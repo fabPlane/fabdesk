@@ -6,6 +6,7 @@
  * The router worker is an extra entrypoint so `new Worker(new URL("./worker/router-worker.ts", import.meta.url))`
  * resolves inside the single-file executable.
  */
+import { fileURLToPath } from "node:url";
 import { mkdir, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
@@ -26,7 +27,7 @@ const hostTarget = `bun-${process.platform === "win32" ? "windows" : process.pla
 const targets: Target[] = only ? [only] : all ? [...TARGETS] : [hostTarget];
 for (const t of targets) if (!TARGETS.includes(t)) throw new Error(`unknown target ${t}`);
 
-const coreDir = resolve(dirname(new URL(import.meta.url).pathname), "..");
+const coreDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(coreDir, "../..");
 const entry = join(coreDir, "src/main.ts");
 const workerRel = "packages/router/src/worker/router-worker.ts";
