@@ -5,7 +5,7 @@ import { RouterHost, availableRouters } from "@fabdesk/router";
 import { captureCoreException } from "./sentry";
 import * as sim from "@fabdesk/sim";
 import type { Principal, RouteRequest, RouteResult, RouterWorkerMessage, Settings } from "@fabdesk/protocol";
-import type { CoreServices, KicadCli, RouteRunStore, SimService } from "@fabdesk/tools";
+import type { CoreServices, KicadCli, KicadImportSummary, RouteRunStore, SimService } from "@fabdesk/tools";
 import type { Channel } from "./config";
 import type { EventBus } from "./bus";
 import type { ProjectStore } from "./projects";
@@ -77,6 +77,7 @@ export async function createServices(deps: ServiceDeps): Promise<CoreServices & 
       runChecks: (cj) => tsc.runChecks(cj),
       queryCircuit: (cj, select, filter) => tsc.queryCircuit(cj, select, filter) as unknown[],
       extractSimpleRouteJson: (cj, o) => tsc.extractSimpleRouteJson(cj, o ?? {}),
+      connectionsForComponents: (cj, refs, o) => tsc.connectionsForComponents(cj, refs, o ?? {}),
       mergeTraces: (cj, traces, map) => tsc.mergeTraces(cj, traces, map),
       unrouteCircuit: (cj, conns) => tsc.unrouteCircuit(cj, conns),
       schematicSvg: (cj) => tsc.schematicSvg(cj),
@@ -85,6 +86,10 @@ export async function createServices(deps: ServiceDeps): Promise<CoreServices & 
     kicad: {
       resolveCli,
       convertToKicad: (o) => kicad.convertToKicad(o),
+      importPcb: async (o) => {
+        const r = await kicad.importKicadPcb(o);
+        return { circuitJson: r.circuitJson, report: r.report as unknown as KicadImportSummary };
+      },
       runDrc: (cli, o) => kicad.runDrc(cli, o),
       runErc: (cli, o) => kicad.runErc(cli, o),
       gate: (drc, erc, allowed) => kicad.gate(drc as kicad.DrcReport, erc as kicad.ErcReport | undefined, allowed),

@@ -5,7 +5,23 @@ import { useCinemaStore } from "../../stores/cinema";
 import { useUiStore } from "../../stores/ui";
 import { cn } from "../../util";
 import { useRunTool } from "../tools";
-import { DARK_THEME, LIGHT_THEME, drawScene, frameStatusText, layerColor, nextFrameSeq } from "./renderer";
+import { CinemaPainter, DARK_THEME, LIGHT_THEME, frameStatusText, layerColor, nextFrameSeq, perfStatusText, type OffscreenLike } from "./renderer";
+
+/** Offscreen layers for the painter: statics and settled copper, sized like the visible canvas. */
+function makePainter(width: number, height: number): CinemaPainter {
+  const make = (): { canvas: HTMLCanvasElement | OffscreenCanvas; ctx: OffscreenLike } => {
+    const canvas = typeof OffscreenCanvas !== "undefined" ? new OffscreenCanvas(width, height) : document.createElement("canvas");
+    if (!(canvas instanceof OffscreenCanvas)) {
+      canvas.width = width;
+      canvas.height = height;
+    }
+    const ctx = canvas.getContext("2d") as unknown as OffscreenLike;
+    return { canvas, ctx };
+  };
+  const statics = make();
+  const copper = make();
+  return new CinemaPainter({ statics: statics.ctx, copper: copper.ctx, image: (which) => (which === "statics" ? statics.canvas : copper.canvas) });
+}
 
 function isEditable(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -23,11 +39,14 @@ export function CinemaTab() {
   const followLive = useCinemaStore((s) => s.followLive);
   const hiddenLayers = useCinemaStore((s) => s.hiddenLayers);
   const playbackMs = useCinemaStore((s) => s.playbackMs);
-  const { seek, step, goLive, togglePlaying, toggleLayer, setActiveRun, ingestMany, setPlaybackMs } = useCinemaStore.getState();
+  const perf = useCinemaStore((s) => s.perf);
+  const { seek, step, goLive, togglePlaying, toggleLayer, setActiveRun, ingestMany, setPlaybackMs, reportDraw } = useCinemaStore.getState();
   const route = useRunTool();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
+  const painterRef = useRef<{ painter: CinemaPainter; width: number; height: number } | null>(null);
   const [size, setSize] = useState({ w: 0, h: 0, dpr: 1 });
+  const [shapeCount, setShapeCount] = useState(0);
   const run = activeRunId ? runs[activeRunId] : undefined;
   const frames = run?.frames.length ?? 0;
 
@@ -65,8 +84,16 @@ export function CinemaTab() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     const dark = document.documentElement.classList.contains("dark");
-    drawScene(ctx, { run, cursor, hiddenLayers: new Set(hiddenLayers), width, height, theme: dark ? DARK_THEME : LIGHT_THEME });
-  }, [run, cursor, hiddenLayers, size]);
+    // Statics are painted once to an offscreen layer and copper is extended per frame while
+    // following live; only the composite hits the visible canvas each frame.
+    if (!painterRef.current || painterRef.current.width !== width || painterRef.current.height !== height) {
+      painterRef.current = { painter: makePainter(width, height), width, height };
+    }
+    const t0 = performance.now();
+    const painted = painterRef.current.painter.paint(ctx as unknown as OffscreenLike, { run, cursor, hiddenLayers: new Set(hiddenLayers), width, height, theme: dark ? DARK_THEME : LIGHT_THEME });
+    reportDraw(performance.now() - t0);
+    setShapeCount(painted.shapes);
+  }, [run, cursor, hiddenLayers, size, reportDraw]);
 
   useEffect(() => {
     if (!playing) return;
@@ -189,6 +216,9 @@ export function CinemaTab() {
         })}
         <span className="ml-auto truncate font-mono text-[11px] text-muted" title={frameStatusText(run, cursor)}>
           {frameStatusText(run, cursor)}
+        </span>
+        <span className="shrink-0 font-mono text-[11px] text-muted" title="frames/s received · last draw · shapes drawn · frames this client never received (throttled upstream)">
+          {perfStatusText(perf, shapeCount)}
         </span>
       </div>
       {/* The box owns the size; the canvas is absolutely positioned so its bitmap size never feeds back into layout. */}

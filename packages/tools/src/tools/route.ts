@@ -1,9 +1,10 @@
 /** Route toolset + the shared `route_run` implementation used by the core toolset. */
-import { appendFile, mkdir } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod/v4";
-import type { RouteResult, RouterWorkerMessage } from "@fabdesk/protocol";
+import type { RouteResult } from "@fabdesk/protocol";
 import { PROJECT_FILES, readJsonOrNull, writeJson } from "../fs";
+import { FrameSink } from "../frame-sink";
 import { ToolError, defineTool, type ToolContext, type ToolOutput } from "../registry";
 import type { CircuitJson } from "../services";
 import { loadCircuitJson, ok, p, throwIfAborted } from "./common";
@@ -12,7 +13,8 @@ export const RouteRunArgs = {
   router: z.enum(["capacity", "freerouting"]).optional().describe("Router; defaults to the project's fabdesk.json router"),
   timeoutMs: z.number().int().min(1000).max(30 * 60_000).default(120_000),
   onlyConnections: z.array(z.string()).optional().describe("Route only these connection/net names (after route_unroute)"),
-  minTraceWidth: z.number().positive().optional().describe("Minimum trace width in mm (default 0.15)"),
+  minTraceWidth: z.number().positive().optional().describe("Minimum trace width in mm (default: fabdesk.json board.rules.traceWidthMm, else 0.15)"),
+  minFrameIntervalMs: z.number().int().min(0).max(5000).optional().describe("Minimum gap between live `attempt` frames (default 33; raise for very large boards)"),
   settings: z.record(z.string(), z.unknown()).optional().describe("Router specific settings"),
 };
 
@@ -20,8 +22,34 @@ export function newRunId(): string {
   return `run_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/** SRJ extraction options derived from the project's board settings (an import fills `rules`). */
+export function srjOptionsFor(ctx: ToolContext, minTraceWidth?: number): { minTraceWidth?: number; rules?: { clearanceMm?: number; viaDrillMm?: number; viaDiameterMm?: number } } {
+  const rules = ctx.project?.manifest().board.rules;
+  const width = minTraceWidth ?? rules?.traceWidthMm;
+  return {
+    ...(width !== undefined ? { minTraceWidth: width } : {}),
+    ...(rules
+      ? {
+          rules: {
+            ...(rules.clearanceMm !== undefined ? { clearanceMm: rules.clearanceMm } : {}),
+            ...(rules.viaDrillMm !== undefined ? { viaDrillMm: rules.viaDrillMm } : {}),
+            ...(rules.viaDiameterMm !== undefined ? { viaDiameterMm: rules.viaDiameterMm } : {}),
+          },
+        }
+      : {}),
+  };
+}
+
+/** Large boards flood the SSE stream at 30 frames/s; scale the attempt-frame gate with the problem size. */
+export function defaultFrameIntervalMs(srj: { obstacles: unknown[]; connections: unknown[] }): number {
+  const size = srj.obstacles.length + srj.connections.length * 4;
+  if (size > 6000) return 200;
+  if (size > 2000) return 100;
+  return 33;
+}
+
 export async function runRoute(
-  args: { router?: "capacity" | "freerouting"; timeoutMs: number; onlyConnections?: string[]; minTraceWidth?: number; settings?: Record<string, unknown> },
+  args: { router?: "capacity" | "freerouting"; timeoutMs: number; onlyConnections?: string[]; minTraceWidth?: number; minFrameIntervalMs?: number; settings?: Record<string, unknown> },
   ctx: ToolContext,
 ): Promise<ToolOutput> {
   const project = ctx.requireProject();
@@ -33,9 +61,7 @@ export async function runRoute(
   // Route from the routed file when re-routing a subset (keeps other traces), else from the clean build.
   const { circuitJson, source } = await loadCircuitJson(project, { preferRouted: Boolean(args.onlyConnections?.length) });
   ctx.progress(0.02, "extracting SimpleRouteJson");
-  const { srj, connectionMap } = ctx.services.tscircuit.extractSimpleRouteJson(circuitJson, {
-    ...(args.minTraceWidth !== undefined ? { minTraceWidth: args.minTraceWidth } : {}),
-  });
+  const { srj, connectionMap, copper, extractMs } = ctx.services.tscircuit.extractSimpleRouteJson(circuitJson, srjOptionsFor(ctx, args.minTraceWidth));
   if (srj.connections.length === 0) {
     return ok("Nothing to route: the circuit has no connections (check nets in circuit.tsx).", { runId: null, complete: [], open: [] });
   }
@@ -43,56 +69,30 @@ export async function runRoute(
   const runDir = p(project, PROJECT_FILES.runs, runId);
   await mkdir(runDir, { recursive: true });
   const framesPath = join(runDir, "frames.jsonl");
-  await writeJson(join(runDir, "request.json"), { runId, router, source, connections: srj.connections.map((c) => c.name), onlyConnections: args.onlyConnections ?? null });
+  const minFrameIntervalMs = args.minFrameIntervalMs ?? defaultFrameIntervalMs(srj);
+  await writeJson(join(runDir, "request.json"), {
+    runId,
+    router,
+    source,
+    connections: srj.connections.map((c) => c.name),
+    onlyConnections: args.onlyConnections ?? null,
+    minFrameIntervalMs,
+    srj: { layerCount: srj.layerCount, layerNames: srj.layerNames ?? null, obstacles: srj.obstacles.length, copper: copper ?? null, extractMs: extractMs ?? null },
+  });
 
   ctx.services.routeRuns.start({ id: runId, projectId: project.id, router, framesPath, startedAt: new Date().toISOString() });
 
   const total = args.onlyConnections?.length ?? srj.connections.length;
-  let frames = 0;
   let done = 0;
-  let buffer: string[] = [];
-  let flushing: Promise<void> | null = null;
-  const flush = async () => {
-    if (buffer.length === 0) return;
-    const chunk = buffer.join("");
-    buffer = [];
-    await appendFile(framesPath, chunk);
-  };
-  const scheduleFlush = () => {
-    if (flushing) return;
-    flushing = new Promise<void>((r) => setTimeout(r, 50)).then(async () => {
-      flushing = null;
-      await flush();
-    });
-  };
-
-  const onMessage = (m: RouterWorkerMessage) => {
-    const ts = Date.now();
-    switch (m.kind) {
-      case "meta":
-        buffer.push(JSON.stringify(m) + "\n");
-        ctx.services.bus.emit({ ts, topic: "route.meta", meta: m });
-        break;
-      case "static":
-        buffer.push(JSON.stringify(m) + "\n");
-        ctx.services.bus.emit({ ts, topic: "route.static", static: m });
-        break;
-      case "frame":
-        frames++;
-        buffer.push(JSON.stringify(m) + "\n");
-        ctx.services.bus.emit({ ts, topic: "route.frame", frame: m });
-        if (m.event.kind === "connection") {
-          done++;
-          ctx.progress(Math.min(0.95, 0.05 + (0.9 * done) / Math.max(1, total)), `${done}/${total} connections`);
-        } else if (m.event.kind === "pass-start") {
-          ctx.progress(Math.min(0.95, 0.05 + (0.9 * done) / Math.max(1, total)), `pass ${m.event.passNo ?? "?"}`);
-        }
-        break;
-      default:
-        break;
+  const sink = new FrameSink(framesPath, ctx.services.bus, (m) => {
+    if (m.kind !== "frame") return;
+    if (m.event.kind === "connection") {
+      done++;
+      ctx.progress(Math.min(0.95, 0.05 + (0.9 * done) / Math.max(1, total)), `${Math.min(done, total)}/${total} connections${done > total ? ` (${done} connection events)` : ""}`);
+    } else if (m.event.kind === "pass-start") {
+      ctx.progress(Math.min(0.95, 0.05 + (0.9 * done) / Math.max(1, total)), `pass ${m.event.passNo ?? "?"}`);
     }
-    scheduleFlush();
-  };
+  });
 
   let result: RouteResult;
   try {
@@ -103,21 +103,21 @@ export async function runRoute(
         router,
         srj,
         timeoutMs: args.timeoutMs,
-        minFrameIntervalMs: 33,
+        minFrameIntervalMs,
         ...(args.onlyConnections ? { onlyConnections: args.onlyConnections } : {}),
         ...(args.settings ? { settings: args.settings } : {}),
       },
-      { onMessage, signal: ctx.signal },
+      { onMessage: sink.onMessage, signal: ctx.signal },
     );
   } catch (e) {
-    await flush();
+    await sink.close();
     const cancelled = ctx.signal.aborted;
     const message = e instanceof Error ? e.message : String(e);
     ctx.services.routeRuns.finish(runId, { status: cancelled ? "cancelled" : "failed", result: null, error: message });
     if (cancelled) throw new ToolError(`route ${runId} cancelled`, "cancelled");
     throw new ToolError(`router failed: ${message}`, "internal");
   }
-  await flush();
+  await sink.close();
   ctx.progress(0.96, "merging traces");
   const merged: CircuitJson = ctx.services.tscircuit.mergeTraces(circuitJson, result.traces, connectionMap);
   await writeJson(p(project, PROJECT_FILES.routedJson), merged);
@@ -125,13 +125,15 @@ export async function runRoute(
   ctx.services.routeRuns.finish(runId, { status: "done", result, error: null });
   ctx.services.bus.emit({ ts: Date.now(), topic: "route.done", result });
   ctx.progress(1, "done");
+  const frames = sink.stats.frames;
+  const throttled = result.stats.framesThrottled;
   const text = [
-    `Route ${runId} (${router}) ${result.timedOut ? "TIMED OUT" : "finished"} in ${Math.round(result.stats.wallMs)} ms: ${result.complete.length} complete, ${result.open.length} open, ${result.stats.vias} vias, ${result.stats.segments} segments, ${frames} frames.`,
+    `Route ${runId} (${router}) ${result.timedOut ? "TIMED OUT" : "finished"} in ${Math.round(result.stats.wallMs)} ms: ${result.complete.length} complete, ${result.open.length} open, ${result.stats.vias} vias, ${result.stats.segments} segments, ${frames} frames${throttled ? ` (${throttled} attempt frames throttled at ${minFrameIntervalMs} ms)` : ""}.`,
     result.open.length ? `Open connections: ${result.open.slice(0, 30).join(", ")}${result.open.length > 30 ? ", …" : ""}` : "All connections routed.",
     `Wrote ${PROJECT_FILES.routedJson}; frames at ${PROJECT_FILES.runs}/${runId}/frames.jsonl.`,
     ...(result.detail ? [result.detail] : []),
   ].join("\n");
-  return { text, json: { runId, router, complete: result.complete, open: result.open, timedOut: result.timedOut, stats: result.stats }, isError: result.open.length > 0 };
+  return { text, json: { runId, router, complete: result.complete, open: result.open, timedOut: result.timedOut, stats: result.stats, frames }, isError: result.open.length > 0 };
 }
 
 export const route_status = defineTool({
@@ -189,4 +191,31 @@ export const route_unroute = defineTool({
   },
 });
 
-export const routeTools = [route_status, route_cancel, route_unroute];
+export const route_scope = defineTool({
+  name: "route_scope",
+  toolset: "route",
+  title: "Connections attached to components",
+  description:
+    "List the connections and nets attached to component references (e.g. the footprints a repair touches) so they can be unrouted and re-routed with route_run {onlyConnections}. Nets that own a copper pour are excluded by default and listed with the reason.",
+  inputSchema: {
+    refs: z.array(z.string().min(1)).min(1).describe("Component references, e.g. [\"U701\", \"Q701\"]"),
+    excludePlaneNets: z.boolean().default(true),
+    excludeNets: z.array(z.string()).optional(),
+  },
+  annotations: { readOnlyHint: true, idempotentHint: true },
+  handler: async ({ refs, excludePlaneNets, excludeNets }, ctx) => {
+    const project = ctx.requireProject();
+    const { circuitJson, source } = await loadCircuitJson(project);
+    const scope = ctx.services.tscircuit.connectionsForComponents(circuitJson, refs, { excludePlaneNets, ...(excludeNets ? { excludeNets } : {}) });
+    const text = [
+      `Scope for ${scope.components.join(", ")}${scope.missing.length ? ` (missing: ${scope.missing.join(", ")})` : ""} from ${source}: ${scope.connections.length} connection(s), ${scope.nets.length} net(s).`,
+      scope.nets.length ? `Nets: ${scope.nets.join(", ")}` : "",
+      scope.excluded.length ? `Excluded: ${scope.excluded.map((e) => `${e.net} (${e.reason})`).join("; ")}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+    return ok(text, { ...scope, source });
+  },
+});
+
+export const routeTools = [route_status, route_cancel, route_unroute, route_scope];

@@ -8,6 +8,7 @@ import { useBranchThread } from "../hooks/threadActions";
 import { useRunsStore } from "../stores/runs";
 import { useUiStore } from "../stores/ui";
 import { cn, dateGroup, formatRelative, modKey } from "../util";
+import { UserFooter } from "./UserFooter";
 
 export interface ThreadSidebarProps {
   onNewChat: () => void;
@@ -202,6 +203,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
           <div className="px-2 py-6 text-center text-xs text-muted">No threads yet.</div>
         )}
       </div>
+      <UserFooter />
       {menu && (
         <ContextMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)}>
           <MenuItem

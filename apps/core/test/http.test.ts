@@ -60,6 +60,30 @@ afterAll(async () => {
 const H = () => ({ authorization: `Bearer ${daemon.token}` });
 const api = (path: string, init: RequestInit = {}) => fetch(`${daemon.url}${path}`, { ...init, headers: { ...H(), "content-type": "application/json", ...(init.headers ?? {}) } });
 
+describe("bench", () => {
+  test("POST /bench/route runs the benchmark as a router job and lists reports", async () => {
+    const created = (await (await api("/projects", { method: "POST", body: JSON.stringify({ name: "Bench Board" }) })).json()) as { id: string; path: string };
+    await Bun.write(`${created.path}/circuit.json`, JSON.stringify([{ type: "pcb_board", width: 20, height: 20, num_layers: 2 }]));
+    const bad = await api("/bench/route", { method: "POST", body: JSON.stringify({ project: created.id, router: "freerouting", repeat: 1 }) });
+    // The test daemon runs as channel internal, so freerouting is allowed at the HTTP layer; nonsense projects are not.
+    expect([202, 503]).toContain(bad.status);
+    expect((await api("/bench/route", { method: "POST", body: JSON.stringify({ project: "nope", repeat: 1 }) })).status).toBe(404);
+    const res = await api("/bench/route", { method: "POST", body: JSON.stringify({ project: created.id, router: "capacity", scenario: "full", repeat: 2, timeoutMs: 5000, label: "http" }) });
+    expect(res.status).toBe(202);
+    const { jobId } = (await res.json()) as { jobId: string };
+    const job = await daemon.jobs.wait(jobId);
+    expect(job.status).toBe("done");
+    const report = job.result as { runs: unknown[]; summary: { all: { runs: number; failures: number } }; path: string; label: string };
+    expect(report.runs).toHaveLength(2);
+    expect(report.summary.all.failures).toBe(0);
+    expect(report.label).toBe("http");
+    expect(report.path).toStartWith(`${created.path}/.fabdesk/bench/`);
+    const list = (await (await api(`/projects/${created.id}/bench`)).json()) as Array<{ path: string }>;
+    expect(list.length).toBeGreaterThanOrEqual(1);
+    expect(list[0]?.path).toStartWith(".fabdesk/bench/");
+  });
+});
+
 describe("http daemon", () => {
   test("health open, auth required, foreign origin rejected, handshake written", async () => {
     const health = await fetch(`${daemon.url}/health`);

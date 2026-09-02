@@ -141,6 +141,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     tokens,
     registry,
     ctxFactory,
+    services,
     mcp,
     auth,
     runs,

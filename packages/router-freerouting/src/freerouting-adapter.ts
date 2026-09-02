@@ -73,15 +73,38 @@ export class FreeroutingAdapter implements RouterAdapter {
       post: hooks.onMessage,
     });
 
+    // `settings` carries js_autorouter's RouterSettings plus a few importer/pipeline knobs that
+    // are SrjRouteOptions rather than settings; those are lifted out here by name.
+    const {
+      importExceptions: rawExceptions,
+      finish,
+      optimize,
+      priorityRetries,
+      priorityConnections,
+      ...routerSettings
+    } = (request.settings ?? {}) as Record<string, unknown>;
     const settings: Partial<RouterSettings> = {
-      ...((request.settings ?? {}) as Partial<RouterSettings>),
+      ...(routerSettings as Partial<RouterSettings>),
       maxTotalMs: request.timeoutMs,
+    };
+    // A bounded repair keeps every other net's copper as obstacles whose owners are not being
+    // routed. Read as keepouts, a plane pour over its own tie endpoint is a refusal
+    // ("obstacle buries endpoint"); as context nets it is fixed, netted copper -- the reviewed
+    // exception the B2.23.1 repair import needed. Whole-board runs keep the strict default.
+    const importExceptions = {
+      ...(request.onlyConnections !== undefined ? { unmatchedOwnersAreContextNets: true } : {}),
+      ...((rawExceptions as Record<string, boolean> | undefined) ?? {}),
     };
     const options: SrjRouteOptions = {
       settings,
       ...(request.onlyConnections !== undefined
         ? { onlyConnections: request.onlyConnections }
         : {}),
+      ...(Object.keys(importExceptions).length > 0 ? { importExceptions } : {}),
+      ...(typeof finish === "boolean" ? { finish } : {}),
+      ...(typeof optimize === "boolean" ? { optimize } : {}),
+      ...(typeof priorityRetries === "number" ? { priorityRetries } : {}),
+      ...(Array.isArray(priorityConnections) ? { priorityConnections: priorityConnections.map(String) } : {}),
     };
 
     // A priority retry routes on a FRESH board, so meta/static/watermark follow the board identity.
@@ -148,8 +171,39 @@ export class FreeroutingAdapter implements RouterAdapter {
         `frame scale mismatch: meta said ${FREEROUTING_UNITS_PER_MM} units/mm, run used ${actualUnitsPerMm}`,
       );
     }
+    const importReport = routed.importReport as {
+      unmatchedOwners?: readonly string[];
+      obstaclesBuryingEndpoints?: readonly string[];
+    };
+    if ((importReport.unmatchedOwners?.length ?? 0) > 0) {
+      details.push(
+        `${importReport.unmatchedOwners!.length} obstacle owner(s) match no routed connection` +
+          (importExceptions.unmatchedOwnersAreContextNets ? " (imported as context nets)" : " (kept as keepouts)"),
+      );
+    }
+    if ((importReport.obstaclesBuryingEndpoints?.length ?? 0) > 0) {
+      details.push(`${importReport.obstaclesBuryingEndpoints!.length} obstacle(s) cover an endpoint`);
+    }
+    if (routed.routerTimedOut) {
+      details.push(`timed out (budget ${request.timeoutMs} ms, best partial board kept)`);
+    }
+    const byKind = new Map<string, number>();
     for (const diagnosis of routed.openDiagnoses) {
-      details.push(`${diagnosis.connection}: ${diagnosis.kind}`);
+      byKind.set(diagnosis.kind, (byKind.get(diagnosis.kind) ?? 0) + 1);
+    }
+    for (const [kind, count] of byKind) {
+      details.push(`${count} open: ${kind}`);
+    }
+    for (const diagnosis of routed.openDiagnoses.slice(0, 12)) {
+      const blockers = (diagnosis.blockers ?? [])
+        .slice(0, 4)
+        .map((b) => `#${b.itemId}${b.net !== undefined ? `(${b.net})` : ""}`)
+        .join(",");
+      details.push(
+        `${diagnosis.connection}: ${diagnosis.kind}` +
+          (diagnosis.insertionFailure !== undefined ? ` [${diagnosis.insertionFailure}]` : "") +
+          (blockers !== "" ? ` blockers ${blockers}` : ""),
+      );
     }
     const detail = details.join("; ");
 
@@ -168,6 +222,7 @@ export class FreeroutingAdapter implements RouterAdapter {
         ),
         wallMs: performance.now() - started,
         frames: emitter.framesSent,
+        framesThrottled: emitter.framesThrottled,
       },
       ...(detail !== "" ? { detail } : {}),
     };

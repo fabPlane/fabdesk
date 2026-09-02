@@ -12,6 +12,9 @@ export const BOARD_TAB_LABELS: Record<BoardTab, string> = {
   files: "Files",
 };
 
+export const SETTINGS_SECTIONS = ["agents", "kicad", "router", "auth", "appearance", "privacy", "shortcuts"] as const;
+export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
+
 export interface PendingAttachment {
   path: string;
   mime: string;
@@ -28,6 +31,8 @@ export interface UiState {
   attachments: Record<string, PendingAttachment[]>;
   paletteOpen: boolean;
   settingsOpen: boolean;
+  /** Section the settings dialog should show when it next opens; null keeps the last one. */
+  settingsSection: SettingsSection | null;
   sketchOpen: boolean;
   agentPickerOpen: boolean;
   /** Bumps to request focus on the composer. */
@@ -44,7 +49,7 @@ export interface UiState {
   removeAttachment: (threadKey: string, path: string) => void;
   clearAttachments: (threadKey: string) => void;
   setPaletteOpen: (open: boolean) => void;
-  setSettingsOpen: (open: boolean) => void;
+  setSettingsOpen: (open: boolean, section?: SettingsSection) => void;
   setSketchOpen: (open: boolean) => void;
   setAgentPickerOpen: (open: boolean) => void;
   focusComposer: () => void;
@@ -62,6 +67,7 @@ export const useUiStore = create<UiState>()((set) => ({
   attachments: {},
   paletteOpen: false,
   settingsOpen: false,
+  settingsSection: null,
   sketchOpen: false,
   agentPickerOpen: false,
   composerFocusNonce: 0,
@@ -81,7 +87,7 @@ export const useUiStore = create<UiState>()((set) => ({
     })),
   clearAttachments: (key) => set((s) => ({ attachments: { ...s.attachments, [key]: [] } })),
   setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
-  setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+  setSettingsOpen: (settingsOpen, section) => set({ settingsOpen, settingsSection: settingsOpen ? (section ?? null) : null }),
   setSketchOpen: (sketchOpen) => set({ sketchOpen }),
   setAgentPickerOpen: (agentPickerOpen) => set({ agentPickerOpen }),
   focusComposer: () => set((s) => ({ composerFocusNonce: s.composerFocusNonce + 1 })),

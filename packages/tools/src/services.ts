@@ -17,6 +17,48 @@ import type { ProjectHandle } from "./registry";
 
 export type CircuitJson = unknown[];
 
+export type ExtractSrjOptions = {
+  minTraceWidth?: number;
+  rules?: { clearanceMm?: number; viaDrillMm?: number; viaDiameterMm?: number } | undefined;
+  existingCopper?: "obstacles" | "omit";
+  copperPours?: "polygon" | "omit";
+};
+
+export type ExtractedSrj = {
+  srj: SimpleRouteJson;
+  connectionMap: Record<string, string>;
+  /** Pre-routed copper folded into the obstacles; absent from producers that do not track it. */
+  copper?: { traces: number; vias: number; pours: number; obstacles: number; unowned: number };
+  extractMs?: number;
+};
+
+export type ComponentScope = {
+  components: string[];
+  missing: string[];
+  connections: string[];
+  nets: string[];
+  excluded: Array<{ net: string; connection: string; reason: string }>;
+  ports: Record<string, number>;
+};
+
+/** Mirrors @fabdesk/kicad `KicadImportReport`; tools only read the fields named here. */
+export type KicadImportSummary = {
+  schema: 1;
+  importedAt: string;
+  source: { path: string; file: string; sha256: string; bytes: number; kicadVersion: number | null; netEncoding: string; footprintPlacement: string };
+  board: { widthMm: number | null; heightMm: number | null; outlinePoints: number };
+  layers: { copperCount: number; circuitJsonLayerCount: number | null; mapping: Array<{ kicad: string; circuitJson: string; index: number; type: string }> };
+  counts: Record<string, unknown>;
+  elements: Record<string, number>;
+  copper: Record<string, number>;
+  dropped: Array<{ kind: string; count: number; detail: string }>;
+  unsupported: Array<{ kind: string; count: number; detail: string }>;
+  designRules: { traceWidthMm?: number; clearanceMm?: number; viaDiameterMm?: number; viaDrillMm?: number } | null;
+  timings: { readMs: number; parseMs: number; convertMs: number; linkMs: number; totalMs: number };
+  warnings: string[];
+  failures: string[];
+} & Record<string, unknown>;
+
 export type BuildError = { message: string; line?: number; column?: number; file?: string; type?: string };
 
 export type BuildResult = {
@@ -40,8 +82,10 @@ export interface TscircuitService {
   queryCircuit(circuitJson: CircuitJson, select: CircuitSelect, filter?: string): unknown[];
   extractSimpleRouteJson(
     circuitJson: CircuitJson,
-    opts?: { minTraceWidth?: number },
-  ): { srj: SimpleRouteJson; connectionMap: Record<string, string> };
+    opts?: ExtractSrjOptions,
+  ): ExtractedSrj;
+  /** Connections/nets attached to component references (repair scope); see @fabdesk/tscircuit. */
+  connectionsForComponents(circuitJson: CircuitJson, refs: string[], options?: { excludePlaneNets?: boolean; excludeNets?: string[] }): ComponentScope;
   mergeTraces(circuitJson: CircuitJson, traces: SimplifiedPcbTrace[], connectionMap: Record<string, string>): CircuitJson;
   unrouteCircuit(circuitJson: CircuitJson, connections?: string[]): CircuitJson;
   schematicSvg(circuitJson: CircuitJson): string;
@@ -70,6 +114,8 @@ export interface KicadService {
   /** settings → KICAD_CLI env → known locations; null when KiCad is not installed. */
   resolveCli(): Promise<KicadCli | null>;
   convertToKicad(opts: { circuitJson: CircuitJson; projectDir: string; projectName: string }): Promise<{ files: string[]; warnings: string[] }>;
+  /** `.kicad_pcb` -> circuit-json + report. Throws `KicadImportError` (with `.report`) in strict mode. */
+  importPcb(opts: { pcbPath: string; projectName?: string; strict?: boolean }): Promise<{ circuitJson: CircuitJson; report: KicadImportSummary }>;
   runDrc(cli: KicadCli, opts: { board: string; outFile: string; severity?: "error" | "all"; schematicParity?: boolean; signal?: AbortSignal }): Promise<DrcReport>;
   runErc(cli: KicadCli, opts: { schematic: string; outFile: string; severity?: "error" | "all"; signal?: AbortSignal }): Promise<ErcReport>;
   gate(drc: DrcReport, erc: ErcReport | undefined, allowedWarningSignatures: string[]): GateResult;

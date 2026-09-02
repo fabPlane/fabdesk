@@ -76,10 +76,16 @@ export const SrjConnectionPoint = SrjPoint.extend({
 });
 export const SrjObstacle = z.object({
   type: z.string(),
+  /** Stable id for diagnostics (js_autorouter names refusals and unmatched owners by it). */
+  obstacleId: z.string().optional(),
   layers: z.array(z.string()),
   center: SrjPoint,
   width: z.number(),
   height: z.number(),
+  /** Rotation of the width x height rectangle about `center` (pre-routed diagonal copper). */
+  ccwRotationDegrees: z.number().optional(),
+  /** Explicit outline in mm; used verbatim instead of the rectangle (copper pours). */
+  polygon: z.array(SrjPoint).optional(),
   connectedTo: z.array(z.string()).optional(),
 });
 export const SrjConnection = z.object({
@@ -89,6 +95,8 @@ export const SrjConnection = z.object({
 });
 export const SimpleRouteJson = z.looseObject({
   layerCount: z.number().int().positive(),
+  /** tscircuit layer names in stack order (`top`, `inner1..N`, `bottom`), when the producer knows them. */
+  layerNames: z.array(z.string()).optional(),
   minTraceWidth: z.number().positive(),
   bounds: z.object({ minX: z.number(), maxX: z.number(), minY: z.number(), maxY: z.number() }),
   obstacles: z.array(SrjObstacle),
@@ -135,6 +143,8 @@ export const RouteResult = z.object({
     segments: z.number().int(),
     wallMs: z.number(),
     frames: z.number().int(),
+    /** `attempt` frames the adapter's throttle (`minFrameIntervalMs`) suppressed. */
+    framesThrottled: z.number().int().optional(),
   }),
   detail: z.string().optional(),
 });

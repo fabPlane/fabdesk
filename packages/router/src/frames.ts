@@ -26,6 +26,7 @@ export class FrameEmitter {
   readonly #post: (message: RouterWorkerMessage) => void;
   readonly #started = performance.now();
   #seq = 0;
+  #throttled = 0;
   #lastAttempt = -Infinity;
 
   constructor(options: FrameEmitterOptions) {
@@ -38,6 +39,11 @@ export class FrameEmitter {
   /** Frames posted so far (throttled `attempt`s excluded). */
   get framesSent(): number {
     return this.#seq;
+  }
+
+  /** `attempt` frames the gate suppressed. */
+  get framesThrottled(): number {
+    return this.#throttled;
   }
 
   get elapsedMs(): number {
@@ -59,6 +65,7 @@ export class FrameEmitter {
   frame(event: RouteProgressEvent, shapes: CinemaShape[] | (() => CinemaShape[])): boolean {
     const now = performance.now();
     if (event.kind === "attempt" && now - this.#lastAttempt < this.#gate) {
+      this.#throttled += 1;
       return false;
     }
     if (event.kind === "attempt") {

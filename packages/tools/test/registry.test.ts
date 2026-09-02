@@ -11,9 +11,9 @@ describe("registry", () => {
     const names = reg.list().map((t) => t.name);
     expect(names).toEqual([
       "load_toolset", "project_status", "circuit_build", "circuit_read_errors", "route_run", "verify_drc", "render_board",
-      "project_read_file", "project_write_file", "project_list_sketches", "project_set_board",
+      "project_read_file", "project_write_file", "project_list_sketches", "project_set_board", "project_import_kicad",
       "circuit_query", "circuit_checks", "circuit_search_parts",
-      "route_status", "route_cancel", "route_unroute",
+      "route_status", "route_cancel", "route_unroute", "route_scope",
       "kicad_convert", "kicad_stats",
       "verify_erc", "verify_gate",
       "render_schematic_svg", "render_pcb_svg", "render_glb",

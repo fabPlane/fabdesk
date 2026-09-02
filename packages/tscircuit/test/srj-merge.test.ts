@@ -19,6 +19,39 @@ describe("extractSimpleRouteJson", () => {
       expect(connectionMap[c.name]).toMatch(/^source_trace_/);
     }
     expect(srj.obstacles.length).toBeGreaterThan(0);
+    // Every netted pad names its connection(s) first so routers see it as the net's own copper.
+    const names = new Set(srj.connections.map((c) => c.name));
+    const owned = srj.obstacles.filter((o) => (o.connectedTo?.length ?? 0) > 0);
+    expect(owned.length).toBeGreaterThan(0);
+    for (const o of owned) expect(names.has(o.connectedTo![0]!)).toBe(true);
+  });
+
+  test("an imported net (source_trace with all ports + source_net) yields one connection, not a twin", () => {
+    const pad = (id: string, port: string, x: number) => [
+      { type: "pcb_port", pcb_port_id: port, pcb_component_id: "c1", source_port_id: `sp_${port}`, x, y: 0, layers: ["top"] },
+      { type: "pcb_smtpad", pcb_smtpad_id: id, pcb_component_id: "c1", pcb_port_id: port, x, y: 0, width: 1, height: 1, layer: "top", shape: "rect", port_hints: ["1"] },
+    ];
+    const cj = [
+      { type: "pcb_board", pcb_board_id: "b", center: { x: 0, y: 0 }, width: 20, height: 10, num_layers: 2 },
+      { type: "source_component", source_component_id: "sc1", name: "U1", ftype: "simple_chip" },
+      { type: "pcb_component", pcb_component_id: "c1", source_component_id: "sc1", center: { x: 0, y: 0 }, layer: "top", rotation: 0, width: 10, height: 2 },
+      { type: "source_port", source_port_id: "sp_p1", source_component_id: "sc1", name: "1" },
+      { type: "source_port", source_port_id: "sp_p2", source_component_id: "sc1", name: "2" },
+      { type: "source_port", source_port_id: "sp_p3", source_component_id: "sc1", name: "3" },
+      ...pad("s1", "p1", -5),
+      ...pad("s2", "p2", 0),
+      ...pad("s3", "p3", 5),
+      { type: "source_net", source_net_id: "source_net_0", name: "SIG", member_source_group_ids: [] },
+      { type: "source_trace", source_trace_id: "source_trace_0", connected_source_port_ids: ["sp_p1", "sp_p2", "sp_p3"], connected_source_net_ids: ["source_net_0"], display_name: "SIG" },
+    ];
+    const { srj, connectionMap } = extractSimpleRouteJson(cj);
+    expect(srj.connections.map((c) => c.name)).toEqual(["source_trace_0"]);
+    expect(srj.connections[0]!.pointsToConnect).toHaveLength(3);
+    expect(connectionMap).toEqual({ source_trace_0: "source_trace_0" });
+    for (const o of srj.obstacles.filter((o) => (o.connectedTo?.length ?? 0) > 0)) {
+      expect(o.connectedTo![0]).toBe("source_trace_0");
+      expect(o.connectedTo).not.toContain("source_net_0");
+    }
   });
 });
 

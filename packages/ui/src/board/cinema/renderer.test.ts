@@ -2,6 +2,7 @@
 import { describe, expect, test } from "bun:test";
 import type { CinemaShape, RouteFrame, RouteMeta, RouteStatic } from "@fabdesk/protocol";
 import {
+  CinemaPainter,
   applyLine,
   applyLines,
   computeBounds,
@@ -9,11 +10,14 @@ import {
   drawScene,
   emptyRun,
   frameStatusText,
+  isSuperset,
   layerColor,
   newShapeIds,
   nextFrameSeq,
+  perfStatusText,
   toCanvas,
   type Canvas2D,
+  type OffscreenLike,
 } from "./renderer";
 
 const meta: RouteMeta = {
@@ -159,5 +163,85 @@ describe("drawScene", () => {
   test("returns null without bounds", () => {
     const { ctx } = fakeCtx();
     expect(drawScene(ctx, { run: emptyRun("r1"), cursor: -1, hiddenLayers: new Set(), width: 10, height: 10 })).toBeNull();
+  });
+});
+
+describe("incremental painter", () => {
+  function offscreen() {
+    const calls: string[] = [];
+    const ctx: OffscreenLike = {
+      fillStyle: "",
+      strokeStyle: "",
+      lineWidth: 0,
+      lineCap: "butt",
+      lineJoin: "miter",
+      globalAlpha: 1,
+      fillRect: () => calls.push("fillRect"),
+      strokeRect: () => calls.push("strokeRect"),
+      beginPath: () => calls.push("beginPath"),
+      moveTo: () => calls.push("moveTo"),
+      lineTo: () => calls.push("lineTo"),
+      arc: () => calls.push("arc"),
+      stroke: () => calls.push(`stroke:${String(ctx.strokeStyle)}`),
+      fill: () => calls.push("fill"),
+      clearRect: () => calls.push("clearRect"),
+      drawImage: (img) => calls.push(`drawImage:${String(img)}`),
+    };
+    return { ctx, calls };
+  }
+
+  test("paints statics once, extends copper by the delta while following live, rebuilds on seek", () => {
+    const run = applyLines(emptyRun("r1"), [
+      meta,
+      { kind: "static", runId: "r1", shapes: [shape(100, 0, "pad"), shape(101, 1, "pad")] },
+      frame(0, [1]),
+      frame(1, [1, 2]),
+      frame(2, [1, 2, 3]),
+    ]);
+    const statics = offscreen();
+    const copper = offscreen();
+    const screen = offscreen();
+    const painter = new CinemaPainter({ statics: statics.ctx, copper: copper.ctx, image: (w) => w });
+    const opts = { run, hiddenLayers: new Set<number>(), width: 100, height: 100 };
+    const first = painter.paint(screen.ctx, { ...opts, cursor: 0 });
+    expect(first.staticsRedrawn).toBe(true);
+    expect(first.copperRedrawn).toBe(true);
+    // Background + two pads on the statics layer; one trace on the copper layer.
+    expect(statics.calls.filter((c) => c === "fillRect").length).toBe(3);
+    expect(copper.calls.filter((c) => c.startsWith("stroke:")).length).toBe(1);
+    const second = painter.paint(screen.ctx, { ...opts, cursor: 1 });
+    expect(second.staticsRedrawn).toBe(false);
+    expect(second.copperRedrawn).toBe(false);
+    expect(second.copperExtended).toBe(1);
+    // Only the first paint cleared the copper layer; the extension did not.
+    expect(copper.calls.filter((c) => c === "clearRect").length).toBe(1);
+    expect(copper.calls.filter((c) => c.startsWith("stroke:")).length).toBe(2);
+    // Fresh copper is highlighted on the visible canvas, over both cached layers.
+    expect(screen.calls.filter((c) => c.startsWith("drawImage:")).slice(-2)).toEqual(["drawImage:statics", "drawImage:copper"]);
+    expect(screen.calls.filter((c) => c === "stroke:#ffffff").length).toBe(2);
+    const seek = painter.paint(screen.ctx, { ...opts, cursor: 0 });
+    expect(seek.copperRedrawn).toBe(true);
+    expect(copper.calls.filter((c) => c === "clearRect").length).toBe(2);
+    const skip = painter.paint(screen.ctx, { ...opts, cursor: 2 });
+    expect(skip.copperRedrawn).toBe(true);
+    expect(skip.shapes).toBe(2 + 3);
+    const hidden = painter.paint(screen.ctx, { ...opts, cursor: 2, hiddenLayers: new Set([1]) });
+    expect(hidden.staticsRedrawn).toBe(true);
+    // Redrawn with layer 1 hidden: background + one pad.
+    expect(statics.calls.filter((c) => c === "fillRect").length).toBe(5);
+  });
+
+  test("isSuperset and perf status text", () => {
+    expect(isSuperset(frame(0, [1, 2]).shapes, frame(1, [1, 2, 3]).shapes)).toBe(true);
+    expect(isSuperset(frame(0, [1, 2]).shapes, frame(1, [1, 3]).shapes)).toBe(false);
+    expect(isSuperset(undefined, frame(1, [1]).shapes)).toBe(false);
+    expect(perfStatusText({ fps: 12.34, drawMs: 4.06, dropped: 7 }, 1500)).toBe("12 f/s · draw 4.1 ms · 1500 shapes · 7 dropped");
+    expect(perfStatusText({ fps: 0, drawMs: 0, dropped: 0 })).toBe("");
+    expect(perfStatusText({ fps: 2.5, drawMs: 0, dropped: 0 })).toBe("2.5 f/s");
+  });
+
+  test("status text reports kept frames when the store evicted some", () => {
+    const run = { ...applyLines(emptyRun("r1"), [meta, frame(5, [1]), frame(6, [1, 2])]), evicted: 4 };
+    expect(frameStatusText(run, 1)).toStartWith("frame 6/6 (2 kept)");
   });
 });

@@ -17,6 +17,9 @@ Usage:
   fabdesk-core login --email <email> --password <password>   # staging/local only
   fabdesk-core doctor [--json]
   fabdesk-core route <srj.json> [--router capacity|freerouting] [--timeout-ms 120000] [--out <routed.json>]
+  fabdesk-core bench route --project <dir> [--router capacity|freerouting] [--scenario full|repair] [--repeat 5]
+                           [--timeout-ms 120000] [--refs U701,U702,...] [--frame-interval-ms N] [--pours polygon|omit] [--copper obstacles|omit]
+                           [--label <tag>] [--json <out.json>]
   fabdesk-core install-cli
   fabdesk-core version
 
@@ -176,6 +179,46 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       if (out) await writeFile(out, JSON.stringify(result, null, 2));
       process.stdout.write(JSON.stringify({ runId, router, complete: result.complete.length, open: result.open, timedOut: result.timedOut, stats: result.stats, frames, ...(out ? { out } : {}) }, null, 2) + "\n");
       return result.open.length ? 1 : 0;
+    }
+    case "bench": {
+      const what = f._[1];
+      const dir = str(f, "project");
+      if (what !== "route" || !dir) {
+        process.stderr.write("usage: fabdesk-core bench route --project <dir> [--router capacity|freerouting] [--scenario full|repair] [--repeat N]\n");
+        return 2;
+      }
+      const router = (str(f, "router") ?? "freerouting") as "capacity" | "freerouting";
+      if (router === "freerouting" && channel() !== "internal") {
+        process.stderr.write("freerouting is only available in internal builds (FABDESK_CHANNEL=internal)\n");
+        return 2;
+      }
+      const scenario = (str(f, "scenario") ?? "repair") as "full" | "repair";
+      const { runBenchCli } = await import("./bench-cli");
+      let lastNote = "";
+      const report = await runBenchCli({
+        dir,
+        bench: {
+          router,
+          scenario,
+          repeat: num(f, "repeat") ?? 5,
+          timeoutMs: num(f, "timeout-ms") ?? 120_000,
+          ...(str(f, "refs") ? { repairRefs: str(f, "refs")!.split(",").map((r) => r.trim()).filter(Boolean) } : {}),
+          ...(num(f, "frame-interval-ms") !== undefined ? { minFrameIntervalMs: num(f, "frame-interval-ms")! } : {}),
+          ...(str(f, "pours") ? { copperPours: str(f, "pours") as "polygon" | "omit" } : {}),
+          ...(str(f, "copper") ? { existingCopper: str(f, "copper") as "obstacles" | "omit" } : {}),
+          ...(str(f, "label") ? { label: str(f, "label")! } : {}),
+          ...(flag(f, "no-frames") ? { persistFrames: false } : {}),
+        },
+        ...(str(f, "json") ? { json: str(f, "json")! } : {}),
+        onProgress: (_p, note) => {
+          if (note && note !== lastNote && !flag(f, "quiet")) {
+            lastNote = note;
+            process.stderr.write(`[bench] ${note}\n`);
+          }
+        },
+      });
+      process.stdout.write(JSON.stringify({ path: report.path, router: report.router, scenario: report.scenario, summary: report.summary, srj: report.srj }, null, 2) + "\n");
+      return report.summary.all.failures > 0 ? 1 : 0;
     }
     case "install-cli": {
       const target = process.execPath;

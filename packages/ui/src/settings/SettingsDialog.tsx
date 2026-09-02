@@ -5,12 +5,10 @@ import { useCore } from "../core/CoreProvider";
 import { useDoctor, usePatchSettings, useSettings } from "../hooks/queries";
 import { shortcutList } from "../hooks/useShortcuts";
 import { useAuthStore } from "../stores/auth";
-import { useUiStore } from "../stores/ui";
+import { SETTINGS_SECTIONS, useUiStore, type SettingsSection } from "../stores/ui";
 import { cn } from "../util";
 
-const SECTIONS = ["agents", "kicad", "router", "auth", "appearance", "privacy", "shortcuts"] as const;
-type Section = (typeof SECTIONS)[number];
-const LABELS: Record<Section, string> = {
+const LABELS: Record<SettingsSection, string> = {
   agents: "Agents",
   kicad: "KiCad & ngspice",
   router: "Router",
@@ -39,7 +37,11 @@ export function SettingsDialog() {
   const { host } = useCore();
   const open = useUiStore((s) => s.settingsOpen);
   const setOpen = useUiStore((s) => s.setSettingsOpen);
-  const [section, setSection] = useState<Section>("agents");
+  const requestedSection = useUiStore((s) => s.settingsSection);
+  const [section, setSection] = useState<SettingsSection>("agents");
+  useEffect(() => {
+    if (open && requestedSection) setSection(requestedSection);
+  }, [open, requestedSection]);
   const settings = useSettings();
   const doctor = useDoctor();
   const patch = usePatchSettings();
@@ -60,7 +62,7 @@ export function SettingsDialog() {
     <Dialog open={open} onClose={() => setOpen(false)} title="Settings" className="h-[80vh] w-[860px]">
       <div className="flex h-full gap-4">
         <nav className="w-40 shrink-0">
-          {SECTIONS.map((s) => (
+          {SETTINGS_SECTIONS.map((s) => (
             <button
               key={s}
               onClick={() => setSection(s)}

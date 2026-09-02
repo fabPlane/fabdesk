@@ -4,10 +4,20 @@ import { AgentId, JobStatus, MessagePart, Principal } from "./events";
 
 export const ProjectId = z.string().min(1);
 
+/** Routing rules a board import carries over (KiCad netclass "Default"); all in millimetres. */
+export const BoardRules = z.object({
+  traceWidthMm: z.number().positive().optional(),
+  clearanceMm: z.number().nonnegative().optional(),
+  viaDrillMm: z.number().positive().optional(),
+  viaDiameterMm: z.number().positive().optional(),
+});
+export type BoardRules = z.infer<typeof BoardRules>;
+
 export const BoardSettings = z.object({
   layers: z.number().int().min(1).max(8).default(2),
   widthMm: z.number().positive().optional(),
   heightMm: z.number().positive().optional(),
+  rules: BoardRules.optional(),
 });
 
 export const ProjectManifest = z.object({

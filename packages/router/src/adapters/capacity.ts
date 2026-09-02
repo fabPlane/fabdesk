@@ -91,16 +91,29 @@ export class CapacityAutorouterAdapter implements RouterAdapter {
     const viaDiameter = numberField(request.srj, "minViaPadDiameter") ?? 0.6;
     const shapeCtx = { layerIndex, netOf, viaDiameter, unitsPerMm: CAPACITY_UNITS_PER_MM };
 
-    // The protocol SRJ is deliberately loose; the solver validates the rest itself.
-    const srj = {
-      ...request.srj,
-      obstacles: request.srj.obstacles.map((o) => ({
-        ...o,
-        type: "rect",
-        connectedTo: o.connectedTo ?? [],
-      })),
-      connections,
-    } as unknown as CapacitySrj;
+    // The protocol SRJ is deliberately loose; the solver validates the rest itself. The capacity
+    // mesh only knows axis-aligned rectangles: a rotated rectangle (diagonal pre-routed copper)
+    // is widened to its bounding box, a polygon (copper pour) cannot be represented at all and
+    // is dropped -- both are reported in `detail` rather than silently flattened.
+    const approximated = { rotated: 0, polygons: 0 };
+    const obstacles: CapacitySrj["obstacles"] = [];
+    for (const o of request.srj.obstacles) {
+      if (o.type === "polygon" && o.polygon !== undefined && o.polygon.length >= 3) {
+        approximated.polygons += 1;
+        continue;
+      }
+      let { width, height } = o;
+      if (o.ccwRotationDegrees !== undefined && o.ccwRotationDegrees % 180 !== 0) {
+        approximated.rotated += 1;
+        const rad = (o.ccwRotationDegrees * Math.PI) / 180;
+        const c = Math.abs(Math.cos(rad));
+        const s = Math.abs(Math.sin(rad));
+        [width, height] = [o.width * c + o.height * s, o.width * s + o.height * c];
+      }
+      const { ccwRotationDegrees: _r, polygon: _p, obstacleId: _id, ...rest } = o;
+      obstacles.push({ ...rest, type: "rect", width, height, connectedTo: o.connectedTo ?? [] } as CapacitySrj["obstacles"][number]);
+    }
+    const srj = { ...request.srj, obstacles, connections } as unknown as CapacitySrj;
     const solver = new AutoroutingPipelineSolver(srj, (request.settings ?? {}) as SolverOptions);
 
     const { minX, minY, maxX, maxY } = request.srj.bounds;
@@ -172,6 +185,9 @@ export class CapacityAutorouterAdapter implements RouterAdapter {
     let traces: SimplifiedPcbTrace[] = [];
     let skipped = 0;
     let detail: string | undefined;
+    const notes: string[] = [];
+    if (approximated.rotated > 0) notes.push(`${approximated.rotated} rotated obstacle(s) widened to their bounding box`);
+    if (approximated.polygons > 0) notes.push(`${approximated.polygons} polygon obstacle(s) (copper pours) dropped: not supported by the capacity mesh`);
     if (solver.solved) {
       const converted = convertTraces(solver.getOutputSimplifiedPcbTraces());
       traces = converted.traces;
@@ -184,6 +200,7 @@ export class CapacityAutorouterAdapter implements RouterAdapter {
     } else {
       detail = solver.error ?? `solver failed in phase ${phase}`;
     }
+    if (notes.length > 0) detail = [detail, ...notes].filter((d) => d !== undefined).join("; ");
     // Judge completion by the copper, not by trace names: a merged net's traces all carry one
     // connection's name while joining every member connection's pads.
     const { complete, open } = classifyConnections(request.srj, traces, names, { groups });
@@ -205,6 +222,7 @@ export class CapacityAutorouterAdapter implements RouterAdapter {
         ),
         wallMs: performance.now() - started,
         frames: emitter.framesSent,
+        framesThrottled: emitter.framesThrottled,
       },
       ...(detail !== undefined ? { detail } : {}),
     };

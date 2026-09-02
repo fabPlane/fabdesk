@@ -35,6 +35,9 @@ export interface ExtractedSrj {
    * `source_net_id` for connections core derives from net selectors (`to="net.GND"`).
    */
   connectionMap: Record<string, string>;
+  /** Pre-routed copper folded into `srj.obstacles` (see `extractSimpleRouteJson`). */
+  copper: { traces: number; vias: number; pours: number; obstacles: number; unowned: number };
+  extractMs: number;
 }
 
 /** Minimal view of a circuit-json element used throughout this package. */
