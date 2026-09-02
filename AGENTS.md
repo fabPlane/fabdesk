@@ -29,3 +29,11 @@ FABPLANE_API_ORIGIN=http://fabplane-staging.tail4f6a7.ts.net:4000 \
 ```
 
 Never send those credentials to `https://api.fabplane.com`.
+
+## Source maps
+
+Never package, embed, or ship source maps inside Fabdesk, its installers, app
+archives, or update artifacts. Production web deployments must not publish or
+serve source maps either. Source maps may be generated only transiently for
+private error-symbol processing when the release workflow removes them before
+the application or deployment artifact is assembled.
