@@ -28,7 +28,7 @@ jobs:
 
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
-      - run: bun test apps packages
+      - run: bun run test
 
       - name: Build core (public channel)
         run: bun run --cwd apps/core build --only bun-linux-x64 --channel public

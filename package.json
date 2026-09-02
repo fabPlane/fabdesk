@@ -26,7 +26,7 @@
     "dev": "bun run --cwd apps/desktop dev",
     "dev:core": "bun run --cwd apps/core dev",
     "typecheck": "bun run --filter './apps/*' --filter './packages/*' typecheck",
-    "test": "bun test apps packages",
+    "test": "bun run --filter './apps/*' --filter './packages/*' test && bun test ./scripts/test",
     "build:core": "bun run --cwd apps/core build",
     "build:desktop": "bun run --cwd apps/desktop build",
     "package": "bun run build:core && bun run --cwd apps/desktop package",
