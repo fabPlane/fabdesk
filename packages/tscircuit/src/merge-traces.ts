@@ -37,41 +37,91 @@ function nextIdCounter(elements: Element[], type: string): () => string {
   return () => `${type}_${++max}`;
 }
 
+const str = (v: unknown): string | undefined => (typeof v === "string" && v.length > 0 ? v : undefined);
+
 /**
- * Replaces the routing for each trace's source_trace (looked up through `connectionMap`) with the
+ * What a routed connection stands for in the source domain. @tscircuit/core names SRJ
+ * connections after a `source_trace` for pin-to-pin traces, but after the `source_net` for
+ * traces that end in a net selector (`to="net.GND"`), so either element type can be the source.
+ */
+interface ConnectionSource {
+  /** `source_trace_id` or `source_net_id`; stored in `source_trace_id` (core does the same). */
+  id: string;
+  element: Element;
+  /** The net the routed copper belongs to, when it can be determined. */
+  net: Element | undefined;
+}
+
+function resolveConnectionSources(elements: Element[]): (t: SimplifiedPcbTrace, connectionMap: Record<string, string>) => ConnectionSource | undefined {
+  const sourceTraces = new Map<string, Element>();
+  const sourceNets = new Map<string, Element>();
+  for (const el of elements) {
+    if (el.type === "source_trace") sourceTraces.set(String(el.source_trace_id), el);
+    else if (el.type === "source_net") sourceNets.set(String(el.source_net_id), el);
+  }
+  const netOfTrace = (trace: Element): Element | undefined => {
+    const key = str(trace.subcircuit_connectivity_map_key);
+    const netIds = Array.isArray(trace.connected_source_net_ids) ? trace.connected_source_net_ids : [];
+    for (const id of netIds) {
+      const net = sourceNets.get(String(id));
+      if (net && (!key || net.subcircuit_connectivity_map_key === key)) return net;
+    }
+    if (!key) return undefined;
+    for (const net of sourceNets.values()) if (net.subcircuit_connectivity_map_key === key) return net;
+    return undefined;
+  };
+  const lookup = (id: string | undefined): ConnectionSource | undefined => {
+    if (!id) return undefined;
+    const trace = sourceTraces.get(id);
+    if (trace) return { id, element: trace, net: netOfTrace(trace) };
+    const net = sourceNets.get(id);
+    if (net) return { id, element: net, net };
+    return undefined;
+  };
+  return (t, connectionMap) => {
+    if (!t.connection_name) return undefined;
+    return lookup(connectionMap[t.connection_name]) ?? lookup(t.connection_name);
+  };
+}
+
+/**
+ * Replaces the routing for each trace's source (looked up through `connectionMap`) with the
  * router's SimplifiedPcbTrace, emitting circuit-json `pcb_trace` (+ one `pcb_via` per via point).
  * Existing pcb_trace/pcb_via elements for the same source_trace_id and their routing errors are
  * dropped; everything else passes through untouched.
+ *
+ * Every emitted element carries `source_trace_id` (a `source_trace_id`, or the `source_net_id`
+ * for net-selector connections, matching what @tscircuit/core writes) and the net's
+ * `subcircuit_connectivity_map_key`, so downstream consumers such as circuit-json-to-kicad can
+ * assign a net without having to resolve the source element themselves. Vias additionally get
+ * `source_net_id`.
  */
 export function mergeTraces(circuitJson: unknown[], traces: SimplifiedPcbTrace[], connectionMap: Record<string, string>): unknown[] {
   const elements = asElements(circuitJson);
-  const resolveSource = (t: SimplifiedPcbTrace): string | undefined => {
-    if (t.connection_name && connectionMap[t.connection_name]) return connectionMap[t.connection_name];
-    if (t.connection_name && elements.some((el) => el.type === "source_trace" && el.source_trace_id === t.connection_name)) {
-      return t.connection_name;
-    }
-    return undefined;
-  };
+  const resolveSource = resolveConnectionSources(elements);
   const targets = new Set<string>();
   for (const t of traces) {
-    const sid = resolveSource(t);
-    if (sid) targets.add(sid);
+    const source = resolveSource(t, connectionMap);
+    if (source) targets.add(source.id);
   }
   const { kept } = removeRouting(elements, targets);
   const nextTraceId = nextIdCounter(kept, "pcb_trace");
   const nextViaId = nextIdCounter(kept, "pcb_via");
-  const sourceTraces = new Map<string, Element>();
-  for (const el of kept) if (el.type === "source_trace") sourceTraces.set(String(el.source_trace_id), el);
 
   const added: Element[] = [];
   for (const trace of traces) {
-    const sourceTraceId = resolveSource(trace);
-    const source = sourceTraceId ? sourceTraces.get(sourceTraceId) : undefined;
+    const source = resolveSource(trace, connectionMap);
     const pcbTraceId = nextTraceId();
     const scope = {
-      ...(source?.subcircuit_id ? { subcircuit_id: source.subcircuit_id } : {}),
-      ...(source?.pcb_group_id ? { pcb_group_id: source.pcb_group_id } : {}),
+      ...(source?.element.subcircuit_id ? { subcircuit_id: source.element.subcircuit_id } : {}),
+      ...(source?.element.pcb_group_id ? { pcb_group_id: source.element.pcb_group_id } : {}),
     };
+    const connectivityKey = str(source?.net?.subcircuit_connectivity_map_key) ?? str(source?.element.subcircuit_connectivity_map_key);
+    const netIdentity = {
+      ...(source ? { source_trace_id: source.id } : {}),
+      ...(connectivityKey ? { subcircuit_connectivity_map_key: connectivityKey } : {}),
+    };
+    const sourceNetId = str(source?.net?.source_net_id);
     const route: Record<string, unknown>[] = [];
     for (const point of trace.route) {
       if (point.route_type === "wire") {
@@ -102,14 +152,15 @@ export function mergeTraces(circuitJson: unknown[], traces: SimplifiedPcbTrace[]
         to_layer: point.to_layer,
         layers: Array.isArray(extra.layers) ? extra.layers : [point.from_layer, point.to_layer],
         pcb_trace_id: pcbTraceId,
-        ...(sourceTraceId ? { source_trace_id: sourceTraceId } : {}),
+        ...netIdentity,
+        ...(sourceNetId ? { source_net_id: sourceNetId } : {}),
       });
     }
     added.push({
       type: "pcb_trace",
       pcb_trace_id: pcbTraceId,
       ...scope,
-      ...(sourceTraceId ? { source_trace_id: sourceTraceId } : {}),
+      ...netIdentity,
       route_thickness_mode: "constant",
       route,
     });

@@ -30,7 +30,10 @@ export type CircuitSelect = "components" | "nets" | "ports" | "traces" | "errors
 
 export interface ExtractedSrj {
   srj: SimpleRouteJson;
-  /** SRJ connection name -> source_trace_id. */
+  /**
+   * SRJ connection name -> the source element it routes: a `source_trace_id`, or the
+   * `source_net_id` for connections core derives from net selectors (`to="net.GND"`).
+   */
   connectionMap: Record<string, string>;
 }
 
