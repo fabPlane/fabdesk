@@ -1,0 +1,151 @@
+name: Release
+
+# Every merge to main produces an official public release: version 0.<minor>.<run_number>,
+# a git tag, a GitHub Release with installers for macOS (arm64, x64), Linux and Windows,
+# SHA256SUMS, and manifest.json. The website script (fabplane.com scripts/publish-desktop-release.ts)
+# consumes manifest.json to publish download links and desktop/latest.json.
+# Internal builds (workflow_dispatch channel=internal) are uploaded as workflow artifacts only.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "public or internal (internal bundles the private router; never released)"
+        required: true
+        default: "public"
+        type: choice
+        options: [public, internal]
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CHANNEL: ${{ inputs.channel || 'public' }}
+
+jobs:
+  version:
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      tag: ${{ steps.v.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        run: |
+          base=$(node -p "require('./package.json').version.split('.').slice(0,2).join('.')")
+          version="${base}.${{ github.run_number }}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "Release version $version"
+
+  build:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-14, target: bun-darwin-arm64, eb: "--mac --arm64" }
+          - { os: macos-14, target: bun-darwin-x64, eb: "--mac --x64" }
+          - { os: ubuntu-22.04, target: bun-linux-x64, eb: "--linux" }
+          - { os: windows-latest, target: bun-windows-x64, eb: "--win" }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.FABDESK_SUBMODULE_TOKEN || github.token }}
+          submodules: false
+
+      - name: Init fabplane submodule
+        run: git submodule update --init --depth 1 vendor/fabplane
+
+      - name: Init js_autorouter submodule (internal channel only)
+        if: env.CHANNEL == 'internal'
+        run: git submodule update --init --depth 1 vendor/js_autorouter
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: bun install --frozen-lockfile
+      - name: Stamp version ${{ needs.version.outputs.version }}
+        run: bun run scripts/set-version.ts ${{ needs.version.outputs.version }}
+      - run: bun run typecheck
+
+      - name: Build core (${{ matrix.target }})
+        run: bun run --cwd apps/core build --only ${{ matrix.target }} --channel ${{ env.CHANNEL }}
+
+      - name: Build renderer/main
+        run: bun run --cwd apps/desktop build
+
+      - name: Package
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.CSC_LINK != '' }}
+          FABDESK_CHANNEL: ${{ env.CHANNEL }}
+        run: cd apps/desktop && bunx electron-builder ${{ matrix.eb }} --publish never
+
+      - name: Collect installers
+        shell: bash
+        run: |
+          mkdir -p release-out
+          find apps/desktop/dist -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.exe' \) -exec cp {} release-out/ \;
+          ls -la release-out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.target }}
+          path: release-out/*
+          if-no-files-found: error
+
+  release:
+    needs: [version, build]
+    if: github.event_name == 'push' && (inputs.channel == '' || inputs.channel == 'public')
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: installers-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Manifest and checksums
+        run: |
+          bun run scripts/release-manifest.ts \
+            --dir artifacts \
+            --version ${{ needs.version.outputs.version }} \
+            --tag ${{ needs.version.outputs.tag }} \
+            --repo ${{ github.repository }} \
+            --commit ${{ github.sha }} \
+            --out artifacts/manifest.json \
+            --sums artifacts/SHA256SUMS
+          cat artifacts/manifest.json
+
+      - name: Tag and publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git tag ${{ needs.version.outputs.tag }} ${{ github.sha }}
+          git push origin ${{ needs.version.outputs.tag }}
+          notes=$(git log -1 --pretty='%s%n%n%b' ${{ github.sha }})
+          gh release create ${{ needs.version.outputs.tag }} \
+            --title "Fabdesk ${{ needs.version.outputs.version }}" \
+            --notes "$notes" \
+            artifacts/*

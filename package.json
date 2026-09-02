@@ -16,9 +16,6 @@
     "vendor/fabplane/packages/pcb",
     "vendor/js_autorouter"
   ],
-  "overrides": {
-    "circuit-json": "0.0.480"
-  },
   "trustedDependencies": [
     "electron",
     "electron-builder",

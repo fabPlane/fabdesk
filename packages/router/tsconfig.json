@@ -1,0 +1,7 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "paths": { "@tscircuit/fanout-solver": ["./src/types-shim/fanout-solver.d.ts"] }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
+}

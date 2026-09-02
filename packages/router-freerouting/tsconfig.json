@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "paths": { "@tscircuit/fanout-solver": ["../router/src/types-shim/fanout-solver.d.ts"] }
+  },
+  "include": ["src/**/*.ts"]
+}
