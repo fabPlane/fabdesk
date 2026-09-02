@@ -36,6 +36,15 @@ const api = {
     ipcRenderer.on("fabdesk:update-status", listener);
     return () => ipcRenderer.removeListener("fabdesk:update-status", listener);
   },
+  updateDownloadState: () => ipcRenderer.invoke("fabdesk:update-download-state"),
+  downloadUpdate: () => ipcRenderer.invoke("fabdesk:download-update"),
+  cancelUpdateDownload: () => ipcRenderer.invoke("fabdesk:cancel-update-download"),
+  openUpdate: () => ipcRenderer.invoke("fabdesk:open-update"),
+  onUpdateDownload: (cb: (state: unknown) => void) => {
+    const listener = (_e: unknown, state: unknown) => cb(state);
+    ipcRenderer.on("fabdesk:update-download", listener);
+    return () => ipcRenderer.removeListener("fabdesk:update-download", listener);
+  },
 };
 
 export type FabdeskBridge = typeof api;

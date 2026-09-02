@@ -1,4 +1,4 @@
-import type { UpdateCheckResult } from "@fabdesk/protocol";
+import type { UpdateCheckResult, UpdateDownloadState } from "@fabdesk/protocol";
 import type { CoreEvent, Message, MessagePart, RouteFrameLine } from "@fabdesk/protocol";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
@@ -27,6 +27,12 @@ export interface HostAdapter {
   updateStatus?: () => Promise<UpdateCheckResult | null>;
   checkForUpdates?: () => Promise<UpdateCheckResult>;
   onUpdateStatus?: (cb: (result: UpdateCheckResult) => void) => () => void;
+  /** In-app installer download (Electron only); absent hosts fall back to opening the URL. */
+  updateDownloadState?: () => Promise<UpdateDownloadState>;
+  downloadUpdate?: () => Promise<UpdateDownloadState>;
+  cancelUpdateDownload?: () => Promise<void>;
+  openUpdate?: () => Promise<string>;
+  onUpdateDownload?: (cb: (state: UpdateDownloadState) => void) => () => void;
 }
 
 export const browserHost: HostAdapter = {

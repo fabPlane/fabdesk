@@ -1,6 +1,6 @@
 /// <reference types="@mcp-b/webmcp-types" />
 import type { CoreInfo } from "../shared/core-info";
-import type { UpdateCheckResult } from "@fabdesk/protocol";
+import type { UpdateCheckResult, UpdateDownloadState } from "@fabdesk/protocol";
 
 export interface PickFileOptions {
   multiple?: boolean;
@@ -28,6 +28,11 @@ export interface FabdeskBridge {
   updateStatus(): Promise<UpdateCheckResult | null>;
   checkForUpdates(): Promise<UpdateCheckResult>;
   onUpdateStatus(cb: (result: UpdateCheckResult) => void): () => void;
+  updateDownloadState(): Promise<UpdateDownloadState>;
+  downloadUpdate(): Promise<UpdateDownloadState>;
+  cancelUpdateDownload(): Promise<void>;
+  openUpdate(): Promise<string>;
+  onUpdateDownload(cb: (state: UpdateDownloadState) => void): () => void;
 }
 
 declare global {

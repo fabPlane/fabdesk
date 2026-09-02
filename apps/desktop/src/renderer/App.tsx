@@ -28,6 +28,11 @@ const host: HostAdapter = bridge
       updateStatus: () => bridge.updateStatus(),
       checkForUpdates: () => bridge.checkForUpdates(),
       onUpdateStatus: (cb) => bridge.onUpdateStatus(cb),
+      updateDownloadState: () => bridge.updateDownloadState(),
+      downloadUpdate: () => bridge.downloadUpdate(),
+      cancelUpdateDownload: () => bridge.cancelUpdateDownload(),
+      openUpdate: () => bridge.openUpdate(),
+      onUpdateDownload: (cb) => bridge.onUpdateDownload(cb),
     }
   : browserHost;
 

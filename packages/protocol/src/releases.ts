@@ -50,3 +50,22 @@ export const UpdateCheckResult = z.object({
   error: z.string().optional(),
 });
 export type UpdateCheckResult = z.infer<typeof UpdateCheckResult>;
+
+/** Progress of an in-app installer download started from the update badge. */
+export const UpdateDownloadState = z.discriminatedUnion("state", [
+  z.object({ state: z.literal("idle") }),
+  z.object({
+    state: z.literal("downloading"),
+    version: z.string(),
+    filename: z.string(),
+    received: z.number().int().nonnegative(),
+    total: z.number().int().nonnegative(),
+    /** 0..1, or null when the total size is unknown. */
+    percent: z.number().min(0).max(1).nullable(),
+    bytesPerSecond: z.number().nonnegative().nullable(),
+  }),
+  z.object({ state: z.literal("verifying"), version: z.string(), filename: z.string() }),
+  z.object({ state: z.literal("done"), version: z.string(), filename: z.string(), path: z.string(), sha256: z.string() }),
+  z.object({ state: z.literal("error"), version: z.string().optional(), message: z.string() }),
+]);
+export type UpdateDownloadState = z.infer<typeof UpdateDownloadState>;
