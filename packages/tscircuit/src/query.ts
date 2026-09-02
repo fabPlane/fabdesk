@@ -119,8 +119,11 @@ function traceRows(ix: Index): Row[] {
       const component = ix.get(port?.source_component_id);
       return component && port ? `${str(component.name)}.${str(port.name)}` : String(pid);
     });
-    const nets = ((t.connected_source_net_ids as unknown[] | undefined) ?? []).map((nid) => str(ix.get(nid)?.name) ?? String(nid));
-    const pcbTraceIds = pcbTracesBySource.get(id);
+    const netIds = (t.connected_source_net_ids as unknown[] | undefined) ?? [];
+    const nets = netIds.map((nid) => str(ix.get(nid)?.name) ?? String(nid));
+    // Net-selector traces are routed as one connection per net, whose pcb_traces carry the
+    // source_net_id in source_trace_id.
+    const pcbTraceIds = pcbTracesBySource.get(id) ?? netIds.map((nid) => pcbTracesBySource.get(String(nid))).find((ids) => ids !== undefined);
     return defined({
       id,
       name: str(t.display_name) ?? str(t.name),

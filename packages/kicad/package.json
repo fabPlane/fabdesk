@@ -20,6 +20,7 @@
   },
   "devDependencies": {
     "typescript": "5.9.2",
-    "@types/bun": "1.2.21"
+    "@types/bun": "1.2.21",
+    "@fabdesk/tscircuit": "workspace:*"
   }
 }
