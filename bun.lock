@@ -213,6 +213,18 @@
         "typescript": "5.9.2",
       },
     },
+    "packages/updates": {
+      "name": "@fabdesk/updates",
+      "version": "0.1.0",
+      "dependencies": {
+        "@fabdesk/protocol": "workspace:*",
+        "zod": "3.25.76",
+      },
+      "devDependencies": {
+        "@types/bun": "1.2.21",
+        "typescript": "5.9.2",
+      },
+    },
     "vendor/fabplane/packages/auth": {
       "name": "@pcb/auth",
       "version": "0.1.0",
@@ -538,6 +550,8 @@
     "@fabdesk/tscircuit": ["@fabdesk/tscircuit@workspace:packages/tscircuit"],
 
     "@fabdesk/ui": ["@fabdesk/ui@workspace:packages/ui"],
+
+    "@fabdesk/updates": ["@fabdesk/updates@workspace:packages/updates"],
 
     "@flatten-js/core": ["@flatten-js/core@1.6.14", "", { "dependencies": { "@flatten-js/interval-tree": "^2.0.0" } }, "sha512-9Aa7Y+tTDtTGjL2mH5dYAGeY43CISj0w1DxQ0MPxgWnwVuIJV6jzRlTNHGSeJEnleMngldwdZORarOMcszqpLg=="],
 
