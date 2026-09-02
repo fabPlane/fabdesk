@@ -1,0 +1,6 @@
+{
+  "extends": "./vendor/fabplane/tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["bun-types"]
+  }
+}

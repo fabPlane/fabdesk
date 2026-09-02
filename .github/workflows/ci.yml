@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.FABDESK_SUBMODULE_TOKEN || github.token }}
+          submodules: false
+
+      - name: Init fabplane submodule
+        run: git submodule update --init --depth 1 vendor/fabplane
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun test apps packages
+
+      - name: Build core (public channel)
+        run: bun run --cwd apps/core build --only bun-linux-x64 --channel public
+
+      - name: Smoke core daemon
+        run: |
+          FABDESK_HOME=/tmp/fabdesk-home ./apps/core/dist/linux-x64/fabdesk-core serve --port 0 --handshake-file /tmp/daemon.json &
+          for n in $(seq 1 30); do test -f /tmp/daemon.json && break || sleep 1; done
+          test -f /tmp/daemon.json
+          port=$(jq -r .port /tmp/daemon.json); token=$(jq -r .token /tmp/daemon.json)
+          curl -fsS -H "Authorization: Bearer $token" "http://127.0.0.1:$port/health"
+          kill %1

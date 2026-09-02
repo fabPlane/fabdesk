@@ -1,0 +1,46 @@
+{
+  "name": "fabdesk",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "bun@1.4.0",
+  "engines": {
+    "bun": "1.4.x"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "vendor/fabplane/packages/shared",
+    "vendor/fabplane/packages/config",
+    "vendor/fabplane/packages/auth",
+    "vendor/fabplane/packages/storage",
+    "vendor/fabplane/packages/pcb",
+    "vendor/js_autorouter"
+  ],
+  "overrides": {
+    "circuit-json": "0.0.480"
+  },
+  "trustedDependencies": [
+    "electron",
+    "electron-builder",
+    "esbuild",
+    "@tscircuit/eval"
+  ],
+  "scripts": {
+    "dev": "bun run --cwd apps/desktop dev",
+    "dev:core": "bun run --cwd apps/core dev",
+    "typecheck": "bun run --filter './apps/*' --filter './packages/*' typecheck",
+    "test": "bun test apps packages",
+    "build:core": "bun run --cwd apps/core build",
+    "build:desktop": "bun run --cwd apps/desktop build",
+    "package": "bun run build:core && bun run --cwd apps/desktop package",
+    "doctor": "bun run --cwd apps/core doctor",
+    "submodules:update": "git submodule update --remote --merge vendor/fabplane",
+    "format": "bunx prettier --write .",
+    "format:check": "bunx prettier --check ."
+  },
+  "devDependencies": {
+    "@types/bun": "1.2.21",
+    "prettier": "3.6.2",
+    "typescript": "5.9.2"
+  }
+}

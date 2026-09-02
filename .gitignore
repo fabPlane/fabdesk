@@ -1,0 +1,16 @@
+node_modules/
+dist/
+out/
+*.tsbuildinfo
+*.log
+.env
+.env.*
+!.env.example
+.DS_Store
+coverage/
+.fabdesk-dev
+.cache/
+
+# submodules manage their own ignores; never run `bun install` inside vendor/
+vendor/fabplane/node_modules/
+vendor/js_autorouter/node_modules/
