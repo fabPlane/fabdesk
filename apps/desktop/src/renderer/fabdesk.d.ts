@@ -1,5 +1,6 @@
 /// <reference types="@mcp-b/webmcp-types" />
 import type { CoreInfo } from "../shared/core-info";
+import type { UpdateCheckResult } from "@fabdesk/protocol";
 
 export interface PickFileOptions {
   multiple?: boolean;
@@ -17,6 +18,9 @@ export interface FabdeskBridge {
   pickFile(opts?: PickFileOptions): Promise<string[]>;
   localAuthAllowed(): Promise<boolean>;
   setLocalAuth(enabled: boolean): Promise<void>;
+  updateStatus(): Promise<UpdateCheckResult | null>;
+  checkForUpdates(): Promise<UpdateCheckResult>;
+  onUpdateStatus(cb: (result: UpdateCheckResult) => void): () => void;
 }
 
 declare global {

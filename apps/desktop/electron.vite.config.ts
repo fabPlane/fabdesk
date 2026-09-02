@@ -44,7 +44,8 @@ export default defineConfig(({ mode }) => {
   const dev = mode === "development";
   return {
     main: {
-      plugins: [externalizeDepsPlugin()],
+      // Workspace packages (and their zod) are bundled into main; everything else stays external.
+      plugins: [externalizeDepsPlugin({ exclude: ["@fabdesk/updates", "@fabdesk/protocol", "zod"] })],
       build: {
         rollupOptions: { input: resolve(__dirname, "src/main/index.ts") },
       },

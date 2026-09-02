@@ -1,3 +1,4 @@
+import type { UpdateCheckResult } from "@fabdesk/protocol";
 import type { CoreEvent, Message, MessagePart, RouteFrameLine } from "@fabdesk/protocol";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
@@ -22,6 +23,10 @@ export interface HostAdapter {
   setLocalAuth?: (enabled: boolean) => Promise<void>;
   restartCore?: () => Promise<void>;
   openLogs?: () => Promise<void>;
+  /** Last update-check result from the host (Electron main), if it performs checks. */
+  updateStatus?: () => Promise<UpdateCheckResult | null>;
+  checkForUpdates?: () => Promise<UpdateCheckResult>;
+  onUpdateStatus?: (cb: (result: UpdateCheckResult) => void) => () => void;
 }
 
 export const browserHost: HostAdapter = {

@@ -191,8 +191,11 @@ export class CoreClient {
   toolManifest(): Promise<ToolManifestEntry[]> {
     return this.request("/tools/manifest");
   }
+  /** `projectId` in args is lifted into the adapter's top-level `project` selector. */
   callTool(name: string, args: unknown): Promise<ToolCallResponse> {
-    return this.request(`/tools/${encodeURIComponent(name)}`, { method: "POST", json: { args } });
+    const { projectId, ...rest } = (args && typeof args === "object" ? args : {}) as Record<string, unknown>;
+    const json = { args: rest, ...(typeof projectId === "string" && projectId ? { project: projectId } : {}) };
+    return this.request(`/tools/${encodeURIComponent(name)}`, { method: "POST", json });
   }
   getJob(id: string): Promise<Job> {
     return this.request(`/jobs/${encodeURIComponent(id)}`);

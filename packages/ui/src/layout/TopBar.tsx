@@ -1,4 +1,5 @@
 import { Badge, IconButton } from "../components/ui";
+import { UpdateBadge } from "../components/UpdateBadge";
 import { useCore } from "../core/CoreProvider";
 import { useProjects } from "../hooks/queries";
 import { useAuthStore } from "../stores/auth";
@@ -41,6 +42,7 @@ export function TopBar({ coreStatus }: { coreStatus?: CoreStatusInfo | undefined
       <span className="font-semibold">Fabdesk</span>
       {project && <span className="text-muted">/ {project.name}</span>}
       <div className="ml-auto flex items-center gap-1.5" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+        <UpdateBadge />
         {auth?.mode === "local" && (
           <Badge tone="warning" title="Running with --local-auth; no Fabplane account">
             Local mode

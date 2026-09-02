@@ -52,3 +52,4 @@ export { CoreStatusScreen } from "./app/CoreStatusScreen";
 export { useAppActions } from "./app/useAppActions";
 export type { AppActions } from "./app/useAppActions";
 export type { CoreState, CoreStatusInfo, CoreInfo } from "./app/types";
+export { UpdateBadge } from "./components/UpdateBadge";

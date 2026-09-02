@@ -8,8 +8,8 @@ import { useRunsStore } from "../stores/runs";
 export const TOOL_PATTERNS = {
   build: { preferred: "circuit_build", patterns: [/^circuit_build$/, /build/] },
   route: { preferred: "route_run", patterns: [/^route_run$/, /^route/, /route/] },
-  drc: { preferred: "kicad_drc", patterns: [/^kicad_drc$/, /^drc/, /drc/] },
-  erc: { preferred: "kicad_erc", patterns: [/^kicad_erc$/, /erc/] },
+  drc: { preferred: "verify_drc", patterns: [/^verify_drc$/, /^kicad_drc$/, /drc/] },
+  erc: { preferred: "verify_erc", patterns: [/^verify_erc$/, /^kicad_erc$/, /erc/] },
   render: { preferred: "render_board", patterns: [/^render_board$/, /^kicad_render$/, /render(?!_glb)/] },
   glb: { preferred: "render_glb", patterns: [/^render_glb$/, /glb/, /3d/] },
 } as const;

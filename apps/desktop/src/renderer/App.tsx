@@ -22,6 +22,9 @@ const host: HostAdapter = bridge
       setLocalAuth: (enabled) => bridge.setLocalAuth(enabled),
       restartCore: () => bridge.restartCore(),
       openLogs: () => bridge.openLogs(),
+      updateStatus: () => bridge.updateStatus(),
+      checkForUpdates: () => bridge.checkForUpdates(),
+      onUpdateStatus: (cb) => bridge.onUpdateStatus(cb),
     }
   : browserHost;
 
