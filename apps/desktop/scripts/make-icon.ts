@@ -1,10 +1,10 @@
-/** Generates build/icon.png: a 512x512 rounded purple tile with a white "F". Placeholder until real artwork lands. */
+/** Generates build/icon.png: a 1024x1024 rounded purple tile with a white "FP" mark. Placeholder until real artwork lands. */
 import { deflateSync } from "node:zlib";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const SIZE = 512;
+const SIZE = 1024;
 const here = dirname(fileURLToPath(import.meta.url));
 const out = join(here, "..", "build", "icon.png");
 
@@ -32,12 +32,23 @@ function inRoundedRect(x: number, y: number, r: number): boolean {
   const cy = Math.min(Math.max(y, r), SIZE - 1 - r);
   return (x - cx) ** 2 + (y - cy) ** 2 <= r * r;
 }
+function inRect(x: number, y: number, x0: number, y0: number, x1: number, y1: number): boolean {
+  return x >= x0 && x < x1 && y >= y0 && y < y1;
+}
+/** Block "FP" mark: two letters on a 1024 grid, stroke 88px, cap height 540px (y 242..782). */
 function inGlyph(x: number, y: number): boolean {
-  // Block "F": vertical stem plus two bars.
-  const stem = x >= 176 && x < 236 && y >= 128 && y < 400;
-  const top = x >= 176 && x < 356 && y >= 128 && y < 184;
-  const mid = x >= 176 && x < 316 && y >= 240 && y < 292;
-  return stem || top || mid;
+  const T = 242;
+  const B = 782;
+  const S = 88;
+  // F: stem at x 176, top bar to 456, mid bar to 416.
+  const f = inRect(x, y, 176, T, 176 + S, B) || inRect(x, y, 176, T, 456, T + S) || inRect(x, y, 176, 476, 416, 476 + S);
+  // P: stem at x 536, bowl = top bar to 848, right stroke down to 512+..., bottom bar of bowl at y 476.
+  const p =
+    inRect(x, y, 536, T, 536 + S, B) ||
+    inRect(x, y, 536, T, 848, T + S) ||
+    inRect(x, y, 848 - S, T, 848, 476 + S) ||
+    inRect(x, y, 536, 476, 848, 476 + S);
+  return f || p;
 }
 
 const raw = Buffer.alloc((SIZE * 4 + 1) * SIZE);
@@ -45,7 +56,7 @@ for (let y = 0; y < SIZE; y++) {
   raw[y * (SIZE * 4 + 1)] = 0; // filter: none
   for (let x = 0; x < SIZE; x++) {
     const i = y * (SIZE * 4 + 1) + 1 + x * 4;
-    if (!inRoundedRect(x, y, 96)) {
+    if (!inRoundedRect(x, y, 192)) {
       raw.fill(0, i, i + 4);
       continue;
     }
