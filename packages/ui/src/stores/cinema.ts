@@ -30,6 +30,9 @@ export interface CinemaState {
   hiddenLayers: number[];
   playbackMs: number;
   perf: CinemaPerf;
+  /** `activity` follows the router's recent copper; `board` keeps the whole board in view. */
+  viewMode: "board" | "activity";
+  setViewMode: (mode: "board" | "activity") => void;
   ingest: (line: RouteFrameLine) => void;
   ingestMany: (runId: string, lines: RouteFrameLine[]) => void;
   setDone: (result: RouteResult) => void;
@@ -92,6 +95,8 @@ export const useCinemaStore = create<CinemaState>()((set, get) => ({
   hiddenLayers: [],
   playbackMs: 120,
   perf: { fps: 0, drawMs: 0, received: 0, dropped: 0 },
+  viewMode: "activity",
+  setViewMode: (viewMode) => set({ viewMode }),
   ingest: (line) => {
     const now = performance.now();
     set((s) => {

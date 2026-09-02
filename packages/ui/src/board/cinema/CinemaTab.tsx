@@ -40,6 +40,8 @@ export function CinemaTab() {
   const hiddenLayers = useCinemaStore((s) => s.hiddenLayers);
   const playbackMs = useCinemaStore((s) => s.playbackMs);
   const perf = useCinemaStore((s) => s.perf);
+  const viewMode = useCinemaStore((s) => s.viewMode);
+  const setViewMode = useCinemaStore((s) => s.setViewMode);
   const { seek, step, goLive, togglePlaying, toggleLayer, setActiveRun, ingestMany, setPlaybackMs, reportDraw } = useCinemaStore.getState();
   const route = useRunTool();
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -90,10 +92,10 @@ export function CinemaTab() {
       painterRef.current = { painter: makePainter(width, height), width, height };
     }
     const t0 = performance.now();
-    const painted = painterRef.current.painter.paint(ctx as unknown as OffscreenLike, { run, cursor, hiddenLayers: new Set(hiddenLayers), width, height, theme: dark ? DARK_THEME : LIGHT_THEME });
+    const painted = painterRef.current.painter.paint(ctx as unknown as OffscreenLike, { run, cursor, hiddenLayers: new Set(hiddenLayers), width, height, theme: dark ? DARK_THEME : LIGHT_THEME, view: viewMode });
     reportDraw(performance.now() - t0);
     setShapeCount(painted.shapes);
-  }, [run, cursor, hiddenLayers, size, reportDraw]);
+  }, [run, cursor, hiddenLayers, size, reportDraw, viewMode]);
 
   useEffect(() => {
     if (!playing) return;
@@ -184,6 +186,10 @@ export function CinemaTab() {
           onChange={(e) => seek(Number(e.target.value))}
           disabled={frames === 0}
         />
+        <Select value={viewMode} onChange={(e) => setViewMode(e.target.value === "board" ? "board" : "activity")} className="h-7 text-xs" title="View: follow the router's recent copper, or fit the whole board">
+          <option value="activity">follow activity</option>
+          <option value="board">whole board</option>
+        </Select>
         <Select value={String(playbackMs)} onChange={(e) => setPlaybackMs(Number(e.target.value))} className="h-7 text-xs" title="Playback speed">
           <option value="400">slow</option>
           <option value="120">normal</option>

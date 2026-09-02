@@ -186,6 +186,8 @@ export function frameStatusText(run: CinemaRun, cursor: number): string {
   return parts.join("  ·  ");
 }
 
+export type CinemaView = "board" | "activity";
+
 export interface DrawOptions {
   run: CinemaRun;
   cursor: number;
@@ -193,6 +195,82 @@ export interface DrawOptions {
   width: number;
   height: number;
   theme?: Theme;
+  /** `activity` zooms to the copper routed in the last few frames; `board` fits the whole board. */
+  view?: CinemaView;
+  /** Dim the static board so the router's own copper dominates (default: on while a frame is shown). */
+  focus?: boolean;
+}
+
+export const RECENT_WINDOW = 6;
+export const RECENT_COPPER_COLOR = "#ffd166";
+export const AIRLINE_COLOR = "#facc15";
+
+/**
+ * Age of each shape in the frame at `cursor`: 0 = new in this frame, 1 = new in the previous one, …
+ * up to `window`. Shapes older than the window are absent (they are settled copper).
+ */
+export function recentShapeAges(run: CinemaRun, cursor: number, window = RECENT_WINDOW): Map<number, number> {
+  const ages = new Map<number, number>();
+  const current = cursor >= 0 ? run.frames[cursor] : undefined;
+  if (!current) return ages;
+  const present = new Set(current.shapes.map((s) => s.id));
+  for (let age = 0; age <= window; age += 1) {
+    const idx = cursor - age;
+    if (idx < 0) break;
+    const frame = run.frames[idx];
+    const older = idx > 0 ? run.frames[idx - 1]?.shapes : undefined;
+    if (!frame) break;
+    for (const id of newShapeIds(older, frame.shapes)) if (present.has(id) && !ages.has(id)) ages.set(id, age);
+  }
+  return ages;
+}
+
+/**
+ * View window for `activity`: the copper added in the last frames plus the current airline, padded
+ * and no smaller than `minSizeMm`, quantised so the view only moves when the work moves. Falls back
+ * to all router copper, then to the board.
+ */
+export function activityBounds(run: CinemaRun, cursor: number, board: Bounds, opts?: { minSizeMm?: number; padding?: number; window?: number }): Bounds {
+  const frame = cursor >= 0 ? run.frames[cursor] : undefined;
+  if (!frame) return board;
+  const upm = run.meta?.unitsPerMm ?? 1;
+  const ages = recentShapeAges(run, cursor, opts?.window ?? RECENT_WINDOW);
+  let x1 = Infinity;
+  let y1 = Infinity;
+  let x2 = -Infinity;
+  let y2 = -Infinity;
+  const visit = (x: number, y: number) => {
+    if (x < x1) x1 = x;
+    if (x > x2) x2 = x;
+    if (y < y1) y1 = y;
+    if (y > y2) y2 = y;
+  };
+  const shapes = ages.size > 0 ? frame.shapes.filter((s) => ages.has(s.id)) : frame.shapes;
+  for (const s of shapes) for (let i = 0; i + 1 < s.pts.length; i += 2) visit(s.pts[i] ?? 0, s.pts[i + 1] ?? 0);
+  const air = frame.event.airline;
+  if (air) {
+    visit(air.from.x, air.from.y);
+    visit(air.to.x, air.to.y);
+  }
+  if (!Number.isFinite(x1) || !Number.isFinite(y1)) return board;
+  const minSize = (opts?.minSizeMm ?? 14) * upm;
+  const pad = 1 + (opts?.padding ?? 0.25);
+  const q = 2 * upm; // quantise the window to 2 mm steps
+  const w = Math.max(minSize, (x2 - x1) * pad);
+  const h = Math.max(minSize, (y2 - y1) * pad);
+  const cx = Math.round((x1 + x2) / 2 / q) * q;
+  const cy = Math.round((y1 + y2) / 2 / q) * q;
+  const bw = board.x2 - board.x1;
+  const bh = board.y2 - board.y1;
+  if (w >= bw && h >= bh) return board;
+  const clamp = (lo: number, size: number, blo: number, bhi: number) => {
+    if (size >= bhi - blo) return [blo, bhi] as const;
+    const start = Math.min(Math.max(lo, blo), bhi - size);
+    return [start, start + size] as const;
+  };
+  const [ax1, ax2] = clamp(cx - w / 2, w, board.x1, board.x2);
+  const [ay1, ay2] = clamp(cy - h / 2, h, board.y1, board.y2);
+  return { x1: ax1, y1: ay1, x2: ax2, y2: ay2 };
 }
 
 export interface Canvas2D {
@@ -210,6 +288,7 @@ export interface Canvas2D {
   arc(x: number, y: number, r: number, a0: number, a1: number): void;
   stroke(): void;
   fill(): void;
+  setLineDash?(segments: number[]): void;
 }
 
 function drawShape(
@@ -219,13 +298,14 @@ function drawShape(
   hidden: ReadonlySet<number>,
   color: string,
   alpha: number,
+  minLineWidth = 1,
 ): void {
   // Vias and other through-items carry layer -1 and stay visible whatever is toggled.
   if (s.layer >= 0 && hidden.has(s.layer)) return;
   ctx.globalAlpha = alpha;
   if (s.k === "trace") {
     ctx.strokeStyle = color;
-    ctx.lineWidth = Math.max(1, (s.w ?? 0) * t.scale);
+    ctx.lineWidth = Math.max(minLineWidth, (s.w ?? 0) * t.scale);
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.beginPath();
@@ -248,15 +328,10 @@ function drawShape(
       ctx.lineWidth = 1;
       ctx.strokeRect(x1, Math.min(y1, y2), x2 - x1, Math.abs(y2 - y1));
     } else if (s.k === "area") {
-      // Copper pours arrive as bounding boxes that can cover the whole board: paint them as a faint
-      // tint plus a hairline so pads and routed copper stay readable on top.
-      ctx.globalAlpha = Math.min(alpha, 0.07);
+      // Pour fragments; `drawStatics` paints them opaque and veils them once, since thousands of
+      // overlapping translucent boxes would stack to a solid colour.
       ctx.fillStyle = color;
       ctx.fillRect(x1, Math.min(y1, y2), x2 - x1, Math.abs(y2 - y1));
-      ctx.globalAlpha = Math.min(alpha, 0.3);
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1;
-      ctx.strokeRect(x1, Math.min(y1, y2), x2 - x1, Math.abs(y2 - y1));
     } else {
       ctx.fillStyle = color;
       ctx.fillRect(x1, Math.min(y1, y2), x2 - x1, Math.abs(y2 - y1));
@@ -273,22 +348,78 @@ function orderedStatics(statics: readonly CinemaShape[]): CinemaShape[] {
 }
 
 /** Draws the static board (outline, pads, keepouts, pre-routed copper) onto `ctx`. */
-export function drawStatics(ctx: Canvas2D, run: CinemaRun, t: Transform, hidden: ReadonlySet<number>, bounds: Bounds, width: number, height: number, theme: Theme): void {
+export function drawStatics(ctx: Canvas2D, run: CinemaRun, t: Transform, hidden: ReadonlySet<number>, bounds: Bounds, width: number, height: number, theme: Theme, dim = false): void {
   ctx.globalAlpha = 1;
   ctx.fillStyle = theme.background;
   ctx.fillRect(0, 0, width, height);
   ctx.strokeStyle = theme.outline;
   ctx.lineWidth = 1;
-  const [bx, by] = toCanvas(t, bounds.x1, bounds.y2);
-  ctx.strokeRect(bx, by, (bounds.x2 - bounds.x1) * t.scale, (bounds.y2 - bounds.y1) * t.scale);
-  for (const s of orderedStatics(run.statics)) {
-    drawShape(ctx, s, t, hidden, s.k === "pad" ? PAD_COLOR : layerColor(s.layer), s.k === "trace" ? 0.35 : 0.5);
+  const board = run.meta?.bounds ?? bounds;
+  const [bx, by] = toCanvas(t, board.x1, board.y2);
+  ctx.strokeRect(bx, by, (board.x2 - board.x1) * t.scale, (board.y2 - board.y1) * t.scale);
+  // Pours: paint every fragment opaque, then veil the lot with the background so their union is one
+  // faint tint (a 20k-vertex GND pour arrives as thousands of overlapping boxes).
+  const ordered = orderedStatics(run.statics);
+  let i = 0;
+  for (; i < ordered.length && ordered[i]!.k === "area"; i += 1) drawShape(ctx, ordered[i]!, t, hidden, layerColor(ordered[i]!.layer), 1);
+  if (i > 0) {
+    ctx.globalAlpha = dim ? 0.96 : 0.9;
+    ctx.fillStyle = theme.background;
+    ctx.fillRect(0, 0, width, height);
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = theme.outline;
+    ctx.strokeRect(bx, by, (board.x2 - board.x1) * t.scale, (board.y2 - board.y1) * t.scale);
+  }
+  // While routing, the existing board is context: pull it back so the router's copper reads first.
+  const k = dim ? 0.38 : 1;
+  for (; i < ordered.length; i += 1) {
+    const s = ordered[i]!;
+    drawShape(ctx, s, t, hidden, s.k === "pad" ? PAD_COLOR : layerColor(s.layer), (s.k === "trace" ? 0.35 : 0.5) * k);
+  }
+}
+
+/** Dashed rubber band between the two pads the router is joining right now, with endpoint dots. */
+export function drawAirline(ctx: Canvas2D, frame: RouteFrame, t: Transform): void {
+  const air = frame.event.airline;
+  if (!air) return;
+  const [x1, y1] = toCanvas(t, air.from.x, air.from.y);
+  const [x2, y2] = toCanvas(t, air.to.x, air.to.y);
+  ctx.globalAlpha = 0.95;
+  ctx.strokeStyle = AIRLINE_COLOR;
+  ctx.fillStyle = AIRLINE_COLOR;
+  ctx.lineWidth = 1.5;
+  ctx.lineCap = "round";
+  ctx.setLineDash?.([6, 4]);
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+  ctx.setLineDash?.([]);
+  for (const [x, y] of [[x1, y1], [x2, y2]] as const) {
+    ctx.beginPath();
+    ctx.arc(x, y, 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+/** Recently added copper: this frame's in white with a glow, the last few frames' in amber, fading. */
+export function drawRecent(ctx: Canvas2D, shapes: readonly CinemaShape[], ages: ReadonlyMap<number, number>, t: Transform, hidden: ReadonlySet<number>, window = RECENT_WINDOW): void {
+  for (const s of shapes) {
+    const age = ages.get(s.id);
+    if (age === undefined) continue;
+    if (age === 0) {
+      drawShape(ctx, s, t, hidden, NEW_COPPER_COLOR, 0.35, 7);
+      drawShape(ctx, s, t, hidden, NEW_COPPER_COLOR, 1, 2.5);
+    } else {
+      drawShape(ctx, s, t, hidden, RECENT_COPPER_COLOR, Math.max(0.45, 1 - age / (window + 1)), 2.5);
+    }
   }
 }
 
 /** Draws routed copper shapes in layer colours (the settled copper layer). */
 export function drawCopper(ctx: Canvas2D, shapes: readonly CinemaShape[], t: Transform, hidden: ReadonlySet<number>): void {
-  for (const s of shapes) drawShape(ctx, s, t, hidden, layerColor(s.layer), 0.9);
+  for (const s of shapes) drawShape(ctx, s, t, hidden, layerColor(s.layer), 1, 2);
 }
 
 /** Draws the copper new in this frame in white on top. */
@@ -352,12 +483,15 @@ export class CinemaPainter {
       ctx.fillRect(0, 0, opts.width, opts.height);
       return { transform: null, shapes: 0, staticsRedrawn: false, copperRedrawn: false, copperExtended: 0 };
     }
-    const t = computeTransform(bounds, opts.width, opts.height);
+    const frameShown = opts.cursor >= 0 && opts.run.frames[opts.cursor] !== undefined;
+    const focus = opts.focus ?? frameShown;
+    const view = opts.view === "activity" && frameShown ? activityBounds(opts.run, opts.cursor, bounds) : bounds;
+    const t = computeTransform(view, opts.width, opts.height);
     const hiddenKey = [...opts.hiddenLayers].sort().join(",");
-    const staticsKey = `${opts.run.runId}|${opts.width}x${opts.height}|${t.scale}|${hiddenKey}|${theme.background}|${opts.run.statics.length}|${bounds.x1},${bounds.y1},${bounds.x2},${bounds.y2}`;
+    const staticsKey = `${opts.run.runId}|${opts.width}x${opts.height}|${t.scale}|${t.ox},${t.oy}|${hiddenKey}|${theme.background}|${opts.run.statics.length}|${focus}`;
     let staticsRedrawn = false;
     if (staticsKey !== this.#staticsKey) {
-      drawStatics(this.canvases.statics, opts.run, t, opts.hiddenLayers, bounds, opts.width, opts.height, theme);
+      drawStatics(this.canvases.statics, opts.run, t, opts.hiddenLayers, view, opts.width, opts.height, theme, focus);
       this.#staticsKey = staticsKey;
       this.#transform = t;
       staticsRedrawn = true;
@@ -371,7 +505,6 @@ export class CinemaPainter {
     }
     const copperKey = `${staticsKey}|${opts.run.runId}`;
     const previous = opts.cursor > 0 ? opts.run.frames[opts.cursor - 1]?.shapes : undefined;
-    const fresh = newShapeIds(previous, frame.shapes);
     let copperRedrawn = false;
     let copperExtended = 0;
     const sequential = copperKey === this.#copperKey && this.#copperFrameIndex === opts.cursor - 1 && staticsRedrawn === false;
@@ -390,7 +523,8 @@ export class CinemaPainter {
     this.#copperKey = copperKey;
     this.#copperFrameIndex = opts.cursor;
     ctx.drawImage(this.canvases.image("copper"), 0, 0);
-    drawFresh(ctx, frame.shapes, fresh, t, opts.hiddenLayers);
+    drawRecent(ctx, frame.shapes, recentShapeAges(opts.run, opts.cursor), t, opts.hiddenLayers);
+    drawAirline(ctx, frame, t);
     return { transform: t, shapes: opts.run.statics.length + frame.shapes.length, staticsRedrawn, copperRedrawn, copperExtended };
   }
 }
@@ -403,22 +537,14 @@ export function drawScene(ctx: Canvas2D, opts: DrawOptions): Transform | null {
   ctx.fillRect(0, 0, opts.width, opts.height);
   const bounds = computeBounds(opts.run);
   if (!bounds) return null;
-  const t = computeTransform(bounds, opts.width, opts.height);
-  ctx.strokeStyle = theme.outline;
-  ctx.lineWidth = 1;
-  const [bx, by] = toCanvas(t, bounds.x1, bounds.y2);
-  ctx.strokeRect(bx, by, (bounds.x2 - bounds.x1) * t.scale, (bounds.y2 - bounds.y1) * t.scale);
-
-  for (const s of orderedStatics(opts.run.statics)) {
-    drawShape(ctx, s, t, opts.hiddenLayers, s.k === "pad" ? PAD_COLOR : layerColor(s.layer), s.k === "trace" ? 0.35 : 0.5);
-  }
-  if (opts.cursor < 0) return t;
-  const frame = opts.run.frames[opts.cursor];
+  const frame = opts.cursor >= 0 ? opts.run.frames[opts.cursor] : undefined;
+  const focus = opts.focus ?? frame !== undefined;
+  const view = opts.view === "activity" && frame ? activityBounds(opts.run, opts.cursor, bounds) : bounds;
+  const t = computeTransform(view, opts.width, opts.height);
+  drawStatics(ctx, opts.run, t, opts.hiddenLayers, view, opts.width, opts.height, theme, focus);
   if (!frame) return t;
-  const fresh = newShapeIds(opts.cursor > 0 ? opts.run.frames[opts.cursor - 1]?.shapes : undefined, frame.shapes);
-  for (const s of frame.shapes) {
-    const isNew = fresh.has(s.id);
-    drawShape(ctx, s, t, opts.hiddenLayers, isNew ? NEW_COPPER_COLOR : layerColor(s.layer), isNew ? 1 : 0.9);
-  }
+  drawCopper(ctx, frame.shapes, t, opts.hiddenLayers);
+  drawRecent(ctx, frame.shapes, recentShapeAges(opts.run, opts.cursor), t, opts.hiddenLayers);
+  drawAirline(ctx, frame, t);
   return t;
 }

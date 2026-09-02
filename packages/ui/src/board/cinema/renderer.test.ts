@@ -18,6 +18,8 @@ import {
   toCanvas,
   type Canvas2D,
   type OffscreenLike,
+  activityBounds,
+  recentShapeAges,
 } from "./renderer";
 
 const meta: RouteMeta = {
@@ -154,10 +156,12 @@ describe("drawScene", () => {
     const run = applyLines(emptyRun("r1"), [meta, frame(0, [1]), { ...frame(1, [1]), shapes: [shape(1), shape(2, 1)] }]);
     const a = fakeCtx();
     drawScene(a.ctx, { run, cursor: 1, hiddenLayers: new Set(), width: 100, height: 100 });
-    expect(a.calls.filter((c) => c.startsWith("stroke:"))).toEqual(["stroke:#e5484d", "stroke:#ffffff"]);
+    // Settled copper in layer colours, then the previous frame's copper in amber and this frame's
+    // new copper in white (glow pass + core pass).
+    expect(a.calls.filter((c) => c.startsWith("stroke:"))).toEqual(["stroke:#e5484d", "stroke:#3b82f6", "stroke:#ffd166", "stroke:#ffffff", "stroke:#ffffff"]);
     const b = fakeCtx();
     drawScene(b.ctx, { run, cursor: 1, hiddenLayers: new Set([1]), width: 100, height: 100 });
-    expect(b.calls.filter((c) => c.startsWith("stroke:"))).toEqual(["stroke:#e5484d"]);
+    expect(b.calls.filter((c) => c.startsWith("stroke:"))).toEqual(["stroke:#e5484d", "stroke:#ffd166"]);
   });
 
   test("returns null without bounds", () => {
@@ -218,7 +222,8 @@ describe("incremental painter", () => {
     expect(copper.calls.filter((c) => c.startsWith("stroke:")).length).toBe(2);
     // Fresh copper is highlighted on the visible canvas, over both cached layers.
     expect(screen.calls.filter((c) => c.startsWith("drawImage:")).slice(-2)).toEqual(["drawImage:statics", "drawImage:copper"]);
-    expect(screen.calls.filter((c) => c === "stroke:#ffffff").length).toBe(2);
+    // Two paints, one new shape each, glow + core pass per fresh shape.
+    expect(screen.calls.filter((c) => c === "stroke:#ffffff").length).toBe(4);
     const seek = painter.paint(screen.ctx, { ...opts, cursor: 0 });
     expect(seek.copperRedrawn).toBe(true);
     expect(copper.calls.filter((c) => c === "clearRect").length).toBe(2);
@@ -243,5 +248,37 @@ describe("incremental painter", () => {
   test("status text reports kept frames when the store evicted some", () => {
     const run = { ...applyLines(emptyRun("r1"), [meta, frame(5, [1]), frame(6, [1, 2])]), evicted: 4 };
     expect(frameStatusText(run, 1)).toStartWith("frame 6/6 (2 kept)");
+  });
+});
+
+describe("activity view", () => {
+  const meta = { kind: "meta" as const, runId: "r", router: "capacity", bounds: { x1: 0, y1: 0, x2: 100, y2: 60 }, layers: ["top", "bottom"], unitsPerMm: 1 };
+  const frame = (seq: number, ids: number[], airline?: { from: { x: number; y: number }; to: { x: number; y: number } }) => ({
+    kind: "frame" as const,
+    runId: "r",
+    seq,
+    event: { kind: "attempt" as const, ...(airline ? { airline } : {}) },
+    elapsedMs: seq * 10,
+    shapes: ids.map((id) => ({ k: "trace" as const, id, layer: 0, net: 1, pts: [id, id, id + 1, id + 1], w: 0.2 })),
+  });
+  test("recentShapeAges ages shapes by the frame they first appeared in", () => {
+    const run = { runId: "r", meta, statics: [], frames: [frame(1, [1]), frame(2, [1, 2]), frame(3, [1, 2, 3])] };
+    const ages = recentShapeAges(run, 2);
+    expect(ages.get(3)).toBe(0);
+    expect(ages.get(2)).toBe(1);
+    expect(ages.get(1)).toBe(2);
+    expect(recentShapeAges(run, 2, 1).has(1)).toBe(false);
+  });
+  test("activityBounds zooms to recent copper plus airline, clamped inside the board", () => {
+    const run = { runId: "r", meta, statics: [], frames: [frame(1, [40]), frame(2, [40, 42], { from: { x: 44, y: 44 }, to: { x: 46, y: 45 } })] };
+    const b = activityBounds(run, 1, meta.bounds);
+    expect(b.x2 - b.x1).toBeGreaterThanOrEqual(14);
+    expect(b.x1).toBeGreaterThanOrEqual(0);
+    expect(b.y2).toBeLessThanOrEqual(60);
+    expect(b.x1).toBeLessThanOrEqual(40);
+    expect(b.x2).toBeGreaterThanOrEqual(46);
+  });
+  test("activityBounds falls back to the board without frames", () => {
+    expect(activityBounds({ runId: "r", meta, statics: [], frames: [] }, -1, meta.bounds)).toEqual(meta.bounds);
   });
 });
