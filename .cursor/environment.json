@@ -1,0 +1,5 @@
+{
+  "name": "Fabdesk",
+  "install": "bash .cursor/install.sh",
+  "repositoryDependencies": ["github.com/tensorfleet/fabplane.com"]
+}
