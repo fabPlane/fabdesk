@@ -1,0 +1,361 @@
+/** Hono application: auth + origin guard, control API, tools/jobs, MCP, events. */
+import { readFile, stat, mkdir } from "node:fs/promises";
+import { basename, extname, join } from "node:path";
+import { Hono, type Context } from "hono";
+import {
+  CreateProject,
+  CreateThread,
+  PatchThread,
+  SendMessage,
+  Settings,
+  type AgentId,
+  type AgentInfo,
+  type AuthState,
+  type DoctorReport,
+  type Me,
+} from "@fabdesk/protocol";
+import { z } from "zod/v4";
+import { PROJECT_FILES, ToolError, jailPath, toolRoutes, writeAtomic, type ContextFactory, type ToolRegistry } from "@fabdesk/tools";
+import { extractToken, originAllowed, type TokenSet } from "../auth";
+import type { AuthFacade } from "../auth-facade";
+import type { EventBus } from "../bus";
+import type { CoreConfig } from "../config";
+import type { Store } from "../db";
+import type { JobRunner } from "../jobs";
+import type { McpSessionManager } from "../mcp-sessions";
+import type { ProjectStore } from "../projects";
+import type { AgentRunManager } from "../agent-runs";
+import { logger, errMsg } from "../log";
+import { parseTopics, sseResponse } from "./sse";
+
+export type AppDeps = {
+  config: CoreConfig;
+  store: Store;
+  bus: EventBus;
+  jobs: JobRunner;
+  projects: ProjectStore;
+  tokens: TokenSet;
+  registry: ToolRegistry;
+  ctxFactory: ContextFactory;
+  mcp: McpSessionManager;
+  auth: AuthFacade;
+  runs: AgentRunManager | null;
+  doctor: () => Promise<DoctorReport>;
+  agents: () => Promise<AgentInfo[]>;
+  shutdown: (reason: string) => void;
+  startedAt: number;
+  extraOrigins?: string[];
+};
+
+export type Env = { Variables: { token?: string; principalSubject?: string } };
+
+const MIME: Record<string, string> = {
+  ".json": "application/json",
+  ".tsx": "text/x-tsx; charset=utf-8",
+  ".ts": "text/x-typescript; charset=utf-8",
+  ".md": "text/markdown; charset=utf-8",
+  ".txt": "text/plain; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".glb": "model/gltf-binary",
+  ".csv": "text/csv; charset=utf-8",
+  ".zip": "application/zip",
+  ".kicad_pcb": "text/plain; charset=utf-8",
+  ".kicad_sch": "text/plain; charset=utf-8",
+  ".kicad_pro": "application/json",
+};
+
+export function createApp(deps: AppDeps): Hono<Env> {
+  const app = new Hono<Env>();
+
+  app.onError((err, c) => {
+    if (err instanceof ToolError) {
+      const status = err.code === "invalid_args" ? 400 : err.code === "not_found" ? 404 : err.code === "precondition" ? 412 : err.code === "unavailable" ? 503 : 500;
+      return c.json({ error: err.message, code: err.code }, status);
+    }
+    if (err instanceof z.ZodError) return c.json({ error: z.prettifyError(err), code: "invalid_args" }, 400);
+    logger.error("unhandled", { path: c.req.path, error: errMsg(err) });
+    return c.json({ error: errMsg(err), code: "internal" }, 500);
+  });
+
+  // Origin guard: browsers on foreign origins are rejected before anything else.
+  app.use("*", async (c, next) => {
+    const origin = c.req.header("origin") ?? null;
+    if (!originAllowed(origin, deps.extraOrigins ?? [])) return c.json({ error: "forbidden origin" }, 403);
+    await next();
+  });
+
+  app.get("/health", (c) =>
+    c.json({ ok: true, version: deps.config.version, pid: process.pid, channel: deps.config.channel, authMode: deps.auth.mode, uptimeMs: Date.now() - deps.startedAt, mcpSessions: deps.mcp.activeCount() }),
+  );
+
+  // Bearer auth for everything else (`?token=` allowed for SSE / WS which cannot set headers).
+  app.use("*", async (c, next) => {
+    if (c.req.path === "/health") return next();
+    const allowQuery = c.req.path === "/events" || c.req.path === "/ws";
+    const token = extractToken(c.req.raw, { allowQuery });
+    if (!deps.tokens.verify(token)) return c.json({ error: "unauthorized" }, 401);
+    c.set("token", token as string);
+    await next();
+  });
+
+  app.get("/doctor", async (c) => c.json(await deps.doctor()));
+  app.get("/agents", async (c) => c.json(await deps.agents()));
+
+  app.get("/events", (c) => {
+    const topics = parseTopics(c.req.query("topics"));
+    const raw = c.req.header("last-event-id") ?? c.req.query("lastEventId") ?? null;
+    const lastEventId = raw !== null && raw !== "" && Number.isFinite(Number(raw)) ? Number(raw) : null;
+    return sseResponse(deps.bus, { topics, lastEventId, signal: c.req.raw.signal });
+  });
+
+  /* ---------- projects ---------- */
+  app.get("/projects", (c) => c.json(deps.projects.summaries()));
+  app.post("/projects", async (c) => {
+    const body = CreateProject.parse(await c.req.json());
+    return c.json(await deps.projects.create(body.name), 201);
+  });
+  app.get("/projects/:id", async (c) => {
+    const d = await deps.projects.detail(c.req.param("id"));
+    return d ? c.json(d) : c.json({ error: "not found" }, 404);
+  });
+  app.patch("/projects/:id", async (c) => {
+    const id = c.req.param("id");
+    const body = z.object({ name: z.string().min(1).max(80).optional(), manifest: z.record(z.string(), z.unknown()).optional() }).parse(await c.req.json());
+    const h = await deps.projects.handle(id);
+    if (!h) return c.json({ error: "not found" }, 404);
+    if (body.manifest) await h.updateManifest(body.manifest as never);
+    if (body.name) await deps.projects.rename(id, body.name);
+    deps.bus.emit({ ts: Date.now(), topic: "project.changed", projectId: id, paths: [PROJECT_FILES.manifest] });
+    return c.json(await deps.projects.detail(id));
+  });
+  app.delete("/projects/:id", async (c) => {
+    const ok = await deps.projects.delete(c.req.param("id"), { purge: c.req.query("purge") === "1" });
+    return ok ? c.json({ ok: true }) : c.json({ error: "not found" }, 404);
+  });
+  app.get("/projects/:id/route-runs", (c) => c.json(deps.store.routeRuns.list(c.req.param("id"))));
+
+  app.get("/projects/:id/files/*", async (c) => {
+    const h = await deps.projects.handle(c.req.param("id"));
+    if (!h) return c.json({ error: "not found" }, 404);
+    const rel = decodeURIComponent(c.req.path.split("/files/")[1] ?? "");
+    const abs = await jailPath(h.dir, rel);
+    const st = await stat(abs).catch(() => null);
+    if (!st || !st.isFile()) return c.json({ error: "not found" }, 404);
+    const mime = MIME[extname(abs).toLowerCase()] ?? "application/octet-stream";
+    return new Response(Bun.file(abs), { headers: { "content-type": mime, "content-length": String(st.size), "x-mtime": st.mtime.toISOString() } });
+  });
+  app.put("/projects/:id/files/*", async (c) => {
+    const id = c.req.param("id");
+    const h = await deps.projects.handle(id);
+    if (!h) return c.json({ error: "not found" }, 404);
+    const rel = decodeURIComponent(c.req.path.split("/files/")[1] ?? "");
+    if (rel === PROJECT_FILES.manifest) return c.json({ error: "use PATCH /projects/:id" }, 400);
+    const abs = await jailPath(h.dir, rel);
+    await writeAtomic(abs, new Uint8Array(await c.req.arrayBuffer()));
+    deps.store.projects.touch(id);
+    return c.json({ ok: true, path: rel });
+  });
+
+  app.get("/projects/:id/sketches", async (c) => {
+    const h = await deps.projects.handle(c.req.param("id"));
+    if (!h) return c.json({ error: "not found" }, 404);
+    const files = await deps.projects.listFiles(join(h.dir, PROJECT_FILES.sketches));
+    return c.json(files.map((f) => ({ ...f, path: `${PROJECT_FILES.sketches}/${f.path}` })));
+  });
+  app.post("/projects/:id/sketches", async (c) => {
+    const id = c.req.param("id");
+    const h = await deps.projects.handle(id);
+    if (!h) return c.json({ error: "not found" }, 404);
+    const ct = c.req.header("content-type") ?? "";
+    let data: Uint8Array;
+    let name: string;
+    if (ct.startsWith("multipart/form-data")) {
+      const form = await c.req.formData();
+      const file = form.get("file");
+      if (!(file instanceof File)) return c.json({ error: "multipart field `file` required" }, 400);
+      data = new Uint8Array(await file.arrayBuffer());
+      name = (form.get("name") as string | null) ?? file.name ?? "sketch.png";
+    } else {
+      data = new Uint8Array(await c.req.arrayBuffer());
+      name = c.req.query("name") ?? "sketch.png";
+    }
+    if (!isPng(data) && !isJpeg(data)) return c.json({ error: "PNG or JPEG required" }, 415);
+    const safe = basename(name).replace(/[^A-Za-z0-9._-]/g, "_") || "sketch.png";
+    const stamped = /\.(png|jpe?g)$/i.test(safe) ? safe : `${safe}.png`;
+    const dir = join(h.dir, PROJECT_FILES.sketches);
+    await mkdir(dir, { recursive: true });
+    let final = stamped;
+    for (let i = 2; await stat(join(dir, final)).catch(() => null); i++) final = stamped.replace(/(\.[^.]+)$/, `-${i}$1`);
+    const abs = await jailPath(h.dir, `${PROJECT_FILES.sketches}/${final}`);
+    await writeAtomic(abs, data);
+    return c.json({ path: `${PROJECT_FILES.sketches}/${final}`, absolutePath: abs, size: data.length }, 201);
+  });
+
+  /* ---------- threads ---------- */
+  app.get("/threads", (c) => {
+    const q = c.req.query("q");
+    const projectId = c.req.query("projectId");
+    const archived = c.req.query("archived");
+    const folderId = c.req.query("folderId");
+    return c.json(
+      deps.store.threads.list({
+        ...(q ? { q } : {}),
+        ...(projectId ? { projectId } : {}),
+        ...(archived !== undefined ? { archived: archived === "1" || archived === "true" } : {}),
+        ...(folderId !== undefined ? { folderId: folderId === "" || folderId === "null" ? null : folderId } : {}),
+      }),
+    );
+  });
+  app.post("/threads", async (c) => {
+    const body = CreateThread.parse(await c.req.json());
+    return c.json(
+      deps.store.threads.create({
+        agentId: body.agentId,
+        ...(body.projectId !== undefined ? { projectId: body.projectId } : {}),
+        ...(body.title ? { title: body.title } : {}),
+        ...(body.model ? { model: body.model } : {}),
+        ...(body.parentThreadId ? { parentThreadId: body.parentThreadId } : {}),
+        ...(body.branchFromMessageId ? { branchFromMessageId: body.branchFromMessageId } : {}),
+      }),
+      201,
+    );
+  });
+  app.get("/threads/:id", (c) => {
+    const t = deps.store.threads.get(c.req.param("id"));
+    return t ? c.json({ ...t, run: deps.store.runs.latestForThread(t.id), running: deps.runs?.isRunning(t.id) ?? false }) : c.json({ error: "not found" }, 404);
+  });
+  app.patch("/threads/:id", async (c) => {
+    const body = compact(PatchThread.parse(await c.req.json()));
+    const t = deps.store.threads.patch(c.req.param("id"), body);
+    if (!t) return c.json({ error: "not found" }, 404);
+    deps.bus.emit({ ts: Date.now(), topic: "thread.updated", threadId: t.id });
+    return c.json(t);
+  });
+  app.delete("/threads/:id", (c) => {
+    const id = c.req.param("id");
+    deps.runs?.abortThread(id);
+    return deps.store.threads.delete(id) ? c.json({ ok: true }) : c.json({ error: "not found" }, 404);
+  });
+  app.get("/threads/:id/messages", (c) => {
+    const t = deps.store.threads.get(c.req.param("id"));
+    return t ? c.json(deps.store.threads.messages(t.id)) : c.json({ error: "not found" }, 404);
+  });
+  app.post("/threads/:id/messages", async (c) => {
+    const t = deps.store.threads.get(c.req.param("id"));
+    if (!t) return c.json({ error: "not found" }, 404);
+    const body = SendMessage.parse(await c.req.json());
+    if (!deps.runs) return c.json({ error: "agent runs are disabled in this daemon" }, 503);
+    const agentId: AgentId = body.agentId ?? t.agentId;
+    if (agentId !== t.agentId || (body.model && body.model !== t.model)) deps.store.threads.patch(t.id, { agentId, ...(body.model ? { model: body.model } : {}) });
+    const user = deps.store.threads.addMessage({ threadId: t.id, role: "user", contentMd: body.content, parts: [{ type: "text", text: body.content }, ...body.attachments.map((a) => ({ type: "image" as const, path: a.path, mime: a.mime }))] });
+    if (t.title === "New chat") deps.store.threads.patch(t.id, { title: body.content.slice(0, 60).replace(/\s+/g, " ") });
+    const project = t.projectId ? await deps.projects.handle(t.projectId) : null;
+    const { runId, messageId } = await deps.runs.start({ threadId: t.id, project, agentId, ...(body.model ?? t.model ? { model: (body.model ?? t.model) as string } : {}), prompt: body.content, attachments: body.attachments });
+    return c.json({ runId, messageId, userMessageId: user.id }, 202);
+  });
+  app.post("/threads/:id/abort", (c) => {
+    const id = c.req.param("id");
+    const hit = deps.runs?.abortThread(id) ?? false;
+    return c.json({ ok: true, aborted: hit });
+  });
+  app.get("/search", (c) => {
+    const q = c.req.query("q") ?? "";
+    if (!q.trim()) return c.json([]);
+    return c.json(deps.store.threads.search(q));
+  });
+
+  /* ---------- folders ---------- */
+  app.get("/folders", (c) => c.json(deps.store.folders.list()));
+  app.post("/folders", async (c) => {
+    const body = z.object({ name: z.string().min(1).max(80), parentId: z.string().nullable().optional() }).parse(await c.req.json());
+    return c.json(deps.store.folders.create(body.name, body.parentId ?? null), 201);
+  });
+  app.patch("/folders/:id", async (c) => {
+    const body = z.object({ name: z.string().min(1).max(80) }).parse(await c.req.json());
+    deps.store.folders.rename(c.req.param("id"), body.name);
+    return c.json({ ok: true });
+  });
+  app.delete("/folders/:id", (c) => (deps.store.folders.delete(c.req.param("id")) ? c.json({ ok: true }) : c.json({ error: "not found" }, 404)));
+
+  /* ---------- tools & jobs ---------- */
+  app.route("/", toolRoutes({ registry: deps.registry, ctxFactory: deps.ctxFactory, jobs: deps.jobs }));
+  app.get("/jobs", (c) => c.json(deps.jobs.list().length ? deps.jobs.list() : deps.store.jobs.list()));
+  app.get("/jobs/:id", (c) => {
+    const j = deps.jobs.get(c.req.param("id")) ?? deps.store.jobs.get(c.req.param("id"));
+    return j ? c.json(j) : c.json({ error: "not found" }, 404);
+  });
+  app.post("/jobs/:id/cancel", (c) => c.json({ ok: deps.jobs.cancel(c.req.param("id")) }));
+  app.delete("/jobs/:id", (c) => c.json({ ok: deps.jobs.cancel(c.req.param("id")) }));
+
+  /* ---------- route frames ---------- */
+  app.get("/route/runs/:id/frames", async (c) => {
+    const rec = deps.store.routeRuns.get(c.req.param("id"));
+    if (!rec) return c.json({ error: "not found" }, 404);
+    const from = Number(c.req.query("from") ?? 0) || 0;
+    const text = await readFile(rec.framesPath, "utf8").catch(() => "");
+    const lines = text.split("\n").filter(Boolean);
+    const out: string[] = [];
+    for (const line of lines) {
+      if (from > 0) {
+        // Keep meta/static always; frames only from `seq >= from`.
+        const seqMatch = /"seq":(\d+)/.exec(line);
+        const kindMatch = /"kind":"(meta|static|frame)"/.exec(line);
+        if (kindMatch?.[1] === "frame" && seqMatch && Number(seqMatch[1]) < from) continue;
+      }
+      out.push(line);
+    }
+    return new Response(out.length ? out.join("\n") + "\n" : "", { headers: { "content-type": "application/x-ndjson", "x-route-status": rec.status } });
+  });
+  app.get("/route/runs/:id", (c) => {
+    const rec = deps.store.routeRuns.get(c.req.param("id"));
+    return rec ? c.json(rec) : c.json({ error: "not found" }, 404);
+  });
+
+  /* ---------- MCP ---------- */
+  app.all("/mcp", (c) => deps.mcp.handle(c.req.raw, { token: c.get("token") ?? null }));
+  app.get("/mcp/sessions", (c) => c.json(deps.mcp.list()));
+
+  /* ---------- auth ---------- */
+  const me = (): Me => ({ principal: deps.auth.principal(), mode: deps.auth.mode });
+  app.get("/v1/auth/state", (c) => c.json(deps.auth.state() satisfies AuthState));
+  app.get("/v1/auth/me", (c) => c.json(me()));
+  app.post("/v1/auth/login", async (c) => {
+    // Kick off the device flow; state transitions arrive via auth.state events. Respond immediately
+    // with the pending state (user code) when available within a short window.
+    const p = deps.auth.login(c.req.raw.signal);
+    const first = await Promise.race([p, new Promise<AuthState>((r) => setTimeout(() => r(deps.auth.state()), 1500))]);
+    void p.catch((e) => logger.warn("login failed", { error: errMsg(e) }));
+    return c.json(first);
+  });
+  app.post("/v1/auth/logout", async (c) => c.json(await deps.auth.logout()));
+
+  /* ---------- settings ---------- */
+  app.get("/settings", (c) => c.json(deps.store.settings.get()));
+  app.patch("/settings", async (c) => {
+    const body = Settings.partial().parse(await c.req.json());
+    return c.json(deps.store.settings.patch(body));
+  });
+
+  app.post("/shutdown", (c) => {
+    setTimeout(() => deps.shutdown("shutdown requested"), 20);
+    return c.json({ ok: true });
+  });
+
+  app.notFound((c: Context) => c.json({ error: "not found" }, 404));
+  return app;
+}
+
+/** Drop `undefined` values so partial objects satisfy exactOptionalPropertyTypes targets. */
+function compact<T extends object>(o: T): { [K in keyof T]: Exclude<T[K], undefined> } {
+  return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as { [K in keyof T]: Exclude<T[K], undefined> };
+}
+
+function isPng(b: Uint8Array): boolean {
+  return b.length > 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47;
+}
+function isJpeg(b: Uint8Array): boolean {
+  return b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff;
+}

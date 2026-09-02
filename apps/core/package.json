@@ -1,0 +1,37 @@
+{
+  "name": "@fabdesk/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "dev": "bun run src/main.ts serve",
+    "start": "bun run src/main.ts serve",
+    "build": "bun run scripts/build.ts",
+    "doctor": "bun run src/main.ts doctor",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@fabdesk/protocol": "workspace:*",
+    "@fabdesk/tools": "workspace:*",
+    "@fabdesk/tscircuit": "workspace:*",
+    "@fabdesk/kicad": "workspace:*",
+    "@fabdesk/router": "workspace:*",
+    "@fabdesk/sim": "workspace:*",
+    "@fabdesk/agents": "workspace:*",
+    "@fabdesk/auth-client": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "hono": "4.9.6",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "typescript": "5.9.2",
+    "@types/bun": "1.2.21"
+  },
+  "bin": {
+    "fabdesk-core": "./src/main.ts"
+  }
+}

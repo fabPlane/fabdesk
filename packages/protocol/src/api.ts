@@ -37,6 +37,7 @@ export const FileEntry = z.object({
   size: z.number().int(),
   mtime: z.string(),
 });
+export type FileEntry = z.infer<typeof FileEntry>;
 
 export const ProjectDetail = ProjectSummary.extend({
   manifest: ProjectManifest,
@@ -189,3 +190,4 @@ export const Settings = z.object({
 export type Settings = z.infer<typeof Settings>;
 
 export const Me = z.object({ principal: Principal.nullable(), mode: z.enum(["fabplane", "local"]) });
+export type Me = z.infer<typeof Me>;

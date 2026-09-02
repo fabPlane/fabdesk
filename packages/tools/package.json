@@ -1,0 +1,23 @@
+{
+  "name": "@fabdesk/tools",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@fabdesk/protocol": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "hono": "4.9.6",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "typescript": "5.9.2",
+    "@types/bun": "1.2.21"
+  }
+}

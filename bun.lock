@@ -13,6 +13,9 @@
     "apps/core": {
       "name": "@fabdesk/core",
       "version": "0.1.0",
+      "bin": {
+        "fabdesk-core": "./src/main.ts",
+      },
       "dependencies": {
         "@fabdesk/agents": "workspace:*",
         "@fabdesk/auth-client": "workspace:*",
@@ -23,7 +26,7 @@
         "@fabdesk/tools": "workspace:*",
         "@fabdesk/tscircuit": "workspace:*",
         "@modelcontextprotocol/sdk": "^1.30.0",
-        "hono": "^4.9.6",
+        "hono": "4.9.6",
         "zod": "3.25.76",
       },
       "devDependencies": {
@@ -34,17 +37,13 @@
     "apps/desktop": {
       "name": "@fabdesk/desktop",
       "version": "0.1.0",
-      "dependencies": {
+      "devDependencies": {
         "@fabdesk/protocol": "workspace:*",
         "@fabdesk/ui": "workspace:*",
         "@mcp-b/global": "latest",
-        "@tanstack/react-query": "^5.80.0",
-        "react": "^19.1.0",
-        "react-dom": "^19.1.0",
-        "zustand": "^5.0.0",
-      },
-      "devDependencies": {
+        "@mcp-b/webmcp-types": "latest",
         "@tailwindcss/vite": "^4.1.0",
+        "@tanstack/react-query": "^5.80.0",
         "@types/node": "^22.0.0",
         "@types/react": "^19.1.0",
         "@types/react-dom": "^19.1.0",
@@ -52,9 +51,12 @@
         "electron": "^44.0.0",
         "electron-builder": "^26.0.0",
         "electron-vite": "^5.0.0",
+        "react": "^19.1.0",
+        "react-dom": "^19.1.0",
         "tailwindcss": "^4.1.0",
         "typescript": "5.9.2",
         "vite": "^7.0.0",
+        "zustand": "^5.0.0",
       },
     },
     "packages/agents": {
@@ -152,7 +154,7 @@
       "dependencies": {
         "@fabdesk/protocol": "workspace:*",
         "@modelcontextprotocol/sdk": "^1.30.0",
-        "hono": "^4.9.6",
+        "hono": "4.9.6",
         "zod": "3.25.76",
       },
       "devDependencies": {
@@ -2550,8 +2552,6 @@
     "@excalidraw/excalidraw/nanoid": ["nanoid@3.3.3", "", { "bin": { "nanoid": "bin/nanoid.cjs" } }, "sha512-p1sjXuopFs0xg+fPASzQ28agW1oHD7xDsd9Xkf3T15H3c/cifrFHVwrh74PdoklAPi+i7MdRsE47vm2r6JoB+w=="],
 
     "@excalidraw/mermaid-to-excalidraw/nanoid": ["nanoid@4.0.2", "", { "bin": { "nanoid": "bin/nanoid.js" } }, "sha512-7ZtY5KTCNheRGfEFxnedV5zFiORN1+Y1N6zvPTnHQd8ENUvfaDBeuJDZb2bN/oXwXxu3qkTXDzy57W5vAmDTBw=="],
-
-    "@fabdesk/tools/hono": ["hono@4.13.5", "", {}, "sha512-O6+/eCYRkzzzy0rPWwKLiGBR1nFuUPZynnwjxN1MBA62NNqbT0wQEzQyK2gSO5yDIDB336sXQleAhOHrzlYyKw=="],
 
     "@malept/flatpak-bundler/fs-extra": ["fs-extra@9.1.0", "", { "dependencies": { "at-least-node": "^1.0.0", "graceful-fs": "^4.2.0", "jsonfile": "^6.0.1", "universalify": "^2.0.0" } }, "sha512-hcg3ZmepS30/7BSFqRvoo3DOMQu7IjqxO5nCDt+zM9XWjb33Wg7ziNT+Qvqbuc3+gWpzO02JubVyk2G4Zvo1OQ=="],
 

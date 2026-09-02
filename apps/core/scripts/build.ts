@@ -1,0 +1,83 @@
+#!/usr/bin/env bun
+/**
+ * Compile fabdesk-core with `bun build --compile`.
+ *   bun run scripts/build.ts [--only bun-darwin-arm64] [--channel public|internal] [--all]
+ * Output: apps/core/dist/<os>-<arch>/fabdesk-core[.exe]
+ * The router worker is an extra entrypoint so `new Worker(new URL("./worker/router-worker.ts", import.meta.url))`
+ * resolves inside the single-file executable.
+ */
+import { mkdir, rm } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+
+const TARGETS = ["bun-darwin-arm64", "bun-darwin-x64", "bun-linux-x64", "bun-windows-x64"] as const;
+type Target = (typeof TARGETS)[number];
+
+const args = process.argv.slice(2);
+const get = (k: string): string | undefined => {
+  const i = args.indexOf(k);
+  return i >= 0 ? args[i + 1] : undefined;
+};
+const chan = (get("--channel") ?? "public") as "public" | "internal";
+if (chan !== "public" && chan !== "internal") throw new Error(`bad --channel ${chan}`);
+const only = get("--only") as Target | undefined;
+const all = args.includes("--all");
+
+const hostTarget = `bun-${process.platform === "win32" ? "windows" : process.platform}-${process.arch === "arm64" ? "arm64" : "x64"}` as Target;
+const targets: Target[] = only ? [only] : all ? [...TARGETS] : [hostTarget];
+for (const t of targets) if (!TARGETS.includes(t)) throw new Error(`unknown target ${t}`);
+
+const coreDir = resolve(dirname(new URL(import.meta.url).pathname), "..");
+const repoRoot = resolve(coreDir, "../..");
+const entry = join(coreDir, "src/main.ts");
+const workerRel = "packages/router/src/worker/router-worker.ts";
+const worker = join(repoRoot, workerRel);
+/** Extra entrypoints are embedded at /$bunfs/root/<path relative to --root> with a .js extension. */
+const embeddedWorker = `/$bunfs/root/${workerRel.replace(/\.ts$/, ".js")}`;
+
+for (const target of targets) {
+  const [, os, arch] = target.split("-");
+  const outDir = join(coreDir, "dist", `${os}-${arch}`);
+  await rm(outDir, { recursive: true, force: true });
+  await mkdir(outDir, { recursive: true });
+  const outfile = join(outDir, os === "windows" ? "fabdesk-core.exe" : "fabdesk-core");
+  const cmd = [
+    "bun",
+    "build",
+    "--compile",
+    `--target=${target}`,
+    "--minify-syntax",
+    "--define",
+    `FABDESK_CHANNEL=${JSON.stringify(chan)}`,
+    "--define",
+    `process.env.FABDESK_CHANNEL=${JSON.stringify(chan)}`,
+    "--define",
+    `FABDESK_ROUTER_WORKER=${JSON.stringify(embeddedWorker)}`,
+    "--root",
+    repoRoot,
+    ...(chan === "public" ? ["--external", "@fabdesk/router-freerouting", "--external", "@tensorfleet/js-autorouter"] : []),
+    ...(os === "windows" ? ["--windows-hide-console"] : []),
+    entry,
+    worker,
+    "--outfile",
+    outfile,
+  ];
+  process.stderr.write(`▸ ${target} (${chan}) → ${outfile}\n`);
+  const proc = Bun.spawn(cmd, { cwd: coreDir, stdout: "inherit", stderr: "inherit", env: { ...process.env, FABDESK_CHANNEL: chan } });
+  const code = await proc.exited;
+  if (code !== 0) {
+    process.stderr.write(`build failed for ${target} (exit ${code})\n`);
+    process.exit(code);
+  }
+  if (chan === "public" && os !== "windows") {
+    // Guard: public binaries must not carry the internal router's code. The bare module specifier
+    // `@fabdesk/router-freerouting` legitimately survives as an (externalized) dynamic import string.
+    const text = Buffer.from(await Bun.file(outfile).arrayBuffer()).toString("latin1");
+    const markers = ["@tensorfleet/js-autorouter", "vendor/js_autorouter/src", "cinema-capture", "setRouteObserver"];
+    const hits = markers.filter((m) => text.includes(m));
+    if (hits.length > 0) {
+      process.stderr.write(`ERROR: public binary bundles js_autorouter code (markers: ${hits.join(", ")})\n`);
+      process.exit(1);
+    }
+  }
+}
+process.stderr.write("done\n");

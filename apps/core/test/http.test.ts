@@ -1,0 +1,300 @@
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import type { AgentEvent, AgentRun, AgentSession } from "@fabdesk/agents";
+import type { CoreServices } from "@fabdesk/tools";
+import { serve, type Daemon } from "../src/serve";
+import { mockServices } from "../../../packages/tools/test/mock-services";
+
+let daemon: Daemon;
+let home: string;
+let services: ReturnType<typeof mockServices>;
+let lastSession: AgentSession | null = null;
+
+async function* fakeEvents(): AsyncGenerator<AgentEvent> {
+  yield { type: "init", sessionId: "sess-42", mcpServers: [{ name: "fabdesk", status: "connected" }] };
+  yield { type: "text", delta: "Hello " };
+  yield { type: "tool_use", id: "tu1", name: "mcp__fabdesk__project_status", input: {} };
+  yield { type: "tool_result", id: "tu1", output: { ok: true } };
+  yield { type: "text", delta: "world" };
+  yield { type: "usage", inputTokens: 10, outputTokens: 5, costUsd: 0.001 };
+  yield { type: "done", exitCode: 0, sessionId: "sess-42" };
+}
+
+beforeAll(async () => {
+  home = await mkdtemp(join(tmpdir(), "fabdesk-core-"));
+  process.env["FABDESK_PROJECTS_DIR"] = join(home, "Fabdesk");
+  process.env["FABDESK_TOKEN"] = "test-token-0123456789abcdef";
+  process.env["FABDESK_CHANNEL"] = "internal";
+  daemon = await serve({
+    port: 0,
+    dataDir: home,
+    handshakeFile: join(home, "daemon.json"),
+    localAuth: true,
+    quiet: true,
+    watchProjects: false,
+    services: async ({ projects, bus, store }) => {
+      services = mockServices([], { projects, bus: { emit: (e) => bus.emit(e) }, routeRuns: store.routeRuns, channel: "internal" });
+      return services as unknown as CoreServices;
+    },
+    adapters: {
+      claude: {
+        id: "claude",
+        run: (session: AgentSession): AgentRun => {
+          lastSession = session;
+          return { events: fakeEvents(), abort() {} };
+        },
+      },
+    },
+    doctor: async () => ({ version: "t", channel: "internal", bun: Bun.version, platform: "test", kicad: { found: false }, ngspice: { found: false }, routers: [], agents: [], warnings: [] }),
+  });
+});
+
+afterAll(async () => {
+  await daemon.close("tests done");
+});
+
+const H = () => ({ authorization: `Bearer ${daemon.token}` });
+const api = (path: string, init: RequestInit = {}) => fetch(`${daemon.url}${path}`, { ...init, headers: { ...H(), "content-type": "application/json", ...(init.headers ?? {}) } });
+
+describe("http daemon", () => {
+  test("health open, auth required, foreign origin rejected, handshake written", async () => {
+    const health = await fetch(`${daemon.url}/health`);
+    expect(health.status).toBe(200);
+    expect(((await health.json()) as { ok: boolean }).ok).toBe(true);
+    expect((await fetch(`${daemon.url}/projects`)).status).toBe(401);
+    expect((await fetch(`${daemon.url}/projects`, { headers: { authorization: "Bearer wrong" } })).status).toBe(401);
+    expect((await fetch(`${daemon.url}/projects`, { headers: { ...H(), origin: "https://evil.example" } })).status).toBe(403);
+    expect((await fetch(`${daemon.url}/health`, { headers: { origin: "https://evil.example" } })).status).toBe(403);
+    expect((await fetch(`${daemon.url}/projects`, { headers: { ...H(), origin: "http://localhost:5173" } })).status).toBe(200);
+    expect((await fetch(`${daemon.url}/projects`, { headers: { ...H(), origin: "app://fabdesk" } })).status).toBe(200);
+    expect((await fetch(`${daemon.url}/projects`, { headers: { ...H(), origin: "null" } })).status).toBe(200);
+    const hs = JSON.parse(await Bun.file(join(home, "daemon.json")).text()) as { port: number; token: string; pid: number; authMode: string };
+    expect(hs.port).toBe(daemon.port);
+    expect(hs.token).toBe(daemon.token);
+    expect(hs.pid).toBe(process.pid);
+    expect(hs.authMode).toBe("local");
+    const me = (await (await api("/v1/auth/me")).json()) as { mode: string; principal: { subject: string } };
+    expect(me.mode).toBe("local");
+    expect(me.principal.subject).toBe("local:dev");
+  });
+
+  test("projects CRUD, files, sketches and project.changed over SSE with catch-up", async () => {
+    // Open SSE first so the create event is observed live.
+    const sse = await fetch(`${daemon.url}/events?token=${daemon.token}&topics=project.*,job.*`);
+    expect(sse.status).toBe(200);
+    expect(sse.headers.get("content-type")).toContain("text/event-stream");
+    const reader = sse.body!.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    const readUntil = async (pred: (s: string) => boolean) => {
+      const deadline = Date.now() + 3000;
+      while (!pred(buf) && Date.now() < deadline) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value);
+      }
+      return buf;
+    };
+
+    const created = await api("/projects", { method: "POST", body: JSON.stringify({ name: "Blinky Board" }) });
+    expect(created.status).toBe(201);
+    const project = (await created.json()) as { id: string; path: string; manifest: { board: { layers: number } }; files: Array<{ path: string }> };
+    expect(project.path).toBe(join(home, "Fabdesk", "blinky-board"));
+    expect(project.files.map((f) => f.path)).toContain("circuit.tsx");
+    await readUntil((s) => s.includes("event: project.changed"));
+    expect(buf).toContain(`"projectId":"${project.id}"`);
+    const idMatch = /id: (\d+)\nevent: project.changed/.exec(buf);
+    expect(idMatch).not.toBeNull();
+    reader.cancel();
+
+    // Duplicate names get a suffixed slug.
+    const dup = (await (await api("/projects", { method: "POST", body: JSON.stringify({ name: "Blinky Board" }) })).json()) as { path: string };
+    expect(dup.path).toBe(join(home, "Fabdesk", "blinky-board-2"));
+
+    // Catch-up: reconnect with Last-Event-ID before the create event replays it.
+    const catchup = await fetch(`${daemon.url}/events?token=${daemon.token}&topics=project.changed`, { headers: { "last-event-id": String(Number(idMatch![1]) - 1) } });
+    const r2 = catchup.body!.getReader();
+    let buf2 = "";
+    const deadline = Date.now() + 2000;
+    while (!buf2.includes(`"projectId":"${project.id}"`) && Date.now() < deadline) {
+      const { value, done } = await r2.read();
+      if (done) break;
+      buf2 += dec.decode(value);
+    }
+    expect(buf2).toContain(`id: ${idMatch![1]}\nevent: project.changed`);
+    r2.cancel();
+
+    // Files: read, write, jail.
+    const tsx = await api(`/projects/${project.id}/files/circuit.tsx`);
+    expect(tsx.status).toBe(200);
+    expect(await tsx.text()).toContain("<board");
+    const put = await api(`/projects/${project.id}/files/notes/readme.md`, { method: "PUT", body: "# hi", headers: { "content-type": "text/markdown" } });
+    expect(put.status).toBe(200);
+    expect(await (await api(`/projects/${project.id}/files/notes/readme.md`)).text()).toBe("# hi");
+    expect((await api(`/projects/${project.id}/files/..%2F..%2Fetc%2Fpasswd`)).status).toBe(400);
+    expect((await api(`/projects/${project.id}/files/fabdesk.json`, { method: "PUT", body: "{}" })).status).toBe(400);
+
+    // Sketch upload (multipart PNG) + non-image rejection.
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+    const form = new FormData();
+    form.append("file", new Blob([png], { type: "image/png" }), "front.png");
+    const up = await fetch(`${daemon.url}/projects/${project.id}/sketches`, { method: "POST", headers: H(), body: form });
+    expect(up.status).toBe(201);
+    expect(((await up.json()) as { path: string }).path).toBe("sketches/front.png");
+    const bad = new FormData();
+    bad.append("file", new Blob([new TextEncoder().encode("not an image")], { type: "text/plain" }), "x.txt");
+    expect((await fetch(`${daemon.url}/projects/${project.id}/sketches`, { method: "POST", headers: H(), body: bad })).status).toBe(415);
+    const sketches = (await (await api(`/projects/${project.id}/sketches`)).json()) as Array<{ path: string }>;
+    expect(sketches.map((s) => s.path)).toEqual(["sketches/front.png"]);
+
+    // PATCH manifest + settings
+    const patched = (await (await api(`/projects/${project.id}`, { method: "PATCH", body: JSON.stringify({ manifest: { board: { layers: 4 } } }) })).json()) as { manifest: { board: { layers: number } } };
+    expect(patched.manifest.board.layers).toBe(4);
+    const settings = (await (await api("/settings", { method: "PATCH", body: JSON.stringify({ keepCoreRunning: true }) })).json()) as { keepCoreRunning: boolean };
+    expect(settings.keepCoreRunning).toBe(true);
+    expect((await api("/settings", { method: "PATCH", body: JSON.stringify({ router: "nope" }) })).status).toBe(400);
+
+    // Tools over HTTP: sync + job.
+    const status = await api("/tools/project_status", { method: "POST", body: JSON.stringify({ project: project.id }) });
+    expect(status.status).toBe(200);
+    expect(((await status.json()) as { text: string }).text).toContain("Blinky Board");
+    const queued = await api("/tools/circuit_build", { method: "POST", body: JSON.stringify({ project: project.id }) });
+    expect(queued.status).toBe(202);
+    const { jobId } = (await queued.json()) as { jobId: string };
+    let job: { status: string; result?: { text: string } } = { status: "queued" };
+    for (let i = 0; i < 50 && job.status !== "done" && job.status !== "failed"; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      job = (await (await api(`/jobs/${jobId}`)).json()) as typeof job;
+    }
+    expect(job.status).toBe("done");
+    expect(await Bun.file(join(project.path, "circuit.json")).exists()).toBe(true);
+    const manifest = (await (await api("/tools/manifest")).json()) as Array<{ name: string }>;
+    expect(manifest.length).toBe(daemon.registry.list().length);
+
+    // Route run via HTTP job writes frames and the frames endpoint serves them.
+    const rq = await api("/tools/route_run?sync=1", { method: "POST", body: JSON.stringify({ project: project.id, timeoutMs: 5000 }) });
+    expect(rq.status).toBe(200);
+    const rr = (await rq.json()) as { json: { runId: string } };
+    const frames = await api(`/route/runs/${rr.json.runId}/frames?from=2`);
+    expect(frames.status).toBe(200);
+    const lines = (await frames.text()).trim().split("\n");
+    expect(lines.length).toBe(3); // meta + static + frame seq 2
+    expect(lines[0]).toContain('"kind":"meta"');
+
+    // Delete (unregister) keeps the directory; purge removes it.
+    expect((await api(`/projects/${project.id}`, { method: "DELETE" })).status).toBe(200);
+    expect(await Bun.file(join(project.path, "circuit.tsx")).exists()).toBe(true);
+    expect((await api(`/projects/${project.id}`)).status).toBe(404);
+  });
+
+  test("threads: create, message → agent run streams agent.* events and persists parts; abort; search", async () => {
+    const created = (await (await api("/projects", { method: "POST", body: JSON.stringify({ name: "Agent Test" }) })).json()) as { id: string; path: string };
+    const thread = (await (await api("/threads", { method: "POST", body: JSON.stringify({ agentId: "claude", projectId: created.id }) })).json()) as { id: string; title: string };
+    expect(thread.title).toBe("New chat");
+
+    const sse = await fetch(`${daemon.url}/events?token=${daemon.token}&topics=agent.*`);
+    const reader = sse.body!.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+
+    const sent = await api(`/threads/${thread.id}/messages`, { method: "POST", body: JSON.stringify({ content: "Design a blinky board please" }) });
+    expect(sent.status).toBe(202);
+    const { runId } = (await sent.json()) as { runId: string; messageId: string };
+    const deadline = Date.now() + 3000;
+    while (!buf.includes("event: agent.done") && Date.now() < deadline) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value);
+    }
+    reader.cancel();
+    for (const t of ["agent.started", "agent.delta", "agent.tool_use", "agent.tool_result", "agent.usage", "agent.done"]) expect(buf).toContain(`event: ${t}`);
+    expect(buf).toContain('"status":"completed"');
+    expect(buf).toContain('"sessionId":"sess-42"');
+
+    expect(lastSession!.cwd).toBe(created.path);
+    expect(lastSession!.mcp.url).toBe(`${daemon.url}/mcp`);
+    expect(lastSession!.mcp.token).not.toBe(daemon.token);
+    // AGENTS.md / CLAUDE.md regenerated before the run.
+    expect(await Bun.file(join(created.path, "AGENTS.md")).text()).toContain("circuit_build");
+    expect((await Bun.file(join(created.path, "CLAUDE.md")).text()).trim()).toBe("@AGENTS.md");
+
+    const msgs = (await (await api(`/threads/${thread.id}/messages`)).json()) as Array<{ role: string; contentMd: string; parts: Array<{ type: string }>; runId: string | null }>;
+    expect(msgs.length).toBe(2);
+    expect(msgs[0]!.role).toBe("user");
+    expect(msgs[1]!.role).toBe("assistant");
+    expect(msgs[1]!.contentMd).toBe("Hello world");
+    expect(msgs[1]!.parts.map((p) => p.type)).toEqual(["text", "tool_use", "tool_result", "text"]);
+    expect(msgs[1]!.runId).toBe(runId);
+    const detail = (await (await api(`/threads/${thread.id}`)).json()) as { title: string; run: { status: string; agentSessionId: string } };
+    expect(detail.title).toBe("Design a blinky board please");
+    expect(detail.run.status).toBe("completed");
+    expect(detail.run.agentSessionId).toBe("sess-42");
+    // The per-run token is revoked after the run.
+    expect((await fetch(`${daemon.url}/projects`, { headers: { authorization: `Bearer ${lastSession!.mcp.token}` } })).status).toBe(401);
+
+    // Second turn resumes the session id.
+    await api(`/threads/${thread.id}/messages`, { method: "POST", body: JSON.stringify({ content: "again" }) });
+    expect(lastSession!.resume).toBe("sess-42");
+    await new Promise((r) => setTimeout(r, 50));
+
+    const found = (await (await api("/threads?q=blinky")).json()) as Array<{ id: string }>;
+    expect(found.map((t) => t.id)).toContain(thread.id);
+    const hits = (await (await api("/search?q=hello")).json()) as Array<{ snippet: string }>;
+    expect(hits.length).toBeGreaterThan(0);
+    expect((await api(`/threads/${thread.id}/abort`, { method: "POST" })).status).toBe(200);
+    const branch = (await (await api("/threads", { method: "POST", body: JSON.stringify({ agentId: "codex", parentThreadId: thread.id }) })).json()) as { parentThreadId: string };
+    expect(branch.parentThreadId).toBe(thread.id);
+  });
+
+  test("MCP over streamable HTTP: sessions, core tools, load_toolset, project_status, run token binds the project", async () => {
+    const created = (await (await api("/projects", { method: "POST", body: JSON.stringify({ name: "MCP Project" }) })).json()) as { id: string };
+    const connect = async (token: string) => {
+      const client = new Client({ name: "test", version: "0" });
+      const transport = new StreamableHTTPClientTransport(new URL(`${daemon.url}/mcp`), { requestInit: { headers: { authorization: `Bearer ${token}` } } });
+      await client.connect(transport);
+      return { client, transport };
+    };
+    const a = await connect(daemon.token);
+    const tools = await a.client.listTools();
+    expect(tools.tools.map((t) => t.name).sort()).toEqual(["circuit_build", "circuit_read_errors", "load_toolset", "project_status", "render_board", "route_run", "verify_drc"]);
+    expect(daemon.mcp.activeCount()).toBe(1);
+
+    // Without a project selector the tool asks for one; with it, it works.
+    const noProject = await a.client.callTool({ name: "project_status", arguments: {} });
+    expect(noProject.isError).toBe(true);
+    const withProject = await a.client.callTool({ name: "project_status", arguments: { project: "MCP Project" } });
+    expect(withProject.isError).toBeFalsy();
+    expect((withProject.structuredContent as { id: string }).id).toBe(created.id);
+
+    await a.client.callTool({ name: "load_toolset", arguments: { toolset: "export" } });
+    expect((await a.client.listTools()).tools.length).toBe(13);
+
+    // A second session starts with only the core toolset (state is per session).
+    const b = await connect(daemon.token);
+    expect((await b.client.listTools()).tools.length).toBe(7);
+    expect(daemon.mcp.activeCount()).toBe(2);
+
+    // A per-run token pins the default project.
+    const runToken = daemon.tokens.mintRunToken({ runId: "run_x", projectId: created.id, threadId: "t" });
+    const c = await connect(runToken);
+    const pinned = await c.client.callTool({ name: "project_status", arguments: {} });
+    expect(pinned.isError).toBeFalsy();
+    expect((pinned.structuredContent as { id: string }).id).toBe(created.id);
+
+    // Unauthenticated MCP is rejected; wrong Host is rejected by DNS-rebinding protection.
+    expect((await fetch(`${daemon.url}/mcp`, { method: "POST", body: "{}" })).status).toBe(401);
+    const rebinding = await fetch(`${daemon.url}/mcp`, { method: "POST", headers: { ...H(), host: "evil.example:80", "content-type": "application/json", accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "x", version: "0" } } }) });
+    expect(rebinding.status).toBe(403);
+
+    await a.transport.terminateSession();
+    await a.client.close();
+    await b.client.close();
+    await c.client.close();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(daemon.mcp.activeCount()).toBe(2);
+  });
+});
