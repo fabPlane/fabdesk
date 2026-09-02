@@ -11,8 +11,12 @@ const api = {
   platform: process.platform,
   /** Main passes `--fabdesk-error-reporting` when its Sentry client is active. */
   errorReporting: process.argv.includes("--fabdesk-error-reporting"),
+  /** `FABDESK_SENTRY_TEST=1` in main: the renderer sends one handled test event on startup. */
+  sentryTest: process.argv.includes("--fabdesk-sentry-test"),
   setErrorReporting: (enabled: boolean) =>
     ipcRenderer.invoke("fabdesk:set-error-reporting", enabled),
+  setSentryUser: (user: { id: string; username?: string } | null) =>
+    ipcRenderer.invoke("fabdesk:set-sentry-user", user),
   coreInfo: () => ipcRenderer.invoke("fabdesk:core-info"),
   restartCore: () => ipcRenderer.invoke("fabdesk:core-restart"),
   onCoreStatus: (cb: (info: unknown) => void) => {

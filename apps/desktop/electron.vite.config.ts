@@ -1,8 +1,29 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, externalizeDepsPlugin } from "electron-vite";
+import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Plugin } from "vite";
+
+/** Short git sha for the Sentry release: CI has GITHUB_SHA, local builds ask git, else `dev`. */
+function gitSha(): string {
+  const ci = process.env["GITHUB_SHA"]?.trim();
+  if (ci) return ci.slice(0, 7);
+  try {
+    return execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd: __dirname, stdio: ["ignore", "pipe", "ignore"] }).toString().trim() || "dev";
+  } catch {
+    return "dev";
+  }
+}
+
+/** `fabdesk@<version>+<sha>` unless VITE_SENTRY_RELEASE / SENTRY_RELEASE is set at build time (docs/sentry.md). */
+function sentryRelease(): string {
+  const explicit = process.env["VITE_SENTRY_RELEASE"]?.trim() || process.env["SENTRY_RELEASE"]?.trim();
+  if (explicit) return explicit;
+  const pkg = JSON.parse(readFileSync(resolve(__dirname, "package.json"), "utf8")) as { version: string };
+  return `fabdesk@${pkg.version}+${gitSha()}`;
+}
 
 /**
  * Production CSP (plan section 8). The daemon is reached over loopback only. Sentry renderer events never
@@ -46,10 +67,12 @@ function cspPlugin(dev: boolean): Plugin {
 
 export default defineConfig(({ mode }) => {
   const dev = mode === "development";
+  const sentryDefine = { __FABDESK_SENTRY_RELEASE__: JSON.stringify(sentryRelease()) };
   return {
     main: {
       // Workspace packages (and their zod) are bundled into main; everything else stays external.
       plugins: [externalizeDepsPlugin({ exclude: ["@fabdesk/updates", "@fabdesk/protocol", "zod"] })],
+      define: sentryDefine,
       build: {
         rollupOptions: { input: resolve(__dirname, "src/main/index.ts") },
       },
@@ -66,7 +89,7 @@ export default defineConfig(({ mode }) => {
     },
     renderer: {
       plugins: [react(), tailwindcss(), cspPlugin(dev)],
-      define: { "process.env.IS_PREACT": JSON.stringify("false") },
+      define: { "process.env.IS_PREACT": JSON.stringify("false"), ...sentryDefine },
       build: {
         rollupOptions: { input: resolve(__dirname, "src/renderer/index.html") },
         chunkSizeWarningLimit: 3000,

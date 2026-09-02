@@ -3,13 +3,15 @@ import {
   CoreClient,
   CoreStatusScreen,
   FabdeskApp,
+  useAuthStore,
   useCoreClient,
   useSettings,
   type CoreInfo,
   type HostAdapter,
 } from "@fabdesk/ui";
 import { useEffect, useMemo, useState } from "react";
-import { disableRendererSentry } from "./sentry";
+import { sentryUserFromAuth } from "../shared/sentry-user";
+import { disableRendererSentry, setRendererSentryUser } from "./sentry";
 import { startWebMcp } from "./webmcp";
 
 const bridge = window.fabdesk;
@@ -57,6 +59,15 @@ function ErrorReportingBridge() {
     void bridge?.setErrorReporting(enabled);
     if (!enabled) void disableRendererSentry();
   }, [enabled]);
+  // Sentry user = principal id + handle (never email) while signed in; cleared on logout.
+  const auth = useAuthStore((s) => s.state);
+  const user = sentryUserFromAuth(auth);
+  const userKey = user ? `${user.id}\u0000${user.username ?? ""}` : "";
+  useEffect(() => {
+    setRendererSentryUser(user);
+    void bridge?.setSentryUser(user);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userKey]);
   return null;
 }
 

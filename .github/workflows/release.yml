@@ -83,18 +83,22 @@ jobs:
       - run: bun run typecheck
 
       # Sentry error reporting (docs/sentry.md). The DSN is a public write-only key; export it only when the
-      # FABDESK_SENTRY_DSN repo secret is set so builds without it ship with reporting off.
+      # SENTRY_DESKTOP_DSN repo secret is set so builds without it ship with reporting off. Both spellings are
+      # exported (SENTRY_* primary, FABDESK_SENTRY_* legacy); the release is fabdesk[-core]@<version>+<GITHUB_SHA>.
       - name: Error reporting environment
         shell: bash
         env:
-          S_FABDESK_SENTRY_DSN: ${{ secrets.FABDESK_SENTRY_DSN }}
+          S_SENTRY_DESKTOP_DSN: ${{ secrets.SENTRY_DESKTOP_DSN }}
         run: |
-          if [ -n "$S_FABDESK_SENTRY_DSN" ]; then
-            echo "FABDESK_SENTRY_DSN=$S_FABDESK_SENTRY_DSN" >> "$GITHUB_ENV"
-            echo "VITE_FABDESK_SENTRY_DSN=$S_FABDESK_SENTRY_DSN" >> "$GITHUB_ENV"
-            echo "FABDESK_SENTRY_DSN: set"
+          if [ -n "$S_SENTRY_DESKTOP_DSN" ]; then
+            for name in SENTRY_DESKTOP_DSN VITE_SENTRY_DESKTOP_DSN FABDESK_SENTRY_DSN VITE_FABDESK_SENTRY_DSN; do
+              echo "$name=$S_SENTRY_DESKTOP_DSN" >> "$GITHUB_ENV"
+            done
+            echo "SENTRY_ENVIRONMENT=production" >> "$GITHUB_ENV"
+            echo "VITE_SENTRY_ENVIRONMENT=production" >> "$GITHUB_ENV"
+            echo "SENTRY_DESKTOP_DSN: set"
           else
-            echo "FABDESK_SENTRY_DSN: unset (error reporting off)"
+            echo "SENTRY_DESKTOP_DSN: unset (error reporting off)"
           fi
 
       - name: Build core (${{ matrix.target }})

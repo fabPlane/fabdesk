@@ -16,7 +16,7 @@ import { JobRunner } from "./jobs";
 import { logger, errMsg } from "./log";
 import { McpSessionManager } from "./mcp-sessions";
 import { ProjectStore } from "./projects";
-import { applyErrorReporting, captureCoreException, closeSentry } from "./sentry";
+import { applyErrorReporting, captureCoreException, closeSentry, runSentryTest, sentryUserFromAuth, setSentryUser } from "./sentry";
 
 export type ServeOptions = {
   port?: number;
@@ -77,6 +77,11 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   await projects.init();
   const auth = await createAuth({ mode: config.authMode, channel: config.channel, home: config.home, apiOrigin: config.apiOrigin, emit: (e) => bus.emit(e) });
   if (auth.mode === "local") logger.warn("running in LOCAL auth mode");
+  // Sentry user = principal id + handle (never email) while signed in; cleared on logout.
+  setSentryUser(sentryUserFromAuth(auth.state()));
+  const unsubscribeAuth = bus.subscribe(["auth.state"], (events) => {
+    for (const ev of events) if (ev.event.topic === "auth.state") setSentryUser(sentryUserFromAuth(ev.event.state));
+  });
 
   const services: CoreServices =
     opts.services !== undefined
@@ -198,6 +203,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   if (!opts.noHandshake) await writeHandshake(config.handshakePath, { version: config.version, pid: process.pid, port, host: config.host, token: config.token, startedAt: new Date(startedAt).toISOString(), channel: config.channel, authMode: auth.mode });
   const ready: ReadyLine = { ok: true, port, pid: process.pid, version: config.version };
   if (!opts.quiet) process.stdout.write(JSON.stringify(ready) + "\n");
+  void runSentryTest();
   logger.info("fabdesk-core listening", { url, channel: config.channel, authMode: auth.mode, home: config.home, projects: config.projectsDir });
 
   // Parent watchdog: exit 30 s after the parent disappears unless an MCP session is active or keepCoreRunning.
@@ -241,6 +247,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
         /* ignore */
       }
       if (watchdog) clearInterval(watchdog);
+      unsubscribeAuth();
       runs.abortAll();
       jobs.cancelAll();
       await mcp.closeAll();

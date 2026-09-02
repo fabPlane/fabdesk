@@ -12,7 +12,11 @@ export interface FabdeskBridge {
   platform: NodeJS.Platform | string;
   /** True when the main process started Sentry (DSN configured and the user has not opted out). */
   errorReporting: boolean;
+  /** True when main runs with FABDESK_SENTRY_TEST=1 (send one handled test event). */
+  sentryTest: boolean;
   setErrorReporting(enabled: boolean): Promise<void>;
+  /** id + handle of the signed-in principal (never email); null on logout. */
+  setSentryUser(user: { id: string; username?: string } | null): Promise<void>;
   coreInfo(): Promise<CoreInfo>;
   restartCore(): Promise<void>;
   onCoreStatus(cb: (info: CoreInfo) => void): () => void;

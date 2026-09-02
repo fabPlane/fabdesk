@@ -21,8 +21,22 @@ const get = (k: string): string | undefined => {
 const chan = (get("--channel") ?? "public") as "public" | "internal";
 if (chan !== "public" && chan !== "internal") throw new Error(`bad --channel ${chan}`);
 const only = get("--only") as Target | undefined;
-/** Sentry DSN baked into the binary (CI secret FABDESK_SENTRY_DSN); the runtime env still overrides. */
-const sentryDsn = process.env["FABDESK_SENTRY_DSN"]?.trim() || undefined;
+/** Sentry (docs/sentry.md): DSN/environment baked into the binary from the build env; the runtime env still overrides. */
+const sentryDsn = process.env["SENTRY_DESKTOP_DSN"]?.trim() || process.env["FABDESK_SENTRY_DSN"]?.trim() || undefined;
+const sentryEnvironment = process.env["SENTRY_ENVIRONMENT"]?.trim() || process.env["FABDESK_SENTRY_ENVIRONMENT"]?.trim() || undefined;
+/** Release `fabdesk-core@<version>+<sha>`: CI has GITHUB_SHA, local builds ask git, else `dev`. */
+function gitSha(): string {
+  const ci = process.env["GITHUB_SHA"]?.trim();
+  if (ci) return ci.slice(0, 7);
+  try {
+    const proc = Bun.spawnSync(["git", "rev-parse", "--short", "HEAD"], { stdout: "pipe", stderr: "ignore" });
+    return (proc.success && proc.stdout.toString().trim()) || "dev";
+  } catch {
+    return "dev";
+  }
+}
+const pkg = (await Bun.file(new URL("../package.json", import.meta.url)).json()) as { version: string };
+const sentryRelease = process.env["SENTRY_RELEASE"]?.trim() || `fabdesk-core@${pkg.version}+${gitSha()}`;
 const all = args.includes("--all");
 
 const hostTarget = `bun-${process.platform === "win32" ? "windows" : process.platform}-${process.arch === "arm64" ? "arm64" : "x64"}` as Target;
@@ -57,7 +71,10 @@ for (const target of targets) {
     `FABDESK_ROUTER_WORKER=${JSON.stringify(embeddedWorker)}`,
     "--define",
     "FABDESK_COMPILED=true",
+    "--define",
+    `FABDESK_SENTRY_RELEASE=${JSON.stringify(sentryRelease)}`,
     ...(sentryDsn ? ["--define", `FABDESK_SENTRY_DSN=${JSON.stringify(sentryDsn)}`] : []),
+    ...(sentryEnvironment ? ["--define", `FABDESK_SENTRY_ENVIRONMENT=${JSON.stringify(sentryEnvironment)}`] : []),
     "--root",
     repoRoot,
     ...(chan === "public" ? ["--external", "@fabdesk/router-freerouting", "--external", "@tensorfleet/js-autorouter"] : []),
@@ -67,7 +84,7 @@ for (const target of targets) {
     "--outfile",
     outfile,
   ];
-  process.stderr.write(`▸ ${target} (${chan}${sentryDsn ? ", sentry" : ""}) → ${outfile}\n`);
+  process.stderr.write(`▸ ${target} (${chan}${sentryDsn ? `, sentry ${sentryRelease}` : ""}) → ${outfile}\n`);
   const proc = Bun.spawn(cmd, { cwd: coreDir, stdout: "inherit", stderr: "inherit", env: { ...process.env, FABDESK_CHANNEL: chan } });
   const code = await proc.exited;
   if (code !== 0) {

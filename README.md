@@ -47,8 +47,8 @@ Rules:
 
 ## Error reporting
 
-Crash and error reports go to Sentry only when a DSN is configured (`FABDESK_SENTRY_DSN` at runtime, or the
-`FABDESK_SENTRY_DSN` repo secret baked into release builds); development builds send nothing. Users can opt
+Crash and error reports go to Sentry only when a DSN is configured (`SENTRY_DESKTOP_DSN` at runtime, or the
+`SENTRY_DESKTOP_DSN` repo secret baked into release builds); development builds send nothing. Users can opt
 out in Settings → Privacy. Reports never include prompts, board files, tokens or project paths. See
 [docs/sentry.md](docs/sentry.md).
 

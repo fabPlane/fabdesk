@@ -27,8 +27,10 @@ Environment:
   FABPLANE_API_ORIGIN    default https://api.fabplane.com
   FABDESK_PROJECTS_DIR   default ~/Fabdesk
   FABDESK_LOG            debug | info | warn | error
-  FABDESK_SENTRY_DSN     Sentry DSN (error reporting off when unset; see docs/sentry.md)
-  FABDESK_SENTRY_ENVIRONMENT  Sentry environment tag (default production for compiled builds, else development)
+  SENTRY_DESKTOP_DSN     Sentry DSN (error reporting off when unset; see docs/sentry.md)
+  SENTRY_ENVIRONMENT     Sentry environment tag (default production for compiled builds, else development)
+  SENTRY_RELEASE         Sentry release (default fabdesk-core@<version>+<git-sha>)
+  FABDESK_SENTRY_TEST    1 sends one handled test event at startup and prints its id
 `;
 
 type Flags = { _: string[]; [k: string]: string | boolean | string[] };

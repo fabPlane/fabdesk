@@ -17,6 +17,22 @@ describe("scrubText", () => {
     );
   });
 
+  test("keeps only the file name of project files", () => {
+    expect(scrubText("ENOENT: open '/Users/me/Fabdesk/blinky/fabdesk.json'")).toBe(
+      "ENOENT: open '[project]/fabdesk.json'",
+    );
+    expect(scrubText("parse C:\\Users\\me\\Fabdesk\\blinky\\circuit.tsx failed")).toBe(
+      "parse [project]/circuit.tsx failed",
+    );
+    expect(scrubText("a /x/circuit.routed.json and /y/z/circuit.tsx")).toBe(
+      "a [project]/circuit.routed.json and [project]/circuit.tsx",
+    );
+    // API URLs carry only the project id and a project-relative name; they stay intact.
+    expect(scrubText("GET http://127.0.0.1:4321/projects/p1/files/circuit.tsx 404")).toBe(
+      "GET http://127.0.0.1:4321/projects/p1/files/circuit.tsx 404",
+    );
+  });
+
   test("leaves ordinary text alone", () => {
     expect(scrubText("http://127.0.0.1:4321/projects/p1/files/circuit.tsx")).toBe(
       "http://127.0.0.1:4321/projects/p1/files/circuit.tsx",
@@ -121,6 +137,20 @@ describe("scrubEvent", () => {
       { category: "fetch", data: { url: `http://127.0.0.1:1/health?token=${FILTERED}` } },
       { category: "ui.click", message: "button" },
     ]);
+  });
+
+  test("removes extra keys that could carry prompts, files or credentials", () => {
+    const out = scrubEvent({
+      extra: {
+        prompt: "design",
+        circuitTsx: "<board/>",
+        filePath: "/a/b",
+        authorization: "x",
+        retries: 2,
+        note: "see /home/u/p/fabdesk.json",
+      },
+    });
+    expect(out.extra).toEqual({ retries: 2, note: "see [project]/fabdesk.json" });
   });
 
   test("passes through events without request or breadcrumbs", () => {

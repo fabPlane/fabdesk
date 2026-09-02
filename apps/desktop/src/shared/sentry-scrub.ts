@@ -26,6 +26,7 @@ export interface ScrubbableRequest {
 
 export interface ScrubbableEvent {
   message?: string;
+  extra?: Record<string, unknown>;
   request?: ScrubbableRequest;
   breadcrumbs?: ScrubbableBreadcrumb[];
   exception?: { values?: Array<{ value?: string }> };
@@ -65,10 +66,19 @@ const SECRET_DATA_KEYS = new Set([
 
 const QUERY_SECRET_RE = new RegExp(`([?&#](?:${SECRET_QUERY_KEYS.join("|")})=)[^&#\\s"']*`, "gi");
 const BEARER_RE = /\b(Bearer\s+)[A-Za-z0-9._~+/=-]+/g;
+/** Absolute paths to project files (they sit under the user's home): keep only the file name. */
+const PROJECT_FILE_RE =
+  /(?<![\w:./\\-])(?:[A-Za-z]:)?[\\/](?:[^\s"'`<>]*[\\/])?(fabdesk\.json|circuit(?:\.routed)?\.(?:tsx|json))\b/g;
+/** `extra` keys that could carry prompts, file contents or credentials are removed outright. */
+const SECRET_EXTRA_KEY_RE =
+  /prompt|circuit|source|content|file|path|body|token|secret|password|cookie|auth|env/i;
 
 /** Replaces secret query-string values and bearer tokens in any text (URLs, messages, exception values). */
 export function scrubText(text: string): string {
-  return text.replace(QUERY_SECRET_RE, `$1${FILTERED}`).replace(BEARER_RE, `$1${FILTERED}`);
+  return text
+    .replace(QUERY_SECRET_RE, `$1${FILTERED}`)
+    .replace(BEARER_RE, `$1${FILTERED}`)
+    .replace(PROJECT_FILE_RE, "[project]/$1");
 }
 
 /** True for the daemon's token-bearing stream URLs (`/events?token=`, `/ws?token=`) whose breadcrumbs are dropped. */
@@ -129,6 +139,12 @@ export function scrubEvent<T extends ScrubbableEvent>(event: T): T {
     event.request = req;
   }
   if (typeof event.message === "string") event.message = scrubText(event.message);
+  if (event.extra) {
+    const extra: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(event.extra))
+      if (!SECRET_EXTRA_KEY_RE.test(k)) extra[k] = scrubUnknown(v);
+    event.extra = extra;
+  }
   if (event.exception?.values) {
     event.exception = {
       ...event.exception,
