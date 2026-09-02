@@ -27,5 +27,12 @@ describe("buildManifest", () => {
     expect(manifest.assets[0]?.sha256).toBe("2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824");
     expect(manifest.assets[0]?.url).toBe("https://github.com/TensorFleet/fabdesk/releases/download/v0.1.1/Fabdesk-0.1.1-mac-arm64.dmg");
     expect(sums.split("\n").filter(Boolean)).toHaveLength(2);
+    expect(manifest.notes).toBeUndefined();
+  });
+  test("carries trimmed release notes when given", () => {
+    const dir = mkdtempSync(join(tmpdir(), "fabdesk-rel-"));
+    writeFileSync(join(dir, "Fabdesk-0.1.1-mac-arm64.dmg"), "hello");
+    const { manifest } = buildManifest({ dir, version: "0.1.1", tag: "v0.1.1", repo: "TensorFleet/fabdesk", commit: "abc", notes: "- Fix a thing\n- Add another\n" });
+    expect(manifest.notes).toBe("- Fix a thing\n- Add another");
   });
 });

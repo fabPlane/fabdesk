@@ -152,6 +152,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history + tags for the release notes
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0
@@ -161,6 +163,9 @@ jobs:
           path: artifacts
           merge-multiple: true
 
+      - name: Release notes (commits since the previous tag)
+        run: bun run scripts/release-notes.ts --out artifacts/NOTES.md --head ${{ github.sha }} && cat artifacts/NOTES.md
+
       - name: Manifest and checksums
         run: |
           bun run scripts/release-manifest.ts \
@@ -169,6 +174,7 @@ jobs:
             --tag ${{ needs.version.outputs.tag }} \
             --repo ${{ github.repository }} \
             --commit ${{ github.sha }} \
+            --notes-file artifacts/NOTES.md \
             --out artifacts/manifest.json \
             --sums artifacts/SHA256SUMS
           cat artifacts/manifest.json
@@ -179,8 +185,7 @@ jobs:
         run: |
           git tag ${{ needs.version.outputs.tag }} ${{ github.sha }}
           git push origin ${{ needs.version.outputs.tag }}
-          notes=$(git log -1 --pretty='%s%n%n%b' ${{ github.sha }})
           gh release create ${{ needs.version.outputs.tag }} \
             --title "Fabdesk ${{ needs.version.outputs.version }}" \
-            --notes "$notes" \
-            artifacts/*
+            --notes-file artifacts/NOTES.md \
+            $(ls artifacts/* | grep -v NOTES.md)
