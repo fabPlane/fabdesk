@@ -5,7 +5,7 @@ import { RouterWorkerMessage, type RouteRequest } from "@fabdesk/protocol";
 import { CapacityAutorouterAdapter } from "./adapters/capacity";
 import { RouterHost } from "./host";
 import { availableRouters, loadAdapter } from "./registry";
-import { FIXTURE_CONNECTIONS, fixtureSrj } from "./testing/fixture";
+import { FIXTURE_CONNECTIONS, MULTI_PAD_CONNECTIONS, fixtureSrj, multiPadNetSrj } from "./testing/fixture";
 import { RouteAbortedError } from "./types";
 import { frameUnitsPerMm } from "./units";
 
@@ -84,6 +84,42 @@ describe("capacity adapter (in-process)", () => {
     expect(result.traces.length).toBe(2);
   });
 
+  test("multi-pad nets: every merged connection is complete and the stream adds up", async () => {
+    const messages: RouterWorkerMessage[] = [];
+    const srj = multiPadNetSrj();
+    const result = await new CapacityAutorouterAdapter().route(request({ srj }), {
+      onMessage: (m) => messages.push(m),
+    });
+    expectWellFormedStream(messages);
+    expect(result.timedOut).toBe(false);
+    // The solver names a merged net's traces after one member; the others must not read as open.
+    expect(result.traces.length).toBeGreaterThan(srj.connections.length - 2);
+    expect(new Set(result.traces.map((t) => t.connection_name)).size).toBeLessThan(srj.connections.length);
+    expect([...result.complete].sort()).toEqual(MULTI_PAD_CONNECTIONS);
+    expect(result.open).toEqual([]);
+    expect(result.complete.length + result.open.length).toBe(srj.connections.length);
+    // One `connection` frame per SRJ connection, each attributed to a real net number.
+    const frames = messages.filter((m) => m.kind === "frame");
+    const announced = frames.filter((f) => f.event.kind === "connection").map((f) => f.event.netNumber);
+    expect([...announced].sort()).toEqual(srj.connections.map((_, i) => i));
+    for (const frame of frames) {
+      for (const shape of frame.shapes) {
+        if (shape.k === "trace" || shape.k === "via") expect(shape.net).toBeGreaterThanOrEqual(0);
+      }
+    }
+  }, 30_000);
+
+  test("onlyConnections can route one member of a merged net", async () => {
+    const result = await new CapacityAutorouterAdapter().route(
+      request({ srj: multiPadNetSrj(), onlyConnections: ["GND_b", "SIG"] }),
+      { onMessage: () => {} },
+    );
+    expect([...result.complete].sort()).toEqual(["GND_b", "SIG"]);
+    expect(result.open).toEqual([]);
+    // Members that were not requested are neither complete nor open.
+    expect(result.complete.length + result.open.length).toBe(2);
+  });
+
   test("an aborted signal stops the step loop", async () => {
     const controller = new AbortController();
     const promise = new CapacityAutorouterAdapter().route(request(), {
@@ -106,6 +142,17 @@ describe("RouterHost (worker)", () => {
       expect([...result.complete].sort()).toEqual(FIXTURE_CONNECTIONS);
       expect(result.open).toEqual([]);
       expect(host.busy).toBe(false);
+    } finally {
+      host.dispose();
+    }
+  }, 30_000);
+
+  test("merged nets are complete through the worker too", async () => {
+    const host = new RouterHost();
+    try {
+      const result = await host.route(request({ srj: multiPadNetSrj() }), { onMessage: () => {} });
+      expect([...result.complete].sort()).toEqual(MULTI_PAD_CONNECTIONS);
+      expect(result.open).toEqual([]);
     } finally {
       host.dispose();
     }

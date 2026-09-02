@@ -81,6 +81,38 @@ describe("registry", () => {
     await expect(call("verify_drc")).rejects.toThrow(/kicad-cli not found/);
   });
 
+  test("route_run reports open connections as an error and keeps text, json and status in step", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("open");
+    const base = mockServices([project]);
+    const services = mockServices([project], {
+      router: {
+        ...base.router,
+        route: async (req, hooks) => {
+          const result = await base.router.route(req, hooks);
+          return { ...result, complete: ["N1"], open: ["N2", "N3"], stats: { ...result.stats, vias: 4, segments: 7 } };
+        },
+      },
+    });
+    const factory = contextFactory(services, project);
+    const call = (name: string, args: Record<string, unknown> = {}) =>
+      reg.invoke(name, args, (ref) => factory({ def: reg.get(name)!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }));
+    await call("circuit_build");
+    const route = await call("route_run", { timeoutMs: 5000 });
+    expect(route.isError).toBe(true);
+    expect(route.text).toContain("1 complete, 2 open, 4 vias, 7 segments");
+    expect(route.text).toContain("Open connections: N2, N3");
+    const json = route.json as { complete: string[]; open: string[]; stats: { vias: number; segments: number } };
+    expect(json.complete).toEqual(["N1"]);
+    expect(json.open).toEqual(["N2", "N3"]);
+    expect(json.stats.vias).toBe(4);
+    const status = await call("route_status");
+    expect(status.text).toContain("done — 1 complete, 2 open, 4 vias, 7 segments");
+    const done = services.events.find((e) => e.topic === "route.done");
+    if (done?.topic !== "route.done") throw new Error("no route.done event");
+    expect(done.result.open).toEqual(["N2", "N3"]);
+  });
+
   test("verify_gate baselines warnings", async () => {
     const reg = createRegistry();
     const project = await tempProject();

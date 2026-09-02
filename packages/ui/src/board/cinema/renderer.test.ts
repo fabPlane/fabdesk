@@ -103,6 +103,25 @@ describe("status and colours", () => {
     expect(frameStatusText(run, 1)).toBe("frame 2/2  ·  attempt pass 1 net 3 → ok  ·  0.1s");
     expect(frameStatusText(applyLine(emptyRun("r1"), meta), -1)).toBe("waiting for frames…");
   });
+  test("the last frame reports the result's own complete/open counts and stats", () => {
+    const run = applyLines(emptyRun("r1"), [meta, frame(0, [1]), frame(1, [1, 2])]);
+    const done = {
+      ...run,
+      result: {
+        runId: "r1",
+        router: "capacity" as const,
+        traces: [],
+        complete: ["A", "B", "C"],
+        open: ["D"],
+        timedOut: false,
+        stats: { vias: 2, segments: 9, wallMs: 100, frames: 2 },
+      },
+    };
+    expect(frameStatusText(done, 1)).toBe(
+      "frame 2/2  ·  attempt pass 1 net 3 → ok  ·  0.1s  ·  done: 3/4 routed, 1 open, 2 vias, 9 segments",
+    );
+    expect(frameStatusText(done, 0)).not.toContain("done:");
+  });
 });
 
 describe("drawScene", () => {
