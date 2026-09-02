@@ -41,6 +41,17 @@ fi
 hash -r 2>/dev/null || true
 log "Using $(bun --version) at $(command -v bun)"
 
+# --- 1b. Tailscale (userspace; joined later by start-tailscale.sh) ----------
+if ! command -v tailscale >/dev/null 2>&1; then
+  log "Installing Tailscale"
+  curl -fsSL https://tailscale.com/install.sh | sh
+  if command -v systemctl >/dev/null 2>&1; then
+    sudo systemctl stop tailscaled.service 2>/dev/null || true
+    sudo systemctl disable tailscaled.service 2>/dev/null || true
+  fi
+fi
+log "Tailscale $(tailscale version | head -n 1)"
+
 # --- 2. Private submodule (fabplane) ---------------------------------------
 if [ ! -f vendor/fabplane/tsconfig.base.json ]; then
   log "Initialising vendor/fabplane submodule"

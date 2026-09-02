@@ -343,9 +343,29 @@ export function createApp(deps: AppDeps): Hono<Env> {
   app.get("/v1/auth/state", (c) => c.json(deps.auth.state() satisfies AuthState));
   app.get("/v1/auth/me", (c) => c.json(me()));
   app.post("/v1/auth/login", async (c) => {
+    let credentials: { email: string; password: string } | undefined;
+    try {
+      const body: unknown = await c.req.json();
+      if (typeof body === "object" && body !== null) {
+        const record = body as Record<string, unknown>;
+        const email = typeof record.email === "string" ? record.email : "";
+        const password = typeof record.password === "string" ? record.password : "";
+        if (email && password) credentials = { email, password };
+      }
+    } catch {
+      /* empty body = interactive device flow */
+    }
+    const p = deps.auth.login(c.req.raw.signal, credentials);
+    if (credentials) {
+      try {
+        return c.json(await p);
+      } catch (e) {
+        logger.warn("login failed", { error: errMsg(e) });
+        return c.json(deps.auth.state());
+      }
+    }
     // Kick off the device flow; state transitions arrive via auth.state events. Respond immediately
     // with the pending state (user code) when available within a short window.
-    const p = deps.auth.login(c.req.raw.signal);
     const first = await Promise.race([p, new Promise<AuthState>((r) => setTimeout(() => r(deps.auth.state()), 1500))]);
     void p.catch((e) => logger.warn("login failed", { error: errMsg(e) }));
     return c.json(first);

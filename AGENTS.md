@@ -9,3 +9,23 @@
 - `packages/router-freerouting` and `vendor/js_autorouter` are internal-only; anything shipped in a public build must not reference them.
 - Relative imports are extensionless (`./events`, not `./events.ts`); `allowImportingTsExtensions` is off, matching fabplane.
 - TypeScript is strict with `exactOptionalPropertyTypes` and `noUncheckedIndexedAccess`; use the `...(x ? { k: x } : {})` idiom for optional fields.
+
+## Staging login (Cloud Agents)
+
+Staging is on Tailscale (`tag:cursor-staging`, ports 4000 and 5173 only). Production (`api.fabplane.com`) stays password-off.
+
+- API: `http://fabplane-staging.tail4f6a7.ts.net:4000`
+- Device UI: `http://fabplane-staging.tail4f6a7.ts.net:5173/device`
+- Accounts: `maya` / `demo`, password `fabplane-dev`
+
+Set the Cursor environment secret `TS_AUTH_KEY`. After `start-tailscale.sh` joins the tailnet:
+
+```bash
+export ALL_PROXY=socks5h://127.0.0.1:1055
+export HTTP_PROXY=http://127.0.0.1:1054
+export HTTPS_PROXY=http://127.0.0.1:1054
+FABPLANE_API_ORIGIN=http://fabplane-staging.tail4f6a7.ts.net:4000 \
+  bun run --cwd apps/core src/main.ts login --email maya --password fabplane-dev
+```
+
+Never send those credentials to `https://api.fabplane.com`.

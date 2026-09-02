@@ -1,5 +1,6 @@
 {
   "name": "Fabdesk",
   "install": "bash .cursor/install.sh",
+  "start": "bash .cursor/start-tailscale.sh",
   "repositoryDependencies": ["github.com/tensorfleet/fabplane.com"]
 }

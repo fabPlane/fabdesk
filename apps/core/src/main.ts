@@ -14,6 +14,7 @@ Usage:
   fabdesk-core serve [--port 0] [--host 127.0.0.1] [--handshake-file <path>] [--parent-pid <pid>] [--local-auth] [--data-dir <dir>]
   fabdesk-core mcp [--standalone] [--project <dir>]
   fabdesk-core login | logout | whoami
+  fabdesk-core login --email <email> --password <password>   # staging/local only
   fabdesk-core doctor [--json]
   fabdesk-core route <srj.json> [--router capacity|freerouting] [--timeout-ms 120000] [--out <routed.json>]
   fabdesk-core install-cli
@@ -25,6 +26,8 @@ Environment:
   FABDESK_CHANNEL        public | internal (default public)
   FABDESK_AUTH_MODE      local | fabplane
   FABPLANE_API_ORIGIN    default https://api.fabplane.com
+  FABPLANE_EMAIL         staging/local password login (also --email); not for production
+  FABPLANE_PASSWORD      staging/local password login (also --password)
   FABDESK_PROJECTS_DIR   default ~/Fabdesk
   FABDESK_LOG            debug | info | warn | error
   SENTRY_DESKTOP_DSN     Sentry DSN (error reporting off when unset; see docs/sentry.md)
@@ -103,13 +106,22 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     case "logout":
     case "whoami": {
       const config = resolveConfig();
+      const email = str(f, "email") ?? process.env["FABPLANE_EMAIL"];
+      const password = str(f, "password") ?? process.env["FABPLANE_PASSWORD"];
+      const credentials = email && password ? { email, password } : undefined;
+      if (cmd === "login" && email && !password) {
+        process.stderr.write("login: --password or FABPLANE_PASSWORD is required when --email / FABPLANE_EMAIL is set\n");
+        return 2;
+      }
       const { createAuth } = await import("./auth-facade");
       const auth = await createAuth({ mode: config.authMode, channel: config.channel, home: config.home, apiOrigin: config.apiOrigin, emit: (e) => {
-        if (e.topic === "auth.state" && e.state.pending) process.stderr.write(`Open ${e.state.pending.verificationUriComplete} and enter code ${e.state.pending.userCode}\n`);
+        if (e.topic === "auth.state" && e.state.pending && !credentials) {
+          process.stderr.write(`Open ${e.state.pending.verificationUriComplete} and enter code ${e.state.pending.userCode}\n`);
+        }
       } });
       if (cmd === "login") {
-        const st = await auth.login();
-        if (st.pending) process.stderr.write(`Open ${st.pending.verificationUriComplete} and enter code ${st.pending.userCode}\n`);
+        const st = await auth.login(undefined, credentials);
+        if (st.pending && !credentials) process.stderr.write(`Open ${st.pending.verificationUriComplete} and enter code ${st.pending.userCode}\n`);
         process.stdout.write(JSON.stringify(auth.state(), null, 2) + "\n");
         return auth.state().status === "signed_in" ? 0 : 1;
       }

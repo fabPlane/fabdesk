@@ -3,7 +3,12 @@
  * delegates to `AuthClient` (device flow). Emits `auth.state` on every change.
  */
 import type { AuthState, CoreEvent, Principal } from "@fabdesk/protocol";
-import { AuthClient, LOCAL_PRINCIPAL, localModeAllowed } from "@fabdesk/auth-client";
+import {
+  AuthClient,
+  LOCAL_PRINCIPAL,
+  localModeAllowed,
+  type PasswordCredentials,
+} from "@fabdesk/auth-client";
 import type { AuthMode, Channel } from "./config";
 import { logger, errMsg } from "./log";
 
@@ -14,7 +19,7 @@ export interface AuthFacade {
   load(): Promise<void>;
   state(): AuthState;
   principal(): Principal | null;
-  login(signal?: AbortSignal): Promise<AuthState>;
+  login(signal?: AbortSignal, credentials?: PasswordCredentials): Promise<AuthState>;
   logout(): Promise<AuthState>;
   token(): string | null;
 }
@@ -80,10 +85,11 @@ export class FabplaneAuth implements AuthFacade {
   principal(): Principal | null {
     return this.state().principal ?? null;
   }
-  async login(signal?: AbortSignal): Promise<AuthState> {
+  async login(signal?: AbortSignal, credentials?: PasswordCredentials): Promise<AuthState> {
     if (!this.client) return this.st;
     try {
-      await this.client.login(signal);
+      if (credentials) await this.client.loginWithPassword(credentials, signal);
+      else await this.client.login(signal);
     } catch (e) {
       this.setState({ mode: "fabplane", status: "error", error: errMsg(e) });
     }

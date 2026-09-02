@@ -223,8 +223,11 @@ export class CoreClient {
   authState(): Promise<AuthState> {
     return this.request("/v1/auth/state");
   }
-  login(): Promise<AuthState> {
-    return this.request("/v1/auth/login", { method: "POST" });
+  login(credentials?: { email: string; password: string }): Promise<AuthState> {
+    return this.request("/v1/auth/login", {
+      method: "POST",
+      ...(credentials ? { json: credentials } : {}),
+    });
   }
   logout(): Promise<void> {
     return this.request("/v1/auth/logout", { method: "POST" });

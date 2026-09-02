@@ -13,9 +13,17 @@ import {
   pollDeviceToken,
   revokeSession,
   startDeviceAuth,
+  type DeviceCodeResponse,
   type MeUser,
 } from "./device-flow";
+import { isProductionFabplaneOrigin, PRODUCTION_PASSWORD_LOGIN_BLOCKED } from "./dev-accounts";
 import { LOCAL_PRINCIPAL } from "./home";
+import {
+  approveDeviceCode,
+  InvalidCredentialsError,
+  loginWithPasswordSession,
+  type PasswordCredentials,
+} from "./password-login";
 
 export interface AuthClientOptions {
   /** FABDESK_HOME: where `credentials.json` lives. */
@@ -165,15 +173,31 @@ export class AuthClient {
 
   /** Runs the device flow; resolves with the resulting state (never rejects for flow outcomes). */
   login(signal?: AbortSignal): Promise<AuthState> {
+    return this.startLogin(() => this.runLogin(signal));
+  }
+
+  /**
+   * Password-assisted device flow: `POST /v1/auth/password` for an `fp_session` cookie,
+   * then `POST /v1/auth/device/approve` and the usual token poll. Used by the CLI/UI
+   * with Fabplane's local/staging accounts (`demo@fabplane.dev`, `maya@fabplane.dev`).
+   */
+  loginWithPassword(credentials: PasswordCredentials, signal?: AbortSignal): Promise<AuthState> {
+    return this.startLogin(() => this.runPasswordLogin(credentials, signal));
+  }
+
+  private startLogin(run: () => Promise<AuthState>): Promise<AuthState> {
     if (this.opts.mode === "local") return Promise.resolve(this.current);
     if (this.loginInFlight) return this.loginInFlight;
-    this.loginInFlight = this.runLogin(signal).finally(() => {
+    this.loginInFlight = run().finally(() => {
       this.loginInFlight = undefined;
     });
     return this.loginInFlight;
   }
 
-  private async runLogin(signal?: AbortSignal): Promise<AuthState> {
+  private async beginDeviceGrant(
+    signal?: AbortSignal,
+    opts?: { publishPending?: boolean },
+  ): Promise<{ device: DeviceCodeResponse; deadline: number } | AuthState> {
     const label = this.opts.clientLabel ?? `fabdesk on ${hostname()}`;
     let device;
     try {
@@ -189,27 +213,90 @@ export class AuthClient {
         error: `Could not start sign-in: ${errorMessage(err)}`,
       });
     }
-    const startedAt = Date.now();
-    const deadline = startedAt + device.expires_in * 1000;
-    this.setState({
-      mode: "fabplane",
-      status: "pending",
-      pending: {
-        userCode: device.user_code,
-        verificationUri: device.verification_uri,
-        verificationUriComplete: device.verification_uri_complete,
-        expiresAt: new Date(deadline).toISOString(),
-      },
-    });
+    const deadline = Date.now() + device.expires_in * 1000;
+    if (opts?.publishPending !== false) {
+      this.setState({
+        mode: "fabplane",
+        status: "pending",
+        pending: {
+          userCode: device.user_code,
+          verificationUri: device.verification_uri,
+          verificationUriComplete: device.verification_uri_complete,
+          expiresAt: new Date(deadline).toISOString(),
+        },
+      });
+    }
+    return { device, deadline };
+  }
+
+  private async runLogin(signal?: AbortSignal): Promise<AuthState> {
+    const started = await this.beginDeviceGrant(signal);
+    if (!("device" in started)) return started;
     try {
-      this.opts.openUrl?.(device.verification_uri_complete);
+      this.opts.openUrl?.(started.device.verification_uri_complete);
     } catch {
       /* the UI still shows the code */
     }
+    return this.pollForToken(started.device, started.deadline, signal);
+  }
 
+  private async runPasswordLogin(
+    credentials: PasswordCredentials,
+    signal?: AbortSignal,
+  ): Promise<AuthState> {
+    if (!credentials.email.trim() || !credentials.password) {
+      return this.setState({
+        mode: "fabplane",
+        status: "error",
+        error: "Email and password are required.",
+      });
+    }
+    if (isProductionFabplaneOrigin(this.apiOrigin)) {
+      return this.setState({
+        mode: "fabplane",
+        status: "error",
+        error: PRODUCTION_PASSWORD_LOGIN_BLOCKED,
+      });
+    }
+    const started = await this.beginDeviceGrant(signal, { publishPending: false });
+    if (!("device" in started)) return started;
+    try {
+      const { cookies } = await loginWithPasswordSession(
+        this.fetchImpl,
+        this.apiOrigin,
+        credentials,
+        signal,
+      );
+      await approveDeviceCode(this.fetchImpl, this.apiOrigin, {
+        userCode: started.device.user_code,
+        cookies,
+        ...(signal ? { signal } : {}),
+      });
+    } catch (err) {
+      if (isAbortError(err) || signal?.aborted) return this.signedOut();
+      if (err instanceof InvalidCredentialsError) {
+        return this.setState({ mode: "fabplane", status: "error", error: err.message });
+      }
+      return this.setState({
+        mode: "fabplane",
+        status: "error",
+        error: describePasswordLoginError(err),
+      });
+    }
+    return this.pollForToken(started.device, started.deadline, signal, { immediate: true });
+  }
+
+  private async pollForToken(
+    device: DeviceCodeResponse,
+    deadline: number,
+    signal?: AbortSignal,
+    opts?: { immediate?: boolean },
+  ): Promise<AuthState> {
     let intervalSec = Math.max(device.interval, MIN_INTERVAL_SEC);
+    let wait = opts?.immediate !== true;
     for (;;) {
-      await this.sleep(intervalSec * 1000, signal);
+      if (wait) await this.sleep(intervalSec * 1000, signal);
+      wait = true;
       if (signal?.aborted) return this.signedOut();
       if (Date.now() >= deadline)
         return this.setState({
@@ -310,6 +397,20 @@ function describeTokenError(error: string, description?: string): string {
     default:
       return description ? `${error}: ${description}` : `Sign-in failed (${error}).`;
   }
+}
+
+function describePasswordLoginError(err: unknown): string {
+  if (err instanceof AuthHttpError) {
+    if (err.path === "/v1/auth/password" && err.httpStatus === 503) {
+      return "Password login is not available on this Fabplane server.";
+    }
+    if (err.path === "/v1/auth/device/approve") {
+      if (err.httpStatus === 401) return "Sign-in session was rejected. Check the email and password.";
+      if (err.httpStatus === 503) return "Device approval is not available on this Fabplane server.";
+      if (err.httpStatus === 404) return "Sign-in code was not found. Start again.";
+    }
+  }
+  return `Could not complete password sign-in: ${errorMessage(err)}`;
 }
 
 function errorMessage(err: unknown): string {

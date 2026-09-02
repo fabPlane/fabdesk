@@ -214,10 +214,20 @@ function AuthSection() {
   const localAllowed = useAuthStore((s) => s.localAllowed);
   const setState = useAuthStore((s) => s.setState);
   const [busy, setBusy] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const login = async () => {
     setBusy(true);
     try {
       setState(await client.login());
+    } finally {
+      setBusy(false);
+    }
+  };
+  const loginWithPassword = async () => {
+    setBusy(true);
+    try {
+      setState(await client.login({ email: email.trim(), password }));
     } finally {
       setBusy(false);
     }
@@ -270,6 +280,37 @@ function AuthSection() {
           </Button>
         )}
       </div>
+      {localAllowed && state.status !== "signed_in" && state.status !== "pending" && (
+        <form
+          className="space-y-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void loginWithPassword();
+          }}
+        >
+          <div className="text-muted">Staging/local password login. Shared demo/maya accounts are not available in production.</div>
+          <Input
+            type="text"
+            autoComplete="username"
+            inputMode="email"
+            placeholder="email or handle"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            disabled={busy}
+          />
+          <Input
+            type="password"
+            autoComplete="current-password"
+            placeholder="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            disabled={busy}
+          />
+          <Button type="submit" disabled={busy || !email.trim() || !password}>
+            Sign in with password
+          </Button>
+        </form>
+      )}
       {localAllowed && (
         <div className="text-muted">Local mode skips Fabplane sign-in; it is only available in development builds or with a .fabdesk-dev marker.</div>
       )}
