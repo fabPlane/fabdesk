@@ -1,0 +1,121 @@
+@import "tailwindcss";
+@source "./";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --fd-bg: #f7f7f8;
+  --fd-panel: #ffffff;
+  --fd-panel-2: #f0f0f2;
+  --fd-border: #e3e3e7;
+  --fd-fg: #1a1a1f;
+  --fd-muted: #6b6b76;
+  --fd-accent: #7c3aed;
+  --fd-accent-fg: #ffffff;
+  --fd-danger: #dc2626;
+  --fd-success: #16a34a;
+  --fd-warning: #d97706;
+  color-scheme: light;
+}
+.dark {
+  --fd-bg: #17161b;
+  --fd-panel: #1f1e24;
+  --fd-panel-2: #26252c;
+  --fd-border: #33323a;
+  --fd-fg: #ececf1;
+  --fd-muted: #9a99a6;
+  --fd-accent: #a78bfa;
+  --fd-accent-fg: #17161b;
+  --fd-danger: #f87171;
+  --fd-success: #4ade80;
+  --fd-warning: #fbbf24;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--fd-bg);
+  --color-panel: var(--fd-panel);
+  --color-panel-2: var(--fd-panel-2);
+  --color-border: var(--fd-border);
+  --color-fg: var(--fd-fg);
+  --color-muted: var(--fd-muted);
+  --color-accent: var(--fd-accent);
+  --color-accent-fg: var(--fd-accent-fg);
+  --color-danger: var(--fd-danger);
+  --color-success: var(--fd-success);
+  --color-warning: var(--fd-warning);
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+body {
+  background: var(--fd-bg);
+  color: var(--fd-fg);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--fd-border) transparent;
+}
+.fd-prose :is(h1, h2, h3, h4) {
+  font-weight: 600;
+  margin: 0.9em 0 0.4em;
+  line-height: 1.25;
+}
+.fd-prose h1 { font-size: 1.35em; }
+.fd-prose h2 { font-size: 1.2em; }
+.fd-prose h3 { font-size: 1.08em; }
+.fd-prose p { margin: 0.45em 0; }
+.fd-prose ul, .fd-prose ol { padding-left: 1.4em; margin: 0.45em 0; }
+.fd-prose ul { list-style: disc; }
+.fd-prose ol { list-style: decimal; }
+.fd-prose li { margin: 0.15em 0; }
+.fd-prose a { color: var(--fd-accent); text-decoration: underline; }
+.fd-prose blockquote { border-left: 3px solid var(--fd-border); padding-left: 0.8em; color: var(--fd-muted); margin: 0.5em 0; }
+.fd-prose table { border-collapse: collapse; margin: 0.6em 0; font-size: 0.95em; }
+.fd-prose th, .fd-prose td { border: 1px solid var(--fd-border); padding: 0.25em 0.6em; }
+.fd-prose th { background: var(--fd-panel-2); }
+.fd-prose code:not(pre code) { background: var(--fd-panel-2); border: 1px solid var(--fd-border); border-radius: 4px; padding: 0.05em 0.35em; font-family: var(--font-mono); font-size: 0.92em; }
+.fd-prose pre { background: var(--fd-panel-2); border: 1px solid var(--fd-border); border-radius: 8px; padding: 0.7em 0.9em; overflow-x: auto; margin: 0.6em 0; font-family: var(--font-mono); font-size: 0.9em; line-height: 1.5; }
+.fd-prose pre.shiki { background: transparent !important; }
+.fd-prose pre.shiki span { color: var(--shiki-light, inherit); }
+.dark .fd-prose pre.shiki span { color: var(--shiki-dark, inherit); }
+.fd-prose hr { border: 0; border-top: 1px solid var(--fd-border); margin: 1em 0; }
+.fd-prose img { max-width: 100%; border-radius: 6px; }
+
+.fd-svg-host svg { width: 100%; height: 100%; }
+
+[cmdk-group-heading] {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fd-muted);
+  padding: 8px 10px 4px;
+}
+[cmdk-item] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+[cmdk-item][data-selected="true"] { background: var(--fd-panel-2); }
+[cmdk-item][data-disabled="true"] { opacity: 0.5; cursor: default; }
+[cmdk-empty] { padding: 12px; color: var(--fd-muted); text-align: center; }
+
+@keyframes fd-spin { to { transform: rotate(360deg); } }
+.fd-spin { animation: fd-spin 0.9s linear infinite; }
+@keyframes fd-blink { 50% { opacity: 0.2; } }
+.fd-caret::after { content: "▍"; animation: fd-blink 1s steps(1) infinite; color: var(--fd-accent); }

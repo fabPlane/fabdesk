@@ -1,0 +1,57 @@
+# electron-builder configuration (plan section 9). Run `bun run package` after `bun run build:core`.
+appId: com.tensorfleet.fabdesk
+productName: Fabdesk
+copyright: Copyright © 2026 TensorFleet
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**
+  - package.json
+  - "!**/*.map"
+asar: true
+npmRebuild: false
+publish: null
+
+# The compiled Bun core is single-arch: apps/core/dist/<os>-<arch>/fabdesk-core[.exe] -> Resources/core/
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  # Sign the sidecar with the app so hardened runtime + notarization accept it.
+  binaries:
+    - Contents/Resources/core/fabdesk-core
+  # Notarization is enabled by the release workflow via APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID;
+  # unsigned local builds skip it (CSC_IDENTITY_AUTO_DISCOVERY=false).
+  notarize: false
+  extraResources:
+    - from: ../core/dist/darwin-${arch}/
+      to: core
+      filter: ["fabdesk-core*"]
+dmg:
+  sign: false
+linux:
+  category: Development
+  target: [AppImage, deb]
+  maintainer: TensorFleet
+  extraResources:
+    - from: ../core/dist/linux-${arch}/
+      to: core
+      filter: ["fabdesk-core*"]
+win:
+  target: [nsis, portable]
+  extraResources:
+    - from: ../core/dist/windows-${arch}/
+      to: core
+      filter: ["fabdesk-core*"]
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true

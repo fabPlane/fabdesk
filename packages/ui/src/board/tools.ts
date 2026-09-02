@@ -1,0 +1,70 @@
+import type { Job, ToolManifestEntry } from "@fabdesk/protocol";
+import { useCallback, useState } from "react";
+import { useCoreClient } from "../core/CoreProvider";
+import { useToolManifest } from "../hooks/queries";
+import { useRunsStore } from "../stores/runs";
+
+/** Preferred tool names with regex fallbacks, since the tool registry is built by another package. */
+export const TOOL_PATTERNS = {
+  build: { preferred: "circuit_build", patterns: [/^circuit_build$/, /build/] },
+  route: { preferred: "route_run", patterns: [/^route_run$/, /^route/, /route/] },
+  drc: { preferred: "kicad_drc", patterns: [/^kicad_drc$/, /^drc/, /drc/] },
+  erc: { preferred: "kicad_erc", patterns: [/^kicad_erc$/, /erc/] },
+  render: { preferred: "render_board", patterns: [/^render_board$/, /^kicad_render$/, /render(?!_glb)/] },
+  glb: { preferred: "render_glb", patterns: [/^render_glb$/, /glb/, /3d/] },
+} as const;
+export type ToolKind = keyof typeof TOOL_PATTERNS;
+
+export function resolveToolName(manifest: ToolManifestEntry[] | undefined, kind: ToolKind): string {
+  const spec = TOOL_PATTERNS[kind];
+  if (!manifest || manifest.length === 0) return spec.preferred;
+  for (const re of spec.patterns) {
+    const hit = manifest.find((t) => re.test(t.name));
+    if (hit) return hit.name;
+  }
+  return spec.preferred;
+}
+
+export interface ToolRunState {
+  status: "idle" | "running" | "done" | "failed";
+  jobId?: string;
+  result?: unknown;
+  error?: string;
+  note?: string;
+}
+
+/** Calls a tool; if the daemon answers with a job, waits for it (progress arrives via the runs store). */
+export function useRunTool() {
+  const client = useCoreClient();
+  const manifest = useToolManifest();
+  const [state, setState] = useState<ToolRunState>({ status: "idle" });
+  const run = useCallback(
+    async (kind: ToolKind | string, args: Record<string, unknown>): Promise<ToolRunState> => {
+      const name = kind in TOOL_PATTERNS ? resolveToolName(manifest.data, kind as ToolKind) : kind;
+      setState({ status: "running" });
+      try {
+        const res = await client.callTool(name, args);
+        if (res.jobId) {
+          setState({ status: "running", jobId: res.jobId });
+          useRunsStore.getState().upsertJob({ jobId: res.jobId, kind: name, status: "running", startedAt: Date.now() });
+          const job: Job = await client.waitJob(res.jobId);
+          const next: ToolRunState =
+            job.status === "done"
+              ? { status: "done", jobId: res.jobId, result: job.result }
+              : { status: "failed", jobId: res.jobId, error: job.error ?? job.status };
+          setState(next);
+          return next;
+        }
+        const next: ToolRunState = { status: "done", result: res.result };
+        setState(next);
+        return next;
+      } catch (e) {
+        const next: ToolRunState = { status: "failed", error: e instanceof Error ? e.message : String(e) };
+        setState(next);
+        return next;
+      }
+    },
+    [client, manifest.data],
+  );
+  return { run, state, manifest: manifest.data };
+}

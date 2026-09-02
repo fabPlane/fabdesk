@@ -1,0 +1,54 @@
+export { CoreClient, CoreHttpError, parseJsonl } from "./core/CoreClient";
+export type { CoreClientOptions, CreateThreadInput, PatchThreadInput, SendMessageInput, ToolCallResponse, FetchLike } from "./core/CoreClient";
+export { subscribeSse, reconnectDelay, appendLastEventId, parseCoreEvent } from "./core/sse";
+export type { EventSourceLike, EventSourceFactory, SseStatus, SseSubscription, SseOptions } from "./core/sse";
+export { CoreProvider, useCore, useCoreClient, useCoreEvents, handleCoreEvent, browserHost, EVENT_TOPICS, messagesKey } from "./core/CoreProvider";
+export type { HostAdapter, FilePickOptions, CoreContextValue, CoreProviderProps } from "./core/CoreProvider";
+
+export { useUiStore, BOARD_TABS, BOARD_TAB_LABELS, DRAFT_KEY_NEW } from "./stores/ui";
+export type { BoardTab, UiState, PendingAttachment } from "./stores/ui";
+export { useCinemaStore } from "./stores/cinema";
+export type { CinemaState } from "./stores/cinema";
+export { useAuthStore } from "./stores/auth";
+export { useRunsStore } from "./stores/runs";
+export type { LiveRun, LiveJob } from "./stores/runs";
+
+export * from "./board/cinema/renderer";
+export { CinemaTab } from "./board/cinema/CinemaTab";
+export { BoardPanel } from "./board/BoardPanel";
+export { SvgTab } from "./board/SvgTab";
+export { SvgViewer } from "./board/SvgViewer";
+export { DrcTab, normalizeReport } from "./board/DrcTab";
+export { RendersTab } from "./board/RendersTab";
+export { FilesTab } from "./board/FilesTab";
+export { ThreeDTab } from "./board/ThreeDTab";
+export { useRunTool, resolveToolName, TOOL_PATTERNS } from "./board/tools";
+
+export { AppShell } from "./layout/AppShell";
+export { TopBar } from "./layout/TopBar";
+export { ThreadSidebar } from "./sidebar/ThreadSidebar";
+export { ThreadView } from "./chat/ThreadView";
+export { MessageList, MessageBubble, BranchHeader } from "./chat/MessageList";
+export { Composer, composerHandlers } from "./chat/Composer";
+export { Markdown, CodeBlock } from "./chat/Markdown";
+export { ToolCallCard, extractImages, resultText } from "./chat/ToolCallCard";
+export { ThinkingBlock } from "./chat/ThinkingBlock";
+export { ProjectImage } from "./chat/ProjectImage";
+export { SketchPad } from "./sketch/SketchPad";
+export { CommandPalette } from "./palette/CommandPalette";
+export { SettingsDialog } from "./settings/SettingsDialog";
+export { LoginScreen } from "./auth/LoginScreen";
+
+export * from "./hooks/queries";
+export { useBranchThread } from "./hooks/threadActions";
+export { useShortcuts, shortcutList } from "./hooks/useShortcuts";
+export { useTheme, useIsDark, applyTheme } from "./hooks/useTheme";
+export * from "./components/ui";
+export * from "./util";
+
+export { FabdeskApp } from "./app/FabdeskApp";
+export type { FabdeskAppProps } from "./app/FabdeskApp";
+export { CoreStatusScreen } from "./app/CoreStatusScreen";
+export { useAppActions } from "./app/useAppActions";
+export type { AppActions } from "./app/useAppActions";
+export type { CoreState, CoreStatusInfo, CoreInfo } from "./app/types";

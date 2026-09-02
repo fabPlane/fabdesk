@@ -1,0 +1,88 @@
+import { create } from "zustand";
+
+export const BOARD_TABS = ["schematic", "pcb", "cinema", "3d", "drc", "renders", "files"] as const;
+export type BoardTab = (typeof BOARD_TABS)[number];
+export const BOARD_TAB_LABELS: Record<BoardTab, string> = {
+  schematic: "Schematic",
+  pcb: "PCB",
+  cinema: "Route Cinema",
+  "3d": "3D",
+  drc: "DRC/ERC",
+  renders: "Renders",
+  files: "Files",
+};
+
+export interface PendingAttachment {
+  path: string;
+  mime: string;
+  label: string;
+}
+
+export interface UiState {
+  sidebarOpen: boolean;
+  boardOpen: boolean;
+  activeThreadId: string | null;
+  activeProjectId: string | null;
+  boardTab: BoardTab;
+  drafts: Record<string, string>;
+  attachments: Record<string, PendingAttachment[]>;
+  paletteOpen: boolean;
+  settingsOpen: boolean;
+  sketchOpen: boolean;
+  agentPickerOpen: boolean;
+  /** Bumps to request focus on the composer. */
+  composerFocusNonce: number;
+  toggleSidebar: () => void;
+  toggleBoard: () => void;
+  setSidebarOpen: (open: boolean) => void;
+  setBoardOpen: (open: boolean) => void;
+  setActiveThread: (id: string | null) => void;
+  setActiveProject: (id: string | null) => void;
+  setBoardTab: (tab: BoardTab) => void;
+  setDraft: (threadKey: string, text: string) => void;
+  addAttachment: (threadKey: string, att: PendingAttachment) => void;
+  removeAttachment: (threadKey: string, path: string) => void;
+  clearAttachments: (threadKey: string) => void;
+  setPaletteOpen: (open: boolean) => void;
+  setSettingsOpen: (open: boolean) => void;
+  setSketchOpen: (open: boolean) => void;
+  setAgentPickerOpen: (open: boolean) => void;
+  focusComposer: () => void;
+}
+
+export const DRAFT_KEY_NEW = "__new__";
+
+export const useUiStore = create<UiState>()((set) => ({
+  sidebarOpen: true,
+  boardOpen: true,
+  activeThreadId: null,
+  activeProjectId: null,
+  boardTab: "schematic",
+  drafts: {},
+  attachments: {},
+  paletteOpen: false,
+  settingsOpen: false,
+  sketchOpen: false,
+  agentPickerOpen: false,
+  composerFocusNonce: 0,
+  toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
+  toggleBoard: () => set((s) => ({ boardOpen: !s.boardOpen })),
+  setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
+  setBoardOpen: (boardOpen) => set({ boardOpen }),
+  setActiveThread: (activeThreadId) => set({ activeThreadId }),
+  setActiveProject: (activeProjectId) => set({ activeProjectId }),
+  setBoardTab: (boardTab) => set({ boardTab, boardOpen: true }),
+  setDraft: (key, text) => set((s) => ({ drafts: { ...s.drafts, [key]: text } })),
+  addAttachment: (key, att) =>
+    set((s) => ({ attachments: { ...s.attachments, [key]: [...(s.attachments[key] ?? []), att] } })),
+  removeAttachment: (key, path) =>
+    set((s) => ({
+      attachments: { ...s.attachments, [key]: (s.attachments[key] ?? []).filter((a) => a.path !== path) },
+    })),
+  clearAttachments: (key) => set((s) => ({ attachments: { ...s.attachments, [key]: [] } })),
+  setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
+  setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+  setSketchOpen: (sketchOpen) => set({ sketchOpen }),
+  setAgentPickerOpen: (agentPickerOpen) => set({ agentPickerOpen }),
+  focusComposer: () => set((s) => ({ composerFocusNonce: s.composerFocusNonce + 1 })),
+}));
