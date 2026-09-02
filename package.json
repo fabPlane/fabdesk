@@ -33,7 +33,10 @@
     "doctor": "bun run --cwd apps/core doctor",
     "submodules:update": "git submodule update --remote --merge vendor/fabplane",
     "format": "bunx prettier --write .",
-    "format:check": "bunx prettier --check ."
+    "format:check": "bunx prettier --check .",
+    "security:scan": "bun run scripts/security-scan.ts",
+    "security:issues": "bun run scripts/security-issues.ts",
+    "pr:relevance": "bun run scripts/pr-relevance.ts"
   },
   "devDependencies": {
     "@types/bun": "1.2.21",

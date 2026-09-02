@@ -1,0 +1,90 @@
+name: Security scan
+
+# Daily comb of Fabdesk-native source + bun audit. Opens GitHub issues for
+# high/critical findings and skips anything we have already filed (fingerprint
+# in the issue body) or previously dismissed (same fingerprint, closed).
+
+on:
+  schedule:
+    - cron: "0 13 * * *" # 09:00 America/New_York during EDT
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      min_severity:
+        description: Minimum severity to file as issues
+        required: true
+        default: high
+        type: choice
+        options: [critical, high, medium, low]
+      dry_run:
+        description: Plan issues without creating them
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  scan:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.FABDESK_SUBMODULE_SSH_KEY }}
+
+      - name: Init fabplane submodule
+        run: git submodule update --init --depth 1 vendor/fabplane
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - run: bun install --frozen-lockfile
+
+      - name: Scan
+        run: bun run scripts/security-scan.ts --json --out findings.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: security-findings
+          path: findings.json
+
+      - name: Open issues (deduped)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          extra=(--min-severity high)
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            extra=(--min-severity "${{ inputs.min_severity }}")
+            if [ "${{ inputs.dry_run }}" = "true" ]; then extra+=(--dry-run); fi
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            # PRs only prove the plan. Filing is schedule / workflow_dispatch so a
+            # label-less list cannot open a second copy of every finding.
+            extra+=(--dry-run)
+          fi
+          bun run scripts/security-issues.ts --findings findings.json --ledger .github/security-filed.json --close-duplicates "${extra[@]}"
+
+      # Schedule / dispatch can create issues even when `gh issue list` is empty.
+      # Commit new fingerprints so the next run skips them without listing.
+      - name: Persist issue ledger
+        if: github.event_name != 'pull_request'
+        run: |
+          if git diff --quiet -- .github/security-filed.json; then
+            echo "ledger unchanged"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          branch="${GITHUB_REF_NAME}"
+          git add .github/security-filed.json
+          git commit -m "chore(security): record newly filed issue fingerprints"
+          if ! git push origin "HEAD:refs/heads/${branch}"; then
+            echo "::warning::could not persist ledger to ${branch}; fingerprints remain in issue bodies"
+          fi
+

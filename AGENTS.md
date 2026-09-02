@@ -9,6 +9,7 @@
 - `packages/router-freerouting` and `vendor/js_autorouter` are internal-only; anything shipped in a public build must not reference them.
 - Relative imports are extensionless (`./events`, not `./events.ts`); `allowImportingTsExtensions` is off, matching fabplane.
 - TypeScript is strict with `exactOptionalPropertyTypes` and `noUncheckedIndexedAccess`; use the `...(x ? { k: x } : {})` idiom for optional fields.
+- Daily jobs: security scan + issue filing is `.github/workflows/security-scan.yml` (`bun run security:scan` / `security:issues`). Open-PR relevance notifies the Grok Cloud Agent (`bun run pr:relevance`). See `docs/daily-jobs.md`.
 
 ## Staging login (Cloud Agents)
 
