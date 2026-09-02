@@ -28,11 +28,17 @@ if ! command -v bun >/dev/null 2>&1 || [ "$(bun --version 2>/dev/null || true)" 
   curl -fsSL https://bun.sh/install | bash -s "bun-v$BUN_VERSION"
 fi
 
-# Make bun discoverable from non-login shells (terminals, agent tools) too.
-if command -v sudo >/dev/null 2>&1 && [ -w /usr/local/bin -o -w /usr/local ]; then
-  sudo ln -sf "$BUN_INSTALL/bin/bun" /usr/local/bin/bun 2>/dev/null || true
-  sudo ln -sf "$BUN_INSTALL/bin/bunx" /usr/local/bin/bunx 2>/dev/null || true
+# Make bun discoverable from non-login shells (terminals, agent tools).
+# Cloud Agent images keep /usr/local/bin on PATH but root-owned, so the
+# previous `-w` check skipped the symlink and later shells could not find bun.
+if command -v sudo >/dev/null 2>&1; then
+  sudo ln -sf "$BUN_INSTALL/bin/bun" /usr/local/bin/bun
+  sudo ln -sf "$BUN_INSTALL/bin/bunx" /usr/local/bin/bunx
+elif [ -w /usr/local/bin ]; then
+  ln -sf "$BUN_INSTALL/bin/bun" /usr/local/bin/bun
+  ln -sf "$BUN_INSTALL/bin/bunx" /usr/local/bin/bunx
 fi
+hash -r 2>/dev/null || true
 log "Using $(bun --version) at $(command -v bun)"
 
 # --- 2. Private submodule (fabplane) ---------------------------------------
