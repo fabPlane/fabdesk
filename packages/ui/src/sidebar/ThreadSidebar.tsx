@@ -56,13 +56,56 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
     setMenu({ x: e.clientX, y: e.clientY, thread });
   };
 
-  const createProject = async () => {
-    const name = window.prompt("Project name");
-    if (!name) return;
+  // Electron renderers do not implement window.prompt, so text questions use an inline row.
+  const [ask, setAsk] = useState<{ kind: "project" } | { kind: "folder"; thread: Thread } | null>(null);
+  const [askValue, setAskValue] = useState("");
+
+  const createProject = async (name: string) => {
     const p = await client.createProject(name);
     await qc.invalidateQueries({ queryKey: ["projects"] });
     setActiveProject(p.id);
   };
+
+  const submitAsk = async () => {
+    const value = askValue.trim();
+    const current = ask;
+    setAsk(null);
+    setAskValue("");
+    if (!current) return;
+    if (current.kind === "project") {
+      if (value) await createProject(value);
+    } else {
+      patch.mutate({ id: current.thread.id, patch: { folderId: value || null } });
+    }
+  };
+
+  const askRow = ask && (
+    <form
+      className="flex items-center gap-1 px-2 pt-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void submitAsk();
+      }}
+    >
+      <Input
+        autoFocus
+        value={askValue}
+        placeholder={ask.kind === "project" ? "Project name" : "Folder name (empty to remove)"}
+        onChange={(e) => setAskValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            setAsk(null);
+            setAskValue("");
+          }
+        }}
+        className="h-7 min-w-0 flex-1 text-xs"
+        data-testid="sidebar-ask"
+      />
+      <Button size="sm" variant="primary" type="submit">
+        OK
+      </Button>
+    </form>
+  );
 
   const renderThread = (t: Thread) => (
     <div key={t.id} className="group relative">
@@ -133,10 +176,11 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
             </option>
           ))}
         </Select>
-        <IconButton title="New project" onClick={() => void createProject()}>
+        <IconButton title="New project" onClick={() => { setAskValue(""); setAsk({ kind: "project" }); }}>
           +
         </IconButton>
       </div>
+      {askRow}
       <div className="px-2 pt-2">
         <Button variant="primary" className="w-full justify-between" onClick={onNewChat}>
           <span>New chat</span>
@@ -178,8 +222,8 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
           </MenuItem>
           <MenuItem
             onClick={() => {
-              const folder = window.prompt("Folder name (empty to remove)", menu.thread.folderId ?? "");
-              if (folder !== null) patch.mutate({ id: menu.thread.id, patch: { folderId: folder.trim() || null } });
+              setAskValue(menu.thread.folderId ?? "");
+              setAsk({ kind: "folder", thread: menu.thread });
               setMenu(null);
             }}
           >

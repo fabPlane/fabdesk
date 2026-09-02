@@ -11,7 +11,8 @@ export function parseTopics(raw: string | null | undefined): string[] {
 }
 
 export function formatSse(ev: StoredEvent): string {
-  return `id: ${ev.id}\nevent: ${ev.event.topic}\ndata: ${JSON.stringify(ev.event)}\n\n`;
+  // No `event:` name: browser EventSource only delivers unnamed events to `onmessage`; the topic lives in the JSON.
+  return `id: ${ev.id}\ndata: ${JSON.stringify(ev.event)}\n\n`;
 }
 
 export function sseResponse(bus: EventBus, opts: { topics: string[]; lastEventId: number | null; heartbeatMs?: number; signal?: AbortSignal }): Response {

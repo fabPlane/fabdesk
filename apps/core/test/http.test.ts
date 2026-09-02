@@ -105,9 +105,9 @@ describe("http daemon", () => {
     const project = (await created.json()) as { id: string; path: string; manifest: { board: { layers: number } }; files: Array<{ path: string }> };
     expect(project.path).toBe(join(home, "Fabdesk", "blinky-board"));
     expect(project.files.map((f) => f.path)).toContain("circuit.tsx");
-    await readUntil((s) => s.includes("event: project.changed"));
+    await readUntil((s) => s.includes('\"topic\":\"project.changed\"'));
     expect(buf).toContain(`"projectId":"${project.id}"`);
-    const idMatch = /id: (\d+)\nevent: project.changed/.exec(buf);
+    const idMatch = /id: (\d+)\ndata: [^\n]*"topic":"project.changed"/.exec(buf);
     expect(idMatch).not.toBeNull();
     reader.cancel();
 
@@ -125,7 +125,7 @@ describe("http daemon", () => {
       if (done) break;
       buf2 += dec.decode(value);
     }
-    expect(buf2).toContain(`id: ${idMatch![1]}\nevent: project.changed`);
+    expect(buf2).toMatch(new RegExp(`id: ${idMatch![1]}\\ndata: [^\\n]*"topic":"project.changed"`));
     r2.cancel();
 
     // Files: read, write, jail.
@@ -205,13 +205,13 @@ describe("http daemon", () => {
     expect(sent.status).toBe(202);
     const { runId } = (await sent.json()) as { runId: string; messageId: string };
     const deadline = Date.now() + 3000;
-    while (!buf.includes("event: agent.done") && Date.now() < deadline) {
+    while (!buf.includes('\"topic\":\"agent.done\"') && Date.now() < deadline) {
       const { value, done } = await reader.read();
       if (done) break;
       buf += dec.decode(value);
     }
     reader.cancel();
-    for (const t of ["agent.started", "agent.delta", "agent.tool_use", "agent.tool_result", "agent.usage", "agent.done"]) expect(buf).toContain(`event: ${t}`);
+    for (const t of ["agent.started", "agent.delta", "agent.tool_use", "agent.tool_result", "agent.usage", "agent.done"]) expect(buf).toContain(`"topic":"${t}"`);
     expect(buf).toContain('"status":"completed"');
     expect(buf).toContain('"sessionId":"sess-42"');
 

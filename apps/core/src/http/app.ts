@@ -80,11 +80,28 @@ export function createApp(deps: AppDeps): Hono<Env> {
     return c.json({ error: errMsg(err), code: "internal" }, 500);
   });
 
-  // Origin guard: browsers on foreign origins are rejected before anything else.
+  // Origin guard: browsers on foreign origins are rejected before anything else. Allowed browser
+  // origins (the Electron renderer on file:// or the Vite dev server, WebMCP pages) get CORS headers,
+  // and their preflights are answered before the bearer check since browsers send them without auth.
   app.use("*", async (c, next) => {
     const origin = c.req.header("origin") ?? null;
     if (!originAllowed(origin, deps.extraOrigins ?? [])) return c.json({ error: "forbidden origin" }, 403);
+    const applyCors = (headers: Headers) => {
+      if (origin === null || origin === "") return;
+      headers.set("Access-Control-Allow-Origin", origin);
+      headers.set("Vary", "Origin");
+      headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+      headers.set("Access-Control-Allow-Headers", "authorization, content-type, last-event-id, mcp-session-id, mcp-protocol-version");
+      headers.set("Access-Control-Expose-Headers", "mcp-session-id, content-disposition, content-length");
+      headers.set("Access-Control-Max-Age", "600");
+    };
+    if (c.req.method === "OPTIONS") {
+      const preflight = new Response(null, { status: 204 });
+      applyCors(preflight.headers);
+      return preflight;
+    }
     await next();
+    applyCors(c.res.headers);
   });
 
   app.get("/health", (c) =>
