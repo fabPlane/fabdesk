@@ -105,7 +105,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p release-out
-          find apps/desktop/dist -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.exe' \) -exec cp {} release-out/ \;
+          find apps/desktop/release -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.exe' \) -exec cp {} release-out/ \;
           ls -la release-out
 
       - uses: actions/upload-artifact@v4
