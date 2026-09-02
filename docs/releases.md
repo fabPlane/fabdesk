@@ -58,7 +58,7 @@ shared with the website and must not be renamed.
 
 | Secret | Purpose |
 |---|---|
-| `FABDESK_SUBMODULE_TOKEN` | Fine-grained PAT with Contents:read on `fabplane.com` and `js_autorouter` (private submodules). Falls back to `github.token`, which cannot read other private repos. |
+| `FABDESK_SUBMODULE_SSH_KEY` | Two read-only deploy keys (fabplane.com, js_autorouter) concatenated; loaded by `webfactory/ssh-agent`, which routes each private submodule fetch through its own key. Rotate by regenerating both keys (`ssh-keygen -t ed25519 -C git@github.com:TensorFleet/<repo>`), re-adding them with `gh repo deploy-key add`, and re-setting the secret. |
 | `CSC_LINK`, `CSC_KEY_PASSWORD` | macOS Developer ID certificate (base64 .p12) |
 | `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` | Notarization |
 | `WIN_CSC_LINK`, `WIN_CSC_KEY_PASSWORD` | Windows code-signing certificate |

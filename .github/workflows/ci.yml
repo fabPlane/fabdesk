@@ -11,8 +11,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          token: ${{ secrets.FABDESK_SUBMODULE_TOKEN || github.token }}
           submodules: false
+
+      # Read-only deploy keys for the private submodules (one secret, keys concatenated;
+      # each key's comment names its repo so ssh-agent maps it to that repo over https).
+      - uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.FABDESK_SUBMODULE_SSH_KEY }}
 
       - name: Init fabplane submodule
         run: git submodule update --init --depth 1 vendor/fabplane
