@@ -5,6 +5,7 @@ import {
 } from "@tscircuit/capacity-autorouter";
 import type { CinemaShape, RouteRequest, RouteResult, SimplifiedPcbTrace } from "@fabdesk/protocol";
 
+import { NetGroups, classifyConnections } from "../connectivity";
 import { FrameEmitter, tracesToShapes } from "../frames";
 import { throwIfAborted, type RouteHooks, type RouterAdapter, type RouterProbe } from "../types";
 import { CAPACITY_UNITS_PER_MM, srjLayerNames } from "../units";
@@ -58,8 +59,35 @@ export class CapacityAutorouterAdapter implements RouterAdapter {
     );
     const names = connections.map((c) => c.name);
     const netIndex = new Map(names.map((name, i) => [name, i] as const));
-    const netOf = (name: string | undefined): number =>
-      name === undefined ? -1 : (netIndex.get(name) ?? -1);
+    // Connections sharing a pad are one net; the solver routes them together and names the merged
+    // net's point pairs and traces after one of them (or after an internal `<a>__<b>_mstN` alias).
+    const groups = new NetGroups(request.srj, names);
+    const resolved = new Map<string, number>();
+    const netOf = (name: string | undefined): number => {
+      if (name === undefined) return -1;
+      const direct = netIndex.get(name);
+      if (direct !== undefined) return direct;
+      const cached = resolved.get(name);
+      if (cached !== undefined) return cached;
+      if (!groups.knows(name)) {
+        const pair = solver.srjWithPointPairs?.connections.find((c) => c.name === name);
+        if (pair !== undefined) {
+          groups.alias(
+            name,
+            pair.pointsToConnect.map((p) => ({
+              x: p.x,
+              y: p.y,
+              layer: "layers" in p ? (p.layers[0] ?? "top") : p.layer,
+              ...(p.pcb_port_id !== undefined ? { pcb_port_id: p.pcb_port_id } : {}),
+            })),
+          );
+        }
+      }
+      const representative = groups.representative(name);
+      const net = representative === undefined ? -1 : (netIndex.get(representative) ?? -1);
+      resolved.set(name, net);
+      return net;
+    };
     const viaDiameter = numberField(request.srj, "minViaPadDiameter") ?? 0.6;
     const shapeCtx = { layerIndex, netOf, viaDiameter, unitsPerMm: CAPACITY_UNITS_PER_MM };
 
@@ -98,6 +126,7 @@ export class CapacityAutorouterAdapter implements RouterAdapter {
     let phaseNo = 0;
     let lastYield = started;
     const stitchedSeen = new Set<string>();
+    const announcedConnections = new Set<string>();
     while (!solver.solved && !solver.failed) {
       solver.step();
       const now = performance.now();
@@ -107,14 +136,20 @@ export class CapacityAutorouterAdapter implements RouterAdapter {
         phaseNo += 1;
         emitter.frame({ kind: "pass-start", passNo: phaseNo, status: phase }, partial);
       } else {
+        // One `connection` frame per SRJ connection, so `done/total` progress adds up even though
+        // the solver stitches a merged net under a single (internal) name.
         let announced = false;
+        let shapes: CinemaShape[] | undefined;
         for (const route of solver.highDensityStitchSolver?.mergedHdRoutes ?? []) {
-          if (!stitchedSeen.has(route.connectionName)) {
-            stitchedSeen.add(route.connectionName);
-            emitter.frame(
-              { kind: "connection", netNumber: netOf(route.connectionName), status: phase },
-              partial,
-            );
+          if (stitchedSeen.has(route.connectionName)) continue;
+          stitchedSeen.add(route.connectionName);
+          const net = netOf(route.connectionName);
+          const members = net >= 0 ? groups.members(names[net]!) : [];
+          for (const member of members.length > 0 ? members : [route.connectionName]) {
+            if (announcedConnections.has(member)) continue;
+            announcedConnections.add(member);
+            shapes ??= partial();
+            emitter.frame({ kind: "connection", netNumber: netOf(member), status: phase }, shapes);
             announced = true;
           }
         }
@@ -149,9 +184,9 @@ export class CapacityAutorouterAdapter implements RouterAdapter {
     } else {
       detail = solver.error ?? `solver failed in phase ${phase}`;
     }
-    const routed = new Set(traces.filter((t) => t.route.length >= 2).map((t) => t.connection_name));
-    const complete = names.filter((name) => routed.has(name));
-    const open = names.filter((name) => !routed.has(name));
+    // Judge completion by the copper, not by trace names: a merged net's traces all carry one
+    // connection's name while joining every member connection's pads.
+    const { complete, open } = classifyConnections(request.srj, traces, names, { groups });
 
     emitter.frame({ kind: "done" }, solver.solved ? tracesToShapes(traces, shapeCtx) : partial());
 

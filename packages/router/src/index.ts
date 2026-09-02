@@ -1,6 +1,12 @@
 export type { RouteHooks, RouterAdapter, RouterProbe } from "./types";
 export { RouteAbortedError, throwIfAborted } from "./types";
 export { CapacityAutorouterAdapter } from "./adapters/capacity";
+export {
+  NetGroups,
+  classifyConnections,
+  type Classification,
+  type ClassifyOptions,
+} from "./connectivity";
 export { RouterHost, type RouterHostOptions } from "./host";
 export {
   availableRouters,

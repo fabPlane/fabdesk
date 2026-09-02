@@ -159,7 +159,10 @@ export function frameStatusText(run: CinemaRun, cursor: number): string {
   parts.push(desc);
   parts.push(`${(frame.elapsedMs / 1000).toFixed(1)}s`);
   if (run.result && cursor === run.frames.length - 1) {
-    parts.push(`done: ${run.result.complete.length} routed, ${run.result.open.length} open`);
+    const { complete, open, stats } = run.result;
+    parts.push(
+      `done: ${complete.length}/${complete.length + open.length} routed, ${open.length} open, ${stats.vias} vias, ${stats.segments} segments`,
+    );
   }
   return parts.join("  ·  ");
 }
