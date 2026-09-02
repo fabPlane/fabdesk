@@ -191,8 +191,9 @@ export function CinemaTab() {
           {frameStatusText(run, cursor)}
         </span>
       </div>
-      <div ref={boxRef} className="min-h-0 flex-1">
-        <canvas ref={canvasRef} className="block h-full w-full" style={{ width: size.w, height: size.h }} />
+      {/* The box owns the size; the canvas is absolutely positioned so its bitmap size never feeds back into layout. */}
+      <div ref={boxRef} className="relative min-h-[320px] flex-1">
+        <canvas ref={canvasRef} className="absolute inset-0 block h-full w-full" />
       </div>
     </div>
   );

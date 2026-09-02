@@ -13,12 +13,16 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
   const projectId = useUiStore((s) => s.activeProjectId);
   const rendered = useProjectText(projectId, `renders/${kind}.svg`);
   const needsCircuit = rendered.data === null;
-  const circuit = useProjectJson<unknown[]>(projectId, needsCircuit ? "circuit.json" : null);
+  // The PCB view prefers the routed copy so traces show up; the schematic only needs the build output.
+  const routed = useProjectJson<unknown[]>(projectId, needsCircuit && kind === "pcb" ? "circuit.routed.json" : null);
+  const useRouted = kind === "pcb" && Array.isArray(routed.data);
+  const circuit = useProjectJson<unknown[]>(projectId, needsCircuit && !useRouted ? "circuit.json" : null);
+  const circuitSource = useRouted ? "circuit.routed.json" : "circuit.json";
   const [generated, setGenerated] = useState<{ key: string; svg: string } | null>(null);
   const [genError, setGenError] = useState<string | null>(null);
   const build = useRunTool();
 
-  const circuitData = circuit.data;
+  const circuitData = useRouted ? routed.data : circuit.data;
   useEffect(() => {
     if (!needsCircuit || !circuitData || !Array.isArray(circuitData)) return;
     let alive = true;
@@ -27,7 +31,7 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
       .then((m) => {
         const fn = kind === "schematic" ? m.convertCircuitJsonToSchematicSvg : m.convertCircuitJsonToPcbSvg;
         const svg = fn(circuitData as CircuitJson);
-        if (alive) setGenerated({ key: `${projectId}:${kind}`, svg });
+        if (alive) setGenerated({ key: `${projectId}:${kind}:${circuitSource}`, svg });
       })
       .catch((e: unknown) => {
         if (alive) setGenError(e instanceof Error ? e.message : String(e));
@@ -35,7 +39,7 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
     return () => {
       alive = false;
     };
-  }, [needsCircuit, circuitData, kind, projectId]);
+  }, [needsCircuit, circuitData, kind, projectId, circuitSource]);
 
   if (!projectId) return <EmptyState title="No project selected">Pick a project in the sidebar to see its {kind}.</EmptyState>;
   if (rendered.isLoading || (needsCircuit && circuit.isLoading)) {
@@ -45,13 +49,13 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
       </div>
     );
   }
-  const svg = rendered.data ?? (generated?.key === `${projectId}:${kind}` ? generated.svg : null);
+  const svg = rendered.data ?? (generated?.key === `${projectId}:${kind}:${circuitSource}` ? generated.svg : null);
   if (svg) {
     return (
       <SvgViewer
         svg={svg}
         toolbar={
-          <span className="text-[11px] text-muted">{rendered.data ? `renders/${kind}.svg` : "generated from circuit.json"}</span>
+          <span className="text-[11px] text-muted">{rendered.data ? `renders/${kind}.svg` : `generated from ${circuitSource}`}</span>
         }
       />
     );
