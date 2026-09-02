@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Idempotent bootstrap for a Fabdesk Cursor Cloud Agent.
+#
+# Responsibilities (all safe to re-run):
+#   1. Install Bun 1.4.0 (the version pinned by package.json / CI).
+#   2. Check out the private `vendor/fabplane` submodule, which provides the
+#      shared `tsconfig.base.json` and the `@pcb/*` workspace packages that the
+#      whole monorepo depends on. Requires the generated GitHub token to have
+#      access to `github.com/tensorfleet/fabplane.com` (see repositoryDependencies
+#      in environment.json). `vendor/js_autorouter` is internal-only and is left
+#      uninitialised; `bun install --frozen-lockfile` skips absent workspaces.
+#   3. Install JS dependencies from the root lockfile.
+#
+# Never run `bun install` inside vendor/* (see AGENTS.md): the root lockfile owns
+# every dependency.
+set -euo pipefail
+
+BUN_VERSION="1.4.0"
+
+log() { printf '\n\033[1;34m[cloud-setup]\033[0m %s\n' "$*"; }
+
+# --- 1. Bun -----------------------------------------------------------------
+export BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}"
+export PATH="$BUN_INSTALL/bin:$PATH"
+
+if ! command -v bun >/dev/null 2>&1 || [ "$(bun --version 2>/dev/null || true)" != "$BUN_VERSION" ]; then
+  log "Installing Bun $BUN_VERSION"
+  curl -fsSL https://bun.sh/install | bash -s "bun-v$BUN_VERSION"
+fi
+
+# Make bun discoverable from non-login shells (terminals, agent tools) too.
+if command -v sudo >/dev/null 2>&1 && [ -w /usr/local/bin -o -w /usr/local ]; then
+  sudo ln -sf "$BUN_INSTALL/bin/bun" /usr/local/bin/bun 2>/dev/null || true
+  sudo ln -sf "$BUN_INSTALL/bin/bunx" /usr/local/bin/bunx 2>/dev/null || true
+fi
+log "Using $(bun --version) at $(command -v bun)"
+
+# --- 2. Private submodule (fabplane) ---------------------------------------
+if [ ! -f vendor/fabplane/tsconfig.base.json ]; then
+  log "Initialising vendor/fabplane submodule"
+  if ! git submodule update --init --depth 1 vendor/fabplane; then
+    cat >&2 <<'EOF'
+
+[cloud-setup] ERROR: could not fetch the private submodule github.com/tensorfleet/fabplane.com
+
+Fabdesk's shared TypeScript config and @pcb/* packages live in this private repo.
+Without it, `bun run typecheck` and the apps/core + apps/desktop apps cannot run.
+
+Grant access by either:
+  * adding "github.com/tensorfleet/fabplane.com" to repositoryDependencies in
+    .cursor/environment.json AND granting the Cursor GitHub App access to that
+    repository, or
+  * providing a read-only submodule deploy key as an environment secret.
+
+EOF
+    exit 1
+  fi
+else
+  log "vendor/fabplane already present"
+fi
+
+# --- 3. JS dependencies -----------------------------------------------------
+log "Installing dependencies (bun install --frozen-lockfile)"
+bun install --frozen-lockfile
+
+log "Setup complete."
