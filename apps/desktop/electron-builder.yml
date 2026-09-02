@@ -1,6 +1,7 @@
 # electron-builder configuration (plan section 9). Run `bun run package` after `bun run build:core`.
 appId: com.tensorfleet.fabdesk
 productName: Fabdesk
+executableName: fabdesk
 copyright: Copyright © 2026 TensorFleet
 artifactName: ${productName}-${version}-${os}-${arch}.${ext}
 directories:
