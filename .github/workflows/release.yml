@@ -82,6 +82,21 @@ jobs:
         run: bun run scripts/set-version.ts ${{ needs.version.outputs.version }}
       - run: bun run typecheck
 
+      # Sentry error reporting (docs/sentry.md). The DSN is a public write-only key; export it only when the
+      # FABDESK_SENTRY_DSN repo secret is set so builds without it ship with reporting off.
+      - name: Error reporting environment
+        shell: bash
+        env:
+          S_FABDESK_SENTRY_DSN: ${{ secrets.FABDESK_SENTRY_DSN }}
+        run: |
+          if [ -n "$S_FABDESK_SENTRY_DSN" ]; then
+            echo "FABDESK_SENTRY_DSN=$S_FABDESK_SENTRY_DSN" >> "$GITHUB_ENV"
+            echo "VITE_FABDESK_SENTRY_DSN=$S_FABDESK_SENTRY_DSN" >> "$GITHUB_ENV"
+            echo "FABDESK_SENTRY_DSN: set"
+          else
+            echo "FABDESK_SENTRY_DSN: unset (error reporting off)"
+          fi
+
       - name: Build core (${{ matrix.target }})
         run: bun run --cwd apps/core build --only ${{ matrix.target }} --channel ${{ env.CHANNEL }}
 

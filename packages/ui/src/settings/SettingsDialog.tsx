@@ -8,7 +8,7 @@ import { useAuthStore } from "../stores/auth";
 import { useUiStore } from "../stores/ui";
 import { cn } from "../util";
 
-const SECTIONS = ["agents", "kicad", "router", "auth", "appearance", "shortcuts"] as const;
+const SECTIONS = ["agents", "kicad", "router", "auth", "appearance", "privacy", "shortcuts"] as const;
 type Section = (typeof SECTIONS)[number];
 const LABELS: Record<Section, string> = {
   agents: "Agents",
@@ -16,6 +16,7 @@ const LABELS: Record<Section, string> = {
   router: "Router",
   auth: "Account",
   appearance: "Appearance",
+  privacy: "Privacy",
   shortcuts: "Shortcuts",
 };
 
@@ -171,6 +172,12 @@ export function SettingsDialog() {
                 <option value="dark">Dark</option>
               </Select>
             </Row>
+          ) : section === "privacy" ? (
+            <div>
+              <Row label="Error reporting" hint="Send crash and error reports to Sentry so bugs get fixed. Reports carry no prompts, board files, tokens or project paths. Turning this off applies immediately; turning it back on applies after a restart.">
+                <input type="checkbox" checked={draft.errorReporting} onChange={(e) => update((s) => ({ ...s, errorReporting: e.target.checked }))} />
+              </Row>
+            </div>
           ) : (
             <table className="w-full text-xs">
               <tbody>

@@ -10,6 +10,9 @@ export interface PickFileOptions {
 /** Surface exposed by src/preload/index.ts via contextBridge. */
 export interface FabdeskBridge {
   platform: NodeJS.Platform | string;
+  /** True when the main process started Sentry (DSN configured and the user has not opted out). */
+  errorReporting: boolean;
+  setErrorReporting(enabled: boolean): Promise<void>;
   coreInfo(): Promise<CoreInfo>;
   restartCore(): Promise<void>;
   onCoreStatus(cb: (info: CoreInfo) => void): () => void;

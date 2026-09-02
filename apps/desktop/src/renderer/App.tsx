@@ -9,6 +9,7 @@ import {
   type HostAdapter,
 } from "@fabdesk/ui";
 import { useEffect, useMemo, useState } from "react";
+import { disableRendererSentry } from "./sentry";
 import { startWebMcp } from "./webmcp";
 
 const bridge = window.fabdesk;
@@ -44,6 +45,18 @@ function WebMcpBridge() {
   const settings = useSettings();
   const writeTools = settings.data?.webmcpWriteTools ?? false;
   useEffect(() => startWebMcp(client), [client, writeTools]);
+  return null;
+}
+
+/** Mirrors the `errorReporting` setting into main (persisted opt-out) and stops the renderer client when off. */
+function ErrorReportingBridge() {
+  const settings = useSettings();
+  const enabled = settings.data?.errorReporting;
+  useEffect(() => {
+    if (enabled === undefined) return;
+    void bridge?.setErrorReporting(enabled);
+    if (!enabled) void disableRendererSentry();
+  }, [enabled]);
   return null;
 }
 
@@ -86,6 +99,7 @@ export function App() {
   return (
     <FabdeskApp client={client} host={host} coreStatus={info?.status} onRestartCore={bridge ? () => void bridge.restartCore() : undefined}>
       <WebMcpBridge />
+      <ErrorReportingBridge />
     </FabdeskApp>
   );
 }

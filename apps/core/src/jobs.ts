@@ -31,7 +31,14 @@ export class JobRunner implements JobsLike {
   private readonly concurrency: Record<JobClass, number>;
 
   constructor(
-    private readonly opts: { emit: (e: CoreEvent) => void; store?: JobStore; concurrency?: Partial<Record<JobClass, number>>; keep?: number } = { emit: () => {} },
+    private readonly opts: {
+      emit: (e: CoreEvent) => void;
+      store?: JobStore;
+      concurrency?: Partial<Record<JobClass, number>>;
+      keep?: number;
+      /** Called for jobs that reject without being cancelled (error reporting hook). */
+      onFailure?: (job: JobRecord, error: unknown) => void;
+    } = { emit: () => {} },
   ) {
     this.concurrency = { ...DEFAULT_CONCURRENCY, ...(opts.concurrency ?? {}) };
   }
@@ -122,7 +129,14 @@ export class JobRunner implements JobsLike {
         (e: unknown) => {
           const msg = e instanceof Error ? e.message : String(e);
           if (j.controller.signal.aborted) this.finish(j, "cancelled", { error: msg });
-          else this.finish(j, "failed", { error: msg });
+          else {
+            this.finish(j, "failed", { error: msg });
+            try {
+              this.opts.onFailure?.(j.rec, e);
+            } catch {
+              /* reporting must never affect the job */
+            }
+          }
         },
       )
       .finally(() => {

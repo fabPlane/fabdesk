@@ -2,7 +2,7 @@
 import { chmod, mkdir, rename, writeFile, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import type { DaemonHandshake, DoctorReport, ReadyLine } from "@fabdesk/protocol";
-import { createRegistry, toolsMarkdown, type CoreServices, type ProjectHandle, type ToolRegistry } from "@fabdesk/tools";
+import { ToolError, createRegistry, toolsMarkdown, type CoreServices, type ProjectHandle, type ToolRegistry } from "@fabdesk/tools";
 import type { AgentId } from "@fabdesk/protocol";
 import { AgentRunManager, type AgentAdapterLike } from "./agent-runs";
 import { TokenSet } from "./auth";
@@ -16,6 +16,7 @@ import { JobRunner } from "./jobs";
 import { logger, errMsg } from "./log";
 import { McpSessionManager } from "./mcp-sessions";
 import { ProjectStore } from "./projects";
+import { applyErrorReporting, captureCoreException, closeSentry } from "./sentry";
 
 export type ServeOptions = {
   port?: number;
@@ -59,10 +60,19 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   const startedAt = Date.now();
   const bus = new EventBus();
   const store = Store.open(config.dbPath);
+  await applyErrorReporting(store.settings.get().errorReporting);
   const stale = store.jobs.failStale();
   if (stale) logger.info("failed stale jobs from previous run", { count: stale });
   const tokens = new TokenSet(config.token);
-  const jobs = new JobRunner({ emit: (e) => bus.emit(e), store: store.jobs });
+  const jobs = new JobRunner({
+    emit: (e) => bus.emit(e),
+    store: store.jobs,
+    // Expected tool failures (bad args, missing kicad-cli, ...) are user-facing, not bugs.
+    onFailure: (job, e) => {
+      if (e instanceof ToolError && e.code !== "internal") return;
+      captureCoreException(e, { "job.kind": job.kind, "job.class": job.jobClass });
+    },
+  });
   const projects = new ProjectStore(store.projects, config.projectsDir, (e) => bus.emit(e), { watch: opts.watchProjects ?? true });
   await projects.init();
   const auth = await createAuth({ mode: config.authMode, channel: config.channel, home: config.home, apiOrigin: config.apiOrigin, emit: (e) => bus.emit(e) });
@@ -240,6 +250,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       server.stop(true);
       if (!opts.noHandshake) await removeHandshake(config.handshakePath);
       store.close();
+      await closeSentry();
       resolveClosed(reason);
     },
   };

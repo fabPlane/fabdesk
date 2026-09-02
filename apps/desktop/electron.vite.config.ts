@@ -4,10 +4,14 @@ import { defineConfig, externalizeDepsPlugin } from "electron-vite";
 import { resolve } from "node:path";
 import type { Plugin } from "vite";
 
-/** Production CSP (plan section 8). The daemon is reached over loopback only. */
+/**
+ * Production CSP (plan section 8). The daemon is reached over loopback only. Sentry renderer events never
+ * leave the renderer directly: they reach the main process over the preload IPC, or over the SDK's
+ * `sentry-ipc:` custom protocol as a fallback, so no ingest host is allowed here (docs/sentry.md).
+ */
 const STRICT_CSP = [
   "default-src 'self'",
-  "connect-src http://127.0.0.1:* ws://127.0.0.1:* http://localhost:*",
+  "connect-src http://127.0.0.1:* ws://127.0.0.1:* http://localhost:* sentry-ipc:",
   "img-src 'self' data: blob: http://127.0.0.1:*",
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self' data:",
@@ -18,7 +22,7 @@ const STRICT_CSP = [
 const DEV_CSP = [
   "default-src 'self' http://localhost:*",
   "script-src 'self' 'unsafe-inline' http://localhost:*",
-  "connect-src http://127.0.0.1:* ws://127.0.0.1:* http://localhost:* ws://localhost:*",
+  "connect-src http://127.0.0.1:* ws://127.0.0.1:* http://localhost:* ws://localhost:* sentry-ipc:",
   "img-src 'self' data: blob: http://127.0.0.1:* http://localhost:*",
   "style-src 'self' 'unsafe-inline' http://localhost:*",
   "font-src 'self' data: http://localhost:*",

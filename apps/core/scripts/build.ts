@@ -21,6 +21,8 @@ const get = (k: string): string | undefined => {
 const chan = (get("--channel") ?? "public") as "public" | "internal";
 if (chan !== "public" && chan !== "internal") throw new Error(`bad --channel ${chan}`);
 const only = get("--only") as Target | undefined;
+/** Sentry DSN baked into the binary (CI secret FABDESK_SENTRY_DSN); the runtime env still overrides. */
+const sentryDsn = process.env["FABDESK_SENTRY_DSN"]?.trim() || undefined;
 const all = args.includes("--all");
 
 const hostTarget = `bun-${process.platform === "win32" ? "windows" : process.platform}-${process.arch === "arm64" ? "arm64" : "x64"}` as Target;
@@ -53,6 +55,9 @@ for (const target of targets) {
     `process.env.FABDESK_CHANNEL=${JSON.stringify(chan)}`,
     "--define",
     `FABDESK_ROUTER_WORKER=${JSON.stringify(embeddedWorker)}`,
+    "--define",
+    "FABDESK_COMPILED=true",
+    ...(sentryDsn ? ["--define", `FABDESK_SENTRY_DSN=${JSON.stringify(sentryDsn)}`] : []),
     "--root",
     repoRoot,
     ...(chan === "public" ? ["--external", "@fabdesk/router-freerouting", "--external", "@tensorfleet/js-autorouter"] : []),
@@ -62,7 +67,7 @@ for (const target of targets) {
     "--outfile",
     outfile,
   ];
-  process.stderr.write(`▸ ${target} (${chan}) → ${outfile}\n`);
+  process.stderr.write(`▸ ${target} (${chan}${sentryDsn ? ", sentry" : ""}) → ${outfile}\n`);
   const proc = Bun.spawn(cmd, { cwd: coreDir, stdout: "inherit", stderr: "inherit", env: { ...process.env, FABDESK_CHANNEL: chan } });
   const code = await proc.exited;
   if (code !== 0) {

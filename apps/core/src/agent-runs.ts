@@ -8,6 +8,7 @@ import type { AgentId, CoreEvent, MessagePart, Settings } from "@fabdesk/protoco
 import { ToolError, type ProjectHandle } from "@fabdesk/tools";
 import type { Store } from "./db";
 import { logger, errMsg } from "./log";
+import { captureCoreException } from "./sentry";
 import type { TokenSet } from "./auth";
 
 import type { AgentAdapter, AgentEvent, AgentRun, AgentSession } from "@fabdesk/agents";
@@ -109,6 +110,7 @@ export class AgentRunManager {
       handle = adapter.run(session);
     } catch (e) {
       const msg = errMsg(e);
+      captureCoreException(e, { agent: input.agentId, "agent.phase": "start" });
       store.runs.finish(run.id, { status: "failed" });
       tokens.revokeRun(run.id);
       emit({ ts: Date.now(), topic: "agent.error", runId: run.id, message: msg });
@@ -174,6 +176,7 @@ export class AgentRunManager {
       } catch (e) {
         if (!aborted) {
           status = "failed";
+          captureCoreException(e, { agent: input.agentId, "agent.phase": "stream" });
           emit({ ts: Date.now(), topic: "agent.error", runId: run.id, message: errMsg(e) });
         }
       }

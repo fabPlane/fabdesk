@@ -26,6 +26,7 @@ import type { McpSessionManager } from "../mcp-sessions";
 import type { ProjectStore } from "../projects";
 import type { AgentRunManager } from "../agent-runs";
 import { logger, errMsg } from "../log";
+import { applyErrorReporting, captureCoreException } from "../sentry";
 import { parseTopics, sseResponse } from "./sse";
 
 export type AppDeps = {
@@ -77,6 +78,8 @@ export function createApp(deps: AppDeps): Hono<Env> {
     }
     if (err instanceof z.ZodError) return c.json({ error: z.prettifyError(err), code: "invalid_args" }, 400);
     logger.error("unhandled", { path: c.req.path, error: errMsg(err) });
+    // Route pattern, not the concrete path: file routes carry project-relative names.
+    captureCoreException(err, { "http.method": c.req.method, "http.route": c.req.routePath });
     return c.json({ error: errMsg(err), code: "internal" }, 500);
   });
 
@@ -353,7 +356,9 @@ export function createApp(deps: AppDeps): Hono<Env> {
   app.get("/settings", (c) => c.json(deps.store.settings.get()));
   app.patch("/settings", async (c) => {
     const body = Settings.partial().parse(await c.req.json());
-    return c.json(deps.store.settings.patch(body));
+    const next = deps.store.settings.patch(body);
+    await applyErrorReporting(next.errorReporting);
+    return c.json(next);
   });
 
   app.post("/shutdown", (c) => {

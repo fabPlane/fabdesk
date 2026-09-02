@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { RouteRequest, SimpleRouteJson } from "@fabdesk/protocol";
 import { VERSION, channel, fabdeskHome, resolveConfig } from "./config";
 import { logger, errMsg, setLogLevel } from "./log";
+import { initSentry } from "./sentry";
 
 const USAGE = `fabdesk-core ${VERSION}
 
@@ -26,6 +27,8 @@ Environment:
   FABPLANE_API_ORIGIN    default https://api.fabplane.com
   FABDESK_PROJECTS_DIR   default ~/Fabdesk
   FABDESK_LOG            debug | info | warn | error
+  FABDESK_SENTRY_DSN     Sentry DSN (error reporting off when unset; see docs/sentry.md)
+  FABDESK_SENTRY_ENVIRONMENT  Sentry environment tag (default production for compiled builds, else development)
 `;
 
 type Flags = { _: string[]; [k: string]: string | boolean | string[] };
@@ -71,6 +74,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       process.stdout.write(USAGE);
       return 0;
     case "serve": {
+      initSentry();
       const { serve } = await import("./serve");
       const daemon = await serve({
         ...(num(f, "port") !== undefined ? { port: num(f, "port")! } : {}),
@@ -88,6 +92,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       return 0;
     }
     case "mcp": {
+      initSentry();
       const { runMcpStdio } = await import("./mcp-stdio");
       await runMcpStdio({ ...(flag(f, "standalone") ? { standalone: true } : {}), ...(str(f, "project") ? { project: str(f, "project")! } : {}), ...(str(f, "data-dir") ? { dataDir: str(f, "data-dir")! } : {}) });
       return 0;

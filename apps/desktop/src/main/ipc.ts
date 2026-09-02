@@ -1,6 +1,7 @@
 import { BrowserWindow, dialog, ipcMain, shell } from "electron";
 import type { CoreSupervisor } from "./core-supervisor";
 import { localAuthAllowed, setLocalAuth } from "./local-mode";
+import { setErrorReporting } from "./sentry";
 
 export interface PickFileOptions {
   multiple?: boolean;
@@ -18,6 +19,7 @@ export function registerIpc(supervisor: CoreSupervisor): void {
     supervisor.setLocalAuth(on);
     await supervisor.restart();
   });
+  ipcMain.handle("fabdesk:set-error-reporting", (_e, enabled: unknown) => setErrorReporting(enabled === true));
   ipcMain.handle("fabdesk:open-external", async (_e, url: unknown) => {
     if (typeof url !== "string" || !/^https?:\/\//i.test(url)) throw new Error("only http(s) URLs may be opened");
     await shell.openExternal(url);

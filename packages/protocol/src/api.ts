@@ -185,6 +185,8 @@ export const Settings = z.object({
     .default({}),
   keepCoreRunning: z.boolean().default(false),
   webmcpWriteTools: z.boolean().default(false),
+  /** Send crash/error reports to Sentry (only when a DSN is configured; see docs/sentry.md). */
+  errorReporting: z.boolean().default(true),
   theme: z.enum(["system", "light", "dark"]).default("system"),
 });
 export type Settings = z.infer<typeof Settings>;

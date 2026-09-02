@@ -24,6 +24,8 @@ export interface SupervisorOptions {
   localAuth: boolean;
   /** Override the daemon command (`FABDESK_CORE_BIN`). */
   binaryOverride?: string | undefined;
+  /** Extra environment for the spawned daemon (e.g. the Sentry DSN/environment; see src/main/sentry.ts). */
+  extraEnv?: Record<string, string> | undefined;
 }
 
 export interface CoreCommand {
@@ -198,7 +200,7 @@ export class CoreSupervisor extends EventEmitter {
     try {
       child = spawn(cmd.command, args, {
         cwd: cmd.cwd,
-        env: { ...process.env, FABDESK_TOKEN: token, ELECTRON_RUN_AS_NODE: undefined },
+        env: { ...process.env, ...(this.opts.extraEnv ?? {}), FABDESK_TOKEN: token, ELECTRON_RUN_AS_NODE: undefined },
         stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true,
       });

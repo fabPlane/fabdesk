@@ -13,6 +13,8 @@ import { join } from "node:path";
 
 interface DesktopPrefs {
   localAuth?: boolean;
+  /** Mirror of the core's `errorReporting` setting so Sentry is never initialized after an opt-out. */
+  errorReporting?: boolean;
 }
 
 /** Same rules as `fabdeskHome()` in @fabdesk/auth-client. */

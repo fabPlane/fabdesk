@@ -2,6 +2,7 @@
 import * as tsc from "@fabdesk/tscircuit";
 import * as kicad from "@fabdesk/kicad";
 import { RouterHost, availableRouters } from "@fabdesk/router";
+import { captureCoreException } from "./sentry";
 import * as sim from "@fabdesk/sim";
 import type { Principal, RouteRequest, RouteResult, RouterWorkerMessage, Settings } from "@fabdesk/protocol";
 import type { CoreServices, KicadCli, RouteRunStore, SimService } from "@fabdesk/tools";
@@ -100,8 +101,12 @@ export async function createServices(deps: ServiceDeps): Promise<CoreServices & 
     router: {
       route: async (request: RouteRequest, { onMessage, signal }: { onMessage(m: RouterWorkerMessage): void; signal?: AbortSignal }): Promise<RouteResult> => {
         activeRoute = { runId: request.runId };
+        const report = (m: RouterWorkerMessage) => {
+          if (m.kind === "error") captureCoreException(new Error(m.message), { component: "router-worker", router: request.router });
+          onMessage(m);
+        };
         try {
-          return await host.route(request, { onMessage, signal });
+          return await host.route(request, { onMessage: report, signal });
         } finally {
           activeRoute = null;
         }

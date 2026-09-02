@@ -45,6 +45,13 @@ Rules:
 - Shared fabplane code is changed by PRs to `TensorFleet/fabplane.com`, then `bun run submodules:update`.
 - `vendor/js_autorouter` is optional. `FABDESK_CHANNEL=internal` builds include it; public builds must not.
 
+## Error reporting
+
+Crash and error reports go to Sentry only when a DSN is configured (`FABDESK_SENTRY_DSN` at runtime, or the
+`FABDESK_SENTRY_DSN` repo secret baked into release builds); development builds send nothing. Users can opt
+out in Settings → Privacy. Reports never include prompts, board files, tokens or project paths. See
+[docs/sentry.md](docs/sentry.md).
+
 ## Auth
 
 Fabdesk signs in through fabplane.com using the OAuth device-authorization flow. For local

@@ -91,6 +91,7 @@ describe("detectAgents", () => {
       },
       keepCoreRunning: false,
       webmcpWriteTools: false,
+      errorReporting: true,
       theme: "system",
     });
     expect(infos.map((i) => i.id)).toEqual(["claude", "codex", "grok", "cursor"]);

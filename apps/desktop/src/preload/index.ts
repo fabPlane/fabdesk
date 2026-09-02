@@ -1,3 +1,5 @@
+// Exposes `window.__SENTRY_IPC__` so renderer Sentry events reach the main process (docs/sentry.md).
+import "@sentry/electron/preload";
 import { contextBridge, ipcRenderer } from "electron";
 
 export interface PickFileOptions {
@@ -7,6 +9,10 @@ export interface PickFileOptions {
 
 const api = {
   platform: process.platform,
+  /** Main passes `--fabdesk-error-reporting` when its Sentry client is active. */
+  errorReporting: process.argv.includes("--fabdesk-error-reporting"),
+  setErrorReporting: (enabled: boolean) =>
+    ipcRenderer.invoke("fabdesk:set-error-reporting", enabled),
   coreInfo: () => ipcRenderer.invoke("fabdesk:core-info"),
   restartCore: () => ipcRenderer.invoke("fabdesk:core-restart"),
   onCoreStatus: (cb: (info: unknown) => void) => {
