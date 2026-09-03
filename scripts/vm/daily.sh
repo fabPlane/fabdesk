@@ -20,6 +20,16 @@ if [ -z "$TESTS" ]; then
 fi
 LOG="${FABDESK_VM_DIR:-$HOME/.fabdesk-vm}/daily-$(date +%Y%m%d-%H%M%S).log"; mkdir -p "$(dirname "$LOG")"
 
+# Hardware acceleration: a long-running scheduler (the OpenClaw gateway) was started before its user
+# joined the kvm group, so its children cannot open /dev/kvm and every VM falls back to emulation
+# (minutes instead of seconds, and Electron gets flaky). Re-exec once through `sg kvm` to pick the
+# group up without restarting the scheduler.
+if [ -e /dev/kvm ] && [ ! -w /dev/kvm ] && [ -z "${FABDESK_VM_SG:-}" ] && id -nG | tr " " "\n" | grep -qx kvm; then
+  export FABDESK_VM_SG=1
+  exec sg kvm -c "$(printf '%q ' "$0" "$@")"
+fi
+[ -e /dev/kvm ] && { [ -w /dev/kvm ] && echo "accel: kvm" >&2 || echo "accel: emulated (/dev/kvm not writable by $(id -un))" >&2; } || echo "accel: emulated (no /dev/kvm)" >&2
+
 host_mem_mib() {
   if [ "$(uname -s)" = Darwin ]; then echo $(( $(sysctl -n hw.memsize) / 1048576 ))
   else awk '/MemAvailable/ {printf "%d", $2/1024}' /proc/meminfo; fi
