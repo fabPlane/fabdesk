@@ -29,9 +29,11 @@ mac:
   # Sign the sidecar with the app so hardened runtime + notarization accept it.
   binaries:
     - Contents/Resources/core/fabdesk-core
-  # Notarization is enabled by the release workflow via APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID;
-  # unsigned local builds skip it (CSC_IDENTITY_AUTO_DISCOVERY=false).
-  notarize: false
+  # Notarize with the Apple ID / app-specific password / team id the release workflow exports
+  # (APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID). electron-builder skips notarization
+  # when they are absent (unsigned local builds), and the installer gate then requires a stapled ticket
+  # whenever APPLE_ID is set.
+  notarize: true
   extraResources:
     - from: ../core/dist/darwin-${arch}/
       to: core

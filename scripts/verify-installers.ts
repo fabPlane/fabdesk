@@ -50,6 +50,14 @@ function checkMacApp(app: string, label: string): void {
   if (!existsSync(join(app, "Contents", "Info.plist"))) return fail(`${label}: no app bundle at ${app}`);
   const sig = run(["codesign", "--verify", "--deep", "--strict", app]);
   if (!sig.ok) fail(`${label}: codesign verify failed`);
+  if (process.env["APPLE_ID"]) {
+    // Signing secrets were present, so the release must be Developer ID signed and notarized (stapled).
+    const info = run(["codesign", "-dv", "--verbose=2", app], { allowFail: true }).out;
+    if (!/Authority=Developer ID Application/.test(info)) fail(`${label}: not signed with a Developer ID Application certificate`);
+    const st = run(["xcrun", "stapler", "validate", app], { allowFail: true });
+    if (!st.ok) fail(`${label}: notarization ticket not stapled (${st.out.trim().split("\n").pop()})`);
+    else console.log(`${label}: Developer ID signed, notarization ticket stapled`);
+  }
   checkCore(join(app, "Contents", "Resources", "core", "fabdesk-core"), label);
 }
 
