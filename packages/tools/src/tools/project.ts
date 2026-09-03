@@ -4,6 +4,7 @@ import { isAbsolute } from "node:path";
 import { z } from "zod/v4";
 import { PROJECT_FILES, jailPath, projectRelative, writeAtomic, writeJson } from "../fs";
 import { ToolError, defineTool } from "../registry";
+import { VIAGRID_9055, viagrid9055StarterTsx, viagrid9055Tsx } from "../templates/viagrid-9055";
 import { ok, p, trim, writeReport } from "./common";
 
 const MAX_READ = 512 * 1024;
@@ -88,28 +89,60 @@ export const project_set_board = defineTool({
   toolset: "project",
   title: "Set board settings",
   description:
-    "Update board constraints in fabdesk.json: layer count (1-8), outline width/height in mm, and the router to use. These drive routing and the KiCad conversion; put matching values in circuit.tsx's <board> element.",
+    "Update board constraints in fabdesk.json: layer count (1-8), outline width/height in mm, the router to use, and optionally a prefab blank template. template=\"viagrid-9055\" sets up Opulo's 90 x 55 mm Viagrid blank: writes viagrid-9055.tsx (180 factory vias + 4 mounting holes as a <Viagrid9055Blank /> component your circuit.tsx must render inside <board>), fixes the board at 90 x 55 mm / 2 layers with the blank's 0.2 mm track and clearance rules, and makes route_run use the laser-prefab solver so layers change only through the factory vias. template=\"none\" removes it. These drive routing and the KiCad conversion; put matching values in circuit.tsx's <board> element.",
   inputSchema: {
     layers: z.number().int().min(1).max(8).optional(),
     widthMm: z.number().positive().optional(),
     heightMm: z.number().positive().optional(),
     router: z.enum(["capacity", "freerouting"]).optional(),
+    template: z.enum(["viagrid-9055", "none"]).optional().describe("Prefab blank to design on; viagrid-9055 or none"),
   },
   annotations: { idempotentHint: true },
-  handler: async ({ layers, widthMm, heightMm, router }, ctx) => {
+  handler: async ({ layers, widthMm, heightMm, router, template }, ctx) => {
     const project = ctx.requireProject();
     if (router === "freerouting" && ctx.services.channel !== "internal") {
       throw new ToolError("the freerouting router is only available in internal builds", "unavailable");
     }
     const current = project.manifest();
+    const { template: currentTemplate, ...currentBoard } = current.board;
+    const templateBoard =
+      template === "viagrid-9055"
+        ? { layers: VIAGRID_9055.layers, widthMm: VIAGRID_9055.widthMm, heightMm: VIAGRID_9055.heightMm, rules: { ...(current.board.rules ?? {}), ...VIAGRID_9055.rules }, template: "viagrid-9055" as const }
+        : template === "none"
+          ? {}
+          : currentTemplate !== undefined
+            ? { template: currentTemplate }
+            : {};
     const board = {
-      ...current.board,
+      ...currentBoard,
+      ...templateBoard,
       ...(layers !== undefined ? { layers } : {}),
       ...(widthMm !== undefined ? { widthMm } : {}),
       ...(heightMm !== undefined ? { heightMm } : {}),
     };
+    const written: string[] = [];
+    if (template === "viagrid-9055") {
+      await writeAtomic(p(project, VIAGRID_9055.file), viagrid9055Tsx());
+      written.push(VIAGRID_9055.file);
+      // A fresh project's placeholder circuit.tsx becomes a Viagrid starter; anything hand-written is left alone.
+      const tsxPath = p(project, PROJECT_FILES.circuitTsx);
+      const existing = await Bun.file(tsxPath).text().catch(() => "");
+      if (existing === "" || (existing.includes("Fabdesk project. Write your board with tscircuit") && !existing.includes(VIAGRID_9055.component))) {
+        await writeAtomic(tsxPath, viagrid9055StarterTsx());
+        written.push(PROJECT_FILES.circuitTsx);
+      }
+    }
     const next = await project.updateManifest({ board, ...(router ? { router } : {}) });
-    return ok(`Board: ${next.board.layers} layers, ${next.board.widthMm ?? "?"}×${next.board.heightMm ?? "?"} mm, router ${next.router}.`, { board: next.board, router: next.router });
+    const text = [
+      `Board: ${next.board.layers} layers, ${next.board.widthMm ?? "?"}×${next.board.heightMm ?? "?"} mm, router ${next.router}${next.board.template ? `, template ${next.board.template}` : ""}.`,
+      ...(written.length ? [`Wrote ${written.join(", ")}.`] : []),
+      ...(next.board.template === "viagrid-9055"
+        ? [
+            `Viagrid rule: render <${VIAGRID_9055.component} /> inside <board> (import it from ./${VIAGRID_9055.file}), never add your own <via>, keep parts clear of the via clusters (x in -12..12 or |x| > 26 with |y| < 14 is free) and the mounting holes at (±38.75, ±18.25). route_run will use the laser-prefab solver; verify_viagrid checks the result.`,
+          ]
+        : []),
+    ].join("\n");
+    return ok(text, { board: next.board, router: next.router, written });
   },
 });
 

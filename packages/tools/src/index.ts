@@ -7,3 +7,4 @@ export * from "./adapters/http";
 export * from "./adapters/agent-docs";
 export * from "./frame-sink";
 export * from "./bench";
+export * from "./templates/viagrid-9055";

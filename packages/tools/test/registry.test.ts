@@ -15,7 +15,7 @@ describe("registry", () => {
       "circuit_query", "circuit_checks", "circuit_search_parts",
       "route_status", "route_cancel", "route_unroute", "route_scope",
       "kicad_convert", "kicad_stats",
-      "verify_erc", "verify_gate",
+      "verify_erc", "verify_gate", "verify_viagrid",
       "render_schematic_svg", "render_pcb_svg", "render_glb",
       "export_gerbers", "export_drill", "export_pos", "export_bom", "export_netlist", "export_zip", "export_dxf",
       "sim_spice_netlist", "sim_run",

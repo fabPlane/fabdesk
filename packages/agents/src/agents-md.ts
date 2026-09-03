@@ -7,9 +7,24 @@ export interface AgentDocsContext {
   toolsMarkdown: string;
   /** Absolute paths of sketch images attached to the project/run. */
   sketches: string[];
-  board: { layers: number; widthMm?: number; heightMm?: number };
+  board: { layers: number; widthMm?: number; heightMm?: number; template?: string };
   mcpServerName: string;
 }
+
+/** Design rules for prefab blanks, keyed by `fabdesk.json` `board.template`. */
+const TEMPLATE_NOTES: Record<string, string> = {
+  "viagrid-9055": `## Viagrid 9055 blank (board.template)
+This board is laid out on Opulo's Viagrid 9055: a prefabricated 90 × 55 mm two-layer blank with **180 factory
+vias** and four 3.5 mm mounting holes. Copper is removed afterwards to isolate nets, so:
+- Render \`<Viagrid9055Blank />\` inside \`<board>\` (\`import { Viagrid9055Blank } from "./viagrid-9055"\`). Do not edit viagrid-9055.tsx.
+- **Never place your own \`<via>\`.** Layer changes happen only through the factory vias; the router (laser-prefab
+  preset) chooses them and claims them for the net. A route result with vias "OFF the grid" is a failure.
+- Factory vias sit in rows at y = ±20.5 (x = −35…35 step 2), columns at x = ±38 (y = −14…14 step 2), and two
+  clusters centred on x = ±19 (y = ±8, ±10, ±12 rows plus a small diamond at y = 0). Free areas for parts:
+  x in −12…12, or |x| > 26 with |y| < 14. Keep 2 mm from the mounting holes at (±38.75, ±18.25).
+- Prefer 0805 or larger SMD parts and 0.2 mm traces (blank rules: track 0.2 mm, clearance 0.2 mm).
+- After routing run \`verify_viagrid\`; fix placement in circuit.tsx and re-route until it passes.`,
+};
 
 export const USER_START = "<!-- fabdesk:user-start -->";
 export const USER_END = "<!-- fabdesk:user-end -->";
@@ -54,7 +69,7 @@ convert, check and render the board; only edit files listed as yours in the file
 - Copper layers: ${ctx.board.layers}
 - Size: ${boardSize(ctx.board)}
 - Every net must be routed and DRC must be clean before you report the board as done.
-
+${ctx.board.template && TEMPLATE_NOTES[ctx.board.template] ? `\n${TEMPLATE_NOTES[ctx.board.template]}\n` : ""}
 ## Sketches
 ${sketches}
 

@@ -13,11 +13,17 @@ export const BoardRules = z.object({
 });
 export type BoardRules = z.infer<typeof BoardRules>;
 
+/** Prefabricated blanks a design is laid out on; `viagrid-9055` is Opulo's 90 x 55 mm Viagrid (180 fixed vias). */
+export const BoardTemplate = z.enum(["viagrid-9055"]);
+export type BoardTemplate = z.infer<typeof BoardTemplate>;
+
 export const BoardSettings = z.object({
   layers: z.number().int().min(1).max(8).default(2),
   widthMm: z.number().positive().optional(),
   heightMm: z.number().positive().optional(),
   rules: BoardRules.optional(),
+  /** When set, the blank's fixed vias are the only vias allowed: routing uses the laser-prefab solver and claims them. */
+  template: BoardTemplate.optional(),
 });
 
 export const ProjectManifest = z.object({

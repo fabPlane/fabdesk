@@ -126,7 +126,12 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
         projectName: project.name,
         toolsMarkdown: toolsMarkdown(registry),
         sketches,
-        board: { layers: board.layers, ...(board.widthMm !== undefined ? { widthMm: board.widthMm } : {}), ...(board.heightMm !== undefined ? { heightMm: board.heightMm } : {}) },
+        board: {
+          layers: board.layers,
+          ...(board.widthMm !== undefined ? { widthMm: board.widthMm } : {}),
+          ...(board.heightMm !== undefined ? { heightMm: board.heightMm } : {}),
+          ...(board.template !== undefined ? { template: board.template } : {}),
+        },
         mcpServerName: agents.MCP_SERVER_NAME,
       });
     },
