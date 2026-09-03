@@ -108,7 +108,7 @@ if ($exe -and (Test-Path $exe)) {
   $t0 = Get-Date
   $app = Start-Process -FilePath $exe -PassThru
   $daemon = Join-Path $ud "daemon.json"; $bridge = Join-Path $ud "app-bridge.json"
-  for ($i = 0; $i -lt 90; $i++) {
+  for ($i = 0; $i -lt 300; $i++) {   # emulated guests need a few minutes for the first Electron start
     if (-not (Test-Path $daemon) -and (Test-Path (Join-Path $udLegacy "daemon.json"))) { $ud = $udLegacy; $daemon = Join-Path $ud "daemon.json"; $bridge = Join-Path $ud "app-bridge.json" }
     if ((Test-Path $daemon) -and (Test-Path $bridge)) { break }; Start-Sleep 1 }
   Log "userData: $ud"
