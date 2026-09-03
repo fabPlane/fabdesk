@@ -99,10 +99,10 @@ case "$CMD" in
     IDX="${FABDESK_VM_WIN_IMAGE_INDEX:-$([ "$EVAL" = 1 ] && echo 1 || echo 6)}"
     KEY="${FABDESK_VM_WIN_KEY:-$([ "$EVAL" = 1 ] && echo "" || echo VK7JG-NPHTM-C97JM-9MPGT-3V66T)}"   # generic Pro key for retail ISOs (unactivated)
     sed -e "s|__IMAGE_INDEX__|$IDX|" -e "s|processorArchitecture=\"arm64\"|processorArchitecture=\"$ARCH_TAG\"|g" \
-        "$REPO_ROOT/scripts/vm/guest/autounattend.xml" > "$U/autounattend.xml"
+        "$VM_SCRIPTS/guest/autounattend.xml" > "$U/autounattend.xml"
     if [ -n "$KEY" ]; then sed -i.bak "s|__PRODUCT_KEY__|$KEY|" "$U/autounattend.xml"; else sed -i.bak 's|<ProductKey><Key>__PRODUCT_KEY__</Key></ProductKey>||' "$U/autounattend.xml"; fi
     rm -f "$U/autounattend.xml.bak"
-    cp "$REPO_ROOT/scripts/vm/guest/windows-agent.cmd" "$U/fabdesk/"
+    cp "$VM_SCRIPTS/guest/windows-agent.cmd" "$U/fabdesk/"
     make_iso "$U" "$D/unattend.iso" FABDESK_UNATTEND
     qemu-img create -q -f qcow2 "$BASE" 64G
     rm -f "$VARS"
@@ -118,11 +118,11 @@ case "$CMD" in
     # it. Stop as soon as Setup is drawing. Later reboots time out at the prompt and boot the disk.
     for i in $(seq 1 240); do
       vm_alive || break
-      state="$(python3 "$REPO_ROOT/scripts/vm/qemu-screen.py" "$MON" "$D/screen.ppm")"
+      state="$(python3 "$VM_SCRIPTS/qemu-screen.py" "$MON" "$D/screen.ppm")"
       case "$state" in
         shell)
           log "firmware fell into the UEFI shell; booting the Windows CD image from it"
-          python3 "$REPO_ROOT/scripts/vm/qemu-keys.py" "$MON" 'FS0:\\EFI\\BOOT\\BOOTX64.EFI\nFS1:\\EFI\\BOOT\\BOOTX64.EFI\n' >/dev/null
+          python3 "$VM_SCRIPTS/qemu-keys.py" "$MON" 'FS0:\\EFI\\BOOT\\BOOTX64.EFI\nFS1:\\EFI\\BOOT\\BOOTX64.EFI\n' >/dev/null
           for j in $(seq 1 12); do mon "sendkey ret"; sleep 2; done ;;
         other) log "Windows Setup is running"; break ;;
         *) mon "sendkey ret" ;;
@@ -143,9 +143,9 @@ case "$CMD" in
     [ -f "$INSTALLER" ] || die "no $FORMAT installer found"
     OUT="$(new_result_dir "windows-$GUEST-$FORMAT")"; log "installer: $INSTALLER"; log "results: $OUT"
     PORT=$(free_port)
-    python3 "$REPO_ROOT/scripts/vm/receiver.py" "$PORT" "$OUT" & RECV=$!
+    python3 "$VM_SCRIPTS/receiver.py" "$PORT" "$OUT" & RECV=$!
     P="$D/payload"; rm -rf "$P"; mkdir -p "$P/fabdesk"
-    cp "$INSTALLER" "$P/fabdesk/"; cp "$REPO_ROOT/scripts/vm/guest/windows-test.ps1" "$P/fabdesk/"
+    cp "$INSTALLER" "$P/fabdesk/"; cp "$VM_SCRIPTS/guest/windows-test.ps1" "$P/fabdesk/"
     printf '{"installer":"%s","reportUrl":"http://10.0.2.2:%s"}\n' "$(basename "$INSTALLER")" "$PORT" > "$P/fabdesk/config.json"
     make_iso "$P" "$D/payload.iso" FABDESK_PAYLOAD
     stop_vm; rm -f "$OVL"; qemu-img create -q -f qcow2 -F qcow2 -b "$BASE" "$OVL"

@@ -54,14 +54,14 @@ case "$CMD" in
       guest_ssh "$VM_USER" "$IP" 22 "$VM_PASS" "arch -arm64 /usr/sbin/softwareupdate --install-rosetta --agree-to-license >/dev/null 2>&1 || true"
     fi
     guest_ssh "$VM_USER" "$IP" 22 "$VM_PASS" "rm -rf ~/fabdesk-test && mkdir -p ~/fabdesk-test/out"
-    guest_scp "$VM_USER" "$IP" 22 "$VM_PASS" "$INSTALLER" "$REPO_ROOT/scripts/vm/guest/mac-test.sh" "$VM_USER@$IP:fabdesk-test/"
+    guest_scp "$VM_USER" "$IP" 22 "$VM_PASS" "$INSTALLER" "$VM_SCRIPTS/guest/mac-test.sh" "$VM_USER@$IP:fabdesk-test/"
     guest_ssh "$VM_USER" "$IP" 22 "$VM_PASS" "bash ~/fabdesk-test/mac-test.sh ~/fabdesk-test/$(basename "$INSTALLER") ~/fabdesk-test/out" | tee "$OUT/log.txt" || true
     guest_scp "$VM_USER" "$IP" 22 "$VM_PASS" "$VM_USER@$IP:fabdesk-test/out/*" "$OUT/" >/dev/null 2>&1 || true
     finish_report "$OUT" ;;
 
   shell)
     IP="$(vm_ip)"; [ -n "$IP" ] || die "no running $VM (run test --keep first)"
-    exec "$REPO_ROOT/scripts/vm/_ssh.sh" "$VM_USER" "$IP" "$VM_PASS" ;;
+    exec "$VM_SCRIPTS/_ssh.sh" "$VM_USER" "$IP" "$VM_PASS" ;;
 
   destroy)
     tart stop "$VM" >/dev/null 2>&1 || true; tart delete "$VM" >/dev/null 2>&1 || true

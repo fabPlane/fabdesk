@@ -38,7 +38,7 @@ case "$CMD" in
   prepare)
     [ -f "$KEY" ] || ssh-keygen -q -t ed25519 -N "" -f "$KEY"
     [ -f "$D/base.img" ] || { log "downloading $IMG_URL"; curl -fL --progress-bar -o "$D/base.img" "$IMG_URL"; }
-    sed "s|__SSH_KEY__|$(cat "$KEY.pub")|" "$REPO_ROOT/scripts/vm/guest/cloud-init-user-data" > "$D/user-data"
+    sed "s|__SSH_KEY__|$(cat "$KEY.pub")|" "$VM_SCRIPTS/guest/cloud-init-user-data" > "$D/user-data"
     printf 'instance-id: fabdesk-linux\nlocal-hostname: fabdesk-linux\n' > "$D/meta-data"
     rm -rf "$D/seed"; mkdir -p "$D/seed"; cp "$D/user-data" "$D/meta-data" "$D/seed/"
     if command -v mkisofs >/dev/null; then mkisofs -quiet -output "$SEED" -volid cidata -joliet -rock "$D/seed"
@@ -73,7 +73,7 @@ case "$CMD" in
     "${S[@]}" true 2>/dev/null || die "ssh never came up (see $OUT/serial.txt)"
     log "guest up"
     "${S[@]}" "rm -rf ~/fabdesk-test && mkdir -p ~/fabdesk-test/out"
-    scp -i "$KEY" "${KOPTS[@]}" -P "$PORT" "$INSTALLER" "$REPO_ROOT/scripts/vm/guest/linux-test.sh" "$VM_USER@127.0.0.1:fabdesk-test/" >/dev/null
+    scp -i "$KEY" "${KOPTS[@]}" -P "$PORT" "$INSTALLER" "$VM_SCRIPTS/guest/linux-test.sh" "$VM_USER@127.0.0.1:fabdesk-test/" >/dev/null
     "${S[@]}" "bash ~/fabdesk-test/linux-test.sh ~/fabdesk-test/$(basename "$INSTALLER") ~/fabdesk-test/out" | tee "$OUT/log.txt" || true
     scp -i "$KEY" "${KOPTS[@]}" -P "$PORT" -r "$VM_USER@127.0.0.1:fabdesk-test/out/*" "$OUT/" >/dev/null 2>&1 || true
     finish_report "$OUT" ;;

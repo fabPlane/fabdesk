@@ -4,7 +4,8 @@
 
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+VM_SCRIPTS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # this directory; also works when copied to a job host
+REPO_ROOT="$(cd "$VM_SCRIPTS/../.." && pwd)"
 VM_DIR="${FABDESK_VM_DIR:-$HOME/.fabdesk-vm}"
 RESULTS_DIR="$VM_DIR/results"
 CACHE_DIR="$VM_DIR/cache"
