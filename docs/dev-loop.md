@@ -21,3 +21,13 @@ Options (environment variables for `bun run dev`):
 Tips: the `core` badge in the top bar shows "core reloaded" briefly after a watch restart; a Route
 Cinema run interrupted by a reload shows its persisted frames but no further updates — start a new
 route. Unit tests are the fast loop for pure logic: `bun test` inside the package.
+
+## Driving the app from an agent
+
+In dev the Electron main process also runs the app automation bridge (loopback HTTP, bearer = the
+daemon token) and writes `<userData>/app-bridge.json` next to `daemon.json`. Any MCP client on the
+`fabdesk` server can then `load_toolset app` and use `app_screenshot`, `app_find` / `app_click`,
+`app_send_message`, `app_cinema`, … to look at and drive the running window; the tools go through
+the same stores and composer handlers as the user. It restarts with Electron (main/preload edits)
+and survives core reloads (the file is re-read on every call). Details, security model and the
+packaged-build switch (`FABDESK_AUTOMATION=1`): [app-automation.md](app-automation.md).

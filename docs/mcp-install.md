@@ -12,7 +12,8 @@ Two transports are available:
 
 Only the **core** toolset (`project_status`, `circuit_build`, `circuit_read_errors`, `route_run`,
 `verify_drc`, `render_board`, `load_toolset`) is listed at start. Ask the agent to call
-`load_toolset` with `project`, `circuit`, `route`, `kicad`, `verify`, `render`, `export` or `sim`
+`load_toolset` with `project`, `circuit`, `route`, `kicad`, `verify`, `render`, `export`, `sim` or `app`
+(drive the running desktop window; see [app-automation.md](app-automation.md))
 to enable more; the tool list refreshes automatically.
 
 ## Locating the binary

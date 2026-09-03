@@ -10,6 +10,7 @@ import type { Channel } from "./config";
 import type { EventBus } from "./bus";
 import type { ProjectStore } from "./projects";
 import { routerHostOptions } from "./router-worker-url";
+import { AppBridgeClient } from "./app-bridge";
 
 export type ServiceDeps = {
   version: string;
@@ -21,6 +22,10 @@ export type ServiceDeps = {
   principal: () => Principal | null;
   /** Directory for router-worker scratch files etc. */
   home: string;
+  /** Daemon token; with `appBridgeFile` enables the desktop app automation bridge (`app` toolset). */
+  token?: string;
+  /** Path of app-bridge.json written by the desktop app (see app-bridge.ts). */
+  appBridgeFile?: string;
 };
 
 function simService(settings: () => Settings): SimService {
@@ -122,6 +127,7 @@ export async function createServices(deps: ServiceDeps): Promise<CoreServices & 
       available: () => availableRouters(),
     },
     sim: simService(deps.settings),
+    ...(deps.token && deps.appBridgeFile ? { appBridge: new AppBridgeClient({ file: deps.appBridgeFile, token: deps.token }) } : {}),
     dispose: () => host.dispose(),
   };
   return services;

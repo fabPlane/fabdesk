@@ -1,6 +1,8 @@
 /// <reference types="@mcp-b/webmcp-types" />
 import type { CoreInfo } from "../shared/core-info";
 import type { UpdateCheckResult, UpdateDownloadState } from "@fabdesk/protocol";
+import type { CoreClient } from "@fabdesk/ui";
+import type { FabdeskAutomationApi } from "./automation";
 
 export interface PickFileOptions {
   multiple?: boolean;
@@ -14,6 +16,8 @@ export interface FabdeskBridge {
   errorReporting: boolean;
   /** True when main runs with FABDESK_SENTRY_TEST=1 (send one handled test event). */
   sentryTest: boolean;
+  /** True when the app automation bridge is on (dev builds / FABDESK_AUTOMATION=1); the renderer then installs window.__fabdeskApp. */
+  automationEnabled: boolean;
   setErrorReporting(enabled: boolean): Promise<void>;
   /** id + handle of the signed-in principal (never email); null on logout. */
   setSentryUser(user: { id: string; username?: string } | null): Promise<void>;
@@ -38,5 +42,9 @@ export interface FabdeskBridge {
 declare global {
   interface Window {
     fabdesk?: FabdeskBridge;
+    /** Renderer automation API (src/renderer/automation.ts); present only when `fabdesk.automationEnabled`. */
+    __fabdeskApp?: FabdeskAutomationApi;
+    /** Live core client + status handed to the automation API by App.tsx (never the token). */
+    __fabdeskRuntime?: { client: CoreClient | null; coreInfo: CoreInfo | null };
   }
 }

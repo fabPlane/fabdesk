@@ -13,6 +13,8 @@ const api = {
   errorReporting: process.argv.includes("--fabdesk-error-reporting"),
   /** `FABDESK_SENTRY_TEST=1` in main: the renderer sends one handled test event on startup. */
   sentryTest: process.argv.includes("--fabdesk-sentry-test"),
+  /** Main passes `--fabdesk-automation` when the app automation bridge is on (dev / FABDESK_AUTOMATION=1). */
+  automationEnabled: process.argv.includes("--fabdesk-automation"),
   setErrorReporting: (enabled: boolean) =>
     ipcRenderer.invoke("fabdesk:set-error-reporting", enabled),
   setSentryUser: (user: { id: string; username?: string } | null) =>

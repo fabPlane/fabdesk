@@ -9,6 +9,7 @@ import { TokenSet } from "./auth";
 import { createAuth, type AuthFacade } from "./auth-facade";
 import { EventBus } from "./bus";
 import { resolveConfig, type CoreConfig } from "./config";
+import { locateAppBridgeFile } from "./app-bridge";
 import { createContextFactory } from "./context";
 import { Store } from "./db";
 import { createApp } from "./http/app";
@@ -95,6 +96,8 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
           routeRuns: store.routeRuns,
           principal: () => auth.principal(),
           home: config.home,
+          token: config.token,
+          appBridgeFile: locateAppBridgeFile(config.handshakePath),
         });
 
   const registry = createRegistry();

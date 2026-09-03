@@ -102,6 +102,11 @@ export function App() {
   const url = info?.url ?? null;
   const token = info?.token ?? null;
   const client = useMemo(() => (url && token ? new CoreClient({ baseUrl: url, token }) : null), [url, token]);
+  // The automation API (dev / FABDESK_AUTOMATION=1) reads these; the token itself is never exposed.
+  useEffect(() => {
+    if (!bridge?.automationEnabled) return;
+    window.__fabdeskRuntime = { client, coreInfo: info ? { url: info.url, token: null, status: info.status } : null };
+  }, [client, info]);
 
   if (!client) {
     return (

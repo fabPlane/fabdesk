@@ -1,4 +1,5 @@
 import { ToolRegistry, type ToolDef } from "../registry";
+import { appTools } from "./app";
 import { circuitTools } from "./circuit";
 import { coreTools } from "./core";
 import { exportTools } from "./export";
@@ -19,6 +20,7 @@ export const allTools: ReadonlyArray<ToolDef> = [
   ...renderTools,
   ...exportTools,
   ...simTools,
+  ...appTools,
 ] as unknown as ReadonlyArray<ToolDef>;
 
 /** The v1 registry with every toolset. */
@@ -35,3 +37,4 @@ export * from "./verify";
 export * from "./render";
 export * from "./export";
 export * from "./sim";
+export * from "./app";

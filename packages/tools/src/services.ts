@@ -179,6 +179,24 @@ export interface ProjectResolver {
   list(): Promise<ProjectHandle[]>;
 }
 
+export type AppBridgeStatus = {
+  running: boolean;
+  url?: string;
+  pid?: number;
+  /** Why the bridge is not usable (no handshake file, process gone, wrong token, ...). */
+  reason?: string;
+};
+
+/**
+ * Loopback HTTP bridge into the running Fabdesk desktop app (Electron main, dev/automation builds
+ * only; see docs/app-automation.md). `apps/core/src/app-bridge.ts` implements it.
+ */
+export interface AppBridge {
+  status(): Promise<AppBridgeStatus>;
+  /** JSON request to the bridge; throws `ToolError("unavailable")` when the app is not reachable. */
+  call<T = unknown>(method: "GET" | "POST", path: string, body?: unknown, opts?: { timeoutMs?: number }): Promise<T>;
+}
+
 export interface CoreServices {
   version: string;
   channel: "public" | "internal";
@@ -193,4 +211,6 @@ export interface CoreServices {
   principal(): Principal | null;
   /** Optional: override fetch (tests, offline). */
   fetch?: typeof fetch;
+  /** Optional: the desktop app automation bridge (`app` toolset). Absent in headless/standalone setups. */
+  appBridge?: AppBridge;
 }

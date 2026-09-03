@@ -5,6 +5,11 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 
+// Dev / FABDESK_AUTOMATION=1 only: window.__fabdeskApp for the core's `app` toolset (docs/app-automation.md).
+if (window.fabdesk?.automationEnabled) {
+  void import("./automation").then((m) => m.installAutomation()).catch((e: unknown) => console.warn("[automation] failed to install", e));
+}
+
 const root = document.getElementById("root");
 if (!root) throw new Error("#root missing");
 const app = <App />;

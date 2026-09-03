@@ -19,6 +19,7 @@ describe("registry", () => {
       "render_schematic_svg", "render_pcb_svg", "render_glb",
       "export_gerbers", "export_drill", "export_pos", "export_bom", "export_netlist", "export_zip",
       "sim_spice_netlist", "sim_run",
+      "app_state", "app_screenshot", "app_find", "app_click", "app_type", "app_key", "app_select_project", "app_open_tab", "app_open_thread", "app_new_chat", "app_send_message", "app_cinema", "app_wait_for", "app_eval",
     ]);
     for (const n of names) expect(n).toMatch(/^[a-z][a-z0-9_]*$/);
     expect(reg.byToolset("core").length).toBe(7);

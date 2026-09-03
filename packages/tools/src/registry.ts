@@ -6,7 +6,7 @@ import { z } from "zod/v4";
 import type { CoreEvent, Principal, ProjectManifest, Settings, ToolManifestEntry } from "@fabdesk/protocol";
 import type { CoreServices } from "./services";
 
-export const TOOLSETS = ["core", "project", "circuit", "route", "kicad", "verify", "render", "export", "sim"] as const;
+export const TOOLSETS = ["core", "project", "circuit", "route", "kicad", "verify", "render", "export", "sim", "app"] as const;
 export type ToolsetId = (typeof TOOLSETS)[number];
 export const ToolsetId = z.enum(TOOLSETS);
 
@@ -168,9 +168,12 @@ export class ToolRegistry {
     if (!def) throw new ToolError(`unknown tool ${name}`, "not_found");
     const parsed = this.inputObject(def).safeParse(rawArgs ?? {});
     if (!parsed.success) throw new ToolError(`invalid arguments for ${name}: ${z.prettifyError(parsed.error)}`, "invalid_args");
-    const { project: projectRef, ...args } = parsed.data as Record<string, unknown> & { project?: string };
-    const ctx = await makeContext((def.scope ?? "project") === "global" ? undefined : projectRef, def);
-    if ((def.scope ?? "project") === "project" && !ctx.project) {
+    const global = (def.scope ?? "project") === "global";
+    // Project-scoped tools get the injected `project` selector split off; global tools keep their own arguments intact.
+    const { project: projectRef, ...rest } = parsed.data as Record<string, unknown> & { project?: string };
+    const args = global ? (parsed.data as Record<string, unknown>) : rest;
+    const ctx = await makeContext(global ? undefined : projectRef, def);
+    if (!global && !ctx.project) {
       throw new ToolError(
         "no project selected: pass `project` (id, name or path) or create one with the app / POST /projects",
         "precondition",

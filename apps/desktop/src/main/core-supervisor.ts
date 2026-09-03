@@ -109,6 +109,11 @@ export class CoreSupervisor extends EventEmitter {
     return this.port ? `http://127.0.0.1:${this.port}` : null;
   }
 
+  /** Daemon bearer token once the core is ready (spawned or attached); null otherwise. */
+  get currentToken(): string | null {
+    return this.status.state === "ready" ? this.token : null;
+  }
+
   info(): CoreInfo {
     return { url: this.status.state === "ready" ? this.url : null, token: this.status.state === "ready" ? this.token : null, status: this.status };
   }

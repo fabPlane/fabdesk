@@ -14,6 +14,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod/v4";
 import { DaemonHandshake } from "@fabdesk/protocol";
 import { attachToRegistry, createRegistry, type ProjectHandle } from "@fabdesk/tools";
+import { locateAppBridgeFile } from "./app-bridge";
 import { TokenSet } from "./auth";
 import { createAuth } from "./auth-facade";
 import { EventBus } from "./bus";
@@ -128,7 +129,7 @@ async function standalone(opts: McpStdioOptions, projectDir: string | null): Pro
     }
   });
   const { createServices } = await import("./services");
-  const services = await createServices({ version: config.version, channel: config.channel, settings: () => store.settings.get(), projects, bus, routeRuns: store.routeRuns, principal: () => auth.principal(), home: config.home });
+  const services = await createServices({ version: config.version, channel: config.channel, settings: () => store.settings.get(), projects, bus, routeRuns: store.routeRuns, principal: () => auth.principal(), home: config.home, token: config.token, appBridgeFile: locateAppBridgeFile(config.handshakePath) });
   const registry = createRegistry();
   let defaultProject: ProjectHandle | null = null;
   if (projectDir) {

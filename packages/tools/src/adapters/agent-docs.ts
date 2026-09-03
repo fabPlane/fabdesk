@@ -11,6 +11,7 @@ const TOOLSET_BLURB: Record<string, string> = {
   render: "SVG/GLB renders",
   export: "fabrication outputs",
   sim: "SPICE",
+  app: "screenshot and drive the desktop app (dev / FABDESK_AUTOMATION=1)",
 };
 
 export function toolsMarkdown(registry: ToolRegistry, opts: { serverName?: string } = {}): string {

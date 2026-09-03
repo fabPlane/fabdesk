@@ -245,7 +245,8 @@ export function activityBounds(run: CinemaRun, cursor: number, board: Bounds, op
     if (y < y1) y1 = y;
     if (y > y2) y2 = y;
   };
-  const shapes = ages.size > 0 ? frame.shapes.filter((s) => ages.has(s.id)) : frame.shapes;
+  const copper = frame.shapes.filter(isRouterCopper);
+  const shapes = ages.size > 0 ? copper.filter((s) => ages.has(s.id)) : copper;
   for (const s of shapes) for (let i = 0; i + 1 < s.pts.length; i += 2) visit(s.pts[i] ?? 0, s.pts[i + 1] ?? 0);
   const air = frame.event.airline;
   if (air) {
@@ -406,6 +407,7 @@ export function drawAirline(ctx: Canvas2D, frame: RouteFrame, t: Transform): voi
 /** Recently added copper: this frame's in white with a glow, the last few frames' in amber, fading. */
 export function drawRecent(ctx: Canvas2D, shapes: readonly CinemaShape[], ages: ReadonlyMap<number, number>, t: Transform, hidden: ReadonlySet<number>, window = RECENT_WINDOW): void {
   for (const s of shapes) {
+    if (!isRouterCopper(s)) continue;
     const age = ages.get(s.id);
     if (age === undefined) continue;
     if (age === 0) {
@@ -417,9 +419,14 @@ export function drawRecent(ctx: Canvas2D, shapes: readonly CinemaShape[], ages: 
   }
 }
 
+/** Router output worth animating: traces and vias. Pours/keepouts re-emitted by the router are static context. */
+export function isRouterCopper(s: CinemaShape): boolean {
+  return s.k === "trace" || s.k === "via";
+}
+
 /** Draws routed copper shapes in layer colours (the settled copper layer). */
 export function drawCopper(ctx: Canvas2D, shapes: readonly CinemaShape[], t: Transform, hidden: ReadonlySet<number>): void {
-  for (const s of shapes) drawShape(ctx, s, t, hidden, layerColor(s.layer), 1, 2);
+  for (const s of shapes) if (isRouterCopper(s)) drawShape(ctx, s, t, hidden, layerColor(s.layer), 1, 2);
 }
 
 /** Draws the copper new in this frame in white on top. */
