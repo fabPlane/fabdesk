@@ -97,6 +97,12 @@ ${sketches}
    images directly in chat and return a \`fileUrl\` / \`url\` field. When the user asks for links, give
    those browser-openable \`file://\` URLs as plain text.
 
+Work through the \`${mcp}\` tools: they are the only tools guaranteed to be available. Shell commands
+(Bash, PowerShell, python, node) may be blocked by the permission mode and cannot be approved during a run;
+if one is refused, do not retry it, use a \`${mcp}\` tool instead (project_read_file, circuit_query,
+route_status, ...). \`circuit.json\`, \`circuit.routed.json\`, \`board.kicad_*\` and \`reports/\` are outputs
+of earlier runs, not inputs: start from \`circuit.tsx\` and rebuild rather than reading old results.
+
 Do not run \`git\`, install packages, or touch files outside this directory unless the prompt asks for it.
 
 ## Tools
