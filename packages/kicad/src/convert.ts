@@ -7,6 +7,53 @@ export interface ConvertOptions {
   circuitJson: unknown[];
   projectDir: string;
   projectName: string;
+  /**
+   * Board rules (fabdesk.json `board.rules`, e.g. a Viagrid blank's 0.2 mm track / clearance). Written into
+   * the generated `.kicad_pro` so KiCad DRC checks the board against them instead of the converter's 0.1 mm
+   * defaults.
+   */
+  rules?: { traceWidthMm?: number; clearanceMm?: number; viaDrillMm?: number; viaDiameterMm?: number };
+}
+
+/**
+ * DRC rules that can only fire on a generated board: every footprint is embedded and belongs to a
+ * `tscircuit` library that no library table knows, so KiCad emits one `lib_footprint_issues` warning per
+ * footprint (192 on a Viagrid board). They carry no information here and bury real findings.
+ */
+export const GENERATED_BOARD_RULE_SEVERITIES: Record<string, "ignore"> = {
+  lib_footprint_issues: "ignore",
+  lib_footprint_mismatch: "ignore",
+};
+
+/** Silences the library-table warnings in a `.kicad_pro` JSON document. */
+export function silenceLibraryWarnings(proJson: string): string {
+  const pro = JSON.parse(proJson) as Record<string, unknown>;
+  const board = ((pro["board"] ??= {}) as Record<string, unknown>);
+  const design = ((board["design_settings"] ??= {}) as Record<string, unknown>);
+  const severities = ((design["rule_severities"] ??= {}) as Record<string, unknown>);
+  for (const [rule, severity] of Object.entries(GENERATED_BOARD_RULE_SEVERITIES)) severities[rule] ??= severity;
+  return JSON.stringify(pro, null, 2);
+}
+
+/** Applies `rules` to a `.kicad_pro` JSON document (design rules + the Default netclass). */
+export function applyRulesToKicadPro(proJson: string, rules: NonNullable<ConvertOptions["rules"]>): string {
+  const pro = JSON.parse(proJson) as Record<string, unknown>;
+  const board = ((pro["board"] ??= {}) as Record<string, unknown>);
+  const design = ((board["design_settings"] ??= {}) as Record<string, unknown>);
+  const drc = ((design["rules"] ??= {}) as Record<string, unknown>);
+  if (rules.clearanceMm !== undefined) drc["min_clearance"] = rules.clearanceMm;
+  if (rules.traceWidthMm !== undefined) drc["min_track_width"] = rules.traceWidthMm;
+  if (rules.viaDiameterMm !== undefined) drc["min_via_diameter"] = rules.viaDiameterMm;
+  if (rules.viaDrillMm !== undefined) drc["min_through_hole_diameter"] = rules.viaDrillMm;
+  const net = ((pro["net_settings"] ??= {}) as Record<string, unknown>);
+  const classes = Array.isArray(net["classes"]) ? (net["classes"] as Array<Record<string, unknown>>) : [];
+  for (const cls of classes) {
+    if (rules.clearanceMm !== undefined) cls["clearance"] = rules.clearanceMm;
+    if (rules.traceWidthMm !== undefined) cls["track_width"] = rules.traceWidthMm;
+    if (rules.viaDiameterMm !== undefined) cls["via_diameter"] = rules.viaDiameterMm;
+    if (rules.viaDrillMm !== undefined) cls["via_drill"] = rules.viaDrillMm;
+  }
+  return JSON.stringify(pro, null, 2);
 }
 
 /**
@@ -45,7 +92,9 @@ export async function convertToKicad(opts: ConvertOptions): Promise<{ files: str
     });
     pro.runUntilFinished();
     const proFile = `${name}.kicad_pro`;
-    await Bun.write(join(opts.projectDir, proFile), pro.getOutputString());
+    const withSeverities = silenceLibraryWarnings(pro.getOutputString());
+    const proText = opts.rules && Object.keys(opts.rules).length > 0 ? applyRulesToKicadPro(withSeverities, opts.rules) : withSeverities;
+    await Bun.write(join(opts.projectDir, proFile), proText);
     files.push(proFile);
   } finally {
     restore();

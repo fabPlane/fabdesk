@@ -7,7 +7,16 @@ import { loadCircuitJson, ok, p, requireBoard, requireKicad, table, writeReport 
 export async function convertProject(ctx: ToolContext): Promise<{ files: string[]; warnings: string[]; source: string }> {
   const project = ctx.requireProject();
   const { circuitJson, source } = await loadCircuitJson(project);
-  const res = await ctx.services.kicad.convertToKicad({ circuitJson, projectDir: project.dir, projectName: "board" });
+  const r = project.manifest().board.rules;
+  const rules = r
+    ? {
+        ...(r.traceWidthMm !== undefined ? { traceWidthMm: r.traceWidthMm } : {}),
+        ...(r.clearanceMm !== undefined ? { clearanceMm: r.clearanceMm } : {}),
+        ...(r.viaDrillMm !== undefined ? { viaDrillMm: r.viaDrillMm } : {}),
+        ...(r.viaDiameterMm !== undefined ? { viaDiameterMm: r.viaDiameterMm } : {}),
+      }
+    : undefined;
+  const res = await ctx.services.kicad.convertToKicad({ circuitJson, projectDir: project.dir, projectName: "board", ...(rules && Object.keys(rules).length ? { rules } : {}) });
   await writeReport(project, "convert", { at: new Date().toISOString(), source, ...res });
   return { ...res, source };
 }

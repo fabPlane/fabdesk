@@ -113,7 +113,13 @@ export type GateResult = { pass: boolean; reasons: string[]; newWarningSignature
 export interface KicadService {
   /** settings → KICAD_CLI env → known locations; null when KiCad is not installed. */
   resolveCli(): Promise<KicadCli | null>;
-  convertToKicad(opts: { circuitJson: CircuitJson; projectDir: string; projectName: string }): Promise<{ files: string[]; warnings: string[] }>;
+  convertToKicad(opts: {
+    circuitJson: CircuitJson;
+    projectDir: string;
+    projectName: string;
+    /** Board rules to write into the generated .kicad_pro (fabdesk.json board.rules). */
+    rules?: { traceWidthMm?: number; clearanceMm?: number; viaDrillMm?: number; viaDiameterMm?: number };
+  }): Promise<{ files: string[]; warnings: string[] }>;
   /** `.kicad_pcb` -> circuit-json + report. Throws `KicadImportError` (with `.report`) in strict mode. */
   importPcb(opts: { pcbPath: string; projectName?: string; strict?: boolean }): Promise<{ circuitJson: CircuitJson; report: KicadImportSummary }>;
   runDrc(cli: KicadCli, opts: { board: string; outFile: string; severity?: "error" | "all"; schematicParity?: boolean; signal?: AbortSignal }): Promise<DrcReport>;
