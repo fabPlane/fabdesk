@@ -8,13 +8,14 @@ instead of on a user's machine.
 
 | Host | macOS guest | Linux guest | Windows guest |
 |---|---|---|---|
-| Apple Silicon Mac | Tart (Virtualization.framework), arm64 + x64-via-Rosetta | QEMU x86_64 under TCG (slow, ~10 min) | QEMU Windows 11 arm64 under HVF; x64 installer runs under Windows' x64 emulation |
+| Apple Silicon Mac | Tart (Virtualization.framework), arm64 + x64-via-Rosetta | QEMU x86_64 under TCG (slow, ~10 min) | QEMU x86_64 Windows 11 under TCG (default; install 1-3 h, test ~15 min) or `--guest aarch64` under HVF with Windows' x64 emulation |
 | Intel Mac / Linux | not supported | QEMU with HVF/KVM (fast) | QEMU with an x64 ISO |
 
 ```bash
 bun run vm:mac prepare              # pulls ghcr.io/cirruslabs/macos-sequoia-base (~25 GB, once)
 bun run vm:linux prepare            # Ubuntu 22.04 cloud image + cloud-init, once
-bun run vm:windows prepare --iso ~/Downloads/Win11_24H2_Arm64.iso   # unattended install, once
+bun run vm:windows prepare                       # downloads the Windows 11 Enterprise eval ISO (x64), unattended install, once
+bun run vm:windows prepare --guest aarch64       # fast arm64 guest instead (installer runs under Windows' x64 emulation)
 
 bun run vm:mac test                                # newest DMG in apps/desktop/release/
 bun run vm:mac test --arch x64 --format zip
@@ -60,10 +61,14 @@ the bridge on, same checks, GDI screen capture. Results are uploaded to the host
   The base image auto-logs in as `admin`/`admin`; the scripts use `SSH_ASKPASS`, no sshpass.
 - The Linux build is x86_64 only, so on Apple Silicon the guest runs emulated. Use `--timeout` to
   extend the default 900 s if the host is busy.
-- Windows `prepare` performs a full unattended install from Microsoft's ISO with TPM / Secure Boot
-  checks bypassed and creates user `fabdesk`/`fabdesk` (auto-logon). Set `FABDESK_VM_WIN_IMAGE_INDEX`
-  if your ISO's Pro image is not index 6 (`wimlib-imagex info` lists them). The install runs once;
-  every test boots a qcow2 overlay of that disk.
+- Windows `prepare` performs a full unattended install with TPM / Secure Boot checks bypassed and
+  creates user `fabdesk`/`fabdesk` (auto-logon). Without `--iso` it downloads Microsoft's 90-day
+  Windows 11 Enterprise evaluation ISO for the guest arch (a direct link, no form). With your own
+  retail ISO set `FABDESK_VM_WIN_IMAGE_INDEX` if the Pro image is not index 6. The install runs once;
+  every test boots a qcow2 overlay of that disk. Only inbox drivers are used (NVMe, e1000e / RNDIS,
+  standard VGA), so no virtio ISO is needed.
+- The default x86_64 Windows guest is what users run and executes the x64 installer natively, but on
+  Apple Silicon it is emulated: plan for a one-time install of one to three hours.
 - `--keep` leaves the VM running after a test: `vm:mac shell`, `vm:linux shell`, or
   `vm:windows console` to look around. `destroy` removes base images and clones.
 - Runner-side checks (`scripts/verify-installers.ts`) still run in CI on every release; the VMs are
