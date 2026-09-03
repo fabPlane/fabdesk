@@ -1,6 +1,6 @@
 import type { Message, MessagePart, Thread } from "@fabdesk/protocol";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Spinner } from "../components/ui";
 import { useCoreClient } from "../core/CoreProvider";
 import { useRunsStore } from "../stores/runs";
@@ -9,9 +9,71 @@ import { cn, formatRelative } from "../util";
 import { Markdown } from "./Markdown";
 import { ProjectImage } from "./ProjectImage";
 import { ThinkingBlock } from "./ThinkingBlock";
-import { ToolCallCard } from "./ToolCallCard";
+import { extractImages, ToolCallCard } from "./ToolCallCard";
 
 type ToolResult = Extract<MessagePart, { type: "tool_result" }>;
+type ToolUse = Extract<MessagePart, { type: "tool_use" }>;
+
+function shortToolName(name: string): string {
+  return name.replace(/^mcp__[^_]+__/, "");
+}
+
+/**
+ * A run of consecutive tool calls, folded into one row under the paragraph that preceded it.
+ * Collapsed by default: count, errors, and the tool still running; the arrow expands the cards.
+ * Image results (board renders) stay visible even when collapsed.
+ */
+export function ToolGroup({ calls, streaming }: { calls: Array<{ use: ToolUse; result?: ToolResult | undefined }>; streaming: boolean }) {
+  const [open, setOpen] = useState(false);
+  const projectId = useUiStore((s) => s.activeProjectId);
+  const errors = calls.filter((c) => c.result?.isError === true).length;
+  const pending = calls.filter((c) => !c.result);
+  const running = streaming && pending.length > 0 ? pending[pending.length - 1] : undefined;
+  const images = calls.flatMap((c) => (c.result ? extractImages(c.result.output) : []));
+  const label = `${calls.length} tool call${calls.length === 1 ? "" : "s"}`;
+  return (
+    <div className="my-1 text-xs" data-testid="tool-group">
+      <button
+        type="button"
+        className={cn("flex w-full items-center gap-2 rounded px-1 py-0.5 text-left text-muted hover:bg-panel-2/60", open && "text-fg")}
+        onClick={() => setOpen((o) => !o)}
+        title={open ? "Hide tool calls" : "Show tool calls"}
+        aria-expanded={open}
+      >
+        <span className={cn("inline-block transition-transform", open && "rotate-90")}>&#9656;</span>
+        <span>{label}</span>
+        {errors > 0 && <span className="text-danger">{errors} error{errors === 1 ? "" : "s"}</span>}
+        {running && (
+          <span className="flex items-center gap-1.5 font-mono">
+            <Spinner className="h-3 w-3" />
+            {shortToolName(running.use.name)}
+          </span>
+        )}
+        {!running && !open && calls.length > 0 && (
+          <span className="truncate font-mono opacity-70">{calls.map((c) => shortToolName(c.use.name)).slice(-3).join(" · ")}</span>
+        )}
+      </button>
+      {!open && images.length > 0 && (
+        <div className="flex flex-wrap gap-2 px-1 pt-1">
+          {images.map((img, i) =>
+            img.kind === "data" ? (
+              <img key={i} src={img.src} alt="tool result" className="max-h-72 rounded border border-border" />
+            ) : (
+              <ProjectImage key={i} projectId={projectId} path={img.src} />
+            ),
+          )}
+        </div>
+      )}
+      {open && (
+        <div className="pl-1">
+          {calls.map((c, i) => (
+            <ToolCallCard key={c.use.id || i} use={c.use} result={c.result} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function ImagePart({ path }: { path: string }) {
   const projectId = useUiStore((s) => s.activeProjectId);
@@ -27,8 +89,20 @@ export function renderParts(m: Message, streaming: boolean): ReactNode[] {
   for (const p of m.parts) if (p.type === "tool_result") results.set(p.id, p);
   const consumed = new Set<string>();
   const out: ReactNode[] = [];
+  // Consecutive tool calls (results interleaved) fold into one collapsed group.
+  let group: Array<{ use: ToolUse; result?: ToolResult | undefined }> = [];
+  let groupKey = 0;
+  const flush = () => {
+    if (group.length === 0) return;
+    out.push(<ToolGroup key={`g${groupKey}`} calls={group} streaming={streaming} />);
+    group = [];
+  };
   m.parts.forEach((p, i) => {
     const last = i === m.parts.length - 1;
+    if (p.type !== "tool_use" && p.type !== "tool_result") {
+      flush();
+      groupKey = i;
+    }
     switch (p.type) {
       case "text":
         out.push(<Markdown key={i} text={p.text} className={cn(streaming && last && "fd-caret")} />);
@@ -39,7 +113,8 @@ export function renderParts(m: Message, streaming: boolean): ReactNode[] {
       case "tool_use": {
         const r = results.get(p.id);
         if (r) consumed.add(p.id);
-        out.push(<ToolCallCard key={i} use={p} result={r} />);
+        if (group.length === 0) groupKey = i;
+        group.push({ use: p, result: r });
         break;
       }
       case "tool_result":
@@ -58,6 +133,7 @@ export function renderParts(m: Message, streaming: boolean): ReactNode[] {
         break;
     }
   });
+  flush();
   return out;
 }
 
