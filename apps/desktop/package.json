@@ -17,7 +17,6 @@
     "preview": "electron-vite preview",
     "package": "electron-vite build && electron-builder --publish never",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "icons": "bun run scripts/make-icon.ts",
     "test": "bun test"
   },
   "dependencies": {},
