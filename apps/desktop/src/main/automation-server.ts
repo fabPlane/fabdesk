@@ -220,8 +220,11 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 }
 
 /** Calls into the renderer automation API (`window.__fabdeskApp`, installed by src/renderer/automation.ts). */
-async function rendererApi<T>(win: AutomationWindow, expr: string): Promise<T> {
-  const res = await evalInWindow(win, `(() => { if (!window.__fabdeskApp) throw new Error("__NO_API__"); return (${expr}); })()`);
+/** UI actions (`send` waits up to 20 s for the core to accept the message) need more than the eval default. */
+export const UI_ACTION_TIMEOUT_MS = 30_000;
+
+async function rendererApi<T>(win: AutomationWindow, expr: string, timeoutMs = EVAL_TIMEOUT_MS): Promise<T> {
+  const res = await evalInWindow(win, `(() => { if (!window.__fabdeskApp) throw new Error("__NO_API__"); return (${expr}); })()`, timeoutMs);
   if (!res.ok) {
     if (res.error.includes("__NO_API__")) throw new BridgeError(503, "renderer automation API not installed (window still loading, or the app was started without the automation flag)");
     throw new BridgeError(500, res.error);
@@ -457,7 +460,12 @@ export async function handleBridgeRequest(req: BridgeRequest, deps: AutomationDe
       const args = Array.isArray(body["args"]) ? body["args"] : [];
       const win = chooseWindow(deps.windows(), windowId);
       if (action === "waitFor") return { status: 200, body: { result: await waitFor(win, args) } };
-      const result = await rendererApi(win, `window.__fabdeskApp.__invoke(${JSON.stringify(action)}, ${JSON.stringify(args)})`);
+      // A timeout here must not be mistaken for "nothing happened": the action keeps running in the page
+      // (a send that took long still sends), so the caller is told not to retry blindly.
+      const result = await rendererApi(win, `window.__fabdeskApp.__invoke(${JSON.stringify(action)}, ${JSON.stringify(args)})`, UI_ACTION_TIMEOUT_MS).catch((e: unknown) => {
+        if (e instanceof BridgeError && /timed out/.test(e.message)) throw new BridgeError(504, `${e.message}; the ${action} action may still have completed in the app, check app_state before retrying`);
+        throw e;
+      });
       return { status: 200, body: { result } };
     }
     case "GET /find": {
