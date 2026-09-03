@@ -59,6 +59,8 @@ boot() {  # boot <disk> <display: none|cocoa|gtk> <serial log> [extra drives...]
     -drive "if=pflash,format=raw,readonly=on,file=$(efi_code)" -drive "if=pflash,format=raw,file=$VARS" \
     -device qemu-xhci -device usb-kbd -device usb-tablet "${devs[@]}" -netdev user,id=n0 \
     -drive "file=$disk,if=none,id=hd,format=qcow2" -device nvme,drive=hd,serial=fabdesk "$@" &
+  # vm_alive/wait_off read the pidfile; give QEMU a moment to write it (fast on KVM, slower under TCG).
+  for i in $(seq 1 20); do [ -s "$PIDF" ] && break; sleep 0.5; done
 }
 mon() { python3 - "$MON" "$1" <<'PY'
 import socket, sys, time
