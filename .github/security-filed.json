@@ -71,6 +71,11 @@
       "number": 20,
       "title": "[security] high: lodash-es ghsa-r5fr-rjxr-66jc: lodash vulnerable to Code Injection via `_.template` imports key names",
       "url": "https://github.com/TensorFleet/fabdesk/issues/20"
+    },
+    "ec98acf6b47b80d7": {
+      "number": 80,
+      "title": "[security] high: Dynamic eval / Function constructor in apps/desktop/src/main/automation-server.test.ts",
+      "url": "https://github.com/TensorFleet/fabdesk/issues/80"
     }
   }
 }
