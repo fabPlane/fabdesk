@@ -10,10 +10,13 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 const dir = process.argv[2] ?? "release-out";
 const target = process.argv[process.argv.indexOf("--target") + 1] ?? "";
+/** Arch the installers were built for (from --target bun-<os>-<arch>); "" when unknown. */
+const targetArch = /-(arm64|x64)$/.exec(target)?.[1] ?? "";
+const hostArch = process.arch === "arm64" ? "arm64" : "x64";
 const failures: string[] = [];
 const fail = (msg: string) => {
   console.error(`::error::${msg}`);
@@ -29,6 +32,15 @@ function run(cmd: string[], opts: { cwd?: string; allowFail?: boolean } = {}): {
 
 function checkCore(bin: string, label: string): void {
   if (!existsSync(bin)) return fail(`${label}: bundled core missing at ${bin}`);
+  if (targetArch && targetArch !== hostArch) {
+    // Foreign-arch binary (the x64 build verified on an arm64 macOS 14 runner): Rosetta there lacks
+    // AVX2, so Bun binaries crash. Check the slice is right and leave execution to the VM tests.
+    const archs = process.platform === "darwin" ? run(["lipo", "-archs", bin], { allowFail: true }).out.trim() : run(["file", bin], { allowFail: true }).out;
+    const want = targetArch === "x64" ? /x86_64|x86-64/ : /arm64|aarch64/;
+    if (!want.test(archs)) fail(`${label}: core is not a ${targetArch} binary (${archs.trim().slice(0, 80)})`);
+    else console.log(`${label}: core is ${targetArch} (not executed on a ${hostArch} host)`);
+    return;
+  }
   const r = run([bin, "version"]);
   if (!r.ok || !/\d+\.\d+\.\d+/.test(r.out)) fail(`${label}: fabdesk-core version failed: ${r.out.trim().slice(0, 200)}`);
   else console.log(`${label}: core ${r.out.trim().split("\n")[0]}`);
@@ -74,8 +86,9 @@ function verifyZip(file: string): void {
 
 function verifyAppImage(file: string): void {
   const out = mkdtempSync(join(tmpdir(), "fabdesk-appimage-"));
+  const abs = resolve(file);
   try {
-    const x = run(["bash", "-c", `chmod +x "${file}" && cd "${out}" && "${file}" --appimage-extract >/dev/null`]);
+    const x = run(["bash", "-c", `chmod +x "${abs}" && cd "${out}" && "${abs}" --appimage-extract >/dev/null`]);
     if (!x.ok) return fail(`${file}: --appimage-extract failed`);
     checkCore(join(out, "squashfs-root", "resources", "core", "fabdesk-core"), file);
   } finally {
@@ -100,7 +113,28 @@ function verifyExe(file: string): void {
   // NSIS installers are 7-Zip-readable archives; a CRC failure here means a corrupt download later.
   const t = run(["7z", "t", file]);
   if (!t.ok) return fail(`${file}: 7z archive test failed`);
-  if (!/resources[\\/]core[\\/]fabdesk-core\.exe/.test(run(["7z", "l", file]).out)) fail(`${file}: bundled core missing from installer`);
+  // electron-builder nests the app in $PLUGINSDIR/app-64.7z; open that to reach the bundled core.
+  const listing = run(["7z", "l", file]).out;
+  const payload = /(\S*app-(?:64|32)\.7z)\s*$/m.exec(listing)?.[1];
+  if (!payload) {
+    if (!/resources[\\/]core[\\/]fabdesk-core\.exe/.test(listing)) fail(`${file}: bundled core missing from installer`);
+    return;
+  }
+  const out = mkdtempSync(join(tmpdir(), "fabdesk-exe-"));
+  try {
+    const x = run(["7z", "e", "-y", `-o${out}`, file, payload]);
+    const inner = join(out, "app-64.7z");
+    const innerPath = existsSync(inner) ? inner : join(out, "app-32.7z");
+    if (!x.ok || !existsSync(innerPath)) return fail(`${file}: could not extract ${payload}`);
+    const il = run(["7z", "l", innerPath]).out;
+    if (!/resources[\\/]core[\\/]fabdesk-core\.exe/.test(il)) return fail(`${file}: bundled core missing from ${payload}`);
+    const c = run(["7z", "e", "-y", `-o${out}`, innerPath, "resources/core/fabdesk-core.exe"]);
+    if (!c.ok) return fail(`${file}: could not extract the bundled core`);
+    if (process.platform === "win32") checkCore(join(out, "fabdesk-core.exe"), file);
+    else console.log(`${file}: core present in ${payload} (not executed on ${process.platform})`);
+  } finally {
+    rmSync(out, { recursive: true, force: true });
+  }
 }
 
 const files = readdirSync(dir).filter((f) => statSync(join(dir, f)).isFile() && !f.startsWith("SHA256SUMS")).sort();
