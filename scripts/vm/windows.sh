@@ -58,7 +58,7 @@ boot() {  # boot <disk> <display: none|cocoa|gtk> <serial log> [extra drives...]
     -monitor "unix:$MON,server,nowait" -pidfile "$PIDF" -rtc base=utc \
     -drive "if=pflash,format=raw,readonly=on,file=$(efi_code)" -drive "if=pflash,format=raw,file=$VARS" \
     -device qemu-xhci -device usb-kbd -device usb-tablet "${devs[@]}" -netdev user,id=n0 \
-    -drive "file=$disk,if=none,id=hd,format=qcow2" -device nvme,drive=hd,serial=fabdesk "$@" &
+    -drive "file=$disk,if=none,id=hd,format=qcow2" -device nvme,drive=hd,serial=fabdesk "$@" >"$D/qemu.log" 2>&1 </dev/null &
   # vm_alive/wait_off read the pidfile; give QEMU a moment to write it (fast on KVM, slower under TCG).
   for i in $(seq 1 20); do [ -s "$PIDF" ] && break; sleep 0.5; done
 }
@@ -71,7 +71,14 @@ try:
 except Exception: pass
 PY
 }
-stop_vm() { [ -f "$PIDF" ] && kill "$(cat "$PIDF")" 2>/dev/null; rm -f "$PIDF" "$MON"; }
+stop_vm() {  # SIGTERM, then SIGKILL: a VM left behind keeps the caller's output pipe open
+  local pid; pid="$(cat "$PIDF" 2>/dev/null || true)"
+  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+    kill "$pid" 2>/dev/null; for i in 1 2 3 4 5 6 7 8 9 10; do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+    kill -9 "$pid" 2>/dev/null || true
+  fi
+  rm -f "$PIDF" "$MON"
+}
 vm_alive() { [ -f "$PIDF" ] && kill -0 "$(cat "$PIDF")" 2>/dev/null; }
 wait_off() { local i; for ((i=0; i<$1; i+=5)); do vm_alive || return 0; sleep 5; done; return 1; }
 make_iso() {  # make_iso <dir> <out.iso> <label>
@@ -142,7 +149,7 @@ case "$CMD" in
     [ -f "$INSTALLER" ] || die "no $FORMAT installer found"
     OUT="$(new_result_dir "windows-$GUEST-$FORMAT")"; log "installer: $INSTALLER"; log "results: $OUT"
     PORT=$(free_port)
-    python3 "$VM_SCRIPTS/receiver.py" "$PORT" "$OUT" & RECV=$!
+    python3 "$VM_SCRIPTS/receiver.py" "$PORT" "$OUT" >/dev/null 2>&1 </dev/null & RECV=$!
     P="$D/payload"; rm -rf "$P"; mkdir -p "$P/fabdesk"
     cp "$INSTALLER" "$P/fabdesk/"; cp "$VM_SCRIPTS/guest/windows-test.ps1" "$P/fabdesk/"
     printf '{"installer":"%s","reportUrl":"http://10.0.2.2:%s"}\n' "$(basename "$INSTALLER")" "$PORT" > "$P/fabdesk/config.json"

@@ -29,9 +29,17 @@ boot() {  # boot <disk> <ssh-port> <log> [extra args...]
   # shellcheck disable=SC2046
   qemu-system-x86_64 $(accel_args) -m "$MEM" -M q35 -nographic -serial "file:$logf" -monitor none -pidfile "$PIDF" \
     -drive "file=$disk,if=virtio,format=qcow2" -drive "file=$SEED,if=virtio,format=raw,readonly=on" \
-    -device virtio-net-pci,netdev=n0 -netdev "user,id=n0,hostfwd=tcp:127.0.0.1:$port-:22" -device virtio-rng-pci "$@" &
+    -device virtio-net-pci,netdev=n0 -netdev "user,id=n0,hostfwd=tcp:127.0.0.1:$port-:22" -device virtio-rng-pci "$@" >"$D/qemu.log" 2>&1 </dev/null &
+  for i in $(seq 1 20); do [ -s "$PIDF" ] && break; sleep 0.5; done
 }
-stop_vm() { [ -f "$PIDF" ] && kill "$(cat "$PIDF")" 2>/dev/null; rm -f "$PIDF"; }
+stop_vm() {
+  local pid; pid="$(cat "$PIDF" 2>/dev/null || true)"
+  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+    kill "$pid" 2>/dev/null; for i in 1 2 3 4 5 6 7 8 9 10; do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+    kill -9 "$pid" 2>/dev/null || true
+  fi
+  rm -f "$PIDF"
+}
 ssh_port() { cat "$D/port" 2>/dev/null || echo 2222; }
 
 case "$CMD" in
