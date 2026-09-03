@@ -42,7 +42,16 @@ export function resolveCoreCommand(opts: { packaged: boolean; resourcesPath: str
   }
   const candidates = [resolve(opts.appPath, "..", ".."), process.cwd(), resolve(process.cwd(), "..", "..")];
   const root = candidates.find((c) => existsSync(join(c, "apps", "core", "src", "main.ts"))) ?? candidates[0]!;
-  return { command: process.env["BUN_PATH"] ?? "bun", args: ["run", join(root, "apps", "core", "src", "main.ts")], cwd: root };
+  // Dev: Bun restarts the daemon on source changes (`FABDESK_CORE_RELOAD=watch`, default), swaps
+  // modules in place (`hot`, experimental with Workers), or neither (`off`). See docs/dev-loop.md.
+  const reload = process.env["FABDESK_CORE_RELOAD"] ?? "watch";
+  const flags = reload === "hot" ? ["--hot"] : reload === "off" ? [] : ["--watch", "--no-clear-screen"];
+  return { command: process.env["BUN_PATH"] ?? "bun", args: [...flags, "run", join(root, "apps", "core", "src", "main.ts")], cwd: root };
+}
+
+/** Dev daemons listen on a fixed port so MCP configs and the renderer survive a reload; 0 = random. */
+export function devCorePort(): string {
+  return process.env["FABDESK_DEV_PORT"] ?? "47831";
 }
 
 export function parseReadyLine(line: string): ReadyLine | null {
@@ -187,7 +196,7 @@ export class CoreSupervisor extends EventEmitter {
       ...cmd.args,
       "serve",
       "--port",
-      "0",
+      app.isPackaged || this.opts.binaryOverride ? "0" : devCorePort(),
       "--handshake-file",
       this.handshakePath(),
       "--parent-pid",
@@ -223,16 +232,17 @@ export class CoreSupervisor extends EventEmitter {
     if (child.stdout) {
       createInterface({ input: child.stdout }).on("line", (line) => {
         this.logLine(`[out] ${line}`);
-        if (ready) return;
         const rl = parseReadyLine(line);
-        if (rl) {
-          ready = true;
-          clearTimeout(readyTimer);
-          this.port = rl.port;
-          this.pid = rl.pid || child.pid || null;
-          this.restartTimes = this.restartTimes.filter((t) => Date.now() - t < 60_000);
-          this.setStatus({ state: "ready", port: rl.port, pid: this.pid ?? 0, attached: false, localAuth: this.opts.localAuth });
-        }
+        if (!rl) return;
+        // A second ready line means `bun --watch` restarted the daemon in place (same token, same
+        // port by default): re-announce so the renderer reconnects instead of treating it as a crash.
+        const reloaded = ready;
+        ready = true;
+        clearTimeout(readyTimer);
+        this.port = rl.port;
+        this.pid = rl.pid || child.pid || null;
+        this.restartTimes = this.restartTimes.filter((t) => Date.now() - t < 60_000);
+        this.setStatus({ state: "ready", port: rl.port, pid: this.pid ?? 0, attached: false, localAuth: this.opts.localAuth, ...(reloaded ? { message: "core reloaded" } : {}) });
       });
     }
     if (child.stderr) {

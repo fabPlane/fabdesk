@@ -46,7 +46,7 @@ export function CinemaTab() {
   const route = useRunTool();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
-  const painterRef = useRef<{ painter: CinemaPainter; width: number; height: number } | null>(null);
+  const painterRef = useRef<{ painter: CinemaPainter; ctor: typeof CinemaPainter; width: number; height: number } | null>(null);
   const [size, setSize] = useState({ w: 0, h: 0, dpr: 1 });
   const [shapeCount, setShapeCount] = useState(0);
   const run = activeRunId ? runs[activeRunId] : undefined;
@@ -88,8 +88,9 @@ export function CinemaTab() {
     const dark = document.documentElement.classList.contains("dark");
     // Statics are painted once to an offscreen layer and copper is extended per frame while
     // following live; only the composite hits the visible canvas each frame.
-    if (!painterRef.current || painterRef.current.width !== width || painterRef.current.height !== height) {
-      painterRef.current = { painter: makePainter(width, height), width, height };
+    // Recreate on resize, and when the renderer module was hot-swapped (a stale instance would keep the old code).
+    if (!painterRef.current || painterRef.current.width !== width || painterRef.current.height !== height || painterRef.current.ctor !== CinemaPainter) {
+      painterRef.current = { painter: makePainter(width, height), ctor: CinemaPainter, width, height };
     }
     const t0 = performance.now();
     const painted = painterRef.current.painter.paint(ctx as unknown as OffscreenLike, { run, cursor, hiddenLayers: new Set(hiddenLayers), width, height, theme: dark ? DARK_THEME : LIGHT_THEME, view: viewMode });

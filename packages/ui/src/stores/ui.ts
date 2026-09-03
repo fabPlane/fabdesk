@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
 export const BOARD_TABS = ["schematic", "pcb", "cinema", "3d", "drc", "renders", "files"] as const;
 export type BoardTab = (typeof BOARD_TABS)[number];
@@ -57,7 +58,9 @@ export interface UiState {
 
 export const DRAFT_KEY_NEW = "__new__";
 
-export const useUiStore = create<UiState>()((set) => ({
+export const useUiStore = create<UiState>()(
+  persist(
+    (set) => ({
   sidebarOpen: true,
   boardOpen: true,
   activeThreadId: null,
@@ -91,4 +94,19 @@ export const useUiStore = create<UiState>()((set) => ({
   setSketchOpen: (sketchOpen) => set({ sketchOpen }),
   setAgentPickerOpen: (agentPickerOpen) => set({ agentPickerOpen }),
   focusComposer: () => set((s) => ({ composerFocusNonce: s.composerFocusNonce + 1 })),
-}));
+}),
+    {
+      name: "fabdesk.ui",
+      version: 1,
+      // Survive full reloads (Vite HMR fallbacks, core reloads) without leaking transient state.
+      partialize: (s) => ({
+        sidebarOpen: s.sidebarOpen,
+        boardOpen: s.boardOpen,
+        activeThreadId: s.activeThreadId,
+        activeProjectId: s.activeProjectId,
+        boardTab: s.boardTab,
+        drafts: s.drafts,
+      }),
+    },
+  ),
+);
