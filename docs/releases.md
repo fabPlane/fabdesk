@@ -71,3 +71,12 @@ Without signing secrets the workflow still produces unsigned installers.
 shasum -a 256 Fabdesk-0.1.42-mac-arm64.dmg   # macOS / Linux
 certutil -hashfile Fabdesk-0.1.42-win-x64.exe SHA256   # Windows
 ```
+
+## Installer checks
+
+- Every release run verifies its own installers on the runner (`scripts/verify-installers.ts`:
+  `hdiutil verify`, mount, `codesign`, the bundled core runs; `unzip -t`, AppImage extract, `dpkg-deb`,
+  `7z t`) and the release job compares the transferred artifacts against per-runner checksums before
+  tagging. A build that fails either step is not released.
+- For the user-facing path (download, Gatekeeper / SmartScreen, first launch) run the fresh-VM tests
+  in [installer-vms.md](installer-vms.md): `bun run vm:mac test`, `vm:linux`, `vm:windows`.

@@ -36,6 +36,9 @@
     "format:check": "bunx prettier --check .",
     "security:scan": "bun run scripts/security-scan.ts",
     "security:issues": "bun run scripts/security-issues.ts",
+    "vm:mac": "bash scripts/vm/mac.sh",
+    "vm:linux": "bash scripts/vm/linux.sh",
+    "vm:windows": "bash scripts/vm/windows.sh",
     "pr:relevance": "bun run scripts/pr-relevance.ts"
   },
   "devDependencies": {

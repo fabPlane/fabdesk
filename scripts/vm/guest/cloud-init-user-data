@@ -1,0 +1,36 @@
+#cloud-config
+# NoCloud seed for the Ubuntu 22.04 installer test VM (scripts/vm/linux.sh). __SSH_KEY__ is filled in by the script.
+hostname: fabdesk-linux
+users:
+  - name: fabdesk
+    groups: [sudo]
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    lock_passwd: false
+    plain_text_passwd: fabdesk
+    ssh_authorized_keys:
+      - __SSH_KEY__
+ssh_pwauth: true
+package_update: true
+packages:
+  # libfuse2: AppImage mount. xvfb/imagemagick: headless display + screenshots. The rest are Electron's runtime deps.
+  - libfuse2
+  - xvfb
+  - imagemagick
+  - curl
+  - python3
+  - libgtk-3-0
+  - libnss3
+  - libxss1
+  - libasound2
+  - libgbm1
+  - libatk-bridge2.0-0
+  - libdrm2
+  - xdg-utils
+write_files:
+  - path: /etc/sysctl.d/60-fabdesk-userns.conf
+    content: "kernel.unprivileged_userns_clone = 1\n"
+runcmd:
+  - sysctl --system
+  - touch /home/fabdesk/.cloud-init-done
+  - chown fabdesk:fabdesk /home/fabdesk/.cloud-init-done
