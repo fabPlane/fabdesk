@@ -65,6 +65,10 @@ export async function runRoute(
   if (srj.connections.length === 0) {
     return ok("Nothing to route: the circuit has no connections (check nets in circuit.tsx).", { runId: null, complete: [], open: [] });
   }
+  // A prefab blank (fabdesk.json board.template) routes with the laser-prefab solver unless the caller
+  // picked a preset explicitly; the adapter also switches by itself when it sees assignable vias.
+  const settings: Record<string, unknown> | undefined =
+    manifest.board.template !== undefined && args.settings?.["preset"] === undefined ? { ...(args.settings ?? {}), preset: "laser-prefab" } : args.settings;
   const runId = newRunId();
   const runDir = p(project, PROJECT_FILES.runs, runId);
   await mkdir(runDir, { recursive: true });
@@ -105,7 +109,7 @@ export async function runRoute(
         timeoutMs: args.timeoutMs,
         minFrameIntervalMs,
         ...(args.onlyConnections ? { onlyConnections: args.onlyConnections } : {}),
-        ...(args.settings ? { settings: args.settings } : {}),
+        ...(settings ? { settings } : {}),
       },
       { onMessage: sink.onMessage, signal: ctx.signal },
     );
@@ -127,13 +131,18 @@ export async function runRoute(
   ctx.progress(1, "done");
   const frames = sink.stats.frames;
   const throttled = result.stats.framesThrottled;
+  const viaNote = result.stats.viasOnFixed !== undefined ? ` (${result.stats.viasOnFixed} on fixed vias)` : "";
   const text = [
-    `Route ${runId} (${router}) ${result.timedOut ? "TIMED OUT" : "finished"} in ${Math.round(result.stats.wallMs)} ms: ${result.complete.length} complete, ${result.open.length} open, ${result.stats.vias} vias, ${result.stats.segments} segments, ${frames} frames${throttled ? ` (${throttled} attempt frames throttled at ${minFrameIntervalMs} ms)` : ""}.`,
+    `Route ${runId} (${router}${result.preset ? `, ${result.preset}` : ""}) ${result.timedOut ? "TIMED OUT" : "finished"} in ${Math.round(result.stats.wallMs)} ms: ${result.complete.length} complete, ${result.open.length} open, ${result.stats.vias} vias${viaNote}, ${result.stats.segments} segments, ${frames} frames${throttled ? ` (${throttled} attempt frames throttled at ${minFrameIntervalMs} ms)` : ""}.`,
     result.open.length ? `Open connections: ${result.open.slice(0, 30).join(", ")}${result.open.length > 30 ? ", …" : ""}` : "All connections routed.",
     `Wrote ${PROJECT_FILES.routedJson}; frames at ${PROJECT_FILES.runs}/${runId}/frames.jsonl.`,
     ...(result.detail ? [result.detail] : []),
   ].join("\n");
-  return { text, json: { runId, router, complete: result.complete, open: result.open, timedOut: result.timedOut, stats: result.stats, frames }, isError: result.open.length > 0 };
+  return {
+    text,
+    json: { runId, router, ...(result.preset ? { preset: result.preset } : {}), complete: result.complete, open: result.open, timedOut: result.timedOut, stats: result.stats, frames },
+    isError: result.open.length > 0,
+  };
 }
 
 export const route_status = defineTool({

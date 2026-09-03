@@ -1,5 +1,6 @@
 import {
   AutoroutingPipelineSolver,
+  AutoroutingPipelineSolver8,
   type SimpleRouteJson as CapacitySrj,
   type SimplifiedPcbTrace as CapacityTrace,
 } from "@tscircuit/capacity-autorouter";
@@ -12,6 +13,27 @@ import { CAPACITY_UNITS_PER_MM, srjLayerNames } from "../units";
 
 /** How long the step loop runs before yielding to the event loop (abort checks, worker messages). */
 const YIELD_EVERY_MS = 16;
+
+/** A router via this close to a pre-placed assignable via counts as sitting on it. */
+const FIXED_VIA_TOLERANCE_MM = 0.05;
+
+/**
+ * Solver presets. `default` is the multi-graph pipeline (vias anywhere). `laser-prefab` is
+ * tscircuit's solver for prefabricated blanks (Viagrid): it never drills new vias and changes
+ * layers only through obstacles flagged `netIsAssignable`. Picked automatically when the SRJ
+ * carries such obstacles; `settings.preset` overrides.
+ */
+export type CapacityPreset = "default" | "laser-prefab";
+
+export function chooseCapacityPreset(
+  srj: Pick<RouteRequest["srj"], "obstacles">,
+  settings: Record<string, unknown> | undefined,
+): { preset: CapacityPreset; assignable: number } {
+  const assignable = srj.obstacles.filter((o) => o.netIsAssignable === true).length;
+  const requested = settings?.["preset"];
+  if (requested === "default" || requested === "laser-prefab") return { preset: requested, assignable };
+  return { preset: assignable > 0 ? "laser-prefab" : "default", assignable };
+}
 
 type SolverOptions = NonNullable<ConstructorParameters<typeof AutoroutingPipelineSolver>[1]>;
 type HdRoute = NonNullable<AutoroutingPipelineSolver["highDensityRouteSolver"]>["routes"][number];
@@ -114,7 +136,14 @@ export class CapacityAutorouterAdapter implements RouterAdapter {
       obstacles.push({ ...rest, type: "rect", width, height, connectedTo: o.connectedTo ?? [] } as CapacitySrj["obstacles"][number]);
     }
     const srj = { ...request.srj, obstacles, connections } as unknown as CapacitySrj;
-    const solver = new AutoroutingPipelineSolver(srj, (request.settings ?? {}) as SolverOptions);
+    const { preset, assignable } = chooseCapacityPreset(request.srj, request.settings);
+    const { preset: _presetSetting, ...solverSettings } = request.settings ?? {};
+    // Solver 8 shares the pipeline surface the loop below reads (phases, HD routes, output traces).
+    const solver =
+      preset === "laser-prefab"
+        ? (new AutoroutingPipelineSolver8(srj, solverSettings as SolverOptions) as unknown as AutoroutingPipelineSolver)
+        : new AutoroutingPipelineSolver(srj, solverSettings as SolverOptions);
+    const fixedVias = request.srj.obstacles.filter((o) => o.netIsAssignable === true).map((o) => o.center);
 
     const { minX, minY, maxX, maxY } = request.srj.bounds;
     emitter.meta({
@@ -200,6 +229,24 @@ export class CapacityAutorouterAdapter implements RouterAdapter {
     } else {
       detail = solver.error ?? `solver failed in phase ${phase}`;
     }
+    const vias = traces.reduce((n, t) => n + t.route.filter((p) => p.route_type === "via").length, 0);
+    const viasOnFixed = traces.reduce(
+      (n, t) =>
+        n +
+        t.route.filter(
+          (p) =>
+            p.route_type === "via" &&
+            fixedVias.some((c) => Math.hypot(c.x - p.x, c.y - p.y) <= FIXED_VIA_TOLERANCE_MM),
+        ).length,
+      0,
+    );
+    if (assignable > 0) {
+      notes.push(
+        preset === "laser-prefab"
+          ? `laser-prefab solver: ${viasOnFixed}/${vias} via(s) on the ${assignable} fixed via position(s)${vias > viasOnFixed ? ` (${vias - viasOnFixed} OFF the grid)` : ""}`
+          : `${assignable} assignable via(s) ignored by the default solver (settings.preset="laser-prefab" routes through them)`,
+      );
+    }
     if (notes.length > 0) detail = [detail, ...notes].filter((d) => d !== undefined).join("; ");
     // Judge completion by the copper, not by trace names: a merged net's traces all carry one
     // connection's name while joining every member connection's pads.
@@ -215,7 +262,7 @@ export class CapacityAutorouterAdapter implements RouterAdapter {
       open,
       timedOut,
       stats: {
-        vias: traces.reduce((n, t) => n + t.route.filter((p) => p.route_type === "via").length, 0),
+        vias,
         segments: traces.reduce(
           (n, t) => n + Math.max(0, t.route.filter((p) => p.route_type === "wire").length - 1),
           0,
@@ -223,7 +270,9 @@ export class CapacityAutorouterAdapter implements RouterAdapter {
         wallMs: performance.now() - started,
         frames: emitter.framesSent,
         framesThrottled: emitter.framesThrottled,
+        ...(assignable > 0 ? { viasOnFixed } : {}),
       },
+      preset,
       ...(detail !== undefined ? { detail } : {}),
     };
     emitter.result(result);

@@ -87,6 +87,11 @@ export const SrjObstacle = z.object({
   /** Explicit outline in mm; used verbatim instead of the rectangle (copper pours). */
   polygon: z.array(SrjPoint).optional(),
   connectedTo: z.array(z.string()).optional(),
+  /**
+   * A pre-placed via with no net yet (tscircuit `<via netIsAssignable />`, e.g. a Viagrid blank's factory
+   * vias). Routers that support it change layers only through such vias and never drill new ones.
+   */
+  netIsAssignable: z.boolean().optional(),
 });
 export const SrjConnection = z.object({
   name: z.string(),
@@ -145,7 +150,11 @@ export const RouteResult = z.object({
     frames: z.number().int(),
     /** `attempt` frames the adapter's throttle (`minFrameIntervalMs`) suppressed. */
     framesThrottled: z.number().int().optional(),
+    /** Vias the router placed on a pre-placed assignable via (see `SrjObstacle.netIsAssignable`). */
+    viasOnFixed: z.number().int().optional(),
   }),
+  /** Solver preset the adapter chose (`laser-prefab` when the board has assignable vias). */
+  preset: z.string().optional(),
   detail: z.string().optional(),
 });
 export type RouteResult = z.infer<typeof RouteResult>;
