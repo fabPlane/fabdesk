@@ -233,7 +233,28 @@ export const verify_drc = defineTool({
     show("Violations", report.violations);
     show("Unconnected", report.unconnected);
     show("Schematic parity", report.schematicParity);
-    return { text: lines.join("\n"), json: report, isError: c.errors > 0 || c.unconnected > 0 };
+    // The full report can run to hundreds of KiB (KiCad repeats a library warning per footprint), which
+    // exceeds what an agent may receive from one tool call; the JSON carries counts by rule and the first
+    // `limit` of each list, the complete report stays in reports/drc.json.
+    const byRule = (items: unknown[]): Record<string, number> => {
+      const out: Record<string, number> = {};
+      for (const v of items as Array<Record<string, unknown>>) {
+        const key = String(v["rule"] ?? v["type"] ?? "unknown");
+        out[key] = (out[key] ?? 0) + 1;
+      }
+      return out;
+    };
+    const json = {
+      counts: c,
+      reportPath: outFile,
+      byRule: { violations: byRule(report.violations), unconnected: byRule(report.unconnected), schematicParity: byRule(report.schematicParity) },
+      violations: report.violations.slice(0, limit),
+      unconnected: report.unconnected.slice(0, limit),
+      schematicParity: report.schematicParity.slice(0, limit),
+      truncated: report.violations.length > limit || report.unconnected.length > limit || report.schematicParity.length > limit,
+    };
+    if (json.truncated) lines.push(`Full report with every violation: ${outFile}`);
+    return { text: lines.join("\n"), json, isError: c.errors > 0 || c.unconnected > 0 };
   },
 });
 
