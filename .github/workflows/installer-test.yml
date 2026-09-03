@@ -48,8 +48,12 @@ jobs:
           tag=""
           if [ "$EVENT" = workflow_run ]; then
             # the release tagged the run's head commit
+            # target_commitish is the branch name, so match the tag's commit instead
             for i in 1 2 3 4 5 6; do
-              tag=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=10" --jq ".[] | select(.target_commitish==\"$RUN_SHA\") | .tag_name" | head -1 || true)
+              for t in $(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=10" --jq '.[].tag_name'); do
+                sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$t" --jq .sha 2>/dev/null || true)
+                [ "$sha" = "$RUN_SHA" ] && { tag="$t"; break; }
+              done
               [ -n "$tag" ] && break; sleep 20
             done
             [ -n "$tag" ] || { echo "::warning::no release found for $RUN_SHA (internal build?); testing the site's latest"; }

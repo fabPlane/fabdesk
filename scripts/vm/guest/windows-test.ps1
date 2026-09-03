@@ -49,7 +49,10 @@ $codesign = "$($sig.Status) $($sig.SignerCertificate.Subject)"
 Log "authenticode: $codesign"
 
 if ($cfg.installer -match "Setup.*\.exe$" -or $cfg.installer -notmatch "portable") {
-  $dir = Join-Path $env:LOCALAPPDATA "Programs\Fabdesk"
+  # electron-builder's NSIS installer: /S installs silently, then launches the app (runAfterFinish),
+  # so waiting for the installer's process tree never returns. Start it, then poll for the installed
+  # app in the per-user and per-machine locations (an elevated session gets a per-machine install).
+  $candidates = @((Join-Path $env:LOCALAPPDATA "Programs\Fabdesk\Fabdesk.exe"), (Join-Path $env:ProgramFiles "Fabdesk\Fabdesk.exe"))
   $motw = ""
   try { $p = Start-Process -FilePath $installer -ArgumentList "/S" -PassThru -ErrorAction Stop }
   catch {
@@ -59,29 +62,36 @@ if ($cfg.installer -match "Setup.*\.exe$" -or $cfg.installer -notmatch "portable
     Unblock-File $installer
     $p = Start-Process -FilePath $installer -ArgumentList "/S" -PassThru
   }
-  # A silent install that shows a dialog (elevation, SmartScreen, "app is running") would wait forever:
-  # give it 10 minutes, then capture the screen so the dialog is visible in the report, and kill it.
-  if ($null -ne $p -and -not $p.WaitForExit(600000)) {
+  $exe = ""
+  for ($i = 0; $i -lt 180; $i++) {
+    $found = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+    if ($found -and ($p.HasExited -or (Get-Process -Name Fabdesk -ErrorAction SilentlyContinue))) { $exe = $found; break }
+    Start-Sleep 1
+  }
+  if (-not $exe) {
     Screenshot (Join-Path $out "installer-hung.png")
     Get-Process | Where-Object { $_.Name -like "Fabdesk*" -or $_.Id -eq $p.Id } | Stop-Process -Force -ErrorAction SilentlyContinue
-    Err "NSIS silent install did not finish within 10 minutes (see installer-hung.png)"
-  } elseif ($null -eq $p -or $p.ExitCode -ne 0) { Err "NSIS silent install exited $($p.ExitCode)" }
-  $exe = Join-Path $dir "Fabdesk.exe"
-  $install = "nsis /S exit $($p.ExitCode) -> $dir" + $(if ($motw) { "; $motw" } else { "" })
+    Err "NSIS silent install produced no Fabdesk.exe within 3 minutes (see installer-hung.png)"
+  } else {
+    Start-Sleep 3
+    # The installer's auto-launched instance runs without the automation bridge: replace it with ours.
+    if (Get-Process -Name Fabdesk -ErrorAction SilentlyContinue) { Log "installer auto-launched the app; stopping it for the instrumented launch"; Stop-Process -Name Fabdesk -Force -ErrorAction SilentlyContinue; Start-Sleep 2 }
+    $install = "nsis /S -> $(Split-Path $exe)" + $(if ($motw) { "; $motw" } else { "" })
+  }
 } else {
   $exe = $installer
   $install = "portable exe"
 }
-if (-not (Test-Path $exe)) { Err "no Fabdesk.exe at $exe after install" }
+if ($exe -and -not (Test-Path $exe)) { Err "no Fabdesk.exe at $exe after install" }
 
-$core = Join-Path (Split-Path $exe) "resources\core\fabdesk-core.exe"
+$core = if ($exe) { Join-Path (Split-Path $exe) "resources\core\fabdesk-core.exe" } else { "" }
 if ($cfg.installer -match "portable") { $core = "" }
 $coreVersion = ""
 if ($core -and (Test-Path $core)) { $coreVersion = (& $core version 2>&1 | Select-Object -First 1); Log "core: $coreVersion" }
 elseif ($core) { Err "core binary missing at $core" }
 
 $health = ""; $shot = ""; $launchMs = ""
-if (Test-Path $exe) {
+if ($exe -and (Test-Path $exe)) {
   $env:FABDESK_AUTOMATION = "1"; $env:FABDESK_UPDATE_CHECK = "0"
   $t0 = Get-Date
   $app = Start-Process -FilePath $exe -PassThru
