@@ -48,6 +48,12 @@ export async function runDoctor(o: { config: CoreConfig; settings: Settings }): 
 
   if (!kicad.found) warnings.push("KiCad not found: install KiCad 9/10 or set Settings.kicadCliPath (DRC, render and export tools need it)");
   if (!agents.some((a) => a.installed)) warnings.push("no agent CLI found (claude, codex, grok or cursor agent); the app can still be used as an MCP server");
+  for (const a of agents) {
+    // npm's Windows shims are batch files; Bun.spawn cannot start them, so runs die at launch (exit -1).
+    if (a.installed && a.path && /\.(cmd|bat)$/i.test(a.path)) {
+      warnings.push(`${a.id} resolves to an npm shim (${a.path}); agent runs cannot start it. Install the native build (claude: irm https://claude.ai/install.ps1 | iex) or point Settings.agents.${a.id}.binaryPath at the .exe`);
+    }
+  }
   if (o.config.channel === "public" && routers.some((r) => r.id === "freerouting" && r.present)) warnings.push("freerouting adapter present in a public build");
   const repoRoot = findRepoRoot();
   if (repoRoot && existsSync(join(repoRoot, "vendor", "fabplane", "node_modules"))) warnings.push("vendor/fabplane/node_modules exists: never run `bun install` inside vendor/fabplane (duplicate zod/hono instances)");
