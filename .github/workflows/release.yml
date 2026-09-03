@@ -138,6 +138,17 @@ jobs:
           find apps/desktop/release -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.exe' \) -exec cp {} release-out/ \;
           ls -la release-out
 
+      # Fail fast on a bad image: some runs have produced DMGs whose internal CRCs do not match.
+      - name: Verify installers on the runner
+        shell: bash
+        run: |
+          cd release-out
+          for f in *.dmg; do [ -f "$f" ] || continue; hdiutil verify "$f" || { echo "::error::$f failed hdiutil verify"; exit 1; }; done
+          for f in *.zip; do [ -f "$f" ] || continue; unzip -tq "$f" || { echo "::error::$f failed zip test"; exit 1; }; done
+          shasum -a 256 * > "../SHA256SUMS-${{ matrix.target }}.txt" 2>/dev/null || sha256sum * > "../SHA256SUMS-${{ matrix.target }}.txt"
+          cat "../SHA256SUMS-${{ matrix.target }}.txt"
+          mv "../SHA256SUMS-${{ matrix.target }}.txt" .
+
       - uses: actions/upload-artifact@v4
         with:
           name: installers-${{ matrix.target }}
@@ -165,6 +176,15 @@ jobs:
 
       - name: Release notes (commits since the previous tag)
         run: bun run scripts/release-notes.ts --out artifacts/NOTES.md --head ${{ github.sha }} && cat artifacts/NOTES.md
+
+      # The per-runner sums prove the artifacts survived upload/download unchanged.
+      - name: Verify artifacts against runner checksums
+        run: |
+          cd artifacts
+          for sums in SHA256SUMS-*.txt; do
+            grep -v 'SHA256SUMS-' "$sums" | shasum -a 256 -c - || { echo "::error::artifact checksum mismatch in $sums"; exit 1; }
+          done
+          rm -f SHA256SUMS-*.txt
 
       - name: Manifest and checksums
         run: |
