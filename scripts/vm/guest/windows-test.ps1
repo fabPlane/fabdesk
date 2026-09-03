@@ -63,26 +63,31 @@ if ($cfg.installer -match "Setup.*\.exe$" -or $cfg.installer -notmatch "portable
     $p = Start-Process -FilePath $installer -ArgumentList "/S" -PassThru
   }
   $exe = ""
+  # The NSIS installer re-launches itself from %TEMP% under the product name, so a process called
+  # Fabdesk is not necessarily the app: the app lives next to resources\app.asar.
+  function IsApp($path) { $path -and (Test-Path (Join-Path (Split-Path $path) "resources\app.asar")) }
   for ($i = 0; $i -lt 600; $i++) {   # emulated VMs need minutes to unpack 150 MB and start Electron
-    # The auto-launched instance tells us exactly where the installer put the app.
-    $running = Get-Process -Name Fabdesk -ErrorAction SilentlyContinue | Where-Object { $_.Path } | Select-Object -First 1
-    if ($running) { $exe = $running.Path; Log "installer launched $exe"; break }
-    $found = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+    $app = Get-Process -Name Fabdesk -ErrorAction SilentlyContinue | Where-Object { IsApp $_.Path } | Select-Object -First 1
+    if ($app) { $exe = $app.Path; Log "installer launched $exe"; break }
+    $found = $candidates | Where-Object { IsApp $_ } | Select-Object -First 1
     if ($found -and $p.HasExited) { $exe = $found; break }
     Start-Sleep 1
   }
   if (-not $exe) {
-    $found = Get-ChildItem -Path $env:LOCALAPPDATA, $env:ProgramFiles, ${env:ProgramFiles(x86)} -Filter Fabdesk.exe -Recurse -Depth 3 -ErrorAction SilentlyContinue | Select-Object -First 1
+    $found = Get-ChildItem -Path $env:LOCALAPPDATA, $env:ProgramFiles, ${env:ProgramFiles(x86)} -Filter Fabdesk.exe -Recurse -Depth 3 -ErrorAction SilentlyContinue | Where-Object { IsApp $_.FullName } | Select-Object -First 1
     if ($found) { $exe = $found.FullName; Log "found installed app at $exe" }
   }
   if (-not $exe) {
     Screenshot (Join-Path $out "installer-hung.png")
     Get-Process | Where-Object { $_.Name -like "Fabdesk*" -or $_.Id -eq $p.Id } | Stop-Process -Force -ErrorAction SilentlyContinue
-    Err "NSIS silent install produced no Fabdesk.exe within 10 minutes (see installer-hung.png)"
+    Err "NSIS silent install produced no app within 10 minutes (see installer-hung.png)"
   } else {
     Start-Sleep 3
     # The installer's auto-launched instance runs without the automation bridge: replace it with ours.
-    if (Get-Process -Name Fabdesk -ErrorAction SilentlyContinue) { Log "installer auto-launched the app; stopping it for the instrumented launch"; Stop-Process -Name Fabdesk -Force -ErrorAction SilentlyContinue; Start-Sleep 2 }
+    $auto = Get-Process -Name Fabdesk -ErrorAction SilentlyContinue | Where-Object { IsApp $_.Path }
+    if ($auto) { Log "installer auto-launched the app; stopping it for the instrumented launch"; $auto | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep 3 }
+    # let the installer stub finish now that the app it launched is gone
+    for ($i = 0; $i -lt 60; $i++) { if ($p.HasExited) { break }; Start-Sleep 1 }
     $install = "nsis /S -> $(Split-Path $exe)" + $(if ($motw) { "; $motw" } else { "" })
   }
 } else {
