@@ -34,7 +34,7 @@ efi_code() {
   local p f
   for p in /opt/homebrew/share/qemu /usr/local/share/qemu /usr/share/qemu /usr/share/edk2/aarch64 /usr/share/OVMF; do
     if [ "$GUEST" = aarch64 ]; then [ -f "$p/edk2-aarch64-code.fd" ] && { echo "$p/edk2-aarch64-code.fd"; return; }
-    else for f in edk2-x86_64-code.fd OVMF_CODE.fd; do [ -f "$p/$f" ] && { echo "$p/$f"; return; }; done; fi
+    else for f in edk2-x86_64-code.fd OVMF_CODE_4M.fd OVMF_CODE.fd; do [ -f "$p/$f" ] && { echo "$p/$f"; return; }; done; fi
   done; die "no EDK2 firmware found for $GUEST (brew install qemu)"
 }
 native() { [ "$(uname -s)" = Darwin ] && { [ "$(uname -m)" = arm64 ] && [ "$GUEST" = aarch64 ] || [ "$(uname -m)" = x86_64 ] && [ "$GUEST" = x86_64 ]; }; }
@@ -50,7 +50,7 @@ boot() {  # boot <disk> <display: none|cocoa|gtk> <serial log> [extra drives...]
   if [ "$GUEST" = x86_64 ]; then machine=(-M q35); devs=(-vga std -device e1000e,netdev=n0); fi
   if [ ! -f "$VARS" ]; then
     if [ "$GUEST" = aarch64 ]; then qemu-img create -q -f raw "$VARS" 64M
-    else cp "$(dirname "$(efi_code)")/edk2-i386-vars.fd" "$VARS" 2>/dev/null || qemu-img create -q -f raw "$VARS" 4M; fi
+    else cp "$(dirname "$(efi_code)")/edk2-i386-vars.fd" "$VARS" 2>/dev/null || cp "$(dirname "$(efi_code)")/OVMF_VARS_4M.fd" "$VARS" 2>/dev/null || qemu-img create -q -f raw "$VARS" 4M; fi
   fi
   rm -f "$MON"
   # shellcheck disable=SC2046
@@ -74,6 +74,7 @@ vm_alive() { [ -f "$PIDF" ] && kill -0 "$(cat "$PIDF")" 2>/dev/null; }
 wait_off() { local i; for ((i=0; i<$1; i+=5)); do vm_alive || return 0; sleep 5; done; return 1; }
 make_iso() {  # make_iso <dir> <out.iso> <label>
   if command -v mkisofs >/dev/null; then mkisofs -quiet -o "$2" -V "$3" -joliet -rock -udf "$1"
+  elif command -v genisoimage >/dev/null; then genisoimage -quiet -o "$2" -V "$3" -joliet -rock -udf "$1"
   elif [ "$(uname -s)" = Darwin ]; then hdiutil makehybrid -quiet -iso -joliet -udf -default-volume-name "$3" -o "$2" "$1"
   else die "need mkisofs (genisoimage)"; fi
 }

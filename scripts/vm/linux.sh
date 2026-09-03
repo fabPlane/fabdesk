@@ -38,11 +38,11 @@ case "$CMD" in
   prepare)
     [ -f "$KEY" ] || ssh-keygen -q -t ed25519 -N "" -f "$KEY"
     [ -f "$D/base.img" ] || { log "downloading $IMG_URL"; curl -fL --progress-bar -o "$D/base.img" "$IMG_URL"; }
-    need mkisofs "brew install cdrtools (or dvd+rw-tools)" 2>/dev/null || need hdiutil "macOS only"
     sed "s|__SSH_KEY__|$(cat "$KEY.pub")|" "$REPO_ROOT/scripts/vm/guest/cloud-init-user-data" > "$D/user-data"
     printf 'instance-id: fabdesk-linux\nlocal-hostname: fabdesk-linux\n' > "$D/meta-data"
     rm -rf "$D/seed"; mkdir -p "$D/seed"; cp "$D/user-data" "$D/meta-data" "$D/seed/"
     if command -v mkisofs >/dev/null; then mkisofs -quiet -output "$SEED" -volid cidata -joliet -rock "$D/seed"
+    elif command -v genisoimage >/dev/null; then genisoimage -quiet -output "$SEED" -volid cidata -joliet -rock "$D/seed"
     else hdiutil makehybrid -quiet -iso -joliet -default-volume-name cidata -o "$SEED" "$D/seed"; fi
     qemu-img create -q -f qcow2 -F qcow2 -b "$D/base.img" "$BASE" 20G 2>/dev/null || { qemu-img convert -O qcow2 "$D/base.img" "$BASE" && qemu-img resize -q "$BASE" 20G; }
     PORT=$(free_port); echo "$PORT" > "$D/port"

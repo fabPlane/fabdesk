@@ -49,11 +49,26 @@ resolve_installer() {
   local os="$1" arch="$2" ext="$3" dir out re
   if [ -n "$FILE" ]; then [ -f "$FILE" ] || die "no such file: $FILE"; echo "$FILE"; return; fi
   if [ "$LATEST" = 1 ]; then
+    # The site feed lists public download URLs + sha256 per asset: no GitHub auth needed.
     need curl "install curl"
-    local json
-    json="$(curl -fsSL https://fabplane.com/desktop/latest.json)"
-    TAG="v$(printf '%s' "$json" | python3 -c 'import sys,json;print(json.load(sys.stdin)["version"])')"
-    log "site latest is $TAG"
+    local feed="${FABDESK_VM_FEED:-https://fabplane.com/desktop/latest.json}"
+    local pick
+    pick="$(curl -fsSL "$feed" | python3 -c '
+import sys, json, re
+os_, arch, ext = sys.argv[1:4]
+d = json.load(sys.stdin)
+re_ = re.compile(r"^Fabdesk-" + re.escape(d["version"]) + rf"-{os_}-{arch}.*\.({ext})$")
+for a in d["assets"]:
+    if re_.match(a["filename"]): print(d["tag"], a["url"], a["sha256"], a["filename"]); break
+' "$os" "$arch" "$ext")"
+    [ -n "$pick" ] || die "site feed has no ${os}-${arch}.(${ext}) asset"
+    set -- $pick; TAG="$1"; local url="$2" sha="$3" name="$4"
+    dir="$CACHE_DIR/$TAG"; mkdir -p "$dir"; out="$dir/$name"
+    if [ ! -f "$out" ] || [ "$(sha256_of "$out" 2>/dev/null)" != "$sha" ]; then
+      log "downloading $name from $url"; curl -fL --progress-bar -o "$out.part" "$url" && mv "$out.part" "$out"
+      [ "$(sha256_of "$out")" = "$sha" ] || die "$name: sha256 mismatch against latest.json"
+    fi
+    log "site latest is $TAG"; echo "$out"; return
   fi
   if [ -n "$TAG" ]; then
     need gh "install GitHub CLI"
@@ -99,6 +114,7 @@ PY
 }
 
 # Free TCP port on the host.
+sha256_of() { if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d" " -f1; else shasum -a 256 "$1" | cut -d" " -f1; fi; }
 free_port() { python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])'; }
 
 # ssh/scp against a guest with password auth without sshpass (OpenSSH >= 8.4).
