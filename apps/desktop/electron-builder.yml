@@ -53,7 +53,9 @@ linux:
       filter: ["fabdesk-core*"]
 win:
   icon: build/icon.ico
-  target: [nsis, portable]
+  # NSIS only: a portable target shares the artifact name and overwrote the installer in releases
+  # (a portable exe ignores /S and runs from %TEMP%).
+  target: [nsis]
   extraResources:
     - from: ../core/dist/windows-${arch}/
       to: core
