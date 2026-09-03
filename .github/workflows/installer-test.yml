@@ -1,0 +1,141 @@
+name: Installer test
+
+# Fresh-machine install + launch test of the released installers, on GitHub's own macOS / Ubuntu /
+# Windows runners (a clean VM per job). Runs after every successful Release (testing that tag),
+# every day against what fabplane.com serves, and on demand. Uses the same guest scripts as the
+# local VM tests (scripts/vm/guest); see docs/installer-vms.md.
+
+on:
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: "17 22 * * *"   # 05:17 Asia/Bangkok
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to test (empty = what fabplane.com serves)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: installer-test
+  cancel-in-progress: false
+
+jobs:
+  select:
+    # Decide which build to test: the tag the triggering release produced, the dispatch input, or the site's latest.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-22.04
+    outputs:
+      args: ${{ steps.pick.outputs.args }}
+      label: ${{ steps.pick.outputs.label }}
+    steps:
+      - id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          tag=""
+          if [ "$EVENT" = workflow_run ]; then
+            # the release tagged the run's head commit
+            for i in 1 2 3 4 5 6; do
+              tag=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=10" --jq ".[] | select(.target_commitish==\"$RUN_SHA\") | .tag_name" | head -1 || true)
+              [ -n "$tag" ] && break; sleep 20
+            done
+            [ -n "$tag" ] || { echo "::warning::no release found for $RUN_SHA (internal build?); testing the site's latest"; }
+          elif [ -n "$INPUT_TAG" ]; then tag="$INPUT_TAG"; fi
+          if [ -n "$tag" ]; then echo "args=--tag $tag" >> "$GITHUB_OUTPUT"; echo "label=$tag" >> "$GITHUB_OUTPUT"
+          else echo "args=--latest" >> "$GITHUB_OUTPUT"; echo "label=site-latest" >> "$GITHUB_OUTPUT"; fi
+
+  macos:
+    needs: select
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: arm64, ext: dmg }
+          - { arch: arm64, ext: zip }
+          - { arch: x64,   ext: dmg }   # Intel build under Rosetta on the arm64 runner
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with: { sparse-checkout: scripts/vm, sparse-checkout-cone-mode: false }
+      - name: Rosetta (x64 build)
+        if: matrix.arch == 'x64'
+        run: sudo softwareupdate --install-rosetta --agree-to-license || true
+      - name: Install and launch
+        id: t
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: bash scripts/vm/runner-test.sh mac ${{ matrix.arch }} ${{ matrix.ext }} ${{ needs.select.outputs.args }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: installer-test-macos-${{ matrix.arch }}-${{ matrix.ext }}-${{ needs.select.outputs.label }}
+          path: ${{ steps.t.outputs.RESULTS_DIR }}
+          if-no-files-found: ignore
+
+  linux:
+    needs: select
+    strategy:
+      fail-fast: false
+      matrix:
+        format: [AppImage, deb]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with: { sparse-checkout: scripts/vm, sparse-checkout-cone-mode: false }
+      - name: Desktop runtime deps (what a user's desktop already has)
+        run: sudo apt-get update -q && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q libfuse2 xvfb imagemagick libgtk-3-0 libnss3 libxss1 libasound2 libgbm1 libatk-bridge2.0-0 libdrm2 xdg-utils >/dev/null
+      - name: Install and launch
+        id: t
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: bash scripts/vm/runner-test.sh linux "(x64|amd64|x86_64)" ${{ matrix.format }} ${{ needs.select.outputs.args }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: installer-test-linux-${{ matrix.format }}-${{ needs.select.outputs.label }}
+          path: ${{ steps.t.outputs.RESULTS_DIR }}
+          if-no-files-found: ignore
+
+  windows:
+    needs: select
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with: { sparse-checkout: scripts/vm, sparse-checkout-cone-mode: false }
+      - name: Fetch installer
+        id: fetch
+        shell: bash
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          source scripts/vm/lib.sh
+          parse_args test ${{ needs.select.outputs.args }}
+          f="$(resolve_installer win "(x64|amd64|x86_64)" exe)"
+          echo "installer=$(cygpath -w "$f")" >> "$GITHUB_OUTPUT"
+      - name: Install and launch
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP "fabdesk-installer-test"
+          & scripts/vm/guest/windows-test.ps1 -Installer "${{ steps.fetch.outputs.installer }}" -Out $out
+          $rc = $LASTEXITCODE
+          Get-Content (Join-Path $out "report.json")
+          "RESULTS_DIR=$out" >> $env:GITHUB_OUTPUT
+          exit $rc
+        id: t
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: installer-test-windows-nsis-${{ needs.select.outputs.label }}
+          path: ${{ runner.temp }}/fabdesk-installer-test
+          if-no-files-found: ignore

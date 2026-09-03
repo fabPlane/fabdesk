@@ -1,5 +1,17 @@
 # Installer test VMs
 
+## On GitHub runners (the default)
+
+`.github/workflows/installer-test.yml` runs the same guest scripts directly on GitHub's macOS,
+Ubuntu and Windows runners, which are fresh VMs per job: no image to prepare or host to keep.
+It runs after every successful Release (testing that tag), daily against what fabplane.com
+serves, and on demand (`gh workflow run installer-test.yml -f tag=v0.1.42`). Each job uploads
+`report.json`, `app.png`, `screen.png` and logs as an artifact, and fails when the guest reports a
+failure. The macOS x64 build is exercised under Rosetta on the arm64 runner.
+
+## Local VMs (debugging)
+
+
 `scripts/vm/` boots a **fresh** virtual machine per run, installs a Fabdesk build the way a user
 would, launches it with the automation bridge on, checks the core daemon, takes screenshots and
 writes a report. Nothing is reused between tests except the base image, so first-run problems

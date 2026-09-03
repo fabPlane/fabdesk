@@ -1,12 +1,22 @@
-# Runs inside the Windows test VM. Started by the startup agent (see autounattend.xml) when it finds a
-# payload drive with fabdesk\windows-test.ps1. Reads fabdesk\config.json ({installer, reportUrl}),
-# installs, launches with the automation bridge, screenshots, and PUTs the results to the host.
+# Runs inside the Windows test VM, or directly on a fresh Windows CI runner.
+#   VM:     started by the startup agent (see autounattend.xml) when it finds a payload drive with
+#           fabdesk\windows-test.ps1; reads fabdesk\config.json ({installer, reportUrl}), uploads the
+#           results to the host over HTTP and powers the VM off.
+#   Runner: windows-test.ps1 -Installer <path> -Out <dir>  (no upload, no shutdown; report.json in -Out)
+param([string]$Installer = "", [string]$Out = "")
 $ErrorActionPreference = "Continue"
 $payload = Split-Path -Parent $MyInvocation.MyCommand.Path
-$cfg = Get-Content (Join-Path $payload "config.json") | ConvertFrom-Json
-$installer = Join-Path $payload $cfg.installer
-$reportUrl = $cfg.reportUrl
-$out = Join-Path $env:TEMP "fabdesk-test"
+$reportUrl = ""
+if ($Installer) {
+  $installer = (Resolve-Path $Installer).Path
+  $cfg = [pscustomobject]@{ installer = (Split-Path -Leaf $installer) }
+} else {
+  $cfg = Get-Content (Join-Path $payload "config.json") | ConvertFrom-Json
+  $installer = Join-Path $payload $cfg.installer
+  $reportUrl = $cfg.reportUrl
+}
+if (-not $Out) { $Out = Join-Path $env:TEMP "fabdesk-test" }
+$out = $Out
 Remove-Item -Recurse -Force $out -ErrorAction SilentlyContinue | Out-Null
 New-Item -ItemType Directory -Force $out | Out-Null
 $log = Join-Path $out "log.txt"
@@ -91,7 +101,12 @@ if (Test-Path $exe) {
 $report = [ordered]@{ platform = "windows"; ok = ($errors.Count -eq 0); installer = $cfg.installer; install = $install
   codesign = $codesign; core_version = $coreVersion; health = $health; screenshot = $shot; launch_ms = $launchMs; errors = $errors }
 $report | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $out "report.json")
-Get-ChildItem $out | ForEach-Object { Put $_.Name $_.FullName }
-try { Invoke-RestMethod -Method Post -Uri "$reportUrl/__done" | Out-Null } catch {}
-Log "== done"
-Stop-Computer -Force
+if ($reportUrl) {
+  Get-ChildItem $out | ForEach-Object { Put $_.Name $_.FullName }
+  try { Invoke-RestMethod -Method Post -Uri "$reportUrl/__done" | Out-Null } catch {}
+  Log "== done"
+  Stop-Computer -Force
+} else {
+  Log "== done"
+  if ($errors.Count -gt 0) { exit 1 }
+}
