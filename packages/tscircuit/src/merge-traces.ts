@@ -4,6 +4,17 @@ import { asElements, type Element } from "./types";
 const DEFAULT_VIA_OUTER_DIAMETER = 0.6;
 const DEFAULT_VIA_HOLE_DIAMETER = 0.3;
 const ROUTE_ERROR_TYPES = new Set(["pcb_trace_error", "pcb_autorouting_error"]);
+/** A router via this close to a pre-placed assignable via claims it instead of adding a new via. */
+const ASSIGNABLE_VIA_TOLERANCE_MM = 0.05;
+
+/** A pre-placed via with no net of its own (`<via netIsAssignable />`, e.g. a Viagrid blank's factory vias). */
+const isAssignableVia = (el: Element): boolean => el.type === "pcb_via" && el.net_is_assignable === true;
+
+/** Returns the via as the blank made it: present, but not part of any trace or net. */
+function unclaimVia(el: Element): Element {
+  const { pcb_trace_id: _t, net_assigned: _a, source_trace_id: _s, source_net_id: _n, subcircuit_connectivity_map_key: _k, ...rest } = el;
+  return rest;
+}
 
 function removeRouting(elements: Element[], sourceTraceIds: Set<string> | null): { kept: Element[]; removedTraceIds: Set<string> } {
   const removedTraceIds = new Set<string>();
@@ -11,18 +22,21 @@ function removeRouting(elements: Element[], sourceTraceIds: Set<string> | null):
   for (const el of elements) {
     if (el.type === "pcb_trace" && matchesSource(el)) removedTraceIds.add(String(el.pcb_trace_id));
   }
-  const kept = elements.filter((el) => {
-    if (el.type === "pcb_trace") return !removedTraceIds.has(String(el.pcb_trace_id));
-    if (el.type === "pcb_via") {
-      if (removedTraceIds.has(String(el.pcb_trace_id))) return false;
-      return !(typeof el.source_trace_id === "string" && matchesSource(el));
+  const kept: Element[] = [];
+  for (const el of elements) {
+    if (el.type === "pcb_trace") {
+      if (!removedTraceIds.has(String(el.pcb_trace_id))) kept.push(el);
+    } else if (el.type === "pcb_via") {
+      const routed = removedTraceIds.has(String(el.pcb_trace_id)) || (typeof el.source_trace_id === "string" && matchesSource(el));
+      // Assignable vias belong to the blank, not to the routing: release them instead of dropping them.
+      if (isAssignableVia(el)) kept.push(routed ? unclaimVia(el) : el);
+      else if (!routed) kept.push(el);
+    } else if (ROUTE_ERROR_TYPES.has(el.type)) {
+      if (sourceTraceIds !== null && !(removedTraceIds.has(String(el.pcb_trace_id)) || matchesSource(el))) kept.push(el);
+    } else {
+      kept.push(el);
     }
-    if (ROUTE_ERROR_TYPES.has(el.type)) {
-      if (sourceTraceIds === null) return false;
-      return !(removedTraceIds.has(String(el.pcb_trace_id)) || matchesSource(el));
-    }
-    return true;
-  });
+  }
   return { kept, removedTraceIds };
 }
 
@@ -107,6 +121,17 @@ export function mergeTraces(circuitJson: unknown[], traces: SimplifiedPcbTrace[]
   const { kept } = removeRouting(elements, targets);
   const nextTraceId = nextIdCounter(kept, "pcb_trace");
   const nextViaId = nextIdCounter(kept, "pcb_via");
+  // Unclaimed assignable vias, by index into `kept`, so a claim can replace the element in place.
+  const assignable = kept.map((el, i) => ({ el, i })).filter(({ el }) => isAssignableVia(el) && el.net_assigned !== true);
+  const claimAssignable = (x: number, y: number): { index: number; el: Element } | undefined => {
+    let best: { index: number; el: Element; d: number } | undefined;
+    for (const { el, i } of assignable) {
+      if (kept[i]?.net_assigned === true) continue;
+      const d = Math.hypot(Number(el.x) - x, Number(el.y) - y);
+      if (d <= ASSIGNABLE_VIA_TOLERANCE_MM && (best === undefined || d < best.d)) best = { index: i, el, d };
+    }
+    return best;
+  };
 
   const added: Element[] = [];
   for (const trace of traces) {
@@ -129,6 +154,30 @@ export function mergeTraces(circuitJson: unknown[], traces: SimplifiedPcbTrace[]
         continue;
       }
       const extra = point as unknown as Record<string, unknown>;
+      // A via on a pre-placed assignable via (a Viagrid factory via) claims that via for this net
+      // instead of drilling a second one on top of it.
+      const claimed = claimAssignable(point.x, point.y);
+      if (claimed) {
+        const via = claimed.el;
+        kept[claimed.index] = {
+          ...via,
+          pcb_trace_id: pcbTraceId,
+          net_assigned: true,
+          ...netIdentity,
+          ...(sourceNetId ? { source_net_id: sourceNetId } : {}),
+        };
+        route.push({
+          route_type: "via",
+          x: Number(via.x),
+          y: Number(via.y),
+          from_layer: point.from_layer,
+          to_layer: point.to_layer,
+          outer_diameter: Number(via.outer_diameter) || DEFAULT_VIA_OUTER_DIAMETER,
+          hole_diameter: Number(via.hole_diameter) || DEFAULT_VIA_HOLE_DIAMETER,
+          pcb_via_id: via.pcb_via_id,
+        });
+        continue;
+      }
       const outer = typeof extra.via_diameter === "number" ? extra.via_diameter : DEFAULT_VIA_OUTER_DIAMETER;
       const hole = typeof extra.via_hole_diameter === "number" ? extra.via_hole_diameter : DEFAULT_VIA_HOLE_DIAMETER;
       route.push({
@@ -156,6 +205,22 @@ export function mergeTraces(circuitJson: unknown[], traces: SimplifiedPcbTrace[]
         ...(sourceNetId ? { source_net_id: sourceNetId } : {}),
       });
     }
+    // A wire that runs across an unclaimed factory via joins that via to the net (the via is copper on
+    // both layers). Claim it too, so the design records the connection and verify_viagrid can see that no
+    // second net touches the same via.
+    for (let i = 1; i < route.length; i++) {
+      const a = route[i - 1]!;
+      const b = route[i]!;
+      if (a.route_type !== "wire" || b.route_type !== "wire" || a.layer !== b.layer) continue;
+      const width = Number(b.width) || 0;
+      for (const { el, i: index } of assignable) {
+        if (kept[index]?.net_assigned === true) continue;
+        const reach = (Number(el.outer_diameter) || DEFAULT_VIA_OUTER_DIAMETER) / 2 + width / 2 - 1e-6;
+        if (distanceToSegment(Number(el.x), Number(el.y), Number(a.x), Number(a.y), Number(b.x), Number(b.y)) <= reach) {
+          kept[index] = { ...el, pcb_trace_id: pcbTraceId, net_assigned: true, ...netIdentity, ...(sourceNetId ? { source_net_id: sourceNetId } : {}) };
+        }
+      }
+    }
     added.push({
       type: "pcb_trace",
       pcb_trace_id: pcbTraceId,
@@ -166,6 +231,15 @@ export function mergeTraces(circuitJson: unknown[], traces: SimplifiedPcbTrace[]
     });
   }
   return [...kept, ...added];
+}
+
+/** Distance from point (px, py) to the segment (ax, ay)-(bx, by). */
+export function distanceToSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const len2 = dx * dx + dy * dy;
+  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
 }
 
 /**
