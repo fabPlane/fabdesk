@@ -14,7 +14,7 @@ ERRORS=(); R_INSTALL="" R_GK="" R_CS="" R_CORE="" R_HEALTH="" R_SHOT="" LAUNCH_M
 err() { ERRORS+=("$1"); echo "ERROR: $1"; }
 write_report() {
   local ok=true; [ ${#ERRORS[@]} -eq 0 ] || ok=false
-  python3 - "$OUT/report.json" "$ok" "$(basename "$INSTALLER")" "$R_INSTALL" "$R_GK" "$R_CS" "$R_CORE" "$R_HEALTH" "$R_SHOT" "$LAUNCH_MS" "${ERRORS[@]}" <<'PY'
+  python3 - "$OUT/report.json" "$ok" "$(basename "$INSTALLER")" "$R_INSTALL" "$R_GK" "$R_CS" "$R_CORE" "$R_HEALTH" "$R_SHOT" "$LAUNCH_MS" ${ERRORS[@]+"${ERRORS[@]}"} <<'PY'
 import json, sys
 a = sys.argv[1:]
 rep = {"platform": "macos", "ok": a[1] == "true", "installer": a[2], "install": a[3], "gatekeeper": a[4],
@@ -45,7 +45,9 @@ case "$INSTALLER" in
 esac
 [ -d "$APP" ] || { err "no $APP after install"; exit 0; }
 
-# Gatekeeper verdict on the quarantined app (what a user sees on first launch).
+# Gatekeeper verdict on the quarantined app (what a user sees on first launch). VM base images ship
+# with Gatekeeper disabled, so turn it back on first (admin has passwordless sudo in the tart images).
+sudo -n spctl --global-enable >/dev/null 2>&1 || sudo -n spctl --master-enable >/dev/null 2>&1 || echo "note: could not enable Gatekeeper"
 GK="$(spctl -a -vv -t exec "$APP" 2>&1 | tr '\n' ' ')"
 R_GK="$GK"
 echo "gatekeeper: $GK"

@@ -11,7 +11,7 @@ ERRORS=(); R_INSTALL="" R_CORE="" R_HEALTH="" R_SHOT="" LAUNCH_MS="" BIN=""
 err() { ERRORS+=("$1"); echo "ERROR: $1"; }
 write_report() {
   local ok=true; [ ${#ERRORS[@]} -eq 0 ] || ok=false
-  python3 - "$OUT/report.json" "$ok" "$(basename "$INSTALLER")" "$R_INSTALL" "$R_CORE" "$R_HEALTH" "$R_SHOT" "$LAUNCH_MS" "${ERRORS[@]}" <<'PY'
+  python3 - "$OUT/report.json" "$ok" "$(basename "$INSTALLER")" "$R_INSTALL" "$R_CORE" "$R_HEALTH" "$R_SHOT" "$LAUNCH_MS" ${ERRORS[@]+"${ERRORS[@]}"} <<'PY'
 import json, sys
 a = sys.argv[1:]
 json.dump({"platform": "linux", "ok": a[1] == "true", "installer": a[2], "install": a[3], "core_version": a[4],
