@@ -12,19 +12,20 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@excalidraw/excalidraw": "^0.18.0",
     "@fabdesk/protocol": "workspace:*",
+    "@fontsource-variable/inter": "^5.2.0",
+    "@tanstack/react-query": "^5.80.0",
+    "circuit-to-svg": "latest",
+    "clsx": "^2.1.0",
+    "cmdk": "^1.1.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "zustand": "^5.0.0",
-    "@tanstack/react-query": "^5.80.0",
     "react-markdown": "^10.1.0",
+    "react-resizable-panels": "^3.0.0",
     "remark-gfm": "^4.0.0",
     "shiki": "^3.0.0",
-    "cmdk": "^1.1.0",
-    "react-resizable-panels": "^3.0.0",
-    "@excalidraw/excalidraw": "^0.18.0",
-    "circuit-to-svg": "latest",
-    "clsx": "^2.1.0"
+    "zustand": "^5.0.0"
   },
   "devDependencies": {
     "typescript": "5.9.2",

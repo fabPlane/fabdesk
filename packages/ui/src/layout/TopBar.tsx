@@ -39,7 +39,7 @@ export function TopBar({ coreStatus }: { coreStatus?: CoreStatusInfo | undefined
           &#9776;
         </IconButton>
       </div>
-      <span className="font-semibold">Fabdesk</span>
+      <span className="fd-wordmark">fab<b>desk</b></span>
       {project && <span className="text-muted">/ {project.name}</span>}
       <div className="ml-auto flex items-center gap-1.5" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
         <UpdateBadge />

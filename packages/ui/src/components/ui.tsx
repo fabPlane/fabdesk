@@ -5,7 +5,7 @@ type Variant = "primary" | "secondary" | "ghost" | "danger";
 type Size = "sm" | "md";
 
 const variants: Record<Variant, string> = {
-  primary: "bg-accent text-accent-fg hover:opacity-90 border-transparent",
+  primary: "bg-accent text-accent-fg font-semibold hover:opacity-90 border-transparent",
   secondary: "bg-panel-2 text-fg hover:bg-border border-border",
   ghost: "bg-transparent text-fg hover:bg-panel-2 border-transparent",
   danger: "bg-danger/10 text-danger hover:bg-danger/20 border-transparent",
@@ -120,7 +120,7 @@ export function Badge({
   title?: string;
 }) {
   const tones = {
-    neutral: "bg-panel-2 text-muted border-border",
+    neutral: "bg-transparent text-fg/85 border-border font-semibold",
     accent: "bg-accent/15 text-accent border-accent/30",
     success: "bg-success/15 text-success border-success/30",
     warning: "bg-warning/15 text-warning border-warning/30",
