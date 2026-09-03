@@ -64,9 +64,9 @@ mkdir -p "$UD"
 T0=$(python3 -c 'import time;print(int(time.time()*1000))')
 FABDESK_AUTOMATION=1 FABDESK_UPDATE_CHECK=0 "$APP/Contents/MacOS/Fabdesk" >"$OUT/app-stdout.txt" 2>&1 &
 APP_PID=$!
-for i in $(seq 1 60); do pick_ud; [ -f "$UD/daemon.json" ] && [ -f "$UD/app-bridge.json" ] && break; sleep 1; done
+for i in $(seq 1 180); do pick_ud; [ -f "$UD/daemon.json" ] && [ -f "$UD/app-bridge.json" ] && break; sleep 1; done   # x64 under Rosetta translates ~200 MB on first launch
 echo "userData: $UD"
-if [ ! -f "$UD/daemon.json" ]; then err "daemon.json never appeared (app did not start its core)"; kill $APP_PID 2>/dev/null; exit 0; fi
+if [ ! -f "$UD/daemon.json" ]; then err "daemon.json never appeared (app did not start its core)"; echo "--- app stdout/stderr:"; tail -20 "$OUT/app-stdout.txt"; screencapture -x "$OUT/screen.png" 2>/dev/null; kill $APP_PID 2>/dev/null; exit 0; fi
 PORT=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["port"])' "$UD/daemon.json")
 TOKEN=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["token"])' "$UD/daemon.json")
 for i in $(seq 1 30); do R_HEALTH="$(curl -fsS -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:$PORT/health" 2>/dev/null)" && break; sleep 1; done

@@ -23,6 +23,15 @@ $log = Join-Path $out "log.txt"
 $errors = @()
 function Log($m) { $line = "$(Get-Date -Format HH:mm:ss) $m"; Write-Host $line; Add-Content $log $line }
 function Err($m) { $script:errors += $m; Log "ERROR: $m" }
+function Screenshot($path) {
+  try {
+    Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+    $bounds = [Windows.Forms.Screen]::PrimaryScreen.Bounds
+    $bmp = New-Object Drawing.Bitmap $bounds.Width, $bounds.Height
+    $g = [Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($bounds.Location, [Drawing.Point]::Empty, $bounds.Size)
+    $bmp.Save($path); $g.Dispose(); $bmp.Dispose()
+  } catch { Log "screen capture failed: $_" }
+}
 function Put($name, $path) {
   try { Invoke-RestMethod -Method Put -Uri "$reportUrl/$name" -InFile $path -ContentType "application/octet-stream" | Out-Null }
   catch { Log "upload of $name failed: $_" }
@@ -42,15 +51,21 @@ Log "authenticode: $codesign"
 if ($cfg.installer -match "Setup.*\.exe$" -or $cfg.installer -notmatch "portable") {
   $dir = Join-Path $env:LOCALAPPDATA "Programs\Fabdesk"
   $motw = ""
-  try { $p = Start-Process -FilePath $installer -ArgumentList "/S" -PassThru -Wait -ErrorAction Stop }
+  try { $p = Start-Process -FilePath $installer -ArgumentList "/S" -PassThru -ErrorAction Stop }
   catch {
     # Windows refused the downloaded (mark-of-the-web) file: what SmartScreen shows a user for an unsigned build.
     $motw = "blocked with mark-of-the-web ($($_.Exception.Message.Split([char]10)[0].Trim())); unblocked and retried"
     Log $motw
     Unblock-File $installer
-    $p = Start-Process -FilePath $installer -ArgumentList "/S" -PassThru -Wait
+    $p = Start-Process -FilePath $installer -ArgumentList "/S" -PassThru
   }
-  if ($null -eq $p -or $p.ExitCode -ne 0) { Err "NSIS silent install exited $($p.ExitCode)" }
+  # A silent install that shows a dialog (elevation, SmartScreen, "app is running") would wait forever:
+  # give it 10 minutes, then capture the screen so the dialog is visible in the report, and kill it.
+  if ($null -ne $p -and -not $p.WaitForExit(600000)) {
+    Screenshot (Join-Path $out "installer-hung.png")
+    Get-Process | Where-Object { $_.Name -like "Fabdesk*" -or $_.Id -eq $p.Id } | Stop-Process -Force -ErrorAction SilentlyContinue
+    Err "NSIS silent install did not finish within 10 minutes (see installer-hung.png)"
+  } elseif ($null -eq $p -or $p.ExitCode -ne 0) { Err "NSIS silent install exited $($p.ExitCode)" }
   $exe = Join-Path $dir "Fabdesk.exe"
   $install = "nsis /S exit $($p.ExitCode) -> $dir" + $(if ($motw) { "; $motw" } else { "" })
 } else {
@@ -95,13 +110,7 @@ if (Test-Path $exe) {
     } else { Err "app-bridge.json missing" }
   }
   # Whole-screen capture (shows SmartScreen / installer dialogs if any).
-  try {
-    Add-Type -AssemblyName System.Windows.Forms, System.Drawing
-    $bounds = [Windows.Forms.Screen]::PrimaryScreen.Bounds
-    $bmp = New-Object Drawing.Bitmap $bounds.Width, $bounds.Height
-    $g = [Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($bounds.Location, [Drawing.Point]::Empty, $bounds.Size)
-    $bmp.Save((Join-Path $out "screen.png")); $g.Dispose(); $bmp.Dispose()
-  } catch { Log "screen capture failed: $_" }
+  Screenshot (Join-Path $out "screen.png")
   Stop-Process -Name Fabdesk -Force -ErrorAction SilentlyContinue
   Get-ChildItem $ud -Filter *.log -ErrorAction SilentlyContinue | Copy-Item -Destination $out
 }
