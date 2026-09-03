@@ -63,7 +63,7 @@ if ($cfg.installer -match "Setup.*\.exe$" -or $cfg.installer -notmatch "portable
     $p = Start-Process -FilePath $installer -ArgumentList "/S" -PassThru
   }
   $exe = ""
-  for ($i = 0; $i -lt 180; $i++) {
+  for ($i = 0; $i -lt 600; $i++) {   # emulated VMs need minutes to unpack 150 MB and start Electron
     # The auto-launched instance tells us exactly where the installer put the app.
     $running = Get-Process -Name Fabdesk -ErrorAction SilentlyContinue | Where-Object { $_.Path } | Select-Object -First 1
     if ($running) { $exe = $running.Path; Log "installer launched $exe"; break }
@@ -78,7 +78,7 @@ if ($cfg.installer -match "Setup.*\.exe$" -or $cfg.installer -notmatch "portable
   if (-not $exe) {
     Screenshot (Join-Path $out "installer-hung.png")
     Get-Process | Where-Object { $_.Name -like "Fabdesk*" -or $_.Id -eq $p.Id } | Stop-Process -Force -ErrorAction SilentlyContinue
-    Err "NSIS silent install produced no Fabdesk.exe within 3 minutes (see installer-hung.png)"
+    Err "NSIS silent install produced no Fabdesk.exe within 10 minutes (see installer-hung.png)"
   } else {
     Start-Sleep 3
     # The installer's auto-launched instance runs without the automation bridge: replace it with ours.
