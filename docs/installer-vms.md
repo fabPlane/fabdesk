@@ -9,6 +9,18 @@ serves, and on demand (`gh workflow run installer-test.yml -f tag=v0.1.42`). Eac
 `report.json`, `app.png`, `screen.png` and logs as an artifact, and fails when the guest reports a
 failure. The macOS x64 build is exercised under Rosetta on the arm64 runner.
 
+## Daily job on agent1 (OpenClaw)
+
+`scripts/vm/install-agent.sh agent1` copies `scripts/vm` to `/home/openclaw/fabdesk-vm` on agent1
+(a Proxmox VM with nested KVM) and declares the OpenClaw automation `fabdesk-installer-vm-daily-v1`:
+`daily.sh` runs the Linux AppImage, Linux deb and Windows NSIS fresh-VM tests against whatever
+fabplane.com serves, every day at 05:00 Asia/Bangkok, announcing to the TensorFleet Telegram
+destination only when something fails. Base images live under `/home/openclaw/.fabdesk-vm`
+(prepared once with `linux.sh prepare` and `windows.sh prepare --guest x86_64` as user openclaw).
+`daily.sh` sizes each VM from the host's available memory (4 GiB Linux, 6 GiB Windows by default,
+always leaving 3 GiB for the host) and runs them one at a time; a full run takes about five
+minutes under KVM. Re-run `install-agent.sh` after changing the scripts.
+
 ## Local VMs (debugging)
 
 
