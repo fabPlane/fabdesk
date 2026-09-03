@@ -29,15 +29,48 @@
   --fd-border: #30362e;
   --fd-fg: #edf0e9;
   --fd-muted: #a5aea0;
-  --fd-accent: #a7e268;
-  --fd-accent-fg: #13200d;
-  --fd-acid: #b9f45d;
+  --fd-accent: #8fca55;
+  --fd-accent-fg: #101a0a;
+  --fd-acid: #a4dc4e;
   --fd-danger: #f0715f;
-  --fd-success: #8dbd68;
+  --fd-success: #7fae5e;
   --fd-warning: #e0b24a;
   --fd-code-bg: #090b09;
-  --fd-code-fg: #a9d985;
+  --fd-code-fg: #98c777;
   color-scheme: dark;
+}
+/* "System" skins: the neutral light/dark look, selectable in Settings → Appearance. */
+[data-skin="plain"] {
+  --fd-bg: #f7f7f8;
+  --fd-panel: #ffffff;
+  --fd-panel-2: #f0f0f2;
+  --fd-border: #e3e3e7;
+  --fd-fg: #1a1a1f;
+  --fd-muted: #6b6b76;
+  --fd-accent: #7c3aed;
+  --fd-accent-fg: #ffffff;
+  --fd-acid: #7c3aed;
+  --fd-danger: #dc2626;
+  --fd-success: #16a34a;
+  --fd-warning: #d97706;
+  --fd-code-bg: #f0f0f2;
+  --fd-code-fg: #1a1a1f;
+}
+.dark[data-skin="plain"] {
+  --fd-bg: #17161b;
+  --fd-panel: #1f1e24;
+  --fd-panel-2: #26252c;
+  --fd-border: #33323a;
+  --fd-fg: #ececf1;
+  --fd-muted: #9a99a6;
+  --fd-accent: #a78bfa;
+  --fd-accent-fg: #17161b;
+  --fd-acid: #a78bfa;
+  --fd-danger: #f87171;
+  --fd-success: #4ade80;
+  --fd-warning: #fbbf24;
+  --fd-code-bg: #26252c;
+  --fd-code-fg: #ececf1;
 }
 
 @theme inline {

@@ -23,6 +23,9 @@ export interface PendingAttachment {
 }
 
 export interface UiState {
+  /** Theme chosen in Settings → Appearance; null = derive from the core setting / OS. */
+  themeId: "fabplane-dark" | "fabplane-light" | "plain-dark" | "plain-light" | null;
+  setThemeId: (id: UiState["themeId"]) => void;
   sidebarOpen: boolean;
   boardOpen: boolean;
   activeThreadId: string | null;
@@ -61,6 +64,8 @@ export const DRAFT_KEY_NEW = "__new__";
 export const useUiStore = create<UiState>()(
   persist(
     (set) => ({
+  themeId: null,
+  setThemeId: (themeId) => set({ themeId }),
   sidebarOpen: true,
   boardOpen: true,
   activeThreadId: null,
@@ -100,6 +105,7 @@ export const useUiStore = create<UiState>()(
       version: 1,
       // Survive full reloads (Vite HMR fallbacks, core reloads) without leaking transient state.
       partialize: (s) => ({
+        themeId: s.themeId,
         sidebarOpen: s.sidebarOpen,
         boardOpen: s.boardOpen,
         activeThreadId: s.activeThreadId,

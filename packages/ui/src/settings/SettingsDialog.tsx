@@ -4,6 +4,7 @@ import { Badge, Button, Dialog, Input, Select, Spinner } from "../components/ui"
 import { useCore } from "../core/CoreProvider";
 import { useDoctor, usePatchSettings, useSettings } from "../hooks/queries";
 import { shortcutList } from "../hooks/useShortcuts";
+import { isThemeId, THEME_IDS, THEME_LABELS, useTheme } from "../hooks/useTheme";
 import { useAuthStore } from "../stores/auth";
 import { SETTINGS_SECTIONS, useUiStore, type SettingsSection } from "../stores/ui";
 import { cn } from "../util";
@@ -38,6 +39,8 @@ export function SettingsDialog() {
   const open = useUiStore((s) => s.settingsOpen);
   const setOpen = useUiStore((s) => s.setSettingsOpen);
   const requestedSection = useUiStore((s) => s.settingsSection);
+  const themeId = useTheme();
+  const setThemeId = useUiStore((s) => s.setThemeId);
   const [section, setSection] = useState<SettingsSection>("agents");
   useEffect(() => {
     if (open && requestedSection) setSection(requestedSection);
@@ -167,11 +170,21 @@ export function SettingsDialog() {
           ) : section === "auth" ? (
             <AuthSection />
           ) : section === "appearance" ? (
-            <Row label="Theme">
-              <Select value={draft.theme} onChange={(e) => update((s) => ({ ...s, theme: e.target.value as Settings["theme"] }))}>
-                <option value="system">System</option>
-                <option value="light">Light</option>
-                <option value="dark">Dark</option>
+            <Row label="Theme" hint="fabPlane themes match fabplane.com; the System themes are the neutral light/dark look. Stored on this device.">
+              <Select
+                value={themeId}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  if (!isThemeId(id)) return;
+                  setThemeId(id);
+                  update((s) => ({ ...s, theme: id.endsWith("-dark") ? "dark" : "light" }));
+                }}
+              >
+                {THEME_IDS.map((id) => (
+                  <option key={id} value={id}>
+                    {THEME_LABELS[id]}
+                  </option>
+                ))}
               </Select>
             </Row>
           ) : section === "privacy" ? (
