@@ -25,6 +25,18 @@ describe("capacity presets for prefab blanks", () => {
     expect(chooseCapacityPreset(plain, { preset: "laser-prefab" }).preset).toBe("laser-prefab");
   });
 
+  test("pads a part marks internally connected are assignable but owned, and do not trigger laser-prefab", () => {
+    // @tscircuit/core sets netIsAssignable on obstacles with an off-board/internal connection (e.g. a USB-C
+    // receptacle's paired GND tabs). Treating those as factory vias switched a whole RP2040 board to via-less
+    // routing and left 37/37 connections open.
+    const plain = fixtureSrj();
+    const owned = { ...assignableVia(0, 0, "usb-gnd1"), connectedTo: ["A"] };
+    const srj = { ...plain, obstacles: [...plain.obstacles, owned] };
+    expect(chooseCapacityPreset(srj, undefined)).toEqual({ preset: "default", assignable: 0 });
+    const mixed = { ...plain, obstacles: [...plain.obstacles, owned, assignableVia(2, 2, "factory")] };
+    expect(chooseCapacityPreset(mixed, undefined)).toEqual({ preset: "laser-prefab", assignable: 1 });
+  });
+
   test("the laser-prefab solver routes the fixture and never drills a via off the fixed positions", async () => {
     const plain = fixtureSrj();
     const fixed = [assignableVia(-3, 3, "v0"), assignableVia(3, 3, "v1"), assignableVia(-3, -3, "v2"), assignableVia(3, -3, "v3")];

@@ -25,11 +25,20 @@ const FIXED_VIA_TOLERANCE_MM = 0.05;
  */
 export type CapacityPreset = "default" | "laser-prefab";
 
+/**
+ * A prefab blank's factory via: assignable and owned by no net. @tscircuit/core also flags pads that a
+ * part declares internally connected (a USB-C receptacle's two GND tabs, say) as `netIsAssignable`, but those
+ * belong to a net already and must not switch the whole board to via-less routing.
+ */
+export function isFactoryVia(o: RouteRequest["srj"]["obstacles"][number]): boolean {
+  return o.netIsAssignable === true && (o.connectedTo ?? []).length === 0;
+}
+
 export function chooseCapacityPreset(
   srj: Pick<RouteRequest["srj"], "obstacles">,
   settings: Record<string, unknown> | undefined,
 ): { preset: CapacityPreset; assignable: number } {
-  const assignable = srj.obstacles.filter((o) => o.netIsAssignable === true).length;
+  const assignable = srj.obstacles.filter(isFactoryVia).length;
   const requested = settings?.["preset"];
   if (requested === "default" || requested === "laser-prefab") return { preset: requested, assignable };
   return { preset: assignable > 0 ? "laser-prefab" : "default", assignable };
@@ -143,7 +152,7 @@ export class CapacityAutorouterAdapter implements RouterAdapter {
       preset === "laser-prefab"
         ? (new AutoroutingPipelineSolver8(srj, solverSettings as SolverOptions) as unknown as AutoroutingPipelineSolver)
         : new AutoroutingPipelineSolver(srj, solverSettings as SolverOptions);
-    const fixedVias = request.srj.obstacles.filter((o) => o.netIsAssignable === true).map((o) => o.center);
+    const fixedVias = request.srj.obstacles.filter(isFactoryVia).map((o) => o.center);
 
     const { minX, minY, maxX, maxY } = request.srj.bounds;
     emitter.meta({
