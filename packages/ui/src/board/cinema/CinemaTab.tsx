@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, EmptyState, Select } from "../../components/ui";
 import { useCoreClient } from "../../core/CoreProvider";
 import { useCinemaStore } from "../../stores/cinema";
@@ -45,7 +45,6 @@ export function CinemaTab() {
   const { seek, step, goLive, togglePlaying, toggleLayer, setActiveRun, ingestMany, setPlaybackMs, reportDraw } = useCinemaStore.getState();
   const route = useRunTool();
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const boxRef = useRef<HTMLDivElement>(null);
   const painterRef = useRef<{ painter: CinemaPainter; ctor: typeof CinemaPainter; width: number; height: number } | null>(null);
   const [size, setSize] = useState({ w: 0, h: 0, dpr: 1 });
   const [shapeCount, setShapeCount] = useState(0);
@@ -65,15 +64,18 @@ export function CinemaTab() {
       .catch(() => {});
   }, [activeRunId, client, ingestMany]);
 
-  useEffect(() => {
-    const el = boxRef.current;
+  // The canvas box only exists once a run is loaded (the empty state renders without it), so the
+  // observer must follow the element: a callback ref re-attaches whenever the box mounts.
+  const resizeRef = useRef<ResizeObserver | null>(null);
+  const boxRef = useCallback((el: HTMLDivElement | null) => {
+    resizeRef.current?.disconnect();
+    resizeRef.current = null;
     if (!el) return;
-    const ro = new ResizeObserver(() => {
-      setSize({ w: el.clientWidth, h: el.clientHeight, dpr: window.devicePixelRatio || 1 });
-    });
+    const measure = () => setSize({ w: el.clientWidth, h: el.clientHeight, dpr: window.devicePixelRatio || 1 });
+    const ro = new ResizeObserver(measure);
     ro.observe(el);
-    setSize({ w: el.clientWidth, h: el.clientHeight, dpr: window.devicePixelRatio || 1 });
-    return () => ro.disconnect();
+    resizeRef.current = ro;
+    measure();
   }, []);
 
   useEffect(() => {
