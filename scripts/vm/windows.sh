@@ -78,7 +78,8 @@ make_iso() {  # make_iso <dir> <out.iso> <label>
   else die "need mkisofs (genisoimage)"; fi
 }
 cdrom_args() {  # cdrom_args <id> <iso> [bootindex]
-  if [ "$GUEST" = x86_64 ]; then echo "-drive file=$2,if=none,id=$1,media=cdrom,format=raw,readonly=on -device ide-cd,drive=$1,bus=ide.${3:-1}${3:+,bootindex=$3}"
+  # q35 AHCI has one unit per port: cd0 -> ide.0, cd1 -> ide.1, ...
+  if [ "$GUEST" = x86_64 ]; then echo "-drive file=$2,if=none,id=$1,media=cdrom,format=raw,readonly=on -device ide-cd,drive=$1,bus=ide.${1#cd}${3:+,bootindex=$3}"
   else echo "-drive file=$2,if=none,id=$1,media=cdrom,format=raw,readonly=on -device usb-storage,drive=$1${3:+,bootindex=$3}"; fi
 }
 
@@ -110,9 +111,24 @@ case "$CMD" in
     # shellcheck disable=SC2046
     boot "$BASE" "$DISP" "$D/prepare-serial.txt" $(cdrom_args cd0 "$ISO" 1) $(cdrom_args cd1 "$D/unattend.iso")
     trap stop_vm EXIT
-    # The Windows CD bootloader waits for "Press any key to boot from CD"; feed it Enter during the
-    # first boot only. Later reboots time out at that prompt and fall through to the installed disk.
-    for i in $(seq 1 40); do vm_alive || break; mon "sendkey ret"; sleep 3; done
+    # First boot: the Windows CD bootloader waits for "Press any key to boot from CD". Under emulation
+    # the firmware often reaches that prompt late and times out into the UEFI shell, so watch the
+    # display: press Enter while it is blank, and when the shell appears boot the CD's EFI image from
+    # it. Stop as soon as Setup is drawing. Later reboots time out at the prompt and boot the disk.
+    for i in $(seq 1 240); do
+      vm_alive || break
+      state="$(python3 "$REPO_ROOT/scripts/vm/qemu-screen.py" "$MON" "$D/screen.ppm")"
+      case "$state" in
+        shell)
+          log "firmware fell into the UEFI shell; booting the Windows CD image from it"
+          python3 "$REPO_ROOT/scripts/vm/qemu-keys.py" "$MON" 'FS0:\\EFI\\BOOT\\BOOTX64.EFI\nFS1:\\EFI\\BOOT\\BOOTX64.EFI\n' >/dev/null
+          for j in $(seq 1 12); do mon "sendkey ret"; sleep 2; done ;;
+        other) log "Windows Setup is running"; break ;;
+        *) mon "sendkey ret" ;;
+      esac
+      sleep 5
+    done
+    rm -f "$D/screen.ppm"
     wait_off "${FABDESK_VM_INSTALL_TIMEOUT:-14400}" || die "install did not finish in time (see $D/prepare-serial.txt; rerun with --keep to watch)"
     trap - EXIT
     log "base disk ready: $BASE" ;;
