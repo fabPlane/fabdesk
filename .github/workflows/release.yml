@@ -141,13 +141,7 @@ jobs:
       # Fail fast on a bad image: some runs have produced DMGs whose internal CRCs do not match.
       - name: Verify installers on the runner
         shell: bash
-        run: |
-          cd release-out
-          for f in *.dmg; do [ -f "$f" ] || continue; hdiutil verify "$f" || { echo "::error::$f failed hdiutil verify"; exit 1; }; done
-          for f in *.zip; do [ -f "$f" ] || continue; unzip -tq "$f" || { echo "::error::$f failed zip test"; exit 1; }; done
-          shasum -a 256 * > "../SHA256SUMS-${{ matrix.target }}.txt" 2>/dev/null || sha256sum * > "../SHA256SUMS-${{ matrix.target }}.txt"
-          cat "../SHA256SUMS-${{ matrix.target }}.txt"
-          mv "../SHA256SUMS-${{ matrix.target }}.txt" .
+        run: bun run scripts/verify-installers.ts release-out --target ${{ matrix.target }}
 
       - uses: actions/upload-artifact@v4
         with:
