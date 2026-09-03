@@ -18,7 +18,12 @@ DEST=/home/openclaw/fabdesk-vm
 echo "[install] syncing scripts/vm -> $HOST:$DEST"
 COPYFILE_DISABLE=1 tar -C "$HERE" -czf - --exclude='*.pyc' --exclude='.DS_Store' . | ssh "$HOST" "sudo -n mkdir -p $DEST && sudo -n tar -C $DEST -xzf - && sudo -n chown -R openclaw:openclaw $DEST && sudo -n sh -c 'chmod +x $DEST/*.sh $DEST/*.py $DEST/guest/*.sh'"
 echo "[install] host prerequisites"
-ssh "$HOST" 'for t in qemu-system-x86_64 qemu-img genisoimage python3 curl; do command -v $t >/dev/null || missing="$missing $t"; done; if [ -n "${missing:-}" ]; then echo "  installing:$missing"; sudo -n DEBIAN_FRONTEND=noninteractive apt-get install -y -q qemu-system-x86 qemu-utils genisoimage python3 curl >/dev/null; fi; echo "  mem: $(awk "/MemTotal/ {printf \"%d MiB\", \$2/1024}" /proc/meminfo), cpus: $(nproc), kvm: $([ -e /dev/kvm ] && echo yes || echo no-emulated)'
+ssh "$HOST" bash -s <<'REMOTE'
+missing=""
+for t in qemu-system-x86_64 qemu-img genisoimage python3 curl; do command -v "$t" >/dev/null || missing="$missing $t"; done
+if [ -n "$missing" ]; then echo "  installing:$missing"; sudo -n DEBIAN_FRONTEND=noninteractive apt-get install -y -q qemu-system-x86 qemu-utils genisoimage python3 curl >/dev/null; fi
+echo "  mem: $(free -m | awk '/^Mem:/ {print $2}') MiB, cpus: $(nproc), kvm: $([ -e /dev/kvm ] && echo yes || echo no-emulated)"
+REMOTE
 [ "$JOB" = 1 ] || exit 0
 echo "[install] declaring OpenClaw automation (cron '$CRON' $TZ_)"
 ssh "$HOST" "sudo -n -u openclaw bash -c 'cd ~ && ~/.npm-global/bin/openclaw cron add \
