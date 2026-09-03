@@ -37,7 +37,7 @@ describe("mcp adapter", () => {
     expect(res.isError).toBeFalsy();
     const after = await client.listTools();
     expect(after.tools.map((t) => t.name)).toContain("export_gerbers");
-    expect(after.tools.length).toBe(7 + 6);
+    expect(after.tools.length).toBe(7 + 7);
     expect(attachment.session.enabledToolsets()).toEqual(["core", "export"]);
     await new Promise((r) => setTimeout(r, 10));
     expect(listChanged).toBeGreaterThan(0);

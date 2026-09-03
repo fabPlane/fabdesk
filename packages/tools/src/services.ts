@@ -133,6 +133,8 @@ export interface KicadService {
   boardStats(cli: KicadCli, opts: { board: string; scratchFile: string }): Promise<Record<string, unknown>>;
   exportGerbers(cli: KicadCli, opts: { board: string; outDir: string; signal?: AbortSignal }): Promise<{ paths: string[] }>;
   exportDrill(cli: KicadCli, opts: { board: string; outDir: string; signal?: AbortSignal }): Promise<{ paths: string[] }>;
+  /** One DXF per layer (mm), the copper-removal artwork for laser/CNC-finished blanks. */
+  exportDxf(cli: KicadCli, opts: { board: string; outDir: string; layers: string[]; signal?: AbortSignal }): Promise<{ paths: string[] }>;
   exportPos(cli: KicadCli, opts: { board: string; output: string; signal?: AbortSignal }): Promise<{ paths: string[] }>;
   exportBom(cli: KicadCli, opts: { schematic: string; output: string; signal?: AbortSignal }): Promise<{ paths: string[] }>;
   exportNetlist(cli: KicadCli, opts: { schematic: string; output: string; format: "kicadsexpr" | "spice"; signal?: AbortSignal }): Promise<{ paths: string[] }>;

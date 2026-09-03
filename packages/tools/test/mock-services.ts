@@ -133,6 +133,7 @@ export function mockServices(projects: ProjectHandle[], overrides: Partial<CoreS
       boardStats: async () => ({}),
       exportGerbers: async () => ({ paths: [] }),
       exportDrill: async () => ({ paths: [] }),
+      exportDxf: async () => ({ paths: [] }),
       exportPos: async () => ({ paths: [] }),
       exportBom: async () => ({ paths: [] }),
       exportNetlist: async () => ({ paths: [] }),
