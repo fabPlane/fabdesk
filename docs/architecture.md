@@ -50,6 +50,10 @@ and is never included in public artifacts.
 The core signs in to fabplane.com with the OAuth device-authorization grant and keeps the opaque
 `fpd_…` token in `${FABDESK_HOME}/credentials.json` (0600). `FABDESK_AUTH_MODE=local` substitutes
 a local principal; it is honored only in non-public channels or when `.fabdesk-dev` exists.
+The desktop hides the staging password form and local mode on the sign-in screen unless the build is
+an unpackaged dev build or the user presses the undocumented ⌘L / Ctrl+L reveal; switching local mode
+on writes `.fabdesk-dev`, so the reveal works in packaged builds too. It is deliberately not listed in
+Settings › Shortcuts.
 
 ## Project on disk
 

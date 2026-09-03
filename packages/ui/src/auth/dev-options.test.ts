@@ -26,14 +26,17 @@ describe("isRevealDevOptionsShortcut", () => {
 });
 
 describe("showDevSignInOptions", () => {
-  test("never when the host forbids local auth", () => {
-    expect(showDevSignInOptions({ localAllowed: false, devBuild: true, revealed: true })).toBe(false);
+  test("hidden by default outside dev builds", () => {
+    expect(showDevSignInOptions({ devBuild: false, revealed: false })).toBe(false);
+    expect(showDevSignInOptions({ devBuild: undefined, revealed: false })).toBe(false);
   });
 
-  test("up front in dev builds, otherwise only after the reveal shortcut", () => {
-    expect(showDevSignInOptions({ localAllowed: true, devBuild: true, revealed: false })).toBe(true);
-    expect(showDevSignInOptions({ localAllowed: true, devBuild: false, revealed: false })).toBe(false);
-    expect(showDevSignInOptions({ localAllowed: true, devBuild: undefined, revealed: false })).toBe(false);
-    expect(showDevSignInOptions({ localAllowed: true, devBuild: false, revealed: true })).toBe(true);
+  test("shown up front in dev builds", () => {
+    expect(showDevSignInOptions({ devBuild: true, revealed: false })).toBe(true);
+  });
+
+  test("the reveal also works in a packaged build, so local mode stays reachable there", () => {
+    expect(showDevSignInOptions({ devBuild: false, revealed: true })).toBe(true);
+    expect(showDevSignInOptions({ devBuild: undefined, revealed: true })).toBe(true);
   });
 });

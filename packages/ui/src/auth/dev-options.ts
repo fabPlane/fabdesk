@@ -15,7 +15,12 @@ export function isRevealDevOptionsShortcut(e: RevealKey, platform?: string): boo
   return isMac(platform) ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
 }
 
-/** Staging password login and local mode are shown up front in dev builds, otherwise only after the reveal shortcut. */
-export function showDevSignInOptions(opts: { localAllowed: boolean; devBuild: boolean | undefined; revealed: boolean }): boolean {
-  return opts.localAllowed && (opts.devBuild === true || opts.revealed);
+/**
+ * Staging password login and local mode are shown up front in dev builds, and otherwise only after
+ * the reveal shortcut. The shortcut is deliberately not gated on the host allowing local auth: it is
+ * an undocumented escape hatch that also works in a packaged build (the host then creates the
+ * `.fabdesk-dev` marker the core checks when local mode is actually switched on).
+ */
+export function showDevSignInOptions(opts: { devBuild: boolean | undefined; revealed: boolean }): boolean {
+  return opts.devBuild === true || opts.revealed;
 }

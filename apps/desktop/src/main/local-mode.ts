@@ -3,8 +3,9 @@
  *
  * The core only honours `--local-auth` on the public channel when a `.fabdesk-dev` marker exists in
  * its home directory (FABDESK_HOME or the per-platform config dir; see @fabdesk/auth-client/home).
- * The desktop mirrors that resolution: local mode is allowed in dev builds (which create the marker
- * on opt-in) or in packaged builds that already carry the marker.
+ * `localAuthAllowed()` reports whether local mode is offered without a reveal: dev builds, or a
+ * packaged build that already carries the marker. Switching local mode on writes the marker in any
+ * build, so the undocumented Cmd+L / Ctrl+L reveal on the sign-in screen works in packaged builds too.
  */
 import { app } from "electron";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -56,19 +57,18 @@ export function localAuthAllowed(): boolean {
   return !app.isPackaged || existsSync(devMarkerPath());
 }
 
-/** Local auth is on by default in dev; packaged builds need the marker plus an explicit opt-in. */
+/** Local auth is on by default in dev; packaged builds need an explicit opt-in. */
 export function localAuthEnabled(): boolean {
-  if (!localAuthAllowed()) return false;
   const enabled = readPrefs().localAuth ?? !app.isPackaged;
-  if (enabled && !app.isPackaged) ensureDevMarker();
+  if (enabled) ensureDevMarker();
   return enabled;
 }
 
-/** Dev builds create the marker the core checks, so `--local-auth` is not refused. */
+/** Writes the marker the core checks, so `--local-auth` is not refused on the public channel. */
 export function ensureDevMarker(): void {
   try {
     mkdirSync(coreHome(), { recursive: true });
-    if (!existsSync(devMarkerPath())) writeFileSync(devMarkerPath(), `created by fabdesk desktop dev build ${new Date().toISOString()}\n`);
+    if (!existsSync(devMarkerPath())) writeFileSync(devMarkerPath(), `created by the fabdesk desktop app when local mode was enabled ${new Date().toISOString()}\n`);
   } catch {
     // best effort; the core will log the refusal
   }
@@ -76,5 +76,5 @@ export function ensureDevMarker(): void {
 
 export function setLocalAuth(enabled: boolean): void {
   writePrefs({ localAuth: enabled });
-  if (enabled && !app.isPackaged) ensureDevMarker();
+  if (enabled) ensureDevMarker();
 }

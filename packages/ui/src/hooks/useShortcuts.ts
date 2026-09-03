@@ -34,7 +34,6 @@ export function shortcutList(platform?: string): ShortcutDef[] {
     { keys: `${m}1…7`, label: "Board tabs" },
     { keys: `${m}/`, label: "Agent & model" },
     { keys: `${m},`, label: "Settings" },
-    { keys: `${m}L`, label: "Sign-in: show staging / local options" },
     { keys: "Space", label: "Cinema: play / pause" },
     { keys: "[ / ]", label: "Cinema: previous / next frame" },
     { keys: "Home / End", label: "Cinema: first frame / live" },

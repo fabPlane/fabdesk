@@ -12,8 +12,9 @@ export function registerIpc(supervisor: CoreSupervisor): void {
   ipcMain.handle("fabdesk:core-info", () => supervisor.info());
   ipcMain.handle("fabdesk:core-restart", () => supervisor.restart());
   ipcMain.handle("fabdesk:local-auth-allowed", () => localAuthAllowed());
+  // No build check here: the sign-in screen's Cmd+L / Ctrl+L reveal may turn local mode on in a
+  // packaged build, and `setLocalAuth` writes the `.fabdesk-dev` marker the core requires.
   ipcMain.handle("fabdesk:set-local-auth", async (_e, enabled: unknown) => {
-    if (!localAuthAllowed()) throw new Error("local auth is not allowed in this build");
     const on = enabled === true;
     setLocalAuth(on);
     supervisor.setLocalAuth(on);

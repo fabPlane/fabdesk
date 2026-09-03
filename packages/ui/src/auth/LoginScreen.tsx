@@ -10,15 +10,15 @@ const STAGING_PASSWORD_HINT =
 
 /**
  * Browser device-code sign-in (production). The staging password form and local mode are shown up
- * front in dev builds; packaged builds that allow local auth keep them behind Cmd+L / Ctrl+L.
+ * front in dev builds; every other build keeps them behind the undocumented Cmd+L / Ctrl+L reveal,
+ * which also works in packaged builds (see `showDevSignInOptions`).
  */
 export function LoginScreen() {
   const { client, host } = useCore();
   const state = useAuthStore((s) => s.state);
   const setState = useAuthStore((s) => s.setState);
-  const localAllowed = useAuthStore((s) => s.localAllowed);
   const [revealed, setRevealed] = useState(false);
-  const devOptions = showDevSignInOptions({ localAllowed, devBuild: host.devBuild, revealed });
+  const devOptions = showDevSignInOptions({ devBuild: host.devBuild, revealed });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [email, setEmail] = useState("");
@@ -37,7 +37,7 @@ export function LoginScreen() {
   }, [state?.status, client, setState]);
 
   useEffect(() => {
-    if (!localAllowed || host.devBuild) return;
+    if (host.devBuild) return;
     const onKey = (e: KeyboardEvent) => {
       if (!isRevealDevOptionsShortcut(e, host.platform)) return;
       e.preventDefault();
@@ -45,7 +45,7 @@ export function LoginScreen() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [localAllowed, host.devBuild, host.platform]);
+  }, [host.devBuild, host.platform]);
 
   const loginWithPassword = async () => {
     setBusy(true);
