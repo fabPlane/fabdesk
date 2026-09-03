@@ -110,6 +110,7 @@ describe("codex adapter", () => {
     expect(args.slice(0, 2)).toEqual(["codex", "exec"]);
     expect(args).toContain("--json");
     expect(args).toContain("--skip-git-repo-check");
+    expect(args).toContain("--approve-for-me");
     expect(args[args.indexOf("-C") + 1]).toBe(dir);
     expect(args).toContain('sandbox_mode="workspace-write"');
     expect(args).toContain('mcp_servers.fabdesk.url="http://127.0.0.1:4321/mcp"');
@@ -131,7 +132,18 @@ describe("codex adapter", () => {
     expect(args.slice(0, 4)).toEqual(["codex", "exec", "resume", "thread-9"]);
     expect(args).not.toContain("-C");
     expect(args).toContain("--dangerously-bypass-approvals-and-sandbox");
+    expect(args).not.toContain("--approve-for-me");
     expect(args).not.toContain('sandbox_mode="workspace-write"');
+  });
+
+  test("auto-reviews approvals in both sandboxed permission modes", () => {
+    expect(codexArgs(session({ permission: "acceptEdits" }), "codex")).toContain("--approve-for-me");
+    expect(codexArgs(session({ permission: "auto" }), "codex")).toContain("--approve-for-me");
+  });
+
+  test("puts automatic approval before the resume subcommand", () => {
+    const args = codexArgs(session({ resume: "thread-9", permission: "acceptEdits" }), "codex");
+    expect(args.slice(0, 5)).toEqual(["codex", "exec", "--approve-for-me", "resume", "thread-9"]);
   });
 });
 

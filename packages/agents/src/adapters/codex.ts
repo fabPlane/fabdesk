@@ -14,11 +14,17 @@ const CANDIDATES = ["codex", "~/.local/bin/codex"];
  */
 export function codexArgs(session: AgentSession, bin: string): string[] {
   const args = [bin, "exec"];
+  // This is an `exec` option rather than an `exec resume` option, so it must precede the
+  // subcommand. Keeping it here also lets follow-up messages use approval-requiring MCP tools.
+  if (session.permission !== "bypass") args.push("--approve-for-me");
   if (session.resume) args.push("resume", session.resume);
   args.push("--json", "--skip-git-repo-check");
   if (session.permission === "bypass") {
     args.push("--dangerously-bypass-approvals-and-sandbox");
   } else {
+    // `codex exec` is non-interactive, so approval-requiring MCP tools otherwise fail with
+    // "approval policy is never". Let Codex review those requests automatically while keeping
+    // shell commands and approved tool calls inside the workspace-write sandbox.
     args.push("-c", 'sandbox_mode="workspace-write"');
   }
   if (!session.resume) args.push("-C", session.cwd);
