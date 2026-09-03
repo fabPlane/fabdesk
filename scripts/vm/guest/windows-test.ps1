@@ -64,9 +64,16 @@ if ($cfg.installer -match "Setup.*\.exe$" -or $cfg.installer -notmatch "portable
   }
   $exe = ""
   for ($i = 0; $i -lt 180; $i++) {
+    # The auto-launched instance tells us exactly where the installer put the app.
+    $running = Get-Process -Name Fabdesk -ErrorAction SilentlyContinue | Where-Object { $_.Path } | Select-Object -First 1
+    if ($running) { $exe = $running.Path; Log "installer launched $exe"; break }
     $found = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-    if ($found -and ($p.HasExited -or (Get-Process -Name Fabdesk -ErrorAction SilentlyContinue))) { $exe = $found; break }
+    if ($found -and $p.HasExited) { $exe = $found; break }
     Start-Sleep 1
+  }
+  if (-not $exe) {
+    $found = Get-ChildItem -Path $env:LOCALAPPDATA, $env:ProgramFiles, ${env:ProgramFiles(x86)} -Filter Fabdesk.exe -Recurse -Depth 3 -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($found) { $exe = $found.FullName; Log "found installed app at $exe" }
   }
   if (-not $exe) {
     Screenshot (Join-Path $out "installer-hung.png")
