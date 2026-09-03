@@ -24,7 +24,9 @@ LOG="${FABDESK_VM_DIR:-$HOME/.fabdesk-vm}/daily-$(date +%Y%m%d-%H%M%S).log"; mkd
 # joined the kvm group, so its children cannot open /dev/kvm and every VM falls back to emulation
 # (minutes instead of seconds, and Electron gets flaky). Re-exec once through `sg kvm` to pick the
 # group up without restarting the scheduler.
-if [ -e /dev/kvm ] && [ ! -w /dev/kvm ] && [ -z "${FABDESK_VM_SG:-}" ] && id -nG | tr " " "\n" | grep -qx kvm; then
+# `id -nG` alone reports the groups the process was started with, which for a long-running scheduler
+# predate the group change; `id -nG <user>` reads the group database instead.
+if [ -e /dev/kvm ] && [ ! -w /dev/kvm ] && [ -z "${FABDESK_VM_SG:-}" ] && id -nG "$(id -un)" | tr " " "\n" | grep -qx kvm; then
   export FABDESK_VM_SG=1
   exec sg kvm -c "$(printf '%q ' "$0" "$@")"
 fi

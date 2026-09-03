@@ -53,7 +53,7 @@ T0=$(date +%s%3N)
 # --disable-gpu: there is no GPU behind Xvfb and Electron's SwiftShader fallback crashes the GPU
 # process intermittently ("GPU process isn't usable. Goodbye."), which is an artifact of the headless
 # guest, not of the build. Everything else runs exactly as a user's desktop would.
-LIBGL_ALWAYS_SOFTWARE=1 FABDESK_AUTOMATION=1 FABDESK_UPDATE_CHECK=0 "$BIN" --disable-gpu >"$OUT/app-stdout.txt" 2>&1 &
+LIBGL_ALWAYS_SOFTWARE=1 FABDESK_AUTOMATION=1 FABDESK_UPDATE_CHECK=0 "$BIN" --disable-gpu --disable-gpu-compositing --disable-software-rasterizer --disable-dev-shm-usage >"$OUT/app-stdout.txt" 2>&1 &
 APP_PID=$!
 for i in $(seq 1 90); do pick_ud; [ -f "$UD/daemon.json" ] && [ -f "$UD/app-bridge.json" ] && break; sleep 1; done
 echo "userData: $UD"
