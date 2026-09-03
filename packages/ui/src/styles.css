@@ -5,21 +5,24 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* Palette follows fabplane.com (paper / ink / line / lime / acid); dark is the house default. */
+/* Palette follows fabplane.com (paper / ink / line / lime / acid); dark is the house default. */
 :root {
   --fd-bg: #f1f0e9;
   --fd-panel: #ffffff;
-  --fd-panel-2: #e8e7df;
-  --fd-border: #cccdc5;
+  --fd-panel-2: #e4e3db;
+  --fd-border: #d6d7cf;
   --fd-fg: #1d211c;
   --fd-muted: #70746d;
   --fd-accent: #4d7d32;
   --fd-accent-fg: #ffffff;
-  --fd-acid: #4d7d32;
+  --fd-primary: #1d211c;
+  --fd-primary-fg: #ffffff;
+  --fd-acid: #b9f45d;
   --fd-danger: #c2410c;
   --fd-success: #4d7d32;
   --fd-warning: #b7791f;
-  --fd-code-bg: #1d211c;
-  --fd-code-fg: #a9d985;
+  --fd-code-bg: #e8e9e0;
+  --fd-code-fg: #2f5d1f;
   color-scheme: light;
 }
 .dark {
@@ -31,6 +34,8 @@
   --fd-muted: #a5aea0;
   --fd-accent: #8fca55;
   --fd-accent-fg: #101a0a;
+  --fd-primary: #8fca55;
+  --fd-primary-fg: #101a0a;
   --fd-acid: #a4dc4e;
   --fd-danger: #f0715f;
   --fd-success: #7fae5e;
@@ -49,6 +54,8 @@
   --fd-muted: #6b6b76;
   --fd-accent: #7c3aed;
   --fd-accent-fg: #ffffff;
+  --fd-primary: #7c3aed;
+  --fd-primary-fg: #ffffff;
   --fd-acid: #7c3aed;
   --fd-danger: #dc2626;
   --fd-success: #16a34a;
@@ -65,6 +72,8 @@
   --fd-muted: #9a99a6;
   --fd-accent: #a78bfa;
   --fd-accent-fg: #17161b;
+  --fd-primary: #a78bfa;
+  --fd-primary-fg: #17161b;
   --fd-acid: #a78bfa;
   --fd-danger: #f87171;
   --fd-success: #4ade80;
@@ -86,6 +95,8 @@
   --color-success: var(--fd-success);
   --color-warning: var(--fd-warning);
   --color-acid: var(--fd-acid);
+  --color-primary: var(--fd-primary);
+  --color-primary-fg: var(--fd-primary-fg);
   --color-code: var(--fd-code-bg);
   --color-code-fg: var(--fd-code-fg);
   --font-sans: "Inter Variable", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -114,9 +125,10 @@ body {
 }
 /* Section label: small, tracked, uppercase, lime (fabplane's "PROJECT ASSISTANT" eyebrow). */
 .fd-eyebrow {
+  font-family: var(--font-mono);
   font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.18em;
+  font-weight: 700;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--fd-success);
 }

@@ -55,7 +55,7 @@ export interface Theme {
 }
 
 export const DARK_THEME: Theme = { background: "#14161a", outline: "#3a3f47" };
-export const LIGHT_THEME: Theme = { background: "#f4f5f7", outline: "#b8bcc4" };
+export const LIGHT_THEME: Theme = { background: "#f1f0e9", outline: "#c4c6bd" };
 
 export function emptyRun(runId: string): CinemaRun {
   return { runId, meta: null, statics: [], frames: [] };
