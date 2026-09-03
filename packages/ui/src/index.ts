@@ -5,8 +5,8 @@ export type { EventSourceLike, EventSourceFactory, SseStatus, SseSubscription, S
 export { CoreProvider, useCore, useCoreClient, useCoreEvents, handleCoreEvent, browserHost, EVENT_TOPICS, messagesKey } from "./core/CoreProvider";
 export type { HostAdapter, FilePickOptions, CoreContextValue, CoreProviderProps } from "./core/CoreProvider";
 
-export { useUiStore, BOARD_TABS, BOARD_TAB_LABELS, DRAFT_KEY_NEW } from "./stores/ui";
-export type { BoardTab, UiState, PendingAttachment } from "./stores/ui";
+export { useUiStore, BOARD_TABS, BOARD_TAB_LABELS, DRAFT_KEY_NEW, SIDEBAR_LIST_TABS, SIDEBAR_LIST_TAB_LABELS } from "./stores/ui";
+export type { BoardTab, SidebarListTab, UiState, PendingAttachment } from "./stores/ui";
 export { useCinemaStore } from "./stores/cinema";
 export type { CinemaState } from "./stores/cinema";
 export { useAuthStore } from "./stores/auth";
@@ -27,6 +27,11 @@ export { useRunTool, resolveToolName, TOOL_PATTERNS } from "./board/tools";
 export { AppShell } from "./layout/AppShell";
 export { TopBar } from "./layout/TopBar";
 export { ThreadSidebar } from "./sidebar/ThreadSidebar";
+export { OpenSourceList } from "./sidebar/OpenSourceList";
+export { groupThreadsByProject } from "./sidebar/group-threads";
+export { OpenSourceView } from "./opensource/OpenSourceView";
+export { OrderFlow } from "./order/OrderFlow";
+export { ProjectPickerDialog } from "./chat/ProjectPickerDialog";
 export { ThreadView } from "./chat/ThreadView";
 export { MessageList, MessageBubble, BranchHeader } from "./chat/MessageList";
 export { Composer, composerHandlers } from "./chat/Composer";

@@ -16,6 +16,14 @@ export const BOARD_TAB_LABELS: Record<BoardTab, string> = {
 export const SETTINGS_SECTIONS = ["agents", "kicad", "router", "auth", "appearance", "privacy", "shortcuts"] as const;
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 
+export const SIDEBAR_LIST_TABS = ["conversations", "projects", "open_source"] as const;
+export type SidebarListTab = (typeof SIDEBAR_LIST_TABS)[number];
+export const SIDEBAR_LIST_TAB_LABELS: Record<SidebarListTab, string> = {
+  conversations: "Conversations",
+  projects: "Projects",
+  open_source: "Open source",
+};
+
 export interface PendingAttachment {
   path: string;
   mime: string;
@@ -30,6 +38,10 @@ export interface UiState {
   boardOpen: boolean;
   activeThreadId: string | null;
   activeProjectId: string | null;
+  sidebarListTab: SidebarListTab;
+  activeOpenSourceId: string | null;
+  projectPickerOpen: boolean;
+  orderFlowOpen: boolean;
   boardTab: BoardTab;
   drafts: Record<string, string>;
   attachments: Record<string, PendingAttachment[]>;
@@ -47,6 +59,10 @@ export interface UiState {
   setBoardOpen: (open: boolean) => void;
   setActiveThread: (id: string | null) => void;
   setActiveProject: (id: string | null) => void;
+  setSidebarListTab: (tab: SidebarListTab) => void;
+  setActiveOpenSourceId: (id: string | null) => void;
+  setProjectPickerOpen: (open: boolean) => void;
+  setOrderFlowOpen: (open: boolean) => void;
   setBoardTab: (tab: BoardTab) => void;
   setDraft: (threadKey: string, text: string) => void;
   addAttachment: (threadKey: string, att: PendingAttachment) => void;
@@ -70,6 +86,10 @@ export const useUiStore = create<UiState>()(
   boardOpen: true,
   activeThreadId: null,
   activeProjectId: null,
+  sidebarListTab: "conversations",
+  activeOpenSourceId: null,
+  projectPickerOpen: false,
+  orderFlowOpen: false,
   boardTab: "schematic",
   drafts: {},
   attachments: {},
@@ -83,8 +103,18 @@ export const useUiStore = create<UiState>()(
   toggleBoard: () => set((s) => ({ boardOpen: !s.boardOpen })),
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
   setBoardOpen: (boardOpen) => set({ boardOpen }),
-  setActiveThread: (activeThreadId) => set({ activeThreadId }),
+  setActiveThread: (activeThreadId) => set({ activeThreadId, ...(activeThreadId ? { activeOpenSourceId: null, orderFlowOpen: false } : {}) }),
   setActiveProject: (activeProjectId) => set({ activeProjectId }),
+  setSidebarListTab: (sidebarListTab) => set({ sidebarListTab }),
+  setActiveOpenSourceId: (activeOpenSourceId) =>
+    set({
+      activeOpenSourceId,
+      ...(activeOpenSourceId
+        ? { activeThreadId: null, orderFlowOpen: false, sidebarListTab: "open_source" as const, boardOpen: false }
+        : {}),
+    }),
+  setProjectPickerOpen: (projectPickerOpen) => set({ projectPickerOpen }),
+  setOrderFlowOpen: (orderFlowOpen) => set({ orderFlowOpen, ...(orderFlowOpen ? { activeOpenSourceId: null } : {}) }),
   setBoardTab: (boardTab) => set({ boardTab, boardOpen: true }),
   setDraft: (key, text) => set((s) => ({ drafts: { ...s.drafts, [key]: text } })),
   addAttachment: (key, att) =>
@@ -102,7 +132,7 @@ export const useUiStore = create<UiState>()(
 }),
     {
       name: "fabdesk.ui",
-      version: 1,
+      version: 2,
       // Survive full reloads (Vite HMR fallbacks, core reloads) without leaking transient state.
       partialize: (s) => ({
         themeId: s.themeId,
@@ -110,6 +140,7 @@ export const useUiStore = create<UiState>()(
         boardOpen: s.boardOpen,
         activeThreadId: s.activeThreadId,
         activeProjectId: s.activeProjectId,
+        sidebarListTab: s.sidebarListTab,
         boardTab: s.boardTab,
         drafts: s.drafts,
       }),

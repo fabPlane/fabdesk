@@ -1,5 +1,6 @@
-import { IconButton, Tabs } from "../components/ui";
+import { Button, IconButton, Tabs } from "../components/ui";
 import { useCore } from "../core/CoreProvider";
+import { useProjectOrder } from "../hooks/queries";
 import { BOARD_TABS, BOARD_TAB_LABELS, useUiStore, type BoardTab } from "../stores/ui";
 import { modKey } from "../util";
 import { CinemaTab } from "./cinema/CinemaTab";
@@ -35,6 +36,9 @@ export function BoardPanel() {
   const tab = useUiStore((s) => s.boardTab);
   const setBoardTab = useUiStore((s) => s.setBoardTab);
   const setBoardOpen = useUiStore((s) => s.setBoardOpen);
+  const projectId = useUiStore((s) => s.activeProjectId);
+  const setOrderFlowOpen = useUiStore((s) => s.setOrderFlowOpen);
+  const order = useProjectOrder(projectId);
   const mod = modKey(host.platform);
   return (
     <div className="flex h-full min-w-0 flex-col bg-panel">
@@ -45,6 +49,11 @@ export function BoardPanel() {
           value={tab}
           onChange={setBoardTab}
         />
+        {order.data?.ready && (
+          <Button size="sm" variant="primary" onClick={() => setOrderFlowOpen(true)} data-testid="order-now">
+            Order now
+          </Button>
+        )}
         <IconButton title={`Hide board panel (${mod}Shift+B)`} onClick={() => setBoardOpen(false)}>
           &#10005;
         </IconButton>

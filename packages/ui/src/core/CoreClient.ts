@@ -5,8 +5,14 @@ import type {
   DoctorReport,
   Job,
   Message,
+  OpenCatalogEntry,
+  OpenCatalogIndex,
+  OrderReadiness,
+  OrderSession,
+  OrderVendorId,
   ProjectDetail,
   ProjectSummary,
+  RemixResult,
   RouteFrameLine,
   Settings,
   Thread,
@@ -158,6 +164,27 @@ export class CoreClient {
     });
     if (!res.ok) throw new CoreHttpError(res.status, "/sketches", await res.text().catch(() => res.statusText));
     return (await res.json()) as { path: string };
+  }
+
+  listOpenSource(q?: string): Promise<OpenCatalogIndex> {
+    const qs = q?.trim() ? `?q=${encodeURIComponent(q.trim())}` : "";
+    return this.request(`/opensource${qs}`);
+  }
+  getOpenSource(id: string): Promise<OpenCatalogEntry> {
+    const [owner, slug] = id.split("/");
+    if (!owner || !slug) throw new Error(`invalid open-source id: ${id}`);
+    return this.request(`/opensource/projects/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}`);
+  }
+  remixOpenSource(id: string): Promise<RemixResult> {
+    const [owner, slug] = id.split("/");
+    if (!owner || !slug) throw new Error(`invalid open-source id: ${id}`);
+    return this.request(`/opensource/projects/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/remix`, { method: "POST" });
+  }
+  projectOrder(id: string): Promise<OrderReadiness & { vendors: Array<{ id: OrderVendorId; label: string; enabled: boolean }> }> {
+    return this.request(`/projects/${encodeURIComponent(id)}/order`);
+  }
+  startOrder(id: string, vendor: OrderVendorId): Promise<OrderSession> {
+    return this.request(`/projects/${encodeURIComponent(id)}/order`, { method: "POST", json: { vendor } });
   }
 
   // Threads

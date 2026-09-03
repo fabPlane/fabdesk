@@ -17,8 +17,10 @@ export function useAppActions() {
     const active = () => data?.find((t) => t.id === ui().activeThreadId);
     return {
       newChat() {
+        ui().setActiveOpenSourceId(null);
+        ui().setOrderFlowOpen(false);
         ui().setActiveThread(null);
-        ui().focusComposer();
+        ui().setProjectPickerOpen(true);
       },
       send() {
         composerHandlers.send?.();
