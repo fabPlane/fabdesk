@@ -49,6 +49,12 @@ export function SettingsDialog() {
   const doctor = useDoctor();
   const patch = usePatchSettings();
   const [draft, setDraft] = useState<Settings | null>(null);
+  // Settings can change behind the dialog's back (PATCH /settings from an agent or a script); re-read them on
+  // every open so the draft, and a later Save, start from what the core actually has.
+  useEffect(() => {
+    if (open) void settings.refetch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
   useEffect(() => {
     if (open && settings.data) setDraft(structuredClone(settings.data));
   }, [open, settings.data]);
