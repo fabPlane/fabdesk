@@ -3,7 +3,9 @@
  *
  * - packaged: `<resources>/core/fabdesk-core[.exe]`; dev: `bun run apps/core/src/main.ts`
  * - reuses a live daemon named by `<userData>/daemon.json` (pid alive + /health OK with its token)
- * - 10 s ready timeout, crash restart with exponential backoff (max 5 restarts per minute)
+ * - 60 s ready timeout (a first launch on a slow disk or under antivirus scanning can take well over
+ *   10 s; the fresh-VM tests caught the old 10 s limit restart-looping), crash restart with exponential
+ *   backoff (max 5 restarts per minute)
  * - logs stdout/stderr to `<userData>/logs/core.log`
  */
 import type { CoreInfo, CoreStatusInfo } from "../shared/core-info";
@@ -16,7 +18,7 @@ import { createWriteStream, existsSync, mkdirSync, readFileSync, type WriteStrea
 import { createInterface } from "node:readline";
 import { join, resolve } from "node:path";
 
-const READY_TIMEOUT_MS = 10_000;
+const READY_TIMEOUT_MS = 60_000;
 const MAX_RESTARTS_PER_MINUTE = 5;
 const SHUTDOWN_GRACE_MS = 3_000;
 
@@ -231,7 +233,7 @@ export class CoreSupervisor extends EventEmitter {
       if (ready) return;
       this.logLine("ready timeout; killing core");
       child.kill();
-      this.setStatus({ state: "crashed", message: "core did not become ready within 10 s" });
+      this.setStatus({ state: "crashed", message: `core did not become ready within ${READY_TIMEOUT_MS / 1000} s` });
     }, READY_TIMEOUT_MS);
 
     if (child.stdout) {
