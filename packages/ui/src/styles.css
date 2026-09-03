@@ -7,10 +7,11 @@
 /* Palette follows fabplane.com (paper / ink / line / lime / acid); dark is the house default. */
 /* Palette follows fabplane.com (paper / ink / line / lime / acid); dark is the house default. */
 :root {
+  /* fabplane.com paper family: no pure white anywhere; panels are a lighter paper, not white. */
   --fd-bg: #f1f0e9;
-  --fd-panel: #ffffff;
-  --fd-panel-2: #e4e3db;
-  --fd-border: #d6d7cf;
+  --fd-panel: #f7f6f0;
+  --fd-panel-2: #e6e5dc;
+  --fd-border: #d2d3ca;
   --fd-fg: #1d211c;
   --fd-muted: #70746d;
   --fd-accent: #4d7d32;
@@ -21,7 +22,7 @@
   --fd-danger: #c2410c;
   --fd-success: #4d7d32;
   --fd-warning: #b7791f;
-  --fd-code-bg: #e8e9e0;
+  --fd-code-bg: #e6e7de;
   --fd-code-fg: #2f5d1f;
   color-scheme: light;
 }
