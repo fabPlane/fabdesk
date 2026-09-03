@@ -22,8 +22,14 @@ function knownLocations(): string[] {
   switch (process.platform) {
     case "darwin":
       return ["/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli", join(homedir(), "Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli")];
-    case "win32":
-      return ["10.0", "9.0"].map((v) => `C:\\Program Files\\KiCad\\${v}\\bin\\kicad-cli.exe`);
+    case "win32": {
+      // Per-machine installs, then the per-user installs winget and the "current user" installer write.
+      const local = process.env["LOCALAPPDATA"] ?? join(homedir(), "AppData", "Local");
+      return ["10.0", "9.0"].flatMap((v) => [
+        `C:\\Program Files\\KiCad\\${v}\\bin\\kicad-cli.exe`,
+        join(local, "Programs", "KiCad", v, "bin", "kicad-cli.exe"),
+      ]);
+    }
     default:
       return [
         "/usr/bin/kicad-cli",
