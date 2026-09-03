@@ -20,7 +20,8 @@ function Put($name, $path) {
 
 Log "== $((Get-CimInstance Win32_OperatingSystem).Caption) $env:PROCESSOR_ARCHITECTURE installer=$($cfg.installer)"
 $ud = Join-Path $env:APPDATA "Fabdesk"
-Remove-Item -Recurse -Force $ud -ErrorAction SilentlyContinue | Out-Null
+$udLegacy = Join-Path $env:APPDATA "@fabdesk\desktop"   # builds before 0.1.40
+Remove-Item -Recurse -Force $ud, $udLegacy -ErrorAction SilentlyContinue | Out-Null
 $install = ""; $exe = ""
 # Simulate a browser download so SmartScreen metadata is present.
 try { Set-Content -Path $installer -Stream Zone.Identifier -Value "[ZoneTransfer]`r`nZoneId=3" } catch {}
@@ -52,7 +53,10 @@ if (Test-Path $exe) {
   $t0 = Get-Date
   $app = Start-Process -FilePath $exe -PassThru
   $daemon = Join-Path $ud "daemon.json"; $bridge = Join-Path $ud "app-bridge.json"
-  for ($i = 0; $i -lt 90; $i++) { if ((Test-Path $daemon) -and (Test-Path $bridge)) { break }; Start-Sleep 1 }
+  for ($i = 0; $i -lt 90; $i++) {
+    if (-not (Test-Path $daemon) -and (Test-Path (Join-Path $udLegacy "daemon.json"))) { $ud = $udLegacy; $daemon = Join-Path $ud "daemon.json"; $bridge = Join-Path $ud "app-bridge.json" }
+    if ((Test-Path $daemon) -and (Test-Path $bridge)) { break }; Start-Sleep 1 }
+  Log "userData: $ud"
   if (-not (Test-Path $daemon)) { Err "daemon.json never appeared (app did not start its core)" }
   else {
     $d = Get-Content $daemon | ConvertFrom-Json

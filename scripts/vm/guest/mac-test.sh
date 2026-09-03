@@ -7,6 +7,8 @@ set -uo pipefail
 INSTALLER="$1"; OUT="$2"; mkdir -p "$OUT"
 APP=/Applications/Fabdesk.app
 UD="$HOME/Library/Application Support/Fabdesk"
+UD_LEGACY="$HOME/Library/Application Support/@fabdesk/desktop"   # builds before 0.1.40
+pick_ud() { [ -f "$UD/daemon.json" ] || { [ -f "$UD_LEGACY/daemon.json" ] && UD="$UD_LEGACY"; }; }
 LOG="$OUT/log.txt"; exec > >(tee -a "$LOG") 2>&1
 ERRORS=(); R_INSTALL="" R_GK="" R_CS="" R_CORE="" R_HEALTH="" R_SHOT="" LAUNCH_MS=""
 err() { ERRORS+=("$1"); echo "ERROR: $1"; }
@@ -23,7 +25,7 @@ PY
 trap write_report EXIT
 
 echo "== host: $(sw_vers -productVersion) $(uname -m)  installer: $INSTALLER"
-rm -rf "$APP" "$UD"
+rm -rf "$APP" "$UD" "$UD_LEGACY"
 
 # Simulate a browser download: quarantine the installer, so Gatekeeper evaluates it like a user's copy.
 xattr -w com.apple.quarantine "0083;$(printf '%x' "$(date +%s)");Safari;" "$INSTALLER" 2>/dev/null || true
@@ -60,7 +62,8 @@ mkdir -p "$UD"
 T0=$(python3 -c 'import time;print(int(time.time()*1000))')
 FABDESK_AUTOMATION=1 FABDESK_UPDATE_CHECK=0 "$APP/Contents/MacOS/Fabdesk" >"$OUT/app-stdout.txt" 2>&1 &
 APP_PID=$!
-for i in $(seq 1 60); do [ -f "$UD/daemon.json" ] && [ -f "$UD/app-bridge.json" ] && break; sleep 1; done
+for i in $(seq 1 60); do pick_ud; [ -f "$UD/daemon.json" ] && [ -f "$UD/app-bridge.json" ] && break; sleep 1; done
+echo "userData: $UD"
 if [ ! -f "$UD/daemon.json" ]; then err "daemon.json never appeared (app did not start its core)"; kill $APP_PID 2>/dev/null; exit 0; fi
 PORT=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["port"])' "$UD/daemon.json")
 TOKEN=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["token"])' "$UD/daemon.json")

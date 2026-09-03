@@ -1,5 +1,6 @@
 {
   "name": "@fabdesk/desktop",
+  "productName": "Fabdesk",
   "version": "0.1.0",
   "description": "Fabdesk: AI PCB generator desktop app",
   "author": {

@@ -42,13 +42,15 @@ parse_args() {
   [ -n "$CMD" ] || { usage; exit 1; }
 }
 
-# Picks the installer to test. Args: <os: mac|linux|win> <arch> <ext regex>. Prints the local path.
+# Picks the installer to test. Args: <os: mac|linux|win> <arch regex> <ext regex>. Prints the local path.
+# electron-builder names arches inconsistently (mac-arm64/x64, linux-amd64 .deb / linux-x86_64 .AppImage,
+# win-x64), so callers pass a regex such as "(x64|amd64|x86_64)".
 resolve_installer() {
-  local os="$1" arch="$2" ext="$3" dir out
+  local os="$1" arch="$2" ext="$3" dir out re
   if [ -n "$FILE" ]; then [ -f "$FILE" ] || die "no such file: $FILE"; echo "$FILE"; return; fi
   if [ "$LATEST" = 1 ]; then
     need curl "install curl"
-    local json url
+    local json
     json="$(curl -fsSL https://fabplane.com/desktop/latest.json)"
     TAG="v$(printf '%s' "$json" | python3 -c 'import sys,json;print(json.load(sys.stdin)["version"])')"
     log "site latest is $TAG"
@@ -56,14 +58,14 @@ resolve_installer() {
   if [ -n "$TAG" ]; then
     need gh "install GitHub CLI"
     dir="$CACHE_DIR/$TAG"; mkdir -p "$dir"
-    local pat="Fabdesk-${TAG#v}-${os}-${arch}"
-    out="$(ls "$dir" 2>/dev/null | grep -E "^${pat}.*\.(${ext})$" | head -1 || true)"
+    re="^Fabdesk-${TAG#v}-${os}-${arch}.*\.(${ext})$"
+    out="$(ls "$dir" 2>/dev/null | grep -E "$re" | head -1 || true)"
     if [ -z "$out" ]; then
-      log "downloading $pat.($ext) from release $TAG"
-      gh release download "$TAG" --repo TensorFleet/fabdesk --dir "$dir" --pattern "${pat}*" --clobber >&2
-      out="$(ls "$dir" | grep -E "^${pat}.*\.(${ext})$" | head -1 || true)"
+      log "downloading Fabdesk-${TAG#v}-${os}-* from release $TAG"
+      gh release download "$TAG" --repo TensorFleet/fabdesk --dir "$dir" --pattern "Fabdesk-${TAG#v}-${os}-*" --clobber >&2
+      out="$(ls "$dir" | grep -E "$re" | head -1 || true)"
     fi
-    [ -n "$out" ] || die "release $TAG has no ${pat}.(${ext})"
+    [ -n "$out" ] || die "release $TAG has no file matching $re"
     echo "$dir/$out"; return
   fi
   dir="$REPO_ROOT/apps/desktop/release"

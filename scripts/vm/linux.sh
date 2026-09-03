@@ -15,8 +15,9 @@ parse_args "$@"
 IMG_URL="${FABDESK_VM_LINUX_IMAGE:-https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img}"
 D="$VM_DIR/linux"; mkdir -p "$D"
 BASE="$D/base.qcow2"; OVL="$D/test.qcow2"; SEED="$D/seed.iso"; KEY="$D/id_ed25519"; PIDF="$D/qemu.pid"
-USER=fabdesk; PASS=fabdesk; MEM="${FABDESK_VM_MEM:-4096}"
+VM_USER=fabdesk; MEM="${FABDESK_VM_MEM:-4096}"
 need qemu-system-x86_64 "brew install qemu"; need qemu-img "brew install qemu"
+KOPTS=("${SSH_OPTS[@]}" -o PreferredAuthentications=publickey -o BatchMode=yes)   # key auth only, never prompt
 
 accel_args() {
   if [ "$(uname -s)" = Darwin ] && [ "$(uname -m)" = x86_64 ]; then echo "-accel hvf -cpu host"
@@ -49,10 +50,10 @@ case "$CMD" in
     boot "$BASE" "$PORT" "$D/prepare-serial.txt"
     trap stop_vm EXIT
     for i in $(seq 1 240); do
-      ssh -i "$KEY" "${SSH_OPTS[@]}" -o PreferredAuthentications=publickey -p "$PORT" "$USER@127.0.0.1" test -f .cloud-init-done 2>/dev/null && break; sleep 10
+      ssh -i "$KEY" "${KOPTS[@]}" -p "$PORT" "$VM_USER@127.0.0.1" test -f .cloud-init-done 2>/dev/null && break; sleep 10
     done
-    ssh -i "$KEY" "${SSH_OPTS[@]}" -p "$PORT" "$USER@127.0.0.1" test -f .cloud-init-done || die "cloud-init never finished (see $D/prepare-serial.txt)"
-    ssh -i "$KEY" "${SSH_OPTS[@]}" -p "$PORT" "$USER@127.0.0.1" "sudo cloud-init clean --logs; sudo sync; sudo poweroff" >/dev/null 2>&1 || true
+    ssh -i "$KEY" "${KOPTS[@]}" -p "$PORT" "$VM_USER@127.0.0.1" test -f .cloud-init-done || die "cloud-init never finished (see $D/prepare-serial.txt)"
+    ssh -i "$KEY" "${KOPTS[@]}" -p "$PORT" "$VM_USER@127.0.0.1" "sudo cloud-init clean --logs; sudo sync; sudo poweroff" >/dev/null 2>&1 || true
     sleep 10; stop_vm; trap - EXIT
     log "base disk ready: $BASE" ;;
 
@@ -60,24 +61,24 @@ case "$CMD" in
     [ -f "$BASE" ] || "$0" prepare
     FORMAT="${FORMAT:-appimage}"
     case "$FORMAT" in appimage) EXT="AppImage" ;; deb) EXT="deb" ;; *) die "--format appimage|deb" ;; esac
-    INSTALLER="$(resolve_installer linux x64 "$EXT")"
+    INSTALLER="$(resolve_installer linux "(x64|amd64|x86_64)" "$EXT")"
     OUT="$(new_result_dir "linux-$FORMAT")"; log "installer: $INSTALLER"; log "results: $OUT"
     stop_vm; rm -f "$OVL"; qemu-img create -q -f qcow2 -F qcow2 -b "$BASE" "$OVL"
     PORT=$(free_port); echo "$PORT" > "$D/port"
     boot "$OVL" "$PORT" "$OUT/serial.txt"
     cleanup() { if [ "$KEEP" = 0 ]; then stop_vm; else warn "VM left running on ssh port $PORT (--keep); use 'linux.sh shell'"; fi; }
     trap cleanup EXIT
-    S=(ssh -i "$KEY" "${SSH_OPTS[@]}" -o PreferredAuthentications=publickey -p "$PORT" "$USER@127.0.0.1")
+    S=(ssh -i "$KEY" "${KOPTS[@]}" -p "$PORT" "$VM_USER@127.0.0.1")
     for i in $(seq 1 120); do "${S[@]}" true 2>/dev/null && break; sleep 5; done
     "${S[@]}" true 2>/dev/null || die "ssh never came up (see $OUT/serial.txt)"
     log "guest up"
     "${S[@]}" "rm -rf ~/fabdesk-test && mkdir -p ~/fabdesk-test/out"
-    scp -i "$KEY" "${SSH_OPTS[@]}" -P "$PORT" "$INSTALLER" "$REPO_ROOT/scripts/vm/guest/linux-test.sh" "$USER@127.0.0.1:fabdesk-test/" >/dev/null
+    scp -i "$KEY" "${KOPTS[@]}" -P "$PORT" "$INSTALLER" "$REPO_ROOT/scripts/vm/guest/linux-test.sh" "$VM_USER@127.0.0.1:fabdesk-test/" >/dev/null
     "${S[@]}" "bash ~/fabdesk-test/linux-test.sh ~/fabdesk-test/$(basename "$INSTALLER") ~/fabdesk-test/out" | tee "$OUT/log.txt" || true
-    scp -i "$KEY" "${SSH_OPTS[@]}" -P "$PORT" -r "$USER@127.0.0.1:fabdesk-test/out/*" "$OUT/" >/dev/null 2>&1 || true
+    scp -i "$KEY" "${KOPTS[@]}" -P "$PORT" -r "$VM_USER@127.0.0.1:fabdesk-test/out/*" "$OUT/" >/dev/null 2>&1 || true
     finish_report "$OUT" ;;
 
-  shell) exec ssh -i "$KEY" "${SSH_OPTS[@]}" -p "$(ssh_port)" "$USER@127.0.0.1" ;;
+  shell) exec ssh -i "$KEY" "${KOPTS[@]}" -p "$(ssh_port)" "$VM_USER@127.0.0.1" ;;
   destroy) stop_vm; rm -rf "$D"; log "deleted $D" ;;
   *) usage; exit 1 ;;
 esac

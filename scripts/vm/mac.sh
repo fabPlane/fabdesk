@@ -13,13 +13,13 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 usage() { sed -n 2,13p "${BASH_SOURCE[0]}"; }
 parse_args "$@"
 BASE_IMAGE="${FABDESK_VM_MAC_IMAGE:-ghcr.io/cirruslabs/macos-sequoia-base:latest}"
-BASE=fabdesk-mac-base; VM=fabdesk-mac-test; USER=admin; PASS=admin
+BASE=fabdesk-mac-base; VM=fabdesk-mac-test; VM_USER=admin; VM_PASS=admin  # not USER: Homebrew reads $USER
 [ "$(uname -m)" = arm64 ] || die "macOS VMs need an Apple Silicon host"
 
 ensure_tart() {
   if ! command -v tart >/dev/null; then
     need brew "install Homebrew first"
-    log "installing tart (brew install cirruslabs/cli/tart)"; brew install cirruslabs/cli/tart
+    log "installing tart (brew trust cirruslabs/cli && brew install cirruslabs/cli/tart)"; brew trust cirruslabs/cli >/dev/null 2>&1 || true; brew install cirruslabs/cli/tart
   fi
 }
 vm_ip() { tart ip "$VM" --wait 120 2>/dev/null; }
@@ -47,21 +47,21 @@ case "$CMD" in
     cleanup() { if [ "$KEEP" = 0 ]; then tart stop "$VM" >/dev/null 2>&1 || true; kill $TART_PID 2>/dev/null || true; tart delete "$VM" >/dev/null 2>&1 || true; else warn "VM $VM left running (--keep); use 'mac.sh shell'"; fi; }
     trap cleanup EXIT
     IP="$(vm_ip)"; [ -n "$IP" ] || die "VM got no IP (see $OUT/tart.txt)"
-    wait_ssh "$USER" "$IP" 22 "$PASS" 180 || die "ssh to $IP never came up"
+    wait_ssh "$VM_USER" "$IP" 22 "$VM_PASS" 180 || die "ssh to $IP never came up"
     log "guest up at $IP"
     if [ "$ARCH" = x64 ]; then
       log "installing Rosetta in the guest"
-      guest_ssh "$USER" "$IP" 22 "$PASS" "arch -arm64 /usr/sbin/softwareupdate --install-rosetta --agree-to-license >/dev/null 2>&1 || true"
+      guest_ssh "$VM_USER" "$IP" 22 "$VM_PASS" "arch -arm64 /usr/sbin/softwareupdate --install-rosetta --agree-to-license >/dev/null 2>&1 || true"
     fi
-    guest_ssh "$USER" "$IP" 22 "$PASS" "rm -rf ~/fabdesk-test && mkdir -p ~/fabdesk-test/out"
-    guest_scp "$USER" "$IP" 22 "$PASS" "$INSTALLER" "$REPO_ROOT/scripts/vm/guest/mac-test.sh" "$USER@$IP:fabdesk-test/"
-    guest_ssh "$USER" "$IP" 22 "$PASS" "bash ~/fabdesk-test/mac-test.sh ~/fabdesk-test/$(basename "$INSTALLER") ~/fabdesk-test/out" | tee "$OUT/log.txt" || true
-    guest_scp "$USER" "$IP" 22 "$PASS" "$USER@$IP:fabdesk-test/out/*" "$OUT/" >/dev/null 2>&1 || true
+    guest_ssh "$VM_USER" "$IP" 22 "$VM_PASS" "rm -rf ~/fabdesk-test && mkdir -p ~/fabdesk-test/out"
+    guest_scp "$VM_USER" "$IP" 22 "$VM_PASS" "$INSTALLER" "$REPO_ROOT/scripts/vm/guest/mac-test.sh" "$VM_USER@$IP:fabdesk-test/"
+    guest_ssh "$VM_USER" "$IP" 22 "$VM_PASS" "bash ~/fabdesk-test/mac-test.sh ~/fabdesk-test/$(basename "$INSTALLER") ~/fabdesk-test/out" | tee "$OUT/log.txt" || true
+    guest_scp "$VM_USER" "$IP" 22 "$VM_PASS" "$VM_USER@$IP:fabdesk-test/out/*" "$OUT/" >/dev/null 2>&1 || true
     finish_report "$OUT" ;;
 
   shell)
     IP="$(vm_ip)"; [ -n "$IP" ] || die "no running $VM (run test --keep first)"
-    exec "$REPO_ROOT/scripts/vm/_ssh.sh" "$USER" "$IP" "$PASS" ;;
+    exec "$REPO_ROOT/scripts/vm/_ssh.sh" "$VM_USER" "$IP" "$VM_PASS" ;;
 
   destroy)
     tart stop "$VM" >/dev/null 2>&1 || true; tart delete "$VM" >/dev/null 2>&1 || true

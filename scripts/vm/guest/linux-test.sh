@@ -4,6 +4,8 @@
 set -uo pipefail
 INSTALLER="$1"; OUT="$2"; mkdir -p "$OUT"
 UD="$HOME/.config/Fabdesk"
+UD_LEGACY="$HOME/.config/@fabdesk/desktop"   # builds before 0.1.40
+pick_ud() { [ -f "$UD/daemon.json" ] || { [ -f "$UD_LEGACY/daemon.json" ] && UD="$UD_LEGACY"; }; }
 LOG="$OUT/log.txt"; exec > >(tee -a "$LOG") 2>&1
 ERRORS=(); R_INSTALL="" R_CORE="" R_HEALTH="" R_SHOT="" LAUNCH_MS="" BIN=""
 err() { ERRORS+=("$1"); echo "ERROR: $1"; }
@@ -18,7 +20,7 @@ PY
 }
 trap write_report EXIT
 echo "== host: $(. /etc/os-release; echo "$PRETTY_NAME") $(uname -m)  installer: $INSTALLER"
-rm -rf "$UD"
+rm -rf "$UD" "$UD_LEGACY"
 
 case "$INSTALLER" in
   *.AppImage)
@@ -46,11 +48,12 @@ fi
 
 export DISPLAY=:99
 Xvfb :99 -screen 0 1440x900x24 >/dev/null 2>&1 &
-XPID=$!; sleep 2
+XPID=$!; for i in $(seq 1 30); do [ -S /tmp/.X11-unix/X99 ] && break; sleep 1; done
 T0=$(date +%s%3N)
 FABDESK_AUTOMATION=1 FABDESK_UPDATE_CHECK=0 "$BIN" >"$OUT/app-stdout.txt" 2>&1 &
 APP_PID=$!
-for i in $(seq 1 90); do [ -f "$UD/daemon.json" ] && [ -f "$UD/app-bridge.json" ] && break; sleep 1; done
+for i in $(seq 1 90); do pick_ud; [ -f "$UD/daemon.json" ] && [ -f "$UD/app-bridge.json" ] && break; sleep 1; done
+echo "userData: $UD"
 if [ ! -f "$UD/daemon.json" ]; then err "daemon.json never appeared (app did not start its core)"; kill $APP_PID $XPID 2>/dev/null; exit 0; fi
 PORT=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["port"])' "$UD/daemon.json")
 TOKEN=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["token"])' "$UD/daemon.json")

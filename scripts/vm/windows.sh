@@ -1,89 +1,130 @@
 #!/usr/bin/env bash
-# Fresh Windows installer test in a QEMU VM (Windows 11 arm64 on Apple Silicon via HVF; x86_64 hosts
-# use an x64 ISO with KVM/HVF). Windows has no cloud image, so `prepare` performs a one-time unattended
-# install from an ISO you supply (Microsoft's official Windows 11 ISO download; the arm64 ISO from
-# https://www.microsoft.com/software-download/windows11arm64). Only inbox drivers are used (NVMe disk,
-# USB RNDIS network, ramfb display), so no virtio driver ISO is needed.
+# Fresh Windows installer test in a QEMU VM. Windows has no cloud image, so `prepare` performs a
+# one-time unattended install from an ISO. With no --iso it downloads Microsoft's Windows 11
+# Enterprise evaluation ISO (90-day, direct link, no form) for the guest architecture.
 #
-#   scripts/vm/windows.sh prepare --iso ~/Downloads/Win11_24H2_Arm64.iso     # ~20-40 min, once
+#   scripts/vm/windows.sh prepare [--guest x86_64|aarch64] [--iso Win11.iso]   # once; x86_64 is emulated on Apple Silicon (slow, hours)
 #   scripts/vm/windows.sh test [--format nsis|portable] [--file X | --tag vX | --latest] [--keep]
-#   scripts/vm/windows.sh console                   # open the VM display (test --keep) for a look
+#   scripts/vm/windows.sh console                   # open the VM display of the last test (--keep)
 #   scripts/vm/windows.sh destroy
+#
+# Guest choice: the Fabdesk Windows build is x64. An x86_64 guest runs it natively and needs only
+# inbox drivers (NVMe disk, e1000e NIC, standard VGA), which is what users have; on Apple Silicon it
+# runs under TCG emulation (install ~1-3 h, each test ~10-20 min). An aarch64 guest is fast under HVF
+# but runs the installer through Windows' own x64 emulation. Default: x86_64.
 #
 # `test` boots a throwaway overlay of the base disk with a payload CD (installer + guest/windows-test.ps1).
 # The startup agent installed during `prepare` runs the test, which reports back over HTTP to the host
-# (10.0.2.2) and powers the VM off. The x64 installer runs under Windows' built-in x64 emulation on arm64.
+# (10.0.2.2) and powers the VM off.
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
-usage() { sed -n 2,17p "${BASH_SOURCE[0]}"; }
-parse_args "$@"
-D="$VM_DIR/windows"; mkdir -p "$D"
-BASE="$D/base.qcow2"; OVL="$D/test.qcow2"; VARS="$D/efivars.fd"; PIDF="$D/qemu.pid"
-MEM="${FABDESK_VM_MEM:-6144}"
-HOST_ARCH="$(uname -m)"
-if [ "$HOST_ARCH" = arm64 ] || [ "$HOST_ARCH" = aarch64 ]; then GUEST=aarch64; else GUEST=x86_64; fi
+usage() { sed -n 2,18p "${BASH_SOURCE[0]}"; }
+GUEST="${FABDESK_VM_WIN_GUEST:-x86_64}"
+# extra flag parsed before the common ones
+ARGS=(); while [ $# -gt 0 ]; do case "$1" in --guest) GUEST="$2"; shift 2 ;; *) ARGS+=("$1"); shift ;; esac; done
+parse_args "${ARGS[@]}"
+[ "$GUEST" = x86_64 ] || [ "$GUEST" = aarch64 ] || die "--guest x86_64|aarch64"
+D="$VM_DIR/windows-$GUEST"; mkdir -p "$D"
+BASE="$D/base.qcow2"; OVL="$D/test.qcow2"; VARS="$D/efivars.fd"; PIDF="$D/qemu.pid"; MON="$D/monitor.sock"
+MEM="${FABDESK_VM_MEM:-8192}"
 need "qemu-system-$GUEST" "brew install qemu"; need qemu-img "brew install qemu"
+EVAL_X64="https://go.microsoft.com/fwlink/?linkid=2289031"     # Windows 11 Enterprise 24H2 eval, x64, en-US
+EVAL_ARM64="https://go.microsoft.com/fwlink/?linkid=2289032"   # same, arm64
 
 efi_code() {
-  local p
+  local p f
   for p in /opt/homebrew/share/qemu /usr/local/share/qemu /usr/share/qemu /usr/share/edk2/aarch64 /usr/share/OVMF; do
     if [ "$GUEST" = aarch64 ]; then [ -f "$p/edk2-aarch64-code.fd" ] && { echo "$p/edk2-aarch64-code.fd"; return; }
     else for f in edk2-x86_64-code.fd OVMF_CODE.fd; do [ -f "$p/$f" ] && { echo "$p/$f"; return; }; done; fi
   done; die "no EDK2 firmware found for $GUEST (brew install qemu)"
 }
-accel() { if [ "$(uname -s)" = Darwin ]; then echo "-accel hvf -cpu host"; elif [ -w /dev/kvm ]; then echo "-accel kvm -cpu host"; else echo "-accel tcg -cpu max"; fi; }
+native() { [ "$(uname -s)" = Darwin ] && { [ "$(uname -m)" = arm64 ] && [ "$GUEST" = aarch64 ] || [ "$(uname -m)" = x86_64 ] && [ "$GUEST" = x86_64 ]; }; }
+accel() {
+  if native; then echo "-accel hvf -cpu host"
+  elif [ "$(uname -s)" = Linux ] && [ -w /dev/kvm ] && [ "$(uname -m)" = "$GUEST" ]; then echo "-accel kvm -cpu host"
+  elif [ "$GUEST" = x86_64 ]; then echo "-accel tcg,thread=multi -cpu Skylake-Client-v4"   # Win11 wants POPCNT/SSE4.2; a named model avoids TCG 'max' quirks
+  else echo "-accel tcg,thread=multi -cpu max"; fi
+}
 boot() {  # boot <disk> <display: none|cocoa|gtk> <serial log> [extra drives...]
   local disk="$1" disp="$2" logf="$3"; shift 3
-  local machine=(-M virt,highmem=on); [ "$GUEST" = x86_64 ] && machine=(-M q35)
-  [ -f "$VARS" ] || { if [ "$GUEST" = aarch64 ]; then qemu-img create -q -f raw "$VARS" 64M; else cp "$(dirname "$(efi_code)")/edk2-i386-vars.fd" "$VARS" 2>/dev/null || qemu-img create -q -f raw "$VARS" 4M; fi; }
+  local machine=(-M virt,highmem=on) devs=(-device ramfb -device usb-net,netdev=n0)
+  if [ "$GUEST" = x86_64 ]; then machine=(-M q35); devs=(-vga std -device e1000e,netdev=n0); fi
+  if [ ! -f "$VARS" ]; then
+    if [ "$GUEST" = aarch64 ]; then qemu-img create -q -f raw "$VARS" 64M
+    else cp "$(dirname "$(efi_code)")/edk2-i386-vars.fd" "$VARS" 2>/dev/null || qemu-img create -q -f raw "$VARS" 4M; fi
+  fi
+  rm -f "$MON"
   # shellcheck disable=SC2046
-  "qemu-system-$GUEST" "${machine[@]}" $(accel) -smp 4 -m "$MEM" -display "$disp" -serial "file:$logf" -monitor none -pidfile "$PIDF" \
+  "qemu-system-$GUEST" "${machine[@]}" $(accel) -smp "${FABDESK_VM_CPUS:-8}" -m "$MEM" -display "$disp" -serial "file:$logf" \
+    -monitor "unix:$MON,server,nowait" -pidfile "$PIDF" -rtc base=utc \
     -drive "if=pflash,format=raw,readonly=on,file=$(efi_code)" -drive "if=pflash,format=raw,file=$VARS" \
-    -device ramfb -device qemu-xhci -device usb-kbd -device usb-tablet \
-    -device usb-net,netdev=n0 -netdev user,id=n0 \
+    -device qemu-xhci -device usb-kbd -device usb-tablet "${devs[@]}" -netdev user,id=n0 \
     -drive "file=$disk,if=none,id=hd,format=qcow2" -device nvme,drive=hd,serial=fabdesk "$@" &
 }
-stop_vm() { [ -f "$PIDF" ] && kill "$(cat "$PIDF")" 2>/dev/null; rm -f "$PIDF"; }
-wait_off() { local i; for ((i=0; i<$1; i+=5)); do [ -f "$PIDF" ] && kill -0 "$(cat "$PIDF")" 2>/dev/null || return 0; sleep 5; done; return 1; }
+mon() { python3 - "$MON" "$1" <<'PY'
+import socket, sys, time
+s = socket.socket(socket.AF_UNIX); s.settimeout(3)
+try:
+    s.connect(sys.argv[1]); time.sleep(0.2); s.recv(4096)
+    s.sendall((sys.argv[2] + "\n").encode()); time.sleep(0.2)
+except Exception: pass
+PY
+}
+stop_vm() { [ -f "$PIDF" ] && kill "$(cat "$PIDF")" 2>/dev/null; rm -f "$PIDF" "$MON"; }
+vm_alive() { [ -f "$PIDF" ] && kill -0 "$(cat "$PIDF")" 2>/dev/null; }
+wait_off() { local i; for ((i=0; i<$1; i+=5)); do vm_alive || return 0; sleep 5; done; return 1; }
 make_iso() {  # make_iso <dir> <out.iso> <label>
   if command -v mkisofs >/dev/null; then mkisofs -quiet -o "$2" -V "$3" -joliet -rock -udf "$1"
   elif [ "$(uname -s)" = Darwin ]; then hdiutil makehybrid -quiet -iso -joliet -udf -default-volume-name "$3" -o "$2" "$1"
   else die "need mkisofs (genisoimage)"; fi
 }
+cdrom_args() {  # cdrom_args <id> <iso> [bootindex]
+  if [ "$GUEST" = x86_64 ]; then echo "-drive file=$2,if=none,id=$1,media=cdrom,format=raw,readonly=on -device ide-cd,drive=$1,bus=ide.${3:-1}${3:+,bootindex=$3}"
+  else echo "-drive file=$2,if=none,id=$1,media=cdrom,format=raw,readonly=on -device usb-storage,drive=$1${3:+,bootindex=$3}"; fi
+}
 
 case "$CMD" in
   prepare)
-    [ -n "$ISO" ] || die "prepare needs --iso <Windows 11 ISO>"; [ -f "$ISO" ] || die "no such ISO: $ISO"
     [ -f "$BASE" ] && { log "base disk already exists ($BASE); destroy first to rebuild"; exit 0; }
+    EVAL=0
+    if [ -z "$ISO" ]; then
+      EVAL=1; ISO="$CACHE_DIR/win11-eval-$GUEST.iso"
+      URL="$EVAL_X64"; [ "$GUEST" = aarch64 ] && URL="$EVAL_ARM64"
+      if [ ! -f "$ISO" ]; then log "downloading Windows 11 Enterprise evaluation ISO ($GUEST, ~5 GB) -> $ISO"; curl -fL --progress-bar -o "$ISO.part" "$URL" && mv "$ISO.part" "$ISO"; fi
+    fi
+    [ -f "$ISO" ] || die "no such ISO: $ISO"
     U="$D/unattend"; rm -rf "$U"; mkdir -p "$U/fabdesk"
     ARCH_TAG=arm64; [ "$GUEST" = x86_64 ] && ARCH_TAG=amd64
-    # Generic Windows 11 Pro KMS client key (installs unactivated; fine for a throwaway test VM).
-    sed -e "s|__IMAGE_INDEX__|${FABDESK_VM_WIN_IMAGE_INDEX:-6}|" -e "s|__PRODUCT_KEY__|${FABDESK_VM_WIN_KEY:-VK7JG-NPHTM-C97JM-9MPGT-3V66T}|" \
-        -e "s|processorArchitecture=\"arm64\"|processorArchitecture=\"$ARCH_TAG\"|g" \
+    IDX="${FABDESK_VM_WIN_IMAGE_INDEX:-$([ "$EVAL" = 1 ] && echo 1 || echo 6)}"
+    KEY="${FABDESK_VM_WIN_KEY:-$([ "$EVAL" = 1 ] && echo "" || echo VK7JG-NPHTM-C97JM-9MPGT-3V66T)}"   # generic Pro key for retail ISOs (unactivated)
+    sed -e "s|__IMAGE_INDEX__|$IDX|" -e "s|processorArchitecture=\"arm64\"|processorArchitecture=\"$ARCH_TAG\"|g" \
         "$REPO_ROOT/scripts/vm/guest/autounattend.xml" > "$U/autounattend.xml"
+    if [ -n "$KEY" ]; then sed -i.bak "s|__PRODUCT_KEY__|$KEY|" "$U/autounattend.xml"; else sed -i.bak 's|<ProductKey><Key>__PRODUCT_KEY__</Key></ProductKey>||' "$U/autounattend.xml"; fi
+    rm -f "$U/autounattend.xml.bak"
     cp "$REPO_ROOT/scripts/vm/guest/windows-agent.cmd" "$U/fabdesk/"
     make_iso "$U" "$D/unattend.iso" FABDESK_UNATTEND
     qemu-img create -q -f qcow2 "$BASE" 64G
     rm -f "$VARS"
-    log "installing Windows unattended (window opens; do not interact). Serial log: $D/prepare-serial.txt"
-    DISP=cocoa; [ "$(uname -s)" = Darwin ] || DISP=gtk
-    boot "$BASE" "$DISP" "$D/prepare-serial.txt" \
-      -drive "file=$ISO,if=none,id=cd0,media=cdrom,format=raw,readonly=on" -device usb-storage,drive=cd0,bootindex=1 \
-      -drive "file=$D/unattend.iso,if=none,id=cd1,media=cdrom,format=raw,readonly=on" -device usb-storage,drive=cd1
+    DISP=none; [ "$KEEP" = 1 ] && { DISP=cocoa; [ "$(uname -s)" = Darwin ] || DISP=gtk; }
+    log "installing Windows unattended (guest $GUEST, image index $IDX). Serial log: $D/prepare-serial.txt"
+    native || warn "emulated guest: expect 1-3 hours"
+    # shellcheck disable=SC2046
+    boot "$BASE" "$DISP" "$D/prepare-serial.txt" $(cdrom_args cd0 "$ISO" 1) $(cdrom_args cd1 "$D/unattend.iso")
     trap stop_vm EXIT
-    # Windows Setup boots from the ISO the first time only when a key is pressed; EDK2 boots the NVMe once
-    # it has a bootloader, so the reboots after setup continue the install and the final shutdown ends it.
-    wait_off 5400 || die "install did not finish in 90 min"
+    # The Windows CD bootloader waits for "Press any key to boot from CD"; feed it Enter during the
+    # first boot only. Later reboots time out at that prompt and fall through to the installed disk.
+    for i in $(seq 1 40); do vm_alive || break; mon "sendkey ret"; sleep 3; done
+    wait_off "${FABDESK_VM_INSTALL_TIMEOUT:-14400}" || die "install did not finish in time (see $D/prepare-serial.txt; rerun with --keep to watch)"
     trap - EXIT
     log "base disk ready: $BASE" ;;
 
   test)
-    [ -f "$BASE" ] || die "no base disk; run: windows.sh prepare --iso <Win11.iso>"
+    [ -f "$BASE" ] || die "no base disk; run: windows.sh prepare [--guest $GUEST]"
     FORMAT="${FORMAT:-nsis}"
-    case "$FORMAT" in nsis) PAT="exe" ;; portable) PAT="exe" ;; *) die "--format nsis|portable" ;; esac
-    INSTALLER="$(resolve_installer win x64 "$PAT")"
+    case "$FORMAT" in nsis|portable) ;; *) die "--format nsis|portable" ;; esac
+    INSTALLER="$(resolve_installer win "(x64|amd64|x86_64)" exe)"
     if [ "$FORMAT" = portable ] && [[ "$INSTALLER" != *portable* ]]; then INSTALLER="$(dirname "$INSTALLER")/$(ls "$(dirname "$INSTALLER")" | grep -i portable | head -1)"; fi
     [ -f "$INSTALLER" ] || die "no $FORMAT installer found"
-    OUT="$(new_result_dir "windows-$FORMAT")"; log "installer: $INSTALLER"; log "results: $OUT"
+    OUT="$(new_result_dir "windows-$GUEST-$FORMAT")"; log "installer: $INSTALLER"; log "results: $OUT"
     PORT=$(free_port)
     python3 "$REPO_ROOT/scripts/vm/receiver.py" "$PORT" "$OUT" & RECV=$!
     P="$D/payload"; rm -rf "$P"; mkdir -p "$P/fabdesk"
@@ -92,18 +133,20 @@ case "$CMD" in
     make_iso "$P" "$D/payload.iso" FABDESK_PAYLOAD
     stop_vm; rm -f "$OVL"; qemu-img create -q -f qcow2 -F qcow2 -b "$BASE" "$OVL"
     DISP=none; [ "$KEEP" = 1 ] && { DISP=cocoa; [ "$(uname -s)" = Darwin ] || DISP=gtk; }
-    boot "$OVL" "$DISP" "$OUT/serial.txt" -drive "file=$D/payload.iso,if=none,id=cd1,media=cdrom,format=raw,readonly=on" -device usb-storage,drive=cd1
+    # shellcheck disable=SC2046
+    boot "$OVL" "$DISP" "$OUT/serial.txt" $(cdrom_args cd1 "$D/payload.iso")
     cleanup() { kill $RECV 2>/dev/null || true; if [ "$KEEP" = 0 ]; then stop_vm; else warn "VM left running (--keep)"; fi; }
     trap cleanup EXIT
     log "waiting for the guest to report (timeout ${TIMEOUT}s)"
-    for ((i=0; i<TIMEOUT; i+=5)); do [ -f "$OUT/.done" ] && break; sleep 5; done
+    for ((i=0; i<TIMEOUT; i+=5)); do [ -f "$OUT/.done" ] && break; vm_alive || break; sleep 5; done
     [ -f "$OUT/.done" ] || warn "guest did not report within ${TIMEOUT}s (see $OUT/serial.txt; try --keep to watch the display)"
     wait_off 60 || true
     finish_report "$OUT" ;;
 
   console)
     [ -f "$OVL" ] || die "no test VM; run test --keep"
-    stop_vm; boot "$OVL" cocoa "$D/console-serial.txt" -drive "file=$D/payload.iso,if=none,id=cd1,media=cdrom,format=raw,readonly=on" -device usb-storage,drive=cd1; wait ;;
+    # shellcheck disable=SC2046
+    stop_vm; boot "$OVL" cocoa "$D/console-serial.txt" $(cdrom_args cd1 "$D/payload.iso"); wait ;;
   destroy) stop_vm; rm -rf "$D"; log "deleted $D" ;;
   *) usage; exit 1 ;;
 esac
