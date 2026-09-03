@@ -173,16 +173,12 @@ async function setComposer(text: string): Promise<{ draftKey: string; draft: str
   return { draftKey: key, draft: useUiStore.getState().drafts[key] ?? "" };
 }
 
-/** Composer agent picker is a native <select> titled "Agent (…)"; set it the way React expects. */
+/**
+ * The composer's agent picker is a React dropdown, not a native <select>, so drive the same state
+ * the menu writes through the composer bridge instead of clicking the DOM.
+ */
 function setAgent(agentId: string): boolean {
-  const selects = Array.from(document.querySelectorAll("select"));
-  const target = selects.find((s) => Array.from(s.options).some((o) => o.value === agentId) && (s.title.startsWith("Agent") || s.title === ""));
-  if (!target) return false;
-  const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set;
-  setter?.call(target, agentId);
-  target.dispatchEvent(new Event("input", { bubbles: true }));
-  target.dispatchEvent(new Event("change", { bubbles: true }));
-  return true;
+  return composerHandlers.setAgent?.(agentId) ?? false;
 }
 
 async function send(): Promise<{ sent: boolean; reason?: string; threadId: string | null; elapsedMs: number }> {

@@ -10,10 +10,19 @@ import { basename, mimeFromPath, modKey } from "../util";
 import { AgentModelMenu } from "./AgentModelMenu";
 import { agentModelLabel } from "./agent-model-choices";
 
-/** Bridge for the global shortcut hook (mod+Enter send, mod+. abort). */
-export const composerHandlers: { send: (() => void) | null; abort: (() => void) | null } = {
+/** Bridge for the global shortcut hook (mod+Enter send, mod+. abort) and for app automation. */
+export const composerHandlers: {
+  send: (() => void) | null;
+  abort: (() => void) | null;
+  /**
+   * Picks agent (and optionally model) exactly as the dropdown does, for callers with no DOM to
+   * click. Returns false when the agent is not one the composer offers.
+   */
+  setAgent: ((agentId: string, model?: string | null) => boolean) | null;
+} = {
   send: null,
   abort: null,
+  setAgent: null,
 };
 
 export interface ComposerProps {
@@ -110,11 +119,20 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
   useEffect(() => {
     composerHandlers.send = () => void send();
     composerHandlers.abort = thread ? () => void client.abort(thread.id) : null;
+    composerHandlers.setAgent = (id, m) => {
+      const offered = doctor.data?.agents ?? FALLBACK_AGENTS;
+      const agent = offered.find((a) => a.id === id);
+      if (!agent) return false;
+      setAgentId(agent.id);
+      setModel(m ?? settings.data?.agents[agent.id]?.model ?? "");
+      return true;
+    };
     return () => {
       composerHandlers.send = null;
       composerHandlers.abort = null;
+      composerHandlers.setAgent = null;
     };
-  }, [send, client, thread]);
+  }, [send, client, thread, doctor.data, settings.data]);
 
   const pickFiles = async () => {
     const paths = await host.pickFile({
