@@ -112,25 +112,22 @@ case "$CMD" in
     # shellcheck disable=SC2046
     boot "$BASE" "$DISP" "$D/prepare-serial.txt" $(cdrom_args cd0 "$ISO" 1) $(cdrom_args cd1 "$D/unattend.iso")
     trap stop_vm EXIT
-    # First boot: the Windows CD bootloader waits for "Press any key to boot from CD". Under emulation
-    # the firmware often reaches that prompt late and times out into the UEFI shell, so watch the
-    # display: press Enter while it is blank, and when the shell appears boot the CD's EFI image from
-    # it. Stop as soon as Setup is drawing. Later reboots time out at the prompt and boot the disk.
-    for i in $(seq 1 240); do
+    # The Windows CD bootloader waits for "Press any key to boot from CD". Under emulation OVMF often
+    # reaches that prompt late and times out into the UEFI shell, and later reboots can land there
+    # too when NVMe is not enumerated. Press Enter while the screen is blank; qemu-rescue.sh watches
+    # for the shell for the whole install and boots the disk / CD from it.
+    "$VM_SCRIPTS/qemu-rescue.sh" "$MON" "$PIDF" 15 2>>"$D/prepare-rescue.log" &
+    RESCUE=$!
+    for i in $(seq 1 120); do
       vm_alive || break
       state="$(python3 "$VM_SCRIPTS/qemu-screen.py" "$MON" "$D/screen.ppm")"
-      case "$state" in
-        shell)
-          log "firmware fell into the UEFI shell; booting the Windows CD image from it"
-          python3 "$VM_SCRIPTS/qemu-keys.py" "$MON" 'FS0:\\EFI\\BOOT\\BOOTX64.EFI\nFS1:\\EFI\\BOOT\\BOOTX64.EFI\n' >/dev/null
-          for j in $(seq 1 12); do mon "sendkey ret"; sleep 2; done ;;
-        other) log "Windows Setup is running"; break ;;
-        *) mon "sendkey ret" ;;
-      esac
+      [ "$state" = other ] && { log "Windows Setup is running"; break; }
+      [ "$state" = black ] && mon "sendkey ret"
       sleep 5
     done
     rm -f "$D/screen.ppm"
     wait_off "${FABDESK_VM_INSTALL_TIMEOUT:-14400}" || die "install did not finish in time (see $D/prepare-serial.txt; rerun with --keep to watch)"
+    kill $RESCUE 2>/dev/null || true
     trap - EXIT
     log "base disk ready: $BASE" ;;
 
@@ -154,8 +151,10 @@ case "$CMD" in
     boot "$OVL" "$DISP" "$OUT/serial.txt" $(cdrom_args cd1 "$D/payload.iso")
     cleanup() { kill $RECV 2>/dev/null || true; if [ "$KEEP" = 0 ]; then stop_vm; else warn "VM left running (--keep)"; fi; }
     trap cleanup EXIT
+    "$VM_SCRIPTS/qemu-rescue.sh" "$MON" "$PIDF" 20 2>>"$OUT/rescue.log" & RESCUE=$!
     log "waiting for the guest to report (timeout ${TIMEOUT}s)"
     for ((i=0; i<TIMEOUT; i+=5)); do [ -f "$OUT/.done" ] && break; vm_alive || break; sleep 5; done
+    kill $RESCUE 2>/dev/null || true
     [ -f "$OUT/.done" ] || warn "guest did not report within ${TIMEOUT}s (see $OUT/serial.txt; try --keep to watch the display)"
     wait_off 60 || true
     finish_report "$OUT" ;;
