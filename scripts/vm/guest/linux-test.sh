@@ -50,7 +50,10 @@ export DISPLAY=:99
 Xvfb :99 -screen 0 1440x900x24 >/dev/null 2>&1 &
 XPID=$!; for i in $(seq 1 30); do [ -S /tmp/.X11-unix/X99 ] && break; sleep 1; done
 T0=$(date +%s%3N)
-FABDESK_AUTOMATION=1 FABDESK_UPDATE_CHECK=0 "$BIN" >"$OUT/app-stdout.txt" 2>&1 &
+# --disable-gpu: there is no GPU behind Xvfb and Electron's SwiftShader fallback crashes the GPU
+# process intermittently ("GPU process isn't usable. Goodbye."), which is an artifact of the headless
+# guest, not of the build. Everything else runs exactly as a user's desktop would.
+LIBGL_ALWAYS_SOFTWARE=1 FABDESK_AUTOMATION=1 FABDESK_UPDATE_CHECK=0 "$BIN" --disable-gpu >"$OUT/app-stdout.txt" 2>&1 &
 APP_PID=$!
 for i in $(seq 1 90); do pick_ud; [ -f "$UD/daemon.json" ] && [ -f "$UD/app-bridge.json" ] && break; sleep 1; done
 echo "userData: $UD"
