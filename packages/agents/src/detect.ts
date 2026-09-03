@@ -35,7 +35,9 @@ export function resolveWindowsShim(path: string): string | undefined {
   }
   const m = /"%(?:dp0|~dp0)%[\\/]?([^"]+\.(?:exe|cmd|bat))"/i.exec(text);
   if (!m?.[1]) return undefined;
-  const target = join(dirname(path), m[1]);
+  // The shim spells its target with backslashes; split on either separator so the join is correct
+  // wherever this runs (a checkout is read the same way on a Linux CI runner).
+  const target = join(dirname(path), ...m[1].split(/[\\/]+/));
   if (/\.(cmd|bat)$/i.test(target) || !isExecutableFile(target)) return undefined;
   return target;
 }
