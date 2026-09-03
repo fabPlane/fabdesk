@@ -67,6 +67,8 @@ function createWindow(): BrowserWindow {
         ...(sentryActive() ? ["--fabdesk-error-reporting"] : []),
         ...(sentryTestRequested() ? ["--fabdesk-sentry-test"] : []),
         ...(automationEnabled() ? ["--fabdesk-automation"] : []),
+        // Unpackaged (dev) builds show the staging/local sign-in options without the Cmd+L / Ctrl+L reveal.
+        ...(app.isPackaged ? [] : ["--fabdesk-dev-build"]),
       ],
     },
   });

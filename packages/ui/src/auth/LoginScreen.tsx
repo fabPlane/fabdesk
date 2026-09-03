@@ -2,16 +2,23 @@ import { useEffect, useState } from "react";
 import { Badge, Button, Input, Spinner } from "../components/ui";
 import { useCore } from "../core/CoreProvider";
 import { useAuthStore } from "../stores/auth";
+import { isMac } from "../util";
+import { isRevealDevOptionsShortcut, showDevSignInOptions } from "./dev-options";
 
 const STAGING_PASSWORD_HINT =
   "Staging/local only. Shared demo/maya accounts are not available in production.";
 
-/** Browser device-code sign-in (production). Password form is staging/local only. */
+/**
+ * Browser device-code sign-in (production). The staging password form and local mode are shown up
+ * front in dev builds; packaged builds that allow local auth keep them behind Cmd+L / Ctrl+L.
+ */
 export function LoginScreen() {
   const { client, host } = useCore();
   const state = useAuthStore((s) => s.state);
   const setState = useAuthStore((s) => s.setState);
   const localAllowed = useAuthStore((s) => s.localAllowed);
+  const [revealed, setRevealed] = useState(false);
+  const devOptions = showDevSignInOptions({ localAllowed, devBuild: host.devBuild, revealed });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [email, setEmail] = useState("");
@@ -28,6 +35,17 @@ export function LoginScreen() {
     }, 2500);
     return () => clearInterval(id);
   }, [state?.status, client, setState]);
+
+  useEffect(() => {
+    if (!localAllowed || host.devBuild) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!isRevealDevOptionsShortcut(e, host.platform)) return;
+      e.preventDefault();
+      setRevealed((v) => !v);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [localAllowed, host.devBuild, host.platform]);
 
   const loginWithPassword = async () => {
     setBusy(true);
@@ -81,7 +99,7 @@ export function LoginScreen() {
             <Button variant="primary" className="w-full" onClick={() => void loginWithDevice()} disabled={busy || !state}>
               {busy ? "Starting sign-in..." : "Sign in with Fabplane"}
             </Button>
-            {localAllowed && (
+            {devOptions && (
               <form
                 className="space-y-3 border-t border-border pt-4"
                 onSubmit={(e) => {
@@ -115,7 +133,7 @@ export function LoginScreen() {
           </div>
         )}
         {(error || state?.error) && <div className="mt-3 text-xs text-danger">{error ?? state?.error}</div>}
-        {localAllowed && host.setLocalAuth && (
+        {devOptions && host.setLocalAuth && (
           <div className="mt-5 border-t border-border pt-4">
             <div className="mb-2 flex items-center justify-center gap-2 text-xs text-muted">
               <Badge tone="warning">dev</Badge> Local mode skips sign-in and restarts the core daemon with --local-auth.
@@ -123,6 +141,11 @@ export function LoginScreen() {
             <Button className="w-full" onClick={() => void host.setLocalAuth?.(true)}>
               Continue in local mode
             </Button>
+          </div>
+        )}
+        {devOptions && !host.devBuild && (
+          <div className="mt-3 text-center text-[11px] text-muted">
+            {isMac(host.platform) ? "\u2318L" : "Ctrl+L"} hides these options again.
           </div>
         )}
       </div>

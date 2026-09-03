@@ -190,6 +190,8 @@ export const Settings = z.object({
         model: z.string().nullable().default(null),
         permissionMode: z.enum(["acceptEdits", "auto", "bypass"]).default("acceptEdits"),
         extraAllowedTools: z.array(z.string()).default([]),
+        /** Models offered in the composer's agent/model dropdown; empty shows the adapter's first three. */
+        pickerModels: z.array(z.string()).default([]),
       }),
     )
     .default({}),

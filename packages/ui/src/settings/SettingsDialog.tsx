@@ -20,7 +20,7 @@ const LABELS: Record<SettingsSection, string> = {
 };
 
 type AgentSettings = Settings["agents"][string];
-const DEFAULT_AGENT: AgentSettings = { binaryPath: null, model: null, permissionMode: "acceptEdits", extraAllowedTools: [] };
+const DEFAULT_AGENT: AgentSettings = { binaryPath: null, model: null, permissionMode: "acceptEdits", extraAllowedTools: [], pickerModels: [] };
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -116,6 +116,13 @@ export function SettingsDialog() {
                           <option key={m} value={m} />
                         ))}
                       </datalist>
+                    </Row>
+                    <Row label="Models in picker" hint="Comma-separated; empty shows the first three known models">
+                      <Input
+                        value={cfg.pickerModels.join(", ")}
+                        onChange={(e) => updateAgent(a.id, { pickerModels: e.target.value.split(",").map((m) => m.trim()).filter(Boolean) })}
+                        placeholder={a.models.slice(0, 3).join(", ")}
+                      />
                     </Row>
                     <Row label="Permission mode" hint="How much the agent may do without asking">
                       <Select value={cfg.permissionMode} onChange={(e) => updateAgent(a.id, { permissionMode: e.target.value as AgentSettings["permissionMode"] })}>

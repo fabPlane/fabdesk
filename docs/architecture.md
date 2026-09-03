@@ -53,6 +53,6 @@ a local principal; it is honored only in non-public channels or when `.fabdesk-d
 
 ## Project on disk
 
-`~/Fabdesk/<slug>/` — `fabdesk.json`, `circuit.tsx`, `circuit.json`, `circuit.routed.json`,
+`~/fabdesk/<slug>/` — `fabdesk.json`, `circuit.tsx`, `circuit.json`, `circuit.routed.json`,
 `<name>.kicad_pcb|sch|pro`, `sketches/`, `renders/`, `reports/`, `exports/`, `AGENTS.md`,
 `CLAUDE.md`, `.fabdesk/runs/<runId>/frames.jsonl`.

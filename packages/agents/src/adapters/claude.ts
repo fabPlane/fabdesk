@@ -64,7 +64,7 @@ export function claudeArgs(session: AgentSession, bin: string): string[] {
 
 export const claudeAdapter: AgentAdapter = {
   id: "claude",
-  displayName: "Claude Code",
+  displayName: "Claude",
   installHint:
     "Install Claude Code: https://code.claude.com/docs/en/setup (curl -fsSL https://claude.ai/install.sh | bash), then run `claude` once to sign in.",
   detect: (binaryPath) => detectBinary(CANDIDATES, binaryPath),

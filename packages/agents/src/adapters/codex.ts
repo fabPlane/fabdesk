@@ -36,7 +36,7 @@ export function codexArgs(session: AgentSession, bin: string): string[] {
 
 export const codexAdapter: AgentAdapter = {
   id: "codex",
-  displayName: "Codex CLI",
+  displayName: "Codex",
   installHint:
     "Install Codex: npm install -g @openai/codex (or brew install codex), then run `codex login`.",
   detect: (binaryPath) => detectBinary(CANDIDATES, binaryPath),

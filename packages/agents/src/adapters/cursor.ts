@@ -57,7 +57,7 @@ export function cursorArgs(session: AgentSession, bin: string): string[] {
 
 export const cursorAdapter: AgentAdapter = {
   id: "cursor",
-  displayName: "Cursor Agent (beta)",
+  displayName: "Cursor",
   beta: true,
   installHint:
     "Install the Cursor CLI: curl https://cursor.com/install -fsS | bash, then run `agent login`.",

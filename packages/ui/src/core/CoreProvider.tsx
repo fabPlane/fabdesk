@@ -17,6 +17,8 @@ export interface FilePickOptions {
 /** What the surrounding shell (Electron preload, or a web host) provides to the UI. */
 export interface HostAdapter {
   platform: string;
+  /** Unpackaged (dev) build: the sign-in screen shows staging/local options up front instead of behind ⌘L / Ctrl+L. */
+  devBuild?: boolean;
   openExternal: (url: string) => Promise<void> | void;
   pickFile: (opts?: FilePickOptions) => Promise<string[]>;
   localAuthAllowed: () => Promise<boolean>;

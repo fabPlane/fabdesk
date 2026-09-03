@@ -18,6 +18,8 @@ export interface FabdeskBridge {
   sentryTest: boolean;
   /** True when the app automation bridge is on (dev builds / FABDESK_AUTOMATION=1); the renderer then installs window.__fabdeskApp. */
   automationEnabled: boolean;
+  /** True for unpackaged (dev) builds; the sign-in screen then shows staging/local options without a shortcut. */
+  devBuild: boolean;
   setErrorReporting(enabled: boolean): Promise<void>;
   /** id + handle of the signed-in principal (never email); null on logout. */
   setSentryUser(user: { id: string; username?: string } | null): Promise<void>;

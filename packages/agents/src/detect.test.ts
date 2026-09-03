@@ -87,6 +87,7 @@ describe("detectAgents", () => {
           model: null,
           permissionMode: "acceptEdits",
           extraAllowedTools: [],
+          pickerModels: [],
         },
       },
       keepCoreRunning: false,
@@ -97,12 +98,12 @@ describe("detectAgents", () => {
     expect(infos.map((i) => i.id)).toEqual(["claude", "codex", "grok", "cursor"]);
     const byId = Object.fromEntries(infos.map((i) => [i.id, i]));
     // claude/cursor also probe fixed home paths (~/.local/bin/…), so only PATH-independent facts are asserted.
-    expect(byId["claude"]).toMatchObject({ displayName: "Claude Code" });
+    expect(byId["claude"]).toMatchObject({ displayName: "Claude" });
     expect(typeof byId["claude"]?.installed).toBe("boolean");
     expect(byId["claude"]?.installHint).toContain("claude");
     expect(byId["codex"]).toMatchObject({ installed: true, version: "0.145.0", path: custom });
     expect(byId["grok"]).toMatchObject({ installed: true, version: "1.0.13", path: grokPath });
-    expect(byId["cursor"]).toMatchObject({ displayName: "Cursor Agent (beta)" });
+    expect(byId["cursor"]).toMatchObject({ displayName: "Cursor" });
     for (const info of infos) expect(info.models.length).toBeGreaterThan(0);
   });
 });

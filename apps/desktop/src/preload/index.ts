@@ -15,6 +15,8 @@ const api = {
   sentryTest: process.argv.includes("--fabdesk-sentry-test"),
   /** Main passes `--fabdesk-automation` when the app automation bridge is on (dev / FABDESK_AUTOMATION=1). */
   automationEnabled: process.argv.includes("--fabdesk-automation"),
+  /** Main passes `--fabdesk-dev-build` for unpackaged (dev) builds. */
+  devBuild: process.argv.includes("--fabdesk-dev-build"),
   setErrorReporting: (enabled: boolean) =>
     ipcRenderer.invoke("fabdesk:set-error-reporting", enabled),
   setSentryUser: (user: { id: string; username?: string } | null) =>

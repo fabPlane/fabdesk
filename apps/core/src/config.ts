@@ -23,7 +23,7 @@ export function fabdeskHome(): string {
 }
 
 export function projectsDir(): string {
-  return process.env["FABDESK_PROJECTS_DIR"] ?? join(homedir(), "Fabdesk");
+  return process.env["FABDESK_PROJECTS_DIR"] ?? join(homedir(), "fabdesk");
 }
 
 export function apiOrigin(): string {

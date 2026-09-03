@@ -40,7 +40,7 @@ report, and not a fair same-input comparison.
 ## Running the VAIO fixture
 
 ```sh
-# Verifies the pinned commit + SHA-256, imports into ~/Fabdesk/vaio-b223-bench, runs one repair route.
+# Verifies the pinned commit + SHA-256, imports into ~/fabdesk/vaio-b223-bench, runs one repair route.
 bun run scripts/bench/vaio-b223.ts
 # More repetitions / other router / whole board:
 bun run scripts/bench/vaio-b223.ts --repeat 5 --timeout-ms 300000
@@ -56,7 +56,7 @@ bench route ...` from source (same worker path, no UI frames) and says so.
 Direct CLI:
 
 ```sh
-FABDESK_CHANNEL=internal bun run apps/core/src/main.ts bench route --project ~/Fabdesk/vaio-b223-bench \
+FABDESK_CHANNEL=internal bun run apps/core/src/main.ts bench route --project ~/fabdesk/vaio-b223-bench \
   --router freerouting --scenario repair --repeat 5 --timeout-ms 300000 --json /tmp/bench.json
 ```
 

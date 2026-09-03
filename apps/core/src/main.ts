@@ -31,7 +31,7 @@ Environment:
   FABPLANE_API_ORIGIN    default https://api.fabplane.com
   FABPLANE_EMAIL         staging/local password login (also --email); not for production
   FABPLANE_PASSWORD      staging/local password login (also --password)
-  FABDESK_PROJECTS_DIR   default ~/Fabdesk
+  FABDESK_PROJECTS_DIR   default ~/fabdesk
   FABDESK_LOG            debug | info | warn | error
   SENTRY_DESKTOP_DSN     Sentry DSN (error reporting off when unset; see docs/sentry.md)
   SENTRY_ENVIRONMENT     Sentry environment tag (default production for compiled builds, else development)

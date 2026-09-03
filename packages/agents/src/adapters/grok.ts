@@ -80,7 +80,7 @@ export function grokArgs(session: AgentSession, bin: string): string[] {
 
 export const grokAdapter: AgentAdapter = {
   id: "grok",
-  displayName: "Grok Build",
+  displayName: "Grok",
   installHint:
     "Install Grok Build (grok CLI) from https://grok.com/build, then run `grok login`. Expected at ~/.grok/bin/grok.",
   detect: (binaryPath) => detectBinary(CANDIDATES, binaryPath),

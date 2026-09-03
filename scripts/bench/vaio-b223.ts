@@ -6,7 +6,7 @@
  *       [--repeat 1] [--timeout-ms 120000] [--pours polygon|omit] [--no-daemon] [--json <out>]
  *
  * 1. verifies the pinned carrier commit + board SHA-256 and copies the board out of git,
- * 2. creates or refreshes the Fabdesk project `~/Fabdesk/vaio-b223-bench` -- through the running
+ * 2. creates or refreshes the Fabdesk project `~/fabdesk/vaio-b223-bench` -- through the running
  *    daemon (daemon.json) when there is one, so the app sees the project and the Route Cinema
  *    gets the frames; else directly on disk,
  * 3. imports the board (project_import_kicad), writes fabdesk.json (6 layers, netclass rules),
@@ -45,7 +45,7 @@ const timeoutMs = Number(str("timeout-ms") ?? 120_000);
 const pours = (str("pours") ?? "polygon") as "polygon" | "omit";
 const PROJECT_NAME = "vaio-b223-bench";
 const repoRoot = new URL("../..", import.meta.url).pathname.replace(/\/$/, "");
-const projectsDir = process.env["FABDESK_PROJECTS_DIR"] ?? join(homedir(), "Fabdesk");
+const projectsDir = process.env["FABDESK_PROJECTS_DIR"] ?? join(homedir(), "fabdesk");
 const projectDir = join(projectsDir, PROJECT_NAME);
 const log = (s: string) => process.stderr.write(`${s}\n`);
 

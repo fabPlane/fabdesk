@@ -1,5 +1,5 @@
 /**
- * Project store: `~/Fabdesk/<slug>/` directories with `fabdesk.json` manifests, mirrored in SQLite
+ * Project store: `~/fabdesk/<slug>/` directories with `fabdesk.json` manifests, mirrored in SQLite
  * for listing/lookup. Emits `project.changed` from a debounced recursive fs.watch.
  */
 import { watch, type FSWatcher } from "node:fs";

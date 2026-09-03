@@ -1,12 +1,14 @@
 import type { AgentId, Thread } from "@fabdesk/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button, IconButton, Kbd, Select, Textarea } from "../components/ui";
+import { Button, IconButton, Kbd, Textarea } from "../components/ui";
 import { useCore } from "../core/CoreProvider";
 import { useDoctor, useSettings } from "../hooks/queries";
 import { useRunsStore } from "../stores/runs";
 import { DRAFT_KEY_NEW, useUiStore } from "../stores/ui";
 import { basename, mimeFromPath, modKey } from "../util";
+import { AgentModelMenu } from "./AgentModelMenu";
+import { agentModelLabel } from "./agent-model-choices";
 
 /** Bridge for the global shortcut hook (mod+Enter send, mod+. abort). */
 export const composerHandlers: { send: (() => void) | null; abort: (() => void) | null } = {
@@ -21,7 +23,7 @@ export interface ComposerProps {
 }
 
 const FALLBACK_AGENTS = [
-  { id: "claude" as AgentId, displayName: "Claude Code", installed: true, installHint: "", models: [] as string[] },
+  { id: "claude" as AgentId, displayName: "Claude", installed: true, installHint: "", models: [] as string[] },
 ];
 
 const EMPTY: never[] = [];
@@ -37,6 +39,7 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
   const removeAttachment = useUiStore((s) => s.removeAttachment);
   const clearAttachments = useUiStore((s) => s.clearAttachments);
   const setSketchOpen = useUiStore((s) => s.setSketchOpen);
+  const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
   const focusNonce = useUiStore((s) => s.composerFocusNonce);
   const agentPickerOpen = useUiStore((s) => s.agentPickerOpen);
   const setAgentPickerOpen = useUiStore((s) => s.setAgentPickerOpen);
@@ -49,7 +52,6 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const agentSelectRef = useRef<HTMLSelectElement>(null);
 
   useEffect(() => {
     if (thread) {
@@ -66,13 +68,6 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
   }, [focusNonce, thread?.id]);
 
   useEffect(() => {
-    if (agentPickerOpen) {
-      agentSelectRef.current?.focus();
-      setAgentPickerOpen(false);
-    }
-  }, [agentPickerOpen, setAgentPickerOpen]);
-
-  useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "0px";
@@ -80,6 +75,7 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
   }, [draft]);
 
   const agents = doctor.data?.agents ?? [];
+  const pickerAgents = agents.length > 0 ? agents : FALLBACK_AGENTS;
   const selectedAgent = agents.find((a) => a.id === agentId);
   const agentMissing = selectedAgent ? !selectedAgent.installed : false;
 
@@ -173,36 +169,34 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
             }}
           />
           <div className="flex items-center gap-1.5 px-2 pb-2">
-            <Select
-              ref={agentSelectRef}
-              value={agentId}
-              onChange={(e) => {
-                const id = e.target.value as AgentId;
-                setAgentId(id);
-                setModel(settings.data?.agents[id]?.model ?? "");
-              }}
-              className="h-7 text-xs"
-              title={`Agent (${mod}/)`}
-            >
-              {(agents.length > 0 ? agents : FALLBACK_AGENTS).map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.displayName}
-                  {a.installed ? "" : " (not installed)"}
-                </option>
-              ))}
-            </Select>
-            <input
-              list={`models-${agentId}`}
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              placeholder="model (default)"
-              className="h-7 w-40 rounded-md border border-border bg-panel px-2 text-xs outline-none focus:border-accent"
-            />
-            <datalist id={`models-${agentId}`}>
-              {(selectedAgent?.models ?? []).map((m) => (
-                <option key={m} value={m} />
-              ))}
-            </datalist>
+            <div className="relative">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 max-w-[280px] truncate font-normal"
+                title={`Agent & model (${mod}/)`}
+                onClick={() => setAgentPickerOpen(!agentPickerOpen)}
+                aria-haspopup="menu"
+                aria-expanded={agentPickerOpen}
+                data-testid="agent-model"
+              >
+                {agentModelLabel(pickerAgents.find((a) => a.id === agentId), agentId, model)} <span className="text-muted">&#9662;</span>
+              </Button>
+              <AgentModelMenu
+                open={agentPickerOpen}
+                onClose={() => setAgentPickerOpen(false)}
+                agents={pickerAgents}
+                agentId={agentId}
+                model={model}
+                defaultModel={(id) => settings.data?.agents[id]?.model ?? ""}
+                configuredModels={(id) => settings.data?.agents[id]?.pickerModels ?? []}
+                onSelect={(id, m) => {
+                  setAgentId(id);
+                  setModel(m);
+                }}
+                onOpenSettings={() => setSettingsOpen(true, "agents")}
+              />
+            </div>
             <IconButton title="Attach file" onClick={() => void pickFiles()}>
               +
             </IconButton>

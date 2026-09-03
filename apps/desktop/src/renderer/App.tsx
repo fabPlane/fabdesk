@@ -19,6 +19,7 @@ const bridge = window.fabdesk;
 const host: HostAdapter = bridge
   ? {
       platform: bridge.platform,
+      devBuild: bridge.devBuild,
       openExternal: (url) => bridge.openExternal(url),
       pickFile: (opts) => bridge.pickFile(opts),
       localAuthAllowed: () => bridge.localAuthAllowed(),
