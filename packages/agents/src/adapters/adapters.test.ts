@@ -116,8 +116,14 @@ describe("codex adapter", () => {
     expect(args).toContain('mcp_servers.fabdesk.bearer_token_env_var="FABDESK_TOKEN"');
     expect(args[args.indexOf("-i") + 1]).toBe("/p/sketches/a.png");
     expect(args[args.indexOf("-m") + 1]).toBe("gpt-5.5");
+    expect(args.at(-2)).toBe("--");
     expect(args.at(-1)).toBe("Design a blinky");
     expect(args.join(" ")).not.toContain(TOKEN);
+  });
+
+  test("terminates options before a prompt that starts with a hyphen", () => {
+    const args = codexArgs(session({ prompt: "- Improve this PCB" }), "codex");
+    expect(args.slice(-2)).toEqual(["--", "- Improve this PCB"]);
   });
 
   test("resume: `exec resume <thread>` without -C, bypass replaces the sandbox", () => {

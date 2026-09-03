@@ -30,7 +30,9 @@ export function codexArgs(session: AgentSession, bin: string): string[] {
     `mcp_servers.${MCP_SERVER_NAME}.bearer_token_env_var=${tomlString(TOKEN_ENV)}`,
   );
   for (const a of session.attachments) if (isImage(a)) args.push("-i", a.path);
-  args.push(promptWithAttachments(session.prompt, session.attachments, { skipImages: true }));
+  // Prompts commonly start with Markdown list markers (`- ...`). Without the option terminator,
+  // Codex parses such prompts as CLI flags and exits with code 2 before emitting JSONL.
+  args.push("--", promptWithAttachments(session.prompt, session.attachments, { skipImages: true }));
   return args;
 }
 
