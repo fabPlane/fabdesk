@@ -388,6 +388,15 @@ export class RunRepo {
   finish(id: string, patch: { status: Run["status"]; exitCode?: number | null; cost?: unknown }): void {
     this.db.run("UPDATE runs SET status = ?, ended_at = ?, exit_code = ?, cost_json = COALESCE(?, cost_json) WHERE id = ?", [patch.status, nowIso(), patch.exitCode ?? null, patch.cost === undefined ? null : JSON.stringify(patch.cost), id]);
   }
+  /**
+   * Runs still marked running belong to a previous daemon process (their agent subprocess died with it);
+   * without this they stay "running" forever and the thread keeps its badge. Returns the affected thread ids.
+   */
+  failStale(): string[] {
+    const rows = this.db.query<{ thread_id: string }, []>("SELECT DISTINCT thread_id FROM runs WHERE status = 'running'").all();
+    this.db.run("UPDATE runs SET status = 'failed', ended_at = ?, exit_code = COALESCE(exit_code, -1) WHERE status = 'running'", [nowIso()]);
+    return rows.map((r) => r.thread_id);
+  }
   latestForThread(threadId: string): Run | null {
     const r = this.db.query<RunRow, [string]>("SELECT * FROM runs WHERE thread_id = ? ORDER BY started_at DESC LIMIT 1").get(threadId);
     return r ? this.toRun(r) : null;
