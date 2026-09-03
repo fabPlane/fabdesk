@@ -22,8 +22,10 @@ on:
 permissions:
   contents: read
 
+# One group per tested commit: runs for different releases do not queue behind or cancel each other
+# (a shared group lets GitHub cancel the older pending run when a newer release arrives).
 concurrency:
-  group: installer-test
+  group: installer-test-${{ github.event.workflow_run.head_sha || github.sha }}-${{ github.event_name }}
   cancel-in-progress: false
 
 jobs:
