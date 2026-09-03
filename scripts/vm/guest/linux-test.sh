@@ -70,6 +70,6 @@ if [ -f "$UD/app-bridge.json" ]; then
 else err "app-bridge.json missing"; fi
 import -window root "$OUT/screen.png" 2>/dev/null || true
 cp "$UD"/*.log "$OUT/" 2>/dev/null || true
-kill $APP_PID 2>/dev/null; sleep 2; pkill -f "$BIN" 2>/dev/null || true; kill $XPID 2>/dev/null || true
+kill $APP_PID 2>/dev/null; sleep 2; pkill -f "^$BIN" 2>/dev/null || true; pkill -f "/tmp/\.mount_" 2>/dev/null || true; kill $XPID 2>/dev/null || true   # anchored: this script's own argv holds the path too
 rm -rf "$OUT/squashfs-root"
 echo "== done"

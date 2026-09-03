@@ -64,7 +64,7 @@ jobs:
           - { arch: arm64, ext: dmg }
           - { arch: arm64, ext: zip }
           - { arch: x64,   ext: dmg }   # Intel build under Rosetta on the arm64 runner
-    runs-on: macos-14
+    runs-on: macos-15   # macOS 15 Rosetta supports AVX2, which the x64 Bun core needs
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4

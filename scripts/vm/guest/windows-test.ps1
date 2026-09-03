@@ -41,10 +41,18 @@ Log "authenticode: $codesign"
 
 if ($cfg.installer -match "Setup.*\.exe$" -or $cfg.installer -notmatch "portable") {
   $dir = Join-Path $env:LOCALAPPDATA "Programs\Fabdesk"
-  $p = Start-Process -FilePath $installer -ArgumentList "/S" -PassThru -Wait
-  if ($p.ExitCode -ne 0) { Err "NSIS silent install exited $($p.ExitCode)" }
+  $motw = ""
+  try { $p = Start-Process -FilePath $installer -ArgumentList "/S" -PassThru -Wait -ErrorAction Stop }
+  catch {
+    # Windows refused the downloaded (mark-of-the-web) file: what SmartScreen shows a user for an unsigned build.
+    $motw = "blocked with mark-of-the-web ($($_.Exception.Message.Split([char]10)[0].Trim())); unblocked and retried"
+    Log $motw
+    Unblock-File $installer
+    $p = Start-Process -FilePath $installer -ArgumentList "/S" -PassThru -Wait
+  }
+  if ($null -eq $p -or $p.ExitCode -ne 0) { Err "NSIS silent install exited $($p.ExitCode)" }
   $exe = Join-Path $dir "Fabdesk.exe"
-  $install = "nsis /S exit $($p.ExitCode) -> $dir"
+  $install = "nsis /S exit $($p.ExitCode) -> $dir" + $(if ($motw) { "; $motw" } else { "" })
 } else {
   $exe = $installer
   $install = "portable exe"
