@@ -119,11 +119,20 @@ jobs:
           S_APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           S_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          for name in CSC_LINK CSC_KEY_PASSWORD WIN_CSC_LINK WIN_CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+          # CSC_LINK is the Apple Developer ID certificate. electron-builder on Windows falls back to it
+          # when WIN_CSC_LINK is absent, which produced installers with an untrusted Authenticode
+          # signature, so the Apple certificate is exported on macOS only. Windows signing uses
+          # WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD (a code-signing certificate for Windows) when set.
+          names="APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID"
+          case "$RUNNER_OS" in
+            macOS) names="CSC_LINK CSC_KEY_PASSWORD $names" ;;
+            Windows) names="WIN_CSC_LINK WIN_CSC_KEY_PASSWORD" ;;
+          esac
+          for name in $names; do
             value="$(printenv "S_$name" || true)"
             if [ -n "$value" ]; then echo "$name=$value" >> "$GITHUB_ENV"; echo "$name: set"; else echo "$name: unset"; fi
           done
-          if [ -z "$S_CSC_LINK" ]; then echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"; fi
+          if [ "$RUNNER_OS" != macOS ] || [ -z "$S_CSC_LINK" ]; then echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"; fi
 
       - name: Package
         shell: bash
