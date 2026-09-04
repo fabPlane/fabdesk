@@ -38,9 +38,10 @@ function Put($name, $path) {
 }
 
 Log "== $((Get-CimInstance Win32_OperatingSystem).Caption) $env:PROCESSOR_ARCHITECTURE installer=$($cfg.installer)"
-$ud = Join-Path $env:APPDATA "Fabdesk"
+$ud = Join-Path $env:APPDATA "fabPlane"
+$udPrev = Join-Path $env:APPDATA "Fabdesk"              # productName before the fabPlane rename
 $udLegacy = Join-Path $env:APPDATA "@fabdesk\desktop"   # builds before 0.1.40
-Remove-Item -Recurse -Force $ud, $udLegacy -ErrorAction SilentlyContinue | Out-Null
+Remove-Item -Recurse -Force $ud, $udPrev, $udLegacy -ErrorAction SilentlyContinue | Out-Null
 $install = ""; $exe = ""
 # Simulate a browser download so SmartScreen metadata is present.
 try { Set-Content -Path $installer -Stream Zone.Identifier -Value "[ZoneTransfer]`r`nZoneId=3" } catch {}
@@ -52,7 +53,12 @@ if ($cfg.installer -match "Setup.*\.exe$" -or $cfg.installer -notmatch "portable
   # electron-builder's NSIS installer: /S installs silently, then launches the app (runAfterFinish),
   # so waiting for the installer's process tree never returns. Start it, then poll for the installed
   # app in the per-user and per-machine locations (an elevated session gets a per-machine install).
-  $candidates = @((Join-Path $env:LOCALAPPDATA "Programs\Fabdesk\Fabdesk.exe"), (Join-Path $env:ProgramFiles "Fabdesk\Fabdesk.exe"))
+  $candidates = @(
+    (Join-Path $env:LOCALAPPDATA "Programs\fabPlane\fabplane.exe"),
+    (Join-Path $env:ProgramFiles "fabPlane\fabplane.exe"),
+    (Join-Path $env:LOCALAPPDATA "Programs\Fabdesk\Fabdesk.exe"),
+    (Join-Path $env:ProgramFiles "Fabdesk\Fabdesk.exe")
+  )
   $motw = ""
   try { $p = Start-Process -FilePath $installer -ArgumentList "/S" -PassThru -ErrorAction Stop }
   catch {
@@ -64,27 +70,28 @@ if ($cfg.installer -match "Setup.*\.exe$" -or $cfg.installer -notmatch "portable
   }
   $exe = ""
   # The NSIS installer re-launches itself from %TEMP% under the product name, so a process called
-  # Fabdesk is not necessarily the app: the app lives next to resources\app.asar.
+  # fabplane / Fabdesk is not necessarily the app: the app lives next to resources\app.asar.
+  function AppProcesses { Get-Process -Name fabplane, fabPlane, Fabdesk -ErrorAction SilentlyContinue }
   function IsApp($path) { $path -and (Test-Path (Join-Path (Split-Path $path) "resources\app.asar")) }
   for ($i = 0; $i -lt 600; $i++) {   # emulated VMs need minutes to unpack 150 MB and start Electron
-    $app = Get-Process -Name Fabdesk -ErrorAction SilentlyContinue | Where-Object { IsApp $_.Path } | Select-Object -First 1
+    $app = AppProcesses | Where-Object { IsApp $_.Path } | Select-Object -First 1
     if ($app) { $exe = $app.Path; Log "installer launched $exe"; break }
     $found = $candidates | Where-Object { IsApp $_ } | Select-Object -First 1
     if ($found -and $p.HasExited) { $exe = $found; break }
     Start-Sleep 1
   }
   if (-not $exe) {
-    $found = Get-ChildItem -Path $env:LOCALAPPDATA, $env:ProgramFiles, ${env:ProgramFiles(x86)} -Filter Fabdesk.exe -Recurse -Depth 3 -ErrorAction SilentlyContinue | Where-Object { IsApp $_.FullName } | Select-Object -First 1
+    $found = Get-ChildItem -Path $env:LOCALAPPDATA, $env:ProgramFiles, ${env:ProgramFiles(x86)} -Include fabplane.exe, Fabdesk.exe -Recurse -Depth 3 -ErrorAction SilentlyContinue | Where-Object { IsApp $_.FullName } | Select-Object -First 1
     if ($found) { $exe = $found.FullName; Log "found installed app at $exe" }
   }
   if (-not $exe) {
     Screenshot (Join-Path $out "installer-hung.png")
-    Get-Process | Where-Object { $_.Name -like "Fabdesk*" -or $_.Id -eq $p.Id } | Stop-Process -Force -ErrorAction SilentlyContinue
+    Get-Process | Where-Object { $_.Name -like "fabplane*" -or $_.Name -like "Fabdesk*" -or $_.Id -eq $p.Id } | Stop-Process -Force -ErrorAction SilentlyContinue
     Err "NSIS silent install produced no app within 10 minutes (see installer-hung.png)"
   } else {
     Start-Sleep 3
     # The installer's auto-launched instance runs without the automation bridge: replace it with ours.
-    $auto = Get-Process -Name Fabdesk -ErrorAction SilentlyContinue | Where-Object { IsApp $_.Path }
+    $auto = AppProcesses | Where-Object { IsApp $_.Path }
     if ($auto) { Log "installer auto-launched the app; stopping it for the instrumented launch"; $auto | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep 3 }
     # let the installer stub finish now that the app it launched is gone
     for ($i = 0; $i -lt 60; $i++) { if ($p.HasExited) { break }; Start-Sleep 1 }
@@ -94,7 +101,7 @@ if ($cfg.installer -match "Setup.*\.exe$" -or $cfg.installer -notmatch "portable
   $exe = $installer
   $install = "portable exe"
 }
-if ($exe -and -not (Test-Path $exe)) { Err "no Fabdesk.exe at $exe after install" }
+if ($exe -and -not (Test-Path $exe)) { Err "no fabplane.exe at $exe after install" }
 
 $core = if ($exe) { Join-Path (Split-Path $exe) "resources\core\fabdesk-core.exe" } else { "" }
 if ($cfg.installer -match "portable") { $core = "" }
@@ -109,6 +116,7 @@ if ($exe -and (Test-Path $exe)) {
   $app = Start-Process -FilePath $exe -PassThru
   $daemon = Join-Path $ud "daemon.json"; $bridge = Join-Path $ud "app-bridge.json"
   for ($i = 0; $i -lt 300; $i++) {   # emulated guests need a few minutes for the first Electron start
+    if (-not (Test-Path $daemon) -and (Test-Path (Join-Path $udPrev "daemon.json"))) { $ud = $udPrev; $daemon = Join-Path $ud "daemon.json"; $bridge = Join-Path $ud "app-bridge.json" }
     if (-not (Test-Path $daemon) -and (Test-Path (Join-Path $udLegacy "daemon.json"))) { $ud = $udLegacy; $daemon = Join-Path $ud "daemon.json"; $bridge = Join-Path $ud "app-bridge.json" }
     if ((Test-Path $daemon) -and (Test-Path $bridge)) { break }; Start-Sleep 1 }
   Log "userData: $ud"
@@ -133,7 +141,7 @@ if ($exe -and (Test-Path $exe)) {
   }
   # Whole-screen capture (shows SmartScreen / installer dialogs if any).
   Screenshot (Join-Path $out "screen.png")
-  Stop-Process -Name Fabdesk -Force -ErrorAction SilentlyContinue
+  Stop-Process -Name fabplane, fabPlane, Fabdesk -Force -ErrorAction SilentlyContinue
   Get-ChildItem $ud -Filter *.log -ErrorAction SilentlyContinue | Copy-Item -Destination $out
 }
 

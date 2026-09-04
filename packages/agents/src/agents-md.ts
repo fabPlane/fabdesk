@@ -44,9 +44,9 @@ export function renderAgentsMd(
       : ctx.toolsMarkdown.trim();
 
   return `${HEADER}
-# ${ctx.projectName} — fabdesk project
+# ${ctx.projectName} — fabPlane project
 
-This directory is a fabdesk PCB project. Fabdesk runs you with an MCP server named \`${mcp}\`
+This directory is a fabPlane PCB project. fabPlane runs you with an MCP server named \`${mcp}\`
 (tools appear as \`mcp__${mcp}__<tool>\` or \`${mcp}__<tool>\`). Use those tools to build, route,
 convert, check and render the board; only edit files listed as yours in the file contract.
 

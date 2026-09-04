@@ -1,5 +1,5 @@
 /**
- * Remix a catalog clone into a Fabdesk project and hydrate the board viewer
+ * Remix a catalog clone into a fabPlane project and hydrate the board viewer
  * from the cloned `.kicad_pcb` so the PCB tab can render without a chat turn.
  */
 import { readdir } from "node:fs/promises";

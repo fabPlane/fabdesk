@@ -65,15 +65,18 @@ async function findDaemon(): Promise<{
   version: string;
 } | null> {
   if (flags["no-daemon"]) return null;
+  const configHome = process.env["XDG_CONFIG_HOME"] ?? join(homedir(), ".config");
   const candidates = [
     ...(process.env["FABDESK_HOME"] ? [join(process.env["FABDESK_HOME"], "daemon.json")] : []),
+    join(homedir(), "Library", "Application Support", "fabPlane", "daemon.json"),
+    join(homedir(), "Library", "Application Support", "Fabdesk", "daemon.json"),
     join(homedir(), "Library", "Application Support", "@fabdesk", "desktop", "daemon.json"),
-    join(
-      process.env["XDG_CONFIG_HOME"] ?? join(homedir(), ".config"),
-      "@fabdesk",
-      "desktop",
-      "daemon.json",
-    ),
+    join(configHome, "fabPlane", "daemon.json"),
+    join(configHome, "Fabdesk", "daemon.json"),
+    join(configHome, "@fabdesk", "desktop", "daemon.json"),
+    ...(process.env["APPDATA"]
+      ? [join(process.env["APPDATA"], "fabPlane", "daemon.json"), join(process.env["APPDATA"], "Fabdesk", "daemon.json")]
+      : []),
   ];
   for (const path of candidates) {
     let hs: Handshake;

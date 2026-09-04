@@ -97,7 +97,7 @@ export class AppBridgeClient implements AppBridge {
 
   async call<T = unknown>(method: "GET" | "POST", path: string, body?: unknown, opts: { timeoutMs?: number } = {}): Promise<T> {
     const located = await this.locate();
-    if (!located.info) throw new ToolError(`Fabdesk app bridge unavailable: ${located.reason}`, "unavailable");
+    if (!located.info) throw new ToolError(`fabPlane app bridge unavailable: ${located.reason}`, "unavailable");
     let res: Response;
     try {
       res = await this.fetchImpl(`${located.info.url}${path}`, {
@@ -107,7 +107,7 @@ export class AppBridgeClient implements AppBridge {
         signal: AbortSignal.timeout(opts.timeoutMs ?? this.timeoutMs),
       });
     } catch (e) {
-      throw new ToolError(`Fabdesk app bridge unreachable at ${located.info.url}: ${e instanceof Error ? e.message : String(e)}`, "unavailable");
+      throw new ToolError(`fabPlane app bridge unreachable at ${located.info.url}: ${e instanceof Error ? e.message : String(e)}`, "unavailable");
     }
     const text = await res.text();
     let json: unknown = null;
@@ -119,7 +119,7 @@ export class AppBridgeClient implements AppBridge {
     if (!res.ok) {
       const msg = (json as { error?: unknown } | null)?.error;
       const detail = typeof msg === "string" ? msg : text.slice(0, 500) || res.statusText;
-      if (res.status === 401) throw new ToolError("Fabdesk app bridge rejected the daemon token (app and core tokens differ; restart the app)", "unavailable");
+      if (res.status === 401) throw new ToolError("fabPlane app bridge rejected the daemon token (app and core tokens differ; restart the app)", "unavailable");
       const code = res.status === 400 ? "invalid_args" : res.status === 404 ? "not_found" : res.status === 503 ? "unavailable" : "internal";
       throw new ToolError(`app bridge ${method} ${path.split("?")[0]} failed (${res.status}): ${detail}`, code);
     }

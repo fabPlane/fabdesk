@@ -268,7 +268,7 @@ function AuthSection() {
     <div className="space-y-3 text-xs">
       <div className="flex items-center gap-2">
         <Badge tone={state.status === "signed_in" ? "success" : state.status === "error" ? "danger" : "neutral"}>{state.status}</Badge>
-        <Badge tone={state.mode === "local" ? "warning" : "accent"}>{state.mode === "local" ? "Local mode" : "Fabplane"}</Badge>
+        <Badge tone={state.mode === "local" ? "warning" : "accent"}>{state.mode === "local" ? "Local mode" : "fabPlane"}</Badge>
       </div>
       {state.principal && (
         <div>
@@ -293,7 +293,7 @@ function AuthSection() {
           </Button>
         ) : (
           <Button variant="primary" onClick={() => void login()} disabled={busy || state.status === "pending"}>
-            Sign in with Fabplane
+            Sign in with fabPlane
           </Button>
         )}
         {localAllowed && host.setLocalAuth && (
@@ -334,7 +334,7 @@ function AuthSection() {
         </form>
       )}
       {localAllowed && (
-        <div className="text-muted">Local mode skips Fabplane sign-in; it is only available in development builds or with a .fabdesk-dev marker.</div>
+        <div className="text-muted">Local mode skips fabPlane sign-in; it is only available in development builds or with a .fabdesk-dev marker.</div>
       )}
     </div>
   );

@@ -79,8 +79,8 @@ export function LoginScreen() {
   return (
     <div className="flex h-full items-center justify-center bg-bg p-6">
       <div className="w-full max-w-sm rounded-2xl border border-border bg-panel p-6 shadow-xl">
-        <div className="mb-1 text-lg font-semibold">Fabdesk</div>
-        <div className="mb-5 text-xs text-muted">Sign in with your Fabplane account to start designing boards.</div>
+        <div className="mb-1 text-lg font-semibold">fabPlane</div>
+        <div className="mb-5 text-xs text-muted">Sign in with your fabPlane account to start designing boards.</div>
         {pending ? (
           <div className="space-y-3">
             <div className="text-xs text-muted">Approve this code in the browser at {pending.verificationUri}:</div>
@@ -97,7 +97,7 @@ export function LoginScreen() {
         ) : (
           <div className="space-y-3">
             <Button variant="primary" className="w-full" onClick={() => void loginWithDevice()} disabled={busy || !state}>
-              {busy ? "Starting sign-in..." : "Sign in with Fabplane"}
+              {busy ? "Starting sign-in..." : "Sign in with fabPlane"}
             </Button>
             {devOptions && (
               <form

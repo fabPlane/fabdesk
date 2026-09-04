@@ -295,7 +295,7 @@ describe("AuthClient.loginWithPassword", () => {
     ).toEqual({
       mode: "fabplane",
       status: "error",
-      error: "Password login is not available on this Fabplane server.",
+      error: "Password login is not available on this fabPlane server.",
     });
   });
 

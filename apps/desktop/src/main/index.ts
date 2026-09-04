@@ -1,6 +1,5 @@
 import { app, BrowserWindow, nativeTheme, shell } from "electron";
-import { existsSync, renameSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { CoreInfo } from "../shared/core-info";
 import { CoreSupervisor } from "./core-supervisor";
@@ -10,6 +9,7 @@ import { localAuthEnabled } from "./local-mode";
 import { coreSentryEnv, flushSentry, initSentry, runSentryTest, sentryActive, sentryTestRequested, syncErrorReportingFromCore } from "./sentry";
 import { registerUpdateIpc, UpdateChecker } from "./updates";
 import { registerUpdateDownloadIpc, UpdateDownloader } from "./update-download";
+import { migrateLegacyUserData } from "./user-data";
 import { resolveWindowTheme } from "./window-theme";
 
 // Error reporting (off without a DSN or when the user opted out); must run before `ready` (docs/sentry.md).
@@ -18,19 +18,9 @@ initSentry();
 // WebMCP (document.modelContext) behind Chromium's feature flag; the renderer polyfills when absent.
 app.commandLine.appendSwitch("enable-features", "WebMCP");
 
-// Electron derives userData from package.json's productName ("Fabdesk"). Builds before 0.1.40 had no
-// productName and used the package name, i.e. "<config>/@fabdesk/desktop"; move that data across once.
-{
-  const userData = app.getPath("userData");
-  const legacy = join(dirname(userData), "@fabdesk", "desktop");
-  if (!existsSync(userData) && existsSync(legacy)) {
-    try {
-      renameSync(legacy, userData);
-    } catch (err) {
-      console.warn(`[main] could not migrate ${legacy} -> ${userData}: ${String(err)}`);
-    }
-  }
-}
+// Electron derives userData from productName ("fabPlane"). Older builds used "Fabdesk" or the
+// package path "<config>/@fabdesk/desktop"; move that data across once when the new path is empty.
+migrateLegacyUserData(app.getPath("userData"));
 
 const here = fileURLToPath(new URL(".", import.meta.url));
 let supervisor: CoreSupervisor | null = null;
@@ -53,6 +43,7 @@ function createWindow(): BrowserWindow {
     height: 920,
     minWidth: 960,
     minHeight: 600,
+    title: "fabPlane",
     show: false,
     backgroundColor: theme.backgroundColor,
     ...(icon ? { icon } : {}),
@@ -74,6 +65,10 @@ function createWindow(): BrowserWindow {
         ...(app.isPackaged ? [] : ["--fabdesk-dev-build"]),
       ],
     },
+  });
+  win.on("page-title-updated", (e) => {
+    e.preventDefault();
+    win.setTitle("fabPlane");
   });
   if (sentryTestRequested()) {
     // Surface the renderer's test-event line on our stderr.
@@ -108,6 +103,9 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   void app.whenReady().then(async () => {
+    // Same id as electron-builder `appId`. Do not change to com.tensorfleet.fabplane: existing
+    // Windows shortcuts, taskbar grouping, and NSIS uninstall/upgrade keys use this value.
+    // Updates fetch latest.json by URL and do not depend on it.
     app.setAppUserModelId("com.tensorfleet.fabdesk");
     const icon = developmentIconPath();
     if (process.platform === "darwin" && icon) app.dock?.setIcon(icon);

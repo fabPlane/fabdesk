@@ -179,7 +179,7 @@ export class AuthClient {
   /**
    * Password-assisted device flow: `POST /v1/auth/password` for an `fp_session` cookie,
    * then `POST /v1/auth/device/approve` and the usual token poll. Used by the CLI/UI
-   * with Fabplane's local/staging accounts (`demo@fabplane.dev`, `maya@fabplane.dev`).
+   * with fabPlane's local/staging accounts (`demo@fabplane.dev`, `maya@fabplane.dev`).
    */
   loginWithPassword(credentials: PasswordCredentials, signal?: AbortSignal): Promise<AuthState> {
     return this.startLogin(() => this.runPasswordLogin(credentials, signal));
@@ -402,11 +402,11 @@ function describeTokenError(error: string, description?: string): string {
 function describePasswordLoginError(err: unknown): string {
   if (err instanceof AuthHttpError) {
     if (err.path === "/v1/auth/password" && err.httpStatus === 503) {
-      return "Password login is not available on this Fabplane server.";
+      return "Password login is not available on this fabPlane server.";
     }
     if (err.path === "/v1/auth/device/approve") {
       if (err.httpStatus === 401) return "Sign-in session was rejected. Check the email and password.";
-      if (err.httpStatus === 503) return "Device approval is not available on this Fabplane server.";
+      if (err.httpStatus === 503) return "Device approval is not available on this fabPlane server.";
       if (err.httpStatus === 404) return "Sign-in code was not found. Start again.";
     }
   }

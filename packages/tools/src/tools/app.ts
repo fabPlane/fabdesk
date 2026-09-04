@@ -1,5 +1,5 @@
 /**
- * App toolset: screenshot and drive the Fabdesk desktop window through the loopback automation
+ * App toolset: screenshot and drive the fabPlane desktop window through the loopback automation
  * bridge (Electron main, dev builds or FABDESK_AUTOMATION=1; docs/app-automation.md). Every tool
  * fails with a clear `unavailable` error when no bridge is running.
  */
@@ -15,7 +15,7 @@ export const APP_BOARD_TABS = ["schematic", "pcb", "cinema", "3d", "drc", "rende
 export const APP_SETTINGS_SECTIONS = ["agents", "kicad", "router", "auth", "appearance", "privacy", "shortcuts"] as const;
 
 export const NO_BRIDGE_MESSAGE =
-  "The Fabdesk desktop app automation bridge is not running. Start the app in dev mode (`bun run dev` in apps/desktop) or launch a packaged build with FABDESK_AUTOMATION=1; the bridge writes app-bridge.json next to daemon.json. See docs/app-automation.md.";
+  "The fabPlane desktop app automation bridge is not running. Start the app in dev mode (`bun run dev` in apps/desktop) or launch a packaged build with FABDESK_AUTOMATION=1; the bridge writes app-bridge.json next to daemon.json. See docs/app-automation.md.";
 
 export function requireBridge(ctx: ToolContext): AppBridge {
   const bridge = ctx.services.appBridge;
@@ -47,7 +47,7 @@ function summarizeState(state: Record<string, unknown>): string {
   const app = (state["app"] ?? {}) as Record<string, unknown>;
   const windows = (state["windows"] ?? []) as Array<Record<string, unknown>>;
   const u = state["ui"] as Record<string, unknown> | null | undefined;
-  const lines = [`Fabdesk ${app["version"] ?? "?"} (${app["packaged"] ? "packaged" : "dev"}, automation ${app["mode"] ?? "?"}); ${windows.length} window(s)`];
+  const lines = [`fabPlane ${app["version"] ?? "?"} (${app["packaged"] ? "packaged" : "dev"}, automation ${app["mode"] ?? "?"}); ${windows.length} window(s)`];
   for (const w of windows) {
     const b = (w["bounds"] ?? {}) as Record<string, number>;
     lines.push(`- window ${w["id"]}${w["focused"] ? " (focused)" : ""}: ${b["width"]}×${b["height"]} at (${b["x"]}, ${b["y"]}) ${w["url"] ?? ""}`);
@@ -72,7 +72,7 @@ export const app_state = defineTool({
   scope: "global",
   title: "Desktop app state",
   description:
-    "Inspect the running Fabdesk desktop app: version, windows (id, bounds, focus, url) and a snapshot of the renderer UI (active project and thread, board tab, open panels, Route Cinema run/cursor/view mode/perf, auth and core status). Call it first to learn what the app is showing before screenshotting or clicking. Fails with `unavailable` when no app bridge is running.",
+    "Inspect the running fabPlane desktop app: version, windows (id, bounds, focus, url) and a snapshot of the renderer UI (active project and thread, board tab, open panels, Route Cinema run/cursor/view mode/perf, auth and core status). Call it first to learn what the app is showing before screenshotting or clicking. Fails with `unavailable` when no app bridge is running.",
   inputSchema: {},
   annotations: { readOnlyHint: true, idempotentHint: true },
   handler: async (_args, ctx) => {
@@ -87,7 +87,7 @@ export const app_screenshot = defineTool({
   scope: "global",
   title: "Screenshot the app window",
   description:
-    "Capture the Fabdesk desktop window (or a region of it, CSS pixels) and return the image so you can see what the user sees. Defaults: scale 0.5, JPEG for full-window captures, PNG for regions. Use app_find to locate elements and app_click/app_type/app_key to interact, then screenshot again to verify.",
+    "Capture the fabPlane desktop window (or a region of it, CSS pixels) and return the image so you can see what the user sees. Defaults: scale 0.5, JPEG for full-window captures, PNG for regions. Use app_find to locate elements and app_click/app_type/app_key to interact, then screenshot again to verify.",
   inputSchema: {
     windowId: z.number().int().optional().describe("Window id from app_state; default focused/first window"),
     region: z

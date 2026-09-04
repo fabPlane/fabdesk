@@ -1,11 +1,11 @@
-# Fabdesk
+# fabPlane
 
 Desktop AI PCB generator for macOS, Linux and Windows. Sketch a board or describe it; a coding
-agent (Claude Code, Codex, Cursor, Grok) drives Fabdesk's MCP tools to write a
+agent (Claude Code, Codex, Cursor, Grok) drives fabPlane's MCP tools to write a
 [tscircuit](https://tscircuit.com) circuit, convert it to KiCad, route it with live visual routing,
 and verify it locally (DRC, ERC, SPICE, renders).
 
-Fabdesk runs standalone or as an MCP server inside Claude Code / Codex / Cursor / Grok.
+fabPlane runs standalone or as an MCP server inside Claude Code / Codex / Cursor / Grok.
 
 ## Layout
 
@@ -54,6 +54,6 @@ out in Settings → Privacy. Reports never include prompts, board files, tokens 
 
 ## Auth
 
-Fabdesk signs in through fabplane.com using the OAuth device-authorization flow. For local
+fabPlane signs in through fabplane.com using the OAuth device-authorization flow. For local
 development set `FABDESK_AUTH_MODE=local` (honored only in non-public channels or with a
-`.fabdesk-dev` marker in the Fabdesk config dir).
+`.fabdesk-dev` marker in the fabPlane config dir).

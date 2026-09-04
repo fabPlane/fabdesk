@@ -99,7 +99,7 @@ export function UpdateBadge() {
   return (
     <button
       type="button"
-      title={`Fabdesk ${version} is available${size}. You are on ${result.currentVersion}. Click to ${canDownload ? "download" : "open the download page"}.`}
+      title={`fabPlane ${version} is available${size}. You are on ${result.currentVersion}. Click to ${canDownload ? "download" : "open the download page"}.`}
       onClick={() => (canDownload ? void host.downloadUpdate?.() : void host.openExternal(target))}
       className={cn(base, "cursor-pointer border-success/50 bg-success/15 text-success")}
     >

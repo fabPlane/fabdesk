@@ -39,12 +39,12 @@ export function TopBar({ coreStatus }: { coreStatus?: CoreStatusInfo | undefined
           &#9776;
         </IconButton>
       </div>
-      <span className="fd-wordmark">fab<b>desk</b></span>
+      <span className="fd-wordmark">fab<b>Plane</b></span>
       {project && <span className="text-muted">/ {project.name}</span>}
       <div className="ml-auto flex items-center gap-1.5" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
         <UpdateBadge />
         {auth?.mode === "local" && (
-          <Badge tone="warning" title="Running with --local-auth; no Fabplane account">
+          <Badge tone="warning" title="Running with --local-auth; no fabPlane account">
             Local mode
           </Badge>
         )}
