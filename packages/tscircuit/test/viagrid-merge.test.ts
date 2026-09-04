@@ -97,7 +97,7 @@ describe("mergeTraces with assignable (factory) vias", () => {
     expect(afterUnroute[0]!.source_trace_id).toBeUndefined();
     expect(unrouted.some((e) => (e as { type: string }).type === "pcb_trace")).toBe(false);
 
-    const second = mergeTraces(first, [trace(0)], { source_trace_0: "source_trace_0" });
+    const second = mergeTraces(unrouted, [trace(0)], { source_trace_0: "source_trace_0" });
     const vs = vias(second);
     expect(vs).toHaveLength(1);
     expect(vs[0]!.net_assigned).toBe(true);
