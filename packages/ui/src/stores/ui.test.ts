@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { SIDEBAR_LIST_TABS, SIDEBAR_LIST_TAB_LABELS, normalizeSidebarListTab } from "./ui";
+import { SIDEBAR_LIST_TABS, SIDEBAR_LIST_TAB_LABELS, newChatInProjectState, normalizeSidebarListTab } from "./ui";
 
 describe("sidebar list tabs", () => {
   test("exposes Projects and Open source only", () => {
@@ -7,6 +7,18 @@ describe("sidebar list tabs", () => {
     expect(Object.keys(SIDEBAR_LIST_TAB_LABELS)).toEqual(["projects", "open_source"]);
     expect(SIDEBAR_LIST_TAB_LABELS.projects).toBe("Projects");
     expect(SIDEBAR_LIST_TAB_LABELS.open_source).toBe("Open source");
+  });
+
+  test("new chat in a project clears the thread and picker", () => {
+    expect(newChatInProjectState("prj_amp")).toEqual({
+      activeProjectId: "prj_amp",
+      activeThreadId: null,
+      activeOpenSourceId: null,
+      orderFlowOpen: false,
+      projectPickerOpen: false,
+      sidebarListTab: "projects",
+    });
+    expect(newChatInProjectState(null).activeProjectId).toBeNull();
   });
 
   test("normalizes the removed Conversations tab onto Projects", () => {

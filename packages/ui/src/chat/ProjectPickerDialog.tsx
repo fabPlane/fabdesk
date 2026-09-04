@@ -9,10 +9,7 @@ import { useUiStore } from "../stores/ui";
 export function ProjectPickerDialog() {
   const open = useUiStore((s) => s.projectPickerOpen);
   const setOpen = useUiStore((s) => s.setProjectPickerOpen);
-  const setActiveProject = useUiStore((s) => s.setActiveProject);
-  const setActiveThread = useUiStore((s) => s.setActiveThread);
-  const setActiveOpenSourceId = useUiStore((s) => s.setActiveOpenSourceId);
-  const focusComposer = useUiStore((s) => s.focusComposer);
+  const startNewChatInProject = useUiStore((s) => s.startNewChatInProject);
   const projects = useProjects();
   const { client } = useCore();
   const qc = useQueryClient();
@@ -21,13 +18,9 @@ export function ProjectPickerDialog() {
   const [error, setError] = useState<string | null>(null);
 
   const choose = (projectId: string | null) => {
-    setActiveProject(projectId);
-    setActiveThread(null);
-    setActiveOpenSourceId(null);
-    setOpen(false);
+    startNewChatInProject(projectId);
     setCreating(false);
     setName("");
-    focusComposer();
   };
 
   const create = async () => {

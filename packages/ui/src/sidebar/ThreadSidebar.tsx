@@ -38,6 +38,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
   const qc = useQueryClient();
   const [q, setQ] = useState("");
   const setActiveProject = useUiStore((s) => s.setActiveProject);
+  const startNewChatInProject = useUiStore((s) => s.startNewChatInProject);
   const projectId = useUiStore((s) => s.activeProjectId);
   const activeThreadId = useUiStore((s) => s.activeThreadId);
   const setActiveThread = useUiStore((s) => s.setActiveThread);
@@ -215,21 +216,36 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
         {threads.isError && <div className="px-2 py-3 text-xs text-danger">Could not load threads</div>}
         {projectGroups.map((group) => (
           <div key={group.key} className="mb-2" data-testid={`sidebar-group-${group.key}`}>
-            <button
-              type="button"
-              className={cn(
-                "flex w-full items-center justify-between px-2 pb-1 pt-2 text-left text-[10.5px] font-semibold uppercase tracking-wide hover:text-fg",
-                group.kind === "project" && group.projectId === projectId ? "text-fg" : "text-muted",
+            <div className="flex items-center gap-0.5 px-1 pb-1 pt-2">
+              <button
+                type="button"
+                className={cn(
+                  "flex min-w-0 flex-1 items-center justify-between px-1 text-left text-[10.5px] font-semibold uppercase tracking-wide hover:text-fg",
+                  group.kind === "project" && group.projectId === projectId ? "text-fg" : "text-muted",
+                )}
+                aria-current={group.kind === "project" && group.projectId === projectId ? "true" : undefined}
+                onClick={() => group.kind === "project" && group.projectId && setActiveProject(group.projectId)}
+              >
+                <span className="flex min-w-0 items-center gap-1 truncate">
+                  {group.kind === "pinned" && <PinMark />}
+                  {group.title}
+                </span>
+                <span className="shrink-0 pl-1">{group.threads.length}</span>
+              </button>
+              {group.kind === "project" && group.projectId && (
+                <IconButton
+                  title={`New chat in ${group.title}`}
+                  className="ml-auto h-5 w-5 shrink-0 text-muted hover:text-fg"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    startNewChatInProject(group.projectId);
+                  }}
+                  data-testid={`project-new-chat-${group.projectId}`}
+                >
+                  +
+                </IconButton>
               )}
-              aria-current={group.kind === "project" && group.projectId === projectId ? "true" : undefined}
-              onClick={() => group.kind === "project" && group.projectId && setActiveProject(group.projectId)}
-            >
-              <span className="flex items-center gap-1">
-                {group.kind === "pinned" && <PinMark />}
-                {group.title}
-              </span>
-              <span>{group.threads.length}</span>
-            </button>
+            </div>
             {group.threads.map(renderThread)}
           </div>
         ))}
