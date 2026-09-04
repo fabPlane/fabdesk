@@ -26,6 +26,10 @@ export interface HostAdapter {
   localAuthAllowed: () => Promise<boolean>;
   setLocalAuth?: (enabled: boolean) => Promise<void>;
   restartCore?: () => Promise<void>;
+  /** Pop the host's application menu at window coordinates (Electron on Windows/Linux). */
+  showAppMenu?: (pos: { x: number; y: number }) => Promise<void> | void;
+  /** Commands from the host's application menu (new-chat, palette, settings, sidebar, board). */
+  onMenu?: (cb: (command: string) => void) => () => void;
   openLogs?: () => Promise<void>;
   /** Last update-check result from the host (Electron main), if it performs checks. */
   updateStatus?: () => Promise<UpdateCheckResult | null>;

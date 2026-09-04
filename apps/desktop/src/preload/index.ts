@@ -23,6 +23,15 @@ const api = {
   setSentryUser: (user: { id: string; username?: string } | null) =>
     ipcRenderer.invoke("fabdesk:set-sentry-user", user),
   coreInfo: () => ipcRenderer.invoke("fabdesk:core-info"),
+  /** Pop the File / Edit / View / Window menu at window coordinates (Windows/Linux top-bar menu button). */
+  showAppMenu: (pos: { x: number; y: number }) => ipcRenderer.invoke("fabdesk:show-app-menu", pos),
+  onMenu: (cb: (command: string) => void) => {
+    const listener = (_e: unknown, command: unknown) => {
+      if (typeof command === "string") cb(command);
+    };
+    ipcRenderer.on("fabdesk:menu", listener);
+    return () => ipcRenderer.removeListener("fabdesk:menu", listener);
+  },
   restartCore: () => ipcRenderer.invoke("fabdesk:core-restart"),
   onCoreStatus: (cb: (info: unknown) => void) => {
     const listener = (_e: unknown, info: unknown) => cb(info);

@@ -26,6 +26,10 @@ export interface FabdeskBridge {
   /** id + handle of the signed-in principal (never email); null on logout. */
   setSentryUser(user: { id: string; username?: string } | null): Promise<void>;
   coreInfo(): Promise<CoreInfo>;
+  /** Pop the application menu at window coordinates (Windows/Linux; macOS uses the system menu bar). */
+  showAppMenu(pos: { x: number; y: number }): Promise<void>;
+  /** Menu commands from the main-process menu (new-chat, palette, settings, sidebar, board). */
+  onMenu(cb: (command: string) => void): () => void;
   restartCore(): Promise<void>;
   onCoreStatus(cb: (info: CoreInfo) => void): () => void;
   openExternal(url: string): Promise<void>;

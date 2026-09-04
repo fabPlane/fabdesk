@@ -7,6 +7,23 @@ import { useUiStore } from "../stores/ui";
 import { cn, modKey } from "../util";
 import type { CoreStatusInfo } from "../app/types";
 
+function MenuIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+      <path d="M2.5 4h11M2.5 8h11M2.5 12h11" />
+    </svg>
+  );
+}
+
+function SidebarIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+      <rect x="1.75" y="2.75" width="12.5" height="10.5" rx="2" />
+      <path d="M6.25 2.75v10.5" />
+    </svg>
+  );
+}
+
 export function TopBar({ coreStatus }: { coreStatus?: CoreStatusInfo | undefined }) {
   const { host, sseStatus, client } = useCore();
   const auth = useAuthStore((s) => s.state);
@@ -21,6 +38,9 @@ export function TopBar({ coreStatus }: { coreStatus?: CoreStatusInfo | undefined
   const project = projects.data?.find((p) => p.id === projectId);
   const mod = modKey(host.platform);
   const mac = host.platform === "darwin";
+  // macOS keeps File / Edit / View / Window in the system menu bar; elsewhere the host hides its
+  // in-window menu bar and this button pops the same menu below itself.
+  const showAppMenu = !mac && host.showAppMenu ? host.showAppMenu : undefined;
   const port = (() => {
     try {
       return new URL(client.baseUrl).port;
@@ -32,11 +52,30 @@ export function TopBar({ coreStatus }: { coreStatus?: CoreStatusInfo | undefined
   return (
     <div
       className={cn("flex h-9 shrink-0 items-center gap-2 border-b border-border bg-panel px-2 text-xs", mac && "pl-20")}
-      style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
+      style={
+        {
+          WebkitAppRegion: "drag",
+          // Windows controls overlay: keep the right-hand actions clear of minimize/maximize/close.
+          // Without an overlay the env() fallbacks make this exactly the normal 0.5rem padding.
+          paddingRight: "calc(0.5rem + 100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw))",
+        } as React.CSSProperties
+      }
     >
-      <div style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties} className="flex items-center gap-1">
+      <div style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties} className="flex items-center gap-0.5">
+        {showAppMenu && (
+          <IconButton
+            title="Menu"
+            data-testid="app-menu-button"
+            onClick={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              void showAppMenu({ x: r.left, y: r.bottom + 2 });
+            }}
+          >
+            <MenuIcon />
+          </IconButton>
+        )}
         <IconButton title={`Toggle sidebar (${mod}B)`} onClick={toggleSidebar} className={cn(sidebarOpen && "text-accent")}>
-          &#9776;
+          <SidebarIcon />
         </IconButton>
       </div>
       <span className="fd-wordmark">fab<b>Plane</b></span>

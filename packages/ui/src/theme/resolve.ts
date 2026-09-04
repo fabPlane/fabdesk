@@ -24,6 +24,14 @@ export const THEME_BACKGROUNDS: Record<ThemeId, string> = {
   "plain-light": "#f7f7f8",
 };
 
+/** Top bar / panel colours; keep in sync with `styles.css` `--fd-panel` (Windows title-bar overlay). */
+export const THEME_PANELS: Record<ThemeId, string> = {
+  "fabplane-dark": "#171a16",
+  "fabplane-light": "#f7f6f0",
+  "plain-dark": "#1f1e24",
+  "plain-light": "#ffffff",
+};
+
 /** First-paint foregrounds; keep in sync with `styles.css` `--fd-fg`. */
 export const THEME_FOREGROUNDS: Record<ThemeId, string> = {
   "fabplane-dark": "#edf0e9",
@@ -42,6 +50,10 @@ export function themeBackground(id: ThemeId): string {
 
 export function themeForeground(id: ThemeId): string {
   return THEME_FOREGROUNDS[id];
+}
+
+export function themePanel(id: ThemeId): string {
+  return THEME_PANELS[id];
 }
 
 export function themeIsDark(id: ThemeId): boolean {

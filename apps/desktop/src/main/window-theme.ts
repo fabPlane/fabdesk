@@ -4,7 +4,9 @@ import {
   isThemeId,
   resolveThemeId,
   themeBackground,
+  themeForeground,
   themeIsDark,
+  themePanel,
   type ThemeId,
 } from "../../../../packages/ui/src/theme/resolve";
 
@@ -36,6 +38,14 @@ export interface WindowTheme {
   themeId: ThemeId;
   backgroundColor: string;
   themeSource: "system" | "light" | "dark";
+}
+
+/** Height of the top bar (`h-9` in TopBar.tsx); the Windows controls overlay matches it. */
+export const TITLE_BAR_HEIGHT = 36;
+
+/** Windows controls-overlay colours for a theme: the top bar's panel colour and its foreground. */
+export function titleBarOverlayFor(themeId: ThemeId): { color: string; symbolColor: string; height: number } {
+  return { color: themePanel(themeId), symbolColor: themeForeground(themeId), height: TITLE_BAR_HEIGHT };
 }
 
 /** Resolve the BrowserWindow background and nativeTheme source from the cached Appearance choice. */
