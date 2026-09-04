@@ -30,6 +30,7 @@ import type { AgentRunManager } from "../agent-runs";
 import { logger, errMsg } from "../log";
 import { allowedCloneUrl, fetchOpenCatalog, findCatalogProject } from "../opensource/catalog";
 import { assessOrderReadiness, orderVendors, startOrderSession } from "../opensource/order";
+import { remixCatalogProject } from "../opensource/remix";
 import { applyErrorReporting, captureCoreException } from "../sentry";
 import { parseTopics, sseResponse } from "./sse";
 
@@ -307,8 +308,8 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const source = findCatalogProject(index, `${c.req.param("owner")}/${c.req.param("slug")}`);
     if (!source) return c.json({ error: "not found" }, 404);
     if (!allowedCloneUrl(source.cloneUrl)) return c.json({ error: "clone url is not an allowed GitHub repository" }, 400);
-    const project = await deps.projects.importFromGit({ name: source.name, gitUrl: source.cloneUrl });
-    return c.json({ project, sourceId: source.id }, 201);
+    const remixed = await remixCatalogProject({ source, projects: deps.projects, services: deps.services });
+    return c.json(remixed, 201);
   });
 
   app.get("/projects/:id/order", async (c) => {

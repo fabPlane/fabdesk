@@ -52,18 +52,21 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
   const svg = rendered.data ?? (generated?.key === `${projectId}:${kind}:${circuitSource}` ? generated.svg : null);
   if (svg) {
     return (
-      <SvgViewer
-        svg={svg}
-        toolbar={
-          <span className="text-[11px] text-muted">{rendered.data ? `renders/${kind}.svg` : `generated from ${circuitSource}`}</span>
-        }
-      />
+      <div className="h-full" data-testid={`board-${kind}-svg`}>
+        <SvgViewer
+          svg={svg}
+          toolbar={
+            <span className="text-[11px] text-muted">{rendered.data ? `renders/${kind}.svg` : `generated from ${circuitSource}`}</span>
+          }
+        />
+      </div>
     );
   }
   if (genError || circuit.parseError) {
     return <EmptyState title="Could not render">{genError ?? circuit.parseError}</EmptyState>;
   }
   return (
+    <div className="h-full" data-testid={`board-${kind}-empty`}>
     <EmptyState
       title={`No ${kind} yet`}
       action={
@@ -80,5 +83,6 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
       Ask the agent to write the circuit, or build the existing source to produce circuit.json.
       {build.state.error && <div className="mt-2 text-danger">{build.state.error}</div>}
     </EmptyState>
+    </div>
   );
 }

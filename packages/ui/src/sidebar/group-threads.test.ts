@@ -37,6 +37,13 @@ describe("groupThreadsByProject", () => {
     expect(groups[0]?.projectId).toBeNull();
   });
 
+  test("includes projects that have no threads yet", () => {
+    const groups = groupThreadsByProject([thread("t1", "A", "p1")], projects);
+    expect(groups.map((g) => g.title)).toEqual(["Amplifier", "Blinky"]);
+    expect(groups.find((g) => g.projectId === "p2")?.threads).toEqual([]);
+    expect(groups.find((g) => g.projectId === "p1")?.threads.map((t) => t.id)).toEqual(["t1"]);
+  });
+
   test("puts pinned threads above unassigned and project groups", () => {
     const groups = groupThreadsByProject(
       [
@@ -47,15 +54,17 @@ describe("groupThreadsByProject", () => {
       ],
       projects,
     );
-    expect(groups.map((g) => g.kind)).toEqual(["pinned", "unassigned", "project"]);
+    expect(groups.map((g) => g.kind)).toEqual(["pinned", "unassigned", "project", "project"]);
     expect(groups[0]?.threads.map((t) => t.id)).toEqual(["pin-proj", "pin-free"]);
     expect(groups[1]?.threads.map((t) => t.id)).toEqual(["u1"]);
-    expect(groups.find((g) => g.projectId === "p2")).toBeUndefined();
+    expect(groups.find((g) => g.projectId === "p2")?.threads).toEqual([]);
     expect(groups.find((g) => g.projectId === "p1")?.threads.map((t) => t.id)).toEqual(["p1t"]);
   });
 
-  test("skips archived threads, including pinned ones", () => {
+  test("skips archived threads but keeps empty projects", () => {
     const archived = { ...thread("x", "old", "p1", true), archived: true };
-    expect(groupThreadsByProject([archived], projects)).toEqual([]);
+    const groups = groupThreadsByProject([archived], projects);
+    expect(groups.map((g) => g.title)).toEqual(["Amplifier", "Blinky"]);
+    expect(groups.every((g) => g.threads.length === 0)).toBe(true);
   });
 });

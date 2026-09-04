@@ -9,6 +9,7 @@ export function OpenSourceView() {
   const setActiveOpenSourceId = useUiStore((s) => s.setActiveOpenSourceId);
   const setSidebarListTab = useUiStore((s) => s.setSidebarListTab);
   const setBoardOpen = useUiStore((s) => s.setBoardOpen);
+  const setBoardTab = useUiStore((s) => s.setBoardTab);
   const focusComposer = useUiStore((s) => s.focusComposer);
   const project = useOpenSourceProject(id);
   const remix = useRemixOpenSource();
@@ -22,6 +23,7 @@ export function OpenSourceView() {
     setActiveThread(null);
     setActiveOpenSourceId(null);
     setSidebarListTab("projects");
+    setBoardTab("pcb");
     setBoardOpen(true);
     focusComposer();
   };

@@ -38,6 +38,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
   const qc = useQueryClient();
   const [q, setQ] = useState("");
   const setActiveProject = useUiStore((s) => s.setActiveProject);
+  const projectId = useUiStore((s) => s.activeProjectId);
   const activeThreadId = useUiStore((s) => s.activeThreadId);
   const setActiveThread = useUiStore((s) => s.setActiveThread);
   const sidebarListTab = normalizeSidebarListTab(useUiStore((s) => s.sidebarListTab));
@@ -216,7 +217,11 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
           <div key={group.key} className="mb-2" data-testid={`sidebar-group-${group.key}`}>
             <button
               type="button"
-              className="flex w-full items-center justify-between px-2 pb-1 pt-2 text-left text-[10.5px] font-semibold uppercase tracking-wide text-muted hover:text-fg"
+              className={cn(
+                "flex w-full items-center justify-between px-2 pb-1 pt-2 text-left text-[10.5px] font-semibold uppercase tracking-wide hover:text-fg",
+                group.kind === "project" && group.projectId === projectId ? "text-fg" : "text-muted",
+              )}
+              aria-current={group.kind === "project" && group.projectId === projectId ? "true" : undefined}
               onClick={() => group.kind === "project" && group.projectId && setActiveProject(group.projectId)}
             >
               <span className="flex items-center gap-1">
@@ -228,8 +233,8 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
             {group.threads.map(renderThread)}
           </div>
         ))}
-        {threads.data && threads.data.length === 0 && (
-          <div className="px-2 py-6 text-center text-xs text-muted">No threads yet.</div>
+        {!threads.isLoading && projectGroups.length === 0 && (
+          <div className="px-2 py-6 text-center text-xs text-muted">No projects yet.</div>
         )}
       </div>
       )}

@@ -1,4 +1,4 @@
-import type { Message, OrderVendorId } from "@fabdesk/protocol";
+import type { Message, OrderVendorId, ProjectSummary } from "@fabdesk/protocol";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useCoreClient } from "../core/CoreProvider";
@@ -61,7 +61,17 @@ export function useRemixOpenSource() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => client.remixOpenSource(id),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["projects"] }),
+    onSuccess: (result) => {
+      qc.setQueryData<ProjectSummary[]>(["projects"], (old) => {
+        const next = old ?? [];
+        if (next.some((p) => p.id === result.project.id)) return next;
+        return [result.project, ...next];
+      });
+      qc.setQueryData(["project", result.project.id], result.project);
+      void qc.invalidateQueries({ queryKey: ["projects"] });
+      void qc.invalidateQueries({ queryKey: ["project", result.project.id] });
+      void qc.invalidateQueries({ queryKey: ["file", result.project.id] });
+    },
   });
 }
 
