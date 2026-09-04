@@ -321,4 +321,25 @@ describe("http daemon", () => {
     await new Promise((r) => setTimeout(r, 20));
     expect(daemon.mcp.activeCount()).toBe(2);
   });
+
+  test("opensource catalog, remix, and order readiness", async () => {
+    const catalog = (await (await api("/opensource?q=koyomi")).json()) as { projects: Array<{ id: string; cloneUrl: string }> };
+    expect(catalog.projects.some((p) => p.id === "tensorfleet/koyomi-lvds-hat")).toBe(true);
+    const one = await api("/opensource/projects/tensorfleet/koyomi-lvds-hat");
+    expect(one.status).toBe(200);
+    expect(((await one.json()) as { name: string }).name).toBe("Koyomi LVDS HAT");
+
+    const created = (await (await api("/projects", { method: "POST", body: JSON.stringify({ name: "Order Board" }) })).json()) as { id: string; path: string };
+    const notReady = await api(`/projects/${created.id}/order`);
+    expect(notReady.status).toBe(200);
+    expect(((await notReady.json()) as { ready: boolean }).ready).toBe(false);
+    await Bun.write(`${created.path}/board.kicad_pcb`, "(kicad_pcb)\n");
+    const ready = (await (await api(`/projects/${created.id}/order`)).json()) as { ready: boolean };
+    expect(ready.ready).toBe(true);
+    const laser = await api(`/projects/${created.id}/order`, { method: "POST", body: JSON.stringify({ vendor: "laser" }) });
+    expect(laser.status).toBe(400);
+    const jlc = await api(`/projects/${created.id}/order`, { method: "POST", body: JSON.stringify({ vendor: "jlcpcb" }) });
+    expect(jlc.status).toBe(200);
+    expect(((await jlc.json()) as { enabled: boolean; orderUrl: string }).orderUrl).toContain("jlcpcb.com");
+  });
 });

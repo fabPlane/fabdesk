@@ -5,9 +5,11 @@ import { Hono, type Context } from "hono";
 import {
   CreateProject,
   CreateThread,
+  OrderVendorId,
   PatchThread,
   SendMessage,
   Settings,
+  StartOrder,
   type AgentId,
   type AgentInfo,
   type AuthState,
@@ -26,6 +28,8 @@ import type { McpSessionManager } from "../mcp-sessions";
 import type { ProjectStore } from "../projects";
 import type { AgentRunManager } from "../agent-runs";
 import { logger, errMsg } from "../log";
+import { allowedCloneUrl, fetchOpenCatalog, findCatalogProject } from "../opensource/catalog";
+import { assessOrderReadiness, orderVendors, startOrderSession } from "../opensource/order";
 import { applyErrorReporting, captureCoreException } from "../sentry";
 import { parseTopics, sseResponse } from "./sse";
 
@@ -286,6 +290,42 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const q = c.req.query("q") ?? "";
     if (!q.trim()) return c.json([]);
     return c.json(deps.store.threads.search(q));
+  });
+
+  /* ---------- open-source catalog ---------- */
+  app.get("/opensource", async (c) => {
+    const index = await fetchOpenCatalog(deps.config.apiOrigin, c.req.query("q") ?? undefined);
+    return c.json(index);
+  });
+  app.get("/opensource/projects/:owner/:slug", async (c) => {
+    const index = await fetchOpenCatalog(deps.config.apiOrigin);
+    const project = findCatalogProject(index, `${c.req.param("owner")}/${c.req.param("slug")}`);
+    return project ? c.json(project) : c.json({ error: "not found" }, 404);
+  });
+  app.post("/opensource/projects/:owner/:slug/remix", async (c) => {
+    const index = await fetchOpenCatalog(deps.config.apiOrigin);
+    const source = findCatalogProject(index, `${c.req.param("owner")}/${c.req.param("slug")}`);
+    if (!source) return c.json({ error: "not found" }, 404);
+    if (!allowedCloneUrl(source.cloneUrl)) return c.json({ error: "clone url is not an allowed GitHub repository" }, 400);
+    const project = await deps.projects.importFromGit({ name: source.name, gitUrl: source.cloneUrl });
+    return c.json({ project, sourceId: source.id }, 201);
+  });
+
+  app.get("/projects/:id/order", async (c) => {
+    const d = await deps.projects.detail(c.req.param("id"));
+    if (!d) return c.json({ error: "not found" }, 404);
+    return c.json({ ...assessOrderReadiness(d.files), vendors: orderVendors() });
+  });
+  app.post("/projects/:id/order", async (c) => {
+    const d = await deps.projects.detail(c.req.param("id"));
+    if (!d) return c.json({ error: "not found" }, 404);
+    const body = StartOrder.parse(await c.req.json());
+    const vendor = OrderVendorId.parse(body.vendor);
+    const readiness = assessOrderReadiness(d.files);
+    if (!readiness.ready) return c.json({ error: "project is not ready to order", ...readiness }, 412);
+    const session = startOrderSession(vendor);
+    if (!session.enabled) return c.json({ error: `${session.label} ordering is not available yet`, session }, 400);
+    return c.json(session);
   });
 
   /* ---------- folders ---------- */

@@ -5,6 +5,7 @@
 import { watch, type FSWatcher } from "node:fs";
 import { mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
+import { spawn } from "node:child_process";
 import { ProjectManifest, type CoreEvent, type FileEntry, type ProjectDetail, type ProjectSummary } from "@fabdesk/protocol";
 import { PROJECT_FILES, ToolError, writeJson, type ProjectHandle, type ProjectResolver } from "@fabdesk/tools";
 import type { ProjectRepo } from "./db";
@@ -137,6 +138,40 @@ export class ProjectStore implements ProjectResolver {
     return (await this.detail(manifest.id))!;
   }
 
+  /** Clone an allowed git URL into the projects root and register it as a Fabdesk project. */
+  async importFromGit(opts: { name: string; gitUrl: string; clone?: (url: string, dir: string) => Promise<void> }): Promise<ProjectDetail> {
+    await mkdir(this.rootDir, { recursive: true });
+    const base = slugify(opts.name);
+    let slug = base;
+    for (let i = 2; await stat(join(this.rootDir, slug)).catch(() => null); i++) slug = `${base}-${i}`;
+    const dir = join(this.rootDir, slug);
+    try {
+      await (opts.clone ?? defaultGitClone)(opts.gitUrl, dir);
+    } catch (e) {
+      await rm(dir, { recursive: true, force: true });
+      throw new ToolError(`could not clone ${opts.gitUrl}: ${e instanceof Error ? e.message : String(e)}`, "unavailable");
+    }
+    const ts = new Date().toISOString();
+    const existing = await this.readManifest(dir);
+    const manifest = ProjectManifest.parse({
+      schema: 1,
+      id: newId("prj"),
+      name: opts.name,
+      createdAt: existing?.createdAt ?? ts,
+      updatedAt: ts,
+      board: existing?.board ?? { layers: 2 },
+      router: existing?.router ?? "capacity",
+    });
+    for (const sub of [PROJECT_FILES.sketches, PROJECT_FILES.renders, PROJECT_FILES.reports, PROJECT_FILES.exports, PROJECT_FILES.runs]) {
+      await mkdir(join(dir, sub), { recursive: true });
+    }
+    await writeJson(join(dir, PROJECT_FILES.manifest), manifest);
+    this.repo.upsert({ id: manifest.id, name: opts.name, slug, path: dir, createdAt: manifest.createdAt, updatedAt: ts });
+    if (this.opts.watch !== false) this.watchDir(manifest.id, dir);
+    this.emit({ ts: Date.now(), topic: "project.changed", projectId: manifest.id, paths: [PROJECT_FILES.manifest] });
+    return (await this.detail(manifest.id))!;
+  }
+
   async detail(id: string): Promise<ProjectDetail | null> {
     const row = this.repo.get(id);
     if (!row) return null;
@@ -253,4 +288,19 @@ export class ProjectStore implements ProjectResolver {
 export function requireProject(h: ProjectHandle | null, ref: string): ProjectHandle {
   if (!h) throw new ToolError(`project not found: ${ref}`, "not_found");
   return h;
+}
+
+async function defaultGitClone(url: string, dir: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn("git", ["clone", "--depth", "1", url, dir], { stdio: ["ignore", "pipe", "pipe"] });
+    let stderr = "";
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(stderr.trim() || `git clone exited ${code}`));
+    });
+  });
 }

@@ -1,13 +1,15 @@
 import type { Thread } from "@fabdesk/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState, type MouseEvent } from "react";
-import { Button, ContextMenu, IconButton, Input, MenuItem, Select } from "../components/ui";
+import { Button, ContextMenu, IconButton, Input, MenuItem, Select, Tabs } from "../components/ui";
 import { useCore } from "../core/CoreProvider";
 import { useProjects, useThreads, useThreadMutations } from "../hooks/queries";
 import { useBranchThread } from "../hooks/threadActions";
 import { useRunsStore } from "../stores/runs";
-import { useUiStore } from "../stores/ui";
+import { SIDEBAR_LIST_TABS, SIDEBAR_LIST_TAB_LABELS, useUiStore } from "../stores/ui";
 import { cn, dateGroup, formatRelative, modKey } from "../util";
+import { groupThreadsByProject } from "./group-threads";
+import { OpenSourceList } from "./OpenSourceList";
 import { UserFooter } from "./UserFooter";
 
 export interface ThreadSidebarProps {
@@ -28,8 +30,15 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
   const setActiveProject = useUiStore((s) => s.setActiveProject);
   const activeThreadId = useUiStore((s) => s.activeThreadId);
   const setActiveThread = useUiStore((s) => s.setActiveThread);
+  const sidebarListTab = useUiStore((s) => s.sidebarListTab);
+  const setSidebarListTab = useUiStore((s) => s.setSidebarListTab);
+  const setActiveOpenSourceId = useUiStore((s) => s.setActiveOpenSourceId);
   const projects = useProjects();
-  const threads = useThreads({ q, projectId });
+  const threads = useThreads({ q, projectId: sidebarListTab === "conversations" ? projectId : null });
+  const projectGroups = useMemo(
+    () => groupThreadsByProject(threads.data ?? [], projects.data ?? []),
+    [threads.data, projects.data],
+  );
   const { patch, remove } = useThreadMutations();
   const branch = useBranchThread();
   const [menu, setMenu] = useState<Menu | null>(null);
@@ -161,48 +170,109 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
       </div>
     );
 
+  const openThread = (id: string, threadProjectId?: string | null) => {
+    setActiveOpenSourceId(null);
+    if (threadProjectId) setActiveProject(threadProjectId);
+    setActiveThread(id);
+  };
+
   return (
     <div className="flex h-full flex-col bg-panel">
-      <div className="flex items-center gap-1 px-2 pt-2">
-        <Select
-          value={projectId ?? ""}
-          onChange={(e) => setActiveProject(e.target.value || null)}
-          className="h-7 min-w-0 flex-1 text-xs"
-          title="Project"
-        >
-          <option value="">All projects</option>
-          {(projects.data ?? []).map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </Select>
-        <IconButton title="New project" onClick={() => { setAskValue(""); setAsk({ kind: "project" }); }}>
-          +
-        </IconButton>
-      </div>
-      {askRow}
-      <div className="px-2 pt-2">
-        <Button variant="primary" className="w-full justify-between" onClick={onNewChat}>
-          <span>New chat</span>
-          <span className="text-[10px] opacity-70">{modKey(host.platform)}&#8679;O</span>
-        </Button>
-      </div>
-      <div className="px-2 pt-2">
-        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search threads..." className="h-7 text-xs" />
-      </div>
+      <Tabs
+        className="px-2 pt-2"
+        tabs={SIDEBAR_LIST_TABS.map((id) => ({ id, label: SIDEBAR_LIST_TAB_LABELS[id] }))}
+        value={sidebarListTab}
+        onChange={setSidebarListTab}
+      />
+      {sidebarListTab !== "open_source" && (
+        <>
+          {sidebarListTab === "conversations" && (
+            <div className="flex items-center gap-1 px-2 pt-2">
+              <Select
+                value={projectId ?? ""}
+                onChange={(e) => setActiveProject(e.target.value || null)}
+                className="h-7 min-w-0 flex-1 text-xs"
+                title="Project"
+              >
+                <option value="">All projects</option>
+                {(projects.data ?? []).map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </Select>
+              <IconButton title="New project" onClick={() => { setAskValue(""); setAsk({ kind: "project" }); }}>
+                +
+              </IconButton>
+            </div>
+          )}
+          {sidebarListTab === "projects" && (
+            <div className="flex items-center justify-end px-2 pt-2">
+              <IconButton title="New project" onClick={() => { setAskValue(""); setAsk({ kind: "project" }); }}>
+                +
+              </IconButton>
+            </div>
+          )}
+          {askRow}
+          <div className="px-2 pt-2">
+            <Button variant="primary" className="w-full justify-between" onClick={onNewChat}>
+              <span>New chat</span>
+              <span className="text-[10px] opacity-70">{modKey(host.platform)}&#8679;O</span>
+            </Button>
+          </div>
+          <div className="px-2 pt-2">
+            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search threads..." className="h-7 text-xs" />
+          </div>
+        </>
+      )}
+      {sidebarListTab === "open_source" ? (
+        <OpenSourceList />
+      ) : (
       <div className="min-h-0 flex-1 overflow-y-auto px-1 pb-2 pt-1">
         {threads.isLoading && <div className="px-2 py-3 text-xs text-muted">Loading...</div>}
         {threads.isError && <div className="px-2 py-3 text-xs text-danger">Could not load threads</div>}
-        {section("Pinned", groups.pinned)}
-        {[...groups.folders.entries()].map(([folder, items]) => section(folder, items))}
-        {section("Today", groups.dated.Today)}
-        {section("Yesterday", groups.dated.Yesterday)}
-        {section("Older", groups.dated.Older)}
+        {sidebarListTab === "projects"
+          ? projectGroups.map((group) => (
+              <div key={group.key} className="mb-2">
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between px-2 pb-1 pt-2 text-left text-[10.5px] font-semibold uppercase tracking-wide text-muted hover:text-fg"
+                  onClick={() => group.projectId && setActiveProject(group.projectId)}
+                >
+                  <span>{group.title}</span>
+                  <span>{group.threads.length}</span>
+                </button>
+                {group.threads.map((t) => (
+                  <div key={t.id} className="group relative">
+                    <button
+                      className={cn(
+                        "flex w-full items-center gap-2 rounded-md px-2 py-1.5 pr-7 text-left text-[13px]",
+                        t.id === activeThreadId ? "bg-panel-2 text-fg" : "text-fg/90 hover:bg-panel-2/70",
+                      )}
+                      onClick={() => openThread(t.id, t.projectId)}
+                      onContextMenu={(e) => openMenu(e, t)}
+                    >
+                      {running[t.id] && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" title="running" />}
+                      <span className="min-w-0 flex-1 truncate">{t.title || "Untitled"}</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ))
+          : (
+            <>
+              {section("Pinned", groups.pinned)}
+              {[...groups.folders.entries()].map(([folder, items]) => section(folder, items))}
+              {section("Today", groups.dated.Today)}
+              {section("Yesterday", groups.dated.Yesterday)}
+              {section("Older", groups.dated.Older)}
+            </>
+          )}
         {threads.data && threads.data.length === 0 && (
           <div className="px-2 py-6 text-center text-xs text-muted">No threads yet.</div>
         )}
       </div>
+      )}
       <UserFooter />
       {menu && (
         <ContextMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)}>

@@ -1,4 +1,4 @@
-import type { Message } from "@fabdesk/protocol";
+import type { Message, OrderVendorId } from "@fabdesk/protocol";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useCoreClient } from "../core/CoreProvider";
@@ -17,6 +17,51 @@ export function useProject(projectId: string | null) {
     queryKey: ["project", projectId],
     queryFn: () => client.getProject(projectId!),
     enabled: !!projectId,
+  });
+}
+
+export function useOpenCatalog(q = "") {
+  const client = useCoreClient();
+  return useQuery({
+    queryKey: ["opensource", q],
+    queryFn: () => client.listOpenSource(q),
+    staleTime: 60_000,
+  });
+}
+
+export function useOpenSourceProject(id: string | null) {
+  const client = useCoreClient();
+  return useQuery({
+    queryKey: ["opensource", "project", id],
+    queryFn: () => client.getOpenSource(id!),
+    enabled: !!id,
+  });
+}
+
+export function useProjectOrder(projectId: string | null) {
+  const client = useCoreClient();
+  return useQuery({
+    queryKey: ["project-order", projectId],
+    queryFn: () => client.projectOrder(projectId!),
+    enabled: !!projectId,
+  });
+}
+
+export function useStartOrder() {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, vendor }: { projectId: string; vendor: OrderVendorId }) => client.startOrder(projectId, vendor),
+    onSuccess: (_data, vars) => void qc.invalidateQueries({ queryKey: ["project-order", vars.projectId] }),
+  });
+}
+
+export function useRemixOpenSource() {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => client.remixOpenSource(id),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["projects"] }),
   });
 }
 
