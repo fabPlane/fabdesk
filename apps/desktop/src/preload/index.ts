@@ -15,7 +15,7 @@ const api = {
   sentryTest: process.argv.includes("--fabdesk-sentry-test"),
   /** Main passes `--fabdesk-automation` when the app automation bridge is on (dev / FABDESK_AUTOMATION=1). */
   automationEnabled: process.argv.includes("--fabdesk-automation"),
-  /** Main passes `--fabdesk-dev-build` for unpackaged (dev) builds. */
+  /** Main passes `--fabdesk-dev-build` for the isolated Fabdesk Dev profile. */
   devBuild: process.argv.includes("--fabdesk-dev-build"),
   setTheme: (themeId: string | null) => ipcRenderer.invoke("fabdesk:set-theme", themeId),
   setErrorReporting: (enabled: boolean) =>

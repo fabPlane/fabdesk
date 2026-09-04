@@ -40,6 +40,11 @@ export function TopBar({ coreStatus }: { coreStatus?: CoreStatusInfo | undefined
         </IconButton>
       </div>
       <span className="fd-wordmark">fab<b>Plane</b></span>
+      {host.devBuild && (
+        <Badge tone="warning" title="Development build — isolated from the installed fabPlane app">
+          Dev
+        </Badge>
+      )}
       {project && <span className="text-muted">/ {project.name}</span>}
       <div className="ml-auto flex items-center gap-1.5" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
         <UpdateBadge />
