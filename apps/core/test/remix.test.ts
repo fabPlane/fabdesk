@@ -7,7 +7,7 @@ import { PROJECT_FILES, type KicadImportSummary } from "@fabdesk/tools";
 import { pcbSvg } from "@fabdesk/tscircuit";
 import { mockServices, tempProject } from "../../../packages/tools/test/mock-services";
 import { Store } from "../src/db";
-import { hydrateClonedBoard, pickKicadPcb, remixCatalogProject } from "../src/opensource/remix";
+import { hydrateClonedBoard, listKicadPcbFiles, pickKicadPcb, remixCatalogProject } from "../src/opensource/remix";
 import { ProjectStore } from "../src/projects";
 
 const MINI_PCB = join(import.meta.dir, "../../../packages/kicad/test/fixtures/mini-two-layer.kicad_pcb");
@@ -30,6 +30,31 @@ describe("pickKicadPcb", () => {
 
   test("skips backup and library paths and returns undefined when nothing remains", () => {
     expect(pickKicadPcb([{ path: "libraries/mod.kicad_pcb" }, { path: "foo/-backups/x.kicad_pcb" }])).toBeUndefined();
+  });
+
+  test("prefers a name-matched nested board over an unrelated root PCB", () => {
+    expect(
+      pickKicadPcb(
+        [
+          { path: "unrelated.kicad_pcb" },
+          { path: "hardware/koyomi-lvds-hat.kicad_pcb" },
+        ],
+        "Koyomi LVDS HAT",
+      ),
+    ).toBe("hardware/koyomi-lvds-hat.kicad_pcb");
+  });
+});
+
+describe("listKicadPcbFiles", () => {
+  test("finds nested boards and skips backup directories", async () => {
+    const root = await mkdtemp(join(tmpdir(), "fabdesk-pcb-walk-"));
+    await mkdir(join(root, "hardware"), { recursive: true });
+    await mkdir(join(root, "hardware", "-backups"), { recursive: true });
+    await Bun.write(join(root, "hardware", "koyomi-lvds-hat.kicad_pcb"), "(kicad_pcb)\n");
+    await Bun.write(join(root, "hardware", "-backups", "old.kicad_pcb"), "(kicad_pcb)\n");
+    await Bun.write(join(root, "readme.txt"), "nope\n");
+    const found = await listKicadPcbFiles(root);
+    expect(found.map((f) => f.path)).toEqual(["hardware/koyomi-lvds-hat.kicad_pcb"]);
   });
 });
 

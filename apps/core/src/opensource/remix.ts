@@ -2,13 +2,15 @@
  * Remix a catalog clone into a Fabdesk project and hydrate the board viewer
  * from the cloned `.kicad_pcb` so the PCB tab can render without a chat turn.
  */
-import { join } from "node:path";
+import { readdir } from "node:fs/promises";
+import { join, relative, sep } from "node:path";
 import type { OpenCatalogEntry, RemixResult } from "@fabdesk/protocol";
 import { PROJECT_FILES, writeAtomic, writeJson, type CoreServices, type ProjectHandle } from "@fabdesk/tools";
 import { logger } from "../log";
 import type { ProjectStore } from "../projects";
 
 const SKIP_PCB = /(^|\/)(\.git|-backups|recovery|libraries)(\/|$)/i;
+const SKIP_WALK_DIR = new Set([".git", "node_modules", "-backups", "recovery", "libraries"]);
 
 export function pickKicadPcb(files: readonly { path: string }[], preferredStem?: string): string | undefined {
   const pcbs = files
@@ -21,13 +23,38 @@ export function pickKicadPcb(files: readonly { path: string }[], preferredStem?:
     const base = (parts[parts.length - 1] ?? "").replace(/\.kicad_pcb$/i, "").toLowerCase();
     const depth = parts.length;
     let s = 0;
-    if (depth === 1) s += 100;
-    if (stem && (base === stem || base.includes(stem) || stem.includes(base))) s += 50;
+    if (stem && (base === stem || base.includes(stem) || stem.includes(base))) {
+      s += base === stem ? 200 : 150;
+    }
+    if (depth === 1) s += 40;
     if (base === "board") s += 20;
     s -= depth * 5;
     return s;
   };
   return [...pcbs].sort((a, b) => score(b) - score(a) || a.localeCompare(b))[0];
+}
+
+/** Walk the clone for `.kicad_pcb` files so hydration is not limited by `listFiles` (max 2000). */
+export async function listKicadPcbFiles(root: string, max = 200): Promise<{ path: string }[]> {
+  const out: { path: string }[] = [];
+  const walk = async (d: string): Promise<void> => {
+    if (out.length >= max) return;
+    const entries = await readdir(d, { withFileTypes: true }).catch(() => []);
+    for (const e of entries) {
+      if (out.length >= max) return;
+      if (SKIP_WALK_DIR.has(e.name)) continue;
+      const abs = join(d, e.name);
+      if (e.isDirectory()) {
+        await walk(abs);
+        continue;
+      }
+      if (!e.isFile() || !e.name.toLowerCase().endsWith(".kicad_pcb")) continue;
+      const path = relative(root, abs).split(sep).join("/");
+      if (!SKIP_PCB.test(path)) out.push({ path });
+    }
+  };
+  await walk(root);
+  return out;
 }
 
 export async function hydrateClonedBoard(opts: {
@@ -90,9 +117,10 @@ export async function remixCatalogProject(opts: {
   const handle = await opts.projects.handle(created.id);
   let pcbPath: string | undefined;
   if (handle) {
+    const files = await listKicadPcbFiles(handle.dir);
     const hydrated = await hydrateClonedBoard({
       project: handle,
-      files: created.files,
+      files,
       importPcb: (o) => opts.services.kicad.importPcb(o),
       pcbSvg: (cj) => opts.services.tscircuit.pcbSvg(cj),
     });
