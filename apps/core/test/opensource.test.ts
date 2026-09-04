@@ -44,14 +44,16 @@ describe("open catalog", () => {
     expect(findCatalogProject(index, "tensorfleet/koyomi-lvds-hat")?.name).toBe("Koyomi LVDS HAT");
   });
 
-  test("seed preview and hero URLs are hosted on fabplane.com, not GitHub", () => {
+  test("seed preview and hero URLs are hosted on the images CDN, not GitHub or the website", () => {
     expect(OPEN_CATALOG_SEED).toHaveLength(20);
     for (const project of OPEN_CATALOG_SEED) {
       expect(isGitHubAssetHost(project.previewUrl)).toBe(false);
       expect(isRateLimitedPreviewHost(project.previewUrl)).toBe(false);
       expect(project.previewUrl).toBe(catalogPreviewUrl(project.ownerSlug, project.slug));
+      expect(project.previewUrl.startsWith("https://images.fabplane.com/artifacts/open-catalog/")).toBe(true);
+      expect(project.previewUrl.includes("://fabplane.com/")).toBe(false);
       expect(project.heroUrl).toBe(project.previewUrl);
-      expect(project.photoUrl).toBe(`https://fabplane.com/open-catalog/${project.ownerSlug}/${project.slug}/photo.webp`);
+      expect(project.photoUrl).toBe(`https://images.fabplane.com/artifacts/open-catalog/${project.ownerSlug}/${project.slug}/photo.webp`);
     }
   });
 
@@ -74,14 +76,14 @@ describe("catalog preview proxy", () => {
 
   test("previewCandidateUrls drops GitHub hosts and keeps hosted 3D first", () => {
     const project = OPEN_CATALOG_SEED.find((p) => p.id === "im-tomu/fomu-hardware")!;
-    expect(previewCandidateUrls(project)[0]).toBe("https://fabplane.com/open-catalog/im-tomu/fomu-hardware/preview.webp");
+    expect(previewCandidateUrls(project)[0]).toBe("https://images.fabplane.com/artifacts/open-catalog/im-tomu/fomu-hardware/preview.webp");
     const og = {
       ...project,
       previewUrl: "https://opengraph.github.com/repo/im-tomu/fomu-hardware",
       photoUrl: "https://raw.githubusercontent.com/im-tomu/fomu-hardware/master/fomu.png",
-      heroUrl: "https://fabplane.com/open-catalog/im-tomu/fomu-hardware/preview.webp",
+      heroUrl: "https://images.fabplane.com/artifacts/open-catalog/im-tomu/fomu-hardware/preview.webp",
     };
-    expect(previewCandidateUrls(og)).toEqual(["https://fabplane.com/open-catalog/im-tomu/fomu-hardware/preview.webp"]);
+    expect(previewCandidateUrls(og)).toEqual(["https://images.fabplane.com/artifacts/open-catalog/im-tomu/fomu-hardware/preview.webp"]);
   });
 
   test("resolveCatalogPreview reads CATALOG_ASSET_DIR before fetching", async () => {
