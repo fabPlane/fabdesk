@@ -1,20 +1,21 @@
 import { useMemo } from "react";
 import { useRunTool } from "../board/tools";
 import { composerHandlers } from "../chat/Composer";
-import { useThreads, useThreadMutations } from "../hooks/queries";
+import { useThread, useThreadMutations } from "../hooks/queries";
 import { useBranchThread } from "../hooks/threadActions";
 import { useUiStore } from "../stores/ui";
 
 /** App-level actions shared by the shortcut hook, the command palette and the top bar. */
 export function useAppActions() {
-  const threads = useThreads();
+  const activeThreadId = useUiStore((s) => s.activeThreadId);
+  const activeThread = useThread(activeThreadId);
   const { patch } = useThreadMutations();
   const branch = useBranchThread();
   const { run } = useRunTool();
-  const data = threads.data;
+  const data = activeThread.data;
   return useMemo(() => {
     const ui = () => useUiStore.getState();
-    const active = () => data?.find((t) => t.id === ui().activeThreadId);
+    const active = () => (data && data.id === ui().activeThreadId ? data : undefined);
     return {
       newChat() {
         ui().setActiveOpenSourceId(null);

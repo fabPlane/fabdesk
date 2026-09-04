@@ -349,4 +349,21 @@ describe("http daemon", () => {
     expect(preview.headers.get("content-type") ?? "").toMatch(/^image\//);
     expect((await preview.arrayBuffer()).byteLength).toBeGreaterThan(64);
   });
+
+  test("PATCH /threads/:id persists pin and lists pinned first", async () => {
+    const older = (await (await api("/threads", { method: "POST", body: JSON.stringify({ agentId: "claude", title: "Older chat" }) })).json()) as { id: string; pinned: boolean };
+    const newer = (await (await api("/threads", { method: "POST", body: JSON.stringify({ agentId: "claude", title: "Newer chat" }) })).json()) as { id: string; pinned: boolean };
+    expect(older.pinned).toBe(false);
+    expect(newer.pinned).toBe(false);
+    const pinned = (await (await api(`/threads/${older.id}`, { method: "PATCH", body: JSON.stringify({ pinned: true }) })).json()) as { id: string; pinned: boolean };
+    expect(pinned.pinned).toBe(true);
+    const listed = (await (await api("/threads")).json()) as Array<{ id: string; pinned: boolean }>;
+    const ids = listed.map((t) => t.id);
+    expect(ids.indexOf(older.id)).toBeLessThan(ids.indexOf(newer.id));
+    expect(listed.find((t) => t.id === older.id)?.pinned).toBe(true);
+    const unpinned = (await (await api(`/threads/${older.id}`, { method: "PATCH", body: JSON.stringify({ pinned: false }) })).json()) as { pinned: boolean };
+    expect(unpinned.pinned).toBe(false);
+    const after = (await (await api(`/threads/${older.id}`)).json()) as { pinned: boolean };
+    expect(after.pinned).toBe(false);
+  });
 });
