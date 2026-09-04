@@ -188,7 +188,7 @@ export type AppBridgeStatus = {
 };
 
 /**
- * Loopback HTTP bridge into the running Fabdesk desktop app (Electron main, dev/automation builds
+ * Loopback HTTP bridge into the running fabPlane desktop app (Electron main, dev/automation builds
  * only; see docs/app-automation.md). `apps/core/src/app-bridge.ts` implements it.
  */
 export interface AppBridge {

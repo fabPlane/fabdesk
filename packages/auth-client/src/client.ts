@@ -179,7 +179,7 @@ export class AuthClient {
   /**
    * Password-assisted device flow: `POST /v1/auth/password` for an `fp_session` cookie,
    * then `POST /v1/auth/device/approve` and the usual token poll. Used by the CLI/UI
-   * with Fabplane's local/staging accounts (`demo@fabplane.dev`, `maya@fabplane.dev`).
+   * with fabPlane's local/staging accounts (`demo@fabplane.dev`, `maya@fabplane.dev`).
    */
   loginWithPassword(credentials: PasswordCredentials, signal?: AbortSignal): Promise<AuthState> {
     return this.startLogin(() => this.runPasswordLogin(credentials, signal));
