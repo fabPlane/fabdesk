@@ -1,5 +1,5 @@
 /**
- * Local auth mode (no Fabplane login).
+ * Local auth mode (no fabPlane login).
  *
  * The core only honours `--local-auth` on the public channel when a `.fabdesk-dev` marker exists in
  * its home directory (FABDESK_HOME or the per-platform config dir; see @fabdesk/auth-client/home).

@@ -53,11 +53,11 @@ hidden from WebMCP unless `settings.webmcpWriteTools` is on.
 ## Enabling in a packaged build
 
 ```bash
-FABDESK_AUTOMATION=1 open -a Fabplane            # macOS
+FABDESK_AUTOMATION=1 open -a fabPlane            # macOS
 FABDESK_AUTOMATION=1 ./fabplane                  # Linux
 ```
 
-Then check `~/Library/Application Support/Fabplane/app-bridge.json` (or the platform's
+Then check `~/Library/Application Support/fabPlane/app-bridge.json` (or the platform's
 `userData`; older builds used `Fabdesk` or `@fabdesk/desktop`). The core the app spawns picks
 the file up on the next tool call; no restart needed.
 

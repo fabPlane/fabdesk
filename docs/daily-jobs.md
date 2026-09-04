@@ -4,7 +4,7 @@ Two scheduled jobs keep security findings and open PRs from going stale.
 
 | Job           | Where it runs                                                                               | What it does                                                                       |
 | ------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| Security scan | GitHub Actions (`.github/workflows/security-scan.yml`) plus this Grok Cloud Agent           | Combs Fabdesk-native source and `bun audit`, opens GitHub issues, skips duplicates |
+| Security scan | GitHub Actions (`.github/workflows/security-scan.yml`) plus this Grok Cloud Agent           | Combs fabPlane-native source and `bun audit`, opens GitHub issues, skips duplicates |
 | PR relevance  | This Grok Cloud Agent (`https://cursor.com/agents/bc-084626c9-7019-46ea-a3e7-7d5f02ecea66`) | Reviews every open PR and pages you here when the PR is still relevant             |
 
 ## Security scan

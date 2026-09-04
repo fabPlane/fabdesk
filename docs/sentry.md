@@ -1,6 +1,6 @@
 # Sentry error reporting
 
-Fabdesk reports crashes and unhandled errors to Sentry from three runtimes: the Electron main
+fabPlane reports crashes and unhandled errors to Sentry from three runtimes: the Electron main
 process, the renderer, and the `fabdesk-core` daemon. Every integration is disabled when no DSN is
 configured, so development builds, CI and a clone without secrets send nothing. Users can opt out
 in **Settings → Privacy** (the `errorReporting` setting, default on).

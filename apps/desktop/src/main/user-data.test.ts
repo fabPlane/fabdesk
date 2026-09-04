@@ -3,17 +3,22 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { isVacantUserData, migrateLegacyUserData, PREVIOUS_PRODUCT_USER_DATA } from "./user-data";
+import {
+  isVacantUserData,
+  migrateLegacyUserData,
+  PREVIOUS_PRODUCT_USER_DATA,
+  TITLECASE_PRODUCT_USER_DATA,
+} from "./user-data";
 
 async function sandbox(): Promise<string> {
   return mkdtemp(join(tmpdir(), "fabplane-userdata-"));
 }
 
 describe("migrateLegacyUserData", () => {
-  test("moves Fabdesk onto an empty Fabplane path", async () => {
+  test("moves Fabdesk onto an empty fabPlane path", async () => {
     const root = await sandbox();
     const previous = join(root, PREVIOUS_PRODUCT_USER_DATA);
-    const next = join(root, "Fabplane");
+    const next = join(root, "fabPlane");
     mkdirSync(previous);
     writeFileSync(join(previous, "daemon.json"), '{"ok":true}');
     expect(migrateLegacyUserData(next)).toBe(previous);
@@ -22,10 +27,22 @@ describe("migrateLegacyUserData", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
+  test("moves title-case Fabplane onto fabPlane", async () => {
+    const root = await sandbox();
+    const previous = join(root, TITLECASE_PRODUCT_USER_DATA);
+    const next = join(root, "fabPlane");
+    mkdirSync(previous);
+    writeFileSync(join(previous, "daemon.json"), '{"ok":true}');
+    expect(migrateLegacyUserData(next)).toBe(previous);
+    expect(existsSync(join(next, "daemon.json"))).toBe(true);
+    expect(existsSync(previous)).toBe(false);
+    rmSync(root, { recursive: true, force: true });
+  });
+
   test("moves @fabdesk/desktop when Fabdesk is absent", async () => {
     const root = await sandbox();
     const scoped = join(root, "@fabdesk", "desktop");
-    const next = join(root, "Fabplane");
+    const next = join(root, "fabPlane");
     mkdirSync(scoped, { recursive: true });
     writeFileSync(join(scoped, "prefs.json"), "{}");
     expect(migrateLegacyUserData(next)).toBe(scoped);
@@ -37,7 +54,7 @@ describe("migrateLegacyUserData", () => {
     const root = await sandbox();
     const previous = join(root, PREVIOUS_PRODUCT_USER_DATA);
     const scoped = join(root, "@fabdesk", "desktop");
-    const next = join(root, "Fabplane");
+    const next = join(root, "fabPlane");
     mkdirSync(previous);
     mkdirSync(scoped, { recursive: true });
     writeFileSync(join(previous, "from.txt"), "fabdesk");
@@ -48,10 +65,10 @@ describe("migrateLegacyUserData", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  test("leaves an already-populated Fabplane path alone", async () => {
+  test("leaves an already-populated fabPlane path alone", async () => {
     const root = await sandbox();
     const previous = join(root, PREVIOUS_PRODUCT_USER_DATA);
-    const next = join(root, "Fabplane");
+    const next = join(root, "fabPlane");
     mkdirSync(previous);
     mkdirSync(next);
     writeFileSync(join(previous, "old.txt"), "old");
@@ -65,7 +82,7 @@ describe("migrateLegacyUserData", () => {
   test("migrates onto an empty destination directory", async () => {
     const root = await sandbox();
     const previous = join(root, PREVIOUS_PRODUCT_USER_DATA);
-    const next = join(root, "Fabplane");
+    const next = join(root, "fabPlane");
     mkdirSync(previous);
     mkdirSync(next);
     writeFileSync(join(previous, "daemon.json"), "{}");

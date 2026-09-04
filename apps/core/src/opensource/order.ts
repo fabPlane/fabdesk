@@ -52,7 +52,7 @@ export function startOrderSession(vendor: OrderVendorId): OrderSession {
       },
       {
         title: `Open ${info.label}`,
-        body: `Create a PCB order on ${info.label} and upload the fabrication zip. Fabdesk does not place the order for you.`,
+        body: `Create a PCB order on ${info.label} and upload the fabrication zip. fabPlane does not place the order for you.`,
       },
       {
         title: "Check the quote",

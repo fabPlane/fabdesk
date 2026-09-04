@@ -66,12 +66,12 @@ The exit status is non-zero when the guest reports a failure, so the scripts wor
 **macOS** (`guest/mac-test.sh`): quarantines the installer like a browser download, `hdiutil verify`
 + mount (DMG) or `ditto` (zip), copies to `/Applications`, records `spctl` (Gatekeeper),
 `codesign --verify --deep --strict` and stapler status, removes quarantine, runs the bundled core,
-launches `Fabplane.app/Contents/MacOS/Fabplane` with `FABDESK_AUTOMATION=1 FABDESK_UPDATE_CHECK=0`,
-waits for `daemon.json` + `app-bridge.json` in `~/Library/Application Support/Fabplane`, calls
+launches `fabPlane.app/Contents/MacOS/fabPlane` with `FABDESK_AUTOMATION=1 FABDESK_UPDATE_CHECK=0`,
+waits for `daemon.json` + `app-bridge.json` in `~/Library/Application Support/fabPlane`, calls
 `/health`, grabs a screenshot through the bridge, then `screencapture`.
 
 **Linux** (`guest/linux-test.sh`): AppImage (needs FUSE, which the base image has) or
-`apt install ./Fabplane.deb`, runs the core, launches `fabplane` under Xvfb, same daemon / bridge checks,
+`apt install ./fabPlane.deb`, runs the core, launches `fabplane` under Xvfb, same daemon / bridge checks,
 `import -window root` for the display.
 
 **Windows** (`guest/windows-test.ps1`): marks the installer as downloaded (Zone.Identifier),

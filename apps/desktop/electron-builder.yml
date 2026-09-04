@@ -2,11 +2,12 @@
 # Keep appId as com.tensorfleet.fabdesk: Windows shortcuts, the taskbar AppUserModelId, and NSIS
 # uninstall/upgrade identity already shipped under it. Changing the id would orphan pinned
 # shortcuts and treat the next install as a new app. In-app updates fetch latest.json by URL and
-# do not key off appId. Visible names are productName / executableName (Fabplane / fabplane).
+# do not key off appId. Visible name is productName (fabPlane); installer stems stay fabplane.
 appId: com.tensorfleet.fabdesk
-productName: Fabplane
+productName: fabPlane
 copyright: Copyright © 2026 TensorFleet
-artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+# Lowercase stem so Windows/AppImage filenames are fabplane-*, not mixed-case fabPlane-*.
+artifactName: fabplane-${version}-${os}-${arch}.${ext}
 afterPack: scripts/after-pack.cjs
 directories:
   output: release
@@ -47,7 +48,7 @@ dmg:
   sign: false
 linux:
   icon: build/icons
-  # desktop Name=Fabplane (productName) and Exec=fabplane
+  # desktop Name=fabPlane (productName) and Exec=fabplane
   executableName: fabplane
   category: Development
   target: [AppImage, deb]

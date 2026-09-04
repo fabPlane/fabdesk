@@ -12,7 +12,7 @@ import type { ProjectRepo } from "./db";
 import { newId } from "./db";
 import { logger } from "./log";
 
-export const DEFAULT_CIRCUIT_TSX = `// Fabdesk project. Write your board with tscircuit; the agent builds, routes and verifies it.
+export const DEFAULT_CIRCUIT_TSX = `// fabPlane project. Write your board with tscircuit; the agent builds, routes and verifies it.
 export default () => (
   <board width="30mm" height="20mm">
     <resistor name="R1" resistance="1k" footprint="0402" pcbX={-5} pcbY={0} />
@@ -138,7 +138,7 @@ export class ProjectStore implements ProjectResolver {
     return (await this.detail(manifest.id))!;
   }
 
-  /** Clone an allowed git URL into the projects root and register it as a Fabdesk project. */
+  /** Clone an allowed git URL into the projects root and register it as a fabPlane project. */
   async importFromGit(opts: { name: string; gitUrl: string; clone?: (url: string, dir: string) => Promise<void> }): Promise<ProjectDetail> {
     await mkdir(this.rootDir, { recursive: true });
     const base = slugify(opts.name);

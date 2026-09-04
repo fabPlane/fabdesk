@@ -94,7 +94,7 @@ describe("app toolset", () => {
     });
     const { invoke } = await setup(bridge);
     const out = await invoke("app_state");
-    expect(out.text).toContain("Fabplane 0.1.0 (dev, automation dev); 1 window(s)");
+    expect(out.text).toContain("fabPlane 0.1.0 (dev, automation dev); 1 window(s)");
     expect(out.text).toContain("window 1 (focused): 1440×920");
     expect(out.text).toContain("project=p1 thread=new chat boardTab=cinema");
     expect(out.text).toContain("run=r1 frames=12 cursor=11 view=board");

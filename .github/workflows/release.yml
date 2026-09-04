@@ -209,6 +209,6 @@ jobs:
           git tag ${{ needs.version.outputs.tag }} ${{ github.sha }}
           git push origin ${{ needs.version.outputs.tag }}
           gh release create ${{ needs.version.outputs.tag }} \
-            --title "Fabplane ${{ needs.version.outputs.version }}" \
+            --title "fabPlane ${{ needs.version.outputs.version }}" \
             --notes-file artifacts/NOTES.md \
             $(ls artifacts/* | grep -v NOTES.md)

@@ -1,4 +1,4 @@
-# Fabdesk architecture
+# fabPlane architecture
 
 ## Processes
 

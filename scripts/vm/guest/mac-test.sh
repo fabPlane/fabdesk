@@ -1,13 +1,13 @@
 #!/bin/bash
 # Runs inside the macOS test VM (copied there by scripts/vm/mac.sh).
 # Usage: mac-test.sh <installer.dmg|.zip> <out-dir>
-# Installs Fabplane the way a user would, records the Gatekeeper verdict, launches the app with the
+# Installs fabPlane the way a user would, records the Gatekeeper verdict, launches the app with the
 # automation bridge on, checks the core daemon, grabs a screenshot, writes <out-dir>/report.json.
 set -uo pipefail
 INSTALLER="$1"; OUT="$2"; mkdir -p "$OUT"
-APP=/Applications/Fabplane.app
-UD="$HOME/Library/Application Support/Fabplane"
-UD_PREV="$HOME/Library/Application Support/Fabdesk"              # productName before the Fabplane rename
+APP=/Applications/fabPlane.app
+UD="$HOME/Library/Application Support/fabPlane"
+UD_PREV="$HOME/Library/Application Support/Fabdesk"              # productName before the fabPlane rename
 UD_LEGACY="$HOME/Library/Application Support/@fabdesk/desktop"   # builds before 0.1.40
 pick_ud() {
   if [ -f "$UD/daemon.json" ]; then return; fi
@@ -40,8 +40,8 @@ case "$INSTALLER" in
     if ! hdiutil verify "$INSTALLER" >/dev/null 2>&1; then err "hdiutil verify failed (corrupt image)"; exit 0; fi
     MNT="$(hdiutil attach -nobrowse -readonly "$INSTALLER" | awk -F'\t' '/\/Volumes\//{print $NF}' | tail -1)"
     [ -d "$MNT" ] || { err "dmg did not mount"; exit 0; }
-    BUNDLE="$(ls -d "$MNT"/Fabplane.app "$MNT"/Fabdesk.app 2>/dev/null | head -1)"
-    [ -n "$BUNDLE" ] || { err "dmg has no Fabplane.app / Fabdesk.app"; hdiutil detach "$MNT" -quiet || true; exit 0; }
+    BUNDLE="$(ls -d "$MNT"/fabPlane.app "$MNT"/Fabdesk.app 2>/dev/null | head -1)"
+    [ -n "$BUNDLE" ] || { err "dmg has no fabPlane.app / Fabdesk.app"; hdiutil detach "$MNT" -quiet || true; exit 0; }
     APP="/Applications/$(basename "$BUNDLE")"
     cp -R "$BUNDLE" /Applications/ || err "copy to /Applications failed"
     hdiutil detach "$MNT" -quiet || true
@@ -71,7 +71,7 @@ R_CORE="$("$CORE" version 2>&1 | head -1)" || err "fabdesk-core version failed: 
 
 mkdir -p "$UD"
 T0=$(python3 -c 'import time;print(int(time.time()*1000))')
-MAC_BIN="$APP/Contents/MacOS/Fabplane"
+MAC_BIN="$APP/Contents/MacOS/fabPlane"
 [ -x "$MAC_BIN" ] || MAC_BIN="$APP/Contents/MacOS/Fabdesk"
 FABDESK_AUTOMATION=1 FABDESK_UPDATE_CHECK=0 "$MAC_BIN" >"$OUT/app-stdout.txt" 2>&1 &
 APP_PID=$!
@@ -93,5 +93,5 @@ if [ -f "$UD/app-bridge.json" ]; then
 else err "app-bridge.json missing (FABDESK_AUTOMATION not honored?)"; fi
 screencapture -x "$OUT/screen.png" 2>/dev/null || true
 cp "$UD"/*.log "$OUT/" 2>/dev/null || true
-kill $APP_PID 2>/dev/null; sleep 2; pkill -x Fabplane 2>/dev/null || pkill -x Fabdesk 2>/dev/null || true
+kill $APP_PID 2>/dev/null; sleep 2; pkill -x fabPlane 2>/dev/null || pkill -x Fabdesk 2>/dev/null || true
 echo "== done"

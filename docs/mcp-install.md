@@ -20,9 +20,9 @@ to enable more; the tool list refreshes automatically.
 
 | Platform | Path |
 | --- | --- |
-| macOS | `/Applications/Fabplane.app/Contents/Resources/core/fabdesk-core` |
+| macOS | `/Applications/fabPlane.app/Contents/Resources/core/fabdesk-core` |
 | Linux (AppImage) | `<mount>/resources/core/fabdesk-core`, or `~/.local/bin/fabdesk` after `fabdesk-core install-cli` |
-| Windows | `C:\Users\<you>\AppData\Local\Programs\Fabplane\resources\core\fabdesk-core.exe` |
+| Windows | `C:\Users\<you>\AppData\Local\Programs\fabPlane\resources\core\fabdesk-core.exe` |
 | Development checkout | `bun run /path/to/fabdesk/apps/core/src/main.ts` |
 
 Run `fabdesk-core install-cli` once to get a `fabdesk` symlink in `~/.local/bin`; the snippets
@@ -39,9 +39,9 @@ project becomes the default and the argument can be omitted.
 ## Claude Code
 
 ```bash
-claude mcp add --transport stdio fabdesk -- "/Applications/Fabplane.app/Contents/Resources/core/fabdesk-core" mcp
+claude mcp add --transport stdio fabdesk -- "/Applications/fabPlane.app/Contents/Resources/core/fabdesk-core" mcp
 # scope it to the current project directory instead of the user profile:
-claude mcp add --scope project --transport stdio fabdesk -- "/Applications/Fabplane.app/Contents/Resources/core/fabdesk-core" mcp
+claude mcp add --scope project --transport stdio fabdesk -- "/Applications/fabPlane.app/Contents/Resources/core/fabdesk-core" mcp
 ```
 
 Tools appear as `mcp__fabdesk__<tool>`; allow them all with `--allowedTools "mcp__fabdesk__*"` or in
@@ -65,7 +65,7 @@ claude mcp add --transport http fabdesk http://127.0.0.1:PORT/mcp --header "Auth
 {
   "mcpServers": {
     "fabdesk": {
-      "command": "/Applications/Fabplane.app/Contents/Resources/core/fabdesk-core",
+      "command": "/Applications/fabPlane.app/Contents/Resources/core/fabdesk-core",
       "args": ["mcp"]
     }
   }
@@ -91,7 +91,7 @@ HTTP variant:
 
 ```toml
 [mcp_servers.fabdesk]
-command = "/Applications/Fabplane.app/Contents/Resources/core/fabdesk-core"
+command = "/Applications/fabPlane.app/Contents/Resources/core/fabdesk-core"
 args = ["mcp"]
 ```
 
@@ -103,19 +103,19 @@ url = "http://127.0.0.1:PORT/mcp"
 bearer_token_env_var = "FABDESK_TOKEN"
 ```
 
-One-off: `codex exec -c 'mcp_servers.fabdesk.command="/Applications/Fabplane.app/Contents/Resources/core/fabdesk-core"' -c 'mcp_servers.fabdesk.args=["mcp"]' "call project_status"`.
+One-off: `codex exec -c 'mcp_servers.fabdesk.command="/Applications/fabPlane.app/Contents/Resources/core/fabdesk-core"' -c 'mcp_servers.fabdesk.args=["mcp"]' "call project_status"`.
 
 ## Grok CLI
 
 ```bash
-grok mcp add fabdesk "/Applications/Fabplane.app/Contents/Resources/core/fabdesk-core" mcp --scope user
+grok mcp add fabdesk "/Applications/fabPlane.app/Contents/Resources/core/fabdesk-core" mcp --scope user
 ```
 
 or `.grok/config.toml` in the project:
 
 ```toml
 [mcp_servers.fabdesk]
-command = "/Applications/Fabplane.app/Contents/Resources/core/fabdesk-core"
+command = "/Applications/fabPlane.app/Contents/Resources/core/fabdesk-core"
 args = ["mcp"]
 ```
 

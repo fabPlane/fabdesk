@@ -18,7 +18,7 @@ initSentry();
 // WebMCP (document.modelContext) behind Chromium's feature flag; the renderer polyfills when absent.
 app.commandLine.appendSwitch("enable-features", "WebMCP");
 
-// Electron derives userData from productName ("Fabplane"). Older builds used "Fabdesk" or the
+// Electron derives userData from productName ("fabPlane"). Older builds used "Fabdesk" or the
 // package path "<config>/@fabdesk/desktop"; move that data across once when the new path is empty.
 migrateLegacyUserData(app.getPath("userData"));
 
@@ -43,7 +43,7 @@ function createWindow(): BrowserWindow {
     height: 920,
     minWidth: 960,
     minHeight: 600,
-    title: "Fabplane",
+    title: "fabPlane",
     show: false,
     backgroundColor: theme.backgroundColor,
     ...(icon ? { icon } : {}),
@@ -65,6 +65,10 @@ function createWindow(): BrowserWindow {
         ...(app.isPackaged ? [] : ["--fabdesk-dev-build"]),
       ],
     },
+  });
+  win.on("page-title-updated", (e) => {
+    e.preventDefault();
+    win.setTitle("fabPlane");
   });
   if (sentryTestRequested()) {
     // Surface the renderer's test-event line on our stderr.

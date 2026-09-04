@@ -38,8 +38,8 @@ function Put($name, $path) {
 }
 
 Log "== $((Get-CimInstance Win32_OperatingSystem).Caption) $env:PROCESSOR_ARCHITECTURE installer=$($cfg.installer)"
-$ud = Join-Path $env:APPDATA "Fabplane"
-$udPrev = Join-Path $env:APPDATA "Fabdesk"              # productName before the Fabplane rename
+$ud = Join-Path $env:APPDATA "fabPlane"
+$udPrev = Join-Path $env:APPDATA "Fabdesk"              # productName before the fabPlane rename
 $udLegacy = Join-Path $env:APPDATA "@fabdesk\desktop"   # builds before 0.1.40
 Remove-Item -Recurse -Force $ud, $udPrev, $udLegacy -ErrorAction SilentlyContinue | Out-Null
 $install = ""; $exe = ""
@@ -54,8 +54,8 @@ if ($cfg.installer -match "Setup.*\.exe$" -or $cfg.installer -notmatch "portable
   # so waiting for the installer's process tree never returns. Start it, then poll for the installed
   # app in the per-user and per-machine locations (an elevated session gets a per-machine install).
   $candidates = @(
-    (Join-Path $env:LOCALAPPDATA "Programs\Fabplane\fabplane.exe"),
-    (Join-Path $env:ProgramFiles "Fabplane\fabplane.exe"),
+    (Join-Path $env:LOCALAPPDATA "Programs\fabPlane\fabplane.exe"),
+    (Join-Path $env:ProgramFiles "fabPlane\fabplane.exe"),
     (Join-Path $env:LOCALAPPDATA "Programs\Fabdesk\Fabdesk.exe"),
     (Join-Path $env:ProgramFiles "Fabdesk\Fabdesk.exe")
   )
@@ -71,7 +71,7 @@ if ($cfg.installer -match "Setup.*\.exe$" -or $cfg.installer -notmatch "portable
   $exe = ""
   # The NSIS installer re-launches itself from %TEMP% under the product name, so a process called
   # fabplane / Fabdesk is not necessarily the app: the app lives next to resources\app.asar.
-  function AppProcesses { Get-Process -Name fabplane, Fabplane, Fabdesk -ErrorAction SilentlyContinue }
+  function AppProcesses { Get-Process -Name fabplane, fabPlane, Fabdesk -ErrorAction SilentlyContinue }
   function IsApp($path) { $path -and (Test-Path (Join-Path (Split-Path $path) "resources\app.asar")) }
   for ($i = 0; $i -lt 600; $i++) {   # emulated VMs need minutes to unpack 150 MB and start Electron
     $app = AppProcesses | Where-Object { IsApp $_.Path } | Select-Object -First 1
@@ -141,7 +141,7 @@ if ($exe -and (Test-Path $exe)) {
   }
   # Whole-screen capture (shows SmartScreen / installer dialogs if any).
   Screenshot (Join-Path $out "screen.png")
-  Stop-Process -Name fabplane, Fabplane, Fabdesk -Force -ErrorAction SilentlyContinue
+  Stop-Process -Name fabplane, fabPlane, Fabdesk -Force -ErrorAction SilentlyContinue
   Get-ChildItem $ud -Filter *.log -ErrorAction SilentlyContinue | Copy-Item -Destination $out
 }
 

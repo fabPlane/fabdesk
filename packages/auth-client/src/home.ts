@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { Principal } from "@fabdesk/protocol";
 
 /**
- * Fabdesk's per-user config/credentials directory. `FABDESK_HOME` wins; otherwise
+ * fabPlane's per-user config/credentials directory. `FABDESK_HOME` wins; otherwise
  * `~/Library/Application Support/fabdesk` (macOS), `%APPDATA%\fabdesk` (Windows) or
  * `$XDG_CONFIG_HOME/fabdesk` (default `~/.config/fabdesk`).
  */

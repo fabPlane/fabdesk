@@ -1,10 +1,10 @@
 #!/bin/bash
 # Runs inside the Ubuntu test VM (copied there by scripts/vm/linux.sh).
-# Usage: linux-test.sh <Fabplane.AppImage|.deb> <out-dir>
+# Usage: linux-test.sh <fabPlane.AppImage|.deb> <out-dir>
 set -uo pipefail
 INSTALLER="$1"; OUT="$2"; mkdir -p "$OUT"
-UD="$HOME/.config/Fabplane"
-UD_PREV="$HOME/.config/Fabdesk"              # productName before the Fabplane rename
+UD="$HOME/.config/fabPlane"
+UD_PREV="$HOME/.config/Fabdesk"              # productName before the fabPlane rename
 UD_LEGACY="$HOME/.config/@fabdesk/desktop"   # builds before 0.1.40
 pick_ud() {
   if [ -f "$UD/daemon.json" ]; then return; fi
@@ -36,7 +36,7 @@ case "$INSTALLER" in
     R_INSTALL="AppImage executable" ;;
   *.deb)
     sudo apt-get install -y "./$(basename "$INSTALLER")" >"$OUT/apt.txt" 2>&1 || sudo apt-get install -y "$INSTALLER" >>"$OUT/apt.txt" 2>&1 || err "apt install of the .deb failed (see apt.txt)"
-    BIN="$(command -v fabplane || command -v fabdesk || echo /opt/Fabplane/fabplane)"
+    BIN="$(command -v fabplane || command -v fabdesk || echo /opt/fabPlane/fabplane)"
     [ -x "$BIN" ] || { [ -x /opt/Fabdesk/fabdesk ] && BIN=/opt/Fabdesk/fabdesk; }
     [ -x "$BIN" ] || { err "no fabplane binary after installing the .deb"; exit 0; }
     R_INSTALL="deb installed, binary $BIN" ;;
@@ -48,7 +48,7 @@ if [ -n "$BIN" ] && [[ "$INSTALLER" == *.AppImage ]]; then
   ( cd "$OUT" && "$INSTALLER" --appimage-extract 'resources/core/*' >/dev/null 2>&1 ) || true
   CORE="$OUT/squashfs-root/resources/core/fabdesk-core"
 else
-  CORE="/opt/Fabplane/resources/core/fabdesk-core"
+  CORE="/opt/fabPlane/resources/core/fabdesk-core"
   [ -x "$CORE" ] || CORE="/opt/Fabdesk/resources/core/fabdesk-core"
 fi
 [ -x "$CORE" ] && { R_CORE="$("$CORE" version 2>&1 | head -1)" || err "fabdesk-core version failed: $R_CORE"; } || err "core binary not found at $CORE"
