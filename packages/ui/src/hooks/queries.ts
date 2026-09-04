@@ -73,6 +73,15 @@ export function useThreads(params?: { q?: string; projectId?: string | null }) {
   });
 }
 
+export function useThread(threadId: string | null) {
+  const client = useCoreClient();
+  return useQuery({
+    queryKey: ["thread", threadId],
+    queryFn: () => client.getThread(threadId!),
+    enabled: !!threadId,
+  });
+}
+
 export function useMessages(threadId: string | null) {
   const client = useCoreClient();
   return useQuery<Message[]>({
@@ -193,7 +202,10 @@ export function useProjectBlobUrl(projectId: string | null, path: string | null)
 export function useThreadMutations() {
   const client = useCoreClient();
   const qc = useQueryClient();
-  const invalidate = () => qc.invalidateQueries({ queryKey: ["threads"] });
+  const invalidate = () => {
+    void qc.invalidateQueries({ queryKey: ["threads"] });
+    void qc.invalidateQueries({ queryKey: ["thread"] });
+  };
   const create = useMutation({
     mutationFn: (input: CreateThreadInput) => client.createThread(input),
     onSuccess: () => void invalidate(),
