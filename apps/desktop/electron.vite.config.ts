@@ -101,6 +101,12 @@ export default defineConfig(({ mode }) => {
       },
     },
     renderer: {
+      resolve: {
+        alias: [
+          { find: /^@fabdesk\/ui$/, replacement: resolve(__dirname, "../../packages/ui/src/index.ts") },
+          { find: "@fabdesk/ui/styles.css", replacement: resolve(__dirname, "../../packages/ui/src/styles.css") },
+        ],
+      },
       plugins: [react(), tailwindcss(), cspPlugin(dev)],
       define: { "process.env.IS_PREACT": JSON.stringify("false"), ...sentryDefine },
       build: {
