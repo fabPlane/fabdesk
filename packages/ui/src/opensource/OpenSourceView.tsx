@@ -1,9 +1,13 @@
+import { useEffect, useState } from "react";
 import { Button, Spinner } from "../components/ui";
+import { useCoreClient } from "../core/CoreProvider";
 import { useOpenSourceProject, useRemixOpenSource } from "../hooks/queries";
+import { CatalogThumb } from "./CatalogThumb";
 import { useUiStore } from "../stores/ui";
 
 export function OpenSourceView() {
   const id = useUiStore((s) => s.activeOpenSourceId);
+  const client = useCoreClient();
   const setActiveProject = useUiStore((s) => s.setActiveProject);
   const setActiveThread = useUiStore((s) => s.setActiveThread);
   const setActiveOpenSourceId = useUiStore((s) => s.setActiveOpenSourceId);
@@ -14,7 +18,11 @@ export function OpenSourceView() {
   const project = useOpenSourceProject(id);
   const remix = useRemixOpenSource();
   const entry = project.data;
-  const hero = entry?.heroUrl ?? entry?.previewUrl;
+  const hero = id ? client.openSourcePreviewUrl(id, "hero") : "";
+  const [heroFailed, setHeroFailed] = useState(false);
+  useEffect(() => {
+    setHeroFailed(false);
+  }, [id]);
 
   const onRemix = async () => {
     if (!id) return;
@@ -54,10 +62,18 @@ export function OpenSourceView() {
         </Button>
       </div>
       <div className="relative min-h-0 flex-1 overflow-hidden bg-[radial-gradient(circle_at_50%_40%,#f6f3e8,#8d887c)] dark:bg-[radial-gradient(circle_at_50%_40%,#2a2e28,#121410)]">
-        {hero ? (
-          <img src={hero} alt={`${entry.name} 3D preview`} className="h-full w-full object-contain p-8" />
+        {hero && !heroFailed ? (
+          <img
+            src={hero}
+            alt={`${entry.name} 3D preview`}
+            className="h-full w-full object-contain p-8"
+            onError={() => setHeroFailed(true)}
+          />
         ) : (
-          <div className="flex h-full items-center justify-center text-sm text-muted">No 3D preview yet.</div>
+          <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-muted">
+            <CatalogThumb name={entry.name} className="h-16 w-16 text-lg" />
+            No 3D preview yet.
+          </div>
         )}
       </div>
       {entry.description && <div className="border-t border-border px-4 py-3 text-[13px] text-muted">{entry.description}</div>}

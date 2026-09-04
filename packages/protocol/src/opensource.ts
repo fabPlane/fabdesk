@@ -80,3 +80,19 @@ export const OrderSession = z.object({
   steps: z.array(OrderStep),
 });
 export type OrderSession = z.infer<typeof OrderSession>;
+
+/** Two-letter tile used when a catalog preview image is missing or fails to load. */
+export function catalogInitials(name: string): string {
+  const words = name
+    .trim()
+    .split(/[\s/_-]+/)
+    .map((word) => word.replace(/[^A-Za-z0-9]/g, ""))
+    .filter(Boolean);
+  if (words.length >= 2) {
+    const first = words[0]?.[0] ?? "?";
+    const second = words[1]?.[0] ?? "";
+    return `${first}${second}`.toUpperCase();
+  }
+  const single = words[0] ?? "?";
+  return (single.slice(0, 2) || "?").toUpperCase();
+}

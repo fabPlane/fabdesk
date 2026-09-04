@@ -29,6 +29,7 @@ import type { ProjectStore } from "../projects";
 import type { AgentRunManager } from "../agent-runs";
 import { logger, errMsg } from "../log";
 import { allowedCloneUrl, fetchOpenCatalog, findCatalogProject } from "../opensource/catalog";
+import { createPreviewCache, resolveCatalogPreview } from "../opensource/preview";
 import { assessOrderReadiness, orderVendors, startOrderSession } from "../opensource/order";
 import { remixCatalogProject } from "../opensource/remix";
 import { applyErrorReporting, captureCoreException } from "../sentry";
@@ -120,7 +121,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
   // Bearer auth for everything else (`?token=` allowed for SSE / WS which cannot set headers).
   app.use("*", async (c, next) => {
     if (c.req.path === "/health") return next();
-    const allowQuery = c.req.path === "/events" || c.req.path === "/ws";
+    const allowQuery = c.req.path === "/events" || c.req.path === "/ws" || c.req.path.startsWith("/opensource/preview/");
     const token = extractToken(c.req.raw, { allowQuery });
     if (!deps.tokens.verify(token)) return c.json({ error: "unauthorized" }, 401);
     c.set("token", token as string);
@@ -294,9 +295,25 @@ export function createApp(deps: AppDeps): Hono<Env> {
   });
 
   /* ---------- open-source catalog ---------- */
+  const previewCache = createPreviewCache();
   app.get("/opensource", async (c) => {
     const index = await fetchOpenCatalog(deps.config.apiOrigin, c.req.query("q") ?? undefined);
     return c.json(index);
+  });
+  app.get("/opensource/preview/:owner/:slug", async (c) => {
+    const index = await fetchOpenCatalog(deps.config.apiOrigin);
+    const project = findCatalogProject(index, `${c.req.param("owner")}/${c.req.param("slug")}`);
+    if (!project) return c.json({ error: "not found" }, 404);
+    const role = c.req.query("role") === "hero" ? "hero" : "preview";
+    const image = await resolveCatalogPreview(project, { cache: previewCache, role });
+    const body = new Uint8Array(image.body);
+    return new Response(body, {
+      headers: {
+        "content-type": image.contentType,
+        "content-length": String(body.byteLength),
+        "cache-control": "private, max-age=3600",
+      },
+    });
   });
   app.get("/opensource/projects/:owner/:slug", async (c) => {
     const index = await fetchOpenCatalog(deps.config.apiOrigin);

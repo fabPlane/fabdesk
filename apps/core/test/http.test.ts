@@ -341,6 +341,13 @@ describe("http daemon", () => {
     const jlc = await api(`/projects/${created.id}/order`, { method: "POST", body: JSON.stringify({ vendor: "jlcpcb" }) });
     expect(jlc.status).toBe(200);
     expect(((await jlc.json()) as { enabled: boolean; orderUrl: string }).orderUrl).toContain("jlcpcb.com");
+
+    expect((await fetch(`${daemon.url}/opensource/preview/tensorfleet/koyomi-lvds-hat`)).status).toBe(401);
+    expect((await fetch(`${daemon.url}/opensource/preview/nope/nope?token=${daemon.token}`)).status).toBe(404);
+    const preview = await fetch(`${daemon.url}/opensource/preview/tensorfleet/koyomi-lvds-hat?token=${daemon.token}`);
+    expect(preview.status).toBe(200);
+    expect(preview.headers.get("content-type") ?? "").toMatch(/^image\//);
+    expect((await preview.arrayBuffer()).byteLength).toBeGreaterThan(64);
   });
 
   test("PATCH /threads/:id persists pin and lists pinned first", async () => {

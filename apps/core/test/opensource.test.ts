@@ -5,6 +5,14 @@ import { join } from "node:path";
 import { Store } from "../src/db";
 import { allowedCloneUrl, fetchOpenCatalog, findCatalogProject } from "../src/opensource/catalog";
 import { assessOrderReadiness, startOrderSession } from "../src/opensource/order";
+import {
+  createPreviewCache,
+  fallbackPreviewSvg,
+  isRateLimitedPreviewHost,
+  previewCandidateUrls,
+  resolveCatalogPreview,
+  sniffImageType,
+} from "../src/opensource/preview";
 import { OPEN_CATALOG_SEED } from "../src/opensource/seed";
 import { ProjectStore } from "../src/projects";
 
@@ -35,10 +43,122 @@ describe("open catalog", () => {
     expect(findCatalogProject(index, "tensorfleet/koyomi-lvds-hat")?.name).toBe("Koyomi LVDS HAT");
   });
 
+  test("seed preview URLs are not GitHub Open Graph endpoints", () => {
+    expect(OPEN_CATALOG_SEED.every((p) => !isRateLimitedPreviewHost(p.previewUrl))).toBe(true);
+    expect(OPEN_CATALOG_SEED.every((p) => p.previewUrl.startsWith("https://"))).toBe(true);
+  });
+
   test("allowedCloneUrl only accepts https GitHub git URLs", () => {
     expect(allowedCloneUrl("https://github.com/TensorFleet/koyomi-lvds-hat.git")).toBe(true);
     expect(allowedCloneUrl("https://evil.example/x.git")).toBe(false);
     expect(allowedCloneUrl("git@github.com:TensorFleet/koyomi-lvds-hat.git")).toBe(false);
+  });
+});
+
+describe("catalog preview proxy", () => {
+  const png = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="), (c) =>
+    c.charCodeAt(0),
+  );
+
+  test("sniffImageType accepts PNG and rejects GitHub's Too many body", () => {
+    expect(sniffImageType(png)).toBe("image/png");
+    expect(sniffImageType(new TextEncoder().encode("Too many"))).toBeNull();
+  });
+
+  test("previewCandidateUrls skips Open Graph until after the GitHub avatar", () => {
+    const project = OPEN_CATALOG_SEED.find((p) => p.id === "blackmagic-debug/blackmagic")!;
+    const og = { ...project, previewUrl: "https://opengraph.github.com/repo/blackmagic-debug/blackmagic" };
+    expect(previewCandidateUrls(og)[0]).toBe("https://avatars.githubusercontent.com/blackmagic-debug");
+    expect(previewCandidateUrls(og).at(-1)).toBe("https://opengraph.github.com/repo/blackmagic-debug/blackmagic");
+  });
+
+  test("previewCandidateUrls puts the hero image first when role is hero", () => {
+    const project = {
+      ...OPEN_CATALOG_SEED[0]!,
+      previewUrl: "https://example.com/thumb.png",
+      heroUrl: "https://example.com/hero.png",
+    };
+    expect(previewCandidateUrls(project)[0]).toBe("https://example.com/thumb.png");
+    expect(previewCandidateUrls(project, "hero")[0]).toBe("https://example.com/hero.png");
+  });
+
+  test("resolveCatalogPreview aborts oversized bodies without buffering the rest", async () => {
+    let pulled = 0;
+    const chunk = new Uint8Array(64 * 1024).fill(0xff);
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += chunk.byteLength;
+        controller.enqueue(chunk);
+      },
+    });
+    const { heroUrl: _hero, ...base } = OPEN_CATALOG_SEED[0]!;
+    const project = { ...base, previewUrl: "https://example.com/huge.png" };
+    const image = await resolveCatalogPreview(project, {
+      cache: createPreviewCache(),
+      fetchImpl: async (url) => {
+        if (String(url).includes("huge")) return new Response(stream);
+        return new Response(png, { headers: { "content-type": "image/png" } });
+      },
+    });
+    expect(image.contentType).toBe("image/png");
+    expect(image.body[0]).toBe(0x89);
+    expect(pulled).toBeGreaterThan(5_000_000);
+    expect(pulled).toBeLessThan(5_000_000 + 64 * 1024 * 3);
+  });
+
+  test("resolveCatalogPreview skips a declared Content-Length over the cap", async () => {
+    const { heroUrl: _hero, ...base } = OPEN_CATALOG_SEED[0]!;
+    const project = { ...base, previewUrl: "https://example.com/huge.png" };
+    let cancelled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(new Uint8Array(1024));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const image = await resolveCatalogPreview(project, {
+      cache: createPreviewCache(),
+      fetchImpl: async (url) => {
+        if (String(url).includes("huge")) {
+          return new Response(stream, { headers: { "content-length": "9000000" } });
+        }
+        return new Response(png, { headers: { "content-type": "image/png" } });
+      },
+    });
+    expect(image.contentType).toBe("image/png");
+    expect(cancelled).toBe(true);
+  });
+
+  test("resolveCatalogPreview caches a fetched image and falls back to SVG", async () => {
+    const project = OPEN_CATALOG_SEED[0]!;
+    const cache = createPreviewCache();
+    const image = await resolveCatalogPreview(project, {
+      cache,
+      fetchImpl: async () => new Response(png, { headers: { "content-type": "text/plain" } }),
+    });
+    expect(image.contentType).toBe("image/png");
+    expect(image.body[0]).toBe(0x89);
+
+    let fetches = 0;
+    const cached = await resolveCatalogPreview(project, {
+      cache,
+      fetchImpl: async () => {
+        fetches += 1;
+        throw new Error("should not refetch");
+      },
+    });
+    expect(fetches).toBe(0);
+    expect(cached.body).toBe(image.body);
+
+    const dead = await resolveCatalogPreview(project, {
+      cache: createPreviewCache(),
+      fetchImpl: async () => new Response("Too many", { status: 200, headers: { "content-type": "image/png" } }),
+    });
+    expect(dead.contentType.startsWith("image/svg+xml")).toBe(true);
+    expect(new TextDecoder().decode(dead.body)).toContain("KL");
+    expect(fallbackPreviewSvg(project.name).contentType.startsWith("image/svg+xml")).toBe(true);
   });
 });
 

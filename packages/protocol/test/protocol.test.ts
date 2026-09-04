@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { CoreEvent, DaemonHandshake, LatestRelease, ReleaseManifest, RouteFrameLine, topicMatches } from "../src/index";
+import { catalogInitials, CoreEvent, DaemonHandshake, LatestRelease, ReleaseManifest, RouteFrameLine, topicMatches } from "../src/index";
 
 describe("topicMatches", () => {
   test("exact, wildcard and prefix globs", () => {
@@ -28,6 +28,14 @@ describe("schemas", () => {
     expect(manifest.assets[0]?.platform).toBe("darwin");
     expect(ReleaseManifest.safeParse({ ...manifest, version: "1.2" }).success).toBe(false);
   });
+  test("catalogInitials uses the first two words, else the first two letters", () => {
+    expect(catalogInitials("HackRF One")).toBe("HO");
+    expect(catalogInitials("Koyomi LVDS HAT")).toBe("KL");
+    expect(catalogInitials("iCEBreaker FPGA")).toBe("IF");
+    expect(catalogInitials("crkbd")).toBe("CR");
+    expect(catalogInitials("   ")).toBe("?");
+  });
+
   test("DaemonHandshake requires a real token", () => {
     const ok = { version: "0.1.0", pid: 1, port: 2, token: "x".repeat(32), startedAt: "now", channel: "public", authMode: "local" };
     expect(DaemonHandshake.parse(ok).host).toBe("127.0.0.1");
