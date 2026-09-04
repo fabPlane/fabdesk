@@ -86,7 +86,7 @@ function createWindow(): BrowserWindow {
   }
   win.once("ready-to-show", () => win.show());
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
+    if (/^(https?|file):\/\//i.test(url)) void shell.openExternal(url);
     return { action: "deny" };
   });
   win.webContents.on("will-navigate", (e, url) => {

@@ -78,7 +78,9 @@ ${sketches}
 3. Build with the \`${mcp}\` build tool; fix every error and rebuild until it passes.
 4. Route with the routing tool, then convert to KiCad.
 5. Run DRC/ERC; fix the source (not the generated files) and repeat from step 3 while anything fails.
-6. Render, then summarise what the board does, the parts used and any open issues.
+6. Render, then summarise what the board does, the parts used and any open issues. Render tools attach
+   images directly in chat and return a \`fileUrl\` / \`url\` field. When the user asks for links, give
+   those browser-openable \`file://\` URLs as plain text.
 
 Do not run \`git\`, install packages, or touch files outside this directory unless the prompt asks for it.
 

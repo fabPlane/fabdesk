@@ -30,6 +30,7 @@ const api = {
     return () => ipcRenderer.removeListener("fabdesk:core-status", listener);
   },
   openExternal: (url: string) => ipcRenderer.invoke("fabdesk:open-external", url),
+  openPath: (path: string) => ipcRenderer.invoke("fabdesk:open-path", path),
   openLogs: () => ipcRenderer.invoke("fabdesk:open-logs"),
   pickFile: (opts?: PickFileOptions) => ipcRenderer.invoke("fabdesk:pick-file", opts ?? {}),
   localAuthAllowed: () => ipcRenderer.invoke("fabdesk:local-auth-allowed"),

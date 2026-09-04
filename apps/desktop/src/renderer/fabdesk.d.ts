@@ -29,6 +29,7 @@ export interface FabdeskBridge {
   restartCore(): Promise<void>;
   onCoreStatus(cb: (info: CoreInfo) => void): () => void;
   openExternal(url: string): Promise<void>;
+  openPath(path: string): Promise<void>;
   openLogs(): Promise<void>;
   pickFile(opts?: PickFileOptions): Promise<string[]>;
   localAuthAllowed(): Promise<boolean>;

@@ -2,7 +2,7 @@
 import { z } from "zod/v4";
 import { PROJECT_FILES, writeAtomic } from "../fs";
 import { defineTool } from "../registry";
-import { loadCircuitJson, ok, p, requireBoard, requireKicad } from "./common";
+import { fileUrl, loadCircuitJson, ok, p, requireBoard, requireKicad } from "./common";
 
 export const render_schematic_svg = defineTool({
   name: "render_schematic_svg",
@@ -17,7 +17,8 @@ export const render_schematic_svg = defineTool({
     const svg = ctx.services.tscircuit.schematicSvg(circuitJson);
     const output = p(project, PROJECT_FILES.renders, "schematic.svg");
     await writeAtomic(output, svg);
-    return ok(`Rendered schematic from ${source} to ${PROJECT_FILES.renders}/schematic.svg (${svg.length} bytes).`, { path: output, bytes: svg.length }, { images: [{ path: output, mime: "image/svg+xml" }] });
+    const url = fileUrl(output);
+    return ok(`Rendered schematic from ${source} to ${PROJECT_FILES.renders}/schematic.svg (${svg.length} bytes). Browser URL: ${url}`, { path: output, url, fileUrl: url, bytes: svg.length }, { images: [{ path: output, mime: "image/svg+xml" }] });
   },
 });
 
@@ -34,7 +35,8 @@ export const render_pcb_svg = defineTool({
     const svg = ctx.services.tscircuit.pcbSvg(circuitJson);
     const output = p(project, PROJECT_FILES.renders, "pcb.svg");
     await writeAtomic(output, svg);
-    return ok(`Rendered PCB from ${source} to ${PROJECT_FILES.renders}/pcb.svg (${svg.length} bytes).`, { path: output, bytes: svg.length }, { images: [{ path: output, mime: "image/svg+xml" }] });
+    const url = fileUrl(output);
+    return ok(`Rendered PCB from ${source} to ${PROJECT_FILES.renders}/pcb.svg (${svg.length} bytes). Browser URL: ${url}`, { path: output, url, fileUrl: url, bytes: svg.length }, { images: [{ path: output, mime: "image/svg+xml" }] });
   },
 });
 
@@ -54,7 +56,8 @@ export const render_glb = defineTool({
     ctx.progress(0.2, "exporting glb");
     const res = await ctx.services.kicad.exportGlb(cli, { board, output, signal: ctx.signal });
     ctx.progress(1, "done");
-    return ok(`Exported ${PROJECT_FILES.renders}/board.glb${res.fused ? " (fused shapes)" : ""}.${res.warnings.length ? `\nWarnings:\n${res.warnings.map((w) => `- ${w}`).join("\n")}` : ""}`, { path: output, ...res });
+    const url = fileUrl(output);
+    return ok(`Exported ${PROJECT_FILES.renders}/board.glb${res.fused ? " (fused shapes)" : ""}. Browser URL: ${url}${res.warnings.length ? `\nWarnings:\n${res.warnings.map((w) => `- ${w}`).join("\n")}` : ""}`, { path: output, url, fileUrl: url, ...res });
   },
 });
 

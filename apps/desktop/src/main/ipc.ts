@@ -51,6 +51,11 @@ export function registerIpc(supervisor: CoreSupervisor): void {
     if (typeof url !== "string" || !/^https?:\/\//i.test(url)) throw new Error("only http(s) URLs may be opened");
     await shell.openExternal(url);
   });
+  ipcMain.handle("fabdesk:open-path", async (_e, path: unknown) => {
+    if (typeof path !== "string" || !path.startsWith("/")) throw new Error("an absolute local path is required");
+    const error = await shell.openPath(path);
+    if (error) throw new Error(error);
+  });
   ipcMain.handle("fabdesk:open-logs", async () => {
     await shell.openPath(supervisor.logPath());
   });

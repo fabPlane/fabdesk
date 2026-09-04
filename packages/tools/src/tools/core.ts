@@ -4,7 +4,7 @@ import { z } from "zod/v4";
 import { PROJECT_FILES, exists, mtimeMs, readJsonOrNull, writeJson } from "../fs";
 import { ToolError, ToolsetId, defineTool, TOOLSETS } from "../registry";
 import type { BuildResult, DrcReport } from "../services";
-import { loadCircuitJson, ok, p, requireKicad, table, writeReport } from "./common";
+import { fileUrl, loadCircuitJson, ok, p, requireKicad, table, writeReport } from "./common";
 import { runRoute, RouteRunArgs } from "./route";
 import { convertProject } from "./kicad";
 
@@ -285,7 +285,8 @@ export const render_board = defineTool({
     ctx.progress(0.3, "rendering");
     await ctx.services.kicad.renderPng(cli, { board, output, view, width, height, quality, signal: ctx.signal });
     ctx.progress(1, "done");
-    return ok(`Rendered ${view} view to ${PROJECT_FILES.renders}/${view}.png (${width}×${height}).`, { path: output, view, width, height }, { images: [{ path: output, mime: "image/png" }] });
+    const url = fileUrl(output);
+    return ok(`Rendered ${view} view to ${PROJECT_FILES.renders}/${view}.png (${width}×${height}). Browser URL: ${url}`, { path: output, url, fileUrl: url, view, width, height }, { images: [{ path: output, mime: "image/png" }] });
   },
 });
 

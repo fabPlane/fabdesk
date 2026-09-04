@@ -34,6 +34,7 @@ const host: HostAdapter = bridge
       platform: bridge.platform,
       devBuild: bridge.devBuild,
       openExternal: (url) => bridge.openExternal(url),
+      openPath: (path) => bridge.openPath(path),
       pickFile: (opts) => bridge.pickFile(opts),
       localAuthAllowed: () => bridge.localAuthAllowed(),
       setLocalAuth: (enabled) => bridge.setLocalAuth(enabled),

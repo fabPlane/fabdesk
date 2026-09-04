@@ -254,7 +254,7 @@ function registerPrompts(server: McpServer): void {
           "3. Run circuit_build; on errors call circuit_read_errors, fix circuit.tsx and rebuild until ok. Then load_toolset circuit and run circuit_checks.",
           "4. Run route_run. If nets stay open, adjust placement (pcbX/pcbY, layer) or board size and reroute; use route_unroute + route_run{onlyConnections} for partial reroutes.",
           "5. Run verify_drc (it converts to KiCad). Fix errors and unconnected items; warnings only need review.",
-          "6. Run render_board and check the image; summarise the design, open issues and next steps for the user.",
+          "6. Run render_board and check the image; summarise the design, open issues and next steps for the user. Render images are attached directly in chat and the tool returns a fileUrl/url field; when the user asks for links, provide those browser-openable file:// URLs as plain text.",
         ]
           .filter(Boolean)
           .join("\n"),

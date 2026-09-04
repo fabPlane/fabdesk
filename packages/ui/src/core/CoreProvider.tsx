@@ -20,6 +20,8 @@ export interface HostAdapter {
   /** Dev-profile build (unpackaged, or FABDESK_DEV_PROFILE=1): staging/local sign-in is shown up front. */
   devBuild?: boolean;
   openExternal: (url: string) => Promise<void> | void;
+  /** Open a local file with the operating system's default application (Electron only). */
+  openPath?: (path: string) => Promise<void> | void;
   pickFile: (opts?: FilePickOptions) => Promise<string[]>;
   localAuthAllowed: () => Promise<boolean>;
   setLocalAuth?: (enabled: boolean) => Promise<void>;

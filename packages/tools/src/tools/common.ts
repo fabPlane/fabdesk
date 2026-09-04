@@ -8,6 +8,10 @@ export function p(project: ProjectHandle, ...parts: string[]): string {
   return join(project.dir, ...parts);
 }
 
+export function fileUrl(path: string): string {
+  return `file://${path.split("/").map(encodeURIComponent).join("/")}`;
+}
+
 /** Prefer `circuit.routed.json` when it is newer than `circuit.json`. */
 export async function loadCircuitJson(
   project: ProjectHandle,
