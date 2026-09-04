@@ -11,7 +11,7 @@ export function ThreadView() {
   const activeThreadId = useUiStore((s) => s.activeThreadId);
   const projectId = useUiStore((s) => s.activeProjectId);
   const setActiveThread = useUiStore((s) => s.setActiveThread);
-  const threads = useThreads({ projectId });
+  const threads = useThreads();
   const thread = threads.data?.find((t) => t.id === activeThreadId) ?? null;
   const messages = useMessages(activeThreadId);
   const { create } = useThreadMutations();
