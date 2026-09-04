@@ -1,5 +1,5 @@
 import { z } from "zod/v4";
-import { ProjectSummary } from "./api";
+import { ProjectDetail } from "./api";
 
 export const OpenCatalogSource = z.object({
   provider: z.literal("github"),
@@ -44,8 +44,9 @@ export const RemixOpenSource = z.object({
 });
 
 export const RemixResult = z.object({
-  project: ProjectSummary,
+  project: ProjectDetail,
   sourceId: z.string(),
+  pcbPath: z.string().optional(),
 });
 export type RemixResult = z.infer<typeof RemixResult>;
 

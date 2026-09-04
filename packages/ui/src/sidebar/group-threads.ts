@@ -22,12 +22,15 @@ export function groupThreadsByProject(threads: readonly Thread[], projects: read
     list.push(thread);
     byProject.set(thread.projectId, list);
   }
-  const groups: ProjectThreadGroup[] = [...byProject.entries()]
-    .map(([projectId, items]) => ({
+  // Remixed (and newly created) projects have zero threads until the first chat.
+  // Still list them so Remix can select the clone immediately.
+  const projectIds = new Set([...byProject.keys(), ...projects.map((p) => p.id)]);
+  const groups: ProjectThreadGroup[] = [...projectIds]
+    .map((projectId) => ({
       key: projectId,
       title: names.get(projectId) ?? "Unknown project",
       projectId,
-      threads: items,
+      threads: byProject.get(projectId) ?? [],
     }))
     .sort((a, b) => a.title.localeCompare(b.title));
   if (unassigned.length) groups.push({ key: "unassigned", title: "No project", projectId: null, threads: unassigned });

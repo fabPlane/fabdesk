@@ -35,8 +35,17 @@ describe("groupThreadsByProject", () => {
     expect(groups[2]?.projectId).toBeNull();
   });
 
-  test("skips archived threads", () => {
+  test("includes projects that have no threads yet", () => {
+    const groups = groupThreadsByProject([thread("t1", "A", "p1")], projects);
+    expect(groups.map((g) => g.title)).toEqual(["Amplifier", "Blinky"]);
+    expect(groups.find((g) => g.projectId === "p2")?.threads).toEqual([]);
+    expect(groups.find((g) => g.projectId === "p1")?.threads.map((t) => t.id)).toEqual(["t1"]);
+  });
+
+  test("skips archived threads but keeps empty projects", () => {
     const archived = { ...thread("x", "old", "p1"), archived: true };
-    expect(groupThreadsByProject([archived], projects)).toEqual([]);
+    const groups = groupThreadsByProject([archived], projects);
+    expect(groups.map((g) => g.title)).toEqual(["Amplifier", "Blinky"]);
+    expect(groups.every((g) => g.threads.length === 0)).toBe(true);
   });
 });

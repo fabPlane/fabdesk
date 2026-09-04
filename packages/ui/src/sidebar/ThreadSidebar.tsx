@@ -236,7 +236,11 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
               <div key={group.key} className="mb-2">
                 <button
                   type="button"
-                  className="flex w-full items-center justify-between px-2 pb-1 pt-2 text-left text-[10.5px] font-semibold uppercase tracking-wide text-muted hover:text-fg"
+                  className={cn(
+                    "flex w-full items-center justify-between px-2 pb-1 pt-2 text-left text-[10.5px] font-semibold uppercase tracking-wide hover:text-fg",
+                    group.projectId && group.projectId === projectId ? "text-fg" : "text-muted",
+                  )}
+                  aria-current={group.projectId && group.projectId === projectId ? "true" : undefined}
                   onClick={() => group.projectId && setActiveProject(group.projectId)}
                 >
                   <span>{group.title}</span>
@@ -268,7 +272,10 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
               {section("Older", groups.dated.Older)}
             </>
           )}
-        {threads.data && threads.data.length === 0 && (
+        {!threads.isLoading && sidebarListTab === "projects" && projectGroups.length === 0 && (
+          <div className="px-2 py-6 text-center text-xs text-muted">No projects yet.</div>
+        )}
+        {sidebarListTab !== "projects" && threads.data && threads.data.length === 0 && (
           <div className="px-2 py-6 text-center text-xs text-muted">No threads yet.</div>
         )}
       </div>

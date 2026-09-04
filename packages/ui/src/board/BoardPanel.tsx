@@ -41,7 +41,7 @@ export function BoardPanel() {
   const order = useProjectOrder(projectId);
   const mod = modKey(host.platform);
   return (
-    <div className="flex h-full min-w-0 flex-col bg-panel">
+    <div className="flex h-full min-w-0 flex-col bg-panel" data-testid="board-panel">
       <div className="flex h-10 items-center gap-1 border-b border-border px-2">
         <Tabs
           className="min-w-0 flex-1"
