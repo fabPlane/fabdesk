@@ -1,14 +1,19 @@
 #!/bin/bash
 # Runs inside the macOS test VM (copied there by scripts/vm/mac.sh).
 # Usage: mac-test.sh <installer.dmg|.zip> <out-dir>
-# Installs Fabdesk the way a user would, records the Gatekeeper verdict, launches the app with the
+# Installs Fabplane the way a user would, records the Gatekeeper verdict, launches the app with the
 # automation bridge on, checks the core daemon, grabs a screenshot, writes <out-dir>/report.json.
 set -uo pipefail
 INSTALLER="$1"; OUT="$2"; mkdir -p "$OUT"
-APP=/Applications/Fabdesk.app
-UD="$HOME/Library/Application Support/Fabdesk"
+APP=/Applications/Fabplane.app
+UD="$HOME/Library/Application Support/Fabplane"
+UD_PREV="$HOME/Library/Application Support/Fabdesk"              # productName before the Fabplane rename
 UD_LEGACY="$HOME/Library/Application Support/@fabdesk/desktop"   # builds before 0.1.40
-pick_ud() { [ -f "$UD/daemon.json" ] || { [ -f "$UD_LEGACY/daemon.json" ] && UD="$UD_LEGACY"; }; }
+pick_ud() {
+  if [ -f "$UD/daemon.json" ]; then return; fi
+  if [ -f "$UD_PREV/daemon.json" ]; then UD="$UD_PREV"; return; fi
+  if [ -f "$UD_LEGACY/daemon.json" ]; then UD="$UD_LEGACY"; fi
+}
 LOG="$OUT/log.txt"; exec > >(tee -a "$LOG") 2>&1
 ERRORS=(); R_INSTALL="" R_GK="" R_CS="" R_CORE="" R_HEALTH="" R_SHOT="" LAUNCH_MS=""
 err() { ERRORS+=("$1"); echo "ERROR: $1"; }
@@ -25,7 +30,7 @@ PY
 trap write_report EXIT
 
 echo "== host: $(sw_vers -productVersion) $(uname -m)  installer: $INSTALLER"
-rm -rf "$APP" "$UD" "$UD_LEGACY"
+rm -rf "$APP" /Applications/Fabdesk.app "$UD" "$UD_PREV" "$UD_LEGACY"
 
 # Simulate a browser download: quarantine the installer, so Gatekeeper evaluates it like a user's copy.
 xattr -w com.apple.quarantine "0083;$(printf '%x' "$(date +%s)");Safari;" "$INSTALLER" 2>/dev/null || true
@@ -35,7 +40,10 @@ case "$INSTALLER" in
     if ! hdiutil verify "$INSTALLER" >/dev/null 2>&1; then err "hdiutil verify failed (corrupt image)"; exit 0; fi
     MNT="$(hdiutil attach -nobrowse -readonly "$INSTALLER" | awk -F'\t' '/\/Volumes\//{print $NF}' | tail -1)"
     [ -d "$MNT" ] || { err "dmg did not mount"; exit 0; }
-    cp -R "$MNT/Fabdesk.app" /Applications/ || err "copy to /Applications failed"
+    BUNDLE="$(ls -d "$MNT"/Fabplane.app "$MNT"/Fabdesk.app 2>/dev/null | head -1)"
+    [ -n "$BUNDLE" ] || { err "dmg has no Fabplane.app / Fabdesk.app"; hdiutil detach "$MNT" -quiet || true; exit 0; }
+    APP="/Applications/$(basename "$BUNDLE")"
+    cp -R "$BUNDLE" /Applications/ || err "copy to /Applications failed"
     hdiutil detach "$MNT" -quiet || true
     R_INSTALL="dmg mounted at $MNT, copied to /Applications" ;;
   *.zip)
@@ -43,6 +51,7 @@ case "$INSTALLER" in
     R_INSTALL="zip extracted to /Applications" ;;
   *) err "unknown installer type"; exit 0 ;;
 esac
+if [ ! -d "$APP" ] && [ -d /Applications/Fabdesk.app ]; then APP=/Applications/Fabdesk.app; fi
 [ -d "$APP" ] || { err "no $APP after install"; exit 0; }
 
 # Gatekeeper verdict on the quarantined app (what a user sees on first launch). VM base images ship
@@ -62,7 +71,9 @@ R_CORE="$("$CORE" version 2>&1 | head -1)" || err "fabdesk-core version failed: 
 
 mkdir -p "$UD"
 T0=$(python3 -c 'import time;print(int(time.time()*1000))')
-FABDESK_AUTOMATION=1 FABDESK_UPDATE_CHECK=0 "$APP/Contents/MacOS/Fabdesk" >"$OUT/app-stdout.txt" 2>&1 &
+MAC_BIN="$APP/Contents/MacOS/Fabplane"
+[ -x "$MAC_BIN" ] || MAC_BIN="$APP/Contents/MacOS/Fabdesk"
+FABDESK_AUTOMATION=1 FABDESK_UPDATE_CHECK=0 "$MAC_BIN" >"$OUT/app-stdout.txt" 2>&1 &
 APP_PID=$!
 for i in $(seq 1 180); do pick_ud; [ -f "$UD/daemon.json" ] && [ -f "$UD/app-bridge.json" ] && break; sleep 1; done   # x64 under Rosetta translates ~200 MB on first launch
 echo "userData: $UD"
@@ -82,5 +93,5 @@ if [ -f "$UD/app-bridge.json" ]; then
 else err "app-bridge.json missing (FABDESK_AUTOMATION not honored?)"; fi
 screencapture -x "$OUT/screen.png" 2>/dev/null || true
 cp "$UD"/*.log "$OUT/" 2>/dev/null || true
-kill $APP_PID 2>/dev/null; sleep 2; pkill -x Fabdesk 2>/dev/null || true
+kill $APP_PID 2>/dev/null; sleep 2; pkill -x Fabplane 2>/dev/null || pkill -x Fabdesk 2>/dev/null || true
 echo "== done"

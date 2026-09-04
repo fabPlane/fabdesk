@@ -1,11 +1,16 @@
 #!/bin/bash
 # Runs inside the Ubuntu test VM (copied there by scripts/vm/linux.sh).
-# Usage: linux-test.sh <Fabdesk.AppImage|.deb> <out-dir>
+# Usage: linux-test.sh <Fabplane.AppImage|.deb> <out-dir>
 set -uo pipefail
 INSTALLER="$1"; OUT="$2"; mkdir -p "$OUT"
-UD="$HOME/.config/Fabdesk"
+UD="$HOME/.config/Fabplane"
+UD_PREV="$HOME/.config/Fabdesk"              # productName before the Fabplane rename
 UD_LEGACY="$HOME/.config/@fabdesk/desktop"   # builds before 0.1.40
-pick_ud() { [ -f "$UD/daemon.json" ] || { [ -f "$UD_LEGACY/daemon.json" ] && UD="$UD_LEGACY"; }; }
+pick_ud() {
+  if [ -f "$UD/daemon.json" ]; then return; fi
+  if [ -f "$UD_PREV/daemon.json" ]; then UD="$UD_PREV"; return; fi
+  if [ -f "$UD_LEGACY/daemon.json" ]; then UD="$UD_LEGACY"; fi
+}
 LOG="$OUT/log.txt"; exec > >(tee -a "$LOG") 2>&1
 ERRORS=(); R_INSTALL="" R_CORE="" R_HEALTH="" R_SHOT="" LAUNCH_MS="" BIN=""
 err() { ERRORS+=("$1"); echo "ERROR: $1"; }
@@ -20,7 +25,7 @@ PY
 }
 trap write_report EXIT
 echo "== host: $(. /etc/os-release; echo "$PRETTY_NAME") $(uname -m)  installer: $INSTALLER"
-rm -rf "$UD" "$UD_LEGACY"
+rm -rf "$UD" "$UD_PREV" "$UD_LEGACY"
 
 case "$INSTALLER" in
   *.AppImage)
@@ -31,8 +36,9 @@ case "$INSTALLER" in
     R_INSTALL="AppImage executable" ;;
   *.deb)
     sudo apt-get install -y "./$(basename "$INSTALLER")" >"$OUT/apt.txt" 2>&1 || sudo apt-get install -y "$INSTALLER" >>"$OUT/apt.txt" 2>&1 || err "apt install of the .deb failed (see apt.txt)"
-    BIN="$(command -v fabdesk || echo /opt/Fabdesk/fabdesk)"
-    [ -x "$BIN" ] || { err "no fabdesk binary after installing the .deb"; exit 0; }
+    BIN="$(command -v fabplane || command -v fabdesk || echo /opt/Fabplane/fabplane)"
+    [ -x "$BIN" ] || { [ -x /opt/Fabdesk/fabdesk ] && BIN=/opt/Fabdesk/fabdesk; }
+    [ -x "$BIN" ] || { err "no fabplane binary after installing the .deb"; exit 0; }
     R_INSTALL="deb installed, binary $BIN" ;;
   *) err "unknown installer type"; exit 0 ;;
 esac
@@ -42,7 +48,8 @@ if [ -n "$BIN" ] && [[ "$INSTALLER" == *.AppImage ]]; then
   ( cd "$OUT" && "$INSTALLER" --appimage-extract 'resources/core/*' >/dev/null 2>&1 ) || true
   CORE="$OUT/squashfs-root/resources/core/fabdesk-core"
 else
-  CORE="/opt/Fabdesk/resources/core/fabdesk-core"
+  CORE="/opt/Fabplane/resources/core/fabdesk-core"
+  [ -x "$CORE" ] || CORE="/opt/Fabdesk/resources/core/fabdesk-core"
 fi
 [ -x "$CORE" ] && { R_CORE="$("$CORE" version 2>&1 | head -1)" || err "fabdesk-core version failed: $R_CORE"; } || err "core binary not found at $CORE"
 

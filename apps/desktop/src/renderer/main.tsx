@@ -19,7 +19,7 @@ createRoot(root).render(
       <Sentry.ErrorBoundary
         fallback={
           <main className="p-6 text-sm">
-            Fabdesk hit an unexpected error. Please restart the app.
+            Fabplane hit an unexpected error. Please restart the app.
           </main>
         }
       >

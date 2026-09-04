@@ -58,7 +58,7 @@ resolve_installer() {
 import sys, json, re
 os_, arch, ext = sys.argv[1:4]
 d = json.load(sys.stdin)
-re_ = re.compile(r"^Fabdesk-" + re.escape(d["version"]) + rf"-{os_}-{arch}.*\.({ext})$")
+re_ = re.compile(r"^(Fabplane|Fabdesk)-" + re.escape(d["version"]) + rf"-{os_}-{arch}.*\.({ext})$")
 for a in d["assets"]:
     if re_.match(a["filename"]): print(d["tag"], a["url"], a["sha256"], a["filename"]); break
 ' "$os" "$arch" "$ext")"
@@ -74,19 +74,20 @@ for a in d["assets"]:
   if [ -n "$TAG" ]; then
     need gh "install GitHub CLI"
     dir="$CACHE_DIR/$TAG"; mkdir -p "$dir"
-    re="^Fabdesk-${TAG#v}-${os}-${arch}.*\.(${ext})$"
+    re="^(Fabplane|Fabdesk)-${TAG#v}-${os}-${arch}.*\.(${ext})$"
     out="$(ls "$dir" 2>/dev/null | grep -E "$re" | head -1 || true)"
     if [ -z "$out" ]; then
-      log "downloading Fabdesk-${TAG#v}-${os}-* from release $TAG"
-      gh release download "$TAG" --repo TensorFleet/fabdesk --dir "$dir" --pattern "Fabdesk-${TAG#v}-${os}-*" --clobber >&2
+      log "downloading Fabplane-/Fabdesk-${TAG#v}-${os}-* from release $TAG"
+      gh release download "$TAG" --repo TensorFleet/fabdesk --dir "$dir" --pattern "Fabplane-${TAG#v}-${os}-*" --clobber >&2 || true
+      gh release download "$TAG" --repo TensorFleet/fabdesk --dir "$dir" --pattern "Fabdesk-${TAG#v}-${os}-*" --clobber >&2 || true
       out="$(ls "$dir" | grep -E "$re" | head -1 || true)"
     fi
     [ -n "$out" ] || die "release $TAG has no file matching $re"
     echo "$dir/$out"; return
   fi
   dir="$REPO_ROOT/apps/desktop/release"
-  out="$(ls -t "$dir" 2>/dev/null | grep -E "^Fabdesk-.*-${os}-${arch}.*\.(${ext})$" | head -1 || true)"
-  [ -n "$out" ] || die "no Fabdesk-*-${os}-${arch}.(${ext}) in $dir; pass --file, --tag vX.Y.Z or --latest"
+  out="$(ls -t "$dir" 2>/dev/null | grep -E "^(Fabplane|Fabdesk)-.*-${os}-${arch}.*\.(${ext})$" | head -1 || true)"
+  [ -n "$out" ] || die "no Fabplane-*-${os}-${arch}.(${ext}) in $dir; pass --file, --tag vX.Y.Z or --latest"
   echo "$dir/$out"
 }
 

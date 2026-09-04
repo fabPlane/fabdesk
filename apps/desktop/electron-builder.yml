@@ -1,6 +1,10 @@
 # electron-builder configuration (plan section 9). Run `bun run package` after `bun run build:core`.
+# Keep appId as com.tensorfleet.fabdesk: Windows shortcuts, the taskbar AppUserModelId, and NSIS
+# uninstall/upgrade identity already shipped under it. Changing the id would orphan pinned
+# shortcuts and treat the next install as a new app. In-app updates fetch latest.json by URL and
+# do not key off appId. Visible names are productName / executableName (Fabplane / fabplane).
 appId: com.tensorfleet.fabdesk
-productName: Fabdesk
+productName: Fabplane
 copyright: Copyright © 2026 TensorFleet
 artifactName: ${productName}-${version}-${os}-${arch}.${ext}
 afterPack: scripts/after-pack.cjs
@@ -43,7 +47,8 @@ dmg:
   sign: false
 linux:
   icon: build/icons
-  executableName: fabdesk
+  # desktop Name=Fabplane (productName) and Exec=fabplane
+  executableName: fabplane
   category: Development
   target: [AppImage, deb]
   maintainer: TensorFleet
@@ -53,6 +58,7 @@ linux:
       filter: ["fabdesk-core*"]
 win:
   icon: build/icon.ico
+  executableName: fabplane
   # NSIS only: a portable target shares the artifact name and overwrote the installer in releases
   # (a portable exe ignores /S and runs from %TEMP%).
   target: [nsis]

@@ -104,7 +104,7 @@ describe("ui snapshot", () => {
       },
       auth: { mode: "local" },
       core: { url: "http://127.0.0.1:47831", status: { state: "ready" } },
-      page: { href: "http://localhost:5173/", title: "Fabdesk", width: 1440, height: 920, dpr: 2, composerMounted: true },
+      page: { href: "http://localhost:5173/", title: "Fabplane", width: 1440, height: 920, dpr: 2, composerMounted: true },
       newChatDraftKey: "__new__",
     });
     expect(snap.activeProjectId).toBe("p1");

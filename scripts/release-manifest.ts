@@ -51,7 +51,7 @@ function arg(name: string, fallback?: string): string {
   return value;
 }
 
-/** Classifies an electron-builder artifact name (`Fabdesk-0.1.42-mac-arm64.dmg`). */
+/** Classifies an electron-builder artifact name (`Fabplane-0.2.0-mac-arm64.dmg`). */
 export function classify(filename: string): Pick<ReleaseAsset, "platform" | "arch" | "kind"> | null {
   const lower = filename.toLowerCase();
   const arch: ReleaseArch = /arm64|aarch64/.test(lower) ? "arm64" : "x64";

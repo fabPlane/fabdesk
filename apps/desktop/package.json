@@ -1,8 +1,8 @@
 {
   "name": "@fabdesk/desktop",
-  "productName": "Fabdesk",
+  "productName": "Fabplane",
   "version": "0.2.0",
-  "description": "Fabdesk: AI PCB generator desktop app",
+  "description": "Fabplane: AI PCB generator desktop app",
   "author": {
     "name": "TensorFleet",
     "email": "hello@fabplane.com"

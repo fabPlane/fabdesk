@@ -38,11 +38,11 @@ shared with the website and must not be renamed.
   "releaseUrl": "https://github.com/TensorFleet/fabdesk/releases/tag/v0.1.42",
   "assets": [
     {
-      "filename": "Fabdesk-0.1.42-mac-arm64.dmg",
+      "filename": "Fabplane-0.1.42-mac-arm64.dmg",
       "platform": "darwin",
       "arch": "arm64",
       "kind": "dmg",
-      "url": "https://downloads.fabplane.com/desktop/v0.1.42/Fabdesk-0.1.42-mac-arm64.dmg",
+      "url": "https://downloads.fabplane.com/desktop/v0.1.42/Fabplane-0.1.42-mac-arm64.dmg",
       "sha256": "<hex>",
       "size": 123456789
     }
@@ -52,7 +52,10 @@ shared with the website and must not be renamed.
 
 `platform` ∈ `darwin | linux | win32`, `arch` ∈ `arm64 | x64`, `kind` ∈
 `dmg | zip | AppImage | deb | exe | portable`. Before the first release the website serves
-`{ "schema": 1, "version": null, "assets": [] }`.
+`{ "schema": 1, "version": null, "assets": [] }`. Releases through 0.1.x used `Fabdesk-` artifact
+prefixes; current builds use `Fabplane-`. `classify()` accepts both. The electron-builder `appId`
+stays `com.tensorfleet.fabdesk` so Windows shortcuts, the AppUserModelId, and NSIS upgrade
+identity do not reset; in-app updates fetch this feed by URL and do not use `appId`.
 
 ## Secrets
 
@@ -68,8 +71,8 @@ Without signing secrets the workflow still produces unsigned installers.
 ## Verifying a download
 
 ```bash
-shasum -a 256 Fabdesk-0.1.42-mac-arm64.dmg   # macOS / Linux
-certutil -hashfile Fabdesk-0.1.42-win-x64.exe SHA256   # Windows
+shasum -a 256 Fabplane-0.1.42-mac-arm64.dmg   # macOS / Linux
+certutil -hashfile Fabplane-0.1.42-win-x64.exe SHA256   # Windows
 ```
 
 ## Installer checks

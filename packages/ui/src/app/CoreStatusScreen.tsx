@@ -16,7 +16,7 @@ export function CoreStatusScreen({
   return (
     <div className="flex h-full items-center justify-center bg-bg p-6">
       <div className="w-full max-w-sm rounded-2xl border border-border bg-panel p-6 text-center shadow-xl">
-        <div className="mb-2 text-lg font-semibold">Fabdesk</div>
+        <div className="mb-2 text-lg font-semibold">Fabplane</div>
         {crashed ? (
           <>
             <div className="text-sm text-danger">Core daemon {state === "stopped" ? "stopped" : "is unavailable"}</div>
