@@ -11,6 +11,7 @@
 - Relative imports are extensionless (`./events`, not `./events.ts`); `allowImportingTsExtensions` is off, matching fabplane.
 - TypeScript is strict with `exactOptionalPropertyTypes` and `noUncheckedIndexedAccess`; use the `...(x ? { k: x } : {})` idiom for optional fields.
 - Daily jobs: security scan + issue filing is `.github/workflows/security-scan.yml` (`bun run security:scan` / `security:issues`). Open-PR relevance notifies the Grok Cloud Agent (`bun run pr:relevance`). See `docs/daily-jobs.md`.
+- Open-source catalog preview/photo images are published by the **fabplane.com** `catalog-sync` GitHub Action (`workflow_dispatch`, or a `main` push that touches catalog seed / preview generator paths only). Fabdesk merges do not upload to R2. Do not add a fabdesk workflow that syncs catalog images on every merge.
 
 ## Staging login (Cloud Agents)
 
