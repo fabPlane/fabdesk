@@ -32,6 +32,12 @@ FABPLANE_API_ORIGIN=http://fabplane-staging.tail4f6a7.ts.net:4000 \
 
 Never send those credentials to `https://api.fabplane.com`.
 
+## Backend deploys
+
+Backend / Hono API / production `api.fabplane.com` changes are **not** auto-deployed on merge to `main`. Merges to `main` only deploy the public Astro site (`deploy-public` → `fabplane.com`). Do not assume `https://api.fabplane.com` has the same code as `fabplane.com` or as `main`.
+
+If a backend change is needed: test on staging first (fabplane **Deploy staging backend** `workflow_dispatch`, or the Tailscale staging API above). After staging is verified, ask the user before deploying production. Production API deploys are manual.
+
 ## Source maps
 
 Never package, embed, or ship source maps inside Fabdesk, its installers, app
