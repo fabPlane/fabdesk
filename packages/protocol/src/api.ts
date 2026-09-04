@@ -62,6 +62,7 @@ export const Thread = z.object({
   projectId: ProjectId.nullable(),
   folderId: z.string().nullable(),
   title: z.string(),
+  /** Local-first flag persisted in fabdesk-core SQLite. Not synced to fabplane.com. */
   pinned: z.boolean(),
   archived: z.boolean(),
   agentId: AgentId,
