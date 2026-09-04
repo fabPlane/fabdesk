@@ -195,6 +195,9 @@ export class CoreClient {
     const s = qs.toString();
     return this.request(`/threads${s ? `?${s}` : ""}`);
   }
+  getThread(id: string): Promise<Thread> {
+    return this.request(`/threads/${encodeURIComponent(id)}`);
+  }
   createThread(input: CreateThreadInput): Promise<Thread> {
     return this.request("/threads", { method: "POST", json: input });
   }

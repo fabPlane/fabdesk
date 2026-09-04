@@ -84,6 +84,33 @@ describe("sqlite", () => {
     expect(() => store.settings.patch({ router: "bogus" })).toThrow();
   });
 
+  test("thread pin persists across database reopen", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "fabdesk-db-pin-"));
+    const path = join(dir, "fabdesk.db");
+    const store = new Store(openDatabase(path));
+    const older = store.threads.create({ agentId: "claude", title: "Keep me" });
+    const newer = store.threads.create({ agentId: "claude", title: "Newer" });
+    store.threads.patch(older.id, { pinned: true });
+    expect(store.threads.get(older.id)!.pinned).toBe(true);
+    expect(store.threads.list().map((t) => t.id)).toEqual([older.id, newer.id]);
+    store.db.close();
+
+    const reopened = new Store(openDatabase(path));
+    expect(reopened.threads.get(older.id)!.pinned).toBe(true);
+    expect(reopened.threads.list().map((t) => t.id)).toEqual([older.id, newer.id]);
+    reopened.threads.patch(older.id, { pinned: false });
+    reopened.threads.patch(newer.id, { pinned: true });
+    expect(reopened.threads.get(older.id)!.pinned).toBe(false);
+    expect(reopened.threads.get(newer.id)!.pinned).toBe(true);
+    reopened.db.close();
+
+    const swapped = new Store(openDatabase(path));
+    expect(swapped.threads.get(older.id)!.pinned).toBe(false);
+    expect(swapped.threads.get(newer.id)!.pinned).toBe(true);
+    expect(swapped.threads.list().map((t) => t.id)).toEqual([newer.id, older.id]);
+    swapped.db.close();
+  });
+
   test("ftsQuery quoting", () => {
     expect(ftsQuery("hello world")).toBe('"hello" "world"*');
     expect(ftsQuery('  a "b" ')).toBe('"a" "b"*');

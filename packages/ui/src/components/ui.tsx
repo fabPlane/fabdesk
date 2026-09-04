@@ -210,6 +210,7 @@ export function Tabs<T extends string>({
           role="tab"
           aria-selected={t.id === value}
           title={t.hint}
+          data-testid={`tab-${t.id}`}
           onClick={() => onChange(t.id)}
           className={cn(
             "h-7 rounded-md px-2.5 text-xs font-medium whitespace-nowrap transition-colors",

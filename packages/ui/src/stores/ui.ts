@@ -16,13 +16,17 @@ export const BOARD_TAB_LABELS: Record<BoardTab, string> = {
 export const SETTINGS_SECTIONS = ["agents", "kicad", "router", "auth", "appearance", "privacy", "shortcuts"] as const;
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 
-export const SIDEBAR_LIST_TABS = ["conversations", "projects", "open_source"] as const;
+export const SIDEBAR_LIST_TABS = ["projects", "open_source"] as const;
 export type SidebarListTab = (typeof SIDEBAR_LIST_TABS)[number];
 export const SIDEBAR_LIST_TAB_LABELS: Record<SidebarListTab, string> = {
-  conversations: "Conversations",
   projects: "Projects",
   open_source: "Open source",
 };
+
+/** Map a persisted or unknown tab id onto the current set (Conversations was removed). */
+export function normalizeSidebarListTab(tab: string | undefined | null): SidebarListTab {
+  return tab === "open_source" ? "open_source" : "projects";
+}
 
 export interface PendingAttachment {
   path: string;
@@ -86,7 +90,7 @@ export const useUiStore = create<UiState>()(
   boardOpen: true,
   activeThreadId: null,
   activeProjectId: null,
-  sidebarListTab: "conversations",
+  sidebarListTab: "projects",
   activeOpenSourceId: null,
   projectPickerOpen: false,
   orderFlowOpen: false,
@@ -105,7 +109,7 @@ export const useUiStore = create<UiState>()(
   setBoardOpen: (boardOpen) => set({ boardOpen }),
   setActiveThread: (activeThreadId) => set({ activeThreadId, ...(activeThreadId ? { activeOpenSourceId: null, orderFlowOpen: false } : {}) }),
   setActiveProject: (activeProjectId) => set({ activeProjectId }),
-  setSidebarListTab: (sidebarListTab) => set({ sidebarListTab }),
+  setSidebarListTab: (sidebarListTab) => set({ sidebarListTab: normalizeSidebarListTab(sidebarListTab) }),
   setActiveOpenSourceId: (activeOpenSourceId) =>
     set({
       activeOpenSourceId,
@@ -132,7 +136,14 @@ export const useUiStore = create<UiState>()(
 }),
     {
       name: "fabdesk.ui",
-      version: 2,
+      version: 3,
+      migrate: (persisted, _version) => {
+        const state = (persisted ?? {}) as Record<string, unknown>;
+        return {
+          ...state,
+          sidebarListTab: normalizeSidebarListTab(typeof state.sidebarListTab === "string" ? state.sidebarListTab : undefined),
+        };
+      },
       // Survive full reloads (Vite HMR fallbacks, core reloads) without leaking transient state.
       partialize: (s) => ({
         themeId: s.themeId,
