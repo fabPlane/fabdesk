@@ -17,6 +17,26 @@ Options (environment variables for `bun run dev`):
 - `FABDESK_DEV_PORT=0` for a random port per restart (the renderer follows automatically; external
   MCP configs won't).
 - `FABDESK_CHANNEL=internal` to include the js_autorouter adapter.
+- `FABDESK_DEV_PROFILE=1` forces the isolated "fabPlane Dev" identity on a packaged nightly;
+  `FABDESK_DEV_PROFILE=0` forces the production identity even when unpackaged.
+
+## Running next to an installed fabPlane
+
+Unpackaged `bun run dev` is **fabPlane Dev**: a separate Electron identity so it can stay open
+alongside the packaged production app (same idea as VS Code Insiders). Isolation, applied before
+the single-instance lock and any `userData` read:
+
+| | Production (packaged) | fabPlane Dev (`!app.isPackaged`, or `FABDESK_DEV_PROFILE=1`) |
+|---|---|---|
+| Name / window title | fabPlane | fabPlane Dev |
+| `appUserModelId` | `com.tensorfleet.fabdesk` | `com.tensorfleet.fabdesk.dev` |
+| userData (lock, `daemon.json`, prefs) | `~/.config/fabPlane` (Linux) | `~/.config/fabPlane Dev` |
+| Core home (SQLite, credentials) | `~/.config/fabdesk` | `~/.config/fabdesk-dev` (`FABDESK_HOME`) |
+| Core port | random | `FABDESK_DEV_PORT` (default 47831) |
+| Linux WM_CLASS | fabPlane | `fabplane-dev` |
+
+Production paths are unchanged. An explicit `FABDESK_HOME` is left alone. Each identity still
+allows only one instance of itself.
 
 Tips: the `core` badge in the top bar shows "core reloaded" briefly after a watch restart; a Route
 Cinema run interrupted by a reload shows its persisted frames but no further updates — start a new

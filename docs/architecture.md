@@ -16,6 +16,8 @@
 
 - **Electron is a thin client.** It owns the window, the OS integrations (open browser, file
   pickers, keychain later) and supervises the core process. All state lives in the core.
+  Unpackaged `bun run dev` uses a separate "fabPlane Dev" identity (userData, lock, `FABDESK_HOME`,
+  fixed core port) so it can run beside the packaged app; see [dev-loop.md](dev-loop.md).
 - **fabdesk-core** is one Bun binary (`bun build --compile`). It runs the same whether the GUI
   started it or an external agent started it with `fabdesk-core mcp`. It authenticates every
   request with a bearer token handed over at spawn time (`FABDESK_TOKEN`) and recorded in

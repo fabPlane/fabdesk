@@ -17,6 +17,7 @@ import { EventEmitter } from "node:events";
 import { createWriteStream, existsSync, mkdirSync, readFileSync, type WriteStream } from "node:fs";
 import { createInterface } from "node:readline";
 import { join, resolve } from "node:path";
+import { spawnCorePort } from "./dev-profile";
 
 const READY_TIMEOUT_MS = 60_000;
 const MAX_RESTARTS_PER_MINUTE = 5;
@@ -28,6 +29,8 @@ export interface SupervisorOptions {
   binaryOverride?: string | undefined;
   /** Extra environment for the spawned daemon (e.g. the Sentry DSN/environment; see src/main/sentry.ts). */
   extraEnv?: Record<string, string> | undefined;
+  /** Isolated "fabPlane Dev" profile: fixed port; core home is passed via FABDESK_HOME. */
+  devProfile?: boolean | undefined;
 }
 
 export interface CoreCommand {
@@ -52,8 +55,8 @@ export function resolveCoreCommand(opts: { packaged: boolean; resourcesPath: str
 }
 
 /** Dev daemons listen on a fixed port so MCP configs and the renderer survive a reload; 0 = random. */
-export function devCorePort(): string {
-  return process.env["FABDESK_DEV_PORT"] ?? "47831";
+export function devCorePort(env: NodeJS.ProcessEnv = process.env): string {
+  return spawnCorePort({ packaged: false, devProfile: true, env });
 }
 
 export function parseReadyLine(line: string): ReadyLine | null {
@@ -203,7 +206,12 @@ export class CoreSupervisor extends EventEmitter {
       ...cmd.args,
       "serve",
       "--port",
-      app.isPackaged || this.opts.binaryOverride ? "0" : devCorePort(),
+      spawnCorePort({
+        packaged: app.isPackaged,
+        ...(this.opts.binaryOverride ? { binaryOverride: true } : {}),
+        devProfile: this.opts.devProfile === true,
+        env: process.env,
+      }),
       "--handshake-file",
       this.handshakePath(),
       "--parent-pid",

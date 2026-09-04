@@ -9,8 +9,8 @@
  */
 import { app } from "electron";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
+import { PROD_CORE_HOME_DIR, resolveCoreHome } from "./dev-profile";
 
 interface DesktopPrefs {
   localAuth?: boolean;
@@ -18,18 +18,12 @@ interface DesktopPrefs {
   errorReporting?: boolean;
 }
 
-/** Same rules as `fabdeskHome()` in @fabdesk/auth-client. */
+/**
+ * Same rules as `fabdeskHome()` in @fabdesk/auth-client. The desktop main process sets
+ * `FABDESK_HOME` to `fabdesk-dev` for the isolated unpackaged copy before this is read.
+ */
 export function coreHome(env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform): string {
-  const override = env["FABDESK_HOME"];
-  if (override && override.trim() !== "") return override;
-  const home = env["HOME"] && env["HOME"] !== "" ? env["HOME"] : homedir();
-  if (platform === "darwin") return join(home, "Library", "Application Support", "fabdesk");
-  if (platform === "win32") {
-    const appData = env["APPDATA"] && env["APPDATA"] !== "" ? env["APPDATA"] : join(home, "AppData", "Roaming");
-    return join(appData, "fabdesk");
-  }
-  const xdg = env["XDG_CONFIG_HOME"] && env["XDG_CONFIG_HOME"] !== "" ? env["XDG_CONFIG_HOME"] : join(home, ".config");
-  return join(xdg, "fabdesk");
+  return resolveCoreHome({ env, platform, dirName: PROD_CORE_HOME_DIR });
 }
 
 export function devMarkerPath(): string {
@@ -57,9 +51,9 @@ export function localAuthAllowed(): boolean {
   return !app.isPackaged || existsSync(devMarkerPath());
 }
 
-/** Local auth is on by default in dev; packaged builds need an explicit opt-in. */
-export function localAuthEnabled(): boolean {
-  const enabled = readPrefs().localAuth ?? !app.isPackaged;
+/** Local auth is on by default for the isolated Dev profile; production identity needs an opt-in. */
+export function localAuthEnabled(defaultOn = !app.isPackaged): boolean {
+  const enabled = readPrefs().localAuth ?? defaultOn;
   if (enabled) ensureDevMarker();
   return enabled;
 }
