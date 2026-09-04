@@ -1,13 +1,16 @@
 import type { OpenCatalogEntry } from "@fabdesk/protocol";
 import { useState } from "react";
 import { Input } from "../components/ui";
+import { useCoreClient } from "../core/CoreProvider";
 import { useOpenCatalog } from "../hooks/queries";
+import { CatalogThumb } from "../opensource/CatalogThumb";
 import { useUiStore } from "../stores/ui";
 import { cn } from "../util";
 
 export function OpenSourceList() {
   const [q, setQ] = useState("");
   const catalog = useOpenCatalog(q);
+  const client = useCoreClient();
   const activeId = useUiStore((s) => s.activeOpenSourceId);
   const setActiveOpenSourceId = useUiStore((s) => s.setActiveOpenSourceId);
   const projects = catalog.data?.projects ?? [];
@@ -30,6 +33,7 @@ export function OpenSourceList() {
           <OpenSourceRow
             key={project.id}
             project={project}
+            previewSrc={client.openSourcePreviewUrl(project.id)}
             active={project.id === activeId}
             onOpen={() => setActiveOpenSourceId(project.id)}
           />
@@ -44,10 +48,12 @@ export function OpenSourceList() {
 
 function OpenSourceRow({
   project,
+  previewSrc,
   active,
   onOpen,
 }: {
   project: OpenCatalogEntry;
+  previewSrc: string;
   active: boolean;
   onOpen: () => void;
 }) {
@@ -61,11 +67,7 @@ function OpenSourceRow({
       )}
       data-testid={`opensource-${project.slug}`}
     >
-      <img
-        src={project.previewUrl}
-        alt=""
-        className="h-8 w-8 shrink-0 rounded-md border border-border bg-panel-2 object-cover"
-      />
+      <CatalogThumb src={previewSrc} name={project.name} className="h-8 w-8 text-[10px]" />
       <span className="min-w-0 flex-1">
         <span className="block truncate">{project.name}</span>
         <span className="block truncate text-[10px] text-muted">

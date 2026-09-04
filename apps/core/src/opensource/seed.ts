@@ -7,7 +7,7 @@ function github(
   description: string,
   license: string,
   tags: string[],
-  extras: { ownerSlug?: string; slug?: string } = {},
+  extras: { ownerSlug?: string; slug?: string; previewUrl?: string } = {},
 ): OpenCatalogEntry {
   const ownerSlug = extras.ownerSlug ?? owner.toLowerCase();
   const slug = extras.slug ?? repo.toLowerCase().replace(/_/g, "-");
@@ -21,7 +21,8 @@ function github(
     description,
     cloneUrl: `${url}.git`,
     homepageUrl: url,
-    previewUrl: `https://opengraph.github.com/repo/${owner}/${repo}`,
+    // opengraph.github.com rate-limits GETs (`Too many`) so the default is the org/user avatar.
+    previewUrl: extras.previewUrl ?? `https://avatars.githubusercontent.com/${owner}`,
     tags,
     source: { provider: "github", owner, repository: repo, url, license },
   };
@@ -51,23 +52,44 @@ export const OPEN_CATALOG_SEED: OpenCatalogEntry[] = [
       license: "CERN-OHL-S-2.0",
     },
   },
-  github("greatscottgadgets", "hackrf", "HackRF One", "Wideband software-defined radio with published hardware.", "GPL-2.0", ["SDR", "RF"]),
-  github("greatscottgadgets", "greatfet", "GreatFET One", "Open USB interface for embedded research.", "BSD-3-Clause", ["USB", "Debug"]),
+  github("greatscottgadgets", "hackrf", "HackRF One", "Wideband software-defined radio with published hardware.", "GPL-2.0", ["SDR", "RF"], {
+    previewUrl: "https://raw.githubusercontent.com/greatscottgadgets/hackrf/main/docs/images/HackRF-One-fd0-0009.jpeg",
+  }),
+  github("greatscottgadgets", "greatfet", "GreatFET One", "Open USB interface for embedded research.", "BSD-3-Clause", ["USB", "Debug"], {
+    previewUrl: "https://raw.githubusercontent.com/greatscottgadgets/greatfet/main/docs/images/greatfet_msp430.png",
+  }),
   github("blackmagic-debug", "blackmagic", "Black Magic Probe", "ARM Cortex debugger with published probe hardware.", "GPL-3.0", ["Debug", "ARM"]),
   github("DangerousPrototypes", "Bus_Pirate", "Bus Pirate", "Universal serial bus pirate with published PCB source.", "CC-BY-SA-3.0", ["Debug", "SPI"], { slug: "bus-pirate" }),
   github("frameworkcomputer", "inputmodule", "Framework Input Module", "Framework Laptop 16 LED-matrix and input modules.", "MIT", ["Framework", "RP2040"]),
   github("keyboardio", "Atreus", "Keyboardio Atreus", "Compact 42-key keyboard with published PCB files.", "GPL-3.0", ["Keyboard", "KiCad"]),
-  github("pierrechevalier83", "ferris", "Ferris keyboard", "34-key split keyboard with KiCad sources.", "CERN-OHL-P-2.0", ["Keyboard", "Split"]),
+  github("pierrechevalier83", "ferris", "Ferris keyboard", "34-key split keyboard with KiCad sources.", "CERN-OHL-P-2.0", ["Keyboard", "Split"], {
+    previewUrl: "https://i.imgur.com/TCjkquR.jpg",
+  }),
   github("betrusted-io", "precursor", "Precursor", "Inspectable open mobile hardware with published PCB files.", "CERN-OHL-S-2.0", ["FPGA", "Mobile"]),
   github("mntmn", "reform", "MNT Reform", "Open modular laptop motherboard and keyboard.", "CERN-OHL-S-2.0", ["Laptop", "KiCad"]),
-  github("adafruit", "Adafruit-Feather-RP2040-PCB", "Adafruit Feather RP2040", "Open Feather-format RP2040 development board.", "CC-BY-SA-3.0", ["RP2040", "Feather"], { slug: "adafruit-feather-rp2040-pcb" }),
-  github("sparkfun", "Pro_Micro", "SparkFun Pro Micro", "Classic ATmega32U4 Pro Micro with published board files.", "CC-BY-SA-3.0", ["AVR", "USB"], { slug: "pro-micro" }),
-  github("Seeed-Studio", "OSHW-XIAO-Series", "Seeed XIAO series", "Open hardware files for the XIAO family.", "MIT", ["XIAO", "RP2040"], { ownerSlug: "seeed-studio", slug: "oshw-xiao-series" }),
+  github("adafruit", "Adafruit-Feather-RP2040-PCB", "Adafruit Feather RP2040", "Open Feather-format RP2040 development board.", "CC-BY-SA-3.0", ["RP2040", "Feather"], {
+    slug: "adafruit-feather-rp2040-pcb",
+    previewUrl: "https://cdn-shop.adafruit.com/970x728/4884-05.jpg",
+  }),
+  github("sparkfun", "Pro_Micro", "SparkFun Pro Micro", "Classic ATmega32U4 Pro Micro with published board files.", "CC-BY-SA-3.0", ["AVR", "USB"], {
+    slug: "pro-micro",
+    previewUrl: "https://cdn.sparkfun.com/assets/parts/1/4/4/0/4/15795-Pro_Micro_C-01.jpg",
+  }),
+  github("Seeed-Studio", "OSHW-XIAO-Series", "Seeed XIAO series", "Open hardware files for the XIAO family.", "MIT", ["XIAO", "RP2040"], {
+    ownerSlug: "seeed-studio",
+    slug: "oshw-xiao-series",
+    previewUrl: "https://raw.githubusercontent.com/Seeed-Studio/OSHW-XIAO-Series/main/image/XIAO-RP2040-768x628.jpg",
+  }),
   github("icebreaker-fpga", "icebreaker", "iCEBreaker FPGA", "Open iCE40 FPGA board for teaching and open toolchains.", "CERN-OHL-W-2.0", ["FPGA", "iCE40"]),
   github("GlasgowEmbedded", "glasgow", "Glasgow Interface Explorer", "Digital interface explorer with published FPGA hardware.", "0BSD", ["FPGA", "Debug"]),
-  github("im-tomu", "fomu-hardware", "Fomu", "FPGA in a USB port — iCE40 board inside a USB-A connector.", "CERN-OHL-W-2.0", ["FPGA", "USB"], { slug: "fomu-hardware" }),
+  github("im-tomu", "fomu-hardware", "Fomu", "FPGA in a USB port — iCE40 board inside a USB-A connector.", "CERN-OHL-W-2.0", ["FPGA", "USB"], {
+    slug: "fomu-hardware",
+    previewUrl: "https://raw.githubusercontent.com/im-tomu/fomu-hardware/master/fomu.png",
+  }),
   github("flipperdevices", "flipperzero-hardware", "Flipper Zero hardware", "Published Flipper Zero hardware design files.", "LicenseRef-Flipper-Hardware", ["RFID", "Sub-GHz"], { slug: "flipperzero-hardware" }),
-  github("OpenMV", "openmv", "OpenMV Cam", "Open machine-vision camera modules with published PCBs.", "MIT", ["Vision", "STM32"]),
+  github("OpenMV", "openmv", "OpenMV Cam", "Open machine-vision camera modules with published PCBs.", "MIT", ["Vision", "STM32"], {
+    previewUrl: "https://raw.githubusercontent.com/openmv/openmv-media/master/boards/openmv-cam/openmv-ae3/ae3-hero-crop.jpg",
+  }),
   github("raspberrypi", "hats", "Raspberry Pi HATs", "Official HAT design resources for Raspberry Pi add-on boards.", "BSD-3-Clause", ["Raspberry Pi", "HAT"]),
   github("foostan", "crkbd", "Corne keyboard (crkbd)", "Popular 42-key split keyboard with published KiCad sources.", "MIT", ["Keyboard", "Split"]),
 ];

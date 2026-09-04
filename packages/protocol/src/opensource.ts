@@ -1,5 +1,5 @@
 import { z } from "zod/v4";
-import { ProjectSummary } from "./api";
+import { ProjectDetail } from "./api";
 
 export const OpenCatalogSource = z.object({
   provider: z.literal("github"),
@@ -44,8 +44,9 @@ export const RemixOpenSource = z.object({
 });
 
 export const RemixResult = z.object({
-  project: ProjectSummary,
+  project: ProjectDetail,
   sourceId: z.string(),
+  pcbPath: z.string().optional(),
 });
 export type RemixResult = z.infer<typeof RemixResult>;
 
@@ -79,3 +80,19 @@ export const OrderSession = z.object({
   steps: z.array(OrderStep),
 });
 export type OrderSession = z.infer<typeof OrderSession>;
+
+/** Two-letter tile used when a catalog preview image is missing or fails to load. */
+export function catalogInitials(name: string): string {
+  const words = name
+    .trim()
+    .split(/[\s/_-]+/)
+    .map((word) => word.replace(/[^A-Za-z0-9]/g, ""))
+    .filter(Boolean);
+  if (words.length >= 2) {
+    const first = words[0]?.[0] ?? "?";
+    const second = words[1]?.[0] ?? "";
+    return `${first}${second}`.toUpperCase();
+  }
+  const single = words[0] ?? "?";
+  return (single.slice(0, 2) || "?").toUpperCase();
+}

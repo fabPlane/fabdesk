@@ -30,6 +30,7 @@ export { ThreadSidebar } from "./sidebar/ThreadSidebar";
 export { OpenSourceList } from "./sidebar/OpenSourceList";
 export { groupThreadsByProject } from "./sidebar/group-threads";
 export { OpenSourceView } from "./opensource/OpenSourceView";
+export { CatalogThumb } from "./opensource/CatalogThumb";
 export { OrderFlow } from "./order/OrderFlow";
 export { ProjectPickerDialog } from "./chat/ProjectPickerDialog";
 export { ThreadView } from "./chat/ThreadView";

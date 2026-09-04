@@ -5,6 +5,14 @@ import { join } from "node:path";
 import { Store } from "../src/db";
 import { allowedCloneUrl, fetchOpenCatalog, findCatalogProject } from "../src/opensource/catalog";
 import { assessOrderReadiness, startOrderSession } from "../src/opensource/order";
+import {
+  createPreviewCache,
+  fallbackPreviewSvg,
+  isRateLimitedPreviewHost,
+  previewCandidateUrls,
+  resolveCatalogPreview,
+  sniffImageType,
+} from "../src/opensource/preview";
 import { OPEN_CATALOG_SEED } from "../src/opensource/seed";
 import { ProjectStore } from "../src/projects";
 
@@ -35,10 +43,63 @@ describe("open catalog", () => {
     expect(findCatalogProject(index, "tensorfleet/koyomi-lvds-hat")?.name).toBe("Koyomi LVDS HAT");
   });
 
+  test("seed preview URLs are not GitHub Open Graph endpoints", () => {
+    expect(OPEN_CATALOG_SEED.every((p) => !isRateLimitedPreviewHost(p.previewUrl))).toBe(true);
+    expect(OPEN_CATALOG_SEED.every((p) => p.previewUrl.startsWith("https://"))).toBe(true);
+  });
+
   test("allowedCloneUrl only accepts https GitHub git URLs", () => {
     expect(allowedCloneUrl("https://github.com/TensorFleet/koyomi-lvds-hat.git")).toBe(true);
     expect(allowedCloneUrl("https://evil.example/x.git")).toBe(false);
     expect(allowedCloneUrl("git@github.com:TensorFleet/koyomi-lvds-hat.git")).toBe(false);
+  });
+});
+
+describe("catalog preview proxy", () => {
+  const png = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="), (c) =>
+    c.charCodeAt(0),
+  );
+
+  test("sniffImageType accepts PNG and rejects GitHub's Too many body", () => {
+    expect(sniffImageType(png)).toBe("image/png");
+    expect(sniffImageType(new TextEncoder().encode("Too many"))).toBeNull();
+  });
+
+  test("previewCandidateUrls skips Open Graph until after the GitHub avatar", () => {
+    const project = OPEN_CATALOG_SEED.find((p) => p.id === "blackmagic-debug/blackmagic")!;
+    const og = { ...project, previewUrl: "https://opengraph.github.com/repo/blackmagic-debug/blackmagic" };
+    expect(previewCandidateUrls(og)[0]).toBe("https://avatars.githubusercontent.com/blackmagic-debug");
+    expect(previewCandidateUrls(og).at(-1)).toBe("https://opengraph.github.com/repo/blackmagic-debug/blackmagic");
+  });
+
+  test("resolveCatalogPreview caches a fetched image and falls back to SVG", async () => {
+    const project = OPEN_CATALOG_SEED[0]!;
+    const cache = createPreviewCache();
+    const image = await resolveCatalogPreview(project, {
+      cache,
+      fetchImpl: async () => new Response(png, { headers: { "content-type": "text/plain" } }),
+    });
+    expect(image.contentType).toBe("image/png");
+    expect(image.body[0]).toBe(0x89);
+
+    let fetches = 0;
+    const cached = await resolveCatalogPreview(project, {
+      cache,
+      fetchImpl: async () => {
+        fetches += 1;
+        throw new Error("should not refetch");
+      },
+    });
+    expect(fetches).toBe(0);
+    expect(cached.body).toBe(image.body);
+
+    const dead = await resolveCatalogPreview(project, {
+      cache: createPreviewCache(),
+      fetchImpl: async () => new Response("Too many", { status: 200, headers: { "content-type": "image/png" } }),
+    });
+    expect(dead.contentType.startsWith("image/svg+xml")).toBe(true);
+    expect(new TextDecoder().decode(dead.body)).toContain("KL");
+    expect(fallbackPreviewSvg(project.name).contentType.startsWith("image/svg+xml")).toBe(true);
   });
 });
 
