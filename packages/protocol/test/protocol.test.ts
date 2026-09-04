@@ -1,5 +1,17 @@
 import { describe, expect, test } from "bun:test";
-import { catalogInitials, CoreEvent, DaemonHandshake, LatestRelease, ReleaseManifest, RouteFrameLine, topicMatches } from "../src/index";
+import {
+  catalogHostedUrl,
+  catalogInitials,
+  catalogPhotoUrl,
+  catalogPreviewUrl,
+  CoreEvent,
+  DaemonHandshake,
+  isGitHubAssetHost,
+  LatestRelease,
+  ReleaseManifest,
+  RouteFrameLine,
+  topicMatches,
+} from "../src/index";
 
 describe("topicMatches", () => {
   test("exact, wildcard and prefix globs", () => {
@@ -28,6 +40,14 @@ describe("schemas", () => {
     expect(manifest.assets[0]?.platform).toBe("darwin");
     expect(ReleaseManifest.safeParse({ ...manifest, version: "1.2" }).success).toBe(false);
   });
+  test("catalog hosted asset URLs stay on fabplane.com", () => {
+    expect(catalogPreviewUrl("im-tomu", "fomu-hardware")).toBe("https://fabplane.com/open-catalog/im-tomu/fomu-hardware/preview.webp");
+    expect(catalogPhotoUrl("tensorfleet", "koyomi-lvds-hat")).toBe("https://fabplane.com/open-catalog/tensorfleet/koyomi-lvds-hat/photo.webp");
+    expect(catalogHostedUrl("foostan", "crkbd", "preview.webp")).toContain("/open-catalog/foostan/crkbd/preview.webp");
+    expect(isGitHubAssetHost("https://raw.githubusercontent.com/im-tomu/fomu-hardware/master/fomu.png")).toBe(true);
+    expect(isGitHubAssetHost("https://fabplane.com/open-catalog/im-tomu/fomu-hardware/preview.webp")).toBe(false);
+  });
+
   test("catalogInitials uses the first two words, else the first two letters", () => {
     expect(catalogInitials("HackRF One")).toBe("HO");
     expect(catalogInitials("Koyomi LVDS HAT")).toBe("KL");

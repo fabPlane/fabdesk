@@ -22,6 +22,8 @@ export const OpenCatalogEntry = z.object({
   homepageUrl: z.string().optional(),
   previewUrl: z.string(),
   heroUrl: z.string().optional(),
+  /** Rehosted original board photo / logo. Primary catalog tile is `previewUrl` (3D). */
+  photoUrl: z.string().optional(),
   modelUrl: z.string().optional(),
   overview: z.string().optional(),
   lede: z.string().optional(),
@@ -80,6 +82,36 @@ export const OrderSession = z.object({
   steps: z.array(OrderStep),
 });
 export type OrderSession = z.infer<typeof OrderSession>;
+
+/** Public site origin for committed catalog images. Switch via ARTIFACT_PUBLIC_BASE later (R2). */
+export const CATALOG_PUBLIC_ORIGIN = "https://fabplane.com";
+export const CATALOG_PUBLIC_PREFIX = "/open-catalog";
+
+export function catalogHostedUrl(ownerSlug: string, slug: string, file: "preview.webp" | "photo.webp"): string {
+  return `${CATALOG_PUBLIC_ORIGIN}${CATALOG_PUBLIC_PREFIX}/${ownerSlug}/${slug}/${file}`;
+}
+
+export function catalogPreviewUrl(ownerSlug: string, slug: string): string {
+  return catalogHostedUrl(ownerSlug, slug, "preview.webp");
+}
+
+export function catalogPhotoUrl(ownerSlug: string, slug: string): string {
+  return catalogHostedUrl(ownerSlug, slug, "photo.webp");
+}
+
+export function isGitHubAssetHost(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return (
+      host === "github.com" ||
+      host.endsWith(".github.com") ||
+      host === "raw.githubusercontent.com" ||
+      host.endsWith(".githubusercontent.com")
+    );
+  } catch {
+    return false;
+  }
+}
 
 /** Two-letter tile used when a catalog preview image is missing or fails to load. */
 export function catalogInitials(name: string): string {

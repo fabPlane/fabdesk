@@ -1,4 +1,6 @@
-import { catalogInitials, type OpenCatalogEntry } from "@fabdesk/protocol";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { catalogInitials, isGitHubAssetHost, type OpenCatalogEntry } from "@fabdesk/protocol";
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
@@ -28,26 +30,33 @@ export function isRateLimitedPreviewHost(url: string): boolean {
   }
 }
 
-export function githubAvatarUrl(owner: string): string {
-  return `https://avatars.githubusercontent.com/${encodeURIComponent(owner)}`;
+export function catalogAssetDir(): string | undefined {
+  const dir = process.env["CATALOG_ASSET_DIR"]?.trim();
+  return dir ? dir : undefined;
 }
 
-/** Prefer board/CDN/raw URLs, then the GitHub avatar, and only then rate-limited Open Graph cards. */
+export function localCatalogAssetPath(project: OpenCatalogEntry, file: "preview.webp" | "photo.webp"): string | undefined {
+  const root = catalogAssetDir();
+  if (!root) return undefined;
+  const path = join(root, project.ownerSlug, project.slug, file);
+  return existsSync(path) ? path : undefined;
+}
+
+/** Hosted 3D preview first, then hero/photo. Never prefer GitHub hosts. */
 export function previewCandidateUrls(project: OpenCatalogEntry, role: PreviewRole = "preview"): string[] {
   const urls: string[] = [];
   const add = (url: string | undefined) => {
-    if (!url || urls.includes(url)) return;
+    if (!url || urls.includes(url) || isGitHubAssetHost(url) || isRateLimitedPreviewHost(url)) return;
     urls.push(url);
   };
-  const preview = project.previewUrl;
-  const hero = project.heroUrl;
-  const primary = role === "hero" ? hero : preview;
-  const secondary = role === "hero" ? preview : hero;
-  if (primary && !isRateLimitedPreviewHost(primary)) add(primary);
-  if (secondary && !isRateLimitedPreviewHost(secondary)) add(secondary);
-  add(githubAvatarUrl(project.source?.owner ?? project.ownerSlug));
-  if (primary && isRateLimitedPreviewHost(primary)) add(primary);
-  if (secondary && isRateLimitedPreviewHost(secondary)) add(secondary);
+  if (role === "hero") {
+    add(project.heroUrl);
+    add(project.previewUrl);
+  } else {
+    add(project.previewUrl);
+    add(project.heroUrl);
+  }
+  add(project.photoUrl);
   return urls;
 }
 
@@ -129,6 +138,17 @@ export async function resolveCatalogPreview(
   const cacheKey = `${project.id}:${role}`;
   const hit = cache?.get(cacheKey);
   if (hit && hit.expiresAt > now) return { body: hit.body, contentType: hit.contentType };
+
+  const local = localCatalogAssetPath(project, "preview.webp") ?? localCatalogAssetPath(project, "photo.webp");
+  if (local) {
+    const bytes = new Uint8Array(await Bun.file(local).arrayBuffer());
+    const sniffed = sniffImageType(bytes);
+    if (sniffed) {
+      const image = { body: bytes, contentType: sniffed };
+      cache?.set(cacheKey, { ...image, expiresAt: now + CACHE_MS });
+      return image;
+    }
+  }
 
   for (const url of previewCandidateUrls(project, role)) {
     try {
