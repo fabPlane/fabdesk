@@ -166,8 +166,8 @@ export function checkViagrid9055(circuitJson: unknown[]): { violations: ViagridV
     if (el["type"] === "pcb_smtpad" || el["type"] === "pcb_plated_hole") {
       const x = num(el["x"]);
       const y = num(el["y"]);
-      const halfWidth = (num(el["width"]) || num(el["rect_pad_width"])) / 2;
-      const halfHeight = (num(el["height"]) || num(el["rect_pad_height"])) / 2;
+      const halfWidth = num(el["width"] ?? el["rect_pad_width"] ?? 0) / 2;
+      const halfHeight = num(el["height"] ?? el["rect_pad_height"] ?? 0) / 2;
       if (nearHole(x, y, halfWidth, halfHeight)) violations.push({ kind: "pad_near_hole", x, y, detail: `${String(el["type"])} ${String(el["pcb_smtpad_id"] ?? el["pcb_plated_hole_id"] ?? "")} at (${x.toFixed(2)}, ${y.toFixed(2)}) is within ${holeKeepoutMm} mm of a mounting hole` });
     }
   }
