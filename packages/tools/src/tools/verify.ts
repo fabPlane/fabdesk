@@ -110,10 +110,10 @@ function netsTouchingVias(els: Array<Record<string, unknown>>, vias: Array<{ id:
         }
       }
     }
-    for (const p of route) {
-      if (p["route_type"] !== "via") continue;
+    for (const point of route) {
+      if (point["route_type"] !== "via") continue;
       for (const via of vias) {
-        if (Math.hypot(via.x - num(p["x"]), via.y - num(p["y"])) <= 0.05) {
+        if (Math.hypot(via.x - num(point["x"]), via.y - num(point["y"])) <= 0.05) {
           let set = touched.get(via.id);
           if (!set) touched.set(via.id, (set = new Set()));
           set.add(net);

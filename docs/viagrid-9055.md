@@ -166,9 +166,9 @@ unchanged); 6, 7, 8, 9, 10 open.
   are flagged; better still would be to keep other nets' tracks off unused vias in the first place (obstacles
   with clearance for vias the net does not own).
 - **Copper pours.** The guide recommends GND pours on both sides; the capacity adapter drops polygon obstacles.
-- **Copper-removal artwork.** Viagrid is finished with a laser (DXF into LightBurn), etch masks or CNC; Fabdesk
-  exports gerbers only. `kicad-cli pcb export dxf` per layer, mirrored bottom, registered to the blank's corner
-  marks, is the missing export.
+- **Copper-removal artwork registration.** `export_dxf` now writes per-layer DXF for LightBurn/CNC workflows, but
+  the branch has only been exercised on simple boards so far. Bottom-layer mirroring and registration to the
+  blank's corner marks still need bench validation on a real Viagrid workflow.
 - **Placement help in the UI.** The PCB view should draw the grid and holes from the template.
 - **Permission mode default.** `acceptEdits` still blocks shell commands with no way to approve them from the
   chat; AGENTS.md now warns the agent, but the app should either surface the prompt or default to `bypass`
