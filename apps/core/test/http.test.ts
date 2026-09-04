@@ -347,6 +347,7 @@ describe("http daemon", () => {
     const preview = await fetch(`${daemon.url}/opensource/preview/tensorfleet/koyomi-lvds-hat?token=${daemon.token}`);
     expect(preview.status).toBe(200);
     expect(preview.headers.get("content-type") ?? "").toMatch(/^image\//);
+    expect(preview.headers.get("cache-control")).toBe("private, max-age=3600");
     expect((await preview.arrayBuffer()).byteLength).toBeGreaterThan(64);
   });
 

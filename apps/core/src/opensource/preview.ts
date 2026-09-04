@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   catalogInitials,
   catalogPhotoUrl,
@@ -18,7 +18,6 @@ export type PreviewRole = "preview" | "hero";
 
 export const MAX_PREVIEW_BYTES = 5_000_000;
 const CACHE_MS = 6 * 60 * 60 * 1000;
-const FALLBACK_CACHE_MS = 5 * 60 * 1000;
 const FETCH_MS = 5_000;
 
 const PREVIEW_UA = "FabdeskCatalog/1.0 (+https://github.com/TensorFleet/fabdesk)";
@@ -45,13 +44,14 @@ export function isPrivatePreviewHost(host: string): boolean {
   return false;
 }
 
-/** HTTPS catalog/CDN hosts only. Private destinations are rejected even if they look public. */
+/** HTTPS catalog/CDN hosts only. End users never fetch GitHub. */
 export function isTrustedPreviewUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
     if (parsed.protocol !== "https:") return false;
     const host = parsed.hostname.toLowerCase();
     if (isPrivatePreviewHost(host)) return false;
+    if (isGitHubAssetHost(url)) return false;
     return TRUSTED_PREVIEW_HOSTS.has(host);
   } catch {
     return false;
@@ -71,9 +71,18 @@ export function isRateLimitedPreviewHost(url: string): boolean {
   }
 }
 
+/** Shipped catalog webps, then `CATALOG_ASSET_DIR`, then next to the compiled core. */
 export function catalogAssetDir(): string | undefined {
-  const dir = process.env["CATALOG_ASSET_DIR"]?.trim();
-  return dir ? dir : undefined;
+  // Empty string disables on-disk assets (tests that exercise CDN fetch only).
+  if (process.env["CATALOG_ASSET_DIR"] === "") return undefined;
+  const env = process.env["CATALOG_ASSET_DIR"]?.trim();
+  const candidates = [
+    ...(env ? [env] : []),
+    join(import.meta.dir, "../../assets/open-catalog"),
+    join(dirname(process.execPath), "open-catalog"),
+    join(dirname(process.execPath), "assets/open-catalog"),
+  ];
+  return candidates.find((dir) => existsSync(dir));
 }
 
 export function localCatalogAssetPath(project: OpenCatalogEntry, file: "preview.webp" | "photo.webp"): string | undefined {
@@ -83,7 +92,7 @@ export function localCatalogAssetPath(project: OpenCatalogEntry, file: "preview.
   return existsSync(path) ? path : undefined;
 }
 
-/** Hosted 3D preview first, then hero/photo. Never prefer GitHub hosts. */
+/** Hosted 3D preview first, then hero/photo. Never include GitHub hosts. */
 export function previewCandidateUrls(project: OpenCatalogEntry, role: PreviewRole = "preview"): string[] {
   const urls: string[] = [];
   const add = (url: string | undefined) => {
@@ -98,7 +107,6 @@ export function previewCandidateUrls(project: OpenCatalogEntry, role: PreviewRol
     add(project.heroUrl);
   }
   add(project.photoUrl);
-  // Seed/CDN paths so a GitHub-backed production catalog still resolves after images deploy.
   add(catalogPreviewUrl(project.ownerSlug, project.slug));
   add(catalogPhotoUrl(project.ownerSlug, project.slug));
   return urls;
@@ -171,6 +179,25 @@ export function fallbackPreviewSvg(name: string): PreviewImage {
   return { body: new TextEncoder().encode(svg), contentType: "image/svg+xml; charset=utf-8" };
 }
 
+async function fetchPreviewImage(url: string, fetchImpl: FetchLike): Promise<PreviewImage | null> {
+  if (!isTrustedPreviewUrl(url)) return null;
+  const res = await fetchImpl(url, {
+    redirect: "follow",
+    signal: AbortSignal.timeout(FETCH_MS),
+    headers: { Accept: "image/*,*/*;q=0.8", "User-Agent": PREVIEW_UA },
+  });
+  const finalUrl = res.url || url;
+  if (finalUrl && !isTrustedPreviewUrl(finalUrl)) return null;
+  if (!res.ok) return null;
+  const bytes = await readCappedBody(res);
+  if (!bytes || bytes.length < 16) return null;
+  const sniffed = sniffImageType(bytes);
+  if (!sniffed || sniffed === "image/svg+xml") return null;
+  const declared = (res.headers.get("content-type") ?? "").split(";")[0]?.trim().toLowerCase() ?? "";
+  const contentType = declared.startsWith("image/") && declared !== "image/svg+xml" ? declared : sniffed;
+  return { body: bytes, contentType };
+}
+
 export async function resolveCatalogPreview(
   project: OpenCatalogEntry,
   opts: { fetchImpl?: FetchLike; cache?: PreviewCache; now?: number; role?: PreviewRole } = {},
@@ -181,45 +208,35 @@ export async function resolveCatalogPreview(
   const role = opts.role ?? "preview";
   const cacheKey = `${project.id}:${role}`;
   const hit = cache?.get(cacheKey);
-  if (hit && hit.expiresAt > now) return { body: hit.body, contentType: hit.contentType };
+  if (hit && hit.expiresAt > now && !hit.contentType.startsWith("image/svg+xml")) {
+    return { body: hit.body, contentType: hit.contentType };
+  }
 
-  const local = localCatalogAssetPath(project, "preview.webp") ?? localCatalogAssetPath(project, "photo.webp");
+  const remember = (image: PreviewImage): PreviewImage => {
+    cache?.set(cacheKey, { ...image, expiresAt: now + CACHE_MS });
+    return image;
+  };
+
+  // Always prefer the 3D/isometric preview. photo.webp is the rehosted GitHub
+  // board photo, logo, or org avatar — never the primary catalog tile or hero.
+  const local =
+    localCatalogAssetPath(project, "preview.webp") ?? localCatalogAssetPath(project, "photo.webp");
   if (local) {
     const bytes = new Uint8Array(await Bun.file(local).arrayBuffer());
     const sniffed = sniffImageType(bytes);
-    if (sniffed) {
-      const image = { body: bytes, contentType: sniffed };
-      cache?.set(cacheKey, { ...image, expiresAt: now + CACHE_MS });
-      return image;
-    }
+    if (sniffed && sniffed !== "image/svg+xml") return remember({ body: bytes, contentType: sniffed });
   }
 
   for (const url of previewCandidateUrls(project, role)) {
     if (!isTrustedPreviewUrl(url)) continue;
     try {
-      const res = await fetchImpl(url, {
-        redirect: "follow",
-        signal: AbortSignal.timeout(FETCH_MS),
-        headers: { Accept: "image/*,*/*;q=0.8", "User-Agent": PREVIEW_UA },
-      });
-      const finalUrl = res.url || url;
-      if (finalUrl && !isTrustedPreviewUrl(finalUrl)) continue;
-      if (!res.ok) continue;
-      const bytes = await readCappedBody(res);
-      if (!bytes || bytes.length < 16) continue;
-      const sniffed = sniffImageType(bytes);
-      if (!sniffed) continue;
-      const declared = (res.headers.get("content-type") ?? "").split(";")[0]?.trim().toLowerCase() ?? "";
-      const contentType = declared.startsWith("image/") ? declared : sniffed;
-      const image = { body: bytes, contentType };
-      cache?.set(cacheKey, { ...image, expiresAt: now + CACHE_MS });
-      return image;
+      const image = await fetchPreviewImage(url, fetchImpl);
+      if (image) return remember(image);
     } catch {
-      /* try the next candidate */
+      /* try the next CDN candidate — never GitHub */
     }
   }
 
-  const fallback = fallbackPreviewSvg(project.name);
-  cache?.set(cacheKey, { ...fallback, expiresAt: now + FALLBACK_CACHE_MS });
-  return fallback;
+  // Do not memory-cache initials so a later CDN success can replace them.
+  return fallbackPreviewSvg(project.name);
 }
