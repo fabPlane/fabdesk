@@ -7,7 +7,7 @@
  * resolves inside the single-file executable.
  */
 import { fileURLToPath } from "node:url";
-import { mkdir, rm } from "node:fs/promises";
+import { cp, mkdir, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
 const TARGETS = ["bun-darwin-arm64", "bun-darwin-x64", "bun-linux-x64", "bun-windows-x64"] as const;
@@ -91,6 +91,8 @@ for (const target of targets) {
     process.stderr.write(`build failed for ${target} (exit ${code})\n`);
     process.exit(code);
   }
+  const catalogAssets = join(coreDir, "assets/open-catalog");
+  await cp(catalogAssets, join(outDir, "open-catalog"), { recursive: true });
   if (chan === "public" && os !== "windows") {
     // Guard: public binaries must not carry the internal router's code. The bare module specifier
     // `@fabdesk/router-freerouting` legitimately survives as an (externalized) dynamic import string.
