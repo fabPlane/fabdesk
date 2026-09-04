@@ -114,10 +114,10 @@ body,
 #root {
   height: 100%;
   margin: 0;
-}
-body {
   background: var(--fd-bg);
   color: var(--fd-fg);
+}
+body {
   font-family: var(--font-sans);
   font-size: 13px;
   line-height: 1.45;

@@ -1,11 +1,14 @@
 import {
+  applyThemeId,
   browserHost,
   CoreClient,
   CoreStatusScreen,
   FabdeskApp,
+  themeFromPreference,
   useAuthStore,
   useCoreClient,
   useSettings,
+  useUiStore,
   type CoreInfo,
   type HostAdapter,
 } from "@fabdesk/ui";
@@ -15,6 +18,16 @@ import { disableRendererSentry, setRendererSentryUser } from "./sentry";
 import { startWebMcp } from "./webmcp";
 
 const bridge = window.fabdesk;
+
+/** Applies the persisted Appearance theme even on the core-status screen (no CoreProvider yet). */
+function ThemeSync() {
+  const stored = useUiStore((s) => s.themeId);
+  useEffect(() => {
+    applyThemeId(stored ?? themeFromPreference(undefined));
+    void bridge?.setTheme(stored);
+  }, [stored]);
+  return null;
+}
 
 const host: HostAdapter = bridge
   ? {
@@ -111,15 +124,19 @@ export function App() {
 
   if (!client) {
     return (
-      <CoreStatusScreen
-        status={info?.status ?? null}
-        onRestart={bridge ? () => void bridge.restartCore() : undefined}
-        onOpenLogs={bridge ? () => void bridge.openLogs() : undefined}
-      />
+      <>
+        <ThemeSync />
+        <CoreStatusScreen
+          status={info?.status ?? null}
+          onRestart={bridge ? () => void bridge.restartCore() : undefined}
+          onOpenLogs={bridge ? () => void bridge.openLogs() : undefined}
+        />
+      </>
     );
   }
   return (
     <FabdeskApp client={client} host={host} coreStatus={info?.status} onRestartCore={bridge ? () => void bridge.restartCore() : undefined}>
+      <ThemeSync />
       <WebMcpBridge />
       <ErrorReportingBridge />
     </FabdeskApp>

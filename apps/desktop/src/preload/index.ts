@@ -17,6 +17,7 @@ const api = {
   automationEnabled: process.argv.includes("--fabdesk-automation"),
   /** Main passes `--fabdesk-dev-build` for unpackaged (dev) builds. */
   devBuild: process.argv.includes("--fabdesk-dev-build"),
+  setTheme: (themeId: string | null) => ipcRenderer.invoke("fabdesk:set-theme", themeId),
   setErrorReporting: (enabled: boolean) =>
     ipcRenderer.invoke("fabdesk:set-error-reporting", enabled),
   setSentryUser: (user: { id: string; username?: string } | null) =>

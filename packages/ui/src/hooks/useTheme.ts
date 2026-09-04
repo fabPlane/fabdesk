@@ -1,38 +1,38 @@
 import { useEffect } from "react";
+import {
+  applyThemeIdTo,
+  resolveThemeId,
+  themeFromPreference as resolveFromPref,
+  type ThemeId,
+  type ThemePreference,
+} from "../theme/resolve";
 import { useSettings } from "./queries";
 import { useUiStore } from "../stores/ui";
 
-/** Legacy core-side preference (kept for the daemon's settings schema). */
-export type ThemePreference = "system" | "light" | "dark";
+export type { ThemeId, ThemePreference } from "../theme/resolve";
+export {
+  THEME_IDS,
+  THEME_LABELS,
+  UI_THEME_STORAGE_KEY,
+  applyThemeIdTo,
+  bootstrapTheme,
+  isThemeId,
+  parsePersistedThemeId,
+  resolveThemeId,
+  themeBackground,
+} from "../theme/resolve";
 
-/** Four explicit themes: the fabplane.com look in dark/light and the neutral "system" look in dark/light. */
-export type ThemeId = "fabplane-dark" | "fabplane-light" | "plain-dark" | "plain-light";
-export const THEME_IDS: readonly ThemeId[] = ["fabplane-dark", "fabplane-light", "plain-dark", "plain-light"];
-export const THEME_LABELS: Record<ThemeId, string> = {
-  "fabplane-dark": "Dark (fabPlane)",
-  "fabplane-light": "Light (fabPlane)",
-  "plain-dark": "System Dark",
-  "plain-light": "System Light",
-};
-
-export function isThemeId(v: unknown): v is ThemeId {
-  return typeof v === "string" && (THEME_IDS as readonly string[]).includes(v);
+function prefersDarkScheme(): boolean {
+  return typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
 
 /** Maps the legacy `settings.theme` value (or nothing) to a theme id, following the OS for "system". */
 export function themeFromPreference(pref: ThemePreference | undefined): ThemeId {
-  const prefersDark = typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches;
-  const dark = pref === "dark" || (pref !== "light" && prefersDark);
-  return dark ? "fabplane-dark" : "fabplane-light";
+  return resolveFromPref(pref, prefersDarkScheme());
 }
 
 export function applyThemeId(id: ThemeId): boolean {
-  const dark = id.endsWith("-dark");
-  const root = document.documentElement;
-  root.classList.toggle("dark", dark);
-  root.dataset["theme"] = dark ? "dark" : "light";
-  root.dataset["skin"] = id.startsWith("plain") ? "plain" : "fabplane";
-  return dark;
+  return applyThemeIdTo(id, document.documentElement);
 }
 
 /** @deprecated use applyThemeId; kept for callers that still pass the legacy preference. */
@@ -44,7 +44,7 @@ export function applyTheme(pref: ThemePreference): boolean {
 export function useTheme(): ThemeId {
   const settings = useSettings();
   const stored = useUiStore((s) => s.themeId);
-  const id: ThemeId = stored ?? themeFromPreference(settings.data?.theme);
+  const id = resolveThemeId(stored, settings.data?.theme, prefersDarkScheme());
   useEffect(() => {
     applyThemeId(id);
   }, [id]);

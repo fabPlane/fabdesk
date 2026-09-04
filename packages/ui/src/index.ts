@@ -49,7 +49,22 @@ export { LoginScreen } from "./auth/LoginScreen";
 export * from "./hooks/queries";
 export { useBranchThread } from "./hooks/threadActions";
 export { useShortcuts, shortcutList } from "./hooks/useShortcuts";
-export { useTheme, useIsDark, applyTheme } from "./hooks/useTheme";
+export {
+  useTheme,
+  useIsDark,
+  applyTheme,
+  applyThemeId,
+  themeFromPreference,
+  isThemeId,
+  resolveThemeId,
+  parsePersistedThemeId,
+  THEME_IDS,
+  THEME_LABELS,
+  UI_THEME_STORAGE_KEY,
+} from "./hooks/useTheme";
+export type { ThemeId, ThemePreference } from "./hooks/useTheme";
+export { themeBackground, bootstrapTheme } from "./theme/resolve";
+export { themeBootInlineCss, themeBootInlineScript } from "./theme/boot-inline";
 export * from "./components/ui";
 export * from "./util";
 

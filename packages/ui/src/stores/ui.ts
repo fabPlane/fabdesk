@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { readStoredThemeId, type ThemeId } from "../theme/resolve";
 
 export const BOARD_TABS = ["schematic", "pcb", "cinema", "3d", "drc", "renders", "files"] as const;
 export type BoardTab = (typeof BOARD_TABS)[number];
@@ -36,7 +37,7 @@ export interface PendingAttachment {
 
 export interface UiState {
   /** Theme chosen in Settings → Appearance; null = derive from the core setting / OS. */
-  themeId: "fabplane-dark" | "fabplane-light" | "plain-dark" | "plain-light" | null;
+  themeId: ThemeId | null;
   setThemeId: (id: UiState["themeId"]) => void;
   sidebarOpen: boolean;
   boardOpen: boolean;
@@ -84,7 +85,8 @@ export const DRAFT_KEY_NEW = "__new__";
 export const useUiStore = create<UiState>()(
   persist(
     (set) => ({
-  themeId: null,
+  // Seed from localStorage so the first React render matches the pre-paint boot script.
+  themeId: readStoredThemeId(),
   setThemeId: (themeId) => set({ themeId }),
   sidebarOpen: true,
   boardOpen: true,
