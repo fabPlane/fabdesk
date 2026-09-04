@@ -36,9 +36,10 @@ describe("Viagrid 9055 template", () => {
     const bad = checkViagrid9055([
       via("pcb_via_0", 19, 0, { net_is_assignable: true }),
       via("pcb_via_1", 19, 0), // stacked on the factory via instead of claiming it
-      via("pcb_via_2", 4.2, -1.1), // nowhere near the grid
+      via("pcb_via_2", 4.2, -1.1, { net_is_assignable: true }), // nowhere near the grid
       { type: "pcb_smtpad", pcb_smtpad_id: "s1", x: -38, y: 18, width: 1, height: 1, layer: "top", shape: "rect" },
     ]);
+    expect(bad.vias).toEqual({ total: 3, factory: 1, claimed: 0, added: 2 });
     expect(bad.vias.added).toBe(2);
     expect(bad.violations.map((v) => v.kind)).toEqual(["via_off_grid", "via_off_grid", "pad_near_hole"]);
     expect(bad.violations[0]!.detail).toContain("without claiming");
@@ -61,6 +62,11 @@ describe("Viagrid 9055 template", () => {
     expect(shorted.violations[0]!.detail).toContain("netB");
     const single = checkViagrid9055([via("pcb_via_0", 19, 0, { net_is_assignable: true, outer_diameter: 1 }), wire("t1", "netA", "top", [[17, 0], [21, 0]])]);
     expect(single.violations).toEqual([]);
+  });
+
+  test("checkViagrid9055 uses pad size for mounting-hole keepout", () => {
+    const result = checkViagrid9055([{ type: "pcb_smtpad", pcb_smtpad_id: "s1", x: -35.5, y: 18.25, width: 2, height: 1, layer: "top", shape: "rect" }]);
+    expect(result.violations.map((v) => v.kind)).toEqual(["pad_near_hole"]);
   });
 
   test("project_set_board template=viagrid-9055 writes the blank, fixes the board and verify_viagrid runs", async () => {

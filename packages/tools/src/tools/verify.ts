@@ -130,7 +130,12 @@ export function checkViagrid9055(circuitJson: unknown[]): { violations: ViagridV
   const num = (v: unknown): number => (typeof v === "number" ? v : Number(v));
   const violations: ViagridViolation[] = [];
   const holeKeepoutMm = VIAGRID_9055.holeDrillMm / 2 + 1.0;
-  const nearHole = (x: number, y: number): boolean => VIAGRID_9055_HOLES.some(([hx, hy]) => Math.hypot(hx - x, hy - y) < holeKeepoutMm);
+  const nearHole = (x: number, y: number, halfWidth = 0, halfHeight = 0): boolean =>
+    VIAGRID_9055_HOLES.some(([hx, hy]) => {
+      const dx = Math.max(Math.abs(hx - x) - halfWidth, 0);
+      const dy = Math.max(Math.abs(hy - y) - halfHeight, 0);
+      return Math.hypot(dx, dy) < holeKeepoutMm;
+    });
   let factory = 0;
   let claimed = 0;
   let added = 0;
@@ -139,7 +144,7 @@ export function checkViagrid9055(circuitJson: unknown[]): { violations: ViagridV
     if (el["type"] !== "pcb_via") continue;
     const x = num(el["x"]);
     const y = num(el["y"]);
-    if (el["net_is_assignable"] === true) {
+    if (el["net_is_assignable"] === true && isOnViagrid9055Via(x, y)) {
       factory += 1;
       if (el["net_assigned"] === true) claimed += 1;
       factoryVias.push({ id: String(el["pcb_via_id"] ?? `${x},${y}`), x, y, r: (num(el["outer_diameter"]) || VIAGRID_9055.viaPadMm) / 2 });
@@ -161,7 +166,9 @@ export function checkViagrid9055(circuitJson: unknown[]): { violations: ViagridV
     if (el["type"] === "pcb_smtpad" || el["type"] === "pcb_plated_hole") {
       const x = num(el["x"]);
       const y = num(el["y"]);
-      if (nearHole(x, y)) violations.push({ kind: "pad_near_hole", x, y, detail: `${String(el["type"])} ${String(el["pcb_smtpad_id"] ?? el["pcb_plated_hole_id"] ?? "")} at (${x.toFixed(2)}, ${y.toFixed(2)}) is within ${holeKeepoutMm} mm of a mounting hole` });
+      const halfWidth = (num(el["width"]) || num(el["rect_pad_width"])) / 2;
+      const halfHeight = (num(el["height"]) || num(el["rect_pad_height"])) / 2;
+      if (nearHole(x, y, halfWidth, halfHeight)) violations.push({ kind: "pad_near_hole", x, y, detail: `${String(el["type"])} ${String(el["pcb_smtpad_id"] ?? el["pcb_plated_hole_id"] ?? "")} at (${x.toFixed(2)}, ${y.toFixed(2)}) is within ${holeKeepoutMm} mm of a mounting hole` });
     }
   }
   return { violations, vias: { total: factory + added, factory, claimed, added } };
