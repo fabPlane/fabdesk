@@ -18,7 +18,7 @@ export function OpenSourceView() {
   const project = useOpenSourceProject(id);
   const remix = useRemixOpenSource();
   const entry = project.data;
-  const hero = id ? client.openSourcePreviewUrl(id) : "";
+  const hero = id ? client.openSourcePreviewUrl(id, "hero") : "";
   const [heroFailed, setHeroFailed] = useState(false);
   useEffect(() => {
     setHeroFailed(false);

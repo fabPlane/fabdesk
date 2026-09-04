@@ -303,7 +303,8 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const index = await fetchOpenCatalog(deps.config.apiOrigin);
     const project = findCatalogProject(index, `${c.req.param("owner")}/${c.req.param("slug")}`);
     if (!project) return c.json({ error: "not found" }, 404);
-    const image = await resolveCatalogPreview(project, { cache: previewCache });
+    const role = c.req.query("role") === "hero" ? "hero" : "preview";
+    const image = await resolveCatalogPreview(project, { cache: previewCache, role });
     const body = new Uint8Array(image.body);
     return new Response(body, {
       headers: {

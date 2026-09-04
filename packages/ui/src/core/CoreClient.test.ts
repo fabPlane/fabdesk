@@ -7,6 +7,9 @@ describe("CoreClient open-source preview URL", () => {
     expect(client.openSourcePreviewUrl("tensorfleet/koyomi-lvds-hat")).toBe(
       "http://127.0.0.1:47831/opensource/preview/tensorfleet/koyomi-lvds-hat?token=tok",
     );
+    expect(client.openSourcePreviewUrl("tensorfleet/koyomi-lvds-hat", "hero")).toBe(
+      "http://127.0.0.1:47831/opensource/preview/tensorfleet/koyomi-lvds-hat?token=tok&role=hero",
+    );
     expect(client.openSourcePreviewUrl("bad")).toBe("");
   });
 });

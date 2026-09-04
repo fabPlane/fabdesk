@@ -6,7 +6,9 @@ export type PreviewImage = { body: Uint8Array; contentType: string };
 
 export type PreviewCache = Map<string, PreviewImage & { expiresAt: number }>;
 
-const MAX_BYTES = 5_000_000;
+export type PreviewRole = "preview" | "hero";
+
+export const MAX_PREVIEW_BYTES = 5_000_000;
 const CACHE_MS = 6 * 60 * 60 * 1000;
 const FALLBACK_CACHE_MS = 5 * 60 * 1000;
 const FETCH_MS = 5_000;
@@ -31,7 +33,7 @@ export function githubAvatarUrl(owner: string): string {
 }
 
 /** Prefer board/CDN/raw URLs, then the GitHub avatar, and only then rate-limited Open Graph cards. */
-export function previewCandidateUrls(project: OpenCatalogEntry): string[] {
+export function previewCandidateUrls(project: OpenCatalogEntry, role: PreviewRole = "preview"): string[] {
   const urls: string[] = [];
   const add = (url: string | undefined) => {
     if (!url || urls.includes(url)) return;
@@ -39,12 +41,48 @@ export function previewCandidateUrls(project: OpenCatalogEntry): string[] {
   };
   const preview = project.previewUrl;
   const hero = project.heroUrl;
-  if (!isRateLimitedPreviewHost(preview)) add(preview);
-  if (hero && !isRateLimitedPreviewHost(hero)) add(hero);
+  const primary = role === "hero" ? hero : preview;
+  const secondary = role === "hero" ? preview : hero;
+  if (!isRateLimitedPreviewHost(primary)) add(primary);
+  if (secondary && !isRateLimitedPreviewHost(secondary)) add(secondary);
   add(githubAvatarUrl(project.source?.owner ?? project.ownerSlug));
-  if (isRateLimitedPreviewHost(preview)) add(preview);
-  if (hero && isRateLimitedPreviewHost(hero)) add(hero);
+  if (isRateLimitedPreviewHost(primary)) add(primary);
+  if (secondary && isRateLimitedPreviewHost(secondary)) add(secondary);
   return urls;
+}
+
+/** Read an image body, aborting once it exceeds `maxBytes` instead of buffering the rest. */
+export async function readCappedBody(res: Response, maxBytes = MAX_PREVIEW_BYTES): Promise<Uint8Array | null> {
+  const declared = Number(res.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    await res.body?.cancel().catch(() => undefined);
+    return null;
+  }
+  const reader = res.body?.getReader();
+  if (!reader) {
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    return bytes.length > maxBytes ? null : bytes;
+  }
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value?.byteLength) continue;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => undefined);
+      return null;
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out;
 }
 
 export function sniffImageType(bytes: Uint8Array): string | null {
@@ -82,15 +120,17 @@ export function fallbackPreviewSvg(name: string): PreviewImage {
 
 export async function resolveCatalogPreview(
   project: OpenCatalogEntry,
-  opts: { fetchImpl?: FetchLike; cache?: PreviewCache; now?: number } = {},
+  opts: { fetchImpl?: FetchLike; cache?: PreviewCache; now?: number; role?: PreviewRole } = {},
 ): Promise<PreviewImage> {
   const fetchImpl = opts.fetchImpl ?? fetch;
   const cache = opts.cache;
   const now = opts.now ?? Date.now();
-  const hit = cache?.get(project.id);
+  const role = opts.role ?? "preview";
+  const cacheKey = `${project.id}:${role}`;
+  const hit = cache?.get(cacheKey);
   if (hit && hit.expiresAt > now) return { body: hit.body, contentType: hit.contentType };
 
-  for (const url of previewCandidateUrls(project)) {
+  for (const url of previewCandidateUrls(project, role)) {
     try {
       const res = await fetchImpl(url, {
         redirect: "follow",
@@ -98,14 +138,14 @@ export async function resolveCatalogPreview(
         headers: { Accept: "image/*,*/*;q=0.8", "User-Agent": PREVIEW_UA },
       });
       if (!res.ok) continue;
-      const bytes = new Uint8Array(await res.arrayBuffer());
-      if (bytes.length < 16 || bytes.length > MAX_BYTES) continue;
+      const bytes = await readCappedBody(res);
+      if (!bytes || bytes.length < 16) continue;
       const sniffed = sniffImageType(bytes);
       if (!sniffed) continue;
       const declared = (res.headers.get("content-type") ?? "").split(";")[0]?.trim().toLowerCase() ?? "";
       const contentType = declared.startsWith("image/") ? declared : sniffed;
       const image = { body: bytes, contentType };
-      cache?.set(project.id, { ...image, expiresAt: now + CACHE_MS });
+      cache?.set(cacheKey, { ...image, expiresAt: now + CACHE_MS });
       return image;
     } catch {
       /* try the next candidate */
@@ -113,6 +153,6 @@ export async function resolveCatalogPreview(
   }
 
   const fallback = fallbackPreviewSvg(project.name);
-  cache?.set(project.id, { ...fallback, expiresAt: now + FALLBACK_CACHE_MS });
+  cache?.set(cacheKey, { ...fallback, expiresAt: now + FALLBACK_CACHE_MS });
   return fallback;
 }

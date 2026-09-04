@@ -181,10 +181,11 @@ export class CoreClient {
     return this.request(`/opensource/projects/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/remix`, { method: "POST" });
   }
   /** Loopback image URL for `<img src>` — the preview route accepts `?token=` like SSE. */
-  openSourcePreviewUrl(id: string): string {
+  openSourcePreviewUrl(id: string, role: "preview" | "hero" = "preview"): string {
     const [owner, slug] = id.split("/");
     if (!owner || !slug) return "";
     const qs = new URLSearchParams({ token: this.token });
+    if (role === "hero") qs.set("role", "hero");
     return `${this.baseUrl}/opensource/preview/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}?${qs.toString()}`;
   }
   projectOrder(id: string): Promise<OrderReadiness & { vendors: Array<{ id: OrderVendorId; label: string; enabled: boolean }> }> {

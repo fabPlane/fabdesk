@@ -72,6 +72,65 @@ describe("catalog preview proxy", () => {
     expect(previewCandidateUrls(og).at(-1)).toBe("https://opengraph.github.com/repo/blackmagic-debug/blackmagic");
   });
 
+  test("previewCandidateUrls puts the hero image first when role is hero", () => {
+    const project = {
+      ...OPEN_CATALOG_SEED[0]!,
+      previewUrl: "https://example.com/thumb.png",
+      heroUrl: "https://example.com/hero.png",
+    };
+    expect(previewCandidateUrls(project)[0]).toBe("https://example.com/thumb.png");
+    expect(previewCandidateUrls(project, "hero")[0]).toBe("https://example.com/hero.png");
+  });
+
+  test("resolveCatalogPreview aborts oversized bodies without buffering the rest", async () => {
+    let pulled = 0;
+    const chunk = new Uint8Array(64 * 1024).fill(0xff);
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += chunk.byteLength;
+        controller.enqueue(chunk);
+      },
+    });
+    const { heroUrl: _hero, ...base } = OPEN_CATALOG_SEED[0]!;
+    const project = { ...base, previewUrl: "https://example.com/huge.png" };
+    const image = await resolveCatalogPreview(project, {
+      cache: createPreviewCache(),
+      fetchImpl: async (url) => {
+        if (String(url).includes("huge")) return new Response(stream);
+        return new Response(png, { headers: { "content-type": "image/png" } });
+      },
+    });
+    expect(image.contentType).toBe("image/png");
+    expect(image.body[0]).toBe(0x89);
+    expect(pulled).toBeGreaterThan(5_000_000);
+    expect(pulled).toBeLessThan(5_000_000 + 64 * 1024 * 3);
+  });
+
+  test("resolveCatalogPreview skips a declared Content-Length over the cap", async () => {
+    const { heroUrl: _hero, ...base } = OPEN_CATALOG_SEED[0]!;
+    const project = { ...base, previewUrl: "https://example.com/huge.png" };
+    let cancelled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(new Uint8Array(1024));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const image = await resolveCatalogPreview(project, {
+      cache: createPreviewCache(),
+      fetchImpl: async (url) => {
+        if (String(url).includes("huge")) {
+          return new Response(stream, { headers: { "content-length": "9000000" } });
+        }
+        return new Response(png, { headers: { "content-type": "image/png" } });
+      },
+    });
+    expect(image.contentType).toBe("image/png");
+    expect(cancelled).toBe(true);
+  });
+
   test("resolveCatalogPreview caches a fetched image and falls back to SVG", async () => {
     const project = OPEN_CATALOG_SEED[0]!;
     const cache = createPreviewCache();
