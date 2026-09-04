@@ -1,6 +1,6 @@
 import type { AgentId, Thread } from "@fabdesk/protocol";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button, IconButton, Kbd, Textarea } from "../components/ui";
 import { useCore } from "../core/CoreProvider";
 import { useDoctor, useSettings } from "../hooks/queries";
@@ -9,6 +9,7 @@ import { DRAFT_KEY_NEW, useUiStore } from "../stores/ui";
 import { basename, mimeFromPath, modKey } from "../util";
 import { AgentModelMenu } from "./AgentModelMenu";
 import { agentModelLabel } from "./agent-model-choices";
+import { applyComposerTextareaHeight } from "./composer-autosize";
 
 /** Bridge for the global shortcut hook (mod+Enter send, mod+. abort) and for app automation. */
 export const composerHandlers: {
@@ -76,11 +77,18 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
     textareaRef.current?.focus();
   }, [focusNonce, thread?.id]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
-    el.style.height = "0px";
-    el.style.height = `${Math.min(240, Math.max(44, el.scrollHeight))}px`;
+    applyComposerTextareaHeight(el, draft);
+    let lastWidth = el.clientWidth;
+    const ro = new ResizeObserver(() => {
+      if (el.clientWidth === lastWidth) return;
+      lastWidth = el.clientWidth;
+      applyComposerTextareaHeight(el, draft);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
   }, [draft]);
 
   const agents = doctor.data?.agents ?? [];
@@ -176,8 +184,8 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
             ref={textareaRef}
             value={draft}
             placeholder={placeholder}
-            className="border-0 bg-transparent px-3.5 py-2.5 focus:border-0"
-            rows={2}
+            className="h-[44px] max-h-[240px] min-h-[44px] overflow-y-auto border-0 bg-transparent px-3.5 py-2.5 focus:border-0"
+            rows={1}
             onChange={(e) => setDraft(draftKey, e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
