@@ -99,6 +99,7 @@ function createWindow(): BrowserWindow {
 }
 
 if (!app.requestSingleInstanceLock()) {
+  console.error(`[main] another ${identity.productName} instance holds the lock; quitting`);
   app.quit();
 } else {
   app.on("second-instance", () => {
