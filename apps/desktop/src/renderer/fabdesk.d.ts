@@ -18,7 +18,7 @@ export interface FabdeskBridge {
   sentryTest: boolean;
   /** True when the app automation bridge is on (dev builds / FABDESK_AUTOMATION=1); the renderer then installs window.__fabdeskApp. */
   automationEnabled: boolean;
-  /** True for the isolated Fabdesk Dev profile; the sign-in screen then shows staging/local options without a shortcut. */
+  /** True for the isolated fabPlane Dev profile; the sign-in screen then shows staging/local options without a shortcut. */
   devBuild: boolean;
   /** Persist the Appearance theme so the next launch paints the matching window background. */
   setTheme(themeId: string | null): Promise<void>;

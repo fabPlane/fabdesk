@@ -1,5 +1,5 @@
 /**
- * Isolated "Fabdesk Dev" identity so an unpackaged `bun run dev` copy can run next to the
+ * Isolated "fabPlane Dev" identity so an unpackaged `bun run dev` copy can run next to the
  * installed production app (VS Code vs Insiders). Electron's single-instance lock and default
  * userData both key off the app name, so this must run before `getPath('userData')` and
  * `requestSingleInstanceLock()`.
@@ -10,14 +10,14 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-export const PROD_PRODUCT_NAME = "Fabdesk";
-export const DEV_PRODUCT_NAME = "Fabdesk Dev";
+export const PROD_PRODUCT_NAME = "fabPlane";
+export const DEV_PRODUCT_NAME = "fabPlane Dev";
 export const PROD_APP_USER_MODEL_ID = "com.tensorfleet.fabdesk";
 export const DEV_APP_USER_MODEL_ID = "com.tensorfleet.fabdesk.dev";
-export const PROD_DESKTOP_NAME = "fabdesk.desktop";
-export const DEV_DESKTOP_NAME = "fabdesk-dev.desktop";
-export const PROD_LINUX_WM_CLASS = "Fabdesk";
-export const DEV_LINUX_WM_CLASS = "fabdesk-dev";
+export const PROD_DESKTOP_NAME = "fabplane.desktop";
+export const DEV_DESKTOP_NAME = "fabplane-dev.desktop";
+export const PROD_LINUX_WM_CLASS = "fabPlane";
+export const DEV_LINUX_WM_CLASS = "fabplane-dev";
 export const PROD_CORE_HOME_DIR = "fabdesk";
 export const DEV_CORE_HOME_DIR = "fabdesk-dev";
 /** Fixed loopback port for a dev-profile core so MCP configs survive `bun --watch` reloads. */
@@ -113,6 +113,22 @@ export function resolveDevCorePort(env: NodeJS.ProcessEnv = {}): string {
   return env["FABDESK_DEV_PORT"] ?? DEFAULT_DEV_CORE_PORT;
 }
 
+/** `bunx electron --user-data-dir=/tmp/foo` must keep that profile (docs/sentry.md). */
+export function explicitUserDataDir(argv: readonly string[] = process.argv): string | undefined {
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (!arg) continue;
+    if (arg === "--user-data-dir" || arg === "--userData") {
+      const next = argv[i + 1];
+      if (next && !next.startsWith("-")) return next;
+      continue;
+    }
+    if (arg.startsWith("--user-data-dir=")) return arg.slice("--user-data-dir=".length) || undefined;
+    if (arg.startsWith("--userData=")) return arg.slice("--userData=".length) || undefined;
+  }
+  return undefined;
+}
+
 /**
  * Packaged production (and a binary override) bind a random port. The isolated dev copy uses a
  * fixed port so MCP configs and the renderer survive core reloads.
@@ -131,13 +147,15 @@ export function spawnCorePort(opts: {
 /** Apply name / userData / AUMID / WM_CLASS / FABDESK_HOME. No-op for the production identity. */
 export function applyDesktopIdentity(
   app: IdentityApp,
-  opts: { packaged: boolean; env: NodeJS.ProcessEnv; platform: NodeJS.Platform },
+  opts: { packaged: boolean; env: NodeJS.ProcessEnv; platform: NodeJS.Platform; argv?: readonly string[] },
 ): DesktopIdentity {
   const identity = desktopIdentity(useDevProfile(opts));
   if (!identity.devProfile) return identity;
 
   app.setName(identity.productName);
-  app.setPath("userData", join(app.getPath("appData"), identity.productName));
+  if (!explicitUserDataDir(opts.argv ?? process.argv)) {
+    app.setPath("userData", join(app.getPath("appData"), identity.productName));
+  }
   app.setAppUserModelId(identity.appUserModelId);
   if (opts.platform === "linux") {
     app.setDesktopName?.(identity.desktopName);

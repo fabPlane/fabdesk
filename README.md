@@ -38,8 +38,8 @@ bun test
 bun run dev
 ```
 
-`bun run dev` starts **Fabdesk Dev**, an isolated Electron identity (separate userData, single-instance
-lock, core home and port) so it can run at the same time as an installed production Fabdesk. See
+`bun run dev` starts **fabPlane Dev**, an isolated Electron identity (separate userData, single-instance
+lock, core home and port) so it can run at the same time as an installed production fabPlane. See
 [docs/dev-loop.md](docs/dev-loop.md).
 
 Rules:

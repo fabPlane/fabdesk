@@ -29,7 +29,7 @@ export interface SupervisorOptions {
   binaryOverride?: string | undefined;
   /** Extra environment for the spawned daemon (e.g. the Sentry DSN/environment; see src/main/sentry.ts). */
   extraEnv?: Record<string, string> | undefined;
-  /** Isolated "Fabdesk Dev" profile: fixed port; core home is passed via FABDESK_HOME. */
+  /** Isolated "fabPlane Dev" profile: fixed port; core home is passed via FABDESK_HOME. */
   devProfile?: boolean | undefined;
 }
 

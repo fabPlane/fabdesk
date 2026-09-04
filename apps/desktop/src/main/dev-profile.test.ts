@@ -12,6 +12,7 @@ import {
   PROD_PRODUCT_NAME,
   applyDesktopIdentity,
   desktopIdentity,
+  explicitUserDataDir,
   parseDevProfileFlag,
   platformAppDataDir,
   resolveCoreHome,
@@ -38,7 +39,7 @@ function fakeApp(appData = "/home/me/.config"): IdentityApp & {
     desktopName?: string;
     switches: Array<[string, string | undefined]>;
   } = { switches: [] };
-  const paths = { appData, userData: join(appData, "Fabdesk") };
+  const paths = { appData, userData: join(appData, "fabPlane") };
   return {
     calls,
     setName(name) {
@@ -109,10 +110,10 @@ describe("paths", () => {
   test("userData and core home are distinct for each profile on every platform", () => {
     const linux = { HOME: "/home/me" };
     expect(resolveUserDataPath({ productName: PROD_PRODUCT_NAME, env: linux, platform: "linux" })).toBe(
-      "/home/me/.config/Fabdesk",
+      "/home/me/.config/fabPlane",
     );
     expect(resolveUserDataPath({ productName: DEV_PRODUCT_NAME, env: linux, platform: "linux" })).toBe(
-      "/home/me/.config/Fabdesk Dev",
+      "/home/me/.config/fabPlane Dev",
     );
     expect(resolveCoreHome({ env: linux, platform: "linux", dirName: PROD_CORE_HOME_DIR })).toBe(
       "/home/me/.config/fabdesk",
@@ -123,7 +124,7 @@ describe("paths", () => {
 
     const mac = { HOME: "/Users/me" };
     expect(resolveUserDataPath({ productName: DEV_PRODUCT_NAME, env: mac, platform: "darwin" })).toBe(
-      "/Users/me/Library/Application Support/Fabdesk Dev",
+      "/Users/me/Library/Application Support/fabPlane Dev",
     );
     expect(resolveCoreHome({ env: mac, platform: "darwin", dirName: DEV_CORE_HOME_DIR })).toBe(
       "/Users/me/Library/Application Support/fabdesk-dev",
@@ -131,7 +132,7 @@ describe("paths", () => {
 
     const win = { HOME: "C:/Users/me", APPDATA: "C:/Users/me/AppData/Roaming" };
     expect(resolveUserDataPath({ productName: DEV_PRODUCT_NAME, env: win, platform: "win32" })).toBe(
-      join("C:/Users/me/AppData/Roaming", "Fabdesk Dev"),
+      join("C:/Users/me/AppData/Roaming", "fabPlane Dev"),
     );
     expect(resolveCoreHome({ env: win, platform: "win32", dirName: DEV_CORE_HOME_DIR })).toBe(
       join("C:/Users/me/AppData/Roaming", "fabdesk-dev"),
@@ -141,7 +142,7 @@ describe("paths", () => {
   test("honors XDG_CONFIG_HOME, APPDATA and FABDESK_HOME", () => {
     expect(platformAppDataDir({ HOME: "/home/me", XDG_CONFIG_HOME: "/home/me/.cfg" }, "linux")).toBe("/home/me/.cfg");
     expect(resolveUserDataPath({ productName: DEV_PRODUCT_NAME, env: { HOME: "/home/me", XDG_CONFIG_HOME: "/x" }, platform: "linux" })).toBe(
-      "/x/Fabdesk Dev",
+      "/x/fabPlane Dev",
     );
     expect(resolveCoreHome({ env: { FABDESK_HOME: "/tmp/custom", HOME: "/home/me" }, platform: "linux", dirName: DEV_CORE_HOME_DIR })).toBe(
       "/tmp/custom",
@@ -171,14 +172,14 @@ describe("applyDesktopIdentity", () => {
     const identity = applyDesktopIdentity(app, { packaged: false, env, platform: "linux" });
     expect(identity.devProfile).toBe(true);
     expect(calls.setName).toBe(DEV_PRODUCT_NAME);
-    expect(calls.userData).toBe("/home/me/.config/Fabdesk Dev");
+    expect(calls.userData).toBe("/home/me/.config/fabPlane Dev");
     expect(calls.aumid).toBe(DEV_APP_USER_MODEL_ID);
     expect(calls.desktopName).toBe(DEV_DESKTOP_NAME);
     expect(calls.switches).toEqual([["class", DEV_LINUX_WM_CLASS]]);
     expect(env["FABDESK_HOME"]).toBe("/home/me/.config/fabdesk-dev");
   });
 
-  test("packaged production is a no-op so existing ~/.config/Fabdesk keeps working", () => {
+  test("packaged production is a no-op so existing ~/.config/fabPlane keeps working", () => {
     const { calls, ...app } = fakeApp();
     const env: NodeJS.ProcessEnv = { HOME: "/home/me" };
     const identity = applyDesktopIdentity(app, { packaged: true, env, platform: "linux" });
@@ -196,7 +197,7 @@ describe("applyDesktopIdentity", () => {
     const env: NodeJS.ProcessEnv = { HOME: "/Users/me", FABDESK_DEV_PROFILE: "1" };
     applyDesktopIdentity(app, { packaged: true, env, platform: "darwin" });
     expect(calls.setName).toBe(DEV_PRODUCT_NAME);
-    expect(calls.userData).toBe("/Users/me/Library/Application Support/Fabdesk Dev");
+    expect(calls.userData).toBe("/Users/me/Library/Application Support/fabPlane Dev");
     expect(env["FABDESK_HOME"]).toBe("/Users/me/Library/Application Support/fabdesk-dev");
     expect(calls.desktopName).toBeUndefined();
     expect(calls.switches).toEqual([]);
@@ -207,5 +208,24 @@ describe("applyDesktopIdentity", () => {
     const env: NodeJS.ProcessEnv = { HOME: "/home/me", FABDESK_HOME: "/tmp/mine" };
     applyDesktopIdentity(app, { packaged: false, env, platform: "linux" });
     expect(env["FABDESK_HOME"]).toBe("/tmp/mine");
+  });
+
+  test("explicitUserDataDir reads --user-data-dir from argv", () => {
+    expect(explicitUserDataDir(["electron", "--user-data-dir=/tmp/fabdesk-sentry-test"])).toBe("/tmp/fabdesk-sentry-test");
+    expect(explicitUserDataDir(["electron", "--user-data-dir", "/tmp/other"])).toBe("/tmp/other");
+    expect(explicitUserDataDir(["electron", "--no-sandbox"])).toBeUndefined();
+  });
+
+  test("keeps an explicit --user-data-dir instead of resetting to fabPlane Dev", () => {
+    const { calls, ...app } = fakeApp();
+    const env: NodeJS.ProcessEnv = { HOME: "/home/me" };
+    applyDesktopIdentity(app, {
+      packaged: false,
+      env,
+      platform: "linux",
+      argv: ["electron", "--user-data-dir=/tmp/fabdesk-sentry-test"],
+    });
+    expect(calls.setName).toBe(DEV_PRODUCT_NAME);
+    expect(calls.userData).toBeUndefined();
   });
 });

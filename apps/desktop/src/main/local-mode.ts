@@ -51,9 +51,9 @@ export function localAuthAllowed(): boolean {
   return !app.isPackaged || existsSync(devMarkerPath());
 }
 
-/** Local auth is on by default in dev; packaged builds need an explicit opt-in. */
-export function localAuthEnabled(): boolean {
-  const enabled = readPrefs().localAuth ?? !app.isPackaged;
+/** Local auth is on by default for the isolated Dev profile; production identity needs an opt-in. */
+export function localAuthEnabled(defaultOn = !app.isPackaged): boolean {
+  const enabled = readPrefs().localAuth ?? defaultOn;
   if (enabled) ensureDevMarker();
   return enabled;
 }

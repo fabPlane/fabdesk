@@ -117,7 +117,7 @@ if (!app.requestSingleInstanceLock()) {
     void runSentryTest();
     const home = process.env["FABDESK_HOME"];
     supervisor = new CoreSupervisor({
-      localAuth: localAuthEnabled(),
+      localAuth: localAuthEnabled(identity.devProfile),
       binaryOverride: process.env["FABDESK_CORE_BIN"],
       extraEnv: { ...coreSentryEnv(), ...(home ? { FABDESK_HOME: home } : {}) },
       ...(identity.devProfile ? { devProfile: true } : {}),
