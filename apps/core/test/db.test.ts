@@ -99,13 +99,16 @@ describe("sqlite", () => {
     expect(reopened.threads.get(older.id)!.pinned).toBe(true);
     expect(reopened.threads.list().map((t) => t.id)).toEqual([older.id, newer.id]);
     reopened.threads.patch(older.id, { pinned: false });
+    reopened.threads.patch(newer.id, { pinned: true });
     expect(reopened.threads.get(older.id)!.pinned).toBe(false);
+    expect(reopened.threads.get(newer.id)!.pinned).toBe(true);
     reopened.db.close();
 
-    const unpinned = new Store(openDatabase(path));
-    expect(unpinned.threads.get(older.id)!.pinned).toBe(false);
-    expect(unpinned.threads.list().map((t) => t.id)).toEqual([newer.id, older.id]);
-    unpinned.db.close();
+    const swapped = new Store(openDatabase(path));
+    expect(swapped.threads.get(older.id)!.pinned).toBe(false);
+    expect(swapped.threads.get(newer.id)!.pinned).toBe(true);
+    expect(swapped.threads.list().map((t) => t.id)).toEqual([newer.id, older.id]);
+    swapped.db.close();
   });
 
   test("ftsQuery quoting", () => {
