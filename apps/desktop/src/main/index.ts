@@ -16,6 +16,7 @@ import { resolveWindowTheme } from "./window-theme";
 // Name / userData / AUMID / WM_CLASS / FABDESK_HOME before any path read or the single-instance lock
 // (Electron keys the lock on userData). Packaged production identity is left untouched.
 const identity = applyDesktopIdentity(app, { packaged: app.isPackaged, env: process.env, platform: process.platform });
+console.error(`[main] identity=${identity.productName} userData=${app.getPath("userData")}${process.env["FABDESK_HOME"] ? ` home=${process.env["FABDESK_HOME"]}` : ""}`);
 
 // Error reporting (off without a DSN or when the user opted out); must run before `ready` (docs/sentry.md).
 initSentry();
