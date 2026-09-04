@@ -217,10 +217,10 @@ export async function resolveCatalogPreview(
     return image;
   };
 
+  // Always prefer the 3D/isometric preview. photo.webp is the rehosted GitHub
+  // board photo, logo, or org avatar — never the primary catalog tile or hero.
   const local =
-    (role === "hero" ? localCatalogAssetPath(project, "photo.webp") : undefined) ??
-    localCatalogAssetPath(project, "preview.webp") ??
-    localCatalogAssetPath(project, "photo.webp");
+    localCatalogAssetPath(project, "preview.webp") ?? localCatalogAssetPath(project, "photo.webp");
   if (local) {
     const bytes = new Uint8Array(await Bun.file(local).arrayBuffer());
     const sniffed = sniffImageType(bytes);

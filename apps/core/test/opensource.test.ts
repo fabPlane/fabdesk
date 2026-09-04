@@ -134,6 +134,35 @@ describe("catalog preview proxy", () => {
     }
   });
 
+  test("hero role serves preview.webp, not the rehosted GitHub photo.webp", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "catalog-hero-"));
+    const dest = join(dir, "im-tomu", "fomu-hardware");
+    const previewPng = png;
+    const photoPng = Uint8Array.from(
+      atob("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEklEQVR42mP8z8BQz0AEYBxVAAAwKwI/aR9BXwAAAABJRU5ErkJggg=="),
+      (c) => c.charCodeAt(0),
+    );
+    await Bun.write(join(dest, "preview.webp"), previewPng);
+    await Bun.write(join(dest, "photo.webp"), photoPng);
+    const prev = process.env["CATALOG_ASSET_DIR"];
+    process.env["CATALOG_ASSET_DIR"] = dir;
+    try {
+      const project = OPEN_CATALOG_SEED.find((p) => p.id === "im-tomu/fomu-hardware")!;
+      const hero = await resolveCatalogPreview(project, {
+        cache: createPreviewCache(),
+        role: "hero",
+        fetchImpl: async () => {
+          throw new Error("should not fetch");
+        },
+      });
+      expect(hero.body.length).toBe(previewPng.length);
+      expect(hero.body.length).not.toBe(photoPng.length);
+    } finally {
+      if (prev === undefined) delete process.env["CATALOG_ASSET_DIR"];
+      else process.env["CATALOG_ASSET_DIR"] = prev;
+    }
+  });
+
   test("resolveCatalogPreview reads CATALOG_ASSET_DIR before fetching", async () => {
     const dir = await mkdtemp(join(tmpdir(), "catalog-assets-"));
     const dest = join(dir, "tensorfleet", "koyomi-lvds-hat");
