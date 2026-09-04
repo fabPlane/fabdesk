@@ -43,10 +43,10 @@ export function previewCandidateUrls(project: OpenCatalogEntry, role: PreviewRol
   const hero = project.heroUrl;
   const primary = role === "hero" ? hero : preview;
   const secondary = role === "hero" ? preview : hero;
-  if (!isRateLimitedPreviewHost(primary)) add(primary);
+  if (primary && !isRateLimitedPreviewHost(primary)) add(primary);
   if (secondary && !isRateLimitedPreviewHost(secondary)) add(secondary);
   add(githubAvatarUrl(project.source?.owner ?? project.ownerSlug));
-  if (isRateLimitedPreviewHost(primary)) add(primary);
+  if (primary && isRateLimitedPreviewHost(primary)) add(primary);
   if (secondary && isRateLimitedPreviewHost(secondary)) add(secondary);
   return urls;
 }
