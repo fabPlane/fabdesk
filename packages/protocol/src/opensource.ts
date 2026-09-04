@@ -22,6 +22,8 @@ export const OpenCatalogEntry = z.object({
   homepageUrl: z.string().optional(),
   previewUrl: z.string(),
   heroUrl: z.string().optional(),
+  /** Rehosted original board photo / logo. Primary catalog tile is `previewUrl` (3D). */
+  photoUrl: z.string().optional(),
   modelUrl: z.string().optional(),
   overview: z.string().optional(),
   lede: z.string().optional(),
@@ -80,6 +82,75 @@ export const OrderSession = z.object({
   steps: z.array(OrderStep),
 });
 export type OrderSession = z.infer<typeof OrderSession>;
+
+/** Images CDN custom domain for catalog preview/photo objects. Not the website. */
+export const DEFAULT_CATALOG_PUBLIC_ORIGIN = "https://images.fabplane.com";
+/** Public path matches the R2 object key: /artifacts/open-catalog/{owner}/{slug}/{file}. */
+export const OPEN_CATALOG_PREFIX = "artifacts/open-catalog";
+export const CATALOG_PUBLIC_PREFIX = `/${OPEN_CATALOG_PREFIX}`;
+
+const WEBSITE_ORIGINS = new Set([
+  "https://fabplane.com",
+  "http://fabplane.com",
+  "https://www.fabplane.com",
+  "http://www.fabplane.com",
+]);
+
+function envOrigin(name: string): string | undefined {
+  const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env;
+  const value = env?.[name]?.trim().replace(/\/+$/, "");
+  if (!value || WEBSITE_ORIGINS.has(value)) return undefined;
+  return value;
+}
+
+/** Images CDN origin. Override with CATALOG_PUBLIC_ORIGIN, IMAGES_PUBLIC_BASE, ARTIFACT_PUBLIC_BASE, or PUBLIC_ARTIFACT_CDN_URL. */
+export function catalogPublicOrigin(): string {
+  return (
+    envOrigin("CATALOG_PUBLIC_ORIGIN") ??
+    envOrigin("IMAGES_PUBLIC_BASE") ??
+    envOrigin("ARTIFACT_PUBLIC_BASE") ??
+    envOrigin("PUBLIC_ARTIFACT_CDN_URL") ??
+    DEFAULT_CATALOG_PUBLIC_ORIGIN
+  );
+}
+
+/** Resolved at import for committed seed URLs. Prefer `catalogPublicOrigin()` at runtime. */
+export const CATALOG_PUBLIC_ORIGIN = catalogPublicOrigin();
+
+export function catalogHostedUrl(ownerSlug: string, slug: string, file: "preview.webp" | "photo.webp"): string {
+  return `${catalogPublicOrigin()}${CATALOG_PUBLIC_PREFIX}/${ownerSlug}/${slug}/${file}`;
+}
+
+export function isCatalogWebsiteAsset(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host === "fabplane.com" || host === "www.fabplane.com";
+  } catch {
+    return false;
+  }
+}
+
+export function catalogPreviewUrl(ownerSlug: string, slug: string): string {
+  return catalogHostedUrl(ownerSlug, slug, "preview.webp");
+}
+
+export function catalogPhotoUrl(ownerSlug: string, slug: string): string {
+  return catalogHostedUrl(ownerSlug, slug, "photo.webp");
+}
+
+export function isGitHubAssetHost(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return (
+      host === "github.com" ||
+      host.endsWith(".github.com") ||
+      host === "raw.githubusercontent.com" ||
+      host.endsWith(".githubusercontent.com")
+    );
+  } catch {
+    return false;
+  }
+}
 
 /** Two-letter tile used when a catalog preview image is missing or fails to load. */
 export function catalogInitials(name: string): string {

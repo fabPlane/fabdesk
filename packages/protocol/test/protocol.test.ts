@@ -1,5 +1,20 @@
 import { describe, expect, test } from "bun:test";
-import { catalogInitials, CoreEvent, DaemonHandshake, LatestRelease, ReleaseManifest, RouteFrameLine, topicMatches } from "../src/index";
+import {
+  catalogHostedUrl,
+  catalogInitials,
+  catalogPhotoUrl,
+  catalogPreviewUrl,
+  catalogPublicOrigin,
+  CoreEvent,
+  DaemonHandshake,
+  isCatalogWebsiteAsset,
+  isGitHubAssetHost,
+  DEFAULT_CATALOG_PUBLIC_ORIGIN,
+  LatestRelease,
+  ReleaseManifest,
+  RouteFrameLine,
+  topicMatches,
+} from "../src/index";
 
 describe("topicMatches", () => {
   test("exact, wildcard and prefix globs", () => {
@@ -28,6 +43,17 @@ describe("schemas", () => {
     expect(manifest.assets[0]?.platform).toBe("darwin");
     expect(ReleaseManifest.safeParse({ ...manifest, version: "1.2" }).success).toBe(false);
   });
+  test("catalog hosted asset URLs stay on the images CDN, not GitHub or the website", () => {
+    expect(catalogPublicOrigin()).toBe(DEFAULT_CATALOG_PUBLIC_ORIGIN);
+    expect(catalogPreviewUrl("im-tomu", "fomu-hardware")).toBe("https://images.fabplane.com/artifacts/open-catalog/im-tomu/fomu-hardware/preview.webp");
+    expect(catalogPhotoUrl("tensorfleet", "koyomi-lvds-hat")).toBe("https://images.fabplane.com/artifacts/open-catalog/tensorfleet/koyomi-lvds-hat/photo.webp");
+    expect(catalogHostedUrl("foostan", "crkbd", "preview.webp")).toContain("/artifacts/open-catalog/foostan/crkbd/preview.webp");
+    expect(isGitHubAssetHost("https://raw.githubusercontent.com/im-tomu/fomu-hardware/master/fomu.png")).toBe(true);
+    expect(isGitHubAssetHost(catalogPreviewUrl("im-tomu", "fomu-hardware"))).toBe(false);
+    expect(isCatalogWebsiteAsset(catalogPreviewUrl("im-tomu", "fomu-hardware"))).toBe(false);
+    expect(isCatalogWebsiteAsset("https://fabplane.com/open-catalog/im-tomu/fomu-hardware/preview.webp")).toBe(true);
+  });
+
   test("catalogInitials uses the first two words, else the first two letters", () => {
     expect(catalogInitials("HackRF One")).toBe("HO");
     expect(catalogInitials("Koyomi LVDS HAT")).toBe("KL");

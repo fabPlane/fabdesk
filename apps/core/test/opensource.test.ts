@@ -3,12 +3,14 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../src/db";
+import { catalogPreviewUrl, isGitHubAssetHost } from "@fabdesk/protocol";
 import { allowedCloneUrl, fetchOpenCatalog, findCatalogProject } from "../src/opensource/catalog";
 import { assessOrderReadiness, startOrderSession } from "../src/opensource/order";
 import {
   createPreviewCache,
   fallbackPreviewSvg,
   isRateLimitedPreviewHost,
+  isTrustedPreviewUrl,
   previewCandidateUrls,
   resolveCatalogPreview,
   sniffImageType,
@@ -43,9 +45,17 @@ describe("open catalog", () => {
     expect(findCatalogProject(index, "tensorfleet/koyomi-lvds-hat")?.name).toBe("Koyomi LVDS HAT");
   });
 
-  test("seed preview URLs are not GitHub Open Graph endpoints", () => {
-    expect(OPEN_CATALOG_SEED.every((p) => !isRateLimitedPreviewHost(p.previewUrl))).toBe(true);
-    expect(OPEN_CATALOG_SEED.every((p) => p.previewUrl.startsWith("https://"))).toBe(true);
+  test("seed preview and hero URLs are hosted on the images CDN, not GitHub or the website", () => {
+    expect(OPEN_CATALOG_SEED).toHaveLength(20);
+    for (const project of OPEN_CATALOG_SEED) {
+      expect(isGitHubAssetHost(project.previewUrl)).toBe(false);
+      expect(isRateLimitedPreviewHost(project.previewUrl)).toBe(false);
+      expect(project.previewUrl).toBe(catalogPreviewUrl(project.ownerSlug, project.slug));
+      expect(project.previewUrl.startsWith("https://images.fabplane.com/artifacts/open-catalog/")).toBe(true);
+      expect(project.previewUrl.includes("://fabplane.com/")).toBe(false);
+      expect(project.heroUrl).toBe(project.previewUrl);
+      expect(project.photoUrl).toBe(`https://images.fabplane.com/artifacts/open-catalog/${project.ownerSlug}/${project.slug}/photo.webp`);
+    }
   });
 
   test("allowedCloneUrl only accepts https GitHub git URLs", () => {
@@ -65,21 +75,72 @@ describe("catalog preview proxy", () => {
     expect(sniffImageType(new TextEncoder().encode("Too many"))).toBeNull();
   });
 
-  test("previewCandidateUrls skips Open Graph until after the GitHub avatar", () => {
-    const project = OPEN_CATALOG_SEED.find((p) => p.id === "blackmagic-debug/blackmagic")!;
-    const og = { ...project, previewUrl: "https://opengraph.github.com/repo/blackmagic-debug/blackmagic" };
-    expect(previewCandidateUrls(og)[0]).toBe("https://avatars.githubusercontent.com/blackmagic-debug");
-    expect(previewCandidateUrls(og).at(-1)).toBe("https://opengraph.github.com/repo/blackmagic-debug/blackmagic");
+  test("previewCandidateUrls drops GitHub hosts and keeps hosted 3D first", () => {
+    const project = OPEN_CATALOG_SEED.find((p) => p.id === "im-tomu/fomu-hardware")!;
+    expect(previewCandidateUrls(project)[0]).toBe("https://images.fabplane.com/artifacts/open-catalog/im-tomu/fomu-hardware/preview.webp");
+    const og = {
+      ...project,
+      previewUrl: "https://opengraph.github.com/repo/im-tomu/fomu-hardware",
+      photoUrl: "https://raw.githubusercontent.com/im-tomu/fomu-hardware/master/fomu.png",
+      heroUrl: "https://images.fabplane.com/artifacts/open-catalog/im-tomu/fomu-hardware/preview.webp",
+    };
+    expect(previewCandidateUrls(og)).toEqual([
+      "https://images.fabplane.com/artifacts/open-catalog/im-tomu/fomu-hardware/preview.webp",
+      "https://images.fabplane.com/artifacts/open-catalog/im-tomu/fomu-hardware/photo.webp",
+    ]);
+  });
+
+  test("previewCandidateUrls derives hosted CDN paths when the API still returns GitHub URLs", () => {
+    const project = OPEN_CATALOG_SEED.find((p) => p.id === "im-tomu/fomu-hardware")!;
+    const githubOnly = {
+      ...project,
+      previewUrl: "https://opengraph.github.com/repo/im-tomu/fomu-hardware",
+      heroUrl: "https://raw.githubusercontent.com/im-tomu/fomu-hardware/master/fomu.png",
+      photoUrl: "https://github.com/im-tomu/fomu-hardware/raw/master/fomu.png",
+    };
+    expect(previewCandidateUrls(githubOnly)).toEqual([
+      catalogPreviewUrl("im-tomu", "fomu-hardware"),
+      `https://images.fabplane.com/artifacts/open-catalog/im-tomu/fomu-hardware/photo.webp`,
+    ]);
+  });
+
+  test("isTrustedPreviewUrl allows the images CDN and rejects private destinations", () => {
+    expect(isTrustedPreviewUrl("https://images.fabplane.com/artifacts/open-catalog/im-tomu/fomu-hardware/preview.webp")).toBe(true);
+    expect(isTrustedPreviewUrl("http://images.fabplane.com/artifacts/open-catalog/im-tomu/fomu-hardware/preview.webp")).toBe(false);
+    expect(isTrustedPreviewUrl("https://169.254.169.254/latest/meta-data")).toBe(false);
+    expect(isTrustedPreviewUrl("https://127.0.0.1/preview.webp")).toBe(false);
+    expect(isTrustedPreviewUrl("https://evil.example/preview.webp")).toBe(false);
+  });
+
+  test("resolveCatalogPreview reads CATALOG_ASSET_DIR before fetching", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "catalog-assets-"));
+    const dest = join(dir, "tensorfleet", "koyomi-lvds-hat");
+    await Bun.write(join(dest, "preview.webp"), png);
+    const prev = process.env["CATALOG_ASSET_DIR"];
+    process.env["CATALOG_ASSET_DIR"] = dir;
+    try {
+      const image = await resolveCatalogPreview(OPEN_CATALOG_SEED[0]!, {
+        cache: createPreviewCache(),
+        fetchImpl: async () => {
+          throw new Error("should not fetch");
+        },
+      });
+      expect(image.contentType).toBe("image/png");
+      expect(image.body[0]).toBe(0x89);
+    } finally {
+      if (prev === undefined) delete process.env["CATALOG_ASSET_DIR"];
+      else process.env["CATALOG_ASSET_DIR"] = prev;
+    }
   });
 
   test("previewCandidateUrls puts the hero image first when role is hero", () => {
     const project = {
       ...OPEN_CATALOG_SEED[0]!,
-      previewUrl: "https://example.com/thumb.png",
-      heroUrl: "https://example.com/hero.png",
+      previewUrl: "https://images.fabplane.com/artifacts/open-catalog/tensorfleet/koyomi-lvds-hat/thumb.webp",
+      heroUrl: "https://images.fabplane.com/artifacts/open-catalog/tensorfleet/koyomi-lvds-hat/hero.webp",
     };
-    expect(previewCandidateUrls(project)[0]).toBe("https://example.com/thumb.png");
-    expect(previewCandidateUrls(project, "hero")[0]).toBe("https://example.com/hero.png");
+    expect(previewCandidateUrls(project)[0]).toBe("https://images.fabplane.com/artifacts/open-catalog/tensorfleet/koyomi-lvds-hat/thumb.webp");
+    expect(previewCandidateUrls(project, "hero")[0]).toBe("https://images.fabplane.com/artifacts/open-catalog/tensorfleet/koyomi-lvds-hat/hero.webp");
   });
 
   test("resolveCatalogPreview aborts oversized bodies without buffering the rest", async () => {
@@ -92,7 +153,7 @@ describe("catalog preview proxy", () => {
       },
     });
     const { heroUrl: _hero, ...base } = OPEN_CATALOG_SEED[0]!;
-    const project = { ...base, previewUrl: "https://example.com/huge.png" };
+    const project = { ...base, previewUrl: "https://images.fabplane.com/artifacts/open-catalog/tensorfleet/koyomi-lvds-hat/huge.png" };
     const image = await resolveCatalogPreview(project, {
       cache: createPreviewCache(),
       fetchImpl: async (url) => {
@@ -108,7 +169,7 @@ describe("catalog preview proxy", () => {
 
   test("resolveCatalogPreview skips a declared Content-Length over the cap", async () => {
     const { heroUrl: _hero, ...base } = OPEN_CATALOG_SEED[0]!;
-    const project = { ...base, previewUrl: "https://example.com/huge.png" };
+    const project = { ...base, previewUrl: "https://images.fabplane.com/artifacts/open-catalog/tensorfleet/koyomi-lvds-hat/huge.png" };
     let cancelled = false;
     const stream = new ReadableStream<Uint8Array>({
       pull(controller) {
