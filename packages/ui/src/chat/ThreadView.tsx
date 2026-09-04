@@ -1,7 +1,7 @@
 import type { AgentId } from "@fabdesk/protocol";
 import { useCallback } from "react";
 import { Badge } from "../components/ui";
-import { useMessages, useThreads, useThreadMutations } from "../hooks/queries";
+import { useMessages, useThread, useThreadMutations } from "../hooks/queries";
 import { useRunsStore } from "../stores/runs";
 import { useUiStore } from "../stores/ui";
 import { Composer } from "./Composer";
@@ -11,8 +11,8 @@ export function ThreadView() {
   const activeThreadId = useUiStore((s) => s.activeThreadId);
   const projectId = useUiStore((s) => s.activeProjectId);
   const setActiveThread = useUiStore((s) => s.setActiveThread);
-  const threads = useThreads();
-  const thread = threads.data?.find((t) => t.id === activeThreadId) ?? null;
+  const threadQuery = useThread(activeThreadId);
+  const thread = threadQuery.data ?? null;
   const messages = useMessages(activeThreadId);
   const { create } = useThreadMutations();
   const run = useRunsStore((s) => (activeThreadId ? s.runsByThread[activeThreadId] : undefined));

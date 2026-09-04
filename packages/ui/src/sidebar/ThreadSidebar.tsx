@@ -62,7 +62,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
   };
 
   // Electron renderers do not implement window.prompt, so text questions use an inline row.
-  const [ask, setAsk] = useState<{ kind: "project" } | { kind: "folder"; thread: Thread } | null>(null);
+  const [ask, setAsk] = useState<{ kind: "project" } | null>(null);
   const [askValue, setAskValue] = useState("");
 
   const createProject = async (name: string) => {
@@ -73,15 +73,9 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
 
   const submitAsk = async () => {
     const value = askValue.trim();
-    const current = ask;
     setAsk(null);
     setAskValue("");
-    if (!current) return;
-    if (current.kind === "project") {
-      if (value) await createProject(value);
-    } else {
-      patch.mutate({ id: current.thread.id, patch: { folderId: value || null } });
-    }
+    if (value) await createProject(value);
   };
 
   const askRow = ask && (
@@ -95,7 +89,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
       <Input
         autoFocus
         value={askValue}
-        placeholder={ask.kind === "project" ? "Project name" : "Folder name (empty to remove)"}
+        placeholder="Project name"
         onChange={(e) => setAskValue(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Escape") {
@@ -257,15 +251,6 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
             }}
           >
             Rename
-          </MenuItem>
-          <MenuItem
-            onClick={() => {
-              setAskValue(menu.thread.folderId ?? "");
-              setAsk({ kind: "folder", thread: menu.thread });
-              setMenu(null);
-            }}
-          >
-            Move to folder...
           </MenuItem>
           <MenuItem
             onClick={() => {
