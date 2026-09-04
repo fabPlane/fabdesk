@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell } from "electron";
+import { app, BrowserWindow, nativeTheme, shell } from "electron";
 import { existsSync, renameSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,6 +10,7 @@ import { localAuthEnabled } from "./local-mode";
 import { coreSentryEnv, flushSentry, initSentry, runSentryTest, sentryActive, sentryTestRequested, syncErrorReportingFromCore } from "./sentry";
 import { registerUpdateIpc, UpdateChecker } from "./updates";
 import { registerUpdateDownloadIpc, UpdateDownloader } from "./update-download";
+import { resolveWindowTheme } from "./window-theme";
 
 // Error reporting (off without a DSN or when the user opted out); must run before `ready` (docs/sentry.md).
 initSentry();
@@ -44,6 +45,8 @@ function developmentIconPath(): string | undefined {
 }
 
 function createWindow(): BrowserWindow {
+  const theme = resolveWindowTheme(app.getPath("userData"), nativeTheme.shouldUseDarkColors);
+  nativeTheme.themeSource = theme.themeSource;
   const icon = developmentIconPath();
   const win = new BrowserWindow({
     width: 1440,
@@ -51,7 +54,7 @@ function createWindow(): BrowserWindow {
     minWidth: 960,
     minHeight: 600,
     show: false,
-    backgroundColor: "#10130f",
+    backgroundColor: theme.backgroundColor,
     ...(icon ? { icon } : {}),
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
     trafficLightPosition: { x: 12, y: 10 },

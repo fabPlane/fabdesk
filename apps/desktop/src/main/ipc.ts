@@ -1,4 +1,6 @@
-import { BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from "electron";
+import { isThemeId, themeBackground, themeIsDark } from "../../../../packages/ui/src/theme/resolve";
+import { resolveWindowTheme, writeCachedThemeId } from "./window-theme";
 import type { CoreSupervisor } from "./core-supervisor";
 import { localAuthAllowed, setLocalAuth } from "./local-mode";
 import { setErrorReporting, setSentryUser } from "./sentry";
@@ -19,6 +21,25 @@ export function registerIpc(supervisor: CoreSupervisor): void {
     setLocalAuth(on);
     supervisor.setLocalAuth(on);
     await supervisor.restart();
+  });
+  ipcMain.handle("fabdesk:set-theme", (_e, raw: unknown) => {
+    const userData = app.getPath("userData");
+    if (raw === null) {
+      writeCachedThemeId(userData, null);
+      nativeTheme.themeSource = "system";
+      const theme = resolveWindowTheme(userData, nativeTheme.shouldUseDarkColors);
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) win.setBackgroundColor(theme.backgroundColor);
+      }
+      return;
+    }
+    if (!isThemeId(raw)) return;
+    writeCachedThemeId(userData, raw);
+    nativeTheme.themeSource = themeIsDark(raw) ? "dark" : "light";
+    const backgroundColor = themeBackground(raw);
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.setBackgroundColor(backgroundColor);
+    }
   });
   ipcMain.handle("fabdesk:set-error-reporting", (_e, enabled: unknown) => setErrorReporting(enabled === true));
   ipcMain.handle("fabdesk:set-sentry-user", (_e, raw: unknown) => {

@@ -20,6 +20,8 @@ export interface FabdeskBridge {
   automationEnabled: boolean;
   /** True for unpackaged (dev) builds; the sign-in screen then shows staging/local options without a shortcut. */
   devBuild: boolean;
+  /** Persist the Appearance theme so the next launch paints the matching window background. */
+  setTheme(themeId: string | null): Promise<void>;
   setErrorReporting(enabled: boolean): Promise<void>;
   /** id + handle of the signed-in principal (never email); null on logout. */
   setSentryUser(user: { id: string; username?: string } | null): Promise<void>;

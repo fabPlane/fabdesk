@@ -2,9 +2,11 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, externalizeDepsPlugin } from "electron-vite";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Plugin } from "vite";
+import { themeBootInlineCss, themeBootInlineScript } from "../../packages/ui/src/theme/boot-inline";
 
 /** Short git sha for the Sentry release: CI has GITHUB_SHA, local builds ask git, else `dev`. */
 function gitSha(): string {
@@ -39,7 +41,7 @@ const STRICT_CSP = [
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self' data:",
   "worker-src 'self' blob:",
-].join("; ");
+];
 
 /** Dev needs Vite's HMR websocket and the React refresh inline preamble. */
 const DEV_CSP = [
@@ -52,16 +54,25 @@ const DEV_CSP = [
   "worker-src 'self' blob:",
 ].join("; ");
 
+function sha256(value: string): string {
+  return createHash("sha256").update(value).digest("base64");
+}
+
 function cspPlugin(dev: boolean): Plugin {
+  const script = themeBootInlineScript();
+  const css = themeBootInlineCss();
+  const productionCsp = [...STRICT_CSP, `script-src 'self' 'sha256-${sha256(script)}'`].join("; ");
   return {
-    name: "fabdesk:csp",
+    name: "fabdesk:theme-boot",
     transformIndexHtml() {
       return [
         {
           tag: "meta",
-          attrs: { "http-equiv": "Content-Security-Policy", content: dev ? DEV_CSP : STRICT_CSP },
+          attrs: { "http-equiv": "Content-Security-Policy", content: dev ? DEV_CSP : productionCsp },
           injectTo: "head-prepend",
         },
+        { tag: "style", children: css, injectTo: "head-prepend" },
+        { tag: "script", children: script, injectTo: "head-prepend" },
       ];
     },
   };
