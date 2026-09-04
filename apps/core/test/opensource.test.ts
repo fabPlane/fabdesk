@@ -10,6 +10,7 @@ import {
   createPreviewCache,
   fallbackPreviewSvg,
   isRateLimitedPreviewHost,
+  isTrustedPreviewUrl,
   previewCandidateUrls,
   resolveCatalogPreview,
   sniffImageType,
@@ -83,7 +84,32 @@ describe("catalog preview proxy", () => {
       photoUrl: "https://raw.githubusercontent.com/im-tomu/fomu-hardware/master/fomu.png",
       heroUrl: "https://images.fabplane.com/artifacts/open-catalog/im-tomu/fomu-hardware/preview.webp",
     };
-    expect(previewCandidateUrls(og)).toEqual(["https://images.fabplane.com/artifacts/open-catalog/im-tomu/fomu-hardware/preview.webp"]);
+    expect(previewCandidateUrls(og)).toEqual([
+      "https://images.fabplane.com/artifacts/open-catalog/im-tomu/fomu-hardware/preview.webp",
+      "https://images.fabplane.com/artifacts/open-catalog/im-tomu/fomu-hardware/photo.webp",
+    ]);
+  });
+
+  test("previewCandidateUrls derives hosted CDN paths when the API still returns GitHub URLs", () => {
+    const project = OPEN_CATALOG_SEED.find((p) => p.id === "im-tomu/fomu-hardware")!;
+    const githubOnly = {
+      ...project,
+      previewUrl: "https://opengraph.github.com/repo/im-tomu/fomu-hardware",
+      heroUrl: "https://raw.githubusercontent.com/im-tomu/fomu-hardware/master/fomu.png",
+      photoUrl: "https://github.com/im-tomu/fomu-hardware/raw/master/fomu.png",
+    };
+    expect(previewCandidateUrls(githubOnly)).toEqual([
+      catalogPreviewUrl("im-tomu", "fomu-hardware"),
+      `https://images.fabplane.com/artifacts/open-catalog/im-tomu/fomu-hardware/photo.webp`,
+    ]);
+  });
+
+  test("isTrustedPreviewUrl allows the images CDN and rejects private destinations", () => {
+    expect(isTrustedPreviewUrl("https://images.fabplane.com/artifacts/open-catalog/im-tomu/fomu-hardware/preview.webp")).toBe(true);
+    expect(isTrustedPreviewUrl("http://images.fabplane.com/artifacts/open-catalog/im-tomu/fomu-hardware/preview.webp")).toBe(false);
+    expect(isTrustedPreviewUrl("https://169.254.169.254/latest/meta-data")).toBe(false);
+    expect(isTrustedPreviewUrl("https://127.0.0.1/preview.webp")).toBe(false);
+    expect(isTrustedPreviewUrl("https://evil.example/preview.webp")).toBe(false);
   });
 
   test("resolveCatalogPreview reads CATALOG_ASSET_DIR before fetching", async () => {
@@ -110,11 +136,11 @@ describe("catalog preview proxy", () => {
   test("previewCandidateUrls puts the hero image first when role is hero", () => {
     const project = {
       ...OPEN_CATALOG_SEED[0]!,
-      previewUrl: "https://example.com/thumb.png",
-      heroUrl: "https://example.com/hero.png",
+      previewUrl: "https://images.fabplane.com/artifacts/open-catalog/tensorfleet/koyomi-lvds-hat/thumb.webp",
+      heroUrl: "https://images.fabplane.com/artifacts/open-catalog/tensorfleet/koyomi-lvds-hat/hero.webp",
     };
-    expect(previewCandidateUrls(project)[0]).toBe("https://example.com/thumb.png");
-    expect(previewCandidateUrls(project, "hero")[0]).toBe("https://example.com/hero.png");
+    expect(previewCandidateUrls(project)[0]).toBe("https://images.fabplane.com/artifacts/open-catalog/tensorfleet/koyomi-lvds-hat/thumb.webp");
+    expect(previewCandidateUrls(project, "hero")[0]).toBe("https://images.fabplane.com/artifacts/open-catalog/tensorfleet/koyomi-lvds-hat/hero.webp");
   });
 
   test("resolveCatalogPreview aborts oversized bodies without buffering the rest", async () => {
@@ -127,7 +153,7 @@ describe("catalog preview proxy", () => {
       },
     });
     const { heroUrl: _hero, ...base } = OPEN_CATALOG_SEED[0]!;
-    const project = { ...base, previewUrl: "https://example.com/huge.png" };
+    const project = { ...base, previewUrl: "https://images.fabplane.com/artifacts/open-catalog/tensorfleet/koyomi-lvds-hat/huge.png" };
     const image = await resolveCatalogPreview(project, {
       cache: createPreviewCache(),
       fetchImpl: async (url) => {
@@ -143,7 +169,7 @@ describe("catalog preview proxy", () => {
 
   test("resolveCatalogPreview skips a declared Content-Length over the cap", async () => {
     const { heroUrl: _hero, ...base } = OPEN_CATALOG_SEED[0]!;
-    const project = { ...base, previewUrl: "https://example.com/huge.png" };
+    const project = { ...base, previewUrl: "https://images.fabplane.com/artifacts/open-catalog/tensorfleet/koyomi-lvds-hat/huge.png" };
     let cancelled = false;
     const stream = new ReadableStream<Uint8Array>({
       pull(controller) {

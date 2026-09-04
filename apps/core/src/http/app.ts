@@ -5,6 +5,7 @@ import { Hono, type Context } from "hono";
 import {
   CreateProject,
   CreateThread,
+  OpenCatalogIndex,
   OrderVendorId,
   PatchThread,
   SendMessage,
@@ -296,32 +297,41 @@ export function createApp(deps: AppDeps): Hono<Env> {
 
   /* ---------- open-source catalog ---------- */
   const previewCache = createPreviewCache();
+  let catalogMemo: { origin: string; at: number; pending: Promise<OpenCatalogIndex> } | undefined;
+  const catalogFor = (origin: string): Promise<OpenCatalogIndex> => {
+    const now = Date.now();
+    if (!catalogMemo || catalogMemo.origin !== origin || now - catalogMemo.at > 30_000) {
+      catalogMemo = { origin, at: now, pending: fetchOpenCatalog(origin) };
+    }
+    return catalogMemo.pending;
+  };
   app.get("/opensource", async (c) => {
     const index = await fetchOpenCatalog(deps.config.apiOrigin, c.req.query("q") ?? undefined);
     return c.json(index);
   });
   app.get("/opensource/preview/:owner/:slug", async (c) => {
-    const index = await fetchOpenCatalog(deps.config.apiOrigin);
+    const index = await catalogFor(deps.config.apiOrigin);
     const project = findCatalogProject(index, `${c.req.param("owner")}/${c.req.param("slug")}`);
     if (!project) return c.json({ error: "not found" }, 404);
     const role = c.req.query("role") === "hero" ? "hero" : "preview";
     const image = await resolveCatalogPreview(project, { cache: previewCache, role });
     const body = new Uint8Array(image.body);
+    const fallback = image.contentType.startsWith("image/svg+xml");
     return new Response(body, {
       headers: {
         "content-type": image.contentType,
         "content-length": String(body.byteLength),
-        "cache-control": "private, max-age=3600",
+        "cache-control": fallback ? "private, max-age=300" : "private, max-age=3600",
       },
     });
   });
   app.get("/opensource/projects/:owner/:slug", async (c) => {
-    const index = await fetchOpenCatalog(deps.config.apiOrigin);
+    const index = await catalogFor(deps.config.apiOrigin);
     const project = findCatalogProject(index, `${c.req.param("owner")}/${c.req.param("slug")}`);
     return project ? c.json(project) : c.json({ error: "not found" }, 404);
   });
   app.post("/opensource/projects/:owner/:slug/remix", async (c) => {
-    const index = await fetchOpenCatalog(deps.config.apiOrigin);
+    const index = await catalogFor(deps.config.apiOrigin);
     const source = findCatalogProject(index, `${c.req.param("owner")}/${c.req.param("slug")}`);
     if (!source) return c.json({ error: "not found" }, 404);
     if (!allowedCloneUrl(source.cloneUrl)) return c.json({ error: "clone url is not an allowed GitHub repository" }, 400);
