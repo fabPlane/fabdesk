@@ -1,7 +1,7 @@
 # Migrating fabdesk off tscircuit onto FabPlane PCB (`fab_pcb`)
 
-Status: **design + a drafted `@fp-pcb/compile` skeleton; nothing in fabdesk's tscircuit
-path has moved.** Pinned to `fab_pcb` `757de90` (KiCad fork `280274cc3d`, tag
+Status: **tscircuit is gone from fabdesk (branch `retire-tscircuit`, §4.7); the compile package and bridge
+job are fab_pcb PRs #2/#3.** Pinned to `fab_pcb` `757de90` (KiCad fork `280274cc3d`, tag
 `fp-pcb/2026-09-07-upstream-be90a7e200`). §5 reviews the skeleton, §6 is the viability verdict.
 
 ## 0. The headline
@@ -217,7 +217,7 @@ before the apply path has ever run against a server. Reversed:
 | 2     | **landed on fab_pcb (stacked on #2)** — `@fp-pcb/compile/bridge-job` mounted at `/sessions/:id/compile`; live `apply.kicad.test.ts` + `compile.kicad.test.ts` against the fork; libraries registered from `FrontendResult.libraries`; A.8 inset. `DocumentChanged` fork patch still open (gaps doc G28). | yes                   |
 | 3     | **landed behind a flag (§4.6)** — bridge client in `apps/core`; `buildCircuit` adapter = compile job → `importKicadPcb(board.kicad_pcb)` → `circuit.json` → `BuildResult`; `boardIsStale` trap closed                                                                                                    | yes                   |
 | 4     | `fab_pcb`: `tscircuit` frontend for existing `circuit.tsx` projects, emitting project-local `.pretty` for procedural footprints                                                                                                                                                                          | yes, inside `fab_pcb` |
-| 5     | Retire `packages/tscircuit`; delete `convert.ts`; routing, DRC, exports, sim, render onto jobs; then delete `import.ts`                                                                                                                                                                                  | no                    |
+| 5     | **landed (§4.7)** — `packages/tscircuit`, `router`, `router-freerouting`, `convert.ts`, `import.ts`, `vendor/js_autorouter` deleted; every tool KiCad-native through the bridge or the fork `kicad-cli`; sim/BOM/netlist export from the netlist source                                                  | no                    |
 
 Phase 3's `importKicadPcb` bridge is why `circuit.json` is not a blocker: it is exactly what
 `project_import_kicad` does today (927 LOC fabdesk owns) and emits the `source_*` elements routing
@@ -279,6 +279,32 @@ Still open before the flag does anything end to end:
    pads, 2 routable nets, design rules from the `.kicad_pro`, no warnings.
 5. `packages/agents/src/agents-md.ts` still tells the agent to write `circuit.tsx`; netlist
    authoring guidance is phase 4.
+
+### 4.7 Phase 5 — tscircuit removed (2026-09-07, branch `retire-tscircuit`)
+
+fabdesk's own packages carry no tscircuit-ecosystem dependency and no `circuit.json` contract.
+
+- **Removed:** `packages/tscircuit`, `packages/router`, `packages/router-freerouting`, the
+  `vendor/js_autorouter` submodule, `packages/kicad/src/{convert,import,net-names}.ts`,
+  `circuit-json-to-spice`, `circuit-to-svg`, the in-process bench (`bench route`, `/bench/route`),
+  `BoardSettings.source`, `Settings.compiler`, the `TscircuitService` and `RouterService` seams.
+- **Replaced by:** `DesignService` (`packages/tools/src/services.ts`) implemented in
+  `apps/core/src/fp-pcb-design.ts` on a per-project bridge session (`fp-pcb-session.ts`, typed
+  `@fp-pcb/client` over the bridge's WebSocket): build = compile job, route = route job,
+  query/unroute/scope/footprint search = client calls. DRC, ERC, renders, exports stay on the fork
+  `kicad-cli` (`packages/kicad`, plus a PCB SVG export). SPICE, BOM and the KiCad netlist export come
+  from `circuit.netlist.json` / the compile job's `.net`. The route cinema keeps working on job
+  progress (events, no geometry).
+- **Source of truth:** `circuit.netlist.json` (`NetlistFile` in `@fabdesk/protocol`, the
+  `@fp-pcb/compile` `netlist-json` frontend's format). New projects start with an empty one; the
+  agent guide (`packages/agents/src/agents-md.ts`) and the MCP prompts teach it.
+- **Vendored client typing:** `@fp-pcb/{proto,client}` are root workspaces; `bun run fp-pcb:types`
+  emits their declarations and `tsconfig.base.json` `paths` map to them, so fabdesk's stricter
+  compiler options do not re-check fab_pcb's sources.
+- **Still true:** nothing spawns the bridge (dev runs it by hand; bundling is phase 0), and with the
+  fork writing the board the `kicad-cli` fabdesk resolves must be the fork (§6.1). `verify_erc`,
+  `render_schematic_svg` and schematic parity only apply to imported KiCad projects — a compiled
+  netlist has no drawn schematic. The freerouting router stays internal-only at the tool layer.
 
 ## 5. Skeleton review — what was wrong and what PR 1 does about it
 

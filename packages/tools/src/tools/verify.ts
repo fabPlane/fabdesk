@@ -10,7 +10,7 @@ export const verify_erc = defineTool({
   name: "verify_erc",
   toolset: "verify",
   title: "Run KiCad ERC",
-  description: "Run KiCad electrical rule check on board.kicad_sch, write reports/erc.json and return counts plus the first violations. Requires kicad-cli and a converted schematic (kicad_convert).",
+  description: "Run KiCad electrical rule check on board.kicad_sch, write reports/erc.json and return counts plus the first violations. Requires kicad-cli and a schematic (an imported KiCad project; a compiled netlist has none).",
   inputSchema: {
     severity: z.enum(["all", "error"]).default("all"),
     limit: z.number().int().min(1).max(200).default(30),

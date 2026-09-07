@@ -2,9 +2,18 @@
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { CoreEvent, ProjectManifest, RouteResult } from "@fabdesk/protocol";
+import type { CoreEvent, NetlistFile, ProjectManifest } from "@fabdesk/protocol";
 import { makeContext, type ContextFactory, type CoreServices, type ProjectHandle, type RouteRunRecord, type ToolRegistry, type ToolsetId } from "../src";
 import { TOOLSETS } from "../src/registry";
+
+/** A one-resistor design; a file containing `BROKEN` makes the mock build fail, like the old marker did. */
+export const DEMO_NETLIST: NetlistFile = {
+  netlist: {
+    components: [{ ref: "R1", value: "1k", footprint: "Resistor_SMD:R_0402_1005Metric" }],
+    nets: [{ name: "N1", nodes: [{ ref: "R1", pin: "1" }] }],
+  },
+  board: { widthMm: 20, heightMm: 20 },
+};
 
 export async function tempProject(name = "demo"): Promise<ProjectHandle> {
   const root = await mkdtemp(join(tmpdir(), "fabdesk-tools-"));
@@ -22,7 +31,7 @@ export async function tempProject(name = "demo"): Promise<ProjectHandle> {
     allowedDrcWarnings: [],
   };
   await writeFile(join(dir, "fabdesk.json"), JSON.stringify(manifest));
-  await writeFile(join(dir, "circuit.tsx"), "export default () => <board width=\"20mm\" height=\"20mm\" />\n");
+  await writeFile(join(dir, "circuit.netlist.json"), JSON.stringify(DEMO_NETLIST, null, 2));
   return {
     id: manifest.id,
     name,
@@ -46,7 +55,6 @@ export function mockServices(projects: ProjectHandle[], overrides: Partial<CoreS
     settings: () => ({
       kicadCliPath: null,
       ngspicePath: null,
-      compiler: "tscircuit",
       fpPcbBridgeUrl: null,
       router: "capacity",
       defaultAgent: "claude",
@@ -69,55 +77,49 @@ export function mockServices(projects: ProjectHandle[], overrides: Partial<CoreS
       get: (id) => runs.get(id) ?? null,
       latest: (pid) => [...runs.values()].filter((r) => r.projectId === pid).at(-1) ?? null,
     },
-    tscircuit: {
-      buildCircuit: async ({ projectDir }) => {
-        const src = await Bun.file(join(projectDir, "circuit.tsx")).text();
+    design: {
+      build: async ({ projectDir, progress }) => {
+        const src = await Bun.file(join(projectDir, "circuit.netlist.json")).text();
         const bad = src.includes("BROKEN");
+        progress?.(0.5, "importing");
+        await Bun.write(join(projectDir, "board.kicad_pcb"), bad ? "" : "(kicad_pcb (version 20260831))\n");
         return {
           ok: !bad,
-          circuitJson: bad ? [] : [{ type: "source_component", name: "R1" }, { type: "pcb_board", width: 20, height: 20 }],
-          errors: bad ? [{ message: "BROKEN marker found", line: 1, column: 1 }] : [],
+          errors: bad ? [{ message: "BROKEN marker found", line: 1, column: 1, file: "circuit.netlist.json" }] : [],
           warnings: [],
-          elementCounts: bad ? {} : { source_component: 1, pcb_board: 1 },
+          counts: bad ? { components: 0, nets: 0, footprintsAdded: 0, footprintsPlaced: 0 } : { components: 1, nets: 1, footprintsAdded: 1, footprintsPlaced: 1 },
           durationMs: 5,
+          revision: 2,
         };
       },
-      runChecks: async () => ({ errors: [] }),
-      queryCircuit: (cj, select) => (cj as Array<Record<string, unknown>>).filter((e) => (select === "errors" ? String(e["type"]).endsWith("_error") : select === "components" ? e["type"] === "source_component" : false)),
-      extractSimpleRouteJson: () => ({
-        srj: { layerCount: 2, layerNames: ["top", "bottom"], minTraceWidth: 0.15, bounds: { minX: 0, maxX: 20, minY: 0, maxY: 20 }, obstacles: [], connections: [{ name: "N1", pointsToConnect: [{ x: 0, y: 0, layer: "top" }, { x: 5, y: 5, layer: "top" }] }] },
-        connectionMap: { N1: "source_trace_0" },
-        copper: { traces: 0, vias: 0, pours: 0, obstacles: 0, unowned: 0 },
-        extractMs: 1,
-      }),
-      connectionsForComponents: (_cj, refs) => ({ components: refs, missing: [], connections: ["N1"], nets: ["N1"], excluded: [], ports: {} }),
-      mergeTraces: (cj, traces) => [...cj, ...traces],
-      unrouteCircuit: (cj) => (cj as Array<Record<string, unknown>>).filter((e) => e["type"] !== "pcb_trace"),
-      schematicSvg: () => "<svg xmlns='http://www.w3.org/2000/svg'><text>sch</text></svg>",
-      pcbSvg: () => "<svg xmlns='http://www.w3.org/2000/svg'><text>pcb</text></svg>",
+      query: async (_dir, select, filter) => {
+        const rows: Record<string, Array<Record<string, unknown>>> = {
+          components: [{ ref: "R1", value: "1k", footprint: "Resistor_SMD:R_0402_1005Metric", x: 1, y: 3, layer: 0 }],
+          nets: [{ name: "N1", code: 1, pads: 1 }],
+          pads: [{ component: "R1", number: "1", net: "N1", x: 0.5, y: 3 }],
+          tracks: [],
+          unrouted: [{ net: "N1", from: "0,0", to: "5,5" }],
+        };
+        const f = filter?.toLowerCase();
+        return (rows[select] ?? []).filter((r) => !f || Object.values(r).some((v) => String(v).toLowerCase().includes(f)));
+      },
+      route: async (_dir, opts, { onProgress, signal }) => {
+        for (let i = 0; i < 3; i++) {
+          if (signal?.aborted) throw new Error("aborted");
+          await new Promise((r) => setTimeout(r, 5));
+          onProgress?.({ state: "routing", log: [], phase: "pass", pass: 1, routed: i, total: 2 });
+        }
+        return { tracks: 1, vias: 0, routed: 2, total: 2, trackLengthNm: 5_000_000, elapsedMs: 10, wallMs: 15, timedOut: false, message: `Autoroute (${opts.router}): 2 connections`, unrouted: [], log: [] };
+      },
+      cancelRoute: async () => {},
+      unroute: async (_dir, nets) => ({ tracks: nets?.length ?? 1, vias: 0 }),
+      scope: async (_dir, refs) => ({ components: refs, missing: [], nets: ["N1"], excluded: [], pads: Object.fromEntries(refs.map((r) => [r, 2])) }),
+      searchFootprints: async (query, limit) => [{ libId: "Resistor_SMD:R_0402_1005Metric", nickname: "Resistor_SMD", name: "R_0402_1005Metric", description: `matches ${query}` }].slice(0, limit),
+      status: async () => ({ url: "http://127.0.0.1:4020", ok: true, frontends: ["netlist-json"] }),
+      release: async () => {},
     },
     kicad: {
-      resolveCli: async () => null,
-      convertToKicad: async () => ({ files: [], warnings: [] }),
-      importPcb: async ({ pcbPath }) => ({
-        circuitJson: [{ type: "pcb_board", width: 15, height: 15, num_layers: 2 }, { type: "source_component", name: "R1" }],
-        report: {
-          schema: 1,
-          importedAt: new Date().toISOString(),
-          source: { path: pcbPath, file: "mock.kicad_pcb", sha256: "0".repeat(64), bytes: 1, kicadVersion: 20241229, netEncoding: "net-table", footprintPlacement: "at" },
-          board: { widthMm: 15, heightMm: 15, outlinePoints: 4 },
-          layers: { copperCount: 4, circuitJsonLayerCount: 4, mapping: [{ kicad: "F.Cu", circuitJson: "top", index: 0, type: "signal" }, { kicad: "In1.Cu", circuitJson: "inner1", index: 1, type: "signal" }, { kicad: "In2.Cu", circuitJson: "inner2", index: 2, type: "signal" }, { kicad: "B.Cu", circuitJson: "bottom", index: 3, type: "signal" }] },
-          counts: { footprints: 1, pads: 2, segments: 0, vias: 0, zones: 0, filledPolygons: 0, nets: 1, netsRoutable: 1 },
-          elements: { pcb_board: 1 },
-          copper: { tracesLinked: 0, tracesUnlinked: 0, viasLinked: 0, viasUnlinked: 0, poursLinked: 0, poursUnlinked: 0 },
-          dropped: [],
-          unsupported: [],
-          designRules: { traceWidthMm: 0.2, clearanceMm: 0.15, viaDiameterMm: 0.6, viaDrillMm: 0.3 },
-          timings: { readMs: 1, parseMs: 1, convertMs: 1, linkMs: 1, totalMs: 4 },
-          warnings: [],
-          failures: [],
-        },
-      }),
+      resolveCli: async () => ({ path: "/mock/kicad-cli", version: "10.99.0" }),
       runDrc: async () => ({ violations: [], unconnected: [], schematicParity: [], counts: { errors: 0, warnings: 0, unconnected: 0 } }),
       runErc: async () => ({ violations: [], counts: { errors: 0, warnings: 0 } }),
       gate: (drc, erc, allowed) => {
@@ -139,29 +141,10 @@ export function mockServices(projects: ProjectHandle[], overrides: Partial<CoreS
       exportBom: async () => ({ paths: [] }),
       exportNetlist: async () => ({ paths: [] }),
       exportSchematicSvg: async () => ({ paths: [] }),
-    },
-    router: {
-      route: async (req, { onMessage, signal }) => {
-        onMessage({ kind: "meta", runId: req.runId, router: req.router, bounds: { x1: 0, y1: 0, x2: 20, y2: 20 }, layers: ["top", "bottom"], unitsPerMm: 1 });
-        onMessage({ kind: "static", runId: req.runId, shapes: [] });
-        for (let i = 0; i < 3; i++) {
-          if (signal?.aborted) throw new Error("aborted");
-          await new Promise((r) => setTimeout(r, 5));
-          onMessage({ kind: "frame", runId: req.runId, seq: i, event: { kind: i === 2 ? "connection" : "attempt", netNumber: 1 }, elapsedMs: i * 5, shapes: [{ k: "trace", id: i, layer: 0, net: 1, pts: [0, 0, i, i], w: 0.15 }] });
-        }
-        const result: RouteResult = {
-          runId: req.runId,
-          router: req.router,
-          traces: [{ type: "pcb_trace", pcb_trace_id: "t1", connection_name: "N1", route: [{ route_type: "wire", x: 0, y: 0, width: 0.15, layer: "top" }, { route_type: "wire", x: 5, y: 5, width: 0.15, layer: "top" }] }],
-          complete: ["N1"],
-          open: [],
-          timedOut: false,
-          stats: { vias: 0, segments: 1, wallMs: 15, frames: 3 },
-        };
-        return result;
+      exportPcbSvg: async (_cli, { output }) => {
+        await Bun.write(output, "<svg xmlns='http://www.w3.org/2000/svg'><text>pcb</text></svg>");
+        return { paths: [output] };
       },
-      cancel: () => {},
-      available: async () => [{ id: "capacity", present: true, ready: true, detail: "mock" }],
     },
     sim: {
       spiceNetlist: () => "* mock\nR1 1 0 1k\n.end\n",

@@ -61,23 +61,43 @@ ${sketches}
 ## File contract
 | Path | Owner | Notes |
 | --- | --- | --- |
-| \`fabdesk.json\` | fabdesk | Project manifest. Never edit. |
-| \`circuit.tsx\` | **you** | tscircuit source: the single file you write. Components, footprints, nets, placement hints. |
-| \`circuit.json\` | \`${mcp}\` | Circuit JSON produced by the build tool. Never edit; rebuild instead. |
-| \`circuit.routed.json\` | \`${mcp}\` | Output of the router. Never edit. |
-| \`board.kicad_pcb\`, \`board.kicad_sch\`, \`board.kicad_pro\` | \`${mcp}\` | Generated KiCad files. Never hand-edit; regenerate. |
+| \`fabdesk.json\` | fabdesk | Project manifest. Never edit; use the board-settings tool. |
+| \`circuit.netlist.json\` | **you** | The design source: the single file you write (schema below). |
+| \`board.kicad_pcb\`, \`board.kicad_pro\` | \`${mcp}\` | The KiCad board the build tool writes and the routing tool edits. Never hand-edit. |
 | \`sketches/\` | user | Input drawings and photos (read-only). |
-| \`renders/\` | \`${mcp}\` | PNG/SVG renders of the board and schematic. |
-| \`reports/\` | \`${mcp}\` | \`drc.json\`, \`erc.json\`, \`checks.json\`, \`spice.json\` from the check tools. |
-| \`exports/\` | \`${mcp}\` | Gerbers, BOM, pick-and-place. |
+| \`renders/\` | \`${mcp}\` | PNG/SVG renders of the board. |
+| \`reports/\` | \`${mcp}\` | \`build.json\`, \`drc.json\`, \`erc.json\`, \`spice.json\` from the tools. |
+| \`exports/\` | \`${mcp}\` | Gerbers, BOM, pick-and-place, netlists. |
 | \`AGENTS.md\`, \`CLAUDE.md\` | fabdesk | Regenerated per run except the user section. |
 
+## circuit.netlist.json
+\`\`\`json
+{
+  "netlist": {
+    "components": [
+      { "ref": "R1", "value": "1k", "footprint": "Resistor_SMD:R_0402_1005Metric" },
+      { "ref": "D1", "value": "RED", "footprint": "LED_SMD:LED_0603_1608Metric", "fields": { "MPN": "..." } }
+    ],
+    "nets": [
+      { "name": "VCC", "nodes": [{ "ref": "R1", "pin": "1" }] },
+      { "name": "N1", "nodes": [{ "ref": "R1", "pin": "2" }, { "ref": "D1", "pin": "1" }] },
+      { "name": "GND", "nodes": [{ "ref": "D1", "pin": "2" }] }
+    ]
+  },
+  "board": { "widthMm": ${ctx.board.widthMm ?? 40}, "heightMm": ${ctx.board.heightMm ?? 30} }
+}
+\`\`\`
+- \`footprint\` is a KiCad library id (\`Library:Name\`). Find real ones with the footprint search tool; never invent names.
+- Every pin that carries a signal appears in exactly one net; a pin listed nowhere is left unconnected.
+- Reference prefixes matter: R/C/L/V/I/D are simulated by value; everything else is placed and routed only.
+- Keep values explicit (\`"4.7k"\`, \`"100nF"\`, \`"3.3V"\`).
+
 ## Workflow
-1. Read the sketches and the prompt; read \`circuit.tsx\` if it exists.
-2. Write or edit \`circuit.tsx\` (valid tscircuit; keep footprints and net names explicit).
+1. Read the sketches and the prompt; read \`circuit.netlist.json\` if it exists.
+2. Write or edit \`circuit.netlist.json\`.
 3. Build with the \`${mcp}\` build tool; fix every error and rebuild until it passes.
-4. Route with the routing tool, then convert to KiCad.
-5. Run DRC/ERC; fix the source (not the generated files) and repeat from step 3 while anything fails.
+4. Route with the routing tool.
+5. Run DRC; fix the source (not the generated files) and repeat from step 3 while anything fails.
 6. Render, then summarise what the board does, the parts used and any open issues.
 
 Do not run \`git\`, install packages, or touch files outside this directory unless the prompt asks for it.

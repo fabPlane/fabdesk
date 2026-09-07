@@ -4,7 +4,7 @@ import { TOOLSETS, type ToolDef, type ToolRegistry } from "../registry";
 const TOOLSET_BLURB: Record<string, string> = {
   core: "always available",
   project: "files, sketches, board settings",
-  circuit: "inspect circuit.json, checks, part search",
+  circuit: "query the board, footprint search",
   route: "routing status/cancel/partial reroute",
   kicad: "KiCad conversion and stats",
   verify: "ERC and release gate",
@@ -21,7 +21,7 @@ export function toolsMarkdown(registry: ToolRegistry, opts: { serverName?: strin
   lines.push("");
   lines.push("Tools are namespaced `mcp__" + server + "__<name>` in Claude Code. Only the **core** toolset is loaded at start; call `load_toolset {toolset}` to enable the others (the tool list refreshes).");
   lines.push("");
-  lines.push("Recommended workflow: `project_status` → write `circuit.tsx` (`project_write_file`) → `circuit_build` → `circuit_read_errors` (fix, rebuild) → `route_run` → `verify_drc` → `render_board`.");
+  lines.push("Recommended workflow: `project_status` → write `circuit.netlist.json` (`project_write_file`) → `circuit_build` → `circuit_read_errors` (fix, rebuild) → `route_run` → `verify_drc` → `render_board`.");
   lines.push("");
   for (const ts of TOOLSETS) {
     const tools = registry.byToolset(ts);

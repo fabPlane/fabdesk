@@ -60,30 +60,6 @@ afterAll(async () => {
 const H = () => ({ authorization: `Bearer ${daemon.token}` });
 const api = (path: string, init: RequestInit = {}) => fetch(`${daemon.url}${path}`, { ...init, headers: { ...H(), "content-type": "application/json", ...(init.headers ?? {}) } });
 
-describe("bench", () => {
-  test("POST /bench/route runs the benchmark as a router job and lists reports", async () => {
-    const created = (await (await api("/projects", { method: "POST", body: JSON.stringify({ name: "Bench Board" }) })).json()) as { id: string; path: string };
-    await Bun.write(`${created.path}/circuit.json`, JSON.stringify([{ type: "pcb_board", width: 20, height: 20, num_layers: 2 }]));
-    const bad = await api("/bench/route", { method: "POST", body: JSON.stringify({ project: created.id, router: "freerouting", repeat: 1 }) });
-    // The test daemon runs as channel internal, so freerouting is allowed at the HTTP layer; nonsense projects are not.
-    expect([202, 503]).toContain(bad.status);
-    expect((await api("/bench/route", { method: "POST", body: JSON.stringify({ project: "nope", repeat: 1 }) })).status).toBe(404);
-    const res = await api("/bench/route", { method: "POST", body: JSON.stringify({ project: created.id, router: "capacity", scenario: "full", repeat: 2, timeoutMs: 5000, label: "http" }) });
-    expect(res.status).toBe(202);
-    const { jobId } = (await res.json()) as { jobId: string };
-    const job = await daemon.jobs.wait(jobId);
-    expect(job.status).toBe("done");
-    const report = job.result as { runs: unknown[]; summary: { all: { runs: number; failures: number } }; path: string; label: string };
-    expect(report.runs).toHaveLength(2);
-    expect(report.summary.all.failures).toBe(0);
-    expect(report.label).toBe("http");
-    expect(report.path).toStartWith(`${created.path}/.fabdesk/bench/`);
-    const list = (await (await api(`/projects/${created.id}/bench`)).json()) as Array<{ path: string }>;
-    expect(list.length).toBeGreaterThanOrEqual(1);
-    expect(list[0]?.path).toStartWith(".fabdesk/bench/");
-  });
-});
-
 describe("http daemon", () => {
   test("health open, auth required, foreign origin rejected, handshake written", async () => {
     const health = await fetch(`${daemon.url}/health`);
@@ -128,7 +104,7 @@ describe("http daemon", () => {
     expect(created.status).toBe(201);
     const project = (await created.json()) as { id: string; path: string; manifest: { board: { layers: number } }; files: Array<{ path: string }> };
     expect(project.path).toBe(join(home, "Fabdesk", "blinky-board"));
-    expect(project.files.map((f) => f.path)).toContain("circuit.tsx");
+    expect(project.files.map((f) => f.path)).toContain("circuit.netlist.json");
     await readUntil((s) => s.includes('\"topic\":\"project.changed\"'));
     expect(buf).toContain(`"projectId":"${project.id}"`);
     const idMatch = /id: (\d+)\ndata: [^\n]*"topic":"project.changed"/.exec(buf);
@@ -153,9 +129,9 @@ describe("http daemon", () => {
     r2.cancel();
 
     // Files: read, write, jail.
-    const tsx = await api(`/projects/${project.id}/files/circuit.tsx`);
+    const tsx = await api(`/projects/${project.id}/files/circuit.netlist.json`);
     expect(tsx.status).toBe(200);
-    expect(await tsx.text()).toContain("<board");
+    expect(await tsx.text()).toContain("netlist");
     const put = await api(`/projects/${project.id}/files/notes/readme.md`, { method: "PUT", body: "# hi", headers: { "content-type": "text/markdown" } });
     expect(put.status).toBe(200);
     expect(await (await api(`/projects/${project.id}/files/notes/readme.md`)).text()).toBe("# hi");
@@ -195,7 +171,7 @@ describe("http daemon", () => {
       job = (await (await api(`/jobs/${jobId}`)).json()) as typeof job;
     }
     expect(job.status).toBe("done");
-    expect(await Bun.file(join(project.path, "circuit.json")).exists()).toBe(true);
+    expect(await Bun.file(join(project.path, "board.kicad_pcb")).exists()).toBe(true);
     const manifest = (await (await api("/tools/manifest")).json()) as Array<{ name: string }>;
     expect(manifest.length).toBe(daemon.registry.list().length);
 
@@ -206,12 +182,12 @@ describe("http daemon", () => {
     const frames = await api(`/route/runs/${rr.json.runId}/frames?from=2`);
     expect(frames.status).toBe(200);
     const lines = (await frames.text()).trim().split("\n");
-    expect(lines.length).toBe(3); // meta + static + frame seq 2
+    expect(lines.length).toBe(2); // meta + the one frame with seq >= 2 (pass-start, connection, connection)
     expect(lines[0]).toContain('"kind":"meta"');
 
     // Delete (unregister) keeps the directory; purge removes it.
     expect((await api(`/projects/${project.id}`, { method: "DELETE" })).status).toBe(200);
-    expect(await Bun.file(join(project.path, "circuit.tsx")).exists()).toBe(true);
+    expect(await Bun.file(join(project.path, "circuit.netlist.json")).exists()).toBe(true);
     expect((await api(`/projects/${project.id}`)).status).toBe(404);
   });
 

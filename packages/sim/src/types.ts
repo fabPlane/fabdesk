@@ -1,3 +1,5 @@
+import type { NetlistFile } from "@fabdesk/protocol";
+
 export type SimAnalysis =
   | { kind: "op" }
   | { kind: "tran"; stepS: number; stopS: number }
@@ -15,7 +17,7 @@ export interface SimResult {
 }
 
 export interface RunSimulationOptions {
-  circuitJson: unknown[];
+  netlist: NetlistFile;
   analysis: SimAnalysis;
   engine?: SimEngine;
   ngspicePath?: string;

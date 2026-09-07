@@ -1,11 +1,11 @@
 /**
- * Remix a catalog clone into a fabPlane project and hydrate the board viewer
- * from the cloned `.kicad_pcb` so the PCB tab can render without a chat turn.
+ * Remix a catalog clone into a fabPlane project: adopt the cloned `.kicad_pcb` as the project
+ * board and render `renders/pcb.svg` with kicad-cli so the PCB tab shows it without a chat turn.
  */
-import { readdir } from "node:fs/promises";
+import { copyFile, mkdir, readdir, stat } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import type { OpenCatalogEntry, RemixResult } from "@fabdesk/protocol";
-import { PROJECT_FILES, writeAtomic, writeJson, type CoreServices, type ProjectHandle } from "@fabdesk/tools";
+import { PROJECT_FILES, type CoreServices, type ProjectHandle } from "@fabdesk/tools";
 import { logger } from "../log";
 import type { ProjectStore } from "../projects";
 
@@ -60,45 +60,40 @@ export async function listKicadPcbFiles(root: string, max = 200): Promise<{ path
 export async function hydrateClonedBoard(opts: {
   project: ProjectHandle;
   files: readonly { path: string }[];
-  importPcb: CoreServices["kicad"]["importPcb"];
-  pcbSvg: CoreServices["tscircuit"]["pcbSvg"];
+  /** Resolves `kicad-cli`, or null; with it the PCB tab gets a rendered `renders/pcb.svg`. */
+  resolveCli: CoreServices["kicad"]["resolveCli"];
+  exportPcbSvg: CoreServices["kicad"]["exportPcbSvg"];
+  boardStats: CoreServices["kicad"]["boardStats"];
 }): Promise<{ pcbPath: string } | null> {
   const pcbPath = pickKicadPcb(opts.files, opts.project.name);
   if (!pcbPath) return null;
   try {
-    const { circuitJson, report } = await opts.importPcb({
-      pcbPath: join(opts.project.dir, pcbPath),
-      projectName: opts.project.name,
-      strict: false,
-    });
-    await writeJson(join(opts.project.dir, PROJECT_FILES.circuitJson), circuitJson);
-    const rules = report.designRules;
-    const board = {
-      ...opts.project.manifest().board,
-      layers: report.layers.copperCount,
-      ...(report.board.widthMm ? { widthMm: report.board.widthMm } : {}),
-      ...(report.board.heightMm ? { heightMm: report.board.heightMm } : {}),
-      ...(rules
-        ? {
-            rules: {
-              ...(rules.traceWidthMm !== undefined ? { traceWidthMm: rules.traceWidthMm } : {}),
-              ...(rules.clearanceMm !== undefined ? { clearanceMm: rules.clearanceMm } : {}),
-              ...(rules.viaDrillMm !== undefined ? { viaDrillMm: rules.viaDrillMm } : {}),
-              ...(rules.viaDiameterMm !== undefined ? { viaDiameterMm: rules.viaDiameterMm } : {}),
-            },
-          }
-        : {}),
-    };
-    await opts.project.updateManifest({ board });
-    try {
-      const svg = opts.pcbSvg(circuitJson);
-      await writeAtomic(join(opts.project.dir, PROJECT_FILES.renders, "pcb.svg"), svg);
-    } catch (e) {
-      logger.warn("remix pcb svg failed", { error: e instanceof Error ? e.message : String(e), pcbPath });
+    const abs = join(opts.project.dir, pcbPath);
+    const target = join(opts.project.dir, PROJECT_FILES.boardPcb);
+    if (abs !== target) await copyFile(abs, target);
+    for (const [ext, dest] of [
+      [".kicad_pro", PROJECT_FILES.boardPro],
+      [".kicad_sch", PROJECT_FILES.boardSch],
+    ] as const) {
+      const sibling = abs.replace(/\.kicad_pcb$/i, ext);
+      const to = join(opts.project.dir, dest);
+      if (sibling !== to && (await stat(sibling).catch(() => null))) await copyFile(sibling, to);
+    }
+    const cli = await opts.resolveCli();
+    if (cli) {
+      const stats = (await opts.boardStats(cli, { board: target, scratchFile: join(opts.project.dir, PROJECT_FILES.reports, "stats.json") }).catch(() => ({}))) as Record<string, unknown>;
+      const layers = Number(stats["copperLayers"] ?? stats["copper_layers"] ?? stats["layers"]);
+      if (Number.isInteger(layers) && layers >= 1 && layers <= 8) await opts.project.updateManifest({ board: { ...opts.project.manifest().board, layers } });
+      try {
+        await mkdir(join(opts.project.dir, PROJECT_FILES.renders), { recursive: true });
+        await opts.exportPcbSvg(cli, { board: target, output: join(opts.project.dir, PROJECT_FILES.renders, "pcb.svg") });
+      } catch (e) {
+        logger.warn("remix pcb svg failed", { error: e instanceof Error ? e.message : String(e), pcbPath });
+      }
     }
     return { pcbPath };
   } catch (e) {
-    logger.warn("remix kicad import failed", { error: e instanceof Error ? e.message : String(e), pcbPath });
+    logger.warn("remix board adopt failed", { error: e instanceof Error ? e.message : String(e), pcbPath });
     return null;
   }
 }
@@ -106,7 +101,7 @@ export async function hydrateClonedBoard(opts: {
 export async function remixCatalogProject(opts: {
   source: Pick<OpenCatalogEntry, "id" | "name" | "cloneUrl">;
   projects: ProjectStore;
-  services: Pick<CoreServices, "kicad" | "tscircuit">;
+  services: Pick<CoreServices, "kicad">;
   clone?: (url: string, dir: string) => Promise<void>;
 }): Promise<RemixResult> {
   const created = await opts.projects.importFromGit({
@@ -121,8 +116,9 @@ export async function remixCatalogProject(opts: {
     const hydrated = await hydrateClonedBoard({
       project: handle,
       files,
-      importPcb: (o) => opts.services.kicad.importPcb(o),
-      pcbSvg: (cj) => opts.services.tscircuit.pcbSvg(cj),
+      resolveCli: () => opts.services.kicad.resolveCli(),
+      exportPcbSvg: (cli, o) => opts.services.kicad.exportPcbSvg(cli, o),
+      boardStats: (cli, o) => opts.services.kicad.boardStats(cli, o),
     });
     pcbPath = hydrated?.pcbPath;
   }

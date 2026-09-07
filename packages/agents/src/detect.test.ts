@@ -79,7 +79,6 @@ describe("detectAgents", () => {
     const infos = await detectAgents({
       kicadCliPath: null,
       ngspicePath: null,
-      compiler: "tscircuit",
       fpPcbBridgeUrl: null,
       router: "capacity",
       defaultAgent: "claude",

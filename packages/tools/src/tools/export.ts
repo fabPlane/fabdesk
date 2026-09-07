@@ -2,9 +2,11 @@
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod/v4";
-import { PROJECT_FILES, ensureDir } from "../fs";
+import { copyFile } from "node:fs/promises";
+import type { NetlistComponent } from "@fabdesk/protocol";
+import { PROJECT_FILES, ensureDir, exists, writeAtomic } from "../fs";
 import { ToolError, defineTool } from "../registry";
-import { ok, p, requireBoard, requireKicad, requireSchematic } from "./common";
+import { loadNetlist, ok, p, requireBoard, requireKicad } from "./common";
 
 const rel = (project: { dir: string }, abs: string) => abs.startsWith(project.dir) ? abs.slice(project.dir.length + 1) : abs;
 
@@ -73,20 +75,16 @@ export const export_bom = defineTool({
   name: "export_bom",
   toolset: "export",
   title: "Export BOM",
-  description: "Export the bill of materials CSV from board.kicad_sch to exports/bom.csv. Requires kicad-cli and a converted schematic.",
+  description: "Export the bill of materials CSV (reference, value, footprint, quantity and any extra fields) from circuit.netlist.json to exports/bom.csv.",
   inputSchema: {},
   annotations: { idempotentHint: true },
-  longRunning: true,
   handler: async (_args, ctx) => {
     const project = ctx.requireProject();
-    const cli = await requireKicad(ctx);
-    const schematic = await requireSchematic(project);
+    const { netlist } = await loadNetlist(project);
     await ensureDir(p(project, PROJECT_FILES.exports));
     const output = p(project, PROJECT_FILES.exports, "bom.csv");
-    ctx.progress(0.2, "exporting bom");
-    await ctx.services.kicad.exportBom(cli, { schematic, output, signal: ctx.signal });
-    ctx.progress(1, "done");
-    return ok(`Exported exports/bom.csv.`, { path: output });
+    await writeAtomic(output, bomCsv(netlist.components));
+    return ok(`Exported exports/bom.csv (${netlist.components.length} components).`, { path: output, components: netlist.components.length });
   },
 });
 
@@ -94,22 +92,23 @@ export const export_netlist = defineTool({
   name: "export_netlist",
   toolset: "export",
   title: "Export netlist",
-  description: "Export the schematic netlist (kicadsexpr or spice) to exports/netlist.<net|cir>. Requires kicad-cli and a converted schematic.",
+  description: "Export the netlist to exports/netlist.<net|cir>: kicadsexpr is the KiCad netlist the last circuit_build handed to KiCad; spice is generated from circuit.netlist.json.",
   inputSchema: {
     format: z.enum(["kicadsexpr", "spice"]).default("kicadsexpr"),
   },
   annotations: { idempotentHint: true },
-  longRunning: true,
   handler: async ({ format }, ctx) => {
     const project = ctx.requireProject();
-    const cli = await requireKicad(ctx);
-    const schematic = await requireSchematic(project);
     await ensureDir(p(project, PROJECT_FILES.exports));
     const ext = { kicadsexpr: "net", spice: "cir" }[format];
     const output = p(project, PROJECT_FILES.exports, `netlist.${ext}`);
-    ctx.progress(0.2, "exporting netlist");
-    await ctx.services.kicad.exportNetlist(cli, { schematic, output, format, signal: ctx.signal });
-    ctx.progress(1, "done");
+    if (format === "kicadsexpr") {
+      const compiled = p(project, PROJECT_FILES.compileNet);
+      if (!(await exists(compiled))) throw new ToolError(`${PROJECT_FILES.compileNet} not found: run circuit_build first`, "precondition");
+      await copyFile(compiled, output);
+    } else {
+      await writeAtomic(output, ctx.services.sim.spiceNetlist(await loadNetlist(project)));
+    }
     return ok(`Exported exports/netlist.${ext} (${format}).`, { path: output, format });
   },
 });
@@ -143,6 +142,18 @@ export const export_zip = defineTool({
     return ok(`Wrote exports/fabrication.zip (${entries.length} files, ${size} bytes).${missing.length ? ` Missing: ${missing.join(", ")}.` : ""}`, { path: output, files: entries.map((e) => e.name), missing, size });
   },
 });
+
+/** CSV with one row per component; extra `fields` become extra columns. */
+export function bomCsv(components: readonly NetlistComponent[]): string {
+  const extra = [...new Set(components.flatMap((c) => Object.keys(c.fields ?? {})))].sort();
+  const cols = ["Reference", "Value", "Footprint", ...extra];
+  const q = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  const lines = [cols.join(",")];
+  for (const c of [...components].sort((a, b) => a.ref.localeCompare(b.ref, undefined, { numeric: true }))) {
+    lines.push([c.ref, c.value, c.footprint, ...extra.map((k) => c.fields?.[k] ?? "")].map(q).join(","));
+  }
+  return `${lines.join("\n")}\n`;
+}
 
 /** Minimal ZIP writer (stored, no compression) to avoid a dependency; fab outputs are small. */
 export async function zipFiles(output: string, entries: Array<{ name: string; path: string }>): Promise<void> {

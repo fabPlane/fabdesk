@@ -12,9 +12,9 @@ describe("registry", () => {
     expect(names).toEqual([
       "load_toolset", "project_status", "circuit_build", "circuit_read_errors", "route_run", "verify_drc", "render_board",
       "project_read_file", "project_write_file", "project_list_sketches", "project_set_board", "project_import_kicad",
-      "circuit_query", "circuit_checks", "circuit_search_parts",
+      "circuit_query", "circuit_search_parts",
       "route_status", "route_cancel", "route_unroute", "route_scope",
-      "kicad_convert", "kicad_stats",
+      "kicad_stats",
       "verify_erc", "verify_gate",
       "render_schematic_svg", "render_pcb_svg", "render_glb",
       "export_gerbers", "export_drill", "export_pos", "export_bom", "export_netlist", "export_zip",
@@ -57,15 +57,17 @@ describe("registry", () => {
       reg.invoke(name, args, (ref) => factory({ def: reg.get(name)!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }));
     const build = await call("circuit_build");
     expect(build.isError).toBeFalsy();
-    expect(await Bun.file(join(project.dir, "circuit.json")).exists()).toBe(true);
+    expect(await Bun.file(join(project.dir, "board.kicad_pcb")).exists()).toBe(true);
     const route = await call("route_run", { timeoutMs: 5000 });
     expect(route.isError).toBeFalsy();
-    const json = route.json as { runId: string; complete: string[] };
-    expect(json.complete).toEqual(["N1"]);
+    const json = route.json as { runId: string; routed: number; total: number; open: string[] };
+    expect(json.routed).toBe(2);
+    expect(json.open).toEqual([]);
     expect(await Bun.file(join(project.dir, ".fabdesk/runs", json.runId, "frames.jsonl")).exists()).toBe(true);
     const frames = (await Bun.file(join(project.dir, ".fabdesk/runs", json.runId, "frames.jsonl")).text()).trim().split("\n");
-    expect(frames.length).toBe(5); // meta + static + 3 frames
-    expect(services.events.map((e) => e.topic)).toEqual(["route.meta", "route.static", "route.frame", "route.frame", "route.frame", "route.done"]);
+    // meta + pass-start + two connection frames (the mock reports routed 0, 1, 2)
+    expect(frames.map((l) => (JSON.parse(l) as { kind: string; event?: { kind: string } }).event?.kind ?? (JSON.parse(l) as { kind: string }).kind)).toEqual(["meta", "pass-start", "connection", "connection"]);
+    expect(services.events.map((e) => e.topic)).toEqual(["route.meta", "route.frame", "route.frame", "route.frame", "route.done"]);
     const status = await call("route_status");
     expect(status.text).toContain("done");
     const q = await call("circuit_query", { select: "components" });
@@ -73,13 +75,17 @@ describe("registry", () => {
     const errs = await call("circuit_read_errors");
     expect(errs.text).toContain("ok");
     // Broken build
-    await writeFile(join(project.dir, "circuit.tsx"), "BROKEN");
+    await writeFile(join(project.dir, "circuit.netlist.json"), "BROKEN");
     const bad = await call("circuit_build");
     expect(bad.isError).toBe(true);
     expect(bad.text).toContain("BROKEN marker");
-    const svg = await call("render_schematic_svg");
+    await call("circuit_build").catch(() => {});
+    await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb)");
+    const svg = await call("render_pcb_svg");
     expect(svg.images?.[0]?.mime).toBe("image/svg+xml");
-    await expect(call("verify_drc")).rejects.toThrow(/kicad-cli not found/);
+    const drc = await call("verify_drc");
+    expect(drc.isError).toBeFalsy();
+    await expect(call("render_schematic_svg")).rejects.toThrow(/board.kicad_sch not found/);
   });
 
   test("route_run reports open connections as an error and keeps text, json and status in step", async () => {
@@ -87,11 +93,11 @@ describe("registry", () => {
     const project = await tempProject("open");
     const base = mockServices([project]);
     const services = mockServices([project], {
-      router: {
-        ...base.router,
-        route: async (req, hooks) => {
-          const result = await base.router.route(req, hooks);
-          return { ...result, complete: ["N1"], open: ["N2", "N3"], stats: { ...result.stats, vias: 4, segments: 7 } };
+      design: {
+        ...base.design,
+        route: async (dir, opts, hooks) => {
+          const summary = await base.design.route(dir, opts, hooks);
+          return { ...summary, routed: 1, total: 3, vias: 4, tracks: 7, unrouted: [{ net: "N2", from: { x: 0, y: 0 }, to: { x: 1, y: 1 } }, { net: "N3", from: { x: 0, y: 0 }, to: { x: 2, y: 2 } }] };
         },
       },
     });
@@ -101,14 +107,14 @@ describe("registry", () => {
     await call("circuit_build");
     const route = await call("route_run", { timeoutMs: 5000 });
     expect(route.isError).toBe(true);
-    expect(route.text).toContain("1 complete, 2 open, 4 vias, 7 segments");
-    expect(route.text).toContain("Open connections: N2, N3");
-    const json = route.json as { complete: string[]; open: string[]; stats: { vias: number; segments: number } };
-    expect(json.complete).toEqual(["N1"]);
+    expect(route.text).toContain("1/3 connections routed, 4 vias, 7 tracks");
+    expect(route.text).toContain("Open nets: N2, N3");
+    const json = route.json as { routed: number; open: string[]; stats: { vias: number; segments: number } };
+    expect(json.routed).toBe(1);
     expect(json.open).toEqual(["N2", "N3"]);
     expect(json.stats.vias).toBe(4);
     const status = await call("route_status");
-    expect(status.text).toContain("done — 1 complete, 2 open, 4 vias, 7 segments");
+    expect(status.text).toContain("done — 2 open, 4 vias, 7 tracks");
     const done = services.events.find((e) => e.topic === "route.done");
     if (done?.topic !== "route.done") throw new Error("no route.done event");
     expect(done.result.open).toEqual(["N2", "N3"]);

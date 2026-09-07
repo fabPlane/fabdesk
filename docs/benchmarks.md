@@ -1,3 +1,5 @@
+> **Historical.** The in-process routing benchmark (`bench route`, `/bench/route`) was removed together with tscircuit; routing now runs on the FabPlane PCB bridge, whose own bench lives in `fab_pcb/packages/router/bench`. Kept for the numbers.
+
 # Benchmarks: real boards through the app
 
 `fabdesk-core bench route` (and `POST /bench/route`) routes one project's board N times through the

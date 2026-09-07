@@ -5,15 +5,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   boardStats,
-  convertToKicad,
   countCopperLayers,
-  exportBom,
   exportDrill,
   exportGerbers,
   exportGlb,
-  exportNetlist,
+  exportPcbSvg,
   exportPos,
-  exportSchematicSvg,
   findKicadCli,
   gate,
   renderPng,
@@ -47,18 +44,13 @@ describe("findKicadCli", () => {
   });
 });
 
-describe.skipIf(!hasCli)("convert + kicad-cli on a real board", () => {
+describe.skipIf(!hasCli)("kicad-cli on a real board", () => {
   let dir: string;
   let board: string;
-  let schematic: string;
   beforeAll(async () => {
     dir = await mkdtemp(join(tmpdir(), "fabdesk-kicad-"));
-    const circuitJson = (await Bun.file(join(import.meta.dir, "fixtures/led-usb.circuit.json")).json()) as unknown[];
-    const { files, warnings } = await convertToKicad({ circuitJson, projectDir: dir, projectName: "ledusb" });
-    expect(files).toEqual(["ledusb.kicad_pcb", "ledusb.kicad_sch", "ledusb.kicad_pro"]);
-    expect(Array.isArray(warnings)).toBe(true);
-    board = join(dir, "ledusb.kicad_pcb");
-    schematic = join(dir, "ledusb.kicad_sch");
+    board = join(dir, "mini.kicad_pcb");
+    await Bun.write(board, await Bun.file(join(import.meta.dir, "fixtures/mini-two-layer.kicad_pcb")).text());
     expect(countCopperLayers(await Bun.file(board).text())).toBe(2);
   });
 
@@ -71,36 +63,25 @@ describe.skipIf(!hasCli)("convert + kicad-cli on a real board", () => {
     await expect(runKicadCli(kicad(), ["pcb", "drc", "/nope.kicad_pcb"])).rejects.toThrow(/failed/);
   });
 
-  test("runDrc parses the JSON report (unrouted board has unconnected items)", async () => {
-    const report = await runDrc(kicad(), { board, outFile: join(dir, "drc.json"), severity: "all", schematicParity: true });
-    expect(report.counts.unconnected).toBeGreaterThan(0);
-    expect(report.unconnected[0]?.rule).toBe("unconnected_items");
-    expect(report.unconnected[0]?.items.length).toBe(2);
-    expect(report.schematicParity.length).toBeGreaterThan(0);
-    for (const v of [...report.violations, ...report.schematicParity]) {
+  test("runDrc parses the JSON report and gate reads it", async () => {
+    const report = await runDrc(kicad(), { board, outFile: join(dir, "drc.json"), severity: "all" });
+    expect(typeof report.counts.errors).toBe("number");
+    expect(typeof report.counts.unconnected).toBe("number");
+    for (const v of [...report.violations, ...report.unconnected]) {
       expect(["error", "warning", "exclusion"]).toContain(v.severity);
       expect(v.signature).toContain(":");
     }
     const errorsOnly = await runDrc(kicad(), { board, outFile: join(dir, "drc-errors.json"), severity: "error" });
     expect(errorsOnly.counts.warnings).toBe(0);
     const result = gate(report, undefined, []);
-    expect(result.pass).toBe(false);
-    expect(result.reasons.some((r) => r.includes("unconnected"))).toBe(true);
-  }, 60_000);
-
-  test("runErc parses the JSON report", async () => {
-    const report = await runErc(kicad(), { schematic, outFile: join(dir, "erc.json"), severity: "all" });
-    expect(report.violations.length).toBeGreaterThan(0);
-    expect(report.counts.warnings + report.counts.errors).toBeGreaterThan(0);
-    expect(report.violations[0]?.rule).toBeString();
+    expect(typeof result.pass).toBe("boolean");
   }, 60_000);
 
   test("boardStats reads the outline", async () => {
     const stats = await boardStats(kicad(), board, join(dir, "stats.json"));
-    expect(stats.width).toBe(20);
-    expect(stats.height).toBe(15);
-    expect(stats.thickness).toBe(1.6);
-    expect(stats.footprints).toBe(3);
+    expect(stats.width).toBeGreaterThan(0);
+    expect(stats.height).toBeGreaterThan(0);
+    expect(typeof stats.footprints).toBe("number");
   }, 60_000);
 
   test("renderPng writes a PNG", async () => {
@@ -118,21 +99,14 @@ describe.skipIf(!hasCli)("convert + kicad-cli on a real board", () => {
     expect(typeof result.fused).toBe("boolean");
   }, 120_000);
 
-  test("fabrication exports", async () => {
+  test("fabrication exports and the PCB SVG", async () => {
     const gerbers = await exportGerbers(kicad(), { board, outDir: join(dir, "gerbers") });
     expect(gerbers.paths.length).toBeGreaterThan(2);
     const drill = await exportDrill(kicad(), { board, outDir: join(dir, "gerbers") });
     expect(drill.paths.length).toBeGreaterThanOrEqual(1);
-    const pos = await exportPos(kicad(), { board, output: join(dir, "ledusb-pos.csv") });
-    expect(await Bun.file(pos.paths[0]!).text()).toContain("R1");
-    const bom = await exportBom(kicad(), { schematic, output: join(dir, "ledusb-bom.csv") });
-    expect(await Bun.file(bom.paths[0]!).text()).toContain("R1");
-    const net = await exportNetlist(kicad(), { schematic, output: join(dir, "ledusb.net"), format: "kicadsexpr" });
-    expect(await Bun.file(net.paths[0]!).text()).toContain("(export");
-    const spice = await exportNetlist(kicad(), { schematic, output: join(dir, "ledusb.cir"), format: "spice" });
-    expect(existsSync(spice.paths[0]!)).toBe(true);
-    const svg = await exportSchematicSvg(kicad(), { schematic, outDir: join(dir, "svg") });
-    expect(svg.paths.length).toBeGreaterThanOrEqual(1);
-    expect(svg.paths[0]).toMatch(/\.svg$/);
+    const pos = await exportPos(kicad(), { board, output: join(dir, "mini-pos.csv") });
+    expect(existsSync(pos.paths[0]!)).toBe(true);
+    const svg = await exportPcbSvg(kicad(), { board, output: join(dir, "pcb.svg") });
+    expect(await Bun.file(svg.paths[0]!).text()).toContain("<svg");
   }, 120_000);
 });

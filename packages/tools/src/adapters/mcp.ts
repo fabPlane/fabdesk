@@ -20,7 +20,7 @@ import {
   type ToolSession,
   type ToolsetId,
 } from "../registry";
-import { boardIsStale, type BuildSummary } from "../tools/core";
+import type { BuildSummary } from "../tools/core";
 import { p } from "../tools/common";
 
 export const MAX_INLINE_IMAGE_BYTES = 2 * 1024 * 1024;
@@ -161,14 +161,14 @@ function registerResources(server: McpServer, registry: ToolRegistry, ctxFactory
 
   server.registerResource(
     "project-circuit",
-    new ResourceTemplate("fabdesk://project/{id}/circuit.tsx", {
-      list: async () => ({ resources: (await listProjects()).map((pr) => ({ uri: `fabdesk://project/${pr.id}/circuit.tsx`, name: `${pr.name} circuit.tsx`, mimeType: "text/x-tsx" })) }),
+    new ResourceTemplate("fabdesk://project/{id}/circuit.netlist.json", {
+      list: async () => ({ resources: (await listProjects()).map((pr) => ({ uri: `fabdesk://project/${pr.id}/circuit.netlist.json`, name: `${pr.name} circuit.netlist.json`, mimeType: "application/json" })) }),
     }),
-    { title: "circuit.tsx", description: "The tscircuit source of the project", mimeType: "text/x-tsx" },
+    { title: "circuit.netlist.json", description: "The design source of the project: components, nets, board size, libraries", mimeType: "application/json" },
     async (uri, vars) => {
       const ctx = await project(String(vars["id"]));
-      const path = p(ctx.project!, PROJECT_FILES.circuitTsx);
-      return text(uri, "text/x-tsx", (await exists(path)) ? await readFile(path, "utf8") : "");
+      const path = p(ctx.project!, PROJECT_FILES.netlistJson);
+      return text(uri, "application/json", (await exists(path)) ? await readFile(path, "utf8") : "");
     },
   );
 
@@ -189,10 +189,8 @@ function registerResources(server: McpServer, registry: ToolRegistry, ctxFactory
         name: pr.name,
         board: pr.manifest().board,
         router: pr.manifest().router,
-        built: await exists(p(pr, PROJECT_FILES.circuitJson)),
-        routed: await exists(p(pr, PROJECT_FILES.routedJson)),
-        kicadBoard: await exists(p(pr, PROJECT_FILES.boardPcb)),
-        kicadStale: await boardIsStale(pr),
+        source: await exists(p(pr, PROJECT_FILES.netlistJson)),
+        built: await exists(p(pr, PROJECT_FILES.boardPcb)),
         lastBuild: build ? { ok: build.ok, errors: build.errors.length, warnings: build.warnings.length, at: build.at } : null,
         lastRoute: route ? { runId: route.id, status: route.status, open: route.result?.open ?? null } : null,
         lastDrc: drc?.counts ?? null,
@@ -207,14 +205,14 @@ function registerResources(server: McpServer, registry: ToolRegistry, ctxFactory
       list: async () => {
         const resources: Array<{ uri: string; name: string; mimeType: string }> = [];
         for (const pr of await listProjects()) {
-          for (const n of ["build", "checks", "drc", "erc", "gate", "spice", "convert"]) {
+          for (const n of ["build", "drc", "erc", "gate", "spice"]) {
             if (await exists(p(pr, PROJECT_FILES.reports, `${n}.json`))) resources.push({ uri: `fabdesk://project/${pr.id}/reports/${n}`, name: `${pr.name} ${n} report`, mimeType: "application/json" });
           }
         }
         return { resources };
       },
     }),
-    { title: "Report", description: "A JSON report: build, checks, drc, erc, gate, spice, convert", mimeType: "application/json" },
+    { title: "Report", description: "A JSON report: build, drc, erc, gate, spice", mimeType: "application/json" },
     async (uri, vars) => {
       const ctx = await project(String(vars["id"]));
       const name = String(vars["name"]).replace(/[^a-z0-9_-]/gi, "");
@@ -238,7 +236,7 @@ function registerPrompts(server: McpServer): void {
     "design_from_sketch",
     {
       title: "Design a board from a sketch",
-      description: "Full workflow: read the sketch and requirements, write circuit.tsx, build, fix errors, route, convert, DRC, render.",
+      description: "Full workflow: read the sketch and requirements, write circuit.netlist.json, build, fix errors, route, DRC, render.",
       argsSchema: promptArgs({ project: projectArg, requirements: z.string().optional().describe("Extra requirements in prose"), sketch: z.string().optional().describe("Sketch path if not in sketches/") }),
     },
     (a: PromptArgs) => {
@@ -250,10 +248,10 @@ function registerPrompts(server: McpServer): void {
           "You are designing a PCB with fabdesk. " + projectLine(project),
           "1. Call project_status, then load_toolset project and project_list_sketches. Look at every sketch image" + (sketch ? ` (also ${sketch})` : "") + " and restate what the board must do.",
           requirements ? `Requirements from the user: ${requirements}` : "",
-          "2. Write circuit.tsx with project_write_file: a single default-exported <board> with width/height, components with footprints (0402/0603/SOT-23/… or registry parts via circuit_search_parts) and <trace> connections or net names. Keep values explicit.",
-          "3. Run circuit_build; on errors call circuit_read_errors, fix circuit.tsx and rebuild until ok. Then load_toolset circuit and run circuit_checks.",
-          "4. Run route_run. If nets stay open, adjust placement (pcbX/pcbY, layer) or board size and reroute; use route_unroute + route_run{onlyConnections} for partial reroutes.",
-          "5. Run verify_drc (it converts to KiCad). Fix errors and unconnected items; warnings only need review.",
+          "2. Write circuit.netlist.json with project_write_file: { netlist: { components: [{ ref, value, footprint }], nets: [{ name, nodes: [{ ref, pin }] }] }, board: { widthMm, heightMm } }. Footprints are KiCad library ids (find them with circuit_search_parts, e.g. Resistor_SMD:R_0402_1005Metric). Every pin that connects must appear in exactly one net.",
+          "3. Run circuit_build; on errors call circuit_read_errors, fix circuit.netlist.json and rebuild until ok. The build places the footprints on a board of the given size.",
+          "4. Run route_run. If nets stay open, enlarge the board (board.widthMm/heightMm, rebuild) or reduce fan-out and reroute; use route_unroute + route_run{onlyConnections} for partial reroutes.",
+          "5. Run verify_drc. Fix errors and unconnected items; warnings only need review.",
           "6. Run render_board and check the image; summarise the design, open issues and next steps for the user.",
         ]
           .filter(Boolean)
@@ -266,14 +264,14 @@ function registerPrompts(server: McpServer): void {
     "fix_drc",
     {
       title: "Fix DRC violations",
-      description: "Read the latest DRC report and iterate on circuit.tsx / routing until the release gate passes.",
+      description: "Read the latest DRC report and iterate on circuit.netlist.json / routing until the release gate passes.",
       argsSchema: promptArgs({ project: projectArg }),
     },
     (a: PromptArgs) =>
       user(
         [
           projectLine(str(a["project"])),
-          "Run verify_drc and read every violation. For each: clearance/track width → adjust footprints, board size or route_run minTraceWidth; unconnected → route_unroute + route_run{onlyConnections}; courtyard overlap → move components (pcbX/pcbY) in circuit.tsx then circuit_build and route_run.",
+          "Run verify_drc and read every violation. For each: clearance/track width → adjust footprints or board size in circuit.netlist.json; unconnected → route_unroute + route_run{onlyConnections}; courtyard overlap → enlarge the board or change footprints, then circuit_build and route_run.",
           "After each change rebuild, reroute and rerun verify_drc. Finish with load_toolset verify, verify_erc and verify_gate; report remaining warnings with their signatures so the user can decide whether to baseline them.",
         ].join("\n"),
       ),
@@ -291,7 +289,7 @@ function registerPrompts(server: McpServer): void {
         [
           projectLine(str(a["project"])),
           "Call load_toolset route then route_status to get the open connections. Call route_unroute with those names, then route_run with onlyConnections set to them and a longer timeoutMs.",
-          "If they remain open, inspect circuit_query nets/ports for those connections, move the involved components apart or add layers via project_set_board, rebuild and route again. Report what changed.",
+          "If they remain open, inspect circuit_query nets/pads for those connections, enlarge the board or add layers via project_set_board, rebuild and route again. Report what changed.",
         ].join("\n"),
       ),
   );

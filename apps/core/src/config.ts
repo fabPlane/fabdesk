@@ -30,14 +30,6 @@ export function apiOrigin(): string {
   return process.env["FABPLANE_API_ORIGIN"] ?? "https://api.fabplane.com";
 }
 
-export type CompilerChoice = "tscircuit" | "fp-pcb";
-
-/** `FABDESK_COMPILER=fp-pcb|tscircuit` overrides the `compiler` setting. */
-export function compilerFromEnv(env: NodeJS.ProcessEnv = process.env): CompilerChoice | undefined {
-  const v = env["FABDESK_COMPILER"];
-  return v === "fp-pcb" || v === "tscircuit" ? v : undefined;
-}
-
 /** Where a locally started `@fp-pcb/bridge` listens by default. */
 export const DEFAULT_FP_PCB_BRIDGE_URL = "http://127.0.0.1:4020";
 

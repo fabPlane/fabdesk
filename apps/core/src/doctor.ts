@@ -1,8 +1,9 @@
-/** `fabdesk-core doctor`: environment report (KiCad, ngspice, routers, agents, warnings). */
+/** `fabdesk-core doctor`: environment report (KiCad, ngspice, the FabPlane PCB bridge, agents, warnings). */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { DoctorReport, Settings } from "@fabdesk/protocol";
-import type { CoreConfig } from "./config";
+import { fpPcbBridgeUrl, type CoreConfig } from "./config";
+import { FpPcbBridgeClient } from "./fp-pcb-bridge";
 import { errMsg } from "./log";
 
 export async function runDoctor(o: { config: CoreConfig; settings: Settings }): Promise<DoctorReport> {
@@ -27,13 +28,15 @@ export async function runDoctor(o: { config: CoreConfig; settings: Settings }): 
       return { found: false };
     }
   })();
+  // The bridge runs the design server (compile + routing); reported in the `routers` slot the report has always had.
   const routers = await (async () => {
+    const url = fpPcbBridgeUrl(o.settings.fpPcbBridgeUrl);
     try {
-      const m = await import("@fabdesk/router");
-      return (await m.availableRouters()).map((r) => ({ id: r.id, present: r.present, ready: r.ready, detail: `${r.detail}${r.version ? ` (${r.version})` : ""}` }));
+      const h = await new FpPcbBridgeClient({ url, timeoutMs: 3_000 }).health();
+      const ready = h.ok && h.kicadCliExists !== false;
+      return [{ id: "fp-pcb", present: true, ready, detail: `${url}${h.kicadCli ? ` (kicad-cli: ${h.kicadCli})` : ""}${h.kicadCliExists === false ? " — kicad-cli missing on the bridge" : ""}` }];
     } catch (e) {
-      warnings.push(`router probe failed: ${errMsg(e)}`);
-      return [];
+      return [{ id: "fp-pcb", present: false, ready: false, detail: `${url}: ${errMsg(e)}` }];
     }
   })();
   const agents = await (async () => {
@@ -46,9 +49,9 @@ export async function runDoctor(o: { config: CoreConfig; settings: Settings }): 
     }
   })();
 
-  if (!kicad.found) warnings.push("KiCad not found: install KiCad 9/10 or set Settings.kicadCliPath (DRC, render and export tools need it)");
+  if (!kicad.found) warnings.push("KiCad not found: install the FabPlane KiCad build or set Settings.kicadCliPath (DRC, render and export tools need it)");
+  if (!routers[0]?.present) warnings.push(`FabPlane PCB bridge not reachable at ${routers[0]?.detail ?? fpPcbBridgeUrl(o.settings.fpPcbBridgeUrl)}: start it (bun run --filter @fp-pcb/bridge start in a fab_pcb checkout) or set Settings.fpPcbBridgeUrl / FABDESK_FP_PCB_BRIDGE_URL; circuit_build and route_run need it`);
   if (!agents.some((a) => a.installed)) warnings.push("no agent CLI found (claude, codex, grok or cursor agent); the app can still be used as an MCP server");
-  if (o.config.channel === "public" && routers.some((r) => r.id === "freerouting" && r.present)) warnings.push("freerouting adapter present in a public build");
   const repoRoot = findRepoRoot();
   if (repoRoot && existsSync(join(repoRoot, "vendor", "fabplane", "node_modules"))) warnings.push("vendor/fabplane/node_modules exists: never run `bun install` inside vendor/fabplane (duplicate zod/hono instances)");
   if (o.config.authMode === "local") warnings.push("auth mode is local (FABDESK_AUTH_MODE=local)");
@@ -82,7 +85,7 @@ export function formatDoctor(r: DoctorReport): string {
     `fabdesk-core ${r.version} (${r.channel}) on ${r.platform}, bun ${r.bun}`,
     `KiCad:   ${r.kicad.found ? `${r.kicad.path} (${r.kicad.version ?? "?"})` : "not found"}`,
     `ngspice: ${r.ngspice.found ? r.ngspice.path : "not found (spicey fallback)"}`,
-    `Routers: ${r.routers.map((x) => `${x.id}${x.ready ? " ✓" : x.present ? " (not ready)" : " ✗"} ${x.detail}`).join("; ") || "none"}`,
+    `Bridge:  ${r.routers.map((x) => `${x.id}${x.ready ? " ✓" : x.present ? " (not ready)" : " ✗"} ${x.detail}`).join("; ") || "none"}`,
     "Agents:",
     ...r.agents.map((a) => `  ${a.id.padEnd(7)} ${a.installed ? `${a.version ?? ""} ${a.path ?? ""}`.trim() : `not installed — ${a.installHint}`}`),
   ];

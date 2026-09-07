@@ -9,7 +9,7 @@
 │  renderer: React UI, WebMCP  │  SSE   │  /projects /threads /tools /jobs /events │
 └──────────────────────────────┘        │  /mcp  (streamable HTTP, per-session)    │
                                         │  SQLite (bun:sqlite) · job runner · bus  │
-   claude / codex / grok / cursor ─────►│  router Worker · tscircuit · kicad-cli   │
+   claude / codex / grok / cursor ─────►│  fp-pcb bridge client · kicad-cli        │
    (spawned by core, or external via    └──────────────────────────────────────────┘
     `fabdesk-core mcp` stdio bridge)
 ```
@@ -36,15 +36,15 @@ Toolsets other than `core` are loaded on demand with `load_toolset` to keep agen
 ## PCB pipeline
 
 ```
-prompt / sketch ─► agent writes circuit.tsx ─► circuit_build (@tscircuit/eval, autorouting off)
-  ─► circuit.json ─► route_run (RouterAdapter in a Bun Worker, frames streamed to the UI)
+prompt / sketch ─► agent writes circuit.netlist.json ─► circuit_build (compile job on the FabPlane PCB bridge:
+  ImportNetlist + autoplace into board.kicad_pcb) ─► route_run (route job on the bridge, progress streamed to the UI)
   ─► circuit.routed.json ─► kicad_convert (circuit-json-to-kicad) ─► board.kicad_pcb / .kicad_sch
   ─► verify_drc / verify_erc / verify_gate (kicad-cli --format json) ─► render_board (kicad-cli render)
   ─► export_* (gerbers, drill, pos, bom, netlist) · sim_run (circuit-json-to-spice → spicey / ngspice)
 ```
 
-Routers: `capacity` (`@tscircuit/capacity-autorouter`, MIT) ships in every build. `freerouting`
-(`vendor/js_autorouter`, a private GPL-derived port) is loaded only when `FABDESK_CHANNEL=internal`
+Routers run on the bridge: `capacity` maps to its built-in JS router; `freerouting` (its Freerouting adapter)
+is offered only when `FABDESK_CHANNEL=internal`
 and is never included in public artifacts.
 
 ## Auth
@@ -59,6 +59,6 @@ Settings › Shortcuts.
 
 ## Project on disk
 
-`~/fabdesk/<slug>/` — `fabdesk.json`, `circuit.tsx`, `circuit.json`, `circuit.routed.json`,
+`~/fabdesk/<slug>/` — `fabdesk.json`, `circuit.netlist.json`, `board.kicad_pcb`, `board.kicad_pro`,
 `<name>.kicad_pcb|sch|pro`, `sketches/`, `renders/`, `reports/`, `exports/`, `AGENTS.md`,
 `CLAUDE.md`, `.fabdesk/runs/<runId>/frames.jsonl`.

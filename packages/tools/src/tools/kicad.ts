@@ -1,36 +1,7 @@
-/** KiCad toolset: conversion and board statistics. */
-import { z } from "zod/v4";
+/** KiCad toolset: board statistics. The board itself is written by circuit_build and edited by route_run. */
 import { PROJECT_FILES } from "../fs";
-import { ToolError, defineTool, type ToolContext, type ToolOutput } from "../registry";
-import { loadCircuitJson, ok, p, requireBoard, requireKicad, table, writeReport } from "./common";
-
-export async function convertProject(ctx: ToolContext): Promise<{ files: string[]; warnings: string[]; source: string }> {
-  const project = ctx.requireProject();
-  if (project.manifest().board.source === "kicad") {
-    throw new ToolError(`${PROJECT_FILES.boardPcb} was compiled by FabPlane PCB and is the source of truth; converting circuit.json over it would discard it. Run circuit_build instead.`, "precondition");
-  }
-  const { circuitJson, source } = await loadCircuitJson(project);
-  const res = await ctx.services.kicad.convertToKicad({ circuitJson, projectDir: project.dir, projectName: "board" });
-  await writeReport(project, "convert", { at: new Date().toISOString(), source, ...res });
-  return { ...res, source };
-}
-
-export const kicad_convert = defineTool({
-  name: "kicad_convert",
-  toolset: "kicad",
-  title: "Convert to KiCad",
-  description:
-    "Convert the circuit (circuit.routed.json when present, else circuit.json) into board.kicad_pcb, board.kicad_sch and board.kicad_pro in the project directory. Needed before DRC/ERC, rendering and exports; verify_drc and render_board call it automatically when the board is stale.",
-  inputSchema: {},
-  annotations: { idempotentHint: true },
-  longRunning: true,
-  handler: async (_args, ctx): Promise<ToolOutput> => {
-    ctx.progress(0.1, "converting");
-    const { files, warnings, source } = await convertProject(ctx);
-    ctx.progress(1, "done");
-    return ok(`Converted ${source} → ${files.map((f) => f.split("/").pop()).join(", ")}${warnings.length ? `\nWarnings:\n${warnings.map((w) => `- ${w}`).join("\n")}` : ""}`, { files, warnings, source });
-  },
-});
+import { defineTool } from "../registry";
+import { ok, p, requireBoard, requireKicad, table } from "./common";
 
 export const kicad_stats = defineTool({
   name: "kicad_stats",
@@ -49,4 +20,4 @@ export const kicad_stats = defineTool({
   },
 });
 
-export const kicadTools = [kicad_convert, kicad_stats];
+export const kicadTools = [kicad_stats];

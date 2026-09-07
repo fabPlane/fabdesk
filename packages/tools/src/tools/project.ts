@@ -1,10 +1,10 @@
 /** Project toolset: files, sketches and board settings. All paths are jailed under the project dir. */
-import { readdir, readFile, stat } from "node:fs/promises";
+import { copyFile, readdir, readFile, stat } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 import { z } from "zod/v4";
-import { PROJECT_FILES, jailPath, projectRelative, writeAtomic, writeJson } from "../fs";
+import { PROJECT_FILES, jailPath, projectRelative, writeAtomic } from "../fs";
 import { ToolError, defineTool } from "../registry";
-import { ok, p, trim, writeReport } from "./common";
+import { ok, p, trim } from "./common";
 
 const MAX_READ = 512 * 1024;
 
@@ -13,9 +13,9 @@ export const project_read_file = defineTool({
   toolset: "project",
   title: "Read a project file",
   description:
-    "Read a text file inside the project directory (e.g. circuit.tsx, reports/drc.json, fabdesk.json). Paths are relative to the project and may not leave it. Binary files are reported by size only; use project_list_sketches for images.",
+    "Read a text file inside the project directory (e.g. circuit.netlist.json, reports/drc.json, fabdesk.json). Paths are relative to the project and may not leave it. Binary files are reported by size only; use project_list_sketches for images.",
   inputSchema: {
-    path: z.string().min(1).describe("Relative path, e.g. circuit.tsx"),
+    path: z.string().min(1).describe("Relative path, e.g. circuit.netlist.json"),
     maxChars: z.number().int().min(100).max(200_000).default(50_000),
   },
   annotations: { readOnlyHint: true, idempotentHint: true },
@@ -42,9 +42,9 @@ export const project_write_file = defineTool({
   toolset: "project",
   title: "Write a project file",
   description:
-    "Create or overwrite a text file inside the project directory, creating parent directories. Use it to write circuit.tsx. Paths are relative to the project and may not leave it; fabdesk.json must be changed through project_set_board.",
+    "Create or overwrite a text file inside the project directory, creating parent directories. Use it to write circuit.netlist.json. Paths are relative to the project and may not leave it; fabdesk.json must be changed through project_set_board.",
   inputSchema: {
-    path: z.string().min(1).describe("Relative path, e.g. circuit.tsx"),
+    path: z.string().min(1).describe("Relative path, e.g. circuit.netlist.json"),
     content: z.string().describe("Full file content (UTF-8)"),
   },
   annotations: { destructiveHint: true, idempotentHint: true },
@@ -64,7 +64,7 @@ export const project_list_sketches = defineTool({
   toolset: "project",
   title: "List sketches",
   description:
-    "List the user's sketch images (PNG/JPEG/SVG under sketches/) with absolute paths so you can open them with your image reading capability. Sketches describe the desired board; interpret them before writing circuit.tsx.",
+    "List the user's sketch images (PNG/JPEG/SVG under sketches/) with absolute paths so you can open them with your image reading capability. Sketches describe the desired board; interpret them before writing circuit.netlist.json.",
   inputSchema: {},
   annotations: { readOnlyHint: true, idempotentHint: true },
   handler: async (_args, ctx) => {
@@ -88,7 +88,7 @@ export const project_set_board = defineTool({
   toolset: "project",
   title: "Set board settings",
   description:
-    "Update board constraints in fabdesk.json: layer count (1-8), outline width/height in mm, and the router to use. These drive routing and the KiCad conversion; put matching values in circuit.tsx's <board> element.",
+    "Update board constraints in fabdesk.json: layer count (1-8), outline width/height in mm, and the router to use. The size becomes the board outline the next circuit_build draws; the router is used by route_run.",
   inputSchema: {
     layers: z.number().int().min(1).max(8).optional(),
     widthMm: z.number().positive().optional(),
@@ -116,66 +116,51 @@ export const project_set_board = defineTool({
 export const project_import_kicad = defineTool({
   name: "project_import_kicad",
   toolset: "project",
-  title: "Import a KiCad board",
+  title: "Adopt a KiCad board",
   description:
-    "Import an existing .kicad_pcb as the project's circuit.json (footprints, pads, holes, tracks, vias, copper pours, outline, nets) without launching KiCad, write reports/import.json (layer mapping, counts, canonical net names, everything dropped or unsupported) and set fabdesk.json board.layers/size/rules from the board. Existing copper is kept and treated as fixed, netted obstacles by route_run; use route_scope + route_unroute to choose what to re-route. Fails closed on net-name collisions, unlinked copper and blind/buried vias unless strict=false.",
+    "Copy an existing .kicad_pcb (and its .kicad_pro / .kicad_sch when they sit next to it) into the project as board.kicad_pcb, board.kicad_pro and board.kicad_sch, so route_run, verify_drc, render and export tools work on it. The board becomes the design; a later circuit_build updates it from circuit.netlist.json (footprints the netlist does not name are removed). Sets fabdesk.json board.layers from the board when kicad-cli is available.",
   inputSchema: {
     path: z.string().min(1).describe("Absolute path to the .kicad_pcb, or a path relative to the project"),
-    strict: z.boolean().default(true),
   },
   annotations: { destructiveHint: true, idempotentHint: true },
   longRunning: true,
-  handler: async ({ path, strict }, ctx) => {
+  handler: async ({ path }, ctx) => {
     const project = ctx.requireProject();
     const abs = isAbsolute(path) ? path : await jailPath(project.dir, path);
     if (!(await stat(abs).catch(() => null))) throw new ToolError(`file not found: ${path}`, "not_found");
-    ctx.progress(0.05, "converting");
-    let circuitJson: unknown[];
-    let report;
-    try {
-      ({ circuitJson, report } = await ctx.services.kicad.importPcb({ pcbPath: abs, projectName: project.name, strict }));
-    } catch (e) {
-      const failed = e as { report?: unknown; message?: string };
-      if (failed.report) await writeReport(project, "import", failed.report);
-      throw new ToolError(failed.message ?? String(e), "precondition");
+    if (!/\.kicad_pcb$/i.test(abs)) throw new ToolError("path must be a .kicad_pcb", "invalid_args");
+    ctx.progress(0.1, "copying");
+    const copied: string[] = [];
+    const target = p(project, PROJECT_FILES.boardPcb);
+    if (abs !== target) {
+      await copyFile(abs, target);
+      copied.push(PROJECT_FILES.boardPcb);
     }
-    ctx.progress(0.8, "writing circuit.json");
-    await writeJson(p(project, PROJECT_FILES.circuitJson), circuitJson);
-    // The imported board is the routed baseline; a stale circuit.routed.json would shadow it.
-    await Bun.file(p(project, PROJECT_FILES.routedJson)).delete().catch(() => {});
-    const reportPath = await writeReport(project, "import", report);
-    const rules = report.designRules;
-    const board = {
-      ...project.manifest().board,
-      layers: report.layers.copperCount,
-      ...(report.board.widthMm ? { widthMm: report.board.widthMm } : {}),
-      ...(report.board.heightMm ? { heightMm: report.board.heightMm } : {}),
-      ...(rules
-        ? {
-            rules: {
-              ...(rules.traceWidthMm !== undefined ? { traceWidthMm: rules.traceWidthMm } : {}),
-              ...(rules.clearanceMm !== undefined ? { clearanceMm: rules.clearanceMm } : {}),
-              ...(rules.viaDrillMm !== undefined ? { viaDrillMm: rules.viaDrillMm } : {}),
-              ...(rules.viaDiameterMm !== undefined ? { viaDiameterMm: rules.viaDiameterMm } : {}),
-            },
-          }
-        : {}),
-    };
-    await project.updateManifest({ board });
+    for (const [ext, dest] of [
+      [".kicad_pro", PROJECT_FILES.boardPro],
+      [".kicad_sch", PROJECT_FILES.boardSch],
+    ] as const) {
+      const sibling = abs.replace(/\.kicad_pcb$/i, ext);
+      const to = p(project, dest);
+      if (sibling !== to && (await stat(sibling).catch(() => null))) {
+        await copyFile(sibling, to);
+        copied.push(dest);
+      }
+    }
+    let layers: number | undefined;
+    const cli = await ctx.services.kicad.resolveCli();
+    if (cli) {
+      ctx.progress(0.5, "reading board stats");
+      const stats = (await ctx.services.kicad.boardStats(cli, { board: target, scratchFile: p(project, PROJECT_FILES.reports, "stats.json") }).catch(() => ({}))) as Record<string, unknown>;
+      const n = Number(stats["copperLayers"] ?? stats["copper_layers"] ?? stats["layers"]);
+      if (Number.isInteger(n) && n >= 1 && n <= 8) layers = n;
+    }
+    if (layers !== undefined) await project.updateManifest({ board: { ...project.manifest().board, layers } });
     ctx.progress(1, "done");
-    const c = report.counts as Record<string, unknown>;
-    const text = [
-      `Imported ${report.source.file} (sha256 ${report.source.sha256.slice(0, 12)}…, KiCad ${report.source.kicadVersion ?? "?"}) in ${report.timings.totalMs} ms: ${report.layers.copperCount} copper layers (${report.layers.mapping.map((m) => `${m.kicad}→${m.circuitJson}`).join(", ")}), ${c["footprints"]} footprints, ${c["pads"]} pads, ${c["segments"]} segments, ${c["vias"]} vias, ${c["zones"]} zones (${c["filledPolygons"]} filled polygons), ${c["nets"]} nets (${c["netsRoutable"]} routable).`,
-      `Copper linked: ${report.copper["tracesLinked"]} traces, ${report.copper["viasLinked"]} vias, ${report.copper["poursLinked"]} pours; unlinked: ${report.copper["tracesUnlinked"]}/${report.copper["viasUnlinked"]}/${report.copper["poursUnlinked"]}.`,
-      report.dropped.length ? `Dropped: ${report.dropped.map((d) => `${d.kind} x${d.count} (${d.detail})`).join("; ")}` : "Dropped: nothing.",
-      report.unsupported.length ? `Unsupported: ${report.unsupported.map((d) => `${d.kind} x${d.count}`).join("; ")}` : "",
-      report.failures.length ? `Failures (strict=false): ${report.failures.join("; ")}` : "",
-      rules ? `Rules: trace ${rules.traceWidthMm ?? "?"} mm, clearance ${rules.clearanceMm ?? "?"} mm, via ${rules.viaDiameterMm ?? "?"}/${rules.viaDrillMm ?? "?"} mm.` : "Rules: no .kicad_pro found.",
-      `Wrote ${PROJECT_FILES.circuitJson} and ${projectRelative(project.dir, reportPath)}; fabdesk.json board.layers=${board.layers}.`,
-    ]
-      .filter(Boolean)
-      .join("\n");
-    return ok(text, { report, board, files: [PROJECT_FILES.circuitJson, projectRelative(project.dir, reportPath)] }, { isError: report.failures.length > 0 });
+    return ok(
+      `Adopted ${abs} as the project board: ${copied.length ? copied.join(", ") : "already in place"}.${layers !== undefined ? ` fabdesk.json board.layers=${layers}.` : ""}`,
+      { source: abs, copied, ...(layers !== undefined ? { layers } : {}) },
+    );
   },
 });
 

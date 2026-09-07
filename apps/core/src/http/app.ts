@@ -18,7 +18,7 @@ import {
   type Me,
 } from "@fabdesk/protocol";
 import { z } from "zod/v4";
-import { PROJECT_FILES, ToolError, benchRoute, jailPath, toolRoutes, writeAtomic, type ContextFactory, type CoreServices, type ToolRegistry } from "@fabdesk/tools";
+import { PROJECT_FILES, ToolError, jailPath, toolRoutes, writeAtomic, type ContextFactory, type CoreServices, type ToolRegistry } from "@fabdesk/tools";
 import { extractToken, originAllowed, type TokenSet } from "../auth";
 import type { AuthFacade } from "../auth-facade";
 import type { EventBus } from "../bus";
@@ -378,43 +378,6 @@ export function createApp(deps: AppDeps): Hono<Env> {
   });
   app.post("/jobs/:id/cancel", (c) => c.json({ ok: deps.jobs.cancel(c.req.param("id")) }));
   app.delete("/jobs/:id", (c) => c.json({ ok: deps.jobs.cancel(c.req.param("id")) }));
-
-  /* ---------- benchmarks ---------- */
-  const BenchBody = z.object({
-    project: z.string().min(1),
-    router: z.enum(["capacity", "freerouting"]).default("capacity"),
-    scenario: z.enum(["full", "repair"]).default("repair"),
-    repeat: z.number().int().min(1).max(50).default(5),
-    timeoutMs: z.number().int().min(1000).max(60 * 60_000).default(120_000),
-    repairRefs: z.array(z.string().min(1)).optional(),
-    minFrameIntervalMs: z.number().int().min(0).max(5000).optional(),
-    copperPours: z.enum(["polygon", "omit"]).optional(),
-    existingCopper: z.enum(["obstacles", "omit"]).optional(),
-    settings: z.record(z.string(), z.unknown()).optional(),
-    label: z.string().max(80).optional(),
-  });
-  /** Runs `benchRoute` as a router-class job; frames stream on the bus like route_run's. */
-  app.post("/bench/route", async (c) => {
-    const body = BenchBody.parse(await c.req.json());
-    const project = await deps.projects.resolve(body.project);
-    if (!project) return c.json({ error: `project not found: ${body.project}` }, 404);
-    if (body.router === "freerouting" && deps.config.channel !== "internal") return c.json({ error: "the freerouting router is only available in internal builds", code: "unavailable" }, 503);
-    const { project: _p, ...opts } = body;
-    const job = deps.jobs.enqueue({
-      kind: "bench:route",
-      jobClass: "router",
-      projectId: project.id,
-      run: (j) => benchRoute({ project, services: deps.services, signal: j.signal, progress: j.progress }, compact(opts)),
-    });
-    return c.json({ jobId: job.id }, 202);
-  });
-  app.get("/projects/:id/bench", async (c) => {
-    const h = await deps.projects.handle(c.req.param("id"));
-    if (!h) return c.json({ error: "not found" }, 404);
-    const dir = join(h.dir, ".fabdesk", "bench");
-    const files = await deps.projects.listFiles(dir);
-    return c.json(files.filter((f) => f.path.endsWith(".json")).map((f) => ({ ...f, path: `.fabdesk/bench/${f.path}` })));
-  });
 
   /* ---------- route frames ---------- */
   app.get("/route/runs/:id/frames", async (c) => {

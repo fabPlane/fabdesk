@@ -66,9 +66,6 @@ jobs:
       - name: Init fabplane submodule
         run: git submodule update --init --depth 1 vendor/fabplane
 
-      - name: Init js_autorouter submodule (internal channel only)
-        if: env.CHANNEL == 'internal'
-        run: git submodule update --init --depth 1 vendor/js_autorouter
 
       - uses: oven-sh/setup-bun@v2
         with:

@@ -27,6 +27,7 @@ export const FpPcbHealth = z.object({
   kicadCliExists: z.boolean().optional(),
   workspaceRoot: z.string().optional(),
   sessions: z.array(FpPcbSession).default([]),
+  compile: z.object({ frontends: z.array(z.string()).default([]) }).optional(),
 });
 export type FpPcbHealth = z.infer<typeof FpPcbHealth>;
 
@@ -142,3 +143,108 @@ export const FP_PCB_SSE_EVENTS = {
   done: "done",
   error: "error",
 } as const;
+
+/** `@fp-pcb/router` `RouteProgress`, as the route job streams it; kept loose. */
+export const FpPcbRouteProgress = z.looseObject({
+  phase: z.string().optional(),
+  message: z.string().optional(),
+  pass: z.number().optional(),
+  routed: z.number().optional(),
+  total: z.number().optional(),
+});
+export type FpPcbRouteProgress = z.infer<typeof FpPcbRouteProgress>;
+
+export const FpPcbRouteJobState = z.enum(["queued", "saving", "filling", "extracting", "routing", "applying", "done", "failed", "cancelled"]);
+export type FpPcbRouteJobState = z.infer<typeof FpPcbRouteJobState>;
+
+export const FpPcbRouteUnrouted = z.object({ net: z.string(), from: z.object({ x: z.number(), y: z.number() }), to: z.object({ x: z.number(), y: z.number() }) });
+
+export const FpPcbRouteSummary = z.object({
+  tracks: z.number().default(0),
+  vias: z.number().default(0),
+  routed: z.number().default(0),
+  routerRouted: z.number().default(0),
+  total: z.number().default(0),
+  trackLengthNm: z.number().default(0),
+  elapsedMs: z.number().default(0),
+  wallMs: z.number().default(0),
+  timedOut: z.boolean().default(false),
+  message: z.string().default(""),
+  unrouted: z.array(FpPcbRouteUnrouted).default([]),
+  log: z.array(z.string()).default([]),
+});
+export type FpPcbRouteSummary = z.infer<typeof FpPcbRouteSummary>;
+
+/** Body of `POST /sessions/:id/route` (`@fp-pcb/router/bridge-job` `RouteJobRequest`). */
+export const FpPcbRouteRequest = z.object({
+  router: z.enum(["js", "freerouting"]),
+  options: z
+    .object({
+      nets: z.array(z.string()).optional(),
+      maxTimeMs: z.number().optional(),
+      layers: z.array(z.number()).optional(),
+      viaCost: z.number().optional(),
+      effort: z.number().optional(),
+    })
+    .optional(),
+  freerouting: z.object({ passes: z.number().optional(), mode: z.string().optional() }).optional(),
+  message: z.string().optional(),
+  refillZones: z.boolean().optional(),
+});
+export type FpPcbRouteRequest = z.infer<typeof FpPcbRouteRequest>;
+
+export const FpPcbRouteJob = z.object({
+  id: z.string(),
+  router: z.string().optional(),
+  state: FpPcbRouteJobState,
+  startedAt: z.string().optional(),
+  finishedAt: z.string().optional(),
+  progress: FpPcbRouteProgress.optional(),
+  log: z.array(z.string()).default([]),
+  summary: FpPcbRouteSummary.optional(),
+  error: z.string().optional(),
+});
+export type FpPcbRouteJob = z.infer<typeof FpPcbRouteJob>;
+
+export const FP_PCB_ROUTE_TERMINAL_STATES: ReadonlySet<FpPcbRouteJobState> = new Set(["done", "failed", "cancelled"]);
+
+/**
+ * `circuit.netlist.json` — the design source fabdesk projects carry, i.e. `@fp-pcb/compile`'s
+ * `NetlistJsonFile`: what exists and what connects to what, plus the board size and the libraries
+ * the footprints resolve against. The compiler validates it; this schema is what fabdesk's own
+ * tools (BOM, SPICE, the agent guide) read.
+ */
+export const NetlistComponent = z.object({
+  ref: z.string(),
+  value: z.string(),
+  footprint: z.string(),
+  libSource: z.object({ lib: z.string(), part: z.string(), description: z.string().optional() }).optional(),
+  fields: z.record(z.string(), z.string()).optional(),
+  uuid: z.string().optional(),
+});
+export type NetlistComponent = z.infer<typeof NetlistComponent>;
+
+export const NetlistNode = z.object({ ref: z.string(), pin: z.string(), pinFunction: z.string().optional(), pinType: z.string().optional() });
+export type NetlistNode = z.infer<typeof NetlistNode>;
+
+export const NetlistNet = z.object({ name: z.string(), code: z.number().optional(), nodes: z.array(NetlistNode) });
+export type NetlistNet = z.infer<typeof NetlistNet>;
+
+export const Netlist = z.object({
+  components: z.array(NetlistComponent),
+  nets: z.array(NetlistNet),
+  design: z.object({ source: z.string().optional(), date: z.string().optional(), tool: z.string().optional() }).optional(),
+});
+export type Netlist = z.infer<typeof Netlist>;
+
+export const NetlistLibrary = z.object({ kind: z.enum(["footprint", "symbol"]), nickname: z.string(), uri: z.string(), description: z.string().optional() });
+export type NetlistLibrary = z.infer<typeof NetlistLibrary>;
+
+export const NetlistFile = z.object({
+  netlist: Netlist,
+  board: FpPcbBoardSpec.optional(),
+  libraries: z.array(NetlistLibrary).optional(),
+});
+export type NetlistFile = z.infer<typeof NetlistFile>;
+
+export const NETLIST_FILE = "circuit.netlist.json";

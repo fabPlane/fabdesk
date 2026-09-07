@@ -6,7 +6,7 @@ import type { RunSimulationOptions, SimResult } from "./types";
 /** Netlists the circuit and runs the analysis with spicey (default) or ngspice. */
 export async function runSimulation(opts: RunSimulationOptions): Promise<SimResult> {
   opts.signal?.throwIfAborted();
-  const netlist = spiceNetlist(opts.circuitJson);
+  const netlist = spiceNetlist(opts.netlist);
   const engine = opts.engine ?? "spicey";
   if (engine === "spicey") return runSpicey(netlist, opts.analysis);
   const ngspice = await findNgspice(opts.ngspicePath);

@@ -6,7 +6,7 @@ differently.
 | You edit… | What happens | State kept |
 |---|---|---|
 | `packages/ui/**`, `apps/desktop/src/renderer/**` | Vite HMR. React component modules swap in place; changes to plain modules (stores, renderers, the `@fabdesk/ui` barrel) fall back to a full page reload. | Zustand `ui` store is persisted (`localStorage` key `fabdesk.ui`): project, thread, board tab, drafts, panel layout survive reloads. Cinema frames do not (they are re-fetched from `/route/runs/:id/frames`). |
-| `apps/core/**`, `packages/{tools,tscircuit,kicad,router,sim,agents,auth-client,protocol}/**` | The daemon runs under `bun --watch`: it restarts itself (~1 s) on a fixed dev port (`FABDESK_DEV_PORT`, default 47831) with the same token, prints a new ready line, and the Electron supervisor re-announces it. The renderer's SSE reconnects and queries refetch. | SQLite (threads, messages, runs, settings) persists. In-flight jobs, route runs, MCP sessions and running agent subprocesses are lost, same as a crash. |
+| `apps/core/**`, `packages/{tools,kicad,sim,agents,auth-client,protocol}/**` | The daemon runs under `bun --watch`: it restarts itself (~1 s) on a fixed dev port (`FABDESK_DEV_PORT`, default 47831) with the same token, prints a new ready line, and the Electron supervisor re-announces it. The renderer's SSE reconnects and queries refetch. | SQLite (threads, messages, runs, settings) persists. In-flight jobs, route runs, MCP sessions and running agent subprocesses are lost, same as a crash. |
 | `apps/desktop/src/main/**`, `src/preload/**` | electron-vite rebuilds and restarts Electron. The core keeps running (its parent watchdog allows 30 s) and the new main attaches to it via `daemon.json`. | Everything in the core; renderer state per the persisted store. |
 
 Options (environment variables for `bun run dev`):
@@ -16,7 +16,8 @@ Options (environment variables for `bun run dev`):
   when iterating on HTTP handlers); `off` for no reload.
 - `FABDESK_DEV_PORT=0` for a random port per restart (the renderer follows automatically; external
   MCP configs won't).
-- `FABDESK_CHANNEL=internal` to include the js_autorouter adapter.
+- `FABDESK_CHANNEL=internal` to offer the bridge's Freerouting router.
+- A FabPlane PCB bridge on `http://127.0.0.1:4020` (or `FABDESK_FP_PCB_BRIDGE_URL`) for `circuit_build` / `route_run`: `KICAD_SRC=<kicad fork> bun run --filter @fp-pcb/bridge start` in a `fab_pcb` checkout.
 - `FABDESK_DEV_PROFILE=1` forces the isolated "fabPlane Dev" identity on a packaged nightly;
   `FABDESK_DEV_PROFILE=0` forces the production identity even when unpackaged.
 

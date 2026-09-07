@@ -18,12 +18,6 @@ export const BoardSettings = z.object({
   widthMm: z.number().positive().optional(),
   heightMm: z.number().positive().optional(),
   rules: BoardRules.optional(),
-  /**
-   * Who owns `board.kicad_pcb`. `tscircuit`: derived from circuit.json by `circuit-json-to-kicad`
-   * and regenerated when stale. `kicad`: written by the FabPlane PCB compiler and authoritative —
-   * never overwritten from circuit.json (which was imported *from* it).
-   */
-  source: z.enum(["tscircuit", "kicad"]).default("tscircuit"),
 });
 
 export const ProjectManifest = z.object({
@@ -187,13 +181,7 @@ export type DoctorReport = z.infer<typeof DoctorReport>;
 export const Settings = z.object({
   kicadCliPath: z.string().nullable().default(null),
   ngspicePath: z.string().nullable().default(null),
-  /**
-   * Which compiler `circuit_build` uses. `fp-pcb` compiles `circuit.netlist.json` through a
-   * FabPlane PCB bridge (`fpPcbBridgeUrl`) and falls back to tscircuit for projects that only
-   * have `circuit.tsx`. Env `FABDESK_COMPILER` overrides.
-   */
-  compiler: z.enum(["tscircuit", "fp-pcb"]).default("tscircuit"),
-  /** Bridge origin, e.g. `http://127.0.0.1:4020`; null means the default. Env `FABDESK_FP_PCB_BRIDGE_URL` overrides. */
+  /** FabPlane PCB bridge origin, e.g. `http://127.0.0.1:4020`; null means the default. Env `FABDESK_FP_PCB_BRIDGE_URL` overrides. */
   fpPcbBridgeUrl: z.string().nullable().default(null),
   router: z.enum(["capacity", "freerouting"]).default("capacity"),
   defaultAgent: AgentId.default("claude"),

@@ -65,14 +65,14 @@ describe("mcp adapter", () => {
     const { client, project } = await pair();
     await client.callTool({ name: "circuit_build", arguments: {} });
     await client.callTool({ name: "load_toolset", arguments: { toolset: "render" } });
-    const svg = await client.callTool({ name: "render_schematic_svg", arguments: {} });
+    const svg = await client.callTool({ name: "render_pcb_svg", arguments: {} });
     const blocks = svg.content as Array<{ type: string }>;
     expect(blocks.map((b) => b.type)).toEqual(["text", "resource"]);
 
     const templates = await client.listResourceTemplates();
     expect(templates.resourceTemplates.map((t) => t.uriTemplate).sort()).toEqual([
       "fabdesk://project/{id}/board-summary",
-      "fabdesk://project/{id}/circuit.tsx",
+      "fabdesk://project/{id}/circuit.netlist.json",
       "fabdesk://project/{id}/manifest",
       "fabdesk://project/{id}/reports/{name}",
     ]);

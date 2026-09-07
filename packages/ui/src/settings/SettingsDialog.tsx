@@ -155,7 +155,7 @@ export function SettingsDialog() {
             <div>
               <Row label="Autorouter">
                 <Select value={draft.router} onChange={(e) => update((s) => ({ ...s, router: e.target.value as Settings["router"] }))}>
-                  <option value="capacity">capacity (tscircuit)</option>
+                  <option value="capacity">capacity (built-in JS router)</option>
                   <option value="freerouting">freerouting</option>
                 </Select>
               </Row>
