@@ -171,12 +171,85 @@ Adopting fab*pcb does not get tscircuit out of the dependency tree; it moves it 
 level down. If removing the tscircuit \_dependency* is the actual goal, this repo is
 not the way to do it.
 
-## 4. What I'd recommend
+## 4. Execution plan: move compile into the fab_pcb backend first
 
-Do **not** rip and replace. Two options that are actually schedulable:
+Agreed direction: **relocate the compile capability into the fab_pcb backend, hook
+fabdesk up to it, and retire tscircuit only once the new path works.** A strangler
+migration — the seam moves before the implementation does.
+
+### 4.1 What the two servers are today
+
+|              | `@kicad-web/bridge`                                                                                        | `@fabdesk/core`                                                                                                    |
+| ------------ | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| server       | `Bun.serve`, port 4020                                                                                     | Hono, ~45 routes                                                                                                   |
+| surface      | `/health`, `/sessions`, `/sessions/:id/{log,events}`, `/files`, `/ws` (binary protobuf frames), static SPA | projects, files, sketches, threads + messages, `/mcp`, jobs, route runs, bench, auth, settings, doctor, opensource |
+| dependencies | **one** (`@kicad-web/client`)                                                                              | tools, tscircuit, kicad, router, sim, agents, auth, MCP SDK, Sentry                                                |
+| domain logic | **none** — process supervision and transport only                                                          | the whole product                                                                                                  |
+
+The bridge is a _transport_; core is the _application_. They overlap on nothing, so
+this is additive rather than a merge.
+
+### 4.2 Put compile in a library package, not in the bridge's HTTP surface
+
+Two facts make this the right shape:
+
+- `NngIpcTransport` is exported from `@kicad-web/client` and speaks the unix socket
+  directly from Bun.
+- `SessionManager` / `Session` are exported from `@kicad-web/bridge`'s index.
+
+So **fabdesk core can drive a KiCad server in-process without running a second HTTP
+server on 4020.** If compile lands as a bridge HTTP endpoint, fabdesk is forced into
+an extra process and an extra hop for every build.
+
+Recommended: a new **`@kicad-web/compile`** package that both consume — the bridge
+exposes it over HTTP for the web app, fabdesk core imports it directly. One
+implementation, two front doors.
+
+### 4.3 The seam
+
+```
+compile(source, session) -> { ok, errors[], warnings[], counts }
+  source -> netlist -> newProject | importNetlist -> annotate
+         -> assignFootprints -> autoplace
+```
+
+Errors come back from `NetlistImportResult{errorCount, warningCount, report}`, which
+preserves the fix-and-retry loop `parseThrownError` gives today.
+
+### 4.4 Phases
+
+| phase | work                                                                                                                                                                                                                 | tscircuit still present? |
+| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| 1     | Create `@kicad-web/compile` in fab_pcb. Internals still `@tscircuit/eval` — fab_pcb already depends on `@tscircuit/capacity-autorouter`, so this is not a new precedent. Expose via the bridge; export as a library. | yes, in fab_pcb          |
+| 2     | Point fabdesk's `TscircuitService` implementation at the new package. `packages/tscircuit` becomes a thin adapter. Nothing in `packages/tools` changes — the interface holds.                                        | yes                      |
+| 3     | Swap the compile internals to netlist-native (§3.1(b)). **fabdesk does not change.**                                                                                                                                 | no                       |
+| 4     | Retire `packages/tscircuit`; delete `convert.ts` + `import.ts` (§2).                                                                                                                                                 | no                       |
+| 5     | Routing, DRC, exports, sim, render onto the fab_pcb equivalents (§2).                                                                                                                                                | —                        |
+
+Phase 3 is where the hard problem from §3.1 lands (part selection, no parametric
+code, schematic auto-layout) — but by then it is behind a stable seam, so it can
+take as long as it takes without blocking anything.
+
+### 4.5 Constraints to plan around
+
+1. **Cross-repo workflow.** `vendor/*` are submodules; per AGENTS.md they are not
+   edited in fabdesk. Every step above is a PR to `TensorFleet/fab_pcb` followed by
+   `bun run submodules:update` — which currently only updates `vendor/fabplane` and
+   needs extending to `vendor/fab_pcb`.
+2. **This pushes fab_pcb's architecture.** Its document model deliberately _is_ the
+   KiCad file; it has no concept of a design source. Adding compile gives it one.
+   TensorFleet owns both repos, so this is a call to make deliberately rather than a
+   blocker.
+3. **§3.2 is still the gate.** None of this runs without a `kicad-cli` that has
+   `api-server`. `DEFAULT_KICAD_CLI` points at a local KiCad checkout build. Shipping
+   fabPlane still means bundling a forked binary on three platforms.
+
+## 5. Superseded — earlier options
+
+Kept for reference; §4 supersedes them.
 
 **Option A — compiler split (lowest risk, keeps the product).**
-Adopt fab*pcb for everything \_downstream* of the design: routing (§2 #4–#7, a
+Adopt `fab_pcb` for everything _downstream_ of the design: routing (§2 #4–#7, a
 genuine upgrade), DRC/ERC, exports, sim netlist, rendering. Keep `@tscircuit/eval`
 as the `circuit.tsx` compiler and hand its output to KiCad via `importNetlist`.
 Rename `packages/tscircuit` → `packages/compile` so the name stops implying more
@@ -191,7 +264,7 @@ of work, no behaviour change, no KiCad fork. This buys none of fab_pcb's upside.
 Either way, **§3.2 is the gate**. Before any code moves, the question to settle is
 whether fabPlane is willing to ship a forked `kicad-cli` on three platforms.
 
-## 5. Rough sizing (assuming §3.1(a) and §3.2 resolved)
+## 6. Rough sizing (assuming §3.1(a) and §3.2 resolved)
 
 | phase | work                                                                          | scale                                    |
 | ----- | ----------------------------------------------------------------------------- | ---------------------------------------- |
