@@ -306,6 +306,35 @@ fabdesk's own packages carry no tscircuit-ecosystem dependency and no `circuit.j
   `render_schematic_svg` and schematic parity only apply to imported KiCad projects — a compiled
   netlist has no drawn schematic. The freerouting router stays internal-only at the tool layer.
 
+#### First end-to-end run — 2026-09-07
+
+fabdesk daemon (`retire-tscircuit`) → bridge (fab_pcb #3, fork `280274cc3d`) → fork `kicad-cli`, on a
+three-part board (2-pin header, 0603 resistor, 0603 LED; stock footprints via `KICAD10_FOOTPRINT_DIR`):
+
+| step                                            | result                                                                        |
+| ----------------------------------------------- | ----------------------------------------------------------------------------- |
+| `circuit_build`                                 | 3 footprints resolved, placed, saved — 3.6 s (compile job 1.8 s)              |
+| `route_run` (capacity = the bridge's JS router) | 3/3 in 64–121 ms, 21 tracks, applied as one commit                            |
+| `verify_drc` on the saved file                  | 0 errors, 0 unconnected, 2 silkscreen warnings (reference text near the edge) |
+| `render_board`, `render_pcb_svg`                | `renders/top.png`, `renders/pcb.svg`                                          |
+
+Three seams the run found, all fixed on the fabdesk side and worth a bridge follow-up:
+
+1. **The route job saves before routing, not after applying** (its save feeds the DSN export), so
+   the file lagged the session and DRC on the file disagreed with the ratsnest. `DesignService`
+   now saves after `route` and `unroute`. Bridge follow-up: a `save` flag on the route job like the
+   compile job has.
+2. **A session the compile job created a project in stays listed as bare** (`path: null`), so a
+   restarted daemon could not find it by path and spawned a second server on the same project.
+   fabdesk now adopts a bare session whose `GetProjectInfo` names this project. Bridge follow-up:
+   refresh `session.path` when a job creates or opens a project.
+3. **A session spawned on `board.kicad_pro` loads the project but opens no board.** fabdesk prefers
+   `board.kicad_pcb` as the session path and opens the board explicitly otherwise.
+
+Also found: Bun honours tsconfig `paths` at runtime, so the declaration mapping for
+`@fp-pcb/{proto,client}` lives in `apps/core/tsconfig.typecheck.json` (used by `tsc` only), not in
+the base config the daemon runs under.
+
 ## 5. Skeleton review — what was wrong and what PR 1 does about it
 
 Verified against the fork source at `280274cc3d`:

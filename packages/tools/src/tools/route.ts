@@ -7,7 +7,7 @@ import { PROJECT_FILES, writeJson } from "../fs";
 import { FrameSink } from "../frame-sink";
 import { ToolError, defineTool, type ToolContext, type ToolOutput } from "../registry";
 import type { RouteProgress } from "../services";
-import { ok, p, throwIfAborted } from "./common";
+import { loadNetlist, ok, p, throwIfAborted } from "./common";
 
 export const RouteRunArgs = {
   router: z.enum(["capacity", "freerouting"]).optional().describe("Router; defaults to the project's fabdesk.json router"),
@@ -35,9 +35,11 @@ export class RouteProgressFrames {
   ) {}
   onProgress(pr: RouteProgress): void {
     const elapsedMs = Date.now() - this.started;
-    if (pr.pass !== undefined && pr.pass !== this.pass) {
-      this.pass = pr.pass;
-      this.sink.onMessage({ kind: "frame", runId: this.runId, seq: this.seq++, elapsedMs, event: { kind: "pass-start", passNo: pr.pass }, shapes: [] });
+    // The bridge reports the pass inside `phase` ("pass 3"); a numeric `pass` wins when present.
+    const pass = pr.pass ?? (pr.phase ? Number(/pass\s+(\d+)/i.exec(pr.phase)?.[1]) || undefined : undefined);
+    if (pass !== undefined && pass !== this.pass) {
+      this.pass = pass;
+      this.sink.onMessage({ kind: "frame", runId: this.runId, seq: this.seq++, elapsedMs, event: { kind: "pass-start", passNo: pass }, shapes: [] });
     }
     if (pr.routed !== undefined && pr.routed > this.routed) {
       for (let n = this.routed; n < pr.routed; n++) {
@@ -70,11 +72,13 @@ export async function runRoute(
   const started = Date.now();
   const sink = new FrameSink(framesPath, ctx.services.bus);
   const board = manifest.board;
+  // The outline the build drew comes from the netlist's board spec; the manifest is the fallback.
+  const spec = (await loadNetlist(project).catch(() => null))?.board;
   sink.onMessage({
     kind: "meta",
     runId,
     router,
-    bounds: { x1: 0, y1: 0, x2: board.widthMm ?? 0, y2: board.heightMm ?? 0 },
+    bounds: { x1: 0, y1: 0, x2: spec?.widthMm ?? board.widthMm ?? 0, y2: spec?.heightMm ?? board.heightMm ?? 0 },
     layers: Array.from({ length: board.layers }, (_, i) => (i === 0 ? "F.Cu" : i === board.layers - 1 ? "B.Cu" : `In${i}.Cu`)),
     unitsPerMm: 1,
   });

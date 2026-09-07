@@ -11,7 +11,7 @@
     "start": "bun run src/main.ts serve",
     "build": "bun run scripts/build.ts",
     "doctor": "bun run src/main.ts doctor",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "test": "bun test"
   },
   "dependencies": {
