@@ -215,7 +215,7 @@ before the apply path has ever run against a server. Reversed:
 | 0     | **Bundled fork (decided, §3.2):** build/sign/notarise `kicad-cli` for macOS, Linux, Windows — add a Windows script to `kicad-patches/`. Ship `kicad-footprints` in the bundle. Run the §6 experiment. | yes                   |
 | 1     | `fab_pcb` PR 1: `@fp-pcb/compile` library — rename, the §5 fixes, JSON netlist frontend (`circuit.netlist.json` = `{ netlist, board }`), `FrontendResult.libraries`                                   | yes                   |
 | 2     | `fab_pcb` PR 2: `apply.kicad.test.ts` against the fork build, `bridge-job.ts`, bridge mount, `compile.kicad.test.ts`, fork patch so `ImportNetlist` publishes `DocumentChanged`                       | yes                   |
-| 3     | fabdesk: bridge client in `apps/core`; `buildCircuit` adapter = compile job → `importKicadPcb(board.kicad_pcb)` → `circuit.json` → `BuildResult`; fix the `boardIsStale` trap (§4.5)                  | yes                   |
+| 3     | **landed behind a flag (§4.6)** — bridge client in `apps/core`; `buildCircuit` adapter = compile job → `importKicadPcb(board.kicad_pcb)` → `circuit.json` → `BuildResult`; `boardIsStale` trap closed | yes                   |
 | 4     | `fab_pcb`: `tscircuit` frontend for existing `circuit.tsx` projects, emitting project-local `.pretty` for procedural footprints                                                                       | yes, inside `fab_pcb` |
 | 5     | Retire `packages/tscircuit`; delete `convert.ts`; routing, DRC, exports, sim, render onto jobs; then delete `import.ts`                                                                               | no                    |
 
@@ -241,6 +241,43 @@ needs. Sim over an imported board is lossy until phase 5; accept it.
    with a placeholder `KICAD_REF`; no image is published at the pin. Publishing the image at
    `KICAD_COMMIT` and flipping that flag is `fab_pcb` infra work, and it is what makes
    `apply.kicad.test.ts` enforceable.
+
+### 4.6 Phase 3 status — landed in fabdesk 2026-09-07, behind a flag
+
+What is in the tree (all unit-tested against stubs; nothing has met a live bridge):
+
+- `packages/protocol/src/fp-pcb.ts` — the bridge wire types (health, sessions, compile
+  request/job/result, SSE event names), mirrored so core carries **no** `fab_pcb` workspace
+  package. The `/sessions/:id/compile` shape is §4.3's; it is a client of a contract until
+  `fab_pcb` PR 2 lands.
+- `apps/core/src/fp-pcb-bridge.ts` — `FpPcbBridgeClient`: session reuse by project path, compile
+  with SSE follow and a JSON fallback, cancel via `DELETE`, `ToolError` codes
+  (`unavailable` / `not_found` / `cancelled`) the tools already understand.
+- `apps/core/src/fp-pcb-compiler.ts` — `fpPcbBuildCircuit` behind `TscircuitService.buildCircuit`:
+  `circuit.netlist.json` → compile job (project created by the job when `board.kicad_pro` is
+  absent) → `board.kicad_pcb` → `importKicadPcb` → `circuit.json`, returning
+  `boardSource: "kicad"`. `chooseCompiler`: setting `compiler: "fp-pcb"` (env `FABDESK_COMPILER`)
+  prefers the new path when the project has a netlist; a `*.netlist.json` entrypoint forces it;
+  tsx-only projects keep tscircuit, so flipping the flag breaks nothing.
+- The §4.5.4 trap is closed: `BoardSettings.source` (`tscircuit` | `kicad`), `boardIsStale`
+  returns false for a KiCad-owned board, `kicad_convert` refuses to overwrite one, and
+  `circuit_build` records ownership on a successful build only.
+- Settings `compiler` and `fpPcbBridgeUrl` (env `FABDESK_FP_PCB_BRIDGE_URL`, default
+  `http://127.0.0.1:4020`). No settings UI yet; the env vars are the dev switch.
+
+Still open before the flag does anything end to end:
+
+1. **`fab_pcb` PR 2.** Nothing answers `POST /sessions/:id/compile` today.
+2. **Nothing spawns the bridge.** Dev runs it by hand from a `fab_pcb` checkout (not `vendor/`,
+   which has no `node_modules`). Bundling it is phase 0.
+3. **File-format compatibility — the real risk.** The fork (10.99) writes a newer `.kicad_pcb`
+   than the stock `kicad-cli` (10.0.4) fabdesk still uses for DRC, render and export. If stock
+   refuses the file, phase 3 is inert until those tools move to the bridge (phase 5) or the
+   bundled fork replaces stock everywhere. The §6 experiment answers this in an hour.
+4. `importKicadPcb` in strict mode on a fresh, unrouted board should pass (no copper to link);
+   unverified.
+5. `packages/agents/src/agents-md.ts` still tells the agent to write `circuit.tsx`; netlist
+   authoring guidance is phase 4.
 
 ## 5. Skeleton review — what was wrong and what PR 1 does about it
 

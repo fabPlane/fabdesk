@@ -68,6 +68,21 @@ export type BuildResult = {
   warnings: BuildError[];
   elementCounts: Record<string, number>;
   durationMs: number;
+  /**
+   * Who now owns `board.kicad_pcb` (see `BoardSettings.source`). `kicad` when the FabPlane PCB
+   * compiler wrote the board and circuit.json was imported from it; absent or `tscircuit` when
+   * circuit.json is primary. `circuit_build` records it in the manifest.
+   */
+  boardSource?: "tscircuit" | "kicad";
+};
+
+export type BuildOptions = {
+  projectDir: string;
+  entrypoint?: string;
+  cacheDir?: string;
+  signal?: AbortSignal;
+  /** Fine-grained progress from compilers that have stages (the fp-pcb job does); tools map it into their own range. */
+  progress?: (fraction: number, note?: string) => void;
 };
 
 export type CircuitSelect = "components" | "nets" | "ports" | "traces" | "errors";
@@ -77,7 +92,7 @@ export type KicadCli = { path: string; version: string };
 export type BoardView = "top" | "bottom" | "perspective" | "side";
 
 export interface TscircuitService {
-  buildCircuit(opts: { projectDir: string; entrypoint?: string; cacheDir?: string; signal?: AbortSignal }): Promise<BuildResult>;
+  buildCircuit(opts: BuildOptions): Promise<BuildResult>;
   runChecks(circuitJson: CircuitJson): Promise<{ errors: Array<{ type: string; message: string } & Record<string, unknown>> }>;
   queryCircuit(circuitJson: CircuitJson, select: CircuitSelect, filter?: string): unknown[];
   extractSimpleRouteJson(

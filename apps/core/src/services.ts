@@ -11,6 +11,9 @@ import type { EventBus } from "./bus";
 import type { ProjectStore } from "./projects";
 import { routerHostOptions } from "./router-worker-url";
 import { AppBridgeClient } from "./app-bridge";
+import { compilerFromEnv, fpPcbBridgeUrl } from "./config";
+import { FpPcbBridgeClient } from "./fp-pcb-bridge";
+import { chooseCompiler, fpPcbBuildCircuit, hasCompileSources } from "./fp-pcb-compiler";
 
 export type ServiceDeps = {
   version: string;
@@ -66,6 +69,14 @@ export async function createServices(deps: ServiceDeps): Promise<CoreServices & 
     return found ? { path: found.path, version: found.version } : null;
   };
 
+  // One bridge client per configured URL; re-created when the setting changes.
+  let bridge: { url: string; client: FpPcbBridgeClient } | null = null;
+  const bridgeClient = (): FpPcbBridgeClient => {
+    const url = fpPcbBridgeUrl(deps.settings().fpPcbBridgeUrl);
+    if (!bridge || bridge.url !== url) bridge = { url, client: new FpPcbBridgeClient({ url }) };
+    return bridge.client;
+  };
+
   const services: CoreServices & { dispose(): void } = {
     version: deps.version,
     channel: deps.channel,
@@ -76,8 +87,10 @@ export async function createServices(deps: ServiceDeps): Promise<CoreServices & 
     principal: deps.principal,
     tscircuit: {
       buildCircuit: async (o) => {
+        const choice = chooseCompiler(compilerFromEnv() ?? deps.settings().compiler, await hasCompileSources(o.projectDir, o.entrypoint));
+        if (choice === "fp-pcb") return fpPcbBuildCircuit(o, { bridge: bridgeClient, importPcb: (i) => services.kicad.importPcb(i) });
         const r = await tsc.buildCircuit(o);
-        return { ...r, warnings: r.warnings.map((w) => ({ message: w })) };
+        return { ...r, warnings: r.warnings.map((w) => ({ message: w })), boardSource: "tscircuit" };
       },
       runChecks: (cj) => tsc.runChecks(cj),
       queryCircuit: (cj, select, filter) => tsc.queryCircuit(cj, select, filter) as unknown[],

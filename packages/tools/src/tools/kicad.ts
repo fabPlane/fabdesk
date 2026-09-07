@@ -1,11 +1,14 @@
 /** KiCad toolset: conversion and board statistics. */
 import { z } from "zod/v4";
 import { PROJECT_FILES } from "../fs";
-import { defineTool, type ToolContext, type ToolOutput } from "../registry";
+import { ToolError, defineTool, type ToolContext, type ToolOutput } from "../registry";
 import { loadCircuitJson, ok, p, requireBoard, requireKicad, table, writeReport } from "./common";
 
 export async function convertProject(ctx: ToolContext): Promise<{ files: string[]; warnings: string[]; source: string }> {
   const project = ctx.requireProject();
+  if (project.manifest().board.source === "kicad") {
+    throw new ToolError(`${PROJECT_FILES.boardPcb} was compiled by FabPlane PCB and is the source of truth; converting circuit.json over it would discard it. Run circuit_build instead.`, "precondition");
+  }
   const { circuitJson, source } = await loadCircuitJson(project);
   const res = await ctx.services.kicad.convertToKicad({ circuitJson, projectDir: project.dir, projectName: "board" });
   await writeReport(project, "convert", { at: new Date().toISOString(), source, ...res });

@@ -2,7 +2,7 @@
 import { readdir } from "node:fs/promises";
 import { z } from "zod/v4";
 import { PROJECT_FILES, exists, mtimeMs, readJsonOrNull, writeJson } from "../fs";
-import { ToolError, ToolsetId, defineTool, TOOLSETS } from "../registry";
+import { ToolError, ToolsetId, defineTool, TOOLSETS, type ProjectHandle } from "../registry";
 import type { BuildResult, DrcReport } from "../services";
 import { loadCircuitJson, ok, p, requireKicad, table, writeReport } from "./common";
 import { runRoute, RouteRunArgs } from "./route";
@@ -92,11 +92,11 @@ export type BuildSummary = {
 export const circuit_build = defineTool({
   name: "circuit_build",
   toolset: "core",
-  title: "Build circuit.tsx",
+  title: "Build the circuit",
   description:
-    "Compile the project's circuit.tsx with tscircuit into circuit.json (no autorouting). Returns ok/errors/warnings with line numbers and element counts. On failure fix circuit.tsx and build again; routing, conversion and verification all consume the output of this step. Invalidates circuit.routed.json.",
+    "Compile the project's circuit source into circuit.json (no autorouting): circuit.tsx with tscircuit, or circuit.netlist.json through FabPlane PCB when the fp-pcb compiler is selected (that path also writes board.kicad_pcb and marks it the source of truth). Returns ok/errors/warnings with positions and element counts. On failure fix the source and build again; routing, conversion and verification all consume the output of this step. Invalidates circuit.routed.json.",
   inputSchema: {
-    entrypoint: z.string().optional().describe("Entry file relative to the project, default circuit.tsx"),
+    entrypoint: z.string().optional().describe("Entry file relative to the project, default circuit.tsx (a *.netlist.json entry selects the fp-pcb compiler)"),
   },
   annotations: { idempotentHint: true },
   longRunning: true,
@@ -108,6 +108,7 @@ export const circuit_build = defineTool({
       ...(entrypoint ? { entrypoint } : {}),
       cacheDir: p(project, PROJECT_FILES.cache),
       signal: ctx.signal,
+      progress: (fraction, note) => ctx.progress(0.05 + fraction * 0.8, note),
     });
     ctx.progress(0.9, "writing circuit.json");
     if (result.ok || result.circuitJson.length > 0) await writeJson(p(project, PROJECT_FILES.circuitJson), result.circuitJson);
@@ -123,6 +124,9 @@ export const circuit_build = defineTool({
       elementCounts: result.elementCounts,
     };
     await writeReport(project, "build", summary);
+    // Record who owns board.kicad_pcb now (see BoardSettings.source); only a successful build changes hands.
+    const boardSource = result.boardSource ?? "tscircuit";
+    if (result.ok && project.manifest().board.source !== boardSource) await project.updateManifest({ board: { ...project.manifest().board, source: boardSource } });
     ctx.progress(1, "done");
     const text = result.ok
       ? `Build OK in ${Math.round(result.durationMs)} ms. Elements: ${Object.entries(result.elementCounts)
@@ -210,7 +214,7 @@ export const verify_drc = defineTool({
     const project = ctx.requireProject();
     const cli = await requireKicad(ctx);
     if (convert) {
-      const stale = await boardIsStale(project.dir);
+      const stale = await boardIsStale(project);
       if (stale) {
         ctx.progress(0.1, "converting to KiCad");
         await convertProject(ctx);
@@ -250,10 +254,16 @@ export function describeViolation(v: unknown): string {
   return `[${sev}] ${rule}: ${desc}${items ? ` — ${items}` : ""}${posStr}`;
 }
 
-export async function boardIsStale(dir: string): Promise<boolean> {
-  const board = await mtimeMs(p({ dir } as never, PROJECT_FILES.boardPcb));
+/**
+ * Whether `board.kicad_pcb` needs regenerating from circuit.json. Never when the FabPlane PCB
+ * compiler wrote the board (`board.source === "kicad"`): circuit.json was imported *from* it, and
+ * converting back would discard the real board.
+ */
+export async function boardIsStale(project: Pick<ProjectHandle, "dir" | "manifest">): Promise<boolean> {
+  const board = await mtimeMs(p(project as never, PROJECT_FILES.boardPcb));
   if (board === null) return true;
-  const src = Math.max((await mtimeMs(p({ dir } as never, PROJECT_FILES.routedJson))) ?? 0, (await mtimeMs(p({ dir } as never, PROJECT_FILES.circuitJson))) ?? 0);
+  if (project.manifest().board.source === "kicad") return false;
+  const src = Math.max((await mtimeMs(p(project as never, PROJECT_FILES.routedJson))) ?? 0, (await mtimeMs(p(project as never, PROJECT_FILES.circuitJson))) ?? 0);
   return src > board;
 }
 
@@ -275,7 +285,7 @@ export const render_board = defineTool({
   handler: async ({ view, width, height, quality, convert }, ctx) => {
     const project = ctx.requireProject();
     const cli = await requireKicad(ctx);
-    if (convert && (await boardIsStale(project.dir))) {
+    if (convert && (await boardIsStale(project))) {
       ctx.progress(0.1, "converting to KiCad");
       await convertProject(ctx);
     }

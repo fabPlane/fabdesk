@@ -192,7 +192,7 @@ function registerResources(server: McpServer, registry: ToolRegistry, ctxFactory
         built: await exists(p(pr, PROJECT_FILES.circuitJson)),
         routed: await exists(p(pr, PROJECT_FILES.routedJson)),
         kicadBoard: await exists(p(pr, PROJECT_FILES.boardPcb)),
-        kicadStale: await boardIsStale(pr.dir),
+        kicadStale: await boardIsStale(pr),
         lastBuild: build ? { ok: build.ok, errors: build.errors.length, warnings: build.warnings.length, at: build.at } : null,
         lastRoute: route ? { runId: route.id, status: route.status, open: route.result?.open ?? null } : null,
         lastDrc: drc?.counts ?? null,

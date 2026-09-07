@@ -46,6 +46,8 @@ export function mockServices(projects: ProjectHandle[], overrides: Partial<CoreS
     settings: () => ({
       kicadCliPath: null,
       ngspicePath: null,
+      compiler: "tscircuit",
+      fpPcbBridgeUrl: null,
       router: "capacity",
       defaultAgent: "claude",
       agents: {},
