@@ -210,14 +210,14 @@ because everything downstream in fabdesk reads the file.
 The earlier plan put `@tscircuit/eval` behind the seam first. That builds the hardest frontend
 before the apply path has ever run against a server. Reversed:
 
-| phase | work                                                                                                                                                                                                  | tscircuit present     |
-| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
-| 0     | **Bundled fork (decided, §3.2):** build/sign/notarise `kicad-cli` for macOS, Linux, Windows — add a Windows script to `kicad-patches/`. Ship `kicad-footprints` in the bundle. Run the §6 experiment. | yes                   |
-| 1     | `fab_pcb` PR 1: `@fp-pcb/compile` library — rename, the §5 fixes, JSON netlist frontend (`circuit.netlist.json` = `{ netlist, board }`), `FrontendResult.libraries`                                   | yes                   |
-| 2     | `fab_pcb` PR 2: `apply.kicad.test.ts` against the fork build, `bridge-job.ts`, bridge mount, `compile.kicad.test.ts`, fork patch so `ImportNetlist` publishes `DocumentChanged`                       | yes                   |
-| 3     | **landed behind a flag (§4.6)** — bridge client in `apps/core`; `buildCircuit` adapter = compile job → `importKicadPcb(board.kicad_pcb)` → `circuit.json` → `BuildResult`; `boardIsStale` trap closed | yes                   |
-| 4     | `fab_pcb`: `tscircuit` frontend for existing `circuit.tsx` projects, emitting project-local `.pretty` for procedural footprints                                                                       | yes, inside `fab_pcb` |
-| 5     | Retire `packages/tscircuit`; delete `convert.ts`; routing, DRC, exports, sim, render onto jobs; then delete `import.ts`                                                                               | no                    |
+| phase | work                                                                                                                                                                                                                                                                                                     | tscircuit present     |
+| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
+| 0     | **Bundled fork (decided, §3.2):** build/sign/notarise `kicad-cli` for macOS, Linux, Windows — add a Windows script to `kicad-patches/`. Ship `kicad-footprints` in the bundle. Run the §6 experiment.                                                                                                    | yes                   |
+| 1     | `fab_pcb` PR 1: `@fp-pcb/compile` library — rename, the §5 fixes, JSON netlist frontend (`circuit.netlist.json` = `{ netlist, board }`), `FrontendResult.libraries`                                                                                                                                      | yes                   |
+| 2     | **landed on fab_pcb (stacked on #2)** — `@fp-pcb/compile/bridge-job` mounted at `/sessions/:id/compile`; live `apply.kicad.test.ts` + `compile.kicad.test.ts` against the fork; libraries registered from `FrontendResult.libraries`; A.8 inset. `DocumentChanged` fork patch still open (gaps doc G28). | yes                   |
+| 3     | **landed behind a flag (§4.6)** — bridge client in `apps/core`; `buildCircuit` adapter = compile job → `importKicadPcb(board.kicad_pcb)` → `circuit.json` → `BuildResult`; `boardIsStale` trap closed                                                                                                    | yes                   |
+| 4     | `fab_pcb`: `tscircuit` frontend for existing `circuit.tsx` projects, emitting project-local `.pretty` for procedural footprints                                                                                                                                                                          | yes, inside `fab_pcb` |
+| 5     | Retire `packages/tscircuit`; delete `convert.ts`; routing, DRC, exports, sim, render onto jobs; then delete `import.ts`                                                                                                                                                                                  | no                    |
 
 Phase 3's `importKicadPcb` bridge is why `circuit.json` is not a blocker: it is exactly what
 `project_import_kicad` does today (927 LOC fabdesk owns) and emits the `source_*` elements routing
@@ -267,7 +267,7 @@ What is in the tree (all unit-tested against stubs; nothing has met a live bridg
 
 Still open before the flag does anything end to end:
 
-1. **`fab_pcb` PR 2.** Nothing answers `POST /sessions/:id/compile` today.
+1. ~~`fab_pcb` PR 2~~ — landed: the bridge answers `POST /sessions/:id/compile` (contract as §4.3; `done` carries `revision`).
 2. **Nothing spawns the bridge.** Dev runs it by hand from a `fab_pcb` checkout (not `vendor/`,
    which has no `node_modules`). Bundling it is phase 0.
 3. **File-format compatibility — confirmed (§6.1).** Stock `kicad-cli` 10.0.4 fails to load the
