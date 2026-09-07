@@ -74,24 +74,65 @@ Outside that boundary, four packages depend on the circuit.json _format_ itself:
 
 ### 3.1 There is no `circuit.tsx` compiler on the other side — ⛔
 
-This is the whole problem. `buildCircuit` is what turns agent-written TypeScript
-into a design. kicad-web has no analogue: its document model _is_ the KiCad file,
-mutated through `BeginCommit → CreateItems/UpdateItems/DeleteItems → EndCommit`.
-The closest paths, `Schematic.syncToBoard()` and `Board.importNetlist()`, both
-start from a schematic that already exists.
+**What the compiler is for.** `buildCircuit` ([build.ts:78](../packages/tscircuit/src/build.ts))
+is 157 lines of glue around `@tscircuit/eval`. It does five jobs:
 
-Two ways out, and they are very different products:
+1. **Runs the project's TypeScript** — `CircuitRunner.executeWithFsMap()` over an
+   fsMap of every source file, then `renderUntilSettled()`. Arbitrary user code,
+   React-style component tree with hooks.
+2. **Fetches parts over the network** — `import { useRedLed } from "@tsci/seveibar.red-led"`,
+   npm-style packages from `registry.tscircuit.com`, cached by `FileCacheEngine`.
+3. **Generates footprint geometry procedurally** — `footprint="0402"` becomes
+   `pcb_smtpad` / `pcb_silkscreen_path` / `pcb_courtyard_rect` computed in code.
+4. **Auto-lays-out** — schematic placement and trace routing
+   (`@tscircuit/schematic-trace-solver`, `minicssgrid`); PCB placement wherever
+   `pcbX`/`pcbY` is omitted.
+5. **Derives the netlist** — selectors like `.R1 > .pin1` become `source_trace` / `source_port`.
 
-- **(a) Keep tscircuit as the compiler only.** `circuit.tsx` stays the authoring
-  format; `@tscircuit/eval` still produces circuit.json; feed it into KiCad via a
-  netlist and `Board.importNetlist`. Preserves the agent workflow and every prompt.
-  But it does not remove tscircuit — it _demotes_ it to one package.
-- **(b) Drop `circuit.tsx`.** The agent authors by driving KiCad commits directly.
-  This rewrites how every agent tool works, every tool description, the MCP surface,
-  `packages/agents`, and the UI's editor story. It is a different product, not a
-  migration.
+The reason a compiler exists at all is not that circuits need compiling. It is that
+the **agent needs a text-shaped, re-runnable authoring surface with line-numbered
+errors** — `parseThrownError` ([build.ts:41](../packages/tscircuit/src/build.ts))
+exists purely so the agent can fix and retry. That loop is the product.
 
-**Nothing else in this document can be scheduled until (a) or (b) is chosen.**
+**What KiCad can do instead**, job by job:
+
+| job                     | KiCad                                                                                                                                          |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. run code             | ⛔ **no.** No scripting anywhere in the IPC API. The only true gap.                                                                            |
+| 2. remote part registry | ⚠️ different — `Libraries` (KiCad symbol/footprint tables). Better corpus for fab, different namespace, no npm-style import.                   |
+| 3. footprints           | ✅ **better** — `assignFootprints`, `updateFootprintsFromLibrary`; real fab-proven footprints with 3D models instead of generated pads.        |
+| 4. layout               | ⚠️ split. PCB: `Board.autoplace()` (needs a board outline; returns `APR_NO_BOARD_OUTLINE` without one). Schematic auto-layout: ⛔ **nothing**. |
+| 5. netlist → design     | ✅ **native** — `importNetlist`, `syncToBoard`, `annotate`, full schematic item creation (`KOT_SCH_SYMBOL`, wires, labels, junctions).         |
+
+It can also build from nothing headless (`KiCad.newProject()`,
+`newDocument(DOCTYPE_SCHEMATIC)`); gap G8 in their tracker is done. **Four of five
+jobs land, three as upgrades.**
+
+**So the decision is: what text does the agent write instead of TSX?**
+
+- **(a) Keep TSX.** tscircuit survives as one package, demoted to the compiler.
+  Cheapest, changes no prompts. But the compiler is `@tscircuit/eval`, an external
+  dependency you do not control.
+- **(b) A KiCad netlist** — recommended. A specified format KiCad ingests natively,
+  and it keeps every property that makes the agent loop work: text, diffable,
+  deterministic rebuild, errors back via `NetlistImportResult{errorCount,
+warningCount, report}`. Pipeline is all existing calls: `newProject` → draw
+  outline → `importNetlist` → `annotate` → `assignFootprints` → `autoplace`.
+- **(c) Emit `.kicad_sch` S-expressions.** Full fidelity, but gnarly to emit
+  reliably and there is no line-level error reporting — KiCad parses it or does not.
+- **(d) Drive `CreateItems` from tools.** No text artifact at all; loses
+  diffability and re-runnability. Worst fit for an agent loop.
+
+**The three costs of (b):**
+
+- **Part selection gets harder.** The agent picks `Resistor_SMD:R_0402_1005Metric`
+  instead of `footprint="0402"`. Needs a library-search tool to replace the registry
+  search; most of the agent-quality work lands here.
+- **Parametric code is lost.** No loops, no reuse, no `useRedLed()`. A netlist is flat.
+- **Schematic auto-layout is the hard one, and it is open-ended.** A netlist carries
+  no geometry. Either ship netlist-only (no drawn schematic → no ERC, no
+  BOM-from-schematic, nothing for a human to review) or write a schematic placer —
+  re-implementing the one genuinely unique thing tscircuit has.
 
 ### 3.2 fab_pcb needs a custom KiCad build — ⛔ the real cost
 
@@ -126,8 +167,8 @@ server or a recorded-protobuf harness. Long jobs (gerbers, STEP) block the socke
 
 `vendor/fab_pcb/packages/router/src/js-router.ts` imports
 `@tscircuit/capacity-autorouter`, the same package `packages/router` uses today.
-Adopting fab_pcb does not get tscircuit out of the dependency tree; it moves it one
-level down. If removing the tscircuit _dependency_ is the actual goal, this repo is
+Adopting fab*pcb does not get tscircuit out of the dependency tree; it moves it one
+level down. If removing the tscircuit \_dependency* is the actual goal, this repo is
 not the way to do it.
 
 ## 4. What I'd recommend
@@ -135,7 +176,7 @@ not the way to do it.
 Do **not** rip and replace. Two options that are actually schedulable:
 
 **Option A — compiler split (lowest risk, keeps the product).**
-Adopt fab_pcb for everything _downstream_ of the design: routing (§2 #4–#7, a
+Adopt fab*pcb for everything \_downstream* of the design: routing (§2 #4–#7, a
 genuine upgrade), DRC/ERC, exports, sim netlist, rendering. Keep `@tscircuit/eval`
 as the `circuit.tsx` compiler and hand its output to KiCad via `importNetlist`.
 Rename `packages/tscircuit` → `packages/compile` so the name stops implying more
