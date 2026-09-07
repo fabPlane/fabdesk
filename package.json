@@ -31,7 +31,7 @@
     "build:desktop": "bun run --cwd apps/desktop build",
     "package": "bun run build:core && bun run --cwd apps/desktop package",
     "doctor": "bun run --cwd apps/core doctor",
-    "submodules:update": "git submodule update --remote --merge vendor/fabplane",
+    "submodules:update": "git submodule update --remote --merge vendor/fabplane vendor/fab_pcb",
     "format": "bunx prettier --write .",
     "format:check": "bunx prettier --check .",
     "security:scan": "bun run scripts/security-scan.ts",
