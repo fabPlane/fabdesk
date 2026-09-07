@@ -132,9 +132,11 @@ binary in the desktop app:
 | security           | KiCad listener on the user's loopback                                 | listener has no origin check → in-pod behind the bridge; bridge auth + per-user roots are on the "to build" list                                                                                           |
 | must exist first   | build/sign pipeline for 3 OSes                                        | login, per-user roots, session controller, storage sync, footprint libraries in the image                                                                                                                  |
 
-**This is the gating decision.** It determines phase 0 entirely and whether fabdesk core is an
-HTTP client or a process supervisor. The good news: the `@fp-pcb/compile` design and the fabdesk
-adapter are the same either way (§4.2).
+**Decision (2026-09-07): bundled fork.** fabPlane keeps building offline, so phase 0 is the
+`kicad-cli` build/sign/notarise pipeline for macOS, Linux and Windows plus GPL redistribution —
+Windows is the missing piece (`kicad-patches/` has no Windows script; fabdesk's `vm:windows`
+harness is the natural host for one). Hosted stays open later at no design cost: the
+`@fp-pcb/compile` package and the fabdesk adapter are the same either way (§4.2).
 
 ### 3.3 Everything becomes stateful and async — nature unchanged, fabdesk-side work shrinks
 
@@ -208,14 +210,14 @@ because everything downstream in fabdesk reads the file.
 The earlier plan put `@tscircuit/eval` behind the seam first. That builds the hardest frontend
 before the apply path has ever run against a server. Reversed:
 
-| phase | work                                                                                                                                                                                 | tscircuit present     |
-| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------- |
-| 0     | **Decide hosted vs bundled (§3.2).** Provision footprint libraries for headless servers. Run the §6 experiment.                                                                      | yes                   |
-| 1     | `fab_pcb` PR 1: `@fp-pcb/compile` library — rename, the §5 fixes, JSON netlist frontend (`circuit.netlist.json` = `{ netlist, board }`), `FrontendResult.libraries`                  | yes                   |
-| 2     | `fab_pcb` PR 2: `apply.kicad.test.ts` against the fork build, `bridge-job.ts`, bridge mount, `compile.kicad.test.ts`, fork patch so `ImportNetlist` publishes `DocumentChanged`      | yes                   |
-| 3     | fabdesk: bridge client in `apps/core`; `buildCircuit` adapter = compile job → `importKicadPcb(board.kicad_pcb)` → `circuit.json` → `BuildResult`; fix the `boardIsStale` trap (§4.5) | yes                   |
-| 4     | `fab_pcb`: `tscircuit` frontend for existing `circuit.tsx` projects, emitting project-local `.pretty` for procedural footprints                                                      | yes, inside `fab_pcb` |
-| 5     | Retire `packages/tscircuit`; delete `convert.ts`; routing, DRC, exports, sim, render onto jobs; then delete `import.ts`                                                              | no                    |
+| phase | work                                                                                                                                                                                                  | tscircuit present     |
+| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
+| 0     | **Bundled fork (decided, §3.2):** build/sign/notarise `kicad-cli` for macOS, Linux, Windows — add a Windows script to `kicad-patches/`. Ship `kicad-footprints` in the bundle. Run the §6 experiment. | yes                   |
+| 1     | `fab_pcb` PR 1: `@fp-pcb/compile` library — rename, the §5 fixes, JSON netlist frontend (`circuit.netlist.json` = `{ netlist, board }`), `FrontendResult.libraries`                                   | yes                   |
+| 2     | `fab_pcb` PR 2: `apply.kicad.test.ts` against the fork build, `bridge-job.ts`, bridge mount, `compile.kicad.test.ts`, fork patch so `ImportNetlist` publishes `DocumentChanged`                       | yes                   |
+| 3     | fabdesk: bridge client in `apps/core`; `buildCircuit` adapter = compile job → `importKicadPcb(board.kicad_pcb)` → `circuit.json` → `BuildResult`; fix the `boardIsStale` trap (§4.5)                  | yes                   |
+| 4     | `fab_pcb`: `tscircuit` frontend for existing `circuit.tsx` projects, emitting project-local `.pretty` for procedural footprints                                                                       | yes, inside `fab_pcb` |
+| 5     | Retire `packages/tscircuit`; delete `convert.ts`; routing, DRC, exports, sim, render onto jobs; then delete `import.ts`                                                                               | no                    |
 
 Phase 3's `importKicadPcb` bridge is why `circuit.json` is not a blocker: it is exactly what
 `project_import_kicad` does today (927 LOC fabdesk owns) and emits the `source_*` elements routing
@@ -226,7 +228,7 @@ needs. Sim over an imported board is lossy until phase 5; accept it.
 1. **Cross-repo workflow.** `vendor/*` is never edited here; every `fab_pcb` step is a PR to
    `TensorFleet/fab_pcb`, then `bun run submodules:update` (now covers `vendor/fab_pcb`). Do not
    add `vendor/fab_pcb/packages/*` to fabdesk's workspaces: the HTTP-client shape needs none.
-2. **§3.2 is the gate**, and now it is a choice rather than a fixed cost.
+2. **§3.2 is decided (bundled).** The gate is now the three-platform fork build, Windows first.
 3. **Footprint libraries.** The Docker image ships none and no `fp-lib-table`; fixtures need
    `KICAD10_FOOTPRINT_DIR`. A compile pipeline is inert until this is solved (image, bundle, or
    frontend-emitted `.pretty`).
@@ -260,9 +262,9 @@ Verified against the fork source at `280274cc3d`:
 **Viable as scoped, with one gating decision and one missing prerequisite.** The library +
 netlist frontend + local integration test are viable now: the fork build exists on this machine
 (`../kicad/build/release/…/kicad-cli` at the pin), stock footprints are installed, and every API
-call the pipeline makes is exercised by `fab_pcb`'s own conformance suite. As a _product_ path it
-is viable once **hosted vs bundled** (§3.2) is decided, because that choice is phase 0 in its
-entirety. The prerequisite the earlier plan missed is **footprint libraries on headless servers**
+call the pipeline makes is exercised by `fab_pcb`'s own conformance suite. As a _product_ path the
+**bundled-fork** decision (§3.2) makes phase 0 the three-platform `kicad-cli` build — a known,
+bounded engineering cost with Windows as the open item. The prerequisite the earlier plan missed is **footprint libraries on headless servers**
 (§4.5.3) — without them a compile succeeds at validation and fails at every `addNewFootprint`.
 
 **Cheapest de-risking experiment (~1 hour, no Docker):** spawn the fork build with
