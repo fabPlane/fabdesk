@@ -270,12 +270,13 @@ Still open before the flag does anything end to end:
 1. **`fab_pcb` PR 2.** Nothing answers `POST /sessions/:id/compile` today.
 2. **Nothing spawns the bridge.** Dev runs it by hand from a `fab_pcb` checkout (not `vendor/`,
    which has no `node_modules`). Bundling it is phase 0.
-3. **File-format compatibility — the real risk.** The fork (10.99) writes a newer `.kicad_pcb`
-   than the stock `kicad-cli` (10.0.4) fabdesk still uses for DRC, render and export. If stock
-   refuses the file, phase 3 is inert until those tools move to the bridge (phase 5) or the
-   bundled fork replaces stock everywhere. The §6 experiment answers this in an hour.
-4. `importKicadPcb` in strict mode on a fresh, unrouted board should pass (no copper to link);
-   unverified.
+3. **File-format compatibility — confirmed (§6.1).** Stock `kicad-cli` 10.0.4 fails to load the
+   fork-written board (`Failed to load board`, file version `20260831`); the fork's own CLI handles
+   it and produces the DRC JSON `runDrc` already parses. Constraint: with `compiler: fp-pcb`,
+   `kicadCliPath` **must** be the fork binary. Follow-up: a `doctor` / build warning when the
+   compiler is fp-pcb and the resolved `kicad-cli` is older than 10.99.
+4. ~~`importKicadPcb` strict on a fresh board~~ — verified (§6.1): 40 elements, 2 components, 4
+   pads, 2 routable nets, design rules from the `.kicad_pro`, no warnings.
 5. `packages/agents/src/agents-md.ts` still tells the agent to write `circuit.tsx`; netlist
    authoring guidance is phase 4.
 
@@ -304,7 +305,7 @@ call the pipeline makes is exercised by `fab_pcb`'s own conformance suite. As a 
 bounded engineering cost with Windows as the open item. The prerequisite the earlier plan missed is **footprint libraries on headless servers**
 (§4.5.3) — without them a compile succeeds at validation and fails at every `addNewFootprint`.
 
-**Cheapest de-risking experiment (~1 hour, no Docker):** spawn the fork build with
+**The de-risking experiment — run 2026-09-07, results in §6.1.** As designed: spawn the fork build with
 `KICAD10_FOOTPRINT_DIR` pointing at the installed footprints, `newProject` in a temp dir, write a
 two-component `.net` (`R1` `Resistor_SMD:R_0402_1005Metric`, `D1` `LED_SMD:LED_0603_1608Metric`,
 two nets), then `importNetlist(dryRun)` → `importNetlist` → outline commit →
@@ -312,6 +313,57 @@ two nets), then `importNetlist(dryRun)` → `importNetlist` → outline commit �
 That confirms or refutes A.1, A.3, the `DocumentChanged` gap and the library dependency in one
 run, and it _is_ the body of `apply.kicad.test.ts`. Repeat inside the Docker image with the bridge
 in a sibling container to get the cold-start + provisioning number the hosted decision needs.
+
+### 6.1 Experiment results — 2026-09-07, fork `280274cc3d`, macOS
+
+Script: `packages/compile/bench/experiment.ts` on `fab_pcb` (`bun run experiment`). Bare
+`api-server`, no project, `KICAD10_FOOTPRINT_DIR` at the stock footprints.
+
+| step                                            | result                                                                                                                   | time                                        |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------- |
+| spawn bare `api-server` + connect               | ok                                                                                                                       | 0.4–0.5 s                                   |
+| `NewProject(<dir>/name.kicad_pro)` + open board | ok. An extension-less path is a _directory to create_; `currentBoard()` is empty afterwards — call `project.openBoard()` | 0.1–1.0 s                                   |
+| `ImportNetlist` dry run                         | 0 errors, 2 footprints resolved, board untouched                                                                         | 1.2–1.8 s cold (library load), 5–22 ms warm |
+| outline commit (20 × 10 mm)                     | revision 0 → 1                                                                                                           | 3 ms                                        |
+| `ImportNetlist`                                 | 2 footprints, 2 nets connected, revision → 2                                                                             | 1 ms                                        |
+| footprints after import                         | D1 (1.54, 0.80) mm, R1 (0.95, 3.08) mm — **spread from the origin, inside the outline** (A.3)                            | —                                           |
+| `AutoplaceFootprints(added, includeOffboard)`   | placed 2 → (1, 3), (1, 5) mm                                                                                             | 1 ms                                        |
+| DRC                                             | 2 unconnected (expected) + **2 `copper_edge_clearance`** + silk clipped by edge (A.8)                                    | 3 ms                                        |
+| `SaveDocument`                                  | `(kicad_pcb (version 20260831) …`                                                                                        | 22 ms                                       |
+| `applyNetlist` on a second fresh project        | identical: 2 added, 2 placed, no diagnostics                                                                             | 22 ms end to end                            |
+
+Library provisioning (A.7):
+
+| configuration                                | dry run                                                                                                                                                                               |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| no `KICAD10_FOOTPRINT_DIR`, no project table | 2 errors — `R1 footprint 'R_0402_1005Metric' not found in any libraries in the footprint library table.` then `Cannot add R1 (footprint 'Resistor_SMD:R_0402_1005Metric' not found).` |
+| project-local `fp-lib-table` only            | resolves                                                                                                                                                                              |
+
+Reading the fork-written board:
+
+| tool                                                 | outcome                                                                                                      |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| stock `kicad-cli` 10.0.4 `pcb drc`, `pcb export svg` | **`Failed to load board`, exit 3**                                                                           |
+| fork `kicad-cli` `pcb drc`, `pcb export svg`         | ok — 7 violations + 2 unconnected in the JSON `runDrc` parses; SVG plotted                                   |
+| fabdesk `importKicadPcb`, strict                     | ok — 40 elements, 2 `source_component`, 4 pads, 2 routable nets, design rules from `.kicad_pro`, no warnings |
+
+**Conclusions.**
+
+1. The apply order holds and A.1–A.5 are verified on a live server, not just reasoned. The report
+   text carries no severity; a project-local `fp-lib-table` is sufficient provisioning, so
+   `FrontendResult.libraries` → table row is the mechanism. §4.6 items 3 and 4 are settled.
+2. **Stock and fork do not mix.** Phase 3 works only with the fork binary doing DRC, render and
+   export too. Under the bundled-fork decision that is the natural single-binary shape; until the
+   bundle exists, dev sets `kicadCliPath` to the fork build.
+3. **A.8, new:** the legacy autoplacer packs footprints into the top-left corner and ignores the
+   copper-to-edge rule (0.5 mm required, 0.0 / 0.22 mm actual). A fresh compile therefore fails DRC
+   on edge clearance every time. The compile job must inset the placement region by the edge
+   clearance (shrink the outline it hands to the placer, or offset afterwards) before this is
+   agent-visible.
+4. `NewProject` wants the `.kicad_pro` path — fabdesk's adapter already passes it — and the job
+   must open the board explicitly afterwards.
+5. Not exercised: `DocumentChanged` publication after `ImportNetlist` (only the revision counter
+   was watched; it bumps 0 → 1 → 2 as expected).
 
 ## 7. Superseded
 
