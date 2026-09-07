@@ -256,9 +256,9 @@ describe("http daemon", () => {
 
   test("MCP over streamable HTTP: sessions, core tools, load_toolset, project_status, run token binds the project", async () => {
     const created = (await (await api("/projects", { method: "POST", body: JSON.stringify({ name: "MCP Project" }) })).json()) as { id: string };
-    const connect = async (token: string) => {
+    const connect = async (token: string, query = "") => {
       const client = new Client({ name: "test", version: "0" });
-      const transport = new StreamableHTTPClientTransport(new URL(`${daemon.url}/mcp`), { requestInit: { headers: { authorization: `Bearer ${token}` } } });
+      const transport = new StreamableHTTPClientTransport(new URL(`${daemon.url}/mcp${query}`), { requestInit: { headers: { authorization: `Bearer ${token}` } } });
       await client.connect(transport);
       return { client, transport };
     };
@@ -282,6 +282,11 @@ describe("http daemon", () => {
     expect((await b.client.listTools()).tools.length).toBe(7);
     expect(daemon.mcp.activeCount()).toBe(2);
 
+    // Clients that cannot process tools/list_changed can request the complete
+    // inventory when the MCP session is initialized.
+    const all = await connect(daemon.token, "?toolsets=all");
+    expect((await all.client.listTools()).tools.length).toBeGreaterThan(14);
+
     // A per-run token pins the default project.
     const runToken = daemon.tokens.mintRunToken({ runId: "run_x", projectId: created.id, threadId: "t" });
     const c = await connect(runToken);
@@ -295,8 +300,10 @@ describe("http daemon", () => {
     expect(rebinding.status).toBe(403);
 
     await a.transport.terminateSession();
+    await all.transport.terminateSession();
     await a.client.close();
     await b.client.close();
+    await all.client.close();
     await c.client.close();
     await new Promise((r) => setTimeout(r, 20));
     expect(daemon.mcp.activeCount()).toBe(2);

@@ -31,7 +31,9 @@ export function codexArgs(session: AgentSession, bin: string): string[] {
   if (session.model) args.push("-m", session.model);
   args.push(
     "-c",
-    `mcp_servers.${MCP_SERVER_NAME}.url=${tomlString(session.mcp.url)}`,
+    // Codex snapshots MCP tools at turn start and does not currently apply
+    // tools/list_changed, so request the complete inventory up front.
+    `mcp_servers.${MCP_SERVER_NAME}.url=${tomlString(withAllToolsets(session.mcp.url))}`,
     "-c",
     `mcp_servers.${MCP_SERVER_NAME}.bearer_token_env_var=${tomlString(TOKEN_ENV)}`,
   );
@@ -40,6 +42,12 @@ export function codexArgs(session: AgentSession, bin: string): string[] {
   // Codex parses such prompts as CLI flags and exits with code 2 before emitting JSONL.
   args.push("--", promptWithAttachments(session.prompt, session.attachments, { skipImages: true }));
   return args;
+}
+
+function withAllToolsets(url: string): string {
+  const endpoint = new URL(url);
+  endpoint.searchParams.set("toolsets", "all");
+  return endpoint.toString();
 }
 
 export const codexAdapter: AgentAdapter = {

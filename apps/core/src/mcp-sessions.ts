@@ -4,7 +4,7 @@
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import { attachToRegistry, type ContextFactory, type ToolRegistry } from "@fabdesk/tools";
+import { attachToRegistry, TOOLSETS, type ContextFactory, type ToolRegistry } from "@fabdesk/tools";
 import { logger, errMsg } from "./log";
 
 type Session = { id: string; server: McpServer; transport: WebStandardStreamableHTTPServerTransport; createdAt: number; lastSeen: number; token: string | null };
@@ -73,7 +73,12 @@ export class McpSessionManager {
     transport.onclose = () => {
       if (transport.sessionId) this.sessions.delete(transport.sessionId);
     };
-    attachToRegistry(server, this.opts.registry, this.opts.ctxFactory);
+    // Codex snapshots MCP tools when a turn starts and currently ignores tools/list_changed.
+    // Let clients that cannot refresh opt into the complete inventory at initialization.
+    const initialToolsets = new URL(req.url).searchParams.get("toolsets") === "all" ? [...TOOLSETS] : undefined;
+    attachToRegistry(server, this.opts.registry, this.opts.ctxFactory, {
+      ...(initialToolsets ? { initialToolsets } : {}),
+    });
     await server.connect(transport);
     return transport.handleRequest(req, opts.token ? { authInfo: { token: opts.token, clientId: "fabdesk", scopes: [] } } : {});
   }
