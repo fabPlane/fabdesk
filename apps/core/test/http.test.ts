@@ -181,9 +181,13 @@ describe("http daemon", () => {
     const rr = (await rq.json()) as { json: { runId: string } };
     const frames = await api(`/route/runs/${rr.json.runId}/frames?from=2`);
     expect(frames.status).toBe(200);
-    const lines = (await frames.text()).trim().split("\n");
-    expect(lines.length).toBe(2); // meta + the one frame with seq >= 2 (pass-start, connection, connection)
-    expect(lines[0]).toContain('"kind":"meta"');
+    const lines = (await frames.text()).trim().split("\n").map((line) => JSON.parse(line) as { kind: string; seq?: number; shapes?: unknown[] });
+    expect(lines[0]?.kind).toBe("meta");
+    expect(lines.some((line) => line.kind === "static")).toBe(true);
+    const filteredFrames = lines.filter((line) => line.kind === "frame");
+    expect(filteredFrames.length).toBeGreaterThan(0);
+    expect(filteredFrames.every((line) => (line.seq ?? 0) >= 2)).toBe(true);
+    expect(filteredFrames.some((line) => (line.shapes?.length ?? 0) > 0)).toBe(true);
 
     // Delete (unregister) keeps the directory; purge removes it.
     expect((await api(`/projects/${project.id}`, { method: "DELETE" })).status).toBe(200);
