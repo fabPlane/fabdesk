@@ -115,7 +115,7 @@ export const circuit_build = defineTool({
   toolset: "core",
   title: "Build the board",
   description:
-    "Compile circuit.netlist.json into board.kicad_pcb on the design server: footprints are pulled from the KiCad libraries, placed on a board of the size in the netlist (or fabdesk.json; a template such as viagrid-9055 replaces it with the blank: outline, free vias, holes, rules), and the nets become the ratsnest for route_run. Returns ok/errors/warnings with positions in the netlist file plus component and footprint counts. On failure fix circuit.netlist.json and build again. Re-building a routed board keeps tracks whose nets still exist; footprints the netlist no longer names are removed.",
+    "Compile circuit.netlist.json into board.kicad_pcb and a generated board.kicad_sch. Footprints are pulled from KiCad libraries, explicitly placed when board.placements names them, and connected into the ratsnest; libSource draws searchable schematic symbols with labelled wire stubs. Returns actionable errors/warnings. Rebuilds replace only generated schematic items, preserve manual schematic work and unlisted manual footprint placement, keep tracks whose nets still exist, and remove footprints the netlist no longer names.",
   inputSchema: {
     entrypoint: z.string().optional().describe("Netlist file relative to the project, default circuit.netlist.json"),
   },
@@ -203,7 +203,7 @@ export const verify_drc = defineTool({
   description: "Run KiCad design rule check on board.kicad_pcb. Writes reports/drc.json and returns error/warning/unconnected counts with the first violations. Requires kicad-cli and circuit_build.",
   inputSchema: {
     severity: z.enum(["all", "error"]).default("all").describe("Report all severities or errors only"),
-    schematicParity: z.boolean().default(false).describe("Also check PCB↔schematic parity (needs an imported schematic)"),
+    schematicParity: z.boolean().default(false).describe("Also check PCB↔schematic parity (requires libSource for generated symbols)"),
     limit: z.number().int().min(1).max(200).default(30).describe("Max violations to include in the text summary"),
   },
   annotations: { idempotentHint: true },

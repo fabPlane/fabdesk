@@ -40,7 +40,7 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
       >
         {kind === "pcb"
           ? "Build the board (circuit_build) and render it, or ask the agent to design one."
-          : "A compiled project has no drawn schematic; import a KiCad project to see one here."}
+          : "Build the project, then render the generated schematic. Components need libSource to appear."}
         {render.state.error && <div className="mt-2 text-danger">{render.state.error}</div>}
       </EmptyState>
     </div>
