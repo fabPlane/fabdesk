@@ -104,6 +104,26 @@ jobs:
       - name: Build renderer/main
         run: bun run --cwd apps/desktop build
 
+      # Backend artifacts are native-smoked in the private fab_pcb repository. Pin the release to
+      # the exact submodule commit so the desktop cannot silently pick a different API contract.
+      - name: Stage FabPlane PCB backend
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.FAB_PCB_RELEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+          commit="$(git -C vendor/fab_pcb rev-parse HEAD)"
+          target="${{ matrix.target }}"
+          target="${target/bun-/}"
+          target="${target/aarch64/arm64}"
+          tag="backend-${commit:0:10}"
+          asset="fp-pcb-backend-${target}.tar.gz"
+          mkdir -p "dist/pcb/$target" "$RUNNER_TEMP/fp-pcb"
+          gh release download "$tag" --repo TensorFleet/fab_pcb --pattern "$asset" --dir "$RUNNER_TEMP/fp-pcb"
+          tar -xzf "$RUNNER_TEMP/fp-pcb/$asset" -C "dist/pcb/$target"
+          test -f "dist/pcb/$target/bundle.json"
+          bun -e 'const m=await Bun.file(process.argv[1]).json(); if(m.target!==process.argv[2]) throw new Error(`bundle target ${m.target} != ${process.argv[2]}`)' "dist/pcb/$target/bundle.json" "$target"
+
       # electron-builder treats an empty CSC_LINK as a file path, so only export secrets that are set.
       - name: Signing environment
         shell: bash
