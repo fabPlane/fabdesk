@@ -6,3 +6,7 @@
 	path = vendor/js_autorouter
 	url = ../js_autorouter.git
 	branch = main
+[submodule "vendor/fab_pcb"]
+	path = vendor/fab_pcb
+	url = ../fab_pcb.git
+	branch = main

@@ -3,7 +3,7 @@
 - Bun 1.4.x monorepo. Run everything from the repo root: `bun install`, `bun run typecheck`, `bun test`.
 - Build on a branch and open a PR; do not commit directly to `main`. The only exception is a small fix that cleans up a mistake already on `main`.
 - Never run `bun install` inside `vendor/fabplane` or `vendor/js_autorouter`.
-- `vendor/*` are git submodules. Do not edit them here; change fabplane via a PR to `TensorFleet/fabplane.com` and bump with `bun run submodules:update`.
+- `vendor/*` are git submodules. Do not edit them here; change fabplane via a PR to `TensorFleet/fabplane.com` and FabPlane PCB via a PR to `TensorFleet/fab_pcb`, then bump with `bun run submodules:update`.
 - Import fabplane's KiCad CLI helpers via the `@pcb/pcb/kicad-cli` subpath only. The package root pulls in sharp and the AWS SDK.
 - fabPlane code imports `zod/v4` (root pins zod 3.25.x so tscircuit gets v3).
 - MCP tool names use underscores (`circuit_build`), never dots.
