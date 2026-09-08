@@ -65,9 +65,10 @@ describe("registry", () => {
     expect(json.open).toEqual([]);
     expect(await Bun.file(join(project.dir, ".fabdesk/runs", json.runId, "frames.jsonl")).exists()).toBe(true);
     const frames = (await Bun.file(join(project.dir, ".fabdesk/runs", json.runId, "frames.jsonl")).text()).trim().split("\n");
-    // meta + pass-start + two connection frames (the mock reports routed 0, 1, 2)
-    expect(frames.map((l) => (JSON.parse(l) as { kind: string; event?: { kind: string } }).event?.kind ?? (JSON.parse(l) as { kind: string }).kind)).toEqual(["meta", "pass-start", "connection", "connection"]);
-    expect(services.events.map((e) => e.topic)).toEqual(["route.meta", "route.frame", "route.frame", "route.frame", "route.done"]);
+    // meta + static pads + progress + a final frame carrying the real routed copper.
+    expect(frames.map((l) => (JSON.parse(l) as { kind: string; event?: { kind: string } }).event?.kind ?? (JSON.parse(l) as { kind: string }).kind)).toEqual(["meta", "static", "pass-start", "connection", "connection", "done"]);
+    expect((JSON.parse(frames.at(-1)!) as { shapes: unknown[] }).shapes).toHaveLength(1);
+    expect(services.events.map((e) => e.topic)).toEqual(["route.meta", "route.static", "route.frame", "route.frame", "route.frame", "route.frame", "route.done"]);
     const status = await call("route_status");
     expect(status.text).toContain("done");
     const q = await call("circuit_query", { select: "components" });

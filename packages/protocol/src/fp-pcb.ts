@@ -185,6 +185,17 @@ export type FpPcbRouteJobState = z.infer<typeof FpPcbRouteJobState>;
 
 export const FpPcbRouteUnrouted = z.object({ net: z.string(), from: z.object({ x: z.number(), y: z.number() }), to: z.object({ x: z.number(), y: z.number() }) });
 
+export const FpPcbRouteGeometry = z.object({
+  kind: z.enum(["trace", "via"]),
+  id: z.string(),
+  /** KiCad BoardLayer enum; -1 for through vias. */
+  layer: z.number().int(),
+  net: z.number().int(),
+  /** Nanometre trace centreline points, or via bounding box. */
+  points: z.array(z.number()),
+  width: z.number().optional(),
+});
+
 export const FpPcbRouteSummary = z.object({
   tracks: z.number().default(0),
   /** Vias the router added. */
@@ -202,6 +213,7 @@ export const FpPcbRouteSummary = z.object({
   timedOut: z.boolean().default(false),
   message: z.string().default(""),
   unrouted: z.array(FpPcbRouteUnrouted).default([]),
+  geometry: z.array(FpPcbRouteGeometry).default([]),
   log: z.array(z.string()).default([]),
 });
 export type FpPcbRouteSummary = z.infer<typeof FpPcbRouteSummary>;

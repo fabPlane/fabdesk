@@ -73,6 +73,8 @@ export type RouteSummary = {
   timedOut: boolean;
   message: string;
   unrouted: Array<{ net: string; from: { x: number; y: number }; to: { x: number; y: number } }>;
+  /** Copper added or claimed by this run, converted to millimetres. */
+  geometry?: Array<{ kind: "trace" | "via"; id: string; layer: number; net: number; points: number[]; width?: number }>;
   log: string[];
 };
 

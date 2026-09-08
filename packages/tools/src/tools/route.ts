@@ -2,7 +2,7 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod/v4";
-import type { RouteResult } from "@fabdesk/protocol";
+import type { CinemaShape, RouteResult } from "@fabdesk/protocol";
 import { PROJECT_FILES, writeJson } from "../fs";
 import { FrameSink } from "../frame-sink";
 import { ToolError, defineTool, type ToolContext, type ToolOutput } from "../registry";
@@ -21,8 +21,8 @@ export function newRunId(): string {
 }
 
 /**
- * Turns the route job's progress into cinema frames: a `pass-start` when the pass changes and a
- * `connection` per newly routed connection. The job streams no geometry, so `shapes` stays empty.
+ * Turns route progress into event frames, then records the completed run's real copper geometry.
+ * A fast board that emits no intermediate progress still gets one useful final frame.
  */
 export class RouteProgressFrames {
   private seq = 0;
@@ -50,6 +50,30 @@ export class RouteProgressFrames {
       this.sink.onMessage({ kind: "frame", runId: this.runId, seq: this.seq++, elapsedMs, event: { kind: "attempt", status: pr.message }, shapes: [] });
     }
   }
+  complete(shapes: CinemaShape[], total: number): void {
+    this.sink.onMessage({
+      kind: "frame",
+      runId: this.runId,
+      seq: this.seq++,
+      elapsedMs: Date.now() - this.started,
+      event: { kind: "done", ...(total ? { status: `${total} connection(s)` } : {}) },
+      shapes,
+    });
+  }
+}
+
+/** Stable numeric id for the cinema wire format (source geometry keeps its string KIID). */
+export function cinemaId(value: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i++) hash = Math.imul(hash ^ value.charCodeAt(i), 16777619);
+  return hash >>> 0;
+}
+
+/** KiCad copper-layer enums are F.Cu=3, In1.Cu=4… and B.Cu=34. */
+export function cinemaLayer(layer: number, count: number): number {
+  if (layer < 0) return -1;
+  if (layer === 34) return Math.max(0, count - 1);
+  return Math.max(0, Math.min(count - 1, layer - 3));
 }
 
 export async function runRoute(
@@ -86,6 +110,33 @@ export async function runRoute(
     layers: Array.from({ length: board.layers }, (_, i) => (i === 0 ? "F.Cu" : i === board.layers - 1 ? "B.Cu" : `In${i}.Cu`)),
     unitsPerMm: 1,
   });
+  // Pads and pre-existing vias make the routed copper intelligible in isolation. Query failures
+  // are non-fatal: older DesignService implementations still produce route frames.
+  try {
+    const [pads, vias, nets] = await Promise.all([
+      ctx.services.design.query(project.dir, "pads"),
+      ctx.services.design.query(project.dir, "vias"),
+      ctx.services.design.query(project.dir, "nets"),
+    ]);
+    const netCodes = new Map(nets.map((n) => [String(n["name"] ?? ""), Number(n["code"] ?? 0)]));
+    const statics: CinemaShape[] = [];
+    for (const pad of pads) {
+      const x = Number(pad["x"] ?? 0), y = Number(pad["y"] ?? 0);
+      const w = Number(pad["width"] ?? 0), h = Number(pad["height"] ?? 0);
+      statics.push({
+        k: "pad", id: cinemaId(String(pad["id"] ?? `${pad["component"]}:${pad["number"]}:${x}:${y}`)),
+        layer: cinemaLayer(Number(pad["layer"] ?? 3), board.layers), net: netCodes.get(String(pad["net"] ?? "")) ?? 0,
+        pts: [x - w / 2, y - h / 2, x + w / 2, y + h / 2],
+      });
+    }
+    for (const via of vias) {
+      const x = Number(via["x"] ?? 0), y = Number(via["y"] ?? 0), d = Number(via["diameter"] ?? 0);
+      statics.push({ k: "via", id: cinemaId(String(via["id"] ?? `${x}:${y}`)), layer: -1, net: netCodes.get(String(via["net"] ?? "")) ?? 0, pts: [x - d / 2, y - d / 2, x + d / 2, y + d / 2] });
+    }
+    sink.onMessage({ kind: "static", runId, shapes: statics });
+  } catch {
+    // Routing itself remains available if an older bridge cannot answer one of these queries.
+  }
   const frames = new RouteProgressFrames(runId, started, sink);
   let total = args.onlyConnections?.length ?? 0;
 
@@ -124,6 +175,15 @@ export async function runRoute(
     ...(summary.preset ? { preset: summary.preset } : {}),
     ...(summary.message ? { detail: summary.message } : {}),
   };
+  const routedShapes: CinemaShape[] = (summary.geometry ?? []).map((shape) => ({
+    k: shape.kind,
+    id: cinemaId(shape.id),
+    layer: cinemaLayer(shape.layer, board.layers),
+    net: shape.net,
+    pts: shape.points,
+    ...(shape.width !== undefined ? { w: shape.width } : {}),
+  }));
+  frames.complete(routedShapes, summary.total);
   sink.onMessage({ kind: "result", runId, result });
   await sink.close();
   await writeJson(join(runDir, "result.json"), { ...result, summary });

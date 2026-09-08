@@ -202,6 +202,8 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
             y: mm(pad.position.y),
             width: mm(pad.size.x),
             height: mm(pad.size.y),
+            id: pad.id,
+            layer: pad.layerId,
           }))
           .filter((r) => keep(r.component, r.net, r.number));
       }
@@ -296,6 +298,14 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         net: u.net,
         from: { x: mm(u.from.x), y: mm(u.from.y) },
         to: { x: mm(u.to.x), y: mm(u.to.y) },
+      })),
+      geometry: s.geometry.map((shape) => ({
+        kind: shape.kind,
+        id: shape.id,
+        layer: shape.layer,
+        net: shape.net,
+        points: shape.points.map(mm),
+        ...(shape.width !== undefined ? { width: mm(shape.width) } : {}),
       })),
       log: s.log,
     };

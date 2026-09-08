@@ -110,7 +110,11 @@ export function mockServices(projects: ProjectHandle[], overrides: Partial<CoreS
           await new Promise((r) => setTimeout(r, 5));
           onProgress?.({ state: "routing", log: [], phase: "pass", pass: 1, routed: i, total: 2 });
         }
-        return { tracks: 1, vias: 0, claimedVias: 0, routed: 2, total: 2, trackLengthNm: 5_000_000, elapsedMs: 10, wallMs: 15, timedOut: false, message: `Autoroute (${opts.router}): 2 connections`, unrouted: [], log: [] };
+        return {
+          tracks: 1, vias: 0, claimedVias: 0, routed: 2, total: 2, trackLengthNm: 5_000_000,
+          elapsedMs: 10, wallMs: 15, timedOut: false, message: `Autoroute (${opts.router}): 2 connections`, unrouted: [], log: [],
+          geometry: [{ kind: "trace", id: "track-1", layer: 3, net: 1, points: [0.5, 3, 4, 3], width: 0.25 }],
+        };
       },
       cancelRoute: async () => {},
       unroute: async (_dir, nets) => ({ tracks: nets?.length ?? 1, vias: 0 }),
