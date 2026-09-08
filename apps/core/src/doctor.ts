@@ -6,6 +6,17 @@ import { fpPcbBridgeUrl, type CoreConfig } from "./config";
 import { FpPcbBridgeClient } from "./fp-pcb-bridge";
 import { errMsg } from "./log";
 
+const MINIMUM_FP_PCB_KICAD = [10, 99] as const;
+
+/** True when a KiCad version string identifies a build older than the FabPlane API fork. */
+export function isUnsupportedFpPcbKicad(version: string): boolean {
+  const match = version.match(/^(\d+)\.(\d+)/);
+  if (!match) return false;
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  return major < MINIMUM_FP_PCB_KICAD[0] || (major === MINIMUM_FP_PCB_KICAD[0] && minor < MINIMUM_FP_PCB_KICAD[1]);
+}
+
 export async function runDoctor(o: { config: CoreConfig; settings: Settings }): Promise<DoctorReport> {
   const warnings: string[] = [];
   const kicad = await (async () => {
@@ -50,6 +61,10 @@ export async function runDoctor(o: { config: CoreConfig; settings: Settings }): 
   })();
 
   if (!kicad.found) warnings.push("KiCad not found: install the FabPlane KiCad build or set Settings.kicadCliPath (DRC, render and export tools need it)");
+  else if (kicad.version && isUnsupportedFpPcbKicad(kicad.version))
+    warnings.push(
+      `KiCad ${kicad.version} at ${kicad.path ?? "the resolved path"} is older than 10.99; use the bundled FabPlane KiCad fork because stock KiCad cannot run the PCB bridge contract`,
+    );
   if (!routers[0]?.present) warnings.push(`FabPlane PCB bridge not reachable at ${routers[0]?.detail ?? fpPcbBridgeUrl(o.settings.fpPcbBridgeUrl)}: start it (bun run --filter @fp-pcb/bridge start in a fab_pcb checkout) or set Settings.fpPcbBridgeUrl / FABDESK_FP_PCB_BRIDGE_URL; circuit_build and route_run need it`);
   if (!agents.some((a) => a.installed)) warnings.push("no agent CLI found (claude, codex, grok or cursor agent); the app can still be used as an MCP server");
   const repoRoot = findRepoRoot();
