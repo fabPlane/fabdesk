@@ -84,7 +84,11 @@ export const RouteResult = z.object({
     frames: z.number().int(),
     /** `attempt` frames the adapter's throttle (`minFrameIntervalMs`) suppressed. */
     framesThrottled: z.number().int().optional(),
+    /** Vias the router placed on a pre-placed assignable via (see `SrjObstacle.netIsAssignable`). */
+    viasOnFixed: z.number().int().optional(),
   }),
+  /** Solver preset the adapter chose (`laser-prefab` when the board has assignable vias). */
+  preset: z.string().optional(),
   detail: z.string().optional(),
 });
 export type RouteResult = z.infer<typeof RouteResult>;

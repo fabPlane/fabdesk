@@ -27,6 +27,19 @@ export async function exportGerbers(cli: KicadCli, opts: { board: string; outDir
   return { paths: await filesWrittenSince(opts.outDir, started, /\.(g[a-z0-9]+|gbr|gbrjob)$/i) };
 }
 
+/**
+ * One DXF per layer into `outDir` (mm units, actual drill shapes). This is the copper-removal artwork for
+ * prefab blanks such as Viagrid: LightBurn imports the DXF, the laser ablates the copper outside the drawn
+ * traces and pads. kicad-cli cannot mirror, so the bottom layer is exported as seen from the top and must be
+ * mirrored in the laser software (LightBurn: Arrange → Flip Horizontal) before burning.
+ */
+export async function exportDxf(cli: KicadCli, opts: { board: string; outDir: string; layers: string[]; signal?: AbortSignal }): Promise<Paths> {
+  await ensureDir(opts.outDir);
+  const started = Date.now();
+  await runKicadCli(cli, ["pcb", "export", "dxf", "--output-units", "mm", "--mode-multi", "--layers", opts.layers.join(","), "-o", withTrailingSep(opts.outDir), opts.board], sig(opts));
+  return { paths: await filesWrittenSince(opts.outDir, started, /\.dxf$/i) };
+}
+
 /** Excellon drill files (PTH/NPTH merged) into `outDir`. */
 export async function exportDrill(cli: KicadCli, opts: { board: string; outDir: string; signal?: AbortSignal }): Promise<Paths> {
   await ensureDir(opts.outDir);

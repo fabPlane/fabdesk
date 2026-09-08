@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { detectBinary } from "../detect";
+import { detectBinary, resolveFirst } from "../detect";
 import { CursorStreamParser } from "../parsers/cursor";
 import { runAgentProcess } from "../process";
 import type { AgentAdapter, AgentRun, AgentSession } from "../types";
@@ -67,7 +67,7 @@ export const cursorAdapter: AgentAdapter = {
     const parser = new CursorStreamParser();
     writeCursorMcp(session.cwd, session.mcp.url);
     return runAgentProcess({
-      cmd: cursorArgs(session, session.binaryPath ?? "agent"),
+      cmd: cursorArgs(session, session.binaryPath ?? resolveFirst(CANDIDATES) ?? "agent"),
       cwd: session.cwd,
       env: agentEnv(session),
       parse: (line) => parser.feed(line),

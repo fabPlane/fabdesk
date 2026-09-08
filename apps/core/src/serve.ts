@@ -64,6 +64,8 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   await applyErrorReporting(store.settings.get().errorReporting);
   const stale = store.jobs.failStale();
   if (stale) logger.info("failed stale jobs from previous run", { count: stale });
+  const staleRuns = store.runs.failStale();
+  if (staleRuns.length) logger.info("failed stale agent runs from previous run", { threads: staleRuns });
   const tokens = new TokenSet(config.token);
   const jobs = new JobRunner({
     emit: (e) => bus.emit(e),
@@ -124,7 +126,12 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
         projectName: project.name,
         toolsMarkdown: toolsMarkdown(registry),
         sketches,
-        board: { layers: board.layers, ...(board.widthMm !== undefined ? { widthMm: board.widthMm } : {}), ...(board.heightMm !== undefined ? { heightMm: board.heightMm } : {}) },
+        board: {
+          layers: board.layers,
+          ...(board.widthMm !== undefined ? { widthMm: board.widthMm } : {}),
+          ...(board.heightMm !== undefined ? { heightMm: board.heightMm } : {}),
+          ...(board.template !== undefined ? { template: board.template } : {}),
+        },
         mcpServerName: agents.MCP_SERVER_NAME,
       });
     },

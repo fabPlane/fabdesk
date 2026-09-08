@@ -7,7 +7,7 @@
  * api-server` per project) for building, querying, routing and library search; `KicadService`
  * runs the fork `kicad-cli` for DRC, renders and exports; `SimService` reads the netlist source.
  */
-import type { CoreEvent, NetlistFile, Principal, RouteResult, Settings } from "@fabdesk/protocol";
+import type { CoreEvent, FpPcbBoardSpec, NetlistFile, Principal, RouteResult, Settings } from "@fabdesk/protocol";
 import type { ProjectHandle } from "./registry";
 
 export type BuildError = { message: string; line?: number; column?: number; file?: string; type?: string };
@@ -16,12 +16,14 @@ export type BuildOptions = {
   projectDir: string;
   /** Source file relative to the project; default `circuit.netlist.json`. */
   entrypoint?: string;
+  /** Replaces the netlist file's `board` for this build (a template's blank, the manifest's rules). */
+  board?: FpPcbBoardSpec;
   signal?: AbortSignal;
   /** Stage progress from the compile job; tools map it into their own range. */
   progress?: (fraction: number, note?: string) => void;
 };
 
-export type BuildCounts = { components: number; nets: number; footprintsAdded: number; footprintsPlaced: number };
+export type BuildCounts = { components: number; nets: number; footprintsAdded: number; footprintsPlaced: number; viasAdded?: number; holesAdded?: number };
 
 export type BuildResult = {
   ok: boolean;
@@ -33,7 +35,7 @@ export type BuildResult = {
   revision?: number;
 };
 
-export type DesignSelect = "components" | "nets" | "pads" | "tracks" | "unrouted";
+export type DesignSelect = "components" | "nets" | "pads" | "vias" | "tracks" | "unrouted";
 export type DesignRow = Record<string, unknown>;
 
 export type RouteJobOptions = {
@@ -57,7 +59,12 @@ export type RouteProgress = {
 
 export type RouteSummary = {
   tracks: number;
+  /** Vias the router added. */
   vias: number;
+  /** Free vias (a blank's) the routing claimed instead of adding its own. */
+  claimedVias: number;
+  /** JS router preset: `default` or `laser-prefab`. */
+  preset?: string;
   routed: number;
   total: number;
   trackLengthNm: number;
@@ -144,6 +151,8 @@ export interface KicadService {
   boardStats(cli: KicadCli, opts: { board: string; scratchFile: string }): Promise<Record<string, unknown>>;
   exportGerbers(cli: KicadCli, opts: { board: string; outDir: string; signal?: AbortSignal }): Promise<{ paths: string[] }>;
   exportDrill(cli: KicadCli, opts: { board: string; outDir: string; signal?: AbortSignal }): Promise<{ paths: string[] }>;
+  /** One DXF per layer (mm), the copper-removal artwork for laser/CNC-finished blanks. */
+  exportDxf(cli: KicadCli, opts: { board: string; outDir: string; layers: string[]; signal?: AbortSignal }): Promise<{ paths: string[] }>;
   exportPos(cli: KicadCli, opts: { board: string; output: string; signal?: AbortSignal }): Promise<{ paths: string[] }>;
   exportBom(cli: KicadCli, opts: { schematic: string; output: string; signal?: AbortSignal }): Promise<{ paths: string[] }>;
   exportNetlist(cli: KicadCli, opts: { schematic: string; output: string; format: "kicadsexpr" | "spice"; signal?: AbortSignal }): Promise<{ paths: string[] }>;

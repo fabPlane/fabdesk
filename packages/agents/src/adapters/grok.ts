@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { detectBinary } from "../detect";
+import { detectBinary, resolveFirst } from "../detect";
 import { MessagesStreamParser } from "../parsers/messages";
 import { runAgentProcess } from "../process";
 import type { AgentAdapter, AgentPermission, AgentRun, AgentSession } from "../types";
@@ -89,7 +89,7 @@ export const grokAdapter: AgentAdapter = {
     const parser = new MessagesStreamParser();
     writeGrokConfig(session.cwd, session.mcp.url);
     return runAgentProcess({
-      cmd: grokArgs(session, session.binaryPath ?? "grok"),
+      cmd: grokArgs(session, session.binaryPath ?? resolveFirst(CANDIDATES) ?? "grok"),
       cwd: session.cwd,
       env: agentEnv(session),
       parse: (line) => parser.feed(line),

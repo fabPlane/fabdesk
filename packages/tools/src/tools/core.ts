@@ -1,10 +1,12 @@
 /** Core toolset: always loaded. Covers the happy path sketch → netlist → board → route → DRC → render. */
 import { readdir } from "node:fs/promises";
 import { z } from "zod/v4";
+import type { FpPcbBoardSpec } from "@fabdesk/protocol";
 import { PROJECT_FILES, exists, mtimeMs, readJsonOrNull, writeJson } from "../fs";
-import { ToolError, ToolsetId, defineTool, TOOLSETS } from "../registry";
+import { ToolError, ToolsetId, defineTool, TOOLSETS, type ProjectHandle } from "../registry";
 import type { BuildResult, DrcReport } from "../services";
-import { ok, p, requireKicad, table, writeReport } from "./common";
+import { VIAGRID_9055, viagrid9055BoardSpec } from "../templates/viagrid-9055";
+import { fileUrl, loadNetlist, ok, p, requireKicad, table, writeReport } from "./common";
 import { runRoute, RouteRunArgs } from "./route";
 
 export const load_toolset = defineTool({
@@ -85,12 +87,35 @@ export type BuildSummary = {
   counts: BuildResult["counts"];
 };
 
+/**
+ * What circuit_build sends as the board spec on top of the netlist file's own: a template's blank
+ * (which replaces the file's board entirely), or the manifest's rules and size (`fabdesk.json`
+ * board.rules / widthMm / heightMm) merged into it. `undefined` when the file's board stands as is.
+ */
+export async function buildBoardSpec(project: ProjectHandle): Promise<FpPcbBoardSpec | undefined> {
+  const m = project.manifest().board;
+  if (m.template === VIAGRID_9055.id) return viagrid9055BoardSpec();
+  const r = m.rules ?? {};
+  const rules = {
+    ...(r.clearanceMm !== undefined ? { clearanceMm: r.clearanceMm } : {}),
+    ...(r.traceWidthMm !== undefined ? { trackWidthMm: r.traceWidthMm } : {}),
+    ...(r.viaDiameterMm !== undefined ? { viaDiameterMm: r.viaDiameterMm } : {}),
+    ...(r.viaDrillMm !== undefined ? { viaDrillMm: r.viaDrillMm } : {}),
+  };
+  const file = await loadNetlist(project).catch(() => null);
+  const own = file?.board;
+  const hasOutline = Boolean(own?.outline?.length || (own?.widthMm && own?.heightMm));
+  const size = !hasOutline && m.widthMm && m.heightMm ? { widthMm: m.widthMm, heightMm: m.heightMm } : {};
+  if (!Object.keys(rules).length && !Object.keys(size).length) return undefined;
+  return { ...(own ?? {}), ...size, ...(Object.keys(rules).length ? { rules: { ...(own?.rules ?? {}), ...rules } } : {}) };
+}
+
 export const circuit_build = defineTool({
   name: "circuit_build",
   toolset: "core",
   title: "Build the board",
   description:
-    "Compile circuit.netlist.json into board.kicad_pcb on the design server: footprints are pulled from the KiCad libraries, placed on a board of the size in the netlist (or fabdesk.json), and the nets become the ratsnest for route_run. Returns ok/errors/warnings with positions in the netlist file plus component and footprint counts. On failure fix circuit.netlist.json and build again. Re-building a routed board keeps tracks whose nets still exist; footprints the netlist no longer names are removed.",
+    "Compile circuit.netlist.json into board.kicad_pcb on the design server: footprints are pulled from the KiCad libraries, placed on a board of the size in the netlist (or fabdesk.json; a template such as viagrid-9055 replaces it with the blank: outline, free vias, holes, rules), and the nets become the ratsnest for route_run. Returns ok/errors/warnings with positions in the netlist file plus component and footprint counts. On failure fix circuit.netlist.json and build again. Re-building a routed board keeps tracks whose nets still exist; footprints the netlist no longer names are removed.",
   inputSchema: {
     entrypoint: z.string().optional().describe("Netlist file relative to the project, default circuit.netlist.json"),
   },
@@ -99,9 +124,11 @@ export const circuit_build = defineTool({
   handler: async ({ entrypoint }, ctx) => {
     const project = ctx.requireProject();
     ctx.progress(0.05, "building");
+    const board = await buildBoardSpec(project);
     const result = await ctx.services.design.build({
       projectDir: project.dir,
       ...(entrypoint ? { entrypoint } : {}),
+      ...(board ? { board } : {}),
       signal: ctx.signal,
       progress: (fraction, note) => ctx.progress(0.05 + fraction * 0.9, note),
     });
@@ -117,7 +144,7 @@ export const circuit_build = defineTool({
     ctx.progress(1, "done");
     const c = result.counts;
     const text = result.ok
-      ? `Build OK in ${Math.round(result.durationMs)} ms: ${c.components} components, ${c.nets} nets, ${c.footprintsAdded} footprints added, ${c.footprintsPlaced} placed.${result.warnings.length ? `\nWarnings:\n${formatErrors(result.warnings)}` : ""}`
+      ? `Build OK in ${Math.round(result.durationMs)} ms: ${c.components} components, ${c.nets} nets, ${c.footprintsAdded} footprints added, ${c.footprintsPlaced} placed${c.viasAdded ? `, blank drawn (${c.viasAdded} free vias, ${c.holesAdded ?? 0} holes)` : ""}.${project.manifest().board.template ? ` Template ${project.manifest().board.template}: the netlist's own board spec was replaced by the blank.` : ""}${result.warnings.length ? `\nWarnings:\n${formatErrors(result.warnings)}` : ""}`
       : `Build FAILED (${result.errors.length} errors):\n${formatErrors(result.errors)}`;
     return { text, json: summary, isError: !result.ok };
   },
@@ -201,7 +228,28 @@ export const verify_drc = defineTool({
     show("Violations", report.violations);
     show("Unconnected", report.unconnected);
     show("Schematic parity", report.schematicParity);
-    return { text: lines.join("\n"), json: report, isError: c.errors > 0 || c.unconnected > 0 };
+    // The full report can run to hundreds of KiB (KiCad repeats a library warning per footprint), which
+    // exceeds what an agent may receive from one tool call; the JSON carries counts by rule and the first
+    // `limit` of each list, the complete report stays in reports/drc.json.
+    const byRule = (items: unknown[]): Record<string, number> => {
+      const out: Record<string, number> = {};
+      for (const v of items as Array<Record<string, unknown>>) {
+        const key = String(v["rule"] ?? v["type"] ?? "unknown");
+        out[key] = (out[key] ?? 0) + 1;
+      }
+      return out;
+    };
+    const json = {
+      counts: c,
+      reportPath: outFile,
+      byRule: { violations: byRule(report.violations), unconnected: byRule(report.unconnected), schematicParity: byRule(report.schematicParity) },
+      violations: report.violations.slice(0, limit),
+      unconnected: report.unconnected.slice(0, limit),
+      schematicParity: report.schematicParity.slice(0, limit),
+      truncated: report.violations.length > limit || report.unconnected.length > limit || report.schematicParity.length > limit,
+    };
+    if (json.truncated) lines.push(`Full report with every violation: ${outFile}`);
+    return { text: lines.join("\n"), json, isError: c.errors > 0 || c.unconnected > 0 };
   },
 });
 
@@ -240,7 +288,8 @@ export const render_board = defineTool({
     ctx.progress(0.3, "rendering");
     await ctx.services.kicad.renderPng(cli, { board, output, view, width, height, quality, signal: ctx.signal });
     ctx.progress(1, "done");
-    return ok(`Rendered ${view} view to ${PROJECT_FILES.renders}/${view}.png (${width}×${height}).`, { path: output, view, width, height }, { images: [{ path: output, mime: "image/png" }] });
+    const url = fileUrl(output);
+    return ok(`Rendered ${view} view to ${PROJECT_FILES.renders}/${view}.png (${width}×${height}). Browser URL: ${url}`, { path: output, url, fileUrl: url, view, width, height }, { images: [{ path: output, mime: "image/png" }] });
   },
 });
 

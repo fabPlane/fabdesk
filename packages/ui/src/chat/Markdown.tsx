@@ -1,7 +1,11 @@
 import { memo, useEffect, useState, type ComponentProps } from "react";
-import ReactMarkdown, { type Components } from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform, type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { cn } from "../util";
+import { useProject, useProjectBlobUrl } from "../hooks/queries";
+import { useUiStore } from "../stores/ui";
+import { basename, cn, isImagePath, projectRelativePath } from "../util";
+import { ProjectImage } from "./ProjectImage";
+import { useCore } from "../core/CoreProvider";
 
 type Shiki = typeof import("shiki");
 let shikiPromise: Promise<Shiki> | null = null;
@@ -76,43 +80,119 @@ export function CodeBlock({ code, lang }: { code: string; lang: string }) {
 type CodeProps = ComponentProps<"code"> & { node?: unknown };
 type PreProps = ComponentProps<"pre"> & { node?: unknown };
 type AnchorProps = ComponentProps<"a"> & { node?: unknown };
+type ImgProps = ComponentProps<"img"> & { node?: unknown };
 
-const components: Components = {
-  code(props: CodeProps) {
-    const { className, children, node: _node, ...rest } = props;
-    void _node;
-    const match = /language-([\w-]+)/.exec(className ?? "");
-    if (match?.[1]) {
-      const text = String(children ?? "").replace(/\n$/, "");
-      return <CodeBlock code={text} lang={match[1]} />;
-    }
-    return (
-      <code className={className} {...rest}>
-        {children}
-      </code>
-    );
-  },
-  pre(props: PreProps) {
-    // A fenced block with a language renders its own <pre> via CodeBlock; avoid nesting.
-    const { children, node: _node, ...rest } = props;
-    void _node;
-    const child = Array.isArray(children) ? children[0] : children;
-    const cls = (child as { props?: { className?: string } } | null)?.props?.className ?? "";
-    if (/language-/.test(cls)) return <>{children}</>;
-    return <pre {...rest}>{children}</pre>;
-  },
-  a(props: AnchorProps) {
-    const { node: _node, ...rest } = props;
-    void _node;
-    return <a {...rest} target="_blank" rel="noreferrer" />;
-  },
-};
+function ProjectFileLink({
+  projectId,
+  href,
+  absolutePath,
+  children,
+  ...props
+}: AnchorProps & { projectId: string; href: string; absolutePath: string }) {
+  const { url } = useProjectBlobUrl(projectId, href);
+  const { host } = useCore();
+  const label = children || basename(href);
+  return (
+    <a
+      {...props}
+      href={url ?? "#"}
+      target="_blank"
+      rel="noreferrer"
+      title={absolutePath}
+      onClick={(event) => {
+        if (host.openPath) {
+          event.preventDefault();
+          void host.openPath(absolutePath);
+          return;
+        }
+        if (!url) event.preventDefault();
+        props.onClick?.(event);
+      }}
+    >
+      {label}
+    </a>
+  );
+}
+
+function linkBareFileUrls(text: string): string {
+  return text.replace(/(^|[\s(])((?:file:\/\/)[^\s)<]+)(?=$|[\s).,;!?])/gm, (_match, prefix: string, url: string) => {
+    const decoded = (() => {
+      try {
+        return decodeURIComponent(new URL(url).pathname).split("/").pop() || url;
+      } catch {
+        return url;
+      }
+    })();
+    return `${prefix}[${decoded}](${url})`;
+  });
+}
+
+function urlTransform(url: string): string {
+  return url.startsWith("file://") ? url : defaultUrlTransform(url);
+}
 
 export const Markdown = memo(function Markdown({ text, className }: { text: string; className?: string }) {
+  const projectId = useUiStore((s) => s.activeProjectId);
+  const project = useProject(projectId).data;
+  const root = project?.path ?? null;
+  const components: Components = {
+    code(props: CodeProps) {
+      const { className, children, node: _node, ...rest } = props;
+      void _node;
+      const match = /language-([\w-]+)/.exec(className ?? "");
+      if (match?.[1]) {
+        const code = String(children ?? "").replace(/\n$/, "");
+        return <CodeBlock code={code} lang={match[1]} />;
+      }
+      return (
+        <code className={className} {...rest}>
+          {children}
+        </code>
+      );
+    },
+    pre(props: PreProps) {
+      // A fenced block with a language renders its own <pre> via CodeBlock; avoid nesting.
+      const { children, node: _node, ...rest } = props;
+      void _node;
+      const child = Array.isArray(children) ? children[0] : children;
+      const cls = (child as { props?: { className?: string } } | null)?.props?.className ?? "";
+      if (/language-/.test(cls)) return <>{children}</>;
+      return <pre {...rest}>{children}</pre>;
+    },
+    a(props: AnchorProps) {
+      const { node: _node, href, children, ...rest } = props;
+      void _node;
+      const projectPath = typeof href === "string" ? projectRelativePath(href, root) : null;
+      if (projectId && projectPath && root) {
+        return (
+          <ProjectFileLink {...rest} projectId={projectId} href={projectPath} absolutePath={`${root.replace(/\/+$/, "")}/${projectPath}`}>
+            {children || basename(projectPath)}
+          </ProjectFileLink>
+        );
+      }
+      return <a {...rest} href={href} target="_blank" rel="noreferrer" />;
+    },
+    img(props: ImgProps) {
+      const { node: _node, src, alt, className } = props;
+      void _node;
+      const projectPath = typeof src === "string" ? projectRelativePath(src, root) : null;
+      if (projectId && projectPath && isImagePath(projectPath)) {
+        return (
+          <ProjectImage
+            projectId={projectId}
+            path={projectPath}
+            {...(alt !== undefined ? { alt } : {})}
+            {...(className !== undefined ? { className } : {})}
+          />
+        );
+      }
+      return <img src={src} {...(alt !== undefined ? { alt } : {})} {...(className !== undefined ? { className } : {})} />;
+    },
+  };
   return (
     <div className={cn("fd-prose break-words", className)}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-        {text}
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components} urlTransform={urlTransform}>
+        {linkBareFileUrls(text)}
       </ReactMarkdown>
     </div>
   );

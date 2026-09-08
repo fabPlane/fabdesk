@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import { PROJECT_FILES, ensureDir } from "../fs";
 import { defineTool } from "../registry";
-import { ok, p, requireBoard, requireKicad, requireSchematic } from "./common";
+import { fileUrl, ok, p, requireBoard, requireKicad, requireSchematic } from "./common";
 
 export const render_schematic_svg = defineTool({
   name: "render_schematic_svg",
@@ -23,7 +23,8 @@ export const render_schematic_svg = defineTool({
     const output = p(project, PROJECT_FILES.renders, "schematic.svg");
     if (first) await Bun.write(output, await readFile(first));
     ctx.progress(1, "done");
-    return ok(`Rendered ${paths.length} schematic sheet(s); first at ${PROJECT_FILES.renders}/schematic.svg.`, { path: output, sheets: paths }, first ? { images: [{ path: output, mime: "image/svg+xml" }] } : {});
+    const url = fileUrl(output);
+    return ok(`Rendered ${paths.length} schematic sheet(s); first at ${PROJECT_FILES.renders}/schematic.svg. Browser URL: ${url}`, { path: output, url, fileUrl: url, sheets: paths }, first ? { images: [{ path: output, mime: "image/svg+xml" }] } : {});
   },
 });
 
@@ -44,7 +45,8 @@ export const render_pcb_svg = defineTool({
     ctx.progress(0.2, "exporting svg");
     await ctx.services.kicad.exportPcbSvg(cli, { board, output, signal: ctx.signal });
     ctx.progress(1, "done");
-    return ok(`Rendered PCB to ${PROJECT_FILES.renders}/pcb.svg.`, { path: output }, { images: [{ path: output, mime: "image/svg+xml" }] });
+    const url = fileUrl(output);
+    return ok(`Rendered PCB to ${PROJECT_FILES.renders}/pcb.svg. Browser URL: ${url}`, { path: output, url, fileUrl: url }, { images: [{ path: output, mime: "image/svg+xml" }] });
   },
 });
 
@@ -64,7 +66,8 @@ export const render_glb = defineTool({
     ctx.progress(0.2, "exporting glb");
     const res = await ctx.services.kicad.exportGlb(cli, { board, output, signal: ctx.signal });
     ctx.progress(1, "done");
-    return ok(`Exported ${PROJECT_FILES.renders}/board.glb${res.fused ? " (fused shapes)" : ""}.${res.warnings.length ? `\nWarnings:\n${res.warnings.map((w) => `- ${w}`).join("\n")}` : ""}`, { path: output, ...res });
+    const url = fileUrl(output);
+    return ok(`Exported ${PROJECT_FILES.renders}/board.glb${res.fused ? " (fused shapes)" : ""}. Browser URL: ${url}${res.warnings.length ? `\nWarnings:\n${res.warnings.map((w) => `- ${w}`).join("\n")}` : ""}`, { path: output, url, fileUrl: url, ...res });
   },
 });
 

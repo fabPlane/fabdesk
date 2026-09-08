@@ -8,9 +8,9 @@ export const circuit_query = defineTool({
   toolset: "circuit",
   title: "Query the board",
   description:
-    "List what the board holds, straight from KiCad, as a compact table: components (ref, value, footprint, position), nets (name, pad count), pads (component, number, net), tracks (routed tracks/arcs/vias per net) or unrouted (the airlines still open). Optional substring filter on names. Requires circuit_build.",
+    "List what the board holds, straight from KiCad, as a compact table: components (ref, value, footprint, position), nets (name, pad count), pads (component, number, net, position, size), vias (position, net; a blank's free vias have an empty net), tracks (routed tracks/arcs/vias per net) or unrouted (the airlines still open). Optional substring filter on names. Requires circuit_build.",
   inputSchema: {
-    select: z.enum(["components", "nets", "pads", "tracks", "unrouted"]),
+    select: z.enum(["components", "nets", "pads", "vias", "tracks", "unrouted"]),
     filter: z.string().optional().describe("Case-insensitive substring matched against refs/nets/footprints"),
     limit: z.number().int().min(1).max(500).default(100),
   },

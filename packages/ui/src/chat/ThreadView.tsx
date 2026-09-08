@@ -1,5 +1,21 @@
 import type { AgentId } from "@fabdesk/protocol";
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
+
+/** Seconds since `startedAt`, ticking once a second while a run is active (undefined otherwise). */
+function useElapsedSeconds(startedAt: number | undefined): number | undefined {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (startedAt === undefined) return;
+    setNow(Date.now());
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [startedAt]);
+  return startedAt === undefined ? undefined : Math.max(0, Math.floor((now - startedAt) / 1000));
+}
+
+function formatElapsed(s: number): string {
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
+}
 import { Badge } from "../components/ui";
 import { useMessages, useThread, useThreadMutations } from "../hooks/queries";
 import { useRunsStore } from "../stores/runs";
@@ -16,6 +32,7 @@ export function ThreadView() {
   const messages = useMessages(activeThreadId);
   const { create } = useThreadMutations();
   const run = useRunsStore((s) => (activeThreadId ? s.runsByThread[activeThreadId] : undefined));
+  const elapsed = useElapsedSeconds(run?.startedAt);
 
   const onCreateThread = useCallback(
     async (input: { title: string; agentId: AgentId; model?: string }) => {
@@ -47,7 +64,7 @@ export function ThreadView() {
             tone="success"
             title={run.usage ? `${run.usage.inputTokens ?? 0} in / ${run.usage.outputTokens ?? 0} out` : "running"}
           >
-            running
+            running{elapsed !== undefined ? ` · ${formatElapsed(elapsed)}` : ""}
           </Badge>
         )}
         {run?.usage?.costUsd !== undefined && <span className="text-xs text-muted">${run.usage.costUsd.toFixed(3)}</span>}

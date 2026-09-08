@@ -96,7 +96,8 @@ export function mockServices(projects: ProjectHandle[], overrides: Partial<CoreS
         const rows: Record<string, Array<Record<string, unknown>>> = {
           components: [{ ref: "R1", value: "1k", footprint: "Resistor_SMD:R_0402_1005Metric", x: 1, y: 3, layer: 0 }],
           nets: [{ name: "N1", code: 1, pads: 1 }],
-          pads: [{ component: "R1", number: "1", net: "N1", x: 0.5, y: 3 }],
+          pads: [{ component: "R1", number: "1", net: "N1", x: 0.5, y: 3, width: 0.5, height: 0.6 }],
+          vias: [],
           tracks: [],
           unrouted: [{ net: "N1", from: "0,0", to: "5,5" }],
         };
@@ -109,7 +110,7 @@ export function mockServices(projects: ProjectHandle[], overrides: Partial<CoreS
           await new Promise((r) => setTimeout(r, 5));
           onProgress?.({ state: "routing", log: [], phase: "pass", pass: 1, routed: i, total: 2 });
         }
-        return { tracks: 1, vias: 0, routed: 2, total: 2, trackLengthNm: 5_000_000, elapsedMs: 10, wallMs: 15, timedOut: false, message: `Autoroute (${opts.router}): 2 connections`, unrouted: [], log: [] };
+        return { tracks: 1, vias: 0, claimedVias: 0, routed: 2, total: 2, trackLengthNm: 5_000_000, elapsedMs: 10, wallMs: 15, timedOut: false, message: `Autoroute (${opts.router}): 2 connections`, unrouted: [], log: [] };
       },
       cancelRoute: async () => {},
       unroute: async (_dir, nets) => ({ tracks: nets?.length ?? 1, vias: 0 }),
@@ -137,6 +138,7 @@ export function mockServices(projects: ProjectHandle[], overrides: Partial<CoreS
       boardStats: async () => ({}),
       exportGerbers: async () => ({ paths: [] }),
       exportDrill: async () => ({ paths: [] }),
+      exportDxf: async () => ({ paths: [] }),
       exportPos: async () => ({ paths: [] }),
       exportBom: async () => ({ paths: [] }),
       exportNetlist: async () => ({ paths: [] }),

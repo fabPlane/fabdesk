@@ -7,7 +7,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { KiCadObjectType } from "@fp-pcb/proto";
-import { toMm, type Board, type KiCad } from "@fp-pcb/client";
+import { Via, toMm, type Board, type KiCad } from "@fp-pcb/client";
 import type { FpPcbCompileJob, FpPcbDiagnostic, FpPcbRouteJob } from "@fabdesk/protocol";
 import {
   PROJECT_FILES,
@@ -109,6 +109,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         {
           source,
           ...(s.path ? {} : { project: { path: join(opts.projectDir, BOARD_PRO) } }),
+          ...(opts.board ? { board: opts.board } : {}),
           autoplace: true,
           save: true,
           netlistPath: PROJECT_FILES.compileNet,
@@ -199,8 +200,23 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
             net: pad.net ?? "",
             x: mm(pad.position.x),
             y: mm(pad.position.y),
+            width: mm(pad.size.x),
+            height: mm(pad.size.y),
           }))
           .filter((r) => keep(r.component, r.net, r.number));
+      }
+      case "vias": {
+        return (await board.getTracks())
+          .filter((t): t is Via => t instanceof Via)
+          .map((v) => ({
+            id: v.id,
+            net: v.net ?? "",
+            x: mm(v.position.x),
+            y: mm(v.position.y),
+            diameter: mm(v.diameter),
+            drill: mm(v.drillDiameter),
+          }))
+          .filter((r) => keep(r.net, r.id));
       }
       case "tracks": {
         return (await board.getTracks())
@@ -267,6 +283,8 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     return {
       tracks: s.tracks,
       vias: s.vias,
+      claimedVias: s.claimedVias,
+      ...(s.preset ? { preset: s.preset } : {}),
       routed: s.routed,
       total: s.total,
       trackLengthNm: s.trackLengthNm,

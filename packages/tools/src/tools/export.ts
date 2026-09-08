@@ -30,6 +30,36 @@ export const export_gerbers = defineTool({
   },
 });
 
+const DXF_DEFAULT_LAYERS = ["F.Cu", "B.Cu", "Edge.Cuts"];
+
+export const export_dxf = defineTool({
+  name: "export_dxf",
+  toolset: "export",
+  title: "Export DXF artwork",
+  description:
+    "Export one DXF per layer (mm) to exports/dxf/: the copper-removal artwork for prefab blanks such as Viagrid, where a laser (LightBurn) or CNC isolates the traces instead of a fab. Default layers F.Cu, B.Cu and Edge.Cuts. The bottom layer is drawn as seen from the top: mirror it in the laser software before burning. Requires kicad-cli and board.kicad_pcb.",
+  inputSchema: {
+    layers: z.array(z.string().min(1)).min(1).default(DXF_DEFAULT_LAYERS).describe("KiCad layer names, e.g. F.Cu, B.Cu, Edge.Cuts, F.Mask"),
+  },
+  annotations: { idempotentHint: true },
+  longRunning: true,
+  handler: async ({ layers }, ctx) => {
+    const project = ctx.requireProject();
+    const cli = await requireKicad(ctx);
+    const board = await requireBoard(project);
+    const outDir = await ensureDir(p(project, PROJECT_FILES.exports, "dxf"));
+    ctx.progress(0.2, "exporting DXF");
+    const { paths: files } = await ctx.services.kicad.exportDxf(cli, { board, outDir, layers, signal: ctx.signal });
+    ctx.progress(1, "done");
+    const template = project.manifest().board.template;
+    const notes = [
+      ...(layers.some((l) => /^B\./.test(l)) ? ["Bottom-layer DXFs are as seen from the top; mirror them (LightBurn: Arrange → Flip Horizontal) before burning."] : []),
+      ...(template === "viagrid-9055" ? ["Viagrid 9055: align to the exposed-FR4 marks in the blank's corners; the factory vias and mounting holes are already in the blank, so only copper is removed."] : []),
+    ];
+    return ok(`Exported ${files.length} DXF file(s) to exports/dxf/:\n${files.map((f) => `- ${rel(project, f)}`).join("\n")}${notes.length ? `\n${notes.join("\n")}` : ""}`, { files, layers, notes });
+  },
+});
+
 export const export_drill = defineTool({
   name: "export_drill",
   toolset: "export",
@@ -228,4 +258,4 @@ function crc32(data: Uint8Array, table: Uint32Array): number {
   return (crc ^ 0xffffffff) >>> 0;
 }
 
-export const exportTools = [export_gerbers, export_drill, export_pos, export_bom, export_netlist, export_zip];
+export const exportTools = [export_gerbers, export_drill, export_pos, export_bom, export_netlist, export_zip, export_dxf];

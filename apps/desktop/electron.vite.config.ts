@@ -31,8 +31,8 @@ function sentryRelease(): string {
  * Production CSP (plan section 8). The daemon is reached over loopback only. Sentry renderer events never
  * leave the renderer directly: they reach the main process over the preload IPC, or over the SDK's
  * `sentry-ipc:` custom protocol as a fallback, so no ingest host is allowed here (docs/sentry.md).
- * `img-src https:` is required for the open-source catalog: seed/API preview and hero images are
- * GitHub OpenGraph / raw.githubusercontent.com / R2 URLs, not loopback.
+ * Catalog thumbs load from the loopback preview proxy (`http://127.0.0.1:*`), which serves shipped
+ * webps, then the images.fabplane.com CDN, then initials SVG. The renderer never fetches GitHub.
  */
 const STRICT_CSP = [
   "default-src 'self'",

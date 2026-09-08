@@ -1,4 +1,4 @@
-import { detectBinary } from "../detect";
+import { detectBinary, resolveFirst } from "../detect";
 import { MessagesStreamParser } from "../parsers/messages";
 import { runAgentProcess } from "../process";
 import type { AgentAdapter, AgentPermission, AgentRun, AgentSession } from "../types";
@@ -72,7 +72,7 @@ export const claudeAdapter: AgentAdapter = {
   run(session: AgentSession): AgentRun {
     const parser = new MessagesStreamParser();
     return runAgentProcess({
-      cmd: claudeArgs(session, session.binaryPath ?? "claude"),
+      cmd: claudeArgs(session, session.binaryPath ?? resolveFirst(CANDIDATES) ?? "claude"),
       cwd: session.cwd,
       env: agentEnv(session),
       parse: (line) => parser.feed(line),

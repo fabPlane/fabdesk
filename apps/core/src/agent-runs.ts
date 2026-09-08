@@ -105,12 +105,20 @@ export class AgentRunManager {
       ...(agentSettings?.binaryPath ? { binaryPath: agentSettings.binaryPath } : {}),
     };
 
+    // A failure has to be visible in the chat, not only on the event bus: after a reload the message is all
+    // the user has, and an empty assistant turn looks like the agent simply never answered.
+    const recordError = (message: string) => {
+      appendText("text", `${contentMd.length || parts.length ? "\n\n" : ""}⚠ ${message}`);
+      persist(true);
+    };
+
     let handle: AgentRun;
     try {
       handle = adapter.run(session);
     } catch (e) {
       const msg = errMsg(e);
       captureCoreException(e, { agent: input.agentId, "agent.phase": "start" });
+      recordError(`${input.agentId} could not be started: ${msg}`);
       store.runs.finish(run.id, { status: "failed" });
       tokens.revokeRun(run.id);
       emit({ ts: Date.now(), topic: "agent.error", runId: run.id, message: msg });
@@ -160,7 +168,10 @@ export class AgentRunManager {
               break;
             case "error":
               emit({ ts: Date.now(), topic: "agent.error", runId: run.id, message: ev.message });
-              if (!aborted) status = "failed";
+              if (!aborted) {
+                status = "failed";
+                recordError(ev.message);
+              }
               break;
             case "done":
               exitCode = ev.exitCode;
@@ -178,9 +189,15 @@ export class AgentRunManager {
           status = "failed";
           captureCoreException(e, { agent: input.agentId, "agent.phase": "stream" });
           emit({ ts: Date.now(), topic: "agent.error", runId: run.id, message: errMsg(e) });
+          recordError(errMsg(e));
         }
       }
       if (aborted) status = "aborted";
+      // A non-zero exit with no explanation so far (the CLI printed plain text instead of JSONL, e.g.
+      // "Not logged in") still has to say something in the chat.
+      if (status === "failed" && !parts.some((p) => p.type === "text" && p.text.includes("⚠"))) {
+        recordError(`${input.agentId} exited with code ${exitCode ?? "unknown"} without producing a reply. Check that it is installed and signed in (run it once in a terminal), then send the message again.`);
+      }
       persist(true);
       store.runs.finish(run.id, { status, exitCode: exitCode ?? null, cost });
       tokens.revokeRun(run.id);

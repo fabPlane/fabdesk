@@ -1,6 +1,6 @@
-import { accessSync, constants } from "node:fs";
+import { accessSync, constants, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import type { DetectResult } from "./types";
 
 const VERSION_TIMEOUT_MS = 15_000;
@@ -20,13 +20,46 @@ function isExecutableFile(p: string): boolean {
   }
 }
 
+/**
+ * npm's Windows shims (`claude.cmd`) are batch files that `Bun.spawn` cannot start (runs die with exit -1
+ * before the CLI runs). They only forward to a real executable next to them
+ * (`"%dp0%\node_modules\@anthropic-ai\claude-code\bin\claude.exe" %*`), so resolve to that instead.
+ */
+export function resolveWindowsShim(path: string): string | undefined {
+  if (!/\.(cmd|bat)$/i.test(path)) return undefined;
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch {
+    return undefined;
+  }
+  const m = /"%(?:dp0|~dp0)%[\\/]?([^"]+\.(?:exe|cmd|bat))"/i.exec(text);
+  if (!m?.[1]) return undefined;
+  // The shim spells its target with backslashes; split on either separator so the join is correct
+  // wherever this runs (a checkout is read the same way on a Linux CI runner).
+  const target = join(dirname(path), ...m[1].split(/[\\/]+/));
+  if (/\.(cmd|bat)$/i.test(target) || !isExecutableFile(target)) return undefined;
+  return target;
+}
+
 /** Resolves a command name or path to an executable, honoring the current `PATH`. */
 export function resolveBinary(candidate: string): string | undefined {
   const expanded = expandHome(candidate);
   const looksLikePath = expanded.includes("/") || expanded.includes("\\") || isAbsolute(expanded);
-  if (looksLikePath) return isExecutableFile(expanded) ? expanded : undefined;
-  const found = Bun.which(expanded, { PATH: process.env["PATH"] ?? "" });
-  return found ?? undefined;
+  let found: string | undefined;
+  if (looksLikePath) found = isExecutableFile(expanded) ? expanded : undefined;
+  else found = Bun.which(expanded, { PATH: process.env["PATH"] ?? "" }) ?? undefined;
+  if (found && process.platform === "win32") return resolveWindowsShim(found) ?? found;
+  return found;
+}
+
+/** First installed candidate, synchronously (no version probe); what adapters spawn when no path is configured. */
+export function resolveFirst(candidates: string[]): string | undefined {
+  for (const candidate of candidates) {
+    const path = resolveBinary(candidate);
+    if (path) return path;
+  }
+  return undefined;
 }
 
 /** Runs `<bin> <args>` and extracts the first dotted version number from its output. */

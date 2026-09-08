@@ -62,6 +62,10 @@ export async function runRoute(
   if (router === "freerouting" && ctx.services.channel !== "internal") {
     throw new ToolError("the freerouting router is only available in internal builds; use router=capacity", "unavailable");
   }
+  // A prefab blank (fabdesk.json board.template) routes with the laser-prefab preset unless the caller
+  // picked one explicitly; the bridge's JS router also switches by itself when the board has free vias.
+  const settings: Record<string, unknown> | undefined =
+    manifest.board.template !== undefined && args.settings?.["preset"] === undefined ? { ...(args.settings ?? {}), preset: "laser-prefab" } : args.settings;
   const runId = newRunId();
   const runDir = p(project, PROJECT_FILES.runs, runId);
   await mkdir(runDir, { recursive: true });
@@ -90,7 +94,7 @@ export async function runRoute(
     throwIfAborted(ctx.signal);
     summary = await ctx.services.design.route(
       project.dir,
-      { router, maxTimeMs: args.timeoutMs, ...(args.onlyConnections ? { nets: args.onlyConnections } : {}), ...(args.settings ? { settings: args.settings } : {}) },
+      { router, maxTimeMs: args.timeoutMs, ...(args.onlyConnections ? { nets: args.onlyConnections } : {}), ...(settings ? { settings } : {}) },
       {
         signal: ctx.signal,
         onProgress: (pr) => {
@@ -116,7 +120,8 @@ export async function runRoute(
     complete: [],
     open,
     timedOut: summary.timedOut,
-    stats: { vias: summary.vias, segments: summary.tracks, wallMs: summary.wallMs, frames: sink.stats.frames },
+    stats: { vias: summary.vias, segments: summary.tracks, wallMs: summary.wallMs, frames: sink.stats.frames, viasOnFixed: summary.claimedVias },
+    ...(summary.preset ? { preset: summary.preset } : {}),
     ...(summary.message ? { detail: summary.message } : {}),
   };
   sink.onMessage({ kind: "result", runId, result });
@@ -125,12 +130,17 @@ export async function runRoute(
   ctx.services.routeRuns.finish(runId, { status: "done", result, error: null });
   ctx.services.bus.emit({ ts: Date.now(), topic: "route.done", result });
   ctx.progress(1, "done");
+  const viaNote = summary.claimedVias || summary.preset === "laser-prefab" ? ` (${summary.claimedVias} factory vias claimed${summary.preset === "laser-prefab" && summary.vias ? `, ${summary.vias} OFF the blank` : ""})` : "";
   const text = [
-    `Route ${runId} (${router}) ${summary.timedOut ? "TIMED OUT" : "finished"} in ${Math.round(summary.wallMs)} ms: ${summary.routed}/${summary.total} connections routed, ${summary.vias} vias, ${summary.tracks} tracks.`,
+    `Route ${runId} (${router}${summary.preset ? `, ${summary.preset}` : ""}) ${summary.timedOut ? "TIMED OUT" : "finished"} in ${Math.round(summary.wallMs)} ms: ${summary.routed}/${summary.total} connections routed, ${summary.vias} vias${viaNote}, ${summary.tracks} tracks.`,
     open.length ? `Open nets: ${open.slice(0, 30).join(", ")}${open.length > 30 ? ", …" : ""}` : "All connections routed.",
     `Applied to board.kicad_pcb as "${summary.message}"; frames at ${PROJECT_FILES.runs}/${runId}/frames.jsonl.`,
   ].join("\n");
-  return { text, json: { runId, router, routed: summary.routed, total: summary.total, open, timedOut: summary.timedOut, stats: result.stats }, isError: open.length > 0 };
+  return {
+    text,
+    json: { runId, router, ...(summary.preset ? { preset: summary.preset } : {}), routed: summary.routed, total: summary.total, open, timedOut: summary.timedOut, claimedVias: summary.claimedVias, stats: result.stats },
+    isError: open.length > 0 || (summary.preset === "laser-prefab" && summary.vias > 0),
+  };
 }
 
 export const route_status = defineTool({

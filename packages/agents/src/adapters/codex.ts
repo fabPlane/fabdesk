@@ -1,4 +1,4 @@
-import { detectBinary } from "../detect";
+import { detectBinary, resolveFirst } from "../detect";
 import { CodexStreamParser } from "../parsers/codex";
 import { runAgentProcess } from "../process";
 import type { AgentAdapter, AgentRun, AgentSession } from "../types";
@@ -60,7 +60,7 @@ export const codexAdapter: AgentAdapter = {
   run(session: AgentSession): AgentRun {
     const parser = new CodexStreamParser();
     return runAgentProcess({
-      cmd: codexArgs(session, session.binaryPath ?? "codex"),
+      cmd: codexArgs(session, session.binaryPath ?? resolveFirst(CANDIDATES) ?? "codex"),
       cwd: session.cwd,
       env: agentEnv(session),
       parse: (line) => parser.feed(line),

@@ -64,6 +64,19 @@ function AppInner({ coreStatus, onRestartCore }: { coreStatus?: CoreStatusInfo |
   );
   useShortcuts(shortcutActions, host.platform);
 
+  // Application menu (Electron): main sends a command for the items it owns; same actions as the shortcuts.
+  useEffect(() => {
+    if (!host.onMenu) return;
+    return host.onMenu((command) => {
+      const ui = useUiStore.getState();
+      if (command === "new-chat") actions.newChat();
+      else if (command === "palette") ui.setPaletteOpen(!ui.paletteOpen);
+      else if (command === "settings") actions.openSettings();
+      else if (command === "sidebar") ui.toggleSidebar();
+      else if (command === "board") ui.toggleBoard();
+    });
+  }, [host, actions]);
+
   const banner =
     coreStatus && coreStatus.state !== "ready" ? (
       <div className="flex items-center gap-2 border-b border-warning/40 bg-warning/10 px-3 py-1 text-xs">

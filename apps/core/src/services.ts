@@ -92,6 +92,7 @@ export async function createServices(deps: ServiceDeps): Promise<CoreServices & 
       boardStats: async (cli, o) => (await kicad.boardStats(cli, o.board, o.scratchFile)) as unknown as Record<string, unknown>,
       exportGerbers: (cli, o) => kicad.exportGerbers(cli, o),
       exportDrill: (cli, o) => kicad.exportDrill(cli, o),
+      exportDxf: (cli, o) => kicad.exportDxf(cli, o),
       exportPos: (cli, o) => kicad.exportPos(cli, o),
       exportBom: (cli, o) => kicad.exportBom(cli, o),
       exportNetlist: (cli, o) => kicad.exportNetlist(cli, o),

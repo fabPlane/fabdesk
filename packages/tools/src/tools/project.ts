@@ -4,6 +4,7 @@ import { isAbsolute } from "node:path";
 import { z } from "zod/v4";
 import { PROJECT_FILES, jailPath, projectRelative, writeAtomic } from "../fs";
 import { ToolError, defineTool } from "../registry";
+import { VIAGRID_9055 } from "../templates/viagrid-9055";
 import { ok, p, trim } from "./common";
 
 const MAX_READ = 512 * 1024;
@@ -88,28 +89,47 @@ export const project_set_board = defineTool({
   toolset: "project",
   title: "Set board settings",
   description:
-    "Update board constraints in fabdesk.json: layer count (1-8), outline width/height in mm, and the router to use. The size becomes the board outline the next circuit_build draws; the router is used by route_run.",
+    "Update board constraints in fabdesk.json: layer count (1-8), outline width/height in mm, the router to use, and optionally a prefab blank template. The size becomes the board outline the next circuit_build draws (when circuit.netlist.json has no board of its own); board.rules reach the KiCad board on the next build; the router is used by route_run. template=\"viagrid-9055\" sets up Opulo's 90 x 55 mm Viagrid blank: circuit_build then draws the blank itself (outline, 180 factory vias as free vias, 4 mounting holes, 0.2 mm track and clearance rules) instead of the netlist's board, and route_run uses the laser-prefab solver so layers change only through the factory vias, which it claims. template=\"none\" removes it.",
   inputSchema: {
     layers: z.number().int().min(1).max(8).optional(),
     widthMm: z.number().positive().optional(),
     heightMm: z.number().positive().optional(),
     router: z.enum(["capacity", "freerouting"]).optional(),
+    template: z.enum(["viagrid-9055", "none"]).optional().describe("Prefab blank to design on; viagrid-9055 or none"),
   },
   annotations: { idempotentHint: true },
-  handler: async ({ layers, widthMm, heightMm, router }, ctx) => {
+  handler: async ({ layers, widthMm, heightMm, router, template }, ctx) => {
     const project = ctx.requireProject();
     if (router === "freerouting" && ctx.services.channel !== "internal") {
       throw new ToolError("the freerouting router is only available in internal builds", "unavailable");
     }
     const current = project.manifest();
+    const { template: currentTemplate, ...currentBoard } = current.board;
+    const templateBoard =
+      template === "viagrid-9055"
+        ? { layers: VIAGRID_9055.layers, widthMm: VIAGRID_9055.widthMm, heightMm: VIAGRID_9055.heightMm, rules: { ...(current.board.rules ?? {}), ...VIAGRID_9055.rules }, template: "viagrid-9055" as const }
+        : template === "none"
+          ? {}
+          : currentTemplate !== undefined
+            ? { template: currentTemplate }
+            : {};
     const board = {
-      ...current.board,
+      ...currentBoard,
+      ...templateBoard,
       ...(layers !== undefined ? { layers } : {}),
       ...(widthMm !== undefined ? { widthMm } : {}),
       ...(heightMm !== undefined ? { heightMm } : {}),
     };
     const next = await project.updateManifest({ board, ...(router ? { router } : {}) });
-    return ok(`Board: ${next.board.layers} layers, ${next.board.widthMm ?? "?"}×${next.board.heightMm ?? "?"} mm, router ${next.router}.`, { board: next.board, router: next.router });
+    const text = [
+      `Board: ${next.board.layers} layers, ${next.board.widthMm ?? "?"}×${next.board.heightMm ?? "?"} mm, router ${next.router}${next.board.template ? `, template ${next.board.template}` : ""}.`,
+      ...(next.board.template === "viagrid-9055"
+        ? [
+            `Viagrid rules: circuit_build draws the blank (rebuild after setting the template; a board that already has an outline keeps it, so delete board.kicad_pcb first). Never add vias to the design; route_run uses the laser-prefab solver and claims the factory vias. Parts must clear the via clusters (blank frame: x in -12..12 or |x| > 26 with |y| < 14 is free) and the mounting holes at (±38.75, ±18.25); the autoplacer does not know that, so check circuit_query components / verify_viagrid and move parts in KiCad when needed.`,
+          ]
+        : []),
+    ].join("\n");
+    return ok(text, { board: next.board, router: next.router });
   },
 });
 

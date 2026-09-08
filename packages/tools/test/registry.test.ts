@@ -15,9 +15,9 @@ describe("registry", () => {
       "circuit_query", "circuit_search_parts",
       "route_status", "route_cancel", "route_unroute", "route_scope",
       "kicad_stats",
-      "verify_erc", "verify_gate",
+      "verify_erc", "verify_gate", "verify_viagrid",
       "render_schematic_svg", "render_pcb_svg", "render_glb",
-      "export_gerbers", "export_drill", "export_pos", "export_bom", "export_netlist", "export_zip",
+      "export_gerbers", "export_drill", "export_pos", "export_bom", "export_netlist", "export_zip", "export_dxf",
       "sim_spice_netlist", "sim_run",
       "app_state", "app_screenshot", "app_find", "app_click", "app_type", "app_key", "app_select_project", "app_open_tab", "app_open_thread", "app_new_chat", "app_send_message", "app_cinema", "app_wait_for", "app_eval",
     ]);

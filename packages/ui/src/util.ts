@@ -83,3 +83,36 @@ export function isImagePath(path: string): boolean {
 export function basename(path: string): string {
   return path.split("/").pop() ?? path;
 }
+
+export function localFilePath(value: string): string | null {
+  if (value.startsWith("file://")) {
+    try {
+      return decodeURIComponent(new URL(value).pathname);
+    } catch {
+      return null;
+    }
+  }
+  if (/^https?:\/\//i.test(value)) {
+    try {
+      const url = new URL(value);
+      if ((url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1") && url.pathname.startsWith("/Users/")) {
+        return decodeURIComponent(url.pathname);
+      }
+    } catch {
+      return null;
+    }
+  }
+  return value.startsWith("/") ? value : null;
+}
+
+export function projectRelativePath(path: string, projectRoot?: string | null): string | null {
+  if (!/^[a-z][a-z0-9+.-]*:/i.test(path) && !path.startsWith("/") && !path.startsWith("#")) {
+    return path.replace(/^\.\/+/, "");
+  }
+  const local = localFilePath(path);
+  if (!local || !projectRoot) return null;
+  const root = projectRoot.replace(/\/+$/, "");
+  if (local === root) return "";
+  if (!local.startsWith(`${root}/`)) return null;
+  return local.slice(root.length + 1);
+}

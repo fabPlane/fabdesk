@@ -321,7 +321,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
       headers: {
         "content-type": image.contentType,
         "content-length": String(body.byteLength),
-        "cache-control": fallback ? "private, max-age=300" : "private, max-age=3600",
+        "cache-control": fallback ? "private, no-store" : "private, max-age=3600",
       },
     });
   });

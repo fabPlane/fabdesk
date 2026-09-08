@@ -110,6 +110,57 @@ describe("catalog preview proxy", () => {
     expect(isTrustedPreviewUrl("https://169.254.169.254/latest/meta-data")).toBe(false);
     expect(isTrustedPreviewUrl("https://127.0.0.1/preview.webp")).toBe(false);
     expect(isTrustedPreviewUrl("https://evil.example/preview.webp")).toBe(false);
+    expect(isTrustedPreviewUrl("https://github.com/im-tomu/fomu-hardware/raw/master/fomu.png")).toBe(false);
+    expect(isTrustedPreviewUrl("https://opengraph.github.com/repo/im-tomu/fomu-hardware")).toBe(false);
+    expect(isTrustedPreviewUrl("https://raw.githubusercontent.com/im-tomu/fomu-hardware/master/fomu.png")).toBe(false);
+    expect(isTrustedPreviewUrl("https://fabplane.com/open-catalog/im-tomu/fomu-hardware/preview.webp")).toBe(true);
+    expect(isTrustedPreviewUrl("https://www.fabplane.com/open-catalog/im-tomu/fomu-hardware/preview.webp")).toBe(true);
+  });
+
+  test("resolveCatalogPreview serves shipped catalog assets without fetching", async () => {
+    const prev = process.env["CATALOG_ASSET_DIR"];
+    delete process.env["CATALOG_ASSET_DIR"];
+    try {
+      const image = await resolveCatalogPreview(OPEN_CATALOG_SEED[0]!, {
+        cache: createPreviewCache(),
+        fetchImpl: async () => {
+          throw new Error("should not fetch GitHub or the CDN");
+        },
+      });
+      expect(image.contentType).toBe("image/webp");
+      expect(image.body.length).toBeGreaterThan(64);
+    } finally {
+      if (prev !== undefined) process.env["CATALOG_ASSET_DIR"] = prev;
+    }
+  });
+
+  test("hero role serves preview.webp, not the rehosted GitHub photo.webp", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "catalog-hero-"));
+    const dest = join(dir, "im-tomu", "fomu-hardware");
+    const previewPng = png;
+    const photoPng = Uint8Array.from(
+      atob("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEklEQVR42mP8z8BQz0AEYBxVAAAwKwI/aR9BXwAAAABJRU5ErkJggg=="),
+      (c) => c.charCodeAt(0),
+    );
+    await Bun.write(join(dest, "preview.webp"), previewPng);
+    await Bun.write(join(dest, "photo.webp"), photoPng);
+    const prev = process.env["CATALOG_ASSET_DIR"];
+    process.env["CATALOG_ASSET_DIR"] = dir;
+    try {
+      const project = OPEN_CATALOG_SEED.find((p) => p.id === "im-tomu/fomu-hardware")!;
+      const hero = await resolveCatalogPreview(project, {
+        cache: createPreviewCache(),
+        role: "hero",
+        fetchImpl: async () => {
+          throw new Error("should not fetch");
+        },
+      });
+      expect(hero.body.length).toBe(previewPng.length);
+      expect(hero.body.length).not.toBe(photoPng.length);
+    } finally {
+      if (prev === undefined) delete process.env["CATALOG_ASSET_DIR"];
+      else process.env["CATALOG_ASSET_DIR"] = prev;
+    }
   });
 
   test("resolveCatalogPreview reads CATALOG_ASSET_DIR before fetching", async () => {
@@ -143,6 +194,32 @@ describe("catalog preview proxy", () => {
     expect(previewCandidateUrls(project, "hero")[0]).toBe("https://images.fabplane.com/artifacts/open-catalog/tensorfleet/koyomi-lvds-hat/hero.webp");
   });
 
+  test("resolveCatalogPreview never fetches GitHub even when the catalog entry points there", async () => {
+    const prev = process.env["CATALOG_ASSET_DIR"];
+    process.env["CATALOG_ASSET_DIR"] = "";
+    const seen: string[] = [];
+    try {
+      const project = {
+        ...OPEN_CATALOG_SEED.find((p) => p.id === "im-tomu/fomu-hardware")!,
+        previewUrl: "https://opengraph.github.com/repo/im-tomu/fomu-hardware",
+        photoUrl: "https://raw.githubusercontent.com/im-tomu/fomu-hardware/master/fomu.png",
+        heroUrl: "https://github.com/im-tomu.png",
+      };
+      await resolveCatalogPreview(project, {
+        cache: createPreviewCache(),
+        fetchImpl: async (url) => {
+          seen.push(String(url));
+          return new Response("missing", { status: 404 });
+        },
+      });
+      expect(seen.every((url) => url.startsWith("https://images.fabplane.com/"))).toBe(true);
+      expect(seen.some((url) => url.includes("github"))).toBe(false);
+    } finally {
+      if (prev === undefined) delete process.env["CATALOG_ASSET_DIR"];
+      else process.env["CATALOG_ASSET_DIR"] = prev;
+    }
+  });
+
   test("resolveCatalogPreview aborts oversized bodies without buffering the rest", async () => {
     let pulled = 0;
     const chunk = new Uint8Array(64 * 1024).fill(0xff);
@@ -154,17 +231,24 @@ describe("catalog preview proxy", () => {
     });
     const { heroUrl: _hero, ...base } = OPEN_CATALOG_SEED[0]!;
     const project = { ...base, previewUrl: "https://images.fabplane.com/artifacts/open-catalog/tensorfleet/koyomi-lvds-hat/huge.png" };
-    const image = await resolveCatalogPreview(project, {
-      cache: createPreviewCache(),
-      fetchImpl: async (url) => {
-        if (String(url).includes("huge")) return new Response(stream);
-        return new Response(png, { headers: { "content-type": "image/png" } });
-      },
-    });
-    expect(image.contentType).toBe("image/png");
-    expect(image.body[0]).toBe(0x89);
-    expect(pulled).toBeGreaterThan(5_000_000);
-    expect(pulled).toBeLessThan(5_000_000 + 64 * 1024 * 3);
+    const prev = process.env["CATALOG_ASSET_DIR"];
+    process.env["CATALOG_ASSET_DIR"] = "";
+    try {
+      const image = await resolveCatalogPreview(project, {
+        cache: createPreviewCache(),
+        fetchImpl: async (url) => {
+          if (String(url).includes("huge")) return new Response(stream);
+          return new Response(png, { headers: { "content-type": "image/png" } });
+        },
+      });
+      expect(image.contentType).toBe("image/png");
+      expect(image.body[0]).toBe(0x89);
+      expect(pulled).toBeGreaterThan(5_000_000);
+      expect(pulled).toBeLessThan(5_000_000 + 64 * 1024 * 3);
+    } finally {
+      if (prev === undefined) delete process.env["CATALOG_ASSET_DIR"];
+      else process.env["CATALOG_ASSET_DIR"] = prev;
+    }
   });
 
   test("resolveCatalogPreview skips a declared Content-Length over the cap", async () => {
@@ -179,47 +263,91 @@ describe("catalog preview proxy", () => {
         cancelled = true;
       },
     });
-    const image = await resolveCatalogPreview(project, {
-      cache: createPreviewCache(),
-      fetchImpl: async (url) => {
-        if (String(url).includes("huge")) {
-          return new Response(stream, { headers: { "content-length": "9000000" } });
-        }
-        return new Response(png, { headers: { "content-type": "image/png" } });
-      },
-    });
-    expect(image.contentType).toBe("image/png");
-    expect(cancelled).toBe(true);
+    const prev = process.env["CATALOG_ASSET_DIR"];
+    process.env["CATALOG_ASSET_DIR"] = "";
+    try {
+      const image = await resolveCatalogPreview(project, {
+        cache: createPreviewCache(),
+        fetchImpl: async (url) => {
+          if (String(url).includes("huge")) {
+            return new Response(stream, { headers: { "content-length": "9000000" } });
+          }
+          return new Response(png, { headers: { "content-type": "image/png" } });
+        },
+      });
+      expect(image.contentType).toBe("image/png");
+      expect(cancelled).toBe(true);
+    } finally {
+      if (prev === undefined) delete process.env["CATALOG_ASSET_DIR"];
+      else process.env["CATALOG_ASSET_DIR"] = prev;
+    }
+  });
+
+  test("resolveCatalogPreview does not cache initials so a later CDN fetch can succeed", async () => {
+    const prev = process.env["CATALOG_ASSET_DIR"];
+    process.env["CATALOG_ASSET_DIR"] = "";
+    const project = OPEN_CATALOG_SEED[1]!;
+    const cache = createPreviewCache();
+    try {
+      const dead = await resolveCatalogPreview(project, {
+        cache,
+        fetchImpl: async () => new Response("Too many", { status: 200, headers: { "content-type": "image/png" } }),
+      });
+      expect(dead.contentType.startsWith("image/svg+xml")).toBe(true);
+
+      const live = await resolveCatalogPreview(project, {
+        cache,
+        fetchImpl: async (url) => {
+          expect(String(url).includes("github")).toBe(false);
+          if (String(url).includes("images.fabplane.com")) {
+            return new Response(png, { headers: { "content-type": "image/png" } });
+          }
+          return new Response("missing", { status: 404 });
+        },
+      });
+      expect(live.contentType).toBe("image/png");
+      expect(live.body[0]).toBe(0x89);
+    } finally {
+      if (prev === undefined) delete process.env["CATALOG_ASSET_DIR"];
+      else process.env["CATALOG_ASSET_DIR"] = prev;
+    }
   });
 
   test("resolveCatalogPreview caches a fetched image and falls back to SVG", async () => {
+    const prev = process.env["CATALOG_ASSET_DIR"];
+    process.env["CATALOG_ASSET_DIR"] = "";
     const project = OPEN_CATALOG_SEED[0]!;
     const cache = createPreviewCache();
-    const image = await resolveCatalogPreview(project, {
-      cache,
-      fetchImpl: async () => new Response(png, { headers: { "content-type": "text/plain" } }),
-    });
-    expect(image.contentType).toBe("image/png");
-    expect(image.body[0]).toBe(0x89);
+    try {
+      const image = await resolveCatalogPreview(project, {
+        cache,
+        fetchImpl: async () => new Response(png, { headers: { "content-type": "text/plain" } }),
+      });
+      expect(image.contentType).toBe("image/png");
+      expect(image.body[0]).toBe(0x89);
 
-    let fetches = 0;
-    const cached = await resolveCatalogPreview(project, {
-      cache,
-      fetchImpl: async () => {
-        fetches += 1;
-        throw new Error("should not refetch");
-      },
-    });
-    expect(fetches).toBe(0);
-    expect(cached.body).toBe(image.body);
+      let fetches = 0;
+      const cached = await resolveCatalogPreview(project, {
+        cache,
+        fetchImpl: async () => {
+          fetches += 1;
+          throw new Error("should not refetch");
+        },
+      });
+      expect(fetches).toBe(0);
+      expect(cached.body).toBe(image.body);
 
-    const dead = await resolveCatalogPreview(project, {
-      cache: createPreviewCache(),
-      fetchImpl: async () => new Response("Too many", { status: 200, headers: { "content-type": "image/png" } }),
-    });
-    expect(dead.contentType.startsWith("image/svg+xml")).toBe(true);
-    expect(new TextDecoder().decode(dead.body)).toContain("KL");
-    expect(fallbackPreviewSvg(project.name).contentType.startsWith("image/svg+xml")).toBe(true);
+      const dead = await resolveCatalogPreview(project, {
+        cache: createPreviewCache(),
+        fetchImpl: async () => new Response("Too many", { status: 200, headers: { "content-type": "image/png" } }),
+      });
+      expect(dead.contentType.startsWith("image/svg+xml")).toBe(true);
+      expect(new TextDecoder().decode(dead.body)).toContain("KL");
+      expect(fallbackPreviewSvg(project.name).contentType.startsWith("image/svg+xml")).toBe(true);
+    } finally {
+      if (prev === undefined) delete process.env["CATALOG_ASSET_DIR"];
+      else process.env["CATALOG_ASSET_DIR"] = prev;
+    }
   });
 });
 

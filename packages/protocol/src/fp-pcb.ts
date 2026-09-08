@@ -48,6 +48,9 @@ export const FpPcbCompileCounts = z.object({
   nets: z.number().default(0),
   footprintsAdded: z.number().default(0),
   footprintsPlaced: z.number().default(0),
+  /** A blank's free vias / cutouts drawn with the outline. */
+  viasAdded: z.number().default(0),
+  holesAdded: z.number().default(0),
 });
 
 export const FpPcbCompileResult = z.object({
@@ -56,6 +59,8 @@ export const FpPcbCompileResult = z.object({
   counts: FpPcbCompileCounts.default({
     components: 0,
     nets: 0,
+    viasAdded: 0,
+    holesAdded: 0,
     footprintsAdded: 0,
     footprintsPlaced: 0,
   }),
@@ -72,12 +77,30 @@ export const FpPcbCompileSource = z.object({
 });
 export type FpPcbCompileSource = z.infer<typeof FpPcbCompileSource>;
 
+/** Design rules in mm (`@fp-pcb/compile` `BoardRules`): only the fields given change on the board. */
+export const FpPcbBoardRules = z.object({
+  clearanceMm: z.number().optional(),
+  trackWidthMm: z.number().optional(),
+  viaDiameterMm: z.number().optional(),
+  viaDrillMm: z.number().optional(),
+});
+export type FpPcbBoardRules = z.infer<typeof FpPcbBoardRules>;
+
+/**
+ * Board setup for the compile (`@fp-pcb/compile` `BoardSpec`), mm, outline top-left at the origin
+ * with +y down (KiCad's frame). `vias` and `holes` describe a prefabricated blank: free vias the
+ * router may claim, and cutouts drawn on `Edge.Cuts`.
+ */
 export const FpPcbBoardSpec = z.object({
   outline: z.array(z.object({ x: z.number(), y: z.number() })).optional(),
   widthMm: z.number().optional(),
   heightMm: z.number().optional(),
   copperLayers: z.number().optional(),
+  rules: FpPcbBoardRules.optional(),
+  vias: z.array(z.object({ x: z.number(), y: z.number(), diameterMm: z.number().optional(), drillMm: z.number().optional() })).optional(),
+  holes: z.array(z.object({ x: z.number(), y: z.number(), diameterMm: z.number() })).optional(),
 });
+export type FpPcbBoardSpec = z.infer<typeof FpPcbBoardSpec>;
 
 /** Body of `POST /sessions/:id/compile`. */
 export const FpPcbCompileRequest = z.object({
@@ -161,7 +184,12 @@ export const FpPcbRouteUnrouted = z.object({ net: z.string(), from: z.object({ x
 
 export const FpPcbRouteSummary = z.object({
   tracks: z.number().default(0),
+  /** Vias the router added. */
   vias: z.number().default(0),
+  /** Free vias (a blank's) the routing claimed. */
+  claimedVias: z.number().default(0),
+  /** JS router preset: `default` or `laser-prefab`. */
+  preset: z.string().optional(),
   routed: z.number().default(0),
   routerRouted: z.number().default(0),
   total: z.number().default(0),
@@ -185,6 +213,8 @@ export const FpPcbRouteRequest = z.object({
       layers: z.array(z.number()).optional(),
       viaCost: z.number().optional(),
       effort: z.number().optional(),
+      /** JS router: `laser-prefab` changes layers only through the board's free vias and claims them. */
+      preset: z.enum(["default", "laser-prefab"]).optional(),
     })
     .optional(),
   freerouting: z.object({ passes: z.number().optional(), mode: z.string().optional() }).optional(),

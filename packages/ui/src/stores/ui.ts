@@ -64,6 +64,8 @@ export interface UiState {
   setBoardOpen: (open: boolean) => void;
   setActiveThread: (id: string | null) => void;
   setActiveProject: (id: string | null) => void;
+  /** Start a blank conversation in a project (or none). Skips the project picker. */
+  startNewChatInProject: (projectId: string | null) => void;
   setSidebarListTab: (tab: SidebarListTab) => void;
   setActiveOpenSourceId: (id: string | null) => void;
   setProjectPickerOpen: (open: boolean) => void;
@@ -81,6 +83,18 @@ export interface UiState {
 }
 
 export const DRAFT_KEY_NEW = "__new__";
+
+/** Shared patch for “new chat in this project” (sidebar + and the picker). */
+export function newChatInProjectState(projectId: string | null) {
+  return {
+    activeProjectId: projectId,
+    activeThreadId: null,
+    activeOpenSourceId: null,
+    orderFlowOpen: false,
+    projectPickerOpen: false,
+    sidebarListTab: "projects" as const,
+  };
+}
 
 export const useUiStore = create<UiState>()(
   persist(
@@ -111,6 +125,8 @@ export const useUiStore = create<UiState>()(
   setBoardOpen: (boardOpen) => set({ boardOpen }),
   setActiveThread: (activeThreadId) => set({ activeThreadId, ...(activeThreadId ? { activeOpenSourceId: null, orderFlowOpen: false } : {}) }),
   setActiveProject: (activeProjectId) => set({ activeProjectId }),
+  startNewChatInProject: (projectId) =>
+    set((s) => ({ ...newChatInProjectState(projectId), composerFocusNonce: s.composerFocusNonce + 1 })),
   setSidebarListTab: (sidebarListTab) => set({ sidebarListTab: normalizeSidebarListTab(sidebarListTab) }),
   setActiveOpenSourceId: (activeOpenSourceId) =>
     set({

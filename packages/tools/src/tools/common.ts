@@ -9,6 +9,10 @@ export function p(project: ProjectHandle, ...parts: string[]): string {
   return join(project.dir, ...parts);
 }
 
+export function fileUrl(path: string): string {
+  return `file://${path.split("/").map(encodeURIComponent).join("/")}`;
+}
+
 /** The project's design source, `circuit.netlist.json`, checked against the schema. */
 export async function loadNetlist(project: ProjectHandle): Promise<NetlistFile> {
   const path = p(project, PROJECT_FILES.netlistJson);

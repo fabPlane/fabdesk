@@ -43,7 +43,7 @@ mac:
   extraResources:
     - from: ../core/dist/darwin-${arch}/
       to: core
-      filter: ["fabdesk-core*"]
+      filter: ["fabdesk-core*", "open-catalog/**"]
 dmg:
   sign: false
 linux:
@@ -56,7 +56,7 @@ linux:
   extraResources:
     - from: ../core/dist/linux-${arch}/
       to: core
-      filter: ["fabdesk-core*"]
+      filter: ["fabdesk-core*", "open-catalog/**"]
 win:
   icon: build/icon.ico
   executableName: fabplane
@@ -66,7 +66,7 @@ win:
   extraResources:
     - from: ../core/dist/windows-${arch}/
       to: core
-      filter: ["fabdesk-core*"]
+      filter: ["fabdesk-core*", "open-catalog/**"]
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true

@@ -1,0 +1,153 @@
+{
+  "generatedAt": "2026-09-04T00:00:00.000Z",
+  "publicOrigin": "https://images.fabplane.com",
+  "urlPattern": "https://images.fabplane.com/artifacts/open-catalog/{ownerSlug}/{slug}/{preview|photo}.webp",
+  "r2Keys": {
+    "preview": "artifacts/open-catalog/{ownerSlug}/{slug}/preview.webp",
+    "photo": "artifacts/open-catalog/{ownerSlug}/{slug}/photo.webp"
+  },
+  "kicadCli": "not-available-in-generator; used upstream KiCad 3D renders when present",
+  "projects": [
+    {
+      "id": "tensorfleet/koyomi-lvds-hat",
+      "previewKind": "kicad-3d",
+      "note": "KiCad raytraced perspective + top from the compact production candidate.",
+      "photoBytes": 25956,
+      "previewBytes": 33544
+    },
+    {
+      "id": "greatscottgadgets/hackrf",
+      "previewKind": "photo-isometric",
+      "note": "Studio 2.5D generated from the rehosted board photo.",
+      "photoBytes": 130968,
+      "previewBytes": 77100
+    },
+    {
+      "id": "greatscottgadgets/greatfet",
+      "previewKind": "photo-isometric",
+      "note": "Studio 2.5D generated from the rehosted board photo.",
+      "photoBytes": 48618,
+      "previewBytes": 30884
+    },
+    {
+      "id": "blackmagic-debug/blackmagic",
+      "previewKind": "generated-isometric",
+      "note": "Hardware repo moved to Codeberg and has no committed board photo; generated 3D fallback. Logo rehosted as photo.webp.",
+      "photoBytes": 16570,
+      "previewBytes": 25108
+    },
+    {
+      "id": "dangerousprototypes/bus-pirate",
+      "previewKind": "photo-isometric",
+      "note": "Studio 2.5D generated from the rehosted board photo.",
+      "photoBytes": 59358,
+      "previewBytes": 43414
+    },
+    {
+      "id": "frameworkcomputer/inputmodule",
+      "previewKind": "photo-isometric",
+      "note": "Rehosted Framework InputModules one-key PCB photo (inputmodule repo is unpublished).",
+      "photoBytes": 21438,
+      "previewBytes": 27948
+    },
+    {
+      "id": "keyboardio/atreus",
+      "previewKind": "generated-isometric",
+      "note": "Atreus GitHub repo is unpublished from this environment; generated 42-key-ish PCB. Logo rehosted as photo.webp.",
+      "photoBytes": 9808,
+      "previewBytes": 24088
+    },
+    {
+      "id": "pierrechevalier83/ferris",
+      "previewKind": "photo-isometric",
+      "note": "Studio 2.5D generated from the rehosted board photo.",
+      "photoBytes": 64680,
+      "previewBytes": 37140
+    },
+    {
+      "id": "betrusted-io/precursor",
+      "previewKind": "generated-isometric",
+      "note": "Repo unpublished here; generated phone-sized PCB. Org avatar rehosted as photo.webp.",
+      "photoBytes": 9146,
+      "previewBytes": 22682
+    },
+    {
+      "id": "mntmn/reform",
+      "previewKind": "generated-isometric",
+      "note": "Repo unpublished here; generated laptop-motherboard PCB. Org avatar rehosted as photo.webp.",
+      "photoBytes": 6400,
+      "previewBytes": 24132
+    },
+    {
+      "id": "adafruit/adafruit-feather-rp2040-pcb",
+      "previewKind": "photo-isometric",
+      "note": "Studio 2.5D generated from the rehosted board photo.",
+      "photoBytes": 120402,
+      "previewBytes": 50682
+    },
+    {
+      "id": "sparkfun/pro-micro",
+      "previewKind": "photo-isometric",
+      "note": "Studio 2.5D generated from the rehosted board photo.",
+      "photoBytes": 34628,
+      "previewBytes": 25860
+    },
+    {
+      "id": "seeed-studio/oshw-xiao-series",
+      "previewKind": "photo-isometric",
+      "note": "Studio 2.5D generated from the rehosted board photo.",
+      "photoBytes": 27304,
+      "previewBytes": 23560
+    },
+    {
+      "id": "icebreaker-fpga/icebreaker",
+      "previewKind": "kicad-3d",
+      "note": "GitHub mirror is archived; used Codeberg Bitsy KiCad 3D render (icebreaker family) as primary. Main v1.0e has KiCad source but no committed render.",
+      "photoBytes": 101676,
+      "previewBytes": 64352
+    },
+    {
+      "id": "glasgowembedded/glasgow",
+      "previewKind": "kicad-3d",
+      "note": "Upstream KiCad 3D front render of revC3 plus PCBA photo.",
+      "photoBytes": 22704,
+      "previewBytes": 82672
+    },
+    {
+      "id": "im-tomu/fomu-hardware",
+      "previewKind": "generated-isometric",
+      "note": "fomu.png is the project mascot (rehosted as photo.webp). No KiCad 3D in-repo; generated isometric PCB is the primary.",
+      "photoBytes": 14960,
+      "previewBytes": 23872
+    },
+    {
+      "id": "flipperdevices/flipperzero-hardware",
+      "previewKind": "generated-isometric",
+      "note": "Hardware repo unpublished here; generated orange-mask PCB. Org avatar rehosted as photo.webp.",
+      "photoBytes": 15962,
+      "previewBytes": 26500
+    },
+    {
+      "id": "openmv/openmv",
+      "previewKind": "photo-isometric",
+      "note": "Studio 2.5D generated from the rehosted board photo.",
+      "photoBytes": 47136,
+      "previewBytes": 36008
+    },
+    {
+      "id": "raspberrypi/hats",
+      "previewKind": "generated-isometric",
+      "note": "Official hats repo has EEPROM diagrams only; generated HAT-shaped PCB. Org avatar rehosted as photo.webp.",
+      "photoBytes": 13760,
+      "previewBytes": 26214
+    },
+    {
+      "id": "foostan/crkbd",
+      "previewKind": "photo-isometric",
+      "note": "Studio 2.5D generated from the rehosted board photo.",
+      "photoBytes": 26430,
+      "previewBytes": 21058
+    }
+  ],
+  "errors": []
+}

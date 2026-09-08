@@ -5,13 +5,14 @@ import type { CoreInfo } from "../shared/core-info";
 import { CoreSupervisor } from "./core-supervisor";
 import { applyDesktopIdentity } from "./dev-profile";
 import { registerIpc } from "./ipc";
+import { installAppMenu } from "./app-menu";
 import { automationEnabled, startAppAutomation, type AppAutomation } from "./automation";
 import { localAuthEnabled } from "./local-mode";
 import { coreSentryEnv, flushSentry, initSentry, runSentryTest, sentryActive, sentryTestRequested, syncErrorReportingFromCore } from "./sentry";
 import { registerUpdateIpc, UpdateChecker } from "./updates";
 import { registerUpdateDownloadIpc, UpdateDownloader } from "./update-download";
 import { migrateLegacyUserData } from "./user-data";
-import { resolveWindowTheme } from "./window-theme";
+import { resolveWindowTheme, titleBarOverlayFor } from "./window-theme";
 
 // Name / userData / AUMID / WM_CLASS / FABDESK_HOME before any path read or the single-instance lock
 // (Electron keys the lock on userData). Packaged production identity is left untouched.
@@ -54,7 +55,12 @@ function createWindow(): BrowserWindow {
     show: false,
     backgroundColor: theme.backgroundColor,
     ...(icon ? { icon } : {}),
-    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
+    // macOS: traffic lights inset into the top bar. Windows: no native title bar; the top bar is the
+    // title bar and the controls overlay draws minimize/maximize/close over its right end (Claude-style).
+    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : process.platform === "win32" ? "hidden" : "default",
+    ...(process.platform === "win32" ? { titleBarOverlay: titleBarOverlayFor(theme.themeId) } : {}),
+    // Windows/Linux: no in-window menu bar; the top bar's menu button pops the same menu (app-menu.ts).
+    autoHideMenuBar: process.platform !== "darwin",
     trafficLightPosition: { x: 12, y: 10 },
     webPreferences: {
       preload: join(here, "../preload/index.cjs"),
@@ -86,7 +92,7 @@ function createWindow(): BrowserWindow {
   }
   win.once("ready-to-show", () => win.show());
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
+    if (/^(https?|file):\/\//i.test(url)) void shell.openExternal(url);
     return { action: "deny" };
   });
   win.webContents.on("will-navigate", (e, url) => {
@@ -122,6 +128,7 @@ if (!app.requestSingleInstanceLock()) {
       extraEnv: { ...coreSentryEnv(), ...(home ? { FABDESK_HOME: home } : {}) },
       ...(identity.devProfile ? { devProfile: true } : {}),
     });
+    installAppMenu();
     registerIpc(supervisor);
     // Dev / FABDESK_AUTOMATION=1: loopback bridge for the core's `app` MCP toolset (docs/app-automation.md).
     const sup = supervisor;

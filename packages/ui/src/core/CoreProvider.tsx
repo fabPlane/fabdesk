@@ -20,10 +20,16 @@ export interface HostAdapter {
   /** Dev-profile build (unpackaged, or FABDESK_DEV_PROFILE=1): staging/local sign-in is shown up front. */
   devBuild?: boolean;
   openExternal: (url: string) => Promise<void> | void;
+  /** Open a local file with the operating system's default application (Electron only). */
+  openPath?: (path: string) => Promise<void> | void;
   pickFile: (opts?: FilePickOptions) => Promise<string[]>;
   localAuthAllowed: () => Promise<boolean>;
   setLocalAuth?: (enabled: boolean) => Promise<void>;
   restartCore?: () => Promise<void>;
+  /** Pop the host's application menu at window coordinates (Electron on Windows/Linux). */
+  showAppMenu?: (pos: { x: number; y: number }) => Promise<void> | void;
+  /** Commands from the host's application menu (new-chat, palette, settings, sidebar, board). */
+  onMenu?: (cb: (command: string) => void) => () => void;
   openLogs?: () => Promise<void>;
   /** Last update-check result from the host (Electron main), if it performs checks. */
   updateStatus?: () => Promise<UpdateCheckResult | null>;
