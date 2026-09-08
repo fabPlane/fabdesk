@@ -58,3 +58,5 @@ out in Settings → Privacy. Reports never include prompts, board files, tokens 
 fabPlane signs in through fabplane.com using the OAuth device-authorization flow. For local
 development set `FABDESK_AUTH_MODE=local` (honored only in non-public channels or with a
 `.fabdesk-dev` marker in the fabPlane config dir).
+
+Backend handoff (running the daemon against the FabPlane PCB bridge, CI keys, open work): [docs/handoff-fab-pcb.md](docs/handoff-fab-pcb.md).
