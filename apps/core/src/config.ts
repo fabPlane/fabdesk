@@ -30,6 +30,15 @@ export function apiOrigin(): string {
   return process.env["FABPLANE_API_ORIGIN"] ?? "https://api.fabplane.com";
 }
 
+/** Where a locally started `@fp-pcb/bridge` listens by default. */
+export const DEFAULT_FP_PCB_BRIDGE_URL = "http://127.0.0.1:4020";
+
+/** `FABDESK_FP_PCB_BRIDGE_URL` > the `fpPcbBridgeUrl` setting > the default; trailing slash dropped. */
+export function fpPcbBridgeUrl(settingUrl: string | null | undefined, env: NodeJS.ProcessEnv = process.env): string {
+  const v = env["FABDESK_FP_PCB_BRIDGE_URL"]?.trim() || settingUrl?.trim() || DEFAULT_FP_PCB_BRIDGE_URL;
+  return v.replace(/\/+$/, "");
+}
+
 export function authModeFromEnv(): AuthMode | undefined {
   const v = process.env["FABDESK_AUTH_MODE"];
   return v === "local" || v === "fabplane" ? v : undefined;

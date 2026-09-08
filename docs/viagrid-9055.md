@@ -1,5 +1,37 @@
 # Viagrid 9055 in Fabdesk
 
+> **2026-09-08 — ported to the FabPlane PCB stack.** The tscircuit compiler and the in-process router this
+> document describes were removed (`docs/fab-pcb-migration.md`); the Viagrid feature now runs on the
+> `@fp-pcb` bridge. What changed:
+>
+> - `project_set_board { template: "viagrid-9055" }` only sets `fabdesk.json` (90 × 55 mm, 2 layers, the
+>   blank's rules). There is no `viagrid-9055.tsx` any more: **`circuit_build` draws the blank** —
+>   `viagrid9055BoardSpec()` (`packages/tools/src/templates/viagrid-9055.ts`) is sent as the compile job's
+>   `board` (outline, the 180 vias as *free vias* on no net, the 4 holes as `Edge.Cuts` circles, the rules
+>   applied to KiCad's design settings and `Default` net class) and replaces the netlist file's own `board`.
+>   The blank is drawn only when the board has no outline yet, so set the template before the first build
+>   (or delete `board.kicad_pcb`). Blank frame → board frame: `x + 45`, `27.5 − y` (`viagridToBoard`).
+> - **Routing**: `route_run` adds `settings.preset = "laser-prefab"` when the template is set; the bridge's
+>   JS router (`@fp-pcb/router`) picks tscircuit's `AutoroutingPipelineSolver8` and, whatever the preset,
+>   *claims* a free via that a route via lands on (`UpdateItems` sets its net, in the same commit as the
+>   tracks) instead of adding one. The result reports `claimedVias` and `preset`; `vias > 0` under
+>   `laser-prefab` is reported as an error ("OFF the blank").
+> - **`verify_viagrid`** reads vias and pads from the KiCad board (`circuit_query vias|pads`) instead of
+>   `circuit.routed.json`: every via must be a factory position, none stacked or added elsewhere, the whole
+>   blank present (`blank_incomplete`), pads 2.75 mm from the holes. Nets shorted through an unclaimed via
+>   are KiCad DRC's job now (an unnetted via against a track is a clearance error).
+> - **Placement is the open item**: the netlist has no positions, KiCad's autoplacer packs parts into the
+>   top-left corner (onto the top via row) and ignores vias. The agent docs say so; parts have to be moved
+>   in KiCad until the compile grows a placement input (see `docs/handoff-fab-pcb.md`, open work).
+> - Verified live on 2026-09-08 (4 parts): build 2.8 s with the blank drawn, route `laser-prefab` 5/5 in 0.6 s,
+>   1 factory via claimed, 0 added, `verify_viagrid` reading the KiCad board. KiCad DRC calls a claimed via that a
+>   track only crosses `via_dangling` (a warning) — that is an unused factory via under a trace, not a fault.
+> - `export_dxf`, the `verify_drc` cap, the Windows KiCad discovery and the agent-shim detection carried over
+>   unchanged; `applyRulesToKicadPro` is gone (rules go through the API now, for every project with
+>   `board.rules`, not only Viagrid).
+>
+> The rest of this document is the original write-up against the tscircuit stack, kept for the measurements.
+
 Date: 2026-09-03. Branch `viagrid-test` (from `main` @ `ec4952b`). Machine: Windows 11, dev app (`bun run dev`),
 local auth, capacity router, KiCad 10.0.6 and Claude Code 2.1.259 installed during the session.
 

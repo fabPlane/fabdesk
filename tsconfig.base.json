@@ -1,9 +1,8 @@
 {
   "extends": "./vendor/fabplane/tsconfig.base.json",
   "compilerOptions": {
-    "types": ["bun-types"],
-    "paths": {
-      "@tscircuit/fanout-solver": ["./packages/router/src/types-shim/fanout-solver.d.ts"]
-    }
+    "types": [
+      "bun-types"
+    ]
   }
 }

@@ -97,4 +97,4 @@ function json(status: number, body: unknown): Response {
 }
 
 export const INSTRUCTIONS =
-  "fabdesk designs PCBs from tscircuit source. Start with project_status. Only the core toolset is loaded; call load_toolset to enable project/circuit/route/kicad/verify/render/export/sim tools. Typical flow: project_write_file circuit.tsx → circuit_build → circuit_read_errors → route_run → verify_drc → render_board.";
+  "fabdesk designs PCBs from a netlist source (circuit.netlist.json) built into a KiCad board. Start with project_status. Only the core toolset is loaded; call load_toolset to enable project/circuit/route/kicad/verify/render/export/sim tools. Typical flow: project_write_file circuit.netlist.json → circuit_build → circuit_read_errors → route_run → verify_drc → render_board.";

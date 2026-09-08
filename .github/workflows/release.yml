@@ -57,18 +57,15 @@ jobs:
         with:
           submodules: false
 
-      # Read-only deploy keys for the private submodules (one secret, keys concatenated;
-      # each key's comment names its repo so ssh-agent maps it to that repo over https).
+      # Read-only deploy keys for the private submodules, fabplane.com and fab_pcb (one secret,
+      # keys concatenated; each key's comment names its repo so ssh-agent maps it to that repo over https).
       - uses: webfactory/ssh-agent@v0.9.1
         with:
           ssh-private-key: ${{ secrets.FABDESK_SUBMODULE_SSH_KEY }}
 
-      - name: Init fabplane submodule
-        run: git submodule update --init --depth 1 vendor/fabplane
+      - name: Init the fabplane and fab_pcb submodules
+        run: git submodule update --init --depth 1 vendor/fabplane vendor/fab_pcb
 
-      - name: Init js_autorouter submodule (internal channel only)
-        if: env.CHANNEL == 'internal'
-        run: git submodule update --init --depth 1 vendor/js_autorouter
 
       - uses: oven-sh/setup-bun@v2
         with:

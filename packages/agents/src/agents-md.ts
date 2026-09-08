@@ -15,15 +15,22 @@ export interface AgentDocsContext {
 const TEMPLATE_NOTES: Record<string, string> = {
   "viagrid-9055": `## Viagrid 9055 blank (board.template)
 This board is laid out on Opulo's Viagrid 9055: a prefabricated 90 × 55 mm two-layer blank with **180 factory
-vias** and four 3.5 mm mounting holes. Copper is removed afterwards to isolate nets, so:
-- Render \`<Viagrid9055Blank />\` inside \`<board>\` (\`import { Viagrid9055Blank } from "./viagrid-9055"\`). Do not edit viagrid-9055.tsx.
-- **Never place your own \`<via>\`.** Layer changes happen only through the factory vias; the router (laser-prefab
-  preset) chooses them and claims them for the net. A route result with vias "OFF the grid" is a failure.
+vias** (1.0 mm pad, 0.2 mm drill) and four 3.5 mm mounting holes. Copper is removed afterwards to isolate nets, so:
+- The build tool draws the blank itself from the template (outline, the vias as free vias, the holes, 0.2 mm
+  track and clearance rules); \`board\` in circuit.netlist.json is ignored while the template is set. Never
+  describe vias or holes in the netlist.
+- **Layer changes happen only through the factory vias.** The routing tool uses the laser-prefab preset, which
+  routes through them and claims them for the net. A route result that reports vias "OFF the blank" is a
+  failure: unroute and route again.
 - Factory vias sit in rows at y = ±20.5 (x = −35…35 step 2), columns at x = ±38 (y = −14…14 step 2), and two
-  clusters centred on x = ±19 (y = ±8, ±10, ±12 rows plus a small diamond at y = 0). Free areas for parts:
-  x in −12…12, or |x| > 26 with |y| < 14. Keep 2 mm from the mounting holes at (±38.75, ±18.25).
+  clusters centred on x = ±19 (y = ±8, ±10, ±12 rows plus a small diamond at y = 0) — blank frame, centre
+  origin, +y up; the board's KiCad frame is x + 45, 27.5 − y. Free areas for parts: x in −12…12, or |x| > 26
+  with |y| < 14. Keep 2 mm from the mounting holes at (±38.75, ±18.25).
+- The autoplacer packs parts into the top-left corner, onto the top via row. Check placement with the query
+  tool (components, vias) and \`verify_viagrid\`; a part on a via must be moved (in KiCad, or by unrouting and
+  rebuilding with a different board size is not an option — the blank is fixed).
 - Prefer 0805 or larger SMD parts and 0.2 mm traces (blank rules: track 0.2 mm, clearance 0.2 mm).
-- After routing run \`verify_viagrid\`; fix placement in circuit.tsx and re-route until it passes.`,
+- After routing run \`verify_viagrid\`, then DRC; \`export_dxf\` writes the copper-removal artwork.`,
 };
 
 export const USER_START = "<!-- fabdesk:user-start -->";
@@ -76,23 +83,43 @@ ${sketches}
 ## File contract
 | Path | Owner | Notes |
 | --- | --- | --- |
-| \`fabdesk.json\` | fabdesk | Project manifest. Never edit. |
-| \`circuit.tsx\` | **you** | tscircuit source: the single file you write. Components, footprints, nets, placement hints. |
-| \`circuit.json\` | \`${mcp}\` | Circuit JSON produced by the build tool. Never edit; rebuild instead. |
-| \`circuit.routed.json\` | \`${mcp}\` | Output of the router. Never edit. |
-| \`board.kicad_pcb\`, \`board.kicad_sch\`, \`board.kicad_pro\` | \`${mcp}\` | Generated KiCad files. Never hand-edit; regenerate. |
+| \`fabdesk.json\` | fabdesk | Project manifest. Never edit; use the board-settings tool. |
+| \`circuit.netlist.json\` | **you** | The design source: the single file you write (schema below). |
+| \`board.kicad_pcb\`, \`board.kicad_pro\` | \`${mcp}\` | The KiCad board the build tool writes and the routing tool edits. Never hand-edit. |
 | \`sketches/\` | user | Input drawings and photos (read-only). |
-| \`renders/\` | \`${mcp}\` | PNG/SVG renders of the board and schematic. |
-| \`reports/\` | \`${mcp}\` | \`drc.json\`, \`erc.json\`, \`checks.json\`, \`spice.json\` from the check tools. |
-| \`exports/\` | \`${mcp}\` | Gerbers, BOM, pick-and-place. |
+| \`renders/\` | \`${mcp}\` | PNG/SVG renders of the board. |
+| \`reports/\` | \`${mcp}\` | \`build.json\`, \`drc.json\`, \`erc.json\`, \`spice.json\` from the tools. |
+| \`exports/\` | \`${mcp}\` | Gerbers, BOM, pick-and-place, netlists. |
 | \`AGENTS.md\`, \`CLAUDE.md\` | fabdesk | Regenerated per run except the user section. |
 
+## circuit.netlist.json
+\`\`\`json
+{
+  "netlist": {
+    "components": [
+      { "ref": "R1", "value": "1k", "footprint": "Resistor_SMD:R_0402_1005Metric" },
+      { "ref": "D1", "value": "RED", "footprint": "LED_SMD:LED_0603_1608Metric", "fields": { "MPN": "..." } }
+    ],
+    "nets": [
+      { "name": "VCC", "nodes": [{ "ref": "R1", "pin": "1" }] },
+      { "name": "N1", "nodes": [{ "ref": "R1", "pin": "2" }, { "ref": "D1", "pin": "1" }] },
+      { "name": "GND", "nodes": [{ "ref": "D1", "pin": "2" }] }
+    ]
+  },
+  "board": { "widthMm": ${ctx.board.widthMm ?? 40}, "heightMm": ${ctx.board.heightMm ?? 30} }
+}
+\`\`\`
+- \`footprint\` is a KiCad library id (\`Library:Name\`). Find real ones with the footprint search tool; never invent names.
+- Every pin that carries a signal appears in exactly one net; a pin listed nowhere is left unconnected.
+- Reference prefixes matter: R/C/L/V/I/D are simulated by value; everything else is placed and routed only.
+- Keep values explicit (\`"4.7k"\`, \`"100nF"\`, \`"3.3V"\`).
+
 ## Workflow
-1. Read the sketches and the prompt; read \`circuit.tsx\` if it exists.
-2. Write or edit \`circuit.tsx\` (valid tscircuit; keep footprints and net names explicit).
+1. Read the sketches and the prompt; read \`circuit.netlist.json\` if it exists.
+2. Write or edit \`circuit.netlist.json\`.
 3. Build with the \`${mcp}\` build tool; fix every error and rebuild until it passes.
-4. Route with the routing tool, then convert to KiCad.
-5. Run DRC/ERC; fix the source (not the generated files) and repeat from step 3 while anything fails.
+4. Route with the routing tool.
+5. Run DRC; fix the source (not the generated files) and repeat from step 3 while anything fails.
 6. Render, then summarise what the board does, the parts used and any open issues. Render tools attach
    images directly in chat and return a \`fileUrl\` / \`url\` field. When the user asks for links, give
    those browser-openable \`file://\` URLs as plain text.
@@ -100,8 +127,8 @@ ${sketches}
 Work through the \`${mcp}\` tools: they are the only tools guaranteed to be available. Shell commands
 (Bash, PowerShell, python, node) may be blocked by the permission mode and cannot be approved during a run;
 if one is refused, do not retry it, use a \`${mcp}\` tool instead (project_read_file, circuit_query,
-route_status, ...). \`circuit.json\`, \`circuit.routed.json\`, \`board.kicad_*\` and \`reports/\` are outputs
-of earlier runs, not inputs: start from \`circuit.tsx\` and rebuild rather than reading old results.
+route_status, ...). \`board.kicad_*\` and \`reports/\` are outputs of earlier runs, not inputs: start from
+\`circuit.netlist.json\` and rebuild rather than reading old results.
 
 Do not run \`git\`, install packages, or touch files outside this directory unless the prompt asks for it.
 

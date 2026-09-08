@@ -2,95 +2,122 @@
  * What the daemon provides to tool handlers. Structural mirrors of the sibling package APIs so
  * `@fabdesk/tools` depends only on `@fabdesk/protocol` and can be exercised with mocks.
  * `apps/core/src/services.ts` implements this with the real packages.
+ *
+ * The design lives in KiCad: `DesignService` talks to a FabPlane PCB bridge (one `kicad-cli
+ * api-server` per project) for building, querying, routing and library search; `KicadService`
+ * runs the fork `kicad-cli` for DRC, renders and exports; `SimService` reads the netlist source.
  */
-import type {
-  CoreEvent,
-  Principal,
-  RouteRequest,
-  RouteResult,
-  RouterWorkerMessage,
-  Settings,
-  SimplifiedPcbTrace,
-  SimpleRouteJson,
-} from "@fabdesk/protocol";
+import type { CoreEvent, FpPcbBoardSpec, NetlistFile, Principal, RouteResult, Settings } from "@fabdesk/protocol";
 import type { ProjectHandle } from "./registry";
 
-export type CircuitJson = unknown[];
+export type BuildError = { message: string; line?: number; column?: number; file?: string; type?: string };
 
-export type ExtractSrjOptions = {
-  minTraceWidth?: number;
-  rules?: { clearanceMm?: number; viaDrillMm?: number; viaDiameterMm?: number } | undefined;
-  existingCopper?: "obstacles" | "omit";
-  copperPours?: "polygon" | "omit";
+export type BuildOptions = {
+  projectDir: string;
+  /** Source file relative to the project; default `circuit.netlist.json`. */
+  entrypoint?: string;
+  /** Replaces the netlist file's `board` for this build (a template's blank, the manifest's rules). */
+  board?: FpPcbBoardSpec;
+  signal?: AbortSignal;
+  /** Stage progress from the compile job; tools map it into their own range. */
+  progress?: (fraction: number, note?: string) => void;
 };
 
-export type ExtractedSrj = {
-  srj: SimpleRouteJson;
-  connectionMap: Record<string, string>;
-  /** Pre-routed copper folded into the obstacles; absent from producers that do not track it. */
-  copper?: { traces: number; vias: number; pours: number; obstacles: number; unowned: number };
-  extractMs?: number;
+export type BuildCounts = { components: number; nets: number; footprintsAdded: number; footprintsPlaced: number; viasAdded?: number; holesAdded?: number };
+
+export type BuildResult = {
+  ok: boolean;
+  errors: BuildError[];
+  warnings: BuildError[];
+  counts: BuildCounts;
+  durationMs: number;
+  /** Board revision the bridge reported after the compile. */
+  revision?: number;
+};
+
+export type DesignSelect = "components" | "nets" | "pads" | "vias" | "tracks" | "unrouted";
+export type DesignRow = Record<string, unknown>;
+
+export type RouteJobOptions = {
+  router: "capacity" | "freerouting";
+  /** Only these nets; default every unrouted connection. */
+  nets?: string[];
+  maxTimeMs?: number;
+  refillZones?: boolean;
+  settings?: Record<string, unknown>;
+};
+
+export type RouteProgress = {
+  state: string;
+  log: string[];
+  phase?: string;
+  message?: string;
+  pass?: number;
+  routed?: number;
+  total?: number;
+};
+
+export type RouteSummary = {
+  tracks: number;
+  /** Vias the router added. */
+  vias: number;
+  /** Free vias (a blank's) the routing claimed instead of adding its own. */
+  claimedVias: number;
+  /** JS router preset: `default` or `laser-prefab`. */
+  preset?: string;
+  routed: number;
+  total: number;
+  trackLengthNm: number;
+  elapsedMs: number;
+  wallMs: number;
+  timedOut: boolean;
+  message: string;
+  unrouted: Array<{ net: string; from: { x: number; y: number }; to: { x: number; y: number } }>;
+  log: string[];
 };
 
 export type ComponentScope = {
   components: string[];
   missing: string[];
-  connections: string[];
   nets: string[];
-  excluded: Array<{ net: string; connection: string; reason: string }>;
-  ports: Record<string, number>;
+  excluded: Array<{ net: string; reason: string }>;
+  /** Pads per component reference. */
+  pads: Record<string, number>;
 };
 
-/** Mirrors @fabdesk/kicad `KicadImportReport`; tools only read the fields named here. */
-export type KicadImportSummary = {
-  schema: 1;
-  importedAt: string;
-  source: { path: string; file: string; sha256: string; bytes: number; kicadVersion: number | null; netEncoding: string; footprintPlacement: string };
-  board: { widthMm: number | null; heightMm: number | null; outlinePoints: number };
-  layers: { copperCount: number; circuitJsonLayerCount: number | null; mapping: Array<{ kicad: string; circuitJson: string; index: number; type: string }> };
-  counts: Record<string, unknown>;
-  elements: Record<string, number>;
-  copper: Record<string, number>;
-  dropped: Array<{ kind: string; count: number; detail: string }>;
-  unsupported: Array<{ kind: string; count: number; detail: string }>;
-  designRules: { traceWidthMm?: number; clearanceMm?: number; viaDiameterMm?: number; viaDrillMm?: number } | null;
-  timings: { readMs: number; parseMs: number; convertMs: number; linkMs: number; totalMs: number };
-  warnings: string[];
-  failures: string[];
-} & Record<string, unknown>;
+export type FootprintHit = { libId: string; nickname: string; name: string; description: string };
 
-export type BuildError = { message: string; line?: number; column?: number; file?: string; type?: string };
-
-export type BuildResult = {
+export type DesignStatus = {
+  url: string;
   ok: boolean;
-  circuitJson: CircuitJson;
-  errors: BuildError[];
-  warnings: BuildError[];
-  elementCounts: Record<string, number>;
-  durationMs: number;
+  reason?: string;
+  kicadCliExists?: boolean;
+  frontends?: string[];
 };
 
-export type CircuitSelect = "components" | "nets" | "ports" | "traces" | "errors";
+export interface DesignService {
+  /** Compile the project's netlist into `board.kicad_pcb` through the bridge. */
+  build(opts: BuildOptions): Promise<BuildResult>;
+  /** Rows describing the board as KiCad holds it. */
+  query(projectDir: string, select: DesignSelect, filter?: string): Promise<DesignRow[]>;
+  /** Autoroute on the bridge; resolves when the job ends. */
+  route(projectDir: string, opts: RouteJobOptions, hooks: { onProgress?: (p: RouteProgress) => void; signal?: AbortSignal }): Promise<RouteSummary>;
+  /** Cancel the running route job of a project (or every running one). */
+  cancelRoute(projectDir?: string): Promise<void>;
+  /** Delete tracks, arcs and vias — of the given nets, or all of them. */
+  unroute(projectDir: string, nets?: string[]): Promise<{ tracks: number; vias: number }>;
+  /** Nets attached to component references (repair scope). */
+  scope(projectDir: string, refs: string[], opts?: { excludePlaneNets?: boolean; excludeNets?: string[] }): Promise<ComponentScope>;
+  /** Footprints in the KiCad libraries the bridge's server can see. */
+  searchFootprints(query: string, limit: number): Promise<FootprintHit[]>;
+  status(): Promise<DesignStatus>;
+  /** Drop the project's session (project closed or deleted). */
+  release(projectDir: string): Promise<void>;
+}
 
 /** Resolved kicad-cli binary (mirrors @fabdesk/kicad KicadCli). */
 export type KicadCli = { path: string; version: string };
 export type BoardView = "top" | "bottom" | "perspective" | "side";
-
-export interface TscircuitService {
-  buildCircuit(opts: { projectDir: string; entrypoint?: string; cacheDir?: string; signal?: AbortSignal }): Promise<BuildResult>;
-  runChecks(circuitJson: CircuitJson): Promise<{ errors: Array<{ type: string; message: string } & Record<string, unknown>> }>;
-  queryCircuit(circuitJson: CircuitJson, select: CircuitSelect, filter?: string): unknown[];
-  extractSimpleRouteJson(
-    circuitJson: CircuitJson,
-    opts?: ExtractSrjOptions,
-  ): ExtractedSrj;
-  /** Connections/nets attached to component references (repair scope); see @fabdesk/tscircuit. */
-  connectionsForComponents(circuitJson: CircuitJson, refs: string[], options?: { excludePlaneNets?: boolean; excludeNets?: string[] }): ComponentScope;
-  mergeTraces(circuitJson: CircuitJson, traces: SimplifiedPcbTrace[], connectionMap: Record<string, string>): CircuitJson;
-  unrouteCircuit(circuitJson: CircuitJson, connections?: string[]): CircuitJson;
-  schematicSvg(circuitJson: CircuitJson): string;
-  pcbSvg(circuitJson: CircuitJson): string;
-}
 
 export type DrcViolation = {
   rule: string;
@@ -113,15 +140,6 @@ export type GateResult = { pass: boolean; reasons: string[]; newWarningSignature
 export interface KicadService {
   /** settings → KICAD_CLI env → known locations; null when KiCad is not installed. */
   resolveCli(): Promise<KicadCli | null>;
-  convertToKicad(opts: {
-    circuitJson: CircuitJson;
-    projectDir: string;
-    projectName: string;
-    /** Board rules to write into the generated .kicad_pro (fabdesk.json board.rules). */
-    rules?: { traceWidthMm?: number; clearanceMm?: number; viaDrillMm?: number; viaDiameterMm?: number };
-  }): Promise<{ files: string[]; warnings: string[] }>;
-  /** `.kicad_pcb` -> circuit-json + report. Throws `KicadImportError` (with `.report`) in strict mode. */
-  importPcb(opts: { pcbPath: string; projectName?: string; strict?: boolean }): Promise<{ circuitJson: CircuitJson; report: KicadImportSummary }>;
   runDrc(cli: KicadCli, opts: { board: string; outFile: string; severity?: "error" | "all"; schematicParity?: boolean; signal?: AbortSignal }): Promise<DrcReport>;
   runErc(cli: KicadCli, opts: { schematic: string; outFile: string; severity?: "error" | "all"; signal?: AbortSignal }): Promise<ErcReport>;
   gate(drc: DrcReport, erc: ErcReport | undefined, allowedWarningSignatures: string[]): GateResult;
@@ -139,22 +157,15 @@ export interface KicadService {
   exportBom(cli: KicadCli, opts: { schematic: string; output: string; signal?: AbortSignal }): Promise<{ paths: string[] }>;
   exportNetlist(cli: KicadCli, opts: { schematic: string; output: string; format: "kicadsexpr" | "spice"; signal?: AbortSignal }): Promise<{ paths: string[] }>;
   exportSchematicSvg(cli: KicadCli, opts: { schematic: string; outDir: string; signal?: AbortSignal }): Promise<{ paths: string[] }>;
-}
-
-export type RouterProbe = { id: string; present: boolean; ready: boolean; version?: string; detail: string };
-
-export interface RouterService {
-  route(request: RouteRequest, opts: { onMessage(m: RouterWorkerMessage): void; signal?: AbortSignal }): Promise<RouteResult>;
-  cancel(runId?: string): void;
-  available(): Promise<RouterProbe[]>;
+  exportPcbSvg(cli: KicadCli, opts: { board: string; output: string; layers?: string[]; signal?: AbortSignal }): Promise<{ paths: string[] }>;
 }
 
 export type SimAnalysis = { type: "op" } | { type: "tran"; stopS: number; stepS?: number } | { type: "ac"; startHz: number; stopHz: number; points?: number };
 export type SimResult = { engine: string; analysis: string; columns: string[]; rows: number[][]; notes?: string[]; durationMs: number };
 
 export interface SimService {
-  spiceNetlist(circuitJson: CircuitJson): string;
-  runSimulation(opts: { circuitJson: CircuitJson; analysis: SimAnalysis; engine?: "spicey" | "ngspice"; ngspicePath?: string; signal?: AbortSignal }): Promise<SimResult>;
+  spiceNetlist(netlist: NetlistFile): string;
+  runSimulation(opts: { netlist: NetlistFile; analysis: SimAnalysis; engine?: "spicey" | "ngspice"; ngspicePath?: string; signal?: AbortSignal }): Promise<SimResult>;
   findNgspice(explicit?: string | null): Promise<string | null>;
 }
 
@@ -212,9 +223,8 @@ export interface CoreServices {
   projects: ProjectResolver;
   bus: EventBusLike;
   routeRuns: RouteRunStore;
-  tscircuit: TscircuitService;
+  design: DesignService;
   kicad: KicadService;
-  router: RouterService;
   sim: SimService;
   principal(): Principal | null;
   /** Optional: override fetch (tests, offline). */

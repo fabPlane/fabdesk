@@ -3,19 +3,18 @@ import { z } from "zod/v4";
 import { PROJECT_FILES, writeAtomic } from "../fs";
 import { defineTool, ToolError } from "../registry";
 import type { SimAnalysis } from "../services";
-import { loadCircuitJson, ok, p, table, writeReport } from "./common";
+import { loadNetlist, ok, p, table, writeReport } from "./common";
 
 export const sim_spice_netlist = defineTool({
   name: "sim_spice_netlist",
   toolset: "sim",
   title: "Generate SPICE netlist",
-  description: "Generate a SPICE netlist from the built circuit (circuit-json-to-spice), save it to exports/circuit.cir and return it. Passive components and sources are supported; ICs without models are omitted.",
+  description: "Generate a SPICE netlist from circuit.netlist.json (R/C/L by value, V/I sources, diodes with a default model), save it to exports/circuit.cir and return it. ICs without models are omitted with a note.",
   inputSchema: {},
   annotations: { readOnlyHint: true, idempotentHint: true },
   handler: async (_args, ctx) => {
     const project = ctx.requireProject();
-    const { circuitJson } = await loadCircuitJson(project);
-    const netlist = ctx.services.sim.spiceNetlist(circuitJson);
+    const netlist = ctx.services.sim.spiceNetlist(await loadNetlist(project));
     const output = p(project, PROJECT_FILES.exports, "circuit.cir");
     await writeAtomic(output, netlist);
     return ok(`SPICE netlist (${PROJECT_FILES.exports}/circuit.cir):\n\`\`\`\n${netlist}\n\`\`\``, { path: output, netlist });
@@ -27,7 +26,7 @@ export const sim_run = defineTool({
   toolset: "sim",
   title: "Run SPICE simulation",
   description:
-    "Simulate the built circuit: analysis op (DC operating point), tran (transient; needs stopS, optional stepS) or ac (needs startHz/stopHz). Engine spicey (bundled, default) or ngspice (needs ngspice installed or KiCad's bundled copy). Writes reports/spice.json and returns a table of node voltages / branch currents (first rows for tran/ac).",
+    "Simulate circuit.netlist.json: analysis op (DC operating point), tran (transient; needs stopS, optional stepS) or ac (needs startHz/stopHz). Engine spicey (bundled, default) or ngspice (needs ngspice installed or KiCad's bundled copy). Writes reports/spice.json and returns a table of node voltages / branch currents (first rows for tran/ac).",
   inputSchema: {
     analysis: z.enum(["op", "tran", "ac"]).default("op"),
     engine: z.enum(["spicey", "ngspice"]).default("spicey"),
@@ -42,7 +41,7 @@ export const sim_run = defineTool({
   longRunning: true,
   handler: async ({ analysis, engine, stopS, stepS, startHz, stopHz, points, limit }, ctx) => {
     const project = ctx.requireProject();
-    const { circuitJson } = await loadCircuitJson(project);
+    const netlist = await loadNetlist(project);
     let an: SimAnalysis;
     if (analysis === "op") an = { type: "op" };
     else if (analysis === "tran") {
@@ -59,7 +58,7 @@ export const sim_run = defineTool({
       ngspicePath = found;
     }
     ctx.progress(0.2, `running ${analysis} (${engine})`);
-    const result = await ctx.services.sim.runSimulation({ circuitJson, analysis: an, engine, ...(ngspicePath ? { ngspicePath } : {}), signal: ctx.signal });
+    const result = await ctx.services.sim.runSimulation({ netlist, analysis: an, engine, ...(ngspicePath ? { ngspicePath } : {}), signal: ctx.signal });
     await writeReport(project, "spice", { at: new Date().toISOString(), ...result });
     ctx.progress(1, "done");
     const rows = result.rows.slice(0, limit).map((r) => Object.fromEntries(result.columns.map((c, i) => [c, fmt(r[i])])));

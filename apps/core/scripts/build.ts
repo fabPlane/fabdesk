@@ -3,8 +3,6 @@
  * Compile fabdesk-core with `bun build --compile`.
  *   bun run scripts/build.ts [--only bun-darwin-arm64] [--channel public|internal] [--all]
  * Output: apps/core/dist/<os>-<arch>/fabdesk-core[.exe]
- * The router worker is an extra entrypoint so `new Worker(new URL("./worker/router-worker.ts", import.meta.url))`
- * resolves inside the single-file executable.
  */
 import { fileURLToPath } from "node:url";
 import { cp, mkdir, rm } from "node:fs/promises";
@@ -46,10 +44,6 @@ for (const t of targets) if (!TARGETS.includes(t)) throw new Error(`unknown targ
 const coreDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(coreDir, "../..");
 const entry = join(coreDir, "src/main.ts");
-const workerRel = "packages/router/src/worker/router-worker.ts";
-const worker = join(repoRoot, workerRel);
-/** Extra entrypoints are embedded at /$bunfs/root/<path relative to --root> with a .js extension. */
-const embeddedWorker = `/$bunfs/root/${workerRel.replace(/\.ts$/, ".js")}`;
 
 for (const target of targets) {
   const [, os, arch] = target.split("-");
@@ -68,8 +62,6 @@ for (const target of targets) {
     "--define",
     `process.env.FABDESK_CHANNEL=${JSON.stringify(chan)}`,
     "--define",
-    `FABDESK_ROUTER_WORKER=${JSON.stringify(embeddedWorker)}`,
-    "--define",
     "FABDESK_COMPILED=true",
     "--define",
     `FABDESK_SENTRY_RELEASE=${JSON.stringify(sentryRelease)}`,
@@ -77,10 +69,8 @@ for (const target of targets) {
     ...(sentryEnvironment ? ["--define", `FABDESK_SENTRY_ENVIRONMENT=${JSON.stringify(sentryEnvironment)}`] : []),
     "--root",
     repoRoot,
-    ...(chan === "public" ? ["--external", "@fabdesk/router-freerouting", "--external", "@tensorfleet/js-autorouter"] : []),
     ...(os === "windows" ? ["--windows-hide-console"] : []),
     entry,
-    worker,
     "--outfile",
     outfile,
   ];
@@ -93,16 +83,5 @@ for (const target of targets) {
   }
   const catalogAssets = join(coreDir, "assets/open-catalog");
   await cp(catalogAssets, join(outDir, "open-catalog"), { recursive: true });
-  if (chan === "public" && os !== "windows") {
-    // Guard: public binaries must not carry the internal router's code. The bare module specifier
-    // `@fabdesk/router-freerouting` legitimately survives as an (externalized) dynamic import string.
-    const text = Buffer.from(await Bun.file(outfile).arrayBuffer()).toString("latin1");
-    const markers = ["@tensorfleet/js-autorouter", "vendor/js_autorouter/src", "cinema-capture", "setRouteObserver"];
-    const hits = markers.filter((m) => text.includes(m));
-    if (hits.length > 0) {
-      process.stderr.write(`ERROR: public binary bundles js_autorouter code (markers: ${hits.join(", ")})\n`);
-      process.exit(1);
-    }
-  }
 }
 process.stderr.write("done\n");

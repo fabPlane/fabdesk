@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@fp-pcb/client": [
+        "../../vendor/fab_pcb/packages/client/dist/src/index.d.ts"
+      ],
+      "@fp-pcb/client/transport": [
+        "../../vendor/fab_pcb/packages/client/dist/src/transport/index.d.ts"
+      ],
+      "@fp-pcb/client/*": [
+        "../../vendor/fab_pcb/packages/client/dist/src/*.d.ts"
+      ],
+      "@fp-pcb/proto": [
+        "../../vendor/fab_pcb/packages/proto/dist/src/index.d.ts"
+      ],
+      "@fp-pcb/proto/gen/*": [
+        "../../vendor/fab_pcb/packages/proto/dist/src/gen/*.d.ts"
+      ]
+    }
+  }
+}

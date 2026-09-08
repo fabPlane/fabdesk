@@ -76,6 +76,13 @@ export async function exportSchematicSvg(cli: KicadCli, opts: { schematic: strin
   return { paths: await filesWrittenSince(opts.outDir, started, /\.svg$/i) };
 }
 
+/** The board as one SVG: the given layers (default copper, silkscreen and edge cuts), page-sized. */
+export async function exportPcbSvg(cli: KicadCli, opts: { board: string; output: string; layers?: string[]; signal?: AbortSignal }): Promise<Paths> {
+  const layers = opts.layers ?? ["F.Cu", "B.Cu", "F.SilkS", "B.SilkS", "Edge.Cuts"];
+  await runKicadCli(cli, ["pcb", "export", "svg", "--layers", layers.join(","), "--exclude-drawing-sheet", "-o", opts.output, opts.board], sig(opts));
+  return { paths: [opts.output] };
+}
+
 function withTrailingSep(dir: string): string {
   return dir.endsWith(sep) ? dir : dir + sep;
 }

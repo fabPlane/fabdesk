@@ -68,7 +68,7 @@ const QUERY_SECRET_RE = new RegExp(`([?&#](?:${SECRET_QUERY_KEYS.join("|")})=)[^
 const BEARER_RE = /\b(Bearer\s+)[A-Za-z0-9._~+/=-]+/g;
 /** Absolute paths to project files (they sit under the user's home): keep only the file name. */
 const PROJECT_FILE_RE =
-  /(?<![\w:./\\-])(?:[A-Za-z]:)?[\\/](?:[^\s"'`<>]*[\\/])?(fabdesk\.json|circuit(?:\.routed)?\.(?:tsx|json))\b/g;
+  /(?<![\w:./\\-])(?:[A-Za-z]:)?[\\/](?:[^\s"'`<>]*[\\/])?(fabdesk\.json|circuit(?:\.netlist|\.routed)?\.(?:tsx|json))\b/g;
 /** `extra` keys that could carry prompts, file contents or credentials are removed outright. */
 const SECRET_EXTRA_KEY_RE =
   /prompt|circuit|source|content|file|path|body|token|secret|password|cookie|auth|env/i;

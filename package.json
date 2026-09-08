@@ -14,18 +14,18 @@
     "vendor/fabplane/packages/auth",
     "vendor/fabplane/packages/storage",
     "vendor/fabplane/packages/pcb",
-    "vendor/js_autorouter"
+    "vendor/fab_pcb/packages/proto",
+    "vendor/fab_pcb/packages/client"
   ],
   "trustedDependencies": [
     "electron",
     "electron-builder",
-    "esbuild",
-    "@tscircuit/eval"
+    "esbuild"
   ],
   "scripts": {
     "dev": "bun run --cwd apps/desktop dev",
     "dev:core": "bun run --cwd apps/core dev",
-    "typecheck": "bun run --filter './apps/*' --filter './packages/*' typecheck",
+    "typecheck": "bun run fp-pcb:types && bun run --filter './apps/*' --filter './packages/*' typecheck",
     "test": "bun run --filter './apps/*' --filter './packages/*' test && bun test ./scripts/test",
     "build:core": "bun run --cwd apps/core build",
     "build:desktop": "bun run --cwd apps/desktop build",
@@ -39,7 +39,8 @@
     "vm:mac": "bash scripts/vm/mac.sh",
     "vm:linux": "bash scripts/vm/linux.sh",
     "vm:windows": "bash scripts/vm/windows.sh",
-    "pr:relevance": "bun run scripts/pr-relevance.ts"
+    "pr:relevance": "bun run scripts/pr-relevance.ts",
+    "fp-pcb:types": "tsc -b vendor/fab_pcb/packages/client"
   },
   "devDependencies": {
     "@types/bun": "1.2.21",

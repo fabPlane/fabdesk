@@ -2,9 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { importKicadPcb } from "@fabdesk/kicad";
-import { PROJECT_FILES, type KicadImportSummary } from "@fabdesk/tools";
-import { pcbSvg } from "@fabdesk/tscircuit";
+import { PROJECT_FILES } from "@fabdesk/tools";
 import { mockServices, tempProject } from "../../../packages/tools/test/mock-services";
 import { Store } from "../src/db";
 import { hydrateClonedBoard, listKicadPcbFiles, pickKicadPcb, remixCatalogProject } from "../src/opensource/remix";
@@ -59,25 +57,38 @@ describe("listKicadPcbFiles", () => {
 });
 
 describe("hydrateClonedBoard", () => {
-  test("imports a real .kicad_pcb into circuit.json and pcb.svg", async () => {
+  test("adopts a nested .kicad_pcb as board.kicad_pcb and renders pcb.svg when kicad-cli is there", async () => {
     const project = await tempProject("mini-board");
+    await mkdir(join(project.dir, "hardware"), { recursive: true });
+    await Bun.write(join(project.dir, "hardware", "mini.kicad_pcb"), await Bun.file(MINI_PCB).text());
+    const hydrated = await hydrateClonedBoard({
+      project,
+      files: [{ path: "hardware/mini.kicad_pcb" }],
+      resolveCli: async () => ({ path: "/mock/kicad-cli", version: "10.99.0" }),
+      boardStats: async () => ({ copperLayers: 4 }),
+      exportPcbSvg: async (_cli, o) => {
+        await Bun.write(o.output, "<svg xmlns='http://www.w3.org/2000/svg'/>");
+        return { paths: [o.output] };
+      },
+    });
+    expect(hydrated?.pcbPath).toBe("hardware/mini.kicad_pcb");
+    expect(await Bun.file(join(project.dir, PROJECT_FILES.boardPcb)).text()).toContain("(kicad_pcb");
+    expect(await Bun.file(join(project.dir, PROJECT_FILES.renders, "pcb.svg")).text()).toContain("<svg");
+    expect(project.manifest().board.layers).toBe(4);
+  });
+
+  test("without kicad-cli the board is still adopted, just not rendered", async () => {
+    const project = await tempProject("mini-board-nocli");
     await Bun.write(join(project.dir, "board.kicad_pcb"), await Bun.file(MINI_PCB).text());
-    await mkdir(join(project.dir, PROJECT_FILES.renders), { recursive: true });
     const hydrated = await hydrateClonedBoard({
       project,
       files: [{ path: "board.kicad_pcb" }],
-      importPcb: async (o) => {
-        const r = await importKicadPcb(o);
-        return { circuitJson: r.circuitJson, report: r.report as unknown as KicadImportSummary };
-      },
-      pcbSvg,
+      resolveCli: async () => null,
+      boardStats: async () => ({}),
+      exportPcbSvg: async () => ({ paths: [] }),
     });
     expect(hydrated?.pcbPath).toBe("board.kicad_pcb");
-    const circuit = JSON.parse(await Bun.file(join(project.dir, PROJECT_FILES.circuitJson)).text()) as unknown[];
-    expect(circuit.some((el) => (el as { type?: string }).type === "pcb_board")).toBe(true);
-    const svg = await Bun.file(join(project.dir, PROJECT_FILES.renders, "pcb.svg")).text();
-    expect(svg).toContain("<svg");
-    expect(project.manifest().board.layers).toBeGreaterThanOrEqual(2);
+    expect(await Bun.file(join(project.dir, PROJECT_FILES.renders, "pcb.svg")).exists()).toBe(false);
   });
 });
 
@@ -98,7 +109,7 @@ describe("remixCatalogProject", () => {
     store.close();
   });
 
-  test("lists the new project and writes circuit.json plus pcb.svg from the clone", async () => {
+  test("lists the new project and adopts the cloned board plus pcb.svg", async () => {
     const services = mockServices([]);
     const result = await remixCatalogProject({
       source: {
@@ -118,16 +129,14 @@ describe("remixCatalogProject", () => {
     expect(result.sourceId).toBe("tensorfleet/koyomi-lvds-hat");
     expect(result.pcbPath).toBe("koyomi-lvds-hat.kicad_pcb");
     expect(result.project.name).toBe("Koyomi LVDS HAT");
-    expect(result.project.files.some((f) => f.path === PROJECT_FILES.circuitJson)).toBe(true);
+    expect(result.project.files.some((f) => f.path === PROJECT_FILES.boardPcb)).toBe(true);
     expect(result.project.files.some((f) => f.path === `${PROJECT_FILES.renders}/pcb.svg`)).toBe(true);
     expect(result.project.files.some((f) => f.path === "koyomi-lvds-hat.kicad_pcb")).toBe(true);
 
     const listed = projects.summaries();
     expect(listed.some((p) => p.id === result.project.id)).toBe(true);
 
-    const circuit = JSON.parse(await Bun.file(join(result.project.path, PROJECT_FILES.circuitJson)).text()) as unknown[];
-    expect(Array.isArray(circuit)).toBe(true);
-    expect(circuit.length).toBeGreaterThan(0);
+    expect(await Bun.file(join(result.project.path, PROJECT_FILES.boardPcb)).text()).toContain("(kicad_pcb");
     const svg = await Bun.file(join(result.project.path, PROJECT_FILES.renders, "pcb.svg")).text();
     expect(svg).toContain("<svg");
   });

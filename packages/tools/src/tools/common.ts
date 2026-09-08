@@ -1,8 +1,9 @@
 /** Helpers shared by tool handlers. */
 import { join } from "node:path";
-import { PROJECT_FILES, exists, mtimeMs, readJsonOrNull, writeJson } from "../fs";
+import { NetlistFile } from "@fabdesk/protocol";
+import { PROJECT_FILES, exists, readJsonOrNull, writeJson } from "../fs";
 import { ToolError, type ProjectHandle, type ToolContext, type ToolOutput } from "../registry";
-import type { CircuitJson, KicadCli } from "../services";
+import type { KicadCli } from "../services";
 
 export function p(project: ProjectHandle, ...parts: string[]): string {
   return join(project.dir, ...parts);
@@ -12,28 +13,21 @@ export function fileUrl(path: string): string {
   return `file://${path.split("/").map(encodeURIComponent).join("/")}`;
 }
 
-/** Prefer `circuit.routed.json` when it is newer than `circuit.json`. */
-export async function loadCircuitJson(
-  project: ProjectHandle,
-  opts: { preferRouted?: boolean } = {},
-): Promise<{ circuitJson: CircuitJson; source: "circuit.json" | "circuit.routed.json" }> {
-  const built = p(project, PROJECT_FILES.circuitJson);
-  const routed = p(project, PROJECT_FILES.routedJson);
-  const [bm, rm] = await Promise.all([mtimeMs(built), mtimeMs(routed)]);
-  if ((opts.preferRouted ?? true) && rm !== null && (bm === null || rm >= bm)) {
-    const cj = await readJsonOrNull<CircuitJson>(routed);
-    if (cj) return { circuitJson: cj, source: "circuit.routed.json" };
-  }
-  const cj = await readJsonOrNull<CircuitJson>(built);
-  if (!cj) throw new ToolError("circuit.json not found: run circuit_build first", "precondition");
-  return { circuitJson: cj, source: "circuit.json" };
+/** The project's design source, `circuit.netlist.json`, checked against the schema. */
+export async function loadNetlist(project: ProjectHandle): Promise<NetlistFile> {
+  const path = p(project, PROJECT_FILES.netlistJson);
+  const raw = await readJsonOrNull<unknown>(path);
+  if (raw === null) throw new ToolError(`${PROJECT_FILES.netlistJson} not found: write the netlist first (project_write_file)`, "precondition");
+  const parsed = NetlistFile.safeParse(raw);
+  if (!parsed.success) throw new ToolError(`${PROJECT_FILES.netlistJson} is not a valid netlist: ${parsed.error.issues.map((i) => `${i.path.join("/")}: ${i.message}`).join("; ")}`, "precondition");
+  return parsed.data;
 }
 
 export async function requireKicad(ctx: ToolContext): Promise<KicadCli> {
   const cli = await ctx.services.kicad.resolveCli();
   if (!cli) {
     throw new ToolError(
-      "kicad-cli not found. Install KiCad 9/10 or set Settings.kicadCliPath / KICAD_CLI; kicad, verify, render and export tools need it.",
+      "kicad-cli not found. Install the FabPlane KiCad build or set Settings.kicadCliPath / KICAD_CLI; verify, render and export tools need it.",
       "unavailable",
     );
   }
@@ -42,13 +36,13 @@ export async function requireKicad(ctx: ToolContext): Promise<KicadCli> {
 
 export async function requireBoard(project: ProjectHandle): Promise<string> {
   const board = p(project, PROJECT_FILES.boardPcb);
-  if (!(await exists(board))) throw new ToolError("board.kicad_pcb not found: run kicad_convert first", "precondition");
+  if (!(await exists(board))) throw new ToolError("board.kicad_pcb not found: run circuit_build first", "precondition");
   return board;
 }
 
 export async function requireSchematic(project: ProjectHandle): Promise<string> {
   const sch = p(project, PROJECT_FILES.boardSch);
-  if (!(await exists(sch))) throw new ToolError("board.kicad_sch not found: run kicad_convert first", "precondition");
+  if (!(await exists(sch))) throw new ToolError("board.kicad_sch not found: a compiled project has no drawn schematic unless one was imported", "precondition");
   return sch;
 }
 

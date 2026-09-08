@@ -1,7 +1,7 @@
 # Migrating fabdesk off tscircuit onto FabPlane PCB (`fab_pcb`)
 
-Status: **design + a drafted `@fp-pcb/compile` skeleton; nothing in fabdesk's tscircuit
-path has moved.** Pinned to `fab_pcb` `757de90` (KiCad fork `280274cc3d`, tag
+Status: **tscircuit is gone from fabdesk (branch `retire-tscircuit`, §4.7); the compile package and bridge
+job are fab_pcb PRs #2/#3.** Pinned to `fab_pcb` `757de90` (KiCad fork `280274cc3d`, tag
 `fp-pcb/2026-09-07-upstream-be90a7e200`). §5 reviews the skeleton, §6 is the viability verdict.
 
 ## 0. The headline
@@ -210,14 +210,14 @@ because everything downstream in fabdesk reads the file.
 The earlier plan put `@tscircuit/eval` behind the seam first. That builds the hardest frontend
 before the apply path has ever run against a server. Reversed:
 
-| phase | work                                                                                                                                                                                                  | tscircuit present     |
-| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
-| 0     | **Bundled fork (decided, §3.2):** build/sign/notarise `kicad-cli` for macOS, Linux, Windows — add a Windows script to `kicad-patches/`. Ship `kicad-footprints` in the bundle. Run the §6 experiment. | yes                   |
-| 1     | `fab_pcb` PR 1: `@fp-pcb/compile` library — rename, the §5 fixes, JSON netlist frontend (`circuit.netlist.json` = `{ netlist, board }`), `FrontendResult.libraries`                                   | yes                   |
-| 2     | `fab_pcb` PR 2: `apply.kicad.test.ts` against the fork build, `bridge-job.ts`, bridge mount, `compile.kicad.test.ts`, fork patch so `ImportNetlist` publishes `DocumentChanged`                       | yes                   |
-| 3     | fabdesk: bridge client in `apps/core`; `buildCircuit` adapter = compile job → `importKicadPcb(board.kicad_pcb)` → `circuit.json` → `BuildResult`; fix the `boardIsStale` trap (§4.5)                  | yes                   |
-| 4     | `fab_pcb`: `tscircuit` frontend for existing `circuit.tsx` projects, emitting project-local `.pretty` for procedural footprints                                                                       | yes, inside `fab_pcb` |
-| 5     | Retire `packages/tscircuit`; delete `convert.ts`; routing, DRC, exports, sim, render onto jobs; then delete `import.ts`                                                                               | no                    |
+| phase | work                                                                                                                                                                                                                                                                                                     | tscircuit present     |
+| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
+| 0     | **Bundled fork (decided, §3.2):** build/sign/notarise `kicad-cli` for macOS, Linux, Windows — add a Windows script to `kicad-patches/`. Ship `kicad-footprints` in the bundle. Run the §6 experiment.                                                                                                    | yes                   |
+| 1     | `fab_pcb` PR 1: `@fp-pcb/compile` library — rename, the §5 fixes, JSON netlist frontend (`circuit.netlist.json` = `{ netlist, board }`), `FrontendResult.libraries`                                                                                                                                      | yes                   |
+| 2     | **landed on fab_pcb (stacked on #2)** — `@fp-pcb/compile/bridge-job` mounted at `/sessions/:id/compile`; live `apply.kicad.test.ts` + `compile.kicad.test.ts` against the fork; libraries registered from `FrontendResult.libraries`; A.8 inset. `DocumentChanged` fork patch still open (gaps doc G28). | yes                   |
+| 3     | **landed behind a flag (§4.6)** — bridge client in `apps/core`; `buildCircuit` adapter = compile job → `importKicadPcb(board.kicad_pcb)` → `circuit.json` → `BuildResult`; `boardIsStale` trap closed                                                                                                    | yes                   |
+| 4     | `fab_pcb`: `tscircuit` frontend for existing `circuit.tsx` projects, emitting project-local `.pretty` for procedural footprints                                                                                                                                                                          | yes, inside `fab_pcb` |
+| 5     | **landed (§4.7)** — `packages/tscircuit`, `router`, `router-freerouting`, `convert.ts`, `import.ts`, `vendor/js_autorouter` deleted; every tool KiCad-native through the bridge or the fork `kicad-cli`; sim/BOM/netlist export from the netlist source                                                  | no                    |
 
 Phase 3's `importKicadPcb` bridge is why `circuit.json` is not a blocker: it is exactly what
 `project_import_kicad` does today (927 LOC fabdesk owns) and emits the `source_*` elements routing
@@ -241,6 +241,99 @@ needs. Sim over an imported board is lossy until phase 5; accept it.
    with a placeholder `KICAD_REF`; no image is published at the pin. Publishing the image at
    `KICAD_COMMIT` and flipping that flag is `fab_pcb` infra work, and it is what makes
    `apply.kicad.test.ts` enforceable.
+
+### 4.6 Phase 3 status — landed in fabdesk 2026-09-07, behind a flag
+
+What is in the tree (all unit-tested against stubs; nothing has met a live bridge):
+
+- `packages/protocol/src/fp-pcb.ts` — the bridge wire types (health, sessions, compile
+  request/job/result, SSE event names), mirrored so core carries **no** `fab_pcb` workspace
+  package. The `/sessions/:id/compile` shape is §4.3's; it is a client of a contract until
+  `fab_pcb` PR 2 lands.
+- `apps/core/src/fp-pcb-bridge.ts` — `FpPcbBridgeClient`: session reuse by project path, compile
+  with SSE follow and a JSON fallback, cancel via `DELETE`, `ToolError` codes
+  (`unavailable` / `not_found` / `cancelled`) the tools already understand.
+- `apps/core/src/fp-pcb-compiler.ts` — `fpPcbBuildCircuit` behind `TscircuitService.buildCircuit`:
+  `circuit.netlist.json` → compile job (project created by the job when `board.kicad_pro` is
+  absent) → `board.kicad_pcb` → `importKicadPcb` → `circuit.json`, returning
+  `boardSource: "kicad"`. `chooseCompiler`: setting `compiler: "fp-pcb"` (env `FABDESK_COMPILER`)
+  prefers the new path when the project has a netlist; a `*.netlist.json` entrypoint forces it;
+  tsx-only projects keep tscircuit, so flipping the flag breaks nothing.
+- The §4.5.4 trap is closed: `BoardSettings.source` (`tscircuit` | `kicad`), `boardIsStale`
+  returns false for a KiCad-owned board, `kicad_convert` refuses to overwrite one, and
+  `circuit_build` records ownership on a successful build only.
+- Settings `compiler` and `fpPcbBridgeUrl` (env `FABDESK_FP_PCB_BRIDGE_URL`, default
+  `http://127.0.0.1:4020`). No settings UI yet; the env vars are the dev switch.
+
+Still open before the flag does anything end to end:
+
+1. ~~`fab_pcb` PR 2~~ — landed: the bridge answers `POST /sessions/:id/compile` (contract as §4.3; `done` carries `revision`).
+2. **Nothing spawns the bridge.** Dev runs it by hand from a `fab_pcb` checkout (not `vendor/`,
+   which has no `node_modules`). Bundling it is phase 0.
+3. **File-format compatibility — confirmed (§6.1).** Stock `kicad-cli` 10.0.4 fails to load the
+   fork-written board (`Failed to load board`, file version `20260831`); the fork's own CLI handles
+   it and produces the DRC JSON `runDrc` already parses. Constraint: with `compiler: fp-pcb`,
+   `kicadCliPath` **must** be the fork binary. Follow-up: a `doctor` / build warning when the
+   compiler is fp-pcb and the resolved `kicad-cli` is older than 10.99.
+4. ~~`importKicadPcb` strict on a fresh board~~ — verified (§6.1): 40 elements, 2 components, 4
+   pads, 2 routable nets, design rules from the `.kicad_pro`, no warnings.
+5. `packages/agents/src/agents-md.ts` still tells the agent to write `circuit.tsx`; netlist
+   authoring guidance is phase 4.
+
+### 4.7 Phase 5 — tscircuit removed (2026-09-07, branch `retire-tscircuit`)
+
+fabdesk's own packages carry no tscircuit-ecosystem dependency and no `circuit.json` contract.
+
+- **Removed:** `packages/tscircuit`, `packages/router`, `packages/router-freerouting`, the
+  `vendor/js_autorouter` submodule, `packages/kicad/src/{convert,import,net-names}.ts`,
+  `circuit-json-to-spice`, `circuit-to-svg`, the in-process bench (`bench route`, `/bench/route`),
+  `BoardSettings.source`, `Settings.compiler`, the `TscircuitService` and `RouterService` seams.
+- **Replaced by:** `DesignService` (`packages/tools/src/services.ts`) implemented in
+  `apps/core/src/fp-pcb-design.ts` on a per-project bridge session (`fp-pcb-session.ts`, typed
+  `@fp-pcb/client` over the bridge's WebSocket): build = compile job, route = route job,
+  query/unroute/scope/footprint search = client calls. DRC, ERC, renders, exports stay on the fork
+  `kicad-cli` (`packages/kicad`, plus a PCB SVG export). SPICE, BOM and the KiCad netlist export come
+  from `circuit.netlist.json` / the compile job's `.net`. The route cinema keeps working on job
+  progress (events, no geometry).
+- **Source of truth:** `circuit.netlist.json` (`NetlistFile` in `@fabdesk/protocol`, the
+  `@fp-pcb/compile` `netlist-json` frontend's format). New projects start with an empty one; the
+  agent guide (`packages/agents/src/agents-md.ts`) and the MCP prompts teach it.
+- **Vendored client typing:** `@fp-pcb/{proto,client}` are root workspaces; `bun run fp-pcb:types`
+  emits their declarations and `tsconfig.base.json` `paths` map to them, so fabdesk's stricter
+  compiler options do not re-check fab_pcb's sources.
+- **Still true:** nothing spawns the bridge (dev runs it by hand; bundling is phase 0), and with the
+  fork writing the board the `kicad-cli` fabdesk resolves must be the fork (§6.1). `verify_erc`,
+  `render_schematic_svg` and schematic parity only apply to imported KiCad projects — a compiled
+  netlist has no drawn schematic. The freerouting router stays internal-only at the tool layer.
+
+#### First end-to-end run — 2026-09-07
+
+fabdesk daemon (`retire-tscircuit`) → bridge (fab_pcb #3, fork `280274cc3d`) → fork `kicad-cli`, on a
+three-part board (2-pin header, 0603 resistor, 0603 LED; stock footprints via `KICAD10_FOOTPRINT_DIR`):
+
+| step                                            | result                                                                        |
+| ----------------------------------------------- | ----------------------------------------------------------------------------- |
+| `circuit_build`                                 | 3 footprints resolved, placed, saved — 3.6 s (compile job 1.8 s)              |
+| `route_run` (capacity = the bridge's JS router) | 3/3 in 64–121 ms, 21 tracks, applied as one commit                            |
+| `verify_drc` on the saved file                  | 0 errors, 0 unconnected, 2 silkscreen warnings (reference text near the edge) |
+| `render_board`, `render_pcb_svg`                | `renders/top.png`, `renders/pcb.svg`                                          |
+
+Three seams the run found, all fixed on the fabdesk side and worth a bridge follow-up:
+
+1. **The route job saves before routing, not after applying** (its save feeds the DSN export), so
+   the file lagged the session and DRC on the file disagreed with the ratsnest. `DesignService`
+   now saves after `route` and `unroute`. Bridge follow-up: a `save` flag on the route job like the
+   compile job has.
+2. **A session the compile job created a project in stays listed as bare** (`path: null`), so a
+   restarted daemon could not find it by path and spawned a second server on the same project.
+   fabdesk now adopts a bare session whose `GetProjectInfo` names this project. Bridge follow-up:
+   refresh `session.path` when a job creates or opens a project.
+3. **A session spawned on `board.kicad_pro` loads the project but opens no board.** fabdesk prefers
+   `board.kicad_pcb` as the session path and opens the board explicitly otherwise.
+
+Also found: Bun honours tsconfig `paths` at runtime, so the declaration mapping for
+`@fp-pcb/{proto,client}` lives in `apps/core/tsconfig.typecheck.json` (used by `tsc` only), not in
+the base config the daemon runs under.
 
 ## 5. Skeleton review — what was wrong and what PR 1 does about it
 
@@ -267,7 +360,7 @@ call the pipeline makes is exercised by `fab_pcb`'s own conformance suite. As a 
 bounded engineering cost with Windows as the open item. The prerequisite the earlier plan missed is **footprint libraries on headless servers**
 (§4.5.3) — without them a compile succeeds at validation and fails at every `addNewFootprint`.
 
-**Cheapest de-risking experiment (~1 hour, no Docker):** spawn the fork build with
+**The de-risking experiment — run 2026-09-07, results in §6.1.** As designed: spawn the fork build with
 `KICAD10_FOOTPRINT_DIR` pointing at the installed footprints, `newProject` in a temp dir, write a
 two-component `.net` (`R1` `Resistor_SMD:R_0402_1005Metric`, `D1` `LED_SMD:LED_0603_1608Metric`,
 two nets), then `importNetlist(dryRun)` → `importNetlist` → outline commit →
@@ -275,6 +368,57 @@ two nets), then `importNetlist(dryRun)` → `importNetlist` → outline commit �
 That confirms or refutes A.1, A.3, the `DocumentChanged` gap and the library dependency in one
 run, and it _is_ the body of `apply.kicad.test.ts`. Repeat inside the Docker image with the bridge
 in a sibling container to get the cold-start + provisioning number the hosted decision needs.
+
+### 6.1 Experiment results — 2026-09-07, fork `280274cc3d`, macOS
+
+Script: `packages/compile/bench/experiment.ts` on `fab_pcb` (`bun run experiment`). Bare
+`api-server`, no project, `KICAD10_FOOTPRINT_DIR` at the stock footprints.
+
+| step                                            | result                                                                                                                   | time                                        |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------- |
+| spawn bare `api-server` + connect               | ok                                                                                                                       | 0.4–0.5 s                                   |
+| `NewProject(<dir>/name.kicad_pro)` + open board | ok. An extension-less path is a _directory to create_; `currentBoard()` is empty afterwards — call `project.openBoard()` | 0.1–1.0 s                                   |
+| `ImportNetlist` dry run                         | 0 errors, 2 footprints resolved, board untouched                                                                         | 1.2–1.8 s cold (library load), 5–22 ms warm |
+| outline commit (20 × 10 mm)                     | revision 0 → 1                                                                                                           | 3 ms                                        |
+| `ImportNetlist`                                 | 2 footprints, 2 nets connected, revision → 2                                                                             | 1 ms                                        |
+| footprints after import                         | D1 (1.54, 0.80) mm, R1 (0.95, 3.08) mm — **spread from the origin, inside the outline** (A.3)                            | —                                           |
+| `AutoplaceFootprints(added, includeOffboard)`   | placed 2 → (1, 3), (1, 5) mm                                                                                             | 1 ms                                        |
+| DRC                                             | 2 unconnected (expected) + **2 `copper_edge_clearance`** + silk clipped by edge (A.8)                                    | 3 ms                                        |
+| `SaveDocument`                                  | `(kicad_pcb (version 20260831) …`                                                                                        | 22 ms                                       |
+| `applyNetlist` on a second fresh project        | identical: 2 added, 2 placed, no diagnostics                                                                             | 22 ms end to end                            |
+
+Library provisioning (A.7):
+
+| configuration                                | dry run                                                                                                                                                                               |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| no `KICAD10_FOOTPRINT_DIR`, no project table | 2 errors — `R1 footprint 'R_0402_1005Metric' not found in any libraries in the footprint library table.` then `Cannot add R1 (footprint 'Resistor_SMD:R_0402_1005Metric' not found).` |
+| project-local `fp-lib-table` only            | resolves                                                                                                                                                                              |
+
+Reading the fork-written board:
+
+| tool                                                 | outcome                                                                                                      |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| stock `kicad-cli` 10.0.4 `pcb drc`, `pcb export svg` | **`Failed to load board`, exit 3**                                                                           |
+| fork `kicad-cli` `pcb drc`, `pcb export svg`         | ok — 7 violations + 2 unconnected in the JSON `runDrc` parses; SVG plotted                                   |
+| fabdesk `importKicadPcb`, strict                     | ok — 40 elements, 2 `source_component`, 4 pads, 2 routable nets, design rules from `.kicad_pro`, no warnings |
+
+**Conclusions.**
+
+1. The apply order holds and A.1–A.5 are verified on a live server, not just reasoned. The report
+   text carries no severity; a project-local `fp-lib-table` is sufficient provisioning, so
+   `FrontendResult.libraries` → table row is the mechanism. §4.6 items 3 and 4 are settled.
+2. **Stock and fork do not mix.** Phase 3 works only with the fork binary doing DRC, render and
+   export too. Under the bundled-fork decision that is the natural single-binary shape; until the
+   bundle exists, dev sets `kicadCliPath` to the fork build.
+3. **A.8, new:** the legacy autoplacer packs footprints into the top-left corner and ignores the
+   copper-to-edge rule (0.5 mm required, 0.0 / 0.22 mm actual). A fresh compile therefore fails DRC
+   on edge clearance every time. The compile job must inset the placement region by the edge
+   clearance (shrink the outline it hands to the placer, or offset afterwards) before this is
+   agent-visible.
+4. `NewProject` wants the `.kicad_pro` path — fabdesk's adapter already passes it — and the job
+   must open the board explicitly afterwards.
+5. Not exercised: `DocumentChanged` publication after `ImportNetlist` (only the revision counter
+   was watched; it bumps 0 → 1 → 2 as expected).
 
 ## 7. Superseded
 

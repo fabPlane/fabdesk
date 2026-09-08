@@ -75,7 +75,7 @@ export function ThreadView() {
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
           <div className="text-xl font-semibold">What board are we building?</div>
           <div className="max-w-md text-sm text-muted">
-            Describe the circuit, attach a sketch, and the agent will write the tscircuit source, route it, run DRC
+            Describe the circuit, attach a sketch, and the agent will write the netlist, build the board, route it, run DRC
             and render it. Watch the board panel as it works.
           </div>
         </div>

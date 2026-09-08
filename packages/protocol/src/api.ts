@@ -187,6 +187,8 @@ export type DoctorReport = z.infer<typeof DoctorReport>;
 export const Settings = z.object({
   kicadCliPath: z.string().nullable().default(null),
   ngspicePath: z.string().nullable().default(null),
+  /** FabPlane PCB bridge origin, e.g. `http://127.0.0.1:4020`; null means the default. Env `FABDESK_FP_PCB_BRIDGE_URL` overrides. */
+  fpPcbBridgeUrl: z.string().nullable().default(null),
   router: z.enum(["capacity", "freerouting"]).default("capacity"),
   defaultAgent: AgentId.default("claude"),
   agents: z

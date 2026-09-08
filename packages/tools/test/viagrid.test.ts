@@ -1,10 +1,24 @@
 import { describe, expect, test } from "bun:test";
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
-import { VIAGRID_9055, VIAGRID_9055_VIAS, checkViagrid9055, createRegistry, isOnViagrid9055Via, viagrid9055Tsx } from "../src";
+import {
+  VIAGRID_9055,
+  VIAGRID_9055_HOLES,
+  VIAGRID_9055_VIAS,
+  boardToViagrid,
+  checkViagrid9055,
+  createRegistry,
+  isOnViagrid9055Via,
+  viagrid9055BoardSpec,
+  viagridToBoard,
+} from "../src";
 import { contextFactory, mockServices, tempProject } from "./mock-services";
 
-const via = (id: string, x: number, y: number, extra: Record<string, unknown> = {}) => ({ type: "pcb_via", pcb_via_id: id, x, y, outer_diameter: 0.6, hole_diameter: 0.3, from_layer: "top", to_layer: "bottom", layers: ["top", "bottom"], ...extra });
+/** A via in the board frame, from a blank-frame position. */
+const factoryVia = (x: number, y: number, net = "", id?: string) => {
+  const [bx, by] = viagridToBoard(x, y);
+  return { x: bx, y: by, net, ...(id ? { id } : {}) };
+};
+const allFactoryVias = (claimed: Array<[number, number, string]> = []) =>
+  VIAGRID_9055_VIAS.map(([x, y], i) => factoryVia(x, y, claimed.find(([cx, cy]) => cx === x && cy === y)?.[2] ?? "", `v${i}`));
 
 describe("Viagrid 9055 template", () => {
   test("the grid has 180 vias and the lookup matches only those positions", () => {
@@ -20,60 +34,66 @@ describe("Viagrid 9055 template", () => {
     expect(VIAGRID_9055_VIAS.filter(([x, y]) => x >= 13 && x <= 25 && Math.abs(y) < 14)).toHaveLength(39);
   });
 
-  test("the generated component marks every via assignable and stays valid JSX", () => {
-    const tsx = viagrid9055Tsx();
-    expect(tsx).toContain("netIsAssignable");
-    expect(tsx).toContain(`export const ${VIAGRID_9055.component}`);
-    expect(tsx).toContain('key={"vg" + i}');
-    expect(tsx).not.toContain("key={}");
+  test("the frames round-trip: blank centre/+y up <-> board top-left/+y down", () => {
+    expect(viagridToBoard(0, 0)).toEqual([45, 27.5]);
+    expect(viagridToBoard(-38, 20.5)).toEqual([7, 7]);
+    expect(viagridToBoard(38.75, -18.25)).toEqual([83.75, 45.75]);
+    expect(boardToViagrid(7, 7)).toEqual([-38, 20.5]);
+    for (const [x, y] of VIAGRID_9055_VIAS) expect(boardToViagrid(...viagridToBoard(x, y))).toEqual([x, y]);
   });
 
-  test("checkViagrid9055 accepts claimed factory vias and flags anything else", () => {
-    const ok = checkViagrid9055([via("pcb_via_0", 19, 0, { net_is_assignable: true, net_assigned: true }), via("pcb_via_1", 21, 0, { net_is_assignable: true })]);
+  test("the board spec carries the blank: outline, 180 free vias, 4 holes and the rules, all inside the outline", () => {
+    const spec = viagrid9055BoardSpec();
+    expect(spec).toMatchObject({ widthMm: 90, heightMm: 55, copperLayers: 2, rules: { clearanceMm: 0.2, trackWidthMm: 0.2, viaDiameterMm: 1, viaDrillMm: 0.2 } });
+    expect(spec.vias).toHaveLength(180);
+    expect(spec.holes).toHaveLength(VIAGRID_9055_HOLES.length);
+    for (const v of spec.vias!) {
+      expect(v.x).toBeGreaterThan(0);
+      expect(v.x).toBeLessThan(90);
+      expect(v.y).toBeGreaterThan(0);
+      expect(v.y).toBeLessThan(55);
+      expect(v).toMatchObject({ diameterMm: VIAGRID_9055.viaPadMm, drillMm: VIAGRID_9055.viaDrillMm });
+    }
+    expect(spec.holes![0]).toMatchObject({ diameterMm: 3.5 });
+  });
+
+  test("checkViagrid9055 accepts a complete blank with claimed vias and flags anything else", () => {
+    const ok = checkViagrid9055({ vias: allFactoryVias([[19, 0, "N1"]]), pads: [] });
     expect(ok.violations).toEqual([]);
-    expect(ok.vias).toEqual({ total: 2, factory: 2, claimed: 1, added: 0 });
+    expect(ok.vias).toEqual({ total: 180, factory: 180, claimed: 1, added: 0 });
 
-    const bad = checkViagrid9055([
-      via("pcb_via_0", 19, 0, { net_is_assignable: true }),
-      via("pcb_via_1", 19, 0), // stacked on the factory via instead of claiming it
-      via("pcb_via_2", 4.2, -1.1, { net_is_assignable: true }), // nowhere near the grid
-      { type: "pcb_smtpad", pcb_smtpad_id: "s1", x: -38, y: 18, width: 1, height: 1, layer: "top", shape: "rect" },
-    ]);
-    expect(bad.vias).toEqual({ total: 3, factory: 1, claimed: 0, added: 2 });
-    expect(bad.vias.added).toBe(2);
-    expect(bad.violations.map((v) => v.kind)).toEqual(["via_off_grid", "via_off_grid", "pad_near_hole"]);
-    expect(bad.violations[0]!.detail).toContain("without claiming");
-  });
-
-  test("checkViagrid9055 flags a factory via that two nets touch", () => {
-    const wire = (id: string, key: string, layer: string, pts: Array<[number, number]>) => ({
-      type: "pcb_trace",
-      pcb_trace_id: id,
-      subcircuit_connectivity_map_key: key,
-      route: pts.map(([x, y]) => ({ route_type: "wire", x, y, width: 0.2, layer })),
+    const bad = checkViagrid9055({
+      vias: [...allFactoryVias(), factoryVia(19, 0, "N1", "stacked"), factoryVia(4.2, -1.1, "N2", "loose")],
+      pads: [{ ...factoryVia(-38, 18), width: 1, height: 1, component: "R1", number: "1" }],
     });
-    const shorted = checkViagrid9055([
-      via("pcb_via_0", 19, 0, { net_is_assignable: true, outer_diameter: 1 }),
-      wire("t1", "netA", "top", [[17, 0], [21, 0]]), // runs straight over the via on top
-      wire("t2", "netB", "bottom", [[19, -2], [19, 2]]), // and another net under it on the bottom
-    ]);
-    expect(shorted.violations.map((v) => v.kind)).toEqual(["via_shorts_nets"]);
-    expect(shorted.violations[0]!.detail).toContain("netA");
-    expect(shorted.violations[0]!.detail).toContain("netB");
-    const single = checkViagrid9055([via("pcb_via_0", 19, 0, { net_is_assignable: true, outer_diameter: 1 }), wire("t1", "netA", "top", [[17, 0], [21, 0]])]);
-    expect(single.violations).toEqual([]);
+    expect(bad.vias).toEqual({ total: 182, factory: 180, claimed: 0, added: 2 });
+    expect(bad.violations.map((v) => v.kind)).toEqual(["via_stacked", "via_off_grid", "pad_near_hole"]);
+    expect(bad.violations[0]!.detail).toContain("instead of claiming");
+    expect(bad.violations[1]!.detail).toContain("net N2");
   });
 
-  test("checkViagrid9055 uses pad size for mounting-hole keepout", () => {
-    const result = checkViagrid9055([{ type: "pcb_smtpad", pcb_smtpad_id: "s1", x: -35.5, y: 18.25, width: 2, height: 1, layer: "top", shape: "rect" }]);
-    expect(result.violations.map((v) => v.kind)).toEqual(["pad_near_hole"]);
+  test("checkViagrid9055 reports a board without the blank and uses pad size for the hole keepout", () => {
+    const missing = checkViagrid9055({ vias: [], pads: [] });
+    expect(missing.violations.map((v) => v.kind)).toEqual(["blank_incomplete"]);
+    const wide = checkViagrid9055({ vias: allFactoryVias(), pads: [{ ...factoryVia(-35.5, 18.25), width: 2, height: 1 }] });
+    expect(wide.violations.map((v) => v.kind)).toEqual(["pad_near_hole"]);
+    const clear = checkViagrid9055({ vias: allFactoryVias(), pads: [{ ...factoryVia(0, 0), width: 2, height: 1 }] });
+    expect(clear.violations).toEqual([]);
   });
 
-  test("project_set_board template=viagrid-9055 writes the blank, fixes the board and verify_viagrid runs", async () => {
+  test("project_set_board template=viagrid-9055 fixes the board and verify_viagrid reads the design server", async () => {
     const project = await tempProject("vg");
-    // The default placeholder circuit.tsx gets replaced by the starter; a custom one would be kept.
-    await Bun.write(join(project.dir, "circuit.tsx"), "// Fabdesk project. Write your board with tscircuit; the agent builds, routes and verifies it.\nexport default () => <board width=\"30mm\" height=\"20mm\" />\n");
     const services = mockServices([project]);
+    const queried: string[] = [];
+    services.design = {
+      ...services.design,
+      query: async (_dir, select) => {
+        queried.push(select);
+        if (select === "vias") return [...allFactoryVias([[19, 0, "N1"]]), factoryVia(1, 1, "N1", "extra")];
+        if (select === "pads") return [{ ...factoryVia(0, 0), width: 1, height: 1, component: "R1", number: "1", net: "N1" }];
+        return [];
+      },
+    };
     const reg = createRegistry();
     const factory = contextFactory(services, project);
     const call = (name: string, args: Record<string, unknown>) =>
@@ -81,15 +101,15 @@ describe("Viagrid 9055 template", () => {
 
     const set = await call("project_set_board", { template: "viagrid-9055" });
     expect(set.isError ?? false).toBe(false);
-    expect(project.manifest().board).toMatchObject({ layers: 2, widthMm: 90, heightMm: 55, template: "viagrid-9055", rules: { traceWidthMm: 0.2, clearanceMm: 0.2 } });
-    expect(await readFile(join(project.dir, VIAGRID_9055.file), "utf8")).toContain("Viagrid9055Blank");
-    expect(await readFile(join(project.dir, "circuit.tsx"), "utf8")).toContain("<Viagrid9055Blank />");
+    expect(project.manifest().board).toMatchObject({ layers: 2, widthMm: 90, heightMm: 55, template: "viagrid-9055", rules: { traceWidthMm: 0.2, clearanceMm: 0.2, viaDiameterMm: 1, viaDrillMm: 0.2 } });
+    expect(set.text).toContain("laser-prefab");
 
-    await Bun.write(join(project.dir, "circuit.routed.json"), JSON.stringify([via("pcb_via_0", 19, 0, { net_is_assignable: true, net_assigned: true }), via("pcb_via_1", 1, 1)]));
     const verify = await call("verify_viagrid", {});
+    expect(queried.sort()).toEqual(["pads", "vias"]);
     expect(verify.isError).toBe(true);
     expect(verify.text).toContain("1 violation");
-    expect(await Bun.file(join(project.dir, "reports", "viagrid.json")).exists()).toBe(true);
+    expect(verify.text).toContain("via_off_grid");
+    expect(await Bun.file(`${project.dir}/reports/viagrid.json`).exists()).toBe(true);
 
     const cleared = await call("project_set_board", { template: "none" });
     expect(cleared.isError ?? false).toBe(false);

@@ -13,7 +13,7 @@ import {
 
 const ctx: AgentDocsContext = {
   projectName: "Blinky",
-  toolsMarkdown: "### circuit_build\nBuilds circuit.tsx.",
+  toolsMarkdown: "### circuit_build\nBuilds circuit.netlist.json.",
   sketches: ["/tmp/p/sketches/front.png"],
   board: { layers: 2, widthMm: 50, heightMm: 30 },
   mcpServerName: "fabdesk",
@@ -29,7 +29,7 @@ describe("renderAgentsMd", () => {
     expect(md).toContain("`/tmp/p/sketches/front.png`");
     expect(md).toContain("mcp__fabdesk__<tool>");
     expect(md).toContain("### circuit_build");
-    expect(md).toContain("| `circuit.tsx` | **you** |");
+    expect(md).toContain("| `circuit.netlist.json` | **you** |");
     expect(md.indexOf(USER_START)).toBeLessThan(md.indexOf(USER_END));
   });
 

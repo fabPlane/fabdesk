@@ -1,16 +1,17 @@
-/** Real CoreServices: wires the sibling packages into the interface `@fabdesk/tools` expects. */
-import * as tsc from "@fabdesk/tscircuit";
+/** Real CoreServices: wires the sibling packages and the FabPlane PCB bridge into the interface `@fabdesk/tools` expects. */
 import * as kicad from "@fabdesk/kicad";
-import { RouterHost, availableRouters } from "@fabdesk/router";
-import { captureCoreException } from "./sentry";
 import * as sim from "@fabdesk/sim";
-import type { Principal, RouteRequest, RouteResult, RouterWorkerMessage, Settings } from "@fabdesk/protocol";
-import type { CoreServices, KicadCli, KicadImportSummary, RouteRunStore, SimService } from "@fabdesk/tools";
+import type { Principal, Settings } from "@fabdesk/protocol";
+import type { CoreServices, KicadCli, RouteRunStore, SimService } from "@fabdesk/tools";
 import type { Channel } from "./config";
+import { fpPcbBridgeUrl } from "./config";
 import type { EventBus } from "./bus";
 import type { ProjectStore } from "./projects";
-import { routerHostOptions } from "./router-worker-url";
 import { AppBridgeClient } from "./app-bridge";
+import { FpPcbBridgeClient } from "./fp-pcb-bridge";
+import { createFpPcbDesign } from "./fp-pcb-design";
+import { FpPcbSessions } from "./fp-pcb-session";
+import { logger } from "./log";
 
 export type ServiceDeps = {
   version: string;
@@ -20,7 +21,7 @@ export type ServiceDeps = {
   bus: EventBus;
   routeRuns: RouteRunStore;
   principal: () => Principal | null;
-  /** Directory for router-worker scratch files etc. */
+  /** Directory for scratch files etc. */
   home: string;
   /** Daemon token; with `appBridgeFile` enables the desktop app automation bridge (`app` toolset). */
   token?: string;
@@ -40,11 +41,11 @@ function simService(settings: () => Settings): SimService {
     }
   };
   return {
-    spiceNetlist: (cj) => sim.spiceNetlist(cj),
+    spiceNetlist: (netlist) => sim.spiceNetlist(netlist),
     runSimulation: async (o) => {
       const t0 = Date.now();
       const r = await sim.runSimulation({
-        circuitJson: o.circuitJson,
+        netlist: o.netlist,
         analysis: toSimAnalysis(o.analysis),
         ...(o.engine ? { engine: o.engine } : {}),
         ...(o.ngspicePath ? { ngspicePath: o.ngspicePath } : {}),
@@ -56,17 +57,23 @@ function simService(settings: () => Settings): SimService {
   };
 }
 
-export async function createServices(deps: ServiceDeps): Promise<CoreServices & { dispose(): void }> {
-  const host = new RouterHost(routerHostOptions());
-  let activeRoute: { runId: string } | null = null;
-
+export async function createServices(deps: ServiceDeps): Promise<CoreServices & { dispose(): Promise<void> }> {
   const resolveCli = async (): Promise<KicadCli | null> => {
     const explicit = deps.settings().kicadCliPath ?? undefined;
     const found = await kicad.findKicadCli(explicit);
     return found ? { path: found.path, version: found.version } : null;
   };
 
-  const services: CoreServices & { dispose(): void } = {
+  // One bridge client per configured URL; re-created when the setting changes.
+  let bridge: { url: string; client: FpPcbBridgeClient } | null = null;
+  const bridgeClient = (): FpPcbBridgeClient => {
+    const url = fpPcbBridgeUrl(deps.settings().fpPcbBridgeUrl);
+    if (!bridge || bridge.url !== url) bridge = { url, client: new FpPcbBridgeClient({ url }) };
+    return bridge.client;
+  };
+  const sessions = new FpPcbSessions(bridgeClient, { clientName: `fabdesk/core/${process.pid}`, log: (m) => logger.info(m) });
+
+  const services: CoreServices & { dispose(): Promise<void> } = {
     version: deps.version,
     channel: deps.channel,
     settings: deps.settings,
@@ -74,27 +81,9 @@ export async function createServices(deps: ServiceDeps): Promise<CoreServices & 
     bus: deps.bus,
     routeRuns: deps.routeRuns,
     principal: deps.principal,
-    tscircuit: {
-      buildCircuit: async (o) => {
-        const r = await tsc.buildCircuit(o);
-        return { ...r, warnings: r.warnings.map((w) => ({ message: w })) };
-      },
-      runChecks: (cj) => tsc.runChecks(cj),
-      queryCircuit: (cj, select, filter) => tsc.queryCircuit(cj, select, filter) as unknown[],
-      extractSimpleRouteJson: (cj, o) => tsc.extractSimpleRouteJson(cj, o ?? {}),
-      connectionsForComponents: (cj, refs, o) => tsc.connectionsForComponents(cj, refs, o ?? {}),
-      mergeTraces: (cj, traces, map) => tsc.mergeTraces(cj, traces, map),
-      unrouteCircuit: (cj, conns) => tsc.unrouteCircuit(cj, conns),
-      schematicSvg: (cj) => tsc.schematicSvg(cj),
-      pcbSvg: (cj) => tsc.pcbSvg(cj),
-    },
+    design: createFpPcbDesign({ bridge: bridgeClient, sessions }),
     kicad: {
       resolveCli,
-      convertToKicad: (o) => kicad.convertToKicad(o),
-      importPcb: async (o) => {
-        const r = await kicad.importKicadPcb(o);
-        return { circuitJson: r.circuitJson, report: r.report as unknown as KicadImportSummary };
-      },
       runDrc: (cli, o) => kicad.runDrc(cli, o),
       runErc: (cli, o) => kicad.runErc(cli, o),
       gate: (drc, erc, allowed) => kicad.gate(drc as kicad.DrcReport, erc as kicad.ErcReport | undefined, allowed),
@@ -108,28 +97,11 @@ export async function createServices(deps: ServiceDeps): Promise<CoreServices & 
       exportBom: (cli, o) => kicad.exportBom(cli, o),
       exportNetlist: (cli, o) => kicad.exportNetlist(cli, o),
       exportSchematicSvg: (cli, o) => kicad.exportSchematicSvg(cli, o),
-    },
-    router: {
-      route: async (request: RouteRequest, { onMessage, signal }: { onMessage(m: RouterWorkerMessage): void; signal?: AbortSignal }): Promise<RouteResult> => {
-        activeRoute = { runId: request.runId };
-        const report = (m: RouterWorkerMessage) => {
-          if (m.kind === "error") captureCoreException(new Error(m.message), { component: "router-worker", router: request.router });
-          onMessage(m);
-        };
-        try {
-          return await host.route(request, { onMessage: report, signal });
-        } finally {
-          activeRoute = null;
-        }
-      },
-      cancel: (runId) => {
-        if (!runId || activeRoute?.runId === runId) host.cancel();
-      },
-      available: () => availableRouters(),
+      exportPcbSvg: (cli, o) => kicad.exportPcbSvg(cli, o),
     },
     sim: simService(deps.settings),
     ...(deps.token && deps.appBridgeFile ? { appBridge: new AppBridgeClient({ file: deps.appBridgeFile, token: deps.token }) } : {}),
-    dispose: () => host.dispose(),
+    dispose: () => sessions.dispose(),
   };
   return services;
 }

@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { ensureAcStimulus, findNgspice, parseAsciiRaw, runSimulation, spiceNetlist, type SimResult } from "../src/index";
 
-const circuitJson = (await Bun.file(join(import.meta.dir, "fixtures/divider.circuit.json")).json()) as unknown[];
+import type { NetlistFile } from "@fabdesk/protocol";
+const netlist = (await Bun.file(join(import.meta.dir, "fixtures/divider.netlist.json")).json()) as NetlistFile;
 // V1 = 5 V, R1 = 1k, R2 = 3k (+ C1 = 1uF across R2): v(n2) = 5 * 3/(1+3) = 3.75 V, i(V1) = -1.25 mA.
 const col = (r: SimResult, name: string) => {
   const i = r.columns.indexOf(name);
@@ -14,7 +15,7 @@ const ngspicePath = await findNgspice();
 
 describe("spiceNetlist", () => {
   test("netlists the divider", () => {
-    const text = spiceNetlist(circuitJson);
+    const text = spiceNetlist(netlist);
     expect(text).toMatch(/^RR1 N1 N2 1K$/m);
     expect(text).toMatch(/^RR2 N2 0 3K$/m);
     expect(text).toMatch(/^CC1 N2 0 1U$/m);
@@ -27,7 +28,7 @@ describe("spiceNetlist", () => {
 
 describe("spicey", () => {
   test("op matches the hand calculation", async () => {
-    const r = await runSimulation({ circuitJson, analysis: { kind: "op" } });
+    const r = await runSimulation({ netlist, analysis: { kind: "op" } });
     expect(r.engine).toBe("spicey");
     expect(r.rows.length).toBe(1);
     expect(last(r)[col(r, "v(n1)")]).toBeCloseTo(5, 9);
@@ -37,14 +38,14 @@ describe("spicey", () => {
   });
 
   test("tran settles to the divider voltage (RC tau = 0.75 ms)", async () => {
-    const r = await runSimulation({ circuitJson, analysis: { kind: "tran", stepS: 1e-6, stopS: 10e-3 } });
+    const r = await runSimulation({ netlist, analysis: { kind: "tran", stepS: 1e-6, stopS: 10e-3 } });
     expect(r.columns[0]).toBe("time");
     expect(r.rows.length).toBeGreaterThan(100);
     expect(last(r)[col(r, "v(n2)")]).toBeCloseTo(3.75, 3);
   });
 
   test("ac sweeps decades and shows the RC roll-off", async () => {
-    const r = await runSimulation({ circuitJson, analysis: { kind: "ac", startHz: 1, stopHz: 1e6, pointsPerDecade: 5 } });
+    const r = await runSimulation({ netlist, analysis: { kind: "ac", startHz: 1, stopHz: 1e6, pointsPerDecade: 5 } });
     expect(r.columns[0]).toBe("frequency");
     expect(r.rows.length).toBe(31);
     const mag = col(r, "v(n2).mag");
@@ -62,19 +63,19 @@ describe("ngspice", () => {
   });
 
   test.skipIf(!ngspicePath)("op/tran/ac agree with spicey", async () => {
-    const op = await runSimulation({ circuitJson, analysis: { kind: "op" }, engine: "ngspice" });
+    const op = await runSimulation({ netlist, analysis: { kind: "op" }, engine: "ngspice" });
     expect(op.engine).toBe("ngspice");
     expect(op.log).toContain("ngspice");
     expect(last(op)[col(op, "v(n2)")]).toBeCloseTo(3.75, 6);
-    const spicey = await runSimulation({ circuitJson, analysis: { kind: "op" } });
+    const spicey = await runSimulation({ netlist, analysis: { kind: "op" } });
     expect(last(op)[col(op, "v(n1)")]).toBeCloseTo(last(spicey)[col(spicey, "v(n1)")]!, 6);
 
-    const tran = await runSimulation({ circuitJson, analysis: { kind: "tran", stepS: 1e-5, stopS: 5e-3 }, engine: "ngspice" });
+    const tran = await runSimulation({ netlist, analysis: { kind: "tran", stepS: 1e-5, stopS: 5e-3 }, engine: "ngspice" });
     expect(tran.columns[0]).toBe("time");
     expect(last(tran)[col(tran, "v(n2)")]).toBeCloseTo(3.75, 2);
 
-    const ac = await runSimulation({ circuitJson, analysis: { kind: "ac", startHz: 1, stopHz: 1e6, pointsPerDecade: 5 }, engine: "ngspice" });
-    const acSpicey = await runSimulation({ circuitJson, analysis: { kind: "ac", startHz: 1, stopHz: 1e6, pointsPerDecade: 5 } });
+    const ac = await runSimulation({ netlist, analysis: { kind: "ac", startHz: 1, stopHz: 1e6, pointsPerDecade: 5 }, engine: "ngspice" });
+    const acSpicey = await runSimulation({ netlist, analysis: { kind: "ac", startHz: 1, stopHz: 1e6, pointsPerDecade: 5 } });
     expect(ac.rows.length).toBe(acSpicey.rows.length);
     expect(ac.rows[0]![col(ac, "v(n2).mag")]).toBeCloseTo(acSpicey.rows[0]![col(acSpicey, "v(n2).mag")]!, 3);
   }, 60_000);

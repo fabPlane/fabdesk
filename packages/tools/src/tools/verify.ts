@@ -3,15 +3,15 @@ import { z } from "zod/v4";
 import { PROJECT_FILES, readJsonOrNull, writeJson } from "../fs";
 import { ToolError, defineTool } from "../registry";
 import type { DrcReport, ErcReport } from "../services";
-import { VIAGRID_9055, VIAGRID_9055_HOLES, isOnViagrid9055Via } from "../templates/viagrid-9055";
 import { describeViolation } from "./core";
-import { loadCircuitJson, ok, p, requireKicad, requireSchematic, writeReport } from "./common";
+import { VIAGRID_9055, VIAGRID_9055_HOLES, VIAGRID_9055_VIAS, boardToViagrid, isOnViagrid9055Via } from "../templates/viagrid-9055";
+import { ok, p, requireKicad, requireSchematic, writeReport } from "./common";
 
 export const verify_erc = defineTool({
   name: "verify_erc",
   toolset: "verify",
   title: "Run KiCad ERC",
-  description: "Run KiCad electrical rule check on board.kicad_sch, write reports/erc.json and return counts plus the first violations. Requires kicad-cli and a converted schematic (kicad_convert).",
+  description: "Run KiCad electrical rule check on board.kicad_sch, write reports/erc.json and return counts plus the first violations. Requires kicad-cli and a schematic (an imported KiCad project; a compiled netlist has none).",
   inputSchema: {
     severity: z.enum(["all", "error"]).default("all"),
     limit: z.number().int().min(1).max(200).default(30),
@@ -71,63 +71,33 @@ export const verify_gate = defineTool({
   },
 });
 
-export interface ViagridViolation {
-  kind: "via_off_grid" | "via_near_hole" | "pad_near_hole" | "via_shorts_nets";
+export type ViagridViolation = { kind: "via_off_grid" | "via_stacked" | "pad_near_hole" | "blank_incomplete"; x: number; y: number; detail: string };
+
+/** A via as `circuit_query vias` reports it: board frame (KiCad, outline top-left at the origin), mm. */
+export interface ViagridVia {
   x: number;
   y: number;
-  detail: string;
+  net: string;
+  id?: string;
 }
-
-function distanceToSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
-  const dx = bx - ax;
-  const dy = by - ay;
-  const len2 = dx * dx + dy * dy;
-  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2));
-  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+/** A pad as `circuit_query pads` reports it: centre and size in mm, board frame. */
+export interface ViagridPad {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  component?: string;
+  number?: string;
 }
 
 /**
- * Nets whose copper touches each factory via. A factory via is copper on both layers, so two nets touching
- * the same one (a top wire over it and a bottom wire under it, say) are shorted through the blank.
+ * Pure check behind `verify_viagrid`; exported for tests. Positions are in the board frame the
+ * compile draws; they are moved into the blank's frame (centre origin, +y up) here.
  */
-function netsTouchingVias(els: Array<Record<string, unknown>>, vias: Array<{ id: string; x: number; y: number; r: number }>): Map<string, Set<string>> {
-  const touched = new Map<string, Set<string>>();
-  const num = (v: unknown): number => (typeof v === "number" ? v : Number(v));
-  for (const el of els) {
-    if (el["type"] !== "pcb_trace" || !Array.isArray(el["route"])) continue;
-    const net = String(el["subcircuit_connectivity_map_key"] ?? el["source_trace_id"] ?? el["pcb_trace_id"]);
-    const route = el["route"] as Array<Record<string, unknown>>;
-    for (let i = 1; i < route.length; i++) {
-      const a = route[i - 1]!;
-      const b = route[i]!;
-      if (a["route_type"] !== "wire" || b["route_type"] !== "wire" || a["layer"] !== b["layer"]) continue;
-      const half = (num(b["width"]) || 0) / 2;
-      for (const via of vias) {
-        if (distanceToSegment(via.x, via.y, num(a["x"]), num(a["y"]), num(b["x"]), num(b["y"])) <= via.r + half - 1e-6) {
-          let set = touched.get(via.id);
-          if (!set) touched.set(via.id, (set = new Set()));
-          set.add(net);
-        }
-      }
-    }
-    for (const point of route) {
-      if (point["route_type"] !== "via") continue;
-      for (const via of vias) {
-        if (Math.hypot(via.x - num(point["x"]), via.y - num(point["y"])) <= 0.05) {
-          let set = touched.get(via.id);
-          if (!set) touched.set(via.id, (set = new Set()));
-          set.add(net);
-        }
-      }
-    }
-  }
-  return touched;
-}
-
-/** Pure check behind `verify_viagrid`; exported for tests. */
-export function checkViagrid9055(circuitJson: unknown[]): { violations: ViagridViolation[]; vias: { total: number; factory: number; claimed: number; added: number } } {
-  const els = circuitJson as Array<Record<string, unknown>>;
-  const num = (v: unknown): number => (typeof v === "number" ? v : Number(v));
+export function checkViagrid9055(board: { vias: ViagridVia[]; pads: ViagridPad[] }): {
+  violations: ViagridViolation[];
+  vias: { total: number; factory: number; claimed: number; added: number };
+} {
   const violations: ViagridViolation[] = [];
   const holeKeepoutMm = VIAGRID_9055.holeDrillMm / 2 + 1.0;
   const nearHole = (x: number, y: number, halfWidth = 0, halfHeight = 0): boolean =>
@@ -139,39 +109,35 @@ export function checkViagrid9055(circuitJson: unknown[]): { violations: ViagridV
   let factory = 0;
   let claimed = 0;
   let added = 0;
-  const factoryVias: Array<{ id: string; x: number; y: number; r: number }> = [];
-  for (const el of els) {
-    if (el["type"] !== "pcb_via") continue;
-    const x = num(el["x"]);
-    const y = num(el["y"]);
-    if (el["net_is_assignable"] === true && isOnViagrid9055Via(x, y)) {
+  const taken = new Set<string>();
+  const key = (x: number, y: number) => `${x.toFixed(2)},${y.toFixed(2)}`;
+  for (const v of board.vias) {
+    const [x, y] = boardToViagrid(v.x, v.y);
+    const label = v.id ? `via ${v.id}` : "via";
+    if (isOnViagrid9055Via(x, y)) {
+      const grid = VIAGRID_9055_VIAS.find(([vx, vy]) => Math.hypot(vx - x, vy - y) <= 0.05)!;
+      const k = key(grid[0], grid[1]);
+      if (taken.has(k)) {
+        added += 1;
+        violations.push({ kind: "via_stacked", x, y, detail: `${label} at (${x.toFixed(2)}, ${y.toFixed(2)}) sits on a factory via that is already there (a via was added instead of claiming the blank's; route_unroute and route_run again)` });
+        continue;
+      }
+      taken.add(k);
       factory += 1;
-      if (el["net_assigned"] === true) claimed += 1;
-      factoryVias.push({ id: String(el["pcb_via_id"] ?? `${x},${y}`), x, y, r: (num(el["outer_diameter"]) || VIAGRID_9055.viaPadMm) / 2 });
+      if (v.net) claimed += 1;
       continue;
     }
     added += 1;
-    if (isOnViagrid9055Via(x, y)) {
-      violations.push({ kind: "via_off_grid", x, y, detail: `via ${String(el["pcb_via_id"] ?? "")} sits on a factory via but was added as a new via (routing was merged without claiming; re-run route_run)` });
-    } else {
-      violations.push({ kind: "via_off_grid", x, y, detail: `via ${String(el["pcb_via_id"] ?? "")} at (${x.toFixed(2)}, ${y.toFixed(2)}) is not a factory via position` });
-    }
+    violations.push({ kind: "via_off_grid", x, y, detail: `${label} at (${x.toFixed(2)}, ${y.toFixed(2)}) is not a factory via position${v.net ? ` (net ${v.net})` : ""}` });
   }
-  for (const [id, nets] of netsTouchingVias(els, factoryVias)) {
-    if (nets.size < 2) continue;
-    const via = factoryVias.find((v) => v.id === id)!;
-    violations.push({ kind: "via_shorts_nets", x: via.x, y: via.y, detail: `factory via ${id} at (${via.x}, ${via.y}) is touched by ${nets.size} nets (${[...nets].join(", ")}): the blank's via joins them` });
+  if (factory < VIAGRID_9055_VIAS.length)
+    violations.push({ kind: "blank_incomplete", x: 0, y: 0, detail: `the board has ${factory} of the blank's ${VIAGRID_9055_VIAS.length} factory vias: the blank was not drawn (build with the template set on a board without an outline)` });
+  for (const pad of board.pads) {
+    const [x, y] = boardToViagrid(pad.x, pad.y);
+    if (nearHole(x, y, pad.width / 2, pad.height / 2))
+      violations.push({ kind: "pad_near_hole", x, y, detail: `pad ${pad.component ?? "?"}:${pad.number ?? "?"} at (${x.toFixed(2)}, ${y.toFixed(2)}) is within ${holeKeepoutMm} mm of a mounting hole` });
   }
-  for (const el of els) {
-    if (el["type"] === "pcb_smtpad" || el["type"] === "pcb_plated_hole") {
-      const x = num(el["x"]);
-      const y = num(el["y"]);
-      const halfWidth = num(el["width"] ?? el["rect_pad_width"] ?? 0) / 2;
-      const halfHeight = num(el["height"] ?? el["rect_pad_height"] ?? 0) / 2;
-      if (nearHole(x, y, halfWidth, halfHeight)) violations.push({ kind: "pad_near_hole", x, y, detail: `${String(el["type"])} ${String(el["pcb_smtpad_id"] ?? el["pcb_plated_hole_id"] ?? "")} at (${x.toFixed(2)}, ${y.toFixed(2)}) is within ${holeKeepoutMm} mm of a mounting hole` });
-    }
-  }
-  return { violations, vias: { total: factory + added, factory, claimed, added } };
+  return { violations, vias: { total: board.vias.length, factory, claimed, added } };
 }
 
 export const verify_viagrid = defineTool({
@@ -179,20 +145,24 @@ export const verify_viagrid = defineTool({
   toolset: "verify",
   title: "Check the Viagrid rules",
   description:
-    "For a project on a Viagrid 9055 blank (project_set_board template=viagrid-9055): every via in circuit.routed.json must be one of the blank's 180 factory vias (claimed by the router), no via may be added anywhere else, and pads must stay clear of the four mounting holes. Writes reports/viagrid.json. Run it after route_run and before kicad_convert.",
+    "For a project on a Viagrid 9055 blank (project_set_board template=viagrid-9055): reads the vias and pads from the KiCad board on the design server and checks that every via is one of the blank's 180 factory vias (claimed by route_run, none added elsewhere or stacked on a factory via), that the whole blank is there, and that pads stay clear of the four mounting holes. Writes reports/viagrid.json. Run it after route_run and before verify_drc; positions in the report are in the blank's frame (centre origin, +y up).",
   inputSchema: {},
   annotations: { readOnlyHint: true, idempotentHint: true },
   handler: async (_args, ctx) => {
     const project = ctx.requireProject();
     const template = project.manifest().board.template;
-    const { circuitJson, source } = await loadCircuitJson(project, { preferRouted: true });
-    const result = checkViagrid9055(circuitJson);
-    await writeReport(project, "viagrid", { at: new Date().toISOString(), source, template: template ?? null, ...result });
+    const [vias, pads] = await Promise.all([ctx.services.design.query(project.dir, "vias"), ctx.services.design.query(project.dir, "pads")]);
+    const num = (v: unknown): number => (typeof v === "number" ? v : Number(v) || 0);
+    const result = checkViagrid9055({
+      vias: vias.map((r) => ({ x: num(r["x"]), y: num(r["y"]), net: String(r["net"] ?? ""), ...(r["id"] !== undefined ? { id: String(r["id"]) } : {}) })),
+      pads: pads.map((r) => ({ x: num(r["x"]), y: num(r["y"]), width: num(r["width"]), height: num(r["height"]), component: String(r["component"] ?? ""), number: String(r["number"] ?? "") })),
+    });
+    await writeReport(project, "viagrid", { at: new Date().toISOString(), template: template ?? null, ...result });
     const lines = [
-      `${template === "viagrid-9055" ? "Viagrid 9055" : "Viagrid 9055 (template not set in fabdesk.json)"}: ${result.vias.factory} factory vias in ${source}, ${result.vias.claimed} claimed by routing, ${result.vias.added} added by the router.`,
+      `${template === VIAGRID_9055.id ? "Viagrid 9055" : "Viagrid 9055 (template not set in fabdesk.json)"}: ${result.vias.factory} factory vias on the board, ${result.vias.claimed} claimed by routing, ${result.vias.added} added by the router.`,
       result.violations.length ? `${result.violations.length} violation(s):\n${result.violations.map((v) => `- [${v.kind}] ${v.detail}`).join("\n")}` : "No violations: every via is a factory via and pads clear the mounting holes.",
     ];
-    return { text: lines.join("\n"), json: { source, template: template ?? null, ...result }, isError: result.violations.length > 0 };
+    return { text: lines.join("\n"), json: { template: template ?? null, ...result }, isError: result.violations.length > 0 };
   },
 });
 

@@ -1,24 +1,30 @@
-/** Render toolset: SVGs from circuit-json, GLB from KiCad. */
-import { z } from "zod/v4";
-import { PROJECT_FILES, writeAtomic } from "../fs";
+/** Render toolset: SVGs and GLB from the KiCad board via kicad-cli. */
+import { readFile } from "node:fs/promises";
+import { PROJECT_FILES, ensureDir } from "../fs";
 import { defineTool } from "../registry";
-import { fileUrl, loadCircuitJson, ok, p, requireBoard, requireKicad } from "./common";
+import { fileUrl, ok, p, requireBoard, requireKicad, requireSchematic } from "./common";
 
 export const render_schematic_svg = defineTool({
   name: "render_schematic_svg",
   toolset: "render",
   title: "Render schematic SVG",
-  description: "Render the schematic of the built circuit to renders/schematic.svg (circuit-to-svg, no KiCad needed) and return it. Useful to check symbol placement and net labels.",
+  description: "Render board.kicad_sch to renders/schematic.svg with kicad-cli and return it. A compiled project has no drawn schematic (the netlist carries no geometry), so this only shows an imported one.",
   inputSchema: {},
   annotations: { readOnlyHint: true, idempotentHint: true },
+  longRunning: true,
   handler: async (_args, ctx) => {
     const project = ctx.requireProject();
-    const { circuitJson, source } = await loadCircuitJson(project);
-    const svg = ctx.services.tscircuit.schematicSvg(circuitJson);
+    const cli = await requireKicad(ctx);
+    const schematic = await requireSchematic(project);
+    const outDir = await ensureDir(p(project, PROJECT_FILES.renders, "schematic"));
+    ctx.progress(0.2, "exporting svg");
+    const { paths } = await ctx.services.kicad.exportSchematicSvg(cli, { schematic, outDir, signal: ctx.signal });
+    const first = paths[0];
     const output = p(project, PROJECT_FILES.renders, "schematic.svg");
-    await writeAtomic(output, svg);
+    if (first) await Bun.write(output, await readFile(first));
+    ctx.progress(1, "done");
     const url = fileUrl(output);
-    return ok(`Rendered schematic from ${source} to ${PROJECT_FILES.renders}/schematic.svg (${svg.length} bytes). Browser URL: ${url}`, { path: output, url, fileUrl: url, bytes: svg.length }, { images: [{ path: output, mime: "image/svg+xml" }] });
+    return ok(`Rendered ${paths.length} schematic sheet(s); first at ${PROJECT_FILES.renders}/schematic.svg. Browser URL: ${url}`, { path: output, url, fileUrl: url, sheets: paths }, first ? { images: [{ path: output, mime: "image/svg+xml" }] } : {});
   },
 });
 
@@ -26,17 +32,21 @@ export const render_pcb_svg = defineTool({
   name: "render_pcb_svg",
   toolset: "render",
   title: "Render PCB SVG",
-  description: "Render the PCB (footprints, traces, vias, board outline) of the built or routed circuit to renders/pcb.svg (circuit-to-svg, no KiCad needed) and return it.",
+  description: "Render board.kicad_pcb (copper, silkscreen, edge cuts) to renders/pcb.svg with kicad-cli and return it. Requires circuit_build.",
   inputSchema: {},
   annotations: { readOnlyHint: true, idempotentHint: true },
+  longRunning: true,
   handler: async (_args, ctx) => {
     const project = ctx.requireProject();
-    const { circuitJson, source } = await loadCircuitJson(project);
-    const svg = ctx.services.tscircuit.pcbSvg(circuitJson);
+    const cli = await requireKicad(ctx);
+    const board = await requireBoard(project);
+    await ensureDir(p(project, PROJECT_FILES.renders));
     const output = p(project, PROJECT_FILES.renders, "pcb.svg");
-    await writeAtomic(output, svg);
+    ctx.progress(0.2, "exporting svg");
+    await ctx.services.kicad.exportPcbSvg(cli, { board, output, signal: ctx.signal });
+    ctx.progress(1, "done");
     const url = fileUrl(output);
-    return ok(`Rendered PCB from ${source} to ${PROJECT_FILES.renders}/pcb.svg (${svg.length} bytes). Browser URL: ${url}`, { path: output, url, fileUrl: url, bytes: svg.length }, { images: [{ path: output, mime: "image/svg+xml" }] });
+    return ok(`Rendered PCB to ${PROJECT_FILES.renders}/pcb.svg. Browser URL: ${url}`, { path: output, url, fileUrl: url }, { images: [{ path: output, mime: "image/svg+xml" }] });
   },
 });
 

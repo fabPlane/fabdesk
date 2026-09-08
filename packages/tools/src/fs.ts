@@ -6,9 +6,10 @@ import { ToolError } from "./registry";
 /** Canonical file locations inside a project directory. */
 export const PROJECT_FILES = {
   manifest: "fabdesk.json",
-  circuitTsx: "circuit.tsx",
-  circuitJson: "circuit.json",
-  routedJson: "circuit.routed.json",
+  /** The design source: what exists and what connects (`NetlistFile` in @fabdesk/protocol). */
+  netlistJson: "circuit.netlist.json",
+  /** The KiCad netlist the compile job wrote; `export_netlist` copies it. */
+  compileNet: ".fabdesk/compile.net",
   boardPcb: "board.kicad_pcb",
   boardSch: "board.kicad_sch",
   boardPro: "board.kicad_pro",

@@ -2,10 +2,6 @@
 	path = vendor/fabplane
 	url = ../fabplane.com.git
 	branch = main
-[submodule "vendor/js_autorouter"]
-	path = vendor/js_autorouter
-	url = ../js_autorouter.git
-	branch = main
 [submodule "vendor/fab_pcb"]
 	path = vendor/fab_pcb
 	url = ../fab_pcb.git

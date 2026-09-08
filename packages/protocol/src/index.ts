@@ -4,3 +4,4 @@ export * from "./handshake";
 export * from "./api";
 export * from "./opensource";
 export * from "./releases";
+export * from "./fp-pcb";
