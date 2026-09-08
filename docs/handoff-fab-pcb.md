@@ -33,9 +33,10 @@ agent (MCP) ──► fabdesk daemon (apps/core, Bun/Hono)
 | bridge client | `apps/core/src/fp-pcb-bridge.ts` | `/health`, `/sessions`, compile + route jobs followed over SSE, cancel via `DELETE`; errors are `ToolError` codes |
 | wire types | `packages/protocol/src/fp-pcb.ts` | mirrors of the bridge's JSON and of `NetlistFile` — kept in sync by hand with fab_pcb |
 | tools | `packages/tools/src/tools/*.ts` | `circuit_build`, `route_run`, `verify_drc`, `render_*`, `export_*`, `sim_*`, `circuit_query`, `circuit_search_parts`, `route_*`, `project_import_kicad` (adopts a board) |
-| agent guide | `packages/agents/src/agents-md.ts` | the `circuit.netlist.json` schema and workflow the agent is given |
-| compile package | fab_pcb `packages/compile` | `Frontend → Netlist → .net → ImportNetlist → outline → autoplace → edge-clearance inset`; the `netlist-json` frontend; `bridge-job.ts` |
-| route job | fab_pcb `packages/router/src/bridge-job.ts` | JS router (the old "capacity") or Freerouting; applied as one commit |
+| agent guide | `packages/agents/src/agents-md.ts` | the `circuit.netlist.json` schema and workflow the agent is given; a Viagrid section when `board.template` is set |
+| prefab blank | `packages/tools/src/templates/viagrid-9055.ts`, `tools/verify.ts` (`verify_viagrid`) | Opulo's Viagrid 9055 as a compile board spec (outline, 180 free vias, 4 holes, rules; `viagridToBoard` for the frame); `circuit_build` sends it in place of the netlist's board when `fabdesk.json` `board.template` is set, `route_run` adds `preset: laser-prefab` ([viagrid-9055.md](viagrid-9055.md)) |
+| compile package | fab_pcb `packages/compile` | `Frontend → Netlist → .net → ImportNetlist → outline (+ a blank's vias/holes) → autoplace → edge-clearance inset`; `rules.ts` puts `board.rules` on the board; the `netlist-json` frontend; `bridge-job.ts` |
+| route job | fab_pcb `packages/router/src/bridge-job.ts` | JS router (the old "capacity") or Freerouting; applied as one commit. `options.preset: laser-prefab` = tscircuit's Solver8, layer changes only through free vias, which the apply *claims* (`UpdateItems` net) — summary `claimedVias`, `preset` |
 | bridge | fab_pcb `packages/bridge` | spawns/supervises `kicad-cli api-server`, relays WebSocket ⇄ nng, mounts the jobs |
 
 fabdesk consumes `@fp-pcb/proto` and `@fp-pcb/client` as root workspaces from the `vendor/fab_pcb`
@@ -116,6 +117,20 @@ Project layout afterwards: `circuit.netlist.json`, `board.kicad_pcb` / `.kicad_p
 (stub), `.fabdesk/compile.net` (what the job handed KiCad), `reports/{build,drc}.json`,
 `renders/`, `.fabdesk/runs/<id>/frames.jsonl`.
 
+The same on a **Viagrid 9055 blank** (verified 2026-09-08, 4 parts, 0805 footprints):
+
+```bash
+call project_set_board '{"template":"viagrid-9055"}'   # before the first build: the blank is drawn only on a board without an outline
+call circuit_build '{}'          # Build OK in 2.8 s: … blank drawn (180 free vias, 4 holes); warning prefab_placement
+call route_run '{"timeoutMs":180000}'   # Route … (capacity, laser-prefab) … 0 vias (1 factory vias claimed), 45 tracks
+call verify_viagrid '{}'         # 180 factory vias on the board, 1 claimed, 0 added; violations: pad_near_hole (J1, autoplaced onto the corner)
+call circuit_query '{"select":"vias"}'   # the claimed via carries its net; the other 179 have none
+```
+
+What that run shows is the state of the port: build, route, claiming and the check all work on
+the bridge; the parts sit where KiCad's autoplacer put them (top-left corner = the top via row), so
+DRC reports a pad-to-via clearance and the header near a hole. Placement input is open work (§6).
+
 ## 4. Verifying changes
 
 ```bash
@@ -141,6 +156,14 @@ Gotchas that cost time already:
   `currentBoard()` is empty afterwards; `AddLibraryTableRow` needs `enabled: true` or the row is
   saved disabled; `UpdateItems` on a footprint moves only its anchor (children snap back). All
   recorded as G28 in fab_pcb `docs/04-ipc-gaps.md`.
+- **`SetNetClasses` breaks `AutoplaceFootprints` for footprints imported afterwards** (G29):
+  `basic_string` from the fork, for the rest of the session. The compile job therefore sets
+  minimum constraints before the apply and the `Default` net class after autoplace, and a failed
+  autoplace is the `autoplace_failed` warning, not a failed build — a rebuild in a session that
+  already set rules leaves new footprints where the import spread them.
+- KiCad's netlist importer warns `Via connected to unknown net ()` once per free via; the compile
+  filters those out of `import_warnings`. KiCad DRC reports a claimed via a track merely crosses as
+  `via_dangling` (a warning): on a blank that is what an unused factory via under a trace is.
 
 ## 5. CI
 
@@ -169,16 +192,21 @@ Gotchas that cost time already:
    refresh `session.path` when a job creates a project (fabdesk adopts bare sessions by
    `GetProjectInfo`); a `Footprint.translate` in `@fp-pcb/client` (the compile inset moves the
    outline instead of parts); `ImportNetlist` should publish `DocumentChanged` (fork patch).
-4. **Agent authoring quality.** The netlist schema and workflow are in `agents-md.ts` and the MCP
+4. **Placement input.** The netlist carries no positions and the legacy autoplacer packs parts
+   into the outline's corner, ignoring a blank's vias (the Viagrid run above). Options: a
+   `placement` per component in `circuit.netlist.json` applied after the import (needs the
+   footprint translate from item 3, since `UpdateItems` moves only the anchor), or a placement
+   tool over the typed client. Until then a Viagrid board needs its parts moved in KiCad.
+5. **Agent authoring quality.** The netlist schema and workflow are in `agents-md.ts` and the MCP
    prompts; nobody has run an agent through them yet. Expect iterations on footprint selection
    (`circuit_search_parts`) and on the placement the legacy autoplacer produces.
-5. **Schematics.** A compiled netlist has no drawn schematic, so `verify_erc`,
+6. **Schematics.** A compiled netlist has no drawn schematic, so `verify_erc`,
    `render_schematic_svg` and schematic parity only apply to imported KiCad projects. Generating a
    schematic from the netlist (KiCad can create symbols/wires over the API) is the one capability
    tscircuit had that nothing replaces.
-6. **Route Cinema on real boards.** Frames come from job progress (pass / connection events, no
+7. **Route Cinema on real boards.** Frames come from job progress (pass / connection events, no
    geometry); the JS router finished the test board before any progress streamed.
-7. Small: `apps/desktop` user-data test assumes a case-sensitive filesystem; Freerouting stays
+8. Small: `apps/desktop` user-data test assumes a case-sensitive filesystem; Freerouting stays
    internal-only at the tool layer; `docs/benchmarks.md` is historical.
 
 ## 7. Decisions already taken (do not relitigate without a reason)
@@ -193,8 +221,13 @@ Gotchas that cost time already:
 
 ## 8. Where the history is
 
-- fabdesk PRs #136 (plan + submodule), #137 (compiler behind a flag), #139 (tscircuit removed);
-  fab_pcb PRs #2 (compile package), #3 (bridge job). All merged to `main`.
+- fabdesk PRs #136 (plan + submodule), #137 (compiler behind a flag), #139 (tscircuit removed,
+  then merged with `main`'s Viagrid 9055 feature and ported to this stack); fab_pcb PRs #2
+  (compile package), #3 (bridge job), #4 (prefab blanks: board rules/vias/holes in the compile,
+  the laser-prefab preset and via claiming in the router). All merged to `main`.
 - `docs/fab-pcb-migration.md` — the design, the review findings (§5), the experiment results
   (§6.1), the end-to-end run (§4.7).
-- fab_pcb `docs/04-ipc-gaps.md` G28 — the three KiCad API behaviours the compile job hit.
+- fab_pcb `docs/04-ipc-gaps.md` G28 — the three KiCad API behaviours the compile job hit; G29 —
+  the `SetNetClasses` / autoplace bug.
+- `docs/viagrid-9055.md` — the Viagrid feature as first built on tscircuit, with a note on top
+  saying what the port changed.

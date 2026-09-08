@@ -23,6 +23,9 @@
 > - **Placement is the open item**: the netlist has no positions, KiCad's autoplacer packs parts into the
 >   top-left corner (onto the top via row) and ignores vias. The agent docs say so; parts have to be moved
 >   in KiCad until the compile grows a placement input (see `docs/handoff-fab-pcb.md`, open work).
+> - Verified live on 2026-09-08 (4 parts): build 2.8 s with the blank drawn, route `laser-prefab` 5/5 in 0.6 s,
+>   1 factory via claimed, 0 added, `verify_viagrid` reading the KiCad board. KiCad DRC calls a claimed via that a
+>   track only crosses `via_dangling` (a warning) — that is an unused factory via under a trace, not a fault.
 > - `export_dxf`, the `verify_drc` cap, the Windows KiCad discovery and the agent-shim detection carried over
 >   unchanged; `applyRulesToKicadPro` is gone (rules go through the API now, for every project with
 >   `board.rules`, not only Viagrid).
