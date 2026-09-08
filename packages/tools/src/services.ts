@@ -88,6 +88,14 @@ export type ComponentScope = {
 };
 
 export type FootprintHit = { libId: string; nickname: string; name: string; description: string };
+export type PartDescription = {
+  kind: "footprint" | "symbol";
+  libId: string;
+  description: string;
+  anchor?: { x: number; y: number };
+  pins?: Array<{ number: string; name: string; electricalType: string; position: { x: number; y: number } }>;
+  pads?: Array<{ number: string; position: { x: number; y: number }; size: { x: number; y: number } }>;
+};
 
 export type DesignStatus = {
   url: string;
@@ -112,6 +120,10 @@ export interface DesignService {
   scope(projectDir: string, refs: string[], opts?: { excludePlaneNets?: boolean; excludeNets?: string[] }): Promise<ComponentScope>;
   /** Footprints in the KiCad libraries the bridge's server can see. */
   searchFootprints(query: string, limit: number): Promise<FootprintHit[]>;
+  /** Symbols in the KiCad libraries the bridge's server can see. */
+  searchSymbols(query: string, limit: number): Promise<FootprintHit[]>;
+  /** Pin/pad geometry needed to connect and place one exact library id safely. */
+  describePart(kind: "footprint" | "symbol", libId: string): Promise<PartDescription>;
   status(): Promise<DesignStatus>;
   /** Drop the project's session (project closed or deleted). */
   release(projectDir: string): Promise<void>;

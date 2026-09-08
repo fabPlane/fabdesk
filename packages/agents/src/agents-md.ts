@@ -97,18 +97,19 @@ ${sketches}
 {
   "netlist": {
     "components": [
-      { "ref": "R1", "value": "1k", "footprint": "Resistor_SMD:R_0402_1005Metric" },
-      { "ref": "D1", "value": "RED", "footprint": "LED_SMD:LED_0603_1608Metric", "fields": { "MPN": "..." } }
+      { "ref": "R1", "value": "1k", "footprint": "Resistor_SMD:R_0402_1005Metric", "libSource": { "lib": "Device", "part": "R" } },
+      { "ref": "D1", "value": "RED", "footprint": "LED_SMD:LED_0603_1608Metric", "libSource": { "lib": "Device", "part": "LED" }, "fields": { "MPN": "..." } }
     ],
     "nets": [
       { "name": "VCC", "nodes": [{ "ref": "R1", "pin": "1" }] },
-      { "name": "N1", "nodes": [{ "ref": "R1", "pin": "2" }, { "ref": "D1", "pin": "1" }] },
-      { "name": "GND", "nodes": [{ "ref": "D1", "pin": "2" }] }
+      { "name": "N1", "nodes": [{ "ref": "R1", "pin": "2" }, { "ref": "D1", "pin": "2" }] },
+      { "name": "GND", "nodes": [{ "ref": "D1", "pin": "1" }] }
     ]
   },
   "board": {
     "widthMm": ${ctx.board.widthMm ?? 40},
     "heightMm": ${ctx.board.heightMm ?? 30},
+    "copperLayers": ${ctx.board.layers},
     "placements": [
       { "ref": "R1", "position": { "x": 10, "y": 10 } },
       { "ref": "D1", "position": { "x": 20, "y": 10 } }
@@ -117,9 +118,17 @@ ${sketches}
 }
 \`\`\`
 - \`footprint\` is a KiCad library id (\`Library:Name\`). Find real ones with the footprint search tool; never invent names.
+- \`libSource\` is the KiCad schematic symbol id split into \`lib\` and \`part\`. Search with
+  \`circuit_search_parts {"kind":"symbol","query":"resistor"}\`; supply it for every component so
+  builds produce searchable symbols and labelled wires. A missing or unknown symbol is a build warning.
+- Before assigning nets, inspect exact symbol pin names/types and footprint pads with
+  \`circuit_describe_part\`. Never guess polarity or pad numbering: KiCad \`Device:LED\` is pin 1
+  cathode (K), pin 2 anode (A). Use specific package-size searches such as \`R_0805_2012\` when
+  generic results are too broad.
 - \`board.placements\` is optional and uses absolute millimetres in the board frame (+x right, +y down).
-  Supply it when placement matters. A rebuild moves only references explicitly listed there; manual
-  placement of other existing footprints is preserved. Inspect the result with \`circuit_query {"select":"components"}\`.
+  Each point places the footprint library anchor; rotation is not currently an input. Supply positions
+  when placement matters. A rebuild moves only references explicitly listed there; manual placement
+  of other existing footprints is preserved. Inspect the result with \`circuit_query {"select":"components"}\`.
 - Every pin that carries a signal appears in exactly one net; a pin listed nowhere is left unconnected.
 - Reference prefixes matter: R/C/L/V/I/D are simulated by value; everything else is placed and routed only.
 - Keep values explicit (\`"4.7k"\`, \`"100nF"\`, \`"3.3V"\`).
@@ -127,8 +136,9 @@ ${sketches}
 ## Workflow
 1. Read the sketches and the prompt; read \`circuit.netlist.json\` if it exists.
 2. Write or edit \`circuit.netlist.json\`.
-3. Build with the \`${mcp}\` build tool; fix every error and rebuild until it passes. Query components
-   and inspect a board render; add or adjust explicit placements when parts collide or crowd an edge.
+3. Search both footprint and symbol ids and describe their pins/pads before choosing them. Build with the \`${mcp}\` build tool;
+   fix every error and review every warning until it passes. Query components and inspect board and
+   schematic renders; add or adjust explicit placements when parts collide or crowd an edge.
 4. Route with the routing tool.
 5. Run DRC; fix the source (not the generated files) and repeat from step 3 while anything fails.
 6. Render, then summarise what the board does, the parts used and any open issues. Render tools attach

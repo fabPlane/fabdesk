@@ -120,6 +120,10 @@ export function mockServices(projects: ProjectHandle[], overrides: Partial<CoreS
       unroute: async (_dir, nets) => ({ tracks: nets?.length ?? 1, vias: 0 }),
       scope: async (_dir, refs) => ({ components: refs, missing: [], nets: ["N1"], excluded: [], pads: Object.fromEntries(refs.map((r) => [r, 2])) }),
       searchFootprints: async (query, limit) => [{ libId: "Resistor_SMD:R_0402_1005Metric", nickname: "Resistor_SMD", name: "R_0402_1005Metric", description: `matches ${query}` }].slice(0, limit),
+      searchSymbols: async (query, limit) => [{ libId: "Device:R", nickname: "Device", name: "R", description: `matches ${query}` }].slice(0, limit),
+      describePart: async (kind, libId) => kind === "symbol"
+        ? { kind, libId, description: "Resistor", pins: [{ number: "1", name: "~", electricalType: "PT_PASSIVE", position: { x: -2.54, y: 0 } }] }
+        : { kind, libId, description: "0402 resistor", anchor: { x: 0, y: 0 }, pads: [{ number: "1", position: { x: -0.5, y: 0 }, size: { x: 0.6, y: 0.6 } }] },
       status: async () => ({ url: "http://127.0.0.1:4020", ok: true, frontends: ["netlist-json"] }),
       release: async () => {},
     },

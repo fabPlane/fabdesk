@@ -6,8 +6,8 @@
  */
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { KiCadObjectType } from "@fp-pcb/proto";
-import { Via, toMm, type Board, type KiCad } from "@fp-pcb/client";
+import { ElectricalPinType, KiCadObjectType } from "@fp-pcb/proto";
+import { LibFootprint, LibSymbol, SchematicPin, Via, toMm, type Board, type KiCad } from "@fp-pcb/client";
 import type { FpPcbCompileJob, FpPcbDiagnostic, FpPcbRouteJob } from "@fabdesk/protocol";
 import {
   PROJECT_FILES,
@@ -21,6 +21,7 @@ import {
   type DesignService,
   type DesignStatus,
   type FootprintHit,
+  type PartDescription,
   type RouteJobOptions,
   type RouteProgress,
   type RouteSummary,
@@ -380,13 +381,13 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     return { components, missing, nets: kept, excluded, pads };
   };
 
-  const searchFootprints = async (query: string, limit: number): Promise<FootprintHit[]> => {
+  const searchLibraries = async (kind: "footprint" | "symbol", query: string, limit: number): Promise<FootprintHit[]> => {
     const kicad = await anyKicad();
     const tokens = query
       .toLowerCase()
       .split(/[\s:]+/)
       .filter(Boolean);
-    const nicknames = await kicad.libraries.nicknames("footprint");
+    const nicknames = await kicad.libraries.nicknames(kind);
     const scored = nicknames
       .map((n) => ({ n, hit: tokens.filter((t) => n.toLowerCase().includes(t)).length }))
       .sort((a, b) => b.hit - a.hit);
@@ -397,7 +398,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       // Libraries whose name matches take everything matching the rest; others only exact-ish entry hits.
       const entries = await kicad.libraries
         .entries(
-          "footprint",
+          kind,
           n,
           hit ? tokens.filter((t) => !n.toLowerCase().includes(t)).join(" ") : filter,
         )
@@ -413,6 +414,41 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       }
     }
     return hits;
+  };
+  const searchFootprints = (query: string, limit: number) => searchLibraries("footprint", query, limit);
+  const searchSymbols = (query: string, limit: number) => searchLibraries("symbol", query, limit);
+  const describePart = async (kind: "footprint" | "symbol", libId: string): Promise<PartDescription> => {
+    const kicad = await anyKicad();
+    const item = await kicad.libraries.get(kind, libId);
+    if (!item) throw new ToolError(`${kind} ${libId} was not found in the design server libraries`, "not_found");
+    if (kind === "symbol" && item instanceof LibSymbol) {
+      const pins = item.items.filter((child): child is SchematicPin => child instanceof SchematicPin);
+      return {
+        kind,
+        libId,
+        description: item.description,
+        pins: pins.map((pin) => ({
+          number: pin.number,
+          name: pin.name,
+          electricalType: ElectricalPinType[pin.electricalType] ?? String(pin.electricalType),
+          position: { x: mm(pin.position.x), y: mm(pin.position.y) },
+        })),
+      };
+    }
+    if (kind === "footprint" && item instanceof LibFootprint) {
+      return {
+        kind,
+        libId,
+        description: item.description,
+        anchor: { x: mm(item.anchor.x), y: mm(item.anchor.y) },
+        pads: item.pads.map((pad) => ({
+          number: pad.number,
+          position: { x: mm(pad.position.x), y: mm(pad.position.y) },
+          size: { x: mm(pad.size.x), y: mm(pad.size.y) },
+        })),
+      };
+    }
+    throw new ToolError(`${libId} did not resolve as a ${kind}`, "invalid_args");
   };
 
   /** Any live KiCad for server-wide questions (libraries); a bare session when no project is open. */
@@ -441,6 +477,8 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     unroute,
     scope,
     searchFootprints,
+    searchSymbols,
+    describePart,
     status,
     release: (dir) => deps.sessions.release(dir),
   };

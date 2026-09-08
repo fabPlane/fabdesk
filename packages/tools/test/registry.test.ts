@@ -12,7 +12,7 @@ describe("registry", () => {
     expect(names).toEqual([
       "load_toolset", "project_status", "circuit_build", "circuit_read_errors", "route_run", "verify_drc", "render_board",
       "project_read_file", "project_write_file", "project_list_sketches", "project_set_board", "project_import_kicad",
-      "circuit_query", "circuit_search_parts",
+      "circuit_query", "circuit_search_parts", "circuit_describe_part",
       "route_status", "route_cancel", "route_unroute", "route_scope",
       "kicad_stats",
       "verify_erc", "verify_gate", "verify_viagrid",
@@ -45,6 +45,12 @@ describe("registry", () => {
     await expect(reg.invoke("project_status", {}, (ref) => noProject({ def: reg.get("project_status")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }))).rejects.toBeInstanceOf(ToolError);
     const out = await reg.invoke("project_status", { project: project.id }, (ref) => noProject({ def: reg.get("project_status")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }));
     expect(out.text).toContain(`Project "demo"`);
+    const symbols = await reg.invoke("circuit_search_parts", { query: "resistor", kind: "symbol" }, (ref) => noProject({ def: reg.get("circuit_search_parts")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }));
+    expect(symbols.text).toContain("Device:R");
+    expect(symbols.json).toMatchObject({ kind: "symbol" });
+    const part = await reg.invoke("circuit_describe_part", { kind: "symbol", libId: "Device:R" }, (ref) => noProject({ def: reg.get("circuit_describe_part")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }));
+    expect(part.text).toContain("number");
+    expect(part.text).toContain("PT_PASSIVE");
     await expect(reg.invoke("circuit_query", { select: "nope", project: project.id }, (ref) => noProject({ def: reg.get("circuit_query")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }))).rejects.toThrow(/invalid arguments/);
   });
 
