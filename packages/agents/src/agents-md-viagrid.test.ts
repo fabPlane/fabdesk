@@ -10,6 +10,8 @@ describe("AGENTS.md for a prefab blank", () => {
     expect(md).toContain("Layer changes happen only through the factory vias");
     expect(md).toContain("verify_viagrid");
     expect(md).toContain("describe vias or holes in the netlist");
+    expect(md).toContain("board.placements");
+    expect(md).toContain("x = blank x + 45");
   });
 
   test("says nothing about blanks otherwise", () => {

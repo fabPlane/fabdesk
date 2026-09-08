@@ -26,9 +26,9 @@ vias** (1.0 mm pad, 0.2 mm drill) and four 3.5 mm mounting holes. Copper is remo
   clusters centred on x = ±19 (y = ±8, ±10, ±12 rows plus a small diamond at y = 0) — blank frame, centre
   origin, +y up; the board's KiCad frame is x + 45, 27.5 − y. Free areas for parts: x in −12…12, or |x| > 26
   with |y| < 14. Keep 2 mm from the mounting holes at (±38.75, ±18.25).
-- The autoplacer packs parts into the top-left corner, onto the top via row. Check placement with the query
-  tool (components, vias) and \`verify_viagrid\`; a part on a via must be moved (in KiCad, or by unrouting and
-  rebuilding with a different board size is not an option — the blank is fixed).
+- Give every component an explicit \`board.placements\` entry in the KiCad frame (x = blank x + 45,
+  y = 27.5 − blank y). Use the free areas above, keep pads clear of factory vias and mounting holes,
+  then check with the query tool and \`verify_viagrid\`.
 - Prefer 0805 or larger SMD parts and 0.2 mm traces (blank rules: track 0.2 mm, clearance 0.2 mm).
 - After routing run \`verify_viagrid\`, then DRC; \`export_dxf\` writes the copper-removal artwork.`,
 };
@@ -106,10 +106,20 @@ ${sketches}
       { "name": "GND", "nodes": [{ "ref": "D1", "pin": "2" }] }
     ]
   },
-  "board": { "widthMm": ${ctx.board.widthMm ?? 40}, "heightMm": ${ctx.board.heightMm ?? 30} }
+  "board": {
+    "widthMm": ${ctx.board.widthMm ?? 40},
+    "heightMm": ${ctx.board.heightMm ?? 30},
+    "placements": [
+      { "ref": "R1", "position": { "x": 10, "y": 10 } },
+      { "ref": "D1", "position": { "x": 20, "y": 10 } }
+    ]
+  }
 }
 \`\`\`
 - \`footprint\` is a KiCad library id (\`Library:Name\`). Find real ones with the footprint search tool; never invent names.
+- \`board.placements\` is optional and uses absolute millimetres in the board frame (+x right, +y down).
+  Supply it when placement matters. A rebuild moves only references explicitly listed there; manual
+  placement of other existing footprints is preserved. Inspect the result with \`circuit_query {"select":"components"}\`.
 - Every pin that carries a signal appears in exactly one net; a pin listed nowhere is left unconnected.
 - Reference prefixes matter: R/C/L/V/I/D are simulated by value; everything else is placed and routed only.
 - Keep values explicit (\`"4.7k"\`, \`"100nF"\`, \`"3.3V"\`).
@@ -117,7 +127,8 @@ ${sketches}
 ## Workflow
 1. Read the sketches and the prompt; read \`circuit.netlist.json\` if it exists.
 2. Write or edit \`circuit.netlist.json\`.
-3. Build with the \`${mcp}\` build tool; fix every error and rebuild until it passes.
+3. Build with the \`${mcp}\` build tool; fix every error and rebuild until it passes. Query components
+   and inspect a board render; add or adjust explicit placements when parts collide or crowd an edge.
 4. Route with the routing tool.
 5. Run DRC; fix the source (not the generated files) and repeat from step 3 while anything fails.
 6. Render, then summarise what the board does, the parts used and any open issues. Render tools attach

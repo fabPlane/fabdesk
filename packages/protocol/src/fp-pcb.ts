@@ -99,6 +99,9 @@ export const FpPcbBoardSpec = z.object({
   rules: FpPcbBoardRules.optional(),
   vias: z.array(z.object({ x: z.number(), y: z.number(), diameterMm: z.number().optional(), drillMm: z.number().optional() })).optional(),
   holes: z.array(z.object({ x: z.number(), y: z.number(), diameterMm: z.number() })).optional(),
+  placements: z
+    .array(z.object({ ref: z.string(), position: z.object({ x: z.number(), y: z.number() }) }))
+    .optional(),
 });
 export type FpPcbBoardSpec = z.infer<typeof FpPcbBoardSpec>;
 
