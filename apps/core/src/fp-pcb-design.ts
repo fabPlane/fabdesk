@@ -443,7 +443,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         anchor: { x: mm(item.anchor.x), y: mm(item.anchor.y) },
         pads: item.pads.map((pad) => ({
           number: pad.number,
-          position: { x: mm(pad.position.x), y: mm(pad.position.y) },
+          position: { x: mm(pad.position.x - item.anchor.x), y: mm(pad.position.y - item.anchor.y) },
           size: { x: mm(pad.size.x), y: mm(pad.size.y) },
         })),
       };
