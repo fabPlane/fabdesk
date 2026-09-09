@@ -71,7 +71,9 @@ export async function runRoute(
   await mkdir(runDir, { recursive: true });
   const framesPath = join(runDir, "frames.jsonl");
   await writeJson(join(runDir, "request.json"), { runId, router, onlyConnections: args.onlyConnections ?? null, timeoutMs: args.timeoutMs });
-  ctx.services.routeRuns.start({ id: runId, projectId: project.id, router, framesPath, startedAt: new Date().toISOString() });
+  // Keep the persisted reference portable when the projects root moves. FrameSink still writes to
+  // the absolute path above; the core resolves this relative path against the current project.
+  ctx.services.routeRuns.start({ id: runId, projectId: project.id, router, framesPath: join(PROJECT_FILES.runs, runId, "frames.jsonl"), startedAt: new Date().toISOString() });
 
   const started = Date.now();
   const sink = new FrameSink(framesPath, ctx.services.bus);
