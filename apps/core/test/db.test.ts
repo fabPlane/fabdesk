@@ -12,7 +12,7 @@ describe("sqlite", () => {
     expect(migrate(db)).toBe(MIGRATIONS.at(-1)!.version);
     expect(schemaVersion(db)).toBe(MIGRATIONS.at(-1)!.version);
     const tables = db.query<{ name: string }, []>("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all().map((r) => r.name);
-    for (const t of ["projects", "folders", "threads", "messages", "messages_fts", "runs", "jobs", "route_runs", "settings", "schema_migrations"]) expect(tables).toContain(t);
+    for (const t of ["projects", "folders", "threads", "messages", "messages_fts", "runs", "run_dumps", "jobs", "route_runs", "settings", "schema_migrations"]) expect(tables).toContain(t);
   });
 
   test("WAL on disk", async () => {
@@ -66,6 +66,9 @@ describe("sqlite", () => {
     expect(store.runs.get(run.id)!.status).toBe("completed");
     expect(store.runs.lastSession(t.id, "claude")).toBe("sess-1");
     expect(store.runs.lastSession(t.id, "codex")).toBeNull();
+    store.runDumps.put({ runId: run.id, traceId: "trace-1", threadId: t.id, agentId: "claude", projectId: null, createdAt: "2026-09-09T00:00:00.000Z", dumpJson: '{"schema":"fabdesk.llm-run-dump/v1"}\n' });
+    expect(store.runDumps.get(run.id)?.dumpJson).toContain("fabdesk.llm-run-dump/v1");
+    expect(store.runDumps.list()).toHaveLength(1);
 
     store.jobs.insert({ id: "job_1", kind: "tool:circuit_build", projectId: null });
     store.jobs.update("job_1", { status: "running", startedAt: "now" });

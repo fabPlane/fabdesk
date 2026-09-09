@@ -1,53 +1,66 @@
-# Agent-run telemetry
+# Agent-run dumps
 
-Fabdesk records every in-app Codex, Claude, Cursor and Grok run as an OpenTelemetry trace and as an exact local debug bundle. The trace is useful for comparing agent behavior across runs; the local bundle retains content that is too large or sensitive to put in a shared trace database.
+Fabdesk records every in-app Codex, Claude, Cursor and Grok run as a portable, structured debug bundle. The main output is one `llm-dump.json` file designed to be attached to a fresh LLM session for analysis.
 
 ## What is captured
 
-- one root span per agent run, linked to the Fabdesk run, thread, agent session, project and model;
-- one child span per MCP tool call, with the authoritative request/result ordering and MCP session id;
-- one child span per `kicad-cli` process, with its executable, complete argv, cwd, exit code, stdout and stderr hashes;
-- agent stream events (text, thinking, tool use/results, usage, errors and completion);
+- agent text, thinking, tool use/results, usage, errors and completion;
+- authoritative MCP request/result ordering and progress events;
+- complete `kicad-cli` executable, argv, cwd, exit code, stdout and stderr, including failures;
 - nanosecond timestamps anchored to the wall clock with a monotonic clock;
-- a content-addressed snapshot immediately before each project-scoped tool call.
+- a content-addressed project snapshot immediately before every project-scoped tool call.
 
-The snapshot walks the project without following symlinks and excludes `.git` and `.fabdesk`. Each manifest records relative path, file type, byte size, nanosecond mtime and SHA-256. File bodies are deduplicated into a per-run `snapshots/blobs/` directory, so unchanged KiCad boards and renders are stored once across many calls.
+The snapshot walks the project without following symlinks and excludes `.git` and `.fabdesk`. Each manifest records relative path, file type, byte size, nanosecond mtime and SHA-256. File bodies are deduplicated, so an unchanged KiCad board is stored once across many tool calls.
 
-The bundle is under `<project>/.fabdesk/runs/<run-id>/`:
+## Files
+
+Each run writes under `<project>/.fabdesk/runs/<run-id>/`:
 
 ```text
-trace.jsonl
+llm-dump.json              # single-file dump to give another LLM
+trace.jsonl                # append-only raw event stream
 snapshots/
-  000000.json
+  000000.json              # exact pre-tool file manifest
   000001.json
-  blobs/<sha256>
+  blobs/<sha256>           # deduplicated original file bodies
 ```
 
-The SQLite `runs.log_path` column points to `trace.jsonl`. Each JSONL record has `traceId`, `runId`, a strict `seq`, `timeUnixNano`, `type`, and `body`. It contains the full MCP inputs/results and KiCad stdout/stderr, and can be handed directly to Codex or Claude together with the referenced snapshot manifests.
+`llm-dump.json` contains:
 
-Tracing is best-effort: a snapshot or exporter failure is recorded/logged but never fails the underlying tool call.
+- the ordered event timeline;
+- every snapshot manifest;
+- every unique UTF-8 project file up to 5 MiB, keyed by SHA-256;
+- metadata and omission reasons for binary or unusually large files;
+- an analysis instruction telling the next model to compare each tool call with the preceding project state and KiCad result.
 
-## Shared local database
+Text source, KiCad documents, JSON reports and SVG renders are normally embedded. PNG, GLB and other binary renders remain in the run/project directory and are represented by path, size and hash.
 
-For development and comparisons, start the checked-in Collector + Tempo + Grafana stack:
+To analyze a run, attach `llm-dump.json` to a new Codex or Claude session and ask, for example:
+
+> Analyze this Fabdesk run. Find where the agent misunderstood the project or KiCad state, correlate each MCP request with the preceding snapshot, and explain any unnecessary loops or failed recovery attempts.
+
+The SQLite `runs.log_path` column points to the raw `trace.jsonl`; the LLM dump is next to it at the deterministic name `llm-dump.json`.
+
+## Common database
+
+Every completed dump is also stored in the `run_dumps` table of Fabdesk's existing WAL-backed SQLite database, `fabdesk.db`. This happens automatically: there is no Docker container, database server, dashboard or setup variable.
+
+The database lives under the normal platform-specific Fabdesk data directory. Set `FABDESK_HOME` if you want an explicit, easy-to-find location:
 
 ```bash
-docker compose -f ops/otel/compose.yaml up -d
-export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318
-export OTEL_SERVICE_NAME=fabdesk-core-dev
+export FABDESK_HOME="$PWD/.fabdesk-dev"
 bun run dev
 ```
 
-Open `http://127.0.0.1:3000`, select the Tempo data source, and search for service `fabdesk-core-dev`. Filter or compare traces with `fabdesk.run.id`, `fabdesk.agent.id`, `rpc.method`, or `process.command_args`.
-
-The compose stack binds only to localhost and persists data in the `fabdesk-otel-data` Docker volume. It is a debug stack, not a production deployment. For a team database, point `OTEL_EXPORTER_OTLP_ENDPOINT` (or the signal-specific `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`) at the team's OTLP/HTTP collector instead.
-
-By default, the shared database receives metadata, paths, hashes and statuses, while the exact content remains in the local bundle. To include truncated MCP arguments/results, agent events, and KiCad stdout/stderr in OTLP spans, explicitly opt in:
+Fetch one complete dump into a file for another LLM session:
 
 ```bash
-export FABDESK_OTEL_CAPTURE_CONTENT=1
+bun run runs:export -- run_abc123
+# writes run_abc123.llm-dump.json
 ```
 
-That content may contain proprietary board data or secrets. Only enable it for a collector with appropriate access controls and retention.
+Pass a second argument for a different output path, or `-` for stdout.
 
-The exporter also honors the standard `OTEL_EXPORTER_OTLP_HEADERS` / `OTEL_EXPORTER_OTLP_TRACES_HEADERS` and timeout environment variables. Fabdesk uses OTLP over HTTP/protobuf.
+`runs:export` reads `fabdesk.db` from the normal data directory (or `FABDESK_HOME`) and does not modify the dump. The database copy makes all local runs available from one place; the project-local copy remains useful if a project is moved to another machine.
+
+Optional OpenTelemetry export remains available for an already-managed OTLP/HTTP endpoint by setting `OTEL_EXPORTER_OTLP_ENDPOINT`. It is not needed to create or export LLM dumps. By default OTLP spans contain only metadata, paths, hashes and statuses; set `FABDESK_OTEL_CAPTURE_CONTENT=1` only if you also want truncated prompts, tool inputs/results and KiCad output duplicated into span attributes.

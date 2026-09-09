@@ -21,6 +21,9 @@ import { errMsg, logger } from "./log";
 
 type RunRecord = {
   runId: string;
+  threadId: string;
+  agentId: string;
+  projectId: string | null;
   traceId: string;
   dir: string;
   logPath: string;
@@ -42,7 +45,19 @@ export type AgentTrace = {
   ): Promise<void>;
 };
 
-export type RunTelemetryOptions = { version: string };
+export type RunDumpSink = {
+  put(dump: {
+    runId: string;
+    traceId: string;
+    threadId: string;
+    agentId: string;
+    projectId: string | null;
+    createdAt: string;
+    dumpJson: string;
+  }): void;
+};
+
+export type RunTelemetryOptions = { version: string; runDumps?: RunDumpSink };
 
 const NS_PER_MS = 1_000_000n;
 const clockWallNs = BigInt(Date.now()) * NS_PER_MS;
@@ -64,8 +79,10 @@ export class RunTelemetry {
   private readonly runs = new Map<string, RunRecord>();
   private readonly activeTool = new AsyncLocalStorage<ToolScope>();
   private readonly captureOtlpContent = process.env["FABDESK_OTEL_CAPTURE_CONTENT"] === "1";
+  private readonly runDumps: RunDumpSink | undefined;
 
   constructor(opts: RunTelemetryOptions) {
+    this.runDumps = opts.runDumps;
     const endpoint =
       process.env["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"] ??
       process.env["OTEL_EXPORTER_OTLP_ENDPOINT"];
@@ -115,6 +132,9 @@ export class RunTelemetry {
     const traceId = span.spanContext().traceId || randomBytes(16).toString("hex");
     const run: RunRecord = {
       runId: input.runId,
+      threadId: input.threadId,
+      agentId: input.agentId,
+      projectId: input.projectId,
       traceId,
       dir,
       logPath,
@@ -300,6 +320,9 @@ export class RunTelemetry {
     details: Record<string, unknown>,
   ): Promise<void> {
     await this.write(run, "run.finished", { status, ...details });
+    await createLlmDump(run, this.runDumps).catch((error) =>
+      logger.warn("could not persist LLM run dump", { runId: run.runId, error: errMsg(error) }),
+    );
     run.span.setStatus({
       code: status === "completed" ? SpanStatusCode.OK : SpanStatusCode.ERROR,
       message: status,
@@ -328,6 +351,88 @@ export class RunTelemetry {
       );
     return run.writes;
   }
+}
+
+type SnapshotManifest = {
+  schema: 1;
+  projectDir: string;
+  capturedAtUnixNano: string;
+  entries: SnapshotEntry[];
+};
+
+type DumpBlob =
+  | { encoding: "utf8"; content: string }
+  | { encoding: "omitted"; size: number; reason: "binary" | "over-limit" | "missing" };
+
+const MAX_LLM_TEXT_BLOB_BYTES = 5 * 1024 * 1024;
+
+async function createLlmDump(run: RunRecord, sink: RunDumpSink | undefined): Promise<void> {
+  const events = (await readFile(run.logPath, "utf8"))
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as unknown);
+  const snapshotsDir = join(run.dir, "snapshots");
+  const names = await readdir(snapshotsDir).catch(() => [] as string[]);
+  const snapshots: SnapshotManifest[] = [];
+  for (const name of names.filter((value) => /^\d+\.json$/.test(value)).sort()) {
+    snapshots.push(
+      JSON.parse(await readFile(join(snapshotsDir, name), "utf8")) as SnapshotManifest,
+    );
+  }
+  const files = new Map<string, SnapshotEntry>();
+  for (const snapshot of snapshots) {
+    for (const entry of snapshot.entries)
+      if (entry.kind === "file" && !files.has(entry.sha256)) files.set(entry.sha256, entry);
+  }
+  const blobs: Record<string, DumpBlob> = {};
+  for (const [sha256, entry] of files) {
+    if (entry.size > MAX_LLM_TEXT_BLOB_BYTES) {
+      blobs[sha256] = { encoding: "omitted", size: entry.size, reason: "over-limit" };
+      continue;
+    }
+    const bytes = await readFile(join(snapshotsDir, "blobs", sha256)).catch(() => null);
+    if (!bytes) {
+      blobs[sha256] = { encoding: "omitted", size: entry.size, reason: "missing" };
+      continue;
+    }
+    try {
+      const content = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+      blobs[sha256] = content.includes("\0")
+        ? { encoding: "omitted", size: entry.size, reason: "binary" }
+        : { encoding: "utf8", content };
+    } catch {
+      blobs[sha256] = { encoding: "omitted", size: entry.size, reason: "binary" };
+    }
+  }
+  const createdAtUnixNano = unixNano();
+  const dump = {
+    schema: "fabdesk.llm-run-dump/v1",
+    runId: run.runId,
+    traceId: run.traceId,
+    threadId: run.threadId,
+    agentId: run.agentId,
+    projectId: run.projectId,
+    createdAtUnixNano,
+    instructions:
+      "Analyze the ordered events, compare each MCP request with its preceding project snapshot, and identify where the agent's model of the KiCad project diverged from the recorded files or CLI results.",
+    events,
+    snapshots,
+    blobs,
+  };
+  const dumpText = json(dump) + "\n";
+  await writeFile(join(run.dir, "llm-dump.json"), dumpText, {
+    encoding: "utf8",
+    mode: 0o600,
+  });
+  sink?.put({
+    runId: run.runId,
+    traceId: run.traceId,
+    threadId: run.threadId,
+    agentId: run.agentId,
+    projectId: run.projectId,
+    createdAt: new Date(Number(BigInt(createdAtUnixNano) / NS_PER_MS)).toISOString(),
+    dumpJson: dumpText,
+  });
 }
 
 function failedKicadResult(error: unknown): RunResult | null {

@@ -1,0 +1,33 @@
+/** Exports a complete Fabdesk LLM run dump from Fabdesk's existing SQLite database. */
+import { resolveConfig } from "../apps/core/src/config";
+import { Store } from "../apps/core/src/db";
+
+export function fetchRunDump(runId: string, dbPath = resolveConfig().dbPath): string {
+  const store = Store.open(dbPath);
+  try {
+    const row = store.runDumps.get(runId);
+    if (!row) throw new Error(`run dump not found: ${runId}`);
+    JSON.parse(row.dumpJson);
+    return row.dumpJson.endsWith("\n") ? row.dumpJson : `${row.dumpJson}\n`;
+  } finally {
+    store.close();
+  }
+}
+
+async function main(): Promise<void> {
+  const [runId, outputArg] = Bun.argv.slice(2);
+  if (!runId) {
+    process.stderr.write("usage: bun run runs:export -- <run-id> [output.json|-]\n");
+    process.exitCode = 2;
+    return;
+  }
+  const dump = fetchRunDump(runId);
+  const output = outputArg ?? `${runId}.llm-dump.json`;
+  if (output === "-") process.stdout.write(dump);
+  else {
+    await Bun.write(output, dump);
+    process.stdout.write(`${output}\n`);
+  }
+}
+
+if (import.meta.main) await main();

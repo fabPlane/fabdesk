@@ -235,6 +235,8 @@ describe("http daemon", () => {
     expect(detail.run.agentSessionId).toBe("sess-42");
     const tracePath = join(created.path, ".fabdesk", "runs", runId, "trace.jsonl");
     expect(await Bun.file(tracePath).exists()).toBe(true);
+    expect(await Bun.file(join(created.path, ".fabdesk", "runs", runId, "llm-dump.json")).exists()).toBe(true);
+    expect(JSON.parse(daemon.store.runDumps.get(runId)!.dumpJson)).toMatchObject({ schema: "fabdesk.llm-run-dump/v1", runId });
     expect(daemon.store.db.query<{ log_path: string }, [string]>("SELECT log_path FROM runs WHERE id = ?").get(runId)?.log_path).toBe(tracePath);
     // The per-run token is revoked after the run.
     expect((await fetch(`${daemon.url}/projects`, { headers: { authorization: `Bearer ${lastSession!.mcp.token}` } })).status).toBe(401);

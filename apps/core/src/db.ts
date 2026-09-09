@@ -112,6 +112,21 @@ export const MIGRATIONS: Array<{ version: number; sql: string }> = [
       );
     `,
   },
+  {
+    version: 2,
+    sql: `
+      CREATE TABLE run_dumps (
+        run_id TEXT PRIMARY KEY,
+        trace_id TEXT NOT NULL,
+        thread_id TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        project_id TEXT,
+        created_at TEXT NOT NULL,
+        dump_json TEXT NOT NULL
+      );
+      CREATE INDEX run_dumps_created ON run_dumps(created_at DESC);
+    `,
+  },
 ];
 
 export function openDatabase(path: string): Database {
@@ -411,6 +426,37 @@ export class RunRepo {
   }
 }
 
+/* ---------- complete agent-run dumps ---------- */
+
+export type RunDump = {
+  runId: string;
+  traceId: string;
+  threadId: string;
+  agentId: string;
+  projectId: string | null;
+  createdAt: string;
+  dumpJson: string;
+};
+
+type RunDumpRow = { run_id: string; trace_id: string; thread_id: string; agent_id: string; project_id: string | null; created_at: string; dump_json: string };
+
+export class RunDumpRepo {
+  constructor(private readonly db: Database) {}
+  put(dump: RunDump): void {
+    this.db.run(
+      "INSERT INTO run_dumps(run_id, trace_id, thread_id, agent_id, project_id, created_at, dump_json) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(run_id) DO UPDATE SET trace_id = excluded.trace_id, thread_id = excluded.thread_id, agent_id = excluded.agent_id, project_id = excluded.project_id, created_at = excluded.created_at, dump_json = excluded.dump_json",
+      [dump.runId, dump.traceId, dump.threadId, dump.agentId, dump.projectId, dump.createdAt, dump.dumpJson],
+    );
+  }
+  get(runId: string): RunDump | null {
+    const row = this.db.query<RunDumpRow, [string]>("SELECT * FROM run_dumps WHERE run_id = ?").get(runId);
+    return row ? { runId: row.run_id, traceId: row.trace_id, threadId: row.thread_id, agentId: row.agent_id, projectId: row.project_id, createdAt: row.created_at, dumpJson: row.dump_json } : null;
+  }
+  list(limit = 100): Omit<RunDump, "dumpJson">[] {
+    return this.db.query<Omit<RunDumpRow, "dump_json">, [number]>("SELECT run_id, trace_id, thread_id, agent_id, project_id, created_at FROM run_dumps ORDER BY created_at DESC LIMIT ?").all(limit).map((row) => ({ runId: row.run_id, traceId: row.trace_id, threadId: row.thread_id, agentId: row.agent_id, projectId: row.project_id, createdAt: row.created_at }));
+  }
+}
+
 /* ---------- jobs ---------- */
 
 type JobRow = { id: string; kind: string; project_id: string | null; status: string; progress: number | null; note: string | null; result_json: string | null; error: string | null; created_at: string; started_at: string | null; ended_at: string | null };
@@ -517,6 +563,7 @@ export class Store {
   readonly threads: ThreadRepo;
   readonly folders: FolderRepo;
   readonly runs: RunRepo;
+  readonly runDumps: RunDumpRepo;
   readonly jobs: JobRepo;
   readonly routeRuns: RouteRunRepo;
   readonly settings: SettingsRepo;
@@ -525,6 +572,7 @@ export class Store {
     this.threads = new ThreadRepo(db);
     this.folders = new FolderRepo(db);
     this.runs = new RunRepo(db);
+    this.runDumps = new RunDumpRepo(db);
     this.jobs = new JobRepo(db);
     this.routeRuns = new RouteRunRepo(db);
     this.settings = new SettingsRepo(db);

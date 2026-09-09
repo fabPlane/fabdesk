@@ -68,7 +68,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   const staleRuns = store.runs.failStale();
   if (staleRuns.length) logger.info("failed stale agent runs from previous run", { threads: staleRuns });
   const tokens = new TokenSet(config.token);
-  const telemetry = new RunTelemetry({ version: config.version });
+  const telemetry = new RunTelemetry({ version: config.version, runDumps: store.runDumps });
   const jobs = new JobRunner({
     emit: (e) => bus.emit(e),
     store: store.jobs,
@@ -271,8 +271,8 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       await new Promise((r) => setTimeout(r, 30));
       server.stop(true);
       if (!opts.noHandshake) await removeHandshake(config.handshakePath);
-      store.close();
       await telemetry.shutdown();
+      store.close();
       await closeSentry();
       resolveClosed(reason);
     },

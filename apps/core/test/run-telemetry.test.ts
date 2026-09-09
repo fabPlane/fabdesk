@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ProjectHandle } from "@fabdesk/tools";
+import { Store, openDatabase } from "../src/db";
 import { RunTelemetry } from "../src/run-telemetry";
 
 describe("agent run telemetry", () => {
@@ -77,7 +78,7 @@ describe("agent run telemetry", () => {
     const request = records.find((record) => record.type === "mcp.request")!;
     const snapshot = request.body["snapshot"] as { manifestPath: string };
     const manifest = JSON.parse(await readFile(snapshot.manifestPath, "utf8")) as {
-      entries: Array<{ path: string; blob: string }>;
+      entries: Array<{ path: string; blob: string; sha256: string }>;
     };
     const source = manifest.entries.find((entry) => entry.path === "circuit.netlist.json")!;
     expect(
@@ -86,6 +87,16 @@ describe("agent run telemetry", () => {
         "utf8",
       ),
     ).toBe('{"before":true}\n');
+    const dump = JSON.parse(
+      await readFile(join(projectDir, ".fabdesk", "runs", "run_1", "llm-dump.json"), "utf8"),
+    ) as {
+      schema: string;
+      events: Array<{ type: string }>;
+      blobs: Record<string, { encoding: string; content?: string }>;
+    };
+    expect(dump.schema).toBe("fabdesk.llm-run-dump/v1");
+    expect(dump.events.map((event) => event.type)).toEqual(records.map((record) => record.type));
+    expect(dump.blobs[source.sha256]).toEqual({ encoding: "utf8", content: '{"before":true}\n' });
   });
 
   test("exports OTLP/HTTP protobuf when an endpoint is configured", async () => {
@@ -132,5 +143,35 @@ describe("agent run telemetry", () => {
         delete process.env["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"];
       else process.env["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"] = savedTraceEndpoint;
     }
+  });
+
+  test("stores the complete LLM dump in Fabdesk's SQLite database", async () => {
+    const store = new Store(openDatabase(":memory:"));
+    const dir = await mkdtemp(join(tmpdir(), "fabdesk-sqlite-dump-"));
+    const telemetry = new RunTelemetry({ version: "test", runDumps: store.runDumps });
+    const run = await telemetry.startAgentRun({
+      runId: "run_shared",
+      threadId: "thread_1",
+      agentId: "claude",
+      projectId: "project_1",
+      cwd: dir,
+      prompt: "test",
+    });
+    await run.finish("completed");
+    await telemetry.shutdown();
+
+    const row = store.runDumps.get("run_shared")!;
+    expect(row).toMatchObject({
+      runId: "run_shared",
+      threadId: "thread_1",
+      agentId: "claude",
+      projectId: "project_1",
+    });
+    expect(JSON.parse(row.dumpJson)).toMatchObject({
+      schema: "fabdesk.llm-run-dump/v1",
+      agentId: "claude",
+      projectId: "project_1",
+    });
+    store.close();
   });
 });
