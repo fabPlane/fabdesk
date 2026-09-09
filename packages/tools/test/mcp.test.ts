@@ -88,6 +88,9 @@ describe("mcp adapter", () => {
     const prompts = await client.listPrompts();
     expect(prompts.prompts.map((p) => p.name).sort()).toEqual(["design_from_sketch", "fix_drc", "reroute_open_nets"]);
     const prompt = await client.getPrompt({ name: "design_from_sketch", arguments: { project: project.id, requirements: "blink an LED" } });
-    expect((prompt.messages[0]!.content as { text: string }).text).toContain("blink an LED");
+    const promptText = (prompt.messages[0]!.content as { text: string }).text;
+    expect(promptText).toContain("blink an LED");
+    expect(promptText).toContain("run both render_schematic_svg and render_pcb_svg");
+    expect(promptText).toContain("Never claim the project passes when a required report is missing");
   });
 });

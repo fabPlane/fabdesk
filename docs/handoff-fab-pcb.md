@@ -200,10 +200,10 @@ Gotchas that cost time already:
 5. **Agent authoring quality.** The netlist schema and workflow are in `agents-md.ts` and the MCP
    prompts; nobody has run an agent through them yet. Expect iterations on footprint selection
    (`circuit_search_parts`) and on the placement the legacy autoplacer produces.
-6. **Schematics.** A compiled netlist has no drawn schematic, so `verify_erc`,
-   `render_schematic_svg` and schematic parity only apply to imported KiCad projects. Generating a
-   schematic from the netlist (KiCad can create symbols/wires over the API) is the one capability
-   tscircuit had that nothing replaces.
+6. **Schematics.** The compiler now generates a native KiCad schematic from the netlist. The agent
+   must run `verify_erc` and must call `render_schematic_svg` explicitly; `render_board` creates PCB
+   PNGs and does not populate the Schematic tab. Generated pin positions are translated from
+   library-local coordinates to absolute sheet coordinates before placement.
 7. **Route Cinema on real boards.** Frames come from job progress (pass / connection events, no
    geometry); the JS router finished the test board before any progress streamed.
 8. Small: `apps/desktop` user-data test assumes a case-sensitive filesystem; Freerouting stays
