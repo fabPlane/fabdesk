@@ -6,6 +6,15 @@ import { useRunTool } from "./tools";
 
 const RENDER_TOOL = { schematic: "render_schematic_svg", pcb: "render_pcb_svg" } as const;
 
+export function svgArtifactCopy(kind: "schematic" | "pcb") {
+  const label = kind === "pcb" ? "PCB" : "schematic";
+  return {
+    label,
+    title: `No ${label} SVG render yet`,
+    action: `Render ${label} SVG`,
+  };
+}
+
 /** Schematic / PCB tab: shows the daemon's rendered SVG (`renders/<kind>.svg`, drawn by kicad-cli) and offers to render it. */
 export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
   const projectId = useUiStore((s) => s.activeProjectId);
@@ -28,19 +37,20 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
     );
   }
   const running = render.state.status === "running";
+  const copy = svgArtifactCopy(kind);
   return (
     <div className="h-full" data-testid={`board-${kind}-empty`}>
       <EmptyState
-        title={`No ${kind} render yet`}
+        title={copy.title}
         action={
           <Button variant="primary" size="sm" disabled={running} onClick={() => void render.run(RENDER_TOOL[kind], { projectId })}>
-            {running ? "Rendering..." : `Render ${kind}`}
+            {running ? "Rendering..." : copy.action}
           </Button>
         }
       >
         {kind === "pcb"
-          ? "Build the board (circuit_build) and render it, or ask the agent to design one."
-          : "A compiled project has no drawn schematic; import a KiCad project to see one here."}
+          ? "This tab displays renders/pcb.svg. Build the board, then generate its PCB SVG; PNG images appear under Renders."
+          : "This tab displays renders/schematic.svg. A compiled netlist has no drawn schematic; import a KiCad schematic to render one here."}
         {render.state.error && <div className="mt-2 text-danger">{render.state.error}</div>}
       </EmptyState>
     </div>

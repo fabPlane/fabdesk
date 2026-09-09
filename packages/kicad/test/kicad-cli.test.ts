@@ -13,12 +13,34 @@ import {
   exportPos,
   findKicadCli,
   gate,
+  normalizeBoardStatsReport,
   renderPng,
   runDrc,
   runErc,
   runKicadCli,
   type KicadCli,
 } from "../src/index";
+
+describe("board stats normalization", () => {
+  test("turns KiCad unavailable minimum sentinels into null", () => {
+    const report = normalizeBoardStatsReport({
+      board: {
+        width: "14.0000 mm",
+        min_track_clearance: "2147.4836 mm",
+        min_track_width: "0.2000 mm",
+        min_drill_diameter: "2147.4836 mm",
+      },
+    });
+    expect(report).toEqual({
+      board: {
+        width: "14.0000 mm",
+        min_track_clearance: null,
+        min_track_width: "0.2000 mm",
+        min_drill_diameter: null,
+      },
+    });
+  });
+});
 
 const cli = await findKicadCli();
 const hasCli = cli !== null;

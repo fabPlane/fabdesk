@@ -20,7 +20,7 @@ export function ThreeDTab() {
   if (!projectId) return <EmptyState title="No project selected" />;
   return (
     <EmptyState
-      title={glb ? "3D model rendered" : "No 3D model yet"}
+      title={glb ? "Board GLB generated" : "No board GLB yet"}
       action={
         <Button variant="primary" size="sm" disabled={state.status === "running"} onClick={() => void run("glb", { projectId })}>
           {state.status === "running" ? (
@@ -28,9 +28,9 @@ export function ThreeDTab() {
               <Spinner className="mr-1" /> Rendering...
             </>
           ) : glb ? (
-            "Re-render 3D"
+            "Regenerate GLB"
           ) : (
-            "Render 3D"
+            "Generate GLB"
           )}
         </Button>
       }
@@ -44,7 +44,7 @@ export function ThreeDTab() {
           <div className="mt-1">Open the file in any glTF viewer; the in-app 3D viewer arrives with the simulation milestone.</div>
         </div>
       ) : (
-        "Renders the routed board to renders/board.glb with KiCad."
+        "Generates the interactive 3D file at renders/board.glb. Perspective PNG images appear under Renders."
       )}
       {job?.note && <div className="mt-2 text-muted">{job.note}</div>}
       {state.error && <div className="mt-2 text-danger">{state.error}</div>}

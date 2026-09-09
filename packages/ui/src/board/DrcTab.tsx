@@ -40,7 +40,7 @@ function normalizeViolation(v: unknown, source: "drc" | "erc"): Violation | null
   if (!r) return null;
   return {
     source,
-    type: typeof r["type"] === "string" ? r["type"] : "unknown",
+    type: typeof r["rule"] === "string" ? r["rule"] : typeof r["type"] === "string" ? r["type"] : "unknown",
     severity: typeof r["severity"] === "string" ? r["severity"] : "error",
     description: typeof r["description"] === "string" ? r["description"] : JSON.stringify(v),
     items: Array.isArray(r["items"]) ? r["items"].map(normalizeItem) : [],
