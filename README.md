@@ -53,6 +53,10 @@ Crash and error reports go to Sentry only when a DSN is configured (`SENTRY_DESK
 out in Settings → Privacy. Reports never include prompts, board files, tokens or project paths. See
 [docs/sentry.md](docs/sentry.md).
 
+Agent-run debugging is separate from crash reporting: every in-app run gets a local exact trace bundle,
+and it can optionally export OpenTelemetry spans to a shared OTLP/HTTP backend. See
+[docs/agent-run-telemetry.md](docs/agent-run-telemetry.md).
+
 ## Auth
 
 fabPlane signs in through fabplane.com using the OAuth device-authorization flow. For local

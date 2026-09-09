@@ -18,6 +18,7 @@ import { logger, errMsg } from "./log";
 import { McpSessionManager } from "./mcp-sessions";
 import { ProjectStore } from "./projects";
 import { applyErrorReporting, captureCoreException, closeSentry, runSentryTest, sentryUserFromAuth, setSentryUser } from "./sentry";
+import { RunTelemetry } from "./run-telemetry";
 
 export type ServeOptions = {
   port?: number;
@@ -67,6 +68,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   const staleRuns = store.runs.failStale();
   if (staleRuns.length) logger.info("failed stale agent runs from previous run", { threads: staleRuns });
   const tokens = new TokenSet(config.token);
+  const telemetry = new RunTelemetry({ version: config.version });
   const jobs = new JobRunner({
     emit: (e) => bus.emit(e),
     store: store.jobs,
@@ -100,10 +102,11 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
           home: config.home,
           token: config.token,
           appBridgeFile: locateAppBridgeFile(config.handshakePath),
+          telemetry,
         });
 
   const registry = createRegistry();
-  const ctxFactory = createContextFactory({ services, projects, tokens });
+  const ctxFactory = createContextFactory({ services, projects, tokens, telemetry });
   const mcp = new McpSessionManager({ registry, ctxFactory, version: config.version });
 
   const adapters = opts.adapters ?? (await loadAdapters());
@@ -118,6 +121,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     adapters,
     settings: () => store.settings.get(),
     workspaceDir: join(config.home, "workspace"),
+    telemetry,
     prepareProject: async (project: ProjectHandle) => {
       const agents = await import("@fabdesk/agents");
       const sketches = (await projects.listFiles(join(project.dir, "sketches"))).filter((f) => /\.(png|jpe?g)$/i.test(f.path)).map((f) => join(project.dir, "sketches", f.path));
@@ -263,11 +267,12 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       jobs.cancelAll();
       await mcp.closeAll();
       projects.close();
-      (services as { dispose?: () => void }).dispose?.();
+      await (services as { dispose?: () => Promise<void> }).dispose?.();
       await new Promise((r) => setTimeout(r, 30));
       server.stop(true);
       if (!opts.noHandshake) await removeHandshake(config.handshakePath);
       store.close();
+      await telemetry.shutdown();
       await closeSentry();
       resolveClosed(reason);
     },

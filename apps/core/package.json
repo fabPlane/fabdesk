@@ -24,6 +24,10 @@
     "@fp-pcb/client": "workspace:*",
     "@fp-pcb/proto": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/exporter-trace-otlp-proto": "^0.222.0",
+    "@opentelemetry/resources": "^2.11.0",
+    "@opentelemetry/sdk-trace-node": "^2.11.0",
     "@sentry/bun": "^10.73.0",
     "hono": "4.9.6",
     "zod": "3.25.76"

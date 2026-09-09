@@ -385,6 +385,9 @@ export class RunRepo {
   setSession(id: string, sessionId: string): void {
     this.db.run("UPDATE runs SET agent_session_id = ? WHERE id = ?", [sessionId, id]);
   }
+  setLogPath(id: string, logPath: string): void {
+    this.db.run("UPDATE runs SET log_path = ? WHERE id = ?", [logPath, id]);
+  }
   finish(id: string, patch: { status: Run["status"]; exitCode?: number | null; cost?: unknown }): void {
     this.db.run("UPDATE runs SET status = ?, ended_at = ?, exit_code = ?, cost_json = COALESCE(?, cost_json) WHERE id = ?", [patch.status, nowIso(), patch.exitCode ?? null, patch.cost === undefined ? null : JSON.stringify(patch.cost), id]);
   }

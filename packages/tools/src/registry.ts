@@ -48,6 +48,16 @@ export interface ToolContext {
   principal: Principal | null;
   /** MCP session hooks; absent over HTTP where every toolset is always available. */
   session?: ToolSession;
+  /** Optional run-scoped tracing supplied by fabdesk-core. */
+  telemetry?: ToolTelemetry;
+}
+
+export interface ToolTelemetry {
+  traceToolCall(
+    input: { name: string; args: Record<string, unknown>; project: ProjectHandle | null; sessionId?: string },
+    invoke: () => Promise<ToolOutput>,
+  ): Promise<ToolOutput>;
+  recordToolEvent?(type: string, body: unknown): void;
 }
 
 export interface ToolSession {
@@ -179,7 +189,13 @@ export class ToolRegistry {
         "precondition",
       );
     }
-    return def.handler(args as never, ctx);
+    const invoke = () => def.handler(args as never, ctx);
+    return ctx.telemetry
+      ? ctx.telemetry.traceToolCall(
+          { name, args: parsed.data as Record<string, unknown>, project: ctx.project, ...(ctx.session ? { sessionId: ctx.session.id } : {}) },
+          invoke,
+        )
+      : invoke();
   }
 }
 
@@ -205,6 +221,7 @@ export function makeContext(opts: {
   progress?: (p: number, note?: string) => void;
   principal?: Principal | null;
   session?: ToolSession;
+  telemetry?: ToolTelemetry;
 }): ToolContext {
   const project = opts.project;
   return {
@@ -218,6 +235,7 @@ export function makeContext(opts: {
     progress: opts.progress ?? (() => {}),
     principal: opts.principal ?? null,
     ...(opts.session ? { session: opts.session } : {}),
+    ...(opts.telemetry ? { telemetry: opts.telemetry } : {}),
   };
 }
 
