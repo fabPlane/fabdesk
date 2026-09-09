@@ -1,14 +1,14 @@
 name: Release
 
-# Every merge to main produces an official public release: version 0.<minor>.<run_number>,
+# Nightly and manual public runs produce a release: version 0.<minor>.<run_number>,
 # a git tag, a GitHub Release with installers for macOS (arm64, x64), Linux and Windows,
 # SHA256SUMS, and manifest.json. The website script (fabplane.com scripts/publish-desktop-release.ts)
 # consumes manifest.json to publish download links and desktop/latest.json.
 # Internal builds (workflow_dispatch channel=internal) are uploaded as workflow artifacts only.
 
 on:
-  push:
-    branches: [main]
+  schedule:
+    - cron: "0 20 * * *" # 03:00 Asia/Bangkok
   workflow_dispatch:
     inputs:
       channel:
@@ -19,7 +19,7 @@ on:
         options: [public, internal]
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.channel || 'public' }}-${{ github.ref }}
   cancel-in-progress: false
 
 env:
@@ -157,7 +157,7 @@ jobs:
 
   release:
     needs: [version, build]
-    if: github.event_name == 'push' && (inputs.channel == '' || inputs.channel == 'public')
+    if: github.ref == 'refs/heads/main' && (inputs.channel == '' || inputs.channel == 'public')
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -205,7 +205,25 @@ jobs:
         run: |
           git tag ${{ needs.version.outputs.tag }} ${{ github.sha }}
           git push origin ${{ needs.version.outputs.tag }}
+          assets=()
+          for file in artifacts/*; do
+            if [ "$file" != artifacts/NOTES.md ]; then assets+=("$file"); fi
+          done
           gh release create ${{ needs.version.outputs.tag }} \
             --title "fabPlane ${{ needs.version.outputs.version }}" \
             --notes-file artifacts/NOTES.md \
-            $(ls artifacts/* | grep -v NOTES.md)
+            "${assets[@]}"
+
+  website:
+    name: Hand off public release to fabplane.com
+    needs: [version, release]
+    runs-on: ubuntu-22.04
+    permissions: {}
+    steps:
+      - name: Trigger website installer and feed publishing
+        env:
+          GH_TOKEN: ${{ secrets.FABPLANE_RELEASE_DISPATCH_TOKEN }}
+          RELEASE_TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          test -n "$GH_TOKEN" || { echo "::error::Missing FABPLANE_RELEASE_DISPATCH_TOKEN (fabplane.com Actions write)"; exit 1; }
+          gh workflow run desktop-release.yml --repo TensorFleet/fabplane.com --ref main -f tag="$RELEASE_TAG"
