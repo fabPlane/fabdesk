@@ -35,7 +35,7 @@ import {
   type RouteSummary,
 } from "@fabdesk/tools";
 import type { FpPcbBridgeClient } from "./fp-pcb-bridge";
-import { BOARD_PRO, type FpPcbSessions } from "./fp-pcb-session";
+import { BOARD_PCB, BOARD_PRO, type FpPcbSessions } from "./fp-pcb-session";
 import type { KicadLibraryCatalog } from "./kicad-library-catalog";
 
 /** The `@fp-pcb/compile` frontend that reads `circuit.netlist.json` (its `NETLIST_JSON_KIND`). */
@@ -115,8 +115,10 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       entrypoint,
     };
     opts.progress?.(0.05, "session");
-    const job = await deps.sessions.withRetry(opts.projectDir, (s) =>
-      deps.bridge().compile(
+    let sessionWasBare = false;
+    const job = await deps.sessions.withRetry(opts.projectDir, (s) => {
+      sessionWasBare = !s.path;
+      return deps.bridge().compile(
         s.id,
         {
           source,
@@ -132,13 +134,23 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
           onProgress: (j: FpPcbCompileJob) =>
             opts.progress?.(STAGE_FRACTION[j.state] ?? 0.5, j.state),
         },
-      ),
-    );
+      );
+    });
     // The project may have been created by this job: the session now has a board and a path.
     if (job.state === "cancelled") throw new ToolError("compile cancelled", "cancelled");
     const durationMs = Math.round(performance.now() - started);
     const empty = { components: 0, nets: 0, footprintsAdded: 0, footprintsPlaced: 0 };
-    if (!job.result)
+    if (!job.result) {
+      // NewProject can write its stub files before a later backend-load failure. The session is
+      // still recorded as bare in that case; release it so the next build reconnects through the
+      // generated board instead of calling NewProject again and getting "already exists" forever.
+      if (
+        sessionWasBare &&
+        /^NewProject:/i.test(job.error ?? "") &&
+        (await exists(join(opts.projectDir, BOARD_PCB)))
+      ) {
+        await deps.sessions.release(opts.projectDir);
+      }
       return {
         ok: false,
         errors: [
@@ -152,6 +164,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         counts: empty,
         durationMs,
       };
+    }
     const errors = job.result.diagnostics.filter((d) => d.severity === "error").map(toBuildError);
     const warnings = job.result.diagnostics
       .filter((d) => d.severity === "warning")

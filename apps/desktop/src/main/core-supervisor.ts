@@ -18,6 +18,7 @@ import { createWriteStream, existsSync, mkdirSync, readFileSync, type WriteStrea
 import { createInterface } from "node:readline";
 import { join, resolve } from "node:path";
 import { spawnCorePort } from "./dev-profile";
+import { sidecarEnvironment } from "./child-process-env";
 
 const READY_TIMEOUT_MS = 60_000;
 const MAX_RESTARTS_PER_MINUTE = 5;
@@ -224,7 +225,11 @@ export class CoreSupervisor extends EventEmitter {
     try {
       child = spawn(cmd.command, args, {
         cwd: cmd.cwd,
-        env: { ...process.env, ...(this.opts.extraEnv ?? {}), FABDESK_TOKEN: token, ELECTRON_RUN_AS_NODE: undefined },
+        env: sidecarEnvironment(process.env, {
+          ...(this.opts.extraEnv ?? {}),
+          FABDESK_TOKEN: token,
+          ELECTRON_RUN_AS_NODE: undefined,
+        }),
         stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true,
       });

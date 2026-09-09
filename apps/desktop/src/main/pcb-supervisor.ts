@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { sidecarEnvironment } from "./child-process-env";
 
 export interface PcbBundleManifest {
   format: 1;
@@ -111,7 +112,7 @@ export class PcbSupervisor {
     if (!(await healthy(this.command.url))) {
       this.child = spawn(this.command.command, this.command.args, {
         cwd: this.command.cwd,
-        env: { ...process.env, ...this.command.env },
+        env: sidecarEnvironment(process.env, this.command.env),
         stdio: ["ignore", "inherit", "inherit"],
         windowsHide: true,
       });
