@@ -53,6 +53,8 @@ linux:
   icon: build/icons
   # desktop Name=fabPlane (productName) and Exec=fabplane
   executableName: fabplane
+  # Keep Electron's app_id/WM_CLASS aligned with the installed desktop entry.
+  syncDesktopName: true
   category: Development
   target: [AppImage, deb]
   maintainer: TensorFleet
