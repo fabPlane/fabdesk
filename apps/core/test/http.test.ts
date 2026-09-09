@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -188,6 +188,18 @@ describe("http daemon", () => {
     expect(filteredFrames.length).toBeGreaterThan(0);
     expect(filteredFrames.every((line) => (line.seq ?? 0) >= 2)).toBe(true);
     expect(filteredFrames.some((line) => (line.shapes?.length ?? 0) > 0)).toBe(true);
+
+    // Legacy runs stored absolute paths. If the projects root moves, prefer the same run beneath
+    // the project's current directory instead of returning an empty Cinema stream.
+    const movedRunId = "run_moved_project";
+    const movedRunDir = join(project.path, ".fabdesk", "runs", movedRunId);
+    await mkdir(movedRunDir, { recursive: true });
+    await writeFile(join(movedRunDir, "frames.jsonl"), '{"kind":"meta","runId":"run_moved_project","router":"capacity","bounds":{"x1":0,"y1":0,"x2":1,"y2":1},"layers":["F.Cu","B.Cu"],"unitsPerMm":1}\n');
+    services.routeRuns.start({ id: movedRunId, projectId: project.id, router: "capacity", framesPath: join(home, "old-projects-root", "blinky-board", ".fabdesk", "runs", movedRunId, "frames.jsonl"), startedAt: new Date().toISOString() });
+    services.routeRuns.finish(movedRunId, { status: "done", result: null, error: null });
+    const movedFrames = await api(`/route/runs/${movedRunId}/frames`);
+    expect(movedFrames.status).toBe(200);
+    expect(await movedFrames.text()).toContain(`"runId":"${movedRunId}"`);
 
     // Delete (unregister) keeps the directory; purge removes it.
     expect((await api(`/projects/${project.id}`, { method: "DELETE" })).status).toBe(200);
