@@ -228,7 +228,7 @@ export const route_run = defineTool({
   toolset: "core",
   title: "Autoroute the board",
   description:
-    "Autoroute board.kicad_pcb on the design server (capacity: the built-in JS router; freerouting: internal builds only). Streams progress frames to the app, persists them under .fabdesk/runs/<runId>/frames.jsonl, applies the tracks to the board as one undo entry and returns which nets stayed open plus via/track counts. Requires circuit_build. Use route_unroute + route_run with onlyConnections to redo specific nets.",
+    "Autoroute board.kicad_pcb on the design server (capacity: the built-in JS router; freerouting: internal builds only). Streams progress frames to the app, persists them under .fabdesk/runs/<runId>/frames.jsonl, applies the tracks to the board as one undo entry and returns which nets stayed open plus via/track counts. Requires circuit_build. Use route_unroute + route_run with onlyConnections to redo specific nets. If routing reports a blocked endpoint or board-edge violation, move the named footprint inward or enlarge the board, rebuild, and retry; never split or rename an electrical net merely to bypass a routing failure.",
   inputSchema: RouteRunArgs,
   annotations: { idempotentHint: true },
   longRunning: true,
