@@ -251,8 +251,8 @@ function registerPrompts(server: McpServer): void {
           "2. Search real footprint and symbol ids with circuit_search_parts (kind footprint or symbol), then use circuit_describe_part to verify pin/pad numbers and polarity. Write circuit.netlist.json with components [{ref,value,footprint,libSource:{lib,part}}], nets, board size/layers, and explicit board.placements when layout matters. Never invent an id or guess a pin; every connected pin appears in exactly one net.",
           "3. Run circuit_build; call circuit_read_errors, fix all errors and review warnings, then rebuild until ok. Inspect component positions and both renders; adjust board.placements when parts collide or crowd edges.",
           "4. Run route_run. If nets stay open, enlarge the board (board.widthMm/heightMm, rebuild) or reduce fan-out and reroute; use route_unroute + route_run{onlyConnections} for partial reroutes.",
-          "5. Run verify_drc. Fix errors and unconnected items; warnings only need review.",
-          "6. Run render_board and check the image; summarise the design, open issues and next steps for the user. Render images are attached directly in chat and the tool returns a fileUrl/url field; when the user asks for links, provide those browser-openable file:// URLs as plain text.",
+          "5. Run verify_drc, then load_toolset verify and run verify_erc and verify_gate with ERC and schematic parity required. Fix errors and unconnected items; warnings only need review. Never claim the project passes when a required report is missing.",
+          "6. Run render_board and check the PNG. Then load_toolset render and run both render_schematic_svg and render_pcb_svg so the Schematic and PCB tabs are populated; render_board alone does not create those SVG artifacts. Inspect both SVGs before summarising the design, open issues, and next steps. Render images are attached directly in chat and tools return a fileUrl/url field; when the user asks for links, provide those browser-openable file:// URLs as plain text.",
         ]
           .filter(Boolean)
           .join("\n"),

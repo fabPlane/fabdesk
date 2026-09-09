@@ -198,6 +198,7 @@ describe("agent docs", () => {
     for (const t of reg.list()) expect(md).toContain(`\`${t.name}\``);
     expect(md).toContain("### core");
     expect(md).toContain("load_toolset");
+    expect(md).toContain("A PNG board render does not populate the Schematic or PCB SVG tabs");
     expect(md).toContain(z.string().constructor.name.length > 0 ? "|" : "");
   });
 });
