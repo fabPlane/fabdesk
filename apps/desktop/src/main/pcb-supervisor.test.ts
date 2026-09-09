@@ -65,10 +65,12 @@ describe("bundled PCB backend", () => {
       join(pcb, "kicad", "lib", "runtime"),
       join(pcb, "libraries", "footprints"),
       join(pcb, "libraries", "symbols"),
+      join(pcb, "private", "js_autorouter", "src"),
     ])
       await mkdir(dir, { recursive: true });
     await writeFile(join(pcb, "bin", "fp-pcb-bridge"), "binary");
     await writeFile(join(pcb, "kicad", "bin", "kicad-cli"), "binary");
+    await writeFile(join(pcb, "private", "js_autorouter", "src", "index.ts"), "source");
     await writeFile(
       join(pcb, "bundle.json"),
       JSON.stringify({
@@ -78,6 +80,7 @@ describe("bundled PCB backend", () => {
         kicadCli: "kicad/bin/kicad-cli",
         footprints: "libraries/footprints",
         symbols: "libraries/symbols",
+        jsAutorouter: "private/js_autorouter/src/index.ts",
         libraryPaths: ["kicad/lib", "kicad/lib/runtime"],
         environment: { KICAD_SOCKET_TRANSPORT: "ipc" },
       }),
@@ -92,6 +95,9 @@ describe("bundled PCB backend", () => {
       `${join(pcb, "kicad", "lib")}:${join(pcb, "kicad", "lib", "runtime")}:/host/lib`,
     );
     expect(resolved?.env.KICAD_STOCK_DATA_HOME).toBe(join(pcb, "kicad", "share", "kicad"));
+    expect(resolved?.env.JS_AUTOROUTER_MODULE).toBe(
+      join(pcb, "private", "js_autorouter", "src", "index.ts"),
+    );
     expect(corePcbEnvironment(resolved!)).toMatchObject({
       KICAD_CLI: join(pcb, "kicad", "bin", "kicad-cli"),
       KICAD_STOCK_DATA_HOME: join(pcb, "kicad", "share", "kicad"),
