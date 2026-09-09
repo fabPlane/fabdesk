@@ -265,9 +265,10 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       unsubscribeAuth();
       runs.abortAll();
       jobs.cancelAll();
+      if (!(await runs.settleAll())) logger.warn("agent runs did not stop before shutdown timeout");
       await mcp.closeAll();
       projects.close();
-      await (services as { dispose?: () => Promise<void> }).dispose?.();
+      (services as { dispose?: () => void }).dispose?.();
       await new Promise((r) => setTimeout(r, 30));
       server.stop(true);
       if (!opts.noHandshake) await removeHandshake(config.handshakePath);

@@ -54,7 +54,7 @@ export interface ToolContext {
 
 export interface ToolTelemetry {
   traceToolCall(
-    input: { name: string; args: Record<string, unknown>; project: ProjectHandle | null; sessionId?: string },
+    input: { name: string; args: Record<string, unknown>; project: ProjectHandle | null; readOnly: boolean; sessionId?: string },
     invoke: () => Promise<ToolOutput>,
   ): Promise<ToolOutput>;
   recordToolEvent?(type: string, body: unknown): void;
@@ -192,7 +192,7 @@ export class ToolRegistry {
     const invoke = () => def.handler(args as never, ctx);
     return ctx.telemetry
       ? ctx.telemetry.traceToolCall(
-          { name, args: parsed.data as Record<string, unknown>, project: ctx.project, ...(ctx.session ? { sessionId: ctx.session.id } : {}) },
+          { name, args: parsed.data as Record<string, unknown>, project: ctx.project, readOnly: def.annotations.readOnlyHint ?? false, ...(ctx.session ? { sessionId: ctx.session.id } : {}) },
           invoke,
         )
       : invoke();

@@ -7,7 +7,6 @@ export function fetchRunDump(runId: string, dbPath = resolveConfig().dbPath): st
   try {
     const row = store.runDumps.get(runId);
     if (!row) throw new Error(`run dump not found: ${runId}`);
-    JSON.parse(row.dumpJson);
     return row.dumpJson.endsWith("\n") ? row.dumpJson : `${row.dumpJson}\n`;
   } finally {
     store.close();

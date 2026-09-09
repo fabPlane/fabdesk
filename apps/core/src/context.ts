@@ -22,14 +22,35 @@ export function createContextFactory(deps: ContextDeps): ContextFactory {
       if (!project && deps.defaultProject) project = await deps.defaultProject();
     }
     const telemetry = info?.runId ? deps.telemetry?.forToolCall(info.runId) : undefined;
+    let lastRecordedProgress = -Infinity;
+    let lastRecordedNote: string | undefined;
+    let lastRecordedAt = 0;
+    const progress = telemetry
+      ? (value: number, note?: string) => {
+          req.progress(value, note);
+          const now = Date.now();
+          if (
+            value <= 0 ||
+            value >= 1 ||
+            value - lastRecordedProgress >= 0.05 ||
+            note !== lastRecordedNote ||
+            now - lastRecordedAt >= 250
+          ) {
+            telemetry.recordToolEvent?.("mcp.progress", {
+              progress: value,
+              ...(note ? { note } : {}),
+            });
+            lastRecordedProgress = value;
+            lastRecordedNote = note;
+            lastRecordedAt = now;
+          }
+        }
+      : req.progress;
     return makeContext({
       services: deps.services,
       project,
       signal: req.signal,
-      progress: (progress, note) => {
-        req.progress(progress, note);
-        telemetry?.recordToolEvent?.("mcp.progress", { progress, ...(note ? { note } : {}) });
-      },
+      progress,
       principal: deps.services.principal(),
       ...(req.session ? { session: req.session } : {}),
       ...(telemetry ? { telemetry } : {}),

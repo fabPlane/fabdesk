@@ -35,6 +35,16 @@ snapshots/
 
 Text source, KiCad documents, JSON reports and SVG renders are normally embedded. PNG, GLB and other binary renders remain in the run/project directory and are represented by path, size and hash.
 
+Capture is bounded so telemetry cannot dominate a run:
+
+- unchanged files reuse their prior metadata, SHA-256 and content blob; identical project states reuse the preceding manifest;
+- files over 5 MiB are represented by metadata and an omission reason without being read;
+- each run is capped at 2,000 files, 128 distinct snapshots, 16 MiB of snapshot blobs, 8 MiB of manifests and 12 MiB of event JSONL;
+- at most 8 MiB of text files is embedded into the portable dump, whose total size is capped at 32 MiB; any omitted content remains identified by path, size and hash where available;
+- the 50 newest project-local run directories and 100 newest database dumps are retained. Database dumps also have a combined 512 MiB cap.
+
+Agent stream events are buffered and appended in batches. Snapshot, serialization, exporter and span-event failures are isolated from the agent run.
+
 To analyze a run, attach `llm-dump.json` to a new Codex or Claude session and ask, for example:
 
 > Analyze this Fabdesk run. Find where the agent misunderstood the project or KiCad state, correlate each MCP request with the preceding snapshot, and explain any unnecessary loops or failed recovery attempts.

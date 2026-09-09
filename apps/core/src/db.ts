@@ -438,15 +438,30 @@ export type RunDump = {
   dumpJson: string;
 };
 
+export const RUN_DUMP_RETENTION = { rows: 100, bytes: 512 * 1024 * 1024 } as const;
+
 type RunDumpRow = { run_id: string; trace_id: string; thread_id: string; agent_id: string; project_id: string | null; created_at: string; dump_json: string };
 
 export class RunDumpRepo {
   constructor(private readonly db: Database) {}
   put(dump: RunDump): void {
-    this.db.run(
-      "INSERT INTO run_dumps(run_id, trace_id, thread_id, agent_id, project_id, created_at, dump_json) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(run_id) DO UPDATE SET trace_id = excluded.trace_id, thread_id = excluded.thread_id, agent_id = excluded.agent_id, project_id = excluded.project_id, created_at = excluded.created_at, dump_json = excluded.dump_json",
-      [dump.runId, dump.traceId, dump.threadId, dump.agentId, dump.projectId, dump.createdAt, dump.dumpJson],
-    );
+    this.db.transaction(() => {
+      this.db.run(
+        "INSERT INTO run_dumps(run_id, trace_id, thread_id, agent_id, project_id, created_at, dump_json) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(run_id) DO UPDATE SET trace_id = excluded.trace_id, thread_id = excluded.thread_id, agent_id = excluded.agent_id, project_id = excluded.project_id, created_at = excluded.created_at, dump_json = excluded.dump_json",
+        [dump.runId, dump.traceId, dump.threadId, dump.agentId, dump.projectId, dump.createdAt, dump.dumpJson],
+      );
+      this.db.run(
+        `DELETE FROM run_dumps WHERE run_id IN (
+          SELECT run_id FROM (
+            SELECT run_id,
+              ROW_NUMBER() OVER (ORDER BY created_at DESC, run_id DESC) AS row_number,
+              SUM(length(CAST(dump_json AS BLOB))) OVER (ORDER BY created_at DESC, run_id DESC) AS cumulative_bytes
+            FROM run_dumps
+          ) WHERE row_number > ? OR cumulative_bytes > ?
+        )`,
+        [RUN_DUMP_RETENTION.rows, RUN_DUMP_RETENTION.bytes],
+      );
+    })();
   }
   get(runId: string): RunDump | null {
     const row = this.db.query<RunDumpRow, [string]>("SELECT * FROM run_dumps WHERE run_id = ?").get(runId);
