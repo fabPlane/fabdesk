@@ -57,18 +57,33 @@ describe("registry", () => {
   test("build → route → query end to end with mocks", async () => {
     const reg = createRegistry();
     const project = await tempProject();
-    const services = mockServices([project]);
+    const base = mockServices([project]);
+    let statsCalls = 0;
+    const services = mockServices([project], {
+      kicad: {
+        ...base.kicad,
+        boardStats: async (_cli, { scratchFile }) => {
+          statsCalls++;
+          await Bun.write(scratchFile, JSON.stringify({ board: { width: "20 mm" } }));
+          return { width: 20 };
+        },
+      },
+    });
     const factory = contextFactory(services, project);
     const call = (name: string, args: Record<string, unknown> = {}) =>
       reg.invoke(name, args, (ref) => factory({ def: reg.get(name)!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }));
     const build = await call("circuit_build");
     expect(build.isError).toBeFalsy();
     expect(await Bun.file(join(project.dir, "board.kicad_pcb")).exists()).toBe(true);
+    await mkdir(join(project.dir, "reports"), { recursive: true });
+    await writeFile(join(project.dir, "reports/stats.json"), '{"stale":true}');
     const route = await call("route_run", { timeoutMs: 5000 });
     expect(route.isError).toBeFalsy();
     const json = route.json as { runId: string; routed: number; total: number; open: string[] };
     expect(json.routed).toBe(2);
     expect(json.open).toEqual([]);
+    expect(statsCalls).toBe(1);
+    expect(await Bun.file(join(project.dir, "reports/stats.json")).json()).toEqual({ board: { width: "20 mm" } });
     expect(await Bun.file(join(project.dir, ".fabdesk/runs", json.runId, "frames.jsonl")).exists()).toBe(true);
     const frames = (await Bun.file(join(project.dir, ".fabdesk/runs", json.runId, "frames.jsonl")).text()).trim().split("\n");
     // meta + static pads + progress + a final frame carrying the real routed copper.
