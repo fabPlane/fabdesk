@@ -18,6 +18,7 @@ import {
   runDrc,
   runErc,
   runKicadCli,
+  KicadCliError,
   type KicadCli,
 } from "../src/index";
 
@@ -82,7 +83,10 @@ describe.skipIf(!hasCli)("kicad-cli on a real board", () => {
     expect(ok.stderr).not.toContain("Error retrieving source file attributes");
     const bad = await runKicadCli(kicad(), ["pcb", "drc", "/nope.kicad_pcb"], { tolerateExit: true });
     expect(bad.exitCode).not.toBe(0);
-    await expect(runKicadCli(kicad(), ["pcb", "drc", "/nope.kicad_pcb"])).rejects.toThrow(/failed/);
+    const error = await runKicadCli(kicad(), ["pcb", "drc", "/nope.kicad_pcb"]).catch((e) => e);
+    expect(error).toBeInstanceOf(KicadCliError);
+    expect((error as KicadCliError).result.exitCode).not.toBe(0);
+    expect((error as KicadCliError).result.stderr || (error as KicadCliError).result.stdout).not.toBe("");
   });
 
   test("runDrc parses the JSON report and gate reads it", async () => {
