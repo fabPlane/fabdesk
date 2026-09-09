@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { resolvePcbBackend } from "./pcb-supervisor";
+import { corePcbEnvironment, resolvePcbBackend } from "./pcb-supervisor";
 
 const roots: string[] = [];
 afterEach(async () =>
@@ -91,6 +91,12 @@ describe("bundled PCB backend", () => {
     expect(resolved?.env.LD_LIBRARY_PATH).toBe(
       `${join(pcb, "kicad", "lib")}:${join(pcb, "kicad", "lib", "runtime")}:/host/lib`,
     );
+    expect(resolved?.env.KICAD_STOCK_DATA_HOME).toBe(join(pcb, "kicad", "share", "kicad"));
+    expect(corePcbEnvironment(resolved!)).toMatchObject({
+      KICAD_CLI: join(pcb, "kicad", "bin", "kicad-cli"),
+      KICAD_STOCK_DATA_HOME: join(pcb, "kicad", "share", "kicad"),
+      LD_LIBRARY_PATH: `${join(pcb, "kicad", "lib")}:${join(pcb, "kicad", "lib", "runtime")}:/host/lib`,
+    });
   });
 
   test("an unpackaged checkout without a bundle keeps the existing external-bridge workflow", async () => {

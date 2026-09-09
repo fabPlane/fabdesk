@@ -24,6 +24,18 @@ export interface PcbBackendCommand {
   url: string;
 }
 
+/** Environment the core needs for CLI-based DRC/render/export, not only the bridge process. */
+export function corePcbEnvironment(command: PcbBackendCommand): Record<string, string> {
+  return {
+    FABDESK_FP_PCB_BRIDGE_URL: command.url,
+    KICAD_CLI: command.env.KICAD_CLI!,
+    KICAD_STOCK_DATA_HOME: command.env.KICAD_STOCK_DATA_HOME!,
+    KICAD_FOOTPRINT_DIR: command.env.KICAD_FOOTPRINT_DIR!,
+    KICAD_SYMBOL_DIR: command.env.KICAD_SYMBOL_DIR!,
+    ...(command.env.LD_LIBRARY_PATH ? { LD_LIBRARY_PATH: command.env.LD_LIBRARY_PATH } : {}),
+  };
+}
+
 export function resolvePcbBackend(opts: {
   packaged: boolean;
   resourcesPath: string;
@@ -41,6 +53,7 @@ export function resolvePcbBackend(opts: {
   const bundleRoot = dirname(manifestPath);
   const command = override ? resolve(override) : resolve(bundleRoot, manifest.bridge);
   const kicadCli = resolve(bundleRoot, manifest.kicadCli);
+  const kicadStockData = resolve(bundleRoot, "kicad", "share", "kicad");
   const footprints = resolve(bundleRoot, manifest.footprints);
   const symbols = resolve(bundleRoot, manifest.symbols);
   const libraryPaths = (manifest.libraryPaths ?? []).map((path) => resolve(bundleRoot, path));
@@ -73,6 +86,7 @@ export function resolvePcbBackend(opts: {
       PORT: port,
       HOST: "127.0.0.1",
       KICAD_CLI: kicadCli,
+      KICAD_STOCK_DATA_HOME: kicadStockData,
       KICAD_FOOTPRINT_DIR: footprints,
       KICAD_SYMBOL_DIR: symbols,
       WORKSPACE_ROOT: env["FABDESK_PROJECTS_DIR"] ?? join(homedir(), "fabdesk"),
@@ -104,12 +118,7 @@ export class PcbSupervisor {
         await new Promise((done) => setTimeout(done, 100));
       }
     }
-    return {
-      FABDESK_FP_PCB_BRIDGE_URL: this.command.url,
-      KICAD_CLI: this.command.env.KICAD_CLI!,
-      KICAD_FOOTPRINT_DIR: this.command.env.KICAD_FOOTPRINT_DIR!,
-      KICAD_SYMBOL_DIR: this.command.env.KICAD_SYMBOL_DIR!,
-    };
+    return corePcbEnvironment(this.command);
   }
 
   async stop(): Promise<void> {
