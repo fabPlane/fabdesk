@@ -64,6 +64,9 @@ Validation completed locally:
   deliberately injecting the bad AppImage launcher variables covered by the regression;
 - a real KiCad compiler integration generated horizontal and vertical symbol pins at their placed
   sheet coordinates and completed ERC with zero electrical errors;
+- the compiler executable copied into the packaged Linux bundle built a fresh three-component
+  project and its bundled KiCad ERC likewise reported zero errors; three remaining findings were
+  non-electrical `lib_symbol_mismatch` warnings;
 - the packaged `simple-pcb` project generated and displayed both `renders/schematic.svg` and
   `renders/pcb.svg` through the buttons shown in the Schematic and PCB tabs;
 - a Fabdesk MCP-only USB-C indicator run exercised parts search, build/rebuild, routing, queries,
