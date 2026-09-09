@@ -12,6 +12,7 @@ import { FpPcbBridgeClient } from "./fp-pcb-bridge";
 import { createFpPcbDesign } from "./fp-pcb-design";
 import { FpPcbSessions } from "./fp-pcb-session";
 import { logger } from "./log";
+import { KicadLibraryCatalog } from "./kicad-library-catalog";
 
 export type ServiceDeps = {
   version: string;
@@ -30,14 +31,21 @@ export type ServiceDeps = {
 };
 
 function simService(settings: () => Settings): SimService {
-  const toSimAnalysis = (a: Parameters<SimService["runSimulation"]>[0]["analysis"]): sim.SimAnalysis => {
+  const toSimAnalysis = (
+    a: Parameters<SimService["runSimulation"]>[0]["analysis"],
+  ): sim.SimAnalysis => {
     switch (a.type) {
       case "op":
         return { kind: "op" };
       case "tran":
         return { kind: "tran", stopS: a.stopS, stepS: a.stepS ?? a.stopS / 1000 };
       case "ac":
-        return { kind: "ac", startHz: a.startHz, stopHz: a.stopHz, pointsPerDecade: a.points ?? 10 };
+        return {
+          kind: "ac",
+          startHz: a.startHz,
+          stopHz: a.stopHz,
+          pointsPerDecade: a.points ?? 10,
+        };
     }
   };
   return {
@@ -51,13 +59,22 @@ function simService(settings: () => Settings): SimService {
         ...(o.ngspicePath ? { ngspicePath: o.ngspicePath } : {}),
         ...(o.signal ? { signal: o.signal } : {}),
       });
-      return { engine: r.engine, analysis: r.analysis, columns: r.columns, rows: r.rows, ...(r.log ? { notes: [r.log] } : {}), durationMs: Date.now() - t0 };
+      return {
+        engine: r.engine,
+        analysis: r.analysis,
+        columns: r.columns,
+        rows: r.rows,
+        ...(r.log ? { notes: [r.log] } : {}),
+        durationMs: Date.now() - t0,
+      };
     },
     findNgspice: (explicit) => sim.findNgspice(explicit ?? settings().ngspicePath ?? undefined),
   };
 }
 
-export async function createServices(deps: ServiceDeps): Promise<CoreServices & { dispose(): Promise<void> }> {
+export async function createServices(
+  deps: ServiceDeps,
+): Promise<CoreServices & { dispose(): Promise<void> }> {
   const resolveCli = async (): Promise<KicadCli | null> => {
     const explicit = deps.settings().kicadCliPath ?? undefined;
     const found = await kicad.findKicadCli(explicit);
@@ -71,7 +88,10 @@ export async function createServices(deps: ServiceDeps): Promise<CoreServices & 
     if (!bridge || bridge.url !== url) bridge = { url, client: new FpPcbBridgeClient({ url }) };
     return bridge.client;
   };
-  const sessions = new FpPcbSessions(bridgeClient, { clientName: `fabdesk/core/${process.pid}`, log: (m) => logger.info(m) });
+  const sessions = new FpPcbSessions(bridgeClient, {
+    clientName: `fabdesk/core/${process.pid}`,
+    log: (m) => logger.info(m),
+  });
 
   const services: CoreServices & { dispose(): Promise<void> } = {
     version: deps.version,
@@ -81,15 +101,24 @@ export async function createServices(deps: ServiceDeps): Promise<CoreServices & 
     bus: deps.bus,
     routeRuns: deps.routeRuns,
     principal: deps.principal,
-    design: createFpPcbDesign({ bridge: bridgeClient, sessions }),
+    design: createFpPcbDesign({
+      bridge: bridgeClient,
+      sessions,
+      catalog: new KicadLibraryCatalog({
+        footprints: process.env["KICAD_FOOTPRINT_DIR"],
+        symbols: process.env["KICAD_SYMBOL_DIR"],
+      }),
+    }),
     kicad: {
       resolveCli,
       runDrc: (cli, o) => kicad.runDrc(cli, o),
       runErc: (cli, o) => kicad.runErc(cli, o),
-      gate: (drc, erc, allowed) => kicad.gate(drc as kicad.DrcReport, erc as kicad.ErcReport | undefined, allowed),
+      gate: (drc, erc, allowed) =>
+        kicad.gate(drc as kicad.DrcReport, erc as kicad.ErcReport | undefined, allowed),
       renderPng: (cli, o) => kicad.renderPng(cli, o),
       exportGlb: (cli, o) => kicad.exportGlb(cli, o),
-      boardStats: async (cli, o) => (await kicad.boardStats(cli, o.board, o.scratchFile)) as unknown as Record<string, unknown>,
+      boardStats: async (cli, o) =>
+        (await kicad.boardStats(cli, o.board, o.scratchFile)) as unknown as Record<string, unknown>,
       exportGerbers: (cli, o) => kicad.exportGerbers(cli, o),
       exportDrill: (cli, o) => kicad.exportDrill(cli, o),
       exportDxf: (cli, o) => kicad.exportDxf(cli, o),
@@ -100,7 +129,9 @@ export async function createServices(deps: ServiceDeps): Promise<CoreServices & 
       exportPcbSvg: (cli, o) => kicad.exportPcbSvg(cli, o),
     },
     sim: simService(deps.settings),
-    ...(deps.token && deps.appBridgeFile ? { appBridge: new AppBridgeClient({ file: deps.appBridgeFile, token: deps.token }) } : {}),
+    ...(deps.token && deps.appBridgeFile
+      ? { appBridge: new AppBridgeClient({ file: deps.appBridgeFile, token: deps.token }) }
+      : {}),
     dispose: () => sessions.dispose(),
   };
   return services;

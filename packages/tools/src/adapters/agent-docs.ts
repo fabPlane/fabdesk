@@ -19,18 +19,29 @@ export function toolsMarkdown(registry: ToolRegistry, opts: { serverName?: strin
   const lines: string[] = [];
   lines.push(`## fabdesk MCP tools (server \`${server}\`)`);
   lines.push("");
-  lines.push("Tools are namespaced `mcp__" + server + "__<name>` in Claude Code. Only the **core** toolset is loaded at start; call `load_toolset {toolset}` to enable the others (the tool list refreshes).");
+  lines.push(
+    "Tools are namespaced `mcp__" +
+      server +
+      "__<name>` in Claude Code. Only the **core** toolset is loaded at start; call `load_toolset {toolset}` to enable the others (the tool list refreshes).",
+  );
   lines.push("");
-  lines.push("Recommended workflow: `project_status` → write `circuit.netlist.json` (`project_write_file`) → `circuit_build` → `circuit_read_errors` (fix, rebuild) → `route_run` → `verify_drc` → `render_board`.");
+  lines.push(
+    'Recommended workflow: `project_status` → write `circuit.netlist.json` (`project_write_file`) → `circuit_build` → `circuit_read_errors` (fix, rebuild) → `route_run` → inspect with `circuit_query` → `verify_drc` → `render_board`. Use `circuit_build {rebuild:"clean"}` when placement, outline, or routing changes require a guaranteed fresh route; the default preserves compatible copper.',
+  );
   lines.push("");
   for (const ts of TOOLSETS) {
     const tools = registry.byToolset(ts);
     if (tools.length === 0) continue;
-    lines.push(`### ${ts} — ${TOOLSET_BLURB[ts] ?? ""}${ts === "core" ? "" : ` (\`load_toolset {"toolset":"${ts}"}\`)`}`);
+    lines.push(
+      `### ${ts} — ${TOOLSET_BLURB[ts] ?? ""}${ts === "core" ? "" : ` (\`load_toolset {"toolset":"${ts}"}\`)`}`,
+    );
     lines.push("");
     lines.push("| tool | arguments | what it does |");
     lines.push("| --- | --- | --- |");
-    for (const t of tools) lines.push(`| \`${t.name}\` | ${argsSummary(registry, t)} | ${firstSentence(t.description)}${t.longRunning ? " (long-running)" : ""} |`);
+    for (const t of tools)
+      lines.push(
+        `| \`${t.name}\` | ${argsSummary(registry, t)} | ${firstSentence(t.description)}${t.longRunning ? " (long-running)" : ""} |`,
+      );
     lines.push("");
   }
   return lines.join("\n");
@@ -48,7 +59,12 @@ function argsSummary(registry: ToolRegistry, def: ToolDef): string {
   const parts = Object.entries(props)
     .filter(([k]) => k !== "project")
     .map(([k, v]) => {
-      const type = typeof v["type"] === "string" ? v["type"] : Array.isArray(v["enum"]) ? (v["enum"] as unknown[]).join("\\|") : "any";
+      const type =
+        typeof v["type"] === "string"
+          ? v["type"]
+          : Array.isArray(v["enum"])
+            ? (v["enum"] as unknown[]).join("\\|")
+            : "any";
       return `${k}${required.has(k) ? "" : "?"}: ${type}`;
     });
   return parts.length ? `\`${parts.join(", ")}\`` : "—";

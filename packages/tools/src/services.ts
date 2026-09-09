@@ -7,10 +7,23 @@
  * api-server` per project) for building, querying, routing and library search; `KicadService`
  * runs the fork `kicad-cli` for DRC, renders and exports; `SimService` reads the netlist source.
  */
-import type { CoreEvent, FpPcbBoardSpec, NetlistFile, Principal, RouteResult, Settings } from "@fabdesk/protocol";
+import type {
+  CoreEvent,
+  FpPcbBoardSpec,
+  NetlistFile,
+  Principal,
+  RouteResult,
+  Settings,
+} from "@fabdesk/protocol";
 import type { ProjectHandle } from "./registry";
 
-export type BuildError = { message: string; line?: number; column?: number; file?: string; type?: string };
+export type BuildError = {
+  message: string;
+  line?: number;
+  column?: number;
+  file?: string;
+  type?: string;
+};
 
 export type BuildOptions = {
   projectDir: string;
@@ -18,12 +31,21 @@ export type BuildOptions = {
   entrypoint?: string;
   /** Replaces the netlist file's `board` for this build (a template's blank, the manifest's rules). */
   board?: FpPcbBoardSpec;
+  /** Preserve compatible copper (default), or remove routed copper before rebuilding. */
+  rebuild?: "preserve" | "clean";
   signal?: AbortSignal;
   /** Stage progress from the compile job; tools map it into their own range. */
   progress?: (fraction: number, note?: string) => void;
 };
 
-export type BuildCounts = { components: number; nets: number; footprintsAdded: number; footprintsPlaced: number; viasAdded?: number; holesAdded?: number };
+export type BuildCounts = {
+  components: number;
+  nets: number;
+  footprintsAdded: number;
+  footprintsPlaced: number;
+  viasAdded?: number;
+  holesAdded?: number;
+};
 
 export type BuildResult = {
   ok: boolean;
@@ -33,6 +55,8 @@ export type BuildResult = {
   durationMs: number;
   /** Board revision the bridge reported after the compile. */
   revision?: number;
+  /** Copper removed by a clean rebuild. */
+  removedCopper?: { tracks: number; vias: number };
 };
 
 export type DesignSelect = "components" | "nets" | "pads" | "vias" | "tracks" | "unrouted";
@@ -74,7 +98,14 @@ export type RouteSummary = {
   message: string;
   unrouted: Array<{ net: string; from: { x: number; y: number }; to: { x: number; y: number } }>;
   /** Copper added or claimed by this run, converted to millimetres. */
-  geometry?: Array<{ kind: "trace" | "via"; id: string; layer: number; net: number; points: number[]; width?: number }>;
+  geometry?: Array<{
+    kind: "trace" | "via";
+    id: string;
+    layer: number;
+    net: number;
+    points: number[];
+    width?: number;
+  }>;
   log: string[];
 };
 
@@ -93,8 +124,17 @@ export type PartDescription = {
   libId: string;
   description: string;
   anchor?: { x: number; y: number };
-  pins?: Array<{ number: string; name: string; electricalType: string; position: { x: number; y: number } }>;
-  pads?: Array<{ number: string; position: { x: number; y: number }; size: { x: number; y: number } }>;
+  pins?: Array<{
+    number: string;
+    name: string;
+    electricalType: string;
+    position: { x: number; y: number };
+  }>;
+  pads?: Array<{
+    number: string;
+    position: { x: number; y: number };
+    size: { x: number; y: number };
+  }>;
 };
 
 export type DesignStatus = {
@@ -111,13 +151,21 @@ export interface DesignService {
   /** Rows describing the board as KiCad holds it. */
   query(projectDir: string, select: DesignSelect, filter?: string): Promise<DesignRow[]>;
   /** Autoroute on the bridge; resolves when the job ends. */
-  route(projectDir: string, opts: RouteJobOptions, hooks: { onProgress?: (p: RouteProgress) => void; signal?: AbortSignal }): Promise<RouteSummary>;
+  route(
+    projectDir: string,
+    opts: RouteJobOptions,
+    hooks: { onProgress?: (p: RouteProgress) => void; signal?: AbortSignal },
+  ): Promise<RouteSummary>;
   /** Cancel the running route job of a project (or every running one). */
   cancelRoute(projectDir?: string): Promise<void>;
   /** Delete tracks, arcs and vias — of the given nets, or all of them. */
   unroute(projectDir: string, nets?: string[]): Promise<{ tracks: number; vias: number }>;
   /** Nets attached to component references (repair scope). */
-  scope(projectDir: string, refs: string[], opts?: { excludePlaneNets?: boolean; excludeNets?: string[] }): Promise<ComponentScope>;
+  scope(
+    projectDir: string,
+    refs: string[],
+    opts?: { excludePlaneNets?: boolean; excludeNets?: string[] },
+  ): Promise<ComponentScope>;
   /** Footprints in the KiCad libraries the bridge's server can see. */
   searchFootprints(query: string, limit: number): Promise<FootprintHit[]>;
   /** Symbols in the KiCad libraries the bridge's server can see. */
@@ -148,38 +196,113 @@ export type DrcReport = {
   counts: { errors: number; warnings: number; unconnected: number };
   raw?: unknown;
 };
-export type ErcReport = { violations: DrcViolation[]; counts: { errors: number; warnings: number }; raw?: unknown };
+export type ErcReport = {
+  violations: DrcViolation[];
+  counts: { errors: number; warnings: number };
+  raw?: unknown;
+};
 export type GateResult = { pass: boolean; reasons: string[]; newWarningSignatures: string[] };
 
 export interface KicadService {
   /** settings → KICAD_CLI env → known locations; null when KiCad is not installed. */
   resolveCli(): Promise<KicadCli | null>;
-  runDrc(cli: KicadCli, opts: { board: string; outFile: string; severity?: "error" | "all"; schematicParity?: boolean; signal?: AbortSignal }): Promise<DrcReport>;
-  runErc(cli: KicadCli, opts: { schematic: string; outFile: string; severity?: "error" | "all"; signal?: AbortSignal }): Promise<ErcReport>;
+  runDrc(
+    cli: KicadCli,
+    opts: {
+      board: string;
+      outFile: string;
+      severity?: "error" | "all";
+      schematicParity?: boolean;
+      signal?: AbortSignal;
+    },
+  ): Promise<DrcReport>;
+  runErc(
+    cli: KicadCli,
+    opts: { schematic: string; outFile: string; severity?: "error" | "all"; signal?: AbortSignal },
+  ): Promise<ErcReport>;
   gate(drc: DrcReport, erc: ErcReport | undefined, allowedWarningSignatures: string[]): GateResult;
   renderPng(
     cli: KicadCli,
-    opts: { board: string; output: string; view: BoardView; width?: number; height?: number; quality?: "basic" | "high"; signal?: AbortSignal },
+    opts: {
+      board: string;
+      output: string;
+      view: BoardView;
+      width?: number;
+      height?: number;
+      quality?: "basic" | "high";
+      signal?: AbortSignal;
+    },
   ): Promise<void>;
-  exportGlb(cli: KicadCli, opts: { board: string; output: string; signal?: AbortSignal }): Promise<{ fused: boolean; warnings: string[] }>;
-  boardStats(cli: KicadCli, opts: { board: string; scratchFile: string }): Promise<Record<string, unknown>>;
-  exportGerbers(cli: KicadCli, opts: { board: string; outDir: string; signal?: AbortSignal }): Promise<{ paths: string[] }>;
-  exportDrill(cli: KicadCli, opts: { board: string; outDir: string; signal?: AbortSignal }): Promise<{ paths: string[] }>;
+  exportGlb(
+    cli: KicadCli,
+    opts: { board: string; output: string; signal?: AbortSignal },
+  ): Promise<{ fused: boolean; warnings: string[] }>;
+  boardStats(
+    cli: KicadCli,
+    opts: { board: string; scratchFile: string },
+  ): Promise<Record<string, unknown>>;
+  exportGerbers(
+    cli: KicadCli,
+    opts: { board: string; outDir: string; signal?: AbortSignal },
+  ): Promise<{ paths: string[] }>;
+  exportDrill(
+    cli: KicadCli,
+    opts: { board: string; outDir: string; signal?: AbortSignal },
+  ): Promise<{ paths: string[] }>;
   /** One DXF per layer (mm), the copper-removal artwork for laser/CNC-finished blanks. */
-  exportDxf(cli: KicadCli, opts: { board: string; outDir: string; layers: string[]; signal?: AbortSignal }): Promise<{ paths: string[] }>;
-  exportPos(cli: KicadCli, opts: { board: string; output: string; signal?: AbortSignal }): Promise<{ paths: string[] }>;
-  exportBom(cli: KicadCli, opts: { schematic: string; output: string; signal?: AbortSignal }): Promise<{ paths: string[] }>;
-  exportNetlist(cli: KicadCli, opts: { schematic: string; output: string; format: "kicadsexpr" | "spice"; signal?: AbortSignal }): Promise<{ paths: string[] }>;
-  exportSchematicSvg(cli: KicadCli, opts: { schematic: string; outDir: string; signal?: AbortSignal }): Promise<{ paths: string[] }>;
-  exportPcbSvg(cli: KicadCli, opts: { board: string; output: string; layers?: string[]; signal?: AbortSignal }): Promise<{ paths: string[] }>;
+  exportDxf(
+    cli: KicadCli,
+    opts: { board: string; outDir: string; layers: string[]; signal?: AbortSignal },
+  ): Promise<{ paths: string[] }>;
+  exportPos(
+    cli: KicadCli,
+    opts: { board: string; output: string; signal?: AbortSignal },
+  ): Promise<{ paths: string[] }>;
+  exportBom(
+    cli: KicadCli,
+    opts: { schematic: string; output: string; signal?: AbortSignal },
+  ): Promise<{ paths: string[] }>;
+  exportNetlist(
+    cli: KicadCli,
+    opts: {
+      schematic: string;
+      output: string;
+      format: "kicadsexpr" | "spice";
+      signal?: AbortSignal;
+    },
+  ): Promise<{ paths: string[] }>;
+  exportSchematicSvg(
+    cli: KicadCli,
+    opts: { schematic: string; outDir: string; signal?: AbortSignal },
+  ): Promise<{ paths: string[] }>;
+  exportPcbSvg(
+    cli: KicadCli,
+    opts: { board: string; output: string; layers?: string[]; signal?: AbortSignal },
+  ): Promise<{ paths: string[] }>;
 }
 
-export type SimAnalysis = { type: "op" } | { type: "tran"; stopS: number; stepS?: number } | { type: "ac"; startHz: number; stopHz: number; points?: number };
-export type SimResult = { engine: string; analysis: string; columns: string[]; rows: number[][]; notes?: string[]; durationMs: number };
+export type SimAnalysis =
+  | { type: "op" }
+  | { type: "tran"; stopS: number; stepS?: number }
+  | { type: "ac"; startHz: number; stopHz: number; points?: number };
+export type SimResult = {
+  engine: string;
+  analysis: string;
+  columns: string[];
+  rows: number[][];
+  notes?: string[];
+  durationMs: number;
+};
 
 export interface SimService {
   spiceNetlist(netlist: NetlistFile): string;
-  runSimulation(opts: { netlist: NetlistFile; analysis: SimAnalysis; engine?: "spicey" | "ngspice"; ngspicePath?: string; signal?: AbortSignal }): Promise<SimResult>;
+  runSimulation(opts: {
+    netlist: NetlistFile;
+    analysis: SimAnalysis;
+    engine?: "spicey" | "ngspice";
+    ngspicePath?: string;
+    signal?: AbortSignal;
+  }): Promise<SimResult>;
   findNgspice(explicit?: string | null): Promise<string | null>;
 }
 
@@ -227,7 +350,12 @@ export type AppBridgeStatus = {
 export interface AppBridge {
   status(): Promise<AppBridgeStatus>;
   /** JSON request to the bridge; throws `ToolError("unavailable")` when the app is not reachable. */
-  call<T = unknown>(method: "GET" | "POST", path: string, body?: unknown, opts?: { timeoutMs?: number }): Promise<T>;
+  call<T = unknown>(
+    method: "GET" | "POST",
+    path: string,
+    body?: unknown,
+    opts?: { timeoutMs?: number },
+  ): Promise<T>;
 }
 
 export interface CoreServices {

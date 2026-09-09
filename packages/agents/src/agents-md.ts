@@ -138,9 +138,12 @@ ${sketches}
 2. Write or edit \`circuit.netlist.json\`.
 3. Search both footprint and symbol ids and describe their pins/pads before choosing them. Build with the \`${mcp}\` build tool;
    fix every error and review every warning until it passes. Query components and inspect board and
-   schematic renders; add or adjust explicit placements when parts collide or crowd an edge.
+   schematic renders; add or adjust explicit placements when parts collide or crowd an edge. The default
+   preserves compatible copper; use \`rebuild="clean"\` before a full reroute after changing placement,
+   outline or routing constraints.
 4. Route with the routing tool.
-5. Run DRC; fix the source (not the generated files) and repeat from step 3 while anything fails.
+5. Inspect components, pads, tracks, vias and unrouted connections with the circuit query tool. Run DRC;
+   fix the source (not the generated files) and repeat from step 3 while anything fails.
 6. Render, then summarise what the board does, the parts used and any open issues. Render tools attach
    images directly in chat and return a \`fileUrl\` / \`url\` field. When the user asks for links, give
    those browser-openable \`file://\` URLs as plain text.

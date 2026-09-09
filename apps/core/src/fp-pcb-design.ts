@@ -7,7 +7,15 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ElectricalPinType, KiCadObjectType } from "@fp-pcb/proto";
-import { LibFootprint, LibSymbol, SchematicPin, Via, toMm, type Board, type KiCad } from "@fp-pcb/client";
+import {
+  LibFootprint,
+  LibSymbol,
+  SchematicPin,
+  Via,
+  toMm,
+  type Board,
+  type KiCad,
+} from "@fp-pcb/client";
 import type { FpPcbCompileJob, FpPcbDiagnostic, FpPcbRouteJob } from "@fabdesk/protocol";
 import {
   PROJECT_FILES,
@@ -28,6 +36,7 @@ import {
 } from "@fabdesk/tools";
 import type { FpPcbBridgeClient } from "./fp-pcb-bridge";
 import { BOARD_PRO, type FpPcbSessions } from "./fp-pcb-session";
+import type { KicadLibraryCatalog } from "./kicad-library-catalog";
 
 /** The `@fp-pcb/compile` frontend that reads `circuit.netlist.json` (its `NETLIST_JSON_KIND`). */
 export const NETLIST_JSON_KIND = "netlist-json";
@@ -37,6 +46,7 @@ const STAGE_FRACTION: Record<string, number> = {
   frontend: 0.1,
   validating: 0.15,
   checking: 0.25,
+  cleaning: 0.3,
   outlining: 0.35,
   importing: 0.5,
   placing: 0.7,
@@ -72,6 +82,7 @@ export type FpPcbDesignDeps = {
   sessions: FpPcbSessions;
   readText?: (path: string) => Promise<string>;
   exists?: (path: string) => Promise<boolean>;
+  catalog?: KicadLibraryCatalog;
 };
 
 export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
@@ -111,6 +122,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
           source,
           ...(s.path ? {} : { project: { path: join(opts.projectDir, BOARD_PRO) } }),
           ...(opts.board ? { board: opts.board } : {}),
+          ...(opts.rebuild ? { rebuild: opts.rebuild } : {}),
           autoplace: true,
           save: true,
           netlistPath: PROJECT_FILES.compileNet,
@@ -151,6 +163,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       counts: job.result.counts,
       durationMs,
       ...(job.revision !== undefined ? { revision: job.revision } : {}),
+      ...(job.removedCopper ? { removedCopper: job.removedCopper } : {}),
     };
   };
 
@@ -189,7 +202,11 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
           if (net) counts.set(net, (counts.get(net) ?? 0) + 1);
         }
         return (await board.nets())
-          .map((n) => ({ name: n.name, code: n.code, pads: counts.get(n.name) ?? 0 }))
+          .map((n) => ({
+            name: n.name,
+            code: n.code?.value ?? 0,
+            pads: counts.get(n.name) ?? 0,
+          }))
           .filter((r) => keep(r.name));
       }
       case "pads": {
@@ -335,7 +352,11 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
   ): Promise<{ tracks: number; vias: number }> => {
     const board = await deps.sessions.board(projectDir);
     const wanted = nets?.length ? new Set(nets) : null;
-    const items = (await board.getTracks()).filter((t) => !wanted || wanted.has(t.net ?? ""));
+    // A free prefab via has no net and is part of the blank, not routed copper. Preserve it when
+    // unrouting the whole board; an explicitly named-net unroute cannot select it anyway.
+    const items = (await board.getTracks()).filter(
+      (t) => (!(t instanceof Via) || Boolean(t.net)) && (!wanted || wanted.has(t.net ?? "")),
+    );
     const vias = items.filter((t) => t.typeName.endsWith("Via")).length;
     if (items.length) {
       await board.commit(wanted ? `Unroute ${[...wanted].join(", ")}` : "Unroute all", (tx) =>
@@ -381,7 +402,12 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     return { components, missing, nets: kept, excluded, pads };
   };
 
-  const searchLibraries = async (kind: "footprint" | "symbol", query: string, limit: number): Promise<FootprintHit[]> => {
+  const searchLibraries = async (
+    kind: "footprint" | "symbol",
+    query: string,
+    limit: number,
+  ): Promise<FootprintHit[]> => {
+    if (deps.catalog?.has(kind)) return deps.catalog.search(kind, query, limit);
     const kicad = await anyKicad();
     const tokens = query
       .toLowerCase()
@@ -415,14 +441,32 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     }
     return hits;
   };
-  const searchFootprints = (query: string, limit: number) => searchLibraries("footprint", query, limit);
+  const searchFootprints = (query: string, limit: number) =>
+    searchLibraries("footprint", query, limit);
   const searchSymbols = (query: string, limit: number) => searchLibraries("symbol", query, limit);
-  const describePart = async (kind: "footprint" | "symbol", libId: string): Promise<PartDescription> => {
+  const describePart = async (
+    kind: "footprint" | "symbol",
+    libId: string,
+  ): Promise<PartDescription> => {
+    if (deps.catalog?.has(kind)) {
+      const item = await deps.catalog.describe(kind, libId);
+      if (item) return item;
+      throw new ToolError(
+        `${kind} ${libId} was not found in the bundled KiCad libraries`,
+        "not_found",
+      );
+    }
     const kicad = await anyKicad();
     const item = await kicad.libraries.get(kind, libId);
-    if (!item) throw new ToolError(`${kind} ${libId} was not found in the design server libraries`, "not_found");
+    if (!item)
+      throw new ToolError(
+        `${kind} ${libId} was not found in the design server libraries`,
+        "not_found",
+      );
     if (kind === "symbol" && item instanceof LibSymbol) {
-      const pins = item.items.filter((child): child is SchematicPin => child instanceof SchematicPin);
+      const pins = item.items.filter(
+        (child): child is SchematicPin => child instanceof SchematicPin,
+      );
       return {
         kind,
         libId,
@@ -443,7 +487,10 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         anchor: { x: mm(item.anchor.x), y: mm(item.anchor.y) },
         pads: item.pads.map((pad) => ({
           number: pad.number,
-          position: { x: mm(pad.position.x - item.anchor.x), y: mm(pad.position.y - item.anchor.y) },
+          position: {
+            x: mm(pad.position.x - item.anchor.x),
+            y: mm(pad.position.y - item.anchor.y),
+          },
           size: { x: mm(pad.size.x), y: mm(pad.size.y) },
         })),
       };

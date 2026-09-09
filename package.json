@@ -24,6 +24,7 @@
   ],
   "scripts": {
     "dev": "bun run --cwd apps/desktop dev",
+    "dev:pcb": "bun run scripts/dev-pcb.ts",
     "dev:core": "bun run --cwd apps/core dev",
     "typecheck": "bun run fp-pcb:types && bun run --filter './apps/*' --filter './packages/*' typecheck",
     "test": "bun run --filter './apps/*' --filter './packages/*' test && bun test ./scripts/test",
