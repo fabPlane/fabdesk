@@ -26,7 +26,7 @@ export function toolsMarkdown(registry: ToolRegistry, opts: { serverName?: strin
   );
   lines.push("");
   lines.push(
-    'Recommended workflow: `project_status` → write `circuit.netlist.json` (`project_write_file`) → `circuit_build` → `circuit_read_errors` (fix, rebuild) → `route_run` → inspect with `circuit_query` → load the verify toolset and run `verify_drc`, `verify_erc`, and `verify_gate` → `render_board` → load the render toolset and run `render_schematic_svg` and `render_pcb_svg`. A PNG board render does not populate the Schematic or PCB SVG tabs. Use `circuit_build {rebuild:"clean"}` when placement, outline, or routing changes require a guaranteed fresh route; the default preserves compatible copper.',
+    'Recommended workflow: `project_status` → write `circuit.netlist.json` (`project_write_file`) → `circuit_build` → `circuit_read_errors` (fix, rebuild) → `route_run` → inspect with `circuit_query` → run `verify_drc {schematicParity:true}`, then load the verify toolset and run `verify_erc` and `verify_gate {requireErc:true}` → `render_board` → load the render toolset and run `render_schematic_svg` and `render_pcb_svg`. A PNG board render does not populate the Schematic or PCB SVG tabs. Use `circuit_build {rebuild:"clean"}` when placement, outline, or routing changes require a guaranteed fresh route; the default preserves compatible copper.',
   );
   lines.push("");
   for (const ts of TOOLSETS) {

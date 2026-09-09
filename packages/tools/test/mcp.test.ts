@@ -91,6 +91,7 @@ describe("mcp adapter", () => {
     const promptText = (prompt.messages[0]!.content as { text: string }).text;
     expect(promptText).toContain("blink an LED");
     expect(promptText).toContain("run both render_schematic_svg and render_pcb_svg");
+    expect(promptText).toContain("verify_drc with schematicParity=true");
     expect(promptText).toContain("Never claim the project passes when a required report is missing");
   });
 });
