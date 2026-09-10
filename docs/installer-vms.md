@@ -4,10 +4,10 @@
 
 `.github/workflows/installer-test.yml` runs the same guest scripts directly on GitHub's macOS,
 Ubuntu and Windows runners, which are fresh VMs per job: no image to prepare or host to keep.
-It runs after every successful Release (testing that tag), daily against what fabplane.com
+It runs after every successful Release (testing that tag), weekly against what fabplane.com
 serves, and on demand (`gh workflow run installer-test.yml -f tag=v0.1.42`). Each job uploads
-`report.json`, `app.png`, `screen.png` and logs as an artifact, and fails when the guest reports a
-failure. The macOS x64 build is exercised under Rosetta on the arm64 runner.
+`report.json`, `app.png`, `screen.png` and logs as a seven-day artifact, and fails when the guest
+reports a failure. The macOS x64 build is exercised under Rosetta on the arm64 runner.
 
 ## Daily job on agent1 (OpenClaw)
 
