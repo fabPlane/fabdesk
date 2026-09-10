@@ -2,7 +2,7 @@
 
 ## Pipeline
 
-1. **Merge to `main`** → `.github/workflows/release.yml` runs.
+1. **Nightly (20:00 UTC / 03:00 Asia/Bangkok) or manual public run** → `.github/workflows/release.yml` runs.
    - Version is `<major>.<minor>.<run_number>` where `<major>.<minor>` comes from the root
      `package.json` (bump that to start a new minor line). `scripts/set-version.ts` stamps it
      into the app manifests before building.
@@ -14,10 +14,20 @@
      `v<version>`, and creates a GitHub Release with everything attached.
    - `workflow_dispatch` with `channel=internal` builds with the private router bundled; internal
      builds are uploaded only as workflow artifacts and never released.
-2. **Website publish** (fabplane.com): `bun run desktop:publish --tag v<version>` downloads the
-   release with `gh`, verifies the hashes, optionally re-hosts the installers on R2, and writes
-   `apps/web/public/desktop/latest.json`, `releases.json` and `SHA256SUMS-<tag>.txt`. Committing
-   and deploying the site publishes the download buttons, `/download`, and the update feed.
+2. **Automatic website handoff**: after the public GitHub release succeeds, the
+   `website` job dispatches `TensorFleet/fabplane.com`'s `desktop-release.yml` with
+   the new tag. That workflow checks installer hashes, uploads to the public R2
+   downloads bucket, commits the website feed and history, dispatches the normal
+   production site deployment, and verifies the live feed. The website also retries
+   daily at 23:17 UTC if a handoff or deployment failed. A failed handoff can be
+   rerun without rebuilding the installers.
+   - Configure `FABPLANE_RELEASE_DISPATCH_TOKEN` here: a fine-grained token with
+     **Actions write** on **only `TensorFleet/fabplane.com`**. The website needs
+     its separate `FABDESK_RELEASE_READ_TOKEN` with **Contents read** on this repo.
+   - Merge the website workflow and configure both credentials before enabling
+     this handoff. See fabplane.com's `docs/desktop-releases.md`.
+   - Merges to `main` no longer cut releases. Manual public dispatches on `main`
+     publish just like the nightly; internal builds remain workflow artifacts only.
 3. **In-app update check**: `@fabdesk/updates` fetches `https://fabplane.com/desktop/latest.json`
    at startup and every 6 hours (`FABDESK_UPDATE_URL` overrides), compares semver with the running
    version and points the user at the right installer. It never downloads or installs on its own.
