@@ -66,11 +66,18 @@ jobs:
       - name: Init the fabplane and fab_pcb submodules
         run: git submodule update --init --depth 1 vendor/fabplane vendor/fab_pcb
 
+      - name: Resolve the private router pin
+        if: env.CHANNEL == 'internal'
+        id: private-router
+        shell: bash
+        run: echo "commit=$(tr -d '[:space:]' < vendor/fab_pcb/packages/router/JS_AUTOROUTER_COMMIT)" >> "$GITHUB_OUTPUT"
+
       - name: Check out private js_autorouter for internal builds
         if: env.CHANNEL == 'internal'
         uses: actions/checkout@v4
         with:
           repository: TensorFleet/js_autorouter
+          ref: ${{ steps.private-router.outputs.commit }}
           path: .ci-private/js_autorouter
           token: ${{ secrets.JS_AUTOROUTER_READ_TOKEN }}
           persist-credentials: false
