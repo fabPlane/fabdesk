@@ -6,9 +6,11 @@
    - Version is `<major>.<minor>.<run_number>` where `<major>.<minor>` comes from the root
      `package.json` (bump that to start a new minor line). `scripts/set-version.ts` stamps it
      into the app manifests before building.
-   - Four runners build `fabdesk-core` for their own target and package the app with
-     electron-builder: macOS arm64 and x64 (`.dmg`, `.zip`), Linux x64 (`.AppImage`, `.deb`),
-     Windows x64 (`.exe` installer + portable).
+   - Four runners build `fabdesk-core` for their own target, stage the FabPlane KiCad fork from
+     TensorFleet/kicad's rolling `nightly` release (`scripts/stage-kicad-bundle.ts --require`), and
+     package the app with electron-builder: macOS arm64 and x64 (`.dmg`, `.zip`), Linux x64
+     (`.AppImage`, `.deb`), Windows x64 (`.exe` installer). `after-pack` copies the staged tree to
+     `Resources/kicad/`.
    - The `release` job collects the installers, runs `scripts/release-manifest.ts` to compute
      SHA-256 for every file and write `manifest.json` + `SHA256SUMS`, tags the commit
      `v<version>`, and creates a GitHub Release with everything attached.

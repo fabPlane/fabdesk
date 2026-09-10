@@ -143,8 +143,19 @@ export function SettingsDialog() {
             </div>
           ) : section === "kicad" ? (
             <div>
-              <Row label="kicad-cli path" hint={doctor.data?.kicad.found ? `detected ${doctor.data.kicad.version ?? ""} at ${doctor.data.kicad.path ?? ""}` : "not detected"}>
-                <Input value={draft.kicadCliPath ?? ""} onChange={(e) => update((s) => ({ ...s, kicadCliPath: e.target.value || null }))} placeholder="auto-detect" />
+              <Row
+                label="kicad-cli path"
+                hint={
+                  doctor.data?.kicad.found
+                    ? `using ${doctor.data.kicad.version ?? ""} at ${doctor.data.kicad.path ?? ""}`
+                    : "bundled FabPlane KiCad (leave blank), or set a path to override"
+                }
+              >
+                <Input
+                  value={draft.kicadCliPath ?? ""}
+                  onChange={(e) => update((s) => ({ ...s, kicadCliPath: e.target.value || null }))}
+                  placeholder="bundled (auto)"
+                />
               </Row>
               <Row label="ngspice path" hint={doctor.data?.ngspice.found ? `detected at ${doctor.data.ngspice.path ?? ""}` : "not detected"}>
                 <Input value={draft.ngspicePath ?? ""} onChange={(e) => update((s) => ({ ...s, ngspicePath: e.target.value || null }))} placeholder="auto-detect" />

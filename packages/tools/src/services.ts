@@ -204,7 +204,7 @@ export type ErcReport = {
 export type GateResult = { pass: boolean; reasons: string[]; newWarningSignatures: string[] };
 
 export interface KicadService {
-  /** settings → KICAD_CLI env → known locations; null when KiCad is not installed. */
+  /** settings → KICAD_CLI env → bundled FabPlane KiCad → PATH / known locations; null when none work. */
   resolveCli(): Promise<KicadCli | null>;
   runDrc(
     cli: KicadCli,
