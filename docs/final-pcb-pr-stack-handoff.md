@@ -1,6 +1,6 @@
 # Agent handoff: final Fabdesk PCB PR stack
 
-Last verified: 2026-09-09 (Asia/Bangkok)
+Last verified: 2026-09-10 (Asia/Bangkok)
 
 ## Objective
 
@@ -23,11 +23,11 @@ public router bundle, or close an issue whose acceptance criteria have not been 
 | 3           | [FabPCB #10](https://github.com/TensorFleet/fab_pcb/pull/10)    | `f87d139dd5aaee0ec36283c78d0f68f9c0f43a94` | Replace the tscircuit capacity-router dependency with server-side `js_autorouter`; fix generated-schematic pin coordinates; allow private router source only in internal bundles; isolate KiCad from AppImage launcher variables. | Advances FabPCB #11, contributes the backend half of [Fabdesk #146](https://github.com/TensorFleet/fabdesk/issues/146), and remains a dependency of open macOS packaging issue [FabPCB #12](https://github.com/TensorFleet/fab_pcb/issues/12). |
 | 4           | [Fabdesk #141](https://github.com/TensorFleet/fabdesk/pull/141) | `166848ecf9a0b3925b05f4fc1ebf2cb49b651235` | Supervise/package FabPCB, expose the complete MCP inventory, share one KiCad environment, load a bundle-relative router, isolate packaged KiCad, and require parity/ERC/SVG completion in the agent workflow. | Consumes KiCad #3 and FabPCB #9/#10 and implements the desktop half of Fabdesk #146; no declared closing issue.                                                                                                                                |
 
-At verification time, all seven PRs were open. KiCad #3 and Fabdesk #141/#143 were mergeable and
-clean; GitHub temporarily reported unknown mergeability for Fabdesk #123/#145, whose CI/security
-checks were green. KiCad #3 had no reported checks. FabPCB #9 and #10 were mergeable with green
-unit and browser smoke tests, while their self-hosted KiCad jobs (and #9's backend release job)
-were still queued; GitHub consequently reported those two PRs as unstable rather than clean.
+At verification time, all seven PRs were open. KiCad #3 and Fabdesk #123/#141/#143/#145 were
+mergeable and clean; every reported Fabdesk check was green, while KiCad #3 had no reported checks.
+FabPCB #9 and #10 were mergeable with green unit and browser smoke tests, while their self-hosted
+KiCad jobs (and #9's backend release job) were still queued; GitHub consequently reported those two
+PRs as unstable rather than clean.
 
 ## Merge procedure
 
