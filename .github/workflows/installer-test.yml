@@ -2,7 +2,7 @@ name: Installer test
 
 # Fresh-machine install + launch test of the released installers, on GitHub's own macOS / Ubuntu /
 # Windows runners (a clean VM per job). Runs after every successful Release (testing that tag),
-# every day against what fabplane.com serves, and on demand. Uses the same guest scripts as the
+# weekly against what fabplane.com serves, and on demand. Uses the same guest scripts as the
 # local VM tests (scripts/vm/guest); see docs/installer-vms.md.
 
 on:
@@ -10,7 +10,7 @@ on:
     workflows: [Release]
     types: [completed]
   schedule:
-    - cron: "17 22 * * *" # 05:17 Asia/Bangkok
+    - cron: "17 22 * * 0" # 05:17 Monday Asia/Bangkok
   workflow_dispatch:
     inputs:
       run_id:
@@ -92,6 +92,7 @@ jobs:
           name: installer-test-macos-${{ matrix.arch }}-${{ matrix.ext }}-${{ needs.select.outputs.label }}
           path: ${{ steps.t.outputs.RESULTS_DIR }}
           if-no-files-found: ignore
+          retention-days: 7
 
   linux:
     needs: select
@@ -116,6 +117,7 @@ jobs:
           name: installer-test-linux-${{ matrix.format }}-${{ needs.select.outputs.label }}
           path: ${{ steps.t.outputs.RESULTS_DIR }}
           if-no-files-found: ignore
+          retention-days: 7
 
   windows:
     needs: select
@@ -149,3 +151,4 @@ jobs:
           name: installer-test-windows-nsis-${{ needs.select.outputs.label }}
           path: ${{ runner.temp }}/fabdesk-installer-test
           if-no-files-found: ignore
+          retention-days: 7

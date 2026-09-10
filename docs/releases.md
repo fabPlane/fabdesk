@@ -6,7 +6,8 @@
    - Version is `<major>.<minor>.<run_number>` where `<major>.<minor>` comes from the root
      `package.json` (bump that to start a new minor line). `scripts/set-version.ts` stamps it
      into the app manifests before building.
-   - Four runners build `fabdesk-core` for their own target, stage the FabPlane KiCad fork from
+   - TypeScript is checked once on Linux before the native build matrix starts. Four runners then
+     build `fabdesk-core` for their own target, stage the FabPlane KiCad fork from
      TensorFleet/kicad's rolling `nightly` release (`scripts/stage-kicad-bundle.ts --require`), and
      package the app with electron-builder: macOS arm64 and x64 (`.dmg`, `.zip`), Linux x64
      (`.AppImage`, `.deb`), Windows x64 (`.exe` installer). `after-pack` copies the staged tree to
@@ -100,5 +101,7 @@ certutil -hashfile fabPlane-0.1.42-win-x64.exe SHA256   # Windows
   `hdiutil verify`, mount, `codesign`, the bundled core runs; `unzip -t`, AppImage extract, `dpkg-deb`,
   `7z t`) and the release job compares the transferred artifacts against per-runner checksums before
   tagging. A build that fails either step is not released.
+- Public installer workflow artifacts are retained for one day because the permanent GitHub
+  Release receives the same files immediately. Internal-build artifacts are retained for seven days.
 - For the user-facing path (download, Gatekeeper / SmartScreen, first launch) run the fresh-VM tests
   in [installer-vms.md](installer-vms.md): `bun run vm:mac test`, `vm:linux`, `vm:windows`.

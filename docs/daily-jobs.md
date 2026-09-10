@@ -9,7 +9,7 @@ Two scheduled jobs keep security findings and open PRs from going stale.
 
 ## Security scan
 
-Schedule: **13:00 UTC** every day (`0 13 * * *`) once this workflow is on `main`, on every pull request, and via **Run workflow** in the Actions tab.
+Schedule: **13:00 UTC** every day (`0 13 * * *`) once this workflow is on `main`, and via **Run workflow** in the Actions tab. Pull requests rely on the normal CI suite; they do not repeat the full dependency audit.
 
 The Action:
 
