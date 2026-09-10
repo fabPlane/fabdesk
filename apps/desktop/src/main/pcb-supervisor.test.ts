@@ -17,6 +17,7 @@ describe("bundled PCB backend", () => {
     for (const dir of [
       join(pcb, "bin"),
       join(pcb, "kicad", "lib", "runtime"),
+      join(pcb, "kicad", "share", "kicad"),
       join(pcb, "libraries", "footprints"),
       join(pcb, "libraries", "symbols"),
     ])
@@ -63,6 +64,7 @@ describe("bundled PCB backend", () => {
       join(pcb, "bin"),
       join(pcb, "kicad", "bin"),
       join(pcb, "kicad", "lib", "runtime"),
+      join(pcb, "kicad", "share", "kicad"),
       join(pcb, "libraries", "footprints"),
       join(pcb, "libraries", "symbols"),
       join(pcb, "private", "js_autorouter", "src"),
@@ -119,6 +121,7 @@ describe("bundled PCB backend", () => {
     for (const dir of [
       join(pcb, "bin"),
       join(pcb, "kicad", "bin"),
+      join(pcb, "kicad", "share", "kicad"),
       join(pcb, "libraries", "footprints"),
       join(pcb, "libraries", "symbols"),
       join(source, "packages", "bridge", "src"),
@@ -150,5 +153,39 @@ describe("bundled PCB backend", () => {
       args: ["run", "--filter", "@fp-pcb/bridge", "start"],
       cwd: source,
     });
+  });
+
+  test("uses the stock-data path recorded by a macOS bundle", async () => {
+    const resources = await mkdtemp(join(tmpdir(), "fabplane-pcb-macos-bundle-"));
+    roots.push(resources);
+    const pcb = join(resources, "pcb");
+    const stockData = join(pcb, "kicad", "KiCad.app", "Contents", "SharedSupport");
+    for (const dir of [
+      join(pcb, "bin"),
+      join(pcb, "kicad", "KiCad.app", "Contents", "MacOS"),
+      stockData,
+      join(pcb, "libraries", "footprints"),
+      join(pcb, "libraries", "symbols"),
+    ])
+      await mkdir(dir, { recursive: true });
+    await writeFile(join(pcb, "bin", "fp-pcb-bridge"), "binary");
+    await writeFile(join(pcb, "kicad", "KiCad.app", "Contents", "MacOS", "kicad-cli"), "binary");
+    await writeFile(
+      join(pcb, "bundle.json"),
+      JSON.stringify({
+        format: 1,
+        target: "darwin-arm64",
+        bridge: "bin/fp-pcb-bridge",
+        kicadCli: "kicad/KiCad.app/Contents/MacOS/kicad-cli",
+        stockData: "kicad/KiCad.app/Contents/SharedSupport",
+        footprints: "libraries/footprints",
+        symbols: "libraries/symbols",
+      }),
+    );
+
+    expect(
+      resolvePcbBackend({ packaged: true, resourcesPath: resources, env: {} })?.env
+        .KICAD_STOCK_DATA_HOME,
+    ).toBe(stockData);
   });
 });

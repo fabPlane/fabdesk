@@ -9,6 +9,8 @@ export interface PcbBundleManifest {
   format: 1;
   target: string;
   kicadCli: string;
+  /** Bundle-relative KiCad stock-data directory (macOS uses KiCad.app/Contents/SharedSupport). */
+  stockData?: string;
   bridge: string;
   footprints: string;
   symbols: string;
@@ -56,16 +58,15 @@ export function resolvePcbBackend(opts: {
   const bundleRoot = dirname(manifestPath);
   const command = override ? resolve(override) : resolve(bundleRoot, manifest.bridge);
   const kicadCli = resolve(bundleRoot, manifest.kicadCli);
-  const kicadStockData = resolve(bundleRoot, "kicad", "share", "kicad");
+  const kicadStockData = resolve(bundleRoot, manifest.stockData ?? "kicad/share/kicad");
   const footprints = resolve(bundleRoot, manifest.footprints);
   const symbols = resolve(bundleRoot, manifest.symbols);
-  const jsAutorouter = manifest.jsAutorouter
-    ? resolve(bundleRoot, manifest.jsAutorouter)
-    : null;
+  const jsAutorouter = manifest.jsAutorouter ? resolve(bundleRoot, manifest.jsAutorouter) : null;
   const libraryPaths = (manifest.libraryPaths ?? []).map((path) => resolve(bundleRoot, path));
   for (const [label, path] of [
     ["bridge", command],
     ["kicad-cli", kicadCli],
+    ["stock data", kicadStockData],
     ["footprints", footprints],
     ["symbols", symbols],
   ] as const)
