@@ -72,7 +72,7 @@ jobs:
         with:
           repository: TensorFleet/js_autorouter
           path: .ci-private/js_autorouter
-          token: ${{ secrets.FABPLANE_RELEASE_DISPATCH_TOKEN }}
+          token: ${{ secrets.JS_AUTOROUTER_READ_TOKEN }}
           persist-credentials: false
           sparse-checkout: |
             package.json
