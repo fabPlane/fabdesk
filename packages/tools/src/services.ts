@@ -57,6 +57,8 @@ export type BuildResult = {
   revision?: number;
   /** Copper removed by a clean rebuild. */
   removedCopper?: { tracks: number; vias: number };
+  /** Rejected candidate retained for diagnosis after a fail-closed schematic build. */
+  rejectedSchematicPath?: string;
 };
 
 export type DesignSelect = "components" | "nets" | "pads" | "vias" | "tracks" | "unrouted";
@@ -143,6 +145,10 @@ export type DesignStatus = {
   reason?: string;
   kicadCliExists?: boolean;
   frontends?: string[];
+  routers?: {
+    capacity?: { ok: boolean; reason?: string };
+    freerouting?: { ok: boolean; reason?: string };
+  };
 };
 
 export interface DesignService {

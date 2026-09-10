@@ -48,7 +48,8 @@ describe("registry", () => {
     const environment = await reg.invoke("pcb_environment", { project: project.id }, (ref) => noProject({ def: reg.get("pcb_environment")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }));
     expect(environment.text).toContain("/mock/kicad-cli (10.99.0)");
     expect(environment.text).toContain("Scripts that call KiCad IPC must identify that dependency");
-    expect(environment.json).toMatchObject({ project: { dir: project.dir }, kicadCli: { path: "/mock/kicad-cli", version: "10.99.0" }, bridge: { url: "http://127.0.0.1:4020", ok: true } });
+    expect(environment.text).toContain("stop after three failed builds or routes");
+    expect(environment.json).toMatchObject({ project: { dir: project.dir }, kicadCli: { path: "/mock/kicad-cli", version: "10.99.0" }, bridge: { url: "http://127.0.0.1:4020", ok: true }, recoveryPolicy: { preserveElectricalIntent: true, maxFailedBuilds: 3, maxFailedRoutes: 3 } });
     const symbols = await reg.invoke("circuit_search_parts", { query: "resistor", kind: "symbol" }, (ref) => noProject({ def: reg.get("circuit_search_parts")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }));
     expect(symbols.text).toContain("Device:R");
     expect(symbols.json).toMatchObject({ kind: "symbol" });

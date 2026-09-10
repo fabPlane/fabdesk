@@ -84,8 +84,8 @@ ${sketches}
 | Path | Owner | Notes |
 | --- | --- | --- |
 | \`fabdesk.json\` | fabdesk | Project manifest. Never edit; use the board-settings tool. |
-| \`circuit.netlist.json\` | **you** | The design source: the single file you write (schema below). |
-| \`board.kicad_pcb\`, \`board.kicad_pro\` | \`${mcp}\` | The KiCad board the build tool writes and the routing tool edits. Never hand-edit. |
+| \`circuit.netlist.json\` | **you** | The compiler design source. Keep the requested electrical topology stable while solving placement or routing. |
+| \`board.kicad_pcb\`, \`board.kicad_sch\`, \`board.kicad_pro\` | KiCad / \`${mcp}\` | Canonical KiCad documents. Inspect freely and edit through KiCad-aware MCP/UI/CLI operations; never move, delete, or text-rewrite them while the bridge session is active. |
 | \`sketches/\` | user | Input drawings and photos (read-only). |
 | \`renders/\` | \`${mcp}\` | PNG/SVG renders of the board. |
 | \`reports/\` | \`${mcp}\` | \`build.json\`, \`drc.json\`, \`erc.json\`, \`spice.json\` from the tools. |
@@ -120,7 +120,7 @@ ${sketches}
 - \`footprint\` is a KiCad library id (\`Library:Name\`). Find real ones with the footprint search tool; never invent names.
 - \`libSource\` is the KiCad schematic symbol id split into \`lib\` and \`part\`. Search with
   \`circuit_search_parts {"kind":"symbol","query":"resistor"}\`; supply it for every component so
-  builds produce searchable symbols and labelled wires. A missing or unknown symbol is a build warning.
+  builds produce searchable symbols and labelled wires. A missing or unknown symbol is a build error.
 - Before assigning nets, inspect exact symbol pin names/types and footprint pads with
   \`circuit_describe_part\`. Never guess polarity or pad numbering: KiCad \`Device:LED\` is pin 1
   cathode (K), pin 2 anode (A). Use specific package-size searches such as \`R_0805_2012\` when
@@ -141,18 +141,26 @@ ${sketches}
    schematic renders; add or adjust explicit placements when parts collide or crowd an edge. The default
    preserves compatible copper; use \`rebuild="clean"\` before a full reroute after changing placement,
    outline or routing constraints.
-4. Route with the routing tool.
-5. Inspect components, pads, tracks, vias and unrouted connections with the circuit query tool. Run DRC;
-   fix the source (not the generated files) and repeat from step 3 while anything fails.
-6. Render, then summarise what the board does, the parts used and any open issues. Render tools attach
+4. Before routing, query the pads of changed connectors and passives and compare every pad net with
+   \`circuit.netlist.json\`. A mismatch is a hard stop: make at most one clean rebuild, then report the
+   mismatch if it persists. Do not mutate the circuit, swap passive pins, or use an empty source as a reset.
+5. Route with the routing tool. If connections remain open, improve placement or enlarge the outline,
+   clean-build, and retry once; then try one available alternate router. Never add components, split nets,
+   rename nets, or reduce electrical requirements merely to help routing.
+6. Inspect components, pads, tracks, vias and unrouted connections with the circuit query tool. Run DRC;
+   fix the source or placement and repeat from step 3 while anything fails. Unless the user explicitly asks
+   for extended diagnosis, stop after three failed builds or three failed route jobs and preserve the
+   canonical files plus reports instead of starting a destructive recovery loop.
+7. Render, then summarise what the board does, the parts used and any open issues. Render tools attach
    images directly in chat and return a \`fileUrl\` / \`url\` field. When the user asks for links, give
    those browser-openable \`file://\` URLs as plain text.
 
 Work through the \`${mcp}\` tools: they are the only tools guaranteed to be available. Shell commands
 (Bash, PowerShell, python, node) may be blocked by the permission mode and cannot be approved during a run;
 if one is refused, do not retry it, use a \`${mcp}\` tool instead (project_read_file, circuit_query,
-route_status, ...). \`board.kicad_*\` and \`reports/\` are outputs of earlier runs, not inputs: start from
-\`circuit.netlist.json\` and rebuild rather than reading old results.
+route_status, ...). Treat current \`board.kicad_*\` files and reports as valuable evidence: do not move or
+delete them to reset live KiCad state. A failed authoritative-schematic build retains its rejected
+candidate under \`.fp-pcb/rejected/\` and restores the last-known-good canonical schematic.
 
 Do not run \`git\`, install packages, or touch files outside this directory unless the prompt asks for it.
 

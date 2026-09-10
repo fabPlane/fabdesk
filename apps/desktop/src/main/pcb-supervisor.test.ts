@@ -66,11 +66,14 @@ describe("bundled PCB backend", () => {
       join(pcb, "libraries", "footprints"),
       join(pcb, "libraries", "symbols"),
       join(pcb, "private", "js_autorouter", "src"),
+      join(pcb, "private", "freerouting", "jdk", "bin"),
     ])
       await mkdir(dir, { recursive: true });
     await writeFile(join(pcb, "bin", "fp-pcb-bridge"), "binary");
     await writeFile(join(pcb, "kicad", "bin", "kicad-cli"), "binary");
     await writeFile(join(pcb, "private", "js_autorouter", "src", "index.ts"), "source");
+    await writeFile(join(pcb, "private", "freerouting", "freerouting.jar"), "jar");
+    await writeFile(join(pcb, "private", "freerouting", "jdk", "bin", "java"), "java");
     await writeFile(
       join(pcb, "bundle.json"),
       JSON.stringify({
@@ -81,6 +84,8 @@ describe("bundled PCB backend", () => {
         footprints: "libraries/footprints",
         symbols: "libraries/symbols",
         jsAutorouter: "private/js_autorouter/src/index.ts",
+        freeroutingJar: "private/freerouting/freerouting.jar",
+        freeroutingJava: "private/freerouting/jdk/bin/java",
         libraryPaths: ["kicad/lib", "kicad/lib/runtime"],
         environment: { KICAD_SOCKET_TRANSPORT: "ipc" },
       }),
@@ -97,6 +102,12 @@ describe("bundled PCB backend", () => {
     expect(resolved?.env.KICAD_STOCK_DATA_HOME).toBe(join(pcb, "kicad", "share", "kicad"));
     expect(resolved?.env.JS_AUTOROUTER_MODULE).toBe(
       join(pcb, "private", "js_autorouter", "src", "index.ts"),
+    );
+    expect(resolved?.env.FREEROUTING_JAR).toBe(
+      join(pcb, "private", "freerouting", "freerouting.jar"),
+    );
+    expect(resolved?.env.FP_PCB_JAVA).toBe(
+      join(pcb, "private", "freerouting", "jdk", "bin", "java"),
     );
     expect(corePcbEnvironment(resolved!)).toMatchObject({
       KICAD_CLI: join(pcb, "kicad", "bin", "kicad-cli"),

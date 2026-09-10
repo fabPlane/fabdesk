@@ -34,6 +34,9 @@ describe("renderAgentsMd", () => {
     expect(md).toContain('"libSource"');
     expect(md).toContain('"kind":"symbol"');
     expect(md).toContain("of other existing footprints is preserved");
+    expect(md).toContain("stop after three failed builds or three failed route jobs");
+    expect(md).toContain("never move, delete, or text-rewrite them while the bridge session is active");
+    expect(md).toContain("A missing or unknown symbol is a build error");
     expect(md.indexOf(USER_START)).toBeLessThan(md.indexOf(USER_END));
   });
 

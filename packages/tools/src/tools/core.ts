@@ -65,16 +65,25 @@ export const pcb_environment = defineTool({
       bridge,
       desktopUi: app,
       lanes,
+      recoveryPolicy: {
+        preserveElectricalIntent: true,
+        maxFailedBuilds: 3,
+        maxFailedRoutes: 3,
+        canonicalFiles: "Never move or delete board.kicad_* while the bridge session is active.",
+        netMismatch: "Spot-check changed connector/passive pads; after one clean retry, stop and preserve evidence if source and board disagree.",
+      },
       releaseBoundary: "Exploration may use any lane. Before claiming release readiness or exporting manufacturing files, require fresh ERC, DRC, connectivity, and schematic-parity evidence for the current project files.",
     };
     return ok([
       `PCB workbench for ${project.name} at ${project.dir}`,
       `KiCad CLI: ${cli ? `${cli.path} (${cli.version})` : "not found"}`,
       `FabPCB bridge: ${bridge.ok ? "ready" : "unavailable"} at ${bridge.url}${bridge.reason ? ` — ${bridge.reason}` : ""}`,
+      `Routers: capacity=${bridge.routers?.capacity?.ok ? "ready" : `unavailable${bridge.routers?.capacity?.reason ? ` — ${bridge.routers.capacity.reason}` : ""}`}; freerouting=${bridge.routers?.freerouting?.ok ? "ready" : `unavailable${bridge.routers?.freerouting?.reason ? ` — ${bridge.routers.freerouting.reason}` : ""}`}`,
       `Desktop UI automation: ${app.running ? "available" : `unavailable${app.reason ? ` — ${app.reason}` : ""}`}`,
       `Project files: ${Object.entries(files).map(([name, path]) => `${name}=${path}${present[name] ? "" : " (missing)"}`).join(", ")}`,
       "Working lanes: MCP for live structured operations; bundled CLI for persisted files; UI for visual work; scripts for independent file/report analysis.",
       "Scripts that call KiCad IPC must identify that dependency and do not count as an independent check.",
+      "Recovery guardrails: preserve electrical topology; never move/delete canonical KiCad files in a live session; stop after three failed builds or routes unless extended diagnosis was requested.",
     ].join("\n"), json);
   },
 });
@@ -156,6 +165,7 @@ export type BuildSummary = {
   counts: BuildResult["counts"];
   revision?: number;
   removedCopper?: { tracks: number; vias: number };
+  rejectedSchematicPath?: string;
 };
 
 /**
@@ -228,13 +238,14 @@ export const circuit_build = defineTool({
       counts: result.counts,
       ...(result.revision !== undefined ? { revision: result.revision } : {}),
       ...(result.removedCopper ? { removedCopper: result.removedCopper } : {}),
+      ...(result.rejectedSchematicPath ? { rejectedSchematicPath: result.rejectedSchematicPath } : {}),
     };
     await writeReport(project, "build", summary);
     ctx.progress(1, "done");
     const c = result.counts;
     const text = result.ok
       ? `Build OK (${rebuild} rebuild) in ${Math.round(result.durationMs)} ms: ${c.components} components, ${c.nets} nets, ${c.footprintsAdded} footprints added, ${c.footprintsPlaced} placed${result.removedCopper ? `, ${result.removedCopper.tracks} old tracks/arcs and ${result.removedCopper.vias} routed vias removed` : ""}${c.viasAdded ? `, blank drawn (${c.viasAdded} free vias, ${c.holesAdded ?? 0} holes)` : ""}.${project.manifest().board.template ? ` Template ${project.manifest().board.template}: the netlist's own board spec was replaced by the blank.` : ""}${result.warnings.length ? `\nWarnings:\n${formatErrors(result.warnings)}` : ""}`
-      : `Build FAILED (${result.errors.length} errors):\n${formatErrors(result.errors)}`;
+      : `Build FAILED (${result.errors.length} errors):\n${formatErrors(result.errors)}${result.rejectedSchematicPath ? `\nRejected schematic preserved at ${result.rejectedSchematicPath}; the canonical schematic was restored.` : ""}`;
     return { text, json: summary, isError: !result.ok };
   },
 });

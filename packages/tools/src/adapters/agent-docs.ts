@@ -29,6 +29,8 @@ export function toolsMarkdown(registry: ToolRegistry, opts: { serverName?: strin
     '`pcb_environment` describes the exact bundled KiCad CLI, FabPCB bridge, project files, UI availability, and supported working lanes. Use whichever combination of MCP tools, shell commands, bundled `kicad-cli`, direct-file scripts, and the app UI best fits the task. `circuit_build` is a convenience workflow, not a mandatory entry point. Python/scripts are useful for independent file, geometry, and report analysis; if a script connects to KiCad IPC, state that explicitly and do not count it as an independent verification path.',
   );
   lines.push("");
+  lines.push('Preserve electrical intent during placement/routing recovery. Never move or delete canonical `board.kicad_*` files while the bridge is active, never use an empty design as a reset, and never add/split/rename circuitry only to help a router. After changed builds, spot-check connector and passive pad nets. Stop and preserve evidence after three failed builds or route jobs unless the user explicitly requests extended diagnosis.');
+  lines.push("");
   lines.push('Before claiming release readiness or exporting manufacturing files, run fresh `verify_drc {schematicParity:true}`, `verify_erc`, and `verify_gate {requireErc:true}` against the current project files. Produce both schematic and PCB SVGs when visual evidence is required; `render_board` creates PNG board images only.');
   lines.push("");
   for (const ts of TOOLSETS) {

@@ -36,6 +36,18 @@ resolved again for each agent run.
 project, inspect it with CLI or MCP, edit it through available structured operations, use the UI,
 or generate a source design and compile it.
 
+## Bounded recovery
+
+Flexible tools do not make project lifecycle or electrical intent disposable. After a changed build,
+spot-check the connector and passive pad nets against the source before routing. If they disagree,
+allow one clean rebuild and then stop with the evidence intact. Never use an empty circuit as a reset
+or move/delete canonical `board.kicad_*` files while the bridge owns a live KiCad session.
+
+Routing recovery changes placement, outline size, constraints, or router—not electrical topology.
+Unless the user explicitly requests extended diagnosis, stop after three failed builds or three
+failed route jobs. A rejected authoritative schematic is retained under `.fp-pcb/rejected/`, while
+the last-known-good canonical schematic is restored.
+
 ## Python and IPC provenance
 
 Python is not a second name for the KiCad IPC layer. A script may invoke `$KICAD_CLI` or directly

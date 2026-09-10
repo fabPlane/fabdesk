@@ -177,6 +177,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       durationMs,
       ...(job.revision !== undefined ? { revision: job.revision } : {}),
       ...(job.removedCopper ? { removedCopper: job.removedCopper } : {}),
+      ...(job.rejectedSchematicPath ? { rejectedSchematicPath: job.rejectedSchematicPath } : {}),
     };
   };
 
@@ -523,6 +524,10 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         ok: h.ok,
         ...(h.kicadCliExists !== undefined ? { kicadCliExists: h.kicadCliExists } : {}),
         ...(h.compile?.frontends ? { frontends: h.compile.frontends } : {}),
+        routers: {
+          ...(h.jsAutorouter ? { capacity: { ok: h.jsAutorouter.ok, ...(h.jsAutorouter.reason ? { reason: h.jsAutorouter.reason } : {}) } } : {}),
+          ...(h.freerouting ? { freerouting: { ok: h.freerouting.ok, ...(h.freerouting.reason ? { reason: h.freerouting.reason } : {}) } } : {}),
+        },
       };
     } catch (e) {
       return { url: bridge.url, ok: false, reason: e instanceof Error ? e.message : String(e) };

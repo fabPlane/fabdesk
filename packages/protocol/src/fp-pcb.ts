@@ -28,6 +28,8 @@ export const FpPcbHealth = z.object({
   workspaceRoot: z.string().optional(),
   sessions: z.array(FpPcbSession).default([]),
   compile: z.object({ frontends: z.array(z.string()).default([]) }).optional(),
+  jsAutorouter: z.object({ ok: z.boolean(), reason: z.string().optional() }).optional(),
+  freerouting: z.object({ ok: z.boolean(), reason: z.string().optional(), jar: z.string().optional(), java: z.string().optional() }).optional(),
 });
 export type FpPcbHealth = z.infer<typeof FpPcbHealth>;
 
@@ -174,6 +176,8 @@ export const FpPcbCompileJob = z.object({
   /** Document revision after the job, so a client can refresh without waiting for an event. */
   revision: z.number().optional(),
   removedCopper: z.object({ tracks: z.number(), vias: z.number() }).optional(),
+  /** Rejected candidate saved by FabPCB when ERC fails and the canonical schematic is restored. */
+  rejectedSchematicPath: z.string().optional(),
 });
 export type FpPcbCompileJob = z.infer<typeof FpPcbCompileJob>;
 
