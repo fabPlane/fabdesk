@@ -143,7 +143,7 @@ export type ErcReport = { violations: DrcViolation[]; counts: { errors: number; 
 export type GateResult = { pass: boolean; reasons: string[]; newWarningSignatures: string[] };
 
 export interface KicadService {
-  /** settings → KICAD_CLI env → known locations; null when KiCad is not installed. */
+  /** settings → KICAD_CLI env → bundled FabPlane KiCad → PATH / known locations; null when none work. */
   resolveCli(): Promise<KicadCli | null>;
   runDrc(cli: KicadCli, opts: { board: string; outFile: string; severity?: "error" | "all"; schematicParity?: boolean; signal?: AbortSignal }): Promise<DrcReport>;
   runErc(cli: KicadCli, opts: { schematic: string; outFile: string; severity?: "error" | "all"; signal?: AbortSignal }): Promise<ErcReport>;

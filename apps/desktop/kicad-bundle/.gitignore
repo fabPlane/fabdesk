@@ -1,0 +1,7 @@
+# Staged FabPlane KiCad trees land here per platform (`darwin-arm64`, …) via
+# `bun run scripts/stage-kicad-bundle.ts`. `apps/desktop/scripts/after-pack.cjs` copies the matching
+# tree into the installer as `Resources/kicad/`. Do not commit binaries.
+*
+!.gitignore
+!.gitkeep
+!README.md

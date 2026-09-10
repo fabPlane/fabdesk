@@ -181,9 +181,12 @@ Gotchas that cost time already:
 ## 6. Open work, in the order I would do it
 
 1. **Bundle the fork `kicad-cli` and the bridge** (phase 0; decided: bundled, not hosted).
-   fab_pcb has macOS and Linux build scripts, no Windows one. Until then developers run the bridge
-   by hand and nothing in fabdesk spawns it. `doctor` reports the bridge; a warning when the
-   resolved `kicad-cli` is older than 10.99 is still missing.
+   fabdesk stages TensorFleet/kicad's rolling `nightly` release into `apps/desktop/kicad-bundle/`
+   (`scripts/stage-kicad-bundle.ts`, assets like `kicad-cli-macos-arm64.tar.gz` via `manifest.json`)
+   and `after-pack` copies it to `Resources/kicad/`; the core prefers that path unless Settings /
+   `KICAD_CLI` override. Remaining: wait for the first successful nightly publish; Windows build
+   script in fab_pcb `kicad-patches/` if needed beyond nightly; footprint libraries in the bundle;
+   bridge spawn. `doctor` warning when the resolved `kicad-cli` is older than 10.99 is still missing.
 2. **Footprint libraries in the bundle.** Headless servers ship none; compiles fail at
    `addNewFootprint` without them. The netlist file can name `libraries` (registered per project)
    and the search tool lists whatever the server's tables hold.

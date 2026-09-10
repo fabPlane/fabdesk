@@ -49,7 +49,11 @@ export async function runDoctor(o: { config: CoreConfig; settings: Settings }): 
     }
   })();
 
-  if (!kicad.found) warnings.push("KiCad not found: install the FabPlane KiCad build or set Settings.kicadCliPath (DRC, render and export tools need it)");
+  if (!kicad.found) {
+    warnings.push(
+      "KiCad not found: the FabPlane KiCad fork should ship inside the app bundle; reinstall fabPlane or set Settings.kicadCliPath / KICAD_CLI to override (DRC, render and export need it)",
+    );
+  }
   if (!routers[0]?.present) warnings.push(`FabPlane PCB bridge not reachable at ${routers[0]?.detail ?? fpPcbBridgeUrl(o.settings.fpPcbBridgeUrl)}: start it (bun run --filter @fp-pcb/bridge start in a fab_pcb checkout) or set Settings.fpPcbBridgeUrl / FABDESK_FP_PCB_BRIDGE_URL; circuit_build and route_run need it`);
   if (!agents.some((a) => a.installed)) warnings.push("no agent CLI found (claude, codex, grok or cursor agent); the app can still be used as an MCP server");
   const repoRoot = findRepoRoot();
