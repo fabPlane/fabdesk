@@ -146,6 +146,7 @@ export const FpPcbCompileJobState = z.enum([
   "importing",
   "placing",
   "schematic",
+  "parity",
   "saving",
   "done",
   "failed",

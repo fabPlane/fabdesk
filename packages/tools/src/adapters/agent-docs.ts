@@ -26,8 +26,10 @@ export function toolsMarkdown(registry: ToolRegistry, opts: { serverName?: strin
   );
   lines.push("");
   lines.push(
-    'Recommended workflow: `project_status` → write `circuit.netlist.json` (`project_write_file`) → `circuit_build` → `circuit_read_errors` (fix, rebuild) → `route_run` → inspect with `circuit_query` → run `verify_drc {schematicParity:true}`, then load the verify toolset and run `verify_erc` and `verify_gate {requireErc:true}` → `render_board` → load the render toolset and run `render_schematic_svg` and `render_pcb_svg`. A PNG board render does not populate the Schematic or PCB SVG tabs. Use `circuit_build {rebuild:"clean"}` when placement, outline, or routing changes require a guaranteed fresh route; the default preserves compatible copper.',
+    '`pcb_environment` describes the exact bundled KiCad CLI, FabPCB bridge, project files, UI availability, and supported working lanes. Use whichever combination of MCP tools, shell commands, bundled `kicad-cli`, direct-file scripts, and the app UI best fits the task. `circuit_build` is a convenience workflow, not a mandatory entry point. Python/scripts are useful for independent file, geometry, and report analysis; if a script connects to KiCad IPC, state that explicitly and do not count it as an independent verification path.',
   );
+  lines.push("");
+  lines.push('Before claiming release readiness or exporting manufacturing files, run fresh `verify_drc {schematicParity:true}`, `verify_erc`, and `verify_gate {requireErc:true}` against the current project files. Produce both schematic and PCB SVGs when visual evidence is required; `render_board` creates PNG board images only.');
   lines.push("");
   for (const ts of TOOLSETS) {
     const tools = registry.byToolset(ts);

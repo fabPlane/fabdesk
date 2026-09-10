@@ -10,7 +10,7 @@ Two transports are available:
 | **stdio** | `fabdesk-core mcp` | Recommended. The subprocess proxies to the running Fabdesk app (so the GUI shows live routing frames and results) and falls back to a standalone in-process server when the app is not running (`--standalone` forces this). |
 | **streamable HTTP** | `http://127.0.0.1:<port>/mcp` with `Authorization: Bearer <token>` | When the client supports remote MCP servers. Port and token are in `daemon.json` (see below). |
 
-Only the **core** toolset (`project_status`, `circuit_build`, `circuit_read_errors`, `route_run`,
+Only the **core** toolset (`pcb_environment`, `project_status`, `circuit_build`, `circuit_read_errors`, `route_run`,
 `verify_drc`, `render_board`, `load_toolset`) is listed at start. Ask the agent to call
 `load_toolset` with `project`, `circuit`, `route`, `kicad`, `verify`, `render`, `export`, `sim` or `app`
 (drive the running desktop window; see [app-automation.md](app-automation.md))

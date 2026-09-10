@@ -24,7 +24,7 @@ describe("mcp adapter", () => {
     const { client, attachment } = await pair();
     const initial = await client.listTools();
     const names = initial.tools.map((t) => t.name).sort();
-    expect(names).toEqual(["circuit_build", "circuit_read_errors", "load_toolset", "project_status", "render_board", "route_run", "verify_drc"]);
+    expect(names).toEqual(["circuit_build", "circuit_read_errors", "load_toolset", "pcb_environment", "project_status", "render_board", "route_run", "verify_drc"]);
     const t = initial.tools.find((x) => x.name === "circuit_build")!;
     expect((t.inputSchema as { properties: Record<string, unknown> }).properties["project"]).toBeDefined();
     expect(t.annotations?.idempotentHint).toBe(true);
@@ -37,7 +37,7 @@ describe("mcp adapter", () => {
     expect(res.isError).toBeFalsy();
     const after = await client.listTools();
     expect(after.tools.map((t) => t.name)).toContain("export_gerbers");
-    expect(after.tools.length).toBe(7 + 7);
+    expect(after.tools.length).toBe(8 + 7);
     expect(attachment.session.enabledToolsets()).toEqual(["core", "export"]);
     await new Promise((r) => setTimeout(r, 10));
     expect(listChanged).toBeGreaterThan(0);

@@ -25,6 +25,8 @@ export type RunDeps = {
   settings: () => Settings;
   /** Regenerates AGENTS.md/CLAUDE.md before the run. */
   prepareProject?: (project: ProjectHandle, agentId: AgentId) => Promise<void>;
+  /** Safe, non-secret workbench paths to add explicitly to the spawned agent environment. */
+  agentEnvironment?: (input: { cwd: string; project: ProjectHandle | null }) => Promise<Record<string, string>>;
   workspaceDir: string;
   telemetry?: Pick<RunTelemetry, "startAgentRun">;
 };
@@ -134,6 +136,10 @@ export class AgentRunManager {
     emit({ ts: Date.now(), topic: "agent.started", runId: run.id, threadId: input.threadId, agentId: input.agentId });
     emit({ ts: Date.now(), topic: "thread.updated", threadId: input.threadId });
 
+    const workbenchEnv = await this.deps.agentEnvironment?.({ cwd, project: input.project }).catch((e) => {
+      logger.warn("agent PCB environment could not be resolved", { error: errMsg(e) });
+      return {};
+    });
     const session: AgentSession = {
       cwd,
       prompt: input.prompt,
@@ -142,6 +148,7 @@ export class AgentRunManager {
       ...(resume ? { resume } : {}),
       ...(selectedModel ? { model: selectedModel } : {}),
       permission: agentSettings?.permissionMode ?? "acceptEdits",
+      ...(workbenchEnv && Object.keys(workbenchEnv).length ? { env: workbenchEnv } : {}),
       ...(agentSettings?.extraAllowedTools?.length ? { extraAllowedTools: agentSettings.extraAllowedTools } : {}),
       ...(agentSettings?.binaryPath ? { binaryPath: agentSettings.binaryPath } : {}),
     };

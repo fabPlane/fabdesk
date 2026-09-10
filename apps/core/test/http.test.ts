@@ -234,6 +234,14 @@ describe("http daemon", () => {
     expect(lastSession!.cwd).toBe(created.path);
     expect(lastSession!.mcp.url).toBe(`${daemon.url}/mcp`);
     expect(lastSession!.mcp.token).not.toBe(daemon.token);
+    expect(lastSession!.env).toMatchObject({
+      FABDESK_PROJECT_DIR: created.path,
+      FABDESK_KICAD_PROJECT: join(created.path, "board.kicad_pro"),
+      FABDESK_KICAD_SCHEMATIC: join(created.path, "board.kicad_sch"),
+      FABDESK_KICAD_BOARD: join(created.path, "board.kicad_pcb"),
+      KICAD_CLI: "/mock/kicad-cli",
+      FABDESK_FP_PCB_BRIDGE_URL: "http://127.0.0.1:4020",
+    });
     // AGENTS.md / CLAUDE.md regenerated before the run.
     expect(await Bun.file(join(created.path, "AGENTS.md")).text()).toContain("circuit_build");
     expect((await Bun.file(join(created.path, "CLAUDE.md")).text()).trim()).toBe("@AGENTS.md");
@@ -281,7 +289,7 @@ describe("http daemon", () => {
     };
     const a = await connect(daemon.token);
     const tools = await a.client.listTools();
-    expect(tools.tools.map((t) => t.name).sort()).toEqual(["circuit_build", "circuit_read_errors", "load_toolset", "project_status", "render_board", "route_run", "verify_drc"]);
+    expect(tools.tools.map((t) => t.name).sort()).toEqual(["circuit_build", "circuit_read_errors", "load_toolset", "pcb_environment", "project_status", "render_board", "route_run", "verify_drc"]);
     expect(daemon.mcp.activeCount()).toBe(1);
 
     // Without a project selector the tool asks for one; with it, it works.
@@ -292,11 +300,11 @@ describe("http daemon", () => {
     expect((withProject.structuredContent as { id: string }).id).toBe(created.id);
 
     await a.client.callTool({ name: "load_toolset", arguments: { toolset: "export" } });
-    expect((await a.client.listTools()).tools.length).toBe(14);
+    expect((await a.client.listTools()).tools.length).toBe(15);
 
     // A second session starts with only the core toolset (state is per session).
     const b = await connect(daemon.token);
-    expect((await b.client.listTools()).tools.length).toBe(7);
+    expect((await b.client.listTools()).tools.length).toBe(8);
     expect(daemon.mcp.activeCount()).toBe(2);
 
     // Clients that cannot process tools/list_changed can request the complete

@@ -15,7 +15,7 @@ export const load_toolset = defineTool({
   scope: "global",
   title: "Load a toolset",
   description:
-    "Enable an additional group of fabdesk tools for this session. Toolsets: project (read/write project files, sketches, board settings, adopt a KiCad board), circuit (query the board, search footprint libraries), route (routing status/cancel/unroute/scope), kicad (board stats), verify (ERC, release gate), render (schematic/PCB SVG, 3D GLB), export (gerbers, drill, pick-and-place, BOM, netlist, zip), sim (SPICE netlist and simulation), app (screenshot and drive the fabPlane desktop app window: find/click/type, switch project, tab, thread, send chat messages, control Route Cinema; needs the app running in dev or with FABDESK_AUTOMATION=1). Call this before using a tool from that group; the core tools (project_status, circuit_build, circuit_read_errors, route_run, verify_drc, render_board) are always available.",
+    "Enable an additional group of fabdesk tools for this session. Toolsets: project (read/write project files, sketches, board settings, adopt a KiCad board), circuit (query the board, footprint search), route (routing status/cancel/unroute/scope), kicad (board stats), verify (ERC, release gate), render (schematic/PCB SVG, 3D GLB), export (gerbers, drill, pick-and-place, BOM, netlist, zip), sim (SPICE netlist and simulation), app (screenshot and drive the fabPlane desktop app window: find/click/type, switch project, tab, thread, send chat messages, control Route Cinema; needs the app running in dev or with FABDESK_AUTOMATION=1). Call this before using a tool from that group; pcb_environment and the other core tools are always available.",
   inputSchema: {
     toolset: ToolsetId.describe("Toolset to enable"),
   },
@@ -27,6 +27,55 @@ export const load_toolset = defineTool({
       `Toolset "${toolset}" enabled. Enabled toolsets: ${enabled.join(", ")}. Tool list has been refreshed.`,
       { toolset, enabled },
     );
+  },
+});
+
+/** Describe the workbench without prescribing which available lane the agent must use. */
+export const pcb_environment = defineTool({
+  name: "pcb_environment",
+  toolset: "core",
+  title: "Inspect the PCB workbench",
+  description:
+    "Return the current project paths, exact kicad-cli binary and version, FabPCB bridge status, desktop-UI availability, and supported MCP/CLI/UI/direct-file working lanes. circuit_build is a convenience workflow, not a required entry point.",
+  inputSchema: {},
+  annotations: { readOnlyHint: true, idempotentHint: true },
+  handler: async (_args, ctx) => {
+    const project = ctx.requireProject();
+    const [cli, bridge, app] = await Promise.all([
+      ctx.services.kicad.resolveCli().catch(() => null),
+      ctx.services.design.status(),
+      ctx.services.appBridge?.status().catch((error) => ({ running: false, reason: error instanceof Error ? error.message : String(error) })) ?? Promise.resolve({ running: false, reason: "desktop automation is not enabled" }),
+    ]);
+    const files = {
+      project: p(project, PROJECT_FILES.boardPro),
+      schematic: p(project, PROJECT_FILES.boardSch),
+      board: p(project, PROJECT_FILES.boardPcb),
+      source: p(project, PROJECT_FILES.netlistJson),
+    };
+    const present: Record<string, boolean> = Object.fromEntries(await Promise.all(Object.entries(files).map(async ([name, path]) => [name, await exists(path)])));
+    const lanes = {
+      mcp: "Structured live KiCad/FabPCB operations and Fabdesk convenience workflows.",
+      cli: "Use the exact kicad-cli path below for persisted-file ERC, DRC, render, and export operations.",
+      ui: "Use the app toolset for visual inspection or interaction when desktop automation is available.",
+      scripting: "Use scripts for direct-file analysis, report processing, geometry checks, and invoking kicad-cli. A script that connects to KiCad IPC must say so explicitly; do not present it as independent validation.",
+    };
+    const json = {
+      project: { id: project.id, name: project.name, dir: project.dir, files, present },
+      kicadCli: cli ? { path: cli.path, version: cli.version } : null,
+      bridge,
+      desktopUi: app,
+      lanes,
+      releaseBoundary: "Exploration may use any lane. Before claiming release readiness or exporting manufacturing files, require fresh ERC, DRC, connectivity, and schematic-parity evidence for the current project files.",
+    };
+    return ok([
+      `PCB workbench for ${project.name} at ${project.dir}`,
+      `KiCad CLI: ${cli ? `${cli.path} (${cli.version})` : "not found"}`,
+      `FabPCB bridge: ${bridge.ok ? "ready" : "unavailable"} at ${bridge.url}${bridge.reason ? ` — ${bridge.reason}` : ""}`,
+      `Desktop UI automation: ${app.running ? "available" : `unavailable${app.reason ? ` — ${app.reason}` : ""}`}`,
+      `Project files: ${Object.entries(files).map(([name, path]) => `${name}=${path}${present[name] ? "" : " (missing)"}`).join(", ")}`,
+      "Working lanes: MCP for live structured operations; bundled CLI for persisted files; UI for visual work; scripts for independent file/report analysis.",
+      "Scripts that call KiCad IPC must identify that dependency and do not count as an independent check.",
+    ].join("\n"), json);
   },
 });
 
@@ -393,6 +442,7 @@ export const render_board = defineTool({
 
 export const coreTools = [
   load_toolset,
+  pcb_environment,
   project_status,
   circuit_build,
   circuit_read_errors,

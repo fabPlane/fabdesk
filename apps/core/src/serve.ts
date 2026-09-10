@@ -122,6 +122,19 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     settings: () => store.settings.get(),
     workspaceDir: join(config.home, "workspace"),
     telemetry,
+    agentEnvironment: async ({ cwd, project }) => {
+      const [cli, design] = await Promise.all([services.kicad.resolveCli().catch(() => null), services.design.status()]);
+      return {
+        FABDESK_PROJECT_DIR: cwd,
+        ...(project ? {
+          FABDESK_KICAD_PROJECT: join(project.dir, "board.kicad_pro"),
+          FABDESK_KICAD_SCHEMATIC: join(project.dir, "board.kicad_sch"),
+          FABDESK_KICAD_BOARD: join(project.dir, "board.kicad_pcb"),
+        } : {}),
+        ...(cli ? { KICAD_CLI: cli.path } : {}),
+        ...(design.url ? { FABDESK_FP_PCB_BRIDGE_URL: design.url } : {}),
+      };
+    },
     prepareProject: async (project: ProjectHandle) => {
       const agents = await import("@fabdesk/agents");
       const sketches = (await projects.listFiles(join(project.dir, "sketches"))).filter((f) => /\.(png|jpe?g)$/i.test(f.path)).map((f) => join(project.dir, "sketches", f.path));

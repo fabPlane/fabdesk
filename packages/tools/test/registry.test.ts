@@ -10,7 +10,7 @@ describe("registry", () => {
     const reg = createRegistry();
     const names = reg.list().map((t) => t.name);
     expect(names).toEqual([
-      "load_toolset", "project_status", "circuit_build", "circuit_read_errors", "route_run", "verify_drc", "render_board",
+      "load_toolset", "pcb_environment", "project_status", "circuit_build", "circuit_read_errors", "route_run", "verify_drc", "render_board",
       "project_read_file", "project_write_file", "project_list_sketches", "project_set_board", "project_import_kicad",
       "circuit_query", "circuit_search_parts", "circuit_describe_part",
       "route_status", "route_cancel", "route_unroute", "route_scope",
@@ -22,7 +22,7 @@ describe("registry", () => {
       "app_state", "app_screenshot", "app_find", "app_click", "app_type", "app_key", "app_select_project", "app_open_tab", "app_open_thread", "app_new_chat", "app_send_message", "app_cinema", "app_wait_for", "app_eval",
     ]);
     for (const n of names) expect(n).toMatch(/^[a-z][a-z0-9_]*$/);
-    expect(reg.byToolset("core").length).toBe(7);
+    expect(reg.byToolset("core").length).toBe(8);
     expect(() => defineTool({ name: "bad.name", toolset: "core", title: "", description: "", inputSchema: {}, annotations: {}, handler: async () => ({}) })).toThrow();
   });
 
@@ -45,6 +45,10 @@ describe("registry", () => {
     await expect(reg.invoke("project_status", {}, (ref) => noProject({ def: reg.get("project_status")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }))).rejects.toBeInstanceOf(ToolError);
     const out = await reg.invoke("project_status", { project: project.id }, (ref) => noProject({ def: reg.get("project_status")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }));
     expect(out.text).toContain(`Project "demo"`);
+    const environment = await reg.invoke("pcb_environment", { project: project.id }, (ref) => noProject({ def: reg.get("pcb_environment")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }));
+    expect(environment.text).toContain("/mock/kicad-cli (10.99.0)");
+    expect(environment.text).toContain("Scripts that call KiCad IPC must identify that dependency");
+    expect(environment.json).toMatchObject({ project: { dir: project.dir }, kicadCli: { path: "/mock/kicad-cli", version: "10.99.0" }, bridge: { url: "http://127.0.0.1:4020", ok: true } });
     const symbols = await reg.invoke("circuit_search_parts", { query: "resistor", kind: "symbol" }, (ref) => noProject({ def: reg.get("circuit_search_parts")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }));
     expect(symbols.text).toContain("Device:R");
     expect(symbols.json).toMatchObject({ kind: "symbol" });
@@ -198,7 +202,8 @@ describe("agent docs", () => {
     for (const t of reg.list()) expect(md).toContain(`\`${t.name}\``);
     expect(md).toContain("### core");
     expect(md).toContain("load_toolset");
-    expect(md).toContain("A PNG board render does not populate the Schematic or PCB SVG tabs");
+    expect(md).toContain("circuit_build` is a convenience workflow, not a mandatory entry point");
+    expect(md).toContain("if a script connects to KiCad IPC, state that explicitly");
     expect(md).toContain(z.string().constructor.name.length > 0 ? "|" : "");
   });
 });
