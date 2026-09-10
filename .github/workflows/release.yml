@@ -101,6 +101,18 @@ jobs:
       - name: Build core (${{ matrix.target }})
         run: bun run --cwd apps/core build --only ${{ matrix.target }} --channel ${{ env.CHANNEL }}
 
+      # Stage the FabPlane KiCad fork from the latest TensorFleet/kicad GitHub Release into
+      # apps/desktop/kicad-bundle/<os>-<arch> so afterPack copies it to Resources/kicad.
+      # Override with FABDESK_KICAD_BUNDLE_URL or FABDESK_KICAD_REPO; --require fails the build
+      # when the release has no matching OS/arch asset.
+      - name: Stage bundled KiCad
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FABDESK_KICAD_BUNDLE_URL: ${{ secrets.FABDESK_KICAD_BUNDLE_URL }}
+          FABDESK_KICAD_REPO: ${{ vars.FABDESK_KICAD_REPO }}
+        run: bun run scripts/stage-kicad-bundle.ts --target ${{ matrix.target }} --require
+
       - name: Build renderer/main
         run: bun run --cwd apps/desktop build
 

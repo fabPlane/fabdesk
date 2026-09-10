@@ -27,7 +27,7 @@ export async function requireKicad(ctx: ToolContext): Promise<KicadCli> {
   const cli = await ctx.services.kicad.resolveCli();
   if (!cli) {
     throw new ToolError(
-      "kicad-cli not found. Install the FabPlane KiCad build or set Settings.kicadCliPath / KICAD_CLI; verify, render and export tools need it.",
+      "kicad-cli not found. The FabPlane KiCad fork should ship with the app; reinstall fabPlane, or set Settings.kicadCliPath / KICAD_CLI to override. Verify, render and export tools need it.",
       "unavailable",
     );
   }
