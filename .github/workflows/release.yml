@@ -27,7 +27,7 @@ env:
 
 jobs:
   version:
-    runs-on: ubuntu-22.04
+    runs-on: blacksmith-4vcpu-ubuntu-2204
     outputs:
       version: ${{ steps.v.outputs.version }}
       tag: ${{ steps.v.outputs.tag }}
@@ -64,10 +64,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: macos-14, target: bun-darwin-arm64, eb: "--mac --arm64" }
-          - { os: macos-14, target: bun-darwin-x64, eb: "--mac --x64" }
-          - { os: ubuntu-22.04, target: bun-linux-x64, eb: "--linux" }
-          - { os: windows-latest, target: bun-windows-x64, eb: "--win" }
+          - { os: blacksmith-6vcpu-macos-15, target: bun-darwin-arm64, eb: "--mac --arm64" }
+          - { os: blacksmith-6vcpu-macos-15, target: bun-darwin-x64, eb: "--mac --x64" }
+          - { os: blacksmith-4vcpu-ubuntu-2204, target: bun-linux-x64, eb: "--linux" }
+          - { os: blacksmith-4vcpu-windows-2025, target: bun-windows-x64, eb: "--win" }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -190,7 +190,7 @@ jobs:
   release:
     needs: [version, build]
     if: github.ref == 'refs/heads/main' && (inputs.channel == '' || inputs.channel == 'public')
-    runs-on: ubuntu-22.04
+    runs-on: blacksmith-4vcpu-ubuntu-2204
     permissions:
       contents: write
     steps:
@@ -249,7 +249,7 @@ jobs:
   website:
     name: Hand off public release to fabplane.com
     needs: [version, release]
-    runs-on: ubuntu-22.04
+    runs-on: blacksmith-4vcpu-ubuntu-2204
     permissions: {}
     steps:
       - name: Trigger website installer and feed publishing
