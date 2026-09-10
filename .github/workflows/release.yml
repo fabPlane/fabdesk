@@ -20,7 +20,7 @@ on:
 
 concurrency:
   group: release-${{ inputs.channel || 'public' }}-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 env:
   CHANNEL: ${{ inputs.channel || 'public' }}
@@ -33,6 +33,23 @@ jobs:
       tag: ${{ steps.v.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.FABDESK_SUBMODULE_SSH_KEY }}
+
+      - name: Init the fabplane and fab_pcb submodules
+        run: git submodule update --init --depth 1 vendor/fabplane vendor/fab_pcb
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+
       - id: v
         run: |
           base=$(node -p "require('./package.json').version.split('.').slice(0,2).join('.')")
@@ -66,7 +83,6 @@ jobs:
       - name: Init the fabplane and fab_pcb submodules
         run: git submodule update --init --depth 1 vendor/fabplane vendor/fab_pcb
 
-
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0
@@ -77,7 +93,6 @@ jobs:
       - run: bun install --frozen-lockfile
       - name: Stamp version ${{ needs.version.outputs.version }}
         run: bun run scripts/set-version.ts ${{ needs.version.outputs.version }}
-      - run: bun run typecheck
 
       # Sentry error reporting (docs/sentry.md). The DSN is a public write-only key; export it only when the
       # SENTRY_DESKTOP_DSN repo secret is set so builds without it ship with reporting off. Both spellings are
@@ -166,6 +181,9 @@ jobs:
           name: installers-${{ matrix.target }}
           path: release-out/*
           if-no-files-found: error
+          # Public installers are copied into the permanent GitHub Release immediately.
+          # Internal builds exist only as workflow artifacts, so retain those for a week.
+          retention-days: ${{ env.CHANNEL == 'internal' && 7 || 1 }}
 
   release:
     needs: [version, build]
@@ -176,7 +194,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # full history + tags for the release notes
+          fetch-depth: 0 # full history + tags for the release notes
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0
