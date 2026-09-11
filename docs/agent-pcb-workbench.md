@@ -36,32 +36,30 @@ resolved again for each agent run.
 project, inspect it with CLI or MCP, edit it through available structured operations, use the UI,
 or generate a source design and compile it.
 
-## Bounded recovery
+## Minimal agent contract
 
-Flexible tools do not make project lifecycle or electrical intent disposable. After a changed build,
-spot-check the connector and passive pad nets against the source before routing. If they disagree,
-allow one clean rebuild and then stop with the evidence intact. Never use an empty circuit as a reset
-or move/delete canonical `board.kicad_*` files while the bridge owns a live KiCad session.
+Fabdesk tells the agent only what is specific to the environment: the canonical filenames used by
+the UI, bundled executable paths, project directories, available MCP tools, and whether an operation
+addresses live KiCad state or persisted files. It does not prescribe a source format, workflow,
+router strategy, retry budget, or stopping policy. The agent may create project-local scripts and
+intermediate artifacts and choose its own route through the available capabilities.
 
-Routing recovery changes placement, outline size, constraints, or router—not electrical topology.
-Unless the user explicitly requests extended diagnosis, stop after three failed builds or three
-failed route jobs. A rejected authoritative schematic is retained under `.fp-pcb/rejected/`, while
-the last-known-good canonical schematic is restored.
+Individual tools still enforce their own invariants. For example, `circuit_build` is fail-closed and
+retains a rejected authoritative schematic under `.fp-pcb/rejected/`, but using that compiler is an
+agent choice rather than a project requirement.
 
-## Python and IPC provenance
+## Python and IPC
 
 Python is not a second name for the KiCad IPC layer. A script may invoke `$KICAD_CLI` or directly
-analyze project, report, Gerber, drill, BOM, image, or other artifacts. If it connects to the KiCad
-API server, imports a KiCad IPC binding, or calls an MCP tool, it must identify that dependency in
-its output and trace. Such a result exercises the live-KiCad lane and must not be described as an
-independent validation of that lane.
+analyze or generate project files, reports, Gerbers, drill files, BOMs, images, or other artifacts.
+A script may also connect to the KiCad API server or call MCP when that is useful; those paths see
+the same live document state as the corresponding service.
 
 The repository's current Python files under `scripts/vm/` automate VM keyboard, display, and
 receiver behavior; they do not connect to the FabPCB or KiCad IPC transports.
 
-## Hard boundary
+## UI-visible evidence
 
-Exploration and repair are intentionally flexible. Release claims and manufacturing exports are
-not: their ERC, DRC, connectivity, and schematic-parity evidence must be fresh for the canonical
-project-file revisions being exported. A render or report from an earlier revision is evidence of
-that earlier revision only.
+Fabdesk displays canonical project files plus artifacts under `renders/`, `reports/`, and `exports/`.
+The MCP verification, rendering, and export tools write the formats the UI already understands.
+Agents using another method can still place compatible outputs in those locations.

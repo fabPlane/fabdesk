@@ -29,14 +29,12 @@ describe("renderAgentsMd", () => {
     expect(md).toContain("`/tmp/p/sketches/front.png`");
     expect(md).toContain("mcp__fabdesk__<tool>");
     expect(md).toContain("### circuit_build");
-    expect(md).toContain("| `circuit.netlist.json` | **you** |");
-    expect(md).toContain('"placements"');
-    expect(md).toContain('"libSource"');
-    expect(md).toContain('"kind":"symbol"');
-    expect(md).toContain("of other existing footprints is preserved");
-    expect(md).toContain("stop after three failed builds or three failed route jobs");
-    expect(md).toContain("never move, delete, or text-rewrite them while the bridge session is active");
-    expect(md).toContain("A missing or unknown symbol is a build error");
+    expect(md).toContain("## Fabdesk compatibility");
+    expect(md).toContain("| `board.kicad_pcb` | Canonical KiCad PCB filename recognized by the UI. |");
+    expect(md).toContain("Optional source consumed by `circuit_build`; it is not required for other approaches");
+    expect(md).toContain("You may create project-local scripts");
+    expect(md).not.toContain("## Workflow");
+    expect(md).not.toContain("stop after three failed builds");
     expect(md.indexOf(USER_START)).toBeLessThan(md.indexOf(USER_END));
   });
 

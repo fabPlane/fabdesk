@@ -57,7 +57,7 @@ export const pcb_environment = defineTool({
       mcp: "Structured live KiCad/FabPCB operations and Fabdesk convenience workflows.",
       cli: "Use the exact kicad-cli path below for persisted-file ERC, DRC, render, and export operations.",
       ui: "Use the app toolset for visual inspection or interaction when desktop automation is available.",
-      scripting: "Use scripts for direct-file analysis, report processing, geometry checks, and invoking kicad-cli. A script that connects to KiCad IPC must say so explicitly; do not present it as independent validation.",
+      scripting: "Use scripts for file generation or analysis, report processing, geometry work, invoking kicad-cli, or other project-local tasks.",
     };
     const json = {
       project: { id: project.id, name: project.name, dir: project.dir, files, present },
@@ -65,14 +65,13 @@ export const pcb_environment = defineTool({
       bridge,
       desktopUi: app,
       lanes,
-      recoveryPolicy: {
-        preserveElectricalIntent: true,
-        maxFailedBuilds: 3,
-        maxFailedRoutes: 3,
-        canonicalFiles: "Never move or delete board.kicad_* while the bridge session is active.",
-        netMismatch: "Spot-check changed connector/passive pads; after one clean retry, stop and preserve evidence if source and board disagree.",
+      uiConventions: {
+        canonicalFiles: files,
+        renders: p(project, PROJECT_FILES.renders),
+        reports: p(project, PROJECT_FILES.reports),
+        exports: p(project, PROJECT_FILES.exports),
       },
-      releaseBoundary: "Exploration may use any lane. Before claiming release readiness or exporting manufacturing files, require fresh ERC, DRC, connectivity, and schematic-parity evidence for the current project files.",
+      stateNote: "MCP tools may operate on live KiCad state; CLI and direct-file operations usually see persisted files. Save or reload deliberately when switching views.",
     };
     return ok([
       `PCB workbench for ${project.name} at ${project.dir}`,
@@ -81,9 +80,9 @@ export const pcb_environment = defineTool({
       `Routers: capacity=${bridge.routers?.capacity?.ok ? "ready" : `unavailable${bridge.routers?.capacity?.reason ? ` — ${bridge.routers.capacity.reason}` : ""}`}; freerouting=${bridge.routers?.freerouting?.ok ? "ready" : `unavailable${bridge.routers?.freerouting?.reason ? ` — ${bridge.routers.freerouting.reason}` : ""}`}`,
       `Desktop UI automation: ${app.running ? "available" : `unavailable${app.reason ? ` — ${app.reason}` : ""}`}`,
       `Project files: ${Object.entries(files).map(([name, path]) => `${name}=${path}${present[name] ? "" : " (missing)"}`).join(", ")}`,
-      "Working lanes: MCP for live structured operations; bundled CLI for persisted files; UI for visual work; scripts for independent file/report analysis.",
-      "Scripts that call KiCad IPC must identify that dependency and do not count as an independent check.",
-      "Recovery guardrails: preserve electrical topology; never move/delete canonical KiCad files in a live session; stop after three failed builds or routes unless extended diagnosis was requested.",
+      "Working lanes: MCP for live structured operations; bundled CLI for persisted files; UI for visual work; scripts for direct file/report work or other project-local tasks.",
+      "Fabdesk UI directories: renders/, reports/, exports/.",
+      "MCP may expose live KiCad state while CLI and file operations see persisted state; save or reload deliberately when switching between them.",
     ].join("\n"), json);
   },
 });
@@ -93,7 +92,7 @@ export const project_status = defineTool({
   toolset: "core",
   title: "Project status",
   description:
-    "Summarise the current project: id, directory, board settings, which artefacts exist (circuit.netlist.json, board.kicad_pcb, board.kicad_sch), last build error count, latest route run and available reports. Call it first to learn the file contract before writing circuit.netlist.json.",
+    "Summarise the current project: id, directory, board settings, which artifacts exist (circuit.netlist.json, board.kicad_pcb, board.kicad_sch), last build result, latest route run, and available reports.",
   inputSchema: {},
   annotations: { readOnlyHint: true, idempotentHint: true },
   handler: async (_args, ctx) => {
@@ -288,7 +287,7 @@ export const route_run = defineTool({
   toolset: "core",
   title: "Autoroute the board",
   description:
-    "Autoroute board.kicad_pcb on the design server (capacity: the built-in JS router; freerouting: internal builds only). Streams progress frames to the app, persists them under .fabdesk/runs/<runId>/frames.jsonl, applies the tracks to the board as one undo entry and returns which nets stayed open plus via/track counts. Requires circuit_build. Use route_unroute + route_run with onlyConnections to redo specific nets. If routing reports a blocked endpoint or board-edge violation, move the named footprint inward or enlarge the board, rebuild, and retry; never split or rename an electrical net merely to bypass a routing failure.",
+    "Autoroute the canonical board on the design server (capacity: the built-in JS router; freerouting: internal builds only). Streams progress frames to the app, persists them under .fabdesk/runs/<runId>/frames.jsonl, applies tracks to the live board as one undo entry, saves it, and returns open connections plus track/via counts. The board may come from circuit_build, project_import_kicad, native KiCad work, or another method. Use onlyConnections to limit a run to named nets.",
   inputSchema: RouteRunArgs,
   annotations: { idempotentHint: true },
   longRunning: true,
