@@ -120,11 +120,24 @@ export type ComponentScope = {
   pads: Record<string, number>;
 };
 
-export type FootprintHit = { libId: string; nickname: string; name: string; description: string };
+export type DataAvailability = "available" | "missing" | "unsupported";
+export type PartBounds = {
+  min: { x: number; y: number };
+  max: { x: number; y: number };
+  size: { x: number; y: number };
+};
+export type PartRoleSuitability = {
+  role: "power-only-usb-c";
+  suitable: boolean;
+  reasons: string[];
+};
 export type PartDescription = {
   kind: "footprint" | "symbol";
   libId: string;
   description: string;
+  keywords?: string[];
+  datasheet?: string;
+  roleSuitability?: PartRoleSuitability[];
   anchor?: { x: number; y: number };
   pins?: Array<{
     number: string;
@@ -134,9 +147,49 @@ export type PartDescription = {
   }>;
   pads?: Array<{
     number: string;
+    type?: string;
+    shape?: string;
+    layers?: string[];
     position: { x: number; y: number };
     size: { x: number; y: number };
   }>;
+  package?: {
+    assemblyMethod: "smd" | "through-hole" | "mixed" | "unspecified";
+    bodyBounds?: PartBounds;
+    courtyardBounds?: PartBounds;
+    connectorEdgeDatum?: { axis: "x" | "y"; coordinate: number; label: string };
+  };
+  fabrication?: {
+    courtyard: DataAvailability;
+    fabOutline: DataAvailability;
+    threeDModels: DataAvailability;
+    models: string[];
+    includedInBom: boolean | "unsupported";
+    includedInPositionFiles: boolean | "unsupported";
+  };
+};
+export type FootprintHit = {
+  libId: string;
+  nickname: string;
+  name: string;
+  description: string;
+  part?: PartDescription;
+};
+export type PartCompatibility = {
+  symbolLibId: string;
+  footprintLibId: string;
+  symbol: PartDescription;
+  footprint: PartDescription;
+  compatible: boolean;
+  pinPad: {
+    compatible: boolean;
+    matched: string[];
+    missingPadsForPins: string[];
+    padsWithoutPins: string[];
+  };
+  role?: PartRoleSuitability;
+  issues: string[];
+  warnings: string[];
 };
 
 export type DesignStatus = {
@@ -178,6 +231,12 @@ export interface DesignService {
   searchSymbols(query: string, limit: number): Promise<FootprintHit[]>;
   /** Pin/pad geometry needed to connect and place one exact library id safely. */
   describePart(kind: "footprint" | "symbol", libId: string): Promise<PartDescription>;
+  /** Validate a symbol/footprint pair without placing or changing either one. */
+  checkPartCompatibility(
+    symbolLibId: string,
+    footprintLibId: string,
+    role?: "power-only-usb-c",
+  ): Promise<PartCompatibility>;
   status(): Promise<DesignStatus>;
   /** Drop the project's session (project closed or deleted). */
   release(projectDir: string): Promise<void>;
@@ -188,7 +247,10 @@ export type KicadRunResult = { stdout: string; stderr: string; exitCode: number 
 export type KicadCli = {
   path: string;
   version: string;
-  trace?: (input: { command: string[]; cwd: string }, invoke: () => Promise<KicadRunResult>) => Promise<KicadRunResult>;
+  trace?: (
+    input: { command: string[]; cwd: string },
+    invoke: () => Promise<KicadRunResult>,
+  ) => Promise<KicadRunResult>;
 };
 export type BoardView = "top" | "bottom" | "perspective" | "side";
 
