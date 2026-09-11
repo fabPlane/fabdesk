@@ -114,7 +114,7 @@ export async function toCallToolResult(output: ToolOutput): Promise<CallToolResu
       content.push({ type: "text", text: `(image missing: ${img.path})` });
       continue;
     }
-    if (st.size > MAX_INLINE_IMAGE_BYTES) {
+    if (st.size > MAX_INLINE_IMAGE_BYTES && !img.requiredInline) {
       content.push({ type: "text", text: `Image too large to inline (${st.size} bytes); read it from ${img.path}` });
       continue;
     }

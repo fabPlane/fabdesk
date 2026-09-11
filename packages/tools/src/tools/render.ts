@@ -90,7 +90,7 @@ export const render_schematic_svg = defineTool({
         schematicRevision: before,
         images,
       },
-      { images: imagePaths.map((path) => ({ path, mime: "image/png" })) },
+      { images: imagePaths.map((path) => ({ path, mime: "image/png", requiredInline: true })) },
     );
   },
 });

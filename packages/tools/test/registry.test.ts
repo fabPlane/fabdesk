@@ -189,6 +189,16 @@ describe("registry", () => {
     expect(json.images[0]!.height).toBeGreaterThan(0);
   });
 
+  test("revision-bound schematic pixels remain agent-viewable above the generic inline limit", async () => {
+    const project = await tempProject("large-schematic-pixels");
+    const path = join(project.dir, "large.png");
+    const bytes = Buffer.alloc(2 * 1024 * 1024 + 1);
+    bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    await Bun.write(path, bytes);
+    const result = await toCallToolResult({ text: "rendered", images: [{ path, mime: "image/png", requiredInline: true }] });
+    expect(result.content.map((block) => block.type)).toEqual(["text", "image"]);
+  });
+
   test("schematic render rejects a source revision that changes during export", async () => {
     const reg = createRegistry();
     const project = await tempProject("schematic-stale");

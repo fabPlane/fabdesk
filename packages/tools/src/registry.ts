@@ -20,7 +20,7 @@ export type ToolAnnotations = {
   openWorldHint?: boolean;
 };
 
-export type ToolImage = { path: string; mime: string };
+export type ToolImage = { path: string; mime: string; requiredInline?: boolean };
 
 export type ToolOutput = {
   /** Human/LLM readable summary. Adapters fall back to JSON when omitted. */
