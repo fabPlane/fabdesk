@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { corePcbEnvironment, resolvePcbBackend } from "./pcb-supervisor";
+import { corePcbEnvironment, PcbSupervisor, resolvePcbBackend } from "./pcb-supervisor";
 
 const roots: string[] = [];
 afterEach(async () =>
@@ -161,5 +161,52 @@ describe("bundled PCB backend", () => {
       args: ["run", "--filter", "@fp-pcb/bridge", "start"],
       cwd: source,
     });
+  });
+
+  test("starts the bundled bridge on another port instead of reusing an incompatible bridge", async () => {
+    const root = await mkdtemp(join(tmpdir(), "fabplane-pcb-collision-"));
+    roots.push(root);
+    const bridgeScript = join(root, "bridge.ts");
+    await writeFile(
+      bridgeScript,
+      `const server = Bun.serve({
+  port: Number(process.env.PORT),
+  hostname: "127.0.0.1",
+  fetch: () => Response.json({ name: "@fp-pcb/bridge", kicadCli: process.env.KICAD_CLI }),
+});
+process.on("SIGTERM", () => { server.stop(true); process.exit(0); });
+`,
+    );
+    const stale = Bun.serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      fetch: () => Response.json({ name: "@fp-pcb/bridge", kicadCli: "/stale/kicad-cli" }),
+    });
+    const supervisor = new PcbSupervisor({
+      command: process.execPath,
+      args: [bridgeScript],
+      cwd: root,
+      url: `http://127.0.0.1:${stale.port}`,
+      fixedUrl: false,
+      env: {
+        PORT: String(stale.port),
+        KICAD_CLI: "/bundled/kicad-cli",
+        KICAD_STOCK_DATA_HOME: "/bundled/share/kicad",
+        KICAD_FOOTPRINT_DIR: "/bundled/footprints",
+        KICAD_SYMBOL_DIR: "/bundled/symbols",
+      },
+    });
+    try {
+      const coreEnv = await supervisor.start();
+      expect(coreEnv.FABDESK_FP_PCB_BRIDGE_URL).not.toBe(`http://127.0.0.1:${stale.port}`);
+      const response = await fetch(`${coreEnv.FABDESK_FP_PCB_BRIDGE_URL}/health`);
+      expect(await response.json()).toMatchObject({
+        name: "@fp-pcb/bridge",
+        kicadCli: "/bundled/kicad-cli",
+      });
+    } finally {
+      await supervisor.stop();
+      stale.stop(true);
+    }
   });
 });
