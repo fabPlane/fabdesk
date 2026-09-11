@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { z } from "zod/v4";
 import { PROJECT_FILES, exists, readJson } from "../fs";
 import { ToolError, defineTool } from "../registry";
-import type { NativeSchematicEdit, PcbFootprintEdit } from "../services";
+import type { NativeSchematicEdit, PcbFootprintEdit, PcbGeometryEdit } from "../services";
 import { ok, p } from "./common";
 
 const Point = z.object({ x: z.number().finite(), y: z.number().finite() });
@@ -65,12 +65,24 @@ const FootprintEdit = z.object({
   flip: z.boolean().optional(), lock: z.boolean().optional(),
 });
 
+const Polygon = z.object({ points: z.array(Point).min(3).max(5000), holes: z.array(z.array(Point).min(3).max(5000)).max(100).optional() });
+const Layer = z.number().int();
+const PcbGeometry = z.object({
+  tracks: z.array(z.object({ start: Point, end: Point, width: z.number().positive(), layer: Layer, net: z.string().min(1).optional() })).max(5000).optional(),
+  vias: z.array(z.object({ position: Point, diameter: z.number().positive(), drill: z.number().positive(), layers: z.array(Layer).min(2), net: z.string().min(1).optional() })).max(2000).optional(),
+  zones: z.array(Polygon.extend({ layers: z.array(Layer).min(1), net: z.string().min(1).optional(), name: z.string().optional(), clearance: z.number().nonnegative().optional(), minThickness: z.number().positive().optional(), priority: z.number().int().optional() })).max(200).optional(),
+  keepouts: z.array(Polygon.extend({ layers: z.array(Layer).min(1), name: z.string().optional(), copper: z.boolean().optional(), vias: z.boolean().optional(), tracks: z.boolean().optional(), pads: z.boolean().optional(), footprints: z.boolean().optional() })).max(200).optional(),
+  texts: z.array(z.object({ text: z.string(), position: Point, layer: Layer, size: Point.optional(), thickness: z.number().positive().optional(), angle: z.number().finite().optional(), knockout: z.boolean().optional() })).max(1000).optional(),
+  graphics: z.array(z.object({ kind: z.enum(["segment", "rectangle", "arc", "circle", "polygon"]), layer: Layer, start: Point.optional(), end: Point.optional(), mid: Point.optional(), center: Point.optional(), radiusPoint: Point.optional(), points: z.array(Point).min(3).max(5000).optional(), holes: z.array(z.array(Point).min(3).max(5000)).max(100).optional(), strokeWidth: z.number().nonnegative().optional(), filled: z.boolean().optional() })).max(2000).optional(),
+  deleteItemIds: z.array(z.string().min(1)).max(5000).optional(),
+});
+
 export const native_edit_transaction = defineTool({
   name: "native_edit_transaction",
   toolset: "circuit",
   title: "Preview or apply an atomic native edit",
   description:
-    "Preview or atomically apply a bounded edit to native KiCad files. Supports schematic symbols/wires/junctions/labels/values/notes, board outline, footprint move/rotate/flip/lock, and local copper removal by net. expectedSchematicRevision/expectedPcbRevision reject stale callers. Failure restores the exact prior files; success returns before/after SHA-256 revisions and a rollback id.",
+    "Preview or atomically apply explicit native KiCad schematic, footprint, outline, copper, zone, keepout, text, and graphic changes. Revision mismatches reject the transaction; rejected changes restore the prior files.",
   inputSchema: {
     mode: z.enum(["preview", "apply"]).default("preview"),
     expectedSchematicRevision: z.string().length(64).nullable().optional(),
@@ -78,10 +90,11 @@ export const native_edit_transaction = defineTool({
     schematic: SchematicEdit.optional(),
     outline: z.object({ points: z.array(Point).min(3).max(100), replace: z.boolean().default(false) }).optional(),
     footprints: z.array(FootprintEdit).max(500).optional(),
+    geometry: PcbGeometry.optional(),
     removeCopperNets: z.array(z.string().min(1)).max(500).optional(),
   },
   annotations: { idempotentHint: false },
-  handler: async ({ mode, expectedSchematicRevision, expectedPcbRevision, schematic, outline, footprints, removeCopperNets }, ctx) => {
+  handler: async ({ mode, expectedSchematicRevision, expectedPcbRevision, schematic, outline, footprints, geometry, removeCopperNets }, ctx) => {
     const project = ctx.requireProject();
     const before = await revisions(project.dir);
     if (expectedSchematicRevision !== undefined && before.schematic !== expectedSchematicRevision)
@@ -92,6 +105,17 @@ export const native_edit_transaction = defineTool({
       schematic: schematic ? "edit native schematic" : null,
       outline: outline ? `${outline.points.length}-segment outline` : null,
       footprints: footprints?.map((edit) => edit.reference) ?? [],
+      geometry: geometry
+        ? {
+            tracks: geometry.tracks?.length ?? 0,
+            vias: geometry.vias?.length ?? 0,
+            zones: geometry.zones?.length ?? 0,
+            keepouts: geometry.keepouts?.length ?? 0,
+            texts: geometry.texts?.length ?? 0,
+            graphics: geometry.graphics?.length ?? 0,
+            deleteItemIds: geometry.deleteItemIds ?? [],
+          }
+        : null,
       removeCopperNets: removeCopperNets ?? [],
     };
     if (mode === "preview") return ok("Native edit preview validated; canonical files were not changed.", { status: "preview", before, after: before, plan });
@@ -108,10 +132,13 @@ export const native_edit_transaction = defineTool({
         const placed = await ctx.services.design.placeFootprints(project.dir, footprints as PcbFootprintEdit[]);
         if (placed.missing.length) throw new ToolError(`unknown footprints: ${placed.missing.join(", ")}`, "invalid_args");
       }
+      if (geometry) await ctx.services.design.editBoardGeometry(project.dir, geometry as PcbGeometryEdit);
       if (removeCopperNets?.length) await ctx.services.design.unroute(project.dir, removeCopperNets);
       const after = await revisions(project.dir);
+      const pcbGeometry = geometry || footprints?.length || outline ? await ctx.services.design.inspectBoardGeometry(project.dir) : undefined;
+      if (pcbGeometry && !pcbGeometry.revisionStable) throw new ToolError("PCB geometry changed during inspection", "precondition");
       await writeFile(join(root, "last-accepted.json"), JSON.stringify({ transactionId, before, after }, null, 2));
-      return ok(`Atomic native edit ${transactionId} accepted.`, { status: "accepted", transactionId, before, after, plan });
+      return ok(`Atomic native edit ${transactionId} accepted.`, { status: "accepted", transactionId, before, after, plan, ...(pcbGeometry ? { pcbGeometry } : {}) });
     } catch (error) {
       await ctx.services.design.release(project.dir).catch(() => undefined);
       await restore(project.dir, directory);

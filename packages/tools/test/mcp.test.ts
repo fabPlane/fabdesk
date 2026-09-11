@@ -61,7 +61,7 @@ describe("mcp adapter", () => {
     expect((bad.content as Array<{ text: string }>)[0]!.text).toContain("no project selected");
   });
 
-  test("svg render returns an embedded resource; resources and prompts listed", async () => {
+  test("svg render returns an embedded resource; resources are listed without workflow prompts", async () => {
     const { client, project } = await pair();
     await client.callTool({ name: "circuit_build", arguments: {} });
     await client.callTool({ name: "load_toolset", arguments: { toolset: "render" } });
@@ -85,14 +85,6 @@ describe("mcp adapter", () => {
     const report = await client.readResource({ uri: `fabdesk://project/${project.id}/reports/build` });
     expect(JSON.parse(report.contents[0]!.text as string).ok).toBe(true);
 
-    const prompts = await client.listPrompts();
-    expect(prompts.prompts.map((p) => p.name).sort()).toEqual(["design_from_sketch", "fix_drc", "reroute_open_nets"]);
-    const prompt = await client.getPrompt({ name: "design_from_sketch", arguments: { project: project.id, requirements: "blink an LED" } });
-    const promptText = (prompt.messages[0]!.content as { text: string }).text;
-    expect(promptText).toContain("blink an LED");
-    expect(promptText).toContain("available in any combination");
-    expect(promptText).toContain("circuit_build and the native schematic tools are optional");
-    expect(promptText).not.toContain("Required workflow");
-    expect(promptText).not.toContain("rebuild until");
+    expect(client.getServerCapabilities()?.prompts).toBeUndefined();
   });
 });

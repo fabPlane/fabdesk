@@ -43,7 +43,7 @@ export const project_write_file = defineTool({
   toolset: "project",
   title: "Write a project file",
   description:
-    "Create or overwrite a text file inside the project directory, creating parent directories. Use it to write circuit.netlist.json. Paths are relative to the project and may not leave it; fabdesk.json must be changed through project_set_board.",
+    "Create or overwrite a UTF-8 text file inside the project directory. Paths are relative to the project and may not leave it; fabdesk.json is managed by project_set_board.",
   inputSchema: {
     path: z.string().min(1).describe("Relative path, e.g. circuit.netlist.json"),
     content: z.string().describe("Full file content (UTF-8)"),
@@ -65,7 +65,7 @@ export const project_list_sketches = defineTool({
   toolset: "project",
   title: "List sketches",
   description:
-    "List the user's sketch images (PNG/JPEG/SVG under sketches/) with absolute paths so you can open them with your image reading capability. Sketches describe the desired board; interpret them before writing circuit.netlist.json.",
+    "List PNG, JPEG, and SVG files under sketches/ with absolute paths and image content for raster formats.",
   inputSchema: {},
   annotations: { readOnlyHint: true, idempotentHint: true },
   handler: async (_args, ctx) => {
@@ -89,7 +89,7 @@ export const project_set_board = defineTool({
   toolset: "project",
   title: "Set board settings",
   description:
-    "Update board constraints in fabdesk.json: layer count (1-8), outline width/height in mm, the router to use, and optionally a prefab blank template. The size becomes the board outline the next circuit_build draws (when circuit.netlist.json has no board of its own); board.rules reach the KiCad board on the next build; the router is used by route_run. template=\"viagrid-9055\" sets up Opulo's 90 x 55 mm Viagrid blank: circuit_build then draws the blank itself (outline, 180 factory vias as free vias, 4 mounting holes, 0.2 mm track and clearance rules) instead of the netlist's board, and route_run uses the laser-prefab solver so layers change only through the factory vias, which it claims. template=\"none\" removes it.",
+    "Update fabdesk.json board settings: layer count, outline dimensions, router, and optional prefab blank template. template=\"viagrid-9055\" represents the Opulo 90 x 55 mm blank with its factory vias, mounting holes, and 0.2 mm track and clearance rules; template=\"none\" removes the template.",
   inputSchema: {
     layers: z.number().int().min(1).max(8).optional(),
     widthMm: z.number().positive().optional(),
@@ -124,9 +124,7 @@ export const project_set_board = defineTool({
     const text = [
       `Board: ${next.board.layers} layers, ${next.board.widthMm ?? "?"}×${next.board.heightMm ?? "?"} mm, router ${next.router}${next.board.template ? `, template ${next.board.template}` : ""}.`,
       ...(next.board.template === "viagrid-9055"
-        ? [
-            `Viagrid rules: circuit_build draws the blank (rebuild after setting the template; a board that already has an outline keeps it, so delete board.kicad_pcb first). Never add vias to the design; route_run uses the laser-prefab solver and claims the factory vias. Parts must clear the via clusters (blank frame: x in -12..12 or |x| > 26 with |y| < 14 is free) and the mounting holes at (±38.75, ±18.25); the autoplacer does not know that, so check circuit_query components / verify_viagrid and move parts in KiCad when needed.`,
-          ]
+        ? ["Viagrid geometry: factory-via-free areas include x in -12..12 and |x| > 26 with |y| < 14; mounting-hole centres are at (±38.75, ±18.25) mm in the blank frame."]
         : []),
     ].join("\n");
     return ok(text, { board: next.board, router: next.router });

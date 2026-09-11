@@ -20,6 +20,33 @@ describe("parseDrcJson", () => {
     expect(report.violations[0]?.items[0]?.pos).toEqual({ x: 1, y: 2 });
     expect(parseDrcJson({ violations: [{ type: "x" }] } as never).violations[0]?.signature).toBe("x:NO_REFERENCE");
   });
+
+  test("retains agent-facing item geometry metadata", () => {
+    const report = parseDrcJson({
+      violations: [{
+        type: "clearance",
+        severity: "error",
+        description: "clearance violation",
+        items: [{
+          description: "Track GND",
+          uuid: "track-1",
+          pos: { x: 4.5, y: 6.25 },
+          net: "GND",
+          layer: "F.Cu",
+          layers: ["F.Cu", "B.Cu"],
+        }],
+      }],
+    } as never);
+    expect(report.violations[0]).toMatchObject({
+      rule: "clearance",
+      severity: "error",
+      coordinates: [{ x: 4.5, y: 6.25 }],
+      layers: ["F.Cu", "B.Cu"],
+      nets: ["GND"],
+      objectIds: ["track-1"],
+      affectedGeometry: [],
+    });
+  });
 });
 
 describe("gate", () => {

@@ -48,7 +48,7 @@ export const design_inspect = defineTool({
     if (!(await exists(schematicPath)) || !(await exists(boardPath)))
       throw new ToolError("native inspection requires both board.kicad_sch and board.kicad_pcb", "precondition");
 
-    const [schematic, components, nets, pads, tracks, vias, zones, keepouts, geometry, texts, remaining, cli, runtime] =
+    const [schematic, components, nets, pads, tracks, vias, zones, keepouts, geometry, texts, remaining, geometrySnapshot, cli, runtime] =
       await Promise.all([
         ctx.services.design.schematicInspect(project.dir),
         ctx.services.design.query(project.dir, "components"),
@@ -61,6 +61,7 @@ export const design_inspect = defineTool({
         ctx.services.design.query(project.dir, "board_geometry"),
         ctx.services.design.query(project.dir, "texts"),
         ctx.services.design.query(project.dir, "unrouted"),
+        ctx.services.design.inspectBoardGeometry(project.dir),
         refreshChecks ? requireKicad(ctx) : ctx.services.kicad.resolveCli(),
         ctx.services.design.status(),
       ]);
@@ -156,7 +157,7 @@ export const design_inspect = defineTool({
         pcb: { documentRevision: schematic.pcbRevision, ...pcbRevision },
       },
       schematic,
-      pcb: { components, nets, pads, tracks, vias, zones, keepouts, geometry, texts, remainingConnections: remaining },
+      pcb: { components, nets, pads, tracks, vias, zones, keepouts, geometry, geometrySnapshot, texts, remainingConnections: remaining },
       checks: { erc, drc },
       releaseEvidence,
       findings,

@@ -6,8 +6,7 @@ import { readFile, stat } from "node:fs/promises";
 import { McpServer, ResourceTemplate, type RegisteredTool } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ZodRawShapeCompat } from "@modelcontextprotocol/sdk/server/zod-compat.js";
 import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
-import type { CallToolResult, GetPromptResult, ReadResourceResult, ServerNotification, ServerRequest } from "@modelcontextprotocol/sdk/types.js";
-import { z } from "zod/v4";
+import type { CallToolResult, ReadResourceResult, ServerNotification, ServerRequest } from "@modelcontextprotocol/sdk/types.js";
 import { PROJECT_FILES, exists, readJsonOrNull } from "../fs";
 import {
   TOOLSETS,
@@ -34,7 +33,7 @@ export type AttachOptions = {
   sessionId?: string;
   /** Toolsets enabled from the start; `core` is always enabled. */
   initialToolsets?: ToolsetId[];
-  /** Skip resources/prompts (e.g. lightweight test servers). */
+  /** Skip resources (e.g. lightweight test servers). */
   toolsOnly?: boolean;
 };
 
@@ -95,7 +94,6 @@ export function attachToRegistry(
 
   if (!opts.toolsOnly) {
     registerResources(server, registry, ctxFactory, session, sessionId);
-    registerPrompts(server);
   }
 
   return { session, registered };
@@ -164,7 +162,7 @@ function registerResources(server: McpServer, registry: ToolRegistry, ctxFactory
     new ResourceTemplate("fabdesk://project/{id}/circuit.netlist.json", {
       list: async () => ({ resources: (await listProjects()).map((pr) => ({ uri: `fabdesk://project/${pr.id}/circuit.netlist.json`, name: `${pr.name} circuit.netlist.json`, mimeType: "application/json" })) }),
     }),
-    { title: "circuit.netlist.json", description: "The design source of the project: components, nets, board size, libraries", mimeType: "application/json" },
+    { title: "circuit.netlist.json", description: "Optional circuit.netlist.json project file", mimeType: "application/json" },
     async (uri, vars) => {
       const ctx = await project(String(vars["id"]));
       const path = p(ctx.project!, PROJECT_FILES.netlistJson);
@@ -220,74 +218,5 @@ function registerResources(server: McpServer, registry: ToolRegistry, ctxFactory
       if (!(await exists(path))) throw new ToolError(`no report ${name}`, "not_found");
       return text(uri, "application/json", await readFile(path, "utf8"));
     },
-  );
-}
-
-const projectArg = z.string().optional().describe("Project id, name or path (optional when a project is selected)");
-const promptArgs = (shape: Record<string, z.ZodType>) => shape as unknown as ZodRawShapeCompat;
-type PromptArgs = Record<string, unknown>;
-const str = (v: unknown): string | undefined => (typeof v === "string" && v.length > 0 ? v : undefined);
-
-function registerPrompts(server: McpServer): void {
-  const user = (text: string): GetPromptResult => ({ messages: [{ role: "user", content: { type: "text", text } }] });
-  const projectLine = (project?: string) => (project ? `Project: ${project} (pass project="${project}" to project-scoped MCP tools).` : "Use the currently selected project.");
-  const freedom = "MCP tools, bundled KiCad, shell commands, project-local scripts, direct file work, and the fabPlane UI are available in any combination. circuit_build and the native schematic tools are optional.";
-
-  server.registerPrompt(
-    "design_from_sketch",
-    {
-      title: "Design a board from a sketch",
-      description: "Pass a board-design request, optional sketch path, and project selector to the agent.",
-      argsSchema: promptArgs({ project: projectArg, requirements: z.string().optional().describe("Extra requirements in prose"), sketch: z.string().optional().describe("Sketch path if not in sketches/") }),
-    },
-    (a: PromptArgs) => {
-      const project = str(a["project"]);
-      const requirements = str(a["requirements"]);
-      const sketch = str(a["sketch"]);
-      return user(
-        [
-          "Design a PCB with fabdesk. " + projectLine(project),
-          sketch ? `Sketch supplied by the user: ${sketch}` : "Project sketches, if any, are under sketches/.",
-          requirements ? `Requirements from the user: ${requirements}` : "",
-          freedom,
-        ]
-          .filter(Boolean)
-          .join("\n"),
-      );
-    },
-  );
-
-  server.registerPrompt(
-    "fix_drc",
-    {
-      title: "Fix DRC violations",
-      description: "Pass a request to fix the project's DRC violations without choosing an authoring method.",
-      argsSchema: promptArgs({ project: projectArg }),
-    },
-    (a: PromptArgs) =>
-      user(
-        [
-          projectLine(str(a["project"])),
-          "Fix the DRC violations reported for this PCB and report the resulting state.",
-          freedom,
-        ].join("\n"),
-      ),
-  );
-
-  server.registerPrompt(
-    "reroute_open_nets",
-    {
-      title: "Reroute open nets",
-      description: "Pass a request to address the connections that remain open.",
-      argsSchema: promptArgs({ project: projectArg }),
-    },
-    (a: PromptArgs) =>
-      user(
-        [
-          projectLine(str(a["project"])),
-          "Address the PCB connections that remain open and report what changed.",
-          freedom,
-        ].join("\n"),
-      ),
   );
 }

@@ -313,6 +313,75 @@ export type PcbOutlineResult = {
   saved: boolean;
 };
 
+export type PcbGeometryEdit = {
+  tracks?: Array<{ start: SchematicPoint; end: SchematicPoint; width: number; layer: number; net?: string }>;
+  vias?: Array<{ position: SchematicPoint; diameter: number; drill: number; layers: number[]; net?: string }>;
+  zones?: Array<{
+    points: SchematicPoint[];
+    holes?: SchematicPoint[][];
+    layers: number[];
+    net?: string;
+    name?: string;
+    clearance?: number;
+    minThickness?: number;
+    priority?: number;
+  }>;
+  keepouts?: Array<{
+    points: SchematicPoint[];
+    holes?: SchematicPoint[][];
+    layers: number[];
+    name?: string;
+    copper?: boolean;
+    vias?: boolean;
+    tracks?: boolean;
+    pads?: boolean;
+    footprints?: boolean;
+  }>;
+  texts?: Array<{
+    text: string;
+    position: SchematicPoint;
+    layer: number;
+    size?: SchematicPoint;
+    thickness?: number;
+    angle?: number;
+    knockout?: boolean;
+  }>;
+  graphics?: Array<{
+    kind: "segment" | "rectangle" | "arc" | "circle" | "polygon";
+    layer: number;
+    start?: SchematicPoint;
+    end?: SchematicPoint;
+    mid?: SchematicPoint;
+    center?: SchematicPoint;
+    radiusPoint?: SchematicPoint;
+    points?: SchematicPoint[];
+    holes?: SchematicPoint[][];
+    strokeWidth?: number;
+    filled?: boolean;
+  }>;
+  deleteItemIds?: string[];
+};
+export type PcbGeometryEditResult = {
+  created: { tracks: number; vias: number; zones: number; keepouts: number; texts: number; graphics: number };
+  createdIds: string[];
+  deletedIds: string[];
+  revision: number;
+  saved: boolean;
+};
+export type PcbGeometrySnapshot = Record<string, unknown> & {
+  revisionStart?: number;
+  revisionEnd?: number;
+  revisionStable: boolean;
+  pads: Array<Record<string, unknown>>;
+  tracks: Array<Record<string, unknown>>;
+  vias: Array<Record<string, unknown>>;
+  zones: Array<Record<string, unknown>>;
+  texts: Array<Record<string, unknown>>;
+  graphics: Array<Record<string, unknown>>;
+  nets: Array<Record<string, unknown>>;
+  rules: Record<string, unknown>;
+};
+
 export interface DesignService {
   /** Compile the project's netlist into `board.kicad_pcb` through the bridge. */
   build(opts: BuildOptions): Promise<BuildResult>;
@@ -333,6 +402,10 @@ export interface DesignService {
     projectDir: string,
     placements: PcbFootprintEdit[],
   ): Promise<PcbPlacementResult>;
+  /** Create and delete explicitly named native board geometry without replacing unrelated items. */
+  editBoardGeometry(projectDir: string, edit: PcbGeometryEdit): Promise<PcbGeometryEditResult>;
+  /** Canonical board geometry, transformed pads, nets, layers, and applicable clearance data. */
+  inspectBoardGeometry(projectDir: string): Promise<PcbGeometrySnapshot>;
   /** Rows describing the board as KiCad holds it. */
   query(projectDir: string, select: DesignSelect, filter?: string): Promise<DesignRow[]>;
   /** Autoroute on the bridge; resolves when the job ends. */
@@ -384,7 +457,19 @@ export type DrcViolation = {
   rule: string;
   severity: "error" | "warning" | "exclusion";
   description: string;
-  items: Array<{ description: string; uuid?: string; pos?: { x: number; y: number } }>;
+  items: Array<{
+    description: string;
+    uuid?: string;
+    pos?: { x: number; y: number };
+    net?: string;
+    layer?: string | number;
+    layers?: Array<string | number>;
+  }>;
+  coordinates: Array<{ x: number; y: number }>;
+  layers: Array<string | number>;
+  nets: string[];
+  objectIds: string[];
+  affectedGeometry: Array<{ objectType: string; [key: string]: unknown }>;
   /** `${rule}:${first item description}`; stable across runs, used for warning baselines. */
   signature: string;
 };
@@ -434,6 +519,10 @@ export interface KicadService {
       signal?: AbortSignal;
     },
   ): Promise<void>;
+  rasterizeSvg(
+    svg: string | Uint8Array,
+    opts?: { maxWidth?: number; background?: string },
+  ): Promise<{ png: Uint8Array; width: number; height: number }>;
   exportGlb(
     cli: KicadCli,
     opts: { board: string; output: string; signal?: AbortSignal },

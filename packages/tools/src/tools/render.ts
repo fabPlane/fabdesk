@@ -1,30 +1,97 @@
-/** Render toolset: SVGs and GLB from the KiCad board via kicad-cli. */
-import { readFile } from "node:fs/promises";
+/** Render toolset: schematic/PCB images and GLB from native KiCad files. */
+import { createHash } from "node:crypto";
+import { readFile, rm, stat } from "node:fs/promises";
+import { z } from "zod/v4";
 import { PROJECT_FILES, ensureDir } from "../fs";
-import { defineTool } from "../registry";
+import { ToolError, defineTool } from "../registry";
 import { fileUrl, ok, p, requireBoard, requireKicad, requireSchematic } from "./common";
+
+async function fileRevision(path: string): Promise<{ sha256: string; bytes: number; mtime: string }> {
+  const [data, metadata] = await Promise.all([readFile(path), stat(path)]);
+  return {
+    sha256: createHash("sha256").update(data).digest("hex"),
+    bytes: data.byteLength,
+    mtime: metadata.mtime.toISOString(),
+  };
+}
+
+async function fileIdentity(path: string): Promise<{ sha256: string; bytes: number }> {
+  const data = await readFile(path);
+  return { sha256: createHash("sha256").update(data).digest("hex"), bytes: data.byteLength };
+}
 
 export const render_schematic_svg = defineTool({
   name: "render_schematic_svg",
   toolset: "render",
-  title: "Render schematic SVG",
-  description: "Render board.kicad_sch to renders/schematic.svg with kicad-cli and return it. circuit_build draws components that supply libSource and labelled wire stubs for their connected pins.",
-  inputSchema: {},
+  title: "Render schematic",
+  description: "Export board.kicad_sch as SVG and return PNG image pixels bound to the source file revision.",
+  inputSchema: {
+    maxWidth: z.number().int().min(320).max(4096).default(1600),
+  },
   annotations: { readOnlyHint: true, idempotentHint: true },
   longRunning: true,
-  handler: async (_args, ctx) => {
+  handler: async ({ maxWidth }, ctx) => {
     const project = ctx.requireProject();
     const cli = await requireKicad(ctx);
     const schematic = await requireSchematic(project);
+    const before = await fileRevision(schematic);
     const outDir = await ensureDir(p(project, PROJECT_FILES.renders, "schematic"));
     ctx.progress(0.2, "exporting svg");
     const { paths } = await ctx.services.kicad.exportSchematicSvg(cli, { schematic, outDir, signal: ctx.signal });
-    const first = paths[0];
+    if (!paths.length) throw new ToolError("schematic export produced no sheets", "internal");
+    const revisionPrefix = before.sha256.slice(0, 16);
+    const images: Array<{
+      sheet: number;
+      path: string;
+      width: number;
+      height: number;
+      sha256: string;
+      bytes: number;
+      schematicRevision: string;
+    }> = [];
+    const imagePaths: string[] = [];
+    for (const [index, path] of paths.entries()) {
+      const raster = await ctx.services.kicad.rasterizeSvg(await readFile(path), { maxWidth });
+      const pngPath = p(project, PROJECT_FILES.renders, "schematic", `${revisionPrefix}-sheet-${index + 1}.png`);
+      await Bun.write(pngPath, raster.png);
+      imagePaths.push(pngPath);
+      images.push({
+        sheet: index + 1,
+        path: pngPath,
+        width: raster.width,
+        height: raster.height,
+        ...(await fileIdentity(pngPath)),
+        schematicRevision: before.sha256,
+      });
+    }
+    const after = await fileRevision(schematic);
+    if (after.sha256 !== before.sha256) {
+      await Promise.all(imagePaths.map((path) => rm(path, { force: true })));
+      throw new ToolError(
+        `schematic changed during rendering: started at ${before.sha256}, ended at ${after.sha256}`,
+        "precondition",
+      );
+    }
+    const firstSvg = paths[0]!;
     const output = p(project, PROJECT_FILES.renders, "schematic.svg");
-    if (first) await Bun.write(output, await readFile(first));
+    const pngOutput = p(project, PROJECT_FILES.renders, "schematic.png");
+    await Bun.write(output, await readFile(firstSvg));
+    await Bun.write(pngOutput, await readFile(imagePaths[0]!));
     ctx.progress(1, "done");
     const url = fileUrl(output);
-    return ok(`Rendered ${paths.length} schematic sheet(s); first at ${PROJECT_FILES.renders}/schematic.svg. Browser URL: ${url}`, { path: output, url, fileUrl: url, sheets: paths }, first ? { images: [{ path: output, mime: "image/svg+xml" }] } : {});
+    return ok(
+      `Rendered ${paths.length} schematic sheet(s) at revision ${before.sha256}.`,
+      {
+        path: output,
+        pngPath: pngOutput,
+        url,
+        fileUrl: url,
+        sheets: paths,
+        schematicRevision: before,
+        images,
+      },
+      { images: imagePaths.map((path) => ({ path, mime: "image/png" })) },
+    );
   },
 });
 
@@ -32,7 +99,7 @@ export const render_pcb_svg = defineTool({
   name: "render_pcb_svg",
   toolset: "render",
   title: "Render PCB SVG",
-  description: "Render board.kicad_pcb (copper, silkscreen, edge cuts) to renders/pcb.svg with kicad-cli and return it. Requires circuit_build.",
+  description: "Render board.kicad_pcb copper, silkscreen, and edge cuts to renders/pcb.svg.",
   inputSchema: {},
   annotations: { readOnlyHint: true, idempotentHint: true },
   longRunning: true,

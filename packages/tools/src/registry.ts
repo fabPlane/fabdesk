@@ -77,7 +77,7 @@ export type ToolDef<I extends z.ZodRawShape = z.ZodRawShape> = {
   name: string;
   toolset: ToolsetId;
   title: string;
-  /** Written for an LLM: when to call it, what it needs, what it returns. */
+  /** Agent-facing capability, input, and output description. */
   description: string;
   inputSchema: I;
   outputSchema?: z.ZodRawShape;

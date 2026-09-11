@@ -8,7 +8,7 @@ export const circuit_query = defineTool({
   toolset: "circuit",
   title: "Query the board",
   description:
-    "List what the board holds, straight from KiCad, as a compact table: components (ref, value, footprint, position), nets (name, pad count), pads (component, number, net, position, size), vias (position, net; a blank's free vias have an empty net), tracks (routed tracks/arcs/vias per net) or unrouted (the airlines still open). Optional substring filter on names. Requires circuit_build.",
+    "List board contents from KiCad as a compact table: components, nets, pads, vias, tracks, or unrouted connections. Supports an optional substring filter.",
   inputSchema: {
     select: z.enum(["components", "nets", "pads", "vias", "tracks", "unrouted"]),
     filter: z
@@ -61,7 +61,7 @@ export const circuit_describe_part = defineTool({
   toolset: "circuit",
   title: "Describe a KiCad part",
   description:
-    "Inspect one exact KiCad symbol or footprint before wiring or placing it. Symbols return pin numbers, names and electrical types; footprints return pad numbers, anchor-relative positions and sizes in millimetres.",
+    "Return details for one exact KiCad symbol or footprint. Symbols include pin numbers, names and electrical types; footprints include pad numbers, anchor-relative positions and sizes in millimetres.",
   inputSchema: {
     kind: z.enum(["footprint", "symbol"]),
     libId: z

@@ -161,6 +161,33 @@ export function mockServices(
         revision: 3,
         saved: true,
       }),
+      editBoardGeometry: async (_dir, edit) => ({
+        created: {
+          tracks: edit.tracks?.length ?? 0,
+          vias: edit.vias?.length ?? 0,
+          zones: edit.zones?.length ?? 0,
+          keepouts: edit.keepouts?.length ?? 0,
+          texts: edit.texts?.length ?? 0,
+          graphics: edit.graphics?.length ?? 0,
+        },
+        createdIds: [],
+        deletedIds: edit.deleteItemIds ?? [],
+        revision: 4,
+        saved: true,
+      }),
+      inspectBoardGeometry: async () => ({
+        revisionStart: 4,
+        revisionEnd: 4,
+        revisionStable: true,
+        pads: [],
+        tracks: [],
+        vias: [],
+        zones: [],
+        texts: [],
+        graphics: [],
+        nets: [],
+        rules: {},
+      }),
       query: async (_dir, select, filter) => {
         const rows: Record<string, Array<Record<string, unknown>>> = {
           components: [
@@ -277,6 +304,10 @@ export function mockServices(
         return { pass: reasons.length === 0, reasons, newWarningSignatures: newSigs };
       },
       renderPng: async () => {},
+      rasterizeSvg: async (svg, opts) => {
+        const { rasterizeSvg } = await import("@fabdesk/kicad");
+        return rasterizeSvg(svg, opts);
+      },
       exportGlb: async () => ({ fused: false, warnings: [] }),
       boardStats: async () => ({}),
       exportGerbers: async () => ({ paths: [] }),

@@ -37,7 +37,7 @@ export const export_dxf = defineTool({
   toolset: "export",
   title: "Export DXF artwork",
   description:
-    "Export one DXF per layer (mm) to exports/dxf/: the copper-removal artwork for prefab blanks such as Viagrid, where a laser (LightBurn) or CNC isolates the traces instead of a fab. Default layers F.Cu, B.Cu and Edge.Cuts. The bottom layer is drawn as seen from the top: mirror it in the laser software before burning. Requires kicad-cli and board.kicad_pcb.",
+    "Export one millimetre-unit DXF per selected layer to exports/dxf/. Defaults to F.Cu, B.Cu, and Edge.Cuts. Bottom-layer output uses a top-view orientation.",
   inputSchema: {
     layers: z.array(z.string().min(1)).min(1).default(DXF_DEFAULT_LAYERS).describe("KiCad layer names, e.g. F.Cu, B.Cu, Edge.Cuts, F.Mask"),
   },
@@ -53,7 +53,7 @@ export const export_dxf = defineTool({
     ctx.progress(1, "done");
     const template = project.manifest().board.template;
     const notes = [
-      ...(layers.some((l) => /^B\./.test(l)) ? ["Bottom-layer DXFs are as seen from the top; mirror them (LightBurn: Arrange → Flip Horizontal) before burning."] : []),
+      ...(layers.some((l) => /^B\./.test(l)) ? ["Bottom-layer DXFs use a top-view orientation."] : []),
       ...(template === "viagrid-9055" ? ["Viagrid 9055: align to the exposed-FR4 marks in the blank's corners; the factory vias and mounting holes are already in the blank, so only copper is removed."] : []),
     ];
     return ok(`Exported ${files.length} DXF file(s) to exports/dxf/:\n${files.map((f) => `- ${rel(project, f)}`).join("\n")}${notes.length ? `\n${notes.join("\n")}` : ""}`, { files, layers, notes });
@@ -134,7 +134,7 @@ export const export_netlist = defineTool({
     const output = p(project, PROJECT_FILES.exports, `netlist.${ext}`);
     if (format === "kicadsexpr") {
       const compiled = p(project, PROJECT_FILES.compileNet);
-      if (!(await exists(compiled))) throw new ToolError(`${PROJECT_FILES.compileNet} not found: run circuit_build first`, "precondition");
+      if (!(await exists(compiled))) throw new ToolError(`${PROJECT_FILES.compileNet} not found`, "precondition");
       await copyFile(compiled, output);
     } else {
       await writeAtomic(output, ctx.services.sim.spiceNetlist(await loadNetlist(project)));
@@ -147,7 +147,7 @@ export const export_zip = defineTool({
   name: "export_zip",
   toolset: "export",
   title: "Zip fabrication outputs",
-  description: "Bundle exports/gerbers, positions.csv and bom.csv into exports/fabrication.zip for upload to a fab house. Run export_gerbers, export_drill, export_pos and export_bom first (missing ones are skipped and reported).",
+  description: "Bundle the files currently present in exports/gerbers plus positions.csv and bom.csv into exports/fabrication.zip. Missing optional entries are reported.",
   inputSchema: {},
   annotations: { idempotentHint: true },
   handler: async (_args, ctx) => {
@@ -165,7 +165,7 @@ export const export_zip = defineTool({
       if (await stat(abs).catch(() => null)) entries.push({ name: f, path: abs });
       else missing.push(f);
     }
-    if (entries.length === 0) throw new ToolError("nothing to zip: run export_gerbers/export_drill/export_pos/export_bom first", "precondition");
+    if (entries.length === 0) throw new ToolError("no fabrication outputs found in exports/", "precondition");
     const output = join(exportsDir, "fabrication.zip");
     await zipFiles(output, entries);
     const size = (await stat(output)).size;

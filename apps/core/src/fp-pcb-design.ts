@@ -39,6 +39,12 @@ import {
   SchematicSymbol,
   SchematicText,
   Via,
+  createBoardGraphic,
+  createBoardText,
+  createTrack,
+  createVia,
+  createZone,
+  inspectBoardGeometry as inspectNativeBoardGeometry,
   mm as toNm,
   placeNativeSymbol,
   moveNativeSymbol,
@@ -65,6 +71,8 @@ import {
   type PartDescription,
   type PartCompatibility,
   type PcbFootprintEdit,
+  type PcbGeometryEdit,
+  type PcbGeometrySnapshot,
   type RouteJobOptions,
   type RouteProgress,
   type RouteSummary,
@@ -725,6 +733,145 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     };
   };
 
+  const editBoardGeometry = async (projectDir: string, edit: PcbGeometryEdit) => {
+    const board = await deps.sessions.board(projectDir);
+    const nets = new Map((await board.nets()).map((item) => [item.name, item.code?.value ?? 0]));
+    const net = (name: string) => {
+      const code = nets.get(name);
+      if (code === undefined) throw new ToolError(`unknown PCB net ${name}`, "invalid_args");
+      return { name, code };
+    };
+    const point = (value: { x: number; y: number }) => ({ x: toNm(value.x), y: toNm(value.y) });
+    const polygons = (points: Array<{ x: number; y: number }>, holes: Array<Array<{ x: number; y: number }>> | undefined) => [
+      { outline: points.map(point), ...(holes ? { holes: holes.map((hole) => hole.map(point)) } : {}) },
+    ];
+    const created = [
+      ...(edit.tracks ?? []).map((item) =>
+        createTrack({ start: point(item.start), end: point(item.end), width: toNm(item.width), layer: item.layer as BoardLayer, ...(item.net ? { net: net(item.net) } : {}) }),
+      ),
+      ...(edit.vias ?? []).map((item) =>
+        createVia({ position: point(item.position), diameter: toNm(item.diameter), drill: toNm(item.drill), layers: item.layers as BoardLayer[], ...(item.net ? { net: net(item.net) } : {}) }),
+      ),
+      ...(edit.zones ?? []).map((item) =>
+        createZone({
+          kind: "copper",
+          polygons: polygons(item.points, item.holes),
+          layers: item.layers as BoardLayer[],
+          ...(item.net ? { net: net(item.net) } : {}),
+          ...(item.name !== undefined ? { name: item.name } : {}),
+          ...(item.clearance !== undefined ? { clearance: toNm(item.clearance) } : {}),
+          ...(item.minThickness !== undefined ? { minThickness: toNm(item.minThickness) } : {}),
+          ...(item.priority !== undefined ? { priority: item.priority } : {}),
+        }),
+      ),
+      ...(edit.keepouts ?? []).map((item) =>
+        createZone({
+          kind: "keepout",
+          polygons: polygons(item.points, item.holes),
+          layers: item.layers as BoardLayer[],
+          ...(item.name !== undefined ? { name: item.name } : {}),
+          ...(item.copper !== undefined ? { copper: item.copper } : {}),
+          ...(item.vias !== undefined ? { vias: item.vias } : {}),
+          ...(item.tracks !== undefined ? { tracks: item.tracks } : {}),
+          ...(item.pads !== undefined ? { pads: item.pads } : {}),
+          ...(item.footprints !== undefined ? { footprints: item.footprints } : {}),
+        }),
+      ),
+      ...(edit.texts ?? []).map((item) =>
+        createBoardText({
+          text: item.text,
+          position: point(item.position),
+          layer: item.layer as BoardLayer,
+          ...(item.size ? { size: point(item.size) } : {}),
+          ...(item.thickness !== undefined ? { thickness: toNm(item.thickness) } : {}),
+          ...(item.angle !== undefined ? { angle: item.angle } : {}),
+          ...(item.knockout !== undefined ? { knockout: item.knockout } : {}),
+        }),
+      ),
+      ...(edit.graphics ?? []).map((item) => {
+        const geometry =
+          item.kind === "segment" && item.start && item.end
+            ? { kind: "segment" as const, start: point(item.start), end: point(item.end) }
+            : item.kind === "rectangle" && item.start && item.end
+              ? { kind: "rectangle" as const, topLeft: point(item.start), bottomRight: point(item.end) }
+              : item.kind === "arc" && item.start && item.mid && item.end
+                ? { kind: "arc" as const, start: point(item.start), mid: point(item.mid), end: point(item.end) }
+                : item.kind === "circle" && item.center && item.radiusPoint
+                  ? { kind: "circle" as const, center: point(item.center), radiusPoint: point(item.radiusPoint) }
+                  : item.kind === "polygon" && item.points
+                    ? { kind: "polygon" as const, polygons: polygons(item.points, item.holes) }
+                    : null;
+        if (!geometry) throw new ToolError(`incomplete ${item.kind} board graphic geometry`, "invalid_args");
+        return createBoardGraphic({
+          geometry,
+          layer: item.layer as BoardLayer,
+          ...(item.strokeWidth !== undefined ? { strokeWidth: toNm(item.strokeWidth) } : {}),
+          ...(item.filled !== undefined ? { filled: item.filled } : {}),
+        });
+      }),
+    ];
+    const deleteIds = edit.deleteItemIds ?? [];
+    if (deleteIds.length) {
+      const existing = await board.getItemsById(deleteIds);
+      const found = new Set(existing.map((item) => item.id));
+      const missing = deleteIds.filter((id) => !found.has(id));
+      if (missing.length) throw new ToolError(`unknown PCB item ids: ${missing.join(", ")}`, "invalid_args");
+    }
+    const result = await board.commit("Fabdesk: edit native PCB geometry", async (tx) => {
+      const made = created.length ? await tx.create(created) : [];
+      if (deleteIds.length) await tx.delete(deleteIds);
+      return made;
+    });
+    await board.save();
+    return {
+      created: {
+        tracks: edit.tracks?.length ?? 0,
+        vias: edit.vias?.length ?? 0,
+        zones: edit.zones?.length ?? 0,
+        keepouts: edit.keepouts?.length ?? 0,
+        texts: edit.texts?.length ?? 0,
+        graphics: edit.graphics?.length ?? 0,
+      },
+      createdIds: result.created.map((item) => item.id),
+      deletedIds: result.deleted,
+      revision: Number((await board.revision()) ?? 0n),
+      saved: true,
+    };
+  };
+
+  const inspectBoardGeometry = async (projectDir: string): Promise<PcbGeometrySnapshot> => {
+    const board = await deps.sessions.board(projectDir);
+    const snapshot = await inspectNativeBoardGeometry(board);
+    const point = (value: { x: number; y: number }) => ({ x: mm(value.x), y: mm(value.y) });
+    const polygonValue = (value: unknown): unknown => {
+      if (Array.isArray(value)) return value.map(polygonValue);
+      if (!value || typeof value !== "object") return typeof value === "bigint" ? Number(value) : value;
+      const row = value as Record<string, unknown>;
+      if (typeof row["xNm"] === "bigint" && typeof row["yNm"] === "bigint")
+        return { x: mm(Number(row["xNm"])), y: mm(Number(row["yNm"])) };
+      return Object.fromEntries(Object.entries(row).filter(([key]) => key !== "$typeName").map(([key, entry]) => [key, polygonValue(entry)]));
+    };
+    const layerNames = Object.fromEntries(
+      await Promise.all(snapshot.enabledLayers.layers.map(async (layer) => [String(layer), await board.layerName(layer)])),
+    );
+    return {
+      ...(snapshot.revisionStart !== undefined ? { revisionStart: Number(snapshot.revisionStart) } : {}),
+      ...(snapshot.revisionEnd !== undefined ? { revisionEnd: Number(snapshot.revisionEnd) } : {}),
+      revisionStable: snapshot.revisionStable,
+      enabledLayers: snapshot.enabledLayers,
+      layerNames,
+      pads: snapshot.pads.map((item) => ({ ...item, position: point(item.position), size: point(item.size), drillDiameter: point(item.drillDiameter), polygons: item.polygons.map((shape) => ({ layer: shape.layer, shape: polygonValue(shape.shape) })) })),
+      tracks: snapshot.tracks.map((item) => ({ ...item, start: point(item.start), end: point(item.end), width: mm(item.width) })),
+      arcs: snapshot.arcs.map((item) => ({ ...item, start: point(item.start), mid: point(item.mid), end: point(item.end), width: mm(item.width) })),
+      vias: snapshot.vias.map((item) => ({ ...item, position: point(item.position), diameter: mm(item.diameter), drill: mm(item.drill) })),
+      zones: snapshot.zones.map((item) => ({ ...item, clearance: mm(item.clearance), minThickness: mm(item.minThickness), outline: item.outline.map(point) })),
+      texts: snapshot.texts.map((item) => ({ ...item, position: point(item.position), size: point(item.size), thickness: mm(item.thickness) })),
+      graphics: snapshot.graphics.map((item) => ({ ...item, start: point(item.start), end: point(item.end), strokeWidth: mm(item.strokeWidth) })),
+      nets: snapshot.nets.map((item) => ({ ...item, ...(item.clearance !== undefined ? { clearance: mm(item.clearance) } : {}), ...(item.trackWidth !== undefined ? { trackWidth: mm(item.trackWidth) } : {}), ...(item.viaDiameter !== undefined ? { viaDiameter: mm(item.viaDiameter) } : {}), ...(item.viaDrill !== undefined ? { viaDrill: mm(item.viaDrill) } : {}) })),
+      rules: { ...snapshot.rules, minimums: Object.fromEntries(Object.entries(snapshot.rules.minimums).map(([key, value]) => [key, mm(value)])), custom: polygonValue(snapshot.rules.custom) },
+    };
+  };
+
   const query = async (
     projectDir: string,
     select: DesignSelect,
@@ -1193,6 +1340,8 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     syncSchematicToPcb,
     defineBoardOutline,
     placeFootprints,
+    editBoardGeometry,
+    inspectBoardGeometry,
     query,
     route,
     cancelRoute,

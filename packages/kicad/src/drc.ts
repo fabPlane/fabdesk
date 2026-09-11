@@ -2,11 +2,30 @@ import { runKicadCli, type KicadCli } from "./cli";
 
 export type Severity = "error" | "warning" | "exclusion";
 
+export interface DrcAffectedGeometry {
+  objectType: string;
+  [key: string]: unknown;
+}
+
+export interface DrcItem {
+  description: string;
+  uuid?: string;
+  pos?: { x: number; y: number };
+  net?: string;
+  layer?: string | number;
+  layers?: Array<string | number>;
+}
+
 export interface DrcViolation {
   rule: string;
   severity: Severity;
   description: string;
-  items: Array<{ description: string; uuid?: string; pos?: { x: number; y: number } }>;
+  items: DrcItem[];
+  coordinates: Array<{ x: number; y: number }>;
+  layers: Array<string | number>;
+  nets: string[];
+  objectIds: string[];
+  affectedGeometry: DrcAffectedGeometry[];
   /** `${rule}:${first item description}`; stable across runs, used for warning baselines. */
   signature: string;
 }
@@ -35,6 +54,9 @@ interface RawItem {
   description?: string;
   uuid?: string;
   pos?: { x: number; y: number };
+  net?: string;
+  layer?: string | number;
+  layers?: Array<string | number>;
 }
 interface RawViolation {
   type?: string;
@@ -55,18 +77,30 @@ function toSeverity(value: unknown): Severity {
   return value === "error" || value === "warning" || value === "exclusion" ? value : "error";
 }
 
+function unique<T>(items: T[]): T[] {
+  return [...new Set(items)];
+}
+
 export function normalizeViolation(raw: RawViolation): DrcViolation {
   const rule = raw.type ?? "unknown";
   const items = (raw.items ?? []).map((item) => ({
     description: item.description ?? "",
     ...(item.uuid ? { uuid: item.uuid } : {}),
     ...(item.pos ? { pos: { x: item.pos.x, y: item.pos.y } } : {}),
+    ...(item.net ? { net: item.net } : {}),
+    ...(item.layer !== undefined ? { layer: item.layer } : {}),
+    ...(item.layers ? { layers: item.layers } : {}),
   }));
   return {
     rule,
     severity: toSeverity(raw.severity),
     description: raw.description ?? "",
     items,
+    coordinates: items.flatMap((item) => (item.pos ? [item.pos] : [])),
+    layers: unique(items.flatMap((item) => [item.layer, ...(item.layers ?? [])]).filter((layer): layer is string | number => layer !== undefined)),
+    nets: unique(items.flatMap((item) => (item.net ? [item.net] : []))),
+    objectIds: unique(items.flatMap((item) => (item.uuid ? [item.uuid] : []))),
+    affectedGeometry: [],
     signature: `${rule}:${items[0]?.description ?? "NO_REFERENCE"}`,
   };
 }

@@ -19,17 +19,7 @@ export function toolsMarkdown(registry: ToolRegistry, opts: { serverName?: strin
   const lines: string[] = [];
   lines.push(`## fabdesk MCP tools (server \`${server}\`)`);
   lines.push("");
-  lines.push(
-    "Tools are namespaced `mcp__" +
-      server +
-      "__<name>` in Claude Code. Only the **core** toolset is loaded at start; call `load_toolset {toolset}` to enable the others (the tool list refreshes).",
-  );
-  lines.push("");
-  lines.push(
-    '`pcb_environment` describes the exact bundled KiCad CLI, FabPCB bridge, project files, UI availability, and supported working lanes. Use whichever combination of MCP tools, shell commands, bundled `kicad-cli`, direct-file scripts, and the app UI best fits the task. `circuit_build` is an optional convenience workflow.',
-  );
-  lines.push("");
-  lines.push('The verification tools write reports under `reports/`; render tools write UI-visible files under `renders/`; export tools write manufacturing artifacts under `exports/`. `render_board` creates PNG board images, while the SVG tools create schematic and PCB SVGs.');
+  lines.push(`Tools are namespaced \`mcp__${server}__<name>\`.`);
   lines.push("");
   for (const ts of TOOLSETS) {
     const tools = registry.byToolset(ts);

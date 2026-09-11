@@ -66,7 +66,7 @@ export class FpPcbSessions {
     });
     if (!board)
       throw new ToolError(
-        "no board is open for this project yet: run circuit_build first",
+        "no board is open for this project yet",
         "precondition",
       );
     return board;

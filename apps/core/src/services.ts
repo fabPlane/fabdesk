@@ -120,6 +120,7 @@ export async function createServices(
       gate: (drc, erc, allowed) =>
         kicad.gate(drc as kicad.DrcReport, erc as kicad.ErcReport | undefined, allowed),
       renderPng: (cli, o) => kicad.renderPng(cli, o),
+      rasterizeSvg: (svg, o) => kicad.rasterizeSvg(svg, o),
       exportGlb: (cli, o) => kicad.exportGlb(cli, o),
       boardStats: async (cli, o) =>
         (await kicad.boardStats(cli, o.board, o.scratchFile)) as unknown as Record<string, unknown>,

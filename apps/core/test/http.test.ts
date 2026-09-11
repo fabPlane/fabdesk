@@ -258,7 +258,9 @@ describe("http daemon", () => {
       FABDESK_FP_PCB_BRIDGE_URL: "http://127.0.0.1:4020",
     });
     // AGENTS.md / CLAUDE.md regenerated before the run.
-    expect(await Bun.file(join(created.path, "AGENTS.md")).text()).toContain("circuit_build");
+    const agentInstructions = await Bun.file(join(created.path, "AGENTS.md")).text();
+    expect(agentInstructions).toContain("Canonical KiCad PCB");
+    expect(agentInstructions).not.toMatch(/workflow|circuit_build|prefer|retry|repeat until|run .* first/i);
     expect((await Bun.file(join(created.path, "CLAUDE.md")).text()).trim()).toBe("@AGENTS.md");
 
     const msgs = (await (await api(`/threads/${thread.id}/messages`)).json()) as Array<{ role: string; contentMd: string; parts: Array<{ type: string }>; runId: string | null }>;

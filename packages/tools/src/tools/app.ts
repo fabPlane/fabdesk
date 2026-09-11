@@ -72,7 +72,7 @@ export const app_state = defineTool({
   scope: "global",
   title: "Desktop app state",
   description:
-    "Inspect the running fabPlane desktop app: version, windows (id, bounds, focus, url) and a snapshot of the renderer UI (active project and thread, board tab, open panels, Route Cinema run/cursor/view mode/perf, auth and core status). Call it first to learn what the app is showing before screenshotting or clicking. Fails with `unavailable` when no app bridge is running.",
+    "Return the running fabPlane desktop app version, windows, and renderer UI state. Fails with `unavailable` when no app bridge is running.",
   inputSchema: {},
   annotations: { readOnlyHint: true, idempotentHint: true },
   handler: async (_args, ctx) => {
@@ -87,7 +87,7 @@ export const app_screenshot = defineTool({
   scope: "global",
   title: "Screenshot the app window",
   description:
-    "Capture the fabPlane desktop window (or a region of it, CSS pixels) and return the image so you can see what the user sees. Defaults: scale 0.5, JPEG for full-window captures, PNG for regions. Use app_find to locate elements and app_click/app_type/app_key to interact, then screenshot again to verify.",
+    "Capture the fabPlane desktop window or a CSS-pixel region and return image content. Defaults are scale 0.5 and JPEG for full windows, PNG for regions.",
   inputSchema: {
     windowId: z.number().int().optional().describe("Window id from app_state; default focused/first window"),
     region: z
@@ -157,7 +157,7 @@ export const app_click = defineTool({
   scope: "global",
   title: "Click in the app",
   description:
-    "Click an element by CSS selector (use a `ref` from app_find) or at window coordinates (CSS px). Selector clicks scroll the element into view and send real mouse events at its centre so React handlers fire; clicking an <option> selects it in its <select>. Follow with app_screenshot or app_state to verify.",
+    "Click an element by CSS selector or at CSS-pixel window coordinates. Selector clicks scroll the element into view and send mouse events at its centre; clicking an <option> selects it in its <select>.",
   inputSchema: {
     selector: z.string().min(1).optional().describe("CSS selector / ref from app_find"),
     x: z.number().optional().describe("CSS px from the left edge of the page (when no selector)"),
@@ -187,7 +187,7 @@ export const app_type = defineTool({
   scope: "global",
   title: "Type text in the app",
   description:
-    "Type text with real key events into the focused element, or focus `selector` first (a ref from app_find, e.g. the chat textarea). Newlines are typed as Shift+Enter; send Enter with app_key. For the chat composer prefer app_send_message, which sets the text and sends through the UI.",
+    "Type text with key events into the focused element, or focus `selector` first. Newlines are typed as Shift+Enter.",
   inputSchema: {
     text: z.string().min(1).max(20_000),
     selector: z.string().min(1).optional().describe("Focus this element before typing"),
@@ -206,7 +206,7 @@ export const app_key = defineTool({
   scope: "global",
   title: "Press a key",
   description:
-    "Send one key press (down/up) to the app using Electron accelerator syntax: `Enter`, `Escape`, `Tab`, `CommandOrControl+K` (command palette), `CommandOrControl+,` (settings), `Shift+Enter`, `ArrowDown`. Use it for shortcuts and to submit or dismiss dialogs.",
+    "Send one key press to the app using Electron accelerator syntax, such as `Enter`, `Escape`, `Tab`, `CommandOrControl+K`, `Shift+Enter`, or `ArrowDown`.",
   inputSchema: {
     key: z.string().min(1).describe("Accelerator string, e.g. Enter, Escape, CommandOrControl+K"),
     windowId: z.number().int().optional(),
@@ -279,7 +279,7 @@ export const app_new_chat = defineTool({
   annotations: { idempotentHint: true },
   handler: async (_args, ctx) => {
     const result = await ui<Record<string, unknown>>(ctx, "newChat", []);
-    return ok("New chat opened; use app_send_message to send the first message.", { ui: result });
+    return ok("New chat opened.", { ui: result });
   },
 });
 
@@ -289,7 +289,7 @@ export const app_send_message = defineTool({
   scope: "global",
   title: "Send a chat message through the UI",
   description:
-    "Put text in the chat composer and send it exactly as a user would (creating the thread when the UI is on a new chat, starting the selected agent run). Optionally pick the agent first. Returns whether the composer accepted the send and the thread id afterwards; use app_state/app_screenshot to follow the run.",
+    "Put text in the chat composer and send it through the UI. Optionally selects an agent. Returns send status and the resulting thread id.",
   inputSchema: {
     text: z.string().min(1).max(50_000),
     agent: z.string().min(1).optional().describe("Agent id to select in the composer before sending (e.g. claude, codex)"),
@@ -312,7 +312,7 @@ export const app_cinema = defineTool({
   scope: "global",
   title: "Control Route Cinema",
   description:
-    "Drive the Route Cinema tab: view (mode = board to fit the whole board, activity to follow recent copper), seek (index = frame to show; leaves live-follow), live (follow the newest frame again), layer (layer = copper layer index to toggle visibility), load (run = id of a persisted route run to replay, e.g. from route_status). The cinema only has a run after route_run streamed one in this app session or after load. Opens the cinema tab first. Returns the cinema state.",
+    "Control Route Cinema view mode, frame position, live-follow state, visible copper layers, or loaded route run. Returns the cinema state.",
   inputSchema: {
     action: z.enum(["view", "seek", "live", "layer", "load"]),
     mode: z.enum(["board", "activity"]).optional().describe("For action=view"),
@@ -376,7 +376,7 @@ export const app_eval = defineTool({
   scope: "global",
   title: "Evaluate JavaScript in the app",
   description:
-    "Run arbitrary JavaScript in the renderer main world (dev/automation builds only) and return its JSON-serialisable result. `window.__fabdeskApp` exposes the automation API (state(), find(), selectProject(), ...). Prefer the specific app_* tools; use this for one-off inspection.",
+    "Run JavaScript in the renderer main world in dev or automation builds and return its JSON-serialisable result. `window.__fabdeskApp` exposes the automation API.",
   inputSchema: {
     code: z.string().min(1).max(64_000).describe("Expression or statements (use `return` in statement form); async allowed"),
     timeoutMs: z.number().int().min(100).max(10_000).default(10_000),

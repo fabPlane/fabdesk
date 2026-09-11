@@ -145,4 +145,4 @@ function json(status: number, body: unknown): Response {
 }
 
 export const INSTRUCTIONS =
-  "fabdesk provides a PCB project workspace around KiCad. pcb_environment reports the canonical UI filenames, exact bundled kicad-cli, FabPCB bridge, and desktop availability. MCP tools, the bundled KiCad CLI, shell commands, project-local scripts, direct file work, and the fabPlane UI may be used in any combination; circuit_build and native schematic tools are optional. MCP tools may operate on live KiCad state while CLI and file operations usually see persisted state. Only the core toolset is loaded by default; other groups are exposed through load_toolset.";
+  "fabdesk exposes optional PCB project tools. Project-scoped tools use the selected project unless a project argument is supplied.";

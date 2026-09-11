@@ -1,10 +1,11 @@
-/** Core toolset: always loaded. Covers the happy path sketch → netlist → board → route → DRC → render. */
-import { readdir } from "node:fs/promises";
+/** Core toolset: always loaded. */
+import { createHash } from "node:crypto";
+import { readFile, readdir, unlink } from "node:fs/promises";
 import { z } from "zod/v4";
 import type { FpPcbBoardSpec } from "@fabdesk/protocol";
 import { PROJECT_FILES, exists, mtimeMs, readJsonOrNull, writeJson } from "../fs";
 import { ToolError, ToolsetId, defineTool, TOOLSETS, type ProjectHandle } from "../registry";
-import type { BuildResult, DrcReport } from "../services";
+import type { BuildResult, DesignRow, DesignSelect, DrcReport, DrcViolation } from "../services";
 import { VIAGRID_9055, viagrid9055BoardSpec } from "../templates/viagrid-9055";
 import { fileUrl, loadNetlist, ok, p, requireKicad, table, writeReport } from "./common";
 import { runRoute, RouteRunArgs } from "./route";
@@ -15,7 +16,7 @@ export const load_toolset = defineTool({
   scope: "global",
   title: "Load a toolset",
   description:
-    "Enable an additional group of fabdesk tools for this session. Toolsets: project (read/write project files, sketches, board settings, adopt a KiCad board), circuit (native KiCad schematic edits, PCB edits, inspection, queries, and part search), route (routing status/cancel/unroute/scope), kicad (board stats), verify (ERC, release gate), render (schematic/PCB SVG, 3D GLB), export (gerbers, drill, pick-and-place, BOM, netlist, zip), sim (SPICE netlist and simulation), app (screenshot and drive the fabPlane desktop app window: find/click/type, switch project, tab, thread, send chat messages, control Route Cinema; needs the app running in dev or with FABDESK_AUTOMATION=1). Call this before using a tool from that group; pcb_environment and the other core tools are always available.",
+    "Enable an additional group of fabdesk tools for this session. Available toolsets are project, circuit, route, kicad, verify, render, export, sim, and app. Core tools are always available.",
   inputSchema: {
     toolset: ToolsetId.describe("Toolset to enable"),
   },
@@ -30,13 +31,13 @@ export const load_toolset = defineTool({
   },
 });
 
-/** Describe the workbench without prescribing which available lane the agent must use. */
+/** Describe the available workbench interfaces. */
 export const pcb_environment = defineTool({
   name: "pcb_environment",
   toolset: "core",
   title: "Inspect the PCB workbench",
   description:
-    "Return the current project paths, exact kicad-cli binary and version, FabPCB bridge status, desktop-UI availability, and supported MCP/CLI/UI/direct-file working lanes. circuit_build is a convenience workflow, not a required entry point.",
+    "Return current project paths, kicad-cli identity, FabPCB bridge status, desktop-UI availability, and available interfaces.",
   inputSchema: {},
   annotations: { readOnlyHint: true, idempotentHint: true },
   handler: async (_args, ctx) => {
@@ -53,25 +54,25 @@ export const pcb_environment = defineTool({
       source: p(project, PROJECT_FILES.netlistJson),
     };
     const present: Record<string, boolean> = Object.fromEntries(await Promise.all(Object.entries(files).map(async ([name, path]) => [name, await exists(path)])));
-    const lanes = {
-      mcp: "Structured live KiCad/FabPCB operations and Fabdesk convenience workflows.",
-      cli: "Use the exact kicad-cli path below for persisted-file ERC, DRC, render, and export operations.",
-      ui: "Use the app toolset for visual inspection or interaction when desktop automation is available.",
-      scripting: "Use scripts for file generation or analysis, report processing, geometry work, invoking kicad-cli, or other project-local tasks.",
+    const interfaces = {
+      mcp: "Structured KiCad, FabPCB, project, render, verification, and export operations.",
+      cli: "Bundled kicad-cli path and version.",
+      ui: "Desktop application automation status.",
+      files: "Project-local files are directly accessible.",
     };
     const json = {
       project: { id: project.id, name: project.name, dir: project.dir, files, present },
       kicadCli: cli ? { path: cli.path, version: cli.version } : null,
       bridge,
       desktopUi: app,
-      lanes,
+      interfaces,
       uiConventions: {
         canonicalFiles: files,
         renders: p(project, PROJECT_FILES.renders),
         reports: p(project, PROJECT_FILES.reports),
         exports: p(project, PROJECT_FILES.exports),
       },
-      stateNote: "MCP tools may operate on live KiCad state; CLI and direct-file operations usually see persisted files. Save or reload deliberately when switching views.",
+      stateVisibility: "MCP operations may address live KiCad state; CLI and direct-file operations address persisted files.",
     };
     return ok([
       `PCB workbench for ${project.name} at ${project.dir}`,
@@ -80,9 +81,9 @@ export const pcb_environment = defineTool({
       `Routers: capacity=${bridge.routers?.capacity?.ok ? "ready" : `unavailable${bridge.routers?.capacity?.reason ? ` — ${bridge.routers.capacity.reason}` : ""}`}; freerouting=${bridge.routers?.freerouting?.ok ? "ready" : `unavailable${bridge.routers?.freerouting?.reason ? ` — ${bridge.routers.freerouting.reason}` : ""}`}`,
       `Desktop UI automation: ${app.running ? "available" : `unavailable${app.reason ? ` — ${app.reason}` : ""}`}`,
       `Project files: ${Object.entries(files).map(([name, path]) => `${name}=${path}${present[name] ? "" : " (missing)"}`).join(", ")}`,
-      "Working lanes: MCP for live structured operations; bundled CLI for persisted files; UI for visual work; scripts for direct file/report work or other project-local tasks.",
+      "Available interfaces: MCP, bundled kicad-cli, desktop UI automation, and direct project files.",
       "Fabdesk UI directories: renders/, reports/, exports/.",
-      "MCP may expose live KiCad state while CLI and file operations see persisted state; save or reload deliberately when switching between them.",
+      "State visibility: MCP operations may address live KiCad state; CLI and file operations address persisted state.",
     ].join("\n"), json);
   },
 });
@@ -263,7 +264,7 @@ export const circuit_read_errors = defineTool({
   toolset: "core",
   title: "Read build errors",
   description:
-    "Return the errors and warnings of the last circuit_build (from reports/build.json). Use it to decide what to fix in circuit.netlist.json.",
+    "Return errors and warnings from reports/build.json.",
   inputSchema: {},
   annotations: { readOnlyHint: true, idempotentHint: true },
   handler: async (_args, ctx) => {
@@ -309,7 +310,7 @@ export const verify_drc = defineTool({
   toolset: "core",
   title: "Run KiCad DRC",
   description:
-    "Run KiCad design rule check on board.kicad_pcb. Writes reports/drc.json and returns error/warning/unconnected counts with the first violations. Requires kicad-cli and circuit_build.",
+    "Run KiCad design rule check on board.kicad_pcb. Writes reports/drc.json and returns revision-bound violations with rules, severities, coordinates, layers, nets, object IDs, and matched board geometry.",
   inputSchema: {
     severity: z
       .enum(["all", "error"])
@@ -318,7 +319,7 @@ export const verify_drc = defineTool({
     schematicParity: z
       .boolean()
       .default(true)
-      .describe("Check PCB↔schematic parity; release reports require this to remain enabled"),
+      .describe("Include PCB↔schematic parity checks"),
     limit: z
       .number()
       .int()
@@ -333,8 +334,8 @@ export const verify_drc = defineTool({
     const project = ctx.requireProject();
     const cli = await requireKicad(ctx);
     const board = p(project, PROJECT_FILES.boardPcb);
-    if (!(await exists(board)))
-      throw new ToolError("board.kicad_pcb not found: run circuit_build first", "precondition");
+    if (!(await exists(board))) throw new ToolError("board.kicad_pcb not found", "precondition");
+    const beforeRevision = await pcbFileRevision(board);
     ctx.progress(0.4, "running DRC");
     const outFile = p(project, PROJECT_FILES.reports, "drc.json");
     const report = await ctx.services.kicad.runDrc(cli, {
@@ -344,19 +345,30 @@ export const verify_drc = defineTool({
       schematicParity,
       signal: ctx.signal,
     });
-    const checkedReport: DrcReport = { ...report, schematicParityChecked: schematicParity };
+    const geometry = await queryDrcGeometry(ctx, project.dir);
+    const afterRevision = await pcbFileRevision(board);
+    if (beforeRevision.sha256 !== afterRevision.sha256) {
+      await unlink(outFile).catch(() => {});
+      throw new ToolError("board.kicad_pcb changed while DRC was running", "precondition");
+    }
+    const enriched = enrichDrcReport(report, geometry);
+    const checkedReport: DrcReport & { pcbRevision: typeof afterRevision } = {
+      ...enriched,
+      schematicParityChecked: schematicParity,
+      pcbRevision: afterRevision,
+    };
     await writeJson(outFile, checkedReport);
     ctx.progress(1, "done");
-    const c = report.counts;
+    const c = enriched.counts;
     const lines = [`DRC: ${c.errors} errors, ${c.warnings} warnings, ${c.unconnected} unconnected`];
     const show = (label: string, items: unknown[]) => {
       if (!items.length) return;
       lines.push(`${label} (${items.length}${items.length > limit ? `, showing ${limit}` : ""}):`);
       for (const v of items.slice(0, limit)) lines.push(`- ${describeViolation(v)}`);
     };
-    show("Violations", report.violations);
-    show("Unconnected", report.unconnected);
-    show("Schematic parity", report.schematicParity);
+    show("Violations", enriched.violations);
+    show("Unconnected", enriched.unconnected);
+    show("Schematic parity", enriched.schematicParity);
     // The full report can run to hundreds of KiB (KiCad repeats a library warning per footprint), which
     // exceeds what an agent may receive from one tool call; the JSON carries counts by rule and the first
     // `limit` of each list, the complete report stays in reports/drc.json.
@@ -372,17 +384,18 @@ export const verify_drc = defineTool({
       counts: c,
       reportPath: outFile,
       byRule: {
-        violations: byRule(report.violations),
-        unconnected: byRule(report.unconnected),
-        schematicParity: byRule(report.schematicParity),
+        violations: byRule(enriched.violations),
+        unconnected: byRule(enriched.unconnected),
+        schematicParity: byRule(enriched.schematicParity),
       },
-      violations: report.violations.slice(0, limit),
-      unconnected: report.unconnected.slice(0, limit),
-      schematicParity: report.schematicParity.slice(0, limit),
+      pcbRevision: afterRevision,
+      violations: enriched.violations.slice(0, limit),
+      unconnected: enriched.unconnected.slice(0, limit),
+      schematicParity: enriched.schematicParity.slice(0, limit),
       truncated:
-        report.violations.length > limit ||
-        report.unconnected.length > limit ||
-        report.schematicParity.length > limit,
+        enriched.violations.length > limit ||
+        enriched.unconnected.length > limit ||
+        enriched.schematicParity.length > limit,
     };
     if (json.truncated) lines.push(`Full report with every violation: ${outFile}`);
     return {
@@ -392,6 +405,111 @@ export const verify_drc = defineTool({
     };
   },
 });
+
+type PcbFileRevision = { sha256: string; bytes: number };
+type DrcGeometry = { objectType: DesignSelect; [key: string]: unknown };
+
+async function pcbFileRevision(path: string): Promise<PcbFileRevision> {
+  const data = await readFile(path);
+  return { sha256: createHash("sha256").update(data).digest("hex"), bytes: data.byteLength };
+}
+
+const DRC_GEOMETRY_SELECTS: DesignSelect[] = [
+  "pads",
+  "tracks",
+  "vias",
+  "zones",
+  "keepouts",
+  "board_geometry",
+  "texts",
+];
+
+async function queryDrcGeometry(ctx: Parameters<typeof requireKicad>[0], projectDir: string): Promise<DrcGeometry[]> {
+  const groups = await Promise.all(
+    DRC_GEOMETRY_SELECTS.map(async (objectType) =>
+      (await ctx.services.design.query(projectDir, objectType)).map((row) => ({ objectType, ...row })),
+    ),
+  );
+  return groups.flat();
+}
+
+function normalizedId(value: unknown): string {
+  return String(value ?? "").replace(/[{}]/g, "").toLowerCase();
+}
+
+function geometryCoordinates(row: DesignRow): Array<{ x: number; y: number }> {
+  const points: Array<{ x: number; y: number }> = [];
+  const add = (value: unknown) => {
+    if (typeof value === "string") {
+      const [x, y] = value.split(",").map(Number);
+      if (Number.isFinite(x) && Number.isFinite(y)) points.push({ x: x!, y: y! });
+      return;
+    }
+    if (!value || typeof value !== "object" || Array.isArray(value)) return;
+    const x = Number((value as Record<string, unknown>)["x"]);
+    const y = Number((value as Record<string, unknown>)["y"]);
+    if (Number.isFinite(x) && Number.isFinite(y)) points.push({ x, y });
+  };
+  const x = Number(row["x"]);
+  const y = Number(row["y"]);
+  if (Number.isFinite(x) && Number.isFinite(y)) points.push({ x, y });
+  for (const key of ["position", "start", "mid", "end"]) add(row[key]);
+  if (Array.isArray(row["points"])) for (const point of row["points"]) add(point);
+  return points;
+}
+
+function uniqueBy<T>(items: T[], key: (item: T) => string): T[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const value = key(item);
+    if (seen.has(value)) return false;
+    seen.add(value);
+    return true;
+  });
+}
+
+export function enrichDrcReport(report: DrcReport, geometry: DrcGeometry[]): DrcReport {
+  const byId = new Map<string, DrcGeometry[]>();
+  for (const row of geometry) {
+    const id = normalizedId(row["id"]);
+    if (!id) continue;
+    byId.set(id, [...(byId.get(id) ?? []), row]);
+  }
+  const enrich = (violation: DrcViolation): DrcViolation => {
+    const objectIds = uniqueBy(
+      [...violation.objectIds, ...violation.items.flatMap((item) => (item.uuid ? [item.uuid] : []))],
+      normalizedId,
+    );
+    const affectedGeometry = uniqueBy(
+      objectIds.flatMap((id) => byId.get(normalizedId(id)) ?? []),
+      (row) => `${row.objectType}:${normalizedId(row["id"])}`,
+    );
+    const coordinates = uniqueBy(
+      [...violation.coordinates, ...affectedGeometry.flatMap(geometryCoordinates)],
+      (point) => `${point.x},${point.y}`,
+    );
+    const layers = uniqueBy(
+      [
+        ...violation.layers,
+        ...affectedGeometry.flatMap((row) => [row["layer"], ...(Array.isArray(row["layers"]) ? row["layers"] : [])]),
+      ].filter((layer): layer is string | number => typeof layer === "string" || typeof layer === "number"),
+      String,
+    );
+    const nets = uniqueBy(
+      [...violation.nets, ...affectedGeometry.map((row) => row["net"])].filter(
+        (net): net is string => typeof net === "string" && net.length > 0,
+      ),
+      String,
+    );
+    return { ...violation, coordinates, layers, nets, objectIds, affectedGeometry };
+  };
+  return {
+    ...report,
+    violations: report.violations.map(enrich),
+    unconnected: report.unconnected.map(enrich),
+    schematicParity: report.schematicParity.map(enrich),
+  };
+}
 
 export function describeViolation(v: unknown): string {
   if (!v || typeof v !== "object") return String(v);
@@ -434,7 +552,7 @@ export const render_board = defineTool({
     const cli = await requireKicad(ctx);
     const board = p(project, PROJECT_FILES.boardPcb);
     if (!(await exists(board)))
-      throw new ToolError("board.kicad_pcb not found: run circuit_build first", "precondition");
+      throw new ToolError("board.kicad_pcb not found", "precondition");
     const output = p(project, PROJECT_FILES.renders, `${view}.png`);
     ctx.progress(0.3, "rendering");
     await ctx.services.kicad.renderPng(cli, {

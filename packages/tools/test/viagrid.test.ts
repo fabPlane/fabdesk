@@ -102,7 +102,7 @@ describe("Viagrid 9055 template", () => {
     const set = await call("project_set_board", { template: "viagrid-9055" });
     expect(set.isError ?? false).toBe(false);
     expect(project.manifest().board).toMatchObject({ layers: 2, widthMm: 90, heightMm: 55, template: "viagrid-9055", rules: { traceWidthMm: 0.2, clearanceMm: 0.2, viaDiameterMm: 1, viaDrillMm: 0.2 } });
-    expect(set.text).toContain("laser-prefab");
+    expect(set.text).toContain("factory-via-free areas");
 
     const verify = await call("verify_viagrid", {});
     expect(queried.sort()).toEqual(["pads", "vias"]);

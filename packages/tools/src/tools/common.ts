@@ -36,13 +36,13 @@ export async function requireKicad(ctx: ToolContext): Promise<KicadCli> {
 
 export async function requireBoard(project: ProjectHandle): Promise<string> {
   const board = p(project, PROJECT_FILES.boardPcb);
-  if (!(await exists(board))) throw new ToolError("board.kicad_pcb not found: run circuit_build first", "precondition");
+  if (!(await exists(board))) throw new ToolError("board.kicad_pcb not found", "precondition");
   return board;
 }
 
 export async function requireSchematic(project: ProjectHandle): Promise<string> {
   const sch = p(project, PROJECT_FILES.boardSch);
-  if (!(await exists(sch))) throw new ToolError("board.kicad_sch not found: run circuit_build first or import a KiCad project", "precondition");
+  if (!(await exists(sch))) throw new ToolError("board.kicad_sch not found", "precondition");
   return sch;
 }
 
