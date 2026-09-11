@@ -9,8 +9,8 @@ export interface AgentDocsContext {
   sketches: string[];
   board: { layers: number; widthMm?: number; heightMm?: number; template?: string };
   mcpServerName: string;
-  /** Experimental minimal interface: native files + packaged KiCad CLI, without Fabdesk MCP tools. */
-  interfaceMode?: "substrate";
+  /** Experimental interfaces without Fabdesk MCP tools. */
+  interfaceMode?: "substrate" | "programmable";
 }
 
 /** Design rules for prefab blanks, keyed by `fabdesk.json` `board.template`. */
@@ -54,11 +54,18 @@ export function renderAgentsMd(
   const interfaceNote =
     ctx.interfaceMode === "substrate"
       ? `This run exposes native project files and Fabdesk's packaged \`kicad-cli\` through \`fabpcb env\`. No Fabdesk MCP design tools are exposed. Other shell executables are host tools, not part of the packaged KiCad runtime. Available independent operations can be listed with \`fabpcb --help\` and \`fabpcb env describe\`.`
+      : ctx.interfaceMode === "programmable"
+        ? `This run exposes native project files, Fabdesk's packaged \`kicad-cli\` through \`fabpcb env\`, and a versioned direct KiCad IPC catalog through \`fabpcb ipc\`. No Fabdesk MCP design tools are exposed. These authoring paths are optional and may be mixed.`
       : `This directory is a fabPlane PCB project. Its MCP server is \`${mcp}\`.`;
+  const ipcNote =
+    ctx.interfaceMode === "programmable"
+      ? `\nA standalone direct KiCad IPC interface is available. Search its versioned operation catalog, inspect an operation schema, or call an exact operation:\n\n\`\`\`bash\nfabpcb ipc search --query <text>\nfabpcb ipc describe <operation-id>\nfabpcb ipc call <operation-id> --request '<json-object>'\n\`\`\`\n`
+      : "";
   return `${HEADER}
 # ${ctx.projectName} — fabPlane project
 
 ${interfaceNote}
+${ipcNote}
 
 ## Board constraints
 - Copper layers: ${ctx.board.layers}

@@ -17,6 +17,10 @@ export const FpPcbSession = z.object({
   state: z.string(),
   /** The project or board file the session's `kicad-cli api-server` opened; null for a bare server. */
   path: z.string().nullable().default(null),
+  /** Direct request socket advertised by the bridge; present on current bridge builds. */
+  socketPath: z.string().optional(),
+  /** KiCad instance token used to bind typed requests to this exact server process. */
+  kicadToken: z.string().nullable().optional(),
 });
 export type FpPcbSession = z.infer<typeof FpPcbSession>;
 

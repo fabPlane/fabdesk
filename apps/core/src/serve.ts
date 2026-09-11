@@ -224,8 +224,11 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   });
 
   const adapters = opts.adapters ?? (await loadAdapters());
+  const configuredInterface = process.env["FABDESK_AGENT_INTERFACE"];
   const agentInterface =
-    process.env["FABDESK_AGENT_INTERFACE"] === "substrate" ? "substrate" : undefined;
+    configuredInterface === "substrate" || configuredInterface === "programmable"
+      ? configuredInterface
+      : undefined;
   let mcpUrl = "";
   const runs = new AgentRunManager({
     store,
@@ -234,7 +237,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     get mcpUrl() {
       return mcpUrl;
     },
-    ...(agentInterface ? { mcpProfile: agentInterface } : {}),
+    ...(agentInterface ? { mcpProfile: "substrate" as const } : {}),
     adapters,
     settings: () => store.settings.get(),
     workspaceDir: join(config.home, "workspace"),
@@ -255,7 +258,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
             }
           : {}),
         ...(cli ? { KICAD_CLI: cli.path } : {}),
-        ...(agentInterface
+        ...(agentInterface === "substrate"
           ? { FABDESK_FP_PCB_BRIDGE_URL: "" }
           : design.url
             ? { FABDESK_FP_PCB_BRIDGE_URL: design.url }

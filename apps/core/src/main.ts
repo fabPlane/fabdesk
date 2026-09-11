@@ -25,6 +25,9 @@ Usage:
   fabpcb verify --project <dir>
   fabpcb render --project <dir> [--document schematic|pcb] [--request @render.json]
   fabpcb release --project <dir> --request @release.json
+  fabpcb ipc search [--query <text>] [--operation <name>] [--document-type <type>] [--object-type <type>] [--capability <name>] [--headless <status>] [--limit 20]
+  fabpcb ipc describe <operation> [--schema-depth 2]
+  fabpcb ipc call <operation> [--request <json> | --request-file <path>] [--project <dir>] [--bridge-url <url>] [--timeout-ms 30000] [--expected-document-revision <n>]
   fabdesk-core login | logout | whoami
   fabdesk-core login --email <email> --password <password>   # staging/local only
   fabdesk-core doctor [--json]
@@ -52,12 +55,17 @@ Environment:
 `;
 
 export function cliUsage(env: NodeJS.ProcessEnv = process.env): string {
-  if (env["FABDESK_AGENT_INTERFACE"] !== "substrate") return FULL_USAGE;
-  return FULL_USAGE.replace(/^  fabdesk-core mcp.*\n/m, "").replace(/^  fabpcb tool.*\n/m, "");
+  const mode = env["FABDESK_AGENT_INTERFACE"];
+  if (mode !== "substrate" && mode !== "programmable") return FULL_USAGE;
+  let usage = FULL_USAGE.replace(/^  fabdesk-core mcp.*\n/m, "").replace(/^  fabpcb tool.*\n/m, "");
+  if (mode === "substrate")
+    usage = usage.replace(/^  fabpcb ipc .*\n/gm, "");
+  return usage;
 }
 
-function substrateInterface(): boolean {
-  return process.env["FABDESK_AGENT_INTERFACE"] === "substrate";
+function constrainedAgentInterface(): "substrate" | "programmable" | null {
+  const mode = process.env["FABDESK_AGENT_INTERFACE"];
+  return mode === "substrate" || mode === "programmable" ? mode : null;
 }
 
 type Flags = { _: string[]; [k: string]: string | boolean | string[] };
@@ -153,8 +161,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       return 0;
     }
     case "mcp": {
-      if (substrateInterface()) {
-        process.stderr.write("fabdesk-core mcp is not exposed in the substrate interface\n");
+      if (constrainedAgentInterface()) {
+        process.stderr.write("fabdesk-core mcp is not exposed in this agent interface\n");
         return 2;
       }
       initSentry();
@@ -167,8 +175,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       return 0;
     }
     case "tool": {
-      if (substrateInterface()) {
-        process.stderr.write("fabpcb tool is not exposed in the substrate interface\n");
+      if (constrainedAgentInterface()) {
+        process.stderr.write("fabpcb tool is not exposed in this agent interface\n");
         return 2;
       }
       const { runToolCli } = await import("./tool-cli");
@@ -222,6 +230,76 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
         ...(renderDocument ? { document: renderDocument } : {}),
         ...(str(f, "url") ? { baseUrl: str(f, "url")! } : {}),
       });
+    }
+    case "ipc": {
+      if (constrainedAgentInterface() === "substrate") {
+        process.stderr.write("fabpcb ipc is not exposed in the substrate interface\n");
+        return 2;
+      }
+      const action = f._[1];
+      const { directIpcCall, directIpcDescribe, directIpcSearch } = await import("./ipc-cli");
+      let result: Record<string, unknown>;
+      if (action === "search") {
+        const headless = str(f, "headless");
+        if (headless && !["ok", "gui-only", "partial", "unregistered", "any"].includes(headless)) {
+          process.stderr.write(`ipc search: invalid --headless ${headless}\n`);
+          return 2;
+        }
+        result = directIpcSearch({
+          ...(str(f, "query") ? { query: str(f, "query")! } : {}),
+          ...(str(f, "operation") ? { operation: str(f, "operation")! } : {}),
+          ...(str(f, "document-type") ? { documentType: str(f, "document-type")! } : {}),
+          ...(str(f, "object-type") ? { objectType: str(f, "object-type")! } : {}),
+          ...(str(f, "capability") ? { capability: str(f, "capability")! } : {}),
+          ...(headless ? { headless: headless as "ok" | "gui-only" | "partial" | "unregistered" | "any" } : {}),
+          ...(num(f, "limit") !== undefined ? { limit: num(f, "limit")! } : {}),
+        });
+      } else if (action === "describe") {
+        const operation = f._[2];
+        if (!operation) {
+          process.stderr.write("ipc describe: operation is required\n");
+          return 2;
+        }
+        result = directIpcDescribe(operation, num(f, "schema-depth") ?? 2);
+      } else if (action === "call") {
+        const operation = f._[2];
+        if (!operation) {
+          process.stderr.write("ipc call: operation is required\n");
+          return 2;
+        }
+        const inline = str(f, "request");
+        const requestFile = str(f, "request-file");
+        if (inline && requestFile) {
+          process.stderr.write("ipc call: use only one of --request or --request-file\n");
+          return 2;
+        }
+        let request: unknown = {};
+        try {
+          request = JSON.parse(requestFile ? await Bun.file(requestFile).text() : inline ?? "{}");
+        } catch (error) {
+          process.stderr.write(`ipc call: request is not valid JSON: ${errMsg(error)}\n`);
+          return 2;
+        }
+        if (!request || typeof request !== "object" || Array.isArray(request)) {
+          process.stderr.write("ipc call: request must be a JSON object\n");
+          return 2;
+        }
+        result = await directIpcCall({
+          operation,
+          request: request as never,
+          ...(str(f, "project") ? { projectDir: str(f, "project")! } : {}),
+          ...(str(f, "bridge-url") ? { bridgeUrl: str(f, "bridge-url")! } : {}),
+          ...(num(f, "timeout-ms") !== undefined ? { timeoutMs: num(f, "timeout-ms")! } : {}),
+          ...(num(f, "expected-document-revision") !== undefined
+            ? { expectedDocumentRevision: num(f, "expected-document-revision")! }
+            : {}),
+        });
+      } else {
+        process.stderr.write("ipc: expected search, describe, or call\n");
+        return 2;
+      }
+      process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+      return result["ok"] === false ? 1 : 0;
     }
     case "login":
     case "logout":
