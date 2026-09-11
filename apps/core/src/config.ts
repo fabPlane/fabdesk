@@ -34,8 +34,12 @@ export function apiOrigin(): string {
 export const DEFAULT_FP_PCB_BRIDGE_URL = "http://127.0.0.1:4020";
 
 /** `FABDESK_FP_PCB_BRIDGE_URL` > the `fpPcbBridgeUrl` setting > the default; trailing slash dropped. */
-export function fpPcbBridgeUrl(settingUrl: string | null | undefined, env: NodeJS.ProcessEnv = process.env): string {
-  const v = env["FABDESK_FP_PCB_BRIDGE_URL"]?.trim() || settingUrl?.trim() || DEFAULT_FP_PCB_BRIDGE_URL;
+export function fpPcbBridgeUrl(
+  settingUrl: string | null | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const v =
+    env["FABDESK_FP_PCB_BRIDGE_URL"]?.trim() || settingUrl?.trim() || DEFAULT_FP_PCB_BRIDGE_URL;
   return v.replace(/\/+$/, "");
 }
 
@@ -63,9 +67,19 @@ export type CoreConfig = {
   authMode: AuthMode;
   apiOrigin: string;
   parentPid: number | null;
+  runtimeId: string | null;
 };
 
-export function resolveConfig(opts: { port?: number; host?: string; handshakeFile?: string; localAuth?: boolean; dataDir?: string; parentPid?: number } = {}): CoreConfig {
+export function resolveConfig(
+  opts: {
+    port?: number;
+    host?: string;
+    handshakeFile?: string;
+    localAuth?: boolean;
+    dataDir?: string;
+    parentPid?: number;
+  } = {},
+): CoreConfig {
   const home = opts.dataDir ?? fabdeskHome();
   const envMode = authModeFromEnv();
   const authMode: AuthMode = opts.localAuth ? "local" : (envMode ?? "fabplane");
@@ -82,5 +96,6 @@ export function resolveConfig(opts: { port?: number; host?: string; handshakeFil
     authMode,
     apiOrigin: apiOrigin(),
     parentPid: opts.parentPid ?? null,
+    runtimeId: process.env["FABDESK_RUNTIME_ID"]?.trim() || null,
   };
 }

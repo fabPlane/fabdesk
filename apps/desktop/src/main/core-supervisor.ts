@@ -26,6 +26,8 @@ const SHUTDOWN_GRACE_MS = 3_000;
 
 export interface SupervisorOptions {
   localAuth: boolean;
+  /** Opaque identity shared by this desktop and only its owned sidecars. */
+  runtimeId?: string | undefined;
   /** Override the daemon command (`FABDESK_CORE_BIN`). */
   binaryOverride?: string | undefined;
   /** Extra environment for the spawned daemon (e.g. the Sentry DSN/environment; see src/main/sentry.ts). */
@@ -40,19 +42,38 @@ export interface CoreCommand {
   cwd: string;
 }
 
-export function resolveCoreCommand(opts: { packaged: boolean; resourcesPath: string; appPath: string; override?: string | undefined }): CoreCommand {
+export function resolveCoreCommand(opts: {
+  packaged: boolean;
+  resourcesPath: string;
+  appPath: string;
+  override?: string | undefined;
+}): CoreCommand {
   if (opts.override) return { command: opts.override, args: [], cwd: process.cwd() };
   if (opts.packaged) {
-    const bin = join(opts.resourcesPath, "core", process.platform === "win32" ? "fabdesk-core.exe" : "fabdesk-core");
+    const bin = join(
+      opts.resourcesPath,
+      "core",
+      process.platform === "win32" ? "fabdesk-core.exe" : "fabdesk-core",
+    );
     return { command: bin, args: [], cwd: opts.resourcesPath };
   }
-  const candidates = [resolve(opts.appPath, "..", ".."), process.cwd(), resolve(process.cwd(), "..", "..")];
-  const root = candidates.find((c) => existsSync(join(c, "apps", "core", "src", "main.ts"))) ?? candidates[0]!;
+  const candidates = [
+    resolve(opts.appPath, "..", ".."),
+    process.cwd(),
+    resolve(process.cwd(), "..", ".."),
+  ];
+  const root =
+    candidates.find((c) => existsSync(join(c, "apps", "core", "src", "main.ts"))) ?? candidates[0]!;
   // Dev: Bun restarts the daemon on source changes (`FABDESK_CORE_RELOAD=watch`, default), swaps
   // modules in place (`hot`, experimental with Workers), or neither (`off`). See docs/dev-loop.md.
   const reload = process.env["FABDESK_CORE_RELOAD"] ?? "watch";
-  const flags = reload === "hot" ? ["--hot"] : reload === "off" ? [] : ["--watch", "--no-clear-screen"];
-  return { command: process.env["BUN_PATH"] ?? "bun", args: [...flags, "run", join(root, "apps", "core", "src", "main.ts")], cwd: root };
+  const flags =
+    reload === "hot" ? ["--hot"] : reload === "off" ? [] : ["--watch", "--no-clear-screen"];
+  return {
+    command: process.env["BUN_PATH"] ?? "bun",
+    args: [...flags, "run", join(root, "apps", "core", "src", "main.ts")],
+    cwd: root,
+  };
 }
 
 /** Dev daemons listen on a fixed port so MCP configs and the renderer survive a reload; 0 = random. */
@@ -64,7 +85,13 @@ export function parseReadyLine(line: string): ReadyLine | null {
   try {
     const v = JSON.parse(line) as Partial<ReadyLine>;
     if (v && v.ok === true && typeof v.port === "number" && typeof v.pid === "number") {
-      return { ok: true, port: v.port, pid: v.pid, version: typeof v.version === "string" ? v.version : "" };
+      return {
+        ok: true,
+        port: v.port,
+        pid: v.pid,
+        version: typeof v.version === "string" ? v.version : "",
+        ...(typeof v.runtimeId === "string" ? { runtimeId: v.runtimeId } : {}),
+      };
     }
   } catch {
     // not JSON
@@ -81,13 +108,21 @@ export function pidAlive(pid: number): boolean {
   }
 }
 
-async function healthOk(url: string, token: string, timeoutMs = 1500): Promise<boolean> {
+async function healthOk(
+  url: string,
+  token: string,
+  expectedRuntimeId?: string,
+  timeoutMs = 1500,
+): Promise<boolean> {
   try {
     const res = await fetch(`${url}/health`, {
       headers: { Authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(timeoutMs),
     });
-    return res.ok;
+    if (!res.ok) return false;
+    if (!expectedRuntimeId) return true;
+    const health = (await res.json()) as { runtimeId?: string | null; parentPid?: number | null };
+    return health.runtimeId === expectedRuntimeId && health.parentPid === process.pid;
   } catch {
     return false;
   }
@@ -121,7 +156,11 @@ export class CoreSupervisor extends EventEmitter {
   }
 
   info(): CoreInfo {
-    return { url: this.status.state === "ready" ? this.url : null, token: this.status.state === "ready" ? this.token : null, status: this.status };
+    return {
+      url: this.status.state === "ready" ? this.url : null,
+      token: this.status.state === "ready" ? this.token : null,
+      status: this.status,
+    };
   }
 
   setLocalAuth(enabled: boolean): void {
@@ -164,16 +203,28 @@ export class CoreSupervisor extends EventEmitter {
     } catch {
       return false;
     }
-    if (!hs || typeof hs.pid !== "number" || typeof hs.port !== "number" || typeof hs.token !== "string") return false;
+    if (
+      !hs ||
+      typeof hs.pid !== "number" ||
+      typeof hs.port !== "number" ||
+      typeof hs.token !== "string"
+    )
+      return false;
     if (!pidAlive(hs.pid)) return false;
     const url = `http://${hs.host ?? "127.0.0.1"}:${hs.port}`;
-    if (!(await healthOk(url, hs.token))) return false;
+    if (!(await healthOk(url, hs.token, this.opts.runtimeId))) return false;
     this.port = hs.port;
     this.token = hs.token;
     this.pid = hs.pid;
     this.attached = true;
     this.logLine(`attached to running daemon pid=${hs.pid} port=${hs.port}`);
-    this.setStatus({ state: "ready", port: hs.port, pid: hs.pid, attached: true, localAuth: hs.authMode === "local" });
+    this.setStatus({
+      state: "ready",
+      port: hs.port,
+      pid: hs.pid,
+      attached: true,
+      localAuth: hs.authMode === "local",
+    });
     this.watchAttached();
     return true;
   }
@@ -219,7 +270,11 @@ export class CoreSupervisor extends EventEmitter {
       String(process.pid),
       ...(this.opts.localAuth ? ["--local-auth"] : []),
     ];
-    this.setStatus({ state: this.status.state === "restarting" ? "restarting" : "starting", ...(this.status.attempt !== undefined ? { attempt: this.status.attempt } : {}), localAuth: this.opts.localAuth });
+    this.setStatus({
+      state: this.status.state === "restarting" ? "restarting" : "starting",
+      ...(this.status.attempt !== undefined ? { attempt: this.status.attempt } : {}),
+      localAuth: this.opts.localAuth,
+    });
     this.logLine(`spawn ${cmd.command} ${args.join(" ")}`);
     let child: ChildProcess;
     try {
@@ -234,7 +289,10 @@ export class CoreSupervisor extends EventEmitter {
         windowsHide: true,
       });
     } catch (e) {
-      this.setStatus({ state: "crashed", message: `failed to spawn core: ${e instanceof Error ? e.message : String(e)}` });
+      this.setStatus({
+        state: "crashed",
+        message: `failed to spawn core: ${e instanceof Error ? e.message : String(e)}`,
+      });
       return;
     }
     this.child = child;
@@ -246,7 +304,10 @@ export class CoreSupervisor extends EventEmitter {
       if (ready) return;
       this.logLine("ready timeout; killing core");
       child.kill();
-      this.setStatus({ state: "crashed", message: `core did not become ready within ${READY_TIMEOUT_MS / 1000} s` });
+      this.setStatus({
+        state: "crashed",
+        message: `core did not become ready within ${READY_TIMEOUT_MS / 1000} s`,
+      });
     }, READY_TIMEOUT_MS);
 
     if (child.stdout) {
@@ -254,6 +315,15 @@ export class CoreSupervisor extends EventEmitter {
         this.logLine(`[out] ${line}`);
         const rl = parseReadyLine(line);
         if (!rl) return;
+        if (this.opts.runtimeId && rl.runtimeId !== this.opts.runtimeId) {
+          clearTimeout(readyTimer);
+          child.kill();
+          this.setStatus({
+            state: "crashed",
+            message: `core runtime identity mismatch: got ${rl.runtimeId ?? "none"}, expected ${this.opts.runtimeId}`,
+          });
+          return;
+        }
         // A second ready line means `bun --watch` restarted the daemon in place (same token, same
         // port by default): re-announce so the renderer reconnects instead of treating it as a crash.
         const reloaded = ready;
@@ -262,7 +332,14 @@ export class CoreSupervisor extends EventEmitter {
         this.port = rl.port;
         this.pid = rl.pid || child.pid || null;
         this.restartTimes = this.restartTimes.filter((t) => Date.now() - t < 60_000);
-        this.setStatus({ state: "ready", port: rl.port, pid: this.pid ?? 0, attached: false, localAuth: this.opts.localAuth, ...(reloaded ? { message: "core reloaded" } : {}) });
+        this.setStatus({
+          state: "ready",
+          port: rl.port,
+          pid: this.pid ?? 0,
+          attached: false,
+          localAuth: this.opts.localAuth,
+          ...(reloaded ? { message: "core reloaded" } : {}),
+        });
       });
     }
     if (child.stderr) {
@@ -290,7 +367,10 @@ export class CoreSupervisor extends EventEmitter {
     const now = Date.now();
     this.restartTimes = this.restartTimes.filter((t) => now - t < 60_000);
     if (this.restartTimes.length >= MAX_RESTARTS_PER_MINUTE) {
-      this.setStatus({ state: "crashed", message: `${reason}; gave up after ${MAX_RESTARTS_PER_MINUTE} restarts in a minute` });
+      this.setStatus({
+        state: "crashed",
+        message: `${reason}; gave up after ${MAX_RESTARTS_PER_MINUTE} restarts in a minute`,
+      });
       return;
     }
     this.restartTimes.push(now);
