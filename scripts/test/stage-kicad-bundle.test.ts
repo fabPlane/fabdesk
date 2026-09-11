@@ -5,9 +5,24 @@ import { join } from "node:path";
 import {
   NIGHTLY_PLATFORM_BY_TARGET,
   nightlyAssetName,
+  nonEmptySetting,
   pickKicadReleaseAsset,
   type Target,
 } from "../stage-kicad-bundle";
+
+describe("nonEmptySetting", () => {
+  test("uses the fallback for unset, empty, and whitespace-only Actions variables", () => {
+    expect(nonEmptySetting(undefined, "TensorFleet/kicad")).toBe("TensorFleet/kicad");
+    expect(nonEmptySetting("", "TensorFleet/kicad")).toBe("TensorFleet/kicad");
+    expect(nonEmptySetting("   ", "TensorFleet/kicad")).toBe("TensorFleet/kicad");
+  });
+
+  test("trims an explicitly configured value", () => {
+    expect(nonEmptySetting(" TensorFleet/kicad-fork ", "TensorFleet/kicad")).toBe(
+      "TensorFleet/kicad-fork",
+    );
+  });
+});
 
 describe("nightlyAssetName", () => {
   test.each([
@@ -40,12 +55,20 @@ describe("pickKicadReleaseAsset", () => {
   });
 
   test("returns null when no matching archive exists", () => {
-    expect(pickKicadReleaseAsset([{ name: "manifest.json", browser_download_url: "x" }], "bun-linux-x64")).toBeNull();
+    expect(
+      pickKicadReleaseAsset(
+        [{ name: "manifest.json", browser_download_url: "x" }],
+        "bun-linux-x64",
+      ),
+    ).toBeNull();
   });
 
   test("does not pick arm64 when asking for x64", () => {
     expect(
-      pickKicadReleaseAsset([{ name: "kicad-cli-linux-arm64.tar.gz", browser_download_url: "x" }], "bun-linux-x64"),
+      pickKicadReleaseAsset(
+        [{ name: "kicad-cli-linux-arm64.tar.gz", browser_download_url: "x" }],
+        "bun-linux-x64",
+      ),
     ).toBeNull();
   });
 });
@@ -62,14 +85,18 @@ describe("stage-kicad-bundle --from", () => {
       chmodSync(join(src, "kicad-cli"), 0o755);
     }
 
-    const os = process.platform === "win32" ? "windows" : process.platform === "darwin" ? "darwin" : "linux";
+    const os =
+      process.platform === "win32" ? "windows" : process.platform === "darwin" ? "darwin" : "linux";
     const arch = process.arch === "arm64" ? "arm64" : "x64";
     const target = `bun-${os}-${arch}`;
-    const proc = Bun.spawn(["bun", "run", "scripts/stage-kicad-bundle.ts", "--from", src, "--target", target], {
-      cwd: join(import.meta.dir, "../.."),
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    const proc = Bun.spawn(
+      ["bun", "run", "scripts/stage-kicad-bundle.ts", "--from", src, "--target", target],
+      {
+        cwd: join(import.meta.dir, "../.."),
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
     const [stderr, code] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
     expect(code).toBe(0);
     expect(stderr).toContain("staged");
@@ -81,7 +108,10 @@ describe("stage-kicad-bundle --from", () => {
       process.platform === "win32" ? "bin/kicad-cli.exe" : "kicad-cli",
     );
     expect(readFileSync(stagedCli, "utf8").length).toBeGreaterThan(0);
-    rmSync(join(import.meta.dir, "../../apps/desktop/kicad-bundle", `${os}-${arch}`), { recursive: true, force: true });
+    rmSync(join(import.meta.dir, "../../apps/desktop/kicad-bundle", `${os}-${arch}`), {
+      recursive: true,
+      force: true,
+    });
     rmSync(src, { recursive: true, force: true });
   });
 });
