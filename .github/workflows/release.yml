@@ -124,8 +124,10 @@ jobs:
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Only forward overrides when set — an empty FABDESK_KICAD_REPO would wipe the
+          # TensorFleet/kicad default and 404 on https://github.com//releases/...
           FABDESK_KICAD_BUNDLE_URL: ${{ secrets.FABDESK_KICAD_BUNDLE_URL }}
-          FABDESK_KICAD_REPO: ${{ vars.FABDESK_KICAD_REPO }}
+          FABDESK_KICAD_REPO: ${{ vars.FABDESK_KICAD_REPO != '' && vars.FABDESK_KICAD_REPO || 'TensorFleet/kicad' }}
         run: bun run scripts/stage-kicad-bundle.ts --target ${{ matrix.target }} --require
 
       - name: Build renderer/main
