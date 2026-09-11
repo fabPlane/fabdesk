@@ -27,7 +27,7 @@ env:
 
 jobs:
   version:
-    runs-on: ubuntu-22.04
+    runs-on: blacksmith-4vcpu-ubuntu-2204
     outputs:
       version: ${{ steps.v.outputs.version }}
       tag: ${{ steps.v.outputs.tag }}
@@ -64,10 +64,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: macos-14, target: bun-darwin-arm64, eb: "--mac --arm64" }
-          - { os: macos-14, target: bun-darwin-x64, eb: "--mac --x64" }
-          - { os: ubuntu-22.04, target: bun-linux-x64, eb: "--linux" }
-          - { os: windows-latest, target: bun-windows-x64, eb: "--win" }
+          - { os: blacksmith-6vcpu-macos-15, target: bun-darwin-arm64, eb: "--mac --arm64" }
+          - { os: blacksmith-6vcpu-macos-15, target: bun-darwin-x64, eb: "--mac --x64" }
+          - { os: blacksmith-4vcpu-ubuntu-2204, target: bun-linux-x64, eb: "--linux" }
+          - { os: blacksmith-4vcpu-windows-2025, target: bun-windows-x64, eb: "--win" }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -79,6 +79,13 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.1
         with:
           ssh-private-key: ${{ secrets.FABDESK_SUBMODULE_SSH_KEY }}
+
+      - name: Trust GitHub SSH host key on Windows
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          mkdir -p ~/.ssh
+          echo 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' >> ~/.ssh/known_hosts
 
       - name: Init the fabplane and fab_pcb submodules
         run: git submodule update --init --depth 1 vendor/fabplane vendor/fab_pcb
@@ -190,7 +197,7 @@ jobs:
   release:
     needs: [version, build]
     if: github.ref == 'refs/heads/main' && (inputs.channel == '' || inputs.channel == 'public')
-    runs-on: ubuntu-22.04
+    runs-on: blacksmith-4vcpu-ubuntu-2204
     permissions:
       contents: write
     steps:
@@ -249,7 +256,7 @@ jobs:
   website:
     name: Hand off public release to fabplane.com
     needs: [version, release]
-    runs-on: ubuntu-22.04
+    runs-on: blacksmith-4vcpu-ubuntu-2204
     permissions: {}
     steps:
       - name: Trigger website installer and feed publishing
