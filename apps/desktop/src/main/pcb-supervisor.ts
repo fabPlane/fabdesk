@@ -1,6 +1,7 @@
 /** Starts the bundled FabPlane PCB bridge before core, and supplies core's bridge/KiCad env. */
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { sidecarEnvironment } from "./child-process-env";
@@ -25,6 +26,8 @@ export interface PcbBackendCommand {
   cwd: string;
   env: Record<string, string>;
   url: string;
+  /** An explicitly configured URL must not be silently replaced after a collision. */
+  fixedUrl: boolean;
 }
 
 /** Environment the core needs for CLI-based DRC/render/export, not only the bridge process. */
@@ -86,6 +89,7 @@ export function resolvePcbBackend(opts: {
     args: sourceRoot ? ["run", "--filter", "@fp-pcb/bridge", "start"] : [],
     cwd: sourceRoot ?? bundleRoot,
     url,
+    fixedUrl: Boolean(env["FABDESK_FP_PCB_BRIDGE_URL"]),
     env: {
       ...(manifest.environment ?? {}),
       ...(libraryPaths.length
@@ -109,7 +113,23 @@ export class PcbSupervisor {
 
   async start(): Promise<Record<string, string>> {
     if (!this.command) return {};
-    if (!(await healthy(this.command.url))) {
+    const expectedKicadCli = this.command.env.KICAD_CLI;
+    if (!expectedKicadCli) throw new Error("FabPlane PCB bridge command has no KICAD_CLI");
+    const existing = await health(this.command.url);
+    if (existing && existing.kicadCli !== expectedKicadCli) {
+      if (this.command.fixedUrl)
+        throw new Error(
+          `FabPlane PCB bridge at ${this.command.url} uses ${existing.kicadCli ?? "an unknown kicad-cli"}, expected ${expectedKicadCli}`,
+        );
+      const occupiedUrl = this.command.url;
+      const port = await availableLoopbackPort();
+      this.command.url = `http://127.0.0.1:${port}`;
+      this.command.env.PORT = String(port);
+      console.error(
+        `[pcb] bridge at ${occupiedUrl} belongs to another runtime (${existing.kicadCli ?? "unknown kicad-cli"}); starting bundled bridge at ${this.command.url}`,
+      );
+    }
+    if (!(await healthy(this.command.url, expectedKicadCli))) {
       this.child = spawn(this.command.command, this.command.args, {
         cwd: this.command.cwd,
         env: sidecarEnvironment(process.env, this.command.env),
@@ -117,7 +137,7 @@ export class PcbSupervisor {
         windowsHide: true,
       });
       const deadline = Date.now() + 60_000;
-      while (!(await healthy(this.command.url))) {
+      while (!(await healthy(this.command.url, expectedKicadCli))) {
         if (this.child.exitCode !== null)
           throw new Error(`FabPlane PCB bridge exited with code ${this.child.exitCode}`);
         if (Date.now() >= deadline)
@@ -143,13 +163,40 @@ export class PcbSupervisor {
   }
 }
 
-async function healthy(url: string): Promise<boolean> {
+interface BridgeHealth {
+  name?: string;
+  kicadCli?: string;
+}
+
+async function health(url: string): Promise<BridgeHealth | null> {
   try {
     const response = await fetch(`${url}/health`, { signal: AbortSignal.timeout(750) });
-    if (!response.ok) return false;
-    const body = (await response.json()) as { name?: string };
-    return body.name === "@fp-pcb/bridge";
+    if (!response.ok) return null;
+    const body = (await response.json()) as BridgeHealth;
+    return body.name === "@fp-pcb/bridge" ? body : null;
   } catch {
-    return false;
+    return null;
   }
+}
+
+async function healthy(url: string, expectedKicadCli: string): Promise<boolean> {
+  const body = await health(url);
+  return body?.kicadCli === expectedKicadCli;
+}
+
+async function availableLoopbackPort(): Promise<number> {
+  const server = createServer();
+  await new Promise<void>((resolveReady, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => resolveReady());
+  });
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    server.close();
+    throw new Error("could not allocate a loopback port for the FabPlane PCB bridge");
+  }
+  await new Promise<void>((resolveClosed, reject) =>
+    server.close((error) => (error ? reject(error) : resolveClosed())),
+  );
+  return address.port;
 }
