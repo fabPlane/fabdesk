@@ -44,16 +44,26 @@ export function bundledKicadCliCandidates(roots: string[] = bundledKicadRoots())
   for (const root of roots) {
     if (process.platform === "darwin") {
       out.push(
-        // Nightly TensorFleet/kicad archive layout (flattened `kicad-cli/` tree).
+        // Flattened nightly tree, or the archive's nested `kicad-cli/` directory.
         join(root, "kicad-cli"),
+        join(root, "kicad-cli", "kicad-cli"),
         join(root, "KiCad.app", "Contents", "MacOS", "kicad-cli"),
         join(root, "Contents", "MacOS", "kicad-cli"),
         join(root, "bin", "kicad-cli"),
       );
     } else if (process.platform === "win32") {
-      out.push(join(root, "bin", "kicad-cli.exe"), join(root, "kicad-cli.exe"));
+      out.push(
+        join(root, "bin", "kicad-cli.exe"),
+        join(root, "kicad-cli", "bin", "kicad-cli.exe"),
+        join(root, "kicad-cli.exe"),
+      );
     } else {
-      out.push(join(root, "kicad-cli"), join(root, "bin", "kicad-cli"));
+      out.push(
+        join(root, "kicad-cli"),
+        join(root, "kicad-cli", "kicad-cli"),
+        join(root, "bin", "kicad-cli"),
+        join(root, "kicad-cli", "bin", "kicad-cli"),
+      );
     }
   }
   return out;
