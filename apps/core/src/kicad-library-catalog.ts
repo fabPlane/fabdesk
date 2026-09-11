@@ -1,7 +1,12 @@
 /** Project-independent search and inspection for the KiCad libraries bundled with Fabdesk. */
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { FootprintHit, PartDescription } from "@fabdesk/tools";
+import type {
+  FootprintHit,
+  PartBounds,
+  PartDescription,
+  PartRoleSuitability,
+} from "@fabdesk/tools";
 
 type SExpr = string | SExpr[];
 type CatalogKind = "footprint" | "symbol";
@@ -25,24 +30,44 @@ export class KicadLibraryCatalog {
       .toLowerCase()
       .split(/[\s:_-]+/)
       .filter(Boolean);
-    return [...index.entries()]
+    const roleQuery = tokens.some((token) => ["power", "charging", "usb", "typec"].includes(token));
+    const seedTokens = tokens.filter(
+      (token) => !["power", "only", "charging", "role"].includes(token),
+    );
+    if (!seedTokens.length && roleQuery) seedTokens.push("usb");
+    const candidates = [...index.entries()]
       .map(([libId, path]) => {
         const haystack = libId.toLowerCase();
-        const matched = tokens.filter((token) => haystack.includes(token)).length;
+        const matched = seedTokens.filter((token) => haystack.includes(token)).length;
         const exact = haystack === query.toLowerCase() ? 100 : 0;
         const prefix = haystack.startsWith(query.toLowerCase()) ? 20 : 0;
         return { libId, path, score: exact + prefix + matched };
       })
       .filter((entry) => entry.score > 0)
       .sort((a, b) => b.score - a.score || a.libId.localeCompare(b.libId))
+      .slice(0, Math.max(50, limit * 10));
+    const enriched = await Promise.all(
+      candidates.map(async ({ libId, score }) => {
+        const part = await this.describe(kind, libId);
+        const metadata =
+          `${part?.description ?? ""} ${(part?.keywords ?? []).join(" ")}`.toLowerCase();
+        const metadataMatches = tokens.filter((token) => metadata.includes(token)).length;
+        const roleBoost =
+          roleQuery && part?.roleSuitability?.some((role) => role.suitable) ? 25 : 0;
+        return { libId, score: score + metadataMatches * 3 + roleBoost, part };
+      }),
+    );
+    return enriched
+      .sort((a, b) => b.score - a.score || a.libId.localeCompare(b.libId))
       .slice(0, limit)
-      .map(({ libId }) => {
+      .map(({ libId, part }) => {
         const [nickname, ...name] = libId.split(":");
         return {
           libId,
           nickname: nickname!,
           name: name.join(":"),
-          description: "Bundled KiCad library",
+          description: part?.description ?? "",
+          ...(part ? { part } : {}),
         };
       });
   }
@@ -118,20 +143,85 @@ function topLevelSymbolNames(text: string): string[] {
 function describeFootprint(libId: string, root: SExpr[]): PartDescription | null {
   const footprint = find(root, "footprint");
   if (!footprint) return null;
+  const description = atom(child(footprint, "descr"), 1) ?? "";
+  const keywords = (atom(child(footprint, "tags"), 1) ?? "").split(/\s+/).filter(Boolean);
+  const pads = children(footprint, "pad").map((pad) => {
+    const at = child(pad, "at");
+    const size = child(pad, "size");
+    return {
+      number: atom(pad, 1) ?? "",
+      type: atom(pad, 2) ?? "",
+      shape: atom(pad, 3) ?? "",
+      layers:
+        child(pad, "layers")
+          ?.slice(1)
+          .filter((value): value is string => typeof value === "string") ?? [],
+      position: { x: number(at, 1), y: number(at, 2) },
+      size: { x: number(size, 1), y: number(size, 2) },
+    };
+  });
+  const attr =
+    child(footprint, "attr")
+      ?.slice(1)
+      .filter((value): value is string => typeof value === "string") ?? [];
+  const padTypes = new Set(pads.map((pad) => pad.type));
+  const assemblyMethod = attr.includes("smd")
+    ? "smd"
+    : attr.includes("through_hole")
+      ? "through-hole"
+      : padTypes.has("smd") && [...padTypes].some((type) => type.includes("thru_hole"))
+        ? "mixed"
+        : "unspecified";
+  const bodyBounds = layerBounds(footprint, ["F.Fab", "B.Fab"]);
+  const courtyardBounds = layerBounds(footprint, ["F.CrtYd", "B.CrtYd"]);
+  const edgeText = children(footprint, "fp_text").find((entry) =>
+    /pcb\s*edge/i.test(`${atom(entry, 1) ?? ""} ${atom(entry, 2) ?? ""}`),
+  );
+  const edgeAt = child(edgeText, "at");
+  const models = children(footprint, "model")
+    .map((model) => atom(model, 1) ?? "")
+    .filter(Boolean);
+  const datasheet = firstUrl(description);
+  const excludedBom = attr.includes("exclude_from_bom");
+  const excludedPosition = attr.includes("exclude_from_pos_files");
   return {
     kind: "footprint",
     libId,
-    description: atom(child(footprint, "descr"), 1) ?? "",
+    description,
+    keywords,
+    ...(datasheet ? { datasheet } : {}),
+    roleSuitability: [
+      usbPowerRole(
+        libId,
+        description,
+        keywords,
+        pads.map((pad) => pad.number),
+      ),
+    ],
     anchor: { x: 0, y: 0 },
-    pads: children(footprint, "pad").map((pad) => {
-      const at = child(pad, "at");
-      const size = child(pad, "size");
-      return {
-        number: atom(pad, 1) ?? "",
-        position: { x: number(at, 1), y: number(at, 2) },
-        size: { x: number(size, 1), y: number(size, 2) },
-      };
-    }),
+    pads,
+    package: {
+      assemblyMethod,
+      ...(bodyBounds ? { bodyBounds } : {}),
+      ...(courtyardBounds ? { courtyardBounds } : {}),
+      ...(edgeAt
+        ? {
+            connectorEdgeDatum: {
+              axis: "y",
+              coordinate: number(edgeAt, 2),
+              label: atom(edgeText, 2) ?? "PCB Edge",
+            },
+          }
+        : {}),
+    },
+    fabrication: {
+      courtyard: courtyardBounds ? "available" : "missing",
+      fabOutline: bodyBounds ? "available" : "missing",
+      threeDModels: models.length ? "available" : "missing",
+      models,
+      includedInBom: !excludedBom,
+      includedInPositionFiles: !excludedPosition,
+    },
   };
 }
 
@@ -148,6 +238,8 @@ function describeSymbol(libId: string, root: SExpr[], name: string): PartDescrip
   const description = children(symbol, "property").find(
     (entry) => atom(entry, 1) === "Description",
   );
+  const datasheet = children(symbol, "property").find((entry) => atom(entry, 1) === "Datasheet");
+  const datasheetUrl = atom(datasheet, 2);
   const pins = descendants(symbol, "pin").map((pin) => {
     const at = child(pin, "at");
     const electrical = atom(pin, 1) ?? "unspecified";
@@ -163,8 +255,65 @@ function describeSymbol(libId: string, root: SExpr[], name: string): PartDescrip
     kind: "symbol",
     libId,
     description: atom(description, 2) ?? "",
+    ...(datasheetUrl ? { datasheet: datasheetUrl } : {}),
     pins: unique,
+    roleSuitability: [
+      usbPowerRole(
+        libId,
+        atom(description, 2) ?? "",
+        [],
+        unique.map((pin) => `${pin.number}:${pin.name}`),
+      ),
+    ],
   };
+}
+
+function firstUrl(value: string): string | undefined {
+  return /https?:\/\/[^\s,)]+/.exec(value)?.[0];
+}
+
+function usbPowerRole(
+  libId: string,
+  description: string,
+  keywords: string[],
+  pins: string[],
+): PartRoleSuitability {
+  const text = `${libId} ${description} ${keywords.join(" ")}`.toLowerCase();
+  const pinText = pins.join(" ").toLowerCase();
+  const usb = /usb|type[-_ ]?c/.test(text);
+  const powerOnly = /power[-_ ]?only|charging[-_ ]?only/.test(text);
+  const hasVbus = /vbus|[ab]9/.test(pinText);
+  const hasGround = /gnd|[ab]12/.test(pinText);
+  const hasCc = /cc[12]|[ab]5/.test(pinText);
+  const suitable =
+    usb && ((powerOnly && hasVbus && hasGround && hasCc) || (hasVbus && hasGround && hasCc));
+  const reasons = [
+    usb ? "identified as USB-C" : "not identified as USB-C",
+    hasVbus ? "VBUS pins/pads present" : "VBUS pins/pads not identified",
+    hasGround ? "ground pins/pads present" : "ground pins/pads not identified",
+    hasCc ? "CC1/CC2 pins/pads present" : "CC pins/pads not identified",
+    ...(powerOnly ? ["library metadata marks the package power-only"] : []),
+  ];
+  return { role: "power-only-usb-c", suitable, reasons };
+}
+
+function layerBounds(root: SExpr[], layers: string[]): PartBounds | undefined {
+  const points: Array<{ x: number; y: number }> = [];
+  for (const value of root) {
+    if (!Array.isArray(value) || typeof value[0] !== "string" || !value[0].startsWith("fp_"))
+      continue;
+    const layer = atom(child(value, "layer"), 1);
+    if (!layer || !layers.includes(layer)) continue;
+    for (const name of ["start", "end", "mid", "center", "xy"])
+      for (const point of descendants(value, name))
+        points.push({ x: number(point, 1), y: number(point, 2) });
+  }
+  if (!points.length) return undefined;
+  const xs = points.map((point) => point.x);
+  const ys = points.map((point) => point.y);
+  const min = { x: Math.min(...xs), y: Math.min(...ys) };
+  const max = { x: Math.max(...xs), y: Math.max(...ys) };
+  return { min, max, size: { x: max.x - min.x, y: max.y - min.y } };
 }
 
 function mergeSymbol(base: SExpr[] | undefined, derived: SExpr[]): SExpr[] {

@@ -30,6 +30,7 @@ import {
   type DesignStatus,
   type FootprintHit,
   type PartDescription,
+  type PartCompatibility,
   type RouteJobOptions,
   type RouteProgress,
   type RouteSummary,
@@ -490,6 +491,14 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
           electricalType: ElectricalPinType[pin.electricalType] ?? String(pin.electricalType),
           position: { x: mm(pin.position.x), y: mm(pin.position.y) },
         })),
+        fabrication: {
+          courtyard: "unsupported",
+          fabOutline: "unsupported",
+          threeDModels: "unsupported",
+          models: [],
+          includedInBom: "unsupported",
+          includedInPositionFiles: "unsupported",
+        },
       };
     }
     if (kind === "footprint" && item instanceof LibFootprint) {
@@ -506,9 +515,29 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
           },
           size: { x: mm(pad.size.x), y: mm(pad.size.y) },
         })),
+        package: { assemblyMethod: "unspecified" },
+        fabrication: {
+          courtyard: "unsupported",
+          fabOutline: "unsupported",
+          threeDModels: "unsupported",
+          models: [],
+          includedInBom: "unsupported",
+          includedInPositionFiles: "unsupported",
+        },
       };
     }
     throw new ToolError(`${libId} did not resolve as a ${kind}`, "invalid_args");
+  };
+  const checkPartCompatibility = async (
+    symbolLibId: string,
+    footprintLibId: string,
+    role?: "power-only-usb-c",
+  ): Promise<PartCompatibility> => {
+    const [symbol, footprint] = await Promise.all([
+      describePart("symbol", symbolLibId),
+      describePart("footprint", footprintLibId),
+    ]);
+    return evaluatePartCompatibility(symbol, footprint, role);
   };
 
   /** Any live KiCad for server-wide questions (libraries); a bare session when no project is open. */
@@ -539,8 +568,68 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     searchFootprints,
     searchSymbols,
     describePart,
+    checkPartCompatibility,
     status,
     release: (dir) => deps.sessions.release(dir),
+  };
+}
+
+/** Pure compatibility contract used before any placement or project mutation. */
+export function evaluatePartCompatibility(
+  symbol: PartDescription,
+  footprint: PartDescription,
+  role?: "power-only-usb-c",
+): PartCompatibility {
+  const pins = new Set(
+    (symbol.pins ?? [])
+      .filter((pin) => pin.electricalType !== "PT_NC")
+      .map((pin) => pin.number)
+      .filter(Boolean),
+  );
+  const pads = new Set((footprint.pads ?? []).map((pad) => pad.number).filter(Boolean));
+  const matched = [...pins].filter((number) => pads.has(number)).sort();
+  const missingPadsForPins = [...pins].filter((number) => !pads.has(number)).sort();
+  const padsWithoutPins = [...pads].filter((number) => !pins.has(number)).sort();
+  const electricalExtras = padsWithoutPins.filter(
+    (number) => !/^(sh|shield|mp|mh|mount|ep)$/i.test(number),
+  );
+  const issues = missingPadsForPins.map((number) => `symbol pin ${number} has no footprint pad`);
+  const warnings = [
+    ...electricalExtras.map((number) => `footprint pad ${number} has no symbol pin`),
+    ...padsWithoutPins
+      .filter((number) => !electricalExtras.includes(number))
+      .map((number) => `mechanical/shield pad ${number} has no symbol pin`),
+  ];
+  let roleResult: PartCompatibility["role"];
+  if (role) {
+    const symbolRole = symbol.roleSuitability?.find((entry) => entry.role === role);
+    const footprintRole = footprint.roleSuitability?.find((entry) => entry.role === role);
+    const suitable = Boolean(symbolRole?.suitable && footprintRole?.suitable);
+    roleResult = {
+      role,
+      suitable,
+      reasons: [
+        ...(symbolRole?.reasons ?? ["symbol role metadata unavailable"]),
+        ...(footprintRole?.reasons ?? ["footprint role metadata unavailable"]),
+      ],
+    };
+    if (!suitable) issues.push(`${role} suitability could not be established for both parts`);
+  }
+  return {
+    symbolLibId: symbol.libId,
+    footprintLibId: footprint.libId,
+    symbol,
+    footprint,
+    compatible: issues.length === 0,
+    pinPad: {
+      compatible: missingPadsForPins.length === 0,
+      matched,
+      missingPadsForPins,
+      padsWithoutPins,
+    },
+    ...(roleResult ? { role: roleResult } : {}),
+    issues,
+    warnings,
   };
 }
 
