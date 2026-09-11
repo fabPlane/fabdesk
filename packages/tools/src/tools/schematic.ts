@@ -48,7 +48,7 @@ export const schematic_edit = defineTool({
   toolset: "circuit",
   title: "Edit native schematic",
   description:
-    "Apply one undoable edit batch directly to board.kicad_sch. Supports rotated/mirrored library symbols, moving existing symbols, direct Manhattan connections, local/global labels, junctions, no-connect markers, notes and deletion by inspected ID. Connections use local labels by default; reserve global labels for genuine cross-sheet/global signals. Creates native KiCad files on first edit. Coordinates are mm on KiCad's 1.27 mm schematic grid.",
+    "Apply one undoable edit batch directly to board.kicad_sch. Supports rotated or mirrored library symbols, symbol movement, Manhattan connections, local and global labels, junctions, no-connect markers, notes, and deletion by inspected ID. The connection-label default is local. Creates native KiCad files when absent. Coordinates are millimetres on KiCad's 1.27 mm schematic grid.",
   inputSchema: {
     symbols: z
       .array(

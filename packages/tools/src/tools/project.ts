@@ -14,7 +14,7 @@ export const project_read_file = defineTool({
   toolset: "project",
   title: "Read a project file",
   description:
-    "Read a text file inside the project directory (e.g. circuit.netlist.json, reports/drc.json, fabdesk.json). Paths are relative to the project and may not leave it. Binary files are reported by size only; use project_list_sketches for images.",
+    "Read a text file inside the project directory. Paths are relative to the project and may not leave it. Binary files are reported by size only; project_list_sketches returns image content.",
   inputSchema: {
     path: z.string().min(1).describe("Relative path, e.g. circuit.netlist.json"),
     maxChars: z.number().int().min(100).max(200_000).default(50_000),
@@ -136,7 +136,7 @@ export const project_import_kicad = defineTool({
   toolset: "project",
   title: "Adopt a KiCad board",
   description:
-    "Copy an existing .kicad_pcb (and its .kicad_pro / .kicad_sch when they sit next to it) into the project as board.kicad_pcb, board.kicad_pro and board.kicad_sch, so route_run, verify_drc, render and export tools work on it. The board becomes the design; a later circuit_build updates it from circuit.netlist.json (footprints the netlist does not name are removed). Sets fabdesk.json board.layers from the board when kicad-cli is available.",
+    "Copy an existing .kicad_pcb and adjacent .kicad_pro/.kicad_sch files into the canonical project paths. The imported board becomes the project design. Also records its copper-layer count when kicad-cli is available.",
   inputSchema: {
     path: z.string().min(1).describe("Absolute path to the .kicad_pcb, or a path relative to the project"),
   },

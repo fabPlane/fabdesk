@@ -287,7 +287,7 @@ export const route_run = defineTool({
   toolset: "core",
   title: "Autoroute the board",
   description:
-    "Autoroute the canonical board on the design server (capacity: the built-in JS router; freerouting: internal builds only). Streams progress frames to the app, persists them under .fabdesk/runs/<runId>/frames.jsonl, applies tracks to the live board as one undo entry, saves it, and returns open connections plus track/via counts. The board may come from circuit_build, project_import_kicad, native KiCad work, or another method. Use onlyConnections to limit a run to named nets.",
+    "Autoroute the canonical board on the design server (capacity: built-in JS router; freerouting: internal builds only). Streams progress frames, persists them under .fabdesk/runs/<runId>/frames.jsonl, applies tracks as one undo entry, saves, and returns open connections and track/via counts. onlyConnections limits the run to named nets.",
   inputSchema: RouteRunArgs,
   annotations: { idempotentHint: true },
   longRunning: true,

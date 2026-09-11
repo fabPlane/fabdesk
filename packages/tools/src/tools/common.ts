@@ -17,7 +17,7 @@ export function fileUrl(path: string): string {
 export async function loadNetlist(project: ProjectHandle): Promise<NetlistFile> {
   const path = p(project, PROJECT_FILES.netlistJson);
   const raw = await readJsonOrNull<unknown>(path);
-  if (raw === null) throw new ToolError(`${PROJECT_FILES.netlistJson} not found: write the netlist first (project_write_file)`, "precondition");
+  if (raw === null) throw new ToolError(`${PROJECT_FILES.netlistJson} not found`, "precondition");
   const parsed = NetlistFile.safeParse(raw);
   if (!parsed.success) throw new ToolError(`${PROJECT_FILES.netlistJson} is not a valid netlist: ${parsed.error.issues.map((i) => `${i.path.join("/")}: ${i.message}`).join("; ")}`, "precondition");
   return parsed.data;
