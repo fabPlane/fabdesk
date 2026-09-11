@@ -1,5 +1,6 @@
 import { app, BrowserWindow, nativeTheme, shell } from "electron";
 import { join } from "node:path";
+import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import type { CoreInfo } from "../shared/core-info";
 import { CoreSupervisor } from "./core-supervisor";
@@ -8,7 +9,15 @@ import { registerIpc } from "./ipc";
 import { installAppMenu } from "./app-menu";
 import { automationEnabled, startAppAutomation, type AppAutomation } from "./automation";
 import { localAuthEnabled } from "./local-mode";
-import { coreSentryEnv, flushSentry, initSentry, runSentryTest, sentryActive, sentryTestRequested, syncErrorReportingFromCore } from "./sentry";
+import {
+  coreSentryEnv,
+  flushSentry,
+  initSentry,
+  runSentryTest,
+  sentryActive,
+  sentryTestRequested,
+  syncErrorReportingFromCore,
+} from "./sentry";
 import { registerUpdateIpc, UpdateChecker } from "./updates";
 import { registerUpdateDownloadIpc, UpdateDownloader } from "./update-download";
 import { migrateLegacyUserData } from "./user-data";
@@ -17,8 +26,17 @@ import { resolveWindowTheme, titleBarOverlayFor } from "./window-theme";
 
 // Name / userData / AUMID / WM_CLASS / FABDESK_HOME before any path read or the single-instance lock
 // (Electron keys the lock on userData). Packaged production identity is left untouched.
-const identity = applyDesktopIdentity(app, { packaged: app.isPackaged, env: process.env, platform: process.platform });
-console.error(`[main] identity=${identity.productName} userData=${app.getPath("userData")}${process.env["FABDESK_HOME"] ? ` home=${process.env["FABDESK_HOME"]}` : ""}`);
+const identity = applyDesktopIdentity(app, {
+  packaged: app.isPackaged,
+  env: process.env,
+  platform: process.platform,
+});
+const runtimeId = process.env["FABDESK_RUNTIME_ID"]?.trim() || randomUUID();
+process.env["FABDESK_RUNTIME_ID"] = runtimeId;
+process.env["FABDESK_DESKTOP_PID"] = String(process.pid);
+console.error(
+  `[main] identity=${identity.productName} userData=${app.getPath("userData")}${process.env["FABDESK_HOME"] ? ` home=${process.env["FABDESK_HOME"]}` : ""}`,
+);
 
 // Error reporting (off without a DSN or when the user opted out); must run before `ready` (docs/sentry.md).
 initSentry();
@@ -59,7 +77,12 @@ function createWindow(): BrowserWindow {
     ...(icon ? { icon } : {}),
     // macOS: traffic lights inset into the top bar. Windows: no native title bar; the top bar is the
     // title bar and the controls overlay draws minimize/maximize/close over its right end (Claude-style).
-    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : process.platform === "win32" ? "hidden" : "default",
+    titleBarStyle:
+      process.platform === "darwin"
+        ? "hiddenInset"
+        : process.platform === "win32"
+          ? "hidden"
+          : "default",
     ...(process.platform === "win32" ? { titleBarOverlay: titleBarOverlayFor(theme.themeId) } : {}),
     // Windows/Linux: no in-window menu bar; the top bar's menu button pops the same menu (app-menu.ts).
     autoHideMenuBar: process.platform !== "darwin",
@@ -98,7 +121,8 @@ function createWindow(): BrowserWindow {
     return { action: "deny" };
   });
   win.webContents.on("will-navigate", (e, url) => {
-    if (!url.startsWith("file://") && !url.startsWith(process.env["ELECTRON_RENDERER_URL"] ?? "\0")) e.preventDefault();
+    if (!url.startsWith("file://") && !url.startsWith(process.env["ELECTRON_RENDERER_URL"] ?? "\0"))
+      e.preventDefault();
   });
   const devUrl = process.env["ELECTRON_RENDERER_URL"];
   if (!app.isPackaged && devUrl) void win.loadURL(devUrl);
@@ -124,13 +148,20 @@ if (!app.requestSingleInstanceLock()) {
     if (process.platform === "darwin" && icon) app.dock?.setIcon(icon);
     void runSentryTest();
     const home = process.env["FABDESK_HOME"];
-    pcbSupervisor = new PcbSupervisor(resolvePcbBackend({ packaged: app.isPackaged, resourcesPath: process.resourcesPath }));
-    const pcbEnv = await pcbSupervisor.start().catch((error: unknown) => {
-      console.error(`[pcb] ${error instanceof Error ? error.message : String(error)}`);
-      return {};
-    });
+    pcbSupervisor = new PcbSupervisor(
+      resolvePcbBackend({ packaged: app.isPackaged, resourcesPath: process.resourcesPath }),
+    );
+    let pcbEnv: Record<string, string>;
+    try {
+      pcbEnv = await pcbSupervisor.start();
+    } catch (error) {
+      console.error(`[pcb] fatal: ${error instanceof Error ? error.message : String(error)}`);
+      app.exit(1);
+      return;
+    }
     supervisor = new CoreSupervisor({
       localAuth: localAuthEnabled(identity.devProfile),
+      runtimeId,
       binaryOverride: process.env["FABDESK_CORE_BIN"],
       extraEnv: { ...coreSentryEnv(), ...pcbEnv, ...(home ? { FABDESK_HOME: home } : {}) },
       ...(identity.devProfile ? { devProfile: true } : {}),
@@ -139,7 +170,11 @@ if (!app.requestSingleInstanceLock()) {
     registerIpc(supervisor);
     // Dev / FABDESK_AUTOMATION=1: loopback bridge for the core's `app` MCP toolset (docs/app-automation.md).
     const sup = supervisor;
-    automation = await startAppAutomation({ token: () => sup.currentToken, version: app.getVersion(), log: (line) => console.error(`[automation] ${line}`) });
+    automation = await startAppAutomation({
+      token: () => sup.currentToken,
+      version: app.getVersion(),
+      log: (line) => console.error(`[automation] ${line}`),
+    });
     // The core's persisted `errorReporting` setting is the source of truth for the opt-out.
     supervisor.on("status", (info: CoreInfo) => {
       if (info.status.state === "ready") void syncErrorReportingFromCore(info);

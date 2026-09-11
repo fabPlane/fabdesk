@@ -172,7 +172,13 @@ describe("bundled PCB backend", () => {
       `const server = Bun.serve({
   port: Number(process.env.PORT),
   hostname: "127.0.0.1",
-  fetch: () => Response.json({ name: "@fp-pcb/bridge", kicadCli: process.env.KICAD_CLI }),
+  fetch: () => Response.json({
+    name: "@fp-pcb/bridge",
+    runtimeId: process.env.FABDESK_RUNTIME_ID,
+    ownerPid: Number(process.env.FABDESK_DESKTOP_PID),
+    kicadCli: process.env.KICAD_CLI,
+    workspaceRoot: process.env.WORKSPACE_ROOT,
+  }),
 });
 process.on("SIGTERM", () => { server.stop(true); process.exit(0); });
 `,
@@ -194,6 +200,9 @@ process.on("SIGTERM", () => { server.stop(true); process.exit(0); });
         KICAD_STOCK_DATA_HOME: "/bundled/share/kicad",
         KICAD_FOOTPRINT_DIR: "/bundled/footprints",
         KICAD_SYMBOL_DIR: "/bundled/symbols",
+        FABDESK_RUNTIME_ID: "runtime-123456789",
+        FABDESK_DESKTOP_PID: String(process.pid),
+        WORKSPACE_ROOT: root,
       },
     });
     try {
@@ -204,6 +213,45 @@ process.on("SIGTERM", () => { server.stop(true); process.exit(0); });
         name: "@fp-pcb/bridge",
         kicadCli: "/bundled/kicad-cli",
       });
+    } finally {
+      await supervisor.stop();
+      stale.stop(true);
+    }
+  });
+
+  test("rejects an explicit bridge override with a clear identity mismatch", async () => {
+    const stale = Bun.serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      fetch: () =>
+        Response.json({
+          name: "@fp-pcb/bridge",
+          runtimeId: "another-runtime",
+          ownerPid: 1,
+          kicadCli: "/bundled/kicad-cli",
+          workspaceRoot: "/boards",
+        }),
+    });
+    const supervisor = new PcbSupervisor({
+      command: process.execPath,
+      args: [],
+      cwd: "/tmp",
+      url: `http://127.0.0.1:${stale.port}`,
+      fixedUrl: true,
+      env: {
+        KICAD_CLI: "/bundled/kicad-cli",
+        KICAD_STOCK_DATA_HOME: "/bundled/share/kicad",
+        KICAD_FOOTPRINT_DIR: "/bundled/footprints",
+        KICAD_SYMBOL_DIR: "/bundled/symbols",
+        FABDESK_RUNTIME_ID: "runtime-123456789",
+        FABDESK_DESKTOP_PID: String(process.pid),
+        WORKSPACE_ROOT: "/boards",
+      },
+    });
+    try {
+      await expect(supervisor.start()).rejects.toThrow(
+        /identity mismatch at explicit URL.*another-runtime.*runtime-123456789/,
+      );
     } finally {
       await supervisor.stop();
       stale.stop(true);

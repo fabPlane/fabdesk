@@ -29,11 +29,13 @@ beforeAll(async () => {
   process.env["FABDESK_PROJECTS_DIR"] = join(home, "Fabdesk");
   process.env["FABDESK_TOKEN"] = "test-token-0123456789abcdef";
   process.env["FABDESK_CHANNEL"] = "internal";
+  process.env["FABDESK_RUNTIME_ID"] = "runtime-123456789";
   daemon = await serve({
     port: 0,
     dataDir: home,
     handshakeFile: join(home, "daemon.json"),
     localAuth: true,
+    parentPid: process.pid,
     quiet: true,
     watchProjects: false,
     services: async ({ projects, bus, store }) => {
@@ -64,7 +66,13 @@ describe("http daemon", () => {
   test("health open, auth required, foreign origin rejected, handshake written", async () => {
     const health = await fetch(`${daemon.url}/health`);
     expect(health.status).toBe(200);
-    expect(((await health.json()) as { ok: boolean }).ok).toBe(true);
+    expect(await health.json()).toMatchObject({
+      ok: true,
+      runtimeId: "runtime-123456789",
+      parentPid: process.pid,
+      projectsDir: join(home, "Fabdesk"),
+      mcpSessions: 0,
+    });
     expect((await fetch(`${daemon.url}/projects`)).status).toBe(401);
     expect((await fetch(`${daemon.url}/projects`, { headers: { authorization: "Bearer wrong" } })).status).toBe(401);
     expect((await fetch(`${daemon.url}/projects`, { headers: { ...H(), origin: "https://evil.example" } })).status).toBe(403);
@@ -72,11 +80,18 @@ describe("http daemon", () => {
     expect((await fetch(`${daemon.url}/projects`, { headers: { ...H(), origin: "http://localhost:5173" } })).status).toBe(200);
     expect((await fetch(`${daemon.url}/projects`, { headers: { ...H(), origin: "app://fabdesk" } })).status).toBe(200);
     expect((await fetch(`${daemon.url}/projects`, { headers: { ...H(), origin: "null" } })).status).toBe(200);
-    const hs = JSON.parse(await Bun.file(join(home, "daemon.json")).text()) as { port: number; token: string; pid: number; authMode: string };
+    const hs = JSON.parse(await Bun.file(join(home, "daemon.json")).text()) as {
+      port: number;
+      token: string;
+      pid: number;
+      authMode: string;
+      runtimeId: string;
+    };
     expect(hs.port).toBe(daemon.port);
     expect(hs.token).toBe(daemon.token);
     expect(hs.pid).toBe(process.pid);
     expect(hs.authMode).toBe("local");
+    expect(hs.runtimeId).toBe("runtime-123456789");
     const me = (await (await api("/v1/auth/me")).json()) as { mode: string; principal: { subject: string } };
     expect(me.mode).toBe("local");
     expect(me.principal.subject).toBe("local:dev");

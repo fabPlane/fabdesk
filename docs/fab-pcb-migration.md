@@ -6,6 +6,16 @@ job are fab_pcb PRs #2/#3.** Pinned to `fab_pcb` `757de90` (KiCad fork `280274cc
 
 ## 0. The headline
 
+### Packaged runtime identity
+
+The desktop assigns every launch an opaque `FABDESK_RUNTIME_ID` and owns both core and bridge
+processes with `FABDESK_DESKTOP_PID`. Before reusing a bridge, it validates the health response's
+runtime ID, owner PID, resolved `kicadCli`, workspace root, and configured JavaScript-router module.
+If the default port belongs to another runtime, the bundled bridge starts on a fresh loopback port;
+an explicit `FABDESK_FP_PCB_BRIDGE_URL` fails with an identity-mismatch error instead. Core health,
+its daemon handshake, and the embedded MCP server carry the same launch identity. Project roots are
+passed unchanged to core and bridge, and each supervisor stops only the child process it spawned.
+
 `TensorFleet/fab_pcb` is **FabPlane PCB**: a headless KiCad stack on the KiCad IPC API
 (`kicad-cli api-server` from a KiCad fork, protobuf over nng), packages
 `@fp-pcb/{proto,client,bridge,renderer,router}`. It is not a tscircuit fork and it has no

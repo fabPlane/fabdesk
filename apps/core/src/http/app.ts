@@ -18,7 +18,16 @@ import {
   type Me,
 } from "@fabdesk/protocol";
 import { z } from "zod/v4";
-import { PROJECT_FILES, ToolError, jailPath, toolRoutes, writeAtomic, type ContextFactory, type CoreServices, type ToolRegistry } from "@fabdesk/tools";
+import {
+  PROJECT_FILES,
+  ToolError,
+  jailPath,
+  toolRoutes,
+  writeAtomic,
+  type ContextFactory,
+  type CoreServices,
+  type ToolRegistry,
+} from "@fabdesk/tools";
 import { extractToken, originAllowed, type TokenSet } from "../auth";
 import type { AuthFacade } from "../auth-facade";
 import type { EventBus } from "../bus";
@@ -81,10 +90,20 @@ export function createApp(deps: AppDeps): Hono<Env> {
 
   app.onError((err, c) => {
     if (err instanceof ToolError) {
-      const status = err.code === "invalid_args" ? 400 : err.code === "not_found" ? 404 : err.code === "precondition" ? 412 : err.code === "unavailable" ? 503 : 500;
+      const status =
+        err.code === "invalid_args"
+          ? 400
+          : err.code === "not_found"
+            ? 404
+            : err.code === "precondition"
+              ? 412
+              : err.code === "unavailable"
+                ? 503
+                : 500;
       return c.json({ error: err.message, code: err.code }, status);
     }
-    if (err instanceof z.ZodError) return c.json({ error: z.prettifyError(err), code: "invalid_args" }, 400);
+    if (err instanceof z.ZodError)
+      return c.json({ error: z.prettifyError(err), code: "invalid_args" }, 400);
     logger.error("unhandled", { path: c.req.path, error: errMsg(err) });
     // Route pattern, not the concrete path: file routes carry project-relative names.
     captureCoreException(err, { "http.method": c.req.method, "http.route": c.req.routePath });
@@ -96,14 +115,21 @@ export function createApp(deps: AppDeps): Hono<Env> {
   // and their preflights are answered before the bearer check since browsers send them without auth.
   app.use("*", async (c, next) => {
     const origin = c.req.header("origin") ?? null;
-    if (!originAllowed(origin, deps.extraOrigins ?? [])) return c.json({ error: "forbidden origin" }, 403);
+    if (!originAllowed(origin, deps.extraOrigins ?? []))
+      return c.json({ error: "forbidden origin" }, 403);
     const applyCors = (headers: Headers) => {
       if (origin === null || origin === "") return;
       headers.set("Access-Control-Allow-Origin", origin);
       headers.set("Vary", "Origin");
       headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
-      headers.set("Access-Control-Allow-Headers", "authorization, content-type, last-event-id, mcp-session-id, mcp-protocol-version");
-      headers.set("Access-Control-Expose-Headers", "mcp-session-id, content-disposition, content-length");
+      headers.set(
+        "Access-Control-Allow-Headers",
+        "authorization, content-type, last-event-id, mcp-session-id, mcp-protocol-version",
+      );
+      headers.set(
+        "Access-Control-Expose-Headers",
+        "mcp-session-id, content-disposition, content-length",
+      );
       headers.set("Access-Control-Max-Age", "600");
     };
     if (c.req.method === "OPTIONS") {
@@ -116,13 +142,27 @@ export function createApp(deps: AppDeps): Hono<Env> {
   });
 
   app.get("/health", (c) =>
-    c.json({ ok: true, version: deps.config.version, pid: process.pid, channel: deps.config.channel, authMode: deps.auth.mode, uptimeMs: Date.now() - deps.startedAt, mcpSessions: deps.mcp.activeCount() }),
+    c.json({
+      ok: true,
+      version: deps.config.version,
+      pid: process.pid,
+      runtimeId: deps.config.runtimeId,
+      parentPid: deps.config.parentPid,
+      projectsDir: deps.config.projectsDir,
+      channel: deps.config.channel,
+      authMode: deps.auth.mode,
+      uptimeMs: Date.now() - deps.startedAt,
+      mcpSessions: deps.mcp.activeCount(),
+    }),
   );
 
   // Bearer auth for everything else (`?token=` allowed for SSE / WS which cannot set headers).
   app.use("*", async (c, next) => {
     if (c.req.path === "/health") return next();
-    const allowQuery = c.req.path === "/events" || c.req.path === "/ws" || c.req.path.startsWith("/opensource/preview/");
+    const allowQuery =
+      c.req.path === "/events" ||
+      c.req.path === "/ws" ||
+      c.req.path.startsWith("/opensource/preview/");
     const token = extractToken(c.req.raw, { allowQuery });
     if (!deps.tokens.verify(token)) return c.json({ error: "unauthorized" }, 401);
     c.set("token", token as string);
@@ -135,7 +175,8 @@ export function createApp(deps: AppDeps): Hono<Env> {
   app.get("/events", (c) => {
     const topics = parseTopics(c.req.query("topics"));
     const raw = c.req.header("last-event-id") ?? c.req.query("lastEventId") ?? null;
-    const lastEventId = raw !== null && raw !== "" && Number.isFinite(Number(raw)) ? Number(raw) : null;
+    const lastEventId =
+      raw !== null && raw !== "" && Number.isFinite(Number(raw)) ? Number(raw) : null;
     return sseResponse(deps.bus, { topics, lastEventId, signal: c.req.raw.signal });
   });
 
@@ -151,16 +192,28 @@ export function createApp(deps: AppDeps): Hono<Env> {
   });
   app.patch("/projects/:id", async (c) => {
     const id = c.req.param("id");
-    const body = z.object({ name: z.string().min(1).max(80).optional(), manifest: z.record(z.string(), z.unknown()).optional() }).parse(await c.req.json());
+    const body = z
+      .object({
+        name: z.string().min(1).max(80).optional(),
+        manifest: z.record(z.string(), z.unknown()).optional(),
+      })
+      .parse(await c.req.json());
     const h = await deps.projects.handle(id);
     if (!h) return c.json({ error: "not found" }, 404);
     if (body.manifest) await h.updateManifest(body.manifest as never);
     if (body.name) await deps.projects.rename(id, body.name);
-    deps.bus.emit({ ts: Date.now(), topic: "project.changed", projectId: id, paths: [PROJECT_FILES.manifest] });
+    deps.bus.emit({
+      ts: Date.now(),
+      topic: "project.changed",
+      projectId: id,
+      paths: [PROJECT_FILES.manifest],
+    });
     return c.json(await deps.projects.detail(id));
   });
   app.delete("/projects/:id", async (c) => {
-    const ok = await deps.projects.delete(c.req.param("id"), { purge: c.req.query("purge") === "1" });
+    const ok = await deps.projects.delete(c.req.param("id"), {
+      purge: c.req.query("purge") === "1",
+    });
     return ok ? c.json({ ok: true }) : c.json({ error: "not found" }, 404);
   });
   app.get("/projects/:id/route-runs", (c) => c.json(deps.store.routeRuns.list(c.req.param("id"))));
@@ -173,7 +226,13 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const st = await stat(abs).catch(() => null);
     if (!st || !st.isFile()) return c.json({ error: "not found" }, 404);
     const mime = MIME[extname(abs).toLowerCase()] ?? "application/octet-stream";
-    return new Response(Bun.file(abs), { headers: { "content-type": mime, "content-length": String(st.size), "x-mtime": st.mtime.toISOString() } });
+    return new Response(Bun.file(abs), {
+      headers: {
+        "content-type": mime,
+        "content-length": String(st.size),
+        "x-mtime": st.mtime.toISOString(),
+      },
+    });
   });
   app.put("/projects/:id/files/*", async (c) => {
     const id = c.req.param("id");
@@ -216,10 +275,14 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const dir = join(h.dir, PROJECT_FILES.sketches);
     await mkdir(dir, { recursive: true });
     let final = stamped;
-    for (let i = 2; await stat(join(dir, final)).catch(() => null); i++) final = stamped.replace(/(\.[^.]+)$/, `-${i}$1`);
+    for (let i = 2; await stat(join(dir, final)).catch(() => null); i++)
+      final = stamped.replace(/(\.[^.]+)$/, `-${i}$1`);
     const abs = await jailPath(h.dir, `${PROJECT_FILES.sketches}/${final}`);
     await writeAtomic(abs, data);
-    return c.json({ path: `${PROJECT_FILES.sketches}/${final}`, absolutePath: abs, size: data.length }, 201);
+    return c.json(
+      { path: `${PROJECT_FILES.sketches}/${final}`, absolutePath: abs, size: data.length },
+      201,
+    );
   });
 
   /* ---------- threads ---------- */
@@ -233,7 +296,9 @@ export function createApp(deps: AppDeps): Hono<Env> {
         ...(q ? { q } : {}),
         ...(projectId ? { projectId } : {}),
         ...(archived !== undefined ? { archived: archived === "1" || archived === "true" } : {}),
-        ...(folderId !== undefined ? { folderId: folderId === "" || folderId === "null" ? null : folderId } : {}),
+        ...(folderId !== undefined
+          ? { folderId: folderId === "" || folderId === "null" ? null : folderId }
+          : {}),
       }),
     );
   });
@@ -253,7 +318,13 @@ export function createApp(deps: AppDeps): Hono<Env> {
   });
   app.get("/threads/:id", (c) => {
     const t = deps.store.threads.get(c.req.param("id"));
-    return t ? c.json({ ...t, run: deps.store.runs.latestForThread(t.id), running: deps.runs?.isRunning(t.id) ?? false }) : c.json({ error: "not found" }, 404);
+    return t
+      ? c.json({
+          ...t,
+          run: deps.store.runs.latestForThread(t.id),
+          running: deps.runs?.isRunning(t.id) ?? false,
+        })
+      : c.json({ error: "not found" }, 404);
   });
   app.patch("/threads/:id", async (c) => {
     const body = compact(PatchThread.parse(await c.req.json()));
@@ -265,7 +336,9 @@ export function createApp(deps: AppDeps): Hono<Env> {
   app.delete("/threads/:id", (c) => {
     const id = c.req.param("id");
     deps.runs?.abortThread(id);
-    return deps.store.threads.delete(id) ? c.json({ ok: true }) : c.json({ error: "not found" }, 404);
+    return deps.store.threads.delete(id)
+      ? c.json({ ok: true })
+      : c.json({ error: "not found" }, 404);
   });
   app.get("/threads/:id/messages", (c) => {
     const t = deps.store.threads.get(c.req.param("id"));
@@ -277,11 +350,28 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const body = SendMessage.parse(await c.req.json());
     if (!deps.runs) return c.json({ error: "agent runs are disabled in this daemon" }, 503);
     const agentId: AgentId = body.agentId ?? t.agentId;
-    if (agentId !== t.agentId || (body.model && body.model !== t.model)) deps.store.threads.patch(t.id, { agentId, ...(body.model ? { model: body.model } : {}) });
-    const user = deps.store.threads.addMessage({ threadId: t.id, role: "user", contentMd: body.content, parts: [{ type: "text", text: body.content }, ...body.attachments.map((a) => ({ type: "image" as const, path: a.path, mime: a.mime }))] });
-    if (t.title === "New chat") deps.store.threads.patch(t.id, { title: body.content.slice(0, 60).replace(/\s+/g, " ") });
+    if (agentId !== t.agentId || (body.model && body.model !== t.model))
+      deps.store.threads.patch(t.id, { agentId, ...(body.model ? { model: body.model } : {}) });
+    const user = deps.store.threads.addMessage({
+      threadId: t.id,
+      role: "user",
+      contentMd: body.content,
+      parts: [
+        { type: "text", text: body.content },
+        ...body.attachments.map((a) => ({ type: "image" as const, path: a.path, mime: a.mime })),
+      ],
+    });
+    if (t.title === "New chat")
+      deps.store.threads.patch(t.id, { title: body.content.slice(0, 60).replace(/\s+/g, " ") });
     const project = t.projectId ? await deps.projects.handle(t.projectId) : null;
-    const { runId, messageId } = await deps.runs.start({ threadId: t.id, project, agentId, ...(body.model ?? t.model ? { model: (body.model ?? t.model) as string } : {}), prompt: body.content, attachments: body.attachments });
+    const { runId, messageId } = await deps.runs.start({
+      threadId: t.id,
+      project,
+      agentId,
+      ...((body.model ?? t.model) ? { model: (body.model ?? t.model) as string } : {}),
+      prompt: body.content,
+      attachments: body.attachments,
+    });
     return c.json({ runId, messageId, userMessageId: user.id }, 202);
   });
   app.post("/threads/:id/abort", (c) => {
@@ -334,8 +424,13 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const index = await catalogFor(deps.config.apiOrigin);
     const source = findCatalogProject(index, `${c.req.param("owner")}/${c.req.param("slug")}`);
     if (!source) return c.json({ error: "not found" }, 404);
-    if (!allowedCloneUrl(source.cloneUrl)) return c.json({ error: "clone url is not an allowed GitHub repository" }, 400);
-    const remixed = await remixCatalogProject({ source, projects: deps.projects, services: deps.services });
+    if (!allowedCloneUrl(source.cloneUrl))
+      return c.json({ error: "clone url is not an allowed GitHub repository" }, 400);
+    const remixed = await remixCatalogProject({
+      source,
+      projects: deps.projects,
+      services: deps.services,
+    });
     return c.json(remixed, 201);
   });
 
@@ -350,16 +445,20 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const body = StartOrder.parse(await c.req.json());
     const vendor = OrderVendorId.parse(body.vendor);
     const readiness = assessOrderReadiness(d.files);
-    if (!readiness.ready) return c.json({ error: "project is not ready to order", ...readiness }, 412);
+    if (!readiness.ready)
+      return c.json({ error: "project is not ready to order", ...readiness }, 412);
     const session = startOrderSession(vendor);
-    if (!session.enabled) return c.json({ error: `${session.label} ordering is not available yet`, session }, 400);
+    if (!session.enabled)
+      return c.json({ error: `${session.label} ordering is not available yet`, session }, 400);
     return c.json(session);
   });
 
   /* ---------- folders ---------- */
   app.get("/folders", (c) => c.json(deps.store.folders.list()));
   app.post("/folders", async (c) => {
-    const body = z.object({ name: z.string().min(1).max(80), parentId: z.string().nullable().optional() }).parse(await c.req.json());
+    const body = z
+      .object({ name: z.string().min(1).max(80), parentId: z.string().nullable().optional() })
+      .parse(await c.req.json());
     return c.json(deps.store.folders.create(body.name, body.parentId ?? null), 201);
   });
   app.patch("/folders/:id", async (c) => {
@@ -367,11 +466,20 @@ export function createApp(deps: AppDeps): Hono<Env> {
     deps.store.folders.rename(c.req.param("id"), body.name);
     return c.json({ ok: true });
   });
-  app.delete("/folders/:id", (c) => (deps.store.folders.delete(c.req.param("id")) ? c.json({ ok: true }) : c.json({ error: "not found" }, 404)));
+  app.delete("/folders/:id", (c) =>
+    deps.store.folders.delete(c.req.param("id"))
+      ? c.json({ ok: true })
+      : c.json({ error: "not found" }, 404),
+  );
 
   /* ---------- tools & jobs ---------- */
-  app.route("/", toolRoutes({ registry: deps.registry, ctxFactory: deps.ctxFactory, jobs: deps.jobs }));
-  app.get("/jobs", (c) => c.json(deps.jobs.list().length ? deps.jobs.list() : deps.store.jobs.list()));
+  app.route(
+    "/",
+    toolRoutes({ registry: deps.registry, ctxFactory: deps.ctxFactory, jobs: deps.jobs }),
+  );
+  app.get("/jobs", (c) =>
+    c.json(deps.jobs.list().length ? deps.jobs.list() : deps.store.jobs.list()),
+  );
   app.get("/jobs/:id", (c) => {
     const j = deps.jobs.get(c.req.param("id")) ?? deps.store.jobs.get(c.req.param("id"));
     return j ? c.json(j) : c.json({ error: "not found" }, 404);
@@ -385,9 +493,16 @@ export function createApp(deps: AppDeps): Hono<Env> {
     if (!rec) return c.json({ error: "not found" }, 404);
     const from = Number(c.req.query("from") ?? 0) || 0;
     const project = await deps.projects.handle(rec.projectId);
-    const currentPath = project ? join(project.dir, PROJECT_FILES.runs, rec.id, "frames.jsonl") : null;
-    const persistedPath = project && !isAbsolute(rec.framesPath) ? await jailPath(project.dir, rec.framesPath).catch(() => null) : rec.framesPath;
-    const candidates = [...new Set([currentPath, persistedPath].filter((path): path is string => !!path))];
+    const currentPath = project
+      ? join(project.dir, PROJECT_FILES.runs, rec.id, "frames.jsonl")
+      : null;
+    const persistedPath =
+      project && !isAbsolute(rec.framesPath)
+        ? await jailPath(project.dir, rec.framesPath).catch(() => null)
+        : rec.framesPath;
+    const candidates = [
+      ...new Set([currentPath, persistedPath].filter((path): path is string => !!path)),
+    ];
     let text = "";
     for (const path of candidates) {
       const loaded = await readFile(path, "utf8").catch(() => null);
@@ -407,7 +522,9 @@ export function createApp(deps: AppDeps): Hono<Env> {
       }
       out.push(line);
     }
-    return new Response(out.length ? out.join("\n") + "\n" : "", { headers: { "content-type": "application/x-ndjson", "x-route-status": rec.status } });
+    return new Response(out.length ? out.join("\n") + "\n" : "", {
+      headers: { "content-type": "application/x-ndjson", "x-route-status": rec.status },
+    });
   });
   app.get("/route/runs/:id", (c) => {
     const rec = deps.store.routeRuns.get(c.req.param("id"));
@@ -446,7 +563,10 @@ export function createApp(deps: AppDeps): Hono<Env> {
     }
     // Kick off the device flow; state transitions arrive via auth.state events. Respond immediately
     // with the pending state (user code) when available within a short window.
-    const first = await Promise.race([p, new Promise<AuthState>((r) => setTimeout(() => r(deps.auth.state()), 1500))]);
+    const first = await Promise.race([
+      p,
+      new Promise<AuthState>((r) => setTimeout(() => r(deps.auth.state()), 1500)),
+    ]);
     void p.catch((e) => logger.warn("login failed", { error: errMsg(e) }));
     return c.json(first);
   });
@@ -472,7 +592,9 @@ export function createApp(deps: AppDeps): Hono<Env> {
 
 /** Drop `undefined` values so partial objects satisfy exactOptionalPropertyTypes targets. */
 function compact<T extends object>(o: T): { [K in keyof T]: Exclude<T[K], undefined> } {
-  return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as { [K in keyof T]: Exclude<T[K], undefined> };
+  return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as {
+    [K in keyof T]: Exclude<T[K], undefined>;
+  };
 }
 
 function isPng(b: Uint8Array): boolean {

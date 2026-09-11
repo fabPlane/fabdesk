@@ -10,6 +10,7 @@ export const DaemonHandshake = z.object({
   startedAt: z.string(),
   channel: z.enum(["public", "internal"]),
   authMode: z.enum(["fabplane", "local"]),
+  runtimeId: z.string().min(16).optional(),
 });
 export type DaemonHandshake = z.infer<typeof DaemonHandshake>;
 
@@ -19,5 +20,6 @@ export const ReadyLine = z.object({
   port: z.number().int(),
   pid: z.number().int(),
   version: z.string(),
+  runtimeId: z.string().min(16).optional(),
 });
 export type ReadyLine = z.infer<typeof ReadyLine>;

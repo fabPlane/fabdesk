@@ -23,9 +23,15 @@ export type FpPcbSession = z.infer<typeof FpPcbSession>;
 export const FpPcbHealth = z.object({
   ok: z.boolean(),
   name: z.string().optional(),
+  pid: z.number().int().optional(),
+  runtimeId: z.string().nullable().optional(),
+  ownerPid: z.number().int().nullable().optional(),
   kicadCli: z.string().optional(),
   kicadCliExists: z.boolean().optional(),
   workspaceRoot: z.string().optional(),
+  jsAutorouter: z
+    .object({ ok: z.boolean(), reason: z.string().optional(), module: z.string().optional() })
+    .optional(),
   sessions: z.array(FpPcbSession).default([]),
   compile: z.object({ frontends: z.array(z.string()).default([]) }).optional(),
   jsAutorouter: z.object({ ok: z.boolean(), reason: z.string().optional() }).optional(),
