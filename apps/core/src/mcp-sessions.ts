@@ -7,7 +7,14 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { attachToRegistry, TOOLSETS, type ContextFactory, type ToolRegistry } from "@fabdesk/tools";
 import { logger, errMsg } from "./log";
 
-type Session = { id: string; server: McpServer; transport: WebStandardStreamableHTTPServerTransport; createdAt: number; lastSeen: number; token: string | null };
+type Session = {
+  id: string;
+  server: McpServer;
+  transport: WebStandardStreamableHTTPServerTransport;
+  createdAt: number;
+  lastSeen: number;
+  token: string | null;
+};
 
 export type McpSessionOptions = {
   registry: ToolRegistry;
@@ -43,26 +50,53 @@ export class McpSessionManager {
   }
 
   list(): Array<{ id: string; createdAt: string; lastSeen: string }> {
-    return [...this.sessions.values()].map((s) => ({ id: s.id, createdAt: new Date(s.createdAt).toISOString(), lastSeen: new Date(s.lastSeen).toISOString() }));
+    return [...this.sessions.values()].map((s) => ({
+      id: s.id,
+      createdAt: new Date(s.createdAt).toISOString(),
+      lastSeen: new Date(s.lastSeen).toISOString(),
+    }));
   }
 
   async handle(req: Request, opts: { token?: string | null } = {}): Promise<Response> {
     const sessionId = req.headers.get("mcp-session-id");
     if (sessionId) {
       const s = this.sessions.get(sessionId);
-      if (!s) return json(404, { jsonrpc: "2.0", error: { code: -32001, message: "Session not found" }, id: null });
+      if (!s)
+        return json(404, {
+          jsonrpc: "2.0",
+          error: { code: -32001, message: "Session not found" },
+          id: null,
+        });
       s.lastSeen = Date.now();
-      return s.transport.handleRequest(req, opts.token ? { authInfo: { token: opts.token, clientId: "fabdesk", scopes: [] } } : {});
+      return s.transport.handleRequest(
+        req,
+        opts.token ? { authInfo: { token: opts.token, clientId: "fabdesk", scopes: [] } } : {},
+      );
     }
-    if (req.method !== "POST") return json(400, { jsonrpc: "2.0", error: { code: -32000, message: "Bad Request: Mcp-Session-Id header required" }, id: null });
+    if (req.method !== "POST")
+      return json(400, {
+        jsonrpc: "2.0",
+        error: { code: -32000, message: "Bad Request: Mcp-Session-Id header required" },
+        id: null,
+      });
     // New session: the transport validates that the body is an initialize request.
-    const server = new McpServer({ name: "fabdesk", version: this.opts.version }, { instructions: INSTRUCTIONS });
+    const server = new McpServer(
+      { name: "fabdesk", version: this.opts.version },
+      { instructions: INSTRUCTIONS },
+    );
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: () => crypto.randomUUID(),
       enableDnsRebindingProtection: this.allowedHosts.length > 0,
       ...(this.allowedHosts.length > 0 ? { allowedHosts: this.allowedHosts } : {}),
       onsessioninitialized: (id) => {
-        this.sessions.set(id, { id, server, transport, createdAt: Date.now(), lastSeen: Date.now(), token: opts.token ?? null });
+        this.sessions.set(id, {
+          id,
+          server,
+          transport,
+          createdAt: Date.now(),
+          lastSeen: Date.now(),
+          token: opts.token ?? null,
+        });
         logger.info("mcp session opened", { id });
       },
       onsessionclosed: (id) => {
@@ -75,19 +109,25 @@ export class McpSessionManager {
     };
     // Codex snapshots MCP tools when a turn starts and currently ignores tools/list_changed.
     // Let clients that cannot refresh opt into the complete inventory at initialization.
-    const initialToolsets = new URL(req.url).searchParams.get("toolsets") === "all" ? [...TOOLSETS] : undefined;
+    const initialToolsets =
+      new URL(req.url).searchParams.get("toolsets") === "all" ? [...TOOLSETS] : undefined;
     attachToRegistry(server, this.opts.registry, this.opts.ctxFactory, {
       ...(initialToolsets ? { initialToolsets } : {}),
     });
     await server.connect(transport);
-    return transport.handleRequest(req, opts.token ? { authInfo: { token: opts.token, clientId: "fabdesk", scopes: [] } } : {});
+    return transport.handleRequest(
+      req,
+      opts.token ? { authInfo: { token: opts.token, clientId: "fabdesk", scopes: [] } } : {},
+    );
   }
 
   async close(id: string): Promise<void> {
     const s = this.sessions.get(id);
     if (!s) return;
     this.sessions.delete(id);
-    await s.transport.close().catch((e) => logger.warn("mcp transport close failed", { error: errMsg(e) }));
+    await s.transport
+      .close()
+      .catch((e) => logger.warn("mcp transport close failed", { error: errMsg(e) }));
     await s.server.close().catch(() => {});
   }
 
@@ -98,8 +138,11 @@ export class McpSessionManager {
 }
 
 function json(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
 }
 
 export const INSTRUCTIONS =
-  "fabdesk provides a PCB project workspace around KiCad. Call pcb_environment for the canonical UI filenames, exact bundled kicad-cli, FabPCB bridge, and desktop availability. You may use MCP tools, the bundled KiCad CLI, shell commands, project-local scripts, direct file work, and the fabPlane UI in whatever combination best accomplishes the user's request; circuit_build is optional. MCP tools may operate on live KiCad state while CLI and file operations usually see persisted state, so save or reload deliberately when switching between them. Only the core toolset is loaded by default; call load_toolset to expose project, circuit, route, kicad, verify, render, export, sim, or app tools.";
+  "fabdesk provides a PCB project workspace around KiCad. pcb_environment reports the canonical UI filenames, exact bundled kicad-cli, FabPCB bridge, and desktop availability. MCP tools, the bundled KiCad CLI, shell commands, project-local scripts, direct file work, and the fabPlane UI may be used in any combination; circuit_build and native schematic tools are optional. MCP tools may operate on live KiCad state while CLI and file operations usually see persisted state. Only the core toolset is loaded by default; other groups are exposed through load_toolset.";

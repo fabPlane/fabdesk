@@ -90,8 +90,9 @@ describe("mcp adapter", () => {
     const prompt = await client.getPrompt({ name: "design_from_sketch", arguments: { project: project.id, requirements: "blink an LED" } });
     const promptText = (prompt.messages[0]!.content as { text: string }).text;
     expect(promptText).toContain("blink an LED");
-    expect(promptText).toContain("run both render_schematic_svg and render_pcb_svg");
-    expect(promptText).toContain("verify_drc with schematicParity=true");
-    expect(promptText).toContain("Never claim the project passes when a required report is missing");
+    expect(promptText).toContain("available in any combination");
+    expect(promptText).toContain("circuit_build and the native schematic tools are optional");
+    expect(promptText).not.toContain("Required workflow");
+    expect(promptText).not.toContain("rebuild until");
   });
 });

@@ -15,7 +15,7 @@ export const load_toolset = defineTool({
   scope: "global",
   title: "Load a toolset",
   description:
-    "Enable an additional group of fabdesk tools for this session. Toolsets: project (read/write project files, sketches, board settings, adopt a KiCad board), circuit (query the board, footprint search), route (routing status/cancel/unroute/scope), kicad (board stats), verify (ERC, release gate), render (schematic/PCB SVG, 3D GLB), export (gerbers, drill, pick-and-place, BOM, netlist, zip), sim (SPICE netlist and simulation), app (screenshot and drive the fabPlane desktop app window: find/click/type, switch project, tab, thread, send chat messages, control Route Cinema; needs the app running in dev or with FABDESK_AUTOMATION=1). Call this before using a tool from that group; pcb_environment and the other core tools are always available.",
+    "Enable an additional group of fabdesk tools for this session. Toolsets: project (read/write project files, sketches, board settings, adopt a KiCad board), circuit (native KiCad schematic edits, PCB edits, inspection, queries, and part search), route (routing status/cancel/unroute/scope), kicad (board stats), verify (ERC, release gate), render (schematic/PCB SVG, 3D GLB), export (gerbers, drill, pick-and-place, BOM, netlist, zip), sim (SPICE netlist and simulation), app (screenshot and drive the fabPlane desktop app window: find/click/type, switch project, tab, thread, send chat messages, control Route Cinema; needs the app running in dev or with FABDESK_AUTOMATION=1). Call this before using a tool from that group; pcb_environment and the other core tools are always available.",
   inputSchema: {
     toolset: ToolsetId.describe("Toolset to enable"),
   },
@@ -148,7 +148,6 @@ export const project_status = defineTool({
       `Last build: ${build ? `${build.ok ? "ok" : "FAILED"} (${build.errors.length} errors, ${build.warnings.length} warnings)` : "never"}`,
       `Last route: ${route ? `${route.status} (${route.result ? `${route.result.open.length} open` : "no result"})` : "never"}`,
       `Last DRC: ${drc ? `${drc.counts.errors} errors, ${drc.counts.warnings} warnings, ${drc.counts.unconnected} unconnected` : "never"}`,
-      "Workflow: write circuit.netlist.json (project_write_file) → circuit_build → circuit_read_errors → route_run → verify_drc → render_board.",
     ];
     return ok(lines.join("\n"), json);
   },
@@ -297,6 +296,8 @@ export const route_run = defineTool({
         timeoutMs: args.timeoutMs,
         ...(args.router ? { router: args.router } : {}),
         ...(args.onlyConnections ? { onlyConnections: args.onlyConnections } : {}),
+        ...(args.targets ? { targets: args.targets } : {}),
+        ...(args.rules ? { rules: args.rules } : {}),
         ...(args.settings ? { settings: args.settings } : {}),
       },
       ctx,
@@ -316,8 +317,8 @@ export const verify_drc = defineTool({
       .describe("Report all severities or errors only"),
     schematicParity: z
       .boolean()
-      .default(false)
-      .describe("Also check PCB↔schematic parity (requires libSource for generated symbols)"),
+      .default(true)
+      .describe("Check PCB↔schematic parity; release reports require this to remain enabled"),
     limit: z
       .number()
       .int()
@@ -343,7 +344,8 @@ export const verify_drc = defineTool({
       schematicParity,
       signal: ctx.signal,
     });
-    await writeJson(outFile, report);
+    const checkedReport: DrcReport = { ...report, schematicParityChecked: schematicParity };
+    await writeJson(outFile, checkedReport);
     ctx.progress(1, "done");
     const c = report.counts;
     const lines = [`DRC: ${c.errors} errors, ${c.warnings} warnings, ${c.unconnected} unconnected`];
@@ -383,7 +385,11 @@ export const verify_drc = defineTool({
         report.schematicParity.length > limit,
     };
     if (json.truncated) lines.push(`Full report with every violation: ${outFile}`);
-    return { text: lines.join("\n"), json, isError: c.errors > 0 || c.unconnected > 0 };
+    return {
+      text: lines.join("\n"),
+      json: { ...json, schematicParityChecked: schematicParity },
+      isError: c.errors > 0 || c.unconnected > 0,
+    };
   },
 });
 

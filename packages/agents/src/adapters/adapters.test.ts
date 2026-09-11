@@ -44,7 +44,7 @@ describe("shared", () => {
       { path: "/notes.pdf", mime: "application/pdf" },
     ]);
     expect(p).toBe(
-      "Go\n\nSketch: /a.png — read it with the Read tool.\nAttachment (application/pdf): /notes.pdf",
+      "Go\n\nSketch: /a.png\nAttachment (application/pdf): /notes.pdf",
     );
     expect(
       promptWithAttachments("Go", [{ path: "/a.png", mime: "image/png" }], { skipImages: true }),
@@ -69,7 +69,7 @@ describe("claude adapter", () => {
     expect(args.slice(0, 3)).toEqual([
       "claude",
       "-p",
-      "Design a blinky\n\nSketch: /p/sketches/a.png — read it with the Read tool.",
+      "Design a blinky\n\nSketch: /p/sketches/a.png",
     ]);
     expect(args).toContain("--strict-mcp-config");
     expect(args).toContain("--include-partial-messages");
@@ -175,7 +175,7 @@ describe("grok adapter", () => {
     expect(args.slice(0, 3)).toEqual([
       "grok",
       "-p",
-      "Design a blinky\n\nSketch: /p/sketches/a.png — read it with the Read tool.",
+      "Design a blinky\n\nSketch: /p/sketches/a.png",
     ]);
     expect(args[args.indexOf("--cwd") + 1]).toBe(dir);
     expect(args).toContain("--trust");

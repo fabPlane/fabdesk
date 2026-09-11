@@ -11,7 +11,8 @@
  * exist yet.
  */
 import { join } from "node:path";
-import { KiCad, type Board } from "@fp-pcb/client";
+import { KiCad, type Board, type Schematic } from "@fp-pcb/client";
+import { DocumentType } from "@fp-pcb/proto";
 import { WebSocketTransport, bridgeWsUrl } from "@fp-pcb/client/transport";
 import { ToolError } from "@fabdesk/tools";
 import type { FpPcbBridgeClient } from "./fp-pcb-bridge";
@@ -69,6 +70,54 @@ export class FpPcbSessions {
         "precondition",
       );
     return board;
+  }
+
+  /** The project's open schematic, without creating project files as a side effect. */
+  async schematic(projectDir: string): Promise<Schematic> {
+    const exists = this.opts.exists ?? ((p: string) => Bun.file(p).exists());
+    const schematic = await this.withRetry(projectDir, async (s) => {
+      const open = await s.kicad.currentSchematic();
+      if (open) return open;
+      const path = join(projectDir, "board.kicad_sch");
+      return (await exists(path)) ? s.kicad.openSchematic(path) : null;
+    });
+    if (!schematic)
+      throw new ToolError(
+        "board.kicad_sch not found: start it with schematic_edit or build an existing netlist",
+        "precondition",
+      );
+    return schematic;
+  }
+
+  /**
+   * Ensure the normal `board.kicad_pro/.kicad_sch/.kicad_pcb` triplet exists and is open in one
+   * headless KiCad session. This is the native schematic-first entry point; no netlist is needed.
+   */
+  async ensureProject(
+    projectDir: string,
+  ): Promise<{ session: ProjectSession; schematic: Schematic; board: Board }> {
+    return this.withRetry(projectDir, async (s) => {
+      const exists = this.opts.exists ?? ((p: string) => Bun.file(p).exists());
+      const pro = join(projectDir, BOARD_PRO);
+      const sch = join(projectDir, "board.kicad_sch");
+      const pcb = join(projectDir, BOARD_PCB);
+      if (!(await exists(pro))) {
+        await s.kicad.newProject(pro);
+        s.path = pro;
+      }
+      await this.bridge().registerBundledLibraries(s.id);
+      let schematic = await s.kicad.currentSchematic();
+      if (!schematic)
+        schematic = (await exists(sch))
+          ? await s.kicad.openSchematic(sch)
+          : await s.kicad.newDocument(DocumentType.DOCTYPE_SCHEMATIC, sch);
+      let board = await s.kicad.currentBoard();
+      if (!board)
+        board = (await exists(pcb))
+          ? await s.kicad.openBoard(pcb)
+          : await s.kicad.newDocument(DocumentType.DOCTYPE_PCB, pcb);
+      return { session: s, schematic, board };
+    });
   }
 
   /** Runs `fn` on the session, reconnecting once when the bridge no longer knows it. */

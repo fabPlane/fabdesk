@@ -61,7 +61,17 @@ export type BuildResult = {
   rejectedSchematicPath?: string;
 };
 
-export type DesignSelect = "components" | "nets" | "pads" | "vias" | "tracks" | "unrouted";
+export type DesignSelect =
+  | "components"
+  | "nets"
+  | "pads"
+  | "vias"
+  | "tracks"
+  | "zones"
+  | "keepouts"
+  | "board_geometry"
+  | "texts"
+  | "unrouted";
 export type DesignRow = Record<string, unknown>;
 
 export type RouteJobOptions = {
@@ -204,9 +214,125 @@ export type DesignStatus = {
   };
 };
 
+export type SchematicPoint = { x: number; y: number };
+export type NativeSchematicSymbolInput = {
+  libId: string;
+  reference: string;
+  value: string;
+  footprint: string;
+  position: SchematicPoint;
+  unit?: number | undefined;
+  bodyStyle?: number | undefined;
+  rotation?: 0 | 90 | 180 | 270 | undefined;
+  mirrorX?: boolean | undefined;
+  mirrorY?: boolean | undefined;
+  fields?: Record<string, string> | undefined;
+};
+export type NativeSchematicSymbolUpdate = {
+  reference: string;
+  newReference?: string | undefined;
+  position?: SchematicPoint | undefined;
+  value?: string | undefined;
+  footprint?: string | undefined;
+  fields?: Record<string, string> | undefined;
+};
+export type NativeSchematicConnectionInput = {
+  name: string;
+  nodes: Array<{ reference: string; pin: string }>;
+  label?: "local" | "global" | "none" | undefined;
+};
+export type NativeSchematicEdit = {
+  symbols?: NativeSchematicSymbolInput[];
+  symbolUpdates?: NativeSchematicSymbolUpdate[];
+  connections?: NativeSchematicConnectionInput[];
+  wires?: Array<{ start: SchematicPoint; end: SchematicPoint }>;
+  localLabels?: Array<{ text: string; position: SchematicPoint }>;
+  globalLabels?: Array<{ text: string; position: SchematicPoint }>;
+  junctions?: SchematicPoint[];
+  noConnects?: SchematicPoint[];
+  texts?: Array<{ text: string; position: SchematicPoint }>;
+  deleteItemIds?: string[];
+  save?: boolean;
+};
+export type NativeSchematicSnapshot = {
+  revision: number;
+  pcbRevision: number;
+  symbols: Array<{
+    id: string;
+    reference: string;
+    value: string;
+    footprint: string;
+    libId: string;
+    position: SchematicPoint;
+    rotation: number;
+    mirrorX: boolean;
+    mirrorY: boolean;
+    pins: Array<{ id: string; number: string; name: string; net?: string; position: SchematicPoint }>;
+  }>;
+  wires: Array<{ id: string; start: SchematicPoint; end: SchematicPoint }>;
+  localLabels: Array<{ id: string; text: string; position: SchematicPoint }>;
+  globalLabels: Array<{ id: string; text: string; position: SchematicPoint }>;
+  junctions: Array<{ id: string; position: SchematicPoint }>;
+  noConnects: Array<{ id: string; position: SchematicPoint }>;
+  texts: Array<{ id: string; text: string; position: SchematicPoint }>;
+  nets: Array<{ name: string; itemCount: number; itemIds: string[] }>;
+  erc: { errors: number; warnings: number };
+};
+export type NativeSchematicEditResult = {
+  created: { symbols: number; wires: number; localLabels: number; globalLabels: number; junctions: number; noConnects: number; texts: number };
+  updated: { symbols: number };
+  deleted: number;
+  saved: boolean;
+  revision: number;
+};
+export type SchematicPcbSyncResult = {
+  ok: boolean;
+  dryRun: boolean;
+  erc: { errors: number; warnings: number };
+  update: { errors: number; warnings: number; newFootprints: number; report: string };
+  parity?: number;
+  saved: boolean;
+};
+export type PcbPlacementResult = {
+  moved: string[];
+  missing: string[];
+  revision: number;
+  saved: boolean;
+};
+export type PcbFootprintEdit = {
+  reference: string;
+  position?: SchematicPoint | undefined;
+  rotation?: number | undefined;
+  flip?: boolean | undefined;
+  lock?: boolean | undefined;
+};
+export type PcbOutlineResult = {
+  created: number;
+  replaced: number;
+  revision: number;
+  saved: boolean;
+};
+
 export interface DesignService {
   /** Compile the project's netlist into `board.kicad_pcb` through the bridge. */
   build(opts: BuildOptions): Promise<BuildResult>;
+  /** Inspect the native KiCad schematic; creates the project's KiCad documents when requested by an edit. */
+  schematicInspect(projectDir: string): Promise<NativeSchematicSnapshot>;
+  /** Apply one reviewable batch of native schematic items as a KiCad undo commit. */
+  schematicEdit(projectDir: string, edit: NativeSchematicEdit): Promise<NativeSchematicEditResult>;
+  /** ERC-gated native Update PCB from Schematic, with dry-run preview and parity verification. */
+  syncSchematicToPcb(projectDir: string, dryRun: boolean): Promise<SchematicPcbSyncResult>;
+  /** Define or update the compiler-owned physical board boundary. */
+  defineBoardOutline(
+    projectDir: string,
+    points: SchematicPoint[],
+    replace: boolean,
+  ): Promise<PcbOutlineResult>;
+  /** Place native board footprints by reference without touching schematic connectivity. */
+  placeFootprints(
+    projectDir: string,
+    placements: PcbFootprintEdit[],
+  ): Promise<PcbPlacementResult>;
   /** Rows describing the board as KiCad holds it. */
   query(projectDir: string, select: DesignSelect, filter?: string): Promise<DesignRow[]>;
   /** Autoroute on the bridge; resolves when the job ends. */
@@ -267,6 +393,8 @@ export type DrcReport = {
   unconnected: DrcViolation[];
   schematicParity: DrcViolation[];
   counts: { errors: number; warnings: number; unconnected: number };
+  /** True only when this report was produced with PCB-to-schematic parity enabled. */
+  schematicParityChecked?: boolean;
   raw?: unknown;
 };
 export type ErcReport = {
@@ -347,6 +475,10 @@ export interface KicadService {
   exportSchematicSvg(
     cli: KicadCli,
     opts: { schematic: string; outDir: string; signal?: AbortSignal },
+  ): Promise<{ paths: string[] }>;
+  exportSchematicPdf(
+    cli: KicadCli,
+    opts: { schematic: string; output: string; signal?: AbortSignal },
   ): Promise<{ paths: string[] }>;
   exportPcbSvg(
     cli: KicadCli,
@@ -433,6 +565,8 @@ export interface AppBridge {
 
 export interface CoreServices {
   version: string;
+  /** Attested packaged runtime identity; null only for un-packaged development. */
+  runtimeId: string | null;
   channel: "public" | "internal";
   settings(): Settings;
   projects: ProjectResolver;

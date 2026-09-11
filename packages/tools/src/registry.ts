@@ -3,6 +3,7 @@
  * manifest, AGENTS.md) are generated from it; handlers are deterministic and never call a model.
  */
 import { z } from "zod/v4";
+import { createHash } from "node:crypto";
 import type { CoreEvent, Principal, ProjectManifest, Settings, ToolManifestEntry } from "@fabdesk/protocol";
 import type { CoreServices } from "./services";
 
@@ -111,6 +112,7 @@ export const PROJECT_ARG = z
 
 export class ToolRegistry {
   private readonly tools = new Map<string, ToolDef>();
+  private contractCache: { version: string; sha256: string } | null = null;
 
   constructor(defs: ReadonlyArray<ToolDef<z.ZodRawShape>> = []) {
     for (const d of defs) this.add(d);
@@ -120,6 +122,7 @@ export class ToolRegistry {
     if (this.tools.has(def.name)) throw new Error(`duplicate tool ${def.name}`);
     if (!TOOL_NAME_RE.test(def.name)) throw new Error(`bad tool name ${def.name}`);
     this.tools.set(def.name, def as unknown as ToolDef);
+    this.contractCache = null;
     return this;
   }
 
@@ -165,6 +168,18 @@ export class ToolRegistry {
     }));
   }
 
+  /** Hash of the exact ordered tool names, descriptions, schemas, annotations and job semantics. */
+  contract(): { version: string; sha256: string } {
+    if (!this.contractCache) {
+      const encoded = JSON.stringify(this.manifest());
+      this.contractCache = {
+        version: "option-1-mcp/1.0.0",
+        sha256: createHash("sha256").update(encoded).digest("hex"),
+      };
+    }
+    return this.contractCache;
+  }
+
   /**
    * Validate `rawArgs` against the tool schema, split off the `project` selector and run the
    * handler. `makeContext` receives the project reference (from args) so adapters can resolve it.
@@ -190,12 +205,21 @@ export class ToolRegistry {
       );
     }
     const invoke = () => def.handler(args as never, ctx);
-    return ctx.telemetry
+    const output = await (ctx.telemetry
       ? ctx.telemetry.traceToolCall(
           { name, args: parsed.data as Record<string, unknown>, project: ctx.project, readOnly: def.annotations.readOnlyHint ?? false, ...(ctx.session ? { sessionId: ctx.session.id } : {}) },
           invoke,
         )
-      : invoke();
+      : invoke());
+    const contract = this.contract();
+    const structured = output.json;
+    return {
+      ...output,
+      json:
+        structured && typeof structured === "object" && !Array.isArray(structured)
+          ? { ...(structured as Record<string, unknown>), _contract: contract }
+          : { value: structured ?? null, _contract: contract },
+    };
   }
 }
 

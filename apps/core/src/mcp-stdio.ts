@@ -187,6 +187,7 @@ async function standalone(opts: McpStdioOptions, projectDir: string | null): Pro
   const { createServices } = await import("./services");
   const services = await createServices({
     version: config.version,
+    runtimeId: config.runtimeId,
     channel: config.channel,
     settings: () => store.settings.get(),
     projects,

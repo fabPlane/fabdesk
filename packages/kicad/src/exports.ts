@@ -76,6 +76,12 @@ export async function exportSchematicSvg(cli: KicadCli, opts: { schematic: strin
   return { paths: await filesWrittenSince(opts.outDir, started, /\.svg$/i) };
 }
 
+/** Multi-sheet schematic PDF suitable for the release handoff. */
+export async function exportSchematicPdf(cli: KicadCli, opts: { schematic: string; output: string; signal?: AbortSignal }): Promise<Paths> {
+  await runKicadCli(cli, ["sch", "export", "pdf", "-o", opts.output, opts.schematic], sig(opts));
+  return { paths: [opts.output] };
+}
+
 /** The board as one SVG: the given layers (default copper, silkscreen and edge cuts), page-sized. */
 export async function exportPcbSvg(cli: KicadCli, opts: { board: string; output: string; layers?: string[]; signal?: AbortSignal }): Promise<Paths> {
   const layers = opts.layers ?? ["F.Cu", "B.Cu", "F.SilkS", "B.SilkS", "Edge.Cuts"];

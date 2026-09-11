@@ -6,12 +6,43 @@
  */
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { ElectricalPinType, KiCadObjectType } from "@fp-pcb/proto";
+import { create } from "@bufbuild/protobuf";
 import {
+  ElectricalPinType,
+  BoardGraphicShapeSchema,
+  BoardLayer,
+  GlobalLabelSchema,
+  JunctionSchema,
+  KiCadObjectType,
+  LocalLabelSchema,
+  NoConnectMarkerSchema,
+  SchematicLabelSpinStyle,
+  SchematicLineSchema,
+  SchematicLineType,
+  SchematicTextSchema,
+  TextSchema,
+} from "@fp-pcb/proto";
+import {
+  GlobalLabel,
+  Junction,
+  LocalLabel,
+  NoConnect,
+  BoardShape,
+  BoardText,
+  Track,
+  Arc,
+  Zone,
   LibFootprint,
   LibSymbol,
+  SchematicLine,
   SchematicPin,
+  SchematicSymbol,
+  SchematicText,
   Via,
+  mm as toNm,
+  placeNativeSymbol,
+  moveNativeSymbol,
+  toVector2,
   toMm,
   type Board,
   type KiCad,
@@ -29,8 +60,11 @@ import {
   type DesignService,
   type DesignStatus,
   type FootprintHit,
+  type NativeSchematicEdit,
+  type NativeSchematicSnapshot,
   type PartDescription,
   type PartCompatibility,
+  type PcbFootprintEdit,
   type RouteJobOptions,
   type RouteProgress,
   type RouteSummary,
@@ -51,6 +85,8 @@ const STAGE_FRACTION: Record<string, number> = {
   outlining: 0.35,
   importing: 0.5,
   placing: 0.7,
+  schematic: 0.2,
+  parity: 0.8,
   saving: 0.85,
 };
 const mm = (nm: number) => Math.round(toMm(nm) * 1000) / 1000;
@@ -182,6 +218,513 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     };
   };
 
+  const schematicInspect = async (projectDir: string): Promise<NativeSchematicSnapshot> => {
+    const { schematic, board } = await deps.sessions.ensureProject(projectDir);
+    const root = await schematic.rootSheet();
+    const [symbols, items, nets, erc, revision, pcbRevision] = await Promise.all([
+      root.getSymbols(),
+      root.getAllItems(),
+      schematic.netlist(),
+      schematic.erc.run(),
+      schematic.revision(),
+      board.revision(),
+    ]);
+    const netByItem = new Map<string, string>();
+    for (const net of nets)
+      for (const sheet of net.sheets)
+        for (const item of sheet.items) netByItem.set(item.value, net.name);
+    return {
+      revision: Number(revision ?? 0n),
+      pcbRevision: Number(pcbRevision ?? 0n),
+      symbols: symbols.map((symbol) => ({
+        id: symbol.id,
+        reference: symbol.reference,
+        value: symbol.value,
+        footprint: symbol.footprint,
+        libId: symbol.libraryId,
+        position: { x: mm(symbol.position.x), y: mm(symbol.position.y) },
+        rotation: symbol.rotation,
+        mirrorX: symbol.mirrorX,
+        mirrorY: symbol.mirrorY,
+        pins: symbol.pins.map((pin) => ({
+          id: pin.id,
+          number: pin.number,
+          name: pin.name,
+          ...(netByItem.get(pin.id) ? { net: netByItem.get(pin.id)! } : {}),
+          position: { x: mm(pin.position.x), y: mm(pin.position.y) },
+        })),
+      })),
+      wires: items
+        .filter((item): item is SchematicLine => item instanceof SchematicLine && item.isWire)
+        .map((wire) => ({
+          id: wire.id,
+          start: { x: mm(wire.start.x), y: mm(wire.start.y) },
+          end: { x: mm(wire.end.x), y: mm(wire.end.y) },
+        })),
+      localLabels: items
+        .filter((item): item is LocalLabel => item instanceof LocalLabel)
+        .map((label) => ({
+          id: label.id,
+          text: label.text,
+          position: { x: mm(label.position.x), y: mm(label.position.y) },
+        })),
+      globalLabels: items
+        .filter((item): item is GlobalLabel => item instanceof GlobalLabel)
+        .map((label) => ({
+          id: label.id,
+          text: label.text,
+          position: { x: mm(label.position.x), y: mm(label.position.y) },
+        })),
+      junctions: items
+        .filter((item): item is Junction => item instanceof Junction)
+        .map((junction) => ({
+          id: junction.id,
+          position: { x: mm(junction.position.x), y: mm(junction.position.y) },
+        })),
+      noConnects: items
+        .filter((item): item is NoConnect => item instanceof NoConnect)
+        .map((marker) => ({
+          id: marker.id,
+          position: { x: mm(marker.position.x), y: mm(marker.position.y) },
+        })),
+      texts: items
+        .filter((item): item is SchematicText => item instanceof SchematicText)
+        .map((note) => ({
+          id: note.id,
+          text: note.text,
+          position: { x: mm(note.position.x), y: mm(note.position.y) },
+        })),
+      nets: nets.map((net) => ({
+        name: net.name,
+        itemCount: net.sheets.reduce((count, sheet) => count + sheet.items.length, 0),
+        itemIds: net.sheets.flatMap((sheet) => sheet.items.map((item) => item.value)),
+      })),
+      erc: { errors: erc.errorCount, warnings: erc.warningCount },
+    };
+  };
+
+  const schematicEdit = async (projectDir: string, edit: NativeSchematicEdit) => {
+    const { schematic, session } = await deps.sessions.ensureProject(projectDir);
+    const root = await schematic.rootSheet();
+    const existing = await root.getSymbols();
+    const byReference = new Map(existing.map((symbol) => [symbol.reference, symbol]));
+    const createdSymbols: SchematicSymbol[] = [];
+    const updatedSymbols: SchematicSymbol[] = [];
+    for (const input of edit.symbolUpdates ?? []) {
+      const symbol = byReference.get(input.reference);
+      if (!symbol)
+        throw new ToolError(`cannot update missing schematic symbol ${input.reference}`, "invalid_args");
+      if (input.position)
+        moveNativeSymbol(symbol, { x: toNm(input.position.x), y: toNm(input.position.y) });
+      if (input.newReference !== undefined) {
+        if (byReference.has(input.newReference))
+          throw new ToolError(`cannot annotate ${input.reference} as existing reference ${input.newReference}`, "invalid_args");
+        symbol.reference = input.newReference;
+        byReference.delete(input.reference);
+        byReference.set(input.newReference, symbol);
+      }
+      if (input.value !== undefined) symbol.value = input.value;
+      if (input.footprint !== undefined) symbol.footprint = input.footprint;
+      for (const [name, value] of Object.entries(input.fields ?? {})) {
+        const field = symbol.field(name);
+        if (!field)
+          throw new ToolError(
+            `cannot add new field ${name} while updating ${input.reference}; provide it when creating the symbol`,
+            "invalid_args",
+          );
+        field.text = value;
+      }
+      updatedSymbols.push(symbol);
+    }
+    const pins = new Map<string, { x: number; y: number }>();
+    for (const symbol of existing)
+      for (const pin of symbol.pins) pins.set(`${symbol.reference}:${pin.number}`, pin.position);
+
+    for (const input of edit.symbols ?? []) {
+      if (byReference.has(input.reference))
+        throw new ToolError(
+          `schematic already contains ${input.reference}; delete or edit it explicitly before adding it again`,
+          "invalid_args",
+        );
+      const definition = await session.kicad
+        .openSymbol(input.libId)
+        .then((document) => document.libSymbol())
+        .catch((error: unknown) => {
+          throw new ToolError(
+            `cannot load symbol ${input.libId}: ${error instanceof Error ? error.message : String(error)}`,
+            "invalid_args",
+          );
+        });
+      if (!definition) throw new ToolError(`cannot load symbol ${input.libId}`, "invalid_args");
+      const placed = placeNativeSymbol(definition, {
+        reference: input.reference,
+        value: input.value,
+        footprint: input.footprint,
+        position: { x: toNm(input.position.x), y: toNm(input.position.y) },
+        ...(input.unit !== undefined ? { unit: input.unit } : {}),
+        ...(input.bodyStyle !== undefined ? { bodyStyle: input.bodyStyle } : {}),
+        ...(input.rotation !== undefined ? { rotation: input.rotation } : {}),
+        ...(input.mirrorX !== undefined ? { mirrorX: input.mirrorX } : {}),
+        ...(input.mirrorY !== undefined ? { mirrorY: input.mirrorY } : {}),
+        ...(input.fields ? { fields: input.fields } : {}),
+      });
+      createdSymbols.push(placed.symbol);
+      for (const [number, position] of placed.pins)
+        pins.set(`${input.reference}:${number}`, position);
+      byReference.set(input.reference, placed.symbol);
+    }
+
+    const wires: SchematicLine[] = [];
+    const addWire = (start: { x: number; y: number }, end: { x: number; y: number }) => {
+      if (start.x === end.x && start.y === end.y) return;
+      wires.push(
+        new SchematicLine(
+          create(SchematicLineSchema, {
+            start: toVector2(start),
+            end: toVector2(end),
+            type: SchematicLineType.SLT_WIRE,
+          }),
+        ),
+      );
+    };
+    for (const wire of edit.wires ?? [])
+      addWire(
+        { x: toNm(wire.start.x), y: toNm(wire.start.y) },
+        { x: toNm(wire.end.x), y: toNm(wire.end.y) },
+      );
+
+    const globalLabels: GlobalLabel[] = (edit.globalLabels ?? []).map(
+      (label) =>
+        new GlobalLabel(
+          create(GlobalLabelSchema, {
+            position: toVector2({ x: toNm(label.position.x), y: toNm(label.position.y) }),
+            text: create(TextSchema, {
+              text: label.text,
+              position: toVector2({ x: toNm(label.position.x), y: toNm(label.position.y) }),
+            }),
+            spinStyle: SchematicLabelSpinStyle.SLSS_LEFT,
+          }),
+        ),
+    );
+    const localLabels: LocalLabel[] = (edit.localLabels ?? []).map(
+      (label) => {
+        const position = { x: toNm(label.position.x), y: toNm(label.position.y) };
+        return new LocalLabel(
+          create(LocalLabelSchema, {
+            position: toVector2(position),
+            text: create(TextSchema, { text: label.text, position: toVector2(position) }),
+            spinStyle: SchematicLabelSpinStyle.SLSS_LEFT,
+          }),
+        );
+      },
+    );
+    const junctions = (edit.junctions ?? []).map(
+      (position) =>
+        new Junction(
+          create(JunctionSchema, {
+            position: toVector2({ x: toNm(position.x), y: toNm(position.y) }),
+          }),
+        ),
+    );
+    const noConnects = (edit.noConnects ?? []).map(
+      (position) =>
+        new NoConnect(
+          create(NoConnectMarkerSchema, {
+            position: toVector2({ x: toNm(position.x), y: toNm(position.y) }),
+          }),
+        ),
+    );
+    const texts = (edit.texts ?? []).map((note) => {
+      const position = { x: toNm(note.position.x), y: toNm(note.position.y) };
+      return new SchematicText(
+        create(SchematicTextSchema, {
+          text: create(TextSchema, { text: note.text, position: toVector2(position) }),
+        }),
+      );
+    });
+
+    for (const connection of edit.connections ?? []) {
+      if (connection.nodes.length < 2)
+        throw new ToolError(`net ${connection.name} needs at least two nodes`, "invalid_args");
+      const points = connection.nodes.map((node) => {
+        const point = pins.get(`${node.reference}:${node.pin}`);
+        if (!point)
+          throw new ToolError(
+            `net ${connection.name}: unknown schematic pin ${node.reference}:${node.pin}`,
+            "invalid_args",
+          );
+        return point;
+      });
+      // A real Manhattan wire chain keeps the schematic electrically connected. A local label is
+      // the default: it preserves the net name without turning every ordinary net into a global.
+      for (let index = 1; index < points.length; index++) {
+        const start = points[index - 1]!;
+        const end = points[index]!;
+        const elbow = { x: end.x, y: start.y };
+        addWire(start, elbow);
+        addWire(elbow, end);
+      }
+      const anchor = points[0]!;
+      if ((connection.label ?? "local") === "global")
+        globalLabels.push(
+          new GlobalLabel(
+            create(GlobalLabelSchema, {
+              position: toVector2(anchor),
+              text: create(TextSchema, { text: connection.name, position: toVector2(anchor) }),
+              spinStyle: SchematicLabelSpinStyle.SLSS_LEFT,
+            }),
+          ),
+        );
+      else if ((connection.label ?? "local") === "local")
+        localLabels.push(
+          new LocalLabel(
+            create(LocalLabelSchema, {
+              position: toVector2(anchor),
+              text: create(TextSchema, { text: connection.name, position: toVector2(anchor) }),
+              spinStyle: SchematicLabelSpinStyle.SLSS_LEFT,
+            }),
+          ),
+        );
+    }
+
+    const deleteItems = edit.deleteItemIds?.length
+      ? await root.getItemsById(edit.deleteItemIds)
+      : [];
+    const createdItems = [
+      ...createdSymbols,
+      ...wires,
+      ...localLabels,
+      ...globalLabels,
+      ...junctions,
+      ...noConnects,
+      ...texts,
+    ];
+    if (createdItems.length || updatedSymbols.length || deleteItems.length)
+      await root.commit("Fabdesk: edit native schematic", async (tx) => {
+        if (deleteItems.length) await tx.delete(deleteItems);
+        if (updatedSymbols.length) await tx.update(updatedSymbols);
+        if (createdItems.length) await tx.create(createdItems);
+      });
+    const save = edit.save ?? true;
+    if (save) await schematic.save();
+    return {
+      created: {
+        symbols: createdSymbols.length,
+        wires: wires.length,
+        localLabels: localLabels.length,
+        globalLabels: globalLabels.length,
+        junctions: junctions.length,
+        noConnects: noConnects.length,
+        texts: texts.length,
+      },
+      updated: { symbols: updatedSymbols.length },
+      deleted: deleteItems.length,
+      saved: save,
+      revision: Number((await schematic.revision()) ?? 0n),
+    };
+  };
+
+  const syncSchematicToPcb = async (projectDir: string, dryRun: boolean) => {
+    const { schematic, board } = await deps.sessions.ensureProject(projectDir);
+    await schematic.save();
+    const erc = await schematic.erc.run();
+    const blocked = {
+      ok: false,
+      dryRun,
+      erc: { errors: erc.errorCount, warnings: erc.warningCount },
+      update: { errors: 0, warnings: 0, newFootprints: 0, report: "" },
+      saved: false,
+    };
+    if (erc.errorCount) return blocked;
+    const options = {
+      matchMode: "uuid" as const,
+      deleteExtraFootprints: false,
+      updateFootprints: true,
+      updateFields: true,
+      removeExtraFields: false,
+    };
+    const preview = await schematic.syncToBoard(board, { ...options, dryRun: true });
+    const update = {
+      errors: preview.errorCount,
+      warnings: preview.warningCount,
+      newFootprints: preview.newFootprintCount,
+      report: preview.report,
+    };
+    if (preview.errorCount || dryRun)
+      return {
+        ok: preview.errorCount === 0,
+        dryRun: true,
+        erc: blocked.erc,
+        update,
+        saved: false,
+      };
+    const applied = await schematic.syncToBoard(board, options);
+    const appliedUpdate = {
+      errors: applied.errorCount,
+      warnings: applied.warningCount,
+      newFootprints: applied.newFootprintCount,
+      report: applied.report,
+    };
+    if (applied.errorCount) {
+      await board.undo().catch(() => undefined);
+      return { ok: false, dryRun: false, erc: blocked.erc, update: appliedUpdate, saved: false };
+    }
+    const parity = await board.drc.run({ testFootprintsAgainstSchematic: true });
+    if (parity.parityCount) {
+      await board.undo().catch(() => undefined);
+      return {
+        ok: false,
+        dryRun: false,
+        erc: blocked.erc,
+        update: appliedUpdate,
+        parity: parity.parityCount,
+        saved: false,
+      };
+    }
+    await board.save();
+    await schematic.save();
+    return {
+      ok: true,
+      dryRun: false,
+      erc: blocked.erc,
+      update: appliedUpdate,
+      parity: 0,
+      saved: true,
+    };
+  };
+
+  const defineBoardOutline = async (
+    projectDir: string,
+    pointsMm: Array<{ x: number; y: number }>,
+    replace: boolean,
+  ) => {
+    const { board } = await deps.sessions.ensureProject(projectDir);
+    const property = "fabdesk.generated-outline";
+    const value = "native-atomic-edit";
+    const points = pointsMm.map((point) => ({ x: toNm(point.x), y: toNm(point.y) }));
+    const newEdges = points.map((start, index) => {
+      const end = points[(index + 1) % points.length]!;
+      const edge = new BoardShape(
+        create(BoardGraphicShapeSchema, {
+          layer: BoardLayer.BL_Edge_Cuts,
+          shape: {
+            geometry: { case: "segment", value: { start: toVector2(start), end: toVector2(end) } },
+          },
+        }),
+      );
+      edge.setCustomProperty(property, value);
+      return edge;
+    });
+    const existing = (await board.getShapes()).filter(
+      (shape) =>
+        shape.proto.layer === BoardLayer.BL_Edge_Cuts &&
+        shape.proto.shape?.geometry.case === "segment",
+    );
+    const generated = existing.filter((edge) => edge.customProperties[property] === value);
+    const segmentKey = (a: { x: number; y: number }, b: { x: number; y: number }) => {
+      const first = `${a.x},${a.y}`;
+      const second = `${b.x},${b.y}`;
+      return first < second ? `${first}|${second}` : `${second}|${first}`;
+    };
+    const keys = (edges: BoardShape[]) =>
+      edges
+        .flatMap((edge) => {
+          const geometry = edge.proto.shape?.geometry;
+          return geometry?.case === "segment"
+            ? [
+                segmentKey(
+                  {
+                    x: Number(geometry.value.start?.xNm ?? 0n),
+                    y: Number(geometry.value.start?.yNm ?? 0n),
+                  },
+                  {
+                    x: Number(geometry.value.end?.xNm ?? 0n),
+                    y: Number(geometry.value.end?.yNm ?? 0n),
+                  },
+                ),
+              ]
+            : [];
+        })
+        .sort();
+    const matches =
+      JSON.stringify(keys(generated.length ? generated : existing)) ===
+      JSON.stringify(keys(newEdges));
+    if (matches) {
+      return {
+        created: 0,
+        replaced: 0,
+        revision: Number((await board.revision()) ?? 0n),
+        saved: true,
+      };
+    }
+    if (existing.length && (!generated.length || !replace))
+      throw new ToolError(
+        generated.length
+          ? "the requested outline differs from the Fabdesk-owned outline; preview the board and pass replace=true to update it"
+          : "the requested outline differs from a human-authored Edge.Cuts boundary; edit it in KiCad or remove it explicitly",
+        "precondition",
+      );
+    await board.commit("Fabdesk: define native PCB outline", async (tx) => {
+      if (generated.length) await tx.delete(generated);
+      await tx.create(newEdges);
+    });
+    await board.save();
+    return {
+      created: newEdges.length,
+      replaced: generated.length,
+      revision: Number((await board.revision()) ?? 0n),
+      saved: true,
+    };
+  };
+
+  const placeFootprints = async (
+    projectDir: string,
+    placements: PcbFootprintEdit[],
+  ) => {
+    const board = await deps.sessions.board(projectDir);
+    const footprints = await board.getFootprints();
+    const byReference = new Map(footprints.map((footprint) => [footprint.reference, footprint]));
+    const missing = placements
+      .map((placement) => placement.reference)
+      .filter((reference) => !byReference.has(reference));
+    if (missing.length)
+      return { moved: [], missing, revision: Number((await board.revision()) ?? 0n), saved: false };
+    const moved = placements.flatMap((placement) => {
+      const footprint = byReference.get(placement.reference)!;
+      let changed = false;
+      if (placement.position) {
+        const target = { x: toNm(placement.position.x), y: toNm(placement.position.y) };
+        const delta = { x: target.x - footprint.position.x, y: target.y - footprint.position.y };
+        if (delta.x || delta.y) {
+          footprint.translate(delta);
+          changed = true;
+        }
+      }
+      if (placement.rotation !== undefined && footprint.orientation !== placement.rotation) {
+        footprint.orientation = placement.rotation;
+        changed = true;
+      }
+      if (placement.flip !== undefined && footprint.isFlipped !== placement.flip) {
+        footprint.layerId = placement.flip ? BoardLayer.BL_B_Cu : BoardLayer.BL_F_Cu;
+        changed = true;
+      }
+      if (placement.lock !== undefined && footprint.locked !== placement.lock) {
+        footprint.locked = placement.lock;
+        changed = true;
+      }
+      return changed ? [footprint] : [];
+    });
+    if (moved.length)
+      await board.commit("Fabdesk: place native PCB footprints", (tx) => tx.update(moved));
+    await board.save();
+    return {
+      moved: moved.map((footprint) => footprint.reference),
+      missing: [],
+      revision: Number((await board.revision()) ?? 0n),
+      saved: true,
+    };
+  };
+
   const query = async (
     projectDir: string,
     select: DesignSelect,
@@ -206,6 +749,10 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
             x: mm(fp.position.x),
             y: mm(fp.position.y),
             layer: fp.layerId,
+            rotation: fp.orientation,
+            flipped: fp.isFlipped,
+            locked: fp.locked,
+            symbolPath: fp.symbolPath,
           }))
           .filter((r) => keep(r.ref, r.value, r.footprint));
       }
@@ -260,8 +807,84 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
             net: t.net ?? "",
             layer: t.layerId ?? "",
             id: t.id,
+            ...(t instanceof Track
+              ? {
+                  start: `${mm(t.start.x)},${mm(t.start.y)}`,
+                  end: `${mm(t.end.x)},${mm(t.end.y)}`,
+                  width: mm(t.width),
+                  length: mm(t.length),
+                }
+              : t instanceof Arc
+                ? {
+                    start: `${mm(t.start.x)},${mm(t.start.y)}`,
+                    mid: `${mm(t.mid.x)},${mm(t.mid.y)}`,
+                    end: `${mm(t.end.x)},${mm(t.end.y)}`,
+                    width: mm(t.width),
+                  }
+                : {}),
           }))
           .filter((r) => keep(r.net));
+      }
+      case "zones":
+      case "keepouts": {
+        return (await board.getZones())
+          .filter((zone) => (select === "keepouts" ? zone.isRuleArea : !zone.isRuleArea))
+          .map((zone: Zone) => ({
+            id: zone.id,
+            name: zone.name,
+            net: zone.net ?? "",
+            layers: zone.layers,
+            clearance: mm(zone.clearance),
+            minThickness: mm(zone.minThickness),
+            filled: zone.filled,
+            points: zone.outlinePoints.map((point) => ({ x: mm(point.x), y: mm(point.y) })),
+          }))
+          .filter((row) => keep(row.name, row.net));
+      }
+      case "board_geometry": {
+        const shapes = await board.getShapes();
+        const footprints = await board.getFootprints();
+        const footprintGeometry = footprints.flatMap((footprint) =>
+          footprint.items
+            .filter(
+              (item): item is BoardShape =>
+                item instanceof BoardShape &&
+                [BoardLayer.BL_F_CrtYd, BoardLayer.BL_B_CrtYd, BoardLayer.BL_F_Fab, BoardLayer.BL_B_Fab].includes(item.layerId),
+            )
+            .map((shape) => ({
+              id: shape.id,
+              owner: footprint.reference,
+              kind: shape.kind,
+              layer: shape.layerId,
+              start: { x: mm(shape.start.x), y: mm(shape.start.y) },
+              end: { x: mm(shape.end.x), y: mm(shape.end.y) },
+            })),
+        );
+        return [
+          ...shapes.map((shape) => ({
+            id: shape.id,
+            owner: "board",
+            kind: shape.kind,
+            layer: shape.layerId,
+            start: { x: mm(shape.start.x), y: mm(shape.start.y) },
+            end: { x: mm(shape.end.x), y: mm(shape.end.y) },
+          })),
+          ...footprintGeometry,
+        ];
+      }
+      case "texts": {
+        return (await board.getTexts())
+          .map((text: BoardText) => ({
+            id: text.id,
+            text: text.text,
+            x: mm(text.position.x),
+            y: mm(text.position.y),
+            layer: text.layerId,
+            rotation: text.angle,
+            size: { x: mm(text.size.x), y: mm(text.size.y) },
+            thickness: mm(text.thickness),
+          }))
+          .filter((row) => keep(row.text));
       }
       case "unrouted": {
         return (await board.ratsnest()).edges
@@ -565,6 +1188,11 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
 
   return {
     build,
+    schematicInspect,
+    schematicEdit,
+    syncSchematicToPcb,
+    defineBoardOutline,
+    placeFootprints,
     query,
     route,
     cancelRoute,

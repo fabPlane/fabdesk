@@ -62,6 +62,7 @@ export function mockServices(
   const svc: CoreServices & { events: CoreEvent[] } = {
     events,
     version: "0.0.0-test",
+    runtimeId: "test-runtime",
     channel: "public",
     settings: () => ({
       kicadCliPath: null,
@@ -112,6 +113,54 @@ export function mockServices(
           revision: 2,
         };
       },
+      schematicInspect: async () => ({
+        revision: 0,
+        pcbRevision: 0,
+        symbols: [],
+        wires: [],
+        localLabels: [],
+        globalLabels: [],
+        junctions: [],
+        noConnects: [],
+        texts: [],
+        nets: [],
+        erc: { errors: 0, warnings: 0 },
+      }),
+      schematicEdit: async (_dir, edit) => ({
+        created: {
+          symbols: edit.symbols?.length ?? 0,
+          wires: edit.wires?.length ?? 0,
+          localLabels: edit.localLabels?.length ?? 0,
+          globalLabels: edit.globalLabels?.length ?? 0,
+          junctions: edit.junctions?.length ?? 0,
+          noConnects: edit.noConnects?.length ?? 0,
+          texts: edit.texts?.length ?? 0,
+        },
+        updated: { symbols: edit.symbolUpdates?.length ?? 0 },
+        deleted: edit.deleteItemIds?.length ?? 0,
+        saved: edit.save ?? true,
+        revision: 1,
+      }),
+      syncSchematicToPcb: async (_dir, dryRun) => ({
+        ok: true,
+        dryRun,
+        erc: { errors: 0, warnings: 0 },
+        update: { errors: 0, warnings: 0, newFootprints: 0, report: "" },
+        ...(dryRun ? {} : { parity: 0 }),
+        saved: !dryRun,
+      }),
+      defineBoardOutline: async (_dir, points, replace) => ({
+        created: points.length,
+        replaced: replace ? points.length : 0,
+        revision: 2,
+        saved: true,
+      }),
+      placeFootprints: async (_dir, placements) => ({
+        moved: placements.map((placement) => placement.reference),
+        missing: [],
+        revision: 3,
+        saved: true,
+      }),
       query: async (_dir, select, filter) => {
         const rows: Record<string, Array<Record<string, unknown>>> = {
           components: [
@@ -205,17 +254,6 @@ export function mockServices(
               anchor: { x: 0, y: 0 },
               pads: [{ number: "1", position: { x: -0.5, y: 0 }, size: { x: 0.6, y: 0.6 } }],
             },
-      checkPartCompatibility: async (symbolLibId, footprintLibId, role) => ({
-        symbolLibId,
-        footprintLibId,
-        symbol: { kind: "symbol", libId: symbolLibId, description: "mock symbol" },
-        footprint: { kind: "footprint", libId: footprintLibId, description: "mock footprint" },
-        compatible: true,
-        pinPad: { compatible: true, matched: ["1"], missingPadsForPins: [], padsWithoutPins: [] },
-        ...(role ? { role: { role, suitable: true, reasons: ["mock compatible"] } } : {}),
-        issues: [],
-        warnings: [],
-      }),
       status: async () => ({ url: "http://127.0.0.1:4020", ok: true, frontends: ["netlist-json"] }),
       release: async () => {},
     },
@@ -248,6 +286,7 @@ export function mockServices(
       exportBom: async () => ({ paths: [] }),
       exportNetlist: async () => ({ paths: [] }),
       exportSchematicSvg: async () => ({ paths: [] }),
+      exportSchematicPdf: async () => ({ paths: [] }),
       exportPcbSvg: async (_cli, { output }) => {
         await Bun.write(output, "<svg xmlns='http://www.w3.org/2000/svg'><text>pcb</text></svg>");
         return { paths: [output] };

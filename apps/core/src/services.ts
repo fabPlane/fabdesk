@@ -17,6 +17,7 @@ import type { RunTelemetry } from "./run-telemetry";
 
 export type ServiceDeps = {
   version: string;
+  runtimeId?: string | null;
   channel: Channel;
   settings: () => Settings;
   projects: ProjectStore;
@@ -97,6 +98,7 @@ export async function createServices(
 
   const services: CoreServices & { dispose(): Promise<void> } = {
     version: deps.version,
+    runtimeId: deps.runtimeId ?? null,
     channel: deps.channel,
     settings: deps.settings,
     projects: deps.projects,
@@ -128,6 +130,7 @@ export async function createServices(
       exportBom: (cli, o) => kicad.exportBom(cli, o),
       exportNetlist: (cli, o) => kicad.exportNetlist(cli, o),
       exportSchematicSvg: (cli, o) => kicad.exportSchematicSvg(cli, o),
+      exportSchematicPdf: (cli, o) => kicad.exportSchematicPdf(cli, o),
       exportPcbSvg: (cli, o) => kicad.exportPcbSvg(cli, o),
     },
     sim: simService(deps.settings),

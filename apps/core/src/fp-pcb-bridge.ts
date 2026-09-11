@@ -113,28 +113,56 @@ export class FpPcbBridgeClient {
     await this.json("DELETE", `/sessions/${encodeURIComponent(id)}`);
   }
 
+  /** Register the packaged bridge's standard KiCad libraries in the session's open project. */
+  async registerBundledLibraries(id: string): Promise<number> {
+    const result = (await this.json(
+      "POST",
+      `/sessions/${encodeURIComponent(id)}/libraries/register-bundled`,
+      {},
+    )) as { registered?: number };
+    return result.registered ?? 0;
+  }
+
   /** A running session on `path` if the bridge has one, else a new one. */
   async sessionFor(path: string | null): Promise<FpPcbSession> {
-    const existing = (await this.sessions()).find((s) => s.path === path && s.state !== "failed" && s.state !== "stopped" && s.state !== "exited");
+    const existing = (await this.sessions()).find(
+      (s) =>
+        s.path === path && s.state !== "failed" && s.state !== "stopped" && s.state !== "exited",
+    );
     return existing ?? this.createSession(path);
   }
 
   /** Starts a compile on `sessionId` and follows it to a terminal state. A 404 (`not_found`) means the session is gone. */
-  compile(sessionId: string, request: FpPcbCompileRequest, follow: JobFollow<FpPcbCompileJob> = {}): Promise<FpPcbCompileJob> {
-    return this.job("compile", sessionId, request, follow, FpPcbCompileJob, (j) => FP_PCB_TERMINAL_STATES.has(j.state));
+  compile(
+    sessionId: string,
+    request: FpPcbCompileRequest,
+    follow: JobFollow<FpPcbCompileJob> = {},
+  ): Promise<FpPcbCompileJob> {
+    return this.job("compile", sessionId, request, follow, FpPcbCompileJob, (j) =>
+      FP_PCB_TERMINAL_STATES.has(j.state),
+    );
   }
 
   /** Starts a route job on `sessionId` and follows it to a terminal state. */
-  route(sessionId: string, request: FpPcbRouteRequest, follow: JobFollow<FpPcbRouteJob> = {}): Promise<FpPcbRouteJob> {
-    return this.job("route", sessionId, request, follow, FpPcbRouteJob, (j) => FP_PCB_ROUTE_TERMINAL_STATES.has(j.state));
+  route(
+    sessionId: string,
+    request: FpPcbRouteRequest,
+    follow: JobFollow<FpPcbRouteJob> = {},
+  ): Promise<FpPcbRouteJob> {
+    return this.job("route", sessionId, request, follow, FpPcbRouteJob, (j) =>
+      FP_PCB_ROUTE_TERMINAL_STATES.has(j.state),
+    );
   }
 
   /** Cancels every running job of a kind on a session. */
   async cancelJobs(kind: JobKind, sessionId: string): Promise<number> {
     const base = `/sessions/${encodeURIComponent(sessionId)}/${kind}`;
     const res = (await this.json("GET", base)) as { jobs?: Array<{ id: string; state: string }> };
-    const running = (res.jobs ?? []).filter((j) => !["done", "failed", "cancelled"].includes(j.state));
-    for (const j of running) await this.json("DELETE", `${base}/${encodeURIComponent(j.id)}`).catch(() => undefined);
+    const running = (res.jobs ?? []).filter(
+      (j) => !["done", "failed", "cancelled"].includes(j.state),
+    );
+    for (const j of running)
+      await this.json("DELETE", `${base}/${encodeURIComponent(j.id)}`).catch(() => undefined);
     return running.length;
   }
 
@@ -162,7 +190,10 @@ export class FpPcbBridgeClient {
 
     let res: Response;
     try {
-      res = await this.fetchImpl(`${this.url}${jobPath}`, { headers: { accept: "text/event-stream" }, signal });
+      res = await this.fetchImpl(`${this.url}${jobPath}`, {
+        headers: { accept: "text/event-stream" },
+        signal,
+      });
     } catch (e) {
       if (follow.signal?.aborted) {
         await cancel();
@@ -181,7 +212,12 @@ export class FpPcbBridgeClient {
           continue;
         }
         job = parsed;
-        if (ev.event === FP_PCB_SSE_EVENTS.done || ev.event === FP_PCB_SSE_EVENTS.error || terminal(job)) return job;
+        if (
+          ev.event === FP_PCB_SSE_EVENTS.done ||
+          ev.event === FP_PCB_SSE_EVENTS.error ||
+          terminal(job)
+        )
+          return job;
         follow.onProgress?.(job);
       }
     } catch (e) {
@@ -198,10 +234,17 @@ export class FpPcbBridgeClient {
     // Stream ended without a terminal event: the record is authoritative.
     job = schema.parse(((await this.json("GET", jobPath)) as { job: unknown }).job);
     if (terminal(job)) return job;
-    throw new ToolError(`${kind} job ${job.id} ended its stream in state ${job.state}`, "unavailable");
+    throw new ToolError(
+      `${kind} job ${job.id} ended its stream in state ${job.state}`,
+      "unavailable",
+    );
   }
 
-  private async json(method: "GET" | "POST" | "DELETE", path: string, body?: unknown): Promise<unknown> {
+  private async json(
+    method: "GET" | "POST" | "DELETE",
+    path: string,
+    body?: unknown,
+  ): Promise<unknown> {
     let res: Response;
     try {
       res = await this.fetchImpl(`${this.url}${path}`, {
@@ -219,7 +262,10 @@ export class FpPcbBridgeClient {
   }
 
   private unreachable(e: unknown): ToolError {
-    return new ToolError(`FabPlane PCB bridge unreachable at ${this.url}: ${e instanceof Error ? e.message : String(e)}`, "unavailable");
+    return new ToolError(
+      `FabPlane PCB bridge unreachable at ${this.url}: ${e instanceof Error ? e.message : String(e)}`,
+      "unavailable",
+    );
   }
 
   private async failure(res: Response, path: string): Promise<ToolError> {
@@ -231,6 +277,9 @@ export class FpPcbBridgeClient {
       /* no body */
     }
     const message = `FabPlane PCB bridge ${res.status} on ${path}${detail ? `: ${detail}` : ""}`;
-    return new ToolError(message, res.status === 404 ? "not_found" : res.status === 400 ? "invalid_args" : "unavailable");
+    return new ToolError(
+      message,
+      res.status === 404 ? "not_found" : res.status === 400 ? "invalid_args" : "unavailable",
+    );
   }
 }

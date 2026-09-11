@@ -1,0 +1,137 @@
+/** SHARED-005: one revision-bound verification and complete native/fabrication handoff. */
+import { createHash } from "node:crypto";
+import { readdir, readFile, stat } from "node:fs/promises";
+import { join, relative } from "node:path";
+import { z } from "zod/v4";
+import { PROJECT_FILES, ensureDir, exists, writeAtomic, writeJson } from "../fs";
+import { ToolError, defineTool } from "../registry";
+import { p, requireKicad } from "./common";
+import { zipFiles } from "./export";
+
+const CircuitCheck = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("led-current"), name: z.string().default("LED current"), supplyVolts: z.number().positive(), forwardVolts: z.number().nonnegative(), resistanceOhms: z.number().positive(), minMa: z.number().nonnegative(), maxMa: z.number().positive() }),
+  z.object({ kind: z.literal("usb-c-cc"), name: z.string().default("USB-C CC pull-downs"), cc1Ohms: z.number().positive(), cc2Ohms: z.number().positive(), expectedOhms: z.number().positive().default(5100), tolerancePercent: z.number().positive().default(10) }),
+  z.object({ kind: z.literal("555-astable"), name: z.string().default("555 astable frequency"), r1Ohms: z.number().positive(), r2Ohms: z.number().positive(), capacitanceFarads: z.number().positive(), expectedHz: z.number().positive(), tolerancePercent: z.number().positive().default(10) }),
+  z.object({ kind: z.literal("assertion"), name: z.string().min(1), pass: z.boolean(), evidence: z.string().min(1) }),
+]);
+
+async function hash(path: string): Promise<string> {
+  return createHash("sha256").update(await readFile(path)).digest("hex");
+}
+
+function evaluate(check: z.infer<typeof CircuitCheck>) {
+  if (check.kind === "assertion") return { ...check, measured: check.evidence, status: check.pass ? "pass" : "fail" };
+  if (check.kind === "led-current") {
+    const measuredMa = Math.max(0, check.supplyVolts - check.forwardVolts) / check.resistanceOhms * 1000;
+    return { ...check, measured: { currentMa: measuredMa }, status: measuredMa >= check.minMa && measuredMa <= check.maxMa ? "pass" : "fail" };
+  }
+  if (check.kind === "usb-c-cc") {
+    const tolerance = check.expectedOhms * check.tolerancePercent / 100;
+    const pass = [check.cc1Ohms, check.cc2Ohms].every((value) => Math.abs(value - check.expectedOhms) <= tolerance);
+    return { ...check, measured: { cc1Ohms: check.cc1Ohms, cc2Ohms: check.cc2Ohms }, status: pass ? "pass" : "fail" };
+  }
+  const measuredHz = 1.44 / ((check.r1Ohms + 2 * check.r2Ohms) * check.capacitanceFarads);
+  const pass = Math.abs(measuredHz - check.expectedHz) <= check.expectedHz * check.tolerancePercent / 100;
+  return { ...check, measured: { frequencyHz: measuredHz }, status: pass ? "pass" : "fail" };
+}
+
+export const release_build = defineTool({
+  name: "release_build",
+  toolset: "verify",
+  title: "Verify and build the complete release",
+  description:
+    "Run full-severity ERC, parity-enabled DRC, unconnected/library checks, task-derived circuit checks, schematic/PCB renders, and complete native/document/fabrication export for one exact saved revision. Missing checks or outputs are reported as missing and fail the release. Returns SHA-256 revisions and a complete output inventory; any later edit makes this evidence stale.",
+  inputSchema: {
+    circuitChecks: z.array(CircuitCheck).min(1).describe("Task-derived electrical assertions relevant to this board"),
+    buildNotes: z.string().min(1).describe("Assembly notes, design calculations, polarity/orientation guidance and constraints"),
+  },
+  annotations: { idempotentHint: true },
+  longRunning: true,
+  handler: async ({ circuitChecks, buildNotes }, ctx) => {
+    const project = ctx.requireProject();
+    const schematic = p(project, PROJECT_FILES.boardSch);
+    const board = p(project, PROJECT_FILES.boardPcb);
+    const pro = p(project, PROJECT_FILES.boardPro);
+    for (const path of [schematic, board, pro]) if (!(await exists(path))) throw new ToolError(`missing native file ${relative(project.dir, path)}`, "precondition");
+    const before = { schematic: await hash(schematic), pcb: await hash(board), project: await hash(pro) };
+    const cli = await requireKicad(ctx);
+    const reportsDir = await ensureDir(p(project, PROJECT_FILES.reports));
+    const rendersDir = await ensureDir(p(project, PROJECT_FILES.renders));
+    const exportsDir = await ensureDir(p(project, PROJECT_FILES.exports));
+    const gerbersDir = await ensureDir(join(exportsDir, "gerbers"));
+
+    ctx.progress(0.08, "ERC");
+    const erc = await ctx.services.kicad.runErc(cli, { schematic, outFile: join(reportsDir, "release-erc.json"), severity: "all", signal: ctx.signal });
+    ctx.progress(0.16, "DRC and parity");
+    const drc = await ctx.services.kicad.runDrc(cli, { board, outFile: join(reportsDir, "release-drc.json"), severity: "all", schematicParity: true, signal: ctx.signal });
+    const gate = ctx.services.kicad.gate({ ...drc, schematicParityChecked: true }, erc, project.manifest().allowedDrcWarnings);
+    const calculations = circuitChecks.map(evaluate);
+
+    ctx.progress(0.3, "renders");
+    const schematicSvgs = await ctx.services.kicad.exportSchematicSvg(cli, { schematic, outDir: join(rendersDir, "schematic"), signal: ctx.signal });
+    const pcbSvg = join(rendersDir, "pcb.svg");
+    await ctx.services.kicad.exportPcbSvg(cli, { board, output: pcbSvg, signal: ctx.signal });
+    const topPng = join(rendersDir, "release-top.png");
+    const bottomPng = join(rendersDir, "release-bottom.png");
+    await ctx.services.kicad.renderPng(cli, { board, output: topPng, view: "top", quality: "high", signal: ctx.signal });
+    await ctx.services.kicad.renderPng(cli, { board, output: bottomPng, view: "bottom", quality: "high", signal: ctx.signal });
+    const schematicPdf = join(exportsDir, "schematic.pdf");
+    await ctx.services.kicad.exportSchematicPdf(cli, { schematic, output: schematicPdf, signal: ctx.signal });
+
+    ctx.progress(0.55, "fabrication outputs");
+    const gerbers = await ctx.services.kicad.exportGerbers(cli, { board, outDir: gerbersDir, signal: ctx.signal });
+    const drills = await ctx.services.kicad.exportDrill(cli, { board, outDir: gerbersDir, signal: ctx.signal });
+    const positions = join(exportsDir, "positions.csv");
+    await ctx.services.kicad.exportPos(cli, { board, output: positions, signal: ctx.signal });
+    const bom = join(exportsDir, "bom.csv");
+    await ctx.services.kicad.exportBom(cli, { schematic, output: bom, signal: ctx.signal });
+    const connectivity = join(exportsDir, "connectivity.net");
+    await ctx.services.kicad.exportNetlist(cli, { schematic, output: connectivity, format: "kicadsexpr", signal: ctx.signal });
+    const notes = join(exportsDir, "build-notes.md");
+    await writeAtomic(notes, `${buildNotes.trim()}\n`);
+
+    const expected = [pro, schematic, board, schematicPdf, pcbSvg, topPng, bottomPng, positions, bom, connectivity, notes];
+    const outputPaths = [...expected, ...schematicSvgs.paths, ...gerbers.paths, ...drills.paths];
+    const unique = [...new Set(outputPaths)];
+    const inventory = await Promise.all(unique.map(async (path) => {
+      const metadata = await stat(path).catch(() => null);
+      return metadata?.isFile() && metadata.size > 0
+        ? { path: relative(project.dir, path), status: "available" as const, bytes: metadata.size, sha256: await hash(path) }
+        : { path: relative(project.dir, path), status: "missing" as const };
+    }));
+    if (!schematicSvgs.paths.length) inventory.push({ path: "renders/schematic/*.svg", status: "missing" as const });
+    if (!gerbers.paths.length) inventory.push({ path: "exports/gerbers/*.gbr", status: "missing" as const });
+    if (!drills.paths.length) inventory.push({ path: "exports/gerbers/*.drl", status: "missing" as const });
+    if (!(await readdir(gerbersDir)).some((name) => /\.gbrjob$/i.test(name))) inventory.push({ path: "exports/gerbers/*.gbrjob", status: "missing" as const });
+
+    const fabricationEntries = inventory.flatMap((entry) => entry.status === "available" && entry.path.startsWith("exports/") && !entry.path.endsWith("fabrication.zip") ? [{ name: entry.path.slice("exports/".length), path: join(project.dir, entry.path) }] : []);
+    const fabricationZip = join(exportsDir, "fabrication.zip");
+    if (fabricationEntries.length) await zipFiles(fabricationZip, fabricationEntries);
+    const zipMetadata = await stat(fabricationZip).catch(() => null);
+    inventory.push(zipMetadata?.size ? { path: "exports/fabrication.zip", status: "available" as const, bytes: zipMetadata.size, sha256: await hash(fabricationZip) } : { path: "exports/fabrication.zip", status: "missing" as const });
+
+    const after = { schematic: await hash(schematic), pcb: await hash(board), project: await hash(pro) };
+    const stable = JSON.stringify(before) === JSON.stringify(after);
+    const missing = inventory.filter((entry) => entry.status === "missing").map((entry) => entry.path);
+    const checks = {
+      erc: { status: erc.counts.errors === 0 ? "pass" : "fail", ...erc },
+      drc: { status: drc.counts.errors === 0 ? "pass" : "fail", ...drc, schematicParityChecked: true },
+      parity: { status: drc.schematicParity.length === 0 ? "pass" : "fail", violations: drc.schematicParity },
+      unconnected: { status: drc.counts.unconnected === 0 ? "pass" : "fail", count: drc.counts.unconnected },
+      libraryMismatches: { status: [...erc.violations, ...drc.violations].some((violation) => /library.*mismatch/i.test(`${violation.rule} ${violation.description}`)) ? "fail" : "pass" },
+      circuit: calculations,
+      revisionStable: { status: stable ? "pass" : "fail" },
+    };
+    const pass = stable && gate.pass && calculations.every((check) => check.status === "pass") && missing.length === 0;
+    const result = {
+      contract: { name: "fabdesk.native-release", version: "1.0.0" }, capturedAt: new Date().toISOString(),
+      runtime: { runtimeId: ctx.services.runtimeId, fabdeskVersion: ctx.services.version, kicadCli: { path: cli.path, version: cli.version } },
+      revisions: before, stale: false, pass, checks, inventory, missing,
+    };
+    await writeJson(join(reportsDir, "release.json"), result);
+    ctx.progress(1, pass ? "release passed" : "release failed");
+    return { text: `Release ${pass ? "PASS" : "FAIL"} for ${before.schematic.slice(0, 12)}/${before.pcb.slice(0, 12)}: ${inventory.length - missing.length}/${inventory.length} outputs available${missing.length ? `; missing ${missing.join(", ")}` : ""}.`, json: result, isError: !pass };
+  },
+});
+
+export const releaseTools = [release_build];

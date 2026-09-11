@@ -1,9 +1,9 @@
 /** Route toolset + the shared `route_run` implementation used by the core toolset. */
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod/v4";
 import type { CinemaShape, RouteResult } from "@fabdesk/protocol";
-import { PROJECT_FILES, writeJson } from "../fs";
+import { PROJECT_FILES, writeAtomic, writeJson } from "../fs";
 import { FrameSink } from "../frame-sink";
 import { ToolError, defineTool, type ToolContext, type ToolOutput } from "../registry";
 import type { RouteProgress } from "../services";
@@ -12,7 +12,13 @@ import { loadNetlist, ok, p, throwIfAborted } from "./common";
 export const RouteRunArgs = {
   router: z.enum(["capacity", "freerouting"]).optional().describe("Router; defaults to the project's fabdesk.json router"),
   timeoutMs: z.number().int().min(1000).max(30 * 60_000).default(120_000),
-  onlyConnections: z.array(z.string()).optional().describe("Route only these nets (after route_unroute)"),
+  onlyConnections: z.array(z.string()).optional().describe("Limit routing to these nets"),
+  targets: z.array(z.object({ net: z.string().min(1), from: z.object({ x: z.number(), y: z.number() }).optional(), to: z.object({ x: z.number(), y: z.number() }).optional() })).optional().describe("Selected nets or exact remaining endpoint pairs"),
+  rules: z.object({
+    widthMm: z.number().positive().optional(), clearanceMm: z.number().nonnegative().optional(),
+    viaDiameterMm: z.number().positive().optional(), viaDrillMm: z.number().positive().optional(),
+    layers: z.array(z.string().min(1)).min(1).optional(), refillZones: z.boolean().optional(),
+  }).optional().describe("Explicit routing width, clearance, via, layer and zone rules"),
   settings: z.record(z.string(), z.unknown()).optional().describe("Router specific settings"),
 };
 
@@ -77,19 +83,34 @@ export function cinemaLayer(layer: number, count: number): number {
 }
 
 export async function runRoute(
-  args: { router?: "capacity" | "freerouting"; timeoutMs: number; onlyConnections?: string[]; settings?: Record<string, unknown> },
+  args: { router?: "capacity" | "freerouting" | undefined; timeoutMs: number; onlyConnections?: string[] | undefined; targets?: Array<{ net: string; from?: { x: number; y: number } | undefined; to?: { x: number; y: number } | undefined }> | undefined; rules?: { widthMm?: number | undefined; clearanceMm?: number | undefined; viaDiameterMm?: number | undefined; viaDrillMm?: number | undefined; layers?: string[] | undefined; refillZones?: boolean | undefined } | undefined; settings?: Record<string, unknown> | undefined },
   ctx: ToolContext,
 ): Promise<ToolOutput> {
   const project = ctx.requireProject();
   const manifest = project.manifest();
   const router = args.router ?? manifest.router;
-  if (router === "freerouting" && ctx.services.channel !== "internal") {
-    throw new ToolError("the freerouting router is only available in internal builds; use router=capacity", "unavailable");
-  }
+  if (router === "freerouting" && ctx.services.channel !== "internal")
+    return { text: "Routing unavailable: freerouting is not present in this packaged runtime.", json: { state: "unavailable", router, routerVersion: null, remainingEndpoints: [], obstacles: ["freerouting is not packaged"], changedGeometry: [], nextActions: ["capacity router", "internal package containing freerouting"] }, isError: true };
   // A prefab blank (fabdesk.json board.template) routes with the laser-prefab preset unless the caller
   // picked one explicitly; the bridge's JS router also switches by itself when the board has free vias.
-  const settings: Record<string, unknown> | undefined =
-    manifest.board.template !== undefined && args.settings?.["preset"] === undefined ? { ...(args.settings ?? {}), preset: "laser-prefab" } : args.settings;
+  const requestedNets = [...new Set([...(args.onlyConnections ?? []), ...(args.targets ?? []).map((target) => target.net)])];
+  const preflightEndpoints = await ctx.services.design.query(project.dir, "unrouted");
+  const endpointRows = preflightEndpoints.map((row) => ({ net: String(row["net"] ?? ""), from: String(row["from"] ?? ""), to: String(row["to"] ?? "") }));
+  const missingTargets = requestedNets.filter((net) => !endpointRows.some((row) => row.net === net));
+  if (missingTargets.length)
+    return { text: `Routing blocked in preflight: no remaining endpoints for ${missingTargets.join(", ")}.`, json: { state: "blocked", router, routerVersion: ctx.services.runtimeId, remainingEndpoints: endpointRows, obstacles: missingTargets.map((net) => `no remaining endpoint for ${net}`), changedGeometry: [], nextActions: ["design inspection", "target-net correction", "placement adjustment"] }, isError: true };
+  const ruleSettings = args.rules ? {
+    ...(args.rules.widthMm !== undefined ? { trackWidthMm: args.rules.widthMm } : {}),
+    ...(args.rules.clearanceMm !== undefined ? { clearanceMm: args.rules.clearanceMm } : {}),
+    ...(args.rules.viaDiameterMm !== undefined ? { viaDiameterMm: args.rules.viaDiameterMm } : {}),
+    ...(args.rules.viaDrillMm !== undefined ? { viaDrillMm: args.rules.viaDrillMm } : {}),
+    ...(args.rules.layers ? { layers: args.rules.layers } : {}),
+  } : {};
+  const settings: Record<string, unknown> | undefined = Object.keys({ ...(args.settings ?? {}), ...ruleSettings }).length || manifest.board.template
+    ? { ...(args.settings ?? {}), ...ruleSettings, ...(manifest.board.template !== undefined && args.settings?.["preset"] === undefined ? { preset: "laser-prefab" } : {}) }
+    : undefined;
+  const boardPath = p(project, PROJECT_FILES.boardPcb);
+  const beforeBoard = await readFile(boardPath, "utf8");
   const runId = newRunId();
   const runDir = p(project, PROJECT_FILES.runs, runId);
   await mkdir(runDir, { recursive: true });
@@ -147,7 +168,7 @@ export async function runRoute(
     throwIfAborted(ctx.signal);
     summary = await ctx.services.design.route(
       project.dir,
-      { router, maxTimeMs: args.timeoutMs, ...(args.onlyConnections ? { nets: args.onlyConnections } : {}), ...(settings ? { settings } : {}) },
+      { router, maxTimeMs: args.timeoutMs, ...(requestedNets.length ? { nets: requestedNets } : {}), ...(settings ? { settings } : {}), ...(args.rules?.refillZones !== undefined ? { refillZones: args.rules.refillZones } : {}) },
       {
         signal: ctx.signal,
         onProgress: (pr) => {
@@ -164,18 +185,31 @@ export async function runRoute(
     const message = e instanceof Error ? e.message : String(e);
     ctx.services.routeRuns.finish(runId, { status: cancelled ? "cancelled" : "failed", result: null, error: message });
     if (cancelled) throw new ToolError(`route ${runId} cancelled`, "cancelled");
-    throw new ToolError(`router failed: ${message}`, "internal");
+    return { text: `Route ${runId} failed: ${message}`, json: { runId, state: "failed", router, routerVersion: ctx.services.runtimeId, remainingEndpoints: preflightEndpoints, obstacles: [message], changedGeometry: [], nextActions: ["router/runtime diagnostics"] }, isError: true };
   }
   const open = [...new Set(summary.unrouted.map((u) => u.net))];
+  const changedGeometry = summary.geometry ?? [];
+  const state = summary.timedOut ? "timeout" : open.length === 0 ? "complete" : summary.routed > 0 || changedGeometry.length > 0 ? "partial" : "no-progress";
+  if (state === "no-progress") {
+    await ctx.services.design.release(project.dir).catch(() => undefined);
+    await writeAtomic(boardPath, beforeBoard);
+  }
+  const obstacles = [...new Set(summary.log.filter((line) => /block|obstacle|clearance|edge|keepout|congestion/i.test(line)).concat(/block|obstacle|clearance|edge|keepout|congestion/i.test(summary.message) ? [summary.message] : []))];
+  const nextActions = state === "complete" ? [] : state === "partial" ? ["remaining-endpoint inspection", "local placement adjustment", "local copper removal"] : state === "timeout" ? ["partial-geometry inspection", "narrower target", "larger time budget"] : ["obstacle inspection", "placement adjustment", "rule adjustment"];
   const result: RouteResult = {
     runId,
     router,
     complete: [],
     open,
     timedOut: summary.timedOut,
+    state,
+    remainingEndpoints: summary.unrouted,
+    obstacles,
+    changedGeometry,
+    nextActions,
     stats: { vias: summary.vias, segments: summary.tracks, wallMs: summary.wallMs, frames: sink.stats.frames, viasOnFixed: summary.claimedVias },
     ...(summary.preset ? { preset: summary.preset } : {}),
-    ...(summary.message ? { detail: summary.message } : {}),
+    detail: `${summary.message} [runtime=${ctx.services.runtimeId ?? "dev"}; router=${router}]`,
   };
   const routedShapes: CinemaShape[] = (summary.geometry ?? []).map((shape) => ({
     k: shape.kind,
@@ -204,14 +238,14 @@ export async function runRoute(
   ctx.progress(1, "done");
   const viaNote = summary.claimedVias || summary.preset === "laser-prefab" ? ` (${summary.claimedVias} factory vias claimed${summary.preset === "laser-prefab" && summary.vias ? `, ${summary.vias} OFF the blank` : ""})` : "";
   const text = [
-    `Route ${runId} (${router}${summary.preset ? `, ${summary.preset}` : ""}) ${summary.timedOut ? "TIMED OUT" : "finished"} in ${Math.round(summary.wallMs)} ms: ${summary.routed}/${summary.total} connections routed, ${summary.vias} vias${viaNote}, ${summary.tracks} tracks.`,
+    `Route ${runId} (${router}${summary.preset ? `, ${summary.preset}` : ""}) ${state} in ${Math.round(summary.wallMs)} ms: ${summary.routed}/${summary.total} connections routed, ${summary.vias} vias${viaNote}, ${summary.tracks} tracks.`,
     open.length ? `Open nets: ${open.slice(0, 30).join(", ")}${open.length > 30 ? ", …" : ""}` : "All connections routed.",
     `Applied to board.kicad_pcb as "${summary.message}"; frames at ${PROJECT_FILES.runs}/${runId}/frames.jsonl.`,
   ].join("\n");
   return {
     text,
-    json: { runId, router, ...(summary.preset ? { preset: summary.preset } : {}), routed: summary.routed, total: summary.total, open, timedOut: summary.timedOut, claimedVias: summary.claimedVias, stats: result.stats },
-    isError: open.length > 0 || (summary.preset === "laser-prefab" && summary.vias > 0),
+    json: { runId, state, router, routerVersion: ctx.services.runtimeId, rules: args.rules ?? null, ...(summary.preset ? { preset: summary.preset } : {}), routed: summary.routed, total: summary.total, open, remainingEndpoints: summary.unrouted, obstacles, changedGeometry, nextActions, timedOut: summary.timedOut, claimedVias: summary.claimedVias, stats: result.stats },
+    isError: state !== "complete" || (summary.preset === "laser-prefab" && summary.vias > 0),
   };
 }
 
@@ -249,7 +283,7 @@ export const route_unroute = defineTool({
   name: "route_unroute",
   toolset: "route",
   title: "Remove routed tracks",
-  description: "Delete routed tracks, arcs and vias from the board — all of them or only the named nets — so they can be rerouted with route_run {onlyConnections}. One undo entry in KiCad.",
+  description: "Delete routed tracks, arcs and vias from the board — all of them or only the named nets. One undo entry in KiCad.",
   inputSchema: {
     connections: z.array(z.string()).optional().describe("Net names to unroute; omit for all"),
   },
@@ -258,7 +292,7 @@ export const route_unroute = defineTool({
     const project = ctx.requireProject();
     const removed = await ctx.services.design.unroute(project.dir, connections);
     const what = connections?.length ? `${connections.length} net(s): ${connections.join(", ")}` : "every net";
-    return ok(`Unrouted ${what}: removed ${removed.tracks} tracks and ${removed.vias} vias. Re-run route_run${connections?.length ? " with onlyConnections" : ""}.`, { connections: connections ?? null, ...removed });
+    return ok(`Unrouted ${what}: removed ${removed.tracks} tracks and ${removed.vias} vias.`, { connections: connections ?? null, ...removed });
   },
 });
 
@@ -267,7 +301,7 @@ export const route_scope = defineTool({
   toolset: "route",
   title: "Nets attached to components",
   description:
-    "List the nets attached to component references (e.g. the footprints a repair touches) so they can be unrouted and re-routed with route_run {onlyConnections}. Nets that own a copper pour are excluded by default and listed with the reason.",
+    "List the nets attached to component references (e.g. the footprints a repair touches). Nets that own a copper pour are excluded by default and listed with the reason.",
   inputSchema: {
     refs: z.array(z.string().min(1)).min(1).describe('Component references, e.g. ["U701", "Q701"]'),
     excludePlaneNets: z.boolean().default(true),

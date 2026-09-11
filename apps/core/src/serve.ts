@@ -125,6 +125,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
           await import("./services")
         ).createServices({
           version: config.version,
+          runtimeId: config.runtimeId,
           channel: config.channel,
           settings: () => store.settings.get(),
           projects,

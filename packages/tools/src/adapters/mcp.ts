@@ -230,13 +230,14 @@ const str = (v: unknown): string | undefined => (typeof v === "string" && v.leng
 
 function registerPrompts(server: McpServer): void {
   const user = (text: string): GetPromptResult => ({ messages: [{ role: "user", content: { type: "text", text } }] });
-  const projectLine = (project?: string) => (project ? `Project: ${project} (pass project="${project}" to every tool).` : "Use the currently selected project.");
+  const projectLine = (project?: string) => (project ? `Project: ${project} (pass project="${project}" to project-scoped MCP tools).` : "Use the currently selected project.");
+  const freedom = "MCP tools, bundled KiCad, shell commands, project-local scripts, direct file work, and the fabPlane UI are available in any combination. circuit_build and the native schematic tools are optional.";
 
   server.registerPrompt(
     "design_from_sketch",
     {
       title: "Design a board from a sketch",
-      description: "Full workflow: read the sketch and requirements, write circuit.netlist.json, build, fix errors, route, DRC, render.",
+      description: "Pass a board-design request, optional sketch path, and project selector to the agent.",
       argsSchema: promptArgs({ project: projectArg, requirements: z.string().optional().describe("Extra requirements in prose"), sketch: z.string().optional().describe("Sketch path if not in sketches/") }),
     },
     (a: PromptArgs) => {
@@ -245,14 +246,10 @@ function registerPrompts(server: McpServer): void {
       const sketch = str(a["sketch"]);
       return user(
         [
-          "You are designing a PCB with fabdesk. " + projectLine(project),
-          "1. Call project_status, then load_toolset project and project_list_sketches. Look at every sketch image" + (sketch ? ` (also ${sketch})` : "") + " and restate what the board must do.",
+          "Design a PCB with fabdesk. " + projectLine(project),
+          sketch ? `Sketch supplied by the user: ${sketch}` : "Project sketches, if any, are under sketches/.",
           requirements ? `Requirements from the user: ${requirements}` : "",
-          "2. Search real footprint and symbol ids with circuit_search_parts (kind footprint or symbol), then use circuit_describe_part to verify pin/pad numbers and polarity. Write circuit.netlist.json with components [{ref,value,footprint,libSource:{lib,part}}], nets, board size/layers, and explicit board.placements when layout matters. Never invent an id or guess a pin; every connected pin appears in exactly one net.",
-          "3. Run circuit_build; call circuit_read_errors, fix all errors and review warnings, then rebuild until ok. Inspect component positions and both renders; adjust board.placements when parts collide or crowd edges.",
-          "4. Run route_run. If nets stay open, enlarge the board (board.widthMm/heightMm, rebuild) or reduce fan-out and reroute; use route_unroute + route_run{onlyConnections} for partial reroutes.",
-          "5. Run verify_drc with schematicParity=true, then load_toolset verify and run verify_erc and verify_gate with requireErc=true. Fix errors and unconnected items; warnings only need review. Never claim the project passes when a required report is missing.",
-          "6. Run render_board and check the PNG. Then load_toolset render and run both render_schematic_svg and render_pcb_svg so the Schematic and PCB tabs are populated; render_board alone does not create those SVG artifacts. Inspect both SVGs before summarising the design, open issues, and next steps. Render images are attached directly in chat and tools return a fileUrl/url field; when the user asks for links, provide those browser-openable file:// URLs as plain text.",
+          freedom,
         ]
           .filter(Boolean)
           .join("\n"),
@@ -264,15 +261,15 @@ function registerPrompts(server: McpServer): void {
     "fix_drc",
     {
       title: "Fix DRC violations",
-      description: "Read the latest DRC report and iterate on circuit.netlist.json / routing until the release gate passes.",
+      description: "Pass a request to fix the project's DRC violations without choosing an authoring method.",
       argsSchema: promptArgs({ project: projectArg }),
     },
     (a: PromptArgs) =>
       user(
         [
           projectLine(str(a["project"])),
-          "Run verify_drc and read every violation. For each: clearance/track width → adjust footprints or board size in circuit.netlist.json; unconnected → route_unroute + route_run{onlyConnections}; courtyard overlap → enlarge the board or change footprints, then circuit_build and route_run.",
-          "After each change rebuild, reroute and rerun verify_drc. Finish with load_toolset verify, verify_erc and verify_gate; report remaining warnings with their signatures so the user can decide whether to baseline them.",
+          "Fix the DRC violations reported for this PCB and report the resulting state.",
+          freedom,
         ].join("\n"),
       ),
   );
@@ -281,15 +278,15 @@ function registerPrompts(server: McpServer): void {
     "reroute_open_nets",
     {
       title: "Reroute open nets",
-      description: "Reroute only the connections that the last route run left open.",
+      description: "Pass a request to address the connections that remain open.",
       argsSchema: promptArgs({ project: projectArg }),
     },
     (a: PromptArgs) =>
       user(
         [
           projectLine(str(a["project"])),
-          "Call load_toolset route then route_status to get the open connections. Call route_unroute with those names, then route_run with onlyConnections set to them and a longer timeoutMs.",
-          "If they remain open, inspect circuit_query nets/pads for those connections, enlarge the board or add layers via project_set_board, rebuild and route again. Report what changed.",
+          "Address the PCB connections that remain open and report what changed.",
+          freedom,
         ].join("\n"),
       ),
   );
