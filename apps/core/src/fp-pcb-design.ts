@@ -864,9 +864,9 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       tracks: snapshot.tracks.map((item) => ({ ...item, start: point(item.start), end: point(item.end), width: mm(item.width) })),
       arcs: snapshot.arcs.map((item) => ({ ...item, start: point(item.start), mid: point(item.mid), end: point(item.end), width: mm(item.width) })),
       vias: snapshot.vias.map((item) => ({ ...item, position: point(item.position), diameter: mm(item.diameter), drill: mm(item.drill) })),
-      zones: snapshot.zones.map((item) => ({ ...item, clearance: mm(item.clearance), minThickness: mm(item.minThickness), outline: item.outline.map(point) })),
+      zones: snapshot.zones.map((item) => ({ ...item, clearance: mm(item.clearance), minThickness: mm(item.minThickness), outline: item.outline.map(point), polygons: polygonValue(item.polygons) })),
       texts: snapshot.texts.map((item) => ({ ...item, position: point(item.position), size: point(item.size), thickness: mm(item.thickness) })),
-      graphics: snapshot.graphics.map((item) => ({ ...item, start: point(item.start), end: point(item.end), strokeWidth: mm(item.strokeWidth) })),
+      graphics: snapshot.graphics.map((item) => ({ ...item, start: point(item.start), end: point(item.end), geometry: polygonValue(item.geometry), strokeWidth: mm(item.strokeWidth) })),
       nets: snapshot.nets.map((item) => ({ ...item, ...(item.clearance !== undefined ? { clearance: mm(item.clearance) } : {}), ...(item.trackWidth !== undefined ? { trackWidth: mm(item.trackWidth) } : {}), ...(item.viaDiameter !== undefined ? { viaDiameter: mm(item.viaDiameter) } : {}), ...(item.viaDrill !== undefined ? { viaDrill: mm(item.viaDrill) } : {}) })),
       rules: { ...snapshot.rules, minimums: Object.fromEntries(Object.entries(snapshot.rules.minimums).map(([key, value]) => [key, mm(value)])), custom: polygonValue(snapshot.rules.custom) },
     };
