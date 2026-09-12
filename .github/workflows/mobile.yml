@@ -11,6 +11,7 @@ on:
       - "packages/client-core/**"
       - "packages/protocol/**"
       - ".github/workflows/mobile.yml"
+  workflow_dispatch:
   pull_request:
     paths:
       - "apps/mobile/**"
@@ -56,4 +57,60 @@ jobs:
       # through Metro's aliases, which a typecheck alone would not catch.
       - name: Bundle
         run: bunx expo export --platform android --output-dir "$RUNNER_TEMP/mobile-export"
+        working-directory: apps/mobile
+
+  # Internal-distribution build on EAS (docs/mobile-release.md). Cloud builds cost credits and need
+  # an Expo token, so this runs only on main and on manual dispatch, and skips itself with a notice
+  # when the EXPO_TOKEN secret is absent (forks, or before `eas init` has been run). `--no-wait`
+  # queues the build and returns; the result lands on expo.dev and in the EAS notification.
+  eas-preview:
+    needs: verify
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: blacksmith-4vcpu-ubuntu-2204
+    steps:
+      - name: Check for EXPO_TOKEN
+        id: gate
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::notice title=EAS build skipped::EXPO_TOKEN is not set; see docs/mobile-release.md for the one-time EAS setup."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.gate.outputs.run == 'true'
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - if: steps.gate.outputs.run == 'true'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - if: steps.gate.outputs.run == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - if: steps.gate.outputs.run == 'true'
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - if: steps.gate.outputs.run == 'true'
+        name: Install
+        run: bun install --frozen-lockfile
+        working-directory: apps/mobile
+
+      # EAS_PROJECT_ID is read by app.config.ts so the id need not be committed before `eas init`
+      # has been run on a workstation; once app.json carries it the variable is redundant.
+      - if: steps.gate.outputs.run == 'true'
+        name: EAS build (preview, iOS + Android)
+        env:
+          EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
+        run: eas build --platform all --profile preview --non-interactive --no-wait
         working-directory: apps/mobile
