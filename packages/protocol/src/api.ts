@@ -264,6 +264,11 @@ export const Settings = z.object({
       port: z.number().int().min(1).max(65535).default(REMOTE_DEFAULT_PORT),
       /** Which endpoint kind the pairing QR lists first. Unset (or null) picks tailscale, then LAN, then the rest. */
       preferredEndpointKind: EndpointKind.nullable().optional(),
+      /**
+       * A relay the daemon dials out to (`apps/relay`), e.g. `https://relay.fabplane.com`, so a
+       * phone off the tailnet can still reach it. Needs a fabplane sign-in; unset or null is off.
+       */
+      relayUrl: z.string().trim().nullable().optional(),
     })
     .default({ enabled: false, host: "0.0.0.0", port: REMOTE_DEFAULT_PORT }),
   /** Daemon-wide kill switch for push notifications to paired phones (docs/mobile-notifications.md §4.1). */

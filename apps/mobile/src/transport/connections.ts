@@ -9,6 +9,7 @@
 import type { DevicePlatform } from "@fabdesk/protocol";
 import { create } from "zustand";
 import * as SecureStore from "expo-secure-store";
+import type { RelayTarget } from "./connect";
 
 export interface Connection {
   id: string;
@@ -28,6 +29,20 @@ export interface Connection {
    * before daemons minted one are matched by `deviceId` instead.
    */
   coreId?: string;
+  /**
+   * The relay the daemon advertised at pairing time (an endpoint of kind `relay`), e.g.
+   * `https://relay.fabplane.com`. Tried after every direct address fails; needs `coreId`.
+   */
+  relayUrl?: string;
+}
+
+/** What `findReachable` needs to try the relay for a connection; null until both halves are known. */
+export function relayTarget(
+  connection: Pick<Connection, "relayUrl" | "coreId">,
+): RelayTarget | null {
+  return connection.relayUrl && connection.coreId
+    ? { url: connection.relayUrl, coreId: connection.coreId }
+    : null;
 }
 
 const TOKEN_PREFIX = "fabdesk.device-token.";
@@ -85,7 +100,8 @@ export const useConnections = create<ConnectionsState>()((set, get) => ({
   hydrate: async () => {
     const connections = await readJson<Connection[]>(CONNECTIONS_KEY, []);
     const stored = await SecureStore.getItemAsync(ACTIVE_KEY);
-    const activeId = stored && connections.some((c) => c.id === stored) ? stored : (connections[0]?.id ?? null);
+    const activeId =
+      stored && connections.some((c) => c.id === stored) ? stored : (connections[0]?.id ?? null);
     set({ connections, activeId, hydrated: true });
   },
 
@@ -130,3 +146,4 @@ export const useConnections = create<ConnectionsState>()((set, get) => ({
 }));
 
 export { connectOrder } from "../lib/connect-order";
+export { relayUrlFromPayload } from "./connect";

@@ -1,8 +1,16 @@
 import { describe, expect, test } from "bun:test";
-import { findReachable, probe } from "./connect";
+import { findReachable, probe, relayUrlFromPayload } from "./connect";
 
-const health = { ok: true, version: "0.2.0", pid: 42, channel: "public", authMode: "fabplane", uptimeMs: 1000 };
-const ok = () => new Response(JSON.stringify(health), { headers: { "content-type": "application/json" } });
+const health = {
+  ok: true,
+  version: "0.2.0",
+  pid: 42,
+  channel: "public",
+  authMode: "fabplane",
+  uptimeMs: 1000,
+};
+const ok = () =>
+  new Response(JSON.stringify(health), { headers: { "content-type": "application/json" } });
 
 /** Injectable timers: nothing fires until the test advances the clock. */
 function fakeClock() {
@@ -35,12 +43,18 @@ function fakeClock() {
 
 describe("probe", () => {
   test("accepts a healthy daemon", async () => {
-    expect(await probe("http://100.64.0.1:47820/", { fetch: async () => ok() })).toMatchObject({ pid: 42 });
+    expect(await probe("http://100.64.0.1:47820/", { fetch: async () => ok() })).toMatchObject({
+      pid: 42,
+    });
   });
 
   test("rejects a non-200, a body that is not ok, and a refused connection", async () => {
-    expect(await probe("http://x", { fetch: async () => new Response("", { status: 502 }) })).toBeNull();
-    expect(await probe("http://x", { fetch: async () => new Response(JSON.stringify({ ok: false })) })).toBeNull();
+    expect(
+      await probe("http://x", { fetch: async () => new Response("", { status: 502 }) }),
+    ).toBeNull();
+    expect(
+      await probe("http://x", { fetch: async () => new Response(JSON.stringify({ ok: false })) }),
+    ).toBeNull();
     expect(
       await probe("http://x", {
         fetch: async () => {
@@ -156,5 +170,87 @@ describe("findReachable", () => {
       }),
     ).toBeNull();
     expect(await findReachable([])).toBeNull();
+  });
+});
+
+describe("findReachable via the relay", () => {
+  const relay = { url: "https://relay.fabplane.com/", coreId: "core_abc" };
+  const relayHealth = "https://relay.fabplane.com/c/core_abc/health";
+
+  test("tries the relay only after every direct address has failed", async () => {
+    const asked: string[] = [];
+    const found = await findReachable(["http://tailnet", "http://lan"], {
+      relay,
+      fetch: async (url) => {
+        asked.push(url);
+        if (url === relayHealth) return ok();
+        throw new Error("no route to host");
+      },
+    });
+    expect(asked).toEqual(["http://tailnet/health", "http://lan/health", relayHealth]);
+    expect(found).toMatchObject({ baseUrl: "https://relay.fabplane.com/c/core_abc", via: "relay" });
+  });
+
+  test("a direct answer wins without the relay being asked", async () => {
+    const asked: string[] = [];
+    const found = await findReachable(["http://tailnet"], {
+      relay,
+      fetch: async (url) => {
+        asked.push(url);
+        return ok();
+      },
+    });
+    expect(asked).toEqual(["http://tailnet/health"]);
+    expect(found).toMatchObject({ baseUrl: "http://tailnet", via: "direct" });
+  });
+
+  test("a relay whose daemon is offline (503) is not reachable, and no relay means no fallback", async () => {
+    const offline = async (url: string) =>
+      url === relayHealth
+        ? new Response(JSON.stringify({ error: "core offline" }), { status: 503 })
+        : Promise.reject(new Error("no route to host"));
+    expect(await findReachable(["http://tailnet"], { relay, fetch: offline })).toBeNull();
+    expect(await findReachable([], { relay, fetch: async () => ok() })).toMatchObject({
+      via: "relay",
+    });
+    expect(await findReachable(["http://tailnet"], { relay: null, fetch: offline })).toBeNull();
+  });
+
+  test("a relay address that leaked into the direct list is not probed twice", async () => {
+    const asked: string[] = [];
+    await findReachable(["https://relay.fabplane.com/c/core_abc"], {
+      relay,
+      fetch: async (url) => {
+        asked.push(url);
+        return ok();
+      },
+    });
+    expect(asked).toEqual([relayHealth]);
+  });
+});
+
+describe("relayUrlFromPayload", () => {
+  test("reads the relay endpoint out of the parallel kinds/schemes lists", () => {
+    expect(
+      relayUrlFromPayload({
+        hosts: ["100.64.0.1", "relay.fabplane.com"],
+        kinds: ["tailscale", "relay"],
+        schemes: ["http", "https"],
+      }),
+    ).toBe("https://relay.fabplane.com");
+    // A local relay on a port, over plain http.
+    expect(
+      relayUrlFromPayload({ hosts: ["127.0.0.1:4040"], kinds: ["relay"], schemes: ["http"] }),
+    ).toBe("http://127.0.0.1:4040");
+    // No scheme list defaults to https — a hosted relay is always TLS.
+    expect(relayUrlFromPayload({ hosts: ["relay.fabplane.com"], kinds: ["relay"] })).toBe(
+      "https://relay.fabplane.com",
+    );
+  });
+
+  test("is null for payloads without a relay, without kinds, or with a mismatched kinds list", () => {
+    expect(relayUrlFromPayload({ hosts: ["100.64.0.1"], kinds: ["tailscale"] })).toBeNull();
+    expect(relayUrlFromPayload({ hosts: ["100.64.0.1"] })).toBeNull();
+    expect(relayUrlFromPayload({ hosts: ["a", "b"], kinds: ["relay"] })).toBeNull();
   });
 });
