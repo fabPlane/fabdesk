@@ -44,7 +44,10 @@ export function claudeMcpConfig(url: string): string {
  * tool answers with one text block holding `{"behavior":"allow","updatedInput":…}` or
  * `{"behavior":"deny","message":…}`. The daemon serves that tool and classifies the call, so the
  * allow list here only pre-approves reads; `manual` is the mode that asks about everything else
- * (Claude Code maps it to its internal `default`).
+ * (Claude Code maps it to its internal `default`). Verified live against 2.1.252: a Bash `touch`
+ * reaches the daemon and runs only after approval, a deny comes back as a tool error the model
+ * carries on from, and `AskUserQuestion` arrives the same way. Note that Claude auto-allows
+ * commands it deems read-only (`echo`, `ls`, …) in that mode without ever asking.
  */
 export function claudeArgs(session: AgentSession, bin: string): string[] {
   const supervised = session.runtimeMode === "supervised";
