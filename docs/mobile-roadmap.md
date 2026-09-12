@@ -160,6 +160,9 @@ Everything the desktop Board panel shows, read-only, plus files.
 
 The reason to carry the app in your pocket.
 
+The full design — contracts for the daemon, the phone and the fabplane.com forwarder — is in
+[`mobile-notifications.md`](mobile-notifications.md).
+
 1. **Local notifications** (no server needed): while the app is backgrounded but the socket is
    alive, notify on run finished / failed / needs input. Cheap first step.
 2. **Push notifications** (APNs / FCM): needs a relay the daemon can reach out to — the same
