@@ -40,6 +40,12 @@ export default function RootLayout() {
             <Stack.Screen name="renders/[id]" options={{ title: "Renders" }} />
             <Stack.Screen name="drc/[id]" options={{ title: "DRC" }} />
             <Stack.Screen name="jobs" options={{ title: "Jobs" }} />
+            <Stack.Screen
+              name="new-project"
+              options={{ title: "New project", presentation: "modal" }}
+            />
+            <Stack.Screen name="catalog/index" options={{ title: "Open-source boards" }} />
+            <Stack.Screen name="catalog/[owner]/[slug]" options={{ title: "Board" }} />
             <Stack.Screen name="files/[id]/index" options={{ title: "Files" }} />
             <Stack.Screen name="files/[id]/view" options={{ title: "File" }} />
             <Stack.Screen

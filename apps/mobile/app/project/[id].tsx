@@ -3,10 +3,16 @@
  * one action (re-render the board) because that is the thing you actually want while away from
  * the desk.
  */
-import { useProject, useProjectJson, useRunTool, useRunsStore } from "@fabdesk/client-core";
+import {
+  useDeleteProject,
+  useProject,
+  useProjectJson,
+  useRunTool,
+  useRunsStore,
+} from "@fabdesk/client-core";
 import { Stack, router, useLocalSearchParams } from "expo-router";
 import { useMemo } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { RenderImage } from "@/components/RenderImage";
 import { useStashRender } from "@/components/render-cache";
 import { Badge, Button, Card, Loading, Screen, readable } from "@/components/ui";
@@ -26,6 +32,7 @@ export default function ProjectScreen() {
   const newChat = useNewChat();
   const render = useRunTool();
   const stash = useStashRender(id ?? "");
+  const remove = useDeleteProject();
 
   const preview = useMemo(() => preferredRender(project.data), [project.data]);
   const renders = useMemo(() => galleryRenders(project.data), [project.data]);
@@ -65,6 +72,26 @@ export default function ProjectScreen() {
       // `callTool` lifts `projectId` out and wraps the rest as the tool's args itself.
       .run("render", { projectId: id, view: "top", width: 1600, height: 1200, quality: "basic" })
       .then(() => project.refetch());
+  };
+
+  const confirmDelete = () => {
+    const name = project.data?.name ?? "this project";
+    const run = (purge: boolean) =>
+      remove
+        .mutateAsync({ projectId: id, purge })
+        .then(() => router.back())
+        .catch((e: unknown) =>
+          Alert.alert("Could not delete", e instanceof Error ? e.message : String(e)),
+        );
+    Alert.alert(
+      `Delete ${name}?`,
+      "Forget it in fabPlane and keep the folder on the computer, or delete the folder too. Its chats are removed either way.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Forget, keep files", onPress: () => void run(false) },
+        { text: "Delete files too", style: "destructive", onPress: () => void run(true) },
+      ],
+    );
   };
 
   return (
@@ -267,6 +294,17 @@ export default function ProjectScreen() {
           ))}
           <Text style={{ color: t.muted, fontSize: 11, marginTop: 6 }}>Most recently changed</Text>
         </Card>
+
+        <Button
+          title={remove.isPending ? "Deleting…" : "Delete project"}
+          variant="danger"
+          disabled={remove.isPending}
+          onPress={confirmDelete}
+          style={{ marginTop: 8 }}
+        />
+        <Text style={{ color: t.muted, fontSize: 11, textAlign: "center", marginTop: -6 }}>
+          {project.data.path}
+        </Text>
       </ScrollView>
     </Screen>
   );
