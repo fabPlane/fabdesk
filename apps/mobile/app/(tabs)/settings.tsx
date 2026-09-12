@@ -3,6 +3,7 @@ import type { AgentId } from "@fabdesk/protocol";
 import { router } from "expo-router";
 import { Alert, ScrollView, Text, View } from "react-native";
 import { Badge, Button, Card, Screen, Segmented, SwitchRow, readable } from "@/components/ui";
+import { hardwareKeyboardShortcutsAvailable } from "@/layout/keyboard";
 import { haptic } from "@/state/haptics";
 import { usePrefs, type Appearance } from "@/state/prefs";
 import { useConnection } from "@/transport/CoreConnection";
@@ -181,6 +182,11 @@ function ThisPhoneCard() {
           onChange={prefs.setKeepAwake}
         />
       </View>
+      {hardwareKeyboardShortcutsAvailable ? (
+        <Text style={{ color: t.muted, fontSize: 12, marginTop: 8 }}>
+          Hardware keyboard: ⌘N new chat · ⌘K search chats
+        </Text>
+      ) : null}
     </Card>
   );
 }

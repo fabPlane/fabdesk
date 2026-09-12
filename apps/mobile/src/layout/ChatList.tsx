@@ -6,7 +6,7 @@
 import { groupThreadsByProject, useProjects, useRunsStore, useThreads } from "@fabdesk/client-core";
 import type { Thread } from "@fabdesk/protocol";
 import { router, usePathname } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, SectionList, StyleSheet, Text, TextInput, View } from "react-native";
 import { Button, Empty, Loading, Screen, readable } from "@/components/ui";
 import { usePullRefresh } from "@/components/pull-refresh";
@@ -23,11 +23,13 @@ import { useChatList } from "@/state/chat-list";
 import { useConnection } from "@/transport/CoreConnection";
 import { relativeTime } from "@/lib/format";
 import { useTheme } from "@/theme";
+import { useKeyboardShortcut } from "./keyboard";
 
 export function ChatList({ variant }: { variant: "screen" | "sidebar" }) {
   const t = useTheme();
   const { connection, status } = useConnection();
   const [q, setQ] = useState("");
+  const search = useRef<TextInput>(null);
   const threads = useThreads(q ? { q } : undefined);
   const projects = useProjects();
   const refreshControl = usePullRefresh(threads.refetch);
@@ -45,6 +47,8 @@ export function ChatList({ variant }: { variant: "screen" | "sidebar" }) {
   useEffect(() => {
     if (viewingId) markSeen(viewingId, viewing?.updatedAt);
   }, [viewingId, viewing?.updatedAt, markSeen]);
+
+  useKeyboardShortcut("cmd+k", () => search.current?.focus());
 
   const sections = useMemo(
     () =>
@@ -76,6 +80,7 @@ export function ChatList({ variant }: { variant: "screen" | "sidebar" }) {
     <Screen>
       <View style={{ padding: 12, paddingBottom: 6, ...width }}>
         <TextInput
+          ref={search}
           // Android in landscape otherwise swaps the screen for a full-screen editor with a DONE key.
           disableFullscreenUI
           value={q}

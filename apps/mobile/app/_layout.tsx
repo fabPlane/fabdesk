@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { Pressable, Text } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { CoreConnectionProvider } from "@/transport/CoreConnection";
+import { AppShell } from "@/layout/AppShell";
 import { useConnections } from "@/transport/connections";
 import { useTheme } from "@/theme";
 
@@ -18,7 +18,8 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <CoreConnectionProvider>
+        {/* The connection provider plus, on tablets, the Chats sidebar; every route stays in this Stack. */}
+        <AppShell>
           <StatusBar style={t.dark ? "light" : "dark"} />
           <Stack
             screenOptions={{
@@ -51,7 +52,7 @@ export default function RootLayout() {
               }}
             />
           </Stack>
-        </CoreConnectionProvider>
+        </AppShell>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
