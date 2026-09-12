@@ -128,6 +128,57 @@ export function appendPart(m: Message, part: MessagePart): Message {
   return { ...m, parts: [...m.parts, part] };
 }
 
+/**
+ * Supervised mode: the four request/resolve events name a run, not a message, so the part lands
+ * on the run's assistant message (the daemon appends it there too). `upsertRequestPart` adds a
+ * pending part or replaces the one with the same requestId — an event replayed after a refetch
+ * that already carried the part must not duplicate it.
+ */
+export function upsertRequestPart(m: Message, part: MessagePart & { requestId: string }): Message {
+  const idx = m.parts.findIndex(
+    (p) => (p.type === "approval" || p.type === "question") && p.requestId === part.requestId,
+  );
+  if (idx < 0) return { ...m, parts: [...m.parts, part] };
+  const parts = [...m.parts];
+  parts[idx] = part;
+  return { ...m, parts };
+}
+
+function patchRequestPart(
+  qc: QueryClient,
+  threadId: string,
+  runId: string,
+  requestId: string,
+  fn: (p: MessagePart) => MessagePart,
+): void {
+  patchMessages(qc, threadId, (msgs) =>
+    msgs.map((m) =>
+      m.runId !== runId
+        ? m
+        : {
+            ...m,
+            parts: m.parts.map((p) =>
+              (p.type === "approval" || p.type === "question") && p.requestId === requestId
+                ? fn(p)
+                : p,
+            ),
+          },
+    ),
+  );
+}
+
+/** The run's assistant message: the daemon created it at run start, so a cache holding the thread has it. */
+function patchRunMessage(
+  qc: QueryClient,
+  threadId: string,
+  runId: string,
+  fn: (m: Message) => Message,
+): void {
+  patchMessages(qc, threadId, (msgs) =>
+    msgs.map((m) => (m.runId === runId && m.role === "assistant" ? fn(m) : m)),
+  );
+}
+
 export function handleCoreEvent(event: CoreEvent, ctx: HandlerCtx): void {
   const { qc } = ctx;
   const runs = useRunsStore.getState();
@@ -199,6 +250,44 @@ export function handleCoreEvent(event: CoreEvent, ctx: HandlerCtx): void {
       void qc.invalidateQueries({ queryKey: ["threads"] });
       break;
     }
+    case "agent.approval_requested":
+      patchRunMessage(qc, event.threadId, event.runId, (m) =>
+        upsertRequestPart(m, {
+          type: "approval",
+          requestId: event.requestId,
+          tool: event.tool,
+          input: event.input,
+          summary: event.summary,
+          decision: "pending",
+        }),
+      );
+      // `["thread", id]` carries `pending`, which is what a badge or the phone's banner reads.
+      void qc.invalidateQueries({ queryKey: ["thread", event.threadId] });
+      break;
+    case "agent.approval_resolved":
+      patchRequestPart(qc, event.threadId, event.runId, event.requestId, (p) =>
+        p.type === "approval" ? { ...p, decision: event.decision } : p,
+      );
+      void qc.invalidateQueries({ queryKey: ["thread", event.threadId] });
+      break;
+    case "agent.input_requested":
+      patchRunMessage(qc, event.threadId, event.runId, (m) =>
+        upsertRequestPart(m, {
+          type: "question",
+          requestId: event.requestId,
+          question: event.question,
+          ...(event.options ? { options: event.options } : {}),
+          answer: null,
+        }),
+      );
+      void qc.invalidateQueries({ queryKey: ["thread", event.threadId] });
+      break;
+    case "agent.input_resolved":
+      patchRequestPart(qc, event.threadId, event.runId, event.requestId, (p) =>
+        p.type === "question" ? { ...p, answer: event.answer } : p,
+      );
+      void qc.invalidateQueries({ queryKey: ["thread", event.threadId] });
+      break;
     case "job.started":
       runs.upsertJob({
         jobId: event.jobId,
