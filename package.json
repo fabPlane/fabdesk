@@ -9,6 +9,7 @@
   "workspaces": [
     "apps/core",
     "apps/desktop",
+    "apps/relay",
     "packages/*",
     "vendor/fabplane/packages/shared",
     "vendor/fabplane/packages/config",
@@ -26,8 +27,9 @@
   "scripts": {
     "dev": "bun run --cwd apps/desktop dev",
     "dev:core": "bun run --cwd apps/core dev",
-    "typecheck": "bun run fp-pcb:types && bun run --filter './apps/core' --filter './apps/desktop' --filter './packages/*' typecheck",
-    "test": "bun run --filter './apps/core' --filter './apps/desktop' --filter './packages/*' test && bun test ./scripts/test",
+    "relay": "bun run --cwd apps/relay start",
+    "typecheck": "bun run fp-pcb:types && bun run --filter './apps/core' --filter './apps/desktop' --filter './apps/relay' --filter './packages/*' typecheck",
+    "test": "bun run --filter './apps/core' --filter './apps/desktop' --filter './apps/relay' --filter './packages/*' test && bun test ./scripts/test",
     "build:core": "bun run --cwd apps/core build",
     "build:desktop": "bun run --cwd apps/desktop build",
     "package": "bun run build:core && bun run --cwd apps/desktop package",
