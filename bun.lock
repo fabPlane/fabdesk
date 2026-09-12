@@ -21,6 +21,7 @@
         "@fabdesk/auth-client": "workspace:*",
         "@fabdesk/kicad": "workspace:*",
         "@fabdesk/protocol": "workspace:*",
+        "@fabdesk/qr": "workspace:*",
         "@fabdesk/sim": "workspace:*",
         "@fabdesk/tools": "workspace:*",
         "@fp-pcb/client": "workspace:*",
@@ -128,6 +129,17 @@
         "typescript": "5.9.2",
       },
     },
+    "packages/qr": {
+      "name": "@fabdesk/qr",
+      "version": "0.1.0",
+      "dependencies": {
+        "qrcode-generator": "^2.0.4",
+      },
+      "devDependencies": {
+        "@types/bun": "1.2.21",
+        "typescript": "5.9.2",
+      },
+    },
     "packages/sim": {
       "name": "@fabdesk/sim",
       "version": "0.1.0",
@@ -162,11 +174,11 @@
         "@excalidraw/excalidraw": "^0.18.0",
         "@fabdesk/client-core": "workspace:*",
         "@fabdesk/protocol": "workspace:*",
+        "@fabdesk/qr": "workspace:*",
         "@fontsource-variable/inter": "^5.2.0",
         "@tanstack/react-query": "^5.80.0",
         "clsx": "^2.1.0",
         "cmdk": "^1.1.0",
-        "qrcode-generator": "^2.0.4",
         "react": "^19.1.0",
         "react-dom": "^19.1.0",
         "react-markdown": "^10.1.0",
@@ -530,6 +542,8 @@
     "@fabdesk/kicad": ["@fabdesk/kicad@workspace:packages/kicad"],
 
     "@fabdesk/protocol": ["@fabdesk/protocol@workspace:packages/protocol"],
+
+    "@fabdesk/qr": ["@fabdesk/qr@workspace:packages/qr"],
 
     "@fabdesk/sim": ["@fabdesk/sim@workspace:packages/sim"],
 

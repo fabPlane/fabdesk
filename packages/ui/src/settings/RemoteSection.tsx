@@ -11,7 +11,7 @@ import { useCoreClient, useDevices, usePatchSettings, useRemoteState, useSetting
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { Badge, Button, Dialog, EmptyState, Input, Select, Spinner } from "../components/ui";
-import { qrSvg } from "./qr";
+import { qrSvg } from "@fabdesk/qr";
 
 type RemoteSetting = Settings["remote"];
 const DEFAULT_SETTING: RemoteSetting = { enabled: false, host: "0.0.0.0", port: REMOTE_DEFAULT_PORT };
