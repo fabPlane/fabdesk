@@ -7,7 +7,6 @@ import { useProject } from "@fabdesk/client-core";
 import { Stack, router, useLocalSearchParams } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
-  FlatList,
   Pressable,
   ScrollView,
   Text,
@@ -16,6 +15,8 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from "react-native";
+// gesture-handler's FlatList, so the compare divider's pan can win over the pager's scroll.
+import { FlatList } from "react-native-gesture-handler";
 import { RenderCompare } from "@/components/RenderCompare";
 import { RenderImage } from "@/components/RenderImage";
 import { usePreviousRender } from "@/components/render-cache";

@@ -35,6 +35,8 @@ export function RenderCompare({
   const startX = useSharedValue(0);
 
   const pan = Gesture.Pan()
+    // A few points of horizontal travel claim the touch from the pager underneath.
+    .activeOffsetX([-4, 4])
     .onStart(() => {
       startX.value = x.value;
     })
