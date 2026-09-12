@@ -76,3 +76,6 @@ export type { ProjectThreadGroup, ProjectThreadGroupKind } from "./group-threads
 export { pickerModelChoices, agentModelLabel } from "./agent-model-choices";
 
 export * from "./queries";
+
+/** Route Cinema: the pure painter and the live-frame hub (`packages/client-core/src/cinema`). */
+export * from "./cinema";

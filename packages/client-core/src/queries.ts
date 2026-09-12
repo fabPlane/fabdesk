@@ -1,4 +1,4 @@
-import type { Message, OrderVendorId, ProjectSummary } from "@fabdesk/protocol";
+import type { Message, OrderVendorId, ProjectSummary, RouteFrameLine, RouteResult } from "@fabdesk/protocol";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { useCoreClient } from "./provider";
@@ -212,4 +212,59 @@ export function useDevices(enabled = true) {
 export function useRemoteState(enabled = true) {
   const client = useCoreClient();
   return useQuery({ queryKey: ["remote"], queryFn: () => client.remoteState(), enabled });
+}
+
+/** A routing run as `GET /projects/:id/route-runs` and `GET /route/runs/:id` describe it (`RouteRunRecord` in @fabdesk/tools). */
+export interface RouteRunSummary {
+  id: string;
+  projectId: string;
+  router: string;
+  status: "running" | "done" | "failed" | "cancelled";
+  framesPath: string;
+  startedAt: string;
+  endedAt: string | null;
+  result: RouteResult | null;
+  error: string | null;
+}
+
+export function routeRunsKey(projectId: string | null) {
+  return ["route-runs", projectId] as const;
+}
+
+/** A project's routing runs, newest first; polls while one is still running. */
+export function useRouteRuns(projectId: string | null) {
+  const client = useCoreClient();
+  return useQuery<RouteRunSummary[]>({
+    queryKey: routeRunsKey(projectId),
+    queryFn: () => client.request(`/projects/${encodeURIComponent(projectId!)}/route-runs`),
+    enabled: !!projectId,
+    refetchInterval: (q) => (q.state.data?.some((r) => r.status === "running") ? 3000 : false),
+  });
+}
+
+/** One routing run's record; polls while it is running so a viewer learns when it finishes. */
+export function useRouteRun(runId: string | null) {
+  const client = useCoreClient();
+  return useQuery<RouteRunSummary>({
+    queryKey: ["route-run", runId],
+    queryFn: () => client.request(`/route/runs/${encodeURIComponent(runId!)}`),
+    enabled: !!runId,
+    refetchInterval: (q) => (q.state.data?.status === "running" ? 2000 : false),
+  });
+}
+
+/**
+ * Every frame line of a run (`meta`, `static`, then `frame`s), for playing it back. Pass
+ * `final: true` once the run has finished: its frames file never changes again, so the result is
+ * cached for good. For a live run, follow `routeFrameHub` and catch up with
+ * `client.routeFrames(id, nextFrameSeq(run))`.
+ */
+export function useRouteRunFrames(runId: string | null, opts?: { enabled?: boolean; final?: boolean }) {
+  const client = useCoreClient();
+  return useQuery<RouteFrameLine[]>({
+    queryKey: ["route-run", runId, "frames"],
+    queryFn: () => client.routeFrames(runId!),
+    enabled: !!runId && (opts?.enabled ?? true),
+    staleTime: opts?.final ? Infinity : 0,
+  });
 }
