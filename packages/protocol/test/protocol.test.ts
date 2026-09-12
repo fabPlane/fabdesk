@@ -7,9 +7,13 @@ import {
   catalogPhotoUrl,
   catalogPreviewUrl,
   catalogPublicOrigin,
+  CoreEndpoint,
   CoreEvent,
   DaemonHandshake,
+  endpointBaseUrl,
+  endpointScheme,
   orderEndpoints,
+  RemoteStatus,
   pairingUrlFromEndpoints,
   parsePairingUrl,
   Settings,
@@ -139,5 +143,60 @@ describe("pairing url", () => {
     expect(Settings.parse({ remote: { preferredEndpointKind: null } }).remote.preferredEndpointKind).toBeNull();
     expect(Settings.parse({ remote: { preferredEndpointKind: "lan" } }).remote).toMatchObject({ preferredEndpointKind: "lan", enabled: false });
     expect(Settings.safeParse({ remote: { preferredEndpointKind: "wifi" } }).success).toBe(false);
+  });
+
+  test("an https endpoint adds a parallel s= list and is tried first, on 443 without a port", () => {
+    const endpoints = orderEndpoints(
+      [
+        { host: "192.168.1.24", port: 47820, kind: "lan", iface: "en0" },
+        { host: "100.64.0.1", port: 47820, kind: "tailscale", iface: "utun4", hostname: "mac.tail.ts.net" },
+        { host: "mac.tail.ts.net", port: 443, kind: "tailscale-https", iface: "utun4", scheme: "https", hostname: "mac.tail.ts.net" },
+      ],
+      null,
+    );
+    expect(endpoints.map((e) => e.kind)).toEqual(["tailscale-https", "tailscale", "lan"]);
+    const url = pairingUrlFromEndpoints({ token: "t", endpoints, port: 47820, name: "Mac" });
+    expect(url).toBe(
+      "fabdesk://pair?v=1&t=t&p=47820&n=Mac&h=mac.tail.ts.net&h=100.64.0.1&h=192.168.1.24&k=tailscale-https&k=tailscale&k=lan&s=https&s=http&s=http",
+    );
+    const parsed = parsePairingUrl(url)!;
+    expect(parsed.schemes).toEqual(["https", "http", "http"]);
+    expect(candidateBaseUrls(parsed)).toEqual(["https://mac.tail.ts.net", "http://100.64.0.1:47820", "http://192.168.1.24:47820"]);
+    // A LAN preference moves the LAN host first in the URL; the phone still tries https first.
+    const lanFirst = parsePairingUrl(pairingUrlFromEndpoints({ token: "t", endpoints: orderEndpoints(endpoints, "lan"), port: 47820, name: "Mac" }))!;
+    expect(lanFirst.hosts[0]).toBe("192.168.1.24");
+    expect(candidateBaseUrls(lanFirst)[0]).toBe("https://mac.tail.ts.net");
+    expect(endpointBaseUrl({ host: "mac.tail.ts.net", port: 8443, scheme: "https" })).toBe("https://mac.tail.ts.net:8443");
+    expect(endpointBaseUrl({ host: "fd7a::1", port: 47820 })).toBe("http://[fd7a::1]:47820");
+  });
+
+  test("s= is omitted while every endpoint is http, and an old phone reads the MagicDNS host as plain http", () => {
+    const allHttp = pairingUrlFromEndpoints({
+      token: "t",
+      endpoints: orderEndpoints([{ host: "100.64.0.1", port: 47820, kind: "tailscale", iface: "utun4", hostname: "mac.tail.ts.net" }], null),
+      port: 47820,
+      name: "Mac",
+    });
+    expect(allHttp).not.toContain("s=");
+    expect(parsePairingUrl(allHttp)?.schemes).toBeUndefined();
+    const mixed = "fabdesk://pair?v=1&t=t&p=47820&n=Mac&h=mac.tail.ts.net&h=100.64.0.1&k=tailscale-https&k=tailscale&s=https&s=http";
+    const legacyView = parsePairingUrl(mixed.replace(/&[ks]=[a-z-]+/g, ""))!;
+    expect(legacyView.schemes).toBeUndefined();
+    expect(candidateBaseUrls(legacyView)).toEqual(["http://mac.tail.ts.net:47820", "http://100.64.0.1:47820"]);
+    // A mismatched or unknown scheme list falls back to http rather than guessing.
+    expect(parsePairingUrl(`${mixed}&s=https`)?.schemes).toBeUndefined();
+    expect(parsePairingUrl(mixed.replace("s=https", "s=wss"))?.schemes).toEqual(["http", "http"]);
+    expect(candidateBaseUrls({ hosts: ["a", "b"], port: 1, schemes: ["https"] })).toEqual(["http://a:1", "http://b:1"]);
+  });
+
+  test("RemoteStatus and CoreEndpoint accept the Tailscale additions and their absence", () => {
+    const plain = { host: "1.2.3.4", port: 1, kind: "lan", iface: "en0", default: true };
+    expect(CoreEndpoint.parse(plain).scheme).toBeUndefined();
+    expect(endpointScheme(CoreEndpoint.parse(plain))).toBe("http");
+    expect(CoreEndpoint.safeParse({ ...plain, scheme: "ftp" }).success).toBe(false);
+    const status = { enabled: false, setting: Settings.parse({}).remote, endpoints: [plain] };
+    expect(RemoteStatus.parse(status).tailscale).toBeUndefined();
+    expect(RemoteStatus.parse({ ...status, tailscale: null }).tailscale).toBeNull();
+    expect(RemoteStatus.parse({ ...status, tailscale: { ip: "100.64.0.1", dnsName: "mac.tail.ts.net", httpsEnabled: true, serve: { port: 443 } } }).tailscale?.serve?.port).toBe(443);
   });
 });

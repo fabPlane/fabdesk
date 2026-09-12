@@ -5,22 +5,25 @@
  * draft/Save footer — a pairing code is live for three minutes, so a half-saved toggle would be
  * confusing, and the listener state the core reports is the truth worth showing.
  */
-import type { CoreEndpoint, Device, EndpointKind, PairStartResult, RemoteStatus, Settings } from "@fabdesk/protocol";
-import { ENDPOINT_KIND_ORDER, REMOTE_DEFAULT_PORT } from "@fabdesk/protocol";
+import type { CoreEndpoint, Device, EndpointKind, PairStartResult, RemoteStatus, Settings, TailscaleState } from "@fabdesk/protocol";
+import { ENDPOINT_KIND_ORDER, REMOTE_DEFAULT_PORT, endpointBaseUrl, endpointScheme } from "@fabdesk/protocol";
 import { useCoreClient, useDevices, usePatchSettings, useRemoteState, useSettings } from "@fabdesk/client-core";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { Badge, Button, Dialog, EmptyState, Input, Select, Spinner } from "../components/ui";
-import { qrSvg } from "./qr";
+import { qrSvg } from "@fabdesk/qr";
 
 type RemoteSetting = Settings["remote"];
 const DEFAULT_SETTING: RemoteSetting = { enabled: false, host: "0.0.0.0", port: REMOTE_DEFAULT_PORT };
 
-function endpointLabel(e: CoreEndpoint): string {
-  return `${e.host}:${e.port}`;
+/** The MagicDNS name when the daemon knows one (the IP stays in the tooltip); `https://name` for a served endpoint. */
+export function endpointLabel(e: CoreEndpoint): string {
+  if (endpointScheme(e) === "https") return endpointBaseUrl(e);
+  return `${e.hostname ?? e.host}:${e.port}`;
 }
 
 const KIND_LABEL: Record<EndpointKind, string> = {
+  "tailscale-https": "Tailscale HTTPS",
   tailscale: "Tailscale",
   lan: "LAN",
   other: "Other",
@@ -36,8 +39,22 @@ function relative(iso: string | null): string {
   return `${Math.floor(ms / 86_400_000)}d ago`;
 }
 
+/** The daemon's `{ error }` body when there is one; a `CoreHttpError` message is the raw response text. */
+export function daemonError(e: unknown): string {
+  const message = e instanceof Error ? e.message : String(e);
+  try {
+    const body = JSON.parse(message) as { error?: unknown };
+    if (typeof body.error === "string" && body.error) return body.error;
+  } catch {
+    /* not JSON */
+  }
+  return message;
+}
+
 /** Why a phone would not reach the listener as configured, or null when it plausibly would. */
 export function unreachableReason(setting: Pick<RemoteSetting, "host">, endpoints: CoreEndpoint[]): string | null {
+  // `tailscale serve` reaches a loopback bind from the tailnet, so a served name makes any bind reachable.
+  if (endpoints.some((e) => e.kind === "tailscale-https")) return null;
   if (/^(127\.|localhost$|::1$)/i.test(setting.host))
     return `Remote access is bound to ${setting.host}, which only this machine can reach. Phones cannot connect — set the host to 0.0.0.0 (all interfaces) or to this machine's tailnet or LAN address.`;
   if (endpoints.length === 0) return "No network address found — is this machine on a tailnet or LAN? A phone has nothing to connect to.";
@@ -88,6 +105,22 @@ export function RemoteSection() {
   const closePairing = () => {
     setPairing(null);
     void client.cancelPairing().catch(() => {});
+  };
+
+  // `tailscale serve` on the daemon's machine: the response is the new remote status, so it goes
+  // straight into the cache rather than waiting for a refetch. Failures carry the CLI's stderr.
+  const [servePending, setServePending] = useState(false);
+  const setTailscaleServe = async (enabled: boolean) => {
+    setError(null);
+    setServePending(true);
+    try {
+      const next = await client.request<RemoteStatus>("/v1/remote/tailscale-serve", { method: "POST", json: { enabled } });
+      qc.setQueryData(["remote"], next);
+    } catch (e) {
+      setError(daemonError(e));
+    } finally {
+      setServePending(false);
+    }
   };
 
   const bound = remote.data?.enabled ? `${remote.data.host}:${remote.data.port}` : null;
@@ -158,7 +191,7 @@ export function RemoteSection() {
             disabled={patch.isPending || kindsOnOffer.length === 0}
             onChange={(e) => applyRemote({ preferredEndpointKind: (e.target.value || null) as EndpointKind | null })}
           >
-            <option value="">Automatic (Tailscale, then LAN)</option>
+            <option value="">Automatic (Tailscale HTTPS, then Tailscale, then LAN)</option>
             {kindsOnOffer.map((k) => (
               <option key={k} value={k}>
                 {KIND_LABEL[k]}
@@ -166,6 +199,9 @@ export function RemoteSection() {
             ))}
           </Select>
         </label>
+        {status?.tailscale !== undefined && (
+          <TailscaleRow tailscale={status.tailscale} pending={servePending || patch.isPending} onChange={(enabled) => void setTailscaleServe(enabled)} />
+        )}
         <div className="mt-2">
           <div className="mb-1 text-xs font-medium">Reachable at</div>
           {remote.isLoading ? (
@@ -226,6 +262,45 @@ export function RemoteSection() {
 }
 
 /**
+ * Front the listener with `tailscale serve` on 443. With it on, phones get a MagicDNS name over
+ * TLS the tailnet vouches for — the one address that needs no cleartext exception on iOS.
+ * `null` means the daemon found no Tailscale CLI, so there is nothing to set up.
+ */
+function TailscaleRow({ tailscale, pending, onChange }: { tailscale: TailscaleState | null; pending: boolean; onChange: (enabled: boolean) => void }) {
+  const served = tailscale?.serve ?? null;
+  let detail: string;
+  if (!tailscale) detail = "Tailscale is not installed on this machine.";
+  else if (!tailscale.dnsName) detail = tailscale.ip ? "MagicDNS is off for this tailnet, so there is no name to issue a certificate for." : "Tailscale is not connected.";
+  else if (served) detail = `https://${tailscale.dnsName}${served.port === 443 ? "" : `:${served.port}`} — reachable from any device on the tailnet, with a certificate it already trusts.`;
+  else if (!tailscale.httpsEnabled) detail = `Runs \`tailscale serve\` for ${tailscale.dnsName}. The tailnet's HTTPS certificates feature looks off — turn it on in the Tailscale admin console under DNS first.`;
+  else detail = `Runs \`tailscale serve\` so phones reach ${tailscale.dnsName} over HTTPS.`;
+  const canSetup = Boolean(tailscale?.dnsName);
+  return (
+    <div className="grid grid-cols-[180px_1fr] items-center gap-3 py-1.5 text-xs">
+      <span>
+        <span className="font-medium">Tailscale HTTPS</span>
+        <span className="block text-[11px] text-muted">TLS via `tailscale serve`</span>
+      </span>
+      <span className="flex items-center gap-2">
+        {served ? <Badge tone="success">on</Badge> : <Badge>off</Badge>}
+        <span className="flex-1 text-[11px] text-muted">{detail}</span>
+        {served ? (
+          <Button size="sm" disabled={pending} onClick={() => onChange(false)}>
+            Turn off
+          </Button>
+        ) : (
+          canSetup && (
+            <Button size="sm" variant="primary" disabled={pending} onClick={() => onChange(true)}>
+              Set up
+            </Button>
+          )
+        )}
+      </span>
+    </div>
+  );
+}
+
+/**
  * The default endpoint, then "+N more" folding the rest (grouped by kind). `onMakeDefault` makes
  * a row's kind the preferred one; it is omitted where the list is only informational.
  */
@@ -244,7 +319,9 @@ function EndpointList({
   const rest = endpoints.filter((e) => e !== primary);
   const row = (e: CoreEndpoint) => (
     <div key={endpointLabel(e)} className="flex items-center gap-2 py-0.5 text-xs">
-      <span className="font-mono">{endpointLabel(e)}</span>
+      <span className="font-mono" title={e.hostname && e.hostname !== e.host ? e.host : undefined}>
+        {endpointLabel(e)}
+      </span>
       <Badge tone={e.kind === "loopback" ? "warning" : e.default ? "accent" : "neutral"} {...(e.iface ? { title: e.iface } : {})}>
         {KIND_LABEL[e.kind]}
       </Badge>

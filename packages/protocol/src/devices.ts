@@ -119,13 +119,19 @@ export type PushResponse = z.infer<typeof PushResponse>;
 /**
  * How a phone would reach an address. `tailscale` is 100.64.0.0/10, `lan` a private or link-local
  * range, `loopback` 127/8 (only ever advertised when the listener is bound to it — a phone cannot
- * use it), `other` anything else (a public address, or a hostname).
+ * use it), `other` anything else (a public address, or a hostname). `tailscale-https` is the
+ * machine's MagicDNS name fronted by `tailscale serve` on 443: the tailnet terminates TLS with a
+ * certificate the phone already trusts, so it is the one kind that needs no ATS exception.
  */
-export const EndpointKind = z.enum(["tailscale", "lan", "other", "loopback"]);
+export const EndpointKind = z.enum(["tailscale-https", "tailscale", "lan", "other", "loopback"]);
 export type EndpointKind = z.infer<typeof EndpointKind>;
+
+export const EndpointScheme = z.enum(["http", "https"]);
+export type EndpointScheme = z.infer<typeof EndpointScheme>;
 
 /** Preference when the user has not picked a kind. Loopback is never first while anything else exists. */
 export const ENDPOINT_KIND_ORDER: readonly EndpointKind[] = [
+  "tailscale-https",
   "tailscale",
   "lan",
   "other",
@@ -134,14 +140,30 @@ export const ENDPOINT_KIND_ORDER: readonly EndpointKind[] = [
 
 /** One address the daemon's remote listener can be reached on. */
 export const CoreEndpoint = z.object({
+  /** What goes into the pairing URL's `h=`: an IP, or a DNS name for `tailscale-https`. */
   host: z.string(),
   port: z.number().int(),
   kind: EndpointKind,
   iface: z.string(),
   /** The one the pairing URL lists first; exactly one endpoint carries it when any exist. */
   default: z.boolean(),
+  /** `http` when absent; daemons from before `tailscale-https` never send it. */
+  scheme: EndpointScheme.optional(),
+  /** A DNS name for `host` (MagicDNS), when one is known. Shown instead of the bare IP. */
+  hostname: z.string().optional(),
 });
 export type CoreEndpoint = z.infer<typeof CoreEndpoint>;
+
+export function endpointScheme(e: Pick<CoreEndpoint, "scheme">): EndpointScheme {
+  return e.scheme ?? "http";
+}
+
+/** `https://name` for an https endpoint on 443, otherwise `scheme://host:port`. IPv6 gets bracketed. */
+export function endpointBaseUrl(e: Pick<CoreEndpoint, "host" | "port" | "scheme">): string {
+  const scheme = endpointScheme(e);
+  const host = e.host.includes(":") ? `[${e.host}]` : e.host;
+  return scheme === "https" && e.port === 443 ? `https://${host}` : `${scheme}://${host}:${e.port}`;
+}
 
 /**
  * Sorts endpoints into the order the phone should try them and flags the first as the default:
@@ -157,6 +179,27 @@ export function orderEndpoints<E extends Omit<CoreEndpoint, "default">>(
   const sorted = [...endpoints].sort((a, b) => rank(a) - rank(b) || a.host.localeCompare(b.host));
   return sorted.map((e, i) => ({ ...e, default: i === 0 }));
 }
+
+/**
+ * What the daemon learned from the Tailscale CLI (`tailscale status --json`, `serve status`).
+ * `null` in `RemoteStatus` when the CLI is not installed — endpoints then come from interface
+ * classification alone, and Settings offers no HTTPS setup.
+ */
+export const TailscaleState = z.object({
+  /** The tailnet IPv4 address, when the node is up. */
+  ip: z.string().nullable(),
+  /** MagicDNS name without the trailing dot, when MagicDNS is on. */
+  dnsName: z.string().nullable(),
+  /** The tailnet has the HTTPS certificates feature on, so `tailscale serve` can front the listener. */
+  httpsEnabled: z.boolean(),
+  /** `tailscale serve` is proxying `https:<port>` to the remote listener right now. */
+  serve: z.object({ port: z.number().int() }).nullable(),
+});
+export type TailscaleState = z.infer<typeof TailscaleState>;
+
+/** `POST /v1/remote/tailscale-serve`: front the remote listener with `tailscale serve` on 443, or stop. */
+export const TailscaleServeRequest = z.object({ enabled: z.boolean() });
+export type TailscaleServeRequest = z.infer<typeof TailscaleServeRequest>;
 
 export const PairStartResult = z.object({
   /** The one-time secret the phone exchanges for a device token. Also the QR payload's `t`. */
@@ -208,16 +251,25 @@ export interface PairingPayload {
    * (and on links whose `k=` list did not line up with `h=`), so treat it as a hint only.
    */
   kinds?: EndpointKind[];
+  /**
+   * The scheme of each host, parallel to `hosts`; only present when at least one is `https`.
+   * An `https` host is reached on 443 with no port — `port` applies to the `http` ones.
+   */
+  schemes?: EndpointScheme[];
 }
 
 /**
- * The QR payload: `fabdesk://pair?v=1&t=<token>&p=<port>&n=<name>&h=<host>…&k=<kind>…`.
+ * The QR payload: `fabdesk://pair?v=1&t=<token>&p=<port>&n=<name>&h=<host>…&k=<kind>…&s=<scheme>…`.
  *
  * Hosts repeat as `h=` so the phone can fall back from tailnet to LAN. Kinds travel as a parallel
  * `k=` list, one per host in the same order, rather than inside `h=`: phones built before `k=`
  * existed ignore the parameter and keep parsing `h=` exactly as they always did, and a daemon
  * without kinds simply omits the list. A kind this parser does not know becomes `other`, so a
  * newer daemon can add kinds without breaking an older phone that does know `k=`.
+ *
+ * Schemes follow the same pattern as `s=`, emitted only when some host is https. An old phone
+ * that ignores `s=` tries `http://<name>:<port>` for the MagicDNS host — which still works when
+ * the plain listener is reachable over the tailnet, so the link degrades rather than breaks.
  */
 export function buildPairingUrl(payload: PairingPayload): string {
   const params = new URLSearchParams();
@@ -230,7 +282,13 @@ export function buildPairingUrl(payload: PairingPayload): string {
     payload.kinds && payload.kinds.length === payload.hosts.length
       ? payload.kinds.map((k) => `k=${encodeURIComponent(k)}`)
       : [];
-  return [`${PAIRING_URL_PREFIX}?${params.toString()}`, ...hosts, ...kinds].join("&");
+  const schemes =
+    payload.schemes &&
+    payload.schemes.length === payload.hosts.length &&
+    payload.schemes.some((s) => s === "https")
+      ? payload.schemes.map((s) => `s=${s}`)
+      : [];
+  return [`${PAIRING_URL_PREFIX}?${params.toString()}`, ...hosts, ...kinds, ...schemes].join("&");
 }
 
 /** Builds the URL from ordered endpoints: the `default` one (or, failing that, the first) goes first. */
@@ -246,6 +304,7 @@ export function pairingUrlFromEndpoints(opts: {
     token: opts.token,
     hosts: ordered.map((e) => e.host),
     kinds: ordered.map((e) => e.kind),
+    schemes: ordered.map(endpointScheme),
     port: opts.port,
     name: opts.name,
   });
@@ -264,6 +323,12 @@ export function parsePairingUrl(raw: string): PairingPayload | null {
     rawKinds.length === hosts.length
       ? rawKinds.map((k) => (EndpointKind.safeParse(k).success ? (k as EndpointKind) : "other"))
       : null;
+  const rawSchemes = params.getAll("s");
+  // An unknown scheme is treated as http: guessing https at a plain listener would only fail.
+  const schemes =
+    rawSchemes.length === hosts.length
+      ? rawSchemes.map((s): EndpointScheme => (s === "https" ? "https" : "http"))
+      : null;
   return {
     version: 1,
     token,
@@ -271,10 +336,24 @@ export function parsePairingUrl(raw: string): PairingPayload | null {
     port,
     name: params.get("n") ?? "fabPlane",
     ...(kinds ? { kinds } : {}),
+    ...(schemes ? { schemes } : {}),
   };
 }
 
-/** Base URLs to try, in the order the daemon listed them (tailnet first). IPv6 gets bracketed. */
-export function candidateBaseUrls(payload: Pick<PairingPayload, "hosts" | "port">): string[] {
-  return payload.hosts.map((h) => `http://${h.includes(":") ? `[${h}]` : h}:${payload.port}`);
+/**
+ * Base URLs to try: every https host first (no ATS exception, and the tailnet already routes it),
+ * then the rest in the order the daemon listed them (tailnet first). IPv6 gets bracketed.
+ */
+export function candidateBaseUrls(
+  payload: Pick<PairingPayload, "hosts" | "port" | "schemes">,
+): string[] {
+  const schemes = payload.schemes?.length === payload.hosts.length ? payload.schemes : null;
+  const urls = payload.hosts.map((host, i) => {
+    const scheme = schemes?.[i] ?? "http";
+    return endpointBaseUrl({ host, scheme, port: scheme === "https" ? 443 : payload.port });
+  });
+  return [
+    ...urls.filter((u) => u.startsWith("https:")),
+    ...urls.filter((u) => !u.startsWith("https:")),
+  ];
 }

@@ -19,6 +19,7 @@
     "@fabdesk/auth-client": "workspace:*",
     "@fabdesk/kicad": "workspace:*",
     "@fabdesk/protocol": "workspace:*",
+    "@fabdesk/qr": "workspace:*",
     "@fabdesk/sim": "workspace:*",
     "@fabdesk/tools": "workspace:*",
     "@fp-pcb/client": "workspace:*",

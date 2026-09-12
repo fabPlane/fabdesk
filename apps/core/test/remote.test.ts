@@ -195,6 +195,7 @@ describe("remote listener", () => {
       ["/shutdown", { method: "POST" }],
       ["/v1/devices", {}],
       ["/v1/devices/pair/start", { method: "POST" }],
+      ["/v1/remote/tailscale-serve", { method: "POST", body: JSON.stringify({ enabled: true }) }],
     ] as const) {
       const res = await fetch(`${remoteUrl}${path}`, { ...init, headers: H() });
       expect({ path, status: res.status }).toEqual({ path, status: 404 });

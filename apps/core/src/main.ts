@@ -3,6 +3,7 @@
 import { chmod, mkdir, symlink, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { REMOTE_DEFAULT_PORT } from "@fabdesk/protocol";
 import { VERSION, channel, fabdeskHome, resolveConfig } from "./config";
 import { logger, errMsg, setLogLevel } from "./log";
 import { initSentry } from "./sentry";
@@ -11,6 +12,10 @@ const USAGE = `fabdesk-core ${VERSION}
 
 Usage:
   fabdesk-core serve [--port 0] [--host 127.0.0.1] [--handshake-file <path>] [--parent-pid <pid>] [--local-auth] [--data-dir <dir>]
+                     [--remote] [--remote-host 0.0.0.0] [--remote-port ${REMOTE_DEFAULT_PORT}]   # turn on (and persist) remote access for phones
+  fabdesk-core pair [--no-wait] [--invert] [--json]      # pairing QR + link for the running daemon; waits for the phone
+  fabdesk-core devices list [--json]                     # paired phones on the running daemon
+  fabdesk-core devices revoke <id|label>
   fabdesk-core mcp [--standalone] [--project <dir>]
   fabdesk-core login | logout | whoami
   fabdesk-core login --email <email> --password <password>   # staging/local only
@@ -34,6 +39,7 @@ Environment:
   SENTRY_ENVIRONMENT     Sentry environment tag (default production for compiled builds, else development)
   SENTRY_RELEASE         Sentry release (default fabdesk-core@<version>+<git-sha>)
   FABDESK_SENTRY_TEST    1 sends one handled test event at startup and prints its id
+  FABDESK_TAILSCALE_CLI  path to the tailscale binary for endpoint discovery, or "off"
 `;
 
 type Flags = { _: string[]; [k: string]: string | boolean | string[] };
@@ -80,6 +86,19 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       return 0;
     case "serve": {
       initSentry();
+      // `--remote` edits the persisted setting before the daemon reads it; see cli/remote.ts.
+      if (f["remote"] !== undefined || f["remote-host"] !== undefined || f["remote-port"] !== undefined) {
+        const config = resolveConfig({ ...(str(f, "data-dir") ? { dataDir: str(f, "data-dir")! } : {}) });
+        const { persistRemoteFlags } = await import("./cli/remote");
+        await mkdir(config.home, { recursive: true });
+        try {
+          const remote = await persistRemoteFlags(config.dbPath, f);
+          if (remote) process.stderr.write(remote.enabled ? `Remote access on: phones connect to ${remote.host}:${remote.port} (persisted; pair one with: fabdesk-core pair)\n` : "Remote access off (persisted)\n");
+        } catch (e) {
+          process.stderr.write(`serve: ${errMsg(e)}\n`);
+          return 2;
+        }
+      }
       const { serve } = await import("./serve");
       const daemon = await serve({
         ...(num(f, "port") !== undefined ? { port: num(f, "port")! } : {}),
@@ -132,6 +151,24 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       const st = auth.state();
       process.stdout.write(JSON.stringify({ mode: auth.mode, status: st.status, principal: st.principal ?? null }, null, 2) + "\n");
       return st.status === "signed_in" ? 0 : 1;
+    }
+    case "devices":
+    case "pair": {
+      const config = resolveConfig({ ...(str(f, "data-dir") ? { dataDir: str(f, "data-dir")! } : {}) });
+      const { connectToDaemon, stdio } = await import("./cli/daemon");
+      const client = await connectToDaemon(config, stdio);
+      if (!client) return 1;
+      try {
+        if (cmd === "pair") {
+          const { pairCommand, parsePairArgs } = await import("./cli/pair");
+          return await pairCommand(client, parsePairArgs(f), stdio);
+        }
+        const { devicesCommand, parseDevicesArgs } = await import("./cli/devices");
+        return await devicesCommand(client, parseDevicesArgs(f._, f), stdio);
+      } catch (e) {
+        process.stderr.write(`${cmd}: ${errMsg(e)}\n`);
+        return 1;
+      }
     }
     case "doctor": {
       const config = resolveConfig();
