@@ -19,11 +19,8 @@
     "expo-constants": "~18.0.0",
     "expo-haptics": "~15.0.8",
     "expo-image": "~3.0.0",
-<<<<<<< HEAD
     "expo-image-picker": "~17.0.11",
-=======
     "expo-keep-awake": "~15.0.8",
->>>>>>> mobile/tabs
     "expo-linking": "~8.0.0",
     "expo-network": "~8.0.8",
     "expo-router": "~6.0.0",
