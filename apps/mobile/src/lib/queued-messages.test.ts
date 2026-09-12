@@ -47,6 +47,19 @@ describe("composerAction", () => {
     });
   });
 
+  test("a slash draft is Run, enabled once it parses, whatever the run state", () => {
+    expect(
+      composerAction({ running: true, hasContent: true, sending: false, slash: "ready" }),
+    ).toEqual({ kind: "run", label: "Run", enabled: true });
+    expect(
+      composerAction({ running: false, hasContent: true, sending: false, slash: "incomplete" })
+        .enabled,
+    ).toBe(false);
+    expect(
+      composerAction({ running: false, hasContent: true, sending: false, slash: null }).kind,
+    ).toBe("send");
+  });
+
   test("live run with a draft: Queue, held while a queue request is in flight", () => {
     expect(composerAction({ running: true, hasContent: true, sending: false })).toEqual({
       kind: "queue",

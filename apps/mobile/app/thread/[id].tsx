@@ -36,11 +36,13 @@ import { AttachmentStrip } from "@/components/AttachmentStrip";
 import { MessageBody, PendingCards } from "@/components/MessageParts";
 import { useOptionSheet } from "@/components/OptionSheet";
 import { QueuedMessages } from "@/components/QueuedMessages";
+import { SlashCommandPopover, SlashToast } from "@/components/SlashCommandPopover";
 import { ThreadHeaderButton, useThreadMenu } from "@/components/ThreadHeaderMenu";
 import { Loading, Screen, readable } from "@/components/ui";
 import { useRememberedChoice } from "@/hooks/agent-choice";
 import { useAttachments } from "@/hooks/attachments";
 import { usePendingForThread } from "@/hooks/pending-requests";
+import { useSlashCommands } from "@/hooks/slash-commands";
 import { choicePatch, sameChoice, type AgentChoice } from "@/lib/agent-choice";
 import {
   attachmentsBlockedReason,
@@ -131,23 +133,28 @@ export default function ThreadScreen() {
   const hasContent = !!content && attachmentsSettled(attachments.pending);
   const canSend = hasContent && !sending;
 
+  // Slash commands (`/render top`, `/export gerbers`, …) run a tool directly; the popover sits
+  // above the composer while the draft starts with `/`, and Return runs a complete command.
+  const input = useRef<TextInput>(null);
+  const slash = useSlashCommands(thread.data, draft, setDraft);
+
   // While a run is live the same draft is queued instead: the daemon holds it and sends it when
   // the run ends. Either way the composer clears at once and restores on failure.
   const queue = useQueueMessage();
   const queued = useMemo(() => queuedMessages(messages.data), [messages.data]);
-  const action = composerAction({ running, hasContent, sending });
+  const action = composerAction({ running, hasContent, sending, slash: slash.state });
 
   const send = async () => {
-    if (!canSend || !id) return;
+    if (!canSend || !id || slash.active) return;
     const text = draft;
     const sent = attachments.pending;
-    const input = { content, attachments: toMessageAttachments(sent) };
+    const body = { content, attachments: toMessageAttachments(sent) };
     setSending(true);
     setDraft("");
     attachments.clear();
     try {
-      if (running) await queue.mutateAsync({ threadId: id, input });
-      else await client.sendMessage(id, input);
+      if (running) await queue.mutateAsync({ threadId: id, input: body });
+      else await client.sendMessage(id, body);
       await messages.refetch();
     } catch (e) {
       setDraft(text);
@@ -161,9 +168,19 @@ export default function ThreadScreen() {
     }
   };
 
-  // ⌘↩ on a hardware keyboard (iPad, the Thor) sends — or queues, while a run is live; inert
-  // without the native key-command module.
-  useKeyboardShortcut("cmd+enter", canSend ? () => void send() : undefined);
+  const primary = () => {
+    if (action.kind === "run") slash.submitDraft();
+    else if (action.kind === "stop") void stop();
+    else void send();
+  };
+
+  // ⌘↩ on a hardware keyboard (iPad, the Thor) sends — or queues while a run is live, or runs a
+  // slash command; ⌘/ starts one. All inert without the native key-command module.
+  useKeyboardShortcut("cmd+enter", action.enabled && action.kind !== "stop" ? primary : undefined);
+  useKeyboardShortcut("cmd+/", () => {
+    if (!slash.active) setDraft("/");
+    input.current?.focus();
+  });
 
   const stop = async () => {
     if (!id) return;
@@ -253,6 +270,13 @@ export default function ThreadScreen() {
           <View style={readable}>
             {id ? <QueuedMessages threadId={id} messages={queued} /> : null}
             <AttachmentStrip items={attachments.pending} onRemove={attachments.remove} />
+            {slash.active ? (
+              <SlashCommandPopover
+                suggestions={slash.suggestions}
+                blocked={slash.blocked}
+                onPick={slash.run}
+              />
+            ) : null}
           </View>
           {attachSheet.sheet}
           <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 8, ...readable }}>
@@ -279,6 +303,7 @@ export default function ThreadScreen() {
               </Text>
             </Pressable>
             <TextInput
+              ref={input}
               // Android in landscape otherwise swaps the screen for a full-screen editor with a DONE key.
               disableFullscreenUI
               value={draft}
@@ -286,6 +311,9 @@ export default function ThreadScreen() {
               placeholder={choice ? `Message ${choice.agentId}` : "Message"}
               placeholderTextColor={t.muted}
               multiline
+              // In a slash draft Return runs the command instead of inserting a newline.
+              submitBehavior={slash.active ? "submit" : "newline"}
+              onSubmitEditing={() => void slash.submitDraft()}
               style={{
                 flex: 1,
                 backgroundColor: t.bg,
@@ -322,7 +350,7 @@ export default function ThreadScreen() {
               </Pressable>
             ) : null}
             <Pressable
-              onPress={() => void (action.kind === "stop" ? stop() : send())}
+              onPress={primary}
               disabled={!action.enabled}
               accessibilityRole="button"
               accessibilityLabel={action.label}
@@ -338,6 +366,9 @@ export default function ThreadScreen() {
                 {action.label}
               </Text>
             </Pressable>
+          </View>
+          <View style={readable}>
+            <SlashToast toast={slash.toast} onOpenJobs={slash.openJobs} onDismiss={slash.dismiss} />
           </View>
         </View>
       </KeyboardAvoidingView>

@@ -15,12 +15,18 @@ export function queuedMessages(messages: readonly Message[] | undefined): Messag
   return (messages ?? []).filter(isQueued);
 }
 
-/** What the primary composer button does and says. `null` label means it is disabled. */
+/**
+ * What the primary composer button does and says. A slash draft turns it into Run (enabled once
+ * the command parses) — a `/render` must never reach the agent as a message.
+ */
 export function composerAction(input: {
   running: boolean;
   hasContent: boolean;
   sending: boolean;
-}): { kind: "send" | "queue" | "stop"; label: string; enabled: boolean } {
+  /** `null` when the draft is not a slash command; otherwise whether it is complete. */
+  slash?: "ready" | "incomplete" | null;
+}): { kind: "send" | "queue" | "stop" | "run"; label: string; enabled: boolean } {
+  if (input.slash) return { kind: "run", label: "Run", enabled: input.slash === "ready" };
   if (input.running) {
     // Stop is what a live run's button has always done; Queue takes over as soon as there is
     // something to queue, and Stop moves to a smaller button beside it.
