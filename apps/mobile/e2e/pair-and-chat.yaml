@@ -12,6 +12,11 @@
 # No `env:` defaults here: a flow-level value wins over `-e`, so run.sh passes every one.
 appId: ${APP_ID}
 ---
+# A fresh phone. `clearState` wipes the app container but not the keychain, where
+# expo-secure-store keeps the device token — without `clearKeychain` the previous run's
+# connection would come back and pairing would not be what is being tested. (This clears the
+# whole simulator keychain; do not point the flow at a simulator whose other apps you care about.)
+- clearKeychain
 - launchApp:
     clearState: true
     stopApp: true
@@ -23,8 +28,17 @@ appId: ${APP_ID}
       true: ${DEV_CLIENT_URL != ""}
     file: dev-client.yaml
 
-# Pairing. `app/pair.tsx` claims the token and replaces the route with the tabs.
+# Pairing. `app/pair.tsx` claims the token and replaces the route with the tabs. iOS asks before
+# handing a custom-scheme URL to an app the way Maestro opens it, and has been seen to ask twice;
+# every "Open" is tapped until the sheet is gone.
 - openLink: ${PAIRING_URL}
+- repeat:
+    while:
+      visible: "Open in .*"
+    commands:
+      - tapOn: "Open"
+      - waitForAnimationToEnd:
+          timeout: 2000
 - extendedWaitUntil:
     visible: "Search chats"
     timeout: 30000
@@ -42,7 +56,6 @@ appId: ${APP_ID}
     timeout: 15000
 - tapOn: "Message claude"
 - inputText: "hello from maestro"
-- hideKeyboard
 - tapOn: "Send"
 
 # The fake adapter streams the reply in two deltas; the run then ends and Send comes back.
