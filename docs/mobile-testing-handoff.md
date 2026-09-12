@@ -33,20 +33,22 @@ required to exercise pairing — `curl` against a daemon works, see "Testing wit
 
 Run on a Mac against a daemon started with the "Testing without a phone" recipe below, remote
 listener bound to `127.0.0.1:47820` (the iOS Simulator shares the host's loopback; the Android
-emulator reaches it at `10.0.2.2`). Driven through the simulator's accessibility tree, so
-**multi-touch (pinch) and the keyboard were not exercised** — see "Still never run".
+emulator reaches it at `10.0.2.2`). Driven through the simulator's accessibility tree
+first, then with real touch input once the native simulator panel attached.
 
 | Now verified at runtime                                                                                                               | Where                                                  |
 | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
 | Every screen mounts and renders under the New Architecture, on both platforms                                                         | all of `app/`                                          |
 | Android cleartext HTTP to a bare IP (`10.0.2.2`) on API 34                                                                            | `usesCleartextTraffic` in `app.json`                   |
-| Sending from the phone: composer → `POST /threads/:id/messages` → streamed reply (Android)                                            | `app/thread/[id].tsx`                                  |
+| Sending from the phone: composer → `POST /threads/:id/messages` → streamed reply, both platforms                                      | `app/thread/[id].tsx`                                  |
+| The composer stays above the software keyboard on both platforms                                                                      | `app/thread/[id].tsx`                                  |
+| Pinch-to-zoom in the board viewer (real two-finger gesture on iOS)                                                                    | `app/board/[id].tsx`                                   |
 | Pairing via the `fabdesk://pair` link, sequential address fallback (unreachable LAN address first, then loopback)                     | `app/pair.tsx`, `claimFirstReachable`                  |
 | `expo-secure-store` round-trips token + connection metadata across a cold start                                                       | `src/transport/connections.ts`                         |
 | WebSocket connects, streams a live run (deltas, tool groups, Stop→Send), reconnects after a daemon restart and refetches (pid change) | `packages/client-core/src/ws.ts`, `CoreConnection.tsx` |
 | `react-native-markdown-display` under React 19: bullets, inline code, paragraphs                                                      | `src/components/MessageParts.tsx`                      |
 | `expo-image` sends the `Authorization` header — board renders load                                                                    | `src/components/ProjectImage.tsx`                      |
-| Reanimated 4 + worklets + gesture-handler load; the board modal opens and closes                                                      | `app/board/[id].tsx`                                   |
+| Reanimated 4 + worklets + gesture-handler load; the board modal opens, pans and closes                                                | `app/board/[id].tsx`                                   |
 | `/doctor` agents list, `/health` version/uptime in Settings                                                                           | `app/(tabs)/settings.tsx`                              |
 
 ### Bugs found and fixed in that pass
@@ -102,11 +104,8 @@ Smaller things seen and left alone:
 Only a physical device can answer these:
 
 - `expo-camera` QR scanning (`app/connect/scan.tsx`). The simulator has no camera.
-- Pinch-to-zoom in the board viewer. The gesture code loads and pan/double-tap are wired, but no
-  two-finger gesture was made.
-- The keyboard-avoiding composer on **iOS**. Android was typed into and works (bug 6); on the
-  simulator the software keyboard never came up under accessibility-driven input, and the iOS
-  branch is unchanged from before the pass.
+- Double-tap-to-zoom in the board viewer. Pinch and pan were made with real gestures; a double
+  tap was not (the driving tool cannot deliver two taps inside the 500 ms window).
 - The Android keystore size limit (~2 KB per entry via `SharedPreferences`+keystore) with several
   saved connections. One connection fits; more is untested.
 - iOS Local Network permission over a real tailnet vs a real LAN — see the next section. The
