@@ -1,6 +1,6 @@
 /** Control API DTOs shared by core routes and the renderer client. */
 import { z } from "zod/v4";
-import { CoreEndpoint, EndpointKind } from "./devices";
+import { CoreEndpoint, EndpointKind, TailscaleState } from "./devices";
 import { AgentId, JobStatus, MessagePart, Principal } from "./events";
 
 export const ProjectId = z.string().min(1);
@@ -236,6 +236,8 @@ export const RemoteStatus = z.object({
   setting: Settings.shape.remote,
   /** Ordered as the pairing URL would list them, `default` on the first. Empty when nothing is reachable. */
   endpoints: z.array(CoreEndpoint),
+  /** `null` without a Tailscale CLI; absent from daemons that predate it. */
+  tailscale: TailscaleState.nullable().optional(),
 });
 export type RemoteStatus = z.infer<typeof RemoteStatus>;
 
