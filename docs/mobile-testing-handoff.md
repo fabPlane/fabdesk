@@ -183,6 +183,12 @@ Native modules added by the lanes, all compiled into the current builds: `expo-n
 Only a physical device can answer these:
 
 - `expo-camera` QR scanning (`app/connect/scan.tsx`). The simulator has no camera.
+- **Mac Catalyst is not a way around the simulator's blank Skia canvas.** Tried 2026-09-13:
+  with `mac_catalyst_enabled` and `SUPPORTS_MACCATALYST` on, everything compiles (only
+  `expo-camera`'s VisionKit scanner needs a `#if !targetEnvironment(macCatalyst)` guard), but the
+  link fails with `library 'pathops' not found` — `@shopify/react-native-skia` ships `ios`,
+  `ios-simulator`, `macos` and `tvos` xcframework slices and no `maccatalyst` one. Catalyst
+  would need Skia built from source, or a non-Skia cinema renderer for that target.
 - **Route Cinema on a real iPhone.** Blank on the simulator (Skia/Metal), fine on Android; open
   `fabdesk://cinema/<runId>` on the device once it is paired with a daemon that has a run.
 - Hardware shortcuts on a real keyboard (L1); the iPad detail pane navigation.
