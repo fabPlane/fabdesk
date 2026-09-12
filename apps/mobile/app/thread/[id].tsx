@@ -3,9 +3,17 @@
  *
  * Messages stream in over the WebSocket into the same react-query cache the desktop uses, so this
  * screen only has to render — there is no mobile-specific streaming logic. Sending picks up the
- * thread's own agent and model, so a chat started with codex on the desktop stays on codex.
+ * thread's own agent and model, so a chat started with codex on the desktop stays on codex; the
+ * pill above the input is where you change that, and it patches the thread itself.
  */
-import { useMessages, useRunsStore, useThread } from "@fabdesk/client-core";
+import {
+  useDoctor,
+  useMessages,
+  useRunsStore,
+  useSettings,
+  useThread,
+  useThreadMutations,
+} from "@fabdesk/client-core";
 import { useCoreClient } from "@fabdesk/client-core";
 import type { Message } from "@fabdesk/protocol";
 import { Stack, useLocalSearchParams } from "expo-router";
@@ -22,8 +30,11 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { AgentModelPicker } from "@/components/AgentModelPicker";
 import { MessageBody } from "@/components/MessageParts";
 import { Loading, Screen, readable } from "@/components/ui";
+import { useRememberedChoice } from "@/hooks/agent-choice";
+import { choicePatch, sameChoice, type AgentChoice } from "@/lib/agent-choice";
 import { formatDuration } from "@/lib/format";
 import { useTheme } from "@/theme";
 
@@ -40,6 +51,33 @@ export default function ThreadScreen() {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const list = useRef<FlatList<Message>>(null);
+
+  // Agent + model. The thread is the source of truth; `pending` covers the moment between the tap
+  // and the daemon's answer so the pill does not snap back while the PATCH is in flight.
+  const doctor = useDoctor();
+  const settings = useSettings();
+  const { patch } = useThreadMutations();
+  const { remember } = useRememberedChoice();
+  const [pending, setPending] = useState<AgentChoice | null>(null);
+  const threadChoice = useMemo<AgentChoice | null>(
+    () => (thread.data ? { agentId: thread.data.agentId, model: thread.data.model ?? "" } : null),
+    [thread.data?.agentId, thread.data?.model],
+  );
+  const choice = pending ?? threadChoice;
+  useEffect(() => {
+    if (pending && sameChoice(pending, threadChoice)) setPending(null);
+  }, [pending, threadChoice]);
+  const changeChoice = async (next: AgentChoice) => {
+    if (!id || sameChoice(next, choice)) return;
+    setPending(next);
+    remember(next);
+    try {
+      await patch.mutateAsync({ id, patch: choicePatch(next) });
+    } catch (e) {
+      setPending(null);
+      Alert.alert("Could not switch agent", e instanceof Error ? e.message : String(e));
+    }
+  };
 
   // Newest last, and the view pinned to it — the tail is what you came to read.
   const data = messages.data ?? [];
@@ -111,13 +149,32 @@ export default function ThreadScreen() {
             paddingBottom: Math.max(10, insets.bottom),
           }}
         >
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 8,
+              ...readable,
+            }}
+          >
+            {choice ? (
+              <AgentModelPicker
+                value={choice}
+                onChange={(next) => void changeChoice(next)}
+                agents={doctor.data?.agents ?? []}
+                settings={settings.data}
+                disabled={running || patch.isPending}
+              />
+            ) : null}
+          </View>
           <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 8, ...readable }}>
             <TextInput
               // Android in landscape otherwise swaps the screen for a full-screen editor with a DONE key.
               disableFullscreenUI
               value={draft}
               onChangeText={setDraft}
-              placeholder={thread.data ? `Message ${thread.data.agentId}` : "Message"}
+              placeholder={choice ? `Message ${choice.agentId}` : "Message"}
               placeholderTextColor={t.muted}
               multiline
               style={{
