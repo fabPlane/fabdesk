@@ -37,6 +37,8 @@ function harness() {
       return timers.length - 1;
     },
     clearTimeout: () => {},
+    // No jitter, so the backoff assertions below are exact.
+    random: () => 0,
   });
   return { sockets, timers, events, statuses, sub };
 }
@@ -144,6 +146,35 @@ describe("subscribeWs", () => {
     h.sockets[1]!.onerror?.({});
     h.sockets[1]!.onclose?.({});
     expect(h.timers[1]!.ms).toBe(2000);
+  });
+
+  test("backoff is jittered by the injected random, within [half, full]", () => {
+    const timers: number[] = [];
+    const sockets: FakeSocket[] = [];
+    let r = 0.5;
+    subscribeWs({
+      buildUrl: () => "ws://host/ws",
+      topics: ["*"],
+      factory: (url) => {
+        const s = new FakeSocket(url);
+        sockets.push(s);
+        return s;
+      },
+      onEvent: () => {},
+      setTimeout: (fn, ms) => {
+        timers.push(ms);
+        fn();
+        return 0;
+      },
+      clearTimeout: () => {},
+      random: () => r,
+    });
+    sockets[0]!.onclose?.({}); // attempt 1: 1000 * (1 - 0.25)
+    r = 0;
+    sockets[1]!.onclose?.({}); // attempt 2: 2000, un-jittered
+    r = 0.999;
+    sockets[2]!.onclose?.({}); // attempt 3: just above 4000 / 2
+    expect(timers).toEqual([750, 2000, 2002]);
   });
 
   test("close() stops reconnecting", () => {

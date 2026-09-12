@@ -37,6 +37,8 @@ export interface WsOptions {
   clearTimeout?: (handle: unknown) => void;
   baseDelayMs?: number;
   maxDelayMs?: number;
+  /** Source of backoff jitter, `Math.random` by default; tests inject a constant. */
+  random?: () => number;
 }
 
 /** One `{id, event}` frame off the wire, or null if it is not one. */
@@ -60,6 +62,7 @@ export function subscribeWs(options: WsOptions): SseSubscription {
   const clearT =
     options.clearTimeout ??
     ((h) => globalThis.clearTimeout(h as ReturnType<typeof globalThis.setTimeout>));
+  const random = options.random ?? Math.random;
   let socket: WebSocketLike | null = null;
   let lastEventId: string | null = null;
   let status: SseStatus = "connecting";
@@ -83,7 +86,7 @@ export function subscribeWs(options: WsOptions): SseSubscription {
     if (socket === ws) socket = null;
     attempt += 1;
     setStatus("reconnecting");
-    timer = setT(connect, reconnectDelay(attempt, options.baseDelayMs, options.maxDelayMs));
+    timer = setT(connect, reconnectDelay(attempt, options.baseDelayMs, options.maxDelayMs, random));
   };
 
   const connect = () => {
