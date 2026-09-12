@@ -57,7 +57,7 @@ answer wins.
   Do not port-forward `47820` to the internet.
 - Remote access is off by default and is never enabled by an upgrade.
 
-Testing it on a device: [mobile-testing-handoff.md](mobile-testing-handoff.md) — what is verified, what has never run, and the platform gotchas to expect.
+Testing it on a device: [mobile-testing-handoff.md](mobile-testing-handoff.md). What comes next, in phases and per-agent work packages: [mobile-roadmap.md](mobile-roadmap.md) — what is verified, what has never run, and the platform gotchas to expect.
 
 ## Running it
 

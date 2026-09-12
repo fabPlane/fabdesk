@@ -34,10 +34,8 @@ export default function ProjectScreen() {
     // `render_board` is long-running, so the tool route answers with a job id and useRunTool
     // waits on it; the project refetch afterwards is what surfaces the new file.
     void render
-      .run("render", {
-        args: { view: "top", width: 1600, height: 1200, quality: "basic" },
-        project: id,
-      })
+      // `callTool` lifts `projectId` out and wraps the rest as the tool's args itself.
+      .run("render", { projectId: id, view: "top", width: 1600, height: 1200, quality: "basic" })
       .then(() => project.refetch());
   };
 
