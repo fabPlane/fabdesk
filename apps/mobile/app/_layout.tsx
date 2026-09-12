@@ -38,6 +38,7 @@ export default function RootLayout() {
             <Stack.Screen name="thread/[id]" options={{ title: "Chat" }} />
             <Stack.Screen name="project/[id]" options={{ title: "Project" }} />
             <Stack.Screen name="renders/[id]" options={{ title: "Renders" }} />
+            <Stack.Screen name="drc/[id]" options={{ title: "DRC" }} />
             <Stack.Screen name="files/[id]/index" options={{ title: "Files" }} />
             <Stack.Screen name="files/[id]/view" options={{ title: "File" }} />
             <Stack.Screen

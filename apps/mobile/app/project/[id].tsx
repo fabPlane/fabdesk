@@ -3,13 +3,14 @@
  * one action (re-render the board) because that is the thing you actually want while away from
  * the desk.
  */
-import { useProject, useRunTool } from "@fabdesk/client-core";
+import { useProject, useProjectJson, useRunTool } from "@fabdesk/client-core";
 import { Stack, router, useLocalSearchParams } from "expo-router";
 import { useMemo } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { RenderImage } from "@/components/RenderImage";
 import { useStashRender } from "@/components/render-cache";
 import { Badge, Button, Card, Loading, Screen, readable } from "@/components/ui";
+import { normalizeReport, summarize } from "@/lib/drc";
 import { formatBytes, relativeTime } from "@/lib/format";
 import { galleryRenders, hasBoard, preferredRender, renderView } from "@/lib/renders";
 import { usePullRefresh } from "@/components/pull-refresh";
@@ -35,6 +36,15 @@ export default function ProjectScreen() {
     [project.data],
   );
   const board = hasBoard(project.data);
+  // The reports are small and cached per file, so the badge costs two requests the DRC screen
+  // would make anyway.
+  const drc = useProjectJson(id ?? null, "reports/drc.json");
+  const erc = useProjectJson(id ?? null, "reports/erc.json");
+  const checks = useMemo(
+    () => summarize([...normalizeReport(drc.data, "drc"), ...normalizeReport(erc.data, "erc")]),
+    [drc.data, erc.data],
+  );
+  const hasReports = drc.data !== null || erc.data !== null;
 
   if (project.isLoading) return <Loading label="Loading project…" />;
   if (!project.data || !id) return <Screen>{null}</Screen>;
@@ -110,6 +120,37 @@ export default function ProjectScreen() {
               {render.state.error}
             </Text>
           ) : null}
+        </Card>
+
+        <Card>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push({ pathname: "/drc/[id]", params: { id } })}
+            style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+          >
+            <Text style={{ color: t.fg, fontSize: 15, fontWeight: "600", flex: 1 }}>DRC / ERC</Text>
+            {!hasReports ? (
+              <Badge label="no reports" />
+            ) : checks.total === 0 ? (
+              <Badge label="passes" tone="success" />
+            ) : (
+              <>
+                {checks.errors ? (
+                  <Badge
+                    label={`${checks.errors} error${checks.errors === 1 ? "" : "s"}`}
+                    tone="danger"
+                  />
+                ) : null}
+                {checks.warnings ? (
+                  <Badge
+                    label={`${checks.warnings} warning${checks.warnings === 1 ? "" : "s"}`}
+                    tone="warning"
+                  />
+                ) : null}
+              </>
+            )}
+            <Text style={{ color: t.accent, fontSize: 13 }}>›</Text>
+          </Pressable>
         </Card>
 
         <Button
