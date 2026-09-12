@@ -205,6 +205,38 @@ Not exercised on a phone yet: the approval card UI itself, the local notificatio
 backgrounded, and the Notifications settings card (need a device build with
 `expo-notifications`; the next Release build includes it).
 
+## Phases 4 and 5 (2026-09-13, overnight)
+
+Four lanes, merged and wired:
+
+- **Tailscale endpoint provider + CLI** — the daemon reads `tailscale status --json` (verified
+  read-only against the real CLI here: `matthews-macbook-pro.tail4f6a7.ts.net`, HTTPS feature on),
+  advertises the MagicDNS name and, once `tailscale serve` fronts the listener, an
+  `https://<name>` endpoint that the pairing URL lists first (`s=` parallel to `k=`); phones try
+  https candidates first. `fabdesk-core serve --remote`, `pair` (terminal QR), `devices
+list/revoke` for headless machines. `tailscale serve` itself was **not** run against the user's
+  config — "Set up" on the desktop's Tailscale HTTPS row is the first live test.
+- **Relay** — `apps/relay` is a reference relay (Bun, ~zero deps); the daemon dials it out
+  (`RelayLink`, on when `remote.relayUrl` is set and signed in), the phone gets a `ProxyTransport`
+  when only the relay answers, and the QR carries the relay as endpoint kind `relay`. Proven by an
+  in-process end-to-end test (daemon → relay → device-token client, HTTP + events); no relay is
+  deployed anywhere yet — fabplane.com's team can port `apps/relay/src/server.ts`.
+- **Multiple computers + hosted web pairing** — status dots per saved computer, a switcher in
+  the Chats header, `queryClient.clear()` on switch; the browser client (`BrowserApp`) boots
+  without the Electron bridge, `/pair?host=…#token=…` claims and saves a host in localStorage,
+  and the remote listener now allows `https://fabplane.com` origins. The site route itself is the
+  fabplane.com repo's.
+- **Release** — `eas.json` profiles, `app.config.ts` layered over `app.json`, Sentry (errors only,
+  no source maps in the bundle — verified), a Maestro flow that **ran green on the iPhone 16 Pro
+  simulator** (pair → new chat → send → reply), `PrivacyInfo.xcprivacy` via a config plugin,
+  screenshot script, `set-version.ts` stamping the app, a `mobile` job in `release.yml`. What a
+  human must do once is listed in `mobile-release.md` (EAS init under the Voxly team, APNs key,
+  FCM, Sentry project, the `EXPO_TOKEN` secret).
+
+The iOS bundle id is now `com.fabplane.fabdesk` (paid team `CMNZZ92926`), so the next device
+build is a separate app from the earlier `com.tensorfleet.fabdesk.mobile` installs; the Android
+package is still `com.tensorfleet.fabdesk.mobile`.
+
 ## Still never run
 
 Only a physical device can answer these:

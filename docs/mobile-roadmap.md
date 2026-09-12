@@ -274,7 +274,7 @@ highlight overlay — the list can land first.
 
 A1 is the largest single package and is daemon-side; start it in Wave 2 so A2 can land in Wave 3.
 
-### Wave 4 (Phase 4)
+### Wave 4 (Phase 4) — **landed 2026-09-13** (relay reference implementation in `apps/relay`; T4 keeps `NSAllowsArbitraryLoads` until every endpoint is https)
 
 | ID  | Package                                                                       | Lane | Touches                                                                                                 | Depends on | Done when                                                                     |
 | --- | ----------------------------------------------------------------------------- | ---- | ------------------------------------------------------------------------------------------------------- | ---------- | ----------------------------------------------------------------------------- |
@@ -285,7 +285,7 @@ A1 is the largest single package and is daemon-side; start it in Wave 2 so A2 ca
 | D3  | `fabdesk-core` CLI: `serve --remote`, `devices`, terminal QR                  | D    | `apps/core/src/main.ts`, `cli/*`                                                                        | D1         | Headless Mac mini pairs a phone from an SSH session                           |
 | W1  | Hosted web pairing on fabplane.com (HTTPS backends only)                      | D    | `apps/web` (public site), `packages/ui`                                                                 | D2         | `fabplane.com/pair?host=…#token=…` saves an environment in the browser client |
 
-### Wave 5 (Phase 5)
+### Wave 5 (Phase 5) — **landed 2026-09-13**; the one-time human steps (EAS init, APNs key, Sentry project) are in `mobile-release.md`
 
 | ID  | Package                                                                          | Lane | Touches                                                                     | Depends on | Done when                                                                 |
 | --- | -------------------------------------------------------------------------------- | ---- | --------------------------------------------------------------------------- | ---------- | ------------------------------------------------------------------------- |
