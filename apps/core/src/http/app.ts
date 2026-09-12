@@ -14,6 +14,7 @@ import {
   SendMessage,
   Settings,
   StartOrder,
+  TailscaleServeRequest,
   type AgentId,
   type AgentInfo,
   type AuthState,
@@ -24,6 +25,7 @@ import {
   type Me,
   type PairClaimResult,
   type RemoteStatus,
+  type TailscaleState,
 } from "@fabdesk/protocol";
 import { z } from "zod/v4";
 import { PROJECT_FILES, ToolError, jailPath, toolRoutes, writeAtomic, type ContextFactory, type CoreServices, type ToolRegistry } from "@fabdesk/tools";
@@ -38,7 +40,8 @@ import type { ProjectStore } from "../projects";
 import type { AgentRunManager } from "../agent-runs";
 import type { DeviceStore } from "../devices";
 import type { RemoteListener } from "../remote";
-import { listenAddresses, machineName } from "../net";
+import { listenAddresses, machineName, serveFor } from "../net";
+import { tailscaleProvider, type TailscaleProvider } from "../tailscale";
 import { logger, errMsg } from "../log";
 import { allowedCloneUrl, fetchOpenCatalog, findCatalogProject } from "../opensource/catalog";
 import { createPreviewCache, resolveCatalogPreview } from "../opensource/preview";
@@ -73,6 +76,8 @@ export type AppDeps = {
    * shutdown, or device administration.
    */
   listener: "local" | "remote";
+  /** What the Tailscale CLI reports, for endpoint discovery. The shared provider when absent. */
+  tailscale?: TailscaleProvider;
 };
 
 export type Env = { Variables: { token?: string; principalSubject?: string } };
@@ -518,25 +523,49 @@ export function createApp(deps: AppDeps): Hono<Env> {
    * setting rather than the live listener so Settings can show (and warn about) what enabling
    * remote access would advertise before it is switched on.
    */
-  const advertisedEndpoints = (): CoreEndpoint[] => {
+  const tailscale = deps.tailscale ?? tailscaleProvider();
+  const advertisedEndpoints = async (fresh = false): Promise<{ endpoints: CoreEndpoint[]; tailscale: TailscaleState | null }> => {
     const remote = deps.store.settings.get().remote;
-    return listenAddresses(remote.port, { bindHost: remote.host, preferred: remote.preferredEndpointKind });
+    const info = await tailscale.info({ fresh });
+    const endpoints = listenAddresses(remote.port, { bindHost: remote.host, preferred: remote.preferredEndpointKind, tailscale: info });
+    const serve = info ? serveFor(info.serves, { host: remote.host, port: remote.port }) : null;
+    return {
+      endpoints,
+      tailscale: info && { ip: info.ip, dnsName: info.dnsName, httpsEnabled: info.httpsEnabled, serve: serve && { port: serve.port } },
+    };
   };
+  const remoteStatus = async (fresh = false): Promise<RemoteStatus> => ({ ...deps.remote.state(), setting: deps.store.settings.get().remote, ...(await advertisedEndpoints(fresh)) });
 
   /** Whether the remote listener is actually bound, and on what — Settings shows the real state. */
-  app.get("/v1/remote", (c) => {
-    const status: RemoteStatus = { ...deps.remote.state(), setting: deps.store.settings.get().remote, endpoints: advertisedEndpoints() };
-    return c.json(status);
-  });
+  app.get("/v1/remote", async (c) => c.json(await remoteStatus()));
 
   /* ---------- paired devices ---------- */
   const localOnly = (c: Context) => (deps.listener === "local" ? null : c.json({ error: "not found" }, 404));
 
-  app.post("/v1/devices/pair/start", (c) => {
+  /**
+   * Front the remote listener with `tailscale serve` on 443 (or stop doing so), then report the
+   * endpoints as they now stand. Administration, so local listener only. A failure carries the
+   * CLI's stderr: the usual cause is the tailnet's HTTPS feature being off.
+   */
+  app.post("/v1/remote/tailscale-serve", async (c) => {
+    const denied = localOnly(c);
+    if (denied) return denied;
+    const body = TailscaleServeRequest.parse(await c.req.json());
+    const remote = deps.store.settings.get().remote;
+    try {
+      await tailscale.setServe(body.enabled, { host: remote.host, port: remote.port });
+    } catch (e) {
+      logger.warn("tailscale serve change failed", { enabled: body.enabled, error: errMsg(e) });
+      return c.json({ error: errMsg(e), code: "precondition" }, 412);
+    }
+    return c.json(await remoteStatus(true));
+  });
+
+  app.post("/v1/devices/pair/start", async (c) => {
     const denied = localOnly(c);
     if (denied) return denied;
     const remote = deps.store.settings.get().remote;
-    const endpoints = advertisedEndpoints();
+    const { endpoints } = await advertisedEndpoints();
     const pending = deps.devices.startPairing();
     return c.json({
       pairingToken: pending.token,
