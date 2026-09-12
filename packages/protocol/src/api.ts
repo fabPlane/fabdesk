@@ -223,6 +223,8 @@ export const Settings = z.object({
       preferredEndpointKind: EndpointKind.nullable().optional(),
     })
     .default({ enabled: false, host: "0.0.0.0", port: REMOTE_DEFAULT_PORT }),
+  /** Daemon-wide kill switch for push notifications to paired phones (docs/mobile-notifications.md §4.1). */
+  notifications: z.object({ enabled: z.boolean().default(true) }).default({ enabled: true }),
 });
 export type Settings = z.infer<typeof Settings>;
 
@@ -236,6 +238,20 @@ export const RemoteStatus = z.object({
   endpoints: z.array(CoreEndpoint),
 });
 export type RemoteStatus = z.infer<typeof RemoteStatus>;
+
+/** `GET /health`: unauthenticated, so it carries nothing a stranger could use. */
+export const Health = z.object({
+  ok: z.literal(true),
+  version: z.string(),
+  pid: z.number().int(),
+  channel: z.enum(["public", "internal"]),
+  authMode: z.enum(["fabplane", "local"]),
+  uptimeMs: z.number(),
+  mcpSessions: z.number().int(),
+  /** Stable daemon identity, minted once (docs/mobile-notifications.md §4.4). */
+  coreId: z.string(),
+});
+export type Health = z.infer<typeof Health>;
 
 export const Me = z.object({ principal: Principal.nullable(), mode: z.enum(["fabplane", "local"]) });
 export type Me = z.infer<typeof Me>;

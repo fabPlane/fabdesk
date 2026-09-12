@@ -13,6 +13,109 @@ export const Device = z.object({
 });
 export type Device = z.infer<typeof Device>;
 
+/* ---------- push registration (docs/mobile-notifications.md §4.1) ---------- */
+
+/** Expo push tokens are opaque; this is the only shape Expo's push service accepts. */
+export const EXPO_PUSH_TOKEN_RE = /^Expo(nent)?PushToken\[[A-Za-z0-9_-]+\]$/;
+
+export const DevicePushPrefs = z.object({
+  /** `agent.done` with status `completed`. */
+  onDone: z.boolean().default(true),
+  /** `agent.done` with status `failed` or `aborted`, and `agent.error`. */
+  onFailed: z.boolean().default(true),
+  /** `agent.approval_requested` / `agent.input_requested` (supervised runs). */
+  onNeedsInput: z.boolean().default(true),
+  /** `job.done` for long jobs (`route_run`, `render_*`). */
+  onJobs: z.boolean().default(false),
+});
+export type DevicePushPrefs = z.infer<typeof DevicePushPrefs>;
+
+/** `PUT /v1/devices/me/push` body. Sent on every connect (the token can rotate) and on prefs change. */
+export const DevicePushRegistration = z.object({
+  expoPushToken: z.string().regex(EXPO_PUSH_TOKEN_RE),
+  platform: DevicePlatform,
+  appVersion: z.string().optional(),
+  prefs: DevicePushPrefs.default({
+    onDone: true,
+    onFailed: true,
+    onNeedsInput: true,
+    onJobs: false,
+  }),
+});
+export type DevicePushRegistration = z.infer<typeof DevicePushRegistration>;
+
+/** What a device sees of its own registration; the token itself is never echoed back. */
+export const DevicePushState = z.object({
+  registeredAt: z.string(),
+  platform: DevicePlatform,
+  prefs: DevicePushPrefs,
+});
+export type DevicePushState = z.infer<typeof DevicePushState>;
+
+/** `GET /v1/devices/me`: the caller's own device, plus its push registration if any. */
+export const DeviceMe = Device.extend({ push: DevicePushState.nullable() });
+export type DeviceMe = z.infer<typeof DeviceMe>;
+
+/** `PUT /v1/devices/me/push` response. */
+export const DevicePushResult = z.object({
+  device: Device,
+  push: z.object({ registeredAt: z.string() }),
+});
+export type DevicePushResult = z.infer<typeof DevicePushResult>;
+
+/**
+ * What the daemon hands fabplane.com (`POST /v1/private/push`, §4.2), which forwards it to Expo
+ * unchanged. `data` is all the phone reads; `title`/`body` are display only.
+ */
+export const PushKind = z.enum(["run.done", "run.failed", "run.needs_input", "job.done"]);
+export type PushKind = z.infer<typeof PushKind>;
+
+export const PushData = z.object({
+  v: z.literal(1),
+  kind: PushKind,
+  /** Daemon identity (§4.4), so a phone paired with two computers can tell them apart. */
+  coreId: z.string(),
+  coreName: z.string(),
+  threadId: z.string().optional(),
+  runId: z.string().optional(),
+  jobId: z.string().optional(),
+  projectId: z.string().optional(),
+});
+export type PushData = z.infer<typeof PushData>;
+
+export const PushMessage = z.object({
+  to: z.string().regex(EXPO_PUSH_TOKEN_RE),
+  title: z.string().max(80),
+  body: z.string().max(200),
+  data: PushData,
+  sound: z.enum(["default"]).optional(),
+  badge: z.number().int().optional(),
+  /** Android channel; `runs` by default. */
+  channelId: z.string().optional(),
+  ttl: z.number().int().min(0).max(86_400).optional(),
+  priority: z.enum(["default", "normal", "high"]).optional(),
+  /** iOS action category; `run` for now (no actions until the relay lands). */
+  categoryId: z.string().optional(),
+});
+export type PushMessage = z.infer<typeof PushMessage>;
+
+export const PUSH_BATCH_MAX = 20;
+export const PushRequest = z.object({ messages: z.array(PushMessage).min(1).max(PUSH_BATCH_MAX) });
+export type PushRequest = z.infer<typeof PushRequest>;
+
+export const PushTicket = z.union([
+  z.object({ status: z.literal("ok"), id: z.string() }),
+  z.object({
+    status: z.literal("error"),
+    message: z.string(),
+    details: z.object({ error: z.string() }).optional(),
+  }),
+]);
+export type PushTicket = z.infer<typeof PushTicket>;
+/** Same order as the request's `messages`. */
+export const PushResponse = z.object({ tickets: z.array(PushTicket) });
+export type PushResponse = z.infer<typeof PushResponse>;
+
 /**
  * How a phone would reach an address. `tailscale` is 100.64.0.0/10, `lan` a private or link-local
  * range, `loopback` 127/8 (only ever advertised when the listener is bound to it — a phone cannot
@@ -78,7 +181,13 @@ export type PairClaim = z.infer<typeof PairClaim>;
 export const PairClaimResult = z.object({
   deviceToken: z.string(),
   device: Device,
-  core: z.object({ name: z.string(), version: z.string(), platform: z.string() }),
+  core: z.object({
+    name: z.string(),
+    version: z.string(),
+    platform: z.string(),
+    /** Stable daemon identity (docs/mobile-notifications.md §4.4); absent from daemons that predate push. */
+    coreId: z.string().optional(),
+  }),
 });
 export type PairClaimResult = z.infer<typeof PairClaimResult>;
 

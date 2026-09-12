@@ -1,5 +1,6 @@
 /** SQLite (bun:sqlite, WAL) with versioned migrations and typed repositories. */
 import { Database, type SQLQueryBindings } from "bun:sqlite";
+import { randomBytes } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import {
@@ -125,6 +126,18 @@ export const MIGRATIONS: Array<{ version: number; sql: string }> = [
         revoked_at TEXT
       );
       CREATE INDEX devices_token ON devices(token_sha256);
+    `,
+  },
+  {
+    // Push registration per paired device (docs/mobile-notifications.md §4.1). The Expo token is
+    // stored in the clear: it is opaque, useless without our Expo project's credentials, and the
+    // daemon needs it verbatim to send.
+    version: 3,
+    sql: `
+      ALTER TABLE devices ADD COLUMN push_token TEXT;
+      ALTER TABLE devices ADD COLUMN push_platform TEXT;
+      ALTER TABLE devices ADD COLUMN push_prefs TEXT;
+      ALTER TABLE devices ADD COLUMN push_registered_at INTEGER;
     `,
   },
 ];
@@ -522,7 +535,34 @@ export class SettingsRepo {
     this.cache = next;
     return next;
   }
+  /**
+   * Stable daemon identity (docs/mobile-notifications.md §4.4), minted on first use and kept in
+   * the settings table under its own key. It is not part of `Settings`: it is not user-editable and
+   * `Settings.parse` strips unknown keys, so `patch()` never touches it.
+   */
+  coreId(): string {
+    if (this.coreIdCache) return this.coreIdCache;
+    const row = this.db.query<{ value_json: string }, [string]>("SELECT value_json FROM settings WHERE key = ?").get(CORE_ID_KEY);
+    let id: string | null = null;
+    if (row) {
+      try {
+        const v: unknown = JSON.parse(row.value_json);
+        if (typeof v === "string" && v.startsWith("core_")) id = v;
+      } catch {
+        /* corrupt value: mint again */
+      }
+    }
+    if (!id) {
+      id = `core_${randomBytes(9).toString("base64url").replace(/[^A-Za-z0-9]/g, "a").slice(0, 12)}`;
+      this.db.run("INSERT INTO settings(key, value_json) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json", [CORE_ID_KEY, JSON.stringify(id)]);
+    }
+    this.coreIdCache = id;
+    return id;
+  }
+  private coreIdCache: string | null = null;
 }
+
+const CORE_ID_KEY = "core_id";
 
 export class Store {
   readonly projects: ProjectRepo;
