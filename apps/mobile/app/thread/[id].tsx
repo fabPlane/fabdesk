@@ -46,6 +46,7 @@ import {
   toMessageAttachments,
 } from "@/lib/attachments";
 import { formatDuration } from "@/lib/format";
+import { useKeyboardShortcut } from "@/layout/keyboard";
 import { useTheme } from "@/theme";
 
 export default function ThreadScreen() {
@@ -134,6 +135,9 @@ export default function ThreadScreen() {
       setSending(false);
     }
   };
+
+  // ⌘↩ on a hardware keyboard (iPad, the Thor) sends; inert without the native key-command module.
+  useKeyboardShortcut("cmd+enter", canSend ? () => void send() : undefined);
 
   const stop = async () => {
     if (!id) return;

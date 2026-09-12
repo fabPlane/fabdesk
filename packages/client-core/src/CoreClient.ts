@@ -15,6 +15,7 @@ import type {
   ProjectDetail,
   ProjectSummary,
   RemixResult,
+  RemoteStatus,
   RouteFrameLine,
   Settings,
   Thread,
@@ -286,7 +287,7 @@ export class CoreClient {
   revokeDevice(id: string): Promise<{ ok: boolean }> {
     return this.request(`/v1/devices/${encodeURIComponent(id)}`, { method: "DELETE" });
   }
-  remoteState(): Promise<{ enabled: boolean; host?: string; port?: number; setting: Settings["remote"] }> {
+  remoteState(): Promise<RemoteStatus> {
     return this.request("/v1/remote");
   }
 
