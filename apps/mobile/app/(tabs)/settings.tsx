@@ -57,7 +57,10 @@ function AgentsCard() {
           <Badge label={a.installed ? (a.version ?? "installed") : "not found"} tone={a.installed ? "success" : "warning"} />
         </View>
       ))}
-      {(doctor.data?.agents ?? []).length === 0 ? <Text style={{ color: t.muted, fontSize: 13 }}>Nothing reported yet.</Text> : null}
+      {(doctor.data?.agents ?? []).length === 0 ? (
+        // `/doctor` probes each agent binary, which takes a few seconds the first time.
+        <Text style={{ color: t.muted, fontSize: 13 }}>{doctor.isPending ? "Checking…" : "Nothing reported yet."}</Text>
+      ) : null}
     </Card>
   );
 }

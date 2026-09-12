@@ -6,10 +6,11 @@ import { groupThreadsByProject, useProjects, useRunsStore, useThreads } from "@f
 import type { Thread } from "@fabdesk/protocol";
 import { router } from "expo-router";
 import { useMemo, useState } from "react";
-import { Pressable, RefreshControl, SectionList, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, SectionList, StyleSheet, Text, TextInput, View } from "react-native";
 import { ConnectionGate } from "@/components/ConnectionGate";
 import { Empty, Loading, Screen } from "@/components/ui";
 import { useConnection } from "@/transport/CoreConnection";
+import { usePullRefresh } from "@/components/pull-refresh";
 import { useTheme } from "@/theme";
 import { relativeTime } from "@/lib/format";
 
@@ -27,6 +28,7 @@ function Chats() {
   const [q, setQ] = useState("");
   const threads = useThreads(q ? { q } : undefined);
   const projects = useProjects();
+  const refreshControl = usePullRefresh(threads.refetch);
   const runningThreads = useRunsStore((s) => s.runsByThread);
 
   const sections = useMemo(() => {
@@ -65,7 +67,7 @@ function Chats() {
       <SectionList
         sections={sections}
         keyExtractor={(item) => item.id}
-        refreshControl={<RefreshControl refreshing={threads.isRefetching} onRefresh={() => void threads.refetch()} tintColor={t.muted} />}
+        refreshControl={refreshControl}
         ListEmptyComponent={
           <Empty title={q ? "No chats match" : "No chats yet"} hint={q ? undefined : "Start one on the desktop and it shows up here."} />
         }

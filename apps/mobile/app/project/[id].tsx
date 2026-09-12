@@ -6,17 +6,19 @@
 import { useProject, useRunTool } from "@fabdesk/client-core";
 import { Stack, router, useLocalSearchParams } from "expo-router";
 import { useMemo } from "react";
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { ProjectImage } from "@/components/ProjectImage";
 import { Badge, Button, Card, Loading, Screen } from "@/components/ui";
 import { formatBytes, relativeTime } from "@/lib/format";
 import { hasBoard, preferredRender, renderImages } from "@/lib/renders";
+import { usePullRefresh } from "@/components/pull-refresh";
 import { useTheme } from "@/theme";
 
 export default function ProjectScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const t = useTheme();
   const project = useProject(id ?? null);
+  const refreshControl = usePullRefresh(project.refetch);
   const render = useRunTool();
 
   const preview = useMemo(() => preferredRender(project.data), [project.data]);
@@ -39,7 +41,7 @@ export default function ProjectScreen() {
       <Stack.Screen options={{ title: project.data.name }} />
       <ScrollView
         contentContainerStyle={{ padding: 14, gap: 14 }}
-        refreshControl={<RefreshControl refreshing={project.isRefetching} onRefresh={() => void project.refetch()} tintColor={t.muted} />}
+        refreshControl={refreshControl}
       >
         <Card>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 }}>

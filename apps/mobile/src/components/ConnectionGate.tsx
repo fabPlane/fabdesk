@@ -10,7 +10,7 @@ import { Button, Empty, Loading, Screen } from "./ui";
 export function ConnectionGate({ children }: { children: ReactNode }) {
   const { phase, connection, error } = useConnection();
 
-  if (phase === "idle" && !connection) {
+  if (!connection) {
     return (
       <Screen>
         <Empty
@@ -22,10 +22,12 @@ export function ConnectionGate({ children }: { children: ReactNode }) {
     );
   }
 
-  if (phase === "locating") {
+  // A saved connection is "idle" for the render between hydration and the effect that starts
+  // locating it; the provider underneath only exists from "connecting" on, so gate on that.
+  if (phase === "idle" || phase === "locating") {
     return (
       <Screen>
-        <Loading label={`Looking for ${connection?.name ?? "your computer"}…`} />
+        <Loading label={`Looking for ${connection.name}…`} />
       </Screen>
     );
   }

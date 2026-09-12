@@ -1,6 +1,7 @@
-import { Stack } from "expo-router";
+import { router, Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
+import { Pressable, Text } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { CoreConnectionProvider } from "@/transport/CoreConnection";
@@ -25,14 +26,29 @@ export default function RootLayout() {
               headerTintColor: t.fg,
               headerTitleStyle: { fontSize: 16 },
               contentStyle: { backgroundColor: t.bg },
+              // Otherwise the back button is titled after the route group it came from: "(tabs)".
+              headerBackButtonDisplayMode: "minimal",
             }}
           >
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             <Stack.Screen name="connect/index" options={{ title: "Connections" }} />
             <Stack.Screen name="connect/scan" options={{ title: "Scan pairing code" }} />
+            <Stack.Screen name="pair" options={{ title: "Pairing" }} />
             <Stack.Screen name="thread/[id]" options={{ title: "Chat" }} />
             <Stack.Screen name="project/[id]" options={{ title: "Project" }} />
-            <Stack.Screen name="board/[id]" options={{ title: "Board", presentation: "fullScreenModal" }} />
+            <Stack.Screen
+              name="board/[id]"
+              options={{
+                title: "Board",
+                presentation: "fullScreenModal",
+                // A full-screen modal cannot be swiped away, so it needs its own way out.
+                headerRight: () => (
+                  <Pressable onPress={() => router.back()} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close">
+                    <Text style={{ color: t.accent, fontSize: 16 }}>Close</Text>
+                  </Pressable>
+                ),
+              }}
+            />
           </Stack>
         </CoreConnectionProvider>
       </SafeAreaProvider>

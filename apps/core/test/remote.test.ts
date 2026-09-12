@@ -149,6 +149,41 @@ describe("pairing over http", () => {
     expect(devices.find((d) => d.id === claim.device.id)?.lastSeenAt).not.toBeNull();
   });
 
+  test("the event socket admits a native client's own-host Origin and nothing foreign", async () => {
+    const start = (await (
+      await local("/v1/devices/pair/start", { method: "POST" })
+    ).json()) as PairStartResult;
+    const claim = (await (
+      await fetch(`${remoteUrl}/v1/devices/pair/claim`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          pairingToken: start.pairingToken,
+          label: "ws phone",
+          platform: "android",
+        }),
+      })
+    ).json()) as PairClaimResult;
+    const wsUrl = `ws://${REMOTE.host}:${REMOTE.port}/ws?topics=agent.*&token=${encodeURIComponent(claim.deviceToken)}`;
+
+    const open = (headers: Record<string, string>) =>
+      new Promise<boolean>((resolve) => {
+        const ws = new WebSocket(wsUrl, { headers } as never);
+        ws.onopen = () => {
+          ws.close();
+          resolve(true);
+        };
+        ws.onerror = () => resolve(false);
+        ws.onclose = () => resolve(false);
+      });
+
+    // React Native's WebSocket sends the URL's own host as its Origin; a bare client sends none.
+    expect(await open({})).toBe(true);
+    expect(await open({ origin: `http://${REMOTE.host}:${REMOTE.port}` })).toBe(true);
+    expect(await open({ origin: "http://evil.example" })).toBe(false);
+    expect(await open({ origin: `http://${REMOTE.host}:${REMOTE.port + 1}` })).toBe(false);
+  });
+
   test("a bad or reused code is rejected", async () => {
     const res = await fetch(`${remoteUrl}/v1/devices/pair/claim`, {
       method: "POST",

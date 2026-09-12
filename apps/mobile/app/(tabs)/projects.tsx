@@ -1,9 +1,10 @@
 import { useProjects } from "@fabdesk/client-core";
 import { router } from "expo-router";
-import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
+import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { ConnectionGate } from "@/components/ConnectionGate";
 import { Empty, Loading, Screen } from "@/components/ui";
 import { relativeTime } from "@/lib/format";
+import { usePullRefresh } from "@/components/pull-refresh";
 import { useTheme } from "@/theme";
 
 export default function ProjectsScreen() {
@@ -17,6 +18,7 @@ export default function ProjectsScreen() {
 function Projects() {
   const t = useTheme();
   const projects = useProjects();
+  const refreshControl = usePullRefresh(projects.refetch);
   if (projects.isLoading) return <Loading label="Loading projects…" />;
 
   return (
@@ -24,7 +26,7 @@ function Projects() {
       <FlatList
         data={projects.data ?? []}
         keyExtractor={(p) => p.id}
-        refreshControl={<RefreshControl refreshing={projects.isRefetching} onRefresh={() => void projects.refetch()} tintColor={t.muted} />}
+        refreshControl={refreshControl}
         contentContainerStyle={(projects.data ?? []).length === 0 ? { flexGrow: 1 } : { paddingBottom: 24 }}
         ListEmptyComponent={<Empty title="No projects" hint="Create one on the desktop and it appears here." />}
         renderItem={({ item }) => (

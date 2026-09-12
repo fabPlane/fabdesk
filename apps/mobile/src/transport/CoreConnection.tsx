@@ -6,9 +6,9 @@
  * the base URL is discovered by probing, because a laptop moves between networks; and the daemon's
  * event ids restart at zero whenever it does, so a changed pid drops the resume cursor and refetches.
  */
-import { CoreProvider, DirectTransport, useCore, type SseStatus } from "@fabdesk/client-core";
+import { CoreProvider, DirectTransport, useCore, type CoreEventSubscribe, type SseStatus } from "@fabdesk/client-core";
 import { QueryClient, useQueryClient } from "@tanstack/react-query";
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { connectOrder, readToken, useConnections, type Connection } from "./connections";
 import { findReachable, type HealthInfo } from "./connect";
 
@@ -88,6 +88,17 @@ export function CoreConnectionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => () => transport?.dispose(), [transport]);
 
+  // `useCoreEvents` reopens the stream whenever this callback changes, so it must be stable for
+  // the life of a transport: an inline arrow here made every re-render — including the one
+  // `setHealth` causes on each successful open — tear the socket down and dial again, forever.
+  const subscribe = useCallback<CoreEventSubscribe>(
+    (topics, onEvent, onStatus) => {
+      if (!transport) throw new Error("no transport");
+      return openEvents(transport, topics, onEvent, onStatus, queryClient, setHealth);
+    },
+    [transport],
+  );
+
   const offline = useMemo<CoreConnectionValue>(
     () => ({ connection, phase, status: "closed", health, baseUrl: null, authHeaders: {}, error, retry }),
     [connection, phase, health, error, retry],
@@ -99,7 +110,7 @@ export function CoreConnectionProvider({ children }: { children: ReactNode }) {
     <CoreProvider
       client={transport.client()}
       queryClient={queryClient}
-      subscribe={(topics, onEvent, onStatus) => openEvents(transport, topics, onEvent, onStatus, queryClient, setHealth)}
+      subscribe={subscribe}
     >
       <Bridge base={offline} transport={transport} onPhase={setPhase}>
         {children}

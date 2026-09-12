@@ -178,7 +178,9 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   /**
    * One request handler shape for both listeners: upgrade `/ws`, otherwise hand off to that
    * listener's Hono app. The origin check differs — a browser reaching the remote listener is not
-   * a case we serve, so only non-browser clients (no Origin header) may open a remote socket.
+   * a case we serve, so a remote socket may carry no Origin, or only the listener's own (React
+   * Native's WebSocket sends `Origin: http://<host>:<port>` for the URL it dials; nothing on this
+   * listener serves a page, so no browser can legitimately present that origin).
    */
   const makeFetch =
     (target: Hono<Env>, scope: "local" | "remote") =>
@@ -186,7 +188,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       const url = new URL(req.url);
       if (url.pathname === "/ws" && req.headers.get("upgrade")?.toLowerCase() === "websocket") {
         const origin = req.headers.get("origin");
-        const allowed = scope === "local" ? originAllowedLocal(origin) : origin === null || origin === "";
+        const allowed = scope === "local" ? originAllowedLocal(origin) : originAllowedRemote(origin, url.host);
         if (!allowed) return new Response("forbidden origin", { status: 403 });
         const token = url.searchParams.get("token") ?? req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? null;
         if (!tokens.verify(token)) return new Response("unauthorized", { status: 401 });
@@ -322,6 +324,16 @@ function originAllowedLocal(origin: string | null): boolean {
     return u.hostname === "localhost" || u.hostname === "127.0.0.1" || u.protocol === "file:" || u.protocol === "app:";
   } catch {
     return origin === "null" || origin.startsWith("file://");
+  }
+}
+
+/** No Origin (a native client), or the listener's own — never a page on some other host. */
+export function originAllowedRemote(origin: string | null, listenerHost: string): boolean {
+  if (!origin) return true;
+  try {
+    return new URL(origin).host === listenerHost;
+  } catch {
+    return false;
   }
 }
 

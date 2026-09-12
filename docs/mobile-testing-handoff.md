@@ -1,8 +1,11 @@
 # Handoff: testing `apps/mobile` on real devices
 
-For whoever picks this up with a simulator, a device, or an Expo build service. The app was written
-and statically verified in a Linux container with **no emulator, no simulator, and no phone** — so
-everything below the "Verified" line is genuinely unknown, not merely unpolished.
+For whoever picks this up with a real device or an Expo build service. The app was written and
+statically verified in a Linux container with no device runtime; it has since had one pass on the
+**iOS Simulator and the Android emulator** on a Mac (2026-09-12, see "Simulator pass" below), which
+found and fixed seven runtime bugs. What is left unknown is what only a physical phone can answer:
+the camera, the OS keystore on real hardware, iOS Local Network permission, backgrounding, and
+network hand-offs.
 
 Read [`docs/mobile.md`](mobile.md) first for what the app is and how pairing works. This document is
 only about what to test and what is likely to break.
@@ -14,38 +17,101 @@ only about what to test and what is likely to break.
 
 ## What is actually verified
 
-| Check | How |
-|---|---|
-| Root `bun install && bun run typecheck && bun run test` green | run; 45 new tests |
-| No `react-native`/`expo` in the root install | `ls node_modules` after a clean `--frozen-lockfile` install |
-| `apps/mobile` typechecks under the repo's strict settings | `bun run mobile:typecheck` |
-| Pure logic unit tests (25) | `bun run mobile:test` |
-| **Metro resolves the aliased workspace packages and the app bundles** | `bunx expo export --platform android` → 1639 modules, 4.83 MB |
-| Daemon remote listener, pairing, device-token issue/revoke | `apps/core/test/remote.test.ts`, `devices.test.ts` — over real HTTP against a real daemon |
+| Check                                                                 | How                                                                                       |
+| --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Root `bun install && bun run typecheck && bun run test` green         | run; 45 new tests                                                                         |
+| No `react-native`/`expo` in the root install                          | `ls node_modules` after a clean `--frozen-lockfile` install                               |
+| `apps/mobile` typechecks under the repo's strict settings             | `bun run mobile:typecheck`                                                                |
+| Pure logic unit tests (25)                                            | `bun run mobile:test`                                                                     |
+| **Metro resolves the aliased workspace packages and the app bundles** | `bunx expo export --platform android` → 1639 modules, 4.83 MB                             |
+| Daemon remote listener, pairing, device-token issue/revoke            | `apps/core/test/remote.test.ts`, `devices.test.ts` — over real HTTP against a real daemon |
 
 That last row matters: **the server half of this feature is tested end to end.** A phone is not
 required to exercise pairing — `curl` against a daemon works, see "Testing without a phone" below.
 
-## What has never run
+## Simulator pass (2026-09-12)
 
-Everything that needs a device runtime:
+Run on a Mac against a daemon started with the "Testing without a phone" recipe below, remote
+listener bound to `127.0.0.1:47820` (the iOS Simulator shares the host's loopback; the Android
+emulator reaches it at `10.0.2.2`). Driven through the simulator's accessibility tree, so
+**multi-touch (pinch) and the keyboard were not exercised** — see "Still never run".
 
-- Any screen actually rendering. The bundle builds; no component has been mounted.
-- `expo-camera` QR scanning (`app/connect/scan.tsx`).
-- `expo-secure-store` read/write (`src/transport/connections.ts`) — including whether connection
-  metadata (not just tokens) is happy going through SecureStore, which has a value-size limit on
-  Android (~2 KB per entry via `SharedPreferences`+keystore). A few saved connections should fit,
-  but this is untested and is the most likely place to hit a surprise.
-- `react-native-reanimated` worklets and `react-native-gesture-handler` in the board viewer
-  (`app/board/[id].tsx`). Reanimated 4 requires `react-native-worklets`, which is pinned and wired
-  into `babel.config.js`, but the plugin ordering has not been proven at runtime.
-- `react-native-markdown-display@7.0.2` under React 19 — it is the least maintained dependency here
-  and the most likely to need replacing. If it throws, the chat view is the casualty; see
-  "If markdown breaks" below.
-- `expo-image` carrying an `Authorization` header (`src/components/ProjectImage.tsx`). This is the
-  only way the phone can load a board render, since `GET /projects/:id/files/*` takes the bearer in
-  a header only and will **not** accept `?token=`.
-- The keyboard-avoiding composer on either platform.
+| Now verified at runtime                                                                                                               | Where                                                  |
+| ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| Every screen mounts and renders under the New Architecture, on both platforms                                                         | all of `app/`                                          |
+| Android cleartext HTTP to a bare IP (`10.0.2.2`) on API 34                                                                            | `usesCleartextTraffic` in `app.json`                   |
+| Sending from the phone: composer → `POST /threads/:id/messages` → streamed reply (Android)                                            | `app/thread/[id].tsx`                                  |
+| Pairing via the `fabdesk://pair` link, sequential address fallback (unreachable LAN address first, then loopback)                     | `app/pair.tsx`, `claimFirstReachable`                  |
+| `expo-secure-store` round-trips token + connection metadata across a cold start                                                       | `src/transport/connections.ts`                         |
+| WebSocket connects, streams a live run (deltas, tool groups, Stop→Send), reconnects after a daemon restart and refetches (pid change) | `packages/client-core/src/ws.ts`, `CoreConnection.tsx` |
+| `react-native-markdown-display` under React 19: bullets, inline code, paragraphs                                                      | `src/components/MessageParts.tsx`                      |
+| `expo-image` sends the `Authorization` header — board renders load                                                                    | `src/components/ProjectImage.tsx`                      |
+| Reanimated 4 + worklets + gesture-handler load; the board modal opens and closes                                                      | `app/board/[id].tsx`                                   |
+| `/doctor` agents list, `/health` version/uptime in Settings                                                                           | `app/(tabs)/settings.tsx`                              |
+
+### Bugs found and fixed in that pass
+
+1. **Remote `/ws` rejected every phone.** React Native's WebSocket sends `Origin: http://<host>:<port>`
+   for the URL it dials; the remote listener admitted only sockets with _no_ Origin, so every
+   connection got `403 forbidden origin` and the app sat on "Reconnecting…" forever while REST
+   worked. `originAllowedRemote` in `apps/core/src/serve.ts` now also accepts the listener's own
+   host (nothing on that listener serves a page, so no browser can present it). Regression test in
+   `apps/core/test/remote.test.ts`.
+2. **The stream re-dialled on every render.** `CoreConnectionProvider` passed `subscribe` as an
+   inline arrow; `useCoreEvents` lists it as an effect dependency, and `canResume` calls `setHealth`
+   on each successful open — so each open re-rendered the provider, which closed the socket and
+   opened another. Status never reached `open`. `subscribe` is now `useCallback`-ed on the transport.
+3. **Cold start with a saved connection crashed** (`useCore must be used inside <CoreProvider>`).
+   Between SecureStore hydration and the effect that starts locating, `phase` is still `"idle"` and
+   `ConnectionGate` rendered the tabs with no provider underneath. The gate now renders children
+   only from `"connecting"` on. Pairing in-session never hit this, which is why it survived.
+4. **`fabdesk://pair?…` had no route.** The scheme was registered but opening the link landed on
+   expo-router's "Unmatched Route". `app/pair.tsx` claims and redirects; the param→URL rebuild is
+   `src/lib/pair-link.ts` (tested).
+5. **Board modal had no way out** — `fullScreenModal` cannot be swiped away. It has a Close button
+   now. Same commit: back buttons were titled `(tabs)` after the route group; the Stack uses
+   `headerBackButtonDisplayMode: "minimal"`.
+6. **Android keyboard covered the composer.** Expo SDK 54 makes Android edge-to-edge, and under
+   edge-to-edge `windowSoftInputMode=adjustResize` no longer shrinks the window for the IME — so
+   `KeyboardAvoidingView` with `behavior={undefined}` on Android left the text field and Send
+   button behind the keyboard. It is `padding` on both platforms now, with the header height as
+   the offset (`app/thread/[id].tsx`). Typed and sent from the emulator afterwards; the reply
+   streamed back.
+7. **Stranded pull-to-refresh spinner.** `RefreshControl` was bound to react-query's `isRefetching`;
+   a background invalidation (reconnect, event) flips that true→false without a gesture and iOS
+   leaves the spinner on screen. `usePullRefresh` (`src/components/pull-refresh.tsx`) tracks the
+   pull instead.
+
+Smaller things seen and left alone:
+
+- A thread created on the desktop does not appear on the phone until something invalidates
+  `["threads"]` — `POST /threads` emits no event. The first `agent.started` on it does, so in
+  practice it shows up when the desktop sends the first message. Pull to refresh otherwise.
+- Opening a thread mid-run briefly shows only the assistant message: the event reducer seeds the
+  message cache before `GET /threads/:id/messages` resolves, and the fetch then overwrites it.
+  Self-heals within a second.
+- `pod install` from `apps/mobile/ios` fails under Ruby 4 + CocoaPods 1.17 with a
+  `Unicode Normalization not appropriate for ASCII-8BIT` error unless `LANG=en_US.UTF-8` is set
+  (`expo run:ios` runs it for you; set the variable first).
+- The pairing URL lists tailnet/LAN addresses from the interfaces, regardless of what host the
+  remote listener is actually bound to. Harmless in real use (it binds `0.0.0.0`), confusing when
+  testing on loopback.
+
+## Still never run
+
+Only a physical device can answer these:
+
+- `expo-camera` QR scanning (`app/connect/scan.tsx`). The simulator has no camera.
+- Pinch-to-zoom in the board viewer. The gesture code loads and pan/double-tap are wired, but no
+  two-finger gesture was made.
+- The keyboard-avoiding composer on **iOS**. Android was typed into and works (bug 6); on the
+  simulator the software keyboard never came up under accessibility-driven input, and the iOS
+  branch is unchanged from before the pass.
+- The Android keystore size limit (~2 KB per entry via `SharedPreferences`+keystore) with several
+  saved connections. One connection fits; more is untested.
+- iOS Local Network permission over a real tailnet vs a real LAN — see the next section. The
+  simulator talks to loopback and never triggers the prompt.
+- Backgrounding, Wi-Fi ↔ cellular — see "WebSocket lifecycle on a real network".
 
 ## The three risks I would test first
 
@@ -95,7 +161,7 @@ the things a test cannot cover:
   phone is connected: the app should refetch rather than silently skip events. The pid check lives
   in `openEvents` in `src/transport/CoreConnection.tsx`.
 
-## Bug found and fixed during this handoff
+## Bug found and fixed before the simulator pass
 
 `subscribeWs` retried on **both** `onerror` and `onclose`. A real failing socket fires both, so
 every failure doubled the number of sockets being opened and double-incremented the backoff

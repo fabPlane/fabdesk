@@ -79,8 +79,10 @@ export default function ThreadScreen() {
       <Stack.Screen options={{ title: thread.data?.title ?? "Chat" }} />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={insets.top + 44}
+        // Android is edge-to-edge under Expo SDK 54, so `adjustResize` no longer shrinks the window
+        // for the keyboard; padding is what works there too. The offset is the navigation header.
+        behavior="padding"
+        keyboardVerticalOffset={insets.top + (Platform.OS === "ios" ? 44 : 56)}
       >
         <FlatList
           ref={list}
