@@ -2,6 +2,7 @@
 import type {
   AuthState,
   CoreEvent,
+  Device,
   DoctorReport,
   Job,
   Message,
@@ -10,6 +11,7 @@ import type {
   OrderReadiness,
   OrderSession,
   OrderVendorId,
+  PairStartResult,
   ProjectDetail,
   ProjectSummary,
   RemixResult,
@@ -269,6 +271,23 @@ export class CoreClient {
   }
   logout(): Promise<void> {
     return this.request("/v1/auth/logout", { method: "POST" });
+  }
+
+  // Paired devices (local listener only; a phone never calls these)
+  startPairing(): Promise<PairStartResult> {
+    return this.request("/v1/devices/pair/start", { method: "POST" });
+  }
+  cancelPairing(): Promise<{ ok: boolean }> {
+    return this.request("/v1/devices/pair/cancel", { method: "POST" });
+  }
+  listDevices(): Promise<Device[]> {
+    return this.request("/v1/devices");
+  }
+  revokeDevice(id: string): Promise<{ ok: boolean }> {
+    return this.request(`/v1/devices/${encodeURIComponent(id)}`, { method: "DELETE" });
+  }
+  remoteState(): Promise<{ enabled: boolean; host?: string; port?: number; setting: Settings["remote"] }> {
+    return this.request("/v1/remote");
   }
 
   // Settings / lifecycle

@@ -202,3 +202,14 @@ export function useThreadMutations() {
   });
   return { create, patch, remove };
 }
+
+/** Paired phones, and whether the daemon's remote listener is actually bound. */
+export function useDevices(enabled = true) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["devices"], queryFn: () => client.listDevices(), enabled });
+}
+
+export function useRemoteState(enabled = true) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["remote"], queryFn: () => client.remoteState(), enabled });
+}
