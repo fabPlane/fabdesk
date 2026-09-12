@@ -37,6 +37,7 @@ import {
   planAfterReprobe,
   shouldReprobeOnNetwork,
 } from "../lib/reconnect";
+import { notifyForEvent } from "../notifications/run-notifier";
 import { connectOrder, readToken, useConnections, type Connection } from "./connections";
 import { findReachable, type HealthInfo } from "./connect";
 
@@ -83,7 +84,7 @@ const queryClient = new QueryClient({
 const REPROBE_TIMEOUT_MS = 2000;
 
 export function CoreConnectionProvider({ children }: { children: ReactNode }) {
-  const { connections, activeId, hydrated, noteConnected } = useConnections();
+  const { connections, activeId, hydrated, noteConnected, noteCoreId } = useConnections();
   const connection = useMemo(
     () => connections.find((c) => c.id === activeId) ?? null,
     [connections, activeId],
@@ -109,6 +110,20 @@ export function CoreConnectionProvider({ children }: { children: ReactNode }) {
   }, [connection, transport, phase]);
   const reprobing = useRef(false);
 
+  // `/health` is the one place a daemon's `coreId` reliably arrives (pairing may predate it, and
+  // the pairing schema may strip it); notifications name the daemon by it.
+  const noteHealth = useCallback(
+    (h: HealthInfo) => {
+      setHealth(h);
+      const conn = latest.current.connection;
+      if (h.coreId && conn && conn.coreId !== h.coreId) void noteCoreId(conn.id, h.coreId);
+    },
+    [noteCoreId],
+  );
+
+  // Keyed on the connection's id, not the record: the store rewrites the record on every connect
+  // (address, `lastConnectedAt`, `coreId`), and none of that should tear the transport down.
+  const connectionId = connection?.id ?? null;
   useEffect(() => {
     if (!hydrated) return;
     if (!connection) {
@@ -136,7 +151,7 @@ export function CoreConnectionProvider({ children }: { children: ReactNode }) {
         setError(`Could not reach ${connection.name}. Is it awake and on the same tailnet?`);
         return;
       }
-      setHealth(found.health);
+      noteHealth(found.health);
       if (found.baseUrl !== connection.baseUrl) void noteConnected(connection.id, found.baseUrl);
       setTransport(new DirectTransport({ id: connection.id, baseUrl: found.baseUrl, token }));
       setPhase("connecting");
@@ -144,7 +159,8 @@ export function CoreConnectionProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [connection, hydrated, attempt, noteConnected]);
+    // `connection` is deliberately not a dependency; see the note above `connectionId`.
+  }, [connectionId, hydrated, attempt, noteConnected, noteHealth]);
 
   useEffect(() => () => transport?.dispose(), [transport]);
 
@@ -172,7 +188,7 @@ export function CoreConnectionProvider({ children }: { children: ReactNode }) {
         currentBaseUrl: current.baseUrl(),
         streamStatus: streamStatus.current,
       });
-      if (found) setHealth(found.health);
+      if (found) noteHealth(found.health);
       if (plan.kind === "switch") {
         const token = await readToken(conn.id);
         if (!token || latest.current.transport !== current) return;
@@ -186,7 +202,7 @@ export function CoreConnectionProvider({ children }: { children: ReactNode }) {
     } finally {
       reprobing.current = false;
     }
-  }, [noteConnected, retry]);
+  }, [noteConnected, noteHealth, retry]);
 
   useEffect(() => {
     let prevApp: AppStateStatus | null = AppState.currentState;
@@ -216,12 +232,26 @@ export function CoreConnectionProvider({ children }: { children: ReactNode }) {
   // the life of a transport: an inline arrow here made every re-render — including the one
   // `setHealth` causes on each successful open — tear the socket down and dial again, forever.
   // `streamEpoch` is in the list on purpose: it is how a re-probe asks for one fresh dial.
+  // Every event is offered to the local notifier first (docs/mobile-notifications.md §3.3): it
+  // needs the run store as it was before the reducer ends the run, and it reads the connection
+  // through `latest` so the callback stays stable.
   const subscribe = useCallback<CoreEventSubscribe>(
     (topics, onEvent, onStatus) => {
       if (!transport) throw new Error("no transport");
-      return openEvents(transport, topics, onEvent, onStatus, queryClient, setHealth);
+      return openEvents(
+        transport,
+        topics,
+        (event, id) => {
+          const conn = latest.current.connection;
+          if (conn) notifyForEvent(event, { connection: conn, qc: queryClient });
+          onEvent(event, id);
+        },
+        onStatus,
+        queryClient,
+        noteHealth,
+      );
     },
-    [transport, streamEpoch],
+    [transport, streamEpoch, noteHealth],
   );
 
   const onStreamStatus = useCallback((next: SseStatus) => {
@@ -339,5 +369,9 @@ function Bridge({
     }),
     [base, sseStatus, transport],
   );
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+  return (
+    <Ctx.Provider value={value}>
+      {children}
+    </Ctx.Provider>
+  );
 }

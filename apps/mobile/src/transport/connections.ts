@@ -22,6 +22,12 @@ export interface Connection {
   platform: DevicePlatform;
   pairedAt: string;
   lastConnectedAt: string | null;
+  /**
+   * The daemon's stable identity (docs/mobile-notifications.md §4.4), from `pair/claim` or the
+   * first `/health` that reports one. A notification names the daemon by it; connections paired
+   * before daemons minted one are matched by `deviceId` instead.
+   */
+  coreId?: string;
 }
 
 const TOKEN_PREFIX = "fabdesk.device-token.";
@@ -66,6 +72,8 @@ export interface ConnectionsState {
   setActive: (id: string | null) => Promise<void>;
   /** Records the address that worked, so the next connect starts there. */
   noteConnected: (id: string, baseUrl: string) => Promise<void>;
+  /** Records the daemon's `coreId` once `/health` reports one; a no-op when it is already known. */
+  noteCoreId: (id: string, coreId: string) => Promise<void>;
   forget: (id: string) => Promise<void>;
 }
 
@@ -99,6 +107,13 @@ export const useConnections = create<ConnectionsState>()((set, get) => ({
     const connections = get().connections.map((c) =>
       c.id === id ? { ...c, baseUrl, lastConnectedAt: new Date().toISOString() } : c,
     );
+    await writeJson(CONNECTIONS_KEY, connections);
+    set({ connections });
+  },
+
+  noteCoreId: async (id, coreId) => {
+    if (get().connections.some((c) => c.id === id && c.coreId === coreId)) return;
+    const connections = get().connections.map((c) => (c.id === id ? { ...c, coreId } : c));
     await writeJson(CONNECTIONS_KEY, connections);
     set({ connections });
   },

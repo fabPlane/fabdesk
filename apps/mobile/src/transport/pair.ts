@@ -23,6 +23,10 @@ export async function claimAndSave(payload: PairingPayload): Promise<Connection>
   // Network prompt is still owed, take it now rather than on the claim (no-op once done).
   await warmUpLocalNetwork(candidateBaseUrls(payload));
   const { baseUrl, result } = await claimFirstReachable(payload, { label: deviceLabel(), platform: devicePlatform() });
+  // Daemons that mint a `coreId` (docs/mobile-notifications.md §4.4) return it in `core`; older
+  // ones do not, and the protocol schema may strip it until it lists the field. Either way the
+  // first `/health` on connect fills it in.
+  const coreId = (result.core as { coreId?: unknown }).coreId;
   const connection: Connection = {
     // One connection per paired device: re-pairing the same machine makes a new one, which is
     // right — the old device token is still listed (and revocable) on the desktop.
@@ -34,6 +38,7 @@ export async function claimAndSave(payload: PairingPayload): Promise<Connection>
     platform: result.device.platform,
     pairedAt: result.device.createdAt,
     lastConnectedAt: new Date().toISOString(),
+    ...(typeof coreId === "string" && coreId ? { coreId } : {}),
   };
   await useConnections.getState().add(connection, result.deviceToken);
   return connection;

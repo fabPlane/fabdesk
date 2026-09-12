@@ -5,6 +5,7 @@ import { Pressable, Text } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AppShell } from "@/layout/AppShell";
+import { NotificationTapHandler } from "@/notifications/NotificationTapHandler";
 import { useConnections } from "@/transport/connections";
 import { useTheme } from "@/theme";
 
@@ -77,6 +78,8 @@ export default function RootLayout() {
             <Stack.Screen name="cinema/index" options={{ title: "Route runs" }} />
             <Stack.Screen name="cinema/[runId]" options={{ title: "Route run" }} />
           </Stack>
+          {/* Notification taps → thread/jobs (docs/mobile-notifications.md §4.3). Renders nothing. */}
+          <NotificationTapHandler />
         </AppShell>
       </SafeAreaProvider>
     </GestureHandlerRootView>
