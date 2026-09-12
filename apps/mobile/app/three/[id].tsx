@@ -10,12 +10,14 @@ import { GlbViewer, type GlbViewerHandle } from "@/components/GlbViewer";
 import { Button, Empty, Loading, Screen } from "@/components/ui";
 import { formatBytes, relativeTime } from "@/lib/format";
 import { useTheme } from "@/theme";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const GLB_PATH = "renders/board.glb";
 
 export default function ThreeScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const t = useTheme();
+  const insets = useSafeAreaInsets();
   const project = useProject(id ?? null);
   const render = useRunTool();
   const [handle, setHandle] = useState<GlbViewerHandle | null>(null);
@@ -95,7 +97,7 @@ export default function ThreeScreen() {
         pointerEvents="none"
         style={{
           position: "absolute",
-          bottom: 28,
+          bottom: 28 + insets.bottom,
           left: 0,
           right: 0,
           textAlign: "center",

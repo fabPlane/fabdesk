@@ -13,6 +13,7 @@ import {
   type PlaybackSpeed,
 } from "@/lib/cinema-frames";
 import { useTheme } from "@/theme";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 function Tap({
   label,
@@ -147,6 +148,7 @@ export function CinemaControls({
   onToggleLayer: (layer: number) => void;
 }) {
   const t = useTheme();
+  const insets = useSafeAreaInsets();
   const speeds = Object.keys(PLAYBACK_SPEEDS) as PlaybackSpeed[];
   const nextSpeed = speeds[(speeds.indexOf(speed) + 1) % speeds.length] ?? "normal";
   return (
@@ -155,7 +157,7 @@ export function CinemaControls({
         backgroundColor: t.panel,
         borderTopColor: t.border,
         borderTopWidth: 1,
-        paddingBottom: 6,
+        paddingBottom: 6 + insets.bottom,
       }}
     >
       <View

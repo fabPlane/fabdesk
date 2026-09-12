@@ -21,6 +21,7 @@ import { Text, View } from "react-native";
 import { WebView, type WebViewMessageEvent } from "react-native-webview";
 import { useConnection } from "@/transport/CoreConnection";
 import { useTheme } from "@/theme";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const MODEL_VIEWER_CDN =
   "https://ajax.googleapis.com/ajax/libs/model-viewer/4.0.0/model-viewer.min.js";
@@ -85,6 +86,7 @@ export function GlbViewer({
   onHandle?: ((h: GlbViewerHandle) => void) | undefined;
 }) {
   const t = useTheme();
+  const insets = useSafeAreaInsets();
   const client = useCoreClient();
   const { baseUrl, authHeaders } = useConnection();
   const web = useRef<WebView>(null);
@@ -154,7 +156,7 @@ export function GlbViewer({
 
   if (!baseUrl) return null;
   return (
-    <View style={{ flex: 1, backgroundColor: background }}>
+    <View style={{ flex: 1, backgroundColor: background, paddingBottom: insets.bottom }}>
       <WebView
         ref={web}
         originWhitelist={["*"]}

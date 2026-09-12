@@ -14,6 +14,7 @@ import { SvgXml } from "react-native-svg";
 import { WebView } from "react-native-webview";
 import { ensureViewBox, fitSize, svgSize, svgWebViewHtml, type SvgSize } from "@/lib/svg-layers";
 import { useTheme } from "@/theme";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const MIN_SCALE = 1;
 const MAX_SCALE = 12;
@@ -81,6 +82,8 @@ export function SvgViewer({
   caption?: string | undefined;
 }) {
   const t = useTheme();
+  // Android is edge-to-edge: without this the caption sits under the system navigation bar.
+  const insets = useSafeAreaInsets();
   const { gesture, style } = useZoomPan();
   const [box, setBox] = useState<SvgSize | null>(null);
   const xml = useMemo(() => ensureViewBox(rawXml), [rawXml]);
@@ -93,7 +96,7 @@ export function SvgViewer({
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: background }}>
+    <View style={{ flex: 1, backgroundColor: background, paddingBottom: insets.bottom }}>
       <View style={{ flex: 1 }} onLayout={onLayout}>
         {fitted ? (
           <GestureDetector gesture={gesture}>
@@ -125,8 +128,10 @@ export function SvgWebViewer({
   caption?: string | undefined;
 }) {
   const t = useTheme();
+  // Android is edge-to-edge: without this the caption sits under the system navigation bar.
+  const insets = useSafeAreaInsets();
   return (
-    <View style={{ flex: 1, backgroundColor: background }}>
+    <View style={{ flex: 1, backgroundColor: background, paddingBottom: insets.bottom }}>
       <WebView
         originWhitelist={["*"]}
         source={{ html: svgWebViewHtml(xml, background) }}
@@ -143,12 +148,13 @@ export function SvgWebViewer({
 }
 
 function Caption({ text, color }: { text: string; color: string }) {
+  const insets = useSafeAreaInsets();
   return (
     <Text
       pointerEvents="none"
       style={{
         position: "absolute",
-        bottom: 28,
+        bottom: 28 + insets.bottom,
         left: 0,
         right: 0,
         textAlign: "center",

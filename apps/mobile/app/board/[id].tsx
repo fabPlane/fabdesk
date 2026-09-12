@@ -12,6 +12,7 @@ import { StyleSheet, Text, View } from "react-native";
 import { RenderImage } from "@/components/RenderImage";
 import { Screen } from "@/components/ui";
 import { useTheme } from "@/theme";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const MIN_SCALE = 1;
 const MAX_SCALE = 8;
@@ -20,6 +21,7 @@ export default function BoardScreen() {
   // `v` is the file's mtime: it keys the image cache, so a re-render is not shown from the old copy.
   const { id, path, v } = useLocalSearchParams<{ id: string; path: string; v?: string }>();
   const t = useTheme();
+  const insets = useSafeAreaInsets();
   const scale = useSharedValue(1);
   const savedScale = useSharedValue(1);
   const x = useSharedValue(0);
@@ -86,7 +88,9 @@ export default function BoardScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: t.dark ? "#000" : "#fff" }}>
+    <View
+      style={{ flex: 1, backgroundColor: t.dark ? "#000" : "#fff", paddingBottom: insets.bottom }}
+    >
       <GestureDetector gesture={Gesture.Simultaneous(pinch, pan, doubleTap)}>
         <Animated.View style={[StyleSheet.absoluteFill, style]}>
           <RenderImage
@@ -99,7 +103,7 @@ export default function BoardScreen() {
       <Text
         style={{
           position: "absolute",
-          bottom: 28,
+          bottom: 28 + insets.bottom,
           left: 0,
           right: 0,
           textAlign: "center",
