@@ -5,6 +5,7 @@ import { Hono, type Context } from "hono";
 import {
   CreateProject,
   CreateThread,
+  DevicePushRegistration,
   PairClaim,
   pairingUrlFromEndpoints,
   OpenCatalogIndex,
@@ -17,8 +18,11 @@ import {
   type AgentInfo,
   type AuthState,
   type CoreEndpoint,
+  type DevicePushResult,
   type DoctorReport,
+  type Health,
   type Me,
+  type PairClaimResult,
   type RemoteStatus,
 } from "@fabdesk/protocol";
 import { z } from "zod/v4";
@@ -131,7 +135,16 @@ export function createApp(deps: AppDeps): Hono<Env> {
   });
 
   app.get("/health", (c) =>
-    c.json({ ok: true, version: deps.config.version, pid: process.pid, channel: deps.config.channel, authMode: deps.auth.mode, uptimeMs: Date.now() - deps.startedAt, mcpSessions: deps.mcp.activeCount() }),
+    c.json({
+      ok: true,
+      version: deps.config.version,
+      pid: process.pid,
+      channel: deps.config.channel,
+      authMode: deps.auth.mode,
+      uptimeMs: Date.now() - deps.startedAt,
+      mcpSessions: deps.mcp.activeCount(),
+      coreId: deps.store.settings.coreId(),
+    } satisfies Health),
   );
 
   // Claiming a pairing code is how a phone gets its first credential, so it cannot carry one.
@@ -149,8 +162,8 @@ export function createApp(deps: AppDeps): Hono<Env> {
     return c.json({
       deviceToken: issued.token,
       device: issued.device,
-      core: { name: machineName(), version: deps.config.version, platform: process.platform },
-    });
+      core: { name: machineName(), version: deps.config.version, platform: process.platform, coreId: deps.store.settings.coreId() },
+    } satisfies PairClaimResult);
   });
 
   // Bearer auth for everything else (`?token=` allowed for SSE / WS which cannot set headers).
@@ -488,7 +501,11 @@ export function createApp(deps: AppDeps): Hono<Env> {
   /* ---------- settings ---------- */
   app.get("/settings", (c) => c.json(deps.store.settings.get()));
   app.patch("/settings", async (c) => {
-    const body = Settings.partial().parse(await c.req.json());
+    const raw = z.record(z.string(), z.unknown()).parse(await c.req.json());
+    // `.partial()` still fills in every field's default, which would reset whatever the client
+    // left out (theme, agents, remote …) — merge only the keys it actually sent.
+    const parsed = Settings.partial().parse(raw);
+    const body = Object.fromEntries(Object.entries(parsed).filter(([k]) => k in raw)) as typeof parsed;
     const next = deps.store.settings.patch(body);
     await applyErrorReporting(next.errorReporting);
     // Remote access is a runtime toggle: the listener starts, stops or rebinds without a restart.
@@ -550,6 +567,39 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const id = c.req.param("id");
     if (!deps.devices.revoke(id)) return c.json({ error: "not found" }, 404);
     deps.bus.emit({ topic: "device.revoked", ts: Date.now(), deviceId: id });
+    return c.json({ ok: true });
+  });
+
+  /* ---------- the calling device itself (docs/mobile-notifications.md §4.1) ---------- */
+  // Authenticated by the device token like every other remote request: the bearer middleware has
+  // already resolved it, so the token's own device is the only one these routes can touch. They
+  // are served on both listeners (the simulator pairs over loopback) and are not administration.
+  const callingDevice = (c: Context<Env>) => {
+    const info = deps.tokens.lookup(c.get("token"));
+    return info?.kind === "device" && info.deviceId ? deps.devices.get(info.deviceId) : null;
+  };
+  const notADevice = (c: Context<Env>) => c.json({ error: "device token required", code: "forbidden" }, 403);
+
+  app.get("/v1/devices/me", (c) => {
+    const device = callingDevice(c);
+    return device ? c.json(device) : notADevice(c);
+  });
+
+  app.put("/v1/devices/me/push", async (c) => {
+    const device = callingDevice(c);
+    if (!device) return notADevice(c);
+    const reg = DevicePushRegistration.parse(await c.req.json());
+    const stored = deps.devices.setPush(device.id, reg);
+    if (!stored) return notADevice(c);
+    logger.info("device push registered", { id: device.id, platform: reg.platform, prefs: reg.prefs });
+    return c.json({ device: stored.device, push: { registeredAt: stored.registeredAt } } satisfies DevicePushResult);
+  });
+
+  app.delete("/v1/devices/me/push", (c) => {
+    const device = callingDevice(c);
+    if (!device) return notADevice(c);
+    deps.devices.clearPush(device.id);
+    logger.info("device push cleared", { id: device.id });
     return c.json({ ok: true });
   });
 

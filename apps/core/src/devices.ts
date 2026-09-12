@@ -5,7 +5,14 @@
  */
 import { createHash, randomUUID } from "node:crypto";
 import type { Database } from "bun:sqlite";
-import { Device, type DevicePlatform } from "@fabdesk/protocol";
+import {
+  Device,
+  DeviceMe,
+  DevicePushPrefs,
+  DevicePushState,
+  type DevicePlatform,
+  type DevicePushRegistration,
+} from "@fabdesk/protocol";
 import { mintToken } from "./config";
 
 /** How long a pairing token is good for, and how many claims may be attempted against it. */
@@ -31,6 +38,11 @@ type DeviceRow = {
   created_at: string;
   last_seen_at: string | null;
   revoked_at: string | null;
+  push_token: string | null;
+  push_platform: string | null;
+  push_prefs: string | null;
+  /** Unix ms, per the migration; surfaced as ISO. */
+  push_registered_at: number | null;
 };
 
 function toDevice(row: DeviceRow): Device {
@@ -41,6 +53,32 @@ function toDevice(row: DeviceRow): Device {
     createdAt: row.created_at,
     lastSeenAt: row.last_seen_at,
   });
+}
+
+/** The push registration on a row, or null when there is none (or it is unreadable). */
+function toPushState(row: DeviceRow): DevicePushState | null {
+  if (!row.push_token || !row.push_platform || row.push_registered_at === null) return null;
+  const parsed = DevicePushState.safeParse({
+    registeredAt: new Date(row.push_registered_at).toISOString(),
+    platform: row.push_platform,
+    prefs: parsePrefs(row.push_prefs),
+  });
+  return parsed.success ? parsed.data : null;
+}
+
+function parsePrefs(raw: string | null): DevicePushPrefs {
+  try {
+    return DevicePushPrefs.parse(raw ? JSON.parse(raw) : {});
+  } catch {
+    return DevicePushPrefs.parse({});
+  }
+}
+
+/** A device the Notifier can send to: its Expo token and what it asked to hear about. */
+export interface PushTarget {
+  device: Device;
+  token: string;
+  prefs: DevicePushPrefs;
 }
 
 export interface PendingPairing {
@@ -139,6 +177,7 @@ export class DeviceStore {
       .map(toDevice);
   }
 
+  /** Revokes the token and forgets the push registration with it: a revoked phone gets nothing more. */
   revoke(id: string, now = Date.now()): boolean {
     const before = this.db
       .query<
@@ -147,10 +186,62 @@ export class DeviceStore {
       >("SELECT COUNT(*) AS n FROM devices WHERE id = ? AND revoked_at IS NULL")
       .get(id);
     if (!before || before.n === 0) return false;
-    this.db.run("UPDATE devices SET revoked_at = ? WHERE id = ?", [
-      new Date(now).toISOString(),
-      id,
-    ]);
+    this.db.run(
+      `UPDATE devices SET revoked_at = ?, push_token = NULL, push_platform = NULL, push_prefs = NULL,
+         push_registered_at = NULL WHERE id = ?`,
+      [new Date(now).toISOString(), id],
+    );
     return true;
+  }
+
+  /* ---------- push registration (docs/mobile-notifications.md §4.1) ---------- */
+
+  /** The device as it sees itself: identity plus its own push registration. Null when revoked. */
+  get(id: string): DeviceMe | null {
+    const row = this.db
+      .query<DeviceRow, [string]>("SELECT * FROM devices WHERE id = ? AND revoked_at IS NULL")
+      .get(id);
+    return row ? DeviceMe.parse({ ...toDevice(row), push: toPushState(row) }) : null;
+  }
+
+  /** Stores (or replaces) a device's push token and prefs; the phone re-registers on every connect. */
+  setPush(
+    id: string,
+    reg: DevicePushRegistration,
+    now = Date.now(),
+  ): { device: Device; registeredAt: string } | null {
+    const current = this.get(id);
+    if (!current) return null;
+    this.db.run(
+      `UPDATE devices SET push_token = ?, push_platform = ?, push_prefs = ?, push_registered_at = ?
+         WHERE id = ? AND revoked_at IS NULL`,
+      [reg.expoPushToken, reg.platform, JSON.stringify(reg.prefs), now, id],
+    );
+    const { push: _push, ...device } = current;
+    return { device, registeredAt: new Date(now).toISOString() };
+  }
+
+  clearPush(id: string): boolean {
+    return (
+      this.db.run(
+        `UPDATE devices SET push_token = NULL, push_platform = NULL, push_prefs = NULL,
+           push_registered_at = NULL WHERE id = ? AND revoked_at IS NULL`,
+        [id],
+      ).changes > 0
+    );
+  }
+
+  /** Every live device holding a push token, with the prefs the Notifier filters on. */
+  pushTargets(): PushTarget[] {
+    return this.db
+      .query<DeviceRow, []>(
+        "SELECT * FROM devices WHERE revoked_at IS NULL AND push_token IS NOT NULL ORDER BY created_at",
+      )
+      .all()
+      .map((row) => ({
+        device: toDevice(row),
+        token: row.push_token as string,
+        prefs: parsePrefs(row.push_prefs),
+      }));
   }
 }

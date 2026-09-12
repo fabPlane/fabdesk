@@ -204,6 +204,18 @@ describe("remote listener", () => {
     expect((await local("/v1/devices")).status).toBe(200);
   });
 
+  test("does serve a device's own routes — they are not administration", async () => {
+    // With the daemon token they answer 403 (not a device), which proves they are routed, not hidden.
+    for (const [path, init] of [
+      ["/v1/devices/me", {}],
+      ["/v1/devices/me/push", { method: "PUT", body: "{}" }],
+      ["/v1/devices/me/push", { method: "DELETE" }],
+    ] as const) {
+      const res = await fetch(`${remoteUrl}${path}`, { ...init, headers: H() });
+      expect({ path, status: res.status }).toEqual({ path, status: 403 });
+    }
+  });
+
   test("turning the setting off unbinds it", async () => {
     await local("/settings", {
       method: "PATCH",
@@ -235,11 +247,21 @@ describe("pairing over http", () => {
     expect(res.status).toBe(200);
     const claim = (await res.json()) as PairClaimResult;
     expect(claim.device.label).toBe("Maya's iPhone");
+    // The daemon's stable identity rides along, and matches what /health says.
+    const health = (await (await fetch(`${remoteUrl}/health`)).json()) as { coreId: string };
+    expect(claim.core.coreId).toBe(health.coreId);
+    expect(health.coreId).toMatch(/^core_/);
 
     const asDevice = await fetch(`${remoteUrl}/projects`, {
       headers: { authorization: `Bearer ${claim.deviceToken}` },
     });
     expect(asDevice.status).toBe(200);
+    // A device sees itself, with no push registration until it makes one.
+    const me = await fetch(`${remoteUrl}/v1/devices/me`, {
+      headers: { authorization: `Bearer ${claim.deviceToken}` },
+    });
+    expect(me.status).toBe(200);
+    expect((await me.json()) as object).toMatchObject({ id: claim.device.id, push: null });
 
     const devices = (await (await local("/v1/devices")).json()) as Device[];
     expect(devices.map((d) => d.id)).toContain(claim.device.id);
