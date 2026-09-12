@@ -1,4 +1,4 @@
-import type { Message, OrderVendorId, ProjectSummary } from "@fabdesk/protocol";
+import type { Job, Message, OrderVendorId, ProjectSummary } from "@fabdesk/protocol";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { useCoreClient } from "./provider";
@@ -212,4 +212,85 @@ export function useDevices(enabled = true) {
 export function useRemoteState(enabled = true) {
   const client = useCoreClient();
   return useQuery({ queryKey: ["remote"], queryFn: () => client.remoteState(), enabled });
+}
+
+/* ---------- projects: create / delete ---------- */
+
+export function useCreateProject() {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) => client.createProject(name),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["projects"] }),
+  });
+}
+
+/** `purge` removes the directory too; without it the daemon only forgets the project. */
+export function useDeleteProject() {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, purge }: { projectId: string; purge?: boolean }) =>
+      client.request<{ ok: boolean }>(`/projects/${encodeURIComponent(projectId)}${purge ? "?purge=1" : ""}`, { method: "DELETE" }),
+    onSuccess: (_data, vars) => {
+      qc.removeQueries({ queryKey: ["project", vars.projectId] });
+      void qc.invalidateQueries({ queryKey: ["projects"] });
+      void qc.invalidateQueries({ queryKey: ["threads"] });
+    },
+  });
+}
+
+export interface Folder {
+  id: string;
+  name: string;
+  parentId: string | null;
+  createdAt: string;
+}
+
+/** Thread folders (`Thread.folderId`); the daemon has no project folders yet. */
+export function useFolders(enabled = true) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["folders"], queryFn: () => client.request<Folder[]>("/folders"), enabled, staleTime: 60_000 });
+}
+
+/* ---------- files ---------- */
+
+export function useWriteProjectFile() {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, path, content }: { projectId: string; path: string; content: string }) =>
+      client.writeFile(projectId, path, content),
+    onSuccess: (_data, vars) => {
+      // The watcher's project.changed follows, but not before this resolves; seed the cache so the
+      // viewer shows what was just saved without a round trip.
+      qc.setQueryData(["file", vars.projectId, vars.path, "text"], vars.content);
+      void qc.invalidateQueries({ queryKey: ["project", vars.projectId] });
+    },
+  });
+}
+
+/* ---------- jobs ---------- */
+
+/** Every job the daemon knows about; polls while one is queued or running, events cover the rest. */
+export function useJobs(enabled = true) {
+  const client = useCoreClient();
+  return useQuery({
+    queryKey: ["jobs"],
+    queryFn: () => client.request<Job[]>("/jobs"),
+    enabled,
+    refetchInterval: (q) => (q.state.data?.some((j) => j.status === "queued" || j.status === "running") ? 2000 : false),
+  });
+}
+
+export function useCancelJob() {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (jobId: string) => client.request<{ ok: boolean }>(`/jobs/${encodeURIComponent(jobId)}/cancel`, { method: "POST" }),
+    onSuccess: (_data, jobId) => {
+      void qc.invalidateQueries({ queryKey: ["jobs"] });
+      void qc.invalidateQueries({ queryKey: ["job", jobId] });
+    },
+  });
 }

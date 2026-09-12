@@ -7,10 +7,11 @@ import { useProject, useRunTool } from "@fabdesk/client-core";
 import { Stack, router, useLocalSearchParams } from "expo-router";
 import { useMemo } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { ProjectImage } from "@/components/ProjectImage";
+import { RenderImage } from "@/components/RenderImage";
+import { useStashRender } from "@/components/render-cache";
 import { Badge, Button, Card, Loading, Screen, readable } from "@/components/ui";
 import { formatBytes, relativeTime } from "@/lib/format";
-import { hasBoard, preferredRender, renderImages } from "@/lib/renders";
+import { galleryRenders, hasBoard, preferredRender, renderView } from "@/lib/renders";
 import { usePullRefresh } from "@/components/pull-refresh";
 import { useNewChat } from "@/hooks/new-chat";
 import { useTheme } from "@/theme";
@@ -22,18 +23,21 @@ export default function ProjectScreen() {
   const refreshControl = usePullRefresh(project.refetch);
   const newChat = useNewChat();
   const render = useRunTool();
+  const stash = useStashRender(id ?? "");
 
   const preview = useMemo(() => preferredRender(project.data), [project.data]);
-  const renders = useMemo(() => renderImages(project.data), [project.data]);
+  const renders = useMemo(() => galleryRenders(project.data), [project.data]);
   const board = hasBoard(project.data);
 
   if (project.isLoading) return <Loading label="Loading project…" />;
   if (!project.data || !id) return <Screen>{null}</Screen>;
 
-  const rerender = () => {
+  const rerender = async () => {
+    // The daemon overwrites renders/top.png, so the copy to compare against has to be taken now.
+    await stash(renders.find((f) => renderView(f.path) === "top") ?? null);
     // `render_board` is long-running, so the tool route answers with a job id and useRunTool
     // waits on it; the project refetch afterwards is what surfaces the new file.
-    void render
+    await render
       // `callTool` lifts `projectId` out and wraps the rest as the tool's args itself.
       .run("render", { projectId: id, view: "top", width: 1600, height: 1200, quality: "basic" })
       .then(() => project.refetch());
@@ -60,12 +64,15 @@ export default function ProjectScreen() {
           {preview ? (
             <Pressable
               onPress={() =>
-                router.push({ pathname: "/board/[id]", params: { id, path: preview.path } })
+                router.push({
+                  pathname: "/board/[id]",
+                  params: { id, path: preview.path, v: preview.mtime },
+                })
               }
             >
-              <ProjectImage
+              <RenderImage
                 projectId={id}
-                path={preview.path}
+                entry={preview}
                 style={{
                   width: "100%",
                   aspectRatio: 4 / 3,
@@ -87,7 +94,7 @@ export default function ProjectScreen() {
 
           <Button
             title={render.state.status === "running" ? "Rendering…" : "Render the board"}
-            onPress={rerender}
+            onPress={() => void rerender()}
             disabled={!board || render.state.status === "running"}
             style={{ marginTop: 10 }}
           />
@@ -105,25 +112,37 @@ export default function ProjectScreen() {
           onPress={() => void newChat.start(id ?? null)}
         />
 
-        {renders.length > 1 ? (
+        {renders.length > 0 ? (
           <Card>
-            <Text style={{ color: t.fg, fontSize: 15, fontWeight: "600", marginBottom: 8 }}>
-              Renders
-            </Text>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => router.push({ pathname: "/renders/[id]", params: { id } })}
+              style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}
+            >
+              <Text style={{ color: t.fg, fontSize: 15, fontWeight: "600", flex: 1 }}>Renders</Text>
+              <Text style={{ color: t.accent, fontSize: 13 }}>
+                {renders.length} view{renders.length === 1 ? "" : "s"} · gallery ›
+              </Text>
+            </Pressable>
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
               {renders.map((f) => (
                 <Pressable
                   key={f.path}
+                  accessibilityRole="imagebutton"
+                  accessibilityLabel={renderView(f.path)}
                   onPress={() =>
-                    router.push({ pathname: "/board/[id]", params: { id, path: f.path } })
+                    router.push({ pathname: "/renders/[id]", params: { id, path: f.path } })
                   }
                 >
-                  <ProjectImage
+                  <RenderImage
                     projectId={id}
-                    path={f.path}
+                    entry={f}
                     contentFit="cover"
                     style={{ width: 96, height: 72, borderRadius: 6, backgroundColor: t.panel2 }}
                   />
+                  <Text style={{ color: t.muted, fontSize: 10, marginTop: 2, textAlign: "center" }}>
+                    {renderView(f.path)}
+                  </Text>
                 </Pressable>
               ))}
             </View>
