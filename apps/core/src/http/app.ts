@@ -16,8 +16,10 @@ import {
   type AgentId,
   type AgentInfo,
   type AuthState,
+  type CoreEndpoint,
   type DoctorReport,
   type Me,
+  type RemoteStatus,
 } from "@fabdesk/protocol";
 import { z } from "zod/v4";
 import { PROJECT_FILES, ToolError, jailPath, toolRoutes, writeAtomic, type ContextFactory, type CoreServices, type ToolRegistry } from "@fabdesk/tools";
@@ -494,8 +496,21 @@ export function createApp(deps: AppDeps): Hono<Env> {
     return c.json(next);
   });
 
+  /**
+   * The addresses a phone would be offered, ordered as the pairing URL lists them. Built from the
+   * setting rather than the live listener so Settings can show (and warn about) what enabling
+   * remote access would advertise before it is switched on.
+   */
+  const advertisedEndpoints = (): CoreEndpoint[] => {
+    const remote = deps.store.settings.get().remote;
+    return listenAddresses(remote.port, { bindHost: remote.host, preferred: remote.preferredEndpointKind });
+  };
+
   /** Whether the remote listener is actually bound, and on what — Settings shows the real state. */
-  app.get("/v1/remote", (c) => c.json({ ...deps.remote.state(), setting: deps.store.settings.get().remote }));
+  app.get("/v1/remote", (c) => {
+    const status: RemoteStatus = { ...deps.remote.state(), setting: deps.store.settings.get().remote, endpoints: advertisedEndpoints() };
+    return c.json(status);
+  });
 
   /* ---------- paired devices ---------- */
   const localOnly = (c: Context) => (deps.listener === "local" ? null : c.json({ error: "not found" }, 404));
@@ -504,7 +519,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const denied = localOnly(c);
     if (denied) return denied;
     const remote = deps.store.settings.get().remote;
-    const endpoints = listenAddresses(remote.port);
+    const endpoints = advertisedEndpoints();
     const pending = deps.devices.startPairing();
     return c.json({
       pairingToken: pending.token,

@@ -7,11 +7,14 @@ import {
   parsePairingUrl,
   type CoreEvent,
   type Device,
+  type EndpointKind,
   type PairClaimResult,
   type PairStartResult,
+  type RemoteStatus,
 } from "@fabdesk/protocol";
 import type { AgentEvent, AgentRun } from "@fabdesk/agents";
 import type { CoreServices } from "@fabdesk/tools";
+import { listenAddresses } from "../src/net";
 import { serve, type Daemon } from "../src/serve";
 import { mockServices } from "../../../packages/tools/test/mock-services";
 
@@ -20,6 +23,11 @@ let home: string;
 /** Bound on loopback so the test never opens a port to the network. */
 const REMOTE = { enabled: true, host: "127.0.0.1", port: 47821 };
 const remoteUrl = `http://${REMOTE.host}:${REMOTE.port}`;
+const FAKE_INTERFACES = {
+  en0: [{ address: "192.168.1.24", family: "IPv4", internal: false } as never],
+  ts0: [{ address: "100.101.102.103", family: "IPv4", internal: false } as never],
+  en1: [{ address: "203.0.113.9", family: "IPv4", internal: false } as never],
+};
 
 beforeAll(async () => {
   home = await mkdtemp(join(tmpdir(), "fabdesk-remote-"));
@@ -84,6 +92,81 @@ describe("remote listener", () => {
       enabled: false,
     });
     expect(fetch(`${remoteUrl}/health`)).rejects.toThrow();
+  });
+
+  test("advertises the addresses a phone would try, and a loopback bind is called out as such", async () => {
+    // Off, wildcard bind: whatever real interfaces this machine has, none is loopback and the
+    // first one is the default. (A CI box with no network gets an empty list, which is also right.)
+    await local("/settings", {
+      method: "PATCH",
+      body: JSON.stringify({ remote: { ...REMOTE, enabled: false, host: "0.0.0.0" } }),
+    });
+    const wildcard = (await (await local("/v1/remote")).json()) as RemoteStatus;
+    expect(wildcard.endpoints.every((e) => e.kind !== "loopback")).toBe(true);
+    expect(wildcard.endpoints.map((e) => e.default)).toEqual(
+      wildcard.endpoints.map((_, i) => i === 0),
+    );
+
+    // Bound to loopback: exactly one endpoint, flagged so the UI can warn before anyone scans.
+    await local("/settings", {
+      method: "PATCH",
+      body: JSON.stringify({ remote: { ...REMOTE, enabled: false } }),
+    });
+    const loop = (await (await local("/v1/remote")).json()) as RemoteStatus;
+    expect(loop.endpoints).toEqual([
+      { host: "127.0.0.1", port: REMOTE.port, kind: "loopback", iface: "lo0", default: true },
+    ]);
+    expect(loop.setting.preferredEndpointKind).toBeUndefined();
+    await enableRemote();
+  });
+
+  test("preferredEndpointKind reorders the advertised endpoints and the pairing URL", async () => {
+    // Loopback is the only address this test can bind, so the ordering is checked on the pure
+    // helper with a fixed set of interfaces; the setting round-trip is checked on the daemon.
+    const kinds = (preferred: EndpointKind | null) =>
+      listenAddresses(1, { preferred, interfaces: FAKE_INTERFACES }).map((e) => e.kind);
+    expect(kinds(null)).toEqual(["tailscale", "lan", "other"]);
+    expect(kinds("lan")).toEqual(["lan", "tailscale", "other"]);
+    expect(kinds("other")).toEqual(["other", "tailscale", "lan"]);
+    expect(kinds("loopback")).toEqual(["tailscale", "lan", "other"]);
+
+    const patched = (await (
+      await local("/settings", {
+        method: "PATCH",
+        body: JSON.stringify({ remote: { ...REMOTE, preferredEndpointKind: "lan" } }),
+      })
+    ).json()) as { remote: { preferredEndpointKind?: string | null } };
+    expect(patched.remote.preferredEndpointKind).toBe("lan");
+    expect(
+      (
+        await local("/settings", {
+          method: "PATCH",
+          body: JSON.stringify({ remote: { ...REMOTE, preferredEndpointKind: "wifi" } }),
+        })
+      ).status,
+    ).toBe(400);
+    const status = (await (await local("/v1/remote")).json()) as RemoteStatus;
+    expect(status.setting.preferredEndpointKind).toBe("lan");
+    // Changing only the preference must not rebind the listener.
+    expect(status).toMatchObject({ enabled: true, host: REMOTE.host, port: REMOTE.port });
+
+    // The URL lists the default endpoint first, with a parallel `k=` list old phones ignore.
+    const start = (await (
+      await local("/v1/devices/pair/start", { method: "POST" })
+    ).json()) as PairStartResult;
+    expect(start.endpoints.filter((e) => e.default)).toHaveLength(1);
+    const parsed = parsePairingUrl(start.url);
+    expect(parsed?.hosts[0]).toBe(start.endpoints.find((e) => e.default)?.host);
+    expect(parsed?.kinds).toEqual(start.endpoints.map((e) => e.kind));
+    expect(start.url).toMatch(/&h=127\.0\.0\.1&k=loopback$/);
+    await local("/v1/devices/pair/cancel", { method: "POST" });
+    // Sending null, or leaving the key out, both unset the preference.
+    for (const remote of [{ ...REMOTE, preferredEndpointKind: null }, REMOTE]) {
+      const res = (await (
+        await local("/settings", { method: "PATCH", body: JSON.stringify({ remote }) })
+      ).json()) as { remote: { preferredEndpointKind?: string | null } };
+      expect(res.remote.preferredEndpointKind ?? undefined).toBeUndefined();
+    }
   });
 
   test("a settings patch binds it without restarting the daemon", async () => {
