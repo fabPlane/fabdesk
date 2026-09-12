@@ -1,13 +1,14 @@
 /** `fabdesk-core serve`: bind, write the handshake, print the ReadyLine, run until told to stop. */
 import { chmod, mkdir, rename, writeFile, unlink } from "node:fs/promises";
 import { join } from "node:path";
-import type { DaemonHandshake, DoctorReport, ReadyLine } from "@fabdesk/protocol";
+import type { DaemonHandshake, DoctorReport, ReadyLine, Settings } from "@fabdesk/protocol";
 import { ToolError, createRegistry, toolsMarkdown, type CoreServices, type ProjectHandle, type ToolRegistry } from "@fabdesk/tools";
 import type { AgentId } from "@fabdesk/protocol";
 import { AgentRunManager, type AgentAdapterLike } from "./agent-runs";
 import { TokenSet } from "./auth";
 import { DeviceStore } from "./devices";
-import { RemoteListener } from "./remote";
+import { RemoteListener, type RemoteListenerOptions } from "./remote";
+import { RelayLink, type EventSession, type RelayEndpoint } from "./relay";
 import { createAuth, type AuthFacade } from "./auth-facade";
 import { EventBus } from "./bus";
 import { resolveConfig, type CoreConfig } from "./config";
@@ -41,6 +42,8 @@ export type ServeOptions = {
   noHandshake?: boolean;
   /** Tests: capture the Notifier's outbound `POST /v1/private/push` instead of reaching fabplane.com. */
   notifierFetch?: typeof fetch;
+  /** Tests: the bearer the relay link presents, when the AuthFacade has none (local auth mode). */
+  relayToken?: () => string | null;
 };
 
 export type Daemon = {
@@ -57,12 +60,31 @@ export type Daemon = {
   tokens: TokenSet;
   runs: AgentRunManager;
   notifier: Notifier;
+  relay: RelayLink;
   close(reason?: string): Promise<void>;
   closed: Promise<string>;
 };
 
 /** `deviceId` is set when the socket was opened with a device token, so the Notifier can skip a phone that is listening. */
-type WsData = { patterns: string[]; unsubscribe: (() => void) | null; deviceId: string | null };
+type WsData = { patterns: string[]; deviceId: string | null; session: EventSession | null };
+
+/**
+ * The remote listener with the relay link riding along: `PATCH /settings` re-applies the
+ * listener, and the relay follows the same `remote` setting.
+ */
+class RemoteListenerWithRelay extends RemoteListener {
+  constructor(
+    opts: RemoteListenerOptions,
+    private readonly relay: RelayLink,
+  ) {
+    super(opts);
+  }
+  override apply(remote: Settings["remote"]) {
+    const state = super.apply(remote);
+    this.relay.apply(remote);
+    return state;
+  }
+}
 
 export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   const config = resolveConfig(opts);
@@ -156,7 +178,10 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   let closing = false;
 
   const doctor = opts.doctor ?? (async () => (await import("./doctor")).runDoctor({ config, settings: store.settings.get() }));
-  const remote = new RemoteListener({ emit: (e) => bus.emit(e) });
+  const relay = new RelayLink({ coreId: store.settings.coreId(), token: opts.relayToken ?? (() => auth.token()) });
+  const remote = new RemoteListenerWithRelay({ emit: (e) => bus.emit(e) }, relay);
+  // Signing in (or out) after start is what turns the relay on (or off); the setting alone is not enough.
+  const unsubscribeAuthRelay = bus.subscribe(["auth.state"], () => relay.apply(store.settings.get().remote));
 
   // Devices with an open event socket (refcounted: a phone may hold one per listener while it
   // switches addresses). The Notifier does not push to a phone that is already listening.
@@ -189,6 +214,12 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     runs,
     devices,
     remote,
+    relay,
+    /** Endpoints beyond the listener's own addresses — the relay, when configured and signed in. */
+    extraEndpoints: (): RelayEndpoint[] => {
+      const e = relay.endpoint();
+      return e ? [e] : [];
+    },
     doctor,
     agents: async () => (await import("@fabdesk/agents")).detectAgents(store.settings.get()),
     shutdown: (reason: string) => void daemon.close(reason),
@@ -212,47 +243,74 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
         const origin = req.headers.get("origin");
         const allowed = scope === "local" ? originAllowedLocal(origin) : originAllowedRemote(origin, url.host);
         if (!allowed) return new Response("forbidden origin", { status: 403 });
-        const token = url.searchParams.get("token") ?? req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? null;
-        const info = tokens.lookup(token);
-        if (!info) return new Response("unauthorized", { status: 401 });
-        const patterns = (url.searchParams.get("topics") ?? "*").split(",").map((s) => s.trim()).filter(Boolean);
-        const data: WsData = { patterns: patterns.length ? patterns : ["*"], unsubscribe: null, deviceId: info.kind === "device" ? (info.deviceId ?? null) : null };
+        const data = authorizeEventSocket(url, req.headers.get("authorization"));
+        if (!data) return new Response("unauthorized", { status: 401 });
         if (srv.upgrade(req, { data })) return undefined;
         return new Response("upgrade failed", { status: 400 });
       }
       return target.fetch(req);
     };
 
+  /** The credential and topics of a `/ws` request; null when the token is unknown. Shared with the relay. */
+  const authorizeEventSocket = (url: URL, authorization: string | null): WsData | null => {
+    const token = url.searchParams.get("token") ?? authorization?.replace(/^Bearer\s+/i, "") ?? null;
+    const info = tokens.lookup(token);
+    if (!info) return null;
+    const patterns = (url.searchParams.get("topics") ?? "*").split(",").map((s) => s.trim()).filter(Boolean);
+    return { patterns: patterns.length ? patterns : ["*"], deviceId: info.kind === "device" ? (info.deviceId ?? null) : null, session: null };
+  };
+
+  /**
+   * One subscriber on the bus per event socket, whether the socket is the listener's own or one
+   * the relay proxies: `{subscribe, lastEventId}` re-subscribes and replays, each event goes out
+   * as an `{id, event}` envelope.
+   */
+  const openEventSession = (data: WsData, send: (s: string) => void): EventSession => {
+    const deliver = (events: { id: number; event: unknown }[]) => {
+      for (const ev of events) send(JSON.stringify({ id: ev.id, event: ev.event }));
+    };
+    if (data.deviceId) liveDevices.set(data.deviceId, (liveDevices.get(data.deviceId) ?? 0) + 1);
+    let unsubscribe: (() => void) | null = bus.subscribe(data.patterns, deliver);
+    let open = true;
+    return {
+      message(raw) {
+        if (!open) return;
+        try {
+          const msg = JSON.parse(raw) as { subscribe?: string[]; lastEventId?: number };
+          if (Array.isArray(msg.subscribe)) {
+            unsubscribe?.();
+            data.patterns = msg.subscribe.length ? msg.subscribe : ["*"];
+            if (typeof msg.lastEventId === "number") deliver(bus.replay(msg.lastEventId, data.patterns));
+            unsubscribe = bus.subscribe(data.patterns, deliver);
+          }
+        } catch {
+          send(JSON.stringify({ error: "bad message" }));
+        }
+      },
+      close() {
+        if (!open) return;
+        open = false;
+        unsubscribe?.();
+        unsubscribe = null;
+        if (data.deviceId) {
+          const n = (liveDevices.get(data.deviceId) ?? 1) - 1;
+          if (n > 0) liveDevices.set(data.deviceId, n);
+          else liveDevices.delete(data.deviceId);
+        }
+      },
+    };
+  };
+
   const websocket: Bun.WebSocketHandler<WsData> = {
     open(ws) {
-      if (ws.data.deviceId) liveDevices.set(ws.data.deviceId, (liveDevices.get(ws.data.deviceId) ?? 0) + 1);
-      ws.data.unsubscribe = bus.subscribe(ws.data.patterns, (events) => {
-        for (const ev of events) ws.send(JSON.stringify({ id: ev.id, event: ev.event }));
-      });
+      ws.data.session = openEventSession(ws.data, (s) => ws.send(s));
     },
     message(ws, message) {
-      try {
-        const msg = JSON.parse(String(message)) as { subscribe?: string[]; lastEventId?: number };
-        if (Array.isArray(msg.subscribe)) {
-          ws.data.unsubscribe?.();
-          ws.data.patterns = msg.subscribe.length ? msg.subscribe : ["*"];
-          if (typeof msg.lastEventId === "number") for (const ev of bus.replay(msg.lastEventId, ws.data.patterns)) ws.send(JSON.stringify({ id: ev.id, event: ev.event }));
-          ws.data.unsubscribe = bus.subscribe(ws.data.patterns, (events) => {
-            for (const ev of events) ws.send(JSON.stringify({ id: ev.id, event: ev.event }));
-          });
-        }
-      } catch {
-        ws.send(JSON.stringify({ error: "bad message" }));
-      }
+      ws.data.session?.message(String(message));
     },
     close(ws) {
-      ws.data.unsubscribe?.();
-      ws.data.unsubscribe = null;
-      if (ws.data.deviceId) {
-        const n = (liveDevices.get(ws.data.deviceId) ?? 1) - 1;
-        if (n > 0) liveDevices.set(ws.data.deviceId, n);
-        else liveDevices.delete(ws.data.deviceId);
-      }
+      ws.data.session?.close();
+      ws.data.session = null;
     },
   };
 
@@ -265,6 +323,13 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   });
 
   remote.attach({ fetch: makeFetch(remoteApp, "remote"), websocket });
+  relay.attach({
+    fetch: (req) => remoteApp.fetch(req),
+    openEvents: (url, headers, send) => {
+      const data = authorizeEventSocket(url, headers.get("authorization"));
+      return data ? openEventSession(data, send) : null;
+    },
+  });
   remote.apply(store.settings.get().remote);
 
   const port = server.port ?? config.port;
@@ -309,6 +374,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     tokens,
     runs,
     notifier,
+    relay,
     closed,
     async close(reason = "close") {
       if (closing) return;
@@ -321,6 +387,8 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       }
       if (watchdog) clearInterval(watchdog);
       unsubscribeAuth();
+      unsubscribeAuthRelay();
+      relay.stop();
       notifier.stop();
       runs.abortAll();
       jobs.cancelAll();
