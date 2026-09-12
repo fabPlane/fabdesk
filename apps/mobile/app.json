@@ -53,8 +53,17 @@
           "photosPermission": "Attaching a photo to a chat so the agent can see it.",
           "cameraPermission": "Taking a photo to attach to a chat so the agent can see it."
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "defaultChannel": "runs"
+        }
       ]
     ],
+    "extra": {
+      "eas": {}
+    },
     "icon": "./assets/icon.png"
   }
 }

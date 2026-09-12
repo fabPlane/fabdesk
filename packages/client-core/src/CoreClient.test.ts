@@ -13,3 +13,38 @@ describe("CoreClient open-source preview URL", () => {
     expect(client.openSourcePreviewUrl("bad")).toBe("");
   });
 });
+
+describe("CoreClient push registration (docs/mobile-notifications.md §4.1)", () => {
+  const calls: Array<{ url: string; init: RequestInit | undefined }> = [];
+  const client = new CoreClient({
+    baseUrl: "http://127.0.0.1:47831/",
+    token: "dev-tok",
+    fetch: async (url, init) => {
+      calls.push({ url, init });
+      return new Response(JSON.stringify({ ok: true }), { headers: { "content-type": "application/json" } });
+    },
+  });
+
+  test("registerPush PUTs the registration with the device bearer", async () => {
+    calls.length = 0;
+    await client.registerPush({
+      expoPushToken: "ExponentPushToken[abc]",
+      platform: "ios",
+      prefs: { onDone: true, onFailed: true, onNeedsInput: true, onJobs: false },
+    });
+    expect(calls[0]?.url).toBe("http://127.0.0.1:47831/v1/devices/me/push");
+    expect(calls[0]?.init?.method).toBe("PUT");
+    expect((calls[0]?.init?.headers as Record<string, string>).Authorization).toBe("Bearer dev-tok");
+    expect(JSON.parse(calls[0]?.init?.body as string)).toMatchObject({ expoPushToken: "ExponentPushToken[abc]", platform: "ios" });
+  });
+
+  test("unregisterPush DELETEs, deviceMe GETs", async () => {
+    calls.length = 0;
+    await client.unregisterPush();
+    await client.deviceMe();
+    expect(calls.map((c) => [c.init?.method ?? "GET", c.url])).toEqual([
+      ["DELETE", "http://127.0.0.1:47831/v1/devices/me/push"],
+      ["GET", "http://127.0.0.1:47831/v1/devices/me"],
+    ]);
+  });
+});

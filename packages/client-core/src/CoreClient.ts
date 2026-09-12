@@ -72,6 +72,34 @@ export type ToolCallResponse = { result: unknown; jobId?: undefined } | { jobId:
 
 export type HealthInfo = { ok?: boolean; version?: string; [k: string]: unknown };
 
+/**
+ * Push registration for a paired phone (docs/mobile-notifications.md §4.1). Spelled out here
+ * rather than imported so the client compiles against the contract while the protocol package
+ * gains the zod schemas; the shapes are identical to `DevicePushPrefs` / `DevicePushRegistration`.
+ */
+export interface DevicePushPrefs {
+  onDone: boolean;
+  onFailed: boolean;
+  onNeedsInput: boolean;
+  onJobs: boolean;
+}
+
+export interface DevicePushRegistration {
+  expoPushToken: string;
+  platform: "ios" | "android";
+  appVersion?: string;
+  prefs: DevicePushPrefs;
+}
+
+export interface DevicePushState {
+  registeredAt: string;
+  platform: "ios" | "android";
+  prefs: DevicePushPrefs;
+}
+
+/** `GET /v1/devices/me`: the calling device, plus its push registration if it has one. */
+export type DeviceMe = Device & { push: DevicePushState | null };
+
 export class CoreClient {
   readonly baseUrl: string;
   readonly token: string;
@@ -289,6 +317,18 @@ export class CoreClient {
   }
   remoteState(): Promise<RemoteStatus> {
     return this.request("/v1/remote");
+  }
+
+  // The calling device (device-token auth; served on both listeners)
+  deviceMe(): Promise<DeviceMe> {
+    return this.request("/v1/devices/me");
+  }
+  /** Idempotent: the phone repeats it on every connect because Expo tokens can rotate. */
+  registerPush(registration: DevicePushRegistration): Promise<{ device: Device; push: { registeredAt: string } }> {
+    return this.request("/v1/devices/me/push", { method: "PUT", json: registration });
+  }
+  unregisterPush(): Promise<{ ok: boolean }> {
+    return this.request("/v1/devices/me/push", { method: "DELETE" });
   }
 
   // Settings / lifecycle

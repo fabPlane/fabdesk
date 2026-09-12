@@ -4,6 +4,7 @@ import { router } from "expo-router";
 import { Alert, ScrollView, Text, View } from "react-native";
 import { Badge, Button, Card, Screen, Segmented, SwitchRow, readable } from "@/components/ui";
 import { hardwareKeyboardShortcutsAvailable } from "@/layout/keyboard";
+import { NotificationsCard } from "@/notifications/NotificationsCard";
 import { haptic } from "@/state/haptics";
 import { usePrefs, type Appearance } from "@/state/prefs";
 import { useConnection } from "@/transport/CoreConnection";
@@ -63,6 +64,8 @@ export default function SettingsScreen() {
         </Card>
 
         <AgentsCard />
+
+        <NotificationsCard />
 
         <ThisPhoneCard />
 

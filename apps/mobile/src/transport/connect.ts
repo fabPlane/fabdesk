@@ -12,6 +12,8 @@ export interface HealthInfo {
   channel: string;
   authMode: string;
   uptimeMs: number;
+  /** Stable daemon identity (docs/mobile-notifications.md §4.4); absent on daemons that predate it. */
+  coreId?: string;
 }
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;

@@ -10,7 +10,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { useCoreClient } from "./provider";
 import { messagesKey } from "./events";
-import { CoreHttpError, type CreateThreadInput, type PatchThreadInput } from "./CoreClient";
+import {
+  CoreHttpError,
+  type CreateThreadInput,
+  type DevicePushRegistration,
+  type PatchThreadInput,
+} from "./CoreClient";
 import { useAuthStore } from "./stores/auth";
 
 export function useProjects() {
@@ -222,6 +227,34 @@ export function useDevices(enabled = true) {
 export function useRemoteState(enabled = true) {
   const client = useCoreClient();
   return useQuery({ queryKey: ["remote"], queryFn: () => client.remoteState(), enabled });
+}
+
+/**
+ * The paired phone's own record on the daemon it is talking to, with its push registration
+ * (docs/mobile-notifications.md §4.1). Only meaningful under device-token auth; a desktop
+ * session gets a 404 and the query simply errors.
+ */
+export function useDeviceMe(enabled = true) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["device-me"], queryFn: () => client.deviceMe(), enabled });
+}
+
+export function useRegisterPush() {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (registration: DevicePushRegistration) => client.registerPush(registration),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["device-me"] }),
+  });
+}
+
+export function useUnregisterPush() {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => client.unregisterPush(),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["device-me"] }),
+  });
 }
 
 /**

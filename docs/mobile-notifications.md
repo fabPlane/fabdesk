@@ -306,6 +306,36 @@ on the lock screen, with Stop. Needs a small native module (ActivityKit) or a ma
 module; start after N1/N4 are in. Updates come from the WebSocket while alive, or from push
 with `apns-push-type: liveactivity` later — not in v1.
 
+_Investigation (2026-09-13, app on Expo SDK 54 / RN 0.81 / New Architecture):_
+
+| Option                                                      | State                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Verdict                                      |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| `expo-widgets` (official, `expo/expo`)                      | The supported path: config plugin generates the widget-extension target and App Group; a Live Activity is a React component rendered to SwiftUI via `@expo/ui`; `LiveActivityFactory.start(props, url)`, `instance.update(props)`, `instance.end(policy)`; buttons via App Intents (`onPress` returns new props, runs without the app process); push-to-start and per-activity APNs tokens when `enablePushNotifications` is on. First release `55.0.0-alpha.0` (2026-01); `57.0.19` current (2026-09-11). **No SDK 54 build exists.** | Use it — after the SDK upgrade.              |
+| `expo-live-activity` (software-mansion-labs)                | Config plugin + fixed SwiftUI template (title, subtitle, progress bar / elapsed timer, image, colours, `deepLinkUrl`); iOS 16.2+; last release 0.4.2 (2025-11). Repository **archived 2026-06-01** with "consider expo-widgets".                                                                                                                                                                                                                                                                                                       | No — unmaintained.                           |
+| `@bacons/apple-targets` 5.0 + our own Swift                 | Maintained (2026-07, `expo >= 52`), generates the extension target from `targets/*/expo-target.config.js`; we would write the ActivityKit attributes, the SwiftUI view, an Expo module for start/update/end, and an App Intent for Stop ourselves — roughly 250–400 lines of Swift plus the plugin config.                                                                                                                                                                                                                             | Fallback only if the SDK upgrade is blocked. |
+| `react-native-live-activity` and other one-off npm packages | Abandoned (2023) or single-author templates without New Architecture claims.                                                                                                                                                                                                                                                                                                                                                                                                                                                           | No.                                          |
+
+Nothing is a drop-in for SDK 54, so N3 is **not implemented** in this pass. Recommended approach:
+
+1. Bump `apps/mobile` to the current Expo SDK (57 at the time of writing; SDK 54 was also the
+   last with legacy-architecture support, so the upgrade is due anyway). Roadmap R1 (EAS
+   project, signing) should land first — Live Activities need a real device and the widget
+   extension needs its own bundle id / provisioning.
+2. Add `expo-widgets`; declare one widget `run` in `app.json` (`bundleIdentifier`
+   `com.tensorfleet.fabdesk.mobile.run`, App Group `group.com.tensorfleet.fabdesk`).
+3. `src/notifications/live.ts`: on `agent.started` start an activity with
+   `{ threadTitle, agent, coreName, startedAt, tool: null }` and `url = fabdesk://thread/<id>`;
+   on `agent.tool_use` update `tool`; on `agent.done` / `agent.error` end with `after(+5 min)`.
+   Only for the active connection's runs, only while the socket is alive (the same window as
+   N1). Roughly 100 lines on our side plus a ~40-line widget component.
+4. **Stop**: a button whose `onPress` runs in the widget runtime, without the app, so it cannot
+   reach the daemon with the device token. For v1 make Stop a deep link into the thread (which
+   has the real Stop); a true remote Stop waits for the Phase 4 relay, when an App Intent can
+   POST `/threads/:id/abort` through it with a token read from the App Group.
+5. Push-driven updates (`apns-push-type: liveactivity`) need fabplane.com to forward to APNs
+   directly (§7) — not through Expo's push API. Out of scope until then; the socket window is
+   enough to show "running · 2:14 · route_run" for the runs that matter.
+
 ## 7. Trade-offs and later changes
 
 - **Expo push vs direct APNs/FCM.** Direct would remove the Expo dependency and let fabplane.com
