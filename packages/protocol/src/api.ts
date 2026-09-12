@@ -286,6 +286,11 @@ export const RemoteStatus = z.object({
   endpoints: z.array(CoreEndpoint),
   /** `null` without a Tailscale CLI; absent from daemons that predate it. */
   tailscale: TailscaleState.nullable().optional(),
+  /** The relay link (`apps/relay`): `null` when `remote.relayUrl` is unset; absent from older daemons. */
+  relay: z
+    .object({ connected: z.boolean(), url: z.string(), error: z.string().optional() })
+    .nullable()
+    .optional(),
 });
 export type RemoteStatus = z.infer<typeof RemoteStatus>;
 

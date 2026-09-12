@@ -62,6 +62,10 @@ import { applyErrorReporting, captureCoreException } from "../sentry";
 import { parseTopics, sseResponse } from "./sse";
 
 export type AppDeps = {
+  /** The relay link, for `/v1/remote`; optional so tests without a relay still build an app. */
+  relay?: { state(): { connected: boolean; url: string; error?: string } | null } | undefined;
+  /** Endpoints outside `listenAddresses` (the relay), merged into what pairing advertises. */
+  extraEndpoints?: (() => CoreEndpoint[]) | undefined;
   config: CoreConfig;
   store: Store;
   bus: EventBus;
@@ -747,17 +751,36 @@ export function createApp(deps: AppDeps): Hono<Env> {
    * remote access would advertise before it is switched on.
    */
   const tailscale = deps.tailscale ?? tailscaleProvider();
-  const advertisedEndpoints = async (fresh = false): Promise<{ endpoints: CoreEndpoint[]; tailscale: TailscaleState | null }> => {
+  const advertisedEndpoints = async (
+    fresh = false,
+  ): Promise<{ endpoints: CoreEndpoint[]; tailscale: TailscaleState | null }> => {
     const remote = deps.store.settings.get().remote;
     const info = await tailscale.info({ fresh });
-    const endpoints = listenAddresses(remote.port, { bindHost: remote.host, preferred: remote.preferredEndpointKind, tailscale: info });
+    const endpoints = [
+      ...listenAddresses(remote.port, {
+        bindHost: remote.host,
+        preferred: remote.preferredEndpointKind,
+        tailscale: info,
+      }),
+      ...(deps.extraEndpoints?.() ?? []),
+    ];
     const serve = info ? serveFor(info.serves, { host: remote.host, port: remote.port }) : null;
     return {
       endpoints,
-      tailscale: info && { ip: info.ip, dnsName: info.dnsName, httpsEnabled: info.httpsEnabled, serve: serve && { port: serve.port } },
+      tailscale: info && {
+        ip: info.ip,
+        dnsName: info.dnsName,
+        httpsEnabled: info.httpsEnabled,
+        serve: serve && { port: serve.port },
+      },
     };
   };
-  const remoteStatus = async (fresh = false): Promise<RemoteStatus> => ({ ...deps.remote.state(), setting: deps.store.settings.get().remote, ...(await advertisedEndpoints(fresh)) });
+  const remoteStatus = async (fresh = false): Promise<RemoteStatus> => ({
+    ...deps.remote.state(),
+    setting: deps.store.settings.get().remote,
+    ...(await advertisedEndpoints(fresh)),
+    relay: deps.relay?.state() ?? null,
+  });
 
   /** Whether the remote listener is actually bound, and on what — Settings shows the real state. */
   app.get("/v1/remote", async (c) => c.json(await remoteStatus()));

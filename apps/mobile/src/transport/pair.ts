@@ -2,6 +2,7 @@
 import { claimFirstReachable } from "@fabdesk/client-core";
 import type { DevicePlatform, PairingPayload } from "@fabdesk/protocol";
 import { candidateBaseUrls } from "@fabdesk/protocol";
+import { relayUrlFromPayload } from "./connect";
 import { Platform } from "react-native";
 import * as Device from "expo-constants";
 import { useConnections, type Connection } from "./connections";
@@ -22,7 +23,10 @@ export async function claimAndSave(payload: PairingPayload): Promise<Connection>
   // A deep link can arrive before the Connections screen has ever been shown; if the Local
   // Network prompt is still owed, take it now rather than on the claim (no-op once done).
   await warmUpLocalNetwork(candidateBaseUrls(payload));
-  const { baseUrl, result } = await claimFirstReachable(payload, { label: deviceLabel(), platform: devicePlatform() });
+  const { baseUrl, result } = await claimFirstReachable(payload, {
+    label: deviceLabel(),
+    platform: devicePlatform(),
+  });
   // Daemons that mint a `coreId` (docs/mobile-notifications.md §4.4) return it in `core`; older
   // ones do not, and the protocol schema may strip it until it lists the field. Either way the
   // first `/health` on connect fills it in.
@@ -34,6 +38,8 @@ export async function claimAndSave(payload: PairingPayload): Promise<Connection>
     name: result.core.name || payload.name,
     baseUrl,
     candidates: candidateBaseUrls(payload),
+    // A relay listed in the QR is kept apart from the direct addresses (`connect.ts`).
+    ...(relayUrlFromPayload(payload) ? { relayUrl: relayUrlFromPayload(payload)! } : {}),
     deviceId: result.device.id,
     platform: result.device.platform,
     pairedAt: result.device.createdAt,

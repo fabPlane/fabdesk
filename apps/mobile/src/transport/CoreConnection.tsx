@@ -16,6 +16,8 @@
 import {
   CoreProvider,
   DirectTransport,
+  ProxyTransport,
+  type CoreTransport,
   routeFrameHub,
   useCore,
   type CoreEventSubscribe,
@@ -51,7 +53,13 @@ import {
 } from "../lib/reconnect";
 import { PushRegistrar } from "../notifications/PushRegistrar";
 import { notifyForEvent } from "../notifications/run-notifier";
-import { connectOrder, readToken, useConnections, type Connection } from "./connections";
+import {
+  connectOrder,
+  readToken,
+  relayTarget,
+  useConnections,
+  type Connection,
+} from "./connections";
 import { findReachable, type HealthInfo } from "./connect";
 
 export type ConnectionPhase =
@@ -120,7 +128,10 @@ export const useEnvironmentStatus = create<EnvironmentStatusState>()((set) => ({
     if (probeRound) return probeRound;
     set({ probing: true });
     probeRound = probeEnvironments(useConnections.getState().connections, async (env) => {
-      const found = await findReachable(connectOrder(env), { timeoutMs: REPROBE_TIMEOUT_MS });
+      const found = await findReachable(connectOrder(env), {
+        timeoutMs: REPROBE_TIMEOUT_MS,
+        relay: relayTarget(env),
+      });
       return found?.baseUrl ?? null;
     })
       .then((next) => set((s) => ({ statuses: { ...s.statuses, ...next } })))
@@ -172,6 +183,21 @@ export function useEnvironmentStatusOf(id: string): EnvironmentStatus {
   return effectiveStatus(entry, live);
 }
 
+/**
+ * A found address is either a direct listener or the relay's `/c/<coreId>` prefix; the relay
+ * case gets a `ProxyTransport`, and its base URL must never be recorded as a last-known-good
+ * direct address.
+ */
+function transportFor(
+  conn: Pick<Connection, "id" | "relayUrl" | "coreId">,
+  found: { baseUrl: string; via: "direct" | "relay" },
+  token: string,
+): CoreTransport {
+  if (found.via === "relay" && conn.relayUrl && conn.coreId)
+    return new ProxyTransport({ id: conn.id, relayUrl: conn.relayUrl, coreId: conn.coreId, token });
+  return new DirectTransport({ id: conn.id, baseUrl: found.baseUrl, token });
+}
+
 export function CoreConnectionProvider({ children }: { children: ReactNode }) {
   const { connections, activeId, hydrated, noteConnected, noteCoreId } = useConnections();
   const connection = useMemo(
@@ -182,7 +208,7 @@ export function CoreConnectionProvider({ children }: { children: ReactNode }) {
   const [phase, setPhase] = useState<ConnectionPhase>("idle");
   const [error, setError] = useState<string | null>(null);
   const [health, setHealth] = useState<HealthInfo | null>(null);
-  const [transport, setTransport] = useState<DirectTransport | null>(null);
+  const [transport, setTransport] = useState<CoreTransport | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [staleSince, setStaleSince] = useState<number | null>(null);
   // Bumping this changes `subscribe`'s identity, which is the one sanctioned way to make
@@ -242,7 +268,9 @@ export function CoreConnectionProvider({ children }: { children: ReactNode }) {
         setError("This device's credential is gone. Pair again from the desktop.");
         return;
       }
-      const found = await findReachable(connectOrder(connection));
+      const found = await findReachable(connectOrder(connection), {
+        relay: relayTarget(connection),
+      });
       if (cancelled) return;
       if (!found) {
         setPhase("unreachable");
@@ -250,8 +278,9 @@ export function CoreConnectionProvider({ children }: { children: ReactNode }) {
         return;
       }
       noteHealth(found.health);
-      if (found.baseUrl !== connection.baseUrl) void noteConnected(connection.id, found.baseUrl);
-      setTransport(new DirectTransport({ id: connection.id, baseUrl: found.baseUrl, token }));
+      if (found.via === "direct" && found.baseUrl !== connection.baseUrl)
+        void noteConnected(connection.id, found.baseUrl);
+      setTransport(transportFor(connection, found, token));
       setPhase("connecting");
     })();
     return () => {
@@ -279,7 +308,10 @@ export function CoreConnectionProvider({ children }: { children: ReactNode }) {
     }
     reprobing.current = true;
     try {
-      const found = await findReachable(connectOrder(conn), { timeoutMs: REPROBE_TIMEOUT_MS });
+      const found = await findReachable(connectOrder(conn), {
+        timeoutMs: REPROBE_TIMEOUT_MS,
+        relay: relayTarget(conn),
+      });
       if (latest.current.transport !== current) return; // replaced meanwhile; that path re-probed already
       const plan = planAfterReprobe({
         found: found?.baseUrl ?? null,
@@ -290,8 +322,10 @@ export function CoreConnectionProvider({ children }: { children: ReactNode }) {
       if (plan.kind === "switch") {
         const token = await readToken(conn.id);
         if (!token || latest.current.transport !== current) return;
-        void noteConnected(conn.id, plan.baseUrl);
-        setTransport(new DirectTransport({ id: conn.id, baseUrl: plan.baseUrl, token }));
+        if (found?.via === "direct") void noteConnected(conn.id, plan.baseUrl);
+        setTransport(
+          transportFor(conn, { baseUrl: plan.baseUrl, via: found?.via ?? "direct" }, token),
+        );
       } else if (plan.kind === "reopen") {
         setStreamEpoch((n) => n + 1);
       } else if (plan.kind === "relocate") {
@@ -401,10 +435,10 @@ export function CoreConnectionProvider({ children }: { children: ReactNode }) {
  * means start clean and refetch rather than resume.
  */
 function openEvents(
-  transport: DirectTransport,
+  transport: CoreTransport,
   topics: string[],
   onEvent: (
-    event: Parameters<Parameters<DirectTransport["openEvents"]>[0]["onEvent"]>[0],
+    event: Parameters<Parameters<CoreTransport["openEvents"]>[0]["onEvent"]>[0],
     id: string,
   ) => void,
   onStatus: (status: SseStatus) => void,
@@ -440,7 +474,7 @@ function Bridge({
   children,
 }: {
   base: CoreConnectionValue;
-  transport: DirectTransport;
+  transport: CoreTransport;
   onPhase: (p: ConnectionPhase) => void;
   onStreamStatus: (s: SseStatus) => void;
   children: ReactNode;

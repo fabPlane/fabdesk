@@ -5,16 +5,39 @@
  * draft/Save footer — a pairing code is live for three minutes, so a half-saved toggle would be
  * confusing, and the listener state the core reports is the truth worth showing.
  */
-import type { CoreEndpoint, Device, EndpointKind, PairStartResult, RemoteStatus, Settings, TailscaleState } from "@fabdesk/protocol";
-import { ENDPOINT_KIND_ORDER, REMOTE_DEFAULT_PORT, endpointBaseUrl, endpointScheme } from "@fabdesk/protocol";
-import { useCoreClient, useDevices, usePatchSettings, useRemoteState, useSettings } from "@fabdesk/client-core";
+import type {
+  CoreEndpoint,
+  Device,
+  EndpointKind,
+  PairStartResult,
+  RemoteStatus,
+  Settings,
+  TailscaleState,
+} from "@fabdesk/protocol";
+import {
+  ENDPOINT_KIND_ORDER,
+  REMOTE_DEFAULT_PORT,
+  endpointBaseUrl,
+  endpointScheme,
+} from "@fabdesk/protocol";
+import {
+  useCoreClient,
+  useDevices,
+  usePatchSettings,
+  useRemoteState,
+  useSettings,
+} from "@fabdesk/client-core";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { Badge, Button, Dialog, EmptyState, Input, Select, Spinner } from "../components/ui";
 import { qrSvg } from "@fabdesk/qr";
 
 type RemoteSetting = Settings["remote"];
-const DEFAULT_SETTING: RemoteSetting = { enabled: false, host: "0.0.0.0", port: REMOTE_DEFAULT_PORT };
+const DEFAULT_SETTING: RemoteSetting = {
+  enabled: false,
+  host: "0.0.0.0",
+  port: REMOTE_DEFAULT_PORT,
+};
 
 /** The MagicDNS name when the daemon knows one (the IP stays in the tooltip); `https://name` for a served endpoint. */
 export function endpointLabel(e: CoreEndpoint): string {
@@ -28,6 +51,7 @@ const KIND_LABEL: Record<EndpointKind, string> = {
   lan: "LAN",
   other: "Other",
   loopback: "This machine only",
+  relay: "Relay",
 };
 
 function relative(iso: string | null): string {
@@ -52,13 +76,18 @@ export function daemonError(e: unknown): string {
 }
 
 /** Why a phone would not reach the listener as configured, or null when it plausibly would. */
-export function unreachableReason(setting: Pick<RemoteSetting, "host">, endpoints: CoreEndpoint[]): string | null {
+export function unreachableReason(
+  setting: Pick<RemoteSetting, "host">,
+  endpoints: CoreEndpoint[],
+): string | null {
   // `tailscale serve` reaches a loopback bind from the tailnet, so a served name makes any bind reachable.
   if (endpoints.some((e) => e.kind === "tailscale-https")) return null;
   if (/^(127\.|localhost$|::1$)/i.test(setting.host))
     return `Remote access is bound to ${setting.host}, which only this machine can reach. Phones cannot connect — set the host to 0.0.0.0 (all interfaces) or to this machine's tailnet or LAN address.`;
-  if (endpoints.length === 0) return "No network address found — is this machine on a tailnet or LAN? A phone has nothing to connect to.";
-  if (endpoints.every((e) => e.kind === "loopback")) return "The only address on offer is loopback, which phones cannot reach.";
+  if (endpoints.length === 0)
+    return "No network address found — is this machine on a tailnet or LAN? A phone has nothing to connect to.";
+  if (endpoints.every((e) => e.kind === "loopback"))
+    return "The only address on offer is loopback, which phones cannot reach.";
   return null;
 }
 
@@ -114,7 +143,10 @@ export function RemoteSection() {
     setError(null);
     setServePending(true);
     try {
-      const next = await client.request<RemoteStatus>("/v1/remote/tailscale-serve", { method: "POST", json: { enabled } });
+      const next = await client.request<RemoteStatus>("/v1/remote/tailscale-serve", {
+        method: "POST",
+        json: { enabled },
+      });
       qc.setQueryData(["remote"], next);
     } catch (e) {
       setError(daemonError(e));
@@ -126,7 +158,9 @@ export function RemoteSection() {
   const bound = remote.data?.enabled ? `${remote.data.host}:${remote.data.port}` : null;
   const warning = unreachableReason(setting, endpoints);
   // Only kinds this machine actually has are offered; picking an absent one would change nothing.
-  const kindsOnOffer = ENDPOINT_KIND_ORDER.filter((k) => k !== "loopback" && endpoints.some((e) => e.kind === k));
+  const kindsOnOffer = ENDPOINT_KIND_ORDER.filter(
+    (k) => k !== "loopback" && endpoints.some((e) => e.kind === k),
+  );
 
   return (
     <div className="space-y-4">
@@ -136,9 +170,9 @@ export function RemoteSection() {
           {bound ? <Badge tone="success">listening on {bound}</Badge> : <Badge>off</Badge>}
         </div>
         <p className="mb-3 text-xs text-muted">
-          Lets the fabPlane phone app reach this machine. Intended for a Tailscale tailnet or a trusted LAN — the
-          connection is not encrypted on its own, so do not forward this port to the internet. Paired phones can do
-          everything the desktop can.
+          Lets the fabPlane phone app reach this machine. Intended for a Tailscale tailnet or a
+          trusted LAN — the connection is not encrypted on its own, so do not forward this port to
+          the internet. Paired phones can do everything the desktop can.
         </p>
         <label className="flex items-center gap-2 py-1.5 text-xs">
           <input
@@ -160,8 +194,8 @@ export function RemoteSection() {
           <span>
             <span className="font-medium">Send notifications to paired phones</span>
             <span className="block text-[11px] text-muted">
-              When a run finishes, fails or needs you and the phone is not connected. Goes through your fabPlane
-              account; each phone chooses what it wants to hear about.
+              When a run finishes, fails or needs you and the phone is not connected. Goes through
+              your fabPlane account; each phone chooses what it wants to hear about.
             </span>
           </span>
         </label>
@@ -176,8 +210,32 @@ export function RemoteSection() {
             onChange={(e) => setPort(e.target.value)}
             onBlur={() => {
               const n = Number(port);
-              if (Number.isInteger(n) && n > 0 && n < 65536 && n !== setting.port) applyRemote({ port: n });
+              if (Number.isInteger(n) && n > 0 && n < 65536 && n !== setting.port)
+                applyRemote({ port: n });
               else setPort(String(setting.port));
+            }}
+          />
+        </label>
+        <label className="grid grid-cols-[180px_1fr] items-center gap-3 py-1.5 text-xs">
+          <span>
+            <span className="font-medium">Relay</span>
+            <span className="block text-[11px] text-muted">
+              {status?.relay
+                ? status.relay.connected
+                  ? "Connected — phones can reach this computer from anywhere"
+                  : `Not connected${status.relay.error ? ` · ${status.relay.error}` : ""}`
+                : "Optional: a relay this computer dials out to (needs a fabplane.com sign-in)"}
+            </span>
+          </span>
+          <input
+            type="url"
+            className="rounded border border-border bg-bg px-2 py-1 text-xs"
+            placeholder="https://relay.fabplane.com"
+            defaultValue={setting.relayUrl ?? ""}
+            disabled={patch.isPending}
+            onBlur={(e) => {
+              const next = e.target.value.trim() || null;
+              if (next !== (setting.relayUrl ?? null)) applyRemote({ relayUrl: next });
             }}
           />
         </label>
@@ -189,7 +247,11 @@ export function RemoteSection() {
           <Select
             value={setting.preferredEndpointKind ?? ""}
             disabled={patch.isPending || kindsOnOffer.length === 0}
-            onChange={(e) => applyRemote({ preferredEndpointKind: (e.target.value || null) as EndpointKind | null })}
+            onChange={(e) =>
+              applyRemote({
+                preferredEndpointKind: (e.target.value || null) as EndpointKind | null,
+              })
+            }
           >
             <option value="">Automatic (Tailscale HTTPS, then Tailscale, then LAN)</option>
             {kindsOnOffer.map((k) => (
@@ -200,7 +262,11 @@ export function RemoteSection() {
           </Select>
         </label>
         {status?.tailscale !== undefined && (
-          <TailscaleRow tailscale={status.tailscale} pending={servePending || patch.isPending} onChange={(enabled) => void setTailscaleServe(enabled)} />
+          <TailscaleRow
+            tailscale={status.tailscale}
+            pending={servePending || patch.isPending}
+            onChange={(enabled) => void setTailscaleServe(enabled)}
+          />
         )}
         <div className="mt-2">
           <div className="mb-1 text-xs font-medium">Reachable at</div>
@@ -214,9 +280,15 @@ export function RemoteSection() {
             />
           )}
         </div>
-        {warning && <div className="mt-2 rounded-md border border-warning/40 bg-warning/10 p-2 text-xs">{warning}</div>}
+        {warning && (
+          <div className="mt-2 rounded-md border border-warning/40 bg-warning/10 p-2 text-xs">
+            {warning}
+          </div>
+        )}
         {error && <div className="mt-2 text-xs text-danger">{error}</div>}
-        {patch.isError && <div className="mt-2 text-xs text-danger">{(patch.error as Error).message}</div>}
+        {patch.isError && (
+          <div className="mt-2 text-xs text-danger">{(patch.error as Error).message}</div>
+        )}
       </div>
 
       <div className="rounded-lg border border-border p-3">
@@ -226,11 +298,15 @@ export function RemoteSection() {
             Pair a device
           </Button>
         </div>
-        {!bound && <div className="mb-2 text-xs text-muted">Turn remote access on to pair a phone.</div>}
+        {!bound && (
+          <div className="mb-2 text-xs text-muted">Turn remote access on to pair a phone.</div>
+        )}
         {devices.isLoading ? (
           <Spinner />
         ) : (devices.data ?? []).length === 0 ? (
-          <EmptyState title="No devices yet">Pair a phone to see your projects and chats from it.</EmptyState>
+          <EmptyState title="No devices yet">
+            Pair a phone to see your projects and chats from it.
+          </EmptyState>
         ) : (
           <table className="w-full text-xs">
             <tbody>
@@ -243,7 +319,9 @@ export function RemoteSection() {
                     <Button
                       variant="danger"
                       onClick={() => {
-                        void client.revokeDevice(d.id).then(() => qc.invalidateQueries({ queryKey: ["devices"] }));
+                        void client
+                          .revokeDevice(d.id)
+                          .then(() => qc.invalidateQueries({ queryKey: ["devices"] }));
                       }}
                     >
                       Revoke
@@ -266,13 +344,26 @@ export function RemoteSection() {
  * TLS the tailnet vouches for — the one address that needs no cleartext exception on iOS.
  * `null` means the daemon found no Tailscale CLI, so there is nothing to set up.
  */
-function TailscaleRow({ tailscale, pending, onChange }: { tailscale: TailscaleState | null; pending: boolean; onChange: (enabled: boolean) => void }) {
+function TailscaleRow({
+  tailscale,
+  pending,
+  onChange,
+}: {
+  tailscale: TailscaleState | null;
+  pending: boolean;
+  onChange: (enabled: boolean) => void;
+}) {
   const served = tailscale?.serve ?? null;
   let detail: string;
   if (!tailscale) detail = "Tailscale is not installed on this machine.";
-  else if (!tailscale.dnsName) detail = tailscale.ip ? "MagicDNS is off for this tailnet, so there is no name to issue a certificate for." : "Tailscale is not connected.";
-  else if (served) detail = `https://${tailscale.dnsName}${served.port === 443 ? "" : `:${served.port}`} — reachable from any device on the tailnet, with a certificate it already trusts.`;
-  else if (!tailscale.httpsEnabled) detail = `Runs \`tailscale serve\` for ${tailscale.dnsName}. The tailnet's HTTPS certificates feature looks off — turn it on in the Tailscale admin console under DNS first.`;
+  else if (!tailscale.dnsName)
+    detail = tailscale.ip
+      ? "MagicDNS is off for this tailnet, so there is no name to issue a certificate for."
+      : "Tailscale is not connected.";
+  else if (served)
+    detail = `https://${tailscale.dnsName}${served.port === 443 ? "" : `:${served.port}`} — reachable from any device on the tailnet, with a certificate it already trusts.`;
+  else if (!tailscale.httpsEnabled)
+    detail = `Runs \`tailscale serve\` for ${tailscale.dnsName}. The tailnet's HTTPS certificates feature looks off — turn it on in the Tailscale admin console under DNS first.`;
   else detail = `Runs \`tailscale serve\` so phones reach ${tailscale.dnsName} over HTTPS.`;
   const canSetup = Boolean(tailscale?.dnsName);
   return (
@@ -322,7 +413,10 @@ function EndpointList({
       <span className="font-mono" title={e.hostname && e.hostname !== e.host ? e.host : undefined}>
         {endpointLabel(e)}
       </span>
-      <Badge tone={e.kind === "loopback" ? "warning" : e.default ? "accent" : "neutral"} {...(e.iface ? { title: e.iface } : {})}>
+      <Badge
+        tone={e.kind === "loopback" ? "warning" : e.default ? "accent" : "neutral"}
+        {...(e.iface ? { title: e.iface } : {})}
+      >
         {KIND_LABEL[e.kind]}
       </Badge>
       {e.default && <span className="text-[11px] text-muted">default</span>}
@@ -340,12 +434,20 @@ function EndpointList({
         (expanded ? (
           <>
             {rest.map(row)}
-            <button type="button" className="py-0.5 text-[11px] text-muted hover:text-fg" onClick={() => setExpanded(false)}>
+            <button
+              type="button"
+              className="py-0.5 text-[11px] text-muted hover:text-fg"
+              onClick={() => setExpanded(false)}
+            >
               Show fewer
             </button>
           </>
         ) : (
-          <button type="button" className="py-0.5 text-[11px] text-muted hover:text-fg" onClick={() => setExpanded(true)}>
+          <button
+            type="button"
+            className="py-0.5 text-[11px] text-muted hover:text-fg"
+            onClick={() => setExpanded(true)}
+          >
             +{rest.length} more
           </button>
         ))}
@@ -353,7 +455,15 @@ function EndpointList({
   );
 }
 
-function PairingDialog({ pairing, setting, onClose }: { pairing: PairStartResult; setting: RemoteSetting; onClose: () => void }) {
+function PairingDialog({
+  pairing,
+  setting,
+  onClose,
+}: {
+  pairing: PairStartResult;
+  setting: RemoteSetting;
+  onClose: () => void;
+}) {
   const qc = useQueryClient();
   const client = useCoreClient();
   const [remaining, setRemaining] = useState(() => Date.parse(pairing.expiresAt) - Date.now());
@@ -396,7 +506,9 @@ function PairingDialog({ pairing, setting, onClose }: { pairing: PairStartResult
       {paired ? (
         <div className="space-y-3 py-6 text-center">
           <div className="text-sm font-medium">{paired} is paired</div>
-          <p className="text-xs text-muted">It can now reach this machine while remote access is on.</p>
+          <p className="text-xs text-muted">
+            It can now reach this machine while remote access is on.
+          </p>
           <Button variant="primary" onClick={onClose}>
             Done
           </Button>
@@ -404,8 +516,8 @@ function PairingDialog({ pairing, setting, onClose }: { pairing: PairStartResult
       ) : (
         <div className="space-y-3">
           <p className="text-xs text-muted">
-            In the fabPlane app on your phone, tap <span className="font-medium">Scan</span> and point it at this code,
-            or send it the link.
+            In the fabPlane app on your phone, tap <span className="font-medium">Scan</span> and
+            point it at this code, or send it the link.
           </p>
           <div
             className={expired ? "mx-auto w-[220px] opacity-30" : "mx-auto w-[220px]"}
@@ -425,7 +537,11 @@ function PairingDialog({ pairing, setting, onClose }: { pairing: PairStartResult
             <div className="mb-1 font-medium text-fg">Reachable at</div>
             <EndpointList endpoints={pairing.endpoints} />
           </div>
-          {warning && <div className="rounded-md border border-warning/40 bg-warning/10 p-2 text-xs">{warning}</div>}
+          {warning && (
+            <div className="rounded-md border border-warning/40 bg-warning/10 p-2 text-xs">
+              {warning}
+            </div>
+          )}
         </div>
       )}
     </Dialog>

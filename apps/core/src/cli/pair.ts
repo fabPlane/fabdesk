@@ -28,6 +28,7 @@ const KIND_LABEL: Record<CoreEndpoint["kind"], string> = {
   lan: "LAN",
   other: "other",
   loopback: "this machine only",
+  relay: "relay",
 };
 
 /** Everything but the QR itself: the human-readable part of the pairing screen. */

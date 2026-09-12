@@ -123,7 +123,14 @@ export type PushResponse = z.infer<typeof PushResponse>;
  * machine's MagicDNS name fronted by `tailscale serve` on 443: the tailnet terminates TLS with a
  * certificate the phone already trusts, so it is the one kind that needs no ATS exception.
  */
-export const EndpointKind = z.enum(["tailscale-https", "tailscale", "lan", "other", "loopback"]);
+export const EndpointKind = z.enum([
+  "tailscale-https",
+  "tailscale",
+  "lan",
+  "other",
+  "loopback",
+  "relay",
+]);
 export type EndpointKind = z.infer<typeof EndpointKind>;
 
 export const EndpointScheme = z.enum(["http", "https"]);
@@ -136,6 +143,8 @@ export const ENDPOINT_KIND_ORDER: readonly EndpointKind[] = [
   "lan",
   "other",
   "loopback",
+  // A relay is never a direct listener; it sits last and only matters when nothing else answers.
+  "relay",
 ];
 
 /** One address the daemon's remote listener can be reached on. */
@@ -345,12 +354,15 @@ export function parsePairingUrl(raw: string): PairingPayload | null {
  * then the rest in the order the daemon listed them (tailnet first). IPv6 gets bracketed.
  */
 export function candidateBaseUrls(
-  payload: Pick<PairingPayload, "hosts" | "port" | "schemes">,
+  payload: Pick<PairingPayload, "hosts" | "port" | "schemes" | "kinds">,
 ): string[] {
   const schemes = payload.schemes?.length === payload.hosts.length ? payload.schemes : null;
-  const urls = payload.hosts.map((host, i) => {
+  const kinds = payload.kinds?.length === payload.hosts.length ? payload.kinds : null;
+  const urls = payload.hosts.flatMap((host, i) => {
+    // A relay host is not a listener to dial directly; the phone keeps it as `relayUrl` instead.
+    if (kinds?.[i] === "relay") return [];
     const scheme = schemes?.[i] ?? "http";
-    return endpointBaseUrl({ host, scheme, port: scheme === "https" ? 443 : payload.port });
+    return [endpointBaseUrl({ host, scheme, port: scheme === "https" ? 443 : payload.port })];
   });
   return [
     ...urls.filter((u) => u.startsWith("https:")),
