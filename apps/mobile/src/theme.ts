@@ -1,8 +1,13 @@
 /**
  * Colours mirroring the desktop's `--fd-*` tokens (packages/ui/src/styles.css), flattened into a
  * plain object because React Native has no CSS custom properties.
+ *
+ * Which of the two applies comes from Settings › Appearance: "system" follows the OS, the other
+ * two pin it. The choice is also pushed into `Appearance` so native surfaces (alerts, the keyboard,
+ * the share sheet) agree with the app instead of following the OS on their own.
  */
-import { useColorScheme } from "react-native";
+import { Appearance, useColorScheme } from "react-native";
+import { usePrefs, type Appearance as AppearancePref } from "@/state/prefs";
 
 export interface Theme {
   dark: boolean;
@@ -50,7 +55,21 @@ const dark: Theme = {
 };
 
 export function useTheme(): Theme {
-  return useColorScheme() === "dark" ? dark : light;
+  const system = useColorScheme();
+  const appearance = usePrefs((s) => s.appearance);
+  const isDark = appearance === "system" ? system === "dark" : appearance === "dark";
+  return isDark ? dark : light;
 }
 
 export const themes = { light, dark };
+
+function applyAppearance(appearance: AppearancePref): void {
+  // `null` hands control back to the OS.
+  Appearance.setColorScheme(appearance === "system" ? null : appearance);
+}
+
+if (usePrefs.persist.hasHydrated()) applyAppearance(usePrefs.getState().appearance);
+usePrefs.persist.onFinishHydration((s) => applyAppearance(s.appearance));
+usePrefs.subscribe((s, prev) => {
+  if (s.appearance !== prev.appearance) applyAppearance(s.appearance);
+});

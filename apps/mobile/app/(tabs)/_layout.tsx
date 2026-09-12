@@ -1,5 +1,6 @@
 import { Tabs } from "expo-router";
 import { Text } from "react-native";
+import { useKeepAwakeWhileRunning } from "@/state/keep-awake";
 import { useTheme } from "@/theme";
 
 /** Text glyphs rather than an icon pack: one less dependency for an experimental app. */
@@ -9,6 +10,8 @@ function icon(glyph: string) {
 
 export default function TabsLayout() {
   const t = useTheme();
+  // The tabs are the bottom of the stack, so this is mounted for the app's whole life.
+  useKeepAwakeWhileRunning();
   return (
     <Tabs
       screenOptions={{
