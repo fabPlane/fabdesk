@@ -9,13 +9,14 @@ import { useEffect, useRef, useState } from "react";
 import { Text, View } from "react-native";
 import { Button, Empty, Loading, Screen } from "@/components/ui";
 import { pairingUrlFromParams, type RouteParams } from "@/lib/pair-link";
+import { describePairingFailure, type PairingFailure } from "@/lib/pairing-failure";
 import { claimAndSave } from "@/transport/pair";
 import { useTheme } from "@/theme";
 
 export default function PairLinkScreen() {
   const t = useTheme();
   const params: RouteParams = useLocalSearchParams();
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<PairingFailure | null>(null);
   const [name, setName] = useState<string | null>(null);
   // The pairing token is one-time; a re-render must not claim it twice.
   const started = useRef(false);
@@ -25,23 +26,24 @@ export default function PairLinkScreen() {
     started.current = true;
     const payload = parsePairingUrl(pairingUrlFromParams(params));
     if (!payload) {
-      setError(
-        "That is not a pairing link. It should come from Settings › Remote access › Pair a device on the desktop.",
-      );
+      setError({
+        title: "That is not a pairing link",
+        message: "It should come from Settings › Remote access › Pair a device on the desktop.",
+      });
       return;
     }
     setName(payload.name);
     claimAndSave(payload)
       .then(() => router.replace("/(tabs)"))
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+      .catch((e: unknown) => setError(describePairingFailure(e)));
   }, [params]);
 
   if (error) {
     return (
       <Screen>
         <Empty
-          title="Pairing failed"
-          hint={error}
+          title={error.title}
+          hint={error.message}
           action={<Button title="Connections" onPress={() => router.replace("/connect")} />}
         />
       </Screen>

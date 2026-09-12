@@ -34,6 +34,7 @@ export default function RootLayout() {
             <Stack.Screen name="connect/index" options={{ title: "Connections" }} />
             <Stack.Screen name="connect/scan" options={{ title: "Scan pairing code" }} />
             <Stack.Screen name="pair" options={{ title: "Pairing" }} />
+            <Stack.Screen name="new-chat" options={{ title: "New chat", presentation: "modal" }} />
             <Stack.Screen name="thread/[id]" options={{ title: "Chat" }} />
             <Stack.Screen name="project/[id]" options={{ title: "Project" }} />
             <Stack.Screen

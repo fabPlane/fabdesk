@@ -4,6 +4,7 @@ import { router } from "expo-router";
 import { useRef, useState } from "react";
 import { Alert, StyleSheet, Text, View } from "react-native";
 import { Button, Empty, Loading, Screen } from "@/components/ui";
+import { describePairingFailure } from "@/lib/pairing-failure";
 import { claimAndSave } from "@/transport/pair";
 import { useTheme } from "@/theme";
 
@@ -23,7 +24,13 @@ export default function ScanScreen() {
         <Empty
           title="Camera access needed"
           hint="The pairing code is a QR code shown by fabPlane on your computer."
-          action={<Button title="Allow camera" variant="primary" onPress={() => void requestPermission()} />}
+          action={
+            <Button
+              title="Allow camera"
+              variant="primary"
+              onPress={() => void requestPermission()}
+            />
+          }
         />
       </Screen>
     );
@@ -41,7 +48,8 @@ export default function ScanScreen() {
       Alert.alert("Paired", `Connected to ${connection.name}.`);
     } catch (e) {
       claimed.current = false;
-      Alert.alert("Pairing failed", e instanceof Error ? e.message : String(e), [{ text: "OK", onPress: () => setBusy(false) }]);
+      const failure = describePairingFailure(e);
+      Alert.alert(failure.title, failure.message, [{ text: "OK", onPress: () => setBusy(false) }]);
     }
   };
 
@@ -53,7 +61,16 @@ export default function ScanScreen() {
         barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
         onBarcodeScanned={({ data }) => void onScan(data)}
       />
-      <View style={{ position: "absolute", left: 0, right: 0, bottom: 40, alignItems: "center", paddingHorizontal: 24 }}>
+      <View
+        style={{
+          position: "absolute",
+          left: 0,
+          right: 0,
+          bottom: 40,
+          alignItems: "center",
+          paddingHorizontal: 24,
+        }}
+      >
         <View style={{ backgroundColor: t.panel, borderRadius: 12, padding: 14 }}>
           <Text style={{ color: t.fg, fontSize: 14, textAlign: "center" }}>
             {busy ? "Pairing…" : "Point at the code in Settings › Remote access on your computer."}

@@ -121,6 +121,25 @@ The icon is the desktop tile cropped to its opaque centre (`assets/icon.png`, fu
 the tile's transparent rounded corners came out as a white frame on iOS) and, for Android's
 adaptive mask, the same image padded to the centre 66% (`assets/adaptive-icon.png`).
 
+## First pairing with a real desktop (2026-09-12, evening)
+
+The iPhone scanned the QR from the desktop dev app (`bun run dev`, `fabPlane Dev` profile) and
+failed on both addresses with `Network request failed`: the phone was not on the tailnet. The raw
+message did not say that, so pairing failures now go through `describePairingFailure`
+(`src/lib/pairing-failure.ts`, tested): an unreachable computer says to check Tailscale / Wi-Fi
+and show a fresh code, a refused code says it is stale or used. Why the LAN address also failed
+while the phone was on the same Wi-Fi is still open — most likely the iOS Local Network permission
+prompt interrupting the first request; check Settings › Privacy & Security › Local Network.
+
+Once paired, the Chats tab showed only project headers: the dev profile has its own database with
+no threads, and the phone had no way to start one. There is now a `+` on each project header, a
+**New chat** picker (`app/new-chat.tsx`) from the empty state, and a **New chat in this project**
+button on the project screen; the agent is the daemon's `defaultAgent`. Verified against the real
+desktop daemon from the simulator: create → send → run → streamed reply.
+
+Seen, not fixed: the daemon titles a thread from its first message without emitting
+`thread.updated`, so the header keeps saying "New chat" until the thread query refetches.
+
 ## Still never run
 
 Only a physical device can answer these:
