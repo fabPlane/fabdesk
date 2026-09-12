@@ -3,7 +3,7 @@
  * one action (re-render the board) because that is the thing you actually want while away from
  * the desk.
  */
-import { useProject, useProjectJson, useRunTool } from "@fabdesk/client-core";
+import { useProject, useProjectJson, useRunTool, useRunsStore } from "@fabdesk/client-core";
 import { Stack, router, useLocalSearchParams } from "expo-router";
 import { useMemo } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -11,6 +11,7 @@ import { RenderImage } from "@/components/RenderImage";
 import { useStashRender } from "@/components/render-cache";
 import { Badge, Button, Card, Loading, Screen, readable } from "@/components/ui";
 import { normalizeReport, summarize } from "@/lib/drc";
+import { ACTIVE } from "@/lib/jobs";
 import { formatBytes, relativeTime } from "@/lib/format";
 import { galleryRenders, hasBoard, preferredRender, renderView } from "@/lib/renders";
 import { usePullRefresh } from "@/components/pull-refresh";
@@ -45,6 +46,12 @@ export default function ProjectScreen() {
     [drc.data, erc.data],
   );
   const hasReports = drc.data !== null || erc.data !== null;
+  // Jobs the stream has told us about; enough to know whether "Jobs" is worth a header button.
+  const liveJobs = useRunsStore((s) => s.jobs);
+  const runningJobs = useMemo(
+    () => Object.values(liveJobs).filter((j) => j.projectId === id && ACTIVE.has(j.status)).length,
+    [liveJobs, id],
+  );
 
   if (project.isLoading) return <Loading label="Loading project…" />;
   if (!project.data || !id) return <Screen>{null}</Screen>;
@@ -62,7 +69,22 @@ export default function ProjectScreen() {
 
   return (
     <Screen>
-      <Stack.Screen options={{ title: project.data.name }} />
+      <Stack.Screen
+        options={{
+          title: project.data.name,
+          headerRight: () =>
+            runningJobs > 0 || render.state.status === "running" ? (
+              <Pressable
+                hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel="Jobs"
+                onPress={() => router.push({ pathname: "/jobs", params: { projectId: id } })}
+              >
+                <Text style={{ color: t.accent, fontSize: 15 }}>⟳ {runningJobs || 1} running</Text>
+              </Pressable>
+            ) : null,
+        }}
+      />
       <ScrollView
         contentContainerStyle={{ padding: 14, gap: 14, ...readable }}
         refreshControl={refreshControl}
@@ -115,6 +137,16 @@ export default function ProjectScreen() {
             disabled={!board || render.state.status === "running"}
             style={{ marginTop: 10 }}
           />
+          {render.state.status === "running" ? (
+            <Pressable
+              accessibilityRole="link"
+              onPress={() => router.push({ pathname: "/jobs", params: { projectId: id } })}
+            >
+              <Text style={{ color: t.accent, fontSize: 12, marginTop: 8, textAlign: "center" }}>
+                Watch or cancel it in Jobs ›
+              </Text>
+            </Pressable>
+          ) : null}
           {render.state.status === "failed" ? (
             <Text style={{ color: t.danger, fontSize: 12, marginTop: 6 }}>
               {render.state.error}
