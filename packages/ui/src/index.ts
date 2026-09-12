@@ -119,3 +119,12 @@ export { useAppActions } from "./app/useAppActions";
 export type { AppActions } from "./app/useAppActions";
 export type { CoreState, CoreStatusInfo, CoreInfo } from "./app/types";
 export { UpdateBadge } from "./components/UpdateBadge";
+
+// Hosted web pairing (docs/mobile.md, "Pairing a browser"): the /pair route and the saved computers.
+export { BrowserApp } from "./app/BrowserApp";
+export { PairRoute } from "./pair/PairRoute";
+export { ComputersPanel, ComputersDialog, ComputersScreen } from "./pair/ComputersPanel";
+export { useSavedHosts, activeSavedHost, watchSavedHosts } from "./pair/store";
+export { parsePairLink, buildPairLink, isPairPath, normalizeHost, browserLabel } from "./pair/parse";
+export type { PairLink, PairLinkFailure, PairLocation } from "./pair/parse";
+export type { SavedHost, SavedHosts } from "./pair/hosts";

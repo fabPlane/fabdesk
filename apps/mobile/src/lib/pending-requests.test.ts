@@ -52,9 +52,27 @@ const approvalPart = (
   decision,
 });
 
+const ev = { runId: "run1", threadId: "t1", ts: 1 } as const;
 const pending: PendingRequests = {
-  approvals: [{ requestId: "a1", tool: "Bash", input: { command: "ls" }, summary: "Run ls" }],
-  inputs: [{ requestId: "q1", question: "Which layer?", options: ["top", "bottom"] }],
+  approvals: [
+    {
+      topic: "agent.approval_requested",
+      ...ev,
+      requestId: "a1",
+      tool: "Bash",
+      input: { command: "ls" },
+      summary: "Run ls",
+    },
+  ],
+  inputs: [
+    {
+      topic: "agent.input_requested",
+      ...ev,
+      requestId: "q1",
+      question: "Which layer?",
+      options: ["top", "bottom"],
+    },
+  ],
 };
 
 describe("runtime mode", () => {
@@ -122,7 +140,14 @@ describe("newRequestIds", () => {
     const next: PendingRequests = {
       approvals: [
         ...pending.approvals,
-        { requestId: "a2", tool: "Write", input: {}, summary: "Write x" },
+        {
+          topic: "agent.approval_requested",
+          ...ev,
+          requestId: "a2",
+          tool: "Write",
+          input: {},
+          summary: "Write x",
+        },
       ],
       inputs: [],
     };
@@ -164,7 +189,7 @@ describe("unplacedPending", () => {
   test("a free-text question carries no options key at all", () => {
     const [q] = unplacedPending([], {
       approvals: [],
-      inputs: [{ requestId: "q2", question: "Name?" }],
+      inputs: [{ topic: "agent.input_requested", ...ev, requestId: "q2", question: "Name?" }],
     });
     expect(q).toEqual({ type: "question", requestId: "q2", question: "Name?", answer: null });
     expect(q && "options" in q).toBe(false);

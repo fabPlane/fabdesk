@@ -8,6 +8,7 @@ import type { Thread } from "@fabdesk/protocol";
 import { router, usePathname } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, SectionList, StyleSheet, Text, TextInput, View } from "react-native";
+import { EnvironmentSwitcher } from "@/components/EnvironmentSwitcher";
 import { Button, Empty, Loading, Screen, readable } from "@/components/ui";
 import { usePullRefresh } from "@/components/pull-refresh";
 import { useNewChat } from "@/hooks/new-chat";
@@ -105,6 +106,8 @@ export function ChatList({ variant }: { variant: "screen" | "sidebar" }) {
           </Text>
         )}
         <View style={{ flexDirection: "row", alignItems: "center", marginTop: 6, gap: 12 }}>
+          {/* Which computer these chats belong to; tap to switch or pair another. */}
+          <EnvironmentSwitcher />
           <Pressable
             onPress={() => prefs.setSort(prefs.sort === "updated" ? "created" : "updated")}
             hitSlop={8}

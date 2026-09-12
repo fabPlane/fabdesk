@@ -82,6 +82,7 @@ describe("detectAgents", () => {
       fpPcbBridgeUrl: null,
       router: "capacity",
       defaultAgent: "claude",
+      defaultRuntimeMode: "full",
       agents: {
         codex: {
           binaryPath: custom,
@@ -108,5 +109,12 @@ describe("detectAgents", () => {
     expect(byId["grok"]).toMatchObject({ installed: true, version: "1.0.13", path: grokPath });
     expect(byId["cursor"]).toMatchObject({ displayName: "Cursor" });
     for (const info of infos) expect(info.models.length).toBeGreaterThan(0);
+    // Only Claude Code can pause a tool call for approval (see each adapter for why).
+    expect(infos.map((i) => [i.id, i.supportsSupervised])).toEqual([
+      ["claude", true],
+      ["codex", false],
+      ["grok", false],
+      ["cursor", false],
+    ]);
   });
 });

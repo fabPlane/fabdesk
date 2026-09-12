@@ -18,7 +18,7 @@ describe("queued messages", () => {
   test("a message is queued only when the daemon says so", () => {
     expect(isQueued(msg("a"))).toBe(false);
     expect(isQueued(msg("b", { status: "queued" }))).toBe(true);
-    expect(isQueued(msg("c", { status: "sent" }))).toBe(false);
+    expect(isQueued(msg("c", {}))).toBe(false);
   });
 
   test("lists the queued ones in order, and copes with no messages", () => {

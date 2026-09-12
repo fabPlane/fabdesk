@@ -17,6 +17,23 @@ export type AgentEvent =
   | { type: "done"; sessionId?: string; exitCode: number };
 
 export type AgentPermission = "acceptEdits" | "auto" | "bypass";
+export type AgentRuntimeMode = "full" | "supervised";
+
+/**
+ * How a supervised run asks a human. The daemon implements it (pending requests, events, the
+ * 30-minute timeout); an adapter that pauses in-band (Codex's app-server protocol, a fake adapter
+ * in tests) awaits these. Claude Code does not use it: its permission prompts arrive at the
+ * daemon's MCP `permission_prompt` tool instead.
+ */
+export interface AgentSupervisor {
+  /** Resolves with the decision; `deny` after 30 minutes without one. */
+  requestApproval(req: {
+    tool: string;
+    input: unknown;
+    summary?: string;
+  }): Promise<"approve" | "deny">;
+  requestInput(req: { question: string; options?: string[] }): Promise<string>;
+}
 
 export interface AgentAttachment {
   path: string;
@@ -31,6 +48,9 @@ export interface AgentSession {
   resume?: string;
   model?: string;
   permission: AgentPermission;
+  /** `supervised` pauses writes for approval; adapters that cannot must not be started with it. */
+  runtimeMode?: AgentRuntimeMode;
+  supervisor?: AgentSupervisor;
   extraAllowedTools?: string[];
   binaryPath?: string;
   env?: Record<string, string>;
@@ -54,6 +74,8 @@ export interface AgentAdapter {
   readonly installHint: string;
   /** `beta` adapters are shipped but unverified against a real CLI. */
   readonly beta?: boolean;
+  /** Can pause a tool call until a human approves it (`runtimeMode: "supervised"`). */
+  readonly supportsSupervised: boolean;
   detect(binaryPath?: string): Promise<DetectResult>;
   models(): string[];
   run(session: AgentSession): AgentRun;
@@ -63,3 +85,5 @@ export interface AgentAdapter {
 export const MCP_SERVER_NAME = "fabdesk";
 /** Environment variable that carries the MCP bearer token into the agent process (never argv). */
 export const TOKEN_ENV = "FABDESK_TOKEN";
+/** The daemon's MCP tool that Claude Code's `--permission-prompt-tool` blocks on in supervised mode. */
+export const PERMISSION_PROMPT_TOOL = "permission_prompt";

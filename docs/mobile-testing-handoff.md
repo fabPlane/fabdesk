@@ -178,6 +178,33 @@ Native modules added by the lanes, all compiled into the current builds: `expo-n
 `expo-keep-awake`, `expo-file-system`, `react-native-svg`, `react-native-webview`,
 `@shopify/react-native-skia`, and the local `modules/fabdesk-key-commands`.
 
+## Phase 3 (2026-09-13, overnight)
+
+Four lanes, merged: supervised runtime mode (daemon + adapters + desktop card), daemon push
+registration and the Notifier, local + push notifications on the phone, and the chat features
+(approval/question cards, runtime-mode switch, queue-while-running, slash commands, work log).
+Verified against the merged daemon with the real Claude Code 2.1.252:
+
+- A supervised thread asked to `touch` a file paused with `agent.approval_requested`;
+  `GET /threads/:id.pending` listed it; approving with a **device token over the remote
+  listener** resumed the run, the file appeared, the part shows `decision: approve, by: device`.
+- The Notifier posted "Needs you · Supervised test" (`kind: run.needs_input`) and then "Done"
+  (`kind: run.done`) to a stub fabplane.com, in the exact `docs/mobile-notifications.md` §4.2 shape.
+- **Against real staging** (`fabplane-staging.tail4f6a7.ts.net:4000`, logged in as `maya`): the
+  route the backend team shipped answers `200 { tickets: [{ status: "error", message: "expo push
+is not configured", details: { error: "ProviderNotConfigured" } }] }` — the contract matches
+  end to end; delivery needs `EXPO_ACCESS_TOKEN` on staging and an EAS project on our side
+  (roadmap R1). The daemon logs `push sent {count:1, ok:0}` plus the ticket error.
+
+Adapter reality (from the supervised lane's live check): Claude Code's `--permission-prompt-tool`
+works with `--print` and our `permission_prompt` MCP tool; Claude still auto-allows commands it
+judges read-only (`ls`, `echo`) without asking. Codex `exec` has no approval hook — supervising it
+needs an app-server JSON-RPC client; it reports `supportsSupervised: false`.
+
+Not exercised on a phone yet: the approval card UI itself, the local notification while
+backgrounded, and the Notifications settings card (need a device build with
+`expo-notifications`; the next Release build includes it).
+
 ## Still never run
 
 Only a physical device can answer these:

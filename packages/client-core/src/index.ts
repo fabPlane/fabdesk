@@ -35,11 +35,12 @@ export type {
 export { subscribeWs, parseWsFrame } from "./ws";
 export type { WebSocketLike, WebSocketFactory, WsOptions } from "./ws";
 
-export { DirectTransport } from "./transport";
+export { DirectTransport, ProxyTransport, relayBaseUrl } from "./transport";
 export type {
   CoreTransport,
   TransportKind,
   DirectTransportOptions,
+  ProxyTransportOptions,
   EventStreamOptions,
 } from "./transport";
 
@@ -55,7 +56,14 @@ export {
 } from "@fabdesk/protocol";
 export type { PairingPayload } from "@fabdesk/protocol";
 
-export { handleCoreEvent, appendDelta, appendPart, messagesKey, patchThreadCaches, EVENT_TOPICS } from "./events";
+export {
+  handleCoreEvent,
+  appendDelta,
+  appendPart,
+  messagesKey,
+  patchThreadCaches,
+  EVENT_TOPICS,
+} from "./events";
 export type { HandlerCtx, RouteSink } from "./events";
 
 export { CoreProvider, useCore, useCoreClient, useCoreEvents, nullHost } from "./provider";

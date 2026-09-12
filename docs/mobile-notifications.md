@@ -1,6 +1,6 @@
 # Push notifications for the mobile app — design
 
-Status: proposed, 2026-09-12. Covers roadmap packages **N1, N2, N3** (`docs/mobile-roadmap.md`)
+Status: implemented on the daemon and the phone (2026-09-13); fabplane.com route live on staging, delivery pending `EXPO_ACCESS_TOKEN` + an EAS project. Originally proposed 2026-09-12. Covers roadmap packages **N1, N2, N3** (`docs/mobile-roadmap.md`)
 and the **fabplane.com** half that makes push possible. Written so the three halves — daemon,
 phone, fabplane.com — can be built by different people against the contracts in §4 without
 talking to each other.

@@ -1,4 +1,7 @@
 import type {
+  ApprovalDecision,
+  PendingRequests,
+  RuntimeMode,
   Job,
   Message,
   OrderVendorId,
@@ -448,28 +451,13 @@ export function useCancelJob() {
 /* ---------- supervised runs: approvals and questions ---------- */
 
 /**
- * The shapes below mirror the Phase 3 contract (`docs/mobile-roadmap.md` Wave 3, A1/A2) for the
- * daemon side that lands separately; once `@fabdesk/protocol` exports them these local
- * declarations should be replaced by imports. Nothing in the hooks depends on more than this.
+ * The daemon's `pending` block on `GET /threads/:id`, typed by the protocol; the `Pending*Request`
+ * aliases are the event objects minus nothing — kept as names because the screens use them.
  */
-export type ApprovalDecision = "approve" | "deny";
-export interface PendingApprovalRequest {
-  requestId: string;
-  runId?: string;
-  tool: string;
-  input: unknown;
-  summary: string;
-}
-export interface PendingInputRequest {
-  requestId: string;
-  runId?: string;
-  question: string;
-  options?: string[];
-}
-export interface PendingRequestsBlock {
-  approvals: PendingApprovalRequest[];
-  inputs: PendingInputRequest[];
-}
+export type { ApprovalDecision, RuntimeMode } from "@fabdesk/protocol";
+export type PendingApprovalRequest = PendingRequests["approvals"][number];
+export type PendingInputRequest = PendingRequests["inputs"][number];
+export type PendingRequestsBlock = PendingRequests;
 
 export function pendingRequestsKey(threadId: string | null) {
   // Under `["thread", id]` on purpose: invalidating the thread invalidates this too.
@@ -551,8 +539,6 @@ export function useAnswerQuestion() {
   });
 }
 
-export type RuntimeMode = "full" | "supervised";
-
 /**
  * `PATCH /threads/:id { runtimeMode }`. Kept apart from `useThreadMutations().patch` until
  * `PatchThreadInput` carries the field; a daemon without supervised mode answers 400, which the
@@ -577,7 +563,8 @@ export function useSetRuntimeMode() {
 /* ---------- queued messages ---------- */
 
 /** A `Message` once the daemon can hold one back: `status: "queued"` until the live run ends. */
-export type QueuedMessage = Message & { status?: "queued" | "sent" | undefined };
+/** A message as the daemon returns it; `status` is `"queued"` until the run ends and it is sent. */
+export type QueuedMessage = Message;
 
 /**
  * `POST /threads/:id/messages?queue=1`: stored while a run is live, sent when it ends. The daemon

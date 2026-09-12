@@ -5,7 +5,7 @@ computer: your projects and chats, agent runs streaming live, and the board rend
 **experimental** — not in the release pipeline, not on any store, and run from a dev server.
 
 It exists because everything in fabPlane is local. The daemon spawns `claude`, `codex`, KiCad and
-the router as subprocesses on one machine, so the phone is a client of *that machine*, not of
+the router as subprocesses on one machine, so the phone is a client of _that machine_, not of
 fabplane.com.
 
 ## How it connects
@@ -48,8 +48,9 @@ The phone uses the WebSocket at `/ws`, not the SSE stream at `/events`: React Na
 
    An https host is `https://<name>` on 443 — `p=` applies to the http ones. A phone from before
    `s=` reads the name as `http://<name>:47820`, which still works over the tailnet.
+
 3. The phone scans it and `POST /v1/devices/pair/claim`s each address in turn. That route is the one
-   unauthenticated route on the daemon besides `/health` — the pairing token *is* the credential —
+   unauthenticated route on the daemon besides `/health` — the pairing token _is_ the credential —
    and it is one-time.
 4. It gets back a device token of its own, kept in the OS keystore (`expo-secure-store`). The daemon
    stores only a SHA-256 digest, in the `devices` table.
@@ -60,6 +61,66 @@ phone could never hold it.
 Both the pairing addresses and the device token are saved, so a laptop that moves between a tailnet
 and a LAN reconnects without re-pairing: `/health` is probed on every known address and the first to
 answer wins.
+
+### Several computers
+
+A phone can be paired with any number of computers; each is a `Connection` with its own device
+token in the keystore, and exactly one is *active*. Chats, projects and runs are per computer —
+switching swaps the transport under the shared provider, and the react-query cache is cleared so
+the new computer's list never flashes the old one's threads. The other computer's token is kept, so
+switching back is instant.
+
+- **Status.** While the Connections screen or the switcher sheet is open, every saved computer's
+  last-known addresses are probed on `/health` (in parallel, 2 s timeout) on arrival and once a
+  minute after; pull down on Connections to probe now. The result is a dot: green *Online*, red
+  *Offline*, grey *Checking…*. It is kept in memory only (`useEnvironmentStatus` in
+  `src/transport/CoreConnection.tsx`) — a status is a snapshot of the network a minute ago and says
+  nothing after a relaunch. For the active computer the live stream outranks the probe.
+- **Switcher.** The Chats header carries a pill with the active computer's name and dot. It opens a
+  sheet listing every computer — status, "last seen" — ordered active first, then online, then by
+  last seen; tap one to switch, *Pair another* at the bottom. The same order and labels are on the
+  Connections screen (`src/lib/environments.ts` is the pure part, with tests).
+- **Last seen** is the later of the last successful connect and the last probe that answered: it
+  is about the computer, not the socket.
+
+### Pairing a browser (hosted web pairing)
+
+The browser client (`packages/ui`, the same React app the desktop runs) can pair with a computer
+too, from a link instead of a QR code:
+
+```
+https://fabplane.com/pair?host=https://<magicdns-name>#token=<pairingToken>
+```
+
+- `host` is the daemon's origin — scheme, host, optional port, nothing after. It travels in the
+  query so the page can read it before doing anything.
+- `token` is the one-time pairing token (`pairingToken` from `POST /v1/devices/pair/start`, the
+  `t=` of the QR payload). It travels in the **fragment**, which browsers never send to the server:
+  fabplane.com's logs, its CDN and any `Referer` see the host but never the secret. The page removes
+  it from the address bar (`history.replaceState`) before doing anything else.
+- **HTTPS only from an HTTPS page.** A browser will not let `https://fabplane.com` fetch
+  `http://100.64.0.1:47820` (mixed content), and reports it as a generic network failure; the page
+  refuses an `http://` host up front with a message saying why. The intended `host` is therefore a
+  Tailscale HTTPS endpoint (`tailscale serve`, MagicDNS name). A plain-`http` page — the Vite dev
+  server — may pair with a plain-`http` daemon, which is how it is tested locally.
+
+What the page does (`packages/ui/src/pair/`): parse the link (`parse.ts`), `POST
+<host>/v1/devices/pair/claim { pairingToken, label: "<Browser> on <OS>", platform: "web" }` straight
+from the browser to the computer (fabplane.com is never in the path), save `{ host, deviceToken,
+coreName, coreId, deviceId, pairedAt }` in `localStorage` under `fabdesk.web-hosts` (one key, a list
+plus the active host), and hand over to the app, which connects with the device token as its bearer
+over the desktop's own `DirectTransport` path. A bare `/pair` — and a boot with no `?core=` and no
+active saved computer — shows the **Computers** page: the saved computers with *Use* / *Remove*;
+inside the running app the same list is `ComputersDialog`, opened from the shell (UserFooter ›
+Computers). Removing a computer there forgets its token in this browser only; revoking is still
+done on the computer under Settings › Remote access, where the browser is listed as a device.
+
+For the fabplane.com site: `/pair` must serve the browser client (`BrowserApp` from `@fabdesk/ui`,
+which gates on `location.pathname === "/pair"` at boot), and nothing on the server needs to read the
+link. The daemon must also accept the site's origin on its remote listener — its origin guard
+(`originAllowed` in `apps/core/src/auth.ts`) currently allows only loopback, `file://` and the
+app's own scheme, so `https://fabplane.com` needs adding to `extraOrigins` (the `pair/claim`
+preflight goes through that guard too).
 
 ### Security
 
@@ -122,19 +183,44 @@ code. A fix to streaming or a new endpoint lands in both clients at once.
 
 ## Screens
 
-| Route | What it is |
-|---|---|
-| `(tabs)/index` | Chats — threads grouped by project, pinned first, a dot for a live run |
-| `(tabs)/projects` | Projects |
-| `(tabs)/settings` | The connection, the core's version, agents detected on that machine |
-| `thread/[id]` | The chat: streaming text, collapsible thinking, folded tool groups, Send/Stop |
-| `project/[id]` | Board preview, renders, files, and a button to re-render the board |
-| `board/[id]` | Full-screen render with pinch, pan and double-tap zoom |
-| `connect/*` | Saved computers, QR scanning, pasting a pairing link |
+| Route             | What it is                                                                    |
+| ----------------- | ----------------------------------------------------------------------------- |
+| `(tabs)/index`    | Chats — threads grouped by project, pinned first, a dot for a live run        |
+| `(tabs)/projects` | Projects                                                                      |
+| `(tabs)/settings` | The connection, the core's version, agents detected on that machine           |
+| `thread/[id]`     | The chat: streaming text, collapsible thinking, folded tool groups, Send/Stop |
+| `project/[id]`    | Board preview, renders, files, and a button to re-render the board            |
+| `board/[id]`      | Full-screen render with pinch, pan and double-tap zoom                        |
+| `connect/*`       | Saved computers, QR scanning, pasting a pairing link                          |
 
-There is no tool-approval UI because there is nothing to approve: agent permissions are a per-agent
-setting applied when the subprocess is spawned (`Settings.agents[id].permissionMode`), so tool calls
-are notifications. The only interactive control over a run is Stop.
+### Supervised mode, approvals and questions
+
+A thread runs in one of two runtime modes (`Thread.runtimeMode`, default from
+`Settings.defaultRuntimeMode`): **full** — tool calls are notifications, Stop is the only
+control — or **supervised** — the agent pauses before anything that writes and asks. The daemon
+decides what pauses (`apps/core/src/supervision.ts`: native shells and file edits always, fabdesk
+tools unless they are read-only or idempotent, reads never) and emits `agent.approval_requested`;
+the desktop and the phone both show a card with Approve / Deny, and `POST
+/threads/:id/approvals/:requestId` resolves it (device tokens are accepted, credited
+`by: "device"`). A request nobody answers in 30 minutes is denied and the run continues. Agents
+that ask the user a question (`AskUserQuestion`) surface as `agent.input_requested` with option
+buttons or a text field. Only Claude Code can run supervised today (`--permission-mode manual`
+plus the daemon's `permission_prompt` MCP tool); Codex/grok/cursor report
+`supportsSupervised: false` and the mode switch is disabled for them.
+
+While a run is live, **Queue** stores a message (`?queue=1`) that the daemon sends when the run
+ends; it shows dimmed in the timeline until then. Slash commands (`/render`, `/route`, `/drc`,
+`/erc`, `/export …`, `/build`) run a tool directly, without the agent, and report into Jobs.
+
+### Notifications
+
+The phone shows a local notification when a run finishes, fails or needs an answer while the app
+is in the background and its socket is still alive. Push — for when the socket is gone — is
+designed in [mobile-notifications.md](mobile-notifications.md): the phone registers an Expo push
+token with each paired daemon (`PUT /v1/devices/me/push`), and the daemon posts to
+fabplane.com's `POST /v1/private/push`, which forwards to Expo. The phone side and the daemon
+side are built; the fabplane.com route and an EAS project (for the push credentials) are what
+remain.
 
 ## Known limits
 
