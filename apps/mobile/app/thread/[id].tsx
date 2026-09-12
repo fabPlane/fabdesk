@@ -32,12 +32,13 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AgentModelPicker } from "@/components/AgentModelPicker";
 import { AttachmentStrip } from "@/components/AttachmentStrip";
-import { MessageBody } from "@/components/MessageParts";
+import { MessageBody, PendingCards } from "@/components/MessageParts";
 import { useOptionSheet } from "@/components/OptionSheet";
 import { ThreadHeaderButton, useThreadMenu } from "@/components/ThreadHeaderMenu";
 import { Loading, Screen, readable } from "@/components/ui";
 import { useRememberedChoice } from "@/hooks/agent-choice";
 import { useAttachments } from "@/hooks/attachments";
+import { usePendingForThread } from "@/hooks/pending-requests";
 import { choicePatch, sameChoice, type AgentChoice } from "@/lib/agent-choice";
 import {
   attachmentsBlockedReason,
@@ -46,6 +47,7 @@ import {
   toMessageAttachments,
 } from "@/lib/attachments";
 import { formatDuration } from "@/lib/format";
+import { pendingCount } from "@/lib/pending-requests";
 import { useKeyboardShortcut } from "@/layout/keyboard";
 import { useTheme } from "@/theme";
 
@@ -96,6 +98,14 @@ export default function ThreadScreen() {
   useEffect(() => {
     if (data.length) requestAnimationFrame(() => list.current?.scrollToEnd({ animated: true }));
   }, [data.length]);
+
+  // Supervised mode: what the run is waiting on. Cards inside messages come from their parts;
+  // anything the parts do not show yet is drawn after the last message.
+  const requests = usePendingForThread(id ?? null, running);
+  const unplaced = useMemo(() => requests.unplaced(messages.data), [requests, messages.data]);
+  useEffect(() => {
+    if (unplaced.length) requestAnimationFrame(() => list.current?.scrollToEnd({ animated: true }));
+  }, [unplaced.length]);
 
   // Photos. They upload as project sketches the moment they are picked, so `+` needs a project.
   const attachments = useAttachments(thread.data?.projectId);
@@ -178,12 +188,21 @@ export default function ThreadScreen() {
               message={item}
               streaming={running && index === data.length - 1 && item.role === "assistant"}
               projectId={thread.data?.projectId}
+              pending={requests}
             />
           )}
           ListFooterComponent={
-            running ? (
-              <RunBanner startedAt={run.startedAt} agentId={run.agentId} error={run.error} />
-            ) : null
+            <>
+              <PendingCards parts={unplaced} pending={requests} />
+              {running ? (
+                <RunBanner
+                  startedAt={run.startedAt}
+                  agentId={run.agentId}
+                  error={run.error}
+                  waiting={pendingCount(requests.pending) > 0}
+                />
+              ) : null}
+            </>
           }
           onContentSizeChange={() => list.current?.scrollToEnd({ animated: false })}
         />
@@ -290,10 +309,13 @@ function RunBanner({
   startedAt,
   agentId,
   error,
+  waiting,
 }: {
   startedAt: number;
   agentId: string;
   error?: string | undefined;
+  /** The run is paused on an approval or a question rather than working. */
+  waiting?: boolean | undefined;
 }) {
   const t = useTheme();
   const [now, setNow] = useState(Date.now());
@@ -320,8 +342,15 @@ function RunBanner({
     );
   }
   return (
-    <Text style={{ color: t.muted, fontSize: 12, paddingHorizontal: 16, paddingVertical: 8 }}>
-      {agentId} is working · {elapsed}
+    <Text
+      style={{
+        color: waiting ? t.warning : t.muted,
+        fontSize: 12,
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+      }}
+    >
+      {agentId} {waiting ? "is waiting for you" : "is working"} · {elapsed}
     </Text>
   );
 }

@@ -10,8 +10,15 @@ import { useMemo, useState } from "react";
 import { summarizeTools, toBlocks } from "../lib/message-blocks";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import Markdown from "react-native-markdown-display";
+import type { PendingActions } from "../hooks/pending-requests";
+import type { PendingPart } from "../lib/pending-requests";
 import { useTheme, type Theme } from "../theme";
+import { PendingApprovalCard } from "./PendingApprovalCard";
+import { PendingQuestionCard } from "./PendingQuestionCard";
 import { ProjectImage } from "./ProjectImage";
+
+/** Cards with nothing to answer through: the buttons show but do nothing (a read-only viewer). */
+const INERT: PendingActions = { decide: async () => {}, answer: async () => {}, busy: new Set() };
 
 function markdownStyles(t: Theme) {
   return {
@@ -43,11 +50,14 @@ export function MessageBody({
   message,
   streaming,
   projectId,
+  pending = INERT,
 }: {
   message: Message;
   streaming: boolean;
   /** The thread's project; image parts are project files, so without it they show as a path. */
   projectId?: string | null | undefined;
+  /** Answers the approval / question cards a supervised run puts in its parts. */
+  pending?: PendingActions | undefined;
 }) {
   const t = useTheme();
   const blocks = useMemo(() => toBlocks(message.parts), [message.parts]);
@@ -107,8 +117,61 @@ export function MessageBody({
         if (block.kind === "thinking") return <ThinkingBlock key={i} text={block.text} />;
         if (block.kind === "image")
           return <ImagePart key={i} path={block.path} projectId={projectId} />;
+        if (block.kind === "approval")
+          return (
+            <PendingApprovalCard
+              key={block.part.requestId}
+              part={block.part}
+              busy={pending.busy.has(block.part.requestId)}
+              onDecide={pending.decide}
+            />
+          );
+        if (block.kind === "question")
+          return (
+            <PendingQuestionCard
+              key={block.part.requestId}
+              part={block.part}
+              busy={pending.busy.has(block.part.requestId)}
+              onAnswer={pending.answer}
+            />
+          );
         return <ToolGroup key={i} parts={block.parts} />;
       })}
+    </View>
+  );
+}
+
+/**
+ * Requests the run is waiting on that no message part shows yet (`unplacedPending`): drawn after
+ * the last message, where the paused run's next step would appear.
+ */
+export function PendingCards({
+  parts,
+  pending,
+}: {
+  parts: readonly PendingPart[];
+  pending: PendingActions;
+}) {
+  if (parts.length === 0) return null;
+  return (
+    <View style={{ paddingHorizontal: 14, paddingVertical: 5, gap: 8 }}>
+      {parts.map((part) =>
+        part.type === "approval" ? (
+          <PendingApprovalCard
+            key={part.requestId}
+            part={part}
+            busy={pending.busy.has(part.requestId)}
+            onDecide={pending.decide}
+          />
+        ) : (
+          <PendingQuestionCard
+            key={part.requestId}
+            part={part}
+            busy={pending.busy.has(part.requestId)}
+            onAnswer={pending.answer}
+          />
+        ),
+      )}
     </View>
   );
 }
