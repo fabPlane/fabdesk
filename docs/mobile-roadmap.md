@@ -259,7 +259,7 @@ component up front. T2 changes `events.ts` which C1 reads; land T2 first if both
 B2/B3/B6 are independent and heavy; give each its own agent. B4 depends on B1 only for the
 highlight overlay — the list can land first.
 
-### Wave 3 (Phase 3)
+### Wave 3 (Phase 3) — **landed 2026-09-13**; N3 investigated (no SDK 54 module; `expo-widgets` after the SDK bump)
 
 | ID  | Package                                                                            | Lane | Touches                                                                                                            | Depends on | Done when                                                                           |
 | --- | ---------------------------------------------------------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------ | ---------- | ----------------------------------------------------------------------------------- |
