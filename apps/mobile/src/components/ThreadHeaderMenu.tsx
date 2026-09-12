@@ -4,12 +4,23 @@
  * The button lives in the navigation header, but the sheet and the rename prompt are hosted by the
  * screen (`overlays`), because `headerRight` is re-created on every options change and is not a
  * good home for state.
+ *
+ * The first row is the runtime mode (Full access / Supervised): it opens a second sheet, greyed
+ * for an agent whose adapter cannot pause. The rest are the thread actions.
  */
+import { useDoctor, useSetRuntimeMode } from "@fabdesk/client-core";
 import type { Thread } from "@fabdesk/protocol";
 import { router } from "expo-router";
 import { useCallback, type ReactNode } from "react";
-import { Pressable, Text } from "react-native";
+import { Alert, Pressable, Text } from "react-native";
 import { useThreadActions } from "@/hooks/thread-actions";
+import {
+  runtimeModeOf,
+  runtimeModeOptions,
+  type AgentWithSupervised,
+  type RuntimeMode,
+  type ThreadWithMode,
+} from "@/lib/pending-requests";
 import { threadMenuItems, type ThreadAction } from "@/lib/thread-actions";
 import { useTheme } from "@/theme";
 import { useOptionSheet } from "./OptionSheet";
@@ -23,6 +34,8 @@ export function useThreadMenu(thread: Thread | undefined): {
   const actions = useThreadActions();
   const { show, sheet } = useOptionSheet();
   const { prompt, element } = useTextPrompt();
+  const doctor = useDoctor();
+  const setMode = useSetRuntimeMode();
 
   const run = useCallback(
     async (t: Thread, action: ThreadAction) => {
@@ -56,16 +69,56 @@ export function useThreadMenu(thread: Thread | undefined): {
     [actions, prompt],
   );
 
+  const changeMode = useCallback(
+    async (t: Thread, runtimeMode: RuntimeMode) => {
+      if (runtimeModeOf(t as ThreadWithMode) === runtimeMode) return;
+      try {
+        await setMode.mutateAsync({ threadId: t.id, runtimeMode });
+      } catch (e) {
+        Alert.alert("Could not change the mode", e instanceof Error ? e.message : String(e));
+      }
+    },
+    [setMode],
+  );
+
+  const openModeSheet = useCallback(
+    (t: Thread) => {
+      const agent = (doctor.data?.agents as AgentWithSupervised[] | undefined)?.find(
+        (a) => a.id === t.agentId,
+      );
+      show({
+        title: "Runtime mode",
+        message: "Supervised pauses writes and shell commands until you approve them.",
+        options: runtimeModeOptions(runtimeModeOf(t as ThreadWithMode), agent).map((o) => ({
+          label: o.label,
+          hint: o.hint,
+          selected: o.selected,
+          disabled: o.disabled,
+          onPress: () => void changeMode(t, o.mode),
+        })),
+      });
+    },
+    [doctor.data?.agents, show, changeMode],
+  );
+
   const open = useCallback(() => {
     if (!thread) return;
+    const mode = runtimeModeOf(thread as ThreadWithMode);
     show({
-      options: threadMenuItems(thread).map((item) => ({
-        label: item.label,
-        destructive: item.destructive,
-        onPress: () => void run(thread, item.action),
-      })),
+      options: [
+        {
+          label: mode === "supervised" ? "Mode: Supervised" : "Mode: Full access",
+          hint: "Change how much the agent may do unasked",
+          onPress: () => openModeSheet(thread),
+        },
+        ...threadMenuItems(thread).map((item) => ({
+          label: item.label,
+          destructive: item.destructive,
+          onPress: () => void run(thread, item.action),
+        })),
+      ],
     });
-  }, [thread, show, run]);
+  }, [thread, show, run, openModeSheet]);
 
   return {
     open,
@@ -75,7 +128,7 @@ export function useThreadMenu(thread: Thread | undefined): {
         {element}
       </>
     ),
-    busy: actions.busy,
+    busy: actions.busy || setMode.isPending,
   };
 }
 

@@ -9,6 +9,7 @@
 import {
   useDoctor,
   useMessages,
+  useQueueMessage,
   useRunsStore,
   useSettings,
   useThread,
@@ -32,12 +33,16 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AgentModelPicker } from "@/components/AgentModelPicker";
 import { AttachmentStrip } from "@/components/AttachmentStrip";
-import { MessageBody } from "@/components/MessageParts";
+import { MessageBody, PendingCards } from "@/components/MessageParts";
 import { useOptionSheet } from "@/components/OptionSheet";
+import { QueuedMessages } from "@/components/QueuedMessages";
+import { SlashCommandPopover, SlashToast } from "@/components/SlashCommandPopover";
 import { ThreadHeaderButton, useThreadMenu } from "@/components/ThreadHeaderMenu";
 import { Loading, Screen, readable } from "@/components/ui";
 import { useRememberedChoice } from "@/hooks/agent-choice";
 import { useAttachments } from "@/hooks/attachments";
+import { usePendingForThread } from "@/hooks/pending-requests";
+import { useSlashCommands } from "@/hooks/slash-commands";
 import { choicePatch, sameChoice, type AgentChoice } from "@/lib/agent-choice";
 import {
   attachmentsBlockedReason,
@@ -46,6 +51,8 @@ import {
   toMessageAttachments,
 } from "@/lib/attachments";
 import { formatDuration } from "@/lib/format";
+import { pendingCount } from "@/lib/pending-requests";
+import { composerAction, queuedMessages } from "@/lib/queued-messages";
 import { useKeyboardShortcut } from "@/layout/keyboard";
 import { useTheme } from "@/theme";
 
@@ -97,6 +104,14 @@ export default function ThreadScreen() {
     if (data.length) requestAnimationFrame(() => list.current?.scrollToEnd({ animated: true }));
   }, [data.length]);
 
+  // Supervised mode: what the run is waiting on. Cards inside messages come from their parts;
+  // anything the parts do not show yet is drawn after the last message.
+  const requests = usePendingForThread(id ?? null, running);
+  const unplaced = useMemo(() => requests.unplaced(messages.data), [requests, messages.data]);
+  useEffect(() => {
+    if (unplaced.length) requestAnimationFrame(() => list.current?.scrollToEnd({ animated: true }));
+  }, [unplaced.length]);
+
   // Photos. They upload as project sketches the moment they are picked, so `+` needs a project.
   const attachments = useAttachments(thread.data?.projectId);
   const attachSheet = useOptionSheet();
@@ -115,29 +130,57 @@ export default function ThreadScreen() {
   };
 
   const content = messageContent(draft, attachments.pending);
-  const canSend = !!content && attachmentsSettled(attachments.pending) && !sending;
+  const hasContent = !!content && attachmentsSettled(attachments.pending);
+  const canSend = hasContent && !sending;
+
+  // Slash commands (`/render top`, `/export gerbers`, …) run a tool directly; the popover sits
+  // above the composer while the draft starts with `/`, and Return runs a complete command.
+  const input = useRef<TextInput>(null);
+  const slash = useSlashCommands(thread.data, draft, setDraft);
+
+  // While a run is live the same draft is queued instead: the daemon holds it and sends it when
+  // the run ends. Either way the composer clears at once and restores on failure.
+  const queue = useQueueMessage();
+  const queued = useMemo(() => queuedMessages(messages.data), [messages.data]);
+  const action = composerAction({ running, hasContent, sending, slash: slash.state });
 
   const send = async () => {
-    if (!canSend || !id) return;
+    if (!canSend || !id || slash.active) return;
     const text = draft;
     const sent = attachments.pending;
+    const body = { content, attachments: toMessageAttachments(sent) };
     setSending(true);
     setDraft("");
     attachments.clear();
     try {
-      await client.sendMessage(id, { content, attachments: toMessageAttachments(sent) });
+      if (running) await queue.mutateAsync({ threadId: id, input: body });
+      else await client.sendMessage(id, body);
       await messages.refetch();
     } catch (e) {
       setDraft(text);
       attachments.restore(sent);
-      Alert.alert("Could not send", e instanceof Error ? e.message : String(e));
+      Alert.alert(
+        running ? "Could not queue" : "Could not send",
+        e instanceof Error ? e.message : String(e),
+      );
     } finally {
       setSending(false);
     }
   };
 
-  // ⌘↩ on a hardware keyboard (iPad, the Thor) sends; inert without the native key-command module.
-  useKeyboardShortcut("cmd+enter", canSend ? () => void send() : undefined);
+  const primary = () => {
+    if (action.kind === "run") slash.submitDraft();
+    else if (action.kind === "stop") void stop();
+    else void send();
+  };
+
+  // ⌘↩ on a hardware keyboard (iPad, the Thor) sends — or queues while a run is live, or runs a
+  // slash command; ⌘/ starts one. All inert without the native key-command module.
+  useKeyboardShortcut("cmd+enter", action.enabled && action.kind !== "stop" ? primary : undefined);
+  useKeyboardShortcut("cmd+/", () => {
+    if (!slash.active) setDraft("/");
+    input.current?.focus();
+  });
 
   const stop = async () => {
     if (!id) return;
@@ -178,12 +221,21 @@ export default function ThreadScreen() {
               message={item}
               streaming={running && index === data.length - 1 && item.role === "assistant"}
               projectId={thread.data?.projectId}
+              pending={requests}
             />
           )}
           ListFooterComponent={
-            running ? (
-              <RunBanner startedAt={run.startedAt} agentId={run.agentId} error={run.error} />
-            ) : null
+            <>
+              <PendingCards parts={unplaced} pending={requests} />
+              {running ? (
+                <RunBanner
+                  startedAt={run.startedAt}
+                  agentId={run.agentId}
+                  error={run.error}
+                  waiting={pendingCount(requests.pending) > 0}
+                />
+              ) : null}
+            </>
           }
           onContentSizeChange={() => list.current?.scrollToEnd({ animated: false })}
         />
@@ -216,7 +268,15 @@ export default function ThreadScreen() {
             ) : null}
           </View>
           <View style={readable}>
+            {id ? <QueuedMessages threadId={id} messages={queued} /> : null}
             <AttachmentStrip items={attachments.pending} onRemove={attachments.remove} />
+            {slash.active ? (
+              <SlashCommandPopover
+                suggestions={slash.suggestions}
+                blocked={slash.blocked}
+                onPick={slash.run}
+              />
+            ) : null}
           </View>
           {attachSheet.sheet}
           <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 8, ...readable }}>
@@ -243,6 +303,7 @@ export default function ThreadScreen() {
               </Text>
             </Pressable>
             <TextInput
+              ref={input}
               // Android in landscape otherwise swaps the screen for a full-screen editor with a DONE key.
               disableFullscreenUI
               value={draft}
@@ -250,6 +311,9 @@ export default function ThreadScreen() {
               placeholder={choice ? `Message ${choice.agentId}` : "Message"}
               placeholderTextColor={t.muted}
               multiline
+              // In a slash draft Return runs the command instead of inserting a newline.
+              submitBehavior={slash.active ? "submit" : "newline"}
+              onSubmitEditing={() => void slash.submitDraft()}
               style={{
                 flex: 1,
                 backgroundColor: t.bg,
@@ -264,21 +328,47 @@ export default function ThreadScreen() {
                 paddingBottom: 10,
               }}
             />
+            {action.kind === "queue" ? (
+              // Stop stays reachable while a draft turns the main button into Queue.
+              <Pressable
+                onPress={() => void stop()}
+                accessibilityRole="button"
+                accessibilityLabel="Stop the run"
+                hitSlop={6}
+                style={({ pressed }) => ({
+                  width: 38,
+                  height: 38,
+                  borderRadius: 19,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderColor: t.danger,
+                  borderWidth: 1,
+                  backgroundColor: pressed ? t.panel2 : "transparent",
+                })}
+              >
+                <Text style={{ color: t.danger, fontSize: 12, fontWeight: "700" }}>■</Text>
+              </Pressable>
+            ) : null}
             <Pressable
-              onPress={() => void (running ? stop() : send())}
-              disabled={!running && !canSend}
+              onPress={primary}
+              disabled={!action.enabled}
+              accessibilityRole="button"
+              accessibilityLabel={action.label}
               style={{
-                backgroundColor: running ? t.danger : t.accent,
-                opacity: !running && !canSend ? 0.4 : 1,
+                backgroundColor: action.kind === "stop" ? t.danger : t.accent,
+                opacity: action.enabled ? 1 : 0.4,
                 borderRadius: 18,
                 paddingHorizontal: 16,
                 paddingVertical: 11,
               }}
             >
               <Text style={{ color: t.accentFg, fontWeight: "700", fontSize: 14 }}>
-                {running ? "Stop" : "Send"}
+                {action.label}
               </Text>
             </Pressable>
+          </View>
+          <View style={readable}>
+            <SlashToast toast={slash.toast} onOpenJobs={slash.openJobs} onDismiss={slash.dismiss} />
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -290,10 +380,13 @@ function RunBanner({
   startedAt,
   agentId,
   error,
+  waiting,
 }: {
   startedAt: number;
   agentId: string;
   error?: string | undefined;
+  /** The run is paused on an approval or a question rather than working. */
+  waiting?: boolean | undefined;
 }) {
   const t = useTheme();
   const [now, setNow] = useState(Date.now());
@@ -320,8 +413,15 @@ function RunBanner({
     );
   }
   return (
-    <Text style={{ color: t.muted, fontSize: 12, paddingHorizontal: 16, paddingVertical: 8 }}>
-      {agentId} is working · {elapsed}
+    <Text
+      style={{
+        color: waiting ? t.warning : t.muted,
+        fontSize: 12,
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+      }}
+    >
+      {agentId} {waiting ? "is waiting for you" : "is working"} · {elapsed}
     </Text>
   );
 }

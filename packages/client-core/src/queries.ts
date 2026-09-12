@@ -15,6 +15,7 @@ import {
   type CreateThreadInput,
   type DevicePushRegistration,
   type PatchThreadInput,
+  type SendMessageInput,
 } from "./CoreClient";
 import { useAuthStore } from "./stores/auth";
 
@@ -441,5 +442,178 @@ export function useCancelJob() {
       void qc.invalidateQueries({ queryKey: ["jobs"] });
       void qc.invalidateQueries({ queryKey: ["job", jobId] });
     },
+  });
+}
+
+/* ---------- supervised runs: approvals and questions ---------- */
+
+/**
+ * The shapes below mirror the Phase 3 contract (`docs/mobile-roadmap.md` Wave 3, A1/A2) for the
+ * daemon side that lands separately; once `@fabdesk/protocol` exports them these local
+ * declarations should be replaced by imports. Nothing in the hooks depends on more than this.
+ */
+export type ApprovalDecision = "approve" | "deny";
+export interface PendingApprovalRequest {
+  requestId: string;
+  runId?: string;
+  tool: string;
+  input: unknown;
+  summary: string;
+}
+export interface PendingInputRequest {
+  requestId: string;
+  runId?: string;
+  question: string;
+  options?: string[];
+}
+export interface PendingRequestsBlock {
+  approvals: PendingApprovalRequest[];
+  inputs: PendingInputRequest[];
+}
+
+export function pendingRequestsKey(threadId: string | null) {
+  // Under `["thread", id]` on purpose: invalidating the thread invalidates this too.
+  return ["thread", threadId, "pending"] as const;
+}
+
+/**
+ * What a thread's run is waiting on (`GET /threads/:id` → `pending`). A daemon without supervised
+ * mode omits the block, which reads as nothing pending. Polls while `live` because the event
+ * reducer may not yet know the `agent.approval_requested` topics; when it does, its invalidation
+ * of `["thread", id]` refreshes this ahead of the poll.
+ */
+export function usePendingRequests(threadId: string | null, opts?: { live?: boolean }) {
+  const client = useCoreClient();
+  return useQuery<PendingRequestsBlock>({
+    queryKey: pendingRequestsKey(threadId),
+    queryFn: async () => {
+      const thread = await client.request<{ pending?: Partial<PendingRequestsBlock> }>(
+        `/threads/${encodeURIComponent(threadId!)}`,
+      );
+      return {
+        approvals: Array.isArray(thread.pending?.approvals) ? thread.pending.approvals : [],
+        inputs: Array.isArray(thread.pending?.inputs) ? thread.pending.inputs : [],
+      };
+    },
+    enabled: !!threadId,
+    refetchInterval: opts?.live ? 2000 : false,
+    staleTime: 0,
+  });
+}
+
+/** `POST /threads/:id/approvals/:requestId { decision }`; 409 means someone answered first. */
+export function useResolveApproval() {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      threadId,
+      requestId,
+      decision,
+    }: {
+      threadId: string;
+      requestId: string;
+      decision: ApprovalDecision;
+    }) =>
+      client.request<{ ok: boolean }>(
+        `/threads/${encodeURIComponent(threadId)}/approvals/${encodeURIComponent(requestId)}`,
+        { method: "POST", json: { decision } },
+      ),
+    onSettled: (_data, _err, vars) => {
+      void qc.invalidateQueries({ queryKey: ["thread", vars.threadId] });
+      void qc.invalidateQueries({ queryKey: messagesKey(vars.threadId) });
+    },
+  });
+}
+
+/** `POST /threads/:id/inputs/:requestId { answer }` for a pending question. */
+export function useAnswerQuestion() {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      threadId,
+      requestId,
+      answer,
+    }: {
+      threadId: string;
+      requestId: string;
+      answer: string;
+    }) =>
+      client.request<{ ok: boolean }>(
+        `/threads/${encodeURIComponent(threadId)}/inputs/${encodeURIComponent(requestId)}`,
+        { method: "POST", json: { answer } },
+      ),
+    onSettled: (_data, _err, vars) => {
+      void qc.invalidateQueries({ queryKey: ["thread", vars.threadId] });
+      void qc.invalidateQueries({ queryKey: messagesKey(vars.threadId) });
+    },
+  });
+}
+
+export type RuntimeMode = "full" | "supervised";
+
+/**
+ * `PATCH /threads/:id { runtimeMode }`. Kept apart from `useThreadMutations().patch` until
+ * `PatchThreadInput` carries the field; a daemon without supervised mode answers 400, which the
+ * caller shows. Invalidates the thread so the header reflects the daemon's answer.
+ */
+export function useSetRuntimeMode() {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ threadId, runtimeMode }: { threadId: string; runtimeMode: RuntimeMode }) =>
+      client.request<unknown>(`/threads/${encodeURIComponent(threadId)}`, {
+        method: "PATCH",
+        json: { runtimeMode },
+      }),
+    onSettled: (_data, _err, vars) => {
+      void qc.invalidateQueries({ queryKey: ["thread", vars.threadId] });
+      void qc.invalidateQueries({ queryKey: ["threads"] });
+    },
+  });
+}
+
+/* ---------- queued messages ---------- */
+
+/** A `Message` once the daemon can hold one back: `status: "queued"` until the live run ends. */
+export type QueuedMessage = Message & { status?: "queued" | "sent" | undefined };
+
+/**
+ * `POST /threads/:id/messages?queue=1`: stored while a run is live, sent when it ends. The daemon
+ * answers with the stored message's id; the run id is absent until it actually goes out.
+ */
+export function useQueueMessage() {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ threadId, input }: { threadId: string; input: SendMessageInput }) =>
+      client.request<{ messageId: string; runId?: string }>(
+        `/threads/${encodeURIComponent(threadId)}/messages?queue=1`,
+        { method: "POST", json: { ...input, queue: true } },
+      ),
+    onSettled: (_data, _err, vars) =>
+      void qc.invalidateQueries({ queryKey: messagesKey(vars.threadId) }),
+  });
+}
+
+/** `DELETE /threads/:id/messages/:messageId` — only a still-queued message can be removed. */
+export function useUnqueueMessage() {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ threadId, messageId }: { threadId: string; messageId: string }) =>
+      client.request<void>(
+        `/threads/${encodeURIComponent(threadId)}/messages/${encodeURIComponent(messageId)}`,
+        { method: "DELETE" },
+      ),
+    onMutate: ({ threadId, messageId }) => {
+      // Drop the chip at once; the refetch on settle agrees or brings it back.
+      qc.setQueryData<Message[]>(messagesKey(threadId), (old) =>
+        old ? old.filter((m) => m.id !== messageId) : old,
+      );
+    },
+    onSettled: (_data, _err, vars) =>
+      void qc.invalidateQueries({ queryKey: messagesKey(vars.threadId) }),
   });
 }

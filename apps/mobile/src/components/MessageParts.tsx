@@ -10,8 +10,17 @@ import { useMemo, useState } from "react";
 import { summarizeTools, toBlocks } from "../lib/message-blocks";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import Markdown from "react-native-markdown-display";
+import type { PendingActions } from "../hooks/pending-requests";
+import type { PendingPart } from "../lib/pending-requests";
+import { isQueued } from "../lib/queued-messages";
+import { workLog, workLogDetails, workLogLabel } from "../lib/work-log";
 import { useTheme, type Theme } from "../theme";
+import { PendingApprovalCard } from "./PendingApprovalCard";
+import { PendingQuestionCard } from "./PendingQuestionCard";
 import { ProjectImage } from "./ProjectImage";
+
+/** Cards with nothing to answer through: the buttons show but do nothing (a read-only viewer). */
+const INERT: PendingActions = { decide: async () => {}, answer: async () => {}, busy: new Set() };
 
 function markdownStyles(t: Theme) {
   return {
@@ -43,11 +52,14 @@ export function MessageBody({
   message,
   streaming,
   projectId,
+  pending = INERT,
 }: {
   message: Message;
   streaming: boolean;
   /** The thread's project; image parts are project files, so without it they show as a path. */
   projectId?: string | null | undefined;
+  /** Answers the approval / question cards a supervised run puts in its parts. */
+  pending?: PendingActions | undefined;
 }) {
   const t = useTheme();
   const blocks = useMemo(() => toBlocks(message.parts), [message.parts]);
@@ -55,8 +67,17 @@ export function MessageBody({
 
   if (message.role === "user") {
     const images = blocks.filter((b) => b.kind === "image");
+    const queued = isQueued(message);
     return (
-      <View style={{ alignItems: "flex-end", paddingHorizontal: 12, paddingVertical: 5, gap: 6 }}>
+      <View
+        style={{
+          alignItems: "flex-end",
+          paddingHorizontal: 12,
+          paddingVertical: 5,
+          gap: 6,
+          opacity: queued ? 0.55 : 1,
+        }}
+      >
         {images.map((b, i) => (
           <ImagePart key={i} path={b.path} projectId={projectId} align="flex-end" />
         ))}
@@ -67,10 +88,18 @@ export function MessageBody({
             paddingHorizontal: 14,
             paddingVertical: 9,
             maxWidth: "88%",
+            ...(queued
+              ? {
+                  borderColor: t.border,
+                  borderWidth: StyleSheet.hairlineWidth,
+                  borderStyle: "dashed" as const,
+                }
+              : {}),
           }}
         >
           <Text style={{ color: t.fg, fontSize: 15, lineHeight: 21 }}>{message.contentMd}</Text>
         </View>
+        {queued ? <Text style={{ color: t.muted, fontSize: 11 }}>queued</Text> : null}
       </View>
     );
   }
@@ -107,8 +136,100 @@ export function MessageBody({
         if (block.kind === "thinking") return <ThinkingBlock key={i} text={block.text} />;
         if (block.kind === "image")
           return <ImagePart key={i} path={block.path} projectId={projectId} />;
+        if (block.kind === "approval")
+          return (
+            <PendingApprovalCard
+              key={block.part.requestId}
+              part={block.part}
+              busy={pending.busy.has(block.part.requestId)}
+              onDecide={pending.decide}
+            />
+          );
+        if (block.kind === "question")
+          return (
+            <PendingQuestionCard
+              key={block.part.requestId}
+              part={block.part}
+              busy={pending.busy.has(block.part.requestId)}
+              onAnswer={pending.answer}
+            />
+          );
         return <ToolGroup key={i} parts={block.parts} />;
       })}
+      {streaming ? null : <WorkLogLine parts={message.parts} />}
+    </View>
+  );
+}
+
+/**
+ * "3 files · 1 render · 1 export" under a finished assistant turn; tap for the names. Hidden
+ * while the turn is still streaming — the counts would only tick up in front of you.
+ */
+function WorkLogLine({ parts }: { parts: readonly MessagePart[] }) {
+  const t = useTheme();
+  const [open, setOpen] = useState(false);
+  const log = useMemo(() => workLog(parts), [parts]);
+  const label = workLogLabel(log);
+  if (!label) return null;
+  const details = workLogDetails(log);
+  return (
+    <Pressable
+      onPress={() => setOpen((o) => !o)}
+      disabled={details.length === 0}
+      accessibilityRole="button"
+      accessibilityLabel={`Work log: ${label}`}
+      style={{ paddingTop: 2 }}
+    >
+      <Text style={{ color: log.errors ? t.danger : t.muted, fontSize: 11 }}>
+        {details.length ? (open ? "▾ " : "▸ ") : ""}
+        {label}
+      </Text>
+      {open
+        ? details.map((line) => (
+            <Text
+              key={line}
+              numberOfLines={1}
+              style={{ color: t.muted, fontSize: 11, fontFamily: "Menlo", marginTop: 2 }}
+            >
+              {line}
+            </Text>
+          ))
+        : null}
+    </Pressable>
+  );
+}
+
+/**
+ * Requests the run is waiting on that no message part shows yet (`unplacedPending`): drawn after
+ * the last message, where the paused run's next step would appear.
+ */
+export function PendingCards({
+  parts,
+  pending,
+}: {
+  parts: readonly PendingPart[];
+  pending: PendingActions;
+}) {
+  if (parts.length === 0) return null;
+  return (
+    <View style={{ paddingHorizontal: 14, paddingVertical: 5, gap: 8 }}>
+      {parts.map((part) =>
+        part.type === "approval" ? (
+          <PendingApprovalCard
+            key={part.requestId}
+            part={part}
+            busy={pending.busy.has(part.requestId)}
+            onDecide={pending.decide}
+          />
+        ) : (
+          <PendingQuestionCard
+            key={part.requestId}
+            part={part}
+            busy={pending.busy.has(part.requestId)}
+            onAnswer={pending.answer}
+          />
+        ),
+      )}
     </View>
   );
 }
