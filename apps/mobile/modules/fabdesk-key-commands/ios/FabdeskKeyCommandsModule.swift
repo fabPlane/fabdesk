@@ -107,12 +107,15 @@ final class FabdeskKeyCommandRegistry {
     guard let key = input else {
       return nil
     }
+    // `propertyList` is read-only after init; the long initializer is the only way to set it.
     let command = UIKeyCommand(
+      title: "",
+      image: nil,
+      action: #selector(UIResponder.fabdeskHandleKeyCommand(_:)),
       input: key,
       modifierFlags: flags,
-      action: #selector(UIResponder.fabdeskHandleKeyCommand(_:))
+      propertyList: id
     )
-    command.propertyList = id
     if #available(iOS 15.0, *) {
       command.wantsPriorityOverSystemBehavior = true
     }
