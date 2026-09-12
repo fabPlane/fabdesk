@@ -50,6 +50,12 @@ export function usePendingForThread(threadId: string | null, running: boolean) {
     seen.current = query.data;
   }, [query.data]);
 
+  // The poll stops with the run; one more read clears whatever the last poll still showed.
+  const refetch = query.refetch;
+  useEffect(() => {
+    if (!running && threadId) void refetch();
+  }, [running, threadId, refetch]);
+
   const unplaced = useCallback(
     (messages: readonly Message[] | undefined): PendingPart[] => unplacedPending(messages, pending),
     [pending],
