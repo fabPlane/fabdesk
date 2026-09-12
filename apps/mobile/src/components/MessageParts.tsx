@@ -13,6 +13,7 @@ import Markdown from "react-native-markdown-display";
 import type { PendingActions } from "../hooks/pending-requests";
 import type { PendingPart } from "../lib/pending-requests";
 import { isQueued } from "../lib/queued-messages";
+import { workLog, workLogDetails, workLogLabel } from "../lib/work-log";
 import { useTheme, type Theme } from "../theme";
 import { PendingApprovalCard } from "./PendingApprovalCard";
 import { PendingQuestionCard } from "./PendingQuestionCard";
@@ -155,7 +156,46 @@ export function MessageBody({
           );
         return <ToolGroup key={i} parts={block.parts} />;
       })}
+      {streaming ? null : <WorkLogLine parts={message.parts} />}
     </View>
+  );
+}
+
+/**
+ * "3 files · 1 render · 1 export" under a finished assistant turn; tap for the names. Hidden
+ * while the turn is still streaming — the counts would only tick up in front of you.
+ */
+function WorkLogLine({ parts }: { parts: readonly MessagePart[] }) {
+  const t = useTheme();
+  const [open, setOpen] = useState(false);
+  const log = useMemo(() => workLog(parts), [parts]);
+  const label = workLogLabel(log);
+  if (!label) return null;
+  const details = workLogDetails(log);
+  return (
+    <Pressable
+      onPress={() => setOpen((o) => !o)}
+      disabled={details.length === 0}
+      accessibilityRole="button"
+      accessibilityLabel={`Work log: ${label}`}
+      style={{ paddingTop: 2 }}
+    >
+      <Text style={{ color: log.errors ? t.danger : t.muted, fontSize: 11 }}>
+        {details.length ? (open ? "▾ " : "▸ ") : ""}
+        {label}
+      </Text>
+      {open
+        ? details.map((line) => (
+            <Text
+              key={line}
+              numberOfLines={1}
+              style={{ color: t.muted, fontSize: 11, fontFamily: "Menlo", marginTop: 2 }}
+            >
+              {line}
+            </Text>
+          ))
+        : null}
+    </Pressable>
   );
 }
 
