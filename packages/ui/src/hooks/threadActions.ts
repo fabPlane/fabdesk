@@ -1,10 +1,10 @@
 import type { Message, Thread } from "@fabdesk/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
-import { useCoreClient } from "../core/CoreProvider";
+import { useCoreClient } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { truncate } from "../util";
-import { useThreadMutations } from "./queries";
+import { useThreadMutations } from "@fabdesk/client-core";
 
 /** Creates a branch of `thread` from its last message and makes it active. */
 export function useBranchThread() {

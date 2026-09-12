@@ -95,6 +95,7 @@ describe("detectAgents", () => {
       webmcpWriteTools: false,
       errorReporting: true,
       theme: "system",
+      remote: { enabled: false, host: "0.0.0.0", port: 47820 },
     });
     expect(infos.map((i) => i.id)).toEqual(["claude", "codex", "grok", "cursor"]);
     const byId = Object.fromEntries(infos.map((i) => [i.id, i]));

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { principalInitials, principalLabel } from "../auth/principal";
 import { Badge, IconButton, Kbd, MenuItem } from "../components/ui";
-import { useCore } from "../core/CoreProvider";
-import { useAuthStore } from "../stores/auth";
+import { useCore } from "@fabdesk/client-core";
+import { useAuthStore } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { cn, modKey } from "../util";
 

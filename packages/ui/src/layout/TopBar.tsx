@@ -1,8 +1,8 @@
 import { Badge, IconButton } from "../components/ui";
 import { UpdateBadge } from "../components/UpdateBadge";
-import { useCore } from "../core/CoreProvider";
-import { useProjects } from "../hooks/queries";
-import { useAuthStore } from "../stores/auth";
+import { useCore } from "@fabdesk/client-core";
+import { useProjects } from "@fabdesk/client-core";
+import { useAuthStore } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { cn, modKey } from "../util";
 import type { CoreStatusInfo } from "../app/types";

@@ -1,8 +1,8 @@
 import type { Job, ToolManifestEntry } from "@fabdesk/protocol";
 import { useCallback, useState } from "react";
-import { useCoreClient } from "../core/CoreProvider";
-import { useToolManifest } from "../hooks/queries";
-import { useRunsStore } from "../stores/runs";
+import { useCoreClient } from "./provider";
+import { useToolManifest } from "./queries";
+import { useRunsStore } from "./stores/runs";
 
 /** Preferred tool names with regex fallbacks, since the tool registry is built by another package. */
 export const TOOL_PATTERNS = {

@@ -1,17 +1,60 @@
-export { CoreClient, CoreHttpError, parseJsonl } from "./core/CoreClient";
-export type { CoreClientOptions, CreateThreadInput, PatchThreadInput, SendMessageInput, ToolCallResponse, FetchLike } from "./core/CoreClient";
-export { subscribeSse, reconnectDelay, appendLastEventId, parseCoreEvent } from "./core/sse";
-export type { EventSourceLike, EventSourceFactory, SseStatus, SseSubscription, SseOptions } from "./core/sse";
-export { CoreProvider, useCore, useCoreClient, useCoreEvents, handleCoreEvent, browserHost, EVENT_TOPICS, messagesKey } from "./core/CoreProvider";
-export type { HostAdapter, FilePickOptions, CoreContextValue, CoreProviderProps } from "./core/CoreProvider";
+/**
+ * The desktop UI. Transport, queries, stores and the event reducer live in `@fabdesk/client-core`
+ * and are re-exported here so renderer code (and the automation API) keeps one import site.
+ */
+export {
+  CoreClient,
+  CoreHttpError,
+  parseJsonl,
+  subscribeSse,
+  subscribeWs,
+  reconnectDelay,
+  appendLastEventId,
+  parseCoreEvent,
+  useCore,
+  useCoreClient,
+  useCoreEvents,
+  handleCoreEvent,
+  appendDelta,
+  appendPart,
+  EVENT_TOPICS,
+  messagesKey,
+  DirectTransport,
+  buildPairingUrl,
+  parsePairingUrl,
+  candidateBaseUrls,
+  claimPairing,
+  claimFirstReachable,
+} from "@fabdesk/client-core";
+export type {
+  CoreClientOptions,
+  CreateThreadInput,
+  PatchThreadInput,
+  SendMessageInput,
+  ToolCallResponse,
+  FetchLike,
+  EventSourceLike,
+  EventSourceFactory,
+  SseStatus,
+  SseSubscription,
+  SseOptions,
+  HostAdapter,
+  FilePickOptions,
+  CoreContextValue,
+  CoreTransport,
+  RouteSink,
+  PairingPayload,
+} from "@fabdesk/client-core";
+export { CoreProvider } from "./core/CoreProvider";
+export type { CoreProviderProps } from "./core/CoreProvider";
+export { browserHost } from "./core/host";
 
 export { useUiStore, BOARD_TABS, BOARD_TAB_LABELS, DRAFT_KEY_NEW, SIDEBAR_LIST_TABS, SIDEBAR_LIST_TAB_LABELS, normalizeSidebarListTab } from "./stores/ui";
 export type { BoardTab, SidebarListTab, UiState, PendingAttachment } from "./stores/ui";
 export { useCinemaStore } from "./stores/cinema";
 export type { CinemaState } from "./stores/cinema";
-export { useAuthStore } from "./stores/auth";
-export { useRunsStore } from "./stores/runs";
-export type { LiveRun, LiveJob } from "./stores/runs";
+export { useAuthStore, useRunsStore } from "@fabdesk/client-core";
+export type { LiveRun, LiveJob } from "@fabdesk/client-core";
 
 export * from "./board/cinema/renderer";
 export { CinemaTab } from "./board/cinema/CinemaTab";
@@ -22,14 +65,14 @@ export { DrcTab, normalizeReport } from "./board/DrcTab";
 export { RendersTab } from "./board/RendersTab";
 export { FilesTab } from "./board/FilesTab";
 export { ThreeDTab } from "./board/ThreeDTab";
-export { useRunTool, resolveToolName, TOOL_PATTERNS } from "./board/tools";
+export { useRunTool, resolveToolName, TOOL_PATTERNS } from "@fabdesk/client-core";
 
 export { AppShell } from "./layout/AppShell";
 export { TopBar } from "./layout/TopBar";
 export { ThreadSidebar } from "./sidebar/ThreadSidebar";
 export { OpenSourceList } from "./sidebar/OpenSourceList";
-export { groupThreadsByProject } from "./sidebar/group-threads";
-export type { ProjectThreadGroup, ProjectThreadGroupKind } from "./sidebar/group-threads";
+export { groupThreadsByProject } from "@fabdesk/client-core";
+export type { ProjectThreadGroup, ProjectThreadGroupKind } from "@fabdesk/client-core";
 export { OpenSourceView } from "./opensource/OpenSourceView";
 export { CatalogThumb } from "./opensource/CatalogThumb";
 export { OrderFlow } from "./order/OrderFlow";
@@ -46,7 +89,8 @@ export { CommandPalette } from "./palette/CommandPalette";
 export { SettingsDialog } from "./settings/SettingsDialog";
 export { LoginScreen } from "./auth/LoginScreen";
 
-export * from "./hooks/queries";
+export * from "@fabdesk/client-core";
+export { useProjectBlobUrl } from "./hooks/queries";
 export { useBranchThread } from "./hooks/threadActions";
 export { useShortcuts, shortcutList } from "./hooks/useShortcuts";
 export {

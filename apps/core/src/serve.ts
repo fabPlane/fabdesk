@@ -6,13 +6,16 @@ import { ToolError, createRegistry, toolsMarkdown, type CoreServices, type Proje
 import type { AgentId } from "@fabdesk/protocol";
 import { AgentRunManager, type AgentAdapterLike } from "./agent-runs";
 import { TokenSet } from "./auth";
+import { DeviceStore } from "./devices";
+import { RemoteListener } from "./remote";
 import { createAuth, type AuthFacade } from "./auth-facade";
 import { EventBus } from "./bus";
 import { resolveConfig, type CoreConfig } from "./config";
 import { locateAppBridgeFile } from "./app-bridge";
 import { createContextFactory } from "./context";
 import { Store } from "./db";
-import { createApp } from "./http/app";
+import type { Hono } from "hono";
+import { createApp, type Env } from "./http/app";
 import { JobRunner } from "./jobs";
 import { logger, errMsg } from "./log";
 import { McpSessionManager } from "./mcp-sessions";
@@ -67,6 +70,11 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   const staleRuns = store.runs.failStale();
   if (staleRuns.length) logger.info("failed stale agent runs from previous run", { threads: staleRuns });
   const tokens = new TokenSet(config.token);
+  const devices = new DeviceStore(store.db);
+  tokens.setDeviceLookup((token) => {
+    const device = devices.verify(token);
+    return device ? { kind: "device", deviceId: device.id } : null;
+  });
   const jobs = new JobRunner({
     emit: (e) => bus.emit(e),
     store: store.jobs,
@@ -142,7 +150,9 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   let closing = false;
 
   const doctor = opts.doctor ?? (async () => (await import("./doctor")).runDoctor({ config, settings: store.settings.get() }));
-  const app = createApp({
+  const remote = new RemoteListener({ emit: (e) => bus.emit(e) });
+
+  const appDeps = {
     config,
     store,
     bus,
@@ -155,56 +165,75 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     mcp,
     auth,
     runs,
+    devices,
+    remote,
     doctor,
     agents: async () => (await import("@fabdesk/agents")).detectAgents(store.settings.get()),
-    shutdown: (reason) => void daemon.close(reason),
+    shutdown: (reason: string) => void daemon.close(reason),
     startedAt,
-  });
+  };
+  const app = createApp({ ...appDeps, listener: "local" });
+  const remoteApp = createApp({ ...appDeps, listener: "remote" });
 
-  const server = Bun.serve<WsData, Record<never, never>>({
-    hostname: config.host,
-    port: config.port,
-    idleTimeout: 255,
-    fetch(req, srv) {
+  /**
+   * One request handler shape for both listeners: upgrade `/ws`, otherwise hand off to that
+   * listener's Hono app. The origin check differs — a browser reaching the remote listener is not
+   * a case we serve, so only non-browser clients (no Origin header) may open a remote socket.
+   */
+  const makeFetch =
+    (target: Hono<Env>, scope: "local" | "remote") =>
+    (req: Request, srv: Bun.Server): Response | Promise<Response> | undefined => {
       const url = new URL(req.url);
       if (url.pathname === "/ws" && req.headers.get("upgrade")?.toLowerCase() === "websocket") {
         const origin = req.headers.get("origin");
-        if (!originAllowedLocal(origin)) return new Response("forbidden origin", { status: 403 });
+        const allowed = scope === "local" ? originAllowedLocal(origin) : origin === null || origin === "";
+        if (!allowed) return new Response("forbidden origin", { status: 403 });
         const token = url.searchParams.get("token") ?? req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? null;
         if (!tokens.verify(token)) return new Response("unauthorized", { status: 401 });
         const patterns = (url.searchParams.get("topics") ?? "*").split(",").map((s) => s.trim()).filter(Boolean);
         if (srv.upgrade(req, { data: { patterns: patterns.length ? patterns : ["*"], unsubscribe: null } })) return undefined;
         return new Response("upgrade failed", { status: 400 });
       }
-      return app.fetch(req);
+      return target.fetch(req);
+    };
+
+  const websocket: Bun.WebSocketHandler<WsData> = {
+    open(ws) {
+      ws.data.unsubscribe = bus.subscribe(ws.data.patterns, (events) => {
+        for (const ev of events) ws.send(JSON.stringify({ id: ev.id, event: ev.event }));
+      });
     },
-    websocket: {
-      open(ws) {
-        ws.data.unsubscribe = bus.subscribe(ws.data.patterns, (events) => {
-          for (const ev of events) ws.send(JSON.stringify({ id: ev.id, event: ev.event }));
-        });
-      },
-      message(ws, message) {
-        try {
-          const msg = JSON.parse(String(message)) as { subscribe?: string[]; lastEventId?: number };
-          if (Array.isArray(msg.subscribe)) {
-            ws.data.unsubscribe?.();
-            ws.data.patterns = msg.subscribe.length ? msg.subscribe : ["*"];
-            if (typeof msg.lastEventId === "number") for (const ev of bus.replay(msg.lastEventId, ws.data.patterns)) ws.send(JSON.stringify({ id: ev.id, event: ev.event }));
-            ws.data.unsubscribe = bus.subscribe(ws.data.patterns, (events) => {
-              for (const ev of events) ws.send(JSON.stringify({ id: ev.id, event: ev.event }));
-            });
-          }
-        } catch {
-          ws.send(JSON.stringify({ error: "bad message" }));
+    message(ws, message) {
+      try {
+        const msg = JSON.parse(String(message)) as { subscribe?: string[]; lastEventId?: number };
+        if (Array.isArray(msg.subscribe)) {
+          ws.data.unsubscribe?.();
+          ws.data.patterns = msg.subscribe.length ? msg.subscribe : ["*"];
+          if (typeof msg.lastEventId === "number") for (const ev of bus.replay(msg.lastEventId, ws.data.patterns)) ws.send(JSON.stringify({ id: ev.id, event: ev.event }));
+          ws.data.unsubscribe = bus.subscribe(ws.data.patterns, (events) => {
+            for (const ev of events) ws.send(JSON.stringify({ id: ev.id, event: ev.event }));
+          });
         }
-      },
-      close(ws) {
-        ws.data.unsubscribe?.();
-        ws.data.unsubscribe = null;
-      },
+      } catch {
+        ws.send(JSON.stringify({ error: "bad message" }));
+      }
     },
+    close(ws) {
+      ws.data.unsubscribe?.();
+      ws.data.unsubscribe = null;
+    },
+  };
+
+  const server = Bun.serve<WsData, Record<never, never>>({
+    hostname: config.host,
+    port: config.port,
+    idleTimeout: 255,
+    fetch: makeFetch(app, "local"),
+    websocket,
   });
+
+  remote.attach({ fetch: makeFetch(remoteApp, "remote"), websocket });
+  remote.apply(store.settings.get().remote);
 
   const port = server.port ?? config.port;
   const url = `http://${config.host}:${port}`;
@@ -265,6 +294,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       projects.close();
       (services as { dispose?: () => void }).dispose?.();
       await new Promise((r) => setTimeout(r, 30));
+      remote.stop();
       server.stop(true);
       if (!opts.noHandshake) await removeHandshake(config.handshakePath);
       store.close();

@@ -2,13 +2,20 @@
 import type { Principal } from "@fabdesk/protocol";
 import { mintToken } from "./config";
 
-export type TokenInfo = { kind: "daemon" | "run"; runId?: string; projectId?: string | null; threadId?: string };
+export type TokenInfo = { kind: "daemon" | "run" | "device"; runId?: string; projectId?: string | null; threadId?: string; deviceId?: string };
 
 export class TokenSet {
   private readonly tokens = new Map<string, TokenInfo>();
+  /** Paired devices hold long-lived tokens kept in SQLite, not in this map. */
+  private devices: ((token: string) => TokenInfo | null) | null = null;
 
   constructor(daemonToken: string) {
     this.tokens.set(daemonToken, { kind: "daemon" });
+  }
+
+  /** Register the device-token lookup; called once the store is open. */
+  setDeviceLookup(lookup: (token: string) => TokenInfo | null): void {
+    this.devices = lookup;
   }
 
   /** Mint a token bound to an agent run (revoked when the run ends). */
@@ -29,7 +36,7 @@ export class TokenSet {
 
   lookup(token: string | undefined | null): TokenInfo | null {
     if (!token) return null;
-    return this.tokens.get(token) ?? null;
+    return this.tokens.get(token) ?? this.devices?.(token) ?? null;
   }
 
   verify(token: string | undefined | null): boolean {

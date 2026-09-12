@@ -119,6 +119,9 @@ export const CoreEvent = z.discriminatedUnion("topic", [
   z.object({ ...base, topic: z.literal("project.changed"), projectId: z.string(), paths: z.array(z.string()) }),
   z.object({ ...base, topic: z.literal("thread.updated"), threadId: z.string() }),
   z.object({ ...base, topic: z.literal("auth.state"), state: AuthState }),
+  z.object({ ...base, topic: z.literal("device.paired"), deviceId: z.string(), label: z.string() }),
+  z.object({ ...base, topic: z.literal("device.revoked"), deviceId: z.string() }),
+  z.object({ ...base, topic: z.literal("remote.state"), enabled: z.boolean(), host: z.string().optional(), port: z.number().optional(), error: z.string().optional() }),
   z.object({ ...base, topic: z.literal("core.shutdown"), reason: z.string() }),
 ]);
 export type CoreEvent = z.infer<typeof CoreEvent>;

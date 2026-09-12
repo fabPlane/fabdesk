@@ -2,13 +2,13 @@ import type { AgentId, Thread } from "@fabdesk/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button, IconButton, Kbd, Textarea } from "../components/ui";
-import { useCore } from "../core/CoreProvider";
-import { useDoctor, useSettings } from "../hooks/queries";
-import { useRunsStore } from "../stores/runs";
+import { useCore } from "@fabdesk/client-core";
+import { useDoctor, useSettings } from "@fabdesk/client-core";
+import { useRunsStore } from "@fabdesk/client-core";
 import { DRAFT_KEY_NEW, useUiStore } from "../stores/ui";
 import { basename, mimeFromPath, modKey } from "../util";
 import { AgentModelMenu } from "./AgentModelMenu";
-import { agentModelLabel } from "./agent-model-choices";
+import { agentModelLabel } from "@fabdesk/client-core";
 import { applyComposerTextareaHeight } from "./composer-autosize";
 
 /** Bridge for the global shortcut hook (mod+Enter send, mod+. abort) and for app automation. */

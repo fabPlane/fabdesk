@@ -1,11 +1,11 @@
 import type { AgentId, Settings } from "@fabdesk/protocol";
 import { useEffect, useState } from "react";
 import { Badge, Button, Dialog, Input, Select, Spinner } from "../components/ui";
-import { useCore } from "../core/CoreProvider";
-import { useDoctor, usePatchSettings, useSettings } from "../hooks/queries";
+import { useCore } from "@fabdesk/client-core";
+import { useDoctor, usePatchSettings, useSettings } from "@fabdesk/client-core";
 import { shortcutList } from "../hooks/useShortcuts";
 import { isThemeId, THEME_IDS, THEME_LABELS, useTheme } from "../hooks/useTheme";
-import { useAuthStore } from "../stores/auth";
+import { useAuthStore } from "@fabdesk/client-core";
 import { SETTINGS_SECTIONS, useUiStore, type SettingsSection } from "../stores/ui";
 import { cn } from "../util";
 

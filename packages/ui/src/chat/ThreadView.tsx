@@ -17,8 +17,8 @@ function formatElapsed(s: number): string {
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
 }
 import { Badge } from "../components/ui";
-import { useMessages, useThread, useThreadMutations } from "../hooks/queries";
-import { useRunsStore } from "../stores/runs";
+import { useMessages, useThread, useThreadMutations } from "@fabdesk/client-core";
+import { useRunsStore } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { Composer } from "./Composer";
 import { MessageList } from "./MessageList";

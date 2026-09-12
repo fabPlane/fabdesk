@@ -5,6 +5,8 @@ import { Hono, type Context } from "hono";
 import {
   CreateProject,
   CreateThread,
+  PairClaim,
+  pairingUrlFromEndpoints,
   OpenCatalogIndex,
   OrderVendorId,
   PatchThread,
@@ -28,6 +30,9 @@ import type { JobRunner } from "../jobs";
 import type { McpSessionManager } from "../mcp-sessions";
 import type { ProjectStore } from "../projects";
 import type { AgentRunManager } from "../agent-runs";
+import type { DeviceStore } from "../devices";
+import type { RemoteListener } from "../remote";
+import { listenAddresses, machineName } from "../net";
 import { logger, errMsg } from "../log";
 import { allowedCloneUrl, fetchOpenCatalog, findCatalogProject } from "../opensource/catalog";
 import { createPreviewCache, resolveCatalogPreview } from "../opensource/preview";
@@ -54,6 +59,14 @@ export type AppDeps = {
   shutdown: (reason: string) => void;
   startedAt: number;
   extraOrigins?: string[];
+  devices: DeviceStore;
+  remote: RemoteListener;
+  /**
+   * Which listener this app instance answers on. The remote listener is reachable from the
+   * tailnet, so it does not serve MCP (whose DNS-rebinding allowlist is bound to loopback),
+   * shutdown, or device administration.
+   */
+  listener: "local" | "remote";
 };
 
 export type Env = { Variables: { token?: string; principalSubject?: string } };
@@ -119,12 +132,33 @@ export function createApp(deps: AppDeps): Hono<Env> {
     c.json({ ok: true, version: deps.config.version, pid: process.pid, channel: deps.config.channel, authMode: deps.auth.mode, uptimeMs: Date.now() - deps.startedAt, mcpSessions: deps.mcp.activeCount() }),
   );
 
+  // Claiming a pairing code is how a phone gets its first credential, so it cannot carry one.
+  // The short-lived, one-time pairing token minted by `/v1/devices/pair/start` is the credential.
+  app.post("/v1/devices/pair/claim", async (c) => {
+    const body = PairClaim.parse(await c.req.json());
+    let issued: ReturnType<DeviceStore["claim"]>;
+    try {
+      issued = deps.devices.claim(body);
+    } catch (e) {
+      return c.json({ error: errMsg(e), code: "unauthorized" }, 401);
+    }
+    deps.bus.emit({ topic: "device.paired", ts: Date.now(), deviceId: issued.device.id, label: issued.device.label });
+    logger.info("device paired", { id: issued.device.id, label: issued.device.label, platform: issued.device.platform });
+    return c.json({
+      deviceToken: issued.token,
+      device: issued.device,
+      core: { name: machineName(), version: deps.config.version, platform: process.platform },
+    });
+  });
+
   // Bearer auth for everything else (`?token=` allowed for SSE / WS which cannot set headers).
   app.use("*", async (c, next) => {
     if (c.req.path === "/health") return next();
     const allowQuery = c.req.path === "/events" || c.req.path === "/ws" || c.req.path.startsWith("/opensource/preview/");
     const token = extractToken(c.req.raw, { allowQuery });
-    if (!deps.tokens.verify(token)) return c.json({ error: "unauthorized" }, 401);
+    const info = deps.tokens.lookup(token);
+    if (!info) return c.json({ error: "unauthorized" }, 401);
+    if (info.kind === "device" && info.deviceId) deps.devices.touch(info.deviceId);
     c.set("token", token as string);
     await next();
   });
@@ -404,8 +438,10 @@ export function createApp(deps: AppDeps): Hono<Env> {
   });
 
   /* ---------- MCP ---------- */
-  app.all("/mcp", (c) => deps.mcp.handle(c.req.raw, { token: c.get("token") ?? null }));
-  app.get("/mcp/sessions", (c) => c.json(deps.mcp.list()));
+  // MCP stays on loopback: its DNS-rebinding allowlist is pinned to the local bind address, and
+  // agent subprocesses always reach the daemon there.
+  app.all("/mcp", (c) => (deps.listener === "local" ? deps.mcp.handle(c.req.raw, { token: c.get("token") ?? null }) : c.json({ error: "not found" }, 404)));
+  app.get("/mcp/sessions", (c) => (deps.listener === "local" ? c.json(deps.mcp.list()) : c.json({ error: "not found" }, 404)));
 
   /* ---------- auth ---------- */
   const me = (): Me => ({ principal: deps.auth.principal(), mode: deps.auth.mode });
@@ -447,10 +483,58 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const body = Settings.partial().parse(await c.req.json());
     const next = deps.store.settings.patch(body);
     await applyErrorReporting(next.errorReporting);
+    // Remote access is a runtime toggle: the listener starts, stops or rebinds without a restart.
+    if (body.remote !== undefined && deps.listener === "local") deps.remote.apply(next.remote);
     return c.json(next);
   });
 
+  /** Whether the remote listener is actually bound, and on what — Settings shows the real state. */
+  app.get("/v1/remote", (c) => c.json({ ...deps.remote.state(), setting: deps.store.settings.get().remote }));
+
+  /* ---------- paired devices ---------- */
+  const localOnly = (c: Context) => (deps.listener === "local" ? null : c.json({ error: "not found" }, 404));
+
+  app.post("/v1/devices/pair/start", (c) => {
+    const denied = localOnly(c);
+    if (denied) return denied;
+    const remote = deps.store.settings.get().remote;
+    const endpoints = listenAddresses(remote.port);
+    const pending = deps.devices.startPairing();
+    return c.json({
+      pairingToken: pending.token,
+      code: pending.code,
+      expiresAt: new Date(pending.expiresAt).toISOString(),
+      endpoints,
+      url: pairingUrlFromEndpoints({ token: pending.token, endpoints, port: remote.port, name: machineName() }),
+      coreName: machineName(),
+    });
+  });
+
+  app.post("/v1/devices/pair/cancel", (c) => {
+    const denied = localOnly(c);
+    if (denied) return denied;
+    deps.devices.cancelPairing();
+    return c.json({ ok: true });
+  });
+
+  app.get("/v1/devices", (c) => {
+    const denied = localOnly(c);
+    if (denied) return denied;
+    return c.json(deps.devices.list());
+  });
+
+  app.delete("/v1/devices/:id", (c) => {
+    const denied = localOnly(c);
+    if (denied) return denied;
+    const id = c.req.param("id");
+    if (!deps.devices.revoke(id)) return c.json({ error: "not found" }, 404);
+    deps.bus.emit({ topic: "device.revoked", ts: Date.now(), deviceId: id });
+    return c.json({ ok: true });
+  });
+
   app.post("/shutdown", (c) => {
+    const denied = localOnly(c);
+    if (denied) return denied;
     setTimeout(() => deps.shutdown("shutdown requested"), 20);
     return c.json({ ok: true });
   });

@@ -4,6 +4,9 @@ import { AgentId, JobStatus, MessagePart, Principal } from "./events";
 
 export const ProjectId = z.string().min(1);
 
+/** Default port for the daemon's opt-in remote listener (see docs/mobile.md). */
+export const REMOTE_DEFAULT_PORT = 47820;
+
 /** Routing rules a board import carries over (KiCad netclass "Default"); all in millimetres. */
 export const BoardRules = z.object({
   traceWidthMm: z.number().positive().optional(),
@@ -209,6 +212,14 @@ export const Settings = z.object({
   /** Send crash/error reports to Sentry (only when a DSN is configured; see docs/sentry.md). */
   errorReporting: z.boolean().default(true),
   theme: z.enum(["system", "light", "dark"]).default("system"),
+  /** Opt-in second listener on a tailnet/LAN address so paired phones can reach the daemon. */
+  remote: z
+    .object({
+      enabled: z.boolean().default(false),
+      host: z.string().default("0.0.0.0"),
+      port: z.number().int().min(1).max(65535).default(REMOTE_DEFAULT_PORT),
+    })
+    .default({ enabled: false, host: "0.0.0.0", port: REMOTE_DEFAULT_PORT }),
 });
 export type Settings = z.infer<typeof Settings>;
 

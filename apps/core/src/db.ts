@@ -112,6 +112,21 @@ export const MIGRATIONS: Array<{ version: number; sql: string }> = [
       );
     `,
   },
+  {
+    version: 2,
+    sql: `
+      CREATE TABLE devices (
+        id TEXT PRIMARY KEY,
+        label TEXT NOT NULL,
+        platform TEXT NOT NULL,
+        token_sha256 TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL,
+        last_seen_at TEXT,
+        revoked_at TEXT
+      );
+      CREATE INDEX devices_token ON devices(token_sha256);
+    `,
+  },
 ];
 
 export function openDatabase(path: string): Database {

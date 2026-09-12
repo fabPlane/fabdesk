@@ -6,7 +6,7 @@ import {
   type ThemeId,
   type ThemePreference,
 } from "../theme/resolve";
-import { useSettings } from "./queries";
+import { useSettings } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 
 export type { ThemeId, ThemePreference } from "../theme/resolve";
