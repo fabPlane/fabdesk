@@ -8,6 +8,7 @@ import type {
   MessagePart,
   RouteFrameLine,
   RouteResult,
+  Thread,
 } from "@fabdesk/protocol";
 import type { QueryClient } from "@tanstack/react-query";
 import type { CoreClient } from "./CoreClient";
@@ -66,6 +67,37 @@ function ensureMessage(
       createdAt: new Date().toISOString(),
     },
   ];
+}
+
+/**
+ * Applies `fn` to every cached copy of a thread: the `["threads", …]` lists and the
+ * `["thread", id]` detail. `fn` returning null drops the thread from a list. The refetch the
+ * caller also schedules will agree with this; patching first just makes the change instant.
+ */
+export function patchThreadCaches(
+  qc: QueryClient,
+  threadId: string,
+  fn: (t: Thread) => Thread | null,
+): void {
+  qc.setQueriesData<unknown>({ queryKey: ["threads"] }, (old: unknown) => {
+    if (Array.isArray(old)) {
+      const out: Thread[] = [];
+      for (const t of old as Thread[]) {
+        if (t.id !== threadId) out.push(t);
+        else {
+          const next = fn(t);
+          if (next) out.push(next);
+        }
+      }
+      return out;
+    }
+    // `["threads", "one", parentId]` holds a single thread or null.
+    if (old && typeof old === "object" && (old as Thread).id === threadId) return fn(old as Thread);
+    return old;
+  });
+  qc.setQueriesData<Thread | undefined>({ queryKey: ["thread", threadId] }, (old) =>
+    old ? (fn(old) ?? undefined) : old,
+  );
 }
 
 function updateMessage(msgs: Message[], messageId: string, fn: (m: Message) => Message): Message[] {
@@ -213,9 +245,25 @@ export function handleCoreEvent(event: CoreEvent, ctx: HandlerCtx): void {
         void qc.invalidateQueries({ queryKey: ["file", event.projectId, p] });
       void qc.invalidateQueries({ queryKey: ["file", event.projectId] });
       break;
-    case "thread.updated":
+    case "thread.created":
+      // The list may be filtered by project; the daemon is the only place that knows the rest of
+      // the row, so this is a refetch rather than a patch.
       void qc.invalidateQueries({ queryKey: ["threads"] });
+      break;
+    case "thread.updated": {
+      const title = event.title;
+      if (title !== undefined) patchThreadCaches(qc, event.threadId, (t) => ({ ...t, title }));
+      void qc.invalidateQueries({ queryKey: ["threads"] });
+      void qc.invalidateQueries({ queryKey: ["thread", event.threadId] });
       void qc.invalidateQueries({ queryKey: messagesKey(event.threadId) });
+      break;
+    }
+    case "thread.deleted":
+      patchThreadCaches(qc, event.threadId, () => null);
+      // A screen still showing the thread must not refetch it into a 404; drop the caches instead.
+      qc.removeQueries({ queryKey: ["thread", event.threadId] });
+      qc.removeQueries({ queryKey: messagesKey(event.threadId) });
+      void qc.invalidateQueries({ queryKey: ["threads"] });
       break;
     case "auth.state":
       useAuthStore.getState().setState(event.state);

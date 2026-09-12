@@ -16,8 +16,10 @@ import {
   type AgentId,
   type AgentInfo,
   type AuthState,
+  type CoreEndpoint,
   type DoctorReport,
   type Me,
+  type RemoteStatus,
 } from "@fabdesk/protocol";
 import { z } from "zod/v4";
 import { PROJECT_FILES, ToolError, jailPath, toolRoutes, writeAtomic, type ContextFactory, type CoreServices, type ToolRegistry } from "@fabdesk/tools";
@@ -273,17 +275,16 @@ export function createApp(deps: AppDeps): Hono<Env> {
   });
   app.post("/threads", async (c) => {
     const body = CreateThread.parse(await c.req.json());
-    return c.json(
-      deps.store.threads.create({
-        agentId: body.agentId,
-        ...(body.projectId !== undefined ? { projectId: body.projectId } : {}),
-        ...(body.title ? { title: body.title } : {}),
-        ...(body.model ? { model: body.model } : {}),
-        ...(body.parentThreadId ? { parentThreadId: body.parentThreadId } : {}),
-        ...(body.branchFromMessageId ? { branchFromMessageId: body.branchFromMessageId } : {}),
-      }),
-      201,
-    );
+    const t = deps.store.threads.create({
+      agentId: body.agentId,
+      ...(body.projectId !== undefined ? { projectId: body.projectId } : {}),
+      ...(body.title ? { title: body.title } : {}),
+      ...(body.model ? { model: body.model } : {}),
+      ...(body.parentThreadId ? { parentThreadId: body.parentThreadId } : {}),
+      ...(body.branchFromMessageId ? { branchFromMessageId: body.branchFromMessageId } : {}),
+    });
+    deps.bus.emit({ ts: Date.now(), topic: "thread.created", threadId: t.id, projectId: t.projectId });
+    return c.json(t, 201);
   });
   app.get("/threads/:id", (c) => {
     const t = deps.store.threads.get(c.req.param("id"));
@@ -293,13 +294,15 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const body = compact(PatchThread.parse(await c.req.json()));
     const t = deps.store.threads.patch(c.req.param("id"), body);
     if (!t) return c.json({ error: "not found" }, 404);
-    deps.bus.emit({ ts: Date.now(), topic: "thread.updated", threadId: t.id });
+    deps.bus.emit({ ts: Date.now(), topic: "thread.updated", threadId: t.id, ...(body.title !== undefined ? { title: t.title } : {}) });
     return c.json(t);
   });
   app.delete("/threads/:id", (c) => {
     const id = c.req.param("id");
     deps.runs?.abortThread(id);
-    return deps.store.threads.delete(id) ? c.json({ ok: true }) : c.json({ error: "not found" }, 404);
+    if (!deps.store.threads.delete(id)) return c.json({ error: "not found" }, 404);
+    deps.bus.emit({ ts: Date.now(), topic: "thread.deleted", threadId: id });
+    return c.json({ ok: true });
   });
   app.get("/threads/:id/messages", (c) => {
     const t = deps.store.threads.get(c.req.param("id"));
@@ -311,9 +314,14 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const body = SendMessage.parse(await c.req.json());
     if (!deps.runs) return c.json({ error: "agent runs are disabled in this daemon" }, 503);
     const agentId: AgentId = body.agentId ?? t.agentId;
-    if (agentId !== t.agentId || (body.model && body.model !== t.model)) deps.store.threads.patch(t.id, { agentId, ...(body.model ? { model: body.model } : {}) });
+    const switched = agentId !== t.agentId || (!!body.model && body.model !== t.model);
+    if (switched) deps.store.threads.patch(t.id, { agentId, ...(body.model ? { model: body.model } : {}) });
     const user = deps.store.threads.addMessage({ threadId: t.id, role: "user", contentMd: body.content, parts: [{ type: "text", text: body.content }, ...body.attachments.map((a) => ({ type: "image" as const, path: a.path, mime: a.mime }))] });
-    if (t.title === "New chat") deps.store.threads.patch(t.id, { title: body.content.slice(0, 60).replace(/\s+/g, " ") });
+    // The first message names a "New chat". Both of these silent edits are announced so a second
+    // client (the phone, or the desktop when the phone sent the message) does not keep a stale row.
+    const title = t.title === "New chat" ? body.content.trim().replace(/\s+/g, " ").slice(0, 60) : null;
+    if (title !== null) deps.store.threads.patch(t.id, { title });
+    if (switched || title !== null) deps.bus.emit({ ts: Date.now(), topic: "thread.updated", threadId: t.id, ...(title !== null ? { title } : {}) });
     const project = t.projectId ? await deps.projects.handle(t.projectId) : null;
     const { runId, messageId } = await deps.runs.start({ threadId: t.id, project, agentId, ...(body.model ?? t.model ? { model: (body.model ?? t.model) as string } : {}), prompt: body.content, attachments: body.attachments });
     return c.json({ runId, messageId, userMessageId: user.id }, 202);
@@ -488,8 +496,21 @@ export function createApp(deps: AppDeps): Hono<Env> {
     return c.json(next);
   });
 
+  /**
+   * The addresses a phone would be offered, ordered as the pairing URL lists them. Built from the
+   * setting rather than the live listener so Settings can show (and warn about) what enabling
+   * remote access would advertise before it is switched on.
+   */
+  const advertisedEndpoints = (): CoreEndpoint[] => {
+    const remote = deps.store.settings.get().remote;
+    return listenAddresses(remote.port, { bindHost: remote.host, preferred: remote.preferredEndpointKind });
+  };
+
   /** Whether the remote listener is actually bound, and on what — Settings shows the real state. */
-  app.get("/v1/remote", (c) => c.json({ ...deps.remote.state(), setting: deps.store.settings.get().remote }));
+  app.get("/v1/remote", (c) => {
+    const status: RemoteStatus = { ...deps.remote.state(), setting: deps.store.settings.get().remote, endpoints: advertisedEndpoints() };
+    return c.json(status);
+  });
 
   /* ---------- paired devices ---------- */
   const localOnly = (c: Context) => (deps.listener === "local" ? null : c.json({ error: "not found" }, 404));
@@ -498,7 +519,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const denied = localOnly(c);
     if (denied) return denied;
     const remote = deps.store.settings.get().remote;
-    const endpoints = listenAddresses(remote.port);
+    const endpoints = advertisedEndpoints();
     const pending = deps.devices.startPairing();
     return c.json({
       pairingToken: pending.token,

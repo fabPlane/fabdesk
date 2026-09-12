@@ -51,7 +51,7 @@ export {
 } from "@fabdesk/protocol";
 export type { PairingPayload } from "@fabdesk/protocol";
 
-export { handleCoreEvent, appendDelta, appendPart, messagesKey, EVENT_TOPICS } from "./events";
+export { handleCoreEvent, appendDelta, appendPart, messagesKey, patchThreadCaches, EVENT_TOPICS } from "./events";
 export type { HandlerCtx, RouteSink } from "./events";
 
 export { CoreProvider, useCore, useCoreClient, useCoreEvents, nullHost } from "./provider";

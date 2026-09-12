@@ -5,17 +5,27 @@
  * draft/Save footer — a pairing code is live for three minutes, so a half-saved toggle would be
  * confusing, and the listener state the core reports is the truth worth showing.
  */
-import type { CoreEndpoint, Device, PairStartResult } from "@fabdesk/protocol";
-import { REMOTE_DEFAULT_PORT } from "@fabdesk/protocol";
+import type { CoreEndpoint, Device, EndpointKind, PairStartResult, RemoteStatus, Settings } from "@fabdesk/protocol";
+import { ENDPOINT_KIND_ORDER, REMOTE_DEFAULT_PORT } from "@fabdesk/protocol";
 import { useCoreClient, useDevices, usePatchSettings, useRemoteState, useSettings } from "@fabdesk/client-core";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { Badge, Button, Dialog, EmptyState, Input, Spinner } from "../components/ui";
+import { Badge, Button, Dialog, EmptyState, Input, Select, Spinner } from "../components/ui";
 import { qrSvg } from "./qr";
+
+type RemoteSetting = Settings["remote"];
+const DEFAULT_SETTING: RemoteSetting = { enabled: false, host: "0.0.0.0", port: REMOTE_DEFAULT_PORT };
 
 function endpointLabel(e: CoreEndpoint): string {
   return `${e.host}:${e.port}`;
 }
+
+const KIND_LABEL: Record<EndpointKind, string> = {
+  tailscale: "Tailscale",
+  lan: "LAN",
+  other: "Other",
+  loopback: "This machine only",
+};
 
 function relative(iso: string | null): string {
   if (!iso) return "never";
@@ -24,6 +34,15 @@ function relative(iso: string | null): string {
   if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ago`;
   if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)}h ago`;
   return `${Math.floor(ms / 86_400_000)}d ago`;
+}
+
+/** Why a phone would not reach the listener as configured, or null when it plausibly would. */
+export function unreachableReason(setting: Pick<RemoteSetting, "host">, endpoints: CoreEndpoint[]): string | null {
+  if (/^(127\.|localhost$|::1$)/i.test(setting.host))
+    return `Remote access is bound to ${setting.host}, which only this machine can reach. Phones cannot connect — set the host to 0.0.0.0 (all interfaces) or to this machine's tailnet or LAN address.`;
+  if (endpoints.length === 0) return "No network address found — is this machine on a tailnet or LAN? A phone has nothing to connect to.";
+  if (endpoints.every((e) => e.kind === "loopback")) return "The only address on offer is loopback, which phones cannot reach.";
+  return null;
 }
 
 export function RemoteSection() {
@@ -36,11 +55,14 @@ export function RemoteSection() {
   const [pairing, setPairing] = useState<PairStartResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const setting = settings.data?.remote ?? { enabled: false, host: "0.0.0.0", port: REMOTE_DEFAULT_PORT };
+  const setting = settings.data?.remote ?? DEFAULT_SETTING;
   const [port, setPort] = useState(String(setting.port));
   useEffect(() => setPort(String(setting.port)), [setting.port]);
+  // `remoteState()` predates the `endpoints` field; the daemon has sent it since endpoint kinds landed.
+  const status = remote.data as RemoteStatus | undefined;
+  const endpoints = useMemo(() => status?.endpoints ?? [], [status?.endpoints]);
 
-  const applyRemote = (next: Partial<typeof setting>) => {
+  const applyRemote = (next: Partial<RemoteSetting>) => {
     setError(null);
     patch.mutate(
       { remote: { ...setting, ...next } },
@@ -63,6 +85,9 @@ export function RemoteSection() {
   };
 
   const bound = remote.data?.enabled ? `${remote.data.host}:${remote.data.port}` : null;
+  const warning = unreachableReason(setting, endpoints);
+  // Only kinds this machine actually has are offered; picking an absent one would change nothing.
+  const kindsOnOffer = ENDPOINT_KIND_ORDER.filter((k) => k !== "loopback" && endpoints.some((e) => e.kind === k));
 
   return (
     <div className="space-y-4">
@@ -101,6 +126,37 @@ export function RemoteSection() {
             }}
           />
         </label>
+        <label className="grid grid-cols-[180px_1fr] items-center gap-3 py-1.5 text-xs">
+          <span>
+            <span className="font-medium">Preferred address</span>
+            <span className="block text-[11px] text-muted">Listed first in the pairing code</span>
+          </span>
+          <Select
+            value={setting.preferredEndpointKind ?? ""}
+            disabled={patch.isPending || kindsOnOffer.length === 0}
+            onChange={(e) => applyRemote({ preferredEndpointKind: (e.target.value || null) as EndpointKind | null })}
+          >
+            <option value="">Automatic (Tailscale, then LAN)</option>
+            {kindsOnOffer.map((k) => (
+              <option key={k} value={k}>
+                {KIND_LABEL[k]}
+              </option>
+            ))}
+          </Select>
+        </label>
+        <div className="mt-2">
+          <div className="mb-1 text-xs font-medium">Reachable at</div>
+          {remote.isLoading ? (
+            <Spinner />
+          ) : (
+            <EndpointList
+              endpoints={endpoints}
+              onMakeDefault={(kind) => applyRemote({ preferredEndpointKind: kind })}
+              current={setting.preferredEndpointKind}
+            />
+          )}
+        </div>
+        {warning && <div className="mt-2 rounded-md border border-warning/40 bg-warning/10 p-2 text-xs">{warning}</div>}
         {error && <div className="mt-2 text-xs text-danger">{error}</div>}
         {patch.isError && <div className="mt-2 text-xs text-danger">{(patch.error as Error).message}</div>}
       </div>
@@ -142,17 +198,70 @@ export function RemoteSection() {
         )}
       </div>
 
-      {pairing && <PairingDialog pairing={pairing} onClose={closePairing} />}
+      {pairing && <PairingDialog pairing={pairing} setting={setting} onClose={closePairing} />}
     </div>
   );
 }
 
-function PairingDialog({ pairing, onClose }: { pairing: PairStartResult; onClose: () => void }) {
+/**
+ * The default endpoint, then "+N more" folding the rest (grouped by kind). `onMakeDefault` makes
+ * a row's kind the preferred one; it is omitted where the list is only informational.
+ */
+function EndpointList({
+  endpoints,
+  current,
+  onMakeDefault,
+}: {
+  endpoints: CoreEndpoint[];
+  current?: EndpointKind | null | undefined;
+  onMakeDefault?: (kind: EndpointKind) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const primary = endpoints.find((e) => e.default) ?? endpoints[0];
+  if (!primary) return <div className="text-xs text-muted">No network address found.</div>;
+  const rest = endpoints.filter((e) => e !== primary);
+  const row = (e: CoreEndpoint) => (
+    <div key={endpointLabel(e)} className="flex items-center gap-2 py-0.5 text-xs">
+      <span className="font-mono">{endpointLabel(e)}</span>
+      <Badge tone={e.kind === "loopback" ? "warning" : e.default ? "accent" : "neutral"} {...(e.iface ? { title: e.iface } : {})}>
+        {KIND_LABEL[e.kind]}
+      </Badge>
+      {e.default && <span className="text-[11px] text-muted">default</span>}
+      {onMakeDefault && !e.default && e.kind !== "loopback" && e.kind !== current && (
+        <Button size="sm" variant="ghost" onClick={() => onMakeDefault(e.kind)}>
+          Make default
+        </Button>
+      )}
+    </div>
+  );
+  return (
+    <div className="rounded-md bg-panel-2 px-2 py-1">
+      {row(primary)}
+      {rest.length > 0 &&
+        (expanded ? (
+          <>
+            {rest.map(row)}
+            <button type="button" className="py-0.5 text-[11px] text-muted hover:text-fg" onClick={() => setExpanded(false)}>
+              Show fewer
+            </button>
+          </>
+        ) : (
+          <button type="button" className="py-0.5 text-[11px] text-muted hover:text-fg" onClick={() => setExpanded(true)}>
+            +{rest.length} more
+          </button>
+        ))}
+    </div>
+  );
+}
+
+function PairingDialog({ pairing, setting, onClose }: { pairing: PairStartResult; setting: RemoteSetting; onClose: () => void }) {
   const qc = useQueryClient();
   const client = useCoreClient();
   const [remaining, setRemaining] = useState(() => Date.parse(pairing.expiresAt) - Date.now());
   const [paired, setPaired] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   const svg = useMemo(() => qrSvg(pairing.url), [pairing.url]);
+  const warning = unreachableReason(setting, pairing.endpoints);
 
   useEffect(() => {
     const t = setInterval(() => setRemaining(Date.parse(pairing.expiresAt) - Date.now()), 500);
@@ -173,6 +282,16 @@ function PairingDialog({ pairing, onClose }: { pairing: PairStartResult; onClose
   const expired = remaining <= 0;
   const seconds = Math.max(0, Math.ceil(remaining / 1000));
 
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(pairing.url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard denied: the link is still visible in the QR */
+    }
+  };
+
   return (
     <Dialog open onClose={onClose} title="Pair a device" className="w-[460px]">
       {paired ? (
@@ -186,7 +305,8 @@ function PairingDialog({ pairing, onClose }: { pairing: PairStartResult; onClose
       ) : (
         <div className="space-y-3">
           <p className="text-xs text-muted">
-            In the fabPlane app on your phone, tap <span className="font-medium">Scan</span> and point it at this code.
+            In the fabPlane app on your phone, tap <span className="font-medium">Scan</span> and point it at this code,
+            or send it the link.
           </p>
           <div
             className={expired ? "mx-auto w-[220px] opacity-30" : "mx-auto w-[220px]"}
@@ -198,19 +318,15 @@ function PairingDialog({ pairing, onClose }: { pairing: PairStartResult; onClose
             <div className="text-[11px] text-muted">
               {expired ? "This code has expired." : `Expires in ${seconds}s`}
             </div>
+            <Button size="sm" className="mt-2" onClick={() => void copyLink()} disabled={expired}>
+              {copied ? "Copied" : "Copy link"}
+            </Button>
           </div>
-          <div className="rounded-md bg-panel-2 p-2 text-[11px] text-muted">
+          <div className="text-[11px] text-muted">
             <div className="mb-1 font-medium text-fg">Reachable at</div>
-            {pairing.endpoints.length === 0 ? (
-              <div>No network address found — is this machine on a tailnet or LAN?</div>
-            ) : (
-              pairing.endpoints.map((e) => (
-                <div key={endpointLabel(e)} className="font-mono">
-                  {endpointLabel(e)} <span className="not-italic">({e.kind === "tailscale" ? "tailscale" : e.iface})</span>
-                </div>
-              ))
-            )}
+            <EndpointList endpoints={pairing.endpoints} />
           </div>
+          {warning && <div className="rounded-md border border-warning/40 bg-warning/10 p-2 text-xs">{warning}</div>}
         </div>
       )}
     </Dialog>

@@ -1,5 +1,6 @@
 /** Control API DTOs shared by core routes and the renderer client. */
 import { z } from "zod/v4";
+import { CoreEndpoint, EndpointKind } from "./devices";
 import { AgentId, JobStatus, MessagePart, Principal } from "./events";
 
 export const ProjectId = z.string().min(1);
@@ -218,10 +219,23 @@ export const Settings = z.object({
       enabled: z.boolean().default(false),
       host: z.string().default("0.0.0.0"),
       port: z.number().int().min(1).max(65535).default(REMOTE_DEFAULT_PORT),
+      /** Which endpoint kind the pairing QR lists first. Unset (or null) picks tailscale, then LAN, then the rest. */
+      preferredEndpointKind: EndpointKind.nullable().optional(),
     })
     .default({ enabled: false, host: "0.0.0.0", port: REMOTE_DEFAULT_PORT }),
 });
 export type Settings = z.infer<typeof Settings>;
+
+/** `GET /v1/remote`: what the listener is really bound to, the setting behind it, and the addresses a phone would be offered. */
+export const RemoteStatus = z.object({
+  enabled: z.boolean(),
+  host: z.string().optional(),
+  port: z.number().optional(),
+  setting: Settings.shape.remote,
+  /** Ordered as the pairing URL would list them, `default` on the first. Empty when nothing is reachable. */
+  endpoints: z.array(CoreEndpoint),
+});
+export type RemoteStatus = z.infer<typeof RemoteStatus>;
 
 export const Me = z.object({ principal: Principal.nullable(), mode: z.enum(["fabplane", "local"]) });
 export type Me = z.infer<typeof Me>;

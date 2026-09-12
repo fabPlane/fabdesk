@@ -3,7 +3,7 @@ import { Database } from "bun:sqlite";
 import { buildPairingUrl, parsePairingUrl } from "@fabdesk/protocol";
 import { migrate } from "../src/db";
 import { DeviceStore, PAIRING_MAX_ATTEMPTS, PAIRING_TTL_MS, hashToken } from "../src/devices";
-import { isTailscaleAddress, listenAddresses } from "../src/net";
+import { endpointKind, isTailscaleAddress, listenAddresses } from "../src/net";
 
 function store(): DeviceStore {
   const db = new Database(":memory:", { create: true, strict: true });
@@ -112,14 +112,55 @@ describe("listen addresses", () => {
     expect(isTailscaleAddress("100.128.0.1")).toBe(false); // above the /10
     expect(isTailscaleAddress("192.168.1.2")).toBe(false);
 
-    const found = listenAddresses(47820, {
-      en0: [{ address: "192.168.1.24", family: "IPv4", internal: false } as never],
-      lo0: [{ address: "127.0.0.1", family: "IPv4", internal: true } as never],
-      tailscale0: [{ address: "100.101.102.103", family: "IPv4", internal: false } as never],
-      en1: [{ address: "fe80::1", family: "IPv6", internal: false } as never],
-    });
-    expect(found.map((e) => e.host)).toEqual(["100.101.102.103", "192.168.1.24"]);
-    expect(found[0]!.kind).toBe("tailscale");
+    const found = listenAddresses(47820, { interfaces });
+    expect(found.map((e) => e.host)).toEqual(["100.101.102.103", "192.168.1.24", "203.0.113.9"]);
+    expect(found.map((e) => e.kind)).toEqual(["tailscale", "lan", "other"]);
+    expect(found.map((e) => e.default)).toEqual([true, false, false]);
     expect(found.every((e) => e.port === 47820)).toBe(true);
   });
+
+  test("the preferred kind goes first; loopback never does", () => {
+    expect(listenAddresses(1, { interfaces, preferred: "lan" }).map((e) => e.host)).toEqual([
+      "192.168.1.24",
+      "100.101.102.103",
+      "203.0.113.9",
+    ]);
+    expect(listenAddresses(1, { interfaces, preferred: "other" })[0]?.host).toBe("203.0.113.9");
+    // A preference for a kind the machine has none of changes nothing.
+    expect(
+      listenAddresses(1, { interfaces: { en0: interfaces.en0 }, preferred: "tailscale" })[0],
+    ).toMatchObject({
+      host: "192.168.1.24",
+      default: true,
+    });
+    expect(endpointKind("127.0.0.1")).toBe("loopback");
+    expect(endpointKind("10.1.2.3")).toBe("lan");
+    expect(endpointKind("172.20.0.1")).toBe("lan");
+    expect(endpointKind("169.254.1.1")).toBe("lan");
+    expect(endpointKind("8.8.8.8")).toBe("other");
+  });
+
+  test("a specific bind host advertises only itself, and loopback says so", () => {
+    expect(listenAddresses(1, { interfaces, bindHost: "192.168.1.24" })).toEqual([
+      { host: "192.168.1.24", port: 1, kind: "lan", iface: "en0", default: true },
+    ]);
+    expect(listenAddresses(1, { interfaces, bindHost: "127.0.0.1" })).toEqual([
+      { host: "127.0.0.1", port: 1, kind: "loopback", iface: "lo0", default: true },
+    ]);
+    expect(listenAddresses(1, { interfaces, bindHost: "localhost" })[0]?.host).toBe("127.0.0.1");
+    // A bind to an address the machine does not currently have is still advertised — it may
+    // come up later (a VPN), and hiding it would make the QR silently useless.
+    expect(listenAddresses(1, { interfaces, bindHost: "10.9.8.7" })).toEqual([
+      { host: "10.9.8.7", port: 1, kind: "lan", iface: "", default: true },
+    ]);
+    expect(listenAddresses(1, { interfaces, bindHost: "::" }).length).toBe(3);
+  });
 });
+
+const interfaces = {
+  en0: [{ address: "192.168.1.24", family: "IPv4", internal: false } as never],
+  lo0: [{ address: "127.0.0.1", family: "IPv4", internal: true } as never],
+  tailscale0: [{ address: "100.101.102.103", family: "IPv4", internal: false } as never],
+  en1: [{ address: "fe80::1", family: "IPv6", internal: false } as never],
+  en2: [{ address: "203.0.113.9", family: "IPv4", internal: false } as never],
+};
