@@ -44,6 +44,9 @@
       "distribution": "store",
       "android": {
         "buildType": "app-bundle"
+      },
+      "env": {
+        "SENTRY_ENVIRONMENT": "production"
       }
     }
   },

@@ -1,8 +1,9 @@
-# Mobile client (experimental)
+# Mobile client
 
 `apps/mobile` is an Expo app for iOS and Android that attaches to a fabPlane daemon running on your
-computer: your projects and chats, agent runs streaming live, and the board renders. It is
-**experimental** — not in the release pipeline, not on any store, and run from a dev server.
+computer: your projects and chats, agent runs streaming live, and the board renders. It is built
+with EAS, versioned by the release workflow, and reports crashes to Sentry
+([mobile-release.md](mobile-release.md)); it is not yet on a store.
 
 It exists because everything in fabPlane is local. The daemon spawns `claude`, `codex`, KiCad and
 the router as subprocesses on one machine, so the phone is a client of *that machine*, not of
@@ -67,6 +68,8 @@ bun run mobile            # expo start — scan with Expo Go or a dev client
 ```
 
 `bun run mobile:typecheck` and `bun run mobile:test` run the checks CI runs (`.github/workflows/mobile.yml`).
+`apps/mobile/e2e/run.sh` runs the Maestro pairing-and-chat flow against a simulator, and
+`scripts/mobile-screenshots.sh` captures the main screens ([mobile-release.md](mobile-release.md)).
 
 The phone must reach the computer, so put both on the same tailnet (or the same LAN) first.
 
@@ -81,8 +84,9 @@ It does not install `@fabdesk/client-core` or `@fabdesk/protocol` either. Both s
 so `metro.config.js` aliases them to their source and watches those directories — edits in
 `packages/` hot-reload here. `tsconfig.json` mirrors the same two paths for `tsc`.
 
-`scripts/set-version.ts` and `release.yml` do not know about this app, and should not until it is
-more than experimental.
+`scripts/set-version.ts` stamps `app.json` (version and both native build numbers) alongside the
+package.json files, and `release.yml` has a `mobile` job that checks the app and, given an
+`EXPO_TOKEN`, queues an EAS preview build. Details in [mobile-release.md](mobile-release.md).
 
 ## What it shares with the desktop
 
