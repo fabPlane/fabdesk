@@ -12,7 +12,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.tensorfleet.fabdesk.mobile",
+      "bundleIdentifier": "com.fabplane.fabdesk",
       "infoPlist": {
         "NSCameraUsageDescription": "Scanning the pairing code shown by fabPlane on your computer.",
         "NSAppTransportSecurity": {
@@ -21,7 +21,7 @@
         },
         "NSLocalNetworkUsageDescription": "Connecting to fabPlane running on your computer over your local network or tailnet."
       },
-      "appleTeamId": "37TBDB5SQJ"
+      "appleTeamId": "CMNZZ92926"
     },
     "android": {
       "package": "com.tensorfleet.fabdesk.mobile",
