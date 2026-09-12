@@ -1,0 +1,11 @@
+# Sub-flow for a development build: expo-dev-launcher shows its own screen until it is handed a
+# bundle URL. The app scheme with the `expo-development-client` path is how a dev client is told
+# which Metro to load; Metro must already be listening at DEV_CLIENT_URL.
+appId: ${APP_ID}
+---
+- openLink: ${APP_SCHEME}://expo-development-client/?url=${DEV_CLIENT_URL}
+# Whatever the app shows first (Connections on a fresh install, Chats on a paired one) means the
+# JS bundle is up; the pairing link then arrives at a running app.
+- extendedWaitUntil:
+    visible: ".*(Connections|Search chats|Pair|Connect).*"
+    timeout: 120000
