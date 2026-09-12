@@ -9,6 +9,9 @@
  * A phone also sleeps and roams. Coming back to the foreground, or changing network, re-probes
  * every saved address: a different one answering means switching transports, a dead stream on the
  * same one means dialling again now instead of waiting out the backoff.
+ *
+ * The other saved computers get a status too (`useEnvironmentStatus`): a `/health` probe of each
+ * one's addresses every minute, but only while a screen that shows the dots is mounted.
  */
 import {
   CoreProvider,
@@ -31,6 +34,15 @@ import {
   type ReactNode,
 } from "react";
 import { AppState, type AppStateStatus } from "react-native";
+import { create } from "zustand";
+import {
+  STATUS_PROBE_INTERVAL_MS,
+  effectiveStatus,
+  probeDue,
+  probeEnvironments,
+  type EnvironmentStatus,
+  type StatusEntry,
+} from "../lib/environments";
 import {
   isForegroundReturn,
   nextStaleSince,
@@ -84,6 +96,82 @@ const queryClient = new QueryClient({
 /** A re-probe after a foreground return or network change has a short fuse: the user is looking. */
 const REPROBE_TIMEOUT_MS = 2000;
 
+/* ---------- status of every saved computer ---------- */
+
+interface EnvironmentStatusState {
+  statuses: Record<string, StatusEntry>;
+  /** A round is in flight (pull-to-refresh shows its spinner off this). */
+  probing: boolean;
+  /** Probes every saved computer now, coalescing with a round already in flight. */
+  refresh: () => Promise<void>;
+}
+
+let probeRound: Promise<void> | null = null;
+
+/**
+ * Not persisted: a status is a snapshot of the network a minute ago and means nothing after a
+ * relaunch. Probing is driven by `useStatusProbing`, not by the store, so nothing runs while no
+ * screen shows the dots.
+ */
+export const useEnvironmentStatus = create<EnvironmentStatusState>()((set) => ({
+  statuses: {},
+  probing: false,
+  refresh: () => {
+    if (probeRound) return probeRound;
+    set({ probing: true });
+    probeRound = probeEnvironments(useConnections.getState().connections, async (env) => {
+      const found = await findReachable(connectOrder(env), { timeoutMs: REPROBE_TIMEOUT_MS });
+      return found?.baseUrl ?? null;
+    })
+      .then((next) => set((s) => ({ statuses: { ...s.statuses, ...next } })))
+      .finally(() => {
+        probeRound = null;
+        set({ probing: false });
+      });
+    return probeRound;
+  },
+}));
+
+/**
+ * Keeps the statuses fresh while `enabled`: one round on mount unless a recent one exists, then
+ * every `STATUS_PROBE_INTERVAL_MS`. Several screens may want it at once (the switcher sheet over
+ * the Connections screen); a ref count keeps one timer between them.
+ */
+let probingSubscribers = 0;
+let probingTimer: ReturnType<typeof setInterval> | null = null;
+
+export function useStatusProbing(enabled: boolean): void {
+  useEffect(() => {
+    if (!enabled) return;
+    const { refresh } = useEnvironmentStatus.getState();
+    if (probingSubscribers++ === 0) {
+      probingTimer = setInterval(() => void refresh(), STATUS_PROBE_INTERVAL_MS);
+    }
+    const ids = useConnections.getState().connections.map((c) => c.id);
+    if (probeDue(useEnvironmentStatus.getState().statuses, ids, Date.now())) void refresh();
+    return () => {
+      if (--probingSubscribers === 0 && probingTimer) {
+        clearInterval(probingTimer);
+        probingTimer = null;
+      }
+    };
+  }, [enabled]);
+}
+
+/**
+ * The status to show for one saved computer. For the active one the live connection outranks the
+ * probe (an open stream is proof; a failed locate is proof of the opposite).
+ */
+export function useEnvironmentStatusOf(id: string): EnvironmentStatus {
+  const entry = useEnvironmentStatus((s) => s.statuses[id]);
+  const { connection, status, phase } = useConnection();
+  const live =
+    connection?.id === id
+      ? { streamOpen: status === "open", unreachable: phase === "unreachable" }
+      : null;
+  return effectiveStatus(entry, live);
+}
+
 export function CoreConnectionProvider({ children }: { children: ReactNode }) {
   const { connections, activeId, hydrated, noteConnected, noteCoreId } = useConnections();
   const connection = useMemo(
@@ -125,8 +213,17 @@ export function CoreConnectionProvider({ children }: { children: ReactNode }) {
   // Keyed on the connection's id, not the record: the store rewrites the record on every connect
   // (address, `lastConnectedAt`, `coreId`), and none of that should tear the transport down.
   const connectionId = connection?.id ?? null;
+  const previousId = useRef<string | null>(null);
   useEffect(() => {
     if (!hydrated) return;
+    // Switching computers: the query cache is one object shared by every transport, so what it
+    // holds is the other machine's threads. Drop it before the gate lets the screens back in,
+    // rather than letting them flash the wrong list until the refetch lands.
+    if (previousId.current !== null && previousId.current !== connectionId) {
+      queryClient.clear();
+      setHealth(null);
+    }
+    previousId.current = connectionId;
     if (!connection) {
       setPhase("idle");
       setTransport(null);

@@ -50,6 +50,66 @@ Both the pairing addresses and the device token are saved, so a laptop that move
 and a LAN reconnects without re-pairing: `/health` is probed on every known address and the first to
 answer wins.
 
+### Several computers
+
+A phone can be paired with any number of computers; each is a `Connection` with its own device
+token in the keystore, and exactly one is *active*. Chats, projects and runs are per computer —
+switching swaps the transport under the shared provider, and the react-query cache is cleared so
+the new computer's list never flashes the old one's threads. The other computer's token is kept, so
+switching back is instant.
+
+- **Status.** While the Connections screen or the switcher sheet is open, every saved computer's
+  last-known addresses are probed on `/health` (in parallel, 2 s timeout) on arrival and once a
+  minute after; pull down on Connections to probe now. The result is a dot: green *Online*, red
+  *Offline*, grey *Checking…*. It is kept in memory only (`useEnvironmentStatus` in
+  `src/transport/CoreConnection.tsx`) — a status is a snapshot of the network a minute ago and says
+  nothing after a relaunch. For the active computer the live stream outranks the probe.
+- **Switcher.** The Chats header carries a pill with the active computer's name and dot. It opens a
+  sheet listing every computer — status, "last seen" — ordered active first, then online, then by
+  last seen; tap one to switch, *Pair another* at the bottom. The same order and labels are on the
+  Connections screen (`src/lib/environments.ts` is the pure part, with tests).
+- **Last seen** is the later of the last successful connect and the last probe that answered: it
+  is about the computer, not the socket.
+
+### Pairing a browser (hosted web pairing)
+
+The browser client (`packages/ui`, the same React app the desktop runs) can pair with a computer
+too, from a link instead of a QR code:
+
+```
+https://fabplane.com/pair?host=https://<magicdns-name>#token=<pairingToken>
+```
+
+- `host` is the daemon's origin — scheme, host, optional port, nothing after. It travels in the
+  query so the page can read it before doing anything.
+- `token` is the one-time pairing token (`pairingToken` from `POST /v1/devices/pair/start`, the
+  `t=` of the QR payload). It travels in the **fragment**, which browsers never send to the server:
+  fabplane.com's logs, its CDN and any `Referer` see the host but never the secret. The page removes
+  it from the address bar (`history.replaceState`) before doing anything else.
+- **HTTPS only from an HTTPS page.** A browser will not let `https://fabplane.com` fetch
+  `http://100.64.0.1:47820` (mixed content), and reports it as a generic network failure; the page
+  refuses an `http://` host up front with a message saying why. The intended `host` is therefore a
+  Tailscale HTTPS endpoint (`tailscale serve`, MagicDNS name). A plain-`http` page — the Vite dev
+  server — may pair with a plain-`http` daemon, which is how it is tested locally.
+
+What the page does (`packages/ui/src/pair/`): parse the link (`parse.ts`), `POST
+<host>/v1/devices/pair/claim { pairingToken, label: "<Browser> on <OS>", platform: "web" }` straight
+from the browser to the computer (fabplane.com is never in the path), save `{ host, deviceToken,
+coreName, coreId, deviceId, pairedAt }` in `localStorage` under `fabdesk.web-hosts` (one key, a list
+plus the active host), and hand over to the app, which connects with the device token as its bearer
+over the desktop's own `DirectTransport` path. A bare `/pair` — and a boot with no `?core=` and no
+active saved computer — shows the **Computers** page: the saved computers with *Use* / *Remove*;
+inside the running app the same list is `ComputersDialog`, opened from the shell (UserFooter ›
+Computers). Removing a computer there forgets its token in this browser only; revoking is still
+done on the computer under Settings › Remote access, where the browser is listed as a device.
+
+For the fabplane.com site: `/pair` must serve the browser client (`BrowserApp` from `@fabdesk/ui`,
+which gates on `location.pathname === "/pair"` at boot), and nothing on the server needs to read the
+link. The daemon must also accept the site's origin on its remote listener — its origin guard
+(`originAllowed` in `apps/core/src/auth.ts`) currently allows only loopback, `file://` and the
+app's own scheme, so `https://fabplane.com` needs adding to `extraOrigins` (the `pair/claim`
+preflight goes through that guard too).
+
 ### Security
 
 - **A device token can do everything the desktop can.** There is no reduced scope. Revoke one from
