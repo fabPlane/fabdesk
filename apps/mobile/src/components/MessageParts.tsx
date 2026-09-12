@@ -12,6 +12,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import Markdown from "react-native-markdown-display";
 import type { PendingActions } from "../hooks/pending-requests";
 import type { PendingPart } from "../lib/pending-requests";
+import { isQueued } from "../lib/queued-messages";
 import { useTheme, type Theme } from "../theme";
 import { PendingApprovalCard } from "./PendingApprovalCard";
 import { PendingQuestionCard } from "./PendingQuestionCard";
@@ -65,8 +66,17 @@ export function MessageBody({
 
   if (message.role === "user") {
     const images = blocks.filter((b) => b.kind === "image");
+    const queued = isQueued(message);
     return (
-      <View style={{ alignItems: "flex-end", paddingHorizontal: 12, paddingVertical: 5, gap: 6 }}>
+      <View
+        style={{
+          alignItems: "flex-end",
+          paddingHorizontal: 12,
+          paddingVertical: 5,
+          gap: 6,
+          opacity: queued ? 0.55 : 1,
+        }}
+      >
         {images.map((b, i) => (
           <ImagePart key={i} path={b.path} projectId={projectId} align="flex-end" />
         ))}
@@ -77,10 +87,18 @@ export function MessageBody({
             paddingHorizontal: 14,
             paddingVertical: 9,
             maxWidth: "88%",
+            ...(queued
+              ? {
+                  borderColor: t.border,
+                  borderWidth: StyleSheet.hairlineWidth,
+                  borderStyle: "dashed" as const,
+                }
+              : {}),
           }}
         >
           <Text style={{ color: t.fg, fontSize: 15, lineHeight: 21 }}>{message.contentMd}</Text>
         </View>
+        {queued ? <Text style={{ color: t.muted, fontSize: 11 }}>queued</Text> : null}
       </View>
     );
   }

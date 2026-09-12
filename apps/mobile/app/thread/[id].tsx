@@ -9,6 +9,7 @@
 import {
   useDoctor,
   useMessages,
+  useQueueMessage,
   useRunsStore,
   useSettings,
   useThread,
@@ -34,6 +35,7 @@ import { AgentModelPicker } from "@/components/AgentModelPicker";
 import { AttachmentStrip } from "@/components/AttachmentStrip";
 import { MessageBody, PendingCards } from "@/components/MessageParts";
 import { useOptionSheet } from "@/components/OptionSheet";
+import { QueuedMessages } from "@/components/QueuedMessages";
 import { ThreadHeaderButton, useThreadMenu } from "@/components/ThreadHeaderMenu";
 import { Loading, Screen, readable } from "@/components/ui";
 import { useRememberedChoice } from "@/hooks/agent-choice";
@@ -48,6 +50,7 @@ import {
 } from "@/lib/attachments";
 import { formatDuration } from "@/lib/format";
 import { pendingCount } from "@/lib/pending-requests";
+import { composerAction, queuedMessages } from "@/lib/queued-messages";
 import { useKeyboardShortcut } from "@/layout/keyboard";
 import { useTheme } from "@/theme";
 
@@ -125,28 +128,41 @@ export default function ThreadScreen() {
   };
 
   const content = messageContent(draft, attachments.pending);
-  const canSend = !!content && attachmentsSettled(attachments.pending) && !sending;
+  const hasContent = !!content && attachmentsSettled(attachments.pending);
+  const canSend = hasContent && !sending;
+
+  // While a run is live the same draft is queued instead: the daemon holds it and sends it when
+  // the run ends. Either way the composer clears at once and restores on failure.
+  const queue = useQueueMessage();
+  const queued = useMemo(() => queuedMessages(messages.data), [messages.data]);
+  const action = composerAction({ running, hasContent, sending });
 
   const send = async () => {
     if (!canSend || !id) return;
     const text = draft;
     const sent = attachments.pending;
+    const input = { content, attachments: toMessageAttachments(sent) };
     setSending(true);
     setDraft("");
     attachments.clear();
     try {
-      await client.sendMessage(id, { content, attachments: toMessageAttachments(sent) });
+      if (running) await queue.mutateAsync({ threadId: id, input });
+      else await client.sendMessage(id, input);
       await messages.refetch();
     } catch (e) {
       setDraft(text);
       attachments.restore(sent);
-      Alert.alert("Could not send", e instanceof Error ? e.message : String(e));
+      Alert.alert(
+        running ? "Could not queue" : "Could not send",
+        e instanceof Error ? e.message : String(e),
+      );
     } finally {
       setSending(false);
     }
   };
 
-  // ⌘↩ on a hardware keyboard (iPad, the Thor) sends; inert without the native key-command module.
+  // ⌘↩ on a hardware keyboard (iPad, the Thor) sends — or queues, while a run is live; inert
+  // without the native key-command module.
   useKeyboardShortcut("cmd+enter", canSend ? () => void send() : undefined);
 
   const stop = async () => {
@@ -235,6 +251,7 @@ export default function ThreadScreen() {
             ) : null}
           </View>
           <View style={readable}>
+            {id ? <QueuedMessages threadId={id} messages={queued} /> : null}
             <AttachmentStrip items={attachments.pending} onRemove={attachments.remove} />
           </View>
           {attachSheet.sheet}
@@ -283,19 +300,42 @@ export default function ThreadScreen() {
                 paddingBottom: 10,
               }}
             />
+            {action.kind === "queue" ? (
+              // Stop stays reachable while a draft turns the main button into Queue.
+              <Pressable
+                onPress={() => void stop()}
+                accessibilityRole="button"
+                accessibilityLabel="Stop the run"
+                hitSlop={6}
+                style={({ pressed }) => ({
+                  width: 38,
+                  height: 38,
+                  borderRadius: 19,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderColor: t.danger,
+                  borderWidth: 1,
+                  backgroundColor: pressed ? t.panel2 : "transparent",
+                })}
+              >
+                <Text style={{ color: t.danger, fontSize: 12, fontWeight: "700" }}>■</Text>
+              </Pressable>
+            ) : null}
             <Pressable
-              onPress={() => void (running ? stop() : send())}
-              disabled={!running && !canSend}
+              onPress={() => void (action.kind === "stop" ? stop() : send())}
+              disabled={!action.enabled}
+              accessibilityRole="button"
+              accessibilityLabel={action.label}
               style={{
-                backgroundColor: running ? t.danger : t.accent,
-                opacity: !running && !canSend ? 0.4 : 1,
+                backgroundColor: action.kind === "stop" ? t.danger : t.accent,
+                opacity: action.enabled ? 1 : 0.4,
                 borderRadius: 18,
                 paddingHorizontal: 16,
                 paddingVertical: 11,
               }}
             >
               <Text style={{ color: t.accentFg, fontWeight: "700", fontSize: 14 }}>
-                {running ? "Stop" : "Send"}
+                {action.label}
               </Text>
             </Pressable>
           </View>
