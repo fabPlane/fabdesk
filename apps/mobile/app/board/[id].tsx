@@ -9,7 +9,7 @@ import { useLocalSearchParams } from "expo-router";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { StyleSheet, Text, View } from "react-native";
-import { ProjectImage } from "@/components/ProjectImage";
+import { RenderImage } from "@/components/RenderImage";
 import { Screen } from "@/components/ui";
 import { useTheme } from "@/theme";
 
@@ -17,7 +17,8 @@ const MIN_SCALE = 1;
 const MAX_SCALE = 8;
 
 export default function BoardScreen() {
-  const { id, path } = useLocalSearchParams<{ id: string; path: string }>();
+  // `v` is the file's mtime: it keys the image cache, so a re-render is not shown from the old copy.
+  const { id, path, v } = useLocalSearchParams<{ id: string; path: string; v?: string }>();
   const t = useTheme();
   const scale = useSharedValue(1);
   const savedScale = useSharedValue(1);
@@ -88,7 +89,11 @@ export default function BoardScreen() {
     <View style={{ flex: 1, backgroundColor: t.dark ? "#000" : "#fff" }}>
       <GestureDetector gesture={Gesture.Simultaneous(pinch, pan, doubleTap)}>
         <Animated.View style={[StyleSheet.absoluteFill, style]}>
-          <ProjectImage projectId={id} path={path} style={StyleSheet.absoluteFill} />
+          <RenderImage
+            projectId={id}
+            entry={{ path, size: 0, mtime: v ?? "" }}
+            style={StyleSheet.absoluteFill}
+          />
         </Animated.View>
       </GestureDetector>
       <Text

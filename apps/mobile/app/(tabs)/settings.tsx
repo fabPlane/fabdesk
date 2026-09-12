@@ -55,6 +55,11 @@ export default function SettingsScreen() {
               style={{ flex: 1 }}
             />
           </View>
+          <Button
+            title="Jobs on that machine"
+            onPress={() => router.push("/jobs")}
+            style={{ marginTop: 8 }}
+          />
         </Card>
 
         <AgentsCard />

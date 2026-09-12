@@ -3,15 +3,24 @@
  * one action (re-render the board) because that is the thing you actually want while away from
  * the desk.
  */
-import { useProject, useRunTool } from "@fabdesk/client-core";
+import {
+  useDeleteProject,
+  useProject,
+  useProjectJson,
+  useRunTool,
+  useRunsStore,
+} from "@fabdesk/client-core";
 import { Stack, router, useLocalSearchParams } from "expo-router";
 import { useMemo } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { BoardViewerLinks } from "@/components/BoardViewerLinks";
-import { ProjectImage } from "@/components/ProjectImage";
+import { RenderImage } from "@/components/RenderImage";
+import { useStashRender } from "@/components/render-cache";
 import { Badge, Button, Card, Loading, Screen, readable } from "@/components/ui";
+import { normalizeReport, summarize } from "@/lib/drc";
+import { ACTIVE } from "@/lib/jobs";
 import { formatBytes, relativeTime } from "@/lib/format";
-import { hasBoard, preferredRender, renderImages } from "@/lib/renders";
+import { galleryRenders, hasBoard, preferredRender, renderView } from "@/lib/renders";
 import { usePullRefresh } from "@/components/pull-refresh";
 import { useNewChat } from "@/hooks/new-chat";
 import { useTheme } from "@/theme";
@@ -23,26 +32,87 @@ export default function ProjectScreen() {
   const refreshControl = usePullRefresh(project.refetch);
   const newChat = useNewChat();
   const render = useRunTool();
+  const stash = useStashRender(id ?? "");
+  const remove = useDeleteProject();
 
   const preview = useMemo(() => preferredRender(project.data), [project.data]);
-  const renders = useMemo(() => renderImages(project.data), [project.data]);
+  const renders = useMemo(() => galleryRenders(project.data), [project.data]);
+  const recentFiles = useMemo(
+    () =>
+      [...(project.data?.files ?? [])]
+        .sort((a, b) => Date.parse(b.mtime) - Date.parse(a.mtime))
+        .slice(0, 8),
+    [project.data],
+  );
   const board = hasBoard(project.data);
+  // The reports are small and cached per file, so the badge costs two requests the DRC screen
+  // would make anyway.
+  const drc = useProjectJson(id ?? null, "reports/drc.json");
+  const erc = useProjectJson(id ?? null, "reports/erc.json");
+  const checks = useMemo(
+    () => summarize([...normalizeReport(drc.data, "drc"), ...normalizeReport(erc.data, "erc")]),
+    [drc.data, erc.data],
+  );
+  const hasReports = drc.data !== null || erc.data !== null;
+  // Jobs the stream has told us about; enough to know whether "Jobs" is worth a header button.
+  const liveJobs = useRunsStore((s) => s.jobs);
+  const runningJobs = useMemo(
+    () => Object.values(liveJobs).filter((j) => j.projectId === id && ACTIVE.has(j.status)).length,
+    [liveJobs, id],
+  );
 
   if (project.isLoading) return <Loading label="Loading project…" />;
   if (!project.data || !id) return <Screen>{null}</Screen>;
 
-  const rerender = () => {
+  const rerender = async () => {
+    // The daemon overwrites renders/top.png, so the copy to compare against has to be taken now.
+    await stash(renders.find((f) => renderView(f.path) === "top") ?? null);
     // `render_board` is long-running, so the tool route answers with a job id and useRunTool
     // waits on it; the project refetch afterwards is what surfaces the new file.
-    void render
+    await render
       // `callTool` lifts `projectId` out and wraps the rest as the tool's args itself.
       .run("render", { projectId: id, view: "top", width: 1600, height: 1200, quality: "basic" })
       .then(() => project.refetch());
   };
 
+  const confirmDelete = () => {
+    const name = project.data?.name ?? "this project";
+    const run = (purge: boolean) =>
+      remove
+        .mutateAsync({ projectId: id, purge })
+        .then(() => router.back())
+        .catch((e: unknown) =>
+          Alert.alert("Could not delete", e instanceof Error ? e.message : String(e)),
+        );
+    Alert.alert(
+      `Delete ${name}?`,
+      "Forget it in fabPlane and keep the folder on the computer, or delete the folder too. Its chats are removed either way.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Forget, keep files", onPress: () => void run(false) },
+        { text: "Delete files too", style: "destructive", onPress: () => void run(true) },
+      ],
+    );
+  };
+
   return (
     <Screen>
-      <Stack.Screen options={{ title: project.data.name }} />
+      <Stack.Screen
+        options={{
+          title: project.data.name,
+          headerRight: () =>
+            runningJobs > 0 || render.state.status === "running" ? (
+              <Pressable
+                hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel="Jobs"
+                onPress={() => router.push({ pathname: "/jobs", params: { projectId: id } })}
+              >
+                <Text style={{ color: t.accent, fontSize: 15 }}>⟳ {runningJobs || 1} running</Text>
+              </Pressable>
+            ) : null,
+        }}
+      />
       <ScrollView
         contentContainerStyle={{ padding: 14, gap: 14, ...readable }}
         refreshControl={refreshControl}
@@ -61,12 +131,15 @@ export default function ProjectScreen() {
           {preview ? (
             <Pressable
               onPress={() =>
-                router.push({ pathname: "/board/[id]", params: { id, path: preview.path } })
+                router.push({
+                  pathname: "/board/[id]",
+                  params: { id, path: preview.path, v: preview.mtime },
+                })
               }
             >
-              <ProjectImage
+              <RenderImage
                 projectId={id}
-                path={preview.path}
+                entry={preview}
                 style={{
                   width: "100%",
                   aspectRatio: 4 / 3,
@@ -88,10 +161,20 @@ export default function ProjectScreen() {
 
           <Button
             title={render.state.status === "running" ? "Rendering…" : "Render the board"}
-            onPress={rerender}
+            onPress={() => void rerender()}
             disabled={!board || render.state.status === "running"}
             style={{ marginTop: 10 }}
           />
+          {render.state.status === "running" ? (
+            <Pressable
+              accessibilityRole="link"
+              onPress={() => router.push({ pathname: "/jobs", params: { projectId: id } })}
+            >
+              <Text style={{ color: t.accent, fontSize: 12, marginTop: 8, textAlign: "center" }}>
+                Watch or cancel it in Jobs ›
+              </Text>
+            </Pressable>
+          ) : null}
           {render.state.status === "failed" ? (
             <Text style={{ color: t.danger, fontSize: 12, marginTop: 6 }}>
               {render.state.error}
@@ -101,6 +184,37 @@ export default function ProjectScreen() {
 
         <BoardViewerLinks projectId={id} project={project.data} />
 
+        <Card>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push({ pathname: "/drc/[id]", params: { id } })}
+            style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+          >
+            <Text style={{ color: t.fg, fontSize: 15, fontWeight: "600", flex: 1 }}>DRC / ERC</Text>
+            {!hasReports ? (
+              <Badge label="no reports" />
+            ) : checks.total === 0 ? (
+              <Badge label="passes" tone="success" />
+            ) : (
+              <>
+                {checks.errors ? (
+                  <Badge
+                    label={`${checks.errors} error${checks.errors === 1 ? "" : "s"}`}
+                    tone="danger"
+                  />
+                ) : null}
+                {checks.warnings ? (
+                  <Badge
+                    label={`${checks.warnings} warning${checks.warnings === 1 ? "" : "s"}`}
+                    tone="warning"
+                  />
+                ) : null}
+              </>
+            )}
+            <Text style={{ color: t.accent, fontSize: 13 }}>›</Text>
+          </Pressable>
+        </Card>
+
         <Button
           title={newChat.busy ? "Starting…" : "New chat in this project"}
           variant="primary"
@@ -108,25 +222,37 @@ export default function ProjectScreen() {
           onPress={() => void newChat.start(id ?? null)}
         />
 
-        {renders.length > 1 ? (
+        {renders.length > 0 ? (
           <Card>
-            <Text style={{ color: t.fg, fontSize: 15, fontWeight: "600", marginBottom: 8 }}>
-              Renders
-            </Text>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => router.push({ pathname: "/renders/[id]", params: { id } })}
+              style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}
+            >
+              <Text style={{ color: t.fg, fontSize: 15, fontWeight: "600", flex: 1 }}>Renders</Text>
+              <Text style={{ color: t.accent, fontSize: 13 }}>
+                {renders.length} view{renders.length === 1 ? "" : "s"} · gallery ›
+              </Text>
+            </Pressable>
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
               {renders.map((f) => (
                 <Pressable
                   key={f.path}
+                  accessibilityRole="imagebutton"
+                  accessibilityLabel={renderView(f.path)}
                   onPress={() =>
-                    router.push({ pathname: "/board/[id]", params: { id, path: f.path } })
+                    router.push({ pathname: "/renders/[id]", params: { id, path: f.path } })
                   }
                 >
-                  <ProjectImage
+                  <RenderImage
                     projectId={id}
-                    path={f.path}
+                    entry={f}
                     contentFit="cover"
                     style={{ width: 96, height: 72, borderRadius: 6, backgroundColor: t.panel2 }}
                   />
+                  <Text style={{ color: t.muted, fontSize: 10, marginTop: 2, textAlign: "center" }}>
+                    {renderView(f.path)}
+                  </Text>
                 </Pressable>
               ))}
             </View>
@@ -134,18 +260,31 @@ export default function ProjectScreen() {
         ) : null}
 
         <Card>
-          <Text style={{ color: t.fg, fontSize: 15, fontWeight: "600", marginBottom: 8 }}>
-            Files
-          </Text>
-          {project.data.files.slice(0, 40).map((f) => (
-            <View
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push({ pathname: "/files/[id]", params: { id } })}
+            style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}
+          >
+            <Text style={{ color: t.fg, fontSize: 15, fontWeight: "600", flex: 1 }}>Files</Text>
+            <Text style={{ color: t.accent, fontSize: 13 }}>
+              {project.data.files.length} file{project.data.files.length === 1 ? "" : "s"} · browse
+              ›
+            </Text>
+          </Pressable>
+          {recentFiles.map((f) => (
+            <Pressable
               key={f.path}
-              style={{
+              accessibilityRole="button"
+              onPress={() =>
+                router.push({ pathname: "/files/[id]/view", params: { id, path: f.path } })
+              }
+              style={({ pressed }) => ({
                 flexDirection: "row",
-                paddingVertical: 4,
+                paddingVertical: 5,
                 borderBottomColor: t.border,
                 borderBottomWidth: StyleSheet.hairlineWidth,
-              }}
+                opacity: pressed ? 0.6 : 1,
+              })}
             >
               <Text
                 numberOfLines={1}
@@ -154,14 +293,21 @@ export default function ProjectScreen() {
                 {f.path}
               </Text>
               <Text style={{ color: t.muted, fontSize: 12 }}>{formatBytes(f.size)}</Text>
-            </View>
+            </Pressable>
           ))}
-          {project.data.files.length > 40 ? (
-            <Text style={{ color: t.muted, fontSize: 12, marginTop: 6 }}>
-              and {project.data.files.length - 40} more
-            </Text>
-          ) : null}
+          <Text style={{ color: t.muted, fontSize: 11, marginTop: 6 }}>Most recently changed</Text>
         </Card>
+
+        <Button
+          title={remove.isPending ? "Deleting…" : "Delete project"}
+          variant="danger"
+          disabled={remove.isPending}
+          onPress={confirmDelete}
+          style={{ marginTop: 8 }}
+        />
+        <Text style={{ color: t.muted, fontSize: 11, textAlign: "center", marginTop: -6 }}>
+          {project.data.path}
+        </Text>
       </ScrollView>
     </Screen>
   );
