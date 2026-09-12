@@ -32,10 +32,22 @@ The phone uses the WebSocket at `/ws`, not the SSE stream at `/events`: React Na
 2. The daemon mints a one-time pairing token (3 minutes, 5 attempts) and builds a QR payload:
 
    ```
-   fabdesk://pair?v=1&t=<pairingToken>&p=47820&n=<hostname>&h=100.64.0.1&h=192.168.1.24
+   fabdesk://pair?v=1&t=<pairingToken>&p=47820&n=<hostname>&h=100.64.0.1&h=192.168.1.24&k=tailscale&k=lan
    ```
 
-   Every address it believes it is reachable on is listed, tailnet (`100.64.0.0/10`) first.
+   Every address it believes it is reachable on is listed, tailnet (`100.64.0.0/10`) first, with
+   a parallel `k=` list of kinds. When the Tailscale CLI is installed the daemon asks it
+   (`tailscale status --json`) for the tailnet address and MagicDNS name, and if
+   `tailscale serve` fronts the listener (Settings › Remote access › **Tailscale HTTPS › Set up**,
+   or `tailscale serve --bg https:443 http://127.0.0.1:47820` by hand) the name leads the list as
+   an https endpoint, flagged by a parallel `s=` list that only appears when some host is https:
+
+   ```
+   …&h=mac.tail1234.ts.net&h=100.64.0.1&k=tailscale-https&k=tailscale&s=https&s=http
+   ```
+
+   An https host is `https://<name>` on 443 — `p=` applies to the http ones. A phone from before
+   `s=` reads the name as `http://<name>:47820`, which still works over the tailnet.
 3. The phone scans it and `POST /v1/devices/pair/claim`s each address in turn. That route is the one
    unauthenticated route on the daemon besides `/health` — the pairing token *is* the credential —
    and it is one-time.
@@ -53,9 +65,26 @@ answer wins.
 
 - **A device token can do everything the desktop can.** There is no reduced scope. Revoke one from
   Settings › Remote access; it stops working immediately.
-- **There is no TLS.** The intended deployment is a Tailscale tailnet, which already encrypts.
-  Do not port-forward `47820` to the internet.
+- **The listener itself has no TLS.** The intended deployment is a Tailscale tailnet, which
+  already encrypts. Do not port-forward `47820` to the internet. With **Tailscale HTTPS** set up,
+  `tailscale serve` terminates TLS on 443 with a certificate the tailnet issues for the MagicDNS
+  name (the tailnet's HTTPS certificates feature must be on, in the admin console under DNS) and
+  proxies to the listener on loopback — so the listener can even be bound to `127.0.0.1` and
+  still be reachable from the tailnet, over HTTPS only.
 - Remote access is off by default and is never enabled by an upgrade.
+
+### App Transport Security (iOS)
+
+`app.json` carries both `NSAllowsArbitraryLoads` and `NSAllowsLocalNetworking`. The narrow key
+covers plain HTTP to RFC 1918 / link-local addresses (the LAN path); a tailnet address is CGNAT
+space (`100.64.0.0/10`), and ATS exceptions are keyed by domain, not IP, so the wide key is what
+lets the `tailscale` kind connect. The phone tries https candidates first, then its last-known-good
+address, then the rest, so a served MagicDNS name is used whenever it answers.
+
+`NSAllowsArbitraryLoads` can go once every endpoint a daemon advertises is https — that is, once
+`tailscale serve` is required rather than optional for the tailnet path (LAN pairing keeps working
+through `NSAllowsLocalNetworking`). Until then dropping it would break pairing over a bare tailnet
+IP, which is still the common case.
 
 Testing it on a device: [mobile-testing-handoff.md](mobile-testing-handoff.md). What comes next, in phases and per-agent work packages: [mobile-roadmap.md](mobile-roadmap.md) — what is verified, what has never run, and the platform gotchas to expect.
 
