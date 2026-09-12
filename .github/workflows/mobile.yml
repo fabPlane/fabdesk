@@ -114,3 +114,60 @@ jobs:
           EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
         run: eas build --platform all --profile preview --non-interactive --no-wait
         working-directory: apps/mobile
+
+  # Maestro on the iOS simulator (apps/mobile/e2e). A Release simulator build from source, a
+  # daemon with a fake agent, then pair → chats → new chat → send → reply. Opt-in via the
+  # MOBILE_E2E repository variable ("1") because a cold Xcode build is ~20 min of macOS runner.
+  e2e-ios:
+    needs: verify
+    if: ${{ vars.MOBILE_E2E == '1' }}
+    runs-on: blacksmith-6vcpu-macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # e2e/daemon.ts is a real fabdesk-core, so it needs the root install too (no submodules:
+      # the daemon runs with mock services and never touches the KiCad or PCB bridges).
+      - name: Install (root and apps/mobile)
+        run: |
+          bun install --frozen-lockfile
+          bun install --frozen-lockfile --cwd apps/mobile
+
+      - name: Install Maestro
+        run: |
+          curl -Ls https://get.maestro.mobile.dev | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      - name: Boot a simulator
+        id: sim
+        run: |
+          udid=$(xcrun simctl list devices available -j | node -e '
+            const d = JSON.parse(require("fs").readFileSync(0, "utf8")).devices;
+            const all = Object.entries(d).filter(([rt]) => /iOS/.test(rt)).flatMap(([, v]) => v).filter((x) => /iPhone/.test(x.name));
+            console.log(all.at(-1)?.udid ?? "")')
+          test -n "$udid" || { echo "::error::no iPhone simulator on this runner"; exit 1; }
+          xcrun simctl boot "$udid" || true
+          xcrun simctl bootstatus "$udid" -b
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+
+      - name: Pair and chat
+        env:
+          LANG: en_US.UTF-8
+        run: apps/mobile/e2e/run.sh --build --udid ${{ steps.sim.outputs.udid }} --port 47820
+
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maestro-debug
+          path: ~/.maestro/tests
+          if-no-files-found: ignore
