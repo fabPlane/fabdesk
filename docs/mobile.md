@@ -5,7 +5,7 @@ computer: your projects and chats, agent runs streaming live, and the board rend
 **experimental** — not in the release pipeline, not on any store, and run from a dev server.
 
 It exists because everything in fabPlane is local. The daemon spawns `claude`, `codex`, KiCad and
-the router as subprocesses on one machine, so the phone is a client of *that machine*, not of
+the router as subprocesses on one machine, so the phone is a client of _that machine_, not of
 fabplane.com.
 
 ## How it connects
@@ -36,8 +36,9 @@ The phone uses the WebSocket at `/ws`, not the SSE stream at `/events`: React Na
    ```
 
    Every address it believes it is reachable on is listed, tailnet (`100.64.0.0/10`) first.
+
 3. The phone scans it and `POST /v1/devices/pair/claim`s each address in turn. That route is the one
-   unauthenticated route on the daemon besides `/health` — the pairing token *is* the credential —
+   unauthenticated route on the daemon besides `/health` — the pairing token _is_ the credential —
    and it is one-time.
 4. It gets back a device token of its own, kept in the OS keystore (`expo-secure-store`). The daemon
    stores only a SHA-256 digest, in the `devices` table.
@@ -93,19 +94,44 @@ code. A fix to streaming or a new endpoint lands in both clients at once.
 
 ## Screens
 
-| Route | What it is |
-|---|---|
-| `(tabs)/index` | Chats — threads grouped by project, pinned first, a dot for a live run |
-| `(tabs)/projects` | Projects |
-| `(tabs)/settings` | The connection, the core's version, agents detected on that machine |
-| `thread/[id]` | The chat: streaming text, collapsible thinking, folded tool groups, Send/Stop |
-| `project/[id]` | Board preview, renders, files, and a button to re-render the board |
-| `board/[id]` | Full-screen render with pinch, pan and double-tap zoom |
-| `connect/*` | Saved computers, QR scanning, pasting a pairing link |
+| Route             | What it is                                                                    |
+| ----------------- | ----------------------------------------------------------------------------- |
+| `(tabs)/index`    | Chats — threads grouped by project, pinned first, a dot for a live run        |
+| `(tabs)/projects` | Projects                                                                      |
+| `(tabs)/settings` | The connection, the core's version, agents detected on that machine           |
+| `thread/[id]`     | The chat: streaming text, collapsible thinking, folded tool groups, Send/Stop |
+| `project/[id]`    | Board preview, renders, files, and a button to re-render the board            |
+| `board/[id]`      | Full-screen render with pinch, pan and double-tap zoom                        |
+| `connect/*`       | Saved computers, QR scanning, pasting a pairing link                          |
 
-There is no tool-approval UI because there is nothing to approve: agent permissions are a per-agent
-setting applied when the subprocess is spawned (`Settings.agents[id].permissionMode`), so tool calls
-are notifications. The only interactive control over a run is Stop.
+### Supervised mode, approvals and questions
+
+A thread runs in one of two runtime modes (`Thread.runtimeMode`, default from
+`Settings.defaultRuntimeMode`): **full** — tool calls are notifications, Stop is the only
+control — or **supervised** — the agent pauses before anything that writes and asks. The daemon
+decides what pauses (`apps/core/src/supervision.ts`: native shells and file edits always, fabdesk
+tools unless they are read-only or idempotent, reads never) and emits `agent.approval_requested`;
+the desktop and the phone both show a card with Approve / Deny, and `POST
+/threads/:id/approvals/:requestId` resolves it (device tokens are accepted, credited
+`by: "device"`). A request nobody answers in 30 minutes is denied and the run continues. Agents
+that ask the user a question (`AskUserQuestion`) surface as `agent.input_requested` with option
+buttons or a text field. Only Claude Code can run supervised today (`--permission-mode manual`
+plus the daemon's `permission_prompt` MCP tool); Codex/grok/cursor report
+`supportsSupervised: false` and the mode switch is disabled for them.
+
+While a run is live, **Queue** stores a message (`?queue=1`) that the daemon sends when the run
+ends; it shows dimmed in the timeline until then. Slash commands (`/render`, `/route`, `/drc`,
+`/erc`, `/export …`, `/build`) run a tool directly, without the agent, and report into Jobs.
+
+### Notifications
+
+The phone shows a local notification when a run finishes, fails or needs an answer while the app
+is in the background and its socket is still alive. Push — for when the socket is gone — is
+designed in [mobile-notifications.md](mobile-notifications.md): the phone registers an Expo push
+token with each paired daemon (`PUT /v1/devices/me/push`), and the daemon posts to
+fabplane.com's `POST /v1/private/push`, which forwards to Expo. The phone side and the daemon
+side are built; the fabplane.com route and an EAS project (for the push credentials) are what
+remain.
 
 ## Known limits
 
