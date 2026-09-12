@@ -6,6 +6,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AppShell } from "@/layout/AppShell";
 import { NotificationTapHandler } from "@/notifications/NotificationTapHandler";
+import { Observability } from "@/observability";
 import { useConnections } from "@/transport/connections";
 import { useTheme } from "@/theme";
 
@@ -80,6 +81,8 @@ export default function RootLayout() {
           </Stack>
           {/* Notification taps → thread/jobs (docs/mobile-notifications.md §4.3). Renders nothing. */}
           <NotificationTapHandler />
+          {/* Sentry tags + transport-failure events (src/observability.ts). Renders nothing. */}
+          <Observability />
         </AppShell>
       </SafeAreaProvider>
     </GestureHandlerRootView>
