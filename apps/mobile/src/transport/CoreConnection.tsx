@@ -10,16 +10,43 @@
  * every saved address: a different one answering means switching transports, a dead stream on the
  * same one means dialling again now instead of waiting out the backoff.
  */
-import { CoreProvider, DirectTransport, useCore, type CoreEventSubscribe, type SseStatus } from "@fabdesk/client-core";
+import {
+  CoreProvider,
+  DirectTransport,
+  routeFrameHub,
+  useCore,
+  type CoreEventSubscribe,
+  type SseStatus,
+} from "@fabdesk/client-core";
 import { QueryClient, useQueryClient } from "@tanstack/react-query";
 import * as Network from "expo-network";
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { AppState, type AppStateStatus } from "react-native";
-import { isForegroundReturn, nextStaleSince, planAfterReprobe, shouldReprobeOnNetwork } from "../lib/reconnect";
+import {
+  isForegroundReturn,
+  nextStaleSince,
+  planAfterReprobe,
+  shouldReprobeOnNetwork,
+} from "../lib/reconnect";
 import { connectOrder, readToken, useConnections, type Connection } from "./connections";
 import { findReachable, type HealthInfo } from "./connect";
 
-export type ConnectionPhase = "idle" | "locating" | "connecting" | "ready" | "unreachable" | "unauthorized";
+export type ConnectionPhase =
+  | "idle"
+  | "locating"
+  | "connecting"
+  | "ready"
+  | "unreachable"
+  | "unauthorized";
 
 export interface CoreConnectionValue {
   connection: Connection | null;
@@ -57,7 +84,10 @@ const REPROBE_TIMEOUT_MS = 2000;
 
 export function CoreConnectionProvider({ children }: { children: ReactNode }) {
   const { connections, activeId, hydrated, noteConnected } = useConnections();
-  const connection = useMemo(() => connections.find((c) => c.id === activeId) ?? null, [connections, activeId]);
+  const connection = useMemo(
+    () => connections.find((c) => c.id === activeId) ?? null,
+    [connections, activeId],
+  );
 
   const [phase, setPhase] = useState<ConnectionPhase>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -201,7 +231,17 @@ export function CoreConnectionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const offline = useMemo<CoreConnectionValue>(
-    () => ({ connection, phase, status: "closed", staleSince, health, baseUrl: null, authHeaders: {}, error, retry }),
+    () => ({
+      connection,
+      phase,
+      status: "closed",
+      staleSince,
+      health,
+      baseUrl: null,
+      authHeaders: {},
+      error,
+      retry,
+    }),
     [connection, phase, staleSince, health, error, retry],
   );
 
@@ -212,8 +252,15 @@ export function CoreConnectionProvider({ children }: { children: ReactNode }) {
       client={transport.client()}
       queryClient={queryClient}
       subscribe={subscribe}
+      // Live routing frames fan out to whichever cinema screen is open.
+      route={routeFrameHub}
     >
-      <Bridge base={offline} transport={transport} onPhase={setPhase} onStreamStatus={onStreamStatus}>
+      <Bridge
+        base={offline}
+        transport={transport}
+        onPhase={setPhase}
+        onStreamStatus={onStreamStatus}
+      >
         {children}
       </Bridge>
     </CoreProvider>
@@ -228,7 +275,10 @@ export function CoreConnectionProvider({ children }: { children: ReactNode }) {
 function openEvents(
   transport: DirectTransport,
   topics: string[],
-  onEvent: (event: Parameters<Parameters<DirectTransport["openEvents"]>[0]["onEvent"]>[0], id: string) => void,
+  onEvent: (
+    event: Parameters<Parameters<DirectTransport["openEvents"]>[0]["onEvent"]>[0],
+    id: string,
+  ) => void,
   onStatus: (status: SseStatus) => void,
   qc: QueryClient,
   onHealth: (h: HealthInfo) => void,
@@ -281,7 +331,12 @@ function Bridge({
   }, [sseStatus, onPhase, onStreamStatus, qc]);
 
   const value = useMemo<CoreConnectionValue>(
-    () => ({ ...base, status: sseStatus, baseUrl: transport.baseUrl(), authHeaders: transport.authHeaders() }),
+    () => ({
+      ...base,
+      status: sseStatus,
+      baseUrl: transport.baseUrl(),
+      authHeaders: transport.authHeaders(),
+    }),
     [base, sseStatus, transport],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

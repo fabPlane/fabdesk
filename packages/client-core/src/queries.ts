@@ -1,4 +1,10 @@
-import type { Message, OrderVendorId, ProjectSummary, RouteFrameLine, RouteResult } from "@fabdesk/protocol";
+import type {
+  Message,
+  OrderVendorId,
+  ProjectSummary,
+  RouteFrameLine,
+  RouteResult,
+} from "@fabdesk/protocol";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { useCoreClient } from "./provider";
@@ -51,8 +57,10 @@ export function useStartOrder() {
   const client = useCoreClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ projectId, vendor }: { projectId: string; vendor: OrderVendorId }) => client.startOrder(projectId, vendor),
-    onSuccess: (_data, vars) => void qc.invalidateQueries({ queryKey: ["project-order", vars.projectId] }),
+    mutationFn: ({ projectId, vendor }: { projectId: string; vendor: OrderVendorId }) =>
+      client.startOrder(projectId, vendor),
+    onSuccess: (_data, vars) =>
+      void qc.invalidateQueries({ queryKey: ["project-order", vars.projectId] }),
   });
 }
 
@@ -193,7 +201,8 @@ export function useThreadMutations() {
     onSuccess: () => void invalidate(),
   });
   const patch = useMutation({
-    mutationFn: ({ id, patch }: { id: string; patch: PatchThreadInput }) => client.patchThread(id, patch),
+    mutationFn: ({ id, patch }: { id: string; patch: PatchThreadInput }) =>
+      client.patchThread(id, patch),
     onSuccess: () => void invalidate(),
   });
   const remove = useMutation({
@@ -229,9 +238,20 @@ export function useUploadSketch() {
   const client = useCoreClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ projectId, file, name }: { projectId: string; file: UploadFile; name: string }) =>
-      client.uploadSketch(projectId, file as Blob, name),
-    onSuccess: (_data, vars) => void qc.invalidateQueries({ queryKey: ["project", vars.projectId] }),
+    mutationFn: ({
+      projectId,
+      file,
+      name,
+    }: {
+      projectId: string;
+      file: UploadFile;
+      name: string;
+    }) => client.uploadSketch(projectId, file as Blob, name),
+    onSuccess: (_data, vars) =>
+      void qc.invalidateQueries({ queryKey: ["project", vars.projectId] }),
+  });
+}
+
 /** A routing run as `GET /projects/:id/route-runs` and `GET /route/runs/:id` describe it (`RouteRunRecord` in @fabdesk/tools). */
 export interface RouteRunSummary {
   id: string;
@@ -277,7 +297,10 @@ export function useRouteRun(runId: string | null) {
  * cached for good. For a live run, follow `routeFrameHub` and catch up with
  * `client.routeFrames(id, nextFrameSeq(run))`.
  */
-export function useRouteRunFrames(runId: string | null, opts?: { enabled?: boolean; final?: boolean }) {
+export function useRouteRunFrames(
+  runId: string | null,
+  opts?: { enabled?: boolean; final?: boolean },
+) {
   const client = useCoreClient();
   return useQuery<RouteFrameLine[]>({
     queryKey: ["route-run", runId, "frames"],

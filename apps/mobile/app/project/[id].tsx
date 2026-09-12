@@ -7,6 +7,7 @@ import { useProject, useRunTool } from "@fabdesk/client-core";
 import { Stack, router, useLocalSearchParams } from "expo-router";
 import { useMemo } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { BoardViewerLinks } from "@/components/BoardViewerLinks";
 import { ProjectImage } from "@/components/ProjectImage";
 import { Badge, Button, Card, Loading, Screen, readable } from "@/components/ui";
 import { formatBytes, relativeTime } from "@/lib/format";
@@ -97,6 +98,8 @@ export default function ProjectScreen() {
             </Text>
           ) : null}
         </Card>
+
+        <BoardViewerLinks projectId={id} project={project.data} />
 
         <Button
           title={newChat.busy ? "Starting…" : "New chat in this project"}
