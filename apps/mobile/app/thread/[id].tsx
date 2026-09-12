@@ -32,6 +32,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AgentModelPicker } from "@/components/AgentModelPicker";
 import { MessageBody } from "@/components/MessageParts";
+import { ThreadHeaderButton, useThreadMenu } from "@/components/ThreadHeaderMenu";
 import { Loading, Screen, readable } from "@/components/ui";
 import { useRememberedChoice } from "@/hooks/agent-choice";
 import { choicePatch, sameChoice, type AgentChoice } from "@/lib/agent-choice";
@@ -58,6 +59,7 @@ export default function ThreadScreen() {
   const settings = useSettings();
   const { patch } = useThreadMutations();
   const { remember } = useRememberedChoice();
+  const menu = useThreadMenu(thread.data);
   const [pending, setPending] = useState<AgentChoice | null>(null);
   const threadChoice = useMemo<AgentChoice | null>(
     () => (thread.data ? { agentId: thread.data.agentId, model: thread.data.model ?? "" } : null),
@@ -114,7 +116,15 @@ export default function ThreadScreen() {
 
   return (
     <Screen>
-      <Stack.Screen options={{ title: thread.data?.title ?? "Chat" }} />
+      <Stack.Screen
+        options={{
+          title: thread.data?.title ?? "Chat",
+          headerRight: () => (
+            <ThreadHeaderButton onPress={menu.open} disabled={!thread.data || menu.busy} />
+          ),
+        }}
+      />
+      {menu.overlays}
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         // Android is edge-to-edge under Expo SDK 54, so `adjustResize` no longer shrinks the window

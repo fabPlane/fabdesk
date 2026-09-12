@@ -50,6 +50,7 @@ export default function RootLayout() {
                 ),
               }}
             />
+            <Stack.Screen name="archived" options={{ title: "Archived" }} />
           </Stack>
         </CoreConnectionProvider>
       </SafeAreaProvider>

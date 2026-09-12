@@ -97,7 +97,9 @@ export function useOptionSheet(): { show: (spec: SheetSpec) => void; sheet: Reac
                 disabled={o.disabled}
                 onPress={() => {
                   close();
-                  o.onPress();
+                  // Let this modal finish sliding out before a handler opens the next one (the
+                  // rename prompt, the model step); Android shows only one modal at a time.
+                  setTimeout(o.onPress, 250);
                 }}
                 style={({ pressed }) => ({
                   backgroundColor: pressed ? t.panel2 : "transparent",
