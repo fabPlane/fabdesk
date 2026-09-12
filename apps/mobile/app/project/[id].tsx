@@ -27,6 +27,13 @@ export default function ProjectScreen() {
 
   const preview = useMemo(() => preferredRender(project.data), [project.data]);
   const renders = useMemo(() => galleryRenders(project.data), [project.data]);
+  const recentFiles = useMemo(
+    () =>
+      [...(project.data?.files ?? [])]
+        .sort((a, b) => Date.parse(b.mtime) - Date.parse(a.mtime))
+        .slice(0, 8),
+    [project.data],
+  );
   const board = hasBoard(project.data);
 
   if (project.isLoading) return <Loading label="Loading project…" />;
@@ -150,18 +157,31 @@ export default function ProjectScreen() {
         ) : null}
 
         <Card>
-          <Text style={{ color: t.fg, fontSize: 15, fontWeight: "600", marginBottom: 8 }}>
-            Files
-          </Text>
-          {project.data.files.slice(0, 40).map((f) => (
-            <View
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push({ pathname: "/files/[id]", params: { id } })}
+            style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}
+          >
+            <Text style={{ color: t.fg, fontSize: 15, fontWeight: "600", flex: 1 }}>Files</Text>
+            <Text style={{ color: t.accent, fontSize: 13 }}>
+              {project.data.files.length} file{project.data.files.length === 1 ? "" : "s"} · browse
+              ›
+            </Text>
+          </Pressable>
+          {recentFiles.map((f) => (
+            <Pressable
               key={f.path}
-              style={{
+              accessibilityRole="button"
+              onPress={() =>
+                router.push({ pathname: "/files/[id]/view", params: { id, path: f.path } })
+              }
+              style={({ pressed }) => ({
                 flexDirection: "row",
-                paddingVertical: 4,
+                paddingVertical: 5,
                 borderBottomColor: t.border,
                 borderBottomWidth: StyleSheet.hairlineWidth,
-              }}
+                opacity: pressed ? 0.6 : 1,
+              })}
             >
               <Text
                 numberOfLines={1}
@@ -170,13 +190,9 @@ export default function ProjectScreen() {
                 {f.path}
               </Text>
               <Text style={{ color: t.muted, fontSize: 12 }}>{formatBytes(f.size)}</Text>
-            </View>
+            </Pressable>
           ))}
-          {project.data.files.length > 40 ? (
-            <Text style={{ color: t.muted, fontSize: 12, marginTop: 6 }}>
-              and {project.data.files.length - 40} more
-            </Text>
-          ) : null}
+          <Text style={{ color: t.muted, fontSize: 11, marginTop: 6 }}>Most recently changed</Text>
         </Card>
       </ScrollView>
     </Screen>

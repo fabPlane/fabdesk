@@ -38,6 +38,12 @@ export default function RootLayout() {
             <Stack.Screen name="thread/[id]" options={{ title: "Chat" }} />
             <Stack.Screen name="project/[id]" options={{ title: "Project" }} />
             <Stack.Screen name="renders/[id]" options={{ title: "Renders" }} />
+            <Stack.Screen name="files/[id]/index" options={{ title: "Files" }} />
+            <Stack.Screen name="files/[id]/view" options={{ title: "File" }} />
+            <Stack.Screen
+              name="files/[id]/edit"
+              options={{ title: "Edit", presentation: "modal", gestureEnabled: false }}
+            />
             <Stack.Screen
               name="board/[id]"
               options={{
@@ -45,7 +51,12 @@ export default function RootLayout() {
                 presentation: "fullScreenModal",
                 // A full-screen modal cannot be swiped away, so it needs its own way out.
                 headerRight: () => (
-                  <Pressable onPress={() => router.back()} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close">
+                  <Pressable
+                    onPress={() => router.back()}
+                    hitSlop={12}
+                    accessibilityRole="button"
+                    accessibilityLabel="Close"
+                  >
                     <Text style={{ color: t.accent, fontSize: 16 }}>Close</Text>
                   </Pressable>
                 ),
