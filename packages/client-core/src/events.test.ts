@@ -146,3 +146,149 @@ describe("thread lifecycle events", () => {
     expect(qc.getQueryData<Thread>(["thread", "th_1"])?.pinned).toBe(false);
   });
 });
+
+describe("supervised mode events", () => {
+  const setup = () => {
+    const qc = new QueryClient();
+    qc.setQueryData(["thread", "th_1"], {
+      id: "th_1",
+      running: true,
+      pending: { approvals: [], inputs: [] },
+    });
+    qc.setQueryData(messagesKey("th_1"), [
+      { ...base, id: "msg_0", role: "user", runId: null, contentMd: "go" },
+      {
+        ...base,
+        parts: [{ type: "tool_use", id: "t1", name: "Bash", input: { command: "rm -rf build" } }],
+      },
+    ]);
+    return { qc, ctx: { qc, client: {} as CoreClient } };
+  };
+  const assistant = (qc: QueryClient) =>
+    (qc.getQueryData<Message[]>(messagesKey("th_1")) ?? [])[1]!;
+  const requested = {
+    topic: "agent.approval_requested" as const,
+    ts: 1,
+    runId: "run_1",
+    threadId: "th_1",
+    requestId: "apr_1",
+    tool: "Bash",
+    input: { command: "rm -rf build" },
+    summary: "Bash: rm -rf build",
+  };
+
+  test("a request lands on the run's assistant message as a pending part, once", () => {
+    const { qc, ctx } = setup();
+    handleCoreEvent(requested, ctx);
+    handleCoreEvent(requested, ctx);
+    expect(assistant(qc).parts).toEqual([
+      { type: "tool_use", id: "t1", name: "Bash", input: { command: "rm -rf build" } },
+      {
+        type: "approval",
+        requestId: "apr_1",
+        tool: "Bash",
+        input: { command: "rm -rf build" },
+        summary: "Bash: rm -rf build",
+        decision: "pending",
+      },
+    ]);
+    // The user message is not the run's and stays untouched; the detail (with `pending`) is stale.
+    expect((qc.getQueryData<Message[]>(messagesKey("th_1")) ?? [])[0]!.parts).toEqual([]);
+    expect(qc.getQueryState(["thread", "th_1"])?.isInvalidated).toBe(true);
+  });
+
+  test("a decision patches the part in place", () => {
+    const { qc, ctx } = setup();
+    handleCoreEvent(requested, ctx);
+    handleCoreEvent(
+      {
+        topic: "agent.approval_resolved",
+        ts: 2,
+        runId: "run_1",
+        threadId: "th_1",
+        requestId: "apr_1",
+        decision: "deny",
+        by: "device",
+      },
+      ctx,
+    );
+    expect(assistant(qc).parts[1]).toMatchObject({
+      type: "approval",
+      requestId: "apr_1",
+      decision: "deny",
+    });
+    expect(assistant(qc).parts).toHaveLength(2);
+    // A decision for a request this cache never saw is a no-op, not a crash.
+    handleCoreEvent(
+      {
+        topic: "agent.approval_resolved",
+        ts: 3,
+        runId: "run_1",
+        threadId: "th_1",
+        requestId: "apr_9",
+        decision: "approve",
+        by: "desktop",
+      },
+      ctx,
+    );
+    expect(assistant(qc).parts).toHaveLength(2);
+  });
+
+  test("questions: options are kept, the answer fills in", () => {
+    const { qc, ctx } = setup();
+    handleCoreEvent(
+      {
+        topic: "agent.input_requested",
+        ts: 1,
+        runId: "run_1",
+        threadId: "th_1",
+        requestId: "ask_1",
+        question: "Layers?",
+        options: ["2", "4"],
+      },
+      ctx,
+    );
+    handleCoreEvent(
+      {
+        topic: "agent.input_requested",
+        ts: 1,
+        runId: "run_1",
+        threadId: "th_1",
+        requestId: "ask_2",
+        question: "Name?",
+      },
+      ctx,
+    );
+    expect(assistant(qc).parts.slice(1)).toEqual([
+      {
+        type: "question",
+        requestId: "ask_1",
+        question: "Layers?",
+        options: ["2", "4"],
+        answer: null,
+      },
+      { type: "question", requestId: "ask_2", question: "Name?", answer: null },
+    ]);
+    handleCoreEvent(
+      {
+        topic: "agent.input_resolved",
+        ts: 2,
+        runId: "run_1",
+        threadId: "th_1",
+        requestId: "ask_1",
+        answer: "4",
+      },
+      ctx,
+    );
+    expect(assistant(qc).parts[1]).toMatchObject({ type: "question", answer: "4" });
+    expect(assistant(qc).parts[2]).toMatchObject({ type: "question", answer: null });
+    expect(qc.getQueryState(["thread", "th_1"])?.isInvalidated).toBe(true);
+  });
+
+  test("a request for a thread that is not cached is harmless", () => {
+    const { qc, ctx } = setup();
+    handleCoreEvent({ ...requested, threadId: "th_other" }, ctx);
+    expect(assistant(qc).parts).toHaveLength(1);
+    expect(qc.getQueryData<Message[]>(messagesKey("th_other"))).toEqual([]);
+  });
+});

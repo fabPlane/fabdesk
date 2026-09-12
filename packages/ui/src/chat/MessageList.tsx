@@ -9,6 +9,7 @@ import { cn, formatRelative } from "../util";
 import { Markdown } from "./Markdown";
 import { ProjectImage } from "./ProjectImage";
 import { ThinkingBlock } from "./ThinkingBlock";
+import { PendingApprovalCard, PendingQuestionCard } from "./PendingRequestCard";
 import { extractImages, ToolCallCard } from "./ToolCallCard";
 
 type ToolResult = Extract<MessagePart, { type: "tool_result" }>;
@@ -129,6 +130,12 @@ export function renderParts(m: Message, streaming: boolean): ReactNode[] {
       case "image":
         out.push(<ImagePart key={i} path={p.path} />);
         break;
+      case "approval":
+        out.push(<PendingApprovalCard key={p.requestId} threadId={m.threadId} part={p} />);
+        break;
+      case "question":
+        out.push(<PendingQuestionCard key={p.requestId} threadId={m.threadId} part={p} />);
+        break;
       default:
         break;
     }
@@ -157,6 +164,7 @@ export function MessageBubble({ message, streaming }: { message: Message; stream
         )}
       >
         {isUser ? message.contentMd : body}
+        {message.status === "queued" && <div className="mt-1 text-right text-[10px] uppercase tracking-wide text-muted">Queued · sends when the run ends</div>}
         {!isUser && streaming && body.length === 0 && (
           <div className="flex items-center gap-2 text-xs text-muted">
             <Spinner /> waiting for the agent...

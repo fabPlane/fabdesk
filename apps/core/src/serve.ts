@@ -2,7 +2,14 @@
 import { chmod, mkdir, rename, writeFile, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import type { DaemonHandshake, DoctorReport, ReadyLine } from "@fabdesk/protocol";
-import { ToolError, createRegistry, toolsMarkdown, type CoreServices, type ProjectHandle, type ToolRegistry } from "@fabdesk/tools";
+import {
+  ToolError,
+  createRegistry,
+  toolsMarkdown,
+  type CoreServices,
+  type ProjectHandle,
+  type ToolRegistry,
+} from "@fabdesk/tools";
 import type { AgentId } from "@fabdesk/protocol";
 import { AgentRunManager, type AgentAdapterLike } from "./agent-runs";
 import { TokenSet } from "./auth";
@@ -22,7 +29,14 @@ import { McpSessionManager } from "./mcp-sessions";
 import { machineName } from "./net";
 import { Notifier } from "./notifier";
 import { ProjectStore } from "./projects";
-import { applyErrorReporting, captureCoreException, closeSentry, runSentryTest, sentryUserFromAuth, setSentryUser } from "./sentry";
+import {
+  applyErrorReporting,
+  captureCoreException,
+  closeSentry,
+  runSentryTest,
+  sentryUserFromAuth,
+  setSentryUser,
+} from "./sentry";
 
 export type ServeOptions = {
   port?: number;
@@ -32,7 +46,13 @@ export type ServeOptions = {
   localAuth?: boolean;
   dataDir?: string;
   /** Tests: inject services/adapters and skip the ReadyLine. */
-  services?: (deps: { config: CoreConfig; projects: ProjectStore; bus: EventBus; store: Store; auth: AuthFacade }) => Promise<CoreServices> | CoreServices;
+  services?: (deps: {
+    config: CoreConfig;
+    projects: ProjectStore;
+    bus: EventBus;
+    store: Store;
+    auth: AuthFacade;
+  }) => Promise<CoreServices> | CoreServices;
   adapters?: Partial<Record<AgentId, AgentAdapterLike>>;
   doctor?: () => Promise<DoctorReport>;
   quiet?: boolean;
@@ -41,6 +61,8 @@ export type ServeOptions = {
   noHandshake?: boolean;
   /** Tests: capture the Notifier's outbound `POST /v1/private/push` instead of reaching fabplane.com. */
   notifierFetch?: typeof fetch;
+  /** Tests: shorten the 30-minute supervised-mode approval timeout. */
+  approvalTimeoutMs?: number;
 };
 
 export type Daemon = {
@@ -74,7 +96,8 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   const stale = store.jobs.failStale();
   if (stale) logger.info("failed stale jobs from previous run", { count: stale });
   const staleRuns = store.runs.failStale();
-  if (staleRuns.length) logger.info("failed stale agent runs from previous run", { threads: staleRuns });
+  if (staleRuns.length)
+    logger.info("failed stale agent runs from previous run", { threads: staleRuns });
   const tokens = new TokenSet(config.token);
   const devices = new DeviceStore(store.db);
   tokens.setDeviceLookup((token) => {
@@ -90,20 +113,31 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       captureCoreException(e, { "job.kind": job.kind, "job.class": job.jobClass });
     },
   });
-  const projects = new ProjectStore(store.projects, config.projectsDir, (e) => bus.emit(e), { watch: opts.watchProjects ?? true });
+  const projects = new ProjectStore(store.projects, config.projectsDir, (e) => bus.emit(e), {
+    watch: opts.watchProjects ?? true,
+  });
   await projects.init();
-  const auth = await createAuth({ mode: config.authMode, channel: config.channel, home: config.home, apiOrigin: config.apiOrigin, emit: (e) => bus.emit(e) });
+  const auth = await createAuth({
+    mode: config.authMode,
+    channel: config.channel,
+    home: config.home,
+    apiOrigin: config.apiOrigin,
+    emit: (e) => bus.emit(e),
+  });
   if (auth.mode === "local") logger.warn("running in LOCAL auth mode");
   // Sentry user = principal id + handle (never email) while signed in; cleared on logout.
   setSentryUser(sentryUserFromAuth(auth.state()));
   const unsubscribeAuth = bus.subscribe(["auth.state"], (events) => {
-    for (const ev of events) if (ev.event.topic === "auth.state") setSentryUser(sentryUserFromAuth(ev.event.state));
+    for (const ev of events)
+      if (ev.event.topic === "auth.state") setSentryUser(sentryUserFromAuth(ev.event.state));
   });
 
   const services: CoreServices =
     opts.services !== undefined
       ? await opts.services({ config, projects, bus, store, auth })
-      : await (await import("./services")).createServices({
+      : await (
+          await import("./services")
+        ).createServices({
           version: config.version,
           channel: config.channel,
           settings: () => store.settings.get(),
@@ -118,7 +152,15 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
 
   const registry = createRegistry();
   const ctxFactory = createContextFactory({ services, projects, tokens });
-  const mcp = new McpSessionManager({ registry, ctxFactory, version: config.version });
+  const mcp = new McpSessionManager({
+    registry,
+    ctxFactory,
+    version: config.version,
+    permissionPrompt: {
+      enabledFor: (token) => runs.isSupervisedRunToken(token),
+      handle: (token, req) => runs.permissionPrompt(token, req),
+    },
+  });
 
   const adapters = opts.adapters ?? (await loadAdapters());
   let mcpUrl = "";
@@ -132,9 +174,16 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     adapters,
     settings: () => store.settings.get(),
     workspaceDir: join(config.home, "workspace"),
+    // Only fabdesk's own tools have annotations the classifier trusts; another server's tool is a write.
+    annotationsFor: (tool, server) =>
+      server === null || server === "fabdesk" ? registry.get(tool)?.annotations : undefined,
+    resolveProject: (id) => projects.handle(id),
+    ...(opts.approvalTimeoutMs !== undefined ? { approvalTimeoutMs: opts.approvalTimeoutMs } : {}),
     prepareProject: async (project: ProjectHandle) => {
       const agents = await import("@fabdesk/agents");
-      const sketches = (await projects.listFiles(join(project.dir, "sketches"))).filter((f) => /\.(png|jpe?g)$/i.test(f.path)).map((f) => join(project.dir, "sketches", f.path));
+      const sketches = (await projects.listFiles(join(project.dir, "sketches")))
+        .filter((f) => /\.(png|jpe?g)$/i.test(f.path))
+        .map((f) => join(project.dir, "sketches", f.path));
       const board = project.manifest().board;
       await agents.writeAgentDocs(project.dir, {
         projectName: project.name,
@@ -155,7 +204,9 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   const closed = new Promise<string>((r) => (resolveClosed = r));
   let closing = false;
 
-  const doctor = opts.doctor ?? (async () => (await import("./doctor")).runDoctor({ config, settings: store.settings.get() }));
+  const doctor =
+    opts.doctor ??
+    (async () => (await import("./doctor")).runDoctor({ config, settings: store.settings.get() }));
   const remote = new RemoteListener({ emit: (e) => bus.emit(e) });
 
   // Devices with an open event socket (refcounted: a phone may hold one per listener while it
@@ -210,13 +261,24 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       const url = new URL(req.url);
       if (url.pathname === "/ws" && req.headers.get("upgrade")?.toLowerCase() === "websocket") {
         const origin = req.headers.get("origin");
-        const allowed = scope === "local" ? originAllowedLocal(origin) : originAllowedRemote(origin, url.host);
+        const allowed =
+          scope === "local" ? originAllowedLocal(origin) : originAllowedRemote(origin, url.host);
         if (!allowed) return new Response("forbidden origin", { status: 403 });
-        const token = url.searchParams.get("token") ?? req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? null;
+        const token =
+          url.searchParams.get("token") ??
+          req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ??
+          null;
         const info = tokens.lookup(token);
         if (!info) return new Response("unauthorized", { status: 401 });
-        const patterns = (url.searchParams.get("topics") ?? "*").split(",").map((s) => s.trim()).filter(Boolean);
-        const data: WsData = { patterns: patterns.length ? patterns : ["*"], unsubscribe: null, deviceId: info.kind === "device" ? (info.deviceId ?? null) : null };
+        const patterns = (url.searchParams.get("topics") ?? "*")
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
+        const data: WsData = {
+          patterns: patterns.length ? patterns : ["*"],
+          unsubscribe: null,
+          deviceId: info.kind === "device" ? (info.deviceId ?? null) : null,
+        };
         if (srv.upgrade(req, { data })) return undefined;
         return new Response("upgrade failed", { status: 400 });
       }
@@ -225,7 +287,8 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
 
   const websocket: Bun.WebSocketHandler<WsData> = {
     open(ws) {
-      if (ws.data.deviceId) liveDevices.set(ws.data.deviceId, (liveDevices.get(ws.data.deviceId) ?? 0) + 1);
+      if (ws.data.deviceId)
+        liveDevices.set(ws.data.deviceId, (liveDevices.get(ws.data.deviceId) ?? 0) + 1);
       ws.data.unsubscribe = bus.subscribe(ws.data.patterns, (events) => {
         for (const ev of events) ws.send(JSON.stringify({ id: ev.id, event: ev.event }));
       });
@@ -236,7 +299,9 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
         if (Array.isArray(msg.subscribe)) {
           ws.data.unsubscribe?.();
           ws.data.patterns = msg.subscribe.length ? msg.subscribe : ["*"];
-          if (typeof msg.lastEventId === "number") for (const ev of bus.replay(msg.lastEventId, ws.data.patterns)) ws.send(JSON.stringify({ id: ev.id, event: ev.event }));
+          if (typeof msg.lastEventId === "number")
+            for (const ev of bus.replay(msg.lastEventId, ws.data.patterns))
+              ws.send(JSON.stringify({ id: ev.id, event: ev.event }));
           ws.data.unsubscribe = bus.subscribe(ws.data.patterns, (events) => {
             for (const ev of events) ws.send(JSON.stringify({ id: ev.id, event: ev.event }));
           });
@@ -270,13 +335,34 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   const port = server.port ?? config.port;
   const url = `http://${config.host}:${port}`;
   mcpUrl = `${url}/mcp`;
-  mcp.allowedHosts = [`${config.host}:${port}`, `localhost:${port}`, `127.0.0.1:${port}`, `[::1]:${port}`];
+  mcp.allowedHosts = [
+    `${config.host}:${port}`,
+    `localhost:${port}`,
+    `127.0.0.1:${port}`,
+    `[::1]:${port}`,
+  ];
 
-  if (!opts.noHandshake) await writeHandshake(config.handshakePath, { version: config.version, pid: process.pid, port, host: config.host, token: config.token, startedAt: new Date(startedAt).toISOString(), channel: config.channel, authMode: auth.mode });
+  if (!opts.noHandshake)
+    await writeHandshake(config.handshakePath, {
+      version: config.version,
+      pid: process.pid,
+      port,
+      host: config.host,
+      token: config.token,
+      startedAt: new Date(startedAt).toISOString(),
+      channel: config.channel,
+      authMode: auth.mode,
+    });
   const ready: ReadyLine = { ok: true, port, pid: process.pid, version: config.version };
   if (!opts.quiet) process.stdout.write(JSON.stringify(ready) + "\n");
   void runSentryTest();
-  logger.info("fabdesk-core listening", { url, channel: config.channel, authMode: auth.mode, home: config.home, projects: config.projectsDir });
+  logger.info("fabdesk-core listening", {
+    url,
+    channel: config.channel,
+    authMode: auth.mode,
+    home: config.home,
+    projects: config.projectsDir,
+  });
 
   // Parent watchdog: exit 30 s after the parent disappears unless an MCP session is active or keepCoreRunning.
   let watchdog: ReturnType<typeof setInterval> | null = null;
@@ -290,8 +376,12 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       }
       parentGoneSince ??= Date.now();
       // A session counts as "active" only with traffic in the last 10 minutes (stale sessions must not pin the daemon).
-      const keep = store.settings.get().keepCoreRunning || mcp.activeCount({ withinMs: 10 * 60_000 }) > 0 || runs.activeCount() > 0;
-      if (!keep && Date.now() - parentGoneSince > 30_000) void daemon.close("parent process exited");
+      const keep =
+        store.settings.get().keepCoreRunning ||
+        mcp.activeCount({ withinMs: 10 * 60_000 }) > 0 ||
+        runs.activeCount() > 0;
+      if (!keep && Date.now() - parentGoneSince > 30_000)
+        void daemon.close("parent process exited");
     }, 5000);
   }
 
@@ -353,7 +443,12 @@ function originAllowedLocal(origin: string | null): boolean {
   if (!origin) return true;
   try {
     const u = new URL(origin);
-    return u.hostname === "localhost" || u.hostname === "127.0.0.1" || u.protocol === "file:" || u.protocol === "app:";
+    return (
+      u.hostname === "localhost" ||
+      u.hostname === "127.0.0.1" ||
+      u.protocol === "file:" ||
+      u.protocol === "app:"
+    );
   } catch {
     return origin === "null" || origin.startsWith("file://");
   }

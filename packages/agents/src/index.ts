@@ -11,10 +11,12 @@ export type {
   AgentEvent,
   AgentPermission,
   AgentRun,
+  AgentRuntimeMode,
   AgentSession,
+  AgentSupervisor,
   DetectResult,
 } from "./types";
-export { MCP_SERVER_NAME, TOKEN_ENV } from "./types";
+export { MCP_SERVER_NAME, PERMISSION_PROMPT_TOOL, TOKEN_ENV } from "./types";
 export { readJsonl, parseJsonlLine } from "./jsonl";
 export { runAgentProcess, killTree } from "./process";
 export { detectBinary, resolveBinary, readVersion } from "./detect";
@@ -64,6 +66,7 @@ export async function detectAgents(settings?: Settings): Promise<AgentInfo[]> {
         ...(result.path ? { path: result.path } : {}),
         installHint: adapter.installHint,
         models: adapter.models(),
+        supportsSupervised: adapter.supportsSupervised,
       };
     }),
   );

@@ -102,6 +102,34 @@ describe("claude adapter", () => {
     expect(claudeArgs(session({ permission: "auto" }), "claude")).toContain("auto");
     expect(claudeMcpConfig("http://x/mcp")).not.toContain(TOKEN);
   });
+
+  test("supervised: manual mode, the daemon's prompt tool, and only reads pre-allowed", () => {
+    const args = claudeArgs(
+      session({
+        runtimeMode: "supervised",
+        permission: "bypass",
+        extraAllowedTools: ["Bash(git status)"],
+      }),
+      "claude",
+    );
+    // The permission mode from Settings is ignored: bypass would skip the prompt tool entirely.
+    expect(
+      args.slice(args.indexOf("--permission-mode"), args.indexOf("--permission-mode") + 2),
+    ).toEqual(["--permission-mode", "manual"]);
+    expect(args.slice(args.indexOf("--permission-prompt-tool"))).toEqual([
+      "--permission-prompt-tool",
+      "mcp__fabdesk__permission_prompt",
+      "--allowedTools",
+      "Read",
+      "Glob",
+      "Grep",
+      "Bash(git status)",
+    ]);
+    expect(args).not.toContain("mcp__fabdesk__*");
+    expect(args).not.toContain("Write");
+    // Full mode is unchanged.
+    expect(claudeArgs(session(), "claude")).not.toContain("--permission-prompt-tool");
+  });
 });
 
 describe("codex adapter", () => {
@@ -137,7 +165,9 @@ describe("codex adapter", () => {
   });
 
   test("auto-reviews approvals in both sandboxed permission modes", () => {
-    expect(codexArgs(session({ permission: "acceptEdits" }), "codex")).toContain("--approve-for-me");
+    expect(codexArgs(session({ permission: "acceptEdits" }), "codex")).toContain(
+      "--approve-for-me",
+    );
     expect(codexArgs(session({ permission: "auto" }), "codex")).toContain("--approve-for-me");
   });
 

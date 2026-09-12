@@ -11,6 +11,8 @@ import {
   OpenCatalogIndex,
   OrderVendorId,
   PatchThread,
+  ResolveApproval,
+  ResolveInput,
   SendMessage,
   Settings,
   StartOrder,
@@ -26,7 +28,16 @@ import {
   type RemoteStatus,
 } from "@fabdesk/protocol";
 import { z } from "zod/v4";
-import { PROJECT_FILES, ToolError, jailPath, toolRoutes, writeAtomic, type ContextFactory, type CoreServices, type ToolRegistry } from "@fabdesk/tools";
+import {
+  PROJECT_FILES,
+  ToolError,
+  jailPath,
+  toolRoutes,
+  writeAtomic,
+  type ContextFactory,
+  type CoreServices,
+  type ToolRegistry,
+} from "@fabdesk/tools";
 import { extractToken, originAllowed, type TokenSet } from "../auth";
 import type { AuthFacade } from "../auth-facade";
 import type { EventBus } from "../bus";
@@ -100,10 +111,20 @@ export function createApp(deps: AppDeps): Hono<Env> {
 
   app.onError((err, c) => {
     if (err instanceof ToolError) {
-      const status = err.code === "invalid_args" ? 400 : err.code === "not_found" ? 404 : err.code === "precondition" ? 412 : err.code === "unavailable" ? 503 : 500;
+      const status =
+        err.code === "invalid_args"
+          ? 400
+          : err.code === "not_found"
+            ? 404
+            : err.code === "precondition"
+              ? 412
+              : err.code === "unavailable"
+                ? 503
+                : 500;
       return c.json({ error: err.message, code: err.code }, status);
     }
-    if (err instanceof z.ZodError) return c.json({ error: z.prettifyError(err), code: "invalid_args" }, 400);
+    if (err instanceof z.ZodError)
+      return c.json({ error: z.prettifyError(err), code: "invalid_args" }, 400);
     logger.error("unhandled", { path: c.req.path, error: errMsg(err) });
     // Route pattern, not the concrete path: file routes carry project-relative names.
     captureCoreException(err, { "http.method": c.req.method, "http.route": c.req.routePath });
@@ -115,14 +136,21 @@ export function createApp(deps: AppDeps): Hono<Env> {
   // and their preflights are answered before the bearer check since browsers send them without auth.
   app.use("*", async (c, next) => {
     const origin = c.req.header("origin") ?? null;
-    if (!originAllowed(origin, deps.extraOrigins ?? [])) return c.json({ error: "forbidden origin" }, 403);
+    if (!originAllowed(origin, deps.extraOrigins ?? []))
+      return c.json({ error: "forbidden origin" }, 403);
     const applyCors = (headers: Headers) => {
       if (origin === null || origin === "") return;
       headers.set("Access-Control-Allow-Origin", origin);
       headers.set("Vary", "Origin");
       headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
-      headers.set("Access-Control-Allow-Headers", "authorization, content-type, last-event-id, mcp-session-id, mcp-protocol-version");
-      headers.set("Access-Control-Expose-Headers", "mcp-session-id, content-disposition, content-length");
+      headers.set(
+        "Access-Control-Allow-Headers",
+        "authorization, content-type, last-event-id, mcp-session-id, mcp-protocol-version",
+      );
+      headers.set(
+        "Access-Control-Expose-Headers",
+        "mcp-session-id, content-disposition, content-length",
+      );
       headers.set("Access-Control-Max-Age", "600");
     };
     if (c.req.method === "OPTIONS") {
@@ -157,19 +185,36 @@ export function createApp(deps: AppDeps): Hono<Env> {
     } catch (e) {
       return c.json({ error: errMsg(e), code: "unauthorized" }, 401);
     }
-    deps.bus.emit({ topic: "device.paired", ts: Date.now(), deviceId: issued.device.id, label: issued.device.label });
-    logger.info("device paired", { id: issued.device.id, label: issued.device.label, platform: issued.device.platform });
+    deps.bus.emit({
+      topic: "device.paired",
+      ts: Date.now(),
+      deviceId: issued.device.id,
+      label: issued.device.label,
+    });
+    logger.info("device paired", {
+      id: issued.device.id,
+      label: issued.device.label,
+      platform: issued.device.platform,
+    });
     return c.json({
       deviceToken: issued.token,
       device: issued.device,
-      core: { name: machineName(), version: deps.config.version, platform: process.platform, coreId: deps.store.settings.coreId() },
+      core: {
+        name: machineName(),
+        version: deps.config.version,
+        platform: process.platform,
+        coreId: deps.store.settings.coreId(),
+      },
     } satisfies PairClaimResult);
   });
 
   // Bearer auth for everything else (`?token=` allowed for SSE / WS which cannot set headers).
   app.use("*", async (c, next) => {
     if (c.req.path === "/health") return next();
-    const allowQuery = c.req.path === "/events" || c.req.path === "/ws" || c.req.path.startsWith("/opensource/preview/");
+    const allowQuery =
+      c.req.path === "/events" ||
+      c.req.path === "/ws" ||
+      c.req.path.startsWith("/opensource/preview/");
     const token = extractToken(c.req.raw, { allowQuery });
     const info = deps.tokens.lookup(token);
     if (!info) return c.json({ error: "unauthorized" }, 401);
@@ -184,7 +229,8 @@ export function createApp(deps: AppDeps): Hono<Env> {
   app.get("/events", (c) => {
     const topics = parseTopics(c.req.query("topics"));
     const raw = c.req.header("last-event-id") ?? c.req.query("lastEventId") ?? null;
-    const lastEventId = raw !== null && raw !== "" && Number.isFinite(Number(raw)) ? Number(raw) : null;
+    const lastEventId =
+      raw !== null && raw !== "" && Number.isFinite(Number(raw)) ? Number(raw) : null;
     return sseResponse(deps.bus, { topics, lastEventId, signal: c.req.raw.signal });
   });
 
@@ -200,16 +246,28 @@ export function createApp(deps: AppDeps): Hono<Env> {
   });
   app.patch("/projects/:id", async (c) => {
     const id = c.req.param("id");
-    const body = z.object({ name: z.string().min(1).max(80).optional(), manifest: z.record(z.string(), z.unknown()).optional() }).parse(await c.req.json());
+    const body = z
+      .object({
+        name: z.string().min(1).max(80).optional(),
+        manifest: z.record(z.string(), z.unknown()).optional(),
+      })
+      .parse(await c.req.json());
     const h = await deps.projects.handle(id);
     if (!h) return c.json({ error: "not found" }, 404);
     if (body.manifest) await h.updateManifest(body.manifest as never);
     if (body.name) await deps.projects.rename(id, body.name);
-    deps.bus.emit({ ts: Date.now(), topic: "project.changed", projectId: id, paths: [PROJECT_FILES.manifest] });
+    deps.bus.emit({
+      ts: Date.now(),
+      topic: "project.changed",
+      projectId: id,
+      paths: [PROJECT_FILES.manifest],
+    });
     return c.json(await deps.projects.detail(id));
   });
   app.delete("/projects/:id", async (c) => {
-    const ok = await deps.projects.delete(c.req.param("id"), { purge: c.req.query("purge") === "1" });
+    const ok = await deps.projects.delete(c.req.param("id"), {
+      purge: c.req.query("purge") === "1",
+    });
     return ok ? c.json({ ok: true }) : c.json({ error: "not found" }, 404);
   });
   app.get("/projects/:id/route-runs", (c) => c.json(deps.store.routeRuns.list(c.req.param("id"))));
@@ -222,7 +280,13 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const st = await stat(abs).catch(() => null);
     if (!st || !st.isFile()) return c.json({ error: "not found" }, 404);
     const mime = MIME[extname(abs).toLowerCase()] ?? "application/octet-stream";
-    return new Response(Bun.file(abs), { headers: { "content-type": mime, "content-length": String(st.size), "x-mtime": st.mtime.toISOString() } });
+    return new Response(Bun.file(abs), {
+      headers: {
+        "content-type": mime,
+        "content-length": String(st.size),
+        "x-mtime": st.mtime.toISOString(),
+      },
+    });
   });
   app.put("/projects/:id/files/*", async (c) => {
     const id = c.req.param("id");
@@ -265,10 +329,14 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const dir = join(h.dir, PROJECT_FILES.sketches);
     await mkdir(dir, { recursive: true });
     let final = stamped;
-    for (let i = 2; await stat(join(dir, final)).catch(() => null); i++) final = stamped.replace(/(\.[^.]+)$/, `-${i}$1`);
+    for (let i = 2; await stat(join(dir, final)).catch(() => null); i++)
+      final = stamped.replace(/(\.[^.]+)$/, `-${i}$1`);
     const abs = await jailPath(h.dir, `${PROJECT_FILES.sketches}/${final}`);
     await writeAtomic(abs, data);
-    return c.json({ path: `${PROJECT_FILES.sketches}/${final}`, absolutePath: abs, size: data.length }, 201);
+    return c.json(
+      { path: `${PROJECT_FILES.sketches}/${final}`, absolutePath: abs, size: data.length },
+      201,
+    );
   });
 
   /* ---------- threads ---------- */
@@ -282,33 +350,101 @@ export function createApp(deps: AppDeps): Hono<Env> {
         ...(q ? { q } : {}),
         ...(projectId ? { projectId } : {}),
         ...(archived !== undefined ? { archived: archived === "1" || archived === "true" } : {}),
-        ...(folderId !== undefined ? { folderId: folderId === "" || folderId === "null" ? null : folderId } : {}),
+        ...(folderId !== undefined
+          ? { folderId: folderId === "" || folderId === "null" ? null : folderId }
+          : {}),
       }),
     );
   });
+  /** Supervised mode needs an adapter that can pause; the phone greys the option out from `/agents`. */
+  const canSupervise = (agentId: AgentId): boolean =>
+    deps.runs?.supportsSupervised(agentId) ?? false;
   app.post("/threads", async (c) => {
     const body = CreateThread.parse(await c.req.json());
+    const runtimeMode = body.runtimeMode ?? deps.store.settings.get().defaultRuntimeMode;
+    // A default of `supervised` must not make an agent that cannot do it unusable: fall back silently
+    // unless the request asked for it by name.
+    const mode =
+      runtimeMode === "supervised" && !canSupervise(body.agentId)
+        ? body.runtimeMode
+          ? null
+          : "full"
+        : runtimeMode;
+    if (mode === null) return c.json({ error: "agent cannot run supervised" }, 400);
     const t = deps.store.threads.create({
       agentId: body.agentId,
+      runtimeMode: mode,
       ...(body.projectId !== undefined ? { projectId: body.projectId } : {}),
       ...(body.title ? { title: body.title } : {}),
       ...(body.model ? { model: body.model } : {}),
       ...(body.parentThreadId ? { parentThreadId: body.parentThreadId } : {}),
       ...(body.branchFromMessageId ? { branchFromMessageId: body.branchFromMessageId } : {}),
     });
-    deps.bus.emit({ ts: Date.now(), topic: "thread.created", threadId: t.id, projectId: t.projectId });
+    deps.bus.emit({
+      ts: Date.now(),
+      topic: "thread.created",
+      threadId: t.id,
+      projectId: t.projectId,
+    });
     return c.json(t, 201);
   });
   app.get("/threads/:id", (c) => {
     const t = deps.store.threads.get(c.req.param("id"));
-    return t ? c.json({ ...t, run: deps.store.runs.latestForThread(t.id), running: deps.runs?.isRunning(t.id) ?? false }) : c.json({ error: "not found" }, 404);
+    if (!t) return c.json({ error: "not found" }, 404);
+    return c.json({
+      ...t,
+      run: deps.store.runs.latestForThread(t.id),
+      running: deps.runs?.isRunning(t.id) ?? false,
+      pending: deps.runs?.pending(t.id) ?? { approvals: [], inputs: [] },
+    });
   });
   app.patch("/threads/:id", async (c) => {
     const body = compact(PatchThread.parse(await c.req.json()));
-    const t = deps.store.threads.patch(c.req.param("id"), body);
+    const current = deps.store.threads.get(c.req.param("id"));
+    if (!current) return c.json({ error: "not found" }, 404);
+    const mode = body.runtimeMode ?? current.runtimeMode ?? "full";
+    if (mode === "supervised" && !canSupervise(body.agentId ?? current.agentId))
+      return c.json({ error: "agent cannot run supervised" }, 400);
+    const t = deps.store.threads.patch(current.id, body);
     if (!t) return c.json({ error: "not found" }, 404);
-    deps.bus.emit({ ts: Date.now(), topic: "thread.updated", threadId: t.id, ...(body.title !== undefined ? { title: t.title } : {}) });
+    deps.bus.emit({
+      ts: Date.now(),
+      topic: "thread.updated",
+      threadId: t.id,
+      ...(body.title !== undefined ? { title: t.title } : {}),
+    });
     return c.json(t);
+  });
+
+  /* ---------- supervised mode: decisions (both listeners; a paired phone may answer) ---------- */
+  const decidedBy = (c: Context<Env>): "desktop" | "device" =>
+    deps.tokens.lookup(c.get("token"))?.kind === "device" ? "device" : "desktop";
+  const outcome = (c: Context<Env>, r: "ok" | "not_found" | "resolved") =>
+    r === "ok"
+      ? c.json({ ok: true })
+      : r === "resolved"
+        ? c.json({ error: "already resolved" }, 409)
+        : c.json({ error: "not found" }, 404);
+  app.post("/threads/:id/approvals/:requestId", async (c) => {
+    if (!deps.runs) return c.json({ error: "agent runs are disabled in this daemon" }, 503);
+    const body = ResolveApproval.parse(await c.req.json());
+    return outcome(
+      c,
+      deps.runs.resolveApproval(
+        c.req.param("id"),
+        c.req.param("requestId"),
+        body.decision,
+        decidedBy(c),
+      ),
+    );
+  });
+  app.post("/threads/:id/inputs/:requestId", async (c) => {
+    if (!deps.runs) return c.json({ error: "agent runs are disabled in this daemon" }, 503);
+    const body = ResolveInput.parse(await c.req.json());
+    return outcome(
+      c,
+      deps.runs.resolveInput(c.req.param("id"), c.req.param("requestId"), body.answer),
+    );
   });
   app.delete("/threads/:id", (c) => {
     const id = c.req.param("id");
@@ -327,17 +463,71 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const body = SendMessage.parse(await c.req.json());
     if (!deps.runs) return c.json({ error: "agent runs are disabled in this daemon" }, 503);
     const agentId: AgentId = body.agentId ?? t.agentId;
+    const queue =
+      body.queue === true || c.req.query("queue") === "1" || c.req.query("queue") === "true";
+    const parts = [
+      { type: "text" as const, text: body.content },
+      ...body.attachments.map((a) => ({ type: "image" as const, path: a.path, mime: a.mime })),
+    ];
+    if (deps.runs.isRunning(t.id)) {
+      // C5: with a run live, keep the message and send it when the run ends. The agent/model switch
+      // is not applied now — the queued message goes out with whatever the thread uses by then.
+      if (!queue)
+        return c.json(
+          { error: "an agent run is already active on this thread", code: "precondition" },
+          412,
+        );
+      const queued = deps.store.threads.addMessage({
+        threadId: t.id,
+        role: "user",
+        contentMd: body.content,
+        parts,
+        status: "queued",
+      });
+      deps.bus.emit({ ts: Date.now(), topic: "thread.updated", threadId: t.id });
+      return c.json({ queued: true, messageId: queued.id, userMessageId: queued.id }, 202);
+    }
     const switched = agentId !== t.agentId || (!!body.model && body.model !== t.model);
-    if (switched) deps.store.threads.patch(t.id, { agentId, ...(body.model ? { model: body.model } : {}) });
-    const user = deps.store.threads.addMessage({ threadId: t.id, role: "user", contentMd: body.content, parts: [{ type: "text", text: body.content }, ...body.attachments.map((a) => ({ type: "image" as const, path: a.path, mime: a.mime }))] });
+    if (switched)
+      deps.store.threads.patch(t.id, { agentId, ...(body.model ? { model: body.model } : {}) });
+    const user = deps.store.threads.addMessage({
+      threadId: t.id,
+      role: "user",
+      contentMd: body.content,
+      parts,
+    });
     // The first message names a "New chat". Both of these silent edits are announced so a second
     // client (the phone, or the desktop when the phone sent the message) does not keep a stale row.
-    const title = t.title === "New chat" ? body.content.trim().replace(/\s+/g, " ").slice(0, 60) : null;
+    const title =
+      t.title === "New chat" ? body.content.trim().replace(/\s+/g, " ").slice(0, 60) : null;
     if (title !== null) deps.store.threads.patch(t.id, { title });
-    if (switched || title !== null) deps.bus.emit({ ts: Date.now(), topic: "thread.updated", threadId: t.id, ...(title !== null ? { title } : {}) });
+    if (switched || title !== null)
+      deps.bus.emit({
+        ts: Date.now(),
+        topic: "thread.updated",
+        threadId: t.id,
+        ...(title !== null ? { title } : {}),
+      });
     const project = t.projectId ? await deps.projects.handle(t.projectId) : null;
-    const { runId, messageId } = await deps.runs.start({ threadId: t.id, project, agentId, ...(body.model ?? t.model ? { model: (body.model ?? t.model) as string } : {}), prompt: body.content, attachments: body.attachments });
+    const { runId, messageId } = await deps.runs.start({
+      threadId: t.id,
+      project,
+      agentId,
+      ...((body.model ?? t.model) ? { model: (body.model ?? t.model) as string } : {}),
+      prompt: body.content,
+      attachments: body.attachments,
+    });
     return c.json({ runId, messageId, userMessageId: user.id }, 202);
+  });
+  /** Removes a message that is still queued; a sent one is history and stays. */
+  app.delete("/threads/:id/messages/:messageId", (c) => {
+    const t = deps.store.threads.get(c.req.param("id"));
+    const m = deps.store.threads.getMessage(c.req.param("messageId"));
+    if (!t || !m || m.threadId !== t.id) return c.json({ error: "not found" }, 404);
+    if (m.status !== "queued") return c.json({ error: "message is not queued" }, 409);
+    deps.store.threads.deleteMessage(m.id);
+    deps.bus.emit({ ts: Date.now(), topic: "thread.updated", threadId: t.id });
+    return c.json({ ok: true });
   });
   app.post("/threads/:id/abort", (c) => {
     const id = c.req.param("id");
@@ -389,8 +579,13 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const index = await catalogFor(deps.config.apiOrigin);
     const source = findCatalogProject(index, `${c.req.param("owner")}/${c.req.param("slug")}`);
     if (!source) return c.json({ error: "not found" }, 404);
-    if (!allowedCloneUrl(source.cloneUrl)) return c.json({ error: "clone url is not an allowed GitHub repository" }, 400);
-    const remixed = await remixCatalogProject({ source, projects: deps.projects, services: deps.services });
+    if (!allowedCloneUrl(source.cloneUrl))
+      return c.json({ error: "clone url is not an allowed GitHub repository" }, 400);
+    const remixed = await remixCatalogProject({
+      source,
+      projects: deps.projects,
+      services: deps.services,
+    });
     return c.json(remixed, 201);
   });
 
@@ -405,16 +600,20 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const body = StartOrder.parse(await c.req.json());
     const vendor = OrderVendorId.parse(body.vendor);
     const readiness = assessOrderReadiness(d.files);
-    if (!readiness.ready) return c.json({ error: "project is not ready to order", ...readiness }, 412);
+    if (!readiness.ready)
+      return c.json({ error: "project is not ready to order", ...readiness }, 412);
     const session = startOrderSession(vendor);
-    if (!session.enabled) return c.json({ error: `${session.label} ordering is not available yet`, session }, 400);
+    if (!session.enabled)
+      return c.json({ error: `${session.label} ordering is not available yet`, session }, 400);
     return c.json(session);
   });
 
   /* ---------- folders ---------- */
   app.get("/folders", (c) => c.json(deps.store.folders.list()));
   app.post("/folders", async (c) => {
-    const body = z.object({ name: z.string().min(1).max(80), parentId: z.string().nullable().optional() }).parse(await c.req.json());
+    const body = z
+      .object({ name: z.string().min(1).max(80), parentId: z.string().nullable().optional() })
+      .parse(await c.req.json());
     return c.json(deps.store.folders.create(body.name, body.parentId ?? null), 201);
   });
   app.patch("/folders/:id", async (c) => {
@@ -422,11 +621,20 @@ export function createApp(deps: AppDeps): Hono<Env> {
     deps.store.folders.rename(c.req.param("id"), body.name);
     return c.json({ ok: true });
   });
-  app.delete("/folders/:id", (c) => (deps.store.folders.delete(c.req.param("id")) ? c.json({ ok: true }) : c.json({ error: "not found" }, 404)));
+  app.delete("/folders/:id", (c) =>
+    deps.store.folders.delete(c.req.param("id"))
+      ? c.json({ ok: true })
+      : c.json({ error: "not found" }, 404),
+  );
 
   /* ---------- tools & jobs ---------- */
-  app.route("/", toolRoutes({ registry: deps.registry, ctxFactory: deps.ctxFactory, jobs: deps.jobs }));
-  app.get("/jobs", (c) => c.json(deps.jobs.list().length ? deps.jobs.list() : deps.store.jobs.list()));
+  app.route(
+    "/",
+    toolRoutes({ registry: deps.registry, ctxFactory: deps.ctxFactory, jobs: deps.jobs }),
+  );
+  app.get("/jobs", (c) =>
+    c.json(deps.jobs.list().length ? deps.jobs.list() : deps.store.jobs.list()),
+  );
   app.get("/jobs/:id", (c) => {
     const j = deps.jobs.get(c.req.param("id")) ?? deps.store.jobs.get(c.req.param("id"));
     return j ? c.json(j) : c.json({ error: "not found" }, 404);
@@ -451,7 +659,9 @@ export function createApp(deps: AppDeps): Hono<Env> {
       }
       out.push(line);
     }
-    return new Response(out.length ? out.join("\n") + "\n" : "", { headers: { "content-type": "application/x-ndjson", "x-route-status": rec.status } });
+    return new Response(out.length ? out.join("\n") + "\n" : "", {
+      headers: { "content-type": "application/x-ndjson", "x-route-status": rec.status },
+    });
   });
   app.get("/route/runs/:id", (c) => {
     const rec = deps.store.routeRuns.get(c.req.param("id"));
@@ -461,8 +671,14 @@ export function createApp(deps: AppDeps): Hono<Env> {
   /* ---------- MCP ---------- */
   // MCP stays on loopback: its DNS-rebinding allowlist is pinned to the local bind address, and
   // agent subprocesses always reach the daemon there.
-  app.all("/mcp", (c) => (deps.listener === "local" ? deps.mcp.handle(c.req.raw, { token: c.get("token") ?? null }) : c.json({ error: "not found" }, 404)));
-  app.get("/mcp/sessions", (c) => (deps.listener === "local" ? c.json(deps.mcp.list()) : c.json({ error: "not found" }, 404)));
+  app.all("/mcp", (c) =>
+    deps.listener === "local"
+      ? deps.mcp.handle(c.req.raw, { token: c.get("token") ?? null })
+      : c.json({ error: "not found" }, 404),
+  );
+  app.get("/mcp/sessions", (c) =>
+    deps.listener === "local" ? c.json(deps.mcp.list()) : c.json({ error: "not found" }, 404),
+  );
 
   /* ---------- auth ---------- */
   const me = (): Me => ({ principal: deps.auth.principal(), mode: deps.auth.mode });
@@ -492,7 +708,10 @@ export function createApp(deps: AppDeps): Hono<Env> {
     }
     // Kick off the device flow; state transitions arrive via auth.state events. Respond immediately
     // with the pending state (user code) when available within a short window.
-    const first = await Promise.race([p, new Promise<AuthState>((r) => setTimeout(() => r(deps.auth.state()), 1500))]);
+    const first = await Promise.race([
+      p,
+      new Promise<AuthState>((r) => setTimeout(() => r(deps.auth.state()), 1500)),
+    ]);
     void p.catch((e) => logger.warn("login failed", { error: errMsg(e) }));
     return c.json(first);
   });
@@ -501,11 +720,15 @@ export function createApp(deps: AppDeps): Hono<Env> {
   /* ---------- settings ---------- */
   app.get("/settings", (c) => c.json(deps.store.settings.get()));
   app.patch("/settings", async (c) => {
-    const raw = z.record(z.string(), z.unknown()).parse(await c.req.json());
-    // `.partial()` still fills in every field's default, which would reset whatever the client
-    // left out (theme, agents, remote …) — merge only the keys it actually sent.
+    const raw: unknown = await c.req.json();
+    // `.partial()` still fills every defaulted key, so a `{ theme }` patch would otherwise reset the
+    // agents, the remote listener and everything else to defaults: keep only what was sent.
     const parsed = Settings.partial().parse(raw);
-    const body = Object.fromEntries(Object.entries(parsed).filter(([k]) => k in raw)) as typeof parsed;
+    const sent =
+      typeof raw === "object" && raw !== null ? new Set(Object.keys(raw)) : new Set<string>();
+    const body = Object.fromEntries(
+      Object.entries(parsed).filter(([k]) => sent.has(k)),
+    ) as typeof parsed;
     const next = deps.store.settings.patch(body);
     await applyErrorReporting(next.errorReporting);
     // Remote access is a runtime toggle: the listener starts, stops or rebinds without a restart.
@@ -520,17 +743,25 @@ export function createApp(deps: AppDeps): Hono<Env> {
    */
   const advertisedEndpoints = (): CoreEndpoint[] => {
     const remote = deps.store.settings.get().remote;
-    return listenAddresses(remote.port, { bindHost: remote.host, preferred: remote.preferredEndpointKind });
+    return listenAddresses(remote.port, {
+      bindHost: remote.host,
+      preferred: remote.preferredEndpointKind,
+    });
   };
 
   /** Whether the remote listener is actually bound, and on what — Settings shows the real state. */
   app.get("/v1/remote", (c) => {
-    const status: RemoteStatus = { ...deps.remote.state(), setting: deps.store.settings.get().remote, endpoints: advertisedEndpoints() };
+    const status: RemoteStatus = {
+      ...deps.remote.state(),
+      setting: deps.store.settings.get().remote,
+      endpoints: advertisedEndpoints(),
+    };
     return c.json(status);
   });
 
   /* ---------- paired devices ---------- */
-  const localOnly = (c: Context) => (deps.listener === "local" ? null : c.json({ error: "not found" }, 404));
+  const localOnly = (c: Context) =>
+    deps.listener === "local" ? null : c.json({ error: "not found" }, 404);
 
   app.post("/v1/devices/pair/start", (c) => {
     const denied = localOnly(c);
@@ -543,7 +774,12 @@ export function createApp(deps: AppDeps): Hono<Env> {
       code: pending.code,
       expiresAt: new Date(pending.expiresAt).toISOString(),
       endpoints,
-      url: pairingUrlFromEndpoints({ token: pending.token, endpoints, port: remote.port, name: machineName() }),
+      url: pairingUrlFromEndpoints({
+        token: pending.token,
+        endpoints,
+        port: remote.port,
+        name: machineName(),
+      }),
       coreName: machineName(),
     });
   });
@@ -578,7 +814,8 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const info = deps.tokens.lookup(c.get("token"));
     return info?.kind === "device" && info.deviceId ? deps.devices.get(info.deviceId) : null;
   };
-  const notADevice = (c: Context<Env>) => c.json({ error: "device token required", code: "forbidden" }, 403);
+  const notADevice = (c: Context<Env>) =>
+    c.json({ error: "device token required", code: "forbidden" }, 403);
 
   app.get("/v1/devices/me", (c) => {
     const device = callingDevice(c);
@@ -591,8 +828,15 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const reg = DevicePushRegistration.parse(await c.req.json());
     const stored = deps.devices.setPush(device.id, reg);
     if (!stored) return notADevice(c);
-    logger.info("device push registered", { id: device.id, platform: reg.platform, prefs: reg.prefs });
-    return c.json({ device: stored.device, push: { registeredAt: stored.registeredAt } } satisfies DevicePushResult);
+    logger.info("device push registered", {
+      id: device.id,
+      platform: reg.platform,
+      prefs: reg.prefs,
+    });
+    return c.json({
+      device: stored.device,
+      push: { registeredAt: stored.registeredAt },
+    } satisfies DevicePushResult);
   });
 
   app.delete("/v1/devices/me/push", (c) => {
@@ -616,7 +860,9 @@ export function createApp(deps: AppDeps): Hono<Env> {
 
 /** Drop `undefined` values so partial objects satisfy exactOptionalPropertyTypes targets. */
 function compact<T extends object>(o: T): { [K in keyof T]: Exclude<T[K], undefined> } {
-  return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as { [K in keyof T]: Exclude<T[K], undefined> };
+  return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as {
+    [K in keyof T]: Exclude<T[K], undefined>;
+  };
 }
 
 function isPng(b: Uint8Array): boolean {
