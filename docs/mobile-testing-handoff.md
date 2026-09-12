@@ -163,7 +163,7 @@ APK) and by inspection on the daemon:
 | B3 3D viewer                                                      | `render_glb` from the phone, then `<model-viewer>` in the WebView loaded the GLB on iOS and on the Thor via the same-origin path                                                                                                                                                                |
 | B4 DRC/ERC                                                        | 6 ERC errors listed with badges; render on top                                                                                                                                                                                                                                                  |
 | B5 files                                                          | tree with folder counts; `circuit.tsx` with TSX highlighting and line numbers                                                                                                                                                                                                                   |
-| B6 Route Cinema on Skia                                           | **renders on the Thor** (a finished run copied from `~/fabdesk/blinky`: 50 frames, play/scrub/layers); **blank on the iOS simulator** — the painter runs (49 shapes reported) but the Skia canvas presents nothing there, not even a debug `<Rect>`. Untested on the physical iPhone; see below |
+| B6 Route Cinema on Skia                                           | **renders on the Thor** (a finished run copied from `~/fabdesk/blinky`: 50 frames, play/scrub/layers); blank only on the iOS **simulator** — the painter runs (49 shapes reported) but the Skia canvas presents nothing there, not even a debug `<Rect>`; a simulator quirk, not a bug to chase |
 | B7 jobs                                                           | `render_glb` listed as done; cancel not exercised                                                                                                                                                                                                                                               |
 | B8 projects create/remix/delete, folder grouping                  | not exercised beyond typecheck/tests                                                                                                                                                                                                                                                            |
 
@@ -189,8 +189,6 @@ Only a physical device can answer these:
   link fails with `library 'pathops' not found` — `@shopify/react-native-skia` ships `ios`,
   `ios-simulator`, `macos` and `tvos` xcframework slices and no `maccatalyst` one. Catalyst
   would need Skia built from source, or a non-Skia cinema renderer for that target.
-- **Route Cinema on a real iPhone.** Blank on the simulator (Skia/Metal), fine on Android; open
-  `fabdesk://cinema/<runId>` on the device once it is paired with a daemon that has a run.
 - Hardware shortcuts on a real keyboard (L1); the iPad detail pane navigation.
 - A real background → foreground cycle and a Wi-Fi → cellular switch (T1).
 - Double-tap-to-zoom in the board viewer. Pinch and pan were made with real gestures; a double

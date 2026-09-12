@@ -3,12 +3,14 @@
  * empty list, and gives the one action that fixes it.
  */
 import { router } from "expo-router";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { RefreshControl, ScrollView, View } from "react-native";
 import { useConnection } from "@/transport/CoreConnection";
+import { useTheme } from "@/theme";
 import { Button, Empty, Loading, Screen } from "./ui";
 
 export function ConnectionGate({ children }: { children: ReactNode }) {
-  const { phase, connection, error } = useConnection();
+  const { phase, connection, error, retry } = useConnection();
 
   if (!connection) {
     return (
@@ -16,7 +18,13 @@ export function ConnectionGate({ children }: { children: ReactNode }) {
         <Empty
           title="No computer connected"
           hint="Pair with a machine running fabPlane to see its projects and chats."
-          action={<Button title="Pair a computer" variant="primary" onPress={() => router.push("/connect")} />}
+          action={
+            <Button
+              title="Pair a computer"
+              variant="primary"
+              onPress={() => router.push("/connect")}
+            />
+          }
         />
       </Screen>
     );
@@ -35,14 +43,60 @@ export function ConnectionGate({ children }: { children: ReactNode }) {
   if (phase === "unreachable" || phase === "unauthorized") {
     return (
       <Screen>
-        <Empty
+        <Unreachable
           title={phase === "unauthorized" ? "Not paired any more" : "Can't reach that computer"}
           hint={error ?? undefined}
-          action={<Button title="Connections" onPress={() => router.push("/connect")} />}
+          canRetry={phase === "unreachable"}
+          retry={retry}
         />
       </Screen>
     );
   }
 
   return <>{children}</>;
+}
+
+/**
+ * The disconnected state is where a pull-to-refresh is most expected — the laptop woke up, the
+ * phone is back on the tailnet — so the whole screen is a scroll view that retries on pull.
+ */
+function Unreachable({
+  title,
+  hint,
+  canRetry,
+  retry,
+}: {
+  title: string;
+  hint: string | undefined;
+  canRetry: boolean;
+  retry: () => void;
+}) {
+  const t = useTheme();
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = () => {
+    setRefreshing(true);
+    retry();
+    // `retry` only bumps an attempt counter; the locating phase takes over the screen within a
+    // render, so the spinner just needs to outlive this frame.
+    setTimeout(() => setRefreshing(false), 800);
+  };
+  return (
+    <ScrollView
+      contentContainerStyle={{ flexGrow: 1 }}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={t.muted} />
+      }
+    >
+      <Empty
+        title={title}
+        hint={hint ? `${hint}\n\nPull down to try again.` : "Pull down to try again."}
+        action={
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            {canRetry ? <Button title="Try again" variant="primary" onPress={retry} /> : null}
+            <Button title="Connections" onPress={() => router.push("/connect")} />
+          </View>
+        }
+      />
+    </ScrollView>
+  );
 }
