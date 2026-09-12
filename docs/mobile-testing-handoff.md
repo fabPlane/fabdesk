@@ -140,11 +140,53 @@ desktop daemon from the simulator: create → send → run → streamed reply.
 Seen, not fixed: the daemon titles a thread from its first message without emitting
 `thread.updated`, so the header keeps saying "New chat" until the thread query refetches.
 
+## Phases 1 and 2 (2026-09-13)
+
+Six agents built the roadmap's Wave 1 and Wave 2 packages in parallel on `mobile/*` branches, all
+merged onto the feature branch. Verified on the iPhone 16 Pro simulator, the AYN Thor (release
+APK) and by inspection on the daemon:
+
+| Package                                                           | Verified how                                                                                                                                                                                                                                                                                    |
+| ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| T1 reconnect on foreground / network change, jitter, `staleSince` | unit tests; cold start reconnects; **not yet** a real background/foreground cycle on a phone                                                                                                                                                                                                    |
+| T2 `thread.created/updated/deleted` events                        | created + auto-titled a thread server-side: it appeared, retitled and sorted on the phone with no interaction                                                                                                                                                                                   |
+| T3 `/health` pre-flight before claim, iOS Local Network warm-up   | pairing via the daemon's own `…&k=loopback` URL on both platforms                                                                                                                                                                                                                               |
+| D1 endpoint kinds, preferred endpoint, loopback warning           | `GET /v1/remote` returns kinds + `default`; desktop UI not exercised (dev app was closed)                                                                                                                                                                                                       |
+| C1 thread actions + Archived                                      | `…` sheet on iOS; Pin reflected on the daemon                                                                                                                                                                                                                                                   |
+| C2 agent + model picker                                           | pill shows `claude · haiku`; sheet lists the four installed agents, then models                                                                                                                                                                                                                 |
+| C3 attachments                                                    | Thor: library picker → upload to `sketches/` → strip → sent as `parts: [text, image]`; the run started and Stop aborted it                                                                                                                                                                      |
+| C4 list sort / fold / unread / running-first                      | live dots and ordering on both platforms                                                                                                                                                                                                                                                        |
+| S1 settings                                                       | dark mode switches everywhere instantly; default-agent control; keyboard hint shows (native module loaded)                                                                                                                                                                                      |
+| L1 wide layout + shortcuts                                        | native key-command module compiles on both platforms (one Swift fix: `UIKeyCommand` needs the long initializer to set `propertyList`); **tablet sidebar layout not yet seen** — no iPad simulator run                                                                                           |
+| B1 renders gallery                                                | screen opens from the project card; **before/after not yet exercised**                                                                                                                                                                                                                          |
+| B2 SVG viewer                                                     | schematic renders on both; fix: tscircuit-era SVGs have no `viewBox`, so `ensureViewBox` adds one or the drawing is clipped                                                                                                                                                                     |
+| B3 3D viewer                                                      | `render_glb` from the phone, then `<model-viewer>` in the WebView loaded the GLB on iOS and on the Thor via the same-origin path                                                                                                                                                                |
+| B4 DRC/ERC                                                        | 6 ERC errors listed with badges; render on top                                                                                                                                                                                                                                                  |
+| B5 files                                                          | tree with folder counts; `circuit.tsx` with TSX highlighting and line numbers                                                                                                                                                                                                                   |
+| B6 Route Cinema on Skia                                           | **renders on the Thor** (a finished run copied from `~/fabdesk/blinky`: 50 frames, play/scrub/layers); **blank on the iOS simulator** — the painter runs (49 shapes reported) but the Skia canvas presents nothing there, not even a debug `<Rect>`. Untested on the physical iPhone; see below |
+| B7 jobs                                                           | `render_glb` listed as done; cancel not exercised                                                                                                                                                                                                                                               |
+| B8 projects create/remix/delete, folder grouping                  | not exercised beyond typecheck/tests                                                                                                                                                                                                                                                            |
+
+Fixes made while integrating: full-bleed viewers (board, SVG, 3D, cinema controls) pad by the
+bottom safe-area inset — under Android edge-to-edge their captions sat beneath the system nav
+bar; the project's board preview is capped to 45% of the window height so a landscape handheld
+does not get a screen-filling picture; `useUploadSketch` / `useRouteRunFrames` lost their
+closing braces in two merge resolutions (caught by typecheck).
+
+Native modules added by the lanes, all compiled into the current builds: `expo-network`,
+`expo-image-picker`, `@react-native-async-storage/async-storage`, `expo-haptics`,
+`expo-keep-awake`, `expo-file-system`, `react-native-svg`, `react-native-webview`,
+`@shopify/react-native-skia`, and the local `modules/fabdesk-key-commands`.
+
 ## Still never run
 
 Only a physical device can answer these:
 
 - `expo-camera` QR scanning (`app/connect/scan.tsx`). The simulator has no camera.
+- **Route Cinema on a real iPhone.** Blank on the simulator (Skia/Metal), fine on Android; open
+  `fabdesk://cinema/<runId>` on the device once it is paired with a daemon that has a run.
+- The iPad sidebar layout (L1) and hardware shortcuts on a real keyboard.
+- A real background → foreground cycle and a Wi-Fi → cellular switch (T1).
 - Double-tap-to-zoom in the board viewer. Pinch and pan were made with real gestures; a double
   tap was not (the driving tool cannot deliver two taps inside the 500 ms window).
 - The Android keystore size limit (~2 KB per entry via `SharedPreferences`+keystore) with several

@@ -225,7 +225,7 @@ and, where it changes a screen, a simulator screenshot in the PR.
 - **D — Desktop** (`packages/ui/src/settings/RemoteSection.tsx`, `apps/core/src/net.ts`)
 - **R — Release & QA** (`.github/workflows`, `eas.json`, `apps/mobile/e2e`)
 
-### Wave 1 (Phase 1; all parallel except where noted)
+### Wave 1 (Phase 1; all parallel except where noted) — **landed 2026-09-13**
 
 | ID  | Package                                                                               | Lane | Touches                                                                                       | Depends on              | Done when                                                                                                     |
 | --- | ------------------------------------------------------------------------------------- | ---- | --------------------------------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------- |
@@ -242,7 +242,7 @@ and, where it changes a screen, a simulator screenshot in the PR.
 Conflict notes: C1 and C2 both edit the thread header — run C2 first or agree on a `ThreadHeader`
 component up front. T2 changes `events.ts` which C1 reads; land T2 first if both are in flight.
 
-### Wave 2 (Phase 2)
+### Wave 2 (Phase 2) — **landed 2026-09-13** (see `mobile-testing-handoff.md` for what was verified on devices)
 
 | ID  | Package                                                                                              | Lane | Touches                                                                                             | Depends on | Done when                                                      |
 | --- | ---------------------------------------------------------------------------------------------------- | ---- | --------------------------------------------------------------------------------------------------- | ---------- | -------------------------------------------------------------- |
