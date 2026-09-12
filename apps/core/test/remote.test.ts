@@ -5,10 +5,12 @@ import { join } from "node:path";
 import {
   REMOTE_DEFAULT_PORT,
   parsePairingUrl,
+  type CoreEvent,
   type Device,
   type PairClaimResult,
   type PairStartResult,
 } from "@fabdesk/protocol";
+import type { AgentEvent, AgentRun } from "@fabdesk/agents";
 import type { CoreServices } from "@fabdesk/tools";
 import { serve, type Daemon } from "../src/serve";
 import { mockServices } from "../../../packages/tools/test/mock-services";
@@ -37,7 +39,19 @@ beforeAll(async () => {
         routeRuns: store.routeRuns,
         channel: "public",
       }) as unknown as CoreServices,
-    adapters: {},
+    // Just enough of an agent for `POST /threads/:id/messages` to accept a message.
+    adapters: {
+      claude: {
+        id: "claude",
+        run: (): AgentRun => ({
+          events: (async function* (): AsyncGenerator<AgentEvent> {
+            yield { type: "text", delta: "ok" };
+            yield { type: "done", exitCode: 0 };
+          })(),
+          abort() {},
+        }),
+      },
+    },
     doctor: async () => ({
       version: "t",
       channel: "public",
@@ -224,6 +238,82 @@ describe("pairing over http", () => {
         })
       ).status,
     ).toBe(401);
+  });
+
+  test("a paired phone sees thread lifecycle events for what other clients do", async () => {
+    const start = (await (
+      await local("/v1/devices/pair/start", { method: "POST" })
+    ).json()) as PairStartResult;
+    const claim = (await (
+      await fetch(`${remoteUrl}/v1/devices/pair/claim`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          pairingToken: start.pairingToken,
+          label: "events phone",
+          platform: "ios",
+        }),
+      })
+    ).json()) as PairClaimResult;
+
+    // The phone listens on the remote socket; the "desktop" acts through the loopback listener.
+    const received: CoreEvent[] = [];
+    const ws = new WebSocket(
+      `ws://${REMOTE.host}:${REMOTE.port}/ws?topics=thread.*&token=${encodeURIComponent(claim.deviceToken)}`,
+    );
+    ws.onmessage = (m) => received.push((JSON.parse(String(m.data)) as { event: CoreEvent }).event);
+    await new Promise<void>((resolve, reject) => {
+      ws.onopen = () => resolve();
+      ws.onerror = () => reject(new Error("socket failed"));
+    });
+    const waitFor = async (pred: () => boolean) => {
+      const deadline = Date.now() + 3000;
+      while (!pred() && Date.now() < deadline) await Bun.sleep(10);
+      expect(pred()).toBe(true);
+    };
+    const ofTopic = <T extends CoreEvent["topic"]>(topic: T) =>
+      received.filter((e): e is Extract<CoreEvent, { topic: T }> => e.topic === topic);
+
+    const thread = (await (
+      await local("/threads", { method: "POST", body: JSON.stringify({ agentId: "claude" }) })
+    ).json()) as { id: string; title: string };
+    await waitFor(() => ofTopic("thread.created").length === 1);
+    expect(ofTopic("thread.created")[0]).toMatchObject({ threadId: thread.id, projectId: null });
+
+    // The first message names a "New chat"; the daemon does that on its own and must say so.
+    const sent = await local(`/threads/${thread.id}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ content: "  Design a   blinky board  " }),
+    });
+    expect(sent.status).toBe(202);
+    await waitFor(() => ofTopic("thread.updated").some((e) => e.title !== undefined));
+    expect(ofTopic("thread.updated").find((e) => e.title !== undefined)).toMatchObject({
+      threadId: thread.id,
+      title: "Design a blinky board",
+    });
+
+    // A rename through PATCH carries the new title too; a pin does not pretend to.
+    received.length = 0;
+    await local(`/threads/${thread.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ title: "Blinky" }),
+    });
+    await local(`/threads/${thread.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ pinned: true }),
+    });
+    await waitFor(() => ofTopic("thread.updated").length >= 2);
+    expect(ofTopic("thread.updated").map((e) => e.title)).toEqual(["Blinky", undefined]);
+
+    received.length = 0;
+    expect((await local(`/threads/${thread.id}`, { method: "DELETE" })).status).toBe(200);
+    await waitFor(() => ofTopic("thread.deleted").length === 1);
+    expect(ofTopic("thread.deleted")[0]).toMatchObject({ threadId: thread.id });
+    // Deleting again is a 404 and announces nothing.
+    expect((await local(`/threads/${thread.id}`, { method: "DELETE" })).status).toBe(404);
+    await Bun.sleep(50);
+    expect(ofTopic("thread.deleted")).toHaveLength(1);
+    ws.close();
   });
 
   test("device tokens survive nothing but the database — they are not the daemon token", async () => {

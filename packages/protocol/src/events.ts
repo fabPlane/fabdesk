@@ -117,7 +117,15 @@ export const CoreEvent = z.discriminatedUnion("topic", [
   z.object({ ...base, topic: z.literal("route.frame"), frame: RouteFrame }),
   z.object({ ...base, topic: z.literal("route.done"), result: RouteResult }),
   z.object({ ...base, topic: z.literal("project.changed"), projectId: z.string(), paths: z.array(z.string()) }),
-  z.object({ ...base, topic: z.literal("thread.updated"), threadId: z.string() }),
+  /**
+   * Thread lifecycle. Every client keeps its own thread list, so each mutation the daemon makes —
+   * including the ones it makes on its own, like auto-titling a "New chat" — is announced here.
+   * `thread.updated` carries `title` only when the title is what changed, so a client can patch
+   * it into its caches before the refetch lands.
+   */
+  z.object({ ...base, topic: z.literal("thread.created"), threadId: z.string(), projectId: z.string().nullable() }),
+  z.object({ ...base, topic: z.literal("thread.updated"), threadId: z.string(), title: z.string().optional() }),
+  z.object({ ...base, topic: z.literal("thread.deleted"), threadId: z.string() }),
   z.object({ ...base, topic: z.literal("auth.state"), state: AuthState }),
   z.object({ ...base, topic: z.literal("device.paired"), deviceId: z.string(), label: z.string() }),
   z.object({ ...base, topic: z.literal("device.revoked"), deviceId: z.string() }),
