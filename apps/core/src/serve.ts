@@ -88,6 +88,13 @@ export type Daemon = {
 };
 
 /** `deviceId` is set when the socket was opened with a device token, so the Notifier can skip a phone that is listening. */
+/** Origins allowed to call the remote listener from a browser page (hosted web pairing). */
+const HOSTED_ORIGINS = [
+  "https://fabplane.com",
+  "https://www.fabplane.com",
+  "https://app.fabplane.com",
+];
+
 type WsData = { patterns: string[]; deviceId: string | null; session: EventSession | null };
 
 /**
@@ -282,7 +289,9 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     startedAt,
   };
   const app = createApp({ ...appDeps, listener: "local" });
-  const remoteApp = createApp({ ...appDeps, listener: "remote" });
+  // A browser at fabplane.com pairs against the remote listener directly (docs/mobile.md, hosted
+  // web pairing), so its origin has to pass the guard there; the loopback listener stays strict.
+  const remoteApp = createApp({ ...appDeps, listener: "remote", extraOrigins: HOSTED_ORIGINS });
 
   /**
    * One request handler shape for both listeners: upgrade `/ws`, otherwise hand off to that
