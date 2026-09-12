@@ -3,6 +3,10 @@ import type {
   AuthState,
   CoreEvent,
   Device,
+  DeviceMe,
+  DevicePushPrefs,
+  DevicePushRegistration,
+  DevicePushState,
   DoctorReport,
   Job,
   Message,
@@ -68,37 +72,13 @@ export interface SendMessageInput {
   model?: string;
 }
 
-export type ToolCallResponse = { result: unknown; jobId?: undefined } | { jobId: string; result?: undefined };
+export type ToolCallResponse =
+  | { result: unknown; jobId?: undefined }
+  | { jobId: string; result?: undefined };
 
 export type HealthInfo = { ok?: boolean; version?: string; [k: string]: unknown };
 
-/**
- * Push registration for a paired phone (docs/mobile-notifications.md §4.1). Spelled out here
- * rather than imported so the client compiles against the contract while the protocol package
- * gains the zod schemas; the shapes are identical to `DevicePushPrefs` / `DevicePushRegistration`.
- */
-export interface DevicePushPrefs {
-  onDone: boolean;
-  onFailed: boolean;
-  onNeedsInput: boolean;
-  onJobs: boolean;
-}
-
-export interface DevicePushRegistration {
-  expoPushToken: string;
-  platform: "ios" | "android";
-  appVersion?: string;
-  prefs: DevicePushPrefs;
-}
-
-export interface DevicePushState {
-  registeredAt: string;
-  platform: "ios" | "android";
-  prefs: DevicePushPrefs;
-}
-
-/** `GET /v1/devices/me`: the calling device, plus its push registration if it has one. */
-export type DeviceMe = Device & { push: DevicePushState | null };
+export type { DeviceMe, DevicePushPrefs, DevicePushRegistration, DevicePushState };
 
 export class CoreClient {
   readonly baseUrl: string;
@@ -185,15 +165,27 @@ export class CoreClient {
     });
     if (!res.ok) throw new CoreHttpError(res.status, path, res.statusText);
   }
-  async uploadSketch(projectId: string, png: Blob, filename = "sketch.png"): Promise<{ path: string }> {
+  async uploadSketch(
+    projectId: string,
+    png: Blob,
+    filename = "sketch.png",
+  ): Promise<{ path: string }> {
     const form = new FormData();
     form.append("file", png, filename);
-    const res = await this.fetchImpl(`${this.baseUrl}/projects/${encodeURIComponent(projectId)}/sketches`, {
-      method: "POST",
-      headers: this.headers(),
-      body: form,
-    });
-    if (!res.ok) throw new CoreHttpError(res.status, "/sketches", await res.text().catch(() => res.statusText));
+    const res = await this.fetchImpl(
+      `${this.baseUrl}/projects/${encodeURIComponent(projectId)}/sketches`,
+      {
+        method: "POST",
+        headers: this.headers(),
+        body: form,
+      },
+    );
+    if (!res.ok)
+      throw new CoreHttpError(
+        res.status,
+        "/sketches",
+        await res.text().catch(() => res.statusText),
+      );
     return (await res.json()) as { path: string };
   }
 
@@ -204,12 +196,17 @@ export class CoreClient {
   getOpenSource(id: string): Promise<OpenCatalogEntry> {
     const [owner, slug] = id.split("/");
     if (!owner || !slug) throw new Error(`invalid open-source id: ${id}`);
-    return this.request(`/opensource/projects/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}`);
+    return this.request(
+      `/opensource/projects/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}`,
+    );
   }
   remixOpenSource(id: string): Promise<RemixResult> {
     const [owner, slug] = id.split("/");
     if (!owner || !slug) throw new Error(`invalid open-source id: ${id}`);
-    return this.request(`/opensource/projects/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/remix`, { method: "POST" });
+    return this.request(
+      `/opensource/projects/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/remix`,
+      { method: "POST" },
+    );
   }
   /** Loopback image URL for `<img src>` — the preview route accepts `?token=` like SSE. */
   openSourcePreviewUrl(id: string, role: "preview" | "hero" = "preview"): string {
@@ -219,11 +216,18 @@ export class CoreClient {
     if (role === "hero") qs.set("role", "hero");
     return `${this.baseUrl}/opensource/preview/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}?${qs.toString()}`;
   }
-  projectOrder(id: string): Promise<OrderReadiness & { vendors: Array<{ id: OrderVendorId; label: string; enabled: boolean }> }> {
+  projectOrder(
+    id: string,
+  ): Promise<
+    OrderReadiness & { vendors: Array<{ id: OrderVendorId; label: string; enabled: boolean }> }
+  > {
     return this.request(`/projects/${encodeURIComponent(id)}/order`);
   }
   startOrder(id: string, vendor: OrderVendorId): Promise<OrderSession> {
-    return this.request(`/projects/${encodeURIComponent(id)}/order`, { method: "POST", json: { vendor } });
+    return this.request(`/projects/${encodeURIComponent(id)}/order`, {
+      method: "POST",
+      json: { vendor },
+    });
   }
 
   // Threads
@@ -249,8 +253,14 @@ export class CoreClient {
   listMessages(threadId: string): Promise<Message[]> {
     return this.request(`/threads/${encodeURIComponent(threadId)}/messages`);
   }
-  sendMessage(threadId: string, input: SendMessageInput): Promise<{ runId: string; messageId: string }> {
-    return this.request(`/threads/${encodeURIComponent(threadId)}/messages`, { method: "POST", json: input });
+  sendMessage(
+    threadId: string,
+    input: SendMessageInput,
+  ): Promise<{ runId: string; messageId: string }> {
+    return this.request(`/threads/${encodeURIComponent(threadId)}/messages`, {
+      method: "POST",
+      json: input,
+    });
   }
   abort(threadId: string): Promise<void> {
     return this.request(`/threads/${encodeURIComponent(threadId)}/abort`, { method: "POST" });
@@ -262,8 +272,14 @@ export class CoreClient {
   }
   /** `projectId` in args is lifted into the adapter's top-level `project` selector. */
   callTool(name: string, args: unknown): Promise<ToolCallResponse> {
-    const { projectId, ...rest } = (args && typeof args === "object" ? args : {}) as Record<string, unknown>;
-    const json = { args: rest, ...(typeof projectId === "string" && projectId ? { project: projectId } : {}) };
+    const { projectId, ...rest } = (args && typeof args === "object" ? args : {}) as Record<
+      string,
+      unknown
+    >;
+    const json = {
+      args: rest,
+      ...(typeof projectId === "string" && projectId ? { project: projectId } : {}),
+    };
     return this.request(`/tools/${encodeURIComponent(name)}`, { method: "POST", json });
   }
   getJob(id: string): Promise<Job> {
@@ -274,15 +290,19 @@ export class CoreClient {
     const interval = opts?.intervalMs ?? 750;
     for (;;) {
       const job = await this.getJob(id);
-      if (job.status === "done" || job.status === "failed" || job.status === "cancelled") return job;
+      if (job.status === "done" || job.status === "failed" || job.status === "cancelled")
+        return job;
       if (opts?.signal?.aborted) return job;
       await new Promise((r) => setTimeout(r, interval));
     }
   }
   async routeFrames(runId: string, from = 0): Promise<RouteFrameLine[]> {
-    const res = await this.fetchImpl(`${this.baseUrl}/route/runs/${encodeURIComponent(runId)}/frames?from=${from}`, {
-      headers: this.headers(),
-    });
+    const res = await this.fetchImpl(
+      `${this.baseUrl}/route/runs/${encodeURIComponent(runId)}/frames?from=${from}`,
+      {
+        headers: this.headers(),
+      },
+    );
     if (!res.ok) throw new CoreHttpError(res.status, "/route/runs", res.statusText);
     const text = await res.text();
     return parseJsonl<RouteFrameLine>(text);
@@ -324,7 +344,9 @@ export class CoreClient {
     return this.request("/v1/devices/me");
   }
   /** Idempotent: the phone repeats it on every connect because Expo tokens can rotate. */
-  registerPush(registration: DevicePushRegistration): Promise<{ device: Device; push: { registeredAt: string } }> {
+  registerPush(
+    registration: DevicePushRegistration,
+  ): Promise<{ device: Device; push: { registeredAt: string } }> {
     return this.request("/v1/devices/me/push", { method: "PUT", json: registration });
   }
   unregisterPush(): Promise<{ ok: boolean }> {
