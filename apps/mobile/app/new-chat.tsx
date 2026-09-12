@@ -1,7 +1,8 @@
-/** Pick where a new chat lives: one of the projects, or none. */
+/** Pick the agent and model, then where the new chat lives: one of the projects, or none. */
 import { useProjects } from "@fabdesk/client-core";
 import { Stack } from "expo-router";
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { AgentModelPicker } from "@/components/AgentModelPicker";
 import { Loading, Screen, readable } from "@/components/ui";
 import { useNewChat } from "@/hooks/new-chat";
 import { useTheme } from "@/theme";
@@ -9,7 +10,7 @@ import { useTheme } from "@/theme";
 export default function NewChatScreen() {
   const t = useTheme();
   const projects = useProjects();
-  const { start, busy } = useNewChat();
+  const { start, busy, choice, setChoice, agents, settings, ready } = useNewChat();
 
   if (projects.isLoading) return <Loading label="Loading projects…" />;
 
@@ -29,10 +30,32 @@ export default function NewChatScreen() {
         data={rows}
         keyExtractor={(r) => r.id ?? "none"}
         contentContainerStyle={{ paddingVertical: 8, ...readable }}
+        ListHeaderComponent={
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              paddingHorizontal: 16,
+              paddingVertical: 12,
+              borderBottomColor: t.border,
+              borderBottomWidth: StyleSheet.hairlineWidth,
+            }}
+          >
+            <Text style={{ color: t.muted, fontSize: 13 }}>Agent</Text>
+            <AgentModelPicker
+              value={choice}
+              onChange={setChoice}
+              agents={agents}
+              settings={settings}
+              disabled={!ready}
+            />
+          </View>
+        }
         renderItem={({ item }) => (
           <Pressable
-            disabled={busy}
-            onPress={() => void start(item.id)}
+            disabled={busy || !ready}
+            onPress={() => void start(item.id, choice)}
             style={({ pressed }) => ({
               backgroundColor: pressed ? t.panel2 : t.panel,
               borderBottomColor: t.border,
@@ -49,8 +72,8 @@ export default function NewChatScreen() {
         ListFooterComponent={
           <View style={{ padding: 16 }}>
             <Text style={{ color: t.muted, fontSize: 12 }}>
-              The chat uses the agent set as default on the desktop; its title comes from your first
-              message.
+              The agent you pick here is remembered on this phone; the chat's title comes from your
+              first message.
             </Text>
           </View>
         }

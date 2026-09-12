@@ -213,3 +213,24 @@ export function useRemoteState(enabled = true) {
   const client = useCoreClient();
   return useQuery({ queryKey: ["remote"], queryFn: () => client.remoteState(), enabled });
 }
+
+/**
+ * A file the platform's `FormData` can carry: a `Blob` on the web, or React Native's
+ * `{ uri, name, type }` descriptor, which its networking layer streams from disk itself.
+ */
+export type UploadFile = Blob | { uri: string; name: string; type: string };
+
+/**
+ * Stores an image in a project's sketches folder (`POST /projects/:id/sketches`); the returned
+ * `path` is what a message's `attachments` reference. Invalidates the project so its file list
+ * picks the new sketch up.
+ */
+export function useUploadSketch() {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, file, name }: { projectId: string; file: UploadFile; name: string }) =>
+      client.uploadSketch(projectId, file as Blob, name),
+    onSuccess: (_data, vars) => void qc.invalidateQueries({ queryKey: ["project", vars.projectId] }),
+  });
+}

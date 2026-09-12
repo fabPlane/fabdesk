@@ -3,9 +3,17 @@
  *
  * Messages stream in over the WebSocket into the same react-query cache the desktop uses, so this
  * screen only has to render — there is no mobile-specific streaming logic. Sending picks up the
- * thread's own agent and model, so a chat started with codex on the desktop stays on codex.
+ * thread's own agent and model, so a chat started with codex on the desktop stays on codex; the
+ * pill above the input is where you change that, and it patches the thread itself.
  */
-import { useMessages, useRunsStore, useThread } from "@fabdesk/client-core";
+import {
+  useDoctor,
+  useMessages,
+  useRunsStore,
+  useSettings,
+  useThread,
+  useThreadMutations,
+} from "@fabdesk/client-core";
 import { useCoreClient } from "@fabdesk/client-core";
 import type { Message } from "@fabdesk/protocol";
 import { Stack, useLocalSearchParams } from "expo-router";
@@ -22,8 +30,21 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { AgentModelPicker } from "@/components/AgentModelPicker";
+import { AttachmentStrip } from "@/components/AttachmentStrip";
 import { MessageBody } from "@/components/MessageParts";
+import { useOptionSheet } from "@/components/OptionSheet";
+import { ThreadHeaderButton, useThreadMenu } from "@/components/ThreadHeaderMenu";
 import { Loading, Screen, readable } from "@/components/ui";
+import { useRememberedChoice } from "@/hooks/agent-choice";
+import { useAttachments } from "@/hooks/attachments";
+import { choicePatch, sameChoice, type AgentChoice } from "@/lib/agent-choice";
+import {
+  attachmentsBlockedReason,
+  attachmentsSettled,
+  messageContent,
+  toMessageAttachments,
+} from "@/lib/attachments";
 import { formatDuration } from "@/lib/format";
 import { useTheme } from "@/theme";
 
@@ -41,22 +62,73 @@ export default function ThreadScreen() {
   const [sending, setSending] = useState(false);
   const list = useRef<FlatList<Message>>(null);
 
+  // Agent + model. The thread is the source of truth; `pending` covers the moment between the tap
+  // and the daemon's answer so the pill does not snap back while the PATCH is in flight.
+  const doctor = useDoctor();
+  const settings = useSettings();
+  const { patch } = useThreadMutations();
+  const { remember } = useRememberedChoice();
+  const menu = useThreadMenu(thread.data);
+  const [pending, setPending] = useState<AgentChoice | null>(null);
+  const threadChoice = useMemo<AgentChoice | null>(
+    () => (thread.data ? { agentId: thread.data.agentId, model: thread.data.model ?? "" } : null),
+    [thread.data?.agentId, thread.data?.model],
+  );
+  const choice = pending ?? threadChoice;
+  useEffect(() => {
+    if (pending && sameChoice(pending, threadChoice)) setPending(null);
+  }, [pending, threadChoice]);
+  const changeChoice = async (next: AgentChoice) => {
+    if (!id || sameChoice(next, choice)) return;
+    setPending(next);
+    remember(next);
+    try {
+      await patch.mutateAsync({ id, patch: choicePatch(next) });
+    } catch (e) {
+      setPending(null);
+      Alert.alert("Could not switch agent", e instanceof Error ? e.message : String(e));
+    }
+  };
+
   // Newest last, and the view pinned to it — the tail is what you came to read.
   const data = messages.data ?? [];
   useEffect(() => {
     if (data.length) requestAnimationFrame(() => list.current?.scrollToEnd({ animated: true }));
   }, [data.length]);
 
+  // Photos. They upload as project sketches the moment they are picked, so `+` needs a project.
+  const attachments = useAttachments(thread.data?.projectId);
+  const attachSheet = useOptionSheet();
+  const blocked = attachmentsBlockedReason(thread.data);
+  const addPhoto = () => {
+    if (blocked) {
+      Alert.alert("No project", blocked);
+      return;
+    }
+    attachSheet.show({
+      options: [
+        { label: "Take photo", onPress: () => void attachments.pick("camera") },
+        { label: "Choose from library", onPress: () => void attachments.pick("library") },
+      ],
+    });
+  };
+
+  const content = messageContent(draft, attachments.pending);
+  const canSend = !!content && attachmentsSettled(attachments.pending) && !sending;
+
   const send = async () => {
-    const content = draft.trim();
-    if (!content || !id) return;
+    if (!canSend || !id) return;
+    const text = draft;
+    const sent = attachments.pending;
     setSending(true);
     setDraft("");
+    attachments.clear();
     try {
-      await client.sendMessage(id, { content });
+      await client.sendMessage(id, { content, attachments: toMessageAttachments(sent) });
       await messages.refetch();
     } catch (e) {
-      setDraft(content);
+      setDraft(text);
+      attachments.restore(sent);
       Alert.alert("Could not send", e instanceof Error ? e.message : String(e));
     } finally {
       setSending(false);
@@ -76,7 +148,15 @@ export default function ThreadScreen() {
 
   return (
     <Screen>
-      <Stack.Screen options={{ title: thread.data?.title ?? "Chat" }} />
+      <Stack.Screen
+        options={{
+          title: thread.data?.title ?? "Chat",
+          headerRight: () => (
+            <ThreadHeaderButton onPress={menu.open} disabled={!thread.data || menu.busy} />
+          ),
+        }}
+      />
+      {menu.overlays}
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         // Android is edge-to-edge under Expo SDK 54, so `adjustResize` no longer shrinks the window
@@ -93,6 +173,7 @@ export default function ThreadScreen() {
             <MessageBody
               message={item}
               streaming={running && index === data.length - 1 && item.role === "assistant"}
+              projectId={thread.data?.projectId}
             />
           )}
           ListFooterComponent={
@@ -111,13 +192,58 @@ export default function ThreadScreen() {
             paddingBottom: Math.max(10, insets.bottom),
           }}
         >
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 8,
+              ...readable,
+            }}
+          >
+            {choice ? (
+              <AgentModelPicker
+                value={choice}
+                onChange={(next) => void changeChoice(next)}
+                agents={doctor.data?.agents ?? []}
+                settings={settings.data}
+                disabled={running || patch.isPending}
+              />
+            ) : null}
+          </View>
+          <View style={readable}>
+            <AttachmentStrip items={attachments.pending} onRemove={attachments.remove} />
+          </View>
+          {attachSheet.sheet}
           <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 8, ...readable }}>
+            <Pressable
+              onPress={addPhoto}
+              disabled={sending}
+              hitSlop={6}
+              accessibilityRole="button"
+              accessibilityLabel={blocked ? `Attach photo (${blocked})` : "Attach photo"}
+              style={({ pressed }) => ({
+                width: 38,
+                height: 38,
+                borderRadius: 19,
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: pressed ? t.panel2 : t.bg,
+                borderColor: t.border,
+                borderWidth: StyleSheet.hairlineWidth,
+                opacity: blocked ? 0.45 : 1,
+              })}
+            >
+              <Text style={{ color: t.fg, fontSize: 22, lineHeight: 24, fontWeight: "300" }}>
+                ＋
+              </Text>
+            </Pressable>
             <TextInput
               // Android in landscape otherwise swaps the screen for a full-screen editor with a DONE key.
               disableFullscreenUI
               value={draft}
               onChangeText={setDraft}
-              placeholder={thread.data ? `Message ${thread.data.agentId}` : "Message"}
+              placeholder={choice ? `Message ${choice.agentId}` : "Message"}
               placeholderTextColor={t.muted}
               multiline
               style={{
@@ -136,10 +262,10 @@ export default function ThreadScreen() {
             />
             <Pressable
               onPress={() => void (running ? stop() : send())}
-              disabled={!running && (sending || !draft.trim())}
+              disabled={!running && !canSend}
               style={{
                 backgroundColor: running ? t.danger : t.accent,
-                opacity: !running && (sending || !draft.trim()) ? 0.4 : 1,
+                opacity: !running && !canSend ? 0.4 : 1,
                 borderRadius: 18,
                 paddingHorizontal: 16,
                 paddingVertical: 11,
