@@ -85,3 +85,9 @@ export function Screen({ children }: { children: ReactNode }) {
   const t = useTheme();
   return <View style={{ flex: 1, backgroundColor: t.bg }}>{children}</View>;
 }
+
+/**
+ * Caps content width on wide windows (a landscape handheld, a tablet) so prose lines stay
+ * readable; on a phone it is a no-op. Spread into a list's `contentContainerStyle` or a row.
+ */
+export const readable = { width: "100%", maxWidth: 760, alignSelf: "center" } as const;

@@ -8,7 +8,7 @@ import { Stack, router, useLocalSearchParams } from "expo-router";
 import { useMemo } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { ProjectImage } from "@/components/ProjectImage";
-import { Badge, Button, Card, Loading, Screen } from "@/components/ui";
+import { Badge, Button, Card, Loading, Screen, readable } from "@/components/ui";
 import { formatBytes, relativeTime } from "@/lib/format";
 import { hasBoard, preferredRender, renderImages } from "@/lib/renders";
 import { usePullRefresh } from "@/components/pull-refresh";
@@ -40,7 +40,7 @@ export default function ProjectScreen() {
     <Screen>
       <Stack.Screen options={{ title: project.data.name }} />
       <ScrollView
-        contentContainerStyle={{ padding: 14, gap: 14 }}
+        contentContainerStyle={{ padding: 14, gap: 14, ...readable }}
         refreshControl={refreshControl}
       >
         <Card>

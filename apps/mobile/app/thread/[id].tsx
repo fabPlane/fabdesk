@@ -23,7 +23,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MessageBody } from "@/components/MessageParts";
-import { Loading, Screen } from "@/components/ui";
+import { Loading, Screen, readable } from "@/components/ui";
 import { formatDuration } from "@/lib/format";
 import { useTheme } from "@/theme";
 
@@ -88,11 +88,18 @@ export default function ThreadScreen() {
           ref={list}
           data={data}
           keyExtractor={(m) => m.id}
-          contentContainerStyle={{ paddingVertical: 10 }}
+          contentContainerStyle={{ paddingVertical: 10, ...readable }}
           renderItem={({ item, index }) => (
-            <MessageBody message={item} streaming={running && index === data.length - 1 && item.role === "assistant"} />
+            <MessageBody
+              message={item}
+              streaming={running && index === data.length - 1 && item.role === "assistant"}
+            />
           )}
-          ListFooterComponent={running ? <RunBanner startedAt={run.startedAt} agentId={run.agentId} error={run.error} /> : null}
+          ListFooterComponent={
+            running ? (
+              <RunBanner startedAt={run.startedAt} agentId={run.agentId} error={run.error} />
+            ) : null
+          }
           onContentSizeChange={() => list.current?.scrollToEnd({ animated: false })}
         />
         <View
@@ -102,51 +109,62 @@ export default function ThreadScreen() {
             backgroundColor: t.panel,
             padding: 10,
             paddingBottom: Math.max(10, insets.bottom),
-            flexDirection: "row",
-            alignItems: "flex-end",
-            gap: 8,
           }}
         >
-          <TextInput
-            value={draft}
-            onChangeText={setDraft}
-            placeholder={thread.data ? `Message ${thread.data.agentId}` : "Message"}
-            placeholderTextColor={t.muted}
-            multiline
-            style={{
-              flex: 1,
-              backgroundColor: t.bg,
-              borderColor: t.border,
-              borderWidth: StyleSheet.hairlineWidth,
-              borderRadius: 18,
-              color: t.fg,
-              fontSize: 15,
-              maxHeight: 140,
-              paddingHorizontal: 14,
-              paddingTop: 10,
-              paddingBottom: 10,
-            }}
-          />
-          <Pressable
-            onPress={() => void (running ? stop() : send())}
-            disabled={!running && (sending || !draft.trim())}
-            style={{
-              backgroundColor: running ? t.danger : t.accent,
-              opacity: !running && (sending || !draft.trim()) ? 0.4 : 1,
-              borderRadius: 18,
-              paddingHorizontal: 16,
-              paddingVertical: 11,
-            }}
-          >
-            <Text style={{ color: t.accentFg, fontWeight: "700", fontSize: 14 }}>{running ? "Stop" : "Send"}</Text>
-          </Pressable>
+          <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 8, ...readable }}>
+            <TextInput
+              // Android in landscape otherwise swaps the screen for a full-screen editor with a DONE key.
+              disableFullscreenUI
+              value={draft}
+              onChangeText={setDraft}
+              placeholder={thread.data ? `Message ${thread.data.agentId}` : "Message"}
+              placeholderTextColor={t.muted}
+              multiline
+              style={{
+                flex: 1,
+                backgroundColor: t.bg,
+                borderColor: t.border,
+                borderWidth: StyleSheet.hairlineWidth,
+                borderRadius: 18,
+                color: t.fg,
+                fontSize: 15,
+                maxHeight: 140,
+                paddingHorizontal: 14,
+                paddingTop: 10,
+                paddingBottom: 10,
+              }}
+            />
+            <Pressable
+              onPress={() => void (running ? stop() : send())}
+              disabled={!running && (sending || !draft.trim())}
+              style={{
+                backgroundColor: running ? t.danger : t.accent,
+                opacity: !running && (sending || !draft.trim()) ? 0.4 : 1,
+                borderRadius: 18,
+                paddingHorizontal: 16,
+                paddingVertical: 11,
+              }}
+            >
+              <Text style={{ color: t.accentFg, fontWeight: "700", fontSize: 14 }}>
+                {running ? "Stop" : "Send"}
+              </Text>
+            </Pressable>
+          </View>
         </View>
       </KeyboardAvoidingView>
     </Screen>
   );
 }
 
-function RunBanner({ startedAt, agentId, error }: { startedAt: number; agentId: string; error?: string | undefined }) {
+function RunBanner({
+  startedAt,
+  agentId,
+  error,
+}: {
+  startedAt: number;
+  agentId: string;
+  error?: string | undefined;
+}) {
   const t = useTheme();
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -157,7 +175,16 @@ function RunBanner({ startedAt, agentId, error }: { startedAt: number; agentId: 
 
   if (error) {
     return (
-      <View style={{ margin: 14, padding: 10, borderRadius: 8, backgroundColor: t.panel, borderColor: t.danger, borderWidth: StyleSheet.hairlineWidth }}>
+      <View
+        style={{
+          margin: 14,
+          padding: 10,
+          borderRadius: 8,
+          backgroundColor: t.panel,
+          borderColor: t.danger,
+          borderWidth: StyleSheet.hairlineWidth,
+        }}
+      >
         <Text style={{ color: t.danger, fontSize: 13 }}>{error}</Text>
       </View>
     );

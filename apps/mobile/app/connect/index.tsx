@@ -6,7 +6,7 @@ import { parsePairingUrl } from "@fabdesk/protocol";
 import { router } from "expo-router";
 import { useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { Badge, Button, Card, Screen } from "@/components/ui";
+import { Badge, Button, Card, Screen, readable } from "@/components/ui";
 import { claimAndSave } from "@/transport/pair";
 import { useConnections } from "@/transport/connections";
 import { relativeTime } from "@/lib/format";
@@ -38,7 +38,7 @@ export default function ConnectScreen() {
 
   return (
     <Screen>
-      <ScrollView contentContainerStyle={{ padding: 14, gap: 14 }} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={{ padding: 14, gap: 14, ...readable }} keyboardShouldPersistTaps="handled">
         <Button title="Scan pairing code" variant="primary" onPress={() => router.push("/connect/scan")} />
 
         {connections.map((c) => (
@@ -76,6 +76,8 @@ export default function ConnectScreen() {
             Settings › Remote access › Pair a device on the desktop shows the link behind the QR code.
           </Text>
           <TextInput
+            // Android in landscape otherwise swaps the screen for a full-screen editor with a DONE key.
+            disableFullscreenUI
             value={manual}
             onChangeText={setManual}
             placeholder="fabdesk://pair?…"

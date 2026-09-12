@@ -99,6 +99,28 @@ Smaller things seen and left alone:
   remote listener is actually bound to. Harmless in real use (it binds `0.0.0.0`), confusing when
   testing on loopback.
 
+## Real devices (2026-09-12, later the same day)
+
+Release builds went onto two physical devices from this Mac:
+
+- **iPhone 17 Pro Max, iOS 26.6** — `xcodebuild -allowProvisioningUpdates` against the Personal
+  Team (`ios.appleTeamId` in `app.json`), installed with `devicectl`. `expo run:ios --device` cannot
+  do this on its own: it never passes `-allowProvisioningUpdates`, so a bundle ID Xcode has not seen
+  fails with "No profiles for … were found". A Personal Team profile expires after 7 days; the
+  Voxly LLC team in Xcode would give a year. The phone has to trust the profile once (Settings ›
+  General › VPN & Device Management). Not yet paired with a real desktop — that test is still open.
+- **AYN Thor, Android 13** — a landscape handheld with a 538×420 dp window. `orientation` was
+  `portrait`, which rendered the whole app sideways; it is `default` now. Content is capped at
+  760 dp (`readable` in `src/components/ui.tsx`) so prose does not run 120 characters wide. Every
+  `TextInput` sets `disableFullscreenUI`, and the flag is verified in the field's `EditorInfo`
+  (`imeOptions` carries `IME_FLAG_NO_FULLSCREEN`) — but this device's Gboard 18.1 goes fullscreen in
+  landscape anyway. Text entry still works: type, DONE, then Send. Paired over USB with
+  `adb reverse tcp:47820 tcp:47820` and a hand-built link with `h=127.0.0.1`.
+
+The icon is the desktop tile cropped to its opaque centre (`assets/icon.png`, full-bleed, no alpha —
+the tile's transparent rounded corners came out as a white frame on iOS) and, for Android's
+adaptive mask, the same image padded to the centre 66% (`assets/adaptive-icon.png`).
+
 ## Still never run
 
 Only a physical device can answer these:
@@ -116,33 +138,34 @@ Only a physical device can answer these:
 
 ### 1. iOS Local Network permission (most likely to block everything)
 
-`app.json` sets `NSAllowsLocalNetworking` and a camera usage string, but **not**
-`NSLocalNetworkUsageDescription`. On iOS 14+ an app connecting to a bare IP on the local network
-triggers a system permission prompt, and without the usage string the connection fails with no
-visible reason.
+`app.json` now sets both halves of this, ahead of the first real-phone build:
 
-Whether a Tailscale `100.64.0.0/10` address counts as "local network" to iOS is exactly the
-question — it is CGNAT space reaching a peer over a userspace tunnel, so it may bypass the check
-entirely, or may not. **Test the tailnet path and the LAN path separately**; they may behave
-differently.
+- `NSLocalNetworkUsageDescription` — on iOS 14+ an app connecting to a bare IP on the local network
+  triggers a system permission prompt, and without the usage string the connection fails with no
+  visible reason.
+- `NSAllowsArbitraryLoads` — `NSAllowsLocalNetworking` alone only exempts RFC 1918 / link-local
+  addresses from App Transport Security, and a Tailscale address is CGNAT space
+  (`100.64.0.0/10`), so plain HTTP to it would be refused. ATS exceptions are keyed by domain, not
+  IP, and the pairing URL carries IPs, so there is no narrower exception that covers the tailnet
+  path. (The alternative — MagicDNS names in the pairing URL plus a per-domain exception — would
+  work only for tailnets with MagicDNS on; a later refinement.)
 
-If it blocks, add to `ios.infoPlist`:
-
-```json
-"NSLocalNetworkUsageDescription": "Connecting to fabPlane running on your computer."
-```
-
-and, if plain HTTP to an IP is refused outright, widen ATS. Prefer a scoped exception over
-`NSAllowsArbitraryLoads` if one works.
+Whether a tailnet address also counts as "local network" for the _permission prompt_ is still
+open — it may bypass the check entirely, or may not. **Test the tailnet path and the LAN path
+separately**; they may behave differently.
 
 Symptom to look for: `findReachable` returns null and the app shows "Can't reach that computer"
 even though `curl http://<ip>:47820/health` works from a laptop on the same tailnet.
 
 ### 2. Android cleartext
 
-`usesCleartextTraffic: true` is set, which should be enough for HTTP to an IP. Verify on Android 9+
-(API 28 changed the default). If it fails, a network security config allowing cleartext to the
-tailnet range is the next step.
+**`android.usesCleartextTraffic` in `app.json` does nothing on Expo SDK 54** — `@expo/config-plugins`
+types the manifest attribute but no plugin writes it from the config. The emulator's debug build
+still reached `10.0.2.2` because the Expo template's `android/app/src/debug/AndroidManifest.xml`
+sets `usesCleartextTraffic="true"` for Metro; the first **release** APK installed on a real device
+(an AYN Thor, Android 13) failed every request with `Network request failed`. The flag now comes
+from the `expo-build-properties` plugin, which puts it in the main manifest; a release APK on the
+Thor pairs and streams with it.
 
 ### 3. WebSocket lifecycle on a real network
 

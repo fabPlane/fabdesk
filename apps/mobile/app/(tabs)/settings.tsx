@@ -1,7 +1,7 @@
 import { useDoctor } from "@fabdesk/client-core";
 import { router } from "expo-router";
 import { ScrollView, Text, View } from "react-native";
-import { Badge, Button, Card, Screen } from "@/components/ui";
+import { Badge, Button, Card, Screen, readable } from "@/components/ui";
 import { useConnection } from "@/transport/CoreConnection";
 import { useConnections } from "@/transport/connections";
 import { useTheme } from "@/theme";
@@ -13,7 +13,7 @@ export default function SettingsScreen() {
 
   return (
     <Screen>
-      <ScrollView contentContainerStyle={{ padding: 14, gap: 14 }}>
+      <ScrollView contentContainerStyle={{ padding: 14, gap: 14, ...readable }}>
         <Card>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 }}>
             <Text style={{ color: t.fg, fontSize: 15, fontWeight: "600", flex: 1 }}>{connection?.name ?? "Not connected"}</Text>

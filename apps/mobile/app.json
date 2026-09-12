@@ -4,29 +4,50 @@
     "slug": "fabplane-mobile",
     "scheme": "fabdesk",
     "version": "0.1.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-    "experiments": { "typedRoutes": false },
+    "experiments": {
+      "typedRoutes": false
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tensorfleet.fabdesk.mobile",
       "infoPlist": {
         "NSCameraUsageDescription": "Scanning the pairing code shown by fabPlane on your computer.",
         "NSAppTransportSecurity": {
-          "NSAllowsLocalNetworking": true,
-          "NSExceptionDomains": {}
-        }
-      }
+          "NSAllowsArbitraryLoads": true,
+          "NSAllowsLocalNetworking": true
+        },
+        "NSLocalNetworkUsageDescription": "Connecting to fabPlane running on your computer over your local network or tailnet."
+      },
+      "appleTeamId": "37TBDB5SQJ"
     },
     "android": {
       "package": "com.tensorfleet.fabdesk.mobile",
-      "usesCleartextTraffic": true,
-      "permissions": ["CAMERA"]
+      "permissions": ["CAMERA"],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0c2726"
+      }
     },
     "plugins": [
       "expo-router",
-      ["expo-camera", { "cameraPermission": "Scanning the pairing code shown by fabPlane on your computer." }]
-    ]
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Scanning the pairing code shown by fabPlane on your computer."
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
+    ],
+    "icon": "./assets/icon.png"
   }
 }

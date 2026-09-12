@@ -8,7 +8,7 @@ import { router } from "expo-router";
 import { useMemo, useState } from "react";
 import { Pressable, SectionList, StyleSheet, Text, TextInput, View } from "react-native";
 import { ConnectionGate } from "@/components/ConnectionGate";
-import { Empty, Loading, Screen } from "@/components/ui";
+import { Empty, Loading, Screen, readable } from "@/components/ui";
 import { useConnection } from "@/transport/CoreConnection";
 import { usePullRefresh } from "@/components/pull-refresh";
 import { useTheme } from "@/theme";
@@ -40,8 +40,10 @@ function Chats() {
 
   return (
     <Screen>
-      <View style={{ padding: 12, paddingBottom: 6 }}>
+      <View style={{ padding: 12, paddingBottom: 6, ...readable }}>
         <TextInput
+          // Android in landscape otherwise swaps the screen for a full-screen editor with a DONE key.
+          disableFullscreenUI
           value={q}
           onChangeText={setQ}
           placeholder="Search chats"
@@ -71,7 +73,7 @@ function Chats() {
         ListEmptyComponent={
           <Empty title={q ? "No chats match" : "No chats yet"} hint={q ? undefined : "Start one on the desktop and it shows up here."} />
         }
-        contentContainerStyle={sections.length === 0 ? { flexGrow: 1 } : { paddingBottom: 24 }}
+        contentContainerStyle={sections.length === 0 ? { flexGrow: 1 } : { paddingBottom: 24, ...readable }}
         renderSectionHeader={({ section }) => (
           <Text
             style={{
