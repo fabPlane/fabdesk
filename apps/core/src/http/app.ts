@@ -10,6 +10,8 @@ import {
   OpenCatalogIndex,
   OrderVendorId,
   PatchThread,
+  ResolveApproval,
+  ResolveInput,
   SendMessage,
   Settings,
   StartOrder,
@@ -273,10 +275,18 @@ export function createApp(deps: AppDeps): Hono<Env> {
       }),
     );
   });
+  /** Supervised mode needs an adapter that can pause; the phone greys the option out from `/agents`. */
+  const canSupervise = (agentId: AgentId): boolean => deps.runs?.supportsSupervised(agentId) ?? false;
   app.post("/threads", async (c) => {
     const body = CreateThread.parse(await c.req.json());
+    const runtimeMode = body.runtimeMode ?? deps.store.settings.get().defaultRuntimeMode;
+    // A default of `supervised` must not make an agent that cannot do it unusable: fall back silently
+    // unless the request asked for it by name.
+    const mode = runtimeMode === "supervised" && !canSupervise(body.agentId) ? (body.runtimeMode ? null : "full") : runtimeMode;
+    if (mode === null) return c.json({ error: "agent cannot run supervised" }, 400);
     const t = deps.store.threads.create({
       agentId: body.agentId,
+      runtimeMode: mode,
       ...(body.projectId !== undefined ? { projectId: body.projectId } : {}),
       ...(body.title ? { title: body.title } : {}),
       ...(body.model ? { model: body.model } : {}),
@@ -288,14 +298,33 @@ export function createApp(deps: AppDeps): Hono<Env> {
   });
   app.get("/threads/:id", (c) => {
     const t = deps.store.threads.get(c.req.param("id"));
-    return t ? c.json({ ...t, run: deps.store.runs.latestForThread(t.id), running: deps.runs?.isRunning(t.id) ?? false }) : c.json({ error: "not found" }, 404);
+    if (!t) return c.json({ error: "not found" }, 404);
+    return c.json({ ...t, run: deps.store.runs.latestForThread(t.id), running: deps.runs?.isRunning(t.id) ?? false, pending: deps.runs?.pending(t.id) ?? { approvals: [], inputs: [] } });
   });
   app.patch("/threads/:id", async (c) => {
     const body = compact(PatchThread.parse(await c.req.json()));
-    const t = deps.store.threads.patch(c.req.param("id"), body);
+    const current = deps.store.threads.get(c.req.param("id"));
+    if (!current) return c.json({ error: "not found" }, 404);
+    const mode = body.runtimeMode ?? current.runtimeMode ?? "full";
+    if (mode === "supervised" && !canSupervise(body.agentId ?? current.agentId)) return c.json({ error: "agent cannot run supervised" }, 400);
+    const t = deps.store.threads.patch(current.id, body);
     if (!t) return c.json({ error: "not found" }, 404);
     deps.bus.emit({ ts: Date.now(), topic: "thread.updated", threadId: t.id, ...(body.title !== undefined ? { title: t.title } : {}) });
     return c.json(t);
+  });
+
+  /* ---------- supervised mode: decisions (both listeners; a paired phone may answer) ---------- */
+  const decidedBy = (c: Context<Env>): "desktop" | "device" => (deps.tokens.lookup(c.get("token"))?.kind === "device" ? "device" : "desktop");
+  const outcome = (c: Context<Env>, r: "ok" | "not_found" | "resolved") => (r === "ok" ? c.json({ ok: true }) : r === "resolved" ? c.json({ error: "already resolved" }, 409) : c.json({ error: "not found" }, 404));
+  app.post("/threads/:id/approvals/:requestId", async (c) => {
+    if (!deps.runs) return c.json({ error: "agent runs are disabled in this daemon" }, 503);
+    const body = ResolveApproval.parse(await c.req.json());
+    return outcome(c, deps.runs.resolveApproval(c.req.param("id"), c.req.param("requestId"), body.decision, decidedBy(c)));
+  });
+  app.post("/threads/:id/inputs/:requestId", async (c) => {
+    if (!deps.runs) return c.json({ error: "agent runs are disabled in this daemon" }, 503);
+    const body = ResolveInput.parse(await c.req.json());
+    return outcome(c, deps.runs.resolveInput(c.req.param("id"), c.req.param("requestId"), body.answer));
   });
   app.delete("/threads/:id", (c) => {
     const id = c.req.param("id");
@@ -314,9 +343,19 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const body = SendMessage.parse(await c.req.json());
     if (!deps.runs) return c.json({ error: "agent runs are disabled in this daemon" }, 503);
     const agentId: AgentId = body.agentId ?? t.agentId;
+    const queue = body.queue === true || c.req.query("queue") === "1" || c.req.query("queue") === "true";
+    const parts = [{ type: "text" as const, text: body.content }, ...body.attachments.map((a) => ({ type: "image" as const, path: a.path, mime: a.mime }))];
+    if (deps.runs.isRunning(t.id)) {
+      // C5: with a run live, keep the message and send it when the run ends. The agent/model switch
+      // is not applied now — the queued message goes out with whatever the thread uses by then.
+      if (!queue) return c.json({ error: "an agent run is already active on this thread", code: "precondition" }, 412);
+      const queued = deps.store.threads.addMessage({ threadId: t.id, role: "user", contentMd: body.content, parts, status: "queued" });
+      deps.bus.emit({ ts: Date.now(), topic: "thread.updated", threadId: t.id });
+      return c.json({ queued: true, messageId: queued.id, userMessageId: queued.id }, 202);
+    }
     const switched = agentId !== t.agentId || (!!body.model && body.model !== t.model);
     if (switched) deps.store.threads.patch(t.id, { agentId, ...(body.model ? { model: body.model } : {}) });
-    const user = deps.store.threads.addMessage({ threadId: t.id, role: "user", contentMd: body.content, parts: [{ type: "text", text: body.content }, ...body.attachments.map((a) => ({ type: "image" as const, path: a.path, mime: a.mime }))] });
+    const user = deps.store.threads.addMessage({ threadId: t.id, role: "user", contentMd: body.content, parts });
     // The first message names a "New chat". Both of these silent edits are announced so a second
     // client (the phone, or the desktop when the phone sent the message) does not keep a stale row.
     const title = t.title === "New chat" ? body.content.trim().replace(/\s+/g, " ").slice(0, 60) : null;
@@ -325,6 +364,16 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const project = t.projectId ? await deps.projects.handle(t.projectId) : null;
     const { runId, messageId } = await deps.runs.start({ threadId: t.id, project, agentId, ...(body.model ?? t.model ? { model: (body.model ?? t.model) as string } : {}), prompt: body.content, attachments: body.attachments });
     return c.json({ runId, messageId, userMessageId: user.id }, 202);
+  });
+  /** Removes a message that is still queued; a sent one is history and stays. */
+  app.delete("/threads/:id/messages/:messageId", (c) => {
+    const t = deps.store.threads.get(c.req.param("id"));
+    const m = deps.store.threads.getMessage(c.req.param("messageId"));
+    if (!t || !m || m.threadId !== t.id) return c.json({ error: "not found" }, 404);
+    if (m.status !== "queued") return c.json({ error: "message is not queued" }, 409);
+    deps.store.threads.deleteMessage(m.id);
+    deps.bus.emit({ ts: Date.now(), topic: "thread.updated", threadId: t.id });
+    return c.json({ ok: true });
   });
   app.post("/threads/:id/abort", (c) => {
     const id = c.req.param("id");
@@ -488,7 +537,12 @@ export function createApp(deps: AppDeps): Hono<Env> {
   /* ---------- settings ---------- */
   app.get("/settings", (c) => c.json(deps.store.settings.get()));
   app.patch("/settings", async (c) => {
-    const body = Settings.partial().parse(await c.req.json());
+    const raw: unknown = await c.req.json();
+    // `.partial()` still fills every defaulted key, so a `{ theme }` patch would otherwise reset the
+    // agents, the remote listener and everything else to defaults: keep only what was sent.
+    const parsed = Settings.partial().parse(raw);
+    const sent = typeof raw === "object" && raw !== null ? new Set(Object.keys(raw)) : new Set<string>();
+    const body = Object.fromEntries(Object.entries(parsed).filter(([k]) => sent.has(k))) as typeof parsed;
     const next = deps.store.settings.patch(body);
     await applyErrorReporting(next.errorReporting);
     // Remote access is a runtime toggle: the listener starts, stops or rebinds without a restart.

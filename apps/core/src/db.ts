@@ -11,6 +11,7 @@ import {
   type JobStatus,
   type MessagePart,
   type ProjectSummary,
+  type RuntimeMode,
 } from "@fabdesk/protocol";
 import type { RouteRunRecord } from "@fabdesk/tools";
 import type { RouteResult } from "@fabdesk/protocol";
@@ -127,6 +128,14 @@ export const MIGRATIONS: Array<{ version: number; sql: string }> = [
       CREATE INDEX devices_token ON devices(token_sha256);
     `,
   },
+  {
+    // Supervised runtime mode per thread; queued user messages (sent when the live run ends).
+    version: 3,
+    sql: `
+      ALTER TABLE threads ADD COLUMN runtime_mode TEXT NOT NULL DEFAULT 'full';
+      ALTER TABLE messages ADD COLUMN status TEXT;
+    `,
+  },
 ];
 
 export function openDatabase(path: string): Database {
@@ -205,9 +214,9 @@ export class ProjectRepo {
 
 type ThreadRow = {
   id: string; project_id: string | null; folder_id: string | null; title: string; pinned: number; archived: number; agent_id: string; model: string | null;
-  parent_thread_id: string | null; branch_from_message_id: string | null; created_at: string; updated_at: string;
+  parent_thread_id: string | null; branch_from_message_id: string | null; runtime_mode: string; created_at: string; updated_at: string;
 };
-type MessageRow = { id: string; thread_id: string; role: string; content_md: string; parts_json: string; run_id: string | null; created_at: string };
+type MessageRow = { id: string; thread_id: string; role: string; content_md: string; parts_json: string; run_id: string | null; status: string | null; created_at: string };
 
 export type ThreadQuery = { q?: string; projectId?: string; archived?: boolean; folderId?: string | null; limit?: number };
 
@@ -217,11 +226,11 @@ export class ThreadRepo {
   private toThread(r: ThreadRow): Thread {
     return Thread.parse({
       id: r.id, projectId: r.project_id, folderId: r.folder_id, title: r.title, pinned: r.pinned === 1, archived: r.archived === 1, agentId: r.agent_id, model: r.model,
-      parentThreadId: r.parent_thread_id, branchFromMessageId: r.branch_from_message_id, createdAt: r.created_at, updatedAt: r.updated_at,
+      parentThreadId: r.parent_thread_id, branchFromMessageId: r.branch_from_message_id, runtimeMode: r.runtime_mode, createdAt: r.created_at, updatedAt: r.updated_at,
     });
   }
   private toMessage(r: MessageRow): Message {
-    return Message.parse({ id: r.id, threadId: r.thread_id, role: r.role, contentMd: r.content_md, parts: JSON.parse(r.parts_json), runId: r.run_id, createdAt: r.created_at });
+    return Message.parse({ id: r.id, threadId: r.thread_id, role: r.role, contentMd: r.content_md, parts: JSON.parse(r.parts_json), runId: r.run_id, ...(r.status ? { status: r.status } : {}), createdAt: r.created_at });
   }
 
   list(q: ThreadQuery = {}): Thread[] {
@@ -256,14 +265,14 @@ export class ThreadRepo {
     return r ? this.toThread(r) : null;
   }
 
-  create(input: { projectId?: string | null; title?: string; agentId: string; model?: string; parentThreadId?: string; branchFromMessageId?: string; folderId?: string | null }): Thread {
+  create(input: { projectId?: string | null; title?: string; agentId: string; model?: string; parentThreadId?: string; branchFromMessageId?: string; folderId?: string | null; runtimeMode?: RuntimeMode }): Thread {
     const id = newId("th");
     const ts = nowIso();
     const parent = input.parentThreadId ? this.get(input.parentThreadId) : null;
     const title = input.title ?? (parent ? `${parent.title} (branch)` : "New chat");
     this.db.run(
-      "INSERT INTO threads(id, project_id, folder_id, title, pinned, archived, agent_id, model, parent_thread_id, branch_from_message_id, created_at, updated_at) VALUES (?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?)",
-      [id, input.projectId ?? parent?.projectId ?? null, input.folderId ?? parent?.folderId ?? null, title, input.agentId, input.model ?? parent?.model ?? null, input.parentThreadId ?? null, input.branchFromMessageId ?? null, ts, ts],
+      "INSERT INTO threads(id, project_id, folder_id, title, pinned, archived, agent_id, model, parent_thread_id, branch_from_message_id, runtime_mode, created_at, updated_at) VALUES (?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?)",
+      [id, input.projectId ?? parent?.projectId ?? null, input.folderId ?? parent?.folderId ?? null, title, input.agentId, input.model ?? parent?.model ?? null, input.parentThreadId ?? null, input.branchFromMessageId ?? null, input.runtimeMode ?? parent?.runtimeMode ?? "full", ts, ts],
     );
     // Branching copies the parent's messages up to (and including) the branch point.
     if (parent) {
@@ -274,7 +283,7 @@ export class ThreadRepo {
     return this.get(id)!;
   }
 
-  patch(id: string, patch: { title?: string; pinned?: boolean; archived?: boolean; folderId?: string | null; agentId?: string; model?: string | null; projectId?: string | null }): Thread | null {
+  patch(id: string, patch: { title?: string; pinned?: boolean; archived?: boolean; folderId?: string | null; agentId?: string; model?: string | null; projectId?: string | null; runtimeMode?: RuntimeMode }): Thread | null {
     const sets: string[] = [];
     const params: unknown[] = [];
     const add = (col: string, v: unknown) => {
@@ -288,6 +297,7 @@ export class ThreadRepo {
     if (patch.agentId !== undefined) add("agent_id", patch.agentId);
     if (patch.model !== undefined) add("model", patch.model);
     if (patch.projectId !== undefined) add("project_id", patch.projectId);
+    if (patch.runtimeMode !== undefined) add("runtime_mode", patch.runtimeMode);
     add("updated_at", nowIso());
     params.push(id);
     this.db.run(`UPDATE threads SET ${sets.join(", ")} WHERE id = ?`, params as []);
@@ -312,15 +322,15 @@ export class ThreadRepo {
     return r ? this.toMessage(r) : null;
   }
 
-  addMessage(input: { threadId: string; role: Message["role"]; contentMd: string; parts?: MessagePart[]; runId?: string | null; id?: string }): Message {
+  addMessage(input: { threadId: string; role: Message["role"]; contentMd: string; parts?: MessagePart[]; runId?: string | null; id?: string; status?: "queued" }): Message {
     const id = input.id ?? newId("msg");
     const ts = nowIso();
-    this.db.run("INSERT INTO messages(id, thread_id, role, content_md, parts_json, run_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)", [id, input.threadId, input.role, input.contentMd, JSON.stringify(input.parts ?? []), input.runId ?? null, ts]);
+    this.db.run("INSERT INTO messages(id, thread_id, role, content_md, parts_json, run_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", [id, input.threadId, input.role, input.contentMd, JSON.stringify(input.parts ?? []), input.runId ?? null, input.status ?? null, ts]);
     this.touch(input.threadId);
     return this.getMessage(id)!;
   }
 
-  updateMessage(id: string, patch: { contentMd?: string; parts?: MessagePart[] }): void {
+  updateMessage(id: string, patch: { contentMd?: string; parts?: MessagePart[]; status?: "queued" | null }): void {
     const sets: string[] = [];
     const params: unknown[] = [];
     if (patch.contentMd !== undefined) {
@@ -331,9 +341,21 @@ export class ThreadRepo {
       sets.push("parts_json = ?");
       params.push(JSON.stringify(patch.parts));
     }
+    if (patch.status !== undefined) {
+      sets.push("status = ?");
+      params.push(patch.status);
+    }
     if (!sets.length) return;
     params.push(id);
     this.db.run(`UPDATE messages SET ${sets.join(", ")} WHERE id = ?`, params as []);
+  }
+
+  deleteMessage(id: string): boolean {
+    const m = this.getMessage(id);
+    if (!m) return false;
+    this.db.run("DELETE FROM messages WHERE id = ?", [id]);
+    this.touch(m.threadId);
+    return true;
   }
 
   search(q: string, limit = 50): Array<{ message: Message; snippet: string }> {

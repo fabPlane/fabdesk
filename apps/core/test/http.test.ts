@@ -156,6 +156,9 @@ describe("http daemon", () => {
     expect(patched.manifest.board.layers).toBe(4);
     const settings = (await (await api("/settings", { method: "PATCH", body: JSON.stringify({ keepCoreRunning: true }) })).json()) as { keepCoreRunning: boolean };
     expect(settings.keepCoreRunning).toBe(true);
+    // A partial patch leaves the other keys alone (the schema's defaults must not bleed in).
+    const themed = (await (await api("/settings", { method: "PATCH", body: JSON.stringify({ theme: "dark" }) })).json()) as { keepCoreRunning: boolean; theme: string };
+    expect(themed).toMatchObject({ keepCoreRunning: true, theme: "dark" });
     expect((await api("/settings", { method: "PATCH", body: JSON.stringify({ router: "nope" }) })).status).toBe(400);
 
     // Tools over HTTP: sync + job.

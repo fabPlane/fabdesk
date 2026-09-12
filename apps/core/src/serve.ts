@@ -37,6 +37,8 @@ export type ServeOptions = {
   watchProjects?: boolean;
   /** Do not write the handshake file (tests). */
   noHandshake?: boolean;
+  /** Tests: shorten the 30-minute supervised-mode approval timeout. */
+  approvalTimeoutMs?: number;
 };
 
 export type Daemon = {
@@ -112,7 +114,12 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
 
   const registry = createRegistry();
   const ctxFactory = createContextFactory({ services, projects, tokens });
-  const mcp = new McpSessionManager({ registry, ctxFactory, version: config.version });
+  const mcp = new McpSessionManager({
+    registry,
+    ctxFactory,
+    version: config.version,
+    permissionPrompt: { enabledFor: (token) => runs.isSupervisedRunToken(token), handle: (token, req) => runs.permissionPrompt(token, req) },
+  });
 
   const adapters = opts.adapters ?? (await loadAdapters());
   let mcpUrl = "";
@@ -126,6 +133,10 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     adapters,
     settings: () => store.settings.get(),
     workspaceDir: join(config.home, "workspace"),
+    // Only fabdesk's own tools have annotations the classifier trusts; another server's tool is a write.
+    annotationsFor: (tool, server) => (server === null || server === "fabdesk" ? registry.get(tool)?.annotations : undefined),
+    resolveProject: (id) => projects.handle(id),
+    ...(opts.approvalTimeoutMs !== undefined ? { approvalTimeoutMs: opts.approvalTimeoutMs } : {}),
     prepareProject: async (project: ProjectHandle) => {
       const agents = await import("@fabdesk/agents");
       const sketches = (await projects.listFiles(join(project.dir, "sketches"))).filter((f) => /\.(png|jpe?g)$/i.test(f.path)).map((f) => join(project.dir, "sketches", f.path));
