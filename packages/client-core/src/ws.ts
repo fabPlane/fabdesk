@@ -72,8 +72,13 @@ export function subscribeWs(options: WsOptions): SseSubscription {
     options.onStatus?.(next, attempt);
   };
 
+  // A failed socket fires `onerror` and then `onclose`, so a retry has to be idempotent per
+  // socket — otherwise every failure doubles the number of sockets being opened.
+  const retried = new WeakSet<WebSocketLike>();
+
   const retry = (ws: WebSocketLike) => {
-    if (closed) return;
+    if (closed || retried.has(ws)) return;
+    retried.add(ws);
     ws.close();
     if (socket === ws) socket = null;
     attempt += 1;

@@ -125,6 +125,27 @@ describe("subscribeWs", () => {
     sub.close();
   });
 
+  test("an error followed by a close reconnects once, not twice", async () => {
+    // How a real socket fails: onerror then onclose. Retrying on both would double the sockets
+    // on every failure.
+    const h = harness();
+    h.sockets[0]!.onopen?.({});
+    await Promise.resolve();
+
+    h.sockets[0]!.onerror?.({});
+    h.sockets[0]!.onclose?.({});
+    expect(h.timers).toHaveLength(1);
+
+    h.timers[0]!.fn();
+    expect(h.sockets).toHaveLength(2);
+    expect(h.timers[0]!.ms).toBe(1000);
+
+    // And the backoff still grows one step per failed attempt, not two.
+    h.sockets[1]!.onerror?.({});
+    h.sockets[1]!.onclose?.({});
+    expect(h.timers[1]!.ms).toBe(2000);
+  });
+
   test("close() stops reconnecting", () => {
     const h = harness();
     h.sockets[0]!.onopen?.({});
