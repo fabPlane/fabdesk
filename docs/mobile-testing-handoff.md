@@ -237,6 +237,23 @@ The iOS bundle id is now `com.fabplane.fabdesk` (paid team `CMNZZ92926`), so the
 build is a separate app from the earlier `com.tensorfleet.fabdesk.mobile` installs; the Android
 package is still `com.tensorfleet.fabdesk.mobile`.
 
+## Morning-after state (2026-09-13)
+
+All five roadmap phases are merged on `claude/experimental-ios-android-client-l1c8h7` and pushed.
+Verified on the iPhone 16 Pro simulator after the final native rebuild: pairing with the
+environment pill, the Notifications card (permission prompt → four prefs → "no EAS project"
+note), a **local notification for a run finished while backgrounded** (needed the new
+`fabdesk-background-grace` module — iOS was suspending the socket), and a **supervised run
+approved from the phone** (card → Approve → file written → "✓ approved on this phone", daemon
+records `by: device`). The AYN Thor has the same build as a release APK. Your iPhone has it as
+`com.fabplane.fabdesk` (Voxly team) — a new app next to the old one; trust the team once if iOS
+asks, then pair again.
+
+Still open, none blocking: push delivery (staging answers per contract but has no
+`EXPO_ACCESS_TOKEN`; we have no EAS project id yet — `docs/mobile-release.md`), Tailscale
+`serve` never run against a real config, no relay deployed, the fabplane.com `/pair` page, and
+the Android package id still `com.tensorfleet.fabdesk.mobile`.
+
 ## Still never run
 
 Only a physical device can answer these:
