@@ -8,6 +8,7 @@ import {
   svgRenderPath,
   svgSize,
   svgWebViewHtml,
+  ensureViewBox,
 } from "./svg-layers";
 
 /** Trimmed from a real `kicad-cli pcb export svg` of packages/kicad/test/fixtures/mini-two-layer. */
@@ -157,4 +158,21 @@ test("svgWebViewHtml inlines the svg on the requested background and allows pinc
   expect(html).toContain("background:#001023");
   expect(html).toContain("<svg");
   expect(html).not.toContain("<?xml");
+});
+
+describe("ensureViewBox", () => {
+  test("adds a viewBox from width/height when there is none", () => {
+    const out = ensureViewBox(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600"><g/></svg>',
+    );
+    expect(out.startsWith('<svg viewBox="0 0 1200 600" xmlns=')).toBe(true);
+    expect(out.endsWith("<g/></svg>")).toBe(true);
+  });
+
+  test("leaves an existing viewBox and a sizeless root alone", () => {
+    const withBox = '<svg viewBox="0 0 10 5" width="100" height="50"/>';
+    expect(ensureViewBox(withBox)).toBe(withBox);
+    const noSize = "<svg><g/></svg>";
+    expect(ensureViewBox(noSize)).toBe(noSize);
+  });
 });

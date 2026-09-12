@@ -101,6 +101,20 @@ export function svgSize(svg: string): SvgSize | null {
   return width > 0 && height > 0 ? { width, height } : null;
 }
 
+/**
+ * An `<svg>` with `width`/`height` but no `viewBox` does not scale: drawn smaller than its
+ * declared size it is clipped, not shrunk (tscircuit-era schematics are like this). Give it the
+ * viewBox its own size implies so a viewer can fit it.
+ */
+export function ensureViewBox(svg: string): string {
+  const open = /<svg\b[^>]*>/i.exec(svg);
+  if (!open || /viewBox\s*=/i.test(open[0])) return svg;
+  const size = svgSize(svg);
+  if (!size) return svg;
+  const tag = open[0].replace(/<svg\b/i, `<svg viewBox="0 0 ${size.width} ${size.height}"`);
+  return svg.slice(0, open.index) + tag + svg.slice(open.index + open[0].length);
+}
+
 /** Largest box of `size`'s aspect that fits `box`, centred — the "contain" fit for a viewer. */
 export function fitSize(size: SvgSize, box: SvgSize): SvgSize {
   const scale = Math.min(box.width / size.width, box.height / size.height);

@@ -6,13 +6,13 @@
  * Past `SVG_NATIVE_MAX_CHARS` the drawing goes into a WebView instead, where the browser's own
  * pinch-zoom takes over (no layer toggles on that path — the page is static).
  */
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { StyleSheet, Text, View, type LayoutChangeEvent } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { SvgXml } from "react-native-svg";
 import { WebView } from "react-native-webview";
-import { fitSize, svgSize, svgWebViewHtml, type SvgSize } from "@/lib/svg-layers";
+import { ensureViewBox, fitSize, svgSize, svgWebViewHtml, type SvgSize } from "@/lib/svg-layers";
 import { useTheme } from "@/theme";
 
 const MIN_SCALE = 1;
@@ -72,7 +72,7 @@ function useZoomPan() {
 }
 
 export function SvgViewer({
-  xml,
+  xml: rawXml,
   background,
   caption,
 }: {
@@ -83,6 +83,7 @@ export function SvgViewer({
   const t = useTheme();
   const { gesture, style } = useZoomPan();
   const [box, setBox] = useState<SvgSize | null>(null);
+  const xml = useMemo(() => ensureViewBox(rawXml), [rawXml]);
   const natural = svgSize(xml);
   const fitted = box && natural ? fitSize(natural, box) : box;
 
