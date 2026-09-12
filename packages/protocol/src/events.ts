@@ -33,6 +33,8 @@ export const MessagePart = z.discriminatedUnion("type", [
     input: z.unknown(),
     summary: z.string(),
     decision: z.enum(["pending", "approve", "deny"]),
+    /** Who settled it, once decided — the phone's card says "approved on desktop". */
+    by: z.enum(["desktop", "device", "timeout"]).optional(),
   }),
   z.object({
     type: z.literal("question"),

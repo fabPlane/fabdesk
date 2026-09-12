@@ -230,7 +230,7 @@ export class AgentRunManager {
         if (!entry) return;
         clearTimeout(entry.timer);
         run.pending.delete(requestId);
-        run.patchPart(requestId, (p) => (p.type === "approval" ? { ...p, decision } : p));
+        run.patchPart(requestId, (p) => (p.type === "approval" ? { ...p, decision, by } : p));
         this.deps.emit({
           ts: Date.now(),
           topic: "agent.approval_resolved",
