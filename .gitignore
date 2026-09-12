@@ -15,3 +15,9 @@ coverage/
 vendor/fabplane/node_modules/
 vendor/js_autorouter/node_modules/
 release/
+
+# apps/mobile: Expo caches and the native projects `expo prebuild` generates
+.expo/
+apps/mobile/ios/
+apps/mobile/android/
+*.keystore

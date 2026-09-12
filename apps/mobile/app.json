@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "fabPlane",
+    "slug": "fabplane-mobile",
+    "scheme": "fabdesk",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "experiments": { "typedRoutes": false },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.tensorfleet.fabdesk.mobile",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Scanning the pairing code shown by fabPlane on your computer.",
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true,
+          "NSExceptionDomains": {}
+        }
+      }
+    },
+    "android": {
+      "package": "com.tensorfleet.fabdesk.mobile",
+      "usesCleartextTraffic": true,
+      "permissions": ["CAMERA"]
+    },
+    "plugins": [
+      "expo-router",
+      ["expo-camera", { "cameraPermission": "Scanning the pairing code shown by fabPlane on your computer." }]
+    ]
+  }
+}
