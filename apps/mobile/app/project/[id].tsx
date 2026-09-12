@@ -12,7 +12,15 @@ import {
 } from "@fabdesk/client-core";
 import { Stack, router, useLocalSearchParams } from "expo-router";
 import { useMemo } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from "react-native";
 import { BoardViewerLinks } from "@/components/BoardViewerLinks";
 import { RenderImage } from "@/components/RenderImage";
 import { useStashRender } from "@/components/render-cache";
@@ -28,6 +36,7 @@ import { useTheme } from "@/theme";
 export default function ProjectScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const t = useTheme();
+  const window = useWindowDimensions();
   const project = useProject(id ?? null);
   const refreshControl = usePullRefresh(project.refetch);
   const newChat = useNewChat();
@@ -143,6 +152,10 @@ export default function ProjectScreen() {
                 style={{
                   width: "100%",
                   aspectRatio: 4 / 3,
+                  // On a short landscape window (a handheld) a 4:3 preview at full content width
+                  // would be the whole screen; the gallery is one tap away for a big look.
+                  maxHeight: Math.round(window.height * 0.45),
+                  alignSelf: "center",
                   borderRadius: 8,
                   backgroundColor: t.panel2,
                 }}
