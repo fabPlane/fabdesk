@@ -6,7 +6,7 @@
 import { parsePairingUrl } from "@fabdesk/protocol";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { Text, View } from "react-native";
+import { Platform, Text, View } from "react-native";
 import { Button, Empty, Loading, Screen } from "@/components/ui";
 import { pairingUrlFromParams, type RouteParams } from "@/lib/pair-link";
 import { describePairingFailure, type PairingFailure } from "@/lib/pairing-failure";
@@ -35,7 +35,7 @@ export default function PairLinkScreen() {
     setName(payload.name);
     claimAndSave(payload)
       .then(() => router.replace("/(tabs)"))
-      .catch((e: unknown) => setError(describePairingFailure(e)));
+      .catch((e: unknown) => setError(describePairingFailure(e, { platform: Platform.OS })));
   }, [params]);
 
   if (error) {
