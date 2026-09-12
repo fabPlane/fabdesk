@@ -12,6 +12,10 @@ export type {
   SendMessageInput,
   ToolCallResponse,
   FetchLike,
+  DevicePushPrefs,
+  DevicePushRegistration,
+  DevicePushState,
+  DeviceMe,
 } from "./CoreClient";
 
 export {

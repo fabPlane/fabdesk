@@ -37,6 +37,7 @@ import {
   planAfterReprobe,
   shouldReprobeOnNetwork,
 } from "../lib/reconnect";
+import { PushRegistrar } from "../notifications/PushRegistrar";
 import { notifyForEvent } from "../notifications/run-notifier";
 import { connectOrder, readToken, useConnections, type Connection } from "./connections";
 import { findReachable, type HealthInfo } from "./connect";
@@ -371,6 +372,8 @@ function Bridge({
   );
   return (
     <Ctx.Provider value={value}>
+      {/* Tells this daemon about the phone's push token on every open (§3.1). */}
+      <PushRegistrar connectionId={transport.id} />
       {children}
     </Ctx.Provider>
   );
