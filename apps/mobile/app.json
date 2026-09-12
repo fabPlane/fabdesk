@@ -46,6 +46,13 @@
             "usesCleartextTraffic": true
           }
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Attaching a photo to a chat so the agent can see it.",
+          "cameraPermission": "Taking a photo to attach to a chat so the agent can see it."
+        }
       ]
     ],
     "icon": "./assets/icon.png"
