@@ -19,6 +19,8 @@ import { createApp, type Env } from "./http/app";
 import { JobRunner } from "./jobs";
 import { logger, errMsg } from "./log";
 import { McpSessionManager } from "./mcp-sessions";
+import { machineName } from "./net";
+import { Notifier } from "./notifier";
 import { ProjectStore } from "./projects";
 import { applyErrorReporting, captureCoreException, closeSentry, runSentryTest, sentryUserFromAuth, setSentryUser } from "./sentry";
 
@@ -37,6 +39,8 @@ export type ServeOptions = {
   watchProjects?: boolean;
   /** Do not write the handshake file (tests). */
   noHandshake?: boolean;
+  /** Tests: capture the Notifier's outbound `POST /v1/private/push` instead of reaching fabplane.com. */
+  notifierFetch?: typeof fetch;
 };
 
 export type Daemon = {
@@ -52,11 +56,13 @@ export type Daemon = {
   mcp: McpSessionManager;
   tokens: TokenSet;
   runs: AgentRunManager;
+  notifier: Notifier;
   close(reason?: string): Promise<void>;
   closed: Promise<string>;
 };
 
-type WsData = { patterns: string[]; unsubscribe: (() => void) | null };
+/** `deviceId` is set when the socket was opened with a device token, so the Notifier can skip a phone that is listening. */
+type WsData = { patterns: string[]; unsubscribe: (() => void) | null; deviceId: string | null };
 
 export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   const config = resolveConfig(opts);
@@ -152,6 +158,22 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   const doctor = opts.doctor ?? (async () => (await import("./doctor")).runDoctor({ config, settings: store.settings.get() }));
   const remote = new RemoteListener({ emit: (e) => bus.emit(e) });
 
+  // Devices with an open event socket (refcounted: a phone may hold one per listener while it
+  // switches addresses). The Notifier does not push to a phone that is already listening.
+  const liveDevices = new Map<string, number>();
+  const notifier = new Notifier({
+    bus,
+    store,
+    devices,
+    auth,
+    apiOrigin: config.apiOrigin,
+    coreId: store.settings.coreId(),
+    coreName: machineName(),
+    isOnline: (id) => (liveDevices.get(id) ?? 0) > 0,
+    ...(opts.notifierFetch ? { fetchImpl: opts.notifierFetch } : {}),
+  });
+  notifier.start();
+
   const appDeps = {
     config,
     store,
@@ -191,9 +213,11 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
         const allowed = scope === "local" ? originAllowedLocal(origin) : originAllowedRemote(origin, url.host);
         if (!allowed) return new Response("forbidden origin", { status: 403 });
         const token = url.searchParams.get("token") ?? req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? null;
-        if (!tokens.verify(token)) return new Response("unauthorized", { status: 401 });
+        const info = tokens.lookup(token);
+        if (!info) return new Response("unauthorized", { status: 401 });
         const patterns = (url.searchParams.get("topics") ?? "*").split(",").map((s) => s.trim()).filter(Boolean);
-        if (srv.upgrade(req, { data: { patterns: patterns.length ? patterns : ["*"], unsubscribe: null } })) return undefined;
+        const data: WsData = { patterns: patterns.length ? patterns : ["*"], unsubscribe: null, deviceId: info.kind === "device" ? (info.deviceId ?? null) : null };
+        if (srv.upgrade(req, { data })) return undefined;
         return new Response("upgrade failed", { status: 400 });
       }
       return target.fetch(req);
@@ -201,6 +225,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
 
   const websocket: Bun.WebSocketHandler<WsData> = {
     open(ws) {
+      if (ws.data.deviceId) liveDevices.set(ws.data.deviceId, (liveDevices.get(ws.data.deviceId) ?? 0) + 1);
       ws.data.unsubscribe = bus.subscribe(ws.data.patterns, (events) => {
         for (const ev of events) ws.send(JSON.stringify({ id: ev.id, event: ev.event }));
       });
@@ -223,6 +248,11 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     close(ws) {
       ws.data.unsubscribe?.();
       ws.data.unsubscribe = null;
+      if (ws.data.deviceId) {
+        const n = (liveDevices.get(ws.data.deviceId) ?? 1) - 1;
+        if (n > 0) liveDevices.set(ws.data.deviceId, n);
+        else liveDevices.delete(ws.data.deviceId);
+      }
     },
   };
 
@@ -278,6 +308,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     mcp,
     tokens,
     runs,
+    notifier,
     closed,
     async close(reason = "close") {
       if (closing) return;
@@ -290,6 +321,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       }
       if (watchdog) clearInterval(watchdog);
       unsubscribeAuth();
+      notifier.stop();
       runs.abortAll();
       jobs.cancelAll();
       await mcp.closeAll();
