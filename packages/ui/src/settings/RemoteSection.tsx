@@ -69,6 +69,12 @@ export function RemoteSection() {
       { onSuccess: () => void qc.invalidateQueries({ queryKey: ["remote"] }) },
     );
   };
+  // Daemon-wide kill switch for push (docs/mobile-notifications.md §4.1); each phone also has its own prefs.
+  const notificationsEnabled = settings.data?.notifications?.enabled ?? true;
+  const applyNotifications = (enabled: boolean) => {
+    setError(null);
+    patch.mutate({ notifications: { enabled } });
+  };
 
   const startPairing = async () => {
     setError(null);
@@ -109,6 +115,22 @@ export function RemoteSection() {
             onChange={(e) => applyRemote({ enabled: e.target.checked })}
           />
           <span className="font-medium">Allow phones to connect</span>
+        </label>
+        <label className="flex items-start gap-2 py-1.5 text-xs">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={notificationsEnabled}
+            disabled={patch.isPending}
+            onChange={(e) => applyNotifications(e.target.checked)}
+          />
+          <span>
+            <span className="font-medium">Send notifications to paired phones</span>
+            <span className="block text-[11px] text-muted">
+              When a run finishes, fails or needs you and the phone is not connected. Goes through your fabPlane
+              account; each phone chooses what it wants to hear about.
+            </span>
+          </span>
         </label>
         <label className="grid grid-cols-[180px_1fr] items-center gap-3 py-1.5 text-xs">
           <span>
