@@ -34,6 +34,7 @@ export default function RootLayout() {
             <Stack.Screen name="project/[id]" options={{ title: "Project" }} />
             <Stack.Screen name="board/[id]" options={{ title: "Board", presentation: "fullScreenModal" }} />
             <Stack.Screen name="svg/[id]" options={{ title: "Schematic" }} />
+            <Stack.Screen name="three/[id]" options={{ title: "3D" }} />
           </Stack>
         </CoreConnectionProvider>
       </SafeAreaProvider>
