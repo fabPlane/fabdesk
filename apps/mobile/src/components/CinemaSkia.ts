@@ -181,9 +181,10 @@ class Layer {
     if (this.#dirty || !this.#image) {
       this.surface.flush();
       // Reusing the previous image's storage keeps a scrub from allocating a screen-sized texture per frame.
-      this.#image = this.#image
-        ? this.surface.makeImageSnapshot(undefined, this.#image)
-        : this.surface.makeImageSnapshot();
+      // A texture-backed snapshot belongs to the offscreen surface's GPU context; the on-screen
+      // canvas replays the picture on its own context and draws nothing from it. A raster copy
+      // is drawable anywhere, at the cost of the reuse trick.
+      this.#image = this.surface.makeImageSnapshot().makeNonTextureImage();
       this.#dirty = false;
     }
     return this.#image;

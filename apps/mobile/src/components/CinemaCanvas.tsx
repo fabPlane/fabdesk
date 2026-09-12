@@ -4,7 +4,7 @@
  */
 import { Canvas, Picture } from "@shopify/react-native-skia";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { PixelRatio, StyleSheet, View, type LayoutChangeEvent } from "react-native";
+import { PixelRatio, View, type LayoutChangeEvent } from "react-native";
 import { DARK_THEME, LIGHT_THEME, type CinemaRun, type CinemaView } from "@fabdesk/client-core";
 import { SkiaCinema, type PaintedFrame } from "./CinemaSkia";
 import { useTheme } from "@/theme";
@@ -60,7 +60,7 @@ export function CinemaCanvas({
   return (
     <View style={{ flex: 1 }} onLayout={onLayout}>
       {size && picture ? (
-        <Canvas style={StyleSheet.absoluteFill}>
+        <Canvas style={{ width: size.width, height: size.height }}>
           <Picture picture={picture} />
         </Canvas>
       ) : null}
