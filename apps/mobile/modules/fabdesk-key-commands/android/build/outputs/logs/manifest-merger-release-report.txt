@@ -1,16 +1,16 @@
 -- Merging decision tree log ---
 manifest
-ADDED from /Users/hyper/projects/tensorfleet/fabdesk/apps/mobile/modules/fabdesk-key-commands/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest10381098581666454272.xml:2:13-83
-INJECTED from /Users/hyper/projects/tensorfleet/fabdesk/apps/mobile/modules/fabdesk-key-commands/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest10381098581666454272.xml:2:13-83
+ADDED from /Users/hyper/projects/tensorfleet/fabdesk/apps/mobile/modules/fabdesk-key-commands/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest2645158815285373874.xml:2:13-83
+INJECTED from /Users/hyper/projects/tensorfleet/fabdesk/apps/mobile/modules/fabdesk-key-commands/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest2645158815285373874.xml:2:13-83
 	package
-		INJECTED from /Users/hyper/projects/tensorfleet/fabdesk/apps/mobile/modules/fabdesk-key-commands/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest10381098581666454272.xml
+		INJECTED from /Users/hyper/projects/tensorfleet/fabdesk/apps/mobile/modules/fabdesk-key-commands/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest2645158815285373874.xml
 	xmlns:android
-		ADDED from /Users/hyper/projects/tensorfleet/fabdesk/apps/mobile/modules/fabdesk-key-commands/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest10381098581666454272.xml:2:23-81
+		ADDED from /Users/hyper/projects/tensorfleet/fabdesk/apps/mobile/modules/fabdesk-key-commands/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest2645158815285373874.xml:2:23-81
 uses-sdk
-INJECTED from /Users/hyper/projects/tensorfleet/fabdesk/apps/mobile/modules/fabdesk-key-commands/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest10381098581666454272.xml reason: use-sdk injection requested
-INJECTED from /Users/hyper/projects/tensorfleet/fabdesk/apps/mobile/modules/fabdesk-key-commands/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest10381098581666454272.xml
-INJECTED from /Users/hyper/projects/tensorfleet/fabdesk/apps/mobile/modules/fabdesk-key-commands/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest10381098581666454272.xml
+INJECTED from /Users/hyper/projects/tensorfleet/fabdesk/apps/mobile/modules/fabdesk-key-commands/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest2645158815285373874.xml reason: use-sdk injection requested
+INJECTED from /Users/hyper/projects/tensorfleet/fabdesk/apps/mobile/modules/fabdesk-key-commands/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest2645158815285373874.xml
+INJECTED from /Users/hyper/projects/tensorfleet/fabdesk/apps/mobile/modules/fabdesk-key-commands/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest2645158815285373874.xml
 	android:targetSdkVersion
-		INJECTED from /Users/hyper/projects/tensorfleet/fabdesk/apps/mobile/modules/fabdesk-key-commands/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest10381098581666454272.xml
+		INJECTED from /Users/hyper/projects/tensorfleet/fabdesk/apps/mobile/modules/fabdesk-key-commands/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest2645158815285373874.xml
 	android:minSdkVersion
-		INJECTED from /Users/hyper/projects/tensorfleet/fabdesk/apps/mobile/modules/fabdesk-key-commands/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest10381098581666454272.xml
+		INJECTED from /Users/hyper/projects/tensorfleet/fabdesk/apps/mobile/modules/fabdesk-key-commands/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest2645158815285373874.xml

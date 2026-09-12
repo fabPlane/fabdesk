@@ -112,8 +112,11 @@ harmful, and the phone sees the state the next time it connects.
 
 ### 3.3 Local notifications (N1 — no server involved)
 
-While the app is **backgrounded** but its WebSocket is still alive (iOS gives ~30 s, Android
-more), `CoreConnection` sees `agent.done` itself and schedules an immediate local notification with
+While the app is **backgrounded** but its WebSocket is still alive — which on iOS is only
+because `modules/fabdesk-background-grace` asks for background time on `didEnterBackground`
+(without it iOS suspends the app, socket and all, within a second or two; measured on the
+simulator: the last event seen was an `agent.delta` in state `inactive`). That buys ~25 s;
+Android keeps JS running on its own — `CoreConnection` sees `agent.done` itself and schedules an immediate local notification with
 the same payload shape as §4.3. When the app is foregrounded, nothing is shown (the thread is on
 screen or one tap away). When the socket is dead, push (§3.2) is the only path. The phone
 de-duplicates by `runId` so a run that arrives both ways shows once.

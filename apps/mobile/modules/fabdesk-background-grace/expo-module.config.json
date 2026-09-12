@@ -1,0 +1,5 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": { "modules": ["FabdeskBackgroundGraceModule"] },
+  "android": { "modules": ["expo.modules.fabdeskbackgroundgrace.FabdeskBackgroundGraceModule"] }
+}
