@@ -33,6 +33,7 @@ export default function RootLayout() {
             <Stack.Screen name="thread/[id]" options={{ title: "Chat" }} />
             <Stack.Screen name="project/[id]" options={{ title: "Project" }} />
             <Stack.Screen name="board/[id]" options={{ title: "Board", presentation: "fullScreenModal" }} />
+            <Stack.Screen name="svg/[id]" options={{ title: "Schematic" }} />
           </Stack>
         </CoreConnectionProvider>
       </SafeAreaProvider>
