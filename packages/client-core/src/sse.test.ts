@@ -45,6 +45,8 @@ function harness() {
       return timers.length;
     },
     clearTimeout: () => {},
+    // No jitter, so the backoff assertions below are exact.
+    random: () => 0,
   });
   return { sub, sources, timers, events, statuses };
 }
@@ -107,6 +109,44 @@ describe("helpers", () => {
     expect(reconnectDelay(1)).toBe(1000);
     expect(reconnectDelay(3)).toBe(4000);
     expect(reconnectDelay(10)).toBe(15000);
+  });
+  test("reconnectDelay jitters down by at most half, never above the un-jittered delay", () => {
+    expect(reconnectDelay(3, 1000, 15000, () => 0)).toBe(4000);
+    expect(reconnectDelay(3, 1000, 15000, () => 0.5)).toBe(3000);
+    expect(reconnectDelay(3, 1000, 15000, () => 0.999)).toBe(2002);
+    expect(reconnectDelay(10, 1000, 15000, () => 1)).toBe(7500);
+    // A misbehaving random source cannot push the delay outside the bounds.
+    expect(reconnectDelay(1, 1000, 15000, () => -3)).toBe(1000);
+    expect(reconnectDelay(1, 1000, 15000, () => 42)).toBe(500);
+    for (let attempt = 1; attempt <= 12; attempt++) {
+      const upper = reconnectDelay(attempt);
+      for (const r of [0, 0.1, 0.37, 0.5, 0.9, 0.999999]) {
+        const d = reconnectDelay(attempt, 1000, 15000, () => r);
+        expect(d).toBeGreaterThanOrEqual(upper / 2);
+        expect(d).toBeLessThanOrEqual(upper);
+      }
+    }
+  });
+  test("subscribeSse feeds the injected random into its backoff", () => {
+    const timers: number[] = [];
+    const sources: FakeSource[] = [];
+    subscribeSse({
+      buildUrl: () => "http://x/events",
+      factory: (url) => {
+        const s = new FakeSource(url);
+        sources.push(s);
+        return s;
+      },
+      onEvent: () => {},
+      setTimeout: (_fn, ms) => {
+        timers.push(ms);
+        return timers.length;
+      },
+      clearTimeout: () => {},
+      random: () => 0.5,
+    });
+    sources[0]!.fail();
+    expect(timers).toEqual([750]);
   });
   test("appendLastEventId respects existing query", () => {
     expect(appendLastEventId("http://x/events", null)).toBe("http://x/events");

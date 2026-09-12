@@ -5,7 +5,7 @@ import {
   parsePairingUrl,
   type PairingPayload,
 } from "@fabdesk/protocol";
-import { claimFirstReachable, claimPairing } from "./pairing";
+import { PairingRefusedError, claimFirstReachable, claimPairing } from "./pairing";
 
 const payload: PairingPayload = {
   version: 1,
@@ -26,6 +26,13 @@ const claimBody = {
   },
   core: { name: "maya's macbook", version: "0.2.0", platform: "darwin" },
 };
+
+const healthOk = () =>
+  new Response(JSON.stringify({ ok: true, version: "0.2.0", pid: 42 }), {
+    headers: { "content-type": "application/json" },
+  });
+const claimOk = () =>
+  new Response(JSON.stringify(claimBody), { headers: { "content-type": "application/json" } });
 
 describe("pairing url", () => {
   test("round-trips every field", () => {
@@ -92,23 +99,122 @@ describe("claim", () => {
       fetch: async (url) => {
         tried.push(url);
         if (url.startsWith("http://100.")) throw new Error("network unreachable");
-        return new Response(JSON.stringify(claimBody), {
-          headers: { "content-type": "application/json" },
-        });
+        return url.endsWith("/health") ? healthOk() : claimOk();
       },
     });
-    expect(tried).toHaveLength(2);
+    // The unreachable address is probed and skipped; the claim goes only where health answered.
+    expect(tried).toEqual([
+      "http://100.101.102.103:47820/health",
+      "http://192.168.1.24:47820/health",
+      "http://192.168.1.24:47820/v1/devices/pair/claim",
+    ]);
     expect(baseUrl).toBe("http://192.168.1.24:47820");
   });
 
-  test("reports every address it tried when none answer", async () => {
+  test("probes before claiming, and claims exactly once, on the first that answers", async () => {
+    const tried: string[] = [];
+    const { baseUrl } = await claimFirstReachable(payload, {
+      label: "Pixel",
+      platform: "android",
+      fetch: async (url) => {
+        tried.push(url);
+        return url.endsWith("/health") ? healthOk() : claimOk();
+      },
+    });
+    expect(tried).toEqual([
+      "http://100.101.102.103:47820/health",
+      "http://100.101.102.103:47820/v1/devices/pair/claim",
+    ]);
+    expect(baseUrl).toBe("http://100.101.102.103:47820");
+  });
+
+  test("a claim never reaches the daemon when no address answers /health", async () => {
+    const tried: string[] = [];
     const attempt = claimFirstReachable(payload, {
       label: "Pixel",
       platform: "android",
-      fetch: async () => {
-        throw new Error("network unreachable");
+      fetch: async (url) => {
+        tried.push(url);
+        throw new Error("Network request failed");
       },
     });
-    expect(attempt).rejects.toThrow("could not reach maya's macbook");
+    await expect(attempt).rejects.toThrow(
+      // The exact shape `describePairingFailure` on the phone parses: a title line, then one
+      // "<url>: <reason>" per address.
+      "could not reach maya's macbook\n" +
+        "http://100.101.102.103:47820: Network request failed\n" +
+        "http://192.168.1.24:47820: Network request failed",
+    );
+    expect(tried.every((u) => u.endsWith("/health"))).toBe(true);
+  });
+
+  test("skips an address that answers but is not a fabPlane daemon, or answers with an error", async () => {
+    const claims: string[] = [];
+    const attempt = claimFirstReachable(payload, {
+      label: "Pixel",
+      platform: "android",
+      fetch: async (url) => {
+        if (url.endsWith("/claim")) claims.push(url);
+        if (url.startsWith("http://100.")) return new Response("<html>router</html>");
+        return new Response("", { status: 503 });
+      },
+    });
+    await expect(attempt).rejects.toThrow(
+      "could not reach maya's macbook\n" +
+        "http://100.101.102.103:47820: not a fabPlane daemon\n" +
+        "http://192.168.1.24:47820: health returned 503",
+    );
+    expect(claims).toEqual([]);
+  });
+
+  test("a health probe that hangs is abandoned at the probe timeout", async () => {
+    const attempt = claimFirstReachable(
+      { ...payload, hosts: ["100.101.102.103"] },
+      {
+        label: "Pixel",
+        platform: "android",
+        probeTimeoutMs: 10,
+        fetch: (_url, init) =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+          }),
+      },
+    );
+    await expect(attempt).rejects.toThrow("http://100.101.102.103:47820: no answer within 10 ms");
+  });
+
+  test("a refusal from a reachable daemon ends the search with the daemon's words", async () => {
+    // Every address is the same machine; a second claim would only spend another attempt.
+    const claims: string[] = [];
+    const attempt = claimFirstReachable(payload, {
+      label: "Pixel",
+      platform: "android",
+      fetch: async (url) => {
+        if (url.endsWith("/health")) return healthOk();
+        claims.push(url);
+        return new Response(JSON.stringify({ error: "pairing code is not valid" }), {
+          status: 400,
+        });
+      },
+    });
+    await expect(attempt).rejects.toBeInstanceOf(PairingRefusedError);
+    await expect(attempt).rejects.toThrow("pairing code is not valid");
+    expect(claims).toEqual(["http://100.101.102.103:47820/v1/devices/pair/claim"]);
+  });
+
+  test("a claim that fails in transit after health answered moves on to the next address", async () => {
+    const tried: string[] = [];
+    const { baseUrl } = await claimFirstReachable(payload, {
+      label: "Pixel",
+      platform: "android",
+      fetch: async (url) => {
+        tried.push(url);
+        if (url.endsWith("/health")) return healthOk();
+        if (url.startsWith("http://100.")) throw new Error("Network request failed");
+        return claimOk();
+      },
+    });
+    expect(baseUrl).toBe("http://192.168.1.24:47820");
+    expect(tried.filter((u) => u.endsWith("/claim"))).toHaveLength(2);
   });
 });

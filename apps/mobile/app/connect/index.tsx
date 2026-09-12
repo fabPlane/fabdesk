@@ -4,12 +4,13 @@
  */
 import { parsePairingUrl } from "@fabdesk/protocol";
 import { router } from "expo-router";
-import { useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useEffect, useState } from "react";
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Badge, Button, Card, Screen, readable } from "@/components/ui";
 import { describePairingFailure } from "@/lib/pairing-failure";
 import { claimAndSave } from "@/transport/pair";
 import { useConnections } from "@/transport/connections";
+import { warmUpLocalNetwork } from "@/transport/local-network-warmup";
 import { relativeTime } from "@/lib/format";
 import { useTheme } from "@/theme";
 
@@ -18,6 +19,12 @@ export default function ConnectScreen() {
   const { connections, activeId, setActive, forget } = useConnections();
   const [manual, setManual] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // iOS puts up its Local Network prompt on the first request to a LAN address and fails that
+  // request. Better it happens here, on a throwaway probe, than on the claim after a scan.
+  useEffect(() => {
+    void warmUpLocalNetwork(useConnections.getState().connections.flatMap((c) => c.candidates));
+  }, []);
 
   const pairManually = async () => {
     const payload = parsePairingUrl(manual);
@@ -34,7 +41,7 @@ export default function ConnectScreen() {
       setManual("");
       router.back();
     } catch (e) {
-      const failure = describePairingFailure(e);
+      const failure = describePairingFailure(e, { platform: Platform.OS });
       Alert.alert(failure.title, failure.message);
     } finally {
       setBusy(false);
@@ -52,6 +59,12 @@ export default function ConnectScreen() {
           variant="primary"
           onPress={() => router.push("/connect/scan")}
         />
+        {Platform.OS === "ios" ? (
+          <Text style={{ color: t.muted, fontSize: 12, marginTop: -6 }}>
+            iOS may ask to let fabPlane find devices on your local network — allow it, or a
+            computer on the same Wi-Fi can't be reached.
+          </Text>
+        ) : null}
 
         {connections.map((c) => (
           <Card key={c.id}>

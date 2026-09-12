@@ -14,6 +14,13 @@ describe("describePairingFailure", () => {
     expect(f.message).toContain("http://10.197.1.118:47820: Network request failed");
   });
 
+  test("on iOS an unreachable computer also points at the Local Network permission", () => {
+    const e = new Error("could not reach Mac\nhttp://10.197.1.118:47820: Network request failed");
+    expect(describePairingFailure(e, { platform: "ios" }).message).toContain("Local Network");
+    expect(describePairingFailure(e, { platform: "android" }).message).not.toContain("Local Network");
+    expect(describePairingFailure(e).message).not.toContain("Local Network");
+  });
+
   test("a stale or used code says so rather than blaming the network", () => {
     for (const msg of ["no pairing in progress", "pairing code is not valid"]) {
       const f = describePairingFailure(new Error(msg));

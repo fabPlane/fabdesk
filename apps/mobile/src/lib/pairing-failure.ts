@@ -14,7 +14,12 @@ export interface PairingFailure {
 
 const UNREACHABLE = /^could not reach (.+)$/m;
 
-export function describePairingFailure(error: unknown): PairingFailure {
+export interface DescribeOptions {
+  /** `Platform.OS`; on iOS an unreachable computer also points at the Local Network switch. */
+  platform?: string;
+}
+
+export function describePairingFailure(error: unknown, opts: DescribeOptions = {}): PairingFailure {
   const raw = error instanceof Error ? error.message : String(error);
   const unreachable = UNREACHABLE.exec(raw);
   if (unreachable) {
@@ -28,6 +33,11 @@ export function describePairingFailure(error: unknown): PairingFailure {
       title: `Can't reach ${name}`,
       message: [
         `Make sure this phone is on the same Tailscale tailnet as ${name} — open Tailscale and check it is connected — or on the same Wi-Fi.`,
+        // The first request to a LAN address on iOS fails while the permission prompt is up, and
+        // every later one fails silently if it was declined.
+        ...(opts.platform === "ios"
+          ? ["On the same Wi-Fi, check Settings › Privacy & Security › Local Network has fabPlane switched on."]
+          : []),
         "Then show a new pairing code on the desktop and scan again.",
         ...(tried.length ? ["", "Tried:", ...tried] : []),
       ].join("\n"),

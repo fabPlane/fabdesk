@@ -2,7 +2,7 @@ import { parsePairingUrl } from "@fabdesk/protocol";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { router } from "expo-router";
 import { useRef, useState } from "react";
-import { Alert, StyleSheet, Text, View } from "react-native";
+import { Alert, Platform, StyleSheet, Text, View } from "react-native";
 import { Button, Empty, Loading, Screen } from "@/components/ui";
 import { describePairingFailure } from "@/lib/pairing-failure";
 import { claimAndSave } from "@/transport/pair";
@@ -48,7 +48,7 @@ export default function ScanScreen() {
       Alert.alert("Paired", `Connected to ${connection.name}.`);
     } catch (e) {
       claimed.current = false;
-      const failure = describePairingFailure(e);
+      const failure = describePairingFailure(e, { platform: Platform.OS });
       Alert.alert(failure.title, failure.message, [{ text: "OK", onPress: () => setBusy(false) }]);
     }
   };
