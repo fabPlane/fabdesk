@@ -4,7 +4,7 @@
  */
 import {
   PairClaimResult,
-  candidateBaseUrls,
+  claimBaseUrls,
   type DevicePlatform,
   type PairingPayload,
 } from "@fabdesk/protocol";
@@ -105,7 +105,7 @@ export async function claimFirstReachable(
   const doFetch = opts.fetch ?? ((input, init) => globalThis.fetch(input, init));
   const probeTimeoutMs = opts.probeTimeoutMs ?? 2500;
   const errors: string[] = [];
-  for (const baseUrl of candidateBaseUrls(payload)) {
+  for (const baseUrl of claimBaseUrls(payload)) {
     const reason = await unreachableReason(baseUrl, doFetch, probeTimeoutMs);
     if (reason !== null) {
       errors.push(`${baseUrl}: ${reason}`);

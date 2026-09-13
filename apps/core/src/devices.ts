@@ -11,6 +11,7 @@ import {
   DevicePushPrefs,
   DevicePushState,
   type DevicePlatform,
+  type DeviceVia,
   type DevicePushRegistration,
   type PushTokenKind,
 } from "@fabdesk/protocol";
@@ -38,6 +39,7 @@ type DeviceRow = {
   platform: string;
   created_at: string;
   last_seen_at: string | null;
+  last_via: string | null;
   revoked_at: string | null;
   push_token: string | null;
   push_token_kind: string | null;
@@ -54,6 +56,7 @@ function toDevice(row: DeviceRow): Device {
     platform: row.platform,
     createdAt: row.created_at,
     lastSeenAt: row.last_seen_at,
+    via: row.last_via === "direct" || row.last_via === "relay" ? row.last_via : null,
   });
 }
 
@@ -164,11 +167,16 @@ export class DeviceStore {
     return row ? toDevice(row) : null;
   }
 
-  touch(id: string, now = Date.now()): void {
-    this.db.run("UPDATE devices SET last_seen_at = ? WHERE id = ?", [
-      new Date(now).toISOString(),
-      id,
-    ]);
+  /** Records a sighting: when, and over which path (`via` unchanged when not given). */
+  touch(id: string, opts: { via?: DeviceVia; now?: number } = {}): void {
+    const seenAt = new Date(opts.now ?? Date.now()).toISOString();
+    if (opts.via)
+      this.db.run("UPDATE devices SET last_seen_at = ?, last_via = ? WHERE id = ?", [
+        seenAt,
+        opts.via,
+        id,
+      ]);
+    else this.db.run("UPDATE devices SET last_seen_at = ? WHERE id = ?", [seenAt, id]);
   }
 
   list(): Device[] {

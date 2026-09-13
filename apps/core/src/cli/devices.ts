@@ -11,7 +11,7 @@ function age(iso: string | null, now = Date.now()): string {
   return `${Math.floor(ms / 86_400_000)}d ago`;
 }
 
-/** Fixed-width columns, header first; an empty list is one line saying so. */
+/** Fixed-width columns, header first; an empty list is one line saying so. VIA is the path of the last request (direct listener or relay). */
 export function formatDevices(devices: Device[], now = Date.now()): string {
   if (devices.length === 0) return "No paired devices.\n";
   const rows = devices.map((d) => [
@@ -20,8 +20,9 @@ export function formatDevices(devices: Device[], now = Date.now()): string {
     d.platform,
     d.createdAt.slice(0, 10),
     age(d.lastSeenAt, now),
+    d.via ?? "-",
   ]);
-  const header = ["ID", "LABEL", "PLATFORM", "PAIRED", "LAST SEEN"];
+  const header = ["ID", "LABEL", "PLATFORM", "PAIRED", "LAST SEEN", "VIA"];
   const widths = header.map((h, i) => Math.max(h.length, ...rows.map((r) => r[i]!.length)));
   const line = (cells: string[]) =>
     cells.map((c, i) => (i === cells.length - 1 ? c : c.padEnd(widths[i]!))).join("  ");

@@ -4,6 +4,7 @@ import { router } from "expo-router";
 import { Alert, ScrollView, Text, View } from "react-native";
 import { Badge, Button, Card, Screen, Segmented, SwitchRow, readable } from "@/components/ui";
 import { hardwareKeyboardShortcutsAvailable } from "@/layout/keyboard";
+import { connectionPath, pathHint, pathLabel } from "@/lib/connection-path";
 import { NotificationsCard } from "@/notifications/NotificationsCard";
 import { haptic } from "@/state/haptics";
 import { usePrefs, type Appearance } from "@/state/prefs";
@@ -19,8 +20,10 @@ const APPEARANCE_OPTIONS: readonly { value: Appearance; label: string }[] = [
 
 export default function SettingsScreen() {
   const t = useTheme();
-  const { connection, status, health, baseUrl, phase, retry } = useConnection();
+  const { connection, status, health, baseUrl, phase, via, coreOffline, retry } = useConnection();
   const connections = useConnections((s) => s.connections);
+  // Which way this phone reaches the computer: straight over the tailnet/LAN, or the relay.
+  const path = connectionPath({ via, baseUrl, relayUrl: connection?.relayUrl });
 
   return (
     <Screen>
@@ -31,22 +34,40 @@ export default function SettingsScreen() {
               {connection?.name ?? "Not connected"}
             </Text>
             <Badge
-              label={status === "open" ? "connected" : phase}
+              label={
+                status === "open"
+                  ? "connected"
+                  : phase === "core-offline" || (coreOffline && phase === "connecting")
+                    ? "computer offline"
+                    : phase
+              }
               tone={
                 status === "open"
                   ? "success"
-                  : phase === "unreachable" || phase === "unauthorized"
+                  : phase === "unreachable" || phase === "core-offline" || phase === "unauthorized"
                     ? "danger"
                     : "warning"
               }
             />
           </View>
+          {path ? <Field label="Path" value={pathLabel(path)} /> : null}
           {baseUrl ? <Field label="Address" value={baseUrl} /> : null}
           {health ? (
             <Field
               label="Core"
               value={`${health.version} · ${health.channel} · up ${Math.round(health.uptimeMs / 60000)}m`}
             />
+          ) : null}
+          {path ? (
+            <Text style={{ color: t.muted, fontSize: 12, lineHeight: 17, marginTop: 6 }}>
+              {pathHint(path)}
+            </Text>
+          ) : null}
+          {coreOffline && status !== "open" ? (
+            <Text style={{ color: t.warning, fontSize: 12, lineHeight: 17, marginTop: 6 }}>
+              The relay is up, but {connection?.name ?? "your computer"} is not connected to it.
+              Wake it, or check that it is signed in to fabplane.com with remote access on.
+            </Text>
           ) : null}
           <View style={{ flexDirection: "row", gap: 8, marginTop: 10 }}>
             <Button title="Reconnect" onPress={retry} style={{ flex: 1 }} />
@@ -71,9 +92,9 @@ export default function SettingsScreen() {
 
         <Card>
           <Text style={{ color: t.muted, fontSize: 12, lineHeight: 18 }}>
-            This app talks straight to a fabPlane daemon on your tailnet or LAN. Nothing goes
-            through fabplane.com, and the connection is only as private as the network carrying it —
-            keep it on Tailscale.
+            {path?.via === "relay"
+              ? `This app is talking to your computer through the ${path.host} relay: the computer dials out to it, so no port is open on your network. Your device token is checked by the computer, not the relay. A direct tailnet or LAN address is used again as soon as one answers.`
+              : "This app talks straight to a fabPlane daemon on your tailnet or LAN whenever one answers, and falls back to the fabplane.com relay only when the computer has one set up and nothing direct is reachable. A direct connection is only as private as the network carrying it — keep it on Tailscale."}
           </Text>
         </Card>
       </ScrollView>
@@ -86,12 +107,18 @@ export default function SettingsScreen() {
  * setting (`PATCH /settings`), so changing it here changes it on the desktop too.
  */
 function AgentsCard() {
-  const t = useTheme();
+  // The daemon hooks below need the CoreProvider, which only exists once a transport does —
+  // reading them while the computer is unreachable threw and took the whole tab down.
   const { status } = useConnection();
+  if (status !== "open") return null;
+  return <AgentsCardBody />;
+}
+
+function AgentsCardBody() {
+  const t = useTheme();
   const doctor = useDoctor();
   const settings = useSettings();
   const patch = usePatchSettings();
-  if (status !== "open") return null;
   const agents = doctor.data?.agents ?? [];
   const installed = agents.filter((a) => a.installed);
   const current = settings.data?.defaultAgent;

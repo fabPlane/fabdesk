@@ -26,6 +26,7 @@ import {
   type Health,
   type Me,
   type PairClaimResult,
+  type RelayPhase,
   type RemoteStatus,
   type TailscaleState,
 } from "@fabdesk/protocol";
@@ -51,6 +52,7 @@ import type { ProjectStore } from "../projects";
 import type { AgentRunManager } from "../agent-runs";
 import type { DeviceStore } from "../devices";
 import type { RemoteListener } from "../remote";
+import { VIA_HEADER, type RelayState } from "../relay";
 import { listenAddresses, machineName, serveFor } from "../net";
 import { tailscaleProvider, type TailscaleProvider } from "../tailscale";
 import { logger, errMsg } from "../log";
@@ -62,8 +64,8 @@ import { applyErrorReporting, captureCoreException } from "../sentry";
 import { parseTopics, sseResponse } from "./sse";
 
 export type AppDeps = {
-  /** The relay link, for `/v1/remote`; optional so tests without a relay still build an app. */
-  relay?: { state(): { connected: boolean; url: string; error?: string } | null } | undefined;
+  /** The relay link, for `/v1/remote` and `/health`; optional so tests without a relay still build an app. */
+  relay?: { state(): RelayState; phase(): RelayPhase } | undefined;
   /** Endpoints outside `listenAddresses` (the relay), merged into what pairing advertises. */
   extraEndpoints?: (() => CoreEndpoint[]) | undefined;
   config: CoreConfig;
@@ -181,6 +183,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
       uptimeMs: Date.now() - deps.startedAt,
       mcpSessions: deps.mcp.activeCount(),
       coreId: deps.store.settings.coreId(),
+      relay: deps.relay?.phase() ?? "off",
     } satisfies Health),
   );
 
@@ -227,7 +230,12 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const token = extractToken(c.req.raw, { allowQuery });
     const info = deps.tokens.lookup(token);
     if (!info) return c.json({ error: "unauthorized" }, 401);
-    if (info.kind === "device" && info.deviceId) deps.devices.touch(info.deviceId);
+    // The relay link stamps its requests; the listeners strip the header from theirs (serve.ts),
+    // so it is the daemon's own knowledge of the path, never the phone's claim.
+    if (info.kind === "device" && info.deviceId)
+      deps.devices.touch(info.deviceId, {
+        via: c.req.header(VIA_HEADER) === "relay" ? "relay" : "direct",
+      });
     c.set("token", token as string);
     await next();
   });
@@ -824,6 +832,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
         endpoints,
         port: remote.port,
         name: machineName(),
+        coreId: deps.store.settings.coreId(),
       }),
       coreName: machineName(),
     });

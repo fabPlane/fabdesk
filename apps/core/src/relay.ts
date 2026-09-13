@@ -2,8 +2,10 @@
  * The daemon's end of the relay (`apps/relay`): an outbound WebSocket a phone off the tailnet can
  * reach the daemon through, with no inbound port.
  *
- * When `Settings.remote.relayUrl` is set and the daemon is signed in to fabplane, this dials
- * `wss://<relay>/d?coreId=<coreId>` with the session bearer and answers the relay's frames:
+ * Whenever remote access is on, `Settings.remote.relay` is not `off` and the daemon is signed in
+ * to fabplane, this dials `wss://<relay>/d?coreId=<coreId>` with the session bearer and answers
+ * the relay's frames. The relay is `Settings.remote.relayUrl` when set, else the default derived
+ * from the fabplane API origin (`defaultRelayUrl`), so nothing needs configuring. Frames:
  * `open` (an HTTP request) is served by the **remote** Hono app — the same narrowed surface a
  * phone on the tailnet gets, so MCP, shutdown and device administration stay 404 — and `ws-open`
  * attaches the phone to the event bus exactly as `/ws` does. The device token the phone sends
@@ -13,7 +15,7 @@
  * can be ported, hence the copy rather than a dependency.
  */
 import { z } from "zod/v4";
-import type { Settings } from "@fabdesk/protocol";
+import type { CoreEvent, RelayPhase, RelayStatus, Settings } from "@fabdesk/protocol";
 import { errMsg, logger } from "./log";
 
 /** One proxied `/ws` client, attached to the bus the way the listener's own sockets are. */
@@ -40,16 +42,156 @@ export interface RelaySocket {
   close(code?: number, reason?: string): void;
 }
 
+/** The relay to use when `remote.relayUrl` is empty, or why there is none (see `defaultRelayUrl`). */
+export type RelayDefault =
+  | { url: string; source: "setting" | "env" | "derived" | "api" }
+  | { url: null; reason: string };
+
 export interface RelayLinkOptions {
   coreId: string;
   /** The fabplane session bearer, null while signed out. Read on every dial so a fresh sign-in is picked up. */
   token: () => string | null;
+  /** The relay for an empty `remote.relayUrl`. Re-read on every `apply`, so a late discovery is picked up. */
+  defaultRelay?: () => RelayDefault;
+  /** Where `remote.relay` events go. */
+  emit?: (event: CoreEvent) => void;
   socketFactory?: (url: string, headers: Record<string, string>) => RelaySocket;
   baseDelayMs?: number;
   maxDelayMs?: number;
+  now?: () => number;
 }
 
-export type RelayState = { connected: boolean; url: string; error?: string } | null;
+/** `RemoteStatus.relay`: null when `remote.relay` is `off`. */
+export type RelayState = RelayStatus | null;
+
+/** Longest wait between redials; the backoff is capped here even after jitter. */
+export const RELAY_MAX_DELAY_MS = 60_000;
+
+/**
+ * Exponential backoff with ±25 % jitter, hard-capped at `max`: 1 s, 2 s, 4 s … then `max`
+ * forever (`attempt` counts from 1). `random` is injectable for tests.
+ */
+export function backoffDelay(
+  attempt: number,
+  { base = 1000, max = RELAY_MAX_DELAY_MS, random = Math.random } = {},
+): number {
+  const exp = base * 2 ** Math.min(Math.max(attempt, 1) - 1, 10);
+  return Math.min(max, exp * (0.75 + random() * 0.5));
+}
+
+/**
+ * The relay for a fabplane API origin when nothing is configured: `FABPLANE_RELAY_URL` when set
+ * (empty means "none", an explicit opt-out), else `api.<domain>` → `relay.<domain>` on the same
+ * scheme and port — `https://api.fabplane.com` → `wss://relay.fabplane.com`. Any other origin
+ * (the staging host's Tailscale name, a local API) has no derivable relay; `discoverRelayUrl`
+ * asks the API itself, and the env override is the fallback.
+ */
+export function defaultRelayUrl(
+  apiOrigin: string,
+  env: NodeJS.ProcessEnv = process.env,
+): RelayDefault {
+  const override = env["FABPLANE_RELAY_URL"];
+  if (override !== undefined) {
+    const url = override.trim();
+    return url
+      ? { url, source: "env" }
+      : { url: null, reason: "FABPLANE_RELAY_URL is empty, so no relay is used" };
+  }
+  let u: URL;
+  try {
+    u = new URL(apiOrigin);
+  } catch {
+    return { url: null, reason: `the API origin is not a URL: ${apiOrigin}` };
+  }
+  if ((u.protocol === "https:" || u.protocol === "http:") && u.hostname.startsWith("api.")) {
+    const scheme = u.protocol === "https:" ? "wss" : "ws";
+    const host = `relay.${u.hostname.slice("api.".length)}${u.port ? `:${u.port}` : ""}`;
+    return { url: `${scheme}://${host}`, source: "derived" };
+  }
+  return {
+    url: null,
+    reason: `no relay is published for ${u.origin}; set FABPLANE_RELAY_URL to use one`,
+  };
+}
+
+/**
+ * Asks the fabplane API which relay serves it: `GET <origin>/v1/config` answering
+ * `{ relayUrl: "wss://…" }` (or `{ relay: { url } }`). Null when the API has no such route yet,
+ * publishes none, or cannot be reached — the caller keeps the derived default or the env override.
+ */
+export async function discoverRelayUrl(
+  apiOrigin: string,
+  fetchImpl: typeof fetch = fetch,
+  timeoutMs = 5000,
+): Promise<string | null> {
+  try {
+    const res = await fetchImpl(`${apiOrigin.replace(/\/+$/, "")}/v1/config`, {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { relayUrl?: unknown; relay?: { url?: unknown } | null };
+    const url = typeof body.relayUrl === "string" ? body.relayUrl : body.relay?.url;
+    return typeof url === "string" && url.trim() ? url.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Serves `defaultRelayUrl` synchronously and, when that yields nothing, asks the API once in a
+ * while (`discoverRelayUrl`); a discovery that finds a relay is reported through `onChange` so
+ * the link can be re-applied. Env and derived defaults are never overridden by discovery.
+ */
+export class RelayDefaultResolver {
+  private discovered: string | null = null;
+  private probing: Promise<void> | null = null;
+  private probedAt: number | null = null;
+
+  constructor(
+    private readonly opts: {
+      apiOrigin: string;
+      env?: NodeJS.ProcessEnv;
+      fetchImpl?: typeof fetch;
+      onChange?: () => void;
+      /** How long a fruitless probe is remembered before the API is asked again. */
+      retryAfterMs?: number;
+      now?: () => number;
+    },
+  ) {}
+
+  current(): RelayDefault {
+    const env = this.opts.env ?? process.env;
+    const d = defaultRelayUrl(this.opts.apiOrigin, env);
+    if (d.url) return d;
+    if (this.discovered) return { url: this.discovered, source: "api" };
+    if (env["FABPLANE_RELAY_URL"] === undefined) this.probe();
+    return d;
+  }
+
+  /** Resolves once no probe is in flight (tests, shutdown). */
+  settled(): Promise<void> {
+    return this.probing ?? Promise.resolve();
+  }
+
+  private probe(): void {
+    const now = this.opts.now?.() ?? Date.now();
+    if (
+      this.probing ||
+      (this.probedAt !== null && now - this.probedAt < (this.opts.retryAfterMs ?? 5 * 60_000))
+    )
+      return;
+    this.probedAt = now;
+    this.probing = discoverRelayUrl(this.opts.apiOrigin, this.opts.fetchImpl).then((url) => {
+      this.probing = null;
+      if (url && url !== this.discovered) {
+        this.discovered = url;
+        logger.info("relay discovered from the API", { url });
+        this.opts.onChange?.();
+      }
+    });
+  }
+}
 
 /** What `listenAddresses`' caller merges into the advertised endpoints when the link is configured. */
 export type RelayEndpoint = {
@@ -106,6 +248,12 @@ type DaemonFrame =
 /** Close code the daemon sends when a proxied `/ws` presents no usable credential. */
 export const CLOSE_UNAUTHORIZED = 4401;
 
+/**
+ * Set on every request and event socket the link hands to the app, so the device row can record
+ * which path the phone used (`Device.via`). Whatever the phone sent under it is dropped first.
+ */
+export const VIA_HEADER = "x-fabdesk-via";
+
 /** The relay's hostname stands in for the daemon's own in proxied requests; nothing routes on it. */
 const PROXY_ORIGIN = "http://relay.invalid";
 
@@ -115,6 +263,7 @@ const DROP_HEADERS = new Set([
   "transfer-encoding",
   "content-length",
   "content-encoding",
+  VIA_HEADER,
 ]);
 
 function textish(contentType: string | null): boolean {
@@ -161,9 +310,13 @@ export function relayDialUrl(
 
 export class RelayLink {
   private handlers: RelayHandlers | null = null;
+  /** The dial target while the link is wanted (dialing, connected, or waiting to redial). */
   private wanted: { setting: string; url: string; endpoint: RelayEndpoint } | null = null;
+  /** Why the link is not wanted right now, in `auto` mode (null when `off` or wanted). */
+  private blocked: { url: string; error: string } | null = null;
   private socket: RelaySocket | null = null;
   private connected = false;
+  private sinceMs: number | null = null;
   private lastError: string | null = null;
   private attempt = 0;
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -183,45 +336,58 @@ export class RelayLink {
   }
 
   state(): RelayState {
-    if (!this.wanted) return null;
-    return {
-      connected: this.connected,
-      url: this.wanted.setting,
-      ...(this.lastError ? { error: this.lastError } : {}),
-    };
+    const lastError = this.lastError ? { lastError: this.lastError } : {};
+    if (this.wanted)
+      return {
+        connected: this.connected,
+        url: this.wanted.setting,
+        ...(this.sinceMs !== null ? { since: new Date(this.sinceMs).toISOString() } : {}),
+        ...lastError,
+      };
+    if (this.blocked)
+      return { connected: false, url: this.blocked.url, error: this.blocked.error, ...lastError };
+    return null;
   }
 
-  /** The endpoint to advertise in pairing URLs; null unless the link is configured and the daemon signed in. */
+  /** `/health`'s view: up, trying, or not trying (off, blocked, or never configured). */
+  phase(): RelayPhase {
+    if (this.connected) return "connected";
+    return this.wanted ? "connecting" : "off";
+  }
+
+  /** The endpoint to advertise in pairing URLs; null unless the link is up right now. */
   endpoint(): RelayEndpoint | null {
-    return this.wanted && this.opts.token() ? this.wanted.endpoint : null;
+    return this.wanted && this.connected ? this.wanted.endpoint : null;
   }
 
-  /** Brings the link in line with the setting and the sign-in state: dials, redials, or hangs up. */
+  /**
+   * Brings the link in line with the setting and the sign-in state: dials, redials, or hangs up.
+   * The relay is the explicit `relayUrl`, else the default; the link is wanted only while remote
+   * access is on, the mode is not `off`, and the daemon is signed in.
+   */
   apply(remote: Settings["remote"]): RelayState {
-    const setting = remote.relayUrl?.trim() || null;
-    if (!setting || !this.opts.token()) {
-      if (this.wanted) logger.info(setting ? "relay link paused: not signed in" : "relay link off");
+    if ((remote.relay ?? "auto") === "off") {
+      if (this.wanted) logger.info("relay link off");
       this.stop();
-      if (setting) {
-        // Keep reporting the configured URL so Settings can say why it is not connected.
-        const dial = relayDialUrl(setting, this.opts.coreId);
-        this.wanted = "error" in dial ? null : { setting, ...dial };
-        this.lastError = "error" in dial ? dial.error : "not signed in";
-      }
-      return this.state();
+      return null;
     }
-    const dial = relayDialUrl(setting, this.opts.coreId);
-    if ("error" in dial) {
-      this.stop();
-      logger.warn("relay link not started", { error: dial.error });
-      this.lastError = dial.error;
-      return this.state();
-    }
+    const explicit = remote.relayUrl?.trim() || null;
+    const target: RelayDefault = explicit
+      ? { url: explicit, source: "setting" }
+      : (this.opts.defaultRelay?.() ?? { url: null, reason: "no relay is configured" });
+    if (target.url === null) return this.block("", target.reason);
+    const dial = relayDialUrl(target.url, this.opts.coreId);
+    if ("error" in dial) return this.block(target.url, dial.error);
+    if (!remote.enabled) return this.block(target.url, "remote access is off");
+    if (!this.opts.token()) return this.block(target.url, "not signed in");
     if (this.wanted?.url === dial.url && (this.socket || this.timer)) return this.state();
-    this.hangUp();
-    this.wanted = { setting, ...dial };
+    this.hangUp("relay changed");
+    this.wanted = { setting: target.url, ...dial };
+    this.blocked = null;
     this.lastError = null;
     this.attempt = 0;
+    this.sinceMs = this.now();
+    logger.info("relay link starting", { url: target.url, source: target.source });
     this.connect();
     return this.state();
   }
@@ -229,15 +395,46 @@ export class RelayLink {
   stop(): void {
     this.hangUp();
     this.wanted = null;
+    this.blocked = null;
     this.lastError = null;
+    this.sinceMs = null;
   }
 
-  private hangUp(): void {
+  private block(url: string, error: string): RelayState {
+    if (this.wanted) logger.info("relay link paused", { url, reason: error });
+    else if (this.blocked?.error !== error)
+      logger.info("relay link not started", { url, reason: error });
+    this.hangUp(error);
+    this.wanted = null;
+    this.blocked = { url, error };
+    return this.state();
+  }
+
+  private now(): number {
+    return this.opts.now?.() ?? Date.now();
+  }
+
+  /** Flips `connected`, stamps `since`, and tells the bus; a no-op when nothing changed. */
+  private setConnected(connected: boolean, error?: string): void {
+    if (this.connected === connected) return;
+    this.connected = connected;
+    this.sinceMs = this.now();
+    this.opts.emit?.({
+      topic: "remote.relay",
+      ts: this.sinceMs,
+      connected,
+      url: this.wanted?.setting ?? "",
+      ...(error ? { error } : {}),
+    });
+  }
+
+  /** Drops the socket and every proxied session; `reason` is what a `remote.relay` event carries. */
+  private hangUp(reason = "relay link stopped"): void {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     const s = this.socket;
     this.socket = null;
-    this.connected = false;
+    this.setConnected(false, reason);
     this.closeSessions();
     if (s) {
       s.onclose = null;
@@ -263,7 +460,7 @@ export class RelayLink {
     this.timer = null;
     const token = this.opts.token();
     if (!token) {
-      this.lastError = "not signed in";
+      this.block(wanted.setting, "not signed in");
       return;
     }
     let ws: RelaySocket;
@@ -277,9 +474,8 @@ export class RelayLink {
     this.socket = ws;
     ws.onopen = () => {
       if (this.socket !== ws) return;
-      this.connected = true;
-      this.lastError = null;
       this.attempt = 0;
+      this.setConnected(true);
       logger.info("relay link connected", { url: wanted.setting });
     };
     ws.onmessage = (ev) => {
@@ -292,9 +488,10 @@ export class RelayLink {
       if (this.socket !== ws) return;
       const wasConnected = this.connected;
       this.socket = null;
-      this.connected = false;
+      const reason = ev.reason || (ev.code ? `closed (${ev.code})` : "closed");
+      this.lastError = reason;
+      this.setConnected(false, reason);
       this.closeSessions();
-      if (ev.reason) this.lastError = ev.reason;
       logger[wasConnected ? "info" : "warn"]("relay link closed", {
         url: wanted.setting,
         code: ev.code,
@@ -307,10 +504,10 @@ export class RelayLink {
   private scheduleReconnect(): void {
     if (!this.wanted || this.timer) return;
     this.attempt += 1;
-    const base = this.opts.baseDelayMs ?? 1000;
-    const max = this.opts.maxDelayMs ?? 30_000;
-    const delay =
-      Math.min(max, base * 2 ** Math.min(this.attempt - 1, 10)) * (0.75 + Math.random() * 0.5);
+    const delay = backoffDelay(this.attempt, {
+      base: this.opts.baseDelayMs ?? 1000,
+      max: this.opts.maxDelayMs ?? RELAY_MAX_DELAY_MS,
+    });
     this.timer = setTimeout(() => {
       this.timer = null;
       this.connect();
@@ -343,7 +540,9 @@ export class RelayLink {
         const handlers = this.handlers;
         if (!handlers) return;
         const url = new URL(`${PROXY_ORIGIN}${f.path}`);
-        const session = handlers.openEvents(url, new Headers(f.headers ?? {}), (data) =>
+        const headers = new Headers(f.headers ?? {});
+        headers.set(VIA_HEADER, "relay");
+        const session = handlers.openEvents(url, headers, (data) =>
           this.send(ws, { t: "ws-msg", sid: f.sid, data }),
         );
         if (!session) {
@@ -379,6 +578,7 @@ export class RelayLink {
     const headers = new Headers();
     for (const [k, v] of Object.entries(f.headers))
       if (!DROP_HEADERS.has(k.toLowerCase()) && k.toLowerCase() !== "host") headers.set(k, v);
+    headers.set(VIA_HEADER, "relay");
     const body =
       f.body !== undefined
         ? f.bodyEncoding === "base64"

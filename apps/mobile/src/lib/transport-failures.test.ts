@@ -25,6 +25,15 @@ describe("transportFailure", () => {
     expect(transportFailure(next, next)).toBeNull();
   });
 
+  test("the relay saying the computer is offline is not a failure worth reporting", () => {
+    const next = snap({
+      phase: "core-offline",
+      status: "closed",
+      error: "Your computer is offline — the relay is up, but Studio is not connected to it.",
+    });
+    expect(transportFailure(snap({ phase: "locating", status: "closed" }), next)).toBeNull();
+  });
+
   test("a rejected device token is an error", () => {
     const next = snap({ phase: "unauthorized", status: "closed", error: null });
     expect(transportFailure(null, next)).toMatchObject({ key: "unauthorized", level: "error" });

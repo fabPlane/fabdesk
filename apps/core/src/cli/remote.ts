@@ -1,6 +1,7 @@
 /**
- * `fabdesk-core serve --remote [--remote-host <addr>] [--remote-port <n>]`: turn the remote
- * listener on for a headless daemon. The setting is persisted before `serve()` starts, and
+ * `fabdesk-core serve --remote [--remote-host <addr>] [--remote-port <n>] [--relay auto|off]`:
+ * turn the remote listener on for a headless daemon (and, with `--relay off`, keep it off the
+ * fabplane.com relay). The setting is persisted before `serve()` starts, and
  * `serve()` applies it exactly as a Settings patch would — so the flags are a one-time edit of
  * the same `remote` setting, not a separate mode, and the next plain `serve` keeps it.
  *
@@ -19,8 +20,19 @@ export function remoteSettingFromFlags(
   const wanted = flags["remote"] === true || flags["remote"] === "true" || flags["remote"] === "1";
   const host = typeof flags["remote-host"] === "string" ? flags["remote-host"] : undefined;
   const portRaw = typeof flags["remote-port"] === "string" ? flags["remote-port"] : undefined;
-  if (flags["remote"] === "false" || flags["remote"] === "0") return { ...current, enabled: false };
-  if (!wanted && host === undefined && portRaw === undefined) return null;
+  const relayRaw = flags["relay"];
+  let relay: Settings["remote"]["relay"];
+  if (relayRaw !== undefined) {
+    if (relayRaw !== "auto" && relayRaw !== "off")
+      throw new Error(`--relay must be auto or off, got "${String(relayRaw)}"`);
+    relay = relayRaw;
+  }
+  if (flags["remote"] === "false" || flags["remote"] === "0")
+    return { ...current, enabled: false, ...(relay ? { relay } : {}) };
+  if (!wanted && host === undefined && portRaw === undefined) {
+    // `--relay` alone edits that one field; it does not switch remote access on.
+    return relay ? { ...current, relay } : null;
+  }
   let port = current.port;
   if (portRaw !== undefined) {
     port = Number(portRaw);
@@ -36,6 +48,7 @@ export function remoteSettingFromFlags(
     enabled: true,
     ...(host !== undefined ? { host: host.trim() } : {}),
     port,
+    ...(relay ? { relay } : {}),
   });
 }
 

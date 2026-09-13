@@ -156,6 +156,13 @@ export const MIGRATIONS: Array<{ version: number; sql: string }> = [
       ALTER TABLE devices ADD COLUMN push_token_kind TEXT;
     `,
   },
+  {
+    // The path a device last authenticated over (`direct` | `relay`), for `fabdesk-core devices`.
+    version: 6,
+    sql: `
+      ALTER TABLE devices ADD COLUMN last_via TEXT;
+    `,
+  },
 ];
 
 export function openDatabase(path: string): Database {

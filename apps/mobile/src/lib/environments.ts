@@ -10,15 +10,28 @@ import { relativeTime } from "./format";
 
 export type EnvironmentStatus = "unknown" | "reachable" | "offline";
 
+/** How a probe reached a computer: a direct listener, or the relay's `/c/<coreId>` prefix. */
+export type ReachedVia = "direct" | "relay";
+
 export interface StatusEntry {
   status: EnvironmentStatus;
   /** When the probe that produced `status` finished (ms since epoch); null before the first. */
   checkedAt: number | null;
   /** The address that answered, when one did — the best first guess on the next switch. */
   baseUrl: string | null;
+  /** Which path `baseUrl` is; null when nothing answered (or the entry predates the field). */
+  via?: ReachedVia | null;
 }
 
-export const UNKNOWN_STATUS: StatusEntry = { status: "unknown", checkedAt: null, baseUrl: null };
+export const UNKNOWN_STATUS: StatusEntry = {
+  status: "unknown",
+  checkedAt: null,
+  baseUrl: null,
+  via: null,
+};
+
+/** What a prober reports: the address that answered and how, or null. A bare string is direct. */
+export type ProbeHit = string | { baseUrl: string; via: ReachedVia } | null;
 
 /** How often every saved computer is probed while a screen that shows status is on screen. */
 export const STATUS_PROBE_INTERVAL_MS = 60_000;
@@ -37,11 +50,11 @@ export interface EnvironmentLike {
   lastConnectedAt: string | null;
 }
 
-/** Turns a probe outcome into an entry; `found` is the address that answered, or null. */
-export function statusFromProbe(found: string | null, now: number): StatusEntry {
-  return found
-    ? { status: "reachable", checkedAt: now, baseUrl: found }
-    : { status: "offline", checkedAt: now, baseUrl: null };
+/** Turns a probe outcome into an entry; `found` is the address that answered (and how), or null. */
+export function statusFromProbe(found: ProbeHit, now: number): StatusEntry {
+  if (!found) return { status: "offline", checkedAt: now, baseUrl: null, via: null };
+  const hit = typeof found === "string" ? { baseUrl: found, via: "direct" as const } : found;
+  return { status: "reachable", checkedAt: now, baseUrl: hit.baseUrl, via: hit.via };
 }
 
 /** Whether a fresh round is worth running, given when the oldest entry was last checked. */
@@ -65,7 +78,7 @@ export function probeDue(
  */
 export async function probeEnvironments<E extends EnvironmentLike>(
   environments: readonly E[],
-  prober: (env: E) => Promise<string | null>,
+  prober: (env: E) => Promise<ProbeHit>,
   now: () => number = Date.now,
 ): Promise<Record<string, StatusEntry>> {
   const entries = await Promise.all(
@@ -89,6 +102,22 @@ export function effectiveStatus(
   if (live?.streamOpen) return "reachable";
   if (live?.unreachable) return "offline";
   return entry?.status ?? "unknown";
+}
+
+/**
+ * The path the dot should draw for one computer: the live transport's for the active one while
+ * its stream is open (a probe from a minute ago may say "relay" when Wi-Fi has since come back),
+ * the last probe's otherwise. Null when nothing is known, and always null for a computer that is
+ * not reachable — the hollow style means "reachable, but through the relay", not "was, once".
+ */
+export function effectiveVia(
+  entry: StatusEntry | undefined,
+  live: { streamOpen: boolean; via: ReachedVia | null } | null,
+  status: EnvironmentStatus,
+): ReachedVia | null {
+  if (status !== "reachable") return null;
+  if (live?.streamOpen && live.via) return live.via;
+  return entry?.via ?? null;
 }
 
 const STATUS_RANK: Record<EnvironmentStatus, number> = { reachable: 0, unknown: 1, offline: 2 };

@@ -137,16 +137,18 @@ preflight goes through that guard too).
 
 ### App Transport Security (iOS)
 
-`app.json` carries both `NSAllowsArbitraryLoads` and `NSAllowsLocalNetworking`. The narrow key
-covers plain HTTP to RFC 1918 / link-local addresses (the LAN path); a tailnet address is CGNAT
-space (`100.64.0.0/10`), and ATS exceptions are keyed by domain, not IP, so the wide key is what
-lets the `tailscale` kind connect. The phone tries https candidates first, then its last-known-good
-address, then the rest, so a served MagicDNS name is used whenever it answers.
+`app.json` carries `NSAllowsArbitraryLoads` **alone**. It used to carry `NSAllowsLocalNetworking`
+too, and that broke the relay on iOS: Apple's rule is that when `NSAllowsLocalNetworking` (or
+the media / web-content keys) is present, ATS ignores `NSAllowsArbitraryLoads` — so plain HTTP
+was allowed only to addresses iOS considers local (the LAN and, as it turned out, a bare tailnet
+IP), and a qualified hostname such as a staging relay on `http://…ts.net:4010` was refused
+before a packet left the phone (`NSURLErrorDomain -1022`, which React Native reports as
+"Network request failed"). One wide key covers every case the narrow one did.
 
 `NSAllowsArbitraryLoads` can go once every endpoint a daemon advertises is https — that is, once
-`tailscale serve` is required rather than optional for the tailnet path (LAN pairing keeps working
-through `NSAllowsLocalNetworking`). Until then dropping it would break pairing over a bare tailnet
-IP, which is still the common case.
+`tailscale serve` is required rather than optional for the tailnet path and the relay is TLS
+(`wss://relay.fabplane.com` is; staging's is not). Until then dropping it would break pairing over
+a bare tailnet IP, which is still the common case.
 
 Testing it on a device: [mobile-testing-handoff.md](mobile-testing-handoff.md). What comes next, in phases and per-agent work packages: [mobile-roadmap.md](mobile-roadmap.md) — what is verified, what has never run, and the platform gotchas to expect.
 
@@ -261,3 +263,25 @@ A relay implementation supplies a different base URL, a different credential and
 URL. Nothing above it — the screens, the queries, the event reducer — needs to change. What a relay
 still has to settle: how a daemon registers with it, how a device proves itself to the relay as well
 as to the daemon, and whether the daemon dials out (so it needs no inbound port at all).
+
+### The relay from the daemon's side
+
+`apps/core/src/relay.ts` is that implementation's daemon end (the relay itself is `apps/relay`,
+hosted by fabplane.com). Nothing needs configuring:
+
+- The relay is derived from the fabplane API origin — `https://api.fabplane.com` →
+  `wss://relay.fabplane.com`. `FABPLANE_RELAY_URL` overrides it (empty means "no relay"); for an
+  origin with no derivable relay (staging's Tailscale name) the daemon also asks
+  `GET <api>/v1/config` for `{ relayUrl }` and uses that once the API publishes one.
+  `Settings.remote.relayUrl` is the explicit per-daemon override.
+- `Settings.remote.relay` is `auto` (absent) or `off`. In `auto` the link is up whenever remote
+  access is on and the daemon is signed in; `fabdesk-core serve --relay off` persists the switch.
+- `GET /v1/remote` → `relay: { connected, url, since?, error?, lastError? }` (`null` when off;
+  `error` is why it is not dialing — "not signed in", "remote access is off" — and `lastError`
+  the last socket drop). `GET /health` → `relay: "connected" | "connecting" | "off"`, nothing
+  more, as that route is unauthenticated. The bus emits `remote.relay` on every connect and drop.
+- The pairing URL lists the relay endpoint only while the link is actually up; `fabdesk-core
+pair` prints "Reachable from anywhere via fabplane.com relay" or the reason it is not.
+- Each device row records `via: "direct" | "relay"` from its last authenticated request or
+  event socket (`fabdesk-core devices` shows the column). Redials back off from 1 s to a hard
+  60 s cap and reset on success.

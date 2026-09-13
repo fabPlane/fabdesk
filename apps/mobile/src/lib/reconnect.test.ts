@@ -124,6 +124,24 @@ describe("planAfterReprobe", () => {
     );
   });
 
+  test("back on Wi-Fi: a direct address answering while on the relay is a switch to it", () => {
+    // `findReachable` probes direct addresses first and only falls back to the relay, so once
+    // the tailnet answers again the re-probe reports it — and the plan leaves the relay even
+    // though the relayed stream is still open. The extra hop is not worth keeping.
+    const viaRelay = "https://relay.fabplane.com/c/core_abc";
+    expect(
+      planAfterReprobe({ found: tailnet, currentBaseUrl: viaRelay, streamStatus: "open" }),
+    ).toEqual({ kind: "switch", baseUrl: tailnet });
+    // Off Wi-Fi again: nothing direct answers, the relay does — a switch the other way.
+    expect(
+      planAfterReprobe({ found: viaRelay, currentBaseUrl: tailnet, streamStatus: "reconnecting" }),
+    ).toEqual({ kind: "switch", baseUrl: viaRelay });
+    // Still on the relay and it still answers: nothing to do.
+    expect(
+      planAfterReprobe({ found: viaRelay, currentBaseUrl: viaRelay, streamStatus: "open" }),
+    ).toEqual({ kind: "keep" });
+  });
+
   test("nothing answers: keep an open stream, but dial a dead one again", () => {
     expect(planAfterReprobe({ found: null, currentBaseUrl: lan, streamStatus: "open" })).toEqual({
       kind: "keep",
