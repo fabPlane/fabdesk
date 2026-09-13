@@ -2,7 +2,15 @@ import { describe, expect, test } from "bun:test";
 import type { Message, Thread } from "@fabdesk/protocol";
 import { QueryClient } from "@tanstack/react-query";
 import type { CoreClient } from "./CoreClient";
-import { appendDelta, appendPart, handleCoreEvent, messagesKey, patchThreadCaches } from "./events";
+import { useRunsStore } from "./stores/runs";
+import {
+  appendDelta,
+  appendPart,
+  handleCoreEvent,
+  messagesKey,
+  patchThreadCaches,
+  syncLiveRuns,
+} from "./events";
 
 const base: Message = {
   id: "msg_1",
@@ -290,5 +298,109 @@ describe("supervised mode events", () => {
     handleCoreEvent({ ...requested, threadId: "th_other" }, ctx);
     expect(assistant(qc).parts).toHaveLength(1);
     expect(qc.getQueryData<Message[]>(messagesKey("th_other"))).toEqual([]);
+  });
+});
+
+describe("syncLiveRuns", () => {
+  test("seeds runs the store never saw and ends the ones the daemon no longer has", async () => {
+    const ended: string[] = [];
+    const started: string[] = [];
+    const runs = {
+      runsByThread: {
+        th_dead: {
+          runId: "run_dead",
+          threadId: "th_dead",
+          agentId: "claude" as const,
+          startedAt: 1,
+        },
+        th_live: {
+          runId: "run_live",
+          threadId: "th_live",
+          agentId: "claude" as const,
+          startedAt: 1,
+        },
+      },
+      startRun: (r: { runId: string }) => started.push(r.runId),
+      endRun: (id: string) => ended.push(id),
+    };
+    const client = {
+      liveRuns: async () => [
+        {
+          runId: "run_live",
+          threadId: "th_live",
+          agentId: "claude" as const,
+          startedAt: "2026-09-13T13:32:17.355Z",
+        },
+        {
+          runId: "run_new",
+          threadId: "th_new",
+          agentId: "codex" as const,
+          startedAt: "2026-09-13T13:40:00.000Z",
+        },
+      ],
+    };
+    const changed = await syncLiveRuns(client, runs);
+    expect(changed.sort()).toEqual(["th_dead", "th_new"]);
+    expect(ended).toEqual(["run_dead"]);
+    expect(started).toEqual(["run_new"]);
+  });
+
+  test("an older daemon without the route changes nothing", async () => {
+    const runs = { runsByThread: {}, startRun: () => {}, endRun: () => {} };
+    expect(
+      await syncLiveRuns(
+        {
+          liveRuns: async () => {
+            throw new Error("404");
+          },
+        },
+        runs,
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe("patchMessages on an unseen thread", () => {
+  test("a delta for a thread with no cached messages seeds the cache and schedules a fetch", () => {
+    const qc = new QueryClient();
+    const spy: unknown[] = [];
+    const original = qc.invalidateQueries.bind(qc);
+    qc.invalidateQueries = ((opts: unknown) => {
+      spy.push(opts);
+      return original(opts as never);
+    }) as typeof qc.invalidateQueries;
+    useRunsStore
+      .getState()
+      .startRun({ runId: "run_seed", threadId: "th_seed", agentId: "claude", startedAt: 1 });
+    handleCoreEvent(
+      {
+        ts: 1,
+        topic: "agent.delta",
+        runId: "run_seed",
+        messageId: "msg_seed",
+        part: "text",
+        delta: "hi",
+      } as never,
+      { qc, client: {} as never },
+    );
+    expect(qc.getQueryData<Message[]>(messagesKey("th_seed"))?.map((m) => m.id)).toEqual([
+      "msg_seed",
+    ]);
+    expect(spy).toContainEqual({ queryKey: messagesKey("th_seed") });
+    // A second delta on the now-cached thread does not fetch again.
+    handleCoreEvent(
+      {
+        ts: 2,
+        topic: "agent.delta",
+        runId: "run_seed",
+        messageId: "msg_seed",
+        part: "text",
+        delta: "!",
+      } as never,
+      { qc, client: {} as never },
+    );
+    expect(
+      spy.filter((o) => JSON.stringify(o) === JSON.stringify({ queryKey: messagesKey("th_seed") })),
+    ).toHaveLength(1);
   });
 });

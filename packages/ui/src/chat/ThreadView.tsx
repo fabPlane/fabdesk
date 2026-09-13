@@ -53,10 +53,9 @@ export function ThreadView() {
   }, [client, qc, thread]);
 
   const onCreateThread = useCallback(
-    async (input: { title: string; agentId: AgentId; model?: string }) => {
+    async (input: { agentId: AgentId; model?: string }) => {
       const t = await create.mutateAsync({
         projectId,
-        title: input.title,
         agentId: input.agentId,
         ...(input.model ? { model: input.model } : {}),
       });

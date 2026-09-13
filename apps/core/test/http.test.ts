@@ -263,7 +263,7 @@ describe("http daemon", () => {
     };
     const a = await connect(daemon.token);
     const tools = await a.client.listTools();
-    expect(tools.tools.map((t) => t.name).sort()).toEqual(["circuit_build", "circuit_read_errors", "load_toolset", "project_status", "render_board", "route_run", "verify_drc"]);
+    expect(tools.tools.map((t) => t.name).sort()).toEqual(["circuit_build", "circuit_place", "circuit_read_errors", "load_toolset", "project_status", "render_board", "route_run", "verify_drc"]);
     expect(daemon.mcp.activeCount()).toBe(1);
 
     // Without a project selector the tool asks for one; with it, it works.
@@ -274,11 +274,11 @@ describe("http daemon", () => {
     expect((withProject.structuredContent as { id: string }).id).toBe(created.id);
 
     await a.client.callTool({ name: "load_toolset", arguments: { toolset: "export" } });
-    expect((await a.client.listTools()).tools.length).toBe(14);
+    expect((await a.client.listTools()).tools.length).toBe(15);
 
     // A second session starts with only the core toolset (state is per session).
     const b = await connect(daemon.token);
-    expect((await b.client.listTools()).tools.length).toBe(7);
+    expect((await b.client.listTools()).tools.length).toBe(8);
     expect(daemon.mcp.activeCount()).toBe(2);
 
     // A per-run token pins the default project.

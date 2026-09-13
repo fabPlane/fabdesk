@@ -154,7 +154,7 @@ export function MessageBody({
               onAnswer={pending.answer}
             />
           );
-        return <ToolGroup key={i} parts={block.parts} />;
+        return <ToolGroup key={i} parts={block.parts} live={streaming} />;
       })}
       {streaming ? null : <WorkLogLine parts={message.parts} />}
     </View>
@@ -285,7 +285,7 @@ function ThinkingBlock({ text }: { text: string }) {
   );
 }
 
-function ToolGroup({ parts }: { parts: MessagePart[] }) {
+function ToolGroup({ parts, live }: { parts: MessagePart[]; live: boolean }) {
   const t = useTheme();
   const [open, setOpen] = useState(false);
   const summary = useMemo(() => summarizeTools(parts), [parts]);
@@ -316,7 +316,12 @@ function ToolGroup({ parts }: { parts: MessagePart[] }) {
         >
           {summary.label}
         </Text>
-        {summary.pending ? <Text style={{ color: t.accent, fontSize: 11 }}>running</Text> : null}
+        {summary.pending ? (
+          // A call with no result on a run that is over was cut off (daemon restart, agent crash).
+          <Text style={{ color: live ? t.accent : t.muted, fontSize: 11 }}>
+            {live ? "running" : "interrupted"}
+          </Text>
+        ) : null}
         {summary.errors ? (
           <Text style={{ color: t.danger, fontSize: 11 }}>{summary.errors} failed</Text>
         ) : null}

@@ -24,7 +24,13 @@ function shortToolName(name: string): string {
  * Collapsed by default: count, errors, and the tool still running; the arrow expands the cards.
  * Image results (board renders) stay visible even when collapsed.
  */
-export function ToolGroup({ calls, streaming }: { calls: Array<{ use: ToolUse; result?: ToolResult | undefined }>; streaming: boolean }) {
+export function ToolGroup({
+  calls,
+  streaming,
+}: {
+  calls: Array<{ use: ToolUse; result?: ToolResult | undefined }>;
+  streaming: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const projectId = useUiStore((s) => s.activeProjectId);
   const errors = calls.filter((c) => c.result?.isError === true).length;
@@ -36,14 +42,23 @@ export function ToolGroup({ calls, streaming }: { calls: Array<{ use: ToolUse; r
     <div className="my-1 text-xs" data-testid="tool-group">
       <button
         type="button"
-        className={cn("flex w-full items-center gap-2 rounded px-1 py-0.5 text-left text-muted hover:bg-panel-2/60", open && "text-fg")}
+        className={cn(
+          "flex w-full items-center gap-2 rounded px-1 py-0.5 text-left text-muted hover:bg-panel-2/60",
+          open && "text-fg",
+        )}
         onClick={() => setOpen((o) => !o)}
         title={open ? "Hide tool calls" : "Show tool calls"}
         aria-expanded={open}
       >
-        <span className={cn("inline-block transition-transform", open && "rotate-90")}>&#9656;</span>
+        <span className={cn("inline-block transition-transform", open && "rotate-90")}>
+          &#9656;
+        </span>
         <span>{label}</span>
-        {errors > 0 && <span className="text-danger">{errors} error{errors === 1 ? "" : "s"}</span>}
+        {errors > 0 && (
+          <span className="text-danger">
+            {errors} error{errors === 1 ? "" : "s"}
+          </span>
+        )}
         {running && (
           <span className="flex items-center gap-1.5 font-mono">
             <Spinner className="h-3 w-3" />
@@ -51,14 +66,24 @@ export function ToolGroup({ calls, streaming }: { calls: Array<{ use: ToolUse; r
           </span>
         )}
         {!running && !open && calls.length > 0 && (
-          <span className="truncate font-mono opacity-70">{calls.map((c) => shortToolName(c.use.name)).slice(-3).join(" · ")}</span>
+          <span className="truncate font-mono opacity-70">
+            {calls
+              .map((c) => shortToolName(c.use.name))
+              .slice(-3)
+              .join(" · ")}
+          </span>
         )}
       </button>
       {!open && images.length > 0 && (
         <div className="flex flex-wrap gap-2 px-1 pt-1">
           {images.map((img, i) =>
             img.kind === "data" ? (
-              <img key={i} src={img.src} alt="tool result" className="max-h-72 rounded border border-border" />
+              <img
+                key={i}
+                src={img.src}
+                alt="tool result"
+                className="max-h-72 rounded border border-border"
+              />
             ) : (
               <ProjectImage key={i} projectId={projectId} path={img.src} />
             ),
@@ -106,7 +131,9 @@ export function renderParts(m: Message, streaming: boolean): ReactNode[] {
     }
     switch (p.type) {
       case "text":
-        out.push(<Markdown key={i} text={p.text} className={cn(streaming && last && "fd-caret")} />);
+        out.push(
+          <Markdown key={i} text={p.text} className={cn(streaming && last && "fd-caret")} />,
+        );
         break;
       case "thinking":
         out.push(<ThinkingBlock key={i} text={p.text} streaming={streaming && last} />);
@@ -121,7 +148,10 @@ export function renderParts(m: Message, streaming: boolean): ReactNode[] {
       case "tool_result":
         if (!consumed.has(p.id)) {
           out.push(
-            <pre key={i} className="my-1 max-h-60 overflow-auto rounded bg-panel-2 p-2 font-mono text-xs">
+            <pre
+              key={i}
+              className="my-1 max-h-60 overflow-auto rounded bg-panel-2 p-2 font-mono text-xs"
+            >
               {typeof p.output === "string" ? p.output : JSON.stringify(p.output, null, 2)}
             </pre>,
           );
@@ -147,7 +177,11 @@ export function renderParts(m: Message, streaming: boolean): ReactNode[] {
 export function MessageBubble({ message, streaming }: { message: Message; streaming: boolean }) {
   const isUser = message.role === "user";
   if (message.role === "system") {
-    return <div className="mx-auto my-2 max-w-xl text-center text-xs text-muted">{message.contentMd}</div>;
+    return (
+      <div className="mx-auto my-2 max-w-xl text-center text-xs text-muted">
+        {message.contentMd}
+      </div>
+    );
   }
   const body =
     message.parts.length > 0
@@ -160,11 +194,29 @@ export function MessageBubble({ message, streaming }: { message: Message; stream
       <div
         className={cn(
           "relative max-w-[85%] text-[13.5px]",
-          isUser ? "whitespace-pre-wrap rounded-2xl rounded-br-md bg-accent/15 px-3.5 py-2" : "w-full",
+          isUser
+            ? "whitespace-pre-wrap rounded-2xl rounded-br-md bg-accent/15 px-3.5 py-2"
+            : "w-full",
         )}
       >
-        {isUser ? message.contentMd : body}
-        {message.status === "queued" && <div className="mt-1 text-right text-[10px] uppercase tracking-wide text-muted">Queued · sends when the run ends</div>}
+        {isUser ? (
+          <>
+            {message.contentMd}
+            {/* A photo attached on the phone arrives as an image part next to the text. */}
+            {message.parts
+              .filter((p) => p.type === "image")
+              .map((p, i) => (
+                <ImagePart key={i} path={(p as { path: string }).path} />
+              ))}
+          </>
+        ) : (
+          body
+        )}
+        {message.status === "queued" && (
+          <div className="mt-1 text-right text-[10px] uppercase tracking-wide text-muted">
+            Queued · sends when the run ends
+          </div>
+        )}
         {!isUser && streaming && body.length === 0 && (
           <div className="flex items-center gap-2 text-xs text-muted">
             <Spinner /> waiting for the agent...
@@ -188,14 +240,18 @@ export function BranchHeader({ thread }: { thread: Thread }) {
   const setActiveThread = useUiStore((s) => s.setActiveThread);
   const parent = useQuery({
     queryKey: ["threads", "one", thread.parentThreadId],
-    queryFn: async () => (await client.listThreads()).find((t) => t.id === thread.parentThreadId) ?? null,
+    queryFn: async () =>
+      (await client.listThreads()).find((t) => t.id === thread.parentThreadId) ?? null,
     enabled: !!thread.parentThreadId,
   });
   if (!thread.parentThreadId) return null;
   return (
     <div className="mx-auto mb-3 flex w-full max-w-3xl items-center gap-2 rounded-lg border border-dashed border-border px-3 py-1.5 text-xs text-muted">
       <span>&#8916; Branched from</span>
-      <button className="font-medium text-fg hover:underline" onClick={() => setActiveThread(thread.parentThreadId)}>
+      <button
+        className="font-medium text-fg hover:underline"
+        onClick={() => setActiveThread(thread.parentThreadId)}
+      >
         {parent.data?.title ?? "parent thread"}
       </button>
     </div>
@@ -239,7 +295,11 @@ export function MessageList({
           </div>
         )}
         {messages.map((m) => (
-          <MessageBubble key={m.id} message={m} streaming={!!run && m.id === lastId && m.role === "assistant"} />
+          <MessageBubble
+            key={m.id}
+            message={m}
+            streaming={!!run && m.id === lastId && m.role === "assistant"}
+          />
         ))}
         {run && (messages.length === 0 || lastRole === "user") && (
           <div className="flex items-center gap-2 text-xs text-muted">
@@ -247,7 +307,9 @@ export function MessageList({
           </div>
         )}
         {run?.error && (
-          <div className="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">{run.error}</div>
+          <div className="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">
+            {run.error}
+          </div>
         )}
       </div>
     </div>

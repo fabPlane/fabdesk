@@ -7,6 +7,8 @@
 export { CoreClient, CoreHttpError, parseJsonl } from "./CoreClient";
 export type {
   CoreClientOptions,
+  ThreadDetail,
+  LiveRunSummary,
   CreateThreadInput,
   PatchThreadInput,
   SendMessageInput,
@@ -72,11 +74,19 @@ export {
   appendPart,
   messagesKey,
   patchThreadCaches,
+  syncLiveRuns,
   EVENT_TOPICS,
 } from "./events";
 export type { HandlerCtx, RouteSink } from "./events";
 
-export { CoreProvider, useCore, useCoreClient, useCoreEvents, nullHost } from "./provider";
+export {
+  CoreProvider,
+  useCore,
+  useCoreClient,
+  useCoreEvents,
+  nullHost,
+  resyncOnStatus,
+} from "./provider";
 export type {
   HostAdapter,
   FilePickOptions,

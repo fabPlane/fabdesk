@@ -8,10 +8,13 @@ export const circuit_query = defineTool({
   toolset: "circuit",
   title: "Query the board",
   description:
-    "List what the board holds, straight from KiCad, as a compact table: components (ref, value, footprint, position), nets (name, pad count), pads (component, number, net, position, size), vias (position, net; a blank's free vias have an empty net), tracks (routed tracks/arcs/vias per net) or unrouted (the airlines still open). Optional substring filter on names. Requires circuit_build.",
+    "List what the board holds, straight from KiCad, as a compact table: components (ref, value, footprint, position), nets (name, pad count), pads (component, number, net, position, size), vias (position, net; a blank's free vias have an empty net), tracks (routed tracks/arcs/vias per net), unrouted (the airlines still open) or outline (the Edge.Cuts bounding box in mm — read it before circuit_place: the outline's corner is not at 0,0). Optional substring filter on names. Requires circuit_build.",
   inputSchema: {
-    select: z.enum(["components", "nets", "pads", "vias", "tracks", "unrouted"]),
-    filter: z.string().optional().describe("Case-insensitive substring matched against refs/nets/footprints"),
+    select: z.enum(["components", "nets", "pads", "vias", "tracks", "unrouted", "outline"]),
+    filter: z
+      .string()
+      .optional()
+      .describe("Case-insensitive substring matched against refs/nets/footprints"),
     limit: z.number().int().min(1).max(500).default(100),
   },
   annotations: { readOnlyHint: true, idempotentHint: true },
@@ -19,7 +22,10 @@ export const circuit_query = defineTool({
     const project = ctx.requireProject();
     const rows = await ctx.services.design.query(project.dir, select, filter);
     const shown = rows.slice(0, limit);
-    return ok(`${select}: ${rows.length} rows${rows.length > limit ? ` (showing ${limit})` : ""}\n${table(shown)}`, { select, total: rows.length, rows: shown });
+    return ok(
+      `${select}: ${rows.length} rows${rows.length > limit ? ` (showing ${limit})` : ""}\n${table(shown)}`,
+      { select, total: rows.length, rows: shown },
+    );
   },
 });
 
@@ -37,7 +43,12 @@ export const circuit_search_parts = defineTool({
   scope: "global",
   handler: async ({ query, limit }, ctx) => {
     const hits = await ctx.services.design.searchFootprints(query, limit);
-    return ok(hits.length ? `Footprints matching "${query}":\n${table(hits, ["libId", "description"])}` : `No footprints match "${query}".`, { query, hits });
+    return ok(
+      hits.length
+        ? `Footprints matching "${query}":\n${table(hits, ["libId", "description"])}`
+        : `No footprints match "${query}".`,
+      { query, hits },
+    );
   },
 });
 

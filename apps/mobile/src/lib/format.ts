@@ -18,6 +18,11 @@ export function formatBytes(n: number): string {
 }
 
 export function formatDuration(ms: number): string {
-  const s = Math.floor(ms / 1000);
+  const s = Math.max(0, Math.floor(ms / 1000));
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
+}
+
+/** Where a run's elapsed time counts from: its start, unless that lies in this clock's future. */
+export function runAnchor(startedAt: number, firstSeen: number): number {
+  return startedAt > firstSeen ? firstSeen : startedAt;
 }

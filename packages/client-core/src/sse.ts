@@ -49,7 +49,12 @@ export const EVENT_SOURCE_CLOSED = 2;
  * every phone that lost the same Wi-Fi would otherwise dial the daemon in lockstep — so the result
  * lies in `[delay / 2, delay]`; the un-jittered value is the upper bound, never exceeded.
  */
-export function reconnectDelay(attempt: number, base = 1000, max = 15000, random?: () => number): number {
+export function reconnectDelay(
+  attempt: number,
+  base = 1000,
+  max = 15000,
+  random?: () => number,
+): number {
   const delay = Math.min(max, base * 2 ** Math.max(0, attempt - 1));
   if (!random) return delay;
   const r = Math.min(1, Math.max(0, random()));
@@ -65,7 +70,11 @@ export function appendLastEventId(url: string, lastEventId: string | null): stri
 export function parseCoreEvent(data: string): CoreEvent | null {
   try {
     const parsed: unknown = JSON.parse(data);
-    if (parsed && typeof parsed === "object" && typeof (parsed as { topic?: unknown }).topic === "string") {
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      typeof (parsed as { topic?: unknown }).topic === "string"
+    ) {
       return parsed as CoreEvent;
     }
     return null;
@@ -76,7 +85,9 @@ export function parseCoreEvent(data: string): CoreEvent | null {
 
 export function subscribeSse(options: SseOptions): SseSubscription {
   const setT = options.setTimeout ?? ((fn, ms) => globalThis.setTimeout(fn, ms));
-  const clearT = options.clearTimeout ?? ((h) => globalThis.clearTimeout(h as ReturnType<typeof globalThis.setTimeout>));
+  const clearT =
+    options.clearTimeout ??
+    ((h) => globalThis.clearTimeout(h as ReturnType<typeof globalThis.setTimeout>));
   const random = options.random ?? Math.random;
   let source: EventSourceLike | null = null;
   let lastEventId: string | null = null;
@@ -111,7 +122,10 @@ export function subscribeSse(options: SseOptions): SseSubscription {
         if (source === es) source = null;
         attempt += 1;
         setStatus("reconnecting");
-        timer = setT(connect, reconnectDelay(attempt, options.baseDelayMs, options.maxDelayMs, random));
+        timer = setT(
+          connect,
+          reconnectDelay(attempt, options.baseDelayMs, options.maxDelayMs, random),
+        );
       } else {
         setStatus("reconnecting");
       }

@@ -15,7 +15,7 @@ import {
   useThread,
   useThreadMutations,
 } from "@fabdesk/client-core";
-import { useCoreClient } from "@fabdesk/client-core";
+import { useCoreClient, type ThreadDetail } from "@fabdesk/client-core";
 import type { Message } from "@fabdesk/protocol";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -51,7 +51,7 @@ import {
   messageContent,
   toMessageAttachments,
 } from "@/lib/attachments";
-import { formatDuration } from "@/lib/format";
+import { formatDuration, runAnchor } from "@/lib/format";
 import { pendingCount } from "@/lib/pending-requests";
 import { composerAction, queuedMessages } from "@/lib/queued-messages";
 import { useKeyboardShortcut } from "@/layout/keyboard";
@@ -247,7 +247,9 @@ function ThreadScreenBody() {
                   error={run.error}
                   waiting={pendingCount(requests.pending) > 0}
                 />
-              ) : null}
+              ) : (
+                <RunEndedNote status={runEndedBadly(thread.data)} />
+              )}
             </>
           }
           onContentSizeChange={() => list.current?.scrollToEnd({ animated: false })}
@@ -389,6 +391,24 @@ function ThreadScreenBody() {
   );
 }
 
+/** The last run's status when it did not complete (the daemon marks a run failed when it restarts mid-run). */
+function runEndedBadly(thread: ThreadDetail | undefined): "failed" | "aborted" | null {
+  const status = thread?.run?.status;
+  return status === "failed" || status === "aborted" ? status : null;
+}
+
+function RunEndedNote({ status }: { status: "failed" | "aborted" | null }) {
+  const t = useTheme();
+  if (!status) return null;
+  return (
+    <Text style={{ color: t.muted, fontSize: 12, textAlign: "center", paddingVertical: 10 }}>
+      {status === "aborted"
+        ? "The run was stopped. Send a message to continue."
+        : "The run ended before it finished — the daemon restarted or the agent crashed. Send a message to pick up where it left off."}
+    </Text>
+  );
+}
+
 function RunBanner({
   startedAt,
   agentId,
@@ -403,11 +423,17 @@ function RunBanner({
 }) {
   const t = useTheme();
   const [now, setNow] = useState(Date.now());
+  // The daemon stamps `startedAt` with its own clock; a phone whose clock runs behind would count
+  // from a moment in its future, so a start we have not reached yet is measured from first sight.
+  const [firstSeen] = useState(Date.now());
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
-  const elapsed = useMemo(() => formatDuration(now - startedAt), [now, startedAt]);
+  const elapsed = useMemo(
+    () => formatDuration(now - runAnchor(startedAt, firstSeen)),
+    [now, startedAt, firstSeen],
+  );
 
   if (error) {
     return (

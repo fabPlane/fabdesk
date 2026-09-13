@@ -9,7 +9,9 @@ describe("pickerModelChoices", () => {
   });
 
   test("configured models replace the default three, in the configured order, and may exceed three", () => {
-    expect(pickerModelChoices(available, ["gpt-5.4", "gpt-5.5", "custom-x", "gpt-5.6-luna"])).toEqual(["gpt-5.4", "gpt-5.5", "custom-x", "gpt-5.6-luna"]);
+    expect(
+      pickerModelChoices(available, ["gpt-5.4", "gpt-5.5", "custom-x", "gpt-5.6-luna"]),
+    ).toEqual(["gpt-5.4", "gpt-5.5", "custom-x", "gpt-5.6-luna"]);
   });
 
   test("drops blanks and duplicates", () => {
@@ -17,8 +19,17 @@ describe("pickerModelChoices", () => {
   });
 
   test("keeps the current model visible even when it is not listed", () => {
-    expect(pickerModelChoices(available, [], "gpt-5.4")).toEqual(["gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.4"]);
-    expect(pickerModelChoices(available, [], "gpt-5.5")).toEqual(["gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra"]);
+    expect(pickerModelChoices(available, [], "gpt-5.4")).toEqual([
+      "gpt-5.5",
+      "gpt-5.6-sol",
+      "gpt-5.6-terra",
+      "gpt-5.4",
+    ]);
+    expect(pickerModelChoices(available, [], "gpt-5.5")).toEqual([
+      "gpt-5.5",
+      "gpt-5.6-sol",
+      "gpt-5.6-terra",
+    ]);
   });
 });
 

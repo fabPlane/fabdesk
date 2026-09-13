@@ -74,7 +74,9 @@ export function ChatList({ variant }: { variant: "screen" | "sidebar" }) {
     [markSeen, pathname],
   );
 
-  if (threads.isLoading) return <Loading label="Loading chats…" />;
+  // Only the very first load replaces the screen. A search changes the query key, and unmounting
+  // the header then would drop the keyboard (and the rest of the word) after the first letter.
+  if (threads.isLoading && !q) return <Loading label="Loading chats…" />;
 
   const width = wide ? {} : readable;
 

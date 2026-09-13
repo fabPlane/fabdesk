@@ -14,7 +14,16 @@ type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 
 const CANDIDATE_SELECTOR = 'a[href],button,input,select,textarea,option,summary,[role],[tabindex],[data-testid],[aria-label],label,h1,h2,h3';
 
-const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
+// An occluded or backgrounded window never paints, so a bare requestAnimationFrame would hang every
+// action until the user brings the app forward; the timer keeps automation moving in that case.
+const nextFrame = () =>
+  new Promise<void>((r) => {
+    const t = setTimeout(r, 50);
+    requestAnimationFrame(() => {
+      clearTimeout(t);
+      r();
+    });
+  });
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 /** Let React commit store updates (two frames plus a macrotask). */
 async function settle(): Promise<void> {

@@ -42,7 +42,7 @@ export default function ThreeScreen() {
           hint={
             project.data?.files.some((f) => f.path.endsWith(".kicad_pcb"))
               ? "Export the routed board to renders/board.glb with KiCad."
-              : "Nothing built yet — run circuit_build on the desktop first, then export the 3D model."
+              : "Nothing built yet — ask the agent in a chat to build the board, then export the 3D model."
           }
           action={
             <View style={{ alignItems: "center", gap: 8 }}>

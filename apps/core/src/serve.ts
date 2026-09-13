@@ -140,6 +140,8 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   const staleRuns = store.runs.failStale();
   if (staleRuns.length)
     logger.info("failed stale agent runs from previous run", { threads: staleRuns });
+  const staleRoutes = store.routeRuns.failStale();
+  if (staleRoutes) logger.info("failed stale route runs from previous run", { count: staleRoutes });
   const tokens = new TokenSet(config.token);
   const devices = new DeviceStore(store.db);
   tokens.setDeviceLookup((token) => {
@@ -558,7 +560,13 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       jobs.cancelAll();
       await mcp.closeAll();
       projects.close();
-      (services as { dispose?: () => void }).dispose?.();
+      // Releasing the design sessions stops their KiCad processes on the bridge; give it a moment.
+      await Promise.race([
+        Promise.resolve((services as { dispose?: () => Promise<void> | void }).dispose?.()).catch(
+          () => undefined,
+        ),
+        new Promise((r) => setTimeout(r, 3_000)),
+      ]);
       await new Promise((r) => setTimeout(r, 30));
       remote.stop();
       server.stop(true);

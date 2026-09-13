@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { formatBytes, formatDuration, relativeTime } from "./format";
+import { formatBytes, formatDuration, relativeTime, runAnchor } from "./format";
 
 const NOW = Date.parse("2026-03-01T12:00:00.000Z");
 const ago = (ms: number) => new Date(NOW - ms).toISOString();
@@ -32,4 +32,13 @@ test("formatBytes picks a readable unit", () => {
 test("formatDuration switches to minutes with padded seconds", () => {
   expect(formatDuration(45_000)).toBe("45s");
   expect(formatDuration(65_000)).toBe("1m 05s");
+});
+
+test("formatDuration never shows a negative count", () => {
+  expect(formatDuration(-28_000)).toBe("0s");
+});
+
+test("runAnchor counts from first sight when the daemon's start is in this clock's future", () => {
+  expect(runAnchor(1_000, 5_000)).toBe(1_000);
+  expect(runAnchor(9_000, 5_000)).toBe(5_000);
 });

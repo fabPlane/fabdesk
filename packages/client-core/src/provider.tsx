@@ -2,7 +2,7 @@ import type { UpdateCheckResult, UpdateDownloadState } from "@fabdesk/protocol";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { CoreClient } from "./CoreClient";
-import { EVENT_TOPICS, handleCoreEvent, type RouteSink } from "./events";
+import { EVENT_TOPICS, handleCoreEvent, messagesKey, syncLiveRuns, type RouteSink } from "./events";
 import type { SseStatus } from "./sse";
 
 export interface FilePickOptions {
@@ -140,11 +140,29 @@ export function useCoreEvents(
   const { route, subscribe } = opts;
   useEffect(() => {
     const open = subscribe ?? ((topics, onEvent, onSt) => client.subscribe(topics, onEvent, onSt));
+    let wasOpen = false;
     const sub = open(
       EVENT_TOPICS,
       (event) => handleCoreEvent(event, { qc, client, ...(route ? { route } : {}) }),
-      (status) => onStatus?.(status),
+      (status) => {
+        // A stream that comes back after a gap (daemon restart, sleep, network blip) may have missed
+        // events beyond the bus's replay window; refetching what is on screen is the cheap correct answer.
+        if (resyncOnStatus(wasOpen, status)) void qc.invalidateQueries();
+        // Every open, first or not: the store only learns about runs from events, so a run that
+        // was already in progress when this client connected is seeded from the daemon.
+        if (status === "open")
+          void syncLiveRuns(client).then((threads) => {
+            for (const id of threads) void qc.invalidateQueries({ queryKey: messagesKey(id) });
+          });
+        if (status === "open") wasOpen = true;
+        onStatus?.(status);
+      },
     );
     return () => sub.close();
   }, [client, qc, onStatus, route, subscribe]);
+}
+
+/** Whether a stream status change is a reconnect (open again after having been open) that needs a refetch. */
+export function resyncOnStatus(wasOpen: boolean, status: SseStatus): boolean {
+  return wasOpen && status === "open";
 }

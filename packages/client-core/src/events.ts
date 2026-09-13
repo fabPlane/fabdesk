@@ -13,7 +13,7 @@ import type {
 import type { QueryClient } from "@tanstack/react-query";
 import type { CoreClient } from "./CoreClient";
 import { useAuthStore } from "./stores/auth";
-import { useRunsStore } from "./stores/runs";
+import { useRunsStore, type RunsState } from "./stores/runs";
 
 export const EVENT_TOPICS = [
   "agent.*",
@@ -45,7 +45,13 @@ export function messagesKey(threadId: string) {
 }
 
 function patchMessages(qc: QueryClient, threadId: string, fn: (msgs: Message[]) => Message[]) {
-  qc.setQueryData<Message[]>(messagesKey(threadId), (old) => fn(old ?? []));
+  const key = messagesKey(threadId);
+  const had = qc.getQueryData<Message[]>(key) !== undefined;
+  qc.setQueryData<Message[]>(key, (old) => fn(old ?? []));
+  // Seeding a thread this client had never fetched (the other device just started it) leaves the
+  // cache with only the streamed assistant message and marks the query fresh, so the user's own
+  // message never appeared. Fetch the rest once.
+  if (!had) void qc.invalidateQueries({ queryKey: key });
 }
 
 function ensureMessage(
@@ -363,4 +369,37 @@ export function handleCoreEvent(event: CoreEvent, ctx: HandlerCtx): void {
     default:
       break;
   }
+}
+
+/**
+ * Brings the live-run store in line with the daemon after the stream (re)opens: runs in progress
+ * that the store never saw (the app started while the agent was already working, or the
+ * `agent.started` fell in a gap) are added, and runs the daemon no longer has are ended (a daemon
+ * restart marks them failed at startup, before anyone is listening, so no `agent.done` comes).
+ * Returns the thread ids whose state changed.
+ */
+export async function syncLiveRuns(
+  client: Pick<CoreClient, "liveRuns">,
+  runs: Pick<RunsState, "runsByThread" | "startRun" | "endRun"> = useRunsStore.getState(),
+): Promise<string[]> {
+  const live = await client.liveRuns().catch(() => null);
+  if (!live) return [];
+  const changed: string[] = [];
+  const liveByThread = new Map(live.map((r) => [r.threadId, r]));
+  for (const run of Object.values(runs.runsByThread)) {
+    if (liveByThread.get(run.threadId)?.runId === run.runId) continue;
+    runs.endRun(run.runId);
+    changed.push(run.threadId);
+  }
+  for (const r of live) {
+    if (runs.runsByThread[r.threadId]?.runId === r.runId) continue;
+    runs.startRun({
+      runId: r.runId,
+      threadId: r.threadId,
+      agentId: r.agentId,
+      startedAt: Date.parse(r.startedAt),
+    });
+    changed.push(r.threadId);
+  }
+  return changed;
 }

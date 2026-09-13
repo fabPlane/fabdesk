@@ -27,7 +27,12 @@ describe("groupThreadsByProject", () => {
 
   test("puts unassigned threads above project groups", () => {
     const groups = groupThreadsByProject(
-      [thread("t1", "A", "p2"), thread("t2", "B", "p1"), thread("t3", "C", null), thread("t4", "gone", "p1")],
+      [
+        thread("t1", "A", "p2"),
+        thread("t2", "B", "p1"),
+        thread("t3", "C", null),
+        thread("t4", "gone", "p1"),
+      ],
       projects,
     );
     expect(groups.map((g) => g.title)).toEqual(["No project", "Amplifier", "Blinky"]);
