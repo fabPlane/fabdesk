@@ -62,7 +62,8 @@ on the tailnet), `X-Forwarded-For` set.
 
 ```bash
 cd /opt/fabplane
-RELAY_API_ORIGIN=http://api:4000 docker compose -f deploy/production/compose.relay.yaml up -d --build relay
+RELAY_API_ORIGIN=http://api:4000 RELAY_TRUSTED_PROXIES=127.0.0.1,::1 \
+  docker compose -f deploy/production/compose.relay.yaml up -d --build relay
 curl -s http://127.0.0.1:4010/health          # {"ok":true,"uptimeSeconds":…,"daemons":0,"clients":0}
 ```
 
@@ -74,7 +75,8 @@ curl -s http://127.0.0.1:4010/health          # {"ok":true,"uptimeSeconds":…,"
 
 Tunables (defaults are fine to start): `RELAY_MAX_DAEMONS_PER_USER=10`,
 `RELAY_MAX_CLIENTS_PER_CORE=32`, `RELAY_REQUESTS_PER_MINUTE=600`, `RELAY_PING_INTERVAL_MS=30000`,
-`RELAY_IDLE_TIMEOUT_MS=90000`, `RELAY_AUTH_CACHE_TTL_MS=300000`.
+`RELAY_IDLE_TIMEOUT_MS=90000`, `RELAY_AUTH_CACHE_TTL_MS=300000`, `RELAY_TRUSTED_PROXIES` (the
+nginx peer; unset trusts nobody).
 
 ## 5. Verify from outside
 
@@ -112,10 +114,10 @@ shuttingDown:true}` during a drain).
 
 ## Known gaps before calling it done
 
-- **`X-Forwarded-For`**: behind nginx every client reaches the relay from `127.0.0.1`, so the
-  per-address rate limit collapses to one bucket until the relay trusts the header from a
-  configured proxy (`RELAY_TRUST_PROXY=1`, to add in `apps/relay`). Per-user limits (by daemon
-  auth) are unaffected.
+- ~~`X-Forwarded-For`~~ — done: set `RELAY_TRUSTED_PROXIES=127.0.0.1,::1` on the container so
+  the per-address limit keys on `CF-Connecting-IP` / the first `X-Forwarded-For` hop instead of
+  nginx's loopback address. Headers from any other peer are ignored, so a direct caller cannot
+  spoof its way past the limit.
 - **Tailscale ACL**: staging's `tag:cursor-staging` grant lists only `tcp:4000,5173`; add
   `tcp:4010` if cloud agents need the staging relay. Production is public, so no ACL.
 - **`NSAllowsArbitraryLoads`** stays in the iOS app until the tailnet path is HTTPS too; the
