@@ -4,7 +4,8 @@
  * through the typed client on the project's session. Positions come back in millimetres; the
  * client speaks nanometres.
  */
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { KiCadObjectType } from "@fp-pcb/proto";
 import { Via, toMm, type Board, type KiCad } from "@fp-pcb/client";
@@ -381,19 +382,19 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       .map((n) => ({ n, hit: tokens.filter((t) => n.toLowerCase().includes(t)).length }))
       .sort((a, b) => b.hit - a.hit);
     const hits: FootprintHit[] = [];
-    const filter = tokens.join(" ");
-    for (const { n, hit } of scored) {
+    for (const { n } of scored) {
       if (hits.length >= limit) break;
-      // Libraries whose name matches take everything matching the rest; others only exact-ish entry hits.
+      // KiCad's entry filter is one substring, so ask with the most specific token the library name
+      // does not already cover and match the remaining tokens here against name + description.
+      const rest = tokens.filter((t) => !n.toLowerCase().includes(t));
+      const [primary, ...others] = [...rest].sort((a, b) => b.length - a.length);
       const entries = await kicad.libraries
-        .entries(
-          "footprint",
-          n,
-          hit ? tokens.filter((t) => !n.toLowerCase().includes(t)).join(" ") : filter,
-        )
+        .entries("footprint", n, primary ?? "")
         .catch(() => []);
       for (const e of entries) {
         if (hits.length >= limit) break;
+        const hay = `${e.name} ${e.description ?? ""}`.toLowerCase();
+        if (!others.every((t) => hay.includes(t))) continue;
         hits.push({
           libId: `${n}:${e.name}`,
           nickname: n,
@@ -405,8 +406,23 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     return hits;
   };
 
-  /** Any live KiCad for server-wide questions (libraries); a bare session when no project is open. */
-  const anyKicad = async (): Promise<KiCad> => (await deps.sessions.session("")).kicad;
+  /**
+   * Any live KiCad for server-wide questions (libraries). The api-server only registers the
+   * footprint-library handlers once a project is open (`GetLibraryTables` answers `AS_UNHANDLED`
+   * on a bare session), so the shared session is given a scratch project the first time.
+   */
+  const anyKicad = async (): Promise<KiCad> => {
+    const { kicad } = await deps.sessions.session("");
+    const hasProject = await kicad
+      .projectInfo()
+      .then(() => true)
+      .catch(() => false);
+    if (!hasProject) {
+      const dir = await mkdtemp(join(tmpdir(), "fabdesk-libs-"));
+      await kicad.newProject(join(dir, "libs.kicad_pro"), { skipStubDocuments: true });
+    }
+    return kicad;
+  };
 
   const status = async (): Promise<DesignStatus> => {
     const bridge = deps.bridge();
