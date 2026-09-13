@@ -13,6 +13,7 @@ const USAGE = `fabdesk-core ${VERSION}
 Usage:
   fabdesk-core serve [--port 0] [--host 127.0.0.1] [--handshake-file <path>] [--parent-pid <pid>] [--local-auth] [--data-dir <dir>]
                      [--remote] [--remote-host 0.0.0.0] [--remote-port ${REMOTE_DEFAULT_PORT}]   # turn on (and persist) remote access for phones
+                     [--relay auto|off]                              # the fabplane.com relay for phones off the tailnet (default auto; FABPLANE_RELAY_URL overrides the host)
   fabdesk-core pair [--no-wait] [--invert] [--json]      # pairing QR + link for the running daemon; waits for the phone
   fabdesk-core devices list [--json]                     # paired phones on the running daemon
   fabdesk-core devices revoke <id|label>
@@ -87,13 +88,13 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     case "serve": {
       initSentry();
       // `--remote` edits the persisted setting before the daemon reads it; see cli/remote.ts.
-      if (f["remote"] !== undefined || f["remote-host"] !== undefined || f["remote-port"] !== undefined) {
+      if (f["remote"] !== undefined || f["remote-host"] !== undefined || f["remote-port"] !== undefined || f["relay"] !== undefined) {
         const config = resolveConfig({ ...(str(f, "data-dir") ? { dataDir: str(f, "data-dir")! } : {}) });
         const { persistRemoteFlags } = await import("./cli/remote");
         await mkdir(config.home, { recursive: true });
         try {
           const remote = await persistRemoteFlags(config.dbPath, f);
-          if (remote) process.stderr.write(remote.enabled ? `Remote access on: phones connect to ${remote.host}:${remote.port} (persisted; pair one with: fabdesk-core pair)\n` : "Remote access off (persisted)\n");
+          if (remote) process.stderr.write(remote.enabled ? `Remote access on: phones connect to ${remote.host}:${remote.port}${remote.relay === "off" ? ", relay off" : ""} (persisted; pair one with: fabdesk-core pair)\n` : "Remote access off (persisted)\n");
         } catch (e) {
           process.stderr.write(`serve: ${errMsg(e)}\n`);
           return 2;

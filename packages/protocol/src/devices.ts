@@ -4,12 +4,18 @@ import { z } from "zod/v4";
 export const DevicePlatform = z.enum(["ios", "android", "web", "other"]);
 export type DevicePlatform = z.infer<typeof DevicePlatform>;
 
+/** The path a device's request took: the daemon's own listener, or the relay (`apps/relay`). */
+export const DeviceVia = z.enum(["direct", "relay"]);
+export type DeviceVia = z.infer<typeof DeviceVia>;
+
 export const Device = z.object({
   id: z.string(),
   label: z.string(),
   platform: DevicePlatform,
   createdAt: z.string(),
   lastSeenAt: z.string().nullable(),
+  /** How the device last authenticated; null until it has, absent from older daemons. */
+  via: DeviceVia.nullable().optional(),
 });
 export type Device = z.infer<typeof Device>;
 

@@ -36,12 +36,19 @@ describe("device tokens", () => {
     expect(s.revoke(device.id)).toBe(false);
   });
 
-  test("touch records last-seen", () => {
+  test("touch records last-seen and the path the device came in over", () => {
     const s = store();
     const { device } = s.issue("phone", "ios");
-    expect(s.list()[0]!.lastSeenAt).toBeNull();
-    s.touch(device.id, Date.parse("2026-02-03T04:05:06.000Z"));
-    expect(s.list()[0]!.lastSeenAt).toBe("2026-02-03T04:05:06.000Z");
+    expect(s.list()[0]).toMatchObject({ lastSeenAt: null, via: null });
+    s.touch(device.id, { now: Date.parse("2026-02-03T04:05:06.000Z") });
+    expect(s.list()[0]).toMatchObject({ lastSeenAt: "2026-02-03T04:05:06.000Z", via: null });
+    s.touch(device.id, { via: "relay", now: Date.parse("2026-02-03T04:05:07.000Z") });
+    expect(s.list()[0]).toMatchObject({ lastSeenAt: "2026-02-03T04:05:07.000Z", via: "relay" });
+    // A sighting with no path keeps the last known one.
+    s.touch(device.id, { now: Date.parse("2026-02-03T04:05:08.000Z") });
+    expect(s.list()[0]).toMatchObject({ lastSeenAt: "2026-02-03T04:05:08.000Z", via: "relay" });
+    s.touch(device.id, { via: "direct" });
+    expect(s.get(device.id)?.via).toBe("direct");
   });
 });
 

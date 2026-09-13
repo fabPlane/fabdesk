@@ -31,8 +31,35 @@ const KIND_LABEL: Record<CoreEndpoint["kind"], string> = {
   relay: "relay",
 };
 
+/**
+ * One line on the relay: reachable from anywhere through it, or why not. `relay` is
+ * `RemoteStatus.relay` (absent from a daemon that predates it, null when switched off).
+ */
+export function formatRelayLine(relay: RemoteStatus["relay"]): string {
+  if (relay === undefined) return "";
+  if (relay === null)
+    return `Relay off (remote.relay is "off"); phones reach this machine only on the addresses above.`;
+  const host = hostOf(relay.url);
+  const name = host.endsWith("fabplane.com") ? "fabplane.com relay" : `relay ${host || relay.url}`;
+  if (relay.connected) return `Reachable from anywhere via ${name}.`;
+  if (relay.error) return `Not reachable via ${name}: ${relay.error}.`;
+  return `Not yet reachable via ${name}: connecting${relay.lastError ? ` (last: ${relay.lastError})` : ""}.`;
+}
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return "";
+  }
+}
+
 /** Everything but the QR itself: the human-readable part of the pairing screen. */
-export function formatPairing(result: PairStartResult, now = Date.now()): string {
+export function formatPairing(
+  result: PairStartResult,
+  now = Date.now(),
+  relay?: RemoteStatus["relay"],
+): string {
   const seconds = Math.max(0, Math.round((Date.parse(result.expiresAt) - now) / 1000));
   const lines = [
     `Pair a phone with ${result.coreName}: in the fabPlane app tap Scan and point it at the code above,`,
@@ -48,6 +75,9 @@ export function formatPairing(result: PairStartResult, now = Date.now()): string
         `  ${endpointBaseUrl(e).padEnd(44)} ${KIND_LABEL[e.kind]}${e.default ? "  (default)" : ""}`,
     ),
   ];
+  const relayLine = formatRelayLine(relay);
+  if (relayLine) lines.push(``, relayLine);
+  // A relay endpoint is only advertised while the link is up, so its presence lifts the warning.
   if (result.endpoints.every((e) => e.kind === "loopback"))
     lines.push(
       ``,
@@ -124,7 +154,7 @@ export async function pairCommand(client: DaemonClient, args: PairArgs, io: Io):
     return 0;
   }
   io.out("\n" + qrTerminal(result.url, { invert: args.invert }) + "\n\n");
-  io.err(formatPairing(result));
+  io.err(formatPairing(result, Date.now(), remote.relay));
   if (!args.wait) return 0;
 
   io.err(`\nWaiting for a phone… (Ctrl-C to stop)\n`);
