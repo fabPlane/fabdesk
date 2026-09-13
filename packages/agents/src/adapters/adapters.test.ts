@@ -88,12 +88,16 @@ describe("claude adapter", () => {
     ]);
     expect(args.join(" ")).not.toContain(TOKEN);
     const cfg = JSON.parse(args[args.indexOf("--mcp-config") + 1] as string) as {
-      mcpServers: { fabdesk: { type: string; url: string; headers: Record<string, string> } };
+      mcpServers: {
+        fabdesk: { type: string; url: string; headers: Record<string, string>; timeout: number };
+      };
     };
     expect(cfg.mcpServers.fabdesk).toEqual({
       type: "http",
       url: "http://127.0.0.1:4321/mcp",
       headers: { Authorization: "Bearer ${FABDESK_TOKEN}" },
+      // Longer than Claude Code's ~5 min idle abort: a route may run its whole timeoutMs.
+      timeout: 1_200_000,
     });
   });
 

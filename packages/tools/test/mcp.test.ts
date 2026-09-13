@@ -69,6 +69,20 @@ describe("mcp adapter", () => {
     expect(progress.length).toBeGreaterThan(0);
     expect(progress.at(-1)).toBe(100);
 
+    // A long-running tool repeats its last progress on a timer so a client with an idle timeout
+    // (Claude Code aborts after ~5 silent minutes) keeps waiting through a quiet solver phase.
+    process.env["FABDESK_MCP_HEARTBEAT_MS"] = "2";
+    try {
+      const beats: number[] = [];
+      await client.callTool({ name: "route_run", arguments: { timeoutMs: 1000 } }, undefined, {
+        onprogress: (p) => beats.push(p.progress),
+      });
+      const repeats = beats.filter((v, i) => i > 0 && v === beats[i - 1]).length;
+      expect(repeats).toBeGreaterThan(0);
+    } finally {
+      delete process.env["FABDESK_MCP_HEARTBEAT_MS"];
+    }
+
     const bad = await client.callTool({
       name: "circuit_read_errors",
       arguments: { project: "does-not-exist" },
