@@ -2,7 +2,14 @@ import { describe, expect, test } from "bun:test";
 import type { Message, Thread } from "@fabdesk/protocol";
 import { QueryClient } from "@tanstack/react-query";
 import type { CoreClient } from "./CoreClient";
-import { appendDelta, appendPart, handleCoreEvent, messagesKey, patchThreadCaches } from "./events";
+import {
+  appendDelta,
+  appendPart,
+  handleCoreEvent,
+  messagesKey,
+  patchThreadCaches,
+  reconcileLiveRuns,
+} from "./events";
 
 const base: Message = {
   id: "msg_1",
@@ -290,5 +297,43 @@ describe("supervised mode events", () => {
     handleCoreEvent({ ...requested, threadId: "th_other" }, ctx);
     expect(assistant(qc).parts).toHaveLength(1);
     expect(qc.getQueryData<Message[]>(messagesKey("th_other"))).toEqual([]);
+  });
+});
+
+describe("reconcileLiveRuns", () => {
+  test("drops runs the daemon no longer reports as running and keeps the live ones", async () => {
+    const ended: string[] = [];
+    const runs = {
+      runsByThread: {
+        th_dead: {
+          runId: "run_dead",
+          threadId: "th_dead",
+          agentId: "claude" as const,
+          startedAt: 1,
+        },
+        th_live: {
+          runId: "run_live",
+          threadId: "th_live",
+          agentId: "claude" as const,
+          startedAt: 1,
+        },
+        th_gone: {
+          runId: "run_gone",
+          threadId: "th_gone",
+          agentId: "claude" as const,
+          startedAt: 1,
+        },
+      },
+      endRun: (id: string) => ended.push(id),
+    };
+    const client = {
+      getThread: async (id: string) => {
+        if (id === "th_gone") throw new Error("404");
+        return { id, running: id === "th_live" } as unknown as Thread;
+      },
+    };
+    const dropped = await reconcileLiveRuns(client, runs);
+    expect(dropped).toEqual(["th_dead"]);
+    expect(ended).toEqual(["run_dead"]);
   });
 });

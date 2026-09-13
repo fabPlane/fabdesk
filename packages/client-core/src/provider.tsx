@@ -2,7 +2,13 @@ import type { UpdateCheckResult, UpdateDownloadState } from "@fabdesk/protocol";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { CoreClient } from "./CoreClient";
-import { EVENT_TOPICS, handleCoreEvent, type RouteSink } from "./events";
+import {
+  EVENT_TOPICS,
+  handleCoreEvent,
+  messagesKey,
+  reconcileLiveRuns,
+  type RouteSink,
+} from "./events";
 import type { SseStatus } from "./sse";
 
 export interface FilePickOptions {
@@ -147,7 +153,12 @@ export function useCoreEvents(
       (status) => {
         // A stream that comes back after a gap (daemon restart, sleep, network blip) may have missed
         // events beyond the bus's replay window; refetching what is on screen is the cheap correct answer.
-        if (resyncOnStatus(wasOpen, status)) void qc.invalidateQueries();
+        if (resyncOnStatus(wasOpen, status)) {
+          void qc.invalidateQueries();
+          void reconcileLiveRuns(client).then((threads) => {
+            for (const id of threads) void qc.invalidateQueries({ queryKey: messagesKey(id) });
+          });
+        }
         if (status === "open") wasOpen = true;
         onStatus?.(status);
       },

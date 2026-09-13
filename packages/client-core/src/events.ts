@@ -13,7 +13,7 @@ import type {
 import type { QueryClient } from "@tanstack/react-query";
 import type { CoreClient } from "./CoreClient";
 import { useAuthStore } from "./stores/auth";
-import { useRunsStore } from "./stores/runs";
+import { useRunsStore, type RunsState } from "./stores/runs";
 
 export const EVENT_TOPICS = [
   "agent.*",
@@ -363,4 +363,28 @@ export function handleCoreEvent(event: CoreEvent, ctx: HandlerCtx): void {
     default:
       break;
   }
+}
+
+/**
+ * After the stream reopens, drop live runs the daemon no longer reports as running. A run that
+ * ended while the client was disconnected (a daemon restart marks it failed at startup, before
+ * anyone is listening) has no `agent.done` coming, so the Stop button would otherwise stay forever.
+ * Returns the thread ids whose run was dropped.
+ */
+export async function reconcileLiveRuns(
+  client: Pick<CoreClient, "getThread">,
+  runs: Pick<RunsState, "runsByThread" | "endRun"> = useRunsStore.getState(),
+): Promise<string[]> {
+  const dropped: string[] = [];
+  await Promise.all(
+    Object.values(runs.runsByThread).map(async (run) => {
+      const thread = (await client.getThread(run.threadId).catch(() => null)) as
+        | (Thread & { running?: boolean })
+        | null;
+      if (!thread || thread.running !== false) return;
+      runs.endRun(run.runId);
+      dropped.push(run.threadId);
+    }),
+  );
+  return dropped;
 }

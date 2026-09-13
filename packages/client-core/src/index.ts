@@ -72,6 +72,7 @@ export {
   appendPart,
   messagesKey,
   patchThreadCaches,
+  reconcileLiveRuns,
   EVENT_TOPICS,
 } from "./events";
 export type { HandlerCtx, RouteSink } from "./events";
