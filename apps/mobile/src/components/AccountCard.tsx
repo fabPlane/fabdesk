@@ -112,7 +112,7 @@ export function AccountCard() {
           {showPassword ? (
             <View style={{ marginTop: 12, gap: 8 }}>
               <Text style={{ color: t.muted, fontSize: 11, lineHeight: 16 }}>
-                Staging/local only. Shared demo/maya accounts are not available in production.
+                Staging/local only. Password login is not available in production.
               </Text>
               <Input
                 accessibilityLabel="Email or handle"

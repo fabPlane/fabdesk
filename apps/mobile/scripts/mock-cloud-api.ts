@@ -7,7 +7,7 @@
  *
  *   EXPO_PUBLIC_FABPLANE_API_ORIGIN=http://10.0.2.2:4077 bun run mobile
  *
- * Password: maya / fabplane-dev (or demo). Production password login stays blocked.
+ * Production password login stays blocked.
  */
 const PORT = Number(process.env["MOCK_CLOUD_PORT"] ?? 4077);
 const ORIGIN = `http://127.0.0.1:${PORT}`;

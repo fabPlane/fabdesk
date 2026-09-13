@@ -338,7 +338,7 @@ function AuthSection() {
             void loginWithPassword();
           }}
         >
-          <div className="text-muted">Staging/local password login. Shared demo/maya accounts are not available in production.</div>
+          <div className="text-muted">Staging/local only. Password login is not available in production.</div>
           <Input
             type="text"
             autoComplete="username"

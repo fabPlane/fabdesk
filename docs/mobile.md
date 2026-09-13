@@ -19,7 +19,7 @@ bun apps/mobile/scripts/mock-cloud-api.ts
 EXPO_PUBLIC_FABPLANE_API_ORIGIN=http://10.0.2.2:4077 bun run mobile
 ```
 
-Password login (`maya` / `fabplane-dev`) is only offered when that origin is not production.
+Password login is only offered when that origin is not production.
 
 ## How it connects
 
