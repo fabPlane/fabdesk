@@ -18,8 +18,8 @@ profile's, the bridge a fab_pcb checkout at the vendor pin with the KiCad fork n
 | 6 | Dreamcast serial SD | Thor (everything) | — | 84/84 routed, 8 router errors; agent hit the rotation bug |
 | 7 | NES UNROM flash cart | desktop (netlist, build, supervised on) | Thor (place, route) | question answered on desktop, Edit approved on Thor; 3 router errors |
 | 8 | GBA multiboot adapter | Thor (photo attachment, netlist, build) | desktop (place, route) | photo uploaded to `sketches/`; desktop showed neither message nor photo until fixed |
-| 9 | N64 Controller Pak | desktop (all) | phone (review) | in flight at time of writing |
-| 10 | Genesis flash cart | Thor (netlist, build) | desktop (place, route) | in flight at time of writing |
+| 9 | N64 Controller Pak | desktop (all) | Thor (DRC list, renders) | placed by the agent; 48 router errors, all at the 0.5 mm USB-C pads; DRC list and gallery reviewed on the Thor |
+| 10 | Genesis flash cart | Thor (netlist, build) | desktop (place, route) | 80/80 routed on the first pass; the second `route_run` was aborted by Claude Code's 5-minute idle timeout (see below) |
 
 ## Fixed on the branch
 
@@ -40,6 +40,14 @@ Cross-device state (both clients, `packages/client-core`):
   daemon's naming (and its `thread.updated`) never ran. The daemon names every thread by its opening clause.
 
 Design tooling (`packages/tools`, `apps/core`, `packages/kicad`):
+
+- **Claude Code aborted `route_run` after 327 silent seconds** (`MCP server "fabdesk" tool "route_run"
+  sent no response or progress`), the agent fell back to a background timer and ended its turn with
+  the router still going, and the route run stayed "running" forever after a restart. Long-running
+  tools now heartbeat their last progress every 30 s, the claude adapter's MCP config carries a
+  20-minute per-server timeout, and route runs left running at startup are failed.
+- **`circuit_query select=outline`** reports the Edge.Cuts bounds: the compile does not put the
+  outline's corner at (0,0), and `circuit_place` takes raw board coordinates.
 
 - **`circuit_search_parts` was dead** (`GetLibraryTables: AS_UNHANDLED`): the api-server registers
   library handlers only once a project is open. The shared library session gets a scratch project;
