@@ -540,7 +540,13 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       jobs.cancelAll();
       await mcp.closeAll();
       projects.close();
-      (services as { dispose?: () => void }).dispose?.();
+      // Releasing the design sessions stops their KiCad processes on the bridge; give it a moment.
+      await Promise.race([
+        Promise.resolve((services as { dispose?: () => Promise<void> | void }).dispose?.()).catch(
+          () => undefined,
+        ),
+        new Promise((r) => setTimeout(r, 3_000)),
+      ]);
       await new Promise((r) => setTimeout(r, 30));
       remote.stop();
       server.stop(true);
