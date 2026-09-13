@@ -469,6 +469,7 @@ a path added to one and not the other typechecks but fails to bundle, or vice ve
 ## Not done, by design
 
 Not bugs, and listed in `docs/mobile.md` too: no attachments on project-less threads (no upload
-endpoint exists), no Route Cinema, no 3D viewer, no schematic/PCB SVG, no on-device board rendering,
-no app-store or EAS build config, and no entry in the release pipeline. `scripts/set-version.ts` and
-`release.yml` deliberately do not know this app exists.
+endpoint exists), no on-device board rendering (the daemon renders), no terminal (no PTY route),
+no git controls (projects are directories, not necessarily repos). Everything the earlier version
+of this paragraph listed as missing — Route Cinema, the 3D and SVG viewers, EAS profiles, the
+release-pipeline entry — landed in Phases 2 and 5.
