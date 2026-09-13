@@ -300,6 +300,7 @@ export function CoreConnectionProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     setPhase("locating");
     setError(null);
+    setCoreOffline(false);
     void (async () => {
       const token = await readToken(connection.id);
       if (cancelled) return;
