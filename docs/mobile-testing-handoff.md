@@ -271,8 +271,9 @@ list/revoke` for headless machines. `tailscale serve` itself was **not** run aga
   FCM, Sentry project, the `EXPO_TOKEN` secret).
 
 The iOS bundle id is now `com.fabplane.fabdesk` (paid team `CMNZZ92926`), so the next device
-build is a separate app from the earlier `com.tensorfleet.fabdesk.mobile` installs; the Android
-package is still `com.tensorfleet.fabdesk.mobile`.
+build is a separate app from the earlier `com.tensorfleet.fabdesk.mobile` installs. The Android
+package followed on 2026-09-13 (`com.fabplane.fabdesk`, its own Firebase Android app; the
+committed `google-services.json` carries both clients so an old-id build still compiles).
 
 ## Morning-after state (2026-09-13)
 
@@ -286,10 +287,9 @@ records `by: device`). The AYN Thor has the same build as a release APK. Your iP
 `com.fabplane.fabdesk` (Voxly team) — a new app next to the old one; trust the team once if iOS
 asks, then pair again.
 
-Still open, none blocking: push delivery end to end (native APNs/FCM tokens now; staging
-needs the backend's APNs/FCM routing by `tokenKind` — `docs/mobile-release.md`), Tailscale
-`serve` never run against a real config, no relay deployed, the fabplane.com `/pair` page, and
-the Android package id still `com.tensorfleet.fabdesk.mobile`.
+Still open, none blocking: push on production (staging is verified on both platforms; the
+production API needs the same provider env and a manual deploy), Tailscale `serve` never run
+against a real config, no relay deployed, the fabplane.com `/pair` page.
 
 ## Still never run
 

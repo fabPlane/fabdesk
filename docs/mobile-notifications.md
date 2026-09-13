@@ -294,7 +294,7 @@ Nothing is a drop-in for SDK 54, so N3 is **not implemented** in this pass. Reco
    project, signing) should land first — Live Activities need a real device and the widget
    extension needs its own bundle id / provisioning.
 2. Add `expo-widgets`; declare one widget `run` in `app.json` (`bundleIdentifier`
-   `com.tensorfleet.fabdesk.mobile.run`, App Group `group.com.tensorfleet.fabdesk`).
+   `com.fabplane.fabdesk.run`, App Group `group.com.fabplane.fabdesk`).
 3. `src/notifications/live.ts`: on `agent.started` start an activity with
    `{ threadTitle, agent, coreName, startedAt, tool: null }` and `url = fabdesk://thread/<id>`;
    on `agent.tool_use` update `tool`; on `agent.done` / `agent.error` end with `after(+5 min)`.

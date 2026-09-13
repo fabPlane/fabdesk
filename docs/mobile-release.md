@@ -57,7 +57,7 @@ backend need:
    plugin) and a provisioning profile that includes Push Notifications for
    `com.fabplane.fabdesk`; the APNs auth key (`4D823P5T3R`, team `CMNZZ92926`) lives on the API
    hosts, not in EAS. A simulator never gets an APNs token — test on a device.
-2. **Android** — `apps/mobile/google-services.json` (Firebase app `com.tensorfleet.fabdesk.mobile`;
+2. **Android** — `apps/mobile/google-services.json` (Firebase app `com.fabplane.fabdesk`;
    client config, committed) is referenced by `app.config.ts` and needs a native rebuild
    (`bunx expo prebuild --platform android --clean` or `expo run:android`) to take effect. The
    Firebase service-account JSON stays on the API hosts and must **not** be committed.
