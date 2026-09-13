@@ -208,6 +208,17 @@ message: "BadDeviceToken", details: { error: "DeviceNotRegistered" } }] }` and a
   ~10 h came back `502 { error: "upstream" }` (`push_upstream_failed`, no reason logged); the
   retry seconds later succeeded. Looks like a cold HTTP/2 session to Apple that is not retried
   once. The daemon treats a 502 as "drop this batch", so that first notification is lost.
+- **FCM end to end on the AYN Thor** (2026-09-13, release APK rebuilt with
+  `google-services.json`): Settings → Notifications on → Android permission prompt → the daemon
+  logged `device push registered` with `tokenKind: fcm`. With the app process killed
+  (`adb shell am kill`, not `force-stop` — a force-stopped app is in Android's stopped state and
+  gets no FCM at all) a finished run produced `push sent {count:1, ok:1}` on the daemon and
+  "Done · Say hi in three words. / Claude finished in blinky on Mac" in the shade within a second.
+  While the app is merely backgrounded its socket stays open, so the daemon counts it online
+  and the phone shows the local notification instead — by design. Two fixes fell out: FCM
+  hands `data` over as strings (`v: "1"`), which the tap handler rejected, so the tap opened
+  Chats rather than the thread; and Android drew a solid disc for the small icon until
+  `assets/notification-icon.png` (white glyph on transparent) was added.
 
 Adapter reality (from the supervised lane's live check): Claude Code's `--permission-prompt-tool`
 works with `--print` and our `permission_prompt` MCP tool; Claude still auto-allows commands it
