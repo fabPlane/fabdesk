@@ -19,6 +19,7 @@ import {
   AUTH_SESSION_COOKIE,
   authErrorFromLocation,
   cookiesFromResponse,
+  loginWithPasswordSession,
 } from "./password-login";
 
 const ORIGIN = "https://api.fabplane.test";
@@ -330,5 +331,28 @@ describe("AuthClient.loginWithPassword", () => {
     }
     expect(server.requests).toHaveLength(0);
     expect(await readCredentials(home)).toBeUndefined();
+  });
+});
+
+describe("loginWithPasswordSession", () => {
+  test("when redirect:manual throws, a JSON 200 still yields the session cookie", async () => {
+    let calls = 0;
+    const fetchImpl = (async (_input: string | URL | Request, init?: RequestInit) => {
+      calls += 1;
+      if (init?.redirect === "manual") throw new TypeError("Network request failed");
+      return new Response(JSON.stringify({ status: "ok" }), {
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+          "set-cookie": `${AUTH_SESSION_COOKIE}=sess_ok; Path=/; HttpOnly`,
+        },
+      });
+    }) as unknown as typeof fetch;
+    const { cookies } = await loginWithPasswordSession(fetchImpl, ORIGIN, {
+      email: "user@example.com",
+      password: "secret",
+    });
+    expect(calls).toBe(2);
+    expect(cookies).toContain(`${AUTH_SESSION_COOKIE}=sess_ok`);
   });
 });

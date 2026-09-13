@@ -9,9 +9,11 @@ import { Platform } from "react-native";
 import { create } from "zustand";
 import {
   fetchCloudSettings,
+  overlayCloudSettings,
   putCloudSettings,
   type PasswordCredentials,
 } from "@fabdesk/auth-client/browser";
+import type { CloudSettings } from "@fabdesk/protocol";
 import { fabplaneApiOrigin } from "@/lib/api-origin";
 import {
   AccountSession,
@@ -53,6 +55,8 @@ function currentPrefs(): LocalPrefs {
   };
 }
 
+let lastCloud: CloudSettings | null = null;
+
 async function syncPrefsFromCloud(session: AccountSession): Promise<"on" | "local" | "error"> {
   const token = session.token();
   if (!token) return "local";
@@ -62,12 +66,15 @@ async function syncPrefsFromCloud(session: AccountSession): Promise<"on" | "loca
       if (got.status === 401 || got.status === 403) await session.logout();
       return "error";
     }
+    lastCloud = got.settings;
     const { next, push } = reconcilePrefs(currentPrefs(), got.settings);
     usePrefs.getState().applyCloud(next);
     if (push) {
-      const put = await putCloudSettings(fetch, fabplaneApiOrigin(), token, prefsToCloud(next));
+      const payload = overlayCloudSettings(lastCloud, prefsToCloud(next));
+      const put = await putCloudSettings(fetch, fabplaneApiOrigin(), token, payload);
       if (!put.ok && put.status === 404) return "local";
       if (!put.ok) return "error";
+      lastCloud = put.settings;
     }
     return "on";
   } catch {
@@ -79,7 +86,9 @@ async function pushPrefs(session: AccountSession): Promise<void> {
   const token = session.token();
   if (!token) return;
   try {
-    await putCloudSettings(fetch, fabplaneApiOrigin(), token, prefsToCloud(currentPrefs()));
+    const payload = overlayCloudSettings(lastCloud, prefsToCloud(currentPrefs()));
+    const put = await putCloudSettings(fetch, fabplaneApiOrigin(), token, payload);
+    if (put.ok) lastCloud = put.settings;
   } catch {
     /* keep the local copy; next sign-in or edit retries */
   }

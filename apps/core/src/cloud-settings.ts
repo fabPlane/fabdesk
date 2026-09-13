@@ -3,9 +3,10 @@
  * Binary paths, the remote listener and keep-core-running stay on this machine.
  */
 import type { CloudSettings, Settings } from "@fabdesk/protocol";
-import { fetchCloudSettings, putCloudSettings } from "@fabdesk/auth-client";
+import { fetchCloudSettings, overlayCloudSettings, putCloudSettings } from "@fabdesk/auth-client";
 import type { SettingsRepo } from "./db";
 import { logger, errMsg } from "./log";
+import { applyErrorReporting } from "./sentry";
 
 const STAMP_KEY = "cloud_updated_at";
 
@@ -34,12 +35,15 @@ export function patchFromCloud(cloud: CloudSettings): Partial<Settings> {
 }
 
 export class CloudSettingsSync {
+  private lastRemote: CloudSettings | null = null;
+
   constructor(
     private readonly opts: {
       apiOrigin: string;
       token: () => string | null;
       settings: SettingsRepo;
       fetchImpl?: typeof fetch;
+      applyErrorReporting?: (enabled: boolean) => Promise<void>;
     },
   ) {}
 
@@ -58,6 +62,7 @@ export class CloudSettingsSync {
     try {
       const got = await fetchCloudSettings(this.opts.fetchImpl ?? fetch, this.opts.apiOrigin, token);
       if (!got.ok) return;
+      this.lastRemote = got.settings;
       if (!got.settings) {
         await this.push();
         return;
@@ -66,6 +71,9 @@ export class CloudSettingsSync {
         const patch = patchFromCloud(got.settings);
         if (Object.keys(patch).length > 0) this.opts.settings.patch(patch);
         this.setStamp(got.settings.updatedAt);
+        if (typeof got.settings.errorReporting === "boolean") {
+          await (this.opts.applyErrorReporting ?? applyErrorReporting)(got.settings.errorReporting);
+        }
       } else if (this.stamp() > got.settings.updatedAt) {
         await this.push();
       }
@@ -75,10 +83,16 @@ export class CloudSettingsSync {
   }
 
   async push(): Promise<void> {
+    // Advance the stamp even when signed out so a later sign-in uploads the local edit
+    // instead of treating equal timestamps as already in sync.
+    const updatedAt = Math.max(Date.now(), this.stamp() + 1);
+    this.setStamp(updatedAt);
     const token = this.opts.token();
     if (!token) return;
-    const updatedAt = Math.max(Date.now(), this.stamp() + 1);
-    const payload = portableFromSettings(this.opts.settings.get(), updatedAt);
+    const payload = overlayCloudSettings(
+      this.lastRemote,
+      portableFromSettings(this.opts.settings.get(), updatedAt),
+    );
     try {
       const put = await putCloudSettings(
         this.opts.fetchImpl ?? fetch,
@@ -86,7 +100,10 @@ export class CloudSettingsSync {
         token,
         payload,
       );
-      if (put.ok) this.setStamp(updatedAt);
+      if (put.ok) {
+        this.lastRemote = put.settings;
+        this.setStamp(put.settings.updatedAt);
+      }
     } catch (e) {
       logger.warn("cloud settings push failed", { error: errMsg(e) });
     }

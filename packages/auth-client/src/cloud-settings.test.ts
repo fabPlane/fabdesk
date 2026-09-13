@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import type { CloudSettings } from "@fabdesk/protocol";
-import { fetchCloudSettings, mergeCloudSettings, putCloudSettings } from "./cloud-settings";
+import {
+  fetchCloudSettings,
+  mergeCloudSettings,
+  overlayCloudSettings,
+  putCloudSettings,
+} from "./cloud-settings";
 
 const ORIGIN = "https://api.fabplane.test";
 const TOKEN = "fpd_test";
@@ -86,5 +91,31 @@ describe("mergeCloudSettings", () => {
       push: false,
       apply: false,
     });
+  });
+});
+
+describe("overlayCloudSettings", () => {
+  test("keeps keys the patch omitted so a phone PUT cannot wipe daemon fields", () => {
+    const base: CloudSettings = {
+      schema: 1,
+      updatedAt: 10,
+      appearance: "dark",
+      defaultAgent: "claude",
+      errorReporting: true,
+    };
+    const phone: CloudSettings = { schema: 1, updatedAt: 20, appearance: "light", haptics: false };
+    expect(overlayCloudSettings(base, phone)).toEqual({
+      schema: 1,
+      updatedAt: 20,
+      appearance: "light",
+      haptics: false,
+      defaultAgent: "claude",
+      errorReporting: true,
+    });
+  });
+
+  test("a missing base is the patch unchanged", () => {
+    const phone: CloudSettings = { schema: 1, updatedAt: 1, haptics: true };
+    expect(overlayCloudSettings(null, phone)).toEqual(phone);
   });
 });

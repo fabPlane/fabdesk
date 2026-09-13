@@ -74,11 +74,12 @@ export async function loginWithPasswordSession(
     res = await fetchImpl(url, { ...init, redirect: "manual" });
   } catch (err) {
     // React Native's fetch throws "Network request failed" for redirect: "manual".
+    // Retry without it: JSON password endpoints return 200 + Set-Cookie instead of a 302.
     if (!isNetworkFailed(err)) throw err;
     res = await fetchImpl(url, init);
   }
   if (res.status === 503) throw new AuthHttpError(res.status, path, await bodyText(res));
-  if (authErrorFromLocation(res.headers.get("location")) === "invalid_credentials") {
+  if (res.status === 401 || authErrorFromLocation(res.headers.get("location")) === "invalid_credentials") {
     throw new InvalidCredentialsError();
   }
   const cookies = cookiesFromResponse(res);

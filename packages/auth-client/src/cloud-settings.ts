@@ -98,3 +98,29 @@ export function mergeCloudSettings(
   if (local.updatedAt > remote.updatedAt) return { next: local, push: true, apply: false };
   return { next: local, push: false, apply: false };
 }
+
+/**
+ * Phone and daemon each own a subset of the document. Overlay defined fields from `patch`
+ * onto `base` so a PUT cannot wipe the other client's keys.
+ */
+export function overlayCloudSettings(base: CloudSettings | null, patch: CloudSettings): CloudSettings {
+  if (!base) return patch;
+  const appearance = patch.appearance ?? base.appearance;
+  const haptics = patch.haptics ?? base.haptics;
+  const keepAwake = patch.keepAwake ?? base.keepAwake;
+  const defaultAgent = patch.defaultAgent ?? base.defaultAgent;
+  const defaultRuntimeMode = patch.defaultRuntimeMode ?? base.defaultRuntimeMode;
+  const errorReporting = patch.errorReporting ?? base.errorReporting;
+  const notificationsEnabled = patch.notificationsEnabled ?? base.notificationsEnabled;
+  return {
+    schema: 1,
+    updatedAt: Math.max(base.updatedAt, patch.updatedAt),
+    ...(appearance ? { appearance } : {}),
+    ...(typeof haptics === "boolean" ? { haptics } : {}),
+    ...(typeof keepAwake === "boolean" ? { keepAwake } : {}),
+    ...(defaultAgent ? { defaultAgent } : {}),
+    ...(defaultRuntimeMode ? { defaultRuntimeMode } : {}),
+    ...(typeof errorReporting === "boolean" ? { errorReporting } : {}),
+    ...(typeof notificationsEnabled === "boolean" ? { notificationsEnabled } : {}),
+  };
+}

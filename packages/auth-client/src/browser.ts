@@ -45,5 +45,6 @@ export {
   fetchCloudSettings,
   putCloudSettings,
   mergeCloudSettings,
+  overlayCloudSettings,
 } from "./cloud-settings";
 export type { CloudSettingsGet, CloudSettingsPut } from "./cloud-settings";

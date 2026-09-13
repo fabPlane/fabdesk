@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { overlayCloudSettings } from "@fabdesk/auth-client/browser";
 import { cloudToPrefs, prefsToCloud, reconcilePrefs, type LocalPrefs } from "./cloud-prefs";
 
 const local: LocalPrefs = {
@@ -42,5 +43,20 @@ describe("reconcilePrefs", () => {
       keepAwake: true,
       updatedAt: 50,
     });
+  });
+
+  test("a phone PUT overlays onto the last cloud document instead of replacing it", () => {
+    const remote = {
+      schema: 1 as const,
+      updatedAt: 10,
+      appearance: "dark" as const,
+      defaultAgent: "claude" as const,
+      errorReporting: true,
+    };
+    const payload = overlayCloudSettings(remote, prefsToCloud({ ...local, updatedAt: 20 }));
+    expect(payload.defaultAgent).toBe("claude");
+    expect(payload.errorReporting).toBe(true);
+    expect(payload.appearance).toBe("light");
+    expect(payload.haptics).toBe(true);
   });
 });
