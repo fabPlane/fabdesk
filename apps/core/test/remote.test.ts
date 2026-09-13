@@ -158,7 +158,8 @@ describe("remote listener", () => {
     const parsed = parsePairingUrl(start.url);
     expect(parsed?.hosts[0]).toBe(start.endpoints.find((e) => e.default)?.host);
     expect(parsed?.kinds).toEqual(start.endpoints.map((e) => e.kind));
-    expect(start.url).toMatch(/&h=127\.0\.0\.1&k=loopback$/);
+    expect(start.url).toMatch(/&h=127\.0\.0\.1&k=loopback&c=core_[A-Za-z0-9]+$/);
+    expect(parsed?.coreId).toBe(daemon.store.settings.coreId());
     await local("/v1/devices/pair/cancel", { method: "POST" });
     // Sending null, or leaving the key out, both unset the preference.
     for (const remote of [{ ...REMOTE, preferredEndpointKind: null }, REMOTE]) {
