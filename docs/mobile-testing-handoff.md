@@ -204,10 +204,10 @@ is not configured", details: { error: "ProviderNotConfigured" } }] }` — the co
 message: "BadDeviceToken", details: { error: "DeviceNotRegistered" } }] }` and an FCM-shaped
   probe answers `NotRegistered` / `DeviceNotRegistered` — both providers reached with our
   credentials. Their `push:selftest` inside the `staging-api-1` container says the same. One
-  wrinkle for the backend team: the **first** APNs request after the container had been idle for
-  ~10 h came back `502 { error: "upstream" }` (`push_upstream_failed`, no reason logged); the
-  retry seconds later succeeded. Looks like a cold HTTP/2 session to Apple that is not retried
-  once. The daemon treats a 502 as "drop this batch", so that first notification is lost.
+  wrinkle, since fixed: the **first** APNs request after the container had been idle ~10 h came
+  back `502 { error: "upstream" }` (a stale HTTP/2 session); fabplane.com `53c5ef9` retries
+  once before response headers. That release also went to **production**, which already had
+  the APNs (production origin) and FCM credentials — both provider self-tests pass there.
 - **FCM end to end on the AYN Thor** (2026-09-13, release APK rebuilt with
   `google-services.json`): Settings → Notifications on → Android permission prompt → the daemon
   logged `device push registered` with `tokenKind: fcm`. With the app process killed
@@ -287,9 +287,10 @@ records `by: device`). The AYN Thor has the same build as a release APK. Your iP
 `com.fabplane.fabdesk` (Voxly team) — a new app next to the old one; trust the team once if iOS
 asks, then pair again.
 
-Still open, none blocking: push on production (staging is verified on both platforms; the
-production API needs the same provider env and a manual deploy), Tailscale `serve` never run
-against a real config, no relay deployed, the fabplane.com `/pair` page.
+Still open, none blocking: Tailscale `serve` never run against a real config, no relay
+deployed, the fabplane.com `/pair` page. Push is live on staging and production (both providers
+self-test green, 2026-09-13); the Sentry project `fabplane-mobile` exists and its DSN is being
+installed in the EAS environments.
 
 ## Still never run
 

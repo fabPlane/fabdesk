@@ -35,8 +35,8 @@ credentials, and a Sentry project. In order:
    (`eas credentials --platform android`) and `eas submit --profile production` uses the
    `internal` track (`eas.json`). FCM needs only the committed `google-services.json`; the
    service account lives on the API hosts.
-5. **Sentry.** In org `tensorfleet-6g` (the desktop's org, [sentry.md](sentry.md)) create a React
-   Native project `fabplane-mobile`. Then in EAS (expo.dev → project → Environment variables, or
+5. **Sentry.** The React Native project `fabplane-mobile` exists in org `tensorfleet-6g` (the
+   desktop's org, [sentry.md](sentry.md); created 2026-09-13). Then in EAS (expo.dev → project → Environment variables, or
    `eas env:create`) for the `preview` and `production` environments:
    - `SENTRY_DSN_MOBILE` — the project DSN (plain text; it is a public write-only key)
    - `SENTRY_ORG=tensorfleet-6g`, `SENTRY_PROJECT=fabplane-mobile`
