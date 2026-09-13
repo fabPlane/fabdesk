@@ -63,6 +63,13 @@ export interface RelayOptions {
   requestTimeoutMs?: number;
   /** Per source address; `false` disables (tests). */
   rateLimit?: { capacity: number; perSecond: number } | false;
+  /**
+   * Behind a reverse proxy every connection arrives from the proxy's address and the per-address
+   * limit collapses to one bucket. Listing the proxies (`127.0.0.1`, `::1`, …) makes the relay
+   * take the client address from `X-Forwarded-For` / `CF-Connecting-IP` — only when the
+   * connection really comes from one of them, so a direct caller cannot spoof the header.
+   */
+  trustedProxies?: string[];
   /** Per-user caps; `false` disables (tests). */
   limits?: Partial<LimitConfig> | false;
   /** Backpressure thresholds on the daemon socket. */
@@ -132,6 +139,7 @@ export function startRelay(opts: RelayOptions): RelayServer {
   const maxBody = opts.maxBodyBytes ?? MAX_BODY_BYTES;
   const requestTimeoutMs = opts.requestTimeoutMs ?? 60_000;
   const log = createLogger(opts.log ?? jsonStdoutSink);
+  const trustedProxies = new Set((opts.trustedProxies ?? []).map(normalizeAddress));
   const limiter =
     opts.rateLimit === false
       ? null
@@ -252,7 +260,7 @@ export function startRelay(opts: RelayOptions): RelayServer {
     rest: string,
   ): Promise<Response | undefined> => {
     if (limiter) {
-      const ip = server.requestIP(req)?.address ?? "unknown";
+      const ip = clientAddress(req, server.requestIP(req)?.address, trustedProxies);
       if (!limiter.take(ip)) return reject(429, "rate_limited_ip", "rate limited");
     }
     if (!CORE_ID_RE.test(coreId)) return reject(404, "bad_core_id", "not found");
@@ -583,4 +591,29 @@ export function startRelay(opts: RelayOptions): RelayServer {
     shutdown,
     stop,
   };
+}
+
+/** Bun reports IPv4 peers as `::ffff:a.b.c.d` on a dual-stack socket; compare on the plain form. */
+function normalizeAddress(address: string): string {
+  return address.replace(/^::ffff:/i, "").toLowerCase();
+}
+
+/**
+ * The address a request should be limited by. The socket peer unless it is a trusted proxy, in
+ * which case the first hop the proxy recorded: `CF-Connecting-IP` (set by Cloudflare, one value)
+ * wins over `X-Forwarded-For` (leftmost entry, the original client as nginx appends). Anything
+ * unparseable falls back to the peer so a bad header can only ever hurt its own sender.
+ */
+export function clientAddress(
+  req: Request,
+  peer: string | undefined,
+  trustedProxies: Set<string>,
+): string {
+  const socket = peer ? normalizeAddress(peer) : "unknown";
+  if (!trustedProxies.has(socket)) return socket;
+  const cf = req.headers.get("cf-connecting-ip")?.trim();
+  if (cf) return normalizeAddress(cf);
+  const xff = req.headers.get("x-forwarded-for");
+  const first = xff?.split(",")[0]?.trim();
+  return first ? normalizeAddress(first) : socket;
 }

@@ -12,6 +12,9 @@
  *   RELAY_PING_INTERVAL_MS      ping a quiet socket after this long (default 30000)
  *   RELAY_IDLE_TIMEOUT_MS       close a silent socket after this long (default 90000)
  *   RELAY_SHUTDOWN_GRACE_MS     wait for close frames on SIGTERM before exit (default 500)
+ *   RELAY_TRUSTED_PROXIES       comma-separated peer addresses whose X-Forwarded-For /
+ *                               CF-Connecting-IP names the client (e.g. 127.0.0.1,::1 behind
+ *                               nginx on the same host; unset = trust nobody)
  *
  * TLS is the deployment's job (a reverse proxy or the platform's edge); this process speaks plain
  * HTTP/WS. Point a daemon at it with `Settings.remote.relayUrl` and a phone reaches the daemon at
@@ -41,6 +44,10 @@ const relay = startRelay({
   hostname: env["RELAY_HOST"] ?? "0.0.0.0",
   apiOrigin,
   authCacheTtlMs: intEnv("RELAY_AUTH_CACHE_TTL_MS", 5 * 60_000),
+  trustedProxies: (env["RELAY_TRUSTED_PROXIES"] ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean),
   limits: {
     maxDaemonsPerUser: intEnv("RELAY_MAX_DAEMONS_PER_USER", 10, 1),
     maxClientsPerCore: intEnv("RELAY_MAX_CLIENTS_PER_CORE", 32, 1),

@@ -203,6 +203,55 @@ describe("client side", () => {
   });
 });
 
+describe("trusted proxies", () => {
+  test("limits by X-Forwarded-For only when the peer is a trusted proxy", async () => {
+    const strict = startRelay({
+      port: 0,
+      apiOrigin: API,
+      fetch: fakeAuth,
+      rateLimit: { capacity: 1, perSecond: 0.001 },
+      trustedProxies: ["127.0.0.1", "::1"],
+      log: () => {},
+    });
+    try {
+      const hit = (headers: Record<string, string>) =>
+        fetch(`${strict.url}/c/${CORE}/x`, { headers }).then((r) => r.status);
+      // Two different forwarded clients each get their own bucket…
+      expect(await hit({ "x-forwarded-for": "203.0.113.5, 10.0.0.1" })).toBe(503);
+      expect(await hit({ "x-forwarded-for": "203.0.113.6" })).toBe(503);
+      // …and the same client is limited on its second request.
+      expect(await hit({ "x-forwarded-for": "203.0.113.5" })).toBe(429);
+      // Cloudflare's header wins over X-Forwarded-For.
+      expect(
+        await hit({ "cf-connecting-ip": "198.51.100.9", "x-forwarded-for": "203.0.113.5" }),
+      ).toBe(503);
+    } finally {
+      strict.stop();
+    }
+  });
+
+  test("a direct caller cannot spoof its way past the limit", async () => {
+    const strict = startRelay({
+      port: 0,
+      apiOrigin: API,
+      fetch: fakeAuth,
+      rateLimit: { capacity: 1, perSecond: 0.001 },
+      trustedProxies: ["192.0.2.1"], // not the loopback peer the test connects from
+      log: () => {},
+    });
+    try {
+      const hit = (xff: string) =>
+        fetch(`${strict.url}/c/${CORE}/x`, { headers: { "x-forwarded-for": xff } }).then(
+          (r) => r.status,
+        );
+      expect(await hit("203.0.113.5")).toBe(503);
+      expect(await hit("203.0.113.6")).toBe(429); // same peer, header ignored
+    } finally {
+      strict.stop();
+    }
+  });
+});
+
 describe("RateLimiter", () => {
   test("bursts to capacity, then refills over time", () => {
     let now = 0;
