@@ -38,6 +38,7 @@ export const FINGERPRINT_RE = /<!--\s*fabdesk-security-fingerprint:\s*([a-f0-9]+
 
 const SKIP_DIR_NAMES = new Set([
   ".git",
+  ".claude",
   "node_modules",
   "vendor",
   "dist",
@@ -99,9 +100,18 @@ const SECRET_RULES: Array<{ rule: string; severity: Severity; title: string; re:
     rule: "secret.generic-credential",
     severity: "high",
     title: "Hard-coded credential assignment",
-    re: /\b(?:api[_-]?key|secret|password|token|access[_-]?key)\b\s*[:=]\s*['"][^'"]{20,}['"]/i,
+    // The lookbehind keeps `"?token="` / `"#token="` URL fragments in tests from
+    // matching: their closing quote is not the start of a credential literal.
+    re: /(?<![#?&.])\b(?:api[_-]?key|secret|password|token|access[_-]?key)\b\s*[:=]\s*['"][^'"]{20,}['"]/i,
   },
 ];
+
+/** Dynamic code in a unit test is not a shipped attack surface; report it but never file it. */
+const TEST_FILE_RE = /(?:^|[\\/])(?:__tests__[\\/]|[^\\/]+\.(?:test|spec)\.[cm]?[jt]sx?$)/;
+
+export function isTestFile(rel: string): boolean {
+  return TEST_FILE_RE.test(rel);
+}
 
 const CODE_RULES: Array<{
   rule: string;
@@ -330,6 +340,7 @@ export function scanFileContent(rel: string, source: string): Finding[] {
 
   if (isExampleEnv) return findings;
 
+  const inTest = isTestFile(rel);
   for (const rule of CODE_RULES) {
     if (rule.ext && !rule.ext.has(ext)) continue;
     rule.re.lastIndex = 0;
@@ -339,7 +350,7 @@ export function scanFileContent(rel: string, source: string): Finding[] {
     findings.push({
       fingerprint: fingerprint([rule.rule, rel, String(line)]),
       rule: rule.rule,
-      severity: rule.severity,
+      severity: inTest ? "low" : rule.severity,
       title: `${rule.title} in ${rel}`,
       detail: `${rel}:${line}: ${snippet(source, match.index)}`,
       file: rel,

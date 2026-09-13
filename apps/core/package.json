@@ -26,7 +26,7 @@
     "@fp-pcb/proto": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@sentry/bun": "^10.73.0",
-    "hono": "4.9.6",
+    "hono": "4.13.7",
     "zod": "3.25.76"
   },
   "devDependencies": {
