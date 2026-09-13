@@ -328,6 +328,7 @@ export function wantsKind(prefs: DevicePushPrefs, kind: PushKind): boolean {
 function toMessage(target: PushTarget, n: PendingNotification): PushMessage {
   return {
     to: target.token,
+    tokenKind: target.tokenKind,
     title: n.title,
     body: n.body,
     data: n.data,

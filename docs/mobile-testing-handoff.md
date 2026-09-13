@@ -193,8 +193,12 @@ Verified against the merged daemon with the real Claude Code 2.1.252:
 - **Against real staging** (`fabplane-staging.tail4f6a7.ts.net:4000`, logged in as `maya`): the
   route the backend team shipped answers `200 { tickets: [{ status: "error", message: "expo push
 is not configured", details: { error: "ProviderNotConfigured" } }] }` — the contract matches
-  end to end; delivery needs `EXPO_ACCESS_TOKEN` on staging and an EAS project on our side
-  (roadmap R1). The daemon logs `push sent {count:1, ok:0}` plus the ticket error.
+  end to end. The daemon logs `push sent {count:1, ok:0}` plus the ticket error. **Later the
+  same day** push moved to native device tokens: the phone now registers the raw APNs/FCM token
+  (`tokenKind: "apns" | "fcm"` on the registration and on each `PushMessage`), fabplane.com
+  delivers directly, and Expo's push service is out of the picture — no `EXPO_ACCESS_TOKEN`, no
+  EAS project needed for delivery. Rebuild both apps (Android picks up `google-services.json`)
+  before expecting a native token.
 
 Adapter reality (from the supervised lane's live check): Claude Code's `--permission-prompt-tool`
 works with `--print` and our `permission_prompt` MCP tool; Claude still auto-allows commands it
@@ -249,8 +253,8 @@ records `by: device`). The AYN Thor has the same build as a release APK. Your iP
 `com.fabplane.fabdesk` (Voxly team) — a new app next to the old one; trust the team once if iOS
 asks, then pair again.
 
-Still open, none blocking: push delivery (staging answers per contract but has no
-`EXPO_ACCESS_TOKEN`; we have no EAS project id yet — `docs/mobile-release.md`), Tailscale
+Still open, none blocking: push delivery end to end (native APNs/FCM tokens now; staging
+needs the backend's APNs/FCM routing by `tokenKind` — `docs/mobile-release.md`), Tailscale
 `serve` never run against a real config, no relay deployed, the fabplane.com `/pair` page, and
 the Android package id still `com.tensorfleet.fabdesk.mobile`.
 

@@ -6,6 +6,7 @@ import type {
   DeviceMe,
   DevicePushPrefs,
   DevicePushRegistration,
+  DevicePushRegistrationInput,
   DevicePushState,
   DoctorReport,
   Job,
@@ -78,7 +79,13 @@ export type ToolCallResponse =
 
 export type HealthInfo = { ok?: boolean; version?: string; [k: string]: unknown };
 
-export type { DeviceMe, DevicePushPrefs, DevicePushRegistration, DevicePushState };
+export type {
+  DeviceMe,
+  DevicePushPrefs,
+  DevicePushRegistration,
+  DevicePushRegistrationInput,
+  DevicePushState,
+};
 
 export class CoreClient {
   readonly baseUrl: string;
@@ -345,7 +352,7 @@ export class CoreClient {
   }
   /** Idempotent: the phone repeats it on every connect because Expo tokens can rotate. */
   registerPush(
-    registration: DevicePushRegistration,
+    registration: DevicePushRegistrationInput,
   ): Promise<{ device: Device; push: { registeredAt: string } }> {
     return this.request("/v1/devices/me/push", { method: "PUT", json: registration });
   }

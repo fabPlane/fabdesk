@@ -1,29 +1,18 @@
 /**
- * Push registration (docs/mobile-notifications.md §3.1, §4.1): getting an Expo push token and
- * telling every paired daemon about it. Delivery itself is the daemon's and fabplane.com's job;
- * the phone only registers, re-registers on connect (tokens rotate), and unregisters on disable.
- *
- * The Expo token needs an EAS project id (`extra.eas.projectId` in app.json — roadmap R1). Until
- * that exists `pushProjectId()` is null, the token is never requested, and only the local
- * notifications in `run-notifier.ts` apply.
+ * Push registration (docs/mobile-notifications.md §3.1, §4.1): getting the platform's own push
+ * token — APNs on iOS, FCM on Android, via `getDevicePushTokenAsync` — and telling every paired
+ * daemon about it. Delivery is the daemon's and fabplane.com's job (which talks to APNs/FCM
+ * directly); the phone only registers, re-registers on connect (tokens rotate), and unregisters
+ * on disable. No Expo project is involved: a release build with the push entitlement (iOS) or
+ * `google-services.json` (Android) is all a native token needs.
  */
 import { CoreClient } from "@fabdesk/client-core";
 import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
-import {
-  isExpoPushToken,
-  pushRegistration,
-  type NotificationPrefs,
-} from "../lib/notification-payload";
+import { pushRegistration, type NotificationPrefs } from "../lib/notification-payload";
 import { readToken, type Connection } from "../transport/connections";
 import { registrationFingerprint, useNotificationStore } from "./store";
-
-export function pushProjectId(): string | null {
-  const extra = Constants.expoConfig?.extra as { eas?: { projectId?: unknown } } | undefined;
-  const id = extra?.eas?.projectId;
-  return typeof id === "string" && id.length > 0 ? id : null;
-}
 
 /** The platform a §4.1 registration accepts; null on anything that cannot receive push. */
 export function pushPlatform(): "ios" | "android" | null {
@@ -32,19 +21,18 @@ export function pushPlatform(): "ios" | "android" | null {
 
 export type PushTokenResult =
   | { token: string; reason?: undefined }
-  | { token: null; reason: "no-project" | "no-platform" | "unavailable"; detail?: string };
+  | { token: null; reason: "no-platform" | "unavailable"; detail?: string };
 
 /**
- * Asks Expo for this install's push token. Talks to Expo's servers, so it can fail offline;
- * callers treat a failure as "try again next connect", never as an error to show.
+ * Asks the OS for this install's native push token (APNs / FCM). The simulator and debug
+ * builds without the entitlement fail here; callers treat a failure as "try again next connect",
+ * never as an error to show.
  */
-export async function fetchExpoPushToken(): Promise<PushTokenResult> {
-  const projectId = pushProjectId();
-  if (!projectId) return { token: null, reason: "no-project" };
+export async function fetchDevicePushToken(): Promise<PushTokenResult> {
   if (!pushPlatform()) return { token: null, reason: "no-platform" };
   try {
-    const { data } = await Notifications.getExpoPushTokenAsync({ projectId });
-    if (!isExpoPushToken(data))
+    const { data } = await Notifications.getDevicePushTokenAsync();
+    if (typeof data !== "string" || !data)
       return { token: null, reason: "unavailable", detail: "unexpected token format" };
     return { token: data };
   } catch (e) {
@@ -71,9 +59,7 @@ export async function registerPushWith(
   if (!platform) return false;
   const appVersion = Constants.expoConfig?.version;
   try {
-    await client.registerPush(
-      pushRegistration({ expoPushToken: token, platform, appVersion, prefs }),
-    );
+    await client.registerPush(pushRegistration({ pushToken: token, platform, appVersion, prefs }));
     useNotificationStore
       .getState()
       .noteRegistered(connectionId, registrationFingerprint(token, prefs));

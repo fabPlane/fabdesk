@@ -15,8 +15,24 @@ export type Device = z.infer<typeof Device>;
 
 /* ---------- push registration (docs/mobile-notifications.md §4.1) ---------- */
 
-/** Expo push tokens are opaque; this is the only shape Expo's push service accepts. */
-export const EXPO_PUSH_TOKEN_RE = /^Expo(nent)?PushToken\[[A-Za-z0-9_-]+\]$/;
+/** An APNs device token: 64 hex characters (the phone gets it from `getDevicePushTokenAsync`). */
+export const APNS_TOKEN_RE = /^[0-9a-fA-F]{64}$/;
+/** An FCM registration token: long, URL-safe, with one colon (`<id>:APA91b…`). */
+export const FCM_TOKEN_RE = /^[A-Za-z0-9_-]{20,}:[A-Za-z0-9_-]{40,}$/;
+
+/**
+ * Which service the token belongs to. fabplane.com routes on it and talks to Apple / Google
+ * directly with the credentials it holds; there is no Expo hop.
+ */
+export const PushTokenKind = z.enum(["apns", "fcm"]);
+export type PushTokenKind = z.infer<typeof PushTokenKind>;
+
+/** Classifies a token by shape, or null when it is neither. */
+export function pushTokenKindOf(token: string): PushTokenKind | null {
+  if (APNS_TOKEN_RE.test(token)) return "apns";
+  if (FCM_TOKEN_RE.test(token)) return "fcm";
+  return null;
+}
 
 export const DevicePushPrefs = z.object({
   /** `agent.done` with status `completed`. */
@@ -31,23 +47,44 @@ export const DevicePushPrefs = z.object({
 export type DevicePushPrefs = z.infer<typeof DevicePushPrefs>;
 
 /** `PUT /v1/devices/me/push` body. Sent on every connect (the token can rotate) and on prefs change. */
-export const DevicePushRegistration = z.object({
-  expoPushToken: z.string().regex(EXPO_PUSH_TOKEN_RE),
-  platform: DevicePlatform,
-  appVersion: z.string().optional(),
-  prefs: DevicePushPrefs.default({
-    onDone: true,
-    onFailed: true,
-    onNeedsInput: true,
-    onJobs: false,
-  }),
-});
-export type DevicePushRegistration = z.infer<typeof DevicePushRegistration>;
+export const DevicePushRegistration = z
+  .object({
+    /** The native token from `getDevicePushTokenAsync`: APNs on iOS, FCM on Android. */
+    pushToken: z.string().min(1),
+    /** Which service `pushToken` belongs to; inferred from its shape when absent. */
+    tokenKind: PushTokenKind.optional(),
+    platform: DevicePlatform,
+    appVersion: z.string().optional(),
+    prefs: DevicePushPrefs.default({
+      onDone: true,
+      onFailed: true,
+      onNeedsInput: true,
+      onJobs: false,
+    }),
+  })
+  .transform((r, ctx) => {
+    const kind = r.tokenKind ?? pushTokenKindOf(r.pushToken);
+    if (!kind) {
+      ctx.addIssue({ code: "custom", message: "pushToken must be an APNs or FCM token" });
+      return z.NEVER;
+    }
+    return {
+      pushToken: r.pushToken,
+      tokenKind: kind,
+      platform: r.platform,
+      appVersion: r.appVersion,
+      prefs: r.prefs,
+    };
+  });
+export type DevicePushRegistration = z.output<typeof DevicePushRegistration>;
+/** What a client sends; the schema fills in `tokenKind` from the token's shape when omitted. */
+export type DevicePushRegistrationInput = z.input<typeof DevicePushRegistration>;
 
 /** What a device sees of its own registration; the token itself is never echoed back. */
 export const DevicePushState = z.object({
   registeredAt: z.string(),
   platform: DevicePlatform,
+  tokenKind: PushTokenKind,
   prefs: DevicePushPrefs,
 });
 export type DevicePushState = z.infer<typeof DevicePushState>;
@@ -84,7 +121,10 @@ export const PushData = z.object({
 export type PushData = z.infer<typeof PushData>;
 
 export const PushMessage = z.object({
-  to: z.string().regex(EXPO_PUSH_TOKEN_RE),
+  /** The device's APNs or FCM token. */
+  to: z.string().min(1),
+  /** Which provider `to` belongs to, so fabplane.com need not guess from the shape. */
+  tokenKind: PushTokenKind,
   title: z.string().max(80),
   body: z.string().max(200),
   data: PushData,

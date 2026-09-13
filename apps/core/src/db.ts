@@ -149,6 +149,13 @@ export const MIGRATIONS: Array<{ version: number; sql: string }> = [
       ALTER TABLE messages ADD COLUMN status TEXT;
     `,
   },
+  {
+    // Which service a stored push token is for (`apns` | `fcm`).
+    version: 5,
+    sql: `
+      ALTER TABLE devices ADD COLUMN push_token_kind TEXT;
+    `,
+  },
 ];
 
 export function openDatabase(path: string): Database {

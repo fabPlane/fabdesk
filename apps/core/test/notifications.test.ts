@@ -28,7 +28,8 @@ const API_ORIGIN = "http://127.0.0.1:1";
 const SESSION_TOKEN = "fpd_test_session_token";
 const REMOTE = { enabled: true, host: "127.0.0.1", port: 47822 };
 const remoteUrl = `http://${REMOTE.host}:${REMOTE.port}`;
-const TOKEN_A = "ExponentPushToken[aaaaaaaaaaaaaaaaaaaaaa]";
+const TOKEN_A = "a".repeat(64); // an APNs device token
+const TOKEN_FCM = `${"f".repeat(22)}:APA91b${"x".repeat(60)}`;
 
 type Captured = { url: string; authorization: string | null; body: PushRequest };
 const sent: Captured[] = [];
@@ -162,7 +163,7 @@ async function pair(label: string): Promise<PairClaimResult> {
 const register = (prefs: Partial<DevicePushPrefs> = {}, token = claim.deviceToken) =>
   asDevice(
     "/v1/devices/me/push",
-    { method: "PUT", body: JSON.stringify({ expoPushToken: TOKEN_A, platform: "ios", prefs }) },
+    { method: "PUT", body: JSON.stringify({ pushToken: TOKEN_A, platform: "ios", prefs }) },
     token,
   );
 
@@ -236,16 +237,17 @@ describe("push registration", () => {
     expect(me.push).toEqual({
       registeredAt: result.push.registeredAt,
       platform: "ios",
+      tokenKind: "apns",
       prefs: { onDone: true, onFailed: true, onNeedsInput: true, onJobs: true },
     });
     // The token itself is never echoed back.
-    expect(JSON.stringify(me)).not.toContain("ExponentPushToken");
+    expect(JSON.stringify(me)).not.toContain(TOKEN_A);
   });
 
   test("a bad token shape is a 400, and the daemon token is not a device", async () => {
     const bad = await asDevice("/v1/devices/me/push", {
       method: "PUT",
-      body: JSON.stringify({ expoPushToken: "not-a-token", platform: "ios" }),
+      body: JSON.stringify({ pushToken: "not-a-token", platform: "ios" }),
     });
     expect(bad.status).toBe(400);
     expect((await local("/v1/devices/me")).status).toBe(403);
@@ -253,7 +255,7 @@ describe("push registration", () => {
       (
         await local("/v1/devices/me/push", {
           method: "PUT",
-          body: JSON.stringify({ expoPushToken: TOKEN_A, platform: "ios" }),
+          body: JSON.stringify({ pushToken: TOKEN_A, platform: "ios" }),
         })
       ).status,
     ).toBe(403);
@@ -262,6 +264,19 @@ describe("push registration", () => {
       headers: { authorization: `Bearer ${claim.deviceToken}` },
     });
     expect(viaLocal.status).toBe(200);
+  });
+
+  test("an FCM token registers as fcm without saying so", async () => {
+    const res = await asDevice("/v1/devices/me/push", {
+      method: "PUT",
+      body: JSON.stringify({ pushToken: TOKEN_FCM, platform: "android" }),
+    });
+    expect(res.status).toBe(200);
+    const me = (await (await asDevice("/v1/devices/me")).json()) as {
+      push?: { tokenKind?: string };
+    };
+    expect(me.push?.tokenKind).toBe("fcm");
+    await register(); // back to the APNs token the rest of the file expects
   });
 
   test("DELETE clears it", async () => {
@@ -300,6 +315,7 @@ describe("notifier", () => {
       messages: [
         {
           to: TOKEN_A,
+          tokenKind: "apns",
           title: "Done · LED driver",
           body: `Claude finished in Blinky on ${coreName}`,
           data: {
@@ -529,7 +545,7 @@ describe("local auth mode", () => {
       const reg = await fetch(`http://127.0.0.1:${localRemote.port}/v1/devices/me/push`, {
         method: "PUT",
         headers: { authorization: `Bearer ${c.deviceToken}`, "content-type": "application/json" },
-        body: JSON.stringify({ expoPushToken: TOKEN_A, platform: "ios" }),
+        body: JSON.stringify({ pushToken: TOKEN_A, platform: "ios" }),
       });
       expect(reg.status).toBe(200);
       const thread = (await (

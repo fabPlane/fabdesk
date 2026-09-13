@@ -6,7 +6,7 @@
  */
 import { useCore, useCoreClient } from "@fabdesk/client-core";
 import { useEffect, useRef } from "react";
-import { fetchExpoPushToken, registerPushWith, unregisterPushWith } from "./push";
+import { fetchDevicePushToken, registerPushWith, unregisterPushWith } from "./push";
 import { useNotificationStore } from "./store";
 
 export function PushRegistrar({ connectionId }: { connectionId: string }) {
@@ -30,7 +30,7 @@ export function PushRegistrar({ connectionId }: { connectionId: string }) {
       let token = pushToken;
       if (!refreshed.current) {
         refreshed.current = true;
-        const fresh = await fetchExpoPushToken();
+        const fresh = await fetchDevicePushToken();
         if (cancelled) return;
         if (fresh.token && fresh.token !== token) {
           token = fresh.token;

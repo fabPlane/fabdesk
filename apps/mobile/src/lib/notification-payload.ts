@@ -270,27 +270,29 @@ export function notificationText(
   }
 }
 
-/** The §4.1 registration body, built from the phone's state. Platform is whatever RN reports. */
+export type PushTokenKind = "apns" | "fcm";
+
+/**
+ * The §4.1 registration body, built from the phone's state. The token is the native one
+ * (`getDevicePushTokenAsync`: APNs on iOS, FCM on Android), so its kind is the platform's.
+ */
 export function pushRegistration(input: {
-  expoPushToken: string;
+  pushToken: string;
   platform: "ios" | "android";
   appVersion?: string | undefined;
   prefs: NotificationPrefs;
 }): {
-  expoPushToken: string;
+  pushToken: string;
+  tokenKind: PushTokenKind;
   platform: "ios" | "android";
   appVersion?: string;
   prefs: NotificationPrefs;
 } {
   return {
-    expoPushToken: input.expoPushToken,
+    pushToken: input.pushToken,
+    tokenKind: input.platform === "ios" ? "apns" : "fcm",
     platform: input.platform,
     ...(input.appVersion ? { appVersion: input.appVersion } : {}),
     prefs: { ...input.prefs },
   };
-}
-
-/** Expo's token format (§4.1). Anything else never leaves the phone. */
-export function isExpoPushToken(token: unknown): token is string {
-  return typeof token === "string" && /^Expo(nent)?PushToken\[[A-Za-z0-9_-]+\]$/.test(token);
 }

@@ -28,14 +28,13 @@ credentials, and a Sentry project. In order:
    workstation creates the distribution certificate and an ad-hoc provisioning profile under the
    team (`CMNZZ92926`) and stores them in EAS; after that `--non-interactive` works in CI. Store
    submission also needs an App Store Connect API key (`eas credentials`) — not needed for preview
-   builds. **APNs key:** `eas credentials --platform ios` → Push Notifications → upload the `.p8`
-   from developer.apple.com (Keys → App Push Notifications service). Without it
-   `expo-notifications` cannot get a device token on a release build.
+   builds. The APNs key is **not** uploaded to EAS — fabplane.com talks to APNs directly (see
+   the push section below); the profile only needs the Push Notifications capability.
 4. **Google.** `eas build --platform android --profile preview` generates and stores an upload
    keystore on first run. For Play, a service-account JSON with release access goes into EAS
    (`eas credentials --platform android`) and `eas submit --profile production` uses the
-   `internal` track (`eas.json`). **FCM:** the Firebase project's service account is uploaded the
-   same way (Push Notifications → FCM V1) so push tokens work on Android.
+   `internal` track (`eas.json`). FCM needs only the committed `google-services.json`; the
+   service account lives on the API hosts.
 5. **Sentry.** In org `tensorfleet-6g` (the desktop's org, [sentry.md](sentry.md)) create a React
    Native project `fabplane-mobile`. Then in EAS (expo.dev → project → Environment variables, or
    `eas env:create`) for the `preview` and `production` environments:
@@ -46,49 +45,25 @@ credentials, and a Sentry project. In order:
 6. **Enable the simulator E2E** when someone wants it on every PR: repository variable
    `MOBILE_E2E=1`. It is ~20 minutes of macOS runner per run, which is why it is opt-in.
 
-## Push credentials runbook (everything an agent could not do)
+## Push credentials (direct APNs / FCM)
 
-Attempted 2026-09-13 overnight; each step below stopped on a credential only a person holds.
-State found: `eas whoami` → not logged in; expo.dev not signed in in Chrome; APNs key
-`~/Downloads/AuthKey_4D823P5T3R.p8` present; no FCM service-account JSON and no
-`google-services.json` on this Mac; Tailscale SSH to the staging host is in check mode
-(`root@`/`deploy@fabplane-staging.tail4f6a7.ts.net` answer with a `login.tailscale.com/a/…`
-approval link). In order, ~15 minutes:
+The phone registers the **native** device token (`getDevicePushTokenAsync()`: a 64-hex APNs
+token on iOS, an FCM registration token on Android) with the daemon, and fabplane.com delivers
+through APNs and FCM itself (`docs/mobile-notifications.md` §4.2). No Expo push service, no
+`EXPO_ACCESS_TOKEN`, no EAS credential upload is involved in delivery. What the build and the
+backend need:
 
-1. **Link the Expo project** (writes `extra.eas.projectId` into `app.json`; commit it):
-   ```bash
-   cd apps/mobile
-   bunx eas-cli@latest login            # Voxly team
-   bunx eas-cli@latest init --account voxly
-   git commit -am "mobile: EAS project id" && git push
-   ```
-   If the Expo account slug is not `voxly`, `eas init` says so — change `owner` in `app.json`.
-2. **APNs key** — `bunx eas-cli@latest credentials --platform ios`, choose the app
-   `com.fabplane.fabdesk`, then _Push Notifications: Manage your Apple Push Notifications Key_
-   → _Upload_: path `~/Downloads/AuthKey_4D823P5T3R.p8`, Key ID `4D823P5T3R`, Team ID
-   `CMNZZ92926`.
-3. **FCM** — download the Firebase project's service-account JSON (Project settings → Service
-   accounts → Generate new private key) and `bunx eas-cli@latest credentials --platform android`
-   → _Push Notifications (FCM V1)_ → upload it. Also download `google-services.json` (Project
-   settings → Your apps → the Android app `com.tensorfleet.fabdesk.mobile`) into `apps/mobile/`;
-   `app.config.ts` references it automatically when the file exists, and it may be committed
-   (client config, not a secret). The service-account JSON must **not** be committed.
-4. **Expo access tokens** — https://expo.dev/settings/access-tokens, one named `fabplane-staging`,
-   one `fabplane-production`. Secrets.
-5. **Install on the API hosts** (the backend reads `EXPO_ACCESS_TOKEN`; `EXPO_TOKEN` is only for
-   the EAS CLI). Tailscale SSH will show a check-mode link the first time — approve it in the
-   browser, then:
-   ```bash
-   ssh root@fabplane-staging.tail4f6a7.ts.net
-   echo 'EXPO_ACCESS_TOKEN=<staging token>' >> /opt/fabplane-staging/.env
-   # recreate the API container so it re-reads the env (compose: `docker compose up -d --force-recreate api`)
-   ```
-   and the same on production with `/etc/fabplane/production.env` — after staging is verified,
-   per `AGENTS.md`.
-6. **Verify** — on the backend checkout, `bun run push:selftest` (their script; not in this
-   repo's `vendor/fabplane` pin) should go from `ProviderNotConfigured` to an accepted request
-   with the dummy token rejected as `DeviceNotRegistered`. Then from this repo, the daemon test
-   used overnight: log a daemon in against staging and finish a run — its log should show
+1. **iOS** — the `aps-environment` entitlement (`expo-notifications` adds it via the config
+   plugin) and a provisioning profile that includes Push Notifications for
+   `com.fabplane.fabdesk`; the APNs auth key (`4D823P5T3R`, team `CMNZZ92926`) lives on the API
+   hosts, not in EAS. A simulator never gets an APNs token — test on a device.
+2. **Android** — `apps/mobile/google-services.json` (Firebase app `com.tensorfleet.fabdesk.mobile`;
+   client config, committed) is referenced by `app.config.ts` and needs a native rebuild
+   (`bunx expo prebuild --platform android --clean` or `expo run:android`) to take effect. The
+   Firebase service-account JSON stays on the API hosts and must **not** be committed.
+3. **Verify** — on the backend checkout `bun run push:selftest` should answer with a provider
+   result (a dummy token is rejected as unregistered rather than `ProviderNotConfigured`). Then
+   from this repo, log a daemon in against staging and finish a run — its log should show
    `push sent {count:1, ok:1}`:
    ```bash
    FABDESK_HOME=/tmp/fab-staging FABPLANE_API_ORIGIN=http://fabplane-staging.tail4f6a7.ts.net:4000 \
@@ -96,8 +71,9 @@ approval link). In order, ~15 minutes:
    FABDESK_HOME=/tmp/fab-staging FABPLANE_API_ORIGIN=http://fabplane-staging.tail4f6a7.ts.net:4000 \
      FABDESK_TOKEN=dev-token-0123456789 bun run --cwd apps/core src/main.ts serve --port 47810
    ```
-   pair a phone (a real one, built after step 1 so it has a push token), send a message, background
-   the app for a minute, and the notification should arrive through APNs rather than locally.
+   Pair a phone, check Settings → Notifications shows a registered token (`GET /v1/devices/me`
+   returns `push.tokenKind`), send a message, background the app for a minute, and the
+   notification should arrive through APNs/FCM rather than locally.
 
 ## Versions and build numbers
 
@@ -173,7 +149,7 @@ The same answers for the **Play Console data-safety form**:
 | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Does the app collect or share data | Collects: **Crash logs** and **Diagnostics** (App performance) — optional, not shared, encrypted in transit, can be deleted by request (Sentry retention). Not used for tracking or ads. |
 | Personal info, messages, photos    | Not collected. Chat text and attached photos go only to the user's own computer over their own network; nothing reaches Voxly or a third party.                                          |
-| Device or other IDs                | Not collected. The push token is stored on the user's own daemon; Expo's push service sees it as an opaque token.                                                                        |
+| Device or other IDs                | Not collected. The push token is stored on the user's own daemon and used by fabplane.com only to address APNs/FCM.                                                                      |
 | Location, contacts, financial      | Not collected. Camera is used for scanning the pairing QR code only; frames are not stored.                                                                                              |
 | Security practices                 | Data encrypted in transit (Sentry: HTTPS; daemon traffic: the user's tailnet). Users can request deletion.                                                                               |
 

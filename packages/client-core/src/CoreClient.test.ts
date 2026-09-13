@@ -3,7 +3,11 @@ import { CoreClient } from "./CoreClient";
 
 describe("CoreClient open-source preview URL", () => {
   test("openSourcePreviewUrl is a loopback img src with the query token", () => {
-    const client = new CoreClient({ baseUrl: "http://127.0.0.1:47831", token: "tok", fetch: async () => new Response("x") });
+    const client = new CoreClient({
+      baseUrl: "http://127.0.0.1:47831",
+      token: "tok",
+      fetch: async () => new Response("x"),
+    });
     expect(client.openSourcePreviewUrl("tensorfleet/koyomi-lvds-hat")).toBe(
       "http://127.0.0.1:47831/opensource/preview/tensorfleet/koyomi-lvds-hat?token=tok",
     );
@@ -21,21 +25,28 @@ describe("CoreClient push registration (docs/mobile-notifications.md §4.1)", ()
     token: "dev-tok",
     fetch: async (url, init) => {
       calls.push({ url, init });
-      return new Response(JSON.stringify({ ok: true }), { headers: { "content-type": "application/json" } });
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { "content-type": "application/json" },
+      });
     },
   });
 
   test("registerPush PUTs the registration with the device bearer", async () => {
     calls.length = 0;
     await client.registerPush({
-      expoPushToken: "ExponentPushToken[abc]",
+      pushToken: "a".repeat(64),
       platform: "ios",
       prefs: { onDone: true, onFailed: true, onNeedsInput: true, onJobs: false },
     });
     expect(calls[0]?.url).toBe("http://127.0.0.1:47831/v1/devices/me/push");
     expect(calls[0]?.init?.method).toBe("PUT");
-    expect((calls[0]?.init?.headers as Record<string, string>).Authorization).toBe("Bearer dev-tok");
-    expect(JSON.parse(calls[0]?.init?.body as string)).toMatchObject({ expoPushToken: "ExponentPushToken[abc]", platform: "ios" });
+    expect((calls[0]?.init?.headers as Record<string, string>).Authorization).toBe(
+      "Bearer dev-tok",
+    );
+    expect(JSON.parse(calls[0]?.init?.body as string)).toMatchObject({
+      pushToken: "a".repeat(64),
+      platform: "ios",
+    });
   });
 
   test("unregisterPush DELETEs, deviceMe GETs", async () => {

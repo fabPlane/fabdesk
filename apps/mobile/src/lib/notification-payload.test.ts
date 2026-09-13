@@ -3,7 +3,6 @@ import {
   DEFAULT_NOTIFICATION_PREFS,
   connectionForCore,
   dedupeKey,
-  isExpoPushToken,
   navigationFor,
   noticeForEvent,
   notificationText,
@@ -230,33 +229,25 @@ describe("notificationText", () => {
   });
 });
 
-describe("pushRegistration / isExpoPushToken", () => {
-  test("builds the §4.1 body and omits an absent appVersion", () => {
+describe("pushRegistration", () => {
+  test("builds the §4.1 body with the platform's token kind and omits an absent appVersion", () => {
+    const apns = "a".repeat(64);
     expect(
-      pushRegistration({
-        expoPushToken: "ExponentPushToken[abc]",
-        platform: "ios",
-        prefs: DEFAULT_NOTIFICATION_PREFS,
-      }),
+      pushRegistration({ pushToken: apns, platform: "ios", prefs: DEFAULT_NOTIFICATION_PREFS }),
     ).toEqual({
-      expoPushToken: "ExponentPushToken[abc]",
+      pushToken: apns,
+      tokenKind: "apns",
       platform: "ios",
       prefs: DEFAULT_NOTIFICATION_PREFS,
     });
-    expect(
-      pushRegistration({
-        expoPushToken: "ExpoPushToken[x]",
-        platform: "android",
-        appVersion: "0.1.0",
-        prefs: DEFAULT_NOTIFICATION_PREFS,
-      }).appVersion,
-    ).toBe("0.1.0");
-  });
-
-  test("only Expo-shaped tokens pass", () => {
-    expect(isExpoPushToken("ExponentPushToken[abc-DEF_123]")).toBe(true);
-    expect(isExpoPushToken("ExpoPushToken[abc]")).toBe(true);
-    expect(isExpoPushToken("fcm:abc")).toBe(false);
-    expect(isExpoPushToken(undefined)).toBe(false);
+    const fcm = `${"f".repeat(22)}:APA91b${"x".repeat(60)}`;
+    const android = pushRegistration({
+      pushToken: fcm,
+      platform: "android",
+      appVersion: "0.1.0",
+      prefs: DEFAULT_NOTIFICATION_PREFS,
+    });
+    expect(android.tokenKind).toBe("fcm");
+    expect(android.appVersion).toBe("0.1.0");
   });
 });

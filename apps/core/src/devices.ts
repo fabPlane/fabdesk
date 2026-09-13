@@ -12,6 +12,7 @@ import {
   DevicePushState,
   type DevicePlatform,
   type DevicePushRegistration,
+  type PushTokenKind,
 } from "@fabdesk/protocol";
 import { mintToken } from "./config";
 
@@ -39,6 +40,7 @@ type DeviceRow = {
   last_seen_at: string | null;
   revoked_at: string | null;
   push_token: string | null;
+  push_token_kind: string | null;
   push_platform: string | null;
   push_prefs: string | null;
   /** Unix ms, per the migration; surfaced as ISO. */
@@ -61,6 +63,7 @@ function toPushState(row: DeviceRow): DevicePushState | null {
   const parsed = DevicePushState.safeParse({
     registeredAt: new Date(row.push_registered_at).toISOString(),
     platform: row.push_platform,
+    tokenKind: row.push_token_kind,
     prefs: parsePrefs(row.push_prefs),
   });
   return parsed.success ? parsed.data : null;
@@ -78,6 +81,7 @@ function parsePrefs(raw: string | null): DevicePushPrefs {
 export interface PushTarget {
   device: Device;
   token: string;
+  tokenKind: PushTokenKind;
   prefs: DevicePushPrefs;
 }
 
@@ -187,8 +191,8 @@ export class DeviceStore {
       .get(id);
     if (!before || before.n === 0) return false;
     this.db.run(
-      `UPDATE devices SET revoked_at = ?, push_token = NULL, push_platform = NULL, push_prefs = NULL,
-         push_registered_at = NULL WHERE id = ?`,
+      `UPDATE devices SET revoked_at = ?, push_token = NULL, push_token_kind = NULL, push_platform = NULL,
+         push_prefs = NULL, push_registered_at = NULL WHERE id = ?`,
       [new Date(now).toISOString(), id],
     );
     return true;
@@ -213,9 +217,9 @@ export class DeviceStore {
     const current = this.get(id);
     if (!current) return null;
     this.db.run(
-      `UPDATE devices SET push_token = ?, push_platform = ?, push_prefs = ?, push_registered_at = ?
-         WHERE id = ? AND revoked_at IS NULL`,
-      [reg.expoPushToken, reg.platform, JSON.stringify(reg.prefs), now, id],
+      `UPDATE devices SET push_token = ?, push_token_kind = ?, push_platform = ?, push_prefs = ?,
+         push_registered_at = ? WHERE id = ? AND revoked_at IS NULL`,
+      [reg.pushToken, reg.tokenKind, reg.platform, JSON.stringify(reg.prefs), now, id],
     );
     const { push: _push, ...device } = current;
     return { device, registeredAt: new Date(now).toISOString() };
@@ -224,8 +228,8 @@ export class DeviceStore {
   clearPush(id: string): boolean {
     return (
       this.db.run(
-        `UPDATE devices SET push_token = NULL, push_platform = NULL, push_prefs = NULL,
-           push_registered_at = NULL WHERE id = ? AND revoked_at IS NULL`,
+        `UPDATE devices SET push_token = NULL, push_token_kind = NULL, push_platform = NULL,
+           push_prefs = NULL, push_registered_at = NULL WHERE id = ? AND revoked_at IS NULL`,
         [id],
       ).changes > 0
     );
@@ -235,12 +239,13 @@ export class DeviceStore {
   pushTargets(): PushTarget[] {
     return this.db
       .query<DeviceRow, []>(
-        "SELECT * FROM devices WHERE revoked_at IS NULL AND push_token IS NOT NULL ORDER BY created_at",
+        "SELECT * FROM devices WHERE revoked_at IS NULL AND push_token IS NOT NULL AND push_token_kind IS NOT NULL ORDER BY created_at",
       )
       .all()
       .map((row) => ({
         device: toDevice(row),
         token: row.push_token as string,
+        tokenKind: row.push_token_kind as PushTokenKind,
         prefs: parsePrefs(row.push_prefs),
       }));
   }

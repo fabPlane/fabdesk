@@ -1,6 +1,6 @@
 # Push notifications for the mobile app — design
 
-Status: implemented on the daemon and the phone (2026-09-13); fabplane.com route live on staging, delivery pending `EXPO_ACCESS_TOKEN` + an EAS project. Originally proposed 2026-09-12. Covers roadmap packages **N1, N2, N3** (`docs/mobile-roadmap.md`)
+Status: implemented on the daemon and the phone (2026-09-13); fabplane.com route live on staging. **Revised the same day to direct APNs/FCM** — the phone registers its native device token and fabplane.com talks to Apple/Google itself with the credentials it holds; there is no Expo push service in the path and no EAS project is needed. Originally proposed 2026-09-12 with Expo push. Covers roadmap packages **N1, N2, N3** (`docs/mobile-roadmap.md`)
 and the **fabplane.com** half that makes push possible. Written so the three halves — daemon,
 phone, fabplane.com — can be built by different people against the contracts in §4 without
 talking to each other.
@@ -25,19 +25,20 @@ Constraints that shape the design:
   nothing that would let it impersonate a device.
 - **Local-mode daemons** (no fabplane.com account) must still get the cheap version: local
   notifications while the app is backgrounded but the socket is alive (N1).
-- **Do not run an APNs/FCM integration ourselves in v1.** Use Expo's push service
-  (`https://exp.host/--/api/v2/push/send`): one HTTP API for both platforms, tokens are opaque
-  strings, and the APNs key/FCM credentials live in the EAS project, not on fabplane.com. The cost
-  is an EAS project and a dependency on Expo's service; §7 says how to swap it out later.
+- **Direct APNs/FCM, not Expo's push service.** fabplane.com already authenticates to APNs and
+  FCM, picks the provider, normalises errors and rate-limits (and its credentials are installed and
+  self-tested on both servers), so an Expo hop would add a failure point, an SLA-less dependency
+  and custody of our provider keys for nothing. The phone gets the platform's own token from
+  `expo-notifications`' `getDevicePushTokenAsync()` — no Expo account or EAS project involved.
 
 ## 2. Architecture
 
 ```
- phone (paired)                daemon (fabdesk-core)              fabplane.com API            Expo push → APNs/FCM
+ phone (paired)                daemon (fabdesk-core)              fabplane.com API            APNs / FCM
  ───────────────               ─────────────────────              ─────────────────           ────────────────────
  expo-notifications
    ├─ permission               devices table gains
-   ├─ ExponentPushToken[…] ──▶ push_token, prefs   (PUT /v1/devices/me/push, device-token auth,
+   ├─ APNs / FCM token ──────▶ push_token, kind, prefs (PUT /v1/devices/me/push, device-token auth,
    │                           per device)          remote listener)
    │
    │                           bus: agent.done / agent.error / (later) agent.approval_requested
@@ -48,7 +49,7 @@ Constraints that shape the design:
    │                             ├─ prefs say no?                  → skip
    │                             └─ POST /v1/private/push ───────▶ auth: daemon's user bearer
    │                                {messages:[{to, title, body, data}]}    │ rate-limit per user
-   │                                                                        │ validate, forward ─▶ Expo ─▶ device
+   │                                                                        │ validate, route by kind ─▶ APNs / FCM ─▶ device
    │                                                                        └─ tickets back
    ◀────────────────────────────────────────────────────────────────────────────────────── notification
    tap → data.{coreId, threadId} → switch connection if needed → /thread/[id]
@@ -74,8 +75,8 @@ sequenceDiagram
   participant P as Phone
   participant D as Daemon (remote listener)
   P->>P: user enables "Notify me" in Settings → OS permission prompt
-  P->>P: Notifications.getExpoPushTokenAsync({ projectId })
-  P->>D: PUT /v1/devices/me/push  (Authorization: Bearer <deviceToken>)<br/>{ expoPushToken, platform, prefs }
+  P->>P: Notifications.getDevicePushTokenAsync()  (APNs on iOS, FCM on Android)
+  P->>D: PUT /v1/devices/me/push  (Authorization: Bearer <deviceToken>)<br/>{ pushToken, tokenKind?, platform, prefs }
   D->>D: look up device by token digest; store token + prefs
   D-->>P: 200 { device, push: { registeredAt } }
   Note over P,D: repeated on every connect (token can rotate) and on prefs change
@@ -92,15 +93,15 @@ sequenceDiagram
   participant B as Bus
   participant N as Notifier (daemon)
   participant F as fabplane.com
-  participant E as Expo push
+  participant E as APNs / FCM
   participant P as Phone
   A->>B: agent.done { runId, threadId, status }
   B->>N: event
   N->>N: for each device with push_token: skip if live socket, skip if prefs exclude
   N->>F: POST /v1/private/push (Bearer <user session>)<br/>{ messages: [ {to, title, body, data, ...} ] }
   F->>F: auth → user; rate limit; validate tokens; audit row
-  F->>E: POST /--/api/v2/push/send (same messages)
-  E-->>F: tickets [{status:"ok", id} | {status:"error", details}]
+  F->>E: one request per message, by tokenKind
+  E-->>F: accepted / rejected (DeviceNotRegistered, …)
   F-->>N: 200 { tickets }
   E->>P: APNs/FCM
   P->>P: tap → navigate to coreId/threadId
@@ -138,8 +139,10 @@ export const DevicePushPrefs = z.object({
   onNeedsInput: z.boolean().default(true), // future: agent.approval_requested / question
   onJobs: z.boolean().default(false), // job.done for long jobs (route_run, render)
 });
+export const PushTokenKind = z.enum(["apns", "fcm"]);
 export const DevicePushRegistration = z.object({
-  expoPushToken: z.string().regex(/^Expo(nent)?PushToken\[[A-Za-z0-9_-]+\]$/),
+  pushToken: z.string().min(1), // getDevicePushTokenAsync(): 64-hex APNs, or FCM
+  tokenKind: PushTokenKind.optional(), // inferred from the token's shape when absent
   platform: DevicePlatform, // "ios" | "android"
   appVersion: z.string().optional(),
   prefs: DevicePushPrefs.default({}),
@@ -152,10 +155,10 @@ export const DevicePushRegistration = z.object({
 | `DELETE /v1/devices/me/push` | —                        | `200 { ok: true }`                                                    |
 | `GET /v1/devices/me`         | —                        | `200 Device` (adds `push: { registeredAt, platform, prefs } \| null`) |
 
-`devices` table gains `push_token TEXT`, `push_platform TEXT`, `push_prefs TEXT` (JSON),
-`push_registered_at INTEGER`. Revoking a device (`DELETE /v1/devices/:id`) drops all of it. The
-push token is stored in the clear: it is Expo-opaque, useless without our Expo project's
-credentials, and the daemon needs it verbatim.
+`devices` table gains `push_token TEXT`, `push_token_kind TEXT`, `push_platform TEXT`,
+`push_prefs TEXT` (JSON), `push_registered_at INTEGER`. Revoking a device
+(`DELETE /v1/devices/:id`) drops all of it. The push token is stored in the clear: a device token
+is useless without the provider credentials fabplane.com holds, and the daemon needs it verbatim.
 
 `Settings` gains `notifications: { enabled: boolean /* default true */ }` — a daemon-wide kill
 switch shown on the desktop's Remote access section.
@@ -169,7 +172,8 @@ Request:
 
 ```ts
 export const PushMessage = z.object({
-  to: z.string().regex(/^Expo(nent)?PushToken\[[A-Za-z0-9_-]+\]$/),
+  to: z.string().min(1), // the APNs or FCM device token
+  tokenKind: z.enum(["apns", "fcm"]), // which provider `to` belongs to
   title: z.string().max(80),
   body: z.string().max(200),
   data: z.object({
@@ -206,12 +210,11 @@ export const PushTicket = z.union([
 export const PushResponse = z.object({ tickets: z.array(PushTicket) }); // same order as messages
 ```
 
-Errors: `401` no/expired session; `400` schema; `429` over limit with `Retry-After`; `502` Expo
-unreachable (body `{ error: "upstream" }`); the daemon treats 5xx/429 as "drop this batch".
+Errors: `401` no/expired session; `400` schema; `429` over limit with `Retry-After`; `502` the
+provider unreachable (body `{ error: "upstream" }`); the daemon treats 5xx/429 as "drop this batch".
 
 The route **must not** log `title`/`body`/`data` at info level, must not store them (audit row has
-counts only, §5), and must forward the messages to Expo unchanged apart from server-side fields
-(`accessToken` header, nothing added to `data`).
+counts only, §5), and must pass `data` through to the provider payload unchanged.
 
 ### 4.3 Notification payload the phone handles
 
@@ -240,48 +243,14 @@ them apart in a notification. Add `core_id` to the daemon's settings store, mint
 phone stores it on the connection (`Connection.coreId`) and uses it for §4.3. Existing
 connections without it fall back to matching by `deviceId`.
 
-## 5. fabplane.com side — for the agent adding it
+## 5. fabplane.com side
 
-Where: `vendor/fabplane` → `TensorFleet/fabplane.com`, `apps/api` (Hono 4 on Bun, Postgres via
-`@pcb/db`, sessions in `sessions` table by token hash). Follow the existing route/auth style in
-`apps/api/src/app.ts` and `auth.ts`.
-
-1. **Route** `POST /v1/private/push` per §4.2, using the same session lookup as
-   `GET /v1/private/me`.
-2. **Migration** `000N_push.sql`:
-   ```sql
-   CREATE TABLE push_batches (
-     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-     user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-     created_at timestamptz NOT NULL DEFAULT now(),
-     message_count int NOT NULL,
-     ok_count int NOT NULL,
-     error_count int NOT NULL,
-     upstream_ms int
-   );
-   CREATE INDEX push_batches_user_created ON push_batches (user_id, created_at DESC);
-   ```
-   Counts only — no tokens, no text. Retention: delete rows older than 30 days (a job, or a
-   cron in `infra`).
-3. **Rate limit** per user, from `push_batches`: 60 messages / minute and 2 000 / day (env
-   `PUSH_PER_MINUTE`, `PUSH_PER_DAY`). Over → `429` + `Retry-After`.
-4. **Forward** to `https://exp.host/--/api/v2/push/send` with `Authorization: Bearer
-$EXPO_ACCESS_TOKEN` (an Expo access token with push enabled; keeps other people from spamming
-   our tokens if one leaks) and `Accept-Encoding: gzip`; 10 s timeout; map Expo's response
-   `data[]` 1:1 to `tickets`. Do not retry on the request path; return the error.
-5. **Receipts** (v1.1): Expo reports `DeviceNotRegistered` in _receipts_ fetched ≥ 15 min later
-   from `/--/api/v2/push/getReceipts`. Store ticket ids with the batch, run a receipt check job,
-   and expose `GET /v1/private/push/dead-tokens?since=<iso>` returning tokens that came back
-   `DeviceNotRegistered`; daemons poll it on startup and clear those tokens. Not needed for v1 —
-   an unregistered token only costs one rejected message per event.
-6. **Config**: `EXPO_ACCESS_TOKEN` (required for the route to be enabled; without it the route
-   returns `503 { error: "push disabled" }`), `PUSH_PER_MINUTE`, `PUSH_PER_DAY`.
-7. **Tests** (`apps/api/src/push.test.ts`, in the style of `app.test.ts`): 401 without session;
-   400 on a bad token format; 429 after the limit; forward + tickets with a mocked upstream;
-   nothing but counts in `push_batches`.
-8. **Deploy**: staging first (Deploy staging backend workflow), verify with a real daemon in
-   `fabplane` mode against `FABPLANE_API_ORIGIN=<staging>`, then production is a manual deploy
-   (see `AGENTS.md` — merges to `main` do not deploy the API).
+Built by the backend team and live on staging (`POST /v1/private/push` behind the session auth,
+`push.ts`, `push:selftest`). It authenticates to APNs (key `4D823P5T3R`, team `CMNZZ92926`) and
+FCM (the `tensorfleet` Firebase project's service account) itself, routes each message by
+`tokenKind` (or the token's shape), normalises provider errors into tickets, rate-limits per user,
+and keeps counts only. What this repo relies on is exactly §4.2; the request carries
+`tokenKind` so the backend never has to guess.
 
 ## 6. Daemon and phone work (fabdesk side)
 
@@ -299,10 +268,10 @@ on `agent.done`/`agent.error` while `AppState !== "active"`, schedule a local no
 the §4.3 payload; tap handling and dedupe per §4.3. No server.
 
 **N4 — phone, push registration**: Settings toggle "Notify me when runs finish" with the four
-prefs; get the Expo token (needs `extra.eas.projectId` in `app.json` — prerequisite from roadmap
-R1; until then the toggle explains it is unavailable in dev builds); `PUT /v1/devices/me/push` on
-every successful connect and on prefs change, `DELETE` on toggle off; store `coreId` on the
-connection.
+prefs; get the native token with `getDevicePushTokenAsync()` (iOS needs the push entitlement, which
+the `expo-notifications` plugin adds; Android needs `apps/mobile/google-services.json`, committed —
+it is client config, not a secret); `PUT /v1/devices/me/push` on every successful connect and on
+prefs change, `DELETE` on toggle off; store `coreId` on the connection.
 
 **N3 — Live Activity** (iOS 16.1+): a run in progress shows elapsed time and the current tool
 on the lock screen, with Stop. Needs a small native module (ActivityKit) or a maintained Expo
@@ -341,10 +310,10 @@ Nothing is a drop-in for SDK 54, so N3 is **not implemented** in this pass. Reco
 
 ## 7. Trade-offs and later changes
 
-- **Expo push vs direct APNs/FCM.** Direct would remove the Expo dependency and let fabplane.com
-  hold the APNs key. The daemon→fabplane.com contract (§4.2) is deliberately Expo-shaped only in
-  the token regex; swapping the forwarder for direct APNs/FCM later changes fabplane.com internals
-  and the token format, nothing in the daemon's message shape.
+- **Why direct APNs/FCM.** Expo's push service would only have given one token format for both
+  platforms; it still forwards to APNs/FCM, adds a hop with no SLA, holds our provider keys, and
+  needs an Expo project. fabplane.com already does the provider work, so the phone registers native
+  tokens and the daemon labels them with `tokenKind`.
 - **Why the daemon, not the phone, talks to fabplane.com.** The phone does not need a fabplane.com
   login to use the app, and pairing already proves the phone is the user's. Registering tokens on
   the daemon keeps fabplane.com stateless about devices. The cost: a phone paired with N computers
