@@ -1,5 +1,6 @@
 /** Hono application: auth + origin guard, control API, tools/jobs, MCP, events. */
 import { readFile, stat, mkdir } from "node:fs/promises";
+import { threadTitleFrom } from "../thread-title";
 import { basename, extname, join } from "node:path";
 import { Hono, type Context } from "hono";
 import {
@@ -405,6 +406,16 @@ export function createApp(deps: AppDeps): Hono<Env> {
     });
     return c.json(t, 201);
   });
+  // Runs in progress, with what the client's live-run store needs. A client that connects (or
+  // reconnects) while an agent is working has no `agent.started` to go on; this is its seed.
+  app.get("/runs/live", (c) =>
+    c.json(
+      (deps.runs?.live() ?? []).flatMap(({ runId, threadId }) => {
+        const run = deps.store.runs.get(runId);
+        return run ? [{ runId, threadId, agentId: run.agentId, startedAt: run.startedAt }] : [];
+      }),
+    ),
+  );
   app.get("/threads/:id", (c) => {
     const t = deps.store.threads.get(c.req.param("id"));
     if (!t) return c.json({ error: "not found" }, 404);
@@ -515,8 +526,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
     });
     // The first message names a "New chat". Both of these silent edits are announced so a second
     // client (the phone, or the desktop when the phone sent the message) does not keep a stale row.
-    const title =
-      t.title === "New chat" ? body.content.trim().replace(/\s+/g, " ").slice(0, 60) : null;
+    const title = t.title === "New chat" ? threadTitleFrom(body.content) : null;
     if (title !== null) deps.store.threads.patch(t.id, { title });
     if (switched || title !== null)
       deps.bus.emit({
