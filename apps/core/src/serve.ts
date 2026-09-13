@@ -139,6 +139,8 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   const staleRuns = store.runs.failStale();
   if (staleRuns.length)
     logger.info("failed stale agent runs from previous run", { threads: staleRuns });
+  const staleRoutes = store.routeRuns.failStale();
+  if (staleRoutes) logger.info("failed stale route runs from previous run", { count: staleRoutes });
   const tokens = new TokenSet(config.token);
   const devices = new DeviceStore(store.db);
   tokens.setDeviceLookup((token) => {

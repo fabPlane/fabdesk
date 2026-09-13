@@ -825,6 +825,13 @@ export class RouteRunRepo {
       [patch.status, patch.result ? JSON.stringify(patch.result) : null, patch.error, nowIso(), id],
     );
   }
+  /** Runs still marked running when the daemon starts were cut off by its restart; nobody will finish them. */
+  failStale(): number {
+    return this.db.run(
+      "UPDATE route_runs SET status = 'failed', error = 'daemon restarted while routing', ended_at = ? WHERE status = 'running'",
+      [nowIso()],
+    ).changes;
+  }
   get(id: string): RouteRunRecord | null {
     const r = this.db.query<RouteRunRow, [string]>("SELECT * FROM route_runs WHERE id = ?").get(id);
     return r ? this.toRec(r) : null;
