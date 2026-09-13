@@ -4,15 +4,19 @@
  * Listens to the bus for the handful of events a person in another room cares about, works out
  * which paired devices should hear about each, and hands the messages to fabplane.com
  * (`POST /v1/private/push`, bearer = the daemon's own user session), which queues them durably
- * and delivers through APNs/FCM from its worker. On this side it is one-way and fire-and-forget:
- * no queue, no retries, and a `200` only means "queued". A missed "run finished" is annoying, not
- * harmful — the phone sees the real state the next time it connects.
+ * and delivers through APNs/FCM from its worker. On this side it is fire-and-forget: no queue, no
+ * retries, and a `200` only means "queued". A missed "run finished" is annoying, not harmful —
+ * the phone sees the real state the next time it connects. The one thing read back is the
+ * worker's verdict (`GET /v1/private/push/:jobId`, a little later): a `device_not_registered`
+ * outcome means the phone was wiped or reinstalled, and its token is forgotten so the next run
+ * does not try it again.
  *
  * A device that holds a live `/ws` socket is skipped: the app is up and already saw the event
  * (and, backgrounded with the socket still alive, shows its own local notification).
  */
 import {
   PUSH_BATCH_MAX,
+  PushJob,
   PushResponse,
   type DevicePushPrefs,
   type PushData,
@@ -40,7 +44,12 @@ export type NotifierDeps = {
   fetchImpl?: typeof fetch;
   /** Tests: how long the outbound call may take. */
   timeoutMs?: number;
+  /** Tests: how long after queueing to ask for the verdict (default 45 s, then 2× twice). */
+  verdictDelayMs?: number;
 };
+
+/** A message and the device it is addressed to, so a verdict can be traced back. */
+type Addressed = { message: PushMessage; deviceId: string };
 
 /**
  * The topics the Notifier reacts to. `agent.approval_requested` / `agent.input_requested` come
@@ -79,12 +88,15 @@ export class Notifier {
   private skippedOnce = false;
   private readonly fetchImpl: typeof fetch;
   private readonly timeoutMs: number;
+  private readonly verdictDelayMs: number;
   /** Outbound calls in flight, so `stop()` (and tests) can wait for them. */
   private inflight = new Set<Promise<void>>();
+  private stopped = false;
 
   constructor(private readonly deps: NotifierDeps) {
     this.fetchImpl = deps.fetchImpl ?? fetch;
     this.timeoutMs = deps.timeoutMs ?? 15_000;
+    this.verdictDelayMs = deps.verdictDelayMs ?? 45_000;
   }
 
   start(): void {
@@ -100,6 +112,7 @@ export class Notifier {
   stop(): void {
     this.unsubscribe?.();
     this.unsubscribe = null;
+    this.stopped = true;
   }
 
   /** Resolves once every outbound call started so far has finished (tests). */
@@ -113,10 +126,10 @@ export class Notifier {
       if (!pending) continue;
       if (this.seen.has(pending.key)) continue;
       this.remember(pending.key);
-      const messages = this.address(pending);
-      if (!messages.length) continue;
-      for (let i = 0; i < messages.length; i += PUSH_BATCH_MAX)
-        this.track(this.send(messages.slice(i, i + PUSH_BATCH_MAX)));
+      const addressed = this.address(pending);
+      if (!addressed.length) continue;
+      for (let i = 0; i < addressed.length; i += PUSH_BATCH_MAX)
+        this.track(this.send(addressed.slice(i, i + PUSH_BATCH_MAX)));
     }
   }
 
@@ -232,13 +245,13 @@ export class Notifier {
   /* ---------- whom to tell (§3.2) ---------- */
 
   /** One message per device that registered for push, is not connected right now, and asked for this kind. */
-  address(pending: PendingNotification): PushMessage[] {
+  address(pending: PendingNotification): Addressed[] {
     if (!this.deps.store.settings.get().notifications.enabled) return [];
-    const out: PushMessage[] = [];
+    const out: Addressed[] = [];
     for (const target of this.deps.devices.pushTargets()) {
       if (this.deps.isOnline(target.device.id)) continue;
       if (!wantsKind(target.prefs, pending.kind)) continue;
-      out.push(toMessage(target, pending));
+      out.push({ message: toMessage(target, pending), deviceId: target.device.id });
     }
     return out;
   }
@@ -250,7 +263,8 @@ export class Notifier {
     void p.finally(() => this.inflight.delete(p));
   }
 
-  private async send(messages: PushMessage[]): Promise<void> {
+  private async send(addressed: Addressed[]): Promise<void> {
+    const messages = addressed.map((a) => a.message);
     const bearer = this.deps.auth.mode === "local" ? null : this.deps.auth.token();
     if (!bearer) {
       // Local-mode daemons, and fabplane-mode ones nobody has signed in on, cannot push. Say so once.
@@ -304,12 +318,63 @@ export class Notifier {
         count: messages.length,
         ok: messages.length - failed.length,
         kinds,
+        ...(parsed.data.queued ? { jobId: parsed.data.queued.jobId } : {}),
       });
+      if (parsed.data.queued) this.track(this.verdict(parsed.data.queued.jobId, addressed, bearer));
     } catch (e) {
       logger.warn("push failed", { error: errMsg(e), count: messages.length, kinds });
     }
   }
+
+  /**
+   * Asks fabplane.com how the batch went once the worker has had time to try (a few attempts
+   * with backoff fit in ~4 minutes), and forgets tokens the providers called dead. Anything
+   * else — a job still running, a network blip — is left alone; the next run asks again.
+   */
+  private async verdict(jobId: string, addressed: Addressed[], bearer: string): Promise<void> {
+    let delay = this.verdictDelayMs;
+    for (let attempt = 0; attempt < 3 && !this.stopped; attempt++, delay *= 2) {
+      await sleep(delay);
+      if (this.stopped) return;
+      let job: PushJob;
+      try {
+        const res = await this.fetchImpl(`${this.deps.apiOrigin}/v1/private/push/${jobId}`, {
+          headers: { authorization: `Bearer ${bearer}`, accept: "application/json" },
+          signal: AbortSignal.timeout(this.timeoutMs),
+        });
+        if (!res.ok) return;
+        const parsed = PushJob.safeParse(await res.json().catch(() => null));
+        if (!parsed.success) return;
+        job = parsed.data;
+      } catch {
+        return;
+      }
+      if (job.status === "queued" || job.status === "running") continue;
+      let forgotten = 0;
+      for (const o of job.outcomes) {
+        if (o.outcome !== "device_not_registered") continue;
+        const target = addressed[o.index];
+        if (target && this.deps.devices.clearPush(target.deviceId)) forgotten++;
+      }
+      const rejected = job.outcomes.filter((o) => o.outcome === "rejected");
+      if (forgotten || rejected.length || job.status !== "completed")
+        logger.info("push verdict", {
+          jobId,
+          status: job.status,
+          forgotten,
+          rejected: rejected.map((o) => o.error ?? "rejected"),
+        });
+      return;
+    }
+  }
 }
+
+const sleep = (ms: number) =>
+  new Promise<void>((resolve) => {
+    const t = setTimeout(resolve, ms);
+    // A pending verdict must not keep the process alive.
+    (t as { unref?: () => void }).unref?.();
+  });
 
 /* ---------- helpers ---------- */
 

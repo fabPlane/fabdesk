@@ -62,6 +62,8 @@ export type ServeOptions = {
   noHandshake?: boolean;
   /** Tests: capture the Notifier's outbound `POST /v1/private/push` instead of reaching fabplane.com. */
   notifierFetch?: typeof fetch;
+  /** Tests: how soon after queueing the Notifier asks fabplane.com for the verdict. */
+  notifierVerdictDelayMs?: number;
   /** Tests: shorten the 30-minute supervised-mode approval timeout. */
   approvalTimeoutMs?: number;
   /** Tests: the bearer the relay link presents, when the AuthFacade has none (local auth mode). */
@@ -259,6 +261,9 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     coreName: machineName(),
     isOnline: (id) => (liveDevices.get(id) ?? 0) > 0,
     ...(opts.notifierFetch ? { fetchImpl: opts.notifierFetch } : {}),
+    ...(opts.notifierVerdictDelayMs !== undefined
+      ? { verdictDelayMs: opts.notifierVerdictDelayMs }
+      : {}),
   });
   notifier.start();
 

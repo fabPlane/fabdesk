@@ -37,10 +37,19 @@ const okTickets = (body: PushRequest) =>
   Response.json({ tickets: body.messages.map((_, i) => ({ status: "ok", id: `ticket-${i}` })) });
 /** What "fabplane.com" answers; tests swap it to simulate a rejection. */
 let respond: (body: PushRequest) => Response = okTickets;
+/** What `GET /v1/private/push/:jobId` answers; tests set it alongside a `queued` response. */
+let respondJob: (jobId: string) => Response = () =>
+  Response.json({ error: "not found" }, { status: 404 });
+const verdictsAsked: string[] = [];
 const pushFetch: typeof fetch = async (input, init) => {
   const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
   const headers = new Headers(init?.headers);
-  const body = JSON.parse(String(init?.body)) as PushRequest;
+  if (!init?.body) {
+    const jobId = url.slice(url.lastIndexOf("/") + 1);
+    verdictsAsked.push(jobId);
+    return respondJob(jobId);
+  }
+  const body = JSON.parse(String(init.body)) as PushRequest;
   sent.push({ url, authorization: headers.get("authorization"), body });
   return respond(body);
 };
@@ -67,6 +76,7 @@ const baseOptions = (home: string): ServeOptions => ({
   quiet: true,
   watchProjects: false,
   notifierFetch: pushFetch,
+  notifierVerdictDelayMs: 10,
   services: async ({ projects, bus, store }) =>
     mockServices([], {
       projects,
@@ -479,7 +489,7 @@ describe("notifier", () => {
       body: "Claude is waiting for an answer",
       data: { kind: "run.needs_input", runId: run.id, threadId, projectId },
     });
-    expect(daemon.notifier.address(pending!).map((m) => m.to)).toEqual([TOKEN_A]);
+    expect(daemon.notifier.address(pending!).map((a) => a.message.to)).toEqual([TOKEN_A]);
   });
 
   test("after DELETE nothing goes out", async () => {
@@ -487,6 +497,49 @@ describe("notifier", () => {
     expect((await asDevice("/v1/devices/me/push", { method: "DELETE" })).status).toBe(200);
     await runOnce(daemon, threadId, "nobody listening");
     expect(sent).toHaveLength(0);
+  });
+
+  test("a queued batch is followed up, and a dead token is forgotten", async () => {
+    sent.length = 0;
+    verdictsAsked.length = 0;
+    expect((await register()).status).toBe(200);
+    respond = (body) =>
+      Response.json({
+        tickets: body.messages.map(() => ({ status: "ok", id: "job-7" })),
+        queued: { jobId: "job-7", expiresAt: new Date(Date.now() + 600_000).toISOString() },
+      });
+    let asks = 0;
+    respondJob = (jobId) =>
+      Response.json(
+        ++asks === 1
+          ? { jobId, status: "running", outcomes: [] }
+          : {
+              jobId,
+              status: "completed",
+              outcomes: [
+                {
+                  index: 0,
+                  provider: "apns",
+                  outcome: "device_not_registered",
+                  error: "DeviceNotRegistered",
+                },
+              ],
+            },
+      );
+    try {
+      await runOnce(daemon, threadId, "phone was wiped");
+    } finally {
+      respond = okTickets;
+      respondJob = () => Response.json({ error: "not found" }, { status: 404 });
+    }
+    expect(sent).toHaveLength(1);
+    // Asked while running, asked again, then acted on the verdict.
+    expect(verdictsAsked).toEqual(["job-7", "job-7"]);
+    const me = (await (await asDevice("/v1/devices/me")).json()) as DeviceMe;
+    expect(me.push).toBeNull();
+    // With the token gone the next run has nobody to tell.
+    await runOnce(daemon, threadId, "nobody left");
+    expect(sent).toHaveLength(1);
   });
 
   test("a rejected batch is dropped, not retried", async () => {

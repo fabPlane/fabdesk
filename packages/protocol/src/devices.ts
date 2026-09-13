@@ -152,9 +152,32 @@ export const PushTicket = z.union([
   }),
 ]);
 export type PushTicket = z.infer<typeof PushTicket>;
-/** Same order as the request's `messages`. */
-export const PushResponse = z.object({ tickets: z.array(PushTicket) });
+/**
+ * Same order as the request's `messages`. Since fabplane.com's durable queue, `200` means
+ * "queued": every ticket is `ok` with the job id, and `queued` says when the batch expires.
+ */
+export const PushResponse = z.object({
+  tickets: z.array(PushTicket),
+  queued: z.object({ jobId: z.string(), expiresAt: z.string() }).optional(),
+});
 export type PushResponse = z.infer<typeof PushResponse>;
+
+/** `GET /v1/private/push/:jobId` — the worker's verdict per message, by request index. */
+export const PushJobStatus = z.enum(["queued", "running", "completed", "failed", "expired"]);
+export const PushOutcome = z.object({
+  index: z.number().int().min(0),
+  provider: z.string().optional(),
+  outcome: z.enum(["accepted", "device_not_registered", "rejected", "expired"]),
+  id: z.string().optional(),
+  error: z.string().optional(),
+  message: z.string().optional(),
+});
+export const PushJob = z.object({
+  jobId: z.string(),
+  status: PushJobStatus,
+  outcomes: z.array(PushOutcome).default([]),
+});
+export type PushJob = z.infer<typeof PushJob>;
 
 /**
  * How a phone would reach an address. `tailscale` is 100.64.0.0/10, `lan` a private or link-local
