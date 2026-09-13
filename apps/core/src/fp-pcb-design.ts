@@ -436,7 +436,12 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     return { components, missing, nets: kept, excluded, pads };
   };
 
-  const searchFootprints = async (query: string, limit: number): Promise<FootprintHit[]> => {
+  const searchFootprints = (query: string, limit: number): Promise<FootprintHit[]> =>
+    // Through withRetry: after a bridge restart the cached library session is gone and every search
+    // failed with "WebSocket … closed" until the daemon itself restarted.
+    deps.sessions.withRetry("", () => searchFootprintsOnce(query, limit));
+
+  const searchFootprintsOnce = async (query: string, limit: number): Promise<FootprintHit[]> => {
     const kicad = await anyKicad();
     const tokens = query
       .toLowerCase()

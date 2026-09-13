@@ -35,9 +35,10 @@ function fakeKicad(opts: { projectOpen: boolean }) {
 }
 
 function sessionsFor(kicad: unknown): FpPcbSessions {
-  return {
-    session: async () => ({ id: "s1", kicad, ws: {}, path: null }),
-  } as unknown as FpPcbSessions;
+  const session = async () => ({ id: "s1", kicad, ws: {}, path: null });
+  const withRetry = async (_dir: string, fn: (s: unknown) => Promise<unknown>) =>
+    fn(await session());
+  return { session, withRetry } as unknown as FpPcbSessions;
 }
 
 describe("searchFootprints", () => {
@@ -60,5 +61,41 @@ describe("searchFootprints", () => {
     const design = createFpPcbDesign({ bridge: () => ({}) as never, sessions: sessionsFor(kicad) });
     await design.searchFootprints("SOT-23-5", 5);
     expect(calls.some((c) => c.startsWith("newProject"))).toBe(false);
+  });
+});
+
+describe("searchFootprints after a bridge restart", () => {
+  test("a gone library session is reconnected once and the search retried", async () => {
+    const { kicad } = fakeKicad({ projectOpen: true });
+    let attempts = 0;
+    const gone = {
+      ...kicad,
+      libraries: {
+        ...kicad.libraries,
+        nicknames: async (type: string) => {
+          attempts++;
+          if (attempts === 1)
+            throw new Error(
+              "WebSocket ws://127.0.0.1:4020/ws?session=x closed (code 1006: Connection ended)",
+            );
+          return kicad.libraries.nicknames(type);
+        },
+      },
+    };
+    const sessions = {
+      session: async () => ({ id: "s1", kicad: gone, ws: {}, path: null }),
+      withRetry: async (_dir: string, fn: (s: unknown) => Promise<unknown>) => {
+        try {
+          return await fn(null);
+        } catch (e) {
+          if (!/closed/.test(String(e))) throw e;
+          return fn(null);
+        }
+      },
+    } as unknown as FpPcbSessions;
+    const design = createFpPcbDesign({ bridge: () => ({}) as never, sessions });
+    const hits = await design.searchFootprints("SOT-23-5", 5);
+    expect(attempts).toBe(2);
+    expect(hits[0]?.libId).toBe("Package_TO_SOT_SMD:SOT-23-5");
   });
 });
