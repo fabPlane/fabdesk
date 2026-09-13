@@ -37,6 +37,8 @@ Judge a fix on the rule categories going to zero, not on a count.
 | `qfn-fanout` | one QFN-28 0.5 mm pitch, 12 × 0603 fanned out from every second pin, common GND; 25 × 25 mm | 26 copper_edge_clearance, 8 clearance, 4 tracks_crossing |
 | `ps1-serial-dongle` | the real board 1: USB-C + CP2102N (QFN-28) + SOT-23-5 LDO + 1×08 header + 10 passives; 16 nets, 40 × 20 mm | 23–42 clearance, 14 copper_edge_clearance, 4–7 hole_clearance, 1–5 shorting_items, 1–9 tracks_crossing, solder_mask_bridge |
 
+| `gb-link-usb-bridge` | the real board 2: RP2040 (QFN-56) + W25Q16 + USB-C + 3 × 74LVC1T45 + LDO + crystal + 31 passives; 41 parts, 29 nets, 50 × 30 mm | first full `route_run` sat 6 min with no progress and was cancelled; the agent then routed in stages (24 runs, 11 failed with `Static reachability precheck failed: N route(s) have no legal …`); the end state has 360 errors: 174 clearance, 113 tracks_crossing, 40 shorting_items, 32 solder_mask_bridge, 17 unconnected |
+
 Baseline that passes: the 3-part blinky in `docs/handoff-fab-pcb.md` §3 (0 errors). Anything with
 two pads closer than `clearance + trackWidth` fails.
 
@@ -79,6 +81,16 @@ ignores; (b) pads: the autoplacer (`packages/compile/src/apply.ts`, KiCad legacy
 rotation 0) packs footprints into the top-left corner and puts tall parts (a 1×08 header on a
 20 mm board) across the outline. Placement is a compile problem, not a router one, but the router
 should not route into an edge violation either.
+
+### R6 — large boards: minutes with no progress, then a solver failure
+
+`gb-link-usb-bridge` (41 parts, GND on 46 pads, 3V3 on 31 pads): the first `route_run` produced
+no progress for 6 minutes (the solver never left its first phase) and had to be cancelled; the
+retry loop (8 rounds of a full solve each) makes a failing board cost 8× a passing one. Partial
+runs (`onlyConnections`) fail with `Static reachability precheck failed: 6 route(s) have no legal
+…` as soon as earlier tracks box a pad in. Whatever replaces R1 must also keep a bound on total
+solver time and report progress (the daemon now forwards phase/percent to the cinema, so a stuck
+phase is at least visible).
 
 ### R4 — hole clearance on the connector's own pegs
 
