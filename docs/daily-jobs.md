@@ -32,7 +32,9 @@ On later runs:
 - Same **title** as an open issue that predates fingerprints → skip.
 - Severity below `--min-severity` (default `high`) → skip.
 
-Durable dedup is `.github/security-filed.json` (fingerprint → issue). The Actions `GITHUB_TOKEN` on `pull_request` can create issues but `gh issue list` returns empty, so a label/list-only check is not enough.
+Durable dedup is `.github/security-filed.json` (fingerprint → issue). Issues are listed through the REST API (`gh api /repos/{owner}/{repo}/issues --paginate`), not `gh issue list`: under the Actions `GITHUB_TOKEN` the latter returns empty (it goes through search), which is how one `code.eval` fingerprint became #112–#158. The ledger and the live listing are merged by issue number, so a canonical issue is never closed as a duplicate of itself.
+
+Dynamic code (`eval`, `new Function`) in a `*.test.ts` / `*.spec.ts` / `__tests__` file is reported at `low` and never filed; a unit test executing the app's own generated script is not a shipped attack surface. `.claude/` (agent worktrees) is skipped like `vendor/`.
 
 Scheduled and `workflow_dispatch` runs commit ledger updates back to the branch they ran on (`contents: write`) so a later run that still cannot list issues will not open a second copy.
 
