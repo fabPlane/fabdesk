@@ -221,6 +221,18 @@ describe("relay link", () => {
     expect(direct.status).toBe(200);
     // The phone's own header is ignored on a listener: the path is what the daemon saw.
     expect((await devices())[0]?.via).toBe("direct");
+    // Stripping it does not lose a request body.
+    const posted = await fetch(`http://${REMOTE.host}:${REMOTE.port}/threads`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${deviceToken}`,
+        "content-type": "application/json",
+        [VIA_HEADER]: "relay",
+      },
+      body: JSON.stringify({ agentId: "claude", title: "direct with a forged header" }),
+    });
+    expect(posted.status).toBe(201);
+    expect(((await posted.json()) as { title: string }).title).toBe("direct with a forged header");
     // …and a proxied request that carries a forged header is still relay.
     expect((await asDevice("/v1/devices/me", { headers: { [VIA_HEADER]: "direct" } })).status).toBe(
       200,
@@ -331,6 +343,7 @@ describe("relay link", () => {
     daemon.relay.apply(daemon.store.settings.get().remote);
     await until(() => relay.daemons().length === 0);
     expect(daemon.relay.state()).toMatchObject({ connected: false, error: "not signed in" });
+    expect(relayEvents.at(-1)).toMatchObject({ connected: false, error: "not signed in" });
     expect((await health()).relay).toBe("off");
     session = SESSION;
     daemon.relay.apply(daemon.store.settings.get().remote);

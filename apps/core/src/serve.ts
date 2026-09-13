@@ -254,7 +254,10 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     apiOrigin: config.apiOrigin,
     ...(opts.relayEnv ? { env: opts.relayEnv } : {}),
     ...(opts.relayDiscoveryFetch ? { fetchImpl: opts.relayDiscoveryFetch } : {}),
-    onChange: () => relay.apply(store.settings.get().remote),
+    // A probe can land after shutdown; it must not bring the link back up.
+    onChange: () => {
+      if (!closing) relay.apply(store.settings.get().remote);
+    },
   });
   const relay = new RelayLink({
     coreId: store.settings.coreId(),

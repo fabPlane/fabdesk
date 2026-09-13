@@ -381,7 +381,7 @@ export class RelayLink {
     if (!remote.enabled) return this.block(target.url, "remote access is off");
     if (!this.opts.token()) return this.block(target.url, "not signed in");
     if (this.wanted?.url === dial.url && (this.socket || this.timer)) return this.state();
-    this.hangUp();
+    this.hangUp("relay changed");
     this.wanted = { setting: target.url, ...dial };
     this.blocked = null;
     this.lastError = null;
@@ -404,7 +404,7 @@ export class RelayLink {
     if (this.wanted) logger.info("relay link paused", { url, reason: error });
     else if (this.blocked?.error !== error)
       logger.info("relay link not started", { url, reason: error });
-    this.hangUp();
+    this.hangUp(error);
     this.wanted = null;
     this.blocked = { url, error };
     return this.state();
@@ -428,12 +428,13 @@ export class RelayLink {
     });
   }
 
-  private hangUp(): void {
+  /** Drops the socket and every proxied session; `reason` is what a `remote.relay` event carries. */
+  private hangUp(reason = "relay link stopped"): void {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     const s = this.socket;
     this.socket = null;
-    this.setConnected(false, "relay link stopped");
+    this.setConnected(false, reason);
     this.closeSessions();
     if (s) {
       s.onclose = null;
