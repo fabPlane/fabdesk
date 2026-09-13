@@ -103,6 +103,21 @@ what to reach for when a cloud build fails in a way the logs do not explain.
 Without EAS, a Release simulator build is `bunx expo run:ios --configuration Release --device
 <udid>`; `apps/mobile/e2e/run.sh --build` wraps that and CI's `e2e-ios` job uses it.
 
+Device builds straight from this Mac, the way the 2026-09 test builds were made:
+
+- **iOS** — `xcodebuild -workspace ios/fabPlane.xcworkspace -scheme fabPlane -configuration
+Release -destination 'id=<device udid>' -derivedDataPath ios/build/device
+-allowProvisioningUpdates DEVELOPMENT_TEAM=CMNZZ92926 build`, then `xcrun devicectl device
+install app --device <udid> ios/build/device/Build/Products/Release-iphoneos/fabPlane.app`.
+  The `.app` directory appears long before signing finishes — wait for `BUILD SUCCEEDED`, not
+  for the path. `devicectl device process launch --payload-url 'fabdesk://pair?…'` opens a
+  pairing link on the phone without touching it (the phone must be unlocked).
+- **Android** — `bunx expo prebuild --platform android` (add `--clean` after changing
+  `app.json`/plugins; it also deletes `android/local.properties`, so recreate it with
+  `sdk.dir=$HOME/Library/Android/sdk`), then `cd android && JAVA_HOME="/Applications/Android
+Studio.app/Contents/jbr/Contents/Home" ./gradlew assembleRelease` — the system Temurin 26 is
+  too new for this Gradle — and `adb install -r app/build/outputs/apk/release/app-release.apk`.
+
 ## Error reporting
 
 `src/observability.ts` initialises `@sentry/react-native` when `extra.sentryDsn` is present in
