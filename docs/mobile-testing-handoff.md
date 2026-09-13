@@ -222,14 +222,16 @@ message: "BadDeviceToken", details: { error: "DeviceNotRegistered" } }] }` and a
   pushed `/thread/:id` before the daemon was located and `ThreadScreen` threw
   `useCore must be used inside <CoreProvider>` — thread, project and jobs now sit behind
   `ConnectionGate`. With all three in the APK the tap lands on the chat (verified).
-- **APNs on the iPhone — not yet exercised.** The rebuilt `com.fabplane.fabdesk` (signed with
-  `aps-environment: development`, matching staging's sandbox gateway) is installed, but the
-  phone was locked so it could not be paired with the staging-logged-in scratch daemon
-  (`FABDESK_HOME=<scratchpad>/home`, remote `0.0.0.0:47820`, `coreId core_NPR3NcFrwNR9`) — its
-  saved "Mac" is the desktop dev daemon (`core_2GmdXcie6WT0`), which is not running. To finish:
-  unlock, pair with that daemon (`fabdesk-core pair` against it, or the `devicectl … --payload-url`
-  line in `docs/mobile-release.md`), Settings → Notifications on, confirm `GET /v1/devices/me`
-  shows `push.tokenKind: "apns"`, swipe the app away, send a message.
+- **APNs on the iPhone — verified** (2026-09-13, `com.fabplane.fabdesk` signed with
+  `aps-environment: development` against staging's sandbox gateway): paired with the scratch
+  daemon by opening the pairing link with `devicectl … --payload-url`, Notifications on →
+  `tokenKind: apns` registered, app swiped away → `push sent {count:1, ok:1}` → the
+  notification arrived on the phone. The first attempt with the app "closed" produced **no**
+  push: iOS had suspended the app rather than closing the socket, and the remote listener's
+  255 s idle timeout kept the phone on the live list, so the daemon neither pushed nor could
+  the app notify locally. Fixed at both ends (`ceac97e`): the phone closes its event stream
+  20 s into the background (`src/lib/dormancy.ts`) and reopens on return; the remote
+  listener's WebSocket idle timeout is 40 s.
 
 Adapter reality (from the supervised lane's live check): Claude Code's `--permission-prompt-tool`
 works with `--print` and our `permission_prompt` MCP tool; Claude still auto-allows commands it
