@@ -7,6 +7,8 @@
 export { CoreClient, CoreHttpError, parseJsonl } from "./CoreClient";
 export type {
   CoreClientOptions,
+  ThreadDetail,
+  LiveRunSummary,
   CreateThreadInput,
   PatchThreadInput,
   SendMessageInput,

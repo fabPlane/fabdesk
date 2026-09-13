@@ -24,9 +24,13 @@ import type {
   RemoteStatus,
   RouteFrameLine,
   Settings,
+  Run,
   Thread,
   ToolManifestEntry,
 } from "@fabdesk/protocol";
+/** `GET /threads/:id`: the thread plus its latest run and whether an agent is working on it now. */
+export type ThreadDetail = Thread & { run?: Run | null; running?: boolean };
+
 /** One row of `GET /runs/live`. */
 export interface LiveRunSummary {
   runId: string;
@@ -254,7 +258,7 @@ export class CoreClient {
     const s = qs.toString();
     return this.request(`/threads${s ? `?${s}` : ""}`);
   }
-  getThread(id: string): Promise<Thread> {
+  getThread(id: string): Promise<ThreadDetail> {
     return this.request(`/threads/${encodeURIComponent(id)}`);
   }
   /** Agent runs in progress right now (`GET /runs/live`), for seeding the live state after a (re)connect. */

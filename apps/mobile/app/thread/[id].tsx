@@ -15,7 +15,7 @@ import {
   useThread,
   useThreadMutations,
 } from "@fabdesk/client-core";
-import { useCoreClient } from "@fabdesk/client-core";
+import { useCoreClient, type ThreadDetail } from "@fabdesk/client-core";
 import type { Message } from "@fabdesk/protocol";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -247,7 +247,9 @@ function ThreadScreenBody() {
                   error={run.error}
                   waiting={pendingCount(requests.pending) > 0}
                 />
-              ) : null}
+              ) : (
+                <RunEndedNote status={runEndedBadly(thread.data)} />
+              )}
             </>
           }
           onContentSizeChange={() => list.current?.scrollToEnd({ animated: false })}
@@ -386,6 +388,24 @@ function ThreadScreenBody() {
         </View>
       </KeyboardAvoidingView>
     </Screen>
+  );
+}
+
+/** The last run's status when it did not complete (the daemon marks a run failed when it restarts mid-run). */
+function runEndedBadly(thread: ThreadDetail | undefined): "failed" | "aborted" | null {
+  const status = thread?.run?.status;
+  return status === "failed" || status === "aborted" ? status : null;
+}
+
+function RunEndedNote({ status }: { status: "failed" | "aborted" | null }) {
+  const t = useTheme();
+  if (!status) return null;
+  return (
+    <Text style={{ color: t.muted, fontSize: 12, textAlign: "center", paddingVertical: 10 }}>
+      {status === "aborted"
+        ? "The run was stopped. Send a message to continue."
+        : "The run ended before it finished — the daemon restarted or the agent crashed. Send a message to pick up where it left off."}
+    </Text>
   );
 }
 
