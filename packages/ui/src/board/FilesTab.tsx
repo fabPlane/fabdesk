@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ProjectImage } from "../chat/ProjectImage";
 import { EmptyState, Spinner } from "../components/ui";
-import { useProject, useProjectText } from "../hooks/queries";
+import { useProject, useProjectText } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { cn, isImagePath } from "../util";
 

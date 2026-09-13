@@ -1,8 +1,8 @@
 import type { OrderVendorId } from "@fabdesk/protocol";
 import { useState } from "react";
 import { Button } from "../components/ui";
-import { useCore } from "../core/CoreProvider";
-import { useProjectOrder, useStartOrder } from "../hooks/queries";
+import { useCore } from "@fabdesk/client-core";
+import { useProjectOrder, useStartOrder } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { cn } from "../util";
 

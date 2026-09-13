@@ -1,8 +1,8 @@
 import type { OpenCatalogEntry } from "@fabdesk/protocol";
 import { useState } from "react";
 import { Input } from "../components/ui";
-import { useCoreClient } from "../core/CoreProvider";
-import { useOpenCatalog } from "../hooks/queries";
+import { useCoreClient } from "@fabdesk/client-core";
+import { useOpenCatalog } from "@fabdesk/client-core";
 import { CatalogThumb } from "../opensource/CatalogThumb";
 import { useUiStore } from "../stores/ui";
 import { cn } from "../util";

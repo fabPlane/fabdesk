@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
 import { Badge, Button, EmptyState, Spinner } from "../components/ui";
-import { useProjectJson } from "../hooks/queries";
+import { useProjectJson } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { cn } from "../util";
-import { useRunTool } from "./tools";
+import { useRunTool } from "@fabdesk/client-core";
 
 export interface ViolationItem {
   description: string;

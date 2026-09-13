@@ -4,7 +4,11 @@
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import type { ZodRawShapeCompat } from "@modelcontextprotocol/sdk/server/zod-compat.js";
+import { z } from "zod/v4";
 import { attachToRegistry, type ContextFactory, type ToolRegistry } from "@fabdesk/tools";
+import { PERMISSION_PROMPT_TOOL } from "@fabdesk/agents";
+import type { PermissionPromptResult } from "./agent-runs";
 import { logger, errMsg } from "./log";
 
 type Session = { id: string; server: McpServer; transport: WebStandardStreamableHTTPServerTransport; createdAt: number; lastSeen: number; token: string | null };
@@ -16,6 +20,22 @@ export type McpSessionOptions = {
   /** Hosts accepted in the `Host` header (DNS rebinding protection). Set after bind. */
   allowedHosts?: string[];
   idleMs?: number;
+  /**
+   * Serves the `permission_prompt` tool Claude Code's `--permission-prompt-tool` calls in
+   * supervised mode. Blocks until the daemon has a decision; absent, the tool is not registered.
+   */
+  permissionPrompt?: {
+    /** Only sessions opened with a supervised run's token see the tool; the model must not find it in full mode. */
+    enabledFor(token: string | null): boolean;
+    handle(token: string | null, req: { toolName: string; input: unknown; toolUseId?: string }): Promise<PermissionPromptResult>;
+  };
+};
+
+/** Claude Code sends `{ tool_name, input, tool_use_id }`; the schema is what makes it "an MCP tool" to the CLI. */
+const PERMISSION_PROMPT_INPUT = {
+  tool_name: z.string(),
+  input: z.unknown(),
+  tool_use_id: z.string().optional(),
 };
 
 export class McpSessionManager {
@@ -74,8 +94,41 @@ export class McpSessionManager {
       if (transport.sessionId) this.sessions.delete(transport.sessionId);
     };
     attachToRegistry(server, this.opts.registry, this.opts.ctxFactory);
+    const prompt = this.opts.permissionPrompt;
+    if (prompt && prompt.enabledFor(opts.token ?? null)) this.registerPermissionPrompt(server, (token, req) => prompt.handle(token, req));
     await server.connect(transport);
     return transport.handleRequest(req, opts.token ? { authInfo: { token: opts.token, clientId: "fabdesk", scopes: [] } } : {});
+  }
+
+  /**
+   * The reply has to be exactly one text block whose text is the JSON permission result; anything
+   * else the CLI treats as a deny. The run token in the call's bearer is what ties the prompt to a
+   * run, so the tool is registered per session but stateless.
+   */
+  private registerPermissionPrompt(server: McpServer, handler: NonNullable<McpSessionOptions["permissionPrompt"]>["handle"]): void {
+    server.registerTool(
+      PERMISSION_PROMPT_TOOL,
+      {
+        title: "Permission prompt",
+        description: "Internal: Claude Code asks the fabdesk daemon whether a tool call may run in supervised mode. Not for the model to call.",
+        inputSchema: PERMISSION_PROMPT_INPUT as unknown as ZodRawShapeCompat,
+        annotations: { title: "Permission prompt", readOnlyHint: true },
+      },
+      async (args: Record<string, unknown>, extra) => {
+        let result: PermissionPromptResult;
+        try {
+          result = await handler(extra.authInfo?.token ?? null, {
+            toolName: String(args["tool_name"] ?? ""),
+            input: args["input"],
+            ...(typeof args["tool_use_id"] === "string" ? { toolUseId: args["tool_use_id"] } : {}),
+          });
+        } catch (e) {
+          logger.warn("permission prompt failed", { error: errMsg(e) });
+          result = { behavior: "deny", message: `permission prompt failed: ${errMsg(e)}` };
+        }
+        return { content: [{ type: "text", text: JSON.stringify(result) }] };
+      },
+    );
   }
 
   async close(id: string): Promise<void> {

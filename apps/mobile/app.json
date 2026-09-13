@@ -1,0 +1,90 @@
+{
+  "expo": {
+    "name": "fabPlane",
+    "slug": "fabplane-mobile",
+    "scheme": "fabdesk",
+    "version": "0.1.0",
+    "owner": "voxly",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "enabled": false
+    },
+    "orientation": "default",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "experiments": {
+      "typedRoutes": false
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.fabplane.fabdesk",
+      "buildNumber": "1",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Scanning the pairing code shown by fabPlane on your computer.",
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true,
+          "NSAllowsLocalNetworking": true
+        },
+        "NSLocalNetworkUsageDescription": "Connecting to fabPlane running on your computer over your local network or tailnet."
+      },
+      "appleTeamId": "CMNZZ92926"
+    },
+    "android": {
+      "package": "com.fabplane.fabdesk",
+      "versionCode": 1,
+      "permissions": ["CAMERA"],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0c2726"
+      },
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Scanning the pairing code shown by fabPlane on your computer.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Attaching a photo to a chat so the agent can see it.",
+          "cameraPermission": "Taking a photo to attach to a chat so the agent can see it."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "defaultChannel": "runs",
+          "icon": "./assets/notification-icon.png",
+          "color": "#8bc37a"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {}
+    },
+    "icon": "./assets/icon.png"
+  }
+}

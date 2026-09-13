@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button, Spinner } from "../components/ui";
-import { useCoreClient } from "../core/CoreProvider";
-import { useOpenSourceProject, useRemixOpenSource } from "../hooks/queries";
+import { useCoreClient } from "@fabdesk/client-core";
+import { useOpenSourceProject, useRemixOpenSource } from "@fabdesk/client-core";
 import { CatalogThumb } from "./CatalogThumb";
 import { useUiStore } from "../stores/ui";
 

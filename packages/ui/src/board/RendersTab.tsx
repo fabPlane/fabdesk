@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { ProjectImage } from "../chat/ProjectImage";
 import { Button, Dialog, EmptyState, Spinner } from "../components/ui";
-import { useProject } from "../hooks/queries";
+import { useProject } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { basename, isImagePath } from "../util";
-import { useRunTool } from "./tools";
+import { useRunTool } from "@fabdesk/client-core";
 
 export function RendersTab() {
   const projectId = useUiStore((s) => s.activeProjectId);

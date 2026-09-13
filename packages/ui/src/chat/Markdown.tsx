@@ -1,11 +1,12 @@
 import { memo, useEffect, useState, type ComponentProps } from "react";
 import ReactMarkdown, { defaultUrlTransform, type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { useProject, useProjectBlobUrl } from "../hooks/queries";
+import { useProject } from "@fabdesk/client-core";
+import { useProjectBlobUrl } from "../hooks/queries";
 import { useUiStore } from "../stores/ui";
 import { basename, cn, isImagePath, projectRelativePath } from "../util";
 import { ProjectImage } from "./ProjectImage";
-import { useCore } from "../core/CoreProvider";
+import { useCore } from "@fabdesk/client-core";
 
 type Shiki = typeof import("shiki");
 let shikiPromise: Promise<Shiki> | null = null;

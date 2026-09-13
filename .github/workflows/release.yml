@@ -266,3 +266,67 @@ jobs:
         run: |
           test -n "$GH_TOKEN" || { echo "::error::Missing FABPLANE_RELEASE_DISPATCH_TOKEN (fabplane.com Actions write)"; exit 1; }
           gh workflow run desktop-release.yml --repo TensorFleet/fabplane.com --ref main -f tag="$RELEASE_TAG"
+
+  # The phone app rides the same version number (docs/mobile-release.md). It is stamped into
+  # apps/mobile/app.json by set-version.ts with derived build numbers, checked the way mobile.yml
+  # checks it, and — when EXPO_TOKEN exists — queued as an EAS preview build (internal
+  # distribution; store submission stays manual). Nothing here feeds the GitHub Release: EAS keeps
+  # the binaries, and the app carries no source maps (Sentry's build phases write them outside
+  # the bundle and delete them after upload; there is no `expo export --source-maps` anywhere).
+  mobile:
+    needs: version
+    runs-on: blacksmith-4vcpu-ubuntu-2204
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install
+        run: bun install --frozen-lockfile
+        working-directory: apps/mobile
+
+      - name: Stamp version ${{ needs.version.outputs.version }}
+        run: bun run scripts/set-version.ts ${{ needs.version.outputs.version }}
+
+      - name: Typecheck
+        run: bun run typecheck
+        working-directory: apps/mobile
+
+      - name: Test
+        run: bun run test
+        working-directory: apps/mobile
+
+      - name: Check for EXPO_TOKEN
+        id: gate
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::notice title=EAS build skipped::EXPO_TOKEN is not set; see docs/mobile-release.md."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.gate.outputs.run == 'true'
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      # Internal builds stay internal: only a public run queues a preview build. The stamped
+      # app.json is uncommitted, which EAS includes (eas.json has no requireCommit).
+      - if: steps.gate.outputs.run == 'true' && env.CHANNEL == 'public'
+        name: EAS build (preview, iOS + Android) ${{ needs.version.outputs.version }}
+        env:
+          EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
+        run: eas build --platform all --profile preview --non-interactive --no-wait
+        working-directory: apps/mobile
