@@ -8,7 +8,7 @@ import {
   handleCoreEvent,
   messagesKey,
   patchThreadCaches,
-  reconcileLiveRuns,
+  syncLiveRuns,
 } from "./events";
 
 const base: Message = {
@@ -300,9 +300,10 @@ describe("supervised mode events", () => {
   });
 });
 
-describe("reconcileLiveRuns", () => {
-  test("drops runs the daemon no longer reports as running and keeps the live ones", async () => {
+describe("syncLiveRuns", () => {
+  test("seeds runs the store never saw and ends the ones the daemon no longer has", async () => {
     const ended: string[] = [];
+    const started: string[] = [];
     const runs = {
       runsByThread: {
         th_dead: {
@@ -317,23 +318,43 @@ describe("reconcileLiveRuns", () => {
           agentId: "claude" as const,
           startedAt: 1,
         },
-        th_gone: {
-          runId: "run_gone",
-          threadId: "th_gone",
-          agentId: "claude" as const,
-          startedAt: 1,
-        },
       },
+      startRun: (r: { runId: string }) => started.push(r.runId),
       endRun: (id: string) => ended.push(id),
     };
     const client = {
-      getThread: async (id: string) => {
-        if (id === "th_gone") throw new Error("404");
-        return { id, running: id === "th_live" } as unknown as Thread;
-      },
+      liveRuns: async () => [
+        {
+          runId: "run_live",
+          threadId: "th_live",
+          agentId: "claude" as const,
+          startedAt: "2026-09-13T13:32:17.355Z",
+        },
+        {
+          runId: "run_new",
+          threadId: "th_new",
+          agentId: "codex" as const,
+          startedAt: "2026-09-13T13:40:00.000Z",
+        },
+      ],
     };
-    const dropped = await reconcileLiveRuns(client, runs);
-    expect(dropped).toEqual(["th_dead"]);
+    const changed = await syncLiveRuns(client, runs);
+    expect(changed.sort()).toEqual(["th_dead", "th_new"]);
     expect(ended).toEqual(["run_dead"]);
+    expect(started).toEqual(["run_new"]);
+  });
+
+  test("an older daemon without the route changes nothing", async () => {
+    const runs = { runsByThread: {}, startRun: () => {}, endRun: () => {} };
+    expect(
+      await syncLiveRuns(
+        {
+          liveRuns: async () => {
+            throw new Error("404");
+          },
+        },
+        runs,
+      ),
+    ).toEqual([]);
   });
 });

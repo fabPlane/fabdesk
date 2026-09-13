@@ -15,7 +15,10 @@ export type ProjectThreadGroup = {
  * project groups (A–Z), including remixed projects that have no threads yet.
  * Pinned threads are not repeated under a project.
  */
-export function groupThreadsByProject(threads: readonly Thread[], projects: readonly ProjectSummary[]): ProjectThreadGroup[] {
+export function groupThreadsByProject(
+  threads: readonly Thread[],
+  projects: readonly ProjectSummary[],
+): ProjectThreadGroup[] {
   const names = new Map(projects.map((p) => [p.id, p.name]));
   const byProject = new Map<string, Thread[]>();
   const pinned: Thread[] = [];
@@ -35,8 +38,22 @@ export function groupThreadsByProject(threads: readonly Thread[], projects: read
     byProject.set(thread.projectId, list);
   }
   const groups: ProjectThreadGroup[] = [];
-  if (pinned.length) groups.push({ key: "pinned", title: "Pinned", kind: "pinned", projectId: null, threads: pinned });
-  if (unassigned.length) groups.push({ key: "unassigned", title: "No project", kind: "unassigned", projectId: null, threads: unassigned });
+  if (pinned.length)
+    groups.push({
+      key: "pinned",
+      title: "Pinned",
+      kind: "pinned",
+      projectId: null,
+      threads: pinned,
+    });
+  if (unassigned.length)
+    groups.push({
+      key: "unassigned",
+      title: "No project",
+      kind: "unassigned",
+      projectId: null,
+      threads: unassigned,
+    });
   const projectIds = new Set([...byProject.keys(), ...projects.map((p) => p.id)]);
   groups.push(
     ...[...projectIds]

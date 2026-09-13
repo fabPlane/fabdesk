@@ -366,25 +366,34 @@ export function handleCoreEvent(event: CoreEvent, ctx: HandlerCtx): void {
 }
 
 /**
- * After the stream reopens, drop live runs the daemon no longer reports as running. A run that
- * ended while the client was disconnected (a daemon restart marks it failed at startup, before
- * anyone is listening) has no `agent.done` coming, so the Stop button would otherwise stay forever.
- * Returns the thread ids whose run was dropped.
+ * Brings the live-run store in line with the daemon after the stream (re)opens: runs in progress
+ * that the store never saw (the app started while the agent was already working, or the
+ * `agent.started` fell in a gap) are added, and runs the daemon no longer has are ended (a daemon
+ * restart marks them failed at startup, before anyone is listening, so no `agent.done` comes).
+ * Returns the thread ids whose state changed.
  */
-export async function reconcileLiveRuns(
-  client: Pick<CoreClient, "getThread">,
-  runs: Pick<RunsState, "runsByThread" | "endRun"> = useRunsStore.getState(),
+export async function syncLiveRuns(
+  client: Pick<CoreClient, "liveRuns">,
+  runs: Pick<RunsState, "runsByThread" | "startRun" | "endRun"> = useRunsStore.getState(),
 ): Promise<string[]> {
-  const dropped: string[] = [];
-  await Promise.all(
-    Object.values(runs.runsByThread).map(async (run) => {
-      const thread = (await client.getThread(run.threadId).catch(() => null)) as
-        | (Thread & { running?: boolean })
-        | null;
-      if (!thread || thread.running !== false) return;
-      runs.endRun(run.runId);
-      dropped.push(run.threadId);
-    }),
-  );
-  return dropped;
+  const live = await client.liveRuns().catch(() => null);
+  if (!live) return [];
+  const changed: string[] = [];
+  const liveByThread = new Map(live.map((r) => [r.threadId, r]));
+  for (const run of Object.values(runs.runsByThread)) {
+    if (liveByThread.get(run.threadId)?.runId === run.runId) continue;
+    runs.endRun(run.runId);
+    changed.push(run.threadId);
+  }
+  for (const r of live) {
+    if (runs.runsByThread[r.threadId]?.runId === r.runId) continue;
+    runs.startRun({
+      runId: r.runId,
+      threadId: r.threadId,
+      agentId: r.agentId,
+      startedAt: Date.parse(r.startedAt),
+    });
+    changed.push(r.threadId);
+  }
+  return changed;
 }

@@ -103,6 +103,11 @@ export class AgentRunManager {
     return this.active.size;
   }
 
+  /** The runs in progress right now, for a client that connects mid-run. */
+  live(): Array<{ runId: string; threadId: string }> {
+    return [...this.active.values()].map((r) => ({ runId: r.runId, threadId: r.threadId }));
+  }
+
   supportsSupervised(agentId: AgentId): boolean {
     return this.deps.adapters[agentId]?.supportsSupervised === true;
   }

@@ -10,7 +10,10 @@ export const TOOL_PATTERNS = {
   route: { preferred: "route_run", patterns: [/^route_run$/, /^route/, /route/] },
   drc: { preferred: "verify_drc", patterns: [/^verify_drc$/, /^kicad_drc$/, /drc/] },
   erc: { preferred: "verify_erc", patterns: [/^verify_erc$/, /^kicad_erc$/, /erc/] },
-  render: { preferred: "render_board", patterns: [/^render_board$/, /^kicad_render$/, /render(?!_glb)/] },
+  render: {
+    preferred: "render_board",
+    patterns: [/^render_board$/, /^kicad_render$/, /render(?!_glb)/],
+  },
   glb: { preferred: "render_glb", patterns: [/^render_glb$/, /glb/, /3d/] },
 } as const;
 export type ToolKind = keyof typeof TOOL_PATTERNS;
@@ -46,7 +49,9 @@ export function useRunTool() {
         const res = await client.callTool(name, args);
         if (res.jobId) {
           setState({ status: "running", jobId: res.jobId });
-          useRunsStore.getState().upsertJob({ jobId: res.jobId, kind: name, status: "running", startedAt: Date.now() });
+          useRunsStore
+            .getState()
+            .upsertJob({ jobId: res.jobId, kind: name, status: "running", startedAt: Date.now() });
           const job: Job = await client.waitJob(res.jobId);
           const next: ToolRunState =
             job.status === "done"
@@ -59,7 +64,10 @@ export function useRunTool() {
         setState(next);
         return next;
       } catch (e) {
-        const next: ToolRunState = { status: "failed", error: e instanceof Error ? e.message : String(e) };
+        const next: ToolRunState = {
+          status: "failed",
+          error: e instanceof Error ? e.message : String(e),
+        };
         setState(next);
         return next;
       }

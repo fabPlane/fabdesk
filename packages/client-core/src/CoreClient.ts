@@ -1,5 +1,6 @@
 /** Typed fetch wrapper over the fabdesk-core control API plus SSE subscription. */
 import type {
+  AgentId,
   AuthState,
   CoreEvent,
   Device,
@@ -26,6 +27,14 @@ import type {
   Thread,
   ToolManifestEntry,
 } from "@fabdesk/protocol";
+/** One row of `GET /runs/live`. */
+export interface LiveRunSummary {
+  runId: string;
+  threadId: string;
+  agentId: AgentId;
+  startedAt: string;
+}
+
 import { subscribeSse, type EventSourceFactory, type SseStatus, type SseSubscription } from "./sse";
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
@@ -247,6 +256,10 @@ export class CoreClient {
   }
   getThread(id: string): Promise<Thread> {
     return this.request(`/threads/${encodeURIComponent(id)}`);
+  }
+  /** Agent runs in progress right now (`GET /runs/live`), for seeding the live state after a (re)connect. */
+  liveRuns(): Promise<LiveRunSummary[]> {
+    return this.request("/runs/live");
   }
   createThread(input: CreateThreadInput): Promise<Thread> {
     return this.request("/threads", { method: "POST", json: input });
