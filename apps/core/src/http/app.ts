@@ -95,6 +95,8 @@ export type AppDeps = {
   listener: "local" | "remote";
   /** What the Tailscale CLI reports, for endpoint discovery. The shared provider when absent. */
   tailscale?: TailscaleProvider;
+  /** After a successful `PATCH /settings`, e.g. to push the portable slice to fabplane.com. */
+  onSettingsChanged?: (settings: Settings) => void;
 };
 
 export type Env = { Variables: { token?: string; principalSubject?: string } };
@@ -750,6 +752,11 @@ export function createApp(deps: AppDeps): Hono<Env> {
     await applyErrorReporting(next.errorReporting);
     // Remote access is a runtime toggle: the listener starts, stops or rebinds without a restart.
     if (body.remote !== undefined && deps.listener === "local") deps.remote.apply(next.remote);
+    try {
+      deps.onSettingsChanged?.(next);
+    } catch (e) {
+      logger.warn("onSettingsChanged failed", { error: errMsg(e) });
+    }
     return c.json(next);
   });
 

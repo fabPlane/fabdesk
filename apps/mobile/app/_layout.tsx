@@ -7,15 +7,19 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AppShell } from "@/layout/AppShell";
 import { NotificationTapHandler } from "@/notifications/NotificationTapHandler";
 import { Observability } from "@/observability";
+import { useAccount, watchPrefsForCloud } from "@/state/account";
 import { useConnections } from "@/transport/connections";
 import { useTheme } from "@/theme";
 
 export default function RootLayout() {
   const t = useTheme();
   const hydrate = useConnections((s) => s.hydrate);
+  const hydrateAccount = useAccount((s) => s.hydrate);
   useEffect(() => {
+    watchPrefsForCloud();
     void hydrate();
-  }, [hydrate]);
+    void hydrateAccount();
+  }, [hydrate, hydrateAccount]);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

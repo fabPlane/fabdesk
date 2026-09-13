@@ -23,6 +23,7 @@ import {
   type RelayEndpoint,
 } from "./relay";
 import { createAuth, type AuthFacade } from "./auth-facade";
+import { CloudSettingsSync } from "./cloud-settings";
 import { EventBus } from "./bus";
 import { resolveConfig, type CoreConfig } from "./config";
 import { locateAppBridgeFile } from "./app-bridge";
@@ -172,6 +173,19 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     for (const ev of events)
       if (ev.event.topic === "auth.state") setSentryUser(sentryUserFromAuth(ev.event.state));
   });
+  const cloudSettings = new CloudSettingsSync({
+    apiOrigin: config.apiOrigin,
+    token: () => auth.token(),
+    settings: store.settings,
+  });
+  if (auth.state().status === "signed_in") void cloudSettings.pull();
+  const unsubscribeCloud = bus.subscribe(["auth.state"], (events) => {
+    for (const ev of events) {
+      if (ev.event.topic === "auth.state" && ev.event.state.status === "signed_in") {
+        void cloudSettings.pull();
+      }
+    }
+  });
 
   const services: CoreServices =
     opts.services !== undefined
@@ -315,6 +329,9 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     agents: async () => (await import("@fabdesk/agents")).detectAgents(store.settings.get()),
     shutdown: (reason: string) => void daemon.close(reason),
     startedAt,
+    onSettingsChanged: () => {
+      void cloudSettings.push();
+    },
   };
   const app = createApp({ ...appDeps, listener: "local" });
   // A browser at fabplane.com pairs against the remote listener directly (docs/mobile.md, hosted
@@ -534,6 +551,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       if (watchdog) clearInterval(watchdog);
       unsubscribeAuth();
       unsubscribeAuthRelay();
+      unsubscribeCloud();
       relay.stop();
       notifier.stop();
       runs.abortAll();

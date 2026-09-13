@@ -57,6 +57,12 @@ an unpackaged dev build or the user presses the undocumented ⌘L / Ctrl+L revea
 on writes `.fabdesk-dev`, so the reveal works in packaged builds too. It is deliberately not listed in
 Settings › Shortcuts.
 
+Once signed in, portable settings (theme, default agent, runtime mode, error reporting,
+notification prefs) last-write-wins to `GET`/`PUT /v1/private/settings` on the account. Binary
+paths, remote access and keep-core-running stay on the machine. The phone has its own account
+session in Settings (appearance / haptics / keep-awake) against the same document. Device
+connectivity through that account is later work.
+
 ## Project on disk
 
 `~/fabdesk/<slug>/` — `fabdesk.json`, `circuit.netlist.json`, `board.kicad_pcb`, `board.kicad_pro`,
