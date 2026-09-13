@@ -14,6 +14,8 @@
  * On EAS the environment is the project's EAS environment variables, not the shell that ran
  * `eas build` (docs/mobile-release.md).
  */
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import type { ExpoConfig } from "expo/config";
 
 type ConfigContext = { config: Partial<ExpoConfig> };
@@ -52,8 +54,17 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   extra["sentryEnvironment"] =
     env("SENTRY_ENVIRONMENT") ?? env("EAS_BUILD_PROFILE") ?? "development";
 
+  // Firebase's client config for FCM push on Android. Only referenced when the file exists —
+  // Expo refuses to prebuild when `googleServicesFile` points at nothing — so a checkout
+  // without it still builds; push tokens on Android just stay unavailable until it is added.
+  const googleServices = "./google-services.json";
+  const android = { ...(config.android ?? {}) } as Record<string, unknown>;
+  if (existsSync(resolve(__dirname, googleServices)))
+    android["googleServicesFile"] = googleServices;
+
   return {
     ...config,
+    android,
     name: config.name ?? "fabPlane",
     slug: config.slug ?? "fabplane-mobile",
     plugins,

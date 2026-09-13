@@ -46,6 +46,59 @@ credentials, and a Sentry project. In order:
 6. **Enable the simulator E2E** when someone wants it on every PR: repository variable
    `MOBILE_E2E=1`. It is ~20 minutes of macOS runner per run, which is why it is opt-in.
 
+## Push credentials runbook (everything an agent could not do)
+
+Attempted 2026-09-13 overnight; each step below stopped on a credential only a person holds.
+State found: `eas whoami` → not logged in; expo.dev not signed in in Chrome; APNs key
+`~/Downloads/AuthKey_4D823P5T3R.p8` present; no FCM service-account JSON and no
+`google-services.json` on this Mac; Tailscale SSH to the staging host is in check mode
+(`root@`/`deploy@fabplane-staging.tail4f6a7.ts.net` answer with a `login.tailscale.com/a/…`
+approval link). In order, ~15 minutes:
+
+1. **Link the Expo project** (writes `extra.eas.projectId` into `app.json`; commit it):
+   ```bash
+   cd apps/mobile
+   bunx eas-cli@latest login            # Voxly team
+   bunx eas-cli@latest init --account voxly
+   git commit -am "mobile: EAS project id" && git push
+   ```
+   If the Expo account slug is not `voxly`, `eas init` says so — change `owner` in `app.json`.
+2. **APNs key** — `bunx eas-cli@latest credentials --platform ios`, choose the app
+   `com.fabplane.fabdesk`, then _Push Notifications: Manage your Apple Push Notifications Key_
+   → _Upload_: path `~/Downloads/AuthKey_4D823P5T3R.p8`, Key ID `4D823P5T3R`, Team ID
+   `CMNZZ92926`.
+3. **FCM** — download the Firebase project's service-account JSON (Project settings → Service
+   accounts → Generate new private key) and `bunx eas-cli@latest credentials --platform android`
+   → _Push Notifications (FCM V1)_ → upload it. Also download `google-services.json` (Project
+   settings → Your apps → the Android app `com.tensorfleet.fabdesk.mobile`) into `apps/mobile/`;
+   `app.config.ts` references it automatically when the file exists, and it may be committed
+   (client config, not a secret). The service-account JSON must **not** be committed.
+4. **Expo access tokens** — https://expo.dev/settings/access-tokens, one named `fabplane-staging`,
+   one `fabplane-production`. Secrets.
+5. **Install on the API hosts** (the backend reads `EXPO_ACCESS_TOKEN`; `EXPO_TOKEN` is only for
+   the EAS CLI). Tailscale SSH will show a check-mode link the first time — approve it in the
+   browser, then:
+   ```bash
+   ssh root@fabplane-staging.tail4f6a7.ts.net
+   echo 'EXPO_ACCESS_TOKEN=<staging token>' >> /opt/fabplane-staging/.env
+   # recreate the API container so it re-reads the env (compose: `docker compose up -d --force-recreate api`)
+   ```
+   and the same on production with `/etc/fabplane/production.env` — after staging is verified,
+   per `AGENTS.md`.
+6. **Verify** — on the backend checkout, `bun run push:selftest` (their script; not in this
+   repo's `vendor/fabplane` pin) should go from `ProviderNotConfigured` to an accepted request
+   with the dummy token rejected as `DeviceNotRegistered`. Then from this repo, the daemon test
+   used overnight: log a daemon in against staging and finish a run — its log should show
+   `push sent {count:1, ok:1}`:
+   ```bash
+   FABDESK_HOME=/tmp/fab-staging FABPLANE_API_ORIGIN=http://fabplane-staging.tail4f6a7.ts.net:4000 \
+     bun run --cwd apps/core src/main.ts login --email maya --password fabplane-dev
+   FABDESK_HOME=/tmp/fab-staging FABPLANE_API_ORIGIN=http://fabplane-staging.tail4f6a7.ts.net:4000 \
+     FABDESK_TOKEN=dev-token-0123456789 bun run --cwd apps/core src/main.ts serve --port 47810
+   ```
+   pair a phone (a real one, built after step 1 so it has a push token), send a message, background
+   the app for a minute, and the notification should arrive through APNs rather than locally.
+
 ## Versions and build numbers
 
 `scripts/set-version.ts <version>` (run by `release.yml`) stamps `expo.version` in
