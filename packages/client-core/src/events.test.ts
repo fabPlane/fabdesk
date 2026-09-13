@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { Message, Thread } from "@fabdesk/protocol";
 import { QueryClient } from "@tanstack/react-query";
 import type { CoreClient } from "./CoreClient";
+import { useRunsStore } from "./stores/runs";
 import {
   appendDelta,
   appendPart,
@@ -356,5 +357,50 @@ describe("syncLiveRuns", () => {
         runs,
       ),
     ).toEqual([]);
+  });
+});
+
+describe("patchMessages on an unseen thread", () => {
+  test("a delta for a thread with no cached messages seeds the cache and schedules a fetch", () => {
+    const qc = new QueryClient();
+    const spy: unknown[] = [];
+    const original = qc.invalidateQueries.bind(qc);
+    qc.invalidateQueries = ((opts: unknown) => {
+      spy.push(opts);
+      return original(opts as never);
+    }) as typeof qc.invalidateQueries;
+    useRunsStore
+      .getState()
+      .startRun({ runId: "run_seed", threadId: "th_seed", agentId: "claude", startedAt: 1 });
+    handleCoreEvent(
+      {
+        ts: 1,
+        topic: "agent.delta",
+        runId: "run_seed",
+        messageId: "msg_seed",
+        part: "text",
+        delta: "hi",
+      } as never,
+      { qc, client: {} as never },
+    );
+    expect(qc.getQueryData<Message[]>(messagesKey("th_seed"))?.map((m) => m.id)).toEqual([
+      "msg_seed",
+    ]);
+    expect(spy).toContainEqual({ queryKey: messagesKey("th_seed") });
+    // A second delta on the now-cached thread does not fetch again.
+    handleCoreEvent(
+      {
+        ts: 2,
+        topic: "agent.delta",
+        runId: "run_seed",
+        messageId: "msg_seed",
+        part: "text",
+        delta: "!",
+      } as never,
+      { qc, client: {} as never },
+    );
+    expect(
+      spy.filter((o) => JSON.stringify(o) === JSON.stringify({ queryKey: messagesKey("th_seed") })),
+    ).toHaveLength(1);
   });
 });

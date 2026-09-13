@@ -45,7 +45,13 @@ export function messagesKey(threadId: string) {
 }
 
 function patchMessages(qc: QueryClient, threadId: string, fn: (msgs: Message[]) => Message[]) {
-  qc.setQueryData<Message[]>(messagesKey(threadId), (old) => fn(old ?? []));
+  const key = messagesKey(threadId);
+  const had = qc.getQueryData<Message[]>(key) !== undefined;
+  qc.setQueryData<Message[]>(key, (old) => fn(old ?? []));
+  // Seeding a thread this client had never fetched (the other device just started it) leaves the
+  // cache with only the streamed assistant message and marks the query fresh, so the user's own
+  // message never appeared. Fetch the rest once.
+  if (!had) void qc.invalidateQueries({ queryKey: key });
 }
 
 function ensureMessage(
