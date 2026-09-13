@@ -29,7 +29,7 @@ export const composerHandlers: {
 export interface ComposerProps {
   thread: Thread | null;
   /** Creates a thread for a first message; returns the new thread id. */
-  onCreateThread: (input: { title: string; agentId: AgentId; model?: string }) => Promise<string>;
+  onCreateThread: (input: { agentId: AgentId; model?: string }) => Promise<string>;
 }
 
 const FALLBACK_AGENTS = [
@@ -104,7 +104,8 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
     try {
       let threadId = thread?.id;
       if (!threadId) {
-        threadId = await onCreateThread({ title: content.slice(0, 60), agentId, ...(model ? { model } : {}) });
+        // No title: the daemon names the thread after this first message (and tells every client).
+        threadId = await onCreateThread({ agentId, ...(model ? { model } : {}) });
       }
       await client.sendMessage(threadId, {
         content,
