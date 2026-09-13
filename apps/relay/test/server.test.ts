@@ -1,101 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { RateLimiter } from "../src/rate-limit";
-import {
-  CLOSE_CORE_OFFLINE,
-  CLOSE_REPLACED,
-  startRelay,
-  type FetchLike,
-  type RelayServer,
-} from "../src/server";
-import type { DaemonToRelay, RelayToDaemon } from "../src/protocol";
-
-const CORE = "core_abcdefghijkl";
-const API = "https://api.example.test";
-const SESSIONS: Record<string, string> = { "sess-maya": "user_maya", "sess-jo": "user_jo" };
-
-/** Fake `GET /v1/auth/me`: a known bearer maps to a subject, anything else is 401. */
-const fakeAuth: FetchLike = async (url, init) => {
-  expect(url).toBe(`${API}/v1/auth/me`);
-  const bearer = new Headers(init?.headers).get("authorization")?.replace(/^Bearer /, "");
-  const subject = bearer ? SESSIONS[bearer] : undefined;
-  if (!subject) return new Response(JSON.stringify({ user: null }), { status: 401 });
-  return new Response(JSON.stringify({ user: { subject } }), {
-    headers: { "content-type": "application/json" },
-  });
-};
-
-/** A fake daemon: answers `open` frames from a table and echoes `ws-msg`. */
-class FakeDaemon {
-  ws!: WebSocket;
-  frames: RelayToDaemon[] = [];
-  closeCode: number | null = null;
-  private closeWaiters: Array<(code: number) => void> = [];
-  private waiters: Array<(f: RelayToDaemon) => void> = [];
-
-  constructor(
-    readonly relay: RelayServer,
-    readonly bearer: string,
-    readonly coreId = CORE,
-  ) {}
-
-  connect(): Promise<{ ok: boolean; status?: number }> {
-    return new Promise((resolve) => {
-      this.ws = new WebSocket(`${this.relay.url.replace("http", "ws")}/d?coreId=${this.coreId}`, {
-        headers: { authorization: `Bearer ${this.bearer}` },
-      } as never);
-      this.ws.onopen = () => resolve({ ok: true });
-      this.ws.onerror = () => resolve({ ok: false });
-      this.ws.onclose = (ev) => {
-        this.closeCode = ev.code;
-        for (const w of this.closeWaiters.splice(0)) w(ev.code);
-        resolve({ ok: false, status: ev.code });
-      };
-      this.ws.onmessage = (ev) => {
-        const frame = JSON.parse(String(ev.data)) as RelayToDaemon;
-        this.frames.push(frame);
-        const w = this.waiters.shift();
-        if (w) w(frame);
-      };
-    });
-  }
-
-  closed(): Promise<number> {
-    if (this.closeCode !== null) return Promise.resolve(this.closeCode);
-    return new Promise((resolve) => this.closeWaiters.push(resolve));
-  }
-
-  next(): Promise<RelayToDaemon> {
-    const queued = this.frames.shift();
-    if (queued) return Promise.resolve(queued);
-    return new Promise((resolve) => this.waiters.push((f) => resolve(this.frames.shift() ?? f)));
-  }
-
-  send(frame: DaemonToRelay) {
-    this.ws.send(JSON.stringify(frame));
-  }
-
-  /** Serves one `open` with a canned answer. */
-  async answer(status: number, body: unknown, headers: Record<string, string> = {}) {
-    const f = await this.next();
-    if (f.t !== "open") throw new Error(`expected open, got ${f.t}`);
-    this.send({
-      t: "resp",
-      sid: f.sid,
-      status,
-      headers: { "content-type": "application/json", ...headers },
-      body: JSON.stringify(body),
-      bodyEncoding: "utf8",
-    });
-    return f;
-  }
-}
+import { CLOSE_CORE_OFFLINE, CLOSE_REPLACED, startRelay, type RelayServer } from "../src/server";
+import { API, CORE, FakeDaemon, fakeAuth, waitForClosed } from "./helpers";
 
 let relay: RelayServer;
-const waitForClosed = (ws: WebSocket) =>
-  new Promise<number>((resolve) => {
-    if (ws.readyState === WebSocket.CLOSED) resolve(-1);
-    ws.addEventListener("close", (ev) => resolve(ev.code));
-  });
 
 beforeAll(() => {
   relay = startRelay({
@@ -104,6 +12,7 @@ beforeAll(() => {
     fetch: fakeAuth,
     rateLimit: false,
     requestTimeoutMs: 500,
+    log: () => {},
   });
 });
 afterAll(() => relay.stop());
@@ -202,6 +111,7 @@ describe("client side", () => {
       rateLimit: false,
       maxBodyBytes: 16,
       requestTimeoutMs: 100,
+      log: () => {},
     });
     try {
       const daemon = new FakeDaemon(small, "sess-maya");
@@ -281,6 +191,7 @@ describe("client side", () => {
       apiOrigin: API,
       fetch: fakeAuth,
       rateLimit: { capacity: 2, perSecond: 0.001 },
+      log: () => {},
     });
     try {
       const statuses = [];
