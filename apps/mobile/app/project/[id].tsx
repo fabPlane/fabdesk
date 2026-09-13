@@ -181,7 +181,7 @@ function ProjectScreenBody() {
             <Text style={{ color: t.muted, fontSize: 13 }}>
               {board
                 ? "No render yet."
-                : "Nothing built yet — run circuit_build on the desktop first."}
+                : "Nothing built yet — ask the agent in a chat to build the board."}
             </Text>
           )}
 
