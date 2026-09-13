@@ -75,6 +75,25 @@ backend need:
    returns `push.tokenKind`), send a message, background the app for a minute, and the
    notification should arrive through APNs/FCM rather than locally.
 
+## Permissions the store sees
+
+Android's merged manifest is what Play's reviewer reads, and library defaults pull in more than
+the app uses. `android.blockedPermissions` in `app.json` removes `RECORD_AUDIO` (expo-camera,
+also turned off with `recordAudioAndroid: false`), `SYSTEM_ALERT_WINDOW`, the legacy
+`READ/WRITE_EXTERNAL_STORAGE`, and `USE_BIOMETRIC`/`USE_FINGERPRINT` (expo-secure-store; the
+app never asks for biometrics). What remains, all explainable: `CAMERA` (pairing QR),
+`INTERNET`, `POST_NOTIFICATIONS`, `VIBRATE` (haptics), `WAKE_LOCK` (keep-awake during a run),
+`ACCESS_NETWORK_STATE`/`ACCESS_WIFI_STATE` (reconnect on network change), and the notification
+badge/boot permissions expo-notifications declares. Check after any plugin change:
+
+```bash
+cd apps/mobile/android && ./gradlew :app:processReleaseMainManifest -q
+grep -o 'uses-permission android:name="android[^"]*"' app/build/intermediates/merged_manifest/release/processReleaseMainManifest/AndroidManifest.xml
+```
+
+iOS: `expo-camera`'s `microphonePermission: false` drops `NSMicrophoneUsageDescription`, so the
+Info.plist carries camera, photo library (attachments) and local-network strings only.
+
 ## Versions and build numbers
 
 `scripts/set-version.ts <version>` (run by `release.yml`) stamps `expo.version` in
