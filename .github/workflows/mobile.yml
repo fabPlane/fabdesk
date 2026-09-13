@@ -40,10 +40,11 @@ jobs:
         with:
           node-version: 22
 
-      # The app aliases @fabdesk/client-core and @fabdesk/protocol to their source, and Bun
-      # resolves *their* imports (zod, react-query, the protocol workspace link) from the root
+      # The app aliases @fabdesk/client-core and @fabdesk/protocol to their source, and tsc and
+      # Bun resolve *their* imports (zod, react-query, the protocol workspace link) from the root
       # node_modules — so the root install is needed too, and that needs the submodule
-      # workspaces present, exactly like ci.yml.
+      # workspaces present, exactly like ci.yml. (Not tsconfig `paths`: Expo hands those to
+      # Metro, and a path to @types/react breaks the bundle.)
       - uses: webfactory/ssh-agent@v0.9.1
         with:
           ssh-private-key: ${{ secrets.FABDESK_SUBMODULE_SSH_KEY }}
