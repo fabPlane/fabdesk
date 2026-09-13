@@ -51,7 +51,7 @@ import {
   messageContent,
   toMessageAttachments,
 } from "@/lib/attachments";
-import { formatDuration } from "@/lib/format";
+import { formatDuration, runAnchor } from "@/lib/format";
 import { pendingCount } from "@/lib/pending-requests";
 import { composerAction, queuedMessages } from "@/lib/queued-messages";
 import { useKeyboardShortcut } from "@/layout/keyboard";
@@ -403,11 +403,17 @@ function RunBanner({
 }) {
   const t = useTheme();
   const [now, setNow] = useState(Date.now());
+  // The daemon stamps `startedAt` with its own clock; a phone whose clock runs behind would count
+  // from a moment in its future, so a start we have not reached yet is measured from first sight.
+  const [firstSeen] = useState(Date.now());
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
-  const elapsed = useMemo(() => formatDuration(now - startedAt), [now, startedAt]);
+  const elapsed = useMemo(
+    () => formatDuration(now - runAnchor(startedAt, firstSeen)),
+    [now, startedAt, firstSeen],
+  );
 
   if (error) {
     return (
