@@ -3,7 +3,7 @@
  * for listing/lookup. Emits `project.changed` from a debounced recursive fs.watch.
  */
 import { watch, type FSWatcher } from "node:fs";
-import { mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, stat } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 import { spawn } from "node:child_process";
 import { ProjectManifest, type CoreEvent, type FileEntry, type ProjectDetail, type ProjectSummary } from "@fabdesk/protocol";
@@ -31,6 +31,9 @@ export function slugify(name: string): string {
     .slice(0, 48);
   return s || "project";
 }
+
+/** Where a forgotten (deleted without purge) project's manifest goes so the directory is not re-adopted. */
+export const FORGOTTEN_MANIFEST = "fabdesk.json.forgotten";
 
 export class ProjectStore implements ProjectResolver {
   private readonly handles = new Map<string, ProjectHandle>();
@@ -188,6 +191,9 @@ export class ProjectStore implements ProjectResolver {
     this.handles.delete(id);
     this.repo.delete(id);
     if (opts.purge) await rm(row.path, { recursive: true, force: true });
+    // Forgetting keeps the files but must survive a restart: `init` re-adopts every directory with a
+    // manifest, so the manifest is set aside (restore it to bring the project back).
+    else await rename(join(row.path, PROJECT_FILES.manifest), join(row.path, FORGOTTEN_MANIFEST)).catch(() => undefined);
     return true;
   }
 
