@@ -100,7 +100,7 @@ describe("AccountSession", () => {
       apiOrigin: ORIGIN,
       store,
       sleep: async () => {},
-      fetchImpl: (async (input: string | URL | Request, init?: RequestInit) => {
+      fetchImpl: (async (input: string | URL | Request) => {
         const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
         const path = new URL(url).pathname;
         if (path === "/v1/auth/device/code") {
