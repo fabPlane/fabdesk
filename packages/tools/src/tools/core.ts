@@ -189,7 +189,7 @@ export const circuit_place = defineTool({
   toolset: "core",
   title: "Place footprints",
   description:
-    "Move footprints on the built board: each entry is a reference with its new origin in mm (KiCad board coordinates, origin top-left of the outline, y downwards) and an optional rotation in degrees. Use it when the autoplacer left parts off the board or in a corner (DRC copper_edge_clearance / courtyards_overlap), or to put connectors on an edge before route_run. Tracks are not moved: unroute affected nets and route again afterwards. Rebuilding keeps placements.",
+    "Move footprints on the built board: each entry is a reference with its new origin in mm in KiCad board coordinates (y downwards; the outline's corner is NOT at 0,0 — read it with circuit_query select=outline first) and an optional rotation in degrees. Use it when the autoplacer left parts off the board or in a corner (DRC copper_edge_clearance / courtyards_overlap), or to put connectors on an edge before route_run. Tracks are not moved: unroute affected nets and route again afterwards. Rebuilding keeps placements.",
   inputSchema: {
     placements: z
       .array(

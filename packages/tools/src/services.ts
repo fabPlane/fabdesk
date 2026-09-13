@@ -37,7 +37,7 @@ export type BuildResult = {
   revision?: number;
 };
 
-export type DesignSelect = "components" | "nets" | "pads" | "vias" | "tracks" | "unrouted";
+export type DesignSelect = "components" | "nets" | "pads" | "vias" | "tracks" | "unrouted" | "outline";
 export type DesignRow = Record<string, unknown>;
 
 export type RouteJobOptions = {

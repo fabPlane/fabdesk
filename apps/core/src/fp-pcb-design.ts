@@ -7,7 +7,7 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { KiCadObjectType } from "@fp-pcb/proto";
+import { BoardLayer, KiCadObjectType } from "@fp-pcb/proto";
 import { Via, toMm, type Board, type KiCad } from "@fp-pcb/client";
 import { placeFootprints } from "@fabdesk/kicad";
 import type { FpPcbCompileJob, FpPcbDiagnostic, FpPcbRouteJob } from "@fabdesk/protocol";
@@ -179,6 +179,38 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
           .includes(f),
       );
     switch (select) {
+      case "outline": {
+        // Edge.Cuts bounding box, so placements can be reasoned about in the board's own coordinates
+        // (the compile does not put the outline's corner at 0,0).
+        const pt = (v: { xNm?: bigint | number; yNm?: bigint | number } | undefined) => ({
+          x: Number(v?.xNm ?? 0),
+          y: Number(v?.yNm ?? 0),
+        });
+        const pts: Array<{ x: number; y: number }> = [];
+        for (const s of await board.getShapes()) {
+          if (s.layerId !== BoardLayer.BL_Edge_Cuts) continue;
+          const g = s.shape?.geometry;
+          if (g?.case === "segment") pts.push(pt(g.value.start), pt(g.value.end));
+          else if (g?.case === "arc") pts.push(pt(g.value.start), pt(g.value.mid), pt(g.value.end));
+          else if (g?.case === "rectangle") pts.push(pt(g.value.topLeft), pt(g.value.bottomRight));
+          else if (g?.case === "circle") {
+            const c = pt(g.value.center);
+            const r = pt(g.value.radiusPoint);
+            const rad = Math.hypot(r.x - c.x, r.y - c.y);
+            pts.push({ x: c.x - rad, y: c.y - rad }, { x: c.x + rad, y: c.y + rad });
+          }
+        }
+        if (!pts.length) return [];
+        const xs = pts.map((p) => p.x);
+        const ys = pts.map((p) => p.y);
+        const minX = Math.min(...xs);
+        const maxX = Math.max(...xs);
+        const minY = Math.min(...ys);
+        const maxY = Math.max(...ys);
+        return [
+          { minX: mm(minX), minY: mm(minY), maxX: mm(maxX), maxY: mm(maxY), widthMm: mm(maxX - minX), heightMm: mm(maxY - minY) },
+        ];
+      }
       case "components": {
         return (await board.getFootprints())
           .map((fp) => ({
