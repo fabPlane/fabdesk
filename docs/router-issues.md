@@ -107,6 +107,17 @@ solver gives up after the retry loop with nothing routed. Boards of this class a
 autorouter is supposed to eat; the capacity mesh appears to fragment on long parallel bundles and
 on large empty areas. Reproduce with the two cases above.
 
+### R8 — a stuck solve takes the whole bridge down
+
+Board 10 (`genesis-flash-cart`, 2 × PLCC-32 + SOIC-28 + 2 logic ICs + 2×32 header, 90 × 60 mm):
+the second `route_run` never returned. The bridge process sat at 97 % CPU for 14 minutes,
+`GET /health` timed out, every tool in every other project failed with "FabPlane PCB bridge
+unreachable", the route job never logged `done`/`failed` (its own 10-minute `maxTimeMs` did not
+fire) and the process ignored SIGTERM — only SIGKILL ended it. The solver runs on the bridge's
+event loop and its `step()` can apparently run for minutes without yielding, so the deadline
+check, cancellation and HTTP all starve. The router needs to run in a Worker (or a child
+process) with a hard kill on the deadline, whatever else changes.
+
 ### R4 — hole clearance on the connector's own pegs
 
 `Hole clearance violation (0.2500 mm; actual 0.1944 mm) — Pad A1 [GND] of J1 | NPTH pad of J1`.
