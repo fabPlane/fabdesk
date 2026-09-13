@@ -39,6 +39,114 @@ const DEFAULT_SETTING: RemoteSetting = {
   port: REMOTE_DEFAULT_PORT,
 };
 
+/**
+ * The relay fields as newer daemons send them, read leniently: `Settings.remote.relay` (the
+ * on/off switch, default `auto`) and `since`/`lastError` on `RemoteStatus.relay` are newer than
+ * the protocol package this UI is built against, so they are feature-detected rather than typed.
+ */
+export type RelaySwitch = "auto" | "off";
+export interface RelayStatusLike {
+  connected: boolean;
+  url: string;
+  /** ISO time the link came up, when connected. */
+  since?: string | undefined;
+  /** Why it is not up right now. */
+  error?: string | undefined;
+  /** The last failure before the current attempt. */
+  lastError?: string | undefined;
+}
+type RemoteSettingLike = RemoteSetting & { relay?: RelaySwitch | undefined };
+
+export type RelayState = "connected" | "connecting" | "off" | "unsupported";
+
+export interface RelayPresentation {
+  state: RelayState;
+  /** "Relay via fabplane.com" — the host the daemon dials, shortened for fabplane's own. */
+  title: string;
+  detail: string;
+  /** What the button does, or null when the daemon has no switch to flip. */
+  action: { label: string; next: RelaySwitch } | null;
+}
+
+/** `relay.fabplane.com` and `relay-staging.fabplane.com` both read "fabplane.com"; anything else by host. */
+export function relayHostLabel(url: string | null | undefined): string {
+  if (!url) return "fabplane.com";
+  const m = /^(?:wss?|https?):\/\/(?:\[([^\]]+)\]|([^/:?#[\]]+))/i.exec(url.trim());
+  const host = (m?.[1] ?? m?.[2] ?? url).toLowerCase();
+  return host === "fabplane.com" || host.endsWith(".fabplane.com") ? "fabplane.com" : host;
+}
+
+/** "3m", "2h 10m", "3d" — how long the link has been up. */
+export function durationLabel(ms: number): string {
+  if (ms < 60_000) return "<1m";
+  const m = Math.floor(ms / 60_000);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return m % 60 ? `${h}h ${m % 60}m` : `${h}h`;
+  return `${Math.floor(h / 24)}d`;
+}
+
+/**
+ * What the relay row shows. `relay` is `RemoteStatus.relay` as received: `undefined` from a
+ * daemon that predates the link, `null` when the daemon has no relay configured, an object
+ * otherwise. `setting.relay` is the switch when the daemon has one; without it the only switch
+ * older daemons know is a `relayUrl`, which the override field below covers.
+ */
+export function relayPresentation(
+  relay: RelayStatusLike | null | undefined,
+  setting: Pick<RemoteSettingLike, "relay" | "relayUrl">,
+  now = Date.now(),
+): RelayPresentation {
+  const hasSwitch = setting.relay !== undefined;
+  const title = `Relay via ${relayHostLabel(relay?.url ?? setting.relayUrl)}`;
+  const turnOff = { label: "Turn off", next: "off" as const };
+  const turnOn = { label: "Turn on", next: "auto" as const };
+  if (relay === undefined) {
+    return {
+      state: "unsupported",
+      title,
+      detail:
+        "This fabPlane daemon predates the relay. Update it to reach this computer from outside the tailnet.",
+      action: null,
+    };
+  }
+  if (setting.relay === "off") {
+    return {
+      state: "off",
+      title,
+      detail: "Off. Phones reach this computer only on the tailnet or LAN.",
+      action: turnOn,
+    };
+  }
+  if (relay === null) {
+    return {
+      state: hasSwitch ? "connecting" : "off",
+      title,
+      detail: hasSwitch
+        ? "Waiting for a fabplane.com sign-in with remote access on."
+        : "Not configured. Set a relay URL below, or update the daemon to use fabplane.com's by default.",
+      action: hasSwitch ? turnOff : null,
+    };
+  }
+  if (relay.connected) {
+    const sinceMs = relay.since ? now - Date.parse(relay.since) : Number.NaN;
+    const up = Number.isFinite(sinceMs) && sinceMs >= 0 ? ` · up ${durationLabel(sinceMs)}` : "";
+    return {
+      state: "connected",
+      title,
+      detail: `Phones can reach this computer from anywhere${up}.`,
+      action: hasSwitch ? turnOff : null,
+    };
+  }
+  const why = relay.error ?? relay.lastError;
+  return {
+    state: "connecting",
+    title,
+    detail: why ? `Not connected · ${why}` : "Connecting…",
+    action: hasSwitch ? turnOff : null,
+  };
+}
+
 /** The MagicDNS name when the daemon knows one (the IP stays in the tooltip); `https://name` for a served endpoint. */
 export function endpointLabel(e: CoreEndpoint): string {
   if (endpointScheme(e) === "https") return endpointBaseUrl(e);
@@ -101,14 +209,15 @@ export function RemoteSection() {
   const [pairing, setPairing] = useState<PairStartResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const setting = settings.data?.remote ?? DEFAULT_SETTING;
+  // The daemon's settings parser strips `relay` where it predates the switch; sending it is harmless.
+  const setting: RemoteSettingLike = settings.data?.remote ?? DEFAULT_SETTING;
   const [port, setPort] = useState(String(setting.port));
   useEffect(() => setPort(String(setting.port)), [setting.port]);
   // `remoteState()` predates the `endpoints` field; the daemon has sent it since endpoint kinds landed.
   const status = remote.data as RemoteStatus | undefined;
   const endpoints = useMemo(() => status?.endpoints ?? [], [status?.endpoints]);
 
-  const applyRemote = (next: Partial<RemoteSetting>) => {
+  const applyRemote = (next: Partial<RemoteSettingLike>) => {
     setError(null);
     patch.mutate(
       { remote: { ...setting, ...next } },
@@ -216,29 +325,13 @@ export function RemoteSection() {
             }}
           />
         </label>
-        <label className="grid grid-cols-[180px_1fr] items-center gap-3 py-1.5 text-xs">
-          <span>
-            <span className="font-medium">Relay</span>
-            <span className="block text-[11px] text-muted">
-              {status?.relay
-                ? status.relay.connected
-                  ? "Connected — phones can reach this computer from anywhere"
-                  : `Not connected${status.relay.error ? ` · ${status.relay.error}` : ""}`
-                : "Optional: a relay this computer dials out to (needs a fabplane.com sign-in)"}
-            </span>
-          </span>
-          <input
-            type="url"
-            className="rounded border border-border bg-bg px-2 py-1 text-xs"
-            placeholder="https://relay.fabplane.com"
-            defaultValue={setting.relayUrl ?? ""}
-            disabled={patch.isPending}
-            onBlur={(e) => {
-              const next = e.target.value.trim() || null;
-              if (next !== (setting.relayUrl ?? null)) applyRemote({ relayUrl: next });
-            }}
-          />
-        </label>
+        <RelayRow
+          relay={status?.relay as RelayStatusLike | null | undefined}
+          setting={setting}
+          pending={patch.isPending || remote.isLoading}
+          onSwitch={(relay) => applyRemote({ relay })}
+          onOverride={(relayUrl) => applyRemote({ relayUrl })}
+        />
         <label className="grid grid-cols-[180px_1fr] items-center gap-3 py-1.5 text-xs">
           <span>
             <span className="font-medium">Preferred address</span>
@@ -335,6 +428,92 @@ export function RemoteSection() {
       </div>
 
       {pairing && <PairingDialog pairing={pairing} setting={setting} onClose={closePairing} />}
+    </div>
+  );
+}
+
+/**
+ * The relay link: the daemon dials out to fabplane.com's relay so a phone off the tailnet still
+ * reaches it. On by default once signed in; the button flips `remote.relay`. The URL override
+ * is for a self-hosted or staging relay and stays folded away unless one is set.
+ */
+function RelayRow({
+  relay,
+  setting,
+  pending,
+  onSwitch,
+  onOverride,
+}: {
+  relay: RelayStatusLike | null | undefined;
+  setting: RemoteSettingLike;
+  pending: boolean;
+  onSwitch: (next: RelaySwitch) => void;
+  onOverride: (url: string | null) => void;
+}) {
+  const p = relayPresentation(relay, setting);
+  const [showOverride, setShowOverride] = useState(Boolean(setting.relayUrl));
+  useEffect(() => {
+    if (setting.relayUrl) setShowOverride(true);
+  }, [setting.relayUrl]);
+  const badge =
+    p.state === "connected" ? (
+      <Badge tone="success">connected</Badge>
+    ) : p.state === "connecting" ? (
+      <Badge tone="warning">connecting</Badge>
+    ) : (
+      <Badge>off</Badge>
+    );
+  return (
+    <div className="py-1.5 text-xs" data-relay-state={p.state}>
+      <div className="grid grid-cols-[180px_1fr] items-center gap-3">
+        <span>
+          <span className="font-medium">{p.title}</span>
+          <span className="block text-[11px] text-muted">
+            This computer dials out; no port to open
+          </span>
+        </span>
+        <span className="flex items-center gap-2">
+          {badge}
+          <span className="flex-1 text-[11px] text-muted" title={relay?.url}>
+            {p.detail}
+          </span>
+          {p.action && (
+            <Button
+              size="sm"
+              variant={p.action.next === "auto" ? "primary" : "secondary"}
+              disabled={pending}
+              onClick={() => onSwitch(p.action!.next)}
+            >
+              {p.action.label}
+            </Button>
+          )}
+          {!showOverride && p.state !== "unsupported" && (
+            <button
+              type="button"
+              className="text-[11px] text-muted hover:text-fg"
+              onClick={() => setShowOverride(true)}
+            >
+              Use another relay
+            </button>
+          )}
+        </span>
+      </div>
+      {showOverride && (
+        <label className="mt-1 grid grid-cols-[180px_1fr] items-center gap-3">
+          <span className="text-[11px] text-muted">Relay URL override</span>
+          <input
+            type="url"
+            className="rounded border border-border bg-bg px-2 py-1 text-xs"
+            placeholder="Default from your fabplane.com sign-in"
+            defaultValue={setting.relayUrl ?? ""}
+            disabled={pending}
+            onBlur={(e) => {
+              const next = e.target.value.trim() || null;
+              if (next !== (setting.relayUrl ?? null)) onOverride(next);
+            }}
+          />
+        </label>
+      )}
     </div>
   );
 }
