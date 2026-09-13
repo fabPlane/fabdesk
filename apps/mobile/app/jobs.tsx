@@ -7,6 +7,7 @@ import { useCancelJob, useJobs, useRunsStore } from "@fabdesk/client-core";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { Alert, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { ConnectionGate } from "@/components/ConnectionGate";
 import { usePullRefresh } from "@/components/pull-refresh";
 import { Badge, Empty, Loading, Screen, readable } from "@/components/ui";
 import { formatDuration, relativeTime } from "@/lib/format";
@@ -21,7 +22,19 @@ import {
 } from "@/lib/jobs";
 import { useTheme } from "@/theme";
 
+/**
+ * Reached by deep link and notification tap as well as from the tabs, so the gate lives here:
+ * a cold start lands on this route before the connection has a client to read from.
+ */
 export default function JobsScreen() {
+  return (
+    <ConnectionGate>
+      <JobsScreenBody />
+    </ConnectionGate>
+  );
+}
+
+function JobsScreenBody() {
   const { projectId } = useLocalSearchParams<{ projectId?: string }>();
   const t = useTheme();
   const jobs = useJobs();

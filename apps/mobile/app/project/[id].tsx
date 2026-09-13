@@ -21,6 +21,7 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
+import { ConnectionGate } from "@/components/ConnectionGate";
 import { BoardViewerLinks } from "@/components/BoardViewerLinks";
 import { RenderImage } from "@/components/RenderImage";
 import { useStashRender } from "@/components/render-cache";
@@ -33,7 +34,19 @@ import { usePullRefresh } from "@/components/pull-refresh";
 import { useNewChat } from "@/hooks/new-chat";
 import { useTheme } from "@/theme";
 
+/**
+ * Reached by deep link and notification tap as well as from the tabs, so the gate lives here:
+ * a cold start lands on this route before the connection has a client to read from.
+ */
 export default function ProjectScreen() {
+  return (
+    <ConnectionGate>
+      <ProjectScreenBody />
+    </ConnectionGate>
+  );
+}
+
+function ProjectScreenBody() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const t = useTheme();
   const window = useWindowDimensions();

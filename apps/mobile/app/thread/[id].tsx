@@ -37,6 +37,7 @@ import { MessageBody, PendingCards } from "@/components/MessageParts";
 import { useOptionSheet } from "@/components/OptionSheet";
 import { QueuedMessages } from "@/components/QueuedMessages";
 import { SlashCommandPopover, SlashToast } from "@/components/SlashCommandPopover";
+import { ConnectionGate } from "@/components/ConnectionGate";
 import { ThreadHeaderButton, useThreadMenu } from "@/components/ThreadHeaderMenu";
 import { Loading, Screen, readable } from "@/components/ui";
 import { useRememberedChoice } from "@/hooks/agent-choice";
@@ -56,7 +57,19 @@ import { composerAction, queuedMessages } from "@/lib/queued-messages";
 import { useKeyboardShortcut } from "@/layout/keyboard";
 import { useTheme } from "@/theme";
 
+/**
+ * Reached by deep link and notification tap as well as from the tabs, so the gate lives here:
+ * a cold start lands on this route before the connection has a client to read from.
+ */
 export default function ThreadScreen() {
+  return (
+    <ConnectionGate>
+      <ThreadScreenBody />
+    </ConnectionGate>
+  );
+}
+
+function ThreadScreenBody() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const t = useTheme();
   const client = useCoreClient();
