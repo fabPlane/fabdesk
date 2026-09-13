@@ -23,7 +23,7 @@ import {
   type CoreEventSubscribe,
   type SseStatus,
 } from "@fabdesk/client-core";
-import { QueryClient, useQueryClient } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import * as Network from "expo-network";
 import {
   createContext,
@@ -564,17 +564,13 @@ function Bridge({
   children: ReactNode;
 }) {
   const { sseStatus } = useCore();
-  const qc = useQueryClient();
-  const wasOpen = useRef(false);
 
   useEffect(() => {
     onPhase(sseStatus === "open" ? "ready" : "connecting");
     onStreamStatus(sseStatus);
-    // A reconnect after a gap may have missed events beyond the bus's replay window; the cheapest
-    // correct answer is to refetch what is on screen.
-    if (sseStatus === "open" && wasOpen.current) void qc.invalidateQueries();
-    if (sseStatus === "open") wasOpen.current = true;
-  }, [sseStatus, onPhase, onStreamStatus, qc]);
+    // A reconnect after a gap refetches what is on screen: useCoreEvents invalidates every query
+    // when the stream reopens, so nothing more is needed here.
+  }, [sseStatus, onPhase, onStreamStatus]);
 
   const value = useMemo<CoreConnectionValue>(
     () => ({

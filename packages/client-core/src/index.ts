@@ -76,7 +76,14 @@ export {
 } from "./events";
 export type { HandlerCtx, RouteSink } from "./events";
 
-export { CoreProvider, useCore, useCoreClient, useCoreEvents, nullHost } from "./provider";
+export {
+  CoreProvider,
+  useCore,
+  useCoreClient,
+  useCoreEvents,
+  nullHost,
+  resyncOnStatus,
+} from "./provider";
 export type {
   HostAdapter,
   FilePickOptions,

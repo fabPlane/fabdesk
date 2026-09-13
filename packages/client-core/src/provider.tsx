@@ -140,11 +140,23 @@ export function useCoreEvents(
   const { route, subscribe } = opts;
   useEffect(() => {
     const open = subscribe ?? ((topics, onEvent, onSt) => client.subscribe(topics, onEvent, onSt));
+    let wasOpen = false;
     const sub = open(
       EVENT_TOPICS,
       (event) => handleCoreEvent(event, { qc, client, ...(route ? { route } : {}) }),
-      (status) => onStatus?.(status),
+      (status) => {
+        // A stream that comes back after a gap (daemon restart, sleep, network blip) may have missed
+        // events beyond the bus's replay window; refetching what is on screen is the cheap correct answer.
+        if (resyncOnStatus(wasOpen, status)) void qc.invalidateQueries();
+        if (status === "open") wasOpen = true;
+        onStatus?.(status);
+      },
     );
     return () => sub.close();
   }, [client, qc, onStatus, route, subscribe]);
+}
+
+/** Whether a stream status change is a reconnect (open again after having been open) that needs a refetch. */
+export function resyncOnStatus(wasOpen: boolean, status: SseStatus): boolean {
+  return wasOpen && status === "open";
 }
