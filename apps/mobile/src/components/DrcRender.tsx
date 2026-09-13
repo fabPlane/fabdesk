@@ -5,7 +5,7 @@
  */
 import type { FileEntry } from "@fabdesk/protocol";
 import { useState } from "react";
-import { Text, View } from "react-native";
+import { Text, View, useWindowDimensions } from "react-native";
 import { RenderImage, type ImageSize } from "@/components/RenderImage";
 import { containedRect, renderPoint, type Bbox, type ViolationItem } from "@/lib/drc";
 import { useTheme } from "@/theme";
@@ -26,6 +26,7 @@ export function DrcRender({
   view?: "top" | "bottom";
 }) {
   const t = useTheme();
+  const window = useWindowDimensions();
   const [image, setImage] = useState<ImageSize | null>(null);
   const [box, setBox] = useState<ImageSize | null>(null);
   const rect = image && box ? containedRect(image, box) : null;
@@ -46,6 +47,11 @@ export function DrcRender({
         style={{
           width: "100%",
           aspectRatio: 4 / 3,
+          // A short landscape window (a handheld) would otherwise give the whole screen to the
+          // picture and push the first violation below the fold; markers stay correct because they
+          // are placed from the measured box, not the aspect ratio.
+          maxHeight: Math.round(window.height * 0.45),
+          alignSelf: "center",
           borderRadius: 8,
           overflow: "hidden",
           backgroundColor: t.panel2,
