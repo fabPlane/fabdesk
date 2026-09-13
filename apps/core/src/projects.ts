@@ -194,6 +194,8 @@ export class ProjectStore implements ProjectResolver {
     // Forgetting keeps the files but must survive a restart: `init` re-adopts every directory with a
     // manifest, so the manifest is set aside (restore it to bring the project back).
     else await rename(join(row.path, PROJECT_FILES.manifest), join(row.path, FORGOTTEN_MANIFEST)).catch(() => undefined);
+    // Every client keeps its own project list; without this the row lingered on the other device.
+    this.emit({ ts: Date.now(), topic: "project.changed", projectId: id, paths: [] });
     return true;
   }
 

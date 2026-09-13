@@ -19,10 +19,18 @@ describe("ProjectStore.delete", () => {
 
   test("a project deleted without purge keeps its files and stays gone after a restart", async () => {
     const root = join(dir, "projects");
-    const projects = new ProjectStore(store.projects, root, () => {}, { watch: false });
+    const events: Array<{ topic: string; projectId?: string }> = [];
+    const projects = new ProjectStore(
+      store.projects,
+      root,
+      (e) => events.push(e as { topic: string; projectId?: string }),
+      { watch: false },
+    );
     await projects.init();
     const p = await projects.create("Smoke Test");
     expect(await projects.delete(p.id)).toBe(true);
+    // Announced, so the other device's project list refetches.
+    expect(events.at(-1)).toMatchObject({ topic: "project.changed", projectId: p.id });
     expect(await stat(join(p.path, FORGOTTEN_MANIFEST)).then(() => true)).toBe(true);
     expect(await stat(join(p.path, "fabdesk.json")).catch(() => null)).toBeNull();
     projects.close();
