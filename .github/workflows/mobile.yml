@@ -40,8 +40,21 @@ jobs:
         with:
           node-version: 22
 
-      # Only this app's tree — the root install is untouched and needs no submodules.
-      - name: Install
+      # The app aliases @fabdesk/client-core and @fabdesk/protocol to their source, and Bun
+      # resolves *their* imports (zod, react-query, the protocol workspace link) from the root
+      # node_modules — so the root install is needed too, and that needs the submodule
+      # workspaces present, exactly like ci.yml.
+      - uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.FABDESK_SUBMODULE_SSH_KEY }}
+
+      - name: Init the fabplane and fab_pcb submodules
+        run: git submodule update --init --depth 1 vendor/fabplane vendor/fab_pcb
+
+      - name: Install (root)
+        run: bun install --frozen-lockfile
+
+      - name: Install (app)
         run: bun install --frozen-lockfile
         working-directory: apps/mobile
 
@@ -136,8 +149,15 @@ jobs:
         with:
           node-version: 22
 
-      # e2e/daemon.ts is a real fabdesk-core, so it needs the root install too (no submodules:
-      # the daemon runs with mock services and never touches the KiCad or PCB bridges).
+      # e2e/daemon.ts is a real fabdesk-core, so it needs the root install too — and a root
+      # install needs the submodule workspaces on disk (bun refuses a pruned checkout).
+      - uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.FABDESK_SUBMODULE_SSH_KEY }}
+
+      - name: Init the fabplane and fab_pcb submodules
+        run: git submodule update --init --depth 1 vendor/fabplane vendor/fab_pcb
+
       - name: Install (root and apps/mobile)
         run: |
           bun install --frozen-lockfile
