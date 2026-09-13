@@ -35,13 +35,22 @@ export type {
 export { subscribeWs, parseWsFrame } from "./ws";
 export type { WebSocketLike, WebSocketFactory, WsOptions } from "./ws";
 
-export { DirectTransport, ProxyTransport, relayBaseUrl } from "./transport";
+export {
+  DirectTransport,
+  ProxyTransport,
+  relayBaseUrl,
+  CoreOfflineError,
+  isCoreOffline,
+  relaySaysCoreOffline,
+  RELAY_CLOSE_CORE_OFFLINE,
+} from "./transport";
 export type {
   CoreTransport,
   TransportKind,
   DirectTransportOptions,
   ProxyTransportOptions,
   EventStreamOptions,
+  RelayCoreState,
 } from "./transport";
 
 export { claimPairing, claimFirstReachable } from "./pairing";

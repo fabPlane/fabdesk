@@ -40,13 +40,19 @@ export function ConnectionGate({ children }: { children: ReactNode }) {
     );
   }
 
-  if (phase === "unreachable" || phase === "unauthorized") {
+  if (phase === "unreachable" || phase === "core-offline" || phase === "unauthorized") {
     return (
       <Screen>
         <Unreachable
-          title={phase === "unauthorized" ? "Not paired any more" : "Can't reach that computer"}
+          title={
+            phase === "unauthorized"
+              ? "Not paired any more"
+              : phase === "core-offline"
+                ? "Your computer is offline"
+                : "Can't reach that computer"
+          }
           hint={error ?? undefined}
-          canRetry={phase === "unreachable"}
+          canRetry={phase !== "unauthorized"}
           retry={retry}
         />
       </Screen>

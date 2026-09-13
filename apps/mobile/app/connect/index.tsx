@@ -17,9 +17,9 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { StatusDot } from "@/components/EnvironmentSwitcher";
+import { StatusDot, dotLabel } from "@/components/EnvironmentSwitcher";
 import { Badge, Button, Card, Screen, readable } from "@/components/ui";
-import { lastSeenLabel, orderEnvironments, statusLabel } from "@/lib/environments";
+import { effectiveVia, lastSeenLabel, orderEnvironments } from "@/lib/environments";
 import { describePairingFailure } from "@/lib/pairing-failure";
 import { haptic } from "@/state/haptics";
 import { claimAndSave } from "@/transport/pair";
@@ -27,6 +27,7 @@ import { useConnections } from "@/transport/connections";
 import {
   useEnvironmentStatus,
   useEnvironmentStatusOf,
+  useEnvironmentViaOf,
   useStatusProbing,
 } from "@/transport/CoreConnection";
 import { warmUpLocalNetwork } from "@/transport/local-network-warmup";
@@ -43,8 +44,11 @@ export default function ConnectScreen() {
   const [refreshing, setRefreshing] = useState(false);
   useStatusProbing(true);
   const liveStatus = useEnvironmentStatusOf(activeId ?? "");
+  const liveVia = useEnvironmentViaOf(activeId ?? "");
   const statusOf = (id: string) =>
     id === activeId ? liveStatus : (statuses[id]?.status ?? "unknown");
+  const viaOf = (id: string) =>
+    id === activeId ? liveVia : effectiveVia(statuses[id], null, statusOf(id));
   const ordered = orderEnvironments(connections, activeId, statusOf);
 
   // iOS puts up its Local Network prompt on the first request to a LAN address and fails that
@@ -111,17 +115,17 @@ export default function ConnectScreen() {
                 void setActive(c.id);
               }}
               accessibilityRole="button"
-              accessibilityLabel={`${c.name}, ${statusLabel[statusOf(c.id)]}${c.id === activeId ? ", active" : ", tap to switch"}`}
+              accessibilityLabel={`${c.name}, ${dotLabel(statusOf(c.id), viaOf(c.id))}${c.id === activeId ? ", active" : ", tap to switch"}`}
             >
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <StatusDot status={statusOf(c.id)} size={10} />
+                <StatusDot status={statusOf(c.id)} via={viaOf(c.id)} size={10} />
                 <Text style={{ color: t.fg, fontSize: 15, fontWeight: "600", flex: 1 }}>
                   {c.name}
                 </Text>
                 {c.id === activeId ? <Badge label="active" tone="success" /> : null}
               </View>
               <Text style={{ color: t.muted, fontSize: 12, marginTop: 4 }} numberOfLines={1}>
-                {statusLabel[statusOf(c.id)]} · {statuses[c.id]?.baseUrl ?? c.baseUrl}
+                {dotLabel(statusOf(c.id), viaOf(c.id))} · {statuses[c.id]?.baseUrl ?? c.baseUrl}
               </Text>
               <Text style={{ color: t.muted, fontSize: 12 }}>
                 paired {relativeTime(c.pairedAt)} · {lastSeenLabel(c, statuses[c.id])}

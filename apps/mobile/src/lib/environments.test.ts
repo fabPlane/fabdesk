@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   effectiveStatus,
+  effectiveVia,
   lastSeenLabel,
   orderEnvironments,
   probeDue,
@@ -33,11 +34,23 @@ const entry = (status: StatusEntry["status"], checkedAt: number | null = NOW): S
 });
 
 describe("statusFromProbe", () => {
-  test("an answering address is reachable and remembered", () => {
+  test("an answering address is reachable and remembered; a bare string is a direct one", () => {
     expect(statusFromProbe("http://100.64.0.1:47820", NOW)).toEqual({
       status: "reachable",
       checkedAt: NOW,
       baseUrl: "http://100.64.0.1:47820",
+      via: "direct",
+    });
+  });
+
+  test("a relay answer is remembered as such, so the dot can draw it hollow", () => {
+    expect(
+      statusFromProbe({ baseUrl: "https://relay.fabplane.com/c/core_abc", via: "relay" }, NOW),
+    ).toEqual({
+      status: "reachable",
+      checkedAt: NOW,
+      baseUrl: "https://relay.fabplane.com/c/core_abc",
+      via: "relay",
     });
   });
 
@@ -46,7 +59,32 @@ describe("statusFromProbe", () => {
       status: "offline",
       checkedAt: NOW,
       baseUrl: null,
+      via: null,
     });
+  });
+});
+
+describe("effectiveVia", () => {
+  test("only a reachable computer has a path", () => {
+    expect(effectiveVia({ ...entry("reachable"), via: "relay" }, null, "offline")).toBeNull();
+    expect(effectiveVia({ ...entry("reachable"), via: "relay" }, null, "unknown")).toBeNull();
+    expect(effectiveVia({ ...entry("reachable"), via: "relay" }, null, "reachable")).toBe("relay");
+  });
+
+  test("the live transport outranks the last probe while its stream is open", () => {
+    const probedViaRelay = { ...entry("reachable"), via: "relay" as const };
+    expect(effectiveVia(probedViaRelay, { streamOpen: true, via: "direct" }, "reachable")).toBe(
+      "direct",
+    );
+    // Stream down: the probe is the freshest word.
+    expect(effectiveVia(probedViaRelay, { streamOpen: false, via: "direct" }, "reachable")).toBe(
+      "relay",
+    );
+  });
+
+  test("an entry from before the field, or none at all, is unknown", () => {
+    expect(effectiveVia(entry("reachable"), null, "reachable")).toBeNull();
+    expect(effectiveVia(undefined, { streamOpen: true, via: null }, "reachable")).toBeNull();
   });
 });
 
@@ -82,8 +120,8 @@ describe("probeEnvironments", () => {
     const result = await probeEnvironments([env("up", null), env("down", null)], prober, () => NOW);
     expect(peak).toBe(2);
     expect(result).toEqual({
-      up: { status: "reachable", checkedAt: NOW, baseUrl: "http://up:47820" },
-      down: { status: "offline", checkedAt: NOW, baseUrl: null },
+      up: { status: "reachable", checkedAt: NOW, baseUrl: "http://up:47820", via: "direct" },
+      down: { status: "offline", checkedAt: NOW, baseUrl: null, via: null },
     });
   });
 

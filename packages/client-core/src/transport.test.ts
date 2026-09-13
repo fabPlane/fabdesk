@@ -1,5 +1,14 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { DirectTransport, ProxyTransport, relayBaseUrl } from "./transport";
+import { CoreHttpError } from "./CoreClient";
+import {
+  CoreOfflineError,
+  DirectTransport,
+  ProxyTransport,
+  RELAY_CLOSE_CORE_OFFLINE,
+  isCoreOffline,
+  relayBaseUrl,
+  relaySaysCoreOffline,
+} from "./transport";
 import type { WebSocketLike } from "./ws";
 
 const CORE = "core_abcdefghijkl";
@@ -97,14 +106,117 @@ describe("ProxyTransport", () => {
     t.dispose();
   });
 
-  test("a core the relay does not know surfaces as the relay's 503", async () => {
+  test("a core the relay does not know surfaces as a distinct CoreOfflineError, not a plain 503", async () => {
+    const states: string[] = [];
     const t = new ProxyTransport({
       id: "c",
       relayUrl: relayUrl(),
       coreId: "core_unknownxxxx",
       token: "dt",
+      onCoreState: (s) => states.push(s),
     });
-    await expect(t.client().listProjects()).rejects.toThrow(/503|offline/);
+    expect(t.coreOffline).toBe(false);
+    const err = await t
+      .client()
+      .listProjects()
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
+    expect(isCoreOffline(err)).toBe(true);
+    expect(err).toBeInstanceOf(CoreOfflineError);
+    expect(err).toBeInstanceOf(CoreHttpError);
+    expect((err as CoreOfflineError).status).toBe(503);
+    expect((err as CoreOfflineError).path).toBe("/projects");
+    expect((err as Error).message).toMatch(/not connected/);
+    expect(t.coreOffline).toBe(true);
+    // The same verdict twice is one notification; it flips back on the next daemon answer.
+    await t
+      .client()
+      .health()
+      .catch(() => {});
+    expect(states).toEqual(["offline"]);
+  });
+
+  test("a 503 the daemon itself produced is not mistaken for the relay's", async () => {
+    // A fetch that answers 503 with a body that is not the relay's `{error:"core offline"}`.
+    const t = new ProxyTransport({
+      id: "c",
+      relayUrl: "https://relay.example",
+      coreId: CORE,
+      token: "dt",
+      fetch: async () => new Response(JSON.stringify({ error: "router busy" }), { status: 503 }),
+    });
+    const err = await t
+      .client()
+      .listProjects()
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
+    expect(isCoreOffline(err)).toBe(false);
+    expect((err as CoreHttpError).status).toBe(503);
+    expect(t.coreOffline).toBe(false);
+  });
+
+  test("the event socket closing with 4503 marks the core offline; the next open clears it", () => {
+    const sockets: WebSocketLike[] = [];
+    const factory = (): WebSocketLike => {
+      const ws: WebSocketLike = {
+        onopen: null,
+        onerror: null,
+        onclose: null,
+        onmessage: null,
+        send() {},
+        close() {},
+      };
+      sockets.push(ws);
+      return ws;
+    };
+    const states: string[] = [];
+    const t = new ProxyTransport({
+      id: "a",
+      relayUrl: "https://relay.fabplane.com",
+      coreId: CORE,
+      token: "dt",
+      webSocketFactory: factory,
+      onCoreState: (s) => states.push(s),
+    });
+    const sub = t.openEvents({ topics: ["thread.*"], onEvent: () => {} });
+    expect(sockets).toHaveLength(1);
+    sockets[0]!.onclose?.({ code: RELAY_CLOSE_CORE_OFFLINE, reason: "core offline" });
+    expect(t.coreOffline).toBe(true);
+    // The daemon dialled back in and the reconnect opened: online again.
+    sockets[0]!.onopen?.({});
+    expect(t.coreOffline).toBe(false);
+    sub.close();
+    t.dispose();
+    // An ordinary close (the daemon restarting, say) says nothing about the relay's view.
+    const t2 = new ProxyTransport({
+      id: "b",
+      relayUrl: "https://relay.fabplane.com",
+      coreId: CORE,
+      token: "dt",
+      webSocketFactory: factory,
+      onCoreState: (s) => states.push(s),
+    });
+    t2.openEvents({ topics: ["thread.*"], onEvent: () => {} });
+    sockets[1]!.onclose?.({ code: 1006 });
+    expect(t2.coreOffline).toBe(false);
+    t2.dispose();
+    expect(states).toEqual(["offline", "online"]);
+  });
+});
+
+describe("relaySaysCoreOffline", () => {
+  test("recognises the relay's two bodies, as text or parsed, and nothing else", () => {
+    expect(relaySaysCoreOffline(503, '{"error":"core offline"}')).toBe(true);
+    expect(relaySaysCoreOffline(503, { error: "core offline" })).toBe(true);
+    expect(relaySaysCoreOffline(502, '{"error":"core disconnected"}')).toBe(true);
+    expect(relaySaysCoreOffline(503, '{"error":"router busy"}')).toBe(false);
+    expect(relaySaysCoreOffline(503, "Service Unavailable")).toBe(false);
+    expect(relaySaysCoreOffline(200, '{"error":"core offline"}')).toBe(false);
+    expect(relaySaysCoreOffline(503, null)).toBe(false);
   });
 
   test("opens the event stream on the relay's /c/<coreId>/ws with the same subscribe protocol", async () => {

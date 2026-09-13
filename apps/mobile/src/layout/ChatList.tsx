@@ -22,13 +22,14 @@ import {
 import { haptic } from "@/state/haptics";
 import { useChatList } from "@/state/chat-list";
 import { useConnection } from "@/transport/CoreConnection";
+import { streamBannerLabel } from "@/lib/connection-path";
 import { relativeTime } from "@/lib/format";
 import { useTheme } from "@/theme";
 import { useKeyboardShortcut } from "./keyboard";
 
 export function ChatList({ variant }: { variant: "screen" | "sidebar" }) {
   const t = useTheme();
-  const { connection, status } = useConnection();
+  const { connection, status, coreOffline } = useConnection();
   const [q, setQ] = useState("");
   const search = useRef<TextInput>(null);
   const threads = useThreads(q ? { q } : undefined);
@@ -102,7 +103,7 @@ export function ChatList({ variant }: { variant: "screen" | "sidebar" }) {
         />
         {status !== "open" && (
           <Text style={{ color: t.warning, fontSize: 12, marginTop: 6 }}>
-            {status === "reconnecting" ? "Reconnecting…" : "Connecting…"} · {connection?.name}
+            {streamBannerLabel({ status, coreOffline, name: connection?.name })}
           </Text>
         )}
         <View style={{ flexDirection: "row", alignItems: "center", marginTop: 6, gap: 12 }}>
