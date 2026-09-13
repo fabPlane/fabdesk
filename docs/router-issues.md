@@ -39,8 +39,13 @@ Judge a fix on the rule categories going to zero, not on a count.
 
 | `gb-link-usb-bridge` | the real board 2: RP2040 (QFN-56) + W25Q16 + USB-C + 3 × 74LVC1T45 + LDO + crystal + 31 passives; 41 parts, 29 nets, 50 × 30 mm | first full `route_run` sat 6 min with no progress and was cancelled; the agent then routed in stages (24 runs, 11 failed with `Static reachability precheck failed: N route(s) have no legal …`); the end state has 360 errors: 174 clearance, 113 tracks_crossing, 40 shorting_items, 32 solder_mask_bridge, 17 unconnected |
 
+| `famicom-expansion-adapter` (+ `.place.json`) | the real board 4: DA-15, two 2×04 IDC headers, SOIC-16 mux, 3 mm LEDs, 0805 passives; 14 parts, 15 nets, 60 × 40 mm, **with a sane hand placement** (connectors on the edges, mux in the middle) | run to run: `HB ran out of iterations` (nothing routed), or 23/38 routed with 38 clearance, 18 shorting_items, 3 tracks_crossing. The same netlist with the autoplacer's corner-packed placement routed 39/39 with only placement errors — spreading the parts out made the router worse. |
+
 Baseline that passes: the 3-part blinky in `docs/handoff-fab-pcb.md` §3 (0 errors). Anything with
 two pads closer than `clearance + trackWidth` fails.
+
+`scripts/router-repro.ts` applies `<case>.place.json` (a `circuit_place` placements array) after the
+build when one exists, so a case can pin its placement.
 
 ## Failure classes
 
@@ -79,8 +84,10 @@ mm)`. Two sources: (a) tracks: `minBoardEdgeClearance` is passed, but traces sti
 outline — check whether the solver honours it or whether the outline is passed as a polygon it
 ignores; (b) pads: the autoplacer (`packages/compile/src/apply.ts`, KiCad legacy grid placer,
 rotation 0) packs footprints into the top-left corner and puts tall parts (a 1×08 header on a
-20 mm board) across the outline. Placement is a compile problem, not a router one, but the router
-should not route into an edge violation either.
+20 mm board) across the outline, sometimes at negative coordinates. fabdesk now has
+`circuit_place` (moves footprints by rewriting their transform in the saved file and reloading the
+board — the API's `UpdateItems` moves only the anchor, gap G28), so the agent can fix placement;
+the router still should not route into an edge violation.
 
 ### R6 — large boards: minutes with no progress, then a solver failure
 
@@ -91,6 +98,14 @@ runs (`onlyConnections`) fail with `Static reachability precheck failed: 6 route
 …` as soon as earlier tracks box a pad in. Whatever replaces R1 must also keep a bound on total
 solver time and report progress (the daemon now forwards phase/percent to the cinema, so a stuck
 phase is at least visible).
+
+### R7 — coarse boards that fail outright
+
+`ps1-pio-breakout` (three 2.54 mm headers, 68 nets, nothing finer than 1.6 mm holes) and the placed
+`famicom-expansion-adapter` end with `solver failed (attempt 3): HB ran out of iterations` — the
+solver gives up after the retry loop with nothing routed. Boards of this class are what a hobbyist
+autorouter is supposed to eat; the capacity mesh appears to fragment on long parallel bundles and
+on large empty areas. Reproduce with the two cases above.
 
 ### R4 — hole clearance on the connector's own pegs
 

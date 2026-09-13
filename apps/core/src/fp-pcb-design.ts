@@ -4,11 +4,12 @@
  * through the typed client on the project's session. Positions come back in millimetres; the
  * client speaks nanometres.
  */
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { KiCadObjectType } from "@fp-pcb/proto";
 import { Via, toMm, type Board, type KiCad } from "@fp-pcb/client";
+import { placeFootprints } from "@fabdesk/kicad";
 import type { FpPcbCompileJob, FpPcbDiagnostic, FpPcbRouteJob } from "@fabdesk/protocol";
 import {
   PROJECT_FILES,
@@ -104,6 +105,14 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       files: { [entrypoint]: await readText(entryPath) },
       entrypoint,
     };
+    if (opts.fresh) {
+      // The session keeps the board in memory and the compile only draws an outline when none
+      // exists, so a size change (or a placement the user wants redone) needs the slate wiped:
+      // drop the session, then the generated files, and let the compile create the project anew.
+      await deps.sessions.release(opts.projectDir);
+      for (const f of ["board.kicad_pcb", "board.kicad_pro", "board.kicad_prl", "board.kicad_sch"])
+        await rm(join(opts.projectDir, f), { force: true });
+    }
     opts.progress?.(0.05, "session");
     const job = await deps.sessions.withRetry(opts.projectDir, (s) =>
       deps.bridge().compile(
@@ -320,6 +329,29 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         .catch(() => 0);
   };
 
+  /**
+   * Move footprints by rewriting their transform in the saved file, then reload the board into the
+   * session: the API's UpdateItems moves only a footprint's anchor (fab_pcb gap G28), the file
+   * format keeps children relative, so this is the one way to place parts today.
+   */
+  const place = async (
+    projectDir: string,
+    placements: Array<{ ref: string; x: number; y: number; rotation?: number }>,
+  ): Promise<{ moved: Array<{ ref: string; x: number; y: number; rotation: number }>; missing: string[] }> => {
+    const board = await deps.sessions.board(projectDir);
+    await board.save();
+    const pcb = join(projectDir, "board.kicad_pcb");
+    const result = placeFootprints(await readText(pcb), placements);
+    if (result.moved.length) {
+      await writeFile(pcb, result.text);
+      await deps.sessions.withRetry(projectDir, async (s) => {
+        await board.close().catch(() => undefined);
+        await s.kicad.openBoard(pcb);
+      });
+    }
+    return { moved: result.moved, missing: result.missing };
+  };
+
   const unroute = async (
     projectDir: string,
     nets?: string[],
@@ -448,6 +480,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     unroute,
     scope,
     searchFootprints,
+    place,
     status,
     release: (dir) => deps.sessions.release(dir),
   };

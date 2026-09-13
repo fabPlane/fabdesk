@@ -13,6 +13,7 @@ describe("registry", () => {
       "load_toolset",
       "project_status",
       "circuit_build",
+      "circuit_place",
       "circuit_read_errors",
       "route_run",
       "verify_drc",
@@ -60,7 +61,7 @@ describe("registry", () => {
       "app_eval",
     ]);
     for (const n of names) expect(n).toMatch(/^[a-z][a-z0-9_]*$/);
-    expect(reg.byToolset("core").length).toBe(7);
+    expect(reg.byToolset("core").length).toBe(8);
     expect(() =>
       defineTool({
         name: "bad.name",
@@ -350,4 +351,24 @@ test("RouteProgressFrames turns phase/percent-only progress into attempt frames,
   frames.onProgress({ state: "routing", log: [], phase: "capacity", percent: 40 });
   frames.onProgress({ state: "routing", log: [], phase: "trace", percent: 0 });
   expect(seen).toEqual(["attempt:capacity · 10%", "attempt:capacity · 40%", "attempt:trace · 0%"]);
+});
+
+test("circuit_place moves footprints through the design service", async () => {
+  const reg = createRegistry();
+  const project = await tempProject();
+  const services = mockServices([project]);
+  const ctx = contextFactory(services, null);
+  const out = await reg.invoke(
+    "circuit_place",
+    { project: project.id, placements: [{ ref: "J2", x: 5, y: 6, rotation: 90 }] },
+    (ref) =>
+      ctx({
+        def: reg.get("circuit_place")!,
+        projectRef: ref,
+        signal: new AbortController().signal,
+        progress: () => {},
+      }),
+  );
+  expect(out.isError).toBe(false);
+  expect(out.text).toContain("J2 → (5, 6) mm, 90°");
 });

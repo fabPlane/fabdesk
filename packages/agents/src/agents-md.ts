@@ -117,10 +117,18 @@ ${sketches}
 ## Workflow
 1. Read the sketches and the prompt; read \`circuit.netlist.json\` if it exists.
 2. Write or edit \`circuit.netlist.json\`.
-3. Build with the \`${mcp}\` build tool; fix every error and rebuild until it passes.
-4. Route with the routing tool.
-5. Run DRC; fix the source (not the generated files) and repeat from step 3 while anything fails.
-6. Render, then summarise what the board does, the parts used and any open issues. Render tools attach
+3. Build with the \`${mcp}\` build tool; fix every error and rebuild until it passes. After changing
+   the board size, build with \`fresh: true\` — a build never redraws an outline that already exists.
+4. Check the placement (\`circuit_query\` components, or a render): the autoplacer packs parts into
+   the top-left corner and can leave a connector across the outline. Move parts with
+   \`circuit_place\` (mm from the outline's top-left, y down) — connectors on an edge, the MCU in the
+   middle — before routing. Never edit \`board.kicad_pcb\` by hand; the design server holds the board in
+   memory and overwrites the file.
+5. Route with the routing tool.
+6. Run DRC. Fix what is yours: placement (\`circuit_place\`, then unroute and route again) and the
+   netlist. Clearance, shorting or tracks-crossing errors between the autorouter's own tracks are the
+   router's — report them by rule with counts and stop; do not try to repair tracks yourself.
+7. Render, then summarise what the board does, the parts used and any open issues. Render tools attach
    images directly in chat and return a \`fileUrl\` / \`url\` field. When the user asks for links, give
    those browser-openable \`file://\` URLs as plain text.
 

@@ -18,6 +18,8 @@ export type BuildOptions = {
   entrypoint?: string;
   /** Replaces the netlist file's `board` for this build (a template's blank, the manifest's rules). */
   board?: FpPcbBoardSpec;
+  /** Start from nothing: drop the session's board and the generated board files first, so the outline, placement and routing are redone. */
+  fresh?: boolean;
   signal?: AbortSignal;
   /** Stage progress from the compile job; tools map it into their own range. */
   progress?: (fraction: number, note?: string) => void;
@@ -112,6 +114,8 @@ export interface DesignService {
   scope(projectDir: string, refs: string[], opts?: { excludePlaneNets?: boolean; excludeNets?: string[] }): Promise<ComponentScope>;
   /** Footprints in the KiCad libraries the bridge's server can see. */
   searchFootprints(query: string, limit: number): Promise<FootprintHit[]>;
+  /** Move footprints (mm, degrees) on the built board; returns what moved and the references it could not find. */
+  place(projectDir: string, placements: Array<{ ref: string; x: number; y: number; rotation?: number }>): Promise<{ moved: Array<{ ref: string; x: number; y: number; rotation: number }>; missing: string[] }>;
   status(): Promise<DesignStatus>;
   /** Drop the project's session (project closed or deleted). */
   release(projectDir: string): Promise<void>;
