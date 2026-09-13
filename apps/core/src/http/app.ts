@@ -832,6 +832,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
         endpoints,
         port: remote.port,
         name: machineName(),
+        coreId: deps.store.settings.coreId(),
       }),
       coreName: machineName(),
     });

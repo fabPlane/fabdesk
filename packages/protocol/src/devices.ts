@@ -334,10 +334,15 @@ export interface PairingPayload {
    * An `https` host is reached on 443 with no port — `port` applies to the `http` ones.
    */
   schemes?: EndpointScheme[];
+  /**
+   * The daemon's stable identity (`c=`), present when the daemon has one. A relay reaches one
+   * daemon at `<relay>/c/<coreId>`, so a phone that can only see the relay needs this to claim.
+   */
+  coreId?: string;
 }
 
 /**
- * The QR payload: `fabdesk://pair?v=1&t=<token>&p=<port>&n=<name>&h=<host>…&k=<kind>…&s=<scheme>…`.
+ * The QR payload: `fabdesk://pair?v=1&t=<token>&p=<port>&n=<name>&h=<host>…&k=<kind>…&s=<scheme>…&c=<coreId>`.
  *
  * Hosts repeat as `h=` so the phone can fall back from tailnet to LAN. Kinds travel as a parallel
  * `k=` list, one per host in the same order, rather than inside `h=`: phones built before `k=`
@@ -366,7 +371,14 @@ export function buildPairingUrl(payload: PairingPayload): string {
     payload.schemes.some((s) => s === "https")
       ? payload.schemes.map((s) => `s=${s}`)
       : [];
-  return [`${PAIRING_URL_PREFIX}?${params.toString()}`, ...hosts, ...kinds, ...schemes].join("&");
+  const core = payload.coreId ? [`c=${encodeURIComponent(payload.coreId)}`] : [];
+  return [
+    `${PAIRING_URL_PREFIX}?${params.toString()}`,
+    ...hosts,
+    ...kinds,
+    ...schemes,
+    ...core,
+  ].join("&");
 }
 
 /** Builds the URL from ordered endpoints: the `default` one (or, failing that, the first) goes first. */
@@ -375,6 +387,7 @@ export function pairingUrlFromEndpoints(opts: {
   endpoints: CoreEndpoint[];
   port: number;
   name: string;
+  coreId?: string;
 }): string {
   const ordered = [...opts.endpoints].sort((a, b) => Number(b.default) - Number(a.default));
   return buildPairingUrl({
@@ -385,6 +398,7 @@ export function pairingUrlFromEndpoints(opts: {
     schemes: ordered.map(endpointScheme),
     port: opts.port,
     name: opts.name,
+    ...(opts.coreId ? { coreId: opts.coreId } : {}),
   });
 }
 
@@ -407,6 +421,7 @@ export function parsePairingUrl(raw: string): PairingPayload | null {
     rawSchemes.length === hosts.length
       ? rawSchemes.map((s): EndpointScheme => (s === "https" ? "https" : "http"))
       : null;
+  const coreId = params.get("c")?.trim();
   return {
     version: 1,
     token,
@@ -415,6 +430,7 @@ export function parsePairingUrl(raw: string): PairingPayload | null {
     name: params.get("n") ?? "fabPlane",
     ...(kinds ? { kinds } : {}),
     ...(schemes ? { schemes } : {}),
+    ...(coreId ? { coreId } : {}),
   };
 }
 
@@ -437,4 +453,23 @@ export function candidateBaseUrls(
     ...urls.filter((u) => u.startsWith("https:")),
     ...urls.filter((u) => !u.startsWith("https:")),
   ];
+}
+
+/**
+ * Where a pairing can be claimed: the direct addresses, then — when the link names a relay and
+ * the daemon's `coreId` — the daemon as the relay serves it (`<relay>/c/<coreId>`), so a phone
+ * that is off the daemon's networks can still pair. The relay comes last: a direct address is
+ * cheaper and is what the phone should keep using while it works.
+ */
+export function claimBaseUrls(
+  payload: Pick<PairingPayload, "hosts" | "port" | "schemes" | "kinds" | "coreId">,
+): string[] {
+  const direct = candidateBaseUrls(payload);
+  const kinds = payload.kinds?.length === payload.hosts.length ? payload.kinds : null;
+  const schemes = payload.schemes?.length === payload.hosts.length ? payload.schemes : null;
+  const i = kinds?.indexOf("relay") ?? -1;
+  const host = i >= 0 ? payload.hosts[i] : undefined;
+  if (!host || !payload.coreId) return direct;
+  const scheme = schemes?.[i] ?? "http";
+  return [...direct, `${scheme}://${host}/c/${encodeURIComponent(payload.coreId)}`];
 }

@@ -60,6 +60,7 @@ export {
   pairingUrlFromEndpoints,
   parsePairingUrl,
   candidateBaseUrls,
+  claimBaseUrls,
   PAIRING_URL_SCHEME,
   PAIRING_URL_PREFIX,
 } from "@fabdesk/protocol";

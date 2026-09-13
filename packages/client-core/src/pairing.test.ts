@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   buildPairingUrl,
   candidateBaseUrls,
+  claimBaseUrls,
   parsePairingUrl,
   type PairingPayload,
 } from "@fabdesk/protocol";
@@ -59,6 +60,58 @@ describe("pairing url", () => {
     ]);
     expect(candidateBaseUrls({ hosts: ["fd7a::1"], port: 4000 })).toEqual([
       "http://[fd7a::1]:4000",
+    ]);
+  });
+
+  test("carries the coreId, and a relay becomes the last place to claim", () => {
+    const withRelay: PairingPayload = {
+      ...payload,
+      hosts: ["127.0.0.1", "relay.fabplane.com"],
+      kinds: ["loopback", "relay"],
+      schemes: ["http", "https"],
+      coreId: "core_abc",
+    };
+    const url = buildPairingUrl(withRelay);
+    expect(url).toContain("&c=core_abc");
+    expect(parsePairingUrl(url)).toEqual(withRelay);
+    // The relay is never a direct candidate…
+    expect(candidateBaseUrls(withRelay)).toEqual(["http://127.0.0.1:47820"]);
+    // …but it is where a phone off the daemon's networks can still claim.
+    expect(claimBaseUrls(withRelay)).toEqual([
+      "http://127.0.0.1:47820",
+      "https://relay.fabplane.com/c/core_abc",
+    ]);
+    // Without a coreId the relay cannot address the daemon, so it is not offered.
+    const { coreId: _, ...noCore } = withRelay;
+    expect(claimBaseUrls(noCore)).toEqual(["http://127.0.0.1:47820"]);
+  });
+});
+
+describe("claim through a relay", () => {
+  test("falls back to the relay when no direct address answers", async () => {
+    const tried: string[] = [];
+    const { baseUrl } = await claimFirstReachable(
+      {
+        ...payload,
+        hosts: ["127.0.0.1", "relay-staging.example:4010"],
+        kinds: ["loopback", "relay"],
+        coreId: "core_abc",
+      },
+      {
+        label: "iPhone",
+        platform: "ios",
+        fetch: async (url) => {
+          tried.push(url);
+          if (url.startsWith("http://127.")) throw new Error("connection refused");
+          return url.endsWith("/health") ? healthOk() : claimOk();
+        },
+      },
+    );
+    expect(baseUrl).toBe("http://relay-staging.example:4010/c/core_abc");
+    expect(tried).toEqual([
+      "http://127.0.0.1:47820/health",
+      "http://relay-staging.example:4010/c/core_abc/health",
+      "http://relay-staging.example:4010/c/core_abc/v1/devices/pair/claim",
     ]);
   });
 });
