@@ -5,11 +5,15 @@ in [mobile.md](mobile.md); this is the pipeline around it. Everything below runs
 root unless it says `apps/mobile`.
 
 ```
- release.yml  version ─┬─ build (desktop × 4)  ─ release ─ website
+ release.yml  version ─┬─ build (desktop × 4)  ─ release ─ website          nightly 03:00 Bangkok / dispatch
                        └─ mobile: stamp app.json → typecheck/test → eas build --profile preview (EXPO_TOKEN)
- mobile.yml   verify (typecheck, test, expo export) ─┬─ eas-preview   main / dispatch, EXPO_TOKEN
+ mobile.yml   verify (typecheck, test, expo export) ─┬─ eas-preview   dispatch only, EXPO_TOKEN
                                                      └─ e2e-ios       vars.MOBILE_E2E == '1'
 ```
+
+Cloud builds are deliberate, not per-merge: the nightly `release.yml` run queues one preview
+build a day, and `mobile.yml`'s `eas-preview` runs only when someone presses **Run workflow**.
+Merging to `main` verifies the app (typecheck, tests, a Metro bundle) and nothing more.
 
 ## One-time setup (a human, once)
 
