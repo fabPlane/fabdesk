@@ -41,6 +41,8 @@ Judge a fix on the rule categories going to zero, not on a count.
 
 | `famicom-expansion-adapter` (+ `.place.json`) | the real board 4: DA-15, two 2×04 IDC headers, SOIC-16 mux, 3 mm LEDs, 0805 passives; 14 parts, 15 nets, 60 × 40 mm, **with a sane hand placement** (connectors on the edges, mux in the middle) | run to run: `HB ran out of iterations` (nothing routed), or 23/38 routed with 38 clearance, 18 shorting_items, 3 tracks_crossing. The same netlist with the autoplacer's corner-packed placement routed 39/39 with only placement errors — spreading the parts out made the router worse. |
 
+| `genesis-flash-cart` (+ `.place.json`) | the real board 10: 2 × PLCC-32 sockets, SOIC-28 FRAM, SOIC-20 + SOIC-14 logic, 2×32 header, 90 × 60 mm, 46 nets, placed by the agent | `timed out with nothing routed (300000 ms in phase highDensityRouteSolver)`; the run before it wedged the bridge (R8) |
+
 Baseline that passes: the 3-part blinky in `docs/handoff-fab-pcb.md` §3 (0 errors). Anything with
 two pads closer than `clearance + trackWidth` fails.
 
