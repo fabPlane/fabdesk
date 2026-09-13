@@ -15,7 +15,13 @@ import { AgentRunManager, type AgentAdapterLike } from "./agent-runs";
 import { TokenSet } from "./auth";
 import { DeviceStore } from "./devices";
 import { RemoteListener, type RemoteListenerOptions } from "./remote";
-import { RelayLink, type EventSession, type RelayEndpoint } from "./relay";
+import {
+  RelayDefaultResolver,
+  RelayLink,
+  VIA_HEADER,
+  type EventSession,
+  type RelayEndpoint,
+} from "./relay";
 import { createAuth, type AuthFacade } from "./auth-facade";
 import { EventBus } from "./bus";
 import { resolveConfig, type CoreConfig } from "./config";
@@ -68,6 +74,10 @@ export type ServeOptions = {
   approvalTimeoutMs?: number;
   /** Tests: the bearer the relay link presents, when the AuthFacade has none (local auth mode). */
   relayToken?: () => string | null;
+  /** Tests: the env the default relay is derived from (`FABPLANE_RELAY_URL`); `process.env` otherwise. */
+  relayEnv?: NodeJS.ProcessEnv;
+  /** Tests: capture the relay discovery probe (`GET <api>/v1/config`). */
+  relayDiscoveryFetch?: typeof fetch;
 };
 
 export type Daemon = {
@@ -238,9 +248,19 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   const doctor =
     opts.doctor ??
     (async () => (await import("./doctor")).runDoctor({ config, settings: store.settings.get() }));
+  // Nothing to configure: the relay is derived from the API origin (or discovered from the API
+  // later, at which point the link is re-applied); `remote.relayUrl` overrides, `remote.relay: "off"` disables.
+  const relayDefaults = new RelayDefaultResolver({
+    apiOrigin: config.apiOrigin,
+    ...(opts.relayEnv ? { env: opts.relayEnv } : {}),
+    ...(opts.relayDiscoveryFetch ? { fetchImpl: opts.relayDiscoveryFetch } : {}),
+    onChange: () => relay.apply(store.settings.get().remote),
+  });
   const relay = new RelayLink({
     coreId: store.settings.coreId(),
     token: opts.relayToken ?? (() => auth.token()),
+    defaultRelay: () => relayDefaults.current(),
+    emit: (e) => bus.emit(e),
   });
   const remote = new RemoteListenerWithRelay({ emit: (e) => bus.emit(e) }, relay);
   // Signing in (or out) after start is what turns the relay on (or off); the setting alone is not enough.
@@ -314,20 +334,38 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
         const allowed =
           scope === "local" ? originAllowedLocal(origin) : originAllowedRemote(origin, url.host);
         if (!allowed) return new Response("forbidden origin", { status: 403 });
-        const data = authorizeEventSocket(url, req.headers.get("authorization"));
+        // A socket on a listener is direct whatever header a phone sends.
+        const headers = new Headers(req.headers);
+        headers.delete(VIA_HEADER);
+        const data = authorizeEventSocket(url, headers);
         if (!data) return new Response("unauthorized", { status: 401 });
         if (srv.upgrade(req, { data })) return undefined;
         return new Response("upgrade failed", { status: 400 });
       }
+      // Only the relay link may say a request came over the relay; a listener request is direct.
+      if (req.headers.has(VIA_HEADER)) {
+        const headers = new Headers(req.headers);
+        headers.delete(VIA_HEADER);
+        return target.fetch(new Request(req, { headers }));
+      }
       return target.fetch(req);
     };
 
-  /** The credential and topics of a `/ws` request; null when the token is unknown. Shared with the relay. */
-  const authorizeEventSocket = (url: URL, authorization: string | null): WsData | null => {
+  /**
+   * The credential and topics of a `/ws` request; null when the token is unknown. Shared with
+   * the relay, which marks its sockets with `VIA_HEADER` so the device row records the path.
+   */
+  const authorizeEventSocket = (url: URL, headers: Headers): WsData | null => {
     const token =
-      url.searchParams.get("token") ?? authorization?.replace(/^Bearer\s+/i, "") ?? null;
+      url.searchParams.get("token") ??
+      headers.get("authorization")?.replace(/^Bearer\s+/i, "") ??
+      null;
     const info = tokens.lookup(token);
     if (!info) return null;
+    if (info.kind === "device" && info.deviceId)
+      devices.touch(info.deviceId, {
+        via: headers.get(VIA_HEADER) === "relay" ? "relay" : "direct",
+      });
     const patterns = (url.searchParams.get("topics") ?? "*")
       .split(",")
       .map((s) => s.trim())
@@ -406,7 +444,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   relay.attach({
     fetch: (req) => remoteApp.fetch(req),
     openEvents: (url, headers, send) => {
-      const data = authorizeEventSocket(url, headers.get("authorization"));
+      const data = authorizeEventSocket(url, headers);
       return data ? openEventSession(data, send) : null;
     },
   });

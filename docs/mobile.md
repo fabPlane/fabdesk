@@ -261,3 +261,25 @@ A relay implementation supplies a different base URL, a different credential and
 URL. Nothing above it — the screens, the queries, the event reducer — needs to change. What a relay
 still has to settle: how a daemon registers with it, how a device proves itself to the relay as well
 as to the daemon, and whether the daemon dials out (so it needs no inbound port at all).
+
+### The relay from the daemon's side
+
+`apps/core/src/relay.ts` is that implementation's daemon end (the relay itself is `apps/relay`,
+hosted by fabplane.com). Nothing needs configuring:
+
+- The relay is derived from the fabplane API origin — `https://api.fabplane.com` →
+  `wss://relay.fabplane.com`. `FABPLANE_RELAY_URL` overrides it (empty means "no relay"); for an
+  origin with no derivable relay (staging's Tailscale name) the daemon also asks
+  `GET <api>/v1/config` for `{ relayUrl }` and uses that once the API publishes one.
+  `Settings.remote.relayUrl` is the explicit per-daemon override.
+- `Settings.remote.relay` is `auto` (absent) or `off`. In `auto` the link is up whenever remote
+  access is on and the daemon is signed in; `fabdesk-core serve --relay off` persists the switch.
+- `GET /v1/remote` → `relay: { connected, url, since?, error?, lastError? }` (`null` when off;
+  `error` is why it is not dialing — "not signed in", "remote access is off" — and `lastError`
+  the last socket drop). `GET /health` → `relay: "connected" | "connecting" | "off"`, nothing
+  more, as that route is unauthenticated. The bus emits `remote.relay` on every connect and drop.
+- The pairing URL lists the relay endpoint only while the link is actually up; `fabdesk-core
+pair` prints "Reachable from anywhere via fabplane.com relay" or the reason it is not.
+- Each device row records `via: "direct" | "relay"` from its last authenticated request or
+  event socket (`fabdesk-core devices` shows the column). Redials back off from 1 s to a hard
+  60 s cap and reset on success.

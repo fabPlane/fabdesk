@@ -265,8 +265,14 @@ export const Settings = z.object({
       /** Which endpoint kind the pairing QR lists first. Unset (or null) picks tailscale, then LAN, then the rest. */
       preferredEndpointKind: EndpointKind.nullable().optional(),
       /**
-       * A relay the daemon dials out to (`apps/relay`), e.g. `https://relay.fabplane.com`, so a
-       * phone off the tailnet can still reach it. Needs a fabplane sign-in; unset or null is off.
+       * Whether the daemon dials out to a relay (`apps/relay`) so a phone off the tailnet can
+       * still reach it. Absent means `auto`: the link comes up whenever remote access is on and
+       * the daemon is signed in to fabplane. `off` never dials.
+       */
+      relay: z.enum(["auto", "off"]).optional(),
+      /**
+       * Explicit relay override, e.g. `https://relay.fabplane.com`. Unset, null or empty means
+       * the default, derived from the fabplane API origin (`FABPLANE_RELAY_URL` overrides that).
        */
       relayUrl: z.string().trim().nullable().optional(),
     })
@@ -275,6 +281,23 @@ export const Settings = z.object({
   notifications: z.object({ enabled: z.boolean().default(true) }).default({ enabled: true }),
 });
 export type Settings = z.infer<typeof Settings>;
+
+/**
+ * The relay link as `GET /v1/remote` reports it. `connected` false with no `error` means the
+ * daemon is dialing (or waiting to redial); `error` names what stops it from dialing at all
+ * ("not signed in", "remote access is off", no relay for this API origin, a bad URL). `lastError`
+ * is the most recent socket failure and survives a reconnect, so a flapping link is visible.
+ */
+export const RelayStatus = z.object({
+  connected: z.boolean(),
+  /** The relay in use (or wanted): the setting, else the default derived from the API origin. Empty when none is known. */
+  url: z.string(),
+  /** When `connected` last changed (ISO). */
+  since: z.string().optional(),
+  error: z.string().optional(),
+  lastError: z.string().optional(),
+});
+export type RelayStatus = z.infer<typeof RelayStatus>;
 
 /** `GET /v1/remote`: what the listener is really bound to, the setting behind it, and the addresses a phone would be offered. */
 export const RemoteStatus = z.object({
@@ -286,13 +309,14 @@ export const RemoteStatus = z.object({
   endpoints: z.array(CoreEndpoint),
   /** `null` without a Tailscale CLI; absent from daemons that predate it. */
   tailscale: TailscaleState.nullable().optional(),
-  /** The relay link (`apps/relay`): `null` when `remote.relayUrl` is unset; absent from older daemons. */
-  relay: z
-    .object({ connected: z.boolean(), url: z.string(), error: z.string().optional() })
-    .nullable()
-    .optional(),
+  /** The relay link (`apps/relay`): `null` when `remote.relay` is `off`; absent from older daemons. */
+  relay: RelayStatus.nullable().optional(),
 });
 export type RemoteStatus = z.infer<typeof RemoteStatus>;
+
+/** Where the relay link stands: connected, or dialing, or blocked (with `error` saying why). */
+export const RelayPhase = z.enum(["connected", "connecting", "off"]);
+export type RelayPhase = z.infer<typeof RelayPhase>;
 
 /** `GET /health`: unauthenticated, so it carries nothing a stranger could use. */
 export const Health = z.object({
@@ -305,6 +329,8 @@ export const Health = z.object({
   mcpSessions: z.number().int(),
   /** Stable daemon identity, minted once (docs/mobile-notifications.md §4.4). */
   coreId: z.string(),
+  /** The relay link, without the URL or the reason (this route is unauthenticated). Absent from older daemons. */
+  relay: RelayPhase.optional(),
 });
 export type Health = z.infer<typeof Health>;
 

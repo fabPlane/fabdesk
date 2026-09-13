@@ -235,6 +235,14 @@ export const CoreEvent = z.discriminatedUnion("topic", [
     port: z.number().optional(),
     error: z.string().optional(),
   }),
+  /** The relay link came up or went down (`apps/core/src/relay.ts`); `error` says why when it went down. */
+  z.object({
+    ...base,
+    topic: z.literal("remote.relay"),
+    connected: z.boolean(),
+    url: z.string(),
+    error: z.string().optional(),
+  }),
   z.object({ ...base, topic: z.literal("core.shutdown"), reason: z.string() }),
 ]);
 export type CoreEvent = z.infer<typeof CoreEvent>;

@@ -13,7 +13,7 @@ import type { CoreServices } from "@fabdesk/tools";
 import { resolveConfig } from "../src/config";
 import { connectToDaemon, daemonClient, type Io } from "../src/cli/daemon";
 import { devicesCommand, formatDevices, parseDevicesArgs } from "../src/cli/devices";
-import { formatPairing, pairCommand, parsePairArgs } from "../src/cli/pair";
+import { formatPairing, formatRelayLine, pairCommand, parsePairArgs } from "../src/cli/pair";
 import { persistRemoteFlags, remoteSettingFromFlags } from "../src/cli/remote";
 import { parseArgs } from "../src/main";
 import { serve, type Daemon } from "../src/serve";
@@ -97,6 +97,25 @@ describe("argument parsing", () => {
       ...saved,
       enabled: false,
     });
+    // `--relay` rides along with the listener flags, or edits that one field on its own.
+    expect(remoteSettingFromFlags({ remote: true, relay: "off" }, DEFAULT_REMOTE)).toEqual({
+      ...DEFAULT_REMOTE,
+      enabled: true,
+      relay: "off",
+    });
+    expect(remoteSettingFromFlags({ relay: "off" }, saved)).toEqual({ ...saved, relay: "off" });
+    expect(remoteSettingFromFlags({ relay: "auto" }, { ...saved, relay: "off" })).toEqual({
+      ...saved,
+      relay: "auto",
+    });
+    expect(remoteSettingFromFlags({ remote: "false", relay: "off" }, saved)).toEqual({
+      ...saved,
+      enabled: false,
+      relay: "off",
+    });
+    expect(() => remoteSettingFromFlags({ relay: "maybe" }, DEFAULT_REMOTE)).toThrow(
+      /--relay must be auto or off/,
+    );
     expect(() => remoteSettingFromFlags({ "remote-port": "70000" }, DEFAULT_REMOTE)).toThrow(
       /1–65535/,
     );
@@ -111,6 +130,15 @@ describe("argument parsing", () => {
 
 describe("formatting", () => {
   const now = Date.parse("2026-09-13T12:00:00Z");
+  const RELAY_ENDPOINT = {
+    host: "relay.fabplane.com",
+    hostname: "relay.fabplane.com",
+    port: 443,
+    scheme: "https",
+    kind: "relay",
+    iface: "relay",
+    default: false,
+  } as const;
   const device = (over: Partial<Device>): Device => ({
     id: "dev_a1",
     label: "Maya's iPhone",
@@ -120,18 +148,47 @@ describe("formatting", () => {
     ...over,
   });
 
-  test("formatDevices aligns columns and ages last-seen", () => {
+  test("formatDevices aligns columns, ages last-seen, and shows the path each phone last used", () => {
     expect(formatDevices([], now)).toBe("No paired devices.\n");
     const table = formatDevices(
-      [device({}), device({ id: "dev_b2", label: "Pixel", platform: "android", lastSeenAt: null })],
+      [
+        device({ via: "relay" }),
+        device({ id: "dev_b2", label: "Pixel", platform: "android", lastSeenAt: null }),
+        device({ id: "dev_c3", label: "iPad", platform: "ios", via: "direct" }),
+      ],
       now,
     );
     expect(table.split("\n")).toEqual([
-      "ID      LABEL          PLATFORM  PAIRED      LAST SEEN",
-      "dev_a1  Maya's iPhone  ios       2026-09-01  2m ago",
-      "dev_b2  Pixel          android   2026-09-01  never",
+      "ID      LABEL          PLATFORM  PAIRED      LAST SEEN  VIA",
+      "dev_a1  Maya's iPhone  ios       2026-09-01  2m ago     relay",
+      "dev_b2  Pixel          android   2026-09-01  never      -",
+      "dev_c3  iPad           ios       2026-09-01  2m ago     direct",
       "",
     ]);
+  });
+
+  test("formatRelayLine says reachable from anywhere, or why not", () => {
+    expect(formatRelayLine(undefined)).toBe("");
+    expect(formatRelayLine(null)).toContain("Relay off");
+    expect(formatRelayLine({ connected: true, url: "wss://relay.fabplane.com" })).toBe(
+      "Reachable from anywhere via fabplane.com relay.",
+    );
+    expect(formatRelayLine({ connected: true, url: "http://10.0.0.5:4040" })).toBe(
+      "Reachable from anywhere via relay 10.0.0.5:4040.",
+    );
+    expect(
+      formatRelayLine({
+        connected: false,
+        url: "wss://relay.fabplane.com",
+        error: "not signed in",
+      }),
+    ).toBe("Not reachable via fabplane.com relay: not signed in.");
+    expect(formatRelayLine({ connected: false, url: "wss://relay.fabplane.com" })).toBe(
+      "Not yet reachable via fabplane.com relay: connecting.",
+    );
+    expect(
+      formatRelayLine({ connected: false, url: "wss://relay.fabplane.com", lastError: "replaced" }),
+    ).toBe("Not yet reachable via fabplane.com relay: connecting (last: replaced).");
   });
 
   test("formatPairing lists the link, the code, the endpoints with kinds, and warns about loopback-only", () => {
@@ -154,8 +211,22 @@ describe("formatting", () => {
       url: "fabdesk://pair?v=1&t=tok&p=47820&n=Mac&h=mac.tail.ts.net&h=192.168.1.24&k=tailscale-https&k=lan&s=https&s=http",
       coreName: "Mac",
     };
-    const text = formatPairing(result, now);
+    const text = formatPairing(result, now, {
+      connected: false,
+      url: "wss://relay.fabplane.com",
+      error: "not signed in",
+    });
     expect(text).toContain("  fabdesk://pair?v=1&t=tok&p=47820");
+    expect(text).toContain("\nNot reachable via fabplane.com relay: not signed in.\n");
+    expect(formatPairing(result, now)).not.toContain("relay");
+    expect(
+      formatPairing({ ...result, endpoints: [...result.endpoints, RELAY_ENDPOINT] }, now, {
+        connected: true,
+        url: "wss://relay.fabplane.com",
+      }),
+    ).toMatch(
+      /https:\/\/relay\.fabplane\.com\s+relay\n[\s\S]*Reachable from anywhere via fabplane\.com relay\./,
+    );
     expect(text).toContain("Code: AB12-CD34   (expires in 90s)");
     expect(text).toContain("https://mac.tail.ts.net");
     expect(text).toMatch(/https:\/\/mac\.tail\.ts\.net\s+Tailscale HTTPS  \(default\)/);
@@ -199,6 +270,8 @@ describe("against a running daemon", () => {
       localAuth: true,
       quiet: true,
       watchProjects: false,
+      // Pin the default relay so the pair output does not depend on the shell's FABPLANE_API_ORIGIN.
+      relayEnv: { FABPLANE_RELAY_URL: "wss://relay.fabplane.com" },
       services: async ({ projects, bus, store }) =>
         mockServices([], {
           projects,
@@ -255,6 +328,8 @@ describe("against a running daemon", () => {
       qr.split("\n").filter((l) => /^[█▀▄ ]+$/.test(l) && l.length > 20).length,
     ).toBeGreaterThan(10);
     expect(io.text()).toContain("Code: ");
+    // Local auth mode: the link exists but cannot dial, and pair says so.
+    expect(io.text()).toContain("Not reachable via fabplane.com relay: not signed in.");
     expect(io.text()).toContain("Waiting for a phone");
 
     const payload = parsePairingUrl(url!)!;
@@ -292,8 +367,8 @@ describe("against a running daemon", () => {
     expect(await devicesCommand(client, { sub: "list", id: undefined, json: false }, io.io)).toBe(
       0,
     );
-    expect(io.stdout()).toMatch(/^ID\s+LABEL\s+PLATFORM/);
-    expect(io.stdout()).toContain("Maya's iPhone");
+    expect(io.stdout()).toMatch(/^ID\s+LABEL\s+PLATFORM\s+PAIRED\s+LAST SEEN\s+VIA/);
+    expect(io.stdout()).toMatch(/Maya's iPhone.*\s-\n/);
     const json = capture();
     expect(
       await devicesCommand(client, { sub: undefined, id: undefined, json: true }, json.io),
