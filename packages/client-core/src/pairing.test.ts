@@ -84,6 +84,19 @@ describe("pairing url", () => {
     // Without a coreId the relay cannot address the daemon, so it is not offered.
     const { coreId: _, ...noCore } = withRelay;
     expect(claimBaseUrls(noCore)).toEqual(["http://127.0.0.1:47820"]);
+    // A plain-http relay (staging) must say so, and the URL carries it even with no https host.
+    const plain: PairingPayload = { ...withRelay, schemes: ["http", "http"] };
+    expect(buildPairingUrl(plain)).toContain("&s=http&s=http");
+    expect(claimBaseUrls(parsePairingUrl(buildPairingUrl(plain))!)).toEqual([
+      "http://127.0.0.1:47820",
+      "http://relay.fabplane.com/c/core_abc",
+    ]);
+    // Scheme-less (an older daemon) means https for the relay, like the phone assumes.
+    const { schemes: __, ...noSchemes } = withRelay;
+    expect(claimBaseUrls(noSchemes)).toEqual([
+      "http://127.0.0.1:47820",
+      "https://relay.fabplane.com/c/core_abc",
+    ]);
   });
 });
 
@@ -95,6 +108,7 @@ describe("claim through a relay", () => {
         ...payload,
         hosts: ["127.0.0.1", "relay-staging.example:4010"],
         kinds: ["loopback", "relay"],
+        schemes: ["http", "http"],
         coreId: "core_abc",
       },
       {

@@ -350,7 +350,7 @@ export interface PairingPayload {
  * without kinds simply omits the list. A kind this parser does not know becomes `other`, so a
  * newer daemon can add kinds without breaking an older phone that does know `k=`.
  *
- * Schemes follow the same pattern as `s=`, emitted only when some host is https. An old phone
+ * Schemes follow the same pattern as `s=`, emitted when some host is https or a relay is listed. An old phone
  * that ignores `s=` tries `http://<name>:<port>` for the MagicDNS host — which still works when
  * the plain listener is reachable over the tailnet, so the link degrades rather than breaks.
  */
@@ -365,10 +365,13 @@ export function buildPairingUrl(payload: PairingPayload): string {
     payload.kinds && payload.kinds.length === payload.hosts.length
       ? payload.kinds.map((k) => `k=${encodeURIComponent(k)}`)
       : [];
+  // Schemes are emitted whenever some host is https — or a relay is listed, since a phone
+  // assumes https for a relay and a plain-http staging relay would otherwise get TLS.
+  const hasRelay = payload.kinds?.some((k) => k === "relay") ?? false;
   const schemes =
     payload.schemes &&
     payload.schemes.length === payload.hosts.length &&
-    payload.schemes.some((s) => s === "https")
+    (hasRelay || payload.schemes.some((s) => s === "https"))
       ? payload.schemes.map((s) => `s=${s}`)
       : [];
   const core = payload.coreId ? [`c=${encodeURIComponent(payload.coreId)}`] : [];
@@ -470,6 +473,7 @@ export function claimBaseUrls(
   const i = kinds?.indexOf("relay") ?? -1;
   const host = i >= 0 ? payload.hosts[i] : undefined;
   if (!host || !payload.coreId) return direct;
-  const scheme = schemes?.[i] ?? "http";
+  // A relay is https unless the link says otherwise (the phone's `relayUrlFromPayload` agrees).
+  const scheme = schemes?.[i] ?? "https";
   return [...direct, `${scheme}://${host}/c/${encodeURIComponent(payload.coreId)}`];
 }
