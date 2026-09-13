@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { findReachable, probe, relayUrlFromPayload } from "./connect";
+import { findReachable, locate, probe, probeOutcome, relayUrlFromPayload } from "./connect";
 
 const health = {
   ok: true,
@@ -83,6 +83,31 @@ describe("probe", () => {
     clock.advance(1);
     expect(aborted).toBe(true);
     expect(await pending).toBeNull();
+  });
+
+  test("probeOutcome names the relay's core-offline answer; any other failure is unreachable", async () => {
+    const body = (error: string, status: number) => async () =>
+      new Response(JSON.stringify({ error }), { status });
+    expect(await probeOutcome("http://relay/c/x", { fetch: body("core offline", 503) })).toEqual({
+      kind: "core-offline",
+    });
+    expect(
+      await probeOutcome("http://relay/c/x", { fetch: body("core disconnected", 502) }),
+    ).toEqual({ kind: "core-offline" });
+    expect(await probeOutcome("http://x", { fetch: body("router busy", 503) })).toEqual({
+      kind: "unreachable",
+    });
+    expect(
+      await probeOutcome("http://x", {
+        fetch: async () => {
+          throw new Error("connection refused");
+        },
+      }),
+    ).toEqual({ kind: "unreachable" });
+    expect(await probeOutcome("http://x", { fetch: async () => ok() })).toMatchObject({
+      kind: "ok",
+      health: { pid: 42 },
+    });
   });
 
   test("asks the right url", async () => {
@@ -214,6 +239,44 @@ describe("findReachable via the relay", () => {
       via: "relay",
     });
     expect(await findReachable(["http://tailnet"], { relay: null, fetch: offline })).toBeNull();
+  });
+
+  test("locate tells the relay's 'core offline' apart from a relay that is itself unreachable", async () => {
+    const offline = async (url: string) =>
+      url === relayHealth
+        ? new Response(JSON.stringify({ error: "core offline" }), { status: 503 })
+        : Promise.reject(new Error("no route to host"));
+    expect(await locate(["http://tailnet"], { relay, fetch: offline })).toEqual({
+      found: null,
+      relay: "core-offline",
+    });
+    const dead = async () => Promise.reject(new Error("no route to host"));
+    expect(await locate(["http://tailnet"], { relay, fetch: dead })).toEqual({
+      found: null,
+      relay: "unreachable",
+    });
+    expect(await locate(["http://tailnet"], { relay: null, fetch: dead })).toEqual({
+      found: null,
+      relay: "none",
+    });
+    // A direct answer never asks the relay, so there is no verdict to report.
+    expect(await locate(["http://tailnet"], { relay, fetch: async () => ok() })).toMatchObject({
+      found: { via: "direct" },
+      relay: "none",
+    });
+    expect(await locate([], { relay, fetch: async () => ok() })).toMatchObject({
+      found: { via: "relay" },
+      relay: "answered",
+    });
+  });
+
+  test("once on the relay, a direct address that answers again wins the re-probe", async () => {
+    // Wi-Fi is back: the same candidates are probed and the tailnet answers, so the result is a
+    // direct address different from the relay prefix the transport is on — `planAfterReprobe`
+    // turns that into a switch.
+    const found = await findReachable(["http://tailnet"], { relay, fetch: async () => ok() });
+    expect(found).toMatchObject({ baseUrl: "http://tailnet", via: "direct" });
+    expect(found?.baseUrl).not.toBe("https://relay.fabplane.com/c/core_abc");
   });
 
   test("a relay address that leaked into the direct list is not probed twice", async () => {

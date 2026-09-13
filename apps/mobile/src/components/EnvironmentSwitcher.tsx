@@ -12,16 +12,19 @@ import { useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
+  effectiveVia,
   lastSeenLabel,
   orderEnvironments,
   statusLabel,
   type EnvironmentStatus,
+  type ReachedVia,
 } from "@/lib/environments";
 import { haptic } from "@/state/haptics";
 import { useConnections, type Connection } from "@/transport/connections";
 import {
   useEnvironmentStatus,
   useEnvironmentStatusOf,
+  useEnvironmentViaOf,
   useStatusProbing,
 } from "@/transport/CoreConnection";
 import { useTheme, type Theme } from "@/theme";
@@ -30,16 +33,38 @@ export function statusColor(t: Theme, status: EnvironmentStatus): string {
   return status === "reachable" ? t.success : status === "offline" ? t.danger : t.muted;
 }
 
-export function StatusDot({ status, size = 8 }: { status: EnvironmentStatus; size?: number }) {
+/** "Online via relay" for a hollow dot; the plain status otherwise. */
+export function dotLabel(status: EnvironmentStatus, via: ReachedVia | null): string {
+  return status === "reachable" && via === "relay" ? "Online via relay" : statusLabel[status];
+}
+
+/**
+ * A solid dot for a direct connection; a hollow ring of the same colour when the computer is
+ * reachable only through the relay — same "online", one hop longer, and the hint to look at the
+ * Settings card for which path is in use.
+ */
+export function StatusDot({
+  status,
+  via = null,
+  size = 8,
+}: {
+  status: EnvironmentStatus;
+  via?: ReachedVia | null;
+  size?: number;
+}) {
   const t = useTheme();
+  const hollow = status === "reachable" && via === "relay";
+  const color = statusColor(t, status);
   return (
     <View
-      accessibilityLabel={statusLabel[status]}
+      accessibilityLabel={dotLabel(status, via)}
       style={{
         width: size,
         height: size,
         borderRadius: size / 2,
-        backgroundColor: statusColor(t, status),
+        backgroundColor: hollow ? "transparent" : color,
+        borderColor: color,
+        borderWidth: hollow ? Math.max(1.5, size / 5) : 0,
       }}
     />
   );
@@ -51,6 +76,7 @@ export function EnvironmentSwitcher() {
   const active = connections.find((c) => c.id === activeId) ?? null;
   const [open, setOpen] = useState(false);
   const status = useEnvironmentStatusOf(active?.id ?? "");
+  const via = useEnvironmentViaOf(active?.id ?? "");
   if (!active) return null;
 
   return (
@@ -59,7 +85,7 @@ export function EnvironmentSwitcher() {
         onPress={() => setOpen(true)}
         hitSlop={6}
         accessibilityRole="button"
-        accessibilityLabel={`Computer: ${active.name}, ${statusLabel[status]}. Tap to switch.`}
+        accessibilityLabel={`Computer: ${active.name}, ${dotLabel(status, via)}. Tap to switch.`}
         style={({ pressed }) => ({
           flexDirection: "row",
           alignItems: "center",
@@ -75,7 +101,7 @@ export function EnvironmentSwitcher() {
           paddingVertical: 4,
         })}
       >
-        <StatusDot status={status} />
+        <StatusDot status={status} via={via} />
         <Text
           numberOfLines={1}
           style={{ color: t.fg, fontSize: 12, fontWeight: "600", flexShrink: 1 }}
@@ -95,10 +121,13 @@ function EnvironmentSheet({ open, onClose }: { open: boolean; onClose: () => voi
   const { connections, activeId, setActive } = useConnections();
   const statuses = useEnvironmentStatus((s) => s.statuses);
   const liveStatus = useEnvironmentStatusOf(activeId ?? "");
+  const liveVia = useEnvironmentViaOf(activeId ?? "");
   useStatusProbing(open);
 
   const statusOf = (id: string) =>
     id === activeId ? liveStatus : (statuses[id]?.status ?? "unknown");
+  const viaOf = (id: string) =>
+    id === activeId ? liveVia : effectiveVia(statuses[id], null, statusOf(id));
   const ordered = orderEnvironments(connections, activeId, statusOf);
 
   const pick = (c: Connection) => {
@@ -136,6 +165,7 @@ function EnvironmentSheet({ open, onClose }: { open: boolean; onClose: () => voi
         <ScrollView>
           {ordered.map((c, i) => {
             const status = statusOf(c.id);
+            const via = viaOf(c.id);
             const isActive = c.id === activeId;
             return (
               <Pressable
@@ -143,7 +173,7 @@ function EnvironmentSheet({ open, onClose }: { open: boolean; onClose: () => voi
                 onPress={() => pick(c)}
                 accessibilityRole="button"
                 accessibilityState={{ selected: isActive }}
-                accessibilityLabel={`${c.name}, ${statusLabel[status]}${isActive ? ", current" : ""}`}
+                accessibilityLabel={`${c.name}, ${dotLabel(status, via)}${isActive ? ", current" : ""}`}
                 style={({ pressed }) => ({
                   backgroundColor: pressed ? t.panel2 : "transparent",
                   paddingHorizontal: 16,
@@ -155,7 +185,7 @@ function EnvironmentSheet({ open, onClose }: { open: boolean; onClose: () => voi
                   borderTopWidth: i === 0 ? 0 : StyleSheet.hairlineWidth,
                 })}
               >
-                <StatusDot status={status} size={10} />
+                <StatusDot status={status} via={via} size={10} />
                 <View style={{ flex: 1 }}>
                   <Text
                     numberOfLines={1}
@@ -164,7 +194,7 @@ function EnvironmentSheet({ open, onClose }: { open: boolean; onClose: () => voi
                     {c.name}
                   </Text>
                   <Text style={{ color: t.muted, fontSize: 12, marginTop: 1 }} numberOfLines={1}>
-                    {statusLabel[status]} · {lastSeenLabel(c, statuses[c.id])}
+                    {dotLabel(status, via)} · {lastSeenLabel(c, statuses[c.id])}
                   </Text>
                 </View>
                 <Text style={{ color: t.accent, width: 16, fontSize: 15 }}>

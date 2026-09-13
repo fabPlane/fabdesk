@@ -40,9 +40,11 @@ import { create } from "zustand";
 import {
   STATUS_PROBE_INTERVAL_MS,
   effectiveStatus,
+  effectiveVia,
   probeDue,
   probeEnvironments,
   type EnvironmentStatus,
+  type ReachedVia,
   type StatusEntry,
 } from "../lib/environments";
 import { DORMANT_AFTER_MS, dormancyAction } from "../lib/dormancy";
@@ -61,7 +63,7 @@ import {
   useConnections,
   type Connection,
 } from "./connections";
-import { findReachable, type HealthInfo } from "./connect";
+import { findReachable, locate, type HealthInfo } from "./connect";
 
 export type ConnectionPhase =
   | "idle"
@@ -69,12 +71,22 @@ export type ConnectionPhase =
   | "connecting"
   | "ready"
   | "unreachable"
+  /** Nothing direct answered and the relay said the computer is not dialled in — the relay is up, the Mac is not. */
+  | "core-offline"
   | "unauthorized";
 
 export interface CoreConnectionValue {
   connection: Connection | null;
   phase: ConnectionPhase;
   status: SseStatus;
+  /** Which path the live transport takes — `direct` to a listener, `relay` through `/c/<coreId>` — or null before one exists. */
+  via: ReachedVia | null;
+  /**
+   * The relay's latest verdict while on it: true after a `503 core offline` or a 4503 close, false
+   * again once the daemon answers. Screens use it to say "your computer is offline" rather than
+   * "reconnecting" while the stream is down. Always false on a direct transport.
+   */
+  coreOffline: boolean;
   /**
    * When the event stream last dropped out of `open` (ms since epoch), null while it is open or
    * has never been. Screens turn it into "Reconnecting for 30 s…"; a cold start is not stale.
@@ -133,7 +145,7 @@ export const useEnvironmentStatus = create<EnvironmentStatusState>()((set) => ({
         timeoutMs: REPROBE_TIMEOUT_MS,
         relay: relayTarget(env),
       });
-      return found?.baseUrl ?? null;
+      return found ? { baseUrl: found.baseUrl, via: found.via } : null;
     })
       .then((next) => set((s) => ({ statuses: { ...s.statuses, ...next } })))
       .finally(() => {
@@ -179,9 +191,24 @@ export function useEnvironmentStatusOf(id: string): EnvironmentStatus {
   const { connection, status, phase } = useConnection();
   const live =
     connection?.id === id
-      ? { streamOpen: status === "open", unreachable: phase === "unreachable" }
+      ? {
+          streamOpen: status === "open",
+          unreachable: phase === "unreachable" || phase === "core-offline",
+        }
       : null;
   return effectiveStatus(entry, live);
+}
+
+/**
+ * How one saved computer is reached — for the switcher's dot, which is hollow for the relay.
+ * Null unless it is reachable and the path is known.
+ */
+export function useEnvironmentViaOf(id: string): ReachedVia | null {
+  const entry = useEnvironmentStatus((s) => s.statuses[id]);
+  const { connection, status, via } = useConnection();
+  const reachable = useEnvironmentStatusOf(id);
+  const live = connection?.id === id ? { streamOpen: status === "open", via } : null;
+  return effectiveVia(entry, live, reachable);
 }
 
 /**
@@ -193,9 +220,16 @@ function transportFor(
   conn: Pick<Connection, "id" | "relayUrl" | "coreId">,
   found: { baseUrl: string; via: "direct" | "relay" },
   token: string,
+  onCoreOffline: (offline: boolean) => void,
 ): CoreTransport {
   if (found.via === "relay" && conn.relayUrl && conn.coreId)
-    return new ProxyTransport({ id: conn.id, relayUrl: conn.relayUrl, coreId: conn.coreId, token });
+    return new ProxyTransport({
+      id: conn.id,
+      relayUrl: conn.relayUrl,
+      coreId: conn.coreId,
+      token,
+      onCoreState: (state) => onCoreOffline(state === "offline"),
+    });
   return new DirectTransport({ id: conn.id, baseUrl: found.baseUrl, token });
 }
 
@@ -218,6 +252,8 @@ export function CoreConnectionProvider({ children }: { children: ReactNode }) {
   // True once the app has been in the background past the grace window: the socket is closed on
   // purpose so the daemon pushes instead (src/lib/dormancy.ts). Cleared on return.
   const [dormant, setDormant] = useState(false);
+  // The relay's word on the daemon while a `ProxyTransport` is up; reset with the transport.
+  const [coreOffline, setCoreOffline] = useState(false);
   const retry = useMemo(() => () => setAttempt((n) => n + 1), []);
 
   // What the re-probe reads. Refs, so the AppState/network listeners are installed once and never
@@ -272,11 +308,20 @@ export function CoreConnectionProvider({ children }: { children: ReactNode }) {
         setError("This device's credential is gone. Pair again from the desktop.");
         return;
       }
-      const found = await findReachable(connectOrder(connection), {
+      const { found, relay } = await locate(connectOrder(connection), {
         relay: relayTarget(connection),
       });
       if (cancelled) return;
       if (!found) {
+        // The relay answering "core offline" is a different situation from nothing answering:
+        // the phone has a way in, the computer just is not there. Say so.
+        if (relay === "core-offline") {
+          setPhase("core-offline");
+          setError(
+            `Your computer is offline — the relay is up, but ${connection.name} is not connected to it. Wake it, or check that it is signed in to fabplane.com with remote access on.`,
+          );
+          return;
+        }
         setPhase("unreachable");
         setError(`Could not reach ${connection.name}. Is it awake and on the same tailnet?`);
         return;
@@ -284,7 +329,8 @@ export function CoreConnectionProvider({ children }: { children: ReactNode }) {
       noteHealth(found.health);
       if (found.via === "direct" && found.baseUrl !== connection.baseUrl)
         void noteConnected(connection.id, found.baseUrl);
-      setTransport(transportFor(connection, found, token));
+      setCoreOffline(false);
+      setTransport(transportFor(connection, found, token, setCoreOffline));
       setPhase("connecting");
     })();
     return () => {
@@ -307,11 +353,14 @@ export function CoreConnectionProvider({ children }: { children: ReactNode }) {
     if (!current) {
       // Nothing to keep alive: a failed initial locate is worth another go, anything else is
       // either in flight or needs the desktop (a revoked token).
-      if (ph === "unreachable") retry();
+      if (ph === "unreachable" || ph === "core-offline") retry();
       return;
     }
     reprobing.current = true;
     try {
+      // Direct addresses are probed first and the relay only as a fallback, so once Wi-Fi is
+      // back the tailnet answers, `found` differs from the relay prefix the transport is on,
+      // and the plan below switches off the relay (`src/lib/reconnect.test.ts`).
       const found = await findReachable(connectOrder(conn), {
         timeoutMs: REPROBE_TIMEOUT_MS,
         relay: relayTarget(conn),
@@ -327,8 +376,14 @@ export function CoreConnectionProvider({ children }: { children: ReactNode }) {
         const token = await readToken(conn.id);
         if (!token || latest.current.transport !== current) return;
         if (found?.via === "direct") void noteConnected(conn.id, plan.baseUrl);
+        setCoreOffline(false);
         setTransport(
-          transportFor(conn, { baseUrl: plan.baseUrl, via: found?.via ?? "direct" }, token),
+          transportFor(
+            conn,
+            { baseUrl: plan.baseUrl, via: found?.via ?? "direct" },
+            token,
+            setCoreOffline,
+          ),
         );
       } else if (plan.kind === "reopen") {
         setStreamEpoch((n) => n + 1);
@@ -423,6 +478,8 @@ export function CoreConnectionProvider({ children }: { children: ReactNode }) {
       connection,
       phase,
       status: "closed",
+      via: null,
+      coreOffline,
       staleSince,
       health,
       baseUrl: null,
@@ -430,7 +487,7 @@ export function CoreConnectionProvider({ children }: { children: ReactNode }) {
       error,
       retry,
     }),
-    [connection, phase, staleSince, health, error, retry],
+    [connection, phase, coreOffline, staleSince, health, error, retry],
   );
 
   if (!transport) return <Ctx.Provider value={offline}>{children}</Ctx.Provider>;
@@ -522,6 +579,7 @@ function Bridge({
     () => ({
       ...base,
       status: sseStatus,
+      via: transport.kind === "proxy" ? "relay" : "direct",
       baseUrl: transport.baseUrl(),
       authHeaders: transport.authHeaders(),
     }),

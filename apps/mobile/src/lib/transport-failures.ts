@@ -13,6 +13,7 @@ export type PhaseLike =
   | "connecting"
   | "ready"
   | "unreachable"
+  | "core-offline"
   | "unauthorized";
 
 export interface ConnectionSnapshot {
@@ -29,7 +30,6 @@ export interface TransportFailure {
   message: string;
   level: "warning" | "error";
 }
-
 /** The same failure is not worth repeating more often than this (ms). */
 export const FAILURE_DEDUPE_MS = 5 * 60_000;
 
@@ -40,6 +40,8 @@ export const FAILURE_DEDUPE_MS = 5 * 60_000;
  * - the stored device token was rejected (`unauthorized`) — never expected without a revoke;
  * - an open stream dropped while the app was in the foreground — a backgrounded phone losing its
  *   socket is the OS, not a bug.
+ * `core-offline` — the relay answered that the computer is not dialled in — is deliberately not
+ * one: a laptop asleep or shut is the user's business, and the relay's verdict is unambiguous.
  */
 export function transportFailure(
   prev: ConnectionSnapshot | null,
