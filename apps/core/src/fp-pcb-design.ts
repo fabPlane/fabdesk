@@ -60,6 +60,7 @@ export function toRouteProgress(job: FpPcbRouteJob): RouteProgress {
     state: job.state,
     log: job.log,
     ...(p?.phase ? { phase: p.phase } : {}),
+    ...(p?.percent !== undefined ? { percent: p.percent } : {}),
     ...(p?.message ? { message: p.message } : {}),
     ...(p?.pass !== undefined ? { pass: p.pass } : {}),
     ...(p?.routed !== undefined ? { routed: p.routed } : {}),

@@ -97,7 +97,16 @@ export const FpPcbBoardSpec = z.object({
   heightMm: z.number().optional(),
   copperLayers: z.number().optional(),
   rules: FpPcbBoardRules.optional(),
-  vias: z.array(z.object({ x: z.number(), y: z.number(), diameterMm: z.number().optional(), drillMm: z.number().optional() })).optional(),
+  vias: z
+    .array(
+      z.object({
+        x: z.number(),
+        y: z.number(),
+        diameterMm: z.number().optional(),
+        drillMm: z.number().optional(),
+      }),
+    )
+    .optional(),
   holes: z.array(z.object({ x: z.number(), y: z.number(), diameterMm: z.number() })).optional(),
 });
 export type FpPcbBoardSpec = z.infer<typeof FpPcbBoardSpec>;
@@ -170,6 +179,8 @@ export const FP_PCB_SSE_EVENTS = {
 /** `@fp-pcb/router` `RouteProgress`, as the route job streams it; kept loose. */
 export const FpPcbRouteProgress = z.looseObject({
   phase: z.string().optional(),
+  /** JS router: solver progress within the phase, 0–100. */
+  percent: z.number().optional(),
   message: z.string().optional(),
   pass: z.number().optional(),
   routed: z.number().optional(),
@@ -177,10 +188,24 @@ export const FpPcbRouteProgress = z.looseObject({
 });
 export type FpPcbRouteProgress = z.infer<typeof FpPcbRouteProgress>;
 
-export const FpPcbRouteJobState = z.enum(["queued", "saving", "filling", "extracting", "routing", "applying", "done", "failed", "cancelled"]);
+export const FpPcbRouteJobState = z.enum([
+  "queued",
+  "saving",
+  "filling",
+  "extracting",
+  "routing",
+  "applying",
+  "done",
+  "failed",
+  "cancelled",
+]);
 export type FpPcbRouteJobState = z.infer<typeof FpPcbRouteJobState>;
 
-export const FpPcbRouteUnrouted = z.object({ net: z.string(), from: z.object({ x: z.number(), y: z.number() }), to: z.object({ x: z.number(), y: z.number() }) });
+export const FpPcbRouteUnrouted = z.object({
+  net: z.string(),
+  from: z.object({ x: z.number(), y: z.number() }),
+  to: z.object({ x: z.number(), y: z.number() }),
+});
 
 export const FpPcbRouteSummary = z.object({
   tracks: z.number().default(0),
@@ -236,7 +261,11 @@ export const FpPcbRouteJob = z.object({
 });
 export type FpPcbRouteJob = z.infer<typeof FpPcbRouteJob>;
 
-export const FP_PCB_ROUTE_TERMINAL_STATES: ReadonlySet<FpPcbRouteJobState> = new Set(["done", "failed", "cancelled"]);
+export const FP_PCB_ROUTE_TERMINAL_STATES: ReadonlySet<FpPcbRouteJobState> = new Set([
+  "done",
+  "failed",
+  "cancelled",
+]);
 
 /**
  * `circuit.netlist.json` — the design source fabdesk projects carry, i.e. `@fp-pcb/compile`'s
@@ -248,26 +277,48 @@ export const NetlistComponent = z.object({
   ref: z.string(),
   value: z.string(),
   footprint: z.string(),
-  libSource: z.object({ lib: z.string(), part: z.string(), description: z.string().optional() }).optional(),
+  libSource: z
+    .object({ lib: z.string(), part: z.string(), description: z.string().optional() })
+    .optional(),
   fields: z.record(z.string(), z.string()).optional(),
   uuid: z.string().optional(),
 });
 export type NetlistComponent = z.infer<typeof NetlistComponent>;
 
-export const NetlistNode = z.object({ ref: z.string(), pin: z.string(), pinFunction: z.string().optional(), pinType: z.string().optional() });
+export const NetlistNode = z.object({
+  ref: z.string(),
+  pin: z.string(),
+  pinFunction: z.string().optional(),
+  pinType: z.string().optional(),
+});
 export type NetlistNode = z.infer<typeof NetlistNode>;
 
-export const NetlistNet = z.object({ name: z.string(), code: z.number().optional(), nodes: z.array(NetlistNode) });
+export const NetlistNet = z.object({
+  name: z.string(),
+  code: z.number().optional(),
+  nodes: z.array(NetlistNode),
+});
 export type NetlistNet = z.infer<typeof NetlistNet>;
 
 export const Netlist = z.object({
   components: z.array(NetlistComponent),
   nets: z.array(NetlistNet),
-  design: z.object({ source: z.string().optional(), date: z.string().optional(), tool: z.string().optional() }).optional(),
+  design: z
+    .object({
+      source: z.string().optional(),
+      date: z.string().optional(),
+      tool: z.string().optional(),
+    })
+    .optional(),
 });
 export type Netlist = z.infer<typeof Netlist>;
 
-export const NetlistLibrary = z.object({ kind: z.enum(["footprint", "symbol"]), nickname: z.string(), uri: z.string(), description: z.string().optional() });
+export const NetlistLibrary = z.object({
+  kind: z.enum(["footprint", "symbol"]),
+  nickname: z.string(),
+  uri: z.string(),
+  description: z.string().optional(),
+});
 export type NetlistLibrary = z.infer<typeof NetlistLibrary>;
 
 export const NetlistFile = z.object({

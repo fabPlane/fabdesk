@@ -51,6 +51,8 @@ export type RouteProgress = {
   state: string;
   log: string[];
   phase?: string;
+  /** Solver progress within the phase, 0–100, when the router reports one. */
+  percent?: number;
   message?: string;
   pass?: number;
   routed?: number;
