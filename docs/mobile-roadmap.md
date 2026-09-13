@@ -10,6 +10,10 @@ read of **T3 Code** (`~/projects/ai/t3code`, v0.0.40), whose `apps/mobile` is th
 "phone client for a local agent daemon" we know of. T3 is a coding-agent GUI; fabPlane is an
 EDA tool with agents inside it, so not everything carries over — the table in §2 says what does.
 
+**Status 2026-09-13 (evening):** all five phases are merged to `main` (PR #159, then the relay
+PRs #165–#167). §2 is now a status map rather than a plan; §7 is what comes next. The T3
+checkout was re-read at the same commit (`4ac094f`, 2026-07-03) — nothing new upstream to fold in.
+
 ---
 
 ## 1. Where v0.1 stands
@@ -63,43 +67,46 @@ Tools an agent can run on that machine (visible as tool cards on the phone alrea
 
 ---
 
-## 2. What T3 Code's mobile app does, and what carries over
+## 2. What T3 Code's mobile app does, and what carries over — gap map
 
 T3's `apps/mobile` (Expo, ~295 source files) is organised into feature modules. Read against
-fabPlane:
+fabPlane as of 2026-09-13. **Status** is against `main`; "code" means merged and typechecked but
+not exercised on a device (the per-package detail is in
+[`mobile-testing-handoff.md`](mobile-testing-handoff.md)).
 
-| T3 mobile feature                      | What it is                                                                                                                                                                              | fabPlane?                                                                                         | Phase          |
-| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | -------------- |
-| Environments + pairing (`connection/`) | Many saved "environments", each with several `AccessEndpoint`s (LAN, Tailscale IP, MagicDNS HTTPS, tunnel); status dot per environment; onboarding                                      | Yes — we have one-computer-at-a-time; multi-computer and endpoint kinds are the natural extension | 4              |
-| Home list (`home/`)                    | Threads sorted by last message/created; group by repository / path / none; filters                                                                                                      | Partly have; sorting and filters                                                                  | 1              |
-| Thread detail + feed (`threads/`)      | Streaming feed, work log, composer with **model** and **configuration** pickers, command popover (slash commands), draft screen for a new task with **environment / workspace / model** | Yes — agent+model picker, slash commands, drafts                                                  | 1, 3           |
-| Pending approval card                  | In-app approve/deny of a command or file write when the session runs "supervised"                                                                                                       | Only once the daemon has a supervised mode; today permissions are per-agent at spawn              | 3              |
-| Pending user-input card                | Agent asks a question with options; "or type a custom answer"                                                                                                                           | Yes, when the adapters surface it                                                                 | 3              |
-| Git controls (`threads/git/`)          | Branches, commit, PR status, overview sheets, action progress overlay                                                                                                                   | Projects are KiCad dirs; git is optional. **Later**, only if projects become git-backed           | later          |
-| Review (`review/`, `diffs/`)           | Native diff viewer of a turn's file changes, review comments                                                                                                                            | For us the "diff" is the board: before/after renders, DRC delta. Text-file diffs matter less      | 2 (board diff) |
-| Files (`files/`)                       | File tree browser, source viewer with syntax highlighting (shiki), markdown/image/web previews                                                                                          | Yes — project files, `circuit.tsx`, reports, renders                                              | 2              |
-| Terminal (`terminal/`)                 | Native terminal surface attached to a thread; open new shell                                                                                                                            | Nice-to-have; the daemon has no PTY route. Defer                                                  | later          |
-| Agent awareness (`agent-awareness/`)   | **Push notifications** when a turn needs you / finishes, **Live Activities** on iOS, notification → thread navigation, device registration with a relay                                 | Yes — the headline reason to have a phone client                                                  | 3              |
-| Archive (`archive/`)                   | Archived threads screen                                                                                                                                                                 | Yes (daemon already has `archived`)                                                               | 1              |
-| Cloud (`cloud/`)                       | Clerk auth, managed relay (DPoP tokens), waitlist                                                                                                                                       | We have fabplane.com auth already; a relay is Phase 4                                             | 4              |
-| Keyboard (`keyboard/`)                 | Hardware-keyboard shortcuts (iPad, Thor)                                                                                                                                                | Small; Thor and iPad both benefit                                                                 | 2              |
-| Layout (`layout/`)                     | Adaptive sidebar + detail on wide screens (iPad), inspector pane                                                                                                                        | Yes — Thor is 538 dp wide, iPad wider                                                             | 2              |
-| Projects (`projects/`)                 | Add project: local path / repository / destination                                                                                                                                      | Yes — create project, import KiCad, remix from catalog                                            | 2              |
-| Settings (`settings/`)                 | Appearance (theme), auth, environments                                                                                                                                                  | Yes                                                                                               | 1              |
-| Observability                          | Tracing hooks                                                                                                                                                                           | Sentry is already in desktop/core; add to mobile                                                  | 5              |
+| T3 mobile feature                      | What it is                                                                                                                                                                              | fabPlane status                                                                                                                                                                                                                                              | Remaining gap                                                                                                                                                                                      |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Environments + pairing (`connection/`) | Many saved "environments", each with several `AccessEndpoint`s (LAN, Tailscale IP, MagicDNS HTTPS, tunnel); status dot per environment; onboarding                                      | **Done.** Endpoint kinds + preferred endpoint in the QR (D1), Tailscale IP / MagicDNS / `serve` detection (D2), relay path through `relay.fabplane.com` (T5, verified from cellular), `EnvironmentSwitcher` with per-computer threads (T6), CLI pairing (D3) | `tailscale serve` HTTPS never run against a real tailnet, so `NSAllowsArbitraryLoads` stays (T4). No "list my machines" — the phone never signs in to fabplane.com; every computer needs a QR/link |
+| Home list (`home/`)                    | Threads sorted by last message/created; group by repository / path / none; filters; **pending (unsent) tasks listed inline** (#3670)                                                    | **Done** (C4): sort, per-project fold, unread dot, running-first                                                                                                                                                                                             | No client-side outbox — a message composed while the computer is offline is lost, not queued (see the new row below)                                                                               |
+| Thread detail + feed (`threads/`)      | Streaming feed, work log, composer with **model** and **configuration** pickers, command popover (slash commands), draft screen for a new task with **environment / workspace / model** | **Done** (C2 agent+model picker, C6 slash commands, C7 work log, `new-chat` draft with project + agent)                                                                                                                                                      | Composer draft is `useState` — lost on navigation; T3 persists drafts and selector choices per thread (#3496). Long-thread scroll performance untested (T3 moved to Legend List, #3545/#3564)      |
+| Pending approval card                  | In-app approve/deny of a command or file write when the session runs "supervised"                                                                                                       | **Done, verified** (A1 daemon `runtimeMode: "supervised"` pauses write-classified tool calls; A2 card; approve from the phone over the relay recorded as `by: device`)                                                                                       | Only Claude + Codex adapters honour it (`supportsSupervised` on `/agents`)                                                                                                                         |
+| Pending user-input card                | Agent asks a question with options; "or type a custom answer"                                                                                                                           | **Code** (A2 `PendingQuestionCard`, `agent.input_requested`)                                                                                                                                                                                                 | Not exercised with a real adapter question yet                                                                                                                                                     |
+| Git controls (`threads/git/`)          | Branches, commit, PR status, overview sheets, action progress overlay                                                                                                                   | Not planned (§5)                                                                                                                                                                                                                                             | —                                                                                                                                                                                                  |
+| Review (`review/`, `diffs/`)           | Native diff viewer of a turn's file changes, review comments                                                                                                                            | **Code** (B1 renders gallery with "since last run" compare; B4 DRC list)                                                                                                                                                                                     | Before/after compare never exercised on a device; no DRC delta between runs (list only)                                                                                                            |
+| Files (`files/`)                       | File tree browser, source viewer with syntax highlighting (shiki), markdown/image/web previews                                                                                          | **Done, verified** (B5)                                                                                                                                                                                                                                      | —                                                                                                                                                                                                  |
+| Terminal (`terminal/`)                 | Native terminal surface attached to a thread; open new shell                                                                                                                            | Not planned (§5)                                                                                                                                                                                                                                             | —                                                                                                                                                                                                  |
+| Agent awareness (`agent-awareness/`)   | **Push notifications** when a turn needs you / finishes, **Live Activities** on iOS, notification → thread navigation, device registration with a relay                                 | **Done, verified** for local (N1) and push (N2: FCM on the Thor, APNs on the iPhone, fabplane.com delivers directly; production + staging providers green)                                                                                                   | **Live Activity (N3) not built** — T3 uses `expo-widgets` on Expo SDK 56; we are on SDK 54. iOS push on _production_ APNs needs a TestFlight-signed build                                          |
+| Live Activity widget (`widgets/`)      | `AgentActivity` — lock-screen / Dynamic Island row per running thread: phase (running / waiting for approval / waiting for input / done), model, deep link                              | Not started                                                                                                                                                                                                                                                  | Needs the SDK 56 bump first; then it is a small port — our `run-notifier.ts` already computes the same phases                                                                                      |
+| Thread outbox (`state/thread-outbox*`) | Messages and new tasks composed while the environment is unreachable are stored locally, shown as "pending" in the home list, sent on reconnect, editable/deletable meanwhile           | Not started. C5 queues _on the daemon_ while a run is live; nothing covers the daemon being away                                                                                                                                                             | Client-side outbox in `client-core` (so the desktop can use it too); "pending" rows in Chats                                                                                                       |
+| Archive (`archive/`)                   | Archived threads screen                                                                                                                                                                 | **Done, verified** (C1)                                                                                                                                                                                                                                      | —                                                                                                                                                                                                  |
+| Cloud (`cloud/`)                       | Clerk auth, managed relay (DPoP tokens), waitlist                                                                                                                                       | **Done** for the relay (daemon authenticates with the user's fabplane.com session; `apps/relay` + `relay.fabplane.com`)                                                                                                                                      | Phone has no fabplane.com identity of its own, so no machine list, no cross-device settings. Waitlist n/a                                                                                          |
+| Keyboard (`keyboard/`)                 | Hardware-keyboard shortcuts (iPad, Thor)                                                                                                                                                | **Code** (L1, native `fabdesk-key-commands` module compiles on both platforms)                                                                                                                                                                               | Never pressed on a real keyboard                                                                                                                                                                   |
+| Layout (`layout/`)                     | Adaptive sidebar + detail on wide screens (iPad), inspector pane                                                                                                                        | **Code** (L1: iPad simulator shows list + detail)                                                                                                                                                                                                            | Opening a chat into the detail pane not tapped through; no inspector pane (board panel as the third column would be ours)                                                                          |
+| Projects (`projects/`)                 | Add project: local path / repository / destination                                                                                                                                      | **Code** (B8: create, remix from catalog, delete, folders)                                                                                                                                                                                                   | Not exercised beyond tests                                                                                                                                                                         |
+| Settings (`settings/`)                 | Appearance (theme), auth, environments                                                                                                                                                  | **Done, verified** (S1 + Notifications card + environments)                                                                                                                                                                                                  | —                                                                                                                                                                                                  |
+| Observability                          | Tracing hooks                                                                                                                                                                           | **Code** (R2 Sentry wired; project `fabplane-mobile` exists)                                                                                                                                                                                                 | `SENTRY_DSN_MOBILE` not yet in the EAS environments, so no build reports anything                                                                                                                  |
 
-T3 architecture ideas worth borrowing outright (their `docs/architecture/remote.md`):
+T3 architecture ideas borrowed, and where each stands:
 
-- **Access vs launch.** How the phone reaches a daemon (direct, tunnel, SSH-forward) is separate
-  from how the daemon got started. Our `CoreTransport` seam is the right place; keep it.
-- **`AdvertisedEndpoint` with kinds** (loopback / lan / private / public / tunnel) and a stable
-  user preference _by kind_, not by IP. Our pairing URL already lists hosts tailnet-first; the
-  next step is kinds + a chosen default on the desktop.
-- **Tailscale as an endpoint provider**, including MagicDNS HTTPS via `tailscale serve` — that is
-  how they get TLS without shipping certificates, and it is how the hosted HTTPS web app can
-  reach a home machine. It would also let us drop `NSAllowsArbitraryLoads`.
-- **One-time pairing token → session credential** (we have it), plus `t3 auth`-style revocation
-  from the CLI (we have devices revoke on the desktop; add to `fabdesk-core` CLI).
+- **Access vs launch.** Kept: `CoreTransport` is the seam; `ProxyTransport` (relay) slotted in
+  beside the direct transport without touching screens.
+- **`AdvertisedEndpoint` with kinds** and a preference _by kind_ — done (D1); the QR carries the
+  chosen default first.
+- **Tailscale as an endpoint provider** — detection done (D2); the `tailscale serve` HTTPS path is
+  written but has never met a real `serve` config, which is what keeps ATS open.
+- **One-time pairing token → session credential + CLI revocation** — done (`fabdesk-core devices
+list/revoke`).
+- **Managed relay** — done as a separate service (`apps/relay`), not inside `api.fabplane.com`.
 
 Not borrowing: Effect-TS runtime, event-sourced orchestration, checkpoints-as-git-refs, worktrees.
 Our daemon is Hono + SQLite + a job runner and that is fine at this scale.
@@ -295,7 +302,7 @@ A1 is the largest single package and is daemon-side; start it in Wave 2 so A2 ca
 | R4  | Store assets, privacy manifest, Play data safety                                 | R    | `apps/mobile/assets/*`, `ios/PrivacyInfo.xcprivacy` via config plugin       | R1         | App Review submission checklist complete                                  |
 | R5  | Release pipeline: `set-version.ts`, `release.yml` include the app; docs promoted | R    | `scripts/set-version.ts`, `.github/workflows/release.yml`, `docs/mobile.md` | R1         | One version bump covers desktop, core and mobile                          |
 
-### Suggested agent assignment for the first sprint
+### Suggested agent assignment for the first sprint (historical — this is how Waves 1–5 ran)
 
 Six agents, one lane each, all starting from the same commit:
 
@@ -320,13 +327,80 @@ the handoff doc is the spec) and pick up R1 once signing is decided.
 - A terminal in the app (no PTY route in the daemon; revisit if agents' shells need watching).
 - Running agents on the phone. The phone is a client of one machine; that is the design.
 
-## 6. Open questions to settle before Wave 3
+## 6. Open questions — settled
 
-- **Relay ownership.** Push notifications and the proxy transport both need a service the daemon
-  can reach. Is that part of fabplane.com (`api.fabplane.com`), or a separate small service?
-  Decides N2's interface and T5's auth.
-- **Supervised mode semantics.** Which tools pause (all? writes only? exports?) and whether the
-  choice is per agent, per project or per thread. Decides A1's shape and the desktop UI.
-- **Signing team.** Personal Team (7-day) vs the company team for TestFlight. Decides R1.
-- **Tailscale as a requirement vs an option.** If we assume it, T4 can drop plain-HTTP support on
-  iOS entirely; if not, LAN HTTP stays and ATS stays open.
+- **Relay ownership.** A separate small service: `apps/relay` (reference implementation),
+  deployed as `relay.fabplane.com`. Push stays on `api.fabplane.com`, which talks to APNs / FCM
+  directly (`mobile-notifications.md`).
+- **Supervised mode semantics.** Per thread (`runtimeMode: "full" | "supervised"` on the thread);
+  the daemon pauses every tool call it classifies as a write; adapters advertise
+  `supportsSupervised`.
+- **Signing team.** The company team (`CMNZZ92926`, Expo owner `voxly`); bundle id
+  `com.fabplane.fabdesk` on both platforms. The one-time steps are in `mobile-release.md`.
+- **Tailscale as a requirement vs an option.** An option. LAN HTTP stays, so
+  `NSAllowsArbitraryLoads` stays until the tailnet path is HTTPS too.
+
+## 7. What's next (Wave 6)
+
+Nothing in §2 is a missing surface any more; what is left is (a) the release plumbing a human
+has to do once, (b) the device-only verification the handoff doc lists as "still never run", and
+(c) three real gaps against T3. In priority order:
+
+### 7a. Get a build into TestFlight and Play internal (human + R lane)
+
+The gate for everything below — production APNs, Sentry, and testers who are not us.
+
+| ID  | Step                                                                                                              | Who   | Done when                                                    |
+| --- | ----------------------------------------------------------------------------------------------------------------- | ----- | ------------------------------------------------------------ |
+| H1  | `eas init` under `voxly`; commit `extra.eas.projectId`; add the `EXPO_TOKEN` secret                               | human | `mobile.yml` EAS steps stop skipping                         |
+| H2  | First interactive `eas build --profile preview` per platform (creates Apple certs / Android keystore in EAS)      | human | `--non-interactive` builds pass in CI                        |
+| H3  | `SENTRY_DSN_MOBILE`, `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_AUTH_TOKEN` in the EAS `preview` + `production` envs | human | A thrown error in a preview build shows in `fabplane-mobile` |
+| H4  | App Store Connect API key + Play service account in EAS; first `eas submit`                                       | human | A build is on TestFlight and the Play internal track         |
+| R6  | Store assets: screenshots on the 6.7" / 6.5" simulators, listing copy, Play data-safety answers                   | agent | Submission checklist in `mobile-release.md` complete         |
+
+The company/account side (Apple Developer Program, Play console, ownership) is sequenced in the
+private runbook referenced by [`company-and-developer-account-setup.md`](company-and-developer-account-setup.md).
+
+### 7b. Real-device verification (Q lane; needs a TestFlight build for the production-APNs row)
+
+The handoff doc's "still never run" list, as packages with a pass criterion each:
+
+| ID  | Check                                                                                                        | Done when                                                                                      |
+| --- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| Q1  | iOS Local Network prompt on a real LAN vs a real tailnet (the risk the handoff ranks first)                  | Both paths pair; the prompt appears at the Connections screen warm-up, not mid-pairing         |
+| Q2  | Background 60 s → foreground; Wi-Fi → cellular mid-run (T1)                                                  | `open` within 3 s of foreground; the run's remaining frames arrive; no duplicate notifications |
+| Q3  | `expo-camera` QR scan on both phones                                                                         | Scan → paired without the link fallback                                                        |
+| Q4  | Production APNs from a TestFlight build                                                                      | `push sent {ok:1}` with the app killed, from `api.fabplane.com`                                |
+| Q5  | Renders before/after (B1), DRC tap-to-highlight (B4), jobs cancel (B7), project create / remix / delete (B8) | Each matches the desktop for the same project                                                  |
+| Q6  | iPad: detail-pane navigation and ⌘N / ⌘K on a hardware keyboard (L1); Thor with a BT keyboard                | Shortcuts fire; the sidebar opens a chat in place                                              |
+| Q7  | Two saved connections on Android (keystore ~2 KB entry limit)                                                | Both survive an app restart, or the store moves to one entry per connection                    |
+| Q8  | `tailscale serve` HTTPS on a real tailnet (D2); then T4 tightens ATS                                         | QR prefers the `https://…ts.net` endpoint; pairing works with `NSAllowsArbitraryLoads` removed |
+| Q9  | A supervised run that asks a _question_ (`agent.input_requested`) answered from the phone (A2)               | The chosen option reaches the adapter and the run continues                                    |
+
+R3's Maestro flow exists (`apps/mobile/e2e`, opt-in via `MOBILE_E2E=1`); Q2 / Q5 / Q9 are the
+candidates to fold into it once they pass by hand.
+
+### 7c. The three real gaps against T3 (feature lanes)
+
+| ID  | Package                                                                                                                                                                                                              | Lane | Touches                                                                                            | Depends on                       | Done when                                                                                                          |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- | -------------------------------------------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| X1  | **Expo SDK 56 bump** (RN 0.85, `expo-notifications`, Skia, the two local modules), then **N3 Live Activity** via `expo-widgets` — port T3's `AgentActivity` phases onto `run-notifier.ts`; Stop from the lock screen | N    | `apps/mobile/package.json`, `app.json` plugins, new `src/widgets/AgentActivity.tsx`, `modules/*`   | H1 (EAS build to test on device) | Elapsed + current tool on the lock screen for a live run; tapping opens the thread; Stop ends the run              |
+| X2  | **Thread outbox**: compose while the computer is unreachable → stored locally → shown as "pending" in Chats → sent on reconnect; edit/delete while pending                                                           | C/T  | new `packages/client-core/src/outbox.ts` (pure, tested), `(tabs)/index.tsx`, `app/thread/[id].tsx` | —                                | Kill the daemon, send two messages, restart it: both arrive in order; the desktop gets the same behaviour for free |
+| X3  | **Composer persistence**: per-thread draft text, attachments and agent/model choice survive navigation and app restart                                                                                               | C    | `src/state/prefs.ts` (AsyncStorage), `app/thread/[id].tsx`, `app/new-chat.tsx`                     | —                                | Type, leave, come back: the draft is there; the last-used agent is preselected on a new chat                       |
+
+Smaller items worth a package when someone is in the area: a DRC **delta** between the last two
+runs (B4 has the list; the desktop has no delta either, so it is a `client-core` feature); an
+**inspector column** on iPad (board panel beside the thread — T3's third pane); and "list my
+machines" once the phone has a fabplane.com identity (a design question first: the phone signing
+in changes the trust model in `mobile.md`).
+
+### Suggested assignment
+
+Three agents plus one human:
+
+1. **Human**: H1 → H2 → H3 → H4, in that order; H1 alone unblocks CI builds.
+2. **QA**: Q1 → Q2 → Q3 on the iPhone and Thor today; Q4 after H4; Q8 needs a tailnet with
+   `serve` enabled.
+3. **Chat**: X3 → X2 (X3 is a day; X2 is the bigger design, and `client-core` so the desktop shares it).
+4. **Notifications**: X1 — start with the SDK 56 bump on its own branch and prove both native
+   modules and Skia still compile before touching Live Activities.
