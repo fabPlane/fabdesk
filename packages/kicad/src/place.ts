@@ -109,12 +109,28 @@ export function placeFootprints(text: string, placements: Placement[]): PlaceRes
     let replacement: string;
     if (node.kind === "transform") {
       const rot = /\(rotate\s+(-?[\d.]+)\)/.exec(current);
-      rotation = p.rotation ?? (rot ? Number(rot[1]) : 0);
+      const before = rot ? Number(rot[1]) : 0;
+      rotation = p.rotation ?? before;
       replacement = current
         .replace(/\(translate\s+-?[\d.]+\s+-?[\d.]+\)/, `(translate ${num(p.x)} ${num(p.y)})`)
         .replace(/\(rotate\s+-?[\d.]+\)/, `(rotate ${num(rotation)})`);
       if (!/\(translate/.test(current))
         throw new Error(`footprint ${p.ref}: transform without translate`);
+      const delta = rotation - before;
+      if (delta !== 0) {
+        // Child positions are relative to the transform, but child angles (pads, text) are written
+        // absolute, so a rotated footprint would keep its pad shapes unless they turn with it.
+        const turned = body
+          .slice(node.end)
+          .replace(
+            /\(at\s+(-?[\d.]+)\s+(-?[\d.]+)(?:\s+(-?[\d.]+))?\s*\)/g,
+            (_m, x: string, y: string, a?: string) => {
+              const angle = (((Number(a ?? 0) + delta) % 360) + 360) % 360;
+              return `(at ${x} ${y} ${num(angle)})`;
+            },
+          );
+        out = out.slice(0, block.start + node.end) + turned + out.slice(block.end);
+      }
     } else {
       const at = /^\(at\s+(-?[\d.]+)\s+(-?[\d.]+)(?:\s+(-?[\d.]+))?\s*\)$/.exec(current.trim());
       if (!at) throw new Error(`footprint ${p.ref}: unreadable (at …)`);
