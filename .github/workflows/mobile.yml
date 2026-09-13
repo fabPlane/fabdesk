@@ -73,13 +73,14 @@ jobs:
         run: bunx expo export --platform android --output-dir "$RUNNER_TEMP/mobile-export"
         working-directory: apps/mobile
 
-  # Internal-distribution build on EAS (docs/mobile-release.md). Cloud builds cost credits and need
-  # an Expo token, so this runs only on main and on manual dispatch, and skips itself with a notice
+  # Internal-distribution build on EAS (docs/mobile-release.md). Cloud builds cost credits, so a
+  # merge to main never queues one: the nightly `release.yml` run builds once a day, and this job
+  # exists for a build on demand (Actions → Mobile → Run workflow). It skips itself with a notice
   # when the EXPO_TOKEN secret is absent (forks, or before `eas init` has been run). `--no-wait`
   # queues the build and returns; the result lands on expo.dev and in the EAS notification.
   eas-preview:
     needs: verify
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    if: github.event_name == 'workflow_dispatch'
     runs-on: blacksmith-4vcpu-ubuntu-2204
     steps:
       - name: Check for EXPO_TOKEN
