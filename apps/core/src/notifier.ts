@@ -3,8 +3,9 @@
  *
  * Listens to the bus for the handful of events a person in another room cares about, works out
  * which paired devices should hear about each, and hands the messages to fabplane.com
- * (`POST /v1/private/push`, bearer = the daemon's own user session), which forwards them to Expo.
- * One-way and fire-and-forget: no queue, no retries. A missed "run finished" is annoying, not
+ * (`POST /v1/private/push`, bearer = the daemon's own user session), which queues them durably
+ * and delivers through APNs/FCM from its worker. On this side it is one-way and fire-and-forget:
+ * no queue, no retries, and a `200` only means "queued". A missed "run finished" is annoying, not
  * harmful — the phone sees the real state the next time it connects.
  *
  * A device that holds a live `/ws` socket is skipped: the app is up and already saw the event

@@ -99,17 +99,21 @@ sequenceDiagram
   B->>N: event
   N->>N: for each device with push_token: skip if live socket, skip if prefs exclude
   N->>F: POST /v1/private/push (Bearer <user session>)<br/>{ messages: [ {to, title, body, data, ...} ] }
-  F->>F: auth → user; rate limit; validate tokens; audit row
-  F->>E: one request per message, by tokenKind
-  E-->>F: accepted / rejected (DeviceNotRegistered, …)
-  F-->>N: 200 { tickets }
+  F->>F: auth → user; rate limit; validate; seal batch; commit job + audit row
+  F-->>N: 200 { tickets, queued: { jobId, expiresAt } }
+  F->>E: worker: one request per message, by tokenKind (retries, backoff, TTL)
+  E-->>F: accepted / rejected (DeviceNotRegistered, …) → outcome rows
+  N-->>F: GET /v1/private/push/:jobId (optional) → outcomes by index
   E->>P: APNs/FCM
   P->>P: tap → navigate to coreId/threadId
 ```
 
 If the daemon is in local mode, or has no bearer, or fabplane.com is unreachable: the Notifier
-logs once at `info` and drops. There is no queue in v1 — a missed "run finished" is annoying, not
-harmful, and the phone sees the state the next time it connects.
+logs once at `info` and drops. The daemon has no queue — a missed "run finished" is annoying, not
+harmful, and the phone sees the state the next time it connects. fabplane.com, on the other hand,
+**does** queue durably: once it answers `200` the batch survives its restarts, worker crashes and
+provider outages, and is retried with backoff for up to ten minutes before it is dropped or
+dead-lettered (fabplane.com `docs/push-notifications.md`).
 
 ### 3.3 Local notifications (N1 — no server involved)
 
@@ -210,8 +214,17 @@ export const PushTicket = z.union([
 export const PushResponse = z.object({ tickets: z.array(PushTicket) }); // same order as messages
 ```
 
-Errors: `401` no/expired session; `400` schema; `429` over limit with `Retry-After`; `502` the
-provider unreachable (body `{ error: "upstream" }`); the daemon treats 5xx/429 as "drop this batch".
+**`200` means durably queued, not delivered.** Every ticket is `ok` and its `id` is the job id;
+the body also carries `queued: { jobId, expiresAt }`. The provider's verdict is read back later
+from `GET /v1/private/push/:jobId` (same bearer), whose `outcomes[]` give, per message **index**,
+`accepted` | `device_not_registered` | `rejected` | `expired` with the normalised `error`
+(`DeviceNotRegistered`, …). The daemon holds the tokens, so an outcome names the index to
+forget, never the token. The daemon does not poll this yet; when it does, that is where a dead
+token gets dropped.
+
+Errors: `401` no/expired session; `400` schema; `429` over limit with `Retry-After` (nothing
+queued); `503` push not configured. There is no `502` — the API never talks to a provider
+itself. The daemon treats 5xx/429 as "drop this batch".
 
 The route **must not** log `title`/`body`/`data` at info level, must not store them (audit row has
 counts only, §5), and must pass `data` through to the provider payload unchanged.
@@ -246,10 +259,13 @@ connections without it fall back to matching by `deviceId`.
 ## 5. fabplane.com side
 
 Built by the backend team and live on staging (`POST /v1/private/push` behind the session auth,
-`push.ts`, `push:selftest`). It authenticates to APNs (key `4D823P5T3R`, team `CMNZZ92926`) and
-FCM (the `tensorfleet` Firebase project's service account) itself, routes each message by
-`tokenKind` (or the token's shape), normalises provider errors into tickets, rate-limits per user,
-and keeps counts only. What this repo relies on is exactly §4.2; the request carries
+`push.ts`, `push:selftest`). The API seals each batch (AES-256-GCM, `PUSH_QUEUE_KEY`) and commits
+it to the PostgreSQL `jobs` table; the worker — the only process holding the APNs key
+(`4D823P5T3R`, team `CMNZZ92926`) and the `tensorfleet` Firebase service account — routes each
+message by `tokenKind` (or the token's shape), delivers with exponential backoff, dead-letters
+after five attempts, expires after ten minutes, and records one outcome row per message (token
+suffix only). The sealed batch is dropped from the row once terminal; what fabplane.com keeps
+is counts and outcomes. What this repo relies on is exactly §4.2; the request carries
 `tokenKind` so the backend never has to guess.
 
 ## 6. Daemon and phone work (fabdesk side)
