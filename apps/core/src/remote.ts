@@ -14,6 +14,9 @@ import type { Settings } from "@fabdesk/protocol";
 import type { EventBus } from "./bus";
 import { errMsg, logger } from "./log";
 
+/** Seconds without a frame (or a pong) before a remote WebSocket counts as gone. */
+export const REMOTE_IDLE_TIMEOUT_S = 40;
+
 export interface RemoteHandlers {
   fetch: (req: Request, server: Server) => Response | Promise<Response> | undefined;
   websocket: Bun.WebSocketHandler<never>;
@@ -56,7 +59,11 @@ export class RemoteListener {
       this.server = Bun.serve<never, Record<never, never>>({
         hostname: remote.host,
         port: remote.port,
-        idleTimeout: 255,
+        // Phones go half-open rather than closing: iOS suspends the app and the socket just
+        // stops answering. The Notifier only pushes to devices with no live socket, so a long
+        // idle timeout here turns into a run that ends with no notification at all. Bun pings at
+        // half this interval; a socket with no pong by the end of it is dropped.
+        idleTimeout: REMOTE_IDLE_TIMEOUT_S,
         fetch: fetch as never,
         websocket,
       });

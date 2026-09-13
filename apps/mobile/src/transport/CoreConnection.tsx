@@ -45,6 +45,7 @@ import {
   type EnvironmentStatus,
   type StatusEntry,
 } from "../lib/environments";
+import { DORMANT_AFTER_MS, dormancyAction } from "../lib/dormancy";
 import {
   isForegroundReturn,
   nextStaleSince,
@@ -214,6 +215,9 @@ export function CoreConnectionProvider({ children }: { children: ReactNode }) {
   // Bumping this changes `subscribe`'s identity, which is the one sanctioned way to make
   // `useCoreEvents` close the socket and dial again. It moves only from a deliberate re-probe.
   const [streamEpoch, setStreamEpoch] = useState(0);
+  // True once the app has been in the background past the grace window: the socket is closed on
+  // purpose so the daemon pushes instead (src/lib/dormancy.ts). Cleared on return.
+  const [dormant, setDormant] = useState(false);
   const retry = useMemo(() => () => setAttempt((n) => n + 1), []);
 
   // What the re-probe reads. Refs, so the AppState/network listeners are installed once and never
@@ -338,7 +342,23 @@ export function CoreConnectionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let prevApp: AppStateStatus | null = AppState.currentState;
+    let dormancyTimer: ReturnType<typeof setTimeout> | null = null;
     const app = AppState.addEventListener("change", (next) => {
+      switch (dormancyAction(prevApp, next)) {
+        case "arm":
+          dormancyTimer ??= setTimeout(() => {
+            dormancyTimer = null;
+            setDormant(true);
+          }, DORMANT_AFTER_MS);
+          break;
+        case "wake":
+          if (dormancyTimer) clearTimeout(dormancyTimer);
+          dormancyTimer = null;
+          setDormant(false);
+          break;
+        case "none":
+          break;
+      }
       if (isForegroundReturn(prevApp, next)) void reprobe();
       prevApp = next;
     });
@@ -355,6 +375,7 @@ export function CoreConnectionProvider({ children }: { children: ReactNode }) {
       prevNet = next;
     });
     return () => {
+      if (dormancyTimer) clearTimeout(dormancyTimer);
       app.remove();
       net.remove();
     };
@@ -370,6 +391,11 @@ export function CoreConnectionProvider({ children }: { children: ReactNode }) {
   const subscribe = useCallback<CoreEventSubscribe>(
     (topics, onEvent, onStatus) => {
       if (!transport) throw new Error("no transport");
+      if (dormant) {
+        // Backgrounded past the grace window: no socket, so the daemon knows to push.
+        onStatus("closed");
+        return { close: () => {} };
+      }
       return openEvents(
         transport,
         topics,
@@ -383,7 +409,7 @@ export function CoreConnectionProvider({ children }: { children: ReactNode }) {
         noteHealth,
       );
     },
-    [transport, streamEpoch, noteHealth],
+    [transport, streamEpoch, dormant, noteHealth],
   );
 
   const onStreamStatus = useCallback((next: SseStatus) => {
