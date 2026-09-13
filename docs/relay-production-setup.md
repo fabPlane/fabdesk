@@ -1,12 +1,17 @@
 # Setting up `relay.fabplane.com`
 
+**Status (2026-09-13): live.** `relay.fabplane.com` is deployed (Cloudflare-proxied DNS, TLS at
+the edge, nginx → relay on `127.0.0.1:4010`, `/metrics` blocked publicly; fabplane.com #62 and
+#64). Verified from an iPhone on cellular with Wi-Fi and Tailscale off: a production-signed-in
+daemon derived `wss://relay.fabplane.com` with no configuration, the phone paired through the
+relay as the only path, and a chat round trip streamed back. The sections below are what was
+set up and how to check it; keep them as the runbook for a rebuild.
+
 What has to exist for a phone on cellular to reach a fabPlane daemon through fabplane.com's
-relay in production. Staging is done (`ws://fabplane-staging.tail4f6a7.ts.net:4010`, tailnet
-only) and was verified end to end from an iPhone on 2026-09-13; production is **files only** —
-nothing rolls it out automatically, and the steps below are the manual rollout. The relay
-itself is `apps/relay` in this repo, copied into fabplane.com (`apps/relay` there, PR
-[TensorFleet/fabplane.com#62](https://github.com/TensorFleet/fabplane.com/pull/62)); the
-contract is in `docs/mobile-roadmap.md` §3 Phase 4 and fabplane.com's `docs/relay.md`.
+relay in production. Staging (`ws://fabplane-staging.tail4f6a7.ts.net:4010`, tailnet only) runs
+the same build. The relay itself is `apps/relay` in this repo, copied into fabplane.com
+(`apps/relay` there, synced with `scripts/sync-relay.sh`); the contract is in
+`docs/mobile-roadmap.md` §3 Phase 4 and fabplane.com's `docs/relay.md`.
 
 ## How the pieces fit
 
@@ -119,7 +124,11 @@ shuttingDown:true}` during a drain).
   nginx's loopback address. Headers from any other peer are ignored, so a direct caller cannot
   spoof its way past the limit.
 - **Tailscale ACL**: staging's `tag:cursor-staging` grant lists only `tcp:4000,5173`; add
-  `tcp:4010` if cloud agents need the staging relay. Production is public, so no ACL.
+  `tcp:4010` only if cloud agents need the staging relay. Production is public, so no ACL.
+- **Monitoring host `agent1`**: the merged monitoring config still has to be refreshed there
+  (its Tailscale SSH ACL refused the deploying agent).
+- **iOS push on production** needs a TestFlight/App Store build: a dev-signed build's APNs token
+  is a sandbox token and production APNs answers `DeviceNotRegistered`, which is correct.
 - **`NSAllowsArbitraryLoads`** stays in the iOS app until the tailnet path is HTTPS too; the
   production relay is TLS and needs no exception.
 - **Accounts**: the daemon authenticates to the relay with the user's fabplane.com session; the

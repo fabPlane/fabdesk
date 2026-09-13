@@ -287,8 +287,9 @@ records `by: device`). The AYN Thor has the same build as a release APK. Your iP
 `com.fabplane.fabdesk` (Voxly team) — a new app next to the old one; trust the team once if iOS
 asks, then pair again.
 
-Still open, none blocking: Tailscale `serve` never run against a real config, no relay
-deployed, the fabplane.com `/pair` page. Push is live on staging and production (both providers
+Still open, none blocking: Tailscale `serve` never run against a real config, the fabplane.com
+`/pair` page. The relay is deployed (`relay.fabplane.com`) and verified from cellular —
+`docs/relay-production-setup.md`. Push is live on staging and production (both providers
 self-test green, 2026-09-13); the Sentry project `fabplane-mobile` exists and its DSN is being
 installed in the EAS environments.
 
