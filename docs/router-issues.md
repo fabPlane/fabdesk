@@ -43,6 +43,8 @@ Judge a fix on the rule categories going to zero, not on a count.
 
 | `genesis-flash-cart` (+ `.place.json`) | the real board 10: 2 × PLCC-32 sockets, SOIC-28 FRAM, SOIC-20 + SOIC-14 logic, 2×32 header, 90 × 60 mm, 46 nets, placed by the agent | `timed out with nothing routed (300000 ms in phase highDensityRouteSolver)`; the run before it wedged the bridge (R8) |
 
+| `nes-expansion-hub`, `ps1-pio-boot-cart`, `snes-flash-cart`, `fds-ram-adapter`, `saturn-boot-cart` (+ `.place.json`) | coarse boards from the second batch: THT headers, PLCC/SOIC/SOP parts, 44–62 nets, placed by the agent with a clean pre-route DRC | every one: `timed out with nothing routed (120000 ms in phase highDensityRouteSolver)` or `HB ran out of iterations`; `nes-expansion-hub` wedged the bridge three times in a row (R8) |
+
 Baseline that passes: the 3-part blinky in `docs/handoff-fab-pcb.md` §3 (0 errors). Anything with
 two pads closer than `clearance + trackWidth` fails.
 

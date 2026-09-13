@@ -1,0 +1,104 @@
+{
+  "netlist": {
+    "components": [
+      { "ref": "U1", "value": "AS6C62256 32K PRG RAM", "footprint": "Package_SO:SOP-28_8.4x18.16mm_P1.27mm", "fields": { "MPN": "AS6C62256-55SIN" } },
+      { "ref": "U2", "value": "AS6C6264 8K CHR RAM", "footprint": "Package_SO:SOP-28_8.4x18.16mm_P1.27mm", "fields": { "MPN": "AS6C6264-55SIN" } },
+      { "ref": "U3", "value": "74HC161", "footprint": "Package_SO:SOIC-16_3.9x9.9mm_P1.27mm", "fields": { "MPN": "SN74HC161D" } },
+      { "ref": "U4", "value": "74HC08", "footprint": "Package_SO:SOIC-14_3.9x8.7mm_P1.27mm", "fields": { "MPN": "SN74HC08D" } },
+      { "ref": "J1", "value": "FC_CART_2x30", "footprint": "Connector_PinHeader_2.54mm:PinHeader_2x30_P2.54mm_Vertical" },
+      { "ref": "J2", "value": "DRIVE_CABLE_1x06", "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x06_P2.54mm_Vertical" },
+      { "ref": "C1", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric" },
+      { "ref": "C2", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric" },
+      { "ref": "C3", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric" },
+      { "ref": "C4", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric" }
+    ],
+    "nets": [
+      { "name": "GND", "nodes": [
+        { "ref": "J1", "pin": "1" }, { "ref": "J2", "pin": "2" },
+        { "ref": "U1", "pin": "14" }, { "ref": "U1", "pin": "22" },
+        { "ref": "U2", "pin": "14" },
+        { "ref": "U3", "pin": "8" }, { "ref": "U3", "pin": "7" }, { "ref": "U3", "pin": "9" }, { "ref": "U3", "pin": "10" },
+        { "ref": "U4", "pin": "7" },
+        { "ref": "C1", "pin": "2" }, { "ref": "C2", "pin": "2" }, { "ref": "C3", "pin": "2" }, { "ref": "C4", "pin": "2" }
+      ] },
+      { "name": "+5V", "nodes": [
+        { "ref": "J1", "pin": "60" }, { "ref": "J2", "pin": "1" },
+        { "ref": "U1", "pin": "28" },
+        { "ref": "U2", "pin": "28" }, { "ref": "U2", "pin": "26" },
+        { "ref": "U3", "pin": "16" }, { "ref": "U3", "pin": "1" },
+        { "ref": "U4", "pin": "14" },
+        { "ref": "C1", "pin": "1" }, { "ref": "C2", "pin": "1" }, { "ref": "C3", "pin": "1" }, { "ref": "C4", "pin": "1" }
+      ] },
+
+      { "name": "/IRQ", "nodes": [ { "ref": "J1", "pin": "3" }, { "ref": "J2", "pin": "6" } ] },
+      { "name": "M2", "nodes": [ { "ref": "J1", "pin": "5" }, { "ref": "U4", "pin": "10" } ] },
+      { "name": "/ROMSEL", "nodes": [ { "ref": "J1", "pin": "7" }, { "ref": "U1", "pin": "20" }, { "ref": "U4", "pin": "5" } ] },
+      { "name": "CPU_RW", "nodes": [ { "ref": "J1", "pin": "9" }, { "ref": "U1", "pin": "27" } ] },
+
+      { "name": "CPU_A0", "nodes": [ { "ref": "J1", "pin": "11" }, { "ref": "U1", "pin": "10" } ] },
+      { "name": "CPU_A1", "nodes": [ { "ref": "J1", "pin": "13" }, { "ref": "U1", "pin": "9" } ] },
+      { "name": "CPU_A2", "nodes": [ { "ref": "J1", "pin": "15" }, { "ref": "U1", "pin": "8" } ] },
+      { "name": "CPU_A3", "nodes": [ { "ref": "J1", "pin": "17" }, { "ref": "U1", "pin": "7" } ] },
+      { "name": "CPU_A4", "nodes": [ { "ref": "J1", "pin": "19" }, { "ref": "U1", "pin": "6" } ] },
+      { "name": "CPU_A5", "nodes": [ { "ref": "J1", "pin": "21" }, { "ref": "U1", "pin": "5" } ] },
+      { "name": "CPU_A6", "nodes": [ { "ref": "J1", "pin": "23" }, { "ref": "U1", "pin": "4" } ] },
+      { "name": "CPU_A7", "nodes": [ { "ref": "J1", "pin": "25" }, { "ref": "U1", "pin": "3" } ] },
+      { "name": "CPU_A8", "nodes": [ { "ref": "J1", "pin": "27" }, { "ref": "U1", "pin": "25" } ] },
+      { "name": "CPU_A9", "nodes": [ { "ref": "J1", "pin": "29" }, { "ref": "U1", "pin": "24" } ] },
+      { "name": "CPU_A10", "nodes": [ { "ref": "J1", "pin": "31" }, { "ref": "U1", "pin": "21" } ] },
+      { "name": "CPU_A11", "nodes": [ { "ref": "J1", "pin": "33" }, { "ref": "U1", "pin": "23" } ] },
+      { "name": "CPU_A12", "nodes": [ { "ref": "J1", "pin": "35" }, { "ref": "U1", "pin": "2" }, { "ref": "U4", "pin": "13" } ] },
+      { "name": "CPU_A13", "nodes": [ { "ref": "J1", "pin": "37" }, { "ref": "U1", "pin": "26" }, { "ref": "U4", "pin": "1" } ] },
+      { "name": "CPU_A14", "nodes": [ { "ref": "J1", "pin": "39" }, { "ref": "U1", "pin": "1" }, { "ref": "U4", "pin": "2" } ] },
+
+      { "name": "CPU_D0", "nodes": [ { "ref": "J1", "pin": "41" }, { "ref": "U1", "pin": "11" }, { "ref": "U3", "pin": "3" } ] },
+      { "name": "CPU_D1", "nodes": [ { "ref": "J1", "pin": "43" }, { "ref": "U1", "pin": "12" }, { "ref": "U3", "pin": "4" } ] },
+      { "name": "CPU_D2", "nodes": [ { "ref": "J1", "pin": "45" }, { "ref": "U1", "pin": "13" }, { "ref": "U3", "pin": "5" } ] },
+      { "name": "CPU_D3", "nodes": [ { "ref": "J1", "pin": "47" }, { "ref": "U1", "pin": "15" }, { "ref": "U3", "pin": "6" } ] },
+      { "name": "CPU_D4", "nodes": [ { "ref": "J1", "pin": "49" }, { "ref": "U1", "pin": "16" } ] },
+      { "name": "CPU_D5", "nodes": [ { "ref": "J1", "pin": "51" }, { "ref": "U1", "pin": "17" } ] },
+      { "name": "CPU_D6", "nodes": [ { "ref": "J1", "pin": "53" }, { "ref": "U1", "pin": "18" } ] },
+      { "name": "CPU_D7", "nodes": [ { "ref": "J1", "pin": "55" }, { "ref": "U1", "pin": "19" } ] },
+
+      { "name": "SOUND", "nodes": [ { "ref": "J1", "pin": "57" }, { "ref": "J1", "pin": "59" } ] },
+
+      { "name": "CIRAM_A10", "nodes": [ { "ref": "J1", "pin": "2" }, { "ref": "U3", "pin": "11" } ] },
+      { "name": "PPU_/A13", "nodes": [ { "ref": "J1", "pin": "6" }, { "ref": "J1", "pin": "4" }, { "ref": "U2", "pin": "20" } ] },
+      { "name": "PPU_/RD", "nodes": [ { "ref": "J1", "pin": "8" }, { "ref": "U2", "pin": "22" } ] },
+      { "name": "PPU_/WR", "nodes": [ { "ref": "J1", "pin": "10" }, { "ref": "U2", "pin": "27" } ] },
+
+      { "name": "PPU_A0", "nodes": [ { "ref": "J1", "pin": "12" }, { "ref": "U2", "pin": "10" } ] },
+      { "name": "PPU_A1", "nodes": [ { "ref": "J1", "pin": "14" }, { "ref": "U2", "pin": "9" } ] },
+      { "name": "PPU_A2", "nodes": [ { "ref": "J1", "pin": "16" }, { "ref": "U2", "pin": "8" } ] },
+      { "name": "PPU_A3", "nodes": [ { "ref": "J1", "pin": "18" }, { "ref": "U2", "pin": "7" } ] },
+      { "name": "PPU_A4", "nodes": [ { "ref": "J1", "pin": "20" }, { "ref": "U2", "pin": "6" } ] },
+      { "name": "PPU_A5", "nodes": [ { "ref": "J1", "pin": "22" }, { "ref": "U2", "pin": "5" } ] },
+      { "name": "PPU_A6", "nodes": [ { "ref": "J1", "pin": "24" }, { "ref": "U2", "pin": "4" } ] },
+      { "name": "PPU_A7", "nodes": [ { "ref": "J1", "pin": "26" }, { "ref": "U2", "pin": "3" } ] },
+      { "name": "PPU_A8", "nodes": [ { "ref": "J1", "pin": "28" }, { "ref": "U2", "pin": "25" } ] },
+      { "name": "PPU_A9", "nodes": [ { "ref": "J1", "pin": "30" }, { "ref": "U2", "pin": "24" } ] },
+      { "name": "PPU_A10", "nodes": [ { "ref": "J1", "pin": "32" }, { "ref": "U2", "pin": "21" } ] },
+      { "name": "PPU_A11", "nodes": [ { "ref": "J1", "pin": "34" }, { "ref": "U2", "pin": "23" } ] },
+      { "name": "PPU_A12", "nodes": [ { "ref": "J1", "pin": "36" }, { "ref": "U2", "pin": "2" } ] },
+
+      { "name": "PPU_D0", "nodes": [ { "ref": "J1", "pin": "40" }, { "ref": "U2", "pin": "11" } ] },
+      { "name": "PPU_D1", "nodes": [ { "ref": "J1", "pin": "42" }, { "ref": "U2", "pin": "12" } ] },
+      { "name": "PPU_D2", "nodes": [ { "ref": "J1", "pin": "44" }, { "ref": "U2", "pin": "13" } ] },
+      { "name": "PPU_D3", "nodes": [ { "ref": "J1", "pin": "46" }, { "ref": "U2", "pin": "15" } ] },
+      { "name": "PPU_D4", "nodes": [ { "ref": "J1", "pin": "48" }, { "ref": "U2", "pin": "16" } ] },
+      { "name": "PPU_D5", "nodes": [ { "ref": "J1", "pin": "50" }, { "ref": "U2", "pin": "17" } ] },
+      { "name": "PPU_D6", "nodes": [ { "ref": "J1", "pin": "52" }, { "ref": "U2", "pin": "18" } ] },
+      { "name": "PPU_D7", "nodes": [ { "ref": "J1", "pin": "54" }, { "ref": "U2", "pin": "19" } ] },
+
+      { "name": "A13A14", "nodes": [ { "ref": "U4", "pin": "3" }, { "ref": "U4", "pin": "4" } ] },
+      { "name": "WRAM_SEL", "nodes": [ { "ref": "U4", "pin": "6" }, { "ref": "U4", "pin": "9" } ] },
+      { "name": "WRAM_SEL_M2", "nodes": [ { "ref": "U4", "pin": "8" }, { "ref": "U4", "pin": "12" } ] },
+      { "name": "REG_CLK", "nodes": [ { "ref": "U4", "pin": "11" }, { "ref": "U3", "pin": "2" } ] },
+
+      { "name": "MOTOR_ON", "nodes": [ { "ref": "U3", "pin": "14" }, { "ref": "J2", "pin": "3" } ] },
+      { "name": "/XFER_RESET", "nodes": [ { "ref": "U3", "pin": "13" }, { "ref": "J2", "pin": "4" } ] },
+      { "name": "WRITE_EN", "nodes": [ { "ref": "U3", "pin": "12" }, { "ref": "J2", "pin": "5" } ] }
+    ]
+  },
+  "board": { "widthMm": 80, "heightMm": 55 }
+}
