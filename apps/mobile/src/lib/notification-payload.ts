@@ -40,20 +40,27 @@ function optionalString(o: Record<string, unknown>, key: string): string | undef
  */
 export function parseNotificationData(raw: unknown): NotificationData | null {
   let o = raw;
-  if (o && typeof o === "object") {
-    const wrapped =
-      (o as Record<string, unknown>).dataString ?? (o as Record<string, unknown>).body;
-    if (typeof wrapped === "string" && !("kind" in (o as object))) {
-      try {
-        o = JSON.parse(wrapped);
-      } catch {
-        return null;
+  if (o && typeof o === "object" && !("kind" in o)) {
+    const r = o as Record<string, unknown>;
+    // APNs delivers our `data` object as a custom key next to `aps`, and expo-notifications
+    // hands the whole userInfo over; some Android paths wrap it as a JSON string instead.
+    if (r.data && typeof r.data === "object") {
+      o = r.data;
+    } else {
+      const wrapped = r.dataString ?? r.body;
+      if (typeof wrapped === "string") {
+        try {
+          o = JSON.parse(wrapped);
+        } catch {
+          return null;
+        }
       }
     }
   }
   if (!o || typeof o !== "object") return null;
   const d = o as Record<string, unknown>;
-  if (d.v !== 1) return null;
+  // FCM data payloads are string maps, so `v` arrives as "1" there.
+  if (d.v !== 1 && d.v !== "1") return null;
   const kind = d.kind;
   if (typeof kind !== "string" || !NOTIFICATION_KINDS.includes(kind as NotificationKind))
     return null;

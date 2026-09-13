@@ -47,6 +47,13 @@ describe("parseNotificationData", () => {
     expect(parseNotificationData({ dataString: "{not json" })).toBeNull();
   });
 
+  test("reads FCM's string map (v: \"1\") and APNs' userInfo with `data` beside `aps`", () => {
+    const fcm = Object.fromEntries(Object.entries(good).map(([k, v]) => [k, String(v)]));
+    expect(parseNotificationData(fcm)).toEqual(good);
+    expect(parseNotificationData({ aps: { alert: {} }, data: good })).toEqual(good);
+    expect(parseNotificationData({ ...good, v: "2" })).toBeNull();
+  });
+
   test("a job without a thread keeps its jobId", () => {
     const d = parseNotificationData({
       v: 1,

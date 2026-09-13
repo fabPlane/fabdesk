@@ -66,7 +66,9 @@
       [
         "expo-notifications",
         {
-          "defaultChannel": "runs"
+          "defaultChannel": "runs",
+          "icon": "./assets/notification-icon.png",
+          "color": "#8bc37a"
         }
       ]
     ],
