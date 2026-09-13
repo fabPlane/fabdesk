@@ -49,8 +49,8 @@ describe("parseNotificationData", () => {
 
   test("reads FCM's string map (v: \"1\") and APNs' userInfo with `data` beside `aps`", () => {
     const fcm = Object.fromEntries(Object.entries(good).map(([k, v]) => [k, String(v)]));
-    expect(parseNotificationData(fcm)).toEqual(good);
-    expect(parseNotificationData({ aps: { alert: {} }, data: good })).toEqual(good);
+    expect(parseNotificationData(fcm)).toEqual({ ...good, v: 1 });
+    expect(parseNotificationData({ aps: { alert: {} }, data: good })).toEqual({ ...good, v: 1 });
     expect(parseNotificationData({ ...good, v: "2" })).toBeNull();
   });
 
