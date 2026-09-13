@@ -98,6 +98,9 @@ export function useThreads(params?: { q?: string; projectId?: string | null }) {
   return useQuery({
     queryKey: ["threads", params?.q ?? "", params?.projectId ?? ""],
     queryFn: () => client.listThreads(params),
+    // A search types one key per letter; showing the previous list until the next answers keeps
+    // the screen from flashing "no chats match" between keystrokes.
+    placeholderData: (previous) => previous,
   });
 }
 
