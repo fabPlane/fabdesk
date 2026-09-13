@@ -24,8 +24,7 @@
       "infoPlist": {
         "NSCameraUsageDescription": "Scanning the pairing code shown by fabPlane on your computer.",
         "NSAppTransportSecurity": {
-          "NSAllowsArbitraryLoads": true,
-          "NSAllowsLocalNetworking": true
+          "NSAllowsArbitraryLoads": true
         },
         "NSLocalNetworkUsageDescription": "Connecting to fabPlane running on your computer over your local network or tailnet."
       },

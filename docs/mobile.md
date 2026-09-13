@@ -137,16 +137,18 @@ preflight goes through that guard too).
 
 ### App Transport Security (iOS)
 
-`app.json` carries both `NSAllowsArbitraryLoads` and `NSAllowsLocalNetworking`. The narrow key
-covers plain HTTP to RFC 1918 / link-local addresses (the LAN path); a tailnet address is CGNAT
-space (`100.64.0.0/10`), and ATS exceptions are keyed by domain, not IP, so the wide key is what
-lets the `tailscale` kind connect. The phone tries https candidates first, then its last-known-good
-address, then the rest, so a served MagicDNS name is used whenever it answers.
+`app.json` carries `NSAllowsArbitraryLoads` **alone**. It used to carry `NSAllowsLocalNetworking`
+too, and that broke the relay on iOS: Apple's rule is that when `NSAllowsLocalNetworking` (or
+the media / web-content keys) is present, ATS ignores `NSAllowsArbitraryLoads` — so plain HTTP
+was allowed only to addresses iOS considers local (the LAN and, as it turned out, a bare tailnet
+IP), and a qualified hostname such as a staging relay on `http://…ts.net:4010` was refused
+before a packet left the phone (`NSURLErrorDomain -1022`, which React Native reports as
+"Network request failed"). One wide key covers every case the narrow one did.
 
 `NSAllowsArbitraryLoads` can go once every endpoint a daemon advertises is https — that is, once
-`tailscale serve` is required rather than optional for the tailnet path (LAN pairing keeps working
-through `NSAllowsLocalNetworking`). Until then dropping it would break pairing over a bare tailnet
-IP, which is still the common case.
+`tailscale serve` is required rather than optional for the tailnet path and the relay is TLS
+(`wss://relay.fabplane.com` is; staging's is not). Until then dropping it would break pairing over
+a bare tailnet IP, which is still the common case.
 
 Testing it on a device: [mobile-testing-handoff.md](mobile-testing-handoff.md). What comes next, in phases and per-agent work packages: [mobile-roadmap.md](mobile-roadmap.md) — what is verified, what has never run, and the platform gotchas to expect.
 
