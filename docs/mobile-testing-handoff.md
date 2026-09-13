@@ -199,6 +199,15 @@ is not configured", details: { error: "ProviderNotConfigured" } }] }` — the co
   delivers directly, and Expo's push service is out of the picture — no `EXPO_ACCESS_TOKEN`, no
   EAS project needed for delivery. Rebuild both apps (Android picks up `google-services.json`)
   before expecting a native token.
+- **Staging routes native tokens** (checked 2026-09-13 with the daemon's `maya` session): a
+  64-hex probe token with `platform: "ios"` answers `200 { tickets: [{ status: "error",
+message: "BadDeviceToken", details: { error: "DeviceNotRegistered" } }] }` and an FCM-shaped
+  probe answers `NotRegistered` / `DeviceNotRegistered` — both providers reached with our
+  credentials. Their `push:selftest` inside the `staging-api-1` container says the same. One
+  wrinkle for the backend team: the **first** APNs request after the container had been idle for
+  ~10 h came back `502 { error: "upstream" }` (`push_upstream_failed`, no reason logged); the
+  retry seconds later succeeded. Looks like a cold HTTP/2 session to Apple that is not retried
+  once. The daemon treats a 502 as "drop this batch", so that first notification is lost.
 
 Adapter reality (from the supervised lane's live check): Claude Code's `--permission-prompt-tool`
 works with `--print` and our `permission_prompt` MCP tool; Claude still auto-allows commands it

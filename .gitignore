@@ -20,4 +20,6 @@ release/
 .expo/
 apps/mobile/ios/
 apps/mobile/android/
+apps/mobile/modules/*/android/build/
+apps/mobile/modules/*/android/.cxx/
 *.keystore
