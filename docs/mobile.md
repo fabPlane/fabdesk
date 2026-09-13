@@ -7,7 +7,19 @@ with EAS, versioned by the release workflow, and reports crashes to Sentry
 
 It exists because everything in fabPlane is local. The daemon spawns `claude`, `codex`, KiCad and
 the router as subprocesses on one machine, so the phone is a client of _that machine_, not of
-fabplane.com.
+fabplane.com. Settings › Account is the exception: signing in to fabplane.com stores appearance,
+haptics and keep-awake on the account (`GET`/`PUT /v1/private/settings`) so they follow the user.
+Pairing a computer is unchanged; using that account to reach computers through the backend is later
+work.
+
+Dev builds can point the account API at a local stand-in:
+
+```bash
+bun apps/mobile/scripts/mock-cloud-api.ts
+EXPO_PUBLIC_FABPLANE_API_ORIGIN=http://10.0.2.2:4077 bun run mobile
+```
+
+Password login (`maya` / `fabplane-dev`) is only offered when that origin is not production.
 
 ## How it connects
 

@@ -2,6 +2,7 @@ import { useDoctor, usePatchSettings, useSettings } from "@fabdesk/client-core";
 import type { AgentId } from "@fabdesk/protocol";
 import { router } from "expo-router";
 import { Alert, ScrollView, Text, View } from "react-native";
+import { AccountCard } from "@/components/AccountCard";
 import { Badge, Button, Card, Screen, Segmented, SwitchRow, readable } from "@/components/ui";
 import { hardwareKeyboardShortcutsAvailable } from "@/layout/keyboard";
 import { connectionPath, pathHint, pathLabel } from "@/lib/connection-path";
@@ -28,6 +29,8 @@ export default function SettingsScreen() {
   return (
     <Screen>
       <ScrollView contentContainerStyle={{ padding: 14, gap: 14, ...readable }}>
+        <AccountCard />
+
         <Card>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 }}>
             <Text style={{ color: t.fg, fontSize: 15, fontWeight: "600", flex: 1 }}>

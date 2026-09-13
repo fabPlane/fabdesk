@@ -15,6 +15,10 @@ export class InvalidCredentialsError extends Error {
   }
 }
 
+function isNetworkFailed(err: unknown): boolean {
+  return err instanceof TypeError || (err instanceof Error && /network request failed/i.test(err.message));
+}
+
 export function cookiesFromResponse(res: Response): string {
   const multi = typeof res.headers.getSetCookie === "function" ? res.headers.getSetCookie() : [];
   const parts = multi
@@ -58,13 +62,21 @@ export async function loginWithPasswordSession(
   const account = resolveDevAccount(credentials.email);
   const email = account?.email ?? credentials.email.trim();
   const path = "/v1/auth/password";
-  const res = await fetchImpl(`${normalizeOrigin(apiOrigin)}${path}`, {
+  const url = `${normalizeOrigin(apiOrigin)}${path}`;
+  const init: RequestInit = {
     method: "POST",
     headers: { "content-type": "application/json", accept: "application/json" },
     body: JSON.stringify({ email, password: credentials.password }),
-    redirect: "manual",
     ...(signal ? { signal } : {}),
-  });
+  };
+  let res: Response;
+  try {
+    res = await fetchImpl(url, { ...init, redirect: "manual" });
+  } catch (err) {
+    // React Native's fetch throws "Network request failed" for redirect: "manual".
+    if (!isNetworkFailed(err)) throw err;
+    res = await fetchImpl(url, init);
+  }
   if (res.status === 503) throw new AuthHttpError(res.status, path, await bodyText(res));
   if (authErrorFromLocation(res.headers.get("location")) === "invalid_credentials") {
     throw new InvalidCredentialsError();

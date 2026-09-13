@@ -283,6 +283,27 @@ export const Settings = z.object({
 export type Settings = z.infer<typeof Settings>;
 
 /**
+ * Portable preferences stored on the fabplane.com account (`GET`/`PUT /v1/private/settings`).
+ * Machine-local fields (binary paths, remote listener, keep-core-running) stay on the daemon.
+ * Last-write-wins by `updatedAt` (unix ms). Unknown keys are stripped so clients can evolve.
+ *
+ * Kept in step with fabplane.com `user_settings.payload` — that API copies this shape, it does
+ * not import this package.
+ */
+export const CloudSettings = z.object({
+  schema: z.literal(1),
+  updatedAt: z.number().int().nonnegative(),
+  appearance: z.enum(["system", "light", "dark"]).optional(),
+  haptics: z.boolean().optional(),
+  keepAwake: z.boolean().optional(),
+  defaultAgent: AgentId.optional(),
+  defaultRuntimeMode: RuntimeMode.optional(),
+  errorReporting: z.boolean().optional(),
+  notificationsEnabled: z.boolean().optional(),
+});
+export type CloudSettings = z.infer<typeof CloudSettings>;
+
+/**
  * The relay link as `GET /v1/remote` reports it. `connected` false with no `error` means the
  * daemon is dialing (or waiting to redial); `error` names what stops it from dialing at all
  * ("not signed in", "remote access is off", no relay for this API origin, a bad URL). `lastError`

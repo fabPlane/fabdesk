@@ -915,6 +915,26 @@ export class SettingsRepo {
     return id;
   }
   private coreIdCache: string | null = null;
+
+  /** Opaque settings-table value used for stamps that are not part of `Settings`. */
+  readRaw(key: string): unknown {
+    const row = this.db
+      .query<{ value_json: string }, [string]>("SELECT value_json FROM settings WHERE key = ?")
+      .get(key);
+    if (!row) return undefined;
+    try {
+      return JSON.parse(row.value_json) as unknown;
+    } catch {
+      return undefined;
+    }
+  }
+
+  writeRaw(key: string, value: unknown): void {
+    this.db.run(
+      "INSERT INTO settings(key, value_json) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json",
+      [key, JSON.stringify(value)],
+    );
+  }
 }
 
 const CORE_ID_KEY = "core_id";
