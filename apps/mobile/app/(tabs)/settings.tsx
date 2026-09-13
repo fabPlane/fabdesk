@@ -107,12 +107,18 @@ export default function SettingsScreen() {
  * setting (`PATCH /settings`), so changing it here changes it on the desktop too.
  */
 function AgentsCard() {
-  const t = useTheme();
+  // The daemon hooks below need the CoreProvider, which only exists once a transport does —
+  // reading them while the computer is unreachable threw and took the whole tab down.
   const { status } = useConnection();
+  if (status !== "open") return null;
+  return <AgentsCardBody />;
+}
+
+function AgentsCardBody() {
+  const t = useTheme();
   const doctor = useDoctor();
   const settings = useSettings();
   const patch = usePatchSettings();
-  if (status !== "open") return null;
   const agents = doctor.data?.agents ?? [];
   const installed = agents.filter((a) => a.installed);
   const current = settings.data?.defaultAgent;
