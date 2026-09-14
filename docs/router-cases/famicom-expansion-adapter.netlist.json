@@ -1,0 +1,60 @@
+{
+  "netlist": {
+    "components": [
+      { "ref": "J1", "value": "Famicom_EXP_DA15", "footprint": "Connector_Dsub:DSUB-15_Socket_Horizontal_P2.77x2.84mm_EdgePinOffset9.90mm_Housed_MountingHolesOffset11.32mm", "fields": { "Description": "DA-15 female right-angle D-sub, Famicom expansion port" } },
+      { "ref": "J2", "value": "NES_CTRL", "footprint": "Connector_IDC:IDC-Header_2x04_P2.54mm_Vertical", "fields": { "Description": "NES-style controller: 1=5V 2=GND 3=CLK 4=LATCH 5=DATA" } },
+      { "ref": "J3", "value": "ZAPPER", "footprint": "Connector_IDC:IDC-Header_2x04_P2.54mm_Vertical", "fields": { "Description": "Zapper: 1=5V 2=GND 3=TRIGGER 4=LIGHT" } },
+      { "ref": "JP1", "value": "MODE", "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical", "fields": { "Description": "Closed: controller on $4016.D1 / P1CLK. Open: controller on $4017.D1 / P2CLK" } },
+      { "ref": "U1", "value": "74HC157", "footprint": "Package_SO:SOIC-16_3.9x9.9mm_P1.27mm", "fields": { "MPN": "SN74HC157DR" } },
+      { "ref": "C1", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric" },
+      { "ref": "R1", "value": "1k", "footprint": "Resistor_SMD:R_0805_2012Metric" },
+      { "ref": "R2", "value": "1k", "footprint": "Resistor_SMD:R_0805_2012Metric" },
+      { "ref": "R3", "value": "10k", "footprint": "Resistor_SMD:R_0805_2012Metric" },
+      { "ref": "R4", "value": "10k", "footprint": "Resistor_SMD:R_0805_2012Metric" },
+      { "ref": "R5", "value": "10k", "footprint": "Resistor_SMD:R_0805_2012Metric" },
+      { "ref": "R6", "value": "10k", "footprint": "Resistor_SMD:R_0805_2012Metric" },
+      { "ref": "D1", "value": "GREEN", "footprint": "LED_THT:LED_D3.0mm", "fields": { "Description": "Power LED" } },
+      { "ref": "D2", "value": "RED", "footprint": "LED_THT:LED_D3.0mm", "fields": { "Description": "Activity LED (latch)" } }
+    ],
+    "nets": [
+      { "name": "+5V", "nodes": [
+        { "ref": "J1", "pin": "15" },
+        { "ref": "J2", "pin": "1" },
+        { "ref": "J3", "pin": "1" },
+        { "ref": "U1", "pin": "16" },
+        { "ref": "U1", "pin": "6" },
+        { "ref": "U1", "pin": "11" },
+        { "ref": "C1", "pin": "1" },
+        { "ref": "R1", "pin": "1" },
+        { "ref": "R3", "pin": "1" },
+        { "ref": "R4", "pin": "1" },
+        { "ref": "R5", "pin": "1" },
+        { "ref": "R6", "pin": "1" }
+      ] },
+      { "name": "GND", "nodes": [
+        { "ref": "J1", "pin": "1" },
+        { "ref": "J2", "pin": "2" },
+        { "ref": "J3", "pin": "2" },
+        { "ref": "U1", "pin": "8" },
+        { "ref": "U1", "pin": "15" },
+        { "ref": "C1", "pin": "2" },
+        { "ref": "D1", "pin": "1" },
+        { "ref": "D2", "pin": "1" },
+        { "ref": "JP1", "pin": "2" }
+      ] },
+      { "name": "P1CLK", "nodes": [ { "ref": "J1", "pin": "14" }, { "ref": "U1", "pin": "2" } ] },
+      { "name": "P2CLK", "nodes": [ { "ref": "J1", "pin": "9" }, { "ref": "U1", "pin": "3" } ] },
+      { "name": "CTRL_CLK", "nodes": [ { "ref": "U1", "pin": "4" }, { "ref": "J2", "pin": "3" } ] },
+      { "name": "LATCH", "nodes": [ { "ref": "J1", "pin": "12" }, { "ref": "J2", "pin": "4" }, { "ref": "U1", "pin": "14" }, { "ref": "U1", "pin": "13" } ] },
+      { "name": "CTRL_DATA", "nodes": [ { "ref": "J2", "pin": "5" }, { "ref": "U1", "pin": "5" }, { "ref": "U1", "pin": "10" }, { "ref": "R3", "pin": "2" } ] },
+      { "name": "JOY1_D1", "nodes": [ { "ref": "U1", "pin": "7" }, { "ref": "J1", "pin": "13" } ] },
+      { "name": "JOY2_D1", "nodes": [ { "ref": "U1", "pin": "9" }, { "ref": "J1", "pin": "7" } ] },
+      { "name": "MODE_SEL", "nodes": [ { "ref": "U1", "pin": "1" }, { "ref": "JP1", "pin": "1" }, { "ref": "R6", "pin": "2" } ] },
+      { "name": "ACT_LED", "nodes": [ { "ref": "U1", "pin": "12" }, { "ref": "R2", "pin": "1" } ] },
+      { "name": "ACT_LED_A", "nodes": [ { "ref": "R2", "pin": "2" }, { "ref": "D2", "pin": "2" } ] },
+      { "name": "PWR_LED_A", "nodes": [ { "ref": "R1", "pin": "2" }, { "ref": "D1", "pin": "2" } ] },
+      { "name": "TRIGGER", "nodes": [ { "ref": "J3", "pin": "3" }, { "ref": "J1", "pin": "4" }, { "ref": "R4", "pin": "2" } ] },
+      { "name": "LIGHT", "nodes": [ { "ref": "J3", "pin": "4" }, { "ref": "J1", "pin": "5" }, { "ref": "R5", "pin": "2" } ] }
+    ]
+  }
+}

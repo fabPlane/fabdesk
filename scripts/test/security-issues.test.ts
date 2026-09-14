@@ -5,6 +5,8 @@ import { join } from "node:path";
 import {
   fingerprintOf,
   formatSyncReport,
+  mergeIssueRecords,
+  parseIssuePages,
   planIssueSync,
   planFingerprintDuplicates,
   applyIssueSync,
@@ -190,5 +192,41 @@ describe("applyIssueSync", () => {
     expect(live.created).toHaveLength(2);
     expect(created).toHaveLength(2);
     expect(formatSyncReport(plan, live.created)).toContain("create=2");
+  });
+});
+
+describe("parseIssuePages", () => {
+  test("flattens paginated pages, drops pull requests, maps html_url", () => {
+    const fp = FINGERPRINT_COMMENT("4917e2378a897497");
+    const raw = JSON.stringify([
+      [
+        { number: 158, title: "a", body: fp, state: "open", html_url: "https://x/issues/158" },
+        { number: 160, title: "pr", body: "", state: "open", pull_request: { url: "…" } },
+      ],
+      [{ number: 21, title: "b", body: fp, state: "closed" }],
+    ]);
+    expect(parseIssuePages(raw)).toEqual([
+      { number: 158, title: "a", body: fp, state: "open", url: "https://x/issues/158" },
+      { number: 21, title: "b", body: fp, state: "closed" },
+    ]);
+    expect(parseIssuePages("")).toEqual([]);
+    expect(parseIssuePages("{}")).toEqual([]);
+  });
+});
+
+describe("mergeIssueRecords", () => {
+  test("a ledger entry and its live copy are one issue, and the live state wins", () => {
+    const fp = FINGERPRINT_COMMENT("aaaa");
+    const ledger: IssueRecord[] = [{ number: 7, title: "t", body: fp, state: "open" }];
+    const live: IssueRecord[] = [
+      { number: 7, title: "t", body: fp, state: "closed" },
+      { number: 9, title: "u", body: FINGERPRINT_COMMENT("bbbb"), state: "open" },
+    ];
+    const merged = mergeIssueRecords(ledger, live);
+    expect(merged.map((i) => [i.number, i.state])).toEqual([
+      [7, "closed"],
+      [9, "open"],
+    ]);
+    expect(planFingerprintDuplicates([...ledger, ...ledger])).toEqual([]);
   });
 });

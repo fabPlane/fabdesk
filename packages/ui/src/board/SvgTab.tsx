@@ -1,8 +1,8 @@
 import { Button, EmptyState, Spinner } from "../components/ui";
-import { useProjectText } from "../hooks/queries";
+import { useProjectText } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { SvgViewer } from "./SvgViewer";
-import { useRunTool } from "./tools";
+import { useRunTool } from "@fabdesk/client-core";
 
 const RENDER_TOOL = { schematic: "render_schematic_svg", pcb: "render_pcb_svg" } as const;
 

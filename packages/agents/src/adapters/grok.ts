@@ -85,6 +85,8 @@ export const grokAdapter: AgentAdapter = {
     "Install Grok Build (grok CLI) from https://grok.com/build, then run `grok login`. Expected at ~/.grok/bin/grok.",
   detect: (binaryPath) => detectBinary(CANDIDATES, binaryPath),
   models: () => ["grok-4.6", "grok-4.5"],
+  /** No approval channel in `grok` headless output. */
+  supportsSupervised: false,
   run(session: AgentSession): AgentRun {
     const parser = new MessagesStreamParser();
     writeGrokConfig(session.cwd, session.mcp.url);

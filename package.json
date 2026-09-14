@@ -7,7 +7,9 @@
     "bun": "1.4.x"
   },
   "workspaces": [
-    "apps/*",
+    "apps/core",
+    "apps/desktop",
+    "apps/relay",
     "packages/*",
     "vendor/fabplane/packages/shared",
     "vendor/fabplane/packages/config",
@@ -22,11 +24,18 @@
     "electron-builder",
     "esbuild"
   ],
+  "overrides": {
+    "hono": "4.13.7",
+    "fast-xml-parser": "5.11.1",
+    "nanoid": "3.3.19",
+    "lodash-es": "4.18.1"
+  },
   "scripts": {
     "dev": "bun run --cwd apps/desktop dev",
     "dev:core": "bun run --cwd apps/core dev",
-    "typecheck": "bun run fp-pcb:types && bun run --filter './apps/*' --filter './packages/*' typecheck",
-    "test": "bun run --filter './apps/*' --filter './packages/*' test && bun test ./scripts/test",
+    "relay": "bun run --cwd apps/relay start",
+    "typecheck": "bun run fp-pcb:types && bun run --filter './apps/core' --filter './apps/desktop' --filter './apps/relay' --filter './packages/*' typecheck",
+    "test": "bun run --filter './apps/core' --filter './apps/desktop' --filter './apps/relay' --filter './packages/*' test && bun test ./scripts/test",
     "build:core": "bun run --cwd apps/core build",
     "build:desktop": "bun run --cwd apps/desktop build",
     "package": "bun run build:core && bun run --cwd apps/desktop package",
@@ -41,7 +50,11 @@
     "vm:linux": "bash scripts/vm/linux.sh",
     "vm:windows": "bash scripts/vm/windows.sh",
     "pr:relevance": "bun run scripts/pr-relevance.ts",
-    "fp-pcb:types": "tsc -b vendor/fab_pcb/packages/client"
+    "fp-pcb:types": "tsc -b vendor/fab_pcb/packages/client",
+    "mobile:install": "bun install --cwd apps/mobile",
+    "mobile:typecheck": "bun run --cwd apps/mobile typecheck",
+    "mobile:test": "bun run --cwd apps/mobile test",
+    "mobile": "bun run --cwd apps/mobile start"
   },
   "devDependencies": {
     "@types/bun": "1.2.21",

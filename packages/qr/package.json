@@ -1,0 +1,20 @@
+{
+  "name": "@fabdesk/qr",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "qrcode-generator": "^2.0.4"
+  },
+  "devDependencies": {
+    "typescript": "5.9.2",
+    "@types/bun": "1.2.21"
+  }
+}
