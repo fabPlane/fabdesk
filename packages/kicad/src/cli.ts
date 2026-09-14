@@ -3,12 +3,21 @@ import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-export type KicadCli = { path: string; version: string };
+export type KicadInvocation = { command: string[]; cwd: string };
+export type KicadInvocationTracer = (input: KicadInvocation, invoke: () => Promise<RunResult>) => Promise<RunResult>;
+export type KicadCli = { path: string; version: string; trace?: KicadInvocationTracer };
 
 export interface RunResult {
   stdout: string;
   stderr: string;
   exitCode: number;
+}
+
+export class KicadCliError extends Error {
+  constructor(message: string, readonly result: RunResult) {
+    super(message);
+    this.name = "KicadCliError";
+  }
 }
 
 export interface RunOptions {
@@ -116,7 +125,7 @@ function isFile(path: string): boolean {
  * `PATH`, `extraLocations`, then stock / standalone install paths.
  * Each candidate is validated by running `version`.
  */
-export async function findKicadCli(explicit?: string, opts: { extraLocations?: string[] } = {}): Promise<KicadCli | null> {
+export async function findKicadCli(explicit?: string, opts: { extraLocations?: string[]; trace?: KicadInvocationTracer } = {}): Promise<KicadCli | null> {
   const candidates = [
     explicit,
     process.env.KICAD_CLI,
@@ -132,9 +141,9 @@ export async function findKicadCli(explicit?: string, opts: { extraLocations?: s
     seen.add(path);
     if (!isFile(path)) continue;
     try {
-      const result = await runKicadCli({ path, version: "" }, ["version"], { tolerateExit: true });
+      const result = await runKicadCli({ path, version: "", ...(opts.trace ? { trace: opts.trace } : {}) }, ["version"], { tolerateExit: true });
       const version = result.stdout.trim().split("\n")[0]?.trim() ?? "";
-      if (result.exitCode === 0 && version) return { path, version };
+      if (result.exitCode === 0 && version) return { path, version, ...(opts.trace ? { trace: opts.trace } : {}) };
     } catch {
       // Try the next candidate.
     }
@@ -151,6 +160,12 @@ const NOISE = [
 
 /** Runs kicad-cli with `args`, filtering platform noise from stderr. Throws on non-zero exit unless `tolerateExit`. */
 export async function runKicadCli(cli: KicadCli, args: string[], opts: RunOptions = {}): Promise<RunResult> {
+  const input = { command: [cli.path, ...args], cwd: opts.cwd ?? process.cwd() };
+  const invoke = () => runKicadCliUntraced(cli, args, opts);
+  return cli.trace ? cli.trace(input, invoke) : invoke();
+}
+
+async function runKicadCliUntraced(cli: KicadCli, args: string[], opts: RunOptions): Promise<RunResult> {
   opts.signal?.throwIfAborted();
   const proc = Bun.spawn([cli.path, ...args], {
     stdout: "pipe",
@@ -169,11 +184,12 @@ export async function runKicadCli(cli: KicadCli, args: string[], opts: RunOption
       .split("\n")
       .filter((line) => !NOISE.some((n) => line.includes(n)))
       .join("\n");
-    if (opts.signal?.aborted) throw new Error(`kicad-cli ${args.slice(0, 3).join(" ")} aborted`);
+    const result = { stdout, stderr, exitCode };
+    if (opts.signal?.aborted) throw new KicadCliError(`kicad-cli ${args.slice(0, 3).join(" ")} aborted`, result);
     if (exitCode !== 0 && !opts.tolerateExit) {
-      throw new Error(`kicad-cli ${args.slice(0, 3).join(" ")} failed (${exitCode}): ${lastLines(stderr || stdout)}`);
+      throw new KicadCliError(`kicad-cli ${args.slice(0, 3).join(" ")} failed (${exitCode}): ${lastLines(stderr || stdout)}`, result);
     }
-    return { stdout, stderr, exitCode };
+    return result;
   } finally {
     opts.signal?.removeEventListener("abort", onAbort);
   }

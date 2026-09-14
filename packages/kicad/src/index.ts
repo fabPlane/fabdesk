@@ -4,7 +4,10 @@ export {
   countCopperLayers,
   bundledKicadRoots,
   bundledKicadCliCandidates,
+  KicadCliError,
   type KicadCli,
+  type KicadInvocation,
+  type KicadInvocationTracer,
   type RunOptions,
   type RunResult,
 } from "./cli";
