@@ -45,6 +45,7 @@ import {
   sentryUserFromAuth,
   setSentryUser,
 } from "./sentry";
+import { RunTelemetry } from "./run-telemetry";
 
 export type ServeOptions = {
   port?: number;
@@ -143,6 +144,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   const staleRoutes = store.routeRuns.failStale();
   if (staleRoutes) logger.info("failed stale route runs from previous run", { count: staleRoutes });
   const tokens = new TokenSet(config.token);
+  const telemetry = new RunTelemetry({ version: config.version, runDumps: store.runDumps });
   const devices = new DeviceStore(store.db);
   tokens.setDeviceLookup((token) => {
     const device = devices.verify(token);
@@ -205,10 +207,11 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
           home: config.home,
           token: config.token,
           appBridgeFile: locateAppBridgeFile(config.handshakePath),
+          telemetry,
         });
 
   const registry = createRegistry();
-  const ctxFactory = createContextFactory({ services, projects, tokens });
+  const ctxFactory = createContextFactory({ services, projects, tokens, telemetry });
   const mcp = new McpSessionManager({
     registry,
     ctxFactory,
@@ -231,6 +234,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     adapters,
     settings: () => store.settings.get(),
     workspaceDir: join(config.home, "workspace"),
+    telemetry,
     // Only fabdesk's own tools have annotations the classifier trusts; another server's tool is a write.
     annotationsFor: (tool, server) =>
       server === null || server === "fabdesk" ? registry.get(tool)?.annotations : undefined,
@@ -558,6 +562,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       notifier.stop();
       runs.abortAll();
       jobs.cancelAll();
+      if (!(await runs.settleAll())) logger.warn("agent runs did not stop before shutdown timeout");
       await mcp.closeAll();
       projects.close();
       // Releasing the design sessions stops their KiCad processes on the bridge; give it a moment.
@@ -571,6 +576,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       remote.stop();
       server.stop(true);
       if (!opts.noHandshake) await removeHandshake(config.handshakePath);
+      await telemetry.shutdown();
       store.close();
       await closeSentry();
       resolveClosed(reason);

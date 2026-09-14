@@ -1,5 +1,5 @@
 /** Route toolset + the shared `route_run` implementation used by the core toolset. */
-import { mkdir } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod/v4";
 import type { CinemaShape, RouteResult } from "@fabdesk/protocol";
@@ -102,7 +102,9 @@ export async function runRoute(
   await mkdir(runDir, { recursive: true });
   const framesPath = join(runDir, "frames.jsonl");
   await writeJson(join(runDir, "request.json"), { runId, router, onlyConnections: args.onlyConnections ?? null, timeoutMs: args.timeoutMs });
-  ctx.services.routeRuns.start({ id: runId, projectId: project.id, router, framesPath, startedAt: new Date().toISOString() });
+  // Keep the persisted reference portable when the projects root moves. FrameSink still writes to
+  // the absolute path above; the core resolves this relative path against the current project.
+  ctx.services.routeRuns.start({ id: runId, projectId: project.id, router, framesPath: join(PROJECT_FILES.runs, runId, "frames.jsonl"), startedAt: new Date().toISOString() });
 
   const started = Date.now();
   const sink = new FrameSink(framesPath, ctx.services.bus);
@@ -191,6 +193,16 @@ export async function runRoute(
     ...(shape.width !== undefined ? { w: shape.width } : {}),
   }));
   frames.complete(routedShapes, summary.total);
+  // Routing mutates board.kicad_pcb, so any earlier stats artifact is stale. Refresh it when KiCad
+  // is available; otherwise remove it rather than presenting old measurements as current.
+  const statsPath = p(project, PROJECT_FILES.reports, "stats.json");
+  await rm(statsPath, { force: true });
+  const cli = await ctx.services.kicad.resolveCli();
+  if (cli) {
+    await ctx.services.kicad
+      .boardStats(cli, { board: p(project, PROJECT_FILES.boardPcb), scratchFile: statsPath })
+      .catch(() => {});
+  }
   sink.onMessage({ kind: "result", runId, result });
   await sink.close();
   await writeJson(join(runDir, "result.json"), { ...result, summary });

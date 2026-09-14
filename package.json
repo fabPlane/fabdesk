@@ -52,6 +52,7 @@
     "vm:linux": "bash scripts/vm/linux.sh",
     "vm:windows": "bash scripts/vm/windows.sh",
     "pr:relevance": "bun run scripts/pr-relevance.ts",
+    "runs:export": "bun run scripts/export-agent-run.ts",
     "fp-pcb:types": "tsc -b vendor/fab_pcb/packages/client",
     "mobile:install": "bun install --cwd apps/mobile",
     "mobile:typecheck": "bun run --cwd apps/mobile typecheck",

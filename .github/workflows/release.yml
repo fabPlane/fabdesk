@@ -64,7 +64,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: blacksmith-6vcpu-macos-15, target: bun-darwin-arm64, eb: "--mac --arm64" }
+          - { os: [self-hosted, macOS, ARM64], target: bun-darwin-arm64, eb: "--mac --arm64" }
+          # The self-hosted Mini does not have Rosetta yet, so keep Intel packaging hosted.
           - { os: blacksmith-6vcpu-macos-15, target: bun-darwin-x64, eb: "--mac --x64" }
           - { os: blacksmith-4vcpu-ubuntu-2204, target: bun-linux-x64, eb: "--linux" }
           - { os: blacksmith-4vcpu-windows-2025, target: bun-windows-x64, eb: "--win" }

@@ -23,6 +23,7 @@ import type {
   RemixResult,
   RemoteStatus,
   RouteFrameLine,
+  RouteResult,
   Settings,
   Run,
   Thread,
@@ -87,10 +88,21 @@ export interface SendMessageInput {
 }
 
 export type ToolCallResponse =
-  | { result: unknown; jobId?: undefined }
-  | { jobId: string; result?: undefined };
+  { result: unknown; jobId?: undefined } | { jobId: string; result?: undefined };
 
 export type HealthInfo = { ok?: boolean; version?: string; [k: string]: unknown };
+
+export interface RouteRunRecord {
+  id: string;
+  projectId: string;
+  router: string;
+  status: "running" | "done" | "failed" | "cancelled";
+  framesPath: string;
+  startedAt: string;
+  endedAt: string | null;
+  result: RouteResult | null;
+  error: string | null;
+}
 
 export type {
   DeviceMe,
@@ -330,6 +342,9 @@ export class CoreClient {
     if (!res.ok) throw new CoreHttpError(res.status, "/route/runs", res.statusText);
     const text = await res.text();
     return parseJsonl<RouteFrameLine>(text);
+  }
+  listRouteRuns(projectId: string): Promise<RouteRunRecord[]> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/route-runs`);
   }
 
   // Auth

@@ -197,7 +197,12 @@ export interface DesignService {
 }
 
 /** Resolved kicad-cli binary (mirrors @fabdesk/kicad KicadCli). */
-export type KicadCli = { path: string; version: string };
+export type KicadRunResult = { stdout: string; stderr: string; exitCode: number };
+export type KicadCli = {
+  path: string;
+  version: string;
+  trace?: (input: { command: string[]; cwd: string }, invoke: () => Promise<KicadRunResult>) => Promise<KicadRunResult>;
+};
 export type BoardView = "top" | "bottom" | "perspective" | "side";
 
 export type DrcViolation = {

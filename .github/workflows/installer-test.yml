@@ -1,6 +1,6 @@
 name: Installer test
 
-# Fresh-machine install + launch test of the released installers, on Blacksmith macOS / Ubuntu /
+# Fresh-machine install + launch test of the released installers, on self-hosted macOS / Blacksmith Ubuntu /
 # Windows runners (a clean VM per job). Runs after every successful Release (testing that tag),
 # weekly against what fabplane.com serves, and on demand. Uses the same guest scripts as the
 # local VM tests (scripts/vm/guest); see docs/installer-vms.md.
@@ -71,10 +71,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { arch: arm64, ext: dmg }
-          - { arch: arm64, ext: zip }
-          - { arch: x64, ext: dmg } # Intel build under Rosetta on the arm64 runner
-    runs-on: blacksmith-6vcpu-macos-15 # macOS 15 Rosetta supports AVX2, which the x64 Bun core needs
+          - { arch: arm64, ext: dmg, os: [self-hosted, macOS, ARM64] }
+          - { arch: arm64, ext: zip, os: [self-hosted, macOS, ARM64] }
+          # The self-hosted Mini does not have Rosetta yet, so keep Intel testing hosted.
+          - { arch: x64, ext: dmg, os: blacksmith-6vcpu-macos-15 }
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4

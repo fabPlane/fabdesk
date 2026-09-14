@@ -13,6 +13,7 @@ import { createFpPcbDesign } from "./fp-pcb-design";
 import { FpPcbSessions } from "./fp-pcb-session";
 import { logger } from "./log";
 import { KicadLibraryCatalog } from "./kicad-library-catalog";
+import type { RunTelemetry } from "./run-telemetry";
 
 export type ServiceDeps = {
   version: string;
@@ -28,6 +29,7 @@ export type ServiceDeps = {
   token?: string;
   /** Path of app-bridge.json written by the desktop app (see app-bridge.ts). */
   appBridgeFile?: string;
+  telemetry?: Pick<RunTelemetry, "traceKicadCli">;
 };
 
 function simService(settings: () => Settings): SimService {
@@ -77,8 +79,8 @@ export async function createServices(
 ): Promise<CoreServices & { dispose(): Promise<void> }> {
   const resolveCli = async (): Promise<KicadCli | null> => {
     const explicit = deps.settings().kicadCliPath ?? undefined;
-    const found = await kicad.findKicadCli(explicit);
-    return found ? { path: found.path, version: found.version } : null;
+    const trace = deps.telemetry ? (input: kicad.KicadInvocation, invoke: () => Promise<kicad.RunResult>) => deps.telemetry!.traceKicadCli(input, invoke) : undefined;
+    return kicad.findKicadCli(explicit, { ...(trace ? { trace } : {}) });
   };
 
   // One bridge client per configured URL; re-created when the setting changes.

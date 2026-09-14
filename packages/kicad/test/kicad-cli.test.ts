@@ -13,12 +13,35 @@ import {
   exportPos,
   findKicadCli,
   gate,
+  normalizeBoardStatsReport,
   renderPng,
   runDrc,
   runErc,
   runKicadCli,
+  KicadCliError,
   type KicadCli,
 } from "../src/index";
+
+describe("board stats normalization", () => {
+  test("turns KiCad unavailable minimum sentinels into null", () => {
+    const report = normalizeBoardStatsReport({
+      board: {
+        width: "14.0000 mm",
+        min_track_clearance: "2147.4836 mm",
+        min_track_width: "0.2000 mm",
+        min_drill_diameter: "2147.4836 mm",
+      },
+    });
+    expect(report).toEqual({
+      board: {
+        width: "14.0000 mm",
+        min_track_clearance: null,
+        min_track_width: "0.2000 mm",
+        min_drill_diameter: null,
+      },
+    });
+  });
+});
 
 const cli = await findKicadCli();
 const hasCli = cli !== null;
@@ -60,7 +83,10 @@ describe.skipIf(!hasCli)("kicad-cli on a real board", () => {
     expect(ok.stderr).not.toContain("Error retrieving source file attributes");
     const bad = await runKicadCli(kicad(), ["pcb", "drc", "/nope.kicad_pcb"], { tolerateExit: true });
     expect(bad.exitCode).not.toBe(0);
-    await expect(runKicadCli(kicad(), ["pcb", "drc", "/nope.kicad_pcb"])).rejects.toThrow(/failed/);
+    const error = await runKicadCli(kicad(), ["pcb", "drc", "/nope.kicad_pcb"]).catch((e) => e);
+    expect(error).toBeInstanceOf(KicadCliError);
+    expect((error as KicadCliError).result.exitCode).not.toBe(0);
+    expect((error as KicadCliError).result.stderr || (error as KicadCliError).result.stdout).not.toBe("");
   });
 
   test("runDrc parses the JSON report and gate reads it", async () => {
