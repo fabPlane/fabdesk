@@ -1,6 +1,6 @@
 # fabPlane — agent notes
 
-- Bun 1.4.x monorepo. Run everything from the repo root: `bun install`, `bun run typecheck`, `bun test`.
+- Bun 1.4.x monorepo. Run everything from the repo root: `bun install`, `bun run typecheck`, `bun run test` (not bare `bun test`, which recurses into `vendor/`).
 - Build on a branch and open a PR; do not commit directly to `main`. The only exception is a small fix that cleans up a mistake already on `main`.
 - Never run `bun install` inside `vendor/fabplane` or `vendor/fab_pcb`. `vendor/fab_pcb/packages/{proto,client}` are root workspaces; `bun run fp-pcb:types` (part of `typecheck`) emits their declarations; `apps/core/tsconfig.typecheck.json` maps the imports to them for `tsc` only (Bun honours tsconfig `paths` at runtime, so the mapping must stay out of the config chain Bun reads).
 - `vendor/*` are git submodules. Do not edit them here; change fabplane via a PR to `TensorFleet/fabplane.com` and FabPlane PCB via a PR to `TensorFleet/fab_pcb`, then bump with `bun run submodules:update`.
@@ -9,6 +9,8 @@
 - MCP tool names use underscores (`circuit_build`), never dots.
 - Routing, compiling and library search run on the FabPlane PCB bridge (`docs/fab-pcb-migration.md`); fabdesk's own packages carry no tscircuit-ecosystem dependency and no `circuit.json`. The `freerouting` router is still internal-only at the tool layer (`channel === "internal"`).
 - Relative imports are extensionless (`./events`, not `./events.ts`); `allowImportingTsExtensions` is off, matching fabplane.
+- Client code that is not DOM-bound belongs in `packages/client-core` (transport, event reducer, query hooks, stores), not `packages/ui`. `packages/ui` re-exports it, so the desktop keeps one import site.
+- `apps/mobile` (the Expo client for iOS and Android) is **not** a root workspace and has its own `bun.lock`: run `bun run mobile:install` / `mobile:typecheck` / `mobile:test`, never plain `bun install` from inside it. It aliases `@fabdesk/client-core` and `@fabdesk/protocol` to their source in `metro.config.js` and `tsconfig.json`; keep the two in step. Root `typecheck`/`test` deliberately skip it — CI is `.github/workflows/mobile.yml`. See `docs/mobile.md`; release steps in `docs/mobile-release.md`. `apps/relay` (the reference relay a daemon dials out to) **is** a root workspace.
 - TypeScript is strict with `exactOptionalPropertyTypes` and `noUncheckedIndexedAccess`; use the `...(x ? { k: x } : {})` idiom for optional fields.
 - Daily jobs: security scan + issue filing is `.github/workflows/security-scan.yml` (`bun run security:scan` / `security:issues`). Open-PR relevance notifies the Grok Cloud Agent (`bun run pr:relevance`). See `docs/daily-jobs.md`.
 - Open-source catalog preview/photo images are published by the **fabplane.com** `catalog-sync` GitHub Action (`workflow_dispatch`, or a `main` push that touches catalog seed / preview generator paths only). Fabdesk merges do not upload to R2. Do not add a fabdesk workflow that syncs catalog images on every merge.

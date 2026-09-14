@@ -9,7 +9,7 @@
     <true/>
     <key>com.apple.security.cs.disable-library-validation</key>
     <true/>
-    <!-- The core spawns kicad-cli, ngspice and agent CLIs from the user's environment. -->
+    <!-- The core spawns the bundled FabPlane kicad-cli (Resources/kicad), ngspice and agent CLIs. -->
     <key>com.apple.security.inherit</key>
     <true/>
     <key>com.apple.security.network.client</key>

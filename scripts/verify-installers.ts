@@ -46,6 +46,36 @@ function checkCore(bin: string, label: string): void {
   else console.log(`${label}: core ${r.out.trim().split("\n")[0]}`);
 }
 
+/** Soft-warn (or fail when FABDESK_REQUIRE_BUNDLED_KICAD=1) if Resources/kicad is missing. */
+function checkBundledKicad(resourcesDir: string, label: string): void {
+  const root = join(resourcesDir, "kicad");
+  const candidates =
+    process.platform === "darwin"
+      ? [
+          join(root, "KiCad.app", "Contents", "MacOS", "kicad-cli"),
+          join(root, "kicad-cli"),
+          join(root, "kicad-cli", "kicad-cli"),
+        ]
+      : process.platform === "win32"
+        ? [join(root, "bin", "kicad-cli.exe"), join(root, "kicad-cli", "bin", "kicad-cli.exe"), join(root, "kicad-cli.exe")]
+        : [join(root, "kicad-cli"), join(root, "kicad-cli", "kicad-cli"), join(root, "bin", "kicad-cli")];
+  // Must be a file: nightly archives use a top-level `kicad-cli/` directory of the same name.
+  const hit = candidates.find((p) => {
+    try {
+      return existsSync(p) && statSync(p).isFile();
+    } catch {
+      return false;
+    }
+  });
+  if (hit) {
+    console.log(`${label}: bundled KiCad at ${hit}`);
+    return;
+  }
+  const msg = `${label}: bundled KiCad missing under ${root} (stage with scripts/stage-kicad-bundle.ts)`;
+  if (process.env["FABDESK_REQUIRE_BUNDLED_KICAD"] === "1") fail(msg);
+  else console.warn(`::warning::${msg}`);
+}
+
 function checkMacApp(app: string, label: string): void {
   if (!existsSync(join(app, "Contents", "Info.plist"))) return fail(`${label}: no app bundle at ${app}`);
   const sig = run(["codesign", "--verify", "--deep", "--strict", app]);
@@ -59,6 +89,7 @@ function checkMacApp(app: string, label: string): void {
     else console.log(`${label}: Developer ID signed, notarization ticket stapled`);
   }
   checkCore(join(app, "Contents", "Resources", "core", "fabdesk-core"), label);
+  checkBundledKicad(join(app, "Contents", "Resources"), label);
 }
 
 function verifyDmg(file: string): void {
@@ -99,6 +130,7 @@ function verifyAppImage(file: string): void {
     const x = run(["bash", "-c", `chmod +x "${abs}" && cd "${out}" && "${abs}" --appimage-extract >/dev/null`]);
     if (!x.ok) return fail(`${file}: --appimage-extract failed`);
     checkCore(join(out, "squashfs-root", "resources", "core", "fabdesk-core"), file);
+    checkBundledKicad(join(out, "squashfs-root", "resources"), file);
   } finally {
     rmSync(out, { recursive: true, force: true });
   }
@@ -111,7 +143,10 @@ function verifyDeb(file: string): void {
     if (!x.ok) return fail(`${file}: dpkg-deb extract failed`);
     const core = run(["bash", "-c", `find "${out}" -path '*/resources/core/fabdesk-core' | head -1`]).out.trim();
     if (!core) fail(`${file}: bundled core missing`);
-    else checkCore(core, file);
+    else {
+      checkCore(core, file);
+      checkBundledKicad(join(core, "..", ".."), file);
+    }
   } finally {
     rmSync(out, { recursive: true, force: true });
   }

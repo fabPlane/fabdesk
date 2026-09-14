@@ -1,24 +1,47 @@
 /** Hono application: auth + origin guard, control API, tools/jobs, MCP, events. */
 import { readFile, stat, mkdir } from "node:fs/promises";
+import { threadTitleFrom } from "../thread-title";
 import { basename, extname, isAbsolute, join } from "node:path";
 import { Hono, type Context } from "hono";
 import {
   CreateProject,
   CreateThread,
+  DevicePushRegistration,
+  PairClaim,
+  pairingUrlFromEndpoints,
   OpenCatalogIndex,
   OrderVendorId,
   PatchThread,
+  ResolveApproval,
+  ResolveInput,
   SendMessage,
   Settings,
   StartOrder,
+  TailscaleServeRequest,
   type AgentId,
   type AgentInfo,
   type AuthState,
+  type CoreEndpoint,
+  type DevicePushResult,
   type DoctorReport,
+  type Health,
   type Me,
+  type PairClaimResult,
+  type RelayPhase,
+  type RemoteStatus,
+  type TailscaleState,
 } from "@fabdesk/protocol";
 import { z } from "zod/v4";
-import { PROJECT_FILES, ToolError, jailPath, toolRoutes, writeAtomic, type ContextFactory, type CoreServices, type ToolRegistry } from "@fabdesk/tools";
+import {
+  PROJECT_FILES,
+  ToolError,
+  jailPath,
+  toolRoutes,
+  writeAtomic,
+  type ContextFactory,
+  type CoreServices,
+  type ToolRegistry,
+} from "@fabdesk/tools";
 import { extractToken, originAllowed, type TokenSet } from "../auth";
 import type { AuthFacade } from "../auth-facade";
 import type { EventBus } from "../bus";
@@ -28,6 +51,11 @@ import type { JobRunner } from "../jobs";
 import type { McpSessionManager } from "../mcp-sessions";
 import type { ProjectStore } from "../projects";
 import type { AgentRunManager } from "../agent-runs";
+import type { DeviceStore } from "../devices";
+import type { RemoteListener } from "../remote";
+import { VIA_HEADER, type RelayState } from "../relay";
+import { listenAddresses, machineName, serveFor } from "../net";
+import { tailscaleProvider, type TailscaleProvider } from "../tailscale";
 import { logger, errMsg } from "../log";
 import { allowedCloneUrl, fetchOpenCatalog, findCatalogProject } from "../opensource/catalog";
 import { createPreviewCache, resolveCatalogPreview } from "../opensource/preview";
@@ -37,6 +65,10 @@ import { applyErrorReporting, captureCoreException } from "../sentry";
 import { parseTopics, sseResponse } from "./sse";
 
 export type AppDeps = {
+  /** The relay link, for `/v1/remote` and `/health`; optional so tests without a relay still build an app. */
+  relay?: { state(): RelayState; phase(): RelayPhase } | undefined;
+  /** Endpoints outside `listenAddresses` (the relay), merged into what pairing advertises. */
+  extraEndpoints?: (() => CoreEndpoint[]) | undefined;
   config: CoreConfig;
   store: Store;
   bus: EventBus;
@@ -54,6 +86,18 @@ export type AppDeps = {
   shutdown: (reason: string) => void;
   startedAt: number;
   extraOrigins?: string[];
+  devices: DeviceStore;
+  remote: RemoteListener;
+  /**
+   * Which listener this app instance answers on. The remote listener is reachable from the
+   * tailnet, so it does not serve MCP (whose DNS-rebinding allowlist is bound to loopback),
+   * shutdown, or device administration.
+   */
+  listener: "local" | "remote";
+  /** What the Tailscale CLI reports, for endpoint discovery. The shared provider when absent. */
+  tailscale?: TailscaleProvider;
+  /** After a successful `PATCH /settings`, e.g. to push the portable slice to fabplane.com. */
+  onSettingsChanged?: (settings: Settings) => void;
 };
 
 export type Env = { Variables: { token?: string; principalSubject?: string } };
@@ -81,10 +125,20 @@ export function createApp(deps: AppDeps): Hono<Env> {
 
   app.onError((err, c) => {
     if (err instanceof ToolError) {
-      const status = err.code === "invalid_args" ? 400 : err.code === "not_found" ? 404 : err.code === "precondition" ? 412 : err.code === "unavailable" ? 503 : 500;
+      const status =
+        err.code === "invalid_args"
+          ? 400
+          : err.code === "not_found"
+            ? 404
+            : err.code === "precondition"
+              ? 412
+              : err.code === "unavailable"
+                ? 503
+                : 500;
       return c.json({ error: err.message, code: err.code }, status);
     }
-    if (err instanceof z.ZodError) return c.json({ error: z.prettifyError(err), code: "invalid_args" }, 400);
+    if (err instanceof z.ZodError)
+      return c.json({ error: z.prettifyError(err), code: "invalid_args" }, 400);
     logger.error("unhandled", { path: c.req.path, error: errMsg(err) });
     // Route pattern, not the concrete path: file routes carry project-relative names.
     captureCoreException(err, { "http.method": c.req.method, "http.route": c.req.routePath });
@@ -96,14 +150,21 @@ export function createApp(deps: AppDeps): Hono<Env> {
   // and their preflights are answered before the bearer check since browsers send them without auth.
   app.use("*", async (c, next) => {
     const origin = c.req.header("origin") ?? null;
-    if (!originAllowed(origin, deps.extraOrigins ?? [])) return c.json({ error: "forbidden origin" }, 403);
+    if (!originAllowed(origin, deps.extraOrigins ?? []))
+      return c.json({ error: "forbidden origin" }, 403);
     const applyCors = (headers: Headers) => {
       if (origin === null || origin === "") return;
       headers.set("Access-Control-Allow-Origin", origin);
       headers.set("Vary", "Origin");
       headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
-      headers.set("Access-Control-Allow-Headers", "authorization, content-type, last-event-id, mcp-session-id, mcp-protocol-version");
-      headers.set("Access-Control-Expose-Headers", "mcp-session-id, content-disposition, content-length");
+      headers.set(
+        "Access-Control-Allow-Headers",
+        "authorization, content-type, last-event-id, mcp-session-id, mcp-protocol-version",
+      );
+      headers.set(
+        "Access-Control-Expose-Headers",
+        "mcp-session-id, content-disposition, content-length",
+      );
       headers.set("Access-Control-Max-Age", "600");
     };
     if (c.req.method === "OPTIONS") {
@@ -116,15 +177,68 @@ export function createApp(deps: AppDeps): Hono<Env> {
   });
 
   app.get("/health", (c) =>
-    c.json({ ok: true, version: deps.config.version, pid: process.pid, channel: deps.config.channel, authMode: deps.auth.mode, uptimeMs: Date.now() - deps.startedAt, mcpSessions: deps.mcp.activeCount() }),
+    c.json({
+      ok: true,
+      version: deps.config.version,
+      pid: process.pid,
+      channel: deps.config.channel,
+      authMode: deps.auth.mode,
+      uptimeMs: Date.now() - deps.startedAt,
+      mcpSessions: deps.mcp.activeCount(),
+      coreId: deps.store.settings.coreId(),
+      relay: deps.relay?.phase() ?? "off",
+    } satisfies Health),
   );
+
+  // Claiming a pairing code is how a phone gets its first credential, so it cannot carry one.
+  // The short-lived, one-time pairing token minted by `/v1/devices/pair/start` is the credential.
+  app.post("/v1/devices/pair/claim", async (c) => {
+    const body = PairClaim.parse(await c.req.json());
+    let issued: ReturnType<DeviceStore["claim"]>;
+    try {
+      issued = deps.devices.claim(body);
+    } catch (e) {
+      return c.json({ error: errMsg(e), code: "unauthorized" }, 401);
+    }
+    deps.bus.emit({
+      topic: "device.paired",
+      ts: Date.now(),
+      deviceId: issued.device.id,
+      label: issued.device.label,
+    });
+    logger.info("device paired", {
+      id: issued.device.id,
+      label: issued.device.label,
+      platform: issued.device.platform,
+    });
+    return c.json({
+      deviceToken: issued.token,
+      device: issued.device,
+      core: {
+        name: machineName(),
+        version: deps.config.version,
+        platform: process.platform,
+        coreId: deps.store.settings.coreId(),
+      },
+    } satisfies PairClaimResult);
+  });
 
   // Bearer auth for everything else (`?token=` allowed for SSE / WS which cannot set headers).
   app.use("*", async (c, next) => {
     if (c.req.path === "/health") return next();
-    const allowQuery = c.req.path === "/events" || c.req.path === "/ws" || c.req.path.startsWith("/opensource/preview/");
+    const allowQuery =
+      c.req.path === "/events" ||
+      c.req.path === "/ws" ||
+      c.req.path.startsWith("/opensource/preview/");
     const token = extractToken(c.req.raw, { allowQuery });
-    if (!deps.tokens.verify(token)) return c.json({ error: "unauthorized" }, 401);
+    const info = deps.tokens.lookup(token);
+    if (!info) return c.json({ error: "unauthorized" }, 401);
+    // The relay link stamps its requests; the listeners strip the header from theirs (serve.ts),
+    // so it is the daemon's own knowledge of the path, never the phone's claim.
+    if (info.kind === "device" && info.deviceId)
+      deps.devices.touch(info.deviceId, {
+        via: c.req.header(VIA_HEADER) === "relay" ? "relay" : "direct",
+      });
     c.set("token", token as string);
     await next();
   });
@@ -135,7 +249,8 @@ export function createApp(deps: AppDeps): Hono<Env> {
   app.get("/events", (c) => {
     const topics = parseTopics(c.req.query("topics"));
     const raw = c.req.header("last-event-id") ?? c.req.query("lastEventId") ?? null;
-    const lastEventId = raw !== null && raw !== "" && Number.isFinite(Number(raw)) ? Number(raw) : null;
+    const lastEventId =
+      raw !== null && raw !== "" && Number.isFinite(Number(raw)) ? Number(raw) : null;
     return sseResponse(deps.bus, { topics, lastEventId, signal: c.req.raw.signal });
   });
 
@@ -151,16 +266,31 @@ export function createApp(deps: AppDeps): Hono<Env> {
   });
   app.patch("/projects/:id", async (c) => {
     const id = c.req.param("id");
-    const body = z.object({ name: z.string().min(1).max(80).optional(), manifest: z.record(z.string(), z.unknown()).optional() }).parse(await c.req.json());
+    const body = z
+      .object({
+        name: z.string().min(1).max(80).optional(),
+        manifest: z.record(z.string(), z.unknown()).optional(),
+      })
+      .parse(await c.req.json());
     const h = await deps.projects.handle(id);
     if (!h) return c.json({ error: "not found" }, 404);
     if (body.manifest) await h.updateManifest(body.manifest as never);
     if (body.name) await deps.projects.rename(id, body.name);
-    deps.bus.emit({ ts: Date.now(), topic: "project.changed", projectId: id, paths: [PROJECT_FILES.manifest] });
+    deps.bus.emit({
+      ts: Date.now(),
+      topic: "project.changed",
+      projectId: id,
+      paths: [PROJECT_FILES.manifest],
+    });
     return c.json(await deps.projects.detail(id));
   });
   app.delete("/projects/:id", async (c) => {
-    const ok = await deps.projects.delete(c.req.param("id"), { purge: c.req.query("purge") === "1" });
+    // The design server keeps one KiCad process per project session; a deleted project's must go too.
+    const handle = await deps.projects.handle(c.req.param("id")).catch(() => null);
+    if (handle) await deps.services.design.release(handle.dir).catch(() => undefined);
+    const ok = await deps.projects.delete(c.req.param("id"), {
+      purge: c.req.query("purge") === "1",
+    });
     return ok ? c.json({ ok: true }) : c.json({ error: "not found" }, 404);
   });
   app.get("/projects/:id/route-runs", (c) => c.json(deps.store.routeRuns.list(c.req.param("id"))));
@@ -173,7 +303,13 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const st = await stat(abs).catch(() => null);
     if (!st || !st.isFile()) return c.json({ error: "not found" }, 404);
     const mime = MIME[extname(abs).toLowerCase()] ?? "application/octet-stream";
-    return new Response(Bun.file(abs), { headers: { "content-type": mime, "content-length": String(st.size), "x-mtime": st.mtime.toISOString() } });
+    return new Response(Bun.file(abs), {
+      headers: {
+        "content-type": mime,
+        "content-length": String(st.size),
+        "x-mtime": st.mtime.toISOString(),
+      },
+    });
   });
   app.put("/projects/:id/files/*", async (c) => {
     const id = c.req.param("id");
@@ -216,10 +352,14 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const dir = join(h.dir, PROJECT_FILES.sketches);
     await mkdir(dir, { recursive: true });
     let final = stamped;
-    for (let i = 2; await stat(join(dir, final)).catch(() => null); i++) final = stamped.replace(/(\.[^.]+)$/, `-${i}$1`);
+    for (let i = 2; await stat(join(dir, final)).catch(() => null); i++)
+      final = stamped.replace(/(\.[^.]+)$/, `-${i}$1`);
     const abs = await jailPath(h.dir, `${PROJECT_FILES.sketches}/${final}`);
     await writeAtomic(abs, data);
-    return c.json({ path: `${PROJECT_FILES.sketches}/${final}`, absolutePath: abs, size: data.length }, 201);
+    return c.json(
+      { path: `${PROJECT_FILES.sketches}/${final}`, absolutePath: abs, size: data.length },
+      201,
+    );
   });
 
   /* ---------- threads ---------- */
@@ -233,39 +373,118 @@ export function createApp(deps: AppDeps): Hono<Env> {
         ...(q ? { q } : {}),
         ...(projectId ? { projectId } : {}),
         ...(archived !== undefined ? { archived: archived === "1" || archived === "true" } : {}),
-        ...(folderId !== undefined ? { folderId: folderId === "" || folderId === "null" ? null : folderId } : {}),
+        ...(folderId !== undefined
+          ? { folderId: folderId === "" || folderId === "null" ? null : folderId }
+          : {}),
       }),
     );
   });
+  /** Supervised mode needs an adapter that can pause; the phone greys the option out from `/agents`. */
+  const canSupervise = (agentId: AgentId): boolean =>
+    deps.runs?.supportsSupervised(agentId) ?? false;
   app.post("/threads", async (c) => {
     const body = CreateThread.parse(await c.req.json());
-    return c.json(
-      deps.store.threads.create({
-        agentId: body.agentId,
-        ...(body.projectId !== undefined ? { projectId: body.projectId } : {}),
-        ...(body.title ? { title: body.title } : {}),
-        ...(body.model ? { model: body.model } : {}),
-        ...(body.parentThreadId ? { parentThreadId: body.parentThreadId } : {}),
-        ...(body.branchFromMessageId ? { branchFromMessageId: body.branchFromMessageId } : {}),
-      }),
-      201,
-    );
+    const runtimeMode = body.runtimeMode ?? deps.store.settings.get().defaultRuntimeMode;
+    // A default of `supervised` must not make an agent that cannot do it unusable: fall back silently
+    // unless the request asked for it by name.
+    const mode =
+      runtimeMode === "supervised" && !canSupervise(body.agentId)
+        ? body.runtimeMode
+          ? null
+          : "full"
+        : runtimeMode;
+    if (mode === null) return c.json({ error: "agent cannot run supervised" }, 400);
+    const t = deps.store.threads.create({
+      agentId: body.agentId,
+      runtimeMode: mode,
+      ...(body.projectId !== undefined ? { projectId: body.projectId } : {}),
+      ...(body.title ? { title: body.title } : {}),
+      ...(body.model ? { model: body.model } : {}),
+      ...(body.parentThreadId ? { parentThreadId: body.parentThreadId } : {}),
+      ...(body.branchFromMessageId ? { branchFromMessageId: body.branchFromMessageId } : {}),
+    });
+    deps.bus.emit({
+      ts: Date.now(),
+      topic: "thread.created",
+      threadId: t.id,
+      projectId: t.projectId,
+    });
+    return c.json(t, 201);
   });
+  // Runs in progress, with what the client's live-run store needs. A client that connects (or
+  // reconnects) while an agent is working has no `agent.started` to go on; this is its seed.
+  app.get("/runs/live", (c) =>
+    c.json(
+      (deps.runs?.live() ?? []).flatMap(({ runId, threadId }) => {
+        const run = deps.store.runs.get(runId);
+        return run ? [{ runId, threadId, agentId: run.agentId, startedAt: run.startedAt }] : [];
+      }),
+    ),
+  );
   app.get("/threads/:id", (c) => {
     const t = deps.store.threads.get(c.req.param("id"));
-    return t ? c.json({ ...t, run: deps.store.runs.latestForThread(t.id), running: deps.runs?.isRunning(t.id) ?? false }) : c.json({ error: "not found" }, 404);
+    if (!t) return c.json({ error: "not found" }, 404);
+    return c.json({
+      ...t,
+      run: deps.store.runs.latestForThread(t.id),
+      running: deps.runs?.isRunning(t.id) ?? false,
+      pending: deps.runs?.pending(t.id) ?? { approvals: [], inputs: [] },
+    });
   });
   app.patch("/threads/:id", async (c) => {
     const body = compact(PatchThread.parse(await c.req.json()));
-    const t = deps.store.threads.patch(c.req.param("id"), body);
+    const current = deps.store.threads.get(c.req.param("id"));
+    if (!current) return c.json({ error: "not found" }, 404);
+    const mode = body.runtimeMode ?? current.runtimeMode ?? "full";
+    if (mode === "supervised" && !canSupervise(body.agentId ?? current.agentId))
+      return c.json({ error: "agent cannot run supervised" }, 400);
+    const t = deps.store.threads.patch(current.id, body);
     if (!t) return c.json({ error: "not found" }, 404);
-    deps.bus.emit({ ts: Date.now(), topic: "thread.updated", threadId: t.id });
+    deps.bus.emit({
+      ts: Date.now(),
+      topic: "thread.updated",
+      threadId: t.id,
+      ...(body.title !== undefined ? { title: t.title } : {}),
+    });
     return c.json(t);
+  });
+
+  /* ---------- supervised mode: decisions (both listeners; a paired phone may answer) ---------- */
+  const decidedBy = (c: Context<Env>): "desktop" | "device" =>
+    deps.tokens.lookup(c.get("token"))?.kind === "device" ? "device" : "desktop";
+  const outcome = (c: Context<Env>, r: "ok" | "not_found" | "resolved") =>
+    r === "ok"
+      ? c.json({ ok: true })
+      : r === "resolved"
+        ? c.json({ error: "already resolved" }, 409)
+        : c.json({ error: "not found" }, 404);
+  app.post("/threads/:id/approvals/:requestId", async (c) => {
+    if (!deps.runs) return c.json({ error: "agent runs are disabled in this daemon" }, 503);
+    const body = ResolveApproval.parse(await c.req.json());
+    return outcome(
+      c,
+      deps.runs.resolveApproval(
+        c.req.param("id"),
+        c.req.param("requestId"),
+        body.decision,
+        decidedBy(c),
+      ),
+    );
+  });
+  app.post("/threads/:id/inputs/:requestId", async (c) => {
+    if (!deps.runs) return c.json({ error: "agent runs are disabled in this daemon" }, 503);
+    const body = ResolveInput.parse(await c.req.json());
+    return outcome(
+      c,
+      deps.runs.resolveInput(c.req.param("id"), c.req.param("requestId"), body.answer),
+    );
   });
   app.delete("/threads/:id", (c) => {
     const id = c.req.param("id");
     deps.runs?.abortThread(id);
-    return deps.store.threads.delete(id) ? c.json({ ok: true }) : c.json({ error: "not found" }, 404);
+    if (!deps.store.threads.delete(id)) return c.json({ error: "not found" }, 404);
+    deps.bus.emit({ ts: Date.now(), topic: "thread.deleted", threadId: id });
+    return c.json({ ok: true });
   });
   app.get("/threads/:id/messages", (c) => {
     const t = deps.store.threads.get(c.req.param("id"));
@@ -277,12 +496,70 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const body = SendMessage.parse(await c.req.json());
     if (!deps.runs) return c.json({ error: "agent runs are disabled in this daemon" }, 503);
     const agentId: AgentId = body.agentId ?? t.agentId;
-    if (agentId !== t.agentId || (body.model && body.model !== t.model)) deps.store.threads.patch(t.id, { agentId, ...(body.model ? { model: body.model } : {}) });
-    const user = deps.store.threads.addMessage({ threadId: t.id, role: "user", contentMd: body.content, parts: [{ type: "text", text: body.content }, ...body.attachments.map((a) => ({ type: "image" as const, path: a.path, mime: a.mime }))] });
-    if (t.title === "New chat") deps.store.threads.patch(t.id, { title: body.content.slice(0, 60).replace(/\s+/g, " ") });
+    const queue =
+      body.queue === true || c.req.query("queue") === "1" || c.req.query("queue") === "true";
+    const parts = [
+      { type: "text" as const, text: body.content },
+      ...body.attachments.map((a) => ({ type: "image" as const, path: a.path, mime: a.mime })),
+    ];
+    if (deps.runs.isRunning(t.id)) {
+      // C5: with a run live, keep the message and send it when the run ends. The agent/model switch
+      // is not applied now — the queued message goes out with whatever the thread uses by then.
+      if (!queue)
+        return c.json(
+          { error: "an agent run is already active on this thread", code: "precondition" },
+          412,
+        );
+      const queued = deps.store.threads.addMessage({
+        threadId: t.id,
+        role: "user",
+        contentMd: body.content,
+        parts,
+        status: "queued",
+      });
+      deps.bus.emit({ ts: Date.now(), topic: "thread.updated", threadId: t.id });
+      return c.json({ queued: true, messageId: queued.id, userMessageId: queued.id }, 202);
+    }
+    const switched = agentId !== t.agentId || (!!body.model && body.model !== t.model);
+    if (switched)
+      deps.store.threads.patch(t.id, { agentId, ...(body.model ? { model: body.model } : {}) });
+    const user = deps.store.threads.addMessage({
+      threadId: t.id,
+      role: "user",
+      contentMd: body.content,
+      parts,
+    });
+    // The first message names a "New chat". Both of these silent edits are announced so a second
+    // client (the phone, or the desktop when the phone sent the message) does not keep a stale row.
+    const title = t.title === "New chat" ? threadTitleFrom(body.content) : null;
+    if (title !== null) deps.store.threads.patch(t.id, { title });
+    if (switched || title !== null)
+      deps.bus.emit({
+        ts: Date.now(),
+        topic: "thread.updated",
+        threadId: t.id,
+        ...(title !== null ? { title } : {}),
+      });
     const project = t.projectId ? await deps.projects.handle(t.projectId) : null;
-    const { runId, messageId } = await deps.runs.start({ threadId: t.id, project, agentId, ...(body.model ?? t.model ? { model: (body.model ?? t.model) as string } : {}), prompt: body.content, attachments: body.attachments });
+    const { runId, messageId } = await deps.runs.start({
+      threadId: t.id,
+      project,
+      agentId,
+      ...((body.model ?? t.model) ? { model: (body.model ?? t.model) as string } : {}),
+      prompt: body.content,
+      attachments: body.attachments,
+    });
     return c.json({ runId, messageId, userMessageId: user.id }, 202);
+  });
+  /** Removes a message that is still queued; a sent one is history and stays. */
+  app.delete("/threads/:id/messages/:messageId", (c) => {
+    const t = deps.store.threads.get(c.req.param("id"));
+    const m = deps.store.threads.getMessage(c.req.param("messageId"));
+    if (!t || !m || m.threadId !== t.id) return c.json({ error: "not found" }, 404);
+    if (m.status !== "queued") return c.json({ error: "message is not queued" }, 409);
+    deps.store.threads.deleteMessage(m.id);
+    deps.bus.emit({ ts: Date.now(), topic: "thread.updated", threadId: t.id });
+    return c.json({ ok: true });
   });
   app.post("/threads/:id/abort", (c) => {
     const id = c.req.param("id");
@@ -334,8 +611,13 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const index = await catalogFor(deps.config.apiOrigin);
     const source = findCatalogProject(index, `${c.req.param("owner")}/${c.req.param("slug")}`);
     if (!source) return c.json({ error: "not found" }, 404);
-    if (!allowedCloneUrl(source.cloneUrl)) return c.json({ error: "clone url is not an allowed GitHub repository" }, 400);
-    const remixed = await remixCatalogProject({ source, projects: deps.projects, services: deps.services });
+    if (!allowedCloneUrl(source.cloneUrl))
+      return c.json({ error: "clone url is not an allowed GitHub repository" }, 400);
+    const remixed = await remixCatalogProject({
+      source,
+      projects: deps.projects,
+      services: deps.services,
+    });
     return c.json(remixed, 201);
   });
 
@@ -350,16 +632,20 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const body = StartOrder.parse(await c.req.json());
     const vendor = OrderVendorId.parse(body.vendor);
     const readiness = assessOrderReadiness(d.files);
-    if (!readiness.ready) return c.json({ error: "project is not ready to order", ...readiness }, 412);
+    if (!readiness.ready)
+      return c.json({ error: "project is not ready to order", ...readiness }, 412);
     const session = startOrderSession(vendor);
-    if (!session.enabled) return c.json({ error: `${session.label} ordering is not available yet`, session }, 400);
+    if (!session.enabled)
+      return c.json({ error: `${session.label} ordering is not available yet`, session }, 400);
     return c.json(session);
   });
 
   /* ---------- folders ---------- */
   app.get("/folders", (c) => c.json(deps.store.folders.list()));
   app.post("/folders", async (c) => {
-    const body = z.object({ name: z.string().min(1).max(80), parentId: z.string().nullable().optional() }).parse(await c.req.json());
+    const body = z
+      .object({ name: z.string().min(1).max(80), parentId: z.string().nullable().optional() })
+      .parse(await c.req.json());
     return c.json(deps.store.folders.create(body.name, body.parentId ?? null), 201);
   });
   app.patch("/folders/:id", async (c) => {
@@ -367,11 +653,20 @@ export function createApp(deps: AppDeps): Hono<Env> {
     deps.store.folders.rename(c.req.param("id"), body.name);
     return c.json({ ok: true });
   });
-  app.delete("/folders/:id", (c) => (deps.store.folders.delete(c.req.param("id")) ? c.json({ ok: true }) : c.json({ error: "not found" }, 404)));
+  app.delete("/folders/:id", (c) =>
+    deps.store.folders.delete(c.req.param("id"))
+      ? c.json({ ok: true })
+      : c.json({ error: "not found" }, 404),
+  );
 
   /* ---------- tools & jobs ---------- */
-  app.route("/", toolRoutes({ registry: deps.registry, ctxFactory: deps.ctxFactory, jobs: deps.jobs }));
-  app.get("/jobs", (c) => c.json(deps.jobs.list().length ? deps.jobs.list() : deps.store.jobs.list()));
+  app.route(
+    "/",
+    toolRoutes({ registry: deps.registry, ctxFactory: deps.ctxFactory, jobs: deps.jobs }),
+  );
+  app.get("/jobs", (c) =>
+    c.json(deps.jobs.list().length ? deps.jobs.list() : deps.store.jobs.list()),
+  );
   app.get("/jobs/:id", (c) => {
     const j = deps.jobs.get(c.req.param("id")) ?? deps.store.jobs.get(c.req.param("id"));
     return j ? c.json(j) : c.json({ error: "not found" }, 404);
@@ -385,9 +680,16 @@ export function createApp(deps: AppDeps): Hono<Env> {
     if (!rec) return c.json({ error: "not found" }, 404);
     const from = Number(c.req.query("from") ?? 0) || 0;
     const project = await deps.projects.handle(rec.projectId);
-    const currentPath = project ? join(project.dir, PROJECT_FILES.runs, rec.id, "frames.jsonl") : null;
-    const persistedPath = project && !isAbsolute(rec.framesPath) ? await jailPath(project.dir, rec.framesPath).catch(() => null) : rec.framesPath;
-    const candidates = [...new Set([currentPath, persistedPath].filter((path): path is string => !!path))];
+    const currentPath = project
+      ? join(project.dir, PROJECT_FILES.runs, rec.id, "frames.jsonl")
+      : null;
+    const persistedPath =
+      project && !isAbsolute(rec.framesPath)
+        ? await jailPath(project.dir, rec.framesPath).catch(() => null)
+        : rec.framesPath;
+    const candidates = [
+      ...new Set([currentPath, persistedPath].filter((path): path is string => !!path)),
+    ];
     let text = "";
     for (const path of candidates) {
       const loaded = await readFile(path, "utf8").catch(() => null);
@@ -407,7 +709,9 @@ export function createApp(deps: AppDeps): Hono<Env> {
       }
       out.push(line);
     }
-    return new Response(out.length ? out.join("\n") + "\n" : "", { headers: { "content-type": "application/x-ndjson", "x-route-status": rec.status } });
+    return new Response(out.length ? out.join("\n") + "\n" : "", {
+      headers: { "content-type": "application/x-ndjson", "x-route-status": rec.status },
+    });
   });
   app.get("/route/runs/:id", (c) => {
     const rec = deps.store.routeRuns.get(c.req.param("id"));
@@ -415,8 +719,16 @@ export function createApp(deps: AppDeps): Hono<Env> {
   });
 
   /* ---------- MCP ---------- */
-  app.all("/mcp", (c) => deps.mcp.handle(c.req.raw, { token: c.get("token") ?? null }));
-  app.get("/mcp/sessions", (c) => c.json(deps.mcp.list()));
+  // MCP stays on loopback: its DNS-rebinding allowlist is pinned to the local bind address, and
+  // agent subprocesses always reach the daemon there.
+  app.all("/mcp", (c) =>
+    deps.listener === "local"
+      ? deps.mcp.handle(c.req.raw, { token: c.get("token") ?? null })
+      : c.json({ error: "not found" }, 404),
+  );
+  app.get("/mcp/sessions", (c) =>
+    deps.listener === "local" ? c.json(deps.mcp.list()) : c.json({ error: "not found" }, 404),
+  );
 
   /* ---------- auth ---------- */
   const me = (): Me => ({ principal: deps.auth.principal(), mode: deps.auth.mode });
@@ -446,7 +758,10 @@ export function createApp(deps: AppDeps): Hono<Env> {
     }
     // Kick off the device flow; state transitions arrive via auth.state events. Respond immediately
     // with the pending state (user code) when available within a short window.
-    const first = await Promise.race([p, new Promise<AuthState>((r) => setTimeout(() => r(deps.auth.state()), 1500))]);
+    const first = await Promise.race([
+      p,
+      new Promise<AuthState>((r) => setTimeout(() => r(deps.auth.state()), 1500)),
+    ]);
     void p.catch((e) => logger.warn("login failed", { error: errMsg(e) }));
     return c.json(first);
   });
@@ -455,13 +770,178 @@ export function createApp(deps: AppDeps): Hono<Env> {
   /* ---------- settings ---------- */
   app.get("/settings", (c) => c.json(deps.store.settings.get()));
   app.patch("/settings", async (c) => {
-    const body = Settings.partial().parse(await c.req.json());
+    const raw: unknown = await c.req.json();
+    // `.partial()` still fills every defaulted key, so a `{ theme }` patch would otherwise reset the
+    // agents, the remote listener and everything else to defaults: keep only what was sent.
+    const parsed = Settings.partial().parse(raw);
+    const sent =
+      typeof raw === "object" && raw !== null ? new Set(Object.keys(raw)) : new Set<string>();
+    const body = Object.fromEntries(
+      Object.entries(parsed).filter(([k]) => sent.has(k)),
+    ) as typeof parsed;
     const next = deps.store.settings.patch(body);
     await applyErrorReporting(next.errorReporting);
+    // Remote access is a runtime toggle: the listener starts, stops or rebinds without a restart.
+    if (body.remote !== undefined && deps.listener === "local") deps.remote.apply(next.remote);
+    try {
+      deps.onSettingsChanged?.(next);
+    } catch (e) {
+      logger.warn("onSettingsChanged failed", { error: errMsg(e) });
+    }
     return c.json(next);
   });
 
+  /**
+   * The addresses a phone would be offered, ordered as the pairing URL lists them. Built from the
+   * setting rather than the live listener so Settings can show (and warn about) what enabling
+   * remote access would advertise before it is switched on.
+   */
+  const tailscale = deps.tailscale ?? tailscaleProvider();
+  const advertisedEndpoints = async (
+    fresh = false,
+  ): Promise<{ endpoints: CoreEndpoint[]; tailscale: TailscaleState | null }> => {
+    const remote = deps.store.settings.get().remote;
+    const info = await tailscale.info({ fresh });
+    const endpoints = [
+      ...listenAddresses(remote.port, {
+        bindHost: remote.host,
+        preferred: remote.preferredEndpointKind,
+        tailscale: info,
+      }),
+      ...(deps.extraEndpoints?.() ?? []),
+    ];
+    const serve = info ? serveFor(info.serves, { host: remote.host, port: remote.port }) : null;
+    return {
+      endpoints,
+      tailscale: info && {
+        ip: info.ip,
+        dnsName: info.dnsName,
+        httpsEnabled: info.httpsEnabled,
+        serve: serve && { port: serve.port },
+      },
+    };
+  };
+  const remoteStatus = async (fresh = false): Promise<RemoteStatus> => ({
+    ...deps.remote.state(),
+    setting: deps.store.settings.get().remote,
+    ...(await advertisedEndpoints(fresh)),
+    relay: deps.relay?.state() ?? null,
+  });
+
+  /** Whether the remote listener is actually bound, and on what — Settings shows the real state. */
+  app.get("/v1/remote", async (c) => c.json(await remoteStatus()));
+
+  /* ---------- paired devices ---------- */
+  const localOnly = (c: Context) =>
+    deps.listener === "local" ? null : c.json({ error: "not found" }, 404);
+
+  /**
+   * Front the remote listener with `tailscale serve` on 443 (or stop doing so), then report the
+   * endpoints as they now stand. Administration, so local listener only. A failure carries the
+   * CLI's stderr: the usual cause is the tailnet's HTTPS feature being off.
+   */
+  app.post("/v1/remote/tailscale-serve", async (c) => {
+    const denied = localOnly(c);
+    if (denied) return denied;
+    const body = TailscaleServeRequest.parse(await c.req.json());
+    const remote = deps.store.settings.get().remote;
+    try {
+      await tailscale.setServe(body.enabled, { host: remote.host, port: remote.port });
+    } catch (e) {
+      logger.warn("tailscale serve change failed", { enabled: body.enabled, error: errMsg(e) });
+      return c.json({ error: errMsg(e), code: "precondition" }, 412);
+    }
+    return c.json(await remoteStatus(true));
+  });
+
+  app.post("/v1/devices/pair/start", async (c) => {
+    const denied = localOnly(c);
+    if (denied) return denied;
+    const remote = deps.store.settings.get().remote;
+    const { endpoints } = await advertisedEndpoints();
+    const pending = deps.devices.startPairing();
+    return c.json({
+      pairingToken: pending.token,
+      code: pending.code,
+      expiresAt: new Date(pending.expiresAt).toISOString(),
+      endpoints,
+      url: pairingUrlFromEndpoints({
+        token: pending.token,
+        endpoints,
+        port: remote.port,
+        name: machineName(),
+        coreId: deps.store.settings.coreId(),
+      }),
+      coreName: machineName(),
+    });
+  });
+
+  app.post("/v1/devices/pair/cancel", (c) => {
+    const denied = localOnly(c);
+    if (denied) return denied;
+    deps.devices.cancelPairing();
+    return c.json({ ok: true });
+  });
+
+  app.get("/v1/devices", (c) => {
+    const denied = localOnly(c);
+    if (denied) return denied;
+    return c.json(deps.devices.list());
+  });
+
+  app.delete("/v1/devices/:id", (c) => {
+    const denied = localOnly(c);
+    if (denied) return denied;
+    const id = c.req.param("id");
+    if (!deps.devices.revoke(id)) return c.json({ error: "not found" }, 404);
+    deps.bus.emit({ topic: "device.revoked", ts: Date.now(), deviceId: id });
+    return c.json({ ok: true });
+  });
+
+  /* ---------- the calling device itself (docs/mobile-notifications.md §4.1) ---------- */
+  // Authenticated by the device token like every other remote request: the bearer middleware has
+  // already resolved it, so the token's own device is the only one these routes can touch. They
+  // are served on both listeners (the simulator pairs over loopback) and are not administration.
+  const callingDevice = (c: Context<Env>) => {
+    const info = deps.tokens.lookup(c.get("token"));
+    return info?.kind === "device" && info.deviceId ? deps.devices.get(info.deviceId) : null;
+  };
+  const notADevice = (c: Context<Env>) =>
+    c.json({ error: "device token required", code: "forbidden" }, 403);
+
+  app.get("/v1/devices/me", (c) => {
+    const device = callingDevice(c);
+    return device ? c.json(device) : notADevice(c);
+  });
+
+  app.put("/v1/devices/me/push", async (c) => {
+    const device = callingDevice(c);
+    if (!device) return notADevice(c);
+    const reg = DevicePushRegistration.parse(await c.req.json());
+    const stored = deps.devices.setPush(device.id, reg);
+    if (!stored) return notADevice(c);
+    logger.info("device push registered", {
+      id: device.id,
+      platform: reg.platform,
+      prefs: reg.prefs,
+    });
+    return c.json({
+      device: stored.device,
+      push: { registeredAt: stored.registeredAt },
+    } satisfies DevicePushResult);
+  });
+
+  app.delete("/v1/devices/me/push", (c) => {
+    const device = callingDevice(c);
+    if (!device) return notADevice(c);
+    deps.devices.clearPush(device.id);
+    logger.info("device push cleared", { id: device.id });
+    return c.json({ ok: true });
+  });
+
   app.post("/shutdown", (c) => {
+    const denied = localOnly(c);
+    if (denied) return denied;
     setTimeout(() => deps.shutdown("shutdown requested"), 20);
     return c.json({ ok: true });
   });
@@ -472,7 +952,9 @@ export function createApp(deps: AppDeps): Hono<Env> {
 
 /** Drop `undefined` values so partial objects satisfy exactOptionalPropertyTypes targets. */
 function compact<T extends object>(o: T): { [K in keyof T]: Exclude<T[K], undefined> } {
-  return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as { [K in keyof T]: Exclude<T[K], undefined> };
+  return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as {
+    [K in keyof T]: Exclude<T[K], undefined>;
+  };
 }
 
 function isPng(b: Uint8Array): boolean {

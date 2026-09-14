@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { runInNewContext } from "node:vm";
 import { themeBootInlineCss, themeBootInlineScript } from "./boot-inline";
 import {
   THEME_BACKGROUNDS,
@@ -161,8 +162,7 @@ describe("theme boot inline script", () => {
     const payload = JSON.stringify({ state: { themeId: "fabplane-dark" }, version: 3 });
     const localStorage = { getItem: () => payload };
     const window = { matchMedia: () => ({ matches: false }) };
-    const run = new Function("document", "localStorage", "window", themeBootInlineScript());
-    run(document, localStorage, window);
+    runInNewContext(themeBootInlineScript(), { document, localStorage, window });
     expect(darkOn).toBe(true);
     expect(attrs["data-theme"]).toBe("dark");
     expect(attrs["data-skin"]).toBe("fabplane");
@@ -184,11 +184,16 @@ describe("theme boot inline script", () => {
         style,
       },
     };
-    const run = new Function("document", "localStorage", "window", themeBootInlineScript());
-    run(document, { getItem: () => null }, { matchMedia: () => ({ matches: true }) });
+    const run = (matches: boolean) =>
+      runInNewContext(themeBootInlineScript(), {
+        document,
+        localStorage: { getItem: () => null },
+        window: { matchMedia: () => ({ matches }) },
+      });
+    run(true);
     expect(darkOn).toBe(true);
     expect(style.backgroundColor).toBe(themeBackground("fabplane-dark"));
-    run(document, { getItem: () => null }, { matchMedia: () => ({ matches: false }) });
+    run(false);
     expect(darkOn).toBe(false);
     expect(style.backgroundColor).toBe(themeBackground("fabplane-light"));
   });

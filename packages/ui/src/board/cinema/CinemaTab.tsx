@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, EmptyState, Select } from "../../components/ui";
-import { useCoreClient } from "../../core/CoreProvider";
+import { useCoreClient } from "@fabdesk/client-core";
 import { useCinemaStore } from "../../stores/cinema";
 import { useUiStore } from "../../stores/ui";
 import { cn } from "../../util";
-import { useRunTool } from "../tools";
+import { useRunTool } from "@fabdesk/client-core";
 import { CinemaPainter, DARK_THEME, LIGHT_THEME, frameStatusText, layerColor, nextFrameSeq, perfStatusText, type OffscreenLike } from "./renderer";
 
 /** Offscreen layers for the painter: statics and settled copper, sized like the visible canvas. */

@@ -1,8 +1,8 @@
 name: Installer test
 
-# Fresh-machine install + launch test of the released installers, on GitHub's own macOS / Ubuntu /
+# Fresh-machine install + launch test of the released installers, on Blacksmith macOS / Ubuntu /
 # Windows runners (a clean VM per job). Runs after every successful Release (testing that tag),
-# every day against what fabplane.com serves, and on demand. Uses the same guest scripts as the
+# weekly against what fabplane.com serves, and on demand. Uses the same guest scripts as the
 # local VM tests (scripts/vm/guest); see docs/installer-vms.md.
 
 on:
@@ -11,7 +11,7 @@ on:
     types: [completed]
     branches: [main]
   schedule:
-    - cron: "17 22 * * *"   # 05:17 Asia/Bangkok
+    - cron: "17 22 * * 0" # 05:17 Monday Asia/Bangkok
   workflow_dispatch:
     inputs:
       tag:
@@ -32,7 +32,7 @@ jobs:
   select:
     # Decide which build to test: the tag the triggering release produced, the dispatch input, or the site's latest.
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
-    runs-on: ubuntu-22.04
+    runs-on: blacksmith-4vcpu-ubuntu-2204
     outputs:
       args: ${{ steps.pick.outputs.args }}
       label: ${{ steps.pick.outputs.label }}
@@ -69,8 +69,8 @@ jobs:
         include:
           - { arch: arm64, ext: dmg }
           - { arch: arm64, ext: zip }
-          - { arch: x64,   ext: dmg }   # Intel build under Rosetta on the arm64 runner
-    runs-on: macos-15   # macOS 15 Rosetta supports AVX2, which the x64 Bun core needs
+          - { arch: x64, ext: dmg } # Intel build under Rosetta on the arm64 runner
+    runs-on: blacksmith-6vcpu-macos-15 # macOS 15 Rosetta supports AVX2, which the x64 Bun core needs
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -88,6 +88,7 @@ jobs:
           name: installer-test-macos-${{ matrix.arch }}-${{ matrix.ext }}-${{ needs.select.outputs.label }}
           path: ${{ steps.t.outputs.RESULTS_DIR }}
           if-no-files-found: ignore
+          retention-days: 7
 
   linux:
     needs: select
@@ -95,7 +96,7 @@ jobs:
       fail-fast: false
       matrix:
         format: [AppImage, deb]
-    runs-on: ubuntu-22.04
+    runs-on: blacksmith-4vcpu-ubuntu-2204
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -112,10 +113,11 @@ jobs:
           name: installer-test-linux-${{ matrix.format }}-${{ needs.select.outputs.label }}
           path: ${{ steps.t.outputs.RESULTS_DIR }}
           if-no-files-found: ignore
+          retention-days: 7
 
   windows:
     needs: select
-    runs-on: windows-latest
+    runs-on: blacksmith-4vcpu-windows-2025
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -145,3 +147,4 @@ jobs:
           name: installer-test-windows-nsis-${{ needs.select.outputs.label }}
           path: ${{ runner.temp }}/fabdesk-installer-test
           if-no-files-found: ignore
+          retention-days: 7

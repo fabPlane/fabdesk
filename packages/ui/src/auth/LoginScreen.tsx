@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { Badge, Button, Input, Spinner } from "../components/ui";
-import { useCore } from "../core/CoreProvider";
-import { useAuthStore } from "../stores/auth";
+import { useCore } from "@fabdesk/client-core";
+import { useAuthStore } from "@fabdesk/client-core";
 import { isMac } from "../util";
 import { isRevealDevOptionsShortcut, showDevSignInOptions } from "./dev-options";
 
 const STAGING_PASSWORD_HINT =
-  "Staging/local only. Shared demo/maya accounts are not available in production.";
+  "Staging/local only. Password login is not available in production.";
 
 /**
  * Browser device-code sign-in (production). The staging password form and local mode are shown up

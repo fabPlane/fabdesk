@@ -2,13 +2,13 @@ import type { Thread } from "@fabdesk/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState, type MouseEvent } from "react";
 import { Button, ContextMenu, IconButton, Input, MenuItem, Tabs } from "../components/ui";
-import { useCore } from "../core/CoreProvider";
-import { useProjects, useThreads, useThreadMutations } from "../hooks/queries";
+import { useCore } from "@fabdesk/client-core";
+import { useProjects, useThreads, useThreadMutations } from "@fabdesk/client-core";
 import { useBranchThread } from "../hooks/threadActions";
-import { useRunsStore } from "../stores/runs";
+import { useRunsStore } from "@fabdesk/client-core";
 import { SIDEBAR_LIST_TABS, SIDEBAR_LIST_TAB_LABELS, normalizeSidebarListTab, useUiStore } from "../stores/ui";
 import { cn, formatRelative, modKey } from "../util";
-import { groupThreadsByProject } from "./group-threads";
+import { groupThreadsByProject } from "@fabdesk/client-core";
 import { OpenSourceList } from "./OpenSourceList";
 import { UserFooter } from "./UserFooter";
 

@@ -63,6 +63,8 @@ export const cursorAdapter: AgentAdapter = {
     "Install the Cursor CLI: curl https://cursor.com/install -fsS | bash, then run `agent login`.",
   detect: (binaryPath) => detectBinary(CANDIDATES, binaryPath),
   models: () => ["auto", "sonnet-4.5", "opus-4.5", "gpt-5"],
+  /** No approval channel in `cursor-agent` headless output. */
+  supportsSupervised: false,
   run(session: AgentSession): AgentRun {
     const parser = new CursorStreamParser();
     writeCursorMcp(session.cwd, session.mcp.url);

@@ -1,8 +1,20 @@
 /** Control API DTOs shared by core routes and the renderer client. */
 import { z } from "zod/v4";
-import { AgentId, JobStatus, MessagePart, Principal } from "./events";
+import { CoreEndpoint, EndpointKind, TailscaleState } from "./devices";
+import {
+  AgentId,
+  ApprovalDecision,
+  JobStatus,
+  MessagePart,
+  Principal,
+  type ApprovalRequestedEvent,
+  type InputRequestedEvent,
+} from "./events";
 
 export const ProjectId = z.string().min(1);
+
+/** Default port for the daemon's opt-in remote listener (see docs/mobile.md). */
+export const REMOTE_DEFAULT_PORT = 47820;
 
 /** Routing rules a board import carries over (KiCad netclass "Default"); all in millimetres. */
 export const BoardRules = z.object({
@@ -63,6 +75,13 @@ export type ProjectDetail = z.infer<typeof ProjectDetail>;
 
 export const CreateProject = z.object({ name: z.string().min(1).max(80) });
 
+/**
+ * `full`: the agent runs with the permission mode from Settings. `supervised`: the daemon pauses
+ * every tool call it classifies as a write until a human approves it (desktop or phone).
+ */
+export const RuntimeMode = z.enum(["full", "supervised"]);
+export type RuntimeMode = z.infer<typeof RuntimeMode>;
+
 export const Thread = z.object({
   id: z.string(),
   projectId: ProjectId.nullable(),
@@ -75,6 +94,8 @@ export const Thread = z.object({
   model: z.string().nullable(),
   parentThreadId: z.string().nullable(),
   branchFromMessageId: z.string().nullable(),
+  /** Always set by the daemon; optional in the type so older fixtures and clients still compile (absent = `full`). */
+  runtimeMode: RuntimeMode.optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -87,6 +108,7 @@ export const CreateThread = z.object({
   model: z.string().optional(),
   parentThreadId: z.string().optional(),
   branchFromMessageId: z.string().optional(),
+  runtimeMode: RuntimeMode.optional(),
 });
 
 export const PatchThread = z.object({
@@ -96,7 +118,18 @@ export const PatchThread = z.object({
   folderId: z.string().nullable().optional(),
   agentId: AgentId.optional(),
   model: z.string().nullable().optional(),
+  runtimeMode: RuntimeMode.optional(),
 });
+
+/** Requests still waiting on a human, as `GET /threads/:id` reports them (`pending`). */
+export const PendingRequests = z.object({
+  approvals: z.array(z.custom<ApprovalRequestedEvent>()),
+  inputs: z.array(z.custom<InputRequestedEvent>()),
+});
+export type PendingRequests = z.infer<typeof PendingRequests>;
+
+export const ResolveApproval = z.object({ decision: ApprovalDecision });
+export const ResolveInput = z.object({ answer: z.string() });
 
 export const Message = z.object({
   id: z.string(),
@@ -105,6 +138,8 @@ export const Message = z.object({
   contentMd: z.string(),
   parts: z.array(MessagePart),
   runId: z.string().nullable(),
+  /** `queued`: a user message waiting for the live run to end before it is sent (absent = sent). */
+  status: z.enum(["queued"]).optional(),
   createdAt: z.string(),
 });
 export type Message = z.infer<typeof Message>;
@@ -116,6 +151,8 @@ export const SendMessage = z.object({
   attachments: z.array(Attachment).default([]),
   agentId: AgentId.optional(),
   model: z.string().optional(),
+  /** With a run live, store the message and send it when the run ends (`?queue=1` does the same). */
+  queue: z.boolean().optional(),
 });
 
 export const Run = z.object({
@@ -168,6 +205,8 @@ export const AgentInfo = z.object({
   path: z.string().optional(),
   installHint: z.string(),
   models: z.array(z.string()),
+  /** Whether the adapter can pause a tool call for approval (`runtimeMode: "supervised"`). Absent = no. */
+  supportsSupervised: z.boolean().optional(),
 });
 export type AgentInfo = z.infer<typeof AgentInfo>;
 
@@ -176,9 +215,15 @@ export const DoctorReport = z.object({
   channel: z.enum(["public", "internal"]),
   bun: z.string(),
   platform: z.string(),
-  kicad: z.object({ found: z.boolean(), path: z.string().optional(), version: z.string().optional() }),
+  kicad: z.object({
+    found: z.boolean(),
+    path: z.string().optional(),
+    version: z.string().optional(),
+  }),
   ngspice: z.object({ found: z.boolean(), path: z.string().optional() }),
-  routers: z.array(z.object({ id: z.string(), present: z.boolean(), ready: z.boolean(), detail: z.string() })),
+  routers: z.array(
+    z.object({ id: z.string(), present: z.boolean(), ready: z.boolean(), detail: z.string() }),
+  ),
   agents: z.array(AgentInfo),
   warnings: z.array(z.string()),
 });
@@ -191,6 +236,8 @@ export const Settings = z.object({
   fpPcbBridgeUrl: z.string().nullable().default(null),
   router: z.enum(["capacity", "freerouting"]).default("capacity"),
   defaultAgent: AgentId.default("claude"),
+  /** Runtime mode new threads start in. */
+  defaultRuntimeMode: RuntimeMode.default("full"),
   agents: z
     .record(
       z.string(),
@@ -209,8 +256,107 @@ export const Settings = z.object({
   /** Send crash/error reports to Sentry (only when a DSN is configured; see docs/sentry.md). */
   errorReporting: z.boolean().default(true),
   theme: z.enum(["system", "light", "dark"]).default("system"),
+  /** Opt-in second listener on a tailnet/LAN address so paired phones can reach the daemon. */
+  remote: z
+    .object({
+      enabled: z.boolean().default(false),
+      host: z.string().default("0.0.0.0"),
+      port: z.number().int().min(1).max(65535).default(REMOTE_DEFAULT_PORT),
+      /** Which endpoint kind the pairing QR lists first. Unset (or null) picks tailscale, then LAN, then the rest. */
+      preferredEndpointKind: EndpointKind.nullable().optional(),
+      /**
+       * Whether the daemon dials out to a relay (`apps/relay`) so a phone off the tailnet can
+       * still reach it. Absent means `auto`: the link comes up whenever remote access is on and
+       * the daemon is signed in to fabplane. `off` never dials.
+       */
+      relay: z.enum(["auto", "off"]).optional(),
+      /**
+       * Explicit relay override, e.g. `https://relay.fabplane.com`. Unset, null or empty means
+       * the default, derived from the fabplane API origin (`FABPLANE_RELAY_URL` overrides that).
+       */
+      relayUrl: z.string().trim().nullable().optional(),
+    })
+    .default({ enabled: false, host: "0.0.0.0", port: REMOTE_DEFAULT_PORT }),
+  /** Daemon-wide kill switch for push notifications to paired phones (docs/mobile-notifications.md §4.1). */
+  notifications: z.object({ enabled: z.boolean().default(true) }).default({ enabled: true }),
 });
 export type Settings = z.infer<typeof Settings>;
 
-export const Me = z.object({ principal: Principal.nullable(), mode: z.enum(["fabplane", "local"]) });
+/**
+ * Portable preferences stored on the fabplane.com account (`GET`/`PUT /v1/private/settings`).
+ * Machine-local fields (binary paths, remote listener, keep-core-running) stay on the daemon.
+ * Last-write-wins by `updatedAt` (unix ms). Unknown keys are stripped so clients can evolve.
+ *
+ * Kept in step with fabplane.com `user_settings.payload` — that API copies this shape, it does
+ * not import this package.
+ */
+export const CloudSettings = z.object({
+  schema: z.literal(1),
+  updatedAt: z.number().int().nonnegative(),
+  appearance: z.enum(["system", "light", "dark"]).optional(),
+  haptics: z.boolean().optional(),
+  keepAwake: z.boolean().optional(),
+  defaultAgent: AgentId.optional(),
+  defaultRuntimeMode: RuntimeMode.optional(),
+  errorReporting: z.boolean().optional(),
+  notificationsEnabled: z.boolean().optional(),
+});
+export type CloudSettings = z.infer<typeof CloudSettings>;
+
+/**
+ * The relay link as `GET /v1/remote` reports it. `connected` false with no `error` means the
+ * daemon is dialing (or waiting to redial); `error` names what stops it from dialing at all
+ * ("not signed in", "remote access is off", no relay for this API origin, a bad URL). `lastError`
+ * is the most recent socket failure and survives a reconnect, so a flapping link is visible.
+ */
+export const RelayStatus = z.object({
+  connected: z.boolean(),
+  /** The relay in use (or wanted): the setting, else the default derived from the API origin. Empty when none is known. */
+  url: z.string(),
+  /** When `connected` last changed (ISO). */
+  since: z.string().optional(),
+  error: z.string().optional(),
+  lastError: z.string().optional(),
+});
+export type RelayStatus = z.infer<typeof RelayStatus>;
+
+/** `GET /v1/remote`: what the listener is really bound to, the setting behind it, and the addresses a phone would be offered. */
+export const RemoteStatus = z.object({
+  enabled: z.boolean(),
+  host: z.string().optional(),
+  port: z.number().optional(),
+  setting: Settings.shape.remote,
+  /** Ordered as the pairing URL would list them, `default` on the first. Empty when nothing is reachable. */
+  endpoints: z.array(CoreEndpoint),
+  /** `null` without a Tailscale CLI; absent from daemons that predate it. */
+  tailscale: TailscaleState.nullable().optional(),
+  /** The relay link (`apps/relay`): `null` when `remote.relay` is `off`; absent from older daemons. */
+  relay: RelayStatus.nullable().optional(),
+});
+export type RemoteStatus = z.infer<typeof RemoteStatus>;
+
+/** Where the relay link stands: connected, or dialing, or blocked (with `error` saying why). */
+export const RelayPhase = z.enum(["connected", "connecting", "off"]);
+export type RelayPhase = z.infer<typeof RelayPhase>;
+
+/** `GET /health`: unauthenticated, so it carries nothing a stranger could use. */
+export const Health = z.object({
+  ok: z.literal(true),
+  version: z.string(),
+  pid: z.number().int(),
+  channel: z.enum(["public", "internal"]),
+  authMode: z.enum(["fabplane", "local"]),
+  uptimeMs: z.number(),
+  mcpSessions: z.number().int(),
+  /** Stable daemon identity, minted once (docs/mobile-notifications.md §4.4). */
+  coreId: z.string(),
+  /** The relay link, without the URL or the reason (this route is unauthenticated). Absent from older daemons. */
+  relay: RelayPhase.optional(),
+});
+export type Health = z.infer<typeof Health>;
+
+export const Me = z.object({
+  principal: Principal.nullable(),
+  mode: z.enum(["fabplane", "local"]),
+});
 export type Me = z.infer<typeof Me>;

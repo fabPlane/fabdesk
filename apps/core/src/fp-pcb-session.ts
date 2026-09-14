@@ -86,12 +86,21 @@ export class FpPcbSessions {
     }
   }
 
+  /**
+   * Drop the project's session and stop its KiCad process on the bridge. The bridge never reaps a
+   * session on its own, so without this every built-then-deleted project (and every daemon restart
+   * that could not re-adopt) left a ~500 MB kicad-cli behind.
+   */
   async release(projectDir: string): Promise<void> {
     const pending = this.open.get(projectDir);
     this.open.delete(projectDir);
     if (!pending) return;
     const s = await pending.catch(() => null);
     await s?.ws.close().catch(() => undefined);
+    if (s)
+      await this.bridge()
+        .deleteSession(s.id)
+        .catch(() => undefined);
   }
 
   async dispose(): Promise<void> {

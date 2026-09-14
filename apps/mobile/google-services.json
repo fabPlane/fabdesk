@@ -1,0 +1,68 @@
+{
+  "project_info": {
+    "project_number": "1095981484842",
+    "project_id": "tensorfleet",
+    "storage_bucket": "tensorfleet.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1095981484842:android:c099b92ed49fab521dac53",
+        "android_client_info": {
+          "package_name": "com.fabplane.fabdesk"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1095981484842-fgm2pb25ll37q5b4sgd70isvcvk4div1.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBPn4-ZfawZo6gaMu8LHWGOUZZ_r2MBD-c"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1095981484842-fgm2pb25ll37q5b4sgd70isvcvk4div1.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1095981484842:android:bb3aff9a794771cc1dac53",
+        "android_client_info": {
+          "package_name": "com.tensorfleet.fabdesk.mobile"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1095981484842-fgm2pb25ll37q5b4sgd70isvcvk4div1.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBPn4-ZfawZo6gaMu8LHWGOUZZ_r2MBD-c"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1095981484842-fgm2pb25ll37q5b4sgd70isvcvk4div1.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

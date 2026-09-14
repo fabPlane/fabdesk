@@ -2,7 +2,7 @@ import "@excalidraw/excalidraw/index.css";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { lazy, Suspense, useCallback, useRef, useState } from "react";
 import { Button, Dialog, Spinner } from "../components/ui";
-import { useCoreClient } from "../core/CoreProvider";
+import { useCoreClient } from "@fabdesk/client-core";
 import { useUiStore, type PendingAttachment } from "../stores/ui";
 import { basename } from "../util";
 
