@@ -404,7 +404,7 @@ async function main(): Promise<void> {
     try {
       const dl = await nightlyKicadDownloadUrl({ target, ...(token ? { token } : {}) });
       process.stderr.write(
-        `▸ ${envOr("FABDESK_KICAD_REPO", DEFAULT_KICAD_REPO)}@${dl.tag} → ${dl.name}` +
+        `▸ ${nonEmptySetting(process.env["FABDESK_KICAD_REPO"], DEFAULT_KICAD_REPO)}@${dl.tag} → ${dl.name}` +
           (dl.commit ? ` (${dl.commit.slice(0, 10)})` : "") +
           "\n",
       );
