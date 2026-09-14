@@ -167,7 +167,10 @@ jobs:
           asset="fp-pcb-backend-${target}.tar.gz"
           mkdir -p "dist/pcb/$target" "$RUNNER_TEMP/fp-pcb"
           gh release download "$tag" --repo TensorFleet/fab_pcb --pattern "$asset" --dir "$RUNNER_TEMP/fp-pcb"
-          tar -xzf "$RUNNER_TEMP/fp-pcb/$asset" -C "dist/pcb/$target"
+          archive="$RUNNER_TEMP/fp-pcb/$asset"
+          # Git Bash tar treats a native D:\ path as a remote host/path pair.
+          if [ "$RUNNER_OS" = Windows ]; then archive="$(cygpath -u "$archive")"; fi
+          tar -xzf "$archive" -C "dist/pcb/$target"
           test -f "dist/pcb/$target/bundle.json"
           # shellcheck disable=SC2016
           bun -e 'const m=await Bun.file(process.argv[1]).json(); if(m.target!==process.argv[2]) throw new Error(`bundle target ${m.target} != ${process.argv[2]}`)' "dist/pcb/$target/bundle.json" "$target"
