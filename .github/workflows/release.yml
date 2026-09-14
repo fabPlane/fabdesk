@@ -200,7 +200,9 @@ jobs:
           archive="$RUNNER_TEMP/fp-pcb/$asset"
           # Git Bash tar treats a native D:\ path as a remote host/path pair.
           if [ "$RUNNER_OS" = Windows ]; then archive="$(cygpath -u "$archive")"; fi
-          tar -xzf "$archive" -C "dist/pcb/$target"
+          # Library snapshots may retain clone metadata. It is not runtime data, bloats the
+          # installer, and macOS codesign cannot rewrite read-only Git pack indexes.
+          tar --exclude='*/.git' --exclude='*/.git/*' -xzf "$archive" -C "dist/pcb/$target"
           test -f "dist/pcb/$target/bundle.json"
           # shellcheck disable=SC2016
           bun -e 'const m=await Bun.file(process.argv[1]).json(); if(m.target!==process.argv[2]) throw new Error(`bundle target ${m.target} != ${process.argv[2]}`)' "dist/pcb/$target/bundle.json" "$target"
