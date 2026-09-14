@@ -143,8 +143,29 @@ jobs:
       - name: Build core (${{ matrix.target }})
         run: bun run --cwd apps/core build --only ${{ matrix.target }} --channel ${{ env.CHANNEL }}
 
-      # Stage the FabPlane KiCad fork from the latest TensorFleet/kicad GitHub Release into
-      # apps/desktop/kicad-bundle/<os>-<arch> so afterPack copies it to Resources/kicad.
+      # Resolve the immutable KiCad nightly that matches FabPCB's generated API contract. The
+      # rolling `nightly` tag can advance independently and must not change a pinned installer.
+      - name: Resolve exact bundled KiCad release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          commit="$(tr -d '[:space:]' < vendor/fab_pcb/packages/proto/KICAD_COMMIT)"
+          sha10="${commit:0:10}"
+          releases="$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/TensorFleet/kicad/releases?per_page=100")"
+          tag="$(printf '%s' "$releases" | jq -r --arg s "$sha10" \
+            '.[] | .tag_name | select(startswith("nightly-") and endswith("-" + $s))' | head -1)"
+          if [ -z "$tag" ]; then
+            echo "::error title=no exact KiCad nightly::No nightly release matches FabPCB KICAD_COMMIT $commit"
+            exit 1
+          fi
+          echo "FABDESK_KICAD_RELEASE=$tag" >> "$GITHUB_ENV"
+
+      # Stage the exact FabPlane KiCad fork release into apps/desktop/kicad-bundle/<os>-<arch>
+      # so afterPack copies it to Resources/kicad.
       # Override with FABDESK_KICAD_BUNDLE_URL or FABDESK_KICAD_REPO; --require fails the build
       # when the release has no matching OS/arch asset.
       - name: Stage bundled KiCad
