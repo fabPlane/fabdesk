@@ -1,0 +1,45 @@
+{
+  "netlist": {
+    "components": [
+      {
+        "ref": "J1",
+        "value": "PWR",
+        "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical"
+      },
+      {
+        "ref": "R1",
+        "value": "330",
+        "footprint": "Resistor_SMD:R_0603_1608Metric"
+      },
+      {
+        "ref": "D1",
+        "value": "RED",
+        "footprint": "LED_SMD:LED_0603_1608Metric"
+      }
+    ],
+    "nets": [
+      {
+        "name": "VIN",
+        "nodes": [
+          { "ref": "J1", "pin": "1" },
+          { "ref": "R1", "pin": "1" }
+        ]
+      },
+      {
+        "name": "LED_A",
+        "nodes": [
+          { "ref": "R1", "pin": "2" },
+          { "ref": "D1", "pin": "2" }
+        ]
+      },
+      {
+        "name": "GND",
+        "nodes": [
+          { "ref": "D1", "pin": "1" },
+          { "ref": "J1", "pin": "2" }
+        ]
+      }
+    ]
+  },
+  "board": { "widthMm": 20, "heightMm": 15 }
+}
