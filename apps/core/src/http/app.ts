@@ -1,7 +1,7 @@
 /** Hono application: auth + origin guard, control API, tools/jobs, MCP, events. */
 import { readFile, stat, mkdir } from "node:fs/promises";
 import { threadTitleFrom } from "../thread-title";
-import { basename, extname, join } from "node:path";
+import { basename, extname, isAbsolute, join } from "node:path";
 import { Hono, type Context } from "hono";
 import {
   CreateProject,
@@ -679,7 +679,25 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const rec = deps.store.routeRuns.get(c.req.param("id"));
     if (!rec) return c.json({ error: "not found" }, 404);
     const from = Number(c.req.query("from") ?? 0) || 0;
-    const text = await readFile(rec.framesPath, "utf8").catch(() => "");
+    const project = await deps.projects.handle(rec.projectId);
+    const currentPath = project
+      ? join(project.dir, PROJECT_FILES.runs, rec.id, "frames.jsonl")
+      : null;
+    const persistedPath =
+      project && !isAbsolute(rec.framesPath)
+        ? await jailPath(project.dir, rec.framesPath).catch(() => null)
+        : rec.framesPath;
+    const candidates = [
+      ...new Set([currentPath, persistedPath].filter((path): path is string => !!path)),
+    ];
+    let text = "";
+    for (const path of candidates) {
+      const loaded = await readFile(path, "utf8").catch(() => null);
+      if (loaded !== null) {
+        text = loaded;
+        break;
+      }
+    }
     const lines = text.split("\n").filter(Boolean);
     const out: string[] = [];
     for (const line of lines) {

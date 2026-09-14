@@ -18,6 +18,23 @@ describe("CoreClient open-source preview URL", () => {
   });
 });
 
+describe("CoreClient route runs", () => {
+  test("lists persisted runs for an encoded project id", async () => {
+    let requested = "";
+    const client = new CoreClient({
+      baseUrl: "http://127.0.0.1:47831",
+      token: "tok",
+      fetch: async (input) => {
+        requested = input;
+        return Response.json([]);
+      },
+    });
+
+    expect(await client.listRouteRuns("project/one")).toEqual([]);
+    expect(requested).toBe("http://127.0.0.1:47831/projects/project%2Fone/route-runs");
+  });
+});
+
 describe("CoreClient push registration (docs/mobile-notifications.md §4.1)", () => {
   const calls: Array<{ url: string; init: RequestInit | undefined }> = [];
   const client = new CoreClient({
