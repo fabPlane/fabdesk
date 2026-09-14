@@ -27,6 +27,37 @@ const token = process.env["FABDESK_TOKEN"];
 if (!token) throw new Error("FABDESK_TOKEN is required");
 const headers = { authorization: `Bearer ${token}`, "content-type": "application/json" };
 
+interface NetlistSource {
+  netlist?: { components?: Array<{ footprint?: unknown }> };
+  libraries?: Array<{ kind: string; nickname: string; uri: string }>;
+}
+
+async function loadNetlistSource(filename: string): Promise<NetlistSource> {
+  const source = (await Bun.file(filename).json()) as NetlistSource;
+  const footprintRoot = process.env["KICAD10_FOOTPRINT_DIR"];
+  if (!footprintRoot) return source;
+  const libraries = source.libraries ?? [];
+  const declared = new Set(libraries.map((library) => library.nickname));
+  const nicknames = new Set(
+    (source.netlist?.components ?? [])
+      .map((component) =>
+        typeof component.footprint === "string" ? component.footprint.split(":", 1)[0] : undefined,
+      )
+      .filter((nickname): nickname is string => Boolean(nickname)),
+  );
+  source.libraries = [
+    ...libraries,
+    ...[...nicknames]
+      .filter((nickname) => !declared.has(nickname))
+      .map((nickname) => ({
+        kind: "footprint",
+        nickname,
+        uri: join(footprintRoot, `${nickname}.pretty`),
+      })),
+  ];
+  return source;
+}
+
 async function request<T>(
   method: string,
   path: string,
@@ -106,7 +137,7 @@ async function runCase(spec: RegressionCase) {
     await request(
       "PUT",
       `/projects/${project.id}/files/circuit.netlist.json`,
-      await Bun.file(join(CASES, spec.netlist)).text(),
+      await loadNetlistSource(join(CASES, spec.netlist)),
     );
     const build = await tool(project.id, "circuit_build", { fresh: true }, 120_000);
     if (build.ok === false || build.error)

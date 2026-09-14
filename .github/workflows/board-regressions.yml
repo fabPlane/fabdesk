@@ -136,6 +136,7 @@ jobs:
         env:
           FABDESK_URL: http://127.0.0.1:47999
           FABDESK_TOKEN: board-regression-token-0123456789
+          KICAD10_FOOTPRINT_DIR: /usr/share/kicad/footprints
           DISPATCH_TIER: ${{ inputs.tier }}
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then tier=pr;
