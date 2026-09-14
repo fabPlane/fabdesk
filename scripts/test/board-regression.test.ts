@@ -41,6 +41,20 @@ describe("board regression evaluation", () => {
     ).toEqual({ clearance: 2 });
   });
 
+  test("uses DRC signatures so fixing one error cannot mask a newly introduced one", () => {
+    const before = report([]);
+    before.violations = [
+      { rule: "clearance", severity: "error", signature: "old-a" },
+      { rule: "clearance", severity: "error", signature: "old-b" },
+    ];
+    const after = report([]);
+    after.violations = [
+      { rule: "clearance", severity: "error", signature: "old-a" },
+      { rule: "clearance", severity: "error", signature: "new-c" },
+    ];
+    expect(introducedDrcErrors(before, after)).toEqual({ clearance: 1 });
+  });
+
   test("unconnected items are tracked by the route result, not misclassified as copper errors", () => {
     expect(introducedDrcErrors(report([], 8), report([], 2))).toEqual({});
   });
@@ -64,9 +78,27 @@ describe("board regression evaluation", () => {
     );
     expect(result.failures).toEqual([
       "bridge health probe failed",
-      "1 connection(s) remained open",
+      "router reports 1 connection(s) remained open",
       "routing introduced 1 clearance error(s)",
     ]);
+  });
+
+  test("gates routing completeness on KiCad DRC, not only the router self-report", () => {
+    const result = evaluateCase(
+      {
+        id: "smoke",
+        tier: "pr",
+        netlist: "smoke.json",
+        quality: "gate",
+        routeTimeoutMs: 100,
+        hardTimeoutMs: 200,
+        requireAllRouted: true,
+      },
+      report([], 2),
+      report([], 1),
+      { timedOut: false, unrouted: [] },
+    );
+    expect(result.failures).toEqual(["KiCad DRC reports 1 unconnected item(s)"]);
   });
 
   test("known quality failures and cooperative timeouts observe, but liveness still gates", () => {

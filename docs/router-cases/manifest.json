@@ -95,7 +95,13 @@
       "placement": "nes-expansion-hub.place.json",
       "quality": "observe",
       "routeTimeoutMs": 120000,
-      "hardTimeoutMs": 150000
+      "hardTimeoutMs": 150000,
+      "forbidIntroducedRules": [
+        "clearance",
+        "shorting_items",
+        "tracks_crossing",
+        "solder_mask_bridge"
+      ]
     },
     {
       "id": "ps1-pio-boot-cart",
@@ -104,7 +110,13 @@
       "placement": "ps1-pio-boot-cart.place.json",
       "quality": "observe",
       "routeTimeoutMs": 120000,
-      "hardTimeoutMs": 150000
+      "hardTimeoutMs": 150000,
+      "forbidIntroducedRules": [
+        "clearance",
+        "shorting_items",
+        "tracks_crossing",
+        "solder_mask_bridge"
+      ]
     },
     {
       "id": "snes-flash-cart",
@@ -113,7 +125,13 @@
       "placement": "snes-flash-cart.place.json",
       "quality": "observe",
       "routeTimeoutMs": 120000,
-      "hardTimeoutMs": 150000
+      "hardTimeoutMs": 150000,
+      "forbidIntroducedRules": [
+        "clearance",
+        "shorting_items",
+        "tracks_crossing",
+        "solder_mask_bridge"
+      ]
     },
     {
       "id": "fds-ram-adapter",
@@ -122,7 +140,13 @@
       "placement": "fds-ram-adapter.place.json",
       "quality": "observe",
       "routeTimeoutMs": 120000,
-      "hardTimeoutMs": 150000
+      "hardTimeoutMs": 150000,
+      "forbidIntroducedRules": [
+        "clearance",
+        "shorting_items",
+        "tracks_crossing",
+        "solder_mask_bridge"
+      ]
     },
     {
       "id": "saturn-boot-cart",
@@ -131,7 +155,13 @@
       "placement": "saturn-boot-cart.place.json",
       "quality": "observe",
       "routeTimeoutMs": 120000,
-      "hardTimeoutMs": 150000
+      "hardTimeoutMs": 150000,
+      "forbidIntroducedRules": [
+        "clearance",
+        "shorting_items",
+        "tracks_crossing",
+        "solder_mask_bridge"
+      ]
     },
     {
       "id": "genesis-flash-cart",
@@ -140,7 +170,13 @@
       "placement": "genesis-flash-cart.place.json",
       "quality": "observe",
       "routeTimeoutMs": 300000,
-      "hardTimeoutMs": 330000
+      "hardTimeoutMs": 330000,
+      "forbidIntroducedRules": [
+        "clearance",
+        "shorting_items",
+        "tracks_crossing",
+        "solder_mask_bridge"
+      ]
     }
   ]
 }

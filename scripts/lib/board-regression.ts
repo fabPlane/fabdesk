@@ -43,22 +43,34 @@ export interface CaseEvaluation {
   introducedErrors: Record<string, number>;
 }
 
-function errorCounts(report: DrcReport): Map<string, number> {
-  const counts = new Map<string, number>();
+type ErrorInstances = { signatures: Map<string, number>; unsigned: number };
+
+function errorInstances(report: DrcReport): Map<string, ErrorInstances> {
+  const byRule = new Map<string, ErrorInstances>();
   for (const violation of [...report.violations, ...report.schematicParity]) {
     if (violation.severity !== "error") continue;
-    counts.set(violation.rule, (counts.get(violation.rule) ?? 0) + 1);
+    const instances = byRule.get(violation.rule) ?? { signatures: new Map(), unsigned: 0 };
+    if (violation.signature)
+      instances.signatures.set(
+        violation.signature,
+        (instances.signatures.get(violation.signature) ?? 0) + 1,
+      );
+    else instances.unsigned++;
+    byRule.set(violation.rule, instances);
   }
-  return counts;
+  return byRule;
 }
 
-/** DRC errors added by routing. Errors already present after placement are not blamed on the router. */
+/** DRC errors added by routing, matched by signature when KiCad supplies one and by count otherwise. */
 export function introducedDrcErrors(before: DrcReport, after: DrcReport): Record<string, number> {
-  const pre = errorCounts(before);
-  const post = errorCounts(after);
+  const pre = errorInstances(before);
+  const post = errorInstances(after);
   const out: Record<string, number> = {};
-  for (const [rule, count] of post) {
-    const added = Math.max(0, count - (pre.get(rule) ?? 0));
+  for (const [rule, instances] of post) {
+    const previous = pre.get(rule) ?? { signatures: new Map(), unsigned: 0 };
+    let added = Math.max(0, instances.unsigned - previous.unsigned);
+    for (const [signature, count] of instances.signatures)
+      added += Math.max(0, count - (previous.signatures.get(signature) ?? 0));
     if (added) out[rule] = added;
   }
   return out;
@@ -80,8 +92,12 @@ export function evaluateCase(
     if (spec.quality === "gate") failures.push(message);
     else observations.push(message);
   }
+  const qualityFinding = (message: string) =>
+    (spec.quality === "gate" ? failures : observations).push(message);
+  if (spec.requireAllRouted && after.counts.unconnected)
+    qualityFinding(`KiCad DRC reports ${after.counts.unconnected} unconnected item(s)`);
   if (spec.requireAllRouted && route.unrouted.length)
-    failures.push(`${route.unrouted.length} connection(s) remained open`);
+    qualityFinding(`router reports ${route.unrouted.length} connection(s) remained open`);
 
   for (const rule of spec.forbidIntroducedRules ?? []) {
     const count = introducedErrors[rule] ?? 0;
@@ -91,7 +107,7 @@ export function evaluateCase(
     else observations.push(message);
   }
 
-  if (spec.quality === "observe" && route.unrouted.length)
+  if (spec.quality === "observe" && !spec.requireAllRouted && route.unrouted.length)
     observations.push(`${route.unrouted.length} connection(s) remained open`);
   return { failures, observations, introducedErrors };
 }

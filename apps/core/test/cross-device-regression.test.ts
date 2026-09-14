@@ -10,11 +10,16 @@ import { mockServices } from "../../../packages/tools/test/mock-services";
 
 let daemon: Daemon;
 let release: () => void = () => {};
+let signalReady: () => void = () => {};
+const ready = new Promise<void>((resolve) => (signalReady = resolve));
 
 async function* gatedAgent(): AsyncGenerator<AgentEvent> {
   yield { type: "init", sessionId: "cross-device-session", mcpServers: [] };
   yield { type: "text", delta: "working from the other device" };
-  await new Promise<void>((resolve) => (release = resolve));
+  await new Promise<void>((resolve) => {
+    release = resolve;
+    signalReady();
+  });
   yield { type: "done", exitCode: 0, sessionId: "cross-device-session" };
 }
 
@@ -116,6 +121,7 @@ test("a run crosses devices and a reconnect recovers the complete terminal state
 
   // Desktop disappears mid-run; the phone continues receiving the terminal event.
   desktopAbort.abort();
+  await ready;
   release();
   expect(await phone("agent.done")).toMatchObject({ threadId: thread.id });
   expect(await (await api("/runs/live")).json()).toEqual([]);

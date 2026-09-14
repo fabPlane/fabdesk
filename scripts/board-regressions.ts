@@ -129,11 +129,12 @@ async function monitorBridge(
 
 async function runCase(spec: RegressionCase) {
   const startedAt = new Date().toISOString();
-  const project = await request<{ id: string; path: string }>("POST", "/projects", {
-    name: `regression-${spec.id}-${Date.now().toString(36)}`,
-  });
+  let project: { id: string; path: string } | undefined;
   const livenessFailures: string[] = [];
   try {
+    project = await request<{ id: string; path: string }>("POST", "/projects", {
+      name: `regression-${spec.id}-${Date.now().toString(36)}`,
+    });
     await request(
       "PUT",
       `/projects/${project.id}/files/circuit.netlist.json`,
@@ -202,11 +203,12 @@ async function runCase(spec: RegressionCase) {
       introducedErrors: {},
     };
   } finally {
-    await request("DELETE", `/projects/${project.id}?purge=1`, undefined, 30_000).catch((error) =>
-      console.error(
-        `${spec.id}: cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
-      ),
-    );
+    if (project)
+      await request("DELETE", `/projects/${project.id}?purge=1`, undefined, 30_000).catch((error) =>
+        console.error(
+          `${spec.id}: cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
   }
 }
 
@@ -217,23 +219,30 @@ if (!selected.length)
   throw new Error(`no regression cases selected${only ? ` for --case ${only}` : ""}`);
 console.log(`board regressions: ${tier} (${selected.map((spec) => spec.id).join(", ")})`);
 const results = [];
+const generatedAt = new Date().toISOString();
+const writeReport = async () => {
+  const summary = {
+    schema: 1,
+    tier,
+    generatedAt,
+    passed: results.every((result) => result.failures.length === 0),
+    results,
+  };
+  await mkdir(dirname(output), { recursive: true });
+  await Bun.write(output, `${JSON.stringify(summary, null, 2)}\n`);
+  return summary;
+};
+await writeReport();
 for (const spec of selected) {
   console.log(`\n[${spec.id}] compile -> place -> pre-DRC -> route -> post-DRC`);
   const result = await runCase(spec);
   results.push(result);
+  await writeReport();
   for (const observation of result.observations) console.log(`  observe: ${observation}`);
   for (const failure of result.failures) console.error(`  FAIL: ${failure}`);
   if (!result.failures.length)
     console.log(`  pass${"wallMs" in result ? ` (${result.wallMs} ms)` : ""}`);
 }
-const summary = {
-  schema: 1,
-  tier,
-  generatedAt: new Date().toISOString(),
-  passed: results.every((result) => result.failures.length === 0),
-  results,
-};
-await mkdir(dirname(output), { recursive: true });
-await Bun.write(output, `${JSON.stringify(summary, null, 2)}\n`);
+const summary = await writeReport();
 console.log(`\nreport: ${output}`);
 process.exit(summary.passed ? 0 : 1);

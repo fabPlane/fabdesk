@@ -439,10 +439,14 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
   const searchFootprints = (query: string, limit: number): Promise<FootprintHit[]> =>
     // Through withRetry: after a bridge restart the cached library session is gone and every search
     // failed with "WebSocket … closed" until the daemon itself restarted.
-    deps.sessions.withRetry("", () => searchFootprintsOnce(query, limit));
+    deps.sessions.withRetry("", (session) => searchFootprintsOnce(session.kicad, query, limit));
 
-  const searchFootprintsOnce = async (query: string, limit: number): Promise<FootprintHit[]> => {
-    const kicad = await anyKicad();
+  const searchFootprintsOnce = async (
+    sessionKicad: KiCad,
+    query: string,
+    limit: number,
+  ): Promise<FootprintHit[]> => {
+    const kicad = await anyKicad(sessionKicad);
     const tokens = query
       .toLowerCase()
       .split(/[\s:]+/)
@@ -458,9 +462,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       // does not already cover and match the remaining tokens here against name + description.
       const rest = tokens.filter((t) => !n.toLowerCase().includes(t));
       const [primary, ...others] = [...rest].sort((a, b) => b.length - a.length);
-      const entries = await kicad.libraries
-        .entries("footprint", n, primary ?? "")
-        .catch(() => []);
+      const entries = await kicad.libraries.entries("footprint", n, primary ?? "");
       for (const e of entries) {
         if (hits.length >= limit) break;
         const hay = `${e.name} ${e.description ?? ""}`.toLowerCase();
@@ -481,8 +483,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
    * footprint-library handlers once a project is open (`GetLibraryTables` answers `AS_UNHANDLED`
    * on a bare session), so the shared session is given a scratch project the first time.
    */
-  const anyKicad = async (): Promise<KiCad> => {
-    const { kicad } = await deps.sessions.session("");
+  const anyKicad = async (kicad: KiCad): Promise<KiCad> => {
     const hasProject = await kicad
       .projectInfo()
       .then(() => true)
