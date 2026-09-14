@@ -4,9 +4,10 @@
  * through the typed client on the project's session. Positions come back in millimetres; the
  * client speaks nanometres.
  */
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ElectricalPinType, KiCadObjectType } from "@fp-pcb/proto";
+import { BoardLayer, ElectricalPinType, KiCadObjectType } from "@fp-pcb/proto";
 import {
   LibFootprint,
   LibSymbol,
@@ -16,6 +17,7 @@ import {
   type Board,
   type KiCad,
 } from "@fp-pcb/client";
+import { placeFootprints } from "@fabdesk/kicad";
 import type { FpPcbCompileJob, FpPcbDiagnostic, FpPcbRouteJob } from "@fabdesk/protocol";
 import {
   PROJECT_FILES,
@@ -70,6 +72,7 @@ export function toRouteProgress(job: FpPcbRouteJob): RouteProgress {
     state: job.state,
     log: job.log,
     ...(p?.phase ? { phase: p.phase } : {}),
+    ...(p?.percent !== undefined ? { percent: p.percent } : {}),
     ...(p?.message ? { message: p.message } : {}),
     ...(p?.pass !== undefined ? { pass: p.pass } : {}),
     ...(p?.routed !== undefined ? { routed: p.routed } : {}),
@@ -114,6 +117,14 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       files: { [entrypoint]: await readText(entryPath) },
       entrypoint,
     };
+    if (opts.fresh) {
+      // The session keeps the board in memory and the compile only draws an outline when none
+      // exists, so a size change (or a placement the user wants redone) needs the slate wiped:
+      // drop the session, then the generated files, and let the compile create the project anew.
+      await deps.sessions.release(opts.projectDir);
+      for (const f of ["board.kicad_pcb", "board.kicad_pro", "board.kicad_prl", "board.kicad_sch"])
+        await rm(join(opts.projectDir, f), { force: true });
+    }
     opts.progress?.(0.05, "session");
     let sessionWasBare = false;
     const job = await deps.sessions.withRetry(opts.projectDir, (s) => {
@@ -195,6 +206,45 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
           .includes(f),
       );
     switch (select) {
+      case "outline": {
+        // Edge.Cuts bounding box, so placements can be reasoned about in the board's own coordinates
+        // (the compile does not put the outline's corner at 0,0).
+        const pt = (v: { xNm?: bigint | number; yNm?: bigint | number } | undefined) => ({
+          x: Number(v?.xNm ?? 0),
+          y: Number(v?.yNm ?? 0),
+        });
+        const pts: Array<{ x: number; y: number }> = [];
+        for (const s of await board.getShapes()) {
+          if (s.layerId !== BoardLayer.BL_Edge_Cuts) continue;
+          const g = s.shape?.geometry;
+          if (g?.case === "segment") pts.push(pt(g.value.start), pt(g.value.end));
+          else if (g?.case === "arc") pts.push(pt(g.value.start), pt(g.value.mid), pt(g.value.end));
+          else if (g?.case === "rectangle") pts.push(pt(g.value.topLeft), pt(g.value.bottomRight));
+          else if (g?.case === "circle") {
+            const c = pt(g.value.center);
+            const r = pt(g.value.radiusPoint);
+            const rad = Math.hypot(r.x - c.x, r.y - c.y);
+            pts.push({ x: c.x - rad, y: c.y - rad }, { x: c.x + rad, y: c.y + rad });
+          }
+        }
+        if (!pts.length) return [];
+        const xs = pts.map((p) => p.x);
+        const ys = pts.map((p) => p.y);
+        const minX = Math.min(...xs);
+        const maxX = Math.max(...xs);
+        const minY = Math.min(...ys);
+        const maxY = Math.max(...ys);
+        return [
+          {
+            minX: mm(minX),
+            minY: mm(minY),
+            maxX: mm(maxX),
+            maxY: mm(maxY),
+            widthMm: mm(maxX - minX),
+            heightMm: mm(maxY - minY),
+          },
+        ];
+      }
       case "components": {
         return (await board.getFootprints())
           .map((fp) => ({
@@ -359,6 +409,32 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         .catch(() => 0);
   };
 
+  /**
+   * Move footprints by rewriting their transform in the saved file, then reload the board into the
+   * session: the API's UpdateItems moves only a footprint's anchor (fab_pcb gap G28), the file
+   * format keeps children relative, so this is the one way to place parts today.
+   */
+  const place = async (
+    projectDir: string,
+    placements: Array<{ ref: string; x: number; y: number; rotation?: number }>,
+  ): Promise<{
+    moved: Array<{ ref: string; x: number; y: number; rotation: number }>;
+    missing: string[];
+  }> => {
+    const board = await deps.sessions.board(projectDir);
+    await board.save();
+    const pcb = join(projectDir, "board.kicad_pcb");
+    const result = placeFootprints(await readText(pcb), placements);
+    if (result.moved.length) {
+      await writeFile(pcb, result.text);
+      await deps.sessions.withRetry(projectDir, async (s) => {
+        await board.close().catch(() => undefined);
+        await s.kicad.openBoard(pcb);
+      });
+    }
+    return { moved: result.moved, missing: result.missing };
+  };
+
   const unroute = async (
     projectDir: string,
     nets?: string[],
@@ -431,19 +507,17 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       .map((n) => ({ n, hit: tokens.filter((t) => n.toLowerCase().includes(t)).length }))
       .sort((a, b) => b.hit - a.hit);
     const hits: FootprintHit[] = [];
-    const filter = tokens.join(" ");
-    for (const { n, hit } of scored) {
+    for (const { n } of scored) {
       if (hits.length >= limit) break;
-      // Libraries whose name matches take everything matching the rest; others only exact-ish entry hits.
-      const entries = await kicad.libraries
-        .entries(
-          kind,
-          n,
-          hit ? tokens.filter((t) => !n.toLowerCase().includes(t)).join(" ") : filter,
-        )
-        .catch(() => []);
+      // KiCad's entry filter is one substring, so ask with the most specific token the library name
+      // does not already cover and match the remaining tokens here against name + description.
+      const rest = tokens.filter((t) => !n.toLowerCase().includes(t));
+      const [primary, ...others] = [...rest].sort((a, b) => b.length - a.length);
+      const entries = await kicad.libraries.entries(kind, n, primary ?? "").catch(() => []);
       for (const e of entries) {
         if (hits.length >= limit) break;
+        const hay = `${e.name} ${e.description ?? ""}`.toLowerCase();
+        if (!others.every((t) => hay.includes(t))) continue;
         hits.push({
           libId: `${n}:${e.name}`,
           nickname: n,
@@ -511,8 +585,23 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     throw new ToolError(`${libId} did not resolve as a ${kind}`, "invalid_args");
   };
 
-  /** Any live KiCad for server-wide questions (libraries); a bare session when no project is open. */
-  const anyKicad = async (): Promise<KiCad> => (await deps.sessions.session("")).kicad;
+  /**
+   * Any live KiCad for server-wide questions (libraries). The api-server only registers the
+   * footprint-library handlers once a project is open (`GetLibraryTables` answers `AS_UNHANDLED`
+   * on a bare session), so the shared session is given a scratch project the first time.
+   */
+  const anyKicad = async (): Promise<KiCad> => {
+    const { kicad } = await deps.sessions.session("");
+    const hasProject = await kicad
+      .projectInfo()
+      .then(() => true)
+      .catch(() => false);
+    if (!hasProject) {
+      const dir = await mkdtemp(join(tmpdir(), "fabdesk-libs-"));
+      await kicad.newProject(join(dir, "libs.kicad_pro"), { skipStubDocuments: true });
+    }
+    return kicad;
+  };
 
   const status = async (): Promise<DesignStatus> => {
     const bridge = deps.bridge();
@@ -539,6 +628,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     searchFootprints,
     searchSymbols,
     describePart,
+    place,
     status,
     release: (dir) => deps.sessions.release(dir),
   };

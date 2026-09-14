@@ -28,6 +28,7 @@ export class RouteProgressFrames {
   private seq = 0;
   private pass: number | undefined;
   private routed = 0;
+  private lastStatus: string | undefined;
   constructor(
     private readonly runId: string,
     private readonly started: number,
@@ -46,8 +47,14 @@ export class RouteProgressFrames {
         this.sink.onMessage({ kind: "frame", runId: this.runId, seq: this.seq++, elapsedMs, event: { kind: "connection", netNumber: n + 1, ...(pr.phase ? { status: pr.phase } : {}) }, shapes: [] });
       }
       this.routed = pr.routed;
-    } else if (pr.message) {
-      this.sink.onMessage({ kind: "frame", runId: this.runId, seq: this.seq++, elapsedMs, event: { kind: "attempt", status: pr.message }, shapes: [] });
+    } else if (pr.message || (pr.pass === undefined && pr.routed === undefined && pr.phase)) {
+      // The JS router reports only a solver phase and a percentage (no passes, no routed count);
+      // without this the cinema sat on "waiting for frames…" for the whole run.
+      const status = pr.message ?? `${pr.phase}${pr.percent !== undefined ? ` · ${pr.percent}%` : ""}`;
+      if (status && status !== this.lastStatus) {
+        this.lastStatus = status;
+        this.sink.onMessage({ kind: "frame", runId: this.runId, seq: this.seq++, elapsedMs, event: { kind: "attempt", status }, shapes: [] });
+      }
     }
   }
   complete(shapes: CinemaShape[], total: number): void {

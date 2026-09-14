@@ -51,11 +51,22 @@ function checkBundledKicad(resourcesDir: string, label: string): void {
   const root = join(resourcesDir, "kicad");
   const candidates =
     process.platform === "darwin"
-      ? [join(root, "KiCad.app", "Contents", "MacOS", "kicad-cli"), join(root, "kicad-cli")]
+      ? [
+          join(root, "KiCad.app", "Contents", "MacOS", "kicad-cli"),
+          join(root, "kicad-cli"),
+          join(root, "kicad-cli", "kicad-cli"),
+        ]
       : process.platform === "win32"
-        ? [join(root, "bin", "kicad-cli.exe"), join(root, "kicad-cli.exe")]
-        : [join(root, "bin", "kicad-cli"), join(root, "kicad-cli")];
-  const hit = candidates.find((p) => existsSync(p));
+        ? [join(root, "bin", "kicad-cli.exe"), join(root, "kicad-cli", "bin", "kicad-cli.exe"), join(root, "kicad-cli.exe")]
+        : [join(root, "kicad-cli"), join(root, "kicad-cli", "kicad-cli"), join(root, "bin", "kicad-cli")];
+  // Must be a file: nightly archives use a top-level `kicad-cli/` directory of the same name.
+  const hit = candidates.find((p) => {
+    try {
+      return existsSync(p) && statSync(p).isFile();
+    } catch {
+      return false;
+    }
+  });
   if (hit) {
     console.log(`${label}: bundled KiCad at ${hit}`);
     return;

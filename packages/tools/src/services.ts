@@ -33,6 +33,8 @@ export type BuildOptions = {
   board?: FpPcbBoardSpec;
   /** Preserve compatible copper (default), or remove routed copper before rebuilding. */
   rebuild?: "preserve" | "clean";
+  /** Start from nothing: drop the session's board and the generated board files first, so the outline, placement and routing are redone. */
+  fresh?: boolean;
   signal?: AbortSignal;
   /** Stage progress from the compile job; tools map it into their own range. */
   progress?: (fraction: number, note?: string) => void;
@@ -59,7 +61,14 @@ export type BuildResult = {
   removedCopper?: { tracks: number; vias: number };
 };
 
-export type DesignSelect = "components" | "nets" | "pads" | "vias" | "tracks" | "unrouted";
+export type DesignSelect =
+  | "components"
+  | "nets"
+  | "pads"
+  | "vias"
+  | "tracks"
+  | "unrouted"
+  | "outline";
 export type DesignRow = Record<string, unknown>;
 
 export type RouteJobOptions = {
@@ -75,6 +84,8 @@ export type RouteProgress = {
   state: string;
   log: string[];
   phase?: string;
+  /** Solver progress within the phase, 0–100, when the router reports one. */
+  percent?: number;
   message?: string;
   pass?: number;
   routed?: number;
@@ -172,6 +183,14 @@ export interface DesignService {
   searchSymbols(query: string, limit: number): Promise<FootprintHit[]>;
   /** Pin/pad geometry needed to connect and place one exact library id safely. */
   describePart(kind: "footprint" | "symbol", libId: string): Promise<PartDescription>;
+  /** Move footprints (mm, degrees) on the built board; returns what moved and the references it could not find. */
+  place(
+    projectDir: string,
+    placements: Array<{ ref: string; x: number; y: number; rotation?: number }>,
+  ): Promise<{
+    moved: Array<{ ref: string; x: number; y: number; rotation: number }>;
+    missing: string[];
+  }>;
   status(): Promise<DesignStatus>;
   /** Drop the project's session (project closed or deleted). */
   release(projectDir: string): Promise<void>;

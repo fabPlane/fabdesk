@@ -1,6 +1,6 @@
 import type { UpdateCheckResult, UpdateDownloadState } from "@fabdesk/protocol";
 import { useEffect, useState } from "react";
-import { useCore } from "../core/CoreProvider";
+import { useCore } from "@fabdesk/client-core";
 import { cn } from "../util";
 
 function mb(bytes: number): string {

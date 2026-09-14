@@ -8,10 +8,13 @@ export const circuit_query = defineTool({
   toolset: "circuit",
   title: "Query the board",
   description:
-    "List what the board holds, straight from KiCad, as a compact table: components (ref, value, footprint, position), nets (name, pad count), pads (component, number, net, position, size), vias (position, net; a blank's free vias have an empty net), tracks (routed tracks/arcs/vias per net) or unrouted (the airlines still open). Optional substring filter on names. Requires circuit_build.",
+    "List what the board holds, straight from KiCad, as a compact table: components (ref, value, footprint, position), nets (name, pad count), pads (component, number, net, position, size), vias (position, net; a blank's free vias have an empty net), tracks (routed tracks/arcs/vias per net), unrouted (the airlines still open) or outline (the Edge.Cuts bounding box in mm — read it before circuit_place: the outline's corner is not at 0,0). Optional substring filter on names. Requires circuit_build.",
   inputSchema: {
-    select: z.enum(["components", "nets", "pads", "vias", "tracks", "unrouted"]),
-    filter: z.string().optional().describe("Case-insensitive substring matched against refs/nets/footprints"),
+    select: z.enum(["components", "nets", "pads", "vias", "tracks", "unrouted", "outline"]),
+    filter: z
+      .string()
+      .optional()
+      .describe("Case-insensitive substring matched against refs/nets/footprints"),
     limit: z.number().int().min(1).max(500).default(100),
   },
   annotations: { readOnlyHint: true, idempotentHint: true },
@@ -19,7 +22,10 @@ export const circuit_query = defineTool({
     const project = ctx.requireProject();
     const rows = await ctx.services.design.query(project.dir, select, filter);
     const shown = rows.slice(0, limit);
-    return ok(`${select}: ${rows.length} rows${rows.length > limit ? ` (showing ${limit})` : ""}\n${table(shown)}`, { select, total: rows.length, rows: shown });
+    return ok(
+      `${select}: ${rows.length} rows${rows.length > limit ? ` (showing ${limit})` : ""}\n${table(shown)}`,
+      { select, total: rows.length, rows: shown },
+    );
   },
 });
 
@@ -37,9 +43,16 @@ export const circuit_search_parts = defineTool({
   annotations: { readOnlyHint: true, idempotentHint: true },
   scope: "global",
   handler: async ({ query, kind, limit }, ctx) => {
-    const hits = await (kind === "symbol" ? ctx.services.design.searchSymbols(query, limit) : ctx.services.design.searchFootprints(query, limit));
+    const hits = await (kind === "symbol"
+      ? ctx.services.design.searchSymbols(query, limit)
+      : ctx.services.design.searchFootprints(query, limit));
     const label = kind === "symbol" ? "Symbols" : "Footprints";
-    return ok(hits.length ? `${label} matching "${query}":\n${table(hits, ["libId", "description"])}` : `No ${kind} libraries match "${query}".`, { query, kind, hits });
+    return ok(
+      hits.length
+        ? `${label} matching "${query}":\n${table(hits, ["libId", "description"])}`
+        : `No ${kind} libraries match "${query}".`,
+      { query, kind, hits },
+    );
   },
 });
 
@@ -51,13 +64,17 @@ export const circuit_describe_part = defineTool({
     "Inspect one exact KiCad symbol or footprint before wiring or placing it. Symbols return pin numbers, names and electrical types; footprints return pad numbers, anchor-relative positions and sizes in millimetres.",
   inputSchema: {
     kind: z.enum(["footprint", "symbol"]),
-    libId: z.string().min(3).max(300).describe("Exact Library:Name returned by circuit_search_parts"),
+    libId: z
+      .string()
+      .min(3)
+      .max(300)
+      .describe("Exact Library:Name returned by circuit_search_parts"),
   },
   annotations: { readOnlyHint: true, idempotentHint: true },
   scope: "global",
   handler: async ({ kind, libId }, ctx) => {
     const part = await ctx.services.design.describePart(kind, libId);
-    const rows = kind === "symbol" ? part.pins ?? [] : part.pads ?? [];
+    const rows = kind === "symbol" ? (part.pins ?? []) : (part.pads ?? []);
     return ok(`${kind} ${libId}: ${part.description || "(no description)"}\n${table(rows)}`, part);
   },
 });

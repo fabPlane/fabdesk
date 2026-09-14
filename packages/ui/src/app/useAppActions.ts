@@ -1,7 +1,7 @@
 import { useMemo } from "react";
-import { useRunTool } from "../board/tools";
+import { useRunTool } from "@fabdesk/client-core";
 import { composerHandlers } from "../chat/Composer";
-import { useThread, useThreadMutations } from "../hooks/queries";
+import { useThread, useThreadMutations } from "@fabdesk/client-core";
 import { useBranchThread } from "../hooks/threadActions";
 import { useUiStore } from "../stores/ui";
 

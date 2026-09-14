@@ -15,7 +15,7 @@ export const load_toolset = defineTool({
   scope: "global",
   title: "Load a toolset",
   description:
-    "Enable an additional group of fabdesk tools for this session. Toolsets: project (read/write project files, sketches, board settings, adopt a KiCad board), circuit (query the board, search footprint libraries), route (routing status/cancel/unroute/scope), kicad (board stats), verify (ERC, release gate), render (schematic/PCB SVG, 3D GLB), export (gerbers, drill, pick-and-place, BOM, netlist, zip), sim (SPICE netlist and simulation), app (screenshot and drive the fabPlane desktop app window: find/click/type, switch project, tab, thread, send chat messages, control Route Cinema; needs the app running in dev or with FABDESK_AUTOMATION=1). Call this before using a tool from that group; the core tools (project_status, circuit_build, circuit_read_errors, route_run, verify_drc, render_board) are always available.",
+    "Enable an additional group of fabdesk tools for this session. Toolsets: project (read/write project files, sketches, board settings, adopt a KiCad board), circuit (query the board, search footprint libraries), route (routing status/cancel/unroute/scope), kicad (board stats), verify (ERC, release gate), render (schematic/PCB SVG, 3D GLB), export (gerbers, drill, pick-and-place, BOM, netlist, zip), sim (SPICE netlist and simulation), app (screenshot and drive the fabPlane desktop app window on the user's behalf: find/click/type, switch project, tab, thread, send chat messages, control Route Cinema; needs the app running in dev or with FABDESK_AUTOMATION=1 — not for diagnosing a route: route_status and reports/drc.json say more than a screenshot). Call this before using a tool from that group; the core tools (project_status, circuit_build, circuit_place, circuit_read_errors, route_run, verify_drc, render_board) are always available.",
   inputSchema: {
     toolset: ToolsetId.describe("Toolset to enable"),
   },
@@ -154,10 +154,16 @@ export const circuit_build = defineTool({
       .describe(
         "preserve keeps compatible existing copper; clean removes routed tracks/arcs/vias after source validation before rebuilding",
       ),
+    fresh: z
+      .boolean()
+      .optional()
+      .describe(
+        "Discard the existing board first (outline, placement, tracks) and build from the netlist alone. Needed after changing the board size: a build never redraws an outline that exists.",
+      ),
   },
   annotations: { idempotentHint: true },
   longRunning: true,
-  handler: async ({ entrypoint, rebuild }, ctx) => {
+  handler: async ({ entrypoint, rebuild, fresh }, ctx) => {
     const project = ctx.requireProject();
     ctx.progress(0.05, "building");
     const board = await buildBoardSpec(project);
@@ -166,6 +172,7 @@ export const circuit_build = defineTool({
       ...(entrypoint ? { entrypoint } : {}),
       ...(board ? { board } : {}),
       rebuild,
+      ...(fresh ? { fresh } : {}),
       signal: ctx.signal,
       progress: (fraction, note) => ctx.progress(0.05 + fraction * 0.9, note),
     });
@@ -187,6 +194,49 @@ export const circuit_build = defineTool({
       ? `Build OK (${rebuild} rebuild) in ${Math.round(result.durationMs)} ms: ${c.components} components, ${c.nets} nets, ${c.footprintsAdded} footprints added, ${c.footprintsPlaced} placed${result.removedCopper ? `, ${result.removedCopper.tracks} old tracks/arcs and ${result.removedCopper.vias} routed vias removed` : ""}${c.viasAdded ? `, blank drawn (${c.viasAdded} free vias, ${c.holesAdded ?? 0} holes)` : ""}.${project.manifest().board.template ? ` Template ${project.manifest().board.template}: the netlist's own board spec was replaced by the blank.` : ""}${result.warnings.length ? `\nWarnings:\n${formatErrors(result.warnings)}` : ""}`
       : `Build FAILED (${result.errors.length} errors):\n${formatErrors(result.errors)}`;
     return { text, json: summary, isError: !result.ok };
+  },
+});
+
+export const circuit_place = defineTool({
+  name: "circuit_place",
+  toolset: "core",
+  title: "Place footprints",
+  description:
+    "Move footprints on the built board: each entry is a reference with its new origin in mm in KiCad board coordinates (y downwards; the outline's corner is NOT at 0,0 — read it with circuit_query select=outline first) and an optional rotation in degrees. Use it when the autoplacer left parts off the board or in a corner (DRC copper_edge_clearance / courtyards_overlap), or to put connectors on an edge before route_run. Tracks are not moved: unroute affected nets and route again afterwards. Rebuilding keeps placements.",
+  inputSchema: {
+    placements: z
+      .array(
+        z.object({
+          ref: z.string().min(1).describe("Reference designator, e.g. J2"),
+          x: z.number().describe("Footprint origin X in mm"),
+          y: z.number().describe("Footprint origin Y in mm"),
+          rotation: z.number().optional().describe("Degrees; omit to keep"),
+        }),
+      )
+      .min(1)
+      .max(200),
+  },
+  annotations: { idempotentHint: true },
+  handler: async ({ placements }, ctx) => {
+    const project = ctx.requireProject();
+    const result = await ctx.services.design.place(
+      project.dir,
+      placements.map((p) => ({
+        ref: p.ref,
+        x: p.x,
+        y: p.y,
+        ...(p.rotation !== undefined ? { rotation: p.rotation } : {}),
+      })),
+    );
+    const lines = result.moved.map((m) => `- ${m.ref} → (${m.x}, ${m.y}) mm, ${m.rotation}°`);
+    if (result.missing.length)
+      lines.push(
+        `Not on the board: ${result.missing.join(", ")} (build first, or check the reference).`,
+      );
+    const text = result.moved.length
+      ? `Placed ${result.moved.length} footprint${result.moved.length === 1 ? "" : "s"}:\n${lines.join("\n")}\nRun verify_drc to check, and route_run (after route_unroute for nets that moved) to re-route.`
+      : `Nothing moved.\n${lines.join("\n")}`;
+    return { text, json: result, isError: result.moved.length === 0 };
   },
 });
 
@@ -395,6 +445,7 @@ export const coreTools = [
   load_toolset,
   project_status,
   circuit_build,
+  circuit_place,
   circuit_read_errors,
   route_run,
   verify_drc,

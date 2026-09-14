@@ -200,8 +200,17 @@ describe("app toolset", () => {
     expect(bridge.calls.at(-1)!.body).toEqual({ text: "hello", selector: "textarea" });
     await invoke("app_key", { key: "CommandOrControl+K" });
     expect(bridge.calls.at(-1)!.body).toEqual({ key: "CommandOrControl+K" });
-    const ev = await invoke("app_eval", { code: "({a:1})" });
-    expect(bridge.calls.at(-1)!.body).toEqual({ code: "({a:1})", timeoutMs: 10_000 });
-    expect(ev.text).toBe(JSON.stringify({ a: 1 }, null, 2));
+    // Off by default: arbitrary JavaScript reaches the host bridge (restartCore).
+    const before = bridge.calls.length;
+    await expect(invoke("app_eval", { code: "({a:1})" })).rejects.toMatchObject({ code: "precondition" });
+    expect(bridge.calls.length).toBe(before);
+    process.env["FABDESK_APP_EVAL"] = "1";
+    try {
+      const ev = await invoke("app_eval", { code: "({a:1})" });
+      expect(bridge.calls.at(-1)!.body).toEqual({ code: "({a:1})", timeoutMs: 10_000 });
+      expect(ev.text).toBe(JSON.stringify({ a: 1 }, null, 2));
+    } finally {
+      delete process.env["FABDESK_APP_EVAL"];
+    }
   });
 });

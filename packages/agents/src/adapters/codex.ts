@@ -65,6 +65,14 @@ export const codexAdapter: AgentAdapter = {
     "gpt-5.4-mini",
     "gpt-5.3-codex-spark",
   ],
+  /**
+   * `codex exec --json` (0.150) has no approval channel: the exec subcommand has no
+   * `--ask-for-approval`, and with `approval_policy="on-request"` it runs writes without emitting
+   * any approval item. Supervising Codex needs the app-server JSON-RPC client
+   * (`item/commandExecution/requestApproval`, `item/permissions/requestApproval`,
+   * `item/tool/requestUserInput`), which this adapter does not speak yet.
+   */
+  supportsSupervised: false,
   run(session: AgentSession): AgentRun {
     const parser = new CodexStreamParser();
     return runAgentProcess({

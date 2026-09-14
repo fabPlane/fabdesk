@@ -21,7 +21,7 @@
  *   bun run scripts/stage-kicad-bundle.ts [--target bun-darwin-arm64] [--from /path] [--require]
  */
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, renameSync, statSync } from "node:fs";
 import { cp, mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -161,18 +161,37 @@ export function expectedCliCandidates(root: string, os: string): string[] {
   if (os === "darwin") {
     return [
       join(root, "kicad-cli"),
+      join(root, "kicad-cli", "kicad-cli"),
       join(root, "KiCad.app", "Contents", "MacOS", "kicad-cli"),
       join(root, "bin", "kicad-cli"),
     ];
   }
   if (os === "windows") {
-    return [join(root, "bin", "kicad-cli.exe"), join(root, "kicad-cli.exe")];
+    return [
+      join(root, "bin", "kicad-cli.exe"),
+      join(root, "kicad-cli", "bin", "kicad-cli.exe"),
+      join(root, "kicad-cli.exe"),
+    ];
   }
-  return [join(root, "kicad-cli"), join(root, "bin", "kicad-cli")];
+  return [
+    join(root, "kicad-cli"),
+    join(root, "kicad-cli", "kicad-cli"),
+    join(root, "bin", "kicad-cli"),
+    join(root, "kicad-cli", "bin", "kicad-cli"),
+  ];
+}
+
+function isCliFile(path: string): boolean {
+  try {
+    return existsSync(path) && statSync(path).isFile();
+  } catch {
+    return false;
+  }
 }
 
 function findCli(root: string, os: string): string | null {
-  return expectedCliCandidates(root, os).find((p) => existsSync(p)) ?? null;
+  // Must be a file: the nightly archive's top-level dir is also named `kicad-cli/`.
+  return expectedCliCandidates(root, os).find((p) => isCliFile(p)) ?? null;
 }
 
 async function assertTree(root: string, os: string): Promise<string> {
@@ -185,18 +204,55 @@ async function assertTree(root: string, os: string): Promise<string> {
   return cli;
 }
 
-async function flattenIfNeeded(stageDir: string, os: string): Promise<void> {
-  if (findCli(stageDir, os)) return;
+/** True when the staged tree already matches the packager layout (top-level launcher file). */
+function isCanonicalLayout(stageDir: string, os: string): boolean {
+  if (os === "windows") {
+    return (
+      isCliFile(join(stageDir, "bin", "kicad-cli.exe")) ||
+      isCliFile(join(stageDir, "kicad-cli.exe"))
+    );
+  }
+  if (os === "darwin" && isCliFile(join(stageDir, "KiCad.app", "Contents", "MacOS", "kicad-cli"))) {
+    return true;
+  }
+  // Top-level `kicad-cli` must be a file — the nightly archive uses a directory of the same name.
+  return isCliFile(join(stageDir, "kicad-cli"));
+}
+
+/** Replace `stageDir` contents with the contents of `fromDir` (promote one nesting level). */
+async function promoteContents(fromDir: string, stageDir: string): Promise<void> {
+  const tmp = `${stageDir}.flat`;
+  await rm(tmp, { recursive: true, force: true });
+  await cp(fromDir, tmp, { recursive: true });
+  await rm(stageDir, { recursive: true, force: true });
+  await mkdir(stageDir, { recursive: true });
+  for (const name of readdirSync(tmp)) {
+    renameSync(join(tmp, name), join(stageDir, name));
+  }
+  await rm(tmp, { recursive: true, force: true });
+}
+
+/**
+ * Nightly archives ship as `kicad-cli/{kicad-cli,lib,...}`. Packaging and runtime expect
+ * `Resources/kicad/kicad-cli` (a file). Promote that nesting — do not treat "cli found nested"
+ * as already flat.
+ */
+export async function flattenIfNeeded(stageDir: string, os: string): Promise<void> {
+  if (isCanonicalLayout(stageDir, os)) return;
+
+  // Nightly tarball: stageDir/kicad-cli/{kicad-cli,lib,share,...}
+  const nested = join(stageDir, "kicad-cli");
+  if (existsSync(nested) && statSync(nested).isDirectory() && findCli(nested, os)) {
+    await promoteContents(nested, stageDir);
+    return;
+  }
+
+  // Single wrapper folder (hash-named extract root, etc.)
   const kids = readdirSync(stageDir).filter((n) => !n.startsWith("_"));
   if (kids.length !== 1) return;
   const only = join(stageDir, kids[0]!);
   if (!statSync(only).isDirectory() || !findCli(only, os)) return;
-  const tmp = `${stageDir}.flat`;
-  await rm(tmp, { recursive: true, force: true });
-  await cp(only, tmp, { recursive: true });
-  await rm(stageDir, { recursive: true, force: true });
-  await cp(tmp, stageDir, { recursive: true });
-  await rm(tmp, { recursive: true, force: true });
+  await promoteContents(only, stageDir);
 }
 
 async function extractArchive(
@@ -249,6 +305,7 @@ async function copyFrom(src: string, stageDir: string, os: string): Promise<stri
   await rm(stageDir, { recursive: true, force: true });
   await mkdir(dirname(stageDir), { recursive: true });
   await cp(src, stageDir, { recursive: true });
+  await flattenIfNeeded(stageDir, os);
   return await assertTree(stageDir, os);
 }
 
@@ -347,7 +404,7 @@ async function main(): Promise<void> {
     try {
       const dl = await nightlyKicadDownloadUrl({ target, ...(token ? { token } : {}) });
       process.stderr.write(
-        `▸ ${process.env["FABDESK_KICAD_REPO"] ?? DEFAULT_KICAD_REPO}@${dl.tag} → ${dl.name}` +
+        `▸ ${envOr("FABDESK_KICAD_REPO", DEFAULT_KICAD_REPO)}@${dl.tag} → ${dl.name}` +
           (dl.commit ? ` (${dl.commit.slice(0, 10)})` : "") +
           "\n",
       );

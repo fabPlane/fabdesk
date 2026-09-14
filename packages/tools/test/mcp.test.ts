@@ -24,9 +24,20 @@ describe("mcp adapter", () => {
     const { client, attachment } = await pair();
     const initial = await client.listTools();
     const names = initial.tools.map((t) => t.name).sort();
-    expect(names).toEqual(["circuit_build", "circuit_read_errors", "load_toolset", "project_status", "render_board", "route_run", "verify_drc"]);
+    expect(names).toEqual([
+      "circuit_build",
+      "circuit_place",
+      "circuit_read_errors",
+      "load_toolset",
+      "project_status",
+      "render_board",
+      "route_run",
+      "verify_drc",
+    ]);
     const t = initial.tools.find((x) => x.name === "circuit_build")!;
-    expect((t.inputSchema as { properties: Record<string, unknown> }).properties["project"]).toBeDefined();
+    expect(
+      (t.inputSchema as { properties: Record<string, unknown> }).properties["project"],
+    ).toBeDefined();
     expect(t.annotations?.idempotentHint).toBe(true);
 
     let listChanged = 0;
@@ -37,7 +48,7 @@ describe("mcp adapter", () => {
     expect(res.isError).toBeFalsy();
     const after = await client.listTools();
     expect(after.tools.map((t) => t.name)).toContain("export_gerbers");
-    expect(after.tools.length).toBe(7 + 7);
+    expect(after.tools.length).toBe(8 + 7);
     expect(attachment.session.enabledToolsets()).toEqual(["core", "export"]);
     await new Promise((r) => setTimeout(r, 10));
     expect(listChanged).toBeGreaterThan(0);
@@ -51,12 +62,31 @@ describe("mcp adapter", () => {
     expect((status.structuredContent as { name: string }).name).toBe("mcp");
 
     const progress: number[] = [];
-    const build = await client.callTool({ name: "circuit_build", arguments: {} }, undefined, { onprogress: (p) => progress.push(p.progress) });
+    const build = await client.callTool({ name: "circuit_build", arguments: {} }, undefined, {
+      onprogress: (p) => progress.push(p.progress),
+    });
     expect(build.isError).toBeFalsy();
     expect(progress.length).toBeGreaterThan(0);
     expect(progress.at(-1)).toBe(100);
 
-    const bad = await client.callTool({ name: "circuit_read_errors", arguments: { project: "does-not-exist" } });
+    // A long-running tool repeats its last progress on a timer so a client with an idle timeout
+    // (Claude Code aborts after ~5 silent minutes) keeps waiting through a quiet solver phase.
+    process.env["FABDESK_MCP_HEARTBEAT_MS"] = "2";
+    try {
+      const beats: number[] = [];
+      await client.callTool({ name: "route_run", arguments: { timeoutMs: 1000 } }, undefined, {
+        onprogress: (p) => beats.push(p.progress),
+      });
+      const repeats = beats.filter((v, i) => i > 0 && v === beats[i - 1]).length;
+      expect(repeats).toBeGreaterThan(0);
+    } finally {
+      delete process.env["FABDESK_MCP_HEARTBEAT_MS"];
+    }
+
+    const bad = await client.callTool({
+      name: "circuit_read_errors",
+      arguments: { project: "does-not-exist" },
+    });
     expect(bad.isError).toBe(true);
     expect((bad.content as Array<{ text: string }>)[0]!.text).toContain("no project selected");
   });
@@ -77,21 +107,36 @@ describe("mcp adapter", () => {
       "fabdesk://project/{id}/reports/{name}",
     ]);
     const list = await client.listResources();
-    expect(list.resources.some((r) => r.uri === `fabdesk://project/${project.id}/manifest`)).toBe(true);
+    expect(list.resources.some((r) => r.uri === `fabdesk://project/${project.id}/manifest`)).toBe(
+      true,
+    );
     const manifest = await client.readResource({ uri: `fabdesk://project/${project.id}/manifest` });
     expect(JSON.parse(manifest.contents[0]!.text as string).name).toBe("mcp");
-    const summary = await client.readResource({ uri: `fabdesk://project/${project.id}/board-summary` });
+    const summary = await client.readResource({
+      uri: `fabdesk://project/${project.id}/board-summary`,
+    });
     expect(JSON.parse(summary.contents[0]!.text as string).built).toBe(true);
-    const report = await client.readResource({ uri: `fabdesk://project/${project.id}/reports/build` });
+    const report = await client.readResource({
+      uri: `fabdesk://project/${project.id}/reports/build`,
+    });
     expect(JSON.parse(report.contents[0]!.text as string).ok).toBe(true);
 
     const prompts = await client.listPrompts();
-    expect(prompts.prompts.map((p) => p.name).sort()).toEqual(["design_from_sketch", "fix_drc", "reroute_open_nets"]);
-    const prompt = await client.getPrompt({ name: "design_from_sketch", arguments: { project: project.id, requirements: "blink an LED" } });
+    expect(prompts.prompts.map((p) => p.name).sort()).toEqual([
+      "design_from_sketch",
+      "fix_drc",
+      "reroute_open_nets",
+    ]);
+    const prompt = await client.getPrompt({
+      name: "design_from_sketch",
+      arguments: { project: project.id, requirements: "blink an LED" },
+    });
     const promptText = (prompt.messages[0]!.content as { text: string }).text;
     expect(promptText).toContain("blink an LED");
     expect(promptText).toContain("run both render_schematic_svg and render_pcb_svg");
     expect(promptText).toContain("verify_drc with schematicParity=true");
-    expect(promptText).toContain("Never claim the project passes when a required report is missing");
+    expect(promptText).toContain(
+      "Never claim the project passes when a required report is missing",
+    );
   });
 });

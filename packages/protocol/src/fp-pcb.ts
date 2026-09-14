@@ -187,6 +187,8 @@ export const FP_PCB_SSE_EVENTS = {
 /** `@fp-pcb/router` `RouteProgress`, as the route job streams it; kept loose. */
 export const FpPcbRouteProgress = z.looseObject({
   phase: z.string().optional(),
+  /** JS router: solver progress within the phase, 0–100. */
+  percent: z.number().optional(),
   message: z.string().optional(),
   pass: z.number().optional(),
   routed: z.number().optional(),
@@ -212,7 +214,6 @@ export const FpPcbRouteUnrouted = z.object({
   from: z.object({ x: z.number(), y: z.number() }),
   to: z.object({ x: z.number(), y: z.number() }),
 });
-
 export const FpPcbRouteGeometry = z.object({
   kind: z.enum(["trace", "via"]),
   id: z.string(),

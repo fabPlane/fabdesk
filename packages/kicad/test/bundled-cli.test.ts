@@ -26,6 +26,7 @@ describe("bundledKicadCliCandidates", () => {
       expect(c[0]).toBe(join("/k", "bin", "kicad-cli.exe"));
     } else {
       expect(c[0]).toBe("/k/kicad-cli");
+      expect(c).toContain("/k/kicad-cli/kicad-cli");
       expect(c).toContain("/k/bin/kicad-cli");
     }
   });

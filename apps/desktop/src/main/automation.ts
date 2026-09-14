@@ -6,11 +6,22 @@
 import { app, BrowserWindow, type NativeImage } from "electron";
 import { mkdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { startBridgeServer, type AutomationDeps, type AutomationWindow, type BridgeServer, type CapturedImage, type InputEvent, type Rect } from "./automation-server";
+import {
+  startBridgeServer,
+  type AutomationDeps,
+  type AutomationWindow,
+  type BridgeServer,
+  type CapturedImage,
+  type InputEvent,
+  type Rect,
+} from "./automation-server";
 
 export const APP_BRIDGE_FILE = "app-bridge.json";
 
-export function automationMode(env: NodeJS.ProcessEnv = process.env, packaged = app.isPackaged): "dev" | "env" | null {
+export function automationMode(
+  env: NodeJS.ProcessEnv = process.env,
+  packaged = app.isPackaged,
+): "dev" | "env" | null {
   if (env["FABDESK_AUTOMATION"] === "1") return "env";
   if (env["FABDESK_AUTOMATION"] === "0") return null;
   return packaged ? null : "dev";
@@ -37,9 +48,18 @@ export function adaptWindow(win: BrowserWindow): AutomationWindow {
     bounds: () => win.getBounds(),
     title: () => win.getTitle(),
     url: () => win.webContents.getURL(),
-    capture: async (rect?: Rect) => wrapImage(rect ? await win.webContents.capturePage(rect) : await win.webContents.capturePage()),
+    capture: async (rect?: Rect) => {
+      // A window behind other windows stops painting and capturePage then hands back the last
+      // composited frame, however old; invalidating forces one fresh paint before the capture.
+      win.webContents.invalidate();
+      await new Promise((r) => setTimeout(r, 60));
+      return wrapImage(
+        rect ? await win.webContents.capturePage(rect) : await win.webContents.capturePage(),
+      );
+    },
     executeJavaScript: (code, userGesture) => win.webContents.executeJavaScript(code, userGesture),
-    sendInputEvent: (ev: InputEvent) => win.webContents.sendInputEvent(ev as unknown as Electron.MouseInputEvent),
+    sendInputEvent: (ev: InputEvent) =>
+      win.webContents.sendInputEvent(ev as unknown as Electron.MouseInputEvent),
     focus: () => {
       if (!win.isDestroyed()) win.webContents.focus();
     },
@@ -51,7 +71,10 @@ export function bridgeFilePath(): string {
 }
 
 /** Atomic 0600 write: temp file in the same directory, then rename over the target. */
-export function writeBridgeFile(path: string, info: { url: string; pid: number; startedAt: string }): void {
+export function writeBridgeFile(
+  path: string,
+  info: { url: string; pid: number; startedAt: string },
+): void {
   mkdirSync(join(path, ".."), { recursive: true });
   const tmp = `${path}.${process.pid}.tmp`;
   writeFileSync(tmp, JSON.stringify(info, null, 2), { mode: 0o600 });
@@ -68,7 +91,11 @@ export function removeBridgeFile(path: string): void {
 
 export type AppAutomation = { url: string; file: string; stop(): Promise<void> };
 
-export async function startAppAutomation(opts: { token: () => string | null; version: string; log?: (line: string) => void }): Promise<AppAutomation | null> {
+export async function startAppAutomation(opts: {
+  token: () => string | null;
+  version: string;
+  log?: (line: string) => void;
+}): Promise<AppAutomation | null> {
   const mode = automationMode();
   if (!mode) return null;
   const deps: AutomationDeps = {
@@ -103,4 +130,3 @@ export async function startAppAutomation(opts: { token: () => string | null; ver
   });
   return { url: server.url, file, stop };
 }
-

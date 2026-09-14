@@ -1,11 +1,12 @@
 import type { AgentId, Settings } from "@fabdesk/protocol";
 import { useEffect, useState } from "react";
 import { Badge, Button, Dialog, Input, Select, Spinner } from "../components/ui";
-import { useCore } from "../core/CoreProvider";
-import { useDoctor, usePatchSettings, useSettings } from "../hooks/queries";
+import { useCore } from "@fabdesk/client-core";
+import { useDoctor, usePatchSettings, useSettings } from "@fabdesk/client-core";
 import { shortcutList } from "../hooks/useShortcuts";
 import { isThemeId, THEME_IDS, THEME_LABELS, useTheme } from "../hooks/useTheme";
-import { useAuthStore } from "../stores/auth";
+import { useAuthStore } from "@fabdesk/client-core";
+import { RemoteSection } from "./RemoteSection";
 import { SETTINGS_SECTIONS, useUiStore, type SettingsSection } from "../stores/ui";
 import { cn } from "../util";
 
@@ -14,6 +15,7 @@ const LABELS: Record<SettingsSection, string> = {
   kicad: "KiCad & ngspice",
   router: "Router",
   auth: "Account",
+  remote: "Remote access",
   appearance: "Appearance",
   privacy: "Privacy",
   shortcuts: "Shortcuts",
@@ -193,6 +195,8 @@ export function SettingsDialog() {
             </div>
           ) : section === "auth" ? (
             <AuthSection />
+          ) : section === "remote" ? (
+            <RemoteSection />
           ) : section === "appearance" ? (
             <Row label="Theme" hint="fabPlane themes match fabplane.com; the System themes are the neutral light/dark look. Stored on this device.">
               <Select
@@ -231,7 +235,7 @@ export function SettingsDialog() {
           )}
         </div>
       </div>
-      {section !== "auth" && section !== "shortcuts" && (
+      {section !== "auth" && section !== "remote" && section !== "shortcuts" && (
         <div className="mt-3 flex items-center justify-end gap-2 border-t border-border pt-3">
           {patch.isError && <span className="mr-auto text-xs text-danger">{(patch.error as Error).message}</span>}
           {patch.isSuccess && !dirty && <span className="mr-auto text-xs text-success">Saved</span>}
@@ -293,6 +297,13 @@ function AuthSection() {
           {state.principal.email && <span className="text-muted"> ({state.principal.email})</span>}
         </div>
       )}
+      {state.status === "signed_in" && state.mode === "fabplane" && (
+        <div className="text-muted">
+          Theme, default agent, runtime mode, error reporting and notification prefs sync to this
+          account. Paths, remote access and keep-core-running stay on this machine. Later, signed-in
+          phones will reach this computer through the backend.
+        </div>
+      )}
       {state.status === "pending" && state.pending && (
         <div className="rounded-md border border-border p-3">
           <div>Enter this code in the browser:</div>
@@ -327,7 +338,7 @@ function AuthSection() {
             void loginWithPassword();
           }}
         >
-          <div className="text-muted">Staging/local password login. Shared demo/maya accounts are not available in production.</div>
+          <div className="text-muted">Staging/local only. Password login is not available in production.</div>
           <Input
             type="text"
             autoComplete="username"

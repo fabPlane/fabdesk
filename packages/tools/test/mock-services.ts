@@ -3,7 +3,15 @@ import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CoreEvent, NetlistFile, ProjectManifest } from "@fabdesk/protocol";
-import { makeContext, type ContextFactory, type CoreServices, type ProjectHandle, type RouteRunRecord, type ToolRegistry, type ToolsetId } from "../src";
+import {
+  makeContext,
+  type ContextFactory,
+  type CoreServices,
+  type ProjectHandle,
+  type RouteRunRecord,
+  type ToolRegistry,
+  type ToolsetId,
+} from "../src";
 import { TOOLSETS } from "../src/registry";
 
 /** A one-resistor design; a file containing `BROKEN` makes the mock build fail, like the old marker did. */
@@ -45,7 +53,10 @@ export async function tempProject(name = "demo"): Promise<ProjectHandle> {
   };
 }
 
-export function mockServices(projects: ProjectHandle[], overrides: Partial<CoreServices> = {}): CoreServices & { events: CoreEvent[] } {
+export function mockServices(
+  projects: ProjectHandle[],
+  overrides: Partial<CoreServices> = {},
+): CoreServices & { events: CoreEvent[] } {
   const events: CoreEvent[] = [];
   const runs = new Map<string, RouteRunRecord>();
   const svc: CoreServices & { events: CoreEvent[] } = {
@@ -64,12 +75,14 @@ export function mockServices(projects: ProjectHandle[], overrides: Partial<CoreS
       theme: "system",
     }),
     projects: {
-      resolve: async (ref) => projects.find((p) => p.id === ref || p.name === ref || p.dir === ref) ?? null,
+      resolve: async (ref) =>
+        projects.find((p) => p.id === ref || p.name === ref || p.dir === ref) ?? null,
       list: async () => projects,
     },
     bus: { emit: (e) => events.push(e) },
     routeRuns: {
-      start: (r) => runs.set(r.id, { ...r, status: "running", endedAt: null, result: null, error: null }),
+      start: (r) =>
+        runs.set(r.id, { ...r, status: "running", endedAt: null, result: null, error: null }),
       finish: (id, patch) => {
         const r = runs.get(id);
         if (r) runs.set(id, { ...r, ...patch, endedAt: new Date().toISOString() });
@@ -82,27 +95,47 @@ export function mockServices(projects: ProjectHandle[], overrides: Partial<CoreS
         const src = await Bun.file(join(projectDir, "circuit.netlist.json")).text();
         const bad = src.includes("BROKEN");
         progress?.(0.5, "importing");
-        await Bun.write(join(projectDir, "board.kicad_pcb"), bad ? "" : "(kicad_pcb (version 20260831))\n");
+        await Bun.write(
+          join(projectDir, "board.kicad_pcb"),
+          bad ? "" : "(kicad_pcb (version 20260831))\n",
+        );
         return {
           ok: !bad,
-          errors: bad ? [{ message: "BROKEN marker found", line: 1, column: 1, file: "circuit.netlist.json" }] : [],
+          errors: bad
+            ? [{ message: "BROKEN marker found", line: 1, column: 1, file: "circuit.netlist.json" }]
+            : [],
           warnings: [],
-          counts: bad ? { components: 0, nets: 0, footprintsAdded: 0, footprintsPlaced: 0 } : { components: 1, nets: 1, footprintsAdded: 1, footprintsPlaced: 1 },
+          counts: bad
+            ? { components: 0, nets: 0, footprintsAdded: 0, footprintsPlaced: 0 }
+            : { components: 1, nets: 1, footprintsAdded: 1, footprintsPlaced: 1 },
           durationMs: 5,
           revision: 2,
         };
       },
       query: async (_dir, select, filter) => {
         const rows: Record<string, Array<Record<string, unknown>>> = {
-          components: [{ ref: "R1", value: "1k", footprint: "Resistor_SMD:R_0402_1005Metric", x: 1, y: 3, layer: 0 }],
+          components: [
+            {
+              ref: "R1",
+              value: "1k",
+              footprint: "Resistor_SMD:R_0402_1005Metric",
+              x: 1,
+              y: 3,
+              layer: 0,
+            },
+          ],
           nets: [{ name: "N1", code: 1, pads: 1 }],
-          pads: [{ component: "R1", number: "1", net: "N1", x: 0.5, y: 3, width: 0.5, height: 0.6 }],
+          pads: [
+            { component: "R1", number: "1", net: "N1", x: 0.5, y: 3, width: 0.5, height: 0.6 },
+          ],
           vias: [],
           tracks: [],
           unrouted: [{ net: "N1", from: "0,0", to: "5,5" }],
         };
         const f = filter?.toLowerCase();
-        return (rows[select] ?? []).filter((r) => !f || Object.values(r).some((v) => String(v).toLowerCase().includes(f)));
+        return (rows[select] ?? []).filter(
+          (r) => !f || Object.values(r).some((v) => String(v).toLowerCase().includes(f)),
+        );
       },
       route: async (_dir, opts, { onProgress, signal }) => {
         for (let i = 0; i < 3; i++) {
@@ -111,25 +144,82 @@ export function mockServices(projects: ProjectHandle[], overrides: Partial<CoreS
           onProgress?.({ state: "routing", log: [], phase: "pass", pass: 1, routed: i, total: 2 });
         }
         return {
-          tracks: 1, vias: 0, claimedVias: 0, routed: 2, total: 2, trackLengthNm: 5_000_000,
-          elapsedMs: 10, wallMs: 15, timedOut: false, message: `Autoroute (${opts.router}): 2 connections`, unrouted: [], log: [],
-          geometry: [{ kind: "trace", id: "track-1", layer: 3, net: 1, points: [0.5, 3, 4, 3], width: 0.25 }],
+          tracks: 1,
+          vias: 0,
+          claimedVias: 0,
+          routed: 2,
+          total: 2,
+          trackLengthNm: 5_000_000,
+          elapsedMs: 10,
+          wallMs: 15,
+          timedOut: false,
+          message: `Autoroute (${opts.router}): 2 connections`,
+          unrouted: [],
+          log: [],
+          geometry: [
+            { kind: "trace", id: "track-1", layer: 3, net: 1, points: [0.5, 3, 4, 3], width: 0.25 },
+          ],
         };
       },
       cancelRoute: async () => {},
       unroute: async (_dir, nets) => ({ tracks: nets?.length ?? 1, vias: 0 }),
-      scope: async (_dir, refs) => ({ components: refs, missing: [], nets: ["N1"], excluded: [], pads: Object.fromEntries(refs.map((r) => [r, 2])) }),
-      searchFootprints: async (query, limit) => [{ libId: "Resistor_SMD:R_0402_1005Metric", nickname: "Resistor_SMD", name: "R_0402_1005Metric", description: `matches ${query}` }].slice(0, limit),
-      searchSymbols: async (query, limit) => [{ libId: "Device:R", nickname: "Device", name: "R", description: `matches ${query}` }].slice(0, limit),
-      describePart: async (kind, libId) => kind === "symbol"
-        ? { kind, libId, description: "Resistor", pins: [{ number: "1", name: "~", electricalType: "PT_PASSIVE", position: { x: -2.54, y: 0 } }] }
-        : { kind, libId, description: "0402 resistor", anchor: { x: 0, y: 0 }, pads: [{ number: "1", position: { x: -0.5, y: 0 }, size: { x: 0.6, y: 0.6 } }] },
+      scope: async (_dir, refs) => ({
+        components: refs,
+        missing: [],
+        nets: ["N1"],
+        excluded: [],
+        pads: Object.fromEntries(refs.map((r) => [r, 2])),
+      }),
+      place: async (_dir, placements) => ({
+        moved: placements.map((p) => ({ ...p, rotation: p.rotation ?? 0 })),
+        missing: [],
+      }),
+      searchFootprints: async (query, limit) =>
+        [
+          {
+            libId: "Resistor_SMD:R_0402_1005Metric",
+            nickname: "Resistor_SMD",
+            name: "R_0402_1005Metric",
+            description: `matches ${query}`,
+          },
+        ].slice(0, limit),
+      searchSymbols: async (query, limit) =>
+        [
+          { libId: "Device:R", nickname: "Device", name: "R", description: `matches ${query}` },
+        ].slice(0, limit),
+      describePart: async (kind, libId) =>
+        kind === "symbol"
+          ? {
+              kind,
+              libId,
+              description: "Resistor",
+              pins: [
+                {
+                  number: "1",
+                  name: "~",
+                  electricalType: "PT_PASSIVE",
+                  position: { x: -2.54, y: 0 },
+                },
+              ],
+            }
+          : {
+              kind,
+              libId,
+              description: "0402 resistor",
+              anchor: { x: 0, y: 0 },
+              pads: [{ number: "1", position: { x: -0.5, y: 0 }, size: { x: 0.6, y: 0.6 } }],
+            },
       status: async () => ({ url: "http://127.0.0.1:4020", ok: true, frontends: ["netlist-json"] }),
       release: async () => {},
     },
     kicad: {
       resolveCli: async () => ({ path: "/mock/kicad-cli", version: "10.99.0" }),
-      runDrc: async () => ({ violations: [], unconnected: [], schematicParity: [], counts: { errors: 0, warnings: 0, unconnected: 0 } }),
+      runDrc: async () => ({
+        violations: [],
+        unconnected: [],
+        schematicParity: [],
+        counts: { errors: 0, warnings: 0, unconnected: 0 },
+      }),
       runErc: async () => ({ violations: [], counts: { errors: 0, warnings: 0 } }),
       gate: (drc, erc, allowed) => {
         const reasons: string[] = [];
@@ -158,7 +248,13 @@ export function mockServices(projects: ProjectHandle[], overrides: Partial<CoreS
     },
     sim: {
       spiceNetlist: () => "* mock\nR1 1 0 1k\n.end\n",
-      runSimulation: async () => ({ engine: "spicey", analysis: "op", columns: ["node", "V"], rows: [[1, 3.3]], durationMs: 1 }),
+      runSimulation: async () => ({
+        engine: "spicey",
+        analysis: "op",
+        columns: ["node", "V"],
+        rows: [[1, 3.3]],
+        durationMs: 1,
+      }),
       findNgspice: async () => null,
     },
     principal: () => null,
@@ -167,10 +263,21 @@ export function mockServices(projects: ProjectHandle[], overrides: Partial<CoreS
   return svc;
 }
 
-export function contextFactory(services: CoreServices, defaultProject: ProjectHandle | null = null): ContextFactory {
+export function contextFactory(
+  services: CoreServices,
+  defaultProject: ProjectHandle | null = null,
+): ContextFactory {
   return async (req) => {
-    const project = req.projectRef ? await services.projects.resolve(req.projectRef) : defaultProject;
-    return makeContext({ services, project, signal: req.signal, progress: req.progress, ...(req.session ? { session: req.session } : {}) });
+    const project = req.projectRef
+      ? await services.projects.resolve(req.projectRef)
+      : defaultProject;
+    return makeContext({
+      services,
+      project,
+      signal: req.signal,
+      progress: req.progress,
+      ...(req.session ? { session: req.session } : {}),
+    });
   };
 }
 
