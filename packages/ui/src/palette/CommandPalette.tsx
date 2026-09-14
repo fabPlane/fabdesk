@@ -2,8 +2,8 @@ import { Command } from "cmdk";
 import { useCallback } from "react";
 import { useAppActions } from "../app/useAppActions";
 import { Dialog, Kbd } from "../components/ui";
-import { useCore } from "../core/CoreProvider";
-import { useProjects, useThreads } from "../hooks/queries";
+import { useCore } from "@fabdesk/client-core";
+import { useProjects, useThreads } from "@fabdesk/client-core";
 import { BOARD_TABS, BOARD_TAB_LABELS, useUiStore } from "../stores/ui";
 import { modKey } from "../util";
 

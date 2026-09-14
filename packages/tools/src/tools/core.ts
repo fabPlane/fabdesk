@@ -15,7 +15,7 @@ export const load_toolset = defineTool({
   scope: "global",
   title: "Load a toolset",
   description:
-    "Enable an additional group of fabdesk tools for this session. Toolsets: project (read/write project files, sketches, board settings, adopt a KiCad board), circuit (query the board, search footprint libraries), route (routing status/cancel/unroute/scope), kicad (board stats), verify (ERC, release gate), render (schematic/PCB SVG, 3D GLB), export (gerbers, drill, pick-and-place, BOM, netlist, zip), sim (SPICE netlist and simulation), app (screenshot and drive the fabPlane desktop app window: find/click/type, switch project, tab, thread, send chat messages, control Route Cinema; needs the app running in dev or with FABDESK_AUTOMATION=1). Call this before using a tool from that group; the core tools (project_status, circuit_build, circuit_read_errors, route_run, verify_drc, render_board) are always available.",
+    "Enable an additional group of fabdesk tools for this session. Toolsets: project (read/write project files, sketches, board settings, adopt a KiCad board), circuit (query the board, search footprint libraries), route (routing status/cancel/unroute/scope), kicad (board stats), verify (ERC, release gate), render (schematic/PCB SVG, 3D GLB), export (gerbers, drill, pick-and-place, BOM, netlist, zip), sim (SPICE netlist and simulation), app (screenshot and drive the fabPlane desktop app window on the user's behalf: find/click/type, switch project, tab, thread, send chat messages, control Route Cinema; needs the app running in dev or with FABDESK_AUTOMATION=1 — not for diagnosing a route: route_status and reports/drc.json say more than a screenshot). Call this before using a tool from that group; the core tools (project_status, circuit_build, circuit_place, circuit_read_errors, route_run, verify_drc, render_board) are always available.",
   inputSchema: {
     toolset: ToolsetId.describe("Toolset to enable"),
   },
@@ -23,7 +23,10 @@ export const load_toolset = defineTool({
   handler: async ({ toolset }, ctx) => {
     if (ctx.session) ctx.session.enableToolset(toolset);
     const enabled = ctx.session ? ctx.session.enabledToolsets() : [...TOOLSETS];
-    return ok(`Toolset "${toolset}" enabled. Enabled toolsets: ${enabled.join(", ")}. Tool list has been refreshed.`, { toolset, enabled });
+    return ok(
+      `Toolset "${toolset}" enabled. Enabled toolsets: ${enabled.join(", ")}. Tool list has been refreshed.`,
+      { toolset, enabled },
+    );
   },
 });
 
@@ -41,11 +44,18 @@ export const project_status = defineTool({
     const files: Record<string, { exists: boolean; mtime?: string }> = {};
     for (const rel of [PROJECT_FILES.netlistJson, PROJECT_FILES.boardPcb, PROJECT_FILES.boardSch]) {
       const m = await mtimeMs(p(project, rel));
-      files[rel] = m === null ? { exists: false } : { exists: true, mtime: new Date(m).toISOString() };
+      files[rel] =
+        m === null ? { exists: false } : { exists: true, mtime: new Date(m).toISOString() };
     }
-    const build = await readJsonOrNull<BuildSummary>(p(project, PROJECT_FILES.reports, "build.json"));
-    const reports = (await readdir(p(project, PROJECT_FILES.reports)).catch(() => [])).filter((f) => f.endsWith(".json"));
-    const sketches = (await readdir(p(project, PROJECT_FILES.sketches)).catch(() => [])).filter((f) => /\.(png|jpe?g|svg)$/i.test(f));
+    const build = await readJsonOrNull<BuildSummary>(
+      p(project, PROJECT_FILES.reports, "build.json"),
+    );
+    const reports = (await readdir(p(project, PROJECT_FILES.reports)).catch(() => [])).filter((f) =>
+      f.endsWith(".json"),
+    );
+    const sketches = (await readdir(p(project, PROJECT_FILES.sketches)).catch(() => [])).filter(
+      (f) => /\.(png|jpe?g|svg)$/i.test(f),
+    );
     const route = ctx.services.routeRuns.latest(project.id);
     const drc = await readJsonOrNull<DrcReport>(p(project, PROJECT_FILES.reports, "drc.json"));
     const json = {
@@ -56,8 +66,17 @@ export const project_status = defineTool({
       router: manifest.router,
       files,
       sketches: sketches.map((s) => `${PROJECT_FILES.sketches}/${s}`),
-      lastBuild: build ? { ok: build.ok, errors: build.errors.length, warnings: build.warnings.length, at: build.at } : null,
-      lastRoute: route ? { runId: route.id, status: route.status, open: route.result?.open.length ?? null } : null,
+      lastBuild: build
+        ? {
+            ok: build.ok,
+            errors: build.errors.length,
+            warnings: build.warnings.length,
+            at: build.at,
+          }
+        : null,
+      lastRoute: route
+        ? { runId: route.id, status: route.status, open: route.result?.open.length ?? null }
+        : null,
       lastDrc: drc ? drc.counts : null,
       reports: reports.map((r) => `${PROJECT_FILES.reports}/${r}`),
       enabledToolsets: ctx.session?.enabledToolsets() ?? [...TOOLSETS],
@@ -105,9 +124,14 @@ export async function buildBoardSpec(project: ProjectHandle): Promise<FpPcbBoard
   const file = await loadNetlist(project).catch(() => null);
   const own = file?.board;
   const hasOutline = Boolean(own?.outline?.length || (own?.widthMm && own?.heightMm));
-  const size = !hasOutline && m.widthMm && m.heightMm ? { widthMm: m.widthMm, heightMm: m.heightMm } : {};
+  const size =
+    !hasOutline && m.widthMm && m.heightMm ? { widthMm: m.widthMm, heightMm: m.heightMm } : {};
   if (!Object.keys(rules).length && !Object.keys(size).length) return undefined;
-  return { ...(own ?? {}), ...size, ...(Object.keys(rules).length ? { rules: { ...(own?.rules ?? {}), ...rules } } : {}) };
+  return {
+    ...(own ?? {}),
+    ...size,
+    ...(Object.keys(rules).length ? { rules: { ...(own?.rules ?? {}), ...rules } } : {}),
+  };
 }
 
 export const circuit_build = defineTool({
@@ -117,11 +141,20 @@ export const circuit_build = defineTool({
   description:
     "Compile circuit.netlist.json into board.kicad_pcb on the design server: footprints are pulled from the KiCad libraries, placed on a board of the size in the netlist (or fabdesk.json; a template such as viagrid-9055 replaces it with the blank: outline, free vias, holes, rules), and the nets become the ratsnest for route_run. Returns ok/errors/warnings with positions in the netlist file plus component and footprint counts. On failure fix circuit.netlist.json and build again. Re-building a routed board keeps tracks whose nets still exist; footprints the netlist no longer names are removed.",
   inputSchema: {
-    entrypoint: z.string().optional().describe("Netlist file relative to the project, default circuit.netlist.json"),
+    entrypoint: z
+      .string()
+      .optional()
+      .describe("Netlist file relative to the project, default circuit.netlist.json"),
+    fresh: z
+      .boolean()
+      .optional()
+      .describe(
+        "Discard the existing board first (outline, placement, tracks) and build from the netlist alone. Needed after changing the board size: a build never redraws an outline that exists.",
+      ),
   },
   annotations: { idempotentHint: true },
   longRunning: true,
-  handler: async ({ entrypoint }, ctx) => {
+  handler: async ({ entrypoint, fresh }, ctx) => {
     const project = ctx.requireProject();
     ctx.progress(0.05, "building");
     const board = await buildBoardSpec(project);
@@ -129,6 +162,7 @@ export const circuit_build = defineTool({
       projectDir: project.dir,
       ...(entrypoint ? { entrypoint } : {}),
       ...(board ? { board } : {}),
+      ...(fresh ? { fresh } : {}),
       signal: ctx.signal,
       progress: (fraction, note) => ctx.progress(0.05 + fraction * 0.9, note),
     });
@@ -150,10 +184,56 @@ export const circuit_build = defineTool({
   },
 });
 
+export const circuit_place = defineTool({
+  name: "circuit_place",
+  toolset: "core",
+  title: "Place footprints",
+  description:
+    "Move footprints on the built board: each entry is a reference with its new origin in mm in KiCad board coordinates (y downwards; the outline's corner is NOT at 0,0 — read it with circuit_query select=outline first) and an optional rotation in degrees. Use it when the autoplacer left parts off the board or in a corner (DRC copper_edge_clearance / courtyards_overlap), or to put connectors on an edge before route_run. Tracks are not moved: unroute affected nets and route again afterwards. Rebuilding keeps placements.",
+  inputSchema: {
+    placements: z
+      .array(
+        z.object({
+          ref: z.string().min(1).describe("Reference designator, e.g. J2"),
+          x: z.number().describe("Footprint origin X in mm"),
+          y: z.number().describe("Footprint origin Y in mm"),
+          rotation: z.number().optional().describe("Degrees; omit to keep"),
+        }),
+      )
+      .min(1)
+      .max(200),
+  },
+  annotations: { idempotentHint: true },
+  handler: async ({ placements }, ctx) => {
+    const project = ctx.requireProject();
+    const result = await ctx.services.design.place(
+      project.dir,
+      placements.map((p) => ({
+        ref: p.ref,
+        x: p.x,
+        y: p.y,
+        ...(p.rotation !== undefined ? { rotation: p.rotation } : {}),
+      })),
+    );
+    const lines = result.moved.map((m) => `- ${m.ref} → (${m.x}, ${m.y}) mm, ${m.rotation}°`);
+    if (result.missing.length)
+      lines.push(
+        `Not on the board: ${result.missing.join(", ")} (build first, or check the reference).`,
+      );
+    const text = result.moved.length
+      ? `Placed ${result.moved.length} footprint${result.moved.length === 1 ? "" : "s"}:\n${lines.join("\n")}\nRun verify_drc to check, and route_run (after route_unroute for nets that moved) to re-route.`
+      : `Nothing moved.\n${lines.join("\n")}`;
+    return { text, json: result, isError: result.moved.length === 0 };
+  },
+});
+
 export function formatErrors(errs: BuildResult["errors"]): string {
   return errs
     .slice(0, 50)
-    .map((e) => `- ${e.file ?? PROJECT_FILES.netlistJson}${e.line ? `:${e.line}${e.column ? `:${e.column}` : ""}` : ""}${e.type ? ` [${e.type}]` : ""}: ${e.message}`)
+    .map(
+      (e) =>
+        `- ${e.file ?? PROJECT_FILES.netlistJson}${e.line ? `:${e.line}${e.column ? `:${e.column}` : ""}` : ""}${e.type ? ` [${e.type}]` : ""}: ${e.message}`,
+    )
     .join("\n");
 }
 
@@ -161,14 +241,19 @@ export const circuit_read_errors = defineTool({
   name: "circuit_read_errors",
   toolset: "core",
   title: "Read build errors",
-  description: "Return the errors and warnings of the last circuit_build (from reports/build.json). Use it to decide what to fix in circuit.netlist.json.",
+  description:
+    "Return the errors and warnings of the last circuit_build (from reports/build.json). Use it to decide what to fix in circuit.netlist.json.",
   inputSchema: {},
   annotations: { readOnlyHint: true, idempotentHint: true },
   handler: async (_args, ctx) => {
     const project = ctx.requireProject();
-    const build = await readJsonOrNull<BuildSummary>(p(project, PROJECT_FILES.reports, "build.json"));
+    const build = await readJsonOrNull<BuildSummary>(
+      p(project, PROJECT_FILES.reports, "build.json"),
+    );
     if (!build) return ok("No build yet. Run circuit_build.", { build: null });
-    const parts = [`Last build (${build.at}): ${build.ok ? "ok" : "failed"}, ${build.errors.length} errors, ${build.warnings.length} warnings`];
+    const parts = [
+      `Last build (${build.at}): ${build.ok ? "ok" : "failed"}, ${build.errors.length} errors, ${build.warnings.length} warnings`,
+    ];
     if (build.errors.length) parts.push(`Errors:\n${formatErrors(build.errors)}`);
     if (build.warnings.length) parts.push(`Warnings:\n${formatErrors(build.warnings)}`);
     return ok(parts.join("\n\n"), { build });
@@ -200,11 +285,24 @@ export const verify_drc = defineTool({
   name: "verify_drc",
   toolset: "core",
   title: "Run KiCad DRC",
-  description: "Run KiCad design rule check on board.kicad_pcb. Writes reports/drc.json and returns error/warning/unconnected counts with the first violations. Requires kicad-cli and circuit_build.",
+  description:
+    "Run KiCad design rule check on board.kicad_pcb. Writes reports/drc.json and returns error/warning/unconnected counts with the first violations. Requires kicad-cli and circuit_build.",
   inputSchema: {
-    severity: z.enum(["all", "error"]).default("all").describe("Report all severities or errors only"),
-    schematicParity: z.boolean().default(false).describe("Also check PCB↔schematic parity (needs an imported schematic)"),
-    limit: z.number().int().min(1).max(200).default(30).describe("Max violations to include in the text summary"),
+    severity: z
+      .enum(["all", "error"])
+      .default("all")
+      .describe("Report all severities or errors only"),
+    schematicParity: z
+      .boolean()
+      .default(false)
+      .describe("Also check PCB↔schematic parity (needs an imported schematic)"),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(200)
+      .default(30)
+      .describe("Max violations to include in the text summary"),
   },
   annotations: { idempotentHint: true },
   longRunning: true,
@@ -212,10 +310,17 @@ export const verify_drc = defineTool({
     const project = ctx.requireProject();
     const cli = await requireKicad(ctx);
     const board = p(project, PROJECT_FILES.boardPcb);
-    if (!(await exists(board))) throw new ToolError("board.kicad_pcb not found: run circuit_build first", "precondition");
+    if (!(await exists(board)))
+      throw new ToolError("board.kicad_pcb not found: run circuit_build first", "precondition");
     ctx.progress(0.4, "running DRC");
     const outFile = p(project, PROJECT_FILES.reports, "drc.json");
-    const report = await ctx.services.kicad.runDrc(cli, { board, outFile, severity, schematicParity, signal: ctx.signal });
+    const report = await ctx.services.kicad.runDrc(cli, {
+      board,
+      outFile,
+      severity,
+      schematicParity,
+      signal: ctx.signal,
+    });
     await writeJson(outFile, report);
     ctx.progress(1, "done");
     const c = report.counts;
@@ -242,11 +347,18 @@ export const verify_drc = defineTool({
     const json = {
       counts: c,
       reportPath: outFile,
-      byRule: { violations: byRule(report.violations), unconnected: byRule(report.unconnected), schematicParity: byRule(report.schematicParity) },
+      byRule: {
+        violations: byRule(report.violations),
+        unconnected: byRule(report.unconnected),
+        schematicParity: byRule(report.schematicParity),
+      },
       violations: report.violations.slice(0, limit),
       unconnected: report.unconnected.slice(0, limit),
       schematicParity: report.schematicParity.slice(0, limit),
-      truncated: report.violations.length > limit || report.unconnected.length > limit || report.schematicParity.length > limit,
+      truncated:
+        report.violations.length > limit ||
+        report.unconnected.length > limit ||
+        report.schematicParity.length > limit,
     };
     if (json.truncated) lines.push(`Full report with every violation: ${outFile}`);
     return { text: lines.join("\n"), json, isError: c.errors > 0 || c.unconnected > 0 };
@@ -260,9 +372,18 @@ export function describeViolation(v: unknown): string {
   const type = o["type"] ?? "";
   const desc = o["description"] ?? o["message"] ?? "";
   const rule = o["rule"] ?? type;
-  const items = Array.isArray(o["items"]) ? (o["items"] as Array<Record<string, unknown>>).map((i) => i["description"]).filter(Boolean).join("; ") : "";
-  const pos = Array.isArray(o["items"]) && (o["items"] as Array<Record<string, unknown>>)[0]?.["pos"];
-  const posStr = pos && typeof pos === "object" ? ` @(${(pos as Record<string, unknown>)["x"]}, ${(pos as Record<string, unknown>)["y"]})` : "";
+  const items = Array.isArray(o["items"])
+    ? (o["items"] as Array<Record<string, unknown>>)
+        .map((i) => i["description"])
+        .filter(Boolean)
+        .join("; ")
+    : "";
+  const pos =
+    Array.isArray(o["items"]) && (o["items"] as Array<Record<string, unknown>>)[0]?.["pos"];
+  const posStr =
+    pos && typeof pos === "object"
+      ? ` @(${(pos as Record<string, unknown>)["x"]}, ${(pos as Record<string, unknown>)["y"]})`
+      : "";
   return `[${sev}] ${rule}: ${desc}${items ? ` — ${items}` : ""}${posStr}`;
 }
 
@@ -270,7 +391,8 @@ export const render_board = defineTool({
   name: "render_board",
   toolset: "core",
   title: "Render board image",
-  description: "Render a PNG of the KiCad board (top or bottom, raytraced optional) to renders/<view>.png and return it as an image so you can inspect placement and routing. Requires kicad-cli and circuit_build.",
+  description:
+    "Render a PNG of the KiCad board (top or bottom, raytraced optional) to renders/<view>.png and return it as an image so you can inspect placement and routing. Requires kicad-cli and circuit_build.",
   inputSchema: {
     view: z.enum(["top", "bottom", "perspective", "side"]).default("top"),
     width: z.number().int().min(128).max(4096).default(1024),
@@ -283,15 +405,37 @@ export const render_board = defineTool({
     const project = ctx.requireProject();
     const cli = await requireKicad(ctx);
     const board = p(project, PROJECT_FILES.boardPcb);
-    if (!(await exists(board))) throw new ToolError("board.kicad_pcb not found: run circuit_build first", "precondition");
+    if (!(await exists(board)))
+      throw new ToolError("board.kicad_pcb not found: run circuit_build first", "precondition");
     const output = p(project, PROJECT_FILES.renders, `${view}.png`);
     ctx.progress(0.3, "rendering");
-    await ctx.services.kicad.renderPng(cli, { board, output, view, width, height, quality, signal: ctx.signal });
+    await ctx.services.kicad.renderPng(cli, {
+      board,
+      output,
+      view,
+      width,
+      height,
+      quality,
+      signal: ctx.signal,
+    });
     ctx.progress(1, "done");
     const url = fileUrl(output);
-    return ok(`Rendered ${view} view to ${PROJECT_FILES.renders}/${view}.png (${width}×${height}). Browser URL: ${url}`, { path: output, url, fileUrl: url, view, width, height }, { images: [{ path: output, mime: "image/png" }] });
+    return ok(
+      `Rendered ${view} view to ${PROJECT_FILES.renders}/${view}.png (${width}×${height}). Browser URL: ${url}`,
+      { path: output, url, fileUrl: url, view, width, height },
+      { images: [{ path: output, mime: "image/png" }] },
+    );
   },
 });
 
-export const coreTools = [load_toolset, project_status, circuit_build, circuit_read_errors, route_run, verify_drc, render_board];
+export const coreTools = [
+  load_toolset,
+  project_status,
+  circuit_build,
+  circuit_place,
+  circuit_read_errors,
+  route_run,
+  verify_drc,
+  render_board,
+];
 export { table };

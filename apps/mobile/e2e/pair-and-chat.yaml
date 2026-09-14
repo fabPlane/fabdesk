@@ -1,0 +1,68 @@
+# The one end-to-end path that matters: a fresh phone pairs with a computer over the deep link,
+# sees that computer's project, starts a chat in it, sends a message and watches the reply stream
+# in. Everything it touches is an accessibility label or visible text the screens already carry;
+# no test ids. `e2e/run.sh` supplies the variables from the daemon it starts (`e2e/daemon.ts`).
+#
+#   APP_ID          bundle id of the installed build (ios.bundleIdentifier in app.json)
+#   PAIRING_URL     fabdesk://pair?… minted by the daemon
+#   PROJECT_NAME    the project the daemon created ("E2E Board")
+#   REPLY_TEXT      what the fake agent answers
+#   DEV_CLIENT_URL  Metro URL when the build is a dev client (empty for a release build)
+#
+# No `env:` defaults here: a flow-level value wins over `-e`, so run.sh passes every one.
+appId: ${APP_ID}
+---
+# A fresh phone. `clearState` wipes the app container but not the keychain, where
+# expo-secure-store keeps the device token — without `clearKeychain` the previous run's
+# connection would come back and pairing would not be what is being tested. (This clears the
+# whole simulator keychain; do not point the flow at a simulator whose other apps you care about.)
+- clearKeychain
+- launchApp:
+    clearState: true
+    stopApp: true
+
+# A dev-client build boots into expo-dev-launcher; point it at Metro first. A release build has
+# the bundle embedded and skips this.
+- runFlow:
+    when:
+      true: ${DEV_CLIENT_URL != ""}
+    file: dev-client.yaml
+
+# Pairing. `app/pair.tsx` claims the token and replaces the route with the tabs. iOS asks before
+# handing a custom-scheme URL to an app the way Maestro opens it, and has been seen to ask twice;
+# every "Open" is tapped until the sheet is gone.
+- openLink: ${PAIRING_URL}
+- repeat:
+    while:
+      visible: "Open in .*"
+    commands:
+      - tapOn: "Open"
+      - waitForAnimationToEnd:
+          timeout: 2000
+- extendedWaitUntil:
+    visible: "Search chats"
+    timeout: 30000
+
+# The project the daemon created is a group header on Chats even with no chats in it yet, and the
+# header's "+" is the way to start one there (`SectionHeader` in src/layout/ChatList.tsx).
+- extendedWaitUntil:
+    visible: ".*${PROJECT_NAME}.*"
+    timeout: 15000
+- tapOn: "New chat in ${PROJECT_NAME}"
+
+# `useNewChat.start` pushes thread/[id]; the composer placeholder names the agent.
+- extendedWaitUntil:
+    visible: "Message claude"
+    timeout: 15000
+- tapOn: "Message claude"
+- inputText: "hello from maestro"
+- tapOn: "Send"
+
+# The fake adapter streams the reply in two deltas; the run then ends and Send comes back.
+- extendedWaitUntil:
+    visible: ${REPLY_TEXT}
+    timeout: 20000
+- assertVisible: "hello from maestro"
+- extendedWaitUntil:
+    visible: "Send"
+    timeout: 10000

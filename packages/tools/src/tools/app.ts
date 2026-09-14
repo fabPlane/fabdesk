@@ -370,6 +370,9 @@ export const app_wait_for = defineTool({
   },
 });
 
+/** `app_eval` runs only when the daemon was started with `FABDESK_APP_EVAL=1`. */
+export const appEvalEnabled = (env: NodeJS.ProcessEnv = process.env): boolean => env["FABDESK_APP_EVAL"] === "1";
+
 export const app_eval = defineTool({
   name: "app_eval",
   toolset: "app",
@@ -384,7 +387,12 @@ export const app_eval = defineTool({
   },
   annotations: { destructiveHint: true, openWorldHint: true, idempotentHint: false },
   handler: async ({ code, timeoutMs, windowId }, ctx) => {
-    const res = await requireBridge(ctx).call<{ result: unknown }>("POST", "/eval", { code, timeoutMs, ...(windowId !== undefined ? { windowId } : {}) });
+    // Arbitrary JavaScript reaches the host bridge too: an agent once called
+    // `window.fabdesk.restartCore()` from here and killed every run, its own included.
+    const bridge = requireBridge(ctx);
+    if (!appEvalEnabled())
+      throw new ToolError("app_eval is off: it can reach the host bridge (restartCore, file dialogs). Set FABDESK_APP_EVAL=1 on the daemon to enable it for a debugging session; use the other app_* tools otherwise.", "precondition");
+    const res = await bridge.call<{ result: unknown }>("POST", "/eval", { code, timeoutMs, ...(windowId !== undefined ? { windowId } : {}) });
     const text = typeof res.result === "string" ? res.result : JSON.stringify(res.result, null, 2);
     return ok(text ?? "null", res);
   },

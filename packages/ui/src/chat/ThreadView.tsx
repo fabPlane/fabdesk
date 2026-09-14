@@ -17,8 +17,9 @@ function formatElapsed(s: number): string {
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
 }
 import { Badge } from "../components/ui";
-import { useMessages, useThread, useThreadMutations } from "../hooks/queries";
-import { useRunsStore } from "../stores/runs";
+import { useCoreClient, useMessages, useThread, useThreadMutations } from "@fabdesk/client-core";
+import { useRunsStore } from "@fabdesk/client-core";
+import { useQueryClient } from "@tanstack/react-query";
 import { useUiStore } from "../stores/ui";
 import { Composer } from "./Composer";
 import { MessageList } from "./MessageList";
@@ -33,12 +34,28 @@ export function ThreadView() {
   const { create } = useThreadMutations();
   const run = useRunsStore((s) => (activeThreadId ? s.runsByThread[activeThreadId] : undefined));
   const elapsed = useElapsedSeconds(run?.startedAt);
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  const [modeError, setModeError] = useState<string | null>(null);
+  // Runtime mode toggle: `supervised` pauses writes for approval (cards in the timeline, or the
+  // phone). Takes effect on the next run. A 400 here means the agent cannot pause — say so.
+  const toggleMode = useCallback(async () => {
+    if (!thread) return;
+    const runtimeMode = thread.runtimeMode === "supervised" ? "full" : "supervised";
+    setModeError(null);
+    try {
+      await client.request(`/threads/${encodeURIComponent(thread.id)}`, { method: "PATCH", json: { runtimeMode } });
+      void qc.invalidateQueries({ queryKey: ["thread", thread.id] });
+      void qc.invalidateQueries({ queryKey: ["threads"] });
+    } catch (e) {
+      setModeError(e instanceof Error ? e.message : String(e));
+    }
+  }, [client, qc, thread]);
 
   const onCreateThread = useCallback(
-    async (input: { title: string; agentId: AgentId; model?: string }) => {
+    async (input: { agentId: AgentId; model?: string }) => {
       const t = await create.mutateAsync({
         projectId,
-        title: input.title,
         agentId: input.agentId,
         ...(input.model ? { model: input.model } : {}),
       });
@@ -59,6 +76,16 @@ export function ThreadView() {
           </Badge>
         )}
         {thread?.pinned && <Badge tone="accent">pinned</Badge>}
+        {thread && (
+          <button
+            type="button"
+            onClick={() => void toggleMode()}
+            title={modeError ?? (thread.runtimeMode === "supervised" ? "Supervised: writes wait for your approval. Click for full mode." : "Full: the agent runs unattended. Click to supervise writes.")}
+            data-testid="runtime-mode-toggle"
+          >
+            <Badge tone={modeError ? "danger" : thread.runtimeMode === "supervised" ? "warning" : "neutral"}>{modeError ? "cannot supervise" : (thread.runtimeMode ?? "full")}</Badge>
+          </button>
+        )}
         {run && (
           <Badge
             tone="success"

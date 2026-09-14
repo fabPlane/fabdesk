@@ -23,6 +23,10 @@ import {
 import type { BuildSummary } from "../tools/core";
 import { p } from "../tools/common";
 
+/** How often a long-running tool repeats its last progress so the MCP client does not call it idle. */
+export const MCP_PROGRESS_HEARTBEAT_MS = 30_000;
+const heartbeatMs = (): number => Number(process.env["FABDESK_MCP_HEARTBEAT_MS"]) || MCP_PROGRESS_HEARTBEAT_MS;
+
 export const MAX_INLINE_IMAGE_BYTES = 2 * 1024 * 1024;
 
 export type McpAttachment = {
@@ -70,7 +74,8 @@ export function attachToRegistry(
       },
       async (args: Record<string, unknown>, extra: RequestHandlerExtra<ServerRequest, ServerNotification>): Promise<CallToolResult> => {
         const progressToken = extra._meta?.progressToken;
-        const progress = (pr: number, note?: string) => {
+        let last: { pr: number; note?: string } = { pr: 0 };
+        const send = (pr: number, note?: string) => {
           if (progressToken === undefined) return;
           void extra
             .sendNotification({
@@ -79,6 +84,14 @@ export function attachToRegistry(
             })
             .catch(() => {});
         };
+        const progress = (pr: number, note?: string) => {
+          last = { pr, ...(note !== undefined ? { note } : {}) };
+          send(pr, note);
+        };
+        // Claude Code aborts a tool call that is silent for ~5 minutes; a router stuck in one solver
+        // phase reports nothing for longer than that, so long-running tools repeat their last
+        // progress on a timer while they work.
+        const heartbeat = def.longRunning && progressToken !== undefined ? setInterval(() => send(last.pr, last.note), heartbeatMs()) : null;
         try {
           const output = await registry.invoke(def.name, args, (projectRef) =>
             ctxFactory({ def, projectRef, signal: extra.signal, progress, session, sessionId, ...(extra.authInfo?.token ? { token: extra.authInfo.token } : {}) }),
@@ -86,6 +99,8 @@ export function attachToRegistry(
           return await toCallToolResult(output);
         } catch (e) {
           return errorResult(e);
+        } finally {
+          if (heartbeat) clearInterval(heartbeat);
         }
       },
     );

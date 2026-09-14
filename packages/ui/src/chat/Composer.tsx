@@ -2,13 +2,13 @@ import type { AgentId, Thread } from "@fabdesk/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button, IconButton, Kbd, Textarea } from "../components/ui";
-import { useCore } from "../core/CoreProvider";
-import { useDoctor, useSettings } from "../hooks/queries";
-import { useRunsStore } from "../stores/runs";
+import { useCore } from "@fabdesk/client-core";
+import { useDoctor, useSettings } from "@fabdesk/client-core";
+import { useRunsStore } from "@fabdesk/client-core";
 import { DRAFT_KEY_NEW, useUiStore } from "../stores/ui";
 import { basename, mimeFromPath, modKey } from "../util";
 import { AgentModelMenu } from "./AgentModelMenu";
-import { agentModelLabel } from "./agent-model-choices";
+import { agentModelLabel } from "@fabdesk/client-core";
 import { applyComposerTextareaHeight } from "./composer-autosize";
 
 /** Bridge for the global shortcut hook (mod+Enter send, mod+. abort) and for app automation. */
@@ -29,7 +29,7 @@ export const composerHandlers: {
 export interface ComposerProps {
   thread: Thread | null;
   /** Creates a thread for a first message; returns the new thread id. */
-  onCreateThread: (input: { title: string; agentId: AgentId; model?: string }) => Promise<string>;
+  onCreateThread: (input: { agentId: AgentId; model?: string }) => Promise<string>;
 }
 
 const FALLBACK_AGENTS = [
@@ -104,7 +104,8 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
     try {
       let threadId = thread?.id;
       if (!threadId) {
-        threadId = await onCreateThread({ title: content.slice(0, 60), agentId, ...(model ? { model } : {}) });
+        // No title: the daemon names the thread after this first message (and tells every client).
+        threadId = await onCreateThread({ agentId, ...(model ? { model } : {}) });
       }
       await client.sendMessage(threadId, {
         content,

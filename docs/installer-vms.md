@@ -1,8 +1,8 @@
 # Installer test VMs
 
-## On GitHub runners (the default)
+## On Blacksmith runners (the default)
 
-`.github/workflows/installer-test.yml` runs the same guest scripts directly on GitHub's macOS,
+`.github/workflows/installer-test.yml` runs the same guest scripts directly on Blacksmith's macOS,
 Ubuntu and Windows runners, which are fresh VMs per job: no image to prepare or host to keep.
 It runs after every successful Release (testing that tag), weekly against what fabplane.com
 serves, and on demand (`gh workflow run installer-test.yml -f tag=v0.1.42`). Each job uploads
