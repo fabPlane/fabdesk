@@ -80,9 +80,24 @@ jobs:
       - name: Install KiCad host libraries and footprints
         run: |
           list="$RUNNER_TEMP/kicad-src/tools/nightly/linux/runtime-packages.txt"
+          packages=(kicad-footprints)
+          if [ -s "$list" ]; then
+            mapfile -t runtime_packages < <(sed '/^#/d; /^$/d' "$list")
+            packages+=("${runtime_packages[@]}")
+          else
+            # Older published nightlies predate the metadata file but need the same host ABI.
+            packages+=(
+              libc6 libstdc++6 libgcc-s1 libglib2.0-0t64 libgtk-3-0t64
+              libgdk-pixbuf-2.0-0 libpango-1.0-0 libpangocairo-1.0-0
+              libcairo2 libcairo-gobject2 libharfbuzz0b libfreetype6
+              libfontconfig1 libwebkit2gtk-4.1-0 libgl1 libglu1-mesa libegl1
+              libx11-6 libxext6 libxrender1 libxkbcommon0 libwayland-client0
+              libwayland-egl1 libdbus-1-3 libsecret-1-0 ca-certificates
+              shared-mime-info
+            )
+          fi
           sudo apt-get update -qq
-          # shellcheck disable=SC2046
-          sudo apt-get install -y -qq --no-install-recommends $(grep -v '^#' "$list" | tr '\n' ' ') kicad-footprints
+          sudo apt-get install -y -qq --no-install-recommends "${packages[@]}"
 
       - name: Download the pinned headless KiCad
         env:
@@ -136,6 +151,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         if: always()
+        continue-on-error: true
         with:
           name: board-regressions-${{ github.run_id }}
           path: |
