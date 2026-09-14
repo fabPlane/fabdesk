@@ -30,6 +30,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: false
+          # This persistent runner may retain submodule worktrees that checkout cannot remove.
+          # Use a fresh child directory so stale root contents cannot corrupt the mobile job.
+          path: source
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -51,31 +54,29 @@ jobs:
 
       - name: Init the fabplane and fab_pcb submodules
         run: git submodule update --init --depth 1 vendor/fabplane vendor/fab_pcb
+        working-directory: source
 
       - name: Install (root)
-        # The persistent macOS runner has occasionally preserved a stale shell directory after
-        # checkout/submodule cleanup. Anchor Bun to the workspace instead of relying on cwd.
-        run: |
-          test -f "$GITHUB_WORKSPACE/package.json"
-          bun install --frozen-lockfile --cwd "$GITHUB_WORKSPACE"
+        run: bun install --frozen-lockfile
+        working-directory: source
 
       - name: Install (app)
         run: bun install --frozen-lockfile
-        working-directory: apps/mobile
+        working-directory: source/apps/mobile
 
       - name: Typecheck
         run: bun run typecheck
-        working-directory: apps/mobile
+        working-directory: source/apps/mobile
 
       - name: Test
         run: bun run test
-        working-directory: apps/mobile
+        working-directory: source/apps/mobile
 
       # The real check that @fabdesk/client-core and @fabdesk/protocol still resolve from source
       # through Metro's aliases, which a typecheck alone would not catch.
       - name: Bundle
         run: bunx expo export --platform android --output-dir "$RUNNER_TEMP/mobile-export"
-        working-directory: apps/mobile
+        working-directory: source/apps/mobile
 
   # Internal-distribution build on EAS (docs/mobile-release.md). Cloud builds cost credits, so a
   # merge to main never queues one: the nightly `release.yml` run builds once a day, and this job
