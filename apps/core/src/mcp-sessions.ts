@@ -16,6 +16,12 @@ type Session = {
   token: string | null;
 };
 
+export const NATIVE_AGENT_TOOLS = [
+  "pcb_environment", "project_status", "circuit_search_parts", "schematic_inspect", "schematic_edit",
+  "pcb_update_from_schematic", "pcb_inspect", "pcb_place", "pcb_edit_copper", "pcb_edit_graphics",
+  "route_run", "verify_erc", "verify_drc", "render_view", "release_build",
+] as const;
+
 export type McpSessionOptions = {
   registry: ToolRegistry;
   ctxFactory: ContextFactory;
@@ -109,10 +115,12 @@ export class McpSessionManager {
     };
     // Codex snapshots MCP tools when a turn starts and currently ignores tools/list_changed.
     // Let clients that cannot refresh opt into the complete inventory at initialization.
-    const initialToolsets =
-      new URL(req.url).searchParams.get("toolsets") === "all" ? [...TOOLSETS] : undefined;
+    const query = new URL(req.url).searchParams;
+    const initialToolsets = query.get("toolsets") === "all" ? [...TOOLSETS] : undefined;
+    const initialTools = query.get("profile") === "native" ? [...NATIVE_AGENT_TOOLS] : undefined;
     attachToRegistry(server, this.opts.registry, this.opts.ctxFactory, {
       ...(initialToolsets ? { initialToolsets } : {}),
+      ...(initialTools ? { initialTools } : {}),
     });
     await server.connect(transport);
     return transport.handleRequest(
@@ -144,5 +152,4 @@ function json(status: number, body: unknown): Response {
   });
 }
 
-export const INSTRUCTIONS =
-  "fabdesk exposes optional PCB project tools. Project-scoped tools use the selected project unless a project argument is supplied.";
+export const INSTRUCTIONS = "Project-scoped tools use the selected project unless `project` is supplied.";

@@ -159,6 +159,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       const [cli, design] = await Promise.all([services.kicad.resolveCli().catch(() => null), services.design.status()]);
       return {
         FABDESK_PROJECT_DIR: cwd,
+        ...(mcpUrl ? { FABDESK_CORE_URL: new URL(mcpUrl).origin } : {}),
         ...(project ? {
           FABDESK_KICAD_PROJECT: join(project.dir, "board.kicad_pro"),
           FABDESK_KICAD_SCHEMATIC: join(project.dir, "board.kicad_sch"),

@@ -119,7 +119,7 @@ describe("http daemon", () => {
     expect(created.status).toBe(201);
     const project = (await created.json()) as { id: string; path: string; manifest: { board: { layers: number } }; files: Array<{ path: string }> };
     expect(project.path).toBe(join(home, "Fabdesk", "blinky-board"));
-    expect(project.files.map((f) => f.path)).toContain("circuit.netlist.json");
+    expect(project.files.map((f) => f.path)).not.toContain("circuit.netlist.json");
     await readUntil((s) => s.includes('\"topic\":\"project.changed\"'));
     expect(buf).toContain(`"projectId":"${project.id}"`);
     const idMatch = /id: (\d+)\ndata: [^\n]*"topic":"project.changed"/.exec(buf);
@@ -144,9 +144,8 @@ describe("http daemon", () => {
     r2.cancel();
 
     // Files: read, write, jail.
-    const tsx = await api(`/projects/${project.id}/files/circuit.netlist.json`);
-    expect(tsx.status).toBe(200);
-    expect(await tsx.text()).toContain("netlist");
+    const missingNetlist = await api(`/projects/${project.id}/files/circuit.netlist.json`);
+    expect(missingNetlist.status).toBe(404);
     const put = await api(`/projects/${project.id}/files/notes/readme.md`, { method: "PUT", body: "# hi", headers: { "content-type": "text/markdown" } });
     expect(put.status).toBe(200);
     expect(await (await api(`/projects/${project.id}/files/notes/readme.md`)).text()).toBe("# hi");
@@ -177,6 +176,7 @@ describe("http daemon", () => {
     const status = await api("/tools/project_status", { method: "POST", body: JSON.stringify({ project: project.id }) });
     expect(status.status).toBe(200);
     expect(((await status.json()) as { text: string }).text).toContain("Blinky Board");
+    await Bun.write(join(project.path, "circuit.netlist.json"), JSON.stringify({ netlist: { components: [], nets: [] }, board: { widthMm: 40, heightMm: 30 } }));
     const queued = await api("/tools/circuit_build", { method: "POST", body: JSON.stringify({ project: project.id }) });
     expect(queued.status).toBe(202);
     const { jobId } = (await queued.json()) as { jobId: string };
@@ -251,6 +251,7 @@ describe("http daemon", () => {
     expect(lastSession!.mcp.token).not.toBe(daemon.token);
     expect(lastSession!.env).toMatchObject({
       FABDESK_PROJECT_DIR: created.path,
+      FABDESK_CORE_URL: daemon.url,
       FABDESK_KICAD_PROJECT: join(created.path, "board.kicad_pro"),
       FABDESK_KICAD_SCHEMATIC: join(created.path, "board.kicad_sch"),
       FABDESK_KICAD_BOARD: join(created.path, "board.kicad_pcb"),
@@ -306,7 +307,7 @@ describe("http daemon", () => {
     };
     const a = await connect(daemon.token);
     const tools = await a.client.listTools();
-    expect(tools.tools.map((t) => t.name).sort()).toEqual(["circuit_build", "circuit_read_errors", "load_toolset", "pcb_environment", "project_status", "render_board", "route_run", "verify_drc"]);
+    expect(tools.tools.map((t) => t.name).sort()).toEqual(["capability_call", "capability_search", "circuit_build", "circuit_read_errors", "load_toolset", "pcb_environment", "project_status", "render_board", "route_run", "verify_drc"]);
     expect(daemon.mcp.activeCount()).toBe(1);
 
     // Without a project selector the tool asks for one; with it, it works.
@@ -317,17 +318,24 @@ describe("http daemon", () => {
     expect((withProject.structuredContent as { id: string }).id).toBe(created.id);
 
     await a.client.callTool({ name: "load_toolset", arguments: { toolset: "export" } });
-    expect((await a.client.listTools()).tools.length).toBe(15);
+    expect((await a.client.listTools()).tools.length).toBe(17);
 
     // A second session starts with only the core toolset (state is per session).
     const b = await connect(daemon.token);
-    expect((await b.client.listTools()).tools.length).toBe(8);
+    expect((await b.client.listTools()).tools.length).toBe(10);
     expect(daemon.mcp.activeCount()).toBe(2);
 
     // Clients that cannot process tools/list_changed can request the complete
     // inventory when the MCP session is initialized.
     const all = await connect(daemon.token, "?toolsets=all");
     expect((await all.client.listTools()).tools.length).toBeGreaterThan(14);
+
+    const native = await connect(daemon.token, "?profile=native");
+    const nativeNames = (await native.client.listTools()).tools.map((tool) => tool.name);
+    expect(nativeNames).toHaveLength(17);
+    expect(nativeNames).toContain("pcb_inspect");
+    expect(nativeNames).not.toContain("circuit_build");
+    expect(nativeNames).not.toContain("native_edit_transaction");
 
     // A per-run token pins the default project.
     const runToken = daemon.tokens.mintRunToken({ runId: "run_x", projectId: created.id, threadId: "t" });
@@ -343,9 +351,11 @@ describe("http daemon", () => {
 
     await a.transport.terminateSession();
     await all.transport.terminateSession();
+    await native.transport.terminateSession();
     await a.client.close();
     await b.client.close();
     await all.client.close();
+    await native.client.close();
     await c.client.close();
     await new Promise((r) => setTimeout(r, 20));
     expect(daemon.mcp.activeCount()).toBe(2);

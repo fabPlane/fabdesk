@@ -113,7 +113,7 @@ describe("codex adapter", () => {
     expect(args).toContain("--approve-for-me");
     expect(args[args.indexOf("-C") + 1]).toBe(dir);
     expect(args).toContain('sandbox_mode="workspace-write"');
-    expect(args).toContain('mcp_servers.fabdesk.url="http://127.0.0.1:4321/mcp?toolsets=all"');
+    expect(args).toContain('mcp_servers.fabdesk.url="http://127.0.0.1:4321/mcp?profile=native"');
     expect(args).toContain('mcp_servers.fabdesk.bearer_token_env_var="FABDESK_TOKEN"');
     expect(args[args.indexOf("-i") + 1]).toBe("/p/sketches/a.png");
     expect(args[args.indexOf("-m") + 1]).toBe("gpt-5.5");

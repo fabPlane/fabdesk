@@ -70,7 +70,6 @@ ${sketches}
 | \`board.kicad_pro\` | Canonical KiCad project. |
 | \`board.kicad_sch\` | Canonical KiCad schematic. |
 | \`board.kicad_pcb\` | Canonical KiCad PCB. |
-| \`circuit.netlist.json\` | Optional circuit source. |
 | \`sketches/\` | User-provided drawings and photos. |
 | \`renders/\` | Rendered artifacts. |
 | \`reports/\` | Machine-readable reports. |

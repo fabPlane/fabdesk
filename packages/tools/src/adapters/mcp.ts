@@ -7,6 +7,7 @@ import { McpServer, ResourceTemplate, type RegisteredTool } from "@modelcontextp
 import type { ZodRawShapeCompat } from "@modelcontextprotocol/sdk/server/zod-compat.js";
 import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { CallToolResult, ReadResourceResult, ServerNotification, ServerRequest } from "@modelcontextprotocol/sdk/types.js";
+import { z } from "zod/v4";
 import { PROJECT_FILES, exists, readJsonOrNull } from "../fs";
 import {
   TOOLSETS,
@@ -33,6 +34,8 @@ export type AttachOptions = {
   sessionId?: string;
   /** Toolsets enabled from the start; `core` is always enabled. */
   initialToolsets?: ToolsetId[];
+  /** Exact initial registry tools. Used by clients that snapshot the list at turn start. */
+  initialTools?: string[];
   /** Skip resources (e.g. lightweight test servers). */
   toolsOnly?: boolean;
 };
@@ -44,6 +47,7 @@ export function attachToRegistry(
   opts: AttachOptions = {},
 ): McpAttachment {
   const enabled = new Set<ToolsetId>(["core", ...(opts.initialToolsets ?? [])]);
+  const initialTools = opts.initialTools ? new Set(opts.initialTools) : null;
   const registered = new Map<string, RegisteredTool>();
   const sessionId = opts.sessionId ?? crypto.randomUUID();
 
@@ -89,14 +93,92 @@ export function attachToRegistry(
       },
     );
     registered.set(def.name, tool);
-    if (!enabled.has(def.toolset)) tool.disable();
+    if (initialTools ? !initialTools.has(def.name) : !enabled.has(def.toolset)) tool.disable();
   }
+
+  registerCapabilityTools(server, registry, ctxFactory, session, sessionId, registered, initialTools);
 
   if (!opts.toolsOnly) {
     registerResources(server, registry, ctxFactory, session, sessionId);
   }
 
   return { session, registered };
+}
+
+function registerCapabilityTools(
+  server: McpServer,
+  registry: ToolRegistry,
+  ctxFactory: ContextFactory,
+  session: ToolSession,
+  sessionId: string,
+  registered: Map<string, RegisteredTool>,
+  initialTools: Set<string> | null,
+): void {
+  const discovered = new Set<string>();
+  const search = server.registerTool(
+    "capability_search",
+    {
+      title: "Search additional Fabdesk capabilities",
+      description: "Find infrequent Fabdesk operations by capability. Returns only matching names, descriptions, and input schemas.",
+      inputSchema: {
+        query: z.string().min(1).max(200).describe("Words describing the operation you need"),
+        limit: z.number().int().min(1).max(20).default(8),
+      } as unknown as ZodRawShapeCompat,
+      annotations: { title: "Search additional Fabdesk capabilities", readOnlyHint: true, idempotentHint: true },
+    },
+    async (rawArgs: Record<string, unknown>): Promise<CallToolResult> => {
+      const query = String(rawArgs["query"]);
+      const limit = Number(rawArgs["limit"] ?? 8);
+      const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+      const matches = registry.list()
+        .filter((def) => !initialTools?.has(def.name))
+        .map((def) => {
+          const haystack = `${def.name} ${def.title} ${def.description} ${def.toolset}`.toLowerCase();
+          const score = terms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0);
+          return { def, score };
+        })
+        .filter(({ score }) => score > 0)
+        .sort((a, b) => b.score - a.score || a.def.name.localeCompare(b.def.name))
+        .slice(0, limit)
+        .map(({ def }) => {
+          discovered.add(def.name);
+          return { name: def.name, title: def.title, description: def.description, inputSchema: registry.jsonSchema(def), annotations: def.annotations, longRunning: def.longRunning ?? false };
+        });
+      return toCallToolResult({
+        text: matches.length ? `Found ${matches.length} matching additional capabilities.` : `No additional capabilities matched "${query}".`,
+        json: { query, matches },
+      });
+    },
+  );
+  registered.set("capability_search", search);
+
+  const call = server.registerTool(
+    "capability_call",
+    {
+      title: "Call an additional Fabdesk capability",
+      description: "Invoke an operation returned by capability_search with its documented arguments.",
+      inputSchema: {
+        name: z.string().min(1).describe("Exact operation name returned by capability_search"),
+        arguments: z.record(z.string(), z.unknown()).default({}),
+      } as unknown as ZodRawShapeCompat,
+      annotations: { title: "Call an additional Fabdesk capability", destructiveHint: true, openWorldHint: true },
+    },
+    async (rawArgs: Record<string, unknown>, extra: RequestHandlerExtra<ServerRequest, ServerNotification>): Promise<CallToolResult> => {
+      const name = String(rawArgs["name"]);
+      const args = (rawArgs["arguments"] ?? {}) as Record<string, unknown>;
+      if (name === "capability_search" || name === "capability_call") return errorResult(new ToolError(`cannot dispatch ${name}`, "invalid_args"));
+      if (!discovered.has(name)) return errorResult(new ToolError(`search for ${name} before calling it`, "invalid_args"));
+      try {
+        const output = await registry.invoke(name, args, (projectRef, def) =>
+          ctxFactory({ def, projectRef, signal: extra.signal, progress: () => {}, session, sessionId, ...(extra.authInfo?.token ? { token: extra.authInfo.token } : {}) }),
+        );
+        return toCallToolResult(output);
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+  registered.set("capability_call", call);
 }
 
 export function errorResult(e: unknown): CallToolResult {
@@ -158,19 +240,6 @@ function registerResources(server: McpServer, registry: ToolRegistry, ctxFactory
   );
 
   server.registerResource(
-    "project-circuit",
-    new ResourceTemplate("fabdesk://project/{id}/circuit.netlist.json", {
-      list: async () => ({ resources: (await listProjects()).map((pr) => ({ uri: `fabdesk://project/${pr.id}/circuit.netlist.json`, name: `${pr.name} circuit.netlist.json`, mimeType: "application/json" })) }),
-    }),
-    { title: "circuit.netlist.json", description: "Optional circuit.netlist.json project file", mimeType: "application/json" },
-    async (uri, vars) => {
-      const ctx = await project(String(vars["id"]));
-      const path = p(ctx.project!, PROJECT_FILES.netlistJson);
-      return text(uri, "application/json", (await exists(path)) ? await readFile(path, "utf8") : "");
-    },
-  );
-
-  server.registerResource(
     "project-board-summary",
     new ResourceTemplate("fabdesk://project/{id}/board-summary", {
       list: async () => ({ resources: (await listProjects()).map((pr) => ({ uri: `fabdesk://project/${pr.id}/board-summary`, name: `${pr.name} board summary`, mimeType: "application/json" })) }),
@@ -187,7 +256,6 @@ function registerResources(server: McpServer, registry: ToolRegistry, ctxFactory
         name: pr.name,
         board: pr.manifest().board,
         router: pr.manifest().router,
-        source: await exists(p(pr, PROJECT_FILES.netlistJson)),
         built: await exists(p(pr, PROJECT_FILES.boardPcb)),
         lastBuild: build ? { ok: build.ok, errors: build.errors.length, warnings: build.warnings.length, at: build.at } : null,
         lastRoute: route ? { runId: route.id, status: route.status, open: route.result?.open ?? null } : null,

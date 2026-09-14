@@ -7,7 +7,8 @@ import { PROJECT_FILES, writeAtomic, writeJson } from "../fs";
 import { FrameSink } from "../frame-sink";
 import { ToolError, defineTool, type ToolContext, type ToolOutput } from "../registry";
 import type { RouteProgress } from "../services";
-import { loadNetlist, ok, p, throwIfAborted } from "./common";
+import { ok, p, throwIfAborted } from "./common";
+import { rowPoints } from "./spatial";
 
 export const RouteRunArgs = {
   router: z.enum(["capacity", "freerouting"]).optional().describe("Router; defaults to the project's fabdesk.json router"),
@@ -123,13 +124,17 @@ export async function runRoute(
   const started = Date.now();
   const sink = new FrameSink(framesPath, ctx.services.bus);
   const board = manifest.board;
-  // The outline the build drew comes from the netlist's board spec; the manifest is the fallback.
-  const spec = (await loadNetlist(project).catch(() => null))?.board;
+  const outlineRows = await ctx.services.design.query(project.dir, "board_geometry").catch(() => []);
+  const outlinePoints = outlineRows.flatMap(rowPoints);
+  const outlineBounds = outlinePoints.length ? {
+    x1: Math.min(...outlinePoints.map((point) => point.x)), y1: Math.min(...outlinePoints.map((point) => point.y)),
+    x2: Math.max(...outlinePoints.map((point) => point.x)), y2: Math.max(...outlinePoints.map((point) => point.y)),
+  } : null;
   sink.onMessage({
     kind: "meta",
     runId,
     router,
-    bounds: { x1: 0, y1: 0, x2: spec?.widthMm ?? board.widthMm ?? 0, y2: spec?.heightMm ?? board.heightMm ?? 0 },
+    bounds: outlineBounds ?? { x1: 0, y1: 0, x2: board.widthMm ?? 0, y2: board.heightMm ?? 0 },
     layers: Array.from({ length: board.layers }, (_, i) => (i === 0 ? "F.Cu" : i === board.layers - 1 ? "B.Cu" : `In${i}.Cu`)),
     unitsPerMm: 1,
   });

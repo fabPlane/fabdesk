@@ -93,7 +93,7 @@ export const native_edit_transaction = defineTool({
     geometry: PcbGeometry.optional(),
     removeCopperNets: z.array(z.string().min(1)).max(500).optional(),
   },
-  annotations: { idempotentHint: false },
+  annotations: { destructiveHint: true, idempotentHint: false },
   handler: async ({ mode, expectedSchematicRevision, expectedPcbRevision, schematic, outline, footprints, geometry, removeCopperNets }, ctx) => {
     const project = ctx.requireProject();
     const before = await revisions(project.dir);
@@ -168,4 +168,55 @@ export const native_edit_rollback = defineTool({
   },
 });
 
-export const nativeEditTools = [native_edit_transaction, native_edit_rollback];
+export const pcb_edit_copper = defineTool({
+  name: "pcb_edit_copper",
+  toolset: "circuit",
+  title: "Edit PCB copper",
+  description: "Preview or atomically apply exact native tracks, vias, copper deletion by inspected ID, or removal of named routed nets. Uses millimetres and rejects stale PCB revisions.",
+  inputSchema: {
+    mode: z.enum(["preview", "apply"]).default("apply"),
+    expectedPcbRevision: z.string().length(64).optional(),
+    tracks: PcbGeometry.shape.tracks,
+    vias: PcbGeometry.shape.vias,
+    deleteItemIds: PcbGeometry.shape.deleteItemIds,
+    removeNets: z.array(z.string().min(1)).max(500).optional(),
+  },
+  annotations: { destructiveHint: true, idempotentHint: false },
+  handler: ({ mode, expectedPcbRevision, tracks, vias, deleteItemIds, removeNets }, ctx) =>
+    native_edit_transaction.handler({
+      mode,
+      ...(expectedPcbRevision ? { expectedPcbRevision } : {}),
+      ...(tracks || vias || deleteItemIds ? { geometry: { ...(tracks ? { tracks } : {}), ...(vias ? { vias } : {}), ...(deleteItemIds ? { deleteItemIds } : {}) } } : {}),
+      ...(removeNets ? { removeCopperNets: removeNets } : {}),
+    }, ctx),
+});
+
+export const pcb_edit_graphics = defineTool({
+  name: "pcb_edit_graphics",
+  toolset: "circuit",
+  title: "Edit PCB outline and graphics",
+  description: "Preview or atomically apply a native board outline, zones, keepouts, text, graphics, or deletion by inspected ID. Uses millimetres and rejects stale PCB revisions.",
+  inputSchema: {
+    mode: z.enum(["preview", "apply"]).default("apply"),
+    expectedPcbRevision: z.string().length(64).optional(),
+    outline: z.object({ points: z.array(Point).min(3).max(100), replace: z.boolean().default(false) }).optional(),
+    zones: PcbGeometry.shape.zones,
+    keepouts: PcbGeometry.shape.keepouts,
+    texts: PcbGeometry.shape.texts,
+    graphics: PcbGeometry.shape.graphics,
+    deleteItemIds: PcbGeometry.shape.deleteItemIds,
+  },
+  annotations: { destructiveHint: true, idempotentHint: false },
+  handler: ({ mode, expectedPcbRevision, outline, zones, keepouts, texts, graphics, deleteItemIds }, ctx) =>
+    native_edit_transaction.handler({
+      mode,
+      ...(expectedPcbRevision ? { expectedPcbRevision } : {}),
+      ...(outline ? { outline } : {}),
+      ...(zones || keepouts || texts || graphics || deleteItemIds ? { geometry: {
+        ...(zones ? { zones } : {}), ...(keepouts ? { keepouts } : {}), ...(texts ? { texts } : {}),
+        ...(graphics ? { graphics } : {}), ...(deleteItemIds ? { deleteItemIds } : {}),
+      } } : {}),
+    }, ctx),
+});
+
+export const nativeEditTools = [native_edit_transaction, native_edit_rollback, pcb_edit_copper, pcb_edit_graphics];

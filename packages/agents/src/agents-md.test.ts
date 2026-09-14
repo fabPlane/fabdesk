@@ -29,7 +29,7 @@ describe("renderAgentsMd", () => {
     expect(md).toContain("`/tmp/p/sketches/front.png`");
     expect(md).toContain("Its MCP server is `fabdesk`");
     expect(md).toContain("| `board.kicad_pcb` | Canonical KiCad PCB. |");
-    expect(md).toContain("| `circuit.netlist.json` | Optional circuit source. |");
+    expect(md).not.toContain("circuit.netlist.json");
     expect(md).not.toContain("### circuit_build");
     expect(md).not.toMatch(/workflow|must use|should use|prefer|retry|repeat until|run .* first|stopping policy/i);
     expect(md.indexOf(USER_START)).toBeLessThan(md.indexOf(USER_END));

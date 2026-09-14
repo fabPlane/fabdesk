@@ -12,15 +12,6 @@ import type { ProjectRepo } from "./db";
 import { newId } from "./db";
 import { logger } from "./log";
 
-export const DEFAULT_NETLIST_JSON = `${JSON.stringify(
-  {
-    netlist: { components: [], nets: [] },
-    board: { widthMm: 40, heightMm: 30 },
-  },
-  null,
-  2,
-)}\n`;
-
 export function slugify(name: string): string {
   const s = name
     .toLowerCase()
@@ -129,11 +120,10 @@ export class ProjectStore implements ProjectResolver {
     const manifest = ProjectManifest.parse({ schema: 1, id: newId("prj"), name, createdAt: ts, updatedAt: ts, board: { layers: 2 }, router: "capacity" });
     for (const sub of [PROJECT_FILES.sketches, PROJECT_FILES.renders, PROJECT_FILES.reports, PROJECT_FILES.exports, PROJECT_FILES.runs]) await mkdir(join(dir, sub), { recursive: true });
     await writeJson(join(dir, PROJECT_FILES.manifest), manifest);
-    await Bun.write(join(dir, PROJECT_FILES.netlistJson), DEFAULT_NETLIST_JSON);
     await Bun.write(join(dir, ".gitignore"), ".fabdesk/\nrenders/\nexports/\n");
     this.repo.upsert({ id: manifest.id, name, slug, path: dir, createdAt: ts, updatedAt: ts });
     if (this.opts.watch !== false) this.watchDir(manifest.id, dir);
-    this.emit({ ts: Date.now(), topic: "project.changed", projectId: manifest.id, paths: [PROJECT_FILES.manifest, PROJECT_FILES.netlistJson] });
+    this.emit({ ts: Date.now(), topic: "project.changed", projectId: manifest.id, paths: [PROJECT_FILES.manifest] });
     return (await this.detail(manifest.id))!;
   }
 

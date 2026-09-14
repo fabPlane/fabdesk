@@ -51,7 +51,6 @@ export const pcb_environment = defineTool({
       project: p(project, PROJECT_FILES.boardPro),
       schematic: p(project, PROJECT_FILES.boardSch),
       board: p(project, PROJECT_FILES.boardPcb),
-      source: p(project, PROJECT_FILES.netlistJson),
     };
     const present: Record<string, boolean> = Object.fromEntries(await Promise.all(Object.entries(files).map(async ([name, path]) => [name, await exists(path)])));
     const interfaces = {
@@ -93,14 +92,14 @@ export const project_status = defineTool({
   toolset: "core",
   title: "Project status",
   description:
-    "Summarise the current project: id, directory, board settings, which artifacts exist (circuit.netlist.json, board.kicad_pcb, board.kicad_sch), last build result, latest route run, and available reports.",
+    "Summarise the selected project: directory, board settings, native KiCad files, latest route and verification state, sketches, and reports.",
   inputSchema: {},
   annotations: { readOnlyHint: true, idempotentHint: true },
   handler: async (_args, ctx) => {
     const project = ctx.requireProject();
     const manifest = project.manifest();
     const files: Record<string, { exists: boolean; mtime?: string }> = {};
-    for (const rel of [PROJECT_FILES.netlistJson, PROJECT_FILES.boardPcb, PROJECT_FILES.boardSch]) {
+    for (const rel of [PROJECT_FILES.boardPro, PROJECT_FILES.boardSch, PROJECT_FILES.boardPcb]) {
       const m = await mtimeMs(p(project, rel));
       files[rel] =
         m === null ? { exists: false } : { exists: true, mtime: new Date(m).toISOString() };

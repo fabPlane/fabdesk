@@ -33,7 +33,7 @@ export function codexArgs(session: AgentSession, bin: string): string[] {
     "-c",
     // Codex snapshots MCP tools at turn start and does not currently apply
     // tools/list_changed, so request the complete inventory up front.
-    `mcp_servers.${MCP_SERVER_NAME}.url=${tomlString(withAllToolsets(session.mcp.url))}`,
+    `mcp_servers.${MCP_SERVER_NAME}.url=${tomlString(withNativeProfile(session.mcp.url))}`,
     "-c",
     `mcp_servers.${MCP_SERVER_NAME}.bearer_token_env_var=${tomlString(TOKEN_ENV)}`,
   );
@@ -44,9 +44,9 @@ export function codexArgs(session: AgentSession, bin: string): string[] {
   return args;
 }
 
-function withAllToolsets(url: string): string {
+function withNativeProfile(url: string): string {
   const endpoint = new URL(url);
-  endpoint.searchParams.set("toolsets", "all");
+  endpoint.searchParams.set("profile", "native");
   return endpoint.toString();
 }
 

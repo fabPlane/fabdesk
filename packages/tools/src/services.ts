@@ -589,9 +589,8 @@ export type SimResult = {
 };
 
 export interface SimService {
-  spiceNetlist(netlist: NetlistFile): string;
-  runSimulation(opts: {
-    netlist: NetlistFile;
+  runSpiceSimulation(opts: {
+    netlist: string;
     analysis: SimAnalysis;
     engine?: "spicey" | "ngspice";
     ngspicePath?: string;

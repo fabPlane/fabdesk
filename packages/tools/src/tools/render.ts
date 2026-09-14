@@ -5,6 +5,7 @@ import { z } from "zod/v4";
 import { PROJECT_FILES, ensureDir } from "../fs";
 import { ToolError, defineTool } from "../registry";
 import { fileUrl, ok, p, requireBoard, requireKicad, requireSchematic } from "./common";
+import { rowPoints } from "./spatial";
 
 async function fileRevision(path: string): Promise<{ sha256: string; bytes: number; mtime: string }> {
   const [data, metadata] = await Promise.all([readFile(path), stat(path)]);
@@ -138,4 +139,91 @@ export const render_glb = defineTool({
   },
 });
 
-export const renderTools = [render_schematic_svg, render_pcb_svg, render_glb];
+const ViewRegion = z.object({ minX: z.number().finite(), minY: z.number().finite(), maxX: z.number().finite(), maxY: z.number().finite() });
+
+export const render_view = defineTool({
+  name: "render_view",
+  toolset: "render",
+  title: "Render a focused design view",
+  description: "Render the saved schematic or an auto-fitted/cropped PCB view. PCB views can highlight component references and nets and return inline PNG pixels bound to the source revision.",
+  inputSchema: {
+    document: z.enum(["schematic", "pcb"]).default("pcb"),
+    region: ViewRegion.optional().describe("PCB crop rectangle in millimetres; omitted auto-fits the board"),
+    layers: z.array(z.string().min(1)).min(1).max(32).optional().describe("KiCad layers; defaults to copper, silkscreen, and Edge.Cuts"),
+    highlightReferences: z.array(z.string().min(1)).max(100).optional(),
+    highlightNets: z.array(z.string().min(1)).max(100).optional(),
+    maxWidth: z.number().int().min(320).max(4096).default(1600),
+  },
+  annotations: { readOnlyHint: true, idempotentHint: true },
+  longRunning: true,
+  handler: async ({ document, region, layers, highlightReferences, highlightNets, maxWidth }, ctx) => {
+    if (document === "schematic") {
+      if (region || layers?.length || highlightReferences?.length || highlightNets?.length) throw new ToolError("schematic crop/layers/highlight is not available yet; render the complete schematic", "invalid_args");
+      return render_schematic_svg.handler({ maxWidth }, ctx);
+    }
+    if (region && (region.maxX <= region.minX || region.maxY <= region.minY)) throw new ToolError("region max coordinates must be greater than min coordinates", "invalid_args");
+    const project = ctx.requireProject();
+    const cli = await requireKicad(ctx);
+    const board = await requireBoard(project);
+    const before = await fileRevision(board);
+    await ensureDir(p(project, PROJECT_FILES.renders));
+    const rawPath = p(project, PROJECT_FILES.renders, "pcb-view-source.svg");
+    ctx.progress(0.2, "exporting svg");
+    await ctx.services.kicad.exportPcbSvg(cli, { board, output: rawPath, ...(layers ? { layers } : {}), signal: ctx.signal });
+    const [geometry, components, pads, tracks, vias] = await Promise.all([
+      ctx.services.design.query(project.dir, "board_geometry"), ctx.services.design.query(project.dir, "components"),
+      ctx.services.design.query(project.dir, "pads"), ctx.services.design.query(project.dir, "tracks"), ctx.services.design.query(project.dir, "vias"),
+    ]);
+    const autoPoints = [...geometry, ...components, ...pads].flatMap(rowPoints);
+    const fitted = region ?? boundsWithMargin(autoPoints, 2);
+    let svg = await readFile(rawPath, "utf8");
+    if (fitted) {
+      const width = fitted.maxX - fitted.minX, height = fitted.maxY - fitted.minY;
+      svg = svg.replace(/width="[^"]+"\s+height="[^"]+"/, `width="${width}mm" height="${height}mm"`).replace(/viewBox="[^"]+"/, `viewBox="${fitted.minX} ${fitted.minY} ${width} ${height}"`);
+    }
+    const refs = new Set((highlightReferences ?? []).map((value) => value.toLowerCase()));
+    const nets = new Set((highlightNets ?? []).map((value) => value.toLowerCase()));
+    const overlayRows = [
+      ...components.filter((row) => refs.has(String(row["ref"] ?? row["reference"] ?? "").toLowerCase())),
+      ...pads.filter((row) => refs.has(String(row["component"] ?? "").toLowerCase()) || nets.has(String(row["net"] ?? "").toLowerCase())),
+      ...tracks.filter((row) => nets.has(String(row["net"] ?? "").toLowerCase())),
+      ...vias.filter((row) => nets.has(String(row["net"] ?? "").toLowerCase())),
+    ];
+    const overlay = overlayRows.map(highlightShape).filter(Boolean).join("\n");
+    if (overlay) svg = svg.replace("</svg>", `<g id="fabdesk-highlights" fill="none" stroke="#00e5ff" stroke-width="0.45" stroke-opacity="0.95">\n${overlay}\n</g>\n</svg>`);
+    const svgPath = p(project, PROJECT_FILES.renders, "pcb-view.svg");
+    const pngPath = p(project, PROJECT_FILES.renders, "pcb-view.png");
+    await Bun.write(svgPath, svg);
+    const raster = await ctx.services.kicad.rasterizeSvg(Buffer.from(svg), { maxWidth });
+    await Bun.write(pngPath, raster.png);
+    const after = await fileRevision(board);
+    if (after.sha256 !== before.sha256) {
+      await Promise.all([svgPath, pngPath].map((path) => rm(path, { force: true })));
+      throw new ToolError("PCB changed during rendering", "precondition");
+    }
+    ctx.progress(1, "done");
+    return ok(`Rendered focused PCB view at revision ${before.sha256}.`,
+      { path: svgPath, pngPath, width: raster.width, height: raster.height, region: fitted, layers: layers ?? null, highlighted: overlayRows.length, pcbRevision: before },
+      { images: [{ path: pngPath, mime: "image/png", requiredInline: true }] });
+  },
+});
+
+function boundsWithMargin(points: Array<{ x: number; y: number }>, margin: number): z.infer<typeof ViewRegion> | undefined {
+  if (!points.length) return undefined;
+  return { minX: Math.min(...points.map((point) => point.x)) - margin, minY: Math.min(...points.map((point) => point.y)) - margin,
+    maxX: Math.max(...points.map((point) => point.x)) + margin, maxY: Math.max(...points.map((point) => point.y)) + margin };
+}
+
+function highlightShape(row: Record<string, unknown>): string {
+  const points = rowPoints(row);
+  if (!points.length) return "";
+  if (points.length >= 2) {
+    const [start, end] = points;
+    return `<line x1="${start!.x}" y1="${start!.y}" x2="${end!.x}" y2="${end!.y}" />`;
+  }
+  const point = points[0]!;
+  const radius = Math.max(0.8, Number(row["diameter"] ?? row["width"] ?? 1) / 2 + 0.5);
+  return `<circle cx="${point.x}" cy="${point.y}" r="${radius}" />`;
+}
+
+export const renderTools = [render_schematic_svg, render_pcb_svg, render_view, render_glb];

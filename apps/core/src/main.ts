@@ -12,6 +12,7 @@ const USAGE = `fabdesk-core ${VERSION}
 Usage:
   fabdesk-core serve [--port 0] [--host 127.0.0.1] [--handshake-file <path>] [--parent-pid <pid>] [--local-auth] [--data-dir <dir>]
   fabdesk-core mcp [--standalone] [--project <dir>]
+  fabpcb tool search <words> | describe <name> | call <name> [--request <json>] | batch --input @calls.jsonl
   fabdesk-core login | logout | whoami
   fabdesk-core login --email <email> --password <password>   # staging/local only
   fabdesk-core doctor [--json]
@@ -29,6 +30,7 @@ Environment:
   FABPLANE_EMAIL         staging/local password login (also --email); not for production
   FABPLANE_PASSWORD      staging/local password login (also --password)
   FABDESK_PROJECTS_DIR   default ~/fabdesk
+  FABDESK_CORE_URL       live local daemon used by the scriptable tool CLI
   FABDESK_LOG            debug | info | warn | error
   SENTRY_DESKTOP_DSN     Sentry DSN (error reporting off when unset; see docs/sentry.md)
   SENTRY_ENVIRONMENT     Sentry environment tag (default production for compiled builds, else development)
@@ -102,6 +104,21 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       await runMcpStdio({ ...(flag(f, "standalone") ? { standalone: true } : {}), ...(str(f, "project") ? { project: str(f, "project")! } : {}), ...(str(f, "data-dir") ? { dataDir: str(f, "data-dir")! } : {}) });
       return 0;
     }
+    case "tool": {
+      const { runToolCli } = await import("./tool-cli");
+      const action = f._[1] as "search" | "describe" | "call" | "batch" | undefined;
+      const positional = f._.slice(2);
+      return runToolCli({
+        ...(action ? { action } : {}),
+        ...(action === "search" ? { query: str(f, "query") ?? positional.join(" ") } : {}),
+        ...((action === "describe" || action === "call") && positional[0] ? { name: positional[0] } : {}),
+        ...(str(f, "request") ? { request: str(f, "request")! } : {}),
+        ...(str(f, "input") ? { input: str(f, "input")! } : {}),
+        ...(str(f, "project") ? { project: str(f, "project")! } : {}),
+        ...(str(f, "url") ? { baseUrl: str(f, "url")! } : {}),
+        ...(num(f, "limit") !== undefined ? { limit: num(f, "limit")! } : {}),
+      });
+    }
     case "login":
     case "logout":
     case "whoami": {
@@ -153,10 +170,13 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       const bin = join(homedir(), ".local", "bin");
       await mkdir(bin, { recursive: true });
       const link = join(bin, "fabdesk");
+      const pcbLink = join(bin, "fabpcb");
       await unlink(link).catch(() => {});
+      await unlink(pcbLink).catch(() => {});
       await symlink(target, link);
+      await symlink(target, pcbLink);
       await chmod(target, 0o755).catch(() => {});
-      process.stdout.write(`Linked ${link} → ${target}\nMake sure ${bin} is on your PATH. Then: claude mcp add --transport stdio fabdesk -- fabdesk mcp\n`);
+      process.stdout.write(`Linked ${link} and ${pcbLink} → ${target}\nMake sure ${bin} is on your PATH. Then: claude mcp add --transport stdio fabdesk -- fabdesk mcp\n`);
       return 0;
     }
     default:

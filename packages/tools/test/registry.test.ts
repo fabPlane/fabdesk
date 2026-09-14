@@ -15,8 +15,11 @@ describe("registry", () => {
       "project_read_file", "project_write_file", "project_list_sketches", "project_set_board", "project_import_kicad",
       "circuit_query", "circuit_search_parts", "circuit_describe_part", "circuit_check_part_compatibility",
       "design_inspect",
+      "pcb_inspect",
       "native_edit_transaction",
       "native_edit_rollback",
+      "pcb_edit_copper",
+      "pcb_edit_graphics",
       "schematic_inspect",
       "schematic_edit",
       "schematic_review",
@@ -31,6 +34,7 @@ describe("registry", () => {
       "release_build",
       "render_schematic_svg",
       "render_pcb_svg",
+      "render_view",
       "render_glb",
       "export_gerbers",
       "export_drill",
@@ -59,6 +63,47 @@ describe("registry", () => {
     for (const n of names) expect(n).toMatch(/^[a-z][a-z0-9_]*$/);
     expect(reg.byToolset("core").length).toBe(8);
     expect(() => defineTool({ name: "bad.name", toolset: "core", title: "", description: "", inputSchema: {}, annotations: {}, handler: async () => ({}) })).toThrow();
+  });
+
+  test("bounded PCB inspection filters by region and returns revision-bound compact rows", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("spatial-inspection");
+    await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb (version 20260831))\n");
+    const services = mockServices([project]);
+    const ctx = contextFactory(services, project);
+    const output = await reg.invoke("pcb_inspect", { kinds: ["components", "pads", "unrouted"], region: { minX: 0, minY: 2, maxX: 2, maxY: 4 }, limitPerKind: 10 },
+      (ref) => ctx({ def: reg.get("pcb_inspect")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }));
+    const json = output.json as { revision: string; coordinateSystem: { units: string }; results: Record<string, { total: number }> };
+    expect(json.revision).toHaveLength(64);
+    expect(json.coordinateSystem.units).toBe("mm");
+    expect(json.results["components"]?.total).toBe(1);
+    expect(json.results["pads"]?.total).toBe(1);
+    expect(json.results["unrouted"]?.total).toBe(1);
+    expect(JSON.stringify(output).length).toBeLessThan(5000);
+  });
+
+  test("focused PCB render crops in board coordinates and highlights inspected items", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("focused-pcb-view");
+    await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb (version 20260831))\n");
+    const base = mockServices([project]);
+    const services = mockServices([project], { kicad: { ...base.kicad,
+      exportPcbSvg: async (_cli, { output }) => {
+        await mkdir(join(project.dir, "renders"), { recursive: true });
+        await writeFile(output, '<svg xmlns="http://www.w3.org/2000/svg" width="20mm" height="20mm" viewBox="0 0 20 20"><rect width="20" height="20" fill="white"/></svg>');
+        return { paths: [output] };
+      },
+    } });
+    const output = await reg.invoke("render_view", { document: "pcb", region: { minX: 0, minY: 2, maxX: 2, maxY: 4 }, highlightReferences: ["R1"], highlightNets: ["N1"] },
+      (ref) => contextFactory(services, project)({ def: reg.get("render_view")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }));
+    const json = output.json as { pcbRevision: { sha256: string }; highlighted: number; region: Record<string, number>; pngPath: string };
+    expect(json.pcbRevision.sha256).toHaveLength(64);
+    expect(json.highlighted).toBe(2);
+    expect(json.region).toEqual({ minX: 0, minY: 2, maxX: 2, maxY: 4 });
+    expect(await Bun.file(json.pngPath).exists()).toBe(true);
+    const svg = await Bun.file(join(project.dir, "renders/pcb-view.svg")).text();
+    expect(svg).toContain('viewBox="0 2 2 2"');
+    expect(svg).toContain('id="fabdesk-highlights"');
   });
 
   test("native schematic edit, inspection and forward annotation", async () => {

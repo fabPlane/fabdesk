@@ -35,7 +35,7 @@ export type ServiceDeps = {
 
 function simService(settings: () => Settings): SimService {
   const toSimAnalysis = (
-    a: Parameters<SimService["runSimulation"]>[0]["analysis"],
+    a: Parameters<SimService["runSpiceSimulation"]>[0]["analysis"],
   ): sim.SimAnalysis => {
     switch (a.type) {
       case "op":
@@ -52,16 +52,13 @@ function simService(settings: () => Settings): SimService {
     }
   };
   return {
-    spiceNetlist: (netlist) => sim.spiceNetlist(netlist),
-    runSimulation: async (o) => {
+    runSpiceSimulation: async (o) => {
       const t0 = Date.now();
-      const r = await sim.runSimulation({
-        netlist: o.netlist,
-        analysis: toSimAnalysis(o.analysis),
-        ...(o.engine ? { engine: o.engine } : {}),
-        ...(o.ngspicePath ? { ngspicePath: o.ngspicePath } : {}),
-        ...(o.signal ? { signal: o.signal } : {}),
-      });
+      const analysis = toSimAnalysis(o.analysis);
+      const engine = o.engine ?? "spicey";
+      const r = engine === "ngspice"
+        ? await sim.runNgspice(o.ngspicePath ?? "ngspice", o.netlist, analysis, o.signal)
+        : sim.runSpicey(o.netlist, analysis);
       return {
         engine: r.engine,
         analysis: r.analysis,

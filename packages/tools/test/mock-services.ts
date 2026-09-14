@@ -324,8 +324,7 @@ export function mockServices(
       },
     },
     sim: {
-      spiceNetlist: () => "* mock\nR1 1 0 1k\n.end\n",
-      runSimulation: async () => ({
+      runSpiceSimulation: async () => ({
         engine: "spicey",
         analysis: "op",
         columns: ["node", "V"],

@@ -6,12 +6,12 @@ import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/typ
 import { attachToRegistry, createRegistry } from "../src";
 import { contextFactory, mockServices, tempProject } from "./mock-services";
 
-async function pair() {
+async function pair(initialTools?: string[]) {
   const registry = createRegistry();
   const project = await tempProject("mcp");
   const services = mockServices([project]);
   const server = new McpServer({ name: "fabdesk-test", version: "0.0.0" });
-  const attachment = attachToRegistry(server, registry, contextFactory(services, project));
+  const attachment = attachToRegistry(server, registry, contextFactory(services, project), initialTools ? { initialTools } : {});
   const [clientT, serverT] = InMemoryTransport.createLinkedPair();
   await server.connect(serverT);
   const client = new Client({ name: "test-client", version: "0.0.0" });
@@ -20,11 +20,24 @@ async function pair() {
 }
 
 describe("mcp adapter", () => {
+  test("native profile is small and searches/calls the hidden catalog", async () => {
+    const { client } = await pair(["project_status", "pcb_inspect"]);
+    expect((await client.listTools()).tools.map((tool) => tool.name).sort()).toEqual(["capability_call", "capability_search", "pcb_inspect", "project_status"]);
+    const undiscovered = await client.callTool({ name: "capability_call", arguments: { name: "circuit_describe_part", arguments: { kind: "symbol", libId: "Device:R" } } });
+    expect(undiscovered.isError).toBe(true);
+    const search = await client.callTool({ name: "capability_search", arguments: { query: "describe part pins" } });
+    const matches = (search.structuredContent as { matches: Array<{ name: string }> }).matches;
+    expect(matches.some((match) => match.name === "circuit_describe_part")).toBe(true);
+    const called = await client.callTool({ name: "capability_call", arguments: { name: "circuit_describe_part", arguments: { kind: "symbol", libId: "Device:R" } } });
+    expect(called.isError).toBeFalsy();
+    expect((called.content as Array<{ text?: string }>)[0]?.text).toContain("symbol Device:R");
+  });
+
   test("core tools visible, load_toolset enables more and emits list_changed", async () => {
     const { client, attachment } = await pair();
     const initial = await client.listTools();
     const names = initial.tools.map((t) => t.name).sort();
-    expect(names).toEqual(["circuit_build", "circuit_read_errors", "load_toolset", "pcb_environment", "project_status", "render_board", "route_run", "verify_drc"]);
+    expect(names).toEqual(["capability_call", "capability_search", "circuit_build", "circuit_read_errors", "load_toolset", "pcb_environment", "project_status", "render_board", "route_run", "verify_drc"]);
     const t = initial.tools.find((x) => x.name === "circuit_build")!;
     expect((t.inputSchema as { properties: Record<string, unknown> }).properties["project"]).toBeDefined();
     expect(t.annotations?.idempotentHint).toBe(true);
@@ -37,7 +50,7 @@ describe("mcp adapter", () => {
     expect(res.isError).toBeFalsy();
     const after = await client.listTools();
     expect(after.tools.map((t) => t.name)).toContain("export_gerbers");
-    expect(after.tools.length).toBe(8 + 7);
+    expect(after.tools.length).toBe(10 + 7);
     expect(attachment.session.enabledToolsets()).toEqual(["core", "export"]);
     await new Promise((r) => setTimeout(r, 10));
     expect(listChanged).toBeGreaterThan(0);
@@ -72,7 +85,6 @@ describe("mcp adapter", () => {
     const templates = await client.listResourceTemplates();
     expect(templates.resourceTemplates.map((t) => t.uriTemplate).sort()).toEqual([
       "fabdesk://project/{id}/board-summary",
-      "fabdesk://project/{id}/circuit.netlist.json",
       "fabdesk://project/{id}/manifest",
       "fabdesk://project/{id}/reports/{name}",
     ]);

@@ -13,6 +13,7 @@ import { renderTools } from "./render";
 import { routeTools } from "./route";
 import { schematicTools } from "./schematic";
 import { simTools } from "./sim";
+import { spatialTools } from "./spatial";
 import { verifyTools } from "./verify";
 
 export const allTools: ReadonlyArray<ToolDef> = [
@@ -20,6 +21,7 @@ export const allTools: ReadonlyArray<ToolDef> = [
   ...projectTools,
   ...circuitTools,
   ...inspectionTools,
+  ...spatialTools,
   ...nativeEditTools,
   ...schematicTools,
   ...pcbTools,
@@ -53,3 +55,4 @@ export * from "./render";
 export * from "./export";
 export * from "./sim";
 export * from "./app";
+export * from "./spatial";

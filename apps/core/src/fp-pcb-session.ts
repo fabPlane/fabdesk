@@ -83,7 +83,7 @@ export class FpPcbSessions {
     });
     if (!schematic)
       throw new ToolError(
-        "board.kicad_sch not found: start it with schematic_edit or build an existing netlist",
+        "board.kicad_sch not found: create it with schematic_edit",
         "precondition",
       );
     return schematic;
