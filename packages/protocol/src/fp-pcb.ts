@@ -108,6 +108,9 @@ export const FpPcbBoardSpec = z.object({
     )
     .optional(),
   holes: z.array(z.object({ x: z.number(), y: z.number(), diameterMm: z.number() })).optional(),
+  placements: z
+    .array(z.object({ ref: z.string(), position: z.object({ x: z.number(), y: z.number() }) }))
+    .optional(),
 });
 export type FpPcbBoardSpec = z.infer<typeof FpPcbBoardSpec>;
 
@@ -120,6 +123,8 @@ export const FpPcbCompileRequest = z.object({
    */
   project: z.object({ path: z.string() }).optional(),
   board: FpPcbBoardSpec.optional(),
+  /** Preserve compatible copper (default), or remove routed copper before applying the rebuild. */
+  rebuild: z.enum(["preserve", "clean"]).optional(),
   matchMode: z.enum(["reference", "uuid"]).optional(),
   deleteExtraFootprints: z.boolean().optional(),
   updateFootprints: z.boolean().optional(),
@@ -136,9 +141,11 @@ export const FpPcbCompileJobState = z.enum([
   "frontend",
   "validating",
   "checking",
+  "cleaning",
   "outlining",
   "importing",
   "placing",
+  "schematic",
   "saving",
   "done",
   "failed",
@@ -165,6 +172,7 @@ export const FpPcbCompileJob = z.object({
   error: z.string().optional(),
   /** Document revision after the job, so a client can refresh without waiting for an event. */
   revision: z.number().optional(),
+  removedCopper: z.object({ tracks: z.number(), vias: z.number() }).optional(),
 });
 export type FpPcbCompileJob = z.infer<typeof FpPcbCompileJob>;
 
@@ -206,6 +214,16 @@ export const FpPcbRouteUnrouted = z.object({
   from: z.object({ x: z.number(), y: z.number() }),
   to: z.object({ x: z.number(), y: z.number() }),
 });
+export const FpPcbRouteGeometry = z.object({
+  kind: z.enum(["trace", "via"]),
+  id: z.string(),
+  /** KiCad BoardLayer enum; -1 for through vias. */
+  layer: z.number().int(),
+  net: z.number().int(),
+  /** Nanometre trace centreline points, or via bounding box. */
+  points: z.array(z.number()),
+  width: z.number().optional(),
+});
 
 export const FpPcbRouteSummary = z.object({
   tracks: z.number().default(0),
@@ -224,6 +242,7 @@ export const FpPcbRouteSummary = z.object({
   timedOut: z.boolean().default(false),
   message: z.string().default(""),
   unrouted: z.array(FpPcbRouteUnrouted).default([]),
+  geometry: z.array(FpPcbRouteGeometry).default([]),
   log: z.array(z.string()).default([]),
 });
 export type FpPcbRouteSummary = z.infer<typeof FpPcbRouteSummary>;

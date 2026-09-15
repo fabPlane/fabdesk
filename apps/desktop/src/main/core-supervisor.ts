@@ -18,6 +18,7 @@ import { createWriteStream, existsSync, mkdirSync, readFileSync, type WriteStrea
 import { createInterface } from "node:readline";
 import { join, resolve } from "node:path";
 import { spawnCorePort } from "./dev-profile";
+import { sidecarEnvironment } from "./child-process-env";
 import { packagedKicadEnv } from "./packaged-kicad";
 
 const READY_TIMEOUT_MS = 60_000;
@@ -228,13 +229,12 @@ export class CoreSupervisor extends EventEmitter {
       const packagedResources = app.isPackaged && !this.opts.binaryOverride ? packagedKicadEnv(process.resourcesPath) : {};
       child = spawn(cmd.command, args, {
         cwd: cmd.cwd,
-        env: {
-          ...process.env,
+        env: sidecarEnvironment(process.env, {
           ...packagedResources,
           ...(this.opts.extraEnv ?? {}),
           FABDESK_TOKEN: token,
           ELECTRON_RUN_AS_NODE: undefined,
-        },
+        }),
         stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true,
       });

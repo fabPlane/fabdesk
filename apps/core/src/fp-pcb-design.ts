@@ -7,8 +7,16 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { BoardLayer, KiCadObjectType } from "@fp-pcb/proto";
-import { Via, toMm, type Board, type KiCad } from "@fp-pcb/client";
+import { BoardLayer, ElectricalPinType, KiCadObjectType } from "@fp-pcb/proto";
+import {
+  LibFootprint,
+  LibSymbol,
+  SchematicPin,
+  Via,
+  toMm,
+  type Board,
+  type KiCad,
+} from "@fp-pcb/client";
 import { placeFootprints } from "@fabdesk/kicad";
 import type { FpPcbCompileJob, FpPcbDiagnostic, FpPcbRouteJob } from "@fabdesk/protocol";
 import {
@@ -23,12 +31,14 @@ import {
   type DesignService,
   type DesignStatus,
   type FootprintHit,
+  type PartDescription,
   type RouteJobOptions,
   type RouteProgress,
   type RouteSummary,
 } from "@fabdesk/tools";
 import type { FpPcbBridgeClient } from "./fp-pcb-bridge";
-import { BOARD_PRO, type FpPcbSessions } from "./fp-pcb-session";
+import { BOARD_PCB, BOARD_PRO, type FpPcbSessions } from "./fp-pcb-session";
+import type { KicadLibraryCatalog } from "./kicad-library-catalog";
 
 /** The `@fp-pcb/compile` frontend that reads `circuit.netlist.json` (its `NETLIST_JSON_KIND`). */
 export const NETLIST_JSON_KIND = "netlist-json";
@@ -38,6 +48,7 @@ const STAGE_FRACTION: Record<string, number> = {
   frontend: 0.1,
   validating: 0.15,
   checking: 0.25,
+  cleaning: 0.3,
   outlining: 0.35,
   importing: 0.5,
   placing: 0.7,
@@ -74,6 +85,7 @@ export type FpPcbDesignDeps = {
   sessions: FpPcbSessions;
   readText?: (path: string) => Promise<string>;
   exists?: (path: string) => Promise<boolean>;
+  catalog?: KicadLibraryCatalog;
 };
 
 export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
@@ -114,13 +126,16 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         await rm(join(opts.projectDir, f), { force: true });
     }
     opts.progress?.(0.05, "session");
-    const job = await deps.sessions.withRetry(opts.projectDir, (s) =>
-      deps.bridge().compile(
+    let sessionWasBare = false;
+    const job = await deps.sessions.withRetry(opts.projectDir, (s) => {
+      sessionWasBare = !s.path;
+      return deps.bridge().compile(
         s.id,
         {
           source,
           ...(s.path ? {} : { project: { path: join(opts.projectDir, BOARD_PRO) } }),
           ...(opts.board ? { board: opts.board } : {}),
+          ...(opts.rebuild ? { rebuild: opts.rebuild } : {}),
           autoplace: true,
           save: true,
           netlistPath: PROJECT_FILES.compileNet,
@@ -130,13 +145,23 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
           onProgress: (j: FpPcbCompileJob) =>
             opts.progress?.(STAGE_FRACTION[j.state] ?? 0.5, j.state),
         },
-      ),
-    );
+      );
+    });
     // The project may have been created by this job: the session now has a board and a path.
     if (job.state === "cancelled") throw new ToolError("compile cancelled", "cancelled");
     const durationMs = Math.round(performance.now() - started);
     const empty = { components: 0, nets: 0, footprintsAdded: 0, footprintsPlaced: 0 };
-    if (!job.result)
+    if (!job.result) {
+      // NewProject can write its stub files before a later backend-load failure. The session is
+      // still recorded as bare in that case; release it so the next build reconnects through the
+      // generated board instead of calling NewProject again and getting "already exists" forever.
+      if (
+        sessionWasBare &&
+        /^NewProject:/i.test(job.error ?? "") &&
+        (await exists(join(opts.projectDir, BOARD_PCB)))
+      ) {
+        await deps.sessions.release(opts.projectDir);
+      }
       return {
         ok: false,
         errors: [
@@ -150,6 +175,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         counts: empty,
         durationMs,
       };
+    }
     const errors = job.result.diagnostics.filter((d) => d.severity === "error").map(toBuildError);
     const warnings = job.result.diagnostics
       .filter((d) => d.severity === "warning")
@@ -161,6 +187,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       counts: job.result.counts,
       durationMs,
       ...(job.revision !== undefined ? { revision: job.revision } : {}),
+      ...(job.removedCopper ? { removedCopper: job.removedCopper } : {}),
     };
   };
 
@@ -208,7 +235,14 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         const minY = Math.min(...ys);
         const maxY = Math.max(...ys);
         return [
-          { minX: mm(minX), minY: mm(minY), maxX: mm(maxX), maxY: mm(maxY), widthMm: mm(maxX - minX), heightMm: mm(maxY - minY) },
+          {
+            minX: mm(minX),
+            minY: mm(minY),
+            maxX: mm(maxX),
+            maxY: mm(maxY),
+            widthMm: mm(maxX - minX),
+            heightMm: mm(maxY - minY),
+          },
         ];
       }
       case "components": {
@@ -231,7 +265,11 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
           if (net) counts.set(net, (counts.get(net) ?? 0) + 1);
         }
         return (await board.nets())
-          .map((n) => ({ name: n.name, code: n.code, pads: counts.get(n.name) ?? 0 }))
+          .map((n) => ({
+            name: n.name,
+            code: n.code?.value ?? 0,
+            pads: counts.get(n.name) ?? 0,
+          }))
           .filter((r) => keep(r.name));
       }
       case "pads": {
@@ -245,6 +283,8 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
             y: mm(pad.position.y),
             width: mm(pad.size.x),
             height: mm(pad.size.y),
+            id: pad.id,
+            layer: pad.layerId,
           }))
           .filter((r) => keep(r.component, r.net, r.number));
       }
@@ -340,6 +380,14 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         from: { x: mm(u.from.x), y: mm(u.from.y) },
         to: { x: mm(u.to.x), y: mm(u.to.y) },
       })),
+      geometry: s.geometry.map((shape) => ({
+        kind: shape.kind,
+        id: shape.id,
+        layer: shape.layer,
+        net: shape.net,
+        points: shape.points.map(mm),
+        ...(shape.width !== undefined ? { width: mm(shape.width) } : {}),
+      })),
       log: s.log,
     };
   };
@@ -369,7 +417,10 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
   const place = async (
     projectDir: string,
     placements: Array<{ ref: string; x: number; y: number; rotation?: number }>,
-  ): Promise<{ moved: Array<{ ref: string; x: number; y: number; rotation: number }>; missing: string[] }> => {
+  ): Promise<{
+    moved: Array<{ ref: string; x: number; y: number; rotation: number }>;
+    missing: string[];
+  }> => {
     const board = await deps.sessions.board(projectDir);
     await board.save();
     const pcb = join(projectDir, "board.kicad_pcb");
@@ -390,7 +441,11 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
   ): Promise<{ tracks: number; vias: number }> => {
     const board = await deps.sessions.board(projectDir);
     const wanted = nets?.length ? new Set(nets) : null;
-    const items = (await board.getTracks()).filter((t) => !wanted || wanted.has(t.net ?? ""));
+    // A free prefab via has no net and is part of the blank, not routed copper. Preserve it when
+    // unrouting the whole board; an explicitly named-net unroute cannot select it anyway.
+    const items = (await board.getTracks()).filter(
+      (t) => (!(t instanceof Via) || Boolean(t.net)) && (!wanted || wanted.has(t.net ?? "")),
+    );
     const vias = items.filter((t) => t.typeName.endsWith("Via")).length;
     if (items.length) {
       await board.commit(wanted ? `Unroute ${[...wanted].join(", ")}` : "Unroute all", (tx) =>
@@ -436,13 +491,9 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     return { components, missing, nets: kept, excluded, pads };
   };
 
-  const searchFootprints = (query: string, limit: number): Promise<FootprintHit[]> =>
-    // Through withRetry: after a bridge restart the cached library session is gone and every search
-    // failed with "WebSocket … closed" until the daemon itself restarted.
-    deps.sessions.withRetry("", (session) => searchFootprintsOnce(session.kicad, query, limit));
-
-  const searchFootprintsOnce = async (
+  const searchLibrariesOnce = async (
     sessionKicad: KiCad,
+    kind: "footprint" | "symbol",
     query: string,
     limit: number,
   ): Promise<FootprintHit[]> => {
@@ -451,7 +502,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       .toLowerCase()
       .split(/[\s:]+/)
       .filter(Boolean);
-    const nicknames = await kicad.libraries.nicknames("footprint");
+    const nicknames = await kicad.libraries.nicknames(kind);
     const scored = nicknames
       .map((n) => ({ n, hit: tokens.filter((t) => n.toLowerCase().includes(t)).length }))
       .sort((a, b) => b.hit - a.hit);
@@ -462,7 +513,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       // does not already cover and match the remaining tokens here against name + description.
       const rest = tokens.filter((t) => !n.toLowerCase().includes(t));
       const [primary, ...others] = [...rest].sort((a, b) => b.length - a.length);
-      const entries = await kicad.libraries.entries("footprint", n, primary ?? "");
+      const entries = await kicad.libraries.entries(kind, n, primary ?? "");
       for (const e of entries) {
         if (hits.length >= limit) break;
         const hay = `${e.name} ${e.description ?? ""}`.toLowerCase();
@@ -477,13 +528,82 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     }
     return hits;
   };
+  const searchLibraries = (
+    kind: "footprint" | "symbol",
+    query: string,
+    limit: number,
+  ): Promise<FootprintHit[]> => {
+    if (deps.catalog?.has(kind)) return deps.catalog.search(kind, query, limit);
+    // Keep the entire remote search inside the retry boundary. If the bridge disappears during an
+    // entries call, retry from nicknames rather than returning a silently truncated result set.
+    return deps.sessions.withRetry("", (session) =>
+      searchLibrariesOnce(session.kicad, kind, query, limit),
+    );
+  };
+  const searchFootprints = (query: string, limit: number) =>
+    searchLibraries("footprint", query, limit);
+  const searchSymbols = (query: string, limit: number) => searchLibraries("symbol", query, limit);
+  const describePart = async (
+    kind: "footprint" | "symbol",
+    libId: string,
+  ): Promise<PartDescription> => {
+    if (deps.catalog?.has(kind)) {
+      const item = await deps.catalog.describe(kind, libId);
+      if (item) return item;
+      throw new ToolError(
+        `${kind} ${libId} was not found in the bundled KiCad libraries`,
+        "not_found",
+      );
+    }
+    const kicad = await anyKicad();
+    const item = await kicad.libraries.get(kind, libId);
+    if (!item)
+      throw new ToolError(
+        `${kind} ${libId} was not found in the design server libraries`,
+        "not_found",
+      );
+    if (kind === "symbol" && item instanceof LibSymbol) {
+      const pins = item.items.filter(
+        (child): child is SchematicPin => child instanceof SchematicPin,
+      );
+      return {
+        kind,
+        libId,
+        description: item.description,
+        pins: pins.map((pin) => ({
+          number: pin.number,
+          name: pin.name,
+          electricalType: ElectricalPinType[pin.electricalType] ?? String(pin.electricalType),
+          position: { x: mm(pin.position.x), y: mm(pin.position.y) },
+        })),
+      };
+    }
+    if (kind === "footprint" && item instanceof LibFootprint) {
+      return {
+        kind,
+        libId,
+        description: item.description,
+        anchor: { x: mm(item.anchor.x), y: mm(item.anchor.y) },
+        pads: item.pads.map((pad) => ({
+          number: pad.number,
+          position: {
+            x: mm(pad.position.x - item.anchor.x),
+            y: mm(pad.position.y - item.anchor.y),
+          },
+          size: { x: mm(pad.size.x), y: mm(pad.size.y) },
+        })),
+      };
+    }
+    throw new ToolError(`${libId} did not resolve as a ${kind}`, "invalid_args");
+  };
 
   /**
    * Any live KiCad for server-wide questions (libraries). The api-server only registers the
    * footprint-library handlers once a project is open (`GetLibraryTables` answers `AS_UNHANDLED`
    * on a bare session), so the shared session is given a scratch project the first time.
    */
-  const anyKicad = async (kicad: KiCad): Promise<KiCad> => {
+  const anyKicad = async (sessionKicad?: KiCad): Promise<KiCad> => {
+    const kicad = sessionKicad ?? (await deps.sessions.session("")).kicad;
     const hasProject = await kicad
       .projectInfo()
       .then(() => true)
@@ -518,6 +638,8 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     unroute,
     scope,
     searchFootprints,
+    searchSymbols,
+    describePart,
     place,
     status,
     release: (dir) => deps.sessions.release(dir),

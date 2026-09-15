@@ -109,7 +109,7 @@ $coreVersion = ""
 if ($core -and (Test-Path $core)) { $coreVersion = (& $core version 2>&1 | Select-Object -First 1); Log "core: $coreVersion" }
 elseif ($core) { Err "core binary missing at $core" }
 
-$health = ""; $shot = ""; $launchMs = ""
+$health = ""; $pcbHealth = ""; $shot = ""; $launchMs = ""
 if ($exe -and (Test-Path $exe)) {
   $env:FABDESK_AUTOMATION = "1"; $env:FABDESK_UPDATE_CHECK = "0"
   $t0 = Get-Date
@@ -128,6 +128,17 @@ if ($exe -and (Test-Path $exe)) {
       try { $health = (Invoke-RestMethod -Headers $hdr -Uri "http://127.0.0.1:$($d.port)/health" | ConvertTo-Json -Compress); break } catch { Start-Sleep 1 }
     }
     if (-not $health) { Err "core /health did not answer on $($d.port)" }
+    $pcb = $null
+    for ($i = 0; $i -lt 30; $i++) {
+      try { $pcb = Invoke-RestMethod -Uri "http://127.0.0.1:4020/health"; break } catch { Start-Sleep 1 }
+    }
+    if (-not $pcb) { Err "PCB bridge /health did not answer on 4020" }
+    else {
+      $pcbHealth = $pcb | ConvertTo-Json -Compress -Depth 4
+      if ($pcb.name -ne "@fp-pcb/bridge" -or $pcb.kicadCliExists -ne $true) { Err "PCB bridge health is incomplete (KiCad unavailable)" }
+      $coreHealth = $health | ConvertFrom-Json
+      if ($coreHealth.channel -eq "internal" -and $pcb.jsAutorouter.ok -ne $true) { Err "internal PCB router is unavailable" }
+    }
     $launchMs = [int]((Get-Date) - $t0).TotalMilliseconds
     Start-Sleep 5
     if (Test-Path $bridge) {
@@ -146,7 +157,7 @@ if ($exe -and (Test-Path $exe)) {
 }
 
 $report = [ordered]@{ platform = "windows"; ok = ($errors.Count -eq 0); installer = $cfg.installer; install = $install
-  codesign = $codesign; core_version = $coreVersion; health = $health; screenshot = $shot; launch_ms = $launchMs; errors = $errors }
+  codesign = $codesign; core_version = $coreVersion; health = $health; pcb_health = $pcbHealth; screenshot = $shot; launch_ms = $launchMs; errors = $errors }
 $report | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $out "report.json")
 if ($reportUrl) {
   Get-ChildItem $out | ForEach-Object { Put $_.Name $_.FullName }

@@ -3,11 +3,19 @@
 `bun run dev` (from `apps/desktop`) runs electron-vite. Three processes are involved; each reloads
 differently.
 
-| You edit… | What happens | State kept |
-|---|---|---|
-| `packages/ui/**`, `apps/desktop/src/renderer/**` | Vite HMR. React component modules swap in place; changes to plain modules (stores, renderers, the `@fabdesk/ui` barrel) fall back to a full page reload. | Zustand `ui` store is persisted (`localStorage` key `fabdesk.ui`): project, thread, board tab, drafts, panel layout survive reloads. Cinema frames do not (they are re-fetched from `/route/runs/:id/frames`). |
-| `apps/core/**`, `packages/{tools,kicad,sim,agents,auth-client,protocol}/**` | The daemon runs under `bun --watch`: it restarts itself (~1 s) on a fixed dev port (`FABDESK_DEV_PORT`, default 47831) with the same token, prints a new ready line, and the Electron supervisor re-announces it. The renderer's SSE reconnects and queries refetch. | SQLite (threads, messages, runs, settings) persists. In-flight jobs, route runs, MCP sessions and running agent subprocesses are lost, same as a crash. |
-| `apps/desktop/src/main/**`, `src/preload/**` | electron-vite rebuilds and restarts Electron. The core keeps running (its parent watchdog allows 30 s) and the new main attaches to it via `daemon.json`. | Everything in the core; renderer state per the persisted store. |
+For PCB work, run `bun run dev:pcb` from the repository root. It finds the current-platform backend
+under `apps/desktop/release/**/resources/pcb/bundle.json`, starts that bundled headless backend with
+Fabdesk, and uses the isolated development profile. To use a bundle elsewhere, set
+`FABDESK_FP_PCB_BUNDLE=/absolute/path/to/bundle.json`. This is the normal fast loop; developers do
+not run the Linux image build to start Fabdesk. To iterate on the bridge/router itself while reusing
+the bundle's KiCad runtime and libraries, add `FABDESK_FP_PCB_SOURCE=/path/to/fab_pcb`; Fabdesk then
+runs the bridge from that checkout and owns its lifetime too.
+
+| You edit…                                                                   | What happens                                                                                                                                                                                                                                                         | State kept                                                                                                                                                                                                     |
+| --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/ui/**`, `apps/desktop/src/renderer/**`                            | Vite HMR. React component modules swap in place; changes to plain modules (stores, renderers, the `@fabdesk/ui` barrel) fall back to a full page reload.                                                                                                             | Zustand `ui` store is persisted (`localStorage` key `fabdesk.ui`): project, thread, board tab, drafts, panel layout survive reloads. Cinema frames do not (they are re-fetched from `/route/runs/:id/frames`). |
+| `apps/core/**`, `packages/{tools,kicad,sim,agents,auth-client,protocol}/**` | The daemon runs under `bun --watch`: it restarts itself (~1 s) on a fixed dev port (`FABDESK_DEV_PORT`, default 47831) with the same token, prints a new ready line, and the Electron supervisor re-announces it. The renderer's SSE reconnects and queries refetch. | SQLite (threads, messages, runs, settings) persists. In-flight jobs, route runs, MCP sessions and running agent subprocesses are lost, same as a crash.                                                        |
+| `apps/desktop/src/main/**`, `src/preload/**`                                | electron-vite rebuilds and restarts Electron. The core keeps running (its parent watchdog allows 30 s) and the new main attaches to it via `daemon.json`.                                                                                                            | Everything in the core; renderer state per the persisted store.                                                                                                                                                |
 
 Options (environment variables for `bun run dev`):
 
@@ -27,14 +35,14 @@ Unpackaged `bun run dev` is **fabPlane Dev**: a separate Electron identity so it
 alongside the packaged production app (same idea as VS Code Insiders). Isolation, applied before
 the single-instance lock and any `userData` read:
 
-| | Production (packaged) | fabPlane Dev (`!app.isPackaged`, or `FABDESK_DEV_PROFILE=1`) |
-|---|---|---|
-| Name / window title | fabPlane | fabPlane Dev |
-| `appUserModelId` | `com.tensorfleet.fabdesk` | `com.tensorfleet.fabdesk.dev` |
-| userData (lock, `daemon.json`, prefs) | `~/.config/fabPlane` (Linux) | `~/.config/fabPlane Dev` |
-| Core home (SQLite, credentials) | `~/.config/fabdesk` | `~/.config/fabdesk-dev` (`FABDESK_HOME`) |
-| Core port | random | `FABDESK_DEV_PORT` (default 47831) |
-| Linux WM_CLASS | fabPlane | `fabplane-dev` |
+|                                       | Production (packaged)        | fabPlane Dev (`!app.isPackaged`, or `FABDESK_DEV_PROFILE=1`) |
+| ------------------------------------- | ---------------------------- | ------------------------------------------------------------ |
+| Name / window title                   | fabPlane                     | fabPlane Dev                                                 |
+| `appUserModelId`                      | `com.tensorfleet.fabdesk`    | `com.tensorfleet.fabdesk.dev`                                |
+| userData (lock, `daemon.json`, prefs) | `~/.config/fabPlane` (Linux) | `~/.config/fabPlane Dev`                                     |
+| Core home (SQLite, credentials)       | `~/.config/fabdesk`          | `~/.config/fabdesk-dev` (`FABDESK_HOME`)                     |
+| Core port                             | random                       | `FABDESK_DEV_PORT` (default 47831)                           |
+| Linux WM_CLASS                        | fabPlane                     | `fabplane-dev`                                               |
 
 Production paths are unchanged. An explicit `FABDESK_HOME` is left alone. Each identity still
 allows only one instance of itself.

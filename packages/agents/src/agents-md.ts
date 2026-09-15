@@ -26,9 +26,9 @@ vias** (1.0 mm pad, 0.2 mm drill) and four 3.5 mm mounting holes. Copper is remo
   clusters centred on x = ±19 (y = ±8, ±10, ±12 rows plus a small diamond at y = 0) — blank frame, centre
   origin, +y up; the board's KiCad frame is x + 45, 27.5 − y. Free areas for parts: x in −12…12, or |x| > 26
   with |y| < 14. Keep 2 mm from the mounting holes at (±38.75, ±18.25).
-- The autoplacer packs parts into the top-left corner, onto the top via row. Check placement with the query
-  tool (components, vias) and \`verify_viagrid\`; a part on a via must be moved (in KiCad, or by unrouting and
-  rebuilding with a different board size is not an option — the blank is fixed).
+- Give every component an explicit \`board.placements\` entry in the KiCad frame (x = blank x + 45,
+  y = 27.5 − blank y). Use the free areas above, keep pads clear of factory vias and mounting holes,
+  then check with the query tool and \`verify_viagrid\`.
 - Prefer 0805 or larger SMD parts and 0.2 mm traces (blank rules: track 0.2 mm, clearance 0.2 mm).
 - After routing run \`verify_viagrid\`, then DRC; \`export_dxf\` writes the copper-removal artwork.`,
 };
@@ -97,19 +97,38 @@ ${sketches}
 {
   "netlist": {
     "components": [
-      { "ref": "R1", "value": "1k", "footprint": "Resistor_SMD:R_0402_1005Metric" },
-      { "ref": "D1", "value": "RED", "footprint": "LED_SMD:LED_0603_1608Metric", "fields": { "MPN": "..." } }
+      { "ref": "R1", "value": "1k", "footprint": "Resistor_SMD:R_0402_1005Metric", "libSource": { "lib": "Device", "part": "R" } },
+      { "ref": "D1", "value": "RED", "footprint": "LED_SMD:LED_0603_1608Metric", "libSource": { "lib": "Device", "part": "LED" }, "fields": { "MPN": "..." } }
     ],
     "nets": [
       { "name": "VCC", "nodes": [{ "ref": "R1", "pin": "1" }] },
-      { "name": "N1", "nodes": [{ "ref": "R1", "pin": "2" }, { "ref": "D1", "pin": "1" }] },
-      { "name": "GND", "nodes": [{ "ref": "D1", "pin": "2" }] }
+      { "name": "N1", "nodes": [{ "ref": "R1", "pin": "2" }, { "ref": "D1", "pin": "2" }] },
+      { "name": "GND", "nodes": [{ "ref": "D1", "pin": "1" }] }
     ]
   },
-  "board": { "widthMm": ${ctx.board.widthMm ?? 40}, "heightMm": ${ctx.board.heightMm ?? 30} }
+  "board": {
+    "widthMm": ${ctx.board.widthMm ?? 40},
+    "heightMm": ${ctx.board.heightMm ?? 30},
+    "copperLayers": ${ctx.board.layers},
+    "placements": [
+      { "ref": "R1", "position": { "x": 10, "y": 10 } },
+      { "ref": "D1", "position": { "x": 20, "y": 10 } }
+    ]
+  }
 }
 \`\`\`
 - \`footprint\` is a KiCad library id (\`Library:Name\`). Find real ones with the footprint search tool; never invent names.
+- \`libSource\` is the KiCad schematic symbol id split into \`lib\` and \`part\`. Search with
+  \`circuit_search_parts {"kind":"symbol","query":"resistor"}\`; supply it for every component so
+  builds produce searchable symbols and labelled wires. A missing or unknown symbol is a build warning.
+- Before assigning nets, inspect exact symbol pin names/types and footprint pads with
+  \`circuit_describe_part\`. Never guess polarity or pad numbering: KiCad \`Device:LED\` is pin 1
+  cathode (K), pin 2 anode (A). Use specific package-size searches such as \`R_0805_2012\` when
+  generic results are too broad.
+- \`board.placements\` is optional and uses absolute millimetres in the board frame (+x right, +y down).
+  Each point places the footprint library anchor; rotation is not currently an input. Supply positions
+  when placement matters. A rebuild moves only references explicitly listed there; manual placement
+  of other existing footprints is preserved. Inspect the result with \`circuit_query {"select":"components"}\`.
 - Every pin that carries a signal appears in exactly one net; a pin listed nowhere is left unconnected.
 - Reference prefixes matter: R/C/L/V/I/D are simulated by value; everything else is placed and routed only.
 - Keep values explicit (\`"4.7k"\`, \`"100nF"\`, \`"3.3V"\`).
@@ -117,8 +136,9 @@ ${sketches}
 ## Workflow
 1. Read the sketches and the prompt; read \`circuit.netlist.json\` if it exists.
 2. Write or edit \`circuit.netlist.json\`.
-3. Build with the \`${mcp}\` build tool; fix every error and rebuild until it passes. After changing
-   the board size, build with \`fresh: true\` — a build never redraws an outline that already exists.
+3. Search both footprint and symbol ids and describe their pins/pads before choosing them. Build with the \`${mcp}\` build tool;
+   fix every error and review every warning until it passes. After changing the board size, build with
+   \`fresh: true\` — a build never redraws an outline that already exists.
 4. Check the placement (\`circuit_query\` select=outline for the board's bounds, then components, or a
    render): the autoplacer packs parts into the top-left corner and can leave a connector across
    the outline. Move parts with \`circuit_place\` (KiCad board coordinates in mm, y down; the outline's
@@ -128,6 +148,8 @@ ${sketches}
 6. Run DRC. Fix what is yours: placement (\`circuit_place\`, then unroute and route again) and the
    netlist. Clearance, shorting or tracks-crossing errors between the autorouter's own tracks are the
    router's — report them by rule with counts and stop; do not try to repair tracks yourself.
+   The default build preserves compatible copper; use \`rebuild="clean"\` before a full reroute after
+   changing placement, outline or routing constraints.
 7. Render, then summarise what the board does, the parts used and any open issues. Render tools attach
    images directly in chat and return a \`fileUrl\` / \`url\` field. When the user asks for links, give
    those browser-openable \`file://\` URLs as plain text.

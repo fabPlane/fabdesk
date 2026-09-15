@@ -8,7 +8,7 @@ export const render_schematic_svg = defineTool({
   name: "render_schematic_svg",
   toolset: "render",
   title: "Render schematic SVG",
-  description: "Render board.kicad_sch to renders/schematic.svg with kicad-cli and return it. A compiled project has no drawn schematic (the netlist carries no geometry), so this only shows an imported one.",
+  description: "Render board.kicad_sch to renders/schematic.svg with kicad-cli and return it. circuit_build draws components that supply libSource and labelled wire stubs for their connected pins.",
   inputSchema: {},
   annotations: { readOnlyHint: true, idempotentHint: true },
   longRunning: true,

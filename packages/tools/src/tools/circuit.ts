@@ -32,24 +32,51 @@ export const circuit_query = defineTool({
 export const circuit_search_parts = defineTool({
   name: "circuit_search_parts",
   toolset: "circuit",
-  title: "Search footprint libraries",
+  title: "Search KiCad libraries",
   description:
-    "Search the KiCad footprint libraries the design server can see (e.g. 'R_0402', 'SOT-23', 'USB_C', 'LQFP-48') and return library ids to use as `footprint` in circuit.netlist.json, e.g. `Resistor_SMD:R_0402_1005Metric`.",
+    "Search the KiCad footprint or symbol libraries the design server can see. Footprint results go in component `footprint`; symbol results split at the colon into `libSource: {lib, part}` so circuit_build can draw the generated schematic.",
   inputSchema: {
     query: z.string().min(1).max(200),
+    kind: z.enum(["footprint", "symbol"]).default("footprint"),
     limit: z.number().int().min(1).max(50).default(10),
   },
   annotations: { readOnlyHint: true, idempotentHint: true },
   scope: "global",
-  handler: async ({ query, limit }, ctx) => {
-    const hits = await ctx.services.design.searchFootprints(query, limit);
+  handler: async ({ query, kind, limit }, ctx) => {
+    const hits = await (kind === "symbol"
+      ? ctx.services.design.searchSymbols(query, limit)
+      : ctx.services.design.searchFootprints(query, limit));
+    const label = kind === "symbol" ? "Symbols" : "Footprints";
     return ok(
       hits.length
-        ? `Footprints matching "${query}":\n${table(hits, ["libId", "description"])}`
-        : `No footprints match "${query}".`,
-      { query, hits },
+        ? `${label} matching "${query}":\n${table(hits, ["libId", "description"])}`
+        : `No ${kind} libraries match "${query}".`,
+      { query, kind, hits },
     );
   },
 });
 
-export const circuitTools = [circuit_query, circuit_search_parts];
+export const circuit_describe_part = defineTool({
+  name: "circuit_describe_part",
+  toolset: "circuit",
+  title: "Describe a KiCad part",
+  description:
+    "Inspect one exact KiCad symbol or footprint before wiring or placing it. Symbols return pin numbers, names and electrical types; footprints return pad numbers, anchor-relative positions and sizes in millimetres.",
+  inputSchema: {
+    kind: z.enum(["footprint", "symbol"]),
+    libId: z
+      .string()
+      .min(3)
+      .max(300)
+      .describe("Exact Library:Name returned by circuit_search_parts"),
+  },
+  annotations: { readOnlyHint: true, idempotentHint: true },
+  scope: "global",
+  handler: async ({ kind, libId }, ctx) => {
+    const part = await ctx.services.design.describePart(kind, libId);
+    const rows = kind === "symbol" ? (part.pins ?? []) : (part.pads ?? []);
+    return ok(`${kind} ${libId}: ${part.description || "(no description)"}\n${table(rows)}`, part);
+  },
+});
+
+export const circuitTools = [circuit_query, circuit_search_parts, circuit_describe_part];

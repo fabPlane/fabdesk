@@ -156,6 +156,9 @@ export function mockServices(
           message: `Autoroute (${opts.router}): 2 connections`,
           unrouted: [],
           log: [],
+          geometry: [
+            { kind: "trace", id: "track-1", layer: 3, net: 1, points: [0.5, 3, 4, 3], width: 0.25 },
+          ],
         };
       },
       cancelRoute: async () => {},
@@ -180,6 +183,32 @@ export function mockServices(
             description: `matches ${query}`,
           },
         ].slice(0, limit),
+      searchSymbols: async (query, limit) =>
+        [
+          { libId: "Device:R", nickname: "Device", name: "R", description: `matches ${query}` },
+        ].slice(0, limit),
+      describePart: async (kind, libId) =>
+        kind === "symbol"
+          ? {
+              kind,
+              libId,
+              description: "Resistor",
+              pins: [
+                {
+                  number: "1",
+                  name: "~",
+                  electricalType: "PT_PASSIVE",
+                  position: { x: -2.54, y: 0 },
+                },
+              ],
+            }
+          : {
+              kind,
+              libId,
+              description: "0402 resistor",
+              anchor: { x: 0, y: 0 },
+              pads: [{ number: "1", position: { x: -0.5, y: 0 }, size: { x: 0.6, y: 0.6 } }],
+            },
       status: async () => ({ url: "http://127.0.0.1:4020", ok: true, frontends: ["netlist-json"] }),
       release: async () => {},
     },

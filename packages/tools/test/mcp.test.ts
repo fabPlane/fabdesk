@@ -131,6 +131,12 @@ describe("mcp adapter", () => {
       name: "design_from_sketch",
       arguments: { project: project.id, requirements: "blink an LED" },
     });
-    expect((prompt.messages[0]!.content as { text: string }).text).toContain("blink an LED");
+    const promptText = (prompt.messages[0]!.content as { text: string }).text;
+    expect(promptText).toContain("blink an LED");
+    expect(promptText).toContain("run both render_schematic_svg and render_pcb_svg");
+    expect(promptText).toContain("verify_drc with schematicParity=true");
+    expect(promptText).toContain(
+      "Never claim the project passes when a required report is missing",
+    );
   });
 });

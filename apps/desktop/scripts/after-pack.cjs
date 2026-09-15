@@ -10,12 +10,23 @@
 const { execFileSync } = require("node:child_process");
 const { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } = require("node:fs");
 const { join } = require("node:path");
+const { Arch } = require("builder-util");
 
 function platformArch(context) {
   const platform = context.electronPlatformName; // darwin | linux | win32
-  const arch = context.arch === "arm64" ? "arm64" : "x64";
-  if (platform === "darwin") return { dir: `darwin-${arch}`, resources: join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`, "Contents", "Resources") };
-  if (platform === "win32") return { dir: `windows-${arch}`, resources: join(context.appOutDir, "resources") };
+  const arch = context.arch === Arch.arm64 || context.arch === "arm64" ? "arm64" : "x64";
+  if (platform === "darwin")
+    return {
+      dir: `darwin-${arch}`,
+      resources: join(
+        context.appOutDir,
+        `${context.packager.appInfo.productFilename}.app`,
+        "Contents",
+        "Resources",
+      ),
+    };
+  if (platform === "win32")
+    return { dir: `windows-${arch}`, resources: join(context.appOutDir, "resources") };
   return { dir: `linux-${arch}`, resources: join(context.appOutDir, "resources") };
 }
 
@@ -26,12 +37,16 @@ function stageRoot(context) {
 function copyBundledKicad(context) {
   const src = stageRoot(context);
   if (!existsSync(src) || !statSync(src).isDirectory()) {
-    console.warn(`after-pack: no staged KiCad at ${src} (run scripts/stage-kicad-bundle.ts before packaging)`);
+    const message = `after-pack: no staged KiCad at ${src} (run scripts/stage-kicad-bundle.ts before packaging)`;
+    if (process.env.FABDESK_REQUIRE_KICAD_BUNDLE === "true") throw new Error(message);
+    console.warn(message);
     return null;
   }
   const entries = readdirSync(src).filter((n) => n !== ".gitkeep" && n !== "README.md");
   if (entries.length === 0) {
-    console.warn(`after-pack: staged KiCad dir ${src} is empty`);
+    const message = `after-pack: staged KiCad dir ${src} is empty`;
+    if (process.env.FABDESK_REQUIRE_KICAD_BUNDLE === "true") throw new Error(message);
+    console.warn(message);
     return null;
   }
   const { resources } = platformArch(context);
@@ -57,6 +72,24 @@ module.exports = async function afterPack(context) {
   const bundleId = context.packager.appInfo.id ?? "com.tensorfleet.fabdesk";
   const entitlements = join(__dirname, "..", "build", "entitlements.mac.plist");
   console.log(`after-pack: ad-hoc signing ${appName} as ${bundleId}`);
-  execFileSync("codesign", ["--force", "--deep", "--sign", "-", "--identifier", bundleId, "--entitlements", entitlements, "--options", "runtime", appPath], { stdio: "inherit" });
+  execFileSync(
+    "codesign",
+    [
+      "--force",
+      "--deep",
+      "--sign",
+      "-",
+      "--identifier",
+      bundleId,
+      "--entitlements",
+      entitlements,
+      "--options",
+      "runtime",
+      appPath,
+    ],
+    { stdio: "inherit" },
+  );
   execFileSync("codesign", ["--verify", "--deep", "--strict", appPath], { stdio: "inherit" });
 };
+
+module.exports.platformArch = platformArch;

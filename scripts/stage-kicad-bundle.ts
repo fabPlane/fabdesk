@@ -32,10 +32,9 @@ export type Target = (typeof TARGETS)[number];
 export const DEFAULT_KICAD_REPO = "TensorFleet/kicad";
 export const DEFAULT_KICAD_RELEASE = "nightly";
 
-/** Treat blank env values as unset so GitHub Actions `vars.X` / empty secrets do not wipe defaults. */
-function envOr(name: string, fallback: string): string {
-  const v = process.env[name]?.trim();
-  return v ? v : fallback;
+/** GitHub Actions exposes unset repository variables as empty strings. */
+export function nonEmptySetting(value: string | undefined, fallback: string): string {
+  return value?.trim() || fallback;
 }
 
 /** Nightly manifest / asset platform keys ↔ fabdesk package targets. */
@@ -53,7 +52,8 @@ const flag = (k: string): string | undefined => {
 };
 
 function hostTarget(): Target {
-  const os = process.platform === "win32" ? "windows" : process.platform === "darwin" ? "darwin" : "linux";
+  const os =
+    process.platform === "win32" ? "windows" : process.platform === "darwin" ? "darwin" : "linux";
   const arch = process.arch === "arm64" ? "arm64" : "x64";
   return `bun-${os}-${arch}` as Target;
 }
@@ -89,7 +89,9 @@ export type NightlyManifest = {
 
 export function nightlyAssetName(target: Target): string {
   const platform = NIGHTLY_PLATFORM_BY_TARGET[target];
-  return targetOs(target) === "windows" ? `kicad-cli-${platform}.zip` : `kicad-cli-${platform}.tar.gz`;
+  return targetOs(target) === "windows"
+    ? `kicad-cli-${platform}.zip`
+    : `kicad-cli-${platform}.tar.gz`;
 }
 
 /** Pick a release asset by name when no manifest is available. */
@@ -101,7 +103,12 @@ export function pickKicadReleaseAsset(assets: ReleaseAsset[], target: Target): R
   const platform = NIGHTLY_PLATFORM_BY_TARGET[target];
   const os = targetOs(target);
   const arch = targetArch(target);
-  const platformTokens = os === "darwin" ? ["darwin", "macos", "osx"] : os === "windows" ? ["windows", "win64", "win32"] : ["linux"];
+  const platformTokens =
+    os === "darwin"
+      ? ["darwin", "macos", "osx"]
+      : os === "windows"
+        ? ["windows", "win64", "win32"]
+        : ["linux"];
   const archTokens = arch === "arm64" ? ["arm64", "aarch64"] : ["x64", "x86_64", "amd64", "x86-64"];
   const scored = assets
     .filter((a) => /\.(tar\.gz|tgz|zip)$/i.test(a.name))
@@ -139,7 +146,10 @@ async function githubJson<T>(url: string, token?: string): Promise<T> {
 }
 
 async function fetchText(url: string, token?: string): Promise<string> {
-  const headers: Record<string, string> = { "User-Agent": "fabdesk-stage-kicad-bundle", Accept: "*/*" };
+  const headers: Record<string, string> = {
+    "User-Agent": "fabdesk-stage-kicad-bundle",
+    Accept: "*/*",
+  };
   if (token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(url, { headers, redirect: "follow" });
   if (!res.ok) throw new Error(`download failed ${res.status} ${url}`);
@@ -187,7 +197,9 @@ function findCli(root: string, os: string): string | null {
 async function assertTree(root: string, os: string): Promise<string> {
   const cli = findCli(root, os);
   if (!cli) {
-    throw new Error(`KiCad tree at ${root} is missing kicad-cli (tried ${expectedCliCandidates(root, os).join(", ")})`);
+    throw new Error(
+      `KiCad tree at ${root} is missing kicad-cli (tried ${expectedCliCandidates(root, os).join(", ")})`,
+    );
   }
   return cli;
 }
@@ -195,7 +207,10 @@ async function assertTree(root: string, os: string): Promise<string> {
 /** True when the staged tree already matches the packager layout (top-level launcher file). */
 function isCanonicalLayout(stageDir: string, os: string): boolean {
   if (os === "windows") {
-    return isCliFile(join(stageDir, "bin", "kicad-cli.exe")) || isCliFile(join(stageDir, "kicad-cli.exe"));
+    return (
+      isCliFile(join(stageDir, "bin", "kicad-cli.exe")) ||
+      isCliFile(join(stageDir, "kicad-cli.exe"))
+    );
   }
   if (os === "darwin" && isCliFile(join(stageDir, "KiCad.app", "Contents", "MacOS", "kicad-cli"))) {
     return true;
@@ -240,12 +255,20 @@ export async function flattenIfNeeded(stageDir: string, os: string): Promise<voi
   await promoteContents(only, stageDir);
 }
 
-async function extractArchive(buf: Buffer, stageDir: string, kind: "zip" | "tar.gz", os: string): Promise<string> {
+async function extractArchive(
+  buf: Buffer,
+  stageDir: string,
+  kind: "zip" | "tar.gz",
+  os: string,
+): Promise<string> {
   await rm(stageDir, { recursive: true, force: true });
   await mkdir(stageDir, { recursive: true });
   const archive = join(stageDir, kind === "zip" ? "_bundle.zip" : "_bundle.tar.gz");
   await writeFile(archive, buf);
-  const extract = kind === "zip" ? ["unzip", "-q", archive, "-d", stageDir] : ["tar", "-xzf", archive, "-C", stageDir];
+  const extract =
+    kind === "zip"
+      ? ["unzip", "-q", archive, "-d", stageDir]
+      : ["tar", "-xzf", archive, "-C", stageDir];
   const proc = Bun.spawn(extract, { stdout: "inherit", stderr: "inherit" });
   if ((await proc.exited) !== 0) throw new Error(`extract failed for ${archive}`);
   await rm(archive, { force: true });
@@ -261,7 +284,10 @@ async function downloadUrl(
   expectSha256?: string,
 ): Promise<string> {
   process.stderr.write(`▸ downloading ${url}\n`);
-  const headers: Record<string, string> = { "User-Agent": "fabdesk-stage-kicad-bundle", Accept: "application/octet-stream" };
+  const headers: Record<string, string> = {
+    "User-Agent": "fabdesk-stage-kicad-bundle",
+    Accept: "application/octet-stream",
+  };
   if (token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(url, { headers, redirect: "follow" });
   if (!res.ok) throw new Error(`download failed ${res.status} ${url}`);
@@ -294,9 +320,19 @@ export async function nightlyKicadDownloadUrl(opts: {
   token?: string;
   fetchJson?: typeof githubJson;
   fetchText?: typeof fetchText;
-}): Promise<{ tag: string; name: string; url: string; sha256?: string; commit?: string; version?: string }> {
-  const repo = opts.repo ?? envOr("FABDESK_KICAD_REPO", DEFAULT_KICAD_REPO);
-  const releaseTag = opts.release ?? envOr("FABDESK_KICAD_RELEASE", DEFAULT_KICAD_RELEASE);
+}): Promise<{
+  tag: string;
+  name: string;
+  url: string;
+  sha256?: string;
+  commit?: string;
+  version?: string;
+}> {
+  const repo = nonEmptySetting(opts.repo ?? process.env["FABDESK_KICAD_REPO"], DEFAULT_KICAD_REPO);
+  const releaseTag = nonEmptySetting(
+    opts.release ?? process.env["FABDESK_KICAD_RELEASE"],
+    DEFAULT_KICAD_RELEASE,
+  );
   const token = opts.token ?? process.env["GITHUB_TOKEN"] ?? process.env["GH_TOKEN"];
   const fetchJson = opts.fetchJson ?? githubJson;
   const fetchTxt = opts.fetchText ?? fetchText;
@@ -313,8 +349,10 @@ export async function nightlyKicadDownloadUrl(opts: {
         name: asset.file ?? nightlyAssetName(opts.target),
         url: asset.url,
         ...(asset.sha256 ? { sha256: asset.sha256 } : {}),
-        ...(asset.commit ?? manifest.commit ? { commit: asset.commit ?? manifest.commit } : {}),
-        ...(asset.version ?? manifest.version ? { version: asset.version ?? manifest.version } : {}),
+        ...((asset.commit ?? manifest.commit) ? { commit: asset.commit ?? manifest.commit } : {}),
+        ...((asset.version ?? manifest.version)
+          ? { version: asset.version ?? manifest.version }
+          : {}),
       };
     }
   } catch (e) {
@@ -344,7 +382,8 @@ async function main(): Promise<void> {
   const arch = targetArch(target);
   const fromArg = flag("--from") ?? process.env["FABDESK_KICAD_BUNDLE"];
   const urlTpl = process.env["FABDESK_KICAD_BUNDLE_URL"];
-  const requireSource = argv.includes("--require") || process.env["FABDESK_KICAD_BUNDLE_REQUIRED"] === "1";
+  const requireSource =
+    argv.includes("--require") || process.env["FABDESK_KICAD_BUNDLE_REQUIRED"] === "1";
 
   const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
   const stageDir = join(repoRoot, "apps/desktop/kicad-bundle", `${os}-${arch}`);
@@ -365,7 +404,7 @@ async function main(): Promise<void> {
     try {
       const dl = await nightlyKicadDownloadUrl({ target, ...(token ? { token } : {}) });
       process.stderr.write(
-        `▸ ${envOr("FABDESK_KICAD_REPO", DEFAULT_KICAD_REPO)}@${dl.tag} → ${dl.name}` +
+        `▸ ${nonEmptySetting(process.env["FABDESK_KICAD_REPO"], DEFAULT_KICAD_REPO)}@${dl.tag} → ${dl.name}` +
           (dl.commit ? ` (${dl.commit.slice(0, 10)})` : "") +
           "\n",
       );
@@ -374,7 +413,9 @@ async function main(): Promise<void> {
       const msg = e instanceof Error ? e.message : String(e);
       if (!requireSource) {
         process.stderr.write(`stage-kicad-bundle: ${msg}\n`);
-        process.stderr.write(`stage-kicad-bundle: leaving ${stageDir} untouched (pass --require to fail)\n`);
+        process.stderr.write(
+          `stage-kicad-bundle: leaving ${stageDir} untouched (pass --require to fail)\n`,
+        );
         process.exit(0);
       }
       throw e;
