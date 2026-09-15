@@ -9,13 +9,7 @@
  * `Canvas2D` interface below: the desktop hands it a `CanvasRenderingContext2D`, the phone a Skia
  * adapter (`apps/mobile/src/components/CinemaSkia.ts`). Nothing here may touch the DOM.
  */
-import type {
-  CinemaShape,
-  RouteFrame,
-  RouteFrameLine,
-  RouteMeta,
-  RouteResult,
-} from "@fabdesk/protocol";
+import type { CinemaShape, RouteFrame, RouteFrameLine, RouteMeta, RouteResult } from "@fabdesk/protocol";
 
 export interface CinemaRun {
   runId: string;
@@ -135,12 +129,7 @@ export function computeBounds(run: CinemaRun): Bounds | null {
 }
 
 /** Board y up → canvas y down, 94% fit, centred. */
-export function computeTransform(
-  bounds: Bounds,
-  width: number,
-  height: number,
-  margin = 0.94,
-): Transform {
+export function computeTransform(bounds: Bounds, width: number, height: number, margin = 0.94): Transform {
   const bw = bounds.x2 - bounds.x1 || 1;
   const bh = bounds.y2 - bounds.y1 || 1;
   const scale = margin * Math.min(width / bw, height / bh);
@@ -154,10 +143,7 @@ export function toCanvas(t: Transform, x: number, y: number): [number, number] {
 }
 
 /** Shapes in `current` whose ids do not appear in `previous` (the copper drawn in white). */
-export function newShapeIds(
-  previous: readonly CinemaShape[] | undefined,
-  current: readonly CinemaShape[],
-): Set<number> {
+export function newShapeIds(previous: readonly CinemaShape[] | undefined, current: readonly CinemaShape[]): Set<number> {
   const prevIds = new Set<number>();
   if (previous) for (const s of previous) prevIds.add(s.id);
   const out = new Set<number>();
@@ -182,17 +168,12 @@ export function perfStatusText(perf: PerfReadout, shapes?: number): string {
 }
 
 export function frameStatusText(run: CinemaRun, cursor: number): string {
-  if (cursor < 0 || run.frames.length === 0)
-    return run.meta ? "waiting for frames…" : "no routing run yet";
+  if (cursor < 0 || run.frames.length === 0) return run.meta ? "waiting for frames…" : "no routing run yet";
   const frame = run.frames[cursor];
   if (!frame) return "";
   const e = frame.event;
   const evicted = run.evicted ?? 0;
-  const parts = [
-    evicted > 0
-      ? `frame ${frame.seq}/${run.frames[run.frames.length - 1]!.seq} (${run.frames.length} kept)`
-      : `frame ${cursor + 1}/${run.frames.length}`,
-  ];
+  const parts = [evicted > 0 ? `frame ${frame.seq}/${run.frames[run.frames.length - 1]!.seq} (${run.frames.length} kept)` : `frame ${cursor + 1}/${run.frames.length}`];
   let desc = e.kind;
   if (e.passNo !== undefined) desc += ` pass ${e.passNo}`;
   if (e.netNumber !== undefined) desc += ` net ${e.netNumber}`;
@@ -232,11 +213,7 @@ export const AIRLINE_COLOR = "#facc15";
  * Age of each shape in the frame at `cursor`: 0 = new in this frame, 1 = new in the previous one, …
  * up to `window`. Shapes older than the window are absent (they are settled copper).
  */
-export function recentShapeAges(
-  run: CinemaRun,
-  cursor: number,
-  window = RECENT_WINDOW,
-): Map<number, number> {
+export function recentShapeAges(run: CinemaRun, cursor: number, window = RECENT_WINDOW): Map<number, number> {
   const ages = new Map<number, number>();
   const current = cursor >= 0 ? run.frames[cursor] : undefined;
   if (!current) return ages;
@@ -247,8 +224,7 @@ export function recentShapeAges(
     const frame = run.frames[idx];
     const older = idx > 0 ? run.frames[idx - 1]?.shapes : undefined;
     if (!frame) break;
-    for (const id of newShapeIds(older, frame.shapes))
-      if (present.has(id) && !ages.has(id)) ages.set(id, age);
+    for (const id of newShapeIds(older, frame.shapes)) if (present.has(id) && !ages.has(id)) ages.set(id, age);
   }
   return ages;
 }
@@ -258,12 +234,7 @@ export function recentShapeAges(
  * and no smaller than `minSizeMm`, quantised so the view only moves when the work moves. Falls back
  * to all router copper, then to the board.
  */
-export function activityBounds(
-  run: CinemaRun,
-  cursor: number,
-  board: Bounds,
-  opts?: { minSizeMm?: number; padding?: number; window?: number },
-): Bounds {
+export function activityBounds(run: CinemaRun, cursor: number, board: Bounds, opts?: { minSizeMm?: number; padding?: number; window?: number }): Bounds {
   const frame = cursor >= 0 ? run.frames[cursor] : undefined;
   if (!frame) return board;
   const upm = run.meta?.unitsPerMm ?? 1;
@@ -280,8 +251,7 @@ export function activityBounds(
   };
   const copper = frame.shapes.filter(isRouterCopper);
   const shapes = ages.size > 0 ? copper.filter((s) => ages.has(s.id)) : copper;
-  for (const s of shapes)
-    for (let i = 0; i + 1 < s.pts.length; i += 2) visit(s.pts[i] ?? 0, s.pts[i + 1] ?? 0);
+  for (const s of shapes) for (let i = 0; i + 1 < s.pts.length; i += 2) visit(s.pts[i] ?? 0, s.pts[i + 1] ?? 0);
   const air = frame.event.airline;
   if (air) {
     visit(air.from.x, air.from.y);
@@ -382,25 +352,15 @@ function drawShape(
   ctx.globalAlpha = 1;
 }
 
+
 /** Static draw order: pours/areas first, then keepouts, copper and pads on top. */
 function orderedStatics(statics: readonly CinemaShape[]): CinemaShape[] {
-  const rank = (s: CinemaShape) =>
-    s.k === "area" ? 0 : s.k === "keepout" ? 1 : s.k === "trace" ? 2 : s.k === "via" ? 3 : 4;
+  const rank = (s: CinemaShape) => (s.k === "area" ? 0 : s.k === "keepout" ? 1 : s.k === "trace" ? 2 : s.k === "via" ? 3 : 4);
   return [...statics].sort((a, b) => rank(a) - rank(b));
 }
 
 /** Draws the static board (outline, pads, keepouts, pre-routed copper) onto `ctx`. */
-export function drawStatics(
-  ctx: Canvas2D,
-  run: CinemaRun,
-  t: Transform,
-  hidden: ReadonlySet<number>,
-  bounds: Bounds,
-  width: number,
-  height: number,
-  theme: Theme,
-  dim = false,
-): void {
+export function drawStatics(ctx: Canvas2D, run: CinemaRun, t: Transform, hidden: ReadonlySet<number>, bounds: Bounds, width: number, height: number, theme: Theme, dim = false): void {
   ctx.globalAlpha = 1;
   ctx.fillStyle = theme.background;
   ctx.fillRect(0, 0, width, height);
@@ -413,8 +373,7 @@ export function drawStatics(
   // faint tint (a 20k-vertex GND pour arrives as thousands of overlapping boxes).
   const ordered = orderedStatics(run.statics);
   let i = 0;
-  for (; i < ordered.length && ordered[i]!.k === "area"; i += 1)
-    drawShape(ctx, ordered[i]!, t, hidden, layerColor(ordered[i]!.layer), 1);
+  for (; i < ordered.length && ordered[i]!.k === "area"; i += 1) drawShape(ctx, ordered[i]!, t, hidden, layerColor(ordered[i]!.layer), 1);
   if (i > 0) {
     ctx.globalAlpha = dim ? 0.96 : 0.9;
     ctx.fillStyle = theme.background;
@@ -427,14 +386,7 @@ export function drawStatics(
   const k = dim ? 0.38 : 1;
   for (; i < ordered.length; i += 1) {
     const s = ordered[i]!;
-    drawShape(
-      ctx,
-      s,
-      t,
-      hidden,
-      s.k === "pad" ? PAD_COLOR : layerColor(s.layer),
-      (s.k === "trace" ? 0.35 : 0.5) * k,
-    );
+    drawShape(ctx, s, t, hidden, s.k === "pad" ? PAD_COLOR : layerColor(s.layer), (s.k === "trace" ? 0.35 : 0.5) * k);
   }
 }
 
@@ -455,10 +407,7 @@ export function drawAirline(ctx: Canvas2D, frame: RouteFrame, t: Transform): voi
   ctx.lineTo(x2, y2);
   ctx.stroke();
   ctx.setLineDash?.([]);
-  for (const [x, y] of [
-    [x1, y1],
-    [x2, y2],
-  ] as const) {
+  for (const [x, y] of [[x1, y1], [x2, y2]] as const) {
     ctx.beginPath();
     ctx.arc(x, y, 4, 0, Math.PI * 2);
     ctx.fill();
@@ -467,14 +416,7 @@ export function drawAirline(ctx: Canvas2D, frame: RouteFrame, t: Transform): voi
 }
 
 /** Recently added copper: this frame's in white with a glow, the last few frames' in amber, fading. */
-export function drawRecent(
-  ctx: Canvas2D,
-  shapes: readonly CinemaShape[],
-  ages: ReadonlyMap<number, number>,
-  t: Transform,
-  hidden: ReadonlySet<number>,
-  window = RECENT_WINDOW,
-): void {
+export function drawRecent(ctx: Canvas2D, shapes: readonly CinemaShape[], ages: ReadonlyMap<number, number>, t: Transform, hidden: ReadonlySet<number>, window = RECENT_WINDOW): void {
   for (const s of shapes) {
     if (!isRouterCopper(s)) continue;
     const age = ages.get(s.id);
@@ -483,15 +425,7 @@ export function drawRecent(
       drawShape(ctx, s, t, hidden, NEW_COPPER_COLOR, 0.35, 7);
       drawShape(ctx, s, t, hidden, NEW_COPPER_COLOR, 1, 2.5);
     } else {
-      drawShape(
-        ctx,
-        s,
-        t,
-        hidden,
-        RECENT_COPPER_COLOR,
-        Math.max(0.45, 1 - age / (window + 1)),
-        2.5,
-      );
+      drawShape(ctx, s, t, hidden, RECENT_COPPER_COLOR, Math.max(0.45, 1 - age / (window + 1)), 2.5);
     }
   }
 }
@@ -502,24 +436,12 @@ export function isRouterCopper(s: CinemaShape): boolean {
 }
 
 /** Draws routed copper shapes in layer colours (the settled copper layer). */
-export function drawCopper(
-  ctx: Canvas2D,
-  shapes: readonly CinemaShape[],
-  t: Transform,
-  hidden: ReadonlySet<number>,
-): void {
-  for (const s of shapes)
-    if (isRouterCopper(s)) drawShape(ctx, s, t, hidden, layerColor(s.layer), 1, 2);
+export function drawCopper(ctx: Canvas2D, shapes: readonly CinemaShape[], t: Transform, hidden: ReadonlySet<number>): void {
+  for (const s of shapes) if (isRouterCopper(s)) drawShape(ctx, s, t, hidden, layerColor(s.layer), 1, 2);
 }
 
 /** Draws the copper new in this frame in white on top. */
-export function drawFresh(
-  ctx: Canvas2D,
-  shapes: readonly CinemaShape[],
-  fresh: ReadonlySet<number>,
-  t: Transform,
-  hidden: ReadonlySet<number>,
-): void {
+export function drawFresh(ctx: Canvas2D, shapes: readonly CinemaShape[], fresh: ReadonlySet<number>, t: Transform, hidden: ReadonlySet<number>): void {
   for (const s of shapes) if (fresh.has(s.id)) drawShape(ctx, s, t, hidden, NEW_COPPER_COLOR, 1);
 }
 
@@ -527,10 +449,7 @@ export function drawFresh(
  * True when `current` only adds shapes to `previous` (same ids kept, same geometry assumed):
  * the live-follow case, where the copper layer can be extended instead of redrawn.
  */
-export function isSuperset(
-  previous: readonly CinemaShape[] | undefined,
-  current: readonly CinemaShape[],
-): boolean {
+export function isSuperset(previous: readonly CinemaShape[] | undefined, current: readonly CinemaShape[]): boolean {
   if (!previous) return false;
   if (current.length < previous.length) return false;
   const ids = new Set<number>();
@@ -572,52 +491,24 @@ export class CinemaPainter {
     this.#copperFrameIndex = -1;
   }
 
-  paint(
-    ctx: OffscreenLike,
-    opts: DrawOptions,
-  ): {
-    transform: Transform | null;
-    shapes: number;
-    staticsRedrawn: boolean;
-    copperRedrawn: boolean;
-    copperExtended: number;
-  } {
+  paint(ctx: OffscreenLike, opts: DrawOptions): { transform: Transform | null; shapes: number; staticsRedrawn: boolean; copperRedrawn: boolean; copperExtended: number } {
     const theme = opts.theme ?? DARK_THEME;
     const bounds = computeBounds(opts.run);
     ctx.globalAlpha = 1;
     if (!bounds) {
       ctx.fillStyle = theme.background;
       ctx.fillRect(0, 0, opts.width, opts.height);
-      return {
-        transform: null,
-        shapes: 0,
-        staticsRedrawn: false,
-        copperRedrawn: false,
-        copperExtended: 0,
-      };
+      return { transform: null, shapes: 0, staticsRedrawn: false, copperRedrawn: false, copperExtended: 0 };
     }
     const frameShown = opts.cursor >= 0 && opts.run.frames[opts.cursor] !== undefined;
     const focus = opts.focus ?? frameShown;
-    const view =
-      opts.view === "activity" && frameShown
-        ? activityBounds(opts.run, opts.cursor, bounds)
-        : bounds;
+    const view = opts.view === "activity" && frameShown ? activityBounds(opts.run, opts.cursor, bounds) : bounds;
     const t = computeTransform(view, opts.width, opts.height);
     const hiddenKey = [...opts.hiddenLayers].sort().join(",");
     const staticsKey = `${opts.run.runId}|${opts.width}x${opts.height}|${t.scale}|${t.ox},${t.oy}|${hiddenKey}|${theme.background}|${opts.run.statics.length}|${focus}`;
     let staticsRedrawn = false;
     if (staticsKey !== this.#staticsKey) {
-      drawStatics(
-        this.canvases.statics,
-        opts.run,
-        t,
-        opts.hiddenLayers,
-        view,
-        opts.width,
-        opts.height,
-        theme,
-        focus,
-      );
+      drawStatics(this.canvases.statics, opts.run, t, opts.hiddenLayers, view, opts.width, opts.height, theme, focus);
       this.#staticsKey = staticsKey;
       staticsRedrawn = true;
     }
@@ -632,10 +523,7 @@ export class CinemaPainter {
     const previous = opts.cursor > 0 ? opts.run.frames[opts.cursor - 1]?.shapes : undefined;
     let copperRedrawn = false;
     let copperExtended = 0;
-    const sequential =
-      copperKey === this.#copperKey &&
-      this.#copperFrameIndex === opts.cursor - 1 &&
-      staticsRedrawn === false;
+    const sequential = copperKey === this.#copperKey && this.#copperFrameIndex === opts.cursor - 1 && staticsRedrawn === false;
     if (sequential && isSuperset(previous, frame.shapes)) {
       // Live follow: only the shapes that are new since the last painted frame go onto the copper layer.
       const delta = frame.shapes.filter((s) => !this.#copperIds.has(s.id));
@@ -653,13 +541,7 @@ export class CinemaPainter {
     ctx.drawImage(this.canvases.image("copper"), 0, 0);
     drawRecent(ctx, frame.shapes, recentShapeAges(opts.run, opts.cursor), t, opts.hiddenLayers);
     drawAirline(ctx, frame, t);
-    return {
-      transform: t,
-      shapes: opts.run.statics.length + frame.shapes.length,
-      staticsRedrawn,
-      copperRedrawn,
-      copperExtended,
-    };
+    return { transform: t, shapes: opts.run.statics.length + frame.shapes.length, staticsRedrawn, copperRedrawn, copperExtended };
   }
 }
 
@@ -673,8 +555,7 @@ export function drawScene(ctx: Canvas2D, opts: DrawOptions): Transform | null {
   if (!bounds) return null;
   const frame = opts.cursor >= 0 ? opts.run.frames[opts.cursor] : undefined;
   const focus = opts.focus ?? frame !== undefined;
-  const view =
-    opts.view === "activity" && frame ? activityBounds(opts.run, opts.cursor, bounds) : bounds;
+  const view = opts.view === "activity" && frame ? activityBounds(opts.run, opts.cursor, bounds) : bounds;
   const t = computeTransform(view, opts.width, opts.height);
   drawStatics(ctx, opts.run, t, opts.hiddenLayers, view, opts.width, opts.height, theme, focus);
   if (!frame) return t;
