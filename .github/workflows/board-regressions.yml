@@ -65,7 +65,6 @@ jobs:
           repository: fabPlane/fab_router
           ref: ${{ steps.router.outputs.commit }}
           path: .ci-private/fab_router
-          token: ${{ secrets.FAB_PCB_RELEASE_TOKEN }}
           persist-credentials: false
           sparse-checkout: |
             package.json
