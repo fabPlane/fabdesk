@@ -34,7 +34,7 @@ export const circuit_search_parts = defineTool({
   toolset: "circuit",
   title: "Search KiCad libraries",
   description:
-    "Search the KiCad footprint or symbol libraries the design server can see. Footprint results go in component `footprint`; symbol results split at the colon into `libSource: {lib, part}` so circuit_build can draw the generated schematic.",
+    "Search the KiCad symbol or footprint libraries available to the native design server. Returns exact library identifiers for native schematic and PCB operations.",
   inputSchema: {
     query: z.string().min(1).max(200),
     kind: z.enum(["footprint", "symbol"]).default("footprint"),

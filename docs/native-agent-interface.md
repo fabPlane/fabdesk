@@ -29,27 +29,37 @@ The remaining custom JSON path is compatibility-only: `circuit_build` consumes i
 
 ## Morning test
 
-From this worktree:
+The prepared test launcher uses an isolated state database and project root:
+
+- State: `/home/shane/fabdesk-native-agent-test/state`
+- Projects: `/home/shane/fabdesk-native-agent-test/projects`
+- Source: `/home/shane/fabdesk-agent-freedom-visual-geometry`
+
+It deliberately does not use `/home/shane/fabdesk`, which is a source checkout even though it is
+also the application's historical default project path.
+
+Build and install the prototype once:
 
 ```bash
 cd /home/shane/fabdesk-agent-freedom-visual-geometry
 bun install --frozen-lockfile
 bun run typecheck
 bun test packages/tools/test/registry.test.ts packages/tools/test/mcp.test.ts apps/core/src/tool-cli.test.ts apps/core/test/http.test.ts
-bun run dev
-```
-
-In the app, create a fresh project and give Codex a normal PCB request. Confirm that the project
-starts without `circuit.netlist.json`, the agent can create native files, and the run uses
-`pcb_inspect`/`render_view` for local inspection. Existing projects with a custom netlist remain
-readable through the compatibility catalog.
-
-Build and install the local CLI symlinks once before testing script-driven agent behavior:
-
-```bash
 bun run build:core
 apps/core/dist/linux-x64/fabdesk-core install-cli
 ```
+
+Then launch the bundled KiCad/FabPCB runtime with the prototype source:
+
+```bash
+/home/shane/fabdesk-evals/bin/run-native-agent-test
+```
+
+In the app, create a fresh project named `Native Agent Test` and give Codex a normal PCB request.
+Do not reuse an evaluation project. Confirm that the project
+starts without `circuit.netlist.json`, the agent can create native files, and the run uses
+`pcb_inspect`/`render_view` for local inspection. Existing projects with a custom netlist remain
+readable through the compatibility catalog.
 
 Inside a running agent session, the app then provides the required URL, token, and project
 environment variables. The agent (or a shell script it writes) can use:

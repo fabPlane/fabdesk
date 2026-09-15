@@ -7,6 +7,13 @@ import { ToolError, createRegistry, defineTool, jailPath, toCallToolResult, tool
 import { contextFactory, mockServices, tempProject } from "./mock-services";
 
 describe("registry", () => {
+  test("native part search guidance does not steer agents to the legacy compiler", () => {
+    const tool = createRegistry().get("circuit_search_parts");
+    expect(tool?.description).toContain("native schematic and PCB operations");
+    expect(tool?.description).not.toContain("circuit_build");
+    expect(tool?.description).not.toContain("libSource");
+  });
+
   test("v1 tool set and naming", () => {
     const reg = createRegistry();
     const names = reg.list().map((t) => t.name);
