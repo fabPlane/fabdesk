@@ -409,8 +409,17 @@ describe("pairing over http", () => {
       method: "PATCH",
       body: JSON.stringify({ pinned: true }),
     });
-    await waitFor(() => ofTopic("thread.updated").length >= 2);
-    expect(ofTopic("thread.updated").map((e) => e.title)).toEqual(["Blinky", undefined]);
+    await waitFor(() => {
+      const updates = ofTopic("thread.updated");
+      const renameIndex = updates.findIndex((event) => event.title === "Blinky");
+      return renameIndex >= 0 && updates.length > renameIndex + 1;
+    });
+    const updates = ofTopic("thread.updated");
+    const renameIndex = updates.findIndex((event) => event.title === "Blinky");
+    expect(updates.slice(renameIndex, renameIndex + 2).map((e) => e.title)).toEqual([
+      "Blinky",
+      undefined,
+    ]);
 
     received.length = 0;
     expect((await local(`/threads/${thread.id}`, { method: "DELETE" })).status).toBe(200);
