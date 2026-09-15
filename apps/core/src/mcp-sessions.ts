@@ -19,7 +19,11 @@ type Session = {
 export const NATIVE_AGENT_TOOLS = [
   "pcb_environment", "project_status", "circuit_search_parts", "schematic_inspect", "schematic_edit",
   "pcb_update_from_schematic", "pcb_inspect", "pcb_place", "pcb_edit_copper", "pcb_edit_graphics",
-  "route_run", "verify_erc", "verify_drc", "render_view", "release_build",
+  "route_run", "verify_erc", "verify_drc", "schematic_review", "render_view", "release_build",
+] as const;
+
+export const NATIVE_CAPABILITY_EXCLUDE = [
+  "circuit_build", "circuit_read_errors", "load_toolset",
 ] as const;
 
 export type McpSessionOptions = {
@@ -121,6 +125,7 @@ export class McpSessionManager {
     attachToRegistry(server, this.opts.registry, this.opts.ctxFactory, {
       ...(initialToolsets ? { initialToolsets } : {}),
       ...(initialTools ? { initialTools } : {}),
+      ...(query.get("profile") === "native" ? { capabilityExclude: [...NATIVE_CAPABILITY_EXCLUDE] } : {}),
     });
     await server.connect(transport);
     return transport.handleRequest(

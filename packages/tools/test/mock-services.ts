@@ -158,6 +158,7 @@ export function mockServices(
       placeFootprints: async (_dir, placements) => ({
         moved: placements.map((placement) => placement.reference),
         missing: [],
+        libraryNormalized: 0,
         revision: 3,
         saved: true,
       }),

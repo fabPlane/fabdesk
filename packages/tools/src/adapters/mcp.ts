@@ -36,6 +36,8 @@ export type AttachOptions = {
   initialToolsets?: ToolsetId[];
   /** Exact initial registry tools. Used by clients that snapshot the list at turn start. */
   initialTools?: string[];
+  /** Registry tools hidden from capability discovery for a specialized profile. */
+  capabilityExclude?: string[];
   /** Skip resources (e.g. lightweight test servers). */
   toolsOnly?: boolean;
 };
@@ -96,7 +98,7 @@ export function attachToRegistry(
     if (initialTools ? !initialTools.has(def.name) : !enabled.has(def.toolset)) tool.disable();
   }
 
-  registerCapabilityTools(server, registry, ctxFactory, session, sessionId, registered, initialTools);
+  registerCapabilityTools(server, registry, ctxFactory, session, sessionId, registered, initialTools, new Set(opts.capabilityExclude ?? []));
 
   if (!opts.toolsOnly) {
     registerResources(server, registry, ctxFactory, session, sessionId);
@@ -113,6 +115,7 @@ function registerCapabilityTools(
   sessionId: string,
   registered: Map<string, RegisteredTool>,
   initialTools: Set<string> | null,
+  excluded: Set<string>,
 ): void {
   const discovered = new Set<string>();
   const search = server.registerTool(
@@ -131,7 +134,7 @@ function registerCapabilityTools(
       const limit = Number(rawArgs["limit"] ?? 8);
       const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
       const matches = registry.list()
-        .filter((def) => !initialTools?.has(def.name))
+        .filter((def) => !initialTools?.has(def.name) && !excluded.has(def.name))
         .map((def) => {
           const haystack = `${def.name} ${def.title} ${def.description} ${def.toolset}`.toLowerCase();
           const score = terms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0);

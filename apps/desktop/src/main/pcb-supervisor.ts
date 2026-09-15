@@ -42,6 +42,8 @@ export function corePcbEnvironment(command: PcbBackendCommand): Record<string, s
     KICAD_STOCK_DATA_HOME: command.env.KICAD_STOCK_DATA_HOME!,
     KICAD_FOOTPRINT_DIR: command.env.KICAD_FOOTPRINT_DIR!,
     KICAD_SYMBOL_DIR: command.env.KICAD_SYMBOL_DIR!,
+    KICAD10_FOOTPRINT_DIR: command.env.KICAD10_FOOTPRINT_DIR ?? command.env.KICAD_FOOTPRINT_DIR!,
+    KICAD10_SYMBOL_DIR: command.env.KICAD10_SYMBOL_DIR ?? command.env.KICAD_SYMBOL_DIR!,
     FABDESK_RUNTIME_ID: command.env.FABDESK_RUNTIME_ID!,
     FABDESK_DESKTOP_PID: command.env.FABDESK_DESKTOP_PID!,
     FABDESK_PROJECTS_DIR: command.env.WORKSPACE_ROOT!,
@@ -123,6 +125,11 @@ export function resolvePcbBackend(opts: {
       KICAD_STOCK_DATA_HOME: kicadStockData,
       KICAD_FOOTPRINT_DIR: footprints,
       KICAD_SYMBOL_DIR: symbols,
+      // KiCad's stock global library tables use these versioned variables. Point both the
+      // headless API server and kicad-cli at the exact libraries packaged with this runtime,
+      // instead of silently resolving a host nightly installation.
+      KICAD10_FOOTPRINT_DIR: footprints,
+      KICAD10_SYMBOL_DIR: symbols,
       FABDESK_RUNTIME_ID: runtimeId,
       FABDESK_DESKTOP_PID: desktopPid,
       ...(jsAutorouter ? { JS_AUTOROUTER_MODULE: jsAutorouter } : {}),

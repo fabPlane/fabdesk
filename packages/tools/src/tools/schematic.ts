@@ -48,7 +48,7 @@ export const schematic_edit = defineTool({
   toolset: "circuit",
   title: "Edit native schematic",
   description:
-    "Apply one undoable edit batch directly to board.kicad_sch. Supports rotated or mirrored library symbols, symbol movement, Manhattan connections, local and global labels, junctions, no-connect markers, notes, and deletion by inspected ID. The connection-label default is local. Creates native KiCad files when absent. Coordinates are millimetres on KiCad's 1.27 mm schematic grid.",
+    "Apply one undoable edit batch directly to board.kicad_sch. Supports rotated or mirrored library symbols, symbol movement, safely labelled pin stubs, explicit wires, local and global labels, junctions, no-connect markers, notes, and deletion by inspected ID. Creates native KiCad files when absent. Coordinates are millimetres on KiCad's 1.27 mm schematic grid.",
   inputSchema: {
     symbols: z
       .array(
@@ -88,7 +88,7 @@ export const schematic_edit = defineTool({
           nodes: z
             .array(z.object({ reference: z.string().min(1), pin: z.string().min(1) }))
             .min(2)
-            .describe("Symbol pin endpoints joined by real Manhattan wires"),
+            .describe("Symbol pin endpoints joined electrically by matching labels on short visible wire stubs"),
           label: z.enum(["local", "global", "none"]).default("local"),
         }),
       )
@@ -158,6 +158,15 @@ export const schematic_review = defineTool({
         findings.push({ code: "global-label-overuse", severity: "warning", message: `${snapshot.globalLabels.length} global labels versus ${snapshot.localLabels.length} local labels.` });
     if (snapshot.symbols.length >= 6 && snapshot.junctions.length === 0)
         findings.push({ code: "no-junctions", severity: "info", message: "No explicit junctions appear in a non-trivial schematic." });
+    const labels = [...snapshot.localLabels, ...snapshot.globalLabels];
+    for (let left = 0; left < labels.length; left++)
+      for (let right = left + 1; right < labels.length; right++) {
+        const a = labels[left]!, b = labels[right]!;
+        if (Math.hypot(a.position.x - b.position.x, a.position.y - b.position.y) < 2.54)
+          findings.push({ code: "label-collision", severity: "warning", message: `Labels ${a.text} and ${b.text} are less than 2.54 mm apart.` });
+      }
+    if (snapshot.symbols.length >= 5 && snapshot.wires.length === 0 && labels.length >= snapshot.symbols.length)
+      findings.push({ code: "label-only-connectivity", severity: "warning", message: "Connectivity is label-only; add short visible pin stubs or functional-block wiring for readability." });
     const xs = snapshot.symbols.map((symbol) => symbol.position.x);
     const ys = snapshot.symbols.map((symbol) => symbol.position.y);
     const extent = xs.length

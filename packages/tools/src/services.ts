@@ -296,6 +296,7 @@ export type SchematicPcbSyncResult = {
 export type PcbPlacementResult = {
   moved: string[];
   missing: string[];
+  libraryNormalized?: number;
   revision: number;
   saved: boolean;
 };

@@ -332,8 +332,9 @@ describe("http daemon", () => {
 
     const native = await connect(daemon.token, "?profile=native");
     const nativeNames = (await native.client.listTools()).tools.map((tool) => tool.name);
-    expect(nativeNames).toHaveLength(17);
+    expect(nativeNames).toHaveLength(18);
     expect(nativeNames).toContain("pcb_inspect");
+    expect(nativeNames).toContain("schematic_review");
     expect(nativeNames).not.toContain("circuit_build");
     expect(nativeNames).not.toContain("native_edit_transaction");
 

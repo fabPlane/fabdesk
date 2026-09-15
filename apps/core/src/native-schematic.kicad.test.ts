@@ -65,7 +65,7 @@ describe.skipIf(!url || !workspace)("optional native schematic capabilities", ()
     const schematic = await design.schematicInspect(projectDir);
     expect(schematic.symbols.map((symbol) => symbol.reference).sort()).toEqual(["R1", "R2"]);
     expect(schematic.nets.map((net) => net.name)).toEqual(
-      expect.arrayContaining(["LEFT", "RIGHT"]),
+      expect.arrayContaining(["/LEFT", "/RIGHT"]),
     );
     expect(schematic.erc.errors).toBe(0);
 
@@ -88,10 +88,11 @@ describe.skipIf(!url || !workspace)("optional native schematic capabilities", ()
     );
     expect(outline.created).toBe(4);
     const placed = await design.placeFootprints(projectDir, [
-      { reference: "R1", position: { x: 8, y: 7.5 } },
+      { reference: "R1", position: { x: 8, y: 7.5 }, rotation: 90 },
       { reference: "R2", position: { x: 22, y: 7.5 } },
     ]);
     expect(placed.missing).toEqual([]);
     expect(placed.moved.sort()).toEqual(["R1", "R2"]);
+    expect(placed.libraryNormalized).toBeGreaterThanOrEqual(1);
   }, 120_000);
 });

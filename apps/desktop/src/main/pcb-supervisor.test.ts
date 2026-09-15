@@ -100,6 +100,8 @@ describe("bundled PCB backend", () => {
       `${join(pcb, "kicad", "lib")}:${join(pcb, "kicad", "lib", "runtime")}:/host/lib`,
     );
     expect(resolved?.env.KICAD_STOCK_DATA_HOME).toBe(join(pcb, "kicad", "share", "kicad"));
+    expect(resolved?.env.KICAD10_FOOTPRINT_DIR).toBe(join(pcb, "libraries", "footprints"));
+    expect(resolved?.env.KICAD10_SYMBOL_DIR).toBe(join(pcb, "libraries", "symbols"));
     expect(resolved?.env.JS_AUTOROUTER_MODULE).toBe(
       join(pcb, "private", "js_autorouter", "src", "index.ts"),
     );
@@ -112,6 +114,8 @@ describe("bundled PCB backend", () => {
     expect(corePcbEnvironment(resolved!)).toMatchObject({
       KICAD_CLI: join(pcb, "kicad", "bin", "kicad-cli"),
       KICAD_STOCK_DATA_HOME: join(pcb, "kicad", "share", "kicad"),
+      KICAD10_FOOTPRINT_DIR: join(pcb, "libraries", "footprints"),
+      KICAD10_SYMBOL_DIR: join(pcb, "libraries", "symbols"),
       LD_LIBRARY_PATH: `${join(pcb, "kicad", "lib")}:${join(pcb, "kicad", "lib", "runtime")}:/host/lib`,
     });
   });

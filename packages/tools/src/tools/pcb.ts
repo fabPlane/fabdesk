@@ -63,7 +63,7 @@ export const pcb_place = defineTool({
     return {
       text: result.missing.length
         ? `Placement blocked; unknown references: ${result.missing.join(", ")}.`
-        : `Placed ${result.moved.length} footprint(s) and saved board revision ${result.revision}: ${result.moved.join(", ") || "already at requested positions"}.`,
+        : `Placed ${result.moved.length} footprint(s), normalized ${result.libraryNormalized ?? 0} library definition(s), and saved board revision ${result.revision}: ${result.moved.join(", ") || "already at requested positions"}.`,
       json: result,
       isError: result.missing.length > 0,
     };

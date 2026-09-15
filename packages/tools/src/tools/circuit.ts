@@ -43,9 +43,12 @@ export const circuit_search_parts = defineTool({
   annotations: { readOnlyHint: true, idempotentHint: true },
   scope: "global",
   handler: async ({ query, kind, limit }, ctx) => {
-    const hits = await (kind === "symbol"
+    const matches = await (kind === "symbol"
       ? ctx.services.design.searchSymbols(query, limit)
       : ctx.services.design.searchFootprints(query, limit));
+    // Search is for discovery, so do not echo embedded pin/pad geometry for every candidate.
+    // Exact details remain available through circuit_describe_part.
+    const hits = matches.map(({ libId, description }) => ({ libId, description }));
     const label = kind === "symbol" ? "Symbols" : "Footprints";
     return ok(
       hits.length

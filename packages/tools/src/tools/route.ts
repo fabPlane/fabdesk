@@ -18,8 +18,8 @@ export const RouteRunArgs = {
   rules: z.object({
     widthMm: z.number().positive().optional(), clearanceMm: z.number().nonnegative().optional(),
     viaDiameterMm: z.number().positive().optional(), viaDrillMm: z.number().positive().optional(),
-    layers: z.array(z.string().min(1)).min(1).optional(), refillZones: z.boolean().optional(),
-  }).optional().describe("Explicit routing width, clearance, via, layer and zone rules"),
+    refillZones: z.boolean().optional(),
+  }).optional().describe("Explicit routing width, clearance, via and zone rules; the router uses the board's enabled copper layers"),
   settings: z.record(z.string(), z.unknown()).optional().describe("Router specific settings"),
 };
 
@@ -84,7 +84,7 @@ export function cinemaLayer(layer: number, count: number): number {
 }
 
 export async function runRoute(
-  args: { router?: "capacity" | "freerouting" | undefined; timeoutMs: number; onlyConnections?: string[] | undefined; targets?: Array<{ net: string; from?: { x: number; y: number } | undefined; to?: { x: number; y: number } | undefined }> | undefined; rules?: { widthMm?: number | undefined; clearanceMm?: number | undefined; viaDiameterMm?: number | undefined; viaDrillMm?: number | undefined; layers?: string[] | undefined; refillZones?: boolean | undefined } | undefined; settings?: Record<string, unknown> | undefined },
+  args: { router?: "capacity" | "freerouting" | undefined; timeoutMs: number; onlyConnections?: string[] | undefined; targets?: Array<{ net: string; from?: { x: number; y: number } | undefined; to?: { x: number; y: number } | undefined }> | undefined; rules?: { widthMm?: number | undefined; clearanceMm?: number | undefined; viaDiameterMm?: number | undefined; viaDrillMm?: number | undefined; refillZones?: boolean | undefined } | undefined; settings?: Record<string, unknown> | undefined },
   ctx: ToolContext,
 ): Promise<ToolOutput> {
   const project = ctx.requireProject();
@@ -105,7 +105,6 @@ export async function runRoute(
     ...(args.rules.clearanceMm !== undefined ? { clearanceMm: args.rules.clearanceMm } : {}),
     ...(args.rules.viaDiameterMm !== undefined ? { viaDiameterMm: args.rules.viaDiameterMm } : {}),
     ...(args.rules.viaDrillMm !== undefined ? { viaDrillMm: args.rules.viaDrillMm } : {}),
-    ...(args.rules.layers ? { layers: args.rules.layers } : {}),
   } : {};
   const settings: Record<string, unknown> | undefined = Object.keys({ ...(args.settings ?? {}), ...ruleSettings }).length || manifest.board.template
     ? { ...(args.settings ?? {}), ...ruleSettings, ...(manifest.board.template !== undefined && args.settings?.["preset"] === undefined ? { preset: "laser-prefab" } : {}) }

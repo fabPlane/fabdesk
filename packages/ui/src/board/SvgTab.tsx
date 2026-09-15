@@ -50,7 +50,7 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
       >
         {kind === "pcb"
           ? "This tab displays renders/pcb.svg. Build the board, then generate its PCB SVG; PNG images appear under Renders."
-          : "This tab displays renders/schematic.svg. Build the project, then generate its schematic SVG; components need libSource to appear."}
+          : "This tab displays renders/schematic.svg generated from the saved native KiCad schematic."}
         {render.state.error && <div className="mt-2 text-danger">{render.state.error}</div>}
       </EmptyState>
     </div>

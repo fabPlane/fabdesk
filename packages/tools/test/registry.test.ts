@@ -3,10 +3,16 @@ import { createHash } from "node:crypto";
 import { mkdir, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod/v4";
-import { ToolError, createRegistry, defineTool, jailPath, toCallToolResult, toolsMarkdown } from "../src";
+import { ToolError, createRegistry, defineTool, isLibraryMismatch, jailPath, toCallToolResult, toolsMarkdown } from "../src";
 import { contextFactory, mockServices, tempProject } from "./mock-services";
 
 describe("registry", () => {
+  test("release recognizes KiCad library mismatch rules and descriptions", () => {
+    expect(isLibraryMismatch({ rule: "lib_footprint_mismatch", description: "Footprint R1 does not match copy in library" })).toBe(true);
+    expect(isLibraryMismatch({ rule: "warning", description: "Symbol does not match the copy in the library" })).toBe(true);
+    expect(isLibraryMismatch({ rule: "silk_overlap", description: "Reference text overlaps a pad" })).toBe(false);
+  });
+
   test("native part search guidance does not steer agents to the legacy compiler", () => {
     const tool = createRegistry().get("circuit_search_parts");
     expect(tool?.description).toContain("native schematic and PCB operations");
@@ -468,7 +474,7 @@ describe("registry", () => {
     });
     const factory = contextFactory(services, project);
     const call = (args: Record<string, unknown>) => reg.invoke("native_edit_transaction", args, (ref) => factory({ def: reg.get("native_edit_transaction")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }));
-    const geometry = { tracks: [{ start: { x: 11, y: 12 }, end: { x: 15, y: 12 }, width: 0.25, layer: 0, net: "GND" }] };
+    const geometry = { tracks: [{ start: { reference: "R1", pad: "1" }, end: { x: 15, y: 12 }, width: 0.25, layer: 0, net: "GND" }] };
 
     const preview = await call({ geometry, expectedPcbRevision: initialRevision });
     expect((preview.json as any).plan.geometry.tracks).toBe(1);
@@ -478,12 +484,11 @@ describe("registry", () => {
 
     const accepted = await call({ mode: "apply", geometry, expectedPcbRevision: initialRevision });
     expect(await Bun.file(board).text()).toBe("unrelated-copper\nnew-track\n");
-    expect((accepted.json as any).pcbGeometry).toMatchObject({
-      revisionStable: true,
-      pads: [{ position: { x: 11, y: 12 }, net: "GND" }],
-      tracks: [{ id: "track-new", layer: 0, net: "GND" }],
-      rules: { minimums: { minClearance: 0.2 } },
+    expect((accepted.json as any).changes.geometry).toMatchObject({
+      created: { tracks: 1 }, createdIds: ["track-new"], revision: 5,
     });
+    expect((accepted.json as any).pcbGeometry).toBeUndefined();
+    expect((accepted.json as any).validation).toEqual({ structural: true, designChecksRun: false });
     await reg.invoke("native_edit_rollback", { transactionId: (accepted.json as any).transactionId }, (ref) => factory({ def: reg.get("native_edit_rollback")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }));
     expect(await Bun.file(board).text()).toBe("unrelated-copper\n");
   });

@@ -35,6 +35,11 @@ function evaluate(check: z.infer<typeof CircuitCheck>) {
   return { ...check, measured: { frequencyHz: measuredHz }, status: pass ? "pass" : "fail" };
 }
 
+export function isLibraryMismatch(violation: { rule: string; description: string }): boolean {
+  const evidence = `${violation.rule} ${violation.description}`;
+  return /(?:^|\s|_)lib(?:rary)?(?:_|\s).*mismatch|(?:^|_)mismatch(?:\s|$)|does not match (?:the )?copy in (?:the )?library/i.test(evidence);
+}
+
 export const release_build = defineTool({
   name: "release_build",
   toolset: "verify",
@@ -113,24 +118,38 @@ export const release_build = defineTool({
     const after = { schematic: await hash(schematic), pcb: await hash(board), project: await hash(pro) };
     const stable = JSON.stringify(before) === JSON.stringify(after);
     const missing = inventory.filter((entry) => entry.status === "missing").map((entry) => entry.path);
+    const libraryMismatchViolations = [...erc.violations, ...drc.violations].filter(isLibraryMismatch);
     const checks = {
       erc: { status: erc.counts.errors === 0 ? "pass" : "fail", ...erc },
       drc: { status: drc.counts.errors === 0 ? "pass" : "fail", ...drc, schematicParityChecked: true },
       parity: { status: drc.schematicParity.length === 0 ? "pass" : "fail", violations: drc.schematicParity },
       unconnected: { status: drc.counts.unconnected === 0 ? "pass" : "fail", count: drc.counts.unconnected },
-      libraryMismatches: { status: [...erc.violations, ...drc.violations].some((violation) => /library.*mismatch/i.test(`${violation.rule} ${violation.description}`)) ? "fail" : "pass" },
+      libraryMismatches: { status: libraryMismatchViolations.length ? "fail" : "pass", count: libraryMismatchViolations.length, violations: libraryMismatchViolations },
       circuit: calculations,
       revisionStable: { status: stable ? "pass" : "fail" },
     };
-    const pass = stable && gate.pass && calculations.every((check) => check.status === "pass") && missing.length === 0;
+    const failedCircuitChecks = calculations.filter((check) => check.status === "fail").map((check) => check.name);
+    const failureReasons = [
+      ...gate.reasons,
+      ...(libraryMismatchViolations.length && !gate.reasons.some((reason) => /warning/i.test(reason)) ? [`${libraryMismatchViolations.length} library mismatch(es)`] : []),
+      ...failedCircuitChecks.map((name) => `circuit check failed: ${name}`),
+      ...missing.map((path) => `missing output: ${path}`),
+      ...(!stable ? ["native files changed while the release was being built"] : []),
+    ];
+    const pass = stable && gate.pass && libraryMismatchViolations.length === 0 && failedCircuitChecks.length === 0 && missing.length === 0;
     const result = {
       contract: { name: "fabdesk.native-release", version: "1.0.0" }, capturedAt: new Date().toISOString(),
       runtime: { runtimeId: ctx.services.runtimeId, fabdeskVersion: ctx.services.version, kicadCli: { path: cli.path, version: cli.version } },
-      revisions: before, stale: false, pass, checks, inventory, missing,
+      revisions: before, stale: false, pass, gate, failureReasons, checks, inventory, missing,
     };
     await writeJson(join(reportsDir, "release.json"), result);
     ctx.progress(1, pass ? "release passed" : "release failed");
-    return { text: `Release ${pass ? "PASS" : "FAIL"} for ${before.schematic.slice(0, 12)}/${before.pcb.slice(0, 12)}: ${inventory.length - missing.length}/${inventory.length} outputs available${missing.length ? `; missing ${missing.join(", ")}` : ""}.`, json: result, isError: !pass };
+    const text = [
+      `Release ${pass ? "PASS" : "FAIL"} for ${before.schematic.slice(0, 12)}/${before.pcb.slice(0, 12)}: ${inventory.length - missing.length}/${inventory.length} outputs available.`,
+      ...(failureReasons.length ? ["Failure reasons:", ...failureReasons.map((reason) => `- ${reason}`)] : []),
+      ...(gate.newWarningSignatures.length ? ["Unapproved warning signatures:", ...gate.newWarningSignatures.map((signature) => `- ${signature}`)] : []),
+    ].join("\n");
+    return { text, json: result, isError: !pass };
   },
 });
 

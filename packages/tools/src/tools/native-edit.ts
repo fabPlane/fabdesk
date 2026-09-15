@@ -9,6 +9,8 @@ import type { NativeSchematicEdit, PcbFootprintEdit, PcbGeometryEdit } from "../
 import { ok, p } from "./common";
 
 const Point = z.object({ x: z.number().finite(), y: z.number().finite() });
+const PadEndpoint = z.object({ reference: z.string().min(1), pad: z.string().min(1) });
+const CopperEndpoint = z.union([Point, PadEndpoint]).describe("Exact millimetre point or a footprint pad resolved to its exact saved-board position");
 const FILES = [PROJECT_FILES.boardPro, PROJECT_FILES.boardSch, PROJECT_FILES.boardPcb] as const;
 
 async function sha(path: string): Promise<string | null> {
@@ -68,7 +70,7 @@ const FootprintEdit = z.object({
 const Polygon = z.object({ points: z.array(Point).min(3).max(5000), holes: z.array(z.array(Point).min(3).max(5000)).max(100).optional() });
 const Layer = z.number().int();
 const PcbGeometry = z.object({
-  tracks: z.array(z.object({ start: Point, end: Point, width: z.number().positive(), layer: Layer, net: z.string().min(1).optional() })).max(5000).optional(),
+  tracks: z.array(z.object({ start: CopperEndpoint, end: CopperEndpoint, width: z.number().positive(), layer: Layer, net: z.string().min(1).optional() })).max(5000).optional(),
   vias: z.array(z.object({ position: Point, diameter: z.number().positive(), drill: z.number().positive(), layers: z.array(Layer).min(2), net: z.string().min(1).optional() })).max(2000).optional(),
   zones: z.array(Polygon.extend({ layers: z.array(Layer).min(1), net: z.string().min(1).optional(), name: z.string().optional(), clearance: z.number().nonnegative().optional(), minThickness: z.number().positive().optional(), priority: z.number().int().optional() })).max(200).optional(),
   keepouts: z.array(Polygon.extend({ layers: z.array(Layer).min(1), name: z.string().optional(), copper: z.boolean().optional(), vias: z.boolean().optional(), tracks: z.boolean().optional(), pads: z.boolean().optional(), footprints: z.boolean().optional() })).max(200).optional(),
@@ -118,7 +120,10 @@ export const native_edit_transaction = defineTool({
         : null,
       removeCopperNets: removeCopperNets ?? [],
     };
-    if (mode === "preview") return ok("Native edit preview validated; canonical files were not changed.", { status: "preview", before, after: before, plan });
+    if (mode === "preview") return ok(
+      "Native edit is structurally valid; canonical files were not changed. ERC, DRC, connectivity, and presentation were not evaluated.",
+      { status: "preview", before, after: before, plan, validation: { structural: true, designChecksRun: false } },
+    );
 
     const transactionId = `native-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
     const root = p(project, ".fabdesk/native-revisions");
@@ -126,19 +131,37 @@ export const native_edit_transaction = defineTool({
     await backup(project.dir, directory);
     await writeFile(join(directory, "metadata.json"), JSON.stringify({ transactionId, createdAt: new Date().toISOString(), before, plan }, null, 2));
     try {
-      if (schematic) await ctx.services.design.schematicEdit(project.dir, { ...(schematic as NativeSchematicEdit), save: true });
-      if (outline) await ctx.services.design.defineBoardOutline(project.dir, outline.points, outline.replace);
+      const changes: Record<string, unknown> = {};
+      if (schematic) changes["schematic"] = await ctx.services.design.schematicEdit(project.dir, { ...(schematic as NativeSchematicEdit), save: true });
+      if (outline) changes["outline"] = await ctx.services.design.defineBoardOutline(project.dir, outline.points, outline.replace);
       if (footprints?.length) {
         const placed = await ctx.services.design.placeFootprints(project.dir, footprints as PcbFootprintEdit[]);
         if (placed.missing.length) throw new ToolError(`unknown footprints: ${placed.missing.join(", ")}`, "invalid_args");
+        changes["footprints"] = placed;
       }
-      if (geometry) await ctx.services.design.editBoardGeometry(project.dir, geometry as PcbGeometryEdit);
-      if (removeCopperNets?.length) await ctx.services.design.unroute(project.dir, removeCopperNets);
+      if (geometry) {
+        const pads = geometry.tracks?.some((track) => "reference" in track.start || "reference" in track.end)
+          ? await ctx.services.design.query(project.dir, "pads")
+          : [];
+        const padPosition = (endpoint: z.infer<typeof CopperEndpoint>) => {
+          if (!("reference" in endpoint)) return endpoint;
+          const pad = pads.find((row) => String(row["component"]) === endpoint.reference && String(row["number"]) === endpoint.pad);
+          if (!pad) throw new ToolError(`unknown PCB pad ${endpoint.reference}:${endpoint.pad}`, "invalid_args");
+          return { x: Number(pad["x"]), y: Number(pad["y"]) };
+        };
+        const resolved = {
+          ...geometry,
+          ...(geometry.tracks ? { tracks: geometry.tracks.map((track) => ({ ...track, start: padPosition(track.start), end: padPosition(track.end) })) } : {}),
+        } as PcbGeometryEdit;
+        changes["geometry"] = await ctx.services.design.editBoardGeometry(project.dir, resolved);
+      }
+      if (removeCopperNets?.length) changes["removedCopper"] = await ctx.services.design.unroute(project.dir, removeCopperNets);
       const after = await revisions(project.dir);
-      const pcbGeometry = geometry || footprints?.length || outline ? await ctx.services.design.inspectBoardGeometry(project.dir) : undefined;
-      if (pcbGeometry && !pcbGeometry.revisionStable) throw new ToolError("PCB geometry changed during inspection", "precondition");
       await writeFile(join(root, "last-accepted.json"), JSON.stringify({ transactionId, before, after }, null, 2));
-      return ok(`Atomic native edit ${transactionId} accepted.`, { status: "accepted", transactionId, before, after, plan, ...(pcbGeometry ? { pcbGeometry } : {}) });
+      return ok(`Atomic native edit ${transactionId} accepted; design checks were not run.`, {
+        status: "accepted", transactionId, before, after, plan, changes,
+        validation: { structural: true, designChecksRun: false },
+      });
     } catch (error) {
       await ctx.services.design.release(project.dir).catch(() => undefined);
       await restore(project.dir, directory);
@@ -172,7 +195,7 @@ export const pcb_edit_copper = defineTool({
   name: "pcb_edit_copper",
   toolset: "circuit",
   title: "Edit PCB copper",
-  description: "Preview or atomically apply exact native tracks, vias, copper deletion by inspected ID, or removal of named routed nets. Uses millimetres and rejects stale PCB revisions.",
+  description: "Preview or atomically apply native tracks, vias, copper deletion by inspected ID, or removal of named routed nets. Track endpoints accept exact millimetre points or semantic {reference,pad} endpoints resolved from the saved board. Rejects stale PCB revisions.",
   inputSchema: {
     mode: z.enum(["preview", "apply"]).default("apply"),
     expectedPcbRevision: z.string().length(64).optional(),

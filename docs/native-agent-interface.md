@@ -5,7 +5,7 @@ Local prototype branch: `local/native-first-agent-interface`, based on Candidate
 
 ## What changed
 
-- Codex receives 17 MCP functions at turn start: 15 common native-KiCad operations plus
+- Codex receives 18 MCP functions at turn start: 16 common native-KiCad operations plus
   `capability_search` and `capability_call`. The complete 65-operation registry remains available
   on demand. The explicit schema payload falls from about 64 KB for the full registry to 24 KB.
 - MCP server guidance is one factual sentence. Generated project guidance no longer describes a
@@ -19,6 +19,14 @@ Local prototype branch: `local/native-first-agent-interface`, based on Candidate
   board-coordinate crop, and reference/net highlights.
 - `pcb_edit_copper` and `pcb_edit_graphics` expose smaller revision-guarded atomic edit schemas;
   the broad transaction tool remains in the searchable compatibility catalog.
+- Copper endpoints can name `{reference, pad}` and are resolved against exact saved-board pad
+  coordinates; inspected coordinates retain nanometre-derived precision.
+- Native edit results report only changed IDs/counts and revisions, rather than returning a full
+  board snapshot. Preview explicitly means structural validation only.
+- Native placement normalizes changed footprint instances from the exact packaged library. The
+  packaged bridge and `kicad-cli` now receive KiCad's standard versioned library variables.
+- `schematic_review` is initially visible, connection batches create safe labelled pin stubs, and
+  legacy netlist compiler operations are excluded from native capability search.
 - Agent shell scripts can search, describe, call, and batch any registry operation with
   `fabpcb tool`. This supplies programmable loops and JSONL batching without legacy Python
   `pcbnew` or a different KiCad build.
@@ -74,6 +82,12 @@ fabpcb tool batch --input @calls.jsonl
 `calls.jsonl` contains one `{"name":"...","arguments":{...}}` object per line. The dispatcher is
 conservatively marked as potentially destructive/open-world because it can call operations with
 different side effects.
+
+For the next clean test, restart the launcher so the bridge inherits the corrected packaged
+library environment. Use a new project; the completed 2026-09-15 blinker is retained as diagnostic
+evidence and should not be overwritten. Confirm that a moved footprint reports a non-zero
+`libraryNormalized` count when needed, DRC has no `lib_footprint_mismatch`, connection rendering
+shows short labelled pin stubs, and a failed `release_build` lists its exact reasons.
 
 ## Known prototype boundaries
 

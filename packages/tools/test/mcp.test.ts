@@ -6,12 +6,15 @@ import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/typ
 import { attachToRegistry, createRegistry } from "../src";
 import { contextFactory, mockServices, tempProject } from "./mock-services";
 
-async function pair(initialTools?: string[]) {
+async function pair(initialTools?: string[], capabilityExclude?: string[]) {
   const registry = createRegistry();
   const project = await tempProject("mcp");
   const services = mockServices([project]);
   const server = new McpServer({ name: "fabdesk-test", version: "0.0.0" });
-  const attachment = attachToRegistry(server, registry, contextFactory(services, project), initialTools ? { initialTools } : {});
+  const attachment = attachToRegistry(server, registry, contextFactory(services, project), {
+    ...(initialTools ? { initialTools } : {}),
+    ...(capabilityExclude ? { capabilityExclude } : {}),
+  });
   const [clientT, serverT] = InMemoryTransport.createLinkedPair();
   await server.connect(serverT);
   const client = new Client({ name: "test-client", version: "0.0.0" });
@@ -31,6 +34,15 @@ describe("mcp adapter", () => {
     const called = await client.callTool({ name: "capability_call", arguments: { name: "circuit_describe_part", arguments: { kind: "symbol", libId: "Device:R" } } });
     expect(called.isError).toBeFalsy();
     expect((called.content as Array<{ text?: string }>)[0]?.text).toContain("symbol Device:R");
+  });
+
+  test("native capability search hides legacy netlist compiler operations", async () => {
+    const { client } = await pair(["project_status", "pcb_inspect"], ["circuit_build", "circuit_read_errors", "load_toolset"]);
+    const search = await client.callTool({ name: "capability_search", arguments: { query: "netlist libSource build errors", limit: 20 } });
+    const names = (search.structuredContent as { matches: Array<{ name: string }> }).matches.map((match) => match.name);
+    expect(names).not.toContain("circuit_build");
+    expect(names).not.toContain("circuit_read_errors");
+    expect(names).not.toContain("load_toolset");
   });
 
   test("core tools visible, load_toolset enables more and emits list_changed", async () => {

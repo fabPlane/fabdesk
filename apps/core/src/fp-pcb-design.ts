@@ -97,7 +97,9 @@ const STAGE_FRACTION: Record<string, number> = {
   parity: 0.8,
   saving: 0.85,
 };
-const mm = (nm: number) => Math.round(toMm(nm) * 1000) / 1000;
+// Nanometres are integral. Preserve enough decimal places for exact pad/track joins instead of
+// rounding inspected coordinates to 1 um and creating tiny disconnected gaps on re-use.
+const mm = (nm: number) => Math.round(toMm(nm) * 1_000_000) / 1_000_000;
 
 function toBuildError(d: FpPcbDiagnostic): BuildError {
   return {
@@ -463,36 +465,47 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
           );
         return point;
       });
-      // A real Manhattan wire chain keeps the schematic electrically connected. A local label is
-      // the default: it preserves the net name without turning every ordinary net into a global.
-      for (let index = 1; index < points.length; index++) {
-        const start = points[index - 1]!;
-        const end = points[index]!;
-        const elbow = { x: end.x, y: start.y };
-        addWire(start, elbow);
-        addWire(elbow, end);
+      // A routed Manhattan chain can silently merge unrelated nets when independently generated
+      // chains cross or share an elbow. Give every endpoint a short outward wire stub and the same
+      // label instead: connectivity stays explicit and safe while the rendered schematic still
+      // shows a connection at each pin.
+      const labelKind = connection.label ?? "local";
+      if (labelKind === "none") {
+        for (let index = 1; index < points.length; index++) {
+          const start = points[index - 1]!;
+          const end = points[index]!;
+          const elbow = { x: end.x, y: start.y };
+          addWire(start, elbow);
+          addWire(elbow, end);
+        }
+        continue;
       }
-      const anchor = points[0]!;
-      if ((connection.label ?? "local") === "global")
-        globalLabels.push(
-          new GlobalLabel(
-            create(GlobalLabelSchema, {
-              position: toVector2(anchor),
-              text: create(TextSchema, { text: connection.name, position: toVector2(anchor) }),
-              spinStyle: SchematicLabelSpinStyle.SLSS_LEFT,
-            }),
-          ),
-        );
-      else if ((connection.label ?? "local") === "local")
-        localLabels.push(
-          new LocalLabel(
-            create(LocalLabelSchema, {
-              position: toVector2(anchor),
-              text: create(TextSchema, { text: connection.name, position: toVector2(anchor) }),
-              spinStyle: SchematicLabelSpinStyle.SLSS_LEFT,
-            }),
-          ),
-        );
+      for (const [index, pin] of points.entries()) {
+        const node = connection.nodes[index]!;
+        const symbol = byReference.get(node.reference);
+        const center = symbol?.position ?? pin;
+        const dx = pin.x - center.x;
+        const dy = pin.y - center.y;
+        const horizontal = Math.abs(dx) >= Math.abs(dy);
+        const step = toNm(2.54);
+        const anchor = horizontal
+          ? { x: pin.x + (dx >= 0 ? step : -step), y: pin.y }
+          : { x: pin.x, y: pin.y + (dy >= 0 ? step : -step) };
+        const spinStyle = horizontal
+          ? (dx >= 0 ? SchematicLabelSpinStyle.SLSS_LEFT : SchematicLabelSpinStyle.SLSS_RIGHT)
+          : (dy >= 0 ? SchematicLabelSpinStyle.SLSS_UP : SchematicLabelSpinStyle.SLSS_BOTTOM);
+        addWire(pin, anchor);
+        if (labelKind === "global")
+          globalLabels.push(new GlobalLabel(create(GlobalLabelSchema, {
+            position: toVector2(anchor), text: create(TextSchema, { text: connection.name, position: toVector2(anchor) }),
+            spinStyle,
+          })));
+        else if (labelKind === "local")
+          localLabels.push(new LocalLabel(create(LocalLabelSchema, {
+            position: toVector2(anchor), text: create(TextSchema, { text: connection.name, position: toVector2(anchor) }),
+            spinStyle,
+          })));
+      }
     }
 
     const deleteItems = edit.deleteItemIds?.length
@@ -724,10 +737,18 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     });
     if (moved.length)
       await board.commit("Fabdesk: place native PCB footprints", (tx) => tx.update(moved));
+    let libraryNormalized = 0;
+    if (moved.length) {
+      const normalized = await board.updateFootprintsFromLibrary(moved.map((footprint) => footprint.id), { onlyChanged: true });
+      if (normalized.missing.length)
+        throw new ToolError(`packaged library footprints unavailable for ${normalized.missing.join(", ")}`, "precondition");
+      libraryNormalized = normalized.updatedCount;
+    }
     await board.save();
     return {
       moved: moved.map((footprint) => footprint.reference),
       missing: [],
+      libraryNormalized,
       revision: Number((await board.revision()) ?? 0n),
       saved: true,
     };
@@ -956,16 +977,16 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
             id: t.id,
             ...(t instanceof Track
               ? {
-                  start: `${mm(t.start.x)},${mm(t.start.y)}`,
-                  end: `${mm(t.end.x)},${mm(t.end.y)}`,
+                  start: { x: mm(t.start.x), y: mm(t.start.y) },
+                  end: { x: mm(t.end.x), y: mm(t.end.y) },
                   width: mm(t.width),
                   length: mm(t.length),
                 }
               : t instanceof Arc
                 ? {
-                    start: `${mm(t.start.x)},${mm(t.start.y)}`,
-                    mid: `${mm(t.mid.x)},${mm(t.mid.y)}`,
-                    end: `${mm(t.end.x)},${mm(t.end.y)}`,
+                    start: { x: mm(t.start.x), y: mm(t.start.y) },
+                    mid: { x: mm(t.mid.x), y: mm(t.mid.y) },
+                    end: { x: mm(t.end.x), y: mm(t.end.y) },
                     width: mm(t.width),
                   }
                 : {}),
@@ -1037,8 +1058,8 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         return (await board.ratsnest()).edges
           .map((e) => ({
             net: e.net,
-            from: `${mm(e.sourcePosition.x)},${mm(e.sourcePosition.y)}`,
-            to: `${mm(e.targetPosition.x)},${mm(e.targetPosition.y)}`,
+            from: { x: mm(e.sourcePosition.x), y: mm(e.sourcePosition.y) },
+            to: { x: mm(e.targetPosition.x), y: mm(e.targetPosition.y) },
           }))
           .filter((r) => keep(r.net));
       }

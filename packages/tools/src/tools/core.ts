@@ -56,6 +56,7 @@ export const pcb_environment = defineTool({
     const interfaces = {
       mcp: "Structured KiCad, FabPCB, project, render, verification, and export operations.",
       cli: "Bundled kicad-cli path and version.",
+      script: "fabpcb tool exposes the same registry as JSON/JSONL for programmable calls and batches.",
       ui: "Desktop application automation status.",
       files: "Project-local files are directly accessible.",
     };
@@ -65,6 +66,12 @@ export const pcb_environment = defineTool({
       bridge,
       desktopUi: app,
       interfaces,
+      scriptCli: {
+        search: 'fabpcb tool search "inspect board region"',
+        describe: "fabpcb tool describe pcb_inspect",
+        call: "fabpcb tool call pcb_inspect --request @request.json",
+        batch: "fabpcb tool batch --input @calls.jsonl",
+      },
       uiConventions: {
         canonicalFiles: files,
         renders: p(project, PROJECT_FILES.renders),
@@ -81,6 +88,7 @@ export const pcb_environment = defineTool({
       `Desktop UI automation: ${app.running ? "available" : `unavailable${app.reason ? ` — ${app.reason}` : ""}`}`,
       `Project files: ${Object.entries(files).map(([name, path]) => `${name}=${path}${present[name] ? "" : " (missing)"}`).join(", ")}`,
       "Available interfaces: MCP, bundled kicad-cli, desktop UI automation, and direct project files.",
+      "Scriptable registry: fabpcb tool search <words>; describe <name>; call <name> --request <json|@file>; batch --input @calls.jsonl.",
       "Fabdesk UI directories: renders/, reports/, exports/.",
       "State visibility: MCP operations may address live KiCad state; CLI and file operations address persisted state.",
     ].join("\n"), json);
