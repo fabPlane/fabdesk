@@ -1,5 +1,5 @@
 /**
- * Route Cinema renderer, ported from js_autorouter/tools/cinema/page.ts.
+ * Route Cinema renderer for visualizing routing frames.
  *
  * The static board is drawn dimly, routed copper in layer colours, and the copper new since the
  * previous frame in white. Everything here except `drawScene` is pure so the frame bookkeeping can

@@ -50,10 +50,8 @@ bun run scripts/bench/vaio-b223.ts --router capacity --scenario full
 ```
 
 With the dev app running the script talks to its daemon (`daemon.json`), so the project appears in
-the app and the Route Cinema shows every run's frames. The freerouting adapter (js_autorouter) only
-exists in the internal channel: start the app with `FABDESK_CHANNEL=internal` to bench it through the
-daemon; otherwise the script falls back to `FABDESK_CHANNEL=internal bun run apps/core/src/main.ts
-bench route ...` from source (same worker path, no UI frames) and says so.
+the app and the Route Cinema shows every run's frames. Routing runs through the FabPlane PCB bridge;
+use the internal channel when benchmarking internal-only router options.
 
 Direct CLI:
 
@@ -70,9 +68,8 @@ does the import + SRJ + one repair route in-process and prints the numbers.
 - No KiCad is launched for import or routing: `.kicad_pcb` is parsed as data (`kicadts` +
   `kicad-to-circuit-json`); nets are re-derived by `@fabdesk/kicad`'s importer because the nightly
   file format references nets by name and the converter drops them.
-- The strict scenario uses `--router freerouting` (js_autorouter) only. The capacity autorouter is
-  available for comparison but drops polygon obstacles (pours) and widens rotated ones; its `detail`
-  says so. It does handle six layers.
+- The strict scenario uses `--router freerouting`. The FabRouter capacity router is available for
+  comparison; its result detail records any geometry limitations.
 - The importer fails closed (`reports/import.json.failures`) on net-name collisions, copper it could
   not link to a net, blind/buried/micro vias, and a layer-count disagreement; rule areas, unfilled
   zones and copper graphics it cannot convert are listed under `dropped`, never silently flattened.
@@ -80,8 +77,8 @@ does the import + SRJ + one repair route in-process and prints the numbers.
   vias and zones.
 - DRC with `kicad-cli` (`verify_drc`) is a separate, optional verification step on the converted
   board; the benchmark does not run it.
-- js_autorouter's `maxTotalMs` is checked between units of work, so a run over a large problem can
-  overshoot `--timeout-ms` by a lot; the report keeps `wallMs` and `timedOut` separately.
+- Router time limits are cooperative, so a large unit of work can overshoot `--timeout-ms`; the
+  report keeps `wallMs` and `timedOut` separately.
 
 ## Route Cinema under load
 

@@ -21,9 +21,8 @@ describe("PCB backend packaging", () => {
     expect(workflow).toContain('tag="backend-${commit:0:10}"');
     expect(workflow).toContain('asset="fp-pcb-backend-${target}.tar.gz"');
     expect(workflow).toContain('test -f "dist/pcb/$target/bundle.json"');
-    expect(workflow).toContain("scripts/inject-js-autorouter.ts");
-    expect(workflow).toContain('if [ "$CHANNEL" = internal ]');
-    expect(workflow).toContain("public backend unexpectedly contains the private router");
+    expect(workflow).toContain("backend does not contain fab_router");
+    expect(workflow).not.toMatch(/js[_-]autorouter/i);
   });
 
   test("installer CI tests the exact triggering build instead of site latest", () => {
