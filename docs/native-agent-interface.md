@@ -1,7 +1,8 @@
 # Native-first agent interface prototype
 
 Local prototype branch: `local/native-first-agent-interface`, based on Candidate 2 iteration 8
-(`b4f7c3b`). This branch is intentionally not published or packaged as an AppImage.
+(`b4f7c3b`). The post-test implementation is commit `b0a60e7`. This branch is intentionally not
+published or packaged as an AppImage.
 
 ## What changed
 
