@@ -42,21 +42,22 @@ jobs:
       - name: Initialize workspace submodules
         run: git submodule update --init --depth 1 vendor/fabplane vendor/fab_pcb
 
-      - name: Resolve the router pin
+      - name: Resolve the fab_router pin
         id: router
-        run: echo "commit=$(tr -d '[:space:]' < vendor/fab_pcb/packages/router/JS_AUTOROUTER_COMMIT)" >> "$GITHUB_OUTPUT"
+        run: echo "commit=$(tr -d '[:space:]' < vendor/fab_pcb/packages/router/FAB_ROUTER_COMMIT)" >> "$GITHUB_OUTPUT"
 
-      - name: Check out the pinned router for regression testing
+      - name: Check out the pinned fab_router for regression testing
         uses: actions/checkout@v4
         with:
-          repository: TensorFleet/js_autorouter
+          repository: TensorFleet/fab_router
           ref: ${{ steps.router.outputs.commit }}
-          path: .ci-private/js_autorouter
+          path: .ci-private/fab_router
           token: ${{ secrets.JS_AUTOROUTER_READ_TOKEN }}
           persist-credentials: false
           sparse-checkout: |
             package.json
             src
+            spec/types
           sparse-checkout-cone-mode: false
 
       - uses: oven-sh/setup-bun@v2
@@ -133,7 +134,7 @@ jobs:
           KICAD_CLI="$KICAD_CLI" \
             KICAD10_FOOTPRINT_DIR=/usr/share/kicad/footprints \
             KICAD_SYMBOL_DIR=/usr/share/kicad/symbols \
-            JS_AUTOROUTER_MODULE="$GITHUB_WORKSPACE/.ci-private/js_autorouter/src/index.ts" \
+            FAB_ROUTER_MODULE="$GITHUB_WORKSPACE/.ci-private/fab_router/src/api.ts" \
             WORKSPACE_ROOT="$RUNNER_TEMP/board-workspace" PORT=4020 \
             bun run --cwd "$RUNNER_TEMP/fab-pcb/packages/bridge" start >"$RUNNER_TEMP/bridge.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/bridge.pid"
