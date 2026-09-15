@@ -21,6 +21,37 @@ profile's, the bridge a fab_pcb checkout at the vendor pin with the KiCad fork n
 | 9 | N64 Controller Pak | desktop (all) | Thor (DRC list, renders) | placed by the agent; 48 router errors, all at the 0.5 mm USB-C pads; DRC list and gallery reviewed on the Thor |
 | 10 | Genesis flash cart | Thor (netlist, build) | desktop (place, route) | 80/80 routed on the first pass; the second `route_run` was aborted by Claude Code's 5-minute idle timeout (see below) |
 
+## The other twelve (2026-09-14, small hours)
+
+Same rules, one route at a time after the first two wedged the bridge; the phone side was the
+emulator (recovered once the host load dropped) and the Thor.
+
+| # | Board | Started | Finished | Outcome |
+| --- | --- | --- | --- | --- |
+| 11 | PS1 memory card (RP2040) | desktop (netlist, build, place) | emulator (route) | first route wedged the bridge; retry routed with 323 errors at the QFN |
+| 12 | GB MBC5 smart cart (ESP32-S3) | emulator (everything to placement) | desktop (route) | route timed out cleanly; 15 placement errors the agent named |
+| 13 | NES expansion-port hub | Thor (netlist) → desktop (build, place) | Thor (route) | every route wedged the bridge (R8); stopped |
+| 14 | PS1 PIO boot cart | desktop (build, supervised on) | emulator (place, route) | question answered as free text on the desktop, Edit approved on the emulator, `circuit_build fresh` after a size change; route timed out |
+| 15 | RP2350 NES cart | emulator (netlist, build, place) | desktop (route) | route `HB ran out of iterations`; placement DRC-clean |
+| 16 | SNES flash cart | Thor (all to placement) | desktop (route) | route timed out; DRC clean pre-route |
+| 17 | RP2350 Game Boy cart | desktop (all to placement) | Thor (route) | route timed out; 14 placement errors |
+| 18 | PicoCart64 N64 dev cart | emulator (all to placement) | desktop (route) | route timed out; 14 placement errors |
+| 19 | Saturn boot cart | Thor (all to placement) | desktop (route) | route timed out; DRC clean pre-route |
+| 20 | FDS RAM adapter | desktop (all to placement) | Thor (route) | route timed out; DRC clean pre-route |
+| 21 | PS1 optical-drive emulator | emulator (all to placement) | desktop (route) | routed all but one net, 188 router errors at the 0.4 mm QFN-80 |
+| 22 | PS1 wireless hub (ESP32-S3) | desktop (all to placement) | emulator (route) | routed, 72 router errors |
+
+What this batch added to the picture: the cross-device flow held up for 22 boards without a
+single lost message; with `circuit_place` every board arrives at a sensible, mostly DRC-clean
+placement; and the router is the wall — coarse THT/SOIC boards time out or wedge the bridge, QFN
+boards route with dozens to hundreds of errors. Two more things fixed from this batch: a bridge
+restart left the cached library session dead so `circuit_search_parts` failed for every agent
+until the daemon restarted (now retried through `withRetry`), and the bridge was kept alive by a
+watchdog (`kill -9` on a 60 s `/health` silence) — the R8 fix belongs in fab_pcb. Five coarse
+netlists with their placements joined `docs/router-cases/`. One test-driving quirk on the
+emulator: uiautomator's accessibility bounds lagged the visible layout while a thread streamed, so
+taps by dumped coordinates missed until re-read from a screenshot.
+
 ## Fixed on the branch
 
 Cross-device state (both clients, `packages/client-core`):

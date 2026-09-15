@@ -74,11 +74,11 @@ identity do not reset; in-app updates fetch this feed by URL and do not use `app
 
 | Secret | Purpose |
 |---|---|
-| `FABDESK_SUBMODULE_SSH_KEY` | Read-only deploy keys for the private submodules (fabplane.com; fab_pcb if it is private) concatenated; loaded by `webfactory/ssh-agent`, which routes each private submodule fetch through its own key. Rotate by regenerating both keys (`ssh-keygen -t ed25519 -C git@github.com:TensorFleet/<repo>`), re-adding them with `gh repo deploy-key add`, and re-setting the secret. |
+| `FABDESK_SUBMODULE_SSH_KEY` | Read-only deploy key for the private `TensorFleet/fabplane.com` submodule. The fabPlane organization disables deploy keys, so this secret must not be used for `fabPlane/fab_pcb`. |
 | `CSC_LINK`, `CSC_KEY_PASSWORD` | macOS Developer ID certificate (base64 .p12) |
 | `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` | Notarization |
 | `WIN_CSC_LINK`, `WIN_CSC_KEY_PASSWORD` | Windows code-signing certificate |
-| `FAB_PCB_RELEASE_TOKEN` | Fine-grained read token for private `TensorFleet/fab_pcb` release assets. Desktop builds download tag `backend-<vendor/fab_pcb commit prefix>` and refuse an unpinned/latest bundle. |
+| `FAB_PCB_RELEASE_TOKEN` | Fine-grained contents-read token for private `fabPlane/fab_pcb`. Workflows use it to check out the exact submodule commit and desktop builds download tag `backend-<vendor/fab_pcb commit prefix>`, refusing an unpinned/latest bundle. |
 
 Without signing secrets the workflow still produces unsigned installers.
 

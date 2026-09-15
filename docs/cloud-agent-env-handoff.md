@@ -17,7 +17,7 @@ gh api /installation/repositories → total_count 4
   TensorFleet/fabplane.com
   TensorFleet/fabdesk
   TensorFleet/kicad
-  TensorFleet/fab_pcb
+  fabPlane/fab_pcb
 ```
 
 Evidence log: `/opt/cursor/artifacts/fabdesk-env-verify-evidence.log` on that run.
@@ -32,7 +32,7 @@ workspaces live in **private git submodules**:
 | Submodule path   | Repo                              | Provides                                   |
 | ---------------- | --------------------------------- | ------------------------------------------ |
 | `vendor/fabplane`| `github.com/TensorFleet/fabplane.com` | shared `tsconfig.base.json`, `@pcb/*` pkgs |
-| `vendor/fab_pcb` | `github.com/TensorFleet/fab_pcb`  | `@fp-pcb/proto`, `@fp-pcb/client` workspaces |
+| `vendor/fab_pcb` | `github.com/fabPlane/fab_pcb`    | `@fp-pcb/proto`, `@fp-pcb/client` workspaces |
 
 Both are **required**: `bun install --frozen-lockfile` aborts if the
 `vendor/fab_pcb/packages/{proto,client}` workspaces are missing from disk, and

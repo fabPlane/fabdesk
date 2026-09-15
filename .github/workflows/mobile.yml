@@ -52,9 +52,23 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.FABDESK_SUBMODULE_SSH_KEY }}
 
-      - name: Init the fabplane and fab_pcb submodules
-        run: git submodule update --init --depth 1 vendor/fabplane vendor/fab_pcb
+      - name: Init the fabplane submodule
+        run: git submodule update --init --depth 1 vendor/fabplane
         working-directory: source
+
+      - name: Resolve the fab_pcb pin
+        id: fab-pcb
+        run: echo "commit=$(git ls-tree HEAD vendor/fab_pcb | awk '{print $3}')" >> "$GITHUB_OUTPUT"
+        working-directory: source
+
+      - name: Check out the pinned fab_pcb workspace
+        uses: actions/checkout@v4
+        with:
+          repository: fabPlane/fab_pcb
+          ref: ${{ steps.fab-pcb.outputs.commit }}
+          path: source/vendor/fab_pcb
+          token: ${{ secrets.FAB_PCB_RELEASE_TOKEN }}
+          persist-credentials: false
 
       - name: Install (root)
         run: bun install --frozen-lockfile
@@ -163,8 +177,21 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.FABDESK_SUBMODULE_SSH_KEY }}
 
-      - name: Init the fabplane and fab_pcb submodules
-        run: git submodule update --init --depth 1 vendor/fabplane vendor/fab_pcb
+      - name: Init the fabplane submodule
+        run: git submodule update --init --depth 1 vendor/fabplane
+
+      - name: Resolve the fab_pcb pin
+        id: fab-pcb
+        run: echo "commit=$(git ls-tree HEAD vendor/fab_pcb | awk '{print $3}')" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the pinned fab_pcb workspace
+        uses: actions/checkout@v4
+        with:
+          repository: fabPlane/fab_pcb
+          ref: ${{ steps.fab-pcb.outputs.commit }}
+          path: vendor/fab_pcb
+          token: ${{ secrets.FAB_PCB_RELEASE_TOKEN }}
+          persist-credentials: false
 
       - name: Install (root and apps/mobile)
         run: |

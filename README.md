@@ -23,7 +23,7 @@ fabPlane runs standalone or as an MCP server inside Claude Code / Codex / Cursor
 | `packages/client-core` | Platform-agnostic client: `CoreClient`, the event reducer, query hooks, stores, transports. Shared by the desktop and the mobile app. |
 | `packages/ui` | React components: chat, board panel, route cinema, sketch pad. |
 | `vendor/fabplane` | git submodule → `TensorFleet/fabplane.com`. Shared `@pcb/*` packages. |
-| `vendor/fab_pcb` | git submodule → `TensorFleet/fab_pcb` (FabPlane PCB). `packages/{proto,client}` are consumed as workspaces; the bridge runs as its own process. |
+| `vendor/fab_pcb` | git submodule → `fabPlane/fab_pcb` (FabPlane PCB). `packages/{proto,client}` are consumed as workspaces; the bridge runs as its own process. |
 
 ## Setup
 

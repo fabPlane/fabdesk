@@ -491,13 +491,13 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     return { components, missing, nets: kept, excluded, pads };
   };
 
-  const searchLibraries = async (
+  const searchLibrariesOnce = async (
+    sessionKicad: KiCad,
     kind: "footprint" | "symbol",
     query: string,
     limit: number,
   ): Promise<FootprintHit[]> => {
-    if (deps.catalog?.has(kind)) return deps.catalog.search(kind, query, limit);
-    const kicad = await anyKicad();
+    const kicad = await anyKicad(sessionKicad);
     const tokens = query
       .toLowerCase()
       .split(/[\s:]+/)
@@ -513,7 +513,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       // does not already cover and match the remaining tokens here against name + description.
       const rest = tokens.filter((t) => !n.toLowerCase().includes(t));
       const [primary, ...others] = [...rest].sort((a, b) => b.length - a.length);
-      const entries = await kicad.libraries.entries(kind, n, primary ?? "").catch(() => []);
+      const entries = await kicad.libraries.entries(kind, n, primary ?? "");
       for (const e of entries) {
         if (hits.length >= limit) break;
         const hay = `${e.name} ${e.description ?? ""}`.toLowerCase();
@@ -527,6 +527,18 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       }
     }
     return hits;
+  };
+  const searchLibraries = (
+    kind: "footprint" | "symbol",
+    query: string,
+    limit: number,
+  ): Promise<FootprintHit[]> => {
+    if (deps.catalog?.has(kind)) return deps.catalog.search(kind, query, limit);
+    // Keep the entire remote search inside the retry boundary. If the bridge disappears during an
+    // entries call, retry from nicknames rather than returning a silently truncated result set.
+    return deps.sessions.withRetry("", (session) =>
+      searchLibrariesOnce(session.kicad, kind, query, limit),
+    );
   };
   const searchFootprints = (query: string, limit: number) =>
     searchLibraries("footprint", query, limit);
@@ -590,8 +602,8 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
    * footprint-library handlers once a project is open (`GetLibraryTables` answers `AS_UNHANDLED`
    * on a bare session), so the shared session is given a scratch project the first time.
    */
-  const anyKicad = async (): Promise<KiCad> => {
-    const { kicad } = await deps.sessions.session("");
+  const anyKicad = async (sessionKicad?: KiCad): Promise<KiCad> => {
+    const kicad = sessionKicad ?? (await deps.sessions.session("")).kicad;
     const hasProject = await kicad
       .projectInfo()
       .then(() => true)

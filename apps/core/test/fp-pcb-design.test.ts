@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { FpPcbCompileJob } from "@fabdesk/protocol";
 import { createFpPcbDesign } from "../src/fp-pcb-design";
 import type { FpPcbBridgeClient } from "../src/fp-pcb-bridge";
-import type { FpPcbSessions, ProjectSession } from "../src/fp-pcb-session";
+import { FpPcbSessions, type ProjectSession } from "../src/fp-pcb-session";
 
 describe("FabPCB build recovery", () => {
   test("releases a bare session when NewProject leaves a board behind", async () => {
@@ -76,9 +76,10 @@ function fakeKicad(opts: { projectOpen: boolean }) {
 }
 
 function sessionsFor(kicad: unknown): FpPcbSessions {
-  return {
-    session: async () => ({ id: "s1", kicad, ws: {}, path: null }),
-  } as unknown as FpPcbSessions;
+  const session = async () => ({ id: "s1", kicad, ws: {}, path: null });
+  const withRetry = async (_dir: string, fn: (s: unknown) => Promise<unknown>) =>
+    fn(await session());
+  return { session, withRetry } as unknown as FpPcbSessions;
 }
 
 describe("searchFootprints", () => {
@@ -101,5 +102,71 @@ describe("searchFootprints", () => {
     const design = createFpPcbDesign({ bridge: () => ({}) as never, sessions: sessionsFor(kicad) });
     await design.searchFootprints("SOT-23-5", 5);
     expect(calls.some((c) => c.startsWith("newProject"))).toBe(false);
+  });
+});
+
+describe("searchFootprints after a bridge restart", () => {
+  test("a gone library session is reconnected once and the search retried", async () => {
+    const { kicad } = fakeKicad({ projectOpen: true });
+    let attempts = 0;
+    const gone = {
+      ...kicad,
+      libraries: {
+        ...kicad.libraries,
+        nicknames: async (type: string) => {
+          attempts++;
+          if (attempts === 1)
+            throw new Error(
+              "WebSocket ws://127.0.0.1:4020/ws?session=x closed (code 1006: Connection ended)",
+            );
+          return kicad.libraries.nicknames(type);
+        },
+      },
+    };
+    const sessions = new FpPcbSessions(() => ({}) as never);
+    let releases = 0;
+    sessions.session = async () => ({
+      id: "s1",
+      kicad: gone as never,
+      ws: {} as never,
+      path: null,
+    });
+    sessions.release = async () => {
+      releases++;
+    };
+    const design = createFpPcbDesign({ bridge: () => ({}) as never, sessions });
+    const hits = await design.searchFootprints("SOT-23-5", 5);
+    expect(attempts).toBe(2);
+    expect(releases).toBe(1);
+    expect(hits[0]?.libId).toBe("Package_TO_SOT_SMD:SOT-23-5");
+  });
+
+  test("an entries call interrupted by a bridge restart retries the complete search", async () => {
+    const { kicad } = fakeKicad({ projectOpen: true });
+    let attempts = 0;
+    const gone = {
+      ...kicad,
+      libraries: {
+        ...kicad.libraries,
+        entries: async (...args: Parameters<typeof kicad.libraries.entries>) => {
+          attempts++;
+          if (attempts === 1) throw new Error("WebSocket closed (code 1006: Connection ended)");
+          return kicad.libraries.entries(...args);
+        },
+      },
+    };
+    const sessions = new FpPcbSessions(() => ({}) as never);
+    sessions.session = async () => ({
+      id: "s1",
+      kicad: gone as never,
+      ws: {} as never,
+      path: null,
+    });
+    sessions.release = async () => {};
+    const design = createFpPcbDesign({ bridge: () => ({}) as never, sessions });
+    expect((await design.searchFootprints("SOT-23-5", 5))[0]?.libId).toBe(
+      "Package_TO_SOT_SMD:SOT-23-5",
+    );
+    expect(attempts).toBeGreaterThan(1);
   });
 });

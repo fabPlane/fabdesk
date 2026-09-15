@@ -7,7 +7,7 @@ errors", has no tool that can, and ends up hand-editing `board.kicad_pcb` for 15
 
 The router is fab_pcb `packages/router/src/js-router.ts` (`@tscircuit/capacity-autorouter`
 0.0.885 behind a `SimpleRouteJson` adapter) running on the FabPlane PCB bridge; fabdesk only
-calls it (`apps/core/src/fp-pcb-design.ts` → `route_run`). Fixes land in `TensorFleet/fab_pcb`,
+calls it (`apps/core/src/fp-pcb-design.ts` → `route_run`). Fixes land in `fabPlane/fab_pcb`,
 then bump `vendor/fab_pcb` here.
 
 ## Reproduce
@@ -40,6 +40,10 @@ Judge a fix on the rule categories going to zero, not on a count.
 | `gb-link-usb-bridge` | the real board 2: RP2040 (QFN-56) + W25Q16 + USB-C + 3 × 74LVC1T45 + LDO + crystal + 31 passives; 41 parts, 29 nets, 50 × 30 mm | first full `route_run` sat 6 min with no progress and was cancelled; the agent then routed in stages (24 runs, 11 failed with `Static reachability precheck failed: N route(s) have no legal …`); the end state has 360 errors: 174 clearance, 113 tracks_crossing, 40 shorting_items, 32 solder_mask_bridge, 17 unconnected |
 
 | `famicom-expansion-adapter` (+ `.place.json`) | the real board 4: DA-15, two 2×04 IDC headers, SOIC-16 mux, 3 mm LEDs, 0805 passives; 14 parts, 15 nets, 60 × 40 mm, **with a sane hand placement** (connectors on the edges, mux in the middle) | run to run: `HB ran out of iterations` (nothing routed), or 23/38 routed with 38 clearance, 18 shorting_items, 3 tracks_crossing. The same netlist with the autoplacer's corner-packed placement routed 39/39 with only placement errors — spreading the parts out made the router worse. |
+
+| `genesis-flash-cart` (+ `.place.json`) | the real board 10: 2 × PLCC-32 sockets, SOIC-28 FRAM, SOIC-20 + SOIC-14 logic, 2×32 header, 90 × 60 mm, 46 nets, placed by the agent | `timed out with nothing routed (300000 ms in phase highDensityRouteSolver)`; the run before it wedged the bridge (R8) |
+
+| `nes-expansion-hub`, `ps1-pio-boot-cart`, `snes-flash-cart`, `fds-ram-adapter`, `saturn-boot-cart` (+ `.place.json`) | coarse boards from the second batch: THT headers, PLCC/SOIC/SOP parts, 44–62 nets, placed by the agent with a clean pre-route DRC | every one: `timed out with nothing routed (120000 ms in phase highDensityRouteSolver)` or `HB ran out of iterations`; `nes-expansion-hub` wedged the bridge three times in a row (R8) |
 
 Baseline that passes: the 3-part blinky in `docs/handoff-fab-pcb.md` §3 (0 errors). Anything with
 two pads closer than `clearance + trackWidth` fails.
