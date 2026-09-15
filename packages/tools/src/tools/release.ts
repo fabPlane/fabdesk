@@ -117,7 +117,7 @@ export const release_build = defineTool({
   toolset: "verify",
   title: "Verify and build the complete release",
   description:
-    "Run full-severity ERC, parity-enabled DRC, unconnected/library checks, design-rule floor and schematic-presentation checks, task-derived circuit checks, schematic/PCB renders, and complete native/document/fabrication export for one exact saved revision. Missing checks, relaxed safety rules, label-dense stub-only schematics, or missing outputs fail the release. Returns SHA-256 revisions and a complete output inventory; any later edit makes this evidence stale.",
+    "Run full-severity ERC, parity-enabled DRC, unconnected/library checks, design-rule floor, schematic-presentation, and PCB-reference visibility checks, task-derived circuit checks, schematic/PCB renders, and complete native/document/fabrication export for one exact saved revision. Missing checks, relaxed safety rules, label-dense stub-only schematics, hidden reference fields, or missing outputs fail the release. Returns SHA-256 revisions and a complete output inventory; any later edit makes this evidence stale.",
   inputSchema: {
     circuitChecks: z.array(CircuitCheck).min(1).describe("Task-derived electrical assertions relevant to this board"),
     buildNotes: z.string().min(1).describe("Assembly notes, design calculations, polarity/orientation guidance and constraints"),

@@ -1,7 +1,7 @@
 # Native-first agent interface prototype
 
 Local prototype branch: `local/native-first-agent-interface`, based on Candidate 2 iteration 8
-(`b4f7c3b`). The post-test implementation is commit `6e3fc09`. This branch is intentionally not
+(`b4f7c3b`). The completed local implementation is commit `a86fdb3`. This branch is intentionally not
 published or packaged as an AppImage.
 
 ## What changed
@@ -35,6 +35,16 @@ published or packaged as an AppImage.
 - Agent shell scripts can search, describe, call, and batch any registry operation with
   `fabpcb tool`. This supplies programmable loops and JSONL batching without legacy Python
   `pcbnew` or a different KiCad build.
+- Rotated and mirrored schematic symbols are transparently created, saved, then transformed so
+  the saved library identity remains clean. Power-symbol serialization is normalized and covered
+  by a packaged-KiCad regression test.
+- USB-C library search accepts the `power-only-usb-c` role and ranks explicit power/charging-only
+  parts ahead of generic data connectors. USB-C symbol/footprint pairs receive compatibility
+  validation when they are added.
+- Native PCB geometry accepts names such as `F.Cu`, `B.Cu`, `F.SilkS`, and `Edge.Cuts`, while
+  retaining numeric layer compatibility.
+- Blank-project PCB inspection returns a successful empty result. Schematic review detects note
+  collisions and low sheet utilization; release fails when most PCB references are hidden.
 
 The remaining custom JSON path is compatibility-only: `circuit_build` consumes it and
 `circuit_read_errors` reads its build report. Neither appears in the native profile. Native
@@ -88,11 +98,11 @@ fabpcb tool batch --input @calls.jsonl
 conservatively marked as potentially destructive/open-world because it can call operations with
 different side effects.
 
-For the next clean test, restart the launcher so the bridge inherits the corrected packaged
-library environment. Use a new project; the completed 2026-09-15 blinker is retained as diagnostic
-evidence and should not be overwritten. Confirm that a moved footprint reports a non-zero
-`libraryNormalized` count when needed, DRC has no `lib_footprint_mismatch`, connection rendering
-shows short labelled pin stubs, and a failed `release_build` lists its exact reasons.
+For the next clean test, restart the launcher and use a new project; the three completed 2026-09-15
+blinkers are retained as diagnostic evidence and should not be overwritten. The packaged KiCad
+10.99 integration test already passes for rotated symbols, power symbols, clean ERC, native PCB
+update/parity, outline creation, and placement. The next manual run should measure behavior and
+visual quality rather than rediscovering those serialization defects.
 
 ## Known prototype boundaries
 
