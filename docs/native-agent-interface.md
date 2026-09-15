@@ -1,12 +1,12 @@
 # Native-first agent interface prototype
 
 Local prototype branch: `local/native-first-agent-interface`, based on Candidate 2 iteration 8
-(`b4f7c3b`). The post-test implementation is commit `b0a60e7`. This branch is intentionally not
+(`b4f7c3b`). The post-test implementation is commit `6e3fc09`. This branch is intentionally not
 published or packaged as an AppImage.
 
 ## What changed
 
-- Codex receives 18 MCP functions at turn start: 16 common native-KiCad operations plus
+- Codex receives 19 MCP functions at turn start: 17 common native-KiCad operations plus
   `capability_search` and `capability_call`. The complete 65-operation registry remains available
   on demand. The explicit schema payload falls from about 64 KB for the full registry to 24 KB.
 - MCP server guidance is one factual sentence. Generated project guidance no longer describes a
@@ -28,6 +28,10 @@ published or packaged as an AppImage.
   packaged bridge and `kicad-cli` now receive KiCad's standard versioned library variables.
 - `schematic_review` is initially visible, connection batches create safe labelled pin stubs, and
   legacy netlist compiler operations are excluded from native capability search.
+- Native symbol creation preserves library identity, power symbols need no fake footprint, and
+  connection preflight rejects crossing or ambiguous labelled stubs before committing.
+- Release rejects relaxed design-rule floors and label-dense stub-only schematics. PCB placement
+  can also lay out reference fields after normalizing library geometry.
 - Agent shell scripts can search, describe, call, and batch any registry operation with
   `fabpcb tool`. This supplies programmable loops and JSONL batching without legacy Python
   `pcbnew` or a different KiCad build.
@@ -64,7 +68,7 @@ Then launch the bundled KiCad/FabPCB runtime with the prototype source:
 /home/shane/fabdesk-evals/bin/run-native-agent-test
 ```
 
-In the app, create a fresh project named `Native Agent Test` and give Codex a normal PCB request.
+In the app, create a fresh project such as `Native Agent Test 3` and give Codex a normal PCB request.
 Do not reuse an evaluation project. Confirm that the project
 starts without `circuit.netlist.json`, the agent can create native files, and the run uses
 `pcb_inspect`/`render_view` for local inspection. Existing projects with a custom netlist remain
