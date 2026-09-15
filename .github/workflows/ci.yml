@@ -17,14 +17,27 @@ jobs:
         with:
           submodules: false
 
-      # Read-only deploy keys for the private submodules, fabplane.com and fab_pcb (one secret,
-      # keys concatenated; each key's comment names its repo so ssh-agent maps it to that repo over https).
+      # The deploy key still provides read-only access to fabplane.com. The new fabPlane
+      # organization disables deploy keys, so fab_pcb is checked out with its repository token.
       - uses: webfactory/ssh-agent@v0.9.1
         with:
           ssh-private-key: ${{ secrets.FABDESK_SUBMODULE_SSH_KEY }}
 
-      - name: Init the fabplane and fab_pcb submodules
-        run: git submodule update --init --depth 1 vendor/fabplane vendor/fab_pcb
+      - name: Init the fabplane submodule
+        run: git submodule update --init --depth 1 vendor/fabplane
+
+      - name: Resolve the fab_pcb pin
+        id: fab-pcb
+        run: echo "commit=$(git ls-tree HEAD vendor/fab_pcb | awk '{print $3}')" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the pinned fab_pcb workspace
+        uses: actions/checkout@v4
+        with:
+          repository: fabPlane/fab_pcb
+          ref: ${{ steps.fab-pcb.outputs.commit }}
+          path: vendor/fab_pcb
+          token: ${{ secrets.FAB_PCB_RELEASE_TOKEN }}
+          persist-credentials: false
 
       - uses: oven-sh/setup-bun@v2
         with:
