@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   verify:
-    runs-on: blacksmith-4vcpu-ubuntu-2204
+    runs-on: [self-hosted, macOS, ARM64]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -136,6 +136,7 @@ jobs:
   e2e-ios:
     needs: verify
     if: ${{ vars.MOBILE_E2E == '1' }}
+    # Keep this on a provisioned image until the self-hosted Mini has full Xcode + simulators.
     runs-on: blacksmith-6vcpu-macos-15
     timeout-minutes: 60
     steps:

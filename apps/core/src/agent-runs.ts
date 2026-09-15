@@ -27,6 +27,7 @@ import { logger, errMsg } from "./log";
 import { captureCoreException } from "./sentry";
 import { classifyToolCall, parseAskUserQuestion } from "./supervision";
 import type { TokenSet } from "./auth";
+import type { AgentTrace, RunTelemetry } from "./run-telemetry";
 
 import type {
   AgentAdapter,
@@ -51,6 +52,7 @@ export type RunDeps = {
   /** Regenerates AGENTS.md/CLAUDE.md before the run. */
   prepareProject?: (project: ProjectHandle, agentId: AgentId) => Promise<void>;
   workspaceDir: string;
+  telemetry?: Pick<RunTelemetry, "startAgentRun">;
   /** Annotations of a fabdesk (or other known) tool, for the supervised-mode classifier. */
   annotationsFor?: (toolName: string, server: string | null) => ToolAnnotations | undefined;
   /** Needed to send queued messages when a run ends (the HTTP route resolves projects the same way). */
@@ -132,6 +134,20 @@ export class AgentRunManager {
 
   abortAll(): void {
     for (const r of this.active.values()) r.abort();
+  }
+
+  async settleAll(timeoutMs = 1_000): Promise<boolean> {
+    const pending = [...this.active.values()].map((run) => run.done);
+    if (!pending.length) return true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const settled = await Promise.race([
+      Promise.allSettled(pending).then(() => true),
+      new Promise<false>((resolve) => {
+        timer = setTimeout(() => resolve(false), timeoutMs);
+      }),
+    ]);
+    if (timer) clearTimeout(timer);
+    return settled;
   }
 
   /* ---------- supervised mode: pending requests ---------- */
@@ -389,6 +405,33 @@ export class AgentRunManager {
         .catch((e) => logger.warn("prepareProject failed", { error: errMsg(e) }));
 
     const run = store.runs.create({ threadId: input.threadId, agentId: input.agentId });
+    const selectedModel = input.model ?? agentSettings?.model;
+    let agentTrace: AgentTrace | undefined;
+    try {
+      agentTrace = await this.deps.telemetry?.startAgentRun({
+        runId: run.id,
+        threadId: input.threadId,
+        agentId: input.agentId,
+        projectId: input.project?.id ?? null,
+        cwd,
+        prompt: input.prompt,
+        attachments: input.attachments,
+        ...(selectedModel ? { model: selectedModel } : {}),
+      });
+      if (agentTrace) store.runs.setLogPath(run.id, agentTrace.logPath);
+    } catch (e) {
+      logger.warn("agent trace could not be started", { runId: run.id, error: errMsg(e) });
+    }
+    const finishTrace = (
+      status: "completed" | "aborted" | "failed",
+      details: Record<string, unknown>,
+    ) => {
+      void agentTrace
+        ?.finish(status, details)
+        .catch((e) =>
+          logger.warn("agent trace could not be finished", { runId: run.id, error: errMsg(e) }),
+        );
+    };
     const token = tokens.mintRunToken({
       runId: run.id,
       projectId: input.project?.id ?? null,
@@ -475,9 +518,7 @@ export class AgentRunManager {
       attachments: input.attachments,
       mcp: { url: this.deps.mcpUrl, token },
       ...(resume ? { resume } : {}),
-      ...((input.model ?? agentSettings?.model)
-        ? { model: (input.model ?? agentSettings?.model) as string }
-        : {}),
+      ...(selectedModel ? { model: selectedModel } : {}),
       permission: agentSettings?.permissionMode ?? "acceptEdits",
       runtimeMode,
       ...(runtimeMode === "supervised" ? { supervisor } : {}),
@@ -505,6 +546,7 @@ export class AgentRunManager {
       tokens.revokeRun(run.id);
       this.active.delete(run.id);
       emit({ ts: Date.now(), topic: "agent.error", runId: run.id, message: msg });
+      finishTrace("failed", { phase: "start", error: msg });
       emit({
         ts: Date.now(),
         topic: "agent.done",
@@ -523,6 +565,7 @@ export class AgentRunManager {
       const cost: Record<string, number> = {};
       try {
         for await (const ev of handle.events) {
+          agentTrace?.record(`agent.${ev.type}`, ev);
           switch (ev.type) {
             case "init": {
               if (ev.sessionId) {
@@ -612,6 +655,7 @@ export class AgentRunManager {
       } catch (e) {
         if (!aborted) {
           status = "failed";
+          agentTrace?.record("agent.stream_error", { error: e });
           captureCoreException(e, { agent: input.agentId, "agent.phase": "stream" });
           emit({ ts: Date.now(), topic: "agent.error", runId: run.id, message: errMsg(e) });
           recordError(errMsg(e));
@@ -634,8 +678,12 @@ export class AgentRunManager {
       persist(true);
       store.runs.finish(run.id, { status, exitCode: exitCode ?? null, cost });
       tokens.revokeRun(run.id);
-      this.active.delete(run.id);
       store.threads.touch(input.threadId);
+      finishTrace(status, {
+        ...(sessionId ? { sessionId } : {}),
+        ...(exitCode !== undefined ? { exitCode } : {}),
+        cost,
+      });
       emit({
         ts: Date.now(),
         topic: "agent.done",
@@ -646,6 +694,7 @@ export class AgentRunManager {
         ...(exitCode !== undefined ? { exitCode } : {}),
       });
       emit({ ts: Date.now(), topic: "thread.updated", threadId: input.threadId });
+      this.active.delete(run.id);
       await this.drainQueue(input.threadId);
     })();
 

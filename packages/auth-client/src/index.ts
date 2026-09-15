@@ -48,3 +48,10 @@ export {
   loginWithPasswordSession,
 } from "./password-login";
 export type { PasswordCredentials } from "./password-login";
+export {
+  fetchCloudSettings,
+  putCloudSettings,
+  mergeCloudSettings,
+  overlayCloudSettings,
+} from "./cloud-settings";
+export type { CloudSettingsGet, CloudSettingsPut } from "./cloud-settings";

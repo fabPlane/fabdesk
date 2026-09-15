@@ -297,6 +297,13 @@ function AuthSection() {
           {state.principal.email && <span className="text-muted"> ({state.principal.email})</span>}
         </div>
       )}
+      {state.status === "signed_in" && state.mode === "fabplane" && (
+        <div className="text-muted">
+          Theme, default agent, runtime mode, error reporting and notification prefs sync to this
+          account. Paths, remote access and keep-core-running stay on this machine. Later, signed-in
+          phones will reach this computer through the backend.
+        </div>
+      )}
       {state.status === "pending" && state.pending && (
         <div className="rounded-md border border-border p-3">
           <div>Enter this code in the browser:</div>
@@ -331,7 +338,7 @@ function AuthSection() {
             void loginWithPassword();
           }}
         >
-          <div className="text-muted">Staging/local password login. Shared demo/maya accounts are not available in production.</div>
+          <div className="text-muted">Staging/local only. Password login is not available in production.</div>
           <Input
             type="text"
             autoComplete="username"

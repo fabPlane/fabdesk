@@ -23,6 +23,7 @@ import {
   type RelayEndpoint,
 } from "./relay";
 import { createAuth, type AuthFacade } from "./auth-facade";
+import { CloudSettingsSync } from "./cloud-settings";
 import { EventBus } from "./bus";
 import { resolveConfig, type CoreConfig } from "./config";
 import { locateAppBridgeFile } from "./app-bridge";
@@ -44,6 +45,7 @@ import {
   sentryUserFromAuth,
   setSentryUser,
 } from "./sentry";
+import { RunTelemetry } from "./run-telemetry";
 
 export type ServeOptions = {
   port?: number;
@@ -142,6 +144,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   const staleRoutes = store.routeRuns.failStale();
   if (staleRoutes) logger.info("failed stale route runs from previous run", { count: staleRoutes });
   const tokens = new TokenSet(config.token);
+  const telemetry = new RunTelemetry({ version: config.version, runDumps: store.runDumps });
   const devices = new DeviceStore(store.db);
   tokens.setDeviceLookup((token) => {
     const device = devices.verify(token);
@@ -174,6 +177,19 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     for (const ev of events)
       if (ev.event.topic === "auth.state") setSentryUser(sentryUserFromAuth(ev.event.state));
   });
+  const cloudSettings = new CloudSettingsSync({
+    apiOrigin: config.apiOrigin,
+    token: () => auth.token(),
+    settings: store.settings,
+  });
+  if (auth.state().status === "signed_in") void cloudSettings.pull();
+  const unsubscribeCloud = bus.subscribe(["auth.state"], (events) => {
+    for (const ev of events) {
+      if (ev.event.topic === "auth.state" && ev.event.state.status === "signed_in") {
+        void cloudSettings.pull();
+      }
+    }
+  });
 
   const services: CoreServices =
     opts.services !== undefined
@@ -191,10 +207,11 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
           home: config.home,
           token: config.token,
           appBridgeFile: locateAppBridgeFile(config.handshakePath),
+          telemetry,
         });
 
   const registry = createRegistry();
-  const ctxFactory = createContextFactory({ services, projects, tokens });
+  const ctxFactory = createContextFactory({ services, projects, tokens, telemetry });
   const mcp = new McpSessionManager({
     registry,
     ctxFactory,
@@ -217,6 +234,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     adapters,
     settings: () => store.settings.get(),
     workspaceDir: join(config.home, "workspace"),
+    telemetry,
     // Only fabdesk's own tools have annotations the classifier trusts; another server's tool is a write.
     annotationsFor: (tool, server) =>
       server === null || server === "fabdesk" ? registry.get(tool)?.annotations : undefined,
@@ -317,6 +335,9 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     agents: async () => (await import("@fabdesk/agents")).detectAgents(store.settings.get()),
     shutdown: (reason: string) => void daemon.close(reason),
     startedAt,
+    onSettingsChanged: () => {
+      void cloudSettings.push();
+    },
   };
   const app = createApp({ ...appDeps, listener: "local" });
   // A browser at fabplane.com pairs against the remote listener directly (docs/mobile.md, hosted
@@ -536,10 +557,12 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       if (watchdog) clearInterval(watchdog);
       unsubscribeAuth();
       unsubscribeAuthRelay();
+      unsubscribeCloud();
       relay.stop();
       notifier.stop();
       runs.abortAll();
       jobs.cancelAll();
+      if (!(await runs.settleAll())) logger.warn("agent runs did not stop before shutdown timeout");
       await mcp.closeAll();
       projects.close();
       // Releasing the design sessions stops their KiCad processes on the bridge; give it a moment.
@@ -553,6 +576,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       remote.stop();
       server.stop(true);
       if (!opts.noHandshake) await removeHandshake(config.handshakePath);
+      await telemetry.shutdown();
       store.close();
       await closeSentry();
       resolveClosed(reason);

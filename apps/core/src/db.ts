@@ -80,8 +80,7 @@ export const MIGRATIONS: Array<{ version: number; sql: string }> = [
         started_at TEXT NOT NULL,
         ended_at TEXT,
         exit_code INTEGER,
-        cost_json TEXT,
-        log_path TEXT
+        cost_json TEXT
       );
       CREATE TABLE jobs (
         id TEXT PRIMARY KEY,
@@ -161,6 +160,23 @@ export const MIGRATIONS: Array<{ version: number; sql: string }> = [
     version: 6,
     sql: `
       ALTER TABLE devices ADD COLUMN last_via TEXT;
+    `,
+  },
+  {
+    // Portable OpenTelemetry agent-run dumps and the path to their JSONL log.
+    version: 7,
+    sql: `
+      ALTER TABLE runs ADD COLUMN log_path TEXT;
+      CREATE TABLE run_dumps (
+        run_id TEXT PRIMARY KEY,
+        trace_id TEXT NOT NULL,
+        thread_id TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        project_id TEXT,
+        created_at TEXT NOT NULL,
+        dump_json TEXT NOT NULL
+      );
+      CREATE INDEX run_dumps_created ON run_dumps(created_at DESC);
     `,
   },
 ];
@@ -645,6 +661,9 @@ export class RunRepo {
   setSession(id: string, sessionId: string): void {
     this.db.run("UPDATE runs SET agent_session_id = ? WHERE id = ?", [sessionId, id]);
   }
+  setLogPath(id: string, logPath: string): void {
+    this.db.run("UPDATE runs SET log_path = ? WHERE id = ?", [logPath, id]);
+  }
   finish(
     id: string,
     patch: { status: Run["status"]; exitCode?: number | null; cost?: unknown },
@@ -695,6 +714,92 @@ export class RunRepo {
       >("SELECT agent_session_id FROM runs WHERE thread_id = ? AND agent_id = ? AND agent_session_id IS NOT NULL ORDER BY started_at DESC LIMIT 1")
       .get(threadId, agentId);
     return r?.agent_session_id ?? null;
+  }
+}
+
+/* ---------- complete agent-run dumps ---------- */
+
+export type RunDump = {
+  runId: string;
+  traceId: string;
+  threadId: string;
+  agentId: string;
+  projectId: string | null;
+  createdAt: string;
+  dumpJson: string;
+};
+
+export const RUN_DUMP_RETENTION = { rows: 100, bytes: 512 * 1024 * 1024 } as const;
+
+type RunDumpRow = {
+  run_id: string;
+  trace_id: string;
+  thread_id: string;
+  agent_id: string;
+  project_id: string | null;
+  created_at: string;
+  dump_json: string;
+};
+
+export class RunDumpRepo {
+  constructor(private readonly db: Database) {}
+  put(dump: RunDump): void {
+    this.db.transaction(() => {
+      this.db.run(
+        "INSERT INTO run_dumps(run_id, trace_id, thread_id, agent_id, project_id, created_at, dump_json) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(run_id) DO UPDATE SET trace_id = excluded.trace_id, thread_id = excluded.thread_id, agent_id = excluded.agent_id, project_id = excluded.project_id, created_at = excluded.created_at, dump_json = excluded.dump_json",
+        [
+          dump.runId,
+          dump.traceId,
+          dump.threadId,
+          dump.agentId,
+          dump.projectId,
+          dump.createdAt,
+          dump.dumpJson,
+        ],
+      );
+      this.db.run(
+        `DELETE FROM run_dumps WHERE run_id IN (
+          SELECT run_id FROM (
+            SELECT run_id,
+              ROW_NUMBER() OVER (ORDER BY created_at DESC, run_id DESC) AS row_number,
+              SUM(length(CAST(dump_json AS BLOB))) OVER (ORDER BY created_at DESC, run_id DESC) AS cumulative_bytes
+            FROM run_dumps
+          ) WHERE row_number > ? OR cumulative_bytes > ?
+        )`,
+        [RUN_DUMP_RETENTION.rows, RUN_DUMP_RETENTION.bytes],
+      );
+    })();
+  }
+  get(runId: string): RunDump | null {
+    const row = this.db
+      .query<RunDumpRow, [string]>("SELECT * FROM run_dumps WHERE run_id = ?")
+      .get(runId);
+    return row
+      ? {
+          runId: row.run_id,
+          traceId: row.trace_id,
+          threadId: row.thread_id,
+          agentId: row.agent_id,
+          projectId: row.project_id,
+          createdAt: row.created_at,
+          dumpJson: row.dump_json,
+        }
+      : null;
+  }
+  list(limit = 100): Omit<RunDump, "dumpJson">[] {
+    return this.db
+      .query<Omit<RunDumpRow, "dump_json">, [number]>(
+        "SELECT run_id, trace_id, thread_id, agent_id, project_id, created_at FROM run_dumps ORDER BY created_at DESC LIMIT ?",
+      )
+      .all(limit)
+      .map((row) => ({
+        runId: row.run_id,
+        traceId: row.trace_id,
+        threadId: row.thread_id,
+        agentId: row.agent_id,
+        projectId: row.project_id,
+        createdAt: row.created_at,
+      }));
   }
 }
 
@@ -922,6 +1027,26 @@ export class SettingsRepo {
     return id;
   }
   private coreIdCache: string | null = null;
+
+  /** Opaque settings-table value used for stamps that are not part of `Settings`. */
+  readRaw(key: string): unknown {
+    const row = this.db
+      .query<{ value_json: string }, [string]>("SELECT value_json FROM settings WHERE key = ?")
+      .get(key);
+    if (!row) return undefined;
+    try {
+      return JSON.parse(row.value_json) as unknown;
+    } catch {
+      return undefined;
+    }
+  }
+
+  writeRaw(key: string, value: unknown): void {
+    this.db.run(
+      "INSERT INTO settings(key, value_json) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json",
+      [key, JSON.stringify(value)],
+    );
+  }
 }
 
 const CORE_ID_KEY = "core_id";
@@ -931,6 +1056,7 @@ export class Store {
   readonly threads: ThreadRepo;
   readonly folders: FolderRepo;
   readonly runs: RunRepo;
+  readonly runDumps: RunDumpRepo;
   readonly jobs: JobRepo;
   readonly routeRuns: RouteRunRepo;
   readonly settings: SettingsRepo;
@@ -939,6 +1065,7 @@ export class Store {
     this.threads = new ThreadRepo(db);
     this.folders = new FolderRepo(db);
     this.runs = new RunRepo(db);
+    this.runDumps = new RunDumpRepo(db);
     this.jobs = new JobRepo(db);
     this.routeRuns = new RouteRunRepo(db);
     this.settings = new SettingsRepo(db);

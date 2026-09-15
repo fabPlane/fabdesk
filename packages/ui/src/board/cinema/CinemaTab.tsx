@@ -51,6 +51,26 @@ export function CinemaTab() {
   const run = activeRunId ? runs[activeRunId] : undefined;
   const frames = run?.frames.length ?? 0;
 
+  // The store receives live route events, but starts empty after an app restart. Restore the
+  // latest persisted run for the selected project so Route Cinema remains useful across sessions.
+  useEffect(() => {
+    let cancelled = false;
+    if (!projectId) {
+      setActiveRun(null);
+      return;
+    }
+    client
+      .listRouteRuns(projectId)
+      .then((persisted) => {
+        if (cancelled) return;
+        setActiveRun(persisted[0]?.id ?? null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [client, projectId, setActiveRun]);
+
   // Catch up on frames we may have missed (tab opened mid-run, reconnect).
   useEffect(() => {
     if (!activeRunId) return;

@@ -11,7 +11,8 @@
     "paths": {
       "@/*": ["./src/*"],
       "@fabdesk/client-core": ["../../packages/client-core/src/index.ts"],
-      "@fabdesk/protocol": ["../../packages/protocol/src/index.ts"]
+      "@fabdesk/protocol": ["../../packages/protocol/src/index.ts"],
+      "@fabdesk/auth-client/browser": ["../../packages/auth-client/src/browser.ts"]
     }
   },
   "include": ["app/**/*.ts", "app/**/*.tsx", "src/**/*.ts", "src/**/*.tsx", "*.ts", "*.js"],

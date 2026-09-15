@@ -17,6 +17,7 @@ import {
   pairingUrlFromEndpoints,
   parsePairingUrl,
   Settings,
+  CloudSettings,
   isCatalogWebsiteAsset,
   isGitHubAssetHost,
   DEFAULT_CATALOG_PUBLIC_ORIGIN,
@@ -70,6 +71,18 @@ describe("schemas", () => {
     expect(catalogInitials("iCEBreaker FPGA")).toBe("IF");
     expect(catalogInitials("crkbd")).toBe("CR");
     expect(catalogInitials("   ")).toBe("?");
+  });
+
+  test("CloudSettings is last-write-wins portable prefs, unknown keys stripped", () => {
+    const parsed = CloudSettings.parse({
+      schema: 1,
+      updatedAt: 42,
+      appearance: "dark",
+      extra: true,
+    });
+    expect(parsed).toEqual({ schema: 1, updatedAt: 42, appearance: "dark" });
+    expect(CloudSettings.safeParse({ schema: 1 }).success).toBe(false);
+    expect(CloudSettings.safeParse({ schema: 2, updatedAt: 1 }).success).toBe(false);
   });
 
   test("DaemonHandshake requires a real token", () => {

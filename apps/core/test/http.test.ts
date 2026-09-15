@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -188,6 +188,18 @@ describe("http daemon", () => {
     expect(lines.length).toBe(2); // meta + the one frame with seq >= 2 (pass-start, connection, connection)
     expect(lines[0]).toContain('"kind":"meta"');
 
+    // Legacy runs stored absolute paths. If the projects root moves, prefer the same run beneath
+    // the project's current directory instead of returning an empty Cinema stream.
+    const movedRunId = "run_moved_project";
+    const movedRunDir = join(project.path, ".fabdesk", "runs", movedRunId);
+    await mkdir(movedRunDir, { recursive: true });
+    await writeFile(join(movedRunDir, "frames.jsonl"), '{"kind":"meta","runId":"run_moved_project","router":"capacity","bounds":{"x1":0,"y1":0,"x2":1,"y2":1},"layers":["F.Cu","B.Cu"],"unitsPerMm":1}\n');
+    services.routeRuns.start({ id: movedRunId, projectId: project.id, router: "capacity", framesPath: join(home, "old-projects-root", "blinky-board", ".fabdesk", "runs", movedRunId, "frames.jsonl"), startedAt: new Date().toISOString() });
+    services.routeRuns.finish(movedRunId, { status: "done", result: null, error: null });
+    const movedFrames = await api(`/route/runs/${movedRunId}/frames`);
+    expect(movedFrames.status).toBe(200);
+    expect(await movedFrames.text()).toContain(`"runId":"${movedRunId}"`);
+
     // Delete (unregister) keeps the directory; purge removes it.
     expect((await api(`/projects/${project.id}`, { method: "DELETE" })).status).toBe(200);
     expect(await Bun.file(join(project.path, "circuit.netlist.json")).exists()).toBe(true);
@@ -236,6 +248,11 @@ describe("http daemon", () => {
     expect(detail.title).toBe("Design a blinky board please");
     expect(detail.run.status).toBe("completed");
     expect(detail.run.agentSessionId).toBe("sess-42");
+    const tracePath = join(created.path, ".fabdesk", "runs", runId, "trace.jsonl");
+    expect(await Bun.file(tracePath).exists()).toBe(true);
+    expect(await Bun.file(join(created.path, ".fabdesk", "runs", runId, "llm-dump.json")).exists()).toBe(true);
+    expect(JSON.parse(daemon.store.runDumps.get(runId)!.dumpJson)).toMatchObject({ schema: "fabdesk.llm-run-dump/v1", runId });
+    expect(daemon.store.db.query<{ log_path: string }, [string]>("SELECT log_path FROM runs WHERE id = ?").get(runId)?.log_path).toBe(tracePath);
     // The per-run token is revoked after the run.
     expect((await fetch(`${daemon.url}/projects`, { headers: { authorization: `Bearer ${lastSession!.mcp.token}` } })).status).toBe(401);
 

@@ -101,13 +101,32 @@ export interface BoardStats {
   backFootprints: number;
 }
 
+const UNAVAILABLE_MINIMUM_MM = 2147.483;
+const MINIMUM_FIELDS = ["min_track_clearance", "min_track_width", "min_drill_diameter"] as const;
+
+/** Replaces KiCad's INT_MAX-derived "no measurement" values with an explicit missing value. */
+export function normalizeBoardStatsReport(raw: unknown): Record<string, unknown> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const report = { ...(raw as Record<string, unknown>) };
+  const board = report["board"];
+  if (!board || typeof board !== "object" || Array.isArray(board)) return report;
+  const normalizedBoard = { ...(board as Record<string, unknown>) };
+  for (const field of MINIMUM_FIELDS) {
+    const value = normalizedBoard[field];
+    if (typeof value === "string" && Number.parseFloat(value) >= UNAVAILABLE_MINIMUM_MM) normalizedBoard[field] = null;
+  }
+  report["board"] = normalizedBoard;
+  return report;
+}
+
 /** Reads outline and component counts through `kicad-cli pcb export stats`. */
 export async function boardStats(cli: KicadCli, board: string, scratchFile: string): Promise<BoardStats> {
   await runKicadCli(cli, ["pcb", "export", "stats", "--format", "json", "--units", "mm", "-o", scratchFile, board]);
-  const raw = (await Bun.file(scratchFile).json()) as {
+  const raw = normalizeBoardStatsReport(await Bun.file(scratchFile).json()) as {
     board: { width: string; height: string; board_thickness: string };
     components: { total: { front: number; back: number; total: number } };
   };
+  await Bun.write(scratchFile, JSON.stringify(raw, null, 2) + "\n");
   const mm = (value: string) => Number.parseFloat(value.replace(/[^\d.]/g, ""));
   return {
     width: round(mm(raw.board.width)),

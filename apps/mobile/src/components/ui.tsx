@@ -5,8 +5,10 @@ import {
   StyleSheet,
   Switch,
   Text,
+  TextInput,
   View,
   type StyleProp,
+  type TextInputProps,
   type ViewStyle,
 } from "react-native";
 import type { ReactNode } from "react";
@@ -47,6 +49,32 @@ export function Button({
     >
       <Text style={{ color: fg, fontWeight: "600", fontSize: 15 }}>{title}</Text>
     </Pressable>
+  );
+}
+
+export function Input({ style, ...props }: TextInputProps) {
+  const t = useTheme();
+  return (
+    <TextInput
+      placeholderTextColor={t.muted}
+      autoCapitalize="none"
+      autoCorrect={false}
+      disableFullscreenUI
+      {...props}
+      style={[
+        {
+          backgroundColor: t.bg,
+          borderColor: t.border,
+          borderWidth: StyleSheet.hairlineWidth,
+          borderRadius: 8,
+          color: t.fg,
+          paddingHorizontal: 12,
+          paddingVertical: 10,
+          fontSize: 15,
+        },
+        style,
+      ]}
+    />
   );
 }
 
