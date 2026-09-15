@@ -1,5 +1,5 @@
 /**
- * Wire types for the FabPlane PCB bridge (`@fp-pcb/bridge` on TensorFleet/fab_pcb), mirrored here
+ * Wire types for the FabPlane PCB bridge (`@fp-pcb/bridge` on fabPlane/fab_pcb), mirrored here
  * so `@fabdesk/core` can be a plain HTTP client of it with no fab_pcb workspace package in its
  * tree — the same way `@fabdesk/tools` mirrors its sibling packages. Deliberately loose: fabdesk
  * validates only the fields it reads, so the bridge can grow without a lockstep release.

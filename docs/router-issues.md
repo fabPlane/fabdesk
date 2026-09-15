@@ -7,7 +7,7 @@ errors", has no tool that can, and ends up hand-editing `board.kicad_pcb` for 15
 
 The router is fab_pcb `packages/router/src/js-router.ts` (`@tscircuit/capacity-autorouter`
 0.0.885 behind a `SimpleRouteJson` adapter) running on the FabPlane PCB bridge; fabdesk only
-calls it (`apps/core/src/fp-pcb-design.ts` → `route_run`). Fixes land in `TensorFleet/fab_pcb`,
+calls it (`apps/core/src/fp-pcb-design.ts` → `route_run`). Fixes land in `fabPlane/fab_pcb`,
 then bump `vendor/fab_pcb` here.
 
 ## Reproduce

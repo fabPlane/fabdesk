@@ -6,7 +6,7 @@ job are fab_pcb PRs #2/#3.** Pinned to `fab_pcb` `757de90` (KiCad fork `280274cc
 
 ## 0. The headline
 
-`TensorFleet/fab_pcb` is **FabPlane PCB**: a headless KiCad stack on the KiCad IPC API
+`fabPlane/fab_pcb` is **FabPlane PCB**: a headless KiCad stack on the KiCad IPC API
 (`kicad-cli api-server` from a KiCad fork, protobuf over nng), packages
 `@fp-pcb/{proto,client,bridge,renderer,router}`. It is not a tscircuit fork and it has no
 circuit-source compiler of its own.
@@ -226,7 +226,7 @@ needs. Sim over an imported board is lossy until phase 5; accept it.
 ### 4.5 Constraints to plan around
 
 1. **Cross-repo workflow.** `vendor/*` is never edited here; every `fab_pcb` step is a PR to
-   `TensorFleet/fab_pcb`, then `bun run submodules:update` (now covers `vendor/fab_pcb`). Do not
+   `fabPlane/fab_pcb`, then `bun run submodules:update` (now covers `vendor/fab_pcb`). Do not
    add `vendor/fab_pcb/packages/*` to fabdesk's workspaces: the HTTP-client shape needs none.
 2. **§3.2 is decided (bundled).** The gate is now the three-platform fork build, Windows first.
 3. **Footprint libraries.** The Docker image ships none and no `fp-lib-table`; fixtures need

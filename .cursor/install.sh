@@ -72,13 +72,13 @@ init_private_submodule() {
 [cloud-setup] ERROR: could not fetch the private submodule $repo
 
 Fabdesk's shared TypeScript config, @pcb/* and @fp-pcb/* packages live in the
-private repos github.com/tensorfleet/fabplane.com and github.com/tensorfleet/fab_pcb.
+private repos github.com/tensorfleet/fabplane.com and github.com/fabplane/fab_pcb.
 Without them, \`bun install\`, \`bun run typecheck\` and the apps/core + apps/desktop
 apps cannot run.
 
 Grant access by either:
   * keeping "github.com/tensorfleet/fabplane.com" and
-    "github.com/tensorfleet/fab_pcb" in repositoryDependencies in
+    "github.com/fabplane/fab_pcb" in repositoryDependencies in
     .cursor/environment.json AND granting the Cursor GitHub App access to both
     repositories, or
   * providing a read-only submodule deploy key as an environment secret.
@@ -88,7 +88,7 @@ EOF
 }
 
 init_private_submodule vendor/fabplane github.com/tensorfleet/fabplane.com vendor/fabplane/tsconfig.base.json
-init_private_submodule vendor/fab_pcb github.com/tensorfleet/fab_pcb vendor/fab_pcb/packages/proto/package.json
+init_private_submodule vendor/fab_pcb github.com/fabplane/fab_pcb vendor/fab_pcb/packages/proto/package.json
 
 # --- 3. JS dependencies -----------------------------------------------------
 log "Installing dependencies (bun install --frozen-lockfile)"

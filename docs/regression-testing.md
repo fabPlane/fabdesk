@@ -1,7 +1,7 @@
 # Board and cross-device regressions
 
 The board run in `desktop-mobile-board-run.md` is split into three repeatable suites. The split
-keeps failures attributable: router algorithm changes belong in `TensorFleet/fab_pcb`; the tool
+keeps failures attributable: router algorithm changes belong in `fabPlane/fab_pcb`; the tool
 pipeline and both clients belong here.
 
 ## Fabdesk board pipeline
@@ -44,7 +44,7 @@ journeys remain a slower nightly/release layer.
 
 ## Router corpus
 
-The authoritative pure-router corpus belongs in `TensorFleet/fab_pcb`. Its fixtures should be the
+The authoritative pure-router corpus belongs in `fabPlane/fab_pcb`. Its fixtures should be the
 normalized `RouteInput` presented to the router, so compiler or footprint-library changes cannot
 silently change the test input. Real KiCad integration then applies the result and uses KiCad DRC as
 the final oracle. A small passing subset gates each router PR; reduced fine-pitch, coarse-bus and

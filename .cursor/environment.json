@@ -4,6 +4,6 @@
   "start": "bash .cursor/start-tailscale.sh",
   "repositoryDependencies": [
     "github.com/tensorfleet/fabplane.com",
-    "github.com/tensorfleet/fab_pcb"
+    "github.com/fabplane/fab_pcb"
   ]
 }
