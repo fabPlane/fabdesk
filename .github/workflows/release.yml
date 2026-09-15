@@ -246,6 +246,7 @@ jobs:
         shell: bash
         env:
           FABDESK_CHANNEL: ${{ env.CHANNEL }}
+          FABDESK_REQUIRE_KICAD_BUNDLE: "true"
         run: cd apps/desktop && bunx electron-builder ${{ matrix.eb }} --publish never
 
       - name: Collect installers
