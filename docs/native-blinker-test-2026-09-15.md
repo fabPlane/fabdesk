@@ -109,3 +109,42 @@ Local commit `6e3fc09` fixes the newly exposed interface defects:
 
 Focused tests, the monorepo typecheck, the core build and the real packaged-KiCad native integration
 test pass. No AppImage, push, PR or official evaluation was created.
+
+## Third clean-project run
+
+The post-correction run is preserved at
+`/home/shane/fabdesk-native-agent-test/projects/native-agent-test-3`, with trace
+`run_mu2dkmpt27be712b99`. It is the first genuine final-output hard-gate pass from this local
+prototype:
+
+- 28m50s, 122 agent tool calls (107 MCP, 11 shell and four file changes), 19 error-marked results,
+  12,698,480 reported input tokens and 29,683 output tokens;
+- final release `pass: true`, 39/39 outputs, zero ERC/DRC warnings or errors, zero unconnected or
+  parity items, zero library mismatches, and unchanged 0.25/0.5/0.2 mm design-rule floors;
+- 17 schematic symbols, 54 wires, no labels, 37 wires longer than 5.08 mm, and no automated
+  schematic-presentation findings; and
+- a complete second router pass connected 31/31 items in 261 ms with 129 tracks and seven vias.
+
+The output pass was expensive. The agent initially selected a generic 16-pin USB-C symbol and
+footprint, routed it partially, then discovered its locator-hole incompatibility and replaced it
+with the correct six-contact power-only pair. This forced connector deletion, unroute, forward
+annotation, replacement placement and a second route. Part compatibility should have been checked
+before schematic construction.
+
+The native authoring defect is also not fully resolved. Rotated Device:R instances and power
+symbols still produced seven `lib_symbol_mismatch` warnings. The agent used 11 shell inspections
+and four direct `board.kicad_sch` edits to repair the symbol cache before the second release. That
+workaround produced a clean persisted artifact, but should not be necessary through the native
+interface. Three zone attempts also failed because the tool accepts unexplained numeric layer IDs.
+
+Visual composition improved substantially: the final schematic has actual functional wiring and
+left-to-right structure. It still wastes most of the A4 sheet, overlaps several values and a long
+note at the bottom, and remains behind the stock Codex reference. The 60x35 mm PCB is routed and
+manufacturable, but sparse; the agent explicitly hid all 13 reference fields, so the assembly
+silkscreen has no component identifiers. The existing release presentation check does not yet
+cover PCB reference visibility.
+
+Conclusion: the prototype can now deliver a valid release without weakened rules, and the
+schematic-direction changes worked. The next iteration should prioritize early role-aware part
+selection/compatibility, rotation-safe and power-symbol-safe native serialization, named PCB
+layers, and PCB presentation checks before another blinker run.
