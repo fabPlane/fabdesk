@@ -77,10 +77,10 @@ jobs:
           git -C "$RUNNER_TEMP/kicad-src" fetch --depth 1 --filter=blob:none origin '${{ steps.nightly.outputs.commit }}'
           git -C "$RUNNER_TEMP/kicad-src" checkout -q FETCH_HEAD
 
-      - name: Install KiCad host libraries and footprints
+      - name: Install KiCad host libraries, footprints and symbols
         run: |
           list="$RUNNER_TEMP/kicad-src/tools/nightly/linux/runtime-packages.txt"
-          packages=(kicad-footprints)
+          packages=(kicad-footprints kicad-symbols)
           if [ -s "$list" ]; then
             mapfile -t runtime_packages < <(sed '/^#/d; /^$/d' "$list")
             packages+=("${runtime_packages[@]}")
@@ -115,6 +115,7 @@ jobs:
           touch "$RUNNER_TEMP/fabdesk-home/.fabdesk-dev"
           KICAD_CLI="$KICAD_CLI" \
             KICAD10_FOOTPRINT_DIR=/usr/share/kicad/footprints \
+            KICAD_SYMBOL_DIR=/usr/share/kicad/symbols \
             WORKSPACE_ROOT="$RUNNER_TEMP/board-workspace" PORT=4020 \
             bun run --cwd "$RUNNER_TEMP/fab-pcb/packages/bridge" start >"$RUNNER_TEMP/bridge.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/bridge.pid"
