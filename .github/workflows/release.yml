@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       channel:
-        description: "public or internal (internal bundles the private router; never released)"
+        description: "public or internal release channel"
         required: true
         default: "public"
         type: choice
@@ -118,26 +118,6 @@ jobs:
           token: ${{ secrets.FAB_PCB_RELEASE_TOKEN }}
           persist-credentials: false
 
-      - name: Resolve the private router pin
-        if: env.CHANNEL == 'internal'
-        id: private-router
-        shell: bash
-        run: echo "commit=$(tr -d '[:space:]' < vendor/fab_pcb/packages/router/JS_AUTOROUTER_COMMIT)" >> "$GITHUB_OUTPUT"
-
-      - name: Check out private js_autorouter for internal builds
-        if: env.CHANNEL == 'internal'
-        uses: actions/checkout@v4
-        with:
-          repository: TensorFleet/js_autorouter
-          ref: ${{ steps.private-router.outputs.commit }}
-          path: .ci-private/js_autorouter
-          token: ${{ secrets.JS_AUTOROUTER_READ_TOKEN }}
-          persist-credentials: false
-          sparse-checkout: |
-            package.json
-            src
-          sparse-checkout-cone-mode: false
-
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0
@@ -234,13 +214,8 @@ jobs:
           test -f "dist/pcb/$target/bundle.json"
           # shellcheck disable=SC2016
           bun -e 'const m=await Bun.file(process.argv[1]).json(); if(m.target!==process.argv[2]) throw new Error(`bundle target ${m.target} != ${process.argv[2]}`)' "dist/pcb/$target/bundle.json" "$target"
-          if [ "$CHANNEL" = internal ]; then
-            router_commit="$(git -C .ci-private/js_autorouter rev-parse HEAD)"
-            bun run scripts/inject-js-autorouter.ts "dist/pcb/$target" .ci-private/js_autorouter "$router_commit"
-          else
-            # shellcheck disable=SC2016
-            bun -e 'const m=await Bun.file(process.argv[1]).json(); if(m.jsAutorouter) throw new Error("public backend unexpectedly contains the private router")' "dist/pcb/$target/bundle.json"
-          fi
+          # shellcheck disable=SC2016
+          bun -e 'const m=await Bun.file(process.argv[1]).json(); if(!m.fabRouter) throw new Error("backend does not contain fab_router")' "dist/pcb/$target/bundle.json"
 
       # electron-builder treats an empty CSC_LINK as a file path, so only export secrets that are set.
       - name: Signing environment

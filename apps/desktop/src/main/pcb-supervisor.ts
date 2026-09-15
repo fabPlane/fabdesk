@@ -16,8 +16,6 @@ export interface PcbBundleManifest {
   symbols: string;
   /** Optional bundle-relative entry point for the private fab_router module. */
   fabRouter?: string;
-  /** Optional bundle-relative entry point for the private js_autorouter module. */
-  jsAutorouter?: string;
   /** Bundle-relative shared-library directories, in loader search order (Linux). */
   libraryPaths?: string[];
   environment?: Record<string, string>;
@@ -64,7 +62,6 @@ export function resolvePcbBackend(opts: {
   const footprints = resolve(bundleRoot, manifest.footprints);
   const symbols = resolve(bundleRoot, manifest.symbols);
   const fabRouter = manifest.fabRouter ? resolve(bundleRoot, manifest.fabRouter) : null;
-  const jsAutorouter = manifest.jsAutorouter ? resolve(bundleRoot, manifest.jsAutorouter) : null;
   const libraryPaths = (manifest.libraryPaths ?? []).map((path) => resolve(bundleRoot, path));
   for (const [label, path] of [
     ["bridge", command],
@@ -78,8 +75,6 @@ export function resolvePcbBackend(opts: {
     if (!existsSync(path)) throw new Error(`FabPlane PCB bundle library path is missing: ${path}`);
   if (fabRouter && !existsSync(fabRouter))
     throw new Error(`FabPlane PCB bundle fab_router is missing: ${fabRouter}`);
-  if (jsAutorouter && !existsSync(jsAutorouter))
-    throw new Error(`FabPlane PCB bundle js_autorouter is missing: ${jsAutorouter}`);
   const sourceRoot = source ? resolve(source) : null;
   if (sourceRoot && !existsSync(join(sourceRoot, "packages", "bridge", "src", "main.ts")))
     throw new Error(
@@ -104,7 +99,6 @@ export function resolvePcbBackend(opts: {
       KICAD_FOOTPRINT_DIR: footprints,
       KICAD_SYMBOL_DIR: symbols,
       ...(fabRouter ? { FAB_ROUTER_MODULE: fabRouter } : {}),
-      ...(jsAutorouter ? { JS_AUTOROUTER_MODULE: jsAutorouter } : {}),
       WORKSPACE_ROOT: env["FABDESK_PROJECTS_DIR"] ?? join(homedir(), "fabdesk"),
     },
   };

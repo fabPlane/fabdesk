@@ -7,8 +7,7 @@
 #      shared `tsconfig.base.json` and the `@pcb/*` workspace packages that the
 #      whole monorepo depends on. Requires the generated GitHub token to have
 #      access to `github.com/tensorfleet/fabplane.com` (see repositoryDependencies
-#      in environment.json). `vendor/js_autorouter` is internal-only and is left
-#      uninitialised; `bun install --frozen-lockfile` skips absent workspaces.
+#      in environment.json).
 #   3. Install JS dependencies from the root lockfile.
 #
 # Never run `bun install` inside vendor/* (see AGENTS.md): the root lockfile owns
