@@ -16,20 +16,22 @@ warn() { printf '\033[1;33m[vm]\033[0m %s\n' "$*" >&2; }
 die() { printf '\033[1;31m[vm]\033[0m %s\n' "$*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "missing '$1'. $2"; }
 
-# Common CLI parsing. Sets: CMD, TAG, FILE, ARCH, KEEP, TIMEOUT, LATEST.
+# Common CLI parsing. Sets: CMD, TAG, FILE, RUN, ARCH, KEEP, TIMEOUT, LATEST.
 #   prepare            build/download the base image (one-time, cached)
 #   test               fresh clone -> install -> launch -> screenshot -> report
 #   shell              ssh/console into the last test VM (mac/linux)
 #   destroy            delete base image and clones
-# Installer selection for `test`: --file <installer> | --tag vX.Y.Z (GitHub release) | --latest (fabplane.com)
+# Installer selection for `test`: --file <installer> | --run <workflow-run-id> |
+# --tag vX.Y.Z (GitHub release) | --latest (fabplane.com)
 # Default: the newest matching file in apps/desktop/release/.
 parse_args() {
   CMD="${1:-}"; shift || true
-  TAG="" FILE="" ARCH="" KEEP=0 TIMEOUT="${FABDESK_VM_TIMEOUT:-900}" LATEST=0 ISO="" FORMAT=""
+  TAG="" FILE="" RUN="" ARCH="" KEEP=0 TIMEOUT="${FABDESK_VM_TIMEOUT:-900}" LATEST=0 ISO="" FORMAT=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --tag) TAG="$2"; shift 2 ;;
       --file) FILE="$2"; shift 2 ;;
+      --run) RUN="$2"; shift 2 ;;
       --arch) ARCH="$2"; shift 2 ;;
       --iso) ISO="$2"; shift 2 ;;
       --format) FORMAT="$2"; shift 2 ;;      # linux: appimage|deb, windows: nsis|portable, mac: dmg|zip
@@ -49,6 +51,26 @@ parse_args() {
 resolve_installer() {
   local os="$1" arch="$2" ext="$3" dir out re
   if [ -n "$FILE" ]; then [ -f "$FILE" ] || die "no such file: $FILE"; echo "$FILE"; return; fi
+  if [ -n "$RUN" ]; then
+    need gh "install GitHub CLI"
+    local artifact
+    case "$os:$arch" in
+      mac:*arm64*) artifact="installers-bun-darwin-arm64" ;;
+      mac:*) artifact="installers-bun-darwin-x64" ;;
+      linux:*) artifact="installers-bun-linux-x64" ;;
+      win:*) artifact="installers-bun-windows-x64" ;;
+      *) die "cannot map installer artifact for $os/$arch" ;;
+    esac
+    dir="$CACHE_DIR/run-$RUN/$artifact"; mkdir -p "$dir"
+    if [ -z "$(find "$dir" -type f -print -quit)" ]; then
+      log "downloading exact artifact $artifact from workflow run $RUN"
+      gh run download "$RUN" --repo TensorFleet/fabdesk --name "$artifact" --dir "$dir" >&2
+    fi
+    re="^(fabplane|fabPlane|Fabdesk)-.*-${os}-${arch}.*\.(${ext})$"
+    out="$(ls "$dir" 2>/dev/null | grep -E "$re" | head -1 || true)"
+    [ -n "$out" ] || die "workflow run $RUN artifact $artifact has no file matching $re"
+    echo "$dir/$out"; return
+  fi
   if [ "$LATEST" = 1 ]; then
     # The site feed lists public download URLs + sha256 per asset: no GitHub auth needed.
     need curl "install curl"
@@ -88,7 +110,7 @@ for a in d["assets"]:
   fi
   dir="$REPO_ROOT/apps/desktop/release"
   out="$(ls -t "$dir" 2>/dev/null | grep -E "^(fabplane|fabPlane|Fabdesk)-.*-${os}-${arch}.*\.(${ext})$" | head -1 || true)"
-  [ -n "$out" ] || die "no fabplane-*-${os}-${arch}.(${ext}) in $dir; pass --file, --tag vX.Y.Z or --latest"
+  [ -n "$out" ] || die "no fabplane-*-${os}-${arch}.(${ext}) in $dir; pass --file, --run ID, --tag vX.Y.Z or --latest"
   echo "$dir/$out"
 }
 
@@ -108,7 +130,7 @@ d = sys.argv[1]
 r = json.load(open(os.path.join(d, "report.json")))
 ok = r.get("ok") is True
 print(("PASS" if ok else "FAIL") + f"  {r.get('platform','?')}  installer={r.get('installer','?')}")
-for k in ("install", "gatekeeper", "codesign", "core_version", "health", "screenshot", "launch_ms"):
+for k in ("install", "gatekeeper", "codesign", "core_version", "health", "pcb_health", "screenshot", "launch_ms"):
     if k in r: print(f"  {k:13} {r[k]}")
 for e in r.get("errors", []): print(f"  error: {e}")
 print(f"  results: {d}")

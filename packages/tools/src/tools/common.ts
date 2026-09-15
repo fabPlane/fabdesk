@@ -42,7 +42,7 @@ export async function requireBoard(project: ProjectHandle): Promise<string> {
 
 export async function requireSchematic(project: ProjectHandle): Promise<string> {
   const sch = p(project, PROJECT_FILES.boardSch);
-  if (!(await exists(sch))) throw new ToolError("board.kicad_sch not found: a compiled project has no drawn schematic unless one was imported", "precondition");
+  if (!(await exists(sch))) throw new ToolError("board.kicad_sch not found: run circuit_build first or import a KiCad project", "precondition");
   return sch;
 }
 

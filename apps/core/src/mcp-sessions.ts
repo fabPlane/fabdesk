@@ -6,12 +6,19 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import type { ZodRawShapeCompat } from "@modelcontextprotocol/sdk/server/zod-compat.js";
 import { z } from "zod/v4";
-import { attachToRegistry, type ContextFactory, type ToolRegistry } from "@fabdesk/tools";
+import { attachToRegistry, TOOLSETS, type ContextFactory, type ToolRegistry } from "@fabdesk/tools";
 import { PERMISSION_PROMPT_TOOL } from "@fabdesk/agents";
 import type { PermissionPromptResult } from "./agent-runs";
 import { logger, errMsg } from "./log";
 
-type Session = { id: string; server: McpServer; transport: WebStandardStreamableHTTPServerTransport; createdAt: number; lastSeen: number; token: string | null };
+type Session = {
+  id: string;
+  server: McpServer;
+  transport: WebStandardStreamableHTTPServerTransport;
+  createdAt: number;
+  lastSeen: number;
+  token: string | null;
+};
 
 export type McpSessionOptions = {
   registry: ToolRegistry;
@@ -27,7 +34,10 @@ export type McpSessionOptions = {
   permissionPrompt?: {
     /** Only sessions opened with a supervised run's token see the tool; the model must not find it in full mode. */
     enabledFor(token: string | null): boolean;
-    handle(token: string | null, req: { toolName: string; input: unknown; toolUseId?: string }): Promise<PermissionPromptResult>;
+    handle(
+      token: string | null,
+      req: { toolName: string; input: unknown; toolUseId?: string },
+    ): Promise<PermissionPromptResult>;
   };
 };
 
@@ -63,26 +73,53 @@ export class McpSessionManager {
   }
 
   list(): Array<{ id: string; createdAt: string; lastSeen: string }> {
-    return [...this.sessions.values()].map((s) => ({ id: s.id, createdAt: new Date(s.createdAt).toISOString(), lastSeen: new Date(s.lastSeen).toISOString() }));
+    return [...this.sessions.values()].map((s) => ({
+      id: s.id,
+      createdAt: new Date(s.createdAt).toISOString(),
+      lastSeen: new Date(s.lastSeen).toISOString(),
+    }));
   }
 
   async handle(req: Request, opts: { token?: string | null } = {}): Promise<Response> {
     const sessionId = req.headers.get("mcp-session-id");
     if (sessionId) {
       const s = this.sessions.get(sessionId);
-      if (!s) return json(404, { jsonrpc: "2.0", error: { code: -32001, message: "Session not found" }, id: null });
+      if (!s)
+        return json(404, {
+          jsonrpc: "2.0",
+          error: { code: -32001, message: "Session not found" },
+          id: null,
+        });
       s.lastSeen = Date.now();
-      return s.transport.handleRequest(req, opts.token ? { authInfo: { token: opts.token, clientId: "fabdesk", scopes: [] } } : {});
+      return s.transport.handleRequest(
+        req,
+        opts.token ? { authInfo: { token: opts.token, clientId: "fabdesk", scopes: [] } } : {},
+      );
     }
-    if (req.method !== "POST") return json(400, { jsonrpc: "2.0", error: { code: -32000, message: "Bad Request: Mcp-Session-Id header required" }, id: null });
+    if (req.method !== "POST")
+      return json(400, {
+        jsonrpc: "2.0",
+        error: { code: -32000, message: "Bad Request: Mcp-Session-Id header required" },
+        id: null,
+      });
     // New session: the transport validates that the body is an initialize request.
-    const server = new McpServer({ name: "fabdesk", version: this.opts.version }, { instructions: INSTRUCTIONS });
+    const server = new McpServer(
+      { name: "fabdesk", version: this.opts.version },
+      { instructions: INSTRUCTIONS },
+    );
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: () => crypto.randomUUID(),
       enableDnsRebindingProtection: this.allowedHosts.length > 0,
       ...(this.allowedHosts.length > 0 ? { allowedHosts: this.allowedHosts } : {}),
       onsessioninitialized: (id) => {
-        this.sessions.set(id, { id, server, transport, createdAt: Date.now(), lastSeen: Date.now(), token: opts.token ?? null });
+        this.sessions.set(id, {
+          id,
+          server,
+          transport,
+          createdAt: Date.now(),
+          lastSeen: Date.now(),
+          token: opts.token ?? null,
+        });
         logger.info("mcp session opened", { id });
       },
       onsessionclosed: (id) => {
@@ -93,11 +130,21 @@ export class McpSessionManager {
     transport.onclose = () => {
       if (transport.sessionId) this.sessions.delete(transport.sessionId);
     };
-    attachToRegistry(server, this.opts.registry, this.opts.ctxFactory);
+    // Codex snapshots MCP tools when a turn starts and currently ignores tools/list_changed.
+    // Let clients that cannot refresh opt into the complete inventory at initialization.
+    const initialToolsets =
+      new URL(req.url).searchParams.get("toolsets") === "all" ? [...TOOLSETS] : undefined;
+    attachToRegistry(server, this.opts.registry, this.opts.ctxFactory, {
+      ...(initialToolsets ? { initialToolsets } : {}),
+    });
     const prompt = this.opts.permissionPrompt;
-    if (prompt && prompt.enabledFor(opts.token ?? null)) this.registerPermissionPrompt(server, (token, req) => prompt.handle(token, req));
+    if (prompt && prompt.enabledFor(opts.token ?? null))
+      this.registerPermissionPrompt(server, (token, req) => prompt.handle(token, req));
     await server.connect(transport);
-    return transport.handleRequest(req, opts.token ? { authInfo: { token: opts.token, clientId: "fabdesk", scopes: [] } } : {});
+    return transport.handleRequest(
+      req,
+      opts.token ? { authInfo: { token: opts.token, clientId: "fabdesk", scopes: [] } } : {},
+    );
   }
 
   /**
@@ -105,12 +152,16 @@ export class McpSessionManager {
    * else the CLI treats as a deny. The run token in the call's bearer is what ties the prompt to a
    * run, so the tool is registered per session but stateless.
    */
-  private registerPermissionPrompt(server: McpServer, handler: NonNullable<McpSessionOptions["permissionPrompt"]>["handle"]): void {
+  private registerPermissionPrompt(
+    server: McpServer,
+    handler: NonNullable<McpSessionOptions["permissionPrompt"]>["handle"],
+  ): void {
     server.registerTool(
       PERMISSION_PROMPT_TOOL,
       {
         title: "Permission prompt",
-        description: "Internal: Claude Code asks the fabdesk daemon whether a tool call may run in supervised mode. Not for the model to call.",
+        description:
+          "Internal: Claude Code asks the fabdesk daemon whether a tool call may run in supervised mode. Not for the model to call.",
         inputSchema: PERMISSION_PROMPT_INPUT as unknown as ZodRawShapeCompat,
         annotations: { title: "Permission prompt", readOnlyHint: true },
       },
@@ -135,7 +186,9 @@ export class McpSessionManager {
     const s = this.sessions.get(id);
     if (!s) return;
     this.sessions.delete(id);
-    await s.transport.close().catch((e) => logger.warn("mcp transport close failed", { error: errMsg(e) }));
+    await s.transport
+      .close()
+      .catch((e) => logger.warn("mcp transport close failed", { error: errMsg(e) }));
     await s.server.close().catch(() => {});
   }
 
@@ -146,8 +199,11 @@ export class McpSessionManager {
 }
 
 function json(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
 }
 
 export const INSTRUCTIONS =
-  "fabdesk designs PCBs from a netlist source (circuit.netlist.json) built into a KiCad board. Start with project_status. Only the core toolset is loaded; call load_toolset to enable project/circuit/route/kicad/verify/render/export/sim tools. Typical flow: project_write_file circuit.netlist.json → circuit_build → circuit_read_errors → route_run → verify_drc → render_board.";
+  "fabdesk designs PCBs from a netlist source (circuit.netlist.json) built into a KiCad project with a schematic and board. Start with project_status. Only the core toolset is loaded; call load_toolset to enable project/circuit/route/kicad/verify/render/export/sim tools. Typical flow: project_write_file circuit.netlist.json → circuit_build → circuit_read_errors → route_run → verify_drc with schematicParity=true → load verify and run verify_erc plus verify_gate with requireErc=true → render_board → load render and run render_schematic_svg plus render_pcb_svg. render_board creates PNG board images only; it does not populate the Schematic or PCB SVG tabs.";

@@ -30,6 +30,10 @@ describe("renderAgentsMd", () => {
     expect(md).toContain("mcp__fabdesk__<tool>");
     expect(md).toContain("### circuit_build");
     expect(md).toContain("| `circuit.netlist.json` | **you** |");
+    expect(md).toContain('"placements"');
+    expect(md).toContain('"libSource"');
+    expect(md).toContain('"kind":"symbol"');
+    expect(md).toContain("of other existing footprints is preserved");
     expect(md.indexOf(USER_START)).toBeLessThan(md.indexOf(USER_END));
   });
 

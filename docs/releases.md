@@ -78,8 +78,15 @@ identity do not reset; in-app updates fetch this feed by URL and do not use `app
 | `CSC_LINK`, `CSC_KEY_PASSWORD` | macOS Developer ID certificate (base64 .p12) |
 | `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` | Notarization |
 | `WIN_CSC_LINK`, `WIN_CSC_KEY_PASSWORD` | Windows code-signing certificate |
+| `FAB_PCB_RELEASE_TOKEN` | Fine-grained read token for private `TensorFleet/fab_pcb` release assets. Desktop builds download tag `backend-<vendor/fab_pcb commit prefix>` and refuse an unpinned/latest bundle. |
 
 Without signing secrets the workflow still produces unsigned installers.
+
+The fab_pcb release must contain `fp-pcb-backend-<target>.tar.gz` for `linux-x64`,
+`darwin-x64`, `darwin-arm64`, and `windows-x64`, each with `bundle.json` at the archive root.
+Those artifacts must be built and smoke-tested on their native runners; cross-compilation alone is
+not release proof. Missing credentials, tag, target, or manifest fails the FabPlane release before
+electron-builder runs.
 
 ## Verifying a download
 

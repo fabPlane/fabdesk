@@ -17,7 +17,8 @@
     "vendor/fabplane/packages/storage",
     "vendor/fabplane/packages/pcb",
     "vendor/fab_pcb/packages/proto",
-    "vendor/fab_pcb/packages/client"
+    "vendor/fab_pcb/packages/client",
+    "vendor/fab_pcb/packages/kicad-wasm"
   ],
   "trustedDependencies": [
     "electron",
@@ -32,6 +33,7 @@
   },
   "scripts": {
     "dev": "bun run --cwd apps/desktop dev",
+    "dev:pcb": "bun run scripts/dev-pcb.ts",
     "dev:core": "bun run --cwd apps/core dev",
     "relay": "bun run --cwd apps/relay start",
     "typecheck": "bun run fp-pcb:types && bun run --filter './apps/core' --filter './apps/desktop' --filter './apps/relay' --filter './packages/*' typecheck",
@@ -61,5 +63,8 @@
     "@types/bun": "1.2.21",
     "prettier": "3.6.2",
     "typescript": "5.9.2"
+  },
+  "patchedDependencies": {
+    "app-builder-lib@26.15.3": "patches/app-builder-lib@26.15.3.patch"
   }
 }

@@ -100,10 +100,13 @@ export const project_status = defineTool({
 export type BuildSummary = {
   ok: boolean;
   at: string;
+  rebuild: "preserve" | "clean";
   durationMs: number;
   errors: BuildResult["errors"];
   warnings: BuildResult["warnings"];
   counts: BuildResult["counts"];
+  revision?: number;
+  removedCopper?: { tracks: number; vias: number };
 };
 
 /**
@@ -139,12 +142,18 @@ export const circuit_build = defineTool({
   toolset: "core",
   title: "Build the board",
   description:
-    "Compile circuit.netlist.json into board.kicad_pcb on the design server: footprints are pulled from the KiCad libraries, placed on a board of the size in the netlist (or fabdesk.json; a template such as viagrid-9055 replaces it with the blank: outline, free vias, holes, rules), and the nets become the ratsnest for route_run. Returns ok/errors/warnings with positions in the netlist file plus component and footprint counts. On failure fix circuit.netlist.json and build again. Re-building a routed board keeps tracks whose nets still exist; footprints the netlist no longer names are removed.",
+    "Compile circuit.netlist.json into board.kicad_pcb and a generated board.kicad_sch. Footprints are pulled from KiCad libraries, explicitly placed when board.placements names them, and connected into the ratsnest; libSource draws searchable schematic symbols with labelled wire stubs. Returns actionable errors/warnings. Rebuilds replace only generated schematic items, preserve manual schematic work and unlisted manual footprint placement, keep tracks whose nets still exist, and remove footprints the netlist no longer names.",
   inputSchema: {
     entrypoint: z
       .string()
       .optional()
       .describe("Netlist file relative to the project, default circuit.netlist.json"),
+    rebuild: z
+      .enum(["preserve", "clean"])
+      .default("preserve")
+      .describe(
+        "preserve keeps compatible existing copper; clean removes routed tracks/arcs/vias after source validation before rebuilding",
+      ),
     fresh: z
       .boolean()
       .optional()
@@ -154,7 +163,7 @@ export const circuit_build = defineTool({
   },
   annotations: { idempotentHint: true },
   longRunning: true,
-  handler: async ({ entrypoint, fresh }, ctx) => {
+  handler: async ({ entrypoint, rebuild, fresh }, ctx) => {
     const project = ctx.requireProject();
     ctx.progress(0.05, "building");
     const board = await buildBoardSpec(project);
@@ -162,6 +171,7 @@ export const circuit_build = defineTool({
       projectDir: project.dir,
       ...(entrypoint ? { entrypoint } : {}),
       ...(board ? { board } : {}),
+      rebuild,
       ...(fresh ? { fresh } : {}),
       signal: ctx.signal,
       progress: (fraction, note) => ctx.progress(0.05 + fraction * 0.9, note),
@@ -169,16 +179,19 @@ export const circuit_build = defineTool({
     const summary: BuildSummary = {
       ok: result.ok,
       at: new Date().toISOString(),
+      rebuild,
       durationMs: result.durationMs,
       errors: result.errors,
       warnings: result.warnings,
       counts: result.counts,
+      ...(result.revision !== undefined ? { revision: result.revision } : {}),
+      ...(result.removedCopper ? { removedCopper: result.removedCopper } : {}),
     };
     await writeReport(project, "build", summary);
     ctx.progress(1, "done");
     const c = result.counts;
     const text = result.ok
-      ? `Build OK in ${Math.round(result.durationMs)} ms: ${c.components} components, ${c.nets} nets, ${c.footprintsAdded} footprints added, ${c.footprintsPlaced} placed${c.viasAdded ? `, blank drawn (${c.viasAdded} free vias, ${c.holesAdded ?? 0} holes)` : ""}.${project.manifest().board.template ? ` Template ${project.manifest().board.template}: the netlist's own board spec was replaced by the blank.` : ""}${result.warnings.length ? `\nWarnings:\n${formatErrors(result.warnings)}` : ""}`
+      ? `Build OK (${rebuild} rebuild) in ${Math.round(result.durationMs)} ms: ${c.components} components, ${c.nets} nets, ${c.footprintsAdded} footprints added, ${c.footprintsPlaced} placed${result.removedCopper ? `, ${result.removedCopper.tracks} old tracks/arcs and ${result.removedCopper.vias} routed vias removed` : ""}${c.viasAdded ? `, blank drawn (${c.viasAdded} free vias, ${c.holesAdded ?? 0} holes)` : ""}.${project.manifest().board.template ? ` Template ${project.manifest().board.template}: the netlist's own board spec was replaced by the blank.` : ""}${result.warnings.length ? `\nWarnings:\n${formatErrors(result.warnings)}` : ""}`
       : `Build FAILED (${result.errors.length} errors):\n${formatErrors(result.errors)}`;
     return { text, json: summary, isError: !result.ok };
   },
@@ -265,7 +278,7 @@ export const route_run = defineTool({
   toolset: "core",
   title: "Autoroute the board",
   description:
-    "Autoroute board.kicad_pcb on the design server (capacity: the built-in JS router; freerouting: internal builds only). Streams progress frames to the app, persists them under .fabdesk/runs/<runId>/frames.jsonl, applies the tracks to the board as one undo entry and returns which nets stayed open plus via/track counts. Requires circuit_build. Use route_unroute + route_run with onlyConnections to redo specific nets.",
+    "Autoroute board.kicad_pcb on the design server (capacity: the built-in JS router; freerouting: internal builds only). Streams progress frames to the app, persists them under .fabdesk/runs/<runId>/frames.jsonl, applies the tracks to the board as one undo entry and returns which nets stayed open plus via/track counts. Requires circuit_build. Use route_unroute + route_run with onlyConnections to redo specific nets. If routing reports a blocked endpoint or board-edge violation, move the named footprint inward or enlarge the board, rebuild, and retry; never split or rename an electrical net merely to bypass a routing failure.",
   inputSchema: RouteRunArgs,
   annotations: { idempotentHint: true },
   longRunning: true,
@@ -295,7 +308,7 @@ export const verify_drc = defineTool({
     schematicParity: z
       .boolean()
       .default(false)
-      .describe("Also check PCB↔schematic parity (needs an imported schematic)"),
+      .describe("Also check PCB↔schematic parity (requires libSource for generated symbols)"),
     limit: z
       .number()
       .int()

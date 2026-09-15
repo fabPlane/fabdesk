@@ -15,15 +15,15 @@ pick_ud() {
   if [ -f "$UD_LEGACY/daemon.json" ]; then UD="$UD_LEGACY"; fi
 }
 LOG="$OUT/log.txt"; exec > >(tee -a "$LOG") 2>&1
-ERRORS=(); R_INSTALL="" R_GK="" R_CS="" R_CORE="" R_HEALTH="" R_SHOT="" LAUNCH_MS=""
+ERRORS=(); R_INSTALL="" R_GK="" R_CS="" R_CORE="" R_HEALTH="" R_PCB="" R_SHOT="" LAUNCH_MS=""
 err() { ERRORS+=("$1"); echo "ERROR: $1"; }
 write_report() {
   local ok=true; [ ${#ERRORS[@]} -eq 0 ] || ok=false
-  python3 - "$OUT/report.json" "$ok" "$(basename "$INSTALLER")" "$R_INSTALL" "$R_GK" "$R_CS" "$R_CORE" "$R_HEALTH" "$R_SHOT" "$LAUNCH_MS" ${ERRORS[@]+"${ERRORS[@]}"} <<'PY'
+  python3 - "$OUT/report.json" "$ok" "$(basename "$INSTALLER")" "$R_INSTALL" "$R_GK" "$R_CS" "$R_CORE" "$R_HEALTH" "$R_PCB" "$R_SHOT" "$LAUNCH_MS" ${ERRORS[@]+"${ERRORS[@]}"} <<'PY'
 import json, sys
 a = sys.argv[1:]
 rep = {"platform": "macos", "ok": a[1] == "true", "installer": a[2], "install": a[3], "gatekeeper": a[4],
-       "codesign": a[5], "core_version": a[6], "health": a[7], "screenshot": a[8], "launch_ms": a[9], "errors": a[10:]}
+       "codesign": a[5], "core_version": a[6], "health": a[7], "pcb_health": a[8], "screenshot": a[9], "launch_ms": a[10], "errors": a[11:]}
 json.dump(rep, open(a[0], "w"), indent=2)
 PY
 }
@@ -82,6 +82,16 @@ PORT=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["port"])' 
 TOKEN=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["token"])' "$UD/daemon.json")
 for i in $(seq 1 30); do R_HEALTH="$(curl -fsS -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:$PORT/health" 2>/dev/null)" && break; sleep 1; done
 [ -n "$R_HEALTH" ] || err "core /health did not answer on $PORT"
+for i in $(seq 1 30); do R_PCB="$(curl -fsS "http://127.0.0.1:4020/health" 2>/dev/null)" && break; sleep 1; done
+if [ -z "$R_PCB" ]; then err "PCB bridge /health did not answer on 4020"
+elif ! python3 - "$R_HEALTH" "$R_PCB" <<'PY'
+import json, sys
+core, pcb = map(json.loads, sys.argv[1:])
+assert pcb.get("name") == "@fp-pcb/bridge", pcb
+assert pcb.get("kicadCliExists") is True, pcb
+if core.get("channel") == "internal": assert pcb.get("jsAutorouter", {}).get("ok") is True, pcb
+PY
+then err "PCB bridge health is incomplete (KiCad or internal router unavailable)"; fi
 LAUNCH_MS=$(( $(python3 -c 'import time;print(int(time.time()*1000))') - T0 ))
 sleep 4  # let the renderer paint
 if [ -f "$UD/app-bridge.json" ]; then

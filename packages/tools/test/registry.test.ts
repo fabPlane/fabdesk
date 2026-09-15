@@ -25,6 +25,7 @@ describe("registry", () => {
       "project_import_kicad",
       "circuit_query",
       "circuit_search_parts",
+      "circuit_describe_part",
       "route_status",
       "route_cancel",
       "route_unroute",
@@ -110,6 +111,32 @@ describe("registry", () => {
       }),
     );
     expect(out.text).toContain(`Project "demo"`);
+    const symbols = await reg.invoke(
+      "circuit_search_parts",
+      { query: "resistor", kind: "symbol" },
+      (ref) =>
+        noProject({
+          def: reg.get("circuit_search_parts")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+    );
+    expect(symbols.text).toContain("Device:R");
+    expect(symbols.json).toMatchObject({ kind: "symbol" });
+    const part = await reg.invoke(
+      "circuit_describe_part",
+      { kind: "symbol", libId: "Device:R" },
+      (ref) =>
+        noProject({
+          def: reg.get("circuit_describe_part")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+    );
+    expect(part.text).toContain("number");
+    expect(part.text).toContain("PT_PASSIVE");
     await expect(
       reg.invoke("circuit_query", { select: "nope", project: project.id }, (ref) =>
         noProject({
@@ -169,16 +196,19 @@ describe("registry", () => {
     )
       .trim()
       .split("\n");
-    // meta + pass-start + two connection frames (the mock reports routed 0, 1, 2)
+    // meta + static pads + progress + a final frame carrying the real routed copper.
     expect(
       frames.map(
         (l) =>
           (JSON.parse(l) as { kind: string; event?: { kind: string } }).event?.kind ??
           (JSON.parse(l) as { kind: string }).kind,
       ),
-    ).toEqual(["meta", "pass-start", "connection", "connection"]);
+    ).toEqual(["meta", "static", "pass-start", "connection", "connection", "done"]);
+    expect((JSON.parse(frames.at(-1)!) as { shapes: unknown[] }).shapes).toHaveLength(1);
     expect(services.events.map((e) => e.topic)).toEqual([
       "route.meta",
+      "route.static",
+      "route.frame",
       "route.frame",
       "route.frame",
       "route.frame",
@@ -351,6 +381,7 @@ describe("agent docs", () => {
     for (const t of reg.list()) expect(md).toContain(`\`${t.name}\``);
     expect(md).toContain("### core");
     expect(md).toContain("load_toolset");
+    expect(md).toContain("A PNG board render does not populate the Schematic or PCB SVG tabs");
     expect(md).toContain(z.string().constructor.name.length > 0 ? "|" : "");
   });
 });

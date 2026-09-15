@@ -33,9 +33,10 @@ describe("migrateLegacyUserData", () => {
     const next = join(root, "fabPlane");
     mkdirSync(previous);
     writeFileSync(join(previous, "daemon.json"), '{"ok":true}');
-    expect(migrateLegacyUserData(next)).toBe(previous);
+    const distinctEntries = !existsSync(next);
+    expect(migrateLegacyUserData(next)).toBe(distinctEntries ? previous : null);
     expect(existsSync(join(next, "daemon.json"))).toBe(true);
-    expect(existsSync(previous)).toBe(false);
+    if (distinctEntries) expect(existsSync(previous)).toBe(false);
     rmSync(root, { recursive: true, force: true });
   });
 

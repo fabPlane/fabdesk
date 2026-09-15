@@ -301,10 +301,11 @@ fabdesk's own packages carry no tscircuit-ecosystem dependency and no `circuit.j
 - **Vendored client typing:** `@fp-pcb/{proto,client}` are root workspaces; `bun run fp-pcb:types`
   emits their declarations and `tsconfig.base.json` `paths` map to them, so fabdesk's stricter
   compiler options do not re-check fab_pcb's sources.
-- **Still true:** nothing spawns the bridge (dev runs it by hand; bundling is phase 0), and with the
-  fork writing the board the `kicad-cli` fabdesk resolves must be the fork (§6.1). `verify_erc`,
-  `render_schematic_svg` and schematic parity only apply to imported KiCad projects — a compiled
-  netlist has no drawn schematic. The freerouting router stays internal-only at the tool layer.
+- **Current behavior:** Fabdesk supervises the bundled bridge and supplies the same bundled KiCad
+  environment to the bridge and core. Compiling a netlist creates both a native KiCad board and
+  schematic, so ERC, schematic parity, and schematic SVG rendering apply. SVG rendering remains
+  explicit: `render_board` writes PCB PNGs; `render_schematic_svg` and `render_pcb_svg` populate
+  their corresponding tabs. The freerouting router stays internal-only at the tool layer.
 
 #### First end-to-end run — 2026-09-07
 

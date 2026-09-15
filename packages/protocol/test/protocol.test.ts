@@ -22,6 +22,7 @@ import {
   isGitHubAssetHost,
   DEFAULT_CATALOG_PUBLIC_ORIGIN,
   LatestRelease,
+  NetlistFile,
   ReleaseManifest,
   RouteFrameLine,
   topicMatches,
@@ -89,6 +90,14 @@ describe("schemas", () => {
     const ok = { version: "0.1.0", pid: 1, port: 2, token: "x".repeat(32), startedAt: "now", channel: "public", authMode: "local" };
     expect(DaemonHandshake.parse(ok).host).toBe("127.0.0.1");
     expect(DaemonHandshake.safeParse({ ...ok, token: "short" }).success).toBe(false);
+  });
+
+  test("NetlistFile accepts explicit component placements", () => {
+    const parsed = NetlistFile.parse({
+      netlist: { components: [], nets: [] },
+      board: { placements: [{ ref: "R1", position: { x: 12.5, y: 7 } }] },
+    });
+    expect(parsed.board?.placements?.[0]).toEqual({ ref: "R1", position: { x: 12.5, y: 7 } });
   });
 });
 

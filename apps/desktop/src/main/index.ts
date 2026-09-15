@@ -12,6 +12,7 @@ import { coreSentryEnv, flushSentry, initSentry, runSentryTest, sentryActive, se
 import { registerUpdateIpc, UpdateChecker } from "./updates";
 import { registerUpdateDownloadIpc, UpdateDownloader } from "./update-download";
 import { migrateLegacyUserData } from "./user-data";
+import { PcbSupervisor, resolvePcbBackend } from "./pcb-supervisor";
 import { resolveWindowTheme, titleBarOverlayFor } from "./window-theme";
 
 // Name / userData / AUMID / WM_CLASS / FABDESK_HOME before any path read or the single-instance lock
@@ -32,6 +33,7 @@ if (!identity.devProfile) migrateLegacyUserData(app.getPath("userData"));
 
 const here = fileURLToPath(new URL(".", import.meta.url));
 let supervisor: CoreSupervisor | null = null;
+let pcbSupervisor: PcbSupervisor | null = null;
 let automation: AppAutomation | null = null;
 let quitting = false;
 
@@ -122,10 +124,15 @@ if (!app.requestSingleInstanceLock()) {
     if (process.platform === "darwin" && icon) app.dock?.setIcon(icon);
     void runSentryTest();
     const home = process.env["FABDESK_HOME"];
+    pcbSupervisor = new PcbSupervisor(resolvePcbBackend({ packaged: app.isPackaged, resourcesPath: process.resourcesPath }));
+    const pcbEnv = await pcbSupervisor.start().catch((error: unknown) => {
+      console.error(`[pcb] ${error instanceof Error ? error.message : String(error)}`);
+      return {};
+    });
     supervisor = new CoreSupervisor({
       localAuth: localAuthEnabled(identity.devProfile),
       binaryOverride: process.env["FABDESK_CORE_BIN"],
-      extraEnv: { ...coreSentryEnv(), ...(home ? { FABDESK_HOME: home } : {}) },
+      extraEnv: { ...coreSentryEnv(), ...pcbEnv, ...(home ? { FABDESK_HOME: home } : {}) },
       ...(identity.devProfile ? { devProfile: true } : {}),
     });
     installAppMenu();
@@ -166,6 +173,7 @@ if (!app.requestSingleInstanceLock()) {
     supervisor
       .stop({ shutdown: true })
       .catch(() => {})
+      .then(() => pcbSupervisor?.stop())
       .then(() => flushSentry())
       .finally(() => app.quit());
   });
