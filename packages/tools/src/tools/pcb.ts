@@ -41,7 +41,7 @@ export const pcb_place = defineTool({
   toolset: "circuit",
   title: "Place PCB footprints",
   description:
-    "Place native PCB footprints by reference at explicit millimetre coordinates. This changes only physical placement in board.kicad_pcb. Unknown references fail without a partial placement.",
+    "Place native PCB footprints and adjust their silkscreen reference fields at explicit millimetre coordinates. Library geometry is normalized before reference-field edits. Unknown references fail without a partial placement.",
   inputSchema: {
     placements: z
       .array(
@@ -51,6 +51,11 @@ export const pcb_place = defineTool({
           rotation: z.number().finite().optional(),
           flip: z.boolean().optional(),
           lock: z.boolean().optional(),
+          referenceField: z.object({
+            visible: z.boolean().optional(),
+            position: Point.optional().describe("Absolute board position in millimetres"),
+            sizeMm: z.number().positive().max(5).optional(),
+          }).optional(),
         }),
       )
       .min(1)

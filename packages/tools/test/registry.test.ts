@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdir, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod/v4";
-import { ToolError, createRegistry, defineTool, isLibraryMismatch, jailPath, toCallToolResult, toolsMarkdown } from "../src";
+import { ToolError, createRegistry, defineTool, inspectDesignRuleFloors, isLibraryMismatch, jailPath, toCallToolResult, toolsMarkdown } from "../src";
 import { contextFactory, mockServices, tempProject } from "./mock-services";
 
 describe("registry", () => {
@@ -11,6 +11,14 @@ describe("registry", () => {
     expect(isLibraryMismatch({ rule: "lib_footprint_mismatch", description: "Footprint R1 does not match copy in library" })).toBe(true);
     expect(isLibraryMismatch({ rule: "warning", description: "Symbol does not match the copy in the library" })).toBe(true);
     expect(isLibraryMismatch({ rule: "silk_overlap", description: "Reference text overlaps a pad" })).toBe(false);
+  });
+
+  test("release detects relaxed design-rule floors", () => {
+    const safe = inspectDesignRuleFloors(JSON.stringify({ board: { design_settings: { rules: { min_hole_clearance: 0.25, min_copper_edge_clearance: 0.5, min_track_width: 0.2 } } } }));
+    expect(safe.status).toBe("pass");
+    const relaxed = inspectDesignRuleFloors(JSON.stringify({ board: { design_settings: { rules: { min_hole_clearance: 0.18, min_copper_edge_clearance: 0.5, min_track_width: 0.2 } } } }));
+    expect(relaxed.status).toBe("fail");
+    expect(relaxed.violations).toEqual(["min_hole_clearance was relaxed to 0.18 mm (release floor 0.25 mm)"]);
   });
 
   test("native part search guidance does not steer agents to the legacy compiler", () => {
@@ -196,9 +204,21 @@ describe("registry", () => {
     });
     expect(edit.text).toContain("created 1 symbols");
     expect(edits).toHaveLength(1);
+    const powerEdit = await call("schematic_edit", {
+      symbols: [{ libId: "power:PWR_FLAG", reference: "#FLG01", value: "PWR_FLAG", position: { x: 20.32, y: 20.32 } }],
+      connections: [{ name: "VBUS", nodes: [{ reference: "#FLG01", pin: "1" }], label: "global" }],
+    });
+    expect(powerEdit.text).toContain("created 1 symbols");
+    await expect(call("schematic_edit", {
+      connections: [{ name: "BAD", nodes: [{ reference: "R1", pin: "1" }], label: "none" }],
+    })).rejects.toThrow(/direct wire connections require at least two nodes/);
     const inspect = await call("schematic_inspect");
     expect(inspect.text).toContain("Native schematic revision 4");
     expect(inspect.text).toContain("Device:R");
+    expect((inspect.json as any).symbols).toHaveLength(1);
+    expect((inspect.json as any).nets).toBeUndefined();
+    const fullInspect = await call("schematic_inspect", { detail: "full" });
+    expect((fullInspect.json as any).nets).toHaveLength(1);
     const review = await call("schematic_review");
     expect(review.text).toContain("Schematic review at revision 4");
     expect(await Bun.file(join(project.dir, "reports/schematic-review.json")).exists()).toBe(true);
@@ -496,7 +516,7 @@ describe("registry", () => {
   test("complete release is revision-bound and fails closed on missing outputs", async () => {
     const reg = createRegistry();
     const project = await tempProject("release");
-    for (const [name, body] of [["board.kicad_sch", "sch"], ["board.kicad_pcb", "pcb"], ["board.kicad_pro", "pro"]]) await writeFile(join(project.dir, name), body);
+    for (const [name, body] of [["board.kicad_sch", "sch"], ["board.kicad_pcb", "pcb"], ["board.kicad_pro", "{}"]]) await writeFile(join(project.dir, name), body);
     const base = mockServices([project]);
     const put = async (path: string, body = "output") => { await mkdir(join(path, ".."), { recursive: true }).catch(() => {}); await Bun.write(path, body); };
     const services = mockServices([project], {

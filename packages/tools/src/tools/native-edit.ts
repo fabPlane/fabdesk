@@ -47,13 +47,13 @@ async function restore(projectDir: string, directory: string): Promise<void> {
 
 const SchematicEdit = z.object({
   symbols: z.array(z.object({
-    libId: z.string().min(3), reference: z.string().min(1), value: z.string(), footprint: z.string(), position: Point,
+    libId: z.string().min(3), reference: z.string().min(1), value: z.string(), footprint: z.string().optional(), position: Point,
     unit: z.number().int().positive().optional(), bodyStyle: z.number().int().positive().optional(),
     rotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]).optional(),
     mirrorX: z.boolean().optional(), mirrorY: z.boolean().optional(), fields: z.record(z.string(), z.string()).optional(),
   })).max(200).optional(),
   symbolUpdates: z.array(z.object({ reference: z.string().min(1), newReference: z.string().min(1).optional(), position: Point.optional(), value: z.string().optional(), footprint: z.string().optional(), fields: z.record(z.string(), z.string()).optional() })).max(200).optional(),
-  connections: z.array(z.object({ name: z.string().min(1), nodes: z.array(z.object({ reference: z.string(), pin: z.string() })).min(2), label: z.enum(["local", "global", "none"]).optional() })).max(500).optional(),
+  connections: z.array(z.object({ name: z.string().min(1), nodes: z.array(z.object({ reference: z.string(), pin: z.string() })).min(1), label: z.enum(["local", "global", "none"]).optional() }).refine((connection) => connection.label !== "none" || connection.nodes.length >= 2, { message: "direct wire connections require at least two nodes", path: ["nodes"] })).max(500).optional(),
   wires: z.array(z.object({ start: Point, end: Point })).max(1000).optional(),
   localLabels: z.array(z.object({ text: z.string(), position: Point })).max(500).optional(),
   globalLabels: z.array(z.object({ text: z.string(), position: Point })).max(500).optional(),

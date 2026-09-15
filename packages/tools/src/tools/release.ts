@@ -40,12 +40,37 @@ export function isLibraryMismatch(violation: { rule: string; description: string
   return /(?:^|\s|_)lib(?:rary)?(?:_|\s).*mismatch|(?:^|_)mismatch(?:\s|$)|does not match (?:the )?copy in (?:the )?library/i.test(evidence);
 }
 
+const DESIGN_RULE_FLOORS = {
+  min_hole_clearance: 0.25,
+  min_copper_edge_clearance: 0.5,
+  min_track_width: 0.2,
+} as const;
+
+export function inspectDesignRuleFloors(projectText: string) {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(projectText);
+  } catch {
+    return { status: "unknown" as const, rules: {}, floors: DESIGN_RULE_FLOORS, violations: ["board.kicad_pro is not valid JSON"] };
+  }
+  const root = parsed && typeof parsed === "object" ? parsed as Record<string, unknown> : {};
+  const board = root["board"] && typeof root["board"] === "object" ? root["board"] as Record<string, unknown> : {};
+  const settings = board["design_settings"] && typeof board["design_settings"] === "object" ? board["design_settings"] as Record<string, unknown> : {};
+  const source = settings["rules"] && typeof settings["rules"] === "object" ? settings["rules"] as Record<string, unknown> : {};
+  const rules = Object.fromEntries(Object.keys(DESIGN_RULE_FLOORS).flatMap((name) => typeof source[name] === "number" ? [[name, source[name]]] : []));
+  const violations = Object.entries(DESIGN_RULE_FLOORS).flatMap(([name, floor]) => {
+    const value = source[name];
+    return typeof value === "number" && value < floor ? [`${name} was relaxed to ${value} mm (release floor ${floor} mm)`] : [];
+  });
+  return { status: violations.length ? "fail" as const : "pass" as const, rules, floors: DESIGN_RULE_FLOORS, violations };
+}
+
 export const release_build = defineTool({
   name: "release_build",
   toolset: "verify",
   title: "Verify and build the complete release",
   description:
-    "Run full-severity ERC, parity-enabled DRC, unconnected/library checks, task-derived circuit checks, schematic/PCB renders, and complete native/document/fabrication export for one exact saved revision. Missing checks or outputs are reported as missing and fail the release. Returns SHA-256 revisions and a complete output inventory; any later edit makes this evidence stale.",
+    "Run full-severity ERC, parity-enabled DRC, unconnected/library checks, design-rule floor and schematic-presentation checks, task-derived circuit checks, schematic/PCB renders, and complete native/document/fabrication export for one exact saved revision. Missing checks, relaxed safety rules, label-dense stub-only schematics, or missing outputs fail the release. Returns SHA-256 revisions and a complete output inventory; any later edit makes this evidence stale.",
   inputSchema: {
     circuitChecks: z.array(CircuitCheck).min(1).describe("Task-derived electrical assertions relevant to this board"),
     buildNotes: z.string().min(1).describe("Assembly notes, design calculations, polarity/orientation guidance and constraints"),
@@ -71,6 +96,23 @@ export const release_build = defineTool({
     const drc = await ctx.services.kicad.runDrc(cli, { board, outFile: join(reportsDir, "release-drc.json"), severity: "all", schematicParity: true, signal: ctx.signal });
     const gate = ctx.services.kicad.gate({ ...drc, schematicParityChecked: true }, erc, project.manifest().allowedDrcWarnings);
     const calculations = circuitChecks.map(evaluate);
+    const designRules = inspectDesignRuleFloors(await readFile(pro, "utf8"));
+    const schematicSnapshot = await ctx.services.design.schematicInspect(project.dir);
+    const labelCount = schematicSnapshot.localLabels.length + schematicSnapshot.globalLabels.length;
+    const longWireCount = schematicSnapshot.wires.filter((wire) => Math.hypot(wire.end.x - wire.start.x, wire.end.y - wire.start.y) > 5.08).length;
+    const presentationViolations = [
+      ...(schematicSnapshot.symbols.length >= 5 && labelCount > schematicSnapshot.symbols.length * 1.5
+        ? [`${labelCount} labels for ${schematicSnapshot.symbols.length} symbols`]
+        : []),
+      ...(schematicSnapshot.symbols.length >= 5 && schematicSnapshot.wires.length >= schematicSnapshot.symbols.length && longWireCount === 0
+        ? ["all schematic wires are short label stubs; no readable functional-block wiring"]
+        : []),
+    ];
+    const schematicPresentation = {
+      status: presentationViolations.length ? "fail" as const : "pass" as const,
+      counts: { symbols: schematicSnapshot.symbols.length, wires: schematicSnapshot.wires.length, labels: labelCount, longWires: longWireCount },
+      violations: presentationViolations,
+    };
 
     ctx.progress(0.3, "renders");
     const schematicSvgs = await ctx.services.kicad.exportSchematicSvg(cli, { schematic, outDir: join(rendersDir, "schematic"), signal: ctx.signal });
@@ -125,6 +167,8 @@ export const release_build = defineTool({
       parity: { status: drc.schematicParity.length === 0 ? "pass" : "fail", violations: drc.schematicParity },
       unconnected: { status: drc.counts.unconnected === 0 ? "pass" : "fail", count: drc.counts.unconnected },
       libraryMismatches: { status: libraryMismatchViolations.length ? "fail" : "pass", count: libraryMismatchViolations.length, violations: libraryMismatchViolations },
+      designRules,
+      schematicPresentation,
       circuit: calculations,
       revisionStable: { status: stable ? "pass" : "fail" },
     };
@@ -132,11 +176,13 @@ export const release_build = defineTool({
     const failureReasons = [
       ...gate.reasons,
       ...(libraryMismatchViolations.length && !gate.reasons.some((reason) => /warning/i.test(reason)) ? [`${libraryMismatchViolations.length} library mismatch(es)`] : []),
+      ...designRules.violations.map((reason) => `design rule integrity: ${reason}`),
+      ...presentationViolations.map((reason) => `schematic presentation: ${reason}`),
       ...failedCircuitChecks.map((name) => `circuit check failed: ${name}`),
       ...missing.map((path) => `missing output: ${path}`),
       ...(!stable ? ["native files changed while the release was being built"] : []),
     ];
-    const pass = stable && gate.pass && libraryMismatchViolations.length === 0 && failedCircuitChecks.length === 0 && missing.length === 0;
+    const pass = stable && gate.pass && libraryMismatchViolations.length === 0 && designRules.status === "pass" && schematicPresentation.status === "pass" && failedCircuitChecks.length === 0 && missing.length === 0;
     const result = {
       contract: { name: "fabdesk.native-release", version: "1.0.0" }, capturedAt: new Date().toISOString(),
       runtime: { runtimeId: ctx.services.runtimeId, fabdeskVersion: ctx.services.version, kicadCli: { path: cli.path, version: cli.version } },

@@ -14,7 +14,8 @@ describe.skipIf(!url || !workspace)("optional native schematic capabilities", ()
 
   afterAll(async () => {
     await sessions?.dispose();
-    if (projectDir) await rm(projectDir, { recursive: true, force: true });
+    if (projectDir && process.env["FABDESK_KEEP_TEST_PROJECT"] !== "1")
+      await rm(projectDir, { recursive: true, force: true });
   });
 
   test("edit native schematic, ERC, forward annotate, outline and place", async () => {
@@ -68,6 +69,7 @@ describe.skipIf(!url || !workspace)("optional native schematic capabilities", ()
       expect.arrayContaining(["/LEFT", "/RIGHT"]),
     );
     expect(schematic.erc.errors).toBe(0);
+    expect(schematic.erc.warnings).toBe(0);
 
     const preview = await design.syncSchematicToPcb(projectDir, true);
     expect(preview.ok).toBe(true);
@@ -88,7 +90,7 @@ describe.skipIf(!url || !workspace)("optional native schematic capabilities", ()
     );
     expect(outline.created).toBe(4);
     const placed = await design.placeFootprints(projectDir, [
-      { reference: "R1", position: { x: 8, y: 7.5 }, rotation: 90 },
+      { reference: "R1", position: { x: 8, y: 7.5 }, rotation: 90, referenceField: { position: { x: 8, y: 4 }, sizeMm: 0.8 } },
       { reference: "R2", position: { x: 22, y: 7.5 } },
     ]);
     expect(placed.missing).toEqual([]);

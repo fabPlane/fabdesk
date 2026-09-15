@@ -13,10 +13,12 @@ export const schematic_inspect = defineTool({
   toolset: "circuit",
   title: "Inspect native schematic",
   description:
-    "Inspect board.kicad_sch as KiCad currently holds it: symbols, absolute pin coordinates, wires, labels, connectivity, and live ERC counts.",
-  inputSchema: {},
+    "Inspect board.kicad_sch as KiCad currently holds it. The default authoring view returns symbols and absolute pin coordinates without repeating every wire/net ID; request full only when item IDs are needed for a targeted edit.",
+  inputSchema: {
+    detail: z.enum(["summary", "authoring", "full"]).default("authoring").describe("summary=count/check overview; authoring=symbols and pins; full=all wires, labels, nets and deletion IDs"),
+  },
   annotations: { readOnlyHint: true, idempotentHint: true },
-  handler: async (_args, ctx) => {
+  handler: async ({ detail }, ctx) => {
     const project = ctx.requireProject();
     const snapshot = await ctx.services.design.schematicInspect(project.dir);
     const symbols = snapshot.symbols.map((symbol) => ({
@@ -39,7 +41,18 @@ export const schematic_inspect = defineTool({
         ? [table(symbols)]
         : ["No symbols yet."]),
     ].join("\n\n");
-    return ok(text, snapshot);
+    const counts = {
+      symbols: snapshot.symbols.length,
+      wires: snapshot.wires.length,
+      localLabels: snapshot.localLabels.length,
+      globalLabels: snapshot.globalLabels.length,
+      junctions: snapshot.junctions.length,
+      noConnects: snapshot.noConnects.length,
+      notes: snapshot.texts.length,
+      nets: snapshot.nets.length,
+    };
+    const compact = { revision: snapshot.revision, pcbRevision: snapshot.pcbRevision, counts, erc: snapshot.erc };
+    return ok(text, detail === "full" ? snapshot : detail === "authoring" ? { ...compact, symbols: snapshot.symbols } : compact);
   },
 });
 
@@ -56,7 +69,7 @@ export const schematic_edit = defineTool({
           libId: z.string().min(3).describe("Exact KiCad symbol ID, such as Device:R"),
           reference: z.string().min(1).describe("Unique annotated reference, such as R1"),
           value: z.string(),
-          footprint: z.string().min(3).describe("Exact KiCad footprint ID"),
+          footprint: z.union([z.literal(""), z.string().min(3)]).optional().describe("Exact KiCad footprint ID; omit or use an empty string for non-physical symbols such as power flags"),
           position: Point,
           unit: z.number().int().positive().optional(),
           bodyStyle: z.number().int().positive().optional(),
@@ -75,7 +88,7 @@ export const schematic_edit = defineTool({
           newReference: z.string().min(1).optional(),
           position: Point.optional(),
           value: z.string().optional(),
-          footprint: z.string().min(3).optional(),
+          footprint: z.union([z.literal(""), z.string().min(3)]).optional(),
           fields: z.record(z.string(), z.string()).optional(),
         }),
       )
@@ -87,9 +100,12 @@ export const schematic_edit = defineTool({
           name: z.string().min(1).describe("Electrical net name"),
           nodes: z
             .array(z.object({ reference: z.string().min(1), pin: z.string().min(1) }))
-            .min(2)
+            .min(1)
             .describe("Symbol pin endpoints joined electrically by matching labels on short visible wire stubs"),
           label: z.enum(["local", "global", "none"]).default("local"),
+        }).refine((connection) => connection.label !== "none" || connection.nodes.length >= 2, {
+          message: "direct wire connections require at least two nodes",
+          path: ["nodes"],
         }),
       )
       .max(500)
@@ -162,9 +178,15 @@ export const schematic_review = defineTool({
     for (let left = 0; left < labels.length; left++)
       for (let right = left + 1; right < labels.length; right++) {
         const a = labels[left]!, b = labels[right]!;
-        if (Math.hypot(a.position.x - b.position.x, a.position.y - b.position.y) < 2.54)
+        if (a.text !== b.text && Math.hypot(a.position.x - b.position.x, a.position.y - b.position.y) < 2.54)
           findings.push({ code: "label-collision", severity: "warning", message: `Labels ${a.text} and ${b.text} are less than 2.54 mm apart.` });
       }
+    const wireLengths = snapshot.wires.map((wire) => Math.hypot(wire.end.x - wire.start.x, wire.end.y - wire.start.y));
+    const longWires = wireLengths.filter((length) => length > 5.08).length;
+    if (snapshot.symbols.length >= 5 && labels.length > snapshot.symbols.length * 1.5)
+      findings.push({ code: "label-density", severity: "warning", message: `${labels.length} labels for ${snapshot.symbols.length} symbols makes the drawing hard to scan; use direct functional-block wiring and reserve labels for shared or long-distance nets.` });
+    if (snapshot.symbols.length >= 5 && snapshot.wires.length >= snapshot.symbols.length && longWires === 0)
+      findings.push({ code: "stub-dominated-connectivity", severity: "warning", message: "Every wire is a short label stub; add direct visible wiring within functional blocks so signal flow can be read from the page." });
     if (snapshot.symbols.length >= 5 && snapshot.wires.length === 0 && labels.length >= snapshot.symbols.length)
       findings.push({ code: "label-only-connectivity", severity: "warning", message: "Connectivity is label-only; add short visible pin stubs or functional-block wiring for readability." });
     const xs = snapshot.symbols.map((symbol) => symbol.position.x);

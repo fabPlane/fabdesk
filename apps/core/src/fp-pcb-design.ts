@@ -101,6 +101,39 @@ const STAGE_FRACTION: Record<string, number> = {
 // rounding inspected coordinates to 1 um and creating tiny disconnected gaps on re-use.
 const mm = (nm: number) => Math.round(toMm(nm) * 1_000_000) / 1_000_000;
 
+function pointOnSegment(
+  point: { x: number; y: number },
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+) {
+  const cross = (point.x - start.x) * (end.y - start.y) - (point.y - start.y) * (end.x - start.x);
+  if (Math.abs(cross) > 1) return false;
+  return point.x >= Math.min(start.x, end.x) && point.x <= Math.max(start.x, end.x)
+    && point.y >= Math.min(start.y, end.y) && point.y <= Math.max(start.y, end.y);
+}
+
+function segmentsIntersect(
+  a: { start: { x: number; y: number }; end: { x: number; y: number } },
+  b: { start: { x: number; y: number }; end: { x: number; y: number } },
+) {
+  const aHorizontal = a.start.y === a.end.y;
+  const bHorizontal = b.start.y === b.end.y;
+  if (aHorizontal && bHorizontal)
+    return a.start.y === b.start.y
+      && Math.max(Math.min(a.start.x, a.end.x), Math.min(b.start.x, b.end.x))
+        <= Math.min(Math.max(a.start.x, a.end.x), Math.max(b.start.x, b.end.x));
+  if (!aHorizontal && !bHorizontal)
+    return a.start.x === b.start.x
+      && Math.max(Math.min(a.start.y, a.end.y), Math.min(b.start.y, b.end.y))
+        <= Math.min(Math.max(a.start.y, a.end.y), Math.max(b.start.y, b.end.y));
+  const horizontal = aHorizontal ? a : b;
+  const vertical = aHorizontal ? b : a;
+  return vertical.start.x >= Math.min(horizontal.start.x, horizontal.end.x)
+    && vertical.start.x <= Math.max(horizontal.start.x, horizontal.end.x)
+    && horizontal.start.y >= Math.min(vertical.start.y, vertical.end.y)
+    && horizontal.start.y <= Math.max(vertical.start.y, vertical.end.y);
+}
+
 function toBuildError(d: FpPcbDiagnostic): BuildError {
   return {
     message: d.message,
@@ -369,7 +402,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       const placed = placeNativeSymbol(definition, {
         reference: input.reference,
         value: input.value,
-        footprint: input.footprint,
+        footprint: input.footprint ?? "",
         position: { x: toNm(input.position.x), y: toNm(input.position.y) },
         ...(input.unit !== undefined ? { unit: input.unit } : {}),
         ...(input.bodyStyle !== undefined ? { bodyStyle: input.bodyStyle } : {}),
@@ -378,6 +411,10 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         ...(input.mirrorY !== undefined ? { mirrorY: input.mirrorY } : {}),
         ...(input.fields ? { fields: input.fields } : {}),
       });
+      // Pin visibility belongs to the library definition and must also be copied to the instance.
+      // A hard-coded value makes KiCad report every R/C/LED as a modified library symbol.
+      placed.symbol.proto.showPinNames = definition.proto.showPinNames;
+      placed.symbol.proto.showPinNumbers = definition.proto.showPinNumbers;
       createdSymbols.push(placed.symbol);
       for (const [number, position] of placed.pins)
         pins.set(`${input.reference}:${number}`, position);
@@ -453,9 +490,24 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       );
     });
 
+    const pinNets = new Map<string, string>();
+    for (const connection of edit.connections ?? [])
+      for (const node of connection.nodes) {
+        const key = `${node.reference}:${node.pin}`;
+        const previous = pinNets.get(key);
+        if (previous && previous !== connection.name)
+          throw new ToolError(`schematic pin ${key} is assigned to both ${previous} and ${connection.name}`, "invalid_args");
+        pinNets.set(key, connection.name);
+      }
+    const plannedStubs: Array<{
+      net: string;
+      node: string;
+      start: { x: number; y: number };
+      end: { x: number; y: number };
+    }> = [];
     for (const connection of edit.connections ?? []) {
-      if (connection.nodes.length < 2)
-        throw new ToolError(`net ${connection.name} needs at least two nodes`, "invalid_args");
+      if (connection.nodes.length < 1 || ((connection.label ?? "local") === "none" && connection.nodes.length < 2))
+        throw new ToolError(`net ${connection.name} needs one labelled node or at least two direct-wire nodes`, "invalid_args");
       const points = connection.nodes.map((node) => {
         const point = pins.get(`${node.reference}:${node.pin}`);
         if (!point)
@@ -491,6 +543,24 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         const anchor = horizontal
           ? { x: pin.x + (dx >= 0 ? step : -step), y: pin.y }
           : { x: pin.x, y: pin.y + (dy >= 0 ? step : -step) };
+        const nodeKey = `${node.reference}:${node.pin}`;
+        for (const [otherKey, otherPin] of pins) {
+          if (otherKey === nodeKey || (otherPin.x === pin.x && otherPin.y === pin.y)) continue;
+          if (pinNets.get(otherKey) === connection.name) continue;
+          if (pointOnSegment(otherPin, pin, anchor))
+            throw new ToolError(
+              `net ${connection.name} stub ${nodeKey} would cross ${otherKey} at ${mm(otherPin.x)},${mm(otherPin.y)}; move a symbol or use explicit wiring`,
+              "invalid_args",
+            );
+        }
+        const candidate = { net: connection.name, node: nodeKey, start: pin, end: anchor };
+        const crossing = plannedStubs.find((stub) => stub.net !== connection.name && segmentsIntersect(stub, candidate));
+        if (crossing)
+          throw new ToolError(
+            `net ${connection.name} stub ${nodeKey} would cross net ${crossing.net} stub ${crossing.node}; move a symbol or use explicit wiring`,
+            "invalid_args",
+          );
+        plannedStubs.push(candidate);
         const spinStyle = horizontal
           ? (dx >= 0 ? SchematicLabelSpinStyle.SLSS_LEFT : SchematicLabelSpinStyle.SLSS_RIGHT)
           : (dy >= 0 ? SchematicLabelSpinStyle.SLSS_UP : SchematicLabelSpinStyle.SLSS_BOTTOM);
@@ -528,6 +598,11 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       });
     const save = edit.save ?? true;
     if (save) await schematic.save();
+    const revision = Number((await schematic.revision()) ?? 0n);
+    // KiCad's API document retains transient library-mismatch markers after a new symbol is
+    // committed even though the saved file is clean. Reload after creation so the next inspect,
+    // ERC, and forward annotation all evaluate the persisted representation.
+    if (save && createdSymbols.length) await deps.sessions.restart(projectDir);
     return {
       created: {
         symbols: createdSymbols.length,
@@ -541,7 +616,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       updated: { symbols: updatedSymbols.length },
       deleted: deleteItems.length,
       saved: save,
-      revision: Number((await schematic.revision()) ?? 0n),
+      revision,
     };
   };
 
@@ -710,7 +785,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       .filter((reference) => !byReference.has(reference));
     if (missing.length)
       return { moved: [], missing, revision: Number((await board.revision()) ?? 0n), saved: false };
-    const moved = placements.flatMap((placement) => {
+    const physical = placements.flatMap((placement) => {
       const footprint = byReference.get(placement.reference)!;
       let changed = false;
       if (placement.position) {
@@ -735,18 +810,51 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       }
       return changed ? [footprint] : [];
     });
-    if (moved.length)
-      await board.commit("Fabdesk: place native PCB footprints", (tx) => tx.update(moved));
+    if (physical.length)
+      await board.commit("Fabdesk: place native PCB footprints", (tx) => tx.update(physical));
     let libraryNormalized = 0;
-    if (moved.length) {
-      const normalized = await board.updateFootprintsFromLibrary(moved.map((footprint) => footprint.id), { onlyChanged: true });
+    if (physical.length) {
+      const normalized = await board.updateFootprintsFromLibrary(physical.map((footprint) => footprint.id), { onlyChanged: true });
       if (normalized.missing.length)
         throw new ToolError(`packaged library footprints unavailable for ${normalized.missing.join(", ")}`, "precondition");
       libraryNormalized = normalized.updatedCount;
     }
+    const refreshed = new Map((await board.getFootprints()).map((footprint) => [footprint.reference, footprint]));
+    const fieldEdited = placements.flatMap((placement) => {
+      if (!placement.referenceField) return [];
+      const footprint = refreshed.get(placement.reference)!;
+      const field = footprint.referenceField;
+      const text = field?.proto.text?.text;
+      if (!field || !text)
+        throw new ToolError(`footprint ${placement.reference} has no editable reference field`, "precondition");
+      let changed = false;
+      if (placement.referenceField.visible !== undefined && field.visible !== placement.referenceField.visible) {
+        field.visible = placement.referenceField.visible;
+        changed = true;
+      }
+      if (placement.referenceField.position) {
+        const target = { x: toNm(placement.referenceField.position.x), y: toNm(placement.referenceField.position.y) };
+        if (field.position.x !== target.x || field.position.y !== target.y) {
+          text.position = toVector2(target);
+          changed = true;
+        }
+      }
+      if (placement.referenceField.sizeMm !== undefined) {
+        const size = toNm(placement.referenceField.sizeMm);
+        if (text.attributes?.size?.xNm !== BigInt(size) || text.attributes?.size?.yNm !== BigInt(size)) {
+          if (!text.attributes) throw new ToolError(`footprint ${placement.reference} reference has no text attributes`, "precondition");
+          text.attributes.size = toVector2({ x: size, y: size });
+          changed = true;
+        }
+      }
+      return changed ? [footprint] : [];
+    });
+    if (fieldEdited.length)
+      await board.commit("Fabdesk: adjust PCB reference fields", (tx) => tx.update(fieldEdited));
     await board.save();
+    const changedReferences = [...new Set([...physical, ...fieldEdited].map((footprint) => footprint.reference))];
     return {
-      moved: moved.map((footprint) => footprint.reference),
+      moved: changedReferences,
       missing: [],
       libraryNormalized,
       revision: Number((await board.revision()) ?? 0n),

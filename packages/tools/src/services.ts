@@ -219,7 +219,8 @@ export type NativeSchematicSymbolInput = {
   libId: string;
   reference: string;
   value: string;
-  footprint: string;
+  /** Omit for non-physical symbols such as power flags. */
+  footprint?: string | undefined;
   position: SchematicPoint;
   unit?: number | undefined;
   bodyStyle?: number | undefined;
@@ -306,6 +307,11 @@ export type PcbFootprintEdit = {
   rotation?: number | undefined;
   flip?: boolean | undefined;
   lock?: boolean | undefined;
+  referenceField?: {
+    visible?: boolean | undefined;
+    position?: SchematicPoint | undefined;
+    sizeMm?: number | undefined;
+  } | undefined;
 };
 export type PcbOutlineResult = {
   created: number;

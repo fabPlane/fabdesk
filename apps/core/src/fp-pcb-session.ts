@@ -143,6 +143,17 @@ export class FpPcbSessions {
     await s?.ws.close().catch(() => undefined);
   }
 
+  /** Close the API server so the next operation reloads the exact saved native files. */
+  async restart(projectDir: string): Promise<void> {
+    const pending = this.open.get(projectDir);
+    this.open.delete(projectDir);
+    if (!pending) return;
+    const session = await pending.catch(() => null);
+    if (!session) return;
+    await session.ws.close().catch(() => undefined);
+    await this.bridge().deleteSession(session.id).catch(() => undefined);
+  }
+
   async dispose(): Promise<void> {
     for (const dir of [...this.open.keys()]) await this.release(dir);
   }
