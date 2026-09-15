@@ -4,17 +4,20 @@
       {
         "ref": "J1",
         "value": "PWR",
-        "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical"
+        "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+        "libSource": { "lib": "Connector_Generic", "part": "Conn_01x02" }
       },
       {
         "ref": "R1",
         "value": "330",
-        "footprint": "Resistor_SMD:R_0603_1608Metric"
+        "footprint": "Resistor_SMD:R_0603_1608Metric",
+        "libSource": { "lib": "Device", "part": "R" }
       },
       {
         "ref": "D1",
         "value": "RED",
-        "footprint": "LED_SMD:LED_0603_1608Metric"
+        "footprint": "LED_SMD:LED_0603_1608Metric",
+        "libSource": { "lib": "Device", "part": "LED" }
       }
     ],
     "nets": [
