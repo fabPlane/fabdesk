@@ -35,7 +35,7 @@ export const load_toolset = defineTool({
 export const pcb_environment = defineTool({
   name: "pcb_environment",
   toolset: "core",
-  title: "Inspect the PCB workbench",
+  title: "Inspect the PCB workbench and script interface",
   description:
     "Return current project paths, kicad-cli identity, FabPCB bridge status, desktop-UI availability, and available interfaces.",
   inputSchema: {},
@@ -84,11 +84,11 @@ export const pcb_environment = defineTool({
       `PCB workbench for ${project.name} at ${project.dir}`,
       `KiCad CLI: ${cli ? `${cli.path} (${cli.version})` : "not found"}`,
       `FabPCB bridge: ${bridge.ok ? "ready" : "unavailable"} at ${bridge.url}${bridge.reason ? ` — ${bridge.reason}` : ""}`,
+      "Scriptable registry: fabpcb tool search <words>; describe <name>; call <name> --request <json|@file>; batch --input @calls.jsonl.",
       `Routers: capacity=${bridge.routers?.capacity?.ok ? "ready" : `unavailable${bridge.routers?.capacity?.reason ? ` — ${bridge.routers.capacity.reason}` : ""}`}; freerouting=${bridge.routers?.freerouting?.ok ? "ready" : `unavailable${bridge.routers?.freerouting?.reason ? ` — ${bridge.routers.freerouting.reason}` : ""}`}`,
       `Desktop UI automation: ${app.running ? "available" : `unavailable${app.reason ? ` — ${app.reason}` : ""}`}`,
       `Project files: ${Object.entries(files).map(([name, path]) => `${name}=${path}${present[name] ? "" : " (missing)"}`).join(", ")}`,
       "Available interfaces: MCP, bundled kicad-cli, desktop UI automation, and direct project files.",
-      "Scriptable registry: fabpcb tool search <words>; describe <name>; call <name> --request <json|@file>; batch --input @calls.jsonl.",
       "Fabdesk UI directories: renders/, reports/, exports/.",
       "State visibility: MCP operations may address live KiCad state; CLI and file operations address persisted state.",
     ].join("\n"), json);

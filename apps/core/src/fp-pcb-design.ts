@@ -4,7 +4,7 @@
  * through the typed client on the project's session. Positions come back in millimetres; the
  * client speaks nanometres.
  */
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { create } from "@bufbuild/protobuf";
 import {
@@ -19,6 +19,8 @@ import {
   SchematicLabelSpinStyle,
   SchematicLineSchema,
   SchematicLineType,
+  SchematicSymbolOrientation,
+  SchematicSymbolType,
   SchematicTextSchema,
   TextSchema,
 } from "@fp-pcb/proto";
@@ -100,6 +102,21 @@ const STAGE_FRACTION: Record<string, number> = {
 // Nanometres are integral. Preserve enough decimal places for exact pad/track joins instead of
 // rounding inspected coordinates to 1 um and creating tiny disconnected gaps on re-use.
 const mm = (nm: number) => Math.round(toMm(nm) * 1_000_000) / 1_000_000;
+
+async function normalizePowerSymbolMarkers(path: string): Promise<boolean> {
+  const text = await readFile(path, "utf8");
+  const lines = text.split("\n");
+  let changed = false;
+  for (let index = 0; index < lines.length - 1; index++) {
+    const match = /^(\s*)\(symbol "power:[^"]+"$/.exec(lines[index]!);
+    if (!match || lines[index + 1]!.trim() === "(power)") continue;
+    lines.splice(index + 1, 0, `${match[1]}\t(power)`);
+    changed = true;
+    index++;
+  }
+  if (changed) await writeFile(path, lines.join("\n"), "utf8");
+  return changed;
+}
 
 function pointOnSegment(
   point: { x: number; y: number },
@@ -359,6 +376,14 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         throw new ToolError(`cannot update missing schematic symbol ${input.reference}`, "invalid_args");
       if (input.position)
         moveNativeSymbol(symbol, { x: toNm(input.position.x), y: toNm(input.position.y) });
+      if (input.rotation !== undefined) symbol.proto.transform!.orientation = {
+        0: SchematicSymbolOrientation.SSO_0,
+        90: SchematicSymbolOrientation.SSO_90,
+        180: SchematicSymbolOrientation.SSO_180,
+        270: SchematicSymbolOrientation.SSO_270,
+      }[input.rotation];
+      if (input.mirrorX !== undefined) symbol.proto.transform!.mirrorX = input.mirrorX;
+      if (input.mirrorY !== undefined) symbol.proto.transform!.mirrorY = input.mirrorY;
       if (input.newReference !== undefined) {
         if (byReference.has(input.newReference))
           throw new ToolError(`cannot annotate ${input.reference} as existing reference ${input.newReference}`, "invalid_args");
@@ -399,6 +424,8 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
           );
         });
       if (!definition) throw new ToolError(`cannot load symbol ${input.libId}`, "invalid_args");
+      if (input.libId.startsWith("power:"))
+        definition.proto.type = SchematicSymbolType.SST_GLOBAL_POWER;
       const placed = placeNativeSymbol(definition, {
         reference: input.reference,
         value: input.value,
@@ -415,6 +442,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       // A hard-coded value makes KiCad report every R/C/LED as a modified library symbol.
       placed.symbol.proto.showPinNames = definition.proto.showPinNames;
       placed.symbol.proto.showPinNumbers = definition.proto.showPinNumbers;
+      placed.symbol.proto.pinNameOffset = definition.proto.pinNameOffset;
       createdSymbols.push(placed.symbol);
       for (const [number, position] of placed.pins)
         pins.set(`${input.reference}:${number}`, position);
@@ -598,6 +626,8 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       });
     const save = edit.save ?? true;
     if (save) await schematic.save();
+    if (save && createdSymbols.some((symbol) => symbol.libraryId.startsWith("power:")))
+      await normalizePowerSymbolMarkers(join(projectDir, "board.kicad_sch"));
     const revision = Number((await schematic.revision()) ?? 0n);
     // KiCad's API document retains transient library-mismatch markers after a new symbol is
     // committed even though the saved file is clean. Reload after creation so the next inspect,

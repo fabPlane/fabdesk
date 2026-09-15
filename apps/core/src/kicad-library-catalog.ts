@@ -52,8 +52,10 @@ export class KicadLibraryCatalog {
         const metadata =
           `${part?.description ?? ""} ${(part?.keywords ?? []).join(" ")}`.toLowerCase();
         const metadataMatches = tokens.filter((token) => metadata.includes(token)).length;
-        const roleBoost =
-          roleQuery && part?.roleSuitability?.some((role) => role.suitable) ? 25 : 0;
+        const explicitPowerOnly = /power[- ]only|charging[- ]only/.test(`${libId} ${metadata}`.toLowerCase());
+        const roleBoost = roleQuery && part?.roleSuitability?.some((role) => role.suitable)
+          ? explicitPowerOnly ? 60 : 10
+          : 0;
         return { libId, score: score + metadataMatches * 3 + roleBoost, part };
       }),
     );

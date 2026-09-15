@@ -59,13 +59,13 @@ export const pcb_inspect = defineTool({
   handler: async ({ kinds, references, nets, layers, region, near, limitPerKind }, ctx) => {
     const project = ctx.requireProject();
     const boardPath = p(project, PROJECT_FILES.boardPcb);
-    let revision: string;
+    let revision: string | null;
     try {
       revision = createHash("sha256")
         .update(await readFile(boardPath))
         .digest("hex");
     } catch {
-      throw new ToolError("board.kicad_pcb not found", "precondition");
+      revision = null;
     }
     if (region && (region.maxX < region.minX || region.maxY < region.minY))
       throw new ToolError(
@@ -79,6 +79,16 @@ export const pcb_inspect = defineTool({
       string,
       { total: number; returned: number; truncated: boolean; rows: DesignRow[] }
     > = {};
+    if (revision === null) {
+      for (const kind of kinds) results[kind] = { total: 0, returned: 0, truncated: false, rows: [] };
+      return ok("PCB not created yet; inspection is empty.", {
+        revision: null,
+        coordinateSystem: { units: "mm", origin: "KiCad board origin", x: "right", y: "down" },
+        query: { kinds, references: references ?? [], nets: nets ?? [], layers: layers ?? [], region: region ?? null, near: near ?? null },
+        bounds: null,
+        results,
+      });
+    }
     const allPoints: Point[] = [];
     for (const kind of kinds as DesignSelect[]) {
       const rows = await ctx.services.design.query(project.dir, kind);

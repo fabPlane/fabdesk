@@ -41,6 +41,25 @@ describe.skipIf(!url || !workspace)("optional native schematic capabilities", ()
           footprint: "Resistor_SMD:R_0603_1608Metric",
           position: { x: 50.8, y: 25.4 },
         },
+        {
+          libId: "Device:R",
+          reference: "R3",
+          value: "3k3",
+          footprint: "Resistor_SMD:R_0603_1608Metric",
+          position: { x: 40.64, y: 40.64 },
+        },
+        {
+          libId: "power:PWR_FLAG",
+          reference: "#FLG01",
+          value: "PWR_FLAG",
+          position: { x: 48.26, y: 50.8 },
+        },
+        {
+          libId: "power:+5V",
+          reference: "#PWR01",
+          value: "+5V",
+          position: { x: 50.8, y: 50.8 },
+        },
       ],
       connections: [
         {
@@ -60,11 +79,24 @@ describe.skipIf(!url || !workspace)("optional native schematic capabilities", ()
       ],
       save: true,
     });
-    expect(edited.created.symbols).toBe(2);
+    expect(edited.created.symbols).toBe(5);
     expect(edited.created.wires).toBeGreaterThanOrEqual(2);
 
+    await design.schematicEdit(projectDir, {
+      symbolUpdates: [{ reference: "R3", rotation: 90 }],
+      save: true,
+    });
+    await design.schematicEdit(projectDir, {
+      connections: [
+        { name: "LEFT", nodes: [{ reference: "R3", pin: "1" }] },
+        { name: "RIGHT", nodes: [{ reference: "R3", pin: "2" }] },
+        { name: "+5V", nodes: [{ reference: "#FLG01", pin: "1" }, { reference: "#PWR01", pin: "1" }], label: "global" },
+      ],
+      save: true,
+    });
+
     const schematic = await design.schematicInspect(projectDir);
-    expect(schematic.symbols.map((symbol) => symbol.reference).sort()).toEqual(["R1", "R2"]);
+    expect(schematic.symbols.map((symbol) => symbol.reference).sort()).toEqual(["#FLG01", "#PWR01", "R1", "R2", "R3"]);
     expect(schematic.nets.map((net) => net.name)).toEqual(
       expect.arrayContaining(["/LEFT", "/RIGHT"]),
     );
@@ -74,7 +106,7 @@ describe.skipIf(!url || !workspace)("optional native schematic capabilities", ()
     const preview = await design.syncSchematicToPcb(projectDir, true);
     expect(preview.ok).toBe(true);
     expect(preview.saved).toBe(false);
-    expect(preview.update.newFootprints).toBe(2);
+    expect(preview.update.newFootprints).toBe(3);
     const applied = await design.syncSchematicToPcb(projectDir, false);
     expect(applied).toMatchObject({ ok: true, parity: 0, saved: true });
 

@@ -233,6 +233,9 @@ export type NativeSchematicSymbolUpdate = {
   reference: string;
   newReference?: string | undefined;
   position?: SchematicPoint | undefined;
+  rotation?: 0 | 90 | 180 | 270 | undefined;
+  mirrorX?: boolean | undefined;
+  mirrorY?: boolean | undefined;
   value?: string | undefined;
   footprint?: string | undefined;
   fields?: Record<string, string> | undefined;

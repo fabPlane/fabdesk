@@ -1,6 +1,6 @@
 /** Native KiCad schematic-first authoring and forward annotation. */
 import { z } from "zod/v4";
-import { defineTool } from "../registry";
+import { ToolError, defineTool } from "../registry";
 import { ok, table, writeReport } from "./common";
 
 const Point = z.object({
@@ -87,6 +87,9 @@ export const schematic_edit = defineTool({
           reference: z.string().min(1),
           newReference: z.string().min(1).optional(),
           position: Point.optional(),
+          rotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]).optional(),
+          mirrorX: z.boolean().optional(),
+          mirrorY: z.boolean().optional(),
           value: z.string().optional(),
           footprint: z.union([z.literal(""), z.string().min(3)]).optional(),
           fields: z.record(z.string(), z.string()).optional(),
@@ -134,10 +137,74 @@ export const schematic_edit = defineTool({
   annotations: { idempotentHint: false },
   handler: async (edit, ctx) => {
     const project = ctx.requireProject();
-    const result = await ctx.services.design.schematicEdit(project.dir, edit);
+    for (const symbol of edit.symbols) {
+      if (!symbol.footprint || !/usb[_ -]?c|type[_ -]?c/i.test(`${symbol.libId} ${symbol.footprint}`)) continue;
+      const compatibility = await ctx.services.design.checkPartCompatibility(
+        symbol.libId,
+        symbol.footprint,
+        "power-only-usb-c",
+      );
+      if (!compatibility.compatible)
+        throw new ToolError(
+          `incompatible USB-C symbol/footprint ${symbol.libId} + ${symbol.footprint}: ${compatibility.issues.join("; ")}`,
+          "invalid_args",
+        );
+    }
+    const transformedSymbols = edit.symbols.filter(
+      (symbol) => symbol.rotation !== 0 || symbol.mirrorX || symbol.mirrorY,
+    );
+    const directSymbols = edit.symbols.filter(
+      (symbol) => symbol.rotation === 0 && !symbol.mirrorX && !symbol.mirrorY,
+    );
+    if (transformedSymbols.length) {
+      await ctx.services.design.schematicEdit(project.dir, {
+        symbols: transformedSymbols.map((symbol) => ({
+          ...symbol,
+          rotation: 0 as const,
+          mirrorX: false,
+          mirrorY: false,
+        })),
+        save: true,
+      });
+      await ctx.services.design.schematicEdit(project.dir, {
+        symbolUpdates: transformedSymbols.map((symbol) => ({
+          reference: symbol.reference,
+          rotation: symbol.rotation,
+          mirrorX: symbol.mirrorX,
+          mirrorY: symbol.mirrorY,
+        })),
+        save: true,
+      });
+    }
+    const transformedUpdates = edit.symbolUpdates.filter(
+      (symbol) => symbol.rotation !== undefined || symbol.mirrorX !== undefined || symbol.mirrorY !== undefined,
+    );
+    if (transformedUpdates.length)
+      await ctx.services.design.schematicEdit(project.dir, {
+        symbolUpdates: transformedUpdates.map(({ reference, rotation, mirrorX, mirrorY }) => ({
+          reference,
+          ...(rotation !== undefined ? { rotation } : {}),
+          ...(mirrorX !== undefined ? { mirrorX } : {}),
+          ...(mirrorY !== undefined ? { mirrorY } : {}),
+        })),
+        save: true,
+      });
+    const finalUpdates = edit.symbolUpdates
+      .map(({ rotation: _rotation, mirrorX: _mirrorX, mirrorY: _mirrorY, ...symbol }) => symbol)
+      .filter((symbol) => Object.keys(symbol).some((key) => key !== "reference"));
+    const result = await ctx.services.design.schematicEdit(project.dir, {
+      ...edit,
+      symbols: directSymbols,
+      symbolUpdates: finalUpdates,
+    });
+    const reported = {
+      ...result,
+      created: { ...result.created, symbols: edit.symbols.length },
+      updated: { symbols: edit.symbolUpdates.length },
+    };
     return ok(
-      `Native schematic revision ${result.revision}: created ${result.created.symbols} symbols, ${result.created.wires} wires, ${result.created.localLabels} local/${result.created.globalLabels} global labels, ${result.created.junctions} junctions, ${result.created.noConnects} no-connects and ${result.created.texts} notes; updated ${result.updated.symbols} symbols; deleted ${result.deleted} items; ${result.saved ? "saved" : "left in memory"}.`,
-      result,
+      `Native schematic revision ${reported.revision}: created ${reported.created.symbols} symbols, ${reported.created.wires} wires, ${reported.created.localLabels} local/${reported.created.globalLabels} global labels, ${reported.created.junctions} junctions, ${reported.created.noConnects} no-connects and ${reported.created.texts} notes; updated ${reported.updated.symbols} symbols; deleted ${reported.deleted} items; ${reported.saved ? "saved" : "left in memory"}.`,
+      reported,
     );
   },
 });
@@ -147,7 +214,7 @@ export const schematic_review = defineTool({
   toolset: "circuit",
   title: "Review schematic quality",
   description:
-    "Review the native schematic for presentation and maintainability findings: missing footprints, duplicate references, excessive global labels, absent notes on non-trivial designs, off-grid placement and cramped symbol layout. Writes reports/schematic-review.json without changing native files.",
+    "Review the native schematic for presentation and maintainability findings: missing footprints, duplicate references, excessive global labels, absent or overlapping notes, off-grid placement, cramped layout, and poor sheet utilization. Writes reports/schematic-review.json without changing native files.",
   inputSchema: {},
   annotations: { readOnlyHint: true, idempotentHint: true },
   handler: async (_args, ctx) => {
@@ -181,6 +248,23 @@ export const schematic_review = defineTool({
         if (a.text !== b.text && Math.hypot(a.position.x - b.position.x, a.position.y - b.position.y) < 2.54)
           findings.push({ code: "label-collision", severity: "warning", message: `Labels ${a.text} and ${b.text} are less than 2.54 mm apart.` });
       }
+    const noteBoxes = snapshot.texts.map((note) => ({
+      note,
+      minX: note.position.x,
+      maxX: note.position.x + Math.max(5, note.text.length * 0.75),
+      minY: note.position.y - 1.8,
+      maxY: note.position.y + 0.6,
+    }));
+    const overlaps = (a: typeof noteBoxes[number], b: typeof noteBoxes[number]) =>
+      a.minX < b.maxX && a.maxX > b.minX && a.minY < b.maxY && a.maxY > b.minY;
+    for (let left = 0; left < noteBoxes.length; left++)
+      for (let right = left + 1; right < noteBoxes.length; right++)
+        if (overlaps(noteBoxes[left]!, noteBoxes[right]!))
+          findings.push({ code: "overlapping-notes", severity: "warning", message: `Notes "${noteBoxes[left]!.note.text}" and "${noteBoxes[right]!.note.text}" overlap.` });
+    for (const box of noteBoxes)
+      for (const symbol of snapshot.symbols)
+        if (symbol.position.x >= box.minX - 1.27 && symbol.position.x <= box.maxX + 1.27 && symbol.position.y >= box.minY - 1.27 && symbol.position.y <= box.maxY + 1.27)
+          findings.push({ code: "note-symbol-overlap", severity: "warning", message: `Note "${box.note.text}" overlaps or crowds ${symbol.reference}.` });
     const wireLengths = snapshot.wires.map((wire) => Math.hypot(wire.end.x - wire.start.x, wire.end.y - wire.start.y));
     const longWires = wireLengths.filter((length) => length > 5.08).length;
     if (snapshot.symbols.length >= 5 && labels.length > snapshot.symbols.length * 1.5)
@@ -196,6 +280,12 @@ export const schematic_review = defineTool({
       : null;
     if (extent && snapshot.symbols.length >= 5 && extent.maxX - extent.minX < 35 && extent.maxY - extent.minY < 35)
       findings.push({ code: "cramped-layout", severity: "info", message: "Symbols occupy a sub-35 mm area, which may obscure functional blocks and signal flow." });
+    if (extent && snapshot.symbols.length >= 8) {
+      const width = Math.max(1, extent.maxX - extent.minX), height = Math.max(1, extent.maxY - extent.minY);
+      const utilization = width * height / (267 * 180);
+      if (utilization < 0.12)
+        findings.push({ code: "poor-sheet-utilization", severity: "info", message: `Symbol extent uses about ${(utilization * 100).toFixed(1)}% of the A4 drawing area; spacing functional blocks more broadly may improve readability.` });
+    }
     const review = {
       at: new Date().toISOString(),
       revision: snapshot.revision,

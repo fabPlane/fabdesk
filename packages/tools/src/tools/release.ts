@@ -65,6 +65,53 @@ export function inspectDesignRuleFloors(projectText: string) {
   return { status: violations.length ? "fail" as const : "pass" as const, rules, floors: DESIGN_RULE_FLOORS, violations };
 }
 
+function sexprBlocks(text: string, head: string): string[] {
+  const blocks: string[] = [];
+  for (let start = 0; start < text.length; start++) {
+    if (!text.startsWith(`(${head}`, start)) continue;
+    const boundary = text[start + head.length + 1];
+    if (boundary && !/[\s")]/.test(boundary)) continue;
+    let depth = 0, quoted = false, escaped = false;
+    for (let index = start; index < text.length; index++) {
+      const character = text[index]!;
+      if (quoted) {
+        if (escaped) escaped = false;
+        else if (character === "\\") escaped = true;
+        else if (character === '"') quoted = false;
+      } else if (character === '"') quoted = true;
+      else if (character === "(") depth++;
+      else if (character === ")" && --depth === 0) {
+        blocks.push(text.slice(start, index + 1));
+        start = index;
+        break;
+      }
+    }
+  }
+  return blocks;
+}
+
+export function inspectPcbPresentation(boardText: string) {
+  const footprints = sexprBlocks(boardText, "footprint");
+  let referenceFields = 0, visibleReferences = 0;
+  for (const footprint of footprints) {
+    const property = sexprBlocks(footprint, "property").find((block) => /^\(property\s+"Reference"/.test(block));
+    const legacy = sexprBlocks(footprint, "fp_text").find((block) => /^\(fp_text\s+reference\b/.test(block));
+    const reference = property ?? legacy;
+    if (!reference) continue;
+    referenceFields++;
+    if (!/\(hide(?:\s+yes)?\)/.test(reference)) visibleReferences++;
+  }
+  const hiddenReferences = referenceFields - visibleReferences;
+  const violations = footprints.length >= 5 && visibleReferences < Math.ceil(footprints.length * 0.8)
+    ? [`only ${visibleReferences}/${footprints.length} footprint references are visible`]
+    : [];
+  return {
+    status: violations.length ? "fail" as const : "pass" as const,
+    counts: { footprints: footprints.length, referenceFields, visibleReferences, hiddenReferences },
+    violations,
+  };
+}
+
 export const release_build = defineTool({
   name: "release_build",
   toolset: "verify",
@@ -97,6 +144,7 @@ export const release_build = defineTool({
     const gate = ctx.services.kicad.gate({ ...drc, schematicParityChecked: true }, erc, project.manifest().allowedDrcWarnings);
     const calculations = circuitChecks.map(evaluate);
     const designRules = inspectDesignRuleFloors(await readFile(pro, "utf8"));
+    const pcbPresentation = inspectPcbPresentation(await readFile(board, "utf8"));
     const schematicSnapshot = await ctx.services.design.schematicInspect(project.dir);
     const labelCount = schematicSnapshot.localLabels.length + schematicSnapshot.globalLabels.length;
     const longWireCount = schematicSnapshot.wires.filter((wire) => Math.hypot(wire.end.x - wire.start.x, wire.end.y - wire.start.y) > 5.08).length;
@@ -169,6 +217,7 @@ export const release_build = defineTool({
       libraryMismatches: { status: libraryMismatchViolations.length ? "fail" : "pass", count: libraryMismatchViolations.length, violations: libraryMismatchViolations },
       designRules,
       schematicPresentation,
+      pcbPresentation,
       circuit: calculations,
       revisionStable: { status: stable ? "pass" : "fail" },
     };
@@ -178,11 +227,12 @@ export const release_build = defineTool({
       ...(libraryMismatchViolations.length && !gate.reasons.some((reason) => /warning/i.test(reason)) ? [`${libraryMismatchViolations.length} library mismatch(es)`] : []),
       ...designRules.violations.map((reason) => `design rule integrity: ${reason}`),
       ...presentationViolations.map((reason) => `schematic presentation: ${reason}`),
+      ...pcbPresentation.violations.map((reason) => `PCB presentation: ${reason}`),
       ...failedCircuitChecks.map((name) => `circuit check failed: ${name}`),
       ...missing.map((path) => `missing output: ${path}`),
       ...(!stable ? ["native files changed while the release was being built"] : []),
     ];
-    const pass = stable && gate.pass && libraryMismatchViolations.length === 0 && designRules.status === "pass" && schematicPresentation.status === "pass" && failedCircuitChecks.length === 0 && missing.length === 0;
+    const pass = stable && gate.pass && libraryMismatchViolations.length === 0 && designRules.status === "pass" && schematicPresentation.status === "pass" && pcbPresentation.status === "pass" && failedCircuitChecks.length === 0 && missing.length === 0;
     const result = {
       contract: { name: "fabdesk.native-release", version: "1.0.0" }, capturedAt: new Date().toISOString(),
       runtime: { runtimeId: ctx.services.runtimeId, fabdeskVersion: ctx.services.version, kicadCli: { path: cli.path, version: cli.version } },

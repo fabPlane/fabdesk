@@ -34,27 +34,33 @@ export const circuit_search_parts = defineTool({
   toolset: "circuit",
   title: "Search KiCad libraries",
   description:
-    "Search the KiCad symbol or footprint libraries available to the native design server. Returns exact library identifiers for native schematic and PCB operations.",
+    "Search the KiCad symbol or footprint libraries available to the native design server. Returns exact library identifiers, descriptions, and role suitability for native schematic and PCB operations.",
   inputSchema: {
     query: z.string().min(1).max(200),
     kind: z.enum(["footprint", "symbol"]).default("footprint"),
+    role: z.enum(["power-only-usb-c"]).optional().describe("Optional functional role used to rank matching parts"),
     limit: z.number().int().min(1).max(50).default(10),
   },
   annotations: { readOnlyHint: true, idempotentHint: true },
   scope: "global",
-  handler: async ({ query, kind, limit }, ctx) => {
+  handler: async ({ query, kind, role, limit }, ctx) => {
+    const searchQuery = role ? `${query} power-only USB-C` : query;
     const matches = await (kind === "symbol"
-      ? ctx.services.design.searchSymbols(query, limit)
-      : ctx.services.design.searchFootprints(query, limit));
+      ? ctx.services.design.searchSymbols(searchQuery, limit)
+      : ctx.services.design.searchFootprints(searchQuery, limit));
     // Search is for discovery, so do not echo embedded pin/pad geometry for every candidate.
     // Exact details remain available through circuit_describe_part.
-    const hits = matches.map(({ libId, description }) => ({ libId, description }));
+    const hits = matches.map(({ libId, description, part }) => ({
+      libId,
+      description,
+      ...(role ? { roleSuitable: part?.roleSuitability?.find((entry) => entry.role === role)?.suitable ?? false } : {}),
+    }));
     const label = kind === "symbol" ? "Symbols" : "Footprints";
     return ok(
       hits.length
         ? `${label} matching "${query}":\n${table(hits, ["libId", "description"])}`
         : `No ${kind} libraries match "${query}".`,
-      { query, kind, hits },
+      { query, kind, role: role ?? null, hits },
     );
   },
 });

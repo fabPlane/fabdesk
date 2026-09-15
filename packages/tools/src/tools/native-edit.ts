@@ -49,8 +49,7 @@ const SchematicEdit = z.object({
   symbols: z.array(z.object({
     libId: z.string().min(3), reference: z.string().min(1), value: z.string(), footprint: z.string().optional(), position: Point,
     unit: z.number().int().positive().optional(), bodyStyle: z.number().int().positive().optional(),
-    rotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]).optional(),
-    mirrorX: z.boolean().optional(), mirrorY: z.boolean().optional(), fields: z.record(z.string(), z.string()).optional(),
+    fields: z.record(z.string(), z.string()).optional(),
   })).max(200).optional(),
   symbolUpdates: z.array(z.object({ reference: z.string().min(1), newReference: z.string().min(1).optional(), position: Point.optional(), value: z.string().optional(), footprint: z.string().optional(), fields: z.record(z.string(), z.string()).optional() })).max(200).optional(),
   connections: z.array(z.object({ name: z.string().min(1), nodes: z.array(z.object({ reference: z.string(), pin: z.string() })).min(1), label: z.enum(["local", "global", "none"]).optional() }).refine((connection) => connection.label !== "none" || connection.nodes.length >= 2, { message: "direct wire connections require at least two nodes", path: ["nodes"] })).max(500).optional(),
@@ -68,7 +67,23 @@ const FootprintEdit = z.object({
 });
 
 const Polygon = z.object({ points: z.array(Point).min(3).max(5000), holes: z.array(z.array(Point).min(3).max(5000)).max(100).optional() });
-const Layer = z.number().int();
+const Layer = z.union([z.number().int(), z.string().min(3)]).describe("KiCad layer name such as F.Cu, B.Cu, F.SilkS, B.SilkS, or Edge.Cuts; numeric IDs remain accepted");
+
+const LAYERS: Record<string, number> = {
+  "F.Cu": 3, "B.Cu": 34, "B.Adhes": 35, "F.Adhes": 36, "B.Paste": 37,
+  "F.Paste": 38, "B.SilkS": 39, "F.SilkS": 40, "B.Mask": 41, "F.Mask": 42,
+  "User.Drawings": 43, "User.Comments": 44, "Eco1.User": 45, "Eco2.User": 46,
+  "Edge.Cuts": 47, Margin: 48, "B.CrtYd": 49, "F.CrtYd": 50, "B.Fab": 51, "F.Fab": 52,
+};
+
+export function layerId(layer: string | number): number {
+  if (typeof layer === "number") return layer;
+  const inner = /^In([1-9]|[12]\d|30)\.Cu$/.exec(layer);
+  if (inner) return 3 + Number(inner[1]);
+  const value = LAYERS[layer];
+  if (value === undefined) throw new ToolError(`unknown KiCad PCB layer ${layer}`, "invalid_args");
+  return value;
+}
 const PcbGeometry = z.object({
   tracks: z.array(z.object({ start: CopperEndpoint, end: CopperEndpoint, width: z.number().positive(), layer: Layer, net: z.string().min(1).optional() })).max(5000).optional(),
   vias: z.array(z.object({ position: Point, diameter: z.number().positive(), drill: z.number().positive(), layers: z.array(Layer).min(2), net: z.string().min(1).optional() })).max(2000).optional(),
@@ -151,7 +166,12 @@ export const native_edit_transaction = defineTool({
         };
         const resolved = {
           ...geometry,
-          ...(geometry.tracks ? { tracks: geometry.tracks.map((track) => ({ ...track, start: padPosition(track.start), end: padPosition(track.end) })) } : {}),
+          ...(geometry.tracks ? { tracks: geometry.tracks.map((track) => ({ ...track, start: padPosition(track.start), end: padPosition(track.end), layer: layerId(track.layer) })) } : {}),
+          ...(geometry.vias ? { vias: geometry.vias.map((via) => ({ ...via, layers: via.layers.map(layerId) })) } : {}),
+          ...(geometry.zones ? { zones: geometry.zones.map((zone) => ({ ...zone, layers: zone.layers.map(layerId) })) } : {}),
+          ...(geometry.keepouts ? { keepouts: geometry.keepouts.map((keepout) => ({ ...keepout, layers: keepout.layers.map(layerId) })) } : {}),
+          ...(geometry.texts ? { texts: geometry.texts.map((item) => ({ ...item, layer: layerId(item.layer) })) } : {}),
+          ...(geometry.graphics ? { graphics: geometry.graphics.map((item) => ({ ...item, layer: layerId(item.layer) })) } : {}),
         } as PcbGeometryEdit;
         changes["geometry"] = await ctx.services.design.editBoardGeometry(project.dir, resolved);
       }

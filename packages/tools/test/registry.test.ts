@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdir, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod/v4";
-import { ToolError, createRegistry, defineTool, inspectDesignRuleFloors, isLibraryMismatch, jailPath, toCallToolResult, toolsMarkdown } from "../src";
+import { ToolError, createRegistry, defineTool, inspectDesignRuleFloors, inspectPcbPresentation, isLibraryMismatch, jailPath, toCallToolResult, toolsMarkdown } from "../src";
 import { contextFactory, mockServices, tempProject } from "./mock-services";
 
 describe("registry", () => {
@@ -19,6 +19,14 @@ describe("registry", () => {
     const relaxed = inspectDesignRuleFloors(JSON.stringify({ board: { design_settings: { rules: { min_hole_clearance: 0.18, min_copper_edge_clearance: 0.5, min_track_width: 0.2 } } } }));
     expect(relaxed.status).toBe("fail");
     expect(relaxed.violations).toEqual(["min_hole_clearance was relaxed to 0.18 mm (release floor 0.25 mm)"]);
+  });
+
+  test("release detects hidden PCB references", () => {
+    const board = `(kicad_pcb ${[1, 2, 3, 4, 5].map((index) => `(footprint "R${index}" (property "Reference" "R${index}" (hide yes)))`).join(" ")})`;
+    expect(inspectPcbPresentation(board)).toMatchObject({
+      status: "fail",
+      counts: { footprints: 5, referenceFields: 5, visibleReferences: 0, hiddenReferences: 5 },
+    });
   });
 
   test("native part search guidance does not steer agents to the legacy compiler", () => {
@@ -101,6 +109,20 @@ describe("registry", () => {
     expect(json.results["pads"]?.total).toBe(1);
     expect(json.results["unrouted"]?.total).toBe(1);
     expect(JSON.stringify(output).length).toBeLessThan(5000);
+  });
+
+  test("PCB inspection is empty before the board exists", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("empty-spatial-inspection");
+    const base = mockServices([project]);
+    let queries = 0;
+    const services = mockServices([project], { design: { ...base.design, query: async () => { queries++; return []; } } });
+    const ctx = contextFactory(services, project);
+    const output = await reg.invoke("pcb_inspect", { kinds: ["components", "tracks"] },
+      (ref) => ctx({ def: reg.get("pcb_inspect")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }));
+    expect(output.text).toContain("not created yet");
+    expect(output.json).toMatchObject({ revision: null, bounds: null, results: { components: { total: 0 }, tracks: { total: 0 } } });
+    expect(queries).toBe(0);
   });
 
   test("focused PCB render crops in board coordinates and highlights inspected items", async () => {
@@ -199,11 +221,14 @@ describe("registry", () => {
           value: "1k",
           footprint: "Resistor_SMD:R_0603_1608Metric",
           position: { x: 30.48, y: 25.4 },
+          rotation: 90,
         },
       ],
     });
     expect(edit.text).toContain("created 1 symbols");
-    expect(edits).toHaveLength(1);
+    expect(edits).toHaveLength(3);
+    expect(edits[0]?.symbols?.[0]).toMatchObject({ reference: "R1", rotation: 0 });
+    expect(edits[1]?.symbolUpdates?.[0]).toMatchObject({ reference: "R1", rotation: 90 });
     const powerEdit = await call("schematic_edit", {
       symbols: [{ libId: "power:PWR_FLAG", reference: "#FLG01", value: "PWR_FLAG", position: { x: 20.32, y: 20.32 } }],
       connections: [{ name: "VBUS", nodes: [{ reference: "#FLG01", pin: "1" }], label: "global" }],
@@ -477,6 +502,7 @@ describe("registry", () => {
         editBoardGeometry: async (_dir, edit) => {
           editCalls++;
           expect(edit.tracks).toHaveLength(1);
+          expect(edit.tracks?.[0]?.layer).toBe(3);
           await Bun.write(board, `${await Bun.file(board).text()}new-track\n`);
           return { created: { tracks: 1, vias: 0, zones: 0, keepouts: 0, texts: 0, graphics: 0 }, createdIds: ["track-new"], deletedIds: [], revision: 5, saved: true };
         },
@@ -494,7 +520,7 @@ describe("registry", () => {
     });
     const factory = contextFactory(services, project);
     const call = (args: Record<string, unknown>) => reg.invoke("native_edit_transaction", args, (ref) => factory({ def: reg.get("native_edit_transaction")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }));
-    const geometry = { tracks: [{ start: { reference: "R1", pad: "1" }, end: { x: 15, y: 12 }, width: 0.25, layer: 0, net: "GND" }] };
+    const geometry = { tracks: [{ start: { reference: "R1", pad: "1" }, end: { x: 15, y: 12 }, width: 0.25, layer: "F.Cu", net: "GND" }] };
 
     const preview = await call({ geometry, expectedPcbRevision: initialRevision });
     expect((preview.json as any).plan.geometry.tracks).toBe(1);
