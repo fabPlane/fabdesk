@@ -1,17 +1,17 @@
 {
   "netlist": {
     "components": [
-      { "ref": "J1", "value": "SATURN_CART_2x25", "footprint": "Connector_PinHeader_2.54mm:PinHeader_2x25_P2.54mm_Vertical" },
-      { "ref": "U1", "value": "SST39SF040_LO", "footprint": "Package_LCC:PLCC-32_THT-Socket", "fields": { "MPN": "SST39SF040-70-4C-NHE" } },
-      { "ref": "U2", "value": "SST39SF040_HI", "footprint": "Package_LCC:PLCC-32_THT-Socket", "fields": { "MPN": "SST39SF040-70-4C-NHE" } },
-      { "ref": "U3", "value": "74HC138", "footprint": "Package_SO:SOIC-16_3.9x9.9mm_P1.27mm", "fields": { "MPN": "SN74HC138D" } },
-      { "ref": "U4", "value": "74HC08", "footprint": "Package_SO:SOIC-14_3.9x8.7mm_P1.27mm", "fields": { "MPN": "SN74HC08D" } },
-      { "ref": "JP1", "value": "WRITE_EN", "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical" },
-      { "ref": "R1", "value": "10k", "footprint": "Resistor_SMD:R_0805_2012Metric" },
-      { "ref": "C1", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric" },
-      { "ref": "C2", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric" },
-      { "ref": "C3", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric" },
-      { "ref": "C4", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric" }
+      { "ref": "J1", "value": "SATURN_CART_2x25", "footprint": "Connector_PinHeader_2.54mm:PinHeader_2x25_P2.54mm_Vertical", "libSource": {"lib":"Connector_Generic","part":"Conn_2x25_Odd_Even"} },
+      { "ref": "U1", "value": "SST39SF040_LO", "footprint": "Package_LCC:PLCC-32_THT-Socket", "libSource": {"lib":"Memory_Flash","part":"SST39SF040"}, "fields": { "MPN": "SST39SF040-70-4C-NHE" } },
+      { "ref": "U2", "value": "SST39SF040_HI", "footprint": "Package_LCC:PLCC-32_THT-Socket", "libSource": {"lib":"Memory_Flash","part":"SST39SF040"}, "fields": { "MPN": "SST39SF040-70-4C-NHE" } },
+      { "ref": "U3", "value": "74HC138", "footprint": "Package_SO:SOIC-16_3.9x9.9mm_P1.27mm", "libSource": {"lib":"74xx","part":"74HC138"}, "fields": { "MPN": "SN74HC138D" } },
+      { "ref": "U4", "value": "74HC08", "footprint": "Package_SO:SOIC-14_3.9x8.7mm_P1.27mm", "libSource": {"lib":"74xx","part":"74LS08"}, "fields": { "MPN": "SN74HC08D" } },
+      { "ref": "JP1", "value": "WRITE_EN", "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical", "libSource": {"lib":"Connector_Generic","part":"Conn_1x02"} },
+      { "ref": "R1", "value": "10k", "footprint": "Resistor_SMD:R_0805_2012Metric", "libSource": {"lib":"Device","part":"R"} },
+      { "ref": "C1", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "libSource": {"lib":"Device","part":"C"} },
+      { "ref": "C2", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "libSource": {"lib":"Device","part":"C"} },
+      { "ref": "C3", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "libSource": {"lib":"Device","part":"C"} },
+      { "ref": "C4", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "libSource": {"lib":"Device","part":"C"} }
     ],
     "nets": [
       { "name": "5V", "nodes": [

@@ -1,30 +1,30 @@
 {
   "netlist": {
     "components": [
-      { "ref": "J1", "value": "NES_EXP_PORT_2x24", "footprint": "Connector_PinHeader_2.54mm:PinHeader_2x24_P2.54mm_Vertical", "fields": { "Description": "Stand-in for the 48-pin NES bottom expansion port" } },
-      { "ref": "J2", "value": "CTRL_IO_1_2x04", "footprint": "Connector_IDC:IDC-Header_2x04_P2.54mm_Vertical", "fields": { "Description": "Controller / IO port 1 (shrouded)" } },
-      { "ref": "J3", "value": "CTRL_IO_2_2x04", "footprint": "Connector_IDC:IDC-Header_2x04_P2.54mm_Vertical", "fields": { "Description": "Controller / IO port 2 (shrouded)" } },
-      { "ref": "J4", "value": "AUDIO_3.5mm_TRS", "footprint": "Connector_Audio:Jack_3.5mm_CUI_SJ1-3523N_Horizontal", "fields": { "MPN": "SJ1-3523N", "Description": "Expansion audio line out" } },
-      { "ref": "JP1", "value": "PWR_JUMPER", "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical", "fields": { "Description": "Bridge to feed hub +5V from the NES" } },
+      { "ref": "J1", "value": "NES_EXP_PORT_2x24", "footprint": "Connector_PinHeader_2.54mm:PinHeader_2x24_P2.54mm_Vertical", "libSource": {"lib":"Connector_Generic","part":"Conn_2x24_Odd_Even"}, "fields": { "Description": "Stand-in for the 48-pin NES bottom expansion port" } },
+      { "ref": "J2", "value": "CTRL_IO_1_2x04", "footprint": "Connector_IDC:IDC-Header_2x04_P2.54mm_Vertical", "libSource": {"lib":"Connector_Generic","part":"Conn_2x04_Odd_Even"}, "fields": { "Description": "Controller / IO port 1 (shrouded)" } },
+      { "ref": "J3", "value": "CTRL_IO_2_2x04", "footprint": "Connector_IDC:IDC-Header_2x04_P2.54mm_Vertical", "libSource": {"lib":"Connector_Generic","part":"Conn_2x04_Odd_Even"}, "fields": { "Description": "Controller / IO port 2 (shrouded)" } },
+      { "ref": "J4", "value": "AUDIO_3.5mm_TRS", "footprint": "Connector_Audio:Jack_3.5mm_CUI_SJ1-3523N_Horizontal", "libSource": {"lib":"Connector","part":"AudioJack3"}, "fields": { "MPN": "SJ1-3523N", "Description": "Expansion audio line out" } },
+      { "ref": "JP1", "value": "PWR_JUMPER", "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical", "libSource": {"lib":"Connector_Generic","part":"Conn_1x02"}, "fields": { "Description": "Bridge to feed hub +5V from the NES" } },
 
-      { "ref": "U1", "value": "LM358", "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm", "fields": { "MPN": "LM358DR", "Description": "Audio buffer / mixer" } },
-      { "ref": "U2", "value": "74HC245", "footprint": "Package_SO:SOIC-20W_7.5x12.8mm_P1.27mm", "fields": { "MPN": "SN74HC245DW", "Description": "Controller strobe/OE line buffer, A->B" } },
+      { "ref": "U1", "value": "LM358", "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm", "libSource": {"lib":"Amplifier_Operational","part":"LM358"}, "fields": { "MPN": "LM358DR", "Description": "Audio buffer / mixer" } },
+      { "ref": "U2", "value": "74HC245", "footprint": "Package_SO:SOIC-20W_7.5x12.8mm_P1.27mm", "libSource": {"lib":"74xx","part":"74HC245"}, "fields": { "MPN": "SN74HC245DW", "Description": "Controller strobe/OE line buffer, A->B" } },
 
-      { "ref": "R1", "value": "100k", "footprint": "Resistor_SMD:R_0805_2012Metric", "fields": { "Description": "Input bias to VBIAS" } },
-      { "ref": "R2", "value": "10k", "footprint": "Resistor_SMD:R_0805_2012Metric", "fields": { "Description": "U1A feedback" } },
-      { "ref": "R3", "value": "10k", "footprint": "Resistor_SMD:R_0805_2012Metric", "fields": { "Description": "U1A gain set (gain 2)" } },
-      { "ref": "R4", "value": "100", "footprint": "Resistor_SMD:R_0805_2012Metric", "fields": { "Description": "Jack series isolation" } },
-      { "ref": "R5", "value": "100k", "footprint": "Resistor_SMD:R_0805_2012Metric", "fields": { "Description": "VBIAS divider top" } },
-      { "ref": "R6", "value": "100k", "footprint": "Resistor_SMD:R_0805_2012Metric", "fields": { "Description": "VBIAS divider bottom" } },
-      { "ref": "R7", "value": "47k", "footprint": "Resistor_SMD:R_0805_2012Metric", "fields": { "Description": "Mix-back into NES audio mixer" } },
+      { "ref": "R1", "value": "100k", "footprint": "Resistor_SMD:R_0805_2012Metric", "libSource": {"lib":"Device","part":"R"}, "fields": { "Description": "Input bias to VBIAS" } },
+      { "ref": "R2", "value": "10k", "footprint": "Resistor_SMD:R_0805_2012Metric", "libSource": {"lib":"Device","part":"R"}, "fields": { "Description": "U1A feedback" } },
+      { "ref": "R3", "value": "10k", "footprint": "Resistor_SMD:R_0805_2012Metric", "libSource": {"lib":"Device","part":"R"}, "fields": { "Description": "U1A gain set (gain 2)" } },
+      { "ref": "R4", "value": "100", "footprint": "Resistor_SMD:R_0805_2012Metric", "libSource": {"lib":"Device","part":"R"}, "fields": { "Description": "Jack series isolation" } },
+      { "ref": "R5", "value": "100k", "footprint": "Resistor_SMD:R_0805_2012Metric", "libSource": {"lib":"Device","part":"R"}, "fields": { "Description": "VBIAS divider top" } },
+      { "ref": "R6", "value": "100k", "footprint": "Resistor_SMD:R_0805_2012Metric", "libSource": {"lib":"Device","part":"R"}, "fields": { "Description": "VBIAS divider bottom" } },
+      { "ref": "R7", "value": "47k", "footprint": "Resistor_SMD:R_0805_2012Metric", "libSource": {"lib":"Device","part":"R"}, "fields": { "Description": "Mix-back into NES audio mixer" } },
 
-      { "ref": "C1", "value": "1uF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "fields": { "Description": "Cart audio input coupling" } },
-      { "ref": "C2", "value": "10uF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "fields": { "Description": "Jack output coupling" } },
-      { "ref": "C3", "value": "1uF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "fields": { "Description": "Mix-back output coupling" } },
-      { "ref": "C4", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "fields": { "Description": "U1 decoupling" } },
-      { "ref": "C5", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "fields": { "Description": "U2 decoupling" } },
-      { "ref": "C6", "value": "10uF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "fields": { "Description": "VBIAS decoupling" } },
-      { "ref": "C7", "value": "10uF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "fields": { "Description": "+5V bulk" } }
+      { "ref": "C1", "value": "1uF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "libSource": {"lib":"Device","part":"C"}, "fields": { "Description": "Cart audio input coupling" } },
+      { "ref": "C2", "value": "10uF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "libSource": {"lib":"Device","part":"C"}, "fields": { "Description": "Jack output coupling" } },
+      { "ref": "C3", "value": "1uF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "libSource": {"lib":"Device","part":"C"}, "fields": { "Description": "Mix-back output coupling" } },
+      { "ref": "C4", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "libSource": {"lib":"Device","part":"C"}, "fields": { "Description": "U1 decoupling" } },
+      { "ref": "C5", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "libSource": {"lib":"Device","part":"C"}, "fields": { "Description": "U2 decoupling" } },
+      { "ref": "C6", "value": "10uF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "libSource": {"lib":"Device","part":"C"}, "fields": { "Description": "VBIAS decoupling" } },
+      { "ref": "C7", "value": "10uF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "libSource": {"lib":"Device","part":"C"}, "fields": { "Description": "+5V bulk" } }
     ],
     "nets": [
       { "name": "GND", "nodes": [

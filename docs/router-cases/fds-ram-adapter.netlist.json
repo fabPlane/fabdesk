@@ -1,16 +1,16 @@
 {
   "netlist": {
     "components": [
-      { "ref": "U1", "value": "AS6C62256 32K PRG RAM", "footprint": "Package_SO:SOP-28_8.4x18.16mm_P1.27mm", "fields": { "MPN": "AS6C62256-55SIN" } },
-      { "ref": "U2", "value": "AS6C6264 8K CHR RAM", "footprint": "Package_SO:SOP-28_8.4x18.16mm_P1.27mm", "fields": { "MPN": "AS6C6264-55SIN" } },
-      { "ref": "U3", "value": "74HC161", "footprint": "Package_SO:SOIC-16_3.9x9.9mm_P1.27mm", "fields": { "MPN": "SN74HC161D" } },
-      { "ref": "U4", "value": "74HC08", "footprint": "Package_SO:SOIC-14_3.9x8.7mm_P1.27mm", "fields": { "MPN": "SN74HC08D" } },
-      { "ref": "J1", "value": "FC_CART_2x30", "footprint": "Connector_PinHeader_2.54mm:PinHeader_2x30_P2.54mm_Vertical" },
-      { "ref": "J2", "value": "DRIVE_CABLE_1x06", "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x06_P2.54mm_Vertical" },
-      { "ref": "C1", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric" },
-      { "ref": "C2", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric" },
-      { "ref": "C3", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric" },
-      { "ref": "C4", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric" }
+      { "ref": "U1", "value": "AS6C62256 32K PRG RAM", "footprint": "Package_SO:SOP-28_8.4x18.16mm_P1.27mm", "libSource": {"lib":"Memory_RAM","part":"KM62256CLP"}, "fields": { "MPN": "AS6C62256-55SIN" } },
+      { "ref": "U2", "value": "AS6C6264 8K CHR RAM", "footprint": "Package_SO:SOP-28_8.4x18.16mm_P1.27mm", "libSource": {"lib":"Memory_RAM","part":"CY7C199"}, "fields": { "MPN": "AS6C6264-55SIN" } },
+      { "ref": "U3", "value": "74HC161", "footprint": "Package_SO:SOIC-16_3.9x9.9mm_P1.27mm", "libSource": {"lib":"74xx","part":"74LS161"}, "fields": { "MPN": "SN74HC161D" } },
+      { "ref": "U4", "value": "74HC08", "footprint": "Package_SO:SOIC-14_3.9x8.7mm_P1.27mm", "libSource": {"lib":"74xx","part":"74LS08"}, "fields": { "MPN": "SN74HC08D" } },
+      { "ref": "J1", "value": "FC_CART_2x30", "footprint": "Connector_PinHeader_2.54mm:PinHeader_2x30_P2.54mm_Vertical", "libSource": {"lib":"Connector_Generic","part":"Conn_2x30_Odd_Even"} },
+      { "ref": "J2", "value": "DRIVE_CABLE_1x06", "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x06_P2.54mm_Vertical", "libSource": {"lib":"Connector_Generic","part":"Conn_1x06"} },
+      { "ref": "C1", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "libSource": {"lib":"Device","part":"C"} },
+      { "ref": "C2", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "libSource": {"lib":"Device","part":"C"} },
+      { "ref": "C3", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "libSource": {"lib":"Device","part":"C"} },
+      { "ref": "C4", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "libSource": {"lib":"Device","part":"C"} }
     ],
     "nets": [
       { "name": "GND", "nodes": [

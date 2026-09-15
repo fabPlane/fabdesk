@@ -12,20 +12,20 @@
   ],
   "netlist": {
     "components": [
-      { "ref": "J1",  "value": "SNES_CART_EDGE_2x31", "footprint": "Connector_PinHeader_2.54mm:PinHeader_2x31_P2.54mm_Vertical" },
-      { "ref": "U1",  "value": "SST39SF040_PLCC32_LOW",  "footprint": "Package_LCC:PLCC-32_THT-Socket" },
-      { "ref": "U2",  "value": "SST39SF040_PLCC32_HIGH", "footprint": "Package_LCC:PLCC-32_THT-Socket" },
-      { "ref": "U3",  "value": "FM18W08", "footprint": "Package_SO:SOIC-28W_7.5x17.9mm_P1.27mm" },
-      { "ref": "U4",  "value": "74HC00", "footprint": "Package_SO:SOIC-14_3.9x8.7mm_P1.27mm" },
-      { "ref": "U5",  "value": "74HC32", "footprint": "Package_SO:SOIC-14_3.9x8.7mm_P1.27mm" },
-      { "ref": "SW1", "value": "LoROM/HiROM", "footprint": "Button_Switch_SMD:SW_SPDT_PCM12" },
-      { "ref": "JP1", "value": "FLASH_WE", "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical" },
-      { "ref": "R1",  "value": "10k", "footprint": "Resistor_SMD:R_0805_2012Metric" },
-      { "ref": "C1",  "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric" },
-      { "ref": "C2",  "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric" },
-      { "ref": "C3",  "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric" },
-      { "ref": "C4",  "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric" },
-      { "ref": "C5",  "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric" }
+      { "ref": "J1",  "value": "SNES_CART_EDGE_2x31", "footprint": "Connector_PinHeader_2.54mm:PinHeader_2x31_P2.54mm_Vertical", "libSource": {"lib":"Connector_Generic","part":"Conn_2x31_Odd_Even"} },
+      { "ref": "U1",  "value": "SST39SF040_PLCC32_LOW",  "footprint": "Package_LCC:PLCC-32_THT-Socket", "libSource": {"lib":"Memory_Flash","part":"SST39SF040"} },
+      { "ref": "U2",  "value": "SST39SF040_PLCC32_HIGH", "footprint": "Package_LCC:PLCC-32_THT-Socket", "libSource": {"lib":"Memory_Flash","part":"SST39SF040"} },
+      { "ref": "U3",  "value": "FM18W08", "footprint": "Package_SO:SOIC-28W_7.5x17.9mm_P1.27mm", "libSource": {"lib":"Memory_NVRAM","part":"FM18W08-SG"} },
+      { "ref": "U4",  "value": "74HC00", "footprint": "Package_SO:SOIC-14_3.9x8.7mm_P1.27mm", "libSource": {"lib":"74xx","part":"74HC00"} },
+      { "ref": "U5",  "value": "74HC32", "footprint": "Package_SO:SOIC-14_3.9x8.7mm_P1.27mm", "libSource": {"lib":"74xx","part":"74LS32"} },
+      { "ref": "SW1", "value": "LoROM/HiROM", "footprint": "Button_Switch_SMD:SW_SPDT_PCM12", "libSource": {"lib":"Switch","part":"SW_SPDT"} },
+      { "ref": "JP1", "value": "FLASH_WE", "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical", "libSource": {"lib":"Connector_Generic","part":"Conn_1x02"} },
+      { "ref": "R1",  "value": "10k", "footprint": "Resistor_SMD:R_0805_2012Metric", "libSource": {"lib":"Device","part":"R"} },
+      { "ref": "C1",  "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "libSource": {"lib":"Device","part":"C"} },
+      { "ref": "C2",  "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "libSource": {"lib":"Device","part":"C"} },
+      { "ref": "C3",  "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "libSource": {"lib":"Device","part":"C"} },
+      { "ref": "C4",  "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "libSource": {"lib":"Device","part":"C"} },
+      { "ref": "C5",  "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "libSource": {"lib":"Device","part":"C"} }
     ],
     "nets": [
       { "name": "GND", "nodes": [

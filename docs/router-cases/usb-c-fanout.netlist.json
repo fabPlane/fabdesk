@@ -4,42 +4,42 @@
       {
         "ref": "J1",
         "value": "USB-C 16P",
-        "footprint": "Connector_USB:USB_C_Receptacle_GCT_USB4105-xx-A_16P_TopMnt_Horizontal"
+        "footprint": "Connector_USB:USB_C_Receptacle_GCT_USB4105-xx-A_16P_TopMnt_Horizontal", "libSource": {"lib":"Connector","part":"USB_C_Receptacle_USB2.0_16P"}
       },
       {
         "ref": "R1",
         "value": "5.1k",
-        "footprint": "Resistor_SMD:R_0603_1608Metric"
+        "footprint": "Resistor_SMD:R_0603_1608Metric", "libSource": {"lib":"Device","part":"R"}
       },
       {
         "ref": "R2",
         "value": "5.1k",
-        "footprint": "Resistor_SMD:R_0603_1608Metric"
+        "footprint": "Resistor_SMD:R_0603_1608Metric", "libSource": {"lib":"Device","part":"R"}
       },
       {
         "ref": "R3",
         "value": "27",
-        "footprint": "Resistor_SMD:R_0603_1608Metric"
+        "footprint": "Resistor_SMD:R_0603_1608Metric", "libSource": {"lib":"Device","part":"R"}
       },
       {
         "ref": "R4",
         "value": "27",
-        "footprint": "Resistor_SMD:R_0603_1608Metric"
+        "footprint": "Resistor_SMD:R_0603_1608Metric", "libSource": {"lib":"Device","part":"R"}
       },
       {
         "ref": "R5",
         "value": "1k",
-        "footprint": "Resistor_SMD:R_0603_1608Metric"
+        "footprint": "Resistor_SMD:R_0603_1608Metric", "libSource": {"lib":"Device","part":"R"}
       },
       {
         "ref": "R6",
         "value": "1k",
-        "footprint": "Resistor_SMD:R_0603_1608Metric"
+        "footprint": "Resistor_SMD:R_0603_1608Metric", "libSource": {"lib":"Device","part":"R"}
       },
       {
         "ref": "J2",
         "value": "OUT",
-        "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical"
+        "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical", "libSource": {"lib":"Connector_Generic","part":"Conn_1x04"}
       }
     ],
     "nets": [

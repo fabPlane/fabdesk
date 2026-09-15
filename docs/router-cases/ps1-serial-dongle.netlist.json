@@ -4,7 +4,7 @@
       {
         "ref": "J1",
         "value": "USB4105-GF-A",
-        "footprint": "Connector_USB:USB_C_Receptacle_GCT_USB4105-xx-A_16P_TopMnt_Horizontal",
+        "footprint": "Connector_USB:USB_C_Receptacle_GCT_USB4105-xx-A_16P_TopMnt_Horizontal", "libSource": {"lib":"Connector","part":"USB_C_Receptacle_USB2.0_16P"},
         "fields": {
           "MPN": "USB4105-GF-A",
           "Description": "USB-C receptacle, USB 2.0, 16 pin"
@@ -13,7 +13,7 @@
       {
         "ref": "U1",
         "value": "CP2102N-A02-GQFN28",
-        "footprint": "Package_DFN_QFN:QFN-28-1EP_5x5mm_P0.5mm_EP3.35x3.35mm",
+        "footprint": "Package_DFN_QFN:QFN-28-1EP_5x5mm_P0.5mm_EP3.35x3.35mm", "libSource": {"lib":"Interface_USB","part":"CP2102N-Axx-xQFN28"},
         "fields": {
           "MPN": "CP2102N-A02-GQFN28",
           "Description": "USB to UART bridge"
@@ -22,7 +22,7 @@
       {
         "ref": "U2",
         "value": "AP2112K-3.3",
-        "footprint": "Package_TO_SOT_SMD:SOT-23-5",
+        "footprint": "Package_TO_SOT_SMD:SOT-23-5", "libSource": {"lib":"Regulator_Linear","part":"AP2112K-3.3"},
         "fields": {
           "MPN": "AP2112K-3.3TRG1",
           "Description": "3.3V 600mA LDO"
@@ -31,7 +31,7 @@
       {
         "ref": "J2",
         "value": "PS1_SERIAL",
-        "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x08_P2.54mm_Vertical",
+        "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x08_P2.54mm_Vertical", "libSource": {"lib":"Connector_Generic","part":"Conn_1x08"},
         "fields": {
           "Description": "PS1 serial port 1:RXD 2:TXD 3:GND 4:3.5V 5:DTR 6:DSR 7:RTS 8:CTS"
         }
@@ -39,47 +39,47 @@
       {
         "ref": "R1",
         "value": "5.1k",
-        "footprint": "Resistor_SMD:R_0603_1608Metric"
+        "footprint": "Resistor_SMD:R_0603_1608Metric", "libSource": {"lib":"Device","part":"R"}
       },
       {
         "ref": "R2",
         "value": "5.1k",
-        "footprint": "Resistor_SMD:R_0603_1608Metric"
+        "footprint": "Resistor_SMD:R_0603_1608Metric", "libSource": {"lib":"Device","part":"R"}
       },
       {
         "ref": "R3",
         "value": "1k",
-        "footprint": "Resistor_SMD:R_0603_1608Metric"
+        "footprint": "Resistor_SMD:R_0603_1608Metric", "libSource": {"lib":"Device","part":"R"}
       },
       {
         "ref": "R4",
         "value": "1k",
-        "footprint": "Resistor_SMD:R_0603_1608Metric"
+        "footprint": "Resistor_SMD:R_0603_1608Metric", "libSource": {"lib":"Device","part":"R"}
       },
       {
         "ref": "C1",
         "value": "1uF",
-        "footprint": "Capacitor_SMD:C_0603_1608Metric"
+        "footprint": "Capacitor_SMD:C_0603_1608Metric", "libSource": {"lib":"Device","part":"C"}
       },
       {
         "ref": "C2",
         "value": "1uF",
-        "footprint": "Capacitor_SMD:C_0603_1608Metric"
+        "footprint": "Capacitor_SMD:C_0603_1608Metric", "libSource": {"lib":"Device","part":"C"}
       },
       {
         "ref": "C3",
         "value": "100nF",
-        "footprint": "Capacitor_SMD:C_0603_1608Metric"
+        "footprint": "Capacitor_SMD:C_0603_1608Metric", "libSource": {"lib":"Device","part":"C"}
       },
       {
         "ref": "C4",
         "value": "100nF",
-        "footprint": "Capacitor_SMD:C_0603_1608Metric"
+        "footprint": "Capacitor_SMD:C_0603_1608Metric", "libSource": {"lib":"Device","part":"C"}
       },
       {
         "ref": "D1",
         "value": "GREEN",
-        "footprint": "LED_SMD:LED_0603_1608Metric",
+        "footprint": "LED_SMD:LED_0603_1608Metric", "libSource": {"lib":"Device","part":"LED"},
         "fields": {
           "Description": "TX activity LED"
         }
@@ -87,7 +87,7 @@
       {
         "ref": "D2",
         "value": "YELLOW",
-        "footprint": "LED_SMD:LED_0603_1608Metric",
+        "footprint": "LED_SMD:LED_0603_1608Metric", "libSource": {"lib":"Device","part":"LED"},
         "fields": {
           "Description": "RX activity LED"
         }
