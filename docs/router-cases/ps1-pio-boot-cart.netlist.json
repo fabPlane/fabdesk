@@ -4,7 +4,7 @@
       {
         "ref": "U1",
         "value": "SST39SF040",
-        "footprint": "Package_LCC:PLCC-32_THT-Socket", "libSource": {"lib":"Memory_Flash","part":"SST39SF040"},
+        "footprint": "Package_LCC:PLCC-32_THT-Socket",
         "fields": {
           "MPN": "SST39SF040-70-4C-NHE",
           "Note": "512Kx8 flash in PLCC-32 socket. JEDEC 32-pin pinout: 1=A18 2=A16 3=A15 4=A12 5-12=A7..A0 13-15=DQ0-2 16=GND 17-21=DQ3-7 22=/CE 23=A10 24=/OE 25=A11 26=A9 27=A8 28=A13 29=A14 30=A17 31=/WE 32=VDD"
@@ -13,7 +13,7 @@
       {
         "ref": "U2",
         "value": "74HC00",
-        "footprint": "Package_SO:SOIC-14_3.9x8.7mm_P1.27mm", "libSource": {"lib":"74xx","part":"74HC00"},
+        "footprint": "Package_SO:SOIC-14_3.9x8.7mm_P1.27mm",
         "fields": {
           "MPN": "74HC00D",
           "Note": "Quad NAND: G1 inverts /SEL, G2 inverts jumper, G3 = /CE to flash, G4 unused (inputs to GND)"
@@ -22,7 +22,7 @@
       {
         "ref": "U3",
         "value": "74HC32",
-        "footprint": "Package_SO:SOIC-14_3.9x8.7mm_P1.27mm", "libSource": {"lib":"74xx","part":"74LS32"},
+        "footprint": "Package_SO:SOIC-14_3.9x8.7mm_P1.27mm",
         "fields": {
           "MPN": "74HC32D",
           "Note": "Quad OR: A19|A20, A21|A22, combine, then OR with /CS -> /SEL (low only for 1F000000h-1F07FFFFh)"
@@ -31,7 +31,7 @@
       {
         "ref": "J1",
         "value": "PS1_PIO",
-        "footprint": "Connector_PinHeader_2.54mm:PinHeader_2x34_P2.54mm_Vertical", "libSource": {"lib":"Connector_Generic","part":"Conn_2x34_Odd_Even"},
+        "footprint": "Connector_PinHeader_2.54mm:PinHeader_2x34_P2.54mm_Vertical",
         "fields": {
           "Note": "2x34 header standing in for the 68-pin PS1 PIO edge connector. PLACEHOLDER PIN MAP - verify against psx-spx before wiring: odd row 1=GND 3..39=A0..A18 41..47=A19..A22 49=A23 51=/CS 53=/RD 55=/WR0 57=/EXTRST 59=/DACK 61=/DREQ 63=/INT10 65=/EXTSYSCLK 67=GND; even row 2=GND 4..18=D0..D7 20,22=+3.5V 68=GND"
         }
@@ -39,13 +39,13 @@
       {
         "ref": "JP1",
         "value": "BOOT_EN",
-        "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical", "libSource": {"lib":"Connector_Generic","part":"Conn_1x02"},
+        "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
         "fields": { "Note": "Jumper fitted = cart enabled (boots Unirom); open = flash disabled, console boots normally" }
       },
-      { "ref": "R1", "value": "10k", "footprint": "Resistor_SMD:R_0805_2012Metric", "libSource": {"lib":"Device","part":"R"}, "fields": { "Note": "Pull-up for JP1 enable input" } },
-      { "ref": "C1", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "libSource": {"lib":"Device","part":"C"}, "fields": { "Note": "Decoupling U1" } },
-      { "ref": "C2", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "libSource": {"lib":"Device","part":"C"}, "fields": { "Note": "Decoupling U2" } },
-      { "ref": "C3", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "libSource": {"lib":"Device","part":"C"}, "fields": { "Note": "Decoupling U3" } }
+      { "ref": "R1", "value": "10k", "footprint": "Resistor_SMD:R_0805_2012Metric", "fields": { "Note": "Pull-up for JP1 enable input" } },
+      { "ref": "C1", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "fields": { "Note": "Decoupling U1" } },
+      { "ref": "C2", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "fields": { "Note": "Decoupling U2" } },
+      { "ref": "C3", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "fields": { "Note": "Decoupling U3" } }
     ],
     "nets": [
       { "name": "GND", "nodes": [

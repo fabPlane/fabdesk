@@ -1,27 +1,27 @@
 {
   "netlist": {
     "components": [
-      { "ref": "J1", "value": "CART_EDGE_2x32", "footprint": "Connector_PinHeader_2.54mm:PinHeader_2x32_P2.54mm_Vertical", "libSource": {"lib":"Connector_Generic","part":"Conn_2x32_Odd_Even"},
+      { "ref": "J1", "value": "CART_EDGE_2x32", "footprint": "Connector_PinHeader_2.54mm:PinHeader_2x32_P2.54mm_Vertical",
         "fields": { "Description": "Stand-in for the 64-pin Mega Drive cart edge. Odd header pins = side B1..B32, even header pins = side A1..A32" } },
-      { "ref": "U1", "value": "SST39SF040", "footprint": "Package_LCC:PLCC-32_THT-Socket", "libSource": {"lib":"Memory_Flash","part":"SST39SF040"},
+      { "ref": "U1", "value": "SST39SF040", "footprint": "Package_LCC:PLCC-32_THT-Socket",
         "fields": { "MPN": "SST39SF040-70-4C-NHE", "Description": "512Kx8 flash, low byte D0-D7" } },
-      { "ref": "U2", "value": "SST39SF040", "footprint": "Package_LCC:PLCC-32_THT-Socket", "libSource": {"lib":"Memory_Flash","part":"SST39SF040"},
+      { "ref": "U2", "value": "SST39SF040", "footprint": "Package_LCC:PLCC-32_THT-Socket",
         "fields": { "MPN": "SST39SF040-70-4C-NHE", "Description": "512Kx8 flash, high byte D8-D15" } },
-      { "ref": "U3", "value": "FM18W08", "footprint": "Package_SO:SOIC-28W_7.5x17.9mm_P1.27mm", "libSource": {"lib":"Memory_NVRAM","part":"FM18W08-SG"},
+      { "ref": "U3", "value": "FM18W08", "footprint": "Package_SO:SOIC-28W_7.5x17.9mm_P1.27mm",
         "fields": { "MPN": "FM18W08-SG", "Description": "32Kx8 FRAM save memory at $200000-$3FFFFF (odd bytes)" } },
-      { "ref": "U4", "value": "74HC373", "footprint": "Package_SO:SOIC-20W_7.5x12.8mm_P1.27mm", "libSource": {"lib":"74xx","part":"74HC373"},
+      { "ref": "U4", "value": "74HC373", "footprint": "Package_SO:SOIC-20W_7.5x12.8mm_P1.27mm",
         "fields": { "MPN": "SN74HC373DW", "Description": "Bank/config register latched by writes to $A130xx (/TIME)" } },
-      { "ref": "U5", "value": "74HC00", "footprint": "Package_SO:SOIC-14_3.9x8.7mm_P1.27mm", "libSource": {"lib":"74xx","part":"74HC00"},
+      { "ref": "U5", "value": "74HC00", "footprint": "Package_SO:SOIC-14_3.9x8.7mm_P1.27mm",
         "fields": { "MPN": "SN74HC00D", "Description": "Chip-select decode and latch-enable" } },
-      { "ref": "JP1", "value": "FLASH_WE", "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical", "libSource": {"lib":"Connector_Generic","part":"Conn_1x02"},
+      { "ref": "JP1", "value": "FLASH_WE", "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
         "fields": { "Description": "Close to allow in-system flash programming (/LWR -> flash /WE)" } },
-      { "ref": "R1", "value": "10k", "footprint": "Resistor_SMD:R_0805_2012Metric", "libSource": {"lib":"Device","part":"R"},
+      { "ref": "R1", "value": "10k", "footprint": "Resistor_SMD:R_0805_2012Metric",
         "fields": { "Description": "Pull-up on flash /WE so it idles high with JP1 open" } },
-      { "ref": "C1", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "libSource": {"lib":"Device","part":"C"}, "fields": { "Description": "Decoupling U1" } },
-      { "ref": "C2", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "libSource": {"lib":"Device","part":"C"}, "fields": { "Description": "Decoupling U2" } },
-      { "ref": "C3", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "libSource": {"lib":"Device","part":"C"}, "fields": { "Description": "Decoupling U3" } },
-      { "ref": "C4", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "libSource": {"lib":"Device","part":"C"}, "fields": { "Description": "Decoupling U4" } },
-      { "ref": "C5", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "libSource": {"lib":"Device","part":"C"}, "fields": { "Description": "Decoupling U5" } }
+      { "ref": "C1", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "fields": { "Description": "Decoupling U1" } },
+      { "ref": "C2", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "fields": { "Description": "Decoupling U2" } },
+      { "ref": "C3", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "fields": { "Description": "Decoupling U3" } },
+      { "ref": "C4", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "fields": { "Description": "Decoupling U4" } },
+      { "ref": "C5", "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric", "fields": { "Description": "Decoupling U5" } }
     ],
     "nets": [
       { "name": "GND", "nodes": [

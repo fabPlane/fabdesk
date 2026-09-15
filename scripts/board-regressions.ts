@@ -11,6 +11,10 @@ import {
   type RegressionTier,
   type RouteObservation,
 } from "./lib/board-regression";
+import {
+  prepareRegressionSymbols,
+  type RegressionNetlistSource,
+} from "./lib/regression-symbols";
 
 const ROOT = resolve(import.meta.dir, "..");
 const CASES = join(ROOT, "docs", "router-cases");
@@ -27,10 +31,7 @@ const token = process.env["FABDESK_TOKEN"];
 if (!token) throw new Error("FABDESK_TOKEN is required");
 const headers = { authorization: `Bearer ${token}`, "content-type": "application/json" };
 
-interface NetlistSource {
-  netlist?: { components?: Array<{ footprint?: unknown }> };
-  libraries?: Array<{ kind: string; nickname: string; uri: string }>;
-}
+interface NetlistSource extends RegressionNetlistSource {}
 
 async function loadNetlistSource(filename: string): Promise<NetlistSource> {
   const source = (await Bun.file(filename).json()) as NetlistSource;
@@ -135,10 +136,16 @@ async function runCase(spec: RegressionCase) {
     project = await request<{ id: string; path: string }>("POST", "/projects", {
       name: `regression-${spec.id}-${Date.now().toString(36)}`,
     });
+    const symbolFilename = "fabdesk-regression.kicad_sym";
+    const prepared = prepareRegressionSymbols(
+      await loadNetlistSource(join(CASES, spec.netlist)),
+      join(project.path, symbolFilename),
+    );
+    await request("PUT", `/projects/${project.id}/files/${symbolFilename}`, prepared.library);
     await request(
       "PUT",
       `/projects/${project.id}/files/circuit.netlist.json`,
-      await loadNetlistSource(join(CASES, spec.netlist)),
+      prepared.source,
     );
     const build = await tool(project.id, "circuit_build", { fresh: true }, 120_000);
     if (build.ok === false || build.error)
