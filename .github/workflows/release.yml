@@ -26,8 +26,13 @@ env:
   CHANNEL: ${{ inputs.channel || 'public' }}
 
 jobs:
+  select-version-runner:
+    uses: ./.github/workflows/select-linux-runner.yml
+    secrets: inherit
+
   version:
-    runs-on: blacksmith-4vcpu-ubuntu-2204
+    needs: select-version-runner
+    runs-on: ${{ fromJSON(needs.select-version-runner.outputs.runner) }}
     outputs:
       version: ${{ steps.v.outputs.version }}
       tag: ${{ steps.v.outputs.tag }}
@@ -59,6 +64,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0
+          no-cache: ${{ startsWith(runner.name, 'tf-nas-') }}
 
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
@@ -71,8 +77,13 @@ jobs:
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
           echo "Release version $version"
 
-  build:
+  select-build-linux-runner:
     needs: version
+    uses: ./.github/workflows/select-linux-runner.yml
+    secrets: inherit
+
+  build:
+    needs: [version, select-build-linux-runner]
     strategy:
       fail-fast: false
       matrix:
@@ -80,7 +91,9 @@ jobs:
           - { os: [self-hosted, macOS, ARM64], target: bun-darwin-arm64, eb: "--mac --arm64" }
           # The self-hosted Mini does not have Rosetta yet, so keep Intel packaging hosted.
           - { os: blacksmith-6vcpu-macos-15, target: bun-darwin-x64, eb: "--mac --x64" }
-          - { os: blacksmith-4vcpu-ubuntu-2204, target: bun-linux-x64, eb: "--linux" }
+          - os: ${{ fromJSON(needs.select-build-linux-runner.outputs.runner) }}
+            target: bun-linux-x64
+            eb: "--linux"
           - { os: blacksmith-4vcpu-windows-2025, target: bun-windows-x64, eb: "--win" }
     runs-on: ${{ matrix.os }}
     steps:
@@ -121,6 +134,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0
+          no-cache: ${{ startsWith(runner.name, 'tf-nas-') }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -272,10 +286,16 @@ jobs:
           # Internal builds exist only as workflow artifacts, so retain those for a week.
           retention-days: ${{ env.CHANNEL == 'internal' && 7 || 1 }}
 
-  release:
+  select-release-runner:
     needs: [version, build]
     if: github.ref == 'refs/heads/main' && (inputs.channel == '' || inputs.channel == 'public')
-    runs-on: blacksmith-4vcpu-ubuntu-2204
+    uses: ./.github/workflows/select-linux-runner.yml
+    secrets: inherit
+
+  release:
+    needs: [version, build, select-release-runner]
+    if: github.ref == 'refs/heads/main' && (inputs.channel == '' || inputs.channel == 'public')
+    runs-on: ${{ fromJSON(needs.select-release-runner.outputs.runner) }}
     permissions:
       contents: write
     steps:
@@ -285,6 +305,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0
+          no-cache: ${{ startsWith(runner.name, 'tf-nas-') }}
       - uses: actions/download-artifact@v4
         with:
           pattern: installers-*
@@ -331,10 +352,15 @@ jobs:
             --notes-file artifacts/NOTES.md \
             "${assets[@]}"
 
+  select-website-runner:
+    needs: [version, release]
+    uses: ./.github/workflows/select-linux-runner.yml
+    secrets: inherit
+
   website:
     name: Hand off public release to fabplane.com
-    needs: [version, release]
-    runs-on: blacksmith-4vcpu-ubuntu-2204
+    needs: [version, release, select-website-runner]
+    runs-on: ${{ fromJSON(needs.select-website-runner.outputs.runner) }}
     permissions: {}
     steps:
       - name: Trigger website installer and feed publishing
@@ -353,9 +379,14 @@ jobs:
   # feeds the GitHub Release: EAS keeps the binaries, and the app carries no source maps (Sentry's
   # build phases write them outside the bundle and delete them after upload; there is no
   # `expo export --source-maps` anywhere).
-  mobile:
+  select-mobile-runner:
     needs: version
-    runs-on: blacksmith-4vcpu-ubuntu-2204
+    uses: ./.github/workflows/select-linux-runner.yml
+    secrets: inherit
+
+  mobile:
+    needs: [version, select-mobile-runner]
+    runs-on: ${{ fromJSON(needs.select-mobile-runner.outputs.runner) }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -364,6 +395,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0
+          no-cache: ${{ startsWith(runner.name, 'tf-nas-') }}
 
       - uses: actions/setup-node@v4
         with:

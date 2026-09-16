@@ -25,8 +25,13 @@ permissions:
   issues: write
 
 jobs:
+  select-linux-runner:
+    uses: ./.github/workflows/select-linux-runner.yml
+    secrets: inherit
+
   scan:
-    runs-on: blacksmith-4vcpu-ubuntu-2204
+    needs: select-linux-runner
+    runs-on: ${{ fromJSON(needs.select-linux-runner.outputs.runner) }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -55,6 +60,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0
+          no-cache: ${{ startsWith(runner.name, 'tf-nas-') }}
 
       - run: bun install --frozen-lockfile
 

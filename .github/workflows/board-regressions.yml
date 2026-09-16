@@ -27,8 +27,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  select-linux-runner:
+    uses: ./.github/workflows/select-linux-runner.yml
+    with:
+      blacksmith-runner: blacksmith-4vcpu-ubuntu-2404
+    secrets: inherit
+
   real-board-pipeline:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    needs: select-linux-runner
+    runs-on: ${{ fromJSON(needs.select-linux-runner.outputs.runner) }}
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
@@ -75,6 +82,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0
+          no-cache: ${{ startsWith(runner.name, 'tf-nas-') }}
 
       - name: Install fabdesk
         run: bun install --frozen-lockfile
@@ -93,8 +101,20 @@ jobs:
         run: |
           commit="$(cat "$RUNNER_TEMP/fab-pcb/packages/proto/KICAD_COMMIT")"
           sha10="${commit:0:10}"
-          tag="$(gh api repos/TensorFleet/kicad/releases --paginate --jq \
-            ".[] | .tag_name | select(startswith(\"nightly-\") and endswith(\"-$sha10\"))" | head -1)"
+          page=1
+          tag=""
+          while [ -z "$tag" ]; do
+            releases="$(curl --fail --location --silent --show-error \
+              --header "Authorization: Bearer $GH_TOKEN" \
+              --header "Accept: application/vnd.github+json" \
+              --header "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/fabPlane/kicad/releases?per_page=100&page=$page")"
+            tag="$(jq -r --arg sha "$sha10" \
+              '.[] | .tag_name | select(startswith("nightly-") and endswith("-" + $sha))' \
+              <<<"$releases" | head -1)"
+            [ "$(jq 'length' <<<"$releases")" -eq 100 ] || break
+            page=$((page + 1))
+          done
           test -n "$tag"
           echo "commit=$commit" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
@@ -108,6 +128,7 @@ jobs:
           git -C "$RUNNER_TEMP/kicad-src" checkout -q FETCH_HEAD
 
       - name: Install KiCad host libraries, footprints and symbols
+        if: ${{ !startsWith(runner.name, 'tf-nas-') }}
         run: |
           list="$RUNNER_TEMP/kicad-src/tools/nightly/linux/runtime-packages.txt"
           packages=(kicad-footprints kicad-symbols)

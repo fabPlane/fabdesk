@@ -1,0 +1,56 @@
+name: Select Linux runner
+
+on:
+  workflow_call:
+    inputs:
+      blacksmith-runner:
+        description: Blacksmith label to use when the NAS runner is unavailable
+        required: false
+        type: string
+        default: blacksmith-4vcpu-ubuntu-2204
+    outputs:
+      runner:
+        description: JSON runner selector for a NAS runner or Blacksmith fallback
+        value: ${{ jobs.select.outputs.runner }}
+
+# Serialize claims on the single NAS slot. The settling job gives GitHub time to
+# mark a just-selected runner busy and the NAS heartbeat time to publish that state
+# before the next caller reads the variable.
+concurrency:
+  group: fabdesk-linux-runner-selection
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  settle:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Let any previous NAS claim become visible
+        run: sleep 15
+
+  select:
+    needs: settle
+    runs-on: ubuntu-24.04
+    outputs:
+      runner: ${{ steps.pick.outputs.runner }}
+    steps:
+      - name: Prefer an online NAS runner
+        id: pick
+        env:
+          BLACKSMITH_RUNNER: ${{ inputs.blacksmith-runner }}
+          NAS_RUNNER_HEARTBEAT: ${{ vars.NAS_RUNNER_HEARTBEAT }}
+        run: |
+          set -uo pipefail
+          now="$(date +%s)"
+          runner="$(jq -cn --arg label "$BLACKSMITH_RUNNER" '$label')"
+          # The NAS publishes this only while its runner is online and idle, every 10 seconds.
+          # Keep the lease short so a newly busy or offline runner falls back promptly.
+          if [[ "${NAS_RUNNER_HEARTBEAT:-}" =~ ^[0-9]+$ ]] &&
+             [ "$NAS_RUNNER_HEARTBEAT" -le "$now" ] &&
+             [ $((now - NAS_RUNNER_HEARTBEAT)) -le 20 ]; then
+            runner='["self-hosted","Linux","X64","tf-nas-ephemeral","fabdesk"]'
+          fi
+          echo "runner=$runner" >> "$GITHUB_OUTPUT"
+          echo "Selected runner: $runner"
