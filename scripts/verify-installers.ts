@@ -8,9 +8,18 @@
  *   bun run scripts/verify-installers.ts release-out --target bun-darwin-arm64
  */
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { resolvePcbBackend } from "../apps/desktop/src/main/pcb-supervisor";
 
 const dir = process.argv[2] ?? "release-out";
 const target = process.argv[process.argv.indexOf("--target") + 1] ?? "";
@@ -23,10 +32,14 @@ const fail = (msg: string) => {
   failures.push(msg);
 };
 
-function run(cmd: string[], opts: { cwd?: string; allowFail?: boolean } = {}): { ok: boolean; out: string } {
+function run(
+  cmd: string[],
+  opts: { cwd?: string; allowFail?: boolean } = {},
+): { ok: boolean; out: string } {
   const p = Bun.spawnSync(cmd, { cwd: opts.cwd, stdout: "pipe", stderr: "pipe" });
   const out = `${new TextDecoder().decode(p.stdout)}${new TextDecoder().decode(p.stderr)}`;
-  if (p.exitCode !== 0 && !opts.allowFail) console.error(out.trim().split("\n").slice(-8).join("\n"));
+  if (p.exitCode !== 0 && !opts.allowFail)
+    console.error(out.trim().split("\n").slice(-8).join("\n"));
   return { ok: p.exitCode === 0, out };
 }
 
@@ -35,15 +48,34 @@ function checkCore(bin: string, label: string): void {
   if (targetArch && targetArch !== hostArch) {
     // Foreign-arch binary (the x64 build verified on an arm64 macOS 14 runner): Rosetta there lacks
     // AVX2, so Bun binaries crash. Check the slice is right and leave execution to the VM tests.
-    const archs = process.platform === "darwin" ? run(["lipo", "-archs", bin], { allowFail: true }).out.trim() : run(["file", bin], { allowFail: true }).out;
+    const archs =
+      process.platform === "darwin"
+        ? run(["lipo", "-archs", bin], { allowFail: true }).out.trim()
+        : run(["file", bin], { allowFail: true }).out;
     const want = targetArch === "x64" ? /x86_64|x86-64/ : /arm64|aarch64/;
-    if (!want.test(archs)) fail(`${label}: core is not a ${targetArch} binary (${archs.trim().slice(0, 80)})`);
+    if (!want.test(archs))
+      fail(`${label}: core is not a ${targetArch} binary (${archs.trim().slice(0, 80)})`);
     else console.log(`${label}: core is ${targetArch} (not executed on a ${hostArch} host)`);
     return;
   }
   const r = run([bin, "version"]);
-  if (!r.ok || !/\d+\.\d+\.\d+/.test(r.out)) fail(`${label}: fabdesk-core version failed: ${r.out.trim().slice(0, 200)}`);
+  if (!r.ok || !/\d+\.\d+\.\d+/.test(r.out))
+    fail(`${label}: fabdesk-core version failed: ${r.out.trim().slice(0, 200)}`);
   else console.log(`${label}: core ${r.out.trim().split("\n")[0]}`);
+}
+
+/** Exercise the same manifest/path resolution that runs during packaged desktop startup. */
+function checkPcbBundle(resourcesDir: string, label: string): void {
+  try {
+    const backend = resolvePcbBackend({ packaged: true, resourcesPath: resourcesDir, env: {} });
+    if (!backend)
+      return fail(`${label}: bundled PCB manifest missing under ${join(resourcesDir, "pcb")}`);
+    console.log(`${label}: PCB bundle ${backend.command}`);
+  } catch (error) {
+    fail(
+      `${label}: bundled PCB manifest is invalid: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 /** Soft-warn (or fail when FABDESK_REQUIRE_BUNDLED_KICAD=1) if Resources/kicad is missing. */
@@ -57,8 +89,16 @@ function checkBundledKicad(resourcesDir: string, label: string): void {
           join(root, "kicad-cli", "kicad-cli"),
         ]
       : process.platform === "win32"
-        ? [join(root, "bin", "kicad-cli.exe"), join(root, "kicad-cli", "bin", "kicad-cli.exe"), join(root, "kicad-cli.exe")]
-        : [join(root, "kicad-cli"), join(root, "kicad-cli", "kicad-cli"), join(root, "bin", "kicad-cli")];
+        ? [
+            join(root, "bin", "kicad-cli.exe"),
+            join(root, "kicad-cli", "bin", "kicad-cli.exe"),
+            join(root, "kicad-cli.exe"),
+          ]
+        : [
+            join(root, "kicad-cli"),
+            join(root, "kicad-cli", "kicad-cli"),
+            join(root, "bin", "kicad-cli"),
+          ];
   // Must be a file: nightly archives use a top-level `kicad-cli/` directory of the same name.
   const hit = candidates.find((p) => {
     try {
@@ -77,19 +117,24 @@ function checkBundledKicad(resourcesDir: string, label: string): void {
 }
 
 function checkMacApp(app: string, label: string): void {
-  if (!existsSync(join(app, "Contents", "Info.plist"))) return fail(`${label}: no app bundle at ${app}`);
+  if (!existsSync(join(app, "Contents", "Info.plist")))
+    return fail(`${label}: no app bundle at ${app}`);
   const sig = run(["codesign", "--verify", "--deep", "--strict", app]);
   if (!sig.ok) fail(`${label}: codesign verify failed`);
   if (process.env["APPLE_ID"]) {
     // Signing secrets were present, so the release must be Developer ID signed and notarized (stapled).
     const info = run(["codesign", "-dv", "--verbose=2", app], { allowFail: true }).out;
-    if (!/Authority=Developer ID Application/.test(info)) fail(`${label}: not signed with a Developer ID Application certificate`);
+    if (!/Authority=Developer ID Application/.test(info))
+      fail(`${label}: not signed with a Developer ID Application certificate`);
     const st = run(["xcrun", "stapler", "validate", app], { allowFail: true });
-    if (!st.ok) fail(`${label}: notarization ticket not stapled (${st.out.trim().split("\n").pop()})`);
+    if (!st.ok)
+      fail(`${label}: notarization ticket not stapled (${st.out.trim().split("\n").pop()})`);
     else console.log(`${label}: Developer ID signed, notarization ticket stapled`);
   }
-  checkCore(join(app, "Contents", "Resources", "core", "fabdesk-core"), label);
-  checkBundledKicad(join(app, "Contents", "Resources"), label);
+  const resources = join(app, "Contents", "Resources");
+  checkCore(join(resources, "core", "fabdesk-core"), label);
+  checkBundledKicad(resources, label);
+  checkPcbBundle(resources, label);
 }
 
 function verifyDmg(file: string): void {
@@ -127,10 +172,16 @@ function verifyAppImage(file: string): void {
   const out = mkdtempSync(join(tmpdir(), "fabdesk-appimage-"));
   const abs = resolve(file);
   try {
-    const x = run(["bash", "-c", `chmod +x "${abs}" && cd "${out}" && "${abs}" --appimage-extract >/dev/null`]);
+    const x = run([
+      "bash",
+      "-c",
+      `chmod +x "${abs}" && cd "${out}" && "${abs}" --appimage-extract >/dev/null`,
+    ]);
     if (!x.ok) return fail(`${file}: --appimage-extract failed`);
-    checkCore(join(out, "squashfs-root", "resources", "core", "fabdesk-core"), file);
-    checkBundledKicad(join(out, "squashfs-root", "resources"), file);
+    const resources = join(out, "squashfs-root", "resources");
+    checkCore(join(resources, "core", "fabdesk-core"), file);
+    checkBundledKicad(resources, file);
+    checkPcbBundle(resources, file);
   } finally {
     rmSync(out, { recursive: true, force: true });
   }
@@ -141,11 +192,17 @@ function verifyDeb(file: string): void {
   try {
     const x = run(["dpkg-deb", "-x", file, out]);
     if (!x.ok) return fail(`${file}: dpkg-deb extract failed`);
-    const core = run(["bash", "-c", `find "${out}" -path '*/resources/core/fabdesk-core' | head -1`]).out.trim();
+    const core = run([
+      "bash",
+      "-c",
+      `find "${out}" -path '*/resources/core/fabdesk-core' | head -1`,
+    ]).out.trim();
     if (!core) fail(`${file}: bundled core missing`);
     else {
       checkCore(core, file);
-      checkBundledKicad(join(core, "..", ".."), file);
+      const resources = resolve(core, "..", "..");
+      checkBundledKicad(resources, file);
+      checkPcbBundle(resources, file);
     }
   } finally {
     rmSync(out, { recursive: true, force: true });
@@ -160,7 +217,8 @@ function verifyExe(file: string): void {
   const listing = run(["7z", "l", file]).out;
   const payload = /(\S*app-(?:64|32)\.7z)\s*$/m.exec(listing)?.[1];
   if (!payload) {
-    if (!/resources[\\/]core[\\/]fabdesk-core\.exe/.test(listing)) fail(`${file}: bundled core missing from installer`);
+    if (!/resources[\\/]core[\\/]fabdesk-core\.exe/.test(listing))
+      fail(`${file}: bundled core missing from installer`);
     return;
   }
   const out = mkdtempSync(join(tmpdir(), "fabdesk-exe-"));
@@ -170,17 +228,23 @@ function verifyExe(file: string): void {
     const innerPath = existsSync(inner) ? inner : join(out, "app-32.7z");
     if (!x.ok || !existsSync(innerPath)) return fail(`${file}: could not extract ${payload}`);
     const il = run(["7z", "l", innerPath]).out;
-    if (!/resources[\\/]core[\\/]fabdesk-core\.exe/.test(il)) return fail(`${file}: bundled core missing from ${payload}`);
+    if (!/resources[\\/]core[\\/]fabdesk-core\.exe/.test(il))
+      return fail(`${file}: bundled core missing from ${payload}`);
     const c = run(["7z", "e", "-y", `-o${out}`, innerPath, "resources/core/fabdesk-core.exe"]);
     if (!c.ok) return fail(`${file}: could not extract the bundled core`);
     if (process.platform === "win32") checkCore(join(out, "fabdesk-core.exe"), file);
     else console.log(`${file}: core present in ${payload} (not executed on ${process.platform})`);
+    const pcb = run(["7z", "x", "-y", `-o${out}`, innerPath, "resources/pcb/*"]);
+    if (!pcb.ok) return fail(`${file}: could not extract the bundled PCB backend`);
+    checkPcbBundle(join(out, "resources"), file);
   } finally {
     rmSync(out, { recursive: true, force: true });
   }
 }
 
-const files = readdirSync(dir).filter((f) => statSync(join(dir, f)).isFile() && !f.startsWith("SHA256SUMS")).sort();
+const files = readdirSync(dir)
+  .filter((f) => statSync(join(dir, f)).isFile() && !f.startsWith("SHA256SUMS"))
+  .sort();
 if (files.length === 0) fail(`no installers found in ${dir}`);
 const sums: string[] = [];
 for (const f of files) {
