@@ -17,7 +17,19 @@ import {
 import type { RouteRunRecord } from "@fabdesk/tools";
 import type { RouteResult } from "@fabdesk/protocol";
 
-export const MIGRATIONS: Array<{ version: number; sql: string }> = [
+/**
+ * Migrations are applied once each, in order, keyed by `version`. Never edit a migration that has
+ * shipped: databases created by that build already have its schema, and a later migration that
+ * re-adds the same thing fails at startup for every existing user (0.2.109 did exactly that with
+ * `runs.log_path`, see version 7). `up` runs before `sql` for the checks a plain DDL string cannot express.
+ */
+export interface Migration {
+  version: number;
+  sql: string;
+  up?: (db: Database) => void;
+}
+
+export const MIGRATIONS: Migration[] = [
   {
     version: 1,
     sql: `
@@ -164,9 +176,14 @@ export const MIGRATIONS: Array<{ version: number; sql: string }> = [
   },
   {
     // Portable OpenTelemetry agent-run dumps and the path to their JSONL log.
+    // `runs.log_path` shipped inside migration 1 up to 0.2.99 and was moved here afterwards, so a
+    // database created by those builds already has the column; adding it again is the
+    // "duplicate column name: log_path" crash loop that 0.2.109 through 0.2.112 hit on upgrade.
     version: 7,
+    up: (db) => {
+      if (!hasColumn(db, "runs", "log_path")) db.run("ALTER TABLE runs ADD COLUMN log_path TEXT");
+    },
     sql: `
-      ALTER TABLE runs ADD COLUMN log_path TEXT;
       CREATE TABLE run_dumps (
         run_id TEXT PRIMARY KEY,
         trace_id TEXT NOT NULL,
@@ -205,6 +222,7 @@ export function migrate(db: Database): number {
   for (const m of MIGRATIONS) {
     if (applied.has(m.version)) continue;
     db.transaction(() => {
+      m.up?.(db);
       db.run(m.sql);
       db.run("INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)", [
         m.version,
@@ -214,6 +232,13 @@ export function migrate(db: Database): number {
     current = m.version;
   }
   return current;
+}
+
+export function hasColumn(db: Database, table: string, column: string): boolean {
+  return db
+    .query<{ name: string }, []>(`PRAGMA table_info(${table})`)
+    .all()
+    .some((c) => c.name === column);
 }
 
 export function schemaVersion(db: Database): number {
