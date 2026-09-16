@@ -75,6 +75,31 @@ describe("argument parsing", () => {
     });
   });
 
+  test("the argument terminator preserves hermetic command arguments", () => {
+    const parsed = parseArgs([
+      "env",
+      "exec",
+      "--project",
+      "/tmp/board",
+      "--",
+      "kicad-cli",
+      "pcb",
+      "drc",
+      "--severity-all",
+      "board.kicad_pcb",
+    ]);
+    expect(parsed._).toEqual([
+      "env",
+      "exec",
+      "kicad-cli",
+      "pcb",
+      "drc",
+      "--severity-all",
+      "board.kicad_pcb",
+    ]);
+    expect(parsed.project).toBe("/tmp/board");
+  });
+
   test("remoteSettingFromFlags turns the flags into a setting patch, or nothing", () => {
     expect(remoteSettingFromFlags({}, DEFAULT_REMOTE)).toBeNull();
     expect(remoteSettingFromFlags({ port: "0" }, DEFAULT_REMOTE)).toBeNull();

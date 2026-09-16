@@ -895,6 +895,12 @@ describe("registry", () => {
             minMa: 2,
             maxMa: 4,
           },
+          {
+            kind: "assertion",
+            name: "Firmware controls the LED",
+            pass: true,
+            evidence: "Firmware will implement this behavior.",
+          },
         ],
       },
       (ref) =>
@@ -907,6 +913,29 @@ describe("registry", () => {
     );
     expect(release.isError).toBeFalsy();
     expect((release.json as any).pass).toBe(true);
+    expect((release.json as any).contract.version).toBe("1.1.0");
+    expect((release.json as any).verification).toEqual({
+      status: "pass",
+      scope: "configured release checks and outputs",
+      productCompletenessAssessed: false,
+    });
+    expect((release.json as any).checks.circuit).toEqual([
+      expect.objectContaining({ kind: "led-current", evidenceLevel: "computed", status: "pass" }),
+      expect.objectContaining({
+        kind: "assertion",
+        evidenceLevel: "declared",
+        status: "declared",
+        claim: "pass",
+      }),
+    ]);
+    expect((release.json as any).checks.circuit[1].measured).toBeUndefined();
+    expect((release.json as any).evidence.declaredClaims).toEqual([
+      {
+        name: "Firmware controls the LED",
+        claim: "pass",
+        evidence: "Firmware will implement this behavior.",
+      },
+    ]);
     expect((release.json as any).revisions.schematic).toHaveLength(64);
     expect(
       (release.json as any).inventory.some(

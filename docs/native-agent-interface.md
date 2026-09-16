@@ -98,6 +98,21 @@ fabpcb tool batch --input @calls.jsonl
 conservatively marked as potentially destructive/open-world because it can call operations with
 different side effects.
 
+The exact packaged KiCad environment is also available without going through a PCB construction
+tool:
+
+```bash
+fabpcb env describe --project /absolute/path/to/project
+fabpcb env exec --project /absolute/path/to/project -- kicad-cli --version
+fabpcb env exec --project /absolute/path/to/project -- kicad-cli pcb drc board.kicad_pcb
+```
+
+`describe` returns machine-readable executable, version, library, stock-data, runtime, and project
+provenance while excluding credentials. `exec` sets the project working directory, prepends the
+packaged KiCad binary directory to `PATH`, and resolves the literal `kicad-cli` command to the exact
+`KICAD_CLI` executable used by Fabdesk. It exposes an environment capability without prescribing an
+authoring workflow.
+
 For the next clean test, restart the launcher and use a new project; the three completed 2026-09-15
 blinkers are retained as diagnostic evidence and should not be overwritten. The packaged KiCad
 10.99 integration test already passes for rotated symbols, power symbols, clean ERC, native PCB

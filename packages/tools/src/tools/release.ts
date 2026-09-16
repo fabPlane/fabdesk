@@ -20,19 +20,24 @@ async function hash(path: string): Promise<string> {
 }
 
 function evaluate(check: z.infer<typeof CircuitCheck>) {
-  if (check.kind === "assertion") return { ...check, measured: check.evidence, status: check.pass ? "pass" : "fail" };
+  if (check.kind === "assertion") return {
+    ...check,
+    evidenceLevel: "declared" as const,
+    status: "declared" as const,
+    claim: check.pass ? "pass" as const : "fail" as const,
+  };
   if (check.kind === "led-current") {
     const measuredMa = Math.max(0, check.supplyVolts - check.forwardVolts) / check.resistanceOhms * 1000;
-    return { ...check, measured: { currentMa: measuredMa }, status: measuredMa >= check.minMa && measuredMa <= check.maxMa ? "pass" : "fail" };
+    return { ...check, evidenceLevel: "computed" as const, measured: { currentMa: measuredMa }, status: measuredMa >= check.minMa && measuredMa <= check.maxMa ? "pass" : "fail" };
   }
   if (check.kind === "usb-c-cc") {
     const tolerance = check.expectedOhms * check.tolerancePercent / 100;
     const pass = [check.cc1Ohms, check.cc2Ohms].every((value) => Math.abs(value - check.expectedOhms) <= tolerance);
-    return { ...check, measured: { cc1Ohms: check.cc1Ohms, cc2Ohms: check.cc2Ohms }, status: pass ? "pass" : "fail" };
+    return { ...check, evidenceLevel: "computed" as const, measured: { cc1Ohms: check.cc1Ohms, cc2Ohms: check.cc2Ohms }, status: pass ? "pass" : "fail" };
   }
   const measuredHz = 1.44 / ((check.r1Ohms + 2 * check.r2Ohms) * check.capacitanceFarads);
   const pass = Math.abs(measuredHz - check.expectedHz) <= check.expectedHz * check.tolerancePercent / 100;
-  return { ...check, measured: { frequencyHz: measuredHz }, status: pass ? "pass" : "fail" };
+  return { ...check, evidenceLevel: "computed" as const, measured: { frequencyHz: measuredHz }, status: pass ? "pass" : "fail" };
 }
 
 export function isLibraryMismatch(violation: { rule: string; description: string }): boolean {
@@ -210,18 +215,23 @@ export const release_build = defineTool({
     const missing = inventory.filter((entry) => entry.status === "missing").map((entry) => entry.path);
     const libraryMismatchViolations = [...erc.violations, ...drc.violations].filter(isLibraryMismatch);
     const checks = {
-      erc: { status: erc.counts.errors === 0 ? "pass" : "fail", ...erc },
-      drc: { status: drc.counts.errors === 0 ? "pass" : "fail", ...drc, schematicParityChecked: true },
-      parity: { status: drc.schematicParity.length === 0 ? "pass" : "fail", violations: drc.schematicParity },
-      unconnected: { status: drc.counts.unconnected === 0 ? "pass" : "fail", count: drc.counts.unconnected },
-      libraryMismatches: { status: libraryMismatchViolations.length ? "fail" : "pass", count: libraryMismatchViolations.length, violations: libraryMismatchViolations },
-      designRules,
-      schematicPresentation,
-      pcbPresentation,
+      erc: { evidenceLevel: "measured", status: erc.counts.errors === 0 ? "pass" : "fail", ...erc },
+      drc: { evidenceLevel: "measured", status: drc.counts.errors === 0 ? "pass" : "fail", ...drc, schematicParityChecked: true },
+      parity: { evidenceLevel: "measured", status: drc.schematicParity.length === 0 ? "pass" : "fail", violations: drc.schematicParity },
+      unconnected: { evidenceLevel: "measured", status: drc.counts.unconnected === 0 ? "pass" : "fail", count: drc.counts.unconnected },
+      libraryMismatches: { evidenceLevel: "measured", status: libraryMismatchViolations.length ? "fail" : "pass", count: libraryMismatchViolations.length, violations: libraryMismatchViolations },
+      designRules: { evidenceLevel: "computed", ...designRules },
+      schematicPresentation: { evidenceLevel: "computed", ...schematicPresentation },
+      pcbPresentation: { evidenceLevel: "computed", ...pcbPresentation },
       circuit: calculations,
-      revisionStable: { status: stable ? "pass" : "fail" },
+      revisionStable: { evidenceLevel: "measured", status: stable ? "pass" : "fail" },
     };
-    const failedCircuitChecks = calculations.filter((check) => check.status === "fail").map((check) => check.name);
+    const failedCircuitChecks = calculations
+      .filter((check) => check.kind === "assertion" ? !check.pass : check.status === "fail")
+      .map((check) => check.name);
+    const declaredClaims = calculations.flatMap((check) => check.kind === "assertion"
+      ? [{ name: check.name, claim: check.claim, evidence: check.evidence }]
+      : []);
     const failureReasons = [
       ...gate.reasons,
       ...(libraryMismatchViolations.length && !gate.reasons.some((reason) => /warning/i.test(reason)) ? [`${libraryMismatchViolations.length} library mismatch(es)`] : []),
@@ -234,9 +244,20 @@ export const release_build = defineTool({
     ];
     const pass = stable && gate.pass && libraryMismatchViolations.length === 0 && designRules.status === "pass" && schematicPresentation.status === "pass" && pcbPresentation.status === "pass" && failedCircuitChecks.length === 0 && missing.length === 0;
     const result = {
-      contract: { name: "fabdesk.native-release", version: "1.0.0" }, capturedAt: new Date().toISOString(),
+      contract: { name: "fabdesk.native-release", version: "1.1.0" }, capturedAt: new Date().toISOString(),
       runtime: { runtimeId: ctx.services.runtimeId, fabdeskVersion: ctx.services.version, kicadCli: { path: cli.path, version: cli.version } },
-      revisions: before, stale: false, pass, gate, failureReasons, checks, inventory, missing,
+      revisions: before, stale: false, pass,
+      verification: {
+        status: pass ? "pass" : "fail",
+        scope: "configured release checks and outputs",
+        productCompletenessAssessed: false,
+      },
+      evidence: {
+        levels: ["measured", "computed", "declared", "missing"],
+        declaredClaims,
+        note: "declared claims are not independent measurements",
+      },
+      gate, failureReasons, checks, inventory, missing,
     };
     await writeJson(join(reportsDir, "release.json"), result);
     ctx.progress(1, pass ? "release passed" : "release failed");

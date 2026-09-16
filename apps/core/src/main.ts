@@ -19,6 +19,8 @@ Usage:
   fabdesk-core devices revoke <id|label>
   fabdesk-core mcp [--standalone] [--project <dir>]
   fabpcb tool search <words> | describe <name> | call <name> [--request <json>] | batch --input @calls.jsonl
+  fabpcb env describe [--project <dir>]
+  fabpcb env exec [--project <dir>] -- <command> [arguments...]
   fabdesk-core login | logout | whoami
   fabdesk-core login --email <email> --password <password>   # staging/local only
   fabdesk-core doctor [--json]
@@ -49,9 +51,14 @@ type Flags = { _: string[]; [k: string]: string | boolean | string[] };
 
 export function parseArgs(argv: string[]): Flags {
   const out: Flags = { _: [] };
+  let positionalOnly = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
-    if (a.startsWith("--")) {
+    if (a === "--" && !positionalOnly) {
+      positionalOnly = true;
+      continue;
+    }
+    if (!positionalOnly && a.startsWith("--")) {
       const eq = a.indexOf("=");
       if (eq > 0) {
         out[a.slice(2, eq)] = a.slice(eq + 1);
@@ -137,6 +144,15 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
         ...(str(f, "project") ? { project: str(f, "project")! } : {}),
         ...(str(f, "url") ? { baseUrl: str(f, "url")! } : {}),
         ...(num(f, "limit") !== undefined ? { limit: num(f, "limit")! } : {}),
+      });
+    }
+    case "env": {
+      const { runHermeticEnv } = await import("./hermetic-env");
+      const action = f._[1] as "describe" | "exec" | undefined;
+      return runHermeticEnv({
+        ...(action ? { action } : {}),
+        ...(str(f, "project") ? { project: str(f, "project")! } : {}),
+        ...(action === "exec" ? { command: f._.slice(2) } : {}),
       });
     }
     case "login":
