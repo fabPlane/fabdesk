@@ -83,7 +83,6 @@ describe("mcp adapter", () => {
       "circuit_build",
       "circuit_place",
       "circuit_read_errors",
-      "design_review",
       "load_toolset",
       "pcb_environment",
       "project_status",
@@ -105,7 +104,7 @@ describe("mcp adapter", () => {
     expect(res.isError).toBeFalsy();
     const after = await client.listTools();
     expect(after.tools.map((t) => t.name)).toContain("export_gerbers");
-    expect(after.tools.length).toBe(12 + 7);
+    expect(after.tools.length).toBe(11 + 7);
     expect(attachment.session.enabledToolsets()).toEqual(["core", "export"]);
     await new Promise((r) => setTimeout(r, 10));
     expect(listChanged).toBeGreaterThan(0);
