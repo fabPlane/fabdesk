@@ -1,9 +1,9 @@
 /** SHARED-003: revision-guarded, previewable native edit transactions with disk rollback. */
 import { createHash, randomUUID } from "node:crypto";
-import { copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod/v4";
-import { PROJECT_FILES, exists, readJson } from "../fs";
+import { PROJECT_FILES, exists, jailPath, readJson } from "../fs";
 import { ToolError, defineTool } from "../registry";
 import type { NativeSchematicEdit, PcbFootprintEdit, PcbGeometryEdit } from "../services";
 import { ok, p } from "./common";
@@ -154,6 +154,10 @@ export const native_edit_transaction = defineTool({
         if (placed.missing.length) throw new ToolError(`unknown footprints: ${placed.missing.join(", ")}`, "invalid_args");
         changes["footprints"] = placed;
       }
+      // Replacement copper must remove the old route before creating the candidate. The surrounding
+      // native-file backup makes both operations one recoverable transaction if either step fails.
+      if (removeCopperNets?.length)
+        changes["removedCopper"] = await ctx.services.design.unroute(project.dir, removeCopperNets);
       if (geometry) {
         const pads = geometry.tracks?.some((track) => "reference" in track.start || "reference" in track.end)
           ? await ctx.services.design.query(project.dir, "pads")
@@ -175,7 +179,6 @@ export const native_edit_transaction = defineTool({
         } as PcbGeometryEdit;
         changes["geometry"] = await ctx.services.design.editBoardGeometry(project.dir, resolved);
       }
-      if (removeCopperNets?.length) changes["removedCopper"] = await ctx.services.design.unroute(project.dir, removeCopperNets);
       const after = await revisions(project.dir);
       await writeFile(join(root, "last-accepted.json"), JSON.stringify({ transactionId, before, after }, null, 2));
       return ok(`Atomic native edit ${transactionId} accepted; design checks were not run.`, {
@@ -215,23 +218,58 @@ export const pcb_edit_copper = defineTool({
   name: "pcb_edit_copper",
   toolset: "circuit",
   title: "Edit PCB copper",
-  description: "Preview or atomically apply native tracks, vias, copper deletion by inspected ID, or removal of named routed nets. Track endpoints accept exact millimetre points or semantic {reference,pad} endpoints resolved from the saved board. Rejects stale PCB revisions.",
+  description: "Preview or atomically apply native tracks, vias, copper deletion by inspected ID, or removal of named routed nets. For reroutes, write a project-local JSON candidate and pass candidateFile with removeNets so old copper is replaced in one recoverable transaction. Applying named-net removal without replacement requires an explicit commitRemovalOnly acknowledgement. Track endpoints accept exact millimetre points or semantic {reference,pad} endpoints resolved from the saved board. Rejects stale PCB revisions.",
   inputSchema: {
     mode: z.enum(["preview", "apply"]).default("apply"),
     expectedPcbRevision: z.string().length(64).optional(),
     tracks: PcbGeometry.shape.tracks,
     vias: PcbGeometry.shape.vias,
+    candidateFile: z.string().min(1).optional().describe("Project-relative JSON file containing {tracks:[...], vias:[...]}; keeps large generated routes durable and out of the tool-call payload"),
     deleteItemIds: PcbGeometry.shape.deleteItemIds,
     removeNets: z.array(z.string().min(1)).max(500).optional(),
+    commitRemovalOnly: z.boolean().default(false).describe("Explicitly acknowledge that named-net copper removal should persist without replacement geometry"),
   },
   annotations: { destructiveHint: true, idempotentHint: false },
-  handler: ({ mode, expectedPcbRevision, tracks, vias, deleteItemIds, removeNets }, ctx) =>
-    native_edit_transaction.handler({
+  handler: async ({ mode, expectedPcbRevision, tracks, vias, candidateFile, deleteItemIds, removeNets, commitRemovalOnly }, ctx) => {
+    if (candidateFile && (tracks?.length || vias?.length))
+      throw new ToolError("candidateFile cannot be combined with inline tracks or vias", "invalid_args");
+    let candidate: { tracks?: z.infer<typeof PcbGeometry>["tracks"]; vias?: z.infer<typeof PcbGeometry>["vias"] } = {};
+    if (candidateFile) {
+      const project = ctx.requireProject();
+      const path = await jailPath(project.dir, candidateFile);
+      const metadata = await stat(path).catch(() => null);
+      if (!metadata?.isFile()) throw new ToolError(`copper candidate not found: ${candidateFile}`, "not_found");
+      if (metadata.size > 5_000_000)
+        throw new ToolError(`copper candidate exceeds 5 MB: ${candidateFile}`, "invalid_args");
+      let raw: unknown;
+      try {
+        raw = JSON.parse(await readFile(path, "utf8"));
+      } catch (error) {
+        throw new ToolError(`copper candidate is not valid JSON: ${error instanceof Error ? error.message : String(error)}`, "invalid_args");
+      }
+      const parsed = PcbGeometry.pick({ tracks: true, vias: true }).strict().safeParse(raw);
+      if (!parsed.success)
+        throw new ToolError(`invalid copper candidate: ${parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ")}`, "invalid_args");
+      candidate = parsed.data;
+    }
+    const replacementTracks = candidate.tracks ?? tracks;
+    const replacementVias = candidate.vias ?? vias;
+    const replacementCount = (replacementTracks?.length ?? 0) + (replacementVias?.length ?? 0);
+    if (mode === "apply" && (removeNets?.length ?? 0) > 0 && replacementCount === 0 && !commitRemovalOnly)
+      throw new ToolError(
+        "named-net copper removal has no replacement; supply candidateFile or inline replacement geometry for an atomic reroute, or set commitRemovalOnly=true to explicitly persist removal alone",
+        "precondition",
+      );
+    const result = await native_edit_transaction.handler({
       mode,
       ...(expectedPcbRevision ? { expectedPcbRevision } : {}),
-      ...(tracks || vias || deleteItemIds ? { geometry: { ...(tracks ? { tracks } : {}), ...(vias ? { vias } : {}), ...(deleteItemIds ? { deleteItemIds } : {}) } } : {}),
+      ...(replacementTracks || replacementVias || deleteItemIds ? { geometry: { ...(replacementTracks ? { tracks: replacementTracks } : {}), ...(replacementVias ? { vias: replacementVias } : {}), ...(deleteItemIds ? { deleteItemIds } : {}) } } : {}),
       ...(removeNets ? { removeCopperNets: removeNets } : {}),
-    }, ctx),
+    }, ctx);
+    if (candidateFile && result.json && typeof result.json === "object")
+      return { ...result, json: { ...(result.json as Record<string, unknown>), candidateFile } };
+    return result;
+  },
 });
 
 export const pcb_edit_graphics = defineTool({

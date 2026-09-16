@@ -823,6 +823,77 @@ describe("registry", () => {
     expect(await Bun.file(board).text()).toBe("unrelated-copper\n");
   });
 
+  test("broad copper replacement uses a durable candidate and never persists removal alone", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("atomic-copper-candidate");
+    const board = join(project.dir, "board.kicad_pcb");
+    await writeFile(board, "existing-route\n");
+    const revision = createHash("sha256").update("existing-route\n").digest("hex");
+    const candidateFile = "routes/replacement.json";
+    await mkdir(join(project.dir, "routes"), { recursive: true });
+    await writeFile(join(project.dir, candidateFile), JSON.stringify({
+      tracks: [{
+        start: { x: 1, y: 2 },
+        end: { x: 3, y: 4 },
+        width: 0.25,
+        layer: "F.Cu",
+        net: "GND",
+      }],
+    }));
+    const base = mockServices([project]);
+    const order: string[] = [];
+    const services = mockServices([project], {
+      design: {
+        ...base.design,
+        unroute: async (_dir, nets) => {
+          order.push(`remove:${nets?.join(",")}`);
+          await Bun.write(board, "route-removed\n");
+          return { tracks: 12, vias: 2 };
+        },
+        editBoardGeometry: async (_dir, edit) => {
+          order.push(`create:${edit.tracks?.length ?? 0}`);
+          await Bun.write(board, `${await Bun.file(board).text()}replacement-route\n`);
+          return {
+            created: { tracks: 1, vias: 0, zones: 0, keepouts: 0, texts: 0, graphics: 0 },
+            createdIds: ["track-replacement"],
+            deletedIds: [],
+            revision: 9,
+            saved: true,
+          };
+        },
+      },
+    });
+    const factory = contextFactory(services, project);
+    const call = (args: Record<string, unknown>) =>
+      reg.invoke("pcb_edit_copper", args, (ref) =>
+        factory({
+          def: reg.get("pcb_edit_copper")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+      );
+
+    await expect(call({ mode: "apply", removeNets: ["A", "B", "C", "D"] }))
+      .rejects.toThrow(/copper removal has no replacement/);
+    expect(await Bun.file(board).text()).toBe("existing-route\n");
+    expect(order).toEqual([]);
+
+    const accepted = await call({
+      mode: "apply",
+      expectedPcbRevision: revision,
+      removeNets: ["A", "B", "C", "D"],
+      candidateFile,
+    });
+    expect(order).toEqual(["remove:A,B,C,D", "create:1"]);
+    expect(await Bun.file(board).text()).toBe("route-removed\nreplacement-route\n");
+    expect((accepted.json as any).candidateFile).toBe(candidateFile);
+    expect((accepted.json as any).changes).toMatchObject({
+      removedCopper: { tracks: 12, vias: 2 },
+      geometry: { created: { tracks: 1 } },
+    });
+  });
+
   test("complete release is revision-bound and fails closed on missing outputs", async () => {
     const reg = createRegistry();
     const project = await tempProject("release");
