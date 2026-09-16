@@ -8,7 +8,7 @@ import { VERSION, channel, fabdeskHome, resolveConfig } from "./config";
 import { logger, errMsg, setLogLevel } from "./log";
 import { initSentry } from "./sentry";
 
-const USAGE = `fabdesk-core ${VERSION}
+const FULL_USAGE = `fabdesk-core ${VERSION}
 
 Usage:
   fabdesk-core serve [--port 0] [--host 127.0.0.1] [--handshake-file <path>] [--parent-pid <pid>] [--local-auth] [--data-dir <dir>]
@@ -50,6 +50,15 @@ Environment:
   FABDESK_SENTRY_TEST    1 sends one handled test event at startup and prints its id
   FABDESK_TAILSCALE_CLI  path to the tailscale binary for endpoint discovery, or "off"
 `;
+
+export function cliUsage(env: NodeJS.ProcessEnv = process.env): string {
+  if (env["FABDESK_AGENT_INTERFACE"] !== "substrate") return FULL_USAGE;
+  return FULL_USAGE.replace(/^  fabdesk-core mcp.*\n/m, "").replace(/^  fabpcb tool.*\n/m, "");
+}
+
+function substrateInterface(): boolean {
+  return process.env["FABDESK_AGENT_INTERFACE"] === "substrate";
+}
 
 type Flags = { _: string[]; [k: string]: string | boolean | string[] };
 
@@ -98,7 +107,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     case "help":
     case "--help":
     case "-h":
-      process.stdout.write(USAGE);
+      process.stdout.write(cliUsage());
       return 0;
     case "serve": {
       initSentry();
@@ -144,6 +153,10 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       return 0;
     }
     case "mcp": {
+      if (substrateInterface()) {
+        process.stderr.write("fabdesk-core mcp is not exposed in the substrate interface\n");
+        return 2;
+      }
       initSentry();
       const { runMcpStdio } = await import("./mcp-stdio");
       await runMcpStdio({
@@ -154,6 +167,10 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       return 0;
     }
     case "tool": {
+      if (substrateInterface()) {
+        process.stderr.write("fabpcb tool is not exposed in the substrate interface\n");
+        return 2;
+      }
       const { runToolCli } = await import("./tool-cli");
       const action = f._[1] as "search" | "describe" | "call" | "batch" | undefined;
       const positional = f._.slice(2);
@@ -310,7 +327,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       return 0;
     }
     default:
-      process.stderr.write(`unknown command: ${cmd}\n${USAGE}`);
+      process.stderr.write(`unknown command: ${cmd}\n${cliUsage()}`);
       return 2;
   }
 }
