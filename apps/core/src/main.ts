@@ -22,6 +22,9 @@ Usage:
   fabpcb env describe [--project <dir>]
   fabpcb env exec [--project <dir>] -- <command> [arguments...]
   fabpcb revision status|checkpoint|accept|discard [--project <dir>] [--label <text>]
+  fabpcb verify --project <dir>
+  fabpcb render --project <dir> [--document schematic|pcb] [--request @render.json]
+  fabpcb release --project <dir> --request @release.json
   fabdesk-core login | logout | whoami
   fabdesk-core login --email <email> --password <password>   # staging/local only
   fabdesk-core doctor [--json]
@@ -183,6 +186,24 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
         ...(action ? { action } : {}),
         ...(str(f, "project") ? { project: str(f, "project")! } : {}),
         ...(str(f, "label") ? { label: str(f, "label")! } : {}),
+      });
+    }
+    case "verify":
+    case "render":
+    case "release": {
+      const { runArtifactCli } = await import("./artifact-cli");
+      const document = str(f, "document");
+      if (document && document !== "schematic" && document !== "pcb") {
+        process.stderr.write("--document must be schematic or pcb\n");
+        return 2;
+      }
+      const renderDocument = document as "schematic" | "pcb" | undefined;
+      return runArtifactCli({
+        action: cmd,
+        ...(str(f, "project") ? { project: str(f, "project")! } : {}),
+        ...(str(f, "request") ? { request: str(f, "request")! } : {}),
+        ...(renderDocument ? { document: renderDocument } : {}),
+        ...(str(f, "url") ? { baseUrl: str(f, "url")! } : {}),
       });
     }
     case "login":

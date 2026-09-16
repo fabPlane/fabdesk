@@ -130,6 +130,22 @@ files are moved to a recovery directory rather than deleted. Generated reports, 
 KiCad user-state files, locks, backups, Git metadata, and dependencies are excluded from source
 snapshots.
 
+Verification, rendering, and release are callable from the shell without selecting an MCP tool:
+
+```bash
+fabpcb verify --project /absolute/path/to/project
+fabpcb render --project /absolute/path/to/project --document schematic
+fabpcb render --project /absolute/path/to/project --document pcb --request @render.json
+fabpcb release --project /absolute/path/to/project --request @release.json
+```
+
+These commands invoke the same local Fabdesk kernels used by the application. They require a live
+local core (`FABDESK_CORE_URL` and `FABDESK_TOKEN`) and a clean accepted source revision. Each
+command checks the accepted revision again after completion and fails stale if source files changed;
+generated reports, renders, and exports do not alter the source revision. `verify` runs each
+applicable ERC, DRC/parity, and gate check. Release inputs remain explicit JSON rather than hidden
+workflow defaults.
+
 For the next clean test, restart the launcher and use a new project; the three completed 2026-09-15
 blinkers are retained as diagnostic evidence and should not be overwritten. The packaged KiCad
 10.99 integration test already passes for rotated symbols, power symbols, clean ERC, native PCB

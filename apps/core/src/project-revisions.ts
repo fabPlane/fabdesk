@@ -279,6 +279,40 @@ function compare(current: ManifestEntry[], accepted: ManifestEntry[]) {
   };
 }
 
+export async function inspectProjectRevision(project: string): Promise<{
+  project: string;
+  accepted: string | null;
+  current: string;
+  clean: boolean;
+  changes: { added: string[]; modified: string[]; removed: string[] };
+}> {
+  const resolved = resolve(project);
+  const currentFiles = await manifestEntries(resolved);
+  const current = revisionOf(currentFiles);
+  const pointer = await acceptedPointer(resolved);
+  if (!pointer)
+    return {
+      project: resolved,
+      accepted: null,
+      current,
+      clean: false,
+      changes: { added: [], modified: [], removed: [] },
+    };
+  const manifest = await readJson<RevisionManifest>(
+    join(resolved, INTERNAL_ROOT, pointer.revision, "manifest.json"),
+  );
+  if (!manifest || manifest.revision !== pointer.revision)
+    throw new Error(`accepted snapshot is missing or invalid: ${pointer.revision}`);
+  const changes = compare(currentFiles, manifest.files);
+  return {
+    project: resolved,
+    accepted: pointer.revision,
+    current,
+    clean: !changes.added.length && !changes.modified.length && !changes.removed.length,
+    changes,
+  };
+}
+
 async function withLock<T>(project: string, operation: () => Promise<T>): Promise<T> {
   const lock = join(project, INTERNAL_ROOT, "mutation.lock");
   await mkdir(dirname(lock), { recursive: true });
@@ -378,13 +412,9 @@ export async function runProjectRevision(
     if (!manifest || manifest.revision !== accepted.revision)
       throw new Error(`accepted snapshot is missing or invalid: ${accepted.revision}`);
     if (action === "status") {
-      const current = await manifestEntries(project);
-      const changes = compare(current, manifest.files);
-      const clean = !changes.added.length && !changes.modified.length && !changes.removed.length;
-      out(
-        `${JSON.stringify({ status: clean ? "clean" : "changed", project, accepted: accepted.revision, current: revisionOf(current), changes }, null, 2)}\n`,
-      );
-      return clean ? 0 : 1;
+      const state = await inspectProjectRevision(project);
+      out(`${JSON.stringify({ status: state.clean ? "clean" : "changed", ...state }, null, 2)}\n`);
+      return state.clean ? 0 : 1;
     }
     if (action === "discard")
       return await withLock(project, async () => {
