@@ -25,12 +25,53 @@ describe("hermetic packaged-KiCad environment", () => {
       },
     )).toBe(0);
     const result = JSON.parse(output) as Record<string, any>;
-    expect(result.contract).toEqual({ name: "fabdesk.hermetic-environment", version: "1.0.0" });
+    expect(result.contract).toEqual({ name: "fabdesk.packaged-kicad-cli", version: "1.1.0" });
     expect(result.project).toBe("/project");
     expect(result.executable).toEqual({ kicadCli: baseEnv.KICAD_CLI, version: "10.99.0" });
+    expect(result.scope).toEqual({
+      packaged: ["kicad-cli"],
+      hostCommandsAllowed: true,
+      pcbnewPythonPackaged: false,
+      guiToolsPackaged: false,
+    });
     expect(result.environment.KICAD_STOCK_DATA_HOME).toBe(baseEnv.KICAD_STOCK_DATA_HOME);
     expect(result.environment.FABDESK_TOKEN).toBeUndefined();
     expect(output).not.toContain("must-not-be-described");
+  });
+
+  test("labels non-KiCad executables as host commands", async () => {
+    let error = "";
+    let observed: string[] | undefined;
+    expect(await runHermeticEnv(
+      { action: "exec", command: ["python3", "generate.py"] },
+      {
+        env: baseEnv,
+        cwd: () => "/work",
+        pathExists: async () => true,
+        execute: async ({ command }) => { observed = command; return 0; },
+        err: (text) => { error += text; },
+      },
+    )).toBe(0);
+    expect(observed).toEqual(["python3", "generate.py"]);
+    expect(error).toContain("host command `python3`");
+    expect(error).toContain("nested commands are not isolated");
+  });
+
+  test("rejects host KiCad entrypoints inside the packaged CLI scope", async () => {
+    for (const executable of ["/usr/bin/kicad-cli", "pcbnew", "eeschema", "kicad"]) {
+      let error = "";
+      expect(await runHermeticEnv(
+        { action: "exec", command: [executable, "--version"] },
+        {
+          env: baseEnv,
+          cwd: () => "/work",
+          pathExists: async () => true,
+          execute: async () => { throw new Error("must not execute"); },
+          err: (text) => { error += text; },
+        },
+      )).toBe(2);
+      expect(error).toContain("not part of the packaged CLI scope");
+    }
   });
 
   test("executes in the project and resolves kicad-cli to the packaged binary", async () => {

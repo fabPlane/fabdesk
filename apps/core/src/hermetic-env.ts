@@ -1,6 +1,6 @@
-/** Method-neutral access to the exact packaged KiCad environment used by Fabdesk. */
+/** Method-neutral access to the exact packaged KiCad CLI used by Fabdesk. */
 import { exists } from "node:fs/promises";
-import { dirname, isAbsolute, resolve } from "node:path";
+import { basename, dirname, isAbsolute, resolve } from "node:path";
 
 const EXPOSED_VARIABLES = [
   "KICAD_CLI",
@@ -41,9 +41,33 @@ export const HERMETIC_ENV_USAGE = `Usage:
   fabpcb env describe [--project <dir>]
   fabpcb env exec [--project <dir>] -- <command> [arguments...]
 
-The command runs with the packaged KiCad executable, libraries and stock data used by Fabdesk.
-"kicad-cli" resolves explicitly to KICAD_CLI. Describe output excludes credentials and tokens.
+Bare "kicad-cli" resolves explicitly to Fabdesk's packaged executable and data.
+Other commands remain host commands; this interface does not provide packaged pcbnew Python or GUI tools.
+Describe output excludes credentials and tokens.
 `;
+
+const HOST_KICAD_ENTRYPOINTS = new Set(["eeschema", "kicad", "pcbnew"]);
+
+function resolveCommand(
+  requested: string[],
+  packagedCli: string,
+): { command?: string[]; error?: string; hostCommand?: string } {
+  const command = [...requested];
+  const executable = command[0]!;
+  if (executable === "kicad-cli" || executable === packagedCli) {
+    command[0] = packagedCli;
+    return { command };
+  }
+
+  const name = basename(executable);
+  if (name === "kicad-cli" || HOST_KICAD_ENTRYPOINTS.has(name)) {
+    return {
+      error: `fabpcb env: ${executable} is not part of the packaged CLI scope; use bare \`kicad-cli\` or run the host tool outside \`fabpcb env exec\`\n`,
+    };
+  }
+
+  return { command, hostCommand: executable };
+}
 
 function environment(source: NodeJS.ProcessEnv, project?: string): Record<string, string> {
   const result: Record<string, string> = {};
@@ -109,9 +133,15 @@ export async function runHermeticEnv(
   if ((options.action ?? "describe") === "describe") {
     const version = await (deps.version ?? defaultVersion)(cli, env);
     out(`${JSON.stringify({
-      contract: { name: "fabdesk.hermetic-environment", version: "1.0.0" },
+      contract: { name: "fabdesk.packaged-kicad-cli", version: "1.1.0" },
       project,
       executable: { kicadCli: cli, version },
+      scope: {
+        packaged: ["kicad-cli"],
+        hostCommandsAllowed: true,
+        pcbnewPythonPackaged: false,
+        guiToolsPackaged: false,
+      },
       environment: visibleEnvironment(env),
     }, null, 2)}\n`);
     return 0;
@@ -121,7 +151,13 @@ export async function runHermeticEnv(
     err(`fabpcb env: exec requires a command after --\n${HERMETIC_ENV_USAGE}`);
     return 2;
   }
-  const command = [...options.command];
-  if (command[0] === "kicad-cli") command[0] = cli;
-  return (deps.execute ?? defaultExecute)({ command, cwd: project, env });
+  const resolved = resolveCommand(options.command, cli);
+  if (resolved.error) {
+    err(resolved.error);
+    return 2;
+  }
+  if (resolved.hostCommand) {
+    err(`fabpcb env: host command \`${resolved.hostCommand}\`; only bare \`kicad-cli\` is supplied by Fabdesk (nested commands are not isolated)\n`);
+  }
+  return (deps.execute ?? defaultExecute)({ command: resolved.command!, cwd: project, env });
 }

@@ -9,7 +9,7 @@ export interface AgentDocsContext {
   sketches: string[];
   board: { layers: number; widthMm?: number; heightMm?: number; template?: string };
   mcpServerName: string;
-  /** Experimental minimal interface: native files + hermetic CLI, without Fabdesk MCP tools. */
+  /** Experimental minimal interface: native files + packaged KiCad CLI, without Fabdesk MCP tools. */
   interfaceMode?: "substrate";
 }
 
@@ -53,7 +53,7 @@ export function renderAgentsMd(
       : "- No sketches attached.";
   const interfaceNote =
     ctx.interfaceMode === "substrate"
-      ? `This run exposes native project files and the hermetic \`fabpcb\` command-line environment. No Fabdesk MCP design tools are exposed. Available independent operations can be listed with \`fabpcb --help\` and \`fabpcb env describe\`.`
+      ? `This run exposes native project files and Fabdesk's packaged \`kicad-cli\` through \`fabpcb env\`. No Fabdesk MCP design tools are exposed. Other shell executables are host tools, not part of the packaged KiCad runtime. Available independent operations can be listed with \`fabpcb --help\` and \`fabpcb env describe\`.`
       : `This directory is a fabPlane PCB project. Its MCP server is \`${mcp}\`.`;
   return `${HEADER}
 # ${ctx.projectName} — fabPlane project
