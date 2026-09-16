@@ -34,4 +34,12 @@ describe("PCB backend packaging", () => {
     expect(workflow).toContain('echo "args=--run $RUN_ID"');
     expect(workflow).not.toContain("internal build?); testing the site's latest");
   });
+
+  test("installer verification resolves the packaged PCB manifest", () => {
+    const verifier = readFileSync(join(repositoryRoot, "scripts/verify-installers.ts"), "utf8");
+
+    expect(verifier).toContain("resolvePcbBackend({ packaged: true");
+    expect(verifier).toContain("bundled PCB manifest is invalid");
+    expect(verifier.match(/checkPcbBundle\(/g)?.length).toBeGreaterThanOrEqual(5);
+  });
 });
