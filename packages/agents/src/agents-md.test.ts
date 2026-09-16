@@ -32,7 +32,9 @@ describe("renderAgentsMd", () => {
     expect(md).toContain("| `board.kicad_pcb` | Canonical KiCad PCB. |");
     expect(md).not.toContain("circuit.netlist.json");
     expect(md).not.toContain("### circuit_build");
-    expect(md).not.toMatch(/workflow|must use|should use|prefer|retry|repeat until|run .* first|stopping policy/i);
+    expect(md).not.toMatch(
+      /workflow|must use|should use|prefer|retry|repeat until|run .* first|stopping policy/i,
+    );
     expect(md.indexOf(USER_START)).toBeLessThan(md.indexOf(USER_END));
   });
 
@@ -43,7 +45,9 @@ describe("renderAgentsMd", () => {
     expect(md).toContain("fabpcb ipc describe <operation-id>");
     expect(md).toContain("fabpcb ipc call <operation-id> --request '<json-object>'");
     expect(md).toContain("optional and may be mixed");
-    expect(md).not.toMatch(/must use|should use|prefer|retry|repeat until|run .* first|stopping policy/i);
+    expect(md).not.toMatch(
+      /must use|should use|prefer|retry|repeat until|run .* first|stopping policy/i,
+    );
   });
 
   test("keeps direct IPC absent from the substrate control", () => {

@@ -91,7 +91,11 @@ export function directIpcDescribe(operation: string, schemaDepth = 2): Record<st
 function firstDocument(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const object = value as Record<string, unknown>;
-  if (object["document"] && typeof object["document"] === "object" && !Array.isArray(object["document"]))
+  if (
+    object["document"] &&
+    typeof object["document"] === "object" &&
+    !Array.isArray(object["document"])
+  )
     return object["document"] as Record<string, unknown>;
   for (const child of Object.values(object)) {
     const found = firstDocument(child);
@@ -100,16 +104,27 @@ function firstDocument(value: unknown): Record<string, unknown> | null {
   return null;
 }
 
-function documentPath(projectDir: string | undefined, document: DocumentSpecifier | null): string | null {
+function documentPath(
+  projectDir: string | undefined,
+  document: DocumentSpecifier | null,
+): string | null {
   if (!projectDir || !document) return null;
   if (document.type === DocumentType.DOCTYPE_PCB)
-    return join(projectDir, document.identifier.case === "boardFilename" && document.identifier.value ? document.identifier.value : "board.kicad_pcb");
+    return join(
+      projectDir,
+      document.identifier.case === "boardFilename" && document.identifier.value
+        ? document.identifier.value
+        : "board.kicad_pcb",
+    );
   if (document.type === DocumentType.DOCTYPE_SCHEMATIC) return join(projectDir, "board.kicad_sch");
   if (document.type === DocumentType.DOCTYPE_PROJECT) return join(projectDir, "board.kicad_pro");
   return null;
 }
 
-async function defaultConnect(bridgeUrl: string, sessionPath: string | null): Promise<DirectIpcConnection> {
+async function defaultConnect(
+  bridgeUrl: string,
+  sessionPath: string | null,
+): Promise<DirectIpcConnection> {
   const session = await new FpPcbBridgeClient({ url: bridgeUrl }).sessionFor(sessionPath);
   if (!session.socketPath)
     throw new Error(`bridge session ${session.id} did not expose a direct KiCad IPC socket`);
@@ -143,22 +158,59 @@ function failure(code: DirectIpcFailureCode, message: string, detail?: Record<st
 function mapFailure(error: unknown) {
   if (error instanceof IpcCallError) return failure(error.code, error.message, error.detail);
   if (error instanceof TransportError)
-    return failure(error.code === "timeout" ? "timeout" : "unavailable", error.message, { transportCode: error.code });
-  if (error instanceof KiCadApiError)
-    return failure(error.codeName === "AS_TIMEOUT" ? "timeout" : error.isUnsupported ? "unsupported" : "kicad_status", error.message, {
-      status: error.codeName,
-      serverMessage: error.serverMessage,
+    return failure(error.code === "timeout" ? "timeout" : "unavailable", error.message, {
+      transportCode: error.code,
     });
+  if (error instanceof KiCadApiError)
+    return failure(
+      error.codeName === "AS_TIMEOUT"
+        ? "timeout"
+        : error.isUnsupported
+          ? "unsupported"
+          : "kicad_status",
+      error.message,
+      {
+        status: error.codeName,
+        serverMessage: error.serverMessage,
+      },
+    );
   return failure("unavailable", error instanceof Error ? error.message : String(error));
 }
 
-export async function directIpcCall(options: DirectIpcCallOptions, deps: DirectIpcDeps = {}): Promise<Record<string, unknown>> {
+export async function directIpcCall(
+  options: DirectIpcCallOptions,
+  deps: DirectIpcDeps = {},
+): Promise<Record<string, unknown>> {
   const description = describeIpcOperation(options.operation, 0);
-  if (!description) return { ok: false, runtime: runtime(), catalog, failure: failure("unknown_operation", `unknown KiCad IPC operation ${options.operation}`) };
+  if (!description)
+    return {
+      ok: false,
+      runtime: runtime(),
+      catalog,
+      failure: failure("unknown_operation", `unknown KiCad IPC operation ${options.operation}`),
+    };
   if (description.headless === "gui-only")
-    return { ok: false, runtime: runtime(), catalog, schema: { operationSha256: description.schemaHash }, failure: failure("non_headless", `${description.operation} is GUI-only and unavailable in kicad-cli api-server`) };
+    return {
+      ok: false,
+      runtime: runtime(),
+      catalog,
+      schema: { operationSha256: description.schemaHash },
+      failure: failure(
+        "non_headless",
+        `${description.operation} is GUI-only and unavailable in kicad-cli api-server`,
+      ),
+    };
   if (description.headless !== "ok")
-    return { ok: false, runtime: runtime(), catalog, schema: { operationSha256: description.schemaHash }, failure: failure("unsupported", `${description.operation} is not supported by the headless IPC catalog`) };
+    return {
+      ok: false,
+      runtime: runtime(),
+      catalog,
+      schema: { operationSha256: description.schemaHash },
+      failure: failure(
+        "unsupported",
+        `${description.operation} is not supported by the headless IPC catalog`,
+      ),
+    };
 
   const projectDir = options.projectDir ? resolve(options.projectDir) : undefined;
   const exists = deps.exists ?? ((path: string) => Bun.file(path).exists());
@@ -183,7 +235,9 @@ export async function directIpcCall(options: DirectIpcCallOptions, deps: DirectI
   const fileHash = async () => {
     if (!path) return null;
     try {
-      return createHash("sha256").update(await readBytes(path)).digest("hex");
+      return createHash("sha256")
+        .update(await readBytes(path))
+        .digest("hex");
     } catch {
       return null;
     }
@@ -191,9 +245,17 @@ export async function directIpcCall(options: DirectIpcCallOptions, deps: DirectI
   const beforeSha256 = await fileHash();
   let connection: DirectIpcConnection | undefined;
   try {
-    connection = await (deps.connect ?? defaultConnect)(options.bridgeUrl ?? fpPcbBridgeUrl(undefined), sessionPath);
-    const readRevision = deps.readRevision ?? (async (client: KiCadClient, target: DocumentSpecifier) =>
-      Number((await commands.getDocumentRevision(client, { document: target }, { retry: false })).revision));
+    connection = await (deps.connect ?? defaultConnect)(
+      options.bridgeUrl ?? fpPcbBridgeUrl(undefined),
+      sessionPath,
+    );
+    const readRevision =
+      deps.readRevision ??
+      (async (client: KiCadClient, target: DocumentSpecifier) =>
+        Number(
+          (await commands.getDocumentRevision(client, { document: target }, { retry: false }))
+            .revision,
+        ));
     let before: number | null = null;
     let revisionFailure: ReturnType<typeof mapFailure> | null = null;
     if (document) {
@@ -224,22 +286,38 @@ export async function directIpcCall(options: DirectIpcCallOptions, deps: DirectI
     };
     if (options.expectedDocumentRevision !== undefined) {
       if (!document)
-        return { ok: false, ...base, failure: failure("invalid_schema", "expectedDocumentRevision requires a request containing a DocumentSpecifier") };
+        return {
+          ok: false,
+          ...base,
+          failure: failure(
+            "invalid_schema",
+            "expectedDocumentRevision requires a request containing a DocumentSpecifier",
+          ),
+        };
       if (revisionFailure) return { ok: false, ...base, failure: revisionFailure };
       if (before !== options.expectedDocumentRevision)
         return {
           ok: false,
           ...base,
-          failure: failure("stale_document", `document revision is ${before}, expected ${options.expectedDocumentRevision}`, {
-            expected: options.expectedDocumentRevision,
-            actual: before,
-          }),
+          failure: failure(
+            "stale_document",
+            `document revision is ${before}, expected ${options.expectedDocumentRevision}`,
+            {
+              expected: options.expectedDocumentRevision,
+              actual: before,
+            },
+          ),
         };
     }
     try {
-      const called: IpcCallResult = await (deps.callOperation ?? callIpcOperation)(connection.client, options.operation, options.request, {
-        ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
-      });
+      const called: IpcCallResult = await (deps.callOperation ?? callIpcOperation)(
+        connection.client,
+        options.operation,
+        options.request,
+        {
+          ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+        },
+      );
       let after: number | null = null;
       if (document) {
         try {
@@ -266,7 +344,11 @@ export async function directIpcCall(options: DirectIpcCallOptions, deps: DirectI
       document: { specifier: requestDocument, path, beforeSha256, afterSha256: beforeSha256 },
       revision: { expected: options.expectedDocumentRevision ?? null, before: null, after: null },
       catalog,
-      schema: { operationSha256: description.schemaHash, requestType: description.requestType, responseType: description.responseType },
+      schema: {
+        operationSha256: description.schemaHash,
+        requestType: description.requestType,
+        responseType: description.responseType,
+      },
       failure: mapFailure(error),
     };
   } finally {

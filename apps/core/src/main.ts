@@ -58,8 +58,7 @@ export function cliUsage(env: NodeJS.ProcessEnv = process.env): string {
   const mode = env["FABDESK_AGENT_INTERFACE"];
   if (mode !== "substrate" && mode !== "programmable") return FULL_USAGE;
   let usage = FULL_USAGE.replace(/^  fabdesk-core mcp.*\n/m, "").replace(/^  fabpcb tool.*\n/m, "");
-  if (mode === "substrate")
-    usage = usage.replace(/^  fabpcb ipc .*\n/gm, "");
+  if (mode === "substrate") usage = usage.replace(/^  fabpcb ipc .*\n/gm, "");
   return usage;
 }
 
@@ -251,7 +250,9 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
           ...(str(f, "document-type") ? { documentType: str(f, "document-type")! } : {}),
           ...(str(f, "object-type") ? { objectType: str(f, "object-type")! } : {}),
           ...(str(f, "capability") ? { capability: str(f, "capability")! } : {}),
-          ...(headless ? { headless: headless as "ok" | "gui-only" | "partial" | "unregistered" | "any" } : {}),
+          ...(headless
+            ? { headless: headless as "ok" | "gui-only" | "partial" | "unregistered" | "any" }
+            : {}),
           ...(num(f, "limit") !== undefined ? { limit: num(f, "limit")! } : {}),
         });
       } else if (action === "describe") {
@@ -275,7 +276,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
         }
         let request: unknown = {};
         try {
-          request = JSON.parse(requestFile ? await Bun.file(requestFile).text() : inline ?? "{}");
+          request = JSON.parse(requestFile ? await Bun.file(requestFile).text() : (inline ?? "{}"));
         } catch (error) {
           process.stderr.write(`ipc call: request is not valid JSON: ${errMsg(error)}\n`);
           return 2;

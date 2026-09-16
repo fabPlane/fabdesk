@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { IpcCallError, type IpcCallResult, type KiCadClient } from "@fp-pcb/client";
-import { directIpcCall, directIpcDescribe, directIpcSearch, type DirectIpcConnection } from "./ipc-cli";
+import {
+  directIpcCall,
+  directIpcDescribe,
+  directIpcSearch,
+  type DirectIpcConnection,
+} from "./ipc-cli";
 
 const connection = (closed: { value: boolean }): DirectIpcConnection => ({
   client: {} as KiCadClient,
@@ -40,7 +45,9 @@ describe("direct IPC CLI contract", () => {
     const description = directIpcDescribe("GetBoardOrigin", 3) as any;
     expect(description.ok).toBe(true);
     expect(description.requestType).toBe("kiapi.board.commands.GetBoardOrigin");
-    expect(description.responseSchema.fields.find((field: any) => field.name === "xNm")?.units).toBe("nanometres");
+    expect(
+      description.responseSchema.fields.find((field: any) => field.name === "xNm")?.units,
+    ).toBe("nanometres");
     expect(description.requestExample).toBeDefined();
   });
 
@@ -54,7 +61,10 @@ describe("direct IPC CLI contract", () => {
       },
     )) as any;
     expect(result.ok).toBe(true);
-    expect(result.transport).toEqual({ kind: "nng-ipc", socketPath: "/tmp/kicad/direct-test.sock" });
+    expect(result.transport).toEqual({
+      kind: "nng-ipc",
+      socketPath: "/tmp/kicad/direct-test.sock",
+    });
     expect(result.session.kicadToken).toBe("direct-token");
     expect(result.schema.operationSha256).toHaveLength(64);
     expect(result.response.version.fullVersion).toBe("10.99.0-test");
@@ -81,7 +91,10 @@ describe("direct IPC CLI contract", () => {
       },
     )) as any;
     expect(stale.ok).toBe(false);
-    expect(stale.failure).toMatchObject({ code: "stale_document", detail: { expected: 4, actual: 5 } });
+    expect(stale.failure).toMatchObject({
+      code: "stale_document",
+      detail: { expected: 4, actual: 5 },
+    });
     expect(stale.document.beforeSha256).toHaveLength(64);
     expect(staleClosed.value).toBe(true);
 
@@ -94,7 +107,10 @@ describe("direct IPC CLI contract", () => {
         },
       },
     )) as any;
-    expect(failed.failure).toMatchObject({ code: "invalid_schema", detail: { requestType: "GetVersion" } });
+    expect(failed.failure).toMatchObject({
+      code: "invalid_schema",
+      detail: { requestType: "GetVersion" },
+    });
     expect((directIpcDescribe("not-an-operation") as any).failure.code).toBe("unknown_operation");
   });
 });

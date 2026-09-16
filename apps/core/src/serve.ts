@@ -47,6 +47,24 @@ import {
 } from "./sentry";
 import { RunTelemetry } from "./run-telemetry";
 
+export type ExperimentalAgentInterface = "substrate" | "programmable";
+
+export function configuredAgentInterface(
+  env: NodeJS.ProcessEnv = process.env,
+): ExperimentalAgentInterface | undefined {
+  const value = env["FABDESK_AGENT_INTERFACE"];
+  return value === "substrate" || value === "programmable" ? value : undefined;
+}
+
+/** The control clears direct authoring IPC; Condition A receives the attested bridge URL. */
+export function agentBridgeEnvironment(
+  mode: ExperimentalAgentInterface | undefined,
+  bridgeUrl: string | undefined,
+): Record<string, string> {
+  if (mode === "substrate") return { FABDESK_FP_PCB_BRIDGE_URL: "" };
+  return bridgeUrl ? { FABDESK_FP_PCB_BRIDGE_URL: bridgeUrl } : {};
+}
+
 export type ServeOptions = {
   port?: number;
   host?: string;
@@ -224,11 +242,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   });
 
   const adapters = opts.adapters ?? (await loadAdapters());
-  const configuredInterface = process.env["FABDESK_AGENT_INTERFACE"];
-  const agentInterface =
-    configuredInterface === "substrate" || configuredInterface === "programmable"
-      ? configuredInterface
-      : undefined;
+  const agentInterface = configuredAgentInterface();
   let mcpUrl = "";
   const runs = new AgentRunManager({
     store,
@@ -258,11 +272,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
             }
           : {}),
         ...(cli ? { KICAD_CLI: cli.path } : {}),
-        ...(agentInterface === "substrate"
-          ? { FABDESK_FP_PCB_BRIDGE_URL: "" }
-          : design.url
-            ? { FABDESK_FP_PCB_BRIDGE_URL: design.url }
-            : {}),
+        ...agentBridgeEnvironment(agentInterface, design.url),
       };
     },
     // Only fabdesk's own tools have annotations the classifier trusts; another server's tool is a write.

@@ -38,7 +38,14 @@ export const FpPcbHealth = z.object({
     .optional(),
   sessions: z.array(FpPcbSession).default([]),
   compile: z.object({ frontends: z.array(z.string()).default([]) }).optional(),
-  freerouting: z.object({ ok: z.boolean(), reason: z.string().optional(), jar: z.string().optional(), java: z.string().optional() }).optional(),
+  freerouting: z
+    .object({
+      ok: z.boolean(),
+      reason: z.string().optional(),
+      jar: z.string().optional(),
+      java: z.string().optional(),
+    })
+    .optional(),
 });
 export type FpPcbHealth = z.infer<typeof FpPcbHealth>;
 
