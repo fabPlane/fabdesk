@@ -20,7 +20,7 @@ export function CoreStatusScreen({
         {crashed ? (
           <>
             <div className="text-sm text-danger">Core daemon {state === "stopped" ? "stopped" : "is unavailable"}</div>
-            {status?.message && <div className="mt-2 break-words font-mono text-[11px] text-muted">{status.message}</div>}
+            {status?.message && <div className="mt-2 whitespace-pre-line break-words font-mono text-[11px] text-muted">{status.message}</div>}
             <div className="mt-4 flex justify-center gap-2">
               {onRestart && (
                 <Button variant="primary" onClick={onRestart}>

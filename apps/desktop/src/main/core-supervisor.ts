@@ -19,6 +19,7 @@ import { createInterface } from "node:readline";
 import { join, resolve } from "node:path";
 import { spawnCorePort } from "./dev-profile";
 import { sidecarEnvironment } from "./child-process-env";
+import { coreExitReason, isTranslocated, StderrTail, withTranslocationHint } from "./core-crash";
 import { packagedKicadEnv } from "./packaged-kicad";
 
 const READY_TIMEOUT_MS = 60_000;
@@ -224,6 +225,7 @@ export class CoreSupervisor extends EventEmitter {
     ];
     this.setStatus({ state: this.status.state === "restarting" ? "restarting" : "starting", ...(this.status.attempt !== undefined ? { attempt: this.status.attempt } : {}), localAuth: this.opts.localAuth });
     this.logLine(`spawn ${cmd.command} ${args.join(" ")}`);
+    if (app.isPackaged && isTranslocated(process.execPath)) this.logLine("app is running from a macOS App Translocation mount (quarantined download not moved to /Applications)");
     let child: ChildProcess;
     try {
       const packagedResources = app.isPackaged && !this.opts.binaryOverride ? packagedKicadEnv(process.resourcesPath) : {};
@@ -270,8 +272,13 @@ export class CoreSupervisor extends EventEmitter {
         this.setStatus({ state: "ready", port: rl.port, pid: this.pid ?? 0, attached: false, localAuth: this.opts.localAuth, ...(reloaded ? { message: "core reloaded" } : {}) });
       });
     }
+    // The core's fatal path writes its error as the last stderr line; keep it for the crash reason.
+    const stderrTail = new StderrTail();
     if (child.stderr) {
-      createInterface({ input: child.stderr }).on("line", (line) => this.logLine(`[err] ${line}`));
+      createInterface({ input: child.stderr }).on("line", (line) => {
+        this.logLine(`[err] ${line}`);
+        stderrTail.push(line);
+      });
     }
     child.on("error", (err) => {
       this.logLine(`spawn error: ${err.message}`);
@@ -287,7 +294,7 @@ export class CoreSupervisor extends EventEmitter {
         this.setStatus({ state: "stopped" });
         return;
       }
-      this.scheduleRestart(`core exited (code ${code ?? signal ?? "?"})`);
+      this.scheduleRestart(coreExitReason(code, signal, stderrTail.last()));
     });
   }
 
@@ -295,7 +302,8 @@ export class CoreSupervisor extends EventEmitter {
     const now = Date.now();
     this.restartTimes = this.restartTimes.filter((t) => now - t < 60_000);
     if (this.restartTimes.length >= MAX_RESTARTS_PER_MINUTE) {
-      this.setStatus({ state: "crashed", message: `${reason}; gave up after ${MAX_RESTARTS_PER_MINUTE} restarts in a minute` });
+      const message = `${reason}; gave up after ${MAX_RESTARTS_PER_MINUTE} restarts in a minute`;
+      this.setStatus({ state: "crashed", message: app.isPackaged ? withTranslocationHint(message, process.execPath) : message });
       return;
     }
     this.restartTimes.push(now);
