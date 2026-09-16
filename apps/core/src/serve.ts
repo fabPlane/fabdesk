@@ -255,7 +255,11 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
             }
           : {}),
         ...(cli ? { KICAD_CLI: cli.path } : {}),
-        ...(design.url && !agentInterface ? { FABDESK_FP_PCB_BRIDGE_URL: design.url } : {}),
+        ...(agentInterface
+          ? { FABDESK_FP_PCB_BRIDGE_URL: "" }
+          : design.url
+            ? { FABDESK_FP_PCB_BRIDGE_URL: design.url }
+            : {}),
       };
     },
     // Only fabdesk's own tools have annotations the classifier trusts; another server's tool is a write.
