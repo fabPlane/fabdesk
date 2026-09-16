@@ -159,13 +159,14 @@ export class McpSessionManager {
     // Let clients that cannot refresh opt into the complete inventory at initialization.
     const query = new URL(req.url).searchParams;
     const initialToolsets = query.get("toolsets") === "all" ? [...TOOLSETS] : undefined;
-    const initialTools = query.get("profile") === "native" ? [...NATIVE_AGENT_TOOLS] : undefined;
+    const profile = query.get("profile");
+    const initialTools =
+      profile === "native" ? [...NATIVE_AGENT_TOOLS] : profile === "substrate" ? [] : undefined;
     attachToRegistry(server, this.opts.registry, this.opts.ctxFactory, {
       ...(initialToolsets ? { initialToolsets } : {}),
       ...(initialTools ? { initialTools } : {}),
-      ...(query.get("profile") === "native"
-        ? { capabilityExclude: [...NATIVE_CAPABILITY_EXCLUDE] }
-        : {}),
+      ...(profile === "native" ? { capabilityExclude: [...NATIVE_CAPABILITY_EXCLUDE] } : {}),
+      ...(profile === "substrate" ? { capabilities: false, toolsOnly: true } : {}),
     });
     const prompt = this.opts.permissionPrompt;
     if (prompt && prompt.enabledFor(opts.token ?? null))

@@ -43,9 +43,7 @@ describe("shared", () => {
       { path: "/a.png", mime: "image/png" },
       { path: "/notes.pdf", mime: "application/pdf" },
     ]);
-    expect(p).toBe(
-      "Go\n\nSketch: /a.png\nAttachment (application/pdf): /notes.pdf",
-    );
+    expect(p).toBe("Go\n\nSketch: /a.png\nAttachment (application/pdf): /notes.pdf");
     expect(
       promptWithAttachments("Go", [{ path: "/a.png", mime: "image/png" }], { skipImages: true }),
     ).toBe("Go");
@@ -157,6 +155,14 @@ describe("codex adapter", () => {
   test("terminates options before a prompt that starts with a hyphen", () => {
     const args = codexArgs(session({ prompt: "- Improve this PCB" }), "codex");
     expect(args.slice(-2)).toEqual(["--", "- Improve this PCB"]);
+  });
+
+  test("preserves an explicitly selected substrate profile", () => {
+    const args = codexArgs(
+      session({ mcp: { url: "http://127.0.0.1:4321/mcp?profile=substrate", token: TOKEN } }),
+      "codex",
+    );
+    expect(args).toContain('mcp_servers.fabdesk.url="http://127.0.0.1:4321/mcp?profile=substrate"');
   });
 
   test("resume: `exec resume <thread>` without -C, bypass replaces the sandbox", () => {

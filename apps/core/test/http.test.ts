@@ -542,6 +542,9 @@ describe("http daemon", () => {
     expect(nativeNames).not.toContain("circuit_build");
     expect(nativeNames).not.toContain("native_edit_transaction");
 
+    const substrate = await connect(daemon.token, "?profile=substrate");
+    expect((await substrate.client.listTools()).tools).toEqual([]);
+
     // A per-run token pins the default project.
     const runToken = daemon.tokens.mintRunToken({
       runId: "run_x",
@@ -583,9 +586,10 @@ describe("http daemon", () => {
     await b.client.close();
     await all.client.close();
     await native.client.close();
+    await substrate.client.close();
     await c.client.close();
     await new Promise((r) => setTimeout(r, 20));
-    expect(daemon.mcp.activeCount()).toBe(2);
+    expect(daemon.mcp.activeCount()).toBe(3);
   });
 
   test("opensource catalog, remix, and order readiness", async () => {

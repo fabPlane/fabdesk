@@ -42,11 +42,19 @@ export type AgentAdapterLike = Pick<AgentAdapter, "id" | "run"> & { supportsSupe
 /** A request nobody answered for this long resolves as `deny` with `by: "timeout"`. */
 export const APPROVAL_TIMEOUT_MS = 30 * 60_000;
 
+function appendMcpProfile(url: string, profile: "substrate"): string {
+  const endpoint = new URL(url);
+  endpoint.searchParams.set("profile", profile);
+  return endpoint.toString();
+}
+
 export type RunDeps = {
   store: Store;
   emit: (e: CoreEvent) => void;
   tokens: TokenSet;
   mcpUrl: string;
+  /** Optional experimental MCP exposure profile appended to each run's endpoint. */
+  mcpProfile?: "substrate";
   adapters: Partial<Record<AgentId, AgentAdapterLike>>;
   settings: () => Settings;
   /** Regenerates AGENTS.md/CLAUDE.md before the run. */
@@ -528,7 +536,12 @@ export class AgentRunManager {
       cwd,
       prompt: input.prompt,
       attachments: input.attachments,
-      mcp: { url: this.deps.mcpUrl, token },
+      mcp: {
+        url: this.deps.mcpProfile
+          ? appendMcpProfile(this.deps.mcpUrl, this.deps.mcpProfile)
+          : this.deps.mcpUrl,
+        token,
+      },
       ...(resume ? { resume } : {}),
       ...(selectedModel ? { model: selectedModel } : {}),
       permission: agentSettings?.permissionMode ?? "acceptEdits",

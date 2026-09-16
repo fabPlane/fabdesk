@@ -9,6 +9,8 @@ export interface AgentDocsContext {
   sketches: string[];
   board: { layers: number; widthMm?: number; heightMm?: number; template?: string };
   mcpServerName: string;
+  /** Experimental minimal interface: native files + hermetic CLI, without Fabdesk MCP tools. */
+  interfaceMode?: "substrate";
 }
 
 /** Design rules for prefab blanks, keyed by `fabdesk.json` `board.template`. */
@@ -49,10 +51,14 @@ export function renderAgentsMd(
     ctx.sketches.length > 0
       ? ctx.sketches.map((p) => `- \`${p}\` — user-provided sketch.`).join("\n")
       : "- No sketches attached.";
+  const interfaceNote =
+    ctx.interfaceMode === "substrate"
+      ? `This run exposes native project files and the hermetic \`fabpcb\` command-line environment. No Fabdesk MCP design tools are exposed. Available independent operations can be listed with \`fabpcb --help\` and \`fabpcb env describe\`.`
+      : `This directory is a fabPlane PCB project. Its MCP server is \`${mcp}\`.`;
   return `${HEADER}
 # ${ctx.projectName} — fabPlane project
 
-This directory is a fabPlane PCB project. Its MCP server is \`${mcp}\`.
+${interfaceNote}
 
 ## Board constraints
 - Copper layers: ${ctx.board.layers}

@@ -224,6 +224,8 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   });
 
   const adapters = opts.adapters ?? (await loadAdapters());
+  const agentInterface =
+    process.env["FABDESK_AGENT_INTERFACE"] === "substrate" ? "substrate" : undefined;
   let mcpUrl = "";
   const runs = new AgentRunManager({
     store,
@@ -232,6 +234,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     get mcpUrl() {
       return mcpUrl;
     },
+    ...(agentInterface ? { mcpProfile: agentInterface } : {}),
     adapters,
     settings: () => store.settings.get(),
     workspaceDir: join(config.home, "workspace"),
@@ -277,6 +280,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
           ...(board.template !== undefined ? { template: board.template } : {}),
         },
         mcpServerName: agents.MCP_SERVER_NAME,
+        ...(agentInterface ? { interfaceMode: agentInterface } : {}),
       });
     },
   });

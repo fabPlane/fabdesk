@@ -46,7 +46,7 @@ export function codexArgs(session: AgentSession, bin: string): string[] {
 
 function withNativeProfile(url: string): string {
   const endpoint = new URL(url);
-  endpoint.searchParams.set("profile", "native");
+  if (!endpoint.searchParams.has("profile")) endpoint.searchParams.set("profile", "native");
   return endpoint.toString();
 }
 
