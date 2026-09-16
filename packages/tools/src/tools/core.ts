@@ -45,18 +45,26 @@ export const pcb_environment = defineTool({
     const [cli, bridge, app] = await Promise.all([
       ctx.services.kicad.resolveCli().catch(() => null),
       ctx.services.design.status(),
-      ctx.services.appBridge?.status().catch((error) => ({ running: false, reason: error instanceof Error ? error.message : String(error) })) ?? Promise.resolve({ running: false, reason: "desktop automation is not enabled" }),
+      ctx.services.appBridge?.status().catch((error) => ({
+        running: false,
+        reason: error instanceof Error ? error.message : String(error),
+      })) ?? Promise.resolve({ running: false, reason: "desktop automation is not enabled" }),
     ]);
     const files = {
       project: p(project, PROJECT_FILES.boardPro),
       schematic: p(project, PROJECT_FILES.boardSch),
       board: p(project, PROJECT_FILES.boardPcb),
     };
-    const present: Record<string, boolean> = Object.fromEntries(await Promise.all(Object.entries(files).map(async ([name, path]) => [name, await exists(path)])));
+    const present: Record<string, boolean> = Object.fromEntries(
+      await Promise.all(
+        Object.entries(files).map(async ([name, path]) => [name, await exists(path)]),
+      ),
+    );
     const interfaces = {
       mcp: "Structured KiCad, FabPCB, project, render, verification, and export operations.",
       cli: "Bundled kicad-cli path and version.",
-      script: "fabpcb tool exposes the same registry as JSON/JSONL for programmable calls and batches.",
+      script:
+        "fabpcb tool exposes the same registry as JSON/JSONL for programmable calls and batches.",
       ui: "Desktop application automation status.",
       files: "Project-local files are directly accessible.",
     };
@@ -78,20 +86,26 @@ export const pcb_environment = defineTool({
         reports: p(project, PROJECT_FILES.reports),
         exports: p(project, PROJECT_FILES.exports),
       },
-      stateVisibility: "MCP operations may address live KiCad state; CLI and direct-file operations address persisted files.",
+      stateVisibility:
+        "MCP operations may address live KiCad state; CLI and direct-file operations address persisted files.",
     };
-    return ok([
-      `PCB workbench for ${project.name} at ${project.dir}`,
-      `KiCad CLI: ${cli ? `${cli.path} (${cli.version})` : "not found"}`,
-      `FabPCB bridge: ${bridge.ok ? "ready" : "unavailable"} at ${bridge.url}${bridge.reason ? ` — ${bridge.reason}` : ""}`,
-      "Scriptable registry: fabpcb tool search <words>; describe <name>; call <name> --request <json|@file>; batch --input @calls.jsonl.",
-      `Routers: capacity=${bridge.routers?.capacity?.ok ? "ready" : `unavailable${bridge.routers?.capacity?.reason ? ` — ${bridge.routers.capacity.reason}` : ""}`}; freerouting=${bridge.routers?.freerouting?.ok ? "ready" : `unavailable${bridge.routers?.freerouting?.reason ? ` — ${bridge.routers.freerouting.reason}` : ""}`}`,
-      `Desktop UI automation: ${app.running ? "available" : `unavailable${app.reason ? ` — ${app.reason}` : ""}`}`,
-      `Project files: ${Object.entries(files).map(([name, path]) => `${name}=${path}${present[name] ? "" : " (missing)"}`).join(", ")}`,
-      "Available interfaces: MCP, bundled kicad-cli, desktop UI automation, and direct project files.",
-      "Fabdesk UI directories: renders/, reports/, exports/.",
-      "State visibility: MCP operations may address live KiCad state; CLI and file operations address persisted state.",
-    ].join("\n"), json);
+    return ok(
+      [
+        `PCB workbench for ${project.name} at ${project.dir}`,
+        `KiCad CLI: ${cli ? `${cli.path} (${cli.version})` : "not found"}`,
+        `FabPCB bridge: ${bridge.ok ? "ready" : "unavailable"} at ${bridge.url}${bridge.reason ? ` — ${bridge.reason}` : ""}`,
+        "Scriptable registry: fabpcb tool search <words>; describe <name>; call <name> --request <json|@file>; batch --input @calls.jsonl.",
+        `Routers: capacity=${bridge.routers?.capacity?.ok ? "ready" : `unavailable${bridge.routers?.capacity?.reason ? ` — ${bridge.routers.capacity.reason}` : ""}`}; freerouting=${bridge.routers?.freerouting?.ok ? "ready" : `unavailable${bridge.routers?.freerouting?.reason ? ` — ${bridge.routers.freerouting.reason}` : ""}`}`,
+        `Desktop UI automation: ${app.running ? "available" : `unavailable${app.reason ? ` — ${app.reason}` : ""}`}`,
+        `Project files: ${Object.entries(files)
+          .map(([name, path]) => `${name}=${path}${present[name] ? "" : " (missing)"}`)
+          .join(", ")}`,
+        "Available interfaces: MCP, bundled kicad-cli, desktop UI automation, and direct project files.",
+        "Fabdesk UI directories: renders/, reports/, exports/.",
+        "State visibility: MCP operations may address live KiCad state; CLI and file operations address persisted state.",
+      ].join("\n"),
+      json,
+    );
   },
 });
 
@@ -219,10 +233,16 @@ export const circuit_build = defineTool({
       .describe(
         "preserve keeps compatible existing copper; clean removes routed tracks/arcs/vias after source validation before rebuilding",
       ),
+    fresh: z
+      .boolean()
+      .optional()
+      .describe(
+        "Discard the existing board first (outline, placement, tracks) and build from the netlist alone. Needed after changing the board size: a build never redraws an outline that exists.",
+      ),
   },
   annotations: { idempotentHint: true },
   longRunning: true,
-  handler: async ({ entrypoint, rebuild }, ctx) => {
+  handler: async ({ entrypoint, rebuild, fresh }, ctx) => {
     const project = ctx.requireProject();
     ctx.progress(0.05, "building");
     const board = await buildBoardSpec(project);
@@ -231,6 +251,7 @@ export const circuit_build = defineTool({
       ...(entrypoint ? { entrypoint } : {}),
       ...(board ? { board } : {}),
       rebuild,
+      ...(fresh ? { fresh } : {}),
       signal: ctx.signal,
       progress: (fraction, note) => ctx.progress(0.05 + fraction * 0.9, note),
     });
@@ -244,7 +265,9 @@ export const circuit_build = defineTool({
       counts: result.counts,
       ...(result.revision !== undefined ? { revision: result.revision } : {}),
       ...(result.removedCopper ? { removedCopper: result.removedCopper } : {}),
-      ...(result.rejectedSchematicPath ? { rejectedSchematicPath: result.rejectedSchematicPath } : {}),
+      ...(result.rejectedSchematicPath
+        ? { rejectedSchematicPath: result.rejectedSchematicPath }
+        : {}),
     };
     await writeReport(project, "build", summary);
     ctx.progress(1, "done");
@@ -253,6 +276,49 @@ export const circuit_build = defineTool({
       ? `Build OK (${rebuild} rebuild) in ${Math.round(result.durationMs)} ms: ${c.components} components, ${c.nets} nets, ${c.footprintsAdded} footprints added, ${c.footprintsPlaced} placed${result.removedCopper ? `, ${result.removedCopper.tracks} old tracks/arcs and ${result.removedCopper.vias} routed vias removed` : ""}${c.viasAdded ? `, blank drawn (${c.viasAdded} free vias, ${c.holesAdded ?? 0} holes)` : ""}.${project.manifest().board.template ? ` Template ${project.manifest().board.template}: the netlist's own board spec was replaced by the blank.` : ""}${result.warnings.length ? `\nWarnings:\n${formatErrors(result.warnings)}` : ""}`
       : `Build FAILED (${result.errors.length} errors):\n${formatErrors(result.errors)}${result.rejectedSchematicPath ? `\nRejected schematic preserved at ${result.rejectedSchematicPath}; the canonical schematic was restored.` : ""}`;
     return { text, json: summary, isError: !result.ok };
+  },
+});
+
+export const circuit_place = defineTool({
+  name: "circuit_place",
+  toolset: "core",
+  title: "Place footprints",
+  description:
+    "Move built-board footprints to explicit KiCad board coordinates in millimetres, with optional rotation. Tracks are not moved. Returns moved and missing references.",
+  inputSchema: {
+    placements: z
+      .array(
+        z.object({
+          ref: z.string().min(1).describe("Reference designator, e.g. J2"),
+          x: z.number().describe("Footprint origin X in mm"),
+          y: z.number().describe("Footprint origin Y in mm"),
+          rotation: z.number().optional().describe("Degrees; omit to keep"),
+        }),
+      )
+      .min(1)
+      .max(200),
+  },
+  annotations: { idempotentHint: true },
+  handler: async ({ placements }, ctx) => {
+    const project = ctx.requireProject();
+    const result = await ctx.services.design.place(
+      project.dir,
+      placements.map((p) => ({
+        ref: p.ref,
+        x: p.x,
+        y: p.y,
+        ...(p.rotation !== undefined ? { rotation: p.rotation } : {}),
+      })),
+    );
+    const lines = result.moved.map((m) => `- ${m.ref} → (${m.x}, ${m.y}) mm, ${m.rotation}°`);
+    if (result.missing.length)
+      lines.push(
+        `Not on the board: ${result.missing.join(", ")} (build first, or check the reference).`,
+      );
+    const text = result.moved.length
+      ? `Placed ${result.moved.length} footprint${result.moved.length === 1 ? "" : "s"}:\n${lines.join("\n")}\nRun verify_drc to check, and route_run (after route_unroute for nets that moved) to re-route.`
+      : `Nothing moved.\n${lines.join("\n")}`;
+    return { text, json: result, isError: result.moved.length === 0 };
   },
 });
 
@@ -270,8 +336,7 @@ export const circuit_read_errors = defineTool({
   name: "circuit_read_errors",
   toolset: "core",
   title: "Read build errors",
-  description:
-    "Return errors and warnings from reports/build.json.",
+  description: "Return errors and warnings from reports/build.json.",
   inputSchema: {},
   annotations: { readOnlyHint: true, idempotentHint: true },
   handler: async (_args, ctx) => {
@@ -323,10 +388,7 @@ export const verify_drc = defineTool({
       .enum(["all", "error"])
       .default("all")
       .describe("Report all severities or errors only"),
-    schematicParity: z
-      .boolean()
-      .default(true)
-      .describe("Include PCB↔schematic parity checks"),
+    schematicParity: z.boolean().default(true).describe("Include PCB↔schematic parity checks"),
     limit: z
       .number()
       .int()
@@ -431,17 +493,25 @@ const DRC_GEOMETRY_SELECTS: DesignSelect[] = [
   "texts",
 ];
 
-async function queryDrcGeometry(ctx: Parameters<typeof requireKicad>[0], projectDir: string): Promise<DrcGeometry[]> {
+async function queryDrcGeometry(
+  ctx: Parameters<typeof requireKicad>[0],
+  projectDir: string,
+): Promise<DrcGeometry[]> {
   const groups = await Promise.all(
     DRC_GEOMETRY_SELECTS.map(async (objectType) =>
-      (await ctx.services.design.query(projectDir, objectType)).map((row) => ({ objectType, ...row })),
+      (await ctx.services.design.query(projectDir, objectType)).map((row) => ({
+        objectType,
+        ...row,
+      })),
     ),
   );
   return groups.flat();
 }
 
 function normalizedId(value: unknown): string {
-  return String(value ?? "").replace(/[{}]/g, "").toLowerCase();
+  return String(value ?? "")
+    .replace(/[{}]/g, "")
+    .toLowerCase();
 }
 
 function geometryCoordinates(row: DesignRow): Array<{ x: number; y: number }> {
@@ -484,7 +554,10 @@ export function enrichDrcReport(report: DrcReport, geometry: DrcGeometry[]): Drc
   }
   const enrich = (violation: DrcViolation): DrcViolation => {
     const objectIds = uniqueBy(
-      [...violation.objectIds, ...violation.items.flatMap((item) => (item.uuid ? [item.uuid] : []))],
+      [
+        ...violation.objectIds,
+        ...violation.items.flatMap((item) => (item.uuid ? [item.uuid] : [])),
+      ],
       normalizedId,
     );
     const affectedGeometry = uniqueBy(
@@ -498,8 +571,13 @@ export function enrichDrcReport(report: DrcReport, geometry: DrcGeometry[]): Drc
     const layers = uniqueBy(
       [
         ...violation.layers,
-        ...affectedGeometry.flatMap((row) => [row["layer"], ...(Array.isArray(row["layers"]) ? row["layers"] : [])]),
-      ].filter((layer): layer is string | number => typeof layer === "string" || typeof layer === "number"),
+        ...affectedGeometry.flatMap((row) => [
+          row["layer"],
+          ...(Array.isArray(row["layers"]) ? row["layers"] : []),
+        ]),
+      ].filter(
+        (layer): layer is string | number => typeof layer === "string" || typeof layer === "number",
+      ),
       String,
     );
     const nets = uniqueBy(
@@ -558,8 +636,7 @@ export const render_board = defineTool({
     const project = ctx.requireProject();
     const cli = await requireKicad(ctx);
     const board = p(project, PROJECT_FILES.boardPcb);
-    if (!(await exists(board)))
-      throw new ToolError("board.kicad_pcb not found", "precondition");
+    if (!(await exists(board))) throw new ToolError("board.kicad_pcb not found", "precondition");
     const output = p(project, PROJECT_FILES.renders, `${view}.png`);
     ctx.progress(0.3, "rendering");
     await ctx.services.kicad.renderPng(cli, {
@@ -586,6 +663,7 @@ export const coreTools = [
   pcb_environment,
   project_status,
   circuit_build,
+  circuit_place,
   circuit_read_errors,
   route_run,
   verify_drc,

@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { runInNewContext } from "node:vm";
 import {
   BridgeError,
   authorized,
@@ -84,8 +85,7 @@ function fakeWindow(id: number, opts: { focused?: boolean; api?: boolean } = {})
       const HTMLSelectElement = { prototype: {} };
       Object.defineProperty(HTMLSelectElement.prototype, "value", { set(v: string) { (this as { value: string }).value = v; }, configurable: true });
       const Event = class { constructor(public type: string, public init?: unknown) {} };
-      const fn = new Function("window", "document", "HTMLSelectElement", "Event", `return (${code});`);
-      return fn({ __fabdeskApp: api }, document, HTMLSelectElement, Event);
+      return runInNewContext(`(${code})`, { window: { __fabdeskApp: api }, document, HTMLSelectElement, Event });
     },
   };
   return w;

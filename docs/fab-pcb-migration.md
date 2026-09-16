@@ -16,7 +16,7 @@ an explicit `FABDESK_FP_PCB_BRIDGE_URL` fails with an identity-mismatch error in
 its daemon handshake, and the embedded MCP server carry the same launch identity. Project roots are
 passed unchanged to core and bridge, and each supervisor stops only the child process it spawned.
 
-`TensorFleet/fab_pcb` is **FabPlane PCB**: a headless KiCad stack on the KiCad IPC API
+`fabPlane/fab_pcb` is **FabPlane PCB**: a headless KiCad stack on the KiCad IPC API
 (`kicad-cli api-server` from a KiCad fork, protobuf over nng), packages
 `@fp-pcb/{proto,client,bridge,renderer,router}`. It is not a tscircuit fork and it has no
 circuit-source compiler of its own.
@@ -160,9 +160,9 @@ Mocking an HTTP job in `packages/tools/test/mock-services.ts` is simpler than fa
 
 ### 3.4 It does not remove tscircuit — unchanged, slightly worse
 
-`@fp-pcb/router` depends on `@tscircuit/capacity-autorouter@0.0.885`, and the bridge now depends
-on `@fp-pcb/router`, so even a bridge-only deployment carries it. Removing it is a `fab_pcb`
-decision (swap `js-router.ts` to `vendor/js_autorouter`), out of scope for compile.
+The bridge owns its router dependency, so a bridge deployment carries the selected capacity
+router. Fabdesk remains isolated from that implementation and communicates only through the
+FabPlane PCB bridge contract.
 
 ## 4. Execution plan
 
@@ -227,7 +227,7 @@ before the apply path has ever run against a server. Reversed:
 | 2     | **landed on fab_pcb (stacked on #2)** — `@fp-pcb/compile/bridge-job` mounted at `/sessions/:id/compile`; live `apply.kicad.test.ts` + `compile.kicad.test.ts` against the fork; libraries registered from `FrontendResult.libraries`; A.8 inset. `DocumentChanged` fork patch still open (gaps doc G28). | yes                   |
 | 3     | **landed behind a flag (§4.6)** — bridge client in `apps/core`; `buildCircuit` adapter = compile job → `importKicadPcb(board.kicad_pcb)` → `circuit.json` → `BuildResult`; `boardIsStale` trap closed                                                                                                    | yes                   |
 | 4     | `fab_pcb`: `tscircuit` frontend for existing `circuit.tsx` projects, emitting project-local `.pretty` for procedural footprints                                                                                                                                                                          | yes, inside `fab_pcb` |
-| 5     | **landed (§4.7)** — `packages/tscircuit`, `router`, `router-freerouting`, `convert.ts`, `import.ts`, `vendor/js_autorouter` deleted; every tool KiCad-native through the bridge or the fork `kicad-cli`; sim/BOM/netlist export from the netlist source                                                  | no                    |
+| 5     | **landed (§4.7)** — `packages/tscircuit`, `router`, `router-freerouting`, `convert.ts`, and `import.ts` deleted; every tool KiCad-native through the bridge or the fork `kicad-cli`; sim/BOM/netlist export from the netlist source                                                                      | no                    |
 
 Phase 3's `importKicadPcb` bridge is why `circuit.json` is not a blocker: it is exactly what
 `project_import_kicad` does today (927 LOC fabdesk owns) and emits the `source_*` elements routing
@@ -236,7 +236,7 @@ needs. Sim over an imported board is lossy until phase 5; accept it.
 ### 4.5 Constraints to plan around
 
 1. **Cross-repo workflow.** `vendor/*` is never edited here; every `fab_pcb` step is a PR to
-   `TensorFleet/fab_pcb`, then `bun run submodules:update` (now covers `vendor/fab_pcb`). Do not
+   `fabPlane/fab_pcb`, then `bun run submodules:update` (now covers `vendor/fab_pcb`). Do not
    add `vendor/fab_pcb/packages/*` to fabdesk's workspaces: the HTTP-client shape needs none.
 2. **§3.2 is decided (bundled).** The gate is now the three-platform fork build, Windows first.
 3. **Footprint libraries.** The Docker image ships none and no `fp-lib-table`; fixtures need
@@ -294,8 +294,8 @@ Still open before the flag does anything end to end:
 
 fabdesk's own packages carry no tscircuit-ecosystem dependency and no `circuit.json` contract.
 
-- **Removed:** `packages/tscircuit`, `packages/router`, `packages/router-freerouting`, the
-  `vendor/js_autorouter` submodule, `packages/kicad/src/{convert,import,net-names}.ts`,
+- **Removed:** `packages/tscircuit`, `packages/router`, `packages/router-freerouting`, the former
+  private-router submodule, `packages/kicad/src/{convert,import,net-names}.ts`,
   `circuit-json-to-spice`, `circuit-to-svg`, the in-process bench (`bench route`, `/bench/route`),
   `BoardSettings.source`, `Settings.compiler`, the `TscircuitService` and `RouterService` seams.
 - **Replaced by:** `DesignService` (`packages/tools/src/services.ts`) implemented in

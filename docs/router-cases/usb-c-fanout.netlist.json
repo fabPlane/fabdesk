@@ -1,0 +1,221 @@
+{
+  "netlist": {
+    "components": [
+      {
+        "ref": "J1",
+        "value": "USB-C 16P",
+        "footprint": "Connector_USB:USB_C_Receptacle_GCT_USB4105-xx-A_16P_TopMnt_Horizontal"
+      },
+      {
+        "ref": "R1",
+        "value": "5.1k",
+        "footprint": "Resistor_SMD:R_0603_1608Metric"
+      },
+      {
+        "ref": "R2",
+        "value": "5.1k",
+        "footprint": "Resistor_SMD:R_0603_1608Metric"
+      },
+      {
+        "ref": "R3",
+        "value": "27",
+        "footprint": "Resistor_SMD:R_0603_1608Metric"
+      },
+      {
+        "ref": "R4",
+        "value": "27",
+        "footprint": "Resistor_SMD:R_0603_1608Metric"
+      },
+      {
+        "ref": "R5",
+        "value": "1k",
+        "footprint": "Resistor_SMD:R_0603_1608Metric"
+      },
+      {
+        "ref": "R6",
+        "value": "1k",
+        "footprint": "Resistor_SMD:R_0603_1608Metric"
+      },
+      {
+        "ref": "J2",
+        "value": "OUT",
+        "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical"
+      }
+    ],
+    "nets": [
+      {
+        "name": "VBUS",
+        "nodes": [
+          {
+            "ref": "J1",
+            "pin": "A4"
+          },
+          {
+            "ref": "J1",
+            "pin": "A9"
+          },
+          {
+            "ref": "J1",
+            "pin": "B4"
+          },
+          {
+            "ref": "J1",
+            "pin": "B9"
+          },
+          {
+            "ref": "R5",
+            "pin": "1"
+          },
+          {
+            "ref": "J2",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "GND",
+        "nodes": [
+          {
+            "ref": "J1",
+            "pin": "A1"
+          },
+          {
+            "ref": "J1",
+            "pin": "A12"
+          },
+          {
+            "ref": "J1",
+            "pin": "B1"
+          },
+          {
+            "ref": "J1",
+            "pin": "B12"
+          },
+          {
+            "ref": "J1",
+            "pin": "SH"
+          },
+          {
+            "ref": "R1",
+            "pin": "2"
+          },
+          {
+            "ref": "R2",
+            "pin": "2"
+          },
+          {
+            "ref": "R6",
+            "pin": "2"
+          },
+          {
+            "ref": "J2",
+            "pin": "4"
+          }
+        ]
+      },
+      {
+        "name": "CC1",
+        "nodes": [
+          {
+            "ref": "J1",
+            "pin": "A5"
+          },
+          {
+            "ref": "R1",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "CC2",
+        "nodes": [
+          {
+            "ref": "J1",
+            "pin": "B5"
+          },
+          {
+            "ref": "R2",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "DP",
+        "nodes": [
+          {
+            "ref": "J1",
+            "pin": "A6"
+          },
+          {
+            "ref": "J1",
+            "pin": "B6"
+          },
+          {
+            "ref": "R3",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "DN",
+        "nodes": [
+          {
+            "ref": "J1",
+            "pin": "A7"
+          },
+          {
+            "ref": "J1",
+            "pin": "B7"
+          },
+          {
+            "ref": "R4",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "DP_OUT",
+        "nodes": [
+          {
+            "ref": "R3",
+            "pin": "2"
+          },
+          {
+            "ref": "J2",
+            "pin": "2"
+          }
+        ]
+      },
+      {
+        "name": "DN_OUT",
+        "nodes": [
+          {
+            "ref": "R4",
+            "pin": "2"
+          },
+          {
+            "ref": "J2",
+            "pin": "3"
+          }
+        ]
+      },
+      {
+        "name": "LED",
+        "nodes": [
+          {
+            "ref": "R5",
+            "pin": "2"
+          },
+          {
+            "ref": "R6",
+            "pin": "1"
+          }
+        ]
+      }
+    ]
+  },
+  "board": {
+    "widthMm": 25,
+    "heightMm": 20
+  }
+}

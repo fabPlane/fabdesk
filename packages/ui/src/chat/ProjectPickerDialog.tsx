@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button, Dialog, Input } from "../components/ui";
-import { useCore } from "../core/CoreProvider";
-import { useProjects } from "../hooks/queries";
+import { useCore } from "@fabdesk/client-core";
+import { useProjects } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 
 /** Codex-style project picker shown whenever a new conversation starts. */

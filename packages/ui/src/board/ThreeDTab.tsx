@@ -1,8 +1,8 @@
 import { Button, EmptyState, Spinner } from "../components/ui";
-import { useProject } from "../hooks/queries";
-import { useRunsStore } from "../stores/runs";
+import { useProject } from "@fabdesk/client-core";
+import { useRunsStore } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
-import { useRunTool } from "./tools";
+import { useRunTool } from "@fabdesk/client-core";
 
 const GLB_PATH = "renders/board.glb";
 

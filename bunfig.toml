@@ -1,5 +1,4 @@
 [install]
-# @fabdesk/router-freerouting resolves @tensorfleet/js-autorouter through hoisting
 # (it is deliberately not a declared dependency: public checkouts have no submodule).
 linker = "hoisted"
 

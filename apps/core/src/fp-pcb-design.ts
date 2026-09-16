@@ -4,7 +4,8 @@
  * through the typed client on the project's session. Positions come back in millimetres; the
  * client speaks nanometres.
  */
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { create } from "@bufbuild/protobuf";
 import {
@@ -125,8 +126,12 @@ function pointOnSegment(
 ) {
   const cross = (point.x - start.x) * (end.y - start.y) - (point.y - start.y) * (end.x - start.x);
   if (Math.abs(cross) > 1) return false;
-  return point.x >= Math.min(start.x, end.x) && point.x <= Math.max(start.x, end.x)
-    && point.y >= Math.min(start.y, end.y) && point.y <= Math.max(start.y, end.y);
+  return (
+    point.x >= Math.min(start.x, end.x) &&
+    point.x <= Math.max(start.x, end.x) &&
+    point.y >= Math.min(start.y, end.y) &&
+    point.y <= Math.max(start.y, end.y)
+  );
 }
 
 function segmentsIntersect(
@@ -136,19 +141,25 @@ function segmentsIntersect(
   const aHorizontal = a.start.y === a.end.y;
   const bHorizontal = b.start.y === b.end.y;
   if (aHorizontal && bHorizontal)
-    return a.start.y === b.start.y
-      && Math.max(Math.min(a.start.x, a.end.x), Math.min(b.start.x, b.end.x))
-        <= Math.min(Math.max(a.start.x, a.end.x), Math.max(b.start.x, b.end.x));
+    return (
+      a.start.y === b.start.y &&
+      Math.max(Math.min(a.start.x, a.end.x), Math.min(b.start.x, b.end.x)) <=
+        Math.min(Math.max(a.start.x, a.end.x), Math.max(b.start.x, b.end.x))
+    );
   if (!aHorizontal && !bHorizontal)
-    return a.start.x === b.start.x
-      && Math.max(Math.min(a.start.y, a.end.y), Math.min(b.start.y, b.end.y))
-        <= Math.min(Math.max(a.start.y, a.end.y), Math.max(b.start.y, b.end.y));
+    return (
+      a.start.x === b.start.x &&
+      Math.max(Math.min(a.start.y, a.end.y), Math.min(b.start.y, b.end.y)) <=
+        Math.min(Math.max(a.start.y, a.end.y), Math.max(b.start.y, b.end.y))
+    );
   const horizontal = aHorizontal ? a : b;
   const vertical = aHorizontal ? b : a;
-  return vertical.start.x >= Math.min(horizontal.start.x, horizontal.end.x)
-    && vertical.start.x <= Math.max(horizontal.start.x, horizontal.end.x)
-    && horizontal.start.y >= Math.min(vertical.start.y, vertical.end.y)
-    && horizontal.start.y <= Math.max(vertical.start.y, vertical.end.y);
+  return (
+    vertical.start.x >= Math.min(horizontal.start.x, horizontal.end.x) &&
+    vertical.start.x <= Math.max(horizontal.start.x, horizontal.end.x) &&
+    horizontal.start.y >= Math.min(vertical.start.y, vertical.end.y) &&
+    horizontal.start.y <= Math.max(vertical.start.y, vertical.end.y)
+  );
 }
 
 function toBuildError(d: FpPcbDiagnostic): BuildError {
@@ -167,6 +178,7 @@ export function toRouteProgress(job: FpPcbRouteJob): RouteProgress {
     state: job.state,
     log: job.log,
     ...(p?.phase ? { phase: p.phase } : {}),
+    ...(p?.percent !== undefined ? { percent: p.percent } : {}),
     ...(p?.message ? { message: p.message } : {}),
     ...(p?.pass !== undefined ? { pass: p.pass } : {}),
     ...(p?.routed !== undefined ? { routed: p.routed } : {}),
@@ -211,6 +223,14 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       files: { [entrypoint]: await readText(entryPath) },
       entrypoint,
     };
+    if (opts.fresh) {
+      // The session keeps the board in memory and the compile only draws an outline when none
+      // exists, so a size change (or a placement the user wants redone) needs the slate wiped:
+      // drop the session, then the generated files, and let the compile create the project anew.
+      await deps.sessions.release(opts.projectDir);
+      for (const f of ["board.kicad_pcb", "board.kicad_pro", "board.kicad_prl", "board.kicad_sch"])
+        await rm(join(opts.projectDir, f), { force: true });
+    }
     opts.progress?.(0.05, "session");
     let sessionWasBare = false;
     const job = await deps.sessions.withRetry(opts.projectDir, (s) => {
@@ -373,20 +393,27 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     for (const input of edit.symbolUpdates ?? []) {
       const symbol = byReference.get(input.reference);
       if (!symbol)
-        throw new ToolError(`cannot update missing schematic symbol ${input.reference}`, "invalid_args");
+        throw new ToolError(
+          `cannot update missing schematic symbol ${input.reference}`,
+          "invalid_args",
+        );
       if (input.position)
         moveNativeSymbol(symbol, { x: toNm(input.position.x), y: toNm(input.position.y) });
-      if (input.rotation !== undefined) symbol.proto.transform!.orientation = {
-        0: SchematicSymbolOrientation.SSO_0,
-        90: SchematicSymbolOrientation.SSO_90,
-        180: SchematicSymbolOrientation.SSO_180,
-        270: SchematicSymbolOrientation.SSO_270,
-      }[input.rotation];
+      if (input.rotation !== undefined)
+        symbol.proto.transform!.orientation = {
+          0: SchematicSymbolOrientation.SSO_0,
+          90: SchematicSymbolOrientation.SSO_90,
+          180: SchematicSymbolOrientation.SSO_180,
+          270: SchematicSymbolOrientation.SSO_270,
+        }[input.rotation];
       if (input.mirrorX !== undefined) symbol.proto.transform!.mirrorX = input.mirrorX;
       if (input.mirrorY !== undefined) symbol.proto.transform!.mirrorY = input.mirrorY;
       if (input.newReference !== undefined) {
         if (byReference.has(input.newReference))
-          throw new ToolError(`cannot annotate ${input.reference} as existing reference ${input.newReference}`, "invalid_args");
+          throw new ToolError(
+            `cannot annotate ${input.reference} as existing reference ${input.newReference}`,
+            "invalid_args",
+          );
         symbol.reference = input.newReference;
         byReference.delete(input.reference);
         byReference.set(input.newReference, symbol);
@@ -481,18 +508,16 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
           }),
         ),
     );
-    const localLabels: LocalLabel[] = (edit.localLabels ?? []).map(
-      (label) => {
-        const position = { x: toNm(label.position.x), y: toNm(label.position.y) };
-        return new LocalLabel(
-          create(LocalLabelSchema, {
-            position: toVector2(position),
-            text: create(TextSchema, { text: label.text, position: toVector2(position) }),
-            spinStyle: SchematicLabelSpinStyle.SLSS_LEFT,
-          }),
-        );
-      },
-    );
+    const localLabels: LocalLabel[] = (edit.localLabels ?? []).map((label) => {
+      const position = { x: toNm(label.position.x), y: toNm(label.position.y) };
+      return new LocalLabel(
+        create(LocalLabelSchema, {
+          position: toVector2(position),
+          text: create(TextSchema, { text: label.text, position: toVector2(position) }),
+          spinStyle: SchematicLabelSpinStyle.SLSS_LEFT,
+        }),
+      );
+    });
     const junctions = (edit.junctions ?? []).map(
       (position) =>
         new Junction(
@@ -524,7 +549,10 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         const key = `${node.reference}:${node.pin}`;
         const previous = pinNets.get(key);
         if (previous && previous !== connection.name)
-          throw new ToolError(`schematic pin ${key} is assigned to both ${previous} and ${connection.name}`, "invalid_args");
+          throw new ToolError(
+            `schematic pin ${key} is assigned to both ${previous} and ${connection.name}`,
+            "invalid_args",
+          );
         pinNets.set(key, connection.name);
       }
     const plannedStubs: Array<{
@@ -534,8 +562,14 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       end: { x: number; y: number };
     }> = [];
     for (const connection of edit.connections ?? []) {
-      if (connection.nodes.length < 1 || ((connection.label ?? "local") === "none" && connection.nodes.length < 2))
-        throw new ToolError(`net ${connection.name} needs one labelled node or at least two direct-wire nodes`, "invalid_args");
+      if (
+        connection.nodes.length < 1 ||
+        ((connection.label ?? "local") === "none" && connection.nodes.length < 2)
+      )
+        throw new ToolError(
+          `net ${connection.name} needs one labelled node or at least two direct-wire nodes`,
+          "invalid_args",
+        );
       const points = connection.nodes.map((node) => {
         const point = pins.get(`${node.reference}:${node.pin}`);
         if (!point)
@@ -582,7 +616,9 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
             );
         }
         const candidate = { net: connection.name, node: nodeKey, start: pin, end: anchor };
-        const crossing = plannedStubs.find((stub) => stub.net !== connection.name && segmentsIntersect(stub, candidate));
+        const crossing = plannedStubs.find(
+          (stub) => stub.net !== connection.name && segmentsIntersect(stub, candidate),
+        );
         if (crossing)
           throw new ToolError(
             `net ${connection.name} stub ${nodeKey} would cross net ${crossing.net} stub ${crossing.node}; move a symbol or use explicit wiring`,
@@ -590,19 +626,33 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
           );
         plannedStubs.push(candidate);
         const spinStyle = horizontal
-          ? (dx >= 0 ? SchematicLabelSpinStyle.SLSS_LEFT : SchematicLabelSpinStyle.SLSS_RIGHT)
-          : (dy >= 0 ? SchematicLabelSpinStyle.SLSS_UP : SchematicLabelSpinStyle.SLSS_BOTTOM);
+          ? dx >= 0
+            ? SchematicLabelSpinStyle.SLSS_LEFT
+            : SchematicLabelSpinStyle.SLSS_RIGHT
+          : dy >= 0
+            ? SchematicLabelSpinStyle.SLSS_UP
+            : SchematicLabelSpinStyle.SLSS_BOTTOM;
         addWire(pin, anchor);
         if (labelKind === "global")
-          globalLabels.push(new GlobalLabel(create(GlobalLabelSchema, {
-            position: toVector2(anchor), text: create(TextSchema, { text: connection.name, position: toVector2(anchor) }),
-            spinStyle,
-          })));
+          globalLabels.push(
+            new GlobalLabel(
+              create(GlobalLabelSchema, {
+                position: toVector2(anchor),
+                text: create(TextSchema, { text: connection.name, position: toVector2(anchor) }),
+                spinStyle,
+              }),
+            ),
+          );
         else if (labelKind === "local")
-          localLabels.push(new LocalLabel(create(LocalLabelSchema, {
-            position: toVector2(anchor), text: create(TextSchema, { text: connection.name, position: toVector2(anchor) }),
-            spinStyle,
-          })));
+          localLabels.push(
+            new LocalLabel(
+              create(LocalLabelSchema, {
+                position: toVector2(anchor),
+                text: create(TextSchema, { text: connection.name, position: toVector2(anchor) }),
+                spinStyle,
+              }),
+            ),
+          );
       }
     }
 
@@ -803,10 +853,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     };
   };
 
-  const placeFootprints = async (
-    projectDir: string,
-    placements: PcbFootprintEdit[],
-  ) => {
+  const placeFootprints = async (projectDir: string, placements: PcbFootprintEdit[]) => {
     const board = await deps.sessions.board(projectDir);
     const footprints = await board.getFootprints();
     const byReference = new Map(footprints.map((footprint) => [footprint.reference, footprint]));
@@ -844,26 +891,43 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       await board.commit("Fabdesk: place native PCB footprints", (tx) => tx.update(physical));
     let libraryNormalized = 0;
     if (physical.length) {
-      const normalized = await board.updateFootprintsFromLibrary(physical.map((footprint) => footprint.id), { onlyChanged: true });
+      const normalized = await board.updateFootprintsFromLibrary(
+        physical.map((footprint) => footprint.id),
+        { onlyChanged: true },
+      );
       if (normalized.missing.length)
-        throw new ToolError(`packaged library footprints unavailable for ${normalized.missing.join(", ")}`, "precondition");
+        throw new ToolError(
+          `packaged library footprints unavailable for ${normalized.missing.join(", ")}`,
+          "precondition",
+        );
       libraryNormalized = normalized.updatedCount;
     }
-    const refreshed = new Map((await board.getFootprints()).map((footprint) => [footprint.reference, footprint]));
+    const refreshed = new Map(
+      (await board.getFootprints()).map((footprint) => [footprint.reference, footprint]),
+    );
     const fieldEdited = placements.flatMap((placement) => {
       if (!placement.referenceField) return [];
       const footprint = refreshed.get(placement.reference)!;
       const field = footprint.referenceField;
       const text = field?.proto.text?.text;
       if (!field || !text)
-        throw new ToolError(`footprint ${placement.reference} has no editable reference field`, "precondition");
+        throw new ToolError(
+          `footprint ${placement.reference} has no editable reference field`,
+          "precondition",
+        );
       let changed = false;
-      if (placement.referenceField.visible !== undefined && field.visible !== placement.referenceField.visible) {
+      if (
+        placement.referenceField.visible !== undefined &&
+        field.visible !== placement.referenceField.visible
+      ) {
         field.visible = placement.referenceField.visible;
         changed = true;
       }
       if (placement.referenceField.position) {
-        const target = { x: toNm(placement.referenceField.position.x), y: toNm(placement.referenceField.position.y) };
+        const target = {
+          x: toNm(placement.referenceField.position.x),
+          y: toNm(placement.referenceField.position.y),
+        };
         if (field.position.x !== target.x || field.position.y !== target.y) {
           text.position = toVector2(target);
           changed = true;
@@ -871,8 +935,15 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       }
       if (placement.referenceField.sizeMm !== undefined) {
         const size = toNm(placement.referenceField.sizeMm);
-        if (text.attributes?.size?.xNm !== BigInt(size) || text.attributes?.size?.yNm !== BigInt(size)) {
-          if (!text.attributes) throw new ToolError(`footprint ${placement.reference} reference has no text attributes`, "precondition");
+        if (
+          text.attributes?.size?.xNm !== BigInt(size) ||
+          text.attributes?.size?.yNm !== BigInt(size)
+        ) {
+          if (!text.attributes)
+            throw new ToolError(
+              `footprint ${placement.reference} reference has no text attributes`,
+              "precondition",
+            );
           text.attributes.size = toVector2({ x: size, y: size });
           changed = true;
         }
@@ -882,7 +953,9 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     if (fieldEdited.length)
       await board.commit("Fabdesk: adjust PCB reference fields", (tx) => tx.update(fieldEdited));
     await board.save();
-    const changedReferences = [...new Set([...physical, ...fieldEdited].map((footprint) => footprint.reference))];
+    const changedReferences = [
+      ...new Set([...physical, ...fieldEdited].map((footprint) => footprint.reference)),
+    ];
     return {
       moved: changedReferences,
       missing: [],
@@ -901,15 +974,33 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       return { name, code };
     };
     const point = (value: { x: number; y: number }) => ({ x: toNm(value.x), y: toNm(value.y) });
-    const polygons = (points: Array<{ x: number; y: number }>, holes: Array<Array<{ x: number; y: number }>> | undefined) => [
-      { outline: points.map(point), ...(holes ? { holes: holes.map((hole) => hole.map(point)) } : {}) },
+    const polygons = (
+      points: Array<{ x: number; y: number }>,
+      holes: Array<Array<{ x: number; y: number }>> | undefined,
+    ) => [
+      {
+        outline: points.map(point),
+        ...(holes ? { holes: holes.map((hole) => hole.map(point)) } : {}),
+      },
     ];
     const created = [
       ...(edit.tracks ?? []).map((item) =>
-        createTrack({ start: point(item.start), end: point(item.end), width: toNm(item.width), layer: item.layer as BoardLayer, ...(item.net ? { net: net(item.net) } : {}) }),
+        createTrack({
+          start: point(item.start),
+          end: point(item.end),
+          width: toNm(item.width),
+          layer: item.layer as BoardLayer,
+          ...(item.net ? { net: net(item.net) } : {}),
+        }),
       ),
       ...(edit.vias ?? []).map((item) =>
-        createVia({ position: point(item.position), diameter: toNm(item.diameter), drill: toNm(item.drill), layers: item.layers as BoardLayer[], ...(item.net ? { net: net(item.net) } : {}) }),
+        createVia({
+          position: point(item.position),
+          diameter: toNm(item.diameter),
+          drill: toNm(item.drill),
+          layers: item.layers as BoardLayer[],
+          ...(item.net ? { net: net(item.net) } : {}),
+        }),
       ),
       ...(edit.zones ?? []).map((item) =>
         createZone({
@@ -952,15 +1043,29 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
           item.kind === "segment" && item.start && item.end
             ? { kind: "segment" as const, start: point(item.start), end: point(item.end) }
             : item.kind === "rectangle" && item.start && item.end
-              ? { kind: "rectangle" as const, topLeft: point(item.start), bottomRight: point(item.end) }
+              ? {
+                  kind: "rectangle" as const,
+                  topLeft: point(item.start),
+                  bottomRight: point(item.end),
+                }
               : item.kind === "arc" && item.start && item.mid && item.end
-                ? { kind: "arc" as const, start: point(item.start), mid: point(item.mid), end: point(item.end) }
+                ? {
+                    kind: "arc" as const,
+                    start: point(item.start),
+                    mid: point(item.mid),
+                    end: point(item.end),
+                  }
                 : item.kind === "circle" && item.center && item.radiusPoint
-                  ? { kind: "circle" as const, center: point(item.center), radiusPoint: point(item.radiusPoint) }
+                  ? {
+                      kind: "circle" as const,
+                      center: point(item.center),
+                      radiusPoint: point(item.radiusPoint),
+                    }
                   : item.kind === "polygon" && item.points
                     ? { kind: "polygon" as const, polygons: polygons(item.points, item.holes) }
                     : null;
-        if (!geometry) throw new ToolError(`incomplete ${item.kind} board graphic geometry`, "invalid_args");
+        if (!geometry)
+          throw new ToolError(`incomplete ${item.kind} board graphic geometry`, "invalid_args");
         return createBoardGraphic({
           geometry,
           layer: item.layer as BoardLayer,
@@ -974,7 +1079,8 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       const existing = await board.getItemsById(deleteIds);
       const found = new Set(existing.map((item) => item.id));
       const missing = deleteIds.filter((id) => !found.has(id));
-      if (missing.length) throw new ToolError(`unknown PCB item ids: ${missing.join(", ")}`, "invalid_args");
+      if (missing.length)
+        throw new ToolError(`unknown PCB item ids: ${missing.join(", ")}`, "invalid_args");
     }
     const result = await board.commit("Fabdesk: edit native PCB geometry", async (tx) => {
       const made = created.length ? await tx.create(created) : [];
@@ -1004,30 +1110,96 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     const point = (value: { x: number; y: number }) => ({ x: mm(value.x), y: mm(value.y) });
     const polygonValue = (value: unknown): unknown => {
       if (Array.isArray(value)) return value.map(polygonValue);
-      if (!value || typeof value !== "object") return typeof value === "bigint" ? Number(value) : value;
+      if (!value || typeof value !== "object")
+        return typeof value === "bigint" ? Number(value) : value;
       const row = value as Record<string, unknown>;
       if (typeof row["xNm"] === "bigint" && typeof row["yNm"] === "bigint")
         return { x: mm(Number(row["xNm"])), y: mm(Number(row["yNm"])) };
-      return Object.fromEntries(Object.entries(row).filter(([key]) => key !== "$typeName").map(([key, entry]) => [key, polygonValue(entry)]));
+      return Object.fromEntries(
+        Object.entries(row)
+          .filter(([key]) => key !== "$typeName")
+          .map(([key, entry]) => [key, polygonValue(entry)]),
+      );
     };
     const layerNames = Object.fromEntries(
-      await Promise.all(snapshot.enabledLayers.layers.map(async (layer) => [String(layer), await board.layerName(layer)])),
+      await Promise.all(
+        snapshot.enabledLayers.layers.map(async (layer) => [
+          String(layer),
+          await board.layerName(layer),
+        ]),
+      ),
     );
     return {
-      ...(snapshot.revisionStart !== undefined ? { revisionStart: Number(snapshot.revisionStart) } : {}),
+      ...(snapshot.revisionStart !== undefined
+        ? { revisionStart: Number(snapshot.revisionStart) }
+        : {}),
       ...(snapshot.revisionEnd !== undefined ? { revisionEnd: Number(snapshot.revisionEnd) } : {}),
       revisionStable: snapshot.revisionStable,
       enabledLayers: snapshot.enabledLayers,
       layerNames,
-      pads: snapshot.pads.map((item) => ({ ...item, position: point(item.position), size: point(item.size), drillDiameter: point(item.drillDiameter), polygons: item.polygons.map((shape) => ({ layer: shape.layer, shape: polygonValue(shape.shape) })) })),
-      tracks: snapshot.tracks.map((item) => ({ ...item, start: point(item.start), end: point(item.end), width: mm(item.width) })),
-      arcs: snapshot.arcs.map((item) => ({ ...item, start: point(item.start), mid: point(item.mid), end: point(item.end), width: mm(item.width) })),
-      vias: snapshot.vias.map((item) => ({ ...item, position: point(item.position), diameter: mm(item.diameter), drill: mm(item.drill) })),
-      zones: snapshot.zones.map((item) => ({ ...item, clearance: mm(item.clearance), minThickness: mm(item.minThickness), outline: item.outline.map(point), polygons: polygonValue(item.polygons) })),
-      texts: snapshot.texts.map((item) => ({ ...item, position: point(item.position), size: point(item.size), thickness: mm(item.thickness) })),
-      graphics: snapshot.graphics.map((item) => ({ ...item, start: point(item.start), end: point(item.end), geometry: polygonValue(item.geometry), strokeWidth: mm(item.strokeWidth) })),
-      nets: snapshot.nets.map((item) => ({ ...item, ...(item.clearance !== undefined ? { clearance: mm(item.clearance) } : {}), ...(item.trackWidth !== undefined ? { trackWidth: mm(item.trackWidth) } : {}), ...(item.viaDiameter !== undefined ? { viaDiameter: mm(item.viaDiameter) } : {}), ...(item.viaDrill !== undefined ? { viaDrill: mm(item.viaDrill) } : {}) })),
-      rules: { ...snapshot.rules, minimums: Object.fromEntries(Object.entries(snapshot.rules.minimums).map(([key, value]) => [key, mm(value)])), custom: polygonValue(snapshot.rules.custom) },
+      pads: snapshot.pads.map((item) => ({
+        ...item,
+        position: point(item.position),
+        size: point(item.size),
+        drillDiameter: point(item.drillDiameter),
+        polygons: item.polygons.map((shape) => ({
+          layer: shape.layer,
+          shape: polygonValue(shape.shape),
+        })),
+      })),
+      tracks: snapshot.tracks.map((item) => ({
+        ...item,
+        start: point(item.start),
+        end: point(item.end),
+        width: mm(item.width),
+      })),
+      arcs: snapshot.arcs.map((item) => ({
+        ...item,
+        start: point(item.start),
+        mid: point(item.mid),
+        end: point(item.end),
+        width: mm(item.width),
+      })),
+      vias: snapshot.vias.map((item) => ({
+        ...item,
+        position: point(item.position),
+        diameter: mm(item.diameter),
+        drill: mm(item.drill),
+      })),
+      zones: snapshot.zones.map((item) => ({
+        ...item,
+        clearance: mm(item.clearance),
+        minThickness: mm(item.minThickness),
+        outline: item.outline.map(point),
+        polygons: polygonValue(item.polygons),
+      })),
+      texts: snapshot.texts.map((item) => ({
+        ...item,
+        position: point(item.position),
+        size: point(item.size),
+        thickness: mm(item.thickness),
+      })),
+      graphics: snapshot.graphics.map((item) => ({
+        ...item,
+        start: point(item.start),
+        end: point(item.end),
+        geometry: polygonValue(item.geometry),
+        strokeWidth: mm(item.strokeWidth),
+      })),
+      nets: snapshot.nets.map((item) => ({
+        ...item,
+        ...(item.clearance !== undefined ? { clearance: mm(item.clearance) } : {}),
+        ...(item.trackWidth !== undefined ? { trackWidth: mm(item.trackWidth) } : {}),
+        ...(item.viaDiameter !== undefined ? { viaDiameter: mm(item.viaDiameter) } : {}),
+        ...(item.viaDrill !== undefined ? { viaDrill: mm(item.viaDrill) } : {}),
+      })),
+      rules: {
+        ...snapshot.rules,
+        minimums: Object.fromEntries(
+          Object.entries(snapshot.rules.minimums).map(([key, value]) => [key, mm(value)]),
+        ),
+        custom: polygonValue(snapshot.rules.custom),
+      },
     };
   };
 
@@ -1046,6 +1218,45 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
           .includes(f),
       );
     switch (select) {
+      case "outline": {
+        // Edge.Cuts bounding box, so placements can be reasoned about in the board's own coordinates
+        // (the compile does not put the outline's corner at 0,0).
+        const pt = (v: { xNm?: bigint | number; yNm?: bigint | number } | undefined) => ({
+          x: Number(v?.xNm ?? 0),
+          y: Number(v?.yNm ?? 0),
+        });
+        const pts: Array<{ x: number; y: number }> = [];
+        for (const s of await board.getShapes()) {
+          if (s.layerId !== BoardLayer.BL_Edge_Cuts) continue;
+          const g = s.shape?.geometry;
+          if (g?.case === "segment") pts.push(pt(g.value.start), pt(g.value.end));
+          else if (g?.case === "arc") pts.push(pt(g.value.start), pt(g.value.mid), pt(g.value.end));
+          else if (g?.case === "rectangle") pts.push(pt(g.value.topLeft), pt(g.value.bottomRight));
+          else if (g?.case === "circle") {
+            const c = pt(g.value.center);
+            const r = pt(g.value.radiusPoint);
+            const rad = Math.hypot(r.x - c.x, r.y - c.y);
+            pts.push({ x: c.x - rad, y: c.y - rad }, { x: c.x + rad, y: c.y + rad });
+          }
+        }
+        if (!pts.length) return [];
+        const xs = pts.map((p) => p.x);
+        const ys = pts.map((p) => p.y);
+        const minX = Math.min(...xs);
+        const maxX = Math.max(...xs);
+        const minY = Math.min(...ys);
+        const maxY = Math.max(...ys);
+        return [
+          {
+            minX: mm(minX),
+            minY: mm(minY),
+            maxX: mm(maxX),
+            maxY: mm(maxY),
+            widthMm: mm(maxX - minX),
+            heightMm: mm(maxY - minY),
+          },
+        ];
+      }
       case "components": {
         return (await board.getFootprints())
           .map((fp) => ({
@@ -1155,7 +1366,12 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
             .filter(
               (item): item is BoardShape =>
                 item instanceof BoardShape &&
-                [BoardLayer.BL_F_CrtYd, BoardLayer.BL_B_CrtYd, BoardLayer.BL_F_Fab, BoardLayer.BL_B_Fab].includes(item.layerId),
+                [
+                  BoardLayer.BL_F_CrtYd,
+                  BoardLayer.BL_B_CrtYd,
+                  BoardLayer.BL_F_Fab,
+                  BoardLayer.BL_B_Fab,
+                ].includes(item.layerId),
             )
             .map((shape) => ({
               id: shape.id,
@@ -1290,6 +1506,36 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         .catch(() => 0);
   };
 
+  /**
+   * Move footprints by rewriting their transform in the saved file, then reload the board into the
+   * session: the API's UpdateItems moves only a footprint's anchor (fab_pcb gap G28), the file
+   * format keeps children relative, so this is the one way to place parts today.
+   */
+  const place = async (
+    projectDir: string,
+    placements: Array<{ ref: string; x: number; y: number; rotation?: number }>,
+  ): Promise<{
+    moved: Array<{ ref: string; x: number; y: number; rotation: number }>;
+    missing: string[];
+  }> => {
+    const requested = new Map(placements.map((placement) => [placement.ref, placement]));
+    const result = await placeFootprints(
+      projectDir,
+      placements.map((placement) => ({
+        reference: placement.ref,
+        position: { x: placement.x, y: placement.y },
+        ...(placement.rotation !== undefined ? { rotation: placement.rotation } : {}),
+      })),
+    );
+    return {
+      moved: result.moved.flatMap((ref) => {
+        const placement = requested.get(ref);
+        return placement ? [{ ...placement, rotation: placement.rotation ?? 0 }] : [];
+      }),
+      missing: result.missing,
+    };
+  };
+
   const unroute = async (
     projectDir: string,
     nets?: string[],
@@ -1346,13 +1592,13 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     return { components, missing, nets: kept, excluded, pads };
   };
 
-  const searchLibraries = async (
+  const searchLibrariesOnce = async (
+    sessionKicad: KiCad,
     kind: "footprint" | "symbol",
     query: string,
     limit: number,
   ): Promise<FootprintHit[]> => {
-    if (deps.catalog?.has(kind)) return deps.catalog.search(kind, query, limit);
-    const kicad = await anyKicad();
+    const kicad = await anyKicad(sessionKicad);
     const tokens = query
       .toLowerCase()
       .split(/[\s:]+/)
@@ -1362,19 +1608,17 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       .map((n) => ({ n, hit: tokens.filter((t) => n.toLowerCase().includes(t)).length }))
       .sort((a, b) => b.hit - a.hit);
     const hits: FootprintHit[] = [];
-    const filter = tokens.join(" ");
-    for (const { n, hit } of scored) {
+    for (const { n } of scored) {
       if (hits.length >= limit) break;
-      // Libraries whose name matches take everything matching the rest; others only exact-ish entry hits.
-      const entries = await kicad.libraries
-        .entries(
-          kind,
-          n,
-          hit ? tokens.filter((t) => !n.toLowerCase().includes(t)).join(" ") : filter,
-        )
-        .catch(() => []);
+      // KiCad's entry filter is one substring, so ask with the most specific token the library name
+      // does not already cover and match the remaining tokens here against name + description.
+      const rest = tokens.filter((t) => !n.toLowerCase().includes(t));
+      const [primary, ...others] = [...rest].sort((a, b) => b.length - a.length);
+      const entries = await kicad.libraries.entries(kind, n, primary ?? "");
       for (const e of entries) {
         if (hits.length >= limit) break;
+        const hay = `${e.name} ${e.description ?? ""}`.toLowerCase();
+        if (!others.every((t) => hay.includes(t))) continue;
         hits.push({
           libId: `${n}:${e.name}`,
           nickname: n,
@@ -1384,6 +1628,18 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       }
     }
     return hits;
+  };
+  const searchLibraries = (
+    kind: "footprint" | "symbol",
+    query: string,
+    limit: number,
+  ): Promise<FootprintHit[]> => {
+    if (deps.catalog?.has(kind)) return deps.catalog.search(kind, query, limit);
+    // Keep the entire remote search inside the retry boundary. If the bridge disappears during an
+    // entries call, retry from nicknames rather than returning a silently truncated result set.
+    return deps.sessions.withRetry("", (session) =>
+      searchLibrariesOnce(session.kicad, kind, query, limit),
+    );
   };
   const searchFootprints = (query: string, limit: number) =>
     searchLibraries("footprint", query, limit);
@@ -1470,8 +1726,23 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     return evaluatePartCompatibility(symbol, footprint, role);
   };
 
-  /** Any live KiCad for server-wide questions (libraries); a bare session when no project is open. */
-  const anyKicad = async (): Promise<KiCad> => (await deps.sessions.session("")).kicad;
+  /**
+   * Any live KiCad for server-wide questions (libraries). The api-server only registers the
+   * footprint-library handlers once a project is open (`GetLibraryTables` answers `AS_UNHANDLED`
+   * on a bare session), so the shared session is given a scratch project the first time.
+   */
+  const anyKicad = async (sessionKicad?: KiCad): Promise<KiCad> => {
+    const kicad = sessionKicad ?? (await deps.sessions.session("")).kicad;
+    const hasProject = await kicad
+      .projectInfo()
+      .then(() => true)
+      .catch(() => false);
+    if (!hasProject) {
+      const dir = await mkdtemp(join(tmpdir(), "fabdesk-libs-"));
+      await kicad.newProject(join(dir, "libs.kicad_pro"), { skipStubDocuments: true });
+    }
+    return kicad;
+  };
 
   const status = async (): Promise<DesignStatus> => {
     const bridge = deps.bridge();
@@ -1483,8 +1754,22 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         ...(h.kicadCliExists !== undefined ? { kicadCliExists: h.kicadCliExists } : {}),
         ...(h.compile?.frontends ? { frontends: h.compile.frontends } : {}),
         routers: {
-          ...(h.jsAutorouter ? { capacity: { ok: h.jsAutorouter.ok, ...(h.jsAutorouter.reason ? { reason: h.jsAutorouter.reason } : {}) } } : {}),
-          ...(h.freerouting ? { freerouting: { ok: h.freerouting.ok, ...(h.freerouting.reason ? { reason: h.freerouting.reason } : {}) } } : {}),
+          ...(h.jsAutorouter
+            ? {
+                capacity: {
+                  ok: h.jsAutorouter.ok,
+                  ...(h.jsAutorouter.reason ? { reason: h.jsAutorouter.reason } : {}),
+                },
+              }
+            : {}),
+          ...(h.freerouting
+            ? {
+                freerouting: {
+                  ok: h.freerouting.ok,
+                  ...(h.freerouting.reason ? { reason: h.freerouting.reason } : {}),
+                },
+              }
+            : {}),
         },
       };
     } catch (e) {
@@ -1510,6 +1795,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     searchSymbols,
     describePart,
     checkPartCompatibility,
+    place,
     status,
     release: (dir) => deps.sessions.release(dir),
   };

@@ -7,8 +7,7 @@
 #      shared `tsconfig.base.json` and the `@pcb/*` workspace packages that the
 #      whole monorepo depends on. Requires the generated GitHub token to have
 #      access to `github.com/tensorfleet/fabplane.com` (see repositoryDependencies
-#      in environment.json). `vendor/js_autorouter` is internal-only and is left
-#      uninitialised; `bun install --frozen-lockfile` skips absent workspaces.
+#      in environment.json).
 #   3. Install JS dependencies from the root lockfile.
 #
 # Never run `bun install` inside vendor/* (see AGENTS.md): the root lockfile owns
@@ -52,29 +51,43 @@ if ! command -v tailscale >/dev/null 2>&1; then
 fi
 log "Tailscale $(tailscale version | head -n 1)"
 
-# --- 2. Private submodule (fabplane) ---------------------------------------
-if [ ! -f vendor/fabplane/tsconfig.base.json ]; then
-  log "Initialising vendor/fabplane submodule"
-  if ! git submodule update --init --depth 1 vendor/fabplane; then
-    cat >&2 <<'EOF'
+# --- 2. Private submodules (fabplane + fab_pcb) -----------------------------
+# Both submodules are required: vendor/fabplane provides the shared
+# tsconfig.base.json and @pcb/* packages; vendor/fab_pcb provides the
+# @fp-pcb/{proto,client} workspaces that apps/core depends on. `bun install
+# --frozen-lockfile` aborts if either set of workspaces is missing from disk.
+init_private_submodule() {
+  local path="$1" repo="$2" marker="$3"
+  if [ -f "$marker" ]; then
+    log "$path already present"
+    return 0
+  fi
+  log "Initialising $path submodule"
+  if git submodule update --init --depth 1 "$path"; then
+    return 0
+  fi
+  cat >&2 <<EOF
 
-[cloud-setup] ERROR: could not fetch the private submodule github.com/tensorfleet/fabplane.com
+[cloud-setup] ERROR: could not fetch the private submodule $repo
 
-Fabdesk's shared TypeScript config and @pcb/* packages live in this private repo.
-Without it, `bun run typecheck` and the apps/core + apps/desktop apps cannot run.
+Fabdesk's shared TypeScript config, @pcb/* and @fp-pcb/* packages live in the
+private repos github.com/tensorfleet/fabplane.com and github.com/fabplane/fab_pcb.
+Without them, \`bun install\`, \`bun run typecheck\` and the apps/core + apps/desktop
+apps cannot run.
 
 Grant access by either:
-  * adding "github.com/tensorfleet/fabplane.com" to repositoryDependencies in
-    .cursor/environment.json AND granting the Cursor GitHub App access to that
-    repository, or
+  * keeping "github.com/tensorfleet/fabplane.com" and
+    "github.com/fabplane/fab_pcb" in repositoryDependencies in
+    .cursor/environment.json AND granting the Cursor GitHub App access to both
+    repositories, or
   * providing a read-only submodule deploy key as an environment secret.
 
 EOF
-    exit 1
-  fi
-else
-  log "vendor/fabplane already present"
-fi
+  return 1
+}
+
+init_private_submodule vendor/fabplane github.com/tensorfleet/fabplane.com vendor/fabplane/tsconfig.base.json
+init_private_submodule vendor/fab_pcb github.com/fabplane/fab_pcb vendor/fab_pcb/packages/proto/package.json
 
 # --- 3. JS dependencies -----------------------------------------------------
 log "Installing dependencies (bun install --frozen-lockfile)"

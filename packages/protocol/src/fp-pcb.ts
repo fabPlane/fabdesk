@@ -1,5 +1,5 @@
 /**
- * Wire types for the FabPlane PCB bridge (`@fp-pcb/bridge` on TensorFleet/fab_pcb), mirrored here
+ * Wire types for the FabPlane PCB bridge (`@fp-pcb/bridge` on fabPlane/fab_pcb), mirrored here
  * so `@fabdesk/core` can be a plain HTTP client of it with no fab_pcb workspace package in its
  * tree — the same way `@fabdesk/tools` mirrors its sibling packages. Deliberately loose: fabdesk
  * validates only the fields it reads, so the bridge can grow without a lockstep release.
@@ -197,6 +197,8 @@ export const FP_PCB_SSE_EVENTS = {
 /** `@fp-pcb/router` `RouteProgress`, as the route job streams it; kept loose. */
 export const FpPcbRouteProgress = z.looseObject({
   phase: z.string().optional(),
+  /** JS router: solver progress within the phase, 0–100. */
+  percent: z.number().optional(),
   message: z.string().optional(),
   pass: z.number().optional(),
   routed: z.number().optional(),
@@ -222,7 +224,6 @@ export const FpPcbRouteUnrouted = z.object({
   from: z.object({ x: z.number(), y: z.number() }),
   to: z.object({ x: z.number(), y: z.number() }),
 });
-
 export const FpPcbRouteGeometry = z.object({
   kind: z.enum(["trace", "via"]),
   id: z.string(),

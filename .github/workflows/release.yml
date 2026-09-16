@@ -1,38 +1,68 @@
 name: Release
 
-# Every merge to main produces an official public release: version 0.<minor>.<run_number>,
+# Nightly and manual public runs produce a release: version 0.<minor>.<run_number>,
 # a git tag, a GitHub Release with installers for macOS (arm64, x64), Linux and Windows,
 # SHA256SUMS, and manifest.json. The website script (fabplane.com scripts/publish-desktop-release.ts)
 # consumes manifest.json to publish download links and desktop/latest.json.
 # Internal builds (workflow_dispatch channel=internal) are uploaded as workflow artifacts only.
 
 on:
-  push:
-    branches: [main]
+  schedule:
+    - cron: "0 20 * * *" # 03:00 Asia/Bangkok
   workflow_dispatch:
     inputs:
       channel:
-        description: "public or internal (internal bundles the private router; never released)"
+        description: "public or internal release channel"
         required: true
         default: "public"
         type: choice
         options: [public, internal]
 
 concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: false
+  group: release-${{ inputs.channel || 'public' }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CHANNEL: ${{ inputs.channel || 'public' }}
 
 jobs:
   version:
-    runs-on: ubuntu-22.04
+    runs-on: blacksmith-4vcpu-ubuntu-2204
     outputs:
       version: ${{ steps.v.outputs.version }}
       tag: ${{ steps.v.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.FABDESK_SUBMODULE_SSH_KEY }}
+
+      - name: Init the fabplane submodule
+        run: git submodule update --init --depth 1 vendor/fabplane
+
+      - name: Resolve the fab_pcb pin
+        id: fab-pcb
+        run: echo "commit=$(git ls-tree HEAD vendor/fab_pcb | awk '{print $3}')" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the pinned fab_pcb workspace
+        uses: actions/checkout@v4
+        with:
+          repository: fabPlane/fab_pcb
+          ref: ${{ steps.fab-pcb.outputs.commit }}
+          path: vendor/fab_pcb
+          token: ${{ secrets.FAB_PCB_RELEASE_TOKEN }}
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+
       - id: v
         run: |
           base=$(node -p "require('./package.json').version.split('.').slice(0,2).join('.')")
@@ -47,25 +77,46 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: macos-14, target: bun-darwin-arm64, eb: "--mac --arm64" }
-          - { os: macos-14, target: bun-darwin-x64, eb: "--mac --x64" }
-          - { os: ubuntu-22.04, target: bun-linux-x64, eb: "--linux" }
-          - { os: windows-latest, target: bun-windows-x64, eb: "--win" }
+          - { os: [self-hosted, macOS, ARM64], target: bun-darwin-arm64, eb: "--mac --arm64" }
+          # The self-hosted Mini does not have Rosetta yet, so keep Intel packaging hosted.
+          - { os: blacksmith-6vcpu-macos-15, target: bun-darwin-x64, eb: "--mac --x64" }
+          - { os: blacksmith-4vcpu-ubuntu-2204, target: bun-linux-x64, eb: "--linux" }
+          - { os: blacksmith-4vcpu-windows-2025, target: bun-windows-x64, eb: "--win" }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: false
 
-      # Read-only deploy keys for the private submodules, fabplane.com and fab_pcb (one secret,
-      # keys concatenated; each key's comment names its repo so ssh-agent maps it to that repo over https).
+      # The deploy key provides read-only access to fabplane.com. fab_pcb is checked out below
+      # with its token because the fabPlane organization disables deploy keys.
       - uses: webfactory/ssh-agent@v0.9.1
         with:
           ssh-private-key: ${{ secrets.FABDESK_SUBMODULE_SSH_KEY }}
 
-      - name: Init the fabplane and fab_pcb submodules
-        run: git submodule update --init --depth 1 vendor/fabplane vendor/fab_pcb
+      - name: Trust GitHub SSH host key on Windows
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          mkdir -p ~/.ssh
+          echo 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' >> ~/.ssh/known_hosts
 
+      - name: Init the fabplane submodule
+        run: git submodule update --init --depth 1 vendor/fabplane
+
+      - name: Resolve the fab_pcb pin
+        id: fab-pcb
+        shell: bash
+        run: echo "commit=$(git ls-tree HEAD vendor/fab_pcb | awk '{print $3}')" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the pinned fab_pcb workspace
+        uses: actions/checkout@v4
+        with:
+          repository: fabPlane/fab_pcb
+          ref: ${{ steps.fab-pcb.outputs.commit }}
+          path: vendor/fab_pcb
+          token: ${{ secrets.FAB_PCB_RELEASE_TOKEN }}
+          persist-credentials: false
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -77,7 +128,6 @@ jobs:
       - run: bun install --frozen-lockfile
       - name: Stamp version ${{ needs.version.outputs.version }}
         run: bun run scripts/set-version.ts ${{ needs.version.outputs.version }}
-      - run: bun run typecheck
 
       # Sentry error reporting (docs/sentry.md). The DSN is a public write-only key; export it only when the
       # SENTRY_DESKTOP_DSN repo secret is set so builds without it ship with reporting off. Both spellings are
@@ -101,6 +151,41 @@ jobs:
       - name: Build core (${{ matrix.target }})
         run: bun run --cwd apps/core build --only ${{ matrix.target }} --channel ${{ env.CHANNEL }}
 
+      # Resolve the immutable KiCad nightly that matches FabPCB's generated API contract. The
+      # rolling `nightly` tag can advance independently and must not change a pinned installer.
+      - name: Resolve exact bundled KiCad release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          commit="$(tr -d '[:space:]' < vendor/fab_pcb/packages/proto/KICAD_COMMIT)"
+          sha10="${commit:0:10}"
+          releases="$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/TensorFleet/kicad/releases?per_page=100")"
+          tag="$(printf '%s' "$releases" | jq -r --arg s "$sha10" \
+            '.[] | .tag_name | select(startswith("nightly-") and endswith("-" + $s))' | head -1)"
+          if [ -z "$tag" ]; then
+            echo "::error title=no exact KiCad nightly::No nightly release matches FabPCB KICAD_COMMIT $commit"
+            exit 1
+          fi
+          echo "FABDESK_KICAD_RELEASE=$tag" >> "$GITHUB_ENV"
+
+      # Stage the exact FabPlane KiCad fork release into apps/desktop/kicad-bundle/<os>-<arch>
+      # so afterPack copies it to Resources/kicad.
+      # Override with FABDESK_KICAD_BUNDLE_URL or FABDESK_KICAD_REPO; --require fails the build
+      # when the release has no matching OS/arch asset.
+      - name: Stage bundled KiCad
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Only forward overrides when set — an empty FABDESK_KICAD_REPO would wipe the
+          # TensorFleet/kicad default and 404 on https://github.com//releases/...
+          FABDESK_KICAD_BUNDLE_URL: ${{ secrets.FABDESK_KICAD_BUNDLE_URL }}
+          FABDESK_KICAD_REPO: ${{ vars.FABDESK_KICAD_REPO != '' && vars.FABDESK_KICAD_REPO || 'TensorFleet/kicad' }}
+        run: bun run scripts/stage-kicad-bundle.ts --target ${{ matrix.target }} --require
+
       - name: Build renderer/main
         run: bun run --cwd apps/desktop build
 
@@ -119,10 +204,18 @@ jobs:
           tag="backend-${commit:0:10}"
           asset="fp-pcb-backend-${target}.tar.gz"
           mkdir -p "dist/pcb/$target" "$RUNNER_TEMP/fp-pcb"
-          gh release download "$tag" --repo TensorFleet/fab_pcb --pattern "$asset" --dir "$RUNNER_TEMP/fp-pcb"
-          tar -xzf "$RUNNER_TEMP/fp-pcb/$asset" -C "dist/pcb/$target"
+          gh release download "$tag" --repo fabPlane/fab_pcb --pattern "$asset" --dir "$RUNNER_TEMP/fp-pcb"
+          archive="$RUNNER_TEMP/fp-pcb/$asset"
+          # Git Bash tar treats a native D:\ path as a remote host/path pair.
+          if [ "$RUNNER_OS" = Windows ]; then archive="$(cygpath -u "$archive")"; fi
+          # Library snapshots may retain clone metadata. It is not runtime data, bloats the
+          # installer, and macOS codesign cannot rewrite read-only Git pack indexes.
+          tar --exclude='*/.git' --exclude='*/.git/*' -xzf "$archive" -C "dist/pcb/$target"
           test -f "dist/pcb/$target/bundle.json"
+          # shellcheck disable=SC2016
           bun -e 'const m=await Bun.file(process.argv[1]).json(); if(m.target!==process.argv[2]) throw new Error(`bundle target ${m.target} != ${process.argv[2]}`)' "dist/pcb/$target/bundle.json" "$target"
+          # shellcheck disable=SC2016
+          bun -e 'const m=await Bun.file(process.argv[1]).json(); if(!m.fabRouter) throw new Error("backend does not contain fab_router")' "dist/pcb/$target/bundle.json"
 
       # electron-builder treats an empty CSC_LINK as a file path, so only export secrets that are set.
       - name: Signing environment
@@ -155,6 +248,7 @@ jobs:
         shell: bash
         env:
           FABDESK_CHANNEL: ${{ env.CHANNEL }}
+          FABDESK_REQUIRE_KICAD_BUNDLE: "true"
         run: cd apps/desktop && bunx electron-builder ${{ matrix.eb }} --publish never
 
       - name: Collect installers
@@ -174,17 +268,20 @@ jobs:
           name: installers-${{ matrix.target }}
           path: release-out/*
           if-no-files-found: error
+          # Public installers are copied into the permanent GitHub Release immediately.
+          # Internal builds exist only as workflow artifacts, so retain those for a week.
+          retention-days: ${{ env.CHANNEL == 'internal' && 7 || 1 }}
 
   release:
     needs: [version, build]
-    if: github.event_name == 'push' && (inputs.channel == '' || inputs.channel == 'public')
-    runs-on: ubuntu-22.04
+    if: github.ref == 'refs/heads/main' && (inputs.channel == '' || inputs.channel == 'public')
+    runs-on: blacksmith-4vcpu-ubuntu-2204
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # full history + tags for the release notes
+          fetch-depth: 0 # full history + tags for the release notes
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0
@@ -225,7 +322,117 @@ jobs:
         run: |
           git tag ${{ needs.version.outputs.tag }} ${{ github.sha }}
           git push origin ${{ needs.version.outputs.tag }}
+          assets=()
+          for file in artifacts/*; do
+            if [ "$file" != artifacts/NOTES.md ]; then assets+=("$file"); fi
+          done
           gh release create ${{ needs.version.outputs.tag }} \
             --title "fabPlane ${{ needs.version.outputs.version }}" \
             --notes-file artifacts/NOTES.md \
-            $(ls artifacts/* | grep -v NOTES.md)
+            "${assets[@]}"
+
+  website:
+    name: Hand off public release to fabplane.com
+    needs: [version, release]
+    runs-on: blacksmith-4vcpu-ubuntu-2204
+    permissions: {}
+    steps:
+      - name: Trigger website installer and feed publishing
+        env:
+          GH_TOKEN: ${{ secrets.FABPLANE_RELEASE_DISPATCH_TOKEN }}
+          RELEASE_TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          test -n "$GH_TOKEN" || { echo "::error::Missing FABPLANE_RELEASE_DISPATCH_TOKEN (fabplane.com Actions write)"; exit 1; }
+          gh workflow run desktop-release.yml --repo TensorFleet/fabplane.com --ref main -f tag="$RELEASE_TAG"
+
+  # The phone app rides the same version number (docs/mobile-release.md). It is stamped into
+  # apps/mobile/app.json by set-version.ts with derived build numbers, checked the way mobile.yml
+  # checks it, and — when EXPO_TOKEN exists — queued as an EAS preview build (internal
+  # distribution; store submission stays manual). This nightly run is the only scheduled mobile
+  # build; merges to main do not build the app (mobile.yml's EAS job is manual-only). Nothing here
+  # feeds the GitHub Release: EAS keeps the binaries, and the app carries no source maps (Sentry's
+  # build phases write them outside the bundle and delete them after upload; there is no
+  # `expo export --source-maps` anywhere).
+  mobile:
+    needs: version
+    runs-on: blacksmith-4vcpu-ubuntu-2204
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # The app aliases @fabdesk/client-core and @fabdesk/protocol to source, whose imports resolve
+      # from the root node_modules — so the root install (and its submodule workspaces) is needed
+      # too, exactly as in mobile.yml.
+      - uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.FABDESK_SUBMODULE_SSH_KEY }}
+
+      - name: Init the fabplane submodule
+        run: git submodule update --init --depth 1 vendor/fabplane
+
+      - name: Resolve the fab_pcb pin
+        id: fab-pcb
+        run: echo "commit=$(git ls-tree HEAD vendor/fab_pcb | awk '{print $3}')" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the pinned fab_pcb workspace
+        uses: actions/checkout@v4
+        with:
+          repository: fabPlane/fab_pcb
+          ref: ${{ steps.fab-pcb.outputs.commit }}
+          path: vendor/fab_pcb
+          token: ${{ secrets.FAB_PCB_RELEASE_TOKEN }}
+          persist-credentials: false
+
+      - name: Install (root)
+        run: bun install --frozen-lockfile
+
+      - name: Install (app)
+        run: bun install --frozen-lockfile
+        working-directory: apps/mobile
+
+      - name: Stamp version ${{ needs.version.outputs.version }}
+        run: bun run scripts/set-version.ts ${{ needs.version.outputs.version }}
+
+      - name: Typecheck
+        run: bun run typecheck
+        working-directory: apps/mobile
+
+      - name: Test
+        run: bun run test
+        working-directory: apps/mobile
+
+      - name: Check for EXPO_TOKEN
+        id: gate
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::notice title=EAS build skipped::EXPO_TOKEN is not set; see docs/mobile-release.md."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.gate.outputs.run == 'true'
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      # Internal builds stay internal: only a public run queues a preview build. The stamped
+      # app.json is uncommitted, which EAS includes (eas.json has no requireCommit).
+      - if: steps.gate.outputs.run == 'true' && env.CHANNEL == 'public'
+        name: EAS build (preview, iOS + Android) ${{ needs.version.outputs.version }}
+        env:
+          EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
+        run: eas build --platform all --profile preview --non-interactive --no-wait
+        working-directory: apps/mobile

@@ -47,9 +47,7 @@ export function renderAgentsMd(
   const mcp = ctx.mcpServerName;
   const sketches =
     ctx.sketches.length > 0
-      ? ctx.sketches
-          .map((p) => `- \`${p}\` — user-provided sketch.`)
-          .join("\n")
+      ? ctx.sketches.map((p) => `- \`${p}\` — user-provided sketch.`).join("\n")
       : "- No sketches attached.";
   return `${HEADER}
 # ${ctx.projectName} — fabPlane project

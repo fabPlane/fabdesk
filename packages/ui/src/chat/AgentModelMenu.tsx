@@ -1,7 +1,7 @@
 import type { AgentId, AgentInfo } from "@fabdesk/protocol";
 import { useEffect, useRef, type ReactNode } from "react";
 import { cn } from "../util";
-import { pickerModelChoices } from "./agent-model-choices";
+import { pickerModelChoices } from "@fabdesk/client-core";
 
 export interface AgentModelMenuProps {
   open: boolean;

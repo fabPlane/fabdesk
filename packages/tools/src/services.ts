@@ -33,6 +33,8 @@ export type BuildOptions = {
   board?: FpPcbBoardSpec;
   /** Preserve compatible copper (default), or remove routed copper before rebuilding. */
   rebuild?: "preserve" | "clean";
+  /** Start from nothing: drop the session's board and the generated board files first, so the outline, placement and routing are redone. */
+  fresh?: boolean;
   signal?: AbortSignal;
   /** Stage progress from the compile job; tools map it into their own range. */
   progress?: (fraction: number, note?: string) => void;
@@ -71,7 +73,8 @@ export type DesignSelect =
   | "keepouts"
   | "board_geometry"
   | "texts"
-  | "unrouted";
+  | "unrouted"
+  | "outline";
 export type DesignRow = Record<string, unknown>;
 
 export type RouteJobOptions = {
@@ -87,6 +90,8 @@ export type RouteProgress = {
   state: string;
   log: string[];
   phase?: string;
+  /** Solver progress within the phase, 0–100, when the router reports one. */
+  percent?: number;
   message?: string;
   pass?: number;
   routed?: number;
@@ -271,7 +276,13 @@ export type NativeSchematicSnapshot = {
     rotation: number;
     mirrorX: boolean;
     mirrorY: boolean;
-    pins: Array<{ id: string; number: string; name: string; net?: string; position: SchematicPoint }>;
+    pins: Array<{
+      id: string;
+      number: string;
+      name: string;
+      net?: string;
+      position: SchematicPoint;
+    }>;
   }>;
   wires: Array<{ id: string; start: SchematicPoint; end: SchematicPoint }>;
   localLabels: Array<{ id: string; text: string; position: SchematicPoint }>;
@@ -283,7 +294,15 @@ export type NativeSchematicSnapshot = {
   erc: { errors: number; warnings: number };
 };
 export type NativeSchematicEditResult = {
-  created: { symbols: number; wires: number; localLabels: number; globalLabels: number; junctions: number; noConnects: number; texts: number };
+  created: {
+    symbols: number;
+    wires: number;
+    localLabels: number;
+    globalLabels: number;
+    junctions: number;
+    noConnects: number;
+    texts: number;
+  };
   updated: { symbols: number };
   deleted: number;
   saved: boolean;
@@ -310,11 +329,13 @@ export type PcbFootprintEdit = {
   rotation?: number | undefined;
   flip?: boolean | undefined;
   lock?: boolean | undefined;
-  referenceField?: {
-    visible?: boolean | undefined;
-    position?: SchematicPoint | undefined;
-    sizeMm?: number | undefined;
-  } | undefined;
+  referenceField?:
+    | {
+        visible?: boolean | undefined;
+        position?: SchematicPoint | undefined;
+        sizeMm?: number | undefined;
+      }
+    | undefined;
 };
 export type PcbOutlineResult = {
   created: number;
@@ -324,8 +345,20 @@ export type PcbOutlineResult = {
 };
 
 export type PcbGeometryEdit = {
-  tracks?: Array<{ start: SchematicPoint; end: SchematicPoint; width: number; layer: number; net?: string }>;
-  vias?: Array<{ position: SchematicPoint; diameter: number; drill: number; layers: number[]; net?: string }>;
+  tracks?: Array<{
+    start: SchematicPoint;
+    end: SchematicPoint;
+    width: number;
+    layer: number;
+    net?: string;
+  }>;
+  vias?: Array<{
+    position: SchematicPoint;
+    diameter: number;
+    drill: number;
+    layers: number[];
+    net?: string;
+  }>;
   zones?: Array<{
     points: SchematicPoint[];
     holes?: SchematicPoint[][];
@@ -372,7 +405,14 @@ export type PcbGeometryEdit = {
   deleteItemIds?: string[];
 };
 export type PcbGeometryEditResult = {
-  created: { tracks: number; vias: number; zones: number; keepouts: number; texts: number; graphics: number };
+  created: {
+    tracks: number;
+    vias: number;
+    zones: number;
+    keepouts: number;
+    texts: number;
+    graphics: number;
+  };
   createdIds: string[];
   deletedIds: string[];
   revision: number;
@@ -408,10 +448,7 @@ export interface DesignService {
     replace: boolean,
   ): Promise<PcbOutlineResult>;
   /** Place native board footprints by reference without touching schematic connectivity. */
-  placeFootprints(
-    projectDir: string,
-    placements: PcbFootprintEdit[],
-  ): Promise<PcbPlacementResult>;
+  placeFootprints(projectDir: string, placements: PcbFootprintEdit[]): Promise<PcbPlacementResult>;
   /** Create and delete explicitly named native board geometry without replacing unrelated items. */
   editBoardGeometry(projectDir: string, edit: PcbGeometryEdit): Promise<PcbGeometryEditResult>;
   /** Canonical board geometry, transformed pads, nets, layers, and applicable clearance data. */
@@ -446,6 +483,14 @@ export interface DesignService {
     footprintLibId: string,
     role?: "power-only-usb-c",
   ): Promise<PartCompatibility>;
+  /** Move footprints (mm, degrees) on the built board; returns what moved and the references it could not find. */
+  place(
+    projectDir: string,
+    placements: Array<{ ref: string; x: number; y: number; rotation?: number }>,
+  ): Promise<{
+    moved: Array<{ ref: string; x: number; y: number; rotation: number }>;
+    missing: string[];
+  }>;
   status(): Promise<DesignStatus>;
   /** Drop the project's session (project closed or deleted). */
   release(projectDir: string): Promise<void>;
@@ -500,7 +545,7 @@ export type ErcReport = {
 export type GateResult = { pass: boolean; reasons: string[]; newWarningSignatures: string[] };
 
 export interface KicadService {
-  /** settings → KICAD_CLI env → known locations; null when KiCad is not installed. */
+  /** settings → KICAD_CLI env → bundled FabPlane KiCad → PATH / known locations; null when none work. */
   resolveCli(): Promise<KicadCli | null>;
   runDrc(
     cli: KicadCli,

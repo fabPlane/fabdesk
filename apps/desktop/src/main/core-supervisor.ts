@@ -19,6 +19,7 @@ import { createInterface } from "node:readline";
 import { join, resolve } from "node:path";
 import { spawnCorePort } from "./dev-profile";
 import { sidecarEnvironment } from "./child-process-env";
+import { packagedKicadEnv } from "./packaged-kicad";
 
 const READY_TIMEOUT_MS = 60_000;
 const MAX_RESTARTS_PER_MINUTE = 5;
@@ -75,6 +76,8 @@ export function resolveCoreCommand(opts: {
     cwd: root,
   };
 }
+
+export { packagedKicadEnv } from "./packaged-kicad";
 
 /** Dev daemons listen on a fixed port so MCP configs and the renderer survive a reload; 0 = random. */
 export function devCorePort(env: NodeJS.ProcessEnv = process.env): string {
@@ -278,9 +281,11 @@ export class CoreSupervisor extends EventEmitter {
     this.logLine(`spawn ${cmd.command} ${args.join(" ")}`);
     let child: ChildProcess;
     try {
+      const packagedResources = app.isPackaged && !this.opts.binaryOverride ? packagedKicadEnv(process.resourcesPath) : {};
       child = spawn(cmd.command, args, {
         cwd: cmd.cwd,
         env: sidecarEnvironment(process.env, {
+          ...packagedResources,
           ...(this.opts.extraEnv ?? {}),
           FABDESK_TOKEN: token,
           ELECTRON_RUN_AS_NODE: undefined,

@@ -20,10 +20,17 @@ async function ensureDir(dir: string): Promise<void> {
 }
 
 /** Gerbers for every enabled layer (plus edge cuts) into `outDir`. */
-export async function exportGerbers(cli: KicadCli, opts: { board: string; outDir: string; signal?: AbortSignal }): Promise<Paths> {
+export async function exportGerbers(
+  cli: KicadCli,
+  opts: { board: string; outDir: string; signal?: AbortSignal },
+): Promise<Paths> {
   await ensureDir(opts.outDir);
   const started = Date.now();
-  await runKicadCli(cli, ["pcb", "export", "gerbers", "-o", withTrailingSep(opts.outDir), opts.board], sig(opts));
+  await runKicadCli(
+    cli,
+    ["pcb", "export", "gerbers", "-o", withTrailingSep(opts.outDir), opts.board],
+    sig(opts),
+  );
   return { paths: await filesWrittenSince(opts.outDir, started, /\.(g[a-z0-9]+|gbr|gbrjob)$/i) };
 }
 
@@ -33,29 +40,87 @@ export async function exportGerbers(cli: KicadCli, opts: { board: string; outDir
  * traces and pads. kicad-cli cannot mirror, so the bottom layer is exported as seen from the top and must be
  * mirrored in the laser software (LightBurn: Arrange → Flip Horizontal) before burning.
  */
-export async function exportDxf(cli: KicadCli, opts: { board: string; outDir: string; layers: string[]; signal?: AbortSignal }): Promise<Paths> {
+export async function exportDxf(
+  cli: KicadCli,
+  opts: { board: string; outDir: string; layers: string[]; signal?: AbortSignal },
+): Promise<Paths> {
   await ensureDir(opts.outDir);
   const started = Date.now();
-  await runKicadCli(cli, ["pcb", "export", "dxf", "--output-units", "mm", "--mode-multi", "--layers", opts.layers.join(","), "-o", withTrailingSep(opts.outDir), opts.board], sig(opts));
+  await runKicadCli(
+    cli,
+    [
+      "pcb",
+      "export",
+      "dxf",
+      "--output-units",
+      "mm",
+      "--mode-multi",
+      "--layers",
+      opts.layers.join(","),
+      "-o",
+      withTrailingSep(opts.outDir),
+      opts.board,
+    ],
+    sig(opts),
+  );
   return { paths: await filesWrittenSince(opts.outDir, started, /\.dxf$/i) };
 }
 
 /** Excellon drill files (PTH/NPTH merged) into `outDir`. */
-export async function exportDrill(cli: KicadCli, opts: { board: string; outDir: string; signal?: AbortSignal }): Promise<Paths> {
+export async function exportDrill(
+  cli: KicadCli,
+  opts: { board: string; outDir: string; signal?: AbortSignal },
+): Promise<Paths> {
   await ensureDir(opts.outDir);
   const started = Date.now();
-  await runKicadCli(cli, ["pcb", "export", "drill", "--format", "excellon", "-o", withTrailingSep(opts.outDir), opts.board], sig(opts));
+  await runKicadCli(
+    cli,
+    [
+      "pcb",
+      "export",
+      "drill",
+      "--format",
+      "excellon",
+      "-o",
+      withTrailingSep(opts.outDir),
+      opts.board,
+    ],
+    sig(opts),
+  );
   return { paths: await filesWrittenSince(opts.outDir, started, /\.(drl|xln|txt)$/i) };
 }
 
 /** Pick-and-place CSV (both sides, mm). */
-export async function exportPos(cli: KicadCli, opts: { board: string; output: string; signal?: AbortSignal }): Promise<Paths> {
-  await runKicadCli(cli, ["pcb", "export", "pos", "--format", "csv", "--units", "mm", "--side", "both", "-o", opts.output, opts.board], sig(opts));
+export async function exportPos(
+  cli: KicadCli,
+  opts: { board: string; output: string; signal?: AbortSignal },
+): Promise<Paths> {
+  await runKicadCli(
+    cli,
+    [
+      "pcb",
+      "export",
+      "pos",
+      "--format",
+      "csv",
+      "--units",
+      "mm",
+      "--side",
+      "both",
+      "-o",
+      opts.output,
+      opts.board,
+    ],
+    sig(opts),
+  );
   return { paths: [opts.output] };
 }
 
 /** Grouped BOM CSV from the schematic. */
-export async function exportBom(cli: KicadCli, opts: { schematic: string; output: string; signal?: AbortSignal }): Promise<Paths> {
+export async function exportBom(
+  cli: KicadCli,
+  opts: { schematic: string; output: string; signal?: AbortSignal },
+): Promise<Paths> {
   await runKicadCli(cli, ["sch", "export", "bom", "-o", opts.output, opts.schematic], sig(opts));
   return { paths: [opts.output] };
 }
@@ -64,29 +129,63 @@ export async function exportNetlist(
   cli: KicadCli,
   opts: { schematic: string; output: string; format: "kicadsexpr" | "spice"; signal?: AbortSignal },
 ): Promise<Paths> {
-  await runKicadCli(cli, ["sch", "export", "netlist", "--format", opts.format, "-o", opts.output, opts.schematic], sig(opts));
+  await runKicadCli(
+    cli,
+    ["sch", "export", "netlist", "--format", opts.format, "-o", opts.output, opts.schematic],
+    sig(opts),
+  );
   return { paths: [opts.output] };
 }
 
 /** One SVG per schematic sheet into `outDir`. */
-export async function exportSchematicSvg(cli: KicadCli, opts: { schematic: string; outDir: string; signal?: AbortSignal }): Promise<Paths> {
+export async function exportSchematicSvg(
+  cli: KicadCli,
+  opts: { schematic: string; outDir: string; signal?: AbortSignal },
+): Promise<Paths> {
   await ensureDir(opts.outDir);
   const started = Date.now();
-  await runKicadCli(cli, ["sch", "export", "svg", "-o", withTrailingSep(opts.outDir), opts.schematic], sig(opts));
+  await runKicadCli(
+    cli,
+    ["sch", "export", "svg", "-o", withTrailingSep(opts.outDir), opts.schematic],
+    sig(opts),
+  );
   return { paths: await filesWrittenSince(opts.outDir, started, /\.svg$/i) };
 }
 
 /** Multi-sheet schematic PDF suitable for the release handoff. */
-export async function exportSchematicPdf(cli: KicadCli, opts: { schematic: string; output: string; signal?: AbortSignal }): Promise<Paths> {
+export async function exportSchematicPdf(
+  cli: KicadCli,
+  opts: { schematic: string; output: string; signal?: AbortSignal },
+): Promise<Paths> {
   await runKicadCli(cli, ["sch", "export", "pdf", "-o", opts.output, opts.schematic], sig(opts));
   return { paths: [opts.output] };
 }
 
 /** The board as one SVG: the given layers (default copper, silkscreen and edge cuts), page-sized. */
-export async function exportPcbSvg(cli: KicadCli, opts: { board: string; output: string; layers?: string[]; signal?: AbortSignal }): Promise<Paths> {
+export async function exportPcbSvg(
+  cli: KicadCli,
+  opts: { board: string; output: string; layers?: string[]; signal?: AbortSignal },
+): Promise<Paths> {
   const layers = opts.layers ?? ["F.Cu", "B.Cu", "F.SilkS", "B.SilkS", "Edge.Cuts"];
   // Board-area mode keeps the SVG viewBox in KiCad's millimetre coordinates.
-  await runKicadCli(cli, ["pcb", "export", "svg", "--layers", layers.join(","), "--exclude-drawing-sheet", "--page-size-mode", "2", "--mode-single", "-o", opts.output, opts.board], sig(opts));
+  await runKicadCli(
+    cli,
+    [
+      "pcb",
+      "export",
+      "svg",
+      "--layers",
+      layers.join(","),
+      "--exclude-drawing-sheet",
+      "--page-size-mode",
+      "2",
+      "--mode-single",
+      "-o",
+      opts.output,
+      opts.board,
+    ],
+    sig(opts),
+  );
   return { paths: [opts.output] };
 }
 

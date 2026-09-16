@@ -1,6 +1,6 @@
 import { Button, IconButton, Tabs } from "../components/ui";
-import { useCore } from "../core/CoreProvider";
-import { useProjectOrder } from "../hooks/queries";
+import { useCore } from "@fabdesk/client-core";
+import { useProjectOrder } from "@fabdesk/client-core";
 import { BOARD_TABS, BOARD_TAB_LABELS, useUiStore, type BoardTab } from "../stores/ui";
 import { modKey } from "../util";
 import { CinemaTab } from "./cinema/CinemaTab";

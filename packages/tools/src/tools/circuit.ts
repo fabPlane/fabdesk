@@ -8,9 +8,9 @@ export const circuit_query = defineTool({
   toolset: "circuit",
   title: "Query the board",
   description:
-    "List board contents from KiCad as a compact table: components, nets, pads, vias, tracks, or unrouted connections. Supports an optional substring filter.",
+    "List board contents from KiCad as a compact table: components, nets, pads, vias, tracks, unrouted connections, or the board outline. Supports an optional substring filter.",
   inputSchema: {
-    select: z.enum(["components", "nets", "pads", "vias", "tracks", "unrouted"]),
+    select: z.enum(["components", "nets", "pads", "vias", "tracks", "unrouted", "outline"]),
     filter: z
       .string()
       .optional()
@@ -38,7 +38,10 @@ export const circuit_search_parts = defineTool({
   inputSchema: {
     query: z.string().min(1).max(200),
     kind: z.enum(["footprint", "symbol"]).default("footprint"),
-    role: z.enum(["power-only-usb-c"]).optional().describe("Optional functional role used to rank matching parts"),
+    role: z
+      .enum(["power-only-usb-c"])
+      .optional()
+      .describe("Optional functional role used to rank matching parts"),
     limit: z.number().int().min(1).max(50).default(10),
   },
   annotations: { readOnlyHint: true, idempotentHint: true },
@@ -53,7 +56,12 @@ export const circuit_search_parts = defineTool({
     const hits = matches.map(({ libId, description, part }) => ({
       libId,
       description,
-      ...(role ? { roleSuitable: part?.roleSuitability?.find((entry) => entry.role === role)?.suitable ?? false } : {}),
+      ...(role
+        ? {
+            roleSuitable:
+              part?.roleSuitability?.find((entry) => entry.role === role)?.suitable ?? false,
+          }
+        : {}),
     }));
     const label = kind === "symbol" ? "Symbols" : "Footprints";
     return ok(

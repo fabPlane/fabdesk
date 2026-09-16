@@ -1,0 +1,194 @@
+name: Board regressions
+
+on:
+  pull_request:
+    paths:
+      - "apps/core/**"
+      - "packages/kicad/**"
+      - "packages/protocol/**"
+      - "packages/tools/**"
+      - "scripts/board-regressions.ts"
+      - "scripts/lib/board-regression.ts"
+      - "docs/router-cases/**"
+      - "vendor/fab_pcb"
+      - ".github/workflows/board-regressions.yml"
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: Case tier
+        type: choice
+        options: [pr, nightly]
+        default: nightly
+
+concurrency:
+  group: board-regressions-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  real-board-pipeline:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.FABDESK_SUBMODULE_SSH_KEY }}
+
+      - name: Initialize the fabplane submodule
+        run: git submodule update --init --depth 1 vendor/fabplane
+
+      - name: Resolve the fab_pcb pin
+        id: fab-pcb
+        run: echo "commit=$(git ls-tree HEAD vendor/fab_pcb | awk '{print $3}')" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the pinned fab_pcb workspace
+        uses: actions/checkout@v4
+        with:
+          repository: fabPlane/fab_pcb
+          ref: ${{ steps.fab-pcb.outputs.commit }}
+          path: vendor/fab_pcb
+          token: ${{ secrets.FAB_PCB_RELEASE_TOKEN }}
+          persist-credentials: false
+
+      - name: Resolve the fab_router pin
+        id: router
+        run: echo "commit=$(tr -d '[:space:]' < vendor/fab_pcb/packages/router/FAB_ROUTER_COMMIT)" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the pinned fab_router for regression testing
+        uses: actions/checkout@v4
+        with:
+          repository: fabPlane/fab_router
+          ref: ${{ steps.router.outputs.commit }}
+          path: .ci-private/fab_router
+          persist-credentials: false
+          sparse-checkout: |
+            package.json
+            src
+            spec/types
+          sparse-checkout-cone-mode: false
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - name: Install fabdesk
+        run: bun install --frozen-lockfile
+
+      # The bridge is deliberately not a fabdesk workspace. Use a separate checkout: never install
+      # dependencies inside vendor/fab_pcb.
+      - name: Prepare FabPlane PCB bridge checkout
+        run: |
+          git clone --no-local vendor/fab_pcb "$RUNNER_TEMP/fab-pcb"
+          bun install --cwd "$RUNNER_TEMP/fab-pcb" --frozen-lockfile
+
+      - name: Resolve the KiCad nightly pinned by FabPlane PCB
+        id: nightly
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          commit="$(cat "$RUNNER_TEMP/fab-pcb/packages/proto/KICAD_COMMIT")"
+          sha10="${commit:0:10}"
+          tag="$(gh api repos/TensorFleet/kicad/releases --paginate --jq \
+            ".[] | .tag_name | select(startswith(\"nightly-\") and endswith(\"-$sha10\"))" | head -1)"
+          test -n "$tag"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch KiCad runtime metadata
+        run: |
+          git init -q "$RUNNER_TEMP/kicad-src"
+          git -C "$RUNNER_TEMP/kicad-src" remote add origin https://github.com/TensorFleet/kicad.git
+          git -C "$RUNNER_TEMP/kicad-src" sparse-checkout set --no-cone tools/nightly/linux
+          git -C "$RUNNER_TEMP/kicad-src" fetch --depth 1 --filter=blob:none origin '${{ steps.nightly.outputs.commit }}'
+          git -C "$RUNNER_TEMP/kicad-src" checkout -q FETCH_HEAD
+
+      - name: Install KiCad host libraries, footprints and symbols
+        run: |
+          list="$RUNNER_TEMP/kicad-src/tools/nightly/linux/runtime-packages.txt"
+          packages=(kicad-footprints kicad-symbols)
+          if [ -s "$list" ]; then
+            mapfile -t runtime_packages < <(sed '/^#/d; /^$/d' "$list")
+            packages+=("${runtime_packages[@]}")
+          else
+            # Older published nightlies predate the metadata file but need the same host ABI.
+            packages+=(
+              libc6 libstdc++6 libgcc-s1 libglib2.0-0t64 libgtk-3-0t64
+              libgdk-pixbuf-2.0-0 libpango-1.0-0 libpangocairo-1.0-0
+              libcairo2 libcairo-gobject2 libharfbuzz0b libfreetype6
+              libfontconfig1 libwebkit2gtk-4.1-0 libgl1 libglu1-mesa libegl1
+              libx11-6 libxext6 libxrender1 libxkbcommon0 libwayland-client0
+              libwayland-egl1 libdbus-1-3 libsecret-1-0 ca-certificates
+              shared-mime-info
+            )
+          fi
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends "${packages[@]}"
+
+      - name: Download the pinned headless KiCad
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          cli="$(bun "$RUNNER_TEMP/fab-pcb/tooling/kicad-cli/fetch.ts" \
+            --tag '${{ steps.nightly.outputs.tag }}' --dir "$RUNNER_TEMP/kicad-cli")"
+          echo "KICAD_CLI=$cli" >> "$GITHUB_ENV"
+
+      - name: Start bridge and fabdesk core
+        env:
+          FABDESK_TOKEN: board-regression-token-0123456789
+        run: |
+          mkdir -p "$RUNNER_TEMP/board-workspace/projects" "$RUNNER_TEMP/fabdesk-home"
+          touch "$RUNNER_TEMP/fabdesk-home/.fabdesk-dev"
+          KICAD_CLI="$KICAD_CLI" \
+            KICAD10_FOOTPRINT_DIR=/usr/share/kicad/footprints \
+            KICAD_SYMBOL_DIR=/usr/share/kicad/symbols \
+            FAB_ROUTER_MODULE="$GITHUB_WORKSPACE/.ci-private/fab_router/src/api.ts" \
+            WORKSPACE_ROOT="$RUNNER_TEMP/board-workspace" PORT=4020 \
+            bun run --cwd "$RUNNER_TEMP/fab-pcb/packages/bridge" start >"$RUNNER_TEMP/bridge.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/bridge.pid"
+          for n in $(seq 1 60); do curl -fsS http://127.0.0.1:4020/health && break || sleep 1; done
+          curl -fsS http://127.0.0.1:4020/health
+
+          FABDESK_HOME="$RUNNER_TEMP/fabdesk-home" \
+            FABDESK_PROJECTS_DIR="$RUNNER_TEMP/board-workspace/projects" \
+            FABDESK_TOKEN="$FABDESK_TOKEN" FABDESK_AUTH_MODE=local \
+            FABDESK_FP_PCB_BRIDGE_URL=http://127.0.0.1:4020 \
+            KICAD_CLI="$KICAD_CLI" KICAD10_FOOTPRINT_DIR=/usr/share/kicad/footprints \
+            bun run --cwd apps/core src/main.ts serve --port 47999 \
+              --data-dir "$RUNNER_TEMP/fabdesk-home" --local-auth >"$RUNNER_TEMP/core.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/core.pid"
+          for n in $(seq 1 60); do curl -fsS http://127.0.0.1:47999/health && break || sleep 1; done
+          curl -fsS http://127.0.0.1:47999/health
+
+      - name: Run board corpus
+        env:
+          FABDESK_URL: http://127.0.0.1:47999
+          FABDESK_TOKEN: board-regression-token-0123456789
+          KICAD10_FOOTPRINT_DIR: /usr/share/kicad/footprints
+          DISPATCH_TIER: ${{ inputs.tier }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then tier=pr;
+          else tier="${DISPATCH_TIER:-nightly}"; fi
+          bun run scripts/board-regressions.ts --tier "$tier" \
+            --output artifacts/board-regressions.json
+
+      - name: Stop services
+        if: always()
+        run: |
+          test ! -f "$RUNNER_TEMP/core.pid" || kill "$(cat "$RUNNER_TEMP/core.pid")" 2>/dev/null || true
+          test ! -f "$RUNNER_TEMP/bridge.pid" || kill "$(cat "$RUNNER_TEMP/bridge.pid")" 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        continue-on-error: true
+        with:
+          name: board-regressions-${{ github.run_id }}
+          path: |
+            artifacts/board-regressions.json
+            ${{ runner.temp }}/bridge.log
+            ${{ runner.temp }}/core.log
+          retention-days: 14

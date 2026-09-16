@@ -17,6 +17,7 @@ describe("bundled PCB backend", () => {
     for (const dir of [
       join(pcb, "bin"),
       join(pcb, "kicad", "lib", "runtime"),
+      join(pcb, "kicad", "share", "kicad"),
       join(pcb, "libraries", "footprints"),
       join(pcb, "libraries", "symbols"),
     ])
@@ -63,17 +64,15 @@ describe("bundled PCB backend", () => {
       join(pcb, "bin"),
       join(pcb, "kicad", "bin"),
       join(pcb, "kicad", "lib", "runtime"),
+      join(pcb, "kicad", "share", "kicad"),
       join(pcb, "libraries", "footprints"),
       join(pcb, "libraries", "symbols"),
-      join(pcb, "private", "js_autorouter", "src"),
-      join(pcb, "private", "freerouting", "jdk", "bin"),
+      join(pcb, "private", "fab_router", "src"),
     ])
       await mkdir(dir, { recursive: true });
     await writeFile(join(pcb, "bin", "fp-pcb-bridge"), "binary");
     await writeFile(join(pcb, "kicad", "bin", "kicad-cli"), "binary");
-    await writeFile(join(pcb, "private", "js_autorouter", "src", "index.ts"), "source");
-    await writeFile(join(pcb, "private", "freerouting", "freerouting.jar"), "jar");
-    await writeFile(join(pcb, "private", "freerouting", "jdk", "bin", "java"), "java");
+    await writeFile(join(pcb, "private", "fab_router", "src", "api.ts"), "source");
     await writeFile(
       join(pcb, "bundle.json"),
       JSON.stringify({
@@ -83,9 +82,7 @@ describe("bundled PCB backend", () => {
         kicadCli: "kicad/bin/kicad-cli",
         footprints: "libraries/footprints",
         symbols: "libraries/symbols",
-        jsAutorouter: "private/js_autorouter/src/index.ts",
-        freeroutingJar: "private/freerouting/freerouting.jar",
-        freeroutingJava: "private/freerouting/jdk/bin/java",
+        fabRouter: "private/fab_router/src/api.ts",
         libraryPaths: ["kicad/lib", "kicad/lib/runtime"],
         environment: { KICAD_SOCKET_TRANSPORT: "ipc" },
       }),
@@ -102,14 +99,8 @@ describe("bundled PCB backend", () => {
     expect(resolved?.env.KICAD_STOCK_DATA_HOME).toBe(join(pcb, "kicad", "share", "kicad"));
     expect(resolved?.env.KICAD10_FOOTPRINT_DIR).toBe(join(pcb, "libraries", "footprints"));
     expect(resolved?.env.KICAD10_SYMBOL_DIR).toBe(join(pcb, "libraries", "symbols"));
-    expect(resolved?.env.JS_AUTOROUTER_MODULE).toBe(
-      join(pcb, "private", "js_autorouter", "src", "index.ts"),
-    );
-    expect(resolved?.env.FREEROUTING_JAR).toBe(
-      join(pcb, "private", "freerouting", "freerouting.jar"),
-    );
-    expect(resolved?.env.FP_PCB_JAVA).toBe(
-      join(pcb, "private", "freerouting", "jdk", "bin", "java"),
+    expect(resolved?.env.FAB_ROUTER_MODULE).toBe(
+      join(pcb, "private", "fab_router", "src", "api.ts"),
     );
     expect(corePcbEnvironment(resolved!)).toMatchObject({
       KICAD_CLI: join(pcb, "kicad", "bin", "kicad-cli"),
@@ -134,6 +125,7 @@ describe("bundled PCB backend", () => {
     for (const dir of [
       join(pcb, "bin"),
       join(pcb, "kicad", "bin"),
+      join(pcb, "kicad", "share", "kicad"),
       join(pcb, "libraries", "footprints"),
       join(pcb, "libraries", "symbols"),
       join(source, "packages", "bridge", "src"),
@@ -260,5 +252,39 @@ process.on("SIGTERM", () => { server.stop(true); process.exit(0); });
       await supervisor.stop();
       stale.stop(true);
     }
+  });
+
+  test("uses the stock-data path recorded by a macOS bundle", async () => {
+    const resources = await mkdtemp(join(tmpdir(), "fabplane-pcb-macos-bundle-"));
+    roots.push(resources);
+    const pcb = join(resources, "pcb");
+    const stockData = join(pcb, "kicad", "KiCad.app", "Contents", "SharedSupport");
+    for (const dir of [
+      join(pcb, "bin"),
+      join(pcb, "kicad", "KiCad.app", "Contents", "MacOS"),
+      stockData,
+      join(pcb, "libraries", "footprints"),
+      join(pcb, "libraries", "symbols"),
+    ])
+      await mkdir(dir, { recursive: true });
+    await writeFile(join(pcb, "bin", "fp-pcb-bridge"), "binary");
+    await writeFile(join(pcb, "kicad", "KiCad.app", "Contents", "MacOS", "kicad-cli"), "binary");
+    await writeFile(
+      join(pcb, "bundle.json"),
+      JSON.stringify({
+        format: 1,
+        target: "darwin-arm64",
+        bridge: "bin/fp-pcb-bridge",
+        kicadCli: "kicad/KiCad.app/Contents/MacOS/kicad-cli",
+        stockData: "kicad/KiCad.app/Contents/SharedSupport",
+        footprints: "libraries/footprints",
+        symbols: "libraries/symbols",
+      }),
+    );
+
+    expect(
+      resolvePcbBackend({ packaged: true, resourcesPath: resources, env: {} })?.env
+        .KICAD_STOCK_DATA_HOME,
+    ).toBe(stockData);
   });
 });

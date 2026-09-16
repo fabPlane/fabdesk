@@ -59,6 +59,8 @@ const server = Bun.serve({
           c.enqueue(enc.encode(sse("state", job(jid!, "queued"))));
           c.enqueue(enc.encode(": keepalive\n\n"));
           c.enqueue(enc.encode(sse("progress", job(jid!, "importing"))));
+          // The real bridge's route jobs send progress without the job id (bridge-job.ts `emit`).
+          c.enqueue(enc.encode(sse("progress", { state: "importing", progress: { phase: "placing", percent: 40 }, log: ["placing"] })));
           if (jid === "err")
             c.enqueue(enc.encode(sse("error", job(jid, "failed", { error: "kicad-cli exited" }))));
           else if (jid === "cut") return c.close();
@@ -130,7 +132,7 @@ describe("FpPcbBridgeClient", () => {
     expect(done.state).toBe("done");
     expect(done.result?.counts.components).toBe(2);
     expect(done.revision).toBe(3);
-    expect(seen).toEqual(["queued", "importing"]);
+    expect(seen).toEqual(["queued", "importing", "importing"]);
   });
 
   test("an error event yields the failed record, not an exception", async () => {

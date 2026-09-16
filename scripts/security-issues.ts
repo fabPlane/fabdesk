@@ -74,7 +74,9 @@ export function planFingerprintDuplicates(
     const fp = fingerprintOf(issue);
     if (!fp) continue;
     const list = byFp.get(fp) ?? [];
-    list.push(issue);
+    // The ledger and the live listing both carry the canonical issue; one
+    // number is one issue, never a duplicate of itself.
+    if (!list.some((i) => i.number === issue.number)) list.push(issue);
     byFp.set(fp, list);
   }
   const out: Array<{ keep: IssueRecord; close: IssueRecord; fingerprint: string }> = [];
@@ -86,6 +88,12 @@ export function planFingerprintDuplicates(
     for (const extra of sorted.slice(1)) out.push({ keep, close: extra, fingerprint });
   }
   return out;
+}
+
+/** Live GitHub state wins over the ledger's snapshot of the same issue number. */
+export function mergeIssueRecords(ledger: IssueRecord[], live: IssueRecord[]): IssueRecord[] {
+  const liveNumbers = new Set(live.map((i) => i.number));
+  return [...ledger.filter((i) => !liveNumbers.has(i.number)), ...live];
 }
 
 export function fingerprintOf(issue: IssueRecord): string | null {
@@ -241,6 +249,28 @@ export function formatSyncReport(
   return `${lines.join("\n")}\n`;
 }
 
+/** `gh api --paginate --slurp` returns an array of pages; the issues endpoint also lists PRs. */
+export function parseIssuePages(raw: string): IssueRecord[] {
+  const parsed: unknown = JSON.parse(raw || "[]");
+  if (!Array.isArray(parsed)) return [];
+  const rows = parsed.flatMap((page) => (Array.isArray(page) ? page : [page]));
+  const out: IssueRecord[] = [];
+  for (const row of rows) {
+    if (!row || typeof row !== "object") continue;
+    const r = row as Record<string, unknown>;
+    if ("pull_request" in r) continue;
+    if (typeof r.number !== "number") continue;
+    out.push({
+      number: r.number,
+      title: String(r.title ?? ""),
+      body: typeof r.body === "string" ? r.body : "",
+      state: r.state === "closed" ? "closed" : "open",
+      ...(typeof r.html_url === "string" ? { url: r.html_url } : {}),
+    });
+  }
+  return out;
+}
+
 export async function runGh(args: string[]): Promise<string> {
   const proc = Bun.spawn(["gh", ...args], { stdout: "pipe", stderr: "pipe" });
   const [stdout, stderr, exit] = await Promise.all([
@@ -255,22 +285,23 @@ export async function runGh(args: string[]): Promise<string> {
 export function ghCliIssues(): GitHubIssues {
   return {
     async list(state) {
-      // Do not filter by label. The first filing created issues whose labels
-      // did not stick, and `--label security-scan` then returned empty — so the
-      // next run opened a second copy of every finding.
+      // REST, not `gh issue list`: under the Actions GITHUB_TOKEN the latter
+      // returns `[]` (it goes through search), which is how #112–#158 became
+      // seven copies of one fingerprint. Do not filter by label either — the
+      // first filing created issues whose labels did not stick.
       const raw = await runGh([
-        "issue",
-        "list",
-        "--state",
-        state,
-        "--limit",
-        "200",
-        "--json",
-        "number,title,body,state,url",
+        "api",
+        "--paginate",
+        "--slurp",
+        "-X",
+        "GET",
+        "/repos/{owner}/{repo}/issues",
+        "-f",
+        `state=${state}`,
+        "-F",
+        "per_page=100",
       ]);
-      const parsed: unknown = JSON.parse(raw || "[]");
-      if (!Array.isArray(parsed)) return [];
-      return parsed as IssueRecord[];
+      return parseIssuePages(raw);
     },
     async create(issue) {
       const args = ["issue", "create", "--title", issue.title, "--body", issue.body];
@@ -345,7 +376,10 @@ if (import.meta.main) {
   const gh = ghCliIssues();
   let existing: IssueRecord[] = [...ledgerRecords];
   try {
-    existing = [...ledgerRecords, ...(await gh.list("open")), ...(await gh.list("closed"))];
+    existing = mergeIssueRecords(ledgerRecords, [
+      ...(await gh.list("open")),
+      ...(await gh.list("closed")),
+    ]);
   } catch (err) {
     console.error(
       `warning: could not list issues (${err instanceof Error ? err.message : err}); using ledger only (${ledgerRecords.length})`,
@@ -357,6 +391,10 @@ if (import.meta.main) {
     const dupes = planFingerprintDuplicates(existing);
     for (const d of dupes) {
       const comment = `Duplicate of #${d.keep.number} (fingerprint \`${d.fingerprint}\`). Closed by security-issues.ts.`;
+      if (dryRun) {
+        process.stdout.write(`would close #${d.close.number} as duplicate of #${d.keep.number}\n`);
+        continue;
+      }
       await gh.close(d.close.number, comment);
       process.stdout.write(`closed #${d.close.number} as duplicate of #${d.keep.number}\n`);
     }

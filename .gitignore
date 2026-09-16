@@ -13,5 +13,12 @@ coverage/
 
 # submodules manage their own ignores; never run `bun install` inside vendor/
 vendor/fabplane/node_modules/
-vendor/js_autorouter/node_modules/
 release/
+
+# apps/mobile: Expo caches and the native projects `expo prebuild` generates
+.expo/
+apps/mobile/ios/
+apps/mobile/android/
+apps/mobile/modules/*/android/build/
+apps/mobile/modules/*/android/.cxx/
+*.keystore

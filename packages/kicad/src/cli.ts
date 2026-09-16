@@ -1,7 +1,7 @@
 // ported from fabplane packages/pcb/src/kicad-cli.ts; replace with @pcb/pcb/kicad-cli once it lands on fabplane main
 import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 export type KicadInvocation = { command: string[]; cwd: string };
 export type KicadInvocationTracer = (input: KicadInvocation, invoke: () => Promise<RunResult>) => Promise<RunResult>;
@@ -27,20 +27,79 @@ export interface RunOptions {
   tolerateExit?: boolean;
 }
 
+/**
+ * Roots that may contain a FabPlane-bundled KiCad tree.
+ * Packaged layout: `<resources>/kicad/` next to `<resources>/core/fabdesk-core`.
+ * Override the resources dir with `FABDESK_RESOURCES`, or the kicad tree with `FABDESK_BUNDLED_KICAD`.
+ */
+export function bundledKicadRoots(env: NodeJS.ProcessEnv = process.env, execPath = process.execPath): string[] {
+  const roots: string[] = [];
+  const push = (p: string | undefined) => {
+    if (p && p.length > 0) roots.push(p);
+  };
+  push(env["FABDESK_BUNDLED_KICAD"]);
+  const resources = env["FABDESK_RESOURCES"];
+  if (resources) push(join(resources, "kicad"));
+  // Packaged core lives at <resources>/core/fabdesk-core[.exe] → sibling ../kicad
+  push(join(dirname(execPath), "..", "kicad"));
+  // Dev / stage-kicad-bundle output next to the core dist or cwd
+  push(join(dirname(execPath), "kicad"));
+  return roots;
+}
+
+/** Candidate `kicad-cli` paths inside a bundled (or staged) FabPlane KiCad tree. */
+export function bundledKicadCliCandidates(roots: string[] = bundledKicadRoots()): string[] {
+  const out: string[] = [];
+  for (const root of roots) {
+    if (process.platform === "darwin") {
+      out.push(
+        // Flattened nightly tree, or the archive's nested `kicad-cli/` directory.
+        join(root, "kicad-cli"),
+        join(root, "kicad-cli", "kicad-cli"),
+        join(root, "KiCad.app", "Contents", "MacOS", "kicad-cli"),
+        join(root, "Contents", "MacOS", "kicad-cli"),
+        join(root, "bin", "kicad-cli"),
+      );
+    } else if (process.platform === "win32") {
+      out.push(
+        join(root, "bin", "kicad-cli.exe"),
+        join(root, "kicad-cli", "bin", "kicad-cli.exe"),
+        join(root, "kicad-cli.exe"),
+      );
+    } else {
+      out.push(
+        join(root, "kicad-cli"),
+        join(root, "kicad-cli", "kicad-cli"),
+        join(root, "bin", "kicad-cli"),
+        join(root, "kicad-cli", "bin", "kicad-cli"),
+      );
+    }
+  }
+  return out;
+}
+
 function knownLocations(): string[] {
   switch (process.platform) {
     case "darwin":
-      return ["/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli", join(homedir(), "Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli")];
+      return [
+        // FabPlane-branded standalone installs (optional override of the in-app bundle).
+        "/Applications/FabPlane KiCad/KiCad.app/Contents/MacOS/kicad-cli",
+        join(homedir(), "Applications/FabPlane KiCad/KiCad.app/Contents/MacOS/kicad-cli"),
+        "/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli",
+        join(homedir(), "Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli"),
+      ];
     case "win32": {
       // Per-machine installs, then the per-user installs winget and the "current user" installer write.
       const local = process.env["LOCALAPPDATA"] ?? join(homedir(), "AppData", "Local");
       return ["10.0", "9.0"].flatMap((v) => [
+        join(local, "Programs", "FabPlane", "KiCad", v, "bin", "kicad-cli.exe"),
         `C:\\Program Files\\KiCad\\${v}\\bin\\kicad-cli.exe`,
         join(local, "Programs", "KiCad", v, "bin", "kicad-cli.exe"),
       ]);
     }
     default:
       return [
+        "/opt/fabplane/kicad/bin/kicad-cli",
         "/usr/bin/kicad-cli",
         "/usr/local/bin/kicad-cli",
         "/usr/lib/kicad/bin/kicad-cli",
@@ -61,13 +120,16 @@ function isFile(path: string): boolean {
 }
 
 /**
- * Locates a usable `kicad-cli`. Order: explicit argument, `$KICAD_CLI`, `PATH`, `extraLocations`,
- * then the usual install paths for the platform. Each candidate is validated by running `version`.
+ * Locates a usable `kicad-cli`.
+ * Order: explicit argument (Settings.kicadCliPath), `$KICAD_CLI`, the FabPlane-bundled tree,
+ * `PATH`, `extraLocations`, then stock / standalone install paths.
+ * Each candidate is validated by running `version`.
  */
 export async function findKicadCli(explicit?: string, opts: { extraLocations?: string[]; trace?: KicadInvocationTracer } = {}): Promise<KicadCli | null> {
   const candidates = [
     explicit,
     process.env.KICAD_CLI,
+    ...bundledKicadCliCandidates(),
     Bun.which("kicad-cli"),
     ...(process.platform === "win32" ? [Bun.which("kicad-cli.exe")] : []),
     ...(opts.extraLocations ?? []),

@@ -3,22 +3,70 @@ import { createHash } from "node:crypto";
 import { mkdir, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod/v4";
-import { ToolError, createRegistry, defineTool, inspectDesignRuleFloors, inspectPcbPresentation, isLibraryMismatch, jailPath, toCallToolResult, toolsMarkdown } from "../src";
+import {
+  ToolError,
+  createRegistry,
+  defineTool,
+  inspectDesignRuleFloors,
+  inspectPcbPresentation,
+  isLibraryMismatch,
+  jailPath,
+  toCallToolResult,
+  toolsMarkdown,
+} from "../src";
 import { contextFactory, mockServices, tempProject } from "./mock-services";
 
 describe("registry", () => {
   test("release recognizes KiCad library mismatch rules and descriptions", () => {
-    expect(isLibraryMismatch({ rule: "lib_footprint_mismatch", description: "Footprint R1 does not match copy in library" })).toBe(true);
-    expect(isLibraryMismatch({ rule: "warning", description: "Symbol does not match the copy in the library" })).toBe(true);
-    expect(isLibraryMismatch({ rule: "silk_overlap", description: "Reference text overlaps a pad" })).toBe(false);
+    expect(
+      isLibraryMismatch({
+        rule: "lib_footprint_mismatch",
+        description: "Footprint R1 does not match copy in library",
+      }),
+    ).toBe(true);
+    expect(
+      isLibraryMismatch({
+        rule: "warning",
+        description: "Symbol does not match the copy in the library",
+      }),
+    ).toBe(true);
+    expect(
+      isLibraryMismatch({ rule: "silk_overlap", description: "Reference text overlaps a pad" }),
+    ).toBe(false);
   });
 
   test("release detects relaxed design-rule floors", () => {
-    const safe = inspectDesignRuleFloors(JSON.stringify({ board: { design_settings: { rules: { min_hole_clearance: 0.25, min_copper_edge_clearance: 0.5, min_track_width: 0.2 } } } }));
+    const safe = inspectDesignRuleFloors(
+      JSON.stringify({
+        board: {
+          design_settings: {
+            rules: {
+              min_hole_clearance: 0.25,
+              min_copper_edge_clearance: 0.5,
+              min_track_width: 0.2,
+            },
+          },
+        },
+      }),
+    );
     expect(safe.status).toBe("pass");
-    const relaxed = inspectDesignRuleFloors(JSON.stringify({ board: { design_settings: { rules: { min_hole_clearance: 0.18, min_copper_edge_clearance: 0.5, min_track_width: 0.2 } } } }));
+    const relaxed = inspectDesignRuleFloors(
+      JSON.stringify({
+        board: {
+          design_settings: {
+            rules: {
+              min_hole_clearance: 0.18,
+              min_copper_edge_clearance: 0.5,
+              min_track_width: 0.2,
+            },
+          },
+        },
+      }),
+    );
     expect(relaxed.status).toBe("fail");
-    expect(relaxed.violations).toEqual(["min_hole_clearance was relaxed to 0.18 mm (release floor 0.25 mm)"]);
+    expect(relaxed.violations).toEqual([
+      "min_hole_clearance was relaxed to 0.18 mm (release floor 0.25 mm)",
+    ]);
   });
 
   test("release detects hidden PCB references", () => {
@@ -40,9 +88,24 @@ describe("registry", () => {
     const reg = createRegistry();
     const names = reg.list().map((t) => t.name);
     expect(names).toEqual([
-      "load_toolset", "pcb_environment", "project_status", "circuit_build", "circuit_read_errors", "route_run", "verify_drc", "render_board",
-      "project_read_file", "project_write_file", "project_list_sketches", "project_set_board", "project_import_kicad",
-      "circuit_query", "circuit_search_parts", "circuit_describe_part", "circuit_check_part_compatibility",
+      "load_toolset",
+      "pcb_environment",
+      "project_status",
+      "circuit_build",
+      "circuit_place",
+      "circuit_read_errors",
+      "route_run",
+      "verify_drc",
+      "render_board",
+      "project_read_file",
+      "project_write_file",
+      "project_list_sketches",
+      "project_set_board",
+      "project_import_kicad",
+      "circuit_query",
+      "circuit_search_parts",
+      "circuit_describe_part",
+      "circuit_check_part_compatibility",
       "design_inspect",
       "pcb_inspect",
       "native_edit_transaction",
@@ -55,7 +118,10 @@ describe("registry", () => {
       "pcb_update_from_schematic",
       "pcb_define_outline",
       "pcb_place",
-      "route_status", "route_cancel", "route_unroute", "route_scope",
+      "route_status",
+      "route_cancel",
+      "route_unroute",
+      "route_scope",
       "kicad_stats",
       "verify_erc",
       "verify_gate",
@@ -90,8 +156,18 @@ describe("registry", () => {
       "app_eval",
     ]);
     for (const n of names) expect(n).toMatch(/^[a-z][a-z0-9_]*$/);
-    expect(reg.byToolset("core").length).toBe(8);
-    expect(() => defineTool({ name: "bad.name", toolset: "core", title: "", description: "", inputSchema: {}, annotations: {}, handler: async () => ({}) })).toThrow();
+    expect(reg.byToolset("core").length).toBe(9);
+    expect(() =>
+      defineTool({
+        name: "bad.name",
+        toolset: "core",
+        title: "",
+        description: "",
+        inputSchema: {},
+        annotations: {},
+        handler: async () => ({}),
+      }),
+    ).toThrow();
   });
 
   test("bounded PCB inspection filters by region and returns revision-bound compact rows", async () => {
@@ -100,9 +176,26 @@ describe("registry", () => {
     await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb (version 20260831))\n");
     const services = mockServices([project]);
     const ctx = contextFactory(services, project);
-    const output = await reg.invoke("pcb_inspect", { kinds: ["components", "pads", "unrouted"], region: { minX: 0, minY: 2, maxX: 2, maxY: 4 }, limitPerKind: 10 },
-      (ref) => ctx({ def: reg.get("pcb_inspect")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }));
-    const json = output.json as { revision: string; coordinateSystem: { units: string }; results: Record<string, { total: number }> };
+    const output = await reg.invoke(
+      "pcb_inspect",
+      {
+        kinds: ["components", "pads", "unrouted"],
+        region: { minX: 0, minY: 2, maxX: 2, maxY: 4 },
+        limitPerKind: 10,
+      },
+      (ref) =>
+        ctx({
+          def: reg.get("pcb_inspect")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+    );
+    const json = output.json as {
+      revision: string;
+      coordinateSystem: { units: string };
+      results: Record<string, { total: number }>;
+    };
     expect(json.revision).toHaveLength(64);
     expect(json.coordinateSystem.units).toBe("mm");
     expect(json.results["components"]?.total).toBe(1);
@@ -116,12 +209,30 @@ describe("registry", () => {
     const project = await tempProject("empty-spatial-inspection");
     const base = mockServices([project]);
     let queries = 0;
-    const services = mockServices([project], { design: { ...base.design, query: async () => { queries++; return []; } } });
+    const services = mockServices([project], {
+      design: {
+        ...base.design,
+        query: async () => {
+          queries++;
+          return [];
+        },
+      },
+    });
     const ctx = contextFactory(services, project);
-    const output = await reg.invoke("pcb_inspect", { kinds: ["components", "tracks"] },
-      (ref) => ctx({ def: reg.get("pcb_inspect")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }));
+    const output = await reg.invoke("pcb_inspect", { kinds: ["components", "tracks"] }, (ref) =>
+      ctx({
+        def: reg.get("pcb_inspect")!,
+        projectRef: ref,
+        signal: new AbortController().signal,
+        progress: () => {},
+      }),
+    );
     expect(output.text).toContain("not created yet");
-    expect(output.json).toMatchObject({ revision: null, bounds: null, results: { components: { total: 0 }, tracks: { total: 0 } } });
+    expect(output.json).toMatchObject({
+      revision: null,
+      bounds: null,
+      results: { components: { total: 0 }, tracks: { total: 0 } },
+    });
     expect(queries).toBe(0);
   });
 
@@ -130,16 +241,44 @@ describe("registry", () => {
     const project = await tempProject("focused-pcb-view");
     await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb (version 20260831))\n");
     const base = mockServices([project]);
-    const services = mockServices([project], { kicad: { ...base.kicad,
-      exportPcbSvg: async (_cli, { output }) => {
-        await mkdir(join(project.dir, "renders"), { recursive: true });
-        await writeFile(output, '<svg xmlns="http://www.w3.org/2000/svg" width="20mm" height="20mm" viewBox="0 0 20 20"><rect width="20" height="20" fill="white"/></svg>');
-        return { paths: [output] };
+    const services = mockServices([project], {
+      kicad: {
+        ...base.kicad,
+        exportPcbSvg: async (_cli, { output }) => {
+          await mkdir(join(project.dir, "renders"), { recursive: true });
+          await writeFile(
+            output,
+            '<svg xmlns="http://www.w3.org/2000/svg" width="20mm" height="20mm" viewBox="0 0 20 20"><rect width="20" height="20" fill="white"/></svg>',
+          );
+          return { paths: [output] };
+        },
       },
-    } });
-    const output = await reg.invoke("render_view", { document: "pcb", region: { minX: 0, minY: 2, maxX: 2, maxY: 4 }, highlightReferences: ["R1"], highlightNets: ["N1"] },
-      (ref) => contextFactory(services, project)({ def: reg.get("render_view")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }));
-    const json = output.json as { pcbRevision: { sha256: string }; highlighted: number; region: Record<string, number>; pngPath: string };
+    });
+    const output = await reg.invoke(
+      "render_view",
+      {
+        document: "pcb",
+        region: { minX: 0, minY: 2, maxX: 2, maxY: 4 },
+        highlightReferences: ["R1"],
+        highlightNets: ["N1"],
+      },
+      (ref) =>
+        contextFactory(
+          services,
+          project,
+        )({
+          def: reg.get("render_view")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+    );
+    const json = output.json as {
+      pcbRevision: { sha256: string };
+      highlighted: number;
+      region: Record<string, number>;
+      pngPath: string;
+    };
     expect(json.pcbRevision.sha256).toHaveLength(64);
     expect(json.highlighted).toBe(2);
     expect(json.region).toEqual({ minX: 0, minY: 2, maxX: 2, maxY: 4 });
@@ -185,7 +324,15 @@ describe("registry", () => {
         schematicEdit: async (_dir, edit) => {
           edits.push(edit);
           return {
-            created: { symbols: edit.symbols?.length ?? 0, wires: 0, localLabels: 0, globalLabels: 0, junctions: 0, noConnects: 0, texts: 0 },
+            created: {
+              symbols: edit.symbols?.length ?? 0,
+              wires: 0,
+              localLabels: 0,
+              globalLabels: 0,
+              junctions: 0,
+              noConnects: 0,
+              texts: 0,
+            },
             updated: { symbols: edit.symbolUpdates?.length ?? 0 },
             deleted: 0,
             saved: true,
@@ -230,13 +377,22 @@ describe("registry", () => {
     expect(edits[0]?.symbols?.[0]).toMatchObject({ reference: "R1", rotation: 0 });
     expect(edits[1]?.symbolUpdates?.[0]).toMatchObject({ reference: "R1", rotation: 90 });
     const powerEdit = await call("schematic_edit", {
-      symbols: [{ libId: "power:PWR_FLAG", reference: "#FLG01", value: "PWR_FLAG", position: { x: 20.32, y: 20.32 } }],
+      symbols: [
+        {
+          libId: "power:PWR_FLAG",
+          reference: "#FLG01",
+          value: "PWR_FLAG",
+          position: { x: 20.32, y: 20.32 },
+        },
+      ],
       connections: [{ name: "VBUS", nodes: [{ reference: "#FLG01", pin: "1" }], label: "global" }],
     });
     expect(powerEdit.text).toContain("created 1 symbols");
-    await expect(call("schematic_edit", {
-      connections: [{ name: "BAD", nodes: [{ reference: "R1", pin: "1" }], label: "none" }],
-    })).rejects.toThrow(/direct wire connections require at least two nodes/);
+    await expect(
+      call("schematic_edit", {
+        connections: [{ name: "BAD", nodes: [{ reference: "R1", pin: "1" }], label: "none" }],
+      }),
+    ).rejects.toThrow(/direct wire connections require at least two nodes/);
     const inspect = await call("schematic_inspect");
     expect(inspect.text).toContain("Native schematic revision 4");
     expect(inspect.text).toContain("Device:R");
@@ -267,13 +423,19 @@ describe("registry", () => {
         exportSchematicSvg: async (_cli, { outDir }) => {
           await mkdir(outDir, { recursive: true });
           const path = join(outDir, "board.svg");
-          await writeFile(path, '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20" fill="white"/><text x="2" y="12">R1</text></svg>');
+          await writeFile(
+            path,
+            '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20" fill="white"/><text x="2" y="12">R1</text></svg>',
+          );
           return { paths: [path] };
         },
       },
     });
     const output = await reg.invoke("render_schematic_svg", {}, (ref) =>
-      contextFactory(services, project)({
+      contextFactory(
+        services,
+        project,
+      )({
         def: reg.get("render_schematic_svg")!,
         projectRef: ref,
         signal: new AbortController().signal,
@@ -285,8 +447,13 @@ describe("registry", () => {
     expect(block?.type).toBe("image");
     if (block?.type !== "image") throw new Error("missing image block");
     expect(block.mimeType).toBe("image/png");
-    expect([...Buffer.from(block.data, "base64").subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
-    const json = output.json as { schematicRevision: { sha256: string }; images: Array<{ schematicRevision: string; width: number; height: number }> };
+    expect([...Buffer.from(block.data, "base64").subarray(0, 8)]).toEqual([
+      137, 80, 78, 71, 13, 10, 26, 10,
+    ]);
+    const json = output.json as {
+      schematicRevision: { sha256: string };
+      images: Array<{ schematicRevision: string; width: number; height: number }>;
+    };
     expect(json.images[0]!.schematicRevision).toBe(json.schematicRevision.sha256);
     expect(json.images[0]!.width).toBeGreaterThan(0);
     expect(json.images[0]!.height).toBeGreaterThan(0);
@@ -298,7 +465,10 @@ describe("registry", () => {
     const bytes = Buffer.alloc(2 * 1024 * 1024 + 1);
     bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
     await Bun.write(path, bytes);
-    const result = await toCallToolResult({ text: "rendered", images: [{ path, mime: "image/png", requiredInline: true }] });
+    const result = await toCallToolResult({
+      text: "rendered",
+      images: [{ path, mime: "image/png", requiredInline: true }],
+    });
     expect(result.content.map((block) => block.type)).toEqual(["text", "image"]);
   });
 
@@ -322,7 +492,10 @@ describe("registry", () => {
     });
     await expect(
       reg.invoke("render_schematic_svg", {}, (ref) =>
-        contextFactory(services, project)({
+        contextFactory(
+          services,
+          project,
+        )({
           def: reg.get("render_schematic_svg")!,
           projectRef: ref,
           signal: new AbortController().signal,
@@ -367,33 +540,37 @@ describe("registry", () => {
         ...base.design,
         query: async (_dir, select) =>
           select === "tracks"
-            ? [{
-                id: "{TRACK-1}",
-                kind: "Track",
-                net: "GND",
-                layer: "F.Cu",
-                start: "1,2",
-                end: "3,4",
-                width: 0.25,
-                clearance: 0.2,
-              }]
+            ? [
+                {
+                  id: "{TRACK-1}",
+                  kind: "Track",
+                  net: "GND",
+                  layer: "F.Cu",
+                  start: "1,2",
+                  end: "3,4",
+                  width: 0.25,
+                  clearance: 0.2,
+                },
+              ]
             : [],
       },
       kicad: {
         ...base.kicad,
         runDrc: async () => ({
-          violations: [{
-            rule: "clearance",
-            severity: "error",
-            description: "Copper clearance violation",
-            items: [{ description: "Track", uuid: "track-1", pos: { x: 2, y: 3 } }],
-            coordinates: [{ x: 2, y: 3 }],
-            layers: [],
-            nets: [],
-            objectIds: ["track-1"],
-            affectedGeometry: [],
-            signature: "clearance:Track",
-          }],
+          violations: [
+            {
+              rule: "clearance",
+              severity: "error",
+              description: "Copper clearance violation",
+              items: [{ description: "Track", uuid: "track-1", pos: { x: 2, y: 3 } }],
+              coordinates: [{ x: 2, y: 3 }],
+              layers: [],
+              nets: [],
+              objectIds: ["track-1"],
+              affectedGeometry: [],
+              signature: "clearance:Track",
+            },
+          ],
           unconnected: [],
           schematicParity: [],
           counts: { errors: 1, warnings: 0, unconnected: 0 },
@@ -414,18 +591,24 @@ describe("registry", () => {
     expect(json.violations[0]).toMatchObject({
       rule: "clearance",
       severity: "error",
-      coordinates: [{ x: 2, y: 3 }, { x: 1, y: 2 }, { x: 3, y: 4 }],
+      coordinates: [
+        { x: 2, y: 3 },
+        { x: 1, y: 2 },
+        { x: 3, y: 4 },
+      ],
       layers: ["F.Cu"],
       nets: ["GND"],
       objectIds: ["track-1"],
-      affectedGeometry: [{
-        objectType: "tracks",
-        id: "{TRACK-1}",
-        net: "GND",
-        layer: "F.Cu",
-        width: 0.25,
-        clearance: 0.2,
-      }],
+      affectedGeometry: [
+        {
+          objectType: "tracks",
+          id: "{TRACK-1}",
+          net: "GND",
+          layer: "F.Cu",
+          width: 0.25,
+          clearance: 0.2,
+        },
+      ],
     });
     const saved = await Bun.file(join(project.dir, "reports/drc.json")).json();
     expect(saved.pcbRevision).toEqual(json.pcbRevision);
@@ -443,19 +626,26 @@ describe("registry", () => {
         ...base.kicad,
         runDrc: async () => {
           await Bun.write(board, "after");
-          return { violations: [], unconnected: [], schematicParity: [], counts: { errors: 0, warnings: 0, unconnected: 0 } };
+          return {
+            violations: [],
+            unconnected: [],
+            schematicParity: [],
+            counts: { errors: 0, warnings: 0, unconnected: 0 },
+          };
         },
       },
     });
     const factory = contextFactory(services, project);
-    await expect(reg.invoke("verify_drc", {}, (ref) =>
-      factory({
-        def: reg.get("verify_drc")!,
-        projectRef: ref,
-        signal: new AbortController().signal,
-        progress: () => {},
-      }),
-    )).rejects.toThrow(/changed while DRC was running/);
+    await expect(
+      reg.invoke("verify_drc", {}, (ref) =>
+        factory({
+          def: reg.get("verify_drc")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+      ),
+    ).rejects.toThrow(/changed while DRC was running/);
     expect(await Bun.file(join(project.dir, "reports/drc.json")).exists()).toBe(false);
   });
 
@@ -471,19 +661,53 @@ describe("registry", () => {
         ...base.design,
         schematicEdit: async () => {
           await Bun.write(join(project.dir, "board.kicad_sch"), "after-sch");
-          return { created: { symbols: 0, wires: 0, localLabels: 0, globalLabels: 0, junctions: 0, noConnects: 0, texts: 1 }, updated: { symbols: 0 }, deleted: 0, saved: true, revision: 2 };
+          return {
+            created: {
+              symbols: 0,
+              wires: 0,
+              localLabels: 0,
+              globalLabels: 0,
+              junctions: 0,
+              noConnects: 0,
+              texts: 1,
+            },
+            updated: { symbols: 0 },
+            deleted: 0,
+            saved: true,
+            revision: 2,
+          };
         },
       },
     });
     const factory = contextFactory(services, project);
-    const call = (args: Record<string, unknown>) => reg.invoke("native_edit_transaction", args, (ref) => factory({ def: reg.get("native_edit_transaction")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }));
-    const preview = await call({ schematic: { texts: [{ text: "note", position: { x: 10, y: 10 } }] } });
+    const call = (args: Record<string, unknown>) =>
+      reg.invoke("native_edit_transaction", args, (ref) =>
+        factory({
+          def: reg.get("native_edit_transaction")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+      );
+    const preview = await call({
+      schematic: { texts: [{ text: "note", position: { x: 10, y: 10 } }] },
+    });
     expect((preview.json as any).status).toBe("preview");
     expect(await Bun.file(join(project.dir, "board.kicad_sch")).text()).toBe("before-sch");
-    const accepted = await call({ mode: "apply", schematic: { texts: [{ text: "note", position: { x: 10, y: 10 } }] } });
+    const accepted = await call({
+      mode: "apply",
+      schematic: { texts: [{ text: "note", position: { x: 10, y: 10 } }] },
+    });
     const transactionId = (accepted.json as any).transactionId;
     expect(await Bun.file(join(project.dir, "board.kicad_sch")).text()).toBe("after-sch");
-    const rolledBack = await reg.invoke("native_edit_rollback", { transactionId }, (ref) => factory({ def: reg.get("native_edit_rollback")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }));
+    const rolledBack = await reg.invoke("native_edit_rollback", { transactionId }, (ref) =>
+      factory({
+        def: reg.get("native_edit_rollback")!,
+        projectRef: ref,
+        signal: new AbortController().signal,
+        progress: () => {},
+      }),
+    );
     expect((rolledBack.json as any).status).toBe("rolled-back");
     expect(await Bun.file(join(project.dir, "board.kicad_sch")).text()).toBe("before-sch");
   });
@@ -504,67 +728,191 @@ describe("registry", () => {
           expect(edit.tracks).toHaveLength(1);
           expect(edit.tracks?.[0]?.layer).toBe(3);
           await Bun.write(board, `${await Bun.file(board).text()}new-track\n`);
-          return { created: { tracks: 1, vias: 0, zones: 0, keepouts: 0, texts: 0, graphics: 0 }, createdIds: ["track-new"], deletedIds: [], revision: 5, saved: true };
+          return {
+            created: { tracks: 1, vias: 0, zones: 0, keepouts: 0, texts: 0, graphics: 0 },
+            createdIds: ["track-new"],
+            deletedIds: [],
+            revision: 5,
+            saved: true,
+          };
         },
         inspectBoardGeometry: async () => ({
           revisionStart: 5,
           revisionEnd: 5,
           revisionStable: true,
-          pads: [{ id: "pad-1", reference: "U1", number: "1", position: { x: 11, y: 12 }, layers: [0], net: "GND", clearance: 0.2 }],
-          tracks: [{ id: "track-new", start: { x: 11, y: 12 }, end: { x: 15, y: 12 }, layer: 0, net: "GND", width: 0.25 }],
-          vias: [], zones: [], texts: [], graphics: [],
+          pads: [
+            {
+              id: "pad-1",
+              reference: "U1",
+              number: "1",
+              position: { x: 11, y: 12 },
+              layers: [0],
+              net: "GND",
+              clearance: 0.2,
+            },
+          ],
+          tracks: [
+            {
+              id: "track-new",
+              start: { x: 11, y: 12 },
+              end: { x: 15, y: 12 },
+              layer: 0,
+              net: "GND",
+              width: 0.25,
+            },
+          ],
+          vias: [],
+          zones: [],
+          texts: [],
+          graphics: [],
           nets: [{ name: "GND", code: 1, clearance: 0.2 }],
           rules: { minimums: { minClearance: 0.2 } },
         }),
       },
     });
     const factory = contextFactory(services, project);
-    const call = (args: Record<string, unknown>) => reg.invoke("native_edit_transaction", args, (ref) => factory({ def: reg.get("native_edit_transaction")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }));
-    const geometry = { tracks: [{ start: { reference: "R1", pad: "1" }, end: { x: 15, y: 12 }, width: 0.25, layer: "F.Cu", net: "GND" }] };
+    const call = (args: Record<string, unknown>) =>
+      reg.invoke("native_edit_transaction", args, (ref) =>
+        factory({
+          def: reg.get("native_edit_transaction")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+      );
+    const geometry = {
+      tracks: [
+        {
+          start: { reference: "R1", pad: "1" },
+          end: { x: 15, y: 12 },
+          width: 0.25,
+          layer: "F.Cu",
+          net: "GND",
+        },
+      ],
+    };
 
     const preview = await call({ geometry, expectedPcbRevision: initialRevision });
     expect((preview.json as any).plan.geometry.tracks).toBe(1);
     expect(editCalls).toBe(0);
     expect(await Bun.file(board).text()).toBe("unrelated-copper\n");
-    await expect(call({ mode: "apply", geometry, expectedPcbRevision: "0".repeat(64) })).rejects.toThrow(/stale PCB revision/);
+    await expect(
+      call({ mode: "apply", geometry, expectedPcbRevision: "0".repeat(64) }),
+    ).rejects.toThrow(/stale PCB revision/);
 
     const accepted = await call({ mode: "apply", geometry, expectedPcbRevision: initialRevision });
     expect(await Bun.file(board).text()).toBe("unrelated-copper\nnew-track\n");
     expect((accepted.json as any).changes.geometry).toMatchObject({
-      created: { tracks: 1 }, createdIds: ["track-new"], revision: 5,
+      created: { tracks: 1 },
+      createdIds: ["track-new"],
+      revision: 5,
     });
     expect((accepted.json as any).pcbGeometry).toBeUndefined();
     expect((accepted.json as any).validation).toEqual({ structural: true, designChecksRun: false });
-    await reg.invoke("native_edit_rollback", { transactionId: (accepted.json as any).transactionId }, (ref) => factory({ def: reg.get("native_edit_rollback")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }));
+    await reg.invoke(
+      "native_edit_rollback",
+      { transactionId: (accepted.json as any).transactionId },
+      (ref) =>
+        factory({
+          def: reg.get("native_edit_rollback")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+    );
     expect(await Bun.file(board).text()).toBe("unrelated-copper\n");
   });
 
   test("complete release is revision-bound and fails closed on missing outputs", async () => {
     const reg = createRegistry();
     const project = await tempProject("release");
-    for (const [name, body] of [["board.kicad_sch", "sch"], ["board.kicad_pcb", "pcb"], ["board.kicad_pro", "{}"]]) await writeFile(join(project.dir, name), body);
+    for (const [name, body] of [
+      ["board.kicad_sch", "sch"],
+      ["board.kicad_pcb", "pcb"],
+      ["board.kicad_pro", "{}"],
+    ])
+      await writeFile(join(project.dir, name), body);
     const base = mockServices([project]);
-    const put = async (path: string, body = "output") => { await mkdir(join(path, ".."), { recursive: true }).catch(() => {}); await Bun.write(path, body); };
+    const put = async (path: string, body = "output") => {
+      await mkdir(join(path, ".."), { recursive: true }).catch(() => {});
+      await Bun.write(path, body);
+    };
     const services = mockServices([project], {
       kicad: {
         ...base.kicad,
         renderPng: async (_cli, { output }) => put(output, "png"),
-        exportSchematicSvg: async (_cli, { outDir }) => { await mkdir(outDir, { recursive: true }); const path = join(outDir, "board.svg"); await put(path, "svg"); return { paths: [path] }; },
-        exportSchematicPdf: async (_cli, { output }) => { await put(output, "pdf"); return { paths: [output] }; },
-        exportPcbSvg: async (_cli, { output }) => { await put(output, "svg"); return { paths: [output] }; },
-        exportGerbers: async (_cli, { outDir }) => { const gbr = join(outDir, "board-F_Cu.gbr"), job = join(outDir, "board-job.gbrjob"); await put(gbr); await put(job); return { paths: [gbr, job] }; },
-        exportDrill: async (_cli, { outDir }) => { const path = join(outDir, "board.drl"); await put(path); return { paths: [path] }; },
-        exportPos: async (_cli, { output }) => { await put(output); return { paths: [output] }; },
-        exportBom: async (_cli, { output }) => { await put(output); return { paths: [output] }; },
-        exportNetlist: async (_cli, { output }) => { await put(output); return { paths: [output] }; },
+        exportSchematicSvg: async (_cli, { outDir }) => {
+          await mkdir(outDir, { recursive: true });
+          const path = join(outDir, "board.svg");
+          await put(path, "svg");
+          return { paths: [path] };
+        },
+        exportSchematicPdf: async (_cli, { output }) => {
+          await put(output, "pdf");
+          return { paths: [output] };
+        },
+        exportPcbSvg: async (_cli, { output }) => {
+          await put(output, "svg");
+          return { paths: [output] };
+        },
+        exportGerbers: async (_cli, { outDir }) => {
+          const gbr = join(outDir, "board-F_Cu.gbr"),
+            job = join(outDir, "board-job.gbrjob");
+          await put(gbr);
+          await put(job);
+          return { paths: [gbr, job] };
+        },
+        exportDrill: async (_cli, { outDir }) => {
+          const path = join(outDir, "board.drl");
+          await put(path);
+          return { paths: [path] };
+        },
+        exportPos: async (_cli, { output }) => {
+          await put(output);
+          return { paths: [output] };
+        },
+        exportBom: async (_cli, { output }) => {
+          await put(output);
+          return { paths: [output] };
+        },
+        exportNetlist: async (_cli, { output }) => {
+          await put(output);
+          return { paths: [output] };
+        },
       },
     });
     const factory = contextFactory(services, project);
-    const release = await reg.invoke("release_build", { buildNotes: "Fit LED with marked cathode.", circuitChecks: [{ kind: "led-current", supplyVolts: 5, forwardVolts: 2, resistanceOhms: 1000, minMa: 2, maxMa: 4 }] }, (ref) => factory({ def: reg.get("release_build")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }));
+    const release = await reg.invoke(
+      "release_build",
+      {
+        buildNotes: "Fit LED with marked cathode.",
+        circuitChecks: [
+          {
+            kind: "led-current",
+            supplyVolts: 5,
+            forwardVolts: 2,
+            resistanceOhms: 1000,
+            minMa: 2,
+            maxMa: 4,
+          },
+        ],
+      },
+      (ref) =>
+        factory({
+          def: reg.get("release_build")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+    );
     expect(release.isError).toBeFalsy();
     expect((release.json as any).pass).toBe(true);
     expect((release.json as any).revisions.schematic).toHaveLength(64);
-    expect((release.json as any).inventory.some((entry: any) => entry.path === "exports/fabrication.zip" && entry.status === "available")).toBe(true);
+    expect(
+      (release.json as any).inventory.some(
+        (entry: any) => entry.path === "exports/fabrication.zip" && entry.status === "available",
+      ),
+    ).toBe(true);
   });
 
   test("manifest has JSON schema with project arg for project tools only", () => {
@@ -583,10 +931,14 @@ describe("registry", () => {
   test("agent-facing tool metadata contains capabilities without workflow policy", () => {
     const reg = createRegistry();
     const agentFacing = [
-      ...reg.manifest().flatMap((tool) => [tool.title, tool.description, JSON.stringify(tool.inputSchema)]),
+      ...reg
+        .manifest()
+        .flatMap((tool) => [tool.title, tool.description, JSON.stringify(tool.inputSchema)]),
       toolsMarkdown(reg),
     ].join("\n");
-    expect(agentFacing).not.toMatch(/run [^.\n]* first|use [^.\n]* (?:before|after)|prefer|repeat until|retry|required workflow|must use|should use|stop after|only after|release checklist|stopping policy/i);
+    expect(agentFacing).not.toMatch(
+      /run [^.\n]* first|use [^.\n]* (?:before|after)|prefer|repeat until|retry|required workflow|must use|should use|stop after|only after|release checklist|stopping policy/i,
+    );
   });
 
   test("invoke validates args and requires a project", async () => {
@@ -613,13 +965,35 @@ describe("registry", () => {
       }),
     );
     expect(out.text).toContain(`Project "demo"`);
-    const environment = await reg.invoke("pcb_environment", { project: project.id }, (ref) => noProject({ def: reg.get("pcb_environment")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }));
+    const environment = await reg.invoke("pcb_environment", { project: project.id }, (ref) =>
+      noProject({
+        def: reg.get("pcb_environment")!,
+        projectRef: ref,
+        signal: new AbortController().signal,
+        progress: () => {},
+      }),
+    );
     expect(environment.text).toContain("/mock/kicad-cli (10.99.0)");
     expect(environment.text).toContain("State visibility:");
     expect(environment.text).not.toContain("deliberately");
-    expect(environment.json).toMatchObject({ project: { dir: project.dir }, kicadCli: { path: "/mock/kicad-cli", version: "10.99.0" }, bridge: { url: "http://127.0.0.1:4020", ok: true }, uiConventions: { canonicalFiles: { board: join(project.dir, "board.kicad_pcb") } } });
+    expect(environment.json).toMatchObject({
+      project: { dir: project.dir },
+      kicadCli: { path: "/mock/kicad-cli", version: "10.99.0" },
+      bridge: { url: "http://127.0.0.1:4020", ok: true },
+      uiConventions: { canonicalFiles: { board: join(project.dir, "board.kicad_pcb") } },
+    });
     expect((out.json as any)._contract).toEqual(reg.contract());
-    const symbols = await reg.invoke("circuit_search_parts", { query: "resistor", kind: "symbol" }, (ref) => noProject({ def: reg.get("circuit_search_parts")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }));
+    const symbols = await reg.invoke(
+      "circuit_search_parts",
+      { query: "resistor", kind: "symbol" },
+      (ref) =>
+        noProject({
+          def: reg.get("circuit_search_parts")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+    );
     expect(symbols.text).toContain("Device:R");
     expect(symbols.json).toMatchObject({ kind: "symbol" });
     const part = await reg.invoke(
@@ -796,17 +1170,43 @@ describe("registry", () => {
         ...base.design,
         route: async () => {
           await Bun.write(join(project.dir, "board.kicad_pcb"), "router-touched-board");
-          return { tracks: 0, vias: 0, claimedVias: 0, routed: 0, total: 1, trackLengthNm: 0, elapsedMs: 1, wallMs: 1, timedOut: false, message: "blocked by edge clearance", unrouted: [{ net: "N1", from: { x: 0, y: 0 }, to: { x: 5, y: 5 } }], geometry: [], log: ["endpoint blocked by board edge"] };
+          return {
+            tracks: 0,
+            vias: 0,
+            claimedVias: 0,
+            routed: 0,
+            total: 1,
+            trackLengthNm: 0,
+            elapsedMs: 1,
+            wallMs: 1,
+            timedOut: false,
+            message: "blocked by edge clearance",
+            unrouted: [{ net: "N1", from: { x: 0, y: 0 }, to: { x: 5, y: 5 } }],
+            geometry: [],
+            log: ["endpoint blocked by board edge"],
+          };
         },
       },
     });
     const factory = contextFactory(services, project);
-    const call = (args: Record<string, unknown>) => reg.invoke("route_run", args, (ref) => factory({ def: reg.get("route_run")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }));
+    const call = (args: Record<string, unknown>) =>
+      reg.invoke("route_run", args, (ref) =>
+        factory({
+          def: reg.get("route_run")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+      );
     const blocked = await call({ timeoutMs: 5000, targets: [{ net: "NOT_A_NET" }] });
     expect((blocked.json as any).state).toBe("blocked");
     const unavailable = await call({ timeoutMs: 5000, router: "freerouting" });
     expect((unavailable.json as any).state).toBe("unavailable");
-    const noProgress = await call({ timeoutMs: 5000, targets: [{ net: "N1" }], rules: { widthMm: 0.25, clearanceMm: 0.2 } });
+    const noProgress = await call({
+      timeoutMs: 5000,
+      targets: [{ net: "N1" }],
+      rules: { widthMm: 0.25, clearanceMm: 0.2 },
+    });
     expect((noProgress.json as any).state).toBe("no-progress");
     expect((noProgress.json as any).obstacles[0]).toContain("blocked");
     expect(await Bun.file(join(project.dir, "board.kicad_pcb")).text()).toBe("canonical-board");
@@ -915,4 +1315,39 @@ describe("agent docs", () => {
     expect(md).not.toContain("workflow");
     expect(md).toContain(z.string().constructor.name.length > 0 ? "|" : "");
   });
+});
+
+test("RouteProgressFrames turns phase/percent-only progress into attempt frames, once per change", async () => {
+  const { RouteProgressFrames } = await import("../src/tools/route");
+  const seen: string[] = [];
+  const sink = {
+    onMessage: (m: { event?: { kind: string; status?: string } }) =>
+      seen.push(`${m.event?.kind}:${m.event?.status ?? ""}`),
+  };
+  const frames = new RouteProgressFrames("run_x", Date.now(), sink as never);
+  frames.onProgress({ state: "routing", log: [], phase: "capacity", percent: 10 });
+  frames.onProgress({ state: "routing", log: [], phase: "capacity", percent: 10 });
+  frames.onProgress({ state: "routing", log: [], phase: "capacity", percent: 40 });
+  frames.onProgress({ state: "routing", log: [], phase: "trace", percent: 0 });
+  expect(seen).toEqual(["attempt:capacity · 10%", "attempt:capacity · 40%", "attempt:trace · 0%"]);
+});
+
+test("circuit_place moves footprints through the design service", async () => {
+  const reg = createRegistry();
+  const project = await tempProject();
+  const services = mockServices([project]);
+  const ctx = contextFactory(services, null);
+  const out = await reg.invoke(
+    "circuit_place",
+    { project: project.id, placements: [{ ref: "J2", x: 5, y: 6, rotation: 90 }] },
+    (ref) =>
+      ctx({
+        def: reg.get("circuit_place")!,
+        projectRef: ref,
+        signal: new AbortController().signal,
+        progress: () => {},
+      }),
+  );
+  expect(out.isError).toBe(false);
+  expect(out.text).toContain("J2 → (5, 6) mm, 90°");
 });

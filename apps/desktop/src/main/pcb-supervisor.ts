@@ -11,14 +11,13 @@ export interface PcbBundleManifest {
   format: 1;
   target: string;
   kicadCli: string;
+  /** Bundle-relative KiCad stock-data directory (macOS uses KiCad.app/Contents/SharedSupport). */
+  stockData?: string;
   bridge: string;
   footprints: string;
   symbols: string;
-  /** Optional bundle-relative entry point for the private js_autorouter module. */
-  jsAutorouter?: string;
-  /** Optional bundle-relative Freerouting jar and matching Java executable. */
-  freeroutingJar?: string;
-  freeroutingJava?: string;
+  /** Optional bundle-relative entry point for the private fab_router module. */
+  fabRouter?: string;
   /** Bundle-relative shared-library directories, in loader search order (Linux). */
   libraryPaths?: string[];
   environment?: Record<string, string>;
@@ -68,34 +67,23 @@ export function resolvePcbBackend(opts: {
   const bundleRoot = dirname(manifestPath);
   const command = override ? resolve(override) : resolve(bundleRoot, manifest.bridge);
   const kicadCli = resolve(bundleRoot, manifest.kicadCli);
-  const kicadStockData = resolve(bundleRoot, "kicad", "share", "kicad");
+  const kicadStockData = resolve(bundleRoot, manifest.stockData ?? "kicad/share/kicad");
   const footprints = resolve(bundleRoot, manifest.footprints);
   const symbols = resolve(bundleRoot, manifest.symbols);
-  const jsAutorouter = manifest.jsAutorouter
-    ? resolve(bundleRoot, manifest.jsAutorouter)
-    : null;
-  const freeroutingJar = manifest.freeroutingJar
-    ? resolve(bundleRoot, manifest.freeroutingJar)
-    : null;
-  const freeroutingJava = manifest.freeroutingJava
-    ? resolve(bundleRoot, manifest.freeroutingJava)
-    : null;
+  const fabRouter = manifest.fabRouter ? resolve(bundleRoot, manifest.fabRouter) : null;
   const libraryPaths = (manifest.libraryPaths ?? []).map((path) => resolve(bundleRoot, path));
   for (const [label, path] of [
     ["bridge", command],
     ["kicad-cli", kicadCli],
+    ["stock data", kicadStockData],
     ["footprints", footprints],
     ["symbols", symbols],
   ] as const)
     if (!existsSync(path)) throw new Error(`FabPlane PCB bundle ${label} is missing: ${path}`);
   for (const path of libraryPaths)
     if (!existsSync(path)) throw new Error(`FabPlane PCB bundle library path is missing: ${path}`);
-  if (jsAutorouter && !existsSync(jsAutorouter))
-    throw new Error(`FabPlane PCB bundle js_autorouter is missing: ${jsAutorouter}`);
-  if (freeroutingJar && !existsSync(freeroutingJar))
-    throw new Error(`FabPlane PCB bundle Freerouting jar is missing: ${freeroutingJar}`);
-  if (freeroutingJava && !existsSync(freeroutingJava))
-    throw new Error(`FabPlane PCB bundle Java runtime is missing: ${freeroutingJava}`);
+  if (fabRouter && !existsSync(fabRouter))
+    throw new Error(`FabPlane PCB bundle fab_router is missing: ${fabRouter}`);
   const sourceRoot = source ? resolve(source) : null;
   if (sourceRoot && !existsSync(join(sourceRoot, "packages", "bridge", "src", "main.ts")))
     throw new Error(
@@ -132,9 +120,7 @@ export function resolvePcbBackend(opts: {
       KICAD10_SYMBOL_DIR: symbols,
       FABDESK_RUNTIME_ID: runtimeId,
       FABDESK_DESKTOP_PID: desktopPid,
-      ...(jsAutorouter ? { JS_AUTOROUTER_MODULE: jsAutorouter } : {}),
-      ...(freeroutingJar ? { FREEROUTING_JAR: freeroutingJar } : {}),
-      ...(freeroutingJava ? { FP_PCB_JAVA: freeroutingJava } : {}),
+      ...(fabRouter ? { FAB_ROUTER_MODULE: fabRouter } : {}),
       WORKSPACE_ROOT: workspaceRoot,
     },
   };

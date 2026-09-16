@@ -1,7 +1,7 @@
 /** `fabdesk-core serve`: bind, write the handshake, print the ReadyLine, run until told to stop. */
 import { chmod, mkdir, rename, writeFile, unlink } from "node:fs/promises";
 import { join } from "node:path";
-import type { DaemonHandshake, DoctorReport, ReadyLine } from "@fabdesk/protocol";
+import type { DaemonHandshake, DoctorReport, ReadyLine, Settings } from "@fabdesk/protocol";
 import {
   ToolError,
   createRegistry,
@@ -13,16 +13,29 @@ import {
 import type { AgentId } from "@fabdesk/protocol";
 import { AgentRunManager, type AgentAdapterLike } from "./agent-runs";
 import { TokenSet } from "./auth";
+import { DeviceStore } from "./devices";
+import { RemoteListener, type RemoteListenerOptions } from "./remote";
+import {
+  RelayDefaultResolver,
+  RelayLink,
+  VIA_HEADER,
+  type EventSession,
+  type RelayEndpoint,
+} from "./relay";
 import { createAuth, type AuthFacade } from "./auth-facade";
+import { CloudSettingsSync } from "./cloud-settings";
 import { EventBus } from "./bus";
 import { resolveConfig, type CoreConfig } from "./config";
 import { locateAppBridgeFile } from "./app-bridge";
 import { createContextFactory } from "./context";
 import { Store } from "./db";
-import { createApp } from "./http/app";
+import type { Hono } from "hono";
+import { createApp, type Env } from "./http/app";
 import { JobRunner } from "./jobs";
 import { logger, errMsg } from "./log";
 import { McpSessionManager } from "./mcp-sessions";
+import { machineName } from "./net";
+import { Notifier } from "./notifier";
 import { ProjectStore } from "./projects";
 import {
   applyErrorReporting,
@@ -55,6 +68,18 @@ export type ServeOptions = {
   watchProjects?: boolean;
   /** Do not write the handshake file (tests). */
   noHandshake?: boolean;
+  /** Tests: capture the Notifier's outbound `POST /v1/private/push` instead of reaching fabplane.com. */
+  notifierFetch?: typeof fetch;
+  /** Tests: how soon after queueing the Notifier asks fabplane.com for the verdict. */
+  notifierVerdictDelayMs?: number;
+  /** Tests: shorten the 30-minute supervised-mode approval timeout. */
+  approvalTimeoutMs?: number;
+  /** Tests: the bearer the relay link presents, when the AuthFacade has none (local auth mode). */
+  relayToken?: () => string | null;
+  /** Tests: the env the default relay is derived from (`FABPLANE_RELAY_URL`); `process.env` otherwise. */
+  relayEnv?: NodeJS.ProcessEnv;
+  /** Tests: capture the relay discovery probe (`GET <api>/v1/config`). */
+  relayDiscoveryFetch?: typeof fetch;
 };
 
 export type Daemon = {
@@ -70,11 +95,39 @@ export type Daemon = {
   mcp: McpSessionManager;
   tokens: TokenSet;
   runs: AgentRunManager;
+  notifier: Notifier;
+  relay: RelayLink;
   close(reason?: string): Promise<void>;
   closed: Promise<string>;
 };
 
-type WsData = { patterns: string[]; unsubscribe: (() => void) | null };
+/** `deviceId` is set when the socket was opened with a device token, so the Notifier can skip a phone that is listening. */
+/** Origins allowed to call the remote listener from a browser page (hosted web pairing). */
+const HOSTED_ORIGINS = [
+  "https://fabplane.com",
+  "https://www.fabplane.com",
+  "https://app.fabplane.com",
+];
+
+type WsData = { patterns: string[]; deviceId: string | null; session: EventSession | null };
+
+/**
+ * The remote listener with the relay link riding along: `PATCH /settings` re-applies the
+ * listener, and the relay follows the same `remote` setting.
+ */
+class RemoteListenerWithRelay extends RemoteListener {
+  constructor(
+    opts: RemoteListenerOptions,
+    private readonly relay: RelayLink,
+  ) {
+    super(opts);
+  }
+  override apply(remote: Settings["remote"]) {
+    const state = super.apply(remote);
+    this.relay.apply(remote);
+    return state;
+  }
+}
 
 export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   const config = resolveConfig(opts);
@@ -88,8 +141,15 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   const staleRuns = store.runs.failStale();
   if (staleRuns.length)
     logger.info("failed stale agent runs from previous run", { threads: staleRuns });
+  const staleRoutes = store.routeRuns.failStale();
+  if (staleRoutes) logger.info("failed stale route runs from previous run", { count: staleRoutes });
   const tokens = new TokenSet(config.token);
   const telemetry = new RunTelemetry({ version: config.version, runDumps: store.runDumps });
+  const devices = new DeviceStore(store.db);
+  tokens.setDeviceLookup((token) => {
+    const device = devices.verify(token);
+    return device ? { kind: "device", deviceId: device.id } : null;
+  });
   const jobs = new JobRunner({
     emit: (e) => bus.emit(e),
     store: store.jobs,
@@ -117,6 +177,19 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     for (const ev of events)
       if (ev.event.topic === "auth.state") setSentryUser(sentryUserFromAuth(ev.event.state));
   });
+  const cloudSettings = new CloudSettingsSync({
+    apiOrigin: config.apiOrigin,
+    token: () => auth.token(),
+    settings: store.settings,
+  });
+  if (auth.state().status === "signed_in") void cloudSettings.pull();
+  const unsubscribeCloud = bus.subscribe(["auth.state"], (events) => {
+    for (const ev of events) {
+      if (ev.event.topic === "auth.state" && ev.event.state.status === "signed_in") {
+        void cloudSettings.pull();
+      }
+    }
+  });
 
   const services: CoreServices =
     opts.services !== undefined
@@ -140,7 +213,15 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
 
   const registry = createRegistry();
   const ctxFactory = createContextFactory({ services, projects, tokens, telemetry });
-  const mcp = new McpSessionManager({ registry, ctxFactory, version: config.version });
+  const mcp = new McpSessionManager({
+    registry,
+    ctxFactory,
+    version: config.version,
+    permissionPrompt: {
+      enabledFor: (token) => runs.isSupervisedRunToken(token),
+      handle: (token, req) => runs.permissionPrompt(token, req),
+    },
+  });
 
   const adapters = opts.adapters ?? (await loadAdapters());
   let mcpUrl = "";
@@ -156,19 +237,29 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     workspaceDir: join(config.home, "workspace"),
     telemetry,
     agentEnvironment: async ({ cwd, project }) => {
-      const [cli, design] = await Promise.all([services.kicad.resolveCli().catch(() => null), services.design.status()]);
+      const [cli, design] = await Promise.all([
+        services.kicad.resolveCli().catch(() => null),
+        services.design.status(),
+      ]);
       return {
         FABDESK_PROJECT_DIR: cwd,
         ...(mcpUrl ? { FABDESK_CORE_URL: new URL(mcpUrl).origin } : {}),
-        ...(project ? {
-          FABDESK_KICAD_PROJECT: join(project.dir, "board.kicad_pro"),
-          FABDESK_KICAD_SCHEMATIC: join(project.dir, "board.kicad_sch"),
-          FABDESK_KICAD_BOARD: join(project.dir, "board.kicad_pcb"),
-        } : {}),
+        ...(project
+          ? {
+              FABDESK_KICAD_PROJECT: join(project.dir, "board.kicad_pro"),
+              FABDESK_KICAD_SCHEMATIC: join(project.dir, "board.kicad_sch"),
+              FABDESK_KICAD_BOARD: join(project.dir, "board.kicad_pcb"),
+            }
+          : {}),
         ...(cli ? { KICAD_CLI: cli.path } : {}),
         ...(design.url ? { FABDESK_FP_PCB_BRIDGE_URL: design.url } : {}),
       };
     },
+    // Only fabdesk's own tools have annotations the classifier trusts; another server's tool is a write.
+    annotationsFor: (tool, server) =>
+      server === null || server === "fabdesk" ? registry.get(tool)?.annotations : undefined,
+    resolveProject: (id) => projects.handle(id),
+    ...(opts.approvalTimeoutMs !== undefined ? { approvalTimeoutMs: opts.approvalTimeoutMs } : {}),
     prepareProject: async (project: ProjectHandle) => {
       const agents = await import("@fabdesk/agents");
       const sketches = (await projects.listFiles(join(project.dir, "sketches")))
@@ -197,7 +288,49 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   const doctor =
     opts.doctor ??
     (async () => (await import("./doctor")).runDoctor({ config, settings: store.settings.get() }));
-  const app = createApp({
+  // Nothing to configure: the relay is derived from the API origin (or discovered from the API
+  // later, at which point the link is re-applied); `remote.relayUrl` overrides, `remote.relay: "off"` disables.
+  const relayDefaults = new RelayDefaultResolver({
+    apiOrigin: config.apiOrigin,
+    ...(opts.relayEnv ? { env: opts.relayEnv } : {}),
+    ...(opts.relayDiscoveryFetch ? { fetchImpl: opts.relayDiscoveryFetch } : {}),
+    // A probe can land after shutdown; it must not bring the link back up.
+    onChange: () => {
+      if (!closing) relay.apply(store.settings.get().remote);
+    },
+  });
+  const relay = new RelayLink({
+    coreId: store.settings.coreId(),
+    token: opts.relayToken ?? (() => auth.token()),
+    defaultRelay: () => relayDefaults.current(),
+    emit: (e) => bus.emit(e),
+  });
+  const remote = new RemoteListenerWithRelay({ emit: (e) => bus.emit(e) }, relay);
+  // Signing in (or out) after start is what turns the relay on (or off); the setting alone is not enough.
+  const unsubscribeAuthRelay = bus.subscribe(["auth.state"], () =>
+    relay.apply(store.settings.get().remote),
+  );
+
+  // Devices with an open event socket (refcounted: a phone may hold one per listener while it
+  // switches addresses). The Notifier does not push to a phone that is already listening.
+  const liveDevices = new Map<string, number>();
+  const notifier = new Notifier({
+    bus,
+    store,
+    devices,
+    auth,
+    apiOrigin: config.apiOrigin,
+    coreId: store.settings.coreId(),
+    coreName: machineName(),
+    isOnline: (id) => (liveDevices.get(id) ?? 0) > 0,
+    ...(opts.notifierFetch ? { fetchImpl: opts.notifierFetch } : {}),
+    ...(opts.notifierVerdictDelayMs !== undefined
+      ? { verdictDelayMs: opts.notifierVerdictDelayMs }
+      : {}),
+  });
+  notifier.start();
+
+  const appDeps = {
     config,
     store,
     bus,
@@ -210,69 +343,158 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     mcp,
     auth,
     runs,
+    devices,
+    remote,
+    relay,
+    /** Endpoints beyond the listener's own addresses — the relay, when configured and signed in. */
+    extraEndpoints: (): RelayEndpoint[] => {
+      const e = relay.endpoint();
+      return e ? [e] : [];
+    },
     doctor,
     agents: async () => (await import("@fabdesk/agents")).detectAgents(store.settings.get()),
-    shutdown: (reason) => void daemon.close(reason),
+    shutdown: (reason: string) => void daemon.close(reason),
     startedAt,
-  });
+    onSettingsChanged: () => {
+      void cloudSettings.push();
+    },
+  };
+  const app = createApp({ ...appDeps, listener: "local" });
+  // A browser at fabplane.com pairs against the remote listener directly (docs/mobile.md, hosted
+  // web pairing), so its origin has to pass the guard there; the loopback listener stays strict.
+  const remoteApp = createApp({ ...appDeps, listener: "remote", extraOrigins: HOSTED_ORIGINS });
+
+  /**
+   * One request handler shape for both listeners: upgrade `/ws`, otherwise hand off to that
+   * listener's Hono app. The origin check differs — a browser reaching the remote listener is not
+   * a case we serve, so a remote socket may carry no Origin, or only the listener's own (React
+   * Native's WebSocket sends `Origin: http://<host>:<port>` for the URL it dials; nothing on this
+   * listener serves a page, so no browser can legitimately present that origin).
+   */
+  const makeFetch =
+    (target: Hono<Env>, scope: "local" | "remote") =>
+    (req: Request, srv: Bun.Server): Response | Promise<Response> | undefined => {
+      const url = new URL(req.url);
+      if (url.pathname === "/ws" && req.headers.get("upgrade")?.toLowerCase() === "websocket") {
+        const origin = req.headers.get("origin");
+        const allowed =
+          scope === "local" ? originAllowedLocal(origin) : originAllowedRemote(origin, url.host);
+        if (!allowed) return new Response("forbidden origin", { status: 403 });
+        // A socket on a listener is direct whatever header a phone sends.
+        const headers = new Headers(req.headers);
+        headers.delete(VIA_HEADER);
+        const data = authorizeEventSocket(url, headers);
+        if (!data) return new Response("unauthorized", { status: 401 });
+        if (srv.upgrade(req, { data })) return undefined;
+        return new Response("upgrade failed", { status: 400 });
+      }
+      // Only the relay link may say a request came over the relay; a listener request is direct.
+      if (req.headers.has(VIA_HEADER)) {
+        const headers = new Headers(req.headers);
+        headers.delete(VIA_HEADER);
+        return target.fetch(new Request(req, { headers }));
+      }
+      return target.fetch(req);
+    };
+
+  /**
+   * The credential and topics of a `/ws` request; null when the token is unknown. Shared with
+   * the relay, which marks its sockets with `VIA_HEADER` so the device row records the path.
+   */
+  const authorizeEventSocket = (url: URL, headers: Headers): WsData | null => {
+    const token =
+      url.searchParams.get("token") ??
+      headers.get("authorization")?.replace(/^Bearer\s+/i, "") ??
+      null;
+    const info = tokens.lookup(token);
+    if (!info) return null;
+    if (info.kind === "device" && info.deviceId)
+      devices.touch(info.deviceId, {
+        via: headers.get(VIA_HEADER) === "relay" ? "relay" : "direct",
+      });
+    const patterns = (url.searchParams.get("topics") ?? "*")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return {
+      patterns: patterns.length ? patterns : ["*"],
+      deviceId: info.kind === "device" ? (info.deviceId ?? null) : null,
+      session: null,
+    };
+  };
+
+  /**
+   * One subscriber on the bus per event socket, whether the socket is the listener's own or one
+   * the relay proxies: `{subscribe, lastEventId}` re-subscribes and replays, each event goes out
+   * as an `{id, event}` envelope.
+   */
+  const openEventSession = (data: WsData, send: (s: string) => void): EventSession => {
+    const deliver = (events: { id: number; event: unknown }[]) => {
+      for (const ev of events) send(JSON.stringify({ id: ev.id, event: ev.event }));
+    };
+    if (data.deviceId) liveDevices.set(data.deviceId, (liveDevices.get(data.deviceId) ?? 0) + 1);
+    let unsubscribe: (() => void) | null = bus.subscribe(data.patterns, deliver);
+    let open = true;
+    return {
+      message(raw) {
+        if (!open) return;
+        try {
+          const msg = JSON.parse(raw) as { subscribe?: string[]; lastEventId?: number };
+          if (Array.isArray(msg.subscribe)) {
+            unsubscribe?.();
+            data.patterns = msg.subscribe.length ? msg.subscribe : ["*"];
+            if (typeof msg.lastEventId === "number")
+              deliver(bus.replay(msg.lastEventId, data.patterns));
+            unsubscribe = bus.subscribe(data.patterns, deliver);
+          }
+        } catch {
+          send(JSON.stringify({ error: "bad message" }));
+        }
+      },
+      close() {
+        if (!open) return;
+        open = false;
+        unsubscribe?.();
+        unsubscribe = null;
+        if (data.deviceId) {
+          const n = (liveDevices.get(data.deviceId) ?? 1) - 1;
+          if (n > 0) liveDevices.set(data.deviceId, n);
+          else liveDevices.delete(data.deviceId);
+        }
+      },
+    };
+  };
+
+  const websocket: Bun.WebSocketHandler<WsData> = {
+    open(ws) {
+      ws.data.session = openEventSession(ws.data, (s) => ws.send(s));
+    },
+    message(ws, message) {
+      ws.data.session?.message(String(message));
+    },
+    close(ws) {
+      ws.data.session?.close();
+      ws.data.session = null;
+    },
+  };
 
   const server = Bun.serve<WsData, Record<never, never>>({
     hostname: config.host,
     port: config.port,
     idleTimeout: 255,
-    fetch(req, srv) {
-      const url = new URL(req.url);
-      if (url.pathname === "/ws" && req.headers.get("upgrade")?.toLowerCase() === "websocket") {
-        const origin = req.headers.get("origin");
-        if (!originAllowedLocal(origin)) return new Response("forbidden origin", { status: 403 });
-        const token =
-          url.searchParams.get("token") ??
-          req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ??
-          null;
-        if (!tokens.verify(token)) return new Response("unauthorized", { status: 401 });
-        const patterns = (url.searchParams.get("topics") ?? "*")
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean);
-        if (
-          srv.upgrade(req, {
-            data: { patterns: patterns.length ? patterns : ["*"], unsubscribe: null },
-          })
-        )
-          return undefined;
-        return new Response("upgrade failed", { status: 400 });
-      }
-      return app.fetch(req);
-    },
-    websocket: {
-      open(ws) {
-        ws.data.unsubscribe = bus.subscribe(ws.data.patterns, (events) => {
-          for (const ev of events) ws.send(JSON.stringify({ id: ev.id, event: ev.event }));
-        });
-      },
-      message(ws, message) {
-        try {
-          const msg = JSON.parse(String(message)) as { subscribe?: string[]; lastEventId?: number };
-          if (Array.isArray(msg.subscribe)) {
-            ws.data.unsubscribe?.();
-            ws.data.patterns = msg.subscribe.length ? msg.subscribe : ["*"];
-            if (typeof msg.lastEventId === "number")
-              for (const ev of bus.replay(msg.lastEventId, ws.data.patterns))
-                ws.send(JSON.stringify({ id: ev.id, event: ev.event }));
-            ws.data.unsubscribe = bus.subscribe(ws.data.patterns, (events) => {
-              for (const ev of events) ws.send(JSON.stringify({ id: ev.id, event: ev.event }));
-            });
-          }
-        } catch {
-          ws.send(JSON.stringify({ error: "bad message" }));
-        }
-      },
-      close(ws) {
-        ws.data.unsubscribe?.();
-        ws.data.unsubscribe = null;
-      },
+    fetch: makeFetch(app, "local"),
+    websocket,
+  });
+
+  remote.attach({ fetch: makeFetch(remoteApp, "remote"), websocket });
+  relay.attach({
+    fetch: (req) => remoteApp.fetch(req),
+    openEvents: (url, headers, send) => {
+      const data = authorizeEventSocket(url, headers);
+      return data ? openEventSession(data, send) : null;
     },
   });
+  remote.apply(store.settings.get().remote);
 
   const port = server.port ?? config.port;
   const url = `http://${config.host}:${port}`;
@@ -347,6 +569,8 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     mcp,
     tokens,
     runs,
+    notifier,
+    relay,
     closed,
     async close(reason = "close") {
       if (closing) return;
@@ -359,13 +583,24 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       }
       if (watchdog) clearInterval(watchdog);
       unsubscribeAuth();
+      unsubscribeAuthRelay();
+      unsubscribeCloud();
+      relay.stop();
+      notifier.stop();
       runs.abortAll();
       jobs.cancelAll();
       if (!(await runs.settleAll())) logger.warn("agent runs did not stop before shutdown timeout");
       await mcp.closeAll();
       projects.close();
-      (services as { dispose?: () => void }).dispose?.();
+      // Releasing the design sessions stops their KiCad processes on the bridge; give it a moment.
+      await Promise.race([
+        Promise.resolve((services as { dispose?: () => Promise<void> | void }).dispose?.()).catch(
+          () => undefined,
+        ),
+        new Promise((r) => setTimeout(r, 3_000)),
+      ]);
       await new Promise((r) => setTimeout(r, 30));
+      remote.stop();
       server.stop(true);
       if (!opts.noHandshake) await removeHandshake(config.handshakePath);
       await telemetry.shutdown();
@@ -399,6 +634,16 @@ function originAllowedLocal(origin: string | null): boolean {
     );
   } catch {
     return origin === "null" || origin.startsWith("file://");
+  }
+}
+
+/** No Origin (a native client), or the listener's own — never a page on some other host. */
+export function originAllowedRemote(origin: string | null, listenerHost: string): boolean {
+  if (!origin) return true;
+  try {
+    return new URL(origin).host === listenerHost;
+  } catch {
+    return false;
   }
 }
 

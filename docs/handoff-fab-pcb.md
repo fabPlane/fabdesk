@@ -10,7 +10,7 @@ finish it.
 fabdesk used to compile an agent-written `circuit.tsx` with `@tscircuit/eval` into
 `circuit.json`, and every tool (routing, DRC, render, export, sim) spoke that JSON. Now the agent
 writes **`circuit.netlist.json`** (components, nets, board size), the **FabPlane PCB bridge**
-(`TensorFleet/fab_pcb`) compiles it into **`board.kicad_pcb`** on a headless `kicad-cli
+(`fabPlane/fab_pcb`) compiles it into **`board.kicad_pcb`** on a headless `kicad-cli
 api-server` built from our KiCad fork, routes it there too, and fabdesk's remaining tools run the
 fork's `kicad-cli` on that file. fabdesk's packages carry **no tscircuit-ecosystem dependency** and
 no `circuit.json` contract. The board is the source of truth; the netlist is the source.
@@ -167,12 +167,11 @@ Gotchas that cost time already:
 
 ## 5. CI
 
-- **fabdesk:** the workflows now init `vendor/fab_pcb` next to `vendor/fabplane`. fab_pcb is a
-  private repo, so `FABDESK_SUBMODULE_SSH_KEY` needs a read-only deploy key for it appended (the
-  js_autorouter key in that secret is dead weight now). Until that key exists, `bun install` in CI
-  fails with "workspace … listed in bun.lock but not on disk". Procedure in
-  [releases.md](releases.md) (`ssh-keygen -t ed25519 -C git@github.com:TensorFleet/fab_pcb`,
-  `gh repo deploy-key add`, re-set the secret with both keys concatenated).
+- **fabdesk:** workflows initialise `vendor/fabplane` with its read-only deploy key, then check out
+  the pinned `fabPlane/fab_pcb` commit with `FAB_PCB_RELEASE_TOKEN`. The fabPlane organization
+  disables deploy keys, so do not append a fab_pcb key to `FABDESK_SUBMODULE_SSH_KEY`. Without
+  token access, `bun install` fails with "workspace … listed in bun.lock but not on disk". See
+  [releases.md](releases.md).
 - **fab_pcb:** `bun (unit)` and `kicad-integration` have been red on `main` since before this work:
   the workflow fetches the fork pin from upstream GitLab (`KICAD_REPO`), which does not have it.
   Point `KICAD_REPO`/`KICAD_REF` at the fork and publish the Docker image at `KICAD_COMMIT`
@@ -181,9 +180,12 @@ Gotchas that cost time already:
 ## 6. Open work, in the order I would do it
 
 1. **Bundle the fork `kicad-cli` and the bridge** (phase 0; decided: bundled, not hosted).
-   fab_pcb has macOS and Linux build scripts, no Windows one. Until then developers run the bridge
-   by hand and nothing in fabdesk spawns it. `doctor` reports the bridge; a warning when the
-   resolved `kicad-cli` is older than 10.99 is still missing.
+   fabdesk stages TensorFleet/kicad's rolling `nightly` release into `apps/desktop/kicad-bundle/`
+   (`scripts/stage-kicad-bundle.ts`, assets like `kicad-cli-macos-arm64.tar.gz` via `manifest.json`)
+   and `after-pack` copies it to `Resources/kicad/`; the core prefers that path unless Settings /
+   `KICAD_CLI` override. Remaining: wait for the first successful nightly publish; Windows build
+   script in fab_pcb `kicad-patches/` if needed beyond nightly; footprint libraries in the bundle;
+   bridge spawn. `doctor` warning when the resolved `kicad-cli` is older than 10.99 is still missing.
 2. **Footprint libraries in the bundle.** Headless servers ship none; compiles fail at
    `addNewFootprint` without them. The netlist file can name `libraries` (registered per project)
    and the search tool lists whatever the server's tables hold.

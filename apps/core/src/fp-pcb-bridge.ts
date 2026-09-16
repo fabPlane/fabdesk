@@ -207,7 +207,10 @@ export class FpPcbBridgeClient {
       for await (const ev of parseSse(res.body)) {
         let parsed: J;
         try {
-          parsed = schema.parse(JSON.parse(ev.data));
+          const data = JSON.parse(ev.data) as Record<string, unknown>;
+          // `state` / `done` / `error` carry the whole job; a route `progress` event carries only
+          // `{ state, progress, log }`, so it is laid over the last full record.
+          parsed = schema.parse(ev.event === FP_PCB_SSE_EVENTS.progress && !("id" in data) ? { ...job, ...data } : data);
         } catch {
           continue;
         }

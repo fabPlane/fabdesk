@@ -247,6 +247,10 @@ export function mockServices(
         excluded: [],
         pads: Object.fromEntries(refs.map((r) => [r, 2])),
       }),
+      place: async (_dir, placements) => ({
+        moved: placements.map((p) => ({ ...p, rotation: p.rotation ?? 0 })),
+        missing: [],
+      }),
       searchFootprints: async (query, limit) =>
         [
           {

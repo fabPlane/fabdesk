@@ -1,0 +1,92 @@
+{
+  "_notes": [
+    "SNES LoROM/HiROM flash cart. J1 (2x31 header) stands in for the 62-pin cart edge:",
+    "SNES pin p (1..31, front row) -> J1 pin 2p-1 ; SNES pin p (32..62, back row) -> J1 pin 2(p-31), so opposite pins sit opposite.",
+    "Cart edge used: 5/36 GND, 27/58 +5V, 6-18 A11-A23, 37-47 A10-A0, 20-23 D4-D7, 49-52 D0-D3, 24 /RD, 53 /WR, 48 /ROMSEL.",
+    "Expansion pins 1-4/28-35/59-62, CIC 54-57, /IRQ 19, /RESET 25, SYSCLK 26 are left unconnected.",
+    "Flash address A0-A18 = SNES A0-A18 (no mux). HiROM: 1MB native. LoROM: images are programmed at 64KB stride (32KB bank in the upper half of each 64KB) -> 512KB LoROM.",
+    "Decode: U4 74HC00, U5 74HC32. N1=NAND(A14,A13). HIROM_TERM=OR(A22,N1). SW1 selects MODE_SEL = /ROMSEL (LoROM) or HIROM_TERM (HiROM).",
+    "/SRAM_CE = OR(A15, MODE_SEL): LoROM -> banks 40-7D/C0-FF $0000-7FFF; HiROM -> banks 00-3F/80-BF $6000-7FFF.",
+    "SRAM_SEL = NOT /SRAM_CE ; /FLASH_CE = OR(/ROMSEL, SRAM_SEL) ; /CE1 = OR(/FLASH_CE, A19) ; FLASH_SEL = NOT /FLASH_CE ; /CE2 = NAND(FLASH_SEL, A19).",
+    "JP1 closed feeds /WR to the flash /WE for in-system programming; R1 pulls /WE high when the jumper is open."
+  ],
+  "netlist": {
+    "components": [
+      { "ref": "J1",  "value": "SNES_CART_EDGE_2x31", "footprint": "Connector_PinHeader_2.54mm:PinHeader_2x31_P2.54mm_Vertical" },
+      { "ref": "U1",  "value": "SST39SF040_PLCC32_LOW",  "footprint": "Package_LCC:PLCC-32_THT-Socket" },
+      { "ref": "U2",  "value": "SST39SF040_PLCC32_HIGH", "footprint": "Package_LCC:PLCC-32_THT-Socket" },
+      { "ref": "U3",  "value": "FM18W08", "footprint": "Package_SO:SOIC-28W_7.5x17.9mm_P1.27mm" },
+      { "ref": "U4",  "value": "74HC00", "footprint": "Package_SO:SOIC-14_3.9x8.7mm_P1.27mm" },
+      { "ref": "U5",  "value": "74HC32", "footprint": "Package_SO:SOIC-14_3.9x8.7mm_P1.27mm" },
+      { "ref": "SW1", "value": "LoROM/HiROM", "footprint": "Button_Switch_SMD:SW_SPDT_PCM12" },
+      { "ref": "JP1", "value": "FLASH_WE", "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical" },
+      { "ref": "R1",  "value": "10k", "footprint": "Resistor_SMD:R_0805_2012Metric" },
+      { "ref": "C1",  "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric" },
+      { "ref": "C2",  "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric" },
+      { "ref": "C3",  "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric" },
+      { "ref": "C4",  "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric" },
+      { "ref": "C5",  "value": "100nF", "footprint": "Capacitor_SMD:C_0805_2012Metric" }
+    ],
+    "nets": [
+      { "name": "GND", "nodes": [
+        { "ref": "J1", "pin": "9" }, { "ref": "J1", "pin": "10" },
+        { "ref": "U1", "pin": "16" }, { "ref": "U2", "pin": "16" }, { "ref": "U3", "pin": "14" },
+        { "ref": "U4", "pin": "7" }, { "ref": "U5", "pin": "7" },
+        { "ref": "C1", "pin": "2" }, { "ref": "C2", "pin": "2" }, { "ref": "C3", "pin": "2" },
+        { "ref": "C4", "pin": "2" }, { "ref": "C5", "pin": "2" } ] },
+      { "name": "+5V", "nodes": [
+        { "ref": "J1", "pin": "53" }, { "ref": "J1", "pin": "54" },
+        { "ref": "U1", "pin": "32" }, { "ref": "U2", "pin": "32" }, { "ref": "U3", "pin": "28" },
+        { "ref": "U4", "pin": "14" }, { "ref": "U5", "pin": "14" }, { "ref": "R1", "pin": "1" },
+        { "ref": "C1", "pin": "1" }, { "ref": "C2", "pin": "1" }, { "ref": "C3", "pin": "1" },
+        { "ref": "C4", "pin": "1" }, { "ref": "C5", "pin": "1" } ] },
+
+      { "name": "A0",  "nodes": [ { "ref": "J1", "pin": "32" }, { "ref": "U1", "pin": "12" }, { "ref": "U2", "pin": "12" }, { "ref": "U3", "pin": "10" } ] },
+      { "name": "A1",  "nodes": [ { "ref": "J1", "pin": "30" }, { "ref": "U1", "pin": "11" }, { "ref": "U2", "pin": "11" }, { "ref": "U3", "pin": "9" } ] },
+      { "name": "A2",  "nodes": [ { "ref": "J1", "pin": "28" }, { "ref": "U1", "pin": "10" }, { "ref": "U2", "pin": "10" }, { "ref": "U3", "pin": "8" } ] },
+      { "name": "A3",  "nodes": [ { "ref": "J1", "pin": "26" }, { "ref": "U1", "pin": "9" },  { "ref": "U2", "pin": "9" },  { "ref": "U3", "pin": "7" } ] },
+      { "name": "A4",  "nodes": [ { "ref": "J1", "pin": "24" }, { "ref": "U1", "pin": "8" },  { "ref": "U2", "pin": "8" },  { "ref": "U3", "pin": "6" } ] },
+      { "name": "A5",  "nodes": [ { "ref": "J1", "pin": "22" }, { "ref": "U1", "pin": "7" },  { "ref": "U2", "pin": "7" },  { "ref": "U3", "pin": "5" } ] },
+      { "name": "A6",  "nodes": [ { "ref": "J1", "pin": "20" }, { "ref": "U1", "pin": "6" },  { "ref": "U2", "pin": "6" },  { "ref": "U3", "pin": "4" } ] },
+      { "name": "A7",  "nodes": [ { "ref": "J1", "pin": "18" }, { "ref": "U1", "pin": "5" },  { "ref": "U2", "pin": "5" },  { "ref": "U3", "pin": "3" } ] },
+      { "name": "A8",  "nodes": [ { "ref": "J1", "pin": "16" }, { "ref": "U1", "pin": "27" }, { "ref": "U2", "pin": "27" }, { "ref": "U3", "pin": "25" } ] },
+      { "name": "A9",  "nodes": [ { "ref": "J1", "pin": "14" }, { "ref": "U1", "pin": "26" }, { "ref": "U2", "pin": "26" }, { "ref": "U3", "pin": "24" } ] },
+      { "name": "A10", "nodes": [ { "ref": "J1", "pin": "12" }, { "ref": "U1", "pin": "23" }, { "ref": "U2", "pin": "23" }, { "ref": "U3", "pin": "21" } ] },
+      { "name": "A11", "nodes": [ { "ref": "J1", "pin": "11" }, { "ref": "U1", "pin": "25" }, { "ref": "U2", "pin": "25" }, { "ref": "U3", "pin": "23" } ] },
+      { "name": "A12", "nodes": [ { "ref": "J1", "pin": "13" }, { "ref": "U1", "pin": "4" },  { "ref": "U2", "pin": "4" },  { "ref": "U3", "pin": "2" } ] },
+      { "name": "A13", "nodes": [ { "ref": "J1", "pin": "15" }, { "ref": "U1", "pin": "28" }, { "ref": "U2", "pin": "28" }, { "ref": "U3", "pin": "26" }, { "ref": "U4", "pin": "2" } ] },
+      { "name": "A14", "nodes": [ { "ref": "J1", "pin": "17" }, { "ref": "U1", "pin": "29" }, { "ref": "U2", "pin": "29" }, { "ref": "U3", "pin": "1" },  { "ref": "U4", "pin": "1" } ] },
+      { "name": "A15", "nodes": [ { "ref": "J1", "pin": "19" }, { "ref": "U1", "pin": "3" },  { "ref": "U2", "pin": "3" },  { "ref": "U5", "pin": "4" } ] },
+      { "name": "A16", "nodes": [ { "ref": "J1", "pin": "21" }, { "ref": "U1", "pin": "2" },  { "ref": "U2", "pin": "2" } ] },
+      { "name": "A17", "nodes": [ { "ref": "J1", "pin": "23" }, { "ref": "U1", "pin": "30" }, { "ref": "U2", "pin": "30" } ] },
+      { "name": "A18", "nodes": [ { "ref": "J1", "pin": "25" }, { "ref": "U1", "pin": "1" },  { "ref": "U2", "pin": "1" } ] },
+      { "name": "A19", "nodes": [ { "ref": "J1", "pin": "27" }, { "ref": "U4", "pin": "13" }, { "ref": "U5", "pin": "13" } ] },
+      { "name": "A22", "nodes": [ { "ref": "J1", "pin": "33" }, { "ref": "U5", "pin": "1" } ] },
+
+      { "name": "D0", "nodes": [ { "ref": "J1", "pin": "36" }, { "ref": "U1", "pin": "13" }, { "ref": "U2", "pin": "13" }, { "ref": "U3", "pin": "11" } ] },
+      { "name": "D1", "nodes": [ { "ref": "J1", "pin": "38" }, { "ref": "U1", "pin": "14" }, { "ref": "U2", "pin": "14" }, { "ref": "U3", "pin": "12" } ] },
+      { "name": "D2", "nodes": [ { "ref": "J1", "pin": "40" }, { "ref": "U1", "pin": "15" }, { "ref": "U2", "pin": "15" }, { "ref": "U3", "pin": "13" } ] },
+      { "name": "D3", "nodes": [ { "ref": "J1", "pin": "42" }, { "ref": "U1", "pin": "17" }, { "ref": "U2", "pin": "17" }, { "ref": "U3", "pin": "15" } ] },
+      { "name": "D4", "nodes": [ { "ref": "J1", "pin": "39" }, { "ref": "U1", "pin": "18" }, { "ref": "U2", "pin": "18" }, { "ref": "U3", "pin": "16" } ] },
+      { "name": "D5", "nodes": [ { "ref": "J1", "pin": "41" }, { "ref": "U1", "pin": "19" }, { "ref": "U2", "pin": "19" }, { "ref": "U3", "pin": "17" } ] },
+      { "name": "D6", "nodes": [ { "ref": "J1", "pin": "43" }, { "ref": "U1", "pin": "20" }, { "ref": "U2", "pin": "20" }, { "ref": "U3", "pin": "18" } ] },
+      { "name": "D7", "nodes": [ { "ref": "J1", "pin": "45" }, { "ref": "U1", "pin": "21" }, { "ref": "U2", "pin": "21" }, { "ref": "U3", "pin": "19" } ] },
+
+      { "name": "nRD",      "nodes": [ { "ref": "J1", "pin": "47" }, { "ref": "U1", "pin": "24" }, { "ref": "U2", "pin": "24" }, { "ref": "U3", "pin": "22" } ] },
+      { "name": "nWR",      "nodes": [ { "ref": "J1", "pin": "44" }, { "ref": "U3", "pin": "27" }, { "ref": "JP1", "pin": "1" } ] },
+      { "name": "FLASH_nWE","nodes": [ { "ref": "JP1", "pin": "2" }, { "ref": "R1", "pin": "2" }, { "ref": "U1", "pin": "31" }, { "ref": "U2", "pin": "31" } ] },
+      { "name": "nROMSEL",  "nodes": [ { "ref": "J1", "pin": "34" }, { "ref": "U5", "pin": "9" }, { "ref": "SW1", "pin": "1" } ] },
+
+      { "name": "N_A14A13",  "nodes": [ { "ref": "U4", "pin": "3" }, { "ref": "U5", "pin": "2" } ] },
+      { "name": "HIROM_TERM","nodes": [ { "ref": "U5", "pin": "3" }, { "ref": "SW1", "pin": "3" } ] },
+      { "name": "MODE_SEL",  "nodes": [ { "ref": "SW1", "pin": "2" }, { "ref": "U5", "pin": "5" } ] },
+      { "name": "nSRAM_CE",  "nodes": [ { "ref": "U5", "pin": "6" }, { "ref": "U3", "pin": "20" }, { "ref": "U4", "pin": "4" }, { "ref": "U4", "pin": "5" } ] },
+      { "name": "SRAM_SEL",  "nodes": [ { "ref": "U4", "pin": "6" }, { "ref": "U5", "pin": "10" } ] },
+      { "name": "nFLASH_CE", "nodes": [ { "ref": "U5", "pin": "8" }, { "ref": "U4", "pin": "9" }, { "ref": "U4", "pin": "10" }, { "ref": "U5", "pin": "12" } ] },
+      { "name": "FLASH_SEL", "nodes": [ { "ref": "U4", "pin": "8" }, { "ref": "U4", "pin": "12" } ] },
+      { "name": "nCE1",      "nodes": [ { "ref": "U5", "pin": "11" }, { "ref": "U1", "pin": "22" } ] },
+      { "name": "nCE2",      "nodes": [ { "ref": "U4", "pin": "11" }, { "ref": "U2", "pin": "22" } ] }
+    ]
+  },
+  "board": { "widthMm": 90, "heightMm": 60 }
+}

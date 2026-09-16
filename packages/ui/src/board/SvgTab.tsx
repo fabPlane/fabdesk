@@ -1,8 +1,8 @@
 import { Button, EmptyState, Spinner } from "../components/ui";
-import { useProjectText } from "../hooks/queries";
+import { useProjectText } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { SvgViewer } from "./SvgViewer";
-import { useRunTool } from "./tools";
+import { useRunTool } from "@fabdesk/client-core";
 
 const RENDER_TOOL = { schematic: "render_schematic_svg", pcb: "render_pcb_svg" } as const;
 
@@ -21,7 +21,12 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
   const rendered = useProjectText(projectId, `renders/${kind}.svg`);
   const render = useRunTool();
 
-  if (!projectId) return <EmptyState title="No project selected">Pick a project in the sidebar to see its {kind}.</EmptyState>;
+  if (!projectId)
+    return (
+      <EmptyState title="No project selected">
+        Pick a project in the sidebar to see its {kind}.
+      </EmptyState>
+    );
   if (rendered.isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -32,7 +37,10 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
   if (rendered.data) {
     return (
       <div className="h-full" data-testid={`board-${kind}-svg`}>
-        <SvgViewer svg={rendered.data} toolbar={<span className="text-[11px] text-muted">renders/{kind}.svg</span>} />
+        <SvgViewer
+          svg={rendered.data}
+          toolbar={<span className="text-[11px] text-muted">renders/{kind}.svg</span>}
+        />
       </div>
     );
   }
@@ -43,7 +51,12 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
       <EmptyState
         title={copy.title}
         action={
-          <Button variant="primary" size="sm" disabled={running} onClick={() => void render.run(RENDER_TOOL[kind], { projectId })}>
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={running}
+            onClick={() => void render.run(RENDER_TOOL[kind], { projectId })}
+          >
             {running ? "Rendering..." : copy.action}
           </Button>
         }

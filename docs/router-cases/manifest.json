@@ -1,0 +1,182 @@
+{
+  "schema": 1,
+  "cases": [
+    {
+      "id": "blinky",
+      "tier": "pr",
+      "netlist": "blinky.netlist.json",
+      "quality": "gate",
+      "routeTimeoutMs": 60000,
+      "hardTimeoutMs": 90000,
+      "requireAllRouted": true,
+      "forbidIntroducedRules": [
+        "clearance",
+        "shorting_items",
+        "tracks_crossing",
+        "solder_mask_bridge",
+        "copper_edge_clearance"
+      ]
+    },
+    {
+      "id": "usb-c-fanout",
+      "tier": "nightly",
+      "netlist": "usb-c-fanout.netlist.json",
+      "quality": "observe",
+      "routeTimeoutMs": 120000,
+      "hardTimeoutMs": 150000,
+      "forbidIntroducedRules": [
+        "clearance",
+        "shorting_items",
+        "tracks_crossing",
+        "solder_mask_bridge"
+      ]
+    },
+    {
+      "id": "qfn-fanout",
+      "tier": "nightly",
+      "netlist": "qfn-fanout.netlist.json",
+      "quality": "observe",
+      "routeTimeoutMs": 120000,
+      "hardTimeoutMs": 150000,
+      "forbidIntroducedRules": [
+        "clearance",
+        "shorting_items",
+        "tracks_crossing",
+        "solder_mask_bridge"
+      ]
+    },
+    {
+      "id": "ps1-serial-dongle",
+      "tier": "nightly",
+      "netlist": "ps1-serial-dongle.netlist.json",
+      "quality": "observe",
+      "routeTimeoutMs": 120000,
+      "hardTimeoutMs": 150000,
+      "forbidIntroducedRules": [
+        "clearance",
+        "shorting_items",
+        "tracks_crossing",
+        "solder_mask_bridge"
+      ]
+    },
+    {
+      "id": "gb-link-usb-bridge",
+      "tier": "nightly",
+      "netlist": "gb-link-usb-bridge.netlist.json",
+      "quality": "observe",
+      "routeTimeoutMs": 300000,
+      "hardTimeoutMs": 330000,
+      "forbidIntroducedRules": [
+        "clearance",
+        "shorting_items",
+        "tracks_crossing",
+        "solder_mask_bridge"
+      ]
+    },
+    {
+      "id": "famicom-expansion-adapter",
+      "tier": "nightly",
+      "netlist": "famicom-expansion-adapter.netlist.json",
+      "placement": "famicom-expansion-adapter.place.json",
+      "quality": "observe",
+      "routeTimeoutMs": 120000,
+      "hardTimeoutMs": 150000,
+      "forbidIntroducedRules": [
+        "clearance",
+        "shorting_items",
+        "tracks_crossing",
+        "solder_mask_bridge"
+      ]
+    },
+    {
+      "id": "nes-expansion-hub",
+      "tier": "nightly",
+      "netlist": "nes-expansion-hub.netlist.json",
+      "placement": "nes-expansion-hub.place.json",
+      "quality": "observe",
+      "routeTimeoutMs": 120000,
+      "hardTimeoutMs": 150000,
+      "forbidIntroducedRules": [
+        "clearance",
+        "shorting_items",
+        "tracks_crossing",
+        "solder_mask_bridge"
+      ]
+    },
+    {
+      "id": "ps1-pio-boot-cart",
+      "tier": "nightly",
+      "netlist": "ps1-pio-boot-cart.netlist.json",
+      "placement": "ps1-pio-boot-cart.place.json",
+      "quality": "observe",
+      "routeTimeoutMs": 120000,
+      "hardTimeoutMs": 150000,
+      "forbidIntroducedRules": [
+        "clearance",
+        "shorting_items",
+        "tracks_crossing",
+        "solder_mask_bridge"
+      ]
+    },
+    {
+      "id": "snes-flash-cart",
+      "tier": "nightly",
+      "netlist": "snes-flash-cart.netlist.json",
+      "placement": "snes-flash-cart.place.json",
+      "quality": "observe",
+      "routeTimeoutMs": 120000,
+      "hardTimeoutMs": 150000,
+      "forbidIntroducedRules": [
+        "clearance",
+        "shorting_items",
+        "tracks_crossing",
+        "solder_mask_bridge"
+      ]
+    },
+    {
+      "id": "fds-ram-adapter",
+      "tier": "nightly",
+      "netlist": "fds-ram-adapter.netlist.json",
+      "placement": "fds-ram-adapter.place.json",
+      "quality": "observe",
+      "routeTimeoutMs": 120000,
+      "hardTimeoutMs": 150000,
+      "forbidIntroducedRules": [
+        "clearance",
+        "shorting_items",
+        "tracks_crossing",
+        "solder_mask_bridge"
+      ]
+    },
+    {
+      "id": "saturn-boot-cart",
+      "tier": "nightly",
+      "netlist": "saturn-boot-cart.netlist.json",
+      "placement": "saturn-boot-cart.place.json",
+      "quality": "observe",
+      "routeTimeoutMs": 120000,
+      "hardTimeoutMs": 150000,
+      "forbidIntroducedRules": [
+        "clearance",
+        "shorting_items",
+        "tracks_crossing",
+        "solder_mask_bridge"
+      ]
+    },
+    {
+      "id": "genesis-flash-cart",
+      "tier": "nightly",
+      "netlist": "genesis-flash-cart.netlist.json",
+      "placement": "genesis-flash-cart.place.json",
+      "quality": "observe",
+      "routeTimeoutMs": 300000,
+      "hardTimeoutMs": 330000,
+      "forbidIntroducedRules": [
+        "clearance",
+        "shorting_items",
+        "tracks_crossing",
+        "solder_mask_bridge"
+      ]
+    }
+  ]
+}

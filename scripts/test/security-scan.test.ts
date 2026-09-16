@@ -13,6 +13,7 @@ import {
   parseSeverity,
   scanFileContent,
   scanSourceTree,
+  isTestFile,
   shouldScanPath,
 } from "../security-scan";
 
@@ -107,6 +108,29 @@ describe("source walk", () => {
     expect(shouldScanPath("scripts/security-scan.ts")).toBe(false);
     expect(shouldScanPath("bun.lock")).toBe(false);
     expect(shouldScanPath(".env.example")).toBe(true);
+    expect(shouldScanPath(".claude/worktrees/agent-1/apps/core/src/auth.ts")).toBe(false);
+  });
+
+  test("dynamic code in a test file is reported at low severity", () => {
+    const src = 'const run = new Function("document", script);\n';
+    const [test] = scanFileContent("packages/ui/src/theme/resolve.test.ts", src);
+    const [prod] = scanFileContent("packages/ui/src/theme/resolve.ts", src);
+    expect(test?.rule).toBe("code.eval");
+    expect(test?.severity).toBe("low");
+    expect(prod?.severity).toBe("high");
+    expect(isTestFile("apps/desktop/src/__tests__/bridge.ts")).toBe(true);
+    expect(isTestFile("apps/desktop/src/main/automation-server.spec.tsx")).toBe(true);
+    expect(isTestFile("apps/desktop/src/main/automation-server.ts")).toBe(false);
+  });
+
+  test("a URL fragment key is not a credential assignment", () => {
+    const line =
+      'expect(https("?host=https://mac.tailnet.ts.net", "#token=")).toEqual({ host: "x" });';
+    expect(scanFileContent("packages/ui/src/pair/parse.test.ts", line)).toEqual([]);
+    const real = `const token = "${"k".repeat(32)}";`;
+    expect(scanFileContent("apps/core/src/x.ts", real).map((f) => f.rule)).toEqual([
+      "secret.generic-credential",
+    ]);
   });
 
   test("flags a real-looking GitHub token and PEM, ignores placeholders", () => {

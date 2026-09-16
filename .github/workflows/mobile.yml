@@ -1,0 +1,228 @@
+# apps/mobile is deliberately not a root workspace: an Expo dependency tree in the root lockfile
+# would install on every CI job, all four release runners and the daily `bun audit`. It therefore
+# needs its own job, which only runs when the app or the packages it aliases actually change.
+name: Mobile
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/mobile/**"
+      - "packages/client-core/**"
+      - "packages/protocol/**"
+      - ".github/workflows/mobile.yml"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "apps/mobile/**"
+      - "packages/client-core/**"
+      - "packages/protocol/**"
+      - ".github/workflows/mobile.yml"
+
+concurrency:
+  group: mobile-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: [self-hosted, macOS, ARM64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+          # This persistent runner may retain submodule worktrees that checkout cannot remove.
+          # Use a fresh child directory so stale root contents cannot corrupt the mobile job.
+          path: source
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      # Metro and the Expo CLI are Node programs; Bun is only the package manager here.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # The app aliases @fabdesk/client-core and @fabdesk/protocol to their source, and tsc and
+      # Bun resolve *their* imports (zod, react-query, the protocol workspace link) from the root
+      # node_modules — so the root install is needed too, and that needs the submodule
+      # workspaces present, exactly like ci.yml. (Not tsconfig `paths`: Expo hands those to
+      # Metro, and a path to @types/react breaks the bundle.)
+      - uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.FABDESK_SUBMODULE_SSH_KEY }}
+
+      - name: Init the fabplane submodule
+        run: git submodule update --init --depth 1 vendor/fabplane
+        working-directory: source
+
+      - name: Resolve the fab_pcb pin
+        id: fab-pcb
+        run: echo "commit=$(git ls-tree HEAD vendor/fab_pcb | awk '{print $3}')" >> "$GITHUB_OUTPUT"
+        working-directory: source
+
+      - name: Check out the pinned fab_pcb workspace
+        uses: actions/checkout@v4
+        with:
+          repository: fabPlane/fab_pcb
+          ref: ${{ steps.fab-pcb.outputs.commit }}
+          path: source/vendor/fab_pcb
+          token: ${{ secrets.FAB_PCB_RELEASE_TOKEN }}
+          persist-credentials: false
+
+      - name: Install (root)
+        run: bun install --frozen-lockfile
+        working-directory: source
+
+      - name: Install (app)
+        run: bun install --frozen-lockfile
+        working-directory: source/apps/mobile
+
+      - name: Typecheck
+        run: bun run typecheck
+        working-directory: source/apps/mobile
+
+      - name: Test
+        run: bun run test
+        working-directory: source/apps/mobile
+
+      # The real check that @fabdesk/client-core and @fabdesk/protocol still resolve from source
+      # through Metro's aliases, which a typecheck alone would not catch.
+      - name: Bundle
+        run: bunx expo export --platform android --output-dir "$RUNNER_TEMP/mobile-export"
+        working-directory: source/apps/mobile
+
+  # Internal-distribution build on EAS (docs/mobile-release.md). Cloud builds cost credits, so a
+  # merge to main never queues one: the nightly `release.yml` run builds once a day, and this job
+  # exists for a build on demand (Actions → Mobile → Run workflow). It skips itself with a notice
+  # when the EXPO_TOKEN secret is absent (forks, or before `eas init` has been run). `--no-wait`
+  # queues the build and returns; the result lands on expo.dev and in the EAS notification.
+  eas-preview:
+    needs: verify
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: blacksmith-4vcpu-ubuntu-2204
+    steps:
+      - name: Check for EXPO_TOKEN
+        id: gate
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::notice title=EAS build skipped::EXPO_TOKEN is not set; see docs/mobile-release.md for the one-time EAS setup."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.gate.outputs.run == 'true'
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - if: steps.gate.outputs.run == 'true'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - if: steps.gate.outputs.run == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - if: steps.gate.outputs.run == 'true'
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - if: steps.gate.outputs.run == 'true'
+        name: Install
+        run: bun install --frozen-lockfile
+        working-directory: apps/mobile
+
+      # EAS_PROJECT_ID is read by app.config.ts so the id need not be committed before `eas init`
+      # has been run on a workstation; once app.json carries it the variable is redundant.
+      - if: steps.gate.outputs.run == 'true'
+        name: EAS build (preview, iOS + Android)
+        env:
+          EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
+        run: eas build --platform all --profile preview --non-interactive --no-wait
+        working-directory: apps/mobile
+
+  # Maestro on the iOS simulator (apps/mobile/e2e). A Release simulator build from source, a
+  # daemon with a fake agent, then pair → chats → new chat → send → reply. Opt-in via the
+  # MOBILE_E2E repository variable ("1") because a cold Xcode build is ~20 min of macOS runner.
+  e2e-ios:
+    needs: verify
+    if: ${{ vars.MOBILE_E2E == '1' }}
+    # Keep this on a provisioned image until the self-hosted Mini has full Xcode + simulators.
+    runs-on: blacksmith-6vcpu-macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # e2e/daemon.ts is a real fabdesk-core, so it needs the root install too — and a root
+      # install needs the submodule workspaces on disk (bun refuses a pruned checkout).
+      - uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.FABDESK_SUBMODULE_SSH_KEY }}
+
+      - name: Init the fabplane submodule
+        run: git submodule update --init --depth 1 vendor/fabplane
+
+      - name: Resolve the fab_pcb pin
+        id: fab-pcb
+        run: echo "commit=$(git ls-tree HEAD vendor/fab_pcb | awk '{print $3}')" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the pinned fab_pcb workspace
+        uses: actions/checkout@v4
+        with:
+          repository: fabPlane/fab_pcb
+          ref: ${{ steps.fab-pcb.outputs.commit }}
+          path: vendor/fab_pcb
+          token: ${{ secrets.FAB_PCB_RELEASE_TOKEN }}
+          persist-credentials: false
+
+      - name: Install (root and apps/mobile)
+        run: |
+          bun install --frozen-lockfile
+          bun install --frozen-lockfile --cwd apps/mobile
+
+      - name: Install Maestro
+        run: |
+          curl -Ls https://get.maestro.mobile.dev | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      - name: Boot a simulator
+        id: sim
+        run: |
+          udid=$(xcrun simctl list devices available -j | node -e '
+            const d = JSON.parse(require("fs").readFileSync(0, "utf8")).devices;
+            const all = Object.entries(d).filter(([rt]) => /iOS/.test(rt)).flatMap(([, v]) => v).filter((x) => /iPhone/.test(x.name));
+            console.log(all.at(-1)?.udid ?? "")')
+          test -n "$udid" || { echo "::error::no iPhone simulator on this runner"; exit 1; }
+          xcrun simctl boot "$udid" || true
+          xcrun simctl bootstatus "$udid" -b
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+
+      - name: Pair and chat
+        env:
+          LANG: en_US.UTF-8
+        run: apps/mobile/e2e/run.sh --build --udid ${{ steps.sim.outputs.udid }} --port 47820
+
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maestro-debug
+          path: ~/.maestro/tests
+          if-no-files-found: ignore
