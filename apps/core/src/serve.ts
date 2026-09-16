@@ -65,6 +65,13 @@ export function agentBridgeEnvironment(
   return bridgeUrl ? { FABDESK_FP_PCB_BRIDGE_URL: bridgeUrl } : {};
 }
 
+/** Both experiment arms keep the promoted MCP inventory empty. */
+export function agentMcpProfile(
+  mode: ExperimentalAgentInterface | undefined,
+): "substrate" | undefined {
+  return mode ? "substrate" : undefined;
+}
+
 export type ServeOptions = {
   port?: number;
   host?: string;
@@ -251,7 +258,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     get mcpUrl() {
       return mcpUrl;
     },
-    ...(agentInterface ? { mcpProfile: "substrate" as const } : {}),
+    ...(agentMcpProfile(agentInterface) ? { mcpProfile: agentMcpProfile(agentInterface)! } : {}),
     adapters,
     settings: () => store.settings.get(),
     workspaceDir: join(config.home, "workspace"),

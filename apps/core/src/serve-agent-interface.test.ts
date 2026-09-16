@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { agentBridgeEnvironment, configuredAgentInterface } from "./serve";
+import { agentBridgeEnvironment, agentMcpProfile, configuredAgentInterface } from "./serve";
 
 describe("experimental agent interface environment", () => {
   test("substrate clears direct IPC while programmable receives the attested bridge", () => {
@@ -10,6 +10,8 @@ describe("experimental agent interface environment", () => {
     expect(agentBridgeEnvironment("programmable", url)).toEqual({
       FABDESK_FP_PCB_BRIDGE_URL: url,
     });
+    expect(agentMcpProfile("substrate")).toBe("substrate");
+    expect(agentMcpProfile("programmable")).toBe("substrate");
   });
 
   test("recognizes only explicit experimental modes", () => {
