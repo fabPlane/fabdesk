@@ -5,21 +5,28 @@
 
 /** How many trailing stderr lines the supervisor keeps per spawn to explain an exit. */
 export const STDERR_TAIL_LINES = 5;
+/**
+ * A stderr line counts as the exit diagnostic only when written this close to the exit. The core's
+ * fatal path writes the error and exits at once; a line from hours earlier (`info fabdesk-core
+ * listening`) must not be presented as the cause of a later signal kill or native crash.
+ */
+export const STDERR_RECENT_MS = 5_000;
 const MAX_REASON_DETAIL = 300;
 
-/** Keeps the last `STDERR_TAIL_LINES` non-empty lines of a child's stderr. */
+/** Keeps the last `STDERR_TAIL_LINES` non-empty lines of a child's stderr with the time they arrived. */
 export class StderrTail {
-  private lines: string[] = [];
+  private lines: { line: string; at: number }[] = [];
 
-  push(line: string): void {
+  push(line: string, now = Date.now()): void {
     if (line.trim() === "") return;
-    this.lines.push(line);
+    this.lines.push({ line, at: now });
     if (this.lines.length > STDERR_TAIL_LINES) this.lines.shift();
   }
 
-  /** The last line written, or null when the child wrote nothing to stderr. */
-  last(): string | null {
-    return this.lines[this.lines.length - 1] ?? null;
+  /** The last line written within `STDERR_RECENT_MS` of `now`; null when stderr was quiet before the exit. */
+  lastRecent(now = Date.now()): string | null {
+    const last = this.lines[this.lines.length - 1];
+    return last && now - last.at <= STDERR_RECENT_MS ? last.line : null;
   }
 }
 

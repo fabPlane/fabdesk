@@ -286,7 +286,9 @@ export class CoreSupervisor extends EventEmitter {
       if (this.child === child) this.child = null;
       this.setStatus({ state: "crashed", message: err.message });
     });
-    child.on("exit", (code, signal) => {
+    // `close`, not `exit`: it fires once stdout/stderr have drained, so the core's final stderr line
+    // has reached the tail before the reason is built.
+    child.on("close", (code, signal) => {
       clearTimeout(readyTimer);
       this.logLine(`core exited code=${code} signal=${signal}`);
       if (this.child === child) this.child = null;
@@ -294,7 +296,7 @@ export class CoreSupervisor extends EventEmitter {
         this.setStatus({ state: "stopped" });
         return;
       }
-      this.scheduleRestart(coreExitReason(code, signal, stderrTail.last()));
+      this.scheduleRestart(coreExitReason(code, signal, stderrTail.lastRecent()));
     });
   }
 

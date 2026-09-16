@@ -1,15 +1,29 @@
 import { describe, expect, test } from "bun:test";
-import { coreExitReason, isTranslocated, StderrTail, STDERR_TAIL_LINES, TRANSLOCATION_HINT, withTranslocationHint } from "./core-crash";
+import { coreExitReason, isTranslocated, StderrTail, STDERR_RECENT_MS, STDERR_TAIL_LINES, TRANSLOCATION_HINT, withTranslocationHint } from "./core-crash";
 
 const TRANSLOCATED = "/private/var/folders/dt/tn5_4fyn51l25st2864zs1q80000gn/T/AppTranslocation/803ADAB1-9BF0-4544-914A-FF1E5A487AAF/d/fabPlane.app/Contents/MacOS/fabPlane";
 
 describe("StderrTail", () => {
   test("keeps the last non-empty lines only", () => {
     const tail = new StderrTail();
-    expect(tail.last()).toBeNull();
-    for (let i = 1; i <= STDERR_TAIL_LINES + 3; i++) tail.push(`line ${i}`);
-    tail.push("   ");
-    expect(tail.last()).toBe(`line ${STDERR_TAIL_LINES + 3}`);
+    expect(tail.lastRecent(0)).toBeNull();
+    for (let i = 1; i <= STDERR_TAIL_LINES + 3; i++) tail.push(`line ${i}`, 1_000);
+    tail.push("   ", 1_000);
+    expect(tail.lastRecent(1_000)).toBe(`line ${STDERR_TAIL_LINES + 3}`);
+  });
+
+  test("a line written long before the exit is not the exit diagnostic", () => {
+    const tail = new StderrTail();
+    tail.push("info  fabdesk-core listening", 1_000);
+    expect(tail.lastRecent(1_000 + STDERR_RECENT_MS)).toBe("info  fabdesk-core listening");
+    expect(tail.lastRecent(1_000 + STDERR_RECENT_MS + 1)).toBeNull();
+  });
+
+  test("the fatal line written just before the exit is", () => {
+    const tail = new StderrTail();
+    tail.push("info  fabdesk-core listening", 1_000);
+    tail.push("EACCES: permission denied", 3_600_000);
+    expect(tail.lastRecent(3_600_010)).toBe("EACCES: permission denied");
   });
 });
 
