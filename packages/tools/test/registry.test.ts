@@ -97,6 +97,7 @@ describe("registry", () => {
       "route_run",
       "verify_drc",
       "render_board",
+      "design_review",
       "project_read_file",
       "project_write_file",
       "project_list_sketches",
@@ -156,7 +157,7 @@ describe("registry", () => {
       "app_eval",
     ]);
     for (const n of names) expect(n).toMatch(/^[a-z][a-z0-9_]*$/);
-    expect(reg.byToolset("core").length).toBe(9);
+    expect(reg.byToolset("core").length).toBe(10);
     expect(() =>
       defineTool({
         name: "bad.name",
@@ -647,6 +648,84 @@ describe("registry", () => {
       ),
     ).rejects.toThrow(/changed while DRC was running/);
     expect(await Bun.file(join(project.dir, "reports/drc.json")).exists()).toBe(false);
+  });
+
+  test("design_review returns both views and rejects a vacuous electrical model", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("design-review");
+    await writeFile(join(project.dir, "board.kicad_sch"), "meaningful-schematic");
+    await writeFile(join(project.dir, "board.kicad_pcb"), "meaningful-board");
+    const base = mockServices([project]);
+    let meaningful = true;
+    const services = mockServices([project], {
+      design: {
+        ...base.design,
+        schematicInspect: async () => ({
+          revision: 3,
+          pcbRevision: 4,
+          symbols: meaningful
+            ? [
+                {
+                  id: "r1",
+                  reference: "R1",
+                  value: "1k",
+                  footprint: "Resistor_SMD:R_0402_1005Metric",
+                  libId: "Device:R",
+                  position: { x: 10, y: 10 },
+                  rotation: 0,
+                  mirrorX: false,
+                  mirrorY: false,
+                  pins: [],
+                },
+              ]
+            : [],
+          wires: [],
+          localLabels: [],
+          globalLabels: [],
+          junctions: [],
+          noConnects: [],
+          texts: [],
+          nets: meaningful ? [{ name: "N1", itemCount: 1, itemIds: ["r1"] }] : [],
+          erc: { errors: 0, warnings: 0 },
+        }),
+      },
+      kicad: {
+        ...base.kicad,
+        exportSchematicSvg: async (_cli, { outDir }) => {
+          const path = join(outDir, "board.svg");
+          await Bun.write(path, "<svg xmlns='http://www.w3.org/2000/svg'><text>sch</text></svg>");
+          return { paths: [path] };
+        },
+      },
+    });
+    const factory = contextFactory(services, project);
+    const call = () =>
+      reg.invoke("design_review", {}, (ref) =>
+        factory({
+          def: reg.get("design_review")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+      );
+    const passing = await call();
+    expect(passing.isError).toBeFalsy();
+    expect(passing.images).toHaveLength(2);
+    expect(passing.text).toContain("Design review: PASS");
+    expect(passing.json).toMatchObject({
+      meaningfulElectricalModel: true,
+      metrics: { symbols: 1, nets: 1, ercErrors: 0, drcErrors: 0, unconnected: 0, parity: 0 },
+    });
+
+    meaningful = false;
+    const failing = await call();
+    expect(failing.isError).toBe(true);
+    expect(failing.text).toContain("electrical model is not meaningful (0 symbols, 0 nets)");
+    expect(failing.json).toMatchObject({
+      pass: false,
+      meaningfulElectricalModel: false,
+      delta: { symbols: -1, nets: -1 },
+    });
   });
 
   test("atomic native edit previews, restores rejected writes, and rolls back accepted revisions", async () => {

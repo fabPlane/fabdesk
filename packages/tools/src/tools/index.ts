@@ -2,6 +2,7 @@ import { ToolRegistry, type ToolDef } from "../registry";
 import { appTools } from "./app";
 import { circuitTools } from "./circuit";
 import { coreTools } from "./core";
+import { designReviewTools } from "./design-review";
 import { exportTools } from "./export";
 import { kicadTools } from "./kicad";
 import { inspectionTools } from "./inspection";
@@ -18,6 +19,7 @@ import { verifyTools } from "./verify";
 
 export const allTools: ReadonlyArray<ToolDef> = [
   ...coreTools,
+  ...designReviewTools,
   ...projectTools,
   ...circuitTools,
   ...inspectionTools,
@@ -41,6 +43,7 @@ export function createRegistry(): ToolRegistry {
 }
 
 export * from "./core";
+export * from "./design-review";
 export * from "./project";
 export * from "./circuit";
 export * from "./schematic";

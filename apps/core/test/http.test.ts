@@ -501,6 +501,7 @@ describe("http daemon", () => {
       "circuit_build",
       "circuit_place",
       "circuit_read_errors",
+      "design_review",
       "load_toolset",
       "pcb_environment",
       "project_status",
@@ -521,11 +522,11 @@ describe("http daemon", () => {
     expect((withProject.structuredContent as { id: string }).id).toBe(created.id);
 
     await a.client.callTool({ name: "load_toolset", arguments: { toolset: "export" } });
-    expect((await a.client.listTools()).tools.length).toBe(18);
+    expect((await a.client.listTools()).tools.length).toBe(19);
 
     // A second session starts with only the core toolset (state is per session).
     const b = await connect(daemon.token);
-    expect((await b.client.listTools()).tools.length).toBe(11);
+    expect((await b.client.listTools()).tools.length).toBe(12);
     expect(daemon.mcp.activeCount()).toBe(2);
 
     // Clients that cannot process tools/list_changed can request the complete
@@ -535,10 +536,11 @@ describe("http daemon", () => {
 
     const native = await connect(daemon.token, "?profile=native");
     const nativeNames = (await native.client.listTools()).tools.map((tool) => tool.name);
-    expect(nativeNames).toHaveLength(19);
+    expect(nativeNames).toHaveLength(20);
     expect(nativeNames).toContain("circuit_describe_part");
     expect(nativeNames).toContain("pcb_inspect");
     expect(nativeNames).toContain("schematic_review");
+    expect(nativeNames).toContain("design_review");
     expect(nativeNames).not.toContain("circuit_build");
     expect(nativeNames).not.toContain("native_edit_transaction");
 

@@ -22,6 +22,7 @@ type Session = {
 export const NATIVE_AGENT_TOOLS = [
   "pcb_environment",
   "project_status",
+  "design_review",
   "circuit_search_parts",
   "circuit_describe_part",
   "schematic_inspect",
