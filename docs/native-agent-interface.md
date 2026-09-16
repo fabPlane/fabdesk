@@ -113,6 +113,23 @@ packaged KiCad binary directory to `PATH`, and resolves the literal `kicad-cli` 
 `KICAD_CLI` executable used by Fabdesk. It exposes an environment capability without prescribing an
 authoring workflow.
 
+Project revisions are content-addressed independently of the authoring method:
+
+```bash
+fabpcb revision checkpoint --project /absolute/path/to/project --label "before reroute"
+fabpcb revision accept --project /absolute/path/to/project
+fabpcb revision status --project /absolute/path/to/project
+fabpcb revision discard --project /absolute/path/to/project
+```
+
+`checkpoint` never changes the accepted pointer. `accept` first proves that each present native
+schematic or PCB reopens with the packaged KiCad version, but deliberately does not require ERC or
+DRC success for an intermediate revision. The accepted pointer advances atomically only after that
+validation and snapshot complete. `discard` restores the accepted source snapshot; candidate-only
+files are moved to a recovery directory rather than deleted. Generated reports, renders, exports,
+KiCad user-state files, locks, backups, Git metadata, and dependencies are excluded from source
+snapshots.
+
 For the next clean test, restart the launcher and use a new project; the three completed 2026-09-15
 blinkers are retained as diagnostic evidence and should not be overwritten. The packaged KiCad
 10.99 integration test already passes for rotated symbols, power symbols, clean ERC, native PCB

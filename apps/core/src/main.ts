@@ -21,6 +21,7 @@ Usage:
   fabpcb tool search <words> | describe <name> | call <name> [--request <json>] | batch --input @calls.jsonl
   fabpcb env describe [--project <dir>]
   fabpcb env exec [--project <dir>] -- <command> [arguments...]
+  fabpcb revision status|checkpoint|accept|discard [--project <dir>] [--label <text>]
   fabdesk-core login | logout | whoami
   fabdesk-core login --email <email> --password <password>   # staging/local only
   fabdesk-core doctor [--json]
@@ -75,8 +76,10 @@ export function parseArgs(argv: string[]): Flags {
   return out;
 }
 
-const str = (f: Flags, k: string): string | undefined => (typeof f[k] === "string" ? (f[k] as string) : undefined);
-const num = (f: Flags, k: string): number | undefined => (str(f, k) !== undefined ? Number(str(f, k)) : undefined);
+const str = (f: Flags, k: string): string | undefined =>
+  typeof f[k] === "string" ? (f[k] as string) : undefined;
+const num = (f: Flags, k: string): number | undefined =>
+  str(f, k) !== undefined ? Number(str(f, k)) : undefined;
 const flag = (f: Flags, k: string): boolean => f[k] === true || f[k] === "true" || f[k] === "1";
 
 export async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
@@ -97,13 +100,25 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     case "serve": {
       initSentry();
       // `--remote` edits the persisted setting before the daemon reads it; see cli/remote.ts.
-      if (f["remote"] !== undefined || f["remote-host"] !== undefined || f["remote-port"] !== undefined || f["relay"] !== undefined) {
-        const config = resolveConfig({ ...(str(f, "data-dir") ? { dataDir: str(f, "data-dir")! } : {}) });
+      if (
+        f["remote"] !== undefined ||
+        f["remote-host"] !== undefined ||
+        f["remote-port"] !== undefined ||
+        f["relay"] !== undefined
+      ) {
+        const config = resolveConfig({
+          ...(str(f, "data-dir") ? { dataDir: str(f, "data-dir")! } : {}),
+        });
         const { persistRemoteFlags } = await import("./cli/remote");
         await mkdir(config.home, { recursive: true });
         try {
           const remote = await persistRemoteFlags(config.dbPath, f);
-          if (remote) process.stderr.write(remote.enabled ? `Remote access on: phones connect to ${remote.host}:${remote.port}${remote.relay === "off" ? ", relay off" : ""} (persisted; pair one with: fabdesk-core pair)\n` : "Remote access off (persisted)\n");
+          if (remote)
+            process.stderr.write(
+              remote.enabled
+                ? `Remote access on: phones connect to ${remote.host}:${remote.port}${remote.relay === "off" ? ", relay off" : ""} (persisted; pair one with: fabdesk-core pair)\n`
+                : "Remote access off (persisted)\n",
+            );
         } catch (e) {
           process.stderr.write(`serve: ${errMsg(e)}\n`);
           return 2;
@@ -128,7 +143,11 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     case "mcp": {
       initSentry();
       const { runMcpStdio } = await import("./mcp-stdio");
-      await runMcpStdio({ ...(flag(f, "standalone") ? { standalone: true } : {}), ...(str(f, "project") ? { project: str(f, "project")! } : {}), ...(str(f, "data-dir") ? { dataDir: str(f, "data-dir")! } : {}) });
+      await runMcpStdio({
+        ...(flag(f, "standalone") ? { standalone: true } : {}),
+        ...(str(f, "project") ? { project: str(f, "project")! } : {}),
+        ...(str(f, "data-dir") ? { dataDir: str(f, "data-dir")! } : {}),
+      });
       return 0;
     }
     case "tool": {
@@ -138,7 +157,9 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       return runToolCli({
         ...(action ? { action } : {}),
         ...(action === "search" ? { query: str(f, "query") ?? positional.join(" ") } : {}),
-        ...((action === "describe" || action === "call") && positional[0] ? { name: positional[0] } : {}),
+        ...((action === "describe" || action === "call") && positional[0]
+          ? { name: positional[0] }
+          : {}),
         ...(str(f, "request") ? { request: str(f, "request")! } : {}),
         ...(str(f, "input") ? { input: str(f, "input")! } : {}),
         ...(str(f, "project") ? { project: str(f, "project")! } : {}),
@@ -155,6 +176,15 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
         ...(action === "exec" ? { command: f._.slice(2) } : {}),
       });
     }
+    case "revision": {
+      const { runProjectRevision } = await import("./project-revisions");
+      const action = f._[1] as "status" | "checkpoint" | "accept" | "discard" | undefined;
+      return runProjectRevision({
+        ...(action ? { action } : {}),
+        ...(str(f, "project") ? { project: str(f, "project")! } : {}),
+        ...(str(f, "label") ? { label: str(f, "label")! } : {}),
+      });
+    }
     case "login":
     case "logout":
     case "whoami": {
@@ -163,18 +193,31 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       const password = str(f, "password") ?? process.env["FABPLANE_PASSWORD"];
       const credentials = email && password ? { email, password } : undefined;
       if (cmd === "login" && email && !password) {
-        process.stderr.write("login: --password or FABPLANE_PASSWORD is required when --email / FABPLANE_EMAIL is set\n");
+        process.stderr.write(
+          "login: --password or FABPLANE_PASSWORD is required when --email / FABPLANE_EMAIL is set\n",
+        );
         return 2;
       }
       const { createAuth } = await import("./auth-facade");
-      const auth = await createAuth({ mode: config.authMode, channel: config.channel, home: config.home, apiOrigin: config.apiOrigin, emit: (e) => {
-        if (e.topic === "auth.state" && e.state.pending && !credentials) {
-          process.stderr.write(`Open ${e.state.pending.verificationUriComplete} and enter code ${e.state.pending.userCode}\n`);
-        }
-      } });
+      const auth = await createAuth({
+        mode: config.authMode,
+        channel: config.channel,
+        home: config.home,
+        apiOrigin: config.apiOrigin,
+        emit: (e) => {
+          if (e.topic === "auth.state" && e.state.pending && !credentials) {
+            process.stderr.write(
+              `Open ${e.state.pending.verificationUriComplete} and enter code ${e.state.pending.userCode}\n`,
+            );
+          }
+        },
+      });
       if (cmd === "login") {
         const st = await auth.login(undefined, credentials);
-        if (st.pending && !credentials) process.stderr.write(`Open ${st.pending.verificationUriComplete} and enter code ${st.pending.userCode}\n`);
+        if (st.pending && !credentials)
+          process.stderr.write(
+            `Open ${st.pending.verificationUriComplete} and enter code ${st.pending.userCode}\n`,
+          );
         process.stdout.write(JSON.stringify(auth.state(), null, 2) + "\n");
         return auth.state().status === "signed_in" ? 0 : 1;
       }
@@ -183,12 +226,20 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
         return 0;
       }
       const st = auth.state();
-      process.stdout.write(JSON.stringify({ mode: auth.mode, status: st.status, principal: st.principal ?? null }, null, 2) + "\n");
+      process.stdout.write(
+        JSON.stringify(
+          { mode: auth.mode, status: st.status, principal: st.principal ?? null },
+          null,
+          2,
+        ) + "\n",
+      );
       return st.status === "signed_in" ? 0 : 1;
     }
     case "devices":
     case "pair": {
-      const config = resolveConfig({ ...(str(f, "data-dir") ? { dataDir: str(f, "data-dir")! } : {}) });
+      const config = resolveConfig({
+        ...(str(f, "data-dir") ? { dataDir: str(f, "data-dir")! } : {}),
+      });
       const { connectToDaemon, stdio } = await import("./cli/daemon");
       const client = await connectToDaemon(config, stdio);
       if (!client) return 1;
@@ -212,7 +263,9 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       const store = Store.open(config.dbPath);
       const report = await runDoctor({ config, settings: store.settings.get() });
       store.close();
-      process.stdout.write(flag(f, "json") ? JSON.stringify(report, null, 2) + "\n" : formatDoctor(report) + "\n");
+      process.stdout.write(
+        flag(f, "json") ? JSON.stringify(report, null, 2) + "\n" : formatDoctor(report) + "\n",
+      );
       return 0;
     }
     case "install-cli": {
@@ -230,7 +283,9 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       await symlink(target, link);
       await symlink(target, pcbLink);
       await chmod(target, 0o755).catch(() => {});
-      process.stdout.write(`Linked ${link} and ${pcbLink} → ${target}\nMake sure ${bin} is on your PATH. Then: claude mcp add --transport stdio fabdesk -- fabdesk mcp\n`);
+      process.stdout.write(
+        `Linked ${link} and ${pcbLink} → ${target}\nMake sure ${bin} is on your PATH. Then: claude mcp add --transport stdio fabdesk -- fabdesk mcp\n`,
+      );
       return 0;
     }
     default:
