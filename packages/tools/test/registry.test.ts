@@ -84,6 +84,22 @@ describe("registry", () => {
     expect(tool?.description).not.toContain("libSource");
   });
 
+  test("atomic PCB contracts make direct apply normal and keep preview explicit", () => {
+    const reg = createRegistry();
+    for (const name of ["pcb_edit_copper", "pcb_edit_graphics"]) {
+      const tool = reg.get(name)!;
+      expect(tool.title).toStartWith("Atomically");
+      expect(tool.description).toContain("normal mode=apply path");
+      expect(tool.description).toContain("mode=preview");
+      expect(reg.inputObject(tool).parse({})).toMatchObject({ mode: "apply" });
+    }
+    const sync = reg.get("pcb_update_from_schematic")!;
+    expect(sync.title).toStartWith("Atomically");
+    expect(sync.description).toContain("normal apply=true path");
+    expect(sync.description).toContain("apply=false");
+    expect(reg.inputObject(sync).parse({})).toMatchObject({ apply: true });
+  });
+
   test("v1 tool set and naming", () => {
     const reg = createRegistry();
     const names = reg.list().map((t) => t.name);
@@ -293,6 +309,7 @@ describe("registry", () => {
     const project = await tempProject("native-schematic");
     const base = mockServices([project]);
     const edits: unknown[] = [];
+    const syncModes: boolean[] = [];
     const services = mockServices([project], {
       design: {
         ...base.design,
@@ -339,14 +356,17 @@ describe("registry", () => {
             revision: 5,
           };
         },
-        syncSchematicToPcb: async (_dir, dryRun) => ({
-          ok: true,
-          dryRun,
-          erc: { errors: 0, warnings: 1 },
-          update: { errors: 0, warnings: 0, newFootprints: 1, report: "Add R1" },
-          ...(dryRun ? {} : { parity: 0 }),
-          saved: !dryRun,
-        }),
+        syncSchematicToPcb: async (_dir, dryRun) => {
+          syncModes.push(dryRun);
+          return {
+            ok: true,
+            dryRun,
+            erc: { errors: 0, warnings: 1 },
+            update: { errors: 0, warnings: 0, newFootprints: 1, report: "Add R1" },
+            ...(dryRun ? {} : { parity: 0 }),
+            saved: !dryRun,
+          };
+        },
       },
     });
     const factory = contextFactory(services, project);
@@ -430,6 +450,7 @@ describe("registry", () => {
     expect(preview.text).toContain("Preview made no PCB changes");
     const applied = await call("pcb_update_from_schematic");
     expect(applied.text).toContain("Native schematic and PCB saved");
+    expect(syncModes).toEqual([true, false]);
     expect(await Bun.file(join(project.dir, "reports/schematic-sync.json")).exists()).toBe(true);
   });
 
@@ -899,7 +920,60 @@ describe("registry", () => {
     expect(await Bun.file(board).text()).toBe("unrelated-copper\n");
   });
 
-  test("broad copper replacement uses a durable candidate and never persists removal alone", async () => {
+  test("direct graphics apply is the default while explicit preview remains non-persistent", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("direct-pcb-graphics");
+    const board = join(project.dir, "board.kicad_pcb");
+    await writeFile(board, "before-graphics\n");
+    const revision = createHash("sha256").update("before-graphics\n").digest("hex");
+    const base = mockServices([project]);
+    let editCalls = 0;
+    const services = mockServices([project], {
+      design: {
+        ...base.design,
+        editBoardGeometry: async (_dir, edit) => {
+          editCalls++;
+          expect(edit.texts?.[0]?.text).toBe("POWER");
+          await Bun.write(board, "after-graphics\n");
+          return {
+            created: { tracks: 0, vias: 0, zones: 0, keepouts: 0, texts: 1, graphics: 0 },
+            createdIds: ["text-power"],
+            deletedIds: [],
+            revision: 6,
+            saved: true,
+          };
+        },
+      },
+    });
+    const factory = contextFactory(services, project);
+    const call = (args: Record<string, unknown>) =>
+      reg.invoke("pcb_edit_graphics", args, (ref) =>
+        factory({
+          def: reg.get("pcb_edit_graphics")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+      );
+    const text = { text: "POWER", position: { x: 4, y: 2 }, layer: "F.SilkS" };
+
+    const preview = await call({ mode: "preview", expectedPcbRevision: revision, texts: [text] });
+    expect((preview.json as any).status).toBe("preview");
+    expect(editCalls).toBe(0);
+    expect(await Bun.file(board).text()).toBe("before-graphics\n");
+
+    await expect(
+      call({ expectedPcbRevision: "0".repeat(64), texts: [text] }),
+    ).rejects.toThrow(/stale PCB revision/);
+    expect(editCalls).toBe(0);
+
+    const accepted = await call({ expectedPcbRevision: revision, texts: [text] });
+    expect((accepted.json as any).status).toBe("accepted");
+    expect(editCalls).toBe(1);
+    expect(await Bun.file(board).text()).toBe("after-graphics\n");
+  });
+
+  test("direct copper apply remains previewable, revision-guarded, and restores rejected replacement", async () => {
     const reg = createRegistry();
     const project = await tempProject("atomic-copper-candidate");
     const board = join(project.dir, "board.kicad_pcb");
@@ -923,6 +997,7 @@ describe("registry", () => {
     );
     const base = mockServices([project]);
     const order: string[] = [];
+    let rejectReplacement = true;
     const services = mockServices([project], {
       design: {
         ...base.design,
@@ -934,6 +1009,7 @@ describe("registry", () => {
         editBoardGeometry: async (_dir, edit) => {
           order.push(`create:${edit.tracks?.length ?? 0}`);
           await Bun.write(board, `${await Bun.file(board).text()}replacement-route\n`);
+          if (rejectReplacement) throw new ToolError("replacement rejected", "invalid_args");
           return {
             created: { tracks: 1, vias: 0, zones: 0, keepouts: 0, texts: 0, graphics: 0 },
             createdIds: ["track-replacement"],
@@ -961,8 +1037,38 @@ describe("registry", () => {
     expect(await Bun.file(board).text()).toBe("existing-route\n");
     expect(order).toEqual([]);
 
+    const preview = await call({
+      mode: "preview",
+      expectedPcbRevision: revision,
+      removeNets: ["A", "B", "C", "D"],
+      candidateFile,
+    });
+    expect((preview.json as any).status).toBe("preview");
+    expect(await Bun.file(board).text()).toBe("existing-route\n");
+    expect(order).toEqual([]);
+
+    await expect(
+      call({
+        expectedPcbRevision: "0".repeat(64),
+        removeNets: ["A", "B", "C", "D"],
+        candidateFile,
+      }),
+    ).rejects.toThrow(/stale PCB revision/);
+    expect(order).toEqual([]);
+
+    await expect(
+      call({
+        expectedPcbRevision: revision,
+        removeNets: ["A", "B", "C", "D"],
+        candidateFile,
+      }),
+    ).rejects.toThrow(/canonical files restored: replacement rejected/);
+    expect(order).toEqual(["remove:A,B,C,D", "create:1"]);
+    expect(await Bun.file(board).text()).toBe("existing-route\n");
+
+    rejectReplacement = false;
+    order.length = 0;
     const accepted = await call({
-      mode: "apply",
       expectedPcbRevision: revision,
       removeNets: ["A", "B", "C", "D"],
       candidateFile,
