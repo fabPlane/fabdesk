@@ -72,6 +72,7 @@ export type DesignSelect =
   | "zones"
   | "keepouts"
   | "board_geometry"
+  | "footprint_geometry"
   | "texts"
   | "unrouted"
   | "outline";

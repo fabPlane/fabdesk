@@ -170,11 +170,12 @@ export const render_view = defineTool({
     const rawPath = p(project, PROJECT_FILES.renders, "pcb-view-source.svg");
     ctx.progress(0.2, "exporting svg");
     await ctx.services.kicad.exportPcbSvg(cli, { board, output: rawPath, ...(layers ? { layers } : {}), signal: ctx.signal });
-    const [geometry, components, pads, tracks, vias] = await Promise.all([
-      ctx.services.design.query(project.dir, "board_geometry"), ctx.services.design.query(project.dir, "components"),
-      ctx.services.design.query(project.dir, "pads"), ctx.services.design.query(project.dir, "tracks"), ctx.services.design.query(project.dir, "vias"),
+    const [boardGeometry, footprintGeometry, components, pads, tracks, vias] = await Promise.all([
+      ctx.services.design.query(project.dir, "board_geometry"), ctx.services.design.query(project.dir, "footprint_geometry"),
+      ctx.services.design.query(project.dir, "components"), ctx.services.design.query(project.dir, "pads"),
+      ctx.services.design.query(project.dir, "tracks"), ctx.services.design.query(project.dir, "vias"),
     ]);
-    const autoPoints = [...geometry, ...components, ...pads].flatMap(rowPoints);
+    const autoPoints = [...boardGeometry, ...footprintGeometry, ...components, ...pads].flatMap(rowPoints);
     const fitted = region ?? boundsWithMargin(autoPoints, 2);
     let svg = await readFile(rawPath, "utf8");
     if (fitted) {

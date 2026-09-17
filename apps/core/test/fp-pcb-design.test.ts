@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { FpPcbCompileJob } from "@fabdesk/protocol";
+import { BoardLayer } from "@fp-pcb/proto";
+import { createBoardGraphic } from "@fp-pcb/client";
 import { createFpPcbDesign, evaluatePartCompatibility } from "../src/fp-pcb-design";
 import type { FpPcbBridgeClient } from "../src/fp-pcb-bridge";
 import { FpPcbSessions, type ProjectSession } from "../src/fp-pcb-session";
@@ -40,6 +42,77 @@ describe("FabPCB build recovery", () => {
     const result = await design.build({ projectDir: "/workspace/partial" });
     expect(result.ok).toBe(false);
     expect(released).toEqual(["/workspace/partial"]);
+  });
+});
+
+describe("PCB geometry query boundaries", () => {
+  test("separates board-owned shapes from explicitly requested footprint primitives", async () => {
+    const boardShape = createBoardGraphic({
+      geometry: {
+        kind: "segment",
+        start: { x: 1_000_000, y: 2_000_000 },
+        end: { x: 11_000_000, y: 2_000_000 },
+      },
+      layer: BoardLayer.BL_Edge_Cuts,
+    });
+    const courtyard = createBoardGraphic({
+      geometry: {
+        kind: "segment",
+        start: { x: 3_000_000, y: 4_000_000 },
+        end: { x: 5_000_000, y: 4_000_000 },
+      },
+      layer: BoardLayer.BL_F_CrtYd,
+    });
+    const fabrication = createBoardGraphic({
+      geometry: {
+        kind: "segment",
+        start: { x: 3_000_000, y: 5_000_000 },
+        end: { x: 5_000_000, y: 5_000_000 },
+      },
+      layer: BoardLayer.BL_F_Fab,
+    });
+    const silkscreen = createBoardGraphic({
+      geometry: {
+        kind: "segment",
+        start: { x: 3_000_000, y: 6_000_000 },
+        end: { x: 5_000_000, y: 6_000_000 },
+      },
+      layer: BoardLayer.BL_F_Silkscreen,
+    });
+    const board = {
+      getShapes: async () => [boardShape],
+      getFootprints: async () => [{ reference: "R1", items: [courtyard, fabrication, silkscreen] }],
+    };
+    const sessions = {
+      board: async () => board,
+    } as unknown as FpPcbSessions;
+    const design = createFpPcbDesign({ bridge: () => ({}) as never, sessions });
+
+    expect(await design.query("/workspace/project", "board_geometry")).toEqual([
+      expect.objectContaining({
+        id: boardShape.id,
+        owner: "board",
+        layer: BoardLayer.BL_Edge_Cuts,
+        start: { x: 1, y: 2 },
+        end: { x: 11, y: 2 },
+      }),
+    ]);
+    expect(await design.query("/workspace/project", "footprint_geometry")).toEqual([
+      expect.objectContaining({
+        id: courtyard.id,
+        owner: "R1",
+        layer: BoardLayer.BL_F_CrtYd,
+        start: { x: 3, y: 4 },
+        end: { x: 5, y: 4 },
+      }),
+      expect.objectContaining({
+        id: fabrication.id,
+        owner: "R1",
+        layer: BoardLayer.BL_F_Fab,
+        start: { x: 3, y: 5 },
+        end: { x: 5, y: 5 },
+      }),
+    ]);
   });
 });
 

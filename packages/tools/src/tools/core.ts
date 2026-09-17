@@ -478,14 +478,17 @@ async function pcbFileRevision(path: string): Promise<PcbFileRevision> {
   return { sha256: createHash("sha256").update(data).digest("hex"), bytes: data.byteLength };
 }
 
-const DRC_GEOMETRY_SELECTS: DesignSelect[] = [
-  "pads",
-  "tracks",
-  "vias",
-  "zones",
-  "keepouts",
-  "board_geometry",
-  "texts",
+const DRC_GEOMETRY_SOURCES: Array<{ select: DesignSelect; objectType: DesignSelect }> = [
+  { select: "pads", objectType: "pads" },
+  { select: "tracks", objectType: "tracks" },
+  { select: "vias", objectType: "vias" },
+  { select: "zones", objectType: "zones" },
+  { select: "keepouts", objectType: "keepouts" },
+  { select: "board_geometry", objectType: "board_geometry" },
+  // Preserve the pre-H4 combined geometry ordering and objectType in DRC enrichment while querying
+  // the newly explicit source so footprint-owned violations retain their matching coordinates.
+  { select: "footprint_geometry", objectType: "board_geometry" },
+  { select: "texts", objectType: "texts" },
 ];
 
 async function queryDrcGeometry(
@@ -493,8 +496,8 @@ async function queryDrcGeometry(
   projectDir: string,
 ): Promise<DrcGeometry[]> {
   const groups = await Promise.all(
-    DRC_GEOMETRY_SELECTS.map(async (objectType) =>
-      (await ctx.services.design.query(projectDir, objectType)).map((row) => ({
+    DRC_GEOMETRY_SOURCES.map(async ({ select, objectType }) =>
+      (await ctx.services.design.query(projectDir, select)).map((row) => ({
         objectType,
         ...row,
       })),

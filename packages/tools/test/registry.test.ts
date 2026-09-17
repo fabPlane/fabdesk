@@ -220,6 +220,147 @@ describe("registry", () => {
     expect(JSON.stringify(output).length).toBeLessThan(5000);
   });
 
+  test("PCB inspection separates board and footprint geometry without changing other kinds", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("scoped-pcb-geometry");
+    await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb (version 20260831))\n");
+    const base = mockServices([project]);
+    const rows: Record<string, Array<Record<string, unknown>>> = {
+      components: [{ ref: "R1", x: 1, y: 1, layer: 3 }],
+      nets: [{ name: "N1", code: 1, pads: 1 }],
+      pads: [{ component: "R1", number: "1", net: "N1", x: 1, y: 1, layer: 3 }],
+      vias: [{ id: "via-1", net: "N1", x: 4, y: 4, diameter: 0.6, drill: 0.3 }],
+      tracks: [{ id: "track-1", net: "N1", layer: 3, start: { x: 1, y: 1 }, end: { x: 4, y: 4 } }],
+      zones: [
+        {
+          id: "zone-1",
+          net: "N1",
+          layers: [3],
+          points: [
+            { x: 0, y: 0 },
+            { x: 5, y: 0 },
+            { x: 5, y: 5 },
+          ],
+        },
+      ],
+      keepouts: [
+        {
+          id: "keepout-1",
+          layers: [3],
+          points: [
+            { x: 6, y: 6 },
+            { x: 7, y: 6 },
+            { x: 7, y: 7 },
+          ],
+        },
+      ],
+      board_geometry: [
+        {
+          id: "edge-1",
+          owner: "board",
+          kind: "segment",
+          layer: 47,
+          start: { x: 0, y: 0 },
+          end: { x: 10, y: 0 },
+        },
+      ],
+      footprint_geometry: [
+        {
+          id: "r1-courtyard-a",
+          owner: "R1",
+          kind: "segment",
+          layer: 49,
+          start: { x: 1, y: 1 },
+          end: { x: 2, y: 1 },
+        },
+        {
+          id: "r1-courtyard-b",
+          owner: "R1",
+          kind: "segment",
+          layer: 49,
+          start: { x: 1, y: 1 },
+          end: { x: 1, y: 2 },
+        },
+        {
+          id: "d1-fab",
+          owner: "D1",
+          kind: "segment",
+          layer: 51,
+          start: { x: 8, y: 8 },
+          end: { x: 9, y: 8 },
+        },
+      ],
+      texts: [{ id: "text-1", text: "POWER", x: 2, y: 2, layer: 40 }],
+      unrouted: [{ net: "N1", from: { x: 1, y: 1 }, to: { x: 4, y: 4 } }],
+    };
+    const services = mockServices([project], {
+      design: {
+        ...base.design,
+        query: async (_dir, select) => rows[select] ?? [],
+      },
+    });
+    const factory = contextFactory(services, project);
+    const call = (args: Record<string, unknown>) =>
+      reg.invoke("pcb_inspect", args, (ref) =>
+        factory({
+          def: reg.get("pcb_inspect")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+      );
+
+    const broad = await call({
+      kinds: [
+        "components",
+        "nets",
+        "pads",
+        "vias",
+        "tracks",
+        "zones",
+        "keepouts",
+        "board_geometry",
+        "texts",
+        "unrouted",
+      ],
+    });
+    const broadJson = broad.json as any;
+    expect(broadJson.contract).toEqual({ name: "fabdesk.pcb-inspection", version: "2.0.0" });
+    expect(broadJson.results.board_geometry.rows).toEqual(rows.board_geometry);
+    expect(broadJson.results.board_geometry.rows).not.toContainEqual(
+      expect.objectContaining({ owner: "R1" }),
+    );
+    for (const kind of [
+      "components",
+      "nets",
+      "pads",
+      "vias",
+      "tracks",
+      "zones",
+      "keepouts",
+      "texts",
+      "unrouted",
+    ])
+      expect(broadJson.results[kind].rows).toEqual(rows[kind]);
+
+    const footprint = await call({
+      kinds: ["footprint_geometry"],
+      references: ["r1"],
+      layers: [49],
+      region: { minX: 0, minY: 0, maxX: 3, maxY: 3 },
+      near: { x: 1, y: 1, radius: 0.1 },
+      limitPerKind: 1,
+    });
+    const footprintJson = footprint.json as any;
+    expect(footprintJson.results.footprint_geometry).toEqual({
+      total: 2,
+      returned: 1,
+      truncated: true,
+      rows: [rows.footprint_geometry![0]],
+    });
+    expect(footprintJson.bounds).toEqual({ minX: 1, minY: 1, maxX: 2, maxY: 1 });
+  });
+
   test("PCB inspection is empty before the board exists", async () => {
     const reg = createRegistry();
     const project = await tempProject("empty-spatial-inspection");
@@ -245,6 +386,7 @@ describe("registry", () => {
     );
     expect(output.text).toContain("not created yet");
     expect(output.json).toMatchObject({
+      contract: { name: "fabdesk.pcb-inspection", version: "2.0.0" },
       revision: null,
       bounds: null,
       results: { components: { total: 0 }, tracks: { total: 0 } },
@@ -258,6 +400,21 @@ describe("registry", () => {
     await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb (version 20260831))\n");
     const base = mockServices([project]);
     const services = mockServices([project], {
+      design: {
+        ...base.design,
+        query: async (dir, select, filter) =>
+          select === "footprint_geometry"
+            ? [
+                {
+                  id: "courtyard-wide",
+                  owner: "R1",
+                  layer: 49,
+                  start: { x: -5, y: -6 },
+                  end: { x: 15, y: 16 },
+                },
+              ]
+            : base.design.query(dir, select, filter),
+      },
       kicad: {
         ...base.kicad,
         exportPcbSvg: async (_cli, { output }) => {
@@ -302,6 +459,22 @@ describe("registry", () => {
     const svg = await Bun.file(join(project.dir, "renders/pcb-view.svg")).text();
     expect(svg).toContain('viewBox="0 2 2 2"');
     expect(svg).toContain('id="fabdesk-highlights"');
+
+    const autoFitted = await reg.invoke("render_view", { document: "pcb" }, (ref) =>
+      contextFactory(
+        services,
+        project,
+      )({
+        def: reg.get("render_view")!,
+        projectRef: ref,
+        signal: new AbortController().signal,
+        progress: () => {},
+      }),
+    );
+    expect((autoFitted.json as any).region).toEqual({ minX: -7, minY: -8, maxX: 17, maxY: 18 });
+    expect(await Bun.file(join(project.dir, "renders/pcb-view.svg")).text()).toContain(
+      'viewBox="-7 -8 24 26"',
+    );
   });
 
   test("native schematic edit, inspection and forward annotation", async () => {
@@ -600,7 +773,36 @@ describe("registry", () => {
     const project = await tempProject("revision-inspection");
     await writeFile(join(project.dir, "board.kicad_sch"), "(kicad_sch (version 20260831))\n");
     await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb (version 20260831))\n");
-    const services = mockServices([project]);
+    const base = mockServices([project]);
+    const queriedGeometry: string[] = [];
+    const boardGeometry = {
+      id: "edge-1",
+      owner: "board",
+      start: { x: 0, y: 0 },
+      end: { x: 10, y: 0 },
+    };
+    const footprintGeometry = {
+      id: "courtyard-1",
+      owner: "R1",
+      start: { x: 1, y: 1 },
+      end: { x: 2, y: 1 },
+    };
+    const services = mockServices([project], {
+      design: {
+        ...base.design,
+        query: async (dir, select, filter) => {
+          if (select === "board_geometry") {
+            queriedGeometry.push(select);
+            return [boardGeometry];
+          }
+          if (select === "footprint_geometry") {
+            queriedGeometry.push(select);
+            return [footprintGeometry];
+          }
+          return base.design.query(dir, select, filter);
+        },
+      },
+    });
     const factory = contextFactory(services, project);
     const inspected = await reg.invoke("design_inspect", {}, (ref) =>
       factory({
@@ -624,6 +826,8 @@ describe("registry", () => {
     });
     expect(json.checks.savedFileDrc.report.schematicParityChecked).toBe(true);
     expect(json.pcb.remainingConnections).toHaveLength(1);
+    expect(json.pcb.geometry).toEqual([boardGeometry, footprintGeometry]);
+    expect(queriedGeometry).toEqual(["board_geometry", "footprint_geometry"]);
     expect(await Bun.file(join(project.dir, "reports/native-inspection.json")).exists()).toBe(true);
   });
 
@@ -632,11 +836,13 @@ describe("registry", () => {
     const project = await tempProject("actionable-drc");
     await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb (version 20260831))\n");
     const base = mockServices([project]);
+    const geometryQueries: string[] = [];
     const services = mockServices([project], {
       design: {
         ...base.design,
-        query: async (_dir, select) =>
-          select === "tracks"
+        query: async (_dir, select) => {
+          geometryQueries.push(select);
+          return select === "tracks"
             ? [
                 {
                   id: "{TRACK-1}",
@@ -649,7 +855,8 @@ describe("registry", () => {
                   clearance: 0.2,
                 },
               ]
-            : [],
+            : [];
+        },
       },
       kicad: {
         ...base.kicad,
@@ -710,6 +917,8 @@ describe("registry", () => {
     const saved = await Bun.file(join(project.dir, "reports/drc.json")).json();
     expect(saved.pcbRevision).toEqual(json.pcbRevision);
     expect(saved.violations[0].affectedGeometry[0].id).toBe("{TRACK-1}");
+    expect(geometryQueries).toContain("board_geometry");
+    expect(geometryQueries).toContain("footprint_geometry");
   });
 
   test("verify_drc rejects a PCB revision change during the check", async () => {
@@ -1409,6 +1618,23 @@ describe("registry", () => {
     const base = mockServices([project]);
     let statsCalls = 0;
     const services = mockServices([project], {
+      design: {
+        ...base.design,
+        query: async (dir, select, filter) => {
+          if (select === "board_geometry")
+            return [{ id: "edge", owner: "board", start: { x: 2, y: 3 }, end: { x: 18, y: 13 } }];
+          if (select === "footprint_geometry")
+            return [
+              {
+                id: "courtyard",
+                owner: "R1",
+                start: { x: -100, y: -100 },
+                end: { x: 100, y: 100 },
+              },
+            ];
+          return base.design.query(dir, select, filter);
+        },
+      },
       kicad: {
         ...base.kicad,
         boardStats: async (_cli, { scratchFile }) => {
@@ -1458,6 +1684,7 @@ describe("registry", () => {
           (JSON.parse(l) as { kind: string }).kind,
       ),
     ).toEqual(["meta", "static", "pass-start", "connection", "connection", "done"]);
+    expect((JSON.parse(frames[0]!) as any).bounds).toEqual({ x1: 2, y1: 3, x2: 18, y2: 13 });
     expect((JSON.parse(frames.at(-1)!) as { shapes: unknown[] }).shapes).toHaveLength(1);
     expect(services.events.map((e) => e.topic)).toEqual([
       "route.meta",

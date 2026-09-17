@@ -16,6 +16,7 @@ const Kind = z.enum([
   "zones",
   "keepouts",
   "board_geometry",
+  "footprint_geometry",
   "texts",
   "unrouted",
 ]);
@@ -38,12 +39,12 @@ export const pcb_inspect = defineTool({
   toolset: "circuit",
   title: "Inspect a PCB region",
   description:
-    "Inspect a bounded part of the saved native PCB by item kind, reference, net, layer, rectangle, or point/radius. Returns compact exact millimetre coordinates, source revision, bounds, and a truncation indicator.",
+    "Inspect a bounded part of the saved native PCB by item kind, reference, net, layer, rectangle, or point/radius. board_geometry returns board-owned outline and graphic shapes; request footprint_geometry explicitly for footprint-owned courtyard and fabrication primitives. Returns compact exact millimetre coordinates, source revision, bounds, and a truncation indicator.",
   inputSchema: {
     kinds: z
       .array(Kind)
       .min(1)
-      .max(10)
+      .max(11)
       .default(["components", "pads", "tracks", "vias", "unrouted"]),
     references: z.array(z.string().min(1)).max(100).optional(),
     nets: z.array(z.string().min(1)).max(100).optional(),
@@ -80,11 +81,20 @@ export const pcb_inspect = defineTool({
       { total: number; returned: number; truncated: boolean; rows: DesignRow[] }
     > = {};
     if (revision === null) {
-      for (const kind of kinds) results[kind] = { total: 0, returned: 0, truncated: false, rows: [] };
+      for (const kind of kinds)
+        results[kind] = { total: 0, returned: 0, truncated: false, rows: [] };
       return ok("PCB not created yet; inspection is empty.", {
+        contract: { name: "fabdesk.pcb-inspection", version: "2.0.0" },
         revision: null,
         coordinateSystem: { units: "mm", origin: "KiCad board origin", x: "right", y: "down" },
-        query: { kinds, references: references ?? [], nets: nets ?? [], layers: layers ?? [], region: region ?? null, near: near ?? null },
+        query: {
+          kinds,
+          references: references ?? [],
+          nets: nets ?? [],
+          layers: layers ?? [],
+          region: region ?? null,
+          near: near ?? null,
+        },
         bounds: null,
         results,
       });
@@ -95,9 +105,12 @@ export const pcb_inspect = defineTool({
       const filtered = rows.filter((row) => {
         if (
           refSet &&
-          !values(row, ["ref", "reference", "component"]).some((value) =>
-            refSet.has(value.toLowerCase()),
-          )
+          !values(row, [
+            "ref",
+            "reference",
+            "component",
+            ...(kind === "footprint_geometry" ? ["owner"] : []),
+          ]).some((value) => refSet.has(value.toLowerCase()))
         )
           return false;
         if (
@@ -114,10 +127,10 @@ export const pcb_inspect = defineTool({
           (points.length === 0 || distanceToRow({ x: near.x, y: near.y }, points) > near.radius)
         )
           return false;
-        allPoints.push(...points);
         return true;
       });
       const shown = filtered.slice(0, limitPerKind);
+      allPoints.push(...shown.flatMap(rowPoints));
       results[kind] = {
         total: filtered.length,
         returned: shown.length,
@@ -131,6 +144,7 @@ export const pcb_inspect = defineTool({
         `${kind}: ${result.total}${result.truncated ? ` (showing ${result.returned})` : ""}${result.rows.length ? `\n${table(result.rows)}` : ""}`,
     );
     return ok(sections.join("\n\n"), {
+      contract: { name: "fabdesk.pcb-inspection", version: "2.0.0" },
       revision,
       coordinateSystem: { units: "mm", origin: "KiCad board origin", x: "right", y: "down" },
       query: {

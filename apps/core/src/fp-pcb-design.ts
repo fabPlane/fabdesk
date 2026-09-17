@@ -1359,10 +1359,20 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
           }))
           .filter((row) => keep(row.name, row.net));
       }
-      case "board_geometry": {
-        const shapes = await board.getShapes();
+      case "board_geometry":
+      case "footprint_geometry": {
+        const shapeRow = (shape: BoardShape, owner: string) => ({
+          id: shape.id,
+          owner,
+          kind: shape.kind,
+          layer: shape.layerId,
+          start: { x: mm(shape.start.x), y: mm(shape.start.y) },
+          end: { x: mm(shape.end.x), y: mm(shape.end.y) },
+        });
+        if (select === "board_geometry")
+          return (await board.getShapes()).map((shape) => shapeRow(shape, "board"));
         const footprints = await board.getFootprints();
-        const footprintGeometry = footprints.flatMap((footprint) =>
+        return footprints.flatMap((footprint) =>
           footprint.items
             .filter(
               (item): item is BoardShape =>
@@ -1374,26 +1384,8 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
                   BoardLayer.BL_B_Fab,
                 ].includes(item.layerId),
             )
-            .map((shape) => ({
-              id: shape.id,
-              owner: footprint.reference,
-              kind: shape.kind,
-              layer: shape.layerId,
-              start: { x: mm(shape.start.x), y: mm(shape.start.y) },
-              end: { x: mm(shape.end.x), y: mm(shape.end.y) },
-            })),
+            .map((shape) => shapeRow(shape, footprint.reference)),
         );
-        return [
-          ...shapes.map((shape) => ({
-            id: shape.id,
-            owner: "board",
-            kind: shape.kind,
-            layer: shape.layerId,
-            start: { x: mm(shape.start.x), y: mm(shape.start.y) },
-            end: { x: mm(shape.end.x), y: mm(shape.end.y) },
-          })),
-          ...footprintGeometry,
-        ];
       }
       case "texts": {
         return (await board.getTexts())
