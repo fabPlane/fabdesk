@@ -447,14 +447,14 @@ export const schematic_review = defineTool({
 export const pcb_update_from_schematic = defineTool({
   name: "pcb_update_from_schematic",
   toolset: "circuit",
-  title: "Update PCB from schematic",
+  title: "Atomically update PCB from schematic",
   description:
-    "Run KiCad's native Update PCB from Schematic. Always saves board.kicad_sch and checks the live KiCad IPC session diagnostics, then performs a dry-run update. With apply=false it only previews the report. With apply=true it updates board.kicad_pcb, requires zero PCB↔schematic parity conflicts, and saves only on success. Live-session diagnostic errors block the board update but are not saved-file or release-authoritative ERC. Board-only footprints are preserved by default.",
+    "Atomically validate and run KiCad's native Update PCB from Schematic. The normal apply=true path performs its own dry-run validation, requires zero PCB↔schematic parity conflicts, and saves only on success. Use apply=false only when a non-mutating forecast is specifically needed. Live-session diagnostic errors block the board update but are not saved-file or release-authoritative ERC. Board-only footprints are preserved by default.",
   inputSchema: {
     apply: z
       .boolean()
-      .default(false)
-      .describe("False previews; true applies and saves after parity passes"),
+      .default(true)
+      .describe("True atomically validates, applies, and saves; false only previews without changing the PCB"),
   },
   annotations: { idempotentHint: true },
   longRunning: true,

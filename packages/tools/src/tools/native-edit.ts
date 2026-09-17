@@ -217,8 +217,8 @@ export const native_edit_rollback = defineTool({
 export const pcb_edit_copper = defineTool({
   name: "pcb_edit_copper",
   toolset: "circuit",
-  title: "Edit PCB copper",
-  description: "Preview or atomically apply native tracks, vias, copper deletion by inspected ID, or removal of named routed nets. For reroutes, write a project-local JSON candidate and pass candidateFile with removeNets so old copper is replaced in one recoverable transaction. Applying named-net removal without replacement requires an explicit commitRemovalOnly acknowledgement. Track endpoints accept exact millimetre points or semantic {reference,pad} endpoints resolved from the saved board. Rejects stale PCB revisions.",
+  title: "Atomically edit PCB copper",
+  description: "Atomically validate and apply native tracks, vias, copper deletion by inspected ID, or removal of named routed nets in one recoverable transaction. The normal mode=apply path validates before saving and restores prior files if rejected; use mode=preview only when a non-mutating forecast is specifically needed. For reroutes, write a project-local JSON candidate and pass candidateFile with removeNets so old copper is replaced in one recoverable transaction. Applying named-net removal without replacement requires an explicit commitRemovalOnly acknowledgement. Track endpoints accept exact millimetre points or semantic {reference,pad} endpoints resolved from the saved board. Rejects stale PCB revisions.",
   inputSchema: {
     mode: z.enum(["preview", "apply"]).default("apply"),
     expectedPcbRevision: z.string().length(64).optional(),
@@ -275,8 +275,8 @@ export const pcb_edit_copper = defineTool({
 export const pcb_edit_graphics = defineTool({
   name: "pcb_edit_graphics",
   toolset: "circuit",
-  title: "Edit PCB outline and graphics",
-  description: "Preview or atomically apply a native board outline, zones, keepouts, text, graphics, or deletion by inspected ID. Uses millimetres and rejects stale PCB revisions.",
+  title: "Atomically edit PCB outline and graphics",
+  description: "Atomically validate and apply a native board outline, zones, keepouts, text, graphics, or deletion by inspected ID in one recoverable transaction. The normal mode=apply path validates before saving and restores prior files if rejected; use mode=preview only when a non-mutating forecast is specifically needed. Uses millimetres and rejects stale PCB revisions.",
   inputSchema: {
     mode: z.enum(["preview", "apply"]).default("apply"),
     expectedPcbRevision: z.string().length(64).optional(),

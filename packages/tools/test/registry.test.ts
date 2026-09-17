@@ -421,14 +421,14 @@ describe("registry", () => {
     expect((review.json as any).erc).toBeUndefined();
     expect((review.json as any).sessionDiagnostics.source).toBe("kicad-ipc-session");
     expect(await Bun.file(join(project.dir, "reports/schematic-review.json")).exists()).toBe(true);
-    const preview = await call("pcb_update_from_schematic");
+    const preview = await call("pcb_update_from_schematic", { apply: false });
     expect(preview.text).toContain("Preview: OK");
     expect(preview.text).toContain("KiCad IPC session diagnostics");
     expect(preview.text).not.toMatch(/(^|\n)ERC:/);
     expect((preview.json as any).erc).toBeUndefined();
     expect((preview.json as any).sessionDiagnostics.source).toBe("kicad-ipc-session");
     expect(preview.text).toContain("Preview made no PCB changes");
-    const applied = await call("pcb_update_from_schematic", { apply: true });
+    const applied = await call("pcb_update_from_schematic");
     expect(applied.text).toContain("Native schematic and PCB saved");
     expect(await Bun.file(join(project.dir, "reports/schematic-sync.json")).exists()).toBe(true);
   });
