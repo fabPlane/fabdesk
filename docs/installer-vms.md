@@ -71,8 +71,8 @@ waits for `daemon.json` + `app-bridge.json` in `~/Library/Application Support/fa
 `/health`, grabs a screenshot through the bridge, then `screencapture`.
 
 **Linux** (`guest/linux-test.sh`): AppImage (needs FUSE, which the base image has) or
-`apt install ./fabPlane.deb`, runs the core, launches `fabplane` under Xvfb, same daemon / bridge checks,
-`import -window root` for the display.
+refreshes apt's package indexes and installs `./fabPlane.deb`, runs the core, launches `fabplane`
+under Xvfb, performs the same daemon / bridge checks, then uses `import -window root` for the display.
 
 **Windows** (`guest/windows-test.ps1`): marks the installer as downloaded (Zone.Identifier),
 records the Authenticode signature, silent NSIS install (`/S`) or the portable exe, launches with
