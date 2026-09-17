@@ -43,14 +43,30 @@ describe("bundled KiCad library catalog", () => {
             (pin power_in line (at 2.54 0 180) (length 2.54) (name "VBUS") (number "A9"))
             (pin bidirectional line (at 5.08 0 180) (length 2.54) (name "CC1") (number "A5")))))`,
     );
+    await writeFile(
+      join(symbols, "Device.kicad_sym"),
+      `(kicad_symbol_lib (version 20231120)
+        (symbol "R"
+          (property "ki_keywords" "R res resistor")
+          (property "ki_description" "Resistor")
+          (pin passive line (at 0 0 0) (length 2.54) (name "~") (number "1")))
+        (symbol "Heater"
+          (property "ki_keywords" "resistor heater")
+          (property "ki_description" "Heating element / resistor")))`,
+    );
 
     const catalog = new KicadLibraryCatalog({ footprints, symbols });
-    expect(await catalog.search("footprint", "power-only USB C", 10)).toMatchObject([
+    const roleHits = await catalog.search("footprint", "power-only USB C", 10);
+    expect(roleHits).toMatchObject([
       { libId: "Connector_USB:USB_C_16P", description: expect.stringContaining("power-only") },
+    ]);
+    expect(roleHits[0]?.part?.roleSuitability).toEqual([
+      expect.objectContaining({ role: "power-only-usb-c", suitable: true }),
     ]);
     expect(await catalog.search("symbol", "USB_C_Receptacle 16P", 10)).toMatchObject([
       { libId: "Connector:USB_C_Receptacle_USB2.0_16P" },
     ]);
+    expect((await catalog.search("symbol", "resistor", 10))[0]?.libId).toBe("Device:R");
     expect(await catalog.describe("footprint", "Connector_USB:USB_C_16P")).toMatchObject({
       description: expect.stringContaining("USB-C receptacle"),
       datasheet: "https://example.com/usb.pdf",

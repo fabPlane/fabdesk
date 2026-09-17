@@ -83,6 +83,7 @@ import {
 import type { FpPcbBridgeClient } from "./fp-pcb-bridge";
 import { BOARD_PCB, BOARD_PRO, type FpPcbSessions } from "./fp-pcb-session";
 import type { KicadLibraryCatalog } from "./kicad-library-catalog";
+import { partSearchTokens, rankPartSearch } from "./part-search-ranking";
 
 /** The `@fp-pcb/compile` frontend that reads `circuit.netlist.json` (its `NETLIST_JSON_KIND`). */
 export const NETLIST_JSON_KIND = "netlist-json";
@@ -1599,35 +1600,53 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     limit: number,
   ): Promise<FootprintHit[]> => {
     const kicad = await anyKicad(sessionKicad);
-    const tokens = query
-      .toLowerCase()
-      .split(/[\s:]+/)
-      .filter(Boolean);
+    const tokens = [...new Set(partSearchTokens(query))];
     const nicknames = await kicad.libraries.nicknames(kind);
     const scored = nicknames
-      .map((n) => ({ n, hit: tokens.filter((t) => n.toLowerCase().includes(t)).length }))
-      .sort((a, b) => b.hit - a.hit);
-    const hits: FootprintHit[] = [];
-    for (const { n } of scored) {
-      if (hits.length >= limit) break;
-      // KiCad's entry filter is one substring, so ask with the most specific token the library name
-      // does not already cover and match the remaining tokens here against name + description.
-      const rest = tokens.filter((t) => !n.toLowerCase().includes(t));
-      const [primary, ...others] = [...rest].sort((a, b) => b.length - a.length);
-      const entries = await kicad.libraries.entries(kind, n, primary ?? "");
+      .map((n) => {
+        const libraryTokens = new Set(partSearchTokens(n));
+        return { n, hit: tokens.filter((token) => libraryTokens.has(token)).length };
+      })
+      .sort((a, b) => b.hit - a.hit || (a.n < b.n ? -1 : a.n > b.n ? 1 : 0));
+    const candidates: Array<{
+      libId: string;
+      nickname: string;
+      name: string;
+      description: string;
+      keywords?: string;
+    }> = [];
+    for (let index = 0; index < scored.length; index++) {
+      const { n } = scored[index]!;
+      const libraryTokens = new Set(partSearchTokens(n));
+      const rest = tokens.filter((token) => !libraryTokens.has(token));
+      const numeric = rest.find((token) => /^\d/.test(token));
+      const primary = !/\s/.test(query.trim())
+        ? query.trim().toLocaleLowerCase("en-US")
+        : (numeric ??
+          [...rest].sort((a, b) => b.length - a.length || (a < b ? -1 : a > b ? 1 : 0))[0] ??
+          query.trim());
+      const entries = await kicad.libraries.entries(kind, n, primary);
       for (const e of entries) {
-        if (hits.length >= limit) break;
-        const hay = `${e.name} ${e.description ?? ""}`.toLowerCase();
-        if (!others.every((t) => hay.includes(t))) continue;
-        hits.push({
+        candidates.push({
           libId: `${n}:${e.name}`,
           nickname: n,
           name: e.name,
           description: e.description ?? "",
+          ...(e.keywords ? { keywords: e.keywords } : {}),
         });
       }
+      // Searching a floor of libraries prevents an early vendor-library match from hiding a much
+      // stronger item name elsewhere. With no candidates, retain the former open-ended scan.
+      if (index >= 63 && candidates.length >= Math.max(50, limit * 10)) break;
     }
-    return hits;
+    return rankPartSearch(query, candidates)
+      .slice(0, limit)
+      .map(({ libId, nickname, name, description }) => ({
+        libId,
+        nickname,
+        name,
+        description: description ?? "",
+      }));
   };
   const searchLibraries = (
     kind: "footprint" | "symbol",

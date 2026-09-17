@@ -7,13 +7,19 @@ import type {
   PartDescription,
   PartRoleSuitability,
 } from "@fabdesk/tools";
+import { rankPartSearch } from "./part-search-ranking";
 
 type SExpr = string | SExpr[];
 type CatalogKind = "footprint" | "symbol";
+type CatalogIndexEntry = {
+  path: string;
+  description?: string | undefined;
+  keywords?: string[] | undefined;
+};
 
 export class KicadLibraryCatalog {
-  private footprintIndex?: Promise<Map<string, string>>;
-  private symbolIndex?: Promise<Map<string, string>>;
+  private footprintIndex?: Promise<Map<string, CatalogIndexEntry>>;
+  private symbolIndex?: Promise<Map<string, CatalogIndexEntry>>;
   private parsed = new Map<string, Promise<SExpr[]>>();
 
   constructor(
@@ -35,28 +41,43 @@ export class KicadLibraryCatalog {
       (token) => !["power", "only", "charging", "role"].includes(token),
     );
     if (!seedTokens.length && roleQuery) seedTokens.push("usb");
-    const candidates = [...index.entries()]
-      .map(([libId, path]) => {
-        const haystack = libId.toLowerCase();
-        const matched = seedTokens.filter((token) => haystack.includes(token)).length;
-        const exact = haystack === query.toLowerCase() ? 100 : 0;
-        const prefix = haystack.startsWith(query.toLowerCase()) ? 20 : 0;
-        return { libId, path, score: exact + prefix + matched };
-      })
-      .filter((entry) => entry.score > 0)
-      .sort((a, b) => b.score - a.score || a.libId.localeCompare(b.libId))
-      .slice(0, Math.max(50, limit * 10));
+    const rankingQuery = seedTokens.join(" ");
+    const candidates = rankPartSearch(
+      rankingQuery,
+      [...index.entries()].map(([libId, entry]) => {
+        const [nickname, ...name] = libId.split(":");
+        return {
+          libId,
+          nickname: nickname!,
+          name: name.join(":"),
+          description: entry.description,
+          keywords: entry.keywords,
+        };
+      }),
+    ).slice(0, Math.max(50, limit * 10));
     const enriched = await Promise.all(
-      candidates.map(async ({ libId, score }) => {
+      candidates.map(async (candidate) => {
+        const { libId } = candidate;
         const part = await this.describe(kind, libId);
         const metadata =
           `${part?.description ?? ""} ${(part?.keywords ?? []).join(" ")}`.toLowerCase();
-        const metadataMatches = tokens.filter((token) => metadata.includes(token)).length;
-        const explicitPowerOnly = /power[- ]only|charging[- ]only/.test(`${libId} ${metadata}`.toLowerCase());
-        const roleBoost = roleQuery && part?.roleSuitability?.some((role) => role.suitable)
-          ? explicitPowerOnly ? 60 : 10
-          : 0;
-        return { libId, score: score + metadataMatches * 3 + roleBoost, part };
+        const explicitPowerOnly = /power[- ]only|charging[- ]only/.test(
+          `${libId} ${metadata}`.toLowerCase(),
+        );
+        const roleBoost =
+          roleQuery && part?.roleSuitability?.some((role) => role.suitable)
+            ? explicitPowerOnly
+              ? 600_000
+              : 100_000
+            : 0;
+        const [ranked] = rankPartSearch(rankingQuery, [
+          {
+            ...candidate,
+            description: `${candidate.description ?? ""} ${part?.description ?? ""}`,
+            keywords: [...(candidate.keywords ?? []), ...(part?.keywords ?? [])],
+          },
+        ]);
+        return { libId, score: (ranked?.score ?? candidate.score) + roleBoost, part };
       }),
     );
     return enriched
@@ -75,23 +96,23 @@ export class KicadLibraryCatalog {
   }
 
   async describe(kind: CatalogKind, libId: string): Promise<PartDescription | null> {
-    const path = (await this.index(kind)).get(libId);
-    if (!path) return null;
+    const entry = (await this.index(kind)).get(libId);
+    if (!entry) return null;
     const [nickname, ...parts] = libId.split(":");
     const name = parts.join(":");
     if (!nickname || !name) return null;
-    const root = await this.parse(path);
+    const root = await this.parse(entry.path);
     if (kind === "footprint") return describeFootprint(libId, root);
     return describeSymbol(libId, root, name);
   }
 
-  private async index(kind: CatalogKind): Promise<Map<string, string>> {
+  private async index(kind: CatalogKind): Promise<Map<string, CatalogIndexEntry>> {
     if (kind === "footprint") return (this.footprintIndex ??= this.indexFootprints());
     return (this.symbolIndex ??= this.indexSymbols());
   }
 
-  private async indexFootprints(): Promise<Map<string, string>> {
-    const result = new Map<string, string>();
+  private async indexFootprints(): Promise<Map<string, CatalogIndexEntry>> {
+    const result = new Map<string, CatalogIndexEntry>();
     const root = this.roots.footprints;
     if (!root) return result;
     for (const library of await readdir(root, { withFileTypes: true })) {
@@ -100,17 +121,16 @@ export class KicadLibraryCatalog {
       const dir = join(root, library.name);
       for (const entry of await readdir(dir, { withFileTypes: true })) {
         if (entry.isFile() && entry.name.endsWith(".kicad_mod"))
-          result.set(
-            `${nickname}:${entry.name.slice(0, -".kicad_mod".length)}`,
-            join(dir, entry.name),
-          );
+          result.set(`${nickname}:${entry.name.slice(0, -".kicad_mod".length)}`, {
+            path: join(dir, entry.name),
+          });
       }
     }
     return result;
   }
 
-  private async indexSymbols(): Promise<Map<string, string>> {
-    const result = new Map<string, string>();
+  private async indexSymbols(): Promise<Map<string, CatalogIndexEntry>> {
+    const result = new Map<string, CatalogIndexEntry>();
     const root = this.roots.symbols;
     if (!root) return result;
     for (const entry of await readdir(root, { withFileTypes: true })) {
@@ -118,7 +138,12 @@ export class KicadLibraryCatalog {
       const nickname = entry.name.slice(0, -".kicad_sym".length);
       const path = join(root, entry.name);
       const text = await readFile(path, "utf8");
-      for (const name of topLevelSymbolNames(text)) result.set(`${nickname}:${name}`, path);
+      for (const symbol of topLevelSymbolEntries(text))
+        result.set(`${nickname}:${symbol.name}`, {
+          path,
+          description: symbol.description,
+          keywords: symbol.keywords,
+        });
     }
     return result;
   }
@@ -133,13 +158,28 @@ export class KicadLibraryCatalog {
   }
 }
 
-function topLevelSymbolNames(text: string): string[] {
-  const names: string[] = [];
+function topLevelSymbolEntries(
+  text: string,
+): Array<{ name: string; description?: string; keywords?: string[] }> {
+  const symbols: Array<{ name: string; description?: string; keywords?: string[] }> = [];
   const tokens = tokenize(text);
-  for (let i = 0; i < tokens.length - 1; i++)
-    if (tokens[i]!.depth === 2 && tokens[i]!.value === "symbol" && tokens[i + 1]!.depth === 2)
-      names.push(tokens[i + 1]!.value);
-  return names;
+  let current: { name: string; description?: string; keywords?: string[] } | undefined;
+  for (let i = 0; i < tokens.length - 1; i++) {
+    if (tokens[i]!.depth === 2 && tokens[i]!.value === "symbol" && tokens[i + 1]!.depth === 2) {
+      current = { name: tokens[i + 1]!.value };
+      symbols.push(current);
+      continue;
+    }
+    if (!current || tokens[i]!.depth !== 3 || tokens[i]!.value !== "property") continue;
+    const property = tokens[i + 1];
+    const value = tokens[i + 2];
+    if (property?.depth !== 3 || value?.depth !== 3) continue;
+    if (["Description", "description", "ki_description"].includes(property.value))
+      current.description = value.value;
+    if (["Keywords", "keywords", "ki_keywords"].includes(property.value))
+      current.keywords = value.value.split(/\s+/).filter(Boolean);
+  }
+  return symbols;
 }
 
 function describeFootprint(libId: string, root: SExpr[]): PartDescription | null {

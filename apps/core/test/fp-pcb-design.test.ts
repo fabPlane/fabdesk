@@ -162,6 +162,25 @@ describe("searchFootprints", () => {
     await design.searchFootprints("SOT-23-5", 5);
     expect(calls.some((c) => c.startsWith("newProject"))).toBe(false);
   });
+
+  test("ranks entries across libraries instead of stopping at the first vendor matches", async () => {
+    const kicad = {
+      projectInfo: async () => ({ kicadProPath: "/tmp/x.kicad_pro", files: [] }),
+      libraries: {
+        nicknames: async () => ["LED", "Device"],
+        entries: async (_type: string, nickname: string) =>
+          nickname === "LED"
+            ? [
+                { name: "APA102", description: "Serial RGB LED", keywords: "LED" },
+                { name: "APFA3010", description: "Vendor LED", keywords: "LED" },
+              ]
+            : [{ name: "LED", description: "Light emitting diode", keywords: "LED diode" }],
+      },
+    };
+    const design = createFpPcbDesign({ bridge: () => ({}) as never, sessions: sessionsFor(kicad) });
+    const hits = await design.searchSymbols("LED", 10);
+    expect(hits.map((hit) => hit.libId)).toEqual(["Device:LED", "LED:APA102", "LED:APFA3010"]);
+  });
 });
 
 describe("searchFootprints after a bridge restart", () => {
