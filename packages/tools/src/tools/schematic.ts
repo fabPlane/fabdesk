@@ -1,7 +1,7 @@
 /** Native KiCad schematic-first authoring and forward annotation. */
 import { z } from "zod/v4";
 import { ToolError, defineTool } from "../registry";
-import { ok, table, writeReport } from "./common";
+import { compactHierarchy, inspectSavedHierarchy, ok, table, writeReport } from "./common";
 import {
   formatKicadIpcSessionDiagnostics,
   kicadIpcSessionDiagnostics,
@@ -17,19 +17,53 @@ export const schematic_inspect = defineTool({
   toolset: "circuit",
   title: "Inspect native schematic",
   description:
-    "Inspect board.kicad_sch as KiCad currently holds it. The default authoring view returns symbols, absolute pin coordinates, and separately labelled informational KiCad IPC session diagnostics without presenting them as saved-file ERC; request full only when item IDs are needed for a targeted edit.",
+    "Inspect the complete saved native schematic hierarchy. The default is a compact packaged-KiCad project summary; request authoring or full for bounded live KiCad IPC details on the root/current or one selected sheet. Live session diagnostics are never presented as saved-file ERC.",
   inputSchema: {
     detail: z
       .enum(["summary", "authoring", "full"])
-      .default("authoring")
+      .default("summary")
       .describe(
         "summary=count/check overview; authoring=symbols and pins; full=all wires, labels, nets and deletion IDs",
       ),
+    sheet: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "For authoring/full detail, select one hierarchy path, sheet name, or native filename",
+      ),
+    sheetOffset: z
+      .number()
+      .int()
+      .nonnegative()
+      .default(0)
+      .describe("First hierarchy summary sheet to return"),
+    sheetLimit: z
+      .number()
+      .int()
+      .min(1)
+      .max(50)
+      .default(25)
+      .describe("Maximum per-sheet summary rows"),
   },
   annotations: { readOnlyHint: true, idempotentHint: true },
-  handler: async ({ detail }, ctx) => {
+  handler: async ({ detail, sheet, sheetOffset, sheetLimit }, ctx) => {
     const project = ctx.requireProject();
-    const snapshot = await ctx.services.design.schematicInspect(project.dir);
+    const hierarchy = await inspectSavedHierarchy(ctx, project);
+    const hierarchyResult = compactHierarchy(hierarchy, sheetOffset, sheetLimit);
+    if (detail === "summary") {
+      const text = `Complete saved hierarchy ${hierarchy.complete ? "COMPLETE" : "INCOMPLETE"} at ${hierarchy.aggregateRevision}: ${hierarchy.counts.components} components, ${hierarchy.counts.nets} nets, ${hierarchy.counts.sheets} sheets; ${hierarchy.orphanFiles.length} orphan schematic file(s). Evidence: packaged-kicad-cli saved-file netlist; no live IPC authoring details requested.`;
+      return {
+        text,
+        json: {
+          contract: { name: "fabdesk.schematic-inspection", version: "3.0.0" },
+          scope: "complete-saved-hierarchy",
+          hierarchy: hierarchyResult,
+        },
+        isError: !hierarchy.complete,
+      };
+    }
+    const snapshot = await ctx.services.design.schematicInspect(project.dir, sheet);
     const symbols = snapshot.symbols.map((symbol) => ({
       ref: symbol.reference,
       value: symbol.value,
@@ -44,7 +78,7 @@ export const schematic_inspect = defineTool({
         .join(" "),
     }));
     const text = [
-      `Native schematic revision ${snapshot.revision}: ${snapshot.symbols.length} symbols, ${snapshot.wires.length} wires, ${snapshot.localLabels.length} local labels, ${snapshot.globalLabels.length} global labels, ${snapshot.junctions.length} junctions, ${snapshot.noConnects.length} no-connects, ${snapshot.texts.length} notes, ${snapshot.nets.length} nets.`,
+      `${snapshot.scope?.kind ?? "current/root-sheet"} authoring detail for ${snapshot.scope?.hierarchyPath ?? "/"}, live KiCad IPC revision ${snapshot.revision}: ${snapshot.symbols.length} symbols, ${snapshot.wires.length} wires, ${snapshot.localLabels.length} local labels, ${snapshot.globalLabels.length} global labels, ${snapshot.junctions.length} junctions, ${snapshot.noConnects.length} no-connects, ${snapshot.texts.length} notes, ${snapshot.nets.length} project-wide live nets. Complete saved hierarchy: ${hierarchy.counts.components} components, ${hierarchy.counts.nets} nets, ${hierarchy.counts.sheets} sheets at ${hierarchy.aggregateRevision} (${hierarchy.complete ? "complete" : "incomplete"}).`,
       formatKicadIpcSessionDiagnostics(snapshot.erc),
       ...(symbols.length ? [table(symbols)] : ["No symbols yet."]),
     ].join("\n\n");
@@ -56,14 +90,22 @@ export const schematic_inspect = defineTool({
       junctions: snapshot.junctions.length,
       noConnects: snapshot.noConnects.length,
       notes: snapshot.texts.length,
-      nets: snapshot.nets.length,
+      projectNets: snapshot.nets.length,
     };
     const sessionDiagnostics = kicadIpcSessionDiagnostics(snapshot.erc);
-    const contract = { name: "fabdesk.schematic-inspection", version: "2.0.0" } as const;
+    const contract = { name: "fabdesk.schematic-inspection", version: "3.0.0" } as const;
     const compact = {
       contract,
+      scope: snapshot.scope ?? {
+        kind: "current/root-sheet",
+        hierarchyPath: "/",
+        nativePath: null,
+        name: "root",
+      },
+      hierarchy: hierarchyResult,
       revision: snapshot.revision,
       pcbRevision: snapshot.pcbRevision,
+      netScope: "complete-live-ipc-session" as const,
       counts,
       sessionDiagnostics,
     };
@@ -71,10 +113,13 @@ export const schematic_inspect = defineTool({
     return ok(
       text,
       detail === "full"
-        ? { contract, ...fullSnapshot, sessionDiagnostics }
-        : detail === "authoring"
-          ? { ...compact, symbols: snapshot.symbols }
-          : compact,
+        ? {
+            contract,
+            ...fullSnapshot,
+            netScope: "complete-live-ipc-session" as const,
+            sessionDiagnostics,
+          }
+        : { ...compact, symbols: snapshot.symbols },
     );
   },
 });
@@ -257,12 +302,21 @@ export const schematic_review = defineTool({
   toolset: "circuit",
   title: "Review schematic quality",
   description:
-    "Review the native schematic for presentation and maintainability findings: missing footprints, duplicate references, excessive global labels, absent or overlapping notes, off-grid placement, cramped layout, and poor sheet utilization. Writes reports/schematic-review.json without changing native files.",
-  inputSchema: {},
+    "Review one explicitly scoped live KiCad sheet for presentation and maintainability findings, while binding the report to the complete saved hierarchy revision. Writes reports/schematic-review.json without changing native files.",
+  inputSchema: {
+    sheet: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "Hierarchy path, sheet name, or native filename; default is the current/root sheet",
+      ),
+  },
   annotations: { readOnlyHint: true, idempotentHint: true },
-  handler: async (_args, ctx) => {
+  handler: async ({ sheet }, ctx) => {
     const project = ctx.requireProject();
-    const snapshot = await ctx.services.design.schematicInspect(project.dir);
+    const hierarchy = await inspectSavedHierarchy(ctx, project);
+    const snapshot = await ctx.services.design.schematicInspect(project.dir, sheet);
     const findings: Array<{ code: string; severity: "warning" | "info"; message: string }> = [];
     const references = new Map<string, number>();
     for (const symbol of snapshot.symbols) {
@@ -420,8 +474,22 @@ export const schematic_review = defineTool({
         });
     }
     const review = {
-      contract: { name: "fabdesk.schematic-review", version: "2.0.0" },
+      contract: { name: "fabdesk.schematic-review", version: "3.0.0" },
       at: new Date().toISOString(),
+      applicability: "selected-sheet-authoring-presentation",
+      scope: snapshot.scope ?? {
+        kind: "current/root-sheet",
+        hierarchyPath: "/",
+        nativePath: null,
+        name: "root",
+      },
+      hierarchy: {
+        rootFile: hierarchy.rootFile,
+        referencedSheetCount: hierarchy.sheets.length,
+        aggregateRevision: hierarchy.aggregateRevision,
+        complete: hierarchy.complete,
+        source: hierarchy.source,
+      },
       revision: snapshot.revision,
       counts: {
         symbols: snapshot.symbols.length,
@@ -438,7 +506,7 @@ export const schematic_review = defineTool({
     };
     await writeReport(project, "schematic-review", review);
     return ok(
-      `Schematic presentation review at revision ${snapshot.revision}: ${findings.length} finding(s).${findings.length ? `\n${findings.map((finding) => `- [${finding.severity}] ${finding.code}: ${finding.message}`).join("\n")}` : "\nNo presentation risks detected by the current checks."}`,
+      `Schematic presentation review of ${snapshot.scope?.hierarchyPath ?? "current/root sheet"} at live IPC revision ${snapshot.revision}, bound to saved hierarchy ${hierarchy.aggregateRevision} (${hierarchy.complete ? "complete" : "incomplete"}): ${findings.length} finding(s).${findings.length ? `\n${findings.map((finding) => `- [${finding.severity}] ${finding.code}: ${finding.message}`).join("\n")}` : "\nNo presentation risks detected by the current checks."}`,
       review,
     );
   },
@@ -454,7 +522,9 @@ export const pcb_update_from_schematic = defineTool({
     apply: z
       .boolean()
       .default(true)
-      .describe("True atomically validates, applies, and saves the PCB; false previews without changing the PCB (both save the live schematic)"),
+      .describe(
+        "True atomically validates, applies, and saves the PCB; false previews without changing the PCB (both save the live schematic)",
+      ),
   },
   annotations: { idempotentHint: true },
   longRunning: true,

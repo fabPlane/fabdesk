@@ -50,6 +50,29 @@ The remaining custom JSON path is compatibility-only: `circuit_build` consumes i
 `circuit_read_errors` reads its build report. Neither appears in the native profile. Native
 `export_netlist` creates a netlist only when requested near the end of a project.
 
+## Saved hierarchy truth contract (H5)
+
+Fabdesk now builds one native saved-hierarchy inventory from `board.kicad_sch`, KiCad 10
+`top_level_sheets`, and recursively referenced `Sheetfile` properties. Packaged KiCad's XML
+netlist export supplies complete component/net facts; live IPC counts are authoring details only.
+The aggregate schematic revision hashes every referenced sheet instance and file revision, so ERC,
+parity, release, project status, and native edit guards become stale when any child changes.
+Missing/unreadable references fail complete-project applicability, while unreferenced schematic
+files are listed as orphans and excluded from electrical totals.
+
+This is a versioned compatibility change:
+
+- `fabdesk.schematic-inspection` is `3.0.0`. Its default changed from a root-sheet authoring dump to
+  a compact complete-hierarchy summary. `detail=authoring|full` plus optional `sheet` expands one
+  bounded live sheet with exact IDs and coordinates.
+- `fabdesk.schematic-review` is `3.0.0`; findings explicitly cover one selected/current sheet and
+  are bound to the aggregate saved revision.
+- `fabdesk.native-inspection` and `fabdesk.native-release` are `2.0.0`; their schematic `sha256`
+  identity is now the aggregate hierarchy revision, with the root-file hash retained separately.
+- Consumers that assumed default `schematic_inspect.symbols`, root-file revision identity, or the
+  old contract versions must request authoring detail or read the new `hierarchy`/`authoring`
+  members. Single-sheet aggregate identity intentionally differs from the former raw-file hash.
+
 ## Morning test
 
 The prepared test launcher uses an isolated state database and project root:

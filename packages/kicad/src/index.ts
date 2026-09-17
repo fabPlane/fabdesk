@@ -39,6 +39,12 @@ export {
   type Severity,
 } from "./drc";
 export {
+  inspectSchematicHierarchy,
+  type SchematicHierarchy,
+  type SchematicHierarchyIssue,
+  type SchematicHierarchySheet,
+} from "./hierarchy";
+export {
   exportGerbers,
   exportDrill,
   exportDxf,

@@ -7,7 +7,16 @@ import { PROJECT_FILES, exists, mtimeMs, readJsonOrNull, writeJson } from "../fs
 import { ToolError, ToolsetId, defineTool, TOOLSETS, type ProjectHandle } from "../registry";
 import type { BuildResult, DesignRow, DesignSelect, DrcReport, DrcViolation } from "../services";
 import { VIAGRID_9055, viagrid9055BoardSpec } from "../templates/viagrid-9055";
-import { fileUrl, loadNetlist, ok, p, requireKicad, table, writeReport } from "./common";
+import {
+  fileUrl,
+  inspectSavedHierarchy,
+  loadNetlist,
+  ok,
+  p,
+  requireKicad,
+  table,
+  writeReport,
+} from "./common";
 import { formatLastRelease, readProjectStatusEvidence } from "./project-status-evidence";
 import { runRoute, RouteRunArgs } from "./route";
 
@@ -377,7 +386,7 @@ export const verify_drc = defineTool({
   toolset: "core",
   title: "Run KiCad DRC",
   description:
-    "Run KiCad design rule check on board.kicad_pcb. Writes reports/drc.json and returns revision-bound violations with rules, severities, coordinates, layers, nets, object IDs, and matched board geometry.",
+    "Run KiCad design rule check on board.kicad_pcb. When parity is enabled, require a complete saved schematic hierarchy and bind parity evidence to its aggregate revision. Writes reports/drc.json with actionable geometry.",
   inputSchema: {
     severity: z
       .enum(["all", "error"])
@@ -400,6 +409,12 @@ export const verify_drc = defineTool({
     const board = p(project, PROJECT_FILES.boardPcb);
     if (!(await exists(board))) throw new ToolError("board.kicad_pcb not found", "precondition");
     const beforeRevision = await pcbFileRevision(board);
+    const beforeHierarchy = schematicParity ? await inspectSavedHierarchy(ctx, project, cli) : null;
+    if (beforeHierarchy && !beforeHierarchy.complete)
+      throw new ToolError(
+        `schematic parity requires a complete saved hierarchy: ${beforeHierarchy.issues.map((issue) => `${issue.kind}: ${issue.path}`).join(", ")}`,
+        "precondition",
+      );
     ctx.progress(0.4, "running DRC");
     const outFile = p(project, PROJECT_FILES.reports, "drc.json");
     const report = await ctx.services.kicad.runDrc(cli, {
@@ -411,15 +426,38 @@ export const verify_drc = defineTool({
     });
     const geometry = await queryDrcGeometry(ctx, project.dir);
     const afterRevision = await pcbFileRevision(board);
+    const afterHierarchy = schematicParity ? await inspectSavedHierarchy(ctx, project, cli) : null;
     if (beforeRevision.sha256 !== afterRevision.sha256) {
       await unlink(outFile).catch(() => {});
       throw new ToolError("board.kicad_pcb changed while DRC was running", "precondition");
     }
+    if (
+      beforeHierarchy &&
+      afterHierarchy &&
+      beforeHierarchy.aggregateRevision !== afterHierarchy.aggregateRevision
+    ) {
+      await unlink(outFile).catch(() => {});
+      throw new ToolError(
+        "a referenced schematic changed while parity DRC was running",
+        "precondition",
+      );
+    }
     const enriched = enrichDrcReport(report, geometry);
-    const checkedReport: DrcReport & { pcbRevision: typeof afterRevision } = {
+    const checkedReport = {
       ...enriched,
       schematicParityChecked: schematicParity,
       pcbRevision: afterRevision,
+      ...(beforeHierarchy
+        ? {
+            schematicHierarchy: {
+              scope: "complete saved hierarchy" as const,
+              aggregateRevision: beforeHierarchy.aggregateRevision,
+              referencedSheetCount: beforeHierarchy.sheets.length,
+              complete: beforeHierarchy.complete,
+              source: beforeHierarchy.source,
+            },
+          }
+        : {}),
     };
     await writeJson(outFile, checkedReport);
     ctx.progress(1, "done");
@@ -453,6 +491,17 @@ export const verify_drc = defineTool({
         schematicParity: byRule(enriched.schematicParity),
       },
       pcbRevision: afterRevision,
+      ...(beforeHierarchy
+        ? {
+            schematicHierarchy: {
+              scope: "complete saved hierarchy" as const,
+              aggregateRevision: beforeHierarchy.aggregateRevision,
+              referencedSheetCount: beforeHierarchy.sheets.length,
+              complete: beforeHierarchy.complete,
+              source: beforeHierarchy.source,
+            },
+          }
+        : {}),
       violations: enriched.violations.slice(0, limit),
       unconnected: enriched.unconnected.slice(0, limit),
       schematicParity: enriched.schematicParity.slice(0, limit),

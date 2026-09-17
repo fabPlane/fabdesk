@@ -298,6 +298,34 @@ export function mockServices(
         counts: { errors: 0, warnings: 0, unconnected: 0 },
       }),
       runErc: async () => ({ violations: [], counts: { errors: 0, warnings: 0 } }),
+      inspectSchematicHierarchy: async (cli) => ({
+        rootFile: "board.kicad_sch",
+        projectFile: "board.kicad_pro",
+        aggregateRevision: "a".repeat(64),
+        complete: true,
+        counts: { components: 1, nets: 1, sheets: 1 },
+        sheets: [
+          {
+            hierarchyPath: "/",
+            nativePath: "board.kicad_sch",
+            identity: "mock-root",
+            name: "root",
+            depth: 0,
+            sha256: "b".repeat(64),
+            bytes: 1,
+            components: 1,
+            nets: 1,
+          },
+        ],
+        referencedFiles: ["board.kicad_sch"],
+        orphanFiles: [],
+        issues: [],
+        source: {
+          hierarchy: "native-kicad-project",
+          electrical: "packaged-kicad-cli-netlist",
+          kicadCli: { path: cli.path, version: cli.version },
+        },
+      }),
       gate: (drc, erc, allowed) => {
         const reasons: string[] = [];
         if (drc.counts.errors) reasons.push(`${drc.counts.errors} DRC errors`);

@@ -6,7 +6,7 @@
  */
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { create } from "@bufbuild/protobuf";
 import {
   ElectricalPinType,
@@ -299,9 +299,27 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     };
   };
 
-  const schematicInspect = async (projectDir: string): Promise<NativeSchematicSnapshot> => {
+  const schematicInspect = async (
+    projectDir: string,
+    selectedSheet?: string,
+  ): Promise<NativeSchematicSnapshot> => {
     const { schematic, board } = await deps.sessions.ensureProject(projectDir);
-    const root = await schematic.rootSheet();
+    const hierarchy = await schematic.hierarchy();
+    const flat = hierarchy.flatMap(function visit(sheet): typeof hierarchy {
+      return [sheet, ...sheet.children.flatMap(visit)];
+    });
+    const selected = selectedSheet
+      ? flat.find(
+          (sheet) =>
+            sheet.path?.pathHumanReadable === selectedSheet ||
+            sheet.name === selectedSheet ||
+            sheet.filename === selectedSheet ||
+            sheet.filename.endsWith(`/${selectedSheet}`),
+        )
+      : flat[0];
+    if (!selected?.path)
+      throw new ToolError(`schematic sheet not found: ${selectedSheet ?? "root"}`, "not_found");
+    const root = schematic.sheet(selected.path, selected);
     const [symbols, items, nets, erc, revision, pcbRevision] = await Promise.all([
       root.getSymbols(),
       root.getAllItems(),
@@ -381,6 +399,17 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         itemIds: net.sheets.flatMap((sheet) => sheet.items.map((item) => item.value)),
       })),
       erc: { errors: erc.errorCount, warnings: erc.warningCount },
+      scope: {
+        kind: selectedSheet ? "selected-sheet" : "current/root-sheet",
+        hierarchyPath:
+          selected.path.pathHumanReadable && selected.path.pathHumanReadable !== "/"
+            ? selected.path.pathHumanReadable
+            : hierarchy.length > 1
+              ? `/${selected.name || basename(selected.filename, ".kicad_sch")}/`
+              : "/",
+        nativePath: selected.filename || null,
+        name: selected.name || (selectedSheet ?? "root"),
+      },
     };
   };
 

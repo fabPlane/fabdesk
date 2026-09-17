@@ -15,8 +15,19 @@ export type SourceBuildSummary = {
 type ReleaseReport = {
   capturedAt?: unknown;
   pass?: unknown;
-  revisions?: { schematic?: unknown; pcb?: unknown } | undefined;
+  revisions?: { schematic?: unknown; pcb?: unknown; project?: unknown } | undefined;
   inventory?: Array<{ status?: unknown }> | undefined;
+  schematicHierarchy?:
+    | {
+        rootFile?: unknown;
+        sheets?: Array<{
+          hierarchyPath?: unknown;
+          nativePath?: unknown;
+          identity?: unknown;
+          sha256?: unknown;
+        }>;
+      }
+    | undefined;
 };
 
 export type LastReleaseStatus =
@@ -25,8 +36,12 @@ export type LastReleaseStatus =
   | {
       status: "pass" | "fail";
       capturedAt: string;
-      checkedRevisions: { schematic: string; pcb: string };
-      currentRevisions: { schematic: string | null; pcb: string | null };
+      checkedRevisions: { schematic: string; pcb: string; project: string | null };
+      currentRevisions: {
+        schematic: string | null;
+        pcb: string | null;
+        project: string | null;
+      };
       outputs: { available: number; total: number; missing: number };
       stale: boolean;
     };
@@ -39,6 +54,28 @@ async function sha256OrNull(path: string): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+async function aggregateRevisionOrNull(
+  project: ProjectHandle,
+  release: ReleaseReport,
+): Promise<string | null> {
+  const sheets = release.schematicHierarchy?.sheets;
+  if (!Array.isArray(sheets) || sheets.length === 0)
+    return sha256OrNull(p(project, PROJECT_FILES.boardSch));
+  const entries: string[] = [];
+  for (const sheet of sheets) {
+    if (
+      typeof sheet.hierarchyPath !== "string" ||
+      typeof sheet.nativePath !== "string" ||
+      typeof sheet.identity !== "string"
+    )
+      return null;
+    const revision = await sha256OrNull(p(project, sheet.nativePath));
+    if (!revision) return null;
+    entries.push(`${sheet.hierarchyPath}\0${sheet.nativePath}\0${sheet.identity}\0${revision}`);
+  }
+  return createHash("sha256").update(entries.sort().join("\n")).digest("hex");
 }
 
 export async function readProjectStatusEvidence(project: ProjectHandle): Promise<{
@@ -74,6 +111,7 @@ export async function readProjectStatusEvidence(project: ProjectHandle): Promise
 
   const schematicRevision = release.revisions?.schematic;
   const pcbRevision = release.revisions?.pcb;
+  const projectRevision = release.revisions?.project;
   if (
     typeof release.pass !== "boolean" ||
     typeof release.capturedAt !== "string" ||
@@ -89,9 +127,10 @@ export async function readProjectStatusEvidence(project: ProjectHandle): Promise
       },
     };
 
-  const [currentSchematic, currentPcb] = await Promise.all([
-    sha256OrNull(p(project, PROJECT_FILES.boardSch)),
+  const [currentSchematic, currentPcb, currentProject] = await Promise.all([
+    aggregateRevisionOrNull(project, release),
     sha256OrNull(p(project, PROJECT_FILES.boardPcb)),
+    sha256OrNull(p(project, PROJECT_FILES.boardPro)),
   ]);
   const available = release.inventory.filter((entry) => entry.status === "available").length;
   const total = release.inventory.length;
@@ -100,10 +139,21 @@ export async function readProjectStatusEvidence(project: ProjectHandle): Promise
     lastRelease: {
       status: release.pass ? "pass" : "fail",
       capturedAt: release.capturedAt,
-      checkedRevisions: { schematic: schematicRevision, pcb: pcbRevision },
-      currentRevisions: { schematic: currentSchematic, pcb: currentPcb },
+      checkedRevisions: {
+        schematic: schematicRevision,
+        pcb: pcbRevision,
+        project: typeof projectRevision === "string" ? projectRevision : null,
+      },
+      currentRevisions: {
+        schematic: currentSchematic,
+        pcb: currentPcb,
+        project: currentProject,
+      },
       outputs: { available, total, missing: total - available },
-      stale: currentSchematic !== schematicRevision || currentPcb !== pcbRevision,
+      stale:
+        currentSchematic !== schematicRevision ||
+        currentPcb !== pcbRevision ||
+        (typeof projectRevision === "string" && currentProject !== projectRevision),
     },
   };
 }

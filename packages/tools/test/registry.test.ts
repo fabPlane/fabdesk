@@ -480,6 +480,7 @@ describe("registry", () => {
   test("native schematic edit, inspection and forward annotation", async () => {
     const reg = createRegistry();
     const project = await tempProject("native-schematic");
+    await writeFile(join(project.dir, "board.kicad_sch"), "(kicad_sch (version 20260831))\n");
     const base = mockServices([project]);
     const edits: unknown[] = [];
     const syncModes: boolean[] = [];
@@ -586,8 +587,8 @@ describe("registry", () => {
         connections: [{ name: "BAD", nodes: [{ reference: "R1", pin: "1" }], label: "none" }],
       }),
     ).rejects.toThrow(/direct wire connections require at least two nodes/);
-    const inspect = await call("schematic_inspect");
-    expect(inspect.text).toContain("Native schematic revision 4");
+    const inspect = await call("schematic_inspect", { detail: "authoring" });
+    expect(inspect.text).toContain("live KiCad IPC revision 4");
     expect(inspect.text).toContain(
       "KiCad IPC session diagnostics (informational; not saved-file ERC)",
     );
@@ -595,7 +596,7 @@ describe("registry", () => {
     expect(inspect.text).toContain("Device:R");
     expect((inspect.json as any).contract).toEqual({
       name: "fabdesk.schematic-inspection",
-      version: "2.0.0",
+      version: "3.0.0",
     });
     expect((inspect.json as any).symbols).toHaveLength(1);
     expect((inspect.json as any).nets).toBeUndefined();
@@ -609,7 +610,9 @@ describe("registry", () => {
     expect((fullInspect.json as any).nets).toHaveLength(1);
     expect((fullInspect.json as any).erc).toBeUndefined();
     const review = await call("schematic_review");
-    expect(review.text).toContain("Schematic presentation review at revision 4");
+    expect(review.text).toContain(
+      "Schematic presentation review of current/root sheet at live IPC revision 4",
+    );
     expect(review.text).not.toContain("ERC");
     expect((review.json as any).erc).toBeUndefined();
     expect((review.json as any).sessionDiagnostics.source).toBe("kicad-ipc-session");
@@ -659,16 +662,16 @@ describe("registry", () => {
         );
       const review = await call("schematic_review");
       const verified = await call("verify_erc");
-      expect(review.text).toBe(
-        `Schematic presentation review at revision ${warnings === 3 ? 7 : 10}: 0 finding(s).\nNo presentation risks detected by the current checks.`,
+      expect(review.text).toContain(
+        `Schematic presentation review of current/root sheet at live IPC revision ${warnings === 3 ? 7 : 10}`,
       );
       expect((review.json as any).sessionDiagnostics.counts).toEqual({ errors: 0, warnings });
       expect(verified.text).toMatch(
-        /^Saved-file ERC measured by packaged kicad-cli 10\.99\.0 for board\.kicad_sch revision [0-9a-f]{64}: 0 errors, 0 warnings$/,
+        /^Complete saved-hierarchy ERC measured by packaged kicad-cli 10\.99\.0 for aggregate revision [0-9a-f]{64} across 1 referenced sheet\(s\): 0 errors, 0 warnings$/,
       );
       expect((verified.json as any).measurement).toMatchObject({
         source: "packaged-kicad-cli",
-        scope: "saved board.kicad_sch",
+        scope: "complete saved hierarchy",
         revisionStable: true,
       });
     }
@@ -813,15 +816,14 @@ describe("registry", () => {
       }),
     );
     const json = inspected.json as Record<string, any>;
-    expect(json.contract).toEqual({ name: "fabdesk.native-inspection", version: "1.1.0" });
+    expect(json.contract).toEqual({ name: "fabdesk.native-inspection", version: "2.0.0" });
     expect(json.runtime.runtimeId).toBe("test-runtime");
     expect(json.revisions.schematic.sha256).toHaveLength(64);
     expect(json.revisions.pcb.sha256).toHaveLength(64);
-    expect(json.schematic.erc).toBeUndefined();
-    expect(json.schematic.sessionDiagnostics.source).toBe("kicad-ipc-session");
+    expect(json.schematic.authoring.sessionDiagnostics.source).toBe("kicad-ipc-session");
     expect(json.checks.savedFileErc).toMatchObject({
       source: "packaged-kicad-cli",
-      scope: "saved board.kicad_sch",
+      scope: "complete saved hierarchy",
       revision: json.revisions.schematic.sha256,
     });
     expect(json.checks.savedFileDrc.report.schematicParityChecked).toBe(true);
@@ -835,6 +837,7 @@ describe("registry", () => {
     const reg = createRegistry();
     const project = await tempProject("actionable-drc");
     await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb (version 20260831))\n");
+    await writeFile(join(project.dir, "board.kicad_sch"), "(kicad_sch (version 20260831))\n");
     const base = mockServices([project]);
     const geometryQueries: string[] = [];
     const services = mockServices([project], {
@@ -926,6 +929,7 @@ describe("registry", () => {
     const project = await tempProject("stale-drc");
     const board = join(project.dir, "board.kicad_pcb");
     await writeFile(board, "before");
+    await writeFile(join(project.dir, "board.kicad_sch"), "before-sch");
     const base = mockServices([project]);
     const services = mockServices([project], {
       kicad: {
@@ -1171,9 +1175,9 @@ describe("registry", () => {
     expect(editCalls).toBe(0);
     expect(await Bun.file(board).text()).toBe("before-graphics\n");
 
-    await expect(
-      call({ expectedPcbRevision: "0".repeat(64), texts: [text] }),
-    ).rejects.toThrow(/stale PCB revision/);
+    await expect(call({ expectedPcbRevision: "0".repeat(64), texts: [text] })).rejects.toThrow(
+      /stale PCB revision/,
+    );
     expect(editCalls).toBe(0);
 
     const accepted = await call({ expectedPcbRevision: revision, texts: [text] });
@@ -1381,17 +1385,19 @@ describe("registry", () => {
     );
     expect(release.isError).toBeFalsy();
     expect((release.json as any).pass).toBe(true);
-    expect((release.json as any).contract.version).toBe("1.1.0");
+    expect((release.json as any).contract.version).toBe("2.0.0");
     expect((release.json as any).verification).toEqual({
       status: "pass",
       scope: "configured release checks and outputs",
       productCompletenessAssessed: false,
     });
-    expect(release.text).toMatch(/Saved-file ERC measured by packaged kicad-cli 10\.99\.0/);
+    expect(release.text).toMatch(
+      /Complete saved-hierarchy ERC measured by packaged kicad-cli 10\.99\.0/,
+    );
     expect((release.json as any).checks.erc).toMatchObject({
       evidenceLevel: "measured",
       source: "packaged-kicad-cli",
-      scope: "saved board.kicad_sch",
+      scope: "complete saved hierarchy",
       revision: (release.json as any).revisions.schematic,
     });
     expect((release.json as any).checks.circuit).toEqual([
@@ -1495,6 +1501,56 @@ describe("registry", () => {
       lastRelease: { status: "pass", stale: false, outputs: { available: 39, total: 39 } },
     });
     expect((current.json as any).lastBuild).toBeUndefined();
+
+    const child = join(project.dir, "child.kicad_sch");
+    const nativeProject = join(project.dir, "board.kicad_pro");
+    await writeFile(child, "child-v1");
+    await writeFile(nativeProject, "project-v1");
+    const hierarchySheets = [
+      {
+        hierarchyPath: "/",
+        nativePath: "board.kicad_sch",
+        identity: "root",
+        sha256: await sha(schematic),
+      },
+      {
+        hierarchyPath: "/Child/",
+        nativePath: "child.kicad_sch",
+        identity: "child",
+        sha256: await sha(child),
+      },
+    ];
+    const aggregate = createHash("sha256")
+      .update(
+        hierarchySheets
+          .map(
+            (sheet) =>
+              `${sheet.hierarchyPath}\0${sheet.nativePath}\0${sheet.identity}\0${sheet.sha256}`,
+          )
+          .sort()
+          .join("\n"),
+      )
+      .digest("hex");
+    await writeFile(
+      join(reports, "release.json"),
+      JSON.stringify({
+        ...release,
+        revisions: {
+          ...release.revisions,
+          schematic: aggregate,
+          project: await sha(nativeProject),
+        },
+        schematicHierarchy: { sheets: hierarchySheets },
+      }),
+    );
+    expect(((await invoke()).json as any).lastRelease.stale).toBe(false);
+    await writeFile(child, "child-v2");
+    expect(((await invoke()).json as any).lastRelease.stale).toBe(true);
+    await writeFile(child, "child-v1");
+    expect(((await invoke()).json as any).lastRelease.stale).toBe(false);
+    await writeFile(nativeProject, "project-v2");
+    expect(((await invoke()).json as any).lastRelease.stale).toBe(true);
+    await writeFile(join(reports, "release.json"), JSON.stringify(release));
 
     await writeFile(schematic, "schematic-v2");
     const stale = await invoke();
@@ -1710,7 +1766,7 @@ describe("registry", () => {
     await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb)");
     const svg = await call("render_pcb_svg");
     expect(svg.images?.[0]?.mime).toBe("image/svg+xml");
-    const drc = await call("verify_drc");
+    const drc = await call("verify_drc", { schematicParity: false });
     expect(drc.isError).toBeFalsy();
     await expect(call("render_schematic_svg")).rejects.toThrow(/board.kicad_sch not found/);
   });
@@ -1827,6 +1883,7 @@ describe("registry", () => {
     const services = mockServices([project]);
     const factory = contextFactory(services, project);
     await mkdir(join(project.dir, "reports"), { recursive: true });
+    await writeFile(join(project.dir, "board.kicad_sch"), "schematic");
     await writeFile(
       join(project.dir, "reports/drc.json"),
       JSON.stringify({
@@ -1863,6 +1920,20 @@ describe("registry", () => {
     const pass = await call({ acceptWarnings: true });
     expect(pass.isError).toBeFalsy();
     expect(project.manifest().allowedDrcWarnings).toEqual(["silk_overlap:"]);
+    await writeFile(
+      join(project.dir, "reports/erc.json"),
+      JSON.stringify({
+        violations: [],
+        counts: { errors: 0, warnings: 0 },
+        measurement: {
+          scope: "complete saved hierarchy",
+          checkedRevision: "b".repeat(64),
+        },
+      }),
+    );
+    const stale = await call({});
+    expect(stale.isError).toBe(true);
+    expect(stale.text).toContain("ERC evidence is stale");
   });
 });
 

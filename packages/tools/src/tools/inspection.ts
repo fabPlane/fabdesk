@@ -5,7 +5,7 @@ import { z } from "zod/v4";
 import { PROJECT_FILES, exists, readJsonOrNull, writeJson } from "../fs";
 import { ToolError, defineTool } from "../registry";
 import type { DesignRow, DrcReport, ErcReport } from "../services";
-import { ok, p, requireKicad } from "./common";
+import { compactHierarchy, inspectSavedHierarchy, ok, p, requireKicad } from "./common";
 import { kicadIpcSessionDiagnostics } from "./diagnostic-evidence";
 
 type Finding = {
@@ -36,7 +36,7 @@ export const design_inspect = defineTool({
   toolset: "circuit",
   title: "Inspect saved native design",
   description:
-    "Inspect the exact saved board.kicad_sch and board.kicad_pcb revisions in one result. Returns schematic pin/net and transformed PCB pad/net membership, placement and board geometry, copper, vias, zones, keepouts, texts, remaining endpoints, packaged-kicad-cli saved-file ERC/DRC/parity measurements, separately labelled KiCad IPC session diagnostics, visual/mechanical findings, file SHA-256 revisions, and packaged runtime identity.",
+    "Inspect the exact complete saved schematic hierarchy and board revision in one result. Defaults to compact whole-project schematic truth; optionally expands one sheet's live KiCad IPC authoring details. Saved-file ERC/parity and live session diagnostics remain separately labelled.",
   inputSchema: {
     refreshChecks: z
       .boolean()
@@ -44,10 +44,16 @@ export const design_inspect = defineTool({
       .describe(
         "Run packaged-kicad-cli full-severity ERC and parity-enabled DRC for these exact saved files",
       ),
+    schematicDetail: z.enum(["summary", "authoring", "full"]).default("summary"),
+    sheet: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Sheet path, name, or native filename for bounded authoring expansion"),
   },
   annotations: { readOnlyHint: true, idempotentHint: true },
   longRunning: true,
-  handler: async ({ refreshChecks }, ctx) => {
+  handler: async ({ refreshChecks, schematicDetail, sheet }, ctx) => {
     const project = ctx.requireProject();
     const schematicPath = p(project, PROJECT_FILES.boardSch);
     const boardPath = p(project, PROJECT_FILES.boardPcb);
@@ -57,6 +63,8 @@ export const design_inspect = defineTool({
         "precondition",
       );
 
+    const cli = await requireKicad(ctx);
+    const hierarchy = await inspectSavedHierarchy(ctx, project, cli);
     const [
       schematic,
       components,
@@ -71,10 +79,9 @@ export const design_inspect = defineTool({
       texts,
       remaining,
       geometrySnapshot,
-      cli,
       runtime,
     ] = await Promise.all([
-      ctx.services.design.schematicInspect(project.dir),
+      ctx.services.design.schematicInspect(project.dir, sheet),
       ctx.services.design.query(project.dir, "components"),
       ctx.services.design.query(project.dir, "nets"),
       ctx.services.design.query(project.dir, "pads"),
@@ -87,7 +94,6 @@ export const design_inspect = defineTool({
       ctx.services.design.query(project.dir, "texts"),
       ctx.services.design.query(project.dir, "unrouted"),
       ctx.services.design.inspectBoardGeometry(project.dir),
-      refreshChecks ? requireKicad(ctx) : ctx.services.kicad.resolveCli(),
       ctx.services.design.status(),
     ]);
     const [schematicRevision, pcbRevision] = await Promise.all([
@@ -104,7 +110,7 @@ export const design_inspect = defineTool({
           capturedAt: previousRelease.capturedAt ?? null,
           pass: previousRelease.pass ?? false,
           stale:
-            previousRelease.revisions?.schematic !== schematicRevision.sha256 ||
+            previousRelease.revisions?.schematic !== hierarchy.aggregateRevision ||
             previousRelease.revisions?.pcb !== pcbRevision.sha256,
         }
       : { status: "missing" as const };
@@ -113,7 +119,7 @@ export const design_inspect = defineTool({
     let drc: (DrcReport & { schematicParityChecked: true }) | { status: "missing" } = {
       status: "missing",
     };
-    if (refreshChecks && cli) {
+    if (refreshChecks && hierarchy.complete) {
       erc = await ctx.services.kicad.runErc(cli, {
         schematic: schematicPath,
         outFile: p(project, PROJECT_FILES.reports, "inspection-erc.json"),
@@ -200,7 +206,7 @@ export const design_inspect = defineTool({
 
     const { erc: sessionErc, ...schematicSnapshot } = schematic;
     const result = {
-      contract: { name: "fabdesk.native-inspection", version: "1.1.0" },
+      contract: { name: "fabdesk.native-inspection", version: "2.0.0" },
       capturedAt: new Date().toISOString(),
       runtime: {
         runtimeId: ctx.services.runtimeId,
@@ -210,12 +216,49 @@ export const design_inspect = defineTool({
         kicadCli: cli ? { path: cli.path, version: cli.version } : { status: "unavailable" },
       },
       revisions: {
-        schematic: { documentRevision: schematic.revision, ...schematicRevision },
+        schematic: {
+          documentRevision: schematic.revision,
+          sha256: hierarchy.aggregateRevision,
+          aggregateRevision: hierarchy.aggregateRevision,
+          rootFileRevision: schematicRevision,
+          referencedSheetCount: hierarchy.sheets.length,
+        },
         pcb: { documentRevision: schematic.pcbRevision, ...pcbRevision },
       },
       schematic: {
-        ...schematicSnapshot,
-        sessionDiagnostics: kicadIpcSessionDiagnostics(sessionErc),
+        scope: "complete-saved-hierarchy" as const,
+        hierarchy: compactHierarchy(hierarchy),
+        authoring:
+          schematicDetail === "summary"
+            ? {
+                scope: schematic.scope ?? {
+                  kind: "current/root-sheet",
+                  hierarchyPath: "/",
+                  nativePath: null,
+                  name: "root",
+                },
+                counts: {
+                  symbols: schematic.symbols.length,
+                  wires: schematic.wires.length,
+                  projectNets: schematic.nets.length,
+                },
+                netScope: "complete-live-ipc-session" as const,
+                sessionDiagnostics: kicadIpcSessionDiagnostics(sessionErc),
+              }
+            : schematicDetail === "authoring"
+              ? {
+                  scope: schematic.scope,
+                  revision: schematic.revision,
+                  symbols: schematic.symbols,
+                  projectNetCount: schematic.nets.length,
+                  netScope: "complete-live-ipc-session" as const,
+                  sessionDiagnostics: kicadIpcSessionDiagnostics(sessionErc),
+                }
+              : {
+                  ...schematicSnapshot,
+                  netScope: "complete-live-ipc-session" as const,
+                  sessionDiagnostics: kicadIpcSessionDiagnostics(sessionErc),
+                },
       },
       pcb: {
         components,
@@ -233,14 +276,17 @@ export const design_inspect = defineTool({
       checks: {
         savedFileErc: {
           source: "packaged-kicad-cli" as const,
-          scope: "saved board.kicad_sch" as const,
-          revision: schematicRevision.sha256,
+          scope: "complete saved hierarchy" as const,
+          revision: hierarchy.aggregateRevision,
+          applicability: hierarchy.complete,
           report: erc,
         },
         savedFileDrc: {
           source: "packaged-kicad-cli" as const,
-          scope: "saved board.kicad_pcb with schematic parity" as const,
+          scope: "saved board.kicad_pcb with complete-hierarchy schematic parity" as const,
           revision: pcbRevision.sha256,
+          schematicRevision: hierarchy.aggregateRevision,
+          applicability: hierarchy.complete,
           report: drc,
         },
       },
@@ -249,8 +295,9 @@ export const design_inspect = defineTool({
     };
     await writeJson(p(project, PROJECT_FILES.reports, "native-inspection.json"), result);
     return ok(
-      `Native inspection ${schematicRevision.sha256.slice(0, 12)}/${pcbRevision.sha256.slice(0, 12)}: ${findings.length} actionable finding(s), ${remaining.length} remaining connection(s), runtime ${ctx.services.runtimeId ?? "unattested-development"}.`,
+      `Native inspection of ${hierarchy.complete ? "complete" : "incomplete"} saved hierarchy ${hierarchy.aggregateRevision.slice(0, 12)} (${hierarchy.counts.components} components, ${hierarchy.counts.nets} nets, ${hierarchy.counts.sheets} sheets) and PCB ${pcbRevision.sha256.slice(0, 12)}: ${findings.length} actionable finding(s), ${remaining.length} remaining connection(s), runtime ${ctx.services.runtimeId ?? "unattested-development"}.`,
       result,
+      { isError: !hierarchy.complete },
     );
   },
 });

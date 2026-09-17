@@ -56,9 +56,10 @@ function simService(settings: () => Settings): SimService {
       const t0 = Date.now();
       const analysis = toSimAnalysis(o.analysis);
       const engine = o.engine ?? "spicey";
-      const r = engine === "ngspice"
-        ? await sim.runNgspice(o.ngspicePath ?? "ngspice", o.netlist, analysis, o.signal)
-        : sim.runSpicey(o.netlist, analysis);
+      const r =
+        engine === "ngspice"
+          ? await sim.runNgspice(o.ngspicePath ?? "ngspice", o.netlist, analysis, o.signal)
+          : sim.runSpicey(o.netlist, analysis);
       return {
         engine: r.engine,
         analysis: r.analysis,
@@ -77,7 +78,10 @@ export async function createServices(
 ): Promise<CoreServices & { dispose(): Promise<void> }> {
   const resolveCli = async (): Promise<KicadCli | null> => {
     const explicit = deps.settings().kicadCliPath ?? undefined;
-    const trace = deps.telemetry ? (input: kicad.KicadInvocation, invoke: () => Promise<kicad.RunResult>) => deps.telemetry!.traceKicadCli(input, invoke) : undefined;
+    const trace = deps.telemetry
+      ? (input: kicad.KicadInvocation, invoke: () => Promise<kicad.RunResult>) =>
+          deps.telemetry!.traceKicadCli(input, invoke)
+      : undefined;
     return kicad.findKicadCli(explicit, { ...(trace ? { trace } : {}) });
   };
 
@@ -114,6 +118,7 @@ export async function createServices(
       resolveCli,
       runDrc: (cli, o) => kicad.runDrc(cli, o),
       runErc: (cli, o) => kicad.runErc(cli, o),
+      inspectSchematicHierarchy: (cli, o) => kicad.inspectSchematicHierarchy(cli, o),
       gate: (drc, erc, allowed) =>
         kicad.gate(drc as kicad.DrcReport, erc as kicad.ErcReport | undefined, allowed),
       renderPng: (cli, o) => kicad.renderPng(cli, o),

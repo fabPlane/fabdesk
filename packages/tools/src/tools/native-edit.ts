@@ -4,18 +4,22 @@ import { copyFile, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/
 import { join } from "node:path";
 import { z } from "zod/v4";
 import { PROJECT_FILES, exists, jailPath, readJson } from "../fs";
-import { ToolError, defineTool } from "../registry";
+import { ToolError, defineTool, type ProjectHandle, type ToolContext } from "../registry";
 import type { NativeSchematicEdit, PcbFootprintEdit, PcbGeometryEdit } from "../services";
-import { ok, p } from "./common";
+import { inspectSavedHierarchy, ok, p } from "./common";
 
 const Point = z.object({ x: z.number().finite(), y: z.number().finite() });
 const PadEndpoint = z.object({ reference: z.string().min(1), pad: z.string().min(1) });
-const CopperEndpoint = z.union([Point, PadEndpoint]).describe("Exact millimetre point or a footprint pad resolved to its exact saved-board position");
+const CopperEndpoint = z
+  .union([Point, PadEndpoint])
+  .describe("Exact millimetre point or a footprint pad resolved to its exact saved-board position");
 const FILES = [PROJECT_FILES.boardPro, PROJECT_FILES.boardSch, PROJECT_FILES.boardPcb] as const;
 
 async function sha(path: string): Promise<string | null> {
   if (!(await exists(path))) return null;
-  return createHash("sha256").update(await readFile(path)).digest("hex");
+  return createHash("sha256")
+    .update(await readFile(path))
+    .digest("hex");
 }
 
 async function revisions(projectDir: string) {
@@ -23,6 +27,13 @@ async function revisions(projectDir: string) {
     schematic: await sha(join(projectDir, PROJECT_FILES.boardSch)),
     pcb: await sha(join(projectDir, PROJECT_FILES.boardPcb)),
   };
+}
+
+async function boundRevisions(ctx: ToolContext, project: ProjectHandle) {
+  const files = await revisions(project.dir);
+  if (files.schematic === null) return files;
+  const hierarchy = await inspectSavedHierarchy(ctx, project);
+  return { ...files, schematic: hierarchy.aggregateRevision };
 }
 
 async function backup(projectDir: string, directory: string): Promise<void> {
@@ -46,34 +57,109 @@ async function restore(projectDir: string, directory: string): Promise<void> {
 }
 
 const SchematicEdit = z.object({
-  symbols: z.array(z.object({
-    libId: z.string().min(3), reference: z.string().min(1), value: z.string(), footprint: z.string().optional(), position: Point,
-    unit: z.number().int().positive().optional(), bodyStyle: z.number().int().positive().optional(),
-    fields: z.record(z.string(), z.string()).optional(),
-  })).max(200).optional(),
-  symbolUpdates: z.array(z.object({ reference: z.string().min(1), newReference: z.string().min(1).optional(), position: Point.optional(), value: z.string().optional(), footprint: z.string().optional(), fields: z.record(z.string(), z.string()).optional() })).max(200).optional(),
-  connections: z.array(z.object({ name: z.string().min(1), nodes: z.array(z.object({ reference: z.string(), pin: z.string() })).min(1), label: z.enum(["local", "global", "none"]).optional() }).refine((connection) => connection.label !== "none" || connection.nodes.length >= 2, { message: "direct wire connections require at least two nodes", path: ["nodes"] })).max(500).optional(),
-  wires: z.array(z.object({ start: Point, end: Point })).max(1000).optional(),
-  localLabels: z.array(z.object({ text: z.string(), position: Point })).max(500).optional(),
-  globalLabels: z.array(z.object({ text: z.string(), position: Point })).max(500).optional(),
-  junctions: z.array(Point).max(1000).optional(), noConnects: z.array(Point).max(1000).optional(),
-  texts: z.array(z.object({ text: z.string(), position: Point })).max(200).optional(),
+  symbols: z
+    .array(
+      z.object({
+        libId: z.string().min(3),
+        reference: z.string().min(1),
+        value: z.string(),
+        footprint: z.string().optional(),
+        position: Point,
+        unit: z.number().int().positive().optional(),
+        bodyStyle: z.number().int().positive().optional(),
+        fields: z.record(z.string(), z.string()).optional(),
+      }),
+    )
+    .max(200)
+    .optional(),
+  symbolUpdates: z
+    .array(
+      z.object({
+        reference: z.string().min(1),
+        newReference: z.string().min(1).optional(),
+        position: Point.optional(),
+        value: z.string().optional(),
+        footprint: z.string().optional(),
+        fields: z.record(z.string(), z.string()).optional(),
+      }),
+    )
+    .max(200)
+    .optional(),
+  connections: z
+    .array(
+      z
+        .object({
+          name: z.string().min(1),
+          nodes: z.array(z.object({ reference: z.string(), pin: z.string() })).min(1),
+          label: z.enum(["local", "global", "none"]).optional(),
+        })
+        .refine((connection) => connection.label !== "none" || connection.nodes.length >= 2, {
+          message: "direct wire connections require at least two nodes",
+          path: ["nodes"],
+        }),
+    )
+    .max(500)
+    .optional(),
+  wires: z
+    .array(z.object({ start: Point, end: Point }))
+    .max(1000)
+    .optional(),
+  localLabels: z
+    .array(z.object({ text: z.string(), position: Point }))
+    .max(500)
+    .optional(),
+  globalLabels: z
+    .array(z.object({ text: z.string(), position: Point }))
+    .max(500)
+    .optional(),
+  junctions: z.array(Point).max(1000).optional(),
+  noConnects: z.array(Point).max(1000).optional(),
+  texts: z
+    .array(z.object({ text: z.string(), position: Point }))
+    .max(200)
+    .optional(),
   deleteItemIds: z.array(z.string()).max(1000).optional(),
 });
 
 const FootprintEdit = z.object({
-  reference: z.string().min(1), position: Point.optional(), rotation: z.number().finite().optional(),
-  flip: z.boolean().optional(), lock: z.boolean().optional(),
+  reference: z.string().min(1),
+  position: Point.optional(),
+  rotation: z.number().finite().optional(),
+  flip: z.boolean().optional(),
+  lock: z.boolean().optional(),
 });
 
-const Polygon = z.object({ points: z.array(Point).min(3).max(5000), holes: z.array(z.array(Point).min(3).max(5000)).max(100).optional() });
-const Layer = z.union([z.number().int(), z.string().min(3)]).describe("KiCad layer name such as F.Cu, B.Cu, F.SilkS, B.SilkS, or Edge.Cuts; numeric IDs remain accepted");
+const Polygon = z.object({
+  points: z.array(Point).min(3).max(5000),
+  holes: z.array(z.array(Point).min(3).max(5000)).max(100).optional(),
+});
+const Layer = z
+  .union([z.number().int(), z.string().min(3)])
+  .describe(
+    "KiCad layer name such as F.Cu, B.Cu, F.SilkS, B.SilkS, or Edge.Cuts; numeric IDs remain accepted",
+  );
 
 const LAYERS: Record<string, number> = {
-  "F.Cu": 3, "B.Cu": 34, "B.Adhes": 35, "F.Adhes": 36, "B.Paste": 37,
-  "F.Paste": 38, "B.SilkS": 39, "F.SilkS": 40, "B.Mask": 41, "F.Mask": 42,
-  "User.Drawings": 43, "User.Comments": 44, "Eco1.User": 45, "Eco2.User": 46,
-  "Edge.Cuts": 47, Margin: 48, "B.CrtYd": 49, "F.CrtYd": 50, "B.Fab": 51, "F.Fab": 52,
+  "F.Cu": 3,
+  "B.Cu": 34,
+  "B.Adhes": 35,
+  "F.Adhes": 36,
+  "B.Paste": 37,
+  "F.Paste": 38,
+  "B.SilkS": 39,
+  "F.SilkS": 40,
+  "B.Mask": 41,
+  "F.Mask": 42,
+  "User.Drawings": 43,
+  "User.Comments": 44,
+  "Eco1.User": 45,
+  "Eco2.User": 46,
+  "Edge.Cuts": 47,
+  Margin: 48,
+  "B.CrtYd": 49,
+  "F.CrtYd": 50,
+  "B.Fab": 51,
+  "F.Fab": 52,
 };
 
 export function layerId(layer: string | number): number {
@@ -85,12 +171,89 @@ export function layerId(layer: string | number): number {
   return value;
 }
 const PcbGeometry = z.object({
-  tracks: z.array(z.object({ start: CopperEndpoint, end: CopperEndpoint, width: z.number().positive(), layer: Layer, net: z.string().min(1).optional() })).max(5000).optional(),
-  vias: z.array(z.object({ position: Point, diameter: z.number().positive(), drill: z.number().positive(), layers: z.array(Layer).min(2), net: z.string().min(1).optional() })).max(2000).optional(),
-  zones: z.array(Polygon.extend({ layers: z.array(Layer).min(1), net: z.string().min(1).optional(), name: z.string().optional(), clearance: z.number().nonnegative().optional(), minThickness: z.number().positive().optional(), priority: z.number().int().optional() })).max(200).optional(),
-  keepouts: z.array(Polygon.extend({ layers: z.array(Layer).min(1), name: z.string().optional(), copper: z.boolean().optional(), vias: z.boolean().optional(), tracks: z.boolean().optional(), pads: z.boolean().optional(), footprints: z.boolean().optional() })).max(200).optional(),
-  texts: z.array(z.object({ text: z.string(), position: Point, layer: Layer, size: Point.optional(), thickness: z.number().positive().optional(), angle: z.number().finite().optional(), knockout: z.boolean().optional() })).max(1000).optional(),
-  graphics: z.array(z.object({ kind: z.enum(["segment", "rectangle", "arc", "circle", "polygon"]), layer: Layer, start: Point.optional(), end: Point.optional(), mid: Point.optional(), center: Point.optional(), radiusPoint: Point.optional(), points: z.array(Point).min(3).max(5000).optional(), holes: z.array(z.array(Point).min(3).max(5000)).max(100).optional(), strokeWidth: z.number().nonnegative().optional(), filled: z.boolean().optional() })).max(2000).optional(),
+  tracks: z
+    .array(
+      z.object({
+        start: CopperEndpoint,
+        end: CopperEndpoint,
+        width: z.number().positive(),
+        layer: Layer,
+        net: z.string().min(1).optional(),
+      }),
+    )
+    .max(5000)
+    .optional(),
+  vias: z
+    .array(
+      z.object({
+        position: Point,
+        diameter: z.number().positive(),
+        drill: z.number().positive(),
+        layers: z.array(Layer).min(2),
+        net: z.string().min(1).optional(),
+      }),
+    )
+    .max(2000)
+    .optional(),
+  zones: z
+    .array(
+      Polygon.extend({
+        layers: z.array(Layer).min(1),
+        net: z.string().min(1).optional(),
+        name: z.string().optional(),
+        clearance: z.number().nonnegative().optional(),
+        minThickness: z.number().positive().optional(),
+        priority: z.number().int().optional(),
+      }),
+    )
+    .max(200)
+    .optional(),
+  keepouts: z
+    .array(
+      Polygon.extend({
+        layers: z.array(Layer).min(1),
+        name: z.string().optional(),
+        copper: z.boolean().optional(),
+        vias: z.boolean().optional(),
+        tracks: z.boolean().optional(),
+        pads: z.boolean().optional(),
+        footprints: z.boolean().optional(),
+      }),
+    )
+    .max(200)
+    .optional(),
+  texts: z
+    .array(
+      z.object({
+        text: z.string(),
+        position: Point,
+        layer: Layer,
+        size: Point.optional(),
+        thickness: z.number().positive().optional(),
+        angle: z.number().finite().optional(),
+        knockout: z.boolean().optional(),
+      }),
+    )
+    .max(1000)
+    .optional(),
+  graphics: z
+    .array(
+      z.object({
+        kind: z.enum(["segment", "rectangle", "arc", "circle", "polygon"]),
+        layer: Layer,
+        start: Point.optional(),
+        end: Point.optional(),
+        mid: Point.optional(),
+        center: Point.optional(),
+        radiusPoint: Point.optional(),
+        points: z.array(Point).min(3).max(5000).optional(),
+        holes: z.array(z.array(Point).min(3).max(5000)).max(100).optional(),
+        strokeWidth: z.number().nonnegative().optional(),
+        filled: z.boolean().optional(),
+      }),
+    )
+    .max(2000)
+    .optional(),
   deleteItemIds: z.array(z.string().min(1)).max(5000).optional(),
 });
 
@@ -105,19 +268,39 @@ export const native_edit_transaction = defineTool({
     expectedSchematicRevision: z.string().length(64).nullable().optional(),
     expectedPcbRevision: z.string().length(64).nullable().optional(),
     schematic: SchematicEdit.optional(),
-    outline: z.object({ points: z.array(Point).min(3).max(100), replace: z.boolean().default(false) }).optional(),
+    outline: z
+      .object({ points: z.array(Point).min(3).max(100), replace: z.boolean().default(false) })
+      .optional(),
     footprints: z.array(FootprintEdit).max(500).optional(),
     geometry: PcbGeometry.optional(),
     removeCopperNets: z.array(z.string().min(1)).max(500).optional(),
   },
   annotations: { destructiveHint: true, idempotentHint: false },
-  handler: async ({ mode, expectedSchematicRevision, expectedPcbRevision, schematic, outline, footprints, geometry, removeCopperNets }, ctx) => {
+  handler: async (
+    {
+      mode,
+      expectedSchematicRevision,
+      expectedPcbRevision,
+      schematic,
+      outline,
+      footprints,
+      geometry,
+      removeCopperNets,
+    },
+    ctx,
+  ) => {
     const project = ctx.requireProject();
-    const before = await revisions(project.dir);
+    const before = await boundRevisions(ctx, project);
     if (expectedSchematicRevision !== undefined && before.schematic !== expectedSchematicRevision)
-      throw new ToolError(`stale schematic revision: expected ${expectedSchematicRevision}, actual ${before.schematic}`, "precondition");
+      throw new ToolError(
+        `stale schematic revision: expected ${expectedSchematicRevision}, actual ${before.schematic}`,
+        "precondition",
+      );
     if (expectedPcbRevision !== undefined && before.pcb !== expectedPcbRevision)
-      throw new ToolError(`stale PCB revision: expected ${expectedPcbRevision}, actual ${before.pcb}`, "precondition");
+      throw new ToolError(
+        `stale PCB revision: expected ${expectedPcbRevision}, actual ${before.pcb}`,
+        "precondition",
+      );
     const plan = {
       schematic: schematic ? "edit native schematic" : null,
       outline: outline ? `${outline.points.length}-segment outline` : null,
@@ -135,23 +318,46 @@ export const native_edit_transaction = defineTool({
         : null,
       removeCopperNets: removeCopperNets ?? [],
     };
-    if (mode === "preview") return ok(
-      "Native edit is structurally valid; canonical files were not changed. ERC, DRC, connectivity, and presentation were not evaluated.",
-      { status: "preview", before, after: before, plan, validation: { structural: true, designChecksRun: false } },
-    );
+    if (mode === "preview")
+      return ok(
+        "Native edit is structurally valid; canonical files were not changed. ERC, DRC, connectivity, and presentation were not evaluated.",
+        {
+          status: "preview",
+          before,
+          after: before,
+          plan,
+          validation: { structural: true, designChecksRun: false },
+        },
+      );
 
     const transactionId = `native-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
     const root = p(project, ".fabdesk/native-revisions");
     const directory = join(root, transactionId);
     await backup(project.dir, directory);
-    await writeFile(join(directory, "metadata.json"), JSON.stringify({ transactionId, createdAt: new Date().toISOString(), before, plan }, null, 2));
+    await writeFile(
+      join(directory, "metadata.json"),
+      JSON.stringify({ transactionId, createdAt: new Date().toISOString(), before, plan }, null, 2),
+    );
     try {
       const changes: Record<string, unknown> = {};
-      if (schematic) changes["schematic"] = await ctx.services.design.schematicEdit(project.dir, { ...(schematic as NativeSchematicEdit), save: true });
-      if (outline) changes["outline"] = await ctx.services.design.defineBoardOutline(project.dir, outline.points, outline.replace);
+      if (schematic)
+        changes["schematic"] = await ctx.services.design.schematicEdit(project.dir, {
+          ...(schematic as NativeSchematicEdit),
+          save: true,
+        });
+      if (outline)
+        changes["outline"] = await ctx.services.design.defineBoardOutline(
+          project.dir,
+          outline.points,
+          outline.replace,
+        );
       if (footprints?.length) {
-        const placed = await ctx.services.design.placeFootprints(project.dir, footprints as PcbFootprintEdit[]);
-        if (placed.missing.length) throw new ToolError(`unknown footprints: ${placed.missing.join(", ")}`, "invalid_args");
+        const placed = await ctx.services.design.placeFootprints(
+          project.dir,
+          footprints as PcbFootprintEdit[],
+        );
+        if (placed.missing.length)
+          throw new ToolError(`unknown footprints: ${placed.missing.join(", ")}`, "invalid_args");
         changes["footprints"] = placed;
       }
       // Replacement copper must remove the old route before creating the candidate. The surrounding
@@ -159,36 +365,91 @@ export const native_edit_transaction = defineTool({
       if (removeCopperNets?.length)
         changes["removedCopper"] = await ctx.services.design.unroute(project.dir, removeCopperNets);
       if (geometry) {
-        const pads = geometry.tracks?.some((track) => "reference" in track.start || "reference" in track.end)
+        const pads = geometry.tracks?.some(
+          (track) => "reference" in track.start || "reference" in track.end,
+        )
           ? await ctx.services.design.query(project.dir, "pads")
           : [];
         const padPosition = (endpoint: z.infer<typeof CopperEndpoint>) => {
           if (!("reference" in endpoint)) return endpoint;
-          const pad = pads.find((row) => String(row["component"]) === endpoint.reference && String(row["number"]) === endpoint.pad);
-          if (!pad) throw new ToolError(`unknown PCB pad ${endpoint.reference}:${endpoint.pad}`, "invalid_args");
+          const pad = pads.find(
+            (row) =>
+              String(row["component"]) === endpoint.reference &&
+              String(row["number"]) === endpoint.pad,
+          );
+          if (!pad)
+            throw new ToolError(
+              `unknown PCB pad ${endpoint.reference}:${endpoint.pad}`,
+              "invalid_args",
+            );
           return { x: Number(pad["x"]), y: Number(pad["y"]) };
         };
         const resolved = {
           ...geometry,
-          ...(geometry.tracks ? { tracks: geometry.tracks.map((track) => ({ ...track, start: padPosition(track.start), end: padPosition(track.end), layer: layerId(track.layer) })) } : {}),
-          ...(geometry.vias ? { vias: geometry.vias.map((via) => ({ ...via, layers: via.layers.map(layerId) })) } : {}),
-          ...(geometry.zones ? { zones: geometry.zones.map((zone) => ({ ...zone, layers: zone.layers.map(layerId) })) } : {}),
-          ...(geometry.keepouts ? { keepouts: geometry.keepouts.map((keepout) => ({ ...keepout, layers: keepout.layers.map(layerId) })) } : {}),
-          ...(geometry.texts ? { texts: geometry.texts.map((item) => ({ ...item, layer: layerId(item.layer) })) } : {}),
-          ...(geometry.graphics ? { graphics: geometry.graphics.map((item) => ({ ...item, layer: layerId(item.layer) })) } : {}),
+          ...(geometry.tracks
+            ? {
+                tracks: geometry.tracks.map((track) => ({
+                  ...track,
+                  start: padPosition(track.start),
+                  end: padPosition(track.end),
+                  layer: layerId(track.layer),
+                })),
+              }
+            : {}),
+          ...(geometry.vias
+            ? { vias: geometry.vias.map((via) => ({ ...via, layers: via.layers.map(layerId) })) }
+            : {}),
+          ...(geometry.zones
+            ? {
+                zones: geometry.zones.map((zone) => ({
+                  ...zone,
+                  layers: zone.layers.map(layerId),
+                })),
+              }
+            : {}),
+          ...(geometry.keepouts
+            ? {
+                keepouts: geometry.keepouts.map((keepout) => ({
+                  ...keepout,
+                  layers: keepout.layers.map(layerId),
+                })),
+              }
+            : {}),
+          ...(geometry.texts
+            ? { texts: geometry.texts.map((item) => ({ ...item, layer: layerId(item.layer) })) }
+            : {}),
+          ...(geometry.graphics
+            ? {
+                graphics: geometry.graphics.map((item) => ({
+                  ...item,
+                  layer: layerId(item.layer),
+                })),
+              }
+            : {}),
         } as PcbGeometryEdit;
         changes["geometry"] = await ctx.services.design.editBoardGeometry(project.dir, resolved);
       }
-      const after = await revisions(project.dir);
-      await writeFile(join(root, "last-accepted.json"), JSON.stringify({ transactionId, before, after }, null, 2));
+      const after = await boundRevisions(ctx, project);
+      await writeFile(
+        join(root, "last-accepted.json"),
+        JSON.stringify({ transactionId, before, after }, null, 2),
+      );
       return ok(`Atomic native edit ${transactionId} accepted; design checks were not run.`, {
-        status: "accepted", transactionId, before, after, plan, changes,
+        status: "accepted",
+        transactionId,
+        before,
+        after,
+        plan,
+        changes,
         validation: { structural: true, designChecksRun: false },
       });
     } catch (error) {
       await ctx.services.design.release(project.dir).catch(() => undefined);
       await restore(project.dir, directory);
-      throw new ToolError(`native edit rejected; canonical files restored: ${error instanceof Error ? error.message : String(error)}`, error instanceof ToolError ? error.code : "internal");
+      throw new ToolError(
+        `native edit rejected; canonical files restored: ${error instanceof Error ? error.message : String(error)}`,
+        error instanceof ToolError ? error.code : "internal",
+      );
     }
   },
 });
@@ -197,20 +458,39 @@ export const native_edit_rollback = defineTool({
   name: "native_edit_rollback",
   toolset: "circuit",
   title: "Rollback the last accepted native edit",
-  description: "Restore the exact native KiCad files saved before an accepted native_edit_transaction. The current revisions must still match that transaction's after revisions, preventing rollback over newer work.",
+  description:
+    "Restore the exact native KiCad files saved before an accepted native_edit_transaction. The current revisions must still match that transaction's after revisions, preventing rollback over newer work.",
   inputSchema: { transactionId: z.string().optional() },
   annotations: { destructiveHint: true, idempotentHint: true },
   handler: async ({ transactionId }, ctx) => {
     const project = ctx.requireProject();
     const root = p(project, ".fabdesk/native-revisions");
-    const accepted = await readJson<{ transactionId: string; before: Awaited<ReturnType<typeof revisions>>; after: Awaited<ReturnType<typeof revisions>> }>(join(root, "last-accepted.json")).catch(() => null);
-    if (!accepted) throw new ToolError("no accepted native edit is available to roll back", "precondition");
-    if (transactionId && transactionId !== accepted.transactionId) throw new ToolError(`last accepted transaction is ${accepted.transactionId}, not ${transactionId}`, "precondition");
-    const current = await revisions(project.dir);
-    if (JSON.stringify(current) !== JSON.stringify(accepted.after)) throw new ToolError("native files changed after the accepted transaction; refusing stale rollback", "precondition");
+    const accepted = await readJson<{
+      transactionId: string;
+      before: Awaited<ReturnType<typeof revisions>>;
+      after: Awaited<ReturnType<typeof revisions>>;
+    }>(join(root, "last-accepted.json")).catch(() => null);
+    if (!accepted)
+      throw new ToolError("no accepted native edit is available to roll back", "precondition");
+    if (transactionId && transactionId !== accepted.transactionId)
+      throw new ToolError(
+        `last accepted transaction is ${accepted.transactionId}, not ${transactionId}`,
+        "precondition",
+      );
+    const current = await boundRevisions(ctx, project);
+    if (JSON.stringify(current) !== JSON.stringify(accepted.after))
+      throw new ToolError(
+        "native files changed after the accepted transaction; refusing stale rollback",
+        "precondition",
+      );
     await ctx.services.design.release(project.dir).catch(() => undefined);
     await restore(project.dir, join(root, accepted.transactionId));
-    return ok(`Rolled back ${accepted.transactionId}.`, { status: "rolled-back", transactionId: accepted.transactionId, before: current, after: await revisions(project.dir) });
+    return ok(`Rolled back ${accepted.transactionId}.`, {
+      status: "rolled-back",
+      transactionId: accepted.transactionId,
+      before: current,
+      after: await boundRevisions(ctx, project),
+    });
   },
 });
 
@@ -218,54 +498,107 @@ export const pcb_edit_copper = defineTool({
   name: "pcb_edit_copper",
   toolset: "circuit",
   title: "Atomically edit PCB copper",
-  description: "Atomically validate and apply native tracks, vias, copper deletion by inspected ID, or removal of named routed nets in one recoverable transaction. The normal mode=apply path validates before saving and restores prior files if rejected; use mode=preview only when a non-mutating forecast is specifically needed. For reroutes, write a project-local JSON candidate and pass candidateFile with removeNets so old copper is replaced in one recoverable transaction. Applying named-net removal without replacement requires an explicit commitRemovalOnly acknowledgement. Track endpoints accept exact millimetre points or semantic {reference,pad} endpoints resolved from the saved board. Rejects stale PCB revisions.",
+  description:
+    "Atomically validate and apply native tracks, vias, copper deletion by inspected ID, or removal of named routed nets in one recoverable transaction. The normal mode=apply path validates before saving and restores prior files if rejected; use mode=preview only when a non-mutating forecast is specifically needed. For reroutes, write a project-local JSON candidate and pass candidateFile with removeNets so old copper is replaced in one recoverable transaction. Applying named-net removal without replacement requires an explicit commitRemovalOnly acknowledgement. Track endpoints accept exact millimetre points or semantic {reference,pad} endpoints resolved from the saved board. Rejects stale PCB revisions.",
   inputSchema: {
     mode: z.enum(["preview", "apply"]).default("apply"),
     expectedPcbRevision: z.string().length(64).optional(),
     tracks: PcbGeometry.shape.tracks,
     vias: PcbGeometry.shape.vias,
-    candidateFile: z.string().min(1).optional().describe("Project-relative JSON file containing {tracks:[...], vias:[...]}; keeps large generated routes durable and out of the tool-call payload"),
+    candidateFile: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "Project-relative JSON file containing {tracks:[...], vias:[...]}; keeps large generated routes durable and out of the tool-call payload",
+      ),
     deleteItemIds: PcbGeometry.shape.deleteItemIds,
     removeNets: z.array(z.string().min(1)).max(500).optional(),
-    commitRemovalOnly: z.boolean().default(false).describe("Explicitly acknowledge that named-net copper removal should persist without replacement geometry"),
+    commitRemovalOnly: z
+      .boolean()
+      .default(false)
+      .describe(
+        "Explicitly acknowledge that named-net copper removal should persist without replacement geometry",
+      ),
   },
   annotations: { destructiveHint: true, idempotentHint: false },
-  handler: async ({ mode, expectedPcbRevision, tracks, vias, candidateFile, deleteItemIds, removeNets, commitRemovalOnly }, ctx) => {
+  handler: async (
+    {
+      mode,
+      expectedPcbRevision,
+      tracks,
+      vias,
+      candidateFile,
+      deleteItemIds,
+      removeNets,
+      commitRemovalOnly,
+    },
+    ctx,
+  ) => {
     if (candidateFile && (tracks?.length || vias?.length))
-      throw new ToolError("candidateFile cannot be combined with inline tracks or vias", "invalid_args");
-    let candidate: { tracks?: z.infer<typeof PcbGeometry>["tracks"]; vias?: z.infer<typeof PcbGeometry>["vias"] } = {};
+      throw new ToolError(
+        "candidateFile cannot be combined with inline tracks or vias",
+        "invalid_args",
+      );
+    let candidate: {
+      tracks?: z.infer<typeof PcbGeometry>["tracks"];
+      vias?: z.infer<typeof PcbGeometry>["vias"];
+    } = {};
     if (candidateFile) {
       const project = ctx.requireProject();
       const path = await jailPath(project.dir, candidateFile);
       const metadata = await stat(path).catch(() => null);
-      if (!metadata?.isFile()) throw new ToolError(`copper candidate not found: ${candidateFile}`, "not_found");
+      if (!metadata?.isFile())
+        throw new ToolError(`copper candidate not found: ${candidateFile}`, "not_found");
       if (metadata.size > 5_000_000)
         throw new ToolError(`copper candidate exceeds 5 MB: ${candidateFile}`, "invalid_args");
       let raw: unknown;
       try {
         raw = JSON.parse(await readFile(path, "utf8"));
       } catch (error) {
-        throw new ToolError(`copper candidate is not valid JSON: ${error instanceof Error ? error.message : String(error)}`, "invalid_args");
+        throw new ToolError(
+          `copper candidate is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+          "invalid_args",
+        );
       }
       const parsed = PcbGeometry.pick({ tracks: true, vias: true }).strict().safeParse(raw);
       if (!parsed.success)
-        throw new ToolError(`invalid copper candidate: ${parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ")}`, "invalid_args");
+        throw new ToolError(
+          `invalid copper candidate: ${parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ")}`,
+          "invalid_args",
+        );
       candidate = parsed.data;
     }
     const replacementTracks = candidate.tracks ?? tracks;
     const replacementVias = candidate.vias ?? vias;
     const replacementCount = (replacementTracks?.length ?? 0) + (replacementVias?.length ?? 0);
-    if (mode === "apply" && (removeNets?.length ?? 0) > 0 && replacementCount === 0 && !commitRemovalOnly)
+    if (
+      mode === "apply" &&
+      (removeNets?.length ?? 0) > 0 &&
+      replacementCount === 0 &&
+      !commitRemovalOnly
+    )
       throw new ToolError(
         "named-net copper removal has no replacement; supply candidateFile or inline replacement geometry for an atomic reroute, or set commitRemovalOnly=true to explicitly persist removal alone",
         "precondition",
       );
-    const result = await native_edit_transaction.handler({
-      mode,
-      ...(expectedPcbRevision ? { expectedPcbRevision } : {}),
-      ...(replacementTracks || replacementVias || deleteItemIds ? { geometry: { ...(replacementTracks ? { tracks: replacementTracks } : {}), ...(replacementVias ? { vias: replacementVias } : {}), ...(deleteItemIds ? { deleteItemIds } : {}) } } : {}),
-      ...(removeNets ? { removeCopperNets: removeNets } : {}),
-    }, ctx);
+    const result = await native_edit_transaction.handler(
+      {
+        mode,
+        ...(expectedPcbRevision ? { expectedPcbRevision } : {}),
+        ...(replacementTracks || replacementVias || deleteItemIds
+          ? {
+              geometry: {
+                ...(replacementTracks ? { tracks: replacementTracks } : {}),
+                ...(replacementVias ? { vias: replacementVias } : {}),
+                ...(deleteItemIds ? { deleteItemIds } : {}),
+              },
+            }
+          : {}),
+        ...(removeNets ? { removeCopperNets: removeNets } : {}),
+      },
+      ctx,
+    );
     if (candidateFile && result.json && typeof result.json === "object")
       return { ...result, json: { ...(result.json as Record<string, unknown>), candidateFile } };
     return result;
@@ -276,11 +609,14 @@ export const pcb_edit_graphics = defineTool({
   name: "pcb_edit_graphics",
   toolset: "circuit",
   title: "Atomically edit PCB outline and graphics",
-  description: "Atomically validate and apply a native board outline, zones, keepouts, text, graphics, or deletion by inspected ID in one recoverable transaction. The normal mode=apply path validates before saving and restores prior files if rejected; use mode=preview only when a non-mutating forecast is specifically needed. Uses millimetres and rejects stale PCB revisions.",
+  description:
+    "Atomically validate and apply a native board outline, zones, keepouts, text, graphics, or deletion by inspected ID in one recoverable transaction. The normal mode=apply path validates before saving and restores prior files if rejected; use mode=preview only when a non-mutating forecast is specifically needed. Uses millimetres and rejects stale PCB revisions.",
   inputSchema: {
     mode: z.enum(["preview", "apply"]).default("apply"),
     expectedPcbRevision: z.string().length(64).optional(),
-    outline: z.object({ points: z.array(Point).min(3).max(100), replace: z.boolean().default(false) }).optional(),
+    outline: z
+      .object({ points: z.array(Point).min(3).max(100), replace: z.boolean().default(false) })
+      .optional(),
     zones: PcbGeometry.shape.zones,
     keepouts: PcbGeometry.shape.keepouts,
     texts: PcbGeometry.shape.texts,
@@ -288,16 +624,34 @@ export const pcb_edit_graphics = defineTool({
     deleteItemIds: PcbGeometry.shape.deleteItemIds,
   },
   annotations: { destructiveHint: true, idempotentHint: false },
-  handler: ({ mode, expectedPcbRevision, outline, zones, keepouts, texts, graphics, deleteItemIds }, ctx) =>
-    native_edit_transaction.handler({
-      mode,
-      ...(expectedPcbRevision ? { expectedPcbRevision } : {}),
-      ...(outline ? { outline } : {}),
-      ...(zones || keepouts || texts || graphics || deleteItemIds ? { geometry: {
-        ...(zones ? { zones } : {}), ...(keepouts ? { keepouts } : {}), ...(texts ? { texts } : {}),
-        ...(graphics ? { graphics } : {}), ...(deleteItemIds ? { deleteItemIds } : {}),
-      } } : {}),
-    }, ctx),
+  handler: (
+    { mode, expectedPcbRevision, outline, zones, keepouts, texts, graphics, deleteItemIds },
+    ctx,
+  ) =>
+    native_edit_transaction.handler(
+      {
+        mode,
+        ...(expectedPcbRevision ? { expectedPcbRevision } : {}),
+        ...(outline ? { outline } : {}),
+        ...(zones || keepouts || texts || graphics || deleteItemIds
+          ? {
+              geometry: {
+                ...(zones ? { zones } : {}),
+                ...(keepouts ? { keepouts } : {}),
+                ...(texts ? { texts } : {}),
+                ...(graphics ? { graphics } : {}),
+                ...(deleteItemIds ? { deleteItemIds } : {}),
+              },
+            }
+          : {}),
+      },
+      ctx,
+    ),
 });
 
-export const nativeEditTools = [native_edit_transaction, native_edit_rollback, pcb_edit_copper, pcb_edit_graphics];
+export const nativeEditTools = [
+  native_edit_transaction,
+  native_edit_rollback,
+  pcb_edit_copper,
+  pcb_edit_graphics,
+];

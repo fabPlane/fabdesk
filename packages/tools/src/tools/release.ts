@@ -5,7 +5,7 @@ import { join, relative } from "node:path";
 import { z } from "zod/v4";
 import { PROJECT_FILES, ensureDir, exists, writeAtomic, writeJson } from "../fs";
 import { ToolError, defineTool } from "../registry";
-import { p, requireKicad } from "./common";
+import { inspectSavedHierarchy, p, requireKicad } from "./common";
 import { zipFiles } from "./export";
 
 const CircuitCheck = z.discriminatedUnion("kind", [
@@ -207,7 +207,7 @@ export const release_build = defineTool({
   toolset: "verify",
   title: "Verify and build the complete release",
   description:
-    "Run full-severity ERC, parity-enabled DRC, unconnected/library checks, design-rule floor, schematic-presentation, and PCB-reference visibility checks, task-derived circuit checks, schematic/PCB renders, and complete native/document/fabrication export for one exact saved revision. Missing checks, relaxed safety rules, label-dense stub-only schematics, hidden reference fields, or missing outputs fail the release. Returns SHA-256 revisions and a complete output inventory; any later edit makes this evidence stale.",
+    "Run full-severity complete-hierarchy ERC, parity-enabled DRC, unconnected/library checks, design-rule floor, root-sheet presentation, PCB-reference visibility, task-derived circuit checks, renders, and native/document/fabrication export for one aggregate saved revision. Missing hierarchy members or outputs fail the release; any referenced-sheet edit makes the evidence stale.",
   inputSchema: {
     circuitChecks: z
       .array(CircuitCheck)
@@ -230,12 +230,19 @@ export const release_build = defineTool({
     for (const path of [schematic, board, pro])
       if (!(await exists(path)))
         throw new ToolError(`missing native file ${relative(project.dir, path)}`, "precondition");
+    const cli = await requireKicad(ctx);
+    const beforeHierarchy = await inspectSavedHierarchy(ctx, project, cli);
+    if (!beforeHierarchy.complete)
+      throw new ToolError(
+        `release requires a complete saved schematic hierarchy: ${beforeHierarchy.issues.map((issue) => `${issue.kind}: ${issue.path}`).join(", ")}`,
+        "precondition",
+      );
     const before = {
-      schematic: await hash(schematic),
+      schematic: beforeHierarchy.aggregateRevision,
+      schematicRoot: await hash(schematic),
       pcb: await hash(board),
       project: await hash(pro),
     };
-    const cli = await requireKicad(ctx);
     const reportsDir = await ensureDir(p(project, PROJECT_FILES.reports));
     const rendersDir = await ensureDir(p(project, PROJECT_FILES.renders));
     const exportsDir = await ensureDir(p(project, PROJECT_FILES.exports));
@@ -254,8 +261,15 @@ export const release_build = defineTool({
       measurement: {
         evidenceLevel: "measured",
         source: "packaged-kicad-cli",
-        scope: "saved board.kicad_sch",
+        scope: "complete saved hierarchy",
         checkedRevision: before.schematic,
+        applicability: true,
+        hierarchy: {
+          rootFile: beforeHierarchy.rootFile,
+          referencedSheetCount: beforeHierarchy.sheets.length,
+          referencedFiles: beforeHierarchy.referencedFiles,
+          orphanFiles: beforeHierarchy.orphanFiles,
+        },
         capturedAt: new Date().toISOString(),
         kicadCli: { path: cli.path, version: cli.version },
       },
@@ -293,6 +307,12 @@ export const release_build = defineTool({
         : []),
     ];
     const schematicPresentation = {
+      scope: schematicSnapshot.scope ?? {
+        kind: "current/root-sheet",
+        hierarchyPath: "/",
+        nativePath: null,
+        name: "root",
+      },
       status: presentationViolations.length ? ("fail" as const) : ("pass" as const),
       counts: {
         symbols: schematicSnapshot.symbols.length,
@@ -309,6 +329,16 @@ export const release_build = defineTool({
       outDir: join(rendersDir, "schematic"),
       signal: ctx.signal,
     });
+    const schematicRenderCoverage = {
+      evidenceLevel: "measured" as const,
+      scope: "complete saved hierarchy" as const,
+      expectedSheets: beforeHierarchy.sheets.length,
+      renderedSheets: schematicSvgs.paths.length,
+      status:
+        schematicSvgs.paths.length === beforeHierarchy.sheets.length
+          ? ("pass" as const)
+          : ("fail" as const),
+    };
     const pcbSvg = join(rendersDir, "pcb.svg");
     await ctx.services.kicad.exportPcbSvg(cli, { board, output: pcbSvg, signal: ctx.signal });
     const topPng = join(rendersDir, "release-top.png");
@@ -417,8 +447,10 @@ export const release_build = defineTool({
         : { path: "exports/fabrication.zip", status: "missing" as const },
     );
 
+    const afterHierarchy = await inspectSavedHierarchy(ctx, project, cli);
     const after = {
-      schematic: await hash(schematic),
+      schematic: afterHierarchy.aggregateRevision,
+      schematicRoot: await hash(schematic),
       pcb: await hash(board),
       project: await hash(pro),
     };
@@ -433,20 +465,27 @@ export const release_build = defineTool({
       erc: {
         evidenceLevel: "measured",
         source: "packaged-kicad-cli",
-        scope: "saved board.kicad_sch",
+        scope: "complete saved hierarchy",
         revision: before.schematic,
+        applicability: beforeHierarchy.complete,
         kicadCli: { path: cli.path, version: cli.version },
         status: erc.counts.errors === 0 ? "pass" : "fail",
         ...erc,
       },
       drc: {
         evidenceLevel: "measured",
+        scope: "saved board.kicad_pcb with complete-hierarchy schematic parity",
+        schematicRevision: before.schematic,
+        applicability: beforeHierarchy.complete,
         status: drc.counts.errors === 0 ? "pass" : "fail",
         ...drc,
         schematicParityChecked: true,
       },
       parity: {
         evidenceLevel: "measured",
+        scope: "complete saved hierarchy to saved PCB",
+        schematicRevision: before.schematic,
+        applicability: beforeHierarchy.complete,
         status: drc.schematicParity.length === 0 ? "pass" : "fail",
         violations: drc.schematicParity,
       },
@@ -463,6 +502,7 @@ export const release_build = defineTool({
       },
       designRules: { evidenceLevel: "computed", ...designRules },
       schematicPresentation: { evidenceLevel: "computed", ...schematicPresentation },
+      schematicRenderCoverage,
       pcbPresentation: { evidenceLevel: "computed", ...pcbPresentation },
       circuit: calculations,
       revisionStable: { evidenceLevel: "measured", status: stable ? "pass" : "fail" },
@@ -483,6 +523,11 @@ export const release_build = defineTool({
         : []),
       ...designRules.violations.map((reason) => `design rule integrity: ${reason}`),
       ...presentationViolations.map((reason) => `schematic presentation: ${reason}`),
+      ...(schematicRenderCoverage.status === "fail"
+        ? [
+            `schematic render coverage: ${schematicRenderCoverage.renderedSheets}/${schematicRenderCoverage.expectedSheets} referenced sheets`,
+          ]
+        : []),
       ...pcbPresentation.violations.map((reason) => `PCB presentation: ${reason}`),
       ...failedCircuitChecks.map((name) => `circuit check failed: ${name}`),
       ...missing.map((path) => `missing output: ${path}`),
@@ -494,11 +539,12 @@ export const release_build = defineTool({
       libraryMismatchViolations.length === 0 &&
       designRules.status === "pass" &&
       schematicPresentation.status === "pass" &&
+      schematicRenderCoverage.status === "pass" &&
       pcbPresentation.status === "pass" &&
       failedCircuitChecks.length === 0 &&
       missing.length === 0;
     const result = {
-      contract: { name: "fabdesk.native-release", version: "1.1.0" },
+      contract: { name: "fabdesk.native-release", version: "2.0.0" },
       capturedAt: new Date().toISOString(),
       runtime: {
         runtimeId: ctx.services.runtimeId,
@@ -506,6 +552,7 @@ export const release_build = defineTool({
         kicadCli: { path: cli.path, version: cli.version },
       },
       revisions: before,
+      schematicHierarchy: beforeHierarchy,
       stale: false,
       pass,
       verification: {
@@ -528,7 +575,7 @@ export const release_build = defineTool({
     ctx.progress(1, pass ? "release passed" : "release failed");
     const text = [
       `Release ${pass ? "PASS" : "FAIL"} for ${before.schematic.slice(0, 12)}/${before.pcb.slice(0, 12)}: ${inventory.length - missing.length}/${inventory.length} outputs available.`,
-      `Saved-file ERC measured by packaged kicad-cli ${cli.version} for board.kicad_sch revision ${before.schematic}: ${erc.counts.errors} errors, ${erc.counts.warnings} warnings.`,
+      `Complete saved-hierarchy ERC measured by packaged kicad-cli ${cli.version} for aggregate revision ${before.schematic} across ${beforeHierarchy.sheets.length} referenced sheet(s): ${erc.counts.errors} errors, ${erc.counts.warnings} warnings.`,
       ...(failureReasons.length
         ? ["Failure reasons:", ...failureReasons.map((reason) => `- ${reason}`)]
         : []),

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { NetlistFile } from "@fabdesk/protocol";
 import { PROJECT_FILES, exists, readJsonOrNull, writeJson } from "../fs";
 import { ToolError, type ProjectHandle, type ToolContext, type ToolOutput } from "../registry";
-import type { KicadCli } from "../services";
+import type { KicadCli, SchematicHierarchy } from "../services";
 
 export function p(project: ProjectHandle, ...parts: string[]): string {
   return join(project.dir, ...parts);
@@ -19,7 +19,11 @@ export async function loadNetlist(project: ProjectHandle): Promise<NetlistFile> 
   const raw = await readJsonOrNull<unknown>(path);
   if (raw === null) throw new ToolError(`${PROJECT_FILES.netlistJson} not found`, "precondition");
   const parsed = NetlistFile.safeParse(raw);
-  if (!parsed.success) throw new ToolError(`${PROJECT_FILES.netlistJson} is not a valid netlist: ${parsed.error.issues.map((i) => `${i.path.join("/")}: ${i.message}`).join("; ")}`, "precondition");
+  if (!parsed.success)
+    throw new ToolError(
+      `${PROJECT_FILES.netlistJson} is not a valid netlist: ${parsed.error.issues.map((i) => `${i.path.join("/")}: ${i.message}`).join("; ")}`,
+      "precondition",
+    );
   return parsed.data;
 }
 
@@ -46,7 +50,45 @@ export async function requireSchematic(project: ProjectHandle): Promise<string> 
   return sch;
 }
 
-export async function writeReport(project: ProjectHandle, name: string, value: unknown): Promise<string> {
+export async function inspectSavedHierarchy(
+  ctx: ToolContext,
+  project: ProjectHandle,
+  cli?: KicadCli,
+): Promise<SchematicHierarchy> {
+  const packagedCli = cli ?? (await requireKicad(ctx));
+  const schematic = await requireSchematic(project);
+  const projectFile = p(project, PROJECT_FILES.boardPro);
+  return ctx.services.kicad.inspectSchematicHierarchy(packagedCli, {
+    projectDir: project.dir,
+    rootSchematic: schematic,
+    ...((await exists(projectFile)) ? { projectFile } : {}),
+    signal: ctx.signal,
+  });
+}
+
+export function compactHierarchy(hierarchy: SchematicHierarchy, offset = 0, limit = 25) {
+  const sheets = hierarchy.sheets.slice(offset, offset + limit);
+  return {
+    ...hierarchy,
+    sheets,
+    pagination: {
+      offset,
+      limit,
+      returned: sheets.length,
+      total: hierarchy.sheets.length,
+      truncated: offset + sheets.length < hierarchy.sheets.length,
+      ...(offset + sheets.length < hierarchy.sheets.length
+        ? { nextOffset: offset + sheets.length }
+        : {}),
+    },
+  };
+}
+
+export async function writeReport(
+  project: ProjectHandle,
+  name: string,
+  value: unknown,
+): Promise<string> {
   const path = p(project, PROJECT_FILES.reports, `${name}.json`);
   await writeJson(path, value);
   return path;
@@ -73,9 +115,11 @@ export function countBy<T>(items: T[], key: (t: T) => string): Record<string, nu
 export function table(rows: Array<Record<string, unknown>>, columns?: string[]): string {
   if (rows.length === 0) return "(none)";
   const cols = columns ?? [...new Set(rows.flatMap((r) => Object.keys(r)))];
-  const cell = (v: unknown) => (v === undefined || v === null ? "" : typeof v === "object" ? JSON.stringify(v) : String(v));
+  const cell = (v: unknown) =>
+    v === undefined || v === null ? "" : typeof v === "object" ? JSON.stringify(v) : String(v);
   const lines = [`| ${cols.join(" | ")} |`, `| ${cols.map(() => "---").join(" | ")} |`];
-  for (const r of rows) lines.push(`| ${cols.map((c) => cell(r[c]).replace(/\|/g, "\\|")).join(" | ")} |`);
+  for (const r of rows)
+    lines.push(`| ${cols.map((c) => cell(r[c]).replace(/\|/g, "\\|")).join(" | ")} |`);
   return lines.join("\n");
 }
 

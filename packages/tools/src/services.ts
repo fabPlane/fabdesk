@@ -293,6 +293,46 @@ export type NativeSchematicSnapshot = {
   texts: Array<{ id: string; text: string; position: SchematicPoint }>;
   nets: Array<{ name: string; itemCount: number; itemIds: string[] }>;
   erc: { errors: number; warnings: number };
+  /** Live KiCad IPC authoring scope. This is never saved-file ERC evidence. */
+  scope?: {
+    kind: "current/root-sheet" | "selected-sheet";
+    hierarchyPath: string;
+    nativePath: string | null;
+    name: string;
+  };
+};
+
+export type SchematicHierarchyIssue = {
+  kind: "missing" | "unreadable" | "duplicate" | "cycle" | "parse" | "export";
+  path: string;
+  detail: string;
+};
+export type SchematicHierarchySheet = {
+  hierarchyPath: string;
+  nativePath: string;
+  identity: string;
+  name: string;
+  depth: number;
+  sha256: string;
+  bytes: number;
+  components: number;
+  nets: number;
+};
+export type SchematicHierarchy = {
+  rootFile: string;
+  projectFile: string | null;
+  aggregateRevision: string;
+  complete: boolean;
+  counts: { components: number; nets: number; sheets: number };
+  sheets: SchematicHierarchySheet[];
+  referencedFiles: string[];
+  orphanFiles: string[];
+  issues: SchematicHierarchyIssue[];
+  source: {
+    hierarchy: "native-kicad-project";
+    electrical: "packaged-kicad-cli-netlist";
+    kicadCli: { path: string; version: string };
+  };
 };
 export type NativeSchematicEditResult = {
   created: {
@@ -437,7 +477,7 @@ export interface DesignService {
   /** Compile the project's netlist into `board.kicad_pcb` through the bridge. */
   build(opts: BuildOptions): Promise<BuildResult>;
   /** Inspect the native KiCad schematic; creates the project's KiCad documents when requested by an edit. */
-  schematicInspect(projectDir: string): Promise<NativeSchematicSnapshot>;
+  schematicInspect(projectDir: string, sheet?: string): Promise<NativeSchematicSnapshot>;
   /** Apply one reviewable batch of native schematic items as a KiCad undo commit. */
   schematicEdit(projectDir: string, edit: NativeSchematicEdit): Promise<NativeSchematicEditResult>;
   /** ERC-gated native Update PCB from Schematic, with dry-run preview and parity verification. */
@@ -562,6 +602,11 @@ export interface KicadService {
     cli: KicadCli,
     opts: { schematic: string; outFile: string; severity?: "error" | "all"; signal?: AbortSignal },
   ): Promise<ErcReport>;
+  /** Shared saved native hierarchy and packaged-KiCad complete-project electrical facts. */
+  inspectSchematicHierarchy(
+    cli: KicadCli,
+    opts: { projectDir: string; rootSchematic: string; projectFile?: string; signal?: AbortSignal },
+  ): Promise<SchematicHierarchy>;
   gate(drc: DrcReport, erc: ErcReport | undefined, allowedWarningSignatures: string[]): GateResult;
   renderPng(
     cli: KicadCli,

@@ -1,6 +1,4 @@
 /** Verify toolset: ERC and the release gate (kicad-automation semantics). */
-import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
 import { z } from "zod/v4";
 import { PROJECT_FILES, readJsonOrNull, writeJson } from "../fs";
 import { ToolError, defineTool } from "../registry";
@@ -13,14 +11,21 @@ import {
   boardToViagrid,
   isOnViagrid9055Via,
 } from "../templates/viagrid-9055";
-import { ok, p, requireKicad, requireSchematic, writeReport } from "./common";
+import {
+  inspectSavedHierarchy,
+  ok,
+  p,
+  requireKicad,
+  requireSchematic,
+  writeReport,
+} from "./common";
 
 export const verify_erc = defineTool({
   name: "verify_erc",
   toolset: "verify",
   title: "Run KiCad ERC",
   description:
-    "Run packaged kicad-cli electrical rule check on the exact saved board.kicad_sch revision, write qualified measurement evidence to reports/erc.json, and return counts and violations.",
+    "Run packaged kicad-cli electrical rule check on the complete saved schematic hierarchy, bind it to the aggregate revision of every referenced native sheet, write qualified evidence to reports/erc.json, and return counts and violations.",
   inputSchema: {
     severity: z.enum(["all", "error"]).default("all"),
     limit: z.number().int().min(1).max(200).default(30),
@@ -32,9 +37,31 @@ export const verify_erc = defineTool({
     const cli = await requireKicad(ctx);
     const schematic = await requireSchematic(project);
     const outFile = p(project, PROJECT_FILES.reports, "erc.json");
-    const checkedRevision = createHash("sha256")
-      .update(await readFile(schematic))
-      .digest("hex");
+    const checkedHierarchy = await inspectSavedHierarchy(ctx, project, cli);
+    if (!checkedHierarchy.complete) {
+      const failed = {
+        violations: [],
+        counts: { errors: 1, warnings: 0 },
+        measurement: {
+          evidenceLevel: "missing" as const,
+          source: "packaged-kicad-cli" as const,
+          scope: "complete saved hierarchy" as const,
+          applicability: false,
+          checkedRevision: checkedHierarchy.aggregateRevision,
+          currentRevision: checkedHierarchy.aggregateRevision,
+          revisionStable: true,
+          capturedAt: new Date().toISOString(),
+          hierarchy: checkedHierarchy,
+          kicadCli: { path: cli.path, version: cli.version },
+        },
+      };
+      await writeJson(outFile, failed);
+      return {
+        text: `Saved-file ERC not applicable: native schematic hierarchy is incomplete (${checkedHierarchy.issues.map((issue) => `${issue.kind}: ${issue.path}`).join(", ")}).`,
+        json: failed,
+        isError: true,
+      };
+    }
     ctx.progress(0.3, "measuring saved-file ERC with packaged kicad-cli");
     const report = await ctx.services.kicad.runErc(cli, {
       schematic,
@@ -42,26 +69,34 @@ export const verify_erc = defineTool({
       severity,
       signal: ctx.signal,
     });
-    const currentRevision = createHash("sha256")
-      .update(await readFile(schematic))
-      .digest("hex");
+    const currentHierarchy = await inspectSavedHierarchy(ctx, project, cli);
+    const checkedRevision = checkedHierarchy.aggregateRevision;
+    const currentRevision = currentHierarchy.aggregateRevision;
     const result = {
       ...report,
       measurement: {
         evidenceLevel: "measured" as const,
         source: "packaged-kicad-cli" as const,
-        scope: "saved board.kicad_sch" as const,
+        scope: "complete saved hierarchy" as const,
+        applicability: checkedHierarchy.complete,
         checkedRevision,
         currentRevision,
         revisionStable: checkedRevision === currentRevision,
         capturedAt: new Date().toISOString(),
         kicadCli: { path: cli.path, version: cli.version },
+        hierarchy: {
+          rootFile: checkedHierarchy.rootFile,
+          referencedSheetCount: checkedHierarchy.sheets.length,
+          complete: checkedHierarchy.complete,
+          referencedFiles: checkedHierarchy.referencedFiles,
+          orphanFiles: checkedHierarchy.orphanFiles,
+        },
       },
     };
     await writeJson(outFile, result);
     ctx.progress(1, "done");
     const lines = [
-      `Saved-file ERC measured by packaged kicad-cli ${cli.version} for board.kicad_sch revision ${checkedRevision}: ${report.counts.errors} errors, ${report.counts.warnings} warnings${checkedRevision === currentRevision ? "" : " (STALE: the schematic changed during measurement)"}`,
+      `Complete saved-hierarchy ERC measured by packaged kicad-cli ${cli.version} for aggregate revision ${checkedRevision} across ${checkedHierarchy.sheets.length} referenced sheet(s): ${report.counts.errors} errors, ${report.counts.warnings} warnings${checkedRevision === currentRevision ? "" : " (STALE: a referenced schematic changed during measurement)"}`,
     ];
     for (const v of report.violations.slice(0, limit)) lines.push(`- ${describeViolation(v)}`);
     return { text: lines.join("\n"), json: result, isError: report.counts.errors > 0 };
@@ -84,10 +119,35 @@ export const verify_gate = defineTool({
   annotations: { idempotentHint: true },
   handler: async ({ acceptWarnings, requireErc }, ctx) => {
     const project = ctx.requireProject();
-    const drc = await readJsonOrNull<DrcReport>(p(project, PROJECT_FILES.reports, "drc.json"));
+    const drc = await readJsonOrNull<
+      DrcReport & { schematicHierarchy?: { aggregateRevision?: string } }
+    >(p(project, PROJECT_FILES.reports, "drc.json"));
     if (!drc) throw new ToolError("reports/drc.json missing", "precondition");
-    const erc = await readJsonOrNull<ErcReport>(p(project, PROJECT_FILES.reports, "erc.json"));
+    const erc = await readJsonOrNull<
+      ErcReport & { measurement?: { checkedRevision?: string; scope?: string } }
+    >(p(project, PROJECT_FILES.reports, "erc.json"));
     if (!erc && requireErc) throw new ToolError("reports/erc.json missing", "precondition");
+    const hierarchyClaimed =
+      erc?.measurement?.scope === "complete saved hierarchy" ||
+      typeof drc.schematicHierarchy?.aggregateRevision === "string";
+    const currentHierarchy = hierarchyClaimed ? await inspectSavedHierarchy(ctx, project) : null;
+    const staleEvidence = [
+      ...(erc?.measurement?.checkedRevision &&
+      currentHierarchy &&
+      erc.measurement.checkedRevision !== currentHierarchy.aggregateRevision
+        ? ["saved-file ERC evidence is stale relative to the current aggregate schematic revision"]
+        : []),
+      ...(drc.schematicHierarchy?.aggregateRevision &&
+      currentHierarchy &&
+      drc.schematicHierarchy.aggregateRevision !== currentHierarchy.aggregateRevision
+        ? [
+            "schematic/PCB parity evidence is stale relative to the current aggregate schematic revision",
+          ]
+        : []),
+      ...(currentHierarchy && !currentHierarchy.complete
+        ? ["current saved schematic hierarchy is incomplete"]
+        : []),
+    ];
     let allowed = project.manifest().allowedDrcWarnings;
     let gate = ctx.services.kicad.gate(drc, erc ?? undefined, allowed);
     let baselined: string[] = [];
@@ -97,6 +157,12 @@ export const verify_gate = defineTool({
       await project.updateManifest({ allowedDrcWarnings: allowed });
       gate = ctx.services.kicad.gate(drc, erc ?? undefined, allowed);
     }
+    if (staleEvidence.length)
+      gate = {
+        ...gate,
+        pass: false,
+        reasons: [...gate.reasons, ...staleEvidence],
+      };
     await writeJson(p(project, PROJECT_FILES.reports, "gate.json"), {
       at: new Date().toISOString(),
       ...gate,
