@@ -35,7 +35,11 @@ case "$INSTALLER" in
     "$INSTALLER" --appimage-version >/dev/null 2>&1 || true
     R_INSTALL="AppImage executable" ;;
   *.deb)
-    sudo apt-get install -y "./$(basename "$INSTALLER")" >"$OUT/apt.txt" 2>&1 || sudo apt-get install -y "$INSTALLER" >>"$OUT/apt.txt" 2>&1 || err "apt install of the .deb failed (see apt.txt)"
+    # The reusable Ubuntu base disk can outlive packages in Jammy's archive. Refresh the indexes in
+    # every throwaway guest before resolving the .deb's runtime dependencies; otherwise apt may try
+    # to fetch an obsolete libnotify4 (or similar) version recorded when the base image was prepared.
+    sudo apt-get update >"$OUT/apt.txt" 2>&1 || { err "apt package index refresh failed (see apt.txt)"; exit 0; }
+    sudo apt-get install -y "./$(basename "$INSTALLER")" >>"$OUT/apt.txt" 2>&1 || sudo apt-get install -y "$INSTALLER" >>"$OUT/apt.txt" 2>&1 || err "apt install of the .deb failed (see apt.txt)"
     BIN="$(command -v fabplane || command -v fabdesk || echo /opt/fabPlane/fabplane)"
     [ -x "$BIN" ] || { [ -x /opt/Fabdesk/fabdesk ] && BIN=/opt/Fabdesk/fabdesk; }
     [ -x "$BIN" ] || { err "no fabplane binary after installing the .deb"; exit 0; }
