@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdir, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod/v4";
 import {
@@ -395,20 +395,89 @@ describe("registry", () => {
     ).rejects.toThrow(/direct wire connections require at least two nodes/);
     const inspect = await call("schematic_inspect");
     expect(inspect.text).toContain("Native schematic revision 4");
+    expect(inspect.text).toContain(
+      "KiCad IPC session diagnostics (informational; not saved-file ERC)",
+    );
+    expect(inspect.text).not.toMatch(/(^|\n)ERC:/);
     expect(inspect.text).toContain("Device:R");
+    expect((inspect.json as any).contract).toEqual({
+      name: "fabdesk.schematic-inspection",
+      version: "2.0.0",
+    });
     expect((inspect.json as any).symbols).toHaveLength(1);
     expect((inspect.json as any).nets).toBeUndefined();
+    expect((inspect.json as any).erc).toBeUndefined();
+    expect((inspect.json as any).sessionDiagnostics).toMatchObject({
+      source: "kicad-ipc-session",
+      authority: "informational-not-saved-file-erc",
+      counts: { errors: 0, warnings: 1 },
+    });
     const fullInspect = await call("schematic_inspect", { detail: "full" });
     expect((fullInspect.json as any).nets).toHaveLength(1);
+    expect((fullInspect.json as any).erc).toBeUndefined();
     const review = await call("schematic_review");
-    expect(review.text).toContain("Schematic review at revision 4");
+    expect(review.text).toContain("Schematic presentation review at revision 4");
+    expect(review.text).not.toContain("ERC");
+    expect((review.json as any).erc).toBeUndefined();
+    expect((review.json as any).sessionDiagnostics.source).toBe("kicad-ipc-session");
     expect(await Bun.file(join(project.dir, "reports/schematic-review.json")).exists()).toBe(true);
     const preview = await call("pcb_update_from_schematic");
     expect(preview.text).toContain("Preview: OK");
+    expect(preview.text).toContain("KiCad IPC session diagnostics");
+    expect(preview.text).not.toMatch(/(^|\n)ERC:/);
+    expect((preview.json as any).erc).toBeUndefined();
+    expect((preview.json as any).sessionDiagnostics.source).toBe("kicad-ipc-session");
     expect(preview.text).toContain("Preview made no PCB changes");
     const applied = await call("pcb_update_from_schematic", { apply: true });
     expect(applied.text).toContain("Native schematic and PCB saved");
     expect(await Bun.file(join(project.dir, "reports/schematic-sync.json")).exists()).toBe(true);
+  });
+
+  test("presentation review cannot conflict with saved-file CLI ERC", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("diagnostic-provenance");
+    await writeFile(join(project.dir, "board.kicad_sch"), "(kicad_sch (version 20260831))\n");
+    const base = mockServices([project]);
+    for (const warnings of [3, 13]) {
+      const services = mockServices([project], {
+        design: {
+          ...base.design,
+          schematicInspect: async () => ({
+            ...(await base.design.schematicInspect(project.dir)),
+            revision: warnings === 3 ? 7 : 10,
+            erc: { errors: 0, warnings },
+          }),
+        },
+        kicad: {
+          ...base.kicad,
+          runErc: async () => ({ violations: [], counts: { errors: 0, warnings: 0 } }),
+        },
+      });
+      const factory = contextFactory(services, project);
+      const call = (name: string) =>
+        reg.invoke(name, {}, (ref) =>
+          factory({
+            def: reg.get(name)!,
+            projectRef: ref,
+            signal: new AbortController().signal,
+            progress: () => {},
+          }),
+        );
+      const review = await call("schematic_review");
+      const verified = await call("verify_erc");
+      expect(review.text).toBe(
+        `Schematic presentation review at revision ${warnings === 3 ? 7 : 10}: 0 finding(s).\nNo presentation risks detected by the current checks.`,
+      );
+      expect((review.json as any).sessionDiagnostics.counts).toEqual({ errors: 0, warnings });
+      expect(verified.text).toMatch(
+        /^Saved-file ERC measured by packaged kicad-cli 10\.99\.0 for board\.kicad_sch revision [0-9a-f]{64}: 0 errors, 0 warnings$/,
+      );
+      expect((verified.json as any).measurement).toMatchObject({
+        source: "packaged-kicad-cli",
+        scope: "saved board.kicad_sch",
+        revisionStable: true,
+      });
+    }
   });
 
   test("schematic render returns revision-bound PNG pixels to an MCP client", async () => {
@@ -505,7 +574,7 @@ describe("registry", () => {
     ).rejects.toThrow(/schematic changed during rendering/);
   });
 
-  test("revision-bound native inspection returns hashes, runtime, geometry and live checks", async () => {
+  test("revision-bound native inspection separates session diagnostics from saved-file checks", async () => {
     const reg = createRegistry();
     const project = await tempProject("revision-inspection");
     await writeFile(join(project.dir, "board.kicad_sch"), "(kicad_sch (version 20260831))\n");
@@ -521,11 +590,18 @@ describe("registry", () => {
       }),
     );
     const json = inspected.json as Record<string, any>;
-    expect(json.contract).toEqual({ name: "fabdesk.native-inspection", version: "1.0.0" });
+    expect(json.contract).toEqual({ name: "fabdesk.native-inspection", version: "1.1.0" });
     expect(json.runtime.runtimeId).toBe("test-runtime");
     expect(json.revisions.schematic.sha256).toHaveLength(64);
     expect(json.revisions.pcb.sha256).toHaveLength(64);
-    expect(json.checks.drc.schematicParityChecked).toBe(true);
+    expect(json.schematic.erc).toBeUndefined();
+    expect(json.schematic.sessionDiagnostics.source).toBe("kicad-ipc-session");
+    expect(json.checks.savedFileErc).toMatchObject({
+      source: "packaged-kicad-cli",
+      scope: "saved board.kicad_sch",
+      revision: json.revisions.schematic.sha256,
+    });
+    expect(json.checks.savedFileDrc.report.schematicParityChecked).toBe(true);
     expect(json.pcb.remainingConnections).toHaveLength(1);
     expect(await Bun.file(join(project.dir, "reports/native-inspection.json")).exists()).toBe(true);
   });
@@ -831,15 +907,20 @@ describe("registry", () => {
     const revision = createHash("sha256").update("existing-route\n").digest("hex");
     const candidateFile = "routes/replacement.json";
     await mkdir(join(project.dir, "routes"), { recursive: true });
-    await writeFile(join(project.dir, candidateFile), JSON.stringify({
-      tracks: [{
-        start: { x: 1, y: 2 },
-        end: { x: 3, y: 4 },
-        width: 0.25,
-        layer: "F.Cu",
-        net: "GND",
-      }],
-    }));
+    await writeFile(
+      join(project.dir, candidateFile),
+      JSON.stringify({
+        tracks: [
+          {
+            start: { x: 1, y: 2 },
+            end: { x: 3, y: 4 },
+            width: 0.25,
+            layer: "F.Cu",
+            net: "GND",
+          },
+        ],
+      }),
+    );
     const base = mockServices([project]);
     const order: string[] = [];
     const services = mockServices([project], {
@@ -874,8 +955,9 @@ describe("registry", () => {
         }),
       );
 
-    await expect(call({ mode: "apply", removeNets: ["A", "B", "C", "D"] }))
-      .rejects.toThrow(/copper removal has no replacement/);
+    await expect(call({ mode: "apply", removeNets: ["A", "B", "C", "D"] })).rejects.toThrow(
+      /copper removal has no replacement/,
+    );
     expect(await Bun.file(board).text()).toBe("existing-route\n");
     expect(order).toEqual([]);
 
@@ -990,6 +1072,13 @@ describe("registry", () => {
       scope: "configured release checks and outputs",
       productCompletenessAssessed: false,
     });
+    expect(release.text).toMatch(/Saved-file ERC measured by packaged kicad-cli 10\.99\.0/);
+    expect((release.json as any).checks.erc).toMatchObject({
+      evidenceLevel: "measured",
+      source: "packaged-kicad-cli",
+      scope: "saved board.kicad_sch",
+      revision: (release.json as any).revisions.schematic,
+    });
     expect((release.json as any).checks.circuit).toEqual([
       expect.objectContaining({ kind: "led-current", evidenceLevel: "computed", status: "pass" }),
       expect.objectContaining({
@@ -1039,6 +1128,93 @@ describe("registry", () => {
     expect(agentFacing).not.toMatch(
       /run [^.\n]* first|use [^.\n]* (?:before|after)|prefer|repeat until|retry|required workflow|must use|should use|stop after|only after|release checklist|stopping policy/i,
     );
+  });
+
+  test("project status distinguishes source builds from current, stale, failed, and missing releases", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("release-status");
+    const reports = join(project.dir, "reports");
+    await mkdir(reports, { recursive: true });
+    const schematic = join(project.dir, "board.kicad_sch");
+    const pcb = join(project.dir, "board.kicad_pcb");
+    await writeFile(schematic, "schematic-v1");
+    await writeFile(pcb, "pcb-v1");
+    const sha = async (path: string) =>
+      createHash("sha256")
+        .update(await readFile(path))
+        .digest("hex");
+    const release = {
+      capturedAt: "2026-09-17T06:01:36.848Z",
+      pass: true,
+      revisions: { schematic: await sha(schematic), pcb: await sha(pcb) },
+      inventory: Array.from({ length: 39 }, (_, index) => ({
+        path: `output-${index}`,
+        status: "available",
+      })),
+    };
+    await writeFile(join(reports, "release.json"), JSON.stringify(release));
+    const services = mockServices([project]);
+    const invoke = () =>
+      reg.invoke("project_status", {}, (ref) =>
+        contextFactory(
+          services,
+          project,
+        )({
+          def: reg.get("project_status")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+      );
+
+    const current = await invoke();
+    expect(current.text).toContain("Last source/compiler build: never");
+    expect(current.text).toContain(
+      "Last release: PASS (39/39 outputs, captured 2026-09-17T06:01:36.848Z",
+    );
+    expect(current.text).toContain("current native files match");
+    expect(current.text).not.toContain("Last build:");
+    expect(current.json).toMatchObject({
+      contract: { name: "fabdesk.project-status", version: "2.0.0" },
+      lastSourceBuild: null,
+      lastRelease: { status: "pass", stale: false, outputs: { available: 39, total: 39 } },
+    });
+    expect((current.json as any).lastBuild).toBeUndefined();
+
+    await writeFile(schematic, "schematic-v2");
+    const stale = await invoke();
+    expect(stale.text).toContain("Last release: PASS");
+    expect(stale.text).toContain("STALE relative to current native files");
+    expect((stale.json as any).lastRelease.stale).toBe(true);
+
+    await writeFile(
+      join(reports, "release.json"),
+      JSON.stringify({ ...release, pass: false, inventory: release.inventory.slice(0, 38) }),
+    );
+    const failed = await invoke();
+    expect(failed.text).toContain("Last release: FAIL");
+    expect((failed.json as any).lastRelease.status).toBe("fail");
+
+    await writeFile(join(reports, "release.json"), JSON.stringify({ pass: true }));
+    const missing = await invoke();
+    expect(missing.text).toContain("Last release: missing");
+    expect((missing.json as any).lastRelease.status).toBe("missing");
+
+    const neverProject = await tempProject("never-release");
+    const neverServices = mockServices([neverProject]);
+    const never = await reg.invoke("project_status", {}, (ref) =>
+      contextFactory(
+        neverServices,
+        neverProject,
+      )({
+        def: reg.get("project_status")!,
+        projectRef: ref,
+        signal: new AbortController().signal,
+        progress: () => {},
+      }),
+    );
+    expect(never.text).toContain("Last release: never");
+    expect((never.json as any).lastRelease).toEqual({ status: "never" });
   });
 
   test("invoke validates args and requires a project", async () => {

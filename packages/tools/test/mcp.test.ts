@@ -115,7 +115,13 @@ describe("mcp adapter", () => {
     const status = await client.callTool({ name: "project_status", arguments: {} });
     const text = (status.content as Array<{ type: string; text?: string }>)[0]!.text!;
     expect(text).toContain('Project "mcp"');
-    expect((status.structuredContent as { name: string }).name).toBe("mcp");
+    expect(status.structuredContent).toMatchObject({
+      contract: { name: "fabdesk.project-status", version: "2.0.0" },
+      name: "mcp",
+      lastSourceBuild: null,
+      lastRelease: { status: "never" },
+    });
+    expect((status.structuredContent as Record<string, unknown>)["lastBuild"]).toBeUndefined();
 
     const progress: number[] = [];
     const build = await client.callTool({ name: "circuit_build", arguments: {} }, undefined, {

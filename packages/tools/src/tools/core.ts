@@ -8,6 +8,7 @@ import { ToolError, ToolsetId, defineTool, TOOLSETS, type ProjectHandle } from "
 import type { BuildResult, DesignRow, DesignSelect, DrcReport, DrcViolation } from "../services";
 import { VIAGRID_9055, viagrid9055BoardSpec } from "../templates/viagrid-9055";
 import { fileUrl, loadNetlist, ok, p, requireKicad, table, writeReport } from "./common";
+import { formatLastRelease, readProjectStatusEvidence } from "./project-status-evidence";
 import { runRoute, RouteRunArgs } from "./route";
 
 export const load_toolset = defineTool({
@@ -114,7 +115,7 @@ export const project_status = defineTool({
   toolset: "core",
   title: "Project status",
   description:
-    "Summarise the selected project: directory, board settings, native KiCad files, latest route and verification state, sketches, and reports.",
+    "Summarise the selected project: directory, board settings, native KiCad files, latest source/compiler build, persisted release evidence and staleness, route and verification state, sketches, and reports. Does not run ERC, DRC, or release.",
   inputSchema: {},
   annotations: { readOnlyHint: true, idempotentHint: true },
   handler: async (_args, ctx) => {
@@ -126,9 +127,7 @@ export const project_status = defineTool({
       files[rel] =
         m === null ? { exists: false } : { exists: true, mtime: new Date(m).toISOString() };
     }
-    const build = await readJsonOrNull<BuildSummary>(
-      p(project, PROJECT_FILES.reports, "build.json"),
-    );
+    const { lastSourceBuild, lastRelease } = await readProjectStatusEvidence(project);
     const reports = (await readdir(p(project, PROJECT_FILES.reports)).catch(() => [])).filter((f) =>
       f.endsWith(".json"),
     );
@@ -138,6 +137,7 @@ export const project_status = defineTool({
     const route = ctx.services.routeRuns.latest(project.id);
     const drc = await readJsonOrNull<DrcReport>(p(project, PROJECT_FILES.reports, "drc.json"));
     const json = {
+      contract: { name: "fabdesk.project-status", version: "2.0.0" },
       id: project.id,
       name: project.name,
       dir: project.dir,
@@ -145,14 +145,8 @@ export const project_status = defineTool({
       router: manifest.router,
       files,
       sketches: sketches.map((s) => `${PROJECT_FILES.sketches}/${s}`),
-      lastBuild: build
-        ? {
-            ok: build.ok,
-            errors: build.errors.length,
-            warnings: build.warnings.length,
-            at: build.at,
-          }
-        : null,
+      lastSourceBuild,
+      lastRelease,
       lastRoute: route
         ? { runId: route.id, status: route.status, open: route.result?.open.length ?? null }
         : null,
@@ -167,7 +161,8 @@ export const project_status = defineTool({
         .map(([k, v]) => `${k}=${v.exists ? "yes" : "no"}`)
         .join(", ")}`,
       `Sketches: ${sketches.length ? sketches.join(", ") : "none"}`,
-      `Last build: ${build ? `${build.ok ? "ok" : "FAILED"} (${build.errors.length} errors, ${build.warnings.length} warnings)` : "never"}`,
+      `Last source/compiler build: ${lastSourceBuild ? `${lastSourceBuild.ok ? "ok" : "FAILED"} (${lastSourceBuild.errors} errors, ${lastSourceBuild.warnings} warnings, captured ${lastSourceBuild.at})` : "never"}`,
+      `Last release: ${formatLastRelease(lastRelease)}`,
       `Last route: ${route ? `${route.status} (${route.result ? `${route.result.open.length} open` : "no result"})` : "never"}`,
       `Last DRC: ${drc ? `${drc.counts.errors} errors, ${drc.counts.warnings} warnings, ${drc.counts.unconnected} unconnected` : "never"}`,
     ];
@@ -346,7 +341,7 @@ export const circuit_read_errors = defineTool({
     );
     if (!build) return ok("No build yet. Run circuit_build.", { build: null });
     const parts = [
-      `Last build (${build.at}): ${build.ok ? "ok" : "failed"}, ${build.errors.length} errors, ${build.warnings.length} warnings`,
+      `Last source/compiler build (${build.at}): ${build.ok ? "ok" : "failed"}, ${build.errors.length} errors, ${build.warnings.length} warnings`,
     ];
     if (build.errors.length) parts.push(`Errors:\n${formatErrors(build.errors)}`);
     if (build.warnings.length) parts.push(`Warnings:\n${formatErrors(build.warnings)}`);

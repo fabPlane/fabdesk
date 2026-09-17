@@ -2,6 +2,10 @@
 import { z } from "zod/v4";
 import { ToolError, defineTool } from "../registry";
 import { ok, table, writeReport } from "./common";
+import {
+  formatKicadIpcSessionDiagnostics,
+  kicadIpcSessionDiagnostics,
+} from "./diagnostic-evidence";
 
 const Point = z.object({
   x: z.number().finite().describe("Schematic X coordinate in millimetres"),
@@ -13,9 +17,14 @@ export const schematic_inspect = defineTool({
   toolset: "circuit",
   title: "Inspect native schematic",
   description:
-    "Inspect board.kicad_sch as KiCad currently holds it. The default authoring view returns symbols and absolute pin coordinates without repeating every wire/net ID; request full only when item IDs are needed for a targeted edit.",
+    "Inspect board.kicad_sch as KiCad currently holds it. The default authoring view returns symbols, absolute pin coordinates, and separately labelled informational KiCad IPC session diagnostics without presenting them as saved-file ERC; request full only when item IDs are needed for a targeted edit.",
   inputSchema: {
-    detail: z.enum(["summary", "authoring", "full"]).default("authoring").describe("summary=count/check overview; authoring=symbols and pins; full=all wires, labels, nets and deletion IDs"),
+    detail: z
+      .enum(["summary", "authoring", "full"])
+      .default("authoring")
+      .describe(
+        "summary=count/check overview; authoring=symbols and pins; full=all wires, labels, nets and deletion IDs",
+      ),
   },
   annotations: { readOnlyHint: true, idempotentHint: true },
   handler: async ({ detail }, ctx) => {
@@ -36,10 +45,8 @@ export const schematic_inspect = defineTool({
     }));
     const text = [
       `Native schematic revision ${snapshot.revision}: ${snapshot.symbols.length} symbols, ${snapshot.wires.length} wires, ${snapshot.localLabels.length} local labels, ${snapshot.globalLabels.length} global labels, ${snapshot.junctions.length} junctions, ${snapshot.noConnects.length} no-connects, ${snapshot.texts.length} notes, ${snapshot.nets.length} nets.`,
-      `ERC: ${snapshot.erc.errors} errors, ${snapshot.erc.warnings} warnings.`,
-      ...(symbols.length
-        ? [table(symbols)]
-        : ["No symbols yet."]),
+      formatKicadIpcSessionDiagnostics(snapshot.erc),
+      ...(symbols.length ? [table(symbols)] : ["No symbols yet."]),
     ].join("\n\n");
     const counts = {
       symbols: snapshot.symbols.length,
@@ -51,8 +58,24 @@ export const schematic_inspect = defineTool({
       notes: snapshot.texts.length,
       nets: snapshot.nets.length,
     };
-    const compact = { revision: snapshot.revision, pcbRevision: snapshot.pcbRevision, counts, erc: snapshot.erc };
-    return ok(text, detail === "full" ? snapshot : detail === "authoring" ? { ...compact, symbols: snapshot.symbols } : compact);
+    const sessionDiagnostics = kicadIpcSessionDiagnostics(snapshot.erc);
+    const contract = { name: "fabdesk.schematic-inspection", version: "2.0.0" } as const;
+    const compact = {
+      contract,
+      revision: snapshot.revision,
+      pcbRevision: snapshot.pcbRevision,
+      counts,
+      sessionDiagnostics,
+    };
+    const { erc: _sessionErc, ...fullSnapshot } = snapshot;
+    return ok(
+      text,
+      detail === "full"
+        ? { contract, ...fullSnapshot, sessionDiagnostics }
+        : detail === "authoring"
+          ? { ...compact, symbols: snapshot.symbols }
+          : compact,
+    );
   },
 });
 
@@ -69,11 +92,18 @@ export const schematic_edit = defineTool({
           libId: z.string().min(3).describe("Exact KiCad symbol ID, such as Device:R"),
           reference: z.string().min(1).describe("Unique annotated reference, such as R1"),
           value: z.string(),
-          footprint: z.union([z.literal(""), z.string().min(3)]).optional().describe("Exact KiCad footprint ID; omit or use an empty string for non-physical symbols such as power flags"),
+          footprint: z
+            .union([z.literal(""), z.string().min(3)])
+            .optional()
+            .describe(
+              "Exact KiCad footprint ID; omit or use an empty string for non-physical symbols such as power flags",
+            ),
           position: Point,
           unit: z.number().int().positive().optional(),
           bodyStyle: z.number().int().positive().optional(),
-          rotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]).default(0),
+          rotation: z
+            .union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)])
+            .default(0),
           mirrorX: z.boolean().default(false),
           mirrorY: z.boolean().default(false),
           fields: z.record(z.string(), z.string()).optional(),
@@ -87,7 +117,9 @@ export const schematic_edit = defineTool({
           reference: z.string().min(1),
           newReference: z.string().min(1).optional(),
           position: Point.optional(),
-          rotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]).optional(),
+          rotation: z
+            .union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)])
+            .optional(),
           mirrorX: z.boolean().optional(),
           mirrorY: z.boolean().optional(),
           value: z.string().optional(),
@@ -99,17 +131,21 @@ export const schematic_edit = defineTool({
       .default([]),
     connections: z
       .array(
-        z.object({
-          name: z.string().min(1).describe("Electrical net name"),
-          nodes: z
-            .array(z.object({ reference: z.string().min(1), pin: z.string().min(1) }))
-            .min(1)
-            .describe("Symbol pin endpoints joined electrically by matching labels on short visible wire stubs"),
-          label: z.enum(["local", "global", "none"]).default("local"),
-        }).refine((connection) => connection.label !== "none" || connection.nodes.length >= 2, {
-          message: "direct wire connections require at least two nodes",
-          path: ["nodes"],
-        }),
+        z
+          .object({
+            name: z.string().min(1).describe("Electrical net name"),
+            nodes: z
+              .array(z.object({ reference: z.string().min(1), pin: z.string().min(1) }))
+              .min(1)
+              .describe(
+                "Symbol pin endpoints joined electrically by matching labels on short visible wire stubs",
+              ),
+            label: z.enum(["local", "global", "none"]).default("local"),
+          })
+          .refine((connection) => connection.label !== "none" || connection.nodes.length >= 2, {
+            message: "direct wire connections require at least two nodes",
+            path: ["nodes"],
+          }),
       )
       .max(500)
       .default([]),
@@ -138,7 +174,11 @@ export const schematic_edit = defineTool({
   handler: async (edit, ctx) => {
     const project = ctx.requireProject();
     for (const symbol of edit.symbols) {
-      if (!symbol.footprint || !/usb[_ -]?c|type[_ -]?c/i.test(`${symbol.libId} ${symbol.footprint}`)) continue;
+      if (
+        !symbol.footprint ||
+        !/usb[_ -]?c|type[_ -]?c/i.test(`${symbol.libId} ${symbol.footprint}`)
+      )
+        continue;
       const compatibility = await ctx.services.design.checkPartCompatibility(
         symbol.libId,
         symbol.footprint,
@@ -177,7 +217,10 @@ export const schematic_edit = defineTool({
       });
     }
     const transformedUpdates = edit.symbolUpdates.filter(
-      (symbol) => symbol.rotation !== undefined || symbol.mirrorX !== undefined || symbol.mirrorY !== undefined,
+      (symbol) =>
+        symbol.rotation !== undefined ||
+        symbol.mirrorX !== undefined ||
+        symbol.mirrorY !== undefined,
     );
     if (transformedUpdates.length)
       await ctx.services.design.schematicEdit(project.dir, {
@@ -225,28 +268,61 @@ export const schematic_review = defineTool({
     for (const symbol of snapshot.symbols) {
       references.set(symbol.reference, (references.get(symbol.reference) ?? 0) + 1);
       if (!symbol.footprint && !symbol.libId.startsWith("power:"))
-        findings.push({ code: "missing-footprint", severity: "warning", message: `${symbol.reference} has no footprint assignment.` });
+        findings.push({
+          code: "missing-footprint",
+          severity: "warning",
+          message: `${symbol.reference} has no footprint assignment.`,
+        });
       const gridError = [symbol.position.x, symbol.position.y].some(
         (coordinate) => Math.abs(coordinate / 1.27 - Math.round(coordinate / 1.27)) > 0.02,
       );
       if (gridError)
-        findings.push({ code: "off-grid-symbol", severity: "warning", message: `${symbol.reference} is off the 1.27 mm schematic grid at ${symbol.position.x},${symbol.position.y}.` });
+        findings.push({
+          code: "off-grid-symbol",
+          severity: "warning",
+          message: `${symbol.reference} is off the 1.27 mm schematic grid at ${symbol.position.x},${symbol.position.y}.`,
+        });
     }
     for (const [reference, count] of references)
       if (count > 1)
-        findings.push({ code: "duplicate-reference", severity: "warning", message: `${reference} occurs ${count} times.` });
+        findings.push({
+          code: "duplicate-reference",
+          severity: "warning",
+          message: `${reference} occurs ${count} times.`,
+        });
     if (snapshot.symbols.length >= 5 && snapshot.texts.length === 0)
-      findings.push({ code: "missing-notes", severity: "info", message: "No functional-block notes, interface constraints, or design calculations are present." });
+      findings.push({
+        code: "missing-notes",
+        severity: "info",
+        message:
+          "No functional-block notes, interface constraints, or design calculations are present.",
+      });
     if (snapshot.globalLabels.length > Math.max(2, snapshot.localLabels.length))
-        findings.push({ code: "global-label-overuse", severity: "warning", message: `${snapshot.globalLabels.length} global labels versus ${snapshot.localLabels.length} local labels.` });
+      findings.push({
+        code: "global-label-overuse",
+        severity: "warning",
+        message: `${snapshot.globalLabels.length} global labels versus ${snapshot.localLabels.length} local labels.`,
+      });
     if (snapshot.symbols.length >= 6 && snapshot.junctions.length === 0)
-        findings.push({ code: "no-junctions", severity: "info", message: "No explicit junctions appear in a non-trivial schematic." });
+      findings.push({
+        code: "no-junctions",
+        severity: "info",
+        message: "No explicit junctions appear in a non-trivial schematic.",
+      });
     const labels = [...snapshot.localLabels, ...snapshot.globalLabels];
     for (let left = 0; left < labels.length; left++)
       for (let right = left + 1; right < labels.length; right++) {
-        const a = labels[left]!, b = labels[right]!;
-        if (a.text !== b.text && Math.hypot(a.position.x - b.position.x, a.position.y - b.position.y) < 2.54)
-          findings.push({ code: "label-collision", severity: "warning", message: `Labels ${a.text} and ${b.text} are less than 2.54 mm apart.` });
+        const a = labels[left]!,
+          b = labels[right]!;
+        if (
+          a.text !== b.text &&
+          Math.hypot(a.position.x - b.position.x, a.position.y - b.position.y) < 2.54
+        )
+          findings.push({
+            code: "label-collision",
+            severity: "warning",
+            message: `Labels ${a.text} and ${b.text} are less than 2.54 mm apart.`,
+          });
       }
     const noteBoxes = snapshot.texts.map((note) => ({
       note,
@@ -255,38 +331,96 @@ export const schematic_review = defineTool({
       minY: note.position.y - 1.8,
       maxY: note.position.y + 0.6,
     }));
-    const overlaps = (a: typeof noteBoxes[number], b: typeof noteBoxes[number]) =>
+    const overlaps = (a: (typeof noteBoxes)[number], b: (typeof noteBoxes)[number]) =>
       a.minX < b.maxX && a.maxX > b.minX && a.minY < b.maxY && a.maxY > b.minY;
     for (let left = 0; left < noteBoxes.length; left++)
       for (let right = left + 1; right < noteBoxes.length; right++)
         if (overlaps(noteBoxes[left]!, noteBoxes[right]!))
-          findings.push({ code: "overlapping-notes", severity: "warning", message: `Notes "${noteBoxes[left]!.note.text}" and "${noteBoxes[right]!.note.text}" overlap.` });
+          findings.push({
+            code: "overlapping-notes",
+            severity: "warning",
+            message: `Notes "${noteBoxes[left]!.note.text}" and "${noteBoxes[right]!.note.text}" overlap.`,
+          });
     for (const box of noteBoxes)
       for (const symbol of snapshot.symbols)
-        if (symbol.position.x >= box.minX - 1.27 && symbol.position.x <= box.maxX + 1.27 && symbol.position.y >= box.minY - 1.27 && symbol.position.y <= box.maxY + 1.27)
-          findings.push({ code: "note-symbol-overlap", severity: "warning", message: `Note "${box.note.text}" overlaps or crowds ${symbol.reference}.` });
-    const wireLengths = snapshot.wires.map((wire) => Math.hypot(wire.end.x - wire.start.x, wire.end.y - wire.start.y));
+        if (
+          symbol.position.x >= box.minX - 1.27 &&
+          symbol.position.x <= box.maxX + 1.27 &&
+          symbol.position.y >= box.minY - 1.27 &&
+          symbol.position.y <= box.maxY + 1.27
+        )
+          findings.push({
+            code: "note-symbol-overlap",
+            severity: "warning",
+            message: `Note "${box.note.text}" overlaps or crowds ${symbol.reference}.`,
+          });
+    const wireLengths = snapshot.wires.map((wire) =>
+      Math.hypot(wire.end.x - wire.start.x, wire.end.y - wire.start.y),
+    );
     const longWires = wireLengths.filter((length) => length > 5.08).length;
     if (snapshot.symbols.length >= 5 && labels.length > snapshot.symbols.length * 1.5)
-      findings.push({ code: "label-density", severity: "warning", message: `${labels.length} labels for ${snapshot.symbols.length} symbols makes the drawing hard to scan; use direct functional-block wiring and reserve labels for shared or long-distance nets.` });
-    if (snapshot.symbols.length >= 5 && snapshot.wires.length >= snapshot.symbols.length && longWires === 0)
-      findings.push({ code: "stub-dominated-connectivity", severity: "warning", message: "Every wire is a short label stub; add direct visible wiring within functional blocks so signal flow can be read from the page." });
-    if (snapshot.symbols.length >= 5 && snapshot.wires.length === 0 && labels.length >= snapshot.symbols.length)
-      findings.push({ code: "label-only-connectivity", severity: "warning", message: "Connectivity is label-only; add short visible pin stubs or functional-block wiring for readability." });
+      findings.push({
+        code: "label-density",
+        severity: "warning",
+        message: `${labels.length} labels for ${snapshot.symbols.length} symbols makes the drawing hard to scan; use direct functional-block wiring and reserve labels for shared or long-distance nets.`,
+      });
+    if (
+      snapshot.symbols.length >= 5 &&
+      snapshot.wires.length >= snapshot.symbols.length &&
+      longWires === 0
+    )
+      findings.push({
+        code: "stub-dominated-connectivity",
+        severity: "warning",
+        message:
+          "Every wire is a short label stub; add direct visible wiring within functional blocks so signal flow can be read from the page.",
+      });
+    if (
+      snapshot.symbols.length >= 5 &&
+      snapshot.wires.length === 0 &&
+      labels.length >= snapshot.symbols.length
+    )
+      findings.push({
+        code: "label-only-connectivity",
+        severity: "warning",
+        message:
+          "Connectivity is label-only; add short visible pin stubs or functional-block wiring for readability.",
+      });
     const xs = snapshot.symbols.map((symbol) => symbol.position.x);
     const ys = snapshot.symbols.map((symbol) => symbol.position.y);
     const extent = xs.length
-      ? { minX: Math.min(...xs), minY: Math.min(...ys), maxX: Math.max(...xs), maxY: Math.max(...ys) }
+      ? {
+          minX: Math.min(...xs),
+          minY: Math.min(...ys),
+          maxX: Math.max(...xs),
+          maxY: Math.max(...ys),
+        }
       : null;
-    if (extent && snapshot.symbols.length >= 5 && extent.maxX - extent.minX < 35 && extent.maxY - extent.minY < 35)
-      findings.push({ code: "cramped-layout", severity: "info", message: "Symbols occupy a sub-35 mm area, which may obscure functional blocks and signal flow." });
+    if (
+      extent &&
+      snapshot.symbols.length >= 5 &&
+      extent.maxX - extent.minX < 35 &&
+      extent.maxY - extent.minY < 35
+    )
+      findings.push({
+        code: "cramped-layout",
+        severity: "info",
+        message:
+          "Symbols occupy a sub-35 mm area, which may obscure functional blocks and signal flow.",
+      });
     if (extent && snapshot.symbols.length >= 8) {
-      const width = Math.max(1, extent.maxX - extent.minX), height = Math.max(1, extent.maxY - extent.minY);
-      const utilization = width * height / (267 * 180);
+      const width = Math.max(1, extent.maxX - extent.minX),
+        height = Math.max(1, extent.maxY - extent.minY);
+      const utilization = (width * height) / (267 * 180);
       if (utilization < 0.12)
-        findings.push({ code: "poor-sheet-utilization", severity: "info", message: `Symbol extent uses about ${(utilization * 100).toFixed(1)}% of the A4 drawing area; spacing functional blocks more broadly may improve readability.` });
+        findings.push({
+          code: "poor-sheet-utilization",
+          severity: "info",
+          message: `Symbol extent uses about ${(utilization * 100).toFixed(1)}% of the A4 drawing area; spacing functional blocks more broadly may improve readability.`,
+        });
     }
     const review = {
+      contract: { name: "fabdesk.schematic-review", version: "2.0.0" },
       at: new Date().toISOString(),
       revision: snapshot.revision,
       counts: {
@@ -299,12 +433,12 @@ export const schematic_review = defineTool({
         notes: snapshot.texts.length,
       },
       extent,
-      erc: snapshot.erc,
+      sessionDiagnostics: kicadIpcSessionDiagnostics(snapshot.erc),
       findings,
     };
     await writeReport(project, "schematic-review", review);
     return ok(
-      `Schematic review at revision ${snapshot.revision}: ${findings.length} finding(s), ERC ${snapshot.erc.errors} errors/${snapshot.erc.warnings} warnings.${findings.length ? `\n${findings.map((finding) => `- [${finding.severity}] ${finding.code}: ${finding.message}`).join("\n")}` : "\nNo presentation risks detected by the current checks."}`,
+      `Schematic presentation review at revision ${snapshot.revision}: ${findings.length} finding(s).${findings.length ? `\n${findings.map((finding) => `- [${finding.severity}] ${finding.code}: ${finding.message}`).join("\n")}` : "\nNo presentation risks detected by the current checks."}`,
       review,
     );
   },
@@ -315,7 +449,7 @@ export const pcb_update_from_schematic = defineTool({
   toolset: "circuit",
   title: "Update PCB from schematic",
   description:
-    "Run KiCad's native Update PCB from Schematic. Always saves and ERC-checks board.kicad_sch, then performs a dry-run update. With apply=false it only previews the report. With apply=true it updates board.kicad_pcb, requires zero PCB↔schematic parity conflicts, and saves only on success. ERC errors always block the board update. Board-only footprints are preserved by default.",
+    "Run KiCad's native Update PCB from Schematic. Always saves board.kicad_sch and checks the live KiCad IPC session diagnostics, then performs a dry-run update. With apply=false it only previews the report. With apply=true it updates board.kicad_pcb, requires zero PCB↔schematic parity conflicts, and saves only on success. Live-session diagnostic errors block the board update but are not saved-file or release-authoritative ERC. Board-only footprints are preserved by default.",
   inputSchema: {
     apply: z
       .boolean()
@@ -326,14 +460,20 @@ export const pcb_update_from_schematic = defineTool({
   longRunning: true,
   handler: async ({ apply }, ctx) => {
     const project = ctx.requireProject();
-    ctx.progress(0.2, "ERC");
+    ctx.progress(0.2, "KiCad IPC session diagnostics");
     const result = await ctx.services.design.syncSchematicToPcb(project.dir, !apply);
-    await writeReport(project, "schematic-sync", { at: new Date().toISOString(), ...result });
+    const { erc: sessionErc, ...syncResult } = result;
+    const reported = {
+      contract: { name: "fabdesk.schematic-pcb-sync", version: "2.0.0" },
+      ...syncResult,
+      sessionDiagnostics: kicadIpcSessionDiagnostics(sessionErc),
+    };
+    await writeReport(project, "schematic-sync", { at: new Date().toISOString(), ...reported });
     ctx.progress(1, result.ok ? "done" : "blocked");
     const mode = apply ? "Update" : "Preview";
     const text = [
       `${mode}: ${result.ok ? "OK" : "BLOCKED"}.`,
-      `ERC: ${result.erc.errors} errors, ${result.erc.warnings} warnings.`,
+      formatKicadIpcSessionDiagnostics(sessionErc),
       `Board update: ${result.update.errors} errors, ${result.update.warnings} warnings, ${result.update.newFootprints} new footprints.`,
       ...(result.parity !== undefined ? [`Schematic parity: ${result.parity} conflicts.`] : []),
       result.saved
@@ -343,8 +483,13 @@ export const pcb_update_from_schematic = defineTool({
           : "Preview made no PCB changes.",
       ...(result.update.report ? [`Report:\n${result.update.report}`] : []),
     ].join("\n");
-    return { text, json: result, isError: !result.ok };
+    return { text, json: reported, isError: !result.ok };
   },
 });
 
-export const schematicTools = [schematic_inspect, schematic_edit, schematic_review, pcb_update_from_schematic];
+export const schematicTools = [
+  schematic_inspect,
+  schematic_edit,
+  schematic_review,
+  pcb_update_from_schematic,
+];

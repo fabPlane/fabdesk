@@ -1,17 +1,26 @@
 /** Verify toolset: ERC and the release gate (kicad-automation semantics). */
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { z } from "zod/v4";
 import { PROJECT_FILES, readJsonOrNull, writeJson } from "../fs";
 import { ToolError, defineTool } from "../registry";
 import type { DrcReport, ErcReport } from "../services";
 import { describeViolation } from "./core";
-import { VIAGRID_9055, VIAGRID_9055_HOLES, VIAGRID_9055_VIAS, boardToViagrid, isOnViagrid9055Via } from "../templates/viagrid-9055";
+import {
+  VIAGRID_9055,
+  VIAGRID_9055_HOLES,
+  VIAGRID_9055_VIAS,
+  boardToViagrid,
+  isOnViagrid9055Via,
+} from "../templates/viagrid-9055";
 import { ok, p, requireKicad, requireSchematic, writeReport } from "./common";
 
 export const verify_erc = defineTool({
   name: "verify_erc",
   toolset: "verify",
   title: "Run KiCad ERC",
-  description: "Run KiCad electrical rule check on board.kicad_sch, write reports/erc.json, and return counts and violations.",
+  description:
+    "Run packaged kicad-cli electrical rule check on the exact saved board.kicad_sch revision, write qualified measurement evidence to reports/erc.json, and return counts and violations.",
   inputSchema: {
     severity: z.enum(["all", "error"]).default("all"),
     limit: z.number().int().min(1).max(200).default(30),
@@ -23,13 +32,39 @@ export const verify_erc = defineTool({
     const cli = await requireKicad(ctx);
     const schematic = await requireSchematic(project);
     const outFile = p(project, PROJECT_FILES.reports, "erc.json");
-    ctx.progress(0.3, "running ERC");
-    const report = await ctx.services.kicad.runErc(cli, { schematic, outFile, severity, signal: ctx.signal });
-    await writeJson(outFile, report);
+    const checkedRevision = createHash("sha256")
+      .update(await readFile(schematic))
+      .digest("hex");
+    ctx.progress(0.3, "measuring saved-file ERC with packaged kicad-cli");
+    const report = await ctx.services.kicad.runErc(cli, {
+      schematic,
+      outFile,
+      severity,
+      signal: ctx.signal,
+    });
+    const currentRevision = createHash("sha256")
+      .update(await readFile(schematic))
+      .digest("hex");
+    const result = {
+      ...report,
+      measurement: {
+        evidenceLevel: "measured" as const,
+        source: "packaged-kicad-cli" as const,
+        scope: "saved board.kicad_sch" as const,
+        checkedRevision,
+        currentRevision,
+        revisionStable: checkedRevision === currentRevision,
+        capturedAt: new Date().toISOString(),
+        kicadCli: { path: cli.path, version: cli.version },
+      },
+    };
+    await writeJson(outFile, result);
     ctx.progress(1, "done");
-    const lines = [`ERC: ${report.counts.errors} errors, ${report.counts.warnings} warnings`];
+    const lines = [
+      `Saved-file ERC measured by packaged kicad-cli ${cli.version} for board.kicad_sch revision ${checkedRevision}: ${report.counts.errors} errors, ${report.counts.warnings} warnings${checkedRevision === currentRevision ? "" : " (STALE: the schematic changed during measurement)"}`,
+    ];
     for (const v of report.violations.slice(0, limit)) lines.push(`- ${describeViolation(v)}`);
-    return { text: lines.join("\n"), json: report, isError: report.counts.errors > 0 };
+    return { text: lines.join("\n"), json: result, isError: report.counts.errors > 0 };
   },
 });
 
@@ -38,9 +73,12 @@ export const verify_gate = defineTool({
   toolset: "verify",
   title: "Release gate",
   description:
-    "Evaluate the release gate over reports/drc.json and reports/erc.json. The result includes pass status, failure reasons, and warning signatures. acceptWarnings adds current warning signatures to fabdesk.json allowedDrcWarnings.",
+    "Evaluate the release gate over saved-file reports/drc.json and packaged-kicad-cli reports/erc.json evidence. The result includes pass status, failure reasons, and warning signatures. acceptWarnings adds current warning signatures to fabdesk.json allowedDrcWarnings.",
   inputSchema: {
-    acceptWarnings: z.boolean().default(false).describe("Add the current new warning signatures to the allowed baseline"),
+    acceptWarnings: z
+      .boolean()
+      .default(false)
+      .describe("Add the current new warning signatures to the allowed baseline"),
     requireErc: z.boolean().default(false).describe("Fail when no ERC report exists"),
   },
   annotations: { idempotentHint: true },
@@ -59,19 +97,35 @@ export const verify_gate = defineTool({
       await project.updateManifest({ allowedDrcWarnings: allowed });
       gate = ctx.services.kicad.gate(drc, erc ?? undefined, allowed);
     }
-    await writeJson(p(project, PROJECT_FILES.reports, "gate.json"), { at: new Date().toISOString(), ...gate, allowedDrcWarnings: allowed });
+    await writeJson(p(project, PROJECT_FILES.reports, "gate.json"), {
+      at: new Date().toISOString(),
+      ...gate,
+      allowedDrcWarnings: allowed,
+    });
     const text = [
       `Gate: ${gate.pass ? "PASS" : "FAIL"}`,
       ...gate.reasons.map((r) => `- ${r}`),
-      ...(gate.newWarningSignatures.length ? [`New warning signatures (${gate.newWarningSignatures.length}):`, ...gate.newWarningSignatures.slice(0, 30).map((s) => `  ${s}`)] : []),
-      ...(baselined.length ? [`Baselined ${baselined.length} warning signature(s) in fabdesk.json.`] : []),
-      ...(erc ? [] : ["(no ERC report)"]),
+      ...(gate.newWarningSignatures.length
+        ? [
+            `New warning signatures (${gate.newWarningSignatures.length}):`,
+            ...gate.newWarningSignatures.slice(0, 30).map((s) => `  ${s}`),
+          ]
+        : []),
+      ...(baselined.length
+        ? [`Baselined ${baselined.length} warning signature(s) in fabdesk.json.`]
+        : []),
+      ...(erc ? [] : ["(no saved-file ERC report)"]),
     ].join("\n");
     return { text, json: { ...gate, baselined, ercChecked: Boolean(erc) }, isError: !gate.pass };
   },
 });
 
-export type ViagridViolation = { kind: "via_off_grid" | "via_stacked" | "pad_near_hole" | "blank_incomplete"; x: number; y: number; detail: string };
+export type ViagridViolation = {
+  kind: "via_off_grid" | "via_stacked" | "pad_near_hole" | "blank_incomplete";
+  x: number;
+  y: number;
+  detail: string;
+};
 
 /** A via as `circuit_query vias` reports it: board frame (KiCad, outline top-left at the origin), mm. */
 export interface ViagridVia {
@@ -119,7 +173,12 @@ export function checkViagrid9055(board: { vias: ViagridVia[]; pads: ViagridPad[]
       const k = key(grid[0], grid[1]);
       if (taken.has(k)) {
         added += 1;
-        violations.push({ kind: "via_stacked", x, y, detail: `${label} at (${x.toFixed(2)}, ${y.toFixed(2)}) sits on a factory via that is already there (a via was added instead of claiming the blank's; route_unroute and route_run again)` });
+        violations.push({
+          kind: "via_stacked",
+          x,
+          y,
+          detail: `${label} at (${x.toFixed(2)}, ${y.toFixed(2)}) sits on a factory via that is already there (a via was added instead of claiming the blank's; route_unroute and route_run again)`,
+        });
         continue;
       }
       taken.add(k);
@@ -128,14 +187,29 @@ export function checkViagrid9055(board: { vias: ViagridVia[]; pads: ViagridPad[]
       continue;
     }
     added += 1;
-    violations.push({ kind: "via_off_grid", x, y, detail: `${label} at (${x.toFixed(2)}, ${y.toFixed(2)}) is not a factory via position${v.net ? ` (net ${v.net})` : ""}` });
+    violations.push({
+      kind: "via_off_grid",
+      x,
+      y,
+      detail: `${label} at (${x.toFixed(2)}, ${y.toFixed(2)}) is not a factory via position${v.net ? ` (net ${v.net})` : ""}`,
+    });
   }
   if (factory < VIAGRID_9055_VIAS.length)
-    violations.push({ kind: "blank_incomplete", x: 0, y: 0, detail: `the board has ${factory} of the blank's ${VIAGRID_9055_VIAS.length} factory vias: the blank was not drawn (build with the template set on a board without an outline)` });
+    violations.push({
+      kind: "blank_incomplete",
+      x: 0,
+      y: 0,
+      detail: `the board has ${factory} of the blank's ${VIAGRID_9055_VIAS.length} factory vias: the blank was not drawn (build with the template set on a board without an outline)`,
+    });
   for (const pad of board.pads) {
     const [x, y] = boardToViagrid(pad.x, pad.y);
     if (nearHole(x, y, pad.width / 2, pad.height / 2))
-      violations.push({ kind: "pad_near_hole", x, y, detail: `pad ${pad.component ?? "?"}:${pad.number ?? "?"} at (${x.toFixed(2)}, ${y.toFixed(2)}) is within ${holeKeepoutMm} mm of a mounting hole` });
+      violations.push({
+        kind: "pad_near_hole",
+        x,
+        y,
+        detail: `pad ${pad.component ?? "?"}:${pad.number ?? "?"} at (${x.toFixed(2)}, ${y.toFixed(2)}) is within ${holeKeepoutMm} mm of a mounting hole`,
+      });
   }
   return { violations, vias: { total: board.vias.length, factory, claimed, added } };
 }
@@ -151,18 +225,43 @@ export const verify_viagrid = defineTool({
   handler: async (_args, ctx) => {
     const project = ctx.requireProject();
     const template = project.manifest().board.template;
-    const [vias, pads] = await Promise.all([ctx.services.design.query(project.dir, "vias"), ctx.services.design.query(project.dir, "pads")]);
+    const [vias, pads] = await Promise.all([
+      ctx.services.design.query(project.dir, "vias"),
+      ctx.services.design.query(project.dir, "pads"),
+    ]);
     const num = (v: unknown): number => (typeof v === "number" ? v : Number(v) || 0);
     const result = checkViagrid9055({
-      vias: vias.map((r) => ({ x: num(r["x"]), y: num(r["y"]), net: String(r["net"] ?? ""), ...(r["id"] !== undefined ? { id: String(r["id"]) } : {}) })),
-      pads: pads.map((r) => ({ x: num(r["x"]), y: num(r["y"]), width: num(r["width"]), height: num(r["height"]), component: String(r["component"] ?? ""), number: String(r["number"] ?? "") })),
+      vias: vias.map((r) => ({
+        x: num(r["x"]),
+        y: num(r["y"]),
+        net: String(r["net"] ?? ""),
+        ...(r["id"] !== undefined ? { id: String(r["id"]) } : {}),
+      })),
+      pads: pads.map((r) => ({
+        x: num(r["x"]),
+        y: num(r["y"]),
+        width: num(r["width"]),
+        height: num(r["height"]),
+        component: String(r["component"] ?? ""),
+        number: String(r["number"] ?? ""),
+      })),
     });
-    await writeReport(project, "viagrid", { at: new Date().toISOString(), template: template ?? null, ...result });
+    await writeReport(project, "viagrid", {
+      at: new Date().toISOString(),
+      template: template ?? null,
+      ...result,
+    });
     const lines = [
       `${template === VIAGRID_9055.id ? "Viagrid 9055" : "Viagrid 9055 (template not set in fabdesk.json)"}: ${result.vias.factory} factory vias on the board, ${result.vias.claimed} claimed by routing, ${result.vias.added} added by the router.`,
-      result.violations.length ? `${result.violations.length} violation(s):\n${result.violations.map((v) => `- [${v.kind}] ${v.detail}`).join("\n")}` : "No violations: every via is a factory via and pads clear the mounting holes.",
+      result.violations.length
+        ? `${result.violations.length} violation(s):\n${result.violations.map((v) => `- [${v.kind}] ${v.detail}`).join("\n")}`
+        : "No violations: every via is a factory via and pads clear the mounting holes.",
     ];
-    return { text: lines.join("\n"), json: { template: template ?? null, ...result }, isError: result.violations.length > 0 };
+    return {
+      text: lines.join("\n"),
+      json: { template: template ?? null, ...result },
+      isError: result.violations.length > 0,
+    };
   },
 });
 

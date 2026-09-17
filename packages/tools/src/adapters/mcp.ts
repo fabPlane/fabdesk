@@ -29,8 +29,8 @@ import {
   type ToolSession,
   type ToolsetId,
 } from "../registry";
-import type { BuildSummary } from "../tools/core";
 import { p } from "../tools/common";
+import { readProjectStatusEvidence } from "../tools/project-status-evidence";
 
 /** How often a long-running tool repeats its last progress so the MCP client does not call it idle. */
 export const MCP_PROGRESS_HEARTBEAT_MS = 30_000;
@@ -408,25 +408,20 @@ function registerResources(
     async (uri, vars) => {
       const ctx = await project(String(vars["id"]));
       const pr = ctx.project!;
-      const build = await readJsonOrNull<BuildSummary>(p(pr, PROJECT_FILES.reports, "build.json"));
+      const { lastSourceBuild, lastRelease } = await readProjectStatusEvidence(pr);
       const drc = await readJsonOrNull<{ counts: unknown }>(
         p(pr, PROJECT_FILES.reports, "drc.json"),
       );
       const route = ctx.services.routeRuns.latest(pr.id);
       const summary = {
+        contract: { name: "fabdesk.project-board-summary", version: "2.0.0" },
         id: pr.id,
         name: pr.name,
         board: pr.manifest().board,
         router: pr.manifest().router,
         built: await exists(p(pr, PROJECT_FILES.boardPcb)),
-        lastBuild: build
-          ? {
-              ok: build.ok,
-              errors: build.errors.length,
-              warnings: build.warnings.length,
-              at: build.at,
-            }
-          : null,
+        lastSourceBuild,
+        lastRelease,
         lastRoute: route
           ? { runId: route.id, status: route.status, open: route.result?.open ?? null }
           : null,
