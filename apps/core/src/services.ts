@@ -14,6 +14,7 @@ import { FpPcbSessions } from "./fp-pcb-session";
 import { logger } from "./log";
 import { KicadLibraryCatalog } from "./kicad-library-catalog";
 import type { RunTelemetry } from "./run-telemetry";
+import { RouteTaskQueue } from "./route-tasks";
 
 export type ServiceDeps = {
   version: string;
@@ -96,6 +97,7 @@ export async function createServices(
     clientName: `fabdesk/core/${process.pid}`,
     log: (m) => logger.info(m),
   });
+  const routeTasks = new RouteTaskQueue();
 
   const services: CoreServices & { dispose(): Promise<void> } = {
     version: deps.version,
@@ -105,6 +107,7 @@ export async function createServices(
     projects: deps.projects,
     bus: deps.bus,
     routeRuns: deps.routeRuns,
+    routeTasks,
     principal: deps.principal,
     design: createFpPcbDesign({
       bridge: bridgeClient,

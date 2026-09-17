@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { z } from "zod/v4";
 import {
   ToolError,
+  type CoreServices,
   createRegistry,
   defineTool,
   inspectDesignRuleFloors,
@@ -15,6 +16,16 @@ import {
   toolsMarkdown,
 } from "../src";
 import { contextFactory, mockServices, tempProject } from "./mock-services";
+
+async function waitForRoute(services: CoreServices, id: string) {
+  for (let attempt = 0; attempt < 200; attempt++) {
+    const run = services.routeRuns.get(id);
+    if (run && ["cancelled", "completed", "failed", "timed_out", "interrupted"].includes(run.state))
+      return run;
+    await Bun.sleep(5);
+  }
+  throw new Error(`route ${id} did not become terminal`);
+}
 
 describe("registry", () => {
   test("release recognizes KiCad library mismatch rules and descriptions", () => {
@@ -136,6 +147,7 @@ describe("registry", () => {
       "pcb_place",
       "route_status",
       "route_cancel",
+      "route_apply",
       "route_unroute",
       "route_scope",
       "kicad_stats",
@@ -1717,9 +1729,11 @@ describe("registry", () => {
     await writeFile(join(project.dir, "reports/stats.json"), '{"stale":true}');
     const route = await call("route_run", { timeoutMs: 5000 });
     expect(route.isError).toBeFalsy();
-    const json = route.json as { runId: string; routed: number; total: number; open: string[] };
-    expect(json.routed).toBe(2);
-    expect(json.open).toEqual([]);
+    const json = route.json as { runId: string; state: string };
+    expect(["queued", "running"]).toContain(json.state);
+    const finished = await waitForRoute(services, json.runId);
+    expect(finished.result?.stats.segments).toBe(1);
+    expect(finished.result?.open).toEqual([]);
     expect(statsCalls).toBe(1);
     expect(await Bun.file(join(project.dir, "reports/stats.json")).json()).toEqual({
       board: { width: "20 mm" },
@@ -1752,7 +1766,7 @@ describe("registry", () => {
       "route.done",
     ]);
     const status = await call("route_status");
-    expect(status.text).toContain("done");
+    expect(status.text).toContain("completed");
     const q = await call("circuit_query", { select: "components" });
     expect(q.text).toContain("R1");
     const errs = await call("circuit_read_errors");
@@ -1806,20 +1820,15 @@ describe("registry", () => {
       );
     await call("circuit_build");
     const route = await call("route_run", { timeoutMs: 5000 });
-    expect(route.isError).toBe(true);
-    expect(route.text).toContain("1/3 connections routed, 4 vias, 7 tracks");
-    expect(route.text).toContain("Open nets: N2, N3");
-    const json = route.json as {
-      routed: number;
-      open: string[];
-      stats: { vias: number; segments: number };
-    };
-    expect(json.routed).toBe(1);
-    expect((json as any).state).toBe("partial");
-    expect(json.open).toEqual(["N2", "N3"]);
-    expect(json.stats.vias).toBe(4);
+    expect(route.isError).toBeFalsy();
+    const json = route.json as { runId: string };
+    const finished = await waitForRoute(services, json.runId);
+    expect(finished.result?.state).toBe("partial");
+    expect(finished.result?.open).toEqual(["N2", "N3"]);
+    expect(finished.result?.stats.vias).toBe(4);
     const status = await call("route_status");
-    expect(status.text).toContain("done — 2 open, 4 vias, 7 tracks");
+    expect(status.text).toContain("completed");
+    expect(status.text).toContain("1/3 routed");
     const done = services.events.find((e) => e.topic === "route.done");
     if (done?.topic !== "route.done") throw new Error("no route.done event");
     expect(done.result.open).toEqual(["N2", "N3"]);
@@ -1833,8 +1842,8 @@ describe("registry", () => {
     const services = mockServices([project], {
       design: {
         ...base.design,
-        route: async () => {
-          await Bun.write(join(project.dir, "board.kicad_pcb"), "router-touched-board");
+        route: async (dir) => {
+          await Bun.write(join(dir, "board.kicad_pcb"), "router-touched-board");
           return {
             tracks: 0,
             vias: 0,
@@ -1864,7 +1873,9 @@ describe("registry", () => {
         }),
       );
     const blocked = await call({ timeoutMs: 5000, targets: [{ net: "NOT_A_NET" }] });
-    expect((blocked.json as any).state).toBe("blocked");
+    const blockedRun = await waitForRoute(services, (blocked.json as any).runId);
+    expect(blockedRun.state).toBe("failed");
+    expect(blockedRun.error).toContain("no remaining endpoints");
     const unavailable = await call({ timeoutMs: 5000, router: "freerouting" });
     expect((unavailable.json as any).state).toBe("unavailable");
     const noProgress = await call({
@@ -1872,8 +1883,9 @@ describe("registry", () => {
       targets: [{ net: "N1" }],
       rules: { widthMm: 0.25, clearanceMm: 0.2 },
     });
-    expect((noProgress.json as any).state).toBe("no-progress");
-    expect((noProgress.json as any).obstacles[0]).toContain("blocked");
+    const noProgressRun = await waitForRoute(services, (noProgress.json as any).runId);
+    expect(noProgressRun.result?.state).toBe("no-progress");
+    expect(noProgressRun.result?.obstacles[0]).toContain("blocked");
     expect(await Bun.file(join(project.dir, "board.kicad_pcb")).text()).toBe("canonical-board");
   });
 

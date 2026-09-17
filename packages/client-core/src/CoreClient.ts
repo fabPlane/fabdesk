@@ -88,7 +88,8 @@ export interface SendMessageInput {
 }
 
 export type ToolCallResponse =
-  { result: unknown; jobId?: undefined } | { jobId: string; result?: undefined };
+  | { result: unknown; jobId?: undefined }
+  | { jobId: string; result?: undefined };
 
 export type HealthInfo = { ok?: boolean; version?: string; [k: string]: unknown };
 
@@ -96,7 +97,16 @@ export interface RouteRunRecord {
   id: string;
   projectId: string;
   router: string;
-  status: "running" | "done" | "failed" | "cancelled";
+  status:
+    | "queued"
+    | "running"
+    | "cancel_requested"
+    | "cancelling"
+    | "cancelled"
+    | "completed"
+    | "failed"
+    | "timed_out"
+    | "interrupted";
   framesPath: string;
   startedAt: string;
   endedAt: string | null;

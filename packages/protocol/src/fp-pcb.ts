@@ -214,6 +214,7 @@ export const FpPcbRouteProgress = z.looseObject({
   pass: z.number().optional(),
   routed: z.number().optional(),
   total: z.number().optional(),
+  violations: z.number().optional(),
 });
 export type FpPcbRouteProgress = z.infer<typeof FpPcbRouteProgress>;
 

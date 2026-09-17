@@ -184,6 +184,7 @@ export function toRouteProgress(job: FpPcbRouteJob): RouteProgress {
     ...(p?.pass !== undefined ? { pass: p.pass } : {}),
     ...(p?.routed !== undefined ? { routed: p.routed } : {}),
     ...(p?.total !== undefined ? { total: p.total } : {}),
+    ...(p?.violations !== undefined ? { violations: p.violations } : {}),
   };
 }
 

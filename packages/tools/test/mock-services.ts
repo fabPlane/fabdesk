@@ -59,6 +59,7 @@ export function mockServices(
 ): CoreServices & { events: CoreEvent[] } {
   const events: CoreEvent[] = [];
   const runs = new Map<string, RouteRunRecord>();
+  const routeControllers = new Map<string, AbortController>();
   const svc: CoreServices & { events: CoreEvent[] } = {
     events,
     version: "0.0.0-test",
@@ -82,14 +83,30 @@ export function mockServices(
     },
     bus: { emit: (e) => events.push(e) },
     routeRuns: {
-      start: (r) =>
-        runs.set(r.id, { ...r, status: "running", endedAt: null, result: null, error: null }),
-      finish: (id, patch) => {
+      start: (r) => runs.set(r.id, r),
+      update: (id, patch) => {
         const r = runs.get(id);
-        if (r) runs.set(id, { ...r, ...patch, endedAt: new Date().toISOString() });
+        if (r) runs.set(id, { ...r, ...patch });
       },
       get: (id) => runs.get(id) ?? null,
       latest: (pid) => [...runs.values()].filter((r) => r.projectId === pid).at(-1) ?? null,
+    },
+    routeTasks: {
+      enqueue: ({ id }, task) => {
+        const controller = new AbortController();
+        routeControllers.set(id, controller);
+        void Promise.resolve()
+          .then(() => task(controller.signal))
+          .finally(() => routeControllers.delete(id));
+        return "running";
+      },
+      cancel: (id) => {
+        const controller = routeControllers.get(id);
+        if (!controller) return "not_found";
+        if (controller.signal.aborted) return "already_requested";
+        controller.abort();
+        return "requested";
+      },
     },
     design: {
       build: async ({ projectDir, progress }) => {

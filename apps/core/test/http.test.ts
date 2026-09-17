@@ -307,6 +307,17 @@ describe("http daemon", () => {
     });
     expect(rq.status).toBe(200);
     const rr = (await rq.json()) as { json: { runId: string } };
+    let routeState = "queued";
+    for (
+      let i = 0;
+      i < 100 && !["completed", "failed", "timed_out", "cancelled"].includes(routeState);
+      i++
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      routeState = ((await (await api(`/route/runs/${rr.json.runId}`)).json()) as { state: string })
+        .state;
+    }
+    expect(routeState).toBe("completed");
     const frames = await api(`/route/runs/${rr.json.runId}/frames?from=2`);
     expect(frames.status).toBe(200);
     const lines = (await frames.text())
@@ -329,10 +340,12 @@ describe("http daemon", () => {
       join(movedRunDir, "frames.jsonl"),
       '{"kind":"meta","runId":"run_moved_project","router":"capacity","bounds":{"x1":0,"y1":0,"x2":1,"y2":1},"layers":["F.Cu","B.Cu"],"unitsPerMm":1}\n',
     );
+    const completedRoute = services.routeRuns.get(rr.json.runId)!;
     services.routeRuns.start({
+      ...completedRoute,
       id: movedRunId,
-      projectId: project.id,
-      router: "capacity",
+      state: "completed",
+      status: "completed",
       framesPath: join(
         home,
         "old-projects-root",
@@ -342,9 +355,11 @@ describe("http daemon", () => {
         movedRunId,
         "frames.jsonl",
       ),
-      startedAt: new Date().toISOString(),
+      artifacts: {
+        ...completedRoute.artifacts,
+        frames: join(".fabdesk", "runs", movedRunId, "frames.jsonl"),
+      },
     });
-    services.routeRuns.finish(movedRunId, { status: "done", result: null, error: null });
     const movedFrames = await api(`/route/runs/${movedRunId}/frames`);
     expect(movedFrames.status).toBe(200);
     expect(await movedFrames.text()).toContain(`"runId":"${movedRunId}"`);

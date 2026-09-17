@@ -3,6 +3,7 @@ import { Database } from "bun:sqlite";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { RouteRunRecord } from "@fabdesk/tools";
 import {
   MIGRATIONS,
   RUN_DUMP_RETENTION,
@@ -12,6 +13,79 @@ import {
   openDatabase,
   schemaVersion,
 } from "../src/db";
+
+function routeRecord(id: string, state: RouteRunRecord["state"] = "running"): RouteRunRecord {
+  const at = "2026-09-17T00:00:00.000Z";
+  const runDir = `.fabdesk/runs/${id}`;
+  return {
+    id,
+    projectId: "p1",
+    router: "capacity",
+    runtimeId: "test",
+    state,
+    status: state,
+    framesPath: `${runDir}/frames.jsonl`,
+    artifacts: {
+      runDir,
+      request: `${runDir}/request.json`,
+      progress: `${runDir}/progress.json`,
+      frames: `${runDir}/frames.jsonl`,
+      log: `${runDir}/router.log`,
+      result: `${runDir}/result.json`,
+      candidate: `${runDir}/candidate.kicad_pcb`,
+      diff: `${runDir}/diff.json`,
+    },
+    request: {
+      timeoutMs: 1000,
+      deadlineAt: at,
+      onlyConnections: null,
+      targets: null,
+      rules: null,
+      settings: null,
+      applyPolicy: "manual",
+    },
+    startingPcbRevision: "a".repeat(64),
+    currentPcbRevision: "a".repeat(64),
+    canonicalMatchesStart: true,
+    progress: {
+      phase: state,
+      pass: null,
+      routed: null,
+      total: null,
+      remaining: null,
+      violations: null,
+      elapsedMs: 0,
+      measuredAt: at,
+      heartbeatAt: at,
+      diagnostics: [],
+    },
+    candidate: {
+      available: false,
+      identity: null,
+      sha256: null,
+      bytes: null,
+      path: `${runDir}/candidate.kicad_pcb`,
+      reopenable: false,
+      inspectedAt: null,
+      limitation: null,
+      diff: null,
+    },
+    application: {
+      policy: "manual",
+      state: "not_available",
+      expectedPcbRevision: "a".repeat(64),
+      resultingPcbRevision: null,
+      appliedAt: null,
+      reason: null,
+    },
+    startedAt: at,
+    updatedAt: at,
+    endedAt: null,
+    result: null,
+    error: null,
+    terminalReason: null,
+  };
+}
 
 describe("sqlite", () => {
   test("migrations are versioned and idempotent", () => {
@@ -145,42 +219,31 @@ describe("sqlite", () => {
     expect(store.jobs.failStale()).toBe(1);
     expect(store.jobs.get("job_1")!.status).toBe("failed");
 
-    store.routeRuns.start({
-      id: "run_1",
-      projectId: "p1",
-      router: "capacity",
-      framesPath: "/x/frames.jsonl",
-      startedAt: "now",
-    });
+    store.routeRuns.start(routeRecord("run_1"));
     expect(store.routeRuns.latest("p1")!.status).toBe("running");
-    store.routeRuns.finish("run_1", {
-      status: "done",
+    store.routeRuns.update("run_1", {
+      state: "completed",
+      status: "completed",
       result: {
         runId: "run_1",
         router: "capacity",
-        traces: [],
         complete: ["N1"],
         open: [],
         timedOut: false,
         stats: { vias: 0, segments: 1, wallMs: 3, frames: 2 },
+        changedGeometryCount: 0,
       },
       error: null,
     });
     expect(store.routeRuns.get("run_1")!.result!.complete).toEqual(["N1"]);
     // A route still running at startup was cut off by the restart.
-    store.routeRuns.start({
-      id: "run_2",
-      projectId: "p1",
-      router: "capacity",
-      framesPath: "/x/f.jsonl",
-      startedAt: "now",
-    });
+    store.routeRuns.start(routeRecord("run_2"));
     expect(store.routeRuns.failStale()).toBe(1);
     expect(store.routeRuns.get("run_2")).toMatchObject({
-      status: "failed",
+      status: "interrupted",
       error: "daemon restarted while routing",
     });
-    expect(store.routeRuns.get("run_1")!.status).toBe("done");
+    expect(store.routeRuns.get("run_1")!.status).toBe("completed");
 
     expect(store.settings.get().router).toBe("capacity");
     const s = store.settings.patch({ kicadCliPath: "/usr/bin/kicad-cli", keepCoreRunning: true });
@@ -214,6 +277,30 @@ describe("sqlite", () => {
     expect(swapped.threads.get(newer.id)!.pinned).toBe(true);
     expect(swapped.threads.list().map((t) => t.id)).toEqual([newer.id, older.id]);
     swapped.db.close();
+  });
+
+  test("daemon interruption is terminal and preserves durable candidate metadata", () => {
+    const store = new Store(openDatabase(":memory:"));
+    const running = routeRecord("run_interrupted");
+    running.candidate = {
+      available: true,
+      identity: "run_interrupted:candidate",
+      sha256: "b".repeat(64),
+      bytes: 1234,
+      path: ".fabdesk/runs/run_interrupted/candidate.kicad_pcb",
+      reopenable: true,
+      inspectedAt: running.startedAt,
+      limitation: null,
+      diff: { tracks: { before: 0, after: 1, changed: 1 } },
+    };
+    store.routeRuns.start(running);
+    expect(store.routeRuns.failStale()).toBe(1);
+    expect(store.routeRuns.get(running.id)).toMatchObject({
+      state: "interrupted",
+      status: "interrupted",
+      terminalReason: expect.stringContaining("candidate and artifacts were preserved"),
+      candidate: { available: true, identity: "run_interrupted:candidate", reopenable: true },
+    });
   });
 
   test("run dump retention removes the oldest rows", () => {

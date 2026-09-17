@@ -363,7 +363,7 @@ export const route_run = defineTool({
   toolset: "core",
   title: "Autoroute the board",
   description:
-    "Autoroute the canonical board on the design server (capacity: built-in JS router; freerouting: internal builds only). Streams progress frames, persists them under .fabdesk/runs/<runId>/frames.jsonl, applies tracks as one undo entry, saves, and returns open connections and track/via counts. onlyConnections limits the run to named nets.",
+    "Start a durable asynchronous autoroute against a revision-bound board snapshot and return a run ID immediately. Progress, diagnostics and artifacts remain available through route_status after this request ends. applyPolicy=auto (default) atomically applies only while the starting PCB revision is current; manual preserves a validated native candidate for route_apply. onlyConnections limits the run to named nets.",
   inputSchema: RouteRunArgs,
   annotations: { idempotentHint: true },
   longRunning: true,
@@ -376,6 +376,7 @@ export const route_run = defineTool({
         ...(args.targets ? { targets: args.targets } : {}),
         ...(args.rules ? { rules: args.rules } : {}),
         ...(args.settings ? { settings: args.settings } : {}),
+        applyPolicy: args.applyPolicy,
       },
       ctx,
     ),

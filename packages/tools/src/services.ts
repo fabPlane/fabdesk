@@ -97,6 +97,7 @@ export type RouteProgress = {
   pass?: number;
   routed?: number;
   total?: number;
+  violations?: number;
 };
 
 export type RouteSummary = {
@@ -700,23 +701,114 @@ export interface SimService {
   findNgspice(explicit?: string | null): Promise<string | null>;
 }
 
+export type RouteRunState =
+  | "queued"
+  | "running"
+  | "cancel_requested"
+  | "cancelling"
+  | "cancelled"
+  | "completed"
+  | "failed"
+  | "timed_out"
+  | "interrupted";
+
+export type RouteApplyState =
+  | "pending"
+  | "manual"
+  | "applying"
+  | "applied"
+  | "stale"
+  | "rejected"
+  | "failed"
+  | "not_available";
+
 export type RouteRunRecord = {
   id: string;
   projectId: string;
   router: string;
-  status: "running" | "done" | "failed" | "cancelled";
+  runtimeId: string | null;
+  state: RouteRunState;
+  /** Compatibility alias for older HTTP/mobile consumers. */
+  status: RouteRunState;
   framesPath: string;
+  artifacts: {
+    runDir: string;
+    request: string;
+    progress: string;
+    frames: string;
+    log: string;
+    result: string;
+    candidate: string;
+    diff: string;
+  };
+  request: {
+    timeoutMs: number;
+    deadlineAt: string;
+    onlyConnections: string[] | null;
+    targets: Array<{
+      net: string;
+      from?: { x: number; y: number } | undefined;
+      to?: { x: number; y: number } | undefined;
+    }> | null;
+    rules: Record<string, unknown> | null;
+    settings: Record<string, unknown> | null;
+    applyPolicy: "auto" | "manual";
+  };
+  startingPcbRevision: string;
+  currentPcbRevision: string | null;
+  canonicalMatchesStart: boolean;
+  progress: {
+    phase: string;
+    pass: number | null;
+    routed: number | null;
+    total: number | null;
+    remaining: number | null;
+    violations: number | null;
+    elapsedMs: number;
+    measuredAt: string;
+    heartbeatAt: string;
+    diagnostics: string[];
+  };
+  candidate: {
+    available: boolean;
+    identity: string | null;
+    sha256: string | null;
+    bytes: number | null;
+    path: string;
+    reopenable: boolean;
+    inspectedAt: string | null;
+    limitation: string | null;
+    diff: Record<string, { before: number; after: number; changed: number }> | null;
+  };
+  application: {
+    policy: "auto" | "manual";
+    state: RouteApplyState;
+    expectedPcbRevision: string;
+    resultingPcbRevision: string | null;
+    appliedAt: string | null;
+    reason: string | null;
+  };
   startedAt: string;
+  updatedAt: string;
   endedAt: string | null;
-  result: RouteResult | null;
+  result: (Omit<RouteResult, "changedGeometry"> & { changedGeometryCount: number }) | null;
   error: string | null;
+  terminalReason: string | null;
 };
 
 export interface RouteRunStore {
-  start(rec: Omit<RouteRunRecord, "endedAt" | "result" | "error" | "status">): void;
-  finish(id: string, patch: Pick<RouteRunRecord, "status" | "result" | "error">): void;
+  start(rec: RouteRunRecord): void;
+  update(id: string, patch: Partial<RouteRunRecord>): void;
   get(id: string): RouteRunRecord | null;
   latest(projectId: string): RouteRunRecord | null;
+}
+
+export interface RouteTaskCoordinator {
+  enqueue(
+    input: { id: string; projectId: string },
+    task: (signal: AbortSignal) => Promise<void>,
+  ): "queued" | "running";
+  cancel(id: string): "requested" | "already_requested" | "terminal" | "not_found";
 }
 
 export interface EventBusLike {
@@ -761,6 +853,7 @@ export interface CoreServices {
   projects: ProjectResolver;
   bus: EventBusLike;
   routeRuns: RouteRunStore;
+  routeTasks: RouteTaskCoordinator;
   design: DesignService;
   kicad: KicadService;
   sim: SimService;
