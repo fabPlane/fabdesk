@@ -3,11 +3,11 @@
  * for listing/lookup. Emits `project.changed` from a debounced recursive fs.watch.
  */
 import { watch, type FSWatcher } from "node:fs";
-import { mkdir, readdir, readFile, rename, rm, stat } from "node:fs/promises";
-import { join, relative, resolve, sep } from "node:path";
+import { mkdir, readdir, readFile, realpath, rename, rm, stat } from "node:fs/promises";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { spawn } from "node:child_process";
 import { ProjectManifest, type CoreEvent, type FileEntry, type ProjectDetail, type ProjectSummary } from "@fabdesk/protocol";
-import { PROJECT_FILES, ToolError, writeJson, type ProjectHandle, type ProjectResolver } from "@fabdesk/tools";
+import { PROJECT_FILES, ToolError, jailPath, writeJson, type ProjectHandle, type ProjectResolver } from "@fabdesk/tools";
 import type { ProjectRepo } from "./db";
 import { newId } from "./db";
 import { logger } from "./log";
@@ -73,18 +73,42 @@ export class ProjectStore implements ProjectResolver {
   }
 
   async resolve(ref: string): Promise<ProjectHandle | null> {
+    // Absolute selectors are deliberately ephemeral. In particular, a copied manifest must never
+    // repoint the persistent row or ID-keyed handle belonging to the canonical project.
+    if (isAbsolute(ref) || /^[A-Za-z]:[\\/]/.test(ref)) return this.ephemeralHandle(ref);
     const row = this.repo.find(ref) ?? (ref.includes(sep) ? this.repo.find(resolve(ref)) : null);
     if (row) return this.handle(row.id);
-    // An absolute path to a directory containing fabdesk.json: register on the fly.
-    if (ref.startsWith("/") || /^[A-Za-z]:[\\/]/.test(ref)) {
-      const dir = resolve(ref);
-      const manifest = await this.readManifest(dir);
-      if (!manifest) return null;
-      this.repo.upsert({ id: manifest.id, name: manifest.name, slug: manifest.id, path: dir, createdAt: manifest.createdAt, updatedAt: manifest.updatedAt });
-      if (this.opts.watch !== false) this.watchDir(manifest.id, dir);
-      return this.handle(manifest.id);
-    }
     return null;
+  }
+
+  private async ephemeralHandle(requestedDir: string): Promise<ProjectHandle | null> {
+    const resolved = resolve(requestedDir);
+    const metadata = await stat(resolved).catch(() => null);
+    if (!metadata?.isDirectory()) return null;
+    const dir = await realpath(resolved).catch(() => null);
+    if (!dir) return null;
+    const required = [PROJECT_FILES.manifest, PROJECT_FILES.boardPro, PROJECT_FILES.boardSch, PROJECT_FILES.boardPcb];
+    for (const path of required) {
+      const jailed = await jailPath(dir, path).catch(() => null);
+      const file = jailed ? await stat(jailed).catch(() => null) : null;
+      if (!file?.isFile()) return null;
+    }
+    const manifest = await this.readManifest(dir);
+    if (!manifest) return null;
+    let current = manifest;
+    const h: ProjectHandle = {
+      id: manifest.id,
+      name: manifest.name,
+      dir,
+      manifest: () => current,
+      async updateManifest(patch) {
+        current = ProjectManifest.parse({ ...current, ...patch, id: manifest.id, updatedAt: new Date().toISOString() });
+        await writeJson(await jailPath(dir, PROJECT_FILES.manifest), current);
+        h.name = current.name;
+        return current;
+      },
+    };
+    return h;
   }
 
   async handle(id: string): Promise<ProjectHandle | null> {
