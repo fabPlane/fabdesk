@@ -55,3 +55,16 @@ export {
   exportSchematicPdf,
   exportPcbSvg,
 } from "./exports";
+export {
+  MECHANICAL_COLLECTOR,
+  MECHANICAL_CONTRACT,
+  MECHANICAL_GLB_ARGS,
+  assembleMechanicalSection,
+  collectMechanical,
+  exportMechanicalGlb,
+  measureGlb,
+  readSavedBoardModels,
+  resolveModelPath,
+  type MechanicalSection,
+  type MechanicalStatus,
+} from "./mechanical";
