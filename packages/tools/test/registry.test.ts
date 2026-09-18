@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdir, readFile, readdir, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod/v4";
 import {
@@ -843,6 +843,182 @@ describe("registry", () => {
     expect(json.pcb.geometry).toEqual([boardGeometry, footprintGeometry]);
     expect(queriedGeometry).toEqual(["board_geometry", "footprint_geometry"]);
     expect(await Bun.file(join(project.dir, "reports/native-inspection.json")).exists()).toBe(true);
+  });
+
+  test("native inspection report references are bounded, exact, and hierarchy-revision bound", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("referenced-native-inspection");
+    await writeFile(join(project.dir, "board.kicad_sch"), "root-sheet");
+    await writeFile(join(project.dir, "board.kicad_pcb"), "board");
+    await writeFile(join(project.dir, "board.kicad_pro"), "project");
+    const childPaths = [
+      "power.kicad_sch",
+      "nested/io.kicad_sch",
+      "nested/control.kicad_sch",
+      "nested/deeper/channels.kicad_sch",
+    ];
+    for (const [index, path] of childPaths.entries()) {
+      await mkdir(join(project.dir, path, ".."), { recursive: true });
+      await writeFile(join(project.dir, path), `child-${index}`);
+    }
+    const referencedFiles = ["board.kicad_sch", ...childPaths];
+    const base = mockServices([project]);
+    const rows = {
+      components: Array.from({ length: 245 }, (_, index) => ({
+        ref: `R${index + 1}`,
+        x: index * 2,
+        y: 0,
+      })),
+      nets: Array.from({ length: 297 }, (_, index) => ({ name: `N${index + 1}` })),
+      pads: Array.from({ length: 1_078 }, (_, index) => ({
+        component: `R${(index % 245) + 1}`,
+        number: String(index + 1),
+        net: `N${(index % 297) + 1}`,
+      })),
+      tracks: [] as Array<Record<string, unknown>>,
+      vias: [] as Array<Record<string, unknown>>,
+      zones: [] as Array<Record<string, unknown>>,
+      keepouts: [] as Array<Record<string, unknown>>,
+      board_geometry: Array.from({ length: 900 }, (_, index) => ({ id: `b${index}` })),
+      footprint_geometry: Array.from({ length: 771 }, (_, index) => ({ id: `f${index}` })),
+      texts: [] as Array<Record<string, unknown>>,
+      unrouted: Array.from({ length: 732 }, (_, index) => ({ net: `N${index}` })),
+    };
+    const services = mockServices([project], {
+      design: {
+        ...base.design,
+        query: async (_dir, select) => rows[select as keyof typeof rows] ?? [],
+      },
+      kicad: {
+        ...base.kicad,
+        inspectSchematicHierarchy: async (cli) => {
+          const sheets = await Promise.all(
+            referencedFiles.map(async (nativePath, index) => {
+              const data = await readFile(join(project.dir, nativePath));
+              return {
+                hierarchyPath: index === 0 ? "/" : `/sheet-${index}/`,
+                nativePath,
+                identity: `sheet-${index}`,
+                name: `sheet-${index}`,
+                depth: nativePath.split("/").length - 1,
+                sha256: createHash("sha256").update(data).digest("hex"),
+                bytes: data.byteLength,
+                components: index === 0 ? 49 : 49,
+                nets: index === 0 ? 61 : 59,
+              };
+            }),
+          );
+          return {
+            rootFile: "board.kicad_sch",
+            projectFile: "board.kicad_pro",
+            aggregateRevision: createHash("sha256")
+              .update(sheets.map((sheet) => sheet.sha256).join(""))
+              .digest("hex"),
+            complete: true,
+            counts: { components: 245, nets: 297, sheets: 5 },
+            sheets,
+            referencedFiles,
+            orphanFiles: [],
+            issues: [],
+            source: {
+              hierarchy: "native-kicad-project",
+              electrical: "packaged-kicad-cli-netlist",
+              kicadCli: { path: cli.path, version: cli.version },
+            },
+          };
+        },
+      },
+    });
+    const factory = contextFactory(services, project);
+    const inspect = (args: Record<string, unknown>) =>
+      reg.invoke("design_inspect", { refreshChecks: false, ...args }, (ref) =>
+        factory({
+          def: reg.get("design_inspect")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+      );
+    const reference = await inspect({ responseMode: "report-reference" });
+    const referenceJson = reference.json as any;
+    expect(referenceJson.status).toBe("report-reference");
+    expect(referenceJson.report.path).toBe("reports/native-inspection.json");
+    expect(referenceJson.counts).toMatchObject({
+      components: 245,
+      nets: 297,
+      sheets: 5,
+      pads: 1_078,
+      geometry: 1_671,
+      remainingConnections: 732,
+    });
+    const reportPath = join(project.dir, referenceJson.report.path);
+    const referenceBytes = await readFile(reportPath);
+    const referenceReport = JSON.parse(referenceBytes.toString("utf8"));
+    expect(referenceJson.report.bytes).toBe(referenceBytes.byteLength);
+    expect(referenceJson.report.sha256).toBe(
+      createHash("sha256").update(referenceBytes).digest("hex"),
+    );
+    const readReference = await reg.invoke(
+      "project_read_file",
+      { path: referenceJson.report.path },
+      (ref) =>
+        factory({
+          def: reg.get("project_read_file")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+    );
+    expect(readReference.json).toMatchObject({
+      path: "reports/native-inspection.json",
+      size: referenceBytes.byteLength,
+    });
+    expect(Buffer.byteLength(JSON.stringify(await toCallToolResult(reference)))).toBeLessThan(
+      8_192,
+    );
+
+    const full = await inspect({});
+    const fullJson = { ...(full.json as Record<string, unknown>) } as any;
+    delete fullJson._contract;
+    const fullReport = JSON.parse(await readFile(reportPath, "utf8"));
+    expect(fullJson).toEqual(fullReport);
+    const comparableReference = { ...referenceReport, capturedAt: "normalized" };
+    const comparableFull = { ...fullReport, capturedAt: "normalized" };
+    expect(comparableReference).toEqual(comparableFull);
+
+    const priorRevision = referenceJson.revisions.schematic.aggregateRevision;
+    await writeFile(join(project.dir, childPaths[0]!), "child-only-change");
+    const changed = await inspect({ responseMode: "report-reference" });
+    expect((changed.json as any).revisions.schematic.aggregateRevision).not.toBe(priorRevision);
+    expect((changed.json as any).revisions.schematic.rootFileRevision.sha256).toBe(
+      referenceJson.revisions.schematic.rootFileRevision.sha256,
+    );
+  });
+
+  test("native inspection cannot return a report reference when the atomic report write fails", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("failed-inspection-report-write");
+    await writeFile(join(project.dir, "board.kicad_sch"), "schematic");
+    await writeFile(join(project.dir, "board.kicad_pcb"), "board");
+    await mkdir(join(project.dir, "reports", "native-inspection.json"), { recursive: true });
+    const services = mockServices([project]);
+    const factory = contextFactory(services, project);
+    await expect(
+      reg.invoke(
+        "design_inspect",
+        { refreshChecks: false, responseMode: "report-reference" },
+        (ref) =>
+          factory({
+            def: reg.get("design_inspect")!,
+            projectRef: ref,
+            signal: new AbortController().signal,
+            progress: () => {},
+          }),
+      ),
+    ).rejects.toThrow();
+    const entries = await readdir(join(project.dir, "reports"));
+    expect(entries).toContain("native-inspection.json");
+    await rm(join(project.dir, "reports"), { recursive: true, force: true });
   });
 
   test("verify_drc binds actionable violations to the exact PCB geometry", async () => {

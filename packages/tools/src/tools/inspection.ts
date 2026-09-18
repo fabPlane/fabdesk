@@ -2,7 +2,7 @@
 import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { z } from "zod/v4";
-import { PROJECT_FILES, exists, readJsonOrNull, writeJson } from "../fs";
+import { PROJECT_FILES, exists, jailPath, projectRelative, readJsonOrNull, writeJson } from "../fs";
 import { ToolError, defineTool } from "../registry";
 import type { DesignRow, DrcReport, ErcReport } from "../services";
 import { compactHierarchy, inspectSavedHierarchy, ok, p, requireKicad } from "./common";
@@ -45,6 +45,12 @@ export const design_inspect = defineTool({
         "Run packaged-kicad-cli full-severity ERC and parity-enabled DRC for these exact saved files",
       ),
     schematicDetail: z.enum(["summary", "authoring", "full"]).default("summary"),
+    responseMode: z
+      .enum(["full", "report-reference"])
+      .default("full")
+      .describe(
+        "Return the complete inspection inline, or a bounded reference to the complete saved report",
+      ),
     sheet: z
       .string()
       .min(1)
@@ -53,7 +59,7 @@ export const design_inspect = defineTool({
   },
   annotations: { readOnlyHint: true, idempotentHint: true },
   longRunning: true,
-  handler: async ({ refreshChecks, schematicDetail, sheet }, ctx) => {
+  handler: async ({ refreshChecks, schematicDetail, responseMode, sheet }, ctx) => {
     const project = ctx.requireProject();
     const schematicPath = p(project, PROJECT_FILES.boardSch);
     const boardPath = p(project, PROJECT_FILES.boardPcb);
@@ -293,10 +299,56 @@ export const design_inspect = defineTool({
       releaseEvidence,
       findings,
     };
-    await writeJson(p(project, PROJECT_FILES.reports, "native-inspection.json"), result);
+    const reportPath = await jailPath(
+      project.dir,
+      `${PROJECT_FILES.reports}/native-inspection.json`,
+    );
+    await writeJson(reportPath, result);
+    const savedReport = await readFile(reportPath);
+    const summary = `Native inspection of ${hierarchy.complete ? "complete" : "incomplete"} saved hierarchy ${hierarchy.aggregateRevision.slice(0, 12)} (${hierarchy.counts.components} components, ${hierarchy.counts.nets} nets, ${hierarchy.counts.sheets} sheets) and PCB ${pcbRevision.sha256.slice(0, 12)}: ${findings.length} actionable finding(s), ${remaining.length} remaining connection(s), runtime ${ctx.services.runtimeId ?? "unattested-development"}.`;
+    if (responseMode === "full") return ok(summary, result, { isError: !hierarchy.complete });
+    const checkSummary = (
+      check: (typeof result.checks)["savedFileErc"] | (typeof result.checks)["savedFileDrc"],
+    ) => ({
+      applicability: check.applicability,
+      revision: check.revision,
+      ...(check.report && "status" in check.report
+        ? { status: check.report.status }
+        : { status: "measured" as const, counts: check.report.counts }),
+    });
     return ok(
-      `Native inspection of ${hierarchy.complete ? "complete" : "incomplete"} saved hierarchy ${hierarchy.aggregateRevision.slice(0, 12)} (${hierarchy.counts.components} components, ${hierarchy.counts.nets} nets, ${hierarchy.counts.sheets} sheets) and PCB ${pcbRevision.sha256.slice(0, 12)}: ${findings.length} actionable finding(s), ${remaining.length} remaining connection(s), runtime ${ctx.services.runtimeId ?? "unattested-development"}.`,
-      result,
+      `${summary} Complete report: ${projectRelative(project.dir, reportPath)} (${savedReport.byteLength} bytes).`,
+      {
+        status: "report-reference",
+        contract: result.contract,
+        capturedAt: result.capturedAt,
+        report: {
+          path: projectRelative(project.dir, reportPath),
+          bytes: savedReport.byteLength,
+          sha256: createHash("sha256").update(savedReport).digest("hex"),
+        },
+        revisions: result.revisions,
+        counts: {
+          components: hierarchy.counts.components,
+          nets: hierarchy.counts.nets,
+          sheets: hierarchy.counts.sheets,
+          pads: pads.length,
+          tracks: tracks.length,
+          vias: vias.length,
+          zones: zones.length,
+          keepouts: keepouts.length,
+          geometry: boardGeometry.length + footprintGeometry.length,
+          texts: texts.length,
+          remainingConnections: remaining.length,
+          findings: findings.length,
+        },
+        freshness: {
+          hierarchyComplete: hierarchy.complete,
+          savedFileErc: checkSummary(result.checks.savedFileErc),
+          savedFileDrc: checkSummary(result.checks.savedFileDrc),
+          releaseEvidence: result.releaseEvidence,
+        },
+      },
       { isError: !hierarchy.complete },
     );
   },
