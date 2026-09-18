@@ -17,6 +17,36 @@ import {
 } from "../src";
 import { contextFactory, mockServices, tempProject } from "./mock-services";
 
+/** A mechanical section shaped like @fabdesk/kicad's, sized like the 245-component fixture. */
+function syntheticMechanical(pcbRevision: string, footprints: number) {
+  return {
+    contract: { name: "fabdesk.mechanical", version: "1.0.0" },
+    status: "partial" as const,
+    source: { pcbRevision, cache: { status: "miss" as const, key: "k".repeat(64) } },
+    coverage: {
+      placedFootprints: footprints,
+      footprintsDeclaringModels: footprints - 5,
+      loadedModels: footprints - 5,
+      missingModels: 0,
+      unloadableModels: 0,
+      footprintsWithBounds: footprints - 5,
+    },
+    footprints: Array.from({ length: footprints }, (_, index) => ({
+      ref: `R${index + 1}`,
+      bounds: { minX: index, minY: 0, minZ: 1.6, maxX: index + 1, maxY: 1, maxZ: 2, units: "mm" },
+    })),
+    interference: {
+      broadPhaseOverlapCandidates: { count: 3, truncated: false, pairs: [] },
+      collision: { status: "unsupported" },
+    },
+    issues: Array.from({ length: 5 }, (_, index) => ({
+      code: "no-model-declared",
+      severity: "info",
+      ref: `H${index}`,
+    })),
+  };
+}
+
 async function waitForRoute(services: CoreServices, id: string) {
   for (let attempt = 0; attempt < 200; attempt++) {
     const run = services.routeRuns.get(id);
@@ -828,7 +858,12 @@ describe("registry", () => {
       }),
     );
     const json = inspected.json as Record<string, any>;
-    expect(json.contract).toEqual({ name: "fabdesk.native-inspection", version: "2.0.0" });
+    expect(json.contract).toEqual({ name: "fabdesk.native-inspection", version: "2.1.0" });
+    expect(json.mechanical).toMatchObject({
+      contract: { name: "fabdesk.mechanical", version: "1.0.0" },
+      status: "not-requested",
+      source: { pcbRevision: json.revisions.pcb.sha256 },
+    });
     expect(json.runtime.runtimeId).toBe("test-runtime");
     expect(json.revisions.schematic.sha256).toHaveLength(64);
     expect(json.revisions.pcb.sha256).toHaveLength(64);
@@ -884,6 +919,7 @@ describe("registry", () => {
       texts: [] as Array<Record<string, unknown>>,
       unrouted: Array.from({ length: 732 }, (_, index) => ({ net: `N${index}` })),
     };
+    const mechanicalCalls: Array<{ projectDir: string; board: string; cacheDir: string }> = [];
     const services = mockServices([project], {
       design: {
         ...base.design,
@@ -891,6 +927,11 @@ describe("registry", () => {
       },
       kicad: {
         ...base.kicad,
+        measureMechanical: async (_cli, { projectDir, board, cacheDir }) => {
+          mechanicalCalls.push({ projectDir, board, cacheDir });
+          const bytes = await readFile(board);
+          return syntheticMechanical(createHash("sha256").update(bytes).digest("hex"), 245);
+        },
         inspectSchematicHierarchy: async (cli) => {
           const sheets = await Promise.all(
             referencedFiles.map(async (nativePath, index) => {
@@ -976,6 +1017,40 @@ describe("registry", () => {
     expect(Buffer.byteLength(JSON.stringify(await toCallToolResult(reference)))).toBeLessThan(
       8_192,
     );
+    expect(referenceJson.mechanical).toEqual({
+      status: "not-requested",
+      contract: { name: "fabdesk.mechanical", version: "1.0.0" },
+    });
+    expect(referenceReport.mechanical.status).toBe("not-requested");
+    expect(mechanicalCalls).toHaveLength(0);
+
+    const measured = await inspect({ responseMode: "report-reference", mechanical: true });
+    const measuredJson = measured.json as any;
+    expect(mechanicalCalls).toEqual([
+      {
+        projectDir: project.dir,
+        board: join(project.dir, "board.kicad_pcb"),
+        cacheDir: join(project.dir, ".fabdesk/cache/mechanical"),
+      },
+    ]);
+    expect(measuredJson.mechanical).toEqual({
+      status: "partial",
+      contract: { name: "fabdesk.mechanical", version: "1.0.0" },
+      coverage: expect.objectContaining({ placedFootprints: 245, footprintsWithBounds: 240 }),
+      broadPhaseOverlapCandidates: 3,
+      collision: "unsupported",
+      issues: 5,
+      cache: "miss",
+    });
+    expect(Buffer.byteLength(JSON.stringify(await toCallToolResult(measured)))).toBeLessThan(8_192);
+    const measuredReport = JSON.parse(await readFile(reportPath, "utf8"));
+    expect(measuredReport.mechanical.footprints).toHaveLength(245);
+    expect(measuredReport.mechanical.source.pcbRevision).toBe(measuredJson.revisions.pcb.sha256);
+    expect(measuredJson.report.sha256).toBe(
+      createHash("sha256")
+        .update(await readFile(reportPath))
+        .digest("hex"),
+    );
 
     const full = await inspect({});
     const fullJson = { ...(full.json as Record<string, unknown>) } as any;
@@ -993,6 +1068,68 @@ describe("registry", () => {
     expect((changed.json as any).revisions.schematic.rootFileRevision.sha256).toBe(
       referenceJson.revisions.schematic.rootFileRevision.sha256,
     );
+  });
+
+  test("native inspection refuses mechanical evidence bound to a different PCB revision", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("stale-mechanical-inspection");
+    await writeFile(join(project.dir, "board.kicad_sch"), "schematic");
+    await writeFile(join(project.dir, "board.kicad_pcb"), "board");
+    const base = mockServices([project]);
+    const services = mockServices([project], {
+      kicad: {
+        ...base.kicad,
+        measureMechanical: async () => syntheticMechanical("0".repeat(64), 2),
+      },
+    });
+    const factory = contextFactory(services, project);
+    await expect(
+      reg.invoke("design_inspect", { refreshChecks: false, mechanical: true }, (ref) =>
+        factory({
+          def: reg.get("design_inspect")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+      ),
+    ).rejects.toThrow(/changed during native inspection/);
+  });
+
+  test("native inspection reports a failed mechanical measurement as missing, not zero", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("failed-mechanical-inspection");
+    await writeFile(join(project.dir, "board.kicad_sch"), "schematic");
+    await writeFile(join(project.dir, "board.kicad_pcb"), "board");
+    const base = mockServices([project]);
+    const services = mockServices([project], {
+      kicad: {
+        ...base.kicad,
+        measureMechanical: async () => {
+          throw new Error("pcb export glb wrote no file (1)");
+        },
+      },
+    });
+    const factory = contextFactory(services, project);
+    const result = await reg.invoke(
+      "design_inspect",
+      { refreshChecks: false, mechanical: true, responseMode: "report-reference" },
+      (ref) =>
+        factory({
+          def: reg.get("design_inspect")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+    );
+    expect((result.json as any).mechanical).toEqual({
+      status: "missing",
+      contract: { name: "fabdesk.mechanical", version: "1.0.0" },
+    });
+    const report = JSON.parse(
+      await readFile(join(project.dir, "reports/native-inspection.json"), "utf8"),
+    );
+    expect(report.mechanical.reason).toContain("pcb export glb wrote no file");
+    expect(report.mechanical).not.toHaveProperty("coverage");
   });
 
   test("native inspection cannot return a report reference when the atomic report write fails", async () => {

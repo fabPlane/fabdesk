@@ -550,6 +550,25 @@ export type KicadCli = {
 };
 export type BoardView = "top" | "bottom" | "perspective" | "side";
 
+/** Structural mirror of @fabdesk/kicad `MechanicalSection`; the report stores it verbatim. */
+export type MechanicalReport = {
+  contract: { name: string; version: string };
+  status: "present" | "partial" | "missing" | "inapplicable" | "not-requested";
+  source: {
+    pcbRevision: string;
+    cache: { status: "hit" | "miss" | "disabled"; key: string | null };
+    [key: string]: unknown;
+  };
+  coverage: Record<string, number>;
+  interference: {
+    broadPhaseOverlapCandidates: { count: number; truncated: boolean; [key: string]: unknown };
+    collision: { status: string; [key: string]: unknown };
+    [key: string]: unknown;
+  };
+  issues: Array<{ code: string; severity: string; [key: string]: unknown }>;
+  [key: string]: unknown;
+};
+
 export type DrcViolation = {
   rule: string;
   severity: "error" | "warning" | "exclusion";
@@ -629,6 +648,14 @@ export interface KicadService {
     cli: KicadCli,
     opts: { board: string; output: string; signal?: AbortSignal },
   ): Promise<{ fused: boolean; warnings: string[] }>;
+  /**
+   * Per-footprint 3D model coverage and exact board-space bounds measured from the packaged
+   * `kicad-cli pcb export glb`; `cacheDir` must be jailed to the project.
+   */
+  measureMechanical(
+    cli: KicadCli,
+    opts: { projectDir: string; board: string; cacheDir: string; signal?: AbortSignal },
+  ): Promise<MechanicalReport>;
   boardStats(
     cli: KicadCli,
     opts: { board: string; scratchFile: string },

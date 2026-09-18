@@ -359,6 +359,9 @@ export function mockServices(
         return rasterizeSvg(svg, opts);
       },
       exportGlb: async () => ({ fused: false, warnings: [] }),
+      measureMechanical: async () => {
+        throw new Error("mechanical measurement is not mocked");
+      },
       boardStats: async () => ({}),
       exportGerbers: async () => ({ paths: [] }),
       exportDrill: async () => ({ paths: [] }),

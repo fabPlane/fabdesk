@@ -4,7 +4,7 @@ import { readFile, stat } from "node:fs/promises";
 import { z } from "zod/v4";
 import { PROJECT_FILES, exists, jailPath, projectRelative, readJsonOrNull, writeJson } from "../fs";
 import { ToolError, defineTool } from "../registry";
-import type { DesignRow, DrcReport, ErcReport } from "../services";
+import type { DesignRow, DrcReport, ErcReport, MechanicalReport } from "../services";
 import { compactHierarchy, inspectSavedHierarchy, ok, p, requireKicad } from "./common";
 import { kicadIpcSessionDiagnostics } from "./diagnostic-evidence";
 
@@ -25,6 +25,17 @@ async function revision(path: string): Promise<{ sha256: string; bytes: number; 
   };
 }
 
+const MECHANICAL_CONTRACT = { name: "fabdesk.mechanical", version: "1.0.0" } as const;
+
+type MechanicalSection =
+  | MechanicalReport
+  | {
+      contract: typeof MECHANICAL_CONTRACT;
+      status: "not-requested" | "missing";
+      source: { pcbRevision: string };
+      reason: string;
+    };
+
 const point = (row: DesignRow): { x: number; y: number } | null => {
   const x = Number(row["x"]);
   const y = Number(row["y"]);
@@ -36,7 +47,7 @@ export const design_inspect = defineTool({
   toolset: "circuit",
   title: "Inspect saved native design",
   description:
-    "Inspect the exact complete saved schematic hierarchy and board revision in one result. Defaults to compact whole-project schematic truth; optionally expands one sheet's live KiCad IPC authoring details. Saved-file ERC/parity and live session diagnostics remain separately labelled.",
+    "Inspect the exact complete saved schematic hierarchy and board revision in one result. Defaults to compact whole-project schematic truth; optionally expands one sheet's live KiCad IPC authoring details. Saved-file ERC/parity and live session diagnostics remain separately labelled. mechanical=true adds per-footprint 3D model coverage, board-space bounds, heights, assembly bounds and broad-phase overlap candidates measured from the packaged runtime.",
   inputSchema: {
     refreshChecks: z
       .boolean()
@@ -51,6 +62,12 @@ export const design_inspect = defineTool({
       .describe(
         "Return the complete inspection inline, or a bounded reference to the complete saved report",
       ),
+    mechanical: z
+      .boolean()
+      .default(false)
+      .describe(
+        "Measure per-footprint 3D model coverage, transformed bounds and heights with packaged kicad-cli (cached by PCB and model-file content)",
+      ),
     sheet: z
       .string()
       .min(1)
@@ -59,7 +76,7 @@ export const design_inspect = defineTool({
   },
   annotations: { readOnlyHint: true, idempotentHint: true },
   longRunning: true,
-  handler: async ({ refreshChecks, schematicDetail, responseMode, sheet }, ctx) => {
+  handler: async ({ refreshChecks, schematicDetail, responseMode, mechanical, sheet }, ctx) => {
     const project = ctx.requireProject();
     const schematicPath = p(project, PROJECT_FILES.boardSch);
     const boardPath = p(project, PROJECT_FILES.boardPcb);
@@ -142,6 +159,41 @@ export const design_inspect = defineTool({
       drc = { ...checked, schematicParityChecked: true };
     }
 
+    let mechanicalSection: MechanicalSection = {
+      contract: MECHANICAL_CONTRACT,
+      status: "not-requested",
+      source: { pcbRevision: pcbRevision.sha256 },
+      reason: "Call design_inspect with mechanical=true to measure 3D model coverage and bounds.",
+    };
+    if (mechanical) {
+      try {
+        mechanicalSection = await ctx.services.kicad.measureMechanical(cli, {
+          projectDir: project.dir,
+          board: boardPath,
+          cacheDir: await jailPath(project.dir, `${PROJECT_FILES.cache}/mechanical`),
+          signal: ctx.signal,
+        });
+      } catch (error) {
+        if (ctx.signal.aborted) throw error;
+        if (/changed during/.test(String(error)))
+          throw new ToolError(
+            "board.kicad_pcb changed during native inspection; re-run design_inspect",
+            "precondition",
+          );
+        mechanicalSection = {
+          contract: MECHANICAL_CONTRACT,
+          status: "missing",
+          source: { pcbRevision: pcbRevision.sha256 },
+          reason: `mechanical measurement failed: ${error instanceof Error ? error.message : String(error)}`,
+        };
+      }
+      if (mechanicalSection.source.pcbRevision !== pcbRevision.sha256)
+        throw new ToolError(
+          "board.kicad_pcb changed during native inspection; re-run design_inspect",
+          "precondition",
+        );
+    }
+
     const findings: Finding[] = [];
     const padsByKey = new Map(pads.map((pad) => [`${pad["component"]}:${pad["number"]}`, pad]));
     for (const symbol of schematic.symbols) {
@@ -212,7 +264,7 @@ export const design_inspect = defineTool({
 
     const { erc: sessionErc, ...schematicSnapshot } = schematic;
     const result = {
-      contract: { name: "fabdesk.native-inspection", version: "2.0.0" },
+      contract: { name: "fabdesk.native-inspection", version: "2.1.0" },
       capturedAt: new Date().toISOString(),
       runtime: {
         runtimeId: ctx.services.runtimeId,
@@ -296,6 +348,7 @@ export const design_inspect = defineTool({
           report: drc,
         },
       },
+      mechanical: mechanicalSection,
       releaseEvidence,
       findings,
     };
@@ -305,7 +358,7 @@ export const design_inspect = defineTool({
     );
     await writeJson(reportPath, result);
     const savedReport = await readFile(reportPath);
-    const summary = `Native inspection of ${hierarchy.complete ? "complete" : "incomplete"} saved hierarchy ${hierarchy.aggregateRevision.slice(0, 12)} (${hierarchy.counts.components} components, ${hierarchy.counts.nets} nets, ${hierarchy.counts.sheets} sheets) and PCB ${pcbRevision.sha256.slice(0, 12)}: ${findings.length} actionable finding(s), ${remaining.length} remaining connection(s), runtime ${ctx.services.runtimeId ?? "unattested-development"}.`;
+    const summary = `Native inspection of ${hierarchy.complete ? "complete" : "incomplete"} saved hierarchy ${hierarchy.aggregateRevision.slice(0, 12)} (${hierarchy.counts.components} components, ${hierarchy.counts.nets} nets, ${hierarchy.counts.sheets} sheets) and PCB ${pcbRevision.sha256.slice(0, 12)}: ${findings.length} actionable finding(s), ${remaining.length} remaining connection(s), runtime ${ctx.services.runtimeId ?? "unattested-development"}; mechanical ${mechanicalSection.status}.`;
     if (responseMode === "full") return ok(summary, result, { isError: !hierarchy.complete });
     const checkSummary = (
       check: (typeof result.checks)["savedFileErc"] | (typeof result.checks)["savedFileDrc"],
@@ -342,6 +395,19 @@ export const design_inspect = defineTool({
           remainingConnections: remaining.length,
           findings: findings.length,
         },
+        mechanical:
+          "coverage" in mechanicalSection
+            ? {
+                status: mechanicalSection.status,
+                contract: mechanicalSection.contract,
+                coverage: mechanicalSection.coverage,
+                broadPhaseOverlapCandidates:
+                  mechanicalSection.interference.broadPhaseOverlapCandidates.count,
+                collision: mechanicalSection.interference.collision.status,
+                issues: mechanicalSection.issues.length,
+                cache: mechanicalSection.source.cache.status,
+              }
+            : { status: mechanicalSection.status, contract: mechanicalSection.contract },
         freshness: {
           hierarchyComplete: hierarchy.complete,
           savedFileErc: checkSummary(result.checks.savedFileErc),
