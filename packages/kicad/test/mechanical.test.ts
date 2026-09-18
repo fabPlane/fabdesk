@@ -548,4 +548,64 @@ describe.skipIf(!packaged)("packaged kicad-cli mechanical truth", () => {
     expect(fp(afterModel, "U9").status).toBe("measured");
     expect(bounds(afterModel, "U9")).toEqual([119, 121, 103, 107, 1.615, 2.745]);
   });
+
+  test("a model or substitution changing during export fails before evidence or cache", async () => {
+    const isolated = await fixtureCopy();
+    const scratchDir = join(isolated, ".fabdesk", "cache", "mechanical");
+    const board = join(isolated, "board.kicad_pcb");
+    const model = join(isolated, "models", "box.step");
+    const substitution = join(isolated, "models", "cube.step");
+    const flag = join(isolated, "swap-flag");
+    const wrapper = join(isolated, "wrap-kicad-cli");
+    await writeFile(
+      wrapper,
+      `#!/bin/sh
+if [ -f ${JSON.stringify(flag)} ]; then
+  op=$(cat ${JSON.stringify(flag)})
+  case "$op" in
+    content) sed -i 's/(1.,-2.,1.13)/(1.,-2.,7.13)/' ${JSON.stringify(model)} ;;
+    disappear) rm -f ${JSON.stringify(model)} ;;
+    appear) cp ${JSON.stringify(model)} ${JSON.stringify(substitution)} ;;
+  esac
+fi
+exec ${JSON.stringify(cli!.path)} "$@"
+`,
+    );
+    await chmod(wrapper, 0o755);
+    const wrapped = { path: wrapper, version: cli!.version };
+    const run = () => collectMechanical(wrapped, { projectDir: isolated, board, scratchDir });
+    const noGlb = async () =>
+      expect((await readdir(scratchDir)).filter((name) => name.endsWith(".glb"))).toEqual([]);
+    const u1 = [109, 111, 98, 102, 1.615, 2.745];
+
+    const expectConcurrentChangeFails = async (op: string, restore: () => Promise<void>) => {
+      mechanicalMemo.clear();
+      const before = mechanicalMemo.size;
+      await writeFile(flag, op);
+      await expect(run()).rejects.toThrow(/changed during mechanical measurement/);
+      expect(mechanicalMemo.size).toBe(before);
+      await noGlb();
+      await rm(flag, { force: true });
+      await restore();
+      const fresh = await run();
+      expect(fresh.source.cache.status).toBe("miss");
+      expect(bounds(fresh, "U1")).toEqual(u1);
+      const hit = await run();
+      expect(hit.source.cache).toMatchObject({ status: "hit", key: fresh.source.cache.key });
+      expect(bounds(hit, "U1")).toEqual(u1);
+      await noGlb();
+      return fresh;
+    };
+
+    await expectConcurrentChangeFails("content", () =>
+      cp(join(FIXTURE, "models", "box.step"), model),
+    );
+    const afterAppear = await expectConcurrentChangeFails("appear", () =>
+      rm(substitution, { force: true }),
+    );
+    expect(fp(afterAppear, "U13").models[0]!.resolution).not.toHaveProperty("substitutedBy");
+    await expectConcurrentChangeFails("disappear", () =>
+      cp(join(FIXTURE, "models", "box.step"), model),
+    );
+  });
 });

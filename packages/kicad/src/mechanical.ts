@@ -1232,12 +1232,61 @@ async function sha256File(path: string): Promise<string | null> {
   }
 }
 
+const MODEL_ABSENT = "absent";
+
+/** Path → content sha256, or {@link MODEL_ABSENT} when the file is missing. */
+async function snapshotModelFiles(
+  saved: SavedFootprint[],
+  projectDir: string,
+  env: NodeJS.ProcessEnv,
+): Promise<{ identity: Map<string, string>; cacheable: boolean }> {
+  const identity = new Map<string, string>();
+  let cacheable = true;
+  for (const fp of saved)
+    for (const model of fp.models) {
+      const resolution = resolveModelPath(model.declared, projectDir, env);
+      if (resolution.status === "unresolved-variable") cacheable = false;
+      for (const path of [resolution.path, ...resolution.substitutionCandidates]) {
+        if (!path || identity.has(path)) continue;
+        identity.set(path, (await sha256File(path)) ?? MODEL_ABSENT);
+      }
+    }
+  return { identity, cacheable };
+}
+
+async function rehashModelFiles(
+  before: Map<string, string>,
+  saved: SavedFootprint[],
+  projectDir: string,
+  env: NodeJS.ProcessEnv,
+): Promise<Map<string, string>> {
+  const { identity } = await snapshotModelFiles(saved, projectDir, env);
+  for (const path of before.keys()) {
+    if (!identity.has(path)) identity.set(path, (await sha256File(path)) ?? MODEL_ABSENT);
+  }
+  return identity;
+}
+
+function modelFilesChanged(before: Map<string, string>, after: Map<string, string>): boolean {
+  if (before.size !== after.size) return true;
+  for (const [path, digest] of before) if (after.get(path) !== digest) return true;
+  return false;
+}
+
+function modelHashesFromIdentity(identity: Map<string, string>): Map<string, string> {
+  const hashes = new Map<string, string>();
+  for (const [path, digest] of identity) if (digest !== MODEL_ABSENT) hashes.set(path, digest);
+  return hashes;
+}
+
 /**
  * Measures the saved board. `scratchDir` must already be jailed to the project by the caller; it
  * only holds the temporary GLB, which is deleted before returning or throwing. Results are cached
  * in {@link mechanicalMemo} only. The key binds the exact PCB bytes, every resolved model file (and
  * VRML substitution candidate) by content, the project, the runtime identity and this collector's
- * version; any unresolved path disables caching.
+ * version; any unresolved path disables caching. After the GLB export the PCB bytes and that same
+ * model path set are re-hashed, including files that appeared or disappeared; any difference throws
+ * before the GLB is parsed or a cache entry is stored.
  */
 export async function collectMechanical(
   cli: KicadCli,
@@ -1254,20 +1303,9 @@ export async function collectMechanical(
   const boardText = boardBytes.toString("utf8");
   const pcbRevision = createHash("sha256").update(boardBytes).digest("hex");
   const saved = readSavedBoardModels(boardText);
-  const modelHashes = new Map<string, string>();
-  let cacheable = true;
-  const keyParts: string[] = [];
-  for (const fp of saved)
-    for (const model of fp.models) {
-      const resolution = resolveModelPath(model.declared, options.projectDir, env);
-      if (resolution.status === "unresolved-variable") cacheable = false;
-      for (const path of [resolution.path, ...resolution.substitutionCandidates]) {
-        if (!path || modelHashes.has(path)) continue;
-        const digest = await sha256File(path);
-        if (digest) modelHashes.set(path, digest);
-        keyParts.push(`${path}\0${digest ?? "absent"}`);
-      }
-    }
+  const { identity, cacheable } = await snapshotModelFiles(saved, options.projectDir, env);
+  const modelHashes = modelHashesFromIdentity(identity);
+  const keyParts = [...identity].map(([path, digest]) => `${path}\0${digest}`);
   const key = createHash("sha256")
     .update(
       JSON.stringify([
@@ -1298,6 +1336,9 @@ export async function collectMechanical(
       throw new Error(
         "board.kicad_pcb changed during mechanical measurement; re-run design_inspect",
       );
+    const afterModels = await rehashModelFiles(identity, saved, options.projectDir, env);
+    if (modelFilesChanged(identity, afterModels))
+      throw new Error("model files changed during mechanical measurement; re-run design_inspect");
     const glb = measureGlb(await readFile(glbPath));
     const section = assembleMechanicalSection({
       projectDir: options.projectDir,

@@ -1095,6 +1095,41 @@ describe("registry", () => {
     ).rejects.toThrow(/changed during native inspection/);
   });
 
+  test("native inspection refuses mechanical evidence when models change during measurement", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("model-changed-mechanical-inspection");
+    await writeFile(join(project.dir, "board.kicad_sch"), "schematic");
+    await writeFile(join(project.dir, "board.kicad_pcb"), "board");
+    const base = mockServices([project]);
+    const services = mockServices([project], {
+      kicad: {
+        ...base.kicad,
+        measureMechanical: async () => {
+          throw new Error(
+            "model files changed during mechanical measurement; re-run design_inspect",
+          );
+        },
+      },
+    });
+    const factory = contextFactory(services, project);
+    await expect(
+      reg.invoke("design_inspect", { refreshChecks: false, mechanical: true }, (ref) =>
+        factory({
+          def: reg.get("design_inspect")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+      ),
+    ).rejects.toMatchObject({
+      code: "precondition",
+      message: expect.stringMatching(/changed during native inspection/),
+    });
+    expect(await Bun.file(join(project.dir, "reports/native-inspection.json")).exists()).toBe(
+      false,
+    );
+  });
+
   test("native inspection reports a failed mechanical measurement as missing, not zero", async () => {
     const reg = createRegistry();
     const project = await tempProject("failed-mechanical-inspection");
