@@ -1,9 +1,9 @@
 /** SHARED-003: revision-guarded, previewable native edit transactions with disk rollback. */
 import { createHash, randomUUID } from "node:crypto";
-import { copyFile, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { copyFile, mkdir, readFile, rename, rm, stat } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { z } from "zod/v4";
-import { PROJECT_FILES, exists, jailPath, readJson } from "../fs";
+import { PROJECT_FILES, exists, jailPath, projectRelative, readJson, writeJson } from "../fs";
 import { ToolError, defineTool, type ProjectHandle, type ToolContext } from "../registry";
 import type { NativeSchematicEdit, PcbFootprintEdit, PcbGeometryEdit } from "../services";
 import { inspectSavedHierarchy, ok, p } from "./common";
@@ -14,6 +14,21 @@ const CopperEndpoint = z
   .union([Point, PadEndpoint])
   .describe("Exact millimetre point or a footprint pad resolved to its exact saved-board position");
 const FILES = [PROJECT_FILES.boardPro, PROJECT_FILES.boardSch, PROJECT_FILES.boardPcb] as const;
+
+type BackupFile = {
+  path: string;
+  existed: boolean;
+  bytes: number | null;
+  sha256: string | null;
+};
+
+type TransactionMetadata = {
+  transactionId: string;
+  createdAt: string;
+  before: Awaited<ReturnType<typeof revisions>>;
+  plan: unknown;
+  files: BackupFile[];
+};
 
 async function sha(path: string): Promise<string | null> {
   if (!(await exists(path))) return null;
@@ -36,24 +51,118 @@ async function boundRevisions(ctx: ToolContext, project: ProjectHandle) {
   return { ...files, schematic: hierarchy.aggregateRevision };
 }
 
-async function backup(projectDir: string, directory: string): Promise<void> {
+async function backup(
+  projectDir: string,
+  directory: string,
+  paths: readonly string[],
+): Promise<BackupFile[]> {
   await mkdir(directory, { recursive: true });
-  for (const file of FILES) {
-    const source = join(projectDir, file);
-    if (await exists(source)) await copyFile(source, join(directory, file));
+  const files: BackupFile[] = [];
+  for (const requestedPath of paths) {
+    const source = await jailPath(projectDir, requestedPath);
+    const path = projectRelative(projectDir, source);
+    const saved = await jailPath(directory, path);
+    const data = await readFile(source).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    });
+    if (data) {
+      await mkdir(dirname(saved), { recursive: true });
+      await copyFile(source, saved);
+    }
+    files.push({
+      path,
+      existed: data !== null,
+      bytes: data?.byteLength ?? null,
+      sha256: data ? createHash("sha256").update(data).digest("hex") : null,
+    });
   }
+  return files;
 }
 
-async function restore(projectDir: string, directory: string): Promise<void> {
-  for (const file of FILES) {
-    const saved = join(directory, file);
-    const target = join(projectDir, file);
-    if (await exists(saved)) {
+async function restore(
+  projectDir: string,
+  directory: string,
+  files: readonly BackupFile[],
+): Promise<number> {
+  let restored = 0;
+  for (const file of files) {
+    const saved = await jailPath(directory, file.path);
+    const target = await jailPath(projectDir, file.path);
+    if (file.existed) {
+      const savedData = await readFile(saved);
+      const savedSha = createHash("sha256").update(savedData).digest("hex");
+      if (savedData.byteLength !== file.bytes || savedSha !== file.sha256)
+        throw new ToolError(`backup integrity check failed for ${file.path}`, "internal");
+      await mkdir(dirname(target), { recursive: true });
       const temporary = `${target}.restore-${randomUUID()}`;
       await copyFile(saved, temporary);
       await rename(temporary, target);
     } else await rm(target, { force: true });
+    const restoredData = await readFile(target).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    });
+    const restoredSha = restoredData
+      ? createHash("sha256").update(restoredData).digest("hex")
+      : null;
+    if (
+      (file.existed && (restoredData?.byteLength !== file.bytes || restoredSha !== file.sha256)) ||
+      (!file.existed && restoredData !== null)
+    )
+      throw new ToolError(`restoration integrity check failed for ${file.path}`, "internal");
+    restored++;
   }
+  return restored;
+}
+
+async function transactionPaths(
+  ctx: ToolContext,
+  project: ProjectHandle,
+  schematicAffecting: boolean,
+): Promise<string[]> {
+  const paths = new Set<string>(FILES);
+  if (schematicAffecting) {
+    const hierarchy = await inspectSavedHierarchy(ctx, project);
+    if (!hierarchy.complete)
+      throw new ToolError(
+        "cannot safely edit an incomplete saved schematic hierarchy",
+        "precondition",
+      );
+    for (const referenced of hierarchy.referencedFiles) {
+      const source = await jailPath(project.dir, referenced);
+      paths.add(projectRelative(project.dir, source));
+    }
+  }
+  return [...paths].sort();
+}
+
+async function transactionMetadata(directory: string): Promise<TransactionMetadata> {
+  const path = await jailPath(directory, "metadata.json");
+  const metadata = await readJson<Omit<TransactionMetadata, "files"> & { files?: BackupFile[] }>(
+    path,
+  ).catch(() => null);
+  if (!metadata)
+    throw new ToolError("native transaction backup metadata is missing or invalid", "precondition");
+  if (Array.isArray(metadata.files)) return { ...metadata, files: metadata.files };
+  // H6 metadata predates manifests. Preserve its three-root-file rollback behavior for existing
+  // accepted transactions; every new transaction records and restores its explicit file manifest.
+  const files = await Promise.all(
+    FILES.map(async (file): Promise<BackupFile> => {
+      const saved = await jailPath(directory, file);
+      const data = await readFile(saved).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return null;
+        throw error;
+      });
+      return {
+        path: file,
+        existed: data !== null,
+        bytes: data?.byteLength ?? null,
+        sha256: data ? createHash("sha256").update(data).digest("hex") : null,
+      };
+    }),
+  );
+  return { ...metadata, files };
 }
 
 const SchematicEdit = z.object({
@@ -333,11 +442,18 @@ export const native_edit_transaction = defineTool({
     const transactionId = `native-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
     const root = p(project, ".fabdesk/native-revisions");
     const directory = join(root, transactionId);
-    await backup(project.dir, directory);
-    await writeFile(
-      join(directory, "metadata.json"),
-      JSON.stringify({ transactionId, createdAt: new Date().toISOString(), before, plan }, null, 2),
+    const files = await backup(
+      project.dir,
+      directory,
+      await transactionPaths(ctx, project, schematic !== undefined),
     );
+    await writeJson(join(directory, "metadata.json"), {
+      transactionId,
+      createdAt: new Date().toISOString(),
+      before,
+      plan,
+      files,
+    } satisfies TransactionMetadata);
     try {
       const changes: Record<string, unknown> = {};
       if (schematic)
@@ -430,10 +546,7 @@ export const native_edit_transaction = defineTool({
         changes["geometry"] = await ctx.services.design.editBoardGeometry(project.dir, resolved);
       }
       const after = await boundRevisions(ctx, project);
-      await writeFile(
-        join(root, "last-accepted.json"),
-        JSON.stringify({ transactionId, before, after }, null, 2),
-      );
+      await writeJson(join(root, "last-accepted.json"), { transactionId, before, after });
       return ok(`Atomic native edit ${transactionId} accepted; design checks were not run.`, {
         status: "accepted",
         transactionId,
@@ -445,9 +558,9 @@ export const native_edit_transaction = defineTool({
       });
     } catch (error) {
       await ctx.services.design.release(project.dir).catch(() => undefined);
-      await restore(project.dir, directory);
+      const restoredFiles = await restore(project.dir, directory, files);
       throw new ToolError(
-        `native edit rejected; canonical files restored: ${error instanceof Error ? error.message : String(error)}`,
+        `native edit ${transactionId} rejected; canonical files restored: ${error instanceof Error ? error.message : String(error)} (${restoredFiles} file(s))`,
         error instanceof ToolError ? error.code : "internal",
       );
     }
@@ -484,10 +597,15 @@ export const native_edit_rollback = defineTool({
         "precondition",
       );
     await ctx.services.design.release(project.dir).catch(() => undefined);
-    await restore(project.dir, join(root, accepted.transactionId));
+    const directory = join(root, accepted.transactionId);
+    const metadata = await transactionMetadata(directory);
+    if (metadata.transactionId !== accepted.transactionId)
+      throw new ToolError("native transaction backup identity mismatch", "precondition");
+    const restoredFiles = await restore(project.dir, directory, metadata.files);
     return ok(`Rolled back ${accepted.transactionId}.`, {
       status: "rolled-back",
       transactionId: accepted.transactionId,
+      restoredFiles,
       before: current,
       after: await boundRevisions(ctx, project),
     });

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod/v4";
 import {
@@ -1022,6 +1022,15 @@ describe("registry", () => {
     });
     const transactionId = (accepted.json as any).transactionId;
     expect(await Bun.file(join(project.dir, "board.kicad_sch")).text()).toBe("after-sch");
+    const metadataPath = join(
+      project.dir,
+      ".fabdesk/native-revisions",
+      transactionId,
+      "metadata.json",
+    );
+    const legacyMetadata = JSON.parse(await readFile(metadataPath, "utf8"));
+    delete legacyMetadata.files;
+    await writeFile(metadataPath, JSON.stringify(legacyMetadata));
     const rolledBack = await reg.invoke("native_edit_rollback", { transactionId }, (ref) =>
       factory({
         def: reg.get("native_edit_rollback")!,
@@ -1032,6 +1041,226 @@ describe("registry", () => {
     );
     expect((rolledBack.json as any).status).toBe("rolled-back");
     expect(await Bun.file(join(project.dir, "board.kicad_sch")).text()).toBe("before-sch");
+  });
+
+  test("hierarchical native transactions restore root and nested sheets after rejection and rollback", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("hierarchical-native-edit");
+    const originals: Record<string, string> = {
+      "board.kicad_pro": "before-pro",
+      "board.kicad_sch": "before-root",
+      "board.kicad_pcb": "before-pcb",
+      "power.kicad_sch": "before-power",
+      "nested/io.kicad_sch": "before-io",
+      "nested/control.kicad_sch": "before-control",
+      "nested/deeper/channels.kicad_sch": "before-channels",
+    };
+    for (const [path, contents] of Object.entries(originals)) {
+      await mkdir(join(project.dir, path, ".."), { recursive: true });
+      await writeFile(join(project.dir, path), contents);
+    }
+    const referencedFiles = [
+      "board.kicad_sch",
+      "power.kicad_sch",
+      "nested/io.kicad_sch",
+      "nested/control.kicad_sch",
+      "nested/deeper/channels.kicad_sch",
+    ];
+    const base = mockServices([project]);
+    let rejectFootprint = true;
+    let editCalls = 0;
+    let releaseCalls = 0;
+    const services = mockServices([project], {
+      design: {
+        ...base.design,
+        schematicEdit: async () => {
+          editCalls++;
+          for (const path of referencedFiles)
+            await writeFile(join(project.dir, path), `changed-${path}`);
+          return {
+            created: {
+              symbols: 0,
+              wires: 0,
+              localLabels: 0,
+              globalLabels: 0,
+              junctions: 0,
+              noConnects: 0,
+              texts: 1,
+            },
+            updated: { symbols: 0 },
+            deleted: 0,
+            saved: true,
+            revision: 2,
+          };
+        },
+        placeFootprints: async () => ({
+          moved: [],
+          missing: rejectFootprint ? ["H7_DOES_NOT_EXIST"] : [],
+          libraryNormalized: 0,
+          revision: 3,
+          saved: true,
+        }),
+        release: async () => {
+          releaseCalls++;
+        },
+      },
+      kicad: {
+        ...base.kicad,
+        inspectSchematicHierarchy: async (cli) => ({
+          rootFile: "board.kicad_sch",
+          projectFile: "board.kicad_pro",
+          aggregateRevision: "a".repeat(64),
+          complete: true,
+          counts: { components: 5, nets: 5, sheets: 5 },
+          sheets: referencedFiles.map((nativePath, index) => ({
+            hierarchyPath: index === 0 ? "/" : `/sheet-${index}/`,
+            nativePath,
+            identity: `sheet-${index}`,
+            name: `sheet-${index}`,
+            depth: nativePath.split("/").length - 1,
+            sha256: createHash("sha256").update(originals[nativePath]!).digest("hex"),
+            bytes: originals[nativePath]!.length,
+            components: 1,
+            nets: 1,
+          })),
+          referencedFiles,
+          orphanFiles: [],
+          issues: [],
+          source: {
+            hierarchy: "native-kicad-project",
+            electrical: "packaged-kicad-cli-netlist",
+            kicadCli: { path: cli.path, version: cli.version },
+          },
+        }),
+      },
+    });
+    const factory = contextFactory(services, project);
+    const invoke = (args: Record<string, unknown>) =>
+      reg.invoke("native_edit_transaction", args, (ref) =>
+        factory({
+          def: reg.get("native_edit_transaction")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+      );
+    await expect(
+      invoke({
+        mode: "apply",
+        schematic: { texts: [{ text: "probe", position: { x: 20, y: 20 } }] },
+        footprints: [{ reference: "H7_DOES_NOT_EXIST", position: { x: 1, y: 1 } }],
+      }),
+    ).rejects.toThrow(/canonical files restored:.*\(7 file\(s\)\)/);
+    for (const [path, contents] of Object.entries(originals))
+      expect(await readFile(join(project.dir, path), "utf8")).toBe(contents);
+    expect(releaseCalls).toBe(1);
+
+    const revisionRoot = join(project.dir, ".fabdesk/native-revisions");
+    const rejectedId = (await readdir(revisionRoot)).find((entry) => entry.startsWith("native-"));
+    expect(rejectedId).toBeDefined();
+    const rejectedMetadata = await Bun.file(
+      join(revisionRoot, rejectedId!, "metadata.json"),
+    ).json();
+    expect(rejectedMetadata.files.map((file: { path: string }) => file.path)).toEqual(
+      Object.keys(originals).sort(),
+    );
+    expect(JSON.stringify(rejectedMetadata)).not.toContain(project.dir);
+    expect(JSON.stringify(rejectedMetadata).length).toBeLessThan(8_192);
+    for (const file of rejectedMetadata.files)
+      expect(file).toMatchObject({
+        existed: true,
+        bytes: expect.any(Number),
+        sha256: expect.any(String),
+      });
+
+    await expect(
+      invoke({
+        mode: "apply",
+        expectedSchematicRevision: "0".repeat(64),
+        schematic: { texts: [{ text: "stale", position: { x: 1, y: 1 } }] },
+      }),
+    ).rejects.toThrow(/stale schematic revision/);
+    expect(editCalls).toBe(1);
+
+    rejectFootprint = false;
+    const accepted = await invoke({
+      mode: "apply",
+      schematic: { texts: [{ text: "accepted", position: { x: 10, y: 10 } }] },
+    });
+    for (const path of referencedFiles)
+      expect(await readFile(join(project.dir, path), "utf8")).toBe(`changed-${path}`);
+    const rolledBack = await reg.invoke(
+      "native_edit_rollback",
+      { transactionId: (accepted.json as any).transactionId },
+      (ref) =>
+        factory({
+          def: reg.get("native_edit_rollback")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+    );
+    expect((rolledBack.json as any).restoredFiles).toBe(7);
+    for (const [path, contents] of Object.entries(originals))
+      expect(await readFile(join(project.dir, path), "utf8")).toBe(contents);
+  });
+
+  test("PCB-only native transactions retain the root-file backup set", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("pcb-only-native-edit");
+    for (const [path, contents] of [
+      ["board.kicad_pro", "before-pro"],
+      ["board.kicad_sch", "before-sch"],
+      ["board.kicad_pcb", "before-pcb"],
+      ["nested/child.kicad_sch", "before-child"],
+    ] as const) {
+      await mkdir(join(project.dir, path, ".."), { recursive: true });
+      await writeFile(join(project.dir, path), contents);
+    }
+    const base = mockServices([project]);
+    const services = mockServices([project], {
+      design: {
+        ...base.design,
+        placeFootprints: async () => {
+          await writeFile(join(project.dir, "board.kicad_pcb"), "after-pcb");
+          return {
+            moved: ["R1"],
+            missing: [],
+            libraryNormalized: 0,
+            revision: 3,
+            saved: true,
+          };
+        },
+      },
+    });
+    const factory = contextFactory(services, project);
+    const accepted = await reg.invoke(
+      "native_edit_transaction",
+      { mode: "apply", footprints: [{ reference: "R1", position: { x: 2, y: 3 } }] },
+      (ref) =>
+        factory({
+          def: reg.get("native_edit_transaction")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+    );
+    const metadata = await Bun.file(
+      join(
+        project.dir,
+        ".fabdesk/native-revisions",
+        (accepted.json as any).transactionId,
+        "metadata.json",
+      ),
+    ).json();
+    expect(metadata.files.map((file: { path: string }) => file.path)).toEqual([
+      "board.kicad_pcb",
+      "board.kicad_pro",
+      "board.kicad_sch",
+    ]);
+    expect(await readFile(join(project.dir, "nested/child.kicad_sch"), "utf8")).toBe(
+      "before-child",
+    );
   });
 
   test("atomic PCB geometry edits are previewable, revision-guarded, local, inspectable, and reversible", async () => {
