@@ -170,7 +170,7 @@ export const design_inspect = defineTool({
         mechanicalSection = await ctx.services.kicad.measureMechanical(cli, {
           projectDir: project.dir,
           board: boardPath,
-          cacheDir: await jailPath(project.dir, `${PROJECT_FILES.cache}/mechanical`),
+          scratchDir: await jailPath(project.dir, `${PROJECT_FILES.cache}/mechanical`),
           signal: ctx.signal,
         });
       } catch (error) {

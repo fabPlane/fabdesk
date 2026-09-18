@@ -919,7 +919,7 @@ describe("registry", () => {
       texts: [] as Array<Record<string, unknown>>,
       unrouted: Array.from({ length: 732 }, (_, index) => ({ net: `N${index}` })),
     };
-    const mechanicalCalls: Array<{ projectDir: string; board: string; cacheDir: string }> = [];
+    const mechanicalCalls: Array<{ projectDir: string; board: string; scratchDir: string }> = [];
     const services = mockServices([project], {
       design: {
         ...base.design,
@@ -927,8 +927,8 @@ describe("registry", () => {
       },
       kicad: {
         ...base.kicad,
-        measureMechanical: async (_cli, { projectDir, board, cacheDir }) => {
-          mechanicalCalls.push({ projectDir, board, cacheDir });
+        measureMechanical: async (_cli, { projectDir, board, scratchDir }) => {
+          mechanicalCalls.push({ projectDir, board, scratchDir });
           const bytes = await readFile(board);
           return syntheticMechanical(createHash("sha256").update(bytes).digest("hex"), 245);
         },
@@ -1030,7 +1030,7 @@ describe("registry", () => {
       {
         projectDir: project.dir,
         board: join(project.dir, "board.kicad_pcb"),
-        cacheDir: join(project.dir, ".fabdesk/cache/mechanical"),
+        scratchDir: join(project.dir, ".fabdesk/cache/mechanical"),
       },
     ]);
     expect(measuredJson.mechanical).toEqual({

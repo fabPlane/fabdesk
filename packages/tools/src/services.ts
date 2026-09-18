@@ -556,7 +556,7 @@ export type MechanicalReport = {
   status: "present" | "partial" | "missing" | "inapplicable" | "not-requested";
   source: {
     pcbRevision: string;
-    cache: { status: "hit" | "miss" | "disabled"; key: string | null };
+    cache: { status: "hit" | "miss" | "disabled"; key: string | null; reason?: string };
     [key: string]: unknown;
   };
   coverage: Record<string, number>;
@@ -650,11 +650,11 @@ export interface KicadService {
   ): Promise<{ fused: boolean; warnings: string[] }>;
   /**
    * Per-footprint 3D model coverage and exact board-space bounds measured from the packaged
-   * `kicad-cli pcb export glb`; `cacheDir` must be jailed to the project.
+   * `kicad-cli pcb export glb`; `scratchDir` (temporary GLB only) must be jailed to the project.
    */
   measureMechanical(
     cli: KicadCli,
-    opts: { projectDir: string; board: string; cacheDir: string; signal?: AbortSignal },
+    opts: { projectDir: string; board: string; scratchDir: string; signal?: AbortSignal },
   ): Promise<MechanicalReport>;
   boardStats(
     cli: KicadCli,

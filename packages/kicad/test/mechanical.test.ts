@@ -1,11 +1,14 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   assembleMechanicalSection,
   collectMechanical,
   findKicadCli,
+  MECHANICAL_CACHE_LIMIT,
+  MechanicalMemo,
+  mechanicalMemo,
   measureGlb,
   placeFootprints,
   readSavedBoardModels,
@@ -225,6 +228,92 @@ describe("attribution semantics", () => {
   });
 });
 
+describe("process-local result cache", () => {
+  const section = (maxZ: number) =>
+    ({
+      source: { cache: { status: "miss", key: "k" } },
+      footprints: [{ ref: "U1", bounds: { maxZ } }],
+    }) as unknown as MechanicalSection;
+  const maxZ = (s: MechanicalSection | undefined) => (s?.footprints[0]!.bounds as any).maxZ;
+
+  test("keeps a bounded number of entries, evicting the least recently used", () => {
+    expect(MECHANICAL_CACHE_LIMIT).toBe(8);
+    expect(mechanicalMemo.limit).toBe(MECHANICAL_CACHE_LIMIT);
+    const memo = new MechanicalMemo(3);
+    for (const k of ["a", "b", "c"]) memo.set(k, section(1));
+    expect(memo.get("a")).toBeDefined(); // a becomes most recent; b is now oldest
+    memo.set("d", section(1));
+    expect(memo.size).toBe(3);
+    expect(memo.get("b")).toBeUndefined();
+    for (const k of ["a", "c", "d"]) expect(memo.get(k)).toBeDefined();
+    memo.clear();
+    expect(memo.size).toBe(0);
+  });
+
+  test("callers cannot mutate the stored section before or after a hit", () => {
+    const memo = new MechanicalMemo(2);
+    const produced = section(2.745);
+    memo.set("k", produced);
+    (produced.footprints[0]!.bounds as any).maxZ = 99.999;
+    const hit = memo.get("k")!;
+    expect(maxZ(hit)).toBe(2.745);
+    (hit.footprints[0]!.bounds as any).maxZ = 99.999;
+    hit.source.cache = { status: "hit", key: "k" };
+    expect(maxZ(memo.get("k"))).toBe(2.745);
+    expect(memo.get("k")!.source.cache.status).toBe("miss");
+  });
+});
+
+describe("temporary GLB scratch", () => {
+  /** A stand-in kicad-cli that writes an invalid GLB to its -o path, then optionally hangs. */
+  async function fakeCli(dir: string, hang: boolean) {
+    const path = join(dir, hang ? "hanging-cli" : "garbage-cli");
+    await writeFile(
+      path,
+      `#!/bin/sh\nwhile [ $# -gt 0 ]; do [ "$1" = "-o" ] && out="$2"; shift; done\nprintf garbage > "$out"\n${hang ? "exec sleep 30\n" : ""}`,
+    );
+    await chmod(path, 0o755);
+    return { path, version: "10.99.0" };
+  }
+
+  test("is deleted when measurement fails and nothing is cached", async () => {
+    const dir = await fixtureCopy();
+    const scratchDir = join(dir, ".fabdesk", "cache", "mechanical");
+    const before = mechanicalMemo.size;
+    await expect(
+      collectMechanical(await fakeCli(dir, false), {
+        projectDir: dir,
+        board: join(dir, "board.kicad_pcb"),
+        scratchDir,
+      }),
+    ).rejects.toThrow();
+    expect(await readdir(scratchDir)).toEqual([]);
+    expect(mechanicalMemo.size).toBe(before);
+  });
+
+  test("is deleted when measurement is cancelled mid-export", async () => {
+    const dir = await fixtureCopy();
+    const scratchDir = join(dir, ".fabdesk", "cache", "mechanical");
+    const controller = new AbortController();
+    const pending = collectMechanical(await fakeCli(dir, true), {
+      projectDir: dir,
+      board: join(dir, "board.kicad_pcb"),
+      scratchDir,
+      signal: controller.signal,
+    });
+    const settled = pending.catch((error: unknown) => error);
+    for (let i = 0; i < 200; i++) {
+      const entries = await readdir(scratchDir).catch(() => [] as string[]);
+      if (entries.some((e) => e.endsWith(".glb"))) break;
+      await Bun.sleep(25);
+    }
+    expect((await readdir(scratchDir)).some((e) => e.endsWith(".glb"))).toBe(true);
+    controller.abort();
+    expect(String(await settled)).toContain("aborted");
+    expect(await readdir(scratchDir)).toEqual([]);
+  });
+});
+
 // The packaged runtime is the source of truth; stock KiCad 9 cannot read the v10 fixture.
 const cli = await findKicadCli();
 const packaged = cli !== null && /^10\./.test(cli.version);
@@ -236,7 +325,7 @@ describe.skipIf(!packaged)("packaged kicad-cli mechanical truth", () => {
     collectMechanical(cli!, {
       projectDir: dir,
       board: join(dir, "board.kicad_pcb"),
-      cacheDir: join(dir, ".fabdesk", "cache", "mechanical"),
+      scratchDir: join(dir, ".fabdesk", "cache", "mechanical"),
     });
   const fp = (section: MechanicalSection, ref: string) =>
     section.footprints.find((f) => f.ref === ref)!;
@@ -348,11 +437,99 @@ describe.skipIf(!packaged)("packaged kicad-cli mechanical truth", () => {
     expect(JSON.stringify(first)).not.toMatch(/"collisions?"\s*:\s*\[/);
   });
 
-  test("cache hits for identical content and invalidates on placement or model-file change", async () => {
-    const warm = await collect();
-    expect(warm.source.cache).toMatchObject({ status: "hit", key: first.source.cache.key });
-    expect(warm.footprints).toEqual(first.footprints);
+  const scratch = () => join(dir, ".fabdesk", "cache", "mechanical");
+  const invented = (section: MechanicalSection) => {
+    const text = JSON.stringify(section);
+    return text.includes("99.999") || text.includes("4242") || text.includes("evil");
+  };
 
+  test("unchanged content hits the process-local cache; hits cannot be poisoned", async () => {
+    expect(await readdir(scratch())).toEqual([]); // temporary GLB removed after success
+    const pristine = structuredClone(first);
+    // Mutating the object a miss returned must not reach the cache.
+    (fp(first, "U1").bounds as any).maxZ = 99.999;
+    first.coverage.loadedModels = 4242;
+
+    const warm = await collect();
+    expect(warm.source.cache).toMatchObject({ status: "hit", key: pristine.source.cache.key });
+    expect(warm.source.cache.reason).toContain("memory only");
+    expect({ ...warm, source: { ...warm.source, cache: null } }).toEqual({
+      ...pristine,
+      source: { ...pristine.source, cache: null },
+    });
+    // Nor may mutating a hit.
+    (fp(warm, "U1").bounds as any).maxZ = 99.999;
+    warm.coverage.loadedModels = 4242;
+    warm.status = "present";
+    const again = await collect();
+    expect(again.source.cache.status).toBe("hit");
+    expect(bounds(again, "U1")).toEqual([109, 111, 98, 102, 1.615, 2.745]);
+    expect(again.coverage.loadedModels).toBe(9);
+    expect(again.status).toBe("partial");
+    expect(await readdir(scratch())).toEqual([]);
+    first = pristine;
+  });
+
+  test("project-local result JSON never influences returned evidence", async () => {
+    const key = first.source.cache.key!;
+    const real = () => JSON.parse(JSON.stringify(first));
+    const fabricated = real();
+    (fabricated.footprints.find((f: any) => f.ref === "U1").bounds as any).maxZ = 99.999;
+    fabricated.coverage.loadedModels = 4242;
+    fabricated.status = "present";
+    fabricated.issues = [];
+    const matchingKey = {
+      ...fabricated,
+      source: { ...fabricated.source, cache: { status: "hit", key } },
+    };
+    const wrongContract = { ...fabricated, contract: { name: "evil", version: "9.9.9" } };
+    const wrongCollector = {
+      ...fabricated,
+      source: { ...fabricated.source, collector: { name: "evil", version: "0" } },
+    };
+    const wrongToolchain = {
+      ...fabricated,
+      source: {
+        ...fabricated.source,
+        toolchain: { ...fabricated.source.toolchain, kicadCli: { path: "/evil", version: "0" } },
+      },
+    };
+    const variants: Record<string, string> = {
+      truncated: JSON.stringify(real()).slice(0, 200),
+      minimal: JSON.stringify({ source: { pcbRevision: first.source.pcbRevision } }),
+      "schema-valid fabricated": JSON.stringify(fabricated),
+      "wrong contract": JSON.stringify(wrongContract),
+      "wrong collector": JSON.stringify(wrongCollector),
+      "wrong toolchain": JSON.stringify(wrongToolchain),
+      "matching key": JSON.stringify(matchingKey),
+    };
+    const expectTruth = (section: MechanicalSection, status: "hit" | "miss", label: string) => {
+      expect([label, section.source.cache.status]).toEqual([label, status]);
+      expect([label, invented(section)]).toEqual([label, false]);
+      expect(bounds(section, "U1")).toEqual([109, 111, 98, 102, 1.615, 2.745]);
+      expect(section.coverage).toEqual(first.coverage);
+      expect(section.contract).toEqual(first.contract);
+      expect(section.source.collector).toEqual(first.source.collector);
+      expect(section.source.toolchain).toEqual(first.source.toolchain);
+      expect(section.status).toBe("partial");
+    };
+    for (const [label, text] of Object.entries(variants)) {
+      await rm(scratch(), { recursive: true, force: true });
+      await mkdir(scratch(), { recursive: true });
+      await writeFile(join(scratch(), `${key}.json`), text);
+      await writeFile(join(scratch(), "legacy.json"), text);
+      // Warm process: served from memory, files unread.
+      expectTruth(await collect(), "hit", label);
+      // Cold process: re-measured, files still unread.
+      mechanicalMemo.clear();
+      expectTruth(await collect(), "miss", label);
+      // Only the planted files remain; no GLB is left behind.
+      expect((await readdir(scratch())).sort()).toEqual([`${key}.json`, "legacy.json"].sort());
+      expect(await readFile(join(scratch(), `${key}.json`), "utf8")).toBe(text);
+    }
+  });
+
+  test("placement-only and model-file-only changes miss", async () => {
     const boardPath = join(dir, "board.kicad_pcb");
     const moved = placeFootprints(await readFile(boardPath, "utf8"), [
       { ref: "U1", x: 112, y: 100 },

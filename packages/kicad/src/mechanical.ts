@@ -18,9 +18,9 @@
  *   diagnostic; only a missing file is reported on stderr. Loadability is therefore measured by the
  *   presence of the model's node, never inferred from its file extension (KiCad sniffs content).
  */
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { runKicadCli, type KicadCli } from "./cli";
 
@@ -1165,8 +1165,62 @@ export function assembleMechanicalSection(input: MechanicalInputs): MechanicalSe
 const roundVec = (v: Vec3): Vec3 => ({ x: mm(v.x), y: mm(v.y), z: mm(v.z) });
 
 // ---------------------------------------------------------------------------------------------
-// Collection with an internal, content-keyed cache
+// Collection with a process-local, content-keyed cache
 // ---------------------------------------------------------------------------------------------
+
+/** Most recent measurements kept per process; a 245-footprint section is ~250 KB as JSON. */
+export const MECHANICAL_CACHE_LIMIT = 8;
+
+function deepFreeze<T>(value: T): T {
+  if (value && typeof value === "object" && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const child of Object.values(value)) deepFreeze(child);
+  }
+  return value;
+}
+
+/**
+ * Bounded LRU of sections this process measured itself. Nothing is read from or written to disk:
+ * project files are writable by anything that can edit the project, so a stored result there could
+ * be fabricated wholesale (bounds, counts, contract, collector, toolchain and key alike). Entries
+ * are deep-frozen private copies and every hit is a fresh clone, so callers cannot alter later
+ * hits. A process restart always starts cold.
+ */
+export class MechanicalMemo {
+  readonly #entries = new Map<string, MechanicalSection>();
+  constructor(readonly limit: number) {}
+
+  get size(): number {
+    return this.#entries.size;
+  }
+
+  get(key: string): MechanicalSection | undefined {
+    const entry = this.#entries.get(key);
+    if (!entry) return undefined;
+    this.#entries.delete(key);
+    this.#entries.set(key, entry);
+    return structuredClone(entry);
+  }
+
+  set(key: string, section: MechanicalSection): void {
+    this.#entries.delete(key);
+    this.#entries.set(key, deepFreeze(structuredClone(section)));
+    while (this.#entries.size > this.limit)
+      this.#entries.delete(this.#entries.keys().next().value!);
+  }
+
+  clear(): void {
+    this.#entries.clear();
+  }
+}
+
+/** The collector's cache; exported so tests can observe and reset it. */
+export const mechanicalMemo = new MechanicalMemo(MECHANICAL_CACHE_LIMIT);
+
+const PROCESS_CACHE_HIT =
+  "copy of a measurement this process computed for identical content; kept in memory only";
+const PROCESS_CACHE_MISS =
+  "measured now; kept in this process's memory only (a restart measures again)";
 
 async function sha256File(path: string): Promise<string | null> {
   try {
@@ -1179,16 +1233,18 @@ async function sha256File(path: string): Promise<string | null> {
 }
 
 /**
- * Measures the saved board. `cacheDir` must already be jailed to the project by the caller. The
- * cache key binds the exact PCB bytes, every resolved model file (and VRML substitution candidate)
- * by content, the runtime identity and this collector's version; any unresolved path disables it.
+ * Measures the saved board. `scratchDir` must already be jailed to the project by the caller; it
+ * only holds the temporary GLB, which is deleted before returning or throwing. Results are cached
+ * in {@link mechanicalMemo} only. The key binds the exact PCB bytes, every resolved model file (and
+ * VRML substitution candidate) by content, the project, the runtime identity and this collector's
+ * version; any unresolved path disables caching.
  */
 export async function collectMechanical(
   cli: KicadCli,
   options: {
     projectDir: string;
     board: string;
-    cacheDir: string;
+    scratchDir: string;
     signal?: AbortSignal;
     env?: NodeJS.ProcessEnv;
   },
@@ -1224,18 +1280,13 @@ export async function collectMechanical(
       ]),
     )
     .digest("hex");
-  const cacheFile = join(options.cacheDir, `${key}.json`);
-  if (cacheable && existsSync(cacheFile)) {
-    try {
-      const cached = JSON.parse(await readFile(cacheFile, "utf8")) as MechanicalSection;
-      if (cached.source?.pcbRevision === pcbRevision)
-        return { ...cached, source: { ...cached.source, cache: { status: "hit", key } } };
-    } catch {
-      // Fall through to a fresh measurement.
-    }
+  const cached = cacheable ? mechanicalMemo.get(key) : undefined;
+  if (cached) {
+    cached.source.cache = { status: "hit", key, reason: PROCESS_CACHE_HIT };
+    return cached;
   }
-  await mkdir(options.cacheDir, { recursive: true });
-  const glbPath = join(options.cacheDir, `export-${process.pid}-${Date.now().toString(36)}.glb`);
+  await mkdir(options.scratchDir, { recursive: true });
+  const glbPath = join(options.scratchDir, `mechanical-${randomUUID()}.glb`);
   try {
     const exported = await exportMechanicalGlb(cli, {
       board: options.board,
@@ -1260,16 +1311,10 @@ export async function collectMechanical(
       env,
       modelHashes,
       cache: cacheable
-        ? { status: "miss", key }
+        ? { status: "miss", key, reason: PROCESS_CACHE_MISS }
         : { status: "disabled", key: null, reason: "a model path uses an undefined variable" },
     });
-    if (cacheable) {
-      for (const entry of await readdir(options.cacheDir))
-        if (entry.endsWith(".json")) await rm(join(options.cacheDir, entry), { force: true });
-      const tmp = `${cacheFile}.${process.pid}.tmp`;
-      await writeFile(tmp, JSON.stringify(section));
-      await rename(tmp, cacheFile);
-    }
+    if (cacheable) mechanicalMemo.set(key, section);
     return section;
   } finally {
     await rm(glbPath, { force: true });

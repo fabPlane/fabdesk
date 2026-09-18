@@ -57,12 +57,15 @@ export {
 } from "./exports";
 export {
   MECHANICAL_COLLECTOR,
+  MECHANICAL_CACHE_LIMIT,
   MECHANICAL_CONTRACT,
   MECHANICAL_GLB_ARGS,
+  MechanicalMemo,
   assembleMechanicalSection,
   collectMechanical,
   exportMechanicalGlb,
   measureGlb,
+  mechanicalMemo,
   readSavedBoardModels,
   resolveModelPath,
   type MechanicalSection,
