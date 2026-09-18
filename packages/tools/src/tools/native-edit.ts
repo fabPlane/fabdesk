@@ -1,6 +1,16 @@
 /** SHARED-003: revision-guarded, previewable native edit transactions with disk rollback. */
 import { createHash, randomUUID } from "node:crypto";
-import { copyFile, mkdir, readFile, rename, rm, stat } from "node:fs/promises";
+import {
+  copyFile,
+  lstat,
+  mkdir,
+  readFile,
+  rename,
+  rm,
+  rmdir,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { z } from "zod/v4";
 import { PROJECT_FILES, exists, jailPath, projectRelative, readJson, writeJson } from "../fs";
@@ -80,40 +90,135 @@ async function backup(
   return files;
 }
 
-async function restore(
+type RestorePlanEntry = { path: string; target: string; data: Buffer | null };
+
+const digest = (data: Buffer) => createHash("sha256").update(data).digest("hex");
+
+async function readOptional(path: string): Promise<Buffer | null> {
+  return readFile(path).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  });
+}
+
+/**
+ * Validates the complete manifest and every backup before restore() touches a canonical file.
+ * Nothing here writes, renames, or deletes; the returned plan holds the exact validated bytes.
+ */
+async function preflightRestore(
   projectDir: string,
   directory: string,
-  files: readonly BackupFile[],
-): Promise<number> {
-  let restored = 0;
-  for (const file of files) {
-    const saved = await jailPath(directory, file.path);
-    const target = await jailPath(projectDir, file.path);
-    if (file.existed) {
-      const savedData = await readFile(saved);
-      const savedSha = createHash("sha256").update(savedData).digest("hex");
-      if (savedData.byteLength !== file.bytes || savedSha !== file.sha256)
-        throw new ToolError(`backup integrity check failed for ${file.path}`, "internal");
-      await mkdir(dirname(target), { recursive: true });
-      const temporary = `${target}.restore-${randomUUID()}`;
-      await copyFile(saved, temporary);
-      await rename(temporary, target);
-    } else await rm(target, { force: true });
-    const restoredData = await readFile(target).catch((error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return null;
-      throw error;
+  files: unknown,
+): Promise<RestorePlanEntry[]> {
+  if (!Array.isArray(files) || files.length === 0)
+    throw new ToolError("native transaction backup manifest is missing or empty", "precondition");
+  // Backups must stay inside the project as well as the transaction directory, so a redirected
+  // transaction directory cannot make restoration read files from outside the project.
+  const backupRoot = await jailPath(projectDir, projectRelative(projectDir, directory)).catch(
+    () => {
+      throw new ToolError(
+        "native transaction backup directory escapes the project",
+        "precondition",
+      );
+    },
+  );
+  const plan: RestorePlanEntry[] = [];
+  const seen = new Set<string>();
+  for (const [index, file] of (files as unknown[]).entries()) {
+    const entry = file as Partial<BackupFile> | null;
+    const invalid = (reason: string, code: ToolError["code"] = "precondition") =>
+      new ToolError(`backup manifest entry ${index} ${reason}`, code);
+    if (typeof entry !== "object" || entry === null || typeof entry.path !== "string")
+      throw invalid("is malformed");
+    // Only paths written by backup() are accepted: normalized, project-relative, and jailed.
+    const target = await jailPath(projectDir, entry.path).catch(() => {
+      throw invalid("has an unsafe path", "invalid_args");
     });
-    const restoredSha = restoredData
-      ? createHash("sha256").update(restoredData).digest("hex")
-      : null;
-    if (
-      (file.existed && (restoredData?.byteLength !== file.bytes || restoredSha !== file.sha256)) ||
-      (!file.existed && restoredData !== null)
-    )
-      throw new ToolError(`restoration integrity check failed for ${file.path}`, "internal");
-    restored++;
+    if (projectRelative(projectDir, target) !== entry.path)
+      throw invalid("has an unsafe path", "invalid_args");
+    const saved = await jailPath(backupRoot, entry.path)
+      .then((path) => jailPath(projectDir, projectRelative(projectDir, path)))
+      .catch(() => {
+        throw invalid("has an unsafe path", "invalid_args");
+      });
+    const label = `${index} (${entry.path})`;
+    if (seen.has(entry.path))
+      throw new ToolError(`backup manifest entry ${label} duplicates a path`, "precondition");
+    seen.add(entry.path);
+    const consistent =
+      typeof entry.existed === "boolean" &&
+      (entry.existed
+        ? Number.isSafeInteger(entry.bytes) &&
+          (entry.bytes as number) >= 0 &&
+          typeof entry.sha256 === "string" &&
+          /^[0-9a-f]{64}$/.test(entry.sha256)
+        : entry.bytes === null && entry.sha256 === null);
+    if (!consistent)
+      throw new ToolError(`backup manifest entry ${label} has inconsistent fields`, "precondition");
+    const current = await lstat(target).catch(() => null);
+    if (current?.isDirectory())
+      throw new ToolError(`backup manifest entry ${label} targets a directory`, "precondition");
+    let data: Buffer | null = null;
+    if (entry.existed) {
+      data = await readOptional(saved).catch(() => null);
+      if (!data || data.byteLength !== entry.bytes || digest(data) !== entry.sha256)
+        throw new ToolError(
+          `backup integrity check failed for manifest entry ${label}`,
+          "internal",
+        );
+    }
+    plan.push({ path: entry.path, target, data });
   }
-  return restored;
+  return plan;
+}
+
+async function restore(projectDir: string, directory: string, files: unknown): Promise<number> {
+  const plan = await preflightRestore(projectDir, directory, files);
+  // Stage every replacement from the validated bytes and verify it before the first canonical
+  // rename. This makes manifest, path, and backup failures leave canonical files untouched; it
+  // does not make multi-file replacement atomic across arbitrary filesystem or process failures.
+  const staged = new Map<RestorePlanEntry, string>();
+  const createdDirectories: string[] = [];
+  let committed = false;
+  try {
+    for (const entry of plan) {
+      if (!entry.data) continue;
+      const created = await mkdir(dirname(entry.target), { recursive: true });
+      if (created) createdDirectories.push(created);
+      const temporary = `${entry.target}.restore-${randomUUID()}`;
+      await writeFile(temporary, entry.data, { flag: "wx" }).catch(
+        async (error: NodeJS.ErrnoException) => {
+          // "wx" never opens an existing file, so only a file this call created is removed.
+          if (error.code !== "EEXIST") await rm(temporary, { force: true });
+          throw error;
+        },
+      );
+      staged.set(entry, temporary);
+      const check = await readFile(temporary);
+      if (!check.equals(entry.data))
+        throw new ToolError(`restoration staging failed for ${entry.path}`, "internal");
+    }
+    let restored = 0;
+    for (const entry of plan) {
+      const temporary = staged.get(entry);
+      if (temporary) {
+        await rename(temporary, entry.target);
+        staged.delete(entry);
+      } else await rm(entry.target, { force: true });
+      const restoredData = await readOptional(entry.target);
+      if (entry.data ? !restoredData || !restoredData.equals(entry.data) : restoredData !== null)
+        throw new ToolError(`restoration integrity check failed for ${entry.path}`, "internal");
+      restored++;
+    }
+    committed = true;
+    return restored;
+  } finally {
+    for (const temporary of staged.values()) await rm(temporary, { force: true });
+    // rmdir removes only empty directories, so restored files are never removed with them.
+    if (!committed)
+      for (const created of createdDirectories.reverse())
+        await rmdir(created).catch(() => undefined);
+  }
 }
 
 async function transactionPaths(
@@ -142,9 +247,10 @@ async function transactionMetadata(directory: string): Promise<TransactionMetada
   const metadata = await readJson<Omit<TransactionMetadata, "files"> & { files?: BackupFile[] }>(
     path,
   ).catch(() => null);
-  if (!metadata)
+  if (!metadata || typeof metadata !== "object" || typeof metadata.transactionId !== "string")
     throw new ToolError("native transaction backup metadata is missing or invalid", "precondition");
-  if (Array.isArray(metadata.files)) return { ...metadata, files: metadata.files };
+  // A present manifest is validated in full by restore(); it never falls back to the H6 default.
+  if (metadata.files !== undefined) return { ...metadata, files: metadata.files };
   // H6 metadata predates manifests. Preserve its three-root-file rollback behavior for existing
   // accepted transactions; every new transaction records and restores its explicit file manifest.
   const files = await Promise.all(
@@ -597,7 +703,11 @@ export const native_edit_rollback = defineTool({
         "precondition",
       );
     await ctx.services.design.release(project.dir).catch(() => undefined);
-    const directory = join(root, accepted.transactionId);
+    const directory = await jailPath(root, accepted.transactionId)
+      .then((path) => jailPath(project.dir, projectRelative(project.dir, path)))
+      .catch(() => {
+        throw new ToolError("native transaction backup directory is invalid", "precondition");
+      });
     const metadata = await transactionMetadata(directory);
     if (metadata.transactionId !== accepted.transactionId)
       throw new ToolError("native transaction backup identity mismatch", "precondition");

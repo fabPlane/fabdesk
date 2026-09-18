@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod/v4";
 import {
@@ -1437,6 +1437,409 @@ describe("registry", () => {
     expect(await readFile(join(project.dir, "nested/child.kicad_sch"), "utf8")).toBe(
       "before-child",
     );
+  });
+
+  describe("native rollback recovery integrity", () => {
+    const originals: Record<string, string> = {
+      "board.kicad_pcb": "before-pcb",
+      "board.kicad_pro": "before-pro",
+      "board.kicad_sch": "before-root",
+      "nested/control.kicad_sch": "before-control",
+      "nested/deeper/channels.kicad_sch": "before-channels",
+      "nested/io.kicad_sch": "before-io",
+      "power.kicad_sch": "before-power",
+    };
+    const referencedFiles = Object.keys(originals).filter(
+      (path) => path.endsWith(".kicad_sch") && path !== "board.kicad_sch",
+    );
+    const sha256 = (data: string | Buffer) => createHash("sha256").update(data).digest("hex");
+
+    /** Every file and link under root, keyed by relative path; `.fabdesk` is optionally skipped. */
+    async function inventory(root: string, skipFabdesk: boolean) {
+      const files: Record<string, string> = {};
+      for (const entry of await readdir(root, { recursive: true, withFileTypes: true })) {
+        const path = join(entry.parentPath, entry.name).slice(root.length + 1);
+        if (skipFabdesk && (path === ".fabdesk" || path.startsWith(".fabdesk/"))) continue;
+        if (entry.isSymbolicLink()) files[path] = `link:${await readlink(join(root, path))}`;
+        else if (entry.isFile()) files[path] = sha256(await readFile(join(root, path)));
+      }
+      return files;
+    }
+
+    async function hierarchicalFixture() {
+      const reg = createRegistry();
+      const project = await tempProject("recovery-integrity");
+      const outside = join(project.dir, "..", "outside");
+      await mkdir(outside, { recursive: true });
+      await writeFile(join(outside, "escape.kicad_sch"), originals["power.kicad_sch"]!);
+      for (const [path, contents] of Object.entries(originals)) {
+        await mkdir(join(project.dir, path, ".."), { recursive: true });
+        await writeFile(join(project.dir, path), contents);
+      }
+      const base = mockServices([project]);
+      const services = mockServices([project], {
+        design: {
+          ...base.design,
+          schematicEdit: async () => {
+            for (const path of Object.keys(originals))
+              await writeFile(join(project.dir, path), `changed-${path}`);
+            return {
+              created: {
+                symbols: 0,
+                wires: 0,
+                localLabels: 0,
+                globalLabels: 0,
+                junctions: 0,
+                noConnects: 0,
+                texts: 1,
+              },
+              updated: { symbols: 0 },
+              deleted: 0,
+              saved: true,
+              revision: 2,
+            };
+          },
+        },
+        kicad: {
+          ...base.kicad,
+          // The aggregate revision follows the saved bytes, so rollback guards stay meaningful.
+          inspectSchematicHierarchy: async (cli) => {
+            const sheets = await Promise.all(
+              ["board.kicad_sch", ...referencedFiles].map(async (nativePath, index) => {
+                const data = await readFile(join(project.dir, nativePath));
+                return {
+                  hierarchyPath: index === 0 ? "/" : `/sheet-${index}/`,
+                  nativePath,
+                  identity: `sheet-${index}`,
+                  name: `sheet-${index}`,
+                  depth: nativePath.split("/").length - 1,
+                  sha256: sha256(data),
+                  bytes: data.byteLength,
+                  components: 1,
+                  nets: 1,
+                };
+              }),
+            );
+            return {
+              rootFile: "board.kicad_sch",
+              projectFile: "board.kicad_pro",
+              aggregateRevision: sha256(sheets.map((sheet) => sheet.sha256).join(":")),
+              complete: true,
+              counts: { components: 5, nets: 5, sheets: 5 },
+              sheets,
+              referencedFiles: ["board.kicad_sch", ...referencedFiles],
+              orphanFiles: [],
+              issues: [],
+              source: {
+                hierarchy: "native-kicad-project",
+                electrical: "packaged-kicad-cli-netlist",
+                kicadCli: { path: cli.path, version: cli.version },
+              },
+            };
+          },
+        },
+      });
+      const factory = contextFactory(services, project);
+      const invoke = (name: string, args: Record<string, unknown>) =>
+        reg.invoke(name, args, (ref) =>
+          factory({
+            def: reg.get(name)!,
+            projectRef: ref,
+            signal: new AbortController().signal,
+            progress: () => {},
+          }),
+        );
+      const revisionRoot = join(project.dir, ".fabdesk/native-revisions");
+      const accept = async () => {
+        const accepted = await invoke("native_edit_transaction", {
+          mode: "apply",
+          schematic: { texts: [{ text: "accepted", position: { x: 10, y: 10 } }] },
+        });
+        const transactionId = (accepted.json as any).transactionId as string;
+        const directory = join(revisionRoot, transactionId);
+        const pristine = join(project.dir, "..", `pristine-${transactionId}`);
+        await cp(directory, pristine, { recursive: true });
+        const metadataPath = join(directory, "metadata.json");
+        return {
+          transactionId,
+          directory,
+          metadataPath,
+          metadata: JSON.parse(await readFile(metadataPath, "utf8")),
+          repair: async () => {
+            await rm(directory, { recursive: true, force: true });
+            await cp(pristine, directory, { recursive: true });
+          },
+        };
+      };
+      return { project, outside, invoke, accept };
+    }
+
+    type Transaction = Awaited<
+      ReturnType<Awaited<ReturnType<typeof hierarchicalFixture>>["accept"]>
+    >;
+    const writeManifest = (tx: Transaction, files: unknown) =>
+      writeFile(tx.metadataPath, JSON.stringify({ ...tx.metadata, files }));
+    const entries = (tx: Transaction) =>
+      structuredClone(tx.metadata.files) as Array<Record<string, unknown>>;
+    const appendToBackup = (tx: Transaction, path: string) =>
+      writeFile(join(tx.directory, path), `${originals[path]}-corrupt-tail`);
+
+    const cases: Array<{
+      name: string;
+      message: RegExp;
+      tamper: (tx: Transaction, outside: string) => Promise<unknown>;
+    }> = [
+      {
+        name: "corrupt first backup",
+        message: /backup integrity check failed for manifest entry 0 \(board\.kicad_pcb\)/,
+        tamper: (tx) => appendToBackup(tx, "board.kicad_pcb"),
+      },
+      {
+        name: "corrupt middle nested backup",
+        message: /manifest entry 4 \(nested\/deeper\/channels\.kicad_sch\)/,
+        tamper: (tx) => appendToBackup(tx, "nested/deeper/channels.kicad_sch"),
+      },
+      {
+        name: "corrupt last backup",
+        message: /backup integrity check failed for manifest entry 6 \(power\.kicad_sch\)/,
+        tamper: (tx) => appendToBackup(tx, "power.kicad_sch"),
+      },
+      {
+        name: "missing required backup",
+        message:
+          /backup integrity check failed for manifest entry 3 \(nested\/control\.kicad_sch\)/,
+        tamper: (tx) => rm(join(tx.directory, "nested/control.kicad_sch")),
+      },
+      {
+        name: "recorded byte count mismatch",
+        message: /backup integrity check failed for manifest entry 5 \(nested\/io\.kicad_sch\)/,
+        tamper: (tx) => {
+          const files = entries(tx);
+          files[5]!["bytes"] = (files[5]!["bytes"] as number) + 1;
+          return writeManifest(tx, files);
+        },
+      },
+      {
+        name: "recorded SHA-256 mismatch",
+        message: /backup integrity check failed for manifest entry 6 \(power\.kicad_sch\)/,
+        tamper: (tx) => {
+          const files = entries(tx);
+          files[6]!["sha256"] = "0".repeat(64);
+          return writeManifest(tx, files);
+        },
+      },
+      {
+        name: "duplicate manifest path",
+        message: /manifest entry 7 \(board\.kicad_pcb\) duplicates a path/,
+        tamper: (tx) => writeManifest(tx, [...entries(tx), entries(tx)[0]]),
+      },
+      {
+        name: "traversal path at a later index",
+        message: /backup manifest entry 4 has an unsafe path/,
+        tamper: (tx) => {
+          // Resolves to the outside file, whose bytes match the copied entry's recorded hash.
+          const files = entries(tx);
+          files[4] = { ...files[6], path: "../outside/escape.kicad_sch" };
+          return writeManifest(tx, files);
+        },
+      },
+      {
+        name: "absolute path at the last index",
+        message: /backup manifest entry 6 has an unsafe path/,
+        tamper: (tx, outside) => {
+          const files = entries(tx);
+          files[6] = { ...files[6], path: join(outside, "escape.kicad_sch") };
+          return writeManifest(tx, files);
+        },
+      },
+      {
+        name: "backup symlinked outside the project at a later index",
+        message: /backup manifest entry 6 has an unsafe path/,
+        tamper: async (tx, outside) => {
+          // The outside file matches the recorded bytes, so only the jail can reject it.
+          await rm(join(tx.directory, "power.kicad_sch"));
+          await symlink(join(outside, "escape.kicad_sch"), join(tx.directory, "power.kicad_sch"));
+        },
+      },
+      {
+        name: "non-normalized path",
+        message: /backup manifest entry 5 has an unsafe path/,
+        tamper: (tx) => {
+          const files = entries(tx);
+          files[5] = { ...files[5], path: "nested/deeper/../io.kicad_sch" };
+          return writeManifest(tx, files);
+        },
+      },
+      {
+        name: "non-boolean existed",
+        message: /manifest entry 2 \(board\.kicad_sch\) has inconsistent fields/,
+        tamper: (tx) => {
+          const files = entries(tx);
+          files[2]!["existed"] = "yes";
+          return writeManifest(tx, files);
+        },
+      },
+      {
+        name: "deletion entry carrying a hash",
+        message: /manifest entry 3 \(nested\/control\.kicad_sch\) has inconsistent fields/,
+        tamper: (tx) => {
+          const files = entries(tx);
+          files[3]!["existed"] = false;
+          return writeManifest(tx, files);
+        },
+      },
+      {
+        name: "negative byte count",
+        message: /manifest entry 4 \(nested\/deeper\/channels\.kicad_sch\) has inconsistent fields/,
+        tamper: (tx) => {
+          const files = entries(tx);
+          files[4]!["bytes"] = -1;
+          return writeManifest(tx, files);
+        },
+      },
+      {
+        name: "non-object entry",
+        message: /backup manifest entry 5 is malformed/,
+        tamper: (tx) => {
+          const files: unknown[] = entries(tx);
+          files[5] = null;
+          return writeManifest(tx, files);
+        },
+      },
+      {
+        name: "non-array manifest",
+        message: /backup manifest is missing or empty/,
+        tamper: (tx) => writeManifest(tx, { "0": entries(tx)[0] }),
+      },
+      {
+        name: "empty manifest",
+        message: /backup manifest is missing or empty/,
+        tamper: (tx) => writeManifest(tx, []),
+      },
+    ];
+
+    test("rejected rollbacks leave canonical files unchanged and the transaction retryable", async () => {
+      const { project, outside, invoke, accept } = await hierarchicalFixture();
+      const expectedPaths = Object.keys(originals);
+      for (const { name, message, tamper } of cases) {
+        const tx = await accept();
+        expect(tx.metadata.files.map((file: { path: string }) => file.path)).toEqual(expectedPaths);
+        await tamper(tx, outside);
+        const canonicalBefore = await inventory(project.dir, true);
+        const outsideBefore = await inventory(outside, false);
+        let failure: unknown;
+        await invoke("native_edit_rollback", { transactionId: tx.transactionId }).catch(
+          (error) => (failure = error),
+        );
+        expect(failure, name).toBeInstanceOf(ToolError);
+        expect((failure as Error).message, name).toMatch(message);
+        expect((failure as Error).message, name).not.toContain(outside);
+        expect((failure as Error).message, name).not.toContain(project.dir);
+        expect(await inventory(project.dir, true), name).toEqual(canonicalBefore);
+        expect(await inventory(outside, false), name).toEqual(outsideBefore);
+        expect(await readFile(join(outside, "escape.kicad_sch"), "utf8")).toBe(
+          originals["power.kicad_sch"],
+        );
+        for (const path of expectedPaths)
+          expect(await readFile(join(project.dir, path), "utf8"), name).toBe(`changed-${path}`);
+        expect(
+          Object.keys(await inventory(project.dir, false)).filter((path) =>
+            path.includes(".restore-"),
+          ),
+          name,
+        ).toEqual([]);
+
+        await tx.repair();
+        const rolledBack = await invoke("native_edit_rollback", {
+          transactionId: tx.transactionId,
+        });
+        expect((rolledBack.json as any).restoredFiles, name).toBe(expectedPaths.length);
+        for (const [path, contents] of Object.entries(originals))
+          expect(await readFile(join(project.dir, path), "utf8"), name).toBe(contents);
+        expect(
+          Object.keys(await inventory(project.dir, false)).filter((path) =>
+            path.includes(".restore-"),
+          ),
+          name,
+        ).toEqual([]);
+      }
+    });
+
+    test("rollback over newer work stays refused after a rejected preflight", async () => {
+      const { project, invoke, accept } = await hierarchicalFixture();
+      const tx = await accept();
+      await appendToBackup(tx, "power.kicad_sch");
+      await expect(
+        invoke("native_edit_rollback", { transactionId: tx.transactionId }),
+      ).rejects.toThrow(/backup integrity check failed for manifest entry 6/);
+      await tx.repair();
+      await writeFile(join(project.dir, "nested/io.kicad_sch"), "newer-work");
+      await expect(
+        invoke("native_edit_rollback", { transactionId: tx.transactionId }),
+      ).rejects.toThrow(/refusing stale rollback/);
+      expect(await readFile(join(project.dir, "board.kicad_pcb"), "utf8")).toBe(
+        "changed-board.kicad_pcb",
+      );
+      await writeFile(join(project.dir, "nested/io.kicad_sch"), "changed-nested/io.kicad_sch");
+      await invoke("native_edit_rollback", { transactionId: tx.transactionId });
+      for (const [path, contents] of Object.entries(originals))
+        expect(await readFile(join(project.dir, path), "utf8")).toBe(contents);
+    });
+
+    test("PCB-only rollback rejects a corrupt non-first backup before changing any file", async () => {
+      const reg = createRegistry();
+      const project = await tempProject("pcb-only-recovery-integrity");
+      for (const [path, contents] of [
+        ["board.kicad_pro", "before-pro"],
+        ["board.kicad_sch", "before-sch"],
+        ["board.kicad_pcb", "before-pcb"],
+      ] as const)
+        await writeFile(join(project.dir, path), contents);
+      const base = mockServices([project]);
+      const services = mockServices([project], {
+        design: {
+          ...base.design,
+          placeFootprints: async () => {
+            await writeFile(join(project.dir, "board.kicad_pcb"), "after-pcb");
+            await writeFile(join(project.dir, "board.kicad_pro"), "after-pro");
+            return { moved: ["R1"], missing: [], libraryNormalized: 0, revision: 3, saved: true };
+          },
+        },
+      });
+      const factory = contextFactory(services, project);
+      const invoke = (name: string, args: Record<string, unknown>) =>
+        reg.invoke(name, args, (ref) =>
+          factory({
+            def: reg.get(name)!,
+            projectRef: ref,
+            signal: new AbortController().signal,
+            progress: () => {},
+          }),
+        );
+      const accepted = await invoke("native_edit_transaction", {
+        mode: "apply",
+        footprints: [{ reference: "R1", position: { x: 2, y: 3 } }],
+      });
+      const transactionId = (accepted.json as any).transactionId as string;
+      const backupSch = join(
+        project.dir,
+        ".fabdesk/native-revisions",
+        transactionId,
+        "board.kicad_sch",
+      );
+      await writeFile(backupSch, "before-sch-corrupt-tail");
+      const before = await inventory(project.dir, true);
+      await expect(invoke("native_edit_rollback", { transactionId })).rejects.toThrow(
+        /backup integrity check failed for manifest entry 2 \(board\.kicad_sch\)/,
+      );
+      expect(await inventory(project.dir, true)).toEqual(before);
+      await writeFile(backupSch, "before-sch");
+      const rolledBack = await invoke("native_edit_rollback", { transactionId });
+      expect((rolledBack.json as any).restoredFiles).toBe(3);
+      expect(await readFile(join(project.dir, "board.kicad_pcb"), "utf8")).toBe("before-pcb");
+      expect(await readFile(join(project.dir, "board.kicad_pro"), "utf8")).toBe("before-pro");
+      expect(await readFile(join(project.dir, "board.kicad_sch"), "utf8")).toBe("before-sch");
+    });
   });
 
   test("atomic PCB geometry edits are previewable, revision-guarded, local, inspectable, and reversible", async () => {
