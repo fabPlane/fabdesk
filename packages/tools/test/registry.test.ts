@@ -1378,6 +1378,122 @@ describe("registry", () => {
     expect(result.text).toContain("Track [GND] on F.Cu 0; Pad 1 of U0 @(0, 0)");
   });
 
+  // Independent evaluation of H9-S observed that the author's tests would still pass if any of
+  // these preconditions quietly became a successful "measurement". That is the worst failure this
+  // change could have, so each one is locked here.
+  test("verify_drc still fails the call on every precondition", async () => {
+    const clean = {
+      violations: [],
+      unconnected: [],
+      schematicParity: [],
+      counts: { errors: 0, warnings: 0, unconnected: 0 },
+    };
+    const invoke = (reg: ReturnType<typeof createRegistry>, services: CoreServices, project: any, args: Record<string, unknown> = {}) => {
+      const factory = contextFactory(services, project);
+      return reg.invoke("verify_drc", args, (ref) =>
+        factory({
+          def: reg.get("verify_drc")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+      );
+    };
+
+    // 1. Missing board.
+    {
+      const reg = createRegistry();
+      const project = await tempProject("precondition-no-board");
+      await writeFile(join(project.dir, "board.kicad_sch"), "(kicad_sch)");
+      const services = mockServices([project]);
+      await expect(invoke(reg, services, project)).rejects.toThrow(/board.kicad_pcb not found/);
+    }
+
+    // 2. Incomplete saved hierarchy with parity requested.
+    {
+      const reg = createRegistry();
+      const project = await tempProject("precondition-incomplete-hierarchy");
+      await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb)");
+      await writeFile(join(project.dir, "board.kicad_sch"), "(kicad_sch)");
+      const base = mockServices([project]);
+      const services = mockServices([project], {
+        kicad: {
+          ...base.kicad,
+          inspectSchematicHierarchy: async (cli: any, opts: any) => ({
+            ...(await base.kicad.inspectSchematicHierarchy(cli, opts)),
+            complete: false,
+            issues: [{ kind: "missing", path: "child.kicad_sch" }],
+          }),
+          runDrc: async () => clean,
+        },
+      });
+      await expect(invoke(reg, services, project, { schematicParity: true })).rejects.toThrow(
+        /schematic parity requires a complete saved hierarchy/,
+      );
+    }
+
+    // 3. A referenced schematic changing mid-check.
+    {
+      const reg = createRegistry();
+      const project = await tempProject("precondition-schematic-moved");
+      await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb)");
+      await writeFile(join(project.dir, "board.kicad_sch"), "(kicad_sch)");
+      const base = mockServices([project]);
+      let calls = 0;
+      const services = mockServices([project], {
+        kicad: {
+          ...base.kicad,
+          inspectSchematicHierarchy: async (cli: any, opts: any) => ({
+            ...(await base.kicad.inspectSchematicHierarchy(cli, opts)),
+            aggregateRevision: String(calls++) .padStart(64, "c"),
+          }),
+          runDrc: async () => clean,
+        },
+      });
+      await expect(invoke(reg, services, project, { schematicParity: true })).rejects.toThrow(
+        /a referenced schematic changed while parity DRC was running/,
+      );
+      expect(await Bun.file(join(project.dir, "reports/drc.json")).exists()).toBe(false);
+    }
+  });
+
+  test("verify_drc bounds a three-category parity response", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("three-category-drc");
+    await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb (version 20260831))\n");
+    await writeFile(join(project.dir, "board.kicad_sch"), "(kicad_sch (version 20260831))\n");
+    const many = Array.from({ length: 200 }, (_, i) => drcViolation("clearance", "error", i));
+    const base = mockServices([project]);
+    const services = mockServices([project], {
+      kicad: {
+        ...base.kicad,
+        runDrc: async () => ({
+          violations: many,
+          unconnected: many,
+          schematicParity: many,
+          counts: { errors: 200, warnings: 0, unconnected: 200 },
+        }),
+      },
+    });
+    const factory = contextFactory(services, project);
+    const result = await reg.invoke(
+      "verify_drc",
+      { schematicParity: true, limit: 200 },
+      (ref) =>
+        factory({
+          def: reg.get("verify_drc")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+    );
+    const json = result.json as any;
+    expect(json.sampling.schematicParity.total).toBe(200);
+    expect(json.sampling.schematicParity.stoppedBy).toBe("bytes");
+    // All three categories populated is the real worst case: ~35 KiB on recorded evidence.
+    expect(JSON.stringify(json).length + result.text!.length).toBeLessThan(49_152);
+  });
+
   test("verify_drc stops error-typing findings without weakening the release gate", async () => {
     const reg = createRegistry();
     const project = await tempProject("gate-still-enforces");
