@@ -1373,6 +1373,9 @@ describe("registry", () => {
     expect(json.counts).toEqual({ errors: 708, warnings: 488, unconnected: 499 });
     expect(result.text).toContain("DRC: 708 errors, 488 warnings, 499 unconnected");
     expect(result.text).toContain("outcome: violations");
+    // The readable line keeps naming the offending objects and their position even though the
+    // structured row no longer carries raw `items`.
+    expect(result.text).toContain("Track [GND] on F.Cu 0; Pad 1 of U0 @(0, 0)");
   });
 
   test("verify_drc stops error-typing findings without weakening the release gate", async () => {

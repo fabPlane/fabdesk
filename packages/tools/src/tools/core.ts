@@ -501,6 +501,9 @@ export const verify_drc = defineTool({
     // bounds the sample by bytes as well as by count.
     const sample = (items: DrcViolation[]) => {
       const rows: unknown[] = [];
+      // The readable line keeps the full violation, including the item descriptions and position
+      // that name the offending objects; only the structured row is slimmed.
+      const described: DrcViolation[] = [];
       let bytes = 0;
       let stop: "complete" | "limit" | "bytes" = "complete";
       for (const violation of items) {
@@ -531,9 +534,10 @@ export const verify_drc = defineTool({
           break;
         }
         rows.push(row);
+        described.push(violation);
         bytes += size;
       }
-      return { rows, total: items.length, stop };
+      return { rows, described, total: items.length, stop };
     };
     const sampled = {
       violations: sample(enriched.violations),
@@ -545,7 +549,7 @@ export const verify_drc = defineTool({
       lines.push(
         `${label} (${part.total}${part.rows.length < part.total ? `, showing ${part.rows.length}` : ""}):`,
       );
-      for (const v of part.rows) lines.push(`- ${describeViolation(v as DrcViolation)}`);
+      for (const v of part.described) lines.push(`- ${describeViolation(v)}`);
     };
     show("Violations", sampled.violations);
     show("Unconnected", sampled.unconnected);
