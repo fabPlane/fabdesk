@@ -284,6 +284,44 @@ describe("registry", () => {
     expect(ids("pads")).not.toContain("pad-far");
   });
 
+  // Locks the conservative direction. Pad rows carry no rotation, so a thin pad is matched by its
+  // largest dimension in both axes: it may be reported when a rotation would have cleared the
+  // region, but it is never missed when it would not have. Tightening this to per-axis extents
+  // silently reintroduces under-reported occupancy for rotated pads.
+  test("pcb_inspect region over-reports a thin pad rather than risk missing it", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("region-conservative");
+    await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb (version 20260831))\n");
+    const base = mockServices([project]);
+    const services = mockServices([project], {
+      design: {
+        ...base.design,
+        query: async (_dir, select) =>
+          select === "pads"
+            ? [
+                // 4 x 0.5 mm pad. Per-axis it clears a region 1.5 mm above its centre; by its
+                // largest dimension it does not.
+                { id: "pad-thin", component: "U1", number: "1", x: 10, y: 10, width: 4, height: 0.5, layer: "F.Cu" },
+              ]
+            : [],
+      },
+    });
+    const factory = contextFactory(services, project);
+    const result = await reg.invoke(
+      "pcb_inspect",
+      { kinds: ["pads"], region: { minX: 9.5, minY: 11.4, maxX: 10.5, maxY: 11.6 } },
+      (ref) =>
+        factory({
+          def: reg.get("pcb_inspect")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+    );
+    const rows = (result.json as any).results.pads.rows as any[];
+    expect(rows.map((r) => r.id)).toContain("pad-thin");
+  });
+
   test("bounded PCB inspection filters by region and returns revision-bound compact rows", async () => {
     const reg = createRegistry();
     const project = await tempProject("spatial-inspection");

@@ -52,7 +52,10 @@ export const pcb_inspect = defineTool({
       .array(z.union([z.string(), z.number().int()]))
       .max(64)
       .optional(),
-    region: Region.optional().describe("Inclusive PCB rectangle in millimetres"),
+    region: Region.optional()
+      .describe(
+        "Inclusive PCB rectangle in millimetres. Items are matched by their body, not their centre: a pad or via whose copper reaches into the rectangle is reported, and a zone covering it is reported. Pad rows carry no rotation, so a pad is matched by its largest dimension in both axes — occupancy is never under-reported and a long thin pad may be reported conservatively.",
+      ),
     near: Near.optional().describe("Items touching this point/radius in millimetres"),
     limitPerKind: z.number().int().min(1).max(200).default(50),
   },
@@ -193,14 +196,25 @@ export function rowTouchesRegion(
   return false;
 }
 
-/** Half-extent in millimetres by which an item's body exceeds its representative point. */
+/**
+ * Half-extent in millimetres by which an item's body exceeds its representative point.
+ *
+ * Deliberately the **circumscribing** half-extent, not a per-axis one. A pad row carries
+ * `width`/`height` in the pad's own frame and no rotation (`fp-pcb-design.ts` builds it from
+ * `pad.size.x/y`), so an axis-aligned box cannot be derived: a rotated 4 x 1 mm pad would be
+ * reported 1 mm tall while occupying 4 mm. Taking the largest dimension in both axes can only
+ * over-report, never under-report.
+ *
+ * The cost is that a long thin pad is treated as a square, so a region query can call a lane
+ * occupied when a rotation would have left it clear — conservative, and the tool description says
+ * so. Do not "tighten" this to per-axis without a rotation on the row: under-reporting occupancy
+ * is the defect this exists to prevent, and it puts copper into copper.
+ */
 function rowExtent(row: DesignRow): number {
   const num = (key: string): number => {
     const value = Number(row[key]);
     return Number.isFinite(value) ? value : 0;
   };
-  // Pads carry width/height, vias a diameter, tracks a width. Half of the largest of those is how
-  // far the copper reaches from the point the row reports.
   const span = Math.max(num("width"), num("height"), num("diameter"), num("size"));
   return span > 0 ? span / 2 : 0;
 }
