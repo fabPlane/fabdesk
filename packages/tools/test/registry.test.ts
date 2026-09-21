@@ -1255,6 +1255,8 @@ describe("registry", () => {
     );
     const json = result.json as any;
     expect(json.pcbRevision.sha256).toHaveLength(64);
+    // The default summary keeps every fact that identifies and locates the violation, so the
+    // binding to real geometry is still provable inline, and counts the rows it left on disk.
     expect(json.violations[0]).toMatchObject({
       rule: "clearance",
       severity: "error",
@@ -1266,6 +1268,29 @@ describe("registry", () => {
       layers: ["F.Cu"],
       nets: ["GND"],
       objectIds: ["track-1"],
+      affectedGeometryCount: 1,
+      itemCount: 1,
+    });
+    expect(json.violations[0].affectedGeometry).toBeUndefined();
+    expect(json.violations[0].items).toBeUndefined();
+    expect(json.sampling.omittedPerViolation).toEqual(["items", "affectedGeometry"]);
+    const saved = await Bun.file(join(project.dir, "reports/drc.json")).json();
+    expect(saved.pcbRevision).toEqual(json.pcbRevision);
+    expect(saved.violations[0].affectedGeometry[0].id).toBe("{TRACK-1}");
+    expect(json.report.bytes).toBeGreaterThan(0);
+    expect(geometryQueries).toContain("board_geometry");
+    expect(geometryQueries).toContain("footprint_geometry");
+
+    // responseMode: "full" still returns the complete enriched rows inline.
+    const full = await reg.invoke("verify_drc", { responseMode: "full" }, (ref) =>
+      factory({
+        def: reg.get("verify_drc")!,
+        projectRef: ref,
+        signal: new AbortController().signal,
+        progress: () => {},
+      }),
+    );
+    expect((full.json as any).violations[0]).toMatchObject({
       affectedGeometry: [
         {
           objectType: "tracks",
@@ -1277,11 +1302,6 @@ describe("registry", () => {
         },
       ],
     });
-    const saved = await Bun.file(join(project.dir, "reports/drc.json")).json();
-    expect(saved.pcbRevision).toEqual(json.pcbRevision);
-    expect(saved.violations[0].affectedGeometry[0].id).toBe("{TRACK-1}");
-    expect(geometryQueries).toContain("board_geometry");
-    expect(geometryQueries).toContain("footprint_geometry");
   });
 
   test("verify_drc rejects a PCB revision change during the check", async () => {
@@ -1317,6 +1337,145 @@ describe("registry", () => {
       ),
     ).rejects.toThrow(/changed while DRC was running/);
     expect(await Bun.file(join(project.dir, "reports/drc.json")).exists()).toBe(false);
+  });
+
+  test("verify_drc reports an unfinished board as a successful measurement", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("unfinished-drc");
+    await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb (version 20260831))\n");
+    await writeFile(join(project.dir, "board.kicad_sch"), "(kicad_sch (version 20260831))\n");
+    const base = mockServices([project]);
+    const services = mockServices([project], {
+      kicad: {
+        ...base.kicad,
+        runDrc: async () => ({
+          violations: [drcViolation("clearance", "error", 0)],
+          unconnected: [drcViolation("unconnected_items", "error", 1)],
+          schematicParity: [],
+          // The exact counts observed in PCBGolf attempt 001 run_mu59okb.
+          counts: { errors: 708, warnings: 488, unconnected: 499 },
+        }),
+      },
+    });
+    const factory = contextFactory(services, project);
+    const result = await reg.invoke("verify_drc", { schematicParity: false }, (ref) =>
+      factory({
+        def: reg.get("verify_drc")!,
+        projectRef: ref,
+        signal: new AbortController().signal,
+        progress: () => {},
+      }),
+    );
+    expect(result.isError).toBeUndefined();
+    const json = result.json as any;
+    expect(json.status).toBe("measured");
+    expect(json.outcome).toBe("violations");
+    expect(json.counts).toEqual({ errors: 708, warnings: 488, unconnected: 499 });
+    expect(result.text).toContain("DRC: 708 errors, 488 warnings, 499 unconnected");
+    expect(result.text).toContain("outcome: violations");
+  });
+
+  test("verify_drc stops error-typing findings without weakening the release gate", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("gate-still-enforces");
+    await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb (version 20260831))\n");
+    await writeFile(join(project.dir, "board.kicad_sch"), "(kicad_sch (version 20260831))\n");
+    const base = mockServices([project]);
+    const services = mockServices([project], {
+      kicad: {
+        ...base.kicad,
+        runDrc: async () => ({
+          violations: [drcViolation("clearance", "error", 0)],
+          unconnected: [drcViolation("unconnected_items", "error", 1)],
+          schematicParity: [],
+          counts: { errors: 3, warnings: 0, unconnected: 12 },
+        }),
+      },
+    });
+    const factory = contextFactory(services, project);
+    const call = (name: string, args: Record<string, unknown> = {}) =>
+      reg.invoke(name, args, (ref) =>
+        factory({
+          def: reg.get(name)!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+      );
+
+    // The measurement succeeds ...
+    const drc = await call("verify_drc", { schematicParity: false });
+    expect(drc.isError).toBeUndefined();
+    expect((drc.json as any).outcome).toBe("violations");
+
+    // ... and the gate, which reads the saved report rather than the tool result, still fails.
+    // apps/core/src/artifact-cli.ts treats isError as operation failure, so this is the invariant
+    // that keeps a bad board from being reported as a passing artifact operation.
+    const gate = await call("verify_gate");
+    expect(gate.isError).toBe(true);
+    expect((gate.json as any).pass).toBe(false);
+    expect((gate.json as any).reasons).toEqual(["3 DRC errors", "12 unconnected"]);
+  });
+
+  test("verify_drc bounds the response by bytes and keeps the whole report on disk", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("bounded-drc");
+    await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb (version 20260831))\n");
+    await writeFile(join(project.dir, "board.kicad_sch"), "(kicad_sch (version 20260831))\n");
+    const many = Array.from({ length: 200 }, (_, i) => drcViolation("clearance", "error", i));
+    const base = mockServices([project]);
+    const services = mockServices([project], {
+      kicad: {
+        ...base.kicad,
+        runDrc: async () => ({
+          violations: many,
+          unconnected: many,
+          schematicParity: [],
+          counts: { errors: 200, warnings: 0, unconnected: 200 },
+        }),
+      },
+    });
+    const factory = contextFactory(services, project);
+    const invoke = (args: Record<string, unknown>) =>
+      reg.invoke("verify_drc", args, (ref) =>
+        factory({
+          def: reg.get("verify_drc")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+      );
+
+    // The request the model actually made 11 times, each time paying 437-607 KiB.
+    const summary = await invoke({ schematicParity: false, limit: 200 });
+    const summaryBytes = JSON.stringify(summary.json).length + summary.text!.length;
+    expect(summaryBytes).toBeLessThan(32_768);
+    const json = summary.json as any;
+    expect(json.sampling.violations.total).toBe(200);
+    expect(json.sampling.violations.stoppedBy).toBe("bytes");
+    expect(json.sampling.violations.included).toBeLessThan(200);
+    expect(json.truncated).toBe(true);
+    // Nothing is lost: every violation is in the report the response points at.
+    const saved = await Bun.file(join(project.dir, "reports/drc.json")).json();
+    expect(saved.violations).toHaveLength(200);
+    expect(saved.unconnected).toHaveLength(200);
+    expect(json.report.bytes).toBeGreaterThan(summaryBytes);
+
+    // A small explicit limit is still honoured exactly, and says so.
+    const three = (await invoke({ schematicParity: false, limit: 3 })).json as any;
+    expect(three.sampling.violations.included).toBe(3);
+    expect(three.sampling.violations.stoppedBy).toBe("limit");
+
+    // Full mode is unchanged from before this correction: the complete enriched list, bounded only
+    // by `limit`. It stays available, it is simply no longer what an unqualified call costs.
+    const full = await invoke({ schematicParity: false, limit: 200, responseMode: "full" });
+    const fullJson = full.json as any;
+    expect(fullJson.sampling.violations.included).toBe(200);
+    expect(fullJson.sampling.violations.stoppedBy).toBe("complete");
+    expect(fullJson.violations[0].items).toHaveLength(2);
+    expect(JSON.stringify(fullJson).length).toBeGreaterThan(
+      8 * JSON.stringify(summary.json).length,
+    );
   });
 
   test("atomic native edit previews, restores rejected writes, and rolls back accepted revisions", async () => {
@@ -3023,3 +3182,24 @@ test("circuit_place moves footprints through the design service", async () => {
   expect(out.isError).toBe(false);
   expect(out.text).toContain("J2 → (5, 6) mm, 90°");
 });
+
+function drcViolation(rule: string, severity: "error" | "warning", index: number) {
+  return {
+    rule,
+    severity,
+    description: `${rule} violation ${index} between two copper items`,
+    items: [
+      { description: `Track [GND] on F.Cu ${index}`, uuid: `item-${index}-a`, pos: { x: index, y: index } },
+      { description: `Pad 1 of U${index}`, uuid: `item-${index}-b`, pos: { x: index + 1, y: index + 1 } },
+    ],
+    coordinates: [{ x: index, y: index }],
+    layers: ["F.Cu"],
+    nets: ["GND"],
+    objectIds: [`item-${index}-a`, `item-${index}-b`],
+    affectedGeometry: [
+      { objectType: "tracks", id: `{TRACK-${index}}`, net: "GND", layer: "F.Cu", width: 0.25, clearance: 0.2, start: "1,2", end: "3,4" },
+      { objectType: "pads", id: `{PAD-${index}}`, net: "GND", layer: "F.Cu", component: `U${index}`, number: "1" },
+    ],
+    signature: `${rule}:item-${index}`,
+  };
+}

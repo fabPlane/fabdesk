@@ -382,6 +382,12 @@ export const route_run = defineTool({
     ),
 });
 
+/**
+ * Byte budget for each inline violation category. The complete report is always on disk, so the
+ * response carries only as much of each list as stays cheap to keep in a transcript.
+ */
+const DRC_SAMPLE_BUDGET_BYTES = 8192;
+
 export const verify_drc = defineTool({
   name: "verify_drc",
   toolset: "core",
@@ -400,11 +406,19 @@ export const verify_drc = defineTool({
       .min(1)
       .max(200)
       .default(30)
-      .describe("Max violations to include in the text summary"),
+      .describe(
+        "Max violations per category in the response (maximum 200). Every violation is in reports/drc.json regardless; this only bounds the inline sample.",
+      ),
+    responseMode: z
+      .enum(["summary", "full"])
+      .default("summary")
+      .describe(
+        "summary: counts, per-rule totals and a byte-bounded sample without per-violation geometry rows. full: the complete enriched violations inline, which costs roughly 1 KiB per violation.",
+      ),
   },
   annotations: { idempotentHint: true },
   longRunning: true,
-  handler: async ({ severity, schematicParity, limit }, ctx) => {
+  handler: async ({ severity, schematicParity, limit, responseMode }, ctx) => {
     const project = ctx.requireProject();
     const cli = await requireKicad(ctx);
     const board = p(project, PROJECT_FILES.boardPcb);
@@ -463,18 +477,15 @@ export const verify_drc = defineTool({
     await writeJson(outFile, checkedReport);
     ctx.progress(1, "done");
     const c = enriched.counts;
+    const savedReport = await readFile(outFile);
+    const outcome = c.errors > 0 || c.unconnected > 0 ? "violations" : "clean";
     const lines = [`DRC: ${c.errors} errors, ${c.warnings} warnings, ${c.unconnected} unconnected`];
-    const show = (label: string, items: unknown[]) => {
-      if (!items.length) return;
-      lines.push(`${label} (${items.length}${items.length > limit ? `, showing ${limit}` : ""}):`);
-      for (const v of items.slice(0, limit)) lines.push(`- ${describeViolation(v)}`);
-    };
-    show("Violations", enriched.violations);
-    show("Unconnected", enriched.unconnected);
-    show("Schematic parity", enriched.schematicParity);
-    // The full report can run to hundreds of KiB (KiCad repeats a library warning per footprint), which
-    // exceeds what an agent may receive from one tool call; the JSON carries counts by rule and the first
-    // `limit` of each list, the complete report stays in reports/drc.json.
+    lines.push(
+      `Check completed on PCB ${afterRevision.sha256.slice(0, 12)}; outcome: ${outcome}. This result is a measurement, not a tool failure.`,
+    );
+    // A completed check is reported as a successful result whatever it found: the model must be able
+    // to ask "how many opens?" without a failed tool call. Enforcement lives in verify_gate and
+    // release_build, which read reports/drc.json independently.
     const byRule = (items: unknown[]): Record<string, number> => {
       const out: Record<string, number> = {};
       for (const v of items as Array<Record<string, unknown>>) {
@@ -483,6 +494,62 @@ export const verify_drc = defineTool({
       }
       return out;
     };
+    // The enriched violations cost roughly 1 KiB each, dominated by the raw `items` and the matched
+    // `affectedGeometry` rows. At the former default this made one DRC call a ~450 KiB tool result that
+    // stays in the transcript, so the model bought affordable checks by dropping `limit` to 1. Summary
+    // mode keeps the facts that identify and locate a violation, drops the bulk to reports/drc.json, and
+    // bounds the sample by bytes as well as by count.
+    const sample = (items: DrcViolation[]) => {
+      const rows: unknown[] = [];
+      let bytes = 0;
+      let stop: "complete" | "limit" | "bytes" = "complete";
+      for (const violation of items) {
+        if (rows.length >= limit) {
+          stop = "limit";
+          break;
+        }
+        const row =
+          responseMode === "full"
+            ? violation
+            : {
+                rule: violation.rule,
+                severity: violation.severity,
+                description: violation.description,
+                coordinates: violation.coordinates,
+                layers: violation.layers,
+                nets: violation.nets,
+                objectIds: violation.objectIds,
+                signature: violation.signature,
+                itemCount: violation.items.length,
+                affectedGeometryCount: violation.affectedGeometry.length,
+              };
+        const size = JSON.stringify(row).length;
+        // `full` is the explicit opt-in to the complete enriched list and keeps the pre-existing
+        // behaviour, bounded only by `limit`; only the default sample is byte-bounded.
+        if (responseMode !== "full" && rows.length && bytes + size > DRC_SAMPLE_BUDGET_BYTES) {
+          stop = "bytes";
+          break;
+        }
+        rows.push(row);
+        bytes += size;
+      }
+      return { rows, total: items.length, stop };
+    };
+    const sampled = {
+      violations: sample(enriched.violations),
+      unconnected: sample(enriched.unconnected),
+      schematicParity: sample(enriched.schematicParity),
+    };
+    const show = (label: string, part: ReturnType<typeof sample>) => {
+      if (!part.total) return;
+      lines.push(
+        `${label} (${part.total}${part.rows.length < part.total ? `, showing ${part.rows.length}` : ""}):`,
+      );
+      for (const v of part.rows) lines.push(`- ${describeViolation(v as DrcViolation)}`);
+    };
+    show("Violations", sampled.violations);
+    show("Unconnected", sampled.unconnected);
+    show("Schematic parity", sampled.schematicParity);
     const json = {
       counts: c,
       reportPath: outFile,
@@ -503,19 +570,36 @@ export const verify_drc = defineTool({
             },
           }
         : {}),
-      violations: enriched.violations.slice(0, limit),
-      unconnected: enriched.unconnected.slice(0, limit),
-      schematicParity: enriched.schematicParity.slice(0, limit),
+      violations: sampled.violations.rows,
+      unconnected: sampled.unconnected.rows,
+      schematicParity: sampled.schematicParity.rows,
       truncated:
-        enriched.violations.length > limit ||
-        enriched.unconnected.length > limit ||
-        enriched.schematicParity.length > limit,
+        sampled.violations.rows.length < sampled.violations.total ||
+        sampled.unconnected.rows.length < sampled.unconnected.total ||
+        sampled.schematicParity.rows.length < sampled.schematicParity.total,
+      sampling: {
+        responseMode,
+        limit,
+        ...(responseMode === "summary" ? { budgetBytes: DRC_SAMPLE_BUDGET_BYTES } : {}),
+        ...(responseMode === "summary"
+          ? { omittedPerViolation: ["items", "affectedGeometry"] as const }
+          : {}),
+        violations: { included: sampled.violations.rows.length, total: sampled.violations.total, stoppedBy: sampled.violations.stop },
+        unconnected: { included: sampled.unconnected.rows.length, total: sampled.unconnected.total, stoppedBy: sampled.unconnected.stop },
+        schematicParity: { included: sampled.schematicParity.rows.length, total: sampled.schematicParity.total, stoppedBy: sampled.schematicParity.stop },
+      },
+      report: {
+        path: outFile,
+        bytes: savedReport.byteLength,
+        sha256: createHash("sha256").update(savedReport).digest("hex"),
+      },
     };
-    if (json.truncated) lines.push(`Full report with every violation: ${outFile}`);
+    lines.push(
+      `Complete report, every violation with its matched geometry: ${outFile} (${savedReport.byteLength} bytes).`,
+    );
     return {
       text: lines.join("\n"),
-      json: { ...json, schematicParityChecked: schematicParity },
-      isError: c.errors > 0 || c.unconnected > 0,
+      json: { ...json, status: "measured" as const, outcome, schematicParityChecked: schematicParity },
     };
   },
 });
