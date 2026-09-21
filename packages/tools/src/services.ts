@@ -63,6 +63,9 @@ export type BuildResult = {
   rejectedSchematicPath?: string;
 };
 
+/** Whether copper pours were refilled after a copper change, and why not when they were not. */
+export type ZoneRefill = { refilled: boolean; error?: string };
+
 export type DesignSelect =
   | "components"
   | "nets"
@@ -459,6 +462,8 @@ export type PcbGeometryEditResult = {
   deletedIds: string[];
   revision: number;
   saved: boolean;
+  /** Pours are refilled before the save, so the saved board's zones match its copper. */
+  zoneRefill?: ZoneRefill;
 };
 export type PcbGeometrySnapshot = Record<string, unknown> & {
   revisionStart?: number;
@@ -506,7 +511,10 @@ export interface DesignService {
   /** Cancel the running route job of a project (or every running one). */
   cancelRoute(projectDir?: string): Promise<void>;
   /** Delete tracks, arcs and vias — of the given nets, or all of them. */
-  unroute(projectDir: string, nets?: string[]): Promise<{ tracks: number; vias: number }>;
+  unroute(
+    projectDir: string,
+    nets?: string[],
+  ): Promise<{ tracks: number; vias: number; zoneRefill?: ZoneRefill }>;
   /** Nets attached to component references (repair scope). */
   scope(
     projectDir: string,

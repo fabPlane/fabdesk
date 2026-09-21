@@ -321,3 +321,79 @@ describe("searchFootprints after a bridge restart", () => {
     expect(attempts).toBeGreaterThan(1);
   });
 });
+
+describe("copper edits refill pours before saving", () => {
+  // Reported from PCBGolf leftover routing: a via added through the agent copper path landed in
+  // pours that still predated it, so native DRC reported clearance errors that were artifacts of
+  // the edit rather than the design. route_run already refilled via rules.refillZones; nothing
+  // else did.
+  const fakeBoard = (opts: { refill?: () => Promise<void> } = {}) => {
+    const calls: string[] = [];
+    return {
+      calls,
+      board: {
+        nets: async () => [{ name: "GND", code: { value: 1 } }],
+        commit: async (_msg: string, run: (tx: unknown) => Promise<unknown> | unknown) => {
+          calls.push("commit");
+          await run({ create: async () => [], delete: async () => undefined });
+          return { created: [], deleted: [] };
+        },
+        revision: async () => 4n,
+        getTracks: async () => [],
+        refillZones: async () => {
+          calls.push("refillZones");
+          if (opts.refill) await opts.refill();
+        },
+        save: async () => {
+          calls.push("save");
+        },
+      },
+    };
+  };
+
+  test("editBoardGeometry refills between the commit and the save", async () => {
+    const { calls, board } = fakeBoard();
+    const design = createFpPcbDesign({
+      bridge: () => ({}) as never,
+      sessions: { board: async () => board } as unknown as FpPcbSessions,
+    });
+    const result = await design.editBoardGeometry("/workspace/project", {
+      vias: [
+        {
+          position: { x: 10, y: 10 },
+          diameter: 0.36,
+          drill: 0.2,
+          layers: ["F.Cu", "B.Cu"],
+          net: "GND",
+        },
+      ],
+    } as never);
+    expect(calls).toEqual(["commit", "refillZones", "save"]);
+    expect(result.zoneRefill).toEqual({ refilled: true });
+  });
+
+  test("a board that cannot refill still saves the copper, and says the pours are stale", async () => {
+    const { calls, board } = fakeBoard({
+      refill: async () => {
+        throw new Error("no zones on this board");
+      },
+    });
+    const design = createFpPcbDesign({
+      bridge: () => ({}) as never,
+      sessions: { board: async () => board } as unknown as FpPcbSessions,
+    });
+    const result = await design.editBoardGeometry("/workspace/project", {
+      tracks: [
+        {
+          start: { x: 0, y: 0 },
+          end: { x: 1, y: 1 },
+          width: 0.2,
+          layer: "F.Cu",
+          net: "GND",
+        },
+      ],
+    } as never);
+    expect(calls).toEqual(["commit", "refillZones", "save"]);
+    expect(result.zoneRefill).toEqual({ refilled: false, error: "no zones on this board" });
+  });
+});

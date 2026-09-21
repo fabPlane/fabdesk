@@ -1118,8 +1118,10 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       if (deleteIds.length) await tx.delete(deleteIds);
       return made;
     });
+    const zoneRefill = await refillAfterCopperChange(board);
     await board.save();
     return {
+      zoneRefill,
       created: {
         tracks: edit.tracks?.length ?? 0,
         vias: edit.vias?.length ?? 0,
@@ -1518,6 +1520,29 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     await board.save();
   };
 
+  /**
+   * Refill copper pours before saving after copper changed.
+   *
+   * A new via or track sits inside the existing pours until they are refilled. Saving without a
+   * refill writes a board whose zones predate its copper, and KiCad then reports clearance and
+   * hole-clearance errors against pour geometry that no longer describes the design. Those are
+   * artifacts of the edit, not the design. `route_run` already refills through
+   * `rules.refillZones`; every other copper mutation must too, or the saved artifact is not the
+   * board the caller built.
+   */
+  const refillAfterCopperChange = async (
+    board: Awaited<ReturnType<typeof deps.sessions.board>>,
+  ): Promise<{ refilled: boolean; error?: string }> => {
+    try {
+      await board.refillZones();
+      return { refilled: true };
+    } catch (error) {
+      // A board with no pours, or a bridge that cannot refill, must not fail the edit: the copper
+      // change itself is valid. Report it so the caller knows the pours may be stale.
+      return { refilled: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  };
+
   const cancelRoute = async (projectDir?: string): Promise<void> => {
     const ids = projectDir
       ? [active.get(projectDir)].filter((v): v is string => !!v)
@@ -1562,7 +1587,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
   const unroute = async (
     projectDir: string,
     nets?: string[],
-  ): Promise<{ tracks: number; vias: number }> => {
+  ): Promise<{ tracks: number; vias: number; zoneRefill: { refilled: boolean; error?: string } }> => {
     const board = await deps.sessions.board(projectDir);
     const wanted = nets?.length ? new Set(nets) : null;
     // A free prefab via has no net and is part of the blank, not routed copper. Preserve it when
@@ -1571,13 +1596,16 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       (t) => (!(t instanceof Via) || Boolean(t.net)) && (!wanted || wanted.has(t.net ?? "")),
     );
     const vias = items.filter((t) => t.typeName.endsWith("Via")).length;
+    let refill: { refilled: boolean; error?: string } = { refilled: false };
     if (items.length) {
       await board.commit(wanted ? `Unroute ${[...wanted].join(", ")}` : "Unroute all", (tx) =>
         tx.delete(items),
       );
+      // Removing copper leaves the pours as stale as adding it does.
+      refill = await refillAfterCopperChange(board);
       await saveBoard(projectDir);
     }
-    return { tracks: items.length - vias, vias };
+    return { tracks: items.length - vias, vias, zoneRefill: refill };
   };
 
   const scope = async (

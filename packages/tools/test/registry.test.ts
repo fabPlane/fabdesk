@@ -228,6 +228,62 @@ describe("registry", () => {
     ).toThrow();
   });
 
+  // Reported from PCBGolf leftover routing: a region query over a 0.4 mm lane came back empty
+  // while real copper occupied it, so the model could not see what to rip and guessed instead.
+  // Cause: region filtering tested zero-area representative points, ignoring pad/via bodies and
+  // treating a pour as its outline vertices only.
+  test("pcb_inspect region reports copper that actually occupies the region", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("region-occupancy");
+    await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb (version 20260831))\n");
+    const base = mockServices([project]);
+    const rows: Record<string, Array<Record<string, unknown>>> = {
+      // Centre outside the region, body overlapping it.
+      pads: [
+        { id: "pad-wide", component: "U1", number: "1", x: 9, y: 5, width: 4, height: 1, layer: "F.Cu", net: "GND" },
+        { id: "pad-far", component: "U2", number: "1", x: 40, y: 40, width: 1, height: 1, layer: "F.Cu", net: "GND" },
+      ],
+      // Centre outside, barrel crossing in.
+      vias: [{ id: "via-1", x: 7.7, y: 5, diameter: 0.9, drill: 0.4, net: "GND", layer: "F.Cu" }],
+      // A pour covering the whole region, with every vertex outside it.
+      zones: [
+        {
+          id: "zone-gnd",
+          net: "GND",
+          layer: "F.Cu",
+          points: [
+            { x: 0, y: 0 },
+            { x: 30, y: 0 },
+            { x: 30, y: 30 },
+            { x: 0, y: 30 },
+          ],
+        },
+      ],
+    };
+    const services = mockServices([project], {
+      design: { ...base.design, query: async (_dir, select) => rows[select] ?? [] },
+    });
+    const factory = contextFactory(services, project);
+    const result = await reg.invoke(
+      "pcb_inspect",
+      { kinds: ["pads", "vias", "zones"], region: { minX: 5, minY: 4.8, maxX: 7.5, maxY: 5.2 } },
+      (ref) =>
+        factory({
+          def: reg.get("pcb_inspect")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+    );
+    const json = result.json as any;
+    const ids = (kind: string) => (json.results[kind].rows as any[]).map((r) => r.id);
+    expect(ids("pads")).toContain("pad-wide");
+    expect(ids("vias")).toContain("via-1");
+    expect(ids("zones")).toContain("zone-gnd");
+    // Still excludes what genuinely is not there.
+    expect(ids("pads")).not.toContain("pad-far");
+  });
+
   test("bounded PCB inspection filters by region and returns revision-bound compact rows", async () => {
     const reg = createRegistry();
     const project = await tempProject("spatial-inspection");

@@ -121,7 +121,7 @@ export const pcb_inspect = defineTool({
         if (layerSet && !values(row, ["layer", "layers"]).some((value) => layerSet.has(value)))
           return false;
         const points = rowPoints(row);
-        if (region && (points.length === 0 || !touchesRegion(points, region))) return false;
+        if (region && !rowTouchesRegion(row, points, region)) return false;
         if (
           near &&
           (points.length === 0 || distanceToRow({ x: near.x, y: near.y }, points) > near.radius)
@@ -160,6 +160,74 @@ export const pcb_inspect = defineTool({
     });
   },
 });
+
+/**
+ * Does this item actually occupy any of the region?
+ *
+ * Testing `rowPoints` alone asks whether a zero-area representative point falls inside, which
+ * under-reports occupancy in the two cases that matter most for finding a free lane: a pad or via
+ * whose body overlaps the region while its centre sits outside, and a pour that covers the region
+ * without any outline vertex or edge inside it. Both report "empty" over real copper. Widen the
+ * item to its true extent, and test containment as well as crossing.
+ */
+export function rowTouchesRegion(
+  row: DesignRow,
+  points: Point[],
+  region: z.infer<typeof Region>,
+): boolean {
+  const pad = rowExtent(row);
+  if (pad) {
+    for (const point of points)
+      if (
+        point.x + pad >= region.minX &&
+        point.x - pad <= region.maxX &&
+        point.y + pad >= region.minY &&
+        point.y - pad <= region.maxY
+      )
+        return true;
+  }
+  if (points.length && touchesRegion(points, region)) return true;
+  // A pour or polygon large enough to contain the whole region has no vertex inside it and no
+  // edge crossing it, so the segment test above cannot see it.
+  if (points.length >= 3 && polygonCoversRegion(points, region)) return true;
+  return false;
+}
+
+/** Half-extent in millimetres by which an item's body exceeds its representative point. */
+function rowExtent(row: DesignRow): number {
+  const num = (key: string): number => {
+    const value = Number(row[key]);
+    return Number.isFinite(value) ? value : 0;
+  };
+  // Pads carry width/height, vias a diameter, tracks a width. Half of the largest of those is how
+  // far the copper reaches from the point the row reports.
+  const span = Math.max(num("width"), num("height"), num("diameter"), num("size"));
+  return span > 0 ? span / 2 : 0;
+}
+
+function polygonCoversRegion(points: Point[], region: z.infer<typeof Region>): boolean {
+  const corners: Point[] = [
+    { x: region.minX, y: region.minY },
+    { x: region.maxX, y: region.minY },
+    { x: region.maxX, y: region.maxY },
+    { x: region.minX, y: region.maxY },
+  ];
+  return corners.some((corner) => pointInPolygon(corner, points));
+}
+
+function pointInPolygon(point: Point, polygon: Point[]): boolean {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const a = polygon[i]!;
+    const b = polygon[j]!;
+    if (
+      a.y > point.y !== b.y > point.y &&
+      point.x < ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y) + a.x
+    )
+      inside = !inside;
+  }
+  return inside;
+}
 
 function values(row: DesignRow, keys: string[]): string[] {
   const out: string[] = [];
