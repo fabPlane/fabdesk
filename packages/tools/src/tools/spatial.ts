@@ -39,7 +39,7 @@ export const pcb_inspect = defineTool({
   toolset: "circuit",
   title: "Inspect a PCB region",
   description:
-    "Inspect a bounded part of the saved native PCB by item kind, reference, net, layer, rectangle, or point/radius. board_geometry returns board-owned outline and graphic shapes; request footprint_geometry explicitly for footprint-owned courtyard and fabrication primitives. Returns compact exact millimetre coordinates, source revision, bounds, and a truncation indicator.",
+    "Inspect a bounded part of the saved native PCB by item kind, reference, net, layer, rectangle, or point/radius. Layers accept F.Cu, BL_F_Cu, or the KiCad enum number (3); vias occupy every copper layer they span. board_geometry returns board-owned outline and graphic shapes; request footprint_geometry explicitly for footprint-owned courtyard and fabrication primitives, and include zones to see pour occupancy. islandsOfNet returns the copper islands of those nets (pad/via/track/zone connectivity). Returns compact exact millimetre coordinates, AABB, source revision, bounds, and a truncation indicator.",
   inputSchema: {
     kinds: z
       .array(Kind)
@@ -58,9 +58,14 @@ export const pcb_inspect = defineTool({
       ),
     near: Near.optional().describe("Items touching this point/radius in millimetres"),
     limitPerKind: z.number().int().min(1).max(200).default(50),
+    islandsOfNet: z
+      .array(z.string().min(1))
+      .max(20)
+      .optional()
+      .describe("Return connected copper islands for these nets (pad/via/track/zone graph)"),
   },
   annotations: { readOnlyHint: true, idempotentHint: true },
-  handler: async ({ kinds, references, nets, layers, region, near, limitPerKind }, ctx) => {
+  handler: async ({ kinds, references, nets, layers, region, near, limitPerKind, islandsOfNet }, ctx) => {
     const project = ctx.requireProject();
     const boardPath = p(project, PROJECT_FILES.boardPcb);
     let revision: string | null;
@@ -121,8 +126,7 @@ export const pcb_inspect = defineTool({
           !values(row, ["net", "name"]).some((value) => netSet.has(value.toLowerCase()))
         )
           return false;
-        if (layerSet && !values(row, ["layer", "layers"]).some((value) => layerSet.has(value)))
-          return false;
+        if (layerSet && !rowMatchesLayers(row, layerSet)) return false;
         const points = rowPoints(row);
         if (region && !rowTouchesRegion(row, points, region)) return false;
         if (
@@ -138,7 +142,11 @@ export const pcb_inspect = defineTool({
         total: filtered.length,
         returned: shown.length,
         truncated: filtered.length > shown.length,
-        rows: shown,
+        rows: shown.map((row) => {
+          if (!region && !near) return row;
+          const aabb = rowAabb(row, rowPoints(row));
+          return aabb ? { ...row, aabb } : row;
+        }),
       };
     }
     const bounds = pointBounds(allPoints);
@@ -146,6 +154,25 @@ export const pcb_inspect = defineTool({
       ([kind, result]) =>
         `${kind}: ${result.total}${result.truncated ? ` (showing ${result.returned})` : ""}${result.rows.length ? `\n${table(result.rows)}` : ""}`,
     );
+    let islands: CopperIsland[] | undefined;
+    if (islandsOfNet?.length) {
+      const copper = {
+        pads: await ctx.services.design.query(project.dir, "pads"),
+        vias: await ctx.services.design.query(project.dir, "vias"),
+        tracks: await ctx.services.design.query(project.dir, "tracks"),
+        zones: await ctx.services.design.query(project.dir, "zones"),
+      };
+      islands = islandsOfNet.flatMap((net) => connectedComponentsForNet(net, copper));
+      if (islands.length)
+        sections.push(
+          `islands: ${islands
+            .map(
+              (island) =>
+                `${island.net}#${island.id} ${island.pads.length} pad(s) ${island.vias.length} via(s) ${island.tracks} track(s)`,
+            )
+            .join("; ")}`,
+        );
+    }
     return ok(sections.join("\n\n"), {
       contract: { name: "fabdesk.pcb-inspection", version: "2.0.0" },
       revision,
@@ -157,9 +184,11 @@ export const pcb_inspect = defineTool({
         layers: layers ?? [],
         region: region ?? null,
         near: near ?? null,
+        islandsOfNet: islandsOfNet ?? [],
       },
       bounds,
       results,
+      ...(islands ? { islands } : {}),
     });
   },
 });
@@ -241,6 +270,160 @@ function pointInPolygon(point: Point, polygon: Point[]): boolean {
       inside = !inside;
   }
   return inside;
+}
+
+const COPPER_LAYER_INDEX: Map<string, string> = (() => {
+  const map = new Map<string, string>();
+  const add = (canonical: string, ...aliases: string[]) => {
+    for (const alias of aliases) map.set(alias.toLowerCase(), canonical);
+  };
+  add("F.Cu", "F.Cu", "BL_F_Cu", "3");
+  for (let inner = 1; inner <= 30; inner++)
+    add(`In${inner}.Cu`, `In${inner}.Cu`, `BL_In${inner}_Cu`, String(3 + inner));
+  add("B.Cu", "B.Cu", "BL_B_Cu", "34");
+  return map;
+})();
+
+export function canonicalCopperLayer(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  if (Array.isArray(value)) return null;
+  const token = String(value).trim();
+  if (!token) return null;
+  return COPPER_LAYER_INDEX.get(token.toLowerCase()) ?? token;
+}
+
+export function rowMatchesLayers(row: DesignRow, layerSet: Set<string>): boolean {
+  const wanted = new Set(
+    [...layerSet].map((token) => canonicalCopperLayer(token)).filter((token): token is string => Boolean(token)),
+  );
+  if (!wanted.size) return true;
+  const have = values(row, ["layer", "layers", "layerNames"])
+    .map((token) => canonicalCopperLayer(token))
+    .filter((token): token is string => Boolean(token));
+  // Through vias with no layer field occupy every copper layer.
+  if (!have.length) return [...wanted].some((layer) => COPPER_LAYER_INDEX.get(layer.toLowerCase()) === layer);
+  return have.some((layer) => wanted.has(layer));
+}
+
+export type CopperIsland = {
+  net: string;
+  id: number;
+  pads: Array<{ id: string; component: string; number: string; x: number; y: number }>;
+  vias: Array<{ id: string; x: number; y: number }>;
+  tracks: number;
+};
+
+export function connectedComponentsForNet(
+  net: string,
+  copper: { pads: DesignRow[]; vias: DesignRow[]; tracks: DesignRow[]; zones: DesignRow[] },
+): CopperIsland[] {
+  const netOf = (row: DesignRow) => String(row["net"] ?? "");
+  const pads = copper.pads.filter((row) => netOf(row) === net);
+  const vias = copper.vias.filter((row) => netOf(row) === net);
+  const tracks = copper.tracks.filter((row) => netOf(row) === net && row["start"] && row["end"]);
+  const zones = copper.zones.filter((row) => netOf(row) === net);
+  const parent = new Map<string, string>();
+  const find = (key: string): string => {
+    const now = parent.get(key) ?? key;
+    if (now !== key) parent.set(key, find(now));
+    return parent.get(key) ?? key;
+  };
+  const union = (a: string, b: string) => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent.set(ra, rb);
+  };
+  const padKey = (row: DesignRow, index: number) => `pad:${String(row["id"] ?? index)}`;
+  const viaKey = (row: DesignRow, index: number) => `via:${String(row["id"] ?? index)}`;
+  const trackKey = (row: DesignRow, index: number) => `track:${String(row["id"] ?? index)}`;
+  for (const [index, row] of pads.entries()) parent.set(padKey(row, index), padKey(row, index));
+  for (const [index, row] of vias.entries()) parent.set(viaKey(row, index), viaKey(row, index));
+  for (const [index, row] of tracks.entries()) parent.set(trackKey(row, index), trackKey(row, index));
+  const xy = (row: DesignRow): Point | null => {
+    const x = Number(row["x"]);
+    const y = Number(row["y"]);
+    return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+  };
+  const touches = (point: Point, row: DesignRow): boolean => {
+    const at = xy(row);
+    if (!at) return false;
+    const radius = Math.max(rowExtent(row), 0.05);
+    return Math.hypot(point.x - at.x, point.y - at.y) <= radius;
+  };
+  for (const [tIndex, track] of tracks.entries()) {
+    const points = rowPoints(track);
+    for (const point of points) {
+      for (const [index, pad] of pads.entries()) if (touches(point, pad)) union(trackKey(track, tIndex), padKey(pad, index));
+      for (const [index, via] of vias.entries()) if (touches(point, via)) union(trackKey(track, tIndex), viaKey(via, index));
+    }
+  }
+  for (const [pIndex, pad] of pads.entries()) {
+    const at = xy(pad);
+    if (!at) continue;
+    for (const [index, via] of vias.entries()) if (touches(at, via)) union(padKey(pad, pIndex), viaKey(via, index));
+  }
+  for (const zone of zones) {
+    const polygon = rowPoints(zone);
+    if (polygon.length < 3) continue;
+    const inside: string[] = [];
+    for (const [index, pad] of pads.entries()) {
+      const at = xy(pad);
+      if (at && pointInPolygon(at, polygon)) inside.push(padKey(pad, index));
+    }
+    for (const [index, via] of vias.entries()) {
+      const at = xy(via);
+      if (at && pointInPolygon(at, polygon)) inside.push(viaKey(via, index));
+    }
+    for (let i = 1; i < inside.length; i++) union(inside[0]!, inside[i]!);
+  }
+  const groups = new Map<string, { pads: CopperIsland["pads"]; vias: CopperIsland["vias"]; tracks: number }>();
+  for (const [index, row] of pads.entries()) {
+    const root = find(padKey(row, index));
+    const group = groups.get(root) ?? { pads: [], vias: [], tracks: 0 };
+    const at = xy(row);
+    group.pads.push({
+      id: String(row["id"] ?? ""),
+      component: String(row["component"] ?? ""),
+      number: String(row["number"] ?? ""),
+      x: at?.x ?? 0,
+      y: at?.y ?? 0,
+    });
+    groups.set(root, group);
+  }
+  for (const [index, row] of vias.entries()) {
+    const root = find(viaKey(row, index));
+    const group = groups.get(root) ?? { pads: [], vias: [], tracks: 0 };
+    const at = xy(row);
+    group.vias.push({ id: String(row["id"] ?? ""), x: at?.x ?? 0, y: at?.y ?? 0 });
+    groups.set(root, group);
+  }
+  for (const [index, row] of tracks.entries()) {
+    const root = find(trackKey(row, index));
+    const group = groups.get(root) ?? { pads: [], vias: [], tracks: 0 };
+    group.tracks += 1;
+    groups.set(root, group);
+  }
+  return [...groups.values()]
+    .filter((group) => group.pads.length || group.vias.length)
+    .sort((a, b) => b.pads.length + b.vias.length - (a.pads.length + a.vias.length))
+    .map((group, id) => ({ net, id, ...group }));
+}
+
+function rowAabb(
+  row: DesignRow,
+  points: Point[],
+): { minX: number; minY: number; maxX: number; maxY: number } | null {
+  const pad = rowExtent(row);
+  const expanded: Point[] = [];
+  for (const point of points) {
+    expanded.push(point);
+    if (pad)
+      expanded.push(
+        { x: point.x - pad, y: point.y - pad },
+        { x: point.x + pad, y: point.y + pad },
+      );
+  }
+  return pointBounds(expanded);
 }
 
 function values(row: DesignRow, keys: string[]): string[] {

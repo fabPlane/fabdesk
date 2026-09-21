@@ -12,6 +12,7 @@ import {
   ElectricalPinType,
   BoardGraphicShapeSchema,
   BoardLayer,
+  PadType,
   GlobalLabelSchema,
   JunctionSchema,
   KiCadObjectType,
@@ -104,6 +105,20 @@ const STAGE_FRACTION: Record<string, number> = {
 // Nanometres are integral. Preserve enough decimal places for exact pad/track joins instead of
 // rounding inspected coordinates to 1 um and creating tiny disconnected gaps on re-use.
 const mm = (nm: number) => Math.round(toMm(nm) * 1_000_000) / 1_000_000;
+
+function copperLayersOf(layers: readonly BoardLayer[]): BoardLayer[] {
+  return [...new Set(layers.filter((layer) => layer >= BoardLayer.BL_F_Cu && layer <= BoardLayer.BL_B_Cu))].sort(
+    (a, b) => a - b,
+  );
+}
+
+function copperLayerUserName(id: BoardLayer): string {
+  if (id === BoardLayer.BL_F_Cu) return "F.Cu";
+  if (id === BoardLayer.BL_B_Cu) return "B.Cu";
+  if (id >= BoardLayer.BL_In1_Cu && id < BoardLayer.BL_B_Cu)
+    return `In${id - BoardLayer.BL_In1_Cu + 1}.Cu`;
+  return BoardLayer[id] ?? String(id);
+}
 
 async function normalizePowerSymbolMarkers(path: string): Promise<boolean> {
   const text = await readFile(path, "utf8");
@@ -1323,31 +1338,47 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       }
       case "pads": {
         const refs = new Map((await board.getFootprints()).map((fp) => [fp.id, fp.reference]));
+        const copperIds = copperLayersOf(await board.enabledLayers().then((enabled) => enabled.layers));
         return (await board.getPads())
-          .map((pad) => ({
-            component: refs.get(pad.parent ?? "") ?? pad.parent ?? "",
-            number: pad.number,
-            net: pad.net ?? "",
-            x: mm(pad.position.x),
-            y: mm(pad.position.y),
-            width: mm(pad.size.x),
-            height: mm(pad.size.y),
-            id: pad.id,
-            layer: pad.layerId,
-          }))
+          .map((pad) => {
+            const through = pad.padType === PadType.PT_PTH || pad.padType === PadType.PT_NPTH;
+            const layers = copperLayersOf(
+              pad.layers.length ? pad.layers : through ? copperIds : pad.layerId !== undefined ? [pad.layerId] : [],
+            );
+            return {
+              component: refs.get(pad.parent ?? "") ?? pad.parent ?? "",
+              number: pad.number,
+              net: pad.net ?? "",
+              x: mm(pad.position.x),
+              y: mm(pad.position.y),
+              width: mm(pad.size.x),
+              height: mm(pad.size.y),
+              id: pad.id,
+              layer: layers[0] ?? pad.layerId,
+              layers,
+              layerNames: layers.map(copperLayerUserName),
+            };
+          })
           .filter((r) => keep(r.component, r.net, r.number));
       }
       case "vias": {
+        const copperIds = copperLayersOf(await board.enabledLayers().then((enabled) => enabled.layers));
         return (await board.getTracks())
           .filter((t): t is Via => t instanceof Via)
-          .map((v) => ({
-            id: v.id,
-            net: v.net ?? "",
-            x: mm(v.position.x),
-            y: mm(v.position.y),
-            diameter: mm(v.diameter),
-            drill: mm(v.drillDiameter),
-          }))
+          .map((v) => {
+            const layers = copperLayersOf(v.layers.length ? v.layers : copperIds);
+            return {
+              id: v.id,
+              net: v.net ?? "",
+              x: mm(v.position.x),
+              y: mm(v.position.y),
+              diameter: mm(v.diameter),
+              drill: mm(v.drillDiameter),
+              layer: layers[0],
+              layers,
+              layerNames: layers.map(copperLayerUserName),
+            };
+          })
           .filter((r) => keep(r.net, r.id));
       }
       case "tracks": {
@@ -1462,6 +1493,13 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
               ...(opts.nets ? { nets: opts.nets } : {}),
               ...(opts.maxTimeMs ? { maxTimeMs: opts.maxTimeMs } : {}),
               ...(opts.settings ?? {}),
+              ...(typeof opts.settings?.["viaDiameterMm"] === "number" &&
+              typeof opts.settings?.["viaDrillMm"] === "number"
+                ? {
+                    viaDiameterNm: opts.settings["viaDiameterMm"] * 1e6,
+                    viaDrillNm: opts.settings["viaDrillMm"] * 1e6,
+                  }
+                : {}),
             },
             ...(opts.refillZones !== undefined ? { refillZones: opts.refillZones } : {}),
           },

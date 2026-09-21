@@ -284,6 +284,83 @@ describe("registry", () => {
     expect(ids("pads")).not.toContain("pad-far");
   });
 
+  test("pcb_inspect region+layers matches F.Cu aliases and through vias without a layer field", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("region-layers");
+    await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb (version 20260831))\n");
+    const base = mockServices([project]);
+    const services = mockServices([project], {
+      design: {
+        ...base.design,
+        query: async (_dir, select) => {
+          if (select === "pads")
+            return [{ id: "pad-1", component: "U1", number: "1", x: 6, y: 5, width: 1, height: 1, layer: 3, net: "SIG" }];
+          if (select === "vias")
+            return [{ id: "via-th", x: 6, y: 5, diameter: 0.36, drill: 0.2, net: "SIG" }];
+          return [];
+        },
+      },
+    });
+    const factory = contextFactory(services, project);
+    const result = await reg.invoke(
+      "pcb_inspect",
+      { kinds: ["pads", "vias"], region: { minX: 5, minY: 4, maxX: 7, maxY: 6 }, layers: ["F.Cu"] },
+      (ref) =>
+        factory({
+          def: reg.get("pcb_inspect")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+    );
+    const json = result.json as any;
+    expect((json.results.pads.rows as any[]).map((r) => r.id)).toContain("pad-1");
+    expect((json.results.vias.rows as any[]).map((r) => r.id)).toContain("via-th");
+    expect(json.results.pads.rows[0].aabb).toMatchObject({ minX: 5.5, maxX: 6.5 });
+  });
+
+  test("pcb_inspect islandsOfNet groups pads joined by a track", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("islands");
+    await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb (version 20260831))\n");
+    const base = mockServices([project]);
+    const services = mockServices([project], {
+      design: {
+        ...base.design,
+        query: async (_dir, select) => {
+          if (select === "pads")
+            return [
+              { id: "a", component: "U1", number: "1", x: 0, y: 0, width: 0.5, height: 0.5, net: "SIG" },
+              { id: "b", component: "U2", number: "1", x: 2, y: 0, width: 0.5, height: 0.5, net: "SIG" },
+              { id: "c", component: "U3", number: "1", x: 20, y: 20, width: 0.5, height: 0.5, net: "SIG" },
+            ];
+          if (select === "tracks")
+            return [{ id: "t1", net: "SIG", start: { x: 0, y: 0 }, end: { x: 2, y: 0 }, width: 0.2 }];
+          if (select === "vias" || select === "zones") return [];
+          return [];
+        },
+      },
+    });
+    const factory = contextFactory(services, project);
+    const result = await reg.invoke(
+      "pcb_inspect",
+      { kinds: ["pads"], islandsOfNet: ["SIG"] },
+      (ref) =>
+        factory({
+          def: reg.get("pcb_inspect")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+    );
+    const islands = (result.json as any).islands as Array<{ pads: Array<{ id: string }>; tracks: number }>;
+    expect(islands).toHaveLength(2);
+    const joined = islands.find((island) => island.pads.some((pad) => pad.id === "a"));
+    expect(joined?.pads.map((pad) => pad.id).sort()).toEqual(["a", "b"]);
+    expect(joined?.tracks).toBe(1);
+    expect(islands.some((island) => island.pads.map((pad) => pad.id).join() === "c")).toBe(true);
+  });
+
   // Locks the conservative direction. Pad rows carry no rotation, so a thin pad is matched by its
   // largest dimension in both axes: it may be reported when a rotation would have cleared the
   // region, but it is never missed when it would not have. Tightening this to per-axis extents
@@ -492,7 +569,7 @@ describe("registry", () => {
       total: 2,
       returned: 1,
       truncated: true,
-      rows: [rows.footprint_geometry![0]],
+      rows: [{ ...rows.footprint_geometry![0]!, aabb: { minX: 1, minY: 1, maxX: 2, maxY: 1 } }],
     });
     expect(footprintJson.bounds).toEqual({ minX: 1, minY: 1, maxX: 2, maxY: 1 });
   });

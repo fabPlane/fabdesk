@@ -22,7 +22,12 @@ export const RouteRunArgs = {
     .min(1000)
     .max(30 * 60_000)
     .default(120_000),
-  onlyConnections: z.array(z.string()).optional().describe("Limit routing to these nets"),
+  onlyConnections: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Route only these leftover nets. The DSN network lists just those nets; other copper stays as obstacles. Via padstacks include existing board via sizes so sessions round-trip. If nothing routes, the result lists the leftover pads.",
+    ),
   targets: z
     .array(
       z.object({
