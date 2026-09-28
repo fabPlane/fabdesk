@@ -190,30 +190,37 @@ export type BuildSummary = {
   revision?: number;
   removedCopper?: { tracks: number; vias: number };
   rejectedSchematicPath?: string;
-  /** Copper layers on the built board, when the build could read them. */
-  copperLayers?: number;
-  /** fabdesk.json board.layers was rewritten to match the built board. */
-  boardReconciled?: { layers: { before: number; after: number } };
+  /**
+   * Declared (fabdesk.json board.layers) and built copper layer counts, when the build could read
+   * the built board's. `match` false means the two disagree and a `layer_mismatch` warning was added.
+   */
+  copperLayers?: { declared: number; built: number; match: boolean };
 };
 
 /**
- * Keep fabdesk.json's recorded stackup in step with the board a successful build produced. The
- * built board is authoritative: stale metadata that disagrees with it misleads the next agent turn
- * (issue #92). Returns what changed, or a note when the built count cannot be recorded.
+ * Compare fabdesk.json's declared stackup with the board a successful build produced. The manifest
+ * is never rewritten here: board.layers always has a value (schema default 2) and may be an
+ * explicit `project_set_board` choice that the compile did not apply. A disagreement becomes a
+ * build warning so it is visible instead of silent (issue #92).
  */
-export async function reconcileBoardLayers(
-  project: ProjectHandle,
+export function checkBoardLayers(
+  declared: number,
   built: number | undefined,
-): Promise<{ reconciled?: { before: number; after: number }; note?: string }> {
+): {
+  layers?: NonNullable<BuildSummary["copperLayers"]>;
+  warning?: BuildResult["warnings"][number];
+} {
   if (built === undefined || !Number.isInteger(built)) return {};
-  const board = project.manifest().board;
-  if (board.layers === built) return {};
-  if (built < 1 || built > 8)
-    return {
-      note: `The built board has ${built} copper layers, outside what fabdesk.json can record (1-8); board.layers stays ${board.layers}.`,
-    };
-  await project.updateManifest({ board: { ...board, layers: built } });
-  return { reconciled: { before: board.layers, after: built } };
+  const layers = { declared, built, match: declared === built };
+  if (layers.match) return { layers };
+  return {
+    layers,
+    warning: {
+      type: "layer_mismatch",
+      file: PROJECT_FILES.manifest,
+      message: `fabdesk.json board.layers is ${declared} but the built board has ${built} copper layers. fabdesk.json was not changed. Make the netlist's board.copperLayers and project_set_board layers agree, then rebuild.`,
+    },
+  };
 }
 
 /**
@@ -283,28 +290,32 @@ export const circuit_build = defineTool({
       signal: ctx.signal,
       progress: (fraction, note) => ctx.progress(0.05 + fraction * 0.9, note),
     });
-    const layers = result.ok ? await reconcileBoardLayers(project, result.copperLayers) : {};
+    const layerCheck = result.ok
+      ? checkBoardLayers(project.manifest().board.layers, result.copperLayers)
+      : {};
+    const warnings = layerCheck.warning
+      ? [...result.warnings, layerCheck.warning]
+      : result.warnings;
     const summary: BuildSummary = {
       ok: result.ok,
       at: new Date().toISOString(),
       rebuild,
       durationMs: result.durationMs,
       errors: result.errors,
-      warnings: result.warnings,
+      warnings,
       counts: result.counts,
       ...(result.revision !== undefined ? { revision: result.revision } : {}),
       ...(result.removedCopper ? { removedCopper: result.removedCopper } : {}),
       ...(result.rejectedSchematicPath
         ? { rejectedSchematicPath: result.rejectedSchematicPath }
         : {}),
-      ...(result.copperLayers !== undefined ? { copperLayers: result.copperLayers } : {}),
-      ...(layers.reconciled ? { boardReconciled: { layers: layers.reconciled } } : {}),
+      ...(layerCheck.layers ? { copperLayers: layerCheck.layers } : {}),
     };
     await writeReport(project, "build", summary);
     ctx.progress(1, "done");
     const c = result.counts;
     const text = result.ok
-      ? `Build OK (${rebuild} rebuild) in ${Math.round(result.durationMs)} ms: ${c.components} components, ${c.nets} nets, ${c.footprintsAdded} footprints added, ${c.footprintsPlaced} placed${result.removedCopper ? `, ${result.removedCopper.tracks} old tracks/arcs and ${result.removedCopper.vias} routed vias removed` : ""}${c.viasAdded ? `, blank drawn (${c.viasAdded} free vias, ${c.holesAdded ?? 0} holes)` : ""}.${project.manifest().board.template ? ` Template ${project.manifest().board.template}: the netlist's own board spec was replaced by the blank.` : ""}${layers.reconciled ? `\nfabdesk.json board.layers updated ${layers.reconciled.before} -> ${layers.reconciled.after} to match the built board's copper layers.` : ""}${layers.note ? `\n${layers.note}` : ""}${result.warnings.length ? `\nWarnings:\n${formatErrors(result.warnings)}` : ""}`
+      ? `Build OK (${rebuild} rebuild) in ${Math.round(result.durationMs)} ms: ${c.components} components, ${c.nets} nets, ${c.footprintsAdded} footprints added, ${c.footprintsPlaced} placed${result.removedCopper ? `, ${result.removedCopper.tracks} old tracks/arcs and ${result.removedCopper.vias} routed vias removed` : ""}${c.viasAdded ? `, blank drawn (${c.viasAdded} free vias, ${c.holesAdded ?? 0} holes)` : ""}.${project.manifest().board.template ? ` Template ${project.manifest().board.template}: the netlist's own board spec was replaced by the blank.` : ""}${warnings.length ? `\nWarnings:\n${formatErrors(warnings)}` : ""}`
       : `Build FAILED (${result.errors.length} errors):\n${formatErrors(result.errors)}${result.rejectedSchematicPath ? `\nRejected schematic preserved at ${result.rejectedSchematicPath}; the canonical schematic was restored.` : ""}`;
     return { text, json: summary, isError: !result.ok };
   },

@@ -2945,12 +2945,12 @@ describe("registry", () => {
     ).toBe(true);
   });
 
-  test("circuit_build records the built board's copper layers in fabdesk.json", async () => {
+  test("circuit_build warns when the built stackup disagrees with fabdesk.json, never rewriting it", async () => {
     const reg = createRegistry();
-    const project = await tempProject("stackup-reconcile");
+    const project = await tempProject("stackup-mismatch");
     await writeFile(join(project.dir, "circuit.netlist.json"), "{}\n");
-    expect(project.manifest().board.layers).toBe(2);
-    let built: number | undefined = 4;
+    await project.updateManifest({ board: { ...project.manifest().board, layers: 4 } });
+    let built: number | undefined = 2;
     const base = mockServices([project]);
     const services = mockServices([project], {
       design: {
@@ -2972,32 +2972,34 @@ describe("registry", () => {
         }),
       );
 
-    const first = await call();
-    expect(first.isError).toBeFalsy();
+    // Explicit layers=4, board built with 2: manifest stays 4, warning emitted.
+    const mismatch = await call();
+    expect(mismatch.isError).toBeFalsy();
     expect(project.manifest().board.layers).toBe(4);
-    expect(first.text).toContain("fabdesk.json board.layers updated 2 -> 4");
-    expect(first.json).toMatchObject({
-      copperLayers: 4,
-      boardReconciled: { layers: { before: 2, after: 4 } },
+    expect(mismatch.text).toContain("Warnings:");
+    expect(mismatch.text).toContain(
+      "fabdesk.json [layer_mismatch]: fabdesk.json board.layers is 4 but the built board has 2 copper layers",
+    );
+    const expected = {
+      copperLayers: { declared: 4, built: 2, match: false },
+      warnings: [expect.objectContaining({ type: "layer_mismatch", file: "fabdesk.json" })],
+    };
+    expect(mismatch.json).toMatchObject(expected);
+    expect(await Bun.file(join(project.dir, "reports/build.json")).json()).toMatchObject(expected);
+
+    // In step: recorded, no warning.
+    built = 4;
+    const inStep = await call();
+    expect(inStep.text).not.toContain("layer_mismatch");
+    expect(inStep.json).toMatchObject({
+      copperLayers: { declared: 4, built: 4, match: true },
+      warnings: [],
     });
-    expect(await Bun.file(join(project.dir, "reports/build.json")).json()).toMatchObject({
-      boardReconciled: { layers: { before: 2, after: 4 } },
-    });
 
-    // In step: nothing to report.
-    const second = await call();
-    expect(second.text).not.toContain("board.layers updated");
-    expect((second.json as any).boardReconciled).toBeUndefined();
-
-    // A count fabdesk.json cannot hold is reported, not written.
-    built = 12;
-    const wide = await call();
-    expect(wide.text).toContain("outside what fabdesk.json can record");
-    expect(project.manifest().board.layers).toBe(4);
-
-    // No measurement leaves the manifest alone.
+    // No measurement: nothing recorded, manifest untouched.
     built = undefined;
-    await call();
+    const unread = await call();
+    expect((unread.json as any).copperLayers).toBeUndefined();
     expect(project.manifest().board.layers).toBe(4);
   });
 
