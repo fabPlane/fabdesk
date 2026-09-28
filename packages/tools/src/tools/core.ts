@@ -221,10 +221,10 @@ export async function buildBoardSpec(project: ProjectHandle): Promise<FpPcbBoard
 }
 
 /**
- * Net names the KiCad fork cannot save. KiCad's own netlist export writes a label's `/` as `{slash}`
- * (and other characters as `{colon}`, `{space}`, …); the fork sets the net class fine but its
- * project save then fails with `basic_string`, and the build reports only that. Refusing them here
- * says what to change instead.
+ * Net names the KiCad fork cannot save once net-class rules are set. KiCad's own netlist export
+ * writes a label's `/` as `{slash}` (and other characters as `{colon}`, `{space}`, …); with a rules
+ * write (`SetNetClasses`) the fork's project save then fails with `basic_string` (fab_pcb G30), and
+ * the build reports only that. Without rules the same board saves.
  */
 export function escapedNetNames(file: NetlistFile): string[] {
   return file.netlist.nets.map((n) => n.name).filter((name) => /[{}]/.test(name));
@@ -261,7 +261,21 @@ export const circuit_build = defineTool({
     ctx.progress(0.05, "building");
     const file = entrypoint ? null : await loadNetlist(project).catch(() => null);
     const escaped = file ? escapedNetNames(file) : [];
-    if (escaped.length) {
+    const board = await buildBoardSpec(project);
+    const rules = board?.rules ?? file?.board?.rules;
+    const writesRules = Boolean(rules && Object.values(rules).some((v) => v !== undefined));
+    // Braces only break the save when the build writes net-class rules; otherwise say so and go on.
+    const escapeWarnings: BuildResult["warnings"] =
+      escaped.length && !writesRules
+        ? [
+            {
+              type: "net_name_escape",
+              file: PROJECT_FILES.netlistJson,
+              message: `net names contain "{" or "}": ${escaped.join(", ")}. The build goes ahead because this board sets no rules, but adding board.rules later will make the KiCad fork fail to save; KiCad writes a label's "/" as {slash}, so use "_" instead.`,
+            },
+          ]
+        : [];
+    if (escaped.length && writesRules) {
       const summary: BuildSummary = {
         ok: false,
         at: new Date().toISOString(),
@@ -271,7 +285,7 @@ export const circuit_build = defineTool({
           {
             type: "net_name_escape",
             file: PROJECT_FILES.netlistJson,
-            message: `net names may not contain "{" or "}" (the KiCad fork cannot save a board with them): ${escaped.join(", ")}. KiCad writes a label's "/" as {slash}; use "_" instead.`,
+            message: `net names may not contain "{" or "}" when the board sets rules (the KiCad fork cannot save such a board): ${escaped.join(", ")}. KiCad writes a label's "/" as {slash}; use "_" instead.`,
           },
         ],
         warnings: [],
@@ -284,7 +298,6 @@ export const circuit_build = defineTool({
         isError: true,
       };
     }
-    const board = await buildBoardSpec(project);
     const result = await ctx.services.design.build({
       projectDir: project.dir,
       ...(entrypoint ? { entrypoint } : {}),
@@ -300,7 +313,7 @@ export const circuit_build = defineTool({
       rebuild,
       durationMs: result.durationMs,
       errors: result.errors,
-      warnings: result.warnings,
+      warnings: [...escapeWarnings, ...result.warnings],
       counts: result.counts,
       ...(result.revision !== undefined ? { revision: result.revision } : {}),
       ...(result.removedCopper ? { removedCopper: result.removedCopper } : {}),
@@ -312,7 +325,7 @@ export const circuit_build = defineTool({
     ctx.progress(1, "done");
     const c = result.counts;
     const text = result.ok
-      ? `Build OK (${rebuild} rebuild) in ${Math.round(result.durationMs)} ms: ${c.components} components, ${c.nets} nets, ${c.footprintsAdded} footprints added, ${c.footprintsPlaced} placed${result.removedCopper ? `, ${result.removedCopper.tracks} old tracks/arcs and ${result.removedCopper.vias} routed vias removed` : ""}${c.viasAdded ? `, blank drawn (${c.viasAdded} free vias, ${c.holesAdded ?? 0} holes)` : ""}.${project.manifest().board.template ? ` Template ${project.manifest().board.template}: the netlist's own board spec was replaced by the blank.` : ""}${result.warnings.length ? `\nWarnings:\n${formatErrors(result.warnings)}` : ""}`
+      ? `Build OK (${rebuild} rebuild) in ${Math.round(result.durationMs)} ms: ${c.components} components, ${c.nets} nets, ${c.footprintsAdded} footprints added, ${c.footprintsPlaced} placed${result.removedCopper ? `, ${result.removedCopper.tracks} old tracks/arcs and ${result.removedCopper.vias} routed vias removed` : ""}${c.viasAdded ? `, blank drawn (${c.viasAdded} free vias, ${c.holesAdded ?? 0} holes)` : ""}.${project.manifest().board.template ? ` Template ${project.manifest().board.template}: the netlist's own board spec was replaced by the blank.` : ""}${summary.warnings.length ? `\nWarnings:\n${formatErrors(summary.warnings)}` : ""}`
       : `Build FAILED (${result.errors.length} errors):\n${formatErrors(result.errors)}${result.rejectedSchematicPath ? `\nRejected schematic preserved at ${result.rejectedSchematicPath}; the canonical schematic was restored.` : ""}`;
     return { text, json: summary, isError: !result.ok };
   },
