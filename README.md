@@ -9,21 +9,21 @@ fabPlane runs standalone or as an MCP server inside Claude Code / Codex / Cursor
 
 ## Layout
 
-| Path | What |
-|---|---|
-| `apps/core` | `fabdesk-core`: Bun daemon (compiled sidecar). Talks to the FabPlane PCB bridge (compile + routing on `kicad-cli api-server`), runs the KiCad CLI for DRC/render/export, and hosts the MCP server. |
-| `apps/desktop` | Electron shell (electron-vite + React). Thin client over `fabdesk-core`. |
-| `apps/mobile` | **Experimental** Expo client for iOS/Android. Pairs with a `fabdesk-core` over a tailnet. Own lockfile, not a root workspace — see [docs/mobile.md](docs/mobile.md) and [docs/mobile-testing-handoff.md](docs/mobile-testing-handoff.md). |
-| `packages/protocol` | Shared zod schemas: control API, event stream, route frames, handshake. |
-| `packages/tools` | Tool registry (single source of truth) + MCP / HTTP / WebMCP / AGENTS.md adapters. |
-| `packages/kicad` | `kicad-cli` wrappers: DRC/ERC gate, renders, SVG, exports (wraps `@pcb/pcb/kicad-cli`). |
-| `packages/sim` | SPICE netlist + spicey / ngspice. |
-| `packages/agents` | Agent adapters: claude, codex, cursor, grok. |
-| `packages/auth-client` | fabplane.com device-code login, credential store, local mode. |
-| `packages/client-core` | Platform-agnostic client: `CoreClient`, the event reducer, query hooks, stores, transports. Shared by the desktop and the mobile app. |
-| `packages/ui` | React components: chat, board panel, route cinema, sketch pad. |
-| `vendor/fabplane` | git submodule → `TensorFleet/fabplane.com`. Shared `@pcb/*` packages. |
-| `vendor/fab_pcb` | git submodule → `fabPlane/fab_pcb` (FabPlane PCB). `packages/{proto,client}` are consumed as workspaces; the bridge runs as its own process. |
+| Path                   | What                                                                                                                                                                                                                                      |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/core`            | `fabdesk-core`: Bun daemon (compiled sidecar). Talks to the FabPlane PCB bridge (compile + routing on `kicad-cli api-server`), runs the KiCad CLI for DRC/render/export, and hosts the MCP server.                                        |
+| `apps/desktop`         | Electron shell (electron-vite + React). Thin client over `fabdesk-core`.                                                                                                                                                                  |
+| `apps/mobile`          | **Experimental** Expo client for iOS/Android. Pairs with a `fabdesk-core` over a tailnet. Own lockfile, not a root workspace — see [docs/mobile.md](docs/mobile.md) and [docs/mobile-testing-handoff.md](docs/mobile-testing-handoff.md). |
+| `packages/protocol`    | Shared zod schemas: control API, event stream, route frames, handshake.                                                                                                                                                                   |
+| `packages/tools`       | Tool registry (single source of truth) + MCP / HTTP / WebMCP / AGENTS.md adapters.                                                                                                                                                        |
+| `packages/kicad`       | `kicad-cli` wrappers: DRC/ERC gate, renders, SVG, exports (wraps `@pcb/pcb/kicad-cli`).                                                                                                                                                   |
+| `packages/sim`         | SPICE netlist + spicey / ngspice.                                                                                                                                                                                                         |
+| `packages/agents`      | Agent adapters: claude, codex, cursor, grok.                                                                                                                                                                                              |
+| `packages/auth-client` | fabplane.com device-code login, credential store, local mode.                                                                                                                                                                             |
+| `packages/client-core` | Platform-agnostic client: `CoreClient`, the event reducer, query hooks, stores, transports. Shared by the desktop and the mobile app.                                                                                                     |
+| `packages/ui`          | React components: chat, board panel, route cinema, sketch pad.                                                                                                                                                                            |
+| `vendor/fabplane`      | git submodule → `TensorFleet/fabplane.com`. Shared `@pcb/*` packages.                                                                                                                                                                     |
+| `vendor/fab_pcb`       | git submodule → `fabPlane/fab_pcb` (FabPlane PCB). `packages/{proto,client}` are consumed as workspaces; the bridge runs as its own process.                                                                                              |
 
 ## Setup
 
@@ -32,7 +32,6 @@ fork from the rolling [`nightly` release](https://github.com/TensorFleet/kicad/r
 on [`TensorFleet/kicad`](https://github.com/TensorFleet/kicad) (`Resources/kicad/`). Leave Settings →
 kicad-cli blank to use it, or set `Settings.kicadCliPath` / `KICAD_CLI` to override. Dev builds
 without a staged release still fall back to `PATH` / stock installs.
-
 
 ```bash
 git clone --recurse-submodules git@github.com:TensorFleet/fabdesk.git
@@ -72,3 +71,5 @@ development set `FABDESK_AUTH_MODE=local` (honored only in non-public channels o
 `.fabdesk-dev` marker in the fabPlane config dir).
 
 Backend handoff (running the daemon against the FabPlane PCB bridge, CI keys, open work): [docs/handoff-fab-pcb.md](docs/handoff-fab-pcb.md).
+
+Final cross-repository PR stack, merge order, issue mapping, and Linux packaging evidence: [docs/final-pcb-pr-stack-handoff.md](docs/final-pcb-pr-stack-handoff.md).

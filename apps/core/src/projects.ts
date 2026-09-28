@@ -3,23 +3,27 @@
  * for listing/lookup. Emits `project.changed` from a debounced recursive fs.watch.
  */
 import { watch, type FSWatcher } from "node:fs";
-import { mkdir, readdir, readFile, rename, rm, stat } from "node:fs/promises";
-import { join, relative, resolve, sep } from "node:path";
+import { mkdir, readdir, readFile, realpath, rename, rm, stat } from "node:fs/promises";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { spawn } from "node:child_process";
-import { ProjectManifest, type CoreEvent, type FileEntry, type ProjectDetail, type ProjectSummary } from "@fabdesk/protocol";
-import { PROJECT_FILES, ToolError, writeJson, type ProjectHandle, type ProjectResolver } from "@fabdesk/tools";
+import {
+  ProjectManifest,
+  type CoreEvent,
+  type FileEntry,
+  type ProjectDetail,
+  type ProjectSummary,
+} from "@fabdesk/protocol";
+import {
+  PROJECT_FILES,
+  ToolError,
+  jailPath,
+  writeJson,
+  type ProjectHandle,
+  type ProjectResolver,
+} from "@fabdesk/tools";
 import type { ProjectRepo } from "./db";
 import { newId } from "./db";
 import { logger } from "./log";
-
-export const DEFAULT_NETLIST_JSON = `${JSON.stringify(
-  {
-    netlist: { components: [], nets: [] },
-    board: { widthMm: 40, heightMm: 30 },
-  },
-  null,
-  2,
-)}\n`;
 
 export function slugify(name: string): string {
   const s = name
@@ -38,7 +42,10 @@ export const FORGOTTEN_MANIFEST = "fabdesk.json.forgotten";
 export class ProjectStore implements ProjectResolver {
   private readonly handles = new Map<string, ProjectHandle>();
   private readonly watchers = new Map<string, FSWatcher>();
-  private readonly pendingChanges = new Map<string, { paths: Set<string>; timer: ReturnType<typeof setTimeout> }>();
+  private readonly pendingChanges = new Map<
+    string,
+    { paths: Set<string>; timer: ReturnType<typeof setTimeout> }
+  >();
 
   constructor(
     private readonly repo: ProjectRepo,
@@ -56,7 +63,14 @@ export class ProjectStore implements ProjectResolver {
       const dir = join(this.rootDir, e.name);
       const manifest = await this.readManifest(dir);
       if (!manifest) continue;
-      this.repo.upsert({ id: manifest.id, name: manifest.name, slug: e.name, path: dir, createdAt: manifest.createdAt, updatedAt: manifest.updatedAt });
+      this.repo.upsert({
+        id: manifest.id,
+        name: manifest.name,
+        slug: e.name,
+        path: dir,
+        createdAt: manifest.createdAt,
+        updatedAt: manifest.updatedAt,
+      });
     }
     for (const p of this.repo.list()) {
       if (!(await stat(p.path).catch(() => null))) {
@@ -82,18 +96,52 @@ export class ProjectStore implements ProjectResolver {
   }
 
   async resolve(ref: string): Promise<ProjectHandle | null> {
+    // Absolute selectors are deliberately ephemeral. In particular, a copied manifest must never
+    // repoint the persistent row or ID-keyed handle belonging to the canonical project.
+    if (isAbsolute(ref) || /^[A-Za-z]:[\\/]/.test(ref)) return this.ephemeralHandle(ref);
     const row = this.repo.find(ref) ?? (ref.includes(sep) ? this.repo.find(resolve(ref)) : null);
     if (row) return this.handle(row.id);
-    // An absolute path to a directory containing fabdesk.json: register on the fly.
-    if (ref.startsWith("/") || /^[A-Za-z]:[\\/]/.test(ref)) {
-      const dir = resolve(ref);
-      const manifest = await this.readManifest(dir);
-      if (!manifest) return null;
-      this.repo.upsert({ id: manifest.id, name: manifest.name, slug: manifest.id, path: dir, createdAt: manifest.createdAt, updatedAt: manifest.updatedAt });
-      if (this.opts.watch !== false) this.watchDir(manifest.id, dir);
-      return this.handle(manifest.id);
-    }
     return null;
+  }
+
+  private async ephemeralHandle(requestedDir: string): Promise<ProjectHandle | null> {
+    const resolved = resolve(requestedDir);
+    const metadata = await stat(resolved).catch(() => null);
+    if (!metadata?.isDirectory()) return null;
+    const dir = await realpath(resolved).catch(() => null);
+    if (!dir) return null;
+    const required = [
+      PROJECT_FILES.manifest,
+      PROJECT_FILES.boardPro,
+      PROJECT_FILES.boardSch,
+      PROJECT_FILES.boardPcb,
+    ];
+    for (const path of required) {
+      const jailed = await jailPath(dir, path).catch(() => null);
+      const file = jailed ? await stat(jailed).catch(() => null) : null;
+      if (!file?.isFile()) return null;
+    }
+    const manifest = await this.readManifest(dir);
+    if (!manifest) return null;
+    let current = manifest;
+    const h: ProjectHandle = {
+      id: manifest.id,
+      name: manifest.name,
+      dir,
+      manifest: () => current,
+      async updateManifest(patch) {
+        current = ProjectManifest.parse({
+          ...current,
+          ...patch,
+          id: manifest.id,
+          updatedAt: new Date().toISOString(),
+        });
+        await writeJson(await jailPath(dir, PROJECT_FILES.manifest), current);
+        h.name = current.name;
+        return current;
+      },
+    };
+    return h;
   }
 
   async handle(id: string): Promise<ProjectHandle | null> {
@@ -111,9 +159,21 @@ export class ProjectStore implements ProjectResolver {
       dir: row.path,
       manifest: () => current,
       async updateManifest(patch) {
-        current = ProjectManifest.parse({ ...current, ...patch, id: row.id, updatedAt: new Date().toISOString() });
+        current = ProjectManifest.parse({
+          ...current,
+          ...patch,
+          id: row.id,
+          updatedAt: new Date().toISOString(),
+        });
         await writeJson(join(row.path, PROJECT_FILES.manifest), current);
-        store.repo.upsert({ id: row.id, name: current.name, slug: row.slug, path: row.path, createdAt: current.createdAt, updatedAt: current.updatedAt });
+        store.repo.upsert({
+          id: row.id,
+          name: current.name,
+          slug: row.slug,
+          path: row.path,
+          createdAt: current.createdAt,
+          updatedAt: current.updatedAt,
+        });
         h.name = current.name;
         return current;
       },
@@ -126,32 +186,60 @@ export class ProjectStore implements ProjectResolver {
     await mkdir(this.rootDir, { recursive: true });
     const base = slugify(name);
     let slug = base;
-    for (let i = 2; await stat(join(this.rootDir, slug)).catch(() => null); i++) slug = `${base}-${i}`;
+    for (let i = 2; await stat(join(this.rootDir, slug)).catch(() => null); i++)
+      slug = `${base}-${i}`;
     const dir = join(this.rootDir, slug);
     const ts = new Date().toISOString();
-    const manifest = ProjectManifest.parse({ schema: 1, id: newId("prj"), name, createdAt: ts, updatedAt: ts, board: { layers: 2 }, router: "capacity" });
-    for (const sub of [PROJECT_FILES.sketches, PROJECT_FILES.renders, PROJECT_FILES.reports, PROJECT_FILES.exports, PROJECT_FILES.runs]) await mkdir(join(dir, sub), { recursive: true });
+    const manifest = ProjectManifest.parse({
+      schema: 1,
+      id: newId("prj"),
+      name,
+      createdAt: ts,
+      updatedAt: ts,
+      board: { layers: 2 },
+      router: "capacity",
+    });
+    for (const sub of [
+      PROJECT_FILES.sketches,
+      PROJECT_FILES.renders,
+      PROJECT_FILES.reports,
+      PROJECT_FILES.exports,
+      PROJECT_FILES.runs,
+    ])
+      await mkdir(join(dir, sub), { recursive: true });
     await writeJson(join(dir, PROJECT_FILES.manifest), manifest);
-    await Bun.write(join(dir, PROJECT_FILES.netlistJson), DEFAULT_NETLIST_JSON);
     await Bun.write(join(dir, ".gitignore"), ".fabdesk/\nrenders/\nexports/\n");
     this.repo.upsert({ id: manifest.id, name, slug, path: dir, createdAt: ts, updatedAt: ts });
     if (this.opts.watch !== false) this.watchDir(manifest.id, dir);
-    this.emit({ ts: Date.now(), topic: "project.changed", projectId: manifest.id, paths: [PROJECT_FILES.manifest, PROJECT_FILES.netlistJson] });
+    this.emit({
+      ts: Date.now(),
+      topic: "project.changed",
+      projectId: manifest.id,
+      paths: [PROJECT_FILES.manifest],
+    });
     return (await this.detail(manifest.id))!;
   }
 
   /** Clone an allowed git URL into the projects root and register it as a fabPlane project. */
-  async importFromGit(opts: { name: string; gitUrl: string; clone?: (url: string, dir: string) => Promise<void> }): Promise<ProjectDetail> {
+  async importFromGit(opts: {
+    name: string;
+    gitUrl: string;
+    clone?: (url: string, dir: string) => Promise<void>;
+  }): Promise<ProjectDetail> {
     await mkdir(this.rootDir, { recursive: true });
     const base = slugify(opts.name);
     let slug = base;
-    for (let i = 2; await stat(join(this.rootDir, slug)).catch(() => null); i++) slug = `${base}-${i}`;
+    for (let i = 2; await stat(join(this.rootDir, slug)).catch(() => null); i++)
+      slug = `${base}-${i}`;
     const dir = join(this.rootDir, slug);
     try {
       await (opts.clone ?? defaultGitClone)(opts.gitUrl, dir);
     } catch (e) {
       await rm(dir, { recursive: true, force: true });
-      throw new ToolError(`could not clone ${opts.gitUrl}: ${e instanceof Error ? e.message : String(e)}`, "unavailable");
+      throw new ToolError(
+        `could not clone ${opts.gitUrl}: ${e instanceof Error ? e.message : String(e)}`,
+        "unavailable",
+      );
     }
     const ts = new Date().toISOString();
     const existing = await this.readManifest(dir);
@@ -164,13 +252,31 @@ export class ProjectStore implements ProjectResolver {
       board: existing?.board ?? { layers: 2 },
       router: existing?.router ?? "capacity",
     });
-    for (const sub of [PROJECT_FILES.sketches, PROJECT_FILES.renders, PROJECT_FILES.reports, PROJECT_FILES.exports, PROJECT_FILES.runs]) {
+    for (const sub of [
+      PROJECT_FILES.sketches,
+      PROJECT_FILES.renders,
+      PROJECT_FILES.reports,
+      PROJECT_FILES.exports,
+      PROJECT_FILES.runs,
+    ]) {
       await mkdir(join(dir, sub), { recursive: true });
     }
     await writeJson(join(dir, PROJECT_FILES.manifest), manifest);
-    this.repo.upsert({ id: manifest.id, name: opts.name, slug, path: dir, createdAt: manifest.createdAt, updatedAt: ts });
+    this.repo.upsert({
+      id: manifest.id,
+      name: opts.name,
+      slug,
+      path: dir,
+      createdAt: manifest.createdAt,
+      updatedAt: ts,
+    });
     if (this.opts.watch !== false) this.watchDir(manifest.id, dir);
-    this.emit({ ts: Date.now(), topic: "project.changed", projectId: manifest.id, paths: [PROJECT_FILES.manifest] });
+    this.emit({
+      ts: Date.now(),
+      topic: "project.changed",
+      projectId: manifest.id,
+      paths: [PROJECT_FILES.manifest],
+    });
     return (await this.detail(manifest.id))!;
   }
 
@@ -193,7 +299,11 @@ export class ProjectStore implements ProjectResolver {
     if (opts.purge) await rm(row.path, { recursive: true, force: true });
     // Forgetting keeps the files but must survive a restart: `init` re-adopts every directory with a
     // manifest, so the manifest is set aside (restore it to bring the project back).
-    else await rename(join(row.path, PROJECT_FILES.manifest), join(row.path, FORGOTTEN_MANIFEST)).catch(() => undefined);
+    else
+      await rename(
+        join(row.path, PROJECT_FILES.manifest),
+        join(row.path, FORGOTTEN_MANIFEST),
+      ).catch(() => undefined);
     // Every client keeps its own project list; without this the row lingered on the other device.
     this.emit({ ts: Date.now(), topic: "project.changed", projectId: id, paths: [] });
     return true;
@@ -219,7 +329,12 @@ export class ProjectStore implements ProjectResolver {
           await walk(abs);
         } else if (e.isFile()) {
           const st = await stat(abs).catch(() => null);
-          if (st) out.push({ path: relative(dir, abs).split(sep).join("/"), size: st.size, mtime: st.mtime.toISOString() });
+          if (st)
+            out.push({
+              path: relative(dir, abs).split(sep).join("/"),
+              size: st.size,
+              mtime: st.mtime.toISOString(),
+            });
         }
         if (out.length >= max) return;
       }
@@ -233,7 +348,10 @@ export class ProjectStore implements ProjectResolver {
       const raw = JSON.parse(await readFile(join(dir, PROJECT_FILES.manifest), "utf8"));
       const parsed = ProjectManifest.safeParse(raw);
       if (!parsed.success) {
-        logger.warn("invalid fabdesk.json ignored", { dir, issue: parsed.error.issues[0]?.message });
+        logger.warn("invalid fabdesk.json ignored", {
+          dir,
+          issue: parsed.error.issues[0]?.message,
+        });
         return null;
       }
       return parsed.data;
@@ -253,7 +371,10 @@ export class ProjectStore implements ProjectResolver {
       w.on("error", (e) => logger.warn("fs.watch error", { id, error: e.message }));
       this.watchers.set(id, w);
     } catch (e) {
-      logger.warn("fs.watch unavailable", { dir, error: e instanceof Error ? e.message : String(e) });
+      logger.warn("fs.watch unavailable", {
+        dir,
+        error: e instanceof Error ? e.message : String(e),
+      });
     }
   }
 
@@ -271,9 +392,16 @@ export class ProjectStore implements ProjectResolver {
       if (paths.has(PROJECT_FILES.manifest)) this.handles.delete(id);
       this.repo.touch(id);
       try {
-        this.emit({ ts: Date.now(), topic: "project.changed", projectId: id, paths: [...paths].slice(0, 100) });
+        this.emit({
+          ts: Date.now(),
+          topic: "project.changed",
+          projectId: id,
+          paths: [...paths].slice(0, 100),
+        });
       } catch (e) {
-        logger.warn("project.changed emit failed", { error: e instanceof Error ? e.message : String(e) });
+        logger.warn("project.changed emit failed", {
+          error: e instanceof Error ? e.message : String(e),
+        });
       }
     }, ms);
     this.pendingChanges.set(id, { paths, timer });
@@ -299,7 +427,9 @@ export function requireProject(h: ProjectHandle | null, ref: string): ProjectHan
 
 async function defaultGitClone(url: string, dir: string): Promise<void> {
   await new Promise<void>((resolve, reject) => {
-    const child = spawn("git", ["clone", "--depth", "1", url, dir], { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn("git", ["clone", "--depth", "1", url, dir], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     let stderr = "";
     child.stderr.on("data", (chunk: Buffer) => {
       stderr += chunk.toString();

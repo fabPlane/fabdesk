@@ -59,9 +59,11 @@ export function mockServices(
 ): CoreServices & { events: CoreEvent[] } {
   const events: CoreEvent[] = [];
   const runs = new Map<string, RouteRunRecord>();
+  const routeControllers = new Map<string, AbortController>();
   const svc: CoreServices & { events: CoreEvent[] } = {
     events,
     version: "0.0.0-test",
+    runtimeId: "test-runtime",
     channel: "public",
     settings: () => ({
       kicadCliPath: null,
@@ -81,14 +83,30 @@ export function mockServices(
     },
     bus: { emit: (e) => events.push(e) },
     routeRuns: {
-      start: (r) =>
-        runs.set(r.id, { ...r, status: "running", endedAt: null, result: null, error: null }),
-      finish: (id, patch) => {
+      start: (r) => runs.set(r.id, r),
+      update: (id, patch) => {
         const r = runs.get(id);
-        if (r) runs.set(id, { ...r, ...patch, endedAt: new Date().toISOString() });
+        if (r) runs.set(id, { ...r, ...patch });
       },
       get: (id) => runs.get(id) ?? null,
       latest: (pid) => [...runs.values()].filter((r) => r.projectId === pid).at(-1) ?? null,
+    },
+    routeTasks: {
+      enqueue: ({ id }, task) => {
+        const controller = new AbortController();
+        routeControllers.set(id, controller);
+        void Promise.resolve()
+          .then(() => task(controller.signal))
+          .finally(() => routeControllers.delete(id));
+        return "running";
+      },
+      cancel: (id) => {
+        const controller = routeControllers.get(id);
+        if (!controller) return "not_found";
+        if (controller.signal.aborted) return "already_requested";
+        controller.abort();
+        return "requested";
+      },
     },
     design: {
       build: async ({ projectDir, progress }) => {
@@ -112,6 +130,82 @@ export function mockServices(
           revision: 2,
         };
       },
+      schematicInspect: async () => ({
+        revision: 0,
+        pcbRevision: 0,
+        symbols: [],
+        wires: [],
+        localLabels: [],
+        globalLabels: [],
+        junctions: [],
+        noConnects: [],
+        texts: [],
+        nets: [],
+        erc: { errors: 0, warnings: 0 },
+      }),
+      schematicEdit: async (_dir, edit) => ({
+        created: {
+          symbols: edit.symbols?.length ?? 0,
+          wires: edit.wires?.length ?? 0,
+          localLabels: edit.localLabels?.length ?? 0,
+          globalLabels: edit.globalLabels?.length ?? 0,
+          junctions: edit.junctions?.length ?? 0,
+          noConnects: edit.noConnects?.length ?? 0,
+          texts: edit.texts?.length ?? 0,
+        },
+        updated: { symbols: edit.symbolUpdates?.length ?? 0 },
+        deleted: edit.deleteItemIds?.length ?? 0,
+        saved: edit.save ?? true,
+        revision: 1,
+      }),
+      syncSchematicToPcb: async (_dir, dryRun) => ({
+        ok: true,
+        dryRun,
+        erc: { errors: 0, warnings: 0 },
+        update: { errors: 0, warnings: 0, newFootprints: 0, report: "" },
+        ...(dryRun ? {} : { parity: 0 }),
+        saved: !dryRun,
+      }),
+      defineBoardOutline: async (_dir, points, replace) => ({
+        created: points.length,
+        replaced: replace ? points.length : 0,
+        revision: 2,
+        saved: true,
+      }),
+      placeFootprints: async (_dir, placements) => ({
+        moved: placements.map((placement) => placement.reference),
+        missing: [],
+        libraryNormalized: 0,
+        revision: 3,
+        saved: true,
+      }),
+      editBoardGeometry: async (_dir, edit) => ({
+        created: {
+          tracks: edit.tracks?.length ?? 0,
+          vias: edit.vias?.length ?? 0,
+          zones: edit.zones?.length ?? 0,
+          keepouts: edit.keepouts?.length ?? 0,
+          texts: edit.texts?.length ?? 0,
+          graphics: edit.graphics?.length ?? 0,
+        },
+        createdIds: [],
+        deletedIds: edit.deleteItemIds ?? [],
+        revision: 4,
+        saved: true,
+      }),
+      inspectBoardGeometry: async () => ({
+        revisionStart: 4,
+        revisionEnd: 4,
+        revisionStable: true,
+        pads: [],
+        tracks: [],
+        vias: [],
+        zones: [],
+        texts: [],
+        graphics: [],
+        nets: [],
+        rules: {},
+      }),
       query: async (_dir, select, filter) => {
         const rows: Record<string, Array<Record<string, unknown>>> = {
           components: [
@@ -221,6 +315,34 @@ export function mockServices(
         counts: { errors: 0, warnings: 0, unconnected: 0 },
       }),
       runErc: async () => ({ violations: [], counts: { errors: 0, warnings: 0 } }),
+      inspectSchematicHierarchy: async (cli) => ({
+        rootFile: "board.kicad_sch",
+        projectFile: "board.kicad_pro",
+        aggregateRevision: "a".repeat(64),
+        complete: true,
+        counts: { components: 1, nets: 1, sheets: 1 },
+        sheets: [
+          {
+            hierarchyPath: "/",
+            nativePath: "board.kicad_sch",
+            identity: "mock-root",
+            name: "root",
+            depth: 0,
+            sha256: "b".repeat(64),
+            bytes: 1,
+            components: 1,
+            nets: 1,
+          },
+        ],
+        referencedFiles: ["board.kicad_sch"],
+        orphanFiles: [],
+        issues: [],
+        source: {
+          hierarchy: "native-kicad-project",
+          electrical: "packaged-kicad-cli-netlist",
+          kicadCli: { path: cli.path, version: cli.version },
+        },
+      }),
       gate: (drc, erc, allowed) => {
         const reasons: string[] = [];
         if (drc.counts.errors) reasons.push(`${drc.counts.errors} DRC errors`);
@@ -232,7 +354,14 @@ export function mockServices(
         return { pass: reasons.length === 0, reasons, newWarningSignatures: newSigs };
       },
       renderPng: async () => {},
+      rasterizeSvg: async (svg, opts) => {
+        const { rasterizeSvg } = await import("@fabdesk/kicad");
+        return rasterizeSvg(svg, opts);
+      },
       exportGlb: async () => ({ fused: false, warnings: [] }),
+      measureMechanical: async () => {
+        throw new Error("mechanical measurement is not mocked");
+      },
       boardStats: async () => ({}),
       exportGerbers: async () => ({ paths: [] }),
       exportDrill: async () => ({ paths: [] }),
@@ -241,14 +370,14 @@ export function mockServices(
       exportBom: async () => ({ paths: [] }),
       exportNetlist: async () => ({ paths: [] }),
       exportSchematicSvg: async () => ({ paths: [] }),
+      exportSchematicPdf: async () => ({ paths: [] }),
       exportPcbSvg: async (_cli, { output }) => {
         await Bun.write(output, "<svg xmlns='http://www.w3.org/2000/svg'><text>pcb</text></svg>");
         return { paths: [output] };
       },
     },
     sim: {
-      spiceNetlist: () => "* mock\nR1 1 0 1k\n.end\n",
-      runSimulation: async () => ({
+      runSpiceSimulation: async () => ({
         engine: "spicey",
         analysis: "op",
         columns: ["node", "V"],

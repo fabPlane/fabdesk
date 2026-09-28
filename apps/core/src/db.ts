@@ -196,6 +196,14 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX run_dumps_created ON run_dumps(created_at DESC);
     `,
   },
+  {
+    // Durable asynchronous routing lifecycle. The legacy columns stay queryable by older clients;
+    // record_json carries the revision-bound progress/candidate/application contract atomically.
+    version: 8,
+    sql: `
+      ALTER TABLE route_runs ADD COLUMN record_json TEXT;
+    `,
+  },
 ];
 
 export function openDatabase(path: string): Database {
@@ -926,41 +934,161 @@ type RouteRunRow = {
   error: string | null;
   started_at: string;
   ended_at: string | null;
+  record_json: string | null;
 };
 
 export class RouteRunRepo {
   constructor(private readonly db: Database) {}
   private toRec(r: RouteRunRow): RouteRunRecord {
+    if (r.record_json) return JSON.parse(r.record_json) as RouteRunRecord;
+    const legacyResult = r.result_json ? (JSON.parse(r.result_json) as RouteResult) : null;
+    const state =
+      r.status === "done"
+        ? "completed"
+        : r.status === "running"
+          ? "interrupted"
+          : (r.status as RouteRunRecord["state"]);
+    const emptyArtifact = r.frames_path.replace(/\/frames\.jsonl$/, "");
     return {
       id: r.id,
       projectId: r.project_id,
       router: r.router,
-      status: r.status as RouteRunRecord["status"],
+      runtimeId: null,
+      state,
+      status: state,
       framesPath: r.frames_path,
+      artifacts: {
+        runDir: emptyArtifact,
+        request: "",
+        progress: "",
+        frames: r.frames_path,
+        log: "",
+        result: "",
+        candidate: "",
+        diff: "",
+      },
+      request: {
+        timeoutMs: 0,
+        deadlineAt: r.started_at,
+        onlyConnections: null,
+        targets: null,
+        rules: null,
+        settings: null,
+        applyPolicy: "auto",
+      },
+      startingPcbRevision: "",
+      currentPcbRevision: null,
+      canonicalMatchesStart: false,
+      progress: {
+        phase: state,
+        pass: null,
+        routed: null,
+        total: null,
+        remaining: null,
+        violations: null,
+        elapsedMs: 0,
+        measuredAt: r.ended_at ?? r.started_at,
+        heartbeatAt: r.ended_at ?? r.started_at,
+        diagnostics: [],
+      },
+      candidate: {
+        available: false,
+        identity: null,
+        sha256: null,
+        bytes: null,
+        path: "",
+        reopenable: false,
+        inspectedAt: null,
+        limitation: "legacy synchronous route record",
+        diff: null,
+      },
+      application: {
+        policy: "auto",
+        state: legacyResult ? "applied" : "not_available",
+        expectedPcbRevision: "",
+        resultingPcbRevision: null,
+        appliedAt: r.ended_at,
+        reason: "legacy synchronous route record",
+      },
       startedAt: r.started_at,
+      updatedAt: r.ended_at ?? r.started_at,
       endedAt: r.ended_at,
-      result: r.result_json ? (JSON.parse(r.result_json) as RouteResult) : null,
+      result: legacyResult
+        ? ({
+            ...legacyResult,
+            changedGeometryCount: legacyResult.changedGeometry?.length ?? 0,
+            changedGeometry: undefined,
+          } as RouteRunRecord["result"])
+        : null,
       error: r.error,
+      terminalReason: r.error,
     };
   }
-  start(rec: Omit<RouteRunRecord, "endedAt" | "result" | "error" | "status">): void {
+  start(rec: RouteRunRecord): void {
     this.db.run(
-      "INSERT INTO route_runs(id, project_id, router, status, frames_path, started_at) VALUES (?, ?, ?, 'running', ?, ?)",
-      [rec.id, rec.projectId, rec.router, rec.framesPath, rec.startedAt],
+      "INSERT INTO route_runs(id, project_id, router, status, frames_path, result_json, error, started_at, ended_at, record_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      [
+        rec.id,
+        rec.projectId,
+        rec.router,
+        rec.state,
+        rec.framesPath,
+        rec.result ? JSON.stringify(rec.result) : null,
+        rec.error,
+        rec.startedAt,
+        rec.endedAt,
+        JSON.stringify(rec),
+      ],
     );
   }
-  finish(id: string, patch: Pick<RouteRunRecord, "status" | "result" | "error">): void {
+  update(id: string, patch: Partial<RouteRunRecord>): void {
+    const current = this.get(id);
+    if (!current) return;
+    const next = {
+      ...current,
+      ...patch,
+      status: patch.state ?? patch.status ?? current.state,
+      updatedAt: patch.updatedAt ?? nowIso(),
+    };
     this.db.run(
-      "UPDATE route_runs SET status = ?, result_json = ?, error = ?, ended_at = ? WHERE id = ?",
-      [patch.status, patch.result ? JSON.stringify(patch.result) : null, patch.error, nowIso(), id],
+      "UPDATE route_runs SET status = ?, result_json = ?, error = ?, ended_at = ?, record_json = ? WHERE id = ?",
+      [
+        next.state,
+        next.result ? JSON.stringify(next.result) : null,
+        next.error,
+        next.endedAt,
+        JSON.stringify(next),
+        id,
+      ],
     );
   }
   /** Runs still marked running when the daemon starts were cut off by its restart; nobody will finish them. */
   failStale(): number {
-    return this.db.run(
-      "UPDATE route_runs SET status = 'failed', error = 'daemon restarted while routing', ended_at = ? WHERE status = 'running'",
-      [nowIso()],
-    ).changes;
+    const rows = this.db
+      .query<
+        RouteRunRow,
+        []
+      >("SELECT * FROM route_runs WHERE status IN ('queued', 'running', 'cancel_requested', 'cancelling')")
+      .all();
+    const endedAt = nowIso();
+    for (const row of rows) {
+      const rec = this.toRec(row);
+      this.update(rec.id, {
+        state: "interrupted",
+        status: "interrupted",
+        endedAt,
+        error: "daemon restarted while routing",
+        terminalReason:
+          "daemon restarted while routing; any durable candidate and artifacts were preserved",
+        progress: {
+          ...rec.progress,
+          phase: "interrupted",
+          measuredAt: endedAt,
+          heartbeatAt: rec.progress.heartbeatAt,
+        },
+      });
+    }
+    return rows.length;
   }
   get(id: string): RouteRunRecord | null {
     const r = this.db.query<RouteRunRow, [string]>("SELECT * FROM route_runs WHERE id = ?").get(id);

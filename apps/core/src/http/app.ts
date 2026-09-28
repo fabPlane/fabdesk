@@ -287,7 +287,6 @@ export function createApp(deps: AppDeps): Hono<Env> {
   app.delete("/projects/:id", async (c) => {
     // The design server keeps one KiCad process per project session; a deleted project's must go too.
     const handle = await deps.projects.handle(c.req.param("id")).catch(() => null);
-    if (handle) await deps.services.design.release(handle.dir).catch(() => undefined);
     const ok = await deps.projects.delete(c.req.param("id"), {
       purge: c.req.query("purge") === "1",
     });

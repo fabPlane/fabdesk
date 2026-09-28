@@ -44,7 +44,10 @@ export function ThreadView() {
     const runtimeMode = thread.runtimeMode === "supervised" ? "full" : "supervised";
     setModeError(null);
     try {
-      await client.request(`/threads/${encodeURIComponent(thread.id)}`, { method: "PATCH", json: { runtimeMode } });
+      await client.request(`/threads/${encodeURIComponent(thread.id)}`, {
+        method: "PATCH",
+        json: { runtimeMode },
+      });
       void qc.invalidateQueries({ queryKey: ["thread", thread.id] });
       void qc.invalidateQueries({ queryKey: ["threads"] });
     } catch (e) {
@@ -70,7 +73,10 @@ export function ThreadView() {
       <div className="flex h-10 items-center gap-2 border-b border-border px-4">
         <div className="truncate text-sm font-medium">{thread?.title ?? "New chat"}</div>
         {thread && (
-          <Badge tone="neutral" title={`Agent: ${thread.agentId}${thread.model ? ` / ${thread.model}` : ""}`}>
+          <Badge
+            tone="neutral"
+            title={`Agent: ${thread.agentId}${thread.model ? ` / ${thread.model}` : ""}`}
+          >
             {thread.agentId}
             {thread.model ? ` / ${thread.model}` : ""}
           </Badge>
@@ -80,21 +86,38 @@ export function ThreadView() {
           <button
             type="button"
             onClick={() => void toggleMode()}
-            title={modeError ?? (thread.runtimeMode === "supervised" ? "Supervised: writes wait for your approval. Click for full mode." : "Full: the agent runs unattended. Click to supervise writes.")}
+            title={
+              modeError ??
+              (thread.runtimeMode === "supervised"
+                ? "Supervised: writes wait for your approval. Click for full mode."
+                : "Full: the agent runs unattended. Click to supervise writes.")
+            }
             data-testid="runtime-mode-toggle"
           >
-            <Badge tone={modeError ? "danger" : thread.runtimeMode === "supervised" ? "warning" : "neutral"}>{modeError ? "cannot supervise" : (thread.runtimeMode ?? "full")}</Badge>
+            <Badge
+              tone={
+                modeError ? "danger" : thread.runtimeMode === "supervised" ? "warning" : "neutral"
+              }
+            >
+              {modeError ? "cannot supervise" : (thread.runtimeMode ?? "full")}
+            </Badge>
           </button>
         )}
         {run && (
           <Badge
             tone="success"
-            title={run.usage ? `${run.usage.inputTokens ?? 0} in / ${run.usage.outputTokens ?? 0} out` : "running"}
+            title={
+              run.usage
+                ? `${run.usage.inputTokens ?? 0} in / ${run.usage.outputTokens ?? 0} out`
+                : "running"
+            }
           >
             running{elapsed !== undefined ? ` · ${formatElapsed(elapsed)}` : ""}
           </Badge>
         )}
-        {run?.usage?.costUsd !== undefined && <span className="text-xs text-muted">${run.usage.costUsd.toFixed(3)}</span>}
+        {run?.usage?.costUsd !== undefined && (
+          <span className="text-xs text-muted">${run.usage.costUsd.toFixed(3)}</span>
+        )}
       </div>
       {activeThreadId ? (
         <MessageList thread={thread} messages={messages.data ?? []} loading={messages.isLoading} />
@@ -102,8 +125,9 @@ export function ThreadView() {
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
           <div className="text-xl font-semibold">What board are we building?</div>
           <div className="max-w-md text-sm text-muted">
-            Describe the circuit, attach a sketch, and the agent will write the netlist, build the board, route it, run DRC
-            and render it. Watch the board panel as it works.
+            Describe the circuit or attach a sketch. The agent can create the native schematic and
+            PCB, route and verify the board, then prepare manufacturing outputs. Watch the board
+            panel as it works.
           </div>
         </div>
       )}

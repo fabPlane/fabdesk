@@ -298,7 +298,16 @@ export interface RouteRunSummary {
   id: string;
   projectId: string;
   router: string;
-  status: "running" | "done" | "failed" | "cancelled";
+  status:
+    | "queued"
+    | "running"
+    | "cancel_requested"
+    | "cancelling"
+    | "cancelled"
+    | "completed"
+    | "failed"
+    | "timed_out"
+    | "interrupted";
   framesPath: string;
   startedAt: string;
   endedAt: string | null;
@@ -317,7 +326,12 @@ export function useRouteRuns(projectId: string | null) {
     queryKey: routeRunsKey(projectId),
     queryFn: () => client.request(`/projects/${encodeURIComponent(projectId!)}/route-runs`),
     enabled: !!projectId,
-    refetchInterval: (q) => (q.state.data?.some((r) => r.status === "running") ? 3000 : false),
+    refetchInterval: (q) =>
+      q.state.data?.some((r) =>
+        ["queued", "running", "cancel_requested", "cancelling"].includes(r.status),
+      )
+        ? 3000
+        : false,
   });
 }
 
@@ -328,7 +342,11 @@ export function useRouteRun(runId: string | null) {
     queryKey: ["route-run", runId],
     queryFn: () => client.request(`/route/runs/${encodeURIComponent(runId!)}`),
     enabled: !!runId,
-    refetchInterval: (q) => (q.state.data?.status === "running" ? 2000 : false),
+    refetchInterval: (q) =>
+      q.state.data &&
+      ["queued", "running", "cancel_requested", "cancelling"].includes(q.state.data.status)
+        ? 2000
+        : false,
   });
 }
 

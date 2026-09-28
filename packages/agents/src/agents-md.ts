@@ -9,28 +9,21 @@ export interface AgentDocsContext {
   sketches: string[];
   board: { layers: number; widthMm?: number; heightMm?: number; template?: string };
   mcpServerName: string;
+  /** Experimental interfaces without Fabdesk MCP tools. */
+  interfaceMode?: "substrate" | "programmable";
 }
 
 /** Design rules for prefab blanks, keyed by `fabdesk.json` `board.template`. */
 const TEMPLATE_NOTES: Record<string, string> = {
   "viagrid-9055": `## Viagrid 9055 blank (board.template)
-This board is laid out on Opulo's Viagrid 9055: a prefabricated 90 × 55 mm two-layer blank with **180 factory
-vias** (1.0 mm pad, 0.2 mm drill) and four 3.5 mm mounting holes. Copper is removed afterwards to isolate nets, so:
-- The build tool draws the blank itself from the template (outline, the vias as free vias, the holes, 0.2 mm
-  track and clearance rules); \`board\` in circuit.netlist.json is ignored while the template is set. Never
-  describe vias or holes in the netlist.
-- **Layer changes happen only through the factory vias.** The routing tool uses the laser-prefab preset, which
-  routes through them and claims them for the net. A route result that reports vias "OFF the blank" is a
-  failure: unroute and route again.
+Opulo Viagrid 9055 is a prefabricated 90 × 55 mm two-layer blank with 180 factory vias (1.0 mm pad,
+0.2 mm drill), four 3.5 mm mounting holes, and 0.2 mm track and clearance rules. Copper isolation is
+the fabrication method. Layer changes are physically limited to the factory vias.
 - Factory vias sit in rows at y = ±20.5 (x = −35…35 step 2), columns at x = ±38 (y = −14…14 step 2), and two
   clusters centred on x = ±19 (y = ±8, ±10, ±12 rows plus a small diamond at y = 0) — blank frame, centre
   origin, +y up; the board's KiCad frame is x + 45, 27.5 − y. Free areas for parts: x in −12…12, or |x| > 26
-  with |y| < 14. Keep 2 mm from the mounting holes at (±38.75, ±18.25).
-- Give every component an explicit \`board.placements\` entry in the KiCad frame (x = blank x + 45,
-  y = 27.5 − blank y). Use the free areas above, keep pads clear of factory vias and mounting holes,
-  then check with the query tool and \`verify_viagrid\`.
-- Prefer 0805 or larger SMD parts and 0.2 mm traces (blank rules: track 0.2 mm, clearance 0.2 mm).
-- After routing run \`verify_viagrid\`, then DRC; \`export_dxf\` writes the copper-removal artwork.`,
+  with |y| < 14. Mounting-hole centres are (±38.75, ±18.25), with a 2 mm component clearance.
+- KiCad-frame coordinates are x = blank x + 45, y = 27.5 − blank y.`,
 };
 
 export const USER_START = "<!-- fabdesk:user-start -->";
@@ -45,7 +38,7 @@ function boardSize(board: AgentDocsContext["board"]): string {
     return `${board.widthMm} × ${board.heightMm} mm`;
   if (board.widthMm !== undefined) return `${board.widthMm} mm wide (height free)`;
   if (board.heightMm !== undefined) return `${board.heightMm} mm high (width free)`;
-  return "not fixed — keep it as small as the parts allow";
+  return "not fixed";
 }
 
 /** Renders AGENTS.md; `userSection` is the preserved text between the user markers. */
@@ -56,114 +49,42 @@ export function renderAgentsMd(
   const mcp = ctx.mcpServerName;
   const sketches =
     ctx.sketches.length > 0
-      ? ctx.sketches
-          .map((p) => `- \`${p}\` — read it with your file/image reading tool before designing.`)
-          .join("\n")
-      : "- No sketches attached. Work from the prompt.";
-  const tools =
-    ctx.toolsMarkdown.trim() === ""
-      ? "_No tool documentation available for this run._"
-      : ctx.toolsMarkdown.trim();
-
+      ? ctx.sketches.map((p) => `- \`${p}\` — user-provided sketch.`).join("\n")
+      : "- No sketches attached.";
+  const interfaceNote =
+    ctx.interfaceMode === "substrate"
+      ? `This run exposes native project files and Fabdesk's packaged \`kicad-cli\` through \`fabpcb env\`. No Fabdesk MCP design tools are exposed. Other shell executables are host tools, not part of the packaged KiCad runtime. Available independent operations can be listed with \`fabpcb --help\` and \`fabpcb env describe\`.`
+      : ctx.interfaceMode === "programmable"
+        ? `This run exposes native project files, Fabdesk's packaged \`kicad-cli\` through \`fabpcb env\`, and a versioned direct KiCad IPC catalog through \`fabpcb ipc\`. No Fabdesk MCP design tools are exposed. These authoring paths are optional and may be mixed.`
+        : `This directory is a fabPlane PCB project. Its MCP server is \`${mcp}\`.`;
+  const ipcNote =
+    ctx.interfaceMode === "programmable"
+      ? `\nA standalone direct KiCad IPC interface is available. Search its versioned operation catalog, inspect an operation schema, or call an exact operation:\n\n\`\`\`bash\nfabpcb ipc search --query <text>\nfabpcb ipc describe <operation-id>\nfabpcb ipc call <operation-id> --request '<json-object>'\n\`\`\`\n`
+      : "";
   return `${HEADER}
 # ${ctx.projectName} — fabPlane project
 
-This directory is a fabPlane PCB project. fabPlane runs you with an MCP server named \`${mcp}\`
-(tools appear as \`mcp__${mcp}__<tool>\` or \`${mcp}__<tool>\`). Use those tools to build, route,
-convert, check and render the board; only edit files listed as yours in the file contract.
+${interfaceNote}
+${ipcNote}
 
 ## Board constraints
 - Copper layers: ${ctx.board.layers}
 - Size: ${boardSize(ctx.board)}
-- Every net must be routed and DRC must be clean before you report the board as done.
 ${ctx.board.template && TEMPLATE_NOTES[ctx.board.template] ? `\n${TEMPLATE_NOTES[ctx.board.template]}\n` : ""}
 ## Sketches
 ${sketches}
 
-## File contract
-| Path | Owner | Notes |
+## Project files
+| Path | Meaning |
 | --- | --- | --- |
-| \`fabdesk.json\` | fabdesk | Project manifest. Never edit; use the board-settings tool. |
-| \`circuit.netlist.json\` | **you** | The design source: the single file you write (schema below). |
-| \`board.kicad_pcb\`, \`board.kicad_pro\` | \`${mcp}\` | The KiCad board the build tool writes and the routing tool edits. Never hand-edit. |
-| \`sketches/\` | user | Input drawings and photos (read-only). |
-| \`renders/\` | \`${mcp}\` | PNG/SVG renders of the board. |
-| \`reports/\` | \`${mcp}\` | \`build.json\`, \`drc.json\`, \`erc.json\`, \`spice.json\` from the tools. |
-| \`exports/\` | \`${mcp}\` | Gerbers, BOM, pick-and-place, netlists. |
-| \`AGENTS.md\`, \`CLAUDE.md\` | fabdesk | Regenerated per run except the user section. |
-
-## circuit.netlist.json
-\`\`\`json
-{
-  "netlist": {
-    "components": [
-      { "ref": "R1", "value": "1k", "footprint": "Resistor_SMD:R_0402_1005Metric", "libSource": { "lib": "Device", "part": "R" } },
-      { "ref": "D1", "value": "RED", "footprint": "LED_SMD:LED_0603_1608Metric", "libSource": { "lib": "Device", "part": "LED" }, "fields": { "MPN": "..." } }
-    ],
-    "nets": [
-      { "name": "VCC", "nodes": [{ "ref": "R1", "pin": "1" }] },
-      { "name": "N1", "nodes": [{ "ref": "R1", "pin": "2" }, { "ref": "D1", "pin": "2" }] },
-      { "name": "GND", "nodes": [{ "ref": "D1", "pin": "1" }] }
-    ]
-  },
-  "board": {
-    "widthMm": ${ctx.board.widthMm ?? 40},
-    "heightMm": ${ctx.board.heightMm ?? 30},
-    "copperLayers": ${ctx.board.layers},
-    "placements": [
-      { "ref": "R1", "position": { "x": 10, "y": 10 } },
-      { "ref": "D1", "position": { "x": 20, "y": 10 } }
-    ]
-  }
-}
-\`\`\`
-- \`footprint\` is a KiCad library id (\`Library:Name\`). Find real ones with the footprint search tool; never invent names.
-- \`libSource\` is the KiCad schematic symbol id split into \`lib\` and \`part\`. Search with
-  \`circuit_search_parts {"kind":"symbol","query":"resistor"}\`; supply it for every component so
-  builds produce searchable symbols and labelled wires. A missing or unknown symbol is a build warning.
-- Before assigning nets, inspect exact symbol pin names/types and footprint pads with
-  \`circuit_describe_part\`. Never guess polarity or pad numbering: KiCad \`Device:LED\` is pin 1
-  cathode (K), pin 2 anode (A). Use specific package-size searches such as \`R_0805_2012\` when
-  generic results are too broad.
-- \`board.placements\` is optional and uses absolute millimetres in the board frame (+x right, +y down).
-  Each point places the footprint library anchor; rotation is not currently an input. Supply positions
-  when placement matters. A rebuild moves only references explicitly listed there; manual placement
-  of other existing footprints is preserved. Inspect the result with \`circuit_query {"select":"components"}\`.
-- Every pin that carries a signal appears in exactly one net; a pin listed nowhere is left unconnected.
-- Reference prefixes matter: R/C/L/V/I/D are simulated by value; everything else is placed and routed only.
-- Keep values explicit (\`"4.7k"\`, \`"100nF"\`, \`"3.3V"\`).
-
-## Workflow
-1. Read the sketches and the prompt; read \`circuit.netlist.json\` if it exists.
-2. Write or edit \`circuit.netlist.json\`.
-3. Search both footprint and symbol ids and describe their pins/pads before choosing them. Build with the \`${mcp}\` build tool;
-   fix every error and review every warning until it passes. After changing the board size, build with
-   \`fresh: true\` — a build never redraws an outline that already exists.
-4. Check the placement (\`circuit_query\` select=outline for the board's bounds, then components, or a
-   render): the autoplacer packs parts into the top-left corner and can leave a connector across
-   the outline. Move parts with \`circuit_place\` (KiCad board coordinates in mm, y down; the outline's
-   corner is not at 0,0) — connectors on an edge, the MCU in the middle — before routing. Never edit \`board.kicad_pcb\` by hand; the design server holds the board in
-   memory and overwrites the file.
-5. Route with the routing tool.
-6. Run DRC. Fix what is yours: placement (\`circuit_place\`, then unroute and route again) and the
-   netlist. Clearance, shorting or tracks-crossing errors between the autorouter's own tracks are the
-   router's — report them by rule with counts and stop; do not try to repair tracks yourself.
-   The default build preserves compatible copper; use \`rebuild="clean"\` before a full reroute after
-   changing placement, outline or routing constraints.
-7. Render, then summarise what the board does, the parts used and any open issues. Render tools attach
-   images directly in chat and return a \`fileUrl\` / \`url\` field. When the user asks for links, give
-   those browser-openable \`file://\` URLs as plain text.
-
-Work through the \`${mcp}\` tools: they are the only tools guaranteed to be available. Shell commands
-(Bash, PowerShell, python, node) may be blocked by the permission mode and cannot be approved during a run;
-if one is refused, do not retry it, use a \`${mcp}\` tool instead (project_read_file, circuit_query,
-route_status, ...). \`board.kicad_*\` and \`reports/\` are outputs of earlier runs, not inputs: start from
-\`circuit.netlist.json\` and rebuild rather than reading old results.
-
-Do not run \`git\`, install packages, or touch files outside this directory unless the prompt asks for it.
-
-## Tools
-${tools}
+| \`fabdesk.json\` | Project metadata. |
+| \`board.kicad_pro\` | Canonical KiCad project. |
+| \`board.kicad_sch\` | Canonical KiCad schematic. |
+| \`board.kicad_pcb\` | Canonical KiCad PCB. |
+| \`sketches/\` | User-provided drawings and photos. |
+| \`renders/\` | Rendered artifacts. |
+| \`reports/\` | Machine-readable reports. |
+| \`exports/\` | Manufacturing and interchange outputs. |
 
 ${USER_START}
 ${userSection.trim() === "" ? DEFAULT_USER_SECTION : userSection.trim()}

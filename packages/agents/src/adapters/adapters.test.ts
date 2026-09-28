@@ -43,9 +43,7 @@ describe("shared", () => {
       { path: "/a.png", mime: "image/png" },
       { path: "/notes.pdf", mime: "application/pdf" },
     ]);
-    expect(p).toBe(
-      "Go\n\nSketch: /a.png — read it with the Read tool.\nAttachment (application/pdf): /notes.pdf",
-    );
+    expect(p).toBe("Go\n\nSketch: /a.png\nAttachment (application/pdf): /notes.pdf");
     expect(
       promptWithAttachments("Go", [{ path: "/a.png", mime: "image/png" }], { skipImages: true }),
     ).toBe("Go");
@@ -69,7 +67,7 @@ describe("claude adapter", () => {
     expect(args.slice(0, 3)).toEqual([
       "claude",
       "-p",
-      "Design a blinky\n\nSketch: /p/sketches/a.png — read it with the Read tool.",
+      "Design a blinky\n\nSketch: /p/sketches/a.png",
     ]);
     expect(args).toContain("--strict-mcp-config");
     expect(args).toContain("--include-partial-messages");
@@ -145,7 +143,7 @@ describe("codex adapter", () => {
     expect(args).toContain("--approve-for-me");
     expect(args[args.indexOf("-C") + 1]).toBe(dir);
     expect(args).toContain('sandbox_mode="workspace-write"');
-    expect(args).toContain('mcp_servers.fabdesk.url="http://127.0.0.1:4321/mcp?toolsets=all"');
+    expect(args).toContain('mcp_servers.fabdesk.url="http://127.0.0.1:4321/mcp?profile=native"');
     expect(args).toContain('mcp_servers.fabdesk.bearer_token_env_var="FABDESK_TOKEN"');
     expect(args[args.indexOf("-i") + 1]).toBe("/p/sketches/a.png");
     expect(args[args.indexOf("-m") + 1]).toBe("gpt-5.5");
@@ -157,6 +155,14 @@ describe("codex adapter", () => {
   test("terminates options before a prompt that starts with a hyphen", () => {
     const args = codexArgs(session({ prompt: "- Improve this PCB" }), "codex");
     expect(args.slice(-2)).toEqual(["--", "- Improve this PCB"]);
+  });
+
+  test("preserves an explicitly selected substrate profile", () => {
+    const args = codexArgs(
+      session({ mcp: { url: "http://127.0.0.1:4321/mcp?profile=substrate", token: TOKEN } }),
+      "codex",
+    );
+    expect(args).toContain('mcp_servers.fabdesk.url="http://127.0.0.1:4321/mcp?profile=substrate"');
   });
 
   test("resume: `exec resume <thread>` without -C, bypass replaces the sandbox", () => {
@@ -209,7 +215,7 @@ describe("grok adapter", () => {
     expect(args.slice(0, 3)).toEqual([
       "grok",
       "-p",
-      "Design a blinky\n\nSketch: /p/sketches/a.png — read it with the Read tool.",
+      "Design a blinky\n\nSketch: /p/sketches/a.png",
     ]);
     expect(args[args.indexOf("--cwd") + 1]).toBe(dir);
     expect(args).toContain("--trust");
