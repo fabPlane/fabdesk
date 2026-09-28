@@ -125,6 +125,7 @@ function InventoryRow({ item }: { item: InventoryItem }) {
 export function InventoryView() {
   const { host } = useCore();
   const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
+  const setInventoryOpen = useUiStore((s) => s.setInventoryOpen);
   const status = useCloudStatus();
   const ready = !!status.data?.available && !!status.data.signedIn;
   const [q, setQ] = useState("");
@@ -160,7 +161,7 @@ export function InventoryView() {
     <div className="flex h-full min-w-0 flex-col bg-bg" data-testid="inventory-view">
       <div className="flex h-10 items-center gap-2 border-b border-border px-4">
         <div className="min-w-0">
-          <div className="truncate text-sm font-medium">Inventory</div>
+          <div className="truncate text-sm font-medium">Parts Inventory</div>
           {org && <div className="truncate text-[11px] text-muted">{org.name}</div>}
         </div>
         <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, MPN, SKU..." className="ml-auto h-7 max-w-xs text-xs" data-testid="inventory-search" />
@@ -173,6 +174,9 @@ export function InventoryView() {
             Dashboard &#8599;
           </Button>
         )}
+        <IconButton title="Close Parts Inventory" onClick={() => setInventoryOpen(false)} data-testid="inventory-close">
+          &#10005;
+        </IconButton>
       </div>
       {adding && <AddItemForm onDone={() => setAdding(false)} />}
       {inventory.error && <div className="border-b border-border px-4 py-1.5 text-xs text-danger">{cloudErrorMessage(inventory.error)}</div>}

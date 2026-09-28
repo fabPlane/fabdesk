@@ -16,6 +16,7 @@ export function UserFooter() {
   const localAllowed = useAuthStore((s) => s.localAllowed);
   const setAuthState = useAuthStore((s) => s.setState);
   const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
+  const setInventoryOpen = useUiStore((s) => s.setInventoryOpen);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -97,6 +98,14 @@ export function UserFooter() {
             </span>
           </MenuItem>
           <MenuItem onClick={() => openSettings("shortcuts")}>Keyboard shortcuts</MenuItem>
+          <MenuItem
+            onClick={() => {
+              close();
+              setInventoryOpen(true);
+            }}
+          >
+            Parts Inventory
+          </MenuItem>
           {!local && auth.dashboardUrl && (
             <MenuItem
               onClick={() => {

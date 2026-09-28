@@ -26,7 +26,7 @@ export function AppShell({ onNewChat, coreStatus, banner }: AppShellProps) {
   const boardOpen = useUiStore((s) => s.boardOpen);
   const openSourceId = useUiStore((s) => s.activeOpenSourceId);
   const orderFlowOpen = useUiStore((s) => s.orderFlowOpen);
-  const inventory = useUiStore((s) => s.sidebarListTab === "inventory");
+  const inventory = useUiStore((s) => s.inventoryOpen);
   const center = orderFlowOpen ? (
     <OrderFlow />
   ) : inventory ? (

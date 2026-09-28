@@ -17,6 +17,7 @@ export function CommandPalette() {
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
   const toggleBoard = useUiStore((s) => s.toggleBoard);
   const setSidebarListTab = useUiStore((s) => s.setSidebarListTab);
+  const setInventoryOpen = useUiStore((s) => s.setInventoryOpen);
   const dashboardUrl = useAuthStore((s) => s.state?.dashboardUrl);
   const actions = useAppActions();
   const threads = useThreads();
@@ -62,8 +63,8 @@ export function CommandPalette() {
             <Command.Item value="settings" onSelect={pick(actions.openSettings)}>
               Settings <span className="ml-auto"><Kbd>{mod},</Kbd></span>
             </Command.Item>
-            <Command.Item value="team inventory" onSelect={pick(() => setSidebarListTab("inventory"))}>
-              Team inventory
+            <Command.Item value="parts inventory" onSelect={pick(() => setInventoryOpen(true))}>
+              Parts Inventory
             </Command.Item>
             {dashboardUrl && (
               <Command.Item value="fabplane dashboard" onSelect={pick(() => void host.openExternal(dashboardUrl))}>
