@@ -88,9 +88,30 @@ export type ImportSummary = {
   renamed: Array<{ from: string; to: string }>;
 };
 
-/** The escapes KiCad writes for characters a label cannot carry literally; the fork cannot save them. */
+/**
+ * The escapes KiCad writes for characters a label cannot carry literally (`{slash}`, `{colon}`, …)
+ * become `_`; any brace left over after that becomes `_` too, since `circuit_build` refuses every
+ * `{`/`}` when the board carries rules. Collisions are resolved by `uniqueNetNames`.
+ */
 export function sanitizeNetName(name: string): string {
-  return name.replace(/\{[a-z]+\}/gi, "_");
+  return name.replace(/\{[a-z]+\}/gi, "_").replace(/[{}]/g, "_");
+}
+
+/**
+ * Sanitized names for every raw net name, in order. A net whose name needs no rewrite keeps it; a
+ * rewritten one that would land on a name already taken (by an untouched net or an earlier
+ * rewrite) gets the first free `_2`, `_3`, … suffix, so two nets never merge silently.
+ */
+export function uniqueNetNames(raw: readonly string[]): string[] {
+  const taken = new Set(raw.filter((name) => sanitizeNetName(name) === name));
+  return raw.map((name) => {
+    const clean = sanitizeNetName(name);
+    if (clean === name) return name;
+    let candidate = clean;
+    for (let n = 2; taken.has(candidate); n++) candidate = `${clean}_${n}`;
+    taken.add(candidate);
+    return candidate;
+  });
 }
 
 export function importKicadNetlist(
@@ -145,9 +166,11 @@ export function importKicadNetlist(
   const refs = new Set(components.map((c) => c.ref));
   const renamed: ImportSummary["renamed"] = [];
   const nets: NetlistFile["netlist"]["nets"] = [];
-  for (const net of children(child(root, "nets") ?? [], "net")) {
+  const rawNets = children(child(root, "nets") ?? [], "net");
+  const names = uniqueNetNames(rawNets.map((net) => str(net, "name") ?? ""));
+  for (const [i, net] of rawNets.entries()) {
     const raw = str(net, "name") ?? "";
-    const name = sanitizeNetName(raw);
+    const name = names[i]!;
     if (name !== raw) renamed.push({ from: raw, to: name });
     const nodes = children(net, "node")
       .map((n) => ({ ref: str(n, "ref") ?? "", pin: str(n, "pin") ?? "" }))

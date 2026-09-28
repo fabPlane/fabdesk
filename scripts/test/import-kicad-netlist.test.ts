@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { importKicadNetlist, parseSexpr, sanitizeNetName } from "../import-kicad-netlist";
+import {
+  importKicadNetlist,
+  parseSexpr,
+  sanitizeNetName,
+  uniqueNetNames,
+} from "../import-kicad-netlist";
 
 const NET = `(export (version "E")
   (design (source "/x/pcbgolf.kicad_sch") (tool "Eeschema 10.99.0"))
@@ -79,5 +84,31 @@ describe("importKicadNetlist", () => {
   test("the reader handles quoted strings with escapes", () => {
     expect(parseSexpr('(a "b \\"c\\"" (d e))')).toEqual(["a", 'b "c"', ["d", "e"]]);
     expect(sanitizeNetName("A{slash}B{colon}C")).toBe("A_B_C");
+  });
+
+  test("leftover braces are rewritten too", () => {
+    expect(sanitizeNetName("CD{x-1}DAT3")).toBe("CD_x-1_DAT3");
+    expect(sanitizeNetName("A}B{")).toBe("A_B_");
+  });
+
+  test("a rewrite never merges with an existing net", () => {
+    expect(
+      uniqueNetNames(["Net-(J2-CD{slash}DAT3)", "Net-(J2-CD_DAT3)", "A{slash}B", "A{colon}B"]),
+    ).toEqual(["Net-(J2-CD_DAT3)_2", "Net-(J2-CD_DAT3)", "A_B", "A_B_2"]);
+    expect(uniqueNetNames(["X{slash}Y", "X_Y", "X_Y_2"])).toEqual(["X_Y_3", "X_Y", "X_Y_2"]);
+  });
+
+  test("the import keeps colliding nets apart and reports the rename", () => {
+    const text = NET.replace(
+      '(net (code "3") (name "ONLY_DNP")',
+      '(net (code "4") (name "Net-(J2-CD_DAT3)") (node (ref "R1") (pin "2")) (node (ref "J2") (pin "3")))\n    (net (code "3") (name "ONLY_DNP")',
+    );
+    const { file, summary } = importKicadNetlist(text);
+    expect(file.netlist.nets.map((n) => n.name)).toEqual([
+      "GND",
+      "Net-(J2-CD_DAT3)_2",
+      "Net-(J2-CD_DAT3)",
+    ]);
+    expect(summary.renamed).toEqual([{ from: "Net-(J2-CD{slash}DAT3)", to: "Net-(J2-CD_DAT3)_2" }]);
   });
 });
