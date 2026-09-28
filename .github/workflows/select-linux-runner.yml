@@ -13,28 +13,16 @@ on:
         description: JSON runner selector for a NAS runner or Blacksmith fallback
         value: ${{ jobs.select.outputs.runner }}
 
-# Serialize claims on the single NAS slot. The settling job gives GitHub time to
-# mark a just-selected runner busy and the NAS heartbeat time to publish that state
-# before the next caller reads the variable.
-concurrency:
-  group: fabdesk-linux-runner-selection
-  cancel-in-progress: false
-
 permissions:
   contents: read
 
 jobs:
-  settle:
+  select:
     # Bootstrap on the same external fallback pool the caller would use. A GitHub-hosted
     # selector cannot choose the self-hosted NAS when the repository's Actions budget is
-    # exhausted, even though the NAS itself is online and free to run.
-    runs-on: ${{ inputs.blacksmith-runner }}
-    steps:
-      - name: Let any previous NAS claim become visible
-        run: sleep 15
-
-  select:
-    needs: settle
+    # exhausted, even though the NAS itself is online and free to run. Do not put this
+    # reusable workflow in a shared concurrency group: GitHub retains only one pending
+    # member and cancels earlier callers when CI, mobile and board checks arrive together.
     runs-on: ${{ inputs.blacksmith-runner }}
     outputs:
       runner: ${{ steps.pick.outputs.runner }}
