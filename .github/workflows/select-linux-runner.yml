@@ -25,14 +25,17 @@ permissions:
 
 jobs:
   settle:
-    runs-on: ubuntu-24.04
+    # Bootstrap on the same external fallback pool the caller would use. A GitHub-hosted
+    # selector cannot choose the self-hosted NAS when the repository's Actions budget is
+    # exhausted, even though the NAS itself is online and free to run.
+    runs-on: ${{ inputs.blacksmith-runner }}
     steps:
       - name: Let any previous NAS claim become visible
         run: sleep 15
 
   select:
     needs: settle
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.blacksmith-runner }}
     outputs:
       runner: ${{ steps.pick.outputs.runner }}
     steps:
