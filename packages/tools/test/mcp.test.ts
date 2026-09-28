@@ -152,7 +152,7 @@ describe("mcp adapter", () => {
     expect((bad.content as Array<{ text: string }>)[0]!.text).toContain("no project selected");
   });
 
-  test("svg render returns an embedded resource; resources are listed without workflow prompts", async () => {
+  test("svg render returns an embedded resource; resources and the shopping_list prompt are listed", async () => {
     const { client, project } = await pair();
     await client.callTool({ name: "circuit_build", arguments: {} });
     await client.callTool({ name: "load_toolset", arguments: { toolset: "render" } });
@@ -181,6 +181,15 @@ describe("mcp adapter", () => {
     });
     expect(JSON.parse(report.contents[0]!.text as string).ok).toBe(true);
 
-    expect(client.getServerCapabilities()?.prompts).toBeUndefined();
+    // The only prompt is `shopping_list` (`/mcp__fabdesk__shopping_list` in Claude Code).
+    const prompts = await client.listPrompts();
+    expect(prompts.prompts.map((p) => p.name)).toEqual(["shopping_list"]);
+    const prompt = await client.getPrompt({
+      name: "shopping_list",
+      arguments: { request: "add 10 spare LEDs" },
+    });
+    const text = (prompt.messages[0]!.content as { text: string }).text;
+    expect(text).toContain("shopping_list_add");
+    expect(text).toContain("Request: add 10 spare LEDs");
   });
 });

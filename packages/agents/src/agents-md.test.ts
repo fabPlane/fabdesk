@@ -32,6 +32,9 @@ describe("renderAgentsMd", () => {
     expect(md).toContain("| `board.kicad_pcb` | Canonical KiCad PCB. |");
     expect(md).not.toContain("circuit.netlist.json");
     expect(md).not.toContain("### circuit_build");
+    expect(md).toContain("## Shopping list");
+    expect(md).toContain("`/shopping-list`");
+    expect(md).toContain("shopping_list_sync_bom");
     expect(md).not.toMatch(
       /workflow|must use|should use|prefer|retry|repeat until|run .* first|stopping policy/i,
     );
@@ -52,6 +55,7 @@ describe("renderAgentsMd", () => {
 
   test("keeps direct IPC absent from the substrate control", () => {
     expect(renderAgentsMd({ ...ctx, interfaceMode: "substrate" })).not.toContain("fabpcb ipc");
+    expect(renderAgentsMd({ ...ctx, interfaceMode: "substrate" })).not.toContain("## Shopping list");
   });
 
   test("handles missing sketches and unconstrained size", () => {

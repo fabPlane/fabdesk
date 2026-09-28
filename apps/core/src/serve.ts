@@ -24,6 +24,7 @@ import {
 } from "./relay";
 import { createAuth, type AuthFacade } from "./auth-facade";
 import { CloudSettingsSync } from "./cloud-settings";
+import { createCloudService } from "./cloud";
 import { EventBus } from "./bus";
 import { resolveConfig, type CoreConfig } from "./config";
 import { locateAppBridgeFile } from "./app-bridge";
@@ -316,6 +317,13 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
           appBridgeFile: locateAppBridgeFile(config.handshakePath),
           telemetry,
         });
+
+  // fabplane.com carts and inventory (`shopping` tools, `/cloud` routes); tests may inject their own.
+  services.cloud ??= createCloudService({
+    apiOrigin: config.apiOrigin,
+    token: () => auth.token(),
+    settings: () => store.settings.get(),
+  });
 
   const registry = createRegistry();
   const ctxFactory = createContextFactory({ services, projects, tokens, telemetry });

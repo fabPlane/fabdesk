@@ -26,7 +26,7 @@ export const load_toolset = defineTool({
   scope: "global",
   title: "Load a toolset",
   description:
-    "Enable an additional group of fabdesk tools for this session. Available toolsets are project, circuit, route, kicad, verify, render, export, sim, and app. Core tools are always available.",
+    "Enable an additional group of fabdesk tools for this session. Available toolsets are project, circuit, route, kicad, verify, render, export, sim, app, and shopping (fabplane.com shopping list and team inventory). Core tools are always available.",
   inputSchema: {
     toolset: ToolsetId.describe("Toolset to enable"),
   },

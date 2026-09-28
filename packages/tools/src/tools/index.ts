@@ -13,6 +13,7 @@ import { renderTools } from "./render";
 import { routeTools } from "./route";
 import { schematicTools } from "./schematic";
 import { simTools } from "./sim";
+import { shoppingTools } from "./shopping";
 import { spatialTools } from "./spatial";
 import { verifyTools } from "./verify";
 
@@ -33,6 +34,7 @@ export const allTools: ReadonlyArray<ToolDef> = [
   ...exportTools,
   ...simTools,
   ...appTools,
+  ...shoppingTools,
 ] as unknown as ReadonlyArray<ToolDef>;
 
 /** The v1 registry with every toolset. */
@@ -56,4 +58,5 @@ export * from "./render";
 export * from "./export";
 export * from "./sim";
 export * from "./app";
+export * from "./shopping";
 export * from "./spatial";

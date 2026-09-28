@@ -216,6 +216,14 @@ describe("registry", () => {
       "app_cinema",
       "app_wait_for",
       "app_eval",
+      "shopping_list_get",
+      "shopping_list_add",
+      "shopping_list_update",
+      "shopping_list_remove",
+      "shopping_list_sync_bom",
+      "shopping_list_destinations",
+      "inventory_search",
+      "inventory_add",
     ]);
     for (const n of names) expect(n).toMatch(/^[a-z][a-z0-9_]*$/);
     expect(reg.byToolset("core").length).toBe(9);

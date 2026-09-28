@@ -17,6 +17,7 @@ import { attachToRegistry, createRegistry, type ProjectHandle } from "@fabdesk/t
 import { locateAppBridgeFile } from "./app-bridge";
 import { TokenSet } from "./auth";
 import { createAuth } from "./auth-facade";
+import { createCloudService } from "./cloud";
 import { EventBus } from "./bus";
 import { resolveConfig } from "./config";
 import { createContextFactory } from "./context";
@@ -197,6 +198,11 @@ async function standalone(opts: McpStdioOptions, projectDir: string | null): Pro
     home: config.home,
     token: config.token,
     appBridgeFile: locateAppBridgeFile(config.handshakePath),
+  });
+  services.cloud = createCloudService({
+    apiOrigin: config.apiOrigin,
+    token: () => auth.token(),
+    settings: () => store.settings.get(),
   });
   const registry = createRegistry();
   let defaultProject: ProjectHandle | null = null;

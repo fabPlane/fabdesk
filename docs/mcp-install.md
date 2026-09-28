@@ -12,9 +12,19 @@ Two transports are available:
 
 Only the **core** toolset (`pcb_environment`, `project_status`, `circuit_build`, `circuit_read_errors`, `route_run`,
 `verify_drc`, `render_board`, `load_toolset`) is listed at start. Ask the agent to call
-`load_toolset` with `project`, `circuit`, `route`, `kicad`, `verify`, `render`, `export`, `sim` or `app`
-(drive the running desktop window; see [app-automation.md](app-automation.md))
+`load_toolset` with `project`, `circuit`, `route`, `kicad`, `verify`, `render`, `export`, `sim`, `app`
+(drive the running desktop window; see [app-automation.md](app-automation.md)) or `shopping`
 to enable more; the tool list refreshes automatically.
+
+### Shopping list and inventory
+
+The `shopping` toolset manages the project's fabplane.com shopping list (an org cart linked to the
+fabdesk project, grouped by purchase destination) and the team inventory: `shopping_list_get`,
+`shopping_list_sync_bom`, `shopping_list_add`, `shopping_list_update`, `shopping_list_remove`,
+`shopping_list_destinations`, `inventory_search`, `inventory_add`. They need a fabplane sign-in
+(Settings → Account); the active org is `Settings.cloudOrgId`, else the personal org. The server
+also offers an MCP prompt, `shopping_list` (`/mcp__fabdesk__shopping_list` in Claude Code), and the
+fabPlane composer expands `/shopping-list <request>` into the same instructions.
 
 ## Locating the binary
 
