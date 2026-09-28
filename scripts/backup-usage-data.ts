@@ -12,10 +12,10 @@ async function main(): Promise<void> {
   }
   const store = Store.open(resolveConfig().dbPath);
   try {
-    if (!store.settings.get().usageArchiveConsent) {
+    if (!store.settings.get().usageArchiveChoiceComplete || !store.settings.get().usageArchiveConsent) {
       throw new Error("enable Usage data backup in Fabdesk Settings > Privacy before exporting");
     }
-    const allowed = () => store.settings.get().usageArchiveConsent;
+    const allowed = () => store.settings.get().usageArchiveChoiceComplete && store.settings.get().usageArchiveConsent;
     if (destination === "--remote") {
       const config = resolveConfig();
       const { createAuth } = await import("../apps/core/src/auth-facade");
@@ -28,7 +28,7 @@ async function main(): Promise<void> {
         emit: () => {},
       });
       const counts = await new UsageArchive(
-        new UsageApiArchiveWriter(config.apiOrigin, () => auth.token()),
+        new UsageApiArchiveWriter(config.apiOrigin, () => auth.token(), store.settings),
       ).backfill(store.db, allowed);
       process.stdout.write(JSON.stringify({ destination: "remote", ...counts }) + "\n");
     } else {

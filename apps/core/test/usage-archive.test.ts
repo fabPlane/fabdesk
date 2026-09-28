@@ -11,6 +11,7 @@ describe("usage archive", () => {
     const writes: string[] = [];
     try {
       expect(store.settings.get().usageArchiveConsent).toBe(false);
+      expect(store.settings.get().usageArchiveChoiceComplete).toBe(false);
       const thread = store.threads.create({ agentId: "codex", title: "Private" });
       store.threads.addMessage({ threadId: thread.id, role: "user", contentMd: "private prompt" });
       const archive = new UsageArchive({
@@ -18,12 +19,14 @@ describe("usage archive", () => {
           writes.push(key);
         },
       });
-      await expect(
-        archive.backfill(store.db, () => store.settings.get().usageArchiveConsent),
-      ).rejects.toBeInstanceOf(ArchiveConsentRevokedError);
+      const allowed = () => store.settings.get().usageArchiveChoiceComplete && store.settings.get().usageArchiveConsent;
+      await expect(archive.backfill(store.db, allowed)).rejects.toBeInstanceOf(ArchiveConsentRevokedError);
       expect(writes).toEqual([]);
       store.settings.patch({ usageArchiveConsent: true });
-      await archive.backfill(store.db, () => store.settings.get().usageArchiveConsent);
+      await expect(archive.backfill(store.db, allowed)).rejects.toBeInstanceOf(ArchiveConsentRevokedError);
+      expect(writes).toEqual([]);
+      store.settings.patch({ usageArchiveChoiceComplete: true });
+      await archive.backfill(store.db, allowed);
       expect(writes.some((key) => key.endsWith(`${thread.id}.json`))).toBe(true);
     } finally {
       store.close();

@@ -6,7 +6,7 @@ Run dumps inherit the capture limits described in [agent-run telemetry](agent-ru
 
 ## Back up to private Cloudflare R2 through the fabplane API
 
-Remote upload is **off by default**. It requires both an operator flag and the **Usage data backup** checkbox in Fabdesk Settings → Privacy. This checkbox is installation-wide and covers all conversations and run dumps currently stored by that daemon, including existing history. It is not scoped to individual signed-in accounts. Turning it off stops future uploads but does not erase prior backups.
+Remote upload requires an operator flag and a saved first-install privacy choice. The initial screen shows **Back up my usage data for analysis** checked; nothing uploads until the person clicks Continue. They can uncheck it first or change **Usage data backup** later in Settings → Privacy. The choice is installation-wide and covers existing conversations and run dumps. Turning it off stops future uploads but does not erase prior backups.
 
 Set this flag in the environment that launches the core daemon:
 
@@ -14,7 +14,7 @@ Set this flag in the environment that launches the core daemon:
 export FABDESK_USAGE_REMOTE_BACKUP=1
 ```
 
-The daemon sends archive objects with its existing fabplane user session to `PUT /v1/private/usage-archive`. The API authenticates the user and writes to private R2. **Only the API server holds the R2 credentials**; do not put them in a desktop environment or installer. The backend endpoint and its R2 bucket must be deployed before enabling this flag. Use a separate private bucket from public catalog images or downloads, with no public bucket URL or custom domain.
+The daemon registers a random installation UUID with the API, stores the signed upload token locally, and sends archive objects to `PUT /v1/usage-archive`. Fabplane sign-in is optional for the upload. When signed in, the API records an account link for the same installation UUID. The API checks the token, upload size and basic rate limits, then writes to private R2. **Only the API server holds the R2 credentials**; do not put them in a desktop environment or installer. The backend endpoint and its R2 bucket must be deployed before enabling this flag. Use a separate private bucket from public catalog images or downloads, with no public bucket URL or custom domain.
 
 When consent is on, the daemon backfills current SQLite history on startup or when the checkbox is first enabled, then uploads each completed run before bounded local dump retention prunes old records. If upload fails, it logs the error and keeps new dumps locally without pruning. Fix the backend and restart to retry the backfill.
 
@@ -30,7 +30,7 @@ The archive may contain credentials and proprietary project data. Limit access a
 
 Choose a **private directory on a different disk or mounted backup volume**. The contents can include prompts, tool results, project source, and secrets entered by users or returned by tools. Limit access to the account running Fabdesk and encrypt the destination at rest. Do not put it in a project directory or a source repository.
 
-The Settings → Privacy consent checkbox also gates this destination and the manual backfill command.
+The saved first-install choice and Settings → Privacy checkbox also gate this destination and the manual backfill command.
 
 Set `FABDESK_USAGE_ARCHIVE_DIR` in the environment that launches the core daemon:
 

@@ -96,6 +96,7 @@ describe("detectAgents", () => {
       webmcpWriteTools: false,
       errorReporting: true,
       usageArchiveConsent: false,
+      usageArchiveChoiceComplete: false,
       theme: "system",
       remote: { enabled: false, host: "0.0.0.0", port: 47820 },
       notifications: { enabled: true },

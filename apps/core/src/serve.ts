@@ -181,11 +181,14 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   if (archiveDir) archives.push(new UsageArchive(archiveDir));
   let archiveBearer: () => string | null = () => null;
   if (remoteArchiveEnabled)
-    archives.push(new UsageArchive(new UsageApiArchiveWriter(config.apiOrigin, () => archiveBearer())));
+    archives.push(new UsageArchive(new UsageApiArchiveWriter(config.apiOrigin, () => archiveBearer(), store.settings)));
   let archiveBackfilled = false;
   let archiveClosing = false;
   let backfillTask: Promise<void> | null = null;
-  const hasArchiveConsent = () => store.settings.get().usageArchiveConsent;
+  const hasArchiveConsent = () => {
+    const settings = store.settings.get();
+    return settings.usageArchiveChoiceComplete && settings.usageArchiveConsent;
+  };
   const startArchiveBackfill = (): Promise<void> => {
     if (backfillTask) return backfillTask;
     if (!archiveEnabled || !hasArchiveConsent() || archiveClosing)

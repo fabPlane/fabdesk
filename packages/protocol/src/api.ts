@@ -257,6 +257,8 @@ export const Settings = z.object({
   errorReporting: z.boolean().default(true),
   /** Local, installation-wide consent to back up stored conversations and tool traces for analysis. */
   usageArchiveConsent: z.boolean().default(false),
+  /** First-install privacy choice is saved before any archive upload begins. */
+  usageArchiveChoiceComplete: z.boolean().default(false),
   theme: z.enum(["system", "light", "dark"]).default("system"),
   /** Opt-in second listener on a tailnet/LAN address so paired phones can reach the daemon. */
   remote: z
