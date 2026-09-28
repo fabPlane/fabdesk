@@ -11,10 +11,7 @@ import {
   type RegressionTier,
   type RouteObservation,
 } from "./lib/board-regression";
-import {
-  prepareRegressionSymbols,
-  type RegressionNetlistSource,
-} from "./lib/regression-symbols";
+import { prepareRegressionSymbols, type RegressionNetlistSource } from "./lib/regression-symbols";
 
 const ROOT = resolve(import.meta.dir, "..");
 const CASES = join(ROOT, "docs", "router-cases");
@@ -128,6 +125,48 @@ async function monitorBridge(
   }
 }
 
+const TERMINAL_ROUTE_STATES = new Set([
+  "cancelled",
+  "completed",
+  "failed",
+  "timed_out",
+  "interrupted",
+]);
+
+type RouteRun = {
+  id: string;
+  state: string;
+  error?: string | null;
+  result?: {
+    timedOut?: boolean;
+    open?: unknown[];
+    stats?: { wallMs?: number };
+  } | null;
+  application?: { state?: string; reason?: string | null };
+};
+
+async function waitForRoute(
+  project: string,
+  runId: string,
+  timeoutMs: number,
+  signal: AbortSignal,
+): Promise<RouteRun> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (signal.aborted) throw signal.reason ?? new Error("route monitoring aborted");
+    const response = await tool(project, "route_status", { runId }, 10_000, signal);
+    const run = (response.json as { run?: RouteRun | null } | undefined)?.run;
+    if (!run) throw new Error(`route_status lost route ${runId}`);
+    const applying = run.application?.state === "pending" || run.application?.state === "applying";
+    if (TERMINAL_ROUTE_STATES.has(run.state) && !applying) return run;
+    if (Date.now() >= deadline) {
+      await tool(project, "route_cancel", { runId }, 10_000).catch(() => undefined);
+      throw new Error(`route ${runId} did not finish within ${timeoutMs} ms`);
+    }
+    await Bun.sleep(250);
+  }
+}
+
 async function runCase(spec: RegressionCase) {
   const startedAt = new Date().toISOString();
   let project: { id: string; path: string } | undefined;
@@ -142,11 +181,7 @@ async function runCase(spec: RegressionCase) {
       join(project.path, symbolFilename),
     );
     await request("PUT", `/projects/${project.id}/files/${symbolFilename}`, prepared.library);
-    await request(
-      "PUT",
-      `/projects/${project.id}/files/circuit.netlist.json`,
-      prepared.source,
-    );
+    await request("PUT", `/projects/${project.id}/files/circuit.netlist.json`, prepared.source);
     const build = await tool(project.id, "circuit_build", { fresh: true }, 120_000);
     if (build.ok === false || build.error)
       throw new Error(`build: ${build.error ?? build.text ?? "failed"}`);
@@ -163,28 +198,37 @@ async function runCase(spec: RegressionCase) {
     const stopped = new Promise<void>((resolveStop) => (stopMonitor = resolveStop));
     const routeAbort = new AbortController();
     const monitor = monitorBridge(stopped, livenessFailures, () => routeAbort.abort());
-    let routeBody: { ok?: boolean; text?: string; error?: string; json?: unknown };
+    let routeRun: RouteRun;
     const routeStarted = performance.now();
     try {
-      routeBody = await tool(
+      const started = await tool(
         project.id,
         "route_run",
         { timeoutMs: spec.routeTimeoutMs },
-        spec.hardTimeoutMs,
+        30_000,
         routeAbort.signal,
       );
+      if (started.ok === false || started.error)
+        throw new Error(`route: ${started.error ?? started.text ?? "failed to start"}`);
+      const runId = (started.json as { runId?: string } | undefined)?.runId;
+      if (!runId) throw new Error("route_run did not return a run ID");
+      routeRun = await waitForRoute(project.id, runId, spec.hardTimeoutMs, routeAbort.signal);
     } finally {
       stopMonitor();
       await monitor;
     }
     const wallMs = Math.round(performance.now() - routeStarted);
-    const route = (routeBody.json ?? {}) as {
-      timedOut?: boolean;
-      open?: unknown[];
-      stats?: { wallMs?: number };
-    };
+    if (["cancelled", "failed", "interrupted"].includes(routeRun.state))
+      throw new Error(
+        `route ${routeRun.id} ${routeRun.state}: ${routeRun.error ?? routeRun.application?.reason ?? "unknown error"}`,
+      );
+    if (["failed", "rejected", "stale"].includes(routeRun.application?.state ?? ""))
+      throw new Error(
+        `route ${routeRun.id} was not applied: ${routeRun.application?.reason ?? routeRun.application?.state}`,
+      );
+    const route = routeRun.result ?? {};
     const observation: RouteObservation = {
-      timedOut: route.timedOut ?? /timed out/i.test(routeBody.error ?? routeBody.text ?? ""),
+      timedOut: route.timedOut ?? routeRun.state === "timed_out",
       unrouted: Array.isArray(route.open) ? route.open : [],
       ...(route.stats?.wallMs !== undefined ? { elapsedMs: route.stats.wallMs } : {}),
     };
