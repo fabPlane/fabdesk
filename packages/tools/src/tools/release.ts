@@ -237,6 +237,11 @@ export const release_build = defineTool({
         `release requires a complete saved schematic hierarchy: ${beforeHierarchy.issues.map((issue) => `${issue.kind}: ${issue.path}`).join(", ")}`,
         "precondition",
       );
+    if (beforeHierarchy.counts.components === 0)
+      throw new ToolError(
+        `release requires a schematic with placed symbols: the saved hierarchy (${beforeHierarchy.sheets.length} sheet(s)) has 0 components, so ERC and parity would pass vacuously`,
+        "precondition",
+      );
     const before = {
       schematic: beforeHierarchy.aggregateRevision,
       schematicRoot: await hash(schematic),

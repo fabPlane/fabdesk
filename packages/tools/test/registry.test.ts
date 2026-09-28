@@ -967,6 +967,85 @@ describe("registry", () => {
     }
   });
 
+  test("ERC on a schematic with no placed symbols is not applicable, never a clean pass", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("empty-erc");
+    await writeFile(join(project.dir, "board.kicad_sch"), "(kicad_sch (version 20260831))\n");
+    await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb (version 20260831))\n");
+    await writeFile(join(project.dir, "board.kicad_pro"), "{}\n");
+    await mkdir(join(project.dir, "reports"), { recursive: true });
+    await writeFile(
+      join(project.dir, "reports/drc.json"),
+      JSON.stringify({
+        violations: [],
+        unconnected: [],
+        schematicParity: [],
+        counts: { errors: 0, warnings: 0, unconnected: 0 },
+      }),
+    );
+    const base = mockServices([project]);
+    let ercRuns = 0;
+    const services = mockServices([project], {
+      kicad: {
+        ...base.kicad,
+        inspectSchematicHierarchy: async (cli: any, opts: any) => {
+          const hierarchy = await base.kicad.inspectSchematicHierarchy(cli, opts);
+          return {
+            ...hierarchy,
+            counts: { ...hierarchy.counts, components: 0, nets: 0 },
+            sheets: hierarchy.sheets.map((sheet) => ({ ...sheet, components: 0, nets: 0 })),
+          };
+        },
+        runErc: async () => {
+          ercRuns++;
+          return { violations: [], counts: { errors: 0, warnings: 0 } };
+        },
+      },
+    });
+    const factory = contextFactory(services, project);
+    const call = (name: string, args: Record<string, unknown> = {}) =>
+      reg.invoke(name, args, (ref) =>
+        factory({
+          def: reg.get(name)!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+      );
+
+    const erc = await call("verify_erc");
+    expect(erc.isError).toBe(true);
+    expect(erc.text).toMatch(/^Saved-file ERC not applicable: .*no placed symbols/);
+    expect(ercRuns).toBe(0);
+    const report = await Bun.file(join(project.dir, "reports/erc.json")).json();
+    expect(report.measurement).toMatchObject({
+      evidenceLevel: "missing",
+      applicability: false,
+      reason: "no-schematic-symbols",
+    });
+
+    // A legacy clean report must not pass the gate either while the hierarchy is empty.
+    await writeFile(
+      join(project.dir, "reports/erc.json"),
+      JSON.stringify({
+        violations: [],
+        counts: { errors: 0, warnings: 0 },
+        measurement: { scope: "complete saved hierarchy", checkedRevision: "a".repeat(64) },
+      }),
+    );
+    const gate = await call("verify_gate", { requireErc: true });
+    expect(gate.isError).toBe(true);
+    expect(gate.text).toContain("no placed symbols; ERC had nothing to check");
+
+    await expect(
+      call("release_build", {
+        circuitChecks: [{ kind: "assertion", name: "n/a", pass: true, evidence: "n/a" }],
+        buildNotes: "n/a",
+      }),
+    ).rejects.toThrow(/release requires a schematic with placed symbols/);
+    expect(ercRuns).toBe(0);
+  });
+
   test("schematic render returns revision-bound PNG pixels to an MCP client", async () => {
     const reg = createRegistry();
     const project = await tempProject("schematic-pixels");
