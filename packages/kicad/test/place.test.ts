@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { placeFootprints } from "../src/place";
+import { placeFootprints, readFootprintPlacements, stackedFootprints } from "../src/place";
 
 const v10 = `(kicad_pcb
 	(version 20260831)
@@ -71,5 +71,55 @@ describe("placeFootprints", () => {
     expect(() => placeFootprints(legacy, [{ ref: "R1", x: 10, y: 20, rotation: 0 }])).toThrow(
       /rotation/,
     );
+  });
+});
+
+describe("readFootprintPlacements", () => {
+  test("reads the v10 transform, the legacy at form and the layer", () => {
+    const legacy = `(kicad_pcb
+	(footprint "R" (layer "B.Cu") (at 1.5 -2 180)
+		(property "Reference" "R9" (at 0 0 0))
+	)
+)`;
+    expect(readFootprintPlacements(v10)).toEqual([
+      { ref: "U1", x: 6, y: 27, rotation: 0, layer: "F.Cu" },
+      { ref: 'J2 "quoted"', x: -5, y: -6, rotation: 90, layer: "F.Cu" },
+    ]);
+    expect(readFootprintPlacements(legacy)).toEqual([
+      { ref: "R9", x: 1.5, y: -2, rotation: 180, layer: "B.Cu" },
+    ]);
+  });
+
+  test("a placement written by placeFootprints reads back", () => {
+    const moved = placeFootprints(v10, [{ ref: "U1", x: 30, y: 12.5, rotation: 90 }]).text;
+    expect(readFootprintPlacements(moved)[0]).toEqual({
+      ref: "U1",
+      x: 30,
+      y: 12.5,
+      rotation: 90,
+      layer: "F.Cu",
+    });
+  });
+});
+
+describe("stackedFootprints", () => {
+  test("groups footprints that share an origin on the same side", () => {
+    const at = (ref: string, x: number, y: number, layer = "F.Cu") => ({
+      ref,
+      x,
+      y,
+      rotation: 0,
+      layer,
+    });
+    expect(
+      stackedFootprints([
+        at("C1", 0, 0),
+        at("C2", 0, 0),
+        at("R1", 5, 5),
+        at("C3", 0, 0),
+        at("R2", 0, 0, "B.Cu"),
+      ]),
+    ).toEqual([["C1", "C2", "C3"]]);
+    expect(stackedFootprints([at("C1", 0, 0), at("R1", 5, 5)])).toEqual([]);
   });
 });
