@@ -74,7 +74,8 @@ jobs:
           bun-version: 1.4.0
           no-cache: ${{ startsWith(runner.name, 'tf-nas-') }}
 
-      - run: bun install --frozen-lockfile
+      # The manifest exporter uses the workspace source; vendored prepare scripts are unnecessary.
+      - run: bun install --ignore-scripts
 
       - name: Check out fabplane-cli
         uses: actions/checkout@v4
