@@ -33,6 +33,8 @@ jobs:
   version:
     needs: select-version-runner
     runs-on: ${{ fromJSON(needs.select-version-runner.outputs.runner) }}
+    permissions:
+      contents: write
     outputs:
       version: ${{ steps.v.outputs.version }}
       tag: ${{ steps.v.outputs.tag }}
@@ -77,6 +79,16 @@ jobs:
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
           echo "Release version $version"
 
+      - name: Prepare draft public release
+        if: github.ref == 'refs/heads/main' && env.CHANNEL == 'public'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.v.outputs.tag }}" \
+            --draft --target "$GITHUB_SHA" \
+            --title "fabPlane ${{ steps.v.outputs.version }}" \
+            --notes "Installer builds are in progress."
+
   select-build-linux-runner:
     needs: version
     uses: ./.github/workflows/select-linux-runner.yml
@@ -84,6 +96,8 @@ jobs:
 
   build:
     needs: [version, select-build-linux-runner]
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -278,13 +292,21 @@ jobs:
         shell: bash
         run: bun run scripts/verify-installers.ts release-out --target ${{ matrix.target }}
 
-      - uses: actions/upload-artifact@v4
+      - name: Stage public installers on the draft release
+        if: github.ref == 'refs/heads/main' && env.CHANNEL == 'public'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ needs.version.outputs.tag }}" release-out/* --clobber
+
+      - name: Upload internal or branch installers
+        if: env.CHANNEL == 'internal' || github.ref != 'refs/heads/main'
+        uses: actions/upload-artifact@v4
         with:
           name: installers-${{ matrix.target }}
           path: release-out/*
           if-no-files-found: error
-          # Public installers are copied into the permanent GitHub Release immediately.
-          # Internal builds exist only as workflow artifacts, so retain those for a week.
+          # Internal builds exist only as workflow artifacts; branch builds are short-lived.
           retention-days: ${{ env.CHANNEL == 'internal' && 7 || 1 }}
 
   select-release-runner:
@@ -307,17 +329,18 @@ jobs:
         with:
           bun-version: 1.4.0
           no-cache: ${{ startsWith(runner.name, 'tf-nas-') }}
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: installers-*
-          path: artifacts
-          merge-multiple: true
+      - name: Download staged installers
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p artifacts
+          gh release download "${{ needs.version.outputs.tag }}" --dir artifacts
 
       - name: Release notes (commits since the previous tag)
         run: bun run scripts/release-notes.ts --out artifacts/NOTES.md --head ${{ github.sha }} && cat artifacts/NOTES.md
 
-      # The per-runner sums prove the artifacts survived upload/download unchanged.
-      - name: Verify artifacts against runner checksums
+      # The per-runner sums prove the installers survived staging unchanged.
+      - name: Verify installers against runner checksums
         run: |
           cd artifacts
           for sums in SHA256SUMS-*.txt; do
@@ -338,20 +361,16 @@ jobs:
             --sums artifacts/SHA256SUMS
           cat artifacts/manifest.json
 
-      - name: Tag and publish GitHub release
+      - name: Publish verified GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          git tag ${{ needs.version.outputs.tag }} ${{ github.sha }}
-          git push origin ${{ needs.version.outputs.tag }}
-          assets=()
-          for file in artifacts/*; do
-            if [ "$file" != artifacts/NOTES.md ]; then assets+=("$file"); fi
-          done
-          gh release create ${{ needs.version.outputs.tag }} \
+          gh release upload "${{ needs.version.outputs.tag }}" \
+            artifacts/manifest.json artifacts/SHA256SUMS --clobber
+          gh release edit "${{ needs.version.outputs.tag }}" \
+            --draft=false \
             --title "fabPlane ${{ needs.version.outputs.version }}" \
-            --notes-file artifacts/NOTES.md \
-            "${assets[@]}"
+            --notes-file artifacts/NOTES.md
 
   select-website-runner:
     needs: [version, release]
