@@ -92,6 +92,7 @@ describe("http daemon", () => {
     expect(await health.json()).toMatchObject({
       ok: true,
       mcpSessions: 0,
+      runtimeId: "runtime-123456789",
     });
     expect((await fetch(`${daemon.url}/projects`)).status).toBe(401);
     expect(

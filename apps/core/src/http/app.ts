@@ -187,6 +187,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
       mcpSessions: deps.mcp.activeCount(),
       coreId: deps.store.settings.coreId(),
       relay: deps.relay?.phase() ?? "off",
+      ...(deps.config.runtimeId ? { runtimeId: deps.config.runtimeId } : {}),
     } satisfies Health),
   );
 
