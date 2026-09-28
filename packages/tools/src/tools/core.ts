@@ -335,7 +335,7 @@ export const circuit_place = defineTool({
         }),
       )
       .min(1)
-      .max(200),
+      .max(1000),
   },
   annotations: { idempotentHint: true },
   handler: async ({ placements }, ctx) => {
