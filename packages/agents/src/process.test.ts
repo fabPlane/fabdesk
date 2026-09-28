@@ -107,4 +107,36 @@ describe("runAgentProcess", () => {
     await Bun.sleep(200);
     expect(descendantPids(run.pid as number)).toEqual([]);
   }, 15_000);
+
+  test("abort also stops a child that ignores SIGINT and outlives the root", async () => {
+    let childPid: number | undefined;
+    const run = runAgentProcess({
+      cmd: [
+        bun,
+        "-e",
+        script([
+          `const child = Bun.spawn([${JSON.stringify(bun)}, "-e", "process.on('SIGINT', () => {}); console.log('ready'); await Bun.sleep(60_000)"], { stdout: "pipe" });`,
+          "await child.stdout.getReader().read();",
+          'console.log(JSON.stringify({ type: "child", pid: child.pid }));',
+          'console.log(JSON.stringify({ type: "init" }));',
+          "await Bun.sleep(60_000);",
+        ]),
+      ],
+      cwd: process.cwd(),
+      env: { ...process.env } as Record<string, string>,
+      parse: (line) => {
+        const value = line as { type?: string; pid?: number };
+        if (value.type === "child") {
+          childPid = value.pid;
+          return [];
+        }
+        return value.type === "init" ? [{ type: "init" }] : [];
+      },
+    });
+    for await (const event of run.events) {
+      if (event.type === "init") run.abort();
+    }
+    expect(childPid).toBeNumber();
+    expect(() => process.kill(childPid as number, 0)).toThrow();
+  }, 15_000);
 });

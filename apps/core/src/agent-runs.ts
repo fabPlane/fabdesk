@@ -42,6 +42,29 @@ export type AgentAdapterLike = Pick<AgentAdapter, "id" | "run"> & { supportsSupe
 /** A request nobody answered for this long resolves as `deny` with `by: "timeout"`. */
 export const APPROVAL_TIMEOUT_MS = 30 * 60_000;
 
+/**
+ * How long `abortThread` waits for the aborted run to wind down before answering anyway. The
+ * run keeps its project lease until it has actually ended; this only bounds the HTTP response.
+ */
+export const ABORT_SETTLE_TIMEOUT_MS = 5_000;
+
+/** Resolves true once every promise has settled, false when `timeoutMs` passes first. */
+async function settledWithin(
+  pending: Array<Promise<unknown>>,
+  timeoutMs: number,
+): Promise<boolean> {
+  if (!pending.length) return true;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const settled = await Promise.race([
+    Promise.allSettled(pending).then(() => true),
+    new Promise<false>((resolve) => {
+      timer = setTimeout(() => resolve(false), timeoutMs);
+    }),
+  ]);
+  if (timer) clearTimeout(timer);
+  return settled;
+}
+
 function appendMcpProfile(url: string, profile: "substrate"): string {
   const endpoint = new URL(url);
   endpoint.searchParams.set("profile", profile);
@@ -72,6 +95,8 @@ export type RunDeps = {
   resolveProject?: (projectId: string) => Promise<ProjectHandle | null>;
   /** Tests shorten the 30-minute approval timeout. */
   approvalTimeoutMs?: number;
+  /** Tests shorten how long an HTTP abort waits for the run to end. */
+  abortSettleTimeoutMs?: number;
 };
 
 type PendingApproval = {
@@ -91,8 +116,13 @@ type Pending = PendingApproval | PendingInput;
 export type ActiveRun = {
   runId: string;
   threadId: string;
+  /** The project the run writes, or null for a scratch run. Held as the project's lease. */
+  projectId: string | null;
   runtimeMode: RuntimeMode;
   abort(): void;
+  /** Settles once the run has ended and released its project lease (before any queued message goes out). */
+  ended: Promise<void>;
+  /** `ended`, then the queued-message drain. */
   done: Promise<void>;
   /** Appends a part to the run's assistant message and persists it. */
   addPart(part: MessagePart): void;
@@ -106,12 +136,59 @@ export type PermissionPromptResult =
   | { behavior: "allow"; updatedInput: unknown }
   | { behavior: "deny"; message: string };
 
+type StartInput = {
+  threadId: string;
+  project: ProjectHandle | null;
+  agentId: AgentId;
+  model?: string;
+  prompt: string;
+  attachments: Array<{ path: string; mime: string }>;
+};
+
 export class AgentRunManager {
   private readonly active = new Map<string, ActiveRun>();
+  /**
+   * Runs between the start checks and `active.set`: `start` awaits (mkdir, prepareProject,
+   * telemetry) before the run is registered, so two requests must not both pass the checks.
+   * Thread ids, and project id → the thread holding it.
+   */
+  private readonly startingThreads = new Set<string>();
+  private readonly startingProjects = new Map<string, string>();
+  /** Threads being deleted: nothing may start on them, their queue is not drained. */
+  private readonly deletingThreads = new Set<string>();
+  /** Project id → threads whose queued message waits for another thread's run to free it. */
+  private readonly waitingOnProject = new Map<string, Set<string>>();
   constructor(private readonly deps: RunDeps) {}
 
   isRunning(threadId: string): boolean {
-    return [...this.active.values()].some((r) => r.threadId === threadId);
+    return (
+      this.startingThreads.has(threadId) ||
+      [...this.active.values()].some((r) => r.threadId === threadId)
+    );
+  }
+
+  /**
+   * The thread whose agent run holds `projectId`'s lease, or null when the project is free. One
+   * agent writes a project at a time (#93); runs without a project never hold a lease. The lease
+   * lives in memory only: a daemon restart kills every agent it spawned and marks their runs
+   * failed (`store.runs.failStale()`), so it starts with every project free.
+   */
+  projectHolder(projectId: string): string | null {
+    const starting = this.startingProjects.get(projectId);
+    if (starting !== undefined) return starting;
+    for (const r of this.active.values()) if (r.projectId === projectId) return r.threadId;
+    return null;
+  }
+
+  /** The 412 message for a project another thread's run holds, or null when it is free. */
+  projectBusyMessage(projectId: string): { threadId: string; message: string } | null {
+    const threadId = this.projectHolder(projectId);
+    if (threadId === null) return null;
+    const title = this.deps.store.threads.get(threadId)?.title;
+    return {
+      threadId,
+      message: `an agent run is already active on this project in thread ${title ? `"${title}" ` : ""}(${threadId}); wait for it to finish or stop it`,
+    };
   }
 
   activeCount(): number {
@@ -134,15 +211,39 @@ export class AgentRunManager {
     return run?.runtimeMode === "supervised";
   }
 
-  abortThread(threadId: string): boolean {
-    let hit = false;
+  /**
+   * Aborts the thread's run and waits — at most `timeoutMs` — for it to end, so a Stop that
+   * answers `settled: true` means the project is free for the next run. A run that outlives the
+   * wait still holds its lease until it really ends; only the answer stops waiting.
+   */
+  async abortThread(
+    threadId: string,
+    timeoutMs = this.deps.abortSettleTimeoutMs ?? ABORT_SETTLE_TIMEOUT_MS,
+  ): Promise<{ aborted: boolean; settled: boolean }> {
+    const pending: Promise<void>[] = [];
     for (const r of this.active.values()) {
       if (r.threadId === threadId) {
         r.abort();
-        hit = true;
+        pending.push(r.ended);
       }
     }
-    return hit;
+    if (!pending.length) return { aborted: false, settled: true };
+    return { aborted: true, settled: await settledWithin(pending, timeoutMs) };
+  }
+
+  /**
+   * `DELETE /threads/:id`: stops the thread's run (bounded wait, like `abortThread`) with the
+   * thread marked as being deleted, so the run ending does not send a queued message into a
+   * thread that is about to disappear. Call `deleted` once the row is gone (or the delete failed).
+   */
+  async abortForDelete(threadId: string): Promise<{ aborted: boolean; settled: boolean }> {
+    this.deletingThreads.add(threadId);
+    return this.abortThread(threadId);
+  }
+
+  deleted(threadId: string): void {
+    this.deletingThreads.delete(threadId);
+    for (const waiting of this.waitingOnProject.values()) waiting.delete(threadId);
   }
 
   abortAll(): void {
@@ -150,17 +251,10 @@ export class AgentRunManager {
   }
 
   async settleAll(timeoutMs = 1_000): Promise<boolean> {
-    const pending = [...this.active.values()].map((run) => run.done);
-    if (!pending.length) return true;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const settled = await Promise.race([
-      Promise.allSettled(pending).then(() => true),
-      new Promise<false>((resolve) => {
-        timer = setTimeout(() => resolve(false), timeoutMs);
-      }),
-    ]);
-    if (timer) clearTimeout(timer);
-    return settled;
+    return settledWithin(
+      [...this.active.values()].map((run) => run.done),
+      timeoutMs,
+    );
   }
 
   /* ---------- supervised mode: pending requests ---------- */
@@ -392,17 +486,32 @@ export class AgentRunManager {
 
   /* ---------- runs ---------- */
 
-  async start(input: {
-    threadId: string;
-    project: ProjectHandle | null;
-    agentId: AgentId;
-    model?: string;
-    prompt: string;
-    attachments: Array<{ path: string; mime: string }>;
-  }): Promise<{ runId: string; messageId: string }> {
-    const { store, emit, tokens } = this.deps;
+  /**
+   * Starts a run. Refused (412) while the thread has a run, or while another thread's run holds
+   * the project. Both checks and the reservation happen before the first await, so concurrent
+   * requests cannot both get through; the reservation becomes the run's `active` entry and is
+   * dropped on every exit from here.
+   */
+  async start(input: StartInput): Promise<{ runId: string; messageId: string }> {
+    if (this.deletingThreads.has(input.threadId))
+      throw new ToolError("the thread is being deleted", "not_found");
     if (this.isRunning(input.threadId))
       throw new ToolError("an agent run is already active on this thread", "precondition");
+    const projectId = input.project?.id ?? null;
+    const busy = projectId !== null ? this.projectBusyMessage(projectId) : null;
+    if (busy) throw new ToolError(busy.message, "precondition");
+    this.startingThreads.add(input.threadId);
+    if (projectId !== null) this.startingProjects.set(projectId, input.threadId);
+    try {
+      return await this.startReserved(input);
+    } finally {
+      this.startingThreads.delete(input.threadId);
+      if (projectId !== null) this.startingProjects.delete(projectId);
+    }
+  }
+
+  private async startReserved(input: StartInput): Promise<{ runId: string; messageId: string }> {
+    const { store, emit, tokens } = this.deps;
     const adapter = this.deps.adapters[input.agentId];
     if (!adapter) throw new ToolError(`agent ${input.agentId} is not available`, "unavailable");
     const settings = this.deps.settings();
@@ -504,8 +613,10 @@ export class AgentRunManager {
     const active: ActiveRun = {
       runId: run.id,
       threadId: input.threadId,
+      projectId: input.project?.id ?? null,
       runtimeMode,
       abort: () => {},
+      ended: Promise.resolve(),
       done: Promise.resolve(),
       pending: new Map(),
       addPart: (part) => {
@@ -584,7 +695,7 @@ export class AgentRunManager {
     }
 
     let aborted = false;
-    const done = (async () => {
+    const consume = async () => {
       let status: "completed" | "aborted" | "failed" = "completed";
       let exitCode: number | undefined;
       let sessionId: string | undefined;
@@ -720,9 +831,28 @@ export class AgentRunManager {
         ...(exitCode !== undefined ? { exitCode } : {}),
       });
       emit({ ts: Date.now(), topic: "thread.updated", threadId: input.threadId });
-      this.active.delete(run.id);
-      await this.drainQueue(input.threadId);
-    })();
+    };
+    // Whatever happens while winding the run down, it leaves `active` — that is what releases the
+    // thread and the project lease — before the next queued message is sent.
+    const ended = consume()
+      .catch((e) => {
+        logger.error("agent run bookkeeping failed", { runId: run.id, error: errMsg(e) });
+        captureCoreException(e, { agent: input.agentId, "agent.phase": "finish" });
+        tokens.revokeRun(run.id);
+        try {
+          store.runs.finish(run.id, { status: "failed" });
+        } catch {
+          /* the run row stays `running` until the next daemon start fails it */
+        }
+      })
+      .finally(() => {
+        this.active.delete(run.id);
+      });
+    const projectId = input.project?.id ?? null;
+    const done = ended
+      .then(() => this.drainQueue(input.threadId))
+      .then(() => (projectId !== null ? this.drainWaiting(projectId) : undefined))
+      .catch((e) => logger.warn("post-run drain failed", { runId: run.id, error: errMsg(e) }));
 
     active.abort = () => {
       aborted = true;
@@ -732,6 +862,7 @@ export class AgentRunManager {
         logger.warn("abort failed", { error: errMsg(e) });
       }
     };
+    active.ended = ended;
     active.done = done;
     return { runId: run.id, messageId: message.id };
   }
@@ -746,36 +877,78 @@ export class AgentRunManager {
    */
   async drainQueue(threadId: string): Promise<void> {
     const { store, emit } = this.deps;
-    const thread = store.threads.get(threadId);
-    if (!thread || this.isRunning(threadId)) return;
-    const next = store.threads.messages(threadId).find((m) => m.status === "queued");
-    if (!next) return;
-    store.threads.updateMessage(next.id, { status: null });
-    emit({ ts: Date.now(), topic: "thread.updated", threadId });
-    const attachments = next.parts.flatMap((p) =>
-      p.type === "image" ? [{ path: p.path, mime: p.mime }] : [],
-    );
     try {
+      const queued = () =>
+        this.deletingThreads.has(threadId) ||
+        !store.threads.get(threadId) ||
+        this.isRunning(threadId)
+          ? undefined
+          : store.threads.messages(threadId).find((m) => m.status === "queued");
+      const first = store.threads.get(threadId);
+      if (!first || !queued()) return;
+      // Resolved before the message leaves the queue: everything from the checks below to the
+      // lease `start` reserves is synchronous, so another thread cannot take the project between.
       const project =
-        thread.projectId && this.deps.resolveProject
-          ? await this.deps.resolveProject(thread.projectId)
+        first.projectId && this.deps.resolveProject
+          ? await this.deps.resolveProject(first.projectId)
           : null;
-      await this.start({
-        threadId,
-        project,
-        agentId: thread.agentId,
-        ...(thread.model ? { model: thread.model } : {}),
-        prompt: next.contentMd,
-        attachments,
-      });
-    } catch (e) {
-      logger.warn("queued message could not be sent", { threadId, error: errMsg(e) });
-      store.threads.addMessage({
-        threadId,
-        role: "system",
-        contentMd: `⚠ Queued message could not be sent: ${errMsg(e)}`,
-      });
+      const thread = store.threads.get(threadId);
+      const next = queued();
+      if (!thread || !next) return;
+      if (project && this.projectHolder(project.id) !== null) {
+        // Another thread's run writes the project: the message stays queued and goes out when
+        // that run ends (see `drainWaiting`).
+        this.waitForProject(project.id, threadId);
+        return;
+      }
+      store.threads.updateMessage(next.id, { status: null });
       emit({ ts: Date.now(), topic: "thread.updated", threadId });
+      const attachments = next.parts.flatMap((p) =>
+        p.type === "image" ? [{ path: p.path, mime: p.mime }] : [],
+      );
+      try {
+        await this.start({
+          threadId,
+          project,
+          agentId: thread.agentId,
+          ...(thread.model ? { model: thread.model } : {}),
+          prompt: next.contentMd,
+          attachments,
+        });
+      } catch (e) {
+        logger.warn("queued message could not be sent", { threadId, error: errMsg(e) });
+        if (!store.threads.get(threadId)) return;
+        if (e instanceof ToolError && e.code === "precondition" && project) {
+          // Lost the project after all: back in the queue rather than dropped without a reply.
+          store.threads.updateMessage(next.id, { status: "queued" });
+          this.waitForProject(project.id, threadId);
+        } else {
+          store.threads.addMessage({
+            threadId,
+            role: "system",
+            contentMd: `⚠ Queued message could not be sent: ${errMsg(e)}`,
+          });
+        }
+        emit({ ts: Date.now(), topic: "thread.updated", threadId });
+      }
+    } catch (e) {
+      // A drain runs detached from any request (after a run ends): it must never reject.
+      logger.warn("queued message drain failed", { threadId, error: errMsg(e) });
     }
+  }
+
+  private waitForProject(projectId: string, threadId: string): void {
+    const waiting = this.waitingOnProject.get(projectId) ?? new Set<string>();
+    waiting.add(threadId);
+    this.waitingOnProject.set(projectId, waiting);
+  }
+
+  /** After a run on `projectId` ends: the threads whose queued message waited for the project. */
+  private async drainWaiting(projectId: string): Promise<void> {
+    const waiting = this.waitingOnProject.get(projectId);
+    if (!waiting) return;
+    this.waitingOnProject.delete(projectId);
+    // The first to start takes the lease; the rest find it busy and wait again.
+    for (const threadId of waiting) await this.drainQueue(threadId);
   }
 }

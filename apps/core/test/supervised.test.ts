@@ -82,6 +82,8 @@ beforeAll(async () => {
     quiet: true,
     watchProjects: false,
     approvalTimeoutMs: APPROVAL_TIMEOUT_MS,
+    // fakeRun ignores abort, so a Stop answers after this bounded wait with `settled: false`.
+    abortSettleTimeoutMs: 150,
     services: async ({ projects, bus, store }) =>
       mockServices([], {
         projects,
@@ -608,5 +610,47 @@ describe("queued messages (C5)", () => {
     const res = await send(t.id, "plain", { queue: true });
     expect(res.status).toBe(202);
     expect(await res.json()).toMatchObject({ runId: expect.any(String) });
+  });
+});
+
+describe("one agent writer per project (#93)", () => {
+  test("a second thread on a busy project gets 412 naming the busy thread; nothing is stored", async () => {
+    const project = await json<{ id: string }>(
+      local("/projects", { method: "POST", body: JSON.stringify({ name: "Lease Board" }) }),
+    );
+    const a = await newThread({ runtimeMode: "full", projectId: project.id, title: "Holder" });
+    const b = await newThread({ runtimeMode: "full", projectId: project.id });
+    const scratch = await newThread({ runtimeMode: "full" });
+    expect((await send(a.id, "hold:lease")).status).toBe(202);
+    await waitFor(() => sessions.some((s) => s.prompt === "hold:lease"));
+
+    // Refused whether or not the client asked to queue: b has no run of its own to drain after.
+    for (const extra of [{}, { queue: true }]) {
+      const refused = await send(b.id, "second writer", extra);
+      expect(refused.status).toBe(412);
+      const body = (await refused.json()) as { error: string; code: string; threadId: string };
+      expect(body).toMatchObject({ code: "precondition", threadId: a.id });
+      expect(body.error).toContain(`"Holder" (${a.id})`);
+    }
+    expect(await messages(b.id)).toEqual([]);
+    // A thread without a project is not affected.
+    expect((await send(scratch.id, "scratch")).status).toBe(202);
+
+    // fakeRun ignores abort: Stop answers after the bounded wait, and the lease stays held.
+    const stop = await json<{ aborted: boolean; settled: boolean }>(
+      local(`/threads/${a.id}/abort`, { method: "POST" }),
+    );
+    expect(stop).toMatchObject({ aborted: true, settled: false });
+    expect((await send(b.id, "still busy")).status).toBe(412);
+
+    // Once the holder's run really ends, the project is free.
+    release("lease");
+    let running = true;
+    for (let i = 0; i < 300 && running; i++) {
+      running = (await detail(a.id)).running;
+      if (running) await Bun.sleep(10);
+    }
+    expect(running).toBe(false);
+    expect((await send(b.id, "now it is free")).status).toBe(202);
   });
 });

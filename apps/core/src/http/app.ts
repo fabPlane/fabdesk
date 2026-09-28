@@ -479,10 +479,19 @@ export function createApp(deps: AppDeps): Hono<Env> {
       deps.runs.resolveInput(c.req.param("id"), c.req.param("requestId"), body.answer),
     );
   });
-  app.delete("/threads/:id", (c) => {
+  app.delete("/threads/:id", async (c) => {
     const id = c.req.param("id");
-    deps.runs?.abortThread(id);
-    if (!deps.store.threads.delete(id)) return c.json({ error: "not found" }, 404);
+    // Bounded wait: the run's bookkeeping writes to the thread, so let it wind down first. The
+    // thread is marked as being deleted meanwhile, so the run ending does not send its queued
+    // message (a run on a deleted thread).
+    let removed: boolean;
+    try {
+      await deps.runs?.abortForDelete(id);
+      removed = deps.store.threads.delete(id);
+    } finally {
+      deps.runs?.deleted(id);
+    }
+    if (!removed) return c.json({ error: "not found" }, 404);
     deps.bus.emit({ ts: Date.now(), topic: "thread.deleted", threadId: id });
     return c.json({ ok: true });
   });
@@ -495,6 +504,10 @@ export function createApp(deps: AppDeps): Hono<Env> {
     if (!t) return c.json({ error: "not found" }, 404);
     const body = SendMessage.parse(await c.req.json());
     if (!deps.runs) return c.json({ error: "agent runs are disabled in this daemon" }, 503);
+    // The last await before `runs.start`: from the checks below to the lease `start` reserves
+    // everything is synchronous, so no other request can take the thread or the project between
+    // them and the user message being stored.
+    const project = t.projectId ? await deps.projects.handle(t.projectId) : null;
     const agentId: AgentId = body.agentId ?? t.agentId;
     const queue =
       body.queue === true || c.req.query("queue") === "1" || c.req.query("queue") === "true";
@@ -520,6 +533,12 @@ export function createApp(deps: AppDeps): Hono<Env> {
       deps.bus.emit({ ts: Date.now(), topic: "thread.updated", threadId: t.id });
       return c.json({ queued: true, messageId: queued.id, userMessageId: queued.id }, 202);
     }
+    // One agent writes a project at a time (#93). Refused before anything is stored, so the
+    // client keeps the draft and a retry does not leave a duplicate user turn. Not queued even
+    // with `queue`: a thread's queue drains when its own run ends, and this thread has none.
+    const busy = t.projectId ? deps.runs.projectBusyMessage(t.projectId) : null;
+    if (busy)
+      return c.json({ error: busy.message, code: "precondition", threadId: busy.threadId }, 412);
     const switched = agentId !== t.agentId || (!!body.model && body.model !== t.model);
     if (switched)
       deps.store.threads.patch(t.id, { agentId, ...(body.model ? { model: body.model } : {}) });
@@ -540,16 +559,29 @@ export function createApp(deps: AppDeps): Hono<Env> {
         threadId: t.id,
         ...(title !== null ? { title } : {}),
       });
-    const project = t.projectId ? await deps.projects.handle(t.projectId) : null;
-    const { runId, messageId } = await deps.runs.start({
-      threadId: t.id,
-      project,
-      agentId,
-      ...((body.model ?? t.model) ? { model: (body.model ?? t.model) as string } : {}),
-      prompt: body.content,
-      attachments: body.attachments,
-    });
-    return c.json({ runId, messageId, userMessageId: user.id }, 202);
+    let started: { runId: string; messageId: string };
+    try {
+      started = await deps.runs.start({
+        threadId: t.id,
+        project,
+        agentId,
+        ...((body.model ?? t.model) ? { model: (body.model ?? t.model) as string } : {}),
+        prompt: body.content,
+        attachments: body.attachments,
+      });
+    } catch (e) {
+      // Refused (thread or project busy): the client keeps its draft, so the stored turn would
+      // turn into a duplicate on retry. Other start failures are written into the thread.
+      if (e instanceof ToolError && e.code === "precondition") {
+        deps.store.threads.deleteMessage(user.id);
+        deps.bus.emit({ ts: Date.now(), topic: "thread.updated", threadId: t.id });
+      }
+      throw e;
+    }
+    return c.json(
+      { runId: started.runId, messageId: started.messageId, userMessageId: user.id },
+      202,
+    );
   });
   /** Removes a message that is still queued; a sent one is history and stays. */
   app.delete("/threads/:id/messages/:messageId", (c) => {
@@ -561,10 +593,18 @@ export function createApp(deps: AppDeps): Hono<Env> {
     deps.bus.emit({ ts: Date.now(), topic: "thread.updated", threadId: t.id });
     return c.json({ ok: true });
   });
-  app.post("/threads/:id/abort", (c) => {
+  /**
+   * Stops the thread's run and answers once it has ended (the project is free again), or after
+   * a bounded wait with `settled: false` if the agent is slow to exit; it keeps the project until
+   * it does.
+   */
+  app.post("/threads/:id/abort", async (c) => {
     const id = c.req.param("id");
-    const hit = deps.runs?.abortThread(id) ?? false;
-    return c.json({ ok: true, aborted: hit });
+    const { aborted, settled } = (await deps.runs?.abortThread(id)) ?? {
+      aborted: false,
+      settled: true,
+    };
+    return c.json({ ok: true, aborted, settled });
   });
   app.get("/search", (c) => {
     const q = c.req.query("q") ?? "";

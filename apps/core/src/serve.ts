@@ -104,6 +104,8 @@ export type ServeOptions = {
   notifierVerdictDelayMs?: number;
   /** Tests: shorten the 30-minute supervised-mode approval timeout. */
   approvalTimeoutMs?: number;
+  /** Tests: shorten how long `POST /threads/:id/abort` waits for the run to end. */
+  abortSettleTimeoutMs?: number;
   /** Tests: the bearer the relay link presents, when the AuthFacade has none (local auth mode). */
   relayToken?: () => string | null;
   /** Tests: the env the default relay is derived from (`FABPLANE_RELAY_URL`); `process.env` otherwise. */
@@ -366,6 +368,9 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       server === null || server === "fabdesk" ? registry.get(tool)?.annotations : undefined,
     resolveProject: (id) => projects.handle(id),
     ...(opts.approvalTimeoutMs !== undefined ? { approvalTimeoutMs: opts.approvalTimeoutMs } : {}),
+    ...(opts.abortSettleTimeoutMs !== undefined
+      ? { abortSettleTimeoutMs: opts.abortSettleTimeoutMs }
+      : {}),
     prepareProject: async (project: ProjectHandle) => {
       const agents = await import("@fabdesk/agents");
       const sketches = (await projects.listFiles(join(project.dir, "sketches")))
