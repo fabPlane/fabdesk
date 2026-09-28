@@ -7,10 +7,12 @@
  * Options: `--router freerouting` (internal channel only), `--settings '{"effort":"high"}'` passed to
  * route_run, `--place <file.place.json>` (a `circuit_place` placements array applied after the build;
  * `<case>.place.json` next to the netlist is picked up automatically), `--keep` to leave the project in
- * place (default: deleted with its files afterwards).
+ * place (default: deleted with its files afterwards). Project-local footprint libraries the netlist
+ * names as `${KIPRJMOD}/<name>.pretty` are copied from next to the case file.
  * The daemon needs a FabPlane PCB bridge and the KiCad fork — see docs/handoff-fab-pcb.md §3.
  */
-import { basename } from "node:path";
+import { cpSync, existsSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 
 const url = (process.env["FABDESK_URL"] ?? "http://127.0.0.1:47831").replace(/\/$/, "");
 const token = process.env["FABDESK_TOKEN"];
@@ -59,6 +61,18 @@ const project = await api<{ id: string; path: string }>("POST", "/projects", { n
 console.log(`project ${project.id} at ${project.path}`);
 try {
   await api("PUT", `/projects/${project.id}/files/circuit.netlist.json`, netlist);
+  // A case with project-local libraries (`libraries[].uri` = `${KIPRJMOD}/<name>.pretty`) keeps
+  // the `.pretty` directory next to the netlist; the project needs a copy before the build.
+  const libraries =
+    (JSON.parse(netlist) as { libraries?: Array<{ uri?: string }> }).libraries ?? [];
+  for (const lib of libraries) {
+    const rel = /^\$\{KIPRJMOD\}\/(.+)$/.exec(lib.uri ?? "")?.[1];
+    if (!rel) continue;
+    const src = join(dirname(file), rel);
+    if (!existsSync(src)) throw new Error(`library ${lib.uri} expects ${src} next to the case`);
+    cpSync(src, join(project.path, rel), { recursive: true });
+    console.log(`copied ${rel}`);
+  }
   const started = performance.now();
   console.log((await tool(project.id, "circuit_build")).split("\n")[0]);
   const placeFile = opt("place") ?? file.replace(/\.netlist\.json$/, ".place.json");

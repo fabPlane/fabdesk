@@ -65,10 +65,9 @@ function footprints(text: string): Array<{ start: number; end: number; ref: stri
   return out;
 }
 
-/** The footprint's own placement node inside its block: the first depth-1 `(transform` or `(at`. */
-function ownPlacement(
-  body: string,
-): { kind: "transform" | "at"; start: number; end: number } | null {
+/** The nodes directly inside a footprint block, in order: `[name, start, end)`. */
+function childNodes(body: string): Array<{ name: string; start: number; end: number }> {
+  const out: Array<{ name: string; start: number; end: number }> = [];
   let depth = 0;
   let quoted = false;
   for (let i = 0; i < body.length; i++) {
@@ -82,14 +81,92 @@ function ownPlacement(
     else if (ch === "(") {
       depth++;
       if (depth === 2) {
-        if (body.startsWith("(transform", i))
-          return { kind: "transform", start: i, end: closeOf(body, i) };
-        if (/^\(at[\s)]/.test(body.slice(i, i + 4)))
-          return { kind: "at", start: i, end: closeOf(body, i) };
+        const name = /^\(([^\s()]*)/.exec(body.slice(i, i + 40))?.[1] ?? "";
+        const end = closeOf(body, i);
+        out.push({ name, start: i, end });
+        i = end - 1;
+        depth--;
       }
     } else if (ch === ")") depth--;
   }
+  return out;
+}
+
+/** The footprint's own placement node inside its block: the first depth-1 `(transform` or `(at`. */
+function ownPlacement(
+  body: string,
+): { kind: "transform" | "at"; start: number; end: number } | null {
+  for (const n of childNodes(body)) {
+    if (n.name === "transform") return { kind: "transform", start: n.start, end: n.end };
+    if (n.name === "at") return { kind: "at", start: n.start, end: n.end };
+  }
   return null;
+}
+
+export type FootprintPlacement = {
+  ref: string;
+  /** Footprint origin in mm, KiCad board coordinates. */
+  x: number;
+  y: number;
+  /** Degrees, as the file stores them. */
+  rotation: number;
+  /** `F.Cu` or `B.Cu`. */
+  layer: string;
+};
+
+/**
+ * Every footprint's own placement as the saved file holds it. The API's footprint proto carries a
+ * `position` the fork does not keep in step with the v10 transform (it reads 0,0 after an autoplace),
+ * so the file is the one honest source of where a part sits.
+ */
+export function readFootprintPlacements(text: string): FootprintPlacement[] {
+  const out: FootprintPlacement[] = [];
+  for (const block of footprints(text)) {
+    if (block.ref === null) continue;
+    const body = text.slice(block.start, block.end);
+    const node = ownPlacement(body);
+    if (!node) continue;
+    const current = body.slice(node.start, node.end);
+    let x: number;
+    let y: number;
+    let rotation: number;
+    if (node.kind === "transform") {
+      const t = /\(translate\s+(-?[\d.]+)\s+(-?[\d.]+)\)/.exec(current);
+      if (!t) continue;
+      x = Number(t[1]);
+      y = Number(t[2]);
+      rotation = Number(/\(rotate\s+(-?[\d.]+)\)/.exec(current)?.[1] ?? 0);
+    } else {
+      const at = /^\(at\s+(-?[\d.]+)\s+(-?[\d.]+)(?:\s+(-?[\d.]+))?\s*\)$/.exec(current.trim());
+      if (!at) continue;
+      x = Number(at[1]);
+      y = Number(at[2]);
+      rotation = at[3] ? Number(at[3]) : 0;
+    }
+    const layerNode = childNodes(body).find((n) => n.name === "layer");
+    const layer = layerNode
+      ? (/\(layer\s+"((?:[^"\\]|\\.)*)"/.exec(body.slice(layerNode.start, layerNode.end))?.[1] ??
+        "F.Cu")
+      : "F.Cu";
+    out.push({ ref: block.ref, x, y, rotation, layer });
+  }
+  return out;
+}
+
+/**
+ * Groups of footprints sharing one origin. KiCad's legacy autoplacer leaves what it cannot fit
+ * where the import put it (all at the same spot) and still counts it as placed; a board with a
+ * stack like that fails DRC on every pad of it.
+ */
+export function stackedFootprints(placements: readonly FootprintPlacement[]): string[][] {
+  const groups = new Map<string, string[]>();
+  for (const p of placements) {
+    const key = `${p.layer}:${p.x},${p.y}`;
+    const g = groups.get(key);
+    if (g) g.push(p.ref);
+    else groups.set(key, [p.ref]);
+  }
+  return [...groups.values()].filter((g) => g.length > 1);
 }
 
 export function placeFootprints(text: string, placements: Placement[]): PlaceResult {

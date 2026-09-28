@@ -1,0 +1,6855 @@
+{
+  "netlist": {
+    "components": [
+      {
+        "ref": "C1",
+        "value": "10uF",
+        "footprint": "pcbgolf:0805-C",
+        "fields": {
+          "MPN": "CL21A106KAYNNNE"
+        }
+      },
+      {
+        "ref": "C2",
+        "value": "100nF",
+        "footprint": "pcbgolf:0402-C",
+        "fields": {
+          "MPN": "CL05F104ZO5NNNC"
+        }
+      },
+      {
+        "ref": "C3",
+        "value": "10uF",
+        "footprint": "pcbgolf:0805-C",
+        "fields": {
+          "MPN": "CL21A106KAYNNNE"
+        }
+      },
+      {
+        "ref": "C4",
+        "value": "100nF",
+        "footprint": "pcbgolf:0402-C",
+        "fields": {
+          "MPN": "CL05F104ZO5NNNC"
+        }
+      },
+      {
+        "ref": "C5",
+        "value": "100nF",
+        "footprint": "pcbgolf:0402-C",
+        "fields": {
+          "MPN": "CL05F104ZO5NNNC"
+        }
+      },
+      {
+        "ref": "C7",
+        "value": "100nF",
+        "footprint": "pcbgolf:0402-C",
+        "fields": {
+          "MPN": "CL05F104ZO5NNNC"
+        }
+      },
+      {
+        "ref": "C8",
+        "value": "10uF",
+        "footprint": "pcbgolf:0805-C",
+        "fields": {
+          "MPN": "CL21A106KAYNNNE"
+        }
+      },
+      {
+        "ref": "C9",
+        "value": "100nF",
+        "footprint": "pcbgolf:0402-C",
+        "fields": {
+          "MPN": "CL05F104ZO5NNNC"
+        }
+      },
+      {
+        "ref": "C11",
+        "value": "100nF",
+        "footprint": "pcbgolf:0402-C",
+        "fields": {
+          "MPN": "CL05F104ZO5NNNC"
+        }
+      },
+      {
+        "ref": "C12",
+        "value": "10uF",
+        "footprint": "pcbgolf:0805-C",
+        "fields": {
+          "MPN": "CL21A106KAYNNNE"
+        }
+      },
+      {
+        "ref": "C13",
+        "value": "10uF",
+        "footprint": "pcbgolf:0805-C",
+        "fields": {
+          "MPN": "CL21A106KAYNNNE"
+        }
+      },
+      {
+        "ref": "D1",
+        "value": "TVS-BI-DO214AA",
+        "footprint": "pcbgolf:DO-214AA(SMB)",
+        "fields": {
+          "MPN": "SMAJ16CA-13-F"
+        }
+      },
+      {
+        "ref": "D2",
+        "value": "DIODEDB2W40100L",
+        "footprint": "pcbgolf:SOD-123F",
+        "fields": {
+          "MPN": "PMEG10020ELRX"
+        }
+      },
+      {
+        "ref": "J1",
+        "value": "DCBARRELSMT",
+        "footprint": "pcbgolf:DCJACK_2MM_SMT",
+        "fields": {
+          "MPN": "PJ-002AH-SMT-TR"
+        }
+      },
+      {
+        "ref": "L1",
+        "value": "3u3",
+        "footprint": "pcbgolf:L-1008",
+        "fields": {
+          "MPN": "MEKK2520T3R3M"
+        }
+      },
+      {
+        "ref": "L2",
+        "value": "3u3",
+        "footprint": "pcbgolf:L-1008",
+        "fields": {
+          "MPN": "MEKK2520T3R3M"
+        }
+      },
+      {
+        "ref": "Q1",
+        "value": "SIS427-VI",
+        "footprint": "pcbgolf:PP-1212-8",
+        "fields": {
+          "MPN": "SI7101DN-T1-GE3"
+        }
+      },
+      {
+        "ref": "R1",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R2",
+        "value": "1k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-071KL"
+        }
+      },
+      {
+        "ref": "R3",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R4",
+        "value": "100k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100KL"
+        }
+      },
+      {
+        "ref": "R5",
+        "value": "100k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100KL"
+        }
+      },
+      {
+        "ref": "R6",
+        "value": "100k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100KL"
+        }
+      },
+      {
+        "ref": "R7",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R8",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R9",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R10",
+        "value": "52k3",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0752K3L"
+        }
+      },
+      {
+        "ref": "U1",
+        "value": "AP62300T",
+        "footprint": "pcbgolf:SOT23-6",
+        "fields": {
+          "MPN": "AP62300WU-7"
+        }
+      },
+      {
+        "ref": "U2",
+        "value": "AP62300T",
+        "footprint": "pcbgolf:SOT23-6",
+        "fields": {
+          "MPN": "AP62300WU-7"
+        }
+      },
+      {
+        "ref": "C14",
+        "value": "12pF",
+        "footprint": "pcbgolf:0402-C",
+        "fields": {
+          "MPN": "C0402C120J5GACTU"
+        }
+      },
+      {
+        "ref": "C15",
+        "value": "10uF",
+        "footprint": "pcbgolf:0805-C",
+        "fields": {
+          "MPN": "CL21A106KAYNNNE"
+        }
+      },
+      {
+        "ref": "C16",
+        "value": "100nF",
+        "footprint": "pcbgolf:0402-C",
+        "fields": {
+          "MPN": "CL05F104ZO5NNNC"
+        }
+      },
+      {
+        "ref": "C17",
+        "value": "12pF",
+        "footprint": "pcbgolf:0402-C",
+        "fields": {
+          "MPN": "C0402C120J5GACTU"
+        }
+      },
+      {
+        "ref": "C18",
+        "value": "100nF",
+        "footprint": "pcbgolf:0402-C",
+        "fields": {
+          "MPN": "CL05F104ZO5NNNC"
+        }
+      },
+      {
+        "ref": "C19",
+        "value": "10uF",
+        "footprint": "pcbgolf:0805-C",
+        "fields": {
+          "MPN": "CL21A106KAYNNNE"
+        }
+      },
+      {
+        "ref": "C20",
+        "value": "10uF",
+        "footprint": "pcbgolf:0805-C",
+        "fields": {
+          "MPN": "CL21A106KAYNNNE"
+        }
+      },
+      {
+        "ref": "C21",
+        "value": "10uF",
+        "footprint": "pcbgolf:0805-C",
+        "fields": {
+          "MPN": "CL21A106KAYNNNE"
+        }
+      },
+      {
+        "ref": "C22",
+        "value": "100nF",
+        "footprint": "pcbgolf:0402-C",
+        "fields": {
+          "MPN": "CL05F104ZO5NNNC"
+        }
+      },
+      {
+        "ref": "C23",
+        "value": "100nF",
+        "footprint": "pcbgolf:0402-C",
+        "fields": {
+          "MPN": "CL05F104ZO5NNNC"
+        }
+      },
+      {
+        "ref": "C24",
+        "value": "100nF",
+        "footprint": "pcbgolf:0402-C",
+        "fields": {
+          "MPN": "CL05F104ZO5NNNC"
+        }
+      },
+      {
+        "ref": "C25",
+        "value": "220pF",
+        "footprint": "pcbgolf:0402-C",
+        "fields": {
+          "MPN": "04025A221FAT2A"
+        }
+      },
+      {
+        "ref": "C26",
+        "value": "100nF",
+        "footprint": "pcbgolf:0402-C",
+        "fields": {
+          "MPN": "CL05F104ZO5NNNC"
+        }
+      },
+      {
+        "ref": "C27",
+        "value": "100nF",
+        "footprint": "pcbgolf:0402-C",
+        "fields": {
+          "MPN": "CL05F104ZO5NNNC"
+        }
+      },
+      {
+        "ref": "L3",
+        "value": "L-US-L2",
+        "footprint": "pcbgolf:0603-L",
+        "fields": {
+          "MPN": "MH1608-601Y"
+        }
+      },
+      {
+        "ref": "L4",
+        "value": "2u2",
+        "footprint": "pcbgolf:0806",
+        "fields": {
+          "MPN": "LQM2MPN2R2NG0L"
+        }
+      },
+      {
+        "ref": "LED1",
+        "value": "CREE-RGB-CLMVC",
+        "footprint": "pcbgolf:CREE-RGB-CLMVC",
+        "fields": {
+          "MPN": "CLMVC-FKA-CL1D1L71BB7C3C3"
+        }
+      },
+      {
+        "ref": "R11",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R12",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R13",
+        "value": "100k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100KL"
+        }
+      },
+      {
+        "ref": "R14",
+        "value": "100k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100KL"
+        }
+      },
+      {
+        "ref": "R15",
+        "value": "100k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100KL"
+        }
+      },
+      {
+        "ref": "R16",
+        "value": "100k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100KL"
+        }
+      },
+      {
+        "ref": "R17",
+        "value": "100k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100KL"
+        }
+      },
+      {
+        "ref": "R18",
+        "value": "100k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100KL"
+        }
+      },
+      {
+        "ref": "R19",
+        "value": "100k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100KL"
+        }
+      },
+      {
+        "ref": "R20",
+        "value": "100k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100KL"
+        }
+      },
+      {
+        "ref": "R21",
+        "value": "1k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-071KL"
+        }
+      },
+      {
+        "ref": "R22",
+        "value": "2k7",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-072K7L"
+        }
+      },
+      {
+        "ref": "R23",
+        "value": "1k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-071KL"
+        }
+      },
+      {
+        "ref": "SW1",
+        "value": "SPST-2-4PIN",
+        "footprint": "pcbgolf:EVQ-Q2",
+        "fields": {
+          "MPN": "EVQ-Q2Y03W"
+        }
+      },
+      {
+        "ref": "U3",
+        "value": "STM32H725ZGTx",
+        "footprint": "pcbgolf:LQFP-144_20x20mm_P0.5mm",
+        "fields": {
+          "MPN": "STM32H725ZGT"
+        }
+      },
+      {
+        "ref": "Y1",
+        "value": "25MHz",
+        "footprint": "pcbgolf:XTAL-3.2X2.5",
+        "fields": {
+          "MPN": "RH100-25.000-12-F-1010-TR"
+        }
+      },
+      {
+        "ref": "C28",
+        "value": "12pF",
+        "footprint": "pcbgolf:0402-C",
+        "fields": {
+          "MPN": "C0402C120J5GACTU"
+        }
+      },
+      {
+        "ref": "C29",
+        "value": "10u",
+        "footprint": "pcbgolf:0402-C",
+        "fields": {
+          "MPN": "GRM155R61A106ME11D"
+        }
+      },
+      {
+        "ref": "C30",
+        "value": "100nF",
+        "footprint": "pcbgolf:0402-C",
+        "fields": {
+          "MPN": "CL05F104ZO5NNNC"
+        }
+      },
+      {
+        "ref": "C31",
+        "value": "100nF",
+        "footprint": "pcbgolf:0402-C",
+        "fields": {
+          "MPN": "CL05F104ZO5NNNC"
+        }
+      },
+      {
+        "ref": "C32",
+        "value": "12pF",
+        "footprint": "pcbgolf:0402-C",
+        "fields": {
+          "MPN": "C0402C120J5GACTU"
+        }
+      },
+      {
+        "ref": "C33",
+        "value": "10u",
+        "footprint": "pcbgolf:0402-C",
+        "fields": {
+          "MPN": "GRM155R61A106ME11D"
+        }
+      },
+      {
+        "ref": "C34",
+        "value": "10u",
+        "footprint": "pcbgolf:0402-C",
+        "fields": {
+          "MPN": "GRM155R61A106ME11D"
+        }
+      },
+      {
+        "ref": "C35",
+        "value": "100nF",
+        "footprint": "pcbgolf:0402-C",
+        "fields": {
+          "MPN": "CL05F104ZO5NNNC"
+        }
+      },
+      {
+        "ref": "C36",
+        "value": "100nF",
+        "footprint": "pcbgolf:0402-C",
+        "fields": {
+          "MPN": "CL05F104ZO5NNNC"
+        }
+      },
+      {
+        "ref": "C37",
+        "value": "10u",
+        "footprint": "pcbgolf:0402-C",
+        "fields": {
+          "MPN": "GRM155R61A106ME11D"
+        }
+      },
+      {
+        "ref": "J2",
+        "value": "MICRO_SD-0472192001",
+        "footprint": "pcbgolf:0472192001",
+        "fields": {
+          "MPN": "47219-2001"
+        }
+      },
+      {
+        "ref": "J3",
+        "value": "USB-C-FEMALE",
+        "footprint": "pcbgolf:DX07S024XJ1R1100",
+        "fields": {
+          "MPN": "DX07S024XJ1R1100"
+        }
+      },
+      {
+        "ref": "R24",
+        "value": "100k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100KL"
+        }
+      },
+      {
+        "ref": "R25",
+        "value": "100k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100KL"
+        }
+      },
+      {
+        "ref": "R26",
+        "value": "1M",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-071ML"
+        }
+      },
+      {
+        "ref": "R27",
+        "value": "12k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "CRGCQ0402F12K"
+        }
+      },
+      {
+        "ref": "R28",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R29",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R30",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R31",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R32",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R33",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R34",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R35",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R36",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R37",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R38",
+        "value": "0R",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RMCF0402ZT0R00"
+        }
+      },
+      {
+        "ref": "R39",
+        "value": "0R",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RMCF0402ZT0R00"
+        }
+      },
+      {
+        "ref": "R40",
+        "value": "0R",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RMCF0402ZT0R00"
+        }
+      },
+      {
+        "ref": "R41",
+        "value": "0R",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RMCF0402ZT0R00"
+        }
+      },
+      {
+        "ref": "R42",
+        "value": "0R",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RMCF0402ZT0R00"
+        }
+      },
+      {
+        "ref": "R43",
+        "value": "0R",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RMCF0402ZT0R00"
+        }
+      },
+      {
+        "ref": "R44",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R45",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "U4",
+        "value": "USB2517",
+        "footprint": "pcbgolf:QFN64-9X9",
+        "fields": {
+          "MPN": "USB2517"
+        }
+      },
+      {
+        "ref": "Y2",
+        "value": "24MHz",
+        "footprint": "pcbgolf:XTAL-3.2X2.5",
+        "fields": {
+          "MPN": "ABM8AIG-24.000MHZ-12-2Z-T3"
+        }
+      },
+      {
+        "ref": "C38",
+        "value": "100nF",
+        "footprint": "pcbgolf:0402-C",
+        "fields": {
+          "MPN": "CL05F104ZO5NNNC"
+        }
+      },
+      {
+        "ref": "C39",
+        "value": "100nF",
+        "footprint": "pcbgolf:0402-C",
+        "fields": {
+          "MPN": "CL05F104ZO5NNNC"
+        }
+      },
+      {
+        "ref": "C40",
+        "value": "100nF",
+        "footprint": "pcbgolf:0402-C",
+        "fields": {
+          "MPN": "CL05F104ZO5NNNC"
+        }
+      },
+      {
+        "ref": "C41",
+        "value": "100nF",
+        "footprint": "pcbgolf:0402-C",
+        "fields": {
+          "MPN": "CL05F104ZO5NNNC"
+        }
+      },
+      {
+        "ref": "C42",
+        "value": "100nF",
+        "footprint": "pcbgolf:0402-C",
+        "fields": {
+          "MPN": "CL05F104ZO5NNNC"
+        }
+      },
+      {
+        "ref": "C43",
+        "value": "100nF",
+        "footprint": "pcbgolf:0402-C",
+        "fields": {
+          "MPN": "CL05F104ZO5NNNC"
+        }
+      },
+      {
+        "ref": "C44",
+        "value": "100nF",
+        "footprint": "pcbgolf:0402-C",
+        "fields": {
+          "MPN": "CL05F104ZO5NNNC"
+        }
+      },
+      {
+        "ref": "C45",
+        "value": "100nF",
+        "footprint": "pcbgolf:0402-C",
+        "fields": {
+          "MPN": "CL05F104ZO5NNNC"
+        }
+      },
+      {
+        "ref": "C46",
+        "value": "100nF",
+        "footprint": "pcbgolf:0402-C",
+        "fields": {
+          "MPN": "CL05F104ZO5NNNC"
+        }
+      },
+      {
+        "ref": "C47",
+        "value": "100nF",
+        "footprint": "pcbgolf:0402-C",
+        "fields": {
+          "MPN": "CL05F104ZO5NNNC"
+        }
+      },
+      {
+        "ref": "C48",
+        "value": "100nF",
+        "footprint": "pcbgolf:0402-C",
+        "fields": {
+          "MPN": "CL05F104ZO5NNNC"
+        }
+      },
+      {
+        "ref": "C49",
+        "value": "100nF",
+        "footprint": "pcbgolf:0402-C",
+        "fields": {
+          "MPN": "CL05F104ZO5NNNC"
+        }
+      },
+      {
+        "ref": "L5",
+        "value": "ACT1210D_CHOKE",
+        "footprint": "pcbgolf:CHOKE-3.2X2.5",
+        "fields": {
+          "MPN": "ACT1210D-101-2P-TL00"
+        }
+      },
+      {
+        "ref": "L6",
+        "value": "ACT1210D_CHOKE",
+        "footprint": "pcbgolf:CHOKE-3.2X2.5",
+        "fields": {
+          "MPN": "ACT1210D-101-2P-TL00"
+        }
+      },
+      {
+        "ref": "L7",
+        "value": "ACT1210D_CHOKE",
+        "footprint": "pcbgolf:CHOKE-3.2X2.5",
+        "fields": {
+          "MPN": "ACT1210D-101-2P-TL00"
+        }
+      },
+      {
+        "ref": "L8",
+        "value": "ACT1210D_CHOKE",
+        "footprint": "pcbgolf:CHOKE-3.2X2.5",
+        "fields": {
+          "MPN": "ACT1210D-101-2P-TL00"
+        }
+      },
+      {
+        "ref": "LED2",
+        "value": "CAN0",
+        "footprint": "pcbgolf:CHIPLED",
+        "fields": {
+          "MPN": "LG R971-KN-1"
+        }
+      },
+      {
+        "ref": "LED3",
+        "value": "CAN1",
+        "footprint": "pcbgolf:CHIPLED",
+        "fields": {
+          "MPN": "LG R971-KN-1"
+        }
+      },
+      {
+        "ref": "LED4",
+        "value": "CAN2",
+        "footprint": "pcbgolf:CHIPLED",
+        "fields": {
+          "MPN": "LG R971-KN-1"
+        }
+      },
+      {
+        "ref": "LED5",
+        "value": "CAN3",
+        "footprint": "pcbgolf:CHIPLED",
+        "fields": {
+          "MPN": "LG R971-KN-1"
+        }
+      },
+      {
+        "ref": "R46",
+        "value": "60",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0760R4L"
+        }
+      },
+      {
+        "ref": "R47",
+        "value": "60",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0760R4L"
+        }
+      },
+      {
+        "ref": "R48",
+        "value": "60",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0760R4L"
+        }
+      },
+      {
+        "ref": "R49",
+        "value": "60",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0760R4L"
+        }
+      },
+      {
+        "ref": "R50",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R51",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R52",
+        "value": "100k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100KL"
+        }
+      },
+      {
+        "ref": "R53",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R54",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R55",
+        "value": "100k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100KL"
+        }
+      },
+      {
+        "ref": "R56",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R57",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R58",
+        "value": "100k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100KL"
+        }
+      },
+      {
+        "ref": "R59",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R60",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R61",
+        "value": "100k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100KL"
+        }
+      },
+      {
+        "ref": "R62",
+        "value": "2k7",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-072K7L"
+        }
+      },
+      {
+        "ref": "R63",
+        "value": "2k7",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-072K7L"
+        }
+      },
+      {
+        "ref": "R64",
+        "value": "2k7",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-072K7L"
+        }
+      },
+      {
+        "ref": "R65",
+        "value": "2k7",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-072K7L"
+        }
+      },
+      {
+        "ref": "U5",
+        "value": "MCP2542FDT-E/MNY",
+        "footprint": "pcbgolf:TDFN8_2X3MC_MCH",
+        "fields": {
+          "MPN": "MCP2542FDT-H/MNY"
+        }
+      },
+      {
+        "ref": "U6",
+        "value": "MCP2542FDT-E/MNY",
+        "footprint": "pcbgolf:TDFN8_2X3MC_MCH",
+        "fields": {
+          "MPN": "MCP2542FDT-H/MNY"
+        }
+      },
+      {
+        "ref": "U7",
+        "value": "MCP2542FDT-E/MNY",
+        "footprint": "pcbgolf:TDFN8_2X3MC_MCH",
+        "fields": {
+          "MPN": "MCP2542FDT-H/MNY"
+        }
+      },
+      {
+        "ref": "U8",
+        "value": "MCP2542FDT-E/MNY",
+        "footprint": "pcbgolf:TDFN8_2X3MC_MCH",
+        "fields": {
+          "MPN": "MCP2542FDT-H/MNY"
+        }
+      },
+      {
+        "ref": "U9",
+        "value": "NCS20071XV",
+        "footprint": "pcbgolf:SOIC-8_3.9x4.9mm_P1.27mm",
+        "fields": {
+          "MPN": "NCS20071SN2T1G"
+        }
+      },
+      {
+        "ref": "U10",
+        "value": "NCS20071XV",
+        "footprint": "pcbgolf:SOIC-8_3.9x4.9mm_P1.27mm",
+        "fields": {
+          "MPN": "NCS20071SN2T1G"
+        }
+      },
+      {
+        "ref": "U11",
+        "value": "NCS20071XV",
+        "footprint": "pcbgolf:SOIC-8_3.9x4.9mm_P1.27mm",
+        "fields": {
+          "MPN": "NCS20071SN2T1G"
+        }
+      },
+      {
+        "ref": "U12",
+        "value": "NCS20071XV",
+        "footprint": "pcbgolf:SOIC-8_3.9x4.9mm_P1.27mm",
+        "fields": {
+          "MPN": "NCS20071SN2T1G"
+        }
+      },
+      {
+        "ref": "C50",
+        "value": "10u",
+        "footprint": "pcbgolf:0805-C",
+        "fields": {
+          "MPN": "CL21A106KAYNNNE"
+        }
+      },
+      {
+        "ref": "C51",
+        "value": "10u",
+        "footprint": "pcbgolf:0805-C",
+        "fields": {
+          "MPN": "CL21A106KAYNNNE"
+        }
+      },
+      {
+        "ref": "C52",
+        "value": "10u",
+        "footprint": "pcbgolf:0805-C",
+        "fields": {
+          "MPN": "CL21A106KAYNNNE"
+        }
+      },
+      {
+        "ref": "C53",
+        "value": "10u",
+        "footprint": "pcbgolf:0805-C",
+        "fields": {
+          "MPN": "CL21A106KAYNNNE"
+        }
+      },
+      {
+        "ref": "J5",
+        "value": "USB-C-FEMALEGCT",
+        "footprint": "pcbgolf:USB-C-FEMALE-VERT-GCT",
+        "fields": {
+          "MPN": "10132328-10011LF"
+        }
+      },
+      {
+        "ref": "J6",
+        "value": "USB-C-FEMALEGCT",
+        "footprint": "pcbgolf:USB-C-FEMALE-VERT-GCT",
+        "fields": {
+          "MPN": "10132328-10011LF"
+        }
+      },
+      {
+        "ref": "J7",
+        "value": "USB-C-FEMALEGCT",
+        "footprint": "pcbgolf:USB-C-FEMALE-VERT-GCT",
+        "fields": {
+          "MPN": "10132328-10011LF"
+        }
+      },
+      {
+        "ref": "J8",
+        "value": "USB-C-FEMALEGCT",
+        "footprint": "pcbgolf:USB-C-FEMALE-VERT-GCT",
+        "fields": {
+          "MPN": "10132328-10011LF"
+        }
+      },
+      {
+        "ref": "LED6",
+        "value": "CH1_PWR",
+        "footprint": "pcbgolf:CHIPLED",
+        "fields": {
+          "MPN": "LG R971-KN-1"
+        }
+      },
+      {
+        "ref": "LED7",
+        "value": "CH1_PWR",
+        "footprint": "pcbgolf:CHIPLED",
+        "fields": {
+          "MPN": "LG R971-KN-1"
+        }
+      },
+      {
+        "ref": "LED8",
+        "value": "CH1_PWR",
+        "footprint": "pcbgolf:CHIPLED",
+        "fields": {
+          "MPN": "LG R971-KN-1"
+        }
+      },
+      {
+        "ref": "LED9",
+        "value": "CH1_PWR",
+        "footprint": "pcbgolf:CHIPLED",
+        "fields": {
+          "MPN": "LG R971-KN-1"
+        }
+      },
+      {
+        "ref": "LED10",
+        "value": "LED-CC-GREEN-RED-AM23ESG",
+        "footprint": "pcbgolf:SOT23-3",
+        "fields": {
+          "MPN": "AM23ESGW"
+        }
+      },
+      {
+        "ref": "LED11",
+        "value": "LED-CC-GREEN-RED-AM23ESG",
+        "footprint": "pcbgolf:SOT23-3",
+        "fields": {
+          "MPN": "AM23ESGW"
+        }
+      },
+      {
+        "ref": "LED12",
+        "value": "LED-CC-GREEN-RED-AM23ESG",
+        "footprint": "pcbgolf:SOT23-3",
+        "fields": {
+          "MPN": "AM23ESGW"
+        }
+      },
+      {
+        "ref": "LED13",
+        "value": "LED-CC-GREEN-RED-AM23ESG",
+        "footprint": "pcbgolf:SOT23-3",
+        "fields": {
+          "MPN": "AM23ESGW"
+        }
+      },
+      {
+        "ref": "LED14",
+        "value": "LED-CC-GREEN-RED-AM23ESG",
+        "footprint": "pcbgolf:SOT23-3",
+        "fields": {
+          "MPN": "AM23ESGW"
+        }
+      },
+      {
+        "ref": "LED15",
+        "value": "LED-CC-GREEN-RED-AM23ESG",
+        "footprint": "pcbgolf:SOT23-3",
+        "fields": {
+          "MPN": "AM23ESGW"
+        }
+      },
+      {
+        "ref": "LED16",
+        "value": "LED-CC-GREEN-RED-AM23ESG",
+        "footprint": "pcbgolf:SOT23-3",
+        "fields": {
+          "MPN": "AM23ESGW"
+        }
+      },
+      {
+        "ref": "LED17",
+        "value": "LED-CC-GREEN-RED-AM23ESG",
+        "footprint": "pcbgolf:SOT23-3",
+        "fields": {
+          "MPN": "AM23ESGW"
+        }
+      },
+      {
+        "ref": "Q2",
+        "value": "NFET-DUAL-COMMON-SOURCE-QS5K2",
+        "footprint": "pcbgolf:SOT23-5",
+        "fields": {
+          "MPN": "QS5K2TR"
+        }
+      },
+      {
+        "ref": "Q3",
+        "value": "NFET-DUAL-COMMON-SOURCE-QS5K2",
+        "footprint": "pcbgolf:SOT23-5",
+        "fields": {
+          "MPN": "QS5K2TR"
+        }
+      },
+      {
+        "ref": "Q4",
+        "value": "NFET-DUAL-COMMON-SOURCE-QS5K2",
+        "footprint": "pcbgolf:SOT23-5",
+        "fields": {
+          "MPN": "QS5K2TR"
+        }
+      },
+      {
+        "ref": "Q5",
+        "value": "NFET-DUAL-COMMON-SOURCE-QS5K2",
+        "footprint": "pcbgolf:SOT23-5",
+        "fields": {
+          "MPN": "QS5K2TR"
+        }
+      },
+      {
+        "ref": "Q6",
+        "value": "NFET-DUAL-COMMON-SOURCE-QS5K2",
+        "footprint": "pcbgolf:SOT23-5",
+        "fields": {
+          "MPN": "QS5K2TR"
+        }
+      },
+      {
+        "ref": "Q7",
+        "value": "NFET-DUAL-COMMON-SOURCE-QS5K2",
+        "footprint": "pcbgolf:SOT23-5",
+        "fields": {
+          "MPN": "QS5K2TR"
+        }
+      },
+      {
+        "ref": "Q8",
+        "value": "NFET-DUAL-COMMON-SOURCE-QS5K2",
+        "footprint": "pcbgolf:SOT23-5",
+        "fields": {
+          "MPN": "QS5K2TR"
+        }
+      },
+      {
+        "ref": "Q9",
+        "value": "NFET-DUAL-COMMON-SOURCE-QS5K2",
+        "footprint": "pcbgolf:SOT23-5",
+        "fields": {
+          "MPN": "QS5K2TR"
+        }
+      },
+      {
+        "ref": "R66",
+        "value": "28k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RK73H1ETTP2802F"
+        }
+      },
+      {
+        "ref": "R67",
+        "value": "28k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RK73H1ETTP2802F"
+        }
+      },
+      {
+        "ref": "R68",
+        "value": "28k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RK73H1ETTP2802F"
+        }
+      },
+      {
+        "ref": "R69",
+        "value": "28k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RK73H1ETTP2802F"
+        }
+      },
+      {
+        "ref": "R70",
+        "value": "33k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-0733KL"
+        }
+      },
+      {
+        "ref": "R71",
+        "value": "33k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-0733KL"
+        }
+      },
+      {
+        "ref": "R72",
+        "value": "33k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-0733KL"
+        }
+      },
+      {
+        "ref": "R73",
+        "value": "33k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-0733KL"
+        }
+      },
+      {
+        "ref": "R74",
+        "value": "3k3",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-073K3L"
+        }
+      },
+      {
+        "ref": "R75",
+        "value": "3k3",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-073K3L"
+        }
+      },
+      {
+        "ref": "R76",
+        "value": "3k3",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-073K3L"
+        }
+      },
+      {
+        "ref": "R77",
+        "value": "3k3",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-073K3L"
+        }
+      },
+      {
+        "ref": "R78",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R79",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R80",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R81",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R82",
+        "value": "100",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100RL"
+        }
+      },
+      {
+        "ref": "R83",
+        "value": "100",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100RL"
+        }
+      },
+      {
+        "ref": "R84",
+        "value": "100",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100RL"
+        }
+      },
+      {
+        "ref": "R85",
+        "value": "100",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100RL"
+        }
+      },
+      {
+        "ref": "R86",
+        "value": "100",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100RL"
+        }
+      },
+      {
+        "ref": "R87",
+        "value": "100",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100RL"
+        }
+      },
+      {
+        "ref": "R88",
+        "value": "100",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100RL"
+        }
+      },
+      {
+        "ref": "R89",
+        "value": "100",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100RL"
+        }
+      },
+      {
+        "ref": "R90",
+        "value": "1k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-071KL"
+        }
+      },
+      {
+        "ref": "R91",
+        "value": "100",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100RL"
+        }
+      },
+      {
+        "ref": "R92",
+        "value": "1k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-071KL"
+        }
+      },
+      {
+        "ref": "R93",
+        "value": "100",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100RL"
+        }
+      },
+      {
+        "ref": "R94",
+        "value": "1k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-071KL"
+        }
+      },
+      {
+        "ref": "R95",
+        "value": "100",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100RL"
+        }
+      },
+      {
+        "ref": "R96",
+        "value": "1k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-071KL"
+        }
+      },
+      {
+        "ref": "R97",
+        "value": "100",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100RL"
+        }
+      },
+      {
+        "ref": "R98",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R99",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R100",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R101",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R102",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R103",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R104",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R105",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R106",
+        "value": "100",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100RL"
+        }
+      },
+      {
+        "ref": "R107",
+        "value": "100",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100RL"
+        }
+      },
+      {
+        "ref": "R108",
+        "value": "100",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100RL"
+        }
+      },
+      {
+        "ref": "R109",
+        "value": "100",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100RL"
+        }
+      },
+      {
+        "ref": "R110",
+        "value": "100",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100RL"
+        }
+      },
+      {
+        "ref": "R111",
+        "value": "100",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100RL"
+        }
+      },
+      {
+        "ref": "R112",
+        "value": "100",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100RL"
+        }
+      },
+      {
+        "ref": "R113",
+        "value": "100",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100RL"
+        }
+      },
+      {
+        "ref": "R114",
+        "value": "1k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-071KL"
+        }
+      },
+      {
+        "ref": "R115",
+        "value": "100",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100RL"
+        }
+      },
+      {
+        "ref": "R116",
+        "value": "1k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-071KL"
+        }
+      },
+      {
+        "ref": "R117",
+        "value": "100",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100RL"
+        }
+      },
+      {
+        "ref": "R118",
+        "value": "1k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-071KL"
+        }
+      },
+      {
+        "ref": "R119",
+        "value": "100",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100RL"
+        }
+      },
+      {
+        "ref": "R120",
+        "value": "1k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-071KL"
+        }
+      },
+      {
+        "ref": "R121",
+        "value": "100",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402JR-07100RL"
+        }
+      },
+      {
+        "ref": "R122",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R123",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R124",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "R125",
+        "value": "10k",
+        "footprint": "pcbgolf:0402-R",
+        "fields": {
+          "MPN": "RC0402FR-0710KL"
+        }
+      },
+      {
+        "ref": "U13",
+        "value": "TPS25942",
+        "footprint": "pcbgolf:WQFN20",
+        "fields": {
+          "MPN": "TPS25944ARVCR"
+        }
+      },
+      {
+        "ref": "U14",
+        "value": "TPS25942",
+        "footprint": "pcbgolf:WQFN20",
+        "fields": {
+          "MPN": "TPS25944ARVCR"
+        }
+      },
+      {
+        "ref": "U15",
+        "value": "TPS25942",
+        "footprint": "pcbgolf:WQFN20",
+        "fields": {
+          "MPN": "TPS25944ARVCR"
+        }
+      },
+      {
+        "ref": "U16",
+        "value": "TPS25942",
+        "footprint": "pcbgolf:WQFN20",
+        "fields": {
+          "MPN": "TPS25944ARVCR"
+        }
+      }
+    ],
+    "nets": [
+      {
+        "name": "+3V3",
+        "code": 1,
+        "nodes": [
+          {
+            "ref": "C19",
+            "pin": "1"
+          },
+          {
+            "ref": "C20",
+            "pin": "1"
+          },
+          {
+            "ref": "C23",
+            "pin": "1"
+          },
+          {
+            "ref": "C24",
+            "pin": "1"
+          },
+          {
+            "ref": "C26",
+            "pin": "1"
+          },
+          {
+            "ref": "C27",
+            "pin": "1"
+          },
+          {
+            "ref": "C30",
+            "pin": "2"
+          },
+          {
+            "ref": "C31",
+            "pin": "2"
+          },
+          {
+            "ref": "C37",
+            "pin": "1"
+          },
+          {
+            "ref": "C42",
+            "pin": "1"
+          },
+          {
+            "ref": "C43",
+            "pin": "1"
+          },
+          {
+            "ref": "C44",
+            "pin": "1"
+          },
+          {
+            "ref": "C45",
+            "pin": "1"
+          },
+          {
+            "ref": "C7",
+            "pin": "1"
+          },
+          {
+            "ref": "C8",
+            "pin": "1"
+          },
+          {
+            "ref": "J2",
+            "pin": "4"
+          },
+          {
+            "ref": "L1",
+            "pin": "2"
+          },
+          {
+            "ref": "L3",
+            "pin": "1"
+          },
+          {
+            "ref": "LED1",
+            "pin": "U1"
+          },
+          {
+            "ref": "R11",
+            "pin": "1"
+          },
+          {
+            "ref": "R28",
+            "pin": "1"
+          },
+          {
+            "ref": "R29",
+            "pin": "1"
+          },
+          {
+            "ref": "R30",
+            "pin": "1"
+          },
+          {
+            "ref": "R33",
+            "pin": "1"
+          },
+          {
+            "ref": "R34",
+            "pin": "1"
+          },
+          {
+            "ref": "R35",
+            "pin": "1"
+          },
+          {
+            "ref": "R36",
+            "pin": "1"
+          },
+          {
+            "ref": "R37",
+            "pin": "1"
+          },
+          {
+            "ref": "R4",
+            "pin": "1"
+          },
+          {
+            "ref": "R5",
+            "pin": "1"
+          },
+          {
+            "ref": "R6",
+            "pin": "1"
+          },
+          {
+            "ref": "SW1",
+            "pin": "B"
+          },
+          {
+            "ref": "SW1",
+            "pin": "B'"
+          },
+          {
+            "ref": "U3",
+            "pin": "106"
+          },
+          {
+            "ref": "U3",
+            "pin": "119"
+          },
+          {
+            "ref": "U3",
+            "pin": "129"
+          },
+          {
+            "ref": "U3",
+            "pin": "13"
+          },
+          {
+            "ref": "U3",
+            "pin": "144"
+          },
+          {
+            "ref": "U3",
+            "pin": "16"
+          },
+          {
+            "ref": "U3",
+            "pin": "19"
+          },
+          {
+            "ref": "U3",
+            "pin": "32"
+          },
+          {
+            "ref": "U3",
+            "pin": "42"
+          },
+          {
+            "ref": "U3",
+            "pin": "56"
+          },
+          {
+            "ref": "U3",
+            "pin": "7"
+          },
+          {
+            "ref": "U3",
+            "pin": "71"
+          },
+          {
+            "ref": "U3",
+            "pin": "79"
+          },
+          {
+            "ref": "U3",
+            "pin": "8"
+          },
+          {
+            "ref": "U3",
+            "pin": "90"
+          },
+          {
+            "ref": "U3",
+            "pin": "91"
+          },
+          {
+            "ref": "U3",
+            "pin": "92"
+          },
+          {
+            "ref": "U4",
+            "pin": "10"
+          },
+          {
+            "ref": "U4",
+            "pin": "13"
+          },
+          {
+            "ref": "U4",
+            "pin": "24"
+          },
+          {
+            "ref": "U4",
+            "pin": "42"
+          },
+          {
+            "ref": "U4",
+            "pin": "43"
+          },
+          {
+            "ref": "U4",
+            "pin": "46"
+          },
+          {
+            "ref": "U4",
+            "pin": "5"
+          },
+          {
+            "ref": "U4",
+            "pin": "52"
+          },
+          {
+            "ref": "U4",
+            "pin": "57"
+          },
+          {
+            "ref": "U4",
+            "pin": "64"
+          },
+          {
+            "ref": "U5",
+            "pin": "5"
+          },
+          {
+            "ref": "U6",
+            "pin": "5"
+          },
+          {
+            "ref": "U7",
+            "pin": "5"
+          },
+          {
+            "ref": "U8",
+            "pin": "5"
+          }
+        ]
+      },
+      {
+        "name": "+5V",
+        "code": 2,
+        "nodes": [
+          {
+            "ref": "C1",
+            "pin": "1"
+          },
+          {
+            "ref": "C11",
+            "pin": "1"
+          },
+          {
+            "ref": "C12",
+            "pin": "1"
+          },
+          {
+            "ref": "C13",
+            "pin": "1"
+          },
+          {
+            "ref": "C2",
+            "pin": "1"
+          },
+          {
+            "ref": "C38",
+            "pin": "1"
+          },
+          {
+            "ref": "C39",
+            "pin": "1"
+          },
+          {
+            "ref": "C40",
+            "pin": "1"
+          },
+          {
+            "ref": "C41",
+            "pin": "1"
+          },
+          {
+            "ref": "L2",
+            "pin": "2"
+          },
+          {
+            "ref": "R1",
+            "pin": "1"
+          },
+          {
+            "ref": "R10",
+            "pin": "2"
+          },
+          {
+            "ref": "R52",
+            "pin": "2"
+          },
+          {
+            "ref": "R55",
+            "pin": "2"
+          },
+          {
+            "ref": "R58",
+            "pin": "2"
+          },
+          {
+            "ref": "R61",
+            "pin": "2"
+          },
+          {
+            "ref": "U1",
+            "pin": "3"
+          },
+          {
+            "ref": "U5",
+            "pin": "3"
+          },
+          {
+            "ref": "U6",
+            "pin": "3"
+          },
+          {
+            "ref": "U7",
+            "pin": "3"
+          },
+          {
+            "ref": "U8",
+            "pin": "3"
+          }
+        ]
+      },
+      {
+        "name": "+12V",
+        "code": 3,
+        "nodes": [
+          {
+            "ref": "C3",
+            "pin": "1"
+          },
+          {
+            "ref": "C46",
+            "pin": "1"
+          },
+          {
+            "ref": "C47",
+            "pin": "1"
+          },
+          {
+            "ref": "C48",
+            "pin": "1"
+          },
+          {
+            "ref": "C49",
+            "pin": "1"
+          },
+          {
+            "ref": "C5",
+            "pin": "1"
+          },
+          {
+            "ref": "C50",
+            "pin": "1"
+          },
+          {
+            "ref": "C51",
+            "pin": "1"
+          },
+          {
+            "ref": "C52",
+            "pin": "1"
+          },
+          {
+            "ref": "C53",
+            "pin": "1"
+          },
+          {
+            "ref": "D2",
+            "pin": "1"
+          },
+          {
+            "ref": "Q1",
+            "pin": "1"
+          },
+          {
+            "ref": "Q1",
+            "pin": "2"
+          },
+          {
+            "ref": "Q1",
+            "pin": "3"
+          },
+          {
+            "ref": "R7",
+            "pin": "1"
+          },
+          {
+            "ref": "U10",
+            "pin": "5"
+          },
+          {
+            "ref": "U11",
+            "pin": "5"
+          },
+          {
+            "ref": "U12",
+            "pin": "5"
+          },
+          {
+            "ref": "U13",
+            "pin": "10"
+          },
+          {
+            "ref": "U13",
+            "pin": "11"
+          },
+          {
+            "ref": "U13",
+            "pin": "12"
+          },
+          {
+            "ref": "U13",
+            "pin": "13"
+          },
+          {
+            "ref": "U13",
+            "pin": "9"
+          },
+          {
+            "ref": "U14",
+            "pin": "10"
+          },
+          {
+            "ref": "U14",
+            "pin": "11"
+          },
+          {
+            "ref": "U14",
+            "pin": "12"
+          },
+          {
+            "ref": "U14",
+            "pin": "13"
+          },
+          {
+            "ref": "U14",
+            "pin": "9"
+          },
+          {
+            "ref": "U15",
+            "pin": "10"
+          },
+          {
+            "ref": "U15",
+            "pin": "11"
+          },
+          {
+            "ref": "U15",
+            "pin": "12"
+          },
+          {
+            "ref": "U15",
+            "pin": "13"
+          },
+          {
+            "ref": "U15",
+            "pin": "9"
+          },
+          {
+            "ref": "U16",
+            "pin": "10"
+          },
+          {
+            "ref": "U16",
+            "pin": "11"
+          },
+          {
+            "ref": "U16",
+            "pin": "12"
+          },
+          {
+            "ref": "U16",
+            "pin": "13"
+          },
+          {
+            "ref": "U16",
+            "pin": "9"
+          },
+          {
+            "ref": "U2",
+            "pin": "3"
+          },
+          {
+            "ref": "U9",
+            "pin": "5"
+          }
+        ]
+      },
+      {
+        "name": "BTN",
+        "code": 4,
+        "nodes": [
+          {
+            "ref": "R12",
+            "pin": "2"
+          },
+          {
+            "ref": "SW1",
+            "pin": "A"
+          },
+          {
+            "ref": "SW1",
+            "pin": "A'"
+          },
+          {
+            "ref": "U3",
+            "pin": "135"
+          },
+          {
+            "ref": "U3",
+            "pin": "65"
+          }
+        ]
+      },
+      {
+        "name": "CAN0_EN",
+        "code": 5,
+        "nodes": [
+          {
+            "ref": "U3",
+            "pin": "134"
+          },
+          {
+            "ref": "U5",
+            "pin": "8"
+          }
+        ]
+      },
+      {
+        "name": "CAN0_H",
+        "code": 6,
+        "nodes": [
+          {
+            "ref": "J5",
+            "pin": "A2"
+          },
+          {
+            "ref": "J6",
+            "pin": "A2"
+          },
+          {
+            "ref": "J7",
+            "pin": "A2"
+          },
+          {
+            "ref": "J8",
+            "pin": "A2"
+          },
+          {
+            "ref": "L5",
+            "pin": "4"
+          },
+          {
+            "ref": "R46",
+            "pin": "2"
+          },
+          {
+            "ref": "R50",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "CAN0_L",
+        "code": 7,
+        "nodes": [
+          {
+            "ref": "J5",
+            "pin": "A3"
+          },
+          {
+            "ref": "J6",
+            "pin": "A3"
+          },
+          {
+            "ref": "J7",
+            "pin": "A3"
+          },
+          {
+            "ref": "J8",
+            "pin": "A3"
+          },
+          {
+            "ref": "L5",
+            "pin": "3"
+          },
+          {
+            "ref": "R46",
+            "pin": "1"
+          },
+          {
+            "ref": "R51",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "CAN0_RX",
+        "code": 8,
+        "nodes": [
+          {
+            "ref": "U3",
+            "pin": "136"
+          },
+          {
+            "ref": "U5",
+            "pin": "4"
+          }
+        ]
+      },
+      {
+        "name": "CAN0_TX",
+        "code": 9,
+        "nodes": [
+          {
+            "ref": "U3",
+            "pin": "137"
+          },
+          {
+            "ref": "U5",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "CAN1_EN",
+        "code": 10,
+        "nodes": [
+          {
+            "ref": "U3",
+            "pin": "130"
+          },
+          {
+            "ref": "U6",
+            "pin": "8"
+          }
+        ]
+      },
+      {
+        "name": "CAN1_H",
+        "code": 11,
+        "nodes": [
+          {
+            "ref": "J5",
+            "pin": "A11"
+          },
+          {
+            "ref": "J6",
+            "pin": "A11"
+          },
+          {
+            "ref": "J7",
+            "pin": "A11"
+          },
+          {
+            "ref": "J8",
+            "pin": "A11"
+          },
+          {
+            "ref": "L6",
+            "pin": "4"
+          },
+          {
+            "ref": "R47",
+            "pin": "2"
+          },
+          {
+            "ref": "R53",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "CAN1_L",
+        "code": 12,
+        "nodes": [
+          {
+            "ref": "J5",
+            "pin": "A10"
+          },
+          {
+            "ref": "J6",
+            "pin": "A10"
+          },
+          {
+            "ref": "J7",
+            "pin": "A10"
+          },
+          {
+            "ref": "J8",
+            "pin": "A10"
+          },
+          {
+            "ref": "L6",
+            "pin": "3"
+          },
+          {
+            "ref": "R47",
+            "pin": "1"
+          },
+          {
+            "ref": "R54",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "CAN1_RX",
+        "code": 13,
+        "nodes": [
+          {
+            "ref": "U3",
+            "pin": "132"
+          },
+          {
+            "ref": "U6",
+            "pin": "4"
+          }
+        ]
+      },
+      {
+        "name": "CAN1_TX",
+        "code": 14,
+        "nodes": [
+          {
+            "ref": "U3",
+            "pin": "133"
+          },
+          {
+            "ref": "U6",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "CAN2_EN",
+        "code": 15,
+        "nodes": [
+          {
+            "ref": "U3",
+            "pin": "121"
+          },
+          {
+            "ref": "U7",
+            "pin": "8"
+          }
+        ]
+      },
+      {
+        "name": "CAN2_H",
+        "code": 16,
+        "nodes": [
+          {
+            "ref": "J5",
+            "pin": "B2"
+          },
+          {
+            "ref": "J6",
+            "pin": "B2"
+          },
+          {
+            "ref": "J7",
+            "pin": "B2"
+          },
+          {
+            "ref": "J8",
+            "pin": "B2"
+          },
+          {
+            "ref": "L7",
+            "pin": "4"
+          },
+          {
+            "ref": "R48",
+            "pin": "2"
+          },
+          {
+            "ref": "R56",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "CAN2_L",
+        "code": 17,
+        "nodes": [
+          {
+            "ref": "J5",
+            "pin": "B3"
+          },
+          {
+            "ref": "J6",
+            "pin": "B3"
+          },
+          {
+            "ref": "J7",
+            "pin": "B3"
+          },
+          {
+            "ref": "J8",
+            "pin": "B3"
+          },
+          {
+            "ref": "L7",
+            "pin": "3"
+          },
+          {
+            "ref": "R48",
+            "pin": "1"
+          },
+          {
+            "ref": "R57",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "CAN2_RX",
+        "code": 18,
+        "nodes": [
+          {
+            "ref": "U3",
+            "pin": "123"
+          },
+          {
+            "ref": "U7",
+            "pin": "4"
+          }
+        ]
+      },
+      {
+        "name": "CAN2_TX",
+        "code": 19,
+        "nodes": [
+          {
+            "ref": "U3",
+            "pin": "122"
+          },
+          {
+            "ref": "U7",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "CAN3_EN",
+        "code": 20,
+        "nodes": [
+          {
+            "ref": "U3",
+            "pin": "131"
+          },
+          {
+            "ref": "U8",
+            "pin": "8"
+          }
+        ]
+      },
+      {
+        "name": "CAN3_H",
+        "code": 21,
+        "nodes": [
+          {
+            "ref": "J5",
+            "pin": "B11"
+          },
+          {
+            "ref": "J6",
+            "pin": "B11"
+          },
+          {
+            "ref": "J7",
+            "pin": "B11"
+          },
+          {
+            "ref": "J8",
+            "pin": "B11"
+          },
+          {
+            "ref": "L8",
+            "pin": "4"
+          },
+          {
+            "ref": "R49",
+            "pin": "2"
+          },
+          {
+            "ref": "R59",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "CAN3_L",
+        "code": 22,
+        "nodes": [
+          {
+            "ref": "J5",
+            "pin": "B10"
+          },
+          {
+            "ref": "J6",
+            "pin": "B10"
+          },
+          {
+            "ref": "J7",
+            "pin": "B10"
+          },
+          {
+            "ref": "J8",
+            "pin": "B10"
+          },
+          {
+            "ref": "L8",
+            "pin": "3"
+          },
+          {
+            "ref": "R49",
+            "pin": "1"
+          },
+          {
+            "ref": "R60",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "CAN3_RX",
+        "code": 23,
+        "nodes": [
+          {
+            "ref": "U3",
+            "pin": "72"
+          },
+          {
+            "ref": "U8",
+            "pin": "4"
+          }
+        ]
+      },
+      {
+        "name": "CAN3_TX",
+        "code": 24,
+        "nodes": [
+          {
+            "ref": "U3",
+            "pin": "73"
+          },
+          {
+            "ref": "U8",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "CH1_D_N",
+        "code": 25,
+        "nodes": [
+          {
+            "ref": "J5",
+            "pin": "A7"
+          },
+          {
+            "ref": "J5",
+            "pin": "B7"
+          },
+          {
+            "ref": "U4",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "CH1_D_P",
+        "code": 26,
+        "nodes": [
+          {
+            "ref": "J5",
+            "pin": "A6"
+          },
+          {
+            "ref": "J5",
+            "pin": "B6"
+          },
+          {
+            "ref": "U4",
+            "pin": "2"
+          }
+        ]
+      },
+      {
+        "name": "CH1_IMON",
+        "code": 27,
+        "nodes": [
+          {
+            "ref": "R70",
+            "pin": "2"
+          },
+          {
+            "ref": "U13",
+            "pin": "19"
+          },
+          {
+            "ref": "U3",
+            "pin": "47"
+          }
+        ]
+      },
+      {
+        "name": "CH1_PWR_EN",
+        "code": 28,
+        "nodes": [
+          {
+            "ref": "U13",
+            "pin": "14"
+          },
+          {
+            "ref": "U3",
+            "pin": "37"
+          }
+        ]
+      },
+      {
+        "name": "CH1_SBU1",
+        "code": 29,
+        "nodes": [
+          {
+            "ref": "J5",
+            "pin": "A8"
+          },
+          {
+            "ref": "R19",
+            "pin": "2"
+          },
+          {
+            "ref": "R90",
+            "pin": "2"
+          },
+          {
+            "ref": "R91",
+            "pin": "2"
+          }
+        ]
+      },
+      {
+        "name": "CH1_SBU1_IGN",
+        "code": 30,
+        "nodes": [
+          {
+            "ref": "Q2",
+            "pin": "1"
+          },
+          {
+            "ref": "R78",
+            "pin": "1"
+          },
+          {
+            "ref": "R83",
+            "pin": "2"
+          },
+          {
+            "ref": "U3",
+            "pin": "112"
+          }
+        ]
+      },
+      {
+        "name": "CH1_SBU1_RELAY",
+        "code": 31,
+        "nodes": [
+          {
+            "ref": "Q2",
+            "pin": "3"
+          },
+          {
+            "ref": "R82",
+            "pin": "2"
+          },
+          {
+            "ref": "R98",
+            "pin": "2"
+          },
+          {
+            "ref": "U3",
+            "pin": "113"
+          }
+        ]
+      },
+      {
+        "name": "CH1_SBU2",
+        "code": 32,
+        "nodes": [
+          {
+            "ref": "J5",
+            "pin": "B8"
+          },
+          {
+            "ref": "R114",
+            "pin": "2"
+          },
+          {
+            "ref": "R115",
+            "pin": "2"
+          },
+          {
+            "ref": "R20",
+            "pin": "2"
+          }
+        ]
+      },
+      {
+        "name": "CH1_SBU2_IGN",
+        "code": 33,
+        "nodes": [
+          {
+            "ref": "Q6",
+            "pin": "1"
+          },
+          {
+            "ref": "R102",
+            "pin": "1"
+          },
+          {
+            "ref": "R107",
+            "pin": "2"
+          },
+          {
+            "ref": "U3",
+            "pin": "115"
+          }
+        ]
+      },
+      {
+        "name": "CH1_SBU2_RELAY",
+        "code": 34,
+        "nodes": [
+          {
+            "ref": "Q6",
+            "pin": "3"
+          },
+          {
+            "ref": "R106",
+            "pin": "2"
+          },
+          {
+            "ref": "R122",
+            "pin": "2"
+          },
+          {
+            "ref": "U3",
+            "pin": "116"
+          }
+        ]
+      },
+      {
+        "name": "CH2_D_N",
+        "code": 35,
+        "nodes": [
+          {
+            "ref": "J6",
+            "pin": "A7"
+          },
+          {
+            "ref": "J6",
+            "pin": "B7"
+          },
+          {
+            "ref": "U4",
+            "pin": "3"
+          }
+        ]
+      },
+      {
+        "name": "CH2_D_P",
+        "code": 36,
+        "nodes": [
+          {
+            "ref": "J6",
+            "pin": "A6"
+          },
+          {
+            "ref": "J6",
+            "pin": "B6"
+          },
+          {
+            "ref": "U4",
+            "pin": "4"
+          }
+        ]
+      },
+      {
+        "name": "CH2_IMON",
+        "code": 37,
+        "nodes": [
+          {
+            "ref": "R71",
+            "pin": "2"
+          },
+          {
+            "ref": "U14",
+            "pin": "19"
+          },
+          {
+            "ref": "U3",
+            "pin": "50"
+          }
+        ]
+      },
+      {
+        "name": "CH2_PWR_EN",
+        "code": 38,
+        "nodes": [
+          {
+            "ref": "U14",
+            "pin": "14"
+          },
+          {
+            "ref": "U3",
+            "pin": "38"
+          }
+        ]
+      },
+      {
+        "name": "CH2_SBU1",
+        "code": 39,
+        "nodes": [
+          {
+            "ref": "J6",
+            "pin": "A8"
+          },
+          {
+            "ref": "R15",
+            "pin": "2"
+          },
+          {
+            "ref": "R92",
+            "pin": "2"
+          },
+          {
+            "ref": "R93",
+            "pin": "2"
+          }
+        ]
+      },
+      {
+        "name": "CH2_SBU1_IGN",
+        "code": 40,
+        "nodes": [
+          {
+            "ref": "Q3",
+            "pin": "1"
+          },
+          {
+            "ref": "R79",
+            "pin": "1"
+          },
+          {
+            "ref": "R85",
+            "pin": "2"
+          },
+          {
+            "ref": "U3",
+            "pin": "117"
+          }
+        ]
+      },
+      {
+        "name": "CH2_SBU1_RELAY",
+        "code": 41,
+        "nodes": [
+          {
+            "ref": "Q3",
+            "pin": "3"
+          },
+          {
+            "ref": "R84",
+            "pin": "2"
+          },
+          {
+            "ref": "R99",
+            "pin": "2"
+          },
+          {
+            "ref": "U3",
+            "pin": "120"
+          }
+        ]
+      },
+      {
+        "name": "CH2_SBU2",
+        "code": 42,
+        "nodes": [
+          {
+            "ref": "J6",
+            "pin": "B8"
+          },
+          {
+            "ref": "R116",
+            "pin": "2"
+          },
+          {
+            "ref": "R117",
+            "pin": "2"
+          },
+          {
+            "ref": "R13",
+            "pin": "2"
+          }
+        ]
+      },
+      {
+        "name": "CH2_SBU2_IGN",
+        "code": 43,
+        "nodes": [
+          {
+            "ref": "Q7",
+            "pin": "1"
+          },
+          {
+            "ref": "R103",
+            "pin": "1"
+          },
+          {
+            "ref": "R109",
+            "pin": "2"
+          },
+          {
+            "ref": "U3",
+            "pin": "76"
+          }
+        ]
+      },
+      {
+        "name": "CH2_SBU2_RELAY",
+        "code": 44,
+        "nodes": [
+          {
+            "ref": "Q7",
+            "pin": "3"
+          },
+          {
+            "ref": "R108",
+            "pin": "2"
+          },
+          {
+            "ref": "R123",
+            "pin": "2"
+          },
+          {
+            "ref": "U3",
+            "pin": "78"
+          }
+        ]
+      },
+      {
+        "name": "CH3_D_N",
+        "code": 45,
+        "nodes": [
+          {
+            "ref": "J7",
+            "pin": "A7"
+          },
+          {
+            "ref": "J7",
+            "pin": "B7"
+          },
+          {
+            "ref": "U4",
+            "pin": "6"
+          }
+        ]
+      },
+      {
+        "name": "CH3_D_P",
+        "code": 46,
+        "nodes": [
+          {
+            "ref": "J7",
+            "pin": "A6"
+          },
+          {
+            "ref": "J7",
+            "pin": "B6"
+          },
+          {
+            "ref": "U4",
+            "pin": "7"
+          }
+        ]
+      },
+      {
+        "name": "CH3_IMON",
+        "code": 47,
+        "nodes": [
+          {
+            "ref": "R72",
+            "pin": "2"
+          },
+          {
+            "ref": "U15",
+            "pin": "19"
+          },
+          {
+            "ref": "U3",
+            "pin": "52"
+          }
+        ]
+      },
+      {
+        "name": "CH3_PWR_EN",
+        "code": 48,
+        "nodes": [
+          {
+            "ref": "U15",
+            "pin": "14"
+          },
+          {
+            "ref": "U3",
+            "pin": "43"
+          }
+        ]
+      },
+      {
+        "name": "CH3_SBU1",
+        "code": 49,
+        "nodes": [
+          {
+            "ref": "J7",
+            "pin": "A8"
+          },
+          {
+            "ref": "R17",
+            "pin": "2"
+          },
+          {
+            "ref": "R94",
+            "pin": "2"
+          },
+          {
+            "ref": "R95",
+            "pin": "2"
+          }
+        ]
+      },
+      {
+        "name": "CH3_SBU1_IGN",
+        "code": 50,
+        "nodes": [
+          {
+            "ref": "Q4",
+            "pin": "1"
+          },
+          {
+            "ref": "R80",
+            "pin": "1"
+          },
+          {
+            "ref": "R87",
+            "pin": "2"
+          },
+          {
+            "ref": "U3",
+            "pin": "82"
+          }
+        ]
+      },
+      {
+        "name": "CH3_SBU1_RELAY",
+        "code": 51,
+        "nodes": [
+          {
+            "ref": "Q4",
+            "pin": "3"
+          },
+          {
+            "ref": "R100",
+            "pin": "2"
+          },
+          {
+            "ref": "R86",
+            "pin": "2"
+          },
+          {
+            "ref": "U3",
+            "pin": "81"
+          }
+        ]
+      },
+      {
+        "name": "CH3_SBU2",
+        "code": 52,
+        "nodes": [
+          {
+            "ref": "J7",
+            "pin": "B8"
+          },
+          {
+            "ref": "R118",
+            "pin": "2"
+          },
+          {
+            "ref": "R119",
+            "pin": "2"
+          },
+          {
+            "ref": "R18",
+            "pin": "2"
+          }
+        ]
+      },
+      {
+        "name": "CH3_SBU2_IGN",
+        "code": 53,
+        "nodes": [
+          {
+            "ref": "Q8",
+            "pin": "1"
+          },
+          {
+            "ref": "R104",
+            "pin": "1"
+          },
+          {
+            "ref": "R111",
+            "pin": "2"
+          },
+          {
+            "ref": "U3",
+            "pin": "77"
+          }
+        ]
+      },
+      {
+        "name": "CH3_SBU2_RELAY",
+        "code": 54,
+        "nodes": [
+          {
+            "ref": "Q8",
+            "pin": "3"
+          },
+          {
+            "ref": "R110",
+            "pin": "2"
+          },
+          {
+            "ref": "R124",
+            "pin": "2"
+          },
+          {
+            "ref": "U3",
+            "pin": "83"
+          }
+        ]
+      },
+      {
+        "name": "CH4_D_N",
+        "code": 55,
+        "nodes": [
+          {
+            "ref": "J8",
+            "pin": "A7"
+          },
+          {
+            "ref": "J8",
+            "pin": "B7"
+          },
+          {
+            "ref": "U4",
+            "pin": "8"
+          }
+        ]
+      },
+      {
+        "name": "CH4_D_P",
+        "code": 56,
+        "nodes": [
+          {
+            "ref": "J8",
+            "pin": "A6"
+          },
+          {
+            "ref": "J8",
+            "pin": "B6"
+          },
+          {
+            "ref": "U4",
+            "pin": "9"
+          }
+        ]
+      },
+      {
+        "name": "CH4_IMON",
+        "code": 57,
+        "nodes": [
+          {
+            "ref": "R73",
+            "pin": "2"
+          },
+          {
+            "ref": "U16",
+            "pin": "19"
+          },
+          {
+            "ref": "U3",
+            "pin": "45"
+          }
+        ]
+      },
+      {
+        "name": "CH4_PWR_EN",
+        "code": 58,
+        "nodes": [
+          {
+            "ref": "U16",
+            "pin": "14"
+          },
+          {
+            "ref": "U3",
+            "pin": "44"
+          }
+        ]
+      },
+      {
+        "name": "CH4_SBU1",
+        "code": 59,
+        "nodes": [
+          {
+            "ref": "J8",
+            "pin": "A8"
+          },
+          {
+            "ref": "R16",
+            "pin": "2"
+          },
+          {
+            "ref": "R96",
+            "pin": "2"
+          },
+          {
+            "ref": "R97",
+            "pin": "2"
+          }
+        ]
+      },
+      {
+        "name": "CH4_SBU1_IGN",
+        "code": 60,
+        "nodes": [
+          {
+            "ref": "Q5",
+            "pin": "1"
+          },
+          {
+            "ref": "R81",
+            "pin": "1"
+          },
+          {
+            "ref": "R89",
+            "pin": "2"
+          },
+          {
+            "ref": "U3",
+            "pin": "84"
+          }
+        ]
+      },
+      {
+        "name": "CH4_SBU1_RELAY",
+        "code": 61,
+        "nodes": [
+          {
+            "ref": "Q5",
+            "pin": "3"
+          },
+          {
+            "ref": "R101",
+            "pin": "2"
+          },
+          {
+            "ref": "R88",
+            "pin": "2"
+          },
+          {
+            "ref": "U3",
+            "pin": "85"
+          }
+        ]
+      },
+      {
+        "name": "CH4_SBU2",
+        "code": 62,
+        "nodes": [
+          {
+            "ref": "J8",
+            "pin": "B8"
+          },
+          {
+            "ref": "R120",
+            "pin": "2"
+          },
+          {
+            "ref": "R121",
+            "pin": "2"
+          },
+          {
+            "ref": "R14",
+            "pin": "2"
+          }
+        ]
+      },
+      {
+        "name": "CH4_SBU2_IGN",
+        "code": 63,
+        "nodes": [
+          {
+            "ref": "Q9",
+            "pin": "1"
+          },
+          {
+            "ref": "R105",
+            "pin": "1"
+          },
+          {
+            "ref": "R113",
+            "pin": "2"
+          },
+          {
+            "ref": "U3",
+            "pin": "138"
+          }
+        ]
+      },
+      {
+        "name": "CH4_SBU2_RELAY",
+        "code": 64,
+        "nodes": [
+          {
+            "ref": "Q9",
+            "pin": "3"
+          },
+          {
+            "ref": "R112",
+            "pin": "2"
+          },
+          {
+            "ref": "R125",
+            "pin": "2"
+          },
+          {
+            "ref": "U3",
+            "pin": "139"
+          }
+        ]
+      },
+      {
+        "name": "GND",
+        "code": 65,
+        "nodes": [
+          {
+            "ref": "C1",
+            "pin": "2"
+          },
+          {
+            "ref": "C11",
+            "pin": "2"
+          },
+          {
+            "ref": "C12",
+            "pin": "2"
+          },
+          {
+            "ref": "C13",
+            "pin": "2"
+          },
+          {
+            "ref": "C14",
+            "pin": "2"
+          },
+          {
+            "ref": "C15",
+            "pin": "2"
+          },
+          {
+            "ref": "C16",
+            "pin": "2"
+          },
+          {
+            "ref": "C17",
+            "pin": "2"
+          },
+          {
+            "ref": "C18",
+            "pin": "2"
+          },
+          {
+            "ref": "C19",
+            "pin": "2"
+          },
+          {
+            "ref": "C2",
+            "pin": "2"
+          },
+          {
+            "ref": "C20",
+            "pin": "2"
+          },
+          {
+            "ref": "C21",
+            "pin": "2"
+          },
+          {
+            "ref": "C22",
+            "pin": "2"
+          },
+          {
+            "ref": "C23",
+            "pin": "2"
+          },
+          {
+            "ref": "C24",
+            "pin": "2"
+          },
+          {
+            "ref": "C25",
+            "pin": "2"
+          },
+          {
+            "ref": "C26",
+            "pin": "2"
+          },
+          {
+            "ref": "C27",
+            "pin": "2"
+          },
+          {
+            "ref": "C28",
+            "pin": "2"
+          },
+          {
+            "ref": "C29",
+            "pin": "2"
+          },
+          {
+            "ref": "C3",
+            "pin": "2"
+          },
+          {
+            "ref": "C30",
+            "pin": "1"
+          },
+          {
+            "ref": "C31",
+            "pin": "1"
+          },
+          {
+            "ref": "C32",
+            "pin": "2"
+          },
+          {
+            "ref": "C33",
+            "pin": "2"
+          },
+          {
+            "ref": "C34",
+            "pin": "2"
+          },
+          {
+            "ref": "C35",
+            "pin": "1"
+          },
+          {
+            "ref": "C36",
+            "pin": "1"
+          },
+          {
+            "ref": "C37",
+            "pin": "2"
+          },
+          {
+            "ref": "C38",
+            "pin": "2"
+          },
+          {
+            "ref": "C39",
+            "pin": "2"
+          },
+          {
+            "ref": "C40",
+            "pin": "2"
+          },
+          {
+            "ref": "C41",
+            "pin": "2"
+          },
+          {
+            "ref": "C42",
+            "pin": "2"
+          },
+          {
+            "ref": "C43",
+            "pin": "2"
+          },
+          {
+            "ref": "C44",
+            "pin": "2"
+          },
+          {
+            "ref": "C45",
+            "pin": "2"
+          },
+          {
+            "ref": "C46",
+            "pin": "2"
+          },
+          {
+            "ref": "C47",
+            "pin": "2"
+          },
+          {
+            "ref": "C48",
+            "pin": "2"
+          },
+          {
+            "ref": "C49",
+            "pin": "2"
+          },
+          {
+            "ref": "C5",
+            "pin": "2"
+          },
+          {
+            "ref": "C50",
+            "pin": "2"
+          },
+          {
+            "ref": "C51",
+            "pin": "2"
+          },
+          {
+            "ref": "C52",
+            "pin": "2"
+          },
+          {
+            "ref": "C53",
+            "pin": "2"
+          },
+          {
+            "ref": "C7",
+            "pin": "2"
+          },
+          {
+            "ref": "C8",
+            "pin": "2"
+          },
+          {
+            "ref": "D1",
+            "pin": "1"
+          },
+          {
+            "ref": "J1",
+            "pin": "GND"
+          },
+          {
+            "ref": "J1",
+            "pin": "GNDBREAK"
+          },
+          {
+            "ref": "J2",
+            "pin": "6"
+          },
+          {
+            "ref": "J2",
+            "pin": "G1"
+          },
+          {
+            "ref": "J2",
+            "pin": "G2"
+          },
+          {
+            "ref": "J2",
+            "pin": "G3"
+          },
+          {
+            "ref": "J2",
+            "pin": "G4"
+          },
+          {
+            "ref": "J3",
+            "pin": "A1"
+          },
+          {
+            "ref": "J3",
+            "pin": "A12"
+          },
+          {
+            "ref": "J3",
+            "pin": "B1"
+          },
+          {
+            "ref": "J3",
+            "pin": "B12"
+          },
+          {
+            "ref": "J3",
+            "pin": "B12T"
+          },
+          {
+            "ref": "J3",
+            "pin": "B1T"
+          },
+          {
+            "ref": "J3",
+            "pin": "S1B"
+          },
+          {
+            "ref": "J3",
+            "pin": "S1T"
+          },
+          {
+            "ref": "J3",
+            "pin": "S1TH"
+          },
+          {
+            "ref": "J3",
+            "pin": "S2B"
+          },
+          {
+            "ref": "J3",
+            "pin": "S2T"
+          },
+          {
+            "ref": "J3",
+            "pin": "S2TH"
+          },
+          {
+            "ref": "J3",
+            "pin": "S3B"
+          },
+          {
+            "ref": "J3",
+            "pin": "S3T"
+          },
+          {
+            "ref": "J3",
+            "pin": "S3TH"
+          },
+          {
+            "ref": "J3",
+            "pin": "S4B"
+          },
+          {
+            "ref": "J3",
+            "pin": "S4T"
+          },
+          {
+            "ref": "J3",
+            "pin": "S4TH"
+          },
+          {
+            "ref": "J5",
+            "pin": "A1"
+          },
+          {
+            "ref": "J5",
+            "pin": "A12"
+          },
+          {
+            "ref": "J5",
+            "pin": "B1"
+          },
+          {
+            "ref": "J5",
+            "pin": "B12"
+          },
+          {
+            "ref": "J5",
+            "pin": "S1"
+          },
+          {
+            "ref": "J5",
+            "pin": "S11"
+          },
+          {
+            "ref": "J5",
+            "pin": "S12"
+          },
+          {
+            "ref": "J5",
+            "pin": "S13"
+          },
+          {
+            "ref": "J5",
+            "pin": "S14"
+          },
+          {
+            "ref": "J5",
+            "pin": "S2"
+          },
+          {
+            "ref": "J5",
+            "pin": "S3"
+          },
+          {
+            "ref": "J5",
+            "pin": "S4"
+          },
+          {
+            "ref": "J6",
+            "pin": "A1"
+          },
+          {
+            "ref": "J6",
+            "pin": "A12"
+          },
+          {
+            "ref": "J6",
+            "pin": "B1"
+          },
+          {
+            "ref": "J6",
+            "pin": "B12"
+          },
+          {
+            "ref": "J6",
+            "pin": "S1"
+          },
+          {
+            "ref": "J6",
+            "pin": "S11"
+          },
+          {
+            "ref": "J6",
+            "pin": "S12"
+          },
+          {
+            "ref": "J6",
+            "pin": "S13"
+          },
+          {
+            "ref": "J6",
+            "pin": "S14"
+          },
+          {
+            "ref": "J6",
+            "pin": "S2"
+          },
+          {
+            "ref": "J6",
+            "pin": "S3"
+          },
+          {
+            "ref": "J6",
+            "pin": "S4"
+          },
+          {
+            "ref": "J7",
+            "pin": "A1"
+          },
+          {
+            "ref": "J7",
+            "pin": "A12"
+          },
+          {
+            "ref": "J7",
+            "pin": "B1"
+          },
+          {
+            "ref": "J7",
+            "pin": "B12"
+          },
+          {
+            "ref": "J7",
+            "pin": "S1"
+          },
+          {
+            "ref": "J7",
+            "pin": "S11"
+          },
+          {
+            "ref": "J7",
+            "pin": "S12"
+          },
+          {
+            "ref": "J7",
+            "pin": "S13"
+          },
+          {
+            "ref": "J7",
+            "pin": "S14"
+          },
+          {
+            "ref": "J7",
+            "pin": "S2"
+          },
+          {
+            "ref": "J7",
+            "pin": "S3"
+          },
+          {
+            "ref": "J7",
+            "pin": "S4"
+          },
+          {
+            "ref": "J8",
+            "pin": "A1"
+          },
+          {
+            "ref": "J8",
+            "pin": "A12"
+          },
+          {
+            "ref": "J8",
+            "pin": "B1"
+          },
+          {
+            "ref": "J8",
+            "pin": "B12"
+          },
+          {
+            "ref": "J8",
+            "pin": "S1"
+          },
+          {
+            "ref": "J8",
+            "pin": "S11"
+          },
+          {
+            "ref": "J8",
+            "pin": "S12"
+          },
+          {
+            "ref": "J8",
+            "pin": "S13"
+          },
+          {
+            "ref": "J8",
+            "pin": "S14"
+          },
+          {
+            "ref": "J8",
+            "pin": "S2"
+          },
+          {
+            "ref": "J8",
+            "pin": "S3"
+          },
+          {
+            "ref": "J8",
+            "pin": "S4"
+          },
+          {
+            "ref": "LED10",
+            "pin": "3"
+          },
+          {
+            "ref": "LED11",
+            "pin": "3"
+          },
+          {
+            "ref": "LED12",
+            "pin": "3"
+          },
+          {
+            "ref": "LED13",
+            "pin": "3"
+          },
+          {
+            "ref": "LED14",
+            "pin": "3"
+          },
+          {
+            "ref": "LED15",
+            "pin": "3"
+          },
+          {
+            "ref": "LED16",
+            "pin": "3"
+          },
+          {
+            "ref": "LED17",
+            "pin": "3"
+          },
+          {
+            "ref": "LED2",
+            "pin": "C"
+          },
+          {
+            "ref": "LED3",
+            "pin": "C"
+          },
+          {
+            "ref": "LED4",
+            "pin": "C"
+          },
+          {
+            "ref": "LED5",
+            "pin": "C"
+          },
+          {
+            "ref": "LED6",
+            "pin": "C"
+          },
+          {
+            "ref": "LED7",
+            "pin": "C"
+          },
+          {
+            "ref": "LED8",
+            "pin": "C"
+          },
+          {
+            "ref": "LED9",
+            "pin": "C"
+          },
+          {
+            "ref": "Q2",
+            "pin": "2"
+          },
+          {
+            "ref": "Q3",
+            "pin": "2"
+          },
+          {
+            "ref": "Q4",
+            "pin": "2"
+          },
+          {
+            "ref": "Q5",
+            "pin": "2"
+          },
+          {
+            "ref": "Q6",
+            "pin": "2"
+          },
+          {
+            "ref": "Q7",
+            "pin": "2"
+          },
+          {
+            "ref": "Q8",
+            "pin": "2"
+          },
+          {
+            "ref": "Q9",
+            "pin": "2"
+          },
+          {
+            "ref": "R100",
+            "pin": "1"
+          },
+          {
+            "ref": "R101",
+            "pin": "1"
+          },
+          {
+            "ref": "R102",
+            "pin": "2"
+          },
+          {
+            "ref": "R103",
+            "pin": "2"
+          },
+          {
+            "ref": "R104",
+            "pin": "2"
+          },
+          {
+            "ref": "R105",
+            "pin": "2"
+          },
+          {
+            "ref": "R12",
+            "pin": "1"
+          },
+          {
+            "ref": "R122",
+            "pin": "1"
+          },
+          {
+            "ref": "R123",
+            "pin": "1"
+          },
+          {
+            "ref": "R124",
+            "pin": "1"
+          },
+          {
+            "ref": "R125",
+            "pin": "1"
+          },
+          {
+            "ref": "R2",
+            "pin": "1"
+          },
+          {
+            "ref": "R25",
+            "pin": "1"
+          },
+          {
+            "ref": "R27",
+            "pin": "1"
+          },
+          {
+            "ref": "R3",
+            "pin": "2"
+          },
+          {
+            "ref": "R31",
+            "pin": "2"
+          },
+          {
+            "ref": "R32",
+            "pin": "2"
+          },
+          {
+            "ref": "R44",
+            "pin": "2"
+          },
+          {
+            "ref": "R45",
+            "pin": "2"
+          },
+          {
+            "ref": "R66",
+            "pin": "1"
+          },
+          {
+            "ref": "R67",
+            "pin": "1"
+          },
+          {
+            "ref": "R68",
+            "pin": "1"
+          },
+          {
+            "ref": "R69",
+            "pin": "1"
+          },
+          {
+            "ref": "R70",
+            "pin": "1"
+          },
+          {
+            "ref": "R71",
+            "pin": "1"
+          },
+          {
+            "ref": "R72",
+            "pin": "1"
+          },
+          {
+            "ref": "R73",
+            "pin": "1"
+          },
+          {
+            "ref": "R78",
+            "pin": "2"
+          },
+          {
+            "ref": "R79",
+            "pin": "2"
+          },
+          {
+            "ref": "R8",
+            "pin": "2"
+          },
+          {
+            "ref": "R80",
+            "pin": "2"
+          },
+          {
+            "ref": "R81",
+            "pin": "2"
+          },
+          {
+            "ref": "R9",
+            "pin": "2"
+          },
+          {
+            "ref": "R98",
+            "pin": "1"
+          },
+          {
+            "ref": "R99",
+            "pin": "1"
+          },
+          {
+            "ref": "U1",
+            "pin": "1"
+          },
+          {
+            "ref": "U10",
+            "pin": "2"
+          },
+          {
+            "ref": "U11",
+            "pin": "2"
+          },
+          {
+            "ref": "U12",
+            "pin": "2"
+          },
+          {
+            "ref": "U13",
+            "pin": "15"
+          },
+          {
+            "ref": "U13",
+            "pin": "16"
+          },
+          {
+            "ref": "U13",
+            "pin": "3"
+          },
+          {
+            "ref": "U13",
+            "pin": "PAD"
+          },
+          {
+            "ref": "U14",
+            "pin": "15"
+          },
+          {
+            "ref": "U14",
+            "pin": "16"
+          },
+          {
+            "ref": "U14",
+            "pin": "3"
+          },
+          {
+            "ref": "U14",
+            "pin": "PAD"
+          },
+          {
+            "ref": "U15",
+            "pin": "15"
+          },
+          {
+            "ref": "U15",
+            "pin": "16"
+          },
+          {
+            "ref": "U15",
+            "pin": "3"
+          },
+          {
+            "ref": "U15",
+            "pin": "PAD"
+          },
+          {
+            "ref": "U16",
+            "pin": "15"
+          },
+          {
+            "ref": "U16",
+            "pin": "16"
+          },
+          {
+            "ref": "U16",
+            "pin": "3"
+          },
+          {
+            "ref": "U16",
+            "pin": "PAD"
+          },
+          {
+            "ref": "U2",
+            "pin": "1"
+          },
+          {
+            "ref": "U3",
+            "pin": "104"
+          },
+          {
+            "ref": "U3",
+            "pin": "118"
+          },
+          {
+            "ref": "U3",
+            "pin": "12"
+          },
+          {
+            "ref": "U3",
+            "pin": "128"
+          },
+          {
+            "ref": "U3",
+            "pin": "14"
+          },
+          {
+            "ref": "U3",
+            "pin": "141"
+          },
+          {
+            "ref": "U3",
+            "pin": "18"
+          },
+          {
+            "ref": "U3",
+            "pin": "33"
+          },
+          {
+            "ref": "U3",
+            "pin": "34"
+          },
+          {
+            "ref": "U3",
+            "pin": "41"
+          },
+          {
+            "ref": "U3",
+            "pin": "55"
+          },
+          {
+            "ref": "U3",
+            "pin": "6"
+          },
+          {
+            "ref": "U3",
+            "pin": "69"
+          },
+          {
+            "ref": "U3",
+            "pin": "80"
+          },
+          {
+            "ref": "U3",
+            "pin": "89"
+          },
+          {
+            "ref": "U4",
+            "pin": "19"
+          },
+          {
+            "ref": "U4",
+            "pin": "PAD"
+          },
+          {
+            "ref": "U5",
+            "pin": "2"
+          },
+          {
+            "ref": "U5",
+            "pin": "PAD"
+          },
+          {
+            "ref": "U6",
+            "pin": "2"
+          },
+          {
+            "ref": "U6",
+            "pin": "PAD"
+          },
+          {
+            "ref": "U7",
+            "pin": "2"
+          },
+          {
+            "ref": "U7",
+            "pin": "PAD"
+          },
+          {
+            "ref": "U8",
+            "pin": "2"
+          },
+          {
+            "ref": "U8",
+            "pin": "PAD"
+          },
+          {
+            "ref": "U9",
+            "pin": "2"
+          },
+          {
+            "ref": "Y1",
+            "pin": "2"
+          },
+          {
+            "ref": "Y1",
+            "pin": "4"
+          },
+          {
+            "ref": "Y2",
+            "pin": "2"
+          },
+          {
+            "ref": "Y2",
+            "pin": "4"
+          }
+        ]
+      },
+      {
+        "name": "HUB_SCL",
+        "code": 66,
+        "nodes": [
+          {
+            "ref": "R30",
+            "pin": "2"
+          },
+          {
+            "ref": "U3",
+            "pin": "66"
+          },
+          {
+            "ref": "U4",
+            "pin": "41"
+          }
+        ]
+      },
+      {
+        "name": "HUB_SDA",
+        "code": 67,
+        "nodes": [
+          {
+            "ref": "R28",
+            "pin": "2"
+          },
+          {
+            "ref": "U3",
+            "pin": "67"
+          },
+          {
+            "ref": "U4",
+            "pin": "40"
+          }
+        ]
+      },
+      {
+        "name": "LED_B",
+        "code": 68,
+        "nodes": [
+          {
+            "ref": "R23",
+            "pin": "2"
+          },
+          {
+            "ref": "U3",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "LED_G",
+        "code": 69,
+        "nodes": [
+          {
+            "ref": "R22",
+            "pin": "2"
+          },
+          {
+            "ref": "U3",
+            "pin": "2"
+          }
+        ]
+      },
+      {
+        "name": "LED_R",
+        "code": 70,
+        "nodes": [
+          {
+            "ref": "R21",
+            "pin": "2"
+          },
+          {
+            "ref": "U3",
+            "pin": "3"
+          }
+        ]
+      },
+      {
+        "name": "Net-(D2-A)",
+        "code": 71,
+        "nodes": [
+          {
+            "ref": "D2",
+            "pin": "2"
+          },
+          {
+            "ref": "Q1",
+            "pin": "4"
+          },
+          {
+            "ref": "R2",
+            "pin": "2"
+          }
+        ]
+      },
+      {
+        "name": "Net-(J1-PWR)",
+        "code": 72,
+        "nodes": [
+          {
+            "ref": "D1",
+            "pin": "2"
+          },
+          {
+            "ref": "J1",
+            "pin": "PWR1"
+          },
+          {
+            "ref": "Q1",
+            "pin": "5"
+          },
+          {
+            "ref": "Q1",
+            "pin": "6"
+          },
+          {
+            "ref": "Q1",
+            "pin": "7"
+          },
+          {
+            "ref": "Q1",
+            "pin": "8"
+          },
+          {
+            "ref": "Q1",
+            "pin": "9"
+          }
+        ]
+      },
+      {
+        "name": "Net-(J2-CD_DAT3)",
+        "code": 73,
+        "nodes": [
+          {
+            "ref": "J2",
+            "pin": "2"
+          },
+          {
+            "ref": "R36",
+            "pin": "2"
+          },
+          {
+            "ref": "R41",
+            "pin": "2"
+          }
+        ]
+      },
+      {
+        "name": "Net-(J2-CLK)",
+        "code": 74,
+        "nodes": [
+          {
+            "ref": "J2",
+            "pin": "5"
+          },
+          {
+            "ref": "R43",
+            "pin": "2"
+          }
+        ]
+      },
+      {
+        "name": "Net-(J2-CMD)",
+        "code": 75,
+        "nodes": [
+          {
+            "ref": "J2",
+            "pin": "3"
+          },
+          {
+            "ref": "R37",
+            "pin": "2"
+          },
+          {
+            "ref": "R42",
+            "pin": "2"
+          }
+        ]
+      },
+      {
+        "name": "Net-(J2-DAT0)",
+        "code": 76,
+        "nodes": [
+          {
+            "ref": "J2",
+            "pin": "7"
+          },
+          {
+            "ref": "R33",
+            "pin": "2"
+          },
+          {
+            "ref": "R38",
+            "pin": "2"
+          }
+        ]
+      },
+      {
+        "name": "Net-(J2-DAT1)",
+        "code": 77,
+        "nodes": [
+          {
+            "ref": "J2",
+            "pin": "8"
+          },
+          {
+            "ref": "R34",
+            "pin": "2"
+          },
+          {
+            "ref": "R39",
+            "pin": "2"
+          }
+        ]
+      },
+      {
+        "name": "Net-(J2-DAT2)",
+        "code": 78,
+        "nodes": [
+          {
+            "ref": "J2",
+            "pin": "1"
+          },
+          {
+            "ref": "R35",
+            "pin": "2"
+          },
+          {
+            "ref": "R40",
+            "pin": "2"
+          }
+        ]
+      },
+      {
+        "name": "Net-(J3-CC1)",
+        "code": 79,
+        "nodes": [
+          {
+            "ref": "J3",
+            "pin": "A5"
+          },
+          {
+            "ref": "R31",
+            "pin": "1"
+          },
+          {
+            "ref": "R32",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(J3-CC2-PadB5)",
+        "code": 80,
+        "nodes": [
+          {
+            "ref": "J3",
+            "pin": "B5"
+          },
+          {
+            "ref": "J3",
+            "pin": "B5T"
+          },
+          {
+            "ref": "R44",
+            "pin": "1"
+          },
+          {
+            "ref": "R45",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(J5-VBUS-PadA4)",
+        "code": 81,
+        "nodes": [
+          {
+            "ref": "J5",
+            "pin": "A4"
+          },
+          {
+            "ref": "J5",
+            "pin": "A9"
+          },
+          {
+            "ref": "J5",
+            "pin": "B4"
+          },
+          {
+            "ref": "J5",
+            "pin": "B9"
+          },
+          {
+            "ref": "R74",
+            "pin": "1"
+          },
+          {
+            "ref": "U13",
+            "pin": "4"
+          },
+          {
+            "ref": "U13",
+            "pin": "5"
+          },
+          {
+            "ref": "U13",
+            "pin": "6"
+          },
+          {
+            "ref": "U13",
+            "pin": "7"
+          },
+          {
+            "ref": "U13",
+            "pin": "8"
+          }
+        ]
+      },
+      {
+        "name": "Net-(J6-VBUS-PadA4)",
+        "code": 82,
+        "nodes": [
+          {
+            "ref": "J6",
+            "pin": "A4"
+          },
+          {
+            "ref": "J6",
+            "pin": "A9"
+          },
+          {
+            "ref": "J6",
+            "pin": "B4"
+          },
+          {
+            "ref": "J6",
+            "pin": "B9"
+          },
+          {
+            "ref": "R75",
+            "pin": "1"
+          },
+          {
+            "ref": "U14",
+            "pin": "4"
+          },
+          {
+            "ref": "U14",
+            "pin": "5"
+          },
+          {
+            "ref": "U14",
+            "pin": "6"
+          },
+          {
+            "ref": "U14",
+            "pin": "7"
+          },
+          {
+            "ref": "U14",
+            "pin": "8"
+          }
+        ]
+      },
+      {
+        "name": "Net-(J7-VBUS-PadA4)",
+        "code": 83,
+        "nodes": [
+          {
+            "ref": "J7",
+            "pin": "A4"
+          },
+          {
+            "ref": "J7",
+            "pin": "A9"
+          },
+          {
+            "ref": "J7",
+            "pin": "B4"
+          },
+          {
+            "ref": "J7",
+            "pin": "B9"
+          },
+          {
+            "ref": "R76",
+            "pin": "1"
+          },
+          {
+            "ref": "U15",
+            "pin": "4"
+          },
+          {
+            "ref": "U15",
+            "pin": "5"
+          },
+          {
+            "ref": "U15",
+            "pin": "6"
+          },
+          {
+            "ref": "U15",
+            "pin": "7"
+          },
+          {
+            "ref": "U15",
+            "pin": "8"
+          }
+        ]
+      },
+      {
+        "name": "Net-(J8-VBUS-PadA4)",
+        "code": 84,
+        "nodes": [
+          {
+            "ref": "J8",
+            "pin": "A4"
+          },
+          {
+            "ref": "J8",
+            "pin": "A9"
+          },
+          {
+            "ref": "J8",
+            "pin": "B4"
+          },
+          {
+            "ref": "J8",
+            "pin": "B9"
+          },
+          {
+            "ref": "R77",
+            "pin": "1"
+          },
+          {
+            "ref": "U16",
+            "pin": "4"
+          },
+          {
+            "ref": "U16",
+            "pin": "5"
+          },
+          {
+            "ref": "U16",
+            "pin": "6"
+          },
+          {
+            "ref": "U16",
+            "pin": "7"
+          },
+          {
+            "ref": "U16",
+            "pin": "8"
+          }
+        ]
+      },
+      {
+        "name": "Net-(LED1-B-)",
+        "code": 85,
+        "nodes": [
+          {
+            "ref": "LED1",
+            "pin": "U4"
+          },
+          {
+            "ref": "R23",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(LED1-G-)",
+        "code": 86,
+        "nodes": [
+          {
+            "ref": "LED1",
+            "pin": "U3"
+          },
+          {
+            "ref": "R22",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(LED1-R-)",
+        "code": 87,
+        "nodes": [
+          {
+            "ref": "LED1",
+            "pin": "U2"
+          },
+          {
+            "ref": "R21",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(LED2-PadA)",
+        "code": 88,
+        "nodes": [
+          {
+            "ref": "LED2",
+            "pin": "A"
+          },
+          {
+            "ref": "R62",
+            "pin": "2"
+          }
+        ]
+      },
+      {
+        "name": "Net-(LED3-PadA)",
+        "code": 89,
+        "nodes": [
+          {
+            "ref": "LED3",
+            "pin": "A"
+          },
+          {
+            "ref": "R63",
+            "pin": "2"
+          }
+        ]
+      },
+      {
+        "name": "Net-(LED4-PadA)",
+        "code": 90,
+        "nodes": [
+          {
+            "ref": "LED4",
+            "pin": "A"
+          },
+          {
+            "ref": "R64",
+            "pin": "2"
+          }
+        ]
+      },
+      {
+        "name": "Net-(LED5-PadA)",
+        "code": 91,
+        "nodes": [
+          {
+            "ref": "LED5",
+            "pin": "A"
+          },
+          {
+            "ref": "R65",
+            "pin": "2"
+          }
+        ]
+      },
+      {
+        "name": "Net-(LED6-PadA)",
+        "code": 92,
+        "nodes": [
+          {
+            "ref": "LED6",
+            "pin": "A"
+          },
+          {
+            "ref": "R74",
+            "pin": "2"
+          }
+        ]
+      },
+      {
+        "name": "Net-(LED7-PadA)",
+        "code": 93,
+        "nodes": [
+          {
+            "ref": "LED7",
+            "pin": "A"
+          },
+          {
+            "ref": "R75",
+            "pin": "2"
+          }
+        ]
+      },
+      {
+        "name": "Net-(LED8-PadA)",
+        "code": 94,
+        "nodes": [
+          {
+            "ref": "LED8",
+            "pin": "A"
+          },
+          {
+            "ref": "R76",
+            "pin": "2"
+          }
+        ]
+      },
+      {
+        "name": "Net-(LED9-PadA)",
+        "code": 95,
+        "nodes": [
+          {
+            "ref": "LED9",
+            "pin": "A"
+          },
+          {
+            "ref": "R77",
+            "pin": "2"
+          }
+        ]
+      },
+      {
+        "name": "Net-(LED10-AG)",
+        "code": 96,
+        "nodes": [
+          {
+            "ref": "LED10",
+            "pin": "2"
+          },
+          {
+            "ref": "R82",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(LED10-AR)",
+        "code": 97,
+        "nodes": [
+          {
+            "ref": "LED10",
+            "pin": "1"
+          },
+          {
+            "ref": "R83",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(LED11-AG)",
+        "code": 98,
+        "nodes": [
+          {
+            "ref": "LED11",
+            "pin": "2"
+          },
+          {
+            "ref": "R84",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(LED11-AR)",
+        "code": 99,
+        "nodes": [
+          {
+            "ref": "LED11",
+            "pin": "1"
+          },
+          {
+            "ref": "R85",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(LED12-AG)",
+        "code": 100,
+        "nodes": [
+          {
+            "ref": "LED12",
+            "pin": "2"
+          },
+          {
+            "ref": "R86",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(LED12-AR)",
+        "code": 101,
+        "nodes": [
+          {
+            "ref": "LED12",
+            "pin": "1"
+          },
+          {
+            "ref": "R87",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(LED13-AG)",
+        "code": 102,
+        "nodes": [
+          {
+            "ref": "LED13",
+            "pin": "2"
+          },
+          {
+            "ref": "R88",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(LED13-AR)",
+        "code": 103,
+        "nodes": [
+          {
+            "ref": "LED13",
+            "pin": "1"
+          },
+          {
+            "ref": "R89",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(LED14-AG)",
+        "code": 104,
+        "nodes": [
+          {
+            "ref": "LED14",
+            "pin": "2"
+          },
+          {
+            "ref": "R106",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(LED14-AR)",
+        "code": 105,
+        "nodes": [
+          {
+            "ref": "LED14",
+            "pin": "1"
+          },
+          {
+            "ref": "R107",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(LED15-AG)",
+        "code": 106,
+        "nodes": [
+          {
+            "ref": "LED15",
+            "pin": "2"
+          },
+          {
+            "ref": "R108",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(LED15-AR)",
+        "code": 107,
+        "nodes": [
+          {
+            "ref": "LED15",
+            "pin": "1"
+          },
+          {
+            "ref": "R109",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(LED16-AG)",
+        "code": 108,
+        "nodes": [
+          {
+            "ref": "LED16",
+            "pin": "2"
+          },
+          {
+            "ref": "R110",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(LED16-AR)",
+        "code": 109,
+        "nodes": [
+          {
+            "ref": "LED16",
+            "pin": "1"
+          },
+          {
+            "ref": "R111",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(LED17-AG)",
+        "code": 110,
+        "nodes": [
+          {
+            "ref": "LED17",
+            "pin": "2"
+          },
+          {
+            "ref": "R112",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(LED17-AR)",
+        "code": 111,
+        "nodes": [
+          {
+            "ref": "LED17",
+            "pin": "1"
+          },
+          {
+            "ref": "R113",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(Q2-D1)",
+        "code": 112,
+        "nodes": [
+          {
+            "ref": "Q2",
+            "pin": "5"
+          },
+          {
+            "ref": "R90",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(Q2-D2)",
+        "code": 113,
+        "nodes": [
+          {
+            "ref": "Q2",
+            "pin": "4"
+          },
+          {
+            "ref": "R91",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(Q3-D1)",
+        "code": 114,
+        "nodes": [
+          {
+            "ref": "Q3",
+            "pin": "5"
+          },
+          {
+            "ref": "R92",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(Q3-D2)",
+        "code": 115,
+        "nodes": [
+          {
+            "ref": "Q3",
+            "pin": "4"
+          },
+          {
+            "ref": "R93",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(Q4-D1)",
+        "code": 116,
+        "nodes": [
+          {
+            "ref": "Q4",
+            "pin": "5"
+          },
+          {
+            "ref": "R94",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(Q4-D2)",
+        "code": 117,
+        "nodes": [
+          {
+            "ref": "Q4",
+            "pin": "4"
+          },
+          {
+            "ref": "R95",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(Q5-D1)",
+        "code": 118,
+        "nodes": [
+          {
+            "ref": "Q5",
+            "pin": "5"
+          },
+          {
+            "ref": "R96",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(Q5-D2)",
+        "code": 119,
+        "nodes": [
+          {
+            "ref": "Q5",
+            "pin": "4"
+          },
+          {
+            "ref": "R97",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(Q6-D1)",
+        "code": 120,
+        "nodes": [
+          {
+            "ref": "Q6",
+            "pin": "5"
+          },
+          {
+            "ref": "R114",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(Q6-D2)",
+        "code": 121,
+        "nodes": [
+          {
+            "ref": "Q6",
+            "pin": "4"
+          },
+          {
+            "ref": "R115",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(Q7-D1)",
+        "code": 122,
+        "nodes": [
+          {
+            "ref": "Q7",
+            "pin": "5"
+          },
+          {
+            "ref": "R116",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(Q7-D2)",
+        "code": 123,
+        "nodes": [
+          {
+            "ref": "Q7",
+            "pin": "4"
+          },
+          {
+            "ref": "R117",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(Q8-D1)",
+        "code": 124,
+        "nodes": [
+          {
+            "ref": "Q8",
+            "pin": "5"
+          },
+          {
+            "ref": "R118",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(Q8-D2)",
+        "code": 125,
+        "nodes": [
+          {
+            "ref": "Q8",
+            "pin": "4"
+          },
+          {
+            "ref": "R119",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(Q9-D1)",
+        "code": 126,
+        "nodes": [
+          {
+            "ref": "Q9",
+            "pin": "5"
+          },
+          {
+            "ref": "R120",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(Q9-D2)",
+        "code": 127,
+        "nodes": [
+          {
+            "ref": "Q9",
+            "pin": "4"
+          },
+          {
+            "ref": "R121",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(R62-Pad1)",
+        "code": 128,
+        "nodes": [
+          {
+            "ref": "R62",
+            "pin": "1"
+          },
+          {
+            "ref": "U9",
+            "pin": "4"
+          }
+        ]
+      },
+      {
+        "name": "Net-(R63-Pad1)",
+        "code": 129,
+        "nodes": [
+          {
+            "ref": "R63",
+            "pin": "1"
+          },
+          {
+            "ref": "U10",
+            "pin": "4"
+          }
+        ]
+      },
+      {
+        "name": "Net-(R64-Pad1)",
+        "code": 130,
+        "nodes": [
+          {
+            "ref": "R64",
+            "pin": "1"
+          },
+          {
+            "ref": "U11",
+            "pin": "4"
+          }
+        ]
+      },
+      {
+        "name": "Net-(R65-Pad1)",
+        "code": 131,
+        "nodes": [
+          {
+            "ref": "R65",
+            "pin": "1"
+          },
+          {
+            "ref": "U12",
+            "pin": "4"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U1-BST)",
+        "code": 132,
+        "nodes": [
+          {
+            "ref": "C4",
+            "pin": "1"
+          },
+          {
+            "ref": "U1",
+            "pin": "6"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U1-EN)",
+        "code": 133,
+        "nodes": [
+          {
+            "ref": "R1",
+            "pin": "2"
+          },
+          {
+            "ref": "U1",
+            "pin": "5"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U1-FB)",
+        "code": 134,
+        "nodes": [
+          {
+            "ref": "R3",
+            "pin": "1"
+          },
+          {
+            "ref": "R4",
+            "pin": "2"
+          },
+          {
+            "ref": "R5",
+            "pin": "2"
+          },
+          {
+            "ref": "R6",
+            "pin": "2"
+          },
+          {
+            "ref": "U1",
+            "pin": "4"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U1-SW)",
+        "code": 135,
+        "nodes": [
+          {
+            "ref": "C4",
+            "pin": "2"
+          },
+          {
+            "ref": "L1",
+            "pin": "1"
+          },
+          {
+            "ref": "U1",
+            "pin": "2"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U2-BST)",
+        "code": 136,
+        "nodes": [
+          {
+            "ref": "C9",
+            "pin": "1"
+          },
+          {
+            "ref": "U2",
+            "pin": "6"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U2-EN)",
+        "code": 137,
+        "nodes": [
+          {
+            "ref": "R7",
+            "pin": "2"
+          },
+          {
+            "ref": "R8",
+            "pin": "1"
+          },
+          {
+            "ref": "U2",
+            "pin": "5"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U2-FB)",
+        "code": 138,
+        "nodes": [
+          {
+            "ref": "R10",
+            "pin": "1"
+          },
+          {
+            "ref": "R9",
+            "pin": "1"
+          },
+          {
+            "ref": "U2",
+            "pin": "4"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U2-SW)",
+        "code": 139,
+        "nodes": [
+          {
+            "ref": "C9",
+            "pin": "2"
+          },
+          {
+            "ref": "L2",
+            "pin": "1"
+          },
+          {
+            "ref": "U2",
+            "pin": "2"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U3-PC0)",
+        "code": 140,
+        "nodes": [
+          {
+            "ref": "R17",
+            "pin": "1"
+          },
+          {
+            "ref": "U3",
+            "pin": "28"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U3-PC1)",
+        "code": 141,
+        "nodes": [
+          {
+            "ref": "R18",
+            "pin": "1"
+          },
+          {
+            "ref": "U3",
+            "pin": "29"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U3-PC2_C)",
+        "code": 142,
+        "nodes": [
+          {
+            "ref": "R19",
+            "pin": "1"
+          },
+          {
+            "ref": "U3",
+            "pin": "30"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U3-PC3_C)",
+        "code": 143,
+        "nodes": [
+          {
+            "ref": "R20",
+            "pin": "1"
+          },
+          {
+            "ref": "U3",
+            "pin": "31"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U3-PDR_ON)",
+        "code": 144,
+        "nodes": [
+          {
+            "ref": "R11",
+            "pin": "2"
+          },
+          {
+            "ref": "U3",
+            "pin": "142"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U3-PF7)",
+        "code": 145,
+        "nodes": [
+          {
+            "ref": "R13",
+            "pin": "1"
+          },
+          {
+            "ref": "U3",
+            "pin": "21"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U3-PF8)",
+        "code": 146,
+        "nodes": [
+          {
+            "ref": "R14",
+            "pin": "1"
+          },
+          {
+            "ref": "U3",
+            "pin": "22"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U3-PF9)",
+        "code": 147,
+        "nodes": [
+          {
+            "ref": "R15",
+            "pin": "1"
+          },
+          {
+            "ref": "U3",
+            "pin": "23"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U3-PF10)",
+        "code": 148,
+        "nodes": [
+          {
+            "ref": "R16",
+            "pin": "1"
+          },
+          {
+            "ref": "U3",
+            "pin": "24"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U3-PH0)",
+        "code": 149,
+        "nodes": [
+          {
+            "ref": "C14",
+            "pin": "1"
+          },
+          {
+            "ref": "U3",
+            "pin": "25"
+          },
+          {
+            "ref": "Y1",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U3-PH1)",
+        "code": 150,
+        "nodes": [
+          {
+            "ref": "C17",
+            "pin": "1"
+          },
+          {
+            "ref": "U3",
+            "pin": "26"
+          },
+          {
+            "ref": "Y1",
+            "pin": "3"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U4-RBIAS)",
+        "code": 151,
+        "nodes": [
+          {
+            "ref": "R27",
+            "pin": "2"
+          },
+          {
+            "ref": "U4",
+            "pin": "63"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U4-SUSP_IND)",
+        "code": 152,
+        "nodes": [
+          {
+            "ref": "R29",
+            "pin": "2"
+          },
+          {
+            "ref": "U4",
+            "pin": "45"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U4-VBUS_DET)",
+        "code": 153,
+        "nodes": [
+          {
+            "ref": "R24",
+            "pin": "1"
+          },
+          {
+            "ref": "R25",
+            "pin": "2"
+          },
+          {
+            "ref": "U4",
+            "pin": "44"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U4-VDD18)",
+        "code": 154,
+        "nodes": [
+          {
+            "ref": "C33",
+            "pin": "1"
+          },
+          {
+            "ref": "C35",
+            "pin": "2"
+          },
+          {
+            "ref": "U4",
+            "pin": "25"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U4-VDD18PLL)",
+        "code": 155,
+        "nodes": [
+          {
+            "ref": "C34",
+            "pin": "1"
+          },
+          {
+            "ref": "C36",
+            "pin": "2"
+          },
+          {
+            "ref": "U4",
+            "pin": "62"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U4-XTAL1)",
+        "code": 156,
+        "nodes": [
+          {
+            "ref": "C28",
+            "pin": "1"
+          },
+          {
+            "ref": "R26",
+            "pin": "2"
+          },
+          {
+            "ref": "U4",
+            "pin": "61"
+          },
+          {
+            "ref": "Y2",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U4-XTAL2)",
+        "code": 157,
+        "nodes": [
+          {
+            "ref": "C32",
+            "pin": "1"
+          },
+          {
+            "ref": "R26",
+            "pin": "1"
+          },
+          {
+            "ref": "U4",
+            "pin": "60"
+          },
+          {
+            "ref": "Y2",
+            "pin": "3"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U5-CANH)",
+        "code": 158,
+        "nodes": [
+          {
+            "ref": "L5",
+            "pin": "1"
+          },
+          {
+            "ref": "U5",
+            "pin": "7"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U5-CANL)",
+        "code": 159,
+        "nodes": [
+          {
+            "ref": "L5",
+            "pin": "2"
+          },
+          {
+            "ref": "U5",
+            "pin": "6"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U6-CANH)",
+        "code": 160,
+        "nodes": [
+          {
+            "ref": "L6",
+            "pin": "1"
+          },
+          {
+            "ref": "U6",
+            "pin": "7"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U6-CANL)",
+        "code": 161,
+        "nodes": [
+          {
+            "ref": "L6",
+            "pin": "2"
+          },
+          {
+            "ref": "U6",
+            "pin": "6"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U7-CANH)",
+        "code": 162,
+        "nodes": [
+          {
+            "ref": "L7",
+            "pin": "1"
+          },
+          {
+            "ref": "U7",
+            "pin": "7"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U7-CANL)",
+        "code": 163,
+        "nodes": [
+          {
+            "ref": "L7",
+            "pin": "2"
+          },
+          {
+            "ref": "U7",
+            "pin": "6"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U8-CANH)",
+        "code": 164,
+        "nodes": [
+          {
+            "ref": "L8",
+            "pin": "1"
+          },
+          {
+            "ref": "U8",
+            "pin": "7"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U8-CANL)",
+        "code": 165,
+        "nodes": [
+          {
+            "ref": "L8",
+            "pin": "2"
+          },
+          {
+            "ref": "U8",
+            "pin": "6"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U9-+)",
+        "code": 166,
+        "nodes": [
+          {
+            "ref": "R50",
+            "pin": "2"
+          },
+          {
+            "ref": "U9",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U9--)",
+        "code": 167,
+        "nodes": [
+          {
+            "ref": "R51",
+            "pin": "2"
+          },
+          {
+            "ref": "R52",
+            "pin": "1"
+          },
+          {
+            "ref": "U9",
+            "pin": "3"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U10-+)",
+        "code": 168,
+        "nodes": [
+          {
+            "ref": "R53",
+            "pin": "2"
+          },
+          {
+            "ref": "U10",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U10--)",
+        "code": 169,
+        "nodes": [
+          {
+            "ref": "R54",
+            "pin": "2"
+          },
+          {
+            "ref": "R55",
+            "pin": "1"
+          },
+          {
+            "ref": "U10",
+            "pin": "3"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U11-+)",
+        "code": 170,
+        "nodes": [
+          {
+            "ref": "R56",
+            "pin": "2"
+          },
+          {
+            "ref": "U11",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U11--)",
+        "code": 171,
+        "nodes": [
+          {
+            "ref": "R57",
+            "pin": "2"
+          },
+          {
+            "ref": "R58",
+            "pin": "1"
+          },
+          {
+            "ref": "U11",
+            "pin": "3"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U12-+)",
+        "code": 172,
+        "nodes": [
+          {
+            "ref": "R59",
+            "pin": "2"
+          },
+          {
+            "ref": "U12",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U12--)",
+        "code": 173,
+        "nodes": [
+          {
+            "ref": "R60",
+            "pin": "2"
+          },
+          {
+            "ref": "R61",
+            "pin": "1"
+          },
+          {
+            "ref": "U12",
+            "pin": "3"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U13-ILIM)",
+        "code": 174,
+        "nodes": [
+          {
+            "ref": "R66",
+            "pin": "2"
+          },
+          {
+            "ref": "U13",
+            "pin": "17"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U14-ILIM)",
+        "code": 175,
+        "nodes": [
+          {
+            "ref": "R67",
+            "pin": "2"
+          },
+          {
+            "ref": "U14",
+            "pin": "17"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U15-ILIM)",
+        "code": 176,
+        "nodes": [
+          {
+            "ref": "R68",
+            "pin": "2"
+          },
+          {
+            "ref": "U15",
+            "pin": "17"
+          }
+        ]
+      },
+      {
+        "name": "Net-(U16-ILIM)",
+        "code": 177,
+        "nodes": [
+          {
+            "ref": "R69",
+            "pin": "2"
+          },
+          {
+            "ref": "U16",
+            "pin": "17"
+          }
+        ]
+      },
+      {
+        "name": "SD_CLK",
+        "code": 178,
+        "nodes": [
+          {
+            "ref": "R43",
+            "pin": "1"
+          },
+          {
+            "ref": "U3",
+            "pin": "111"
+          }
+        ]
+      },
+      {
+        "name": "SD_CMD",
+        "code": 179,
+        "nodes": [
+          {
+            "ref": "R42",
+            "pin": "1"
+          },
+          {
+            "ref": "U3",
+            "pin": "114"
+          }
+        ]
+      },
+      {
+        "name": "SD_D0",
+        "code": 180,
+        "nodes": [
+          {
+            "ref": "R38",
+            "pin": "1"
+          },
+          {
+            "ref": "U3",
+            "pin": "95"
+          }
+        ]
+      },
+      {
+        "name": "SD_D1",
+        "code": 181,
+        "nodes": [
+          {
+            "ref": "R39",
+            "pin": "1"
+          },
+          {
+            "ref": "U3",
+            "pin": "96"
+          }
+        ]
+      },
+      {
+        "name": "SD_D2",
+        "code": 182,
+        "nodes": [
+          {
+            "ref": "R40",
+            "pin": "1"
+          },
+          {
+            "ref": "U3",
+            "pin": "109"
+          }
+        ]
+      },
+      {
+        "name": "SD_D3",
+        "code": 183,
+        "nodes": [
+          {
+            "ref": "R41",
+            "pin": "1"
+          },
+          {
+            "ref": "U3",
+            "pin": "110"
+          }
+        ]
+      },
+      {
+        "name": "STM_D_N",
+        "code": 184,
+        "nodes": [
+          {
+            "ref": "U3",
+            "pin": "100"
+          },
+          {
+            "ref": "U4",
+            "pin": "55"
+          }
+        ]
+      },
+      {
+        "name": "STM_D_P",
+        "code": 185,
+        "nodes": [
+          {
+            "ref": "U3",
+            "pin": "101"
+          },
+          {
+            "ref": "U4",
+            "pin": "56"
+          }
+        ]
+      },
+      {
+        "name": "USB_D_N",
+        "code": 186,
+        "nodes": [
+          {
+            "ref": "J3",
+            "pin": "A7"
+          },
+          {
+            "ref": "J3",
+            "pin": "B7"
+          },
+          {
+            "ref": "J3",
+            "pin": "B7T"
+          },
+          {
+            "ref": "U4",
+            "pin": "58"
+          }
+        ]
+      },
+      {
+        "name": "USB_D_P",
+        "code": 187,
+        "nodes": [
+          {
+            "ref": "J3",
+            "pin": "A6"
+          },
+          {
+            "ref": "J3",
+            "pin": "B6"
+          },
+          {
+            "ref": "J3",
+            "pin": "B6T"
+          },
+          {
+            "ref": "U4",
+            "pin": "59"
+          }
+        ]
+      },
+      {
+        "name": "VBUS",
+        "code": 188,
+        "nodes": [
+          {
+            "ref": "C29",
+            "pin": "1"
+          },
+          {
+            "ref": "J3",
+            "pin": "A4"
+          },
+          {
+            "ref": "J3",
+            "pin": "A9"
+          },
+          {
+            "ref": "J3",
+            "pin": "B4"
+          },
+          {
+            "ref": "J3",
+            "pin": "B4T"
+          },
+          {
+            "ref": "J3",
+            "pin": "B9"
+          },
+          {
+            "ref": "J3",
+            "pin": "B9T"
+          },
+          {
+            "ref": "R24",
+            "pin": "2"
+          }
+        ]
+      },
+      {
+        "name": "VDDA",
+        "code": 189,
+        "nodes": [
+          {
+            "ref": "C22",
+            "pin": "1"
+          },
+          {
+            "ref": "L3",
+            "pin": "2"
+          },
+          {
+            "ref": "U3",
+            "pin": "35"
+          },
+          {
+            "ref": "U3",
+            "pin": "36"
+          }
+        ]
+      },
+      {
+        "name": "VDDLDO",
+        "code": 190,
+        "nodes": [
+          {
+            "ref": "C15",
+            "pin": "1"
+          },
+          {
+            "ref": "C16",
+            "pin": "1"
+          },
+          {
+            "ref": "C18",
+            "pin": "1"
+          },
+          {
+            "ref": "C21",
+            "pin": "1"
+          },
+          {
+            "ref": "L4",
+            "pin": "1"
+          },
+          {
+            "ref": "U3",
+            "pin": "103"
+          },
+          {
+            "ref": "U3",
+            "pin": "105"
+          },
+          {
+            "ref": "U3",
+            "pin": "140"
+          },
+          {
+            "ref": "U3",
+            "pin": "143"
+          },
+          {
+            "ref": "U3",
+            "pin": "17"
+          },
+          {
+            "ref": "U3",
+            "pin": "68"
+          },
+          {
+            "ref": "U3",
+            "pin": "70"
+          }
+        ]
+      },
+      {
+        "name": "VLXSMPS",
+        "code": 191,
+        "nodes": [
+          {
+            "ref": "C25",
+            "pin": "1"
+          },
+          {
+            "ref": "L4",
+            "pin": "2"
+          },
+          {
+            "ref": "U3",
+            "pin": "15"
+          }
+        ]
+      },
+      {
+        "name": "unconnected-(J3-RX1+-PadB11)",
+        "code": 192,
+        "nodes": [
+          {
+            "ref": "J3",
+            "pin": "B11"
+          },
+          {
+            "ref": "J3",
+            "pin": "B11T"
+          }
+        ]
+      },
+      {
+        "name": "unconnected-(J3-RX1--PadB10)",
+        "code": 193,
+        "nodes": [
+          {
+            "ref": "J3",
+            "pin": "B10"
+          },
+          {
+            "ref": "J3",
+            "pin": "B10T"
+          }
+        ]
+      },
+      {
+        "name": "unconnected-(J3-SBU2-PadB8)",
+        "code": 197,
+        "nodes": [
+          {
+            "ref": "J3",
+            "pin": "B8"
+          },
+          {
+            "ref": "J3",
+            "pin": "B8T"
+          }
+        ]
+      },
+      {
+        "name": "unconnected-(J3-TX2+-PadB2)",
+        "code": 200,
+        "nodes": [
+          {
+            "ref": "J3",
+            "pin": "B2"
+          },
+          {
+            "ref": "J3",
+            "pin": "B2T"
+          }
+        ]
+      },
+      {
+        "name": "unconnected-(J3-TX2--PadB3)",
+        "code": 201,
+        "nodes": [
+          {
+            "ref": "J3",
+            "pin": "B3"
+          },
+          {
+            "ref": "J3",
+            "pin": "B3T"
+          }
+        ]
+      }
+    ],
+    "design": {
+      "source": "commaai/PCBGolf pcbgolf.kicad_sch",
+      "tool": "kicad-cli sch export netlist"
+    }
+  },
+  "board": {
+    "widthMm": 70,
+    "heightMm": 55,
+    "copperLayers": 2,
+    "rules": {
+      "clearanceMm": 0.15,
+      "trackWidthMm": 0.15,
+      "viaDiameterMm": 0.45,
+      "viaDrillMm": 0.2
+    }
+  },
+  "libraries": [
+    {
+      "kind": "footprint",
+      "nickname": "pcbgolf",
+      "uri": "${KIPRJMOD}/pcbgolf.pretty",
+      "description": "PCBGolf project footprints"
+    }
+  ]
+}

@@ -2,7 +2,11 @@ import { describe, expect, test } from "bun:test";
 import type { FpPcbCompileJob } from "@fabdesk/protocol";
 import { BoardLayer } from "@fp-pcb/proto";
 import { createBoardGraphic } from "@fp-pcb/client";
-import { createFpPcbDesign, evaluatePartCompatibility } from "../src/fp-pcb-design";
+import {
+  createFpPcbDesign,
+  evaluatePartCompatibility,
+  persistDefaultNetClass,
+} from "../src/fp-pcb-design";
 import type { FpPcbBridgeClient } from "../src/fp-pcb-bridge";
 import { FpPcbSessions, type ProjectSession } from "../src/fp-pcb-session";
 
@@ -449,5 +453,208 @@ describe("copper edits refill pours before saving", () => {
     } as never);
     expect(calls).toEqual(["commit", "refillZones", "save"]);
     expect(result.zoneRefill).toEqual({ refilled: false, error: "no zones on this board" });
+  });
+});
+
+describe("persistDefaultNetClass", () => {
+  const io = (files: Record<string, string>) => {
+    const fs = {
+      files,
+      writes: 0,
+      readText: async (p: string) => {
+        if (!(p in files)) throw new Error("ENOENT");
+        return files[p]!;
+      },
+      writeText: async (p: string, text: string) => {
+        fs.writes++;
+        files[p] = text;
+      },
+    };
+    return fs;
+  };
+
+  test("writes the Default class into a project file that has none", async () => {
+    const fs = io({
+      "/p/board.kicad_pro": JSON.stringify({
+        board: { design_settings: { rules: { min_clearance: 0.15 } } },
+        net_settings: { classes: [], meta: { version: 4 } },
+      }),
+    });
+    expect(
+      await persistDefaultNetClass(
+        "/p/board.kicad_pro",
+        { clearanceMm: 0.15, trackWidthMm: 0.15, viaDiameterMm: 0.45, viaDrillMm: 0.25 },
+        fs,
+      ),
+    ).toBe(true);
+    const pro = JSON.parse(fs.files["/p/board.kicad_pro"]!);
+    expect(pro.net_settings.classes).toEqual([
+      {
+        name: "Default",
+        priority: 2147483647,
+        clearance: 0.15,
+        track_width: 0.15,
+        via_diameter: 0.45,
+        via_drill: 0.25,
+      },
+    ]);
+    expect(pro.net_settings.meta).toEqual({ version: 4 });
+    expect(pro.board.design_settings.rules.min_clearance).toBe(0.15);
+  });
+
+  test("merges into an existing Default class and leaves fields the rules do not name", async () => {
+    const fs = io({
+      "/p/board.kicad_pro": JSON.stringify({
+        net_settings: {
+          classes: [
+            { name: "Default", clearance: 0.2, track_width: 0.25, diff_pair_gap: 0.25 },
+            { name: "Power", track_width: 0.5 },
+          ],
+        },
+      }),
+    });
+    await persistDefaultNetClass("/p/board.kicad_pro", { clearanceMm: 0.1 }, fs);
+    const pro = JSON.parse(fs.files["/p/board.kicad_pro"]!);
+    expect(pro.net_settings.classes[0]).toEqual({
+      name: "Default",
+      clearance: 0.1,
+      track_width: 0.25,
+      diff_pair_gap: 0.25,
+    });
+    expect(pro.net_settings.classes[1]).toEqual({ name: "Power", track_width: 0.5 });
+  });
+
+  test("leaves a file that already holds the class untouched (the save kept it)", async () => {
+    const text = JSON.stringify({
+      net_settings: { classes: [{ name: "Default", clearance: 0.15, track_width: 0.15 }] },
+    });
+    const fs = io({ "/p/board.kicad_pro": text });
+    expect(
+      await persistDefaultNetClass(
+        "/p/board.kicad_pro",
+        { clearanceMm: 0.15, trackWidthMm: 0.15 },
+        fs,
+      ),
+    ).toBe(true);
+    expect(fs.writes).toBe(0);
+    expect(fs.files["/p/board.kicad_pro"]).toBe(text);
+  });
+
+  test("does nothing without a project file", async () => {
+    const fs = io({});
+    expect(await persistDefaultNetClass("/p/board.kicad_pro", { clearanceMm: 0.1 }, fs)).toBe(
+      false,
+    );
+    expect(Object.keys(fs.files)).toEqual([]);
+  });
+});
+
+describe("what a successful build checks against the saved board", () => {
+  type At = [ref: string, x: number, y: number];
+  const pcbText = (refs: At[]) =>
+    `(kicad_pcb\n${refs
+      .map(
+        ([ref, x, y]) =>
+          `\t(footprint "R" (layer "F.Cu") (at ${x} ${y} 0)\n\t\t(property "Reference" "${ref}" (at 0 0 0))\n\t)`,
+      )
+      .join("\n")}\n)`;
+
+  const setup = (opts: { file: At[]; session: At[] }) => {
+    const calls: string[] = [];
+    const files: Record<string, string> = {
+      "/w/circuit.netlist.json": JSON.stringify({
+        board: { rules: { clearanceMm: 0.15, trackWidthMm: 0.15 } },
+      }),
+      "/w/board.kicad_pcb": pcbText(opts.file),
+      "/w/board.kicad_pro": JSON.stringify({ net_settings: { classes: [] } }),
+    };
+    const job = {
+      id: "compile-1",
+      sessionId: "session-1",
+      frontend: "netlist-json",
+      state: "succeeded",
+      startedAt: new Date().toISOString(),
+      log: [],
+      result: {
+        ok: true,
+        diagnostics: [],
+        counts: { components: 3, nets: 1, footprintsAdded: 3, footprintsPlaced: 3 },
+      },
+    } as unknown as FpPcbCompileJob;
+    const board = {
+      getFootprints: async () =>
+        opts.session.map(([reference, x, y]) => ({
+          reference,
+          position: { x: x * 1_000_000, y: y * 1_000_000 },
+        })),
+      close: async () => {
+        calls.push("close");
+      },
+    };
+    const session = {
+      id: "session-1",
+      path: "/w/board.kicad_pro",
+      kicad: {
+        currentBoard: async () => board,
+        openBoard: async (path: string) => {
+          calls.push(`open ${path}`);
+          return board;
+        },
+      },
+    } as unknown as ProjectSession;
+    const sessions = {
+      withRetry: async <T>(_dir: string, run: (s: ProjectSession) => Promise<T>) => run(session),
+      release: async () => undefined,
+      board: async () => ({ enabledLayers: async () => ({ copperLayerCount: 2 }) }),
+    } as unknown as FpPcbSessions;
+    const design = createFpPcbDesign({
+      bridge: () => ({ compile: async () => job }) as unknown as FpPcbBridgeClient,
+      sessions,
+      readText: async (p) => {
+        if (!(p in files)) throw new Error("ENOENT");
+        return files[p]!;
+      },
+      writeText: async (p, text) => {
+        files[p] = text;
+      },
+      exists: async (p) => p in files,
+    });
+    return { calls, files, design };
+  };
+
+  test("warns when parts share one origin, whatever the compile counted", async () => {
+    const at: At[] = [
+      ["C1", 0, 0],
+      ["C2", 0, 0],
+      ["R1", 5, 5],
+    ];
+    const { design } = setup({ file: at, session: at });
+    const result = await design.build({ projectDir: "/w" });
+    expect(result.ok).toBe(true);
+    const stacked = result.warnings.find((w) => w.type === "footprints_stacked");
+    expect(stacked?.message).toContain("2 footprints share one position");
+    expect(stacked?.message).toContain("C1, C2");
+  });
+
+  test("reopens the board only when the session's positions disagree with the file", async () => {
+    const same = setup({ file: [["R1", 5, 5]], session: [["R1", 5, 5]] });
+    await same.design.build({ projectDir: "/w" });
+    expect(same.calls).toEqual([]);
+
+    const stale = setup({ file: [["R1", 5, 5]], session: [["R1", 0, 0]] });
+    const result = await stale.design.build({ projectDir: "/w" });
+    expect(stale.calls).toEqual(["close", "open /w/board.kicad_pcb"]);
+    expect(result.warnings).toEqual([]);
+  });
+
+  test("writes the netlist's rules into the project's Default net class", async () => {
+    const { files, design } = setup({ file: [["R1", 5, 5]], session: [["R1", 5, 5]] });
+    await design.build({ projectDir: "/w" });
+    const pro = JSON.parse(files["/w/board.kicad_pro"]!);
+    expect(pro.net_settings.classes[0]).toMatchObject({
+      name: "Default",
+      clearance: 0.15,
+      track_width: 0.15,
+    });
   });
 });

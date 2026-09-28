@@ -2,7 +2,7 @@
 import { createHash } from "node:crypto";
 import { readFile, readdir, unlink } from "node:fs/promises";
 import { z } from "zod/v4";
-import type { FpPcbBoardSpec } from "@fabdesk/protocol";
+import type { FpPcbBoardSpec, NetlistFile } from "@fabdesk/protocol";
 import { PROJECT_FILES, exists, mtimeMs, readJsonOrNull, writeJson } from "../fs";
 import { ToolError, ToolsetId, defineTool, TOOLSETS, type ProjectHandle } from "../registry";
 import type { BuildResult, DesignRow, DesignSelect, DrcReport, DrcViolation } from "../services";
@@ -251,6 +251,16 @@ export async function buildBoardSpec(project: ProjectHandle): Promise<FpPcbBoard
   };
 }
 
+/**
+ * Net names the KiCad fork cannot save once net-class rules are set. KiCad's own netlist export
+ * writes a label's `/` as `{slash}` (and other characters as `{colon}`, `{space}`, …); with a rules
+ * write (`SetNetClasses`) the fork's project save then fails with `basic_string` (fab_pcb G30), and
+ * the build reports only that. Without rules the same board saves.
+ */
+export function escapedNetNames(file: NetlistFile): string[] {
+  return file.netlist.nets.map((n) => n.name).filter((name) => /[{}]/.test(name));
+}
+
 export const circuit_build = defineTool({
   name: "circuit_build",
   toolset: "core",
@@ -280,7 +290,45 @@ export const circuit_build = defineTool({
   handler: async ({ entrypoint, rebuild, fresh }, ctx) => {
     const project = ctx.requireProject();
     ctx.progress(0.05, "building");
+    const file = entrypoint ? null : await loadNetlist(project).catch(() => null);
+    const escaped = file ? escapedNetNames(file) : [];
     const board = await buildBoardSpec(project);
+    const rules = board?.rules ?? file?.board?.rules;
+    const writesRules = Boolean(rules && Object.values(rules).some((v) => v !== undefined));
+    // Braces only break the save when the build writes net-class rules; otherwise say so and go on.
+    const escapeWarnings: BuildResult["warnings"] =
+      escaped.length && !writesRules
+        ? [
+            {
+              type: "net_name_escape",
+              file: PROJECT_FILES.netlistJson,
+              message: `net names contain "{" or "}": ${escaped.join(", ")}. The build goes ahead because this board sets no rules, but adding board.rules later will make the KiCad fork fail to save; KiCad writes a label's "/" as {slash}, so use "_" instead.`,
+            },
+          ]
+        : [];
+    if (escaped.length && writesRules) {
+      const summary: BuildSummary = {
+        ok: false,
+        at: new Date().toISOString(),
+        rebuild,
+        durationMs: 0,
+        errors: [
+          {
+            type: "net_name_escape",
+            file: PROJECT_FILES.netlistJson,
+            message: `net names may not contain "{" or "}" when the board sets rules (the KiCad fork cannot save such a board): ${escaped.join(", ")}. KiCad writes a label's "/" as {slash}; use "_" instead.`,
+          },
+        ],
+        warnings: [],
+        counts: { components: 0, nets: 0, footprintsAdded: 0, footprintsPlaced: 0 },
+      };
+      await writeReport(project, "build", summary);
+      return {
+        text: `Build FAILED (1 errors):\n${formatErrors(summary.errors)}`,
+        json: summary,
+        isError: true,
+      };
+    }
     const result = await ctx.services.design.build({
       projectDir: project.dir,
       ...(entrypoint ? { entrypoint } : {}),
@@ -293,9 +341,11 @@ export const circuit_build = defineTool({
     const layerCheck = result.ok
       ? checkBoardLayers(project.manifest().board.layers, result.copperLayers)
       : {};
-    const warnings = layerCheck.warning
-      ? [...result.warnings, layerCheck.warning]
-      : result.warnings;
+    const warnings = [
+      ...escapeWarnings,
+      ...result.warnings,
+      ...(layerCheck.warning ? [layerCheck.warning] : []),
+    ];
     const summary: BuildSummary = {
       ok: result.ok,
       at: new Date().toISOString(),
@@ -338,7 +388,7 @@ export const circuit_place = defineTool({
         }),
       )
       .min(1)
-      .max(200),
+      .max(1000),
   },
   annotations: { idempotentHint: true },
   handler: async ({ placements }, ctx) => {

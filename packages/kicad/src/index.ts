@@ -11,7 +11,14 @@ export {
   type RunOptions,
   type RunResult,
 } from "./cli";
-export { placeFootprints, type Placement, type PlaceResult } from "./place";
+export {
+  placeFootprints,
+  readFootprintPlacements,
+  stackedFootprints,
+  type FootprintPlacement,
+  type Placement,
+  type PlaceResult,
+} from "./place";
 export { rasterizeSvg, type RasterizedSvg } from "./raster";
 export {
   renderPng,

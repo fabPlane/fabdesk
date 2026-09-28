@@ -57,7 +57,13 @@ import {
   type Board,
   type KiCad,
 } from "@fp-pcb/client";
-import type { FpPcbCompileJob, FpPcbDiagnostic, FpPcbRouteJob } from "@fabdesk/protocol";
+import { readFootprintPlacements, stackedFootprints } from "@fabdesk/kicad";
+import type {
+  FpPcbBoardSpec,
+  FpPcbCompileJob,
+  FpPcbDiagnostic,
+  FpPcbRouteJob,
+} from "@fabdesk/protocol";
 import {
   PROJECT_FILES,
   ToolError,
@@ -190,6 +196,61 @@ function toBuildError(d: FpPcbDiagnostic): BuildError {
   };
 }
 
+/** The netlist file's own `board.rules`, when the tool did not pass a board spec of its own. */
+function fileRules(text: string | undefined): FpPcbBoardSpec["rules"] | undefined {
+  if (!text) return undefined;
+  try {
+    const rules = (JSON.parse(text) as { board?: { rules?: FpPcbBoardSpec["rules"] } }).board
+      ?.rules;
+    return rules && typeof rules === "object" ? rules : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The `Default` net class into `board.kicad_pro`. The compile sets it on the live project through
+ * `SetNetClasses`, but the KiCad fork's project save wrote no `net_settings.classes` (fab_pcb G33),
+ * so kicad-cli DRC (and anything else reading the files) fell back to KiCad's stock 0.2 mm
+ * clearance and track width. Merging the class in ourselves keeps the files and the session saying
+ * the same thing; when the save already wrote it, the file is left untouched.
+ */
+export async function persistDefaultNetClass(
+  proPath: string,
+  rules: NonNullable<FpPcbBoardSpec["rules"]>,
+  io: {
+    readText: (p: string) => Promise<string>;
+    writeText: (p: string, text: string) => Promise<void>;
+  },
+): Promise<boolean> {
+  const text = await io.readText(proPath).catch(() => null);
+  if (text === null) return false;
+  let pro: Record<string, unknown>;
+  try {
+    pro = JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    return false;
+  }
+  if (!pro || typeof pro !== "object" || Array.isArray(pro)) return false;
+  const settings = (pro["net_settings"] ??= {}) as Record<string, unknown>;
+  const classes = (settings["classes"] ??= []) as Array<Record<string, unknown>>;
+  if (!Array.isArray(classes)) return false;
+  let cls = classes.find((c) => c["name"] === "Default");
+  const before = JSON.stringify(cls ?? null);
+  if (!cls) {
+    cls = { name: "Default", priority: 2147483647 };
+    classes.unshift(cls);
+  }
+  if (rules.clearanceMm !== undefined) cls["clearance"] = rules.clearanceMm;
+  if (rules.trackWidthMm !== undefined) cls["track_width"] = rules.trackWidthMm;
+  if (rules.viaDiameterMm !== undefined) cls["via_diameter"] = rules.viaDiameterMm;
+  if (rules.viaDrillMm !== undefined) cls["via_drill"] = rules.viaDrillMm;
+  // Nothing to change (the save already kept the class): leave the file and its mtime alone.
+  if (JSON.stringify(cls) === before) return true;
+  await io.writeText(proPath, `${JSON.stringify(pro, null, 2)}\n`);
+  return true;
+}
+
 export function toRouteProgress(job: FpPcbRouteJob): RouteProgress {
   const p = job.progress;
   return {
@@ -209,14 +270,35 @@ export type FpPcbDesignDeps = {
   bridge: () => FpPcbBridgeClient;
   sessions: FpPcbSessions;
   readText?: (path: string) => Promise<string>;
+  writeText?: (path: string, text: string) => Promise<void>;
   exists?: (path: string) => Promise<boolean>;
   catalog?: KicadLibraryCatalog;
 };
 
 export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
   const readText = deps.readText ?? ((p: string) => readFile(p, "utf8"));
+  const writeText = deps.writeText ?? ((p: string, text: string) => writeFile(p, text, "utf8"));
   const exists = deps.exists ?? ((p: string) => Bun.file(p).exists());
   const active = new Map<string, string>(); // projectDir -> session id with a running route
+
+  /** The rules the last build applied per project, so later saves can re-persist the net class. */
+  const rulesByProject = new Map<string, NonNullable<FpPcbBoardSpec["rules"]>>();
+  /**
+   * Every `SaveDocument` on the fork rewrote `board.kicad_pro` without the net classes the session
+   * holds (fab_pcb G33; the compile job re-writes them after its own save, other saves do not), so
+   * the `Default` class goes back into the file after each board save the design service makes:
+   * from the rules the build applied, or the netlist file's own. A project with no netlist rules
+   * (a native schematic-first one) is left alone.
+   */
+  const keepNetClass = async (projectDir: string): Promise<void> => {
+    const rules =
+      rulesByProject.get(projectDir) ??
+      fileRules(await readText(join(projectDir, PROJECT_FILES.netlistJson)).catch(() => undefined));
+    if (!rules || !Object.values(rules).some((v) => v !== undefined)) return;
+    await persistDefaultNetClass(join(projectDir, BOARD_PRO), rules, { readText, writeText }).catch(
+      () => false,
+    );
+  };
 
   const build = async (opts: BuildOptions): Promise<BuildResult> => {
     const started = performance.now();
@@ -306,6 +388,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       .filter((d) => d.severity === "warning")
       .map(toBuildError);
     const ok = job.result.ok && errors.length === 0;
+    if (ok) await afterSuccessfulBuild(opts, source.files[entrypoint], warnings);
     // The stackup the compile actually left on the board, so circuit_build can keep fabdesk.json
     // in step with it. Best effort: a build is not failed because this read failed.
     const copperLayers = ok
@@ -326,6 +409,63 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       ...(job.removedCopper ? { removedCopper: job.removedCopper } : {}),
       ...(job.rejectedSchematicPath ? { rejectedSchematicPath: job.rejectedSchematicPath } : {}),
     };
+  };
+
+  /**
+   * What the compile's own report could not be trusted with, checked against the board it saved:
+   * - KiCad's autoplace count (fab_pcb G32: "238 placed" with 198 parts never moved): read where
+   *   the parts sit in the file and warn `footprints_stacked` when several share one origin.
+   * - The session's footprint positions (fork G31: 0,0 after an autoplace until the board is
+   *   reloaded from disk): when they disagree with the file, reopen the board so queries and
+   *   `circuit_place`'s deltas start from where the parts really are.
+   * - The project file's `Default` net class (G33).
+   * Each step is a no-op once the underlying bug is fixed.
+   */
+  const afterSuccessfulBuild = async (
+    opts: BuildOptions,
+    netlistText: string | undefined,
+    warnings: BuildError[],
+  ): Promise<void> => {
+    const pcb = join(opts.projectDir, BOARD_PCB);
+    const saved = await readText(pcb).catch(() => null);
+    const placements = saved !== null ? readFootprintPlacements(saved) : [];
+    const stacks = stackedFootprints(placements);
+    if (stacks.length && !warnings.some((w) => w.type === "footprints_stacked")) {
+      const stacked = stacks.reduce((n, g) => n + g.length, 0);
+      const refs = stacks.flat();
+      warnings.push({
+        type: "footprints_stacked",
+        message: `${stacked} footprints share ${stacks.length === 1 ? "one position" : `${stacks.length} positions`} and overlap: the autoplacer ran out of room on this outline (or did not run). Give the board more area, or place them with circuit_place: ${refs.slice(0, 20).join(", ")}${refs.length > 20 ? `, … (${refs.length - 20} more)` : ""}.`,
+      });
+    }
+    if (placements.length) {
+      const inFile = new Map(placements.map((p) => [p.ref, p]));
+      await deps.sessions
+        .withRetry(opts.projectDir, async (s) => {
+          const board = await s.kicad.currentBoard();
+          if (!board) return;
+          const stale = (await board.getFootprints()).some((fp) => {
+            const want = inFile.get(fp.reference);
+            return (
+              want !== undefined &&
+              (Math.abs(toMm(fp.position.x) - want.x) > 1e-3 ||
+                Math.abs(toMm(fp.position.y) - want.y) > 1e-3)
+            );
+          });
+          if (!stale) return;
+          await board.close().catch(() => undefined);
+          await s.kicad.openBoard(pcb);
+        })
+        .catch((e: unknown) => {
+          warnings.push({
+            type: "reload_failed",
+            message: `the board could not be reopened after the build (${e instanceof Error ? e.message : String(e)}); circuit_query may report footprints at stale positions until a rebuild.`,
+          });
+        });
+    }
+    const rules = opts.board?.rules ?? fileRules(netlistText);
+    if (rules) rulesByProject.set(opts.projectDir, rules);
+    await keepNetClass(opts.projectDir);
   };
 
   const schematicInspect = async (
@@ -818,6 +958,8 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     }
     await board.save();
     await schematic.save();
+    // After the last save in this path: either save may rewrite board.kicad_pro.
+    await keepNetClass(projectDir);
     return {
       ok: true,
       dryRun: false,
@@ -904,6 +1046,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       await tx.create(newEdges);
     });
     await board.save();
+    await keepNetClass(projectDir);
     return {
       created: newEdges.length,
       replaced: generated.length,
@@ -1012,6 +1155,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     if (fieldEdited.length)
       await board.commit("Fabdesk: adjust PCB reference fields", (tx) => tx.update(fieldEdited));
     await board.save();
+    await keepNetClass(projectDir);
     const changedReferences = [
       ...new Set([...physical, ...fieldEdited].map((footprint) => footprint.reference)),
     ];
@@ -1148,6 +1292,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     });
     const zoneRefill = await refillAfterCopperChange(board);
     await board.save();
+    await keepNetClass(projectDir);
     return {
       zoneRefill,
       created: {
@@ -1579,6 +1724,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
   const saveBoard = async (projectDir: string): Promise<void> => {
     const board = await deps.sessions.board(projectDir);
     await board.save();
+    await keepNetClass(projectDir);
   };
 
   /**
