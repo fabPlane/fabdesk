@@ -3386,6 +3386,9 @@ describe("registry", () => {
     expect(
       await Bun.file(join(project.dir, ".fabdesk/runs", json.runId, "frames.jsonl")).exists(),
     ).toBe(true);
+    expect(
+      await Bun.file(join(project.dir, ".fabdesk/runs", json.runId, "frames.json")).json(),
+    ).toMatchObject({ truncated: false, droppedBytes: 0, maxBytes: 64 * 1024 * 1024 });
     const frames = (
       await Bun.file(join(project.dir, ".fabdesk/runs", json.runId, "frames.jsonl")).text()
     )

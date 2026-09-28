@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { z } from "zod/v4";
 import type { CinemaShape, RouteResult } from "@fabdesk/protocol";
 import { PROJECT_FILES, writeAtomic, writeJson } from "../fs";
-import { FrameSink } from "../frame-sink";
+import { DEFAULT_ROUTE_FRAME_MAX_BYTES, FrameSink } from "../frame-sink";
 import { ToolError, defineTool, type ToolContext, type ToolOutput } from "../registry";
 import type { RouteProgress, RouteRunRecord } from "../services";
 import { ok, p, throwIfAborted } from "./common";
@@ -361,6 +361,19 @@ async function executeRoute(
   };
   await persistProgress(ctx, rec, runDir);
   const sink = new FrameSink(framesPath, ctx.services.bus);
+  const frameCapture = () => ({
+    bytes: sink.stats.bytes,
+    maxBytes: DEFAULT_ROUTE_FRAME_MAX_BYTES,
+    truncated: sink.stats.truncated,
+    droppedBytes: sink.stats.droppedBytes,
+    framesReceived: sink.stats.frames,
+  });
+  // frames.json is diagnostic metadata: failing to write it must not fail a finished route.
+  const persistFrameCapture = () =>
+    writeJson(join(runDir, "frames.json"), frameCapture()).then(
+      () => null,
+      (error: unknown) => (error instanceof Error ? error.message : String(error)),
+    );
   const frames = new RouteProgressFrames(rec.id, started, sink);
   let progressWrites = Promise.resolve();
   let cancelPromise: Promise<void> | null = null;
@@ -568,7 +581,26 @@ async function executeRoute(
     frames.complete(shapes, summary.total);
     sink.onMessage({ kind: "result", runId: rec.id, result: fullResult });
     await sink.close();
-    await writeJson(join(runDir, "result.json"), { ...fullResult, summary });
+    const frameMetadataError = await persistFrameCapture();
+    if (frameMetadataError)
+      rec = {
+        ...rec,
+        progress: {
+          ...rec.progress,
+          diagnostics: [
+            ...rec.progress.diagnostics,
+            `frames.json not written: ${frameMetadataError}`,
+          ].slice(-20),
+        },
+      };
+    await writeJson(join(runDir, "result.json"), {
+      ...fullResult,
+      summary,
+      frameCapture: {
+        ...frameCapture(),
+        ...(frameMetadataError ? { metadataError: frameMetadataError } : {}),
+      },
+    });
     await writeAtomic(join(runDir, "router.log"), `${summary.log.join("\n")}\n`);
     const candidatePath = join(runDir, "candidate.kicad_pcb");
     await ctx.services.design.release(snapshotDir).catch(() => undefined);
@@ -671,6 +703,7 @@ async function executeRoute(
   } catch (error) {
     await cancelPromise;
     await sink.close().catch(() => undefined);
+    await persistFrameCapture();
     const endedAt = iso();
     const cancelled = signal.aborted;
     const message = error instanceof Error ? error.message : String(error);
