@@ -50,7 +50,11 @@ function syntheticMechanical(pcbRevision: string, footprints: number) {
 async function waitForRoute(services: CoreServices, id: string) {
   for (let attempt = 0; attempt < 200; attempt++) {
     const run = services.routeRuns.get(id);
-    if (run && ["cancelled", "completed", "failed", "timed_out", "interrupted"].includes(run.state))
+    if (
+      run &&
+      ["cancelled", "completed", "failed", "timed_out", "interrupted"].includes(run.state) &&
+      !["pending", "applying"].includes(run.application.state)
+    )
       return run;
     await Bun.sleep(5);
   }
