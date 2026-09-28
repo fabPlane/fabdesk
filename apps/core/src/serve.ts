@@ -48,9 +48,9 @@ import {
 import { RunTelemetry } from "./run-telemetry";
 import {
   ArchiveConsentRevokedError,
-  TrainingArchive,
-} from "./training-archive";
-import { TrainingApiArchiveWriter } from "./training-api";
+  UsageArchive,
+} from "./usage-archive";
+import { UsageApiArchiveWriter } from "./usage-api";
 
 export type ServeOptions = {
   port?: number;
@@ -149,18 +149,18 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   const staleRoutes = store.routeRuns.failStale();
   if (staleRoutes) logger.info("failed stale route runs from previous run", { count: staleRoutes });
   const tokens = new TokenSet(config.token);
-  const archiveDir = process.env["FABDESK_TRAINING_ARCHIVE_DIR"]?.trim();
-  const remoteArchiveEnabled = process.env["FABDESK_TRAINING_REMOTE_BACKUP"] === "1";
+  const archiveDir = process.env["FABDESK_USAGE_ARCHIVE_DIR"]?.trim();
+  const remoteArchiveEnabled = process.env["FABDESK_USAGE_REMOTE_BACKUP"] === "1";
   const archiveEnabled = Boolean(archiveDir) || remoteArchiveEnabled;
-  const archives: TrainingArchive[] = [];
-  if (archiveDir) archives.push(new TrainingArchive(archiveDir));
+  const archives: UsageArchive[] = [];
+  if (archiveDir) archives.push(new UsageArchive(archiveDir));
   let archiveBearer: () => string | null = () => null;
   if (remoteArchiveEnabled)
-    archives.push(new TrainingArchive(new TrainingApiArchiveWriter(config.apiOrigin, () => archiveBearer())));
+    archives.push(new UsageArchive(new UsageApiArchiveWriter(config.apiOrigin, () => archiveBearer())));
   let archiveBackfilled = false;
   let archiveClosing = false;
   let backfillTask: Promise<void> | null = null;
-  const hasArchiveConsent = () => store.settings.get().trainingArchiveConsent;
+  const hasArchiveConsent = () => store.settings.get().usageArchiveConsent;
   const startArchiveBackfill = (): Promise<void> => {
     if (backfillTask) return backfillTask;
     if (!archiveEnabled || !hasArchiveConsent() || archiveClosing)
@@ -173,12 +173,12 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
             store.db,
             () => hasArchiveConsent() && !archiveClosing,
           );
-          logger.info("training archive backfilled", counts);
+          logger.info("usage archive backfilled", counts);
         }
         archiveBackfilled = hasArchiveConsent() && !archiveClosing;
       } catch (error) {
         if (!(error instanceof ArchiveConsentRevokedError)) {
-          logger.warn("training archive backfill failed; local dump pruning disabled", {
+          logger.warn("usage archive backfill failed; local dump pruning disabled", {
             error: errMsg(error),
           });
         }
@@ -206,7 +206,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
                 await archive.put(dump, store.db, hasArchiveConsent);
               } catch (error) {
                 backedUp = false;
-                logger.warn("training archive failed; retained run dump locally", {
+                logger.warn("usage archive failed; retained run dump locally", {
                   runId: dump.runId,
                   error: errMsg(error),
                 });

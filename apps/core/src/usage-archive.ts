@@ -23,7 +23,7 @@ export type ArchiveWriter = {
 
 export class ArchiveConsentRevokedError extends Error {
   constructor() {
-    super("training archive consent revoked");
+    super("usage archive consent revoked");
   }
 }
 
@@ -55,11 +55,11 @@ export function conversationRecord(db: Database, threadId: string): string | nul
     .query<RunRow, [string]>("SELECT * FROM runs WHERE thread_id = ? ORDER BY started_at, id")
     .all(threadId);
   return (
-    JSON.stringify({ schema: "fabdesk.training-conversation/v1", thread, messages, runs }) + "\n"
+    JSON.stringify({ schema: "fabdesk.usage-conversation/v1", thread, messages, runs }) + "\n"
   );
 }
 
-export class TrainingArchive {
+export class UsageArchive {
   private readonly writer: ArchiveWriter;
   constructor(destination: string | ArchiveWriter) {
     this.writer =
@@ -119,7 +119,7 @@ export class TrainingArchive {
     await this.writer.write(
       `snapshots/${snapshot}/manifest.json`,
       JSON.stringify({
-        schema: "fabdesk.training-backup/v1",
+        schema: "fabdesk.usage-backup/v1",
         createdAt: new Date().toISOString(),
         conversations,
         runDumps,

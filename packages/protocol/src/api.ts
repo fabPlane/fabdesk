@@ -255,8 +255,8 @@ export const Settings = z.object({
   webmcpWriteTools: z.boolean().default(false),
   /** Send crash/error reports to Sentry (only when a DSN is configured; see docs/sentry.md). */
   errorReporting: z.boolean().default(true),
-  /** Local, installation-wide consent to export stored conversations and tool traces for training. */
-  trainingArchiveConsent: z.boolean().default(false),
+  /** Local, installation-wide consent to back up stored conversations and tool traces for analysis. */
+  usageArchiveConsent: z.boolean().default(false),
   theme: z.enum(["system", "light", "dark"]).default("system"),
   /** Opt-in second listener on a tailnet/LAN address so paired phones can reach the daemon. */
   remote: z

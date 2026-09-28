@@ -1,8 +1,8 @@
-/** Authenticated training-archive upload through fabplane.com. R2 credentials stay on the API. */
+/** Authenticated usage-archive upload through fabplane.com. R2 credentials stay on the API. */
 import { createHash } from "node:crypto";
-import type { ArchiveWriter } from "./training-archive";
+import type { ArchiveWriter } from "./usage-archive";
 
-export class TrainingApiArchiveWriter implements ArchiveWriter {
+export class UsageApiArchiveWriter implements ArchiveWriter {
   constructor(
     private readonly apiOrigin: string,
     private readonly token: () => string | null,
@@ -11,9 +11,9 @@ export class TrainingApiArchiveWriter implements ArchiveWriter {
 
   async write(key: string, content: string): Promise<void> {
     const bearer = this.token();
-    if (!bearer) throw new Error("training archive requires a fabplane sign-in");
+    if (!bearer) throw new Error("usage archive requires a fabplane sign-in");
     const body = Buffer.from(content, "utf8");
-    const response = await this.fetchImpl(`${this.apiOrigin.replace(/\/+$/, "")}/v1/private/training-archive`, {
+    const response = await this.fetchImpl(`${this.apiOrigin.replace(/\/+$/, "")}/v1/private/usage-archive`, {
       method: "PUT",
       headers: {
         authorization: `Bearer ${bearer}`,
@@ -24,6 +24,6 @@ export class TrainingApiArchiveWriter implements ArchiveWriter {
       body,
       signal: AbortSignal.timeout(60_000),
     });
-    if (!response.ok) throw new Error(`training archive upload failed (${response.status})`);
+    if (!response.ok) throw new Error(`usage archive upload failed (${response.status})`);
   }
 }

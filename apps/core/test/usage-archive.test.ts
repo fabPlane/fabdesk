@@ -3,27 +3,27 @@ import { mkdtemp, readFile, readdir, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../src/db";
-import { ArchiveConsentRevokedError, TrainingArchive } from "../src/training-archive";
+import { ArchiveConsentRevokedError, UsageArchive } from "../src/usage-archive";
 
-describe("training archive", () => {
+describe("usage archive", () => {
   test("requires consent before exporting stored history", async () => {
     const store = Store.open(":memory:");
     const writes: string[] = [];
     try {
-      expect(store.settings.get().trainingArchiveConsent).toBe(false);
+      expect(store.settings.get().usageArchiveConsent).toBe(false);
       const thread = store.threads.create({ agentId: "codex", title: "Private" });
       store.threads.addMessage({ threadId: thread.id, role: "user", contentMd: "private prompt" });
-      const archive = new TrainingArchive({
+      const archive = new UsageArchive({
         async write(key) {
           writes.push(key);
         },
       });
       await expect(
-        archive.backfill(store.db, () => store.settings.get().trainingArchiveConsent),
+        archive.backfill(store.db, () => store.settings.get().usageArchiveConsent),
       ).rejects.toBeInstanceOf(ArchiveConsentRevokedError);
       expect(writes).toEqual([]);
-      store.settings.patch({ trainingArchiveConsent: true });
-      await archive.backfill(store.db, () => store.settings.get().trainingArchiveConsent);
+      store.settings.patch({ usageArchiveConsent: true });
+      await archive.backfill(store.db, () => store.settings.get().usageArchiveConsent);
       expect(writes.some((key) => key.endsWith(`${thread.id}.json`))).toBe(true);
     } finally {
       store.close();
@@ -31,7 +31,7 @@ describe("training archive", () => {
   });
 
   test("backs up conversations and completed run dumps as readable private files", async () => {
-    const root = await mkdtemp(join(tmpdir(), "fabdesk-training-"));
+    const root = await mkdtemp(join(tmpdir(), "fabdesk-usage-"));
     const store = Store.open(join(root, "data", "fabdesk.db"));
     try {
       const thread = store.threads.create({ agentId: "codex", title: "Board" });
@@ -46,7 +46,7 @@ describe("training archive", () => {
         dumpJson: '{"events":["tool"]}\n',
       };
       store.runDumps.put(dump);
-      const archive = new TrainingArchive(join(root, "backup"));
+      const archive = new UsageArchive(join(root, "backup"));
       await archive.put(dump, store.db);
       expect(
         JSON.parse(await readFile(join(root, "backup", "run-dumps", "run_1.json"), "utf8")),
