@@ -7,6 +7,7 @@ import { CinemaTab } from "./cinema/CinemaTab";
 import { DrcTab } from "./DrcTab";
 import { FilesTab } from "./FilesTab";
 import { RendersTab } from "./RendersTab";
+import { ShoppingListTab } from "./ShoppingListTab";
 import { SvgTab } from "./SvgTab";
 import { ThreeDTab } from "./ThreeDTab";
 
@@ -26,6 +27,8 @@ function TabBody({ tab }: { tab: BoardTab }) {
       return <RendersTab />;
     case "files":
       return <FilesTab />;
+    case "bom":
+      return <ShoppingListTab />;
     default:
       return null;
   }

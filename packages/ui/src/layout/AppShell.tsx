@@ -3,6 +3,7 @@ import type { CoreStatusInfo } from "../app/types";
 import { BoardPanel } from "../board/BoardPanel";
 import { ProjectPickerDialog } from "../chat/ProjectPickerDialog";
 import { ThreadView } from "../chat/ThreadView";
+import { InventoryView } from "../inventory/InventoryView";
 import { OpenSourceView } from "../opensource/OpenSourceView";
 import { OrderFlow } from "../order/OrderFlow";
 import { ThreadSidebar } from "../sidebar/ThreadSidebar";
@@ -25,7 +26,16 @@ export function AppShell({ onNewChat, coreStatus, banner }: AppShellProps) {
   const boardOpen = useUiStore((s) => s.boardOpen);
   const openSourceId = useUiStore((s) => s.activeOpenSourceId);
   const orderFlowOpen = useUiStore((s) => s.orderFlowOpen);
-  const center = orderFlowOpen ? <OrderFlow /> : openSourceId ? <OpenSourceView /> : <ThreadView />;
+  const inventory = useUiStore((s) => s.sidebarListTab === "inventory");
+  const center = orderFlowOpen ? (
+    <OrderFlow />
+  ) : inventory ? (
+    <InventoryView />
+  ) : openSourceId ? (
+    <OpenSourceView />
+  ) : (
+    <ThreadView />
+  );
   return (
     <div className="flex h-full flex-col">
       <TopBar coreStatus={coreStatus} />
@@ -43,7 +53,7 @@ export function AppShell({ onNewChat, coreStatus, banner }: AppShellProps) {
           <Panel id="chat" order={2} minSize={30}>
             {center}
           </Panel>
-          {boardOpen && !openSourceId && (
+          {boardOpen && !openSourceId && !(inventory && !orderFlowOpen) && (
             <>
               <Handle />
               <Panel id="board" order={3} defaultSize={40} minSize={20}>

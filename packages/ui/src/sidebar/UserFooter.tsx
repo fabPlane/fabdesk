@@ -97,6 +97,16 @@ export function UserFooter() {
             </span>
           </MenuItem>
           <MenuItem onClick={() => openSettings("shortcuts")}>Keyboard shortcuts</MenuItem>
+          {!local && auth.dashboardUrl && (
+            <MenuItem
+              onClick={() => {
+                close();
+                void host.openExternal(auth.dashboardUrl!);
+              }}
+            >
+              fabplane dashboard <span className="ml-auto text-muted">&#8599;</span>
+            </MenuItem>
+          )}
           {(!local || (localAllowed && host.setLocalAuth)) && (
             <>
               <div className="my-1 border-t border-border" />

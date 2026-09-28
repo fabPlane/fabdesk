@@ -74,6 +74,8 @@ export { OpenSourceList } from "./sidebar/OpenSourceList";
 export { groupThreadsByProject } from "@fabdesk/client-core";
 export type { ProjectThreadGroup, ProjectThreadGroupKind } from "@fabdesk/client-core";
 export { OpenSourceView } from "./opensource/OpenSourceView";
+export { InventoryView } from "./inventory/InventoryView";
+export { ShoppingListTab } from "./board/ShoppingListTab";
 export { CatalogThumb } from "./opensource/CatalogThumb";
 export { OrderFlow } from "./order/OrderFlow";
 export { ProjectPickerDialog } from "./chat/ProjectPickerDialog";

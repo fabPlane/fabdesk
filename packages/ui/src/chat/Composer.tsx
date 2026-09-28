@@ -8,7 +8,7 @@ import { useRunsStore } from "@fabdesk/client-core";
 import { DRAFT_KEY_NEW, useUiStore } from "../stores/ui";
 import { basename, mimeFromPath, modKey } from "../util";
 import { AgentModelMenu } from "./AgentModelMenu";
-import { agentModelLabel } from "@fabdesk/client-core";
+import { agentModelLabel, expandSlashCommand, slashSuggestions } from "@fabdesk/client-core";
 import { applyComposerTextareaHeight } from "./composer-autosize";
 
 /** Bridge for the global shortcut hook (mod+Enter send, mod+. abort) and for app automation. */
@@ -97,8 +97,10 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
   const agentMissing = selectedAgent ? !selectedAgent.installed : false;
 
   const send = useCallback(async () => {
-    const content = draft.trim();
-    if (!content || sending || run) return;
+    const typed = draft.trim();
+    if (!typed || sending || run) return;
+    // `/shopping-list …` and friends expand into the instructions the agent needs.
+    const content = expandSlashCommand(typed) ?? typed;
     setSending(true);
     setError(null);
     try {
@@ -151,6 +153,7 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
     for (const p of paths) addAttachment(draftKey, { path: p, mime: mimeFromPath(p), label: basename(p) });
   };
 
+  const suggestions = slashSuggestions(draft);
   const mod = modKey(host.platform);
   const placeholder = thread
     ? "Message the agent..."
@@ -177,6 +180,25 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
                   &#10005;
                 </button>
               </span>
+            ))}
+          </div>
+        )}
+        {suggestions.length > 0 && (
+          <div className="mb-1.5 flex flex-wrap gap-1.5" data-testid="slash-suggestions">
+            {suggestions.map((c) => (
+              <button
+                key={c.name}
+                type="button"
+                className="inline-flex items-center gap-1.5 rounded-md border border-border bg-panel px-2 py-0.5 text-xs hover:bg-panel-2"
+                onClick={() => {
+                  setDraft(draftKey, `/${c.name} `);
+                  textareaRef.current?.focus();
+                }}
+                title={c.hint}
+              >
+                <span className="font-mono">{c.usage}</span>
+                <span className="text-muted">{c.hint}</span>
+              </button>
             ))}
           </div>
         )}

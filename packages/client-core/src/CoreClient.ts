@@ -2,6 +2,16 @@
 import type {
   AgentId,
   AuthState,
+  BomSyncSummary,
+  Cart,
+  CartItem,
+  CartItemInput,
+  CartItemPatch,
+  CloudStatus,
+  Destination,
+  InventoryItem,
+  InventoryItemInput,
+  ShoppingListResponse,
   CoreEvent,
   Device,
   DeviceMe,
@@ -269,6 +279,80 @@ export class CoreClient {
     return this.request(`/projects/${encodeURIComponent(id)}/order`, {
       method: "POST",
       json: { vendor },
+    });
+  }
+
+  // fabplane.com shopping lists & inventory (proxied by the core)
+  cloudStatus(): Promise<CloudStatus> {
+    return this.request("/cloud/status");
+  }
+  shoppingList(projectId: string): Promise<ShoppingListResponse> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/shopping-list`);
+  }
+  createShoppingList(projectId: string): Promise<ShoppingListResponse> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/shopping-list`, { method: "POST" });
+  }
+  addShoppingItems(
+    projectId: string,
+    items: CartItemInput[],
+  ): Promise<{ cart: Cart; added: CartItem[]; cartUrl: string }> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/shopping-list/items`, {
+      method: "POST",
+      json: { items },
+    });
+  }
+  updateShoppingItem(
+    projectId: string,
+    itemId: string,
+    patch: CartItemPatch,
+  ): Promise<{ item: CartItem }> {
+    return this.request(
+      `/projects/${encodeURIComponent(projectId)}/shopping-list/items/${encodeURIComponent(itemId)}`,
+      { method: "PATCH", json: patch },
+    );
+  }
+  removeShoppingItem(projectId: string, itemId: string): Promise<{ ok: boolean }> {
+    return this.request(
+      `/projects/${encodeURIComponent(projectId)}/shopping-list/items/${encodeURIComponent(itemId)}`,
+      { method: "DELETE" },
+    );
+  }
+  syncShoppingBom(
+    projectId: string,
+  ): Promise<{ cart: Cart; summary: BomSyncSummary; cartUrl: string }> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/shopping-list/sync-bom`, {
+      method: "POST",
+    });
+  }
+  cloudDestinations(): Promise<{ destinations: Destination[] }> {
+    return this.request("/cloud/destinations");
+  }
+  searchInventory(q?: string): Promise<{ items: InventoryItem[]; nextCursor: string | null }> {
+    const qs = q?.trim() ? `?q=${encodeURIComponent(q.trim())}` : "";
+    return this.request(`/cloud/inventory${qs}`);
+  }
+  /** JSON, or multipart with the picked image when one is given. */
+  async createInventoryItem(
+    input: InventoryItemInput,
+    image?: { data: Blob; filename: string },
+  ): Promise<{ item: InventoryItem }> {
+    if (!image) return this.request("/cloud/inventory", { method: "POST", json: input });
+    const form = new FormData();
+    form.append("item", JSON.stringify(input));
+    form.append("image", image.data, image.filename);
+    const res = await this.fetchImpl(`${this.baseUrl}/cloud/inventory`, {
+      method: "POST",
+      headers: this.headers(),
+      body: form,
+    });
+    if (!res.ok)
+      throw new CoreHttpError(res.status, "/cloud/inventory", await res.text().catch(() => res.statusText));
+    return (await res.json()) as { item: InventoryItem };
+  }
+  adjustInventory(itemId: string, delta: number, reason?: string): Promise<{ item: InventoryItem }> {
+    return this.request(`/cloud/inventory/${encodeURIComponent(itemId)}/adjust`, {
+      method: "POST",
+      json: { delta, ...(reason ? { reason } : {}) },
     });
   }
 

@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { readStoredThemeId, type ThemeId } from "../theme/resolve";
 
-export const BOARD_TABS = ["schematic", "pcb", "cinema", "3d", "drc", "renders", "files"] as const;
+export const BOARD_TABS = ["schematic", "pcb", "cinema", "3d", "drc", "renders", "files", "bom"] as const;
 export type BoardTab = (typeof BOARD_TABS)[number];
 export const BOARD_TAB_LABELS: Record<BoardTab, string> = {
   schematic: "Schematic",
@@ -12,21 +12,23 @@ export const BOARD_TAB_LABELS: Record<BoardTab, string> = {
   drc: "DRC/ERC",
   renders: "Renders",
   files: "Files",
+  bom: "Shopping list",
 };
 
 export const SETTINGS_SECTIONS = ["agents", "kicad", "router", "auth", "remote", "appearance", "privacy", "shortcuts"] as const;
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 
-export const SIDEBAR_LIST_TABS = ["projects", "open_source"] as const;
+export const SIDEBAR_LIST_TABS = ["projects", "open_source", "inventory"] as const;
 export type SidebarListTab = (typeof SIDEBAR_LIST_TABS)[number];
 export const SIDEBAR_LIST_TAB_LABELS: Record<SidebarListTab, string> = {
   projects: "Projects",
   open_source: "Open source",
+  inventory: "Inventory",
 };
 
 /** Map a persisted or unknown tab id onto the current set (Conversations was removed). */
 export function normalizeSidebarListTab(tab: string | undefined | null): SidebarListTab {
-  return tab === "open_source" ? "open_source" : "projects";
+  return tab === "open_source" || tab === "inventory" ? tab : "projects";
 }
 
 export interface PendingAttachment {
@@ -154,11 +156,12 @@ export const useUiStore = create<UiState>()(
 }),
     {
       name: "fabdesk.ui",
-      version: 3,
+      version: 4,
       migrate: (persisted, _version) => {
         const state = (persisted ?? {}) as Record<string, unknown>;
         return {
           ...state,
+          boardTab: (BOARD_TABS as readonly string[]).includes(String(state.boardTab)) ? state.boardTab : "schematic",
           sidebarListTab: normalizeSidebarListTab(typeof state.sidebarListTab === "string" ? state.sidebarListTab : undefined),
         };
       },
