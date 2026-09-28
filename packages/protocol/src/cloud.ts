@@ -135,7 +135,7 @@ export type InventoryImage = {
   createdAt: string;
 };
 
-export type InventoryItem = Omit<InventoryItemInput, "serverAiProcessing"> & {
+export type InventoryItem = Omit<InventoryItemInput, "serverAiProcessing" | "attributes"> & {
   id: string;
   orgId: string;
   quantity: number;

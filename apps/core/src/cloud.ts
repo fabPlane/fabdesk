@@ -4,13 +4,10 @@
  */
 import type { Settings } from "@fabdesk/protocol";
 import { CloudService, type CloudApiFactory } from "@fabdesk/tools";
+import { FabplaneClient } from "fabplane-cli";
 
-/**
- * Injection point for the fabplane API client. With `vendor/fabplane-cli` as a workspace:
- *   export const cloudApiFactory: CloudApiFactory | null = (o) => new FabplaneClient(o);
- * Null means this build has no client: `/cloud/status` reports `available: false`.
- */
-export const cloudApiFactory: CloudApiFactory | null = null;
+/** The fabplane API client (`vendor/fabplane-cli`). Tests pass `api` to swap in a fake. */
+export const cloudApiFactory: CloudApiFactory = (o) => new FabplaneClient(o);
 
 export function createCloudService(o: {
   apiOrigin: string;
