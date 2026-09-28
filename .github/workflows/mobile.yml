@@ -26,6 +26,8 @@ concurrency:
 jobs:
   select-linux-runner:
     uses: ./.github/workflows/select-linux-runner.yml
+    with:
+      selection-delay-seconds: 45
     secrets: inherit
 
   verify:

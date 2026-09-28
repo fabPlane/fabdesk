@@ -8,6 +8,11 @@ on:
         required: false
         type: string
         default: blacksmith-4vcpu-ubuntu-2204
+      selection-delay-seconds:
+        description: Delay before reading the NAS heartbeat so concurrent callers can observe an earlier claim
+        required: false
+        type: number
+        default: 0
     outputs:
       runner:
         description: JSON runner selector for a NAS runner or Blacksmith fallback
@@ -17,7 +22,16 @@ permissions:
   contents: read
 
 jobs:
+  settle:
+    runs-on: ${{ inputs.blacksmith-runner }}
+    steps:
+      - name: Wait for earlier NAS claims to reach the heartbeat
+        env:
+          SELECTION_DELAY_SECONDS: ${{ inputs.selection-delay-seconds }}
+        run: sleep "$SELECTION_DELAY_SECONDS"
+
   select:
+    needs: settle
     # Bootstrap on the same external fallback pool the caller would use. A GitHub-hosted
     # selector cannot choose the self-hosted NAS when the repository's Actions budget is
     # exhausted, even though the NAS itself is online and free to run. Do not put this
