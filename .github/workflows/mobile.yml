@@ -24,14 +24,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  select-eas-runner:
-    needs: verify
-    if: github.event_name == 'workflow_dispatch'
+  select-linux-runner:
     uses: ./.github/workflows/select-linux-runner.yml
+    with:
+      selection-delay-seconds: 45
     secrets: inherit
 
   verify:
-    runs-on: [self-hosted, macOS, ARM64]
+    needs: select-linux-runner
+    runs-on: ${{ fromJSON(needs.select-linux-runner.outputs.runner) }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -105,9 +106,9 @@ jobs:
   # when the EXPO_TOKEN secret is absent (forks, or before `eas init` has been run). `--no-wait`
   # queues the build and returns; the result lands on expo.dev and in the EAS notification.
   eas-preview:
-    needs: [verify, select-eas-runner]
+    needs: [verify, select-linux-runner]
     if: github.event_name == 'workflow_dispatch'
-    runs-on: ${{ fromJSON(needs.select-eas-runner.outputs.runner) }}
+    runs-on: ${{ fromJSON(needs.select-linux-runner.outputs.runner) }}
     steps:
       - name: Check for EXPO_TOKEN
         id: gate

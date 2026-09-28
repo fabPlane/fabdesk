@@ -17,8 +17,7 @@ export function isImage(a: AgentAttachment): boolean {
 }
 
 /**
- * Appends a note per attachment so CLIs without an image flag still find the file. Agents read
- * images through their file-reading tool (Claude's `Read` renders PNG/JPEG).
+ * Appends a path per attachment so CLIs without an image flag still receive the user-provided file.
  */
 export function promptWithAttachments(
   prompt: string,
@@ -27,11 +26,7 @@ export function promptWithAttachments(
 ): string {
   const notes = attachments
     .filter((a) => !(opts.skipImages && isImage(a)))
-    .map((a) =>
-      isImage(a)
-        ? `Sketch: ${a.path} — read it with the Read tool.`
-        : `Attachment (${a.mime}): ${a.path}`,
-    );
+    .map((a) => (isImage(a) ? `Sketch: ${a.path}` : `Attachment (${a.mime}): ${a.path}`));
   if (notes.length === 0) return prompt;
   return `${prompt}\n\n${notes.join("\n")}`;
 }

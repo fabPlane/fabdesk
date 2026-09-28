@@ -5,12 +5,12 @@ Protocol. Any MCP-capable coding agent can drive a Fabdesk project from the term
 
 Two transports are available:
 
-| Transport | Command / URL | When to use |
-| --- | --- | --- |
-| **stdio** | `fabdesk-core mcp` | Recommended. The subprocess proxies to the running Fabdesk app (so the GUI shows live routing frames and results) and falls back to a standalone in-process server when the app is not running (`--standalone` forces this). |
-| **streamable HTTP** | `http://127.0.0.1:<port>/mcp` with `Authorization: Bearer <token>` | When the client supports remote MCP servers. Port and token are in `daemon.json` (see below). |
+| Transport           | Command / URL                                                      | When to use                                                                                                                                                                                                                  |
+| ------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **stdio**           | `fabdesk-core mcp`                                                 | Recommended. The subprocess proxies to the running Fabdesk app (so the GUI shows live routing frames and results) and falls back to a standalone in-process server when the app is not running (`--standalone` forces this). |
+| **streamable HTTP** | `http://127.0.0.1:<port>/mcp` with `Authorization: Bearer <token>` | When the client supports remote MCP servers. Port and token are in `daemon.json` (see below).                                                                                                                                |
 
-Only the **core** toolset (`project_status`, `circuit_build`, `circuit_read_errors`, `route_run`,
+Only the **core** toolset (`pcb_environment`, `project_status`, `circuit_build`, `circuit_read_errors`, `route_run`,
 `verify_drc`, `render_board`, `load_toolset`) is listed at start. Ask the agent to call
 `load_toolset` with `project`, `circuit`, `route`, `kicad`, `verify`, `render`, `export`, `sim` or `app`
 (drive the running desktop window; see [app-automation.md](app-automation.md))
@@ -18,12 +18,12 @@ to enable more; the tool list refreshes automatically.
 
 ## Locating the binary
 
-| Platform | Path |
-| --- | --- |
-| macOS | `/Applications/fabPlane.app/Contents/Resources/core/fabdesk-core` |
-| Linux (AppImage) | `<mount>/resources/core/fabdesk-core`, or `~/.local/bin/fabdesk` after `fabdesk-core install-cli` |
-| Windows | `C:\Users\<you>\AppData\Local\Programs\fabPlane\resources\core\fabdesk-core.exe` |
-| Development checkout | `bun run /path/to/fabdesk/apps/core/src/main.ts` |
+| Platform             | Path                                                                                              |
+| -------------------- | ------------------------------------------------------------------------------------------------- |
+| macOS                | `/Applications/fabPlane.app/Contents/Resources/core/fabdesk-core`                                 |
+| Linux (AppImage)     | `<mount>/resources/core/fabdesk-core`, or `~/.local/bin/fabdesk` after `fabdesk-core install-cli` |
+| Windows              | `C:\Users\<you>\AppData\Local\Programs\fabPlane\resources\core\fabdesk-core.exe`                  |
+| Development checkout | `bun run /path/to/fabdesk/apps/core/src/main.ts`                                                  |
 
 Run `fabdesk-core install-cli` once to get a `fabdesk` symlink in `~/.local/bin`; the snippets
 below use the full macOS path — substitute yours.
@@ -126,11 +126,11 @@ Allow the tools with `--allow "MCPTool(fabdesk__*)"`.
 The running app writes `daemon.json` (`{version, pid, port, host, token, startedAt, channel, authMode}`,
 mode 0600) to the Fabdesk home directory:
 
-| Platform | `FABDESK_HOME` default |
-| --- | --- |
-| macOS | `~/Library/Application Support/fabdesk` |
-| Linux | `$XDG_CONFIG_HOME/fabdesk` (`~/.config/fabdesk`) |
-| Windows | `%APPDATA%\fabdesk` |
+| Platform | `FABDESK_HOME` default                           |
+| -------- | ------------------------------------------------ |
+| macOS    | `~/Library/Application Support/fabdesk`          |
+| Linux    | `$XDG_CONFIG_HOME/fabdesk` (`~/.config/fabdesk`) |
+| Windows  | `%APPDATA%\fabdesk`                              |
 
 `fabdesk-core mcp` reads it to find the live daemon. Set `FABDESK_HOME` to relocate it.
 

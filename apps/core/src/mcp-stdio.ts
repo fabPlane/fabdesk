@@ -41,9 +41,16 @@ export async function findLiveDaemon(path: string): Promise<DaemonHandshake | nu
   const hs = await readHandshake(path);
   if (!hs || !pidAlive(hs.pid)) return null;
   try {
-    const res = await fetch(`http://${hs.host}:${hs.port}/health`, { signal: AbortSignal.timeout(1500) });
+    const res = await fetch(`http://${hs.host}:${hs.port}/health`, {
+      signal: AbortSignal.timeout(1500),
+    });
     if (!res.ok) return null;
-    const auth = await fetch(`http://${hs.host}:${hs.port}/settings`, { headers: { authorization: `Bearer ${hs.token}` }, signal: AbortSignal.timeout(1500) });
+    const health = (await res.json()) as { runtimeId?: string | null };
+    if (hs.runtimeId && health.runtimeId !== hs.runtimeId) return null;
+    const auth = await fetch(`http://${hs.host}:${hs.port}/settings`, {
+      headers: { authorization: `Bearer ${hs.token}` },
+      signal: AbortSignal.timeout(1500),
+    });
     return auth.status === 200 ? hs : null;
   } catch {
     return null;
@@ -74,11 +81,19 @@ export async function runMcpStdio(opts: McpStdioOptions = {}): Promise<void> {
 
 /** Generic JSON-RPC proxy: every request/notification is forwarded verbatim in both directions. */
 async function proxyToDaemon(hs: DaemonHandshake, projectDir: string | null): Promise<void> {
-  const client = new Client({ name: "fabdesk-core-stdio", version: hs.version }, { capabilities: {} });
-  const transport = new StreamableHTTPClientTransport(new URL(`http://${hs.host}:${hs.port}/mcp`), { requestInit: { headers: { authorization: `Bearer ${hs.token}` } } });
+  const client = new Client(
+    { name: "fabdesk-core-stdio", version: hs.version },
+    { capabilities: {} },
+  );
+  const transport = new StreamableHTTPClientTransport(new URL(`http://${hs.host}:${hs.port}/mcp`), {
+    requestInit: { headers: { authorization: `Bearer ${hs.token}` } },
+  });
   await client.connect(transport as unknown as Transport);
   const remoteCaps = client.getServerCapabilities() ?? {};
-  const server = new Server({ name: "fabdesk", version: hs.version }, { capabilities: remoteCaps, instructions: client.getInstructions() ?? INSTRUCTIONS });
+  const server = new Server(
+    { name: "fabdesk", version: hs.version },
+    { capabilities: remoteCaps, instructions: client.getInstructions() ?? INSTRUCTIONS },
+  );
   const Any = z.looseObject({});
   server.fallbackRequestHandler = async (request) => {
     const params = { ...((request.params as Record<string, unknown> | undefined) ?? {}) };
@@ -90,10 +105,14 @@ async function proxyToDaemon(hs: DaemonHandshake, projectDir: string | null): Pr
     return client.request({ method: request.method, params }, Any as never);
   };
   server.fallbackNotificationHandler = async (n) => {
-    await client.notification({ method: n.method, ...(n.params ? { params: n.params } : {}) } as never).catch(() => {});
+    await client
+      .notification({ method: n.method, ...(n.params ? { params: n.params } : {}) } as never)
+      .catch(() => {});
   };
   client.fallbackNotificationHandler = async (n) => {
-    await server.notification({ method: n.method, ...(n.params ? { params: n.params } : {}) } as never).catch(() => {});
+    await server
+      .notification({ method: n.method, ...(n.params ? { params: n.params } : {}) } as never)
+      .catch(() => {});
   };
   client.onclose = () => {
     logger.info("daemon connection closed; exiting");
@@ -114,30 +133,90 @@ async function standalone(opts: McpStdioOptions, projectDir: string | null): Pro
   await mkdir(config.home, { recursive: true });
   const bus = new EventBus();
   const store = Store.open(config.dbPath);
-  const auth = await createAuth({ mode: config.authMode, channel: config.channel, home: config.home, apiOrigin: config.apiOrigin, emit: () => {} });
-  const projects = new ProjectStore(store.projects, config.projectsDir, (e) => bus.emit(e), { watch: false });
+  const auth = await createAuth({
+    mode: config.authMode,
+    channel: config.channel,
+    home: config.home,
+    apiOrigin: config.apiOrigin,
+    emit: () => {},
+  });
+  const projects = new ProjectStore(store.projects, config.projectsDir, (e) => bus.emit(e), {
+    watch: false,
+  });
   await projects.init();
   // Standalone: persist route frames under FABDESK_HOME/cinema too so the GUI can replay them later.
   bus.subscribe(["route.*"], (events) => {
     for (const ev of events) {
       const e = ev.event;
-      const runId = e.topic === "route.meta" ? e.meta.runId : e.topic === "route.static" ? e.static.runId : e.topic === "route.frame" ? e.frame.runId : e.topic === "route.done" ? e.result.runId : null;
+      const runId =
+        e.topic === "route.meta"
+          ? e.meta.runId
+          : e.topic === "route.static"
+            ? e.static.runId
+            : e.topic === "route.frame"
+              ? e.frame.runId
+              : e.topic === "route.done"
+                ? e.result.runId
+                : null;
       if (!runId) continue;
-      const line = JSON.stringify(e.topic === "route.done" ? { kind: "result", runId, result: e.result } : e.topic === "route.meta" ? e.meta : e.topic === "route.static" ? e.static : e.topic === "route.frame" ? e.frame : e) + "\n";
+      const line =
+        JSON.stringify(
+          e.topic === "route.done"
+            ? { kind: "result", runId, result: e.result }
+            : e.topic === "route.meta"
+              ? e.meta
+              : e.topic === "route.static"
+                ? e.static
+                : e.topic === "route.frame"
+                  ? e.frame
+                  : e,
+        ) + "\n";
       const path = join(config.home, "cinema", `${runId}.jsonl`);
-      void mkdir(join(config.home, "cinema"), { recursive: true }).then(() => Bun.file(path).exists().then(async (ex) => { const prev = ex ? await Bun.file(path).text() : ""; await Bun.write(path, prev + line); })).catch(() => {});
+      void mkdir(join(config.home, "cinema"), { recursive: true })
+        .then(() =>
+          Bun.file(path)
+            .exists()
+            .then(async (ex) => {
+              const prev = ex ? await Bun.file(path).text() : "";
+              await Bun.write(path, prev + line);
+            }),
+        )
+        .catch(() => {});
     }
   });
   const { createServices } = await import("./services");
-  const services = await createServices({ version: config.version, channel: config.channel, settings: () => store.settings.get(), projects, bus, routeRuns: store.routeRuns, principal: () => auth.principal(), home: config.home, token: config.token, appBridgeFile: locateAppBridgeFile(config.handshakePath) });
+  const services = await createServices({
+    version: config.version,
+    runtimeId: config.runtimeId,
+    channel: config.channel,
+    settings: () => store.settings.get(),
+    projects,
+    bus,
+    routeRuns: store.routeRuns,
+    principal: () => auth.principal(),
+    home: config.home,
+    token: config.token,
+    appBridgeFile: locateAppBridgeFile(config.handshakePath),
+  });
   const registry = createRegistry();
   let defaultProject: ProjectHandle | null = null;
   if (projectDir) {
     defaultProject = await projects.resolve(projectDir);
-    if (!defaultProject) logger.warn("project directory has no fabdesk.json; tools need an explicit `project`", { projectDir });
+    if (!defaultProject)
+      logger.warn("project directory has no fabdesk.json; tools need an explicit `project`", {
+        projectDir,
+      });
   }
-  const ctxFactory = createContextFactory({ services, projects, tokens: new TokenSet(config.token), defaultProject: async () => defaultProject });
-  const server = new McpServer({ name: "fabdesk", version: config.version }, { instructions: INSTRUCTIONS });
+  const ctxFactory = createContextFactory({
+    services,
+    projects,
+    tokens: new TokenSet(config.token),
+    defaultProject: async () => defaultProject,
+  });
+  const server = new McpServer(
+    { name: "fabdesk", version: config.version },
+    { instructions: INSTRUCTIONS },
+  );
   attachToRegistry(server, registry, ctxFactory);
   const stdio = new StdioServerTransport();
   await server.connect(stdio);

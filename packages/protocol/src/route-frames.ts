@@ -77,6 +77,32 @@ export const RouteResult = z.object({
   complete: z.array(z.string()),
   open: z.array(z.string()),
   timedOut: z.boolean(),
+  state: z
+    .enum(["complete", "partial", "blocked", "no-progress", "unavailable", "timeout", "failed"])
+    .optional(),
+  remainingEndpoints: z
+    .array(
+      z.object({
+        net: z.string(),
+        from: z.object({ x: z.number(), y: z.number() }),
+        to: z.object({ x: z.number(), y: z.number() }),
+      }),
+    )
+    .optional(),
+  obstacles: z.array(z.string()).optional(),
+  changedGeometry: z
+    .array(
+      z.object({
+        kind: z.enum(["trace", "via"]),
+        id: z.string(),
+        layer: z.number(),
+        net: z.number(),
+        points: z.array(z.number()),
+        width: z.number().optional(),
+      }),
+    )
+    .optional(),
+  nextActions: z.array(z.string()).optional(),
   stats: z.object({
     vias: z.number().int(),
     segments: z.number().int(),

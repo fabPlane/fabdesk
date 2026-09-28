@@ -31,6 +31,7 @@ jobs:
     uses: ./.github/workflows/select-linux-runner.yml
     with:
       blacksmith-runner: blacksmith-4vcpu-ubuntu-2404
+      selection-delay-seconds: 30
     secrets: inherit
 
   real-board-pipeline:

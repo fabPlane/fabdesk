@@ -8,7 +8,7 @@ export const circuit_query = defineTool({
   toolset: "circuit",
   title: "Query the board",
   description:
-    "List what the board holds, straight from KiCad, as a compact table: components (ref, value, footprint, position), nets (name, pad count), pads (component, number, net, position, size), vias (position, net; a blank's free vias have an empty net), tracks (routed tracks/arcs/vias per net), unrouted (the airlines still open) or outline (the Edge.Cuts bounding box in mm — read it before circuit_place: the outline's corner is not at 0,0). Optional substring filter on names. Requires circuit_build.",
+    "List board contents from KiCad as a compact table: components, nets, pads, vias, tracks, unrouted connections, or the board outline. Supports an optional substring filter.",
   inputSchema: {
     select: z.enum(["components", "nets", "pads", "vias", "tracks", "unrouted", "outline"]),
     filter: z
@@ -34,24 +34,41 @@ export const circuit_search_parts = defineTool({
   toolset: "circuit",
   title: "Search KiCad libraries",
   description:
-    "Search the KiCad footprint or symbol libraries the design server can see. Footprint results go in component `footprint`; symbol results split at the colon into `libSource: {lib, part}` so circuit_build can draw the generated schematic.",
+    "Search the KiCad symbol or footprint libraries available to the native design server. Returns exact library identifiers, descriptions, and role suitability for native schematic and PCB operations.",
   inputSchema: {
     query: z.string().min(1).max(200),
     kind: z.enum(["footprint", "symbol"]).default("footprint"),
+    role: z
+      .enum(["power-only-usb-c"])
+      .optional()
+      .describe("Optional functional role used to rank matching parts"),
     limit: z.number().int().min(1).max(50).default(10),
   },
   annotations: { readOnlyHint: true, idempotentHint: true },
   scope: "global",
-  handler: async ({ query, kind, limit }, ctx) => {
-    const hits = await (kind === "symbol"
-      ? ctx.services.design.searchSymbols(query, limit)
-      : ctx.services.design.searchFootprints(query, limit));
+  handler: async ({ query, kind, role, limit }, ctx) => {
+    const searchQuery = role ? `${query} power-only USB-C` : query;
+    const matches = await (kind === "symbol"
+      ? ctx.services.design.searchSymbols(searchQuery, limit)
+      : ctx.services.design.searchFootprints(searchQuery, limit));
+    // Search is for discovery, so do not echo embedded pin/pad geometry for every candidate.
+    // Exact details remain available through circuit_describe_part.
+    const hits = matches.map(({ libId, description, part }) => ({
+      libId,
+      description,
+      ...(role
+        ? {
+            roleSuitable:
+              part?.roleSuitability?.find((entry) => entry.role === role)?.suitable ?? false,
+          }
+        : {}),
+    }));
     const label = kind === "symbol" ? "Symbols" : "Footprints";
     return ok(
       hits.length
         ? `${label} matching "${query}":\n${table(hits, ["libId", "description"])}`
         : `No ${kind} libraries match "${query}".`,
-      { query, kind, hits },
+      { query, kind, role: role ?? null, hits },
     );
   },
 });
@@ -61,7 +78,7 @@ export const circuit_describe_part = defineTool({
   toolset: "circuit",
   title: "Describe a KiCad part",
   description:
-    "Inspect one exact KiCad symbol or footprint before wiring or placing it. Symbols return pin numbers, names and electrical types; footprints return pad numbers, anchor-relative positions and sizes in millimetres.",
+    "Return details for one exact KiCad symbol or footprint. Symbols include pin numbers, names and electrical types; footprints include pad numbers, anchor-relative positions and sizes in millimetres.",
   inputSchema: {
     kind: z.enum(["footprint", "symbol"]),
     libId: z
@@ -75,8 +92,49 @@ export const circuit_describe_part = defineTool({
   handler: async ({ kind, libId }, ctx) => {
     const part = await ctx.services.design.describePart(kind, libId);
     const rows = kind === "symbol" ? (part.pins ?? []) : (part.pads ?? []);
-    return ok(`${kind} ${libId}: ${part.description || "(no description)"}\n${table(rows)}`, part);
+    const facts =
+      kind === "footprint"
+        ? `\nPackage: ${JSON.stringify(part.package ?? { status: "unsupported" })}\nFabrication: ${JSON.stringify(part.fabrication ?? { status: "unsupported" })}`
+        : `\nRoles: ${JSON.stringify(part.roleSuitability ?? [])}`;
+    return ok(
+      `${kind} ${libId}: ${part.description || "(no description)"}${facts}\n${table(rows)}`,
+      part,
+    );
   },
 });
 
-export const circuitTools = [circuit_query, circuit_search_parts, circuit_describe_part];
+export const circuit_check_part_compatibility = defineTool({
+  name: "circuit_check_part_compatibility",
+  toolset: "circuit",
+  title: "Check symbol and footprint compatibility",
+  description:
+    "Read-only pre-placement check for one exact KiCad symbol/footprint pair. Reports pin-to-pad mappings, mechanical/fabrication facts, and optional role suitability without modifying a project.",
+  inputSchema: {
+    symbolLibId: z.string().min(3).max(300).describe("Exact symbol Library:Name"),
+    footprintLibId: z.string().min(3).max(300).describe("Exact footprint Library:Name"),
+    role: z.enum(["power-only-usb-c"]).optional(),
+  },
+  annotations: { readOnlyHint: true, idempotentHint: true },
+  scope: "global",
+  handler: async ({ symbolLibId, footprintLibId, role }, ctx) => {
+    const result = await ctx.services.design.checkPartCompatibility(
+      symbolLibId,
+      footprintLibId,
+      role,
+    );
+    const state = result.compatible ? "compatible" : "incompatible";
+    return ok(
+      `${symbolLibId} + ${footprintLibId}: ${state}\nMatched pins/pads: ${result.pinPad.matched.join(", ") || "none"}` +
+        `${result.issues.length ? `\nIssues:\n- ${result.issues.join("\n- ")}` : ""}` +
+        `${result.warnings.length ? `\nWarnings:\n- ${result.warnings.join("\n- ")}` : ""}`,
+      result,
+    );
+  },
+});
+
+export const circuitTools = [
+  circuit_query,
+  circuit_search_parts,
+  circuit_describe_part,
+  circuit_check_part_compatibility,
+];

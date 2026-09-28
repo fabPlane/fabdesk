@@ -52,6 +52,31 @@ import {
 } from "./usage-archive";
 import { UsageApiArchiveWriter } from "./usage-api";
 
+export type ExperimentalAgentInterface = "substrate" | "programmable";
+
+export function configuredAgentInterface(
+  env: NodeJS.ProcessEnv = process.env,
+): ExperimentalAgentInterface | undefined {
+  const value = env["FABDESK_AGENT_INTERFACE"];
+  return value === "substrate" || value === "programmable" ? value : undefined;
+}
+
+/** The control clears direct authoring IPC; Condition A receives the attested bridge URL. */
+export function agentBridgeEnvironment(
+  mode: ExperimentalAgentInterface | undefined,
+  bridgeUrl: string | undefined,
+): Record<string, string> {
+  if (mode === "substrate") return { FABDESK_FP_PCB_BRIDGE_URL: "" };
+  return bridgeUrl ? { FABDESK_FP_PCB_BRIDGE_URL: bridgeUrl } : {};
+}
+
+/** Both experiment arms keep the promoted MCP inventory empty. */
+export function agentMcpProfile(
+  mode: ExperimentalAgentInterface | undefined,
+): "substrate" | undefined {
+  return mode ? "substrate" : undefined;
+}
+
 export type ServeOptions = {
   port?: number;
   host?: string;
@@ -273,6 +298,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
           await import("./services")
         ).createServices({
           version: config.version,
+          runtimeId: config.runtimeId,
           channel: config.channel,
           settings: () => store.settings.get(),
           projects,
@@ -298,6 +324,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   });
 
   const adapters = opts.adapters ?? (await loadAdapters());
+  const agentInterface = configuredAgentInterface();
   let mcpUrl = "";
   const runs = new AgentRunManager({
     store,
@@ -306,10 +333,30 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     get mcpUrl() {
       return mcpUrl;
     },
+    ...(agentMcpProfile(agentInterface) ? { mcpProfile: agentMcpProfile(agentInterface)! } : {}),
     adapters,
     settings: () => store.settings.get(),
     workspaceDir: join(config.home, "workspace"),
     telemetry,
+    agentEnvironment: async ({ cwd, project }) => {
+      const [cli, design] = await Promise.all([
+        services.kicad.resolveCli().catch(() => null),
+        services.design.status(),
+      ]);
+      return {
+        FABDESK_PROJECT_DIR: cwd,
+        ...(mcpUrl ? { FABDESK_CORE_URL: new URL(mcpUrl).origin } : {}),
+        ...(project
+          ? {
+              FABDESK_KICAD_PROJECT: join(project.dir, "board.kicad_pro"),
+              FABDESK_KICAD_SCHEMATIC: join(project.dir, "board.kicad_sch"),
+              FABDESK_KICAD_BOARD: join(project.dir, "board.kicad_pcb"),
+            }
+          : {}),
+        ...(cli ? { KICAD_CLI: cli.path } : {}),
+        ...agentBridgeEnvironment(agentInterface, design.url),
+      };
+    },
     // Only fabdesk's own tools have annotations the classifier trusts; another server's tool is a write.
     annotationsFor: (tool, server) =>
       server === null || server === "fabdesk" ? registry.get(tool)?.annotations : undefined,
@@ -332,6 +379,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
           ...(board.template !== undefined ? { template: board.template } : {}),
         },
         mcpServerName: agents.MCP_SERVER_NAME,
+        ...(agentInterface ? { interfaceMode: agentInterface } : {}),
       });
     },
   });
@@ -575,8 +623,15 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       startedAt: new Date(startedAt).toISOString(),
       channel: config.channel,
       authMode: auth.mode,
+      ...(config.runtimeId ? { runtimeId: config.runtimeId } : {}),
     });
-  const ready: ReadyLine = { ok: true, port, pid: process.pid, version: config.version };
+  const ready: ReadyLine = {
+    ok: true,
+    port,
+    pid: process.pid,
+    version: config.version,
+    ...(config.runtimeId ? { runtimeId: config.runtimeId } : {}),
+  };
   if (!opts.quiet) process.stdout.write(JSON.stringify(ready) + "\n");
   void runSentryTest();
   logger.info("fabdesk-core listening", {

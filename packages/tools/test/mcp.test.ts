@@ -6,12 +6,15 @@ import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/typ
 import { attachToRegistry, createRegistry } from "../src";
 import { contextFactory, mockServices, tempProject } from "./mock-services";
 
-async function pair() {
+async function pair(initialTools?: string[], capabilityExclude?: string[]) {
   const registry = createRegistry();
   const project = await tempProject("mcp");
   const services = mockServices([project]);
   const server = new McpServer({ name: "fabdesk-test", version: "0.0.0" });
-  const attachment = attachToRegistry(server, registry, contextFactory(services, project));
+  const attachment = attachToRegistry(server, registry, contextFactory(services, project), {
+    ...(initialTools ? { initialTools } : {}),
+    ...(capabilityExclude ? { capabilityExclude } : {}),
+  });
   const [clientT, serverT] = InMemoryTransport.createLinkedPair();
   await server.connect(serverT);
   const client = new Client({ name: "test-client", version: "0.0.0" });
@@ -20,15 +23,68 @@ async function pair() {
 }
 
 describe("mcp adapter", () => {
+  test("native profile is small and searches/calls the hidden catalog", async () => {
+    const { client } = await pair(["project_status", "pcb_inspect"]);
+    expect((await client.listTools()).tools.map((tool) => tool.name).sort()).toEqual([
+      "capability_call",
+      "capability_search",
+      "pcb_inspect",
+      "project_status",
+    ]);
+    const undiscovered = await client.callTool({
+      name: "capability_call",
+      arguments: {
+        name: "circuit_describe_part",
+        arguments: { kind: "symbol", libId: "Device:R" },
+      },
+    });
+    expect(undiscovered.isError).toBe(true);
+    const search = await client.callTool({
+      name: "capability_search",
+      arguments: { query: "describe part pins" },
+    });
+    const matches = (search.structuredContent as { matches: Array<{ name: string }> }).matches;
+    expect(matches.some((match) => match.name === "circuit_describe_part")).toBe(true);
+    const called = await client.callTool({
+      name: "capability_call",
+      arguments: {
+        name: "circuit_describe_part",
+        arguments: { kind: "symbol", libId: "Device:R" },
+      },
+    });
+    expect(called.isError).toBeFalsy();
+    expect((called.content as Array<{ text?: string }>)[0]?.text).toContain("symbol Device:R");
+  });
+
+  test("native capability search hides legacy netlist compiler operations", async () => {
+    const { client } = await pair(
+      ["project_status", "pcb_inspect"],
+      ["circuit_build", "circuit_read_errors", "load_toolset"],
+    );
+    const search = await client.callTool({
+      name: "capability_search",
+      arguments: { query: "netlist libSource build errors", limit: 20 },
+    });
+    const names = (search.structuredContent as { matches: Array<{ name: string }> }).matches.map(
+      (match) => match.name,
+    );
+    expect(names).not.toContain("circuit_build");
+    expect(names).not.toContain("circuit_read_errors");
+    expect(names).not.toContain("load_toolset");
+  });
+
   test("core tools visible, load_toolset enables more and emits list_changed", async () => {
     const { client, attachment } = await pair();
     const initial = await client.listTools();
     const names = initial.tools.map((t) => t.name).sort();
     expect(names).toEqual([
+      "capability_call",
+      "capability_search",
       "circuit_build",
       "circuit_place",
       "circuit_read_errors",
       "load_toolset",
+      "pcb_environment",
       "project_status",
       "render_board",
       "route_run",
@@ -48,7 +104,7 @@ describe("mcp adapter", () => {
     expect(res.isError).toBeFalsy();
     const after = await client.listTools();
     expect(after.tools.map((t) => t.name)).toContain("export_gerbers");
-    expect(after.tools.length).toBe(8 + 7);
+    expect(after.tools.length).toBe(11 + 7);
     expect(attachment.session.enabledToolsets()).toEqual(["core", "export"]);
     await new Promise((r) => setTimeout(r, 10));
     expect(listChanged).toBeGreaterThan(0);
@@ -59,7 +115,13 @@ describe("mcp adapter", () => {
     const status = await client.callTool({ name: "project_status", arguments: {} });
     const text = (status.content as Array<{ type: string; text?: string }>)[0]!.text!;
     expect(text).toContain('Project "mcp"');
-    expect((status.structuredContent as { name: string }).name).toBe("mcp");
+    expect(status.structuredContent).toMatchObject({
+      contract: { name: "fabdesk.project-status", version: "2.0.0" },
+      name: "mcp",
+      lastSourceBuild: null,
+      lastRelease: { status: "never" },
+    });
+    expect((status.structuredContent as Record<string, unknown>)["lastBuild"]).toBeUndefined();
 
     const progress: number[] = [];
     const build = await client.callTool({ name: "circuit_build", arguments: {} }, undefined, {
@@ -69,16 +131,15 @@ describe("mcp adapter", () => {
     expect(progress.length).toBeGreaterThan(0);
     expect(progress.at(-1)).toBe(100);
 
-    // A long-running tool repeats its last progress on a timer so a client with an idle timeout
-    // (Claude Code aborts after ~5 silent minutes) keeps waiting through a quiet solver phase.
+    // Durable routing returns immediately; it no longer needs request heartbeats to survive a
+    // client idle timeout.
     process.env["FABDESK_MCP_HEARTBEAT_MS"] = "2";
     try {
       const beats: number[] = [];
       await client.callTool({ name: "route_run", arguments: { timeoutMs: 1000 } }, undefined, {
         onprogress: (p) => beats.push(p.progress),
       });
-      const repeats = beats.filter((v, i) => i > 0 && v === beats[i - 1]).length;
-      expect(repeats).toBeGreaterThan(0);
+      expect(beats.length).toBeLessThanOrEqual(1);
     } finally {
       delete process.env["FABDESK_MCP_HEARTBEAT_MS"];
     }
@@ -91,7 +152,7 @@ describe("mcp adapter", () => {
     expect((bad.content as Array<{ text: string }>)[0]!.text).toContain("no project selected");
   });
 
-  test("svg render returns an embedded resource; resources and prompts listed", async () => {
+  test("svg render returns an embedded resource; resources are listed without workflow prompts", async () => {
     const { client, project } = await pair();
     await client.callTool({ name: "circuit_build", arguments: {} });
     await client.callTool({ name: "load_toolset", arguments: { toolset: "render" } });
@@ -102,7 +163,6 @@ describe("mcp adapter", () => {
     const templates = await client.listResourceTemplates();
     expect(templates.resourceTemplates.map((t) => t.uriTemplate).sort()).toEqual([
       "fabdesk://project/{id}/board-summary",
-      "fabdesk://project/{id}/circuit.netlist.json",
       "fabdesk://project/{id}/manifest",
       "fabdesk://project/{id}/reports/{name}",
     ]);
@@ -121,22 +181,6 @@ describe("mcp adapter", () => {
     });
     expect(JSON.parse(report.contents[0]!.text as string).ok).toBe(true);
 
-    const prompts = await client.listPrompts();
-    expect(prompts.prompts.map((p) => p.name).sort()).toEqual([
-      "design_from_sketch",
-      "fix_drc",
-      "reroute_open_nets",
-    ]);
-    const prompt = await client.getPrompt({
-      name: "design_from_sketch",
-      arguments: { project: project.id, requirements: "blink an LED" },
-    });
-    const promptText = (prompt.messages[0]!.content as { text: string }).text;
-    expect(promptText).toContain("blink an LED");
-    expect(promptText).toContain("run both render_schematic_svg and render_pcb_svg");
-    expect(promptText).toContain("verify_drc with schematicParity=true");
-    expect(promptText).toContain(
-      "Never claim the project passes when a required report is missing",
-    );
+    expect(client.getServerCapabilities()?.prompts).toBeUndefined();
   });
 });
