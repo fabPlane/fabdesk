@@ -1,0 +1,54 @@
+name: Artifact cleanup
+
+# Deletes this repository's workflow artifacts older than max_age_days (default 7, the longest
+# retention any workflow here requests), so old test reports and builds stop counting against the
+# organization's shared Actions storage quota. Only this repository's artifacts are touched.
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+    inputs:
+      max_age_days:
+        description: Delete artifacts older than this many days (minimum 1)
+        required: false
+        default: "7"
+
+permissions:
+  actions: write
+
+concurrency:
+  group: artifact-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: [self-hosted, Linux, X64, tf-nas-ephemeral, fabdesk]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/github-script@v7
+        env:
+          MAX_AGE_DAYS: ${{ inputs.max_age_days || '7' }}
+        with:
+          script: |
+            const days = Number(process.env.MAX_AGE_DAYS);
+            if (!Number.isFinite(days) || days < 1) throw new Error(`max_age_days must be a number >= 1, got ${process.env.MAX_AGE_DAYS}`);
+            const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+            const { owner, repo } = context.repo;
+            // List everything first: deleting while paging would shift later pages.
+            const all = await github.paginate(github.rest.actions.listArtifactsForRepo, { owner, repo, per_page: 100 });
+            const old = all.filter((a) => !a.expired && Date.parse(a.created_at) < cutoff);
+            let deleted = 0, bytes = 0, failed = 0;
+            for (const a of old) {
+              try {
+                await github.rest.actions.deleteArtifact({ owner, repo, artifact_id: a.id });
+                deleted++;
+                bytes += a.size_in_bytes;
+              } catch (error) {
+                failed++;
+                core.warning(`could not delete artifact ${a.id} (${a.name}): ${error.message}`);
+              }
+            }
+            const line = `Deleted ${deleted} of ${all.length} artifacts older than ${days} days (${(bytes / 1e6).toFixed(1)} MB); ${failed} failed.`;
+            core.info(line);
+            await core.summary.addRaw(line).write();
