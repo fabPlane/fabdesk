@@ -65,6 +65,30 @@ export function killTree(pid: number, signal: Signal): void {
   }
 }
 
+function signalPids(pids: readonly number[], signal: Signal): void {
+  for (const pid of pids) {
+    try {
+      process.kill(pid, signal);
+    } catch {
+      /* already gone */
+    }
+  }
+}
+
+function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForExit(pids: readonly number[], timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (pids.some(isAlive) && Date.now() < deadline) await Bun.sleep(50);
+}
+
 export interface AgentProcessOptions {
   cmd: string[];
   cwd: string;
@@ -98,6 +122,16 @@ export function runAgentProcess(opts: AgentProcessOptions): AgentRun {
 
   let aborted = false;
   let exited = false;
+  /**
+   * Every PID of the tree seen since abort, so a child re-parented after the root exits (it is no
+   * longer the root's descendant) is still reached.
+   */
+  const abortTargets = new Set<number>();
+  const signalAbortTree = (pid: number, signal: Signal) => {
+    for (const child of descendantPids(pid).reverse()) abortTargets.add(child);
+    abortTargets.add(pid);
+    signalPids([...abortTargets], signal);
+  };
   const timers: ReturnType<typeof setTimeout>[] = [];
   const clearTimers = () => {
     for (const t of timers) clearTimeout(t);
@@ -115,9 +149,15 @@ export function runAgentProcess(opts: AgentProcessOptions): AgentRun {
     if (!proc || exited || aborted) return;
     aborted = true;
     const pid = proc.pid;
-    killTree(pid, "SIGINT");
-    schedule(TERM_GRACE_MS, () => killTree(pid, "SIGTERM"));
-    schedule(TERM_GRACE_MS + KILL_GRACE_MS, () => killTree(pid, "SIGKILL"));
+    if (process.platform === "win32") {
+      killTree(pid, "SIGINT");
+      schedule(TERM_GRACE_MS, () => killTree(pid, "SIGTERM"));
+      schedule(TERM_GRACE_MS + KILL_GRACE_MS, () => killTree(pid, "SIGKILL"));
+      return;
+    }
+    signalAbortTree(pid, "SIGINT");
+    schedule(TERM_GRACE_MS, () => signalAbortTree(pid, "SIGTERM"));
+    schedule(TERM_GRACE_MS + KILL_GRACE_MS, () => signalAbortTree(pid, "SIGKILL"));
   };
 
   async function* events(): AsyncGenerator<AgentEvent> {
@@ -151,6 +191,20 @@ export function runAgentProcess(opts: AgentProcessOptions): AgentRun {
       }
       const exitCode = await proc.exited;
       exited = true;
+      // The root CLI may exit on SIGINT while a router/tool child ignores it and is re-parented.
+      // Finish off what abort saw before reporting done: `done` releases the run's project lease,
+      // and a surviving child could otherwise keep writing next to the project's next run.
+      if (aborted) {
+        const rootPid = proc.pid;
+        const survivors = [...abortTargets].filter((pid) => pid !== rootPid && isAlive(pid));
+        if (survivors.length) {
+          signalPids(survivors, "SIGTERM");
+          await waitForExit(survivors, KILL_GRACE_MS);
+          const stubborn = survivors.filter(isAlive);
+          signalPids(stubborn, "SIGKILL");
+          await waitForExit(stubborn, 1000);
+        }
+      }
       clearTimers();
       const stderr = (await stderrTail).trim();
       if (exitCode !== 0 && !sawError && !aborted) {

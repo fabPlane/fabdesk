@@ -479,9 +479,10 @@ export function createApp(deps: AppDeps): Hono<Env> {
       deps.runs.resolveInput(c.req.param("id"), c.req.param("requestId"), body.answer),
     );
   });
-  app.delete("/threads/:id", (c) => {
+  app.delete("/threads/:id", async (c) => {
     const id = c.req.param("id");
-    deps.runs?.abortThread(id);
+    // Bounded wait: the run's bookkeeping writes to the thread, so let it wind down first.
+    await deps.runs?.abortThread(id);
     if (!deps.store.threads.delete(id)) return c.json({ error: "not found" }, 404);
     deps.bus.emit({ ts: Date.now(), topic: "thread.deleted", threadId: id });
     return c.json({ ok: true });
@@ -520,6 +521,12 @@ export function createApp(deps: AppDeps): Hono<Env> {
       deps.bus.emit({ ts: Date.now(), topic: "thread.updated", threadId: t.id });
       return c.json({ queued: true, messageId: queued.id, userMessageId: queued.id }, 202);
     }
+    // One agent writes a project at a time (#93). Refused before anything is stored, so the
+    // client keeps the draft and a retry does not leave a duplicate user turn. Not queued even
+    // with `queue`: a thread's queue drains when its own run ends, and this thread has none.
+    const busy = t.projectId ? deps.runs.projectBusyMessage(t.projectId) : null;
+    if (busy)
+      return c.json({ error: busy.message, code: "precondition", threadId: busy.threadId }, 412);
     const switched = agentId !== t.agentId || (!!body.model && body.model !== t.model);
     if (switched)
       deps.store.threads.patch(t.id, { agentId, ...(body.model ? { model: body.model } : {}) });
@@ -561,10 +568,18 @@ export function createApp(deps: AppDeps): Hono<Env> {
     deps.bus.emit({ ts: Date.now(), topic: "thread.updated", threadId: t.id });
     return c.json({ ok: true });
   });
-  app.post("/threads/:id/abort", (c) => {
+  /**
+   * Stops the thread's run and answers once it has ended (the project is free again), or after
+   * a bounded wait with `settled: false` if the agent is slow to exit; it keeps the project until
+   * it does.
+   */
+  app.post("/threads/:id/abort", async (c) => {
     const id = c.req.param("id");
-    const hit = deps.runs?.abortThread(id) ?? false;
-    return c.json({ ok: true, aborted: hit });
+    const { aborted, settled } = (await deps.runs?.abortThread(id)) ?? {
+      aborted: false,
+      settled: true,
+    };
+    return c.json({ ok: true, aborted, settled });
   });
   app.get("/search", (c) => {
     const q = c.req.query("q") ?? "";
