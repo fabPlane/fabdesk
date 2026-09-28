@@ -56,6 +56,7 @@
     "regressions:boards:pr": "bun run scripts/board-regressions.ts --tier pr",
     "regressions:boards:nightly": "bun run scripts/board-regressions.ts --tier nightly",
     "runs:export": "bun run scripts/export-agent-run.ts",
+    "training:backup": "bun run scripts/backup-training-data.ts",
     "fp-pcb:types": "tsc -b vendor/fab_pcb/packages/client",
     "mobile:install": "bun install --cwd apps/mobile",
     "mobile:typecheck": "bun run --cwd apps/mobile typecheck",

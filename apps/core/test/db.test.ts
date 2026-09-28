@@ -232,6 +232,21 @@ describe("sqlite", () => {
     }
     expect(store.runDumps.list(RUN_DUMP_RETENTION.rows + 1)).toHaveLength(RUN_DUMP_RETENTION.rows);
     expect(store.runDumps.get("run_000")).toBeNull();
+    store.runDumps.put(
+      {
+        runId: "run_unbacked",
+        traceId: "trace_unbacked",
+        threadId: "thread_1",
+        agentId: "codex",
+        projectId: null,
+        createdAt: "2026-09-10T00:00:00.000Z",
+        dumpJson: "{}",
+      },
+      false,
+    );
+    expect(store.runDumps.list(RUN_DUMP_RETENTION.rows + 1)).toHaveLength(
+      RUN_DUMP_RETENTION.rows + 1,
+    );
     store.close();
   });
 

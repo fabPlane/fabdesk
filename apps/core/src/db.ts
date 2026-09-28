@@ -768,7 +768,7 @@ type RunDumpRow = {
 
 export class RunDumpRepo {
   constructor(private readonly db: Database) {}
-  put(dump: RunDump): void {
+  put(dump: RunDump, prune = true): void {
     this.db.transaction(() => {
       this.db.run(
         "INSERT INTO run_dumps(run_id, trace_id, thread_id, agent_id, project_id, created_at, dump_json) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(run_id) DO UPDATE SET trace_id = excluded.trace_id, thread_id = excluded.thread_id, agent_id = excluded.agent_id, project_id = excluded.project_id, created_at = excluded.created_at, dump_json = excluded.dump_json",
@@ -782,8 +782,9 @@ export class RunDumpRepo {
           dump.dumpJson,
         ],
       );
-      this.db.run(
-        `DELETE FROM run_dumps WHERE run_id IN (
+      if (prune)
+        this.db.run(
+          `DELETE FROM run_dumps WHERE run_id IN (
           SELECT run_id FROM (
             SELECT run_id,
               ROW_NUMBER() OVER (ORDER BY created_at DESC, run_id DESC) AS row_number,
@@ -791,8 +792,8 @@ export class RunDumpRepo {
             FROM run_dumps
           ) WHERE row_number > ? OR cumulative_bytes > ?
         )`,
-        [RUN_DUMP_RETENTION.rows, RUN_DUMP_RETENTION.bytes],
-      );
+          [RUN_DUMP_RETENTION.rows, RUN_DUMP_RETENTION.bytes],
+        );
     })();
   }
   get(runId: string): RunDump | null {

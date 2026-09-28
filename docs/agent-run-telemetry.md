@@ -71,6 +71,6 @@ bun run runs:export -- run_abc123
 
 Pass a second argument for a different output path, or `-` for stdout.
 
-`runs:export` reads `fabdesk.db` from the normal data directory (or `FABDESK_HOME`) and does not modify the dump. The database copy makes all local runs available from one place; the project-local copy remains useful if a project is moved to another machine.
+`runs:export` reads `fabdesk.db` from the normal data directory (or `FABDESK_HOME`) and does not modify the dump. The database copy makes all local runs available from one place; the project-local copy remains useful if a project is moved to another machine. For long-term retention of conversations and run dumps, see [training data archive](training-data-backup.md).
 
 Optional OpenTelemetry export remains available for an already-managed OTLP/HTTP endpoint by setting `OTEL_EXPORTER_OTLP_ENDPOINT`. It is not needed to create or export LLM dumps. By default OTLP spans contain only metadata, paths, hashes and statuses; set `FABDESK_OTEL_CAPTURE_CONTENT=1` only if you also want truncated prompts, tool inputs/results and KiCad output duplicated into span attributes.

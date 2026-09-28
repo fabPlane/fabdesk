@@ -46,6 +46,7 @@ import {
   setSentryUser,
 } from "./sentry";
 import { RunTelemetry } from "./run-telemetry";
+import { TrainingArchive } from "./training-archive";
 
 export type ServeOptions = {
   port?: number;
@@ -144,7 +145,41 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   const staleRoutes = store.routeRuns.failStale();
   if (staleRoutes) logger.info("failed stale route runs from previous run", { count: staleRoutes });
   const tokens = new TokenSet(config.token);
-  const telemetry = new RunTelemetry({ version: config.version, runDumps: store.runDumps });
+  const archiveDir = process.env["FABDESK_TRAINING_ARCHIVE_DIR"]?.trim();
+  const archive = archiveDir ? new TrainingArchive(archiveDir) : null;
+  let archiveBackfilled = false;
+  if (archive) {
+    try {
+      const counts = await archive.backfill(store.db);
+      archiveBackfilled = true;
+      logger.info("training archive backfilled", counts);
+    } catch (error) {
+      logger.warn("training archive backfill failed; local dump pruning disabled", {
+        error: errMsg(error),
+      });
+    }
+  }
+  const telemetry = new RunTelemetry({
+    version: config.version,
+    runDumps: archive
+      ? {
+          async put(dump) {
+            let backedUp = false;
+            try {
+              await archive.put(dump, store.db);
+              backedUp = true;
+            } catch (error) {
+              logger.warn("training archive failed; retained run dump locally", {
+                runId: dump.runId,
+                error: errMsg(error),
+              });
+            }
+            // Keep the local copy until backup succeeds; bounded pruning could otherwise erase it.
+            store.runDumps.put(dump, backedUp && archiveBackfilled);
+          },
+        }
+      : store.runDumps,
+  });
   const devices = new DeviceStore(store.db);
   tokens.setDeviceLookup((token) => {
     const device = devices.verify(token);
