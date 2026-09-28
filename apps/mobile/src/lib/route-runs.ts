@@ -14,13 +14,22 @@ export interface RunRow {
   live: boolean;
 }
 
+const LIVE_STATUSES: ReadonlySet<RouteRunSummary["status"]> = new Set([
+  "queued",
+  "running",
+  "cancel_requested",
+  "cancelling",
+]);
+
 export function runTone(status: RouteRunSummary["status"]): RunTone {
   switch (status) {
-    case "done":
+    case "completed":
       return "success";
     case "failed":
+    case "interrupted":
       return "danger";
     case "cancelled":
+    case "timed_out":
       return "warning";
     default:
       return "default";
@@ -29,7 +38,9 @@ export function runTone(status: RouteRunSummary["status"]): RunTone {
 
 /** `12/14 routed, 2 open` for a finished run, `routing…` while live, else the status. */
 export function runTitle(run: RouteRunSummary): string {
+  if (run.status === "queued") return "Queued…";
   if (run.status === "running") return "Routing…";
+  if (run.status === "cancel_requested" || run.status === "cancelling") return "Cancelling…";
   if (run.result) {
     const { complete, open } = run.result;
     const total = complete.length + open.length;
@@ -37,7 +48,10 @@ export function runTitle(run: RouteRunSummary): string {
     return open.length > 0 ? `${routed}, ${open.length} open` : routed;
   }
   if (run.status === "failed") return run.error ? `Failed: ${run.error}` : "Failed";
-  return run.status === "cancelled" ? "Cancelled" : "Done";
+  if (run.status === "cancelled") return "Cancelled";
+  if (run.status === "timed_out") return "Timed out";
+  if (run.status === "interrupted") return "Interrupted";
+  return "Done";
 }
 
 export function runDuration(run: RouteRunSummary, now = Date.now()): string {
@@ -57,15 +71,15 @@ export function describeRun(run: RouteRunSummary, now = Date.now()): RunRow {
     subtitle: parts.join(" · "),
     status: run.status,
     tone: runTone(run.status),
-    live: run.status === "running",
+    live: LIVE_STATUSES.has(run.status),
   };
 }
 
 /** Newest first, with anything still running on top regardless of when it started. */
 export function sortRuns(runs: readonly RouteRunSummary[]): RouteRunSummary[] {
   return [...runs].sort((a, b) => {
-    const liveA = a.status === "running" ? 1 : 0;
-    const liveB = b.status === "running" ? 1 : 0;
+    const liveA = LIVE_STATUSES.has(a.status) ? 1 : 0;
+    const liveB = LIVE_STATUSES.has(b.status) ? 1 : 0;
     if (liveA !== liveB) return liveB - liveA;
     return Date.parse(b.startedAt) - Date.parse(a.startedAt);
   });
