@@ -17,7 +17,7 @@ import { attachToRegistry, createRegistry, type ProjectHandle } from "@fabdesk/t
 import { locateAppBridgeFile } from "./app-bridge";
 import { TokenSet } from "./auth";
 import { createAuth } from "./auth-facade";
-import { createCloudService } from "./cloud";
+import { createCloudService, storedCredentialToken } from "./cloud";
 import { EventBus } from "./bus";
 import { resolveConfig } from "./config";
 import { createContextFactory } from "./context";
@@ -199,9 +199,11 @@ async function standalone(opts: McpStdioOptions, projectDir: string | null): Pro
     token: config.token,
     appBridgeFile: locateAppBridgeFile(config.handshakePath),
   });
+  const storedToken =
+    auth.mode === "local" ? storedCredentialToken({ home: config.home, apiOrigin: config.apiOrigin }) : () => null;
   services.cloud = createCloudService({
     apiOrigin: config.apiOrigin,
-    token: () => auth.token(),
+    token: () => auth.token() ?? storedToken(),
     settings: () => store.settings.get(),
   });
   const registry = createRegistry();
