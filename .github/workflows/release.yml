@@ -88,7 +88,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: [self-hosted, macOS, ARM64], target: bun-darwin-arm64, eb: "--mac --arm64" }
+          # The self-hosted Mini is offline; build Apple Silicon on Blacksmith until it is back.
+          - { os: blacksmith-6vcpu-macos-15, target: bun-darwin-arm64, eb: "--mac --arm64" }
           # The self-hosted Mini does not have Rosetta yet, so keep Intel packaging hosted.
           - { os: blacksmith-6vcpu-macos-15, target: bun-darwin-x64, eb: "--mac --x64" }
           - os: ${{ fromJSON(needs.select-build-linux-runner.outputs.runner) }}

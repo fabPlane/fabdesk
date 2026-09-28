@@ -76,8 +76,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { arch: arm64, ext: dmg, os: [self-hosted, macOS, ARM64] }
-          - { arch: arm64, ext: zip, os: [self-hosted, macOS, ARM64] }
+          # The self-hosted Mini is offline; test Apple Silicon on Blacksmith until it is back.
+          - { arch: arm64, ext: dmg, os: blacksmith-6vcpu-macos-15 }
+          - { arch: arm64, ext: zip, os: blacksmith-6vcpu-macos-15 }
           # The self-hosted Mini does not have Rosetta yet, so keep Intel testing hosted.
           - { arch: x64, ext: dmg, os: blacksmith-6vcpu-macos-15 }
     runs-on: ${{ matrix.os }}
