@@ -3024,6 +3024,64 @@ describe("registry", () => {
     ).toBe(true);
   });
 
+  test("circuit_build warns when the built stackup disagrees with fabdesk.json, never rewriting it", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("stackup-mismatch");
+    await writeFile(join(project.dir, "circuit.netlist.json"), "{}\n");
+    await project.updateManifest({ board: { ...project.manifest().board, layers: 4 } });
+    let built: number | undefined = 2;
+    const base = mockServices([project]);
+    const services = mockServices([project], {
+      design: {
+        ...base.design,
+        build: async (opts) => ({
+          ...(await base.design.build(opts)),
+          ...(built !== undefined ? { copperLayers: built } : {}),
+        }),
+      },
+    });
+    const factory = contextFactory(services, project);
+    const call = () =>
+      reg.invoke("circuit_build", {}, (ref) =>
+        factory({
+          def: reg.get("circuit_build")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+      );
+
+    // Explicit layers=4, board built with 2: manifest stays 4, warning emitted.
+    const mismatch = await call();
+    expect(mismatch.isError).toBeFalsy();
+    expect(project.manifest().board.layers).toBe(4);
+    expect(mismatch.text).toContain("Warnings:");
+    expect(mismatch.text).toContain(
+      "fabdesk.json [layer_mismatch]: fabdesk.json board.layers is 4 but the built board has 2 copper layers",
+    );
+    const expected = {
+      copperLayers: { declared: 4, built: 2, match: false },
+      warnings: [expect.objectContaining({ type: "layer_mismatch", file: "fabdesk.json" })],
+    };
+    expect(mismatch.json).toMatchObject(expected);
+    expect(await Bun.file(join(project.dir, "reports/build.json")).json()).toMatchObject(expected);
+
+    // In step: recorded, no warning.
+    built = 4;
+    const inStep = await call();
+    expect(inStep.text).not.toContain("layer_mismatch");
+    expect(inStep.json).toMatchObject({
+      copperLayers: { declared: 4, built: 4, match: true },
+      warnings: [],
+    });
+
+    // No measurement: nothing recorded, manifest untouched.
+    built = undefined;
+    const unread = await call();
+    expect((unread.json as any).copperLayers).toBeUndefined();
+    expect(project.manifest().board.layers).toBe(4);
+  });
+
   test("manifest has JSON schema with project arg for project tools only", () => {
     const reg = createRegistry();
     const m = reg.manifest();

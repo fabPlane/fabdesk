@@ -190,7 +190,38 @@ export type BuildSummary = {
   revision?: number;
   removedCopper?: { tracks: number; vias: number };
   rejectedSchematicPath?: string;
+  /**
+   * Declared (fabdesk.json board.layers) and built copper layer counts, when the build could read
+   * the built board's. `match` false means the two disagree and a `layer_mismatch` warning was added.
+   */
+  copperLayers?: { declared: number; built: number; match: boolean };
 };
+
+/**
+ * Compare fabdesk.json's declared stackup with the board a successful build produced. The manifest
+ * is never rewritten here: board.layers always has a value (schema default 2) and may be an
+ * explicit `project_set_board` choice that the compile did not apply. A disagreement becomes a
+ * build warning so it is visible instead of silent (issue #92).
+ */
+export function checkBoardLayers(
+  declared: number,
+  built: number | undefined,
+): {
+  layers?: NonNullable<BuildSummary["copperLayers"]>;
+  warning?: BuildResult["warnings"][number];
+} {
+  if (built === undefined || !Number.isInteger(built)) return {};
+  const layers = { declared, built, match: declared === built };
+  if (layers.match) return { layers };
+  return {
+    layers,
+    warning: {
+      type: "layer_mismatch",
+      file: PROJECT_FILES.manifest,
+      message: `fabdesk.json board.layers is ${declared} but the built board has ${built} copper layers. fabdesk.json was not changed. Make the netlist's board.copperLayers and project_set_board layers agree, then rebuild.`,
+    },
+  };
+}
 
 /**
  * What circuit_build sends as the board spec on top of the netlist file's own: a template's blank
@@ -259,25 +290,32 @@ export const circuit_build = defineTool({
       signal: ctx.signal,
       progress: (fraction, note) => ctx.progress(0.05 + fraction * 0.9, note),
     });
+    const layerCheck = result.ok
+      ? checkBoardLayers(project.manifest().board.layers, result.copperLayers)
+      : {};
+    const warnings = layerCheck.warning
+      ? [...result.warnings, layerCheck.warning]
+      : result.warnings;
     const summary: BuildSummary = {
       ok: result.ok,
       at: new Date().toISOString(),
       rebuild,
       durationMs: result.durationMs,
       errors: result.errors,
-      warnings: result.warnings,
+      warnings,
       counts: result.counts,
       ...(result.revision !== undefined ? { revision: result.revision } : {}),
       ...(result.removedCopper ? { removedCopper: result.removedCopper } : {}),
       ...(result.rejectedSchematicPath
         ? { rejectedSchematicPath: result.rejectedSchematicPath }
         : {}),
+      ...(layerCheck.layers ? { copperLayers: layerCheck.layers } : {}),
     };
     await writeReport(project, "build", summary);
     ctx.progress(1, "done");
     const c = result.counts;
     const text = result.ok
-      ? `Build OK (${rebuild} rebuild) in ${Math.round(result.durationMs)} ms: ${c.components} components, ${c.nets} nets, ${c.footprintsAdded} footprints added, ${c.footprintsPlaced} placed${result.removedCopper ? `, ${result.removedCopper.tracks} old tracks/arcs and ${result.removedCopper.vias} routed vias removed` : ""}${c.viasAdded ? `, blank drawn (${c.viasAdded} free vias, ${c.holesAdded ?? 0} holes)` : ""}.${project.manifest().board.template ? ` Template ${project.manifest().board.template}: the netlist's own board spec was replaced by the blank.` : ""}${result.warnings.length ? `\nWarnings:\n${formatErrors(result.warnings)}` : ""}`
+      ? `Build OK (${rebuild} rebuild) in ${Math.round(result.durationMs)} ms: ${c.components} components, ${c.nets} nets, ${c.footprintsAdded} footprints added, ${c.footprintsPlaced} placed${result.removedCopper ? `, ${result.removedCopper.tracks} old tracks/arcs and ${result.removedCopper.vias} routed vias removed` : ""}${c.viasAdded ? `, blank drawn (${c.viasAdded} free vias, ${c.holesAdded ?? 0} holes)` : ""}.${project.manifest().board.template ? ` Template ${project.manifest().board.template}: the netlist's own board spec was replaced by the blank.` : ""}${warnings.length ? `\nWarnings:\n${formatErrors(warnings)}` : ""}`
       : `Build FAILED (${result.errors.length} errors):\n${formatErrors(result.errors)}${result.rejectedSchematicPath ? `\nRejected schematic preserved at ${result.rejectedSchematicPath}; the canonical schematic was restored.` : ""}`;
     return { text, json: summary, isError: !result.ok };
   },

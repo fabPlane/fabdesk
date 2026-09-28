@@ -57,6 +57,8 @@ export type BuildResult = {
   durationMs: number;
   /** Board revision the bridge reported after the compile. */
   revision?: number;
+  /** Copper layer count of the board as built (KiCad's enabled layers), when it could be read. */
+  copperLayers?: number;
   /** Copper removed by a clean rebuild. */
   removedCopper?: { tracks: number; vias: number };
   /** Rejected candidate retained for diagnosis after a fail-closed schematic build. */
