@@ -45,6 +45,8 @@ Judge a fix on the rule categories going to zero, not on a count.
 
 | `nes-expansion-hub`, `ps1-pio-boot-cart`, `snes-flash-cart`, `fds-ram-adapter`, `saturn-boot-cart` (+ `.place.json`) | coarse boards from the second batch: THT headers, PLCC/SOIC/SOP parts, 44–62 nets, placed by the agent with a clean pre-route DRC | every one: `timed out with nothing routed (120000 ms in phase highDensityRouteSolver)` or `HB ran out of iterations`; `nes-expansion-hub` wedged the bridge three times in a row (R8) |
 
+| `pcbgolf` (+ `.place.json`, `pcbgolf.pretty/`) | commaai's PCBGolf board: STM32H725 LQFP-144, USB2517 QFN-64, four vertical USB-C ports each with a TPS25942, an op-amp and a CAN transceiver, two bucks, microSD; 238 parts, 196 nets, 70 × 55 mm, placed by a cluster-and-pack script (`docs/pcbgolf.md`) | JS router: `solver failed (attempt 6): Static reachability precheck failed: 2 route(s) have no legal path … Net-(LED1-B-)` after 15 s, nothing routed (R1 on the RGB LED's 0.65 mm pads). `router: freerouting` fails before routing: the bridge's DSN export job writes nothing (R9). Freerouting by hand on the kicad-cli export: see `docs/pcbgolf.md`. |
+
 Baseline that passes: the 3-part blinky in `docs/handoff-fab-pcb.md` §3 (0 errors). Anything with
 two pads closer than `clearance + trackWidth` fails.
 
@@ -121,6 +123,22 @@ fire) and the process ignored SIGTERM — only SIGKILL ended it. The solver runs
 event loop and its `step()` can apparently run for minutes without yielding, so the deadline
 check, cancellation and HTTP all starve. The router needs to run in a Worker (or a child
 process) with a hard kill on the deadline, whatever else changes.
+
+### R9 — Freerouting through the bridge: the DSN export job returns nothing
+
+`route_run {router: "freerouting"}` on an internal build fails in 200 ms with `router failed:
+ENOENT: no such file or directory, open '…/fp-pcb-freerouting-…/board.dsn'`. The adapter's
+`exportDsnViaKicad` runs `RunBoardJobExportSpecctra` with `returnInline: true` and `async: false`;
+on the nightly `20260912-5e09a6e3be` the job answers with neither inline data nor an output path,
+and no file appears. `kicad-cli pcb export specctra -o board.dsn board.kicad_pcb` with the same
+binary writes a valid DSN, and Freerouting routes it. Until the job is fixed in the fork (or the
+adapter falls back to the CLI export), Freerouting is unusable through fabdesk; the pcbgolf case
+above was routed by running the jar on the CLI export and importing the session through
+`ImportSpecctraSession`, which does work.
+
+fab_pcb [#32](https://github.com/TensorFleet/fab_pcb/pull/32) (in the current `vendor/fab_pcb`
+pin) makes the adapter fall back to `kicad-cli pcb export specctra` when the job returns nothing.
+Re-run the pcbgolf case with `--router freerouting` to confirm R9 is closed on the pinned bridge.
 
 ### R4 — hole clearance on the connector's own pegs
 
