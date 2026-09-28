@@ -16,7 +16,7 @@ export FABDESK_USAGE_REMOTE_BACKUP=1
 
 The daemon registers a random installation UUID with the API, stores the signed upload token locally, and sends archive objects to `PUT /v1/usage-archive`. Fabplane sign-in is optional for the upload. When signed in, the API records an account link for the same installation UUID. The API checks the token, upload size and basic rate limits, then writes to private R2. **Only the API server holds the R2 credentials**; do not put them in a desktop environment or installer. The backend endpoint and its R2 bucket must be deployed before enabling this flag. Use a separate private bucket from public catalog images or downloads, with no public bucket URL or custom domain.
 
-When consent is on, the daemon backfills current SQLite history on startup or when the checkbox is first enabled, then uploads each completed run before bounded local dump retention prunes old records. If upload fails, it logs the error and keeps new dumps locally without pruning. Fix the backend and restart to retry the backfill.
+When consent is on, the daemon backfills current SQLite history in the background on startup or when the checkbox is first enabled, then uploads each completed run before bounded local dump retention prunes old records. The daemon records a content hash of each conversation and run dump it has sent to a destination (the `usage_archive_uploads` table), so a backfill sends only new or changed records rather than all history on every launch. If upload fails, it logs the error and keeps new dumps locally without pruning. Fix the backend and restart to retry the backfill.
 
 To backfill on demand with the same environment:
 
@@ -47,7 +47,7 @@ Run a backfill now, and periodically thereafter to capture conversations that ha
 bun run usage:backup -- /mnt/private-fabdesk-backup/usage
 ```
 
-The command uses the normal Fabdesk data directory (`FABDESK_HOME` when set). Each invocation creates a dated snapshot with one JSON file per conversation and a manifest. `run-dumps/<run-id>.json` holds every dump still present in SQLite. Per-run archives are written to `conversations/<thread-id>/<run-id>.json` and `run-dumps/<run-id>.json`.
+The command uses the normal Fabdesk data directory (`FABDESK_HOME` when set). Each invocation creates a dated snapshot with one JSON file per conversation that is new or changed since the last backup to that destination, plus a manifest; nothing is written when nothing changed. Pass `--all` to write every conversation and run dump again, for example after replacing the backup volume. `run-dumps/<run-id>.json` holds every dump still present in SQLite. Per-run archives are written to `conversations/<thread-id>/<run-id>.json` and `run-dumps/<run-id>.json`.
 
 Backups retain historical conversation snapshots even if a thread is later edited or deleted in Fabdesk. Remove the corresponding files from the archive when fulfilling a deletion request. Analysis should account for secrets and private content in these raw records. A local directory is only an off-device backup when it is on a separate backed-up volume or is synchronized to private remote storage.
 

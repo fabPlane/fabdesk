@@ -204,6 +204,20 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE route_runs ADD COLUMN record_json TEXT;
     `,
   },
+  {
+    // What the usage archive has already written to each destination, by content hash, so a
+    // backfill skips unchanged conversations and run dumps instead of re-sending all history.
+    version: 9,
+    sql: `
+      CREATE TABLE usage_archive_uploads (
+        destination TEXT NOT NULL,
+        record_id TEXT NOT NULL,
+        sha256 TEXT NOT NULL,
+        uploaded_at TEXT NOT NULL,
+        PRIMARY KEY (destination, record_id)
+      );
+    `,
+  },
 ];
 
 export function openDatabase(path: string): Database {

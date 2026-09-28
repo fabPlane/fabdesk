@@ -272,7 +272,8 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     emit: (e) => bus.emit(e),
   });
   archiveBearer = () => auth.token();
-  if (hasArchiveConsent()) await startArchiveBackfill();
+  // In the background: a large history over a slow link must not hold the daemon's startup.
+  if (hasArchiveConsent()) void startArchiveBackfill();
   if (auth.mode === "local") logger.warn("running in LOCAL auth mode");
   // Sentry user = principal id + handle (never email) while signed in; cleared on logout.
   setSentryUser(sentryUserFromAuth(auth.state()));

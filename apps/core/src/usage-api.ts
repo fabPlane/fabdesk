@@ -21,6 +21,9 @@ function validInstallation(value: unknown): value is Installation {
 
 export class UsageApiArchiveWriter implements ArchiveWriter {
   private installationTask: Promise<Installation> | null = null;
+  get id(): string {
+    return `api:${this.apiOrigin.replace(/\/+$/, "")}`;
+  }
   constructor(
     private readonly apiOrigin: string,
     private readonly token: () => string | null,
