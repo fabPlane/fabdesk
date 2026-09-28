@@ -190,7 +190,31 @@ export type BuildSummary = {
   revision?: number;
   removedCopper?: { tracks: number; vias: number };
   rejectedSchematicPath?: string;
+  /** Copper layers on the built board, when the build could read them. */
+  copperLayers?: number;
+  /** fabdesk.json board.layers was rewritten to match the built board. */
+  boardReconciled?: { layers: { before: number; after: number } };
 };
+
+/**
+ * Keep fabdesk.json's recorded stackup in step with the board a successful build produced. The
+ * built board is authoritative: stale metadata that disagrees with it misleads the next agent turn
+ * (issue #92). Returns what changed, or a note when the built count cannot be recorded.
+ */
+export async function reconcileBoardLayers(
+  project: ProjectHandle,
+  built: number | undefined,
+): Promise<{ reconciled?: { before: number; after: number }; note?: string }> {
+  if (built === undefined || !Number.isInteger(built)) return {};
+  const board = project.manifest().board;
+  if (board.layers === built) return {};
+  if (built < 1 || built > 8)
+    return {
+      note: `The built board has ${built} copper layers, outside what fabdesk.json can record (1-8); board.layers stays ${board.layers}.`,
+    };
+  await project.updateManifest({ board: { ...board, layers: built } });
+  return { reconciled: { before: board.layers, after: built } };
+}
 
 /**
  * What circuit_build sends as the board spec on top of the netlist file's own: a template's blank
@@ -259,6 +283,7 @@ export const circuit_build = defineTool({
       signal: ctx.signal,
       progress: (fraction, note) => ctx.progress(0.05 + fraction * 0.9, note),
     });
+    const layers = result.ok ? await reconcileBoardLayers(project, result.copperLayers) : {};
     const summary: BuildSummary = {
       ok: result.ok,
       at: new Date().toISOString(),
@@ -272,12 +297,14 @@ export const circuit_build = defineTool({
       ...(result.rejectedSchematicPath
         ? { rejectedSchematicPath: result.rejectedSchematicPath }
         : {}),
+      ...(result.copperLayers !== undefined ? { copperLayers: result.copperLayers } : {}),
+      ...(layers.reconciled ? { boardReconciled: { layers: layers.reconciled } } : {}),
     };
     await writeReport(project, "build", summary);
     ctx.progress(1, "done");
     const c = result.counts;
     const text = result.ok
-      ? `Build OK (${rebuild} rebuild) in ${Math.round(result.durationMs)} ms: ${c.components} components, ${c.nets} nets, ${c.footprintsAdded} footprints added, ${c.footprintsPlaced} placed${result.removedCopper ? `, ${result.removedCopper.tracks} old tracks/arcs and ${result.removedCopper.vias} routed vias removed` : ""}${c.viasAdded ? `, blank drawn (${c.viasAdded} free vias, ${c.holesAdded ?? 0} holes)` : ""}.${project.manifest().board.template ? ` Template ${project.manifest().board.template}: the netlist's own board spec was replaced by the blank.` : ""}${result.warnings.length ? `\nWarnings:\n${formatErrors(result.warnings)}` : ""}`
+      ? `Build OK (${rebuild} rebuild) in ${Math.round(result.durationMs)} ms: ${c.components} components, ${c.nets} nets, ${c.footprintsAdded} footprints added, ${c.footprintsPlaced} placed${result.removedCopper ? `, ${result.removedCopper.tracks} old tracks/arcs and ${result.removedCopper.vias} routed vias removed` : ""}${c.viasAdded ? `, blank drawn (${c.viasAdded} free vias, ${c.holesAdded ?? 0} holes)` : ""}.${project.manifest().board.template ? ` Template ${project.manifest().board.template}: the netlist's own board spec was replaced by the blank.` : ""}${layers.reconciled ? `\nfabdesk.json board.layers updated ${layers.reconciled.before} -> ${layers.reconciled.after} to match the built board's copper layers.` : ""}${layers.note ? `\n${layers.note}` : ""}${result.warnings.length ? `\nWarnings:\n${formatErrors(result.warnings)}` : ""}`
       : `Build FAILED (${result.errors.length} errors):\n${formatErrors(result.errors)}${result.rejectedSchematicPath ? `\nRejected schematic preserved at ${result.rejectedSchematicPath}; the canonical schematic was restored.` : ""}`;
     return { text, json: summary, isError: !result.ok };
   },

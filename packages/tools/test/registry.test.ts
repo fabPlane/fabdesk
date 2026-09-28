@@ -2945,6 +2945,62 @@ describe("registry", () => {
     ).toBe(true);
   });
 
+  test("circuit_build records the built board's copper layers in fabdesk.json", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("stackup-reconcile");
+    await writeFile(join(project.dir, "circuit.netlist.json"), "{}\n");
+    expect(project.manifest().board.layers).toBe(2);
+    let built: number | undefined = 4;
+    const base = mockServices([project]);
+    const services = mockServices([project], {
+      design: {
+        ...base.design,
+        build: async (opts) => ({
+          ...(await base.design.build(opts)),
+          ...(built !== undefined ? { copperLayers: built } : {}),
+        }),
+      },
+    });
+    const factory = contextFactory(services, project);
+    const call = () =>
+      reg.invoke("circuit_build", {}, (ref) =>
+        factory({
+          def: reg.get("circuit_build")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+      );
+
+    const first = await call();
+    expect(first.isError).toBeFalsy();
+    expect(project.manifest().board.layers).toBe(4);
+    expect(first.text).toContain("fabdesk.json board.layers updated 2 -> 4");
+    expect(first.json).toMatchObject({
+      copperLayers: 4,
+      boardReconciled: { layers: { before: 2, after: 4 } },
+    });
+    expect(await Bun.file(join(project.dir, "reports/build.json")).json()).toMatchObject({
+      boardReconciled: { layers: { before: 2, after: 4 } },
+    });
+
+    // In step: nothing to report.
+    const second = await call();
+    expect(second.text).not.toContain("board.layers updated");
+    expect((second.json as any).boardReconciled).toBeUndefined();
+
+    // A count fabdesk.json cannot hold is reported, not written.
+    built = 12;
+    const wide = await call();
+    expect(wide.text).toContain("outside what fabdesk.json can record");
+    expect(project.manifest().board.layers).toBe(4);
+
+    // No measurement leaves the manifest alone.
+    built = undefined;
+    await call();
+    expect(project.manifest().board.layers).toBe(4);
+  });
+
   test("manifest has JSON schema with project arg for project tools only", () => {
     const reg = createRegistry();
     const m = reg.manifest();

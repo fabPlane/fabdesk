@@ -43,6 +43,60 @@ describe("FabPCB build recovery", () => {
     expect(result.ok).toBe(false);
     expect(released).toEqual(["/workspace/partial"]);
   });
+
+  test("reports the built board's copper layer count, and survives failing to read it", async () => {
+    const job = {
+      id: "compile-2",
+      sessionId: "session-2",
+      frontend: "netlist-json",
+      state: "done",
+      startedAt: new Date().toISOString(),
+      log: [],
+      result: {
+        ok: true,
+        diagnostics: [],
+        counts: {
+          components: 1,
+          nets: 1,
+          viasAdded: 0,
+          holesAdded: 0,
+          footprintsAdded: 1,
+          footprintsPlaced: 1,
+        },
+        durationMs: 1,
+      },
+    } as FpPcbCompileJob;
+    const bridge = { compile: async () => job } as unknown as FpPcbBridgeClient;
+    const session = { id: "session-2", path: "/workspace/four/board.kicad_pro" } as ProjectSession;
+    let enabledLayers: () => Promise<{
+      copperLayerCount: number;
+      layers: BoardLayer[];
+    }> = async () => ({ copperLayerCount: 4, layers: [] });
+    const sessions = {
+      withRetry: async (
+        _projectDir: string,
+        run: (value: ProjectSession) => Promise<FpPcbCompileJob>,
+      ) => run(session),
+      board: async () => ({ enabledLayers: () => enabledLayers() }),
+    } as unknown as FpPcbSessions;
+    const design = createFpPcbDesign({
+      bridge: () => bridge,
+      sessions,
+      readText: async () => "{}",
+      exists: async () => true,
+    });
+
+    const built = await design.build({ projectDir: "/workspace/four" });
+    expect(built.ok).toBe(true);
+    expect(built.copperLayers).toBe(4);
+
+    enabledLayers = async () => {
+      throw new Error("board went away");
+    };
+    const unread = await design.build({ projectDir: "/workspace/four" });
+    expect(unread.ok).toBe(true);
+    expect(unread.copperLayers).toBeUndefined();
+  });
 });
 
 describe("PCB geometry query boundaries", () => {
