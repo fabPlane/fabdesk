@@ -20,99 +20,40 @@ and `apps/core/tsconfig.typecheck.json` maps it to `src/index.ts` for `tsc`.
   `bun scripts/export-tool-manifest.ts` and opens a PR on fabplane-cli updating
   `spec/fabdesk-tools.json`.
 
-fabplane-cli's npm publish workflow guards `NPM_TOKEN` the same way (that secret is set); see the
-Publishing section of its README.
+fabplane-cli's npm publish workflow separately uses `NPM_TOKEN`; see the Publishing section of its
+README.
 
-## Handoff: make the weekly sync open PRs (open as of 2026-09-29)
+## GitHub App setup for weekly sync
 
-Neither sync job can open a pull request yet. This section is written so another agent (or a
-person) can finish it without earlier context.
+Both jobs use a short-lived GitHub App installation token to write to
+`fabPlane/fabplane-cli`. No personal access token or deploy key is needed. The App is installed
+only on `fabPlane/fabplane-cli`; fabdesk creates a token for that installation. The built-in
+`GITHUB_TOKEN` cannot write to another repository, and the fabPlane organization currently blocks
+Actions from opening pull requests with that token.
 
-### Current state
+An owner of the fabPlane organization must complete the credential steps:
 
-| Job | Repo / file | Auth it uses | Status |
-| --- | --- | --- | --- |
-| MCP tool manifest → fabplane-cli | TensorFleet/fabdesk `.github/workflows/fabplane-cli-sync.yml` | `secrets.FABPLANE_CLI_SYNC_TOKEN` (checkout + `peter-evans/create-pull-request@v7`) | Secret missing; the first step fails with `::error title=FABPLANE_CLI_SYNC_TOKEN missing::` |
-| OpenAPI spec → fabplane-cli | fabPlane/fabplane-cli `.github/workflows/sync-api.yml` | `GITHUB_TOKEN` (`peter-evans/create-pull-request@v7`) | Fails at "create PR": the org forbids Actions from creating PRs |
+1. Create a private GitHub App owned by fabPlane, with its webhook disabled. Grant repository
+   permissions **Contents: Read and write** and **Pull requests: Read and write** (Metadata read
+   is automatic). Install it with **Only select repositories → fabplane-cli**.
+2. Generate a private key from the App settings. Keep it out of git and chat.
+3. In both `fabPlane/fabplane-cli` and `TensorFleet/fabdesk`, set the Actions variable
+   `FABPLANE_CLI_SYNC_APP_ID` to the App ID and the Actions secret
+   `FABPLANE_CLI_SYNC_APP_PRIVATE_KEY` to the complete private-key PEM. The same App ID and key
+   are used in both repositories. The private key is held as a secret; the App ID is not secret.
+4. Remove any obsolete `FABPLANE_CLI_SYNC_TOKEN` secret after the App-backed runs succeed.
 
-Facts already established (no need to re-check):
+Each workflow checks these settings before doing work. It then uses
+`actions/create-github-app-token@v2` with `owner: fabPlane` and
+`repositories: fabplane-cli`, requesting only Contents and Pull requests write. The token
+expires after one hour and the action revokes it at job end. fabdesk passes it to the target
+repository checkout and PR step; fabplane-cli passes it to its PR step.
 
-- The **fabPlane org** policy "Allow GitHub Actions to create and approve pull requests" is **off**.
-  `PUT repos/fabPlane/fabplane-cli/actions/permissions/workflow` with
-  `can_approve_pull_request_reviews=true` returns `409 The organization does not allow GitHub
-  Actions to create or approve pull requests`. Only an org admin can change it
-  (`admin:org` scope); the repo-level switch is locked by the org.
-- A fine-grained PAT is not subject to that policy, so a PAT fixes **both** jobs.
-- `fabPlane/fabplane-cli` is public; `TensorFleet/fabdesk` is private. The fabdesk job needs
-  cross-repo write, which `GITHUB_TOKEN` can never give.
-- An AI agent running in auto mode was blocked (classifier: "Permission Grant") from creating
-  credentials or changing repo/org Actions permissions. **Step 1 must be done by a human.** Do not
-  try to work around it with deploy keys, a personal `gh` token copied into a secret, or similar.
+### Verify
 
-### Step 1 — human: create and store the token
-
-1. Create a fine-grained token at <https://github.com/settings/personal-access-tokens/new>:
-   - Resource owner **fabPlane**, repository access **Only select repositories → fabplane-cli**.
-   - Repository permissions: **Contents: Read and write**, **Pull requests: Read and write**
-     (Metadata: read is added automatically).
-   - Any expiry; when it lapses both jobs fail with the "please add it" error below.
-2. Store it on both repos (each command prompts for the value; nothing lands in shell history):
-   ```bash
-   gh secret set FABPLANE_CLI_SYNC_TOKEN --repo TensorFleet/fabdesk
-   gh secret set FABPLANE_CLI_SYNC_TOKEN --repo fabPlane/fabplane-cli
-   ```
-
-Optional, not required after step 1: an org admin can turn on **fabPlane → Settings → Actions →
-General → Workflow permissions → "Allow GitHub Actions to create and approve pull requests"**.
-
-### Step 2 — agent: point `sync-api.yml` at the token
-
-In a clone of `fabPlane/fabplane-cli` (branch off `main`, open a PR; the repo is public, so never
-commit secrets, internal hostnames or staging credentials):
-
-1. Add a first step to the job, matching the fabdesk workflow and `publish.yml`:
-   ```yaml
-   - name: Require FABPLANE_CLI_SYNC_TOKEN
-     env:
-       FABPLANE_CLI_SYNC_TOKEN: ${{ secrets.FABPLANE_CLI_SYNC_TOKEN }}
-     run: |
-       if [ -z "$FABPLANE_CLI_SYNC_TOKEN" ]; then
-         echo "::error title=FABPLANE_CLI_SYNC_TOKEN missing::Please add the FABPLANE_CLI_SYNC_TOKEN repository secret (fine-grained PAT: contents + pull-requests write on fabPlane/fabplane-cli). The fabPlane org does not let GITHUB_TOKEN open pull requests. See the README's 'Weekly sync' section."
-         exit 1
-       fi
-   ```
-2. In the `peter-evans/create-pull-request` step, replace `token: ${{ secrets.GITHUB_TOKEN }}`
-   (or the implicit default) with `token: ${{ secrets.FABPLANE_CLI_SYNC_TOKEN }}`. PRs opened with
-   a PAT also trigger `ci.yml`, so the workaround that ran the tests inside the sync job can stay or go.
-3. Document the secret in the README's weekly-sync section, next to the `NPM_TOKEN` note.
-4. Merge that PR (ask the user first if you lack merge permission).
-
-Nothing changes in fabdesk: `fabplane-cli-sync.yml` already uses `FABPLANE_CLI_SYNC_TOKEN` and
-guards for it.
-
-### Step 3 — agent: verify
-
-```bash
-gh secret list --repo TensorFleet/fabdesk | grep FABPLANE_CLI_SYNC_TOKEN
-gh secret list --repo fabPlane/fabplane-cli | grep FABPLANE_CLI_SYNC_TOKEN
-gh workflow run fabplane-cli-sync.yml --repo TensorFleet/fabdesk --ref main
-gh workflow run sync-api.yml --repo fabPlane/fabplane-cli --ref main
-gh run list --repo TensorFleet/fabdesk --workflow fabplane-cli-sync.yml --limit 1
-gh run list --repo fabPlane/fabplane-cli --workflow sync-api.yml --limit 1
-gh pr list --repo fabPlane/fabplane-cli --head sync/fabdesk-tools
-```
-
-Expected:
-
-- **fabdesk job:** opens (or updates) a PR from `sync/fabdesk-tools` on fabplane-cli. The branch
-  adds the `shopping_list_*` / `inventory_*` tools, which the committed snapshot lacks, so the first
-  run should produce a PR.
-- **`sync-api`:** exits cleanly with "no changes" when production doesn't serve
-  `/v1/public/openapi.json` yet (it 404s until the orgs/carts/inventory backend reaches
-  production). It opens a PR only when the live spec differs from `spec/openapi.json`.
-
-`fabplane-cli-sync.yml` only exists on fabdesk `main` once the `feat/shopping-list-inventory`
-branch is merged; before that, dispatch with `--ref feat/shopping-list-inventory`.
-
-Done when both runs are green and the tool-manifest PR exists. Then delete this handoff section,
-keeping a one-line note that both jobs use `FABPLANE_CLI_SYNC_TOKEN`.
+Run `sync-api.yml` on fabplane-cli `main`, then
+`fabplane-cli-sync.yml` on fabdesk `feat/shopping-list-inventory` until that branch is merged.
+Both runs should be green. The fabdesk run should open or update the
+`sync/fabdesk-tools` pull request in fabplane-cli. The API sync should report no changes while
+production does not serve `/v1/public/openapi.json`; it opens a PR only when the live spec changes.
+After the fabdesk feature branch is merged, verify its job again on `main`.
