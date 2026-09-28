@@ -16,12 +16,14 @@ const VENDOR_COPY: Record<OrderVendorId, { blurb: string }> = {
 export function OrderFlow() {
   const projectId = useUiStore((s) => s.activeProjectId);
   const setOrderFlowOpen = useUiStore((s) => s.setOrderFlowOpen);
+  const setBoardTab = useUiStore((s) => s.setBoardTab);
   const order = useProjectOrder(projectId);
   const start = useStartOrder();
   const { host } = useCore();
   const [vendor, setVendor] = useState<OrderVendorId | null>(null);
   const session = start.data;
   const vendors = order.data?.vendors ?? [];
+  const ready = order.data?.ready === true;
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-bg" data-testid="order-flow">
@@ -36,20 +38,43 @@ export function OrderFlow() {
         <p className="mt-2 max-w-lg text-sm text-muted">
           Pick a fab house. Laser and CNC are listed so the path is obvious; they are disabled for now.
         </p>
+        {order.data && !ready && (
+          <div
+            className="mt-5 max-w-xl rounded-lg border border-danger/40 bg-danger/5 p-4"
+            data-testid="order-blockers"
+          >
+            <div className="text-sm font-semibold text-danger">Board checks must pass before ordering</div>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-muted">
+              {order.data.reasons.map((reason) => (
+                <li key={reason}>{reason}</li>
+              ))}
+            </ul>
+            <Button
+              className="mt-3"
+              size="sm"
+              onClick={() => {
+                setBoardTab("drc");
+                setOrderFlowOpen(false);
+              }}
+            >
+              Open DRC/ERC
+            </Button>
+          </div>
+        )}
         <div className="mt-5 grid max-w-xl grid-cols-2 gap-2">
           {vendors.map((item) => (
             <button
               key={item.id}
               type="button"
-              disabled={!item.enabled}
+              disabled={!item.enabled || !ready}
               onClick={() => {
                 setVendor(item.id);
-                if (projectId && item.enabled) void start.mutateAsync({ projectId, vendor: item.id });
+                if (projectId && item.enabled && ready) void start.mutateAsync({ projectId, vendor: item.id });
               }}
               className={cn(
                 "rounded-lg border px-3 py-3 text-left",
                 vendor === item.id ? "border-accent bg-accent/10" : "border-border hover:bg-panel-2",
-                !item.enabled && "cursor-not-allowed opacity-50 hover:bg-transparent",
+                (!item.enabled || !ready) && "cursor-not-allowed opacity-50 hover:bg-transparent",
               )}
               data-testid={`order-vendor-${item.id}`}
             >

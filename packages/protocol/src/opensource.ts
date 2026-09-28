@@ -55,12 +55,17 @@ export type RemixResult = z.infer<typeof RemixResult>;
 export const OrderVendorId = z.enum(["jlcpcb", "pcbway", "laser", "cnc"]);
 export type OrderVendorId = z.infer<typeof OrderVendorId>;
 
+export const OrderCheckStatus = z.enum(["not_required", "missing", "stale", "pass", "fail"]);
+export type OrderCheckStatus = z.infer<typeof OrderCheckStatus>;
+
 export const OrderReadiness = z.object({
   ready: z.boolean(),
   hasGerbers: z.boolean(),
   hasFabricationZip: z.boolean(),
   hasRouted: z.boolean(),
   hasKicadPcb: z.boolean(),
+  /** Freshness and pass state of the release gate's saved-file DRC/ERC reports. */
+  checks: z.object({ drc: OrderCheckStatus, erc: OrderCheckStatus }),
   reasons: z.array(z.string()),
 });
 export type OrderReadiness = z.infer<typeof OrderReadiness>;

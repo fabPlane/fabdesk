@@ -5,7 +5,13 @@ import { join } from "node:path";
 import { Store } from "../src/db";
 import { catalogPreviewUrl, isGitHubAssetHost } from "@fabdesk/protocol";
 import { allowedCloneUrl, fetchOpenCatalog, findCatalogProject } from "../src/opensource/catalog";
-import { assessOrderReadiness, startOrderSession } from "../src/opensource/order";
+import type { DrcReport, DrcViolation, ErcReport } from "@fabdesk/kicad";
+import {
+  assessOrderReadiness,
+  loadOrderCheckEvidence,
+  startOrderSession,
+  type OrderCheckEvidence,
+} from "../src/opensource/order";
 import {
   createPreviewCache,
   fallbackPreviewSvg,
@@ -352,13 +358,75 @@ describe("catalog preview proxy", () => {
 });
 
 describe("order readiness", () => {
-  test("is ready when gerbers, a zip, KiCad, or a routed board exist", () => {
-    expect(assessOrderReadiness([]).ready).toBe(false);
-    expect(assessOrderReadiness([{ path: "circuit.tsx" }]).ready).toBe(false);
-    expect(assessOrderReadiness([{ path: "board.kicad_pcb" }]).ready).toBe(true);
-    expect(assessOrderReadiness([{ path: "exports/gerbers/F_Cu.gbr" }]).ready).toBe(true);
-    expect(assessOrderReadiness([{ path: "exports/fabrication.zip" }]).ready).toBe(true);
-    expect(assessOrderReadiness([{ path: "circuit.routed.json" }]).ready).toBe(true);
+  const t0 = "2026-09-01T00:00:00.000Z";
+  const t1 = "2026-09-01T00:01:00.000Z";
+  const at = (path: string, mtime = t0) => ({ path, mtime });
+  const none: OrderCheckEvidence = { allowedDrcWarnings: [], drc: null, erc: null, currentPcbSha256: null };
+  const drcReport = (over: Partial<DrcReport> = {}): DrcReport => ({
+    violations: [],
+    unconnected: [],
+    schematicParity: [],
+    counts: { errors: 0, warnings: 0, unconnected: 0 },
+    raw: {},
+    ...over,
+  });
+  const ercReport = (errors = 0): ErcReport => ({
+    violations: [],
+    counts: { errors, warnings: 0 },
+    raw: {},
+  });
+
+  test("gerbers or a zip without a board need no checks; a board or routed file needs DRC", () => {
+    expect(assessOrderReadiness([], none).ready).toBe(false);
+    expect(assessOrderReadiness([at("circuit.tsx")], none).ready).toBe(false);
+    expect(assessOrderReadiness([at("exports/gerbers/F_Cu.gbr")], none).ready).toBe(true);
+    expect(assessOrderReadiness([at("exports/fabrication.zip")], none).ready).toBe(true);
+    const board = assessOrderReadiness([at("board.kicad_pcb")], none);
+    expect(board.ready).toBe(false);
+    expect(board.checks).toEqual({ drc: "missing", erc: "not_required" });
+    expect(board.reasons.join(" ")).toContain("Run DRC");
+    expect(assessOrderReadiness([at("circuit.routed.json")], none).checks.drc).toBe("missing");
+  });
+
+  test("DRC must pass the release gate and match the current board revision", () => {
+    const files = [at("board.kicad_pcb"), at("reports/drc.json", t1)];
+    const fresh = { ...drcReport(), pcbRevision: { sha256: "aaa" } };
+    const ok = assessOrderReadiness(files, { ...none, drc: fresh, currentPcbSha256: "aaa" });
+    expect(ok.ready).toBe(true);
+    expect(ok.checks.drc).toBe("pass");
+
+    const edited = assessOrderReadiness(files, { ...none, drc: fresh, currentPcbSha256: "bbb" });
+    expect(edited.checks.drc).toBe("stale");
+    expect(edited.ready).toBe(false);
+
+    const failing = { ...drcReport({ counts: { errors: 2, warnings: 0, unconnected: 0 } }), pcbRevision: { sha256: "aaa" } };
+    expect(assessOrderReadiness(files, { ...none, drc: failing, currentPcbSha256: "aaa" }).checks.drc).toBe("fail");
+
+    const warning: DrcViolation = { rule: "silk", severity: "warning", description: "", items: [], coordinates: [], layers: [], nets: [], objectIds: [], affectedGeometry: [], signature: "sig-1" };
+    const warned = { ...drcReport({ violations: [warning], counts: { errors: 0, warnings: 1, unconnected: 0 } }), pcbRevision: { sha256: "aaa" } };
+    expect(assessOrderReadiness(files, { ...none, drc: warned, currentPcbSha256: "aaa" }).checks.drc).toBe("fail");
+    expect(
+      assessOrderReadiness(files, { ...none, drc: warned, currentPcbSha256: "aaa", allowedDrcWarnings: ["sig-1"] }).checks.drc,
+    ).toBe("pass");
+  });
+
+  test("DRC reports without a board revision fall back to file times", () => {
+    const report = drcReport();
+    expect(assessOrderReadiness([at("board.kicad_pcb", t0), at("reports/drc.json", t1)], { ...none, drc: report }).checks.drc).toBe("pass");
+    expect(assessOrderReadiness([at("board.kicad_pcb", t1), at("reports/drc.json", t0)], { ...none, drc: report }).checks.drc).toBe("stale");
+  });
+
+  test("a schematic requires a fresh, error-free ERC report", () => {
+    const base = [at("board.kicad_pcb"), at("reports/drc.json", t1)];
+    const drc = { ...drcReport(), pcbRevision: { sha256: "aaa" } };
+    const withSch = (sch: string, erc: string) => [...base, at("board.kicad_sch", sch), at("reports/erc.json", erc)];
+    const evidence = { ...none, drc, currentPcbSha256: "aaa" };
+    expect(assessOrderReadiness([...base, at("board.kicad_sch")], evidence).checks.erc).toBe("missing");
+    expect(assessOrderReadiness(withSch(t0, t1), { ...evidence, erc: ercReport() }).ready).toBe(true);
+    expect(assessOrderReadiness(withSch(t1, t0), { ...evidence, erc: ercReport() }).checks.erc).toBe("stale");
+    expect(assessOrderReadiness(withSch(t0, t1), { ...evidence, erc: ercReport(1) }).checks.erc).toBe("fail");
+    const unstable = { ...ercReport(), measurement: { revisionStable: false } };
+    expect(assessOrderReadiness(withSch(t0, t1), { ...evidence, erc: unstable }).checks.erc).toBe("stale");
   });
 
   test("JLCPCB and PCBWay are enabled; laser and CNC are not", () => {
@@ -398,6 +466,8 @@ describe("remix import", () => {
     expect(detail.name).toBe("Koyomi remix");
     expect(detail.files.some((f) => f.path === "board.kicad_pcb")).toBe(true);
     expect(detail.files.some((f) => f.path === "fabdesk.json")).toBe(true);
-    expect(assessOrderReadiness(detail.files).ready).toBe(true);
+    const readiness = assessOrderReadiness(detail.files, await loadOrderCheckEvidence(detail.path, []));
+    expect(readiness.hasKicadPcb).toBe(true);
+    expect(readiness.checks.drc).toBe("missing");
   });
 });

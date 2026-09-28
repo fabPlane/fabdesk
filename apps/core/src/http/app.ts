@@ -59,7 +59,12 @@ import { tailscaleProvider, type TailscaleProvider } from "../tailscale";
 import { logger, errMsg } from "../log";
 import { allowedCloneUrl, fetchOpenCatalog, findCatalogProject } from "../opensource/catalog";
 import { createPreviewCache, resolveCatalogPreview } from "../opensource/preview";
-import { assessOrderReadiness, orderVendors, startOrderSession } from "../opensource/order";
+import {
+  assessOrderReadiness,
+  loadOrderCheckEvidence,
+  orderVendors,
+  startOrderSession,
+} from "../opensource/order";
 import { remixCatalogProject } from "../opensource/remix";
 import { applyErrorReporting, captureCoreException } from "../sentry";
 import { parseTopics, sseResponse } from "./sse";
@@ -621,17 +626,22 @@ export function createApp(deps: AppDeps): Hono<Env> {
     return c.json(remixed, 201);
   });
 
+  const orderReadiness = async (projectId: string) => {
+    const d = await deps.projects.detail(projectId);
+    if (!d) return null;
+    const evidence = await loadOrderCheckEvidence(d.path, d.manifest.allowedDrcWarnings);
+    return assessOrderReadiness(d.files, evidence);
+  };
   app.get("/projects/:id/order", async (c) => {
-    const d = await deps.projects.detail(c.req.param("id"));
-    if (!d) return c.json({ error: "not found" }, 404);
-    return c.json({ ...assessOrderReadiness(d.files), vendors: orderVendors() });
+    const readiness = await orderReadiness(c.req.param("id"));
+    if (!readiness) return c.json({ error: "not found" }, 404);
+    return c.json({ ...readiness, vendors: orderVendors() });
   });
   app.post("/projects/:id/order", async (c) => {
-    const d = await deps.projects.detail(c.req.param("id"));
-    if (!d) return c.json({ error: "not found" }, 404);
+    const readiness = await orderReadiness(c.req.param("id"));
+    if (!readiness) return c.json({ error: "not found" }, 404);
     const body = StartOrder.parse(await c.req.json());
     const vendor = OrderVendorId.parse(body.vendor);
-    const readiness = assessOrderReadiness(d.files);
     if (!readiness.ready)
       return c.json({ error: "project is not ready to order", ...readiness }, 412);
     const session = startOrderSession(vendor);
