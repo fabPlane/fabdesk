@@ -1,5 +1,5 @@
 import { CART_ITEM_STATUSES, type CartItem, type CartItemPatch, type CartItemStatus, type Destination } from "@fabdesk/protocol";
-import { useEffect, useMemo, useState, type InputHTMLAttributes } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type InputHTMLAttributes } from "react";
 import { Badge, Button, EmptyState, IconButton, Input, Select, Spinner } from "../components/ui";
 import {
   cloudErrorMessage,
@@ -38,7 +38,7 @@ function CommitInput({
         if (e.key === "Enter") (e.target as HTMLInputElement).blur();
         if (e.key === "Escape") setDraft(value);
       }}
-      className={cn("h-6 px-1.5 text-xs", className)}
+      className={cn("px-1.5", className)}
     />
   );
 }
@@ -70,15 +70,17 @@ function DestinationSelect({
   options,
   onChange,
   className,
+  style,
 }: {
   value: string;
   options: Destination[];
   onChange: (id: string) => void;
   className?: string;
+  style?: CSSProperties;
 }) {
   const known = options.some((d) => d.id === value);
   return (
-    <Select value={value} onChange={(e) => onChange(e.target.value)} className={cn("h-6 px-1 text-xs", className)}>
+    <Select value={value} onChange={(e) => onChange(e.target.value)} className={cn("px-1", className)} style={style} aria-label="Destination">
       {!known && value && <option value={value}>{value}</option>}
       {options.map((d) => (
         <option key={d.id} value={d.id}>
@@ -88,6 +90,9 @@ function DestinationSelect({
     </Select>
   );
 }
+
+/** `cn` does not merge Tailwind classes, so compact control sizes go in inline styles. */
+const COMPACT = { height: 24, fontSize: 12 } as const;
 
 function ItemRow({
   item,
@@ -101,22 +106,29 @@ function ItemRow({
   onRemove: () => void;
 }) {
   const sub = [item.mpn && item.value ? item.value : null, item.footprint, item.manufacturer].filter(Boolean).join(" · ");
+  const refs = (item.refs ?? []).join(" ");
   return (
-    <tr className="border-t border-border/60 align-middle hover:bg-panel-2/40" data-testid={`shopping-item-${item.id}`}>
-      <td className="px-2 py-1">
-        <div className="flex items-center gap-1.5">
-          {item.kind !== "part" && <Badge tone="warning">{item.kind}</Badge>}
-          <span className="truncate font-medium" title={item.description ?? undefined}>
-            {itemLabel(item)}
+    <div className="border-t border-border/60 px-2 py-1.5 hover:bg-panel-2/40" data-testid={`shopping-item-${item.id}`}>
+      <div className="flex min-w-0 items-center gap-1.5">
+        {item.kind !== "part" && <Badge tone="warning">{item.kind}</Badge>}
+        <span className="min-w-0 truncate text-xs font-medium" title={item.description ?? itemLabel(item)}>
+          {itemLabel(item)}
+        </span>
+        {refs && (
+          <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted" title={refs}>
+            {refs}
           </span>
+        )}
+        <IconButton title="Remove" className="ml-auto h-6 w-6 shrink-0 text-muted hover:text-danger" onClick={onRemove}>
+          &#10005;
+        </IconButton>
+      </div>
+      {(sub || item.sku) && (
+        <div className="truncate font-mono text-[10.5px] text-muted" title={sub}>
+          {[sub, item.sku ? `SKU ${item.sku}` : null].filter(Boolean).join(" · ")}
         </div>
-        {sub && <div className="truncate font-mono text-[10.5px] text-muted">{sub}</div>}
-        {item.sku && <div className="truncate font-mono text-[10.5px] text-muted">SKU {item.sku}</div>}
-      </td>
-      <td className="max-w-[140px] px-2 py-1 font-mono text-[11px] text-muted" title={(item.refs ?? []).join(" ")}>
-        <div className="truncate">{(item.refs ?? []).join(" ")}</div>
-      </td>
-      <td className="w-16 px-1 py-1">
+      )}
+      <div className="mt-1 flex items-center gap-1.5">
         <CommitInput
           type="number"
           min={0}
@@ -126,16 +138,19 @@ function ItemRow({
             if (Number.isInteger(n) && n >= 0) onPatch({ quantity: n });
           }}
           aria-label="Quantity"
+          style={{ ...COMPACT, width: 60, flex: "none" }}
         />
-      </td>
-      <td className="w-36 px-1 py-1">
-        <DestinationSelect value={item.destinationId} options={options} onChange={(destinationId) => onPatch({ destinationId })} className="w-full" />
-      </td>
-      <td className="w-24 px-1 py-1">
+        <DestinationSelect
+          value={item.destinationId}
+          options={options}
+          onChange={(destinationId) => onPatch({ destinationId })}
+          style={{ ...COMPACT, minWidth: 0, flex: "1 1 120px" }}
+        />
         <Select
           value={item.status}
           onChange={(e) => onPatch({ status: e.target.value as CartItemStatus })}
-          className="h-6 w-full px-1 text-xs"
+          className="px-1"
+          style={{ ...COMPACT, width: 92, flex: "none" }}
           aria-label="Status"
         >
           {CART_ITEM_STATUSES.map((s) => (
@@ -144,16 +159,14 @@ function ItemRow({
             </option>
           ))}
         </Select>
-      </td>
-      <td className="px-1 py-1">
-        <CommitInput value={item.notes ?? ""} placeholder="Notes" onCommit={(notes) => onPatch({ notes })} />
-      </td>
-      <td className="w-8 px-1 py-1 text-right">
-        <IconButton title="Remove" className="h-6 w-6 text-muted hover:text-danger" onClick={onRemove}>
-          &#10005;
-        </IconButton>
-      </td>
-    </tr>
+        <CommitInput
+          value={item.notes ?? ""}
+          placeholder="Notes"
+          onCommit={(notes) => onPatch({ notes })}
+          style={{ ...COMPACT, minWidth: 0, flex: "1 1 120px" }}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -175,9 +188,9 @@ function AddRow({ options, fab, onAdd, busy }: { options: Destination[]; fab: st
         setQty("1");
       }}
     >
-      <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Add item: MPN or description" className="h-7 min-w-0 flex-1 text-xs" data-testid="shopping-add-label" />
-      <Input type="number" min={0} value={qty} onChange={(e) => setQty(e.target.value)} className="h-7 w-16 text-xs" aria-label="Quantity" />
-      <DestinationSelect value={dest} options={options} onChange={setDest} className="h-7 w-36" />
+      <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Add item: MPN or description" className="text-xs" style={{ height: 28, minWidth: 0, flex: "1 1 auto" }} data-testid="shopping-add-label" />
+      <Input type="number" min={0} value={qty} onChange={(e) => setQty(e.target.value)} className="text-xs" style={{ height: 28, width: 60, flex: "none" }} aria-label="Quantity" />
+      <DestinationSelect value={dest} options={options} onChange={setDest} className="text-xs" style={{ height: 28, width: 140, flex: "none" }} />
       <Button type="submit" size="sm" disabled={!valid || busy}>
         Add
       </Button>
@@ -294,28 +307,17 @@ export function ShoppingListTab() {
                 </button>
               )}
             </div>
-            <table className="w-full table-fixed text-left text-xs">
-              <colgroup>
-                <col />
-                <col className="w-[18%]" />
-                <col className="w-16" />
-                <col className="w-36" />
-                <col className="w-24" />
-                <col className="w-[18%]" />
-                <col className="w-8" />
-              </colgroup>
-              <tbody>
-                {g.items.map((item) => (
-                  <ItemRow
-                    key={item.id}
-                    item={item}
-                    options={options}
-                    onPatch={(patch) => m.update.mutate({ itemId: item.id, patch })}
-                    onRemove={() => m.remove.mutate(item.id)}
-                  />
-                ))}
-              </tbody>
-            </table>
+            <div>
+              {g.items.map((item) => (
+              <ItemRow
+                key={item.id}
+                item={item}
+                options={options}
+                onPatch={(patch) => m.update.mutate({ itemId: item.id, patch })}
+                onRemove={() => m.remove.mutate(item.id)}
+              />
+            ))}
+            </div>
           </section>
         ))}
         {groups.length > 0 && (
