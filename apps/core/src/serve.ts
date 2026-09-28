@@ -46,7 +46,7 @@ import {
   setSentryUser,
 } from "./sentry";
 import { RunTelemetry } from "./run-telemetry";
-import { TrainingArchive } from "./training-archive";
+import { TrainingArchive, type ArchiveWriter } from "./training-archive";
 
 export type ServeOptions = {
   port?: number;
@@ -146,14 +146,32 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   if (staleRoutes) logger.info("failed stale route runs from previous run", { count: staleRoutes });
   const tokens = new TokenSet(config.token);
   const archiveDir = process.env["FABDESK_TRAINING_ARCHIVE_DIR"]?.trim();
-  const archive = archiveDir ? new TrainingArchive(archiveDir) : null;
-  let archiveBackfilled = false;
-  if (archive) {
+  const r2Enabled = process.env["FABDESK_TRAINING_R2_ENABLED"] === "1";
+  const archiveEnabled = Boolean(archiveDir) || r2Enabled;
+  const archives: TrainingArchive[] = [];
+  if (archiveDir) archives.push(new TrainingArchive(archiveDir));
+  let r2Writer: (ArchiveWriter & { close(): void }) | null = null;
+  let archiveBackfilled = true;
+  if (r2Enabled) {
+    try {
+      const { r2ArchiveConfig, R2ArchiveWriter } = await import("./training-r2");
+      const r2Config = r2ArchiveConfig();
+      if (!r2Config) throw new Error("R2 archive enabled without configuration");
+      r2Writer = new R2ArchiveWriter(r2Config);
+      archives.push(new TrainingArchive(r2Writer));
+    } catch (error) {
+      archiveBackfilled = false;
+      logger.warn("training R2 archive configuration failed; local dump pruning disabled", {
+        error: errMsg(error),
+      });
+    }
+  }
+  for (const archive of archives) {
     try {
       const counts = await archive.backfill(store.db);
-      archiveBackfilled = true;
       logger.info("training archive backfilled", counts);
     } catch (error) {
+      archiveBackfilled = false;
       logger.warn("training archive backfill failed; local dump pruning disabled", {
         error: errMsg(error),
       });
@@ -161,21 +179,23 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   }
   const telemetry = new RunTelemetry({
     version: config.version,
-    runDumps: archive
+    runDumps: archiveEnabled
       ? {
           async put(dump) {
-            let backedUp = false;
-            try {
-              await archive.put(dump, store.db);
-              backedUp = true;
-            } catch (error) {
-              logger.warn("training archive failed; retained run dump locally", {
-                runId: dump.runId,
-                error: errMsg(error),
-              });
+            let backedUp = archiveBackfilled;
+            for (const archive of archives) {
+              try {
+                await archive.put(dump, store.db);
+              } catch (error) {
+                backedUp = false;
+                logger.warn("training archive failed; retained run dump locally", {
+                  runId: dump.runId,
+                  error: errMsg(error),
+                });
+              }
             }
             // Keep the local copy until backup succeeds; bounded pruning could otherwise erase it.
-            store.runDumps.put(dump, backedUp && archiveBackfilled);
+            store.runDumps.put(dump, backedUp);
           },
         }
       : store.runDumps,
@@ -612,6 +632,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       server.stop(true);
       if (!opts.noHandshake) await removeHandshake(config.handshakePath);
       await telemetry.shutdown();
+      r2Writer?.close();
       store.close();
       await closeSentry();
       resolveClosed(reason);

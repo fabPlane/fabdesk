@@ -4,7 +4,32 @@ Fabdesk already stores conversations in `fabdesk.db` and records completed agent
 
 Run dumps inherit the capture limits described in [agent-run telemetry](agent-run-telemetry.md), so large events and project files may be truncated or omitted. Conversation messages are exported from SQLite with their stored text and parts.
 
-## Configure a backup location
+## Back up to private Cloudflare R2
+
+R2 upload is **off by default**. This is an installation-level opt-in: enabling it sends all conversations and run dumps currently stored by that daemon, including existing history. It does not record individual user consent. Use a private bucket with no public bucket URL or custom domain, and create a bucket-scoped R2 token with object read/write access. Fabdesk uses Cloudflare's [S3-compatible endpoint](https://developers.cloudflare.com/r2/examples/aws/aws-sdk-js-v3/) and the `auto` region.
+
+Set these variables in the environment that launches the core daemon:
+
+```bash
+export FABDESK_TRAINING_R2_ENABLED=1
+export FABDESK_TRAINING_R2_ACCOUNT_ID=<32-character-account-id>
+export FABDESK_TRAINING_R2_BUCKET=<private-bucket-name>
+export FABDESK_TRAINING_R2_ACCESS_KEY_ID=<bucket-scoped-access-key-id>
+export FABDESK_TRAINING_R2_SECRET_ACCESS_KEY=<bucket-scoped-secret-access-key>
+export FABDESK_TRAINING_R2_PREFIX=fabdesk-training/v1  # optional default
+```
+
+The daemon backfills the current SQLite history on startup, then uploads each completed run before bounded local dump retention prunes old records. If configuration or upload fails, it logs the error and keeps new dumps locally without pruning. Fix the configuration and restart to retry the backfill. No R2 request is made unless `FABDESK_TRAINING_R2_ENABLED=1`.
+
+To backfill on demand with the same environment:
+
+```bash
+bun run training:backup -- --r2
+```
+
+Use a separate private bucket from public catalog images or downloads. The archive may contain credentials and proprietary project data. Review access and retention before using it for model training.
+
+## Back up to a private directory
 
 Choose a **private directory on a different disk or mounted backup volume**. The contents can include prompts, tool results, project source, and secrets entered by users or returned by tools. Limit access to the account running Fabdesk and encrypt the destination at rest. Do not put it in a project directory or a source repository.
 
@@ -15,7 +40,7 @@ export FABDESK_TRAINING_ARCHIVE_DIR=/mnt/private-fabdesk-backup/training
 bun run dev
 ```
 
-With this set, the daemon backfills its current SQLite history on startup. Each completed run then writes an immutable run dump and a snapshot of its conversation before the bounded SQLite dump store prunes old records. If the archive write or startup backfill fails, Fabdesk logs the failure and keeps new dumps in SQLite without pruning; repair the destination and restart the daemon. Agent runs continue normally.
+With this set, the daemon backfills its current SQLite history on startup. Each completed run then writes a run dump and a snapshot of its conversation before the bounded SQLite dump store prunes old records. If the archive write or startup backfill fails, Fabdesk logs the failure and keeps new dumps in SQLite without pruning; repair the destination and restart the daemon. Agent runs continue normally. Both the directory and R2 destination can be enabled together.
 
 Run a backfill now, and periodically thereafter to capture conversations that have no completed agent run, including edits made after the last run:
 

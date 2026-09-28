@@ -17,6 +17,17 @@ async function atomicWrite(path: string, content: string): Promise<void> {
   await rename(temporary, path);
 }
 
+export type ArchiveWriter = {
+  write(key: string, content: string): Promise<void>;
+};
+
+class FileArchiveWriter implements ArchiveWriter {
+  constructor(private readonly directory: string) {}
+  write(key: string, content: string): Promise<void> {
+    return atomicWrite(join(this.directory, key), content);
+  }
+}
+
 type ThreadRow = Record<string, string | number | null> & { id: string };
 type MessageRow = Record<string, string | number | null>;
 type RunRow = Record<string, string | number | null>;
@@ -39,19 +50,20 @@ export function conversationRecord(db: Database, threadId: string): string | nul
 }
 
 export class TrainingArchive {
-  constructor(readonly directory: string) {}
+  private readonly writer: ArchiveWriter;
+  constructor(destination: string | ArchiveWriter) {
+    this.writer =
+      typeof destination === "string" ? new FileArchiveWriter(destination) : destination;
+  }
 
   /** A completed run is written before the bounded SQLite copy can prune older dumps. */
   async put(dump: RunDump, db: Database): Promise<void> {
     const runId = safeId(dump.runId);
     const threadId = safeId(dump.threadId);
-    await atomicWrite(join(this.directory, "run-dumps", `${runId}.json`), dump.dumpJson);
+    await this.writer.write(`run-dumps/${runId}.json`, dump.dumpJson);
     const conversation = conversationRecord(db, threadId);
     if (conversation) {
-      await atomicWrite(
-        join(this.directory, "conversations", threadId, `${runId}.json`),
-        conversation,
-      );
+      await this.writer.write(`conversations/${threadId}/${runId}.json`, conversation);
     }
   }
 
@@ -64,10 +76,7 @@ export class TrainingArchive {
       .all()) {
       const record = conversationRecord(db, row.id);
       if (!record) continue;
-      await atomicWrite(
-        join(this.directory, "snapshots", snapshot, "conversations", `${safeId(row.id)}.json`),
-        record,
-      );
+      await this.writer.write(`snapshots/${snapshot}/conversations/${safeId(row.id)}.json`, record);
       conversations++;
     }
     let runDumps = 0;
@@ -83,17 +92,14 @@ export class TrainingArchive {
         .all(lastCreatedAt, lastCreatedAt, lastRunId);
       if (batch.length === 0) break;
       for (const row of batch) {
-        await atomicWrite(
-          join(this.directory, "run-dumps", `${safeId(row.run_id)}.json`),
-          row.dump_json,
-        );
+        await this.writer.write(`run-dumps/${safeId(row.run_id)}.json`, row.dump_json);
         runDumps++;
         lastCreatedAt = row.created_at;
         lastRunId = row.run_id;
       }
     }
-    await atomicWrite(
-      join(this.directory, "snapshots", snapshot, "manifest.json"),
+    await this.writer.write(
+      `snapshots/${snapshot}/manifest.json`,
       JSON.stringify({
         schema: "fabdesk.training-backup/v1",
         createdAt: new Date().toISOString(),

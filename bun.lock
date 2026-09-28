@@ -17,6 +17,7 @@
         "fabdesk-core": "./src/main.ts",
       },
       "dependencies": {
+        "@aws-sdk/client-s3": "3.879.0",
         "@fabdesk/agents": "workspace:*",
         "@fabdesk/auth-client": "workspace:*",
         "@fabdesk/kicad": "workspace:*",
