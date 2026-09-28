@@ -49,8 +49,8 @@ import { RunTelemetry } from "./run-telemetry";
 import {
   ArchiveConsentRevokedError,
   TrainingArchive,
-  type ArchiveWriter,
 } from "./training-archive";
+import { TrainingApiArchiveWriter } from "./training-api";
 
 export type ServeOptions = {
   port?: number;
@@ -150,33 +150,20 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   if (staleRoutes) logger.info("failed stale route runs from previous run", { count: staleRoutes });
   const tokens = new TokenSet(config.token);
   const archiveDir = process.env["FABDESK_TRAINING_ARCHIVE_DIR"]?.trim();
-  const r2Enabled = process.env["FABDESK_TRAINING_R2_ENABLED"] === "1";
-  const archiveEnabled = Boolean(archiveDir) || r2Enabled;
+  const remoteArchiveEnabled = process.env["FABDESK_TRAINING_REMOTE_BACKUP"] === "1";
+  const archiveEnabled = Boolean(archiveDir) || remoteArchiveEnabled;
   const archives: TrainingArchive[] = [];
   if (archiveDir) archives.push(new TrainingArchive(archiveDir));
-  let r2Writer: (ArchiveWriter & { close(): void }) | null = null;
-  let archiveConfigured = true;
+  let archiveBearer: () => string | null = () => null;
+  if (remoteArchiveEnabled)
+    archives.push(new TrainingArchive(new TrainingApiArchiveWriter(config.apiOrigin, () => archiveBearer())));
   let archiveBackfilled = false;
   let archiveClosing = false;
   let backfillTask: Promise<void> | null = null;
   const hasArchiveConsent = () => store.settings.get().trainingArchiveConsent;
-  if (r2Enabled) {
-    try {
-      const { r2ArchiveConfig, R2ArchiveWriter } = await import("./training-r2");
-      const r2Config = r2ArchiveConfig();
-      if (!r2Config) throw new Error("R2 archive enabled without configuration");
-      r2Writer = new R2ArchiveWriter(r2Config);
-      archives.push(new TrainingArchive(r2Writer));
-    } catch (error) {
-      archiveConfigured = false;
-      logger.warn("training R2 archive configuration failed; local dump pruning disabled", {
-        error: errMsg(error),
-      });
-    }
-  }
   const startArchiveBackfill = (): Promise<void> => {
     if (backfillTask) return backfillTask;
-    if (!archiveEnabled || !archiveConfigured || !hasArchiveConsent() || archiveClosing)
+    if (!archiveEnabled || !hasArchiveConsent() || archiveClosing)
       return Promise.resolve();
     archiveBackfilled = false;
     const task = (async () => {
@@ -203,7 +190,6 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     });
     return task;
   };
-  if (hasArchiveConsent()) await startArchiveBackfill();
   let lastArchiveConsent = hasArchiveConsent();
   const telemetry = new RunTelemetry({
     version: config.version,
@@ -257,6 +243,8 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     apiOrigin: config.apiOrigin,
     emit: (e) => bus.emit(e),
   });
+  archiveBearer = () => auth.token();
+  if (hasArchiveConsent()) await startArchiveBackfill();
   if (auth.mode === "local") logger.warn("running in LOCAL auth mode");
   // Sentry user = principal id + handle (never email) while signed in; cleared on logout.
   setSentryUser(sentryUserFromAuth(auth.state()));
@@ -670,7 +658,6 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       await telemetry.shutdown();
       archiveClosing = true;
       await backfillTask;
-      r2Writer?.close();
       store.close();
       await closeSentry();
       resolveClosed(reason);
