@@ -947,8 +947,9 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       };
     }
     await board.save();
-    await keepNetClass(projectDir);
     await schematic.save();
+    // After the last save in this path: either save may rewrite board.kicad_pro.
+    await keepNetClass(projectDir);
     return {
       ok: true,
       dryRun: false,
