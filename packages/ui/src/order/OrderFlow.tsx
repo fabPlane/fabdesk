@@ -61,6 +61,13 @@ export function OrderFlow() {
             </Button>
           </div>
         )}
+        {order.data && order.data.warnings.length > 0 && (
+          <ul className="mt-4 max-w-xl list-disc space-y-1 pl-5 text-sm text-muted" data-testid="order-warnings">
+            {order.data.warnings.map((warning) => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
+        )}
         <div className="mt-5 grid max-w-xl grid-cols-2 gap-2">
           {vendors.map((item) => (
             <button

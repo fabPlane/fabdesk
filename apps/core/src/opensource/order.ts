@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { gate, type DrcReport, type ErcReport } from "@fabdesk/kicad";
 import type {
@@ -9,60 +9,62 @@ import type {
   OrderSession,
   OrderVendorId,
 } from "@fabdesk/protocol";
+import { savedHierarchyRevision, type SavedSheetRef } from "@fabdesk/tools";
 
-type OrderFile = Pick<FileEntry, "path" | "mtime">;
+/** The board and schematic verify_drc / verify_erc check (packages/tools PROJECT_FILES). */
+const BOARD_PCB = "board.kicad_pcb";
+const BOARD_SCH = "board.kicad_sch";
+const DRC_REPORT = "reports/drc.json";
+const ERC_REPORT = "reports/erc.json";
+
+type DrcEvidenceReport = DrcReport & { pcbRevision?: { sha256?: unknown } };
+type ErcEvidenceReport = ErcReport & {
+  measurement?: {
+    evidenceLevel?: unknown;
+    applicability?: unknown;
+    revisionStable?: unknown;
+    checkedRevision?: unknown;
+    hierarchy?: { referencedFiles?: unknown; sheets?: unknown };
+  };
+};
 
 /**
- * The saved-file DRC/ERC evidence the release gate (`verify_gate`) reads: `reports/drc.json` from
- * verify_drc (bound to the board by `pcbRevision.sha256`) and `reports/erc.json` from verify_erc.
+ * The saved-file evidence the release gate (`verify_gate`) reads, loaded straight from disk: the
+ * project file listing is capped and must not decide whether a report exists.
  */
 export type OrderCheckEvidence = {
   allowedDrcWarnings: readonly string[];
-  drc: (DrcReport & { pcbRevision?: { sha256?: unknown } }) | null;
-  erc: (ErcReport & { measurement?: { revisionStable?: unknown } }) | null;
-  /** sha256 of the current `board.kicad_pcb`, or null when it does not exist. */
-  currentPcbSha256: string | null;
+  /** `board.kicad_pcb` exists, so verify_drc can run. */
+  hasBoardPcb: boolean;
+  /** `board.kicad_sch` exists, so verify_erc can run. */
+  hasBoardSch: boolean;
+  /** `inputsChanged`: the files the report measured changed after it was written. */
+  drc: { report: DrcEvidenceReport; inputsChanged: boolean } | null;
+  erc: { report: ErcEvidenceReport; inputsChanged: boolean } | null;
 };
 
-const DRC_REPORT = "reports/drc.json";
-const ERC_REPORT = "reports/erc.json";
-const BOARD_PCB = "board.kicad_pcb";
-
-const mtimeOf = (file: OrderFile | undefined): number | null => {
-  const parsed = Date.parse(file?.mtime ?? "");
-  return Number.isFinite(parsed) ? parsed : null;
-};
-
-const latestMtime = (files: readonly OrderFile[], match: (path: string) => boolean): number =>
-  Math.max(0, ...files.filter((f) => match(f.path)).map((f) => mtimeOf(f) ?? 0));
-
-function drcStatus(files: readonly OrderFile[], evidence: OrderCheckEvidence): OrderCheckStatus {
-  const report = evidence.drc;
-  const reportMtime = mtimeOf(files.find((f) => f.path === DRC_REPORT));
-  if (!report || reportMtime === null) return "missing";
-  const checked = report.pcbRevision?.sha256;
-  if (typeof checked === "string" && evidence.currentPcbSha256 !== null) {
-    // verify_drc binds the report to the exact board bytes; prefer that over timestamps.
-    if (checked !== evidence.currentPcbSha256) return "stale";
-  } else if (
-    reportMtime <
-    latestMtime(files, (path) => path.endsWith(".kicad_pcb") || path === "circuit.routed.json")
-  ) {
-    return "stale";
-  }
+function drcStatus(evidence: OrderCheckEvidence): OrderCheckStatus {
+  if (!evidence.hasBoardPcb) return "not_required";
+  if (!evidence.drc) return "missing";
+  if (evidence.drc.inputsChanged) return "stale";
   try {
-    return gate(report, undefined, [...evidence.allowedDrcWarnings]).pass ? "pass" : "fail";
+    return gate(evidence.drc.report, undefined, [...evidence.allowedDrcWarnings]).pass
+      ? "pass"
+      : "fail";
   } catch {
     return "missing";
   }
 }
 
-function ercStatus(files: readonly OrderFile[], evidence: OrderCheckEvidence): OrderCheckStatus {
-  const report = evidence.erc;
-  const reportMtime = mtimeOf(files.find((f) => f.path === ERC_REPORT));
-  if (!report || reportMtime === null) return "missing";
-  if (report.measurement?.revisionStable === false) return "stale";
-  if (reportMtime < latestMtime(files, (path) => path.endsWith(".kicad_sch"))) return "stale";
+function ercStatus(evidence: OrderCheckEvidence): OrderCheckStatus {
+  if (!evidence.hasBoardSch) return "not_required";
+  if (!evidence.erc) return "missing";
+  const { report, inputsChanged } = evidence.erc;
+  // verify_erc writes a non-applicable report when the saved hierarchy is incomplete (common on
+  // remixed boards). Nothing the user can run clears that, so it is a warning, not a block.
+  if (report.measurement?.applicability === false || report.measurement?.evidenceLevel === "missing")
+    return "not_applicable";
+  if (inputsChanged || report.measurement?.revisionStable === false) return "stale";
   const errors: unknown = report.counts?.errors;
   if (typeof errors !== "number") return "missing";
   return errors === 0 ? "pass" : "fail";
@@ -71,31 +73,28 @@ function ercStatus(files: readonly OrderFile[], evidence: OrderCheckEvidence): O
 const CHECK_REASONS: Record<"drc" | "erc", Partial<Record<OrderCheckStatus, string>>> = {
   drc: {
     missing: "Run DRC on the current board before ordering.",
-    stale: "The DRC report is older than the current board. Run DRC again.",
+    stale: "The board changed after the last DRC report. Run DRC again.",
     fail: "The current board fails the DRC release gate. Open DRC/ERC, fix the violations, and run DRC again.",
   },
   erc: {
     missing: "Run ERC on the current schematic before ordering.",
-    stale: "The ERC report is older than the current schematic. Run ERC again.",
+    stale: "The schematic changed after the last ERC report. Run ERC again.",
     fail: "The current schematic has ERC errors. Open DRC/ERC, fix them, and run ERC again.",
   },
 };
 
 export function assessOrderReadiness(
-  files: readonly OrderFile[],
+  files: readonly Pick<FileEntry, "path">[],
   evidence: OrderCheckEvidence,
 ): OrderReadiness {
   const hasGerbers = files.some((f) => f.path.startsWith("exports/gerbers/") || /gerber/i.test(f.path));
   const hasFabricationZip = files.some((f) => f.path === "exports/fabrication.zip" || (f.path.startsWith("exports/") && f.path.endsWith(".zip")));
   const hasRouted = files.some((f) => f.path === "circuit.routed.json");
-  const hasKicadPcb = files.some((f) => f.path.endsWith(".kicad_pcb"));
-  const hasKicadSch = files.some((f) => f.path.endsWith(".kicad_sch"));
+  const hasKicadPcb = evidence.hasBoardPcb || files.some((f) => f.path.endsWith(".kicad_pcb"));
   const hasOrderArtifact = hasGerbers || hasFabricationZip || hasKicadPcb || hasRouted;
-  const checks: OrderReadiness["checks"] = {
-    drc: hasKicadPcb || hasRouted ? drcStatus(files, evidence) : "not_required",
-    erc: hasKicadSch ? ercStatus(files, evidence) : "not_required",
-  };
+  const checks: OrderReadiness["checks"] = { drc: drcStatus(evidence), erc: ercStatus(evidence) };
   const reasons: string[] = [];
+  const warnings: string[] = [];
   if (!hasOrderArtifact) {
     reasons.push("Add a routed board or KiCad PCB, then export gerbers before ordering.");
   } else if (!hasGerbers && !hasFabricationZip) {
@@ -105,24 +104,60 @@ export function assessOrderReadiness(
     const reason = CHECK_REASONS[key][checks[key]];
     if (reason) reasons.push(reason);
   }
-  const checksPass = [checks.drc, checks.erc].every((s) => s === "pass" || s === "not_required");
+  if (checks.erc === "not_applicable")
+    warnings.push(
+      "ERC could not check this schematic (its saved hierarchy is incomplete). Review the schematic before ordering.",
+    );
+  const blocking = (s: OrderCheckStatus) => s === "missing" || s === "stale" || s === "fail";
   return {
-    ready: hasOrderArtifact && checksPass,
+    ready: hasOrderArtifact && !blocking(checks.drc) && !blocking(checks.erc),
     hasGerbers,
     hasFabricationZip,
     hasRouted,
     hasKicadPcb,
     checks,
     reasons,
+    warnings,
   };
 }
 
-async function readJson<T>(path: string): Promise<T | null> {
+async function readJson<T>(path: string): Promise<{ value: T; mtimeMs: number } | null> {
   try {
-    return JSON.parse(await readFile(path, "utf8")) as T;
+    const [text, info] = await Promise.all([readFile(path, "utf8"), stat(path)]);
+    return { value: JSON.parse(text) as T, mtimeMs: info.mtimeMs };
   } catch {
     return null;
   }
+}
+
+const mtimeMs = (path: string) => stat(path).then((s) => s.mtimeMs, () => null);
+
+/** Backups, autosaves and library sheets never belong to the measured hierarchy. */
+const isNativeSheet = (path: string) =>
+  path.endsWith(".kicad_sch") &&
+  !/(^|\/)[^/]*-backups\//.test(path) &&
+  !/(^|\/)libraries\//.test(path) &&
+  !/(^|\/)_autosave-[^/]*$/.test(path);
+
+async function ercInputsChanged(projectDir: string, erc: { value: ErcEvidenceReport; mtimeMs: number }) {
+  const m = erc.value.measurement;
+  const sheets = m?.hierarchy?.sheets;
+  if (typeof m?.checkedRevision === "string" && Array.isArray(sheets) && sheets.length) {
+    // Content, as the release gate does: recompute the aggregate revision from current bytes.
+    return (await savedHierarchyRevision(projectDir, sheets as SavedSheetRef[])) !== m.checkedRevision;
+  }
+  // Older reports carry no sheet identities; fall back to the times of the sheets they measured.
+  const referenced = m?.hierarchy?.referencedFiles;
+  const inputs = (
+    Array.isArray(referenced) && referenced.every((f) => typeof f === "string")
+      ? (referenced as string[])
+      : [BOARD_SCH]
+  ).filter(isNativeSheet);
+  for (const input of inputs) {
+    const t = await mtimeMs(join(projectDir, input));
+    if (t === null || t > erc.mtimeMs) return true;
+  }
+  return false;
 }
 
 /** Loads the release gate's saved DRC/ERC evidence for `assessOrderReadiness`. */
@@ -130,16 +165,28 @@ export async function loadOrderCheckEvidence(
   projectDir: string,
   allowedDrcWarnings: readonly string[],
 ): Promise<OrderCheckEvidence> {
-  const [drc, erc, board] = await Promise.all([
-    readJson<OrderCheckEvidence["drc"]>(join(projectDir, DRC_REPORT)),
-    readJson<OrderCheckEvidence["erc"]>(join(projectDir, ERC_REPORT)),
+  const [board, boardMtime, schMtime, drc, erc] = await Promise.all([
     readFile(join(projectDir, BOARD_PCB)).catch(() => null),
+    mtimeMs(join(projectDir, BOARD_PCB)),
+    mtimeMs(join(projectDir, BOARD_SCH)),
+    readJson<DrcEvidenceReport>(join(projectDir, DRC_REPORT)),
+    readJson<ErcEvidenceReport>(join(projectDir, ERC_REPORT)),
   ]);
+  let drcEvidence: OrderCheckEvidence["drc"] = null;
+  if (drc && board) {
+    const checked = drc.value.pcbRevision?.sha256;
+    const inputsChanged =
+      typeof checked === "string"
+        ? checked !== createHash("sha256").update(board).digest("hex")
+        : (boardMtime ?? 0) > drc.mtimeMs;
+    drcEvidence = { report: drc.value, inputsChanged };
+  }
   return {
     allowedDrcWarnings,
-    drc,
-    erc,
-    currentPcbSha256: board ? createHash("sha256").update(board).digest("hex") : null,
+    hasBoardPcb: board !== null,
+    hasBoardSch: schMtime !== null,
+    drc: drcEvidence,
+    erc: erc ? { report: erc.value, inputsChanged: await ercInputsChanged(projectDir, erc) } : null,
   };
 }
 

@@ -55,7 +55,15 @@ export type RemixResult = z.infer<typeof RemixResult>;
 export const OrderVendorId = z.enum(["jlcpcb", "pcbway", "laser", "cnc"]);
 export type OrderVendorId = z.infer<typeof OrderVendorId>;
 
-export const OrderCheckStatus = z.enum(["not_required", "missing", "stale", "pass", "fail"]);
+/** not_applicable: the check ran but could not apply (e.g. incomplete hierarchy); it warns, never blocks. */
+export const OrderCheckStatus = z.enum([
+  "not_required",
+  "missing",
+  "stale",
+  "pass",
+  "fail",
+  "not_applicable",
+]);
 export type OrderCheckStatus = z.infer<typeof OrderCheckStatus>;
 
 export const OrderReadiness = z.object({
@@ -67,6 +75,8 @@ export const OrderReadiness = z.object({
   /** Freshness and pass state of the release gate's saved-file DRC/ERC reports. */
   checks: z.object({ drc: OrderCheckStatus, erc: OrderCheckStatus }),
   reasons: z.array(z.string()),
+  /** Non-blocking notes shown alongside the vendors. */
+  warnings: z.array(z.string()),
 });
 export type OrderReadiness = z.infer<typeof OrderReadiness>;
 
