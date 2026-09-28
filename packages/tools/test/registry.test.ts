@@ -967,6 +967,85 @@ describe("registry", () => {
     }
   });
 
+  test("ERC on a schematic with no placed symbols is not applicable, never a clean pass", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("empty-erc");
+    await writeFile(join(project.dir, "board.kicad_sch"), "(kicad_sch (version 20260831))\n");
+    await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb (version 20260831))\n");
+    await writeFile(join(project.dir, "board.kicad_pro"), "{}\n");
+    await mkdir(join(project.dir, "reports"), { recursive: true });
+    await writeFile(
+      join(project.dir, "reports/drc.json"),
+      JSON.stringify({
+        violations: [],
+        unconnected: [],
+        schematicParity: [],
+        counts: { errors: 0, warnings: 0, unconnected: 0 },
+      }),
+    );
+    const base = mockServices([project]);
+    let ercRuns = 0;
+    const services = mockServices([project], {
+      kicad: {
+        ...base.kicad,
+        inspectSchematicHierarchy: async (cli: any, opts: any) => {
+          const hierarchy = await base.kicad.inspectSchematicHierarchy(cli, opts);
+          return {
+            ...hierarchy,
+            counts: { ...hierarchy.counts, components: 0, nets: 0 },
+            sheets: hierarchy.sheets.map((sheet) => ({ ...sheet, components: 0, nets: 0 })),
+          };
+        },
+        runErc: async () => {
+          ercRuns++;
+          return { violations: [], counts: { errors: 0, warnings: 0 } };
+        },
+      },
+    });
+    const factory = contextFactory(services, project);
+    const call = (name: string, args: Record<string, unknown> = {}) =>
+      reg.invoke(name, args, (ref) =>
+        factory({
+          def: reg.get(name)!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+      );
+
+    const erc = await call("verify_erc");
+    expect(erc.isError).toBe(true);
+    expect(erc.text).toMatch(/^Saved-file ERC not applicable: .*no placed symbols/);
+    expect(ercRuns).toBe(0);
+    const report = await Bun.file(join(project.dir, "reports/erc.json")).json();
+    expect(report.measurement).toMatchObject({
+      evidenceLevel: "missing",
+      applicability: false,
+      reason: "no-schematic-symbols",
+    });
+
+    // A legacy clean report must not pass the gate either while the hierarchy is empty.
+    await writeFile(
+      join(project.dir, "reports/erc.json"),
+      JSON.stringify({
+        violations: [],
+        counts: { errors: 0, warnings: 0 },
+        measurement: { scope: "complete saved hierarchy", checkedRevision: "a".repeat(64) },
+      }),
+    );
+    const gate = await call("verify_gate", { requireErc: true });
+    expect(gate.isError).toBe(true);
+    expect(gate.text).toContain("no placed symbols; ERC had nothing to check");
+
+    await expect(
+      call("release_build", {
+        circuitChecks: [{ kind: "assertion", name: "n/a", pass: true, evidence: "n/a" }],
+        buildNotes: "n/a",
+      }),
+    ).rejects.toThrow(/release requires a schematic with placed symbols/);
+    expect(ercRuns).toBe(0);
+  });
+
   test("schematic render returns revision-bound PNG pixels to an MCP client", async () => {
     const reg = createRegistry();
     const project = await tempProject("schematic-pixels");
@@ -2943,6 +3022,64 @@ describe("registry", () => {
         (entry: any) => entry.path === "exports/fabrication.zip" && entry.status === "available",
       ),
     ).toBe(true);
+  });
+
+  test("circuit_build warns when the built stackup disagrees with fabdesk.json, never rewriting it", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("stackup-mismatch");
+    await writeFile(join(project.dir, "circuit.netlist.json"), "{}\n");
+    await project.updateManifest({ board: { ...project.manifest().board, layers: 4 } });
+    let built: number | undefined = 2;
+    const base = mockServices([project]);
+    const services = mockServices([project], {
+      design: {
+        ...base.design,
+        build: async (opts) => ({
+          ...(await base.design.build(opts)),
+          ...(built !== undefined ? { copperLayers: built } : {}),
+        }),
+      },
+    });
+    const factory = contextFactory(services, project);
+    const call = () =>
+      reg.invoke("circuit_build", {}, (ref) =>
+        factory({
+          def: reg.get("circuit_build")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+      );
+
+    // Explicit layers=4, board built with 2: manifest stays 4, warning emitted.
+    const mismatch = await call();
+    expect(mismatch.isError).toBeFalsy();
+    expect(project.manifest().board.layers).toBe(4);
+    expect(mismatch.text).toContain("Warnings:");
+    expect(mismatch.text).toContain(
+      "fabdesk.json [layer_mismatch]: fabdesk.json board.layers is 4 but the built board has 2 copper layers",
+    );
+    const expected = {
+      copperLayers: { declared: 4, built: 2, match: false },
+      warnings: [expect.objectContaining({ type: "layer_mismatch", file: "fabdesk.json" })],
+    };
+    expect(mismatch.json).toMatchObject(expected);
+    expect(await Bun.file(join(project.dir, "reports/build.json")).json()).toMatchObject(expected);
+
+    // In step: recorded, no warning.
+    built = 4;
+    const inStep = await call();
+    expect(inStep.text).not.toContain("layer_mismatch");
+    expect(inStep.json).toMatchObject({
+      copperLayers: { declared: 4, built: 4, match: true },
+      warnings: [],
+    });
+
+    // No measurement: nothing recorded, manifest untouched.
+    built = undefined;
+    const unread = await call();
+    expect((unread.json as any).copperLayers).toBeUndefined();
+    expect(project.manifest().board.layers).toBe(4);
   });
 
   test("manifest has JSON schema with project arg for project tools only", () => {

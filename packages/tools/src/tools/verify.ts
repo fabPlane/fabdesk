@@ -38,7 +38,11 @@ export const verify_erc = defineTool({
     const schematic = await requireSchematic(project);
     const outFile = p(project, PROJECT_FILES.reports, "erc.json");
     const checkedHierarchy = await inspectSavedHierarchy(ctx, project, cli);
-    if (!checkedHierarchy.complete) {
+    // A hierarchy with no placed symbols gives kicad-cli nothing to check, so its ERC is
+    // vacuously clean. Report it as not applicable (same shape as an incomplete hierarchy)
+    // instead of a measured pass. See issue #64.
+    const noSymbols = checkedHierarchy.complete && checkedHierarchy.counts.components === 0;
+    if (!checkedHierarchy.complete || noSymbols) {
       const failed = {
         violations: [],
         counts: { errors: 1, warnings: 0 },
@@ -47,6 +51,7 @@ export const verify_erc = defineTool({
           source: "packaged-kicad-cli" as const,
           scope: "complete saved hierarchy" as const,
           applicability: false,
+          ...(noSymbols ? { reason: "no-schematic-symbols" as const } : {}),
           checkedRevision: checkedHierarchy.aggregateRevision,
           currentRevision: checkedHierarchy.aggregateRevision,
           revisionStable: true,
@@ -57,7 +62,9 @@ export const verify_erc = defineTool({
       };
       await writeJson(outFile, failed);
       return {
-        text: `Saved-file ERC not applicable: native schematic hierarchy is incomplete (${checkedHierarchy.issues.map((issue) => `${issue.kind}: ${issue.path}`).join(", ")}).`,
+        text: noSymbols
+          ? `Saved-file ERC not applicable: the saved schematic hierarchy has no placed symbols (${checkedHierarchy.sheets.length} sheet(s), 0 components), so there is nothing to check. Place the design's symbols before running ERC.`
+          : `Saved-file ERC not applicable: native schematic hierarchy is incomplete (${checkedHierarchy.issues.map((issue) => `${issue.kind}: ${issue.path}`).join(", ")}).`,
         json: failed,
         isError: true,
       };
@@ -146,6 +153,9 @@ export const verify_gate = defineTool({
         : []),
       ...(currentHierarchy && !currentHierarchy.complete
         ? ["current saved schematic hierarchy is incomplete"]
+        : []),
+      ...(currentHierarchy?.complete && currentHierarchy.counts.components === 0
+        ? ["current saved schematic hierarchy has no placed symbols; ERC had nothing to check"]
         : []),
     ];
     let allowed = project.manifest().allowedDrcWarnings;

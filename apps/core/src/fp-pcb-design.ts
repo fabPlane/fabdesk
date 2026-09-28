@@ -387,14 +387,24 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     const warnings = job.result.diagnostics
       .filter((d) => d.severity === "warning")
       .map(toBuildError);
-    if (job.result.ok && errors.length === 0)
-      await afterSuccessfulBuild(opts, source.files[entrypoint], warnings);
+    const ok = job.result.ok && errors.length === 0;
+    if (ok) await afterSuccessfulBuild(opts, source.files[entrypoint], warnings);
+    // The stackup the compile actually left on the board, so circuit_build can keep fabdesk.json
+    // in step with it. Best effort: a build is not failed because this read failed.
+    const copperLayers = ok
+      ? await deps.sessions
+          .board(opts.projectDir)
+          .then((board) => board.enabledLayers())
+          .then((enabled) => enabled.copperLayerCount)
+          .catch(() => undefined)
+      : undefined;
     return {
-      ok: job.result.ok && errors.length === 0,
+      ok,
       errors,
       warnings,
       counts: job.result.counts,
       durationMs,
+      ...(copperLayers !== undefined ? { copperLayers } : {}),
       ...(job.revision !== undefined ? { revision: job.revision } : {}),
       ...(job.removedCopper ? { removedCopper: job.removedCopper } : {}),
       ...(job.rejectedSchematicPath ? { rejectedSchematicPath: job.rejectedSchematicPath } : {}),
