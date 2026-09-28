@@ -21,6 +21,16 @@ export type ArchiveWriter = {
   write(key: string, content: string): Promise<void>;
 };
 
+export class ArchiveConsentRevokedError extends Error {
+  constructor() {
+    super("training archive consent revoked");
+  }
+}
+
+function requireConsent(allowed: () => boolean): void {
+  if (!allowed()) throw new ArchiveConsentRevokedError();
+}
+
 class FileArchiveWriter implements ArchiveWriter {
   constructor(private readonly directory: string) {}
   write(key: string, content: string): Promise<void> {
@@ -57,18 +67,23 @@ export class TrainingArchive {
   }
 
   /** A completed run is written before the bounded SQLite copy can prune older dumps. */
-  async put(dump: RunDump, db: Database): Promise<void> {
+  async put(dump: RunDump, db: Database, allowed: () => boolean = () => true): Promise<void> {
     const runId = safeId(dump.runId);
     const threadId = safeId(dump.threadId);
+    requireConsent(allowed);
     await this.writer.write(`run-dumps/${runId}.json`, dump.dumpJson);
     const conversation = conversationRecord(db, threadId);
     if (conversation) {
+      requireConsent(allowed);
       await this.writer.write(`conversations/${threadId}/${runId}.json`, conversation);
     }
   }
 
   /** Backfill current SQLite history, including conversations that have no agent run. */
-  async backfill(db: Database): Promise<{ conversations: number; runDumps: number }> {
+  async backfill(
+    db: Database,
+    allowed: () => boolean = () => true,
+  ): Promise<{ conversations: number; runDumps: number }> {
     const snapshot = `${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID()}`;
     let conversations = 0;
     for (const row of db
@@ -76,6 +91,7 @@ export class TrainingArchive {
       .all()) {
       const record = conversationRecord(db, row.id);
       if (!record) continue;
+      requireConsent(allowed);
       await this.writer.write(`snapshots/${snapshot}/conversations/${safeId(row.id)}.json`, record);
       conversations++;
     }
@@ -92,12 +108,14 @@ export class TrainingArchive {
         .all(lastCreatedAt, lastCreatedAt, lastRunId);
       if (batch.length === 0) break;
       for (const row of batch) {
+        requireConsent(allowed);
         await this.writer.write(`run-dumps/${safeId(row.run_id)}.json`, row.dump_json);
         runDumps++;
         lastCreatedAt = row.created_at;
         lastRunId = row.run_id;
       }
     }
+    requireConsent(allowed);
     await this.writer.write(
       `snapshots/${snapshot}/manifest.json`,
       JSON.stringify({

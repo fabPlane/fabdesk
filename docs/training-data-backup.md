@@ -6,7 +6,7 @@ Run dumps inherit the capture limits described in [agent-run telemetry](agent-ru
 
 ## Back up to private Cloudflare R2
 
-R2 upload is **off by default**. This is an installation-level opt-in: enabling it sends all conversations and run dumps currently stored by that daemon, including existing history. It does not record individual user consent. Use a private bucket with no public bucket URL or custom domain, and create a bucket-scoped R2 token with object read/write access. Fabdesk uses Cloudflare's [S3-compatible endpoint](https://developers.cloudflare.com/r2/examples/aws/aws-sdk-js-v3/) and the `auto` region.
+R2 upload is **off by default**. It requires both the operator's R2 configuration below **and** the **Training data backup** checkbox in Fabdesk Settings → Privacy. This checkbox is installation-wide and covers all conversations and run dumps currently stored by that daemon, including existing history. It is not scoped to individual signed-in accounts. Turning it off stops future uploads but does not erase prior backups. Use a private bucket with no public bucket URL or custom domain, and create a bucket-scoped R2 token with object read/write access. Fabdesk uses Cloudflare's [S3-compatible endpoint](https://developers.cloudflare.com/r2/examples/aws/aws-sdk-js-v3/) and the `auto` region.
 
 Set these variables in the environment that launches the core daemon:
 
@@ -19,7 +19,7 @@ export FABDESK_TRAINING_R2_SECRET_ACCESS_KEY=<bucket-scoped-secret-access-key>
 export FABDESK_TRAINING_R2_PREFIX=fabdesk-training/v1  # optional default
 ```
 
-The daemon backfills the current SQLite history on startup, then uploads each completed run before bounded local dump retention prunes old records. If configuration or upload fails, it logs the error and keeps new dumps locally without pruning. Fix the configuration and restart to retry the backfill. No R2 request is made unless `FABDESK_TRAINING_R2_ENABLED=1`.
+When consent is on, the daemon backfills the current SQLite history on startup or when the checkbox is first enabled, then uploads each completed run before bounded local dump retention prunes old records. If configuration or upload fails, it logs the error and keeps new dumps locally without pruning. Fix the configuration and restart to retry the backfill. No R2 request is made unless both opt-ins are on.
 
 To backfill on demand with the same environment:
 
@@ -32,6 +32,8 @@ Use a separate private bucket from public catalog images or downloads. The archi
 ## Back up to a private directory
 
 Choose a **private directory on a different disk or mounted backup volume**. The contents can include prompts, tool results, project source, and secrets entered by users or returned by tools. Limit access to the account running Fabdesk and encrypt the destination at rest. Do not put it in a project directory or a source repository.
+
+The Settings → Privacy consent checkbox also gates this destination and the manual backfill command.
 
 Set `FABDESK_TRAINING_ARCHIVE_DIR` in the environment that launches the core daemon:
 

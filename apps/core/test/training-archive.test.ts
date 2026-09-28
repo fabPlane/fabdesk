@@ -3,9 +3,33 @@ import { mkdtemp, readFile, readdir, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../src/db";
-import { TrainingArchive } from "../src/training-archive";
+import { ArchiveConsentRevokedError, TrainingArchive } from "../src/training-archive";
 
 describe("training archive", () => {
+  test("requires consent before exporting stored history", async () => {
+    const store = Store.open(":memory:");
+    const writes: string[] = [];
+    try {
+      expect(store.settings.get().trainingArchiveConsent).toBe(false);
+      const thread = store.threads.create({ agentId: "codex", title: "Private" });
+      store.threads.addMessage({ threadId: thread.id, role: "user", contentMd: "private prompt" });
+      const archive = new TrainingArchive({
+        async write(key) {
+          writes.push(key);
+        },
+      });
+      await expect(
+        archive.backfill(store.db, () => store.settings.get().trainingArchiveConsent),
+      ).rejects.toBeInstanceOf(ArchiveConsentRevokedError);
+      expect(writes).toEqual([]);
+      store.settings.patch({ trainingArchiveConsent: true });
+      await archive.backfill(store.db, () => store.settings.get().trainingArchiveConsent);
+      expect(writes.some((key) => key.endsWith(`${thread.id}.json`))).toBe(true);
+    } finally {
+      store.close();
+    }
+  });
+
   test("backs up conversations and completed run dumps as readable private files", async () => {
     const root = await mkdtemp(join(tmpdir(), "fabdesk-training-"));
     const store = Store.open(join(root, "data", "fabdesk.db"));

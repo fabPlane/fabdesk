@@ -46,7 +46,11 @@ import {
   setSentryUser,
 } from "./sentry";
 import { RunTelemetry } from "./run-telemetry";
-import { TrainingArchive, type ArchiveWriter } from "./training-archive";
+import {
+  ArchiveConsentRevokedError,
+  TrainingArchive,
+  type ArchiveWriter,
+} from "./training-archive";
 
 export type ServeOptions = {
   port?: number;
@@ -151,7 +155,11 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   const archives: TrainingArchive[] = [];
   if (archiveDir) archives.push(new TrainingArchive(archiveDir));
   let r2Writer: (ArchiveWriter & { close(): void }) | null = null;
-  let archiveBackfilled = true;
+  let archiveConfigured = true;
+  let archiveBackfilled = false;
+  let archiveClosing = false;
+  let backfillTask: Promise<void> | null = null;
+  const hasArchiveConsent = () => store.settings.get().trainingArchiveConsent;
   if (r2Enabled) {
     try {
       const { r2ArchiveConfig, R2ArchiveWriter } = await import("./training-r2");
@@ -160,32 +168,56 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       r2Writer = new R2ArchiveWriter(r2Config);
       archives.push(new TrainingArchive(r2Writer));
     } catch (error) {
-      archiveBackfilled = false;
+      archiveConfigured = false;
       logger.warn("training R2 archive configuration failed; local dump pruning disabled", {
         error: errMsg(error),
       });
     }
   }
-  for (const archive of archives) {
-    try {
-      const counts = await archive.backfill(store.db);
-      logger.info("training archive backfilled", counts);
-    } catch (error) {
-      archiveBackfilled = false;
-      logger.warn("training archive backfill failed; local dump pruning disabled", {
-        error: errMsg(error),
-      });
-    }
-  }
+  const startArchiveBackfill = (): Promise<void> => {
+    if (backfillTask) return backfillTask;
+    if (!archiveEnabled || !archiveConfigured || !hasArchiveConsent() || archiveClosing)
+      return Promise.resolve();
+    archiveBackfilled = false;
+    const task = (async () => {
+      try {
+        for (const archive of archives) {
+          const counts = await archive.backfill(
+            store.db,
+            () => hasArchiveConsent() && !archiveClosing,
+          );
+          logger.info("training archive backfilled", counts);
+        }
+        archiveBackfilled = hasArchiveConsent() && !archiveClosing;
+      } catch (error) {
+        if (!(error instanceof ArchiveConsentRevokedError)) {
+          logger.warn("training archive backfill failed; local dump pruning disabled", {
+            error: errMsg(error),
+          });
+        }
+      }
+    })();
+    backfillTask = task;
+    void task.finally(() => {
+      backfillTask = null;
+    });
+    return task;
+  };
+  if (hasArchiveConsent()) await startArchiveBackfill();
+  let lastArchiveConsent = hasArchiveConsent();
   const telemetry = new RunTelemetry({
     version: config.version,
     runDumps: archiveEnabled
       ? {
           async put(dump) {
+            if (!hasArchiveConsent() || archiveClosing) {
+              store.runDumps.put(dump);
+              return;
+            }
             let backedUp = archiveBackfilled;
             for (const archive of archives) {
               try {
-                await archive.put(dump, store.db);
+                await archive.put(dump, store.db, hasArchiveConsent);
               } catch (error) {
                 backedUp = false;
                 logger.warn("training archive failed; retained run dump locally", {
@@ -392,6 +424,10 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     startedAt,
     onSettingsChanged: () => {
       void cloudSettings.push();
+      const consent = hasArchiveConsent();
+      if (consent && !lastArchiveConsent) void startArchiveBackfill();
+      if (!consent) archiveBackfilled = false;
+      lastArchiveConsent = consent;
     },
   };
   const app = createApp({ ...appDeps, listener: "local" });
@@ -632,6 +668,8 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       server.stop(true);
       if (!opts.noHandshake) await removeHandshake(config.handshakePath);
       await telemetry.shutdown();
+      archiveClosing = true;
+      await backfillTask;
       r2Writer?.close();
       store.close();
       await closeSentry();

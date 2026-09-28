@@ -12,13 +12,17 @@ async function main(): Promise<void> {
   }
   const store = Store.open(resolveConfig().dbPath);
   try {
+    if (!store.settings.get().trainingArchiveConsent) {
+      throw new Error("enable Training data backup in Fabdesk Settings > Privacy before exporting");
+    }
+    const allowed = () => store.settings.get().trainingArchiveConsent;
     if (destination === "--r2") {
       const { r2ArchiveConfig, R2ArchiveWriter } = await import("../apps/core/src/training-r2");
       const config = r2ArchiveConfig();
       if (!config) throw new Error("set FABDESK_TRAINING_R2_ENABLED=1 to back up to R2");
       const writer = new R2ArchiveWriter(config);
       try {
-        const counts = await new TrainingArchive(writer).backfill(store.db);
+        const counts = await new TrainingArchive(writer).backfill(store.db, allowed);
         process.stdout.write(
           JSON.stringify({
             destination: "r2",
@@ -31,7 +35,7 @@ async function main(): Promise<void> {
         writer.close();
       }
     } else {
-      const counts = await new TrainingArchive(destination).backfill(store.db);
+      const counts = await new TrainingArchive(destination).backfill(store.db, allowed);
       process.stdout.write(JSON.stringify({ directory: destination, ...counts }) + "\n");
     }
   } finally {
