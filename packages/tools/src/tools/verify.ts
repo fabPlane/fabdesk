@@ -97,6 +97,12 @@ export const verify_erc = defineTool({
           complete: checkedHierarchy.complete,
           referencedFiles: checkedHierarchy.referencedFiles,
           orphanFiles: checkedHierarchy.orphanFiles,
+          // Lets readers such as the order gate recompute the aggregate revision from current bytes.
+          sheets: checkedHierarchy.sheets.map(({ hierarchyPath, nativePath, identity }) => ({
+            hierarchyPath,
+            nativePath,
+            identity,
+          })),
         },
       },
     };

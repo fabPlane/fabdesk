@@ -624,6 +624,28 @@ describe("http daemon", () => {
     expect(notReady.status).toBe(200);
     expect(((await notReady.json()) as { ready: boolean }).ready).toBe(false);
     await Bun.write(`${created.path}/board.kicad_pcb`, "(kicad_pcb)\n");
+    const blocked = (await (await api(`/projects/${created.id}/order`)).json()) as {
+      ready: boolean;
+      checks: { drc: string };
+    };
+    expect(blocked).toMatchObject({ ready: false, checks: { drc: "missing" } });
+    const blockedPost = await api(`/projects/${created.id}/order`, {
+      method: "POST",
+      body: JSON.stringify({ vendor: "jlcpcb" }),
+    });
+    expect(blockedPost.status).toBe(412);
+    const pcbSha = new Bun.CryptoHasher("sha256").update("(kicad_pcb)\n").digest("hex");
+    await Bun.write(
+      `${created.path}/reports/drc.json`,
+      JSON.stringify({
+        violations: [],
+        unconnected: [],
+        schematicParity: [],
+        counts: { errors: 0, warnings: 0, unconnected: 0 },
+        raw: {},
+        pcbRevision: { sha256: pcbSha },
+      }),
+    );
     const ready = (await (await api(`/projects/${created.id}/order`)).json()) as { ready: boolean };
     expect(ready.ready).toBe(true);
     const laser = await api(`/projects/${created.id}/order`, {

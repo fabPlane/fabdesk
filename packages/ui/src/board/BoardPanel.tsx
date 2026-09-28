@@ -49,9 +49,15 @@ export function BoardPanel() {
           value={tab}
           onChange={setBoardTab}
         />
-        {order.data?.ready && (
-          <Button size="sm" variant="primary" onClick={() => setOrderFlowOpen(true)} data-testid="order-now">
-            Order now
+        {order.data && (order.data.hasKicadPcb || order.data.hasRouted || order.data.ready) && (
+          <Button
+            size="sm"
+            variant={order.data.ready ? "primary" : "secondary"}
+            onClick={() => setOrderFlowOpen(true)}
+            title={order.data.ready ? "Board checks passed" : order.data.reasons.join(" ")}
+            data-testid="order-now"
+          >
+            {order.data.ready ? "Order now" : "Order checks"}
           </Button>
         )}
         <IconButton title={`Hide board panel (${mod}Shift+B)`} onClick={() => setBoardOpen(false)}>

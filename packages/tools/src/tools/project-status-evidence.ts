@@ -1,6 +1,7 @@
 /** Read-only summaries of persisted source-build and release evidence for project status surfaces. */
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { PROJECT_FILES, exists, readJsonOrNull } from "../fs";
 import type { ProjectHandle } from "../registry";
 import { p } from "./common";
@@ -56,13 +57,17 @@ async function sha256OrNull(path: string): Promise<string | null> {
   }
 }
 
-async function aggregateRevisionOrNull(
-  project: ProjectHandle,
-  release: ReleaseReport,
+export type SavedSheetRef = { hierarchyPath?: unknown; nativePath?: unknown; identity?: unknown };
+
+/**
+ * Recomputes a saved schematic hierarchy's aggregate revision (the formula of `inspectSchematicHierarchy`)
+ * from the current bytes of the sheets an earlier measurement recorded, without running kicad-cli.
+ * Null when a sheet reference is malformed or a sheet can no longer be read.
+ */
+export async function savedHierarchyRevision(
+  projectDir: string,
+  sheets: readonly SavedSheetRef[],
 ): Promise<string | null> {
-  const sheets = release.schematicHierarchy?.sheets;
-  if (!Array.isArray(sheets) || sheets.length === 0)
-    return sha256OrNull(p(project, PROJECT_FILES.boardSch));
   const entries: string[] = [];
   for (const sheet of sheets) {
     if (
@@ -71,11 +76,21 @@ async function aggregateRevisionOrNull(
       typeof sheet.identity !== "string"
     )
       return null;
-    const revision = await sha256OrNull(p(project, sheet.nativePath));
+    const revision = await sha256OrNull(join(projectDir, sheet.nativePath));
     if (!revision) return null;
     entries.push(`${sheet.hierarchyPath}\0${sheet.nativePath}\0${sheet.identity}\0${revision}`);
   }
   return createHash("sha256").update(entries.sort().join("\n")).digest("hex");
+}
+
+async function aggregateRevisionOrNull(
+  project: ProjectHandle,
+  release: ReleaseReport,
+): Promise<string | null> {
+  const sheets = release.schematicHierarchy?.sheets;
+  if (!Array.isArray(sheets) || sheets.length === 0)
+    return sha256OrNull(p(project, PROJECT_FILES.boardSch));
+  return savedHierarchyRevision(project.dir, sheets);
 }
 
 export async function readProjectStatusEvidence(project: ProjectHandle): Promise<{

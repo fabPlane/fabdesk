@@ -339,6 +339,7 @@ export function handleCoreEvent(event: CoreEvent, ctx: HandlerCtx): void {
       for (const p of event.paths)
         void qc.invalidateQueries({ queryKey: ["file", event.projectId, p] });
       void qc.invalidateQueries({ queryKey: ["file", event.projectId] });
+      void qc.invalidateQueries({ queryKey: ["project-order", event.projectId] });
       break;
     case "thread.created":
       // The list may be filtered by project; the daemon is the only place that knows the rest of

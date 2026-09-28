@@ -46,6 +46,7 @@ export * from "./circuit";
 export * from "./schematic";
 export * from "./pcb";
 export * from "./route";
+export { savedHierarchyRevision, type SavedSheetRef } from "./project-status-evidence";
 export * from "./kicad";
 export * from "./inspection";
 export * from "./native-edit";
