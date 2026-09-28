@@ -54,7 +54,9 @@ export class FrameSink {
         this.stats.frames += 1;
         if (m.event.kind === "connection") this.stats.connections += 1;
         this.stats.maxShapes = Math.max(this.stats.maxShapes, m.shapes.length);
-        this.#record(m);
+        // The terminal frame carries the finished copper; a replay without it shows a half-routed
+        // board, so it is written even after the cap has been reached.
+        this.#record(m, m.event.kind === "done");
         this.bus?.emit({ ts, topic: "route.frame", frame: m });
         break;
       default:
@@ -64,11 +66,15 @@ export class FrameSink {
     this.#scheduleFlush();
   };
 
-  #record(m: RouterWorkerMessage): void {
+  /**
+   * `terminal` records bypass the cap, so the file can exceed `maxBytes` by the one final frame;
+   * everything else stops once the budget is reached.
+   */
+  #record(m: RouterWorkerMessage, terminal = false): void {
     if (!this.framesPath) return;
     const line = JSON.stringify(m) + "\n";
     const bytes = Buffer.byteLength(line);
-    if (this.#persistenceCapped || this.stats.bytes + bytes > this.maxBytes) {
+    if (!terminal && (this.#persistenceCapped || this.stats.bytes + bytes > this.maxBytes)) {
       this.#persistenceCapped = true;
       this.stats.truncated = true;
       this.stats.droppedBytes += bytes;

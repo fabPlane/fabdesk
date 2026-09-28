@@ -368,7 +368,12 @@ async function executeRoute(
     droppedBytes: sink.stats.droppedBytes,
     framesReceived: sink.stats.frames,
   });
-  const persistFrameCapture = () => writeJson(join(runDir, "frames.json"), frameCapture());
+  // frames.json is diagnostic metadata: failing to write it must not fail a finished route.
+  const persistFrameCapture = () =>
+    writeJson(join(runDir, "frames.json"), frameCapture()).then(
+      () => null,
+      (error: unknown) => (error instanceof Error ? error.message : String(error)),
+    );
   const frames = new RouteProgressFrames(rec.id, started, sink);
   let progressWrites = Promise.resolve();
   let cancelPromise: Promise<void> | null = null;
@@ -576,11 +581,25 @@ async function executeRoute(
     frames.complete(shapes, summary.total);
     sink.onMessage({ kind: "result", runId: rec.id, result: fullResult });
     await sink.close();
-    await persistFrameCapture();
+    const frameMetadataError = await persistFrameCapture();
+    if (frameMetadataError)
+      rec = {
+        ...rec,
+        progress: {
+          ...rec.progress,
+          diagnostics: [
+            ...rec.progress.diagnostics,
+            `frames.json not written: ${frameMetadataError}`,
+          ].slice(-20),
+        },
+      };
     await writeJson(join(runDir, "result.json"), {
       ...fullResult,
       summary,
-      frameCapture: frameCapture(),
+      frameCapture: {
+        ...frameCapture(),
+        ...(frameMetadataError ? { metadataError: frameMetadataError } : {}),
+      },
     });
     await writeAtomic(join(runDir, "router.log"), `${summary.log.join("\n")}\n`);
     const candidatePath = join(runDir, "candidate.kicad_pcb");
@@ -684,7 +703,7 @@ async function executeRoute(
   } catch (error) {
     await cancelPromise;
     await sink.close().catch(() => undefined);
-    await persistFrameCapture().catch(() => undefined);
+    await persistFrameCapture();
     const endedAt = iso();
     const cancelled = signal.aborted;
     const message = error instanceof Error ? error.message : String(error);
