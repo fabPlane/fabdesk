@@ -3,25 +3,39 @@ import { appendFile } from "node:fs/promises";
 import type { RouterWorkerMessage } from "@fabdesk/protocol";
 import type { EventBusLike } from "./services";
 
+/** A replay is diagnostic data; it must never be able to exhaust the user's disk. */
+export const DEFAULT_ROUTE_FRAME_MAX_BYTES = 64 * 1024 * 1024;
+
 export interface FrameSinkStats {
   /** Frames received from the router (after its own throttle). */
   frames: number;
   /** Frames with `event.kind === "connection"`. */
   connections: number;
   bytes: number;
+  droppedBytes: number;
+  truncated: boolean;
   maxShapes: number;
 }
 
 export class FrameSink {
-  readonly stats: FrameSinkStats = { frames: 0, connections: 0, bytes: 0, maxShapes: 0 };
+  readonly stats: FrameSinkStats = {
+    frames: 0,
+    connections: 0,
+    bytes: 0,
+    droppedBytes: 0,
+    truncated: false,
+    maxShapes: 0,
+  };
   #buffer: string[] = [];
   #flushing: Promise<void> | null = null;
   #pending: Promise<void> = Promise.resolve();
+  #persistenceCapped = false;
 
   constructor(
     private readonly framesPath: string | null,
     private readonly bus: EventBusLike | null,
     private readonly onProgress?: (m: RouterWorkerMessage) => void,
+    private readonly maxBytes = DEFAULT_ROUTE_FRAME_MAX_BYTES,
   ) {}
 
   onMessage = (m: RouterWorkerMessage): void => {
@@ -53,7 +67,14 @@ export class FrameSink {
   #record(m: RouterWorkerMessage): void {
     if (!this.framesPath) return;
     const line = JSON.stringify(m) + "\n";
-    this.stats.bytes += line.length;
+    const bytes = Buffer.byteLength(line);
+    if (this.#persistenceCapped || this.stats.bytes + bytes > this.maxBytes) {
+      this.#persistenceCapped = true;
+      this.stats.truncated = true;
+      this.stats.droppedBytes += bytes;
+      return;
+    }
+    this.stats.bytes += bytes;
     this.#buffer.push(line);
   }
 

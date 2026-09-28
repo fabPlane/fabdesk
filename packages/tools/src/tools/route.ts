@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { z } from "zod/v4";
 import type { CinemaShape, RouteResult } from "@fabdesk/protocol";
 import { PROJECT_FILES, writeAtomic, writeJson } from "../fs";
-import { FrameSink } from "../frame-sink";
+import { DEFAULT_ROUTE_FRAME_MAX_BYTES, FrameSink } from "../frame-sink";
 import { ToolError, defineTool, type ToolContext, type ToolOutput } from "../registry";
 import type { RouteProgress, RouteRunRecord } from "../services";
 import { ok, p, throwIfAborted } from "./common";
@@ -361,6 +361,14 @@ async function executeRoute(
   };
   await persistProgress(ctx, rec, runDir);
   const sink = new FrameSink(framesPath, ctx.services.bus);
+  const frameCapture = () => ({
+    bytes: sink.stats.bytes,
+    maxBytes: DEFAULT_ROUTE_FRAME_MAX_BYTES,
+    truncated: sink.stats.truncated,
+    droppedBytes: sink.stats.droppedBytes,
+    framesReceived: sink.stats.frames,
+  });
+  const persistFrameCapture = () => writeJson(join(runDir, "frames.json"), frameCapture());
   const frames = new RouteProgressFrames(rec.id, started, sink);
   let progressWrites = Promise.resolve();
   let cancelPromise: Promise<void> | null = null;
@@ -568,7 +576,12 @@ async function executeRoute(
     frames.complete(shapes, summary.total);
     sink.onMessage({ kind: "result", runId: rec.id, result: fullResult });
     await sink.close();
-    await writeJson(join(runDir, "result.json"), { ...fullResult, summary });
+    await persistFrameCapture();
+    await writeJson(join(runDir, "result.json"), {
+      ...fullResult,
+      summary,
+      frameCapture: frameCapture(),
+    });
     await writeAtomic(join(runDir, "router.log"), `${summary.log.join("\n")}\n`);
     const candidatePath = join(runDir, "candidate.kicad_pcb");
     await ctx.services.design.release(snapshotDir).catch(() => undefined);
@@ -671,6 +684,7 @@ async function executeRoute(
   } catch (error) {
     await cancelPromise;
     await sink.close().catch(() => undefined);
+    await persistFrameCapture().catch(() => undefined);
     const endedAt = iso();
     const cancelled = signal.aborted;
     const message = error instanceof Error ? error.message : String(error);
