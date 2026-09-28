@@ -2,7 +2,7 @@
 import { createHash } from "node:crypto";
 import { readFile, readdir, unlink } from "node:fs/promises";
 import { z } from "zod/v4";
-import type { FpPcbBoardSpec } from "@fabdesk/protocol";
+import type { FpPcbBoardSpec, NetlistFile } from "@fabdesk/protocol";
 import { PROJECT_FILES, exists, mtimeMs, readJsonOrNull, writeJson } from "../fs";
 import { ToolError, ToolsetId, defineTool, TOOLSETS, type ProjectHandle } from "../registry";
 import type { BuildResult, DesignRow, DesignSelect, DrcReport, DrcViolation } from "../services";
@@ -220,6 +220,16 @@ export async function buildBoardSpec(project: ProjectHandle): Promise<FpPcbBoard
   };
 }
 
+/**
+ * Net names the KiCad fork cannot save. KiCad's own netlist export writes a label's `/` as `{slash}`
+ * (and other characters as `{colon}`, `{space}`, …); the fork sets the net class fine but its
+ * project save then fails with `basic_string`, and the build reports only that. Refusing them here
+ * says what to change instead.
+ */
+export function escapedNetNames(file: NetlistFile): string[] {
+  return file.netlist.nets.map((n) => n.name).filter((name) => /[{}]/.test(name));
+}
+
 export const circuit_build = defineTool({
   name: "circuit_build",
   toolset: "core",
@@ -249,6 +259,31 @@ export const circuit_build = defineTool({
   handler: async ({ entrypoint, rebuild, fresh }, ctx) => {
     const project = ctx.requireProject();
     ctx.progress(0.05, "building");
+    const file = entrypoint ? null : await loadNetlist(project).catch(() => null);
+    const escaped = file ? escapedNetNames(file) : [];
+    if (escaped.length) {
+      const summary: BuildSummary = {
+        ok: false,
+        at: new Date().toISOString(),
+        rebuild,
+        durationMs: 0,
+        errors: [
+          {
+            type: "net_name_escape",
+            file: PROJECT_FILES.netlistJson,
+            message: `net names may not contain "{" or "}" (the KiCad fork cannot save a board with them): ${escaped.join(", ")}. KiCad writes a label's "/" as {slash}; use "_" instead.`,
+          },
+        ],
+        warnings: [],
+        counts: { components: 0, nets: 0, footprintsAdded: 0, footprintsPlaced: 0 },
+      };
+      await writeReport(project, "build", summary);
+      return {
+        text: `Build FAILED (1 errors):\n${formatErrors(summary.errors)}`,
+        json: summary,
+        isError: true,
+      };
+    }
     const board = await buildBoardSpec(project);
     const result = await ctx.services.design.build({
       projectDir: project.dir,
