@@ -10,7 +10,7 @@ function run(patch: Partial<RouteRunSummary>): RouteRunSummary {
     id: "r1",
     projectId: "p1",
     router: "capacity",
-    status: "done",
+    status: "completed",
     framesPath: "/tmp/r1.jsonl",
     startedAt: at(3 * 3_600_000 + 65_000),
     endedAt: at(3 * 3_600_000),
@@ -39,6 +39,8 @@ describe("runTitle", () => {
     );
     expect(runTitle(run({ status: "failed" }))).toBe("Failed");
     expect(runTitle(run({ status: "cancelled" }))).toBe("Cancelled");
+    expect(runTitle(run({ status: "queued", endedAt: null }))).toBe("Queued…");
+    expect(runTitle(run({ status: "timed_out" }))).toBe("Timed out");
     expect(runTitle(run({}))).toBe("Done");
   });
 });
@@ -60,7 +62,7 @@ test("describeRun joins router, duration and age, and flags a live run", () => {
     id: "r1",
     title: "3/4 routed, 1 open",
     subtitle: "capacity · 1m 05s · 3h ago",
-    status: "done",
+    status: "completed",
     tone: "success",
     live: false,
   });

@@ -21,7 +21,12 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
   const rendered = useProjectText(projectId, `renders/${kind}.svg`);
   const render = useRunTool();
 
-  if (!projectId) return <EmptyState title="No project selected">Pick a project in the sidebar to see its {kind}.</EmptyState>;
+  if (!projectId)
+    return (
+      <EmptyState title="No project selected">
+        Pick a project in the sidebar to see its {kind}.
+      </EmptyState>
+    );
   if (rendered.isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -32,7 +37,10 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
   if (rendered.data) {
     return (
       <div className="h-full" data-testid={`board-${kind}-svg`}>
-        <SvgViewer svg={rendered.data} toolbar={<span className="text-[11px] text-muted">renders/{kind}.svg</span>} />
+        <SvgViewer
+          svg={rendered.data}
+          toolbar={<span className="text-[11px] text-muted">renders/{kind}.svg</span>}
+        />
       </div>
     );
   }
@@ -43,14 +51,19 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
       <EmptyState
         title={copy.title}
         action={
-          <Button variant="primary" size="sm" disabled={running} onClick={() => void render.run(RENDER_TOOL[kind], { projectId })}>
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={running}
+            onClick={() => void render.run(RENDER_TOOL[kind], { projectId })}
+          >
             {running ? "Rendering..." : copy.action}
           </Button>
         }
       >
         {kind === "pcb"
-          ? "Build the board (circuit_build) and render it, or ask the agent to design one."
-          : "Build the project, then render the generated schematic. Components need libSource to appear."}
+          ? "This tab displays renders/pcb.svg. Build the board, then generate its PCB SVG; PNG images appear under Renders."
+          : "This tab displays renders/schematic.svg generated from the saved native KiCad schematic."}
         {render.state.error && <div className="mt-2 text-danger">{render.state.error}</div>}
       </EmptyState>
     </div>

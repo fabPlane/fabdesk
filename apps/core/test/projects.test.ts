@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, stat, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../src/db";
@@ -50,5 +50,96 @@ describe("ProjectStore.delete", () => {
     await projects.delete(p.id, { purge: true });
     expect(await stat(p.path).catch(() => null)).toBeNull();
     projects.close();
+  });
+});
+
+describe("ProjectStore absolute-path resolution", () => {
+  test("absolute copies are ephemeral and cannot repoint a canonical project", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "fabdesk-ephemeral-projects-"));
+    const store = Store.open(join(dir, "db.sqlite"));
+    const projectsRoot = join(dir, "projects");
+    const projects = new ProjectStore(store.projects, projectsRoot, () => {}, { debounceMs: 5 });
+    try {
+      await projects.init();
+      const canonical = await projects.create("Canonical Project");
+      for (const path of ["board.kicad_pro", "board.kicad_sch", "board.kicad_pcb"])
+        await writeFile(join(canonical.path, path), `canonical-${path}`);
+      await Bun.sleep(20);
+      const canonicalHandle = await projects.handle(canonical.id);
+      expect(canonicalHandle?.dir).toBe(canonical.path);
+
+      const createCopy = async (name: string, id: string) => {
+        const copy = join(dir, "external", name);
+        await mkdir(copy, { recursive: true });
+        const now = new Date().toISOString();
+        await writeFile(
+          join(copy, "fabdesk.json"),
+          JSON.stringify({
+            schema: 1,
+            id,
+            name,
+            createdAt: now,
+            updatedAt: now,
+            board: { layers: 2 },
+            router: "capacity",
+          }),
+        );
+        for (const path of ["board.kicad_pro", "board.kicad_sch", "board.kicad_pcb"])
+          await writeFile(join(copy, path), `${name}-${path}`);
+        return copy;
+      };
+
+      const rowsBefore = store.projects.list();
+      const watchersBefore = (projects as any).watchers.size;
+      const handlesBefore = (projects as any).handles.size;
+      const unique = await createCopy("Unique Copy", "prj_ephemeral_unique");
+      const uniqueHandle = await projects.resolve(unique);
+      expect(uniqueHandle).toMatchObject({ id: "prj_ephemeral_unique", dir: unique });
+      expect(store.projects.list()).toEqual(rowsBefore);
+      expect((projects as any).watchers.size).toBe(watchersBefore);
+      expect((projects as any).handles.size).toBe(handlesBefore);
+      expect(await projects.resolve("prj_ephemeral_unique")).toBeNull();
+
+      const duplicate = await createCopy("Duplicate Copy", canonical.id);
+      const duplicateHandle = await projects.resolve(duplicate);
+      expect(duplicateHandle).toMatchObject({
+        id: canonical.id,
+        name: "Duplicate Copy",
+        dir: duplicate,
+      });
+      expect(store.projects.list()).toEqual(rowsBefore);
+      expect((projects as any).watchers.size).toBe(watchersBefore);
+      expect((projects as any).handles.size).toBe(handlesBefore);
+      expect(await projects.resolve(canonical.id)).toBe(canonicalHandle);
+      expect((await projects.resolve("Canonical Project"))?.dir).toBe(canonical.path);
+
+      const invalid = join(dir, "external", "invalid");
+      await mkdir(invalid, { recursive: true });
+      await writeFile(join(invalid, "fabdesk.json"), "not-json");
+      expect(await projects.resolve(invalid)).toBeNull();
+      const missingNative = await createCopy("Missing Native", "prj_missing_native");
+      await unlink(join(missingNative, "board.kicad_pcb"));
+      expect(await projects.resolve(missingNative)).toBeNull();
+      const escaped = await createCopy("Escaped Native", "prj_escaped_native");
+      const outside = join(dir, "outside.kicad_sch");
+      await writeFile(outside, "outside");
+      await unlink(join(escaped, "board.kicad_sch"));
+      await symlink(outside, join(escaped, "board.kicad_sch"));
+      expect(await projects.resolve(escaped)).toBeNull();
+      expect(await projects.resolve(join(dir, "does-not-exist"))).toBeNull();
+      expect(store.projects.list()).toEqual(rowsBefore);
+      expect((projects as any).watchers.size).toBe(watchersBefore);
+
+      projects.close();
+      const restarted = new ProjectStore(store.projects, projectsRoot, () => {}, { watch: false });
+      await restarted.init();
+      expect((await restarted.resolve(canonical.id))?.dir).toBe(canonical.path);
+      expect(await restarted.resolve("prj_ephemeral_unique")).toBeNull();
+      restarted.close();
+    } finally {
+      projects.close();
+      store.close();
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

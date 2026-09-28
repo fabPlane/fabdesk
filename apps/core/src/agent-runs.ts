@@ -42,15 +42,28 @@ export type AgentAdapterLike = Pick<AgentAdapter, "id" | "run"> & { supportsSupe
 /** A request nobody answered for this long resolves as `deny` with `by: "timeout"`. */
 export const APPROVAL_TIMEOUT_MS = 30 * 60_000;
 
+function appendMcpProfile(url: string, profile: "substrate"): string {
+  const endpoint = new URL(url);
+  endpoint.searchParams.set("profile", profile);
+  return endpoint.toString();
+}
+
 export type RunDeps = {
   store: Store;
   emit: (e: CoreEvent) => void;
   tokens: TokenSet;
   mcpUrl: string;
+  /** Optional experimental MCP exposure profile appended to each run's endpoint. */
+  mcpProfile?: "substrate";
   adapters: Partial<Record<AgentId, AgentAdapterLike>>;
   settings: () => Settings;
   /** Regenerates AGENTS.md/CLAUDE.md before the run. */
   prepareProject?: (project: ProjectHandle, agentId: AgentId) => Promise<void>;
+  /** Safe, non-secret workbench paths to add explicitly to the spawned agent environment. */
+  agentEnvironment?: (input: {
+    cwd: string;
+    project: ProjectHandle | null;
+  }) => Promise<Record<string, string>>;
   workspaceDir: string;
   telemetry?: Pick<RunTelemetry, "startAgentRun">;
   /** Annotations of a fabdesk (or other known) tool, for the supervised-mode classifier. */
@@ -480,6 +493,13 @@ export class AgentRunManager {
     });
     emit({ ts: Date.now(), topic: "thread.updated", threadId: input.threadId });
 
+    const workbenchEnv = await this.deps
+      .agentEnvironment?.({ cwd, project: input.project })
+      .catch((e) => {
+        logger.warn("agent PCB environment could not be resolved", { error: errMsg(e) });
+        return {};
+      });
+
     // Registered before the adapter starts: an in-band supervisor call can arrive with the first event.
     const active: ActiveRun = {
       runId: run.id,
@@ -516,10 +536,16 @@ export class AgentRunManager {
       cwd,
       prompt: input.prompt,
       attachments: input.attachments,
-      mcp: { url: this.deps.mcpUrl, token },
+      mcp: {
+        url: this.deps.mcpProfile
+          ? appendMcpProfile(this.deps.mcpUrl, this.deps.mcpProfile)
+          : this.deps.mcpUrl,
+        token,
+      },
       ...(resume ? { resume } : {}),
       ...(selectedModel ? { model: selectedModel } : {}),
       permission: agentSettings?.permissionMode ?? "acceptEdits",
+      ...(workbenchEnv && Object.keys(workbenchEnv).length ? { env: workbenchEnv } : {}),
       runtimeMode,
       ...(runtimeMode === "supervised" ? { supervisor } : {}),
       ...(agentSettings?.extraAllowedTools?.length

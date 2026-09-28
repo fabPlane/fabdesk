@@ -59,7 +59,12 @@ export type BuildResult = {
   revision?: number;
   /** Copper removed by a clean rebuild. */
   removedCopper?: { tracks: number; vias: number };
+  /** Rejected candidate retained for diagnosis after a fail-closed schematic build. */
+  rejectedSchematicPath?: string;
 };
+
+/** Whether copper pours were refilled after a copper change, and why not when they were not. */
+export type ZoneRefill = { refilled: boolean; error?: string };
 
 export type DesignSelect =
   | "components"
@@ -67,6 +72,11 @@ export type DesignSelect =
   | "pads"
   | "vias"
   | "tracks"
+  | "zones"
+  | "keepouts"
+  | "board_geometry"
+  | "footprint_geometry"
+  | "texts"
   | "unrouted"
   | "outline";
 export type DesignRow = Record<string, unknown>;
@@ -90,6 +100,7 @@ export type RouteProgress = {
   pass?: number;
   routed?: number;
   total?: number;
+  violations?: number;
 };
 
 export type RouteSummary = {
@@ -129,11 +140,24 @@ export type ComponentScope = {
   pads: Record<string, number>;
 };
 
-export type FootprintHit = { libId: string; nickname: string; name: string; description: string };
+export type DataAvailability = "available" | "missing" | "unsupported";
+export type PartBounds = {
+  min: { x: number; y: number };
+  max: { x: number; y: number };
+  size: { x: number; y: number };
+};
+export type PartRoleSuitability = {
+  role: "power-only-usb-c";
+  suitable: boolean;
+  reasons: string[];
+};
 export type PartDescription = {
   kind: "footprint" | "symbol";
   libId: string;
   description: string;
+  keywords?: string[];
+  datasheet?: string;
+  roleSuitability?: PartRoleSuitability[];
   anchor?: { x: number; y: number };
   pins?: Array<{
     number: string;
@@ -143,9 +167,49 @@ export type PartDescription = {
   }>;
   pads?: Array<{
     number: string;
+    type?: string;
+    shape?: string;
+    layers?: string[];
     position: { x: number; y: number };
     size: { x: number; y: number };
   }>;
+  package?: {
+    assemblyMethod: "smd" | "through-hole" | "mixed" | "unspecified";
+    bodyBounds?: PartBounds;
+    courtyardBounds?: PartBounds;
+    connectorEdgeDatum?: { axis: "x" | "y"; coordinate: number; label: string };
+  };
+  fabrication?: {
+    courtyard: DataAvailability;
+    fabOutline: DataAvailability;
+    threeDModels: DataAvailability;
+    models: string[];
+    includedInBom: boolean | "unsupported";
+    includedInPositionFiles: boolean | "unsupported";
+  };
+};
+export type FootprintHit = {
+  libId: string;
+  nickname: string;
+  name: string;
+  description: string;
+  part?: PartDescription;
+};
+export type PartCompatibility = {
+  symbolLibId: string;
+  footprintLibId: string;
+  symbol: PartDescription;
+  footprint: PartDescription;
+  compatible: boolean;
+  pinPad: {
+    compatible: boolean;
+    matched: string[];
+    missingPadsForPins: string[];
+    padsWithoutPins: string[];
+  };
+  role?: PartRoleSuitability;
+  issues: string[];
+  warnings: string[];
 };
 
 export type DesignStatus = {
@@ -154,11 +218,288 @@ export type DesignStatus = {
   reason?: string;
   kicadCliExists?: boolean;
   frontends?: string[];
+  routers?: {
+    capacity?: { ok: boolean; reason?: string };
+    freerouting?: { ok: boolean; reason?: string };
+  };
+};
+
+export type SchematicPoint = { x: number; y: number };
+export type NativeSchematicSymbolInput = {
+  libId: string;
+  reference: string;
+  value: string;
+  /** Omit for non-physical symbols such as power flags. */
+  footprint?: string | undefined;
+  position: SchematicPoint;
+  unit?: number | undefined;
+  bodyStyle?: number | undefined;
+  rotation?: 0 | 90 | 180 | 270 | undefined;
+  mirrorX?: boolean | undefined;
+  mirrorY?: boolean | undefined;
+  fields?: Record<string, string> | undefined;
+};
+export type NativeSchematicSymbolUpdate = {
+  reference: string;
+  newReference?: string | undefined;
+  position?: SchematicPoint | undefined;
+  rotation?: 0 | 90 | 180 | 270 | undefined;
+  mirrorX?: boolean | undefined;
+  mirrorY?: boolean | undefined;
+  value?: string | undefined;
+  footprint?: string | undefined;
+  fields?: Record<string, string> | undefined;
+};
+export type NativeSchematicConnectionInput = {
+  name: string;
+  nodes: Array<{ reference: string; pin: string }>;
+  label?: "local" | "global" | "none" | undefined;
+};
+export type NativeSchematicEdit = {
+  symbols?: NativeSchematicSymbolInput[];
+  symbolUpdates?: NativeSchematicSymbolUpdate[];
+  connections?: NativeSchematicConnectionInput[];
+  wires?: Array<{ start: SchematicPoint; end: SchematicPoint }>;
+  localLabels?: Array<{ text: string; position: SchematicPoint }>;
+  globalLabels?: Array<{ text: string; position: SchematicPoint }>;
+  junctions?: SchematicPoint[];
+  noConnects?: SchematicPoint[];
+  texts?: Array<{ text: string; position: SchematicPoint }>;
+  deleteItemIds?: string[];
+  save?: boolean;
+};
+export type NativeSchematicSnapshot = {
+  revision: number;
+  pcbRevision: number;
+  symbols: Array<{
+    id: string;
+    reference: string;
+    value: string;
+    footprint: string;
+    libId: string;
+    position: SchematicPoint;
+    rotation: number;
+    mirrorX: boolean;
+    mirrorY: boolean;
+    pins: Array<{
+      id: string;
+      number: string;
+      name: string;
+      net?: string;
+      position: SchematicPoint;
+    }>;
+  }>;
+  wires: Array<{ id: string; start: SchematicPoint; end: SchematicPoint }>;
+  localLabels: Array<{ id: string; text: string; position: SchematicPoint }>;
+  globalLabels: Array<{ id: string; text: string; position: SchematicPoint }>;
+  junctions: Array<{ id: string; position: SchematicPoint }>;
+  noConnects: Array<{ id: string; position: SchematicPoint }>;
+  texts: Array<{ id: string; text: string; position: SchematicPoint }>;
+  nets: Array<{ name: string; itemCount: number; itemIds: string[] }>;
+  erc: { errors: number; warnings: number };
+  /** Live KiCad IPC authoring scope. This is never saved-file ERC evidence. */
+  scope?: {
+    kind: "current/root-sheet" | "selected-sheet";
+    hierarchyPath: string;
+    nativePath: string | null;
+    name: string;
+  };
+};
+
+export type SchematicHierarchyIssue = {
+  kind: "missing" | "unreadable" | "duplicate" | "cycle" | "parse" | "export";
+  path: string;
+  detail: string;
+};
+export type SchematicHierarchySheet = {
+  hierarchyPath: string;
+  nativePath: string;
+  identity: string;
+  name: string;
+  depth: number;
+  sha256: string;
+  bytes: number;
+  components: number;
+  nets: number;
+};
+export type SchematicHierarchy = {
+  rootFile: string;
+  projectFile: string | null;
+  aggregateRevision: string;
+  complete: boolean;
+  counts: { components: number; nets: number; sheets: number };
+  sheets: SchematicHierarchySheet[];
+  referencedFiles: string[];
+  orphanFiles: string[];
+  issues: SchematicHierarchyIssue[];
+  source: {
+    hierarchy: "native-kicad-project";
+    electrical: "packaged-kicad-cli-netlist";
+    kicadCli: { path: string; version: string };
+  };
+};
+export type NativeSchematicEditResult = {
+  created: {
+    symbols: number;
+    wires: number;
+    localLabels: number;
+    globalLabels: number;
+    junctions: number;
+    noConnects: number;
+    texts: number;
+  };
+  updated: { symbols: number };
+  deleted: number;
+  saved: boolean;
+  revision: number;
+};
+export type SchematicPcbSyncResult = {
+  ok: boolean;
+  dryRun: boolean;
+  erc: { errors: number; warnings: number };
+  update: { errors: number; warnings: number; newFootprints: number; report: string };
+  parity?: number;
+  saved: boolean;
+};
+export type PcbPlacementResult = {
+  moved: string[];
+  missing: string[];
+  libraryNormalized?: number;
+  revision: number;
+  saved: boolean;
+};
+export type PcbFootprintEdit = {
+  reference: string;
+  position?: SchematicPoint | undefined;
+  rotation?: number | undefined;
+  flip?: boolean | undefined;
+  lock?: boolean | undefined;
+  referenceField?:
+    | {
+        visible?: boolean | undefined;
+        position?: SchematicPoint | undefined;
+        sizeMm?: number | undefined;
+      }
+    | undefined;
+};
+export type PcbOutlineResult = {
+  created: number;
+  replaced: number;
+  revision: number;
+  saved: boolean;
+};
+
+export type PcbGeometryEdit = {
+  tracks?: Array<{
+    start: SchematicPoint;
+    end: SchematicPoint;
+    width: number;
+    layer: number;
+    net?: string;
+  }>;
+  vias?: Array<{
+    position: SchematicPoint;
+    diameter: number;
+    drill: number;
+    layers: number[];
+    net?: string;
+  }>;
+  zones?: Array<{
+    points: SchematicPoint[];
+    holes?: SchematicPoint[][];
+    layers: number[];
+    net?: string;
+    name?: string;
+    clearance?: number;
+    minThickness?: number;
+    priority?: number;
+  }>;
+  keepouts?: Array<{
+    points: SchematicPoint[];
+    holes?: SchematicPoint[][];
+    layers: number[];
+    name?: string;
+    copper?: boolean;
+    vias?: boolean;
+    tracks?: boolean;
+    pads?: boolean;
+    footprints?: boolean;
+  }>;
+  texts?: Array<{
+    text: string;
+    position: SchematicPoint;
+    layer: number;
+    size?: SchematicPoint;
+    thickness?: number;
+    angle?: number;
+    knockout?: boolean;
+  }>;
+  graphics?: Array<{
+    kind: "segment" | "rectangle" | "arc" | "circle" | "polygon";
+    layer: number;
+    start?: SchematicPoint;
+    end?: SchematicPoint;
+    mid?: SchematicPoint;
+    center?: SchematicPoint;
+    radiusPoint?: SchematicPoint;
+    points?: SchematicPoint[];
+    holes?: SchematicPoint[][];
+    strokeWidth?: number;
+    filled?: boolean;
+  }>;
+  deleteItemIds?: string[];
+};
+export type PcbGeometryEditResult = {
+  created: {
+    tracks: number;
+    vias: number;
+    zones: number;
+    keepouts: number;
+    texts: number;
+    graphics: number;
+  };
+  createdIds: string[];
+  deletedIds: string[];
+  revision: number;
+  saved: boolean;
+  /** Pours are refilled before the save, so the saved board's zones match its copper. */
+  zoneRefill?: ZoneRefill;
+};
+export type PcbGeometrySnapshot = Record<string, unknown> & {
+  revisionStart?: number;
+  revisionEnd?: number;
+  revisionStable: boolean;
+  pads: Array<Record<string, unknown>>;
+  tracks: Array<Record<string, unknown>>;
+  vias: Array<Record<string, unknown>>;
+  zones: Array<Record<string, unknown>>;
+  texts: Array<Record<string, unknown>>;
+  graphics: Array<Record<string, unknown>>;
+  nets: Array<Record<string, unknown>>;
+  rules: Record<string, unknown>;
 };
 
 export interface DesignService {
   /** Compile the project's netlist into `board.kicad_pcb` through the bridge. */
   build(opts: BuildOptions): Promise<BuildResult>;
+  /** Inspect the native KiCad schematic; creates the project's KiCad documents when requested by an edit. */
+  schematicInspect(projectDir: string, sheet?: string): Promise<NativeSchematicSnapshot>;
+  /** Apply one reviewable batch of native schematic items as a KiCad undo commit. */
+  schematicEdit(projectDir: string, edit: NativeSchematicEdit): Promise<NativeSchematicEditResult>;
+  /** ERC-gated native Update PCB from Schematic, with dry-run preview and parity verification. */
+  syncSchematicToPcb(projectDir: string, dryRun: boolean): Promise<SchematicPcbSyncResult>;
+  /** Define or update the compiler-owned physical board boundary. */
+  defineBoardOutline(
+    projectDir: string,
+    points: SchematicPoint[],
+    replace: boolean,
+  ): Promise<PcbOutlineResult>;
+  /** Place native board footprints by reference without touching schematic connectivity. */
+  placeFootprints(projectDir: string, placements: PcbFootprintEdit[]): Promise<PcbPlacementResult>;
+  /** Create and delete explicitly named native board geometry without replacing unrelated items. */
+  editBoardGeometry(projectDir: string, edit: PcbGeometryEdit): Promise<PcbGeometryEditResult>;
+  /** Canonical board geometry, transformed pads, nets, layers, and applicable clearance data. */
+  inspectBoardGeometry(projectDir: string): Promise<PcbGeometrySnapshot>;
   /** Rows describing the board as KiCad holds it. */
   query(projectDir: string, select: DesignSelect, filter?: string): Promise<DesignRow[]>;
   /** Autoroute on the bridge; resolves when the job ends. */
@@ -170,7 +511,10 @@ export interface DesignService {
   /** Cancel the running route job of a project (or every running one). */
   cancelRoute(projectDir?: string): Promise<void>;
   /** Delete tracks, arcs and vias — of the given nets, or all of them. */
-  unroute(projectDir: string, nets?: string[]): Promise<{ tracks: number; vias: number }>;
+  unroute(
+    projectDir: string,
+    nets?: string[],
+  ): Promise<{ tracks: number; vias: number; zoneRefill?: ZoneRefill }>;
   /** Nets attached to component references (repair scope). */
   scope(
     projectDir: string,
@@ -183,6 +527,12 @@ export interface DesignService {
   searchSymbols(query: string, limit: number): Promise<FootprintHit[]>;
   /** Pin/pad geometry needed to connect and place one exact library id safely. */
   describePart(kind: "footprint" | "symbol", libId: string): Promise<PartDescription>;
+  /** Validate a symbol/footprint pair without placing or changing either one. */
+  checkPartCompatibility(
+    symbolLibId: string,
+    footprintLibId: string,
+    role?: "power-only-usb-c",
+  ): Promise<PartCompatibility>;
   /** Move footprints (mm, degrees) on the built board; returns what moved and the references it could not find. */
   place(
     projectDir: string,
@@ -201,15 +551,49 @@ export type KicadRunResult = { stdout: string; stderr: string; exitCode: number 
 export type KicadCli = {
   path: string;
   version: string;
-  trace?: (input: { command: string[]; cwd: string }, invoke: () => Promise<KicadRunResult>) => Promise<KicadRunResult>;
+  trace?: (
+    input: { command: string[]; cwd: string },
+    invoke: () => Promise<KicadRunResult>,
+  ) => Promise<KicadRunResult>;
 };
 export type BoardView = "top" | "bottom" | "perspective" | "side";
+
+/** Structural mirror of @fabdesk/kicad `MechanicalSection`; the report stores it verbatim. */
+export type MechanicalReport = {
+  contract: { name: string; version: string };
+  status: "present" | "partial" | "missing" | "inapplicable" | "not-requested";
+  source: {
+    pcbRevision: string;
+    cache: { status: "hit" | "miss" | "disabled"; key: string | null; reason?: string };
+    [key: string]: unknown;
+  };
+  coverage: Record<string, number>;
+  interference: {
+    broadPhaseOverlapCandidates: { count: number; truncated: boolean; [key: string]: unknown };
+    collision: { status: string; [key: string]: unknown };
+    [key: string]: unknown;
+  };
+  issues: Array<{ code: string; severity: string; [key: string]: unknown }>;
+  [key: string]: unknown;
+};
 
 export type DrcViolation = {
   rule: string;
   severity: "error" | "warning" | "exclusion";
   description: string;
-  items: Array<{ description: string; uuid?: string; pos?: { x: number; y: number } }>;
+  items: Array<{
+    description: string;
+    uuid?: string;
+    pos?: { x: number; y: number };
+    net?: string;
+    layer?: string | number;
+    layers?: Array<string | number>;
+  }>;
+  coordinates: Array<{ x: number; y: number }>;
+  layers: Array<string | number>;
+  nets: string[];
+  objectIds: string[];
+  affectedGeometry: Array<{ objectType: string; [key: string]: unknown }>;
   /** `${rule}:${first item description}`; stable across runs, used for warning baselines. */
   signature: string;
 };
@@ -218,6 +602,8 @@ export type DrcReport = {
   unconnected: DrcViolation[];
   schematicParity: DrcViolation[];
   counts: { errors: number; warnings: number; unconnected: number };
+  /** True only when this report was produced with PCB-to-schematic parity enabled. */
+  schematicParityChecked?: boolean;
   raw?: unknown;
 };
 export type ErcReport = {
@@ -244,6 +630,11 @@ export interface KicadService {
     cli: KicadCli,
     opts: { schematic: string; outFile: string; severity?: "error" | "all"; signal?: AbortSignal },
   ): Promise<ErcReport>;
+  /** Shared saved native hierarchy and packaged-KiCad complete-project electrical facts. */
+  inspectSchematicHierarchy(
+    cli: KicadCli,
+    opts: { projectDir: string; rootSchematic: string; projectFile?: string; signal?: AbortSignal },
+  ): Promise<SchematicHierarchy>;
   gate(drc: DrcReport, erc: ErcReport | undefined, allowedWarningSignatures: string[]): GateResult;
   renderPng(
     cli: KicadCli,
@@ -257,10 +648,22 @@ export interface KicadService {
       signal?: AbortSignal;
     },
   ): Promise<void>;
+  rasterizeSvg(
+    svg: string | Uint8Array,
+    opts?: { maxWidth?: number; background?: string },
+  ): Promise<{ png: Uint8Array; width: number; height: number }>;
   exportGlb(
     cli: KicadCli,
     opts: { board: string; output: string; signal?: AbortSignal },
   ): Promise<{ fused: boolean; warnings: string[] }>;
+  /**
+   * Per-footprint 3D model coverage and exact board-space bounds measured from the packaged
+   * `kicad-cli pcb export glb`; `scratchDir` (temporary GLB only) must be jailed to the project.
+   */
+  measureMechanical(
+    cli: KicadCli,
+    opts: { projectDir: string; board: string; scratchDir: string; signal?: AbortSignal },
+  ): Promise<MechanicalReport>;
   boardStats(
     cli: KicadCli,
     opts: { board: string; scratchFile: string },
@@ -299,6 +702,10 @@ export interface KicadService {
     cli: KicadCli,
     opts: { schematic: string; outDir: string; signal?: AbortSignal },
   ): Promise<{ paths: string[] }>;
+  exportSchematicPdf(
+    cli: KicadCli,
+    opts: { schematic: string; output: string; signal?: AbortSignal },
+  ): Promise<{ paths: string[] }>;
   exportPcbSvg(
     cli: KicadCli,
     opts: { board: string; output: string; layers?: string[]; signal?: AbortSignal },
@@ -319,9 +726,8 @@ export type SimResult = {
 };
 
 export interface SimService {
-  spiceNetlist(netlist: NetlistFile): string;
-  runSimulation(opts: {
-    netlist: NetlistFile;
+  runSpiceSimulation(opts: {
+    netlist: string;
     analysis: SimAnalysis;
     engine?: "spicey" | "ngspice";
     ngspicePath?: string;
@@ -330,23 +736,114 @@ export interface SimService {
   findNgspice(explicit?: string | null): Promise<string | null>;
 }
 
+export type RouteRunState =
+  | "queued"
+  | "running"
+  | "cancel_requested"
+  | "cancelling"
+  | "cancelled"
+  | "completed"
+  | "failed"
+  | "timed_out"
+  | "interrupted";
+
+export type RouteApplyState =
+  | "pending"
+  | "manual"
+  | "applying"
+  | "applied"
+  | "stale"
+  | "rejected"
+  | "failed"
+  | "not_available";
+
 export type RouteRunRecord = {
   id: string;
   projectId: string;
   router: string;
-  status: "running" | "done" | "failed" | "cancelled";
+  runtimeId: string | null;
+  state: RouteRunState;
+  /** Compatibility alias for older HTTP/mobile consumers. */
+  status: RouteRunState;
   framesPath: string;
+  artifacts: {
+    runDir: string;
+    request: string;
+    progress: string;
+    frames: string;
+    log: string;
+    result: string;
+    candidate: string;
+    diff: string;
+  };
+  request: {
+    timeoutMs: number;
+    deadlineAt: string;
+    onlyConnections: string[] | null;
+    targets: Array<{
+      net: string;
+      from?: { x: number; y: number } | undefined;
+      to?: { x: number; y: number } | undefined;
+    }> | null;
+    rules: Record<string, unknown> | null;
+    settings: Record<string, unknown> | null;
+    applyPolicy: "auto" | "manual";
+  };
+  startingPcbRevision: string;
+  currentPcbRevision: string | null;
+  canonicalMatchesStart: boolean;
+  progress: {
+    phase: string;
+    pass: number | null;
+    routed: number | null;
+    total: number | null;
+    remaining: number | null;
+    violations: number | null;
+    elapsedMs: number;
+    measuredAt: string;
+    heartbeatAt: string;
+    diagnostics: string[];
+  };
+  candidate: {
+    available: boolean;
+    identity: string | null;
+    sha256: string | null;
+    bytes: number | null;
+    path: string;
+    reopenable: boolean;
+    inspectedAt: string | null;
+    limitation: string | null;
+    diff: Record<string, { before: number; after: number; changed: number }> | null;
+  };
+  application: {
+    policy: "auto" | "manual";
+    state: RouteApplyState;
+    expectedPcbRevision: string;
+    resultingPcbRevision: string | null;
+    appliedAt: string | null;
+    reason: string | null;
+  };
   startedAt: string;
+  updatedAt: string;
   endedAt: string | null;
-  result: RouteResult | null;
+  result: (Omit<RouteResult, "changedGeometry"> & { changedGeometryCount: number }) | null;
   error: string | null;
+  terminalReason: string | null;
 };
 
 export interface RouteRunStore {
-  start(rec: Omit<RouteRunRecord, "endedAt" | "result" | "error" | "status">): void;
-  finish(id: string, patch: Pick<RouteRunRecord, "status" | "result" | "error">): void;
+  start(rec: RouteRunRecord): void;
+  update(id: string, patch: Partial<RouteRunRecord>): void;
   get(id: string): RouteRunRecord | null;
   latest(projectId: string): RouteRunRecord | null;
+}
+
+export interface RouteTaskCoordinator {
+  enqueue(
+    input: { id: string; projectId: string },
+    task: (signal: AbortSignal) => Promise<void>,
+  ): "queued" | "running";
+  cancel(id: string): "requested" | "already_requested" | "terminal" | "not_found";
 }
 
 export interface EventBusLike {
@@ -384,11 +881,14 @@ export interface AppBridge {
 
 export interface CoreServices {
   version: string;
+  /** Attested packaged runtime identity; null only for un-packaged development. */
+  runtimeId: string | null;
   channel: "public" | "internal";
   settings(): Settings;
   projects: ProjectResolver;
   bus: EventBusLike;
   routeRuns: RouteRunStore;
+  routeTasks: RouteTaskCoordinator;
   design: DesignService;
   kicad: KicadService;
   sim: SimService;

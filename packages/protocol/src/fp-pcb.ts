@@ -17,17 +17,35 @@ export const FpPcbSession = z.object({
   state: z.string(),
   /** The project or board file the session's `kicad-cli api-server` opened; null for a bare server. */
   path: z.string().nullable().default(null),
+  /** Direct request socket advertised by the bridge; present on current bridge builds. */
+  socketPath: z.string().optional(),
+  /** KiCad instance token used to bind typed requests to this exact server process. */
+  kicadToken: z.string().nullable().optional(),
 });
 export type FpPcbSession = z.infer<typeof FpPcbSession>;
 
 export const FpPcbHealth = z.object({
   ok: z.boolean(),
   name: z.string().optional(),
+  pid: z.number().int().optional(),
+  runtimeId: z.string().nullable().optional(),
+  ownerPid: z.number().int().nullable().optional(),
   kicadCli: z.string().optional(),
   kicadCliExists: z.boolean().optional(),
   workspaceRoot: z.string().optional(),
+  jsAutorouter: z
+    .object({ ok: z.boolean(), reason: z.string().optional(), module: z.string().optional() })
+    .optional(),
   sessions: z.array(FpPcbSession).default([]),
   compile: z.object({ frontends: z.array(z.string()).default([]) }).optional(),
+  freerouting: z
+    .object({
+      ok: z.boolean(),
+      reason: z.string().optional(),
+      jar: z.string().optional(),
+      java: z.string().optional(),
+    })
+    .optional(),
 });
 export type FpPcbHealth = z.infer<typeof FpPcbHealth>;
 
@@ -146,6 +164,7 @@ export const FpPcbCompileJobState = z.enum([
   "importing",
   "placing",
   "schematic",
+  "parity",
   "saving",
   "done",
   "failed",
@@ -173,6 +192,8 @@ export const FpPcbCompileJob = z.object({
   /** Document revision after the job, so a client can refresh without waiting for an event. */
   revision: z.number().optional(),
   removedCopper: z.object({ tracks: z.number(), vias: z.number() }).optional(),
+  /** Rejected candidate saved by FabPCB when ERC fails and the canonical schematic is restored. */
+  rejectedSchematicPath: z.string().optional(),
 });
 export type FpPcbCompileJob = z.infer<typeof FpPcbCompileJob>;
 
@@ -193,6 +214,7 @@ export const FpPcbRouteProgress = z.looseObject({
   pass: z.number().optional(),
   routed: z.number().optional(),
   total: z.number().optional(),
+  violations: z.number().optional(),
 });
 export type FpPcbRouteProgress = z.infer<typeof FpPcbRouteProgress>;
 

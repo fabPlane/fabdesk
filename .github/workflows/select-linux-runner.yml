@@ -8,31 +8,36 @@ on:
         required: false
         type: string
         default: blacksmith-4vcpu-ubuntu-2204
+      selection-delay-seconds:
+        description: Delay before reading the NAS heartbeat so concurrent callers can observe an earlier claim
+        required: false
+        type: number
+        default: 0
     outputs:
       runner:
         description: JSON runner selector for a NAS runner or Blacksmith fallback
         value: ${{ jobs.select.outputs.runner }}
-
-# Serialize claims on the single NAS slot. The settling job gives GitHub time to
-# mark a just-selected runner busy and the NAS heartbeat time to publish that state
-# before the next caller reads the variable.
-concurrency:
-  group: fabdesk-linux-runner-selection
-  cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
   settle:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.blacksmith-runner }}
     steps:
-      - name: Let any previous NAS claim become visible
-        run: sleep 15
+      - name: Wait for earlier NAS claims to reach the heartbeat
+        env:
+          SELECTION_DELAY_SECONDS: ${{ inputs.selection-delay-seconds }}
+        run: sleep "$SELECTION_DELAY_SECONDS"
 
   select:
     needs: settle
-    runs-on: ubuntu-24.04
+    # Bootstrap on the same external fallback pool the caller would use. A GitHub-hosted
+    # selector cannot choose the self-hosted NAS when the repository's Actions budget is
+    # exhausted, even though the NAS itself is online and free to run. Do not put this
+    # reusable workflow in a shared concurrency group: GitHub retains only one pending
+    # member and cancels earlier callers when CI, mobile and board checks arrive together.
+    runs-on: ${{ inputs.blacksmith-runner }}
     outputs:
       runner: ${{ steps.pick.outputs.runner }}
     steps:

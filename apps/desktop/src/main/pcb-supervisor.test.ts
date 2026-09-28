@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { corePcbEnvironment, resolvePcbBackend } from "./pcb-supervisor";
+import { corePcbEnvironment, PcbSupervisor, resolvePcbBackend } from "./pcb-supervisor";
 
 const roots: string[] = [];
 afterEach(async () =>
@@ -97,12 +97,16 @@ describe("bundled PCB backend", () => {
       `${join(pcb, "kicad", "lib")}:${join(pcb, "kicad", "lib", "runtime")}:/host/lib`,
     );
     expect(resolved?.env.KICAD_STOCK_DATA_HOME).toBe(join(pcb, "kicad", "share", "kicad"));
+    expect(resolved?.env.KICAD10_FOOTPRINT_DIR).toBe(join(pcb, "libraries", "footprints"));
+    expect(resolved?.env.KICAD10_SYMBOL_DIR).toBe(join(pcb, "libraries", "symbols"));
     expect(resolved?.env.FAB_ROUTER_MODULE).toBe(
       join(pcb, "private", "fab_router", "src", "api.ts"),
     );
     expect(corePcbEnvironment(resolved!)).toMatchObject({
       KICAD_CLI: join(pcb, "kicad", "bin", "kicad-cli"),
       KICAD_STOCK_DATA_HOME: join(pcb, "kicad", "share", "kicad"),
+      KICAD10_FOOTPRINT_DIR: join(pcb, "libraries", "footprints"),
+      KICAD10_SYMBOL_DIR: join(pcb, "libraries", "symbols"),
       LD_LIBRARY_PATH: `${join(pcb, "kicad", "lib")}:${join(pcb, "kicad", "lib", "runtime")}:/host/lib`,
     });
   });
@@ -153,6 +157,101 @@ describe("bundled PCB backend", () => {
       args: ["run", "--filter", "@fp-pcb/bridge", "start"],
       cwd: source,
     });
+  });
+
+  test("starts the bundled bridge on another port instead of reusing an incompatible bridge", async () => {
+    const root = await mkdtemp(join(tmpdir(), "fabplane-pcb-collision-"));
+    roots.push(root);
+    const bridgeScript = join(root, "bridge.ts");
+    await writeFile(
+      bridgeScript,
+      `const server = Bun.serve({
+  port: Number(process.env.PORT),
+  hostname: "127.0.0.1",
+  fetch: () => Response.json({
+    name: "@fp-pcb/bridge",
+    runtimeId: process.env.FABDESK_RUNTIME_ID,
+    ownerPid: Number(process.env.FABDESK_DESKTOP_PID),
+    kicadCli: process.env.KICAD_CLI,
+    workspaceRoot: process.env.WORKSPACE_ROOT,
+  }),
+});
+process.on("SIGTERM", () => { server.stop(true); process.exit(0); });
+`,
+    );
+    const stale = Bun.serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      fetch: () => Response.json({ name: "@fp-pcb/bridge", kicadCli: "/stale/kicad-cli" }),
+    });
+    const supervisor = new PcbSupervisor({
+      command: process.execPath,
+      args: [bridgeScript],
+      cwd: root,
+      url: `http://127.0.0.1:${stale.port}`,
+      fixedUrl: false,
+      env: {
+        PORT: String(stale.port),
+        KICAD_CLI: "/bundled/kicad-cli",
+        KICAD_STOCK_DATA_HOME: "/bundled/share/kicad",
+        KICAD_FOOTPRINT_DIR: "/bundled/footprints",
+        KICAD_SYMBOL_DIR: "/bundled/symbols",
+        FABDESK_RUNTIME_ID: "runtime-123456789",
+        FABDESK_DESKTOP_PID: String(process.pid),
+        WORKSPACE_ROOT: root,
+      },
+    });
+    try {
+      const coreEnv = await supervisor.start();
+      expect(coreEnv.FABDESK_FP_PCB_BRIDGE_URL).not.toBe(`http://127.0.0.1:${stale.port}`);
+      const response = await fetch(`${coreEnv.FABDESK_FP_PCB_BRIDGE_URL}/health`);
+      expect(await response.json()).toMatchObject({
+        name: "@fp-pcb/bridge",
+        kicadCli: "/bundled/kicad-cli",
+      });
+    } finally {
+      await supervisor.stop();
+      stale.stop(true);
+    }
+  });
+
+  test("rejects an explicit bridge override with a clear identity mismatch", async () => {
+    const stale = Bun.serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      fetch: () =>
+        Response.json({
+          name: "@fp-pcb/bridge",
+          runtimeId: "another-runtime",
+          ownerPid: 1,
+          kicadCli: "/bundled/kicad-cli",
+          workspaceRoot: "/boards",
+        }),
+    });
+    const supervisor = new PcbSupervisor({
+      command: process.execPath,
+      args: [],
+      cwd: "/tmp",
+      url: `http://127.0.0.1:${stale.port}`,
+      fixedUrl: true,
+      env: {
+        KICAD_CLI: "/bundled/kicad-cli",
+        KICAD_STOCK_DATA_HOME: "/bundled/share/kicad",
+        KICAD_FOOTPRINT_DIR: "/bundled/footprints",
+        KICAD_SYMBOL_DIR: "/bundled/symbols",
+        FABDESK_RUNTIME_ID: "runtime-123456789",
+        FABDESK_DESKTOP_PID: String(process.pid),
+        WORKSPACE_ROOT: "/boards",
+      },
+    });
+    try {
+      await expect(supervisor.start()).rejects.toThrow(
+        /identity mismatch at explicit URL.*another-runtime.*runtime-123456789/,
+      );
+    } finally {
+      await supervisor.stop();
+      stale.stop(true);
+    }
   });
 
   test("uses the stock-data path recorded by a macOS bundle", async () => {

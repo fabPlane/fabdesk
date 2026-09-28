@@ -19,6 +19,31 @@ type Session = {
   lastSeen: number;
   token: string | null;
 };
+export const NATIVE_AGENT_TOOLS = [
+  "pcb_environment",
+  "project_status",
+  "circuit_search_parts",
+  "circuit_describe_part",
+  "schematic_inspect",
+  "schematic_edit",
+  "pcb_update_from_schematic",
+  "pcb_inspect",
+  "pcb_place",
+  "pcb_edit_copper",
+  "pcb_edit_graphics",
+  "route_run",
+  "verify_erc",
+  "verify_drc",
+  "schematic_review",
+  "render_view",
+  "release_build",
+] as const;
+
+export const NATIVE_CAPABILITY_EXCLUDE = [
+  "circuit_build",
+  "circuit_read_errors",
+  "load_toolset",
+] as const;
 
 export type McpSessionOptions = {
   registry: ToolRegistry;
@@ -132,10 +157,16 @@ export class McpSessionManager {
     };
     // Codex snapshots MCP tools when a turn starts and currently ignores tools/list_changed.
     // Let clients that cannot refresh opt into the complete inventory at initialization.
-    const initialToolsets =
-      new URL(req.url).searchParams.get("toolsets") === "all" ? [...TOOLSETS] : undefined;
+    const query = new URL(req.url).searchParams;
+    const initialToolsets = query.get("toolsets") === "all" ? [...TOOLSETS] : undefined;
+    const profile = query.get("profile");
+    const initialTools =
+      profile === "native" ? [...NATIVE_AGENT_TOOLS] : profile === "substrate" ? [] : undefined;
     attachToRegistry(server, this.opts.registry, this.opts.ctxFactory, {
       ...(initialToolsets ? { initialToolsets } : {}),
+      ...(initialTools ? { initialTools } : {}),
+      ...(profile === "native" ? { capabilityExclude: [...NATIVE_CAPABILITY_EXCLUDE] } : {}),
+      ...(profile === "substrate" ? { capabilities: false, toolsOnly: true } : {}),
     });
     const prompt = this.opts.permissionPrompt;
     if (prompt && prompt.enabledFor(opts.token ?? null))
@@ -206,4 +237,4 @@ function json(status: number, body: unknown): Response {
 }
 
 export const INSTRUCTIONS =
-  "fabdesk designs PCBs from a netlist source (circuit.netlist.json) built into a KiCad project with a schematic and board. Start with project_status. Only the core toolset is loaded; call load_toolset to enable project/circuit/route/kicad/verify/render/export/sim tools. Typical flow: project_write_file circuit.netlist.json → circuit_build → circuit_read_errors → route_run → verify_drc with schematicParity=true → load verify and run verify_erc plus verify_gate with requireErc=true → render_board → load render and run render_schematic_svg plus render_pcb_svg. render_board creates PNG board images only; it does not populate the Schematic or PCB SVG tabs.";
+  "Project-scoped tools use the selected project unless `project` is supplied.";

@@ -1,8 +1,10 @@
 /** Starts the bundled FabPlane PCB bridge before core, and supplies core's bridge/KiCad env. */
 import { spawn, type ChildProcess } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
+import { createServer } from "node:net";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve, win32 } from "node:path";
 import { sidecarEnvironment } from "./child-process-env";
 
 export interface PcbBundleManifest {
@@ -27,6 +29,8 @@ export interface PcbBackendCommand {
   cwd: string;
   env: Record<string, string>;
   url: string;
+  /** An explicitly configured URL must not be silently replaced after a collision. */
+  fixedUrl: boolean;
 }
 
 /** Environment the core needs for CLI-based DRC/render/export, not only the bridge process. */
@@ -37,6 +41,11 @@ export function corePcbEnvironment(command: PcbBackendCommand): Record<string, s
     KICAD_STOCK_DATA_HOME: command.env.KICAD_STOCK_DATA_HOME!,
     KICAD_FOOTPRINT_DIR: command.env.KICAD_FOOTPRINT_DIR!,
     KICAD_SYMBOL_DIR: command.env.KICAD_SYMBOL_DIR!,
+    KICAD10_FOOTPRINT_DIR: command.env.KICAD10_FOOTPRINT_DIR ?? command.env.KICAD_FOOTPRINT_DIR!,
+    KICAD10_SYMBOL_DIR: command.env.KICAD10_SYMBOL_DIR ?? command.env.KICAD_SYMBOL_DIR!,
+    FABDESK_RUNTIME_ID: command.env.FABDESK_RUNTIME_ID!,
+    FABDESK_DESKTOP_PID: command.env.FABDESK_DESKTOP_PID!,
+    FABDESK_PROJECTS_DIR: command.env.WORKSPACE_ROOT!,
     ...(command.env.LD_LIBRARY_PATH ? { LD_LIBRARY_PATH: command.env.LD_LIBRARY_PATH } : {}),
   };
 }
@@ -82,11 +91,17 @@ export function resolvePcbBackend(opts: {
     );
   const url = env["FABDESK_FP_PCB_BRIDGE_URL"] ?? "http://127.0.0.1:4020";
   const port = new URL(url).port || "4020";
+  const runtimeId = env["FABDESK_RUNTIME_ID"]?.trim() || randomUUID();
+  const desktopPid = env["FABDESK_DESKTOP_PID"]?.trim() || String(process.pid);
+  const workspace = env["FABDESK_PROJECTS_DIR"] ?? join(homedir(), "fabdesk");
+  const workspaceRoot =
+    isAbsolute(workspace) || win32.isAbsolute(workspace) ? workspace : resolve(workspace);
   return {
     command: sourceRoot ? (env["BUN_PATH"] ?? "bun") : command,
     args: sourceRoot ? ["run", "--filter", "@fp-pcb/bridge", "start"] : [],
     cwd: sourceRoot ?? bundleRoot,
     url,
+    fixedUrl: Boolean(env["FABDESK_FP_PCB_BRIDGE_URL"]),
     env: {
       ...(manifest.environment ?? {}),
       ...(libraryPaths.length
@@ -98,8 +113,15 @@ export function resolvePcbBackend(opts: {
       KICAD_STOCK_DATA_HOME: kicadStockData,
       KICAD_FOOTPRINT_DIR: footprints,
       KICAD_SYMBOL_DIR: symbols,
+      // KiCad's stock global library tables use these versioned variables. Point both the
+      // headless API server and kicad-cli at the exact libraries packaged with this runtime,
+      // instead of silently resolving a host nightly installation.
+      KICAD10_FOOTPRINT_DIR: footprints,
+      KICAD10_SYMBOL_DIR: symbols,
+      FABDESK_RUNTIME_ID: runtimeId,
+      FABDESK_DESKTOP_PID: desktopPid,
       ...(fabRouter ? { FAB_ROUTER_MODULE: fabRouter } : {}),
-      WORKSPACE_ROOT: env["FABDESK_PROJECTS_DIR"] ?? join(homedir(), "fabdesk"),
+      WORKSPACE_ROOT: workspaceRoot,
     },
   };
 }
@@ -110,7 +132,24 @@ export class PcbSupervisor {
 
   async start(): Promise<Record<string, string>> {
     if (!this.command) return {};
-    if (!(await healthy(this.command.url))) {
+    if (!this.command.env.KICAD_CLI)
+      throw new Error("FabPlane PCB bridge command has no KICAD_CLI");
+    const existing = await health(this.command.url);
+    const mismatch = existing ? identityMismatch(existing, this.command) : null;
+    if (mismatch) {
+      if (this.command.fixedUrl)
+        throw new Error(
+          `FabPlane PCB bridge identity mismatch at explicit URL ${this.command.url}: ${mismatch}`,
+        );
+      const occupiedUrl = this.command.url;
+      const port = await availableLoopbackPort();
+      this.command.url = `http://127.0.0.1:${port}`;
+      this.command.env.PORT = String(port);
+      console.error(
+        `[pcb] bridge at ${occupiedUrl} belongs to another runtime (${mismatch}); starting bundled bridge at ${this.command.url}`,
+      );
+    }
+    if (!(await healthy(this.command.url, this.command))) {
       this.child = spawn(this.command.command, this.command.args, {
         cwd: this.command.cwd,
         env: sidecarEnvironment(process.env, this.command.env),
@@ -118,7 +157,7 @@ export class PcbSupervisor {
         windowsHide: true,
       });
       const deadline = Date.now() + 60_000;
-      while (!(await healthy(this.command.url))) {
+      while (!(await healthy(this.command.url, this.command))) {
         if (this.child.exitCode !== null)
           throw new Error(`FabPlane PCB bridge exited with code ${this.child.exitCode}`);
         if (Date.now() >= deadline)
@@ -144,13 +183,59 @@ export class PcbSupervisor {
   }
 }
 
-async function healthy(url: string): Promise<boolean> {
+interface BridgeHealth {
+  name?: string;
+  runtimeId?: string | null;
+  ownerPid?: number | null;
+  kicadCli?: string;
+  workspaceRoot?: string;
+  jsAutorouter?: { module?: string };
+}
+
+async function health(url: string): Promise<BridgeHealth | null> {
   try {
     const response = await fetch(`${url}/health`, { signal: AbortSignal.timeout(750) });
-    if (!response.ok) return false;
-    const body = (await response.json()) as { name?: string };
-    return body.name === "@fp-pcb/bridge";
+    if (!response.ok) return null;
+    const body = (await response.json()) as BridgeHealth;
+    return body.name === "@fp-pcb/bridge" ? body : null;
   } catch {
-    return false;
+    return null;
   }
+}
+
+function identityMismatch(body: BridgeHealth, command: PcbBackendCommand): string | null {
+  const expected = command.env;
+  if (body.runtimeId !== expected.FABDESK_RUNTIME_ID)
+    return `runtime ${body.runtimeId ?? "none"}, expected ${expected.FABDESK_RUNTIME_ID}`;
+  if (body.ownerPid !== Number(expected.FABDESK_DESKTOP_PID))
+    return `desktop owner ${body.ownerPid ?? "none"}, expected ${expected.FABDESK_DESKTOP_PID}`;
+  if (body.kicadCli !== expected.KICAD_CLI)
+    return `kicad-cli ${body.kicadCli ?? "none"}, expected ${expected.KICAD_CLI}`;
+  if (body.workspaceRoot !== expected.WORKSPACE_ROOT)
+    return `workspace ${body.workspaceRoot ?? "none"}, expected ${expected.WORKSPACE_ROOT}`;
+  if (expected.JS_AUTOROUTER_MODULE && body.jsAutorouter?.module !== expected.JS_AUTOROUTER_MODULE)
+    return `router ${body.jsAutorouter?.module ?? "none"}, expected ${expected.JS_AUTOROUTER_MODULE}`;
+  return null;
+}
+
+async function healthy(url: string, command: PcbBackendCommand): Promise<boolean> {
+  const body = await health(url);
+  return body !== null && identityMismatch(body, command) === null;
+}
+
+async function availableLoopbackPort(): Promise<number> {
+  const server = createServer();
+  await new Promise<void>((resolveReady, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => resolveReady());
+  });
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    server.close();
+    throw new Error("could not allocate a loopback port for the FabPlane PCB bridge");
+  }
+  await new Promise<void>((resolveClosed, reject) =>
+    server.close((error) => (error ? reject(error) : resolveClosed())),
+  );
+  return address.port;
 }

@@ -14,9 +14,11 @@ import { FpPcbSessions } from "./fp-pcb-session";
 import { logger } from "./log";
 import { KicadLibraryCatalog } from "./kicad-library-catalog";
 import type { RunTelemetry } from "./run-telemetry";
+import { RouteTaskQueue } from "./route-tasks";
 
 export type ServiceDeps = {
   version: string;
+  runtimeId?: string | null;
   channel: Channel;
   settings: () => Settings;
   projects: ProjectStore;
@@ -34,7 +36,7 @@ export type ServiceDeps = {
 
 function simService(settings: () => Settings): SimService {
   const toSimAnalysis = (
-    a: Parameters<SimService["runSimulation"]>[0]["analysis"],
+    a: Parameters<SimService["runSpiceSimulation"]>[0]["analysis"],
   ): sim.SimAnalysis => {
     switch (a.type) {
       case "op":
@@ -51,16 +53,14 @@ function simService(settings: () => Settings): SimService {
     }
   };
   return {
-    spiceNetlist: (netlist) => sim.spiceNetlist(netlist),
-    runSimulation: async (o) => {
+    runSpiceSimulation: async (o) => {
       const t0 = Date.now();
-      const r = await sim.runSimulation({
-        netlist: o.netlist,
-        analysis: toSimAnalysis(o.analysis),
-        ...(o.engine ? { engine: o.engine } : {}),
-        ...(o.ngspicePath ? { ngspicePath: o.ngspicePath } : {}),
-        ...(o.signal ? { signal: o.signal } : {}),
-      });
+      const analysis = toSimAnalysis(o.analysis);
+      const engine = o.engine ?? "spicey";
+      const r =
+        engine === "ngspice"
+          ? await sim.runNgspice(o.ngspicePath ?? "ngspice", o.netlist, analysis, o.signal)
+          : sim.runSpicey(o.netlist, analysis);
       return {
         engine: r.engine,
         analysis: r.analysis,
@@ -79,7 +79,10 @@ export async function createServices(
 ): Promise<CoreServices & { dispose(): Promise<void> }> {
   const resolveCli = async (): Promise<KicadCli | null> => {
     const explicit = deps.settings().kicadCliPath ?? undefined;
-    const trace = deps.telemetry ? (input: kicad.KicadInvocation, invoke: () => Promise<kicad.RunResult>) => deps.telemetry!.traceKicadCli(input, invoke) : undefined;
+    const trace = deps.telemetry
+      ? (input: kicad.KicadInvocation, invoke: () => Promise<kicad.RunResult>) =>
+          deps.telemetry!.traceKicadCli(input, invoke)
+      : undefined;
     return kicad.findKicadCli(explicit, { ...(trace ? { trace } : {}) });
   };
 
@@ -94,14 +97,17 @@ export async function createServices(
     clientName: `fabdesk/core/${process.pid}`,
     log: (m) => logger.info(m),
   });
+  const routeTasks = new RouteTaskQueue();
 
   const services: CoreServices & { dispose(): Promise<void> } = {
     version: deps.version,
+    runtimeId: deps.runtimeId ?? null,
     channel: deps.channel,
     settings: deps.settings,
     projects: deps.projects,
     bus: deps.bus,
     routeRuns: deps.routeRuns,
+    routeTasks,
     principal: deps.principal,
     design: createFpPcbDesign({
       bridge: bridgeClient,
@@ -115,10 +121,13 @@ export async function createServices(
       resolveCli,
       runDrc: (cli, o) => kicad.runDrc(cli, o),
       runErc: (cli, o) => kicad.runErc(cli, o),
+      inspectSchematicHierarchy: (cli, o) => kicad.inspectSchematicHierarchy(cli, o),
       gate: (drc, erc, allowed) =>
         kicad.gate(drc as kicad.DrcReport, erc as kicad.ErcReport | undefined, allowed),
       renderPng: (cli, o) => kicad.renderPng(cli, o),
+      rasterizeSvg: (svg, o) => kicad.rasterizeSvg(svg, o),
       exportGlb: (cli, o) => kicad.exportGlb(cli, o),
+      measureMechanical: (cli, o) => kicad.collectMechanical(cli, o),
       boardStats: async (cli, o) =>
         (await kicad.boardStats(cli, o.board, o.scratchFile)) as unknown as Record<string, unknown>,
       exportGerbers: (cli, o) => kicad.exportGerbers(cli, o),
@@ -128,6 +137,7 @@ export async function createServices(
       exportBom: (cli, o) => kicad.exportBom(cli, o),
       exportNetlist: (cli, o) => kicad.exportNetlist(cli, o),
       exportSchematicSvg: (cli, o) => kicad.exportSchematicSvg(cli, o),
+      exportSchematicPdf: (cli, o) => kicad.exportSchematicPdf(cli, o),
       exportPcbSvg: (cli, o) => kicad.exportPcbSvg(cli, o),
     },
     sim: simService(deps.settings),
