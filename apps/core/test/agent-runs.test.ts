@@ -20,7 +20,13 @@ afterEach(() => {
 /** A run that stays live until `finish()`; `abort()` ends it unless `ignoreAbort`. */
 type Controlled = { session: AgentSession; finish(ev?: AgentEvent[]): void; aborted: boolean };
 
-function harness(opts: { ignoreAbort?: boolean; run?: AgentAdapterLike["run"] } = {}) {
+function harness(
+  opts: {
+    ignoreAbort?: boolean;
+    run?: AgentAdapterLike["run"];
+    resolveProject?: (id: string) => Promise<ProjectHandle | null>;
+  } = {},
+) {
   return (async () => {
     const dir = await mkdtemp(join(tmpdir(), "fabdesk-agent-runs-"));
     const store = Store.open(join(dir, "core.sqlite"));
@@ -55,6 +61,7 @@ function harness(opts: { ignoreAbort?: boolean; run?: AgentAdapterLike["run"] } 
       settings: () => store.settings.get(),
       workspaceDir: dir,
       abortSettleTimeoutMs: 100,
+      ...(opts.resolveProject ? { resolveProject: opts.resolveProject } : {}),
     });
     const project = (id: string): ProjectHandle =>
       ({ id, name: id, dir: join(dir, id) }) as unknown as ProjectHandle;
@@ -206,6 +213,97 @@ describe("AgentRunManager project lease", () => {
     });
     expect(restarted.projectHolder(p.id)).toBeNull();
     h.runs[0]!.finish();
+    await settle();
+  });
+});
+
+describe("queued messages and the lease", () => {
+  /** Captures unhandled rejections for the duration of `fn`. */
+  async function noUnhandled(fn: () => Promise<void>): Promise<unknown[]> {
+    const seen: unknown[] = [];
+    const onRejection = (e: unknown) => seen.push(e);
+    process.on("unhandledRejection", onRejection);
+    try {
+      await fn();
+    } finally {
+      process.off("unhandledRejection", onRejection);
+    }
+    return seen;
+  }
+
+  test("deleting a thread with a queued message starts no run and rejects nothing", async () => {
+    const h = await harness();
+    const p = h.project("proj-delete");
+    const t = h.thread();
+    const unhandled = await noUnhandled(async () => {
+      await h.start(t.id, p);
+      const queued = h.store.threads.addMessage({
+        threadId: t.id,
+        role: "user",
+        contentMd: "queued follow-up",
+        status: "queued",
+      });
+      // What DELETE /threads/:id does.
+      expect(await h.manager.abortForDelete(t.id)).toEqual({ aborted: true, settled: true });
+      await settle();
+      // The run ended during the wait; its drain left the queue alone and started nothing.
+      expect(h.store.threads.getMessage(queued.id)?.status).toBe("queued");
+      expect(h.manager.isRunning(t.id)).toBe(false);
+      expect(h.store.threads.delete(t.id)).toBe(true);
+      h.manager.deleted(t.id);
+      await settle();
+    });
+    expect(unhandled).toEqual([]);
+    expect(h.runs).toHaveLength(1);
+    expect(h.manager.activeCount()).toBe(0);
+    expect(h.manager.projectHolder(p.id)).toBeNull();
+  });
+
+  test("a queued message whose project is taken meanwhile stays queued and goes out when it frees", async () => {
+    let gate: (() => void) | null = null;
+    const h = await harness({
+      // The drain resolves the project before un-queueing; hold it there so another thread can
+      // take the project in between.
+      resolveProject: async (id) => {
+        if (gate === null) await new Promise<void>((r) => (gate = r));
+        return h.project(id);
+      },
+    });
+    const now = new Date().toISOString();
+    h.store.projects.upsert({
+      id: "proj-drain",
+      name: "Drain",
+      slug: "drain",
+      path: join(h.dir, "proj-drain"),
+      createdAt: now,
+      updatedAt: now,
+    });
+    const p = h.project("proj-drain");
+    const a = h.store.threads.create({ agentId: "claude", title: "A", projectId: p.id });
+    const b = h.thread("B");
+    await h.start(a.id, p, "first");
+    const queued = h.store.threads.addMessage({
+      threadId: a.id,
+      role: "user",
+      contentMd: "follow-up",
+      status: "queued",
+    });
+    h.runs[0]!.finish();
+    await settle();
+    // A's run ended; its drain is parked in resolveProject. B takes the project.
+    expect(h.manager.projectHolder(p.id)).toBeNull();
+    await h.start(b.id, p, "other thread");
+    (gate as unknown as () => void)();
+    await settle();
+    expect(h.store.threads.getMessage(queued.id)?.status).toBe("queued");
+    expect(h.runs.map((r) => r.session.prompt)).toEqual(["first", "other thread"]);
+    // B's run ends: A's queued message goes out now.
+    h.runs[1]!.finish();
+    await settle();
+    expect(h.runs.map((r) => r.session.prompt)).toEqual(["first", "other thread", "follow-up"]);
+    expect(h.store.threads.getMessage(queued.id)?.status).toBeUndefined();
+    expect(h.manager.projectHolder(p.id)).toBe(a.id);
+    h.runs[2]!.finish();
     await settle();
   });
 });

@@ -128,6 +128,8 @@ export function runAgentProcess(opts: AgentProcessOptions): AgentRun {
    */
   const abortTargets = new Set<number>();
   const signalAbortTree = (pid: number, signal: Signal) => {
+    // Only while the root is alive: after it is reaped `pid` may belong to another process.
+    if (exited || !proc || proc.exitCode !== null || proc.signalCode !== null) return;
     for (const child of descendantPids(pid).reverse()) abortTargets.add(child);
     abortTargets.add(pid);
     signalPids([...abortTargets], signal);
@@ -191,9 +193,13 @@ export function runAgentProcess(opts: AgentProcessOptions): AgentRun {
       }
       const exitCode = await proc.exited;
       exited = true;
+      // The root is reaped: its pid may be reused, so no escalation timer may signal it (or re-scan
+      // its "descendants") from here on.
+      clearTimers();
       // The root CLI may exit on SIGINT while a router/tool child ignores it and is re-parented.
-      // Finish off what abort saw before reporting done: `done` releases the run's project lease,
-      // and a surviving child could otherwise keep writing next to the project's next run.
+      // Finish off what abort saw while the root was alive before reporting done: `done` releases
+      // the run's project lease, and a surviving child could otherwise keep writing next to the
+      // project's next run.
       if (aborted) {
         const rootPid = proc.pid;
         const survivors = [...abortTargets].filter((pid) => pid !== rootPid && isAlive(pid));
@@ -205,7 +211,6 @@ export function runAgentProcess(opts: AgentProcessOptions): AgentRun {
           await waitForExit(stubborn, 1000);
         }
       }
-      clearTimers();
       const stderr = (await stderrTail).trim();
       if (exitCode !== 0 && !sawError && !aborted) {
         yield {
