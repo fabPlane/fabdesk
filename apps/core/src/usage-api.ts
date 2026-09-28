@@ -15,7 +15,8 @@ function validInstallation(value: unknown): value is Installation {
   if (!value || typeof value !== "object") return false;
   const record = value as Record<string, unknown>;
   return typeof record["installationId"] === "string" && UUID.test(record["installationId"])
-    && typeof record["token"] === "string" && record["token"].startsWith(`${record["installationId"]}.`);
+    && typeof record["token"] === "string"
+    && new RegExp(`^${record["installationId"]}\\.[a-f0-9]{64}$`).test(record["token"]);
 }
 
 export class UsageApiArchiveWriter implements ArchiveWriter {
