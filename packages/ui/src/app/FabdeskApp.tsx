@@ -1,7 +1,7 @@
 import { useEffect, useMemo, type ReactNode } from "react";
 import { LoginScreen } from "../auth/LoginScreen";
 import { Button, Spinner } from "../components/ui";
-import { useCore, type HostAdapter } from "@fabdesk/client-core";
+import { useCore, useSettings, type HostAdapter } from "@fabdesk/client-core";
 import { CoreProvider } from "../core/CoreProvider";
 import { browserHost } from "../core/host";
 import type { CoreClient } from "@fabdesk/client-core";
@@ -16,6 +16,7 @@ import { useAuthStore } from "@fabdesk/client-core";
 import { DRAFT_KEY_NEW, useUiStore } from "../stores/ui";
 import type { CoreStatusInfo } from "./types";
 import { useAppActions } from "./useAppActions";
+import { FirstInstallPrivacy } from "./FirstInstallPrivacy";
 
 export interface FabdeskAppProps {
   client: CoreClient;
@@ -39,6 +40,7 @@ function AppInner({ coreStatus, onRestartCore }: { coreStatus?: CoreStatusInfo |
   const { host, sseStatus } = useCore();
   useTheme();
   const auth = useAuthState();
+  const settings = useSettings();
   const authState = useAuthStore((s) => s.state);
   const setLocalAllowed = useAuthStore((s) => s.setLocalAllowed);
   const actions = useAppActions();
@@ -100,15 +102,15 @@ function AppInner({ coreStatus, onRestartCore }: { coreStatus?: CoreStatusInfo |
       <div className="border-b border-warning/40 bg-warning/10 px-3 py-1 text-xs">Reconnecting to core events...</div>
     ) : null;
 
-  if (!authState) {
+  if (!authState || !settings.data) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 bg-bg text-sm text-muted">
         <Spinner />
-        {auth.isError ? (
+        {auth.isError || settings.isError ? (
           <div className="text-center">
             <div className="text-danger">Could not reach the core daemon.</div>
-            <div className="mt-1 text-xs">{(auth.error as Error).message}</div>
-            <Button className="mt-3" onClick={() => void auth.refetch()}>
+            <div className="mt-1 text-xs">{((auth.error ?? settings.error) as Error).message}</div>
+            <Button className="mt-3" onClick={() => { void auth.refetch(); void settings.refetch(); }}>
               Retry
             </Button>
           </div>
@@ -118,6 +120,7 @@ function AppInner({ coreStatus, onRestartCore }: { coreStatus?: CoreStatusInfo |
       </div>
     );
   }
+  if (!settings.data.usageArchiveChoiceComplete) return <FirstInstallPrivacy />;
   if (authState.status !== "signed_in") return <LoginScreen />;
   return (
     <>

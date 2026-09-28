@@ -46,6 +46,11 @@ import {
   setSentryUser,
 } from "./sentry";
 import { RunTelemetry } from "./run-telemetry";
+import {
+  ArchiveConsentRevokedError,
+  UsageArchive,
+} from "./usage-archive";
+import { UsageApiArchiveWriter } from "./usage-api";
 
 export type ExperimentalAgentInterface = "substrate" | "programmable";
 
@@ -169,7 +174,78 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   const staleRoutes = store.routeRuns.failStale();
   if (staleRoutes) logger.info("failed stale route runs from previous run", { count: staleRoutes });
   const tokens = new TokenSet(config.token);
-  const telemetry = new RunTelemetry({ version: config.version, runDumps: store.runDumps });
+  const archiveDir = process.env["FABDESK_USAGE_ARCHIVE_DIR"]?.trim();
+  const remoteArchiveEnabled = process.env["FABDESK_USAGE_REMOTE_BACKUP"] === "1";
+  const archiveEnabled = Boolean(archiveDir) || remoteArchiveEnabled;
+  const archives: UsageArchive[] = [];
+  if (archiveDir) archives.push(new UsageArchive(archiveDir));
+  let archiveBearer: () => string | null = () => null;
+  if (remoteArchiveEnabled)
+    archives.push(new UsageArchive(new UsageApiArchiveWriter(config.apiOrigin, () => archiveBearer(), store.settings)));
+  let archiveBackfilled = false;
+  let archiveClosing = false;
+  let backfillTask: Promise<void> | null = null;
+  const hasArchiveConsent = () => {
+    const settings = store.settings.get();
+    return settings.usageArchiveChoiceComplete && settings.usageArchiveConsent;
+  };
+  const startArchiveBackfill = (): Promise<void> => {
+    if (backfillTask) return backfillTask;
+    if (!archiveEnabled || !hasArchiveConsent() || archiveClosing)
+      return Promise.resolve();
+    archiveBackfilled = false;
+    const task = (async () => {
+      try {
+        for (const archive of archives) {
+          const counts = await archive.backfill(
+            store.db,
+            () => hasArchiveConsent() && !archiveClosing,
+          );
+          logger.info("usage archive backfilled", counts);
+        }
+        archiveBackfilled = hasArchiveConsent() && !archiveClosing;
+      } catch (error) {
+        if (!(error instanceof ArchiveConsentRevokedError)) {
+          logger.warn("usage archive backfill failed; local dump pruning disabled", {
+            error: errMsg(error),
+          });
+        }
+      }
+    })();
+    backfillTask = task;
+    void task.finally(() => {
+      backfillTask = null;
+    });
+    return task;
+  };
+  let lastArchiveConsent = hasArchiveConsent();
+  const telemetry = new RunTelemetry({
+    version: config.version,
+    runDumps: archiveEnabled
+      ? {
+          async put(dump) {
+            if (!hasArchiveConsent() || archiveClosing) {
+              store.runDumps.put(dump);
+              return;
+            }
+            let backedUp = archiveBackfilled;
+            for (const archive of archives) {
+              try {
+                await archive.put(dump, store.db, hasArchiveConsent);
+              } catch (error) {
+                backedUp = false;
+                logger.warn("usage archive failed; retained run dump locally", {
+                  runId: dump.runId,
+                  error: errMsg(error),
+                });
+              }
+            }
+            // Keep the local copy until backup succeeds; bounded pruning could otherwise erase it.
+            store.runDumps.put(dump, backedUp);
+          },
+        }
+      : store.runDumps,
+  });
   const devices = new DeviceStore(store.db);
   tokens.setDeviceLookup((token) => {
     const device = devices.verify(token);
@@ -195,6 +271,9 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     apiOrigin: config.apiOrigin,
     emit: (e) => bus.emit(e),
   });
+  archiveBearer = () => auth.token();
+  // In the background: a large history over a slow link must not hold the daemon's startup.
+  if (hasArchiveConsent()) void startArchiveBackfill();
   if (auth.mode === "local") logger.warn("running in LOCAL auth mode");
   // Sentry user = principal id + handle (never email) while signed in; cleared on logout.
   setSentryUser(sentryUserFromAuth(auth.state()));
@@ -385,6 +464,10 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     startedAt,
     onSettingsChanged: () => {
       void cloudSettings.push();
+      const consent = hasArchiveConsent();
+      if (consent && !lastArchiveConsent) void startArchiveBackfill();
+      if (!consent) archiveBackfilled = false;
+      lastArchiveConsent = consent;
     },
   };
   const app = createApp({ ...appDeps, listener: "local" });
@@ -632,6 +715,8 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       server.stop(true);
       if (!opts.noHandshake) await removeHandshake(config.handshakePath);
       await telemetry.shutdown();
+      archiveClosing = true;
+      await backfillTask;
       store.close();
       await closeSentry();
       resolveClosed(reason);

@@ -220,6 +220,9 @@ export function SettingsDialog() {
               <Row label="Error reporting" hint="Send crash and error reports to Sentry so bugs get fixed. Reports carry no prompts, board files, tokens or project paths. Turning this off applies immediately; turning it back on applies after a restart.">
                 <input type="checkbox" checked={draft.errorReporting} onChange={(e) => update((s) => ({ ...s, errorReporting: e.target.checked }))} />
               </Row>
+              <Row label="Usage data backup" hint="Back up this installation's conversations and tool traces for analysis, including existing history. Requires an administrator-configured destination. Turning this off stops future backups; it does not erase prior copies.">
+                <input type="checkbox" checked={draft.usageArchiveConsent} onChange={(e) => update((s) => ({ ...s, usageArchiveConsent: e.target.checked }))} />
+              </Row>
             </div>
           ) : (
             <table className="w-full text-xs">
