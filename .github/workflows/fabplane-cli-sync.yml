@@ -1,0 +1,111 @@
+name: fabplane-cli tool sync
+
+# Weekly: export fabdesk's MCP tool manifest and open (or update) a PR on fabPlane/fabplane-cli
+# when `spec/fabdesk-tools.json` there is out of date. The API half of the sync runs in the
+# fabplane-cli repo itself (`sync-api.yml`, from api.fabplane.com/v1/public/openapi.json).
+#
+# Needs FABPLANE_CLI_SYNC_APP_ID (variable) and FABPLANE_CLI_SYNC_APP_PRIVATE_KEY (secret).
+# The GitHub App is installed only on fabPlane/fabplane-cli. See docs/fabplane-cli.md.
+
+on:
+  schedule:
+    - cron: "0 4 * * 1" # Mondays 04:00 UTC, an hour after fabplane-cli's own API sync
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  select-linux-runner:
+    uses: ./.github/workflows/select-linux-runner.yml
+    secrets: inherit
+
+  sync:
+    needs: select-linux-runner
+    runs-on: ${{ fromJSON(needs.select-linux-runner.outputs.runner) }}
+    steps:
+      - name: Require GitHub App credentials
+        env:
+          FABPLANE_CLI_SYNC_APP_ID: ${{ vars.FABPLANE_CLI_SYNC_APP_ID }}
+          FABPLANE_CLI_SYNC_APP_PRIVATE_KEY: ${{ secrets.FABPLANE_CLI_SYNC_APP_PRIVATE_KEY }}
+        run: |
+          if [ -z "$FABPLANE_CLI_SYNC_APP_ID" ] || [ -z "$FABPLANE_CLI_SYNC_APP_PRIVATE_KEY" ]; then
+            echo "::error title=GitHub App credentials missing::Set FABPLANE_CLI_SYNC_APP_ID (variable) and FABPLANE_CLI_SYNC_APP_PRIVATE_KEY (secret). See docs/fabplane-cli.md."
+            exit 1
+          fi
+
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.FABPLANE_CLI_SYNC_APP_ID }}
+          private-key: ${{ secrets.FABPLANE_CLI_SYNC_APP_PRIVATE_KEY }}
+          owner: fabPlane
+          repositories: fabplane-cli
+          permission-contents: write
+          permission-pull-requests: write
+
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.FABDESK_SUBMODULE_SSH_KEY }}
+
+      - name: Init the fabplane submodule
+        run: git submodule update --init --depth 1 vendor/fabplane vendor/fabplane-cli
+
+      - name: Resolve the fab_pcb pin
+        id: fab-pcb
+        run: echo "commit=$(git ls-tree HEAD vendor/fab_pcb | awk '{print $3}')" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the pinned fab_pcb workspace
+        uses: actions/checkout@v4
+        with:
+          repository: fabPlane/fab_pcb
+          ref: ${{ steps.fab-pcb.outputs.commit }}
+          path: vendor/fab_pcb
+          token: ${{ secrets.FAB_PCB_RELEASE_TOKEN }}
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+          no-cache: ${{ startsWith(runner.name, 'tf-nas-') }}
+
+      # The manifest exporter uses the workspace source; vendored prepare scripts are unnecessary.
+      - run: bun install --ignore-scripts
+
+      - name: Check out fabplane-cli
+        uses: actions/checkout@v4
+        with:
+          repository: fabPlane/fabplane-cli
+          path: fabplane-cli-sync
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Export the tool manifest
+        id: export
+        run: |
+          bun scripts/export-tool-manifest.ts manifest.json
+          # generatedAt changes daily; compare everything else.
+          if jq -S 'del(.generatedAt)' manifest.json | cmp -s - <(jq -S 'del(.generatedAt)' fabplane-cli-sync/spec/fabdesk-tools.json); then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "fabdesk tools unchanged"
+          else
+            cp manifest.json fabplane-cli-sync/spec/fabdesk-tools.json
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open or update the PR
+        if: steps.export.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          path: fabplane-cli-sync
+          token: ${{ steps.app-token.outputs.token }}
+          branch: sync/fabdesk-tools
+          commit-message: "spec: refresh fabdesk tool manifest"
+          title: "spec: refresh fabdesk tool manifest"
+          body: |
+            Automated weekly export of the fabdesk MCP tool manifest (`bun scripts/export-tool-manifest.ts`)
+            from fabdesk@${{ github.sha }}.

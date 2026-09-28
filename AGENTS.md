@@ -4,6 +4,7 @@
 - Build on a branch and open a PR; do not commit directly to `main`. The only exception is a small fix that cleans up a mistake already on `main`.
 - Never run `bun install` inside `vendor/fabplane` or `vendor/fab_pcb`. `vendor/fab_pcb/packages/{proto,client,kicad-wasm}` are root workspaces (the client's tests import kicad-wasm); `bun run fp-pcb:types` (part of `typecheck`) emits their declarations; `apps/core/tsconfig.typecheck.json` maps the imports to them for `tsc` only (Bun honours tsconfig `paths` at runtime, so the mapping must stay out of the config chain Bun reads).
 - `vendor/*` are git submodules. Do not edit them here; change fabplane via a PR to `TensorFleet/fabplane.com` and FabPlane PCB via a PR to `fabPlane/fab_pcb`, then bump with `bun run submodules:update`.
+- `vendor/fabplane-cli` (public, fabPlane/fabplane-cli) is the fabplane.com API client/CLI/MCP package; the daemon's carts + inventory go through it (`docs/fabplane-cli.md`). Add new fabplane.com calls there, not ad hoc in fabdesk.
 - Import fabplane's KiCad CLI helpers via the `@pcb/pcb/kicad-cli` subpath only. The package root pulls in sharp and the AWS SDK.
 - fabPlane code imports `zod/v4` (root pins zod 3.25.x).
 - MCP tool names use underscores (`circuit_build`), never dots.

@@ -12,6 +12,7 @@ import type { ZodRawShapeCompat } from "@modelcontextprotocol/sdk/server/zod-com
 import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type {
   CallToolResult,
+  GetPromptResult,
   ReadResourceResult,
   ServerNotification,
   ServerRequest,
@@ -158,9 +159,55 @@ export function attachToRegistry(
 
   if (!opts.toolsOnly) {
     registerResources(server, registry, ctxFactory, session, sessionId);
+    registerShoppingPrompt(server);
   }
 
   return { session, registered };
+}
+
+/** What `/shopping-list <text>` (fabPlane composer) and the `shopping_list` MCP prompt ask of the agent. */
+export function shoppingListPromptText(request?: string, project?: string): string {
+  return [
+    "Manage this project's fabplane.com shopping list with the fabdesk `shopping` tools.",
+    project
+      ? `Project: ${project} (pass project="${project}" to the shopping_list_* tools).`
+      : "Use the currently selected project.",
+    'First make the tools available: call load_toolset {"toolset":"shopping"}, or if load_toolset is not offered, find them with capability_search "shopping list" and run them through capability_call.',
+    "Tools: shopping_list_get (show the list), shopping_list_sync_bom (rebuild part lines from the netlist, keeping edits), shopping_list_add / shopping_list_update / shopping_list_remove (edit lines: quantity, destination such as JLCPCB, a distributor or \"manual\", status needed/ordered/received, notes), shopping_list_destinations (list or add purchase destinations), inventory_search / inventory_add (the team's parts on hand).",
+    "Check inventory_search before buying parts the team may already have. Finish with a short summary of the list grouped by destination and the dashboard link.",
+    request?.trim()
+      ? `Request: ${request.trim()}`
+      : "Request: show the current shopping list, sync it from the BOM if it is missing or stale, and point out anything that needs a decision.",
+  ].join("\n");
+}
+
+function registerShoppingPrompt(server: McpServer): void {
+  server.registerPrompt(
+    "shopping_list",
+    {
+      title: "Shopping list",
+      description:
+        "Manage the project's fabplane.com shopping list (BOM cart) and check the team inventory.",
+      argsSchema: {
+        request: z.string().optional().describe("What to do with the shopping list"),
+        project: z.string().optional().describe("Project id, name or path"),
+      } as unknown as ZodRawShapeCompat,
+    },
+    (args: Record<string, unknown>): GetPromptResult => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: shoppingListPromptText(
+              typeof args["request"] === "string" ? args["request"] : undefined,
+              typeof args["project"] === "string" && args["project"] ? args["project"] : undefined,
+            ),
+          },
+        },
+      ],
+    }),
+  );
 }
 
 function registerCapabilityTools(

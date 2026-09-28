@@ -2,7 +2,7 @@
  * Auth facade over @fabdesk/auth-client. Local mode short-circuits fabplane entirely; fabplane mode
  * delegates to `AuthClient` (device flow). Emits `auth.state` on every change.
  */
-import type { AuthState, CoreEvent, Principal } from "@fabdesk/protocol";
+import { dashboardUrlFor, type AuthState, type CoreEvent, type Principal } from "@fabdesk/protocol";
 import {
   AuthClient,
   LOCAL_PRINCIPAL,
@@ -71,16 +71,19 @@ export class FabplaneAuth implements AuthFacade {
       this.st = { mode: "fabplane", status: "error", error: errMsg(e) };
     }
   }
+  private withDashboard(s: AuthState): AuthState {
+    return { ...s, dashboardUrl: dashboardUrlFor(this.opts.apiOrigin) };
+  }
   private setState(s: AuthState): void {
     this.st = s;
     try {
-      this.opts.emit({ ts: Date.now(), topic: "auth.state", state: s });
+      this.opts.emit({ ts: Date.now(), topic: "auth.state", state: this.withDashboard(s) });
     } catch (e) {
       logger.warn("auth.state emit failed", { error: errMsg(e) });
     }
   }
   state(): AuthState {
-    return this.client?.state() ?? this.st;
+    return this.withDashboard(this.client?.state() ?? this.st);
   }
   principal(): Principal | null {
     return this.state().principal ?? null;

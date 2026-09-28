@@ -7,6 +7,7 @@
  * api-server` per project) for building, querying, routing and library search; `KicadService`
  * runs the fork `kicad-cli` for DRC, renders and exports; `SimService` reads the netlist source.
  */
+import type { CloudService } from "./cloud/service";
 import type {
   CoreEvent,
   FpPcbBoardSpec,
@@ -899,4 +900,6 @@ export interface CoreServices {
   fetch?: typeof fetch;
   /** Optional: the desktop app automation bridge (`app` toolset). Absent in headless/standalone setups. */
   appBridge?: AppBridge;
+  /** Optional: fabplane.com carts and inventory (`shopping` toolset, `/cloud` routes). */
+  cloud?: CloudService;
 }

@@ -17,6 +17,7 @@ const settings = {
   theme: "dark",
   remote: { enabled: false, host: "0.0.0.0", port: 47820 },
   notifications: { enabled: true },
+  cloudOrgId: null,
 } satisfies Settings;
 
 describe("portableFromSettings", () => {

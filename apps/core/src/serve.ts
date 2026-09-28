@@ -24,6 +24,7 @@ import {
 } from "./relay";
 import { createAuth, type AuthFacade } from "./auth-facade";
 import { CloudSettingsSync } from "./cloud-settings";
+import { createCloudService, storedCredentialToken } from "./cloud";
 import { EventBus } from "./bus";
 import { resolveConfig, type CoreConfig } from "./config";
 import { locateAppBridgeFile } from "./app-bridge";
@@ -316,6 +317,15 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
           appBridgeFile: locateAppBridgeFile(config.handshakePath),
           telemetry,
         });
+
+  // fabplane.com carts and inventory (`shopping` tools, `/cloud` routes); tests may inject their own.
+  const storedToken =
+    auth.mode === "local" ? storedCredentialToken({ home: config.home, apiOrigin: config.apiOrigin }) : () => null;
+  services.cloud ??= createCloudService({
+    apiOrigin: config.apiOrigin,
+    token: () => auth.token() ?? storedToken(),
+    settings: () => store.settings.get(),
+  });
 
   const registry = createRegistry();
   const ctxFactory = createContextFactory({ services, projects, tokens, telemetry });

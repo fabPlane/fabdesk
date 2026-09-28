@@ -77,6 +77,8 @@ export const AuthState = z.object({
     })
     .optional(),
   error: z.string().optional(),
+  /** fabplane dashboard root for the core's API origin (`https://app.fabplane.com/dashboard`). */
+  dashboardUrl: z.string().optional(),
 });
 export type AuthState = z.infer<typeof AuthState>;
 

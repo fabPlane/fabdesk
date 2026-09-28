@@ -625,3 +625,98 @@ export function useUnqueueMessage() {
       void qc.invalidateQueries({ queryKey: messagesKey(vars.threadId) }),
   });
 }
+
+/* ---------- fabplane.com shopping lists & inventory ---------- */
+
+export function useCloudStatus(enabled = true) {
+  const client = useCoreClient();
+  return useQuery({
+    queryKey: ["cloud", "status"],
+    queryFn: () => client.cloudStatus(),
+    enabled,
+    staleTime: 30_000,
+    retry: false,
+  });
+}
+
+export function useCloudDestinations(enabled = true) {
+  const client = useCoreClient();
+  return useQuery({
+    queryKey: ["cloud", "destinations"],
+    queryFn: async () => (await client.cloudDestinations()).destinations,
+    enabled,
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
+export function shoppingListKey(projectId: string | null) {
+  return ["cloud", "shopping-list", projectId] as const;
+}
+
+/** Polls while mounted so edits the agent makes through the shopping tools show up. */
+export function useShoppingList(projectId: string | null, enabled = true) {
+  const client = useCoreClient();
+  return useQuery({
+    queryKey: shoppingListKey(projectId),
+    queryFn: () => client.shoppingList(projectId!),
+    enabled: enabled && !!projectId,
+    refetchInterval: 15_000,
+    retry: false,
+  });
+}
+
+export function useShoppingListMutations(projectId: string | null) {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  const refresh = () => void qc.invalidateQueries({ queryKey: shoppingListKey(projectId) });
+  const need = () => {
+    if (!projectId) throw new Error("no project selected");
+    return projectId;
+  };
+  return {
+    create: useMutation({ mutationFn: () => client.createShoppingList(need()), onSuccess: refresh }),
+    syncBom: useMutation({ mutationFn: () => client.syncShoppingBom(need()), onSuccess: refresh }),
+    add: useMutation({
+      mutationFn: (items: Parameters<typeof client.addShoppingItems>[1]) =>
+        client.addShoppingItems(need(), items),
+      onSuccess: refresh,
+    }),
+    update: useMutation({
+      mutationFn: ({ itemId, patch }: { itemId: string; patch: Parameters<typeof client.updateShoppingItem>[2] }) =>
+        client.updateShoppingItem(need(), itemId, patch),
+      onSuccess: refresh,
+    }),
+    remove: useMutation({
+      mutationFn: (itemId: string) => client.removeShoppingItem(need(), itemId),
+      onSuccess: refresh,
+    }),
+  };
+}
+
+export function useInventory(q: string, enabled = true) {
+  const client = useCoreClient();
+  return useQuery({
+    queryKey: ["cloud", "inventory", q],
+    queryFn: () => client.searchInventory(q),
+    enabled,
+    retry: false,
+  });
+}
+
+export function useInventoryMutations() {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  const refresh = () => void qc.invalidateQueries({ queryKey: ["cloud", "inventory"] });
+  return {
+    create: useMutation({
+      mutationFn: ({ input, image }: { input: Parameters<typeof client.createInventoryItem>[0]; image?: { data: Blob; filename: string } }) =>
+        client.createInventoryItem(input, image),
+      onSuccess: refresh,
+    }),
+    adjust: useMutation({
+      mutationFn: ({ itemId, delta }: { itemId: string; delta: number }) => client.adjustInventory(itemId, delta),
+      onSuccess: refresh,
+    }),
+  };
+}

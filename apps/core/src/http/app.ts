@@ -68,6 +68,7 @@ import {
 import { remixCatalogProject } from "../opensource/remix";
 import { applyErrorReporting, captureCoreException } from "../sentry";
 import { parseTopics, sseResponse } from "./sse";
+import { cloudRoutes } from "./cloud-routes";
 
 export type AppDeps = {
   /** The relay link, for `/v1/remote` and `/health`; optional so tests without a relay still build an app. */
@@ -689,6 +690,9 @@ export function createApp(deps: AppDeps): Hono<Env> {
       return c.json({ error: `${session.label} ordering is not available yet`, session }, 400);
     return c.json(session);
   });
+
+  /* ---------- fabplane.com shopping lists & inventory ---------- */
+  app.route("/", cloudRoutes<Env["Variables"]>({ cloud: () => deps.services.cloud, projects: deps.projects }));
 
   /* ---------- folders ---------- */
   app.get("/folders", (c) => c.json(deps.store.folders.list()));

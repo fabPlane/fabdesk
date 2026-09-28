@@ -16,6 +16,9 @@
       ],
       "@fp-pcb/proto/gen/*": [
         "../../vendor/fab_pcb/packages/proto/dist/src/gen/*.d.ts"
+      ],
+      "fabplane-cli": [
+        "../../vendor/fabplane-cli/src/index.ts"
       ]
     }
   }

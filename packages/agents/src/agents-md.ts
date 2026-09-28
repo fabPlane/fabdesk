@@ -26,6 +26,14 @@ the fabrication method. Layer changes are physically limited to the factory vias
 - KiCad-frame coordinates are x = blank x + 45, y = 27.5 − blank y.`,
 };
 
+const SHOPPING_SECTION = `## Shopping list
+The project's parts order lives on fabplane.com as a shopping list (a cart grouped by where each
+line is bought: JLCPCB, a distributor, or manual purchase), next to the team's parts inventory.
+Manage it with the \`shopping\` toolset (\`load_toolset {"toolset":"shopping"}\`): \`shopping_list_get\`,
+\`shopping_list_sync_bom\`, \`shopping_list_add\`, \`shopping_list_update\`, \`shopping_list_remove\`,
+\`shopping_list_destinations\`, \`inventory_search\`, \`inventory_add\`. A message starting with
+\`/shopping-list\` is a request to use these tools. They need the user to be signed in to fabplane.`;
+
 export const USER_START = "<!-- fabdesk:user-start -->";
 export const USER_END = "<!-- fabdesk:user-end -->";
 const HEADER =
@@ -86,7 +94,7 @@ ${sketches}
 | \`reports/\` | Machine-readable reports. |
 | \`exports/\` | Manufacturing and interchange outputs. |
 
-${USER_START}
+${ctx.interfaceMode ? "" : `${SHOPPING_SECTION}\n\n`}${USER_START}
 ${userSection.trim() === "" ? DEFAULT_USER_SECTION : userSection.trim()}
 ${USER_END}
 `;

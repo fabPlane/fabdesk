@@ -283,6 +283,8 @@ export const Settings = z.object({
     .default({ enabled: false, host: "0.0.0.0", port: REMOTE_DEFAULT_PORT }),
   /** Daemon-wide kill switch for push notifications to paired phones (docs/mobile-notifications.md §4.1). */
   notifications: z.object({ enabled: z.boolean().default(true) }).default({ enabled: true }),
+  /** fabplane.com org whose carts and inventory fabdesk uses; null means the caller's personal org. */
+  cloudOrgId: z.string().nullable().default(null),
 });
 export type Settings = z.infer<typeof Settings>;
 

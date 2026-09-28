@@ -31,7 +31,7 @@ export function shortcutList(platform?: string): ShortcutDef[] {
     { keys: `${m}${s}P`, label: "Pin / unpin thread" },
     { keys: `${m}${s}D`, label: "Branch thread" },
     { keys: `${m}${s}S`, label: "Sketch pad" },
-    { keys: `${m}1…7`, label: "Board tabs" },
+    { keys: `${m}1…8`, label: "Board tabs" },
     { keys: `${m}/`, label: "Agent & model" },
     { keys: `${m},`, label: "Settings" },
     { keys: "Space", label: "Cinema: play / pause" },
@@ -71,7 +71,7 @@ export function useShortcuts(actions: ShortcutActions, platform?: string): void 
       if (key === "s" && shift) return run(actions.openSketch ?? (() => ui.setSketchOpen(true)));
       if (key === "/" ) return run(() => ui.setAgentPickerOpen(true));
       if (key === ",") return run(actions.openSettings ?? (() => ui.setSettingsOpen(true)));
-      if (!shift && /^[1-7]$/.test(key)) {
+      if (!shift && /^[1-8]$/.test(key)) {
         const tab = BOARD_TABS[Number(key) - 1];
         if (tab) return run(() => ui.setBoardTab(tab));
       }

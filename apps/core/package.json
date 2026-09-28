@@ -24,6 +24,7 @@
     "@fabdesk/tools": "workspace:*",
     "@fp-pcb/client": "workspace:*",
     "@fp-pcb/proto": "workspace:*",
+    "fabplane-cli": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/exporter-trace-otlp-proto": "^0.222.0",

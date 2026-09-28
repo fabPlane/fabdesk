@@ -111,3 +111,14 @@ export * from "./queries";
 
 /** Route Cinema: the pure painter and the live-frame hub (`packages/client-core/src/cinema`). */
 export * from "./cinema";
+
+export {
+  groupByDestination,
+  itemLabel,
+  destinationOptions,
+  isCloudSignedOut,
+  cloudErrorMessage,
+} from "./shopping";
+export type { DestinationGroup } from "./shopping";
+export { SLASH_COMMANDS, expandSlashCommand, slashSuggestions } from "./slash-commands";
+export type { SlashCommand } from "./slash-commands";

@@ -3,7 +3,7 @@ import { useCallback } from "react";
 import { useAppActions } from "../app/useAppActions";
 import { Dialog, Kbd } from "../components/ui";
 import { useCore } from "@fabdesk/client-core";
-import { useProjects, useThreads } from "@fabdesk/client-core";
+import { useAuthStore, useProjects, useThreads } from "@fabdesk/client-core";
 import { BOARD_TABS, BOARD_TAB_LABELS, useUiStore } from "../stores/ui";
 import { modKey } from "../util";
 
@@ -16,6 +16,8 @@ export function CommandPalette() {
   const setBoardTab = useUiStore((s) => s.setBoardTab);
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
   const toggleBoard = useUiStore((s) => s.toggleBoard);
+  const setSidebarListTab = useUiStore((s) => s.setSidebarListTab);
+  const dashboardUrl = useAuthStore((s) => s.state?.dashboardUrl);
   const actions = useAppActions();
   const threads = useThreads();
   const projects = useProjects();
@@ -60,6 +62,14 @@ export function CommandPalette() {
             <Command.Item value="settings" onSelect={pick(actions.openSettings)}>
               Settings <span className="ml-auto"><Kbd>{mod},</Kbd></span>
             </Command.Item>
+            <Command.Item value="team inventory" onSelect={pick(() => setSidebarListTab("inventory"))}>
+              Team inventory
+            </Command.Item>
+            {dashboardUrl && (
+              <Command.Item value="fabplane dashboard" onSelect={pick(() => void host.openExternal(dashboardUrl))}>
+                Open fabplane dashboard
+              </Command.Item>
+            )}
             <Command.Item value="toggle sidebar" onSelect={pick(toggleSidebar)}>
               Toggle sidebar <span className="ml-auto"><Kbd>{mod}B</Kbd></span>
             </Command.Item>

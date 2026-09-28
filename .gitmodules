@@ -6,3 +6,7 @@
 	path = vendor/fab_pcb
 	url = https://github.com/fabPlane/fab_pcb.git
 	branch = main
+[submodule "vendor/fabplane-cli"]
+	path = vendor/fabplane-cli
+	url = https://github.com/fabPlane/fabplane-cli.git
+	branch = main

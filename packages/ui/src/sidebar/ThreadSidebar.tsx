@@ -10,6 +10,7 @@ import { SIDEBAR_LIST_TABS, SIDEBAR_LIST_TAB_LABELS, normalizeSidebarListTab, us
 import { cn, formatRelative, modKey } from "../util";
 import { groupThreadsByProject } from "@fabdesk/client-core";
 import { OpenSourceList } from "./OpenSourceList";
+import { InventorySidebar } from "./InventorySidebar";
 import { UserFooter } from "./UserFooter";
 
 export interface ThreadSidebarProps {
@@ -189,7 +190,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
         value={sidebarListTab}
         onChange={setSidebarListTab}
       />
-      {sidebarListTab !== "open_source" && (
+      {sidebarListTab === "projects" && (
         <>
           <div className="flex items-center justify-end px-2 pt-2">
             <IconButton title="New project" onClick={() => { setAskValue(""); setAsk({ kind: "project" }); }}>
@@ -210,6 +211,8 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
       )}
       {sidebarListTab === "open_source" ? (
         <OpenSourceList />
+      ) : sidebarListTab === "inventory" ? (
+        <InventorySidebar />
       ) : (
       <div className="min-h-0 flex-1 overflow-y-auto px-1 pb-2 pt-1">
         {threads.isLoading && <div className="px-2 py-3 text-xs text-muted">Loading...</div>}
