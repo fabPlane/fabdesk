@@ -141,21 +141,20 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
       </nav>
       {sidebarListTab === "projects" && (
         <>
-          <div className="flex items-center justify-between px-3 pt-3">
-            <span className="text-[11px] font-medium text-muted">Projects</span>
-            <IconButton title="New project" onClick={() => setCreatingProject(true)}>
-              <Icon name="plus" />
-            </IconButton>
-          </div>
-
           <div className="px-3 pt-3">
             <Button variant="secondary" className="fd-new-chat-button w-full" onClick={onNewChat} aria-label="New chat" data-testid="sidebar-new-chat">
-              <Icon name="plus" width={16} height={16} /><span className="fd-new-chat-label text-left">New chat</span>
+              <Icon name="compose" width={16} height={16} /><span className="fd-new-chat-label text-left">New chat</span>
             </Button>
           </div>
           <div className="fd-sidebar-search relative mx-3 mb-3 mt-3">
             <Icon name="search" width={15} height={15} className="pointer-events-none absolute left-2.5 top-2.5 text-muted" />
             <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search threads..." aria-label="Search threads" />
+          </div>
+          <div className="flex items-center justify-between px-3 pt-1">
+            <span className="text-[11px] font-medium text-muted">Projects</span>
+            <IconButton title="New project" onClick={() => setCreatingProject(true)}>
+              <Icon name="plus" />
+            </IconButton>
           </div>
         </>
       )}

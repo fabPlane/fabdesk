@@ -1,6 +1,7 @@
 import type { SVGProps } from "react";
 
 export type IconName =
+  | "compose"
   | "folderOpen"
   | "menu"
   | "sidebar"
@@ -27,6 +28,7 @@ export type IconName =
 /** One stroke language for the desktop chrome. Icons inherit the control's color. */
 export function Icon({ name, ...props }: SVGProps<SVGSVGElement> & { name: IconName }) {
   const paths: Record<IconName, React.ReactNode> = {
+    compose: <><path d="M12 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-7" /><path d="m16 3 5 5-10 10-5 1 1-5 9-11Z" /></>,
     folderOpen: <><path d="M3 18V6a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v2" /><path d="M3 18a2 2 0 0 0 2 2h13a2 2 0 0 0 1.9-1.4l2-6A1.2 1.2 0 0 0 20.8 11H7.5a2 2 0 0 0-1.9 1.4L3 18Z" /></>,
     minus: <path d="M5 12h14" />,
     play: <path d="m8 5 11 7-11 7V5Z" />,
@@ -45,7 +47,7 @@ export function Icon({ name, ...props }: SVGProps<SVGSVGElement> & { name: IconN
     chevronDown: <path d="m6 9 6 6 6-6" />,
     paperclip: <path d="m20.5 11.5-8.8 8.8a5.2 5.2 0 0 1-7.4-7.4l9.4-9.4a3.5 3.5 0 0 1 5 5l-9.5 9.4a1.8 1.8 0 0 1-2.6-2.6l8.7-8.7" />,
     send: <><path d="M5 12h14M13 6l6 6-6 6" /></>,
-    pin: <><path d="m8 4 8 8M14 3l7 7-3 1-3 3-2 7-2-8-3-3-4-1 3-3 1-3Z" /></>,
+    pin: <><path d="M8 3h8l-1 7 3 3v2H6v-2l3-3-1-7Z" /><path d="M12 15v7" /></>,
     more: <><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></>,
     stop: <rect x="6" y="6" width="12" height="12" rx="2" />,
     command: <><path d="M9 7V5a2 2 0 1 0-2 2h10a2 2 0 1 0-2-2v14a2 2 0 1 0 2-2H7a2 2 0 1 0 2 2V7Z" /></>,
