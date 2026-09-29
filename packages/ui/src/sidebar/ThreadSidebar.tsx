@@ -25,6 +25,7 @@ interface Menu {
 export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
 
   const [q, setQ] = useState("");
+  const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
   const setActiveProject = useUiStore((s) => s.setActiveProject);
   const startNewChatInProject = useUiStore((s) => s.startNewChatInProject);
   const projectId = useUiStore((s) => s.activeProjectId);
@@ -164,7 +165,9 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3 pt-1">
         {threads.isLoading && <div className="px-2 py-3 text-xs text-muted">Loading...</div>}
         {threads.isError && <div className="px-2 py-3 text-xs text-danger">Could not load threads</div>}
-        {projectGroups.map((group) => (
+        {projectGroups.map((group) => {
+          const expanded = group.kind !== "project" || (expandedProjects[group.key] ?? (group.projectId === projectId || q.trim().length > 0));
+          return (
           <div key={group.key} className="mb-1" data-testid={`sidebar-group-${group.key}`}>
             <div className="group relative flex items-center gap-0.5 px-0.5">
               <button
@@ -174,11 +177,18 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
                   group.kind === "project" && group.projectId === projectId ? "bg-panel-2/50 text-fg" : "text-muted",
                 )}
                 aria-current={group.kind === "project" && group.projectId === projectId ? "true" : undefined}
-                onClick={() => group.kind === "project" && group.projectId && setActiveProject(group.projectId)}
+                aria-expanded={group.kind === "project" ? expanded : undefined}
+                aria-controls={group.kind === "project" ? `project-chats-${group.key}` : undefined}
+                onClick={() => {
+                  if (group.kind === "project" && group.projectId) {
+                    setExpandedProjects((current) => ({ ...current, [group.key]: !expanded }));
+                    setActiveProject(group.projectId);
+                  }
+                }}
               >
                 <span className="flex min-w-0 flex-1 items-center gap-2">
                   {group.kind === "pinned" && <Icon name="pin" width={13} height={13} />}
-                  {group.kind === "project" && <Icon name="folder" width={15} height={15} className="shrink-0 opacity-65" />}
+                  {group.kind === "project" && <Icon name={expanded ? "folderOpen" : "folder"} width={15} height={15} className="shrink-0 opacity-65" />}
                   <span className="min-w-0 truncate" title={group.title}>{group.title}</span>
                 </span>
                 <span className="fd-project-count ml-2 shrink-0 text-[10px] tabular-nums text-muted">{group.threads.length}</span>
@@ -189,6 +199,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
                   className="fd-project-add absolute right-0 top-0 text-muted opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover:text-fg"
                   onClick={(e) => {
                     e.stopPropagation();
+                    setExpandedProjects((current) => ({ ...current, [group.key]: true }));
                     startNewChatInProject(group.projectId);
                   }}
                   data-testid={`project-new-chat-${group.projectId}`}
@@ -197,9 +208,14 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
                 </IconButton>
               )}
             </div>
-            {group.threads.map(renderThread)}
+            <div id={`project-chats-${group.key}`} hidden={!expanded} className={group.kind === "project" ? "pl-5 pb-1" : undefined}>
+              {group.threads.map(renderThread)}
+              {group.kind === "project" && group.threads.length === 0 && !threads.isLoading && !threads.isError && (
+                <div className="px-2.5 py-2 text-xs text-muted">{q.trim() ? "No matching chats" : "No chats"}</div>
+              )}
+            </div>
           </div>
-        ))}
+        ); })}
         {!threads.isLoading && projectGroups.length === 0 && (
           <div className="px-2 py-6 text-center text-xs text-muted">No projects yet.</div>
         )}
