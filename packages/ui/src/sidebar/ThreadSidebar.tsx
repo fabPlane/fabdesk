@@ -8,7 +8,7 @@ import { useProjects, useThreads, useThreadMutations } from "@fabdesk/client-cor
 import { useBranchThread } from "../hooks/threadActions";
 import { useRunsStore } from "@fabdesk/client-core";
 import { SIDEBAR_LIST_TABS, SIDEBAR_LIST_TAB_LABELS, normalizeSidebarListTab, useUiStore } from "../stores/ui";
-import { cn, formatRelative, modKey } from "../util";
+import { cn, modKey } from "../util";
 import { groupThreadsByProject } from "@fabdesk/client-core";
 import { OpenSourceList } from "./OpenSourceList";
 import { UserFooter } from "./UserFooter";
@@ -21,12 +21,14 @@ interface Menu {
   x: number;
   y: number;
   thread: Thread;
+  location: string;
 }
 
 export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
   const { client, host } = useCore();
   const qc = useQueryClient();
   const [q, setQ] = useState("");
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const setActiveProject = useUiStore((s) => s.setActiveProject);
   const startNewChatInProject = useUiStore((s) => s.startNewChatInProject);
   const projectId = useUiStore((s) => s.activeProjectId);
@@ -44,13 +46,13 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
   const { patch, remove } = useThreadMutations();
   const branch = useBranchThread();
   const [menu, setMenu] = useState<Menu | null>(null);
-  const [renaming, setRenaming] = useState<{ id: string; title: string } | null>(null);
+  const [renaming, setRenaming] = useState<{ id: string; title: string; location: string } | null>(null);
   const running = useRunsStore((s) => s.runsByThread);
 
-  const openMenu = (e: MouseEvent, thread: Thread) => {
+  const openMenu = (e: MouseEvent, thread: Thread, location: string) => {
     e.preventDefault();
     e.stopPropagation();
-    setMenu({ x: e.clientX, y: e.clientY, thread });
+    setMenu({ x: e.clientX, y: e.clientY, thread, location });
   };
 
   // Electron renderers do not implement window.prompt, so text questions use an inline row.
@@ -102,9 +104,9 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
     patch.mutate({ id: thread.id, patch: { pinned: !thread.pinned } });
   };
 
-  const renderThread = (t: Thread) => (
+  const renderThread = (t: Thread, location = "project") => (
     <div key={t.id} className="group relative">
-      {renaming?.id === t.id ? (
+      {renaming?.id === t.id && renaming.location === location ? (
         <form
           className="px-1"
           onSubmit={(e) => {
@@ -116,7 +118,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
           <Input
             autoFocus
             value={renaming.title}
-            onChange={(e) => setRenaming({ id: t.id, title: e.target.value })}
+            onChange={(e) => setRenaming({ id: t.id, title: e.target.value, location })}
             onBlur={() => setRenaming(null)}
             className="h-7 text-xs"
           />
@@ -124,12 +126,12 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
       ) : (
         <button
           className={cn(
-            "flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 py-1.5 pr-14 text-left text-[13px] transition-colors",
+            "fd-sidebar-thread flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 py-1.5 pr-14 text-left text-[13px] transition-colors",
             t.id === activeThreadId ? "bg-panel-2 font-medium text-fg shadow-sm" : "text-fg/85 hover:bg-panel-2/60 hover:text-fg",
           )}
-          onClick={() => openThread(t.id, t.projectId)}
-          onContextMenu={(e) => openMenu(e, t)}
-          data-testid={`sidebar-thread-${t.id}`}
+          title={t.title || "Untitled"} onClick={() => openThread(t.id, t.projectId)}
+          onContextMenu={(e) => openMenu(e, t, location)}
+          data-testid={`sidebar-thread-${location === "recent" ? "recent-" : ""}${t.id}`}
         >
           {running[t.id] && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" title="running" />}
           {t.pinned && (
@@ -138,9 +140,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
             </span>
           )}
           <span className="min-w-0 flex-1 truncate">{t.title || "Untitled"}</span>
-          <span className="shrink-0 text-[11px] text-muted opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
-            {formatRelative(t.updatedAt)}
-          </span>
+
         </button>
       )}
       <IconButton
@@ -151,7 +151,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
           e.stopPropagation();
           togglePin(t);
         }}
-        data-testid={`thread-pin-${t.id}`}
+        data-testid={`thread-pin-${location === "recent" ? "recent-" : ""}${t.id}`}
       >
         <Icon name="pin" width={16} height={16} />
       </IconButton>
@@ -159,8 +159,8 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
         title="Thread menu"
         style={{ width: 28, height: 28 }}
         className="absolute right-0 top-1 h-7 w-7 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
-        onClick={(e) => openMenu(e, t)}
-        data-testid={`thread-menu-${t.id}`}
+        onClick={(e) => openMenu(e, t, location)}
+        data-testid={`thread-menu-${location === "recent" ? "recent-" : ""}${t.id}`}
       >
         <Icon name="more" />
       </IconButton>
@@ -185,16 +185,9 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
       </nav>
       {sidebarListTab === "projects" && (
         <>
-          <div className="flex items-center justify-between px-3 pt-3">
-            <span className="text-[11px] font-medium text-muted">Workspace</span>
-            <IconButton title="New project" onClick={() => { setAskValue(""); setAsk({ kind: "project" }); }}>
-              <Icon name="plus" />
-            </IconButton>
-          </div>
-          {askRow}
           <div className="px-3 pt-3">
             <Button variant="secondary" className="fd-new-chat-button w-full" onClick={onNewChat} title={`New chat (${modKey(host.platform)}+Shift+O)`} aria-label="New chat" data-testid="sidebar-new-chat">
-              <Icon name="plus" width={16} height={16} /><span className="fd-new-chat-label text-left">New chat</span>
+              <Icon name="compose" width={16} height={16} /><span className="fd-new-chat-label text-left">New chat</span>
               <span className="fd-shortcut" aria-hidden="true"><span>{modKey(host.platform)}</span><span>{host.platform === "darwin" ? "⇧" : "Shift"}</span><span>O</span></span>
             </Button>
           </div>
@@ -210,9 +203,19 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3 pt-1">
         {threads.isLoading && <div className="px-2 py-3 text-xs text-muted">Loading...</div>}
         {threads.isError && <div className="px-2 py-3 text-xs text-danger">Could not load threads</div>}
-        {projectGroups.map((group) => (
+        <div className="fd-sidebar-section-heading">
+          <span>Projects</span>
+          <IconButton title="New project" onClick={() => { setAskValue(""); setAsk({ kind: "project" }); }}><Icon name="plus" /></IconButton>
+        </div>
+        {askRow}
+        {projectGroups.filter((group) => group.kind !== "unassigned").map((group) => {
+          const isExpanded = expanded[group.key] ?? (group.kind !== "project" || group.projectId === projectId || q.trim().length > 0);
+          return (
           <div key={group.key} className="mb-1" data-testid={`sidebar-group-${group.key}`}>
             <div className="group relative flex items-center gap-0.5 px-0.5">
+              <button type="button" className="fd-project-toggle" aria-label={`${isExpanded ? "Collapse" : "Expand"} ${group.title}`} aria-expanded={isExpanded} aria-controls={`sidebar-chats-${group.key}`} onClick={() => setExpanded((current) => ({ ...current, [group.key]: !isExpanded }))}>
+                <Icon name={isExpanded ? "chevronDown" : "chevronRight"} width={14} height={14} />
+              </button>
               <button
                 type="button"
                 className={cn(
@@ -224,10 +227,9 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
               >
                 <span className="flex min-w-0 flex-1 items-center gap-2">
                   {group.kind === "pinned" && <Icon name="pin" width={13} height={13} />}
-                  {group.kind === "project" && <Icon name="folder" width={15} height={15} className="shrink-0 opacity-65" />}
+                  {group.kind === "project" && <Icon name={isExpanded ? "folderOpen" : "folder"} width={15} height={15} className="shrink-0 opacity-65" />}
                   <span className="min-w-0 truncate" title={group.title}>{group.title}</span>
                 </span>
-                <span className="fd-project-count ml-2 shrink-0 text-[10px] tabular-nums text-muted">{group.threads.length}</span>
               </button>
               {group.kind === "project" && group.projectId && (
                 <IconButton
@@ -243,9 +245,17 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
                 </IconButton>
               )}
             </div>
-            {group.threads.map(renderThread)}
+            <div id={`sidebar-chats-${group.key}`} hidden={!isExpanded} className="fd-project-chats">
+              {group.threads.map((thread) => renderThread(thread))}
+              {group.threads.length === 0 && <div className="fd-project-empty">No chats</div>}
+            </div>
           </div>
-        ))}
+        ); })}
+        <section aria-label="Recent chats">
+          <div className="fd-sidebar-section-heading">Recents</div>
+          {(threads.data ?? []).filter((thread) => !thread.archived && !thread.pinned).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt))).map((thread) => renderThread(thread, "recent"))}
+          {!threads.isLoading && !threads.isError && !(threads.data ?? []).some((thread) => !thread.archived && !thread.pinned) && <div className="fd-project-empty">{q ? "No matching chats" : "No recent chats"}</div>}
+        </section>
         {!threads.isLoading && projectGroups.length === 0 && (
           <div className="px-2 py-6 text-center text-xs text-muted">No projects yet.</div>
         )}
@@ -264,7 +274,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
           </MenuItem>
           <MenuItem
             onClick={() => {
-              setRenaming({ id: menu.thread.id, title: menu.thread.title });
+              setRenaming({ id: menu.thread.id, title: menu.thread.title, location: menu.location });
               setMenu(null);
             }}
           >
