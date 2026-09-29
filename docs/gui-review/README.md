@@ -1,5 +1,9 @@
 # FabPlane desktop GUI review
 
+## Latest review
+
+**[Workspace redesign, research, and new comparisons](iteration-2/README.md)** — implementation `8b0f68dc0f5077f856657819375b7ac086d08b8a`. Includes original-main comparisons, the previous GUI iteration, four themes, minimum-window captures, and a labeled conversation fixture. The evidence below records the earlier pass.
+
 **Base:** `main` at `33d68bc109150789c45f7ad334c079931e39d353`
 
 **GUI implementation:** `gui-improvements` at `8092e511ced9455bba51b893c42065e6e372db68`
