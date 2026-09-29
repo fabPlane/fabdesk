@@ -1,8 +1,6 @@
 import type { SVGProps } from "react";
 
 export type IconName =
-  | "compose"
-  | "folderOpen"
   | "menu"
   | "sidebar"
   | "panel"
@@ -28,8 +26,6 @@ export type IconName =
 /** One stroke language for the desktop chrome. Icons inherit the control's color. */
 export function Icon({ name, ...props }: SVGProps<SVGSVGElement> & { name: IconName }) {
   const paths: Record<IconName, React.ReactNode> = {
-    compose: <><path d="M12 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-7" /><path d="m16 3 5 5-10 10-5 1 1-5 9-11Z" /></>,
-    folderOpen: <><path d="M3 9V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v1" /><path d="M3 9h18l-3 11H3L1 9h2Z" /></>,
     minus: <path d="M5 12h14" />,
     play: <path d="m8 5 11 7-11 7V5Z" />,
     pause: <><path d="M8 5v14M16 5v14" /></>,

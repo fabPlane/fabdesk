@@ -335,15 +335,3 @@ body {
 .fd-spin { animation: fd-spin 0.9s linear infinite; }
 @keyframes fd-blink { 50% { opacity: 0.2; } }
 .fd-caret::after { content: "▍"; animation: fd-blink 1s steps(1) infinite; color: var(--fd-accent); }
-
-/* Expandable project navigation with quiet, readable hierarchy. */
-.fd-sidebar .fd-new-chat-button { background: transparent; border-color: transparent; box-shadow: none; }
-.fd-sidebar .fd-new-chat-button:hover { background: var(--fd-panel-2); }
-.fd-sidebar-section-heading { display: flex; align-items: center; justify-content: space-between; min-height: 36px; padding: 12px 8px 5px; color: var(--fd-muted); font-size: 12px; font-weight: 600; }
-.fd-project-toggle { display: grid; place-items: center; width: 24px; height: 32px; flex-shrink: 0; border-radius: 5px; color: var(--fd-muted); }
-.fd-project-toggle:hover { background: var(--fd-panel-2); color: var(--fd-fg); }
-.fd-project-chats { padding-left: 27px; padding-bottom: 5px; }
-.fd-project-empty { padding: 7px 10px; color: var(--fd-muted); font-size: 12px; }
-.fd-sidebar-thread { padding-right: 10px; }
-
-.group:has(> .fd-sidebar-thread):is(:hover, :focus-within) .fd-sidebar-thread { padding-right: 58px; }
