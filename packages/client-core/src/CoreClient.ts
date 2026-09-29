@@ -364,6 +364,23 @@ export class CoreClient {
     const s = qs.toString();
     return this.request(`/threads${s ? `?${s}` : ""}`);
   }
+  importGitHubDestination(name: string, parentDirectory?: string): Promise<{ path: string; exists: boolean }> {
+    const params = new URLSearchParams({ name });
+    if (parentDirectory) params.set("parentDirectory", parentDirectory);
+    return this.request(`/projects/import-github/destination?${params}`);
+  }
+  importGitHub(url: string, name: string, parentDirectory?: string, signal?: AbortSignal): Promise<{ project: ProjectDetail; boards: string[]; adoptedBoard: string | null }> {
+    return this.request("/projects/import-github", {
+      method: "POST", json: { url, name, ...(parentDirectory ? { parentDirectory } : {}) },
+      ...(signal ? { signal } : {}),
+    });
+  }
+  adoptImportedBoard(projectId: string, path: string): Promise<{ project: ProjectDetail; pcbPath: string }> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/adopt-board`, { method: "POST", json: { path } });
+  }
+  searchChats(q: string, offset = 0): Promise<{ titles: Thread[]; messages: Array<{ message: Message; snippet: string; thread: Thread }>; nextOffset: number | null }> {
+    return this.request(`/search/results?q=${encodeURIComponent(q)}&offset=${offset}`);
+  }
   getThread(id: string): Promise<ThreadDetail> {
     return this.request(`/threads/${encodeURIComponent(id)}`);
   }

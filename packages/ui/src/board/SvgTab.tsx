@@ -1,5 +1,5 @@
 import { Button, EmptyState, LoadError, Spinner } from "../components/ui";
-import { useProjectText } from "@fabdesk/client-core";
+import { useProject, useProjectText } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { SvgViewer } from "./SvgViewer";
 import { useRunTool } from "@fabdesk/client-core";
@@ -27,6 +27,7 @@ export function svgArtifactCopy(kind: "schematic" | "pcb") {
 /** Schematic / PCB tab: shows the daemon's rendered SVG (`renders/<kind>.svg`, drawn by kicad-cli) and offers to render it. */
 export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
   const projectId = useUiStore((s) => s.activeProjectId);
+  const project = useProject(projectId);
   const rendered = useProjectText(projectId, `renders/${kind}.svg`);
   const render = useRunTool();
 
@@ -36,6 +37,8 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
         Pick a project in the sidebar to see its {kind}.
       </EmptyState></div>
     );
+  if (project.isLoading) return <div className="flex h-full items-center justify-center"><Spinner /></div>;
+  if (project.isError) return <LoadError title="Could not load project files" onRetry={() => void project.refetch()} />;
   if (rendered.isError) return <LoadError title="Could not load board preview" onRetry={() => void rendered.refetch()} />;
   if (rendered.isLoading) {
     return (
@@ -54,6 +57,11 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
       </div>
     );
   }
+  const sourcePath = kind === "pcb" ? "board.kicad_pcb" : "board.kicad_sch";
+  if (!project.data?.files.some((file) => file.path === sourcePath))
+    return <div className="fd-canvas-empty h-full" data-testid={`board-${kind}-missing-source`}><EmptyState title={kind === "pcb" ? "No KiCad board found" : "No KiCad schematic found"} icon={<BoardOutline />}>
+      {kind === "pcb" ? "Add a KiCad board to this project to preview it here." : "Add a KiCad schematic to this project to preview it here."}
+    </EmptyState></div>;
   const running = render.state.status === "running";
   const copy = svgArtifactCopy(kind);
   return (

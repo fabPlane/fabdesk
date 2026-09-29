@@ -62,6 +62,24 @@ The dialog uses the same surfaces, type, row spacing, and selected-state treatme
 
 These informed the FabPlane-specific implementation; no third-party visual assets were copied.
 
+## Chat and project workflow additions
+
+The feature pass keeps the same shell and project workflow while adding message and project affordances. These captures were taken from the running `gui-improvements` desktop profile at the same minimum and desktop sizes.
+
+| Flow | Capture |
+| --- | --- |
+| Conversation with visible local timestamps and date divider, 1440×920 | ![Conversation](chat-workflows/conversation-1440.png) |
+| Conversation at the 960×600 minimum | ![Conversation minimum](chat-workflows/conversation-960.png) |
+| Sidebar keyword search grouped by chat, 1440×920 | ![Search](chat-workflows/search-1440.png) |
+| Sidebar keyword search at the minimum, 960×600 | ![Search minimum](chat-workflows/search-960.png) |
+| Command palette search with title and message matches | ![Palette search](chat-workflows/palette-search-960.png) |
+| GitHub import with parsed repository and exact destination, 1440×920 | ![GitHub import](chat-workflows/import-1440.png) |
+| GitHub import at the minimum, 960×600 | ![GitHub import minimum](chat-workflows/import-960.png) |
+| Imported repository with no KiCad board | ![No board](chat-workflows/import-no-board-960.png) |
+| No-board project state in the board pane | ![No board pane](chat-workflows/no-board-960.png) |
+
+The screenshots show the new behavior alongside the existing GUI comparison above. Search results open the chat and briefly highlight the selected message. Imports retain their Git origin, prevent destination collisions, allow cancellation, and give a clear no-board state.
+
 ## Verification
 
 - Root `bun run typecheck`: passed.

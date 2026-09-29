@@ -11,6 +11,7 @@ import { cn } from "../util";
 import { groupThreadsByProject } from "@fabdesk/client-core";
 import { OpenSourceList } from "./OpenSourceList";
 import { UserFooter } from "./UserFooter";
+import { SearchResults } from "../chat/SearchResults";
 
 export interface ThreadSidebarProps {
   onNewChat: () => void;
@@ -170,6 +171,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
         <OpenSourceList />
       ) : (
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3 pt-1">
+        {q.trim() ? <SearchResults query={q} /> : <>
         {threads.isLoading && <div className="px-2 py-3 text-xs text-muted">Loading...</div>}
         {threads.isError && <div className="px-2 py-3 text-xs text-danger">Could not load chats</div>}
         {projectGroups.map((group) => {
@@ -227,6 +229,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
         {!threads.isLoading && projectGroups.length === 0 && (
           <div className="px-2 py-6 text-center text-xs text-muted">No projects yet.</div>
         )}
+        </>}
       </div>
       )}
       <UserFooter />

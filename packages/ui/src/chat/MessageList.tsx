@@ -6,7 +6,7 @@ import { Icon } from "../components/Icon";
 import { useCoreClient } from "@fabdesk/client-core";
 import { useRunsStore } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
-import { cn, formatRelative } from "../util";
+import { cn } from "../util";
 import { Markdown } from "./Markdown";
 import { ProjectImage } from "./ProjectImage";
 import { ThinkingBlock } from "./ThinkingBlock";
@@ -180,7 +180,7 @@ export function MessageBubble({ message, streaming }: { message: Message; stream
   if (message.role === "system") {
     return (
       <div className="mx-auto my-3 max-w-xl text-center text-xs text-muted">
-        {message.contentMd}
+        {message.contentMd}<time tabIndex={0} dateTime={message.createdAt} title={new Date(message.createdAt).toLocaleString()} aria-label={new Date(message.createdAt).toLocaleString()} className="mt-1 block text-[11px] focus-visible:outline focus-visible:outline-accent">{new Date(message.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}<span aria-hidden className="fd-full-time hidden">{new Date(message.createdAt).toLocaleString()}</span></time>
       </div>
     );
   }
@@ -224,16 +224,9 @@ export function MessageBubble({ message, streaming }: { message: Message; stream
             <Spinner /> waiting for the agent...
           </div>
         )}
-        <time
-          dateTime={message.createdAt}
-          title={new Date(message.createdAt).toLocaleString()}
-          className={cn(
-            "pointer-events-none absolute top-full mt-0.5 whitespace-nowrap text-[11px] leading-4 text-muted opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100",
-            isUser ? "right-0" : "left-0",
-          )}
-        >
-          {formatRelative(message.createdAt)}
-        </time>
+        <time tabIndex={0} dateTime={message.createdAt} title={new Date(message.createdAt).toLocaleString()} aria-label={new Date(message.createdAt).toLocaleString()}
+          className={cn("mt-2 block text-[11px] leading-4 text-muted focus-visible:outline focus-visible:outline-accent", isUser ? "text-right" : "text-left")}
+        >{new Date(message.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}<span aria-hidden className="fd-full-time hidden">{new Date(message.createdAt).toLocaleString()}</span></time>
       </div>
     </div>
   );
@@ -274,6 +267,19 @@ export function MessageList({
   const ref = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const run = useRunsStore((s) => (thread ? s.runsByThread[thread.id] : undefined));
+  const focusMessageId = useUiStore((s) => s.focusMessageId);
+  const setFocusMessageId = useUiStore((s) => s.setFocusMessageId);
+  useEffect(() => {
+    if (!focusMessageId || !messages.some((message) => message.id === focusMessageId)) return;
+    const target = [...(ref.current?.querySelectorAll<HTMLElement>("[data-message-id]") ?? [])].find((element) => element.dataset.messageId === focusMessageId);
+    if (!target) return;
+    stick.current = false;
+    target.scrollIntoView({ block: "center", behavior: "smooth" });
+    target.classList.add("fd-search-highlight");
+    setFocusMessageId(null);
+    const timer = setTimeout(() => target.classList.remove("fd-search-highlight"), 2500);
+    return () => clearTimeout(timer);
+  }, [focusMessageId, messages, setFocusMessageId]);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -287,8 +293,9 @@ export function MessageList({
     const el = ref.current;
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   }, [messages]);
-  const lastId = messages[messages.length - 1]?.id;
-  const lastRole = messages[messages.length - 1]?.role;
+  const lastId = messages.findLast((message) => message.role === "assistant")?.id;
+  const visibleMessages = messages.filter((message) => message.status !== "queued");
+  const lastRole = visibleMessages[visibleMessages.length - 1]?.role;
   return (
     <div ref={ref} className="min-h-0 flex-1 overflow-y-auto px-5 py-6">
       <div className="mx-auto flex max-w-3xl flex-col gap-5">
@@ -298,13 +305,14 @@ export function MessageList({
             <Spinner />
           </div>
         )}
-        {messages.map((m) => (
-          <MessageBubble
-            key={m.id}
-            message={m}
-            streaming={!!run && m.id === lastId && m.role === "assistant"}
-          />
-        ))}
+        {visibleMessages.map((m, index, visible) => {
+          const day = new Date(m.createdAt).toDateString();
+          const previousDay = visible[index - 1] ? new Date(visible[index - 1]!.createdAt).toDateString() : null;
+          return <div key={m.id} data-message-id={m.id} className="scroll-mt-8 rounded-xl">
+            {day !== previousDay && <div className="my-3 flex items-center gap-3 text-[11px] text-muted"><span className="h-px flex-1 bg-border" /><time dateTime={m.createdAt}>{new Date(m.createdAt).toLocaleDateString([], { dateStyle: "medium" })}</time><span className="h-px flex-1 bg-border" /></div>}
+            <MessageBubble message={m} streaming={!!run && lastRole === "assistant" && m.id === lastId && m.role === "assistant"} />
+          </div>;
+        })}
         {run && (messages.length === 0 || lastRole === "user") && (
           <div className="flex items-center gap-2 text-xs text-muted">
             <Spinner /> {run.agentId} is working...

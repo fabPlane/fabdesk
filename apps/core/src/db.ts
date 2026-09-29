@@ -619,6 +619,21 @@ export class ThreadRepo {
       .all(ftsQuery(q), limit);
     return rows.map((r) => ({ message: this.toMessage(r), snippet: r.snippet }));
   }
+
+  searchResults(q: string, limit = 30, offset = 0): { titles: Thread[]; messages: Array<{ message: Message; snippet: string; thread: Thread }>; nextOffset: number | null } {
+    const like = q.replace(/[\\%_]/g, "\\$&");
+    const titles = this.db.query<ThreadRow, [string, string, string, number]>(
+      "SELECT * FROM threads WHERE title LIKE ? ESCAPE '\\' ORDER BY CASE WHEN lower(title) = lower(?) THEN 0 WHEN lower(title) LIKE lower(?) ESCAPE '\\' THEN 1 ELSE 2 END, updated_at DESC, id LIMIT ?",
+    ).all(`%${like}%`, q, `${like}%`, 20).map((row) => this.toThread(row));
+    const hits = this.db.query<MessageRow & { snippet: string }, [string, number, number]>(
+      "SELECT m.*, snippet(messages_fts, 0, '[', ']', '…', 12) AS snippet FROM messages_fts f JOIN messages m ON m.rowid = f.rowid WHERE messages_fts MATCH ? ORDER BY rank, m.created_at DESC, m.id LIMIT ? OFFSET ?",
+    ).all(ftsQuery(q), limit + 1, offset);
+    const messages = hits.slice(0, limit).flatMap((row) => {
+      const thread = this.get(row.thread_id);
+      return thread ? [{ message: this.toMessage(row), snippet: row.snippet, thread }] : [];
+    });
+    return { titles, messages, nextOffset: hits.length > limit ? offset + limit : null };
+  }
 }
 
 /** Quote user text for FTS5 so punctuation cannot break the query; prefix-match the last token. */

@@ -5,7 +5,7 @@ import { Button, IconButton, Textarea } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { InstallHint } from "../components/InstallHint";
 import { useCore } from "@fabdesk/client-core";
-import { useDoctor, useSettings } from "@fabdesk/client-core";
+import { useDoctor, useSettings, useMessages, useQueueMessage, useUnqueueMessage } from "@fabdesk/client-core";
 import { useRunsStore } from "@fabdesk/client-core";
 import { DRAFT_KEY_NEW, useUiStore } from "../stores/ui";
 import { basename, mimeFromPath, modKey } from "../util";
@@ -58,6 +58,10 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
   const setAgentPickerOpen = useUiStore((s) => s.setAgentPickerOpen);
   const projectId = useUiStore((s) => s.activeProjectId);
   const run = useRunsStore((s) => (thread ? s.runsByThread[thread.id] : undefined));
+  const messages = useMessages(thread?.id ?? null);
+  const queued = (messages.data ?? []).filter((message) => message.status === "queued");
+  const queueMessage = useQueueMessage();
+  const unqueueMessage = useUnqueueMessage();
   const doctor = useDoctor();
   const settings = useSettings();
   const [agentId, setAgentId] = useState<AgentId>(thread?.agentId ?? settings.data?.defaultAgent ?? "claude");
@@ -101,34 +105,44 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
 
   const send = useCallback(async () => {
     const typed = draft.trim();
-    if (!typed || sending || run) return;
+    if (!typed || sending) return;
     // `/shopping-list …` and friends expand into the instructions the agent needs.
     const content = expandSlashCommand(typed) ?? typed;
     setSending(true);
     setError(null);
+    let createdThreadId: string | null = null;
     try {
       let threadId = thread?.id;
       if (!threadId) {
         // No title: the daemon names the thread after this first message (and tells every client).
         threadId = await onCreateThread({ agentId, ...(model ? { model } : {}) });
+        createdThreadId = threadId;
       }
-      await client.sendMessage(threadId, {
+      const input = {
         content,
         attachments: pending.map((a) => ({ path: a.path, mime: a.mime })),
         agentId,
         ...(model ? { model } : {}),
-      });
+      };
+      // The queue endpoint starts immediately when idle and queues if a run began meanwhile.
+      await queueMessage.mutateAsync({ threadId, input });
       setDraft(draftKey, "");
       clearAttachments(draftKey);
       if (draftKey === DRAFT_KEY_NEW) setDraft(threadId, "");
       void qc.invalidateQueries({ queryKey: ["messages", threadId] });
       void qc.invalidateQueries({ queryKey: ["threads"] });
     } catch (e) {
+      if (createdThreadId) {
+        setDraft(createdThreadId, draft);
+        for (const attachment of pending) addAttachment(createdThreadId, attachment);
+        setDraft(DRAFT_KEY_NEW, "");
+        clearAttachments(DRAFT_KEY_NEW);
+      }
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setSending(false);
     }
-  }, [draft, sending, run, thread?.id, onCreateThread, agentId, model, client, pending, setDraft, draftKey, clearAttachments, qc]);
+  }, [draft, sending, thread, onCreateThread, agentId, model, pending, setDraft, draftKey, clearAttachments, addAttachment, qc, queueMessage]);
 
   useEffect(() => {
     composerHandlers.send = () => void send();
@@ -167,6 +181,14 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
   return (
     <div className="fd-composer-dock bg-bg px-5 pb-4 pt-3">
       <div className="mx-auto max-w-3xl">
+        {queued.length > 0 && <div className="mb-2 max-h-36 space-y-1 overflow-y-auto rounded-xl border border-border bg-panel p-2" aria-label="Queued messages">
+          <div className="px-1 text-[11px] text-muted">Queued · sends in order after the current run</div>
+          {queued.map((message, index) => <div key={message.id} className="flex items-center gap-2 rounded-lg bg-panel-2 px-2 py-1.5 text-xs">
+            <span className="shrink-0 text-muted">{index + 1}.</span><span className="min-w-0 flex-1 truncate" title={message.contentMd}>{message.contentMd}</span>
+            <button type="button" className="shrink-0 text-muted hover:text-fg" disabled={unqueueMessage.isPending} aria-label={`Cancel queued message ${index + 1}`} onClick={() => void unqueueMessage.mutateAsync({ threadId: thread!.id, messageId: message.id }).catch(() => { void messages.refetch(); setError("This message has already started and cannot be canceled."); })}>Cancel</button>
+          </div>)}
+          <div className="px-1 text-[11px] text-muted">Queued messages use this chat’s agent and model when they start.</div>
+        </div>}
         {pending.length > 0 && (
           <div className="mb-2 flex flex-wrap gap-1.5">
             {pending.map((a) => (
@@ -229,6 +251,7 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
                 className="fd-agent-button h-8 max-w-full font-medium"
                 title={`Agent & model (${mod} + /)`}
                 onClick={() => setAgentPickerOpen(!agentPickerOpen)}
+                disabled={!!run || queued.length > 0}
                 aria-haspopup="menu"
                 aria-expanded={agentPickerOpen}
                 data-testid="agent-model"
@@ -266,22 +289,21 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
               <Icon name="compose" width={16} height={16} /><span className="fd-action-label">Sketch</span>
             </Button>
             <div className="ml-auto flex items-center gap-2">
-              {run ? (
-                <Button variant="danger" size="sm" onClick={() => void client.abort(run.threadId)} title={`Abort (${mod} + .)`}>
+              {run && (
+                <Button variant="danger" size="sm" onClick={() => void client.abort(run.threadId)} aria-label="Stop current run; queued messages stay scheduled" title={`Stop current run (${mod} + .). Queued messages stay scheduled.`}>
                   <Icon name="stop" width={14} height={14} /> Stop
                 </Button>
-              ) : (
+              )}
                 <Button
                   variant="primary"
                   size="sm"
-                  aria-label={sending ? "Sending message" : "Send message"}
+                  aria-label={run ? "Queue message" : sending ? "Sending message" : "Send message"}
                   onClick={() => void send()}
                   disabled={!draft.trim() || sending}
-                  title={`Send (${mod} + Enter)`}
+                  title={`${run ? "Queue" : "Send"} (${mod} + Enter)`}
                 >
-                  <span className="fd-action-label">{sending ? "Sending..." : "Send"}</span> <Icon name="send" width={14} height={14} />
+                  <span className="fd-action-label">{sending ? "Sending..." : run ? "Queue" : "Send"}</span> <Icon name="send" width={14} height={14} />
                 </Button>
-              )}
             </div>
           </div>
         </div>
@@ -297,7 +319,7 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
           </details>
         )}
         {error && <div className="mt-2 rounded-lg border border-danger/25 bg-danger/5 px-3 py-2 text-xs text-danger">{error}</div>}
-        <div className="fd-composer-hint"><span>Enter to send</span><span>Shift + Enter for a new line</span></div>
+        <div className="fd-composer-hint"><span>{run ? "Enter to queue" : "Enter to send"}</span><span>Shift + Enter for a new line</span></div>
       </div>
     </div>
   );
