@@ -148,7 +148,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
           </div>
           <div className="fd-sidebar-search relative mx-3 mb-3 mt-3">
             <Icon name="search" width={15} height={15} className="pointer-events-none absolute left-2.5 top-2.5 text-muted" />
-            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search threads..." aria-label="Search threads" />
+            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search chats" aria-label="Search chats" />
           </div>
           <div className="flex items-center justify-between px-3 pt-1">
             <span className="text-[11px] font-medium text-muted">Projects</span>
