@@ -51,10 +51,10 @@ export function PendingApprovalCard({ threadId, part }: { threadId: string; part
       )}
       data-testid="approval-card"
     >
-      <div className="flex items-center gap-2 px-2.5 py-1.5">
+      <div className="flex flex-wrap items-center gap-2 px-2.5 py-2">
         <button
           type="button"
-          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          className="flex min-w-0 flex-1 basis-40 items-center gap-2 text-left"
           onClick={() => setOpen((o) => !o)}
           aria-expanded={open}
         >
@@ -139,6 +139,7 @@ export function PendingQuestionCard({ threadId, part }: { threadId: string; part
               key={o}
               size="sm"
               variant="ghost"
+              className="h-auto min-h-8 max-w-full whitespace-normal text-left"
               disabled={busy}
               onClick={() => void answer(o)}
             >

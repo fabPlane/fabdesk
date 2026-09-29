@@ -29,12 +29,12 @@ export function CommandPalette() {
     fn();
   };
   return (
-    <Dialog open={open} onClose={close} bare className="w-[560px] max-w-full">
+    <Dialog open={open} onClose={close} bare ariaLabel="Command palette" className="w-[560px] max-w-full">
       <Command label="Command palette" className="flex max-h-[70vh] flex-col">
         <Command.Input
           autoFocus
           placeholder="Type a command or search threads..."
-          className="h-11 w-full border-b border-border bg-transparent px-4 text-sm outline-none placeholder:text-muted"
+          className="h-12 shrink-0 w-full border-b border-border bg-transparent px-4 text-sm outline-none placeholder:text-muted"
         />
         <Command.List className="min-h-0 flex-1 overflow-auto p-1.5">
           <Command.Empty>No results.</Command.Empty>

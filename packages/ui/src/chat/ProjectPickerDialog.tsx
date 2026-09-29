@@ -50,7 +50,7 @@ export function ProjectPickerDialog() {
             onClick={() => choose(project.id)}
             data-testid={`picker-project-${project.id}`}
           >
-            <div className="font-semibold">{project.name}</div>
+            <div className="truncate font-semibold" title={project.name}>{project.name}</div>
             <div className="truncate text-[11px] text-muted">{project.path}</div>
           </button>
         ))}
@@ -77,7 +77,7 @@ export function ProjectPickerDialog() {
           </Button>
         </form>
       ) : (
-        <div className="mt-3 flex items-center gap-2">
+        <div className="mt-3 flex flex-wrap items-center gap-2">
           <Button variant="primary" onClick={() => setCreating(true)}>
             New project
           </Button>

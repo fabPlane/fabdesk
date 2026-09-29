@@ -37,12 +37,12 @@ export function RendersTab() {
   }
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2 border-b border-border px-2 py-1">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2">
         {button}
         {render.state.error && <span className="text-xs text-danger">{render.state.error}</span>}
         <span className="ml-auto text-[11px] text-muted">{images.length} image{images.length === 1 ? "" : "s"}</span>
       </div>
-      <div className="grid min-h-0 flex-1 grid-cols-2 gap-3 overflow-auto p-3 xl:grid-cols-3">
+      <div className="fd-render-grid grid min-h-0 flex-1 content-start gap-3 overflow-auto p-3">
         {images.map((f) => (
           <button key={f.path} className="group text-left" onClick={() => setOpen(f.path)}>
             <ProjectImage projectId={projectId} path={f.path} className="max-h-none w-full object-contain" />

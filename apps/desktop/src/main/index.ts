@@ -86,7 +86,7 @@ function createWindow(): BrowserWindow {
     ...(process.platform === "win32" ? { titleBarOverlay: titleBarOverlayFor(theme.themeId) } : {}),
     // Windows/Linux: no in-window menu bar; the top bar's menu button pops the same menu (app-menu.ts).
     autoHideMenuBar: process.platform !== "darwin",
-    trafficLightPosition: { x: 12, y: 10 },
+    trafficLightPosition: { x: 12, y: 17 },
     webPreferences: {
       preload: join(here, "../preload/index.cjs"),
       contextIsolation: true,

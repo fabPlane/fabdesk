@@ -3,6 +3,7 @@ import { Button, EmptyState, Select } from "../../components/ui";
 import { useCoreClient } from "@fabdesk/client-core";
 import { useCinemaStore } from "../../stores/cinema";
 import { useUiStore } from "../../stores/ui";
+import { Icon } from "../../components/Icon";
 import { cn } from "../../util";
 import { useRunTool } from "@fabdesk/client-core";
 import { CinemaPainter, DARK_THEME, LIGHT_THEME, frameStatusText, layerColor, nextFrameSeq, perfStatusText, type OffscreenLike } from "./renderer";
@@ -189,19 +190,20 @@ export function CinemaTab() {
     <div className="flex h-full flex-col">
       <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-2 py-1 text-xs">
         <Button size="sm" variant={followLive ? "primary" : "secondary"} onClick={goLive} title="Follow live (End)">
-          &#9654; live
+          <Icon name="play" width={14} height={14} /> Live
         </Button>
         <Button size="sm" onClick={togglePlaying} title="Play / pause (Space)" disabled={frames === 0}>
-          {playing ? "⏸" : "▶"}
+          <Icon name={playing ? "pause" : "play"} width={16} height={16} />
         </Button>
         <Button size="sm" onClick={() => step(-1)} title="Previous frame ([)" disabled={cursor <= 0}>
-          &#8249;
+          <Icon name="chevronLeft" width={16} height={16} />
         </Button>
         <Button size="sm" onClick={() => step(1)} title="Next frame (])" disabled={cursor >= frames - 1}>
-          &#8250;
+          <Icon name="chevronRight" width={16} height={16} />
         </Button>
         <input
           type="range"
+          aria-label="Routing frame"
           className="min-w-24 flex-1 accent-(--fd-accent)"
           min={0}
           max={Math.max(0, frames - 1)}
@@ -251,7 +253,7 @@ export function CinemaTab() {
         </span>
       </div>
       {/* The box owns the size; the canvas is absolutely positioned so its bitmap size never feeds back into layout. */}
-      <div ref={boxRef} className="relative min-h-[320px] flex-1">
+      <div ref={boxRef} className="relative min-h-0 flex-1">
         <canvas ref={canvasRef} className="absolute inset-0 block h-full w-full" />
       </div>
     </div>

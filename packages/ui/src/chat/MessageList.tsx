@@ -194,7 +194,7 @@ export function MessageBubble({ message, streaming }: { message: Message; stream
     <div className={cn("group flex w-full", isUser ? "justify-end" : "justify-start")}>
       <div
         className={cn(
-          "relative min-w-0 text-sm leading-[1.75]",
+          "relative min-w-0 text-sm leading-[1.75] [overflow-wrap:anywhere]",
           isUser
             ? "max-w-[90%] whitespace-pre-wrap rounded-2xl rounded-br-md border border-border/60 bg-panel-2/60 px-4 py-3"
             : "w-full max-w-full",

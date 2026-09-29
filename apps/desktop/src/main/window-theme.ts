@@ -40,8 +40,8 @@ export interface WindowTheme {
   themeSource: "system" | "light" | "dark";
 }
 
-/** Height of the top bar (`h-9` in TopBar.tsx); the Windows controls overlay matches it. */
-export const TITLE_BAR_HEIGHT = 36;
+/** Height of the top bar (`h-12` in TopBar.tsx); the Windows controls overlay matches it. */
+export const TITLE_BAR_HEIGHT = 48;
 
 /** Windows controls-overlay colours for a theme: the top bar's panel colour and its foreground. */
 export function titleBarOverlayFor(themeId: ThemeId): { color: string; symbolColor: string; height: number } {

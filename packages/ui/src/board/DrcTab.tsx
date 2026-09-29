@@ -81,7 +81,7 @@ export function DrcTab() {
   if (!projectId) return <EmptyState title="No project selected" />;
   const loading = drc.isLoading || erc.isLoading;
   const toolbar = (
-    <div className="flex items-center gap-1.5 border-b border-border px-2 py-1">
+    <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border px-3 py-2">
       <Button size="sm" disabled={tool.state.status === "running"} onClick={() => void tool.run("drc", { projectId })}>
         Run DRC
       </Button>
@@ -126,6 +126,11 @@ export function DrcTab() {
                   <tr
                     key={i}
                     onClick={() => setSelected(i)}
+                    tabIndex={0}
+                    aria-selected={selected === i}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelected(i); }
+                    }}
                     className={cn("cursor-pointer border-t border-border/60 hover:bg-panel-2/60", selected === i && "bg-panel-2")}
                   >
                     <td className="px-2 py-1.5 font-mono uppercase text-muted">{v.source}</td>

@@ -29,7 +29,7 @@ const DEFAULT_AGENT: AgentSettings = { binaryPath: null, model: null, permission
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
-    <label className="fd-settings-row grid grid-cols-[180px_1fr] items-center gap-4 py-2 text-[13px]">
+    <label className="fd-settings-row grid grid-cols-[180px_minmax(0,1fr)] items-center gap-4 py-2 text-[13px]">
       <span>
         <span className="font-medium">{label}</span>
         {hint && <span className="mt-0.5 block text-[11px] leading-4 text-muted">{hint}</span>}

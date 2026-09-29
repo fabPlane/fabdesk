@@ -1,10 +1,12 @@
 import type { AgentId, AgentInfo } from "@fabdesk/protocol";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "../util";
 import { pickerModelChoices } from "@fabdesk/client-core";
 
 export interface AgentModelMenuProps {
   open: boolean;
+  anchorRef: RefObject<HTMLButtonElement | null>;
   onClose: () => void;
   agents: AgentInfo[];
   agentId: AgentId;
@@ -22,14 +24,45 @@ export interface AgentModelMenuProps {
  * Dropdown above the composer's agent button: one list with each CLI and up to three of its models.
  * Clicking the CLI name picks it with its default model; the Settings link widens the model list.
  */
-export function AgentModelMenu({ open, onClose, agents, agentId, model, defaultModel, configuredModels, onSelect, onOpenSettings }: AgentModelMenuProps) {
+export function AgentModelMenu({ open, anchorRef, onClose, agents, agentId, model, defaultModel, configuredModels, onSelect, onOpenSettings }: AgentModelMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState({ left: 8, top: 8, maxHeight: 300 });
+  useLayoutEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const anchor = anchorRef.current?.getBoundingClientRect();
+      if (!anchor) return;
+      const above = anchor.top - 12;
+      const below = innerHeight - anchor.bottom - 12;
+      const maxHeight = Math.max(80, Math.min(440, Math.max(above, below)));
+      const height = Math.min(ref.current?.scrollHeight ?? maxHeight, maxHeight);
+      setPosition({ left: Math.max(8, Math.min(anchor.left, innerWidth - 280 - 8)), top: above >= below ? Math.max(8, anchor.top - height - 6) : anchor.bottom + 6, maxHeight });
+    };
+    place();
+    ref.current?.querySelector<HTMLElement>('[aria-checked="true"], button')?.focus();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+      anchorRef.current?.focus();
+    };
+  }, [open, anchorRef]);
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) onClose();
+      if (!ref.current?.contains(e.target as Node) && !anchorRef.current?.contains(e.target as Node)) onClose();
     };
     const onKey = (e: KeyboardEvent) => {
+      if (["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) {
+        const items = Array.from(ref.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? []);
+        const index = items.indexOf(document.activeElement as HTMLButtonElement);
+        const next = e.key === "Home" ? 0 : e.key === "End" ? items.length - 1 : (index + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+        e.preventDefault();
+        e.stopPropagation();
+        items[next]?.focus();
+      }
+      if (e.key === "Tab") onClose();
       if (e.key === "Escape") {
         e.stopPropagation();
         onClose();
@@ -41,7 +74,7 @@ export function AgentModelMenu({ open, onClose, agents, agentId, model, defaultM
       window.removeEventListener("mousedown", onDown);
       window.removeEventListener("keydown", onKey, true);
     };
-  }, [open, onClose]);
+  }, [open, onClose, anchorRef]);
   if (!open) return null;
 
   const choose = (id: AgentId, m: string) => {
@@ -49,8 +82,8 @@ export function AgentModelMenu({ open, onClose, agents, agentId, model, defaultM
     onClose();
   };
 
-  return (
-    <div ref={ref} role="menu" className="absolute bottom-full left-0 z-40 mb-1 w-60 rounded-lg border border-border bg-panel p-1 shadow-xl" data-testid="agent-model-menu">
+  return createPortal(
+    <div ref={ref} role="menu" aria-label="Agent and model" style={position} className="fd-elevated fixed z-40 w-[280px] max-w-[calc(100vw-16px)] overflow-y-auto rounded-xl border border-border bg-panel p-1.5" data-testid="agent-model-menu">
       {agents.map((a) => {
         const fallback = defaultModel(a.id);
         const active = a.id === agentId;
@@ -75,7 +108,7 @@ export function AgentModelMenu({ open, onClose, agents, agentId, model, defaultM
           <span className="text-muted">More models in Settings…</span>
         </Item>
       </div>
-    </div>
+    </div>, document.body
   );
 }
 

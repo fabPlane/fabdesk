@@ -10,6 +10,7 @@ import {
   useInventoryMutations,
 } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
+import { Icon } from "../components/Icon";
 
 function useDebounced<T>(value: T, ms: number): T {
   const [v, setV] = useState(value);
@@ -92,7 +93,7 @@ function InventoryRow({ item }: { item: InventoryItem }) {
         )}
       </td>
       <td className="px-2 py-1.5">
-        <div className="truncate font-medium">{item.name}</div>
+        <div className="truncate font-medium" title={item.name}>{item.name}</div>
         <div className="truncate font-mono text-[10.5px] text-muted">
           {[item.mpn, item.manufacturer, item.category].filter(Boolean).join(" · ")}
         </div>
@@ -100,11 +101,11 @@ function InventoryRow({ item }: { item: InventoryItem }) {
       <td className="w-36 px-2 py-1.5">
         <div className="flex items-center gap-1">
           <IconButton title="Use one" className="h-6 w-6" disabled={busy || item.quantity <= 0} onClick={() => adjust.mutate({ itemId: item.id, delta: -1 })}>
-            &#8722;
+            <Icon name="minus" width={16} height={16} />
           </IconButton>
           <span className="min-w-[3ch] text-center font-mono">{item.quantity}</span>
           <IconButton title="Add one" className="h-6 w-6" disabled={busy} onClick={() => adjust.mutate({ itemId: item.id, delta: 1 })}>
-            +
+            <Icon name="plus" width={16} height={16} />
           </IconButton>
           <span className="text-[10.5px] text-muted">{item.unit}</span>
         </div>
@@ -158,13 +159,13 @@ export function InventoryView() {
 
   const items = inventory.data?.items ?? [];
   return (
-    <div className="flex h-full min-w-0 flex-col bg-bg" data-testid="inventory-view">
-      <div className="flex h-10 items-center gap-2 border-b border-border px-4">
+    <div className="fd-content-pane flex h-full min-w-0 flex-col bg-bg" data-testid="inventory-view">
+      <div className="fd-screen-header flex flex-wrap items-center gap-2 border-b border-border px-4">
         <div className="min-w-0">
           <div className="truncate text-sm font-medium">Parts Inventory</div>
           {org && <div className="truncate text-[11px] text-muted">{org.name}</div>}
         </div>
-        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, MPN, SKU..." className="ml-auto h-7 max-w-xs text-xs" data-testid="inventory-search" />
+        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, MPN, SKU..." aria-label="Search inventory" className="ml-auto h-8 max-w-xs flex-1 basis-40 text-xs" data-testid="inventory-search" />
         {inventory.isFetching && <Spinner />}
         <Button size="sm" variant="primary" onClick={() => setAdding((v) => !v)}>
           Add item
@@ -175,7 +176,7 @@ export function InventoryView() {
           </Button>
         )}
         <IconButton title="Close Parts Inventory" onClick={() => setInventoryOpen(false)} data-testid="inventory-close">
-          &#10005;
+          <Icon name="close" />
         </IconButton>
       </div>
       {adding && <AddItemForm onDone={() => setAdding(false)} />}
@@ -192,7 +193,8 @@ export function InventoryView() {
           </div>
         )}
         {items.length > 0 && (
-          <table className="w-full text-left text-xs">
+          <table className="w-full min-w-[640px] table-fixed text-left text-xs">
+            <colgroup><col className="w-12" /><col /><col className="w-36" /><col className="w-32" /><col className="w-32" /></colgroup>
             <thead className="sticky top-0 bg-panel">
               <tr className="text-[10.5px] uppercase tracking-wide text-muted">
                 <th className="px-2 py-1.5" />

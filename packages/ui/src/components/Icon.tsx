@@ -16,11 +16,21 @@ export type IconName =
   | "stop"
   | "command"
   | "folder"
+  | "minus"
+  | "play"
+  | "pause"
+  | "chevronLeft"
+  | "chevronRight"
   | "library";
 
 /** One stroke language for the desktop chrome. Icons inherit the control's color. */
 export function Icon({ name, ...props }: SVGProps<SVGSVGElement> & { name: IconName }) {
   const paths: Record<IconName, React.ReactNode> = {
+    minus: <path d="M5 12h14" />,
+    play: <path d="m8 5 11 7-11 7V5Z" />,
+    pause: <><path d="M8 5v14M16 5v14" /></>,
+    chevronLeft: <path d="m15 6-6 6 6 6" />,
+    chevronRight: <path d="m9 6 6 6-6 6" />,
     folder: <path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />,
     library: <><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></>,
     menu: <path d="M4 6h16M4 12h16M4 18h16" />,

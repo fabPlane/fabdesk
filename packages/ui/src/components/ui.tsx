@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
+import { forwardRef, useEffect, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
 import { cn } from "../util";
 import { Icon } from "./Icon";
 
@@ -61,7 +61,7 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
     <input
       ref={ref}
       className={cn(
-        "h-9 w-full rounded-md border border-border bg-bg/50 px-3 text-[13px] text-fg placeholder:text-muted outline-none transition-colors focus:border-accent",
+        "h-9 min-w-0 w-full rounded-md border border-border bg-bg/50 px-3 text-[13px] text-fg placeholder:text-muted outline-none transition-colors focus:border-accent",
         className,
       )}
       {...rest}
@@ -92,7 +92,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
     <select
       ref={ref}
       className={cn(
-        "h-9 rounded-md border border-border bg-bg/50 px-2.5 text-[13px] text-fg outline-none transition-colors focus:border-accent",
+        "h-9 min-w-0 max-w-full rounded-md border border-border bg-bg/50 px-2.5 text-[13px] text-fg outline-none transition-colors focus:border-accent",
         className,
       )}
       {...rest}
@@ -130,7 +130,7 @@ export function Badge({
   return (
     <span
       title={title}
-      className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium leading-4 tracking-[0.01em]", tones[tone], className)}
+      className={cn("inline-flex shrink-0 items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium leading-4 tracking-[0.01em]", tones[tone], className)}
     >
       {children}
     </span>
@@ -147,13 +147,14 @@ export interface DialogProps {
   open: boolean;
   onClose: () => void;
   title?: ReactNode;
+  ariaLabel?: string;
   children: ReactNode;
   className?: string;
   /** Skip the padded panel chrome (used by the sketch pad). */
   bare?: boolean;
 }
 
-export function Dialog({ open, onClose, title, children, className, bare }: DialogProps) {
+export function Dialog({ open, onClose, title, ariaLabel, children, className, bare }: DialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -178,7 +179,13 @@ export function Dialog({ open, onClose, title, children, className, bare }: Dial
       if (e.key === "Tab") {
         const dialog = dialogRef.current;
         const items = Array.from(dialog?.querySelectorAll<HTMLElement>("button, input, select, textarea, a[href], [tabindex]") ?? [])
-          .filter((element) => !element.matches(":disabled, [tabindex='-1'], input[type='hidden']") && element.getClientRects().length > 0);
+          .filter((element) => {
+            if (element.matches(":disabled, [tabindex='-1'], input[type='hidden']") || element.getClientRects().length === 0) return false;
+            if (element instanceof HTMLInputElement && element.type === "radio" && !element.checked && element.name) {
+              return !Array.from(dialog?.querySelectorAll<HTMLInputElement>('input[type="radio"]') ?? []).some((radio) => radio.name === element.name && radio.checked);
+            }
+            return true;
+          });
         const first = items[0];
         const last = items[items.length - 1];
         if (!first) { e.preventDefault(); dialog?.focus(); }
@@ -200,7 +207,7 @@ export function Dialog({ open, onClose, title, children, className, bare }: Dial
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
-        aria-label={typeof title === "string" ? title : undefined}
+        aria-label={ariaLabel ?? (typeof title === "string" ? title : undefined)}
         tabIndex={-1}
         className={cn(
           "fd-elevated flex max-h-full flex-col overflow-hidden rounded-2xl border border-border bg-panel",
@@ -211,7 +218,7 @@ export function Dialog({ open, onClose, title, children, className, bare }: Dial
       >
         {title !== undefined && (
           <div className="flex min-h-13 items-center justify-between border-b border-border px-5 py-3">
-            <div className="text-[15px] font-semibold tracking-[-0.01em]">{title}</div>
+            <div className="min-w-0 break-words text-[15px] font-semibold tracking-[-0.01em]">{title}</div>
             <IconButton title="Close" onClick={onClose}>
               <Icon name="close" />
             </IconButton>
@@ -292,21 +299,43 @@ export function ContextMenu({
   onClose: () => void;
   children: ReactNode;
 }) {
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState({ left: x, top: y });
+  useLayoutEffect(() => {
+    const menu = menuRef.current;
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const rect = menu?.getBoundingClientRect();
+    if (rect) setPosition({ left: Math.max(8, Math.min(x, innerWidth - rect.width - 8)), top: Math.max(8, Math.min(y, innerHeight - rect.height - 8)) });
+    menuRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    return () => { if (menu?.contains(document.activeElement) && previous?.isConnected) previous.focus(); };
+  }, [x, y]);
   useEffect(() => {
     const close = () => onClose();
     window.addEventListener("mousedown", close);
     window.addEventListener("blur", close);
-    window.addEventListener("keydown", close);
+    window.addEventListener("resize", close);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" || event.key === "Tab") close();
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? []);
+        const index = items.indexOf(document.activeElement as HTMLButtonElement);
+        items[(index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("mousedown", close);
       window.removeEventListener("blur", close);
-      window.removeEventListener("keydown", close);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("keydown", onKey);
     };
   }, [onClose]);
   return (
     <div
-      className="fd-elevated fixed z-50 min-w-44 rounded-xl border border-border bg-panel p-1.5"
-      style={{ left: x, top: y }}
+      ref={menuRef}
+      className="fd-elevated fixed z-50 max-h-[calc(100vh-16px)] max-w-[calc(100vw-16px)] min-w-44 overflow-auto rounded-xl border border-border bg-panel p-1.5"
+      style={position}
       onMouseDown={(e) => e.stopPropagation()}
       role="menu"
     >

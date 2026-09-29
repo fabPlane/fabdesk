@@ -40,6 +40,7 @@ const FALLBACK_AGENTS = [
 const EMPTY: never[] = [];
 
 export function Composer({ thread, onCreateThread }: ComposerProps) {
+  const agentButtonRef = useRef<HTMLButtonElement>(null);
   const { client, host } = useCore();
   const qc = useQueryClient();
   const draftKey = thread?.id ?? DRAFT_KEY_NEW;
@@ -221,6 +222,7 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
           <div className="fd-composer-toolbar flex flex-wrap items-center gap-1.5 px-2.5 py-2">
             <div className="fd-agent-control relative min-w-0">
               <Button
+                ref={agentButtonRef}
                 variant="ghost"
                 size="sm"
                 className="fd-agent-button h-8 max-w-full font-medium"
@@ -233,6 +235,7 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
                 <span className="min-w-0 truncate">{agentModelLabel(pickerAgents.find((a) => a.id === agentId), agentId, model)}</span> <Icon name="chevronDown" width={13} height={13} className="shrink-0" />
               </Button>
               <AgentModelMenu
+                anchorRef={agentButtonRef}
                 open={agentPickerOpen}
                 onClose={() => setAgentPickerOpen(false)}
                 agents={pickerAgents}

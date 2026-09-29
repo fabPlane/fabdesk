@@ -51,9 +51,9 @@ export function SketchPad({ onAttach }: SketchPadProps) {
 
   const dark = typeof document !== "undefined" && document.documentElement.classList.contains("dark");
   return (
-    <Dialog open={open} onClose={close} bare className="h-[85vh] w-[90vw] max-w-6xl">
+    <Dialog open={open} onClose={close} bare ariaLabel="Sketch" className="h-[85vh] w-[90vw] max-w-6xl">
       <div className="flex h-full flex-col">
-        <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2">
           <div className="text-sm font-semibold">Sketch</div>
           <div className="text-xs text-muted">Rough out the board or a schematic; the PNG is attached to your next message.</div>
           <div className="ml-auto flex items-center gap-2">

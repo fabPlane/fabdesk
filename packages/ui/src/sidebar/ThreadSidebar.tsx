@@ -145,6 +145,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
       )}
       <IconButton
         title={t.pinned ? "Unpin" : "Pin"}
+        style={{ width: 28, height: 28 }}
         className={cn("absolute right-7 top-1 h-7 w-7", t.pinned ? "text-accent opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100")}
         onClick={(e) => {
           e.stopPropagation();
@@ -152,10 +153,11 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
         }}
         data-testid={`thread-pin-${t.id}`}
       >
-        <Icon name="pin" width={13} height={13} />
+        <Icon name="pin" width={16} height={16} />
       </IconButton>
       <IconButton
         title="Thread menu"
+        style={{ width: 28, height: 28 }}
         className="absolute right-0 top-1 h-7 w-7 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
         onClick={(e) => openMenu(e, t)}
         data-testid={`thread-menu-${t.id}`}
