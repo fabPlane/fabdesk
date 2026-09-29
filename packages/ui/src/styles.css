@@ -131,7 +131,6 @@ button, input, select, textarea { font: inherit; }
 ::selection { background: color-mix(in srgb, var(--fd-accent) 30%, transparent); }
 .fd-elevated { box-shadow: 0 12px 38px rgb(0 0 0 / 0.16), 0 2px 8px rgb(0 0 0 / 0.09); }
 .fd-surface-inset { box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.035); }
-.fd-hero-mark { box-shadow: 0 16px 48px color-mix(in srgb, var(--fd-accent) 9%, transparent), inset 0 1px 0 rgb(255 255 255 / 0.05); }
 .fd-composer { box-shadow: 0 10px 28px rgb(0 0 0 / 0.11), 0 1px 3px rgb(0 0 0 / 0.08); }
 .fd-composer textarea:focus-visible { outline: none; }
 .fd-setup-notice summary::-webkit-details-marker { display: none; }
@@ -155,7 +154,7 @@ button, input, select, textarea { font: inherit; }
 }
 @media (max-height: 700px) {
   .fd-empty-hero { padding-bottom: 0; gap: 8px; }
-  .fd-empty-hero .fd-hero-mark { display: none; }
+  .fd-empty-hero .fd-hero-icon { display: none; }
 }
 /* Section label: small, tracked, uppercase, lime (fabplane's "PROJECT ASSISTANT" eyebrow). */
 .fd-eyebrow {

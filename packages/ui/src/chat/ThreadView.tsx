@@ -122,13 +122,11 @@ export function ThreadView() {
         <MessageList thread={thread} messages={messages.data ?? []} loading={messages.isLoading} />
       ) : (
         <div className="fd-empty-hero flex min-h-0 flex-1 flex-col items-center justify-center gap-3 overflow-y-auto px-8 pb-12 text-center">
-          <div className="fd-hero-mark mb-3 flex h-20 w-20 items-center justify-center rounded-2xl border border-border bg-panel text-accent" aria-hidden="true">
-            <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="8" y="8" width="36" height="36" rx="7" />
-              <path d="M8 20h10l7 7h10M44 18h-8l-6 6M18 44v-9l7-8" />
-              <circle cx="18" cy="20" r="2" fill="currentColor" /><circle cx="35" cy="27" r="2" fill="currentColor" /><circle cx="30" cy="24" r="2" fill="currentColor" />
-            </svg>
-          </div>
+          <svg className="fd-hero-icon mb-3 shrink-0 text-accent" width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="8" y="8" width="36" height="36" rx="7" />
+            <path d="M8 20h10l7 7h10M44 18h-8l-6 6M18 44v-9l7-8" />
+            <circle cx="18" cy="20" r="2" fill="currentColor" /><circle cx="35" cy="27" r="2" fill="currentColor" /><circle cx="30" cy="24" r="2" fill="currentColor" />
+          </svg>
           <div className="fd-eyebrow">Your PCB workspace</div>
           <h1 className="text-[22px] font-semibold tracking-[-0.035em]">What board are we building?</h1>
           <div className="max-w-md text-[13px] leading-6 text-muted">
