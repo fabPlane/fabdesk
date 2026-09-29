@@ -1,7 +1,8 @@
 import type { AgentId, Thread } from "@fabdesk/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Button, IconButton, Kbd, Textarea } from "../components/ui";
+import { Button, IconButton, Textarea } from "../components/ui";
+import { Icon } from "../components/Icon";
 import { useCore } from "@fabdesk/client-core";
 import { useDoctor, useSettings } from "@fabdesk/client-core";
 import { useRunsStore } from "@fabdesk/client-core";
@@ -162,14 +163,14 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
       : "Pick or create a project, then describe the board...";
 
   return (
-    <div className="border-t border-border bg-bg px-4 pb-3 pt-2">
+    <div className="border-t border-border bg-bg px-5 pb-4 pt-3">
       <div className="mx-auto max-w-3xl">
         {pending.length > 0 && (
           <div className="mb-2 flex flex-wrap gap-1.5">
             {pending.map((a) => (
               <span
                 key={a.path}
-                className="inline-flex items-center gap-1 rounded-full border border-border bg-panel px-2 py-0.5 text-xs"
+                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-panel px-2.5 py-1 text-xs"
               >
                 <span className="text-muted">{a.mime.startsWith("image/") ? "img" : "file"}</span> {a.label}
                 <button
@@ -202,12 +203,12 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
             ))}
           </div>
         )}
-        <div className="rounded-xl border border-border bg-panel shadow-sm focus-within:border-accent">
+        <div className="fd-composer rounded-xl border border-border bg-panel transition-colors focus-within:border-accent">
           <Textarea
             ref={textareaRef}
             value={draft}
             placeholder={placeholder}
-            className="h-[44px] max-h-[240px] min-h-[44px] overflow-y-auto border-0 bg-transparent px-3.5 py-2.5 focus:border-0"
+            className="h-[52px] max-h-[240px] min-h-[52px] overflow-y-auto border-0 bg-transparent px-4 py-3 text-sm leading-6 focus:border-0"
             rows={1}
             onChange={(e) => setDraft(draftKey, e.target.value)}
             onKeyDown={(e) => {
@@ -217,19 +218,19 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
               }
             }}
           />
-          <div className="flex items-center gap-1.5 px-2 pb-2">
+          <div className="flex items-center gap-1.5 border-t border-border/50 px-2.5 py-2">
             <div className="relative">
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-7 max-w-[280px] truncate font-normal"
+                className="h-8 max-w-[280px] truncate font-medium"
                 title={`Agent & model (${mod}/)`}
                 onClick={() => setAgentPickerOpen(!agentPickerOpen)}
                 aria-haspopup="menu"
                 aria-expanded={agentPickerOpen}
                 data-testid="agent-model"
               >
-                {agentModelLabel(pickerAgents.find((a) => a.id === agentId), agentId, model)} <span className="text-muted">&#9662;</span>
+                {agentModelLabel(pickerAgents.find((a) => a.id === agentId), agentId, model)} <Icon name="chevronDown" width={13} height={13} />
               </Button>
               <AgentModelMenu
                 open={agentPickerOpen}
@@ -247,7 +248,7 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
               />
             </div>
             <IconButton title="Attach file" onClick={() => void pickFiles()}>
-              +
+              <Icon name="paperclip" />
             </IconButton>
             <Button
               variant="ghost"
@@ -261,7 +262,7 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
             <div className="ml-auto flex items-center gap-2">
               {run ? (
                 <Button variant="danger" size="sm" onClick={() => void client.abort(run.threadId)} title={`Abort (${mod}.)`}>
-                  &#9632; Stop
+                  <Icon name="stop" width={14} height={14} /> Stop
                 </Button>
               ) : (
                 <Button
@@ -271,18 +272,18 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
                   disabled={!draft.trim() || sending}
                   title={`Send (${mod}Enter)`}
                 >
-                  {sending ? "Sending..." : "Send"} <Kbd>&#8629;</Kbd>
+                  {sending ? "Sending..." : "Send"} <Icon name="send" width={14} height={14} />
                 </Button>
               )}
             </div>
           </div>
         </div>
         {agentMissing && selectedAgent && (
-          <div className="mt-1.5 text-xs text-warning">
+          <div className="mt-2 rounded-lg border border-warning/25 bg-warning/5 px-3 py-2 text-xs leading-5 text-warning break-words">
             {selectedAgent.displayName} is not installed. {selectedAgent.installHint}
           </div>
         )}
-        {error && <div className="mt-1.5 text-xs text-danger">{error}</div>}
+        {error && <div className="mt-2 rounded-lg border border-danger/25 bg-danger/5 px-3 py-2 text-xs text-danger">{error}</div>}
       </div>
     </div>
   );

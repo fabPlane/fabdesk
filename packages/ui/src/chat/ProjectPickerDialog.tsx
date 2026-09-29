@@ -5,7 +5,7 @@ import { useCore } from "@fabdesk/client-core";
 import { useProjects } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 
-/** Codex-style project picker shown whenever a new conversation starts. */
+/** Project picker shown whenever a new conversation starts. */
 export function ProjectPickerDialog() {
   const open = useUiStore((s) => s.projectPickerOpen);
   const setOpen = useUiStore((s) => s.setProjectPickerOpen);
@@ -38,19 +38,19 @@ export function ProjectPickerDialog() {
 
   return (
     <Dialog open={open} onClose={() => setOpen(false)} title="Which project?" className="w-[420px]">
-      <p className="mb-3 text-[13px] text-muted">
-        New conversations are organized around a project, the same way Codex asks before you start.
+      <p className="mb-4 text-[13px] leading-5 text-muted">
+        Choose a project for this conversation, or continue without one.
       </p>
       <div className="flex max-h-64 flex-col gap-1 overflow-y-auto">
         {(projects.data ?? []).map((project) => (
           <button
             key={project.id}
             type="button"
-            className="rounded-md px-3 py-2 text-left text-[13px] hover:bg-panel-2"
+            className="rounded-lg border border-transparent px-3 py-2.5 text-left text-[13px] hover:border-border hover:bg-panel-2/70"
             onClick={() => choose(project.id)}
             data-testid={`picker-project-${project.id}`}
           >
-            <div className="font-medium">{project.name}</div>
+            <div className="font-semibold">{project.name}</div>
             <div className="truncate text-[11px] text-muted">{project.path}</div>
           </button>
         ))}

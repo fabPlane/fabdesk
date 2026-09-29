@@ -2,6 +2,7 @@ import type { Thread } from "@fabdesk/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState, type MouseEvent } from "react";
 import { Button, ContextMenu, IconButton, Input, MenuItem, Tabs } from "../components/ui";
+import { Icon } from "../components/Icon";
 import { useCore } from "@fabdesk/client-core";
 import { useProjects, useThreads, useThreadMutations } from "@fabdesk/client-core";
 import { useBranchThread } from "../hooks/threadActions";
@@ -20,17 +21,6 @@ interface Menu {
   x: number;
   y: number;
   thread: Thread;
-}
-
-function PinMark() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden className="shrink-0">
-      <path
-        fill="currentColor"
-        d="M10.16 1.4a1.1 1.1 0 0 1 1.56 0l1.38 1.38a1.1 1.1 0 0 1 0 1.56l-1.1 1.1.28 1.5a.9.9 0 0 1-.24.82L8.7 9.1l3.18 3.18-1.06 1.06L7.64 10.16l-2.1 3.26a.85.85 0 0 1-1.45-.18l-.62-1.24a.85.85 0 0 1 .16-.96l2.26-1.46-2.72-2.72a.9.9 0 0 1 .82-.24l1.5.28 1.1-1.1z"
-      />
-    </svg>
-  );
 }
 
 export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
@@ -134,8 +124,8 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
       ) : (
         <button
           className={cn(
-            "flex w-full items-center gap-2 rounded-md px-2 py-1.5 pr-14 text-left text-[13px]",
-            t.id === activeThreadId ? "bg-panel-2 text-fg" : "text-fg/90 hover:bg-panel-2/70",
+            "flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 py-1.5 pr-14 text-left text-[13px] transition-colors",
+            t.id === activeThreadId ? "bg-panel-2 font-medium text-fg shadow-sm" : "text-fg/85 hover:bg-panel-2/60 hover:text-fg",
           )}
           onClick={() => openThread(t.id, t.projectId)}
           onContextMenu={(e) => openMenu(e, t)}
@@ -144,33 +134,33 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
           {running[t.id] && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" title="running" />}
           {t.pinned && (
             <span className="text-accent" title="Pinned">
-              <PinMark />
+              <Icon name="pin" width={13} height={13} />
             </span>
           )}
           <span className="min-w-0 flex-1 truncate">{t.title || "Untitled"}</span>
-          <span className="shrink-0 text-[10px] text-muted opacity-0 group-hover:opacity-100">
+          <span className="shrink-0 text-[11px] text-muted opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
             {formatRelative(t.updatedAt)}
           </span>
         </button>
       )}
       <IconButton
         title={t.pinned ? "Unpin" : "Pin"}
-        className={cn("absolute right-6 top-1 h-5 w-5", t.pinned ? "text-accent opacity-100" : "opacity-0 group-hover:opacity-100")}
+        className={cn("absolute right-7 top-1 h-7 w-7", t.pinned ? "text-accent opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100")}
         onClick={(e) => {
           e.stopPropagation();
           togglePin(t);
         }}
         data-testid={`thread-pin-${t.id}`}
       >
-        <PinMark />
+        <Icon name="pin" width={13} height={13} />
       </IconButton>
       <IconButton
         title="Thread menu"
-        className="absolute right-1 top-1 h-5 w-5 opacity-0 group-hover:opacity-100"
+        className="absolute right-0 top-1 h-7 w-7 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
         onClick={(e) => openMenu(e, t)}
         data-testid={`thread-menu-${t.id}`}
       >
-        &#8943;
+        <Icon name="more" />
       </IconButton>
     </div>
   );
@@ -184,65 +174,66 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
   return (
     <div className="flex h-full flex-col bg-panel">
       <Tabs
-        className="px-2 pt-2"
+        className="border-b border-border px-2.5 py-2"
         tabs={SIDEBAR_LIST_TABS.map((id) => ({ id, label: SIDEBAR_LIST_TAB_LABELS[id] }))}
         value={sidebarListTab}
         onChange={setSidebarListTab}
       />
       {sidebarListTab === "projects" && (
         <>
-          <div className="flex items-center justify-end px-2 pt-2">
+          <div className="flex items-center justify-between px-3 pt-3">
+            <span className="fd-eyebrow fd-eyebrow-muted">Workspace</span>
             <IconButton title="New project" onClick={() => { setAskValue(""); setAsk({ kind: "project" }); }}>
-              +
+              <Icon name="plus" />
             </IconButton>
           </div>
           {askRow}
-          <div className="px-2 pt-2">
+          <div className="px-3 pt-2">
             <Button variant="primary" className="w-full justify-between" onClick={onNewChat} data-testid="sidebar-new-chat">
               <span>New chat</span>
-              <span className="text-[10px] opacity-70">{modKey(host.platform)}&#8679;O</span>
+              <span className="text-[11px] opacity-70">{modKey(host.platform)}&#8679;O</span>
             </Button>
           </div>
-          <div className="px-2 pt-2">
-            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search threads..." className="h-7 text-xs" />
+          <div className="px-3 pb-2 pt-3">
+            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search threads..." className="h-8 text-xs" />
           </div>
         </>
       )}
       {sidebarListTab === "open_source" ? (
         <OpenSourceList />
       ) : (
-      <div className="min-h-0 flex-1 overflow-y-auto px-1 pb-2 pt-1">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3 pt-1">
         {threads.isLoading && <div className="px-2 py-3 text-xs text-muted">Loading...</div>}
         {threads.isError && <div className="px-2 py-3 text-xs text-danger">Could not load threads</div>}
         {projectGroups.map((group) => (
-          <div key={group.key} className="mb-2" data-testid={`sidebar-group-${group.key}`}>
-            <div className="flex items-center gap-0.5 px-1 pb-1 pt-2">
+          <div key={group.key} className="mb-1.5" data-testid={`sidebar-group-${group.key}`}>
+            <div className="flex items-center gap-0.5 px-0.5 pb-1 pt-2">
               <button
                 type="button"
                 className={cn(
-                  "flex min-w-0 flex-1 items-center justify-between px-1 text-left text-[10.5px] font-semibold uppercase tracking-wide hover:text-fg",
-                  group.kind === "project" && group.projectId === projectId ? "text-fg" : "text-muted",
+                  "flex min-h-8 min-w-0 flex-1 items-center justify-between rounded-md px-2 text-left text-xs font-semibold tracking-[0.01em] hover:bg-panel-2/60 hover:text-fg",
+                  group.kind === "project" && group.projectId === projectId ? "bg-panel-2/50 text-fg" : "text-muted",
                 )}
                 aria-current={group.kind === "project" && group.projectId === projectId ? "true" : undefined}
                 onClick={() => group.kind === "project" && group.projectId && setActiveProject(group.projectId)}
               >
-                <span className="flex min-w-0 items-center gap-1 truncate">
-                  {group.kind === "pinned" && <PinMark />}
-                  {group.title}
+                <span className="flex min-w-0 flex-1 items-center gap-1">
+                  {group.kind === "pinned" && <Icon name="pin" width={13} height={13} />}
+                  <span className="min-w-0 truncate" title={group.title}>{group.title}</span>
                 </span>
-                <span className="shrink-0 pl-1">{group.threads.length}</span>
+                <span className="ml-2 shrink-0 text-muted">{group.threads.length}</span>
               </button>
               {group.kind === "project" && group.projectId && (
                 <IconButton
                   title={`New chat in ${group.title}`}
-                  className="ml-auto h-5 w-5 shrink-0 text-muted hover:text-fg"
+                  className="ml-auto h-7 w-7 shrink-0 text-muted hover:text-fg"
                   onClick={(e) => {
                     e.stopPropagation();
                     startNewChatInProject(group.projectId);
                   }}
                   data-testid={`project-new-chat-${group.projectId}`}
                 >
-                  +
+                  <Icon name="plus" />
                 </IconButton>
               )}
             </div>

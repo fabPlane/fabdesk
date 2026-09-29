@@ -11,7 +11,7 @@ import { useUiStore } from "../stores/ui";
 import { TopBar } from "./TopBar";
 
 function Handle() {
-  return <PanelResizeHandle className="w-px bg-border transition-colors hover:bg-accent data-[resize-handle-active]:bg-accent" />;
+  return <PanelResizeHandle className="fd-splitter w-px bg-border transition-colors hover:bg-accent data-[resize-handle-active]:bg-accent" />;
 }
 
 export interface AppShellProps {
@@ -44,7 +44,7 @@ export function AppShell({ onNewChat, coreStatus, banner }: AppShellProps) {
         <PanelGroup direction="horizontal" autoSaveId="fabdesk-shell">
           {sidebarOpen && (
             <>
-              <Panel id="sidebar" order={1} defaultSize={18} minSize={12} maxSize={35}>
+              <Panel id="sidebar" order={1} defaultSize={22} minSize={22} maxSize={32}>
                 <ThreadSidebar onNewChat={onNewChat} />
               </Panel>
               <Handle />

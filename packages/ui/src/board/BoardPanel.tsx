@@ -1,4 +1,5 @@
-import { Button, IconButton, Tabs } from "../components/ui";
+import { Button, IconButton, Select, Tabs } from "../components/ui";
+import { Icon } from "../components/Icon";
 import { useCore } from "@fabdesk/client-core";
 import { useProjectOrder } from "@fabdesk/client-core";
 import { BOARD_TABS, BOARD_TAB_LABELS, useUiStore, type BoardTab } from "../stores/ui";
@@ -44,14 +45,25 @@ export function BoardPanel() {
   const order = useProjectOrder(projectId);
   const mod = modKey(host.platform);
   return (
-    <div className="flex h-full min-w-0 flex-col bg-panel" data-testid="board-panel">
-      <div className="flex h-10 items-center gap-1 border-b border-border px-2">
+    <div className="fd-board-panel flex h-full min-w-0 flex-col bg-panel" data-testid="board-panel">
+      <div className="flex h-12 items-center gap-1.5 border-b border-border px-2.5">
         <Tabs
-          className="min-w-0 flex-1"
+          className="fd-board-tabs min-w-0 flex-1"
           tabs={BOARD_TABS.map((id, i) => ({ id, label: BOARD_TAB_LABELS[id], hint: `${mod}${i + 1}` }))}
           value={tab}
           onChange={setBoardTab}
         />
+        <label className="fd-board-compact min-w-0 flex-1 items-center gap-2" data-testid="board-view-menu">
+          <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.09em] text-muted">View</span>
+          <Select
+            value={tab}
+            onChange={(e) => setBoardTab(e.target.value as BoardTab)}
+            aria-label="Board view"
+            className="h-8 min-w-0 flex-1 border-border bg-panel-2/70 text-xs font-medium"
+          >
+            {BOARD_TABS.map((id, i) => <option key={id} value={id}>{BOARD_TAB_LABELS[id]} · {mod}{i + 1}</option>)}
+          </Select>
+        </label>
         {order.data && (order.data.hasKicadPcb || order.data.hasRouted || order.data.ready) && (
           <Button
             size="sm"
@@ -64,7 +76,7 @@ export function BoardPanel() {
           </Button>
         )}
         <IconButton title={`Hide board panel (${mod}Shift+B)`} onClick={() => setBoardOpen(false)}>
-          &#10005;
+          <Icon name="close" />
         </IconButton>
       </div>
       <div className="min-h-0 flex-1">

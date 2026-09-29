@@ -5,54 +5,53 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* Palette follows fabplane.com (paper / ink / line / lime / acid); dark is the house default. */
-/* Palette follows fabplane.com (paper / ink / line / lime / acid); dark is the house default. */
 :root {
   /* fabplane.com paper family: no pure white anywhere; panels are a lighter paper, not white. */
-  --fd-bg: #f1f0e9;
-  --fd-panel: #f7f6f0;
-  --fd-panel-2: #e6e5dc;
-  --fd-border: #d2d3ca;
-  --fd-fg: #1d211c;
-  --fd-muted: #70746d;
-  --fd-accent: #4d7d32;
+  --fd-bg: #eef0e9;
+  --fd-panel: #f8f9f5;
+  --fd-panel-2: #e4e9df;
+  --fd-border: #cdd5ca;
+  --fd-fg: #1d281b;
+  --fd-muted: #657365;
+  --fd-accent: #456f32;
   --fd-accent-fg: #ffffff;
-  --fd-primary: #1d211c;
+  --fd-primary: #243321;
   --fd-primary-fg: #ffffff;
   --fd-acid: #b9f45d;
   --fd-danger: #c2410c;
   --fd-success: #4d7d32;
   --fd-warning: #b7791f;
-  --fd-code-bg: #e6e7de;
+  --fd-code-bg: #e7ebe3;
   --fd-code-fg: #2f5d1f;
   color-scheme: light;
 }
 .dark {
-  --fd-bg: #10130f;
-  --fd-panel: #171a16;
-  --fd-panel-2: #1e211d;
-  --fd-border: #30362e;
-  --fd-fg: #edf0e9;
-  --fd-muted: #a5aea0;
-  --fd-accent: #8fca55;
+  --fd-bg: #111610;
+  --fd-panel: #191e18;
+  --fd-panel-2: #252c24;
+  --fd-border: #354033;
+  --fd-fg: #eef3e9;
+  --fd-muted: #aab8a6;
+  --fd-accent: #addb75;
   --fd-accent-fg: #101a0a;
-  --fd-primary: #8fca55;
+  --fd-primary: #addb75;
   --fd-primary-fg: #101a0a;
   --fd-acid: #a4dc4e;
   --fd-danger: #f0715f;
   --fd-success: #7fae5e;
   --fd-warning: #e0b24a;
-  --fd-code-bg: #090b09;
+  --fd-code-bg: #0d120d;
   --fd-code-fg: #98c777;
   color-scheme: dark;
 }
 /* "System" skins: the neutral light/dark look, selectable in Settings → Appearance. */
 [data-skin="plain"] {
-  --fd-bg: #f7f7f8;
+  --fd-bg: #f4f6f8;
   --fd-panel: #ffffff;
-  --fd-panel-2: #f0f0f2;
-  --fd-border: #e3e3e7;
-  --fd-fg: #1a1a1f;
-  --fd-muted: #6b6b76;
+  --fd-panel-2: #ecf0f4;
+  --fd-border: #d7dfe8;
+  --fd-fg: #18212b;
+  --fd-muted: #667485;
   --fd-accent: #7c3aed;
   --fd-accent-fg: #ffffff;
   --fd-primary: #7c3aed;
@@ -65,16 +64,16 @@
   --fd-code-fg: #1a1a1f;
 }
 .dark[data-skin="plain"] {
-  --fd-bg: #17161b;
-  --fd-panel: #1f1e24;
-  --fd-panel-2: #26252c;
-  --fd-border: #33323a;
-  --fd-fg: #ececf1;
-  --fd-muted: #9a99a6;
+  --fd-bg: #171a20;
+  --fd-panel: #20242c;
+  --fd-panel-2: #2b313a;
+  --fd-border: #3b4450;
+  --fd-fg: #f1f4f7;
+  --fd-muted: #aab4c1;
   --fd-accent: #a78bfa;
-  --fd-accent-fg: #17161b;
+  --fd-accent-fg: #171a20;
   --fd-primary: #a78bfa;
-  --fd-primary-fg: #17161b;
+  --fd-primary-fg: #171a20;
   --fd-acid: #a78bfa;
   --fd-danger: #f87171;
   --fd-success: #4ade80;
@@ -102,11 +101,11 @@
   --color-code-fg: var(--fd-code-fg);
   --font-sans: "Inter Variable", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --radius-sm: 4px;
-  --radius-md: 5px;
-  --radius-lg: 7px;
-  --radius-xl: 10px;
-  --radius-2xl: 12px;
+  --radius-sm: 5px;
+  --radius-md: 7px;
+  --radius-lg: 9px;
+  --radius-xl: 12px;
+  --radius-2xl: 15px;
 }
 
 html,
@@ -119,10 +118,33 @@ body,
 }
 body {
   font-family: var(--font-sans);
-  font-size: 13px;
-  line-height: 1.45;
+  font-size: 14px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
+}
+button, input, select, textarea { font: inherit; }
+:is(button, input, select, textarea, [role="tab"]):focus-visible {
+  outline: 2px solid var(--fd-accent);
+  outline-offset: 2px;
+}
+::selection { background: color-mix(in srgb, var(--fd-accent) 30%, transparent); }
+.fd-elevated { box-shadow: 0 12px 38px rgb(0 0 0 / 0.16), 0 2px 8px rgb(0 0 0 / 0.09); }
+.fd-surface-inset { box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.035); }
+.fd-hero-mark { box-shadow: 0 16px 48px color-mix(in srgb, var(--fd-accent) 9%, transparent), inset 0 1px 0 rgb(255 255 255 / 0.05); }
+.fd-composer { box-shadow: 0 10px 28px rgb(0 0 0 / 0.11), 0 1px 3px rgb(0 0 0 / 0.08); }
+.fd-composer textarea:focus-visible { outline: none; }
+.fd-splitter { position: relative; }
+.fd-splitter::after { content: ""; position: absolute; inset: 0 -3px; }
+.fd-board-panel { container-type: inline-size; }
+.fd-board-compact { display: none; }
+@container (max-width: 520px) {
+  .fd-board-tabs { display: none; }
+  .fd-board-compact { display: flex; }
+}
+@media (max-height: 700px) {
+  .fd-empty-hero { padding-bottom: 0; gap: 8px; }
+  .fd-empty-hero .fd-hero-mark { display: none; }
 }
 /* Section label: small, tracked, uppercase, lime (fabplane's "PROJECT ASSISTANT" eyebrow). */
 .fd-eyebrow {
@@ -133,6 +155,7 @@ body {
   text-transform: uppercase;
   color: var(--fd-success);
 }
+.fd-eyebrow-muted { color: var(--fd-muted); }
 .fd-wordmark {
   font-weight: 700;
   letter-spacing: -0.025em;

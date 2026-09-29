@@ -38,7 +38,7 @@ describe("applyComposerTextareaHeight", () => {
     expect(applyComposerTextareaHeight(el, "hello")).toBe(96);
     expect(el.style.height).toBe("96px");
 
-    const tall = { style: { height: "44px" }, scrollHeight: 400, clientWidth: 640 };
+    const tall = { style: { height: "52px" }, scrollHeight: 400, clientWidth: 640 };
     expect(applyComposerTextareaHeight(tall, "lots")).toBe(COMPOSER_TEXTAREA_MAX_PX);
     expect(tall.style.height).toBe(`${COMPOSER_TEXTAREA_MAX_PX}px`);
   });

@@ -28,10 +28,10 @@ const DEFAULT_AGENT: AgentSettings = { binaryPath: null, model: null, permission
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
-    <label className="grid grid-cols-[180px_1fr] items-center gap-3 py-1.5 text-xs">
+    <label className="grid grid-cols-[180px_1fr] items-center gap-4 py-2 text-[13px]">
       <span>
         <span className="font-medium">{label}</span>
-        {hint && <span className="block text-[11px] text-muted">{hint}</span>}
+        {hint && <span className="mt-0.5 block text-[11px] leading-4 text-muted">{hint}</span>}
       </span>
       {children}
     </label>
@@ -73,15 +73,15 @@ export function SettingsDialog() {
 
   return (
     <Dialog open={open} onClose={() => setOpen(false)} title="Settings" className="h-[80vh] w-[860px]">
-      <div className="flex h-full gap-4">
-        <nav className="w-40 shrink-0">
+      <div className="flex h-full gap-5">
+        <nav className="w-40 shrink-0 border-r border-border pr-3" aria-label="Settings sections">
           {SETTINGS_SECTIONS.map((s) => (
             <button
               key={s}
               onClick={() => setSection(s)}
               className={cn(
-                "block w-full rounded-md px-2.5 py-1.5 text-left text-[13px]",
-                s === section ? "bg-panel-2 font-medium" : "text-muted hover:text-fg",
+                "mb-0.5 block min-h-9 w-full rounded-lg px-3 py-2 text-left text-[13px] transition-colors",
+                s === section ? "bg-panel-2 font-semibold text-fg" : "text-muted hover:bg-panel-2/50 hover:text-fg",
               )}
             >
               {LABELS[s]}

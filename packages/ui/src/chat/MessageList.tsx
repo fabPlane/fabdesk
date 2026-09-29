@@ -39,11 +39,11 @@ export function ToolGroup({
   const images = calls.flatMap((c) => (c.result ? extractImages(c.result.output) : []));
   const label = `${calls.length} tool call${calls.length === 1 ? "" : "s"}`;
   return (
-    <div className="my-1 text-xs" data-testid="tool-group">
+    <div className="my-2 overflow-hidden rounded-lg border border-border/70 bg-panel/70 text-xs" data-testid="tool-group">
       <button
         type="button"
         className={cn(
-          "flex w-full items-center gap-2 rounded px-1 py-0.5 text-left text-muted hover:bg-panel-2/60",
+          "flex min-h-9 w-full items-center gap-2 px-3 py-2 text-left text-muted hover:bg-panel-2/60",
           open && "text-fg",
         )}
         onClick={() => setOpen((o) => !o)}
@@ -75,7 +75,7 @@ export function ToolGroup({
         )}
       </button>
       {!open && images.length > 0 && (
-        <div className="flex flex-wrap gap-2 px-1 pt-1">
+        <div className="flex flex-wrap gap-2 border-t border-border/60 px-3 py-2">
           {images.map((img, i) =>
             img.kind === "data" ? (
               <img
@@ -91,7 +91,7 @@ export function ToolGroup({
         </div>
       )}
       {open && (
-        <div className="pl-1">
+        <div className="border-t border-border/60 px-3 py-2">
           {calls.map((c, i) => (
             <ToolCallCard key={c.use.id || i} use={c.use} result={c.result} />
           ))}
@@ -178,7 +178,7 @@ export function MessageBubble({ message, streaming }: { message: Message; stream
   const isUser = message.role === "user";
   if (message.role === "system") {
     return (
-      <div className="mx-auto my-2 max-w-xl text-center text-xs text-muted">
+      <div className="mx-auto my-3 max-w-xl text-center text-xs text-muted">
         {message.contentMd}
       </div>
     );
@@ -193,9 +193,9 @@ export function MessageBubble({ message, streaming }: { message: Message; stream
     <div className={cn("group flex w-full", isUser ? "justify-end" : "justify-start")}>
       <div
         className={cn(
-          "relative max-w-[85%] text-[13.5px]",
+          "relative max-w-[88%] text-sm leading-[1.65]",
           isUser
-            ? "whitespace-pre-wrap rounded-2xl rounded-br-md bg-accent/15 px-3.5 py-2"
+            ? "whitespace-pre-wrap rounded-2xl rounded-br-md border border-accent/20 bg-accent/10 px-4 py-2.5"
             : "w-full",
         )}
       >
@@ -224,7 +224,7 @@ export function MessageBubble({ message, streaming }: { message: Message; stream
         )}
         <div
           className={cn(
-            "mt-0.5 text-[10px] text-muted opacity-0 transition-opacity group-hover:opacity-100",
+            "mt-1 text-[11px] text-muted opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100",
             isUser && "text-right",
           )}
         >
@@ -286,8 +286,8 @@ export function MessageList({
   const lastId = messages[messages.length - 1]?.id;
   const lastRole = messages[messages.length - 1]?.role;
   return (
-    <div ref={ref} className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-      <div className="mx-auto flex max-w-3xl flex-col gap-4">
+    <div ref={ref} className="min-h-0 flex-1 overflow-y-auto px-5 py-6">
+      <div className="mx-auto flex max-w-3xl flex-col gap-5">
         {thread && <BranchHeader thread={thread} />}
         {loading && messages.length === 0 && (
           <div className="flex justify-center py-8">

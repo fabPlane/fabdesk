@@ -1,4 +1,5 @@
 import { Badge, IconButton } from "../components/ui";
+import { Icon } from "../components/Icon";
 import { UpdateBadge } from "../components/UpdateBadge";
 import { useCore } from "@fabdesk/client-core";
 import { useProjects } from "@fabdesk/client-core";
@@ -6,23 +7,6 @@ import { useAuthStore } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { cn, modKey } from "../util";
 import type { CoreStatusInfo } from "../app/types";
-
-function MenuIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
-      <path d="M2.5 4h11M2.5 8h11M2.5 12h11" />
-    </svg>
-  );
-}
-
-function SidebarIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
-      <rect x="1.75" y="2.75" width="12.5" height="10.5" rx="2" />
-      <path d="M6.25 2.75v10.5" />
-    </svg>
-  );
-}
 
 export function TopBar({ coreStatus }: { coreStatus?: CoreStatusInfo | undefined }) {
   const { host, sseStatus, client } = useCore();
@@ -51,7 +35,7 @@ export function TopBar({ coreStatus }: { coreStatus?: CoreStatusInfo | undefined
   const connected = sseStatus === "open" && (coreStatus?.state ?? "ready") === "ready";
   return (
     <div
-      className={cn("flex h-9 shrink-0 items-center gap-2 border-b border-border bg-panel px-2 text-xs", mac && "pl-20")}
+      className={cn("fd-surface-inset flex h-11 shrink-0 items-center gap-2 border-b border-border bg-panel px-2.5 text-xs", mac && "pl-20")}
       style={
         {
           WebkitAppRegion: "drag",
@@ -61,7 +45,7 @@ export function TopBar({ coreStatus }: { coreStatus?: CoreStatusInfo | undefined
         } as React.CSSProperties
       }
     >
-      <div style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties} className="flex items-center gap-0.5">
+      <div style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties} className="flex items-center gap-0.5 border-r border-border pr-2">
         {showAppMenu && (
           <IconButton
             title="Menu"
@@ -71,21 +55,21 @@ export function TopBar({ coreStatus }: { coreStatus?: CoreStatusInfo | undefined
               void showAppMenu({ x: r.left, y: r.bottom + 2 });
             }}
           >
-            <MenuIcon />
+            <Icon name="menu" />
           </IconButton>
         )}
         <IconButton title={`Toggle sidebar (${mod}B)`} onClick={toggleSidebar} className={cn(sidebarOpen && "text-accent")}>
-          <SidebarIcon />
+          <Icon name="sidebar" />
         </IconButton>
       </div>
-      <span className="fd-wordmark">fab<b>Plane</b></span>
+      <span className="fd-wordmark ml-1 text-[15px]">fab<b>Plane</b></span>
       {host.devBuild && (
         <Badge tone="warning" title="Development build — isolated from the installed fabPlane app">
           Dev
         </Badge>
       )}
-      {project && <span className="text-muted">/ {project.name}</span>}
-      <div className="ml-auto flex items-center gap-1.5" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+      {project && <span className="min-w-0 max-w-60 truncate border-l border-border pl-3 text-[12px] font-medium text-muted" title={project.name}>{project.name}</span>}
+      <div className="ml-auto flex items-center gap-1" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
         <UpdateBadge />
         {auth?.mode === "local" && (
           <Badge tone="warning" title="Running with --local-auth; no fabPlane account">
@@ -96,16 +80,18 @@ export function TopBar({ coreStatus }: { coreStatus?: CoreStatusInfo | undefined
           tone={connected ? "success" : coreStatus?.state === "crashed" ? "danger" : "warning"}
           title={coreStatus?.message ?? `SSE ${sseStatus}`}
         >
+          <span className="mr-1.5 h-1.5 w-1.5 rounded-full bg-current" />
           core {connected ? `connected${port ? ` :${port}` : ""}` : (coreStatus?.state ?? sseStatus)}
         </Badge>
+        <span className="mx-1 h-4 w-px bg-border" />
         <IconButton title={`Command palette (${mod}K)`} onClick={() => setPaletteOpen(true)}>
-          &#8984;
+          <Icon name="search" />
         </IconButton>
         <IconButton title={`Board panel (${mod}Shift+B)`} onClick={toggleBoard} className={cn(boardOpen && "text-accent")}>
-          &#9707;
+          <Icon name="panel" />
         </IconButton>
         <IconButton title={`Settings (${mod},)`} onClick={() => setSettingsOpen(true)}>
-          &#9881;
+          <Icon name="settings" />
         </IconButton>
       </div>
     </div>

@@ -1,18 +1,19 @@
 import { forwardRef, useEffect, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
 import { cn } from "../util";
+import { Icon } from "./Icon";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
 type Size = "sm" | "md";
 
 const variants: Record<Variant, string> = {
-  primary: "bg-primary text-primary-fg font-semibold hover:opacity-90 border-transparent",
-  secondary: "bg-panel-2 text-fg hover:bg-border border-border",
-  ghost: "bg-transparent text-fg hover:bg-panel-2 border-transparent",
-  danger: "bg-danger/10 text-danger hover:bg-danger/20 border-transparent",
+  primary: "bg-primary text-primary-fg font-semibold hover:brightness-105 border-transparent shadow-sm",
+  secondary: "bg-panel-2/70 text-fg hover:bg-panel-2 border-border",
+  ghost: "bg-transparent text-muted hover:text-fg hover:bg-panel-2/70 border-transparent",
+  danger: "bg-danger/10 text-danger hover:bg-danger/20 border-danger/20",
 };
 const sizes: Record<Size, string> = {
-  sm: "h-7 px-2 text-xs gap-1",
-  md: "h-8 px-3 text-[13px] gap-1.5",
+  sm: "h-8 px-2.5 text-xs gap-1.5",
+  md: "h-9 px-3.5 text-[13px] gap-2",
 };
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -29,7 +30,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       ref={ref}
       type={type}
       className={cn(
-        "inline-flex items-center justify-center rounded-md border font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none select-none whitespace-nowrap",
+        "inline-flex items-center justify-center rounded-md border font-medium transition-[background-color,color,border-color,filter,box-shadow] duration-150 disabled:opacity-45 disabled:pointer-events-none select-none whitespace-nowrap",
         variants[variant],
         sizes[size],
         className,
@@ -44,7 +45,7 @@ export function IconButton({ className, title, ...rest }: ButtonProps & { title:
     <Button
       variant="ghost"
       size="sm"
-      className={cn("w-7 px-0", className)}
+      className={cn("w-8 px-0 text-muted hover:text-fg", className)}
       title={title}
       aria-label={title}
       {...rest}
@@ -60,7 +61,7 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
     <input
       ref={ref}
       className={cn(
-        "h-8 w-full rounded-md border border-border bg-panel px-2.5 text-[13px] text-fg placeholder:text-muted outline-none focus:border-accent",
+        "h-9 w-full rounded-md border border-border bg-bg/50 px-3 text-[13px] text-fg placeholder:text-muted outline-none transition-colors focus:border-accent",
         className,
       )}
       {...rest}
@@ -74,7 +75,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<H
       <textarea
         ref={ref}
         className={cn(
-          "w-full resize-none rounded-md border border-border bg-panel px-3 py-2 text-[13px] text-fg placeholder:text-muted outline-none focus:border-accent",
+          "w-full resize-none rounded-md border border-border bg-bg/50 px-3 py-2 text-sm text-fg placeholder:text-muted outline-none transition-colors focus:border-accent",
           className,
         )}
         {...rest}
@@ -91,7 +92,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
     <select
       ref={ref}
       className={cn(
-        "h-8 rounded-md border border-border bg-panel px-2 text-[13px] text-fg outline-none focus:border-accent",
+        "h-9 rounded-md border border-border bg-bg/50 px-2.5 text-[13px] text-fg outline-none transition-colors focus:border-accent",
         className,
       )}
       {...rest}
@@ -129,7 +130,7 @@ export function Badge({
   return (
     <span
       title={title}
-      className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium leading-4", tones[tone], className)}
+      className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium leading-4 tracking-[0.01em]", tones[tone], className)}
     >
       {children}
     </span>
@@ -138,7 +139,7 @@ export function Badge({
 
 export function Kbd({ children }: { children: ReactNode }) {
   return (
-    <kbd className="rounded border border-border bg-panel-2 px-1.5 py-0.5 font-mono text-[10px] text-muted">{children}</kbd>
+    <kbd className="rounded-md border border-border bg-panel-2/60 px-1.5 py-0.5 font-mono text-[10px] text-muted">{children}</kbd>
   );
 }
 
@@ -166,26 +167,26 @@ export function Dialog({ open, onClose, title, children, className, bare }: Dial
   }, [open, onClose]);
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6" onMouseDown={onClose} role="presentation">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-[3px]" onMouseDown={onClose} role="presentation">
       <div
         role="dialog"
         aria-modal="true"
         className={cn(
-          "flex max-h-full flex-col overflow-hidden rounded-xl border border-border bg-panel shadow-2xl",
+          "fd-elevated flex max-h-full flex-col overflow-hidden rounded-2xl border border-border bg-panel",
           bare ? "" : "w-[640px] max-w-full",
           className,
         )}
         onMouseDown={(e) => e.stopPropagation()}
       >
         {title !== undefined && (
-          <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
-            <div className="text-sm font-semibold">{title}</div>
+          <div className="flex min-h-13 items-center justify-between border-b border-border px-5 py-3">
+            <div className="text-[15px] font-semibold tracking-[-0.01em]">{title}</div>
             <IconButton title="Close" onClick={onClose}>
-              ✕
+              <Icon name="close" />
             </IconButton>
           </div>
         )}
-        <div className={cn("min-h-0 flex-1 overflow-auto", bare ? "" : "p-4")}>{children}</div>
+        <div className={cn("min-h-0 flex-1 overflow-auto", bare ? "" : "p-5")}>{children}</div>
       </div>
     </div>
   );
@@ -203,7 +204,7 @@ export function Tabs<T extends string>({
   className?: string;
 }) {
   return (
-    <div className={cn("flex items-center gap-0.5 overflow-x-auto", className)} role="tablist">
+    <div className={cn("flex items-center gap-1 overflow-x-auto", className)} role="tablist">
       {tabs.map((t) => (
         <button
           key={t.id}
@@ -213,8 +214,8 @@ export function Tabs<T extends string>({
           data-testid={`tab-${t.id}`}
           onClick={() => onChange(t.id)}
           className={cn(
-            "h-7 rounded-md px-2.5 text-xs font-medium whitespace-nowrap transition-colors",
-            t.id === value ? "bg-panel-2 text-fg" : "text-muted hover:text-fg hover:bg-panel-2/60",
+            "h-8 rounded-md px-2.5 text-xs font-medium whitespace-nowrap transition-colors",
+            t.id === value ? "bg-panel-2 text-fg shadow-sm" : "text-muted hover:text-fg hover:bg-panel-2/60",
           )}
         >
           {t.label}
@@ -226,9 +227,9 @@ export function Tabs<T extends string>({
 
 export function EmptyState({ title, children, action }: { title: ReactNode; children?: ReactNode; action?: ReactNode }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-      <div className="text-sm font-medium">{title}</div>
-      {children && <div className="max-w-md text-xs text-muted">{children}</div>}
+    <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
+      <div className="text-[15px] font-semibold tracking-[-0.01em]">{title}</div>
+      {children && <div className="max-w-sm text-[13px] leading-5 text-muted">{children}</div>}
       {action && <div className="mt-2">{action}</div>}
     </div>
   );
@@ -238,7 +239,7 @@ export function MenuItem({ children, onClick, danger }: { children: ReactNode; o
   return (
     <button
       className={cn(
-        "flex w-full items-center rounded-md px-2.5 py-1.5 text-left text-[13px] hover:bg-panel-2",
+        "flex min-h-9 w-full items-center rounded-md px-3 py-1.5 text-left text-[13px] hover:bg-panel-2",
         danger ? "text-danger" : "text-fg",
       )}
       onClick={onClick}
@@ -272,7 +273,7 @@ export function ContextMenu({
   }, [onClose]);
   return (
     <div
-      className="fixed z-50 min-w-40 rounded-lg border border-border bg-panel p-1 shadow-xl"
+      className="fd-elevated fixed z-50 min-w-44 rounded-xl border border-border bg-panel p-1.5"
       style={{ left: x, top: y }}
       onMouseDown={(e) => e.stopPropagation()}
       role="menu"

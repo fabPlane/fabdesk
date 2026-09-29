@@ -18,26 +18,26 @@ export const THEME_LABELS: Record<ThemeId, string> = {
 
 /** First-paint backgrounds; keep in sync with `styles.css` `--fd-bg`. */
 export const THEME_BACKGROUNDS: Record<ThemeId, string> = {
-  "fabplane-dark": "#10130f",
-  "fabplane-light": "#f1f0e9",
-  "plain-dark": "#17161b",
-  "plain-light": "#f7f7f8",
+  "fabplane-dark": "#111610",
+  "fabplane-light": "#eef0e9",
+  "plain-dark": "#171a20",
+  "plain-light": "#f4f6f8",
 };
 
 /** Top bar / panel colours; keep in sync with `styles.css` `--fd-panel` (Windows title-bar overlay). */
 export const THEME_PANELS: Record<ThemeId, string> = {
-  "fabplane-dark": "#171a16",
-  "fabplane-light": "#f7f6f0",
-  "plain-dark": "#1f1e24",
+  "fabplane-dark": "#191e18",
+  "fabplane-light": "#f8f9f5",
+  "plain-dark": "#20242c",
   "plain-light": "#ffffff",
 };
 
 /** First-paint foregrounds; keep in sync with `styles.css` `--fd-fg`. */
 export const THEME_FOREGROUNDS: Record<ThemeId, string> = {
-  "fabplane-dark": "#edf0e9",
-  "fabplane-light": "#1d211c",
-  "plain-dark": "#ececf1",
-  "plain-light": "#1a1a1f",
+  "fabplane-dark": "#eef3e9",
+  "fabplane-light": "#1d281b",
+  "plain-dark": "#f1f4f7",
+  "plain-light": "#18212b",
 };
 
 export function isThemeId(v: unknown): v is ThemeId {

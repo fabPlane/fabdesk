@@ -70,15 +70,14 @@ export function ThreadView() {
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-bg">
-      <div className="flex h-10 items-center gap-2 border-b border-border px-4">
-        <div className="truncate text-sm font-medium">{thread?.title ?? "New chat"}</div>
+      <div className="flex min-h-12 items-center gap-2 overflow-hidden border-b border-border px-5">
+        <div className="min-w-0 max-w-[45%] truncate text-[13px] font-semibold tracking-[-0.01em]" title={thread?.title ?? "New chat"}>{thread?.title ?? "New chat"}</div>
         {thread && (
-          <Badge
+          <Badge className="max-w-36 overflow-hidden"
             tone="neutral"
             title={`Agent: ${thread.agentId}${thread.model ? ` / ${thread.model}` : ""}`}
           >
-            {thread.agentId}
-            {thread.model ? ` / ${thread.model}` : ""}
+            <span className="truncate">{thread.agentId}{thread.model ? ` / ${thread.model}` : ""}</span>
           </Badge>
         )}
         {thread?.pinned && <Badge tone="accent">pinned</Badge>}
@@ -104,7 +103,7 @@ export function ThreadView() {
           </button>
         )}
         {run && (
-          <Badge
+          <Badge className="ml-auto"
             tone="success"
             title={
               run.usage
@@ -122,9 +121,17 @@ export function ThreadView() {
       {activeThreadId ? (
         <MessageList thread={thread} messages={messages.data ?? []} loading={messages.isLoading} />
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
-          <div className="text-xl font-semibold">What board are we building?</div>
-          <div className="max-w-md text-sm text-muted">
+        <div className="fd-empty-hero flex min-h-0 flex-1 flex-col items-center justify-center gap-3 overflow-y-auto px-8 pb-12 text-center">
+          <div className="fd-hero-mark mb-3 flex h-20 w-20 items-center justify-center rounded-2xl border border-border bg-panel text-accent" aria-hidden="true">
+            <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="8" y="8" width="36" height="36" rx="7" />
+              <path d="M8 20h10l7 7h10M44 18h-8l-6 6M18 44v-9l7-8" />
+              <circle cx="18" cy="20" r="2" fill="currentColor" /><circle cx="35" cy="27" r="2" fill="currentColor" /><circle cx="30" cy="24" r="2" fill="currentColor" />
+            </svg>
+          </div>
+          <div className="fd-eyebrow">Your PCB workspace</div>
+          <h1 className="text-[22px] font-semibold tracking-[-0.035em]">What board are we building?</h1>
+          <div className="max-w-md text-[13px] leading-6 text-muted">
             Describe the circuit or attach a sketch. The agent can create the native schematic and
             PCB, route and verify the board, then prepare manufacturing outputs. Watch the board
             panel as it works.
