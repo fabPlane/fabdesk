@@ -6,6 +6,8 @@
 
 **Responsive icon and composer refinement:** `38a59b561994a1f7ec4d7b58bac3eb6bc7cada7c`
 
+**Empty-state icon cleanup:** `2f1f2d187eb1eaa39eb108a0d57edcc95ce91cbd`
+
 All pairs use the same local FabPlane Dev profile, projects, dark FabPlane theme, display scaling, and selected state. The full-size captures are 1440 × 920. The narrow board pair is the app minimum, 960 × 600. The selected project is `PICOMEMCARD-REF`, with its empty Schematic view. The Claude installation warning reflects this machine's unchanged local setup.
 
 ## New chat · 1440 × 920
@@ -14,7 +16,7 @@ All pairs use the same local FabPlane Dev profile, projects, dark FabPlane theme
 | --- | --- |
 | ![New chat before](before/new-chat-1440.png) | ![New chat after](after/new-chat-1440.png) |
 
-The workspace and project list have more readable sizing and clearer selection. The chat has a more deliberate introduction and a quieter, stronger composer. The top bar uses 20 px icons in 36 px targets, with separate controls and restrained status chips. The missing-agent notice keeps the issue visible while its full setup instructions open on demand.
+The workspace and project list have more readable sizing and clearer selection. The board illustration now sits directly on the page, without an enclosing tile. The chat has a quieter, stronger composer. The top bar uses 20 px icons in 36 px targets, with separate controls and restrained status chips. The missing-agent notice keeps the issue visible while its full setup instructions open on demand.
 
 ## Selected project and board · 1440 × 920
 
