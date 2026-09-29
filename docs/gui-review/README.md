@@ -4,6 +4,8 @@
 
 **GUI implementation:** `gui-improvements` at `8092e511ced9455bba51b893c42065e6e372db68`
 
+**Responsive icon and composer refinement:** `38a59b561994a1f7ec4d7b58bac3eb6bc7cada7c`
+
 All pairs use the same local FabPlane Dev profile, projects, dark FabPlane theme, display scaling, and selected state. The full-size captures are 1440 × 920. The narrow board pair is the app minimum, 960 × 600. The selected project is `PICOMEMCARD-REF`, with its empty Schematic view. The Claude installation warning reflects this machine's unchanged local setup.
 
 ## New chat · 1440 × 920
@@ -12,7 +14,7 @@ All pairs use the same local FabPlane Dev profile, projects, dark FabPlane theme
 | --- | --- |
 | ![New chat before](before/new-chat-1440.png) | ![New chat after](after/new-chat-1440.png) |
 
-The workspace and project list have more readable sizing and clearer selection. The chat has a more deliberate introduction and a quieter, stronger composer. The top bar, icons, and status chips share one alignment and stroke language.
+The workspace and project list have more readable sizing and clearer selection. The chat has a more deliberate introduction and a quieter, stronger composer. The top bar uses 20 px icons in 36 px targets, with separate controls and restrained status chips. The missing-agent notice keeps the issue visible while its full setup instructions open on demand.
 
 ## Selected project and board · 1440 × 920
 
@@ -28,7 +30,7 @@ The selected project is easier to locate. Board tabs, empty-state text, and the 
 | --- | --- |
 | ![Narrow board before](before/board-960.png) | ![Narrow board after](after/board-960.png) |
 
-The old tab strip hid later views behind horizontal scrolling. The labeled **View** menu now exposes all eight board views and shows the active one, including each shortcut. Project names truncate cleanly, and the short-window chat introduction leaves room for the composer.
+The old tab strip hid later views behind horizontal scrolling. The labeled **View** menu now exposes all eight board views and shows the active one, including each shortcut. Project names truncate cleanly, the connection badge becomes a status dot with a detailed tooltip, and the compact setup notice leaves room for the composer.
 
 ## Settings · 1440 × 920
 
@@ -43,6 +45,8 @@ The dialog uses the same surfaces, type, row spacing, and selected-state treatme
 - [Linear design refresh](https://linear.app/now/behind-the-latest-design-refresh): quieter navigation chrome, deliberate spacing, and surface hierarchy.
 - [Figma UI3 redesign](https://www.figma.com/blog/behind-our-redesign-ui3/): protect canvas area while preserving familiar resizable controls.
 - [Codex app](https://openai.com/index/introducing-the-codex-app/): project-organized agent workspace and clear conversation hierarchy.
+- [Official OpenAI documentation on projects and chats](https://learn.chatgpt.com/docs/projects): quick navigation and shortcuts around project work.
+- [OpenAI's Codex workflow guide](https://developers.openai.com/blog/mastering-codex-remote-for-engineering): keep workspace decisions legible and expose secondary detail when needed.
 - [Cursor 3](https://cursor.com/blog/cursor-3): keep agent activity central and detail available on demand.
 - [Raycast refresh](https://www.raycast.com/blog/a-fresh-look-and-feel): consistent icon treatment and visible shortcuts.
 
