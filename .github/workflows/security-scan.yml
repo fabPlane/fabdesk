@@ -33,11 +33,11 @@ jobs:
     needs: select-linux-runner
     runs-on: ${{ fromJSON(needs.select-linux-runner.outputs.runner) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: false
 
-      - uses: webfactory/ssh-agent@v0.9.1
+      - uses: webfactory/ssh-agent@v0.10.0
         with:
           ssh-private-key: ${{ secrets.FABDESK_SUBMODULE_SSH_KEY }}
 
@@ -49,7 +49,7 @@ jobs:
         run: echo "commit=$(git ls-tree HEAD vendor/fab_pcb | awk '{print $3}')" >> "$GITHUB_OUTPUT"
 
       - name: Check out the pinned fab_pcb workspace
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: fabPlane/fab_pcb
           ref: ${{ steps.fab-pcb.outputs.commit }}
@@ -67,7 +67,7 @@ jobs:
       - name: Scan
         run: bun run scripts/security-scan.ts --json --out findings.json
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: security-findings
           path: findings.json
