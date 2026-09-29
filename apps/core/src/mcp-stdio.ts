@@ -23,7 +23,7 @@ import { resolveConfig } from "./config";
 import { createContextFactory } from "./context";
 import { Store } from "./db";
 import { logger, errMsg } from "./log";
-import { INSTRUCTIONS } from "./mcp-sessions";
+import { DEFAULT_AGENT_TOOLSETS, INSTRUCTIONS } from "./mcp-sessions";
 import { ProjectStore } from "./projects";
 import { pidAlive } from "./serve";
 
@@ -200,7 +200,9 @@ async function standalone(opts: McpStdioOptions, projectDir: string | null): Pro
     appBridgeFile: locateAppBridgeFile(config.handshakePath),
   });
   const storedToken =
-    auth.mode === "local" ? storedCredentialToken({ home: config.home, apiOrigin: config.apiOrigin }) : () => null;
+    auth.mode === "local"
+      ? storedCredentialToken({ home: config.home, apiOrigin: config.apiOrigin })
+      : () => null;
   services.cloud = createCloudService({
     apiOrigin: config.apiOrigin,
     token: () => auth.token() ?? storedToken(),
@@ -225,7 +227,7 @@ async function standalone(opts: McpStdioOptions, projectDir: string | null): Pro
     { name: "fabdesk", version: config.version },
     { instructions: INSTRUCTIONS },
   );
-  attachToRegistry(server, registry, ctxFactory);
+  attachToRegistry(server, registry, ctxFactory, { initialToolsets: [...DEFAULT_AGENT_TOOLSETS] });
   const stdio = new StdioServerTransport();
   await server.connect(stdio);
   await new Promise<void>((resolveDone) => {

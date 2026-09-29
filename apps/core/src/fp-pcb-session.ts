@@ -79,7 +79,7 @@ export class FpPcbSessions {
     });
     if (!schematic)
       throw new ToolError(
-        "board.kicad_sch not found: create it with schematic_edit",
+        "board.kicad_sch not found: create it with schematic_edit or circuit_build",
         "precondition",
       );
     return schematic;
