@@ -186,8 +186,8 @@ export class CoreClient {
   listProjects(): Promise<ProjectSummary[]> {
     return this.request("/projects");
   }
-  createProject(name: string): Promise<ProjectSummary> {
-    return this.request("/projects", { method: "POST", json: { name } });
+  createProject(name: string, parentDirectory?: string): Promise<ProjectSummary> {
+    return this.request("/projects", { method: "POST", json: { name, ...(parentDirectory ? { parentDirectory } : {}) } });
   }
   getProject(id: string): Promise<ProjectDetail> {
     return this.request(`/projects/${encodeURIComponent(id)}`);

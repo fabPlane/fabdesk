@@ -182,13 +182,23 @@ export class ProjectStore implements ProjectResolver {
     return h;
   }
 
-  async create(name: string): Promise<ProjectDetail> {
-    await mkdir(this.rootDir, { recursive: true });
+  async create(name: string, parentDirectory?: string): Promise<ProjectDetail> {
+    if (parentDirectory && !isAbsolute(parentDirectory)) throw new ToolError("Choose an absolute project location", "invalid_args");
+    const root = parentDirectory ? await realpath(parentDirectory) : this.rootDir;
+    if (parentDirectory && !(await stat(root)).isDirectory()) throw new ToolError("Project location must be a folder", "invalid_args");
+    await mkdir(root, { recursive: true });
     const base = slugify(name);
     let slug = base;
-    for (let i = 2; await stat(join(this.rootDir, slug)).catch(() => null); i++)
-      slug = `${base}-${i}`;
-    const dir = join(this.rootDir, slug);
+    // Reserve a fresh directory atomically; never reuse or overwrite an existing folder.
+    for (let i = 2; ; i++) {
+      if (this.repo.list().some((project) => project.slug === slug)) { slug = `${base}-${i}`; continue; }
+      try { await mkdir(join(root, slug)); break; }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+        slug = `${base}-${i}`;
+      }
+    }
+    const dir = join(root, slug);
     const ts = new Date().toISOString();
     const manifest = ProjectManifest.parse({
       schema: 1,
@@ -209,7 +219,9 @@ export class ProjectStore implements ProjectResolver {
       await mkdir(join(dir, sub), { recursive: true });
     await writeJson(join(dir, PROJECT_FILES.manifest), manifest);
     await Bun.write(join(dir, ".gitignore"), ".fabdesk/\nrenders/\nexports/\n");
-    this.repo.upsert({ id: manifest.id, name, slug, path: dir, createdAt: ts, updatedAt: ts });
+    // Concurrent creations in different parents may reserve the same basename.
+    const registeredSlug = this.repo.list().some((project) => project.slug === slug) ? `${slug}-${manifest.id}` : slug;
+    this.repo.upsert({ id: manifest.id, name, slug: registeredSlug, path: dir, createdAt: ts, updatedAt: ts });
     if (this.opts.watch !== false) this.watchDir(manifest.id, dir);
     this.emit({
       ts: Date.now(),

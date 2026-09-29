@@ -143,3 +143,39 @@ describe("ProjectStore absolute-path resolution", () => {
     }
   });
 });
+
+describe("ProjectStore custom locations", () => {
+  test("creates outside the default root, avoids existing folders, and survives restart", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "fabdesk-location-"));
+    const store = Store.open(join(dir, "db.sqlite"));
+    const root = join(dir, "default");
+    const parent = join(dir, "chosen");
+    const projects = new ProjectStore(store.projects, root, () => {}, { watch: false });
+    const restarted = new ProjectStore(store.projects, root, () => {}, { watch: false });
+    try {
+      await mkdir(join(parent, "my-board"), { recursive: true });
+      await writeFile(join(parent, "my-board", "keep.txt"), "existing data");
+      const project = await projects.create("My Board", parent);
+      expect(project.path).toBe(join(parent, "my-board-2"));
+      expect(await Bun.file(join(parent, "my-board", "keep.txt")).text()).toBe("existing data");
+      expect(await Bun.file(join(project.path, "fabdesk.json")).exists()).toBe(true);
+      await restarted.init();
+      expect((await restarted.detail(project.id))?.path).toBe(project.path);
+      const ordinary = await projects.create("Default Board");
+      expect(ordinary.path).toBe(join(root, "default-board"));
+      const concurrent = await Promise.all([projects.create("Parallel", parent), projects.create("Parallel", parent)]);
+      expect(new Set(concurrent.map((p) => p.path)).size).toBe(2);
+      const otherParent = join(dir, "other");
+      await mkdir(otherParent);
+      const acrossParents = await Promise.all([projects.create("Across", parent), projects.create("Across", otherParent)]);
+      expect(new Set(acrossParents.map((p) => p.id)).size).toBe(2);
+      await expect(projects.create("Relative", "relative/path")).rejects.toThrow("absolute");
+      await expect(projects.create("File", join(parent, "my-board", "keep.txt"))).rejects.toThrow("folder");
+    } finally {
+      projects.close();
+      restarted.close();
+      store.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});

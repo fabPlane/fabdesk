@@ -1,5 +1,5 @@
 import type { Thread } from "@fabdesk/protocol";
-import { useQueryClient } from "@tanstack/react-query";
+import { CreateProjectDialog } from "./CreateProjectDialog";
 import { useMemo, useState, type MouseEvent } from "react";
 import { Button, ContextMenu, IconButton, Input, MenuItem } from "../components/ui";
 import { Icon } from "../components/Icon";
@@ -24,8 +24,8 @@ interface Menu {
 }
 
 export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
-  const { client, host } = useCore();
-  const qc = useQueryClient();
+  const { host } = useCore();
+
   const [q, setQ] = useState("");
   const setActiveProject = useUiStore((s) => s.setActiveProject);
   const startNewChatInProject = useUiStore((s) => s.startNewChatInProject);
@@ -53,50 +53,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
     setMenu({ x: e.clientX, y: e.clientY, thread });
   };
 
-  // Electron renderers do not implement window.prompt, so text questions use an inline row.
-  const [ask, setAsk] = useState<{ kind: "project" } | null>(null);
-  const [askValue, setAskValue] = useState("");
-
-  const createProject = async (name: string) => {
-    const p = await client.createProject(name);
-    await qc.invalidateQueries({ queryKey: ["projects"] });
-    setActiveProject(p.id);
-  };
-
-  const submitAsk = async () => {
-    const value = askValue.trim();
-    setAsk(null);
-    setAskValue("");
-    if (value) await createProject(value);
-  };
-
-  const askRow = ask && (
-    <form
-      className="flex items-center gap-1 px-2 pt-2"
-      onSubmit={(e) => {
-        e.preventDefault();
-        void submitAsk();
-      }}
-    >
-      <Input
-        autoFocus
-        value={askValue}
-        placeholder="Project name"
-        onChange={(e) => setAskValue(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
-            setAsk(null);
-            setAskValue("");
-          }
-        }}
-        className="h-7 min-w-0 flex-1 text-xs"
-        data-testid="sidebar-ask"
-      />
-      <Button size="sm" variant="primary" type="submit">
-        OK
-      </Button>
-    </form>
-  );
+  const [creatingProject, setCreatingProject] = useState(false);
 
   const togglePin = (thread: Thread) => {
     patch.mutate({ id: thread.id, patch: { pinned: !thread.pinned } });
@@ -186,12 +143,12 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
       {sidebarListTab === "projects" && (
         <>
           <div className="flex items-center justify-between px-3 pt-3">
-            <span className="text-[11px] font-medium text-muted">Workspace</span>
-            <IconButton title="New project" onClick={() => { setAskValue(""); setAsk({ kind: "project" }); }}>
+            <span className="text-[11px] font-medium text-muted">Project</span>
+            <IconButton title="New project" onClick={() => setCreatingProject(true)}>
               <Icon name="plus" />
             </IconButton>
           </div>
-          {askRow}
+
           <div className="px-3 pt-3">
             <Button variant="secondary" className="fd-new-chat-button w-full" onClick={onNewChat} title={`New chat (${modKey(host.platform)}+Shift+O)`} aria-label="New chat" data-testid="sidebar-new-chat">
               <Icon name="plus" width={16} height={16} /><span className="fd-new-chat-label text-left">New chat</span>
@@ -252,6 +209,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
       </div>
       )}
       <UserFooter />
+      {creatingProject && <CreateProjectDialog onClose={() => setCreatingProject(false)} onCreated={(id) => { setActiveProject(id); setCreatingProject(false); }} />}
       {menu && (
         <ContextMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)}>
           <MenuItem

@@ -265,7 +265,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
   app.get("/projects", (c) => c.json(deps.projects.summaries()));
   app.post("/projects", async (c) => {
     const body = CreateProject.parse(await c.req.json());
-    return c.json(await deps.projects.create(body.name), 201);
+    return c.json(await deps.projects.create(body.name, body.parentDirectory), 201);
   });
   app.get("/projects/:id", async (c) => {
     const d = await deps.projects.detail(c.req.param("id"));
