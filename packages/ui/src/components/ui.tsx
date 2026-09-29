@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
+import { forwardRef, useEffect, useRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
 import { cn } from "../util";
 import { Icon } from "./Icon";
 
@@ -154,9 +154,37 @@ export interface DialogProps {
 }
 
 export function Dialog({ open, onClose, title, children, className, bare }: DialogProps) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const frame = requestAnimationFrame(() => {
+      const dialog = dialogRef.current;
+      if (dialog && !dialog.contains(document.activeElement)) {
+        (dialog.querySelector<HTMLElement>("[autofocus], input:not([type=hidden]):not([type=radio]):not([disabled]), textarea:not([disabled]), select:not([disabled])")
+          ?? dialog.querySelector<HTMLElement>("button:not([disabled])") ?? dialog).focus();
+      }
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      if (previous?.isConnected) previous.focus();
+    };
+  }, [open]);
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
+      const dialogs = document.querySelectorAll('[role="dialog"][aria-modal="true"]');
+      if (dialogs[dialogs.length - 1] !== dialogRef.current) return;
+      if (e.key === "Tab") {
+        const dialog = dialogRef.current;
+        const items = Array.from(dialog?.querySelectorAll<HTMLElement>("button, input, select, textarea, a[href], [tabindex]") ?? [])
+          .filter((element) => !element.matches(":disabled, [tabindex='-1'], input[type='hidden']") && element.getClientRects().length > 0);
+        const first = items[0];
+        const last = items[items.length - 1];
+        if (!first) { e.preventDefault(); dialog?.focus(); }
+        else if (e.shiftKey && (document.activeElement === first || !dialog?.contains(document.activeElement))) { e.preventDefault(); last?.focus(); }
+        else if (!e.shiftKey && (document.activeElement === last || !dialog?.contains(document.activeElement))) { e.preventDefault(); first.focus(); }
+      }
       if (e.key === "Escape") {
         e.stopPropagation();
         onClose();
@@ -169,8 +197,11 @@ export function Dialog({ open, onClose, title, children, className, bare }: Dial
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-[3px]" onMouseDown={onClose} role="presentation">
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
+        aria-label={typeof title === "string" ? title : undefined}
+        tabIndex={-1}
         className={cn(
           "fd-elevated flex max-h-full flex-col overflow-hidden rounded-2xl border border-border bg-panel",
           bare ? "" : "w-[640px] max-w-full",
@@ -225,9 +256,10 @@ export function Tabs<T extends string>({
   );
 }
 
-export function EmptyState({ title, children, action }: { title: ReactNode; children?: ReactNode; action?: ReactNode }) {
+export function EmptyState({ title, children, action, icon }: { title: ReactNode; children?: ReactNode; action?: ReactNode; icon?: ReactNode }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
+    <div className="fd-empty-state flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
+      {icon && <div className="mb-3 text-muted" aria-hidden="true">{icon}</div>}
       <div className="text-[15px] font-semibold tracking-[-0.01em]">{title}</div>
       {children && <div className="max-w-sm text-[13px] leading-5 text-muted">{children}</div>}
       {action && <div className="mt-2">{action}</div>}

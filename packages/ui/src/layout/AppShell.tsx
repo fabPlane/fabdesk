@@ -1,4 +1,5 @@
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
+import { useEffect, useRef, useState } from "react";
 import type { CoreStatusInfo } from "../app/types";
 import { BoardPanel } from "../board/BoardPanel";
 import { ProjectPickerDialog } from "../chat/ProjectPickerDialog";
@@ -22,6 +23,18 @@ export interface AppShellProps {
 
 /** Three resizable panes: thread sidebar | chat | board panel. */
 export function AppShell({ onNewChat, coreStatus, banner }: AppShellProps) {
+  const shellRef = useRef<HTMLDivElement>(null);
+  const [shellWidth, setShellWidth] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const shell = shellRef.current;
+    if (!shell) return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) setShellWidth(Math.max(1, entry.contentRect.width));
+    });
+    observer.observe(shell);
+    return () => observer.disconnect();
+  }, []);
+  const percent = (pixels: number) => (pixels / Math.max(760, shellWidth)) * 100;
   const sidebarOpen = useUiStore((s) => s.sidebarOpen);
   const boardOpen = useUiStore((s) => s.boardOpen);
   const openSourceId = useUiStore((s) => s.activeOpenSourceId);
@@ -37,26 +50,26 @@ export function AppShell({ onNewChat, coreStatus, banner }: AppShellProps) {
     <ThreadView />
   );
   return (
-    <div className="flex h-full flex-col">
+    <div ref={shellRef} className="fd-workspace flex h-full flex-col">
       <TopBar coreStatus={coreStatus} />
       {banner}
       <div className="min-h-0 flex-1">
         <PanelGroup direction="horizontal" autoSaveId="fabdesk-shell">
           {sidebarOpen && (
             <>
-              <Panel id="sidebar" order={1} defaultSize={22} minSize={22} maxSize={32}>
+              <Panel id="sidebar" order={1} defaultSize={percent(240)} minSize={percent(190)} maxSize={percent(280)}>
                 <ThreadSidebar onNewChat={onNewChat} />
               </Panel>
               <Handle />
             </>
           )}
-          <Panel id="chat" order={2} minSize={30}>
+          <Panel id="chat" order={2} minSize={percent(300)}>
             {center}
           </Panel>
           {boardOpen && !openSourceId && !(inventory && !orderFlowOpen) && (
             <>
               <Handle />
-              <Panel id="board" order={3} defaultSize={40} minSize={20}>
+              <Panel id="board" order={3} defaultSize={40} minSize={percent(260)}>
                 <BoardPanel />
               </Panel>
             </>

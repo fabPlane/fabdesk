@@ -6,7 +6,8 @@ import { useCloudStatus, useDoctor, usePatchSettings, useSettings } from "@fabde
 import { dashboardUrlFor } from "@fabdesk/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { shortcutList } from "../hooks/useShortcuts";
-import { isThemeId, THEME_IDS, THEME_LABELS, useTheme } from "../hooks/useTheme";
+import { THEME_IDS, THEME_LABELS, useTheme } from "../hooks/useTheme";
+import { THEME_BACKGROUNDS, THEME_PANELS, THEME_FOREGROUNDS } from "../theme/resolve";
 import { useAuthStore } from "@fabdesk/client-core";
 import { RemoteSection } from "./RemoteSection";
 import { SETTINGS_SECTIONS, useUiStore, type SettingsSection } from "../stores/ui";
@@ -28,7 +29,7 @@ const DEFAULT_AGENT: AgentSettings = { binaryPath: null, model: null, permission
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
-    <label className="grid grid-cols-[180px_1fr] items-center gap-4 py-2 text-[13px]">
+    <label className="fd-settings-row grid grid-cols-[180px_1fr] items-center gap-4 py-2 text-[13px]">
       <span>
         <span className="font-medium">{label}</span>
         {hint && <span className="mt-0.5 block text-[11px] leading-4 text-muted">{hint}</span>}
@@ -72,9 +73,9 @@ export function SettingsDialog() {
   };
 
   return (
-    <Dialog open={open} onClose={() => setOpen(false)} title="Settings" className="h-[80vh] w-[860px]">
-      <div className="flex h-full gap-5">
-        <nav className="w-40 shrink-0 border-r border-border pr-3" aria-label="Settings sections">
+    <Dialog open={open} onClose={() => setOpen(false)} title="Settings" className="fd-settings h-[80vh] w-[860px]">
+      <div className="fd-settings-layout flex min-h-0 flex-1 gap-6">
+        <nav className="w-40 shrink-0 overflow-y-auto border-r border-border pr-3" aria-label="Settings sections">
           {SETTINGS_SECTIONS.map((s) => (
             <button
               key={s}
@@ -89,6 +90,7 @@ export function SettingsDialog() {
           ))}
         </nav>
         <div className="min-w-0 flex-1 overflow-auto pr-1">
+          <h2 className="mb-5 text-xl font-semibold tracking-tight">{LABELS[section]}</h2>
           {!draft ? (
             <Spinner />
           ) : section === "agents" ? (
@@ -200,23 +202,23 @@ export function SettingsDialog() {
           ) : section === "remote" ? (
             <RemoteSection />
           ) : section === "appearance" ? (
-            <Row label="Theme" hint="fabPlane themes match fabplane.com; the System themes are the neutral light/dark look. Stored on this device.">
-              <Select
-                value={themeId}
-                onChange={(e) => {
-                  const id = e.target.value;
-                  if (!isThemeId(id)) return;
-                  setThemeId(id);
-                  update((s) => ({ ...s, theme: id.endsWith("-dark") ? "dark" : "light" }));
-                }}
-              >
-                {THEME_IDS.map((id) => (
-                  <option key={id} value={id}>
-                    {THEME_LABELS[id]}
-                  </option>
-                ))}
-              </Select>
-            </Row>
+            <fieldset>
+              <legend className="text-[13px] font-medium">Theme</legend>
+              <p className="mb-5 mt-1 text-xs leading-5 text-muted">Choose FabPlane's signature palette or a neutral System theme. Your choice is stored on this device.</p>
+              <div className="fd-theme-options">
+                {THEME_IDS.map((id) => <label key={id} className="fd-theme-option">
+                  <input type="radio" name="appearance-theme" value={id} checked={themeId === id} onChange={() => {
+                    setThemeId(id);
+                    update((s) => ({ ...s, theme: id.endsWith("-dark") ? "dark" : "light" }));
+                  }} />
+                  <span className="fd-theme-preview" style={{ background: THEME_BACKGROUNDS[id], color: THEME_FOREGROUNDS[id] }} aria-hidden="true">
+                    <span className="fd-theme-preview-sidebar" style={{ background: THEME_PANELS[id] }}><i /><i /><i /></span>
+                    <span className="fd-theme-preview-chat"><i /><i /><b style={{ background: id.startsWith("plain") ? "#a78bfa" : "#addb75" }} /></span>
+                  </span>
+                  <span className="fd-theme-name">{THEME_LABELS[id]}<span className="fd-theme-check" aria-hidden="true" /></span>
+                </label>)}
+              </div>
+            </fieldset>
           ) : section === "privacy" ? (
             <div>
               <Row label="Error reporting" hint="Send crash and error reports to Sentry so bugs get fixed. Reports carry no prompts, board files, tokens or project paths. Turning this off applies immediately; turning it back on applies after a restart.">
@@ -241,7 +243,7 @@ export function SettingsDialog() {
         </div>
       </div>
       {section !== "auth" && section !== "remote" && section !== "shortcuts" && (
-        <div className="mt-3 flex items-center justify-end gap-2 border-t border-border pt-3">
+        <div className="mt-4 flex shrink-0 items-center justify-end gap-2 border-t border-border pt-4">
           {patch.isError && <span className="mr-auto text-xs text-danger">{(patch.error as Error).message}</span>}
           {patch.isSuccess && !dirty && <span className="mr-auto text-xs text-success">Saved</span>}
           <Button onClick={() => settings.data && setDraft(structuredClone(settings.data))} disabled={!dirty}>

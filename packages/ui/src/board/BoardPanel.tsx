@@ -1,7 +1,7 @@
 import { Button, IconButton, Select, Tabs } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { useCore } from "@fabdesk/client-core";
-import { useProjectOrder } from "@fabdesk/client-core";
+import { useProjectOrder, useProjects } from "@fabdesk/client-core";
 import { BOARD_TABS, BOARD_TAB_LABELS, useUiStore, type BoardTab } from "../stores/ui";
 import { modKey } from "../util";
 import { CinemaTab } from "./cinema/CinemaTab";
@@ -43,17 +43,24 @@ export function BoardPanel() {
   const projectId = useUiStore((s) => s.activeProjectId);
   const setOrderFlowOpen = useUiStore((s) => s.setOrderFlowOpen);
   const order = useProjectOrder(projectId);
+  const projects = useProjects();
+  const project = projects.data?.find((item) => item.id === projectId);
   const mod = modKey(host.platform);
   return (
     <div className="fd-board-panel flex h-full min-w-0 flex-col bg-panel" data-testid="board-panel">
-      <div className="flex h-12 items-center gap-1.5 border-b border-border px-2.5">
+      <div className="fd-board-heading">
+        <Icon name="panel" width={16} height={16} />
+        <span>Board workspace</span>
+        {project && <span className="ml-auto min-w-0 truncate text-[11px] text-muted" title={project.name}>{project.name}</span>}
+      </div>
+      <div className="fd-board-controls flex min-h-12 shrink-0 flex-wrap items-center gap-1.5 px-3 py-1.5">
         <Tabs
           className="fd-board-tabs min-w-0 flex-1"
           tabs={BOARD_TABS.map((id, i) => ({ id, label: BOARD_TAB_LABELS[id], hint: `${mod}${i + 1}` }))}
           value={tab}
           onChange={setBoardTab}
         />
-        <label className="fd-board-compact min-w-0 flex-1 items-center gap-2" data-testid="board-view-menu">
+        <label className="fd-board-compact min-w-0 flex-1 basis-44 items-center gap-2" data-testid="board-view-menu">
           <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.09em] text-muted">View</span>
           <Select
             value={tab}
@@ -79,7 +86,7 @@ export function BoardPanel() {
           <Icon name="close" />
         </IconButton>
       </div>
-      <div className="min-h-0 flex-1">
+      <div className="fd-board-stage min-h-0 flex-1">
         <TabBody tab={tab} />
       </div>
     </div>

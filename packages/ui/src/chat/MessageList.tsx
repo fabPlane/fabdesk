@@ -2,6 +2,7 @@ import type { Message, MessagePart, Thread } from "@fabdesk/protocol";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Spinner } from "../components/ui";
+import { Icon } from "../components/Icon";
 import { useCoreClient } from "@fabdesk/client-core";
 import { useRunsStore } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
@@ -39,7 +40,7 @@ export function ToolGroup({
   const images = calls.flatMap((c) => (c.result ? extractImages(c.result.output) : []));
   const label = `${calls.length} tool call${calls.length === 1 ? "" : "s"}`;
   return (
-    <div className="my-2 overflow-hidden rounded-lg border border-border/70 bg-panel/70 text-xs" data-testid="tool-group">
+    <div className="fd-tool-group my-2 overflow-hidden rounded-lg border border-border/70 bg-panel/70 text-xs" data-testid="tool-group">
       <button
         type="button"
         className={cn(
@@ -50,8 +51,8 @@ export function ToolGroup({
         title={open ? "Hide tool calls" : "Show tool calls"}
         aria-expanded={open}
       >
-        <span className={cn("inline-block transition-transform", open && "rotate-90")}>
-          &#9656;
+        <span className={cn("inline-block -rotate-90 transition-transform", open && "rotate-0")}>
+          <Icon name="chevronDown" width={14} height={14} />
         </span>
         <span>{label}</span>
         {errors > 0 && (
@@ -193,12 +194,13 @@ export function MessageBubble({ message, streaming }: { message: Message; stream
     <div className={cn("group flex w-full", isUser ? "justify-end" : "justify-start")}>
       <div
         className={cn(
-          "relative max-w-[88%] text-sm leading-[1.65]",
+          "relative min-w-0 text-sm leading-[1.75]",
           isUser
-            ? "whitespace-pre-wrap rounded-2xl rounded-br-md border border-accent/20 bg-accent/10 px-4 py-2.5"
-            : "w-full",
+            ? "max-w-[90%] whitespace-pre-wrap rounded-2xl rounded-br-md border border-border/60 bg-panel-2/60 px-4 py-3"
+            : "w-full max-w-full",
         )}
       >
+        {!isUser && <div className="mb-3 flex items-center gap-2 text-[11px] font-medium text-muted"><span className="h-1.5 w-1.5 rounded-full bg-accent" />Agent{streaming && <span className="text-accent">· Working</span>}</div>}
         {isUser ? (
           <>
             {message.contentMd}

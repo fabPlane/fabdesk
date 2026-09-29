@@ -18,16 +18,16 @@ export const THEME_LABELS: Record<ThemeId, string> = {
 
 /** First-paint backgrounds; keep in sync with `styles.css` `--fd-bg`. */
 export const THEME_BACKGROUNDS: Record<ThemeId, string> = {
-  "fabplane-dark": "#111610",
-  "fabplane-light": "#eef0e9",
+  "fabplane-dark": "#191d1a",
+  "fabplane-light": "#f7f8f5",
   "plain-dark": "#171a20",
   "plain-light": "#f4f6f8",
 };
 
 /** Top bar / panel colours; keep in sync with `styles.css` `--fd-panel` (Windows title-bar overlay). */
 export const THEME_PANELS: Record<ThemeId, string> = {
-  "fabplane-dark": "#191e18",
-  "fabplane-light": "#f8f9f5",
+  "fabplane-dark": "#1e231f",
+  "fabplane-light": "#ffffff",
   "plain-dark": "#20242c",
   "plain-light": "#ffffff",
 };

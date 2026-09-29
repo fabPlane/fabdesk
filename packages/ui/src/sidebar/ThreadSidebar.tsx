@@ -1,7 +1,7 @@
 import type { Thread } from "@fabdesk/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState, type MouseEvent } from "react";
-import { Button, ContextMenu, IconButton, Input, MenuItem, Tabs } from "../components/ui";
+import { Button, ContextMenu, IconButton, Input, MenuItem } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { useCore } from "@fabdesk/client-core";
 import { useProjects, useThreads, useThreadMutations } from "@fabdesk/client-core";
@@ -172,30 +172,33 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
   };
 
   return (
-    <div className="flex h-full flex-col bg-panel">
-      <Tabs
-        className="border-b border-border px-2.5 py-2"
-        tabs={SIDEBAR_LIST_TABS.map((id) => ({ id, label: SIDEBAR_LIST_TAB_LABELS[id] }))}
-        value={sidebarListTab}
-        onChange={setSidebarListTab}
-      />
+    <div className="fd-sidebar flex h-full flex-col">
+      <nav className="fd-sidebar-nav" aria-label="Workspace navigation">
+        {SIDEBAR_LIST_TABS.map((id) => (
+          <button key={id} type="button" aria-current={sidebarListTab === id ? "page" : undefined} onClick={() => setSidebarListTab(id)}>
+            <Icon name={id === "projects" ? "folder" : "library"} width={17} height={17} />
+            {SIDEBAR_LIST_TAB_LABELS[id]}
+          </button>
+        ))}
+      </nav>
       {sidebarListTab === "projects" && (
         <>
           <div className="flex items-center justify-between px-3 pt-3">
-            <span className="fd-eyebrow fd-eyebrow-muted">Workspace</span>
+            <span className="text-[11px] font-medium text-muted">Workspace</span>
             <IconButton title="New project" onClick={() => { setAskValue(""); setAsk({ kind: "project" }); }}>
               <Icon name="plus" />
             </IconButton>
           </div>
           {askRow}
           <div className="px-3 pt-2">
-            <Button variant="primary" className="w-full justify-between" onClick={onNewChat} data-testid="sidebar-new-chat">
-              <span>New chat</span>
+            <Button variant="secondary" className="fd-new-chat-button w-full" onClick={onNewChat} data-testid="sidebar-new-chat">
+              <Icon name="plus" width={16} height={16} /><span className="flex-1 text-left">New chat</span>
               <span className="text-[11px] opacity-70">{modKey(host.platform)}&#8679;O</span>
             </Button>
           </div>
-          <div className="px-3 pb-2 pt-3">
-            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search threads..." className="h-8 text-xs" />
+          <div className="fd-sidebar-search relative mx-3 mb-3 mt-3">
+            <Icon name="search" width={15} height={15} className="pointer-events-none absolute left-2.5 top-2.5 text-muted" />
+            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search threads..." aria-label="Search threads" />
           </div>
         </>
       )}
@@ -206,27 +209,28 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
         {threads.isLoading && <div className="px-2 py-3 text-xs text-muted">Loading...</div>}
         {threads.isError && <div className="px-2 py-3 text-xs text-danger">Could not load threads</div>}
         {projectGroups.map((group) => (
-          <div key={group.key} className="mb-1.5" data-testid={`sidebar-group-${group.key}`}>
-            <div className="flex items-center gap-0.5 px-0.5 pb-1 pt-2">
+          <div key={group.key} className="mb-1" data-testid={`sidebar-group-${group.key}`}>
+            <div className="group relative flex items-center gap-0.5 px-0.5">
               <button
                 type="button"
                 className={cn(
-                  "flex min-h-8 min-w-0 flex-1 items-center justify-between rounded-md px-2 text-left text-xs font-semibold tracking-[0.01em] hover:bg-panel-2/60 hover:text-fg",
+                  "fd-project-row flex min-h-9 min-w-0 flex-1 items-center justify-between rounded-md px-2 text-left text-[13px] hover:bg-panel-2/60 hover:text-fg",
                   group.kind === "project" && group.projectId === projectId ? "bg-panel-2/50 text-fg" : "text-muted",
                 )}
                 aria-current={group.kind === "project" && group.projectId === projectId ? "true" : undefined}
                 onClick={() => group.kind === "project" && group.projectId && setActiveProject(group.projectId)}
               >
-                <span className="flex min-w-0 flex-1 items-center gap-1">
+                <span className="flex min-w-0 flex-1 items-center gap-2">
                   {group.kind === "pinned" && <Icon name="pin" width={13} height={13} />}
+                  {group.kind === "project" && <Icon name="folder" width={15} height={15} className="shrink-0 opacity-65" />}
                   <span className="min-w-0 truncate" title={group.title}>{group.title}</span>
                 </span>
-                <span className="ml-2 shrink-0 text-muted">{group.threads.length}</span>
+                <span className="fd-project-count ml-2 shrink-0 text-[10px] tabular-nums text-muted">{group.threads.length}</span>
               </button>
               {group.kind === "project" && group.projectId && (
                 <IconButton
                   title={`New chat in ${group.title}`}
-                  className="ml-auto h-7 w-7 shrink-0 text-muted hover:text-fg"
+                  className="fd-project-add absolute right-0 top-0 text-muted opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover:text-fg"
                   onClick={(e) => {
                     e.stopPropagation();
                     startNewChatInProject(group.projectId);

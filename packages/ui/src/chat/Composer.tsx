@@ -163,7 +163,7 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
       : "Pick or create a project, then describe the board...";
 
   return (
-    <div className="border-t border-border bg-bg px-5 pb-4 pt-3">
+    <div className="fd-composer-dock bg-bg px-5 pb-4 pt-3">
       <div className="mx-auto max-w-3xl">
         {pending.length > 0 && (
           <div className="mb-2 flex flex-wrap gap-1.5">
@@ -218,19 +218,19 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
               }
             }}
           />
-          <div className="flex items-center gap-1.5 border-t border-border/50 px-2.5 py-2">
-            <div className="relative">
+          <div className="fd-composer-toolbar flex flex-wrap items-center gap-1.5 px-2.5 py-2">
+            <div className="fd-agent-control relative min-w-0">
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-8 max-w-[280px] truncate font-medium"
+                className="fd-agent-button h-8 max-w-full font-medium"
                 title={`Agent & model (${mod}/)`}
                 onClick={() => setAgentPickerOpen(!agentPickerOpen)}
                 aria-haspopup="menu"
                 aria-expanded={agentPickerOpen}
                 data-testid="agent-model"
               >
-                {agentModelLabel(pickerAgents.find((a) => a.id === agentId), agentId, model)} <Icon name="chevronDown" width={13} height={13} />
+                <span className="min-w-0 truncate">{agentModelLabel(pickerAgents.find((a) => a.id === agentId), agentId, model)}</span> <Icon name="chevronDown" width={13} height={13} className="shrink-0" />
               </Button>
               <AgentModelMenu
                 open={agentPickerOpen}
@@ -290,6 +290,7 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
           </details>
         )}
         {error && <div className="mt-2 rounded-lg border border-danger/25 bg-danger/5 px-3 py-2 text-xs text-danger">{error}</div>}
+        <div className="fd-composer-hint"><span>Enter to send</span><span>Shift + Enter for a new line</span></div>
       </div>
     </div>
   );
