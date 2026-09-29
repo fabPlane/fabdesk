@@ -196,14 +196,14 @@ export function MessageBubble({ message, streaming }: { message: Message; stream
         className={cn(
           "relative min-w-0 text-sm leading-[1.75] [overflow-wrap:anywhere]",
           isUser
-            ? "max-w-[90%] whitespace-pre-wrap rounded-2xl rounded-br-md border border-border/60 bg-panel-2/60 px-4 py-3"
+            ? "fd-user-message max-w-[90%] rounded-2xl rounded-br-md border border-border/60 bg-panel-2/60 px-4 py-3"
             : "w-full max-w-full",
         )}
       >
         {!isUser && <div className="mb-3 flex items-center gap-2 text-[11px] font-medium text-muted"><span className="h-1.5 w-1.5 rounded-full bg-accent" />Agent{streaming && <span className="text-accent">· Working</span>}</div>}
         {isUser ? (
           <>
-            {message.contentMd}
+            {message.contentMd && <div className="whitespace-pre-wrap">{message.contentMd}</div>}
             {/* A photo attached on the phone arrives as an image part next to the text. */}
             {message.parts
               .filter((p) => p.type === "image")
@@ -224,14 +224,16 @@ export function MessageBubble({ message, streaming }: { message: Message; stream
             <Spinner /> waiting for the agent...
           </div>
         )}
-        <div
+        <time
+          dateTime={message.createdAt}
+          title={new Date(message.createdAt).toLocaleString()}
           className={cn(
-            "mt-1 text-[11px] text-muted opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100",
-            isUser && "text-right",
+            "pointer-events-none absolute top-full mt-0.5 whitespace-nowrap text-[11px] leading-4 text-muted opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100",
+            isUser ? "right-0" : "left-0",
           )}
         >
           {formatRelative(message.createdAt)}
-        </div>
+        </time>
       </div>
     </div>
   );
