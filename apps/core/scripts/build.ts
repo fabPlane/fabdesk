@@ -33,8 +33,22 @@ function gitSha(): string {
     return "dev";
   }
 }
+function git(args: string[]): string | null {
+  try {
+    const proc = Bun.spawnSync(["git", ...args], { stdout: "pipe", stderr: "ignore" });
+    return proc.success ? proc.stdout.toString().trim() : null;
+  } catch {
+    return null;
+  }
+}
+/** Build identity baked into the binary and stamped on every run dump (src/build-info.ts). */
+const sha = gitSha();
+const buildCommit = sha === "dev" ? null : sha;
+const buildBranch = process.env["GITHUB_REF_NAME"]?.trim() || git(["rev-parse", "--abbrev-ref", "HEAD"]);
+const buildDirty = process.env["GITHUB_SHA"] ? false : (git(["status", "--porcelain", "--untracked-files=no"]) ?? "").length > 0;
+const buildTime = new Date().toISOString();
 const pkg = (await Bun.file(new URL("../package.json", import.meta.url)).json()) as { version: string };
-const sentryRelease = process.env["SENTRY_RELEASE"]?.trim() || `fabdesk-core@${pkg.version}+${gitSha()}`;
+const sentryRelease = process.env["SENTRY_RELEASE"]?.trim() || `fabdesk-core@${pkg.version}+${sha}`;
 const all = args.includes("--all");
 
 const hostTarget = `bun-${process.platform === "win32" ? "windows" : process.platform}-${process.arch === "arm64" ? "arm64" : "x64"}` as Target;
@@ -65,6 +79,12 @@ for (const target of targets) {
     "FABDESK_COMPILED=true",
     "--define",
     `FABDESK_SENTRY_RELEASE=${JSON.stringify(sentryRelease)}`,
+    ...(buildCommit ? ["--define", `FABDESK_BUILD_COMMIT=${JSON.stringify(buildCommit)}`] : []),
+    ...(buildBranch && buildBranch !== "HEAD" ? ["--define", `FABDESK_BUILD_BRANCH=${JSON.stringify(buildBranch)}`] : []),
+    "--define",
+    `FABDESK_BUILD_DIRTY=${buildDirty}`,
+    "--define",
+    `FABDESK_BUILD_TIME=${JSON.stringify(buildTime)}`,
     ...(sentryDsn ? ["--define", `FABDESK_SENTRY_DSN=${JSON.stringify(sentryDsn)}`] : []),
     ...(sentryEnvironment ? ["--define", `FABDESK_SENTRY_ENVIRONMENT=${JSON.stringify(sentryEnvironment)}`] : []),
     "--root",
@@ -74,7 +94,7 @@ for (const target of targets) {
     "--outfile",
     outfile,
   ];
-  process.stderr.write(`▸ ${target} (${chan}${sentryDsn ? `, sentry ${sentryRelease}` : ""}) → ${outfile}\n`);
+  process.stderr.write(`▸ ${target} (${chan}, ${buildCommit ?? "no commit"}${buildDirty ? "+dirty" : ""}${sentryDsn ? `, sentry ${sentryRelease}` : ""}) → ${outfile}\n`);
   const proc = Bun.spawn(cmd, { cwd: coreDir, stdout: "inherit", stderr: "inherit", env: { ...process.env, FABDESK_CHANNEL: chan } });
   const code = await proc.exited;
   if (code !== 0) {

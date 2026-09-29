@@ -16,6 +16,7 @@ import { resourceFromAttributes } from "@opentelemetry/resources";
 import { BatchSpanProcessor, NodeTracerProvider, type ReadableSpan, type SpanExporter } from "@opentelemetry/sdk-trace-node";
 import type { ToolOutput, ToolTelemetry } from "@fabdesk/tools";
 import type { KicadInvocation, RunResult } from "@fabdesk/kicad";
+import type { BuildInfo } from "./build-info";
 import { errMsg, logger } from "./log";
 
 type RunRecord = {
@@ -77,7 +78,8 @@ export type RunDumpSink = {
   }): void | Promise<void>;
 };
 
-export type RunTelemetryOptions = { version: string; runDumps?: RunDumpSink };
+/** `build` is written on every `run.started` so usage analysis can tell builds apart. */
+export type RunTelemetryOptions = { version: string; build?: BuildInfo; runDumps?: RunDumpSink };
 
 export const RUN_TELEMETRY_LIMITS = {
   traceBytes: 12 * 1024 * 1024,
@@ -139,9 +141,11 @@ export class RunTelemetry {
   private readonly activeTool = new AsyncLocalStorage<ToolScope>();
   private readonly captureOtlpContent = process.env["FABDESK_OTEL_CAPTURE_CONTENT"] === "1";
   private readonly runDumps: RunDumpSink | undefined;
+  private readonly build: BuildInfo | undefined;
 
   constructor(opts: RunTelemetryOptions) {
     this.runDumps = opts.runDumps;
+    this.build = opts.build;
     const endpoint =
       process.env["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"] ??
       process.env["OTEL_EXPORTER_OTLP_ENDPOINT"];
@@ -219,7 +223,7 @@ export class RunTelemetry {
       finalization: null,
     };
     this.runs.set(input.runId, run);
-    await this.write(run, "run.started", input);
+    await this.write(run, "run.started", this.build ? { ...input, build: this.build } : input);
     return {
       logPath,
       record: (type, body) => this.recordAgentEvent(run, type, body),

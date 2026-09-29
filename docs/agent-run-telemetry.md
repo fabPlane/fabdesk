@@ -10,6 +10,30 @@ Fabdesk records every in-app Codex, Claude, Cursor and Grok run as a portable, s
 - nanosecond timestamps anchored to the wall clock with a monotonic clock;
 - a content-addressed project snapshot immediately before every project-scoped tool call.
 
+## Build identity
+
+The `run.started` event carries a `build` object, so usage analysis can tell which fabdesk produced
+a run (`apps/core/src/build-info.ts`):
+
+```json
+"build": { "version": "0.2.0", "kind": "dev", "label": null, "commit": "5067af9", "branch": "traditional-v2", "dirty": true, "channel": "public", "builtAt": null }
+```
+
+| `kind` | When | `commit` / `branch` / `dirty` |
+| --- | --- | --- |
+| `release` | a compiled `fabdesk-core` | baked in by `apps/core/scripts/build.ts` (`FABDESK_BUILD_*` defines); `builtAt` is set |
+| `dev` | running from a checkout | read from git in that checkout when the daemon starts |
+| `candidate` | either, launched with `FABDESK_BUILD_LABEL=<name>` | as above; `label` names the line of work |
+
+`dirty: true` means uncommitted changes, so the commit alone does not reproduce the build. To make a
+benchmark build easy to find later, launch it with a label:
+
+```bash
+FABDESK_BUILD_LABEL=traditional-v2 bun run dev
+```
+
+`channel` is the existing public/internal feature channel, unrelated to `kind`.
+
 The snapshot walks the project without following symlinks and excludes `.git` and `.fabdesk`. Each manifest records relative path, file type, byte size, nanosecond mtime and SHA-256. File bodies are deduplicated, so an unchanged KiCad board is stored once across many tool calls.
 
 ## Files

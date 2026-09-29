@@ -47,6 +47,7 @@ import {
   setSentryUser,
 } from "./sentry";
 import { RunTelemetry } from "./run-telemetry";
+import { buildInfo } from "./build-info";
 import {
   ArchiveConsentRevokedError,
   UsageArchive,
@@ -224,6 +225,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   let lastArchiveConsent = hasArchiveConsent();
   const telemetry = new RunTelemetry({
     version: config.version,
+    build: buildInfo(),
     runDumps: archiveEnabled
       ? {
           async put(dump) {
