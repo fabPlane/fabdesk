@@ -141,7 +141,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
       {sidebarListTab === "projects" && (
         <>
           <div className="flex items-center justify-between px-3 pt-3">
-            <span className="text-[11px] font-medium text-muted">Project</span>
+            <span className="text-[11px] font-medium text-muted">Projects</span>
             <IconButton title="New project" onClick={() => setCreatingProject(true)}>
               <Icon name="plus" />
             </IconButton>

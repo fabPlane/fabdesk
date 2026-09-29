@@ -1,6 +1,6 @@
 # Create project dialog
 
-Replaces the sidebar inline name field with a shared Create project dialog, also used by the new-chat project picker. Sidebar heading is now **Project**.
+Replaces the sidebar inline name field with a shared Create project dialog, also used by the new-chat project picker. Sidebar heading is now **Projects**.
 
 The user-supplied Codex screenshot informed the name field, location panel and footer actions. The location picker uses Electron's native directory dialog on Windows/macOS. The selected folder is a parent: creation makes a fresh project subfolder inside it. Canceling the picker keeps the previous location; Use default restores existing behavior. Native local paths are not offered for remote connections.
 
@@ -17,4 +17,6 @@ Before base: 3f3a4f4. Captures use the same dev profile, theme, project/chat and
 - Root `bun run typecheck`: passed.
 - Custom-location regression: passed (9 assertions), including restart persistence, concurrent creation in the same/different parents, no overwrite, default behavior and invalid paths.
 - Root `bun run test`: failed. UI 71/0 and client-core 94/0 passed. Failing suites: auth-client 3, agents 7, desktop 5, tools 3, KiCad 8, core 8. Includes platform/toolchain failures and a Windows EPERM symlink failure in the existing project resolution test. No claim that the full suite is green.
-- Dialog inspected at 960×600 in the Windows dev app. Native OS folder-picker interaction and native macOS remain unverified.
+- Dialog inspected at 960×600 in the Windows dev app. Windows native folder selection verified after a full Electron restart: the selected path returns to the dialog without an error. Native macOS remains unverified.
+
+The running dev renderer initially retained an older preload bridge. The desktop host now checks picker availability before exposing it, preventing a missing-method error during partial dev reloads. Main/preload changes require a full Electron restart.
