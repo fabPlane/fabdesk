@@ -188,7 +188,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
               >
                 <span className="flex min-w-0 flex-1 items-center gap-2">
                   {group.kind === "pinned" && <Icon name="pin" width={13} height={13} />}
-                  {group.kind === "project" && <Icon name={expanded ? "folderOpen" : "folder"} width={15} height={15} className="shrink-0 opacity-65" />}
+                  {group.kind === "project" && <Icon name={expanded ? "folderOpen" : "folder"} width={17} height={17} className="shrink-0" />}
                   <span className="min-w-0 truncate" title={group.title}>{group.title}</span>
                 </span>
                 <span className="fd-project-count ml-2 shrink-0 text-[10px] tabular-nums text-muted">{group.threads.length}</span>

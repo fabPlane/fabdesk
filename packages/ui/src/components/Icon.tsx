@@ -27,13 +27,13 @@ export type IconName =
 /** One stroke language for the desktop chrome. Icons inherit the control's color. */
 export function Icon({ name, ...props }: SVGProps<SVGSVGElement> & { name: IconName }) {
   const paths: Record<IconName, React.ReactNode> = {
-    folderOpen: <><path d="M3 9V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v1" /><path d="M3 9h18l-3 11H3L1 9h2Z" /></>,
+    folderOpen: <><path d="M3 18V6a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v2" /><path d="M3 18a2 2 0 0 0 2 2h13a2 2 0 0 0 1.9-1.4l2-6A1.2 1.2 0 0 0 20.8 11H7.5a2 2 0 0 0-1.9 1.4L3 18Z" /></>,
     minus: <path d="M5 12h14" />,
     play: <path d="m8 5 11 7-11 7V5Z" />,
     pause: <><path d="M8 5v14M16 5v14" /></>,
     chevronLeft: <path d="m15 6-6 6 6 6" />,
     chevronRight: <path d="m9 6 6 6-6 6" />,
-    folder: <path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />,
+    folder: <><path d="M3 18V6a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" /><path d="M3 9h18" /></>,
     library: <><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></>,
     menu: <path d="M4 6h16M4 12h16M4 18h16" />,
     sidebar: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" /></>,
