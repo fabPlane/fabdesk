@@ -172,6 +172,8 @@ body {
 .fd-new-chat-button > svg { display: block; flex-shrink: 0; }
 .fd-new-chat-label { display: block; line-height: 20px; }
 .fd-project-row[aria-current="true"] { box-shadow: inset 2px 0 var(--fd-accent); }
+.fd-sidebar-project-group { margin-bottom: 8px; }
+.fd-sidebar-chat-list:not([hidden]) { display: grid; gap: 4px; margin-top: 8px; padding-bottom: 4px; }
 .group:has(.fd-project-add):is(:hover, :focus-within) .fd-project-row { padding-right: 38px; }
 .group:has(.fd-project-add):is(:hover, :focus-within) .fd-project-count { display: none; }
 .fd-thread-body { display: flex; min-height: 0; flex: 1; flex-direction: column; }

@@ -167,7 +167,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
         {projectGroups.map((group) => {
           const expanded = group.kind !== "project" || (expandedProjects[group.key] ?? (group.projectId === projectId || q.trim().length > 0));
           return (
-          <div key={group.key} className="mb-1" data-testid={`sidebar-group-${group.key}`}>
+          <div key={group.key} className="fd-sidebar-project-group" data-testid={`sidebar-group-${group.key}`}>
             <div className="group relative flex items-center gap-0.5 px-0.5">
               <button
                 type="button"
@@ -207,7 +207,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
                 </IconButton>
               )}
             </div>
-            <div id={`project-chats-${group.key}`} hidden={!expanded} className={group.kind === "project" ? "pl-5 pb-1" : undefined}>
+            <div id={`project-chats-${group.key}`} hidden={!expanded} className={cn("fd-sidebar-chat-list", group.kind === "project" && "pl-5")}>
               {group.threads.map(renderThread)}
               {group.kind === "project" && group.threads.length === 0 && !threads.isLoading && !threads.isError && (
                 <div className="px-2.5 py-2 text-xs text-muted">{q.trim() ? "No matching chats" : "No chats"}</div>
