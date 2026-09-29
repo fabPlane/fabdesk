@@ -143,7 +143,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
         <>
           <div className="px-3 pt-3">
             <Button variant="secondary" className="fd-new-chat-button w-full" onClick={onNewChat} aria-label="New chat" data-testid="sidebar-new-chat">
-              <Icon name="compose" width={16} height={16} /><span className="fd-new-chat-label text-left">New chat</span>
+              <Icon name="compose" width={18} height={18} /><span className="fd-new-chat-label text-left">New chat</span>
             </Button>
           </div>
           <div className="fd-sidebar-search relative mx-3 mb-3 mt-3">
