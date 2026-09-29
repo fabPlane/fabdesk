@@ -171,6 +171,11 @@ body {
 .fd-new-chat-button { display: flex; align-items: center; justify-content: flex-start; gap: 12px; height: 42px; padding: 0 12px; line-height: 20px; background: var(--fd-panel); box-shadow: 0 1px 3px rgb(0 0 0 / 0.08); }
 .fd-new-chat-button > svg { display: block; flex-shrink: 0; }
 .fd-new-chat-label { display: block; line-height: 20px; }
+.fd-sidebar-nav button,
+.fd-sidebar .fd-new-chat-button,
+.fd-sidebar .fd-project-row,
+.fd-sidebar .fd-chat-row,
+.fd-sidebar-search input { border-radius: 12px; }
 .fd-project-row[aria-current="true"] { box-shadow: inset 2px 0 var(--fd-accent); }
 .fd-sidebar-project-group { margin-bottom: 8px; }
 .fd-sidebar-chat-list:not([hidden]) { display: grid; gap: 4px; margin-top: 8px; padding-bottom: 4px; }

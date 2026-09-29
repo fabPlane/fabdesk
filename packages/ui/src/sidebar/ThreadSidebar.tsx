@@ -80,7 +80,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
       ) : (
         <button
           className={cn(
-            "flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 py-1.5 pr-14 text-left text-[13px] transition-colors",
+            "fd-chat-row flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 py-1.5 pr-14 text-left text-[13px] transition-colors",
             t.id === activeThreadId ? "bg-panel-2 font-medium text-fg shadow-sm" : "text-fg/85 hover:bg-panel-2/60 hover:text-fg",
           )}
           onClick={() => openThread(t.id, t.projectId)}
