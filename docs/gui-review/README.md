@@ -2,6 +2,8 @@
 
 ## Latest review
 
+**[Responsiveness and cross-platform audit](responsive-audit/README.md)** — `95be0f4adf38e939b691e6ff321d6a5dd85fc10e`. Screen-by-screen coverage, fixes, screenshots, and explicit native macOS/Windows verification limits.
+
 **[Workspace redesign, research, and new comparisons](iteration-2/README.md)** — implementation `8b0f68dc0f5077f856657819375b7ac086d08b8a`. Includes original-main comparisons, the previous GUI iteration, four themes, minimum-window captures, and a labeled conversation fixture. The evidence below records the earlier pass.
 
 **Base:** `main` at `33d68bc109150789c45f7ad334c079931e39d353`
