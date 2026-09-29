@@ -2,6 +2,8 @@
 
 ## Latest review
 
+**[Main versus current GUI](current/README.md)** — fresh screenshots of current implementation `ecfad8314853280c1067342f5a3d92b3f80f0607` compared with original main. These supersede the earlier comparisons below.
+
 **[Responsiveness and cross-platform audit](responsive-audit/README.md)** — `95be0f4adf38e939b691e6ff321d6a5dd85fc10e`. Screen-by-screen coverage, fixes, screenshots, and explicit native macOS/Windows verification limits.
 
 **[Workspace redesign, research, and new comparisons](iteration-2/README.md)** — implementation `8b0f68dc0f5077f856657819375b7ac086d08b8a`. Includes original-main comparisons, the previous GUI iteration, four themes, minimum-window captures, and a labeled conversation fixture. The evidence below records the earlier pass.
