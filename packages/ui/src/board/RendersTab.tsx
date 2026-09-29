@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ProjectImage } from "../chat/ProjectImage";
-import { Button, Dialog, EmptyState, Spinner } from "../components/ui";
+import { Button, Dialog, EmptyState, LoadError, Spinner } from "../components/ui";
 import { useProject } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { basename, isImagePath } from "../util";
@@ -12,6 +12,7 @@ export function RendersTab() {
   const [open, setOpen] = useState<string | null>(null);
   const render = useRunTool();
   if (!projectId) return <EmptyState title="No project selected" />;
+  if (project.isError) return <LoadError title="Could not load renders" onRetry={() => void project.refetch()} />;
   if (project.isLoading) {
     return (
       <div className="flex h-full items-center justify-center">

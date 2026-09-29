@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { CreateProjectDialog } from "../sidebar/CreateProjectDialog";
-import { Button, Dialog } from "../components/ui";
+import { Button, Dialog, LoadError, Spinner } from "../components/ui";
 
 import { useProjects } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
@@ -28,6 +28,8 @@ export function ProjectPickerDialog() {
         Choose a project for this conversation, or continue without one.
       </p>
       <div className="flex max-h-64 flex-col gap-1 overflow-y-auto">
+        {projects.isPending && <div className="p-3"><Spinner /></div>}
+        {projects.isError && <LoadError title="Could not load projects" onRetry={() => void projects.refetch()} />}
         {(projects.data ?? []).map((project) => (
           <button
             key={project.id}

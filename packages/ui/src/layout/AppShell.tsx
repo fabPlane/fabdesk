@@ -66,7 +66,7 @@ export function AppShell({ onNewChat, coreStatus, banner }: AppShellProps) {
           <Panel id="chat" order={2} minSize={percent(300)}>
             {center}
           </Panel>
-          {boardOpen && !openSourceId && !(inventory && !orderFlowOpen) && (
+          {boardOpen && !openSourceId && !inventory && !orderFlowOpen && (
             <>
               <Handle />
               <Panel id="board" order={3} defaultSize={40} minSize={percent(260)}>

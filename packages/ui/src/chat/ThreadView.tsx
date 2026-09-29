@@ -30,6 +30,11 @@ export function ThreadView() {
   const setActiveThread = useUiStore((s) => s.setActiveThread);
   const threadQuery = useThread(activeThreadId);
   const thread = threadQuery.data ?? null;
+  useEffect(() => {
+    if (thread && thread.id === useUiStore.getState().activeThreadId) {
+      useUiStore.setState({ activeProjectId: thread.projectId ?? null });
+    }
+  }, [thread]);
   const messages = useMessages(activeThreadId);
   const { create } = useThreadMutations();
   const run = useRunsStore((s) => (activeThreadId ? s.runsByThread[activeThreadId] : undefined));
@@ -92,14 +97,12 @@ export function ThreadView() {
                 : "Full: the agent runs unattended. Click to supervise writes.")
             }
             data-testid="runtime-mode-toggle"
+            aria-pressed={thread.runtimeMode === "supervised"}
+            className="min-h-8 rounded-md border border-border px-2 text-xs text-muted hover:bg-panel-2"
           >
-            <Badge
-              tone={
-                modeError ? "danger" : thread.runtimeMode === "supervised" ? "warning" : "neutral"
-              }
-            >
-              {modeError ? "cannot supervise" : (thread.runtimeMode ?? "full")}
-            </Badge>
+            <span className={modeError ? "text-danger" : thread.runtimeMode === "supervised" ? "text-warning" : "text-fg"}>
+              {modeError ? "Cannot change mode" : thread.runtimeMode === "supervised" ? "Approval required" : "Unsupervised"}
+            </span>
           </button>
         )}
         {run && (

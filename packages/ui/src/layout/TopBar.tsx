@@ -58,7 +58,7 @@ export function TopBar({ coreStatus }: { coreStatus?: CoreStatusInfo | undefined
             <Icon name="menu" width={20} height={20} />
           </IconButton>
         )}
-        <IconButton title={`Toggle sidebar (${mod}B)`} onClick={toggleSidebar} className={cn(sidebarOpen && "text-accent")}>
+        <IconButton title={`Toggle sidebar (${mod} + B)`} onClick={toggleSidebar} className={cn(sidebarOpen && "text-accent")}>
           <Icon name="sidebar" width={20} height={20} />
         </IconButton>
       </div>
@@ -85,13 +85,13 @@ export function TopBar({ coreStatus }: { coreStatus?: CoreStatusInfo | undefined
           <span className="fd-topbar-status-text">{connected ? "Core connected" : `Core ${coreStatus?.state ?? sseStatus}`}</span>
         </Badge>
         <div className="fd-topbar-tools flex items-center gap-1">
-          <IconButton title={`Command palette (${mod}K)`} onClick={() => setPaletteOpen(true)}>
+          <IconButton title={`Command palette (${mod} + K)`} onClick={() => setPaletteOpen(true)}>
             <Icon name="search" width={20} height={20} />
           </IconButton>
-          <IconButton title={`Board panel (${mod}Shift+B)`} onClick={toggleBoard} className={cn(boardOpen && "text-accent")}>
+          <IconButton title={`Board panel (${mod} + Shift + B)`} onClick={toggleBoard} className={cn(boardOpen && "text-accent")}>
             <Icon name="panel" width={20} height={20} />
           </IconButton>
-          <IconButton title={`Settings (${mod},)`} onClick={() => setSettingsOpen(true)}>
+          <IconButton title={`Settings (${mod} + ,)`} onClick={() => setSettingsOpen(true)}>
             <Icon name="settings" width={20} height={20} />
           </IconButton>
         </div>

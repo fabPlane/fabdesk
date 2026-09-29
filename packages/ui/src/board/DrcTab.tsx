@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Badge, Button, EmptyState, Spinner } from "../components/ui";
+import { Badge, Button, EmptyState, LoadError, Spinner } from "../components/ui";
 import { useProjectJson } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { cn } from "../util";
@@ -79,6 +79,7 @@ export function DrcTab() {
   );
 
   if (!projectId) return <EmptyState title="No project selected" />;
+  const failed = drc.isError || erc.isError || drc.parseError || erc.parseError;
   const loading = drc.isLoading || erc.isLoading;
   const toolbar = (
     <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border px-3 py-2">
@@ -91,7 +92,7 @@ export function DrcTab() {
       {tool.state.status === "running" && <Spinner />}
       {tool.state.error && <span className="text-xs text-danger">{tool.state.error}</span>}
       <span className="ml-auto text-[11px] text-muted">
-        {drc.data === null && erc.data === null ? "no reports yet" : `${rows.length} finding${rows.length === 1 ? "" : "s"}`}
+        {failed ? "Reports unavailable" : drc.data === null && erc.data === null ? "no reports yet" : `${rows.length} finding${rows.length === 1 ? "" : "s"}`}
       </span>
     </div>
   );
@@ -99,7 +100,7 @@ export function DrcTab() {
   return (
     <div className="flex h-full flex-col">
       {toolbar}
-      {loading ? (
+      {failed ? <LoadError title="Checks could not be verified" onRetry={() => { void drc.refetch(); void erc.refetch(); }} /> : loading ? (
         <div className="flex flex-1 items-center justify-center">
           <Spinner />
         </div>
@@ -112,7 +113,7 @@ export function DrcTab() {
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="min-h-0 flex-1 overflow-auto">
-            <table className="w-full text-left text-xs">
+            <table className="fd-drc-table w-full text-left text-xs">
               <thead className="sticky top-0 bg-panel">
                 <tr className="text-[10.5px] uppercase tracking-wide text-muted">
                   <th className="px-2 py-1.5">Src</th>

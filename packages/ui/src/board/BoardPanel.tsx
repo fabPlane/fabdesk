@@ -56,7 +56,7 @@ export function BoardPanel() {
       <div className="fd-board-controls flex min-h-12 shrink-0 flex-wrap items-center gap-1.5 px-3 py-1.5">
         <Tabs
           className="fd-board-tabs min-w-0 flex-1"
-          tabs={BOARD_TABS.map((id, i) => ({ id, label: BOARD_TAB_LABELS[id], hint: `${mod}${i + 1}` }))}
+          tabs={BOARD_TABS.map((id, i) => ({ id, label: BOARD_TAB_LABELS[id], hint: `${mod} + ${i + 1}` }))}
           value={tab}
           onChange={setBoardTab}
         />
@@ -68,7 +68,7 @@ export function BoardPanel() {
             aria-label="Board view"
             className="h-8 min-w-0 flex-1 border-border bg-panel-2/70 text-xs font-medium"
           >
-            {BOARD_TABS.map((id, i) => <option key={id} value={id}>{BOARD_TAB_LABELS[id]} · {mod}{i + 1}</option>)}
+            {BOARD_TABS.map((id, i) => <option key={id} value={id}>{BOARD_TAB_LABELS[id]} · {mod} + {i + 1}</option>)}
           </Select>
         </label>
         {order.data && (order.data.hasKicadPcb || order.data.hasRouted || order.data.ready) && (
@@ -82,7 +82,7 @@ export function BoardPanel() {
             {order.data.ready ? "Order now" : "Order checks"}
           </Button>
         )}
-        <IconButton title={`Hide board panel (${mod}Shift+B)`} onClick={() => setBoardOpen(false)}>
+        <IconButton title={`Hide board panel (${mod} + Shift + B)`} onClick={() => setBoardOpen(false)}>
           <Icon name="close" />
         </IconButton>
       </div>

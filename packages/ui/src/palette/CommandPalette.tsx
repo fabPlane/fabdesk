@@ -33,14 +33,14 @@ export function CommandPalette() {
       <Command label="Command palette" className="flex max-h-[70vh] flex-col">
         <Command.Input
           autoFocus
-          placeholder="Type a command or search threads..."
+          placeholder="Type a command or search chats..."
           className="h-12 shrink-0 w-full border-b border-border bg-transparent px-4 text-sm outline-none placeholder:text-muted"
         />
         <Command.List className="min-h-0 flex-1 overflow-auto p-1.5">
           <Command.Empty>No results.</Command.Empty>
           <Command.Group heading="Actions">
             <Command.Item value="new chat" onSelect={pick(actions.newChat)}>
-              New chat <span className="ml-auto"><Kbd>{mod}Shift+O</Kbd></span>
+              New chat <span className="ml-auto"><Kbd>{mod} + Shift + O</Kbd></span>
             </Command.Item>
             <Command.Item value="route board" onSelect={pick(() => void actions.routeBoard())}>
               Route board
@@ -52,16 +52,16 @@ export function CommandPalette() {
               Render board
             </Command.Item>
             <Command.Item value="pin thread" onSelect={pick(() => void actions.pinThread())}>
-              Pin / unpin thread <span className="ml-auto"><Kbd>{mod}Shift+P</Kbd></span>
+              Pin / unpin chat <span className="ml-auto"><Kbd>{mod} + Shift + P</Kbd></span>
             </Command.Item>
             <Command.Item value="branch thread" onSelect={pick(() => void actions.branchThread())}>
-              Branch thread <span className="ml-auto"><Kbd>{mod}Shift+D</Kbd></span>
+              Branch chat <span className="ml-auto"><Kbd>{mod} + Shift + D</Kbd></span>
             </Command.Item>
             <Command.Item value="sketch" onSelect={pick(actions.openSketch)}>
-              Open sketch pad <span className="ml-auto"><Kbd>{mod}Shift+S</Kbd></span>
+              Open sketch pad <span className="ml-auto"><Kbd>{mod} + Shift + S</Kbd></span>
             </Command.Item>
             <Command.Item value="settings" onSelect={pick(actions.openSettings)}>
-              Settings <span className="ml-auto"><Kbd>{mod},</Kbd></span>
+              Settings <span className="ml-auto"><Kbd>{mod} + ,</Kbd></span>
             </Command.Item>
             <Command.Item value="parts inventory" onSelect={pick(() => setInventoryOpen(true))}>
               Parts Inventory
@@ -72,16 +72,16 @@ export function CommandPalette() {
               </Command.Item>
             )}
             <Command.Item value="toggle sidebar" onSelect={pick(toggleSidebar)}>
-              Toggle sidebar <span className="ml-auto"><Kbd>{mod}B</Kbd></span>
+              Toggle sidebar <span className="ml-auto"><Kbd>{mod} + B</Kbd></span>
             </Command.Item>
             <Command.Item value="toggle board panel" onSelect={pick(toggleBoard)}>
-              Toggle board panel <span className="ml-auto"><Kbd>{mod}Shift+B</Kbd></span>
+              Toggle board panel <span className="ml-auto"><Kbd>{mod} + Shift + B</Kbd></span>
             </Command.Item>
           </Command.Group>
           <Command.Group heading="Board tabs">
             {BOARD_TABS.map((tab, i) => (
               <Command.Item key={tab} value={`tab ${BOARD_TAB_LABELS[tab]}`} onSelect={pick(() => setBoardTab(tab))}>
-                {BOARD_TAB_LABELS[tab]} <span className="ml-auto"><Kbd>{mod}{i + 1}</Kbd></span>
+                {BOARD_TAB_LABELS[tab]} <span className="ml-auto"><Kbd>{mod} + {i + 1}</Kbd></span>
               </Command.Item>
             ))}
           </Command.Group>
@@ -95,9 +95,9 @@ export function CommandPalette() {
             </Command.Group>
           )}
           {(threads.data?.length ?? 0) > 0 && (
-            <Command.Group heading="Threads">
-              {threads.data!.slice(0, 50).map((t) => (
-                <Command.Item key={t.id} value={`thread ${t.title} ${t.id}`} onSelect={pick(() => setActiveThread(t.id))}>
+            <Command.Group heading="Chats">
+              {threads.data!.map((t) => (
+                <Command.Item key={t.id} value={`thread ${t.title} ${t.id}`} onSelect={pick(() => { setActiveProject(t.projectId ?? null); setActiveThread(t.id); })}>
                   <span className="truncate">{t.title || "Untitled"}</span>
                   {t.pinned && <span className="ml-auto text-[10px] text-muted">pinned</span>}
                 </Command.Item>

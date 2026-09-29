@@ -21,15 +21,26 @@ export function UserFooter() {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const close = useCallback(() => setOpen(false), []);
 
   useEffect(() => {
     if (!open) return;
+    const items = () => Array.from(rootRef.current?.querySelectorAll<HTMLButtonElement>('[role="menu"] button:not(:disabled)') ?? []);
+    items().forEach((item) => item.setAttribute("role", "menuitem"));
+    items()[0]?.focus();
     const onDown = (e: MouseEvent) => {
       if (!rootRef.current?.contains(e.target as Node)) close();
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
+      if (e.key === "Escape") { e.preventDefault(); close(); triggerRef.current?.focus(); }
+      if (["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) {
+        e.preventDefault();
+        const options = items();
+        const index = options.indexOf(document.activeElement as HTMLButtonElement);
+        const next = e.key === "Home" ? 0 : e.key === "End" ? options.length - 1 : (index + (e.key === "ArrowDown" ? 1 : -1) + options.length) % options.length;
+        options[next]?.focus();
+      }
     };
     window.addEventListener("mousedown", onDown);
     window.addEventListener("keydown", onKey);
@@ -73,6 +84,7 @@ export function UserFooter() {
   return (
     <div
       ref={rootRef}
+      onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) close(); }}
       className="relative shrink-0 border-t border-border bg-panel px-3 py-2"
       data-testid="user-footer"
     >
@@ -95,7 +107,7 @@ export function UserFooter() {
           <MenuItem onClick={() => openSettings()}>
             <span>Settings</span>
             <span className="ml-auto">
-              <Kbd>{mod},</Kbd>
+              <Kbd>{mod} + ,</Kbd>
             </span>
           </MenuItem>
           <MenuItem onClick={() => openSettings("shortcuts")}>Keyboard shortcuts</MenuItem>
@@ -129,6 +141,7 @@ export function UserFooter() {
       )}
       <div className="flex items-center gap-1">
         <button
+          ref={triggerRef}
           type="button"
           className={cn(
             "flex min-h-9 min-w-0 flex-1 items-center gap-2.5 rounded-lg px-1.5 py-1 text-left text-[13px] hover:bg-panel-2",
@@ -146,7 +159,7 @@ export function UserFooter() {
           </span>
           <span className="min-w-0 flex-1 truncate">{label}</span>
         </button>
-        <IconButton title={`Settings (${mod},)`} onClick={() => openSettings()}>
+        <IconButton title={`Settings (${mod} + ,)`} onClick={() => openSettings()}>
           <Icon name="settings" />
         </IconButton>
       </div>

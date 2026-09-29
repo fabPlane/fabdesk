@@ -1,5 +1,5 @@
 import "@excalidraw/excalidraw/index.css";
-import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+import type { ExcalidrawImperativeAPI, ExcalidrawInitialDataState } from "@excalidraw/excalidraw/types";
 import { lazy, Suspense, useCallback, useRef, useState } from "react";
 import { Button, Dialog, Spinner } from "../components/ui";
 import { useCoreClient } from "@fabdesk/client-core";
@@ -19,9 +19,15 @@ export function SketchPad({ onAttach }: SketchPadProps) {
   const setOpen = useUiStore((s) => s.setSketchOpen);
   const projectId = useUiStore((s) => s.activeProjectId);
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
+  const scenes = useRef(new Map<string, ExcalidrawInitialDataState>());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const close = useCallback(() => setOpen(false), [setOpen]);
+  const close = useCallback(() => {
+    if (busy) return;
+    const api = apiRef.current;
+    if (api) scenes.current.set(projectId ?? "__new__", { elements: api.getSceneElements(), appState: api.getAppState(), files: api.getFiles() });
+    setOpen(false);
+  }, [setOpen, projectId, busy]);
 
   const attach = async () => {
     const api = apiRef.current;
@@ -41,7 +47,8 @@ export function SketchPad({ onAttach }: SketchPadProps) {
       });
       const { path } = await client.uploadSketch(projectId, blob, `sketch-${Date.now()}.png`);
       onAttach({ path, mime: "image/png", label: basename(path) });
-      close();
+      scenes.current.delete(projectId);
+      setOpen(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -58,15 +65,15 @@ export function SketchPad({ onAttach }: SketchPadProps) {
           <div className="text-xs text-muted">Rough out the board or a schematic; the PNG is attached to your next message.</div>
           <div className="ml-auto flex items-center gap-2">
             {error && <span className="text-xs text-danger">{error}</span>}
-            <Button size="sm" onClick={close}>
-              Cancel
+            <Button size="sm" disabled={busy} onClick={close}>
+              Close
             </Button>
             <Button variant="primary" size="sm" disabled={busy || !projectId} onClick={() => void attach()}>
               {busy ? "Uploading..." : "Attach to message"}
             </Button>
           </div>
         </div>
-        <div className="min-h-0 flex-1">
+        <div className="fd-sketch-canvas min-h-0 flex-1">
           {open && (
             <Suspense
               fallback={
@@ -76,6 +83,7 @@ export function SketchPad({ onAttach }: SketchPadProps) {
               }
             >
               <Excalidraw
+                initialData={scenes.current.get(projectId ?? "__new__") ?? null}
                 excalidrawAPI={(api) => {
                   apiRef.current = api;
                 }}

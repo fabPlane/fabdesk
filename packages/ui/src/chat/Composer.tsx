@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button, IconButton, Textarea } from "../components/ui";
 import { Icon } from "../components/Icon";
+import { InstallHint } from "../components/InstallHint";
 import { useCore } from "@fabdesk/client-core";
 import { useDoctor, useSettings } from "@fabdesk/client-core";
 import { useRunsStore } from "@fabdesk/client-core";
@@ -226,7 +227,7 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
                 variant="ghost"
                 size="sm"
                 className="fd-agent-button h-8 max-w-full font-medium"
-                title={`Agent & model (${mod}/)`}
+                title={`Agent & model (${mod} + /)`}
                 onClick={() => setAgentPickerOpen(!agentPickerOpen)}
                 aria-haspopup="menu"
                 aria-expanded={agentPickerOpen}
@@ -256,26 +257,29 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
             <Button
               variant="ghost"
               size="sm"
-              title={`Sketch (${mod}Shift+S)`}
+              className="fd-sketch-button"
+              aria-label="Sketch"
+              title={`Sketch (${mod} + Shift + S)`}
               onClick={() => setSketchOpen(true)}
               disabled={!projectId}
             >
-              Sketch
+              <Icon name="compose" width={16} height={16} /><span className="fd-action-label">Sketch</span>
             </Button>
             <div className="ml-auto flex items-center gap-2">
               {run ? (
-                <Button variant="danger" size="sm" onClick={() => void client.abort(run.threadId)} title={`Abort (${mod}.)`}>
+                <Button variant="danger" size="sm" onClick={() => void client.abort(run.threadId)} title={`Abort (${mod} + .)`}>
                   <Icon name="stop" width={14} height={14} /> Stop
                 </Button>
               ) : (
                 <Button
                   variant="primary"
                   size="sm"
+                  aria-label={sending ? "Sending message" : "Send message"}
                   onClick={() => void send()}
                   disabled={!draft.trim() || sending}
-                  title={`Send (${mod}Enter)`}
+                  title={`Send (${mod} + Enter)`}
                 >
-                  {sending ? "Sending..." : "Send"} <Icon name="send" width={14} height={14} />
+                  <span className="fd-action-label">{sending ? "Sending..." : "Send"}</span> <Icon name="send" width={14} height={14} />
                 </Button>
               )}
             </div>
@@ -289,7 +293,7 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
               <span className="shrink-0 font-medium">Setup instructions</span>
               <Icon name="chevronDown" width={14} height={14} className="fd-setup-chevron shrink-0 transition-transform" />
             </summary>
-            <div className="break-words border-t border-warning/20 px-3 py-2">{selectedAgent.installHint}</div>
+            <div className="border-t border-warning/20 px-3 py-2"><InstallHint text={selectedAgent.installHint} /></div>
           </details>
         )}
         {error && <div className="mt-2 rounded-lg border border-danger/25 bg-danger/5 px-3 py-2 text-xs text-danger">{error}</div>}

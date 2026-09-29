@@ -1,4 +1,4 @@
-import { Button, EmptyState, Spinner } from "../components/ui";
+import { Button, EmptyState, LoadError, Spinner } from "../components/ui";
 import { useProjectText } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { SvgViewer } from "./SvgViewer";
@@ -36,6 +36,7 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
         Pick a project in the sidebar to see its {kind}.
       </EmptyState></div>
     );
+  if (rendered.isError) return <LoadError title="Could not load board preview" onRetry={() => void rendered.refetch()} />;
   if (rendered.isLoading) {
     return (
       <div className="flex h-full items-center justify-center">

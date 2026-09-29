@@ -1,5 +1,5 @@
 import type { AgentId, Settings } from "@fabdesk/protocol";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Badge, Button, Dialog, Input, Select, Spinner } from "../components/ui";
 import { useCore } from "@fabdesk/client-core";
 import { useCloudStatus, useDoctor, usePatchSettings, useSettings } from "@fabdesk/client-core";
@@ -12,6 +12,7 @@ import { useAuthStore } from "@fabdesk/client-core";
 import { RemoteSection } from "./RemoteSection";
 import { SETTINGS_SECTIONS, useUiStore, type SettingsSection } from "../stores/ui";
 import { cn } from "../util";
+import { InstallHint } from "../components/InstallHint";
 
 const LABELS: Record<SettingsSection, string> = {
   agents: "Agents",
@@ -46,6 +47,9 @@ export function SettingsDialog() {
   const requestedSection = useUiStore((s) => s.settingsSection);
   const themeId = useTheme();
   const setThemeId = useUiStore((s) => s.setThemeId);
+  const storedTheme = useUiStore((s) => s.themeId);
+  const originalTheme = useRef(storedTheme);
+  const [confirmClose, setConfirmClose] = useState(false);
   const [section, setSection] = useState<SettingsSection>("agents");
   useEffect(() => {
     if (open && requestedSection) setSection(requestedSection);
@@ -57,23 +61,27 @@ export function SettingsDialog() {
   // Settings can change behind the dialog's back (PATCH /settings from an agent or a script); re-read them on
   // every open so the draft, and a later Save, start from what the core actually has.
   useEffect(() => {
-    if (open) void settings.refetch();
+    if (!open) return;
+    originalTheme.current = useUiStore.getState().themeId;
+    setDraft(null);
+    let active = true;
+    void settings.refetch().then((result) => { if (active && result.data) setDraft(structuredClone(result.data)); });
+    return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
-  useEffect(() => {
-    if (open && settings.data) setDraft(structuredClone(settings.data));
-  }, [open, settings.data]);
 
   const update = (fn: (s: Settings) => Settings) => setDraft((d) => (d ? fn(d) : d));
   const updateAgent = (id: string, p: Partial<AgentSettings>) =>
     update((s) => ({ ...s, agents: { ...s.agents, [id]: { ...(s.agents[id] ?? DEFAULT_AGENT), ...p } } }));
-  const dirty = !!draft && !!settings.data && JSON.stringify(draft) !== JSON.stringify(settings.data);
+  const dirty = (!!draft && !!settings.data && JSON.stringify(draft) !== JSON.stringify(settings.data)) || storedTheme !== originalTheme.current;
+  const reset = () => { if (settings.data) setDraft(structuredClone(settings.data)); setThemeId(originalTheme.current); };
+  const close = () => { if (patch.isPending) return; if (dirty) setConfirmClose(true); else setOpen(false); };
   const save = () => {
-    if (draft) patch.mutate(draft);
+    if (draft) patch.mutate(draft, { onSuccess: () => { originalTheme.current = useUiStore.getState().themeId; } });
   };
 
   return (
-    <Dialog open={open} onClose={() => setOpen(false)} title="Settings" className="fd-settings h-[80vh] w-[860px]">
+    <><Dialog open={open} onClose={close} title="Settings" className="fd-settings h-[80vh] w-[860px]">
       <div className="fd-settings-layout flex min-h-0 flex-1 gap-6">
         <nav className="w-40 shrink-0 overflow-y-auto border-r border-border pr-3" aria-label="Settings sections">
           {SETTINGS_SECTIONS.map((s) => (
@@ -91,7 +99,7 @@ export function SettingsDialog() {
         </nav>
         <div className="min-w-0 flex-1 overflow-auto pr-1">
           <h2 className="mb-5 text-xl font-semibold tracking-tight">{LABELS[section]}</h2>
-          {!draft ? (
+          {!draft && settings.isError ? <div role="alert" className="text-sm text-danger">Could not load settings. Close and reopen Settings to retry.</div> : !draft ? (
             <Spinner />
           ) : section === "agents" ? (
             <div className="space-y-4">
@@ -117,7 +125,7 @@ export function SettingsDialog() {
                       )}
                       {a.path && <span className="truncate font-mono text-[11px] text-muted">{a.path}</span>}
                     </div>
-                    {!a.installed && <div className="mb-2 text-xs text-muted">{a.installHint}</div>}
+                    {!a.installed && <div className="mb-2"><InstallHint text={a.installHint} /></div>}
                     <Row label="Binary path" hint="Leave empty to use PATH">
                       <Input value={cfg.binaryPath ?? ""} onChange={(e) => updateAgent(a.id, { binaryPath: e.target.value || null })} placeholder={a.path ?? "auto-detect"} />
                     </Row>
@@ -246,7 +254,7 @@ export function SettingsDialog() {
         <div className="mt-4 flex shrink-0 items-center justify-end gap-2 border-t border-border pt-4">
           {patch.isError && <span className="mr-auto text-xs text-danger">{(patch.error as Error).message}</span>}
           {patch.isSuccess && !dirty && <span className="mr-auto text-xs text-success">Saved</span>}
-          <Button onClick={() => settings.data && setDraft(structuredClone(settings.data))} disabled={!dirty}>
+          <Button onClick={reset} disabled={!dirty || patch.isPending}>
             Reset
           </Button>
           <Button variant="primary" onClick={save} disabled={!dirty || patch.isPending}>
@@ -255,6 +263,13 @@ export function SettingsDialog() {
         </div>
       )}
     </Dialog>
+    <Dialog open={open && confirmClose} onClose={() => setConfirmClose(false)} title="Unsaved changes" className="w-[420px]">
+      <p className="text-sm text-muted">Keep editing to save your changes, or discard them and close Settings.</p>
+      <div className="mt-5 flex flex-wrap justify-end gap-3">
+        <Button onClick={() => { reset(); setConfirmClose(false); setOpen(false); }}>Discard changes</Button>
+        <Button variant="primary" onClick={() => setConfirmClose(false)}>Keep editing</Button>
+      </div>
+    </Dialog></>
   );
 }
 

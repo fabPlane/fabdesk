@@ -211,7 +211,7 @@ export function Dialog({ open, onClose, title, ariaLabel, children, className, b
         tabIndex={-1}
         className={cn(
           "fd-elevated flex max-h-full flex-col overflow-hidden rounded-2xl border border-border bg-panel",
-          bare ? "" : "w-[640px] max-w-full",
+          bare ? "" : /(?:^|\s)!?w-/.test(className ?? "") ? "max-w-full" : "w-[640px] max-w-full",
           className,
         )}
         onMouseDown={(e) => e.stopPropagation()}
@@ -248,6 +248,15 @@ export function Tabs<T extends string>({
           key={t.id}
           role="tab"
           aria-selected={t.id === value}
+          tabIndex={t.id === value ? 0 : -1}
+          onKeyDown={(e) => {
+            if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return;
+            e.preventDefault();
+            const index = tabs.findIndex((tab) => tab.id === t.id);
+            const next = e.key === "Home" ? 0 : e.key === "End" ? tabs.length - 1 : (index + (e.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+            const tab = tabs[next];
+            if (tab) { onChange(tab.id); (e.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next])?.focus(); }
+          }}
           title={t.hint}
           data-testid={`tab-${t.id}`}
           onClick={() => onChange(t.id)}
@@ -272,6 +281,10 @@ export function EmptyState({ title, children, action, icon }: { title: ReactNode
       {action && <div className="mt-2">{action}</div>}
     </div>
   );
+}
+
+export function LoadError({ title, onRetry }: { title: string; onRetry: () => void }) {
+  return <EmptyState title={title} action={<Button onClick={onRetry}>Try again</Button>}><span role="alert">We couldn’t load this content. Check the connection and try again.</span></EmptyState>;
 }
 
 export function MenuItem({ children, onClick, danger }: { children: ReactNode; onClick: () => void; danger?: boolean }) {

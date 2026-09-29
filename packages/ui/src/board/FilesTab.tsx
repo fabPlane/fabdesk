@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ProjectImage } from "../chat/ProjectImage";
-import { EmptyState, Spinner } from "../components/ui";
+import { EmptyState, LoadError, Spinner } from "../components/ui";
 import { useProject, useProjectText } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { cn, isImagePath } from "../util";
@@ -18,6 +18,7 @@ export function FilesTab() {
   const text = useProjectText(projectId, file && !isImage && !tooBig ? file.path : null);
 
   if (!projectId) return <EmptyState title="No project selected" />;
+  if (project.isError) return <LoadError title="Could not load project files" onRetry={() => void project.refetch()} />;
   if (project.isLoading) {
     return (
       <div className="flex h-full items-center justify-center">

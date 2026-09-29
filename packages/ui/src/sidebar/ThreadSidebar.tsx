@@ -1,13 +1,13 @@
 import type { Thread } from "@fabdesk/protocol";
 import { CreateProjectDialog } from "./CreateProjectDialog";
-import { useMemo, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { Button, ContextMenu, IconButton, Input, MenuItem } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { useProjects, useThreads, useThreadMutations } from "@fabdesk/client-core";
 import { useBranchThread } from "../hooks/threadActions";
 import { useRunsStore } from "@fabdesk/client-core";
 import { SIDEBAR_LIST_TABS, SIDEBAR_LIST_TAB_LABELS, normalizeSidebarListTab, useUiStore } from "../stores/ui";
-import { cn, formatRelative } from "../util";
+import { cn } from "../util";
 import { groupThreadsByProject } from "@fabdesk/client-core";
 import { OpenSourceList } from "./OpenSourceList";
 import { UserFooter } from "./UserFooter";
@@ -36,6 +36,16 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
   const setActiveOpenSourceId = useUiStore((s) => s.setActiveOpenSourceId);
   const projects = useProjects();
   const threads = useThreads({ q });
+  const revealedChat = useRef<string | null>(null);
+  useEffect(() => {
+    if (!activeThreadId) { revealedChat.current = null; return; }
+    if (revealedChat.current === activeThreadId) return;
+    const active = threads.data?.find((thread) => thread.id === activeThreadId);
+    if (active) {
+      revealedChat.current = activeThreadId;
+      if (active.projectId) setExpandedProjects((current) => ({ ...current, [active.projectId!]: true }));
+    }
+  }, [activeThreadId, threads.data]);
   const projectGroups = useMemo(
     () => groupThreadsByProject(threads.data ?? [], projects.data ?? []),
     [threads.data, projects.data],
@@ -80,9 +90,10 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
       ) : (
         <button
           className={cn(
-            "fd-chat-row flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 py-1.5 pr-14 text-left text-[13px] transition-colors",
+            "fd-chat-row flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-colors",
             t.id === activeThreadId ? "bg-panel-2 font-medium text-fg shadow-sm" : "text-fg/85 hover:bg-panel-2/60 hover:text-fg",
           )}
+          title={t.title || "Untitled"}
           onClick={() => openThread(t.id, t.projectId)}
           onContextMenu={(e) => openMenu(e, t)}
           data-testid={`sidebar-thread-${t.id}`}
@@ -94,15 +105,12 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
             </span>
           )}
           <span className="min-w-0 flex-1 truncate">{t.title || "Untitled"}</span>
-          <span className="shrink-0 text-[11px] text-muted opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
-            {formatRelative(t.updatedAt)}
-          </span>
         </button>
       )}
       <IconButton
         title={t.pinned ? "Unpin" : "Pin"}
         style={{ width: 28, height: 28 }}
-        className={cn("absolute right-7 top-1 h-7 w-7", t.pinned ? "text-accent opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100")}
+        className={cn("absolute right-7 top-1 h-7 w-7 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100", t.pinned && "text-accent")}
         onClick={(e) => {
           e.stopPropagation();
           togglePin(t);
@@ -112,7 +120,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
         <Icon name="pin" width={16} height={16} />
       </IconButton>
       <IconButton
-        title="Thread menu"
+        title="Chat menu"
         style={{ width: 28, height: 28 }}
         className="absolute right-0 top-1 h-7 w-7 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
         onClick={(e) => openMenu(e, t)}
@@ -141,12 +149,12 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
       </nav>
       {sidebarListTab === "projects" && (
         <>
-          <div className="px-3 pt-3">
+          <div className="px-3 pt-1">
             <Button variant="secondary" className="fd-new-chat-button w-full" onClick={onNewChat} aria-label="New chat" data-testid="sidebar-new-chat">
               <Icon name="compose" width={18} height={18} /><span className="fd-new-chat-label text-left">New chat</span>
             </Button>
           </div>
-          <div className="fd-sidebar-search relative mx-3 mb-3 mt-3">
+          <div className="fd-sidebar-search relative mx-3 mb-1 mt-2">
             <Icon name="search" width={15} height={15} className="pointer-events-none absolute left-2.5 top-2.5 text-muted" />
             <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search chats" aria-label="Search chats" />
           </div>
@@ -163,9 +171,10 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
       ) : (
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3 pt-1">
         {threads.isLoading && <div className="px-2 py-3 text-xs text-muted">Loading...</div>}
-        {threads.isError && <div className="px-2 py-3 text-xs text-danger">Could not load threads</div>}
+        {threads.isError && <div className="px-2 py-3 text-xs text-danger">Could not load chats</div>}
         {projectGroups.map((group) => {
-          const expanded = group.kind !== "project" || (expandedProjects[group.key] ?? (group.projectId === projectId || q.trim().length > 0));
+          const expanded = group.kind !== "project" || q.trim().length > 0 || (expandedProjects[group.key] ?? group.projectId === projectId);
+          const pinnedCount = group.kind === "project" ? (threads.data ?? []).filter((t) => t.projectId === group.projectId && t.pinned && !t.archived).length : 0;
           return (
           <div key={group.key} className="fd-sidebar-project-group" data-testid={`sidebar-group-${group.key}`}>
             <div className="group relative flex items-center gap-0.5 px-0.5">
@@ -190,7 +199,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
                   {group.kind === "project" && <Icon name={expanded ? "folderOpen" : "folder"} width={17} height={17} className="shrink-0" />}
                   <span className="min-w-0 truncate" title={group.title}>{group.title}</span>
                 </span>
-                <span className="fd-project-count ml-2 shrink-0 text-[10px] tabular-nums text-muted">{group.threads.length}</span>
+                <span className="fd-project-count ml-2 shrink-0 text-[10px] tabular-nums text-muted">{group.threads.length + pinnedCount}</span>
               </button>
               {group.kind === "project" && group.projectId && (
                 <IconButton
@@ -210,7 +219,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
             <div id={`project-chats-${group.key}`} hidden={!expanded} className={cn("fd-sidebar-chat-list", group.kind === "project" && "pl-5")}>
               {group.threads.map(renderThread)}
               {group.kind === "project" && group.threads.length === 0 && !threads.isLoading && !threads.isError && (
-                <div className="px-2.5 py-2 text-xs text-muted">{q.trim() ? "No matching chats" : "No chats"}</div>
+                <div className="px-2.5 py-2 text-xs text-muted">{pinnedCount ? "Chats are in Pinned above" : q.trim() ? "No matching chats" : "No chats"}</div>
               )}
             </div>
           </div>
