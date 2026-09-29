@@ -18,17 +18,16 @@ export const BOARD_TAB_LABELS: Record<BoardTab, string> = {
 export const SETTINGS_SECTIONS = ["agents", "kicad", "router", "auth", "remote", "appearance", "privacy", "shortcuts"] as const;
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 
-export const SIDEBAR_LIST_TABS = ["projects", "open_source", "inventory"] as const;
+export const SIDEBAR_LIST_TABS = ["projects", "open_source"] as const;
 export type SidebarListTab = (typeof SIDEBAR_LIST_TABS)[number];
 export const SIDEBAR_LIST_TAB_LABELS: Record<SidebarListTab, string> = {
   projects: "Projects",
   open_source: "Open source",
-  inventory: "Inventory",
 };
 
-/** Map a persisted or unknown tab id onto the current set (Conversations was removed). */
+/** Map a persisted or unknown tab id onto the current set (Conversations and Inventory were removed). */
 export function normalizeSidebarListTab(tab: string | undefined | null): SidebarListTab {
-  return tab === "open_source" || tab === "inventory" ? tab : "projects";
+  return tab === "open_source" ? tab : "projects";
 }
 
 export interface PendingAttachment {
@@ -49,6 +48,8 @@ export interface UiState {
   activeOpenSourceId: string | null;
   projectPickerOpen: boolean;
   orderFlowOpen: boolean;
+  /** Parts Inventory (opened from the user menu) replaces the chat pane while true. */
+  inventoryOpen: boolean;
   boardTab: BoardTab;
   drafts: Record<string, string>;
   attachments: Record<string, PendingAttachment[]>;
@@ -72,6 +73,7 @@ export interface UiState {
   setActiveOpenSourceId: (id: string | null) => void;
   setProjectPickerOpen: (open: boolean) => void;
   setOrderFlowOpen: (open: boolean) => void;
+  setInventoryOpen: (open: boolean) => void;
   setBoardTab: (tab: BoardTab) => void;
   setDraft: (threadKey: string, text: string) => void;
   addAttachment: (threadKey: string, att: PendingAttachment) => void;
@@ -93,6 +95,7 @@ export function newChatInProjectState(projectId: string | null) {
     activeThreadId: null,
     activeOpenSourceId: null,
     orderFlowOpen: false,
+    inventoryOpen: false,
     projectPickerOpen: false,
     sidebarListTab: "projects" as const,
   };
@@ -112,6 +115,7 @@ export const useUiStore = create<UiState>()(
   activeOpenSourceId: null,
   projectPickerOpen: false,
   orderFlowOpen: false,
+  inventoryOpen: false,
   boardTab: "schematic",
   drafts: {},
   attachments: {},
@@ -125,7 +129,7 @@ export const useUiStore = create<UiState>()(
   toggleBoard: () => set((s) => ({ boardOpen: !s.boardOpen })),
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
   setBoardOpen: (boardOpen) => set({ boardOpen }),
-  setActiveThread: (activeThreadId) => set({ activeThreadId, ...(activeThreadId ? { activeOpenSourceId: null, orderFlowOpen: false } : {}) }),
+  setActiveThread: (activeThreadId) => set({ activeThreadId, ...(activeThreadId ? { activeOpenSourceId: null, orderFlowOpen: false, inventoryOpen: false } : {}) }),
   setActiveProject: (activeProjectId) => set({ activeProjectId }),
   startNewChatInProject: (projectId) =>
     set((s) => ({ ...newChatInProjectState(projectId), composerFocusNonce: s.composerFocusNonce + 1 })),
@@ -134,11 +138,13 @@ export const useUiStore = create<UiState>()(
     set({
       activeOpenSourceId,
       ...(activeOpenSourceId
-        ? { activeThreadId: null, orderFlowOpen: false, sidebarListTab: "open_source" as const, boardOpen: false }
+        ? { activeThreadId: null, orderFlowOpen: false, inventoryOpen: false, sidebarListTab: "open_source" as const, boardOpen: false }
         : {}),
     }),
   setProjectPickerOpen: (projectPickerOpen) => set({ projectPickerOpen }),
-  setOrderFlowOpen: (orderFlowOpen) => set({ orderFlowOpen, ...(orderFlowOpen ? { activeOpenSourceId: null } : {}) }),
+  setOrderFlowOpen: (orderFlowOpen) => set({ orderFlowOpen, ...(orderFlowOpen ? { activeOpenSourceId: null, inventoryOpen: false } : {}) }),
+  setInventoryOpen: (inventoryOpen) =>
+    set({ inventoryOpen, ...(inventoryOpen ? { activeOpenSourceId: null, orderFlowOpen: false } : {}) }),
   setBoardTab: (boardTab) => set({ boardTab, boardOpen: true }),
   setDraft: (key, text) => set((s) => ({ drafts: { ...s.drafts, [key]: text } })),
   addAttachment: (key, att) =>
@@ -156,7 +162,7 @@ export const useUiStore = create<UiState>()(
 }),
     {
       name: "fabdesk.ui",
-      version: 4,
+      version: 5,
       migrate: (persisted, _version) => {
         const state = (persisted ?? {}) as Record<string, unknown>;
         return {
