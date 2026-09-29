@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { buildInfo, resolveBuildInfo } from "../src/build-info";
+import { buildInfo, changedBeyondVersion, resolveBuildInfo, worktreeDirty } from "../src/build-info";
 
 const git = (out: Record<string, string | null>) => (args: string[]) => out[args.join(" ")] ?? null;
 const repo = git({
   "rev-parse --short HEAD": "5067af9",
   "rev-parse --abbrev-ref HEAD": "traditional-v2",
-  "status --porcelain --untracked-files=no": " M apps/core/src/serve.ts",
+  "diff --name-only HEAD": "apps/core/src/serve.ts",
+  "rev-parse --show-toplevel": "/repo",
 });
 
 describe("build info", () => {
@@ -39,5 +40,23 @@ describe("build info", () => {
     const b = buildInfo();
     expect(b.kind === "dev" || b.kind === "candidate").toBe(true);
     expect(b.commit).toMatch(/^[0-9a-f]{7,}$/);
+  });
+
+  test("dirty ignores only the release version stamp, even when set-version reformats", () => {
+    const head = '{\n  "expo": {\n    "version": "0.1.0",\n    "ios": { "buildNumber": "1" },\n    "android": { "versionCode": 1, "permissions": ["CAMERA"] }\n  }\n}\n';
+    const stamped = JSON.stringify({ expo: { version: "0.3.512", ios: { buildNumber: "300512" }, android: { versionCode: 300512, permissions: ["CAMERA"] } } }, null, 2);
+    expect(changedBeyondVersion("apps/mobile/app.json", head, stamped)).toBe(false);
+    expect(changedBeyondVersion("apps/core/package.json", '{"name":"a","version":"0.2.0"}', '{\n "name": "a",\n "version": "0.3.1"\n}')).toBe(false);
+    // Anything else is a change: another field in a stamped file, or any other file.
+    expect(changedBeyondVersion("apps/core/package.json", '{"name":"a","version":"0.2.0"}', '{"name":"b","version":"0.2.0"}')).toBe(true);
+    expect(changedBeyondVersion("apps/core/src/log.ts", "a", "b")).toBe(true);
+
+    const files: Record<string, string> = { "/repo/package.json": '{"version":"0.3.1"}' };
+    const gitWith = (names: string) => git({ "diff --name-only HEAD": names, "rev-parse --show-toplevel": "/repo", "show HEAD:package.json": '{"version":"0.2.0"}' });
+    const read = (p: string) => files[p] ?? null;
+    expect(worktreeDirty(gitWith(""), read)).toBe(false);
+    expect(worktreeDirty(gitWith("package.json"), read)).toBe(false);
+    expect(worktreeDirty(gitWith("package.json\napps/core/src/log.ts"), read)).toBe(true);
+    expect(worktreeDirty(() => null, read)).toBeNull();
   });
 });

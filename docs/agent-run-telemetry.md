@@ -25,7 +25,10 @@ a run (`apps/core/src/build-info.ts`):
 | `dev` | running from a checkout | read from git in that checkout when the daemon starts |
 | `candidate` | either, launched with `FABDESK_BUILD_LABEL=<name>` | as above; `label` names the line of work |
 
-`dirty: true` means uncommitted changes, so the commit alone does not reproduce the build. To make a
+`dirty: true` means uncommitted changes to tracked files, so the commit alone does not reproduce
+the build. The release version stamp `scripts/set-version.ts` writes in CI (the version fields in the
+package.json files and the mobile `app.json`) is ignored; any other change, including other edits to
+those files, counts. `dirty: null` means git couldn't tell. To make a
 benchmark build easy to find later, launch it with a label:
 
 ```bash

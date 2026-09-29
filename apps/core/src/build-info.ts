@@ -6,6 +6,7 @@
  * - dev: running from a checkout; commit, branch and dirty flag come from git at startup.
  * - candidate: either of the above launched with FABDESK_BUILD_LABEL, e.g. a benchmark build.
  */
+import { readFileSync } from "node:fs";
 import { VERSION, channel, type Channel } from "./config";
 
 declare const FABDESK_COMPILED: boolean | undefined;
@@ -30,7 +31,7 @@ export type BuildInfo = {
 };
 
 export type Baked = { compiled: boolean; commit?: string; branch?: string; dirty?: boolean; builtAt?: string };
-type Git = (args: string[]) => string | null;
+export type Git = (args: string[]) => string | null;
 
 const clean = (v: string | null | undefined, max = 64): string | null => {
   const s = v?.trim().replace(/[^\w.+/@-]+/g, "-").slice(0, max);
@@ -43,6 +44,7 @@ export function resolveBuildInfo(opts: {
   baked: Baked;
   env?: NodeJS.ProcessEnv;
   git?: Git;
+  read?: (path: string) => string | null;
 }): BuildInfo {
   const { baked, env = process.env } = opts;
   const label = clean(env["FABDESK_BUILD_LABEL"]);
@@ -53,8 +55,7 @@ export function resolveBuildInfo(opts: {
     commit = clean(opts.git(["rev-parse", "--short", "HEAD"]), 40);
     const ref = opts.git(["rev-parse", "--abbrev-ref", "HEAD"]);
     branch = ref && ref !== "HEAD" ? clean(ref) : null;
-    const status = commit ? opts.git(["status", "--porcelain", "--untracked-files=no"]) : null;
-    dirty = status === null ? null : status.length > 0;
+    dirty = commit ? worktreeDirty(opts.git, opts.read ?? readText) : null;
   }
   return {
     version: opts.version,
@@ -67,6 +68,57 @@ export function resolveBuildInfo(opts: {
     builtAt: baked.builtAt ?? null,
   };
 }
+
+/** Files `scripts/set-version.ts` rewrites when CI stamps a release version. */
+const VERSION_STAMP_FILES = new Set(["package.json", "apps/desktop/package.json", "apps/core/package.json", "apps/mobile/app.json"]);
+
+/** A stamped file's JSON without the fields set-version.ts writes (it also reformats, so compare parsed). */
+function unstamped(text: string): unknown {
+  const doc = JSON.parse(text) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+  delete doc["version"];
+  if (doc["expo"]) {
+    delete doc["expo"].version;
+    delete doc["expo"].ios?.buildNumber;
+    delete doc["expo"].android?.versionCode;
+  }
+  return doc;
+}
+
+const canonical = (v: unknown): string =>
+  JSON.stringify(v, (_k, x: unknown) =>
+    x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => a.localeCompare(b))) : x);
+
+/** True unless `head` and `current` differ only in the release version stamp. */
+export function changedBeyondVersion(path: string, head: string | null, current: string | null): boolean {
+  if (!VERSION_STAMP_FILES.has(path) || head === null || current === null) return true;
+  try {
+    return canonical(unstamped(head)) !== canonical(unstamped(current));
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Uncommitted changes to tracked files, ignoring the version stamp CI writes just before a release
+ * build. Null when git can't tell (not a checkout).
+ */
+export function worktreeDirty(git: Git, read: (path: string) => string | null): boolean | null {
+  const names = git(["diff", "--name-only", "HEAD"]);
+  const root = git(["rev-parse", "--show-toplevel"]);
+  if (names === null || !root) return null;
+  return names
+    .split("\n")
+    .filter(Boolean)
+    .some((f) => changedBeyondVersion(f, git(["show", `HEAD:${f}`]), read(`${root}/${f}`)));
+}
+
+export const readText = (path: string): string | null => {
+  try {
+    return readFileSync(path, "utf8");
+  } catch {
+    return null;
+  }
+};
 
 /** `git -C <this checkout>`; null when git is missing or this is not a checkout. */
 function sourceGit(args: string[]): string | null {
@@ -92,7 +144,7 @@ export function buildInfo(): BuildInfo {
       ...(typeof FABDESK_BUILD_DIRTY === "boolean" ? { dirty: FABDESK_BUILD_DIRTY } : {}),
       ...(typeof FABDESK_BUILD_TIME === "string" ? { builtAt: FABDESK_BUILD_TIME } : {}),
     },
-    ...(compiled ? {} : { git: sourceGit }),
+    ...(compiled ? {} : { git: sourceGit, read: readText }),
   });
   return cached;
 }
