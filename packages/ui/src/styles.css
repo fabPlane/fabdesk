@@ -168,12 +168,7 @@ body {
 .fd-sidebar-nav button[aria-current="page"] { background: var(--fd-panel-2); color: var(--fd-fg); font-weight: 600; }
 .fd-sidebar-search input { padding-left: 32px; background: transparent; border-color: transparent; font-size: 12px; }
 .fd-sidebar-search input:focus { border-color: var(--fd-border); background: var(--fd-bg); }
-.fd-new-chat-button { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; column-gap: 12px; row-gap: 5px; height: auto; min-height: 42px; padding: 10px 12px; background: var(--fd-panel); box-shadow: 0 1px 3px rgb(0 0 0 / 0.08); }
-.fd-shortcut { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; font-size: 11px; line-height: 16px; font-weight: 500; color: var(--fd-muted); }
-@container (max-width: 220px) {
-  .fd-new-chat-button { grid-template-columns: 16px minmax(0, 1fr); }
-  .fd-new-chat-button .fd-shortcut { grid-column: 2; justify-self: start; }
-}
+.fd-new-chat-button { display: grid; grid-template-columns: 16px minmax(0, 1fr); column-gap: 12px; height: auto; min-height: 42px; padding: 10px 12px; background: var(--fd-panel); box-shadow: 0 1px 3px rgb(0 0 0 / 0.08); }
 .fd-project-row[aria-current="true"] { box-shadow: inset 2px 0 var(--fd-accent); }
 .group:has(.fd-project-add):is(:hover, :focus-within) .fd-project-row { padding-right: 38px; }
 .group:has(.fd-project-add):is(:hover, :focus-within) .fd-project-count { display: none; }

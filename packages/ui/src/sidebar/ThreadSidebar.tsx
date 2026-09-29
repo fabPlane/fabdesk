@@ -3,12 +3,11 @@ import { CreateProjectDialog } from "./CreateProjectDialog";
 import { useMemo, useState, type MouseEvent } from "react";
 import { Button, ContextMenu, IconButton, Input, MenuItem } from "../components/ui";
 import { Icon } from "../components/Icon";
-import { useCore } from "@fabdesk/client-core";
 import { useProjects, useThreads, useThreadMutations } from "@fabdesk/client-core";
 import { useBranchThread } from "../hooks/threadActions";
 import { useRunsStore } from "@fabdesk/client-core";
 import { SIDEBAR_LIST_TABS, SIDEBAR_LIST_TAB_LABELS, normalizeSidebarListTab, useUiStore } from "../stores/ui";
-import { cn, formatRelative, modKey } from "../util";
+import { cn, formatRelative } from "../util";
 import { groupThreadsByProject } from "@fabdesk/client-core";
 import { OpenSourceList } from "./OpenSourceList";
 import { UserFooter } from "./UserFooter";
@@ -24,7 +23,6 @@ interface Menu {
 }
 
 export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
-  const { host } = useCore();
 
   const [q, setQ] = useState("");
   const setActiveProject = useUiStore((s) => s.setActiveProject);
@@ -150,9 +148,8 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
           </div>
 
           <div className="px-3 pt-3">
-            <Button variant="secondary" className="fd-new-chat-button w-full" onClick={onNewChat} title={`New chat (${modKey(host.platform)}+Shift+O)`} aria-label="New chat" data-testid="sidebar-new-chat">
+            <Button variant="secondary" className="fd-new-chat-button w-full" onClick={onNewChat} aria-label="New chat" data-testid="sidebar-new-chat">
               <Icon name="plus" width={16} height={16} /><span className="fd-new-chat-label text-left">New chat</span>
-              <span className="fd-shortcut" aria-hidden="true"><span>{modKey(host.platform)}</span><span>{host.platform === "darwin" ? "⇧" : "Shift"}</span><span>O</span></span>
             </Button>
           </div>
           <div className="fd-sidebar-search relative mx-3 mb-3 mt-3">
