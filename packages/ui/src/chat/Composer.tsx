@@ -279,9 +279,15 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
           </div>
         </div>
         {agentMissing && selectedAgent && (
-          <div className="mt-2 rounded-lg border border-warning/25 bg-warning/5 px-3 py-2 text-xs leading-5 text-warning break-words">
-            {selectedAgent.displayName} is not installed. {selectedAgent.installHint}
-          </div>
+          <details className="fd-setup-notice mt-2 rounded-lg border border-warning/25 bg-warning/5 text-xs leading-5 text-warning">
+            <summary className="flex cursor-pointer items-center gap-2 px-3 py-2">
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />
+              <span className="min-w-0 flex-1 truncate">{selectedAgent.displayName} is not installed</span>
+              <span className="shrink-0 font-medium">Setup instructions</span>
+              <Icon name="chevronDown" width={14} height={14} className="fd-setup-chevron shrink-0 transition-transform" />
+            </summary>
+            <div className="break-words border-t border-warning/20 px-3 py-2">{selectedAgent.installHint}</div>
+          </details>
         )}
         {error && <div className="mt-2 rounded-lg border border-danger/25 bg-danger/5 px-3 py-2 text-xs text-danger">{error}</div>}
       </div>

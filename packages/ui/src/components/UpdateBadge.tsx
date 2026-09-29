@@ -40,7 +40,7 @@ export function UpdateBadge() {
   const version = result.latest.version;
   const asset = result.asset;
   const canDownload = Boolean(host.downloadUpdate && asset);
-  const base = "inline-flex h-6 items-center gap-1.5 rounded-full border px-2 text-[11px] font-medium leading-none";
+  const base = "inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-medium leading-none";
 
   if (dl.state === "downloading" && dl.version === version) {
     const pct = dl.percent === null ? null : Math.round(dl.percent * 100);

@@ -45,7 +45,7 @@ export function IconButton({ className, title, ...rest }: ButtonProps & { title:
     <Button
       variant="ghost"
       size="sm"
-      className={cn("w-8 px-0 text-muted hover:text-fg", className)}
+      className={cn("fd-icon-button h-9 w-9 shrink-0 text-fg/75 hover:text-fg", className)}
       title={title}
       aria-label={title}
       {...rest}

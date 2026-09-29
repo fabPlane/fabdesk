@@ -35,7 +35,7 @@ export function TopBar({ coreStatus }: { coreStatus?: CoreStatusInfo | undefined
   const connected = sseStatus === "open" && (coreStatus?.state ?? "ready") === "ready";
   return (
     <div
-      className={cn("fd-surface-inset flex h-11 shrink-0 items-center gap-2 border-b border-border bg-panel px-2.5 text-xs", mac && "pl-20")}
+      className={cn("fd-topbar fd-surface-inset flex h-12 shrink-0 items-center gap-2 border-b border-border bg-panel px-2.5 text-xs", mac && "pl-20")}
       style={
         {
           WebkitAppRegion: "drag",
@@ -55,11 +55,11 @@ export function TopBar({ coreStatus }: { coreStatus?: CoreStatusInfo | undefined
               void showAppMenu({ x: r.left, y: r.bottom + 2 });
             }}
           >
-            <Icon name="menu" />
+            <Icon name="menu" width={20} height={20} />
           </IconButton>
         )}
         <IconButton title={`Toggle sidebar (${mod}B)`} onClick={toggleSidebar} className={cn(sidebarOpen && "text-accent")}>
-          <Icon name="sidebar" />
+          <Icon name="sidebar" width={20} height={20} />
         </IconButton>
       </div>
       <span className="fd-wordmark ml-1 text-[15px]">fab<b>Plane</b></span>
@@ -68,31 +68,33 @@ export function TopBar({ coreStatus }: { coreStatus?: CoreStatusInfo | undefined
           Dev
         </Badge>
       )}
-      {project && <span className="min-w-0 max-w-60 truncate border-l border-border pl-3 text-[12px] font-medium text-muted" title={project.name}>{project.name}</span>}
-      <div className="ml-auto flex items-center gap-1" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+      {project && <span className="fd-topbar-project min-w-0 max-w-60 truncate border-l border-border pl-3 text-[12px] font-medium text-muted" title={project.name}>{project.name}</span>}
+      <div className="fd-topbar-actions ml-auto flex min-w-0 items-center gap-2" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
         <UpdateBadge />
         {auth?.mode === "local" && (
-          <Badge tone="warning" title="Running with --local-auth; no fabPlane account">
+          <Badge tone="warning" title="Running with --local-auth; no fabPlane account" className="fd-topbar-local">
             Local mode
           </Badge>
         )}
         <Badge
           tone={connected ? "success" : coreStatus?.state === "crashed" ? "danger" : "warning"}
-          title={coreStatus?.message ?? `SSE ${sseStatus}`}
+          title={coreStatus?.message ?? `Core ${coreStatus?.state ?? "ready"}; SSE ${sseStatus}${port ? `; port ${port}` : ""}`}
+          className="fd-topbar-status"
         >
-          <span className="mr-1.5 h-1.5 w-1.5 rounded-full bg-current" />
-          core {connected ? `connected${port ? ` :${port}` : ""}` : (coreStatus?.state ?? sseStatus)}
+          <span className="fd-topbar-status-dot mr-1.5 h-1.5 w-1.5 rounded-full bg-current" />
+          <span className="fd-topbar-status-text">{connected ? "Core connected" : `Core ${coreStatus?.state ?? sseStatus}`}</span>
         </Badge>
-        <span className="mx-1 h-4 w-px bg-border" />
-        <IconButton title={`Command palette (${mod}K)`} onClick={() => setPaletteOpen(true)}>
-          <Icon name="search" />
-        </IconButton>
-        <IconButton title={`Board panel (${mod}Shift+B)`} onClick={toggleBoard} className={cn(boardOpen && "text-accent")}>
-          <Icon name="panel" />
-        </IconButton>
-        <IconButton title={`Settings (${mod},)`} onClick={() => setSettingsOpen(true)}>
-          <Icon name="settings" />
-        </IconButton>
+        <div className="fd-topbar-tools flex items-center gap-1">
+          <IconButton title={`Command palette (${mod}K)`} onClick={() => setPaletteOpen(true)}>
+            <Icon name="search" width={20} height={20} />
+          </IconButton>
+          <IconButton title={`Board panel (${mod}Shift+B)`} onClick={toggleBoard} className={cn(boardOpen && "text-accent")}>
+            <Icon name="panel" width={20} height={20} />
+          </IconButton>
+          <IconButton title={`Settings (${mod},)`} onClick={() => setSettingsOpen(true)}>
+            <Icon name="settings" width={20} height={20} />
+          </IconButton>
+        </div>
       </div>
     </div>
   );
