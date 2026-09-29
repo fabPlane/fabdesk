@@ -192,10 +192,10 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
             </IconButton>
           </div>
           {askRow}
-          <div className="px-3 pt-2">
-            <Button variant="secondary" className="fd-new-chat-button w-full" onClick={onNewChat} data-testid="sidebar-new-chat">
-              <Icon name="plus" width={16} height={16} /><span className="flex-1 text-left">New chat</span>
-              <span className="text-[11px] opacity-70">{modKey(host.platform)}&#8679;O</span>
+          <div className="px-3 pt-3">
+            <Button variant="secondary" className="fd-new-chat-button w-full" onClick={onNewChat} title={`New chat (${modKey(host.platform)}+Shift+O)`} aria-label="New chat" data-testid="sidebar-new-chat">
+              <Icon name="plus" width={16} height={16} /><span className="fd-new-chat-label text-left">New chat</span>
+              <span className="fd-shortcut" aria-hidden="true"><span>{modKey(host.platform)}</span><span>{host.platform === "darwin" ? "⇧" : "Shift"}</span><span>O</span></span>
             </Button>
           </div>
           <div className="fd-sidebar-search relative mx-3 mb-3 mt-3">

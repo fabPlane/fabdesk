@@ -161,14 +161,19 @@ body {
 }
 
 /* Workspace surfaces and a conversation-first start screen. */
-.fd-sidebar { background: var(--fd-sidebar); }
+.fd-sidebar { background: var(--fd-sidebar); container-type: inline-size; }
 .fd-sidebar-nav { display: flex; flex-direction: column; gap: 3px; padding: 15px 12px 8px; }
 .fd-sidebar-nav button { display: flex; align-items: center; gap: 10px; min-height: 37px; padding: 8px 10px; border-radius: 7px; color: var(--fd-muted); text-align: left; font-size: 13px; }
 .fd-sidebar-nav button:hover { background: var(--fd-panel-2); color: var(--fd-fg); }
 .fd-sidebar-nav button[aria-current="page"] { background: var(--fd-panel-2); color: var(--fd-fg); font-weight: 600; }
 .fd-sidebar-search input { padding-left: 32px; background: transparent; border-color: transparent; font-size: 12px; }
 .fd-sidebar-search input:focus { border-color: var(--fd-border); background: var(--fd-bg); }
-.fd-new-chat-button { background: var(--fd-panel); box-shadow: 0 1px 3px rgb(0 0 0 / 0.08); }
+.fd-new-chat-button { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; column-gap: 12px; row-gap: 5px; height: auto; min-height: 42px; padding: 10px 12px; background: var(--fd-panel); box-shadow: 0 1px 3px rgb(0 0 0 / 0.08); }
+.fd-shortcut { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; font-size: 11px; line-height: 16px; font-weight: 500; color: var(--fd-muted); }
+@container (max-width: 220px) {
+  .fd-new-chat-button { grid-template-columns: 16px minmax(0, 1fr); }
+  .fd-new-chat-button .fd-shortcut { grid-column: 2; justify-self: start; }
+}
 .fd-project-row[aria-current="true"] { box-shadow: inset 2px 0 var(--fd-accent); }
 .group:has(.fd-project-add):is(:hover, :focus-within) .fd-project-row { padding-right: 38px; }
 .group:has(.fd-project-add):is(:hover, :focus-within) .fd-project-count { display: none; }
@@ -179,7 +184,8 @@ body {
 .fd-hero-description { max-width: 440px; font-size: 14px; line-height: 1.7; color: var(--fd-muted); }
 .fd-hero-icon { margin: 0 0 19px -8px; }
 .fd-new-chat-body .fd-composer-dock { width: 100%; max-width: 640px; padding: 0; margin: 0 auto; background: transparent; }
-.fd-composer-toolbar { row-gap: 8px; }
+.fd-composer-toolbar { gap: 8px; padding: 10px 12px; }
+.fd-topbar-tools { gap: 6px; }
 .fd-agent-control { max-width: 100%; }
 .fd-agent-button { max-width: 220px; }
 .fd-composer-hint { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; padding: 10px 3px 0; font-size: 10px; color: var(--fd-muted); opacity: .75; }

@@ -80,3 +80,13 @@ The available host is Windows; native macOS testing remains required. This is a 
 - Desktop tests: 87 passed, five failed. Failures are in unchanged platform path/identity and packaged KiCad path tests: the two `paths` cases, two `applyDesktopIdentity` cases, and `packagedKicadEnv`. The desktop suite is not green.
 - The earlier full-suite core/tools/KiCad failures remain documented in the preceding review; they were not addressed by this UI audit.
 - No native Mac runtime is available. Native macOS verification, live cloud mutations, and populated routing/rendering workflows remain follow-up verification items.
+
+## New chat spacing refinement
+
+The New chat action now has 12px between its icon and label, 10px vertical padding, and 5px between shortcut keys. Below a 220px sidebar width, the shortcut moves beneath the label. Windows spells out Shift; macOS retains its familiar modifier symbols. Top-bar actions have 6px gaps and the composer toolbar has consistent 8px gaps with 10px vertical padding. No outer container was added to the top-bar actions.
+
+Both captures are 960×600 using the same project, theme, and new-chat state. The Mac image simulates renderer platform values on Windows; it is not native macOS verification. UI typecheck and `git diff --check` passed for this refinement.
+
+| Windows | macOS renderer simulation |
+| --- | --- |
+| ![Windows spacing](new-chat-spacing-windows-960.png) | ![Simulated Mac spacing](new-chat-spacing-mac-simulated-960.png) |
