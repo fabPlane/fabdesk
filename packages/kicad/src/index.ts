@@ -24,6 +24,8 @@ export {
   renderPng,
   exportGlb,
   boardStats,
+  supportsBoardStats,
+  boardStatsUnavailableMessage,
   normalizeBoardStatsReport,
   DEFAULT_PERSPECTIVE,
   type BoardView,

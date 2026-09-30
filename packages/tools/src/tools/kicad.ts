@@ -7,7 +7,7 @@ export const kicad_stats = defineTool({
   name: "kicad_stats",
   toolset: "kicad",
   title: "Board statistics",
-  description: "Board statistics from KiCad: outline size, layer count, footprint/pad/track/via counts, drill sizes. Requires kicad-cli and board.kicad_pcb.",
+  description: "Board statistics from KiCad: outline size, layer count, footprint/pad/track/via counts, drill sizes. Requires board.kicad_pcb and a kicad-cli build with pcb export stats (not available in every build; doctor reports support).",
   inputSchema: {},
   annotations: { readOnlyHint: true, idempotentHint: true },
   handler: async (_args, ctx) => {
