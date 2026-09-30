@@ -74,7 +74,12 @@ export const design_inspect = defineTool({
       .optional()
       .describe("Sheet path, name, or native filename for bounded authoring expansion"),
   },
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   longRunning: true,
   handler: async ({ refreshChecks, schematicDetail, responseMode, mechanical, sheet }, ctx) => {
     const project = ctx.requireProject();

@@ -233,7 +233,9 @@ function registerCapabilityTools(
       } as unknown as ZodRawShapeCompat,
       annotations: {
         title: "Search additional Fabdesk capabilities",
-        readOnlyHint: true,
+        readOnlyHint: false,
+        destructiveHint: false,
+        openWorldHint: false,
         idempotentHint: true,
       },
     },
@@ -286,8 +288,10 @@ function registerCapabilityTools(
       } as unknown as ZodRawShapeCompat,
       annotations: {
         title: "Call an additional Fabdesk capability",
+        readOnlyHint: false,
         destructiveHint: true,
         openWorldHint: true,
+        idempotentHint: false,
       },
     },
     async (

@@ -888,7 +888,12 @@ export const route_status = defineTool({
   description:
     "Return compact persisted progress, heartbeat freshness, revision match, candidate/application state and artifact paths for the latest or exact durable route run.",
   inputSchema: { runId: z.string().optional() },
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async ({ runId }, ctx) => {
     const project = ctx.requireProject();
     const rec = runId
@@ -918,7 +923,12 @@ export const route_cancel = defineTool({
   description:
     "Idempotently request cancellation of one exact durable route run. It never cancels a different project or newer run.",
   inputSchema: { runId: z.string().min(1) },
-  annotations: { idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async ({ runId }, ctx) => {
     const project = ctx.requireProject();
     const rec = ctx.services.routeRuns.get(runId);
@@ -955,7 +965,12 @@ export const route_apply = defineTool({
   description:
     "Atomically apply one validated route candidate only when the supplied expected PCB revision equals both the current board and the run's starting revision. Restores the prior board on validation failure.",
   inputSchema: { runId: z.string().min(1), expectedPcbRevision: z.string().length(64) },
-  annotations: { destructiveHint: true, idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async ({ runId, expectedPcbRevision }, ctx) => {
     const rec = ctx.services.routeRuns.get(runId);
     if (!rec) throw new ToolError(`route run not found: ${runId}`, "not_found");
@@ -988,7 +1003,12 @@ export const route_unroute = defineTool({
   inputSchema: {
     connections: z.array(z.string()).optional().describe("Net names to unroute; omit for all"),
   },
-  annotations: { destructiveHint: true, idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async ({ connections }, ctx) => {
     const project = ctx.requireProject();
     const removed = await ctx.services.design.unroute(project.dir, connections);
@@ -1013,7 +1033,12 @@ export const route_scope = defineTool({
     excludePlaneNets: z.boolean().default(true),
     excludeNets: z.array(z.string()).optional(),
   },
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async ({ refs, excludePlaneNets, excludeNets }, ctx) => {
     const project = ctx.requireProject();
     const scope = await ctx.services.design.scope(project.dir, refs, {

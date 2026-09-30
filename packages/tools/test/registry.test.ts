@@ -234,7 +234,7 @@ describe("registry", () => {
         title: "",
         description: "",
         inputSchema: {},
-        annotations: {},
+        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
         handler: async () => ({}),
       }),
     ).toThrow();

@@ -19,7 +19,12 @@ export const project_read_file = defineTool({
     path: z.string().min(1).describe("Relative path, e.g. circuit.netlist.json"),
     maxChars: z.number().int().min(100).max(200_000).default(50_000),
   },
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async ({ path, maxChars }, ctx) => {
     const project = ctx.requireProject();
     const abs = await jailPath(project.dir, path);
@@ -58,7 +63,12 @@ export const project_write_file = defineTool({
     path: z.string().min(1).describe("Relative path, e.g. circuit.netlist.json"),
     content: z.string().describe("Full file content (UTF-8)"),
   },
-  annotations: { destructiveHint: true, idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async ({ path, content }, ctx) => {
     const project = ctx.requireProject();
     const abs = await jailPath(project.dir, path);
@@ -85,7 +95,12 @@ export const project_list_sketches = defineTool({
   description:
     "List PNG, JPEG, and SVG files under sketches/ with absolute paths and image content for raster formats.",
   inputSchema: {},
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async (_args, ctx) => {
     const project = ctx.requireProject();
     const dir = p(project, PROJECT_FILES.sketches);
@@ -136,7 +151,12 @@ export const project_set_board = defineTool({
       .optional()
       .describe("Prefab blank to design on; viagrid-9055 or none"),
   },
-  annotations: { idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async ({ layers, widthMm, heightMm, router, template }, ctx) => {
     const project = ctx.requireProject();
     if (router === "freerouting" && ctx.services.channel !== "internal") {
@@ -193,7 +213,12 @@ export const project_import_kicad = defineTool({
       .min(1)
       .describe("Absolute path to the .kicad_pcb, or a path relative to the project"),
   },
-  annotations: { destructiveHint: true, idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   longRunning: true,
   handler: async ({ path }, ctx) => {
     const project = ctx.requireProject();

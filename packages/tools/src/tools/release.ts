@@ -220,7 +220,12 @@ export const release_build = defineTool({
         "Assembly notes, design calculations, polarity/orientation guidance and constraints",
       ),
   },
-  annotations: { idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   longRunning: true,
   handler: async ({ circuitChecks, buildNotes }, ctx) => {
     const project = ctx.requireProject();

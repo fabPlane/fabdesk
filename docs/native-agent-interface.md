@@ -189,3 +189,25 @@ visual quality rather than rediscovering those serialization defects.
 The interface follows the official OpenAI guidance for GPT-5.6: use lean prompts, expose only
 task-relevant tools, keep descriptions concise, and validate changes on representative tasks.
 See <https://developers.openai.com/api/docs/guides/latest-model?model=gpt-5.6>.
+
+## MCP effect annotations
+
+Each registry definition explicitly declares `readOnlyHint`, `destructiveHint`, and `openWorldHint`;
+`idempotentHint` records whether repeating a call adds effects. The MCP adapter publishes these
+same values for direct tools and capability-search results. Metadata describes the broadest
+supported mode, including optional writes and previews.
+
+Saving reports, exports, screenshots, or render artifacts is a state change even when native
+KiCad files stay unchanged. Overwriting an artifact is a potentially destructive write. Starting
+another durable route job is not idempotent. A bounded project, library catalog, or signed-in
+team workspace is closed-world even when its service is remote. Arbitrary renderer JavaScript
+and general UI actions can reach beyond that boundary.
+
+Annotations are hints, not authorization. Existing supervised-mode classification consumes
+read-only and idempotent hints, so correcting those values also changes its classification of
+builds, route starts, screenshots, and JavaScript wait predicates. Tool handlers, input schemas,
+outputs, tool names, and exposure profiles retain their implementations.
+
+Sources: [OpenAI tool annotation guidance](https://developers.openai.com/plugins/plugin-guidelines),
+[Anthropic MCP tool guidance](https://www.anthropic.com/engineering/writing-tools-for-agents),
+and the [MCP annotation specification](https://modelcontextprotocol.io/specification/2025-11-25/schema#toolannotations).
