@@ -1,6 +1,6 @@
 # GUI review
 
-The stack remains draft: [visual refresh #200](https://github.com/TensorFleet/fabdesk/pull/200),
+The review stack: [visual refresh #200](https://github.com/TensorFleet/fabdesk/pull/200),
 [search/timestamps #206](https://github.com/TensorFleet/fabdesk/pull/206),
 [project locations/import #207](https://github.com/TensorFleet/fabdesk/pull/207), and
 [composer queue #208](https://github.com/TensorFleet/fabdesk/pull/208).
@@ -94,24 +94,25 @@ silenced by skipping tests or weakening expected measurements.
 
 An initial tools route test also failed once waiting for `route.done`; its focused
 rerun and the final full tools suite passed. Its intermittent cause is unresolved.
-The final UI suite passed 76 tests and desktop passed 92. The scripts phase, skipped
-by the root command's failing workspace phase, was run separately: 71 pass, 0 fail.
+The final UI suite passed 76 tests and desktop passed 92. The final successful
+root command also ran its scripts phase: 71 pass, 0 fail.
 
 A continuation verified unobscured traffic-light spacing, green full-screen entry,
 Control-Command-F return, yellow minimize (hidden visibility and lost focus), and
 restore. Native pane dragging subsequently passed using Retina-pixel coordinates.
-Native title-bar movement remains unverified by automation: its drag sends a move
-event with the left button released, although the CSS drag region is correctly
-configured. A manual confirmation has been requested. The red close control was subsequently verified: the native bridge reported no
-remaining app windows.
+Native title-bar movement was manually confirmed by the user on September 30, 2026:
+dragging the empty top-bar area moves the entire window normally. Automation alone
+could not verify this because its move event released the mouse button. The red
+close control was verified: the native bridge reported no remaining app windows.
 
 The first #208 CI failed a queue lease test after its fixed 20 ms wait, although
 local main and complete-stack focused runs each passed 11 tests. #208 now waits
 for queued dispatch with a two-second deadline and unchanged result assertions.
 This is test synchronization only, not a production queue implementation change.
 
-Before marking ready, finish native title-bar movement confirmation. All local
-root checks now pass. Supplemental Mobile and Board workflows passed on the prior
-heads; CI on the final changes is rechecked and reported in the PR descriptions.
-CI after the pushed changes is reported separately in the PR descriptions; green
-remote CI does not substitute for these remaining native checks.
+Native verification and screenshot upload are complete, including the user's title-bar
+confirmation. All complete-stack local root checks pass. Supplemental Mobile and
+Board workflows passed on the pushed heads. The earlier layers' CI exposed the
+pre-existing fixed-sleep queue test corrected only in #208; it is not classified as
+a visual regression or copied into #200's backend tests. Final CI status and any
+remaining readiness blocker are recorded in the PR descriptions.
