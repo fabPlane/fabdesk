@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { chmod, mkdir, mkdtemp, readdir, rm, stat } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, realpath, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../src/db";
@@ -44,6 +44,48 @@ test("board discovery covers zero, one, and multiple KiCad boards", async () => 
   expect((await listKicadPcbFiles(root)).map((entry) => entry.path)).toEqual(["a.kicad_pcb"]);
   await Bun.write(join(root, "b.kicad_pcb"), "board");
   expect((await listKicadPcbFiles(root)).map((entry) => entry.path).sort()).toEqual(["a.kicad_pcb", "b.kicad_pcb"]);
+});
+
+test("same-name imports in different parents preserve destinations and survive restart", async () => {
+  const root = await mkdtemp(join(tmpdir(), "fabdesk-gh-names-")); roots.push(root);
+  const store = Store.open(join(root, "db.sqlite"));
+  const projectsRoot = join(root, "projects");
+  let projects = new ProjectStore(store.projects, projectsRoot, () => {}, { watch: false });
+  try {
+    await projects.init();
+    const original = await projects.create("same-repo");
+    const parents = [join(root, "first"), join(root, "second")];
+    for (const parent of parents) await mkdir(parent);
+    const destinations = await Promise.all(parents.map((parent) => projects.importDestination("same-repo", parent)));
+    expect(destinations.every((destination) => !destination.exists)).toBe(true);
+
+    // Concurrent clones finish independently; registration must allocate its
+    // unique internal slug without changing either confirmed folder path.
+    const outcomes = await Promise.allSettled(parents.map((parentDirectory, index) => projects.importFromGit({
+      name: "same-repo", parentDirectory, failOnCollision: true,
+      gitUrl: `https://github.com/owner${index}/same-repo.git`,
+      clone: async (_url, dir) => { await Bun.write(join(dir, "README.md"), `repository ${index}`); },
+    })));
+    const imported = outcomes.map((outcome) => {
+      if (outcome.status === "rejected") throw outcome.reason;
+      return outcome.value;
+    });
+    expect(imported.map((project) => project.path)).toEqual(destinations.map((destination) => destination.path));
+    expect(new Set(store.projects.list().map((project) => project.slug)).size).toBe(3);
+    expect(new Set([original.id, ...imported.map((project) => project.id)]).size).toBe(3);
+    for (const [index, project] of imported.entries()) {
+      expect(project.name).toBe("same-repo");
+      expect(project.path).toBe(join(await realpath(parents[index]!), "same-repo"));
+      expect(await readFile(join(project.path, "README.md"), "utf8")).toBe(`repository ${index}`);
+    }
+    projects.close();
+    projects = new ProjectStore(store.projects, projectsRoot, () => {}, { watch: false });
+    await projects.init();
+    expect(projects.summaries()).toHaveLength(3);
+    for (const project of [original, ...imported]) {
+      expect((await projects.detail(project.id))?.path).toBe(project.path);
+    }
+  } finally { projects.close(); store.close(); }
 });
 
 test.skipIf(process.platform === "win32")("cancellation waits for git to exit before removing its destination", async () => {
