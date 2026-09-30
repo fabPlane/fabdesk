@@ -33,14 +33,18 @@ published or packaged as an AppImage.
   legacy netlist compiler operations are excluded from native capability search.
 - Native symbol creation preserves library identity, power symbols need no fake footprint, and
   connection preflight rejects crossing or ambiguous labelled stubs before committing.
-- Release rejects relaxed design-rule floors and label-dense stub-only schematics. PCB placement
-  can also lay out reference fields without refreshing the footprint library.
+- Release rejects relaxed design-rule floors. Label density and short-wire counts are advisory
+  findings, not readability verdicts or release gates. ERC, parity-enabled DRC, revision binding,
+  and required outputs remain release gates. PCB placement can also lay out reference fields
+  without refreshing the footprint library.
 - Agent shell scripts can search, describe, call, and batch any registry operation with
   `fabpcb tool`. This supplies programmable loops and JSONL batching without legacy Python
   `pcbnew` or a different KiCad build.
-- Rotated and mirrored schematic symbols are transparently created, saved, then transformed so
-  the saved library identity remains clean. Power-symbol serialization is normalized and covered
-  by a packaged-KiCad regression test.
+- Native connections and inspection resolve local library pins through the current symbol position,
+  rotation, and mirroring, including updates in the same call. Derived symbols are placed from
+  resolved library definitions. Save/reopen regressions compare exact net endpoints and ERC for
+  combined transforms, multi-unit symbols, and inherited pins. Power-symbol serialization remains
+  normalized.
 - USB-C library search accepts the `power-only-usb-c` role and ranks explicit power/charging-only
   parts ahead of generic data connectors. USB-C symbol/footprint pairs receive compatibility
   validation when they are added.

@@ -431,7 +431,7 @@ export const schematic_review = defineTool({
       findings.push({
         code: "label-density",
         severity: "warning",
-        message: `${labels.length} labels for ${snapshot.symbols.length} symbols makes the drawing hard to scan; use direct functional-block wiring and reserve labels for shared or long-distance nets.`,
+        message: `${labels.length} labels for ${snapshot.symbols.length} symbols. Label density is advisory; inspect the rendered sheet to assess readability.`,
       });
     if (
       snapshot.symbols.length >= 5 &&
@@ -442,7 +442,7 @@ export const schematic_review = defineTool({
         code: "stub-dominated-connectivity",
         severity: "warning",
         message:
-          "Every wire is a short label stub; add direct visible wiring within functional blocks so signal flow can be read from the page.",
+          "Every wire is a short label stub. This is an advisory count; inspect the rendered sheet to assess signal-flow readability.",
       });
     if (
       snapshot.symbols.length >= 5 &&
