@@ -188,7 +188,7 @@ export function MessageActions({ message, latestReply = false }: { message: Mess
     : message.contentMd;
   const fullTime = new Date(message.createdAt).toLocaleString();
   return (
-    <div className="fd-message-actions" data-latest-reply={latestReply || undefined}>
+    <div className="fd-message-actions" data-role={message.role} data-latest-reply={latestReply || undefined}>
       {text.trim() && <button
         type="button"
         className="fd-message-copy"
