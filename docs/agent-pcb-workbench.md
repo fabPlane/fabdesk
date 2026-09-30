@@ -63,3 +63,9 @@ receiver behavior; they do not connect to the FabPCB or KiCad IPC transports.
 Fabdesk displays canonical project files plus artifacts under `renders/`, `reports/`, and `exports/`.
 The MCP verification, rendering, and export tools write the formats the UI already understands.
 Agents using another method can still place compatible outputs in those locations.
+
+## Routing scope
+
+`route_run.onlyConnections` and net-only `targets` select whole nets. The bridge does not support
+exact endpoint-pair selection: supplying `targets.from` or `targets.to` fails before creating a
+run or changing the board. Select a whole net explicitly only when that is the intended scope.
