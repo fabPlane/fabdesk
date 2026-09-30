@@ -25,7 +25,6 @@ export function CommandPalette() {
   const projects = useProjects();
   const [query, setQuery] = useState("");
   const search = useChatSearch(useDeferredValue(query));
-  const hasSearchResults = !!search.data?.pages.some((page) => page.titles.length > 0 || page.messages.length > 0);
   const searchGroups = new Map<string, { title: string; hits: Array<{ id: string; snippet: string; thread: NonNullable<typeof search.data>["pages"][number]["titles"][number] }> }>();
   for (const hit of search.data?.pages.flatMap((page) => page.messages) ?? []) {
     const group = searchGroups.get(hit.thread.id) ?? { title: hit.thread.title || "Untitled", hits: [] };
@@ -50,7 +49,7 @@ export function CommandPalette() {
         />
         <Command.List className="min-h-0 flex-1 overflow-auto p-1.5">
           <Command.Empty>No results.</Command.Empty>
-          {!hasSearchResults && <Command.Group heading="Actions">
+          <Command.Group heading="Actions">
             <Command.Item value="new chat" onSelect={pick(actions.newChat)}>
               New chat <span className="ml-auto"><Kbd>{mod} + Shift + O</Kbd></span>
             </Command.Item>
@@ -89,15 +88,15 @@ export function CommandPalette() {
             <Command.Item value="toggle board panel" onSelect={pick(toggleBoard)}>
               Toggle board panel <span className="ml-auto"><Kbd>{mod} + Shift + B</Kbd></span>
             </Command.Item>
-          </Command.Group>}
-          {!hasSearchResults && <Command.Group heading="Board tabs">
+          </Command.Group>
+          <Command.Group heading="Board tabs">
             {BOARD_TABS.map((tab, i) => (
               <Command.Item key={tab} value={`tab ${BOARD_TAB_LABELS[tab]}`} onSelect={pick(() => setBoardTab(tab))}>
                 {BOARD_TAB_LABELS[tab]} <span className="ml-auto"><Kbd>{mod} + {i + 1}</Kbd></span>
               </Command.Item>
             ))}
-          </Command.Group>}
-          {!hasSearchResults && (projects.data?.length ?? 0) > 0 && (
+          </Command.Group>
+          {(projects.data?.length ?? 0) > 0 && (
             <Command.Group heading="Projects">
               {projects.data!.map((p) => (
                 <Command.Item key={p.id} value={`project ${p.name}`} onSelect={pick(() => setActiveProject(p.id))}>
