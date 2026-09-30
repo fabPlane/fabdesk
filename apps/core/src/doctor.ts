@@ -23,6 +23,14 @@ export async function runDoctor(o: { config: CoreConfig; settings: Settings }): 
     try {
       const m = await import("@fabdesk/kicad");
       const cli = await m.findKicadCli(o.settings.kicadCliPath ?? undefined);
+      if (cli) {
+        try {
+          if (!(await m.supportsBoardStats(cli)))
+            warnings.push(m.boardStatsUnavailableMessage(cli));
+        } catch (e) {
+          warnings.push(`board statistics capability probe failed: ${errMsg(e)}`);
+        }
+      }
       return cli ? { found: true, path: cli.path, version: cli.version } : { found: false };
     } catch (e) {
       warnings.push(`kicad probe failed: ${errMsg(e)}`);

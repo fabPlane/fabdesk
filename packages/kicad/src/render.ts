@@ -119,8 +119,30 @@ export function normalizeBoardStatsReport(raw: unknown): Record<string, unknown>
   return report;
 }
 
+/** Probe the installed command set: version numbers do not guarantee this optional export. */
+export async function supportsBoardStats(cli: KicadCli): Promise<boolean> {
+  const help = await runKicadCli(cli, ["pcb", "export", "--help"]);
+  return /^\s+stats\s+/m.test(help.stdout);
+}
+
+export function boardStatsUnavailableMessage(cli: KicadCli): string {
+  return (
+    `Board statistics unavailable: KiCad ${cli.version} at ${cli.path} does not provide ` +
+    "'pcb export stats'. Use a KiCad build that includes this command for kicad_stats; " +
+    "DRC, rendering and other exports can still be used."
+  );
+}
+
+export class BoardStatsUnavailableError extends Error {
+  constructor(cli: KicadCli) {
+    super(boardStatsUnavailableMessage(cli));
+    this.name = "BoardStatsUnavailableError";
+  }
+}
+
 /** Reads outline and component counts through `kicad-cli pcb export stats`. */
 export async function boardStats(cli: KicadCli, board: string, scratchFile: string): Promise<BoardStats> {
+  if (!(await supportsBoardStats(cli))) throw new BoardStatsUnavailableError(cli);
   await runKicadCli(cli, ["pcb", "export", "stats", "--format", "json", "--units", "mm", "-o", scratchFile, board]);
   const raw = normalizeBoardStatsReport(await Bun.file(scratchFile).json()) as {
     board: { width: string; height: string; board_thickness: string };

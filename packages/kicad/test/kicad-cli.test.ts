@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   boardStats,
+  supportsBoardStats,
   countCopperLayers,
   exportDrill,
   exportGerbers,
@@ -45,6 +46,7 @@ describe("board stats normalization", () => {
 
 const cli = await findKicadCli();
 const hasCli = cli !== null;
+const hasStats = cli !== null && await supportsBoardStats(cli);
 const kicad = () => cli as KicadCli;
 
 describe("findKicadCli", () => {
@@ -103,7 +105,7 @@ describe.skipIf(!hasCli)("kicad-cli on a real board", () => {
     expect(typeof result.pass).toBe("boolean");
   }, 60_000);
 
-  test("boardStats reads the outline", async () => {
+  test.skipIf(!hasStats)("boardStats reads the outline", async () => {
     const stats = await boardStats(kicad(), board, join(dir, "stats.json"));
     expect(stats.width).toBeGreaterThan(0);
     expect(stats.height).toBeGreaterThan(0);

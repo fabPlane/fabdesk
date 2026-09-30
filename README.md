@@ -73,3 +73,8 @@ development set `FABDESK_AUTH_MODE=local` (honored only in non-public channels o
 Backend handoff (running the daemon against the FabPlane PCB bridge, CI keys, open work): [docs/handoff-fab-pcb.md](docs/handoff-fab-pcb.md).
 
 Final cross-repository PR stack, merge order, issue mapping, and Linux packaging evidence: [docs/final-pcb-pr-stack-handoff.md](docs/final-pcb-pr-stack-handoff.md).
+
+`kicad_stats` additionally requires the optional `kicad-cli pcb export stats` command.
+Some stock and packaged KiCad builds omit it, regardless of version. `doctor` probes
+the command and reports when board statistics are unavailable; other supported exports,
+DRC and rendering remain usable.
