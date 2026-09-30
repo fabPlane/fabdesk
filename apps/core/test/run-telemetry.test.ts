@@ -20,7 +20,8 @@ describe("agent run telemetry", () => {
       updateManifest: async () => ({}) as Awaited<ReturnType<ProjectHandle["updateManifest"]>>,
     } satisfies ProjectHandle;
 
-    const telemetry = new RunTelemetry({ version: "test" });
+    const build = { version: "test", kind: "dev", label: null, commit: "abc1234", branch: "main", dirty: false, channel: "public", builtAt: null } as const;
+    const telemetry = new RunTelemetry({ version: "test", build });
     const agent = await telemetry.startAgentRun({
       runId: "run_1",
       threadId: "thread_1",
@@ -68,6 +69,7 @@ describe("agent run telemetry", () => {
       "run.finished",
     ]);
     expect(records.map((record) => record.seq)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    expect(records[0]!.body["build"]).toEqual(build);
     expect(
       records.every(
         (record, index) =>
