@@ -105,14 +105,31 @@ dragging the empty top-bar area moves the entire window normally. Automation alo
 could not verify this because its move event released the mouse button. The red
 close control was verified: the native bridge reported no remaining app windows.
 
-The first #208 CI failed a queue lease test after its fixed 20 ms wait, although
-local main and complete-stack focused runs each passed 11 tests. #208 now waits
-for queued dispatch with a two-second deadline and unchanged result assertions.
-This is test synchronization only, not a production queue implementation change.
+The first #208 CI failed a queue lease test after its fixed 20 ms wait. The fix now
+lives in prerequisite PR #210 (`codex/queue-test-synchronization`): it waits for
+dispatch with a two-second deadline and unchanged assertions. #200 is based on
+that prerequisite, so its review diff remains visual-only. The fix is propagated
+through #206, #207 and #208. No PR has been merged.
 
-Native verification and screenshot upload are complete, including the user's title-bar
-confirmation. All complete-stack local root checks pass. Supplemental Mobile and
-Board workflows passed on the pushed heads. The earlier layers' CI exposed the
-pre-existing fixed-sleep queue test corrected only in #208; it is not classified as
-a visual regression or copied into #200's backend tests. Final CI status and any
-remaining readiness blocker are recorded in the PR descriptions.
+Native macOS verification and screenshot upload are complete, including the user's
+title-bar confirmation. The macOS complete-stack root checks passed. Final CI
+status is recorded in the PR descriptions; capture revisions above remain unchanged.
+
+## Windows follow-up — September 30, 2026
+
+- Fetched and preserved the Mac changes; the prior Windows stack remains available
+  at `codex/windows-pre-mac-sync`. Existing untracked workspace files were untouched.
+- Bun 1.4.0 root typecheck passes on the synchronized stack.
+- Targeted regressions: 35 pass, 1 POSIX-only cancellation-process test skipped,
+  179 assertions. All 11 queue/lease tests pass on the isolated prerequisite too.
+- Root Windows tests are **not green**: 31 failures (auth-client 3, agents 7,
+  desktop 5, tools 4, KiCad 4, core 8). UI: 76 pass; client-core: 94 pass.
+  The scripts phase does not run because the workspace test phase fails.
+- A same-host baseline run on main plus the test-only prerequisite reproduced 30
+  of those failures. Four mechanical tests failing in that baseline now pass with
+  the Mac fixture fixes. The remaining tools MCP progress test also fails on a
+  focused rerun (two progress notifications versus at most one expected); its test,
+  mocks and production tools code are unchanged from main. Its cause is unresolved.
+- Known Windows failures include path/permission assumptions, symlink EPERM,
+  subprocess behavior and KiCad test support. They have not been hidden or marked
+  as passing. The Git child-close cancellation regression is still POSIX-only.
