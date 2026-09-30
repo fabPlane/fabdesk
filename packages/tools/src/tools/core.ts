@@ -19,6 +19,7 @@ import {
 } from "./common";
 import { formatLastRelease, readProjectStatusEvidence } from "./project-status-evidence";
 import { runRoute, RouteRunArgs } from "./route";
+import { compilerSourceHelp, formatCompilerSourceHelp } from "./compiler-source-guide";
 
 export const load_toolset = defineTool({
   name: "load_toolset",
@@ -266,7 +267,7 @@ export const circuit_build = defineTool({
   toolset: "core",
   title: "Build the board",
   description:
-    "Compile circuit.netlist.json into board.kicad_pcb and a generated board.kicad_sch. Footprints are pulled from KiCad libraries, explicitly placed when board.placements names them, and connected into the ratsnest; libSource draws searchable schematic symbols with labelled wire stubs. Returns actionable errors/warnings. Rebuilds replace only generated schematic items, preserve manual schematic work and unlisted manual footprint placement, keep tracks whose nets still exist, and remove footprints the netlist no longer names.",
+    "Compile circuit.netlist.json into board.kicad_pcb and a generated board.kicad_sch. Footprints are pulled from KiCad libraries, explicitly placed when board.placements names them, and connected into the ratsnest; libSource draws searchable schematic symbols with labelled wire stubs. Returns actionable errors/warnings, with source-format guidance and an example when the entrypoint is missing or malformed. Rebuilds replace only generated schematic items, preserve manual schematic work and unlisted manual footprint placement, keep tracks whose nets still exist, and remove footprints the netlist no longer names.",
   inputSchema: {
     entrypoint: z
       .string()
@@ -367,7 +368,12 @@ export const circuit_build = defineTool({
     const text = result.ok
       ? `Build OK (${rebuild} rebuild) in ${Math.round(result.durationMs)} ms: ${c.components} components, ${c.nets} nets, ${c.footprintsAdded} footprints added, ${c.footprintsPlaced} placed${result.removedCopper ? `, ${result.removedCopper.tracks} old tracks/arcs and ${result.removedCopper.vias} routed vias removed` : ""}${c.viasAdded ? `, blank drawn (${c.viasAdded} free vias, ${c.holesAdded ?? 0} holes)` : ""}.${project.manifest().board.template ? ` Template ${project.manifest().board.template}: the netlist's own board spec was replaced by the blank.` : ""}${warnings.length ? `\nWarnings:\n${formatErrors(warnings)}` : ""}`
       : `Build FAILED (${result.errors.length} errors):\n${formatErrors(result.errors)}${result.rejectedSchematicPath ? `\nRejected schematic preserved at ${result.rejectedSchematicPath}; the canonical schematic was restored.` : ""}`;
-    return { text, json: summary, isError: !result.ok };
+    const sourceGuide = result.ok ? undefined : compilerSourceHelp(result.errors);
+    return {
+      text: sourceGuide ? text + "\n\n" + formatCompilerSourceHelp(sourceGuide) : text,
+      json: { ...summary, ...(sourceGuide ? { sourceGuide } : {}) },
+      isError: !result.ok,
+    };
   },
 });
 
