@@ -24,14 +24,17 @@ published or packaged as an AppImage.
   coordinates; inspected coordinates retain nanometre-derived precision.
 - Native edit results report only changed IDs/counts and revisions, rather than returning a full
   board snapshot. Preview explicitly means structural validation only.
-- Native placement normalizes changed footprint instances from the exact packaged library. The
-  packaged bridge and `kicad-cli` now receive KiCad's standard versioned library variables.
+- Native placement moves and rotates the existing embedded footprint geometry without requiring
+  its source library. Save any open PCB and schematic first; unsaved or unknown modified state
+  rejects placement before the commit, since recovery can restart the shared KiCad session.
+  Flips use KiCad's native transform (including its angle change). Failed operations restore saved files
+  and discard the edited session before a later operation can reuse it.
 - `schematic_review` is initially visible, connection batches create safe labelled pin stubs, and
   legacy netlist compiler operations are excluded from native capability search.
 - Native symbol creation preserves library identity, power symbols need no fake footprint, and
   connection preflight rejects crossing or ambiguous labelled stubs before committing.
 - Release rejects relaxed design-rule floors and label-dense stub-only schematics. PCB placement
-  can also lay out reference fields after normalizing library geometry.
+  can also lay out reference fields without refreshing the footprint library.
 - Agent shell scripts can search, describe, call, and batch any registry operation with
   `fabpcb tool`. This supplies programmable loops and JSONL batching without legacy Python
   `pcbnew` or a different KiCad build.

@@ -85,6 +85,17 @@ export class FpPcbSessions {
     return schematic;
   }
 
+  /** Placement recovery may restart KiCad; never discard unsaved schematic work. */
+  async assertSchematicSaved(projectDir: string): Promise<void> {
+    const session = await this.session(projectDir);
+    const schematic = await session.kicad.currentSchematic();
+    if (schematic && (await schematic.modified()) !== false)
+      throw new ToolError(
+        "save the open schematic before placing footprints; placement recovery may restart KiCad",
+        "precondition",
+      );
+  }
+
   /**
    * Ensure the normal `board.kicad_pro/.kicad_sch/.kicad_pcb` triplet exists and is open in one
    * headless KiCad session. This is the native schematic-first entry point; no netlist is needed.

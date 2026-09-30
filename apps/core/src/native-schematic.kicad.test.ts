@@ -145,6 +145,6 @@ describe.skipIf(!url || !workspace)("optional native schematic capabilities", ()
     ]);
     expect(placed.missing).toEqual([]);
     expect(placed.moved.sort()).toEqual(["R1", "R2"]);
-    expect(placed.libraryNormalized).toBeGreaterThanOrEqual(1);
+    expect(placed.libraryNormalized).toBe(0);
   }, 120_000);
 });
