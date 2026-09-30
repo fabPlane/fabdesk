@@ -662,7 +662,12 @@ describe("what a successful build checks against the saved board", () => {
 
 describe("embedded footprint placement recovery", () => {
   function setup(
-    options: { failSave?: boolean; failRestore?: boolean; unsavedSchematic?: boolean } = {},
+    options: {
+      failSave?: boolean;
+      failRestore?: boolean;
+      unsavedSchematic?: boolean;
+      unsavedPcb?: boolean;
+    } = {},
   ) {
     const original = new Footprint(
       create(FootprintInstanceSchema, {
@@ -701,6 +706,7 @@ describe("embedded footprint placement recovery", () => {
     const board = {
       getFootprints: async () => [live],
       revision: async () => 3n,
+      modified: async () => (!options.unsavedPcb ? false : true),
       updateFootprintsFromLibrary: async () => {
         throw new Error("unexpected library access");
       },
@@ -799,6 +805,14 @@ describe("embedded footprint placement recovery", () => {
     const result = await state.design.placeFootprints("/p", [{ reference: "J13", rotation: 90 }]);
     expect(result.moved).toEqual(["J13"]);
     expect(state.live().pads[0]?.position).toEqual({ x: 9000000, y: 18000000 });
+  });
+  test("unsaved PCB rejects placement without a commit or restart", async () => {
+    const state = setup({ unsavedPcb: true });
+    await expect(
+      state.design.placeFootprints("/p", [{ reference: "J13", rotation: 90 }]),
+    ).rejects.toThrow("save the open PCB");
+    expect(state.calls).toEqual([]);
+    expect(state.live().equals(state.original)).toBe(true);
   });
   test("unsaved schematic rejects placement without a commit or restart", async () => {
     const state = setup({ unsavedSchematic: true });

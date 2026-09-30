@@ -25,7 +25,9 @@ published or packaged as an AppImage.
 - Native edit results report only changed IDs/counts and revisions, rather than returning a full
   board snapshot. Preview explicitly means structural validation only.
 - Native placement moves and rotates the existing embedded footprint geometry without requiring
-  its source library. Flips use KiCad's native transform. Failed operations restore saved files
+  its source library. Save any open PCB and schematic first; unsaved or unknown modified state
+  rejects placement before the commit, since recovery can restart the shared KiCad session.
+  Flips use KiCad's native transform (including its angle change). Failed operations restore saved files
   and discard the edited session before a later operation can reuse it.
 - `schematic_review` is initially visible, connection batches create safe labelled pin stubs, and
   legacy netlist compiler operations are excluded from native capability search.

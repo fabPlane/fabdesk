@@ -173,7 +173,7 @@ with R1.
   but it only helps if the router can actually route those nets within the rules (R1).
 
 Footprint placement preserves embedded geometry and uses native KiCad flips (which also change
-the angle to `180° − θ`). Save any open schematic before placement: unsaved or unknown schematic
+the angle to `180° − θ`). Save any open PCB and schematic before placement: unsaved or unknown document
 state is rejected before the PCB commit, because recovery can restart the shared KiCad session.
 Each saved PCB/project file is restored independently on failure; recovery errors are logged
 without replacing the original placement error.

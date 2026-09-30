@@ -1092,6 +1092,11 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         "invalid_args",
       );
 
+    if ((await board.modified()) !== false)
+      throw new ToolError(
+        "save the open PCB before placing footprints; placement recovery may restart KiCad",
+        "precondition",
+      );
     await deps.sessions.assertSchematicSaved(projectDir);
     const originals = await Promise.all(
       [BOARD_PCB, BOARD_PRO].map(async (file) => ({

@@ -54,7 +54,21 @@ describe.skipIf(!haveKicad())("embedded placement against KiCad", () => {
       const original = (await (await openBoard()).getFootprints()).find(
         (f) => f.reference === "J13",
       )!;
-      const originalPad = original.pads[0]!.position;
+      const originalPads = new Map(original.pads.map((pad) => [pad.number, pad.position]));
+      expect(originalPads.size).toBe(14);
+      const unsavedBoard = await openBoard();
+      const unsavedFile = await readFile(path, "utf8");
+      const unsavedFootprint = original.clone();
+      unsavedFootprint.locked = true;
+      await unsavedBoard.commit("unsaved GUI-like edit", (tx) => tx.update([unsavedFootprint]));
+      await expect(
+        design.placeFootprints(dir, [{ reference: "J13", rotation: 90 }]),
+      ).rejects.toThrow("save the open PCB");
+      expect(await readFile(path, "utf8")).toBe(unsavedFile);
+      expect(
+        (await (await openBoard()).getFootprints()).find((f) => f.reference === "J13")!.locked,
+      ).toBe(true);
+      await unsavedBoard.save();
       const moved = await design.placeFootprints(dir, [
         {
           reference: "J13",
@@ -68,10 +82,11 @@ describe.skipIf(!haveKicad())("embedded placement against KiCad", () => {
       let saved = (await (await openBoard()).getFootprints()).find((f) => f.reference === "J13")!;
       expect(saved.orientation).toBe(90);
       expect(saved.position).toEqual({ x: 20000000, y: 30000000 });
-      expect(saved.pads[0]!.position).toEqual({
-        x: 30000000 - originalPad.x,
-        y: 50000000 - originalPad.y,
-      });
+      expect(saved.pads).toHaveLength(originalPads.size);
+      for (const pad of saved.pads) {
+        const before = originalPads.get(pad.number)!;
+        expect(pad.position).toEqual({ x: 30000000 - before.x, y: 50000000 - before.y });
+      }
       expect(saved.referenceField!.position).toEqual({ x: 21000000, y: 34000000 });
       expect(saved.id).toBe(original.id);
       const beforeFailure = await readFile(path, "utf8");
@@ -98,11 +113,11 @@ describe.skipIf(!haveKicad())("embedded placement against KiCad", () => {
       await release();
       saved = (await (await openBoard()).getFootprints()).find((f) => f.reference === "J13")!;
       expect(saved.orientation).toBe(-90);
-      expect(saved.pads[0]!.position).toEqual({
-        x: originalPad.x + 10000000,
-        y: originalPad.y + 10000000,
-      });
-      const beforeFlipPad = saved.pads[0]!.position;
+      for (const pad of saved.pads) {
+        const before = originalPads.get(pad.number)!;
+        expect(pad.position).toEqual({ x: before.x + 10000000, y: before.y + 10000000 });
+      }
+      const beforeFlipPads = new Map(saved.pads.map((pad) => [pad.number, pad.position]));
       const flip = await design.placeFootprints(dir, [
         { reference: "J13", flip: true, rotation: 90 },
       ]);
@@ -114,10 +129,12 @@ describe.skipIf(!haveKicad())("embedded placement against KiCad", () => {
       expect(saved.orientation).toBe(90);
       expect(saved.pads[0]!.layers).toContain(saved.layerId);
       // Native left-right flip mirrors X at the anchor; the requested angle then rotates 180°.
-      expect(saved.pads[0]!.position).toEqual({
-        x: beforeFlipPad.x,
-        y: 2 * saved.position.y - beforeFlipPad.y,
-      });
+      expect(saved.pads).toHaveLength(beforeFlipPads.size);
+      for (const pad of saved.pads) {
+        const before = beforeFlipPads.get(pad.number)!;
+        expect(pad.position).toEqual({ x: before.x, y: 2 * saved.position.y - before.y });
+        expect(pad.layers).toContain(saved.layerId);
+      }
     } finally {
       await release();
       await rm(dir, { recursive: true, force: true });
