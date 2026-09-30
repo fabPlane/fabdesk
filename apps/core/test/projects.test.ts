@@ -86,7 +86,8 @@ describe("ProjectStore absolute-path resolution", () => {
         );
         for (const path of ["board.kicad_pro", "board.kicad_sch", "board.kicad_pcb"])
           await writeFile(join(copy, path), `${name}-${path}`);
-        return copy;
+        // Project handles canonicalize macOS /var and /private/var aliases.
+        return await realpath(copy);
       };
 
       const rowsBefore = store.projects.list();
