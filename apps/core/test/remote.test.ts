@@ -190,27 +190,6 @@ describe("remote listener", () => {
     expect((await fetch(`${remoteUrl}/projects`, { headers: H() })).status).toBe(200);
   });
 
-  test("remote clients cannot choose or probe host directories; local clients can", async () => {
-    await enableRemote();
-    const before = await (await local("/projects")).json();
-    for (const parentDirectory of [home, join(home, "missing"), ""]) {
-      for (const path of ["/projects", "/projects/import-github"]) {
-        const response = await fetch(`${remoteUrl}${path}`, {
-          method: "POST", headers: H(),
-          body: JSON.stringify({ name: "Remote location", url: "https://github.com/example/board", parentDirectory }),
-        });
-        expect(response.status).toBe(403);
-      }
-      const query = new URLSearchParams({ name: "Remote probe", parentDirectory });
-      expect((await fetch(`${remoteUrl}/projects/import-github/destination?${query}`, { headers: H() })).status).toBe(403);
-    }
-    expect(await (await local("/projects")).json()).toEqual(before);
-    expect((await fetch(`${remoteUrl}/projects/import-github/destination?name=Default`, { headers: H() })).status).toBe(200);
-    expect((await fetch(`${remoteUrl}/projects`, { method: "POST", headers: H(), body: JSON.stringify({ name: "Remote default" }) })).status).toBe(201);
-    expect((await local("/projects", { method: "POST", body: JSON.stringify({ name: "Local custom", parentDirectory: home }) })).status).toBe(201);
-    expect((await local(`/projects/import-github/destination?${new URLSearchParams({ name: "Local import", parentDirectory: home })}`)).status).toBe(200);
-  });
-
   test("does not serve mcp, shutdown or device administration", async () => {
     for (const [path, init] of [
       ["/mcp/sessions", {}],

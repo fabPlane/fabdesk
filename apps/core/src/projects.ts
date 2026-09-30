@@ -95,14 +95,6 @@ export class ProjectStore implements ProjectResolver {
     return this.repo.list().map(({ slug: _slug, ...s }) => s);
   }
 
-  async importDestination(name: string, parentDirectory?: string): Promise<{ path: string; exists: boolean }> {
-    if (parentDirectory && !isAbsolute(parentDirectory)) throw new ToolError("Choose an absolute project location", "invalid_args");
-    const root = parentDirectory ? await realpath(parentDirectory) : this.rootDir;
-    if (parentDirectory && !(await stat(root)).isDirectory()) throw new ToolError("Project location must be a folder", "invalid_args");
-    const path = join(root, slugify(name));
-    return { path, exists: !!(await stat(path).catch(() => null)) };
-  }
-
   async resolve(ref: string): Promise<ProjectHandle | null> {
     // Absolute selectors are deliberately ephemeral. In particular, a copied manifest must never
     // repoint the persistent row or ID-keyed handle belonging to the canonical project.
@@ -190,23 +182,13 @@ export class ProjectStore implements ProjectResolver {
     return h;
   }
 
-  async create(name: string, parentDirectory?: string): Promise<ProjectDetail> {
-    if (parentDirectory && !isAbsolute(parentDirectory)) throw new ToolError("Choose an absolute project location", "invalid_args");
-    const root = parentDirectory ? await realpath(parentDirectory) : this.rootDir;
-    if (parentDirectory && !(await stat(root)).isDirectory()) throw new ToolError("Project location must be a folder", "invalid_args");
-    await mkdir(root, { recursive: true });
+  async create(name: string): Promise<ProjectDetail> {
+    await mkdir(this.rootDir, { recursive: true });
     const base = slugify(name);
     let slug = base;
-    // Reserve a fresh directory atomically; never reuse or overwrite an existing folder.
-    for (let i = 2; ; i++) {
-      if (this.repo.list().some((project) => project.slug === slug)) { slug = `${base}-${i}`; continue; }
-      try { await mkdir(join(root, slug)); break; }
-      catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-        slug = `${base}-${i}`;
-      }
-    }
-    const dir = join(root, slug);
+    for (let i = 2; await stat(join(this.rootDir, slug)).catch(() => null); i++)
+      slug = `${base}-${i}`;
+    const dir = join(this.rootDir, slug);
     const ts = new Date().toISOString();
     const manifest = ProjectManifest.parse({
       schema: 1,
@@ -227,9 +209,7 @@ export class ProjectStore implements ProjectResolver {
       await mkdir(join(dir, sub), { recursive: true });
     await writeJson(join(dir, PROJECT_FILES.manifest), manifest);
     await Bun.write(join(dir, ".gitignore"), ".fabdesk/\nrenders/\nexports/\n");
-    // Concurrent creations in different parents may reserve the same basename.
-    const registeredSlug = this.repo.list().some((project) => project.slug === slug) ? `${slug}-${manifest.id}` : slug;
-    this.repo.upsert({ id: manifest.id, name, slug: registeredSlug, path: dir, createdAt: ts, updatedAt: ts });
+    this.repo.upsert({ id: manifest.id, name, slug, path: dir, createdAt: ts, updatedAt: ts });
     if (this.opts.watch !== false) this.watchDir(manifest.id, dir);
     this.emit({
       ts: Date.now(),
@@ -245,40 +225,22 @@ export class ProjectStore implements ProjectResolver {
     name: string;
     gitUrl: string;
     clone?: (url: string, dir: string) => Promise<void>;
-    parentDirectory?: string;
-    signal?: AbortSignal;
-    failOnCollision?: boolean;
   }): Promise<ProjectDetail> {
-    if (opts.parentDirectory && !isAbsolute(opts.parentDirectory)) throw new ToolError("Choose an absolute project location", "invalid_args");
-    const root = opts.parentDirectory ? await realpath(opts.parentDirectory) : this.rootDir;
-    if (opts.parentDirectory && !(await stat(root)).isDirectory()) throw new ToolError("Project location must be a folder", "invalid_args");
-    await mkdir(root, { recursive: true });
+    await mkdir(this.rootDir, { recursive: true });
     const base = slugify(opts.name);
     let slug = base;
-    // Reserve the destination atomically. Only remove directories this call created.
-    for (let i = 2; ; i++) {
-      try { await mkdir(join(root, slug)); break; }
-      catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-        if (opts.failOnCollision) throw new ToolError(`A folder named ${slug} already exists here`, "invalid_args");
-        slug = `${base}-${i}`;
-      }
-    }
-    const dir = join(root, slug);
+    for (let i = 2; await stat(join(this.rootDir, slug)).catch(() => null); i++)
+      slug = `${base}-${i}`;
+    const dir = join(this.rootDir, slug);
     try {
-      opts.signal?.throwIfAborted();
-      await (opts.clone ?? ((url, dest) => defaultGitClone(url, dest, opts.signal)))(opts.gitUrl, dir);
-      opts.signal?.throwIfAborted();
+      await (opts.clone ?? defaultGitClone)(opts.gitUrl, dir);
     } catch (e) {
       await rm(dir, { recursive: true, force: true });
-      if (opts.signal?.aborted) throw new ToolError("GitHub import canceled", "unavailable");
       throw new ToolError(
         `could not clone ${opts.gitUrl}: ${e instanceof Error ? e.message : String(e)}`,
         "unavailable",
       );
     }
-    let registeredId: string | null = null;
-    try {
     const ts = new Date().toISOString();
     const existing = await this.readManifest(dir);
     const manifest = ProjectManifest.parse({
@@ -300,7 +262,6 @@ export class ProjectStore implements ProjectResolver {
       await mkdir(join(dir, sub), { recursive: true });
     }
     await writeJson(join(dir, PROJECT_FILES.manifest), manifest);
-    opts.signal?.throwIfAborted();
     this.repo.upsert({
       id: manifest.id,
       name: opts.name,
@@ -309,7 +270,6 @@ export class ProjectStore implements ProjectResolver {
       createdAt: manifest.createdAt,
       updatedAt: ts,
     });
-    registeredId = manifest.id;
     if (this.opts.watch !== false) this.watchDir(manifest.id, dir);
     this.emit({
       ts: Date.now(),
@@ -318,11 +278,6 @@ export class ProjectStore implements ProjectResolver {
       paths: [PROJECT_FILES.manifest],
     });
     return (await this.detail(manifest.id))!;
-    } catch (error) {
-      if (registeredId) { this.unwatch(registeredId); this.handles.delete(registeredId); this.repo.delete(registeredId); }
-      await rm(dir, { recursive: true, force: true });
-      throw error;
-    }
   }
 
   async detail(id: string): Promise<ProjectDetail | null> {
@@ -470,12 +425,10 @@ export function requireProject(h: ProjectHandle | null, ref: string): ProjectHan
   return h;
 }
 
-async function defaultGitClone(url: string, dir: string, signal?: AbortSignal): Promise<void> {
+async function defaultGitClone(url: string, dir: string): Promise<void> {
   await new Promise<void>((resolve, reject) => {
-    const child = spawn("git", ["-c", "credential.helper=", "clone", "--depth", "1", "--progress", url, dir], {
+    const child = spawn("git", ["clone", "--depth", "1", url, dir], {
       stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "Never" },
-      ...(signal ? { signal } : {}),
     });
     let stderr = "";
     child.stderr.on("data", (chunk: Buffer) => {

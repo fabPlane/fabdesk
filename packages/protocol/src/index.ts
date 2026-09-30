@@ -7,4 +7,3 @@ export * from "./opensource";
 export * from "./releases";
 export * from "./fp-pcb";
 export * from "./cloud";
-export * from "./github";

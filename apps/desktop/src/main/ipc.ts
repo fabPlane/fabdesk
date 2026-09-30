@@ -12,12 +12,6 @@ export interface PickFileOptions {
 }
 
 export function registerIpc(supervisor: CoreSupervisor): void {
-  ipcMain.handle("fabdesk:pick-directory", async (e) => {
-    const win = BrowserWindow.fromWebContents(e.sender);
-    const options = { title: "Choose project location", properties: ["openDirectory", "createDirectory"] as Array<"openDirectory" | "createDirectory"> };
-    const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
-    return result.canceled ? null : result.filePaths[0] ?? null;
-  });
   ipcMain.handle("fabdesk:core-info", () => supervisor.info());
   ipcMain.handle("fabdesk:core-restart", () => supervisor.restart());
   ipcMain.handle("fabdesk:show-app-menu", (e, raw: unknown) => {

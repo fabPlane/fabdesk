@@ -43,7 +43,6 @@ export interface UiState {
   sidebarOpen: boolean;
   boardOpen: boolean;
   activeThreadId: string | null;
-  focusMessageId: string | null;
   activeProjectId: string | null;
   sidebarListTab: SidebarListTab;
   activeOpenSourceId: string | null;
@@ -67,7 +66,6 @@ export interface UiState {
   setSidebarOpen: (open: boolean) => void;
   setBoardOpen: (open: boolean) => void;
   setActiveThread: (id: string | null) => void;
-  setFocusMessageId: (id: string | null) => void;
   setActiveProject: (id: string | null) => void;
   /** Start a blank conversation in a project (or none). Skips the project picker. */
   startNewChatInProject: (projectId: string | null) => void;
@@ -112,7 +110,6 @@ export const useUiStore = create<UiState>()(
   sidebarOpen: true,
   boardOpen: true,
   activeThreadId: null,
-  focusMessageId: null,
   activeProjectId: null,
   sidebarListTab: "projects",
   activeOpenSourceId: null,
@@ -133,7 +130,6 @@ export const useUiStore = create<UiState>()(
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
   setBoardOpen: (boardOpen) => set({ boardOpen }),
   setActiveThread: (activeThreadId) => set({ activeThreadId, ...(activeThreadId ? { activeOpenSourceId: null, orderFlowOpen: false, inventoryOpen: false } : {}) }),
-  setFocusMessageId: (focusMessageId) => set({ focusMessageId }),
   setActiveProject: (activeProjectId) => set((s) => ({ activeProjectId, ...(activeProjectId !== s.activeProjectId ? { activeThreadId: null, activeOpenSourceId: null, orderFlowOpen: false, inventoryOpen: false } : {}) })),
   startNewChatInProject: (projectId) =>
     set((s) => ({ ...newChatInProjectState(projectId), composerFocusNonce: s.composerFocusNonce + 1 })),

@@ -9,8 +9,8 @@ import type {
   RouteFrameLine,
   RouteResult,
 } from "@fabdesk/protocol";
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { useCoreClient } from "./provider";
 import { messagesKey } from "./events";
 import {
@@ -101,23 +101,6 @@ export function useThreads(params?: { q?: string; projectId?: string | null }) {
     // A search types one key per letter; showing the previous list until the next answers keeps
     // the screen from flashing "no chats match" between keystrokes.
     placeholderData: (previous) => previous,
-  });
-}
-
-export function useChatSearch(query: string) {
-  const client = useCoreClient();
-  const input = query.trim();
-  const [q, setQ] = useState("");
-  useEffect(() => {
-    const timer = setTimeout(() => setQ(input), 250);
-    return () => clearTimeout(timer);
-  }, [input]);
-  return useInfiniteQuery({
-    queryKey: ["chat-search", q],
-    queryFn: ({ pageParam }) => client.searchChats(q, pageParam),
-    initialPageParam: 0,
-    getNextPageParam: (page) => page.nextOffset ?? undefined,
-    enabled: q.length >= 2 && q === input,
   });
 }
 
