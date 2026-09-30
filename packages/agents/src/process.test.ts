@@ -75,13 +75,15 @@ describe("runAgentProcess", () => {
   });
 
   test("abort() interrupts a long-running process tree", async () => {
+    let childPid: number | undefined;
     const run = runAgentProcess({
       cmd: [
         bun,
         "-e",
         script([
-          'console.log(JSON.stringify({ type: "system", subtype: "init", session_id: "s2" }));',
-          'const child = Bun.spawn(["sleep", "60"]);',
+          `const child = Bun.spawn([process.execPath, "-e", ${JSON.stringify("console.log('ready'); await Bun.sleep(60_000)")}], { stdout: "pipe" });`,
+          'await child.stdout.getReader().read();',
+          'console.log(JSON.stringify({ type: "system", subtype: "init", session_id: String(child.pid) }));',
           "await Bun.sleep(60_000);",
         ]),
       ],
@@ -94,10 +96,14 @@ describe("runAgentProcess", () => {
     for await (const e of run.events) {
       events.push(e);
       if (e.type === "init") {
-        // give the child a moment to spawn, then confirm the tree is visible and abort it
-        await Bun.sleep(300);
-        expect(descendantPids(run.pid as number).length).toBeGreaterThanOrEqual(1);
-        run.abort();
+        childPid = Number(e.sessionId);
+        try {
+          expect(() => process.kill(childPid!, 0)).not.toThrow();
+          if (process.platform !== "win32")
+            expect(descendantPids(run.pid as number)).toContain(childPid);
+        } finally {
+          run.abort();
+        }
       }
     }
     expect(Date.now() - started).toBeLessThan(5000);
@@ -105,6 +111,8 @@ describe("runAgentProcess", () => {
     expect(done?.type).toBe("done");
     expect(events.some((e) => e.type === "error")).toBe(false);
     await Bun.sleep(200);
+    expect(childPid).toBeNumber();
+    expect(() => process.kill(childPid!, 0)).toThrow();
     expect(descendantPids(run.pid as number)).toEqual([]);
   }, 15_000);
 

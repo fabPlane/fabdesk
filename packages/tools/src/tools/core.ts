@@ -455,6 +455,7 @@ export const route_run = defineTool({
   inputSchema: RouteRunArgs,
   annotations: { idempotentHint: true },
   longRunning: true,
+  mcpHeartbeat: false,
   handler: (args, ctx) =>
     runRoute(
       {

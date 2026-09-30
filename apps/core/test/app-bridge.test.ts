@@ -34,9 +34,9 @@ async function bridgeFile(contents: unknown): Promise<string> {
 
 describe("app bridge client", () => {
   test("locates the file next to the handshake or from the env override", () => {
-    expect(locateAppBridgeFile("/x/y/daemon.json", {})).toBe("/x/y/app-bridge.json");
+    expect(locateAppBridgeFile("/x/y/daemon.json", {})).toBe(join("/x/y", "app-bridge.json"));
     expect(locateAppBridgeFile("/x/y/daemon.json", { FABDESK_APP_BRIDGE_FILE: "/else/bridge.json" })).toBe("/else/bridge.json");
-    expect(locateAppBridgeFile("/x/y/daemon.json", { FABDESK_APP_BRIDGE_FILE: "  " })).toBe("/x/y/app-bridge.json");
+    expect(locateAppBridgeFile("/x/y/daemon.json", { FABDESK_APP_BRIDGE_FILE: "  " })).toBe(join("/x/y", "app-bridge.json"));
   });
 
   test("parses only loopback bridge files", () => {

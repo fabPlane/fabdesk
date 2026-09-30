@@ -125,7 +125,10 @@ describe("ProjectStore absolute-path resolution", () => {
       const outside = join(dir, "outside.kicad_sch");
       await writeFile(outside, "outside");
       await unlink(join(escaped, "board.kicad_sch"));
-      await symlink(outside, join(escaped, "board.kicad_sch"));
+      // Junctions exercise the same realpath jail on Windows without requiring
+      // Developer Mode or administrator privileges for file symlinks.
+      await symlink(process.platform === "win32" ? dir : outside,
+        join(escaped, "board.kicad_sch"), process.platform === "win32" ? "junction" : "file");
       expect(await projects.resolve(escaped)).toBeNull();
       expect(await projects.resolve(join(dir, "does-not-exist"))).toBeNull();
       expect(store.projects.list()).toEqual(rowsBefore);

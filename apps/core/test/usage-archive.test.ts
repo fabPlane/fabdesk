@@ -60,7 +60,8 @@ describe("usage archive", () => {
         messages: Array<{ content_md: string }>;
       };
       expect(conversation.messages[0]!.content_md).toBe("Route the board");
-      expect((await stat(conversationPath)).mode & 0o077).toBe(0);
+      // POSIX permission bits are not implemented by Windows filesystems.
+      if (process.platform !== "win32") expect((await stat(conversationPath)).mode & 0o077).toBe(0);
 
       const counts = await archive.backfill(store.db, () => true, { all: true });
       expect(counts).toEqual({ conversations: 1, runDumps: 1 });

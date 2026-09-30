@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { runHermeticEnv } from "./hermetic-env";
+import { delimiter, dirname, resolve } from "node:path";
 
 const baseEnv = {
   PATH: "/usr/bin",
@@ -12,6 +13,25 @@ const baseEnv = {
 };
 
 describe("hermetic packaged-KiCad environment", () => {
+  test("preserves the inherited PATH with the platform's environment-key casing", async () => {
+    const { PATH, ...rest } = baseEnv;
+    let observed: Record<string, string> = {};
+    await runHermeticEnv(
+      { action: "exec", command: ["kicad-cli", "version"] },
+      {
+        env: { ...rest, [process.platform === "win32" ? "Path" : "PATH"]: PATH },
+        cwd: () => process.cwd(),
+        pathExists: async () => true,
+        execute: async ({ env }) => {
+          observed = env;
+          return 0;
+        },
+      },
+    );
+    expect(observed.PATH).toBe(`${dirname(baseEnv.KICAD_CLI)}${delimiter}${PATH}`);
+    expect(observed.Path).toBeUndefined();
+  });
+
   test("describes exact toolchain paths without exposing credentials", async () => {
     let output = "";
     expect(
@@ -30,7 +50,7 @@ describe("hermetic packaged-KiCad environment", () => {
     ).toBe(0);
     const result = JSON.parse(output) as Record<string, any>;
     expect(result.contract).toEqual({ name: "fabdesk.packaged-kicad-cli", version: "1.1.0" });
-    expect(result.project).toBe("/project");
+    expect(result.project).toBe(resolve("/project"));
     expect(result.executable).toEqual({ kicadCli: baseEnv.KICAD_CLI, version: "10.99.0" });
     expect(result.scope).toEqual({
       packaged: ["kicad-cli"],
@@ -112,9 +132,9 @@ describe("hermetic packaged-KiCad environment", () => {
       ),
     ).toBe(7);
     expect(observed?.command).toEqual([baseEnv.KICAD_CLI, "pcb", "drc", "board.kicad_pcb"]);
-    expect(observed?.cwd).toBe("/work/board");
-    expect(observed?.env.PATH).toBe("/bundle/kicad/bin:/usr/bin");
-    expect(observed?.env.FABDESK_PROJECT_DIR).toBe("/work/board");
+    expect(observed?.cwd).toBe(resolve("/work", "board"));
+    expect(observed?.env.PATH).toBe(`${dirname(baseEnv.KICAD_CLI)}${delimiter}/usr/bin`);
+    expect(observed?.env.FABDESK_PROJECT_DIR).toBe(resolve("/work", "board"));
   });
 
   test("fails closed when the packaged executable is unavailable", async () => {
