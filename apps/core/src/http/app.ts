@@ -618,6 +618,17 @@ export function createApp(deps: AppDeps): Hono<Env> {
     return c.json(deps.store.threads.search(q));
   });
 
+  app.get("/search/results", (c) => {
+    const q = (c.req.query("q") ?? "").trim();
+    if (q.length < 2) return c.json({ titles: [], messages: [], nextOffset: null });
+    if (q.length > 200) return c.json({ error: "search query is too long" }, 400);
+    const parsedLimit = c.req.query("limit") === undefined ? 30 : Number(c.req.query("limit"));
+    const offset = c.req.query("offset") === undefined ? 0 : Number(c.req.query("offset"));
+    if (!Number.isSafeInteger(parsedLimit) || parsedLimit < 1 || !Number.isSafeInteger(offset) || offset < 0) return c.json({ error: "limit and offset must be non-negative integers" }, 400);
+    const limit = Math.min(50, parsedLimit);
+    return c.json(deps.store.threads.searchResults(q, limit, offset));
+  });
+
   /* ---------- open-source catalog ---------- */
   const previewCache = createPreviewCache();
   let catalogMemo: { origin: string; at: number; pending: Promise<OpenCatalogIndex> } | undefined;
