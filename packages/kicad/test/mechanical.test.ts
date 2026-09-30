@@ -26,6 +26,9 @@ async function fixtureCopy(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "fabdesk-mechanical-"));
   temporary.push(dir);
   await cp(FIXTURE, dir, { recursive: true });
+  // Real export uses the stable KiCad placement format. Keep board.kicad_pcb in
+  // FIXTURE unchanged for the separate 10.99 transform-parser coverage.
+  await cp(join(FIXTURE, "runtime-board.kicad_pcb"), join(dir, "board.kicad_pcb"));
   return dir;
 }
 
@@ -314,7 +317,7 @@ describe("temporary GLB scratch", () => {
   });
 });
 
-// The packaged runtime is the source of truth; stock KiCad 9 cannot read the v10 fixture.
+// Real GLB measurements require KiCad 10; the runtime fixture uses its stable board format.
 const cli = await findKicadCli();
 const packaged = cli !== null && /^10\./.test(cli.version);
 
@@ -352,7 +355,7 @@ describe.skipIf(!packaged)("packaged kicad-cli mechanical truth", () => {
     ]);
   });
 
-  test("measures transforms, sides, heights, coverage and overlap labelling", async () => {
+  test("measures placement, sides, heights, coverage and overlap labelling", async () => {
     dir = await fixtureCopy();
     first = await collect();
     expect(first.source.cache.status).toBe("miss");
@@ -563,7 +566,7 @@ describe.skipIf(!packaged)("packaged kicad-cli mechanical truth", () => {
 if [ -f ${JSON.stringify(flag)} ]; then
   op=$(cat ${JSON.stringify(flag)})
   case "$op" in
-    content) sed -i 's/(1.,-2.,1.13)/(1.,-2.,7.13)/' ${JSON.stringify(model)} ;;
+    content) sed 's/(1.,-2.,1.13)/(1.,-2.,7.13)/' ${JSON.stringify(model)} > ${JSON.stringify(model + '.tmp')} && mv ${JSON.stringify(model + '.tmp')} ${JSON.stringify(model)} ;;
     disappear) rm -f ${JSON.stringify(model)} ;;
     appear) cp ${JSON.stringify(model)} ${JSON.stringify(substitution)} ;;
   esac
