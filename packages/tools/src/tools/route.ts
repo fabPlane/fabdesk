@@ -37,7 +37,9 @@ export const RouteRunArgs = {
       }),
     )
     .optional()
-    .describe("Selected nets or exact remaining endpoint pairs"),
+    .describe(
+      "Whole-net selections only. Endpoint coordinates (from/to) are unsupported and rejected before a run starts.",
+    ),
   rules: z
     .object({
       widthMm: z.number().positive().optional(),
@@ -749,6 +751,13 @@ async function executeRoute(
 
 export async function runRoute(args: RouteArgs, ctx: ToolContext): Promise<ToolOutput> {
   const project = ctx.requireProject();
+  // Keep legacy coordinate inputs recognizable so callers get an actionable error. The bridge
+  // accepts net names only; dropping coordinates would silently broaden the requested mutation.
+  if (args.targets?.some((target) => target.from !== undefined || target.to !== undefined))
+    throw new ToolError(
+      "route_run supports whole-net scope only; targets.from/to cannot be honored. Use net-only targets or onlyConnections if routing the whole net is intended.",
+      "precondition",
+    );
   const router = args.router ?? project.manifest().router;
   if (router === "freerouting" && ctx.services.channel !== "internal")
     return {
