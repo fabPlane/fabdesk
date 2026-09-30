@@ -478,12 +478,16 @@ async function defaultGitClone(url: string, dir: string, signal?: AbortSignal): 
       ...(signal ? { signal } : {}),
     });
     let stderr = "";
+    let processError: Error | undefined;
     child.stderr.on("data", (chunk: Buffer) => {
       stderr += chunk.toString();
     });
-    child.on("error", reject);
+    // Abort emits an error before Git has exited. Let close settle the promise so
+    // import cleanup cannot race with the child's remaining filesystem writes.
+    child.on("error", (error) => { processError = error; });
     child.on("close", (code) => {
-      if (code === 0) resolve();
+      if (processError) reject(processError);
+      else if (code === 0) resolve();
       else reject(new Error(stderr.trim() || `git clone exited ${code}`));
     });
   });
