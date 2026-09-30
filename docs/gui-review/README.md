@@ -97,7 +97,8 @@ by the root command's failing workspace phase, was run separately: 71 pass, 0 fa
 A continuation verified unobscured traffic-light spacing, green full-screen entry,
 Control-Command-F return, yellow minimize (hidden visibility and lost focus), and
 restore. Native title-bar and pane drag attempts still produced no measurable
-bounds change; they remain unverified. Close-button behavior remains outstanding.
+bounds change; they remain unverified. The red close control was subsequently verified: the native bridge reported no
+remaining app windows.
 
 The first #208 CI failed a queue lease test after its fixed 20 ms wait, although
 local main and complete-stack focused runs each passed 11 tests. #208 now waits
@@ -105,6 +106,6 @@ for queued dispatch with a two-second deadline and unchanged result assertions.
 This is test synchronization only, not a production queue implementation change.
 
 Before marking ready, resolve or explicitly accept the five macOS KiCad failures
-and finish title-bar dragging, mouse pane resizing, and close-button verification.
+and finish title-bar dragging and mouse pane resizing.
 CI after the pushed changes is reported separately in the PR descriptions; green
 remote CI does not substitute for these remaining native checks.
