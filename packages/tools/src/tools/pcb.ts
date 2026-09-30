@@ -17,7 +17,12 @@ export const pcb_define_outline = defineTool({
     points: z.array(Point).min(3).max(100).optional(),
     replace: z.boolean().default(false),
   },
-  annotations: { idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async ({ widthMm, heightMm, points, replace }, ctx) => {
     if (!points && !(widthMm && heightMm))
       throw new ToolError("provide points or both widthMm and heightMm", "invalid_args");
@@ -63,7 +68,12 @@ export const pcb_place = defineTool({
       .min(1)
       .max(500),
   },
-  annotations: { idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async ({ placements }, ctx) => {
     const project = ctx.requireProject();
     const result = await ctx.services.design.placeFootprints(project.dir, placements);

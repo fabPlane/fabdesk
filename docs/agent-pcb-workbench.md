@@ -69,3 +69,9 @@ Agents using another method can still place compatible outputs in those location
 `route_run.onlyConnections` and net-only `targets` select whole nets. The bridge does not support
 exact endpoint-pair selection: supplying `targets.from` or `targets.to` fails before creating a
 run or changing the board. Select a whole net explicitly only when that is the intended scope.
+
+## Compiler source format recovery
+
+When circuit_build reports a missing entrypoint, invalid JSON, or a malformed source shape, it returns a bounded sourceGuide with the component and net contract and a two-resistor format example. The same guide appears in the text result. Adapt the example to the requested circuit; it is not a completed design or evidence of electrical correctness.
+
+This help is returned only after selecting the compiler and encountering a source-format error. Successful builds and electrical failures retain their existing result behavior. Compiler validation, native checks, preservation rules, and release requirements are unchanged.

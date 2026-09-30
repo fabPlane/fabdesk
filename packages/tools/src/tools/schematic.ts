@@ -46,7 +46,12 @@ export const schematic_inspect = defineTool({
       .default(25)
       .describe("Maximum per-sheet summary rows"),
   },
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async ({ detail, sheet, sheetOffset, sheetLimit }, ctx) => {
     const project = ctx.requireProject();
     const hierarchy = await inspectSavedHierarchy(ctx, project);
@@ -215,7 +220,12 @@ export const schematic_edit = defineTool({
     deleteItemIds: z.array(z.string().min(1)).max(1000).default([]),
     save: z.boolean().default(true),
   },
-  annotations: { idempotentHint: false },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: false,
+  },
   handler: async (edit, ctx) => {
     const project = ctx.requireProject();
     for (const symbol of edit.symbols) {
@@ -312,7 +322,12 @@ export const schematic_review = defineTool({
         "Hierarchy path, sheet name, or native filename; default is the current/root sheet",
       ),
   },
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async ({ sheet }, ctx) => {
     const project = ctx.requireProject();
     const hierarchy = await inspectSavedHierarchy(ctx, project);
@@ -526,7 +541,12 @@ export const pcb_update_from_schematic = defineTool({
         "True atomically validates, applies, and saves the PCB; false previews without changing the PCB (both save the live schematic)",
       ),
   },
-  annotations: { idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   longRunning: true,
   handler: async ({ apply }, ctx) => {
     const project = ctx.requireProject();

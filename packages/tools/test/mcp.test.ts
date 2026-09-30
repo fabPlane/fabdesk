@@ -23,6 +23,50 @@ async function pair(initialTools?: string[], capabilityExclude?: string[]) {
 }
 
 describe("mcp adapter", () => {
+  test("all exposed and discovered tools carry explicit effect annotations", async () => {
+    const registry = createRegistry();
+    const { client, server } = await pair(registry.list().map((tool) => tool.name));
+    try {
+      const tools = (await client.listTools()).tools;
+      expect(tools).toHaveLength(registry.list().length + 2);
+      for (const tool of tools) {
+        for (const key of [
+          "readOnlyHint",
+          "destructiveHint",
+          "openWorldHint",
+          "idempotentHint",
+        ] as const)
+          expect(typeof tool.annotations?.[key]).toBe("boolean");
+        const definition = registry.get(tool.name);
+        if (definition)
+          expect(tool.annotations).toEqual({ title: definition.title, ...definition.annotations });
+        if (tool.annotations?.readOnlyHint) expect(tool.annotations.destructiveHint).toBe(false);
+      }
+    } finally {
+      await client.close();
+      await server.close();
+    }
+
+    const native = await pair(["project_status"]);
+    try {
+      for (const name of ["sim_run", "inventory_search", "app_wait_for"]) {
+        const search = await native.client.callTool({
+          name: "capability_search",
+          arguments: { query: name },
+        });
+        const matches = (
+          search.structuredContent as { matches: Array<{ name: string; annotations: unknown }> }
+        ).matches;
+        expect(matches.find((match) => match.name === name)?.annotations).toEqual(
+          registry.get(name)!.annotations,
+        );
+      }
+    } finally {
+      await native.client.close();
+      await native.server.close();
+    }
+  });
+
   test("native profile is small and searches/calls the hidden catalog", async () => {
     const { client } = await pair(["project_status", "pcb_inspect"]);
     expect((await client.listTools()).tools.map((tool) => tool.name).sort()).toEqual([
@@ -94,7 +138,7 @@ describe("mcp adapter", () => {
     expect(
       (t.inputSchema as { properties: Record<string, unknown> }).properties["project"],
     ).toBeDefined();
-    expect(t.annotations?.idempotentHint).toBe(true);
+    expect(t.annotations?.idempotentHint).toBe(false);
 
     let listChanged = 0;
     client.setNotificationHandler(ToolListChangedNotificationSchema, async () => {
