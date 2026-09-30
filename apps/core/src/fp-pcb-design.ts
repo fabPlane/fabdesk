@@ -33,6 +33,7 @@ import {
   NoConnect,
   BoardShape,
   BoardText,
+  Footprint,
   Track,
   Arc,
   Zone,
@@ -1064,108 +1065,133 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       .filter((reference) => !byReference.has(reference));
     if (missing.length)
       return { moved: [], missing, revision: Number((await board.revision()) ?? 0n), saved: false };
-    const physical = placements.flatMap((placement) => {
-      const footprint = byReference.get(placement.reference)!;
-      let changed = false;
-      if (placement.position) {
-        const target = { x: toNm(placement.position.x), y: toNm(placement.position.y) };
-        const delta = { x: target.x - footprint.position.x, y: target.y - footprint.position.y };
-        if (delta.x || delta.y) {
-          footprint.translate(delta);
-          changed = true;
-        }
-      }
-      if (placement.rotation !== undefined && footprint.orientation !== placement.rotation) {
-        footprint.orientation = placement.rotation;
-        changed = true;
-      }
-      if (placement.flip !== undefined && footprint.isFlipped !== placement.flip) {
-        footprint.layerId = placement.flip ? BoardLayer.BL_B_Cu : BoardLayer.BL_F_Cu;
-        changed = true;
-      }
-      if (placement.lock !== undefined && footprint.locked !== placement.lock) {
-        footprint.locked = placement.lock;
-        changed = true;
-      }
-      return changed ? [footprint] : [];
-    });
-    if (physical.length)
-      await board.commit("Fabdesk: place native PCB footprints", (tx) => tx.update(physical));
-    let libraryNormalized = 0;
-    if (physical.length) {
-      const normalized = await board.updateFootprintsFromLibrary(
-        physical.map((footprint) => footprint.id),
-        { onlyChanged: true },
-      );
-      if (normalized.missing.length)
-        throw new ToolError(
-          `packaged library footprints unavailable for ${normalized.missing.join(", ")}`,
-          "precondition",
-        );
-      libraryNormalized = normalized.updatedCount;
-    }
-    const refreshed = new Map(
-      (await board.getFootprints()).map((footprint) => [footprint.reference, footprint]),
-    );
-    const fieldEdited = placements.flatMap((placement) => {
-      if (!placement.referenceField) return [];
-      const footprint = refreshed.get(placement.reference)!;
+    // Work on detached snapshots: edits and preflight failures must not mutate cached items.
+    const planned = placements.map((placement) => {
+      const footprint = byReference.get(placement.reference)!.clone();
       const field = footprint.referenceField;
-      const text = field?.proto.text?.text;
-      if (!field || !text)
+      if (
+        placement.referenceField &&
+        (!field?.proto.text?.text ||
+          (placement.referenceField.sizeMm !== undefined && !field.proto.text.text.attributes))
+      )
         throw new ToolError(
           `footprint ${placement.reference} has no editable reference field`,
           "precondition",
         );
-      let changed = false;
-      if (
-        placement.referenceField.visible !== undefined &&
-        field.visible !== placement.referenceField.visible
-      ) {
-        field.visible = placement.referenceField.visible;
-        changed = true;
-      }
-      if (placement.referenceField.position) {
-        const target = {
-          x: toNm(placement.referenceField.position.x),
-          y: toNm(placement.referenceField.position.y),
-        };
-        if (field.position.x !== target.x || field.position.y !== target.y) {
-          text.position = toVector2(target);
-          changed = true;
-        }
-      }
-      if (placement.referenceField.sizeMm !== undefined) {
-        const size = toNm(placement.referenceField.sizeMm);
-        if (
-          text.attributes?.size?.xNm !== BigInt(size) ||
-          text.attributes?.size?.yNm !== BigInt(size)
-        ) {
-          if (!text.attributes)
-            throw new ToolError(
-              `footprint ${placement.reference} reference has no text attributes`,
-              "precondition",
-            );
-          text.attributes.size = toVector2({ x: size, y: size });
-          changed = true;
-        }
-      }
-      return changed ? [footprint] : [];
+      return { placement, footprint };
     });
-    if (fieldEdited.length)
-      await board.commit("Fabdesk: adjust PCB reference fields", (tx) => tx.update(fieldEdited));
-    await board.save();
-    await keepNetClass(projectDir);
-    const changedReferences = [
-      ...new Set([...physical, ...fieldEdited].map((footprint) => footprint.reference)),
-    ];
-    return {
-      moved: changedReferences,
-      missing: [],
-      libraryNormalized,
-      revision: Number((await board.revision()) ?? 0n),
-      saved: true,
-    };
+    if (new Set(placements.map((p) => p.reference)).size !== placements.length)
+      throw new ToolError(
+        "each footprint reference must appear only once per placement",
+        "invalid_args",
+      );
+
+    const originals = await Promise.all(
+      [BOARD_PCB, BOARD_PRO].map(async (file) => ({
+        path: join(projectDir, file),
+        text: await readText(join(projectDir, file)).catch((error: NodeJS.ErrnoException) => {
+          if (error.code !== "ENOENT") throw error;
+          return null;
+        }),
+      })),
+    );
+    const moved: string[] = [];
+    let revision = 0;
+    try {
+      await board.commit("Fabdesk: place native PCB footprints", async (tx) => {
+        // KiCad's native flip transforms pads, fields, graphics and layers together.
+        const toFlip = planned.filter(
+          ({ placement, footprint }) =>
+            placement.flip !== undefined && footprint.isFlipped !== placement.flip,
+        );
+        const flipped = toFlip.length
+          ? await board.flip(toFlip.map(({ footprint }) => footprint.id))
+          : [];
+        const flippedById = new Map(
+          flipped
+            .filter((item): item is Footprint => item instanceof Footprint)
+            .map((item) => [item.id, item]),
+        );
+        const updates: Footprint[] = [];
+        for (const { placement, footprint: initial } of planned) {
+          let footprint = initial;
+          let changed = false;
+          if (placement.flip !== undefined && footprint.isFlipped !== placement.flip) {
+            const canonical = flippedById.get(footprint.id);
+            if (!canonical)
+              throw new ToolError(`could not flip footprint ${placement.reference}`, "internal");
+            footprint = canonical.clone();
+            changed = true;
+          }
+          if (placement.position) {
+            const delta = {
+              x: toNm(placement.position.x) - footprint.position.x,
+              y: toNm(placement.position.y) - footprint.position.y,
+            };
+            if (delta.x || delta.y) {
+              footprint.translate(delta);
+              changed = true;
+            }
+          }
+          if (placement.rotation !== undefined) {
+            const delta = (placement.rotation - footprint.orientation) % 360;
+            if (delta) {
+              footprint.rotate(delta);
+              changed = true;
+            }
+          }
+          if (placement.lock !== undefined && footprint.locked !== placement.lock) {
+            footprint.locked = placement.lock;
+            changed = true;
+          }
+          const edit = placement.referenceField;
+          if (edit) {
+            const field = footprint.referenceField!;
+            const text = field.proto.text!.text!;
+            if (edit.visible !== undefined && field.visible !== edit.visible) {
+              field.visible = edit.visible;
+              changed = true;
+            }
+            if (edit.position) {
+              const target = { x: toNm(edit.position.x), y: toNm(edit.position.y) };
+              if (field.position.x !== target.x || field.position.y !== target.y) {
+                text.position = toVector2(target);
+                changed = true;
+              }
+            }
+            if (edit.sizeMm !== undefined) {
+              const size = toNm(edit.sizeMm);
+              if (
+                text.attributes!.size?.xNm !== BigInt(size) ||
+                text.attributes!.size?.yNm !== BigInt(size)
+              ) {
+                text.attributes!.size = toVector2({ x: size, y: size });
+                changed = true;
+              }
+            }
+          }
+          if (changed) {
+            updates.push(footprint);
+            moved.push(placement.reference);
+          }
+        }
+        if (updates.length) await tx.update(updates);
+      });
+      // KiCad SaveDocument writes the committed state, so save only after EndCommit.
+      await board.save();
+      await keepNetClass(projectDir);
+      revision = Number((await board.revision()) ?? 0n);
+    } catch (error) {
+      // A save can fail after writing. Restore the saved files and discard the edited session
+      // so a failed transport, commit or save cannot leak into a later successful edit.
+      await deps.sessions.release(projectDir);
+      for (const original of originals) {
+        if (original.text !== null) await writeText(original.path, original.text);
+        else await rm(original.path, { force: true });
+      }
+      throw error;
+    }
+    return { moved, missing: [], libraryNormalized: 0, revision, saved: true };
   };
 
   const editBoardGeometry = async (projectDir: string, edit: PcbGeometryEdit) => {
@@ -1761,11 +1787,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         .catch(() => 0);
   };
 
-  /**
-   * Move footprints by rewriting their transform in the saved file, then reload the board into the
-   * session: the API's UpdateItems moves only a footprint's anchor (fab_pcb gap G28), the file
-   * format keeps children relative, so this is the one way to place parts today.
-   */
+  /** Compatibility entry point; native placement transforms the existing embedded geometry. */
   const place = async (
     projectDir: string,
     placements: Array<{ ref: string; x: number; y: number; rotation?: number }>,

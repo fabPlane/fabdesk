@@ -41,7 +41,7 @@ export const pcb_place = defineTool({
   toolset: "circuit",
   title: "Place PCB footprints",
   description:
-    "Place native PCB footprints and adjust their silkscreen reference fields at explicit millimetre coordinates. Library geometry is normalized before reference-field edits. Unknown references fail without a partial placement.",
+    "Place native PCB footprints and adjust their silkscreen reference fields at explicit millimetre coordinates. Existing embedded geometry is preserved; the source footprint library is not required. Unknown references fail without a partial placement.",
   inputSchema: {
     placements: z
       .array(
@@ -70,7 +70,7 @@ export const pcb_place = defineTool({
     return {
       text: result.missing.length
         ? `Placement blocked; unknown references: ${result.missing.join(", ")}.`
-        : `Placed ${result.moved.length} footprint(s), normalized ${result.libraryNormalized ?? 0} library definition(s), and saved board revision ${result.revision}: ${result.moved.join(", ") || "already at requested positions"}.`,
+        : `Placed ${result.moved.length} footprint(s) and saved board revision ${result.revision}: ${result.moved.join(", ") || "already at requested positions"}.`,
       json: result,
       isError: result.missing.length > 0,
     };

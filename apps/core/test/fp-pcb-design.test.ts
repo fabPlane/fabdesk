@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { FpPcbCompileJob } from "@fabdesk/protocol";
-import { BoardLayer } from "@fp-pcb/proto";
-import { createBoardGraphic } from "@fp-pcb/client";
+import { create } from "@bufbuild/protobuf";
+import { BoardLayer, FootprintInstanceSchema, PadSchema, packAny } from "@fp-pcb/proto";
+import { Footprint, createBoardGraphic } from "@fp-pcb/client";
 import {
   createFpPcbDesign,
   evaluatePartCompatibility,
@@ -656,5 +657,148 @@ describe("what a successful build checks against the saved board", () => {
       clearance: 0.15,
       track_width: 0.15,
     });
+  });
+});
+
+describe("embedded footprint placement recovery", () => {
+  function setup(options: { failSave?: boolean } = {}) {
+    const original = new Footprint(
+      create(FootprintInstanceSchema, {
+        id: { value: "connector" },
+        position: { xNm: 10000000n, yNm: 20000000n },
+        orientation: { valueDegrees: -90 },
+        layer: BoardLayer.BL_F_Cu,
+        referenceField: {
+          text: {
+            text: { text: "J13", position: { xNm: 10000000n, yNm: 20000000n }, attributes: {} },
+          },
+        },
+        definition: {
+          id: { libraryNickname: "Missing", entryName: "Embedded" },
+          items: [
+            packAny(
+              PadSchema,
+              create(PadSchema, {
+                id: { value: "pad1" },
+                number: "1",
+                position: { xNm: 11000000n, yNm: 22000000n },
+                net: { name: "GND", code: { value: 1 } },
+              }),
+            ),
+          ],
+        },
+      }),
+    );
+    let live = original.clone();
+    const files: Record<string, string> = {
+      "/p/board.kicad_pcb": "original pcb",
+      "/p/board.kicad_pro": "original project",
+    };
+    const calls: string[] = [];
+    let failSave = options.failSave ?? false;
+    const board = {
+      getFootprints: async () => [live],
+      revision: async () => 3n,
+      updateFootprintsFromLibrary: async () => {
+        throw new Error("unexpected library access");
+      },
+      commit: async (
+        _message: string,
+        run: (tx: { update: (items: Footprint[]) => Promise<void> }) => Promise<void>,
+      ) => {
+        const before = live.clone();
+        calls.push("commit");
+        try {
+          await run({
+            update: async (items) => {
+              live = items[0]!.clone();
+            },
+          });
+        } catch (error) {
+          live = before;
+          throw error;
+        }
+      },
+      save: async () => {
+        calls.push("save");
+        files["/p/board.kicad_pcb"] = `angle ${live.orientation}`;
+        if (failSave) {
+          failSave = false;
+          throw new Error("save failed after write");
+        }
+      },
+    };
+    const design = createFpPcbDesign({
+      bridge: () => ({}) as never,
+      sessions: {
+        board: async () => board,
+        release: async () => {
+          calls.push("release");
+          live = original.clone();
+        },
+      } as unknown as FpPcbSessions,
+      readText: async (path) => {
+        if (!(path in files)) throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+        return files[path]!;
+      },
+      writeText: async (path, text) => {
+        files[path] = text;
+      },
+    });
+    return { design, original, files, calls, live: () => live };
+  }
+  test("moves and physically rotates embedded pads without accessing a library", async () => {
+    const state = setup();
+    const result = await state.design.placeFootprints("/p", [
+      { reference: "J13", position: { x: 20, y: 30 }, rotation: 90 },
+    ]);
+    expect(result).toMatchObject({ moved: ["J13"], saved: true, libraryNormalized: 0 });
+    expect(state.live().pads[0]?.position).toEqual({ x: 19000000, y: 28000000 });
+    expect(state.original.orientation).toBe(-90);
+    expect(state.original.pads[0]?.position).toEqual({ x: 11000000, y: 22000000 });
+  });
+  test("unknown references and invalid fields reject before any commit", async () => {
+    const state = setup();
+    const result = await state.design.placeFootprints("/p", [
+      { reference: "J13", rotation: 90 },
+      { reference: "Unknown", rotation: 90 },
+    ]);
+    expect(result.saved).toBe(false);
+    expect(state.calls).toEqual([]);
+    state.live().proto.referenceField!.text!.text!.attributes = undefined;
+    await expect(
+      state.design.placeFootprints("/p", [
+        { reference: "J13", rotation: 90, referenceField: { sizeMm: 0.8 } },
+      ]),
+    ).rejects.toThrow("no editable reference field");
+    expect(state.calls).toEqual([]);
+    expect(state.live().orientation).toBe(-90);
+  });
+  test("save failure restores both live and saved state, and retry performs the edit", async () => {
+    const state = setup({ failSave: true });
+    await expect(
+      state.design.placeFootprints("/p", [{ reference: "J13", rotation: 90 }]),
+    ).rejects.toThrow("save failed");
+    expect(state.live().equals(state.original)).toBe(true);
+    expect(state.files["/p/board.kicad_pcb"]).toBe("original pcb");
+    expect(state.files["/p/board.kicad_pro"]).toBe("original project");
+    expect(state.calls).toEqual(["commit", "save", "release"]);
+    const result = await state.design.placeFootprints("/p", [{ reference: "J13", rotation: 90 }]);
+    expect(result.moved).toEqual(["J13"]);
+    expect(state.live().pads[0]?.position).toEqual({ x: 9000000, y: 18000000 });
+  });
+  test("equivalent angles are a no-op and reference-field edits remain independent", async () => {
+    const state = setup();
+    const result = await state.design.placeFootprints("/p", [{ reference: "J13", rotation: 270 }]);
+    expect(result.moved).toEqual([]);
+    expect(state.live().equals(state.original)).toBe(true);
+    await state.design.placeFootprints("/p", [
+      {
+        reference: "J13",
+        referenceField: { position: { x: 12, y: 23 }, sizeMm: 0.8, visible: true },
+      },
+    ]);
+    expect(state.live().referenceField?.position).toEqual({ x: 12000000, y: 23000000 });
+    expect(state.live().pads[0]?.position).toEqual(state.original.pads[0]?.position);
   });
 });
