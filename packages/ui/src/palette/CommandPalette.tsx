@@ -41,7 +41,8 @@ export function CommandPalette() {
     <Dialog open={open} onClose={close} bare ariaLabel="Command palette" className="w-[560px] max-w-full">
       <Command label="Command palette" className="flex max-h-[70vh] flex-col">
         <Command.Input
-          autoFocus
+          // Dialog records the opener before focusing this input. React autoFocus
+          // runs earlier and would make the removed input the restore target.
           value={query}
           onValueChange={setQuery}
           placeholder="Type a command or search chats..."
