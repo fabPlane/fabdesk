@@ -301,10 +301,14 @@ export class ProjectStore implements ProjectResolver {
     }
     await writeJson(join(dir, PROJECT_FILES.manifest), manifest);
     opts.signal?.throwIfAborted();
+    // Slugs are globally unique, but destination folders are scoped to their
+    // parent. Allocate the internal name after cloning without renaming the
+    // destination the user confirmed. No await between allocation and upsert.
+    const registeredSlug = this.repo.list().some((project) => project.slug === slug) ? `${slug}-${manifest.id}` : slug;
     this.repo.upsert({
       id: manifest.id,
       name: opts.name,
-      slug,
+      slug: registeredSlug,
       path: dir,
       createdAt: manifest.createdAt,
       updatedAt: ts,
