@@ -2,7 +2,12 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { boardStats, supportsBoardStats, KicadCliError } from "../src/index";
+import {
+  BoardStatsUnavailableError,
+  boardStats,
+  supportsBoardStats,
+  KicadCliError,
+} from "../src/index";
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -43,6 +48,9 @@ describe("optional pcb export stats capability", () => {
     await Bun.write(f.output, "previous report");
     await expect(boardStats(f.cli, "board.kicad_pcb", f.output)).rejects.toThrow(
       "does not provide 'pcb export stats'",
+    );
+    await expect(boardStats(f.cli, "board.kicad_pcb", f.output)).rejects.toBeInstanceOf(
+      BoardStatsUnavailableError,
     );
     expect(await Bun.file(f.output).text()).toBe("previous report");
     const calls = (await Bun.file(f.calls).text())

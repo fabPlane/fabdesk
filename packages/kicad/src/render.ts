@@ -133,9 +133,16 @@ export function boardStatsUnavailableMessage(cli: KicadCli): string {
   );
 }
 
+export class BoardStatsUnavailableError extends Error {
+  constructor(cli: KicadCli) {
+    super(boardStatsUnavailableMessage(cli));
+    this.name = "BoardStatsUnavailableError";
+  }
+}
+
 /** Reads outline and component counts through `kicad-cli pcb export stats`. */
 export async function boardStats(cli: KicadCli, board: string, scratchFile: string): Promise<BoardStats> {
-  if (!(await supportsBoardStats(cli))) throw new Error(boardStatsUnavailableMessage(cli));
+  if (!(await supportsBoardStats(cli))) throw new BoardStatsUnavailableError(cli);
   await runKicadCli(cli, ["pcb", "export", "stats", "--format", "json", "--units", "mm", "-o", scratchFile, board]);
   const raw = normalizeBoardStatsReport(await Bun.file(scratchFile).json()) as {
     board: { width: string; height: string; board_thickness: string };

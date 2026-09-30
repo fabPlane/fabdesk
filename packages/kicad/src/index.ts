@@ -26,6 +26,7 @@ export {
   boardStats,
   supportsBoardStats,
   boardStatsUnavailableMessage,
+  BoardStatsUnavailableError,
   normalizeBoardStatsReport,
   DEFAULT_PERSPECTIVE,
   type BoardView,
