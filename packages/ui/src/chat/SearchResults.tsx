@@ -12,7 +12,7 @@ export function openChatSearchResult(thread: Thread, messageId?: string) {
 }
 
 function Preview({ snippet }: { snippet: string }) {
-  return <span className="line-clamp-2 text-[11px] leading-4 text-muted">{snippet.replaceAll("[", "").replaceAll("]", "")}</span>;
+  return <span className="line-clamp-2 text-[11px] leading-4 text-muted">{snippet}</span>;
 }
 
 export function SearchResults({ query }: { query: string }) {

@@ -120,7 +120,7 @@ function ItemRow({
             {refs}
           </span>
         )}
-        <IconButton title="Remove" className="ml-auto h-6 w-6 shrink-0 text-muted hover:text-danger" onClick={onRemove}>
+        <IconButton title="Remove" size="xs" className="ml-auto shrink-0 text-muted hover:text-danger" onClick={onRemove}>
           <Icon name="close" width={16} height={16} />
         </IconButton>
       </div>
@@ -190,8 +190,8 @@ function AddRow({ options, fab, onAdd, busy }: { options: Destination[]; fab: st
       }}
     >
       <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Add item: MPN or description" aria-label="Item description or MPN" className="text-xs" style={{ height: 32, minWidth: 0, flex: "1 1 180px" }} data-testid="shopping-add-label" />
-      <Input type="number" min={0} value={qty} onChange={(e) => setQty(e.target.value)} className="text-xs" style={{ height: 28, width: 60, flex: "none" }} aria-label="Quantity" />
-      <DestinationSelect value={dest} options={options} onChange={setDest} className="text-xs" style={{ height: 28, width: 140, flex: "none" }} />
+      <Input type="number" min={0} value={qty} onChange={(e) => setQty(e.target.value)} className="text-xs" style={{ ...COMPACT, width: 60, flex: "none" }} aria-label="Quantity" />
+      <DestinationSelect value={dest} options={options} onChange={setDest} className="text-xs" style={{ ...COMPACT, width: 140, flex: "none" }} />
       <Button type="submit" size="sm" disabled={!valid || busy}>
         Add
       </Button>

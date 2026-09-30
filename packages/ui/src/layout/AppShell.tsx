@@ -28,11 +28,19 @@ export function AppShell({ onNewChat, coreStatus, banner }: AppShellProps) {
   useEffect(() => {
     const shell = shellRef.current;
     if (!shell) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let width = shell.clientWidth;
     const observer = new ResizeObserver(([entry]) => {
-      if (entry) setShellWidth(Math.max(1, entry.contentRect.width));
+      if (!entry) return;
+      width = Math.max(1, entry.contentRect.width);
+      // Update minimums at most ten times a second during window resizing.
+      if (timer === undefined) timer = setTimeout(() => {
+        setShellWidth(width);
+        timer = undefined;
+      }, 100);
     });
     observer.observe(shell);
-    return () => observer.disconnect();
+    return () => { observer.disconnect(); clearTimeout(timer); };
   }, []);
   const percent = (pixels: number) => (pixels / Math.max(760, shellWidth)) * 100;
   const sidebarOpen = useUiStore((s) => s.sidebarOpen);
@@ -66,7 +74,7 @@ export function AppShell({ onNewChat, coreStatus, banner }: AppShellProps) {
           <Panel id="chat" order={2} minSize={percent(300)}>
             {center}
           </Panel>
-          {boardOpen && !openSourceId && !inventory && !orderFlowOpen && (
+          {boardOpen && !openSourceId && !inventory && (
             <>
               <Handle />
               <Panel id="board" order={3} defaultSize={40} minSize={percent(260)}>

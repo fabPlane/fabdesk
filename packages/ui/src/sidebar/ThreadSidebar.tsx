@@ -36,7 +36,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
   const setSidebarListTab = useUiStore((s) => s.setSidebarListTab);
   const setActiveOpenSourceId = useUiStore((s) => s.setActiveOpenSourceId);
   const projects = useProjects();
-  const threads = useThreads({ q });
+  const threads = useThreads();
   const revealedChat = useRef<string | null>(null);
   useEffect(() => {
     if (!activeThreadId) { revealedChat.current = null; return; }
@@ -171,7 +171,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
         <OpenSourceList />
       ) : (
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3 pt-1">
-        {q.trim() ? <SearchResults query={q} /> : <>
+        {q.trim().length >= 2 ? <SearchResults query={q} /> : <>
         {threads.isLoading && <div className="px-2 py-3 text-xs text-muted">Loading...</div>}
         {threads.isError && <div className="px-2 py-3 text-xs text-danger">Could not load chats</div>}
         {projectGroups.map((group) => {
@@ -192,7 +192,6 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
                 onClick={() => {
                   if (group.kind === "project" && group.projectId) {
                     setExpandedProjects((current) => ({ ...current, [group.key]: !expanded }));
-                    setActiveProject(group.projectId);
                   }
                 }}
               >

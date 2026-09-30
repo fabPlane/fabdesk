@@ -265,7 +265,11 @@ export function createApp(deps: AppDeps): Hono<Env> {
   /* ---------- projects ---------- */
   app.get("/projects", (c) => c.json(deps.projects.summaries()));
   app.post("/projects", async (c) => {
-    const body = CreateProject.parse(await c.req.json());
+    const input = await c.req.json();
+    if (deps.listener === "remote" && input?.parentDirectory !== undefined) {
+      return c.json({ error: "Choosing a parent directory requires the local desktop connection" }, 403);
+    }
+    const body = CreateProject.parse(input);
     return c.json(await deps.projects.create(body.name, body.parentDirectory), 201);
   });
   app.get("/projects/:id", async (c) => {
@@ -619,16 +623,23 @@ export function createApp(deps: AppDeps): Hono<Env> {
     return c.json(deps.store.threads.search(q));
   });
   app.get("/projects/import-github/destination", async (c) => {
+    if (deps.listener === "remote" && c.req.query("parentDirectory") !== undefined) {
+      return c.json({ error: "Choosing a parent directory requires the local desktop connection" }, 403);
+    }
     const name = c.req.query("name") ?? "";
     if (!name.trim() || name.length > 80) return c.json({ error: "Enter a project name" }, 400);
     return c.json(await deps.projects.importDestination(name, c.req.query("parentDirectory")));
   });
   app.post("/projects/import-github", async (c) => {
+    const input = await c.req.json();
+    if (deps.listener === "remote" && input?.parentDirectory !== undefined) {
+      return c.json({ error: "Choosing a parent directory requires the local desktop connection" }, 403);
+    }
     const body = z.object({
       url: z.string().min(1),
       name: z.string().trim().min(1).max(80),
       parentDirectory: z.string().optional(),
-    }).parse(await c.req.json());
+    }).parse(input);
     const source = parsePublicGitHubUrl(body.url);
     const project = await deps.projects.importFromGit({
       name: body.name,

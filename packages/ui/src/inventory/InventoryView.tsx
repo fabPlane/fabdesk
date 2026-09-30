@@ -100,11 +100,11 @@ function InventoryRow({ item }: { item: InventoryItem }) {
       </td>
       <td className="w-36 px-2 py-1.5">
         <div className="flex items-center gap-1">
-          <IconButton title="Use one" className="h-6 w-6" disabled={busy || item.quantity <= 0} onClick={() => adjust.mutate({ itemId: item.id, delta: -1 })}>
+          <IconButton title="Use one" size="xs" disabled={busy || item.quantity <= 0} onClick={() => adjust.mutate({ itemId: item.id, delta: -1 })}>
             <Icon name="minus" width={16} height={16} />
           </IconButton>
           <span className="min-w-[3ch] text-center font-mono">{item.quantity}</span>
-          <IconButton title="Add one" className="h-6 w-6" disabled={busy} onClick={() => adjust.mutate({ itemId: item.id, delta: 1 })}>
+          <IconButton title="Add one" size="xs" disabled={busy} onClick={() => adjust.mutate({ itemId: item.id, delta: 1 })}>
             <Icon name="plus" width={16} height={16} />
           </IconButton>
           <span className="text-[10.5px] text-muted">{item.unit}</span>

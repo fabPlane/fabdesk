@@ -22,3 +22,12 @@ test("paged search ranks titles and returns message snippets with archived chat 
     expect([first, second].flatMap((page) => page.messages).some((hit) => hit.thread.id === prefix.id && hit.thread.archived)).toBe(true);
   } finally { store.close(); }
 });
+
+test("paged snippets preserve literal brackets without injecting display markers", () => {
+  const store = new Store(openDatabase(":memory:"));
+  try {
+    const thread = store.threads.create({ agentId: "claude", title: "Board" });
+    store.threads.addMessage({ threadId: thread.id, role: "user", contentMd: "Check resistor R[1] and [the connector]" });
+    expect(store.threads.searchResults("resistor").messages[0]!.snippet).toBe("Check resistor R[1] and [the connector]");
+  } finally { store.close(); }
+});

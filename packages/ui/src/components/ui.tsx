@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
 import { cn } from "../util";
 import { Icon } from "./Icon";
+import { tabDestination, tabStopIndices } from "./keyboard";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
 type Size = "sm" | "md";
@@ -40,12 +41,14 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   );
 });
 
-export function IconButton({ className, title, ...rest }: ButtonProps & { title: string }) {
+export function IconButton({ className, title, size = "md", style, ...rest }: Omit<ButtonProps, "size"> & { title: string; size?: "xs" | "sm" | "md" }) {
+  const pixels = { xs: 24, sm: 28, md: 36 }[size];
   return (
     <Button
       variant="ghost"
       size="sm"
-      className={cn("fd-icon-button h-9 w-9 shrink-0 text-fg/75 hover:text-fg", className)}
+      className={cn("fd-icon-button shrink-0 text-fg/75 hover:text-fg", className)}
+      style={{ width: pixels, height: pixels, padding: 0, ...style }}
       title={title}
       aria-label={title}
       {...rest}
@@ -178,14 +181,14 @@ export function Dialog({ open, onClose, title, ariaLabel, children, className, b
       if (dialogs[dialogs.length - 1] !== dialogRef.current) return;
       if (e.key === "Tab") {
         const dialog = dialogRef.current;
-        const items = Array.from(dialog?.querySelectorAll<HTMLElement>("button, input, select, textarea, a[href], [tabindex]") ?? [])
-          .filter((element) => {
-            if (element.matches(":disabled, [tabindex='-1'], input[type='hidden']") || element.getClientRects().length === 0) return false;
-            if (element instanceof HTMLInputElement && element.type === "radio" && !element.checked && element.name) {
-              return !Array.from(dialog?.querySelectorAll<HTMLInputElement>('input[type="radio"]') ?? []).some((radio) => radio.name === element.name && radio.checked);
-            }
-            return true;
-          });
+        const candidates = Array.from(dialog?.querySelectorAll<HTMLElement>("button, input, select, textarea, a[href], [tabindex]") ?? []);
+        const items = tabStopIndices(candidates.map((element) => ({
+          disabled: element.matches(":disabled") || !!element.closest("[inert]"),
+          tabIndex: element.tabIndex,
+          visible: element.getClientRects().length > 0 && getComputedStyle(element).visibility !== "hidden",
+          radioGroup: element instanceof HTMLInputElement && element.type === "radio" ? element.name : "",
+          checked: element instanceof HTMLInputElement && element.checked,
+        }))).map((index) => candidates[index]!);
         const first = items[0];
         const last = items[items.length - 1];
         if (!first) { e.preventDefault(); dialog?.focus(); }
@@ -250,10 +253,10 @@ export function Tabs<T extends string>({
           aria-selected={t.id === value}
           tabIndex={t.id === value ? 0 : -1}
           onKeyDown={(e) => {
-            if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return;
-            e.preventDefault();
             const index = tabs.findIndex((tab) => tab.id === t.id);
-            const next = e.key === "Home" ? 0 : e.key === "End" ? tabs.length - 1 : (index + (e.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+            const next = tabDestination(e.key, index, tabs.length);
+            if (next === null) return;
+            e.preventDefault();
             const tab = tabs[next];
             if (tab) { onChange(tab.id); (e.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next])?.focus(); }
           }}

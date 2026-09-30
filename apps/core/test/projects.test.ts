@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, stat, symlink, unlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, stat, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../src/db";
@@ -156,7 +156,7 @@ describe("ProjectStore custom locations", () => {
       await mkdir(join(parent, "my-board"), { recursive: true });
       await writeFile(join(parent, "my-board", "keep.txt"), "existing data");
       const project = await projects.create("My Board", parent);
-      expect(project.path).toBe(join(parent, "my-board-2"));
+      expect(project.path).toBe(join(await realpath(parent), "my-board-2"));
       expect(await Bun.file(join(parent, "my-board", "keep.txt")).text()).toBe("existing data");
       expect(await Bun.file(join(project.path, "fabdesk.json")).exists()).toBe(true);
       await restarted.init();

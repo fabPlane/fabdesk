@@ -122,7 +122,7 @@ export function CommandPalette() {
             </Command.Group> : null}
             {[...searchGroups.entries()].map(([threadId, group]) => <Command.Group key={threadId} heading={`Messages · ${group.title}`}>
               {group.hits.map(({ id, snippet, thread }) => <Command.Item key={id} value={`${query} ${thread.title} ${id}`} onSelect={() => openChatSearchResult(thread, id)}>
-                <span className="block min-w-0 truncate text-xs text-muted">{snippet.replaceAll("[", "").replaceAll("]", "")}</span>
+                <span className="block min-w-0 truncate text-xs text-muted">{snippet}</span>
               </Command.Item>)}
             </Command.Group>)}
             {search.hasNextPage && <Command.Group heading="More results"><Command.Item value={`${query} load more messages`} onSelect={() => void search.fetchNextPage()}>{search.isFetchingNextPage ? "Loading…" : "Load more messages"}</Command.Item></Command.Group>}

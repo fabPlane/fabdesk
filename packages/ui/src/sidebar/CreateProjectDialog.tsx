@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCore } from "@fabdesk/client-core";
+import { parsePublicGitHubUrl } from "@fabdesk/protocol";
 import { Button, Dialog, Input } from "../components/ui";
 import { Icon } from "../components/Icon";
 
@@ -23,6 +24,7 @@ export function CreateProjectDialog({ onClose, onCreated, initialMode = "create"
   const canPick = local && !!host.pickDirectory;
 
   useEffect(() => {
+    setDestination(null);
     if (mode !== "github" || !name.trim()) { setDestination(null); return; }
     let canceled = false;
     const timer = setTimeout(() => {
@@ -89,8 +91,10 @@ export function CreateProjectDialog({ onClose, onCreated, initialMode = "create"
       {mode === "github" && <label className="flex flex-col gap-2 text-[13px] font-medium">Public GitHub URL
         <Input autoFocus type="url" required value={url} disabled={pending} onChange={(e) => {
           const next = e.target.value; setUrl(next);
-          const repo = /^https:\/\/github\.com\/[A-Za-z0-9-]+\/([A-Za-z0-9._-]+?)(?:\.git)?\/?$/.exec(next.trim())?.[1];
-          if (repo && !nameTouched) setName(repo);
+          if (!nameTouched) {
+            try { setName(parsePublicGitHubUrl(next).repo); }
+            catch { setName(""); }
+          }
         }} placeholder="https://github.com/owner/repo" className="h-11" />
         <span className="text-xs font-normal leading-5 text-muted">Public repositories only. The Git origin stays connected.</span>
       </label>}

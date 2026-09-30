@@ -626,7 +626,7 @@ export class ThreadRepo {
       "SELECT * FROM threads WHERE title LIKE ? ESCAPE '\\' ORDER BY CASE WHEN lower(title) = lower(?) THEN 0 WHEN lower(title) LIKE lower(?) ESCAPE '\\' THEN 1 ELSE 2 END, updated_at DESC, id LIMIT ?",
     ).all(`%${like}%`, q, `${like}%`, 20).map((row) => this.toThread(row));
     const hits = this.db.query<MessageRow & { snippet: string }, [string, number, number]>(
-      "SELECT m.*, snippet(messages_fts, 0, '[', ']', '…', 12) AS snippet FROM messages_fts f JOIN messages m ON m.rowid = f.rowid WHERE messages_fts MATCH ? ORDER BY rank, m.created_at DESC, m.id LIMIT ? OFFSET ?",
+      "SELECT m.*, snippet(messages_fts, 0, '', '', '…', 12) AS snippet FROM messages_fts f JOIN messages m ON m.rowid = f.rowid WHERE messages_fts MATCH ? ORDER BY rank, m.created_at DESC, m.id LIMIT ? OFFSET ?",
     ).all(ftsQuery(q), limit + 1, offset);
     const messages = hits.slice(0, limit).flatMap((row) => {
       const thread = this.get(row.thread_id);

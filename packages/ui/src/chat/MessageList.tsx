@@ -276,9 +276,11 @@ export function MessageList({
     stick.current = false;
     target.scrollIntoView({ block: "center", behavior: "smooth" });
     target.classList.add("fd-search-highlight");
-    setFocusMessageId(null);
-    const timer = setTimeout(() => target.classList.remove("fd-search-highlight"), 2500);
-    return () => clearTimeout(timer);
+    const timer = setTimeout(() => {
+      target.classList.remove("fd-search-highlight");
+      setFocusMessageId(null);
+    }, 2500);
+    return () => { clearTimeout(timer); target.classList.remove("fd-search-highlight"); };
   }, [focusMessageId, messages, setFocusMessageId]);
   useEffect(() => {
     const el = ref.current;
