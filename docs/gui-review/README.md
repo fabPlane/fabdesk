@@ -47,8 +47,9 @@ was limited by the macOS sharing overlay and control-tool failures.
   this is not validation of every CAD operation or authenticated shopping flow.
 - Long labels truncate at 960×600; comparison pages have no horizontal document
   overflow. Refreshed settings Save/Reset controls remain visible at minimum size.
-  Programmatic native resizing and pane proportions passed; mouse-drag resizing
-  remains unverified.
+  Native mouse resizing also passed with Retina-pixel coordinates: board width
+  changed 431.40 → 531.26 px at 1440×920, and 353.92 → 304.03 px at 960×600,
+  with no horizontal document overflow.
 - Expanding a different project preserves the active chat. Ordering preserves the
   board pane, including with a rendered imported PCB.
 - Native parent-folder picker and project creation succeeded with a custom location;
@@ -77,17 +78,19 @@ no destination remained and no project was registered.
 
 ## Test results and remaining gates
 
-Required Bun 1.4.0 was used. Root `bun run typecheck` passes on current main and the
-complete stack, and on the import branch after its fix. Desktop builds passed on
-main, visual-only, and the initial complete stack. The final root `bun run test`
-initially **failed six tests**: five KiCad mechanical-export/cache tests and one core
-ephemeral project-copy path assertion. Independent current-main dependencies and
-submodules reproduced those six failures. The import layer now compares canonical
-realpaths in the ephemeral-copy fixture; all four project tests pass. The five KiCad
-failures remain: the fixture declares format `20260831` / generator `10.99`, while
-this host has KiCad `10.0.4`, which reports `Failed to load board`. The concurrency
-wrapper also uses GNU-style `sed -i`, incompatible with macOS BSD sed. These are
-not fixed or skipped to produce a green test result.
+Required Bun 1.4.0 was used. Root `bun run typecheck` and root `bun run test`
+now both pass on the complete stack, including the scripts phase. Mechanical tests:
+18 pass / 250 assertions; full KiCad workspace: 48 pass; core: 291 pass / 2 optional
+skips. Desktop builds passed on main, visual-only, and the complete stack.
+
+The initial six macOS failures were independently reproduced on current main.
+The import layer corrected canonical-path expectations for ephemeral project copies.
+It also adds a stable-format mechanical runtime fixture with the same 13 footprints,
+models, placements and expected measurements. The original KiCad 10.99 transform
+fixture remains unchanged for parser coverage. Real GLB export now runs on installed
+KiCad 10.0.4 with all measurement assertions intact. The concurrent-change wrapper
+uses portable `sed` output plus rename instead of GNU-only `sed -i`. No failure was
+silenced by skipping tests or weakening expected measurements.
 
 An initial tools route test also failed once waiting for `route.done`; its focused
 rerun and the final full tools suite passed. Its intermittent cause is unresolved.
@@ -96,8 +99,10 @@ by the root command's failing workspace phase, was run separately: 71 pass, 0 fa
 
 A continuation verified unobscured traffic-light spacing, green full-screen entry,
 Control-Command-F return, yellow minimize (hidden visibility and lost focus), and
-restore. Native title-bar and pane drag attempts still produced no measurable
-bounds change; they remain unverified. The red close control was subsequently verified: the native bridge reported no
+restore. Native pane dragging subsequently passed using Retina-pixel coordinates.
+Native title-bar movement remains unverified by automation: its drag sends a move
+event with the left button released, although the CSS drag region is correctly
+configured. A manual confirmation has been requested. The red close control was subsequently verified: the native bridge reported no
 remaining app windows.
 
 The first #208 CI failed a queue lease test after its fixed 20 ms wait, although
@@ -105,7 +110,8 @@ local main and complete-stack focused runs each passed 11 tests. #208 now waits
 for queued dispatch with a two-second deadline and unchanged result assertions.
 This is test synchronization only, not a production queue implementation change.
 
-Before marking ready, resolve or explicitly accept the five macOS KiCad failures
-and finish title-bar dragging and mouse pane resizing.
+Before marking ready, finish native title-bar movement confirmation. All local
+root checks now pass. Supplemental Mobile and Board workflows passed on the prior
+heads; CI on the final changes is rechecked and reported in the PR descriptions.
 CI after the pushed changes is reported separately in the PR descriptions; green
 remote CI does not substitute for these remaining native checks.
