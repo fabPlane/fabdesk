@@ -18,22 +18,15 @@ describe.skipIf(!haveKicad())("embedded placement against KiCad", () => {
     await cp(join(import.meta.dir, "fixtures/embedded-placement.kicad_pcb"), path);
     let server: RunningKiCad | undefined;
     let failSave = false;
-    let poisonSecond = false;
+    let failFlip = false;
     const openBoard = async (): Promise<Board> => {
       if (!server) server = await startKiCad(path, "fabdesk-placement");
       const board = (await server.kicad.currentBoard())!;
-      const getFootprints = board.getFootprints.bind(board);
-      board.getFootprints = async () => {
-        const footprints = await getFootprints();
-        if (poisonSecond) {
-          const second = footprints.find((f) => f.reference === "U1")!;
-          second.proto.definition!.items.push({
-            $typeName: "google.protobuf.Any",
-            typeUrl: "type.googleapis.com/unknown.Child",
-            value: new Uint8Array(),
-          });
-        }
-        return footprints;
+      const nativeFlip = board.flip.bind(board);
+      board.flip = async (...args) => {
+        const result = await nativeFlip(...args);
+        if (failFlip) throw new Error("injected failure after native flip");
+        return result;
       };
       const save = board.save.bind(board);
       board.save = async () => {
@@ -51,7 +44,11 @@ describe.skipIf(!haveKicad())("embedded placement against KiCad", () => {
     };
     const design = createFpPcbDesign({
       bridge: () => ({}) as never,
-      sessions: { board: openBoard, release } as unknown as FpPcbSessions,
+      sessions: {
+        board: openBoard,
+        release,
+        assertSchematicSaved: async () => {},
+      } as unknown as FpPcbSessions,
     });
     try {
       const original = (await (await openBoard()).getFootprints()).find(
@@ -78,14 +75,14 @@ describe.skipIf(!haveKicad())("embedded placement against KiCad", () => {
       expect(saved.referenceField!.position).toEqual({ x: 21000000, y: 34000000 });
       expect(saved.id).toBe(original.id);
       const beforeFailure = await readFile(path, "utf8");
-      poisonSecond = true;
+      failFlip = true;
       await expect(
         design.placeFootprints(dir, [
           { reference: "J13", rotation: -90, flip: true },
           { reference: "U1", rotation: 90 },
         ]),
-      ).rejects.toThrow("unknown footprint child");
-      poisonSecond = false;
+      ).rejects.toThrow("injected failure after native flip");
+      failFlip = false;
       expect(await readFile(path, "utf8")).toBe(beforeFailure);
       saved = (await (await openBoard()).getFootprints()).find((f) => f.reference === "J13")!;
       expect(saved.orientation).toBe(90);
@@ -105,6 +102,7 @@ describe.skipIf(!haveKicad())("embedded placement against KiCad", () => {
         x: originalPad.x + 10000000,
         y: originalPad.y + 10000000,
       });
+      const beforeFlipPad = saved.pads[0]!.position;
       const flip = await design.placeFootprints(dir, [
         { reference: "J13", flip: true, rotation: 90 },
       ]);
@@ -115,6 +113,11 @@ describe.skipIf(!haveKicad())("embedded placement against KiCad", () => {
       expect(saved.isFlipped).toBe(true);
       expect(saved.orientation).toBe(90);
       expect(saved.pads[0]!.layers).toContain(saved.layerId);
+      // Native left-right flip mirrors X at the anchor; the requested angle then rotates 180°.
+      expect(saved.pads[0]!.position).toEqual({
+        x: beforeFlipPad.x,
+        y: 2 * saved.position.y - beforeFlipPad.y,
+      });
     } finally {
       await release();
       await rm(dir, { recursive: true, force: true });

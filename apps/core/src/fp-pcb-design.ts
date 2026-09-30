@@ -1078,6 +1078,12 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
           `footprint ${placement.reference} has no editable reference field`,
           "precondition",
         );
+      // Validate ordinary rotations before entering a commit or flipping another footprint.
+      if (
+        placement.rotation !== undefined &&
+        (placement.flip === undefined || footprint.isFlipped === placement.flip)
+      )
+        footprint.clone().rotate((placement.rotation - footprint.orientation) % 360);
       return { placement, footprint };
     });
     if (new Set(placements.map((p) => p.reference)).size !== placements.length)
@@ -1086,6 +1092,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         "invalid_args",
       );
 
+    await deps.sessions.assertSchematicSaved(projectDir);
     const originals = await Promise.all(
       [BOARD_PCB, BOARD_PRO].map(async (file) => ({
         path: join(projectDir, file),
@@ -1184,10 +1191,18 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     } catch (error) {
       // A save can fail after writing. Restore the saved files and discard the edited session
       // so a failed transport, commit or save cannot leak into a later successful edit.
-      await deps.sessions.release(projectDir);
-      for (const original of originals) {
-        if (original.text !== null) await writeText(original.path, original.text);
-        else await rm(original.path, { force: true });
+      await deps.sessions.release(projectDir).catch((cleanupError) => {
+        console.warn("footprint placement session recovery failed:", cleanupError);
+      });
+      const cleanup = await Promise.allSettled(
+        originals.map(async (original) => {
+          if (original.text !== null) await writeText(original.path, original.text);
+          else await rm(original.path, { force: true });
+        }),
+      );
+      for (const result of cleanup) {
+        if (result.status === "rejected")
+          console.warn("footprint placement recovery failed:", result.reason);
       }
       throw error;
     }

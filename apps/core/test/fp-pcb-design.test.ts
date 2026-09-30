@@ -661,7 +661,9 @@ describe("what a successful build checks against the saved board", () => {
 });
 
 describe("embedded footprint placement recovery", () => {
-  function setup(options: { failSave?: boolean } = {}) {
+  function setup(
+    options: { failSave?: boolean; failRestore?: boolean; unsavedSchematic?: boolean } = {},
+  ) {
     const original = new Footprint(
       create(FootprintInstanceSchema, {
         id: { value: "connector" },
@@ -732,6 +734,9 @@ describe("embedded footprint placement recovery", () => {
       bridge: () => ({}) as never,
       sessions: {
         board: async () => board,
+        assertSchematicSaved: async () => {
+          if (options.unsavedSchematic) throw new Error("save the open schematic");
+        },
         release: async () => {
           calls.push("release");
           live = original.clone();
@@ -742,7 +747,9 @@ describe("embedded footprint placement recovery", () => {
         return files[path]!;
       },
       writeText: async (path, text) => {
+        if (options.failRestore && path.endsWith(".kicad_pcb")) throw new Error("restore failed");
         files[path] = text;
+        calls.push(`restore ${path}`);
       },
     });
     return { design, original, files, calls, live: () => live };
@@ -782,10 +789,43 @@ describe("embedded footprint placement recovery", () => {
     expect(state.live().equals(state.original)).toBe(true);
     expect(state.files["/p/board.kicad_pcb"]).toBe("original pcb");
     expect(state.files["/p/board.kicad_pro"]).toBe("original project");
-    expect(state.calls).toEqual(["commit", "save", "release"]);
+    expect(state.calls).toEqual([
+      "commit",
+      "save",
+      "release",
+      "restore /p/board.kicad_pcb",
+      "restore /p/board.kicad_pro",
+    ]);
     const result = await state.design.placeFootprints("/p", [{ reference: "J13", rotation: 90 }]);
     expect(result.moved).toEqual(["J13"]);
     expect(state.live().pads[0]?.position).toEqual({ x: 9000000, y: 18000000 });
+  });
+  test("unsaved schematic rejects placement without a commit or restart", async () => {
+    const state = setup({ unsavedSchematic: true });
+    await expect(
+      state.design.placeFootprints("/p", [{ reference: "J13", rotation: 90 }]),
+    ).rejects.toThrow("save the open schematic");
+    expect(state.calls).toEqual([]);
+    expect(state.live().equals(state.original)).toBe(true);
+  });
+  test("a failed PCB restore still restores the project and preserves the original error", async () => {
+    const state = setup({ failSave: true, failRestore: true });
+    await expect(
+      state.design.placeFootprints("/p", [{ reference: "J13", rotation: 90 }]),
+    ).rejects.toThrow("save failed after write");
+    expect(state.calls).toContain("restore /p/board.kicad_pro");
+  });
+  test("unknown rotation content rejects before a commit or restart", async () => {
+    const state = setup();
+    state.live().proto.definition!.items.push({
+      $typeName: "google.protobuf.Any",
+      typeUrl: "type.googleapis.com/unknown.Child",
+      value: new Uint8Array(),
+    });
+    await expect(
+      state.design.placeFootprints("/p", [{ reference: "J13", rotation: 90 }]),
+    ).rejects.toThrow("unknown footprint child");
+    expect(state.calls).toEqual([]);
   });
   test("equivalent angles are a no-op and reference-field edits remain independent", async () => {
     const state = setup();
