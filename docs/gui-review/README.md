@@ -40,8 +40,8 @@ was limited by the macOS sharing overlay and control-tool failures.
 ## Native verification
 
 - Command-comma opens Settings; Escape closes it and returns focus to the composer.
-  Keyboard traversal remains inside Settings. Exhaustive reverse-tab boundary checks
-  remain outstanding.
+  Keyboard traversal remains inside Settings. Shift-Tab from Close wraps to the last
+  enabled control, Tab wraps back to Close, and Escape restores composer focus.
 - Selected and saved all four themes. Command-1 through Command-8 opens all eight
   board views at minimum size. Empty/loading/local-sign-in states were exercised;
   this is not validation of every CAD operation or authenticated shopping flow.
@@ -62,8 +62,9 @@ was limited by the macOS sharing overlay and control-tool failures.
   was needed; all mock runs were stopped.
 - Public Hello-World import exercised zero boards; PicoMemcard exercised multiple
   boards and adoption. Missing-repository failure and real HTTP cancellation cleanup
-  were checked. One-board discovery/hydration passed automated tests but has not had
-  a separate native end-to-end import pass.
+  were checked. Native one-board automatic import also passed using `nayaramadan/BlinkyBoard`
+  at `5ac1154f1d8208550dfa99a52249853530c26cb4`: the board was adopted and rendered
+  without a chooser.
 
 ## Reproducible fix
 
@@ -79,20 +80,31 @@ no destination remained and no project was registered.
 Required Bun 1.4.0 was used. Root `bun run typecheck` passes on current main and the
 complete stack, and on the import branch after its fix. Desktop builds passed on
 main, visual-only, and the initial complete stack. The final root `bun run test`
-**fails six tests**: five KiCad mechanical-export/cache tests and one core ephemeral
-project-copy path assertion (`/var/folders` versus `/private/var/folders`). Independent
-current-main dependencies and submodules reproduce the same six failures. KiCad logs
-include BSD-sed incompatibility and export errors. These failures remain unresolved.
+initially **failed six tests**: five KiCad mechanical-export/cache tests and one core
+ephemeral project-copy path assertion. Independent current-main dependencies and
+submodules reproduced those six failures. The import layer now compares canonical
+realpaths in the ephemeral-copy fixture; all four project tests pass. The five KiCad
+failures remain: the fixture declares format `20260831` / generator `10.99`, while
+this host has KiCad `10.0.4`, which reports `Failed to load board`. The concurrency
+wrapper also uses GNU-style `sed -i`, incompatible with macOS BSD sed. These are
+not fixed or skipped to produce a green test result.
 
 An initial tools route test also failed once waiting for `route.done`; its focused
 rerun and the final full tools suite passed. Its intermittent cause is unresolved.
 The final UI suite passed 76 tests and desktop passed 92. The scripts phase, skipped
 by the root command's failing workspace phase, was run separately: 71 pass, 0 fail.
 
-Before marking ready, resolve or explicitly accept the macOS suite failures and
-finish traffic-light transitions, title-bar dragging/spacing without the sharing
-overlay, mouse pane resizing, exhaustive reverse focus traversal, and native
-one-board automatic import. The native control tool reported `noWindowsAvailable`
-on title-bar drag despite an accessible app window, so that behavior is unverified.
+A continuation verified unobscured traffic-light spacing, green full-screen entry,
+Control-Command-F return, yellow minimize (hidden visibility and lost focus), and
+restore. Native title-bar and pane drag attempts still produced no measurable
+bounds change; they remain unverified. Close-button behavior remains outstanding.
+
+The first #208 CI failed a queue lease test after its fixed 20 ms wait, although
+local main and complete-stack focused runs each passed 11 tests. #208 now waits
+for queued dispatch with a two-second deadline and unchanged result assertions.
+This is test synchronization only, not a production queue implementation change.
+
+Before marking ready, resolve or explicitly accept the five macOS KiCad failures
+and finish title-bar dragging, mouse pane resizing, and close-button verification.
 CI after the pushed changes is reported separately in the PR descriptions; green
 remote CI does not substitute for these remaining native checks.
