@@ -105,7 +105,9 @@ export type ToolDef<I extends z.ZodRawShape = z.ZodRawShape> = {
   description: string;
   inputSchema: I;
   outputSchema?: z.ZodRawShape;
-  annotations: ToolAnnotations;
+  /** Declare effects explicitly; omitted MCP hints otherwise default to destructive/open-world. */
+  annotations: ToolAnnotations &
+    Required<Pick<ToolAnnotations, "readOnlyHint" | "destructiveHint" | "openWorldHint">>;
   /** Runs as a job over HTTP (`{jobId}`), streams progress over MCP. */
   longRunning?: boolean;
   /** `project` tools accept an optional `project` argument (id or path) and require one at runtime. */

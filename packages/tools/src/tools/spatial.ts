@@ -63,7 +63,12 @@ export const pcb_inspect = defineTool({
       .optional()
       .describe("Return connected copper islands for these nets (pad/via/track/zone graph)"),
   },
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async (
     { kinds, references, nets, layers, region, near, limitPerKind, islandsOfNet },
     ctx,

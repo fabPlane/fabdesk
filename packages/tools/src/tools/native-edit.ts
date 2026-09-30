@@ -490,7 +490,12 @@ export const native_edit_transaction = defineTool({
     geometry: PcbGeometry.optional(),
     removeCopperNets: z.array(z.string().min(1)).max(500).optional(),
   },
-  annotations: { destructiveHint: true, idempotentHint: false },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: false,
+  },
   handler: async (
     {
       mode,
@@ -680,7 +685,12 @@ export const native_edit_rollback = defineTool({
   description:
     "Restore the exact native KiCad files saved before an accepted native_edit_transaction. The current revisions must still match that transaction's after revisions, preventing rollback over newer work.",
   inputSchema: { transactionId: z.string().optional() },
-  annotations: { destructiveHint: true, idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async ({ transactionId }, ctx) => {
     const project = ctx.requireProject();
     const root = p(project, ".fabdesk/native-revisions");
@@ -749,7 +759,12 @@ export const pcb_edit_copper = defineTool({
         "Explicitly acknowledge that named-net copper removal should persist without replacement geometry",
       ),
   },
-  annotations: { destructiveHint: true, idempotentHint: false },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: false,
+  },
   handler: async (
     {
       mode,
@@ -851,7 +866,12 @@ export const pcb_edit_graphics = defineTool({
     graphics: PcbGeometry.shape.graphics,
     deleteItemIds: PcbGeometry.shape.deleteItemIds,
   },
-  annotations: { destructiveHint: true, idempotentHint: false },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: false,
+  },
   handler: (
     { mode, expectedPcbRevision, outline, zones, keepouts, texts, graphics, deleteItemIds },
     ctx,

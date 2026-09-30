@@ -30,7 +30,12 @@ export const verify_erc = defineTool({
     severity: z.enum(["all", "error"]).default("all"),
     limit: z.number().int().min(1).max(200).default(30),
   },
-  annotations: { idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   longRunning: true,
   handler: async ({ severity, limit }, ctx) => {
     const project = ctx.requireProject();
@@ -129,7 +134,12 @@ export const verify_gate = defineTool({
       .describe("Add the current new warning signatures to the allowed baseline"),
     requireErc: z.boolean().default(false).describe("Fail when no ERC report exists"),
   },
-  annotations: { idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async ({ acceptWarnings, requireErc }, ctx) => {
     const project = ctx.requireProject();
     const drc = await readJsonOrNull<
@@ -303,7 +313,12 @@ export const verify_viagrid = defineTool({
   description:
     "For a project on a Viagrid 9055 blank (project_set_board template=viagrid-9055): reads the vias and pads from the KiCad board on the design server and checks that every via is one of the blank's 180 factory vias (claimed by route_run, none added elsewhere or stacked on a factory via), that the whole blank is there, and that pads stay clear of the four mounting holes. Writes reports/viagrid.json. Run it after route_run and before verify_drc; positions in the report are in the blank's frame (centre origin, +y up).",
   inputSchema: {},
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async (_args, ctx) => {
     const project = ctx.requireProject();
     const template = project.manifest().board.template;

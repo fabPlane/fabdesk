@@ -44,10 +44,9 @@ describe("classifyToolCall", () => {
     }
   });
 
-  test("the contract's examples run unattended: write_file, route_run, export_*, render_*", () => {
+  test("idempotent file writes, exports and renders run unattended", () => {
     const fine = [
       "project_write_file",
-      "route_run",
       ...registry
         .list()
         .filter((d) => /^(export|render)_/.test(d.name))
@@ -59,7 +58,10 @@ describe("classifyToolCall", () => {
   });
 
   test("non-idempotent fabdesk tools and unknown servers pause", () => {
-    for (const t of ["app_click", "app_type", "app_send_message", "app_eval"])
+    for (const t of [
+      "app_click", "app_type", "app_send_message", "app_eval",
+      "circuit_build", "route_run", "app_screenshot", "app_wait_for",
+    ])
       expect({ t, needs: needs(`mcp__fabdesk__${t}`) }).toEqual({ t, needs: true });
     expect(needs("mcp__github__create_issue")).toBe(true);
     expect(needs("mcp__fabdesk__no_such_tool")).toBe(true);

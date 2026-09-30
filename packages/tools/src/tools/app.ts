@@ -108,7 +108,12 @@ export const app_state = defineTool({
   description:
     "Return the running fabPlane desktop app version, windows, and renderer UI state. Fails with `unavailable` when no app bridge is running.",
   inputSchema: {},
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async (_args, ctx) => {
     const state = await requireBridge(ctx).call<Record<string, unknown>>("GET", "/state");
     return ok(summarizeState(state), state);
@@ -149,7 +154,12 @@ export const app_screenshot = defineTool({
       .describe("Image format; default jpeg for full window, png for regions"),
     annotate: z.boolean().optional().describe("Reserved: overlay element refs (currently a no-op)"),
   },
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: false,
+    openWorldHint: false,
+    idempotentHint: false,
+  },
   handler: async ({ windowId, region, scale, format }, ctx) => {
     const fmt = format ?? (region ? "png" : "jpeg");
     const body = {
@@ -193,7 +203,12 @@ export const app_find = defineTool({
     limit: z.number().int().min(1).max(50).default(10),
     windowId: z.number().int().optional(),
   },
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async ({ query, limit, windowId }, ctx) => {
     const qs = new URLSearchParams({
       query,
@@ -241,7 +256,12 @@ export const app_click = defineTool({
     clickCount: z.number().int().min(1).max(3).default(1).describe("2 for double-click"),
     windowId: z.number().int().optional(),
   },
-  annotations: { idempotentHint: false },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: true,
+    idempotentHint: false,
+  },
   handler: async ({ selector, x, y, button, clickCount, windowId }, ctx) => {
     if (!selector && (x === undefined || y === undefined))
       throw new ToolError("pass `selector` or both `x` and `y`", "invalid_args");
@@ -273,7 +293,12 @@ export const app_type = defineTool({
     selector: z.string().min(1).optional().describe("Focus this element before typing"),
     windowId: z.number().int().optional(),
   },
-  annotations: { idempotentHint: false },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: true,
+    idempotentHint: false,
+  },
   handler: async ({ text, selector, windowId }, ctx) => {
     const res = await requireBridge(ctx).call<Record<string, unknown>>("POST", "/type", {
       text,
@@ -295,7 +320,12 @@ export const app_key = defineTool({
     key: z.string().min(1).describe("Accelerator string, e.g. Enter, Escape, CommandOrControl+K"),
     windowId: z.number().int().optional(),
   },
-  annotations: { idempotentHint: false },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: true,
+    idempotentHint: false,
+  },
   handler: async ({ key, windowId }, ctx) => {
     const res = await requireBridge(ctx).call<Record<string, unknown>>("POST", "/key", {
       key,
@@ -315,7 +345,12 @@ export const app_select_project = defineTool({
   inputSchema: {
     project: z.string().min(1).describe("Project id, name or absolute path"),
   },
-  annotations: { idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: false,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async ({ project }, ctx) => {
     const handle = await ctx.services.projects.resolve(project);
     const result = await ui<Record<string, unknown>>(ctx, "selectProject", [handle?.id ?? project]);
@@ -339,7 +374,12 @@ export const app_open_tab = defineTool({
   inputSchema: {
     tab: z.enum(APP_BOARD_TABS),
   },
-  annotations: { idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: false,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async ({ tab }, ctx) => {
     const result = await ui<Record<string, unknown>>(ctx, "openTab", [tab]);
     return ok(`Board tab is now ${tab}.`, { tab, ui: result });
@@ -356,7 +396,12 @@ export const app_open_thread = defineTool({
   inputSchema: {
     thread: z.string().min(1).describe("Thread id"),
   },
-  annotations: { idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: false,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async ({ thread }, ctx) => {
     const result = await ui<Record<string, unknown>>(ctx, "openThread", [thread]);
     return ok(`Opened thread ${thread}.`, { threadId: thread, ui: result });
@@ -371,7 +416,12 @@ export const app_new_chat = defineTool({
   description:
     "Switch the desktop UI to a fresh, unsaved chat (composer focused) in the active project. The thread is created when the first message is sent.",
   inputSchema: {},
-  annotations: { idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async (_args, ctx) => {
     const result = await ui<Record<string, unknown>>(ctx, "newChat", []);
     return ok("New chat opened.", { ui: result });
@@ -393,7 +443,12 @@ export const app_send_message = defineTool({
       .optional()
       .describe("Agent id to select in the composer before sending (e.g. claude, codex)"),
   },
-  annotations: { idempotentHint: false },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: true,
+    idempotentHint: false,
+  },
   handler: async ({ text, agent }, ctx) => {
     const result = await ui<Record<string, unknown>>(ctx, "sendMessage", [text, agent ?? null]);
     const sent = result["sent"] === true;
@@ -421,7 +476,12 @@ export const app_cinema = defineTool({
     layer: z.number().int().min(0).optional().describe("For action=layer: copper layer index"),
     run: z.string().min(1).optional().describe("For action=load: route run id"),
   },
-  annotations: { idempotentHint: false },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: false,
+    openWorldHint: false,
+    idempotentHint: false,
+  },
   handler: async ({ action, mode, index, layer, run }, ctx) => {
     let result: Record<string, unknown>;
     switch (action) {
@@ -463,7 +523,12 @@ export const app_wait_for = defineTool({
     predicate: z.string().min(1).max(4000).describe("JS expression over `state` and `document`"),
     timeoutMs: z.number().int().min(100).max(120_000).default(10_000),
   },
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: true,
+    idempotentHint: false,
+  },
   handler: async ({ predicate, timeoutMs }, ctx) => {
     const result = await ui<{ ok: boolean; value?: unknown; elapsedMs: number; error?: string }>(
       ctx,
@@ -501,7 +566,12 @@ export const app_eval = defineTool({
     timeoutMs: z.number().int().min(100).max(10_000).default(10_000),
     windowId: z.number().int().optional(),
   },
-  annotations: { destructiveHint: true, openWorldHint: true, idempotentHint: false },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: true,
+    idempotentHint: false,
+  },
   handler: async ({ code, timeoutMs, windowId }, ctx) => {
     // Arbitrary JavaScript reaches the host bridge too: an agent once called
     // `window.fabdesk.restartCore()` from here and killed every run, its own included.

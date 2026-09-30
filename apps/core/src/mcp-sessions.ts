@@ -204,7 +204,13 @@ export class McpSessionManager {
         description:
           "Internal: Claude Code asks the fabdesk daemon whether a tool call may run in supervised mode. Not for the model to call.",
         inputSchema: PERMISSION_PROMPT_INPUT as unknown as ZodRawShapeCompat,
-        annotations: { title: "Permission prompt", readOnlyHint: true },
+        annotations: {
+          title: "Permission prompt",
+          readOnlyHint: false,
+          destructiveHint: false,
+          openWorldHint: false,
+          idempotentHint: false,
+        },
       },
       async (args: Record<string, unknown>, extra) => {
         let result: PermissionPromptResult;

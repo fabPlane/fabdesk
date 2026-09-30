@@ -53,8 +53,8 @@ describe("app toolset", () => {
       "app_eval",
     ]);
     expect(registry.get("app_state")!.annotations.readOnlyHint).toBe(true);
-    expect(registry.get("app_screenshot")!.annotations.readOnlyHint).toBe(true);
-    expect(registry.get("app_click")!.annotations.readOnlyHint).toBeUndefined();
+    expect(registry.get("app_screenshot")!.annotations.readOnlyHint).toBe(false);
+    expect(registry.get("app_click")!.annotations.readOnlyHint).toBe(false);
     expect(registry.get("app_eval")!.annotations.destructiveHint).toBe(true);
     expect(registry.get("app_eval")!.annotations.openWorldHint).toBe(true);
     // Global scope: no injected `project` argument.

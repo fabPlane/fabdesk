@@ -17,7 +17,12 @@ export const circuit_query = defineTool({
       .describe("Case-insensitive substring matched against refs/nets/footprints"),
     limit: z.number().int().min(1).max(500).default(100),
   },
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async ({ select, filter, limit }, ctx) => {
     const project = ctx.requireProject();
     const rows = await ctx.services.design.query(project.dir, select, filter);
@@ -44,7 +49,12 @@ export const circuit_search_parts = defineTool({
       .describe("Optional functional role used to rank matching parts"),
     limit: z.number().int().min(1).max(50).default(10),
   },
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   scope: "global",
   handler: async ({ query, kind, role, limit }, ctx) => {
     const searchQuery = role ? `${query} power-only USB-C` : query;
@@ -87,7 +97,12 @@ export const circuit_describe_part = defineTool({
       .max(300)
       .describe("Exact Library:Name returned by circuit_search_parts"),
   },
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   scope: "global",
   handler: async ({ kind, libId }, ctx) => {
     const part = await ctx.services.design.describePart(kind, libId);
@@ -114,7 +129,12 @@ export const circuit_check_part_compatibility = defineTool({
     footprintLibId: z.string().min(3).max(300).describe("Exact footprint Library:Name"),
     role: z.enum(["power-only-usb-c"]).optional(),
   },
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   scope: "global",
   handler: async ({ symbolLibId, footprintLibId, role }, ctx) => {
     const result = await ctx.services.design.checkPartCompatibility(

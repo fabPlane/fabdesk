@@ -31,7 +31,12 @@ export const load_toolset = defineTool({
   inputSchema: {
     toolset: ToolsetId.describe("Toolset to enable"),
   },
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: false,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async ({ toolset }, ctx) => {
     if (ctx.session) ctx.session.enableToolset(toolset);
     const enabled = ctx.session ? ctx.session.enabledToolsets() : [...TOOLSETS];
@@ -50,7 +55,12 @@ export const pcb_environment = defineTool({
   description:
     "Return current project paths, kicad-cli identity, FabPCB bridge status, desktop-UI availability, and available interfaces.",
   inputSchema: {},
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async (_args, ctx) => {
     const project = ctx.requireProject();
     const [cli, bridge, app] = await Promise.all([
@@ -127,7 +137,12 @@ export const project_status = defineTool({
   description:
     "Summarise the selected project: directory, board settings, native KiCad files, latest source/compiler build, persisted release evidence and staleness, route and verification state, sketches, and reports. Does not run ERC, DRC, or release.",
   inputSchema: {},
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async (_args, ctx) => {
     const project = ctx.requireProject();
     const manifest = project.manifest();
@@ -286,7 +301,12 @@ export const circuit_build = defineTool({
         "Discard the existing board first (outline, placement, tracks) and build from the netlist alone. Needed after changing the board size: a build never redraws an outline that exists.",
       ),
   },
-  annotations: { idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: false,
+  },
   longRunning: true,
   handler: async ({ entrypoint, rebuild, fresh }, ctx) => {
     const project = ctx.requireProject();
@@ -396,7 +416,12 @@ export const circuit_place = defineTool({
       .min(1)
       .max(1000),
   },
-  annotations: { idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async ({ placements }, ctx) => {
     const project = ctx.requireProject();
     const result = await ctx.services.design.place(
@@ -436,7 +461,12 @@ export const circuit_read_errors = defineTool({
   title: "Read build errors",
   description: "Return errors and warnings from reports/build.json.",
   inputSchema: {},
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async (_args, ctx) => {
     const project = ctx.requireProject();
     const build = await readJsonOrNull<BuildSummary>(
@@ -459,7 +489,12 @@ export const route_run = defineTool({
   description:
     "Start a durable asynchronous autoroute against a revision-bound board snapshot and return a run ID immediately. Progress, diagnostics and artifacts remain available through route_status after this request ends. applyPolicy=auto (default) atomically applies only while the starting PCB revision is current; manual preserves a validated native candidate for route_apply. onlyConnections limits the run to named nets.",
   inputSchema: RouteRunArgs,
-  annotations: { idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: false,
+  },
   longRunning: true,
   handler: (args, ctx) =>
     runRoute(
@@ -510,7 +545,12 @@ export const verify_drc = defineTool({
         "summary: counts, per-rule totals and a byte-bounded sample without per-violation geometry rows. full: the complete enriched violations inline, which costs roughly 1 KiB per violation.",
       ),
   },
-  annotations: { idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   longRunning: true,
   handler: async ({ severity, schematicParity, limit, responseMode }, ctx) => {
     const project = ctx.requireProject();
@@ -877,7 +917,12 @@ export const render_board = defineTool({
     height: z.number().int().min(128).max(4096).default(768),
     quality: z.enum(["basic", "high"]).default("basic").describe("basic is fast; high raytraces"),
   },
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   longRunning: true,
   handler: async ({ view, width, height, quality }, ctx) => {
     const project = ctx.requireProject();
