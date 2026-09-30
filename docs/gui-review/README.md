@@ -1,54 +1,98 @@
 # GUI review
 
-PR #200 contains the desktop visual refresh only. Chat search and timestamps,
-project locations and GitHub import, and composer queueing are reviewed in
-separate stacked PRs.
+The stack remains draft: [visual refresh #200](https://github.com/TensorFleet/fabdesk/pull/200),
+[search/timestamps #206](https://github.com/TensorFleet/fabdesk/pull/206),
+[project locations/import #207](https://github.com/TensorFleet/fabdesk/pull/207), and
+[composer queue #208](https://github.com/TensorFleet/fabdesk/pull/208).
+No backend changes belong to #200. No PR has been merged.
 
-## Review corrections
+## Capture revisions — September 30, 2026
 
-- Expanding a project only toggles its chat list. Opening a chat or creating a
-  new chat selects that project explicitly.
-- Icon buttons have explicit 24, 28 and 36 px sizes. Inventory and shopping
-  rows use 24 px controls; shopping add-row fields share a 32 px height.
-- Ordering keeps the board pane visible.
-- Long chat titles truncate within the sidebar grid at the minimum window size.
-- Window-size minimum calculations are throttled to at most ten updates per second.
-- Focus-trap filtering and tab-key wrapping have focused regression tests.
+- Fetched current main baseline: `263a38d2c8dc478eb309ed18d7fcda4a38daf67d`.
+- Visual-only capture: `22676bbccd72d8422c71bb096abe26704ce8c95f`.
+- Feature captures from the complete stack: `db98b45431ff4fda64888054bc09fdad23c6ef1a`.
+- Search/import heads at initial fetch: `b8f4a692463a42dfc0c5d86494183c28826e1d75` /
+  `e08349ee243d367d45c361e4061dc3ff4bafe2f2`.
+- Subsequent import cancellation fix: `02bb2c4b79c5061f7da537ba9249c5dd96225cf8`,
+  propagated to the complete stack as `c125188848aeaa779acd6a219082f6a0c7a0623e`.
+  Feature images precede that backend-only fix; they are not captures of the later head.
+  This report is a subsequent documentation change.
 
-## Visual evidence
+Fresh native Electron renderer captures replace the historical comparisons in #200.
+All images are GitHub PR attachments, not repository binaries. Main is on the left,
+visual-only UI on the right: new chat and selected project/PCB at 1440×920, narrow
+board at 960×600, and Appearance settings at both sizes. #206–#208 embed their own
+feature evidence. Upload previews were checked for loaded images and dimensions.
 
-The original main baseline is `33d68bc109150789c45f7ad334c079931e39d353`.
-The earlier visual comparison was captured at `ecfad8314853280c1067342f5a3d92b3f80f0607`
-and stored in historical commit `6e10a82688b93a81b78c565df00ff8c3bb21f841`.
-Its paired images remain embedded directly in the PR description, labeled with
-their capture revision. They are historical evidence, not screenshots of these
-review corrections.
+Each pair uses the same isolated profile and disposable data, Fabplane Dark theme,
+selected project/thread/board state, and measured pane widths. Wide pane proportions
+are 16.6667/43.3333/40%; narrow proportions are 20/50/30%. There is no active chat in
+the comparison pairs. Project captures show the same imported PicoMemcard PCB.
+The public fixture revision is `9ea646810366574740b03e3211b655de870a03dc`
+from `dangiu/PicoMemcard`, board `pcb/PicoMemcard-pico/PicoMemcard-pico.kicad_pcb`.
 
-Screenshot binaries and superseded iteration reports have been removed from the
-branch's final diff. GitHub-hosted PR attachment upload remains pending; historical
-commit image URLs keep the existing comparison visible meanwhile.
+Environment: macOS 26.6.2 (25G83), arm64, Electron 44.1.1, Bun 1.4.0,
+KiCad 10.0.4. Native windows were sized to 1440×920 or 960×600. Retina renderer
+captures were scaled to CSS dimensions. **These images omit OS window chrome**;
+they are not proof of traffic-light or title-bar behavior. Separate native inspection
+was limited by the macOS sharing overlay and control-tool failures.
 
-## Design references
+## Native verification
 
-- [Linear](https://linear.app/now/behind-the-latest-design-refresh): quieter chrome and alignment.
-- [Figma UI3](https://www.figma.com/blog/behind-our-redesign-ui3/): protect canvas space.
-- [Codex](https://openai.com/index/introducing-the-codex-app/): project-organized workspace.
-- [Cursor](https://cursor.com/blog/cursor-3): clear agent work and secondary details.
-- [Raycast](https://www.raycast.com/blog/a-fresh-look-and-feel): icons and shortcut discovery.
+- Command-comma opens Settings; Escape closes it and returns focus to the composer.
+  Keyboard traversal remains inside Settings. Exhaustive reverse-tab boundary checks
+  remain outstanding.
+- Selected and saved all four themes. Command-1 through Command-8 opens all eight
+  board views at minimum size. Empty/loading/local-sign-in states were exercised;
+  this is not validation of every CAD operation or authenticated shopping flow.
+- Long labels truncate at 960×600; comparison pages have no horizontal document
+  overflow. Refreshed settings Save/Reset controls remain visible at minimum size.
+  Programmatic native resizing and pane proportions passed; mouse-drag resizing
+  remains unverified.
+- Expanding a different project preserves the active chat. Ordering preserves the
+  board pane, including with a rendered imported PCB.
+- Native parent-folder picker and project creation succeeded with a custom location;
+  `/tmp` resolved to `/private/tmp`. Canonical-path custom-location coverage passed.
+- Literal `R[1]` search issued one request after about 260 ms. Result navigation
+  selected the chat; the temporary highlight appeared and cleared after 2.8 seconds.
+  September 29/30 date dividers and local message timestamps were visible.
+- Disposable mock agent: queue acceptance, queued-item cancellation without stopping
+  the active run, and Command-period stop followed by queued dispatch passed.
+  Simulated send failure retained both draft text and attachment. No paid model run
+  was needed; all mock runs were stopped.
+- Public Hello-World import exercised zero boards; PicoMemcard exercised multiple
+  boards and adoption. Missing-repository failure and real HTTP cancellation cleanup
+  were checked. One-board discovery/hydration passed automated tests but has not had
+  a separate native end-to-end import pass.
 
-## Verification
+## Reproducible fix
 
-The complete implementation passed root `bun run typecheck` before the split.
-The visual-only split also passes root typecheck and all 76 UI tests.
-Electron checks at 960×600 confirmed expansion preserves the active chat and
-ordering keeps the board visible without page overflow.
-Remote-listener regressions: 15 passing tests, including all three custom-path
-entry points and local/default-directory compatibility.
-Pure keyboard, shared URL parser, bracket-preserving search, import and custom
-project-location tests pass. The broader project test file encounters Windows
-`EPERM` when creating a symlink.
+Cancellation originally rejected on the Git child's AbortSignal error before the
+child had exited. Cleanup could race with Git recreating the destination. #207 now
+waits for child close before rejecting and deleting the destination; #208 contains
+the same fix. A deterministic POSIX regression failed before the change and passed
+afterward (4 import tests, 24 assertions). Real canceled-import cleanup was retested:
+no destination remained and no project was registered.
 
-Root `bun run test` remains failing in several workspaces on this Windows host.
-Failures include POSIX path and permission expectations, executable/process
-assumptions, and installed KiCad format compatibility. These are reported rather
-than treated as a passing verification gate. Native macOS has not been tested.
+## Test results and remaining gates
+
+Required Bun 1.4.0 was used. Root `bun run typecheck` passes on current main and the
+complete stack, and on the import branch after its fix. Desktop builds passed on
+main, visual-only, and the initial complete stack. The final root `bun run test`
+**fails six tests**: five KiCad mechanical-export/cache tests and one core ephemeral
+project-copy path assertion (`/var/folders` versus `/private/var/folders`). Independent
+current-main dependencies and submodules reproduce the same six failures. KiCad logs
+include BSD-sed incompatibility and export errors. These failures remain unresolved.
+
+An initial tools route test also failed once waiting for `route.done`; its focused
+rerun and the final full tools suite passed. Its intermittent cause is unresolved.
+The final UI suite passed 76 tests and desktop passed 92. The scripts phase, skipped
+by the root command's failing workspace phase, was run separately: 71 pass, 0 fail.
+
+Before marking ready, resolve or explicitly accept the macOS suite failures and
+finish traffic-light transitions, title-bar dragging/spacing without the sharing
+overlay, mouse pane resizing, exhaustive reverse focus traversal, and native
+one-board automatic import. The native control tool reported `noWindowsAvailable`
+on title-bar drag despite an accessible app window, so that behavior is unverified.
+CI after the pushed changes is reported separately in the PR descriptions; green
+remote CI does not substitute for these remaining native checks.
