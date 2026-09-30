@@ -13,14 +13,16 @@ export function ProjectPickerDialog() {
   const projects = useProjects();
 
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   const choose = (projectId: string | null) => {
     startNewChatInProject(projectId);
     setCreating(false);
+    setImporting(false);
 
   };
 
-  if (open && creating) return <CreateProjectDialog onClose={() => setCreating(false)} onCreated={choose} />;
+  if (open && (creating || importing)) return <CreateProjectDialog initialMode={importing ? "github" : "create"} onClose={() => { setCreating(false); setImporting(false); }} onCreated={choose} />;
 
   return (
     <Dialog open={open} onClose={() => setOpen(false)} title="Which project?" className="w-[420px]">
@@ -48,6 +50,7 @@ export function ProjectPickerDialog() {
           <Button variant="primary" onClick={() => setCreating(true)}>
             New project
           </Button>
+          <Button onClick={() => setImporting(true)}>Import from GitHub</Button>
           <Button onClick={() => choose(null)}>Continue without a project</Button>
         </div>
 
