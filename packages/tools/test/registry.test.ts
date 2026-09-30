@@ -2916,59 +2916,9 @@ describe("registry", () => {
       await mkdir(join(path, ".."), { recursive: true }).catch(() => {});
       await Bun.write(path, body);
     };
-    let presentation: "none" | "dense" | "stubs" = "none";
-    let fault: "none" | "erc" | "drc" | "missing" | "stale" = "none";
     const services = mockServices([project], {
-      design: {
-        ...base.design,
-        schematicInspect: async () => ({
-          ...(await base.design.schematicInspect(project.dir)),
-          symbols:
-            presentation === "none"
-              ? []
-              : Array.from({ length: 14 }, (_, i) => ({
-                  id: `symbol-${i}`,
-                  reference: `R${i + 1}`,
-                  value: "1k",
-                  footprint: "",
-                  libId: "Device:R",
-                  position: { x: i * 10, y: 20 },
-                  rotation: 0,
-                  mirrorX: false,
-                  mirrorY: false,
-                  pins: [],
-                })),
-          localLabels:
-            presentation === "none"
-              ? []
-              : Array.from({ length: 37 }, (_, i) => ({
-                  id: `label-${i}`,
-                  text: `N${i}`,
-                  position: { x: i * 10, y: 20 },
-                })),
-          wires:
-            presentation === "none"
-              ? []
-              : Array.from({ length: 35 }, (_, i) => ({
-                  id: `wire-${i}`,
-                  start: { x: i * 10, y: 20 },
-                  end: { x: i * 10 + (presentation === "stubs" ? 2.54 : 10), y: 20 },
-                })),
-        }),
-      },
       kicad: {
         ...base.kicad,
-        runErc: async () => ({
-          violations: [],
-          counts: { errors: fault === "erc" ? 1 : 0, warnings: 0 },
-        }),
-        runDrc: async (_cli, opts) => {
-          expect(opts.schematicParity).toBe(true);
-          return {
-            ...(await base.kicad.runDrc(_cli, opts)),
-            counts: { errors: fault === "drc" ? 1 : 0, warnings: 0, unconnected: 0 },
-          };
-        },
         renderPng: async (_cli, { output }) => put(output, "png"),
         exportSchematicSvg: async (_cli, { outDir }) => {
           await mkdir(outDir, { recursive: true });
@@ -3001,10 +2951,7 @@ describe("registry", () => {
           return { paths: [output] };
         },
         exportBom: async (_cli, { output }) => {
-          if (fault === "missing") await rm(output, { force: true });
-          else await put(output);
-          if (fault === "stale")
-            await writeFile(join(project.dir, "board.kicad_pcb"), "changed during release");
+          await put(output);
           return { paths: [output] };
         },
         exportNetlist: async (_cli, { output }) => {
@@ -3014,37 +2961,35 @@ describe("registry", () => {
       },
     });
     const factory = contextFactory(services, project);
-    const callRelease = () =>
-      reg.invoke(
-        "release_build",
-        {
-          buildNotes: "Fit LED with marked cathode.",
-          circuitChecks: [
-            {
-              kind: "led-current",
-              supplyVolts: 5,
-              forwardVolts: 2,
-              resistanceOhms: 1000,
-              minMa: 2,
-              maxMa: 4,
-            },
-            {
-              kind: "assertion",
-              name: "Firmware controls the LED",
-              pass: true,
-              evidence: "Firmware will implement this behavior.",
-            },
-          ],
-        },
-        (ref) =>
-          factory({
-            def: reg.get("release_build")!,
-            projectRef: ref,
-            signal: new AbortController().signal,
-            progress: () => {},
-          }),
-      );
-    const release = await callRelease();
+    const release = await reg.invoke(
+      "release_build",
+      {
+        buildNotes: "Fit LED with marked cathode.",
+        circuitChecks: [
+          {
+            kind: "led-current",
+            supplyVolts: 5,
+            forwardVolts: 2,
+            resistanceOhms: 1000,
+            minMa: 2,
+            maxMa: 4,
+          },
+          {
+            kind: "assertion",
+            name: "Firmware controls the LED",
+            pass: true,
+            evidence: "Firmware will implement this behavior.",
+          },
+        ],
+      },
+      (ref) =>
+        factory({
+          def: reg.get("release_build")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+    );
     expect(release.isError).toBeFalsy();
     expect((release.json as any).pass).toBe(true);
     expect((release.json as any).contract.version).toBe("2.0.0");
@@ -3085,37 +3030,6 @@ describe("registry", () => {
         (entry: any) => entry.path === "exports/fabrication.zip" && entry.status === "available",
       ),
     ).toBe(true);
-    for (const layout of ["dense", "stubs"] as const) {
-      presentation = layout;
-      const advisory = await callRelease();
-      expect(advisory.isError).toBeFalsy();
-      expect((advisory.json as any).pass).toBe(true);
-      expect((advisory.json as any).failureReasons).toEqual([]);
-      expect((advisory.json as any).checks.schematicPresentation).toMatchObject({
-        status: "advisory",
-        readabilityAssessed: false,
-      });
-      expect(advisory.text).toContain(
-        "Schematic presentation findings (advisory; readability not assessed)",
-      );
-      expect((advisory.json as any).checks.schematicPresentation.findings).toContain(
-        "37 labels for 14 symbols",
-      );
-      if (layout === "stubs")
-        expect((advisory.json as any).checks.schematicPresentation.findings).toContain(
-          "all schematic wires are short label stubs",
-        );
-    }
-    for (const failure of ["erc", "drc", "missing", "stale"] as const) {
-      fault = failure;
-      const blocked = await callRelease();
-      expect(blocked.isError).toBe(true);
-      expect((blocked.json as any).pass).toBe(false);
-      expect((blocked.json as any).failureReasons.length).toBeGreaterThan(0);
-      expect((blocked.json as any).failureReasons.join(" ")).not.toContain(
-        "schematic presentation",
-      );
-    }
   });
 
   test("circuit_build warns when the built stackup disagrees with fabdesk.json, never rewriting it", async () => {

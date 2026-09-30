@@ -207,7 +207,7 @@ export const release_build = defineTool({
   toolset: "verify",
   title: "Verify and build the complete release",
   description:
-    "Run full-severity complete-hierarchy ERC, parity-enabled DRC, unconnected/library checks, design-rule floor, advisory root-sheet presentation findings, PCB-reference visibility, task-derived circuit checks, renders, and native/document/fabrication export for one aggregate saved revision. Missing hierarchy members or outputs fail the release; any referenced-sheet edit makes the evidence stale.",
+    "Run full-severity complete-hierarchy ERC, parity-enabled DRC, unconnected/library checks, design-rule floor, root-sheet presentation, PCB-reference visibility, task-derived circuit checks, renders, and native/document/fabrication export for one aggregate saved revision. Missing hierarchy members or outputs fail the release; any referenced-sheet edit makes the evidence stale.",
   inputSchema: {
     circuitChecks: z
       .array(CircuitCheck)
@@ -305,7 +305,7 @@ export const release_build = defineTool({
     const longWireCount = schematicSnapshot.wires.filter(
       (wire) => Math.hypot(wire.end.x - wire.start.x, wire.end.y - wire.start.y) > 5.08,
     ).length;
-    const presentationFindings = [
+    const presentationViolations = [
       ...(schematicSnapshot.symbols.length >= 5 &&
       labelCount > schematicSnapshot.symbols.length * 1.5
         ? [`${labelCount} labels for ${schematicSnapshot.symbols.length} symbols`]
@@ -313,7 +313,7 @@ export const release_build = defineTool({
       ...(schematicSnapshot.symbols.length >= 5 &&
       schematicSnapshot.wires.length >= schematicSnapshot.symbols.length &&
       longWireCount === 0
-        ? ["all schematic wires are short label stubs"]
+        ? ["all schematic wires are short label stubs; no readable functional-block wiring"]
         : []),
     ];
     const schematicPresentation = {
@@ -323,15 +323,14 @@ export const release_build = defineTool({
         nativePath: null,
         name: "root",
       },
-      status: "advisory" as const,
-      readabilityAssessed: false,
+      status: presentationViolations.length ? ("fail" as const) : ("pass" as const),
       counts: {
         symbols: schematicSnapshot.symbols.length,
         wires: schematicSnapshot.wires.length,
         labels: labelCount,
         longWires: longWireCount,
       },
-      findings: presentationFindings,
+      violations: presentationViolations,
     };
 
     ctx.progress(0.3, "renders");
@@ -533,6 +532,7 @@ export const release_build = defineTool({
         ? [`${libraryMismatchViolations.length} library mismatch(es)`]
         : []),
       ...designRules.violations.map((reason) => `design rule integrity: ${reason}`),
+      ...presentationViolations.map((reason) => `schematic presentation: ${reason}`),
       ...(schematicRenderCoverage.status === "fail"
         ? [
             `schematic render coverage: ${schematicRenderCoverage.renderedSheets}/${schematicRenderCoverage.expectedSheets} referenced sheets`,
@@ -548,6 +548,7 @@ export const release_build = defineTool({
       gate.pass &&
       libraryMismatchViolations.length === 0 &&
       designRules.status === "pass" &&
+      schematicPresentation.status === "pass" &&
       schematicRenderCoverage.status === "pass" &&
       pcbPresentation.status === "pass" &&
       failedCircuitChecks.length === 0 &&
@@ -587,12 +588,6 @@ export const release_build = defineTool({
       `Complete saved-hierarchy ERC measured by packaged kicad-cli ${cli.version} for aggregate revision ${before.schematic} across ${beforeHierarchy.sheets.length} referenced sheet(s): ${erc.counts.errors} errors, ${erc.counts.warnings} warnings.`,
       ...(failureReasons.length
         ? ["Failure reasons:", ...failureReasons.map((reason) => `- ${reason}`)]
-        : []),
-      ...(presentationFindings.length
-        ? [
-            "Schematic presentation findings (advisory; readability not assessed):",
-            ...presentationFindings.map((finding) => `- ${finding}`),
-          ]
         : []),
       ...(gate.newWarningSignatures.length
         ? [

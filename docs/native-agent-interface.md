@@ -33,10 +33,8 @@ published or packaged as an AppImage.
   legacy netlist compiler operations are excluded from native capability search.
 - Native symbol creation preserves library identity, power symbols need no fake footprint, and
   connection preflight rejects crossing or ambiguous labelled stubs before committing.
-- Release rejects relaxed design-rule floors. Label density and short-wire counts are advisory
-  findings, not readability verdicts or release gates. ERC, parity-enabled DRC, revision binding,
-  and required outputs remain release gates. PCB placement can also lay out reference fields
-  without refreshing the footprint library.
+- Release enforces design-rule floors, ERC, parity-enabled DRC, revision binding, and required
+  outputs. PCB placement can also lay out reference fields without refreshing the footprint library.
 - Agent shell scripts can search, describe, call, and batch any registry operation with
   `fabpcb tool`. This supplies programmable loops and JSONL batching without legacy Python
   `pcbnew` or a different KiCad build.
