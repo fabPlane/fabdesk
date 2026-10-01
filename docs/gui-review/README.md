@@ -115,7 +115,7 @@ Native macOS verification and screenshot upload are complete, including the user
 title-bar confirmation. The macOS complete-stack root checks passed. Final CI
 status is recorded in the PR descriptions; capture revisions above remain unchanged.
 
-## Windows follow-up — September 30, 2026
+## Initial Windows follow-up — September 30, 2026
 
 - Fetched and preserved the Mac changes; the prior Windows stack remains available
   at `codex/windows-pre-mac-sync`. Existing untracked workspace files were untouched.
@@ -133,3 +133,35 @@ status is recorded in the PR descriptions; capture revisions above remain unchan
 - Known Windows failures include path/permission assumptions, symlink EPERM,
   subprocess behavior and KiCad test support. They have not been hidden or marked
   as passing. The Git child-close cancellation regression is still POSIX-only.
+
+## Windows failure fixes — September 30, 2026
+
+Follow-up branch: `codex/windows-test-portability`, based on the complete stack at
+`45aeced265a08d4ac1328a9b2398a8cded2a2c8b`. The initial failures above are historical;
+this follow-up fixes them separately from the visual-refresh and workflow PRs.
+
+- Fixed real Windows behavior: release inventory paths now use forward slashes so
+  fabrication ZIPs include their outputs; KiCad PATH uses the platform delimiter;
+  agent and KiCad environment overrides honor Windows' case-insensitive names.
+- Platform-parameterized profile paths now use that platform's path rules. Native
+  path expectations and mock filesystem paths work on Windows, macOS and Linux.
+- Replaced POSIX shell test fixtures with the existing Bun runtime or the KiCad
+  invocation tracer. The mechanical tests still run real KiCad exports and keep
+  their geometry, cancellation, mutation detection and cache assertions.
+- The user reported Smart App Control blocks while locally compiled fixture
+  executables failed. Those fixtures were removed. No unsigned runners or changes to
+  Windows security settings are required by this fix.
+- Windows safety tests use directory junctions rather than privileged file
+  symlinks; POSIX keeps file-symlink coverage. Permission-bit assertions run only
+  where POSIX modes apply; credential and archive persistence still run everywhere.
+- The MCP failure was a real configuration mismatch: durable routing retained
+  request heartbeats. It now disables those heartbeats while preserving HTTP's
+  existing queued-job response. The assertion now requires zero heartbeats.
+- Fixed the additional intermittent `route.done` test race by awaiting the exact
+  run's event, with a bounded deadline, before checking its payload.
+
+Windows root `bun run typecheck` and `bun run test` pass with Bun 1.4.0, including
+the scripts phase: **922 passed, 17 existing skips, 0 failures**. Existing
+platform/optional skips remain; no new test was skipped
+to obtain a passing result. These are automated checks, not a repeat of the native
+macOS GUI walkthrough or new screenshot captures.

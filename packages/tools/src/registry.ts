@@ -108,6 +108,8 @@ export type ToolDef<I extends z.ZodRawShape = z.ZodRawShape> = {
   annotations: ToolAnnotations;
   /** Runs as a job over HTTP (`{jobId}`), streams progress over MCP. */
   longRunning?: boolean;
+  /** False for durable jobs whose MCP request only schedules work. Keeps HTTP job behavior. */
+  mcpHeartbeat?: boolean;
   /** `project` tools accept an optional `project` argument (id or path) and require one at runtime. */
   scope?: "project" | "global";
   handler: ToolHandler<I>;

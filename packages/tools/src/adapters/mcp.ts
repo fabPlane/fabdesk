@@ -118,7 +118,7 @@ export function attachToRegistry(
         // phase reports nothing for longer than that, so long-running tools repeat their last
         // progress on a timer while they work.
         const heartbeat =
-          def.longRunning && progressToken !== undefined
+          def.longRunning && def.mcpHeartbeat !== false && progressToken !== undefined
             ? setInterval(() => send(last.pr, last.note), heartbeatMs())
             : null;
         try {

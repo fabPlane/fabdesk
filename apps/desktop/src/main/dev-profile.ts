@@ -8,7 +8,7 @@
  * `FABDESK_DEV_PROFILE=0` forces the production identity (useful for side-by-side tests).
  */
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { posix, win32 } from "node:path";
 
 export const PROD_PRODUCT_NAME = "fabPlane";
 export const DEV_PRODUCT_NAME = "fabPlane Dev";
@@ -80,6 +80,7 @@ export function desktopIdentity(devProfile: boolean): DesktopIdentity {
 
 /** Parent of Electron `userData` and of `FABDESK_HOME` (same rules as `@fabdesk/auth-client`). */
 export function platformAppDataDir(env: NodeJS.ProcessEnv, platform: NodeJS.Platform): string {
+  const join = platform === "win32" ? win32.join : posix.join;
   const home = env["HOME"] && env["HOME"] !== "" ? env["HOME"] : homedir();
   if (platform === "darwin") return join(home, "Library", "Application Support");
   if (platform === "win32") {
@@ -95,7 +96,8 @@ export function resolveUserDataPath(opts: {
   env?: NodeJS.ProcessEnv;
   platform?: NodeJS.Platform;
 }): string {
-  return join(platformAppDataDir(opts.env ?? {}, opts.platform ?? "linux"), opts.productName);
+  const paths = opts.platform === "win32" ? win32 : posix;
+  return paths.join(platformAppDataDir(opts.env ?? {}, opts.platform ?? "linux"), opts.productName);
 }
 
 export function resolveCoreHome(opts: {
@@ -106,7 +108,8 @@ export function resolveCoreHome(opts: {
   const env = opts.env ?? {};
   const override = env["FABDESK_HOME"];
   if (override && override.trim() !== "") return override;
-  return join(platformAppDataDir(env, opts.platform ?? "linux"), opts.dirName);
+  const paths = opts.platform === "win32" ? win32 : posix;
+  return paths.join(platformAppDataDir(env, opts.platform ?? "linux"), opts.dirName);
 }
 
 export function resolveDevCorePort(env: NodeJS.ProcessEnv = {}): string {
@@ -154,7 +157,10 @@ export function applyDesktopIdentity(
 
   app.setName(identity.productName);
   if (!explicitUserDataDir(opts.argv ?? process.argv)) {
-    app.setPath("userData", join(app.getPath("appData"), identity.productName));
+    app.setPath(
+      "userData",
+      (opts.platform === "win32" ? win32 : posix).join(app.getPath("appData"), identity.productName),
+    );
   }
   app.setAppUserModelId(identity.appUserModelId);
   if (opts.platform === "linux") {

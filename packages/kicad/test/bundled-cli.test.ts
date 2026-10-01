@@ -11,7 +11,7 @@ describe("bundledKicadRoots", () => {
       "/Resources/core/fabdesk-core",
     );
     expect(roots[0]).toBe("/bundle/kicad");
-    expect(roots).toContain("/Resources/kicad");
+    expect(roots).toContain(join("/Resources", "kicad"));
     expect(roots).toContain(join("/Resources/core", "..", "kicad"));
   });
 });

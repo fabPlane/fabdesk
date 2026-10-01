@@ -133,13 +133,14 @@ describe("mcp adapter", () => {
 
     // Durable routing returns immediately; it no longer needs request heartbeats to survive a
     // client idle timeout.
+    expect(createRegistry().get("route_run")?.longRunning).toBe(true); // HTTP keeps its job response.
     process.env["FABDESK_MCP_HEARTBEAT_MS"] = "2";
     try {
       const beats: number[] = [];
       await client.callTool({ name: "route_run", arguments: { timeoutMs: 1000 } }, undefined, {
         onprogress: (p) => beats.push(p.progress),
       });
-      expect(beats.length).toBeLessThanOrEqual(1);
+      expect(beats).toEqual([]);
     } finally {
       delete process.env["FABDESK_MCP_HEARTBEAT_MS"];
     }

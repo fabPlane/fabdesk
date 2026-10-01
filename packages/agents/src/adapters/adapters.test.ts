@@ -49,6 +49,20 @@ describe("shared", () => {
     ).toBe("Go");
   });
 
+  test("agentEnv respects platform casing when overriding inherited variables", () => {
+    const env = agentEnv(session({ env: { Path: "custom-bin", fabdesk_token: "ignored" } }));
+    if (process.platform === "win32") {
+      expect(env["PATH"]).toBe("custom-bin");
+      expect(env["Path"]).toBeUndefined();
+      expect(env["fabdesk_token"]).toBeUndefined();
+    } else {
+      expect(env["Path"]).toBe("custom-bin");
+      expect(env["PATH"]).toBe(process.env["PATH"] ?? "");
+      expect(env["fabdesk_token"]).toBe("ignored");
+    }
+    expect(env["FABDESK_TOKEN"]).toBe(TOKEN);
+  });
+
   test("replaceMarkedBlock replaces in place and appends otherwise", () => {
     const first = replaceMarkedBlock("[user]\nname = 'x'\n", "# s", "# e", "a = 1");
     expect(first).toBe("[user]\nname = 'x'\n\n# s\na = 1\n# e\n");

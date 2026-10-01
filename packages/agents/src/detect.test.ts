@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { detectBinary } from "./detect";
@@ -8,12 +8,14 @@ import { detectAgents } from "./index";
 let dir: string;
 let originalPath: string | undefined;
 
-function fakeBinary(name: string, versionLine: string): string {
-  const path = join(dir, name);
-  writeFileSync(path, `#!/bin/sh\necho "${versionLine}"\n`);
-  chmodSync(path, 0o755);
+function fakeBinary(name: string): string {
+  // Reuse the trusted runtime bytes: unsigned compiled fixtures are blocked by
+  // Windows Smart App Control, and POSIX shell scripts cannot run on Windows.
+  const path = join(dir, process.platform === "win32" ? `${name}.exe` : name);
+  copyFileSync(process.execPath, path);
   return path;
 }
+const versionArgs = (line: string) => ["-e", `console.log(${JSON.stringify(line)})`];
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "fabdesk-detect-"));
@@ -28,19 +30,22 @@ afterEach(() => {
 
 describe("detectBinary", () => {
   test("finds the first candidate on PATH and parses its version", async () => {
-    const path = fakeBinary("claude", "9.9.9 (Claude Code)");
-    const result = await detectBinary(["claude", "~/.local/bin/claude"]);
+    const path = fakeBinary("claude");
+    const result = await detectBinary(
+      ["claude", "~/.local/bin/claude"], undefined, versionArgs("9.9.9 (Claude Code)"),
+    );
     expect(result).toEqual({ installed: true, version: "9.9.9", path });
   });
 
   test("falls back to later candidates and to explicit paths", async () => {
-    const path = fakeBinary("cursor-agent", "cursor-agent version 2026.1.5");
-    expect(await detectBinary(["agent", "cursor-agent"])).toEqual({
+    const path = fakeBinary("cursor-agent");
+    const args = versionArgs("cursor-agent version 2026.1.5");
+    expect(await detectBinary(["agent", "cursor-agent"], undefined, args)).toEqual({
       installed: true,
       version: "2026.1.5",
       path,
     });
-    expect(await detectBinary(["agent", join(dir, "cursor-agent")])).toEqual({
+    expect(await detectBinary(["agent", path], undefined, args)).toEqual({
       installed: true,
       version: "2026.1.5",
       path,
@@ -54,9 +59,9 @@ describe("detectBinary", () => {
   });
 
   test("an explicit binaryPath is the only thing checked", async () => {
-    fakeBinary("claude", "1.0.0");
-    const custom = fakeBinary("my-claude", "2.0.0");
-    expect(await detectBinary(["claude"], custom)).toEqual({
+    fakeBinary("claude");
+    const custom = fakeBinary("my-claude");
+    expect(await detectBinary(["claude"], custom, versionArgs("2.0.0"))).toEqual({
       installed: true,
       version: "2.0.0",
       path: custom,
@@ -64,18 +69,18 @@ describe("detectBinary", () => {
     expect(await detectBinary(["claude"], join(dir, "nope"))).toEqual({ installed: false });
   });
 
-  test("a binary whose --version fails is still installed", async () => {
-    const path = join(dir, "codex");
-    writeFileSync(path, "#!/bin/sh\nexit 3\n");
-    chmodSync(path, 0o755);
-    expect(await detectBinary(["codex"])).toEqual({ installed: true, path });
+  test("a binary whose version probe fails is still installed", async () => {
+    const path = fakeBinary("codex");
+    expect(await detectBinary(["codex"], undefined, ["-e", "process.exit(3)"])).toEqual({
+      installed: true, path,
+    });
   });
 });
 
 describe("detectAgents", () => {
   test("returns one AgentInfo per adapter with install hints and settings overrides", async () => {
-    const grokPath = fakeBinary("grok", "grok 1.0.13 (abc) [stable]");
-    const custom = fakeBinary("codex-custom", "codex-cli 0.145.0");
+    const grokPath = fakeBinary("grok");
+    const custom = fakeBinary("codex-custom");
     const infos = await detectAgents({
       kicadCliPath: null,
       ngspicePath: null,
@@ -108,8 +113,8 @@ describe("detectAgents", () => {
     expect(byId["claude"]).toMatchObject({ displayName: "Claude" });
     expect(typeof byId["claude"]?.installed).toBe("boolean");
     expect(byId["claude"]?.installHint).toContain("claude");
-    expect(byId["codex"]).toMatchObject({ installed: true, version: "0.145.0", path: custom });
-    expect(byId["grok"]).toMatchObject({ installed: true, version: "1.0.13", path: grokPath });
+    expect(byId["codex"]).toMatchObject({ installed: true, version: process.versions.bun, path: custom });
+    expect(byId["grok"]).toMatchObject({ installed: true, version: process.versions.bun, path: grokPath });
     expect(byId["cursor"]).toMatchObject({ displayName: "Cursor" });
     for (const info of infos) expect(info.models.length).toBeGreaterThan(0);
     // Only Claude Code can pause a tool call for approval (see each adapter for why).

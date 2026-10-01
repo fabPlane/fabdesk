@@ -61,6 +61,17 @@ async function waitForRoute(services: CoreServices, id: string) {
   throw new Error(`route ${id} did not become terminal`);
 }
 
+async function waitForRouteDone(services: ReturnType<typeof mockServices>, id: string) {
+  // The terminal record is stored before final persistence and event emission.
+  const deadline = Date.now() + 2_000;
+  do {
+    const done = services.events.find((e) => e.topic === "route.done" && e.result.runId === id);
+    if (done?.topic === "route.done") return done;
+    await Bun.sleep(5);
+  } while (Date.now() < deadline);
+  throw new Error(`no route.done event for ${id}`);
+}
+
 describe("registry", () => {
   test("release recognizes KiCad library mismatch rules and descriptions", () => {
     expect(
@@ -2445,7 +2456,14 @@ describe("registry", () => {
         tamper: async (tx, outside) => {
           // The outside file matches the recorded bytes, so only the jail can reject it.
           await rm(join(tx.directory, "power.kicad_sch"));
-          await symlink(join(outside, "escape.kicad_sch"), join(tx.directory, "power.kicad_sch"));
+          if (process.platform === "win32") {
+            await symlink(outside, join(tx.directory, "linked"), "junction");
+            const files = entries(tx);
+            files[6] = { ...files[6], path: "linked/escape.kicad_sch" };
+            await writeManifest(tx, files);
+          } else {
+            await symlink(join(outside, "escape.kicad_sch"), join(tx.directory, "power.kicad_sch"));
+          }
         },
       },
       {
@@ -3412,6 +3430,7 @@ describe("registry", () => {
     ).toEqual(["meta", "static", "pass-start", "connection", "connection", "done"]);
     expect((JSON.parse(frames[0]!) as any).bounds).toEqual({ x1: 2, y1: 3, x2: 18, y2: 13 });
     expect((JSON.parse(frames.at(-1)!) as { shapes: unknown[] }).shapes).toHaveLength(1);
+    await waitForRouteDone(services, json.runId);
     expect(services.events.map((e) => e.topic)).toEqual([
       "route.meta",
       "route.static",
@@ -3485,8 +3504,7 @@ describe("registry", () => {
     const status = await call("route_status");
     expect(status.text).toContain("completed");
     expect(status.text).toContain("1/3 routed");
-    const done = services.events.find((e) => e.topic === "route.done");
-    if (done?.topic !== "route.done") throw new Error("no route.done event");
+    const done = await waitForRouteDone(services, json.runId);
     expect(done.result.open).toEqual(["N2", "N3"]);
   });
 
@@ -3611,7 +3629,8 @@ describe("path jail", () => {
     await mkdir(join(project.dir, "sub"), { recursive: true });
     const outside = join(project.dir, "..", "outside.txt");
     await writeFile(outside, "secret");
-    await symlink(outside, join(project.dir, "sub", "link"));
+    await symlink(process.platform === "win32" ? join(project.dir, "..") : outside,
+      join(project.dir, "sub", "link"), process.platform === "win32" ? "junction" : "file");
     expect(await jailPath(project.dir, "circuit.tsx")).toBe(join(project.dir, "circuit.tsx"));
     expect(await jailPath(project.dir, "sub/new/file.txt")).toBe(
       join(project.dir, "sub/new/file.txt"),

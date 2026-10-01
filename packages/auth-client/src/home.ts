@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, posix, win32 } from "node:path";
 import type { Principal } from "@fabdesk/protocol";
 
 /**
@@ -12,6 +12,7 @@ export function fabdeskHome(
   env: NodeJS.ProcessEnv = process.env,
   platform: NodeJS.Platform = process.platform,
 ): string {
+  const join = platform === "win32" ? win32.join : posix.join;
   const override = env["FABDESK_HOME"];
   if (override && override.trim() !== "") return override;
   const home = env["HOME"] && env["HOME"] !== "" ? env["HOME"] : homedir();

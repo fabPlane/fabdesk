@@ -1,7 +1,8 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { chmod, cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { runKicadCli, type KicadCli } from "../src/cli";
 import {
   assembleMechanicalSection,
   collectMechanical,
@@ -269,14 +270,24 @@ describe("process-local result cache", () => {
 
 describe("temporary GLB scratch", () => {
   /** A stand-in kicad-cli that writes an invalid GLB to its -o path, then optionally hangs. */
-  async function fakeCli(dir: string, hang: boolean) {
-    const path = join(dir, hang ? "hanging-cli" : "garbage-cli");
+  async function fakeCli(dir: string, hang: boolean, signal?: AbortSignal): Promise<KicadCli> {
+    const script = join(dir, "fixture-cli.ts");
     await writeFile(
-      path,
-      `#!/bin/sh\nwhile [ $# -gt 0 ]; do [ "$1" = "-o" ] && out="$2"; shift; done\nprintf garbage > "$out"\n${hang ? "exec sleep 30\n" : ""}`,
+      script,
+      `await Bun.write(process.argv[process.argv.indexOf('-o') + 1], 'garbage'); ${hang ? "await Bun.sleep(30_000);" : ""}`,
     );
-    await chmod(path, 0o755);
-    return { path, version: "10.99.0" };
+    return {
+      path: process.execPath,
+      version: "10.99.0",
+      // Run the normal CLI subprocess/abort implementation through the trusted
+      // Bun runtime, avoiding unsigned test executables on Windows.
+      trace: ({ command, cwd }) =>
+        runKicadCli(
+          { path: process.execPath, version: "10.99.0" },
+          [script, ...command.slice(1)],
+          { cwd, ...(signal ? { signal } : {}) },
+        ),
+    };
   }
 
   test("is deleted when measurement fails and nothing is cached", async () => {
@@ -298,20 +309,24 @@ describe("temporary GLB scratch", () => {
     const dir = await fixtureCopy();
     const scratchDir = join(dir, ".fabdesk", "cache", "mechanical");
     const controller = new AbortController();
-    const pending = collectMechanical(await fakeCli(dir, true), {
+    const pending = collectMechanical(await fakeCli(dir, true, controller.signal), {
       projectDir: dir,
       board: join(dir, "board.kicad_pcb"),
       scratchDir,
       signal: controller.signal,
     });
     const settled = pending.catch((error: unknown) => error);
-    for (let i = 0; i < 200; i++) {
-      const entries = await readdir(scratchDir).catch(() => [] as string[]);
-      if (entries.some((e) => e.endsWith(".glb"))) break;
-      await Bun.sleep(25);
+    try {
+      for (let i = 0; i < 100; i++) {
+        const entries = await readdir(scratchDir).catch(() => [] as string[]);
+        if (entries.some((e) => e.endsWith(".glb"))) break;
+        await Bun.sleep(25);
+      }
+      expect((await readdir(scratchDir)).some((e) => e.endsWith(".glb"))).toBe(true);
+    } finally {
+      controller.abort();
+      await settled;
     }
-    expect((await readdir(scratchDir)).some((e) => e.endsWith(".glb"))).toBe(true);
-    controller.abort();
     expect(String(await settled)).toContain("aborted");
     expect(await readdir(scratchDir)).toEqual([]);
   });
@@ -559,23 +574,20 @@ describe.skipIf(!packaged)("packaged kicad-cli mechanical truth", () => {
     const model = join(isolated, "models", "box.step");
     const substitution = join(isolated, "models", "cube.step");
     const flag = join(isolated, "swap-flag");
-    const wrapper = join(isolated, "wrap-kicad-cli");
-    await writeFile(
-      wrapper,
-      `#!/bin/sh
-if [ -f ${JSON.stringify(flag)} ]; then
-  op=$(cat ${JSON.stringify(flag)})
-  case "$op" in
-    content) sed 's/(1.,-2.,1.13)/(1.,-2.,7.13)/' ${JSON.stringify(model)} > ${JSON.stringify(model + '.tmp')} && mv ${JSON.stringify(model + '.tmp')} ${JSON.stringify(model)} ;;
-    disappear) rm -f ${JSON.stringify(model)} ;;
-    appear) cp ${JSON.stringify(model)} ${JSON.stringify(substitution)} ;;
-  esac
-fi
-exec ${JSON.stringify(cli!.path)} "$@"
-`,
-    );
-    await chmod(wrapper, 0o755);
-    const wrapped = { path: wrapper, version: cli!.version };
+    const wrapped: KicadCli = {
+      ...cli!,
+      trace: async (_input, invoke) => {
+        const op = await readFile(flag, "utf8").catch(() => "");
+        if (op === "content")
+          await writeFile(
+            model,
+            (await readFile(model, "utf8")).replace("(1.,-2.,1.13)", "(1.,-2.,7.13)"),
+          );
+        if (op === "disappear") await rm(model);
+        if (op === "appear") await cp(model, substitution);
+        return invoke();
+      },
+    };
     const run = () => collectMechanical(wrapped, { projectDir: isolated, board, scratchDir });
     const noGlb = async () =>
       expect((await readdir(scratchDir)).filter((name) => name.endsWith(".glb"))).toEqual([]);

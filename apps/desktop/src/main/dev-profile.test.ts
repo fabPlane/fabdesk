@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { join } from "node:path";
+import { join, win32 } from "node:path";
 import {
   DEFAULT_DEV_CORE_PORT,
   DEV_APP_USER_MODEL_ID,
@@ -132,10 +132,10 @@ describe("paths", () => {
 
     const win = { HOME: "C:/Users/me", APPDATA: "C:/Users/me/AppData/Roaming" };
     expect(resolveUserDataPath({ productName: DEV_PRODUCT_NAME, env: win, platform: "win32" })).toBe(
-      join("C:/Users/me/AppData/Roaming", "fabPlane Dev"),
+      win32.join("C:/Users/me/AppData/Roaming", "fabPlane Dev"),
     );
     expect(resolveCoreHome({ env: win, platform: "win32", dirName: DEV_CORE_HOME_DIR })).toBe(
-      join("C:/Users/me/AppData/Roaming", "fabdesk-dev"),
+      win32.join("C:/Users/me/AppData/Roaming", "fabdesk-dev"),
     );
   });
 
