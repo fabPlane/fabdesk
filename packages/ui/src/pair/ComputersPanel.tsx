@@ -93,7 +93,7 @@ export function ComputersScreen({ onSwitch }: { onSwitch: (host: SavedHost) => v
   const saved = useSavedHosts((s) => s.saved);
   const current = saved.hosts.find((h) => h.host === saved.active);
   return (
-    <div className="flex h-full items-center justify-center bg-bg p-6 text-fg">
+    <div className="flex h-full items-center justify-center overflow-y-auto bg-bg p-6 text-fg" style={{ alignItems: "safe center" }}>
       <div className="w-full max-w-md rounded-2xl border border-border bg-panel p-6 shadow-xl">
         <div className="mb-1 text-lg font-semibold">fabPlane</div>
         <div className="mb-4 text-sm text-muted">

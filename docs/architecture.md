@@ -10,6 +10,7 @@
 └──────────────────────────────┘        │  /mcp  (streamable HTTP, per-session)    │
                                         │  SQLite (bun:sqlite) · job runner · bus  │
    claude / codex / grok / cursor ─────►│  fp-pcb bridge client · kicad-cli        │
+                                        │  fab-cad bridge client (FreeCAD)         │
    (spawned by core, or external via    └──────────────────────────────────────────┘
     `fabdesk-core mcp` stdio bridge)
 ```
@@ -47,6 +48,13 @@ Routers run on the bridge: `capacity` maps to its built-in JS router; `freerouti
 is offered only when `FABDESK_CHANNEL=internal`
 and is never included in public artifacts.
 
+## Mechanical model
+
+`model.FCStd` in the project is a FreeCAD document, edited through the `cad` toolset over the
+FabPlane CAD bridge (`vendor/fab_cad`, one `FreeCADApiServer` from the fabPlane FreeCAD fork per
+project) and shown live in the board panel's CAD tab. Optional: without a bridge only the `cad`
+toolset is unavailable. See [fab-cad.md](fab-cad.md).
+
 ## Auth
 
 The core signs in to fabplane.com with the OAuth device-authorization grant and keeps the opaque
@@ -66,5 +74,5 @@ connectivity through that account is later work.
 ## Project on disk
 
 `~/fabdesk/<slug>/` — `fabdesk.json`, `circuit.netlist.json`, `board.kicad_pcb`, `board.kicad_pro`,
-`<name>.kicad_pcb|sch|pro`, `sketches/`, `renders/`, `reports/`, `exports/`, `AGENTS.md`,
+`<name>.kicad_pcb|sch|pro`, `model.FCStd`, `sketches/`, `renders/`, `reports/`, `exports/`, `AGENTS.md`,
 `CLAUDE.md`, `.fabdesk/runs/<runId>/frames.jsonl`.

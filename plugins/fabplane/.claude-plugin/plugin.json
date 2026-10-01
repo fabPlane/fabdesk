@@ -1,0 +1,7 @@
+{
+  "name": "fabplane",
+  "version": "0.1.0",
+  "description": "Design, review and order PCBs with fabPlane: the fabdesk PCB tools, plus interactive board, CAD and shopping-list views in hosts that render MCP Apps.",
+  "author": { "name": "fabPlane" },
+  "homepage": "https://fabplane.com"
+}

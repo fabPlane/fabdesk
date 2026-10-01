@@ -17,7 +17,7 @@ Usage:
   fabdesk-core pair [--no-wait] [--invert] [--json]      # pairing QR + link for the running daemon; waits for the phone
   fabdesk-core devices list [--json]                     # paired phones on the running daemon
   fabdesk-core devices revoke <id|label>
-  fabdesk-core mcp [--standalone] [--project <dir>]
+  fabdesk-core mcp [--standalone] [--apps] [--project <dir>]
   fabpcb tool search <words> | describe <name> | call <name> [--request <json>] | batch --input @calls.jsonl
   fabpcb env describe [--project <dir>]
   fabpcb env exec [--project <dir>] -- <command> [arguments...]
@@ -168,6 +168,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       const { runMcpStdio } = await import("./mcp-stdio");
       await runMcpStdio({
         ...(flag(f, "standalone") ? { standalone: true } : {}),
+        ...(flag(f, "apps") ? { apps: true } : {}),
         ...(str(f, "project") ? { project: str(f, "project")! } : {}),
         ...(str(f, "data-dir") ? { dataDir: str(f, "data-dir")! } : {}),
       });

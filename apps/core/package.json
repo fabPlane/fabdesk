@@ -22,6 +22,7 @@
     "@fabdesk/qr": "workspace:*",
     "@fabdesk/sim": "workspace:*",
     "@fabdesk/tools": "workspace:*",
+    "@fab-cad/client": "workspace:*",
     "@fp-pcb/client": "workspace:*",
     "@fp-pcb/proto": "workspace:*",
     "fabplane-cli": "workspace:*",
@@ -35,6 +36,8 @@
     "zod": "3.25.76"
   },
   "devDependencies": {
+    "@fab-cad/bridge": "workspace:*",
+    "@fab-cad/mock-server": "workspace:*",
     "typescript": "5.9.2",
     "@types/bun": "1.2.21"
   },

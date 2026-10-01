@@ -14,7 +14,7 @@ export function CoreStatusScreen({
   const state = status?.state ?? "starting";
   const crashed = state === "crashed" || state === "stopped";
   return (
-    <div className="flex h-full items-center justify-center bg-bg p-6">
+    <div className="flex h-full items-center justify-center overflow-y-auto bg-bg p-6" style={{ alignItems: "safe center" }}>
       <div className="w-full max-w-sm rounded-2xl border border-border bg-panel p-6 text-center shadow-xl">
         <div className="mb-2 text-lg font-semibold">fabPlane</div>
         {crashed ? (

@@ -84,7 +84,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with: { sparse-checkout: scripts/vm, sparse-checkout-cone-mode: false }
       - name: Rosetta (x64 build)
         if: matrix.arch == 'x64'
@@ -93,7 +93,7 @@ jobs:
         id: t
         env: { GH_TOKEN: "${{ github.token }}" }
         run: bash scripts/vm/runner-test.sh mac ${{ matrix.arch }} ${{ matrix.ext }} ${{ needs.select.outputs.args }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: installer-test-macos-${{ matrix.arch }}-${{ matrix.ext }}-${{ needs.select.outputs.label }}
@@ -115,7 +115,7 @@ jobs:
     runs-on: ${{ fromJSON(needs.select-linux-test-runner.outputs.runner) }}
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with: { sparse-checkout: scripts/vm, sparse-checkout-cone-mode: false }
       - name: Desktop runtime deps (what a user's desktop already has)
         run: sudo apt-get update -q && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q libfuse2 xvfb imagemagick libgtk-3-0 libnss3 libxss1 libasound2 libgbm1 libatk-bridge2.0-0 libdrm2 xdg-utils >/dev/null
@@ -123,7 +123,7 @@ jobs:
         id: t
         env: { GH_TOKEN: "${{ github.token }}" }
         run: bash scripts/vm/runner-test.sh linux "(x64|amd64|x86_64)" ${{ matrix.format }} ${{ needs.select.outputs.args }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: installer-test-linux-${{ matrix.format }}-${{ needs.select.outputs.label }}
@@ -136,7 +136,7 @@ jobs:
     runs-on: blacksmith-4vcpu-windows-2025
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with: { sparse-checkout: scripts/vm, sparse-checkout-cone-mode: false }
       - name: Fetch installer
         id: fetch
@@ -157,7 +157,7 @@ jobs:
           "RESULTS_DIR=$out" >> $env:GITHUB_OUTPUT
           exit $rc
         id: t
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: installer-test-windows-nsis-${{ needs.select.outputs.label }}

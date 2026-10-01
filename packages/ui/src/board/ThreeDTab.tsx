@@ -1,4 +1,4 @@
-import { Button, EmptyState, Spinner } from "../components/ui";
+import { Button, EmptyState, LoadError, Spinner } from "../components/ui";
 import { useProject } from "@fabdesk/client-core";
 import { useRunsStore } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
@@ -18,9 +18,11 @@ export function ThreeDTab() {
   const job = useRunsStore((s) => (state.jobId ? s.jobs[state.jobId] : undefined));
 
   if (!projectId) return <EmptyState title="No project selected" />;
+  if (project.isError) return <LoadError title="Could not load 3D export" onRetry={() => void project.refetch()} />;
+  if (project.isLoading) return <EmptyState title="Loading 3D export"><Spinner /></EmptyState>;
   return (
     <EmptyState
-      title={glb ? "Board GLB generated" : "No board GLB yet"}
+      title={glb ? "3D model ready to export" : "Export a 3D model"}
       action={
         <Button variant="primary" size="sm" disabled={state.status === "running"} onClick={() => void run("glb", { projectId })}>
           {state.status === "running" ? (
@@ -28,9 +30,9 @@ export function ThreeDTab() {
               <Spinner className="mr-1" /> Rendering...
             </>
           ) : glb ? (
-            "Regenerate GLB"
+            "Regenerate 3D model"
           ) : (
-            "Generate GLB"
+            "Generate 3D model"
           )}
         </Button>
       }
@@ -41,10 +43,10 @@ export function ThreeDTab() {
           <div>
             {(glb.size / 1024).toFixed(0)} KB, updated {new Date(glb.mtime).toLocaleString()}
           </div>
-          <div className="mt-1">Open the file in any glTF viewer; the in-app 3D viewer arrives with the simulation milestone.</div>
+          <div className="mt-1">Open this GLB file in a compatible 3D viewer. This tab exports models; it does not display an interactive preview.</div>
         </div>
       ) : (
-        "Generates the interactive 3D file at renders/board.glb. Perspective PNG images appear under Renders."
+        "Create a GLB file for a compatible 3D viewer. For board preview images, open Renders."
       )}
       {job?.note && <div className="mt-2 text-muted">{job.note}</div>}
       {state.error && <div className="mt-2 text-danger">{state.error}</div>}

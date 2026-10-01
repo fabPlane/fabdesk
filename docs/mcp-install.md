@@ -16,6 +16,15 @@ Only the **core** toolset (`pcb_environment`, `project_status`, `circuit_build`,
 (drive the running desktop window; see [app-automation.md](app-automation.md)) or `shopping`
 to enable more; the tool list refreshes automatically.
 
+### Interactive views (MCP Apps)
+
+Hosts that render [MCP Apps](https://github.com/modelcontextprotocol/ext-apps) (ChatGPT, Codex,
+Claude Desktop) also get `board_viewer` (PCB, schematic, 3D and CAD drawings) and
+`shopping_list_viewer`, plus the OpenAI MCP Extensions (sidebar entries, file handlers for
+`.kicad_pcb` / `.dxf` / `.stl` / `.glb`, composer @-mentions). They are listed only for clients
+that advertise MCP Apps; `fabdesk-core mcp --apps` lists them regardless. The fabPlane plugin for
+Codex and Claude Code lives in `plugins/fabplane/`. See [mcp-extensions.md](mcp-extensions.md).
+
 ### Shopping list and inventory
 
 The `shopping` toolset manages the project's fabplane.com shopping list (an org cart linked to the

@@ -25,6 +25,7 @@ export const TOOLSETS = [
   "sim",
   "app",
   "shopping",
+  "cad",
 ] as const;
 export type ToolsetId = (typeof TOOLSETS)[number];
 export const ToolsetId = z.enum(TOOLSETS);
@@ -131,6 +132,8 @@ export type ToolDef<I extends z.ZodRawShape = z.ZodRawShape> = {
     Required<Pick<ToolAnnotations, "readOnlyHint" | "destructiveHint" | "openWorldHint">>;
   /** Runs as a job over HTTP (`{jobId}`), streams progress over MCP. */
   longRunning?: boolean;
+  /** False for durable jobs whose MCP request only schedules work. Keeps HTTP job behavior. */
+  mcpHeartbeat?: boolean;
   /** `project` tools accept an optional `project` argument (id or path) and require one at runtime. */
   scope?: "project" | "global";
   handler: ToolHandler<I>;

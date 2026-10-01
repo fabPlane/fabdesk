@@ -1,5 +1,6 @@
 import { ToolRegistry, type ToolDef } from "../registry";
 import { appTools } from "./app";
+import { cadTools } from "./cad";
 import { circuitTools } from "./circuit";
 import { coreTools, packaged_route_run, route_run } from "./core";
 import { exportTools } from "./export";
@@ -35,6 +36,7 @@ export const allTools: ReadonlyArray<ToolDef> = [
   ...simTools,
   ...appTools,
   ...shoppingTools,
+  ...cadTools,
 ] as unknown as ReadonlyArray<ToolDef>;
 
 /**
@@ -68,4 +70,5 @@ export * from "./export";
 export * from "./sim";
 export * from "./app";
 export * from "./shopping";
+export * from "./cad";
 export * from "./spatial";

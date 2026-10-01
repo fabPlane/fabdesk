@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, win32 } from "node:path";
 import type { AuthState } from "@fabdesk/protocol";
 import { AuthClient } from "./client";
 import { credentialsPath, readCredentials, writeCredentials } from "./credential-store";
@@ -137,7 +137,7 @@ describe("fabdeskHome / localModeAllowed", () => {
     );
     expect(
       fabdeskHome({ HOME: "C:/Users/me", APPDATA: "C:/Users/me/AppData/Roaming" }, "win32"),
-    ).toBe(join("C:/Users/me/AppData/Roaming", "fabdesk"));
+    ).toBe(win32.join("C:/Users/me/AppData/Roaming", "fabdesk"));
     expect(fabdeskHome({ HOME: "/home/me", XDG_CONFIG_HOME: "/home/me/.cfg" }, "linux")).toBe(
       "/home/me/.cfg/fabdesk",
     );
@@ -169,8 +169,8 @@ describe("credential store", () => {
       expiresAt: "2026-10-02T00:00:00.000Z",
     });
     const path = credentialsPath(home);
-    expect(statSync(path).mode & 0o777).toBe(0o600);
-    expect(statSync(home).mode & 0o777).toBe(0o700);
+    if (process.platform !== "win32") expect(statSync(path).mode & 0o777).toBe(0o600);
+    if (process.platform !== "win32") expect(statSync(home).mode & 0o777).toBe(0o700);
     expect(readFileSync(path, "utf8")).toContain('"token": "fpd_abc"');
     expect((await readCredentials(home))?.token).toBe("fpd_abc");
     writeFileSync(path, "{not json");
@@ -223,7 +223,7 @@ describe("AuthClient.login (device flow)", () => {
     expect(Date.parse(stored?.expiresAt ?? "") - Date.parse(stored?.obtainedAt ?? "")).toBe(
       3600_000,
     );
-    expect(statSync(credentialsPath(home)).mode & 0o777).toBe(0o600);
+    if (process.platform !== "win32") expect(statSync(credentialsPath(home)).mode & 0o777).toBe(0o600);
     expect(server.requests.filter((r) => r.url.endsWith("/v1/auth/device/token"))).toHaveLength(4);
     expect(states.at(-1)?.status).toBe("signed_in");
   });

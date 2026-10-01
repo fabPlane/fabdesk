@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, stat, symlink, unlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, stat, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../src/db";
@@ -86,7 +86,8 @@ describe("ProjectStore absolute-path resolution", () => {
         );
         for (const path of ["board.kicad_pro", "board.kicad_sch", "board.kicad_pcb"])
           await writeFile(join(copy, path), `${name}-${path}`);
-        return copy;
+        // Project handles canonicalize macOS /var and /private/var aliases.
+        return await realpath(copy);
       };
 
       const rowsBefore = store.projects.list();
@@ -124,7 +125,10 @@ describe("ProjectStore absolute-path resolution", () => {
       const outside = join(dir, "outside.kicad_sch");
       await writeFile(outside, "outside");
       await unlink(join(escaped, "board.kicad_sch"));
-      await symlink(outside, join(escaped, "board.kicad_sch"));
+      // Junctions exercise the same realpath jail on Windows without requiring
+      // Developer Mode or administrator privileges for file symlinks.
+      await symlink(process.platform === "win32" ? dir : outside,
+        join(escaped, "board.kicad_sch"), process.platform === "win32" ? "junction" : "file");
       expect(await projects.resolve(escaped)).toBeNull();
       expect(await projects.resolve(join(dir, "does-not-exist"))).toBeNull();
       expect(store.projects.list()).toEqual(rowsBefore);
@@ -138,6 +142,42 @@ describe("ProjectStore absolute-path resolution", () => {
       restarted.close();
     } finally {
       projects.close();
+      store.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("ProjectStore custom locations", () => {
+  test("creates outside the default root, avoids existing folders, and survives restart", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "fabdesk-location-"));
+    const store = Store.open(join(dir, "db.sqlite"));
+    const root = join(dir, "default");
+    const parent = join(dir, "chosen");
+    const projects = new ProjectStore(store.projects, root, () => {}, { watch: false });
+    const restarted = new ProjectStore(store.projects, root, () => {}, { watch: false });
+    try {
+      await mkdir(join(parent, "my-board"), { recursive: true });
+      await writeFile(join(parent, "my-board", "keep.txt"), "existing data");
+      const project = await projects.create("My Board", parent);
+      expect(project.path).toBe(join(await realpath(parent), "my-board-2"));
+      expect(await Bun.file(join(parent, "my-board", "keep.txt")).text()).toBe("existing data");
+      expect(await Bun.file(join(project.path, "fabdesk.json")).exists()).toBe(true);
+      await restarted.init();
+      expect((await restarted.detail(project.id))?.path).toBe(project.path);
+      const ordinary = await projects.create("Default Board");
+      expect(ordinary.path).toBe(join(root, "default-board"));
+      const concurrent = await Promise.all([projects.create("Parallel", parent), projects.create("Parallel", parent)]);
+      expect(new Set(concurrent.map((p) => p.path)).size).toBe(2);
+      const otherParent = join(dir, "other");
+      await mkdir(otherParent);
+      const acrossParents = await Promise.all([projects.create("Across", parent), projects.create("Across", otherParent)]);
+      expect(new Set(acrossParents.map((p) => p.id)).size).toBe(2);
+      await expect(projects.create("Relative", "relative/path")).rejects.toThrow("absolute");
+      await expect(projects.create("File", join(parent, "my-board", "keep.txt"))).rejects.toThrow("folder");
+    } finally {
+      projects.close();
+      restarted.close();
       store.close();
       await rm(dir, { recursive: true, force: true });
     }

@@ -26,8 +26,8 @@ export function OrderFlow() {
   const ready = order.data?.ready === true;
 
   return (
-    <div className="flex h-full min-w-0 flex-col bg-bg" data-testid="order-flow">
-      <div className="flex h-10 items-center justify-between border-b border-border px-4">
+    <div className="fd-content-pane flex h-full min-w-0 flex-col bg-bg" data-testid="order-flow">
+      <div className="fd-screen-header flex items-center justify-between border-b border-border px-4">
         <div className="text-sm font-medium">Order now</div>
         <Button size="sm" onClick={() => setOrderFlowOpen(false)}>
           Back
@@ -68,7 +68,7 @@ export function OrderFlow() {
             ))}
           </ul>
         )}
-        <div className="mt-5 grid max-w-xl grid-cols-2 gap-2">
+        <div className="fd-order-vendors mt-5 grid max-w-xl grid-cols-2 gap-3">
           {vendors.map((item) => (
             <button
               key={item.id}

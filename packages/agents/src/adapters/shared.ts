@@ -6,8 +6,10 @@ import { TOKEN_ENV } from "../types";
 /** Environment for the agent process: inherited, session overrides, then the MCP token. */
 export function agentEnv(session: AgentSession): Record<string, string> {
   const env: Record<string, string> = {};
-  for (const [k, v] of Object.entries(process.env)) if (typeof v === "string") env[k] = v;
-  for (const [k, v] of Object.entries(session.env ?? {})) env[k] = v;
+  // Windows environment names are case-insensitive, unlike keys in this object.
+  const key = (name: string) => process.platform === "win32" ? name.toUpperCase() : name;
+  for (const [k, v] of Object.entries(process.env)) if (typeof v === "string") env[key(k)] = v;
+  for (const [k, v] of Object.entries(session.env ?? {})) env[key(k)] = v;
   env[TOKEN_ENV] = session.mcp.token;
   return env;
 }

@@ -8,7 +8,7 @@ export function FirstInstallPrivacy() {
   const patch = usePatchSettings();
 
   return (
-    <div className="flex h-full items-center justify-center bg-bg p-6">
+    <div className="flex h-full items-center justify-center overflow-y-auto bg-bg p-6" style={{ alignItems: "safe center" }}>
       <div className="w-full max-w-md rounded-2xl border border-border bg-panel p-6 shadow-xl">
         <h1 className="text-lg font-semibold">Privacy choice</h1>
         <p className="mt-3 text-sm text-muted">

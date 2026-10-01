@@ -2,7 +2,8 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { DoctorReport, Settings } from "@fabdesk/protocol";
-import { fpPcbBridgeUrl, type CoreConfig } from "./config";
+import { fabCadBridgeUrl, fpPcbBridgeUrl, type CoreConfig } from "./config";
+import { FabCadBridgeClient } from "./fab-cad-bridge";
 import { FpPcbBridgeClient } from "./fp-pcb-bridge";
 import { errMsg } from "./log";
 
@@ -58,6 +59,17 @@ export async function runDoctor(o: { config: CoreConfig; settings: Settings }): 
       return [{ id: "fp-pcb", present: false, ready: false, detail: `${url}: ${errMsg(e)}` }];
     }
   })();
+  // FreeCAD (the `cad` toolset) is optional: reported, never a warning.
+  routers.push(await (async () => {
+    const url = fabCadBridgeUrl();
+    try {
+      const h = await new FabCadBridgeClient({ url, timeoutMs: 3_000 }).health();
+      const freecad = h.serverCommand?.join(" ");
+      return { id: "fab-cad", present: true, ready: h.ok && Boolean(freecad), detail: `${url}${freecad ? ` (FreeCAD: ${freecad})` : " — no FreeCAD API server on the bridge"}` };
+    } catch (e) {
+      return { id: "fab-cad", present: false, ready: false, detail: `${url}: ${errMsg(e)}` };
+    }
+  })());
   const agents = await (async () => {
     try {
       const m = await import("@fabdesk/agents");

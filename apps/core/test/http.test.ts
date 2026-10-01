@@ -569,6 +569,17 @@ describe("http daemon", () => {
     const substrate = await connect(daemon.token, "?profile=substrate");
     expect((await substrate.client.listTools()).tools).toEqual([]);
 
+    // MCP Apps views: `?apps=on` (stdio proxy started with --apps) lists them for any client;
+    // the agent profiles never get them. The plain sessions above did not advertise MCP Apps.
+    const apps = await connect(daemon.token, "?apps=on");
+    const appNames = (await apps.client.listTools()).tools.map((tool) => tool.name);
+    expect(appNames).toContain("board_viewer");
+    expect(appNames).toContain("shopping_list_viewer");
+    const nativeApps = await connect(daemon.token, "?profile=native&apps=on");
+    expect((await nativeApps.client.listTools()).tools.map((tool) => tool.name)).not.toContain(
+      "board_viewer",
+    );
+
     // A per-run token pins the default project.
     const runToken = daemon.tokens.mintRunToken({
       runId: "run_x",
@@ -606,6 +617,10 @@ describe("http daemon", () => {
     await a.transport.terminateSession();
     await all.transport.terminateSession();
     await native.transport.terminateSession();
+    await apps.transport.terminateSession();
+    await nativeApps.transport.terminateSession();
+    await apps.client.close();
+    await nativeApps.client.close();
     await a.client.close();
     await b.client.close();
     await all.client.close();

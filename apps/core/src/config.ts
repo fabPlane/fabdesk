@@ -43,6 +43,15 @@ export function fpPcbBridgeUrl(
   return v.replace(/\/+$/, "");
 }
 
+/** Where a locally started `@fab-cad/bridge` listens by default. */
+export const DEFAULT_FAB_CAD_BRIDGE_URL = "http://127.0.0.1:4030";
+
+/** `FABDESK_FAB_CAD_BRIDGE_URL` > the default; trailing slash dropped. */
+export function fabCadBridgeUrl(env: NodeJS.ProcessEnv = process.env): string {
+  const v = env["FABDESK_FAB_CAD_BRIDGE_URL"]?.trim() || DEFAULT_FAB_CAD_BRIDGE_URL;
+  return v.replace(/\/+$/, "");
+}
+
 export function authModeFromEnv(): AuthMode | undefined {
   const v = process.env["FABDESK_AUTH_MODE"];
   return v === "local" || v === "fabplane" ? v : undefined;

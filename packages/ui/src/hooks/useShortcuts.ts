@@ -19,8 +19,8 @@ export interface ShortcutDef {
 
 /** Display list for the Settings › Shortcuts tab. `⌘` is rendered as Ctrl on non-mac. */
 export function shortcutList(platform?: string): ShortcutDef[] {
-  const m = isMac(platform) ? "⌘" : "Ctrl+";
-  const s = isMac(platform) ? "⇧" : "Shift+";
+  const m = isMac(platform) ? "⌘" : "Ctrl + ";
+  const s = isMac(platform) ? "⇧" : "Shift + ";
   return [
     { keys: `${m}K`, label: "Command palette" },
     { keys: `${m}${s}O`, label: "New chat" },
@@ -28,8 +28,8 @@ export function shortcutList(platform?: string): ShortcutDef[] {
     { keys: `${m}${s}B`, label: "Toggle board panel" },
     { keys: `${m}↵`, label: "Send message" },
     { keys: `${m}.`, label: "Abort run" },
-    { keys: `${m}${s}P`, label: "Pin / unpin thread" },
-    { keys: `${m}${s}D`, label: "Branch thread" },
+    { keys: `${m}${s}P`, label: "Pin / unpin chat" },
+    { keys: `${m}${s}D`, label: "Branch chat" },
     { keys: `${m}${s}S`, label: "Sketch pad" },
     { keys: `${m}1…8`, label: "Board tabs" },
     { keys: `${m}/`, label: "Agent & model" },
@@ -71,7 +71,7 @@ export function useShortcuts(actions: ShortcutActions, platform?: string): void 
       if (key === "s" && shift) return run(actions.openSketch ?? (() => ui.setSketchOpen(true)));
       if (key === "/" ) return run(() => ui.setAgentPickerOpen(true));
       if (key === ",") return run(actions.openSettings ?? (() => ui.setSettingsOpen(true)));
-      if (!shift && /^[1-8]$/.test(key)) {
+      if (!shift && /^[1-9]$/.test(key)) {
         const tab = BOARD_TABS[Number(key) - 1];
         if (tab) return run(() => ui.setBoardTab(tab));
       }

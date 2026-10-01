@@ -604,7 +604,7 @@ describe("what a successful build checks against the saved board", () => {
       kicad: {
         currentBoard: async () => board,
         openBoard: async (path: string) => {
-          calls.push(`open ${path}`);
+          calls.push(`open ${path.replaceAll("\\", "/")}`);
           return board;
         },
       },
@@ -618,13 +618,14 @@ describe("what a successful build checks against the saved board", () => {
       bridge: () => ({ compile: async () => job }) as unknown as FpPcbBridgeClient,
       sessions,
       readText: async (p) => {
+        p = p.replaceAll("\\", "/");
         if (!(p in files)) throw new Error("ENOENT");
         return files[p]!;
       },
       writeText: async (p, text) => {
-        files[p] = text;
+        files[p.replaceAll("\\", "/")] = text;
       },
-      exists: async (p) => p in files,
+      exists: async (p) => p.replaceAll("\\", "/") in files,
     });
     return { calls, files, design };
   };

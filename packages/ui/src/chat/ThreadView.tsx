@@ -30,6 +30,11 @@ export function ThreadView() {
   const setActiveThread = useUiStore((s) => s.setActiveThread);
   const threadQuery = useThread(activeThreadId);
   const thread = threadQuery.data ?? null;
+  useEffect(() => {
+    if (thread && thread.id === useUiStore.getState().activeThreadId) {
+      useUiStore.setState({ activeProjectId: thread.projectId ?? null });
+    }
+  }, [thread]);
   const messages = useMessages(activeThreadId);
   const { create } = useThreadMutations();
   const run = useRunsStore((s) => (activeThreadId ? s.runsByThread[activeThreadId] : undefined));
@@ -69,16 +74,15 @@ export function ThreadView() {
   );
 
   return (
-    <div className="flex h-full min-w-0 flex-col bg-bg">
-      <div className="flex h-10 items-center gap-2 border-b border-border px-4">
-        <div className="truncate text-sm font-medium">{thread?.title ?? "New chat"}</div>
+    <div className="fd-chat-pane flex h-full min-w-0 flex-col bg-bg">
+      <div className="fd-thread-header flex min-h-12 flex-wrap items-center gap-2 border-b border-border px-5 py-2">
+        <div className="min-w-0 max-w-[45%] truncate text-[13px] font-semibold tracking-[-0.01em]" title={thread?.title ?? "New chat"}>{thread?.title ?? "New chat"}</div>
         {thread && (
-          <Badge
+          <Badge className="max-w-36 overflow-hidden"
             tone="neutral"
             title={`Agent: ${thread.agentId}${thread.model ? ` / ${thread.model}` : ""}`}
           >
-            {thread.agentId}
-            {thread.model ? ` / ${thread.model}` : ""}
+            <span className="truncate">{thread.agentId}{thread.model ? ` / ${thread.model}` : ""}</span>
           </Badge>
         )}
         {thread?.pinned && <Badge tone="accent">pinned</Badge>}
@@ -93,18 +97,16 @@ export function ThreadView() {
                 : "Full: the agent runs unattended. Click to supervise writes.")
             }
             data-testid="runtime-mode-toggle"
+            aria-pressed={thread.runtimeMode === "supervised"}
+            className="min-h-8 rounded-md border border-border px-2 text-xs text-muted hover:bg-panel-2"
           >
-            <Badge
-              tone={
-                modeError ? "danger" : thread.runtimeMode === "supervised" ? "warning" : "neutral"
-              }
-            >
-              {modeError ? "cannot supervise" : (thread.runtimeMode ?? "full")}
-            </Badge>
+            <span className={modeError ? "text-danger" : thread.runtimeMode === "supervised" ? "text-warning" : "text-fg"}>
+              {modeError ? "Cannot change mode" : thread.runtimeMode === "supervised" ? "Approval required" : "Unsupervised"}
+            </span>
           </button>
         )}
         {run && (
-          <Badge
+          <Badge className="ml-auto"
             tone="success"
             title={
               run.usage
@@ -119,19 +121,25 @@ export function ThreadView() {
           <span className="text-xs text-muted">${run.usage.costUsd.toFixed(3)}</span>
         )}
       </div>
+      <div className={activeThreadId ? "fd-thread-body" : "fd-thread-body fd-new-chat-body"}>
       {activeThreadId ? (
         <MessageList thread={thread} messages={messages.data ?? []} loading={messages.isLoading} />
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
-          <div className="text-xl font-semibold">What board are we building?</div>
-          <div className="max-w-md text-sm text-muted">
-            Describe the circuit or attach a sketch. The agent can create the native schematic and
-            PCB, route and verify the board, then prepare manufacturing outputs. Watch the board
-            panel as it works.
+        <div className="fd-empty-hero">
+          <svg className="fd-hero-icon mb-3 shrink-0 text-accent" width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="8" y="8" width="36" height="36" rx="7" />
+            <path d="M8 20h10l7 7h10M44 18h-8l-6 6M18 44v-9l7-8" />
+            <circle cx="18" cy="20" r="2" fill="currentColor" /><circle cx="35" cy="27" r="2" fill="currentColor" /><circle cx="30" cy="24" r="2" fill="currentColor" />
+          </svg>
+          <div className="fd-eyebrow">Your PCB workspace</div>
+          <h1>What board are we building?</h1>
+          <div className="fd-hero-description">
+            Describe your circuit or attach a sketch. Build, route, and verify your board with an agent, then prepare it for manufacturing.
           </div>
         </div>
       )}
       <Composer thread={thread} onCreateThread={onCreateThread} />
+      </div>
     </div>
   );
 }

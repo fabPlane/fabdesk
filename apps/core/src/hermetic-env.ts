@@ -1,6 +1,6 @@
 /** Method-neutral access to the exact packaged KiCad CLI used by Fabdesk. */
 import { exists } from "node:fs/promises";
-import { basename, dirname, isAbsolute, resolve } from "node:path";
+import { basename, delimiter, dirname, isAbsolute, resolve } from "node:path";
 
 const EXPOSED_VARIABLES = [
   "KICAD_CLI",
@@ -72,9 +72,9 @@ function resolveCommand(
 function environment(source: NodeJS.ProcessEnv, project?: string): Record<string, string> {
   const result: Record<string, string> = {};
   for (const [key, value] of Object.entries(source))
-    if (typeof value === "string") result[key] = value;
-  const cli = source["KICAD_CLI"]?.trim();
-  if (cli) result["PATH"] = [dirname(cli), source["PATH"]].filter(Boolean).join(":");
+    if (typeof value === "string") result[process.platform === "win32" ? key.toUpperCase() : key] = value;
+  const cli = result["KICAD_CLI"]?.trim();
+  if (cli) result["PATH"] = [dirname(cli), result["PATH"]].filter(Boolean).join(delimiter);
   if (project) result["FABDESK_PROJECT_DIR"] = project;
   return result;
 }

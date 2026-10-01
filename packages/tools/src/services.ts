@@ -914,6 +914,123 @@ export interface AppBridge {
   ): Promise<T>;
 }
 
+/**
+ * FreeCAD over the FabPlane CAD bridge (`@fab-cad/bridge` on fabPlane/fab_cad): one
+ * `FreeCADApiServer` per project, the mechanical model in `model.FCStd`. Values travel in the
+ * FreeCAD API's JSON form: numbers, strings with units (`"25 mm"`), and tagged objects
+ * (`{"$type": "Placement", …}`), see `src/Api/PROTOCOL.md` in the fabPlane FreeCAD fork.
+ */
+export type CadObject = {
+  name: string;
+  label: string;
+  type: string;
+  status: string;
+  isError: boolean;
+  visibility: boolean;
+  children: string[];
+  parents: string[];
+  bbox?: { min: [number, number, number]; max: [number, number, number] };
+};
+
+export type CadProperty = {
+  name: string;
+  type: string;
+  group: string;
+  value: unknown;
+  unit?: string;
+  expression?: string;
+  enum?: string[];
+  readOnly: boolean;
+};
+
+export type CadModel = {
+  /** FreeCAD's internal document name. */
+  document: string;
+  /** The `.FCStd` on disk. */
+  path: string;
+  modified: boolean;
+  objects: CadObject[];
+  undo: string[];
+  redo: string[];
+};
+
+export type CadExportFormat = "step" | "iges" | "brep" | "stl" | "obj";
+
+export type CadPythonResult = {
+  stdout: string;
+  stderr: string;
+  repr?: string;
+  exception?: string;
+};
+
+export type CadStatus = {
+  bridgeUrl: string;
+  reachable: boolean;
+  /** Why the bridge is not usable, or what it runs FreeCAD with. */
+  detail: string;
+  /** The FreeCAD server command the bridge spawns; null when it has none. */
+  freecad: string | null;
+  /** Whether the bridge serves the fab_cad web UI. */
+  ui: boolean;
+};
+
+export type CadView = {
+  bridgeUrl: string;
+  session: string;
+  wsUrl: string;
+  uiUrl: string | null;
+  document: string;
+};
+
+export interface CadService {
+  status(): Promise<CadStatus>;
+  /** The project's model, created (empty) and saved when it does not exist yet. */
+  model(projectDir: string): Promise<CadModel>;
+  properties(projectDir: string, object: string, names?: string[]): Promise<CadProperty[]>;
+  addObject(
+    projectDir: string,
+    input: {
+      type: string;
+      name?: string;
+      label?: string;
+      properties?: Record<string, unknown>;
+      group?: string;
+    },
+  ): Promise<CadObject>;
+  setProperties(
+    projectDir: string,
+    object: string,
+    values: Record<string, unknown>,
+  ): Promise<CadProperty[]>;
+  setExpression(
+    projectDir: string,
+    object: string,
+    path: string,
+    expression: string | null,
+  ): Promise<void>;
+  removeObject(projectDir: string, object: string, recursive?: boolean): Promise<void>;
+  recompute(
+    projectDir: string,
+  ): Promise<{ recomputed: number; errors: Array<{ object: string; message: string }> }>;
+  undo(projectDir: string, redo?: boolean): Promise<{ undo: string[]; redo: string[] }>;
+  /** Save the model to its `.FCStd`. */
+  save(projectDir: string): Promise<{ path: string }>;
+  /** Export objects (default every visible top-level shape) as file bytes. */
+  export(
+    projectDir: string,
+    input: { objects?: string[]; format: CadExportFormat },
+  ): Promise<{ data: Uint8Array; fileName: string; objects: string[] }>;
+  python(
+    projectDir: string,
+    code: string,
+    mode?: "exec" | "eval" | "auto",
+  ): Promise<CadPythonResult>;
+  /** Where the fab_cad web UI can attach to the project's live session. */
+  view(projectDir: string): Promise<CadView>;
+  /** Stop the project's FreeCAD session. */
+  release(projectDir: string): Promise<void>;
+}
+
 export interface CoreServices {
   version: string;
   /** Attested packaged runtime identity; null only for un-packaged development. */
@@ -934,4 +1051,6 @@ export interface CoreServices {
   appBridge?: AppBridge;
   /** Optional: fabplane.com carts and inventory (`shopping` toolset, `/cloud` routes). */
   cloud?: CloudService;
+  /** Optional: FreeCAD over the FabPlane CAD bridge (`cad` toolset). */
+  cad?: CadService;
 }

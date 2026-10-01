@@ -1,0 +1,20 @@
+{
+  "name": "fabplane",
+  "interface": {
+    "displayName": "fabPlane"
+  },
+  "plugins": [
+    {
+      "name": "fabplane",
+      "source": {
+        "source": "local",
+        "path": "./plugins/fabplane"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

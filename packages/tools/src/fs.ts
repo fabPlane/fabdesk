@@ -13,6 +13,8 @@ export const PROJECT_FILES = {
   boardPcb: "board.kicad_pcb",
   boardSch: "board.kicad_sch",
   boardPro: "board.kicad_pro",
+  /** The mechanical model, a FreeCAD document (`cad` toolset). */
+  cadModel: "model.FCStd",
   sketches: "sketches",
   renders: "renders",
   reports: "reports",

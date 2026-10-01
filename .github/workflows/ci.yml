@@ -18,25 +18,25 @@ jobs:
     needs: select-linux-runner
     runs-on: ${{ fromJSON(needs.select-linux-runner.outputs.runner) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: false
 
       # The deploy key still provides read-only access to fabplane.com. The new fabPlane
       # organization disables deploy keys, so fab_pcb is checked out with its repository token.
-      - uses: webfactory/ssh-agent@v0.9.1
+      - uses: webfactory/ssh-agent@v0.10.0
         with:
           ssh-private-key: ${{ secrets.FABDESK_SUBMODULE_SSH_KEY }}
 
-      - name: Init the fabplane submodule
-        run: git submodule update --init --depth 1 vendor/fabplane vendor/fabplane-cli
+      - name: Init the fabplane, fabplane-cli and fab_cad submodules
+        run: git submodule update --init --depth 1 vendor/fabplane vendor/fabplane-cli vendor/fab_cad
 
       - name: Resolve the fab_pcb pin
         id: fab-pcb
         run: echo "commit=$(git ls-tree HEAD vendor/fab_pcb | awk '{print $3}')" >> "$GITHUB_OUTPUT"
 
       - name: Check out the pinned fab_pcb workspace
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: fabPlane/fab_pcb
           ref: ${{ steps.fab-pcb.outputs.commit }}

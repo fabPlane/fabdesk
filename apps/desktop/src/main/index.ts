@@ -21,6 +21,7 @@ import {
 import { registerUpdateIpc, UpdateChecker } from "./updates";
 import { registerUpdateDownloadIpc, UpdateDownloader } from "./update-download";
 import { migrateLegacyUserData } from "./user-data";
+import { CadSupervisor, resolveCadBackend } from "./cad-supervisor";
 import { PcbSupervisor, resolvePcbBackend } from "./pcb-supervisor";
 import { resolveWindowTheme, titleBarOverlayFor } from "./window-theme";
 
@@ -52,6 +53,7 @@ if (!identity.devProfile) migrateLegacyUserData(app.getPath("userData"));
 const here = fileURLToPath(new URL(".", import.meta.url));
 let supervisor: CoreSupervisor | null = null;
 let pcbSupervisor: PcbSupervisor | null = null;
+let cadSupervisor: CadSupervisor | null = null;
 let automation: AppAutomation | null = null;
 let quitting = false;
 
@@ -86,7 +88,7 @@ function createWindow(): BrowserWindow {
     ...(process.platform === "win32" ? { titleBarOverlay: titleBarOverlayFor(theme.themeId) } : {}),
     // Windows/Linux: no in-window menu bar; the top bar's menu button pops the same menu (app-menu.ts).
     autoHideMenuBar: process.platform !== "darwin",
-    trafficLightPosition: { x: 12, y: 10 },
+    trafficLightPosition: { x: 12, y: 17 },
     webPreferences: {
       preload: join(here, "../preload/index.cjs"),
       contextIsolation: true,
@@ -159,11 +161,26 @@ if (!app.requestSingleInstanceLock()) {
       app.exit(1);
       return;
     }
+    // FreeCAD is optional: a missing or failing CAD bridge only disables the `cad` toolset.
+    let cadEnv: Record<string, string> = {};
+    try {
+      cadSupervisor = new CadSupervisor(
+        resolveCadBackend({ resourcesPath: process.resourcesPath }),
+      );
+      cadEnv = await cadSupervisor.start();
+    } catch (error) {
+      console.error(`[cad] ${error instanceof Error ? error.message : String(error)}`);
+    }
     supervisor = new CoreSupervisor({
       localAuth: localAuthEnabled(identity.devProfile),
       runtimeId,
       binaryOverride: process.env["FABDESK_CORE_BIN"],
-      extraEnv: { ...coreSentryEnv(), ...pcbEnv, ...(home ? { FABDESK_HOME: home } : {}) },
+      extraEnv: {
+        ...coreSentryEnv(),
+        ...pcbEnv,
+        ...cadEnv,
+        ...(home ? { FABDESK_HOME: home } : {}),
+      },
       ...(identity.devProfile ? { devProfile: true } : {}),
     });
     installAppMenu();
@@ -208,7 +225,7 @@ if (!app.requestSingleInstanceLock()) {
     supervisor
       .stop({ shutdown: true })
       .catch(() => {})
-      .then(() => pcbSupervisor?.stop())
+      .then(() => Promise.all([pcbSupervisor?.stop(), cadSupervisor?.stop()]))
       .then(() => flushSentry())
       .finally(() => app.quit());
   });

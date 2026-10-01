@@ -39,23 +39,23 @@ jobs:
     runs-on: ${{ fromJSON(needs.select-linux-runner.outputs.runner) }}
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: false
 
-      - uses: webfactory/ssh-agent@v0.9.1
+      - uses: webfactory/ssh-agent@v0.10.0
         with:
           ssh-private-key: ${{ secrets.FABDESK_SUBMODULE_SSH_KEY }}
 
       - name: Initialize the fabplane submodule
-        run: git submodule update --init --depth 1 vendor/fabplane vendor/fabplane-cli
+        run: git submodule update --init --depth 1 vendor/fabplane vendor/fabplane-cli vendor/fab_cad
 
       - name: Resolve the fab_pcb pin
         id: fab-pcb
         run: echo "commit=$(git ls-tree HEAD vendor/fab_pcb | awk '{print $3}')" >> "$GITHUB_OUTPUT"
 
       - name: Check out the pinned fab_pcb workspace
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: fabPlane/fab_pcb
           ref: ${{ steps.fab-pcb.outputs.commit }}
@@ -68,7 +68,7 @@ jobs:
         run: echo "commit=$(tr -d '[:space:]' < vendor/fab_pcb/packages/router/FAB_ROUTER_COMMIT)" >> "$GITHUB_OUTPUT"
 
       - name: Check out the pinned fab_router for regression testing
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: fabPlane/fab_router
           ref: ${{ steps.router.outputs.commit }}
@@ -204,7 +204,7 @@ jobs:
           test ! -f "$RUNNER_TEMP/core.pid" || kill "$(cat "$RUNNER_TEMP/core.pid")" 2>/dev/null || true
           test ! -f "$RUNNER_TEMP/bridge.pid" || kill "$(cat "$RUNNER_TEMP/bridge.pid")" 2>/dev/null || true
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: always()
         continue-on-error: true
         with:

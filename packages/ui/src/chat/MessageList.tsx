@@ -2,10 +2,11 @@ import type { Message, MessagePart, Thread } from "@fabdesk/protocol";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Spinner } from "../components/ui";
+import { Icon } from "../components/Icon";
 import { useCoreClient } from "@fabdesk/client-core";
 import { useRunsStore } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
-import { cn, formatRelative } from "../util";
+import { cn } from "../util";
 import { Markdown } from "./Markdown";
 import { ProjectImage } from "./ProjectImage";
 import { ThinkingBlock } from "./ThinkingBlock";
@@ -39,19 +40,19 @@ export function ToolGroup({
   const images = calls.flatMap((c) => (c.result ? extractImages(c.result.output) : []));
   const label = `${calls.length} tool call${calls.length === 1 ? "" : "s"}`;
   return (
-    <div className="my-1 text-xs" data-testid="tool-group">
+    <div className="fd-tool-group my-2 overflow-hidden rounded-lg border border-border/70 bg-panel/70 text-xs" data-testid="tool-group">
       <button
         type="button"
         className={cn(
-          "flex w-full items-center gap-2 rounded px-1 py-0.5 text-left text-muted hover:bg-panel-2/60",
+          "flex min-h-9 w-full items-center gap-2 px-3 py-2 text-left text-muted hover:bg-panel-2/60",
           open && "text-fg",
         )}
         onClick={() => setOpen((o) => !o)}
         title={open ? "Hide tool calls" : "Show tool calls"}
         aria-expanded={open}
       >
-        <span className={cn("inline-block transition-transform", open && "rotate-90")}>
-          &#9656;
+        <span className={cn("inline-block -rotate-90 transition-transform", open && "rotate-0")}>
+          <Icon name="chevronDown" width={14} height={14} />
         </span>
         <span>{label}</span>
         {errors > 0 && (
@@ -75,7 +76,7 @@ export function ToolGroup({
         )}
       </button>
       {!open && images.length > 0 && (
-        <div className="flex flex-wrap gap-2 px-1 pt-1">
+        <div className="flex flex-wrap gap-2 border-t border-border/60 px-3 py-2">
           {images.map((img, i) =>
             img.kind === "data" ? (
               <img
@@ -91,7 +92,7 @@ export function ToolGroup({
         </div>
       )}
       {open && (
-        <div className="pl-1">
+        <div className="border-t border-border/60 px-3 py-2">
           {calls.map((c, i) => (
             <ToolCallCard key={c.use.id || i} use={c.use} result={c.result} />
           ))}
@@ -174,12 +175,51 @@ export function renderParts(m: Message, streaming: boolean): ReactNode[] {
   return out;
 }
 
-export function MessageBubble({ message, streaming }: { message: Message; streaming: boolean }) {
+export function MessageActions({ message, latestReply = false }: { message: Message; latestReply?: boolean }) {
+  const [feedback, setFeedback] = useState<"" | "copied" | "error">("");
+  useEffect(() => {
+    if (!feedback) return;
+    const timer = setTimeout(() => setFeedback(""), 2500);
+    return () => clearTimeout(timer);
+  }, [feedback]);
+  // Copy the reply, not hidden reasoning, tool payloads, or attachment paths.
+  const text = message.role === "assistant" && message.parts.length > 0
+    ? message.parts.filter((part) => part.type === "text").map((part) => part.text).join("\n\n")
+    : message.contentMd;
+  const fullTime = new Date(message.createdAt).toLocaleString();
+  return (
+    <div className="fd-message-actions" data-role={message.role} data-latest-reply={latestReply || undefined}>
+      {text.trim() && <button
+        type="button"
+        className="fd-message-copy"
+        aria-label={feedback === "copied" ? "Message copied" : "Copy message"}
+        title={feedback === "copied" ? "Copied" : "Copy message"}
+        onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(text);
+            setFeedback("copied");
+          } catch {
+            setFeedback("error");
+          }
+        }}
+      ><Icon name={feedback === "copied" ? "check" : "copy"} width={16} height={16} /></button>}
+      <time tabIndex={0} dateTime={message.createdAt} title={fullTime} aria-label={fullTime} className="fd-message-time">
+        {new Date(message.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+      </time>
+      <span role="status" className={feedback === "error" ? "text-xs text-danger" : "sr-only"}>
+        {feedback === "copied" ? "Message copied" : feedback === "error" ? "Could not copy. Try again or select the text." : ""}
+      </span>
+    </div>
+  );
+}
+
+export function MessageBubble({ message, streaming, latestReply = false }: { message: Message; streaming: boolean; latestReply?: boolean }) {
   const isUser = message.role === "user";
   if (message.role === "system") {
     return (
-      <div className="mx-auto my-2 max-w-xl text-center text-xs text-muted">
+      <div className="fd-message mx-auto my-3 flex max-w-xl flex-col items-center text-center text-xs text-muted">
         {message.contentMd}
+        <MessageActions message={message} />
       </div>
     );
   }
@@ -190,18 +230,19 @@ export function MessageBubble({ message, streaming }: { message: Message; stream
         ? [<Markdown key="md" text={message.contentMd} className={cn(streaming && "fd-caret")} />]
         : [];
   return (
-    <div className={cn("group flex w-full", isUser ? "justify-end" : "justify-start")}>
+    <div className={cn("fd-message flex w-full flex-col", isUser ? "items-end" : "items-start")}>
       <div
         className={cn(
-          "relative max-w-[85%] text-[13.5px]",
+          "relative min-w-0 text-sm leading-[1.75] [overflow-wrap:anywhere]",
           isUser
-            ? "whitespace-pre-wrap rounded-2xl rounded-br-md bg-accent/15 px-3.5 py-2"
-            : "w-full",
+            ? "fd-user-message max-w-[90%] rounded-2xl rounded-br-md border border-border/60 bg-panel-2/60 px-4 py-3"
+            : "w-full max-w-full",
         )}
       >
+        {!isUser && <div className="mb-3 flex items-center gap-2 text-[11px] font-medium text-muted"><span className="h-1.5 w-1.5 rounded-full bg-accent" />Agent{streaming && <span className="text-accent">· Working</span>}</div>}
         {isUser ? (
           <>
-            {message.contentMd}
+            {message.contentMd && <div className="whitespace-pre-wrap">{message.contentMd}</div>}
             {/* A photo attached on the phone arrives as an image part next to the text. */}
             {message.parts
               .filter((p) => p.type === "image")
@@ -222,15 +263,8 @@ export function MessageBubble({ message, streaming }: { message: Message; stream
             <Spinner /> waiting for the agent...
           </div>
         )}
-        <div
-          className={cn(
-            "mt-0.5 text-[10px] text-muted opacity-0 transition-opacity group-hover:opacity-100",
-            isUser && "text-right",
-          )}
-        >
-          {formatRelative(message.createdAt)}
-        </div>
       </div>
+      <MessageActions message={message} latestReply={latestReply} />
     </div>
   );
 }
@@ -270,6 +304,21 @@ export function MessageList({
   const ref = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const run = useRunsStore((s) => (thread ? s.runsByThread[thread.id] : undefined));
+  const focusMessageId = useUiStore((s) => s.focusMessageId);
+  const setFocusMessageId = useUiStore((s) => s.setFocusMessageId);
+  useEffect(() => {
+    if (!focusMessageId || !messages.some((message) => message.id === focusMessageId)) return;
+    const target = [...(ref.current?.querySelectorAll<HTMLElement>("[data-message-id]") ?? [])].find((element) => element.dataset.messageId === focusMessageId);
+    if (!target) return;
+    stick.current = false;
+    target.scrollIntoView({ block: "center", behavior: "smooth" });
+    target.classList.add("fd-search-highlight");
+    const timer = setTimeout(() => {
+      target.classList.remove("fd-search-highlight");
+      setFocusMessageId(null);
+    }, 2500);
+    return () => { clearTimeout(timer); target.classList.remove("fd-search-highlight"); };
+  }, [focusMessageId, messages, setFocusMessageId]);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -283,24 +332,26 @@ export function MessageList({
     const el = ref.current;
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   }, [messages]);
-  const lastId = messages[messages.length - 1]?.id;
-  const lastRole = messages[messages.length - 1]?.role;
+  const lastId = messages.findLast((message) => message.role === "assistant")?.id;
+  const visibleMessages = messages.filter((message) => message.status !== "queued");
+  const lastRole = visibleMessages[visibleMessages.length - 1]?.role;
   return (
-    <div ref={ref} className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-      <div className="mx-auto flex max-w-3xl flex-col gap-4">
+    <div ref={ref} className="min-h-0 flex-1 overflow-y-auto px-5 py-6">
+      <div className="mx-auto flex max-w-3xl flex-col gap-5">
         {thread && <BranchHeader thread={thread} />}
         {loading && messages.length === 0 && (
           <div className="flex justify-center py-8">
             <Spinner />
           </div>
         )}
-        {messages.map((m) => (
-          <MessageBubble
-            key={m.id}
-            message={m}
-            streaming={!!run && m.id === lastId && m.role === "assistant"}
-          />
-        ))}
+        {visibleMessages.map((m, index, visible) => {
+          const day = new Date(m.createdAt).toDateString();
+          const previousDay = visible[index - 1] ? new Date(visible[index - 1]!.createdAt).toDateString() : null;
+          return <div key={m.id} data-message-id={m.id} className="scroll-mt-8 rounded-xl">
+            {day !== previousDay && <div className="my-3 flex items-center gap-3 text-[11px] text-muted"><span className="h-px flex-1 bg-border" /><time dateTime={m.createdAt}>{new Date(m.createdAt).toLocaleDateString([], { dateStyle: "medium" })}</time><span className="h-px flex-1 bg-border" /></div>}
+            <MessageBubble message={m} latestReply={m.role === "assistant" && m.id === lastId} streaming={!!run && lastRole === "assistant" && m.id === lastId && m.role === "assistant"} />
+          </div>;
+        })}
         {run && (messages.length === 0 || lastRole === "user") && (
           <div className="flex items-center gap-2 text-xs text-muted">
             <Spinner /> {run.agentId} is working...

@@ -34,7 +34,7 @@ jobs:
     needs: select-linux-runner
     runs-on: ${{ fromJSON(needs.select-linux-runner.outputs.runner) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: false
           # This persistent runner may retain submodule worktrees that checkout cannot remove.
@@ -47,8 +47,9 @@ jobs:
           no-cache: ${{ startsWith(runner.name, 'tf-nas-') }}
 
       # Metro and the Expo CLI are Node programs; Bun is only the package manager here.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
+          package-manager-cache: false
           node-version: 22
 
       # The app aliases @fabdesk/client-core and @fabdesk/protocol to their source, and tsc and
@@ -56,12 +57,12 @@ jobs:
       # node_modules — so the root install is needed too, and that needs the submodule
       # workspaces present, exactly like ci.yml. (Not tsconfig `paths`: Expo hands those to
       # Metro, and a path to @types/react breaks the bundle.)
-      - uses: webfactory/ssh-agent@v0.9.1
+      - uses: webfactory/ssh-agent@v0.10.0
         with:
           ssh-private-key: ${{ secrets.FABDESK_SUBMODULE_SSH_KEY }}
 
-      - name: Init the fabplane submodule
-        run: git submodule update --init --depth 1 vendor/fabplane vendor/fabplane-cli
+      - name: Init the fabplane, fabplane-cli and fab_cad submodules
+        run: git submodule update --init --depth 1 vendor/fabplane vendor/fabplane-cli vendor/fab_cad
         working-directory: source
 
       - name: Resolve the fab_pcb pin
@@ -70,7 +71,7 @@ jobs:
         working-directory: source
 
       - name: Check out the pinned fab_pcb workspace
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: fabPlane/fab_pcb
           ref: ${{ steps.fab-pcb.outputs.commit }}
@@ -123,7 +124,7 @@ jobs:
           fi
 
       - if: steps.gate.outputs.run == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: false
 
@@ -134,12 +135,13 @@ jobs:
           no-cache: ${{ startsWith(runner.name, 'tf-nas-') }}
 
       - if: steps.gate.outputs.run == 'true'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
+          package-manager-cache: false
           node-version: 22
 
       - if: steps.gate.outputs.run == 'true'
-        uses: expo/expo-github-action@v8
+        uses: expo/expo-github-action@v9
         with:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
@@ -168,7 +170,7 @@ jobs:
     runs-on: blacksmith-6vcpu-macos-15
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: false
 
@@ -177,25 +179,26 @@ jobs:
           bun-version: 1.4.0
           no-cache: ${{ startsWith(runner.name, 'tf-nas-') }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
+          package-manager-cache: false
           node-version: 22
 
       # e2e/daemon.ts is a real fabdesk-core, so it needs the root install too — and a root
       # install needs the submodule workspaces on disk (bun refuses a pruned checkout).
-      - uses: webfactory/ssh-agent@v0.9.1
+      - uses: webfactory/ssh-agent@v0.10.0
         with:
           ssh-private-key: ${{ secrets.FABDESK_SUBMODULE_SSH_KEY }}
 
-      - name: Init the fabplane submodule
-        run: git submodule update --init --depth 1 vendor/fabplane vendor/fabplane-cli
+      - name: Init the fabplane, fabplane-cli and fab_cad submodules
+        run: git submodule update --init --depth 1 vendor/fabplane vendor/fabplane-cli vendor/fab_cad
 
       - name: Resolve the fab_pcb pin
         id: fab-pcb
         run: echo "commit=$(git ls-tree HEAD vendor/fab_pcb | awk '{print $3}')" >> "$GITHUB_OUTPUT"
 
       - name: Check out the pinned fab_pcb workspace
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: fabPlane/fab_pcb
           ref: ${{ steps.fab-pcb.outputs.commit }}
@@ -231,7 +234,7 @@ jobs:
         run: apps/mobile/e2e/run.sh --build --udid ${{ steps.sim.outputs.udid }} --port 47820
 
       - if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: maestro-debug
           path: ~/.maestro/tests

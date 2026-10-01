@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { chmod, mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { inspectSchematicHierarchy, type KicadCli } from "../src";
@@ -22,13 +22,15 @@ async function fixture(sheetCount = 2) {
     JSON.stringify({ schematic: { top_level_sheets: sheets } }),
   );
   const xml = `<?xml version="1.0"?><export><design><sheet number="1" name="/Root/"/><sheet number="2" name="/Child 1/"/></design><components><comp ref="R1"><sheetpath names="/Root/"/></comp><comp ref="C1"><sheetpath names="/Child 1/"/></comp></components><nets><net code="1" name="N"><node ref="R1" pin="1"/><node ref="C1" pin="1"/></net></nets></export>`;
-  const executable = join(projectDir, "fake-kicad-cli");
-  await writeFile(
-    executable,
-    `#!/bin/sh\nfor last; do :; done\nwhile [ "$1" != "-o" ]; do shift; done\nprintf '%s' '${xml}' > "$2"\n`,
-  );
-  await chmod(executable, 0o755);
-  return { projectDir, cli: { path: executable, version: "10.99.0" } satisfies KicadCli };
+  const cli: KicadCli = {
+    path: process.execPath,
+    version: "10.99.0",
+    trace: async ({ command }) => {
+      await writeFile(command[command.indexOf("-o") + 1]!, xml);
+      return { stdout: "", stderr: "", exitCode: 0 };
+    },
+  };
+  return { projectDir, cli };
 }
 
 describe("saved schematic hierarchy", () => {

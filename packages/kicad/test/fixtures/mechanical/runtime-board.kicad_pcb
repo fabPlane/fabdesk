@@ -1,0 +1,398 @@
+(kicad_pcb
+  (version 20241229)
+  (generator "pcbnew")
+  (generator_version "9.0")
+  (general
+    (thickness 1.6)
+    (legacy_teardrops no)
+  )
+  (layers
+    (0 "F.Cu" signal)
+    (31 "B.Cu" signal)
+    (37 "F.SilkS" user "F.Silkscreen")
+    (36 "B.SilkS" user "B.Silkscreen")
+    (44 "Edge.Cuts" user)
+    (46 "Margin" user)
+    (47 "F.CrtYd" user "F.Courtyard")
+    (46 "B.CrtYd" user "B.Courtyard")
+  )
+  (setup
+    (pad_to_mask_clearance 0)
+  )
+  (footprint "fx:U1"
+    (layer "F.Cu")
+    (uuid "00000000-0000-4000-8000-000000000001")
+    (at 110 100 0)
+    (property "Reference" "U1"
+      (at 0 -3 0)
+      (layer "F.SilkS")
+      (uuid "00000000-0000-4000-8000-000000000001")
+      (effects
+        (font
+          (size 1 1)
+          (thickness 0.15)
+        )
+      )
+    )
+    (attr smd)
+    (model "${KIPRJMOD}/models/box.step"
+      (offset
+        (xyz 0 0 0)
+      )
+      (scale
+        (xyz 1 1 1)
+      )
+      (rotate
+        (xyz 0 0 0)
+      )
+    )
+  )
+  (footprint "fx:U2"
+    (layer "F.Cu")
+    (uuid "00000000-0000-4000-8000-000000000001")
+    (at 120 100 90)
+    (property "Reference" "U2"
+      (at 0 -3 90)
+      (layer "F.SilkS")
+      (uuid "00000000-0000-4000-8000-000000000001")
+      (effects
+        (font
+          (size 1 1)
+          (thickness 0.15)
+        )
+      )
+    )
+    (attr smd)
+    (model "${KIPRJMOD}/models/box.step"
+      (offset
+        (xyz 0 0 0)
+      )
+      (scale
+        (xyz 1 1 1)
+      )
+      (rotate
+        (xyz 0 0 0)
+      )
+    )
+  )
+  (footprint "fx:U4"
+    (layer "F.Cu")
+    (uuid "00000000-0000-4000-8000-000000000001")
+    (at 150 95 0)
+    (property "Reference" "U4"
+      (at 0 -3 0)
+      (layer "F.SilkS")
+      (uuid "00000000-0000-4000-8000-000000000001")
+      (effects
+        (font
+          (size 1 1)
+          (thickness 0.15)
+        )
+      )
+    )
+    (attr smd)
+    (model "${KIPRJMOD}/models/box.step"
+      (offset
+        (xyz 0 0 0)
+      )
+      (scale
+        (xyz 1 1 1)
+      )
+      (rotate
+        (xyz 0 0 0)
+      )
+    )
+    (model "${KIPRJMOD}/models/box.step"
+      (offset
+        (xyz 1 0 1.2)
+      )
+      (scale
+        (xyz 1 1 2)
+      )
+      (rotate
+        (xyz 0 0 90)
+      )
+    )
+  )
+  (footprint "fx:U5"
+    (layer "F.Cu")
+    (uuid "00000000-0000-4000-8000-000000000001")
+    (at 140 100 0)
+    (property "Reference" "U5"
+      (at 0 -3 0)
+      (layer "F.SilkS")
+      (uuid "00000000-0000-4000-8000-000000000001")
+      (effects
+        (font
+          (size 1 1)
+          (thickness 0.15)
+        )
+      )
+    )
+    (attr smd)
+    (model "${KIPRJMOD}/models/box.step"
+      (offset
+        (xyz 0 0 0)
+      )
+      (scale
+        (xyz 1 1 1)
+      )
+      (rotate
+        (xyz 0 0 0)
+      )
+    )
+  )
+  (footprint "fx:U6"
+    (layer "F.Cu")
+    (uuid "00000000-0000-4000-8000-000000000001")
+    (at 141.5 100 0)
+    (property "Reference" "U6"
+      (at 0 -3 0)
+      (layer "F.SilkS")
+      (uuid "00000000-0000-4000-8000-000000000001")
+      (effects
+        (font
+          (size 1 1)
+          (thickness 0.15)
+        )
+      )
+    )
+    (attr smd)
+    (model "${KIPRJMOD}/models/box.step"
+      (offset
+        (xyz 0 0 0)
+      )
+      (scale
+        (xyz 1 1 1)
+      )
+      (rotate
+        (xyz 0 0 0)
+      )
+    )
+  )
+  (footprint "fx:U7"
+    (layer "F.Cu")
+    (uuid "00000000-0000-4000-8000-000000000001")
+    (at 110 105 0)
+    (property "Reference" "U7"
+      (at 0 -3 0)
+      (layer "F.SilkS")
+      (uuid "00000000-0000-4000-8000-000000000001")
+      (effects
+        (font
+          (size 1 1)
+          (thickness 0.15)
+        )
+      )
+    )
+    (attr smd)
+    (model "${KIPRJMOD}/models/nope.step"
+      (offset
+        (xyz 0 0 0)
+      )
+      (scale
+        (xyz 1 1 1)
+      )
+      (rotate
+        (xyz 0 0 0)
+      )
+    )
+  )
+  (footprint "fx:U8"
+    (layer "F.Cu")
+    (uuid "00000000-0000-4000-8000-000000000001")
+    (at 115 105 0)
+    (property "Reference" "U8"
+      (at 0 -3 0)
+      (layer "F.SilkS")
+      (uuid "00000000-0000-4000-8000-000000000001")
+      (effects
+        (font
+          (size 1 1)
+          (thickness 0.15)
+        )
+      )
+    )
+    (attr smd)
+  )
+  (footprint "fx:U9"
+    (layer "F.Cu")
+    (uuid "00000000-0000-4000-8000-000000000001")
+    (at 120 105 0)
+    (property "Reference" "U9"
+      (at 0 -3 0)
+      (layer "F.SilkS")
+      (uuid "00000000-0000-4000-8000-000000000001")
+      (effects
+        (font
+          (size 1 1)
+          (thickness 0.15)
+        )
+      )
+    )
+    (attr smd)
+    (model "${KIPRJMOD}/models/junk.step"
+      (offset
+        (xyz 0 0 0)
+      )
+      (scale
+        (xyz 1 1 1)
+      )
+      (rotate
+        (xyz 0 0 0)
+      )
+    )
+  )
+  (footprint "fx:U10"
+    (layer "F.Cu")
+    (uuid "00000000-0000-4000-8000-000000000001")
+    (at 125 105 0)
+    (property "Reference" "U10"
+      (at 0 -3 0)
+      (layer "F.SilkS")
+      (uuid "00000000-0000-4000-8000-000000000001")
+      (effects
+        (font
+          (size 1 1)
+          (thickness 0.15)
+        )
+      )
+    )
+    (attr smd)
+    (model "${KIPRJMOD}/models/thing.xyz"
+      (offset
+        (xyz 0 0 0)
+      )
+      (scale
+        (xyz 1 1 1)
+      )
+      (rotate
+        (xyz 0 0 0)
+      )
+    )
+  )
+  (footprint "fx:U11"
+    (layer "F.Cu")
+    (uuid "00000000-0000-4000-8000-000000000001")
+    (at 130 105 0)
+    (property "Reference" "U11"
+      (at 0 -3 0)
+      (layer "F.SilkS")
+      (uuid "00000000-0000-4000-8000-000000000001")
+      (effects
+        (font
+          (size 1 1)
+          (thickness 0.15)
+        )
+      )
+    )
+    (attr smd)
+    (model "${KIPRJMOD}/models/box.step"
+      (hide yes)
+      (offset
+        (xyz 0 0 0)
+      )
+      (scale
+        (xyz 1 1 1)
+      )
+      (rotate
+        (xyz 0 0 0)
+      )
+    )
+  )
+  (footprint "fx:U12"
+    (layer "F.Cu")
+    (uuid "00000000-0000-4000-8000-000000000001")
+    (at 135 95 0)
+    (property "Reference" "U12"
+      (at 0 -3 0)
+      (layer "F.SilkS")
+      (uuid "00000000-0000-4000-8000-000000000001")
+      (effects
+        (font
+          (size 1 1)
+          (thickness 0.15)
+        )
+      )
+    )
+    (attr smd)
+    (model "${KIPRJMOD}/models/box.step"
+      (offset
+        (xyz 0 1 0)
+      )
+      (scale
+        (xyz 1 1 1)
+      )
+      (rotate
+        (xyz 0 0 0)
+      )
+    )
+  )
+  (footprint "fx:U13"
+    (layer "F.Cu")
+    (uuid "00000000-0000-4000-8000-000000000001")
+    (at 155 105 0)
+    (property "Reference" "U13"
+      (at 0 -3 0)
+      (layer "F.SilkS")
+      (uuid "00000000-0000-4000-8000-000000000001")
+      (effects
+        (font
+          (size 1 1)
+          (thickness 0.15)
+        )
+      )
+    )
+    (attr smd)
+    (model "${KIPRJMOD}/models/cube.wrl"
+      (offset
+        (xyz 0 0 0)
+      )
+      (scale
+        (xyz 1 1 1)
+      )
+      (rotate
+        (xyz 0 0 0)
+      )
+    )
+  )
+  (footprint "fx:U3"
+    (layer "B.Cu")
+    (uuid "00000000-0000-4000-8000-000000000001")
+    (at 130 100 30)
+    (property "Reference" "U3"
+      (at 0 -3.000001 30)
+      (layer "F.SilkS")
+      (uuid "00000000-0000-4000-8000-000000000001")
+      (effects
+        (font
+          (size 1 1)
+          (thickness 0.15)
+        )
+      )
+    )
+    (attr smd)
+    (model "${KIPRJMOD}/models/box.step"
+      (offset
+        (xyz 0 0 0)
+      )
+      (scale
+        (xyz 1 1 1)
+      )
+      (rotate
+        (xyz 0 0 0)
+      )
+    )
+  )
+  (gr_rect
+    (start 100 90)
+    (end 160 110)
+    (stroke
+      (width 0.05)
+      (type default)
+    )
+    (fill no)
+    (layer "Edge.Cuts")
+    (uuid "aaaaaaaa-0000-4000-8000-000000000001")
+  )
+)

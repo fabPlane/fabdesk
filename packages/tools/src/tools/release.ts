@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { z } from "zod/v4";
-import { PROJECT_FILES, ensureDir, exists, writeAtomic, writeJson } from "../fs";
+import { PROJECT_FILES, ensureDir, exists, projectRelative, writeAtomic, writeJson } from "../fs";
 import { ToolError, defineTool } from "../registry";
 import { inspectSavedHierarchy, p, requireKicad } from "./common";
 import { zipFiles } from "./export";
@@ -426,12 +426,12 @@ export const release_build = defineTool({
         const metadata = await stat(path).catch(() => null);
         return metadata?.isFile() && metadata.size > 0
           ? {
-              path: relative(project.dir, path),
+              path: projectRelative(project.dir, path),
               status: "available" as const,
               bytes: metadata.size,
               sha256: await hash(path),
             }
-          : { path: relative(project.dir, path), status: "missing" as const };
+          : { path: projectRelative(project.dir, path), status: "missing" as const };
       }),
     );
     if (!schematicSvgs.paths.length)

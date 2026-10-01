@@ -75,7 +75,7 @@ export function ToolCallCard({ use, result }: { use: ToolUse; result?: ToolResul
     <div className={cn("my-1.5 rounded-lg border bg-panel-2/40 text-xs", error ? "border-danger/50" : "border-border")}>
       <button className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left" onClick={() => setOpen((o) => !o)}>
         <span className={cn("inline-block text-muted transition-transform", open && "rotate-90")}>&#9656;</span>
-        <span className="font-mono font-medium">{use.name}</span>
+        <span className="min-w-0 max-w-[50%] truncate font-mono font-medium" title={use.name}>{use.name}</span>
         <span className="truncate text-muted">{summarizeArgs(use.input)}</span>
         <span className="ml-auto flex items-center gap-1.5">
           {pending && <Spinner className="h-3 w-3" />}

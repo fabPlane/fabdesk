@@ -10,3 +10,6 @@
 	path = vendor/fabplane-cli
 	url = https://github.com/fabPlane/fabplane-cli.git
 	branch = main
+[submodule "vendor/fab_cad"]
+	path = vendor/fab_cad
+	url = https://github.com/fabPlane/fab_cad.git

@@ -73,7 +73,7 @@ export const ProjectDetail = ProjectSummary.extend({
 });
 export type ProjectDetail = z.infer<typeof ProjectDetail>;
 
-export const CreateProject = z.object({ name: z.string().min(1).max(80) });
+export const CreateProject = z.object({ name: z.string().min(1).max(80), parentDirectory: z.string().min(1).optional() });
 
 /**
  * `full`: the agent runs with the permission mode from Settings. `supervised`: the daemon pauses

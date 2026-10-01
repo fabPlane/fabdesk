@@ -308,7 +308,7 @@ export function RemoteSection() {
             </span>
           </span>
         </label>
-        <label className="grid grid-cols-[180px_1fr] items-center gap-3 py-1.5 text-xs">
+        <label className="fd-settings-row grid grid-cols-[180px_minmax(0,1fr)] items-center gap-3 py-1.5 text-xs">
           <span>
             <span className="font-medium">Port</span>
             <span className="block text-[11px] text-muted">Default {REMOTE_DEFAULT_PORT}</span>
@@ -332,7 +332,7 @@ export function RemoteSection() {
           onSwitch={(relay) => applyRemote({ relay })}
           onOverride={(relayUrl) => applyRemote({ relayUrl })}
         />
-        <label className="grid grid-cols-[180px_1fr] items-center gap-3 py-1.5 text-xs">
+        <label className="fd-settings-row grid grid-cols-[180px_minmax(0,1fr)] items-center gap-3 py-1.5 text-xs">
           <span>
             <span className="font-medium">Preferred address</span>
             <span className="block text-[11px] text-muted">Listed first in the pairing code</span>
@@ -465,7 +465,7 @@ function RelayRow({
     );
   return (
     <div className="py-1.5 text-xs" data-relay-state={p.state}>
-      <div className="grid grid-cols-[180px_1fr] items-center gap-3">
+      <div className="fd-settings-row grid grid-cols-[180px_minmax(0,1fr)] items-center gap-3">
         <span>
           <span className="font-medium">{p.title}</span>
           <span className="block text-[11px] text-muted">
@@ -499,7 +499,7 @@ function RelayRow({
         </span>
       </div>
       {showOverride && (
-        <label className="mt-1 grid grid-cols-[180px_1fr] items-center gap-3">
+        <label className="mt-1 fd-settings-row grid grid-cols-[180px_minmax(0,1fr)] items-center gap-3">
           <span className="text-[11px] text-muted">Relay URL override</span>
           <input
             type="url"
@@ -546,7 +546,7 @@ function TailscaleRow({
   else detail = `Runs \`tailscale serve\` so phones reach ${tailscale.dnsName} over HTTPS.`;
   const canSetup = Boolean(tailscale?.dnsName);
   return (
-    <div className="grid grid-cols-[180px_1fr] items-center gap-3 py-1.5 text-xs">
+    <div className="fd-settings-row grid grid-cols-[180px_minmax(0,1fr)] items-center gap-3 py-1.5 text-xs">
       <span>
         <span className="font-medium">Tailscale HTTPS</span>
         <span className="block text-[11px] text-muted">TLS via `tailscale serve`</span>

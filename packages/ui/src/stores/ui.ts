@@ -2,13 +2,14 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { readStoredThemeId, type ThemeId } from "../theme/resolve";
 
-export const BOARD_TABS = ["schematic", "pcb", "cinema", "3d", "drc", "renders", "files", "bom"] as const;
+export const BOARD_TABS = ["schematic", "pcb", "cinema", "3d", "cad", "drc", "renders", "files", "bom"] as const;
 export type BoardTab = (typeof BOARD_TABS)[number];
 export const BOARD_TAB_LABELS: Record<BoardTab, string> = {
   schematic: "Schematic",
   pcb: "PCB",
   cinema: "Route Cinema",
-  "3d": "3D",
+  "3d": "3D export",
+  cad: "CAD",
   drc: "DRC/ERC",
   renders: "Renders",
   files: "Files",
@@ -43,6 +44,7 @@ export interface UiState {
   sidebarOpen: boolean;
   boardOpen: boolean;
   activeThreadId: string | null;
+  focusMessageId: string | null;
   activeProjectId: string | null;
   sidebarListTab: SidebarListTab;
   activeOpenSourceId: string | null;
@@ -66,6 +68,7 @@ export interface UiState {
   setSidebarOpen: (open: boolean) => void;
   setBoardOpen: (open: boolean) => void;
   setActiveThread: (id: string | null) => void;
+  setFocusMessageId: (id: string | null) => void;
   setActiveProject: (id: string | null) => void;
   /** Start a blank conversation in a project (or none). Skips the project picker. */
   startNewChatInProject: (projectId: string | null) => void;
@@ -110,6 +113,7 @@ export const useUiStore = create<UiState>()(
   sidebarOpen: true,
   boardOpen: true,
   activeThreadId: null,
+  focusMessageId: null,
   activeProjectId: null,
   sidebarListTab: "projects",
   activeOpenSourceId: null,
@@ -130,7 +134,8 @@ export const useUiStore = create<UiState>()(
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
   setBoardOpen: (boardOpen) => set({ boardOpen }),
   setActiveThread: (activeThreadId) => set({ activeThreadId, ...(activeThreadId ? { activeOpenSourceId: null, orderFlowOpen: false, inventoryOpen: false } : {}) }),
-  setActiveProject: (activeProjectId) => set({ activeProjectId }),
+  setFocusMessageId: (focusMessageId) => set({ focusMessageId }),
+  setActiveProject: (activeProjectId) => set((s) => ({ activeProjectId, ...(activeProjectId !== s.activeProjectId ? { activeThreadId: null, activeOpenSourceId: null, orderFlowOpen: false, inventoryOpen: false } : {}) })),
   startNewChatInProject: (projectId) =>
     set((s) => ({ ...newChatInProjectState(projectId), composerFocusNonce: s.composerFocusNonce + 1 })),
   setSidebarListTab: (sidebarListTab) => set({ sidebarListTab: normalizeSidebarListTab(sidebarListTab) }),

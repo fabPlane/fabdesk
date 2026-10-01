@@ -299,7 +299,10 @@ describe("queued messages and the lease", () => {
     expect(h.runs.map((r) => r.session.prompt)).toEqual(["first", "other thread"]);
     // B's run ends: A's queued message goes out now.
     h.runs[1]!.finish();
-    await settle();
+    // Dispatch resolves a project and creates its working directory asynchronously. A fixed
+    // 20 ms sleep can expire before those filesystem operations finish on a busy CI runner.
+    const dispatchDeadline = Date.now() + 2_000;
+    while (h.runs.length < 3 && Date.now() < dispatchDeadline) await Bun.sleep(10);
     expect(h.runs.map((r) => r.session.prompt)).toEqual(["first", "other thread", "follow-up"]);
     expect(h.store.threads.getMessage(queued.id)?.status).toBeUndefined();
     expect(h.manager.projectHolder(p.id)).toBe(a.id);

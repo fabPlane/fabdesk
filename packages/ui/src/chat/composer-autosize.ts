@@ -1,5 +1,5 @@
 /** Compact empty height: one to two lines plus padding, matching Codex/Claude. */
-export const COMPOSER_TEXTAREA_MIN_PX = 44;
+export const COMPOSER_TEXTAREA_MIN_PX = 52;
 /** Grow-with-content cap; overflow scrolls after this. */
 export const COMPOSER_TEXTAREA_MAX_PX = 240;
 

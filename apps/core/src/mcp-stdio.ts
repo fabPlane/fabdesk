@@ -13,7 +13,13 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod/v4";
 import { DaemonHandshake } from "@fabdesk/protocol";
-import { attachToRegistry, createRegistry, type ProjectHandle } from "@fabdesk/tools";
+import {
+  attachToRegistry,
+  clientSupportsApps,
+  createRegistry,
+  FABDESK_SERVER_ICONS,
+  type ProjectHandle,
+} from "@fabdesk/tools";
 import { locateAppBridgeFile } from "./app-bridge";
 import { TokenSet } from "./auth";
 import { createAuth } from "./auth-facade";
@@ -27,7 +33,13 @@ import { DEFAULT_AGENT_TOOLSETS, INSTRUCTIONS } from "./mcp-sessions";
 import { ProjectStore } from "./projects";
 import { pidAlive } from "./serve";
 
-export type McpStdioOptions = { standalone?: boolean; project?: string; dataDir?: string };
+export type McpStdioOptions = {
+  standalone?: boolean;
+  project?: string;
+  dataDir?: string;
+  /** Always list the MCP Apps views (Codex / ChatGPT plugin). Default: only for clients that advertise MCP Apps. */
+  apps?: boolean;
+};
 
 export async function readHandshake(path: string): Promise<DaemonHandshake | null> {
   try {
@@ -72,7 +84,7 @@ export async function runMcpStdio(opts: McpStdioOptions = {}): Promise<void> {
     const hs = await findLiveDaemon(config.handshakePath);
     if (hs) {
       logger.info("proxying stdio MCP to the running daemon", { port: hs.port, pid: hs.pid });
-      await proxyToDaemon(hs, projectDir);
+      await proxyToDaemon(hs, projectDir, opts.apps === true);
       return;
     }
     logger.info("no live daemon; running standalone MCP server");
@@ -81,52 +93,84 @@ export async function runMcpStdio(opts: McpStdioOptions = {}): Promise<void> {
 }
 
 /** Generic JSON-RPC proxy: every request/notification is forwarded verbatim in both directions. */
-async function proxyToDaemon(hs: DaemonHandshake, projectDir: string | null): Promise<void> {
-  const client = new Client(
-    { name: "fabdesk-core-stdio", version: hs.version },
-    { capabilities: {} },
+async function proxyToDaemon(
+  hs: DaemonHandshake,
+  projectDir: string | null,
+  apps: boolean,
+): Promise<void> {
+  type Upstream = { client: Client; transport: StreamableHTTPClientTransport };
+  let server: Server | null = null;
+  const open = async (withApps: boolean): Promise<Upstream> => {
+    const client = new Client(
+      { name: "fabdesk-core-stdio", version: hs.version },
+      { capabilities: {} },
+    );
+    // The daemon sees this proxy's capabilities, not the host's, so MCP Apps are requested explicitly.
+    const url = new URL(`http://${hs.host}:${hs.port}/mcp`);
+    if (withApps) url.searchParams.set("apps", "on");
+    const transport = new StreamableHTTPClientTransport(url, {
+      requestInit: { headers: { authorization: `Bearer ${hs.token}` } },
+    });
+    await client.connect(transport as unknown as Transport);
+    client.fallbackNotificationHandler = async (n) => {
+      await server
+        ?.notification({ method: n.method, ...(n.params ? { params: n.params } : {}) } as never)
+        .catch(() => {});
+    };
+    client.onclose = () => {
+      logger.info("daemon connection closed; exiting");
+      void (server?.close() ?? Promise.resolve()).finally(() => process.exit(0));
+    };
+    return { client, transport };
+  };
+  let upstream = await open(apps);
+  // A host that advertises MCP Apps (known only after its initialize) gets a session with the views.
+  let ready: Promise<void> = Promise.resolve();
+  const remoteCaps = upstream.client.getServerCapabilities() ?? {};
+  server = new Server(
+    { name: "fabdesk", title: "fabPlane", version: hs.version, icons: FABDESK_SERVER_ICONS },
+    { capabilities: remoteCaps, instructions: upstream.client.getInstructions() ?? INSTRUCTIONS },
   );
-  const transport = new StreamableHTTPClientTransport(new URL(`http://${hs.host}:${hs.port}/mcp`), {
-    requestInit: { headers: { authorization: `Bearer ${hs.token}` } },
-  });
-  await client.connect(transport as unknown as Transport);
-  const remoteCaps = client.getServerCapabilities() ?? {};
-  const server = new Server(
-    { name: "fabdesk", version: hs.version },
-    { capabilities: remoteCaps, instructions: client.getInstructions() ?? INSTRUCTIONS },
-  );
+  const downstream = server;
+  downstream.oninitialized = () => {
+    if (apps || !clientSupportsApps(downstream.getClientCapabilities())) return;
+    ready = (async () => {
+      const previous = upstream;
+      upstream = await open(true);
+      previous.client.onclose = () => {};
+      await previous.transport.terminateSession().catch(() => {});
+      await previous.client.close().catch(() => {});
+    })().catch((e) => logger.warn("MCP Apps session failed; keeping the plain one", { error: errMsg(e) }));
+  };
   const Any = z.looseObject({});
-  server.fallbackRequestHandler = async (request) => {
+  downstream.fallbackRequestHandler = async (request) => {
+    await ready;
     const params = { ...((request.params as Record<string, unknown> | undefined) ?? {}) };
     // Inject the detected project when a tool call omits it.
     if (request.method === "tools/call" && projectDir) {
       const args = (params["arguments"] as Record<string, unknown> | undefined) ?? {};
       if (args["project"] === undefined) params["arguments"] = { ...args, project: projectDir };
     }
-    return client.request({ method: request.method, params }, Any as never);
+    return upstream.client.request({ method: request.method, params }, Any as never);
   };
-  server.fallbackNotificationHandler = async (n) => {
-    await client
+  downstream.fallbackNotificationHandler = async (n) => {
+    await ready;
+    await upstream.client
       .notification({ method: n.method, ...(n.params ? { params: n.params } : {}) } as never)
       .catch(() => {});
-  };
-  client.fallbackNotificationHandler = async (n) => {
-    await server
-      .notification({ method: n.method, ...(n.params ? { params: n.params } : {}) } as never)
-      .catch(() => {});
-  };
-  client.onclose = () => {
-    logger.info("daemon connection closed; exiting");
-    void server.close().finally(() => process.exit(0));
   };
   const stdio = new StdioServerTransport();
-  await server.connect(stdio);
+  await downstream.connect(stdio);
   await new Promise<void>((resolveDone) => {
     stdio.onclose = () => resolveDone();
+    // The SDK transport does not report stdin EOF, which is how hosts disconnect.
+    process.stdin.once("end", () => resolveDone());
   });
+  await ready;
   // Free the daemon-side session so the parent watchdog does not see a phantom MCP client.
-  await transport.terminateSession().catch(() => {});
-  await client.close().catch(() => {});
+  upstream.client.onclose = () => {};
+  await upstream.transport.terminateSession().catch(() => {});
+  await upstream.client.close().catch(() => {});
 }
 
 async function standalone(opts: McpStdioOptions, projectDir: string | null): Promise<void> {
@@ -224,10 +268,13 @@ async function standalone(opts: McpStdioOptions, projectDir: string | null): Pro
     defaultProject: async () => defaultProject,
   });
   const server = new McpServer(
-    { name: "fabdesk", version: config.version },
+    { name: "fabdesk", title: "fabPlane", version: config.version, icons: FABDESK_SERVER_ICONS },
     { instructions: INSTRUCTIONS },
   );
-  attachToRegistry(server, registry, ctxFactory, { initialToolsets: [...DEFAULT_AGENT_TOOLSETS] });
+  attachToRegistry(server, registry, ctxFactory, {
+    initialToolsets: [...DEFAULT_AGENT_TOOLSETS],
+    apps: opts.apps ? "on" : "auto",
+  });
   const stdio = new StdioServerTransport();
   await server.connect(stdio);
   await new Promise<void>((resolveDone) => {

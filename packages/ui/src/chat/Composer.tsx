@@ -1,9 +1,11 @@
 import type { AgentId, Thread } from "@fabdesk/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Button, IconButton, Kbd, Textarea } from "../components/ui";
+import { Button, IconButton, Textarea } from "../components/ui";
+import { Icon } from "../components/Icon";
+import { InstallHint } from "../components/InstallHint";
 import { useCore } from "@fabdesk/client-core";
-import { useDoctor, useSettings } from "@fabdesk/client-core";
+import { CoreHttpError, useDoctor, useSettings, useMessages, useQueueMessage, useUnqueueMessage } from "@fabdesk/client-core";
 import { useRunsStore } from "@fabdesk/client-core";
 import { DRAFT_KEY_NEW, useUiStore } from "../stores/ui";
 import { basename, mimeFromPath, modKey } from "../util";
@@ -39,6 +41,7 @@ const FALLBACK_AGENTS = [
 const EMPTY: never[] = [];
 
 export function Composer({ thread, onCreateThread }: ComposerProps) {
+  const agentButtonRef = useRef<HTMLButtonElement>(null);
   const { client, host } = useCore();
   const qc = useQueryClient();
   const draftKey = thread?.id ?? DRAFT_KEY_NEW;
@@ -55,6 +58,10 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
   const setAgentPickerOpen = useUiStore((s) => s.setAgentPickerOpen);
   const projectId = useUiStore((s) => s.activeProjectId);
   const run = useRunsStore((s) => (thread ? s.runsByThread[thread.id] : undefined));
+  const messages = useMessages(thread?.id ?? null);
+  const queued = (messages.data ?? []).filter((message) => message.status === "queued");
+  const queueMessage = useQueueMessage();
+  const unqueueMessage = useUnqueueMessage();
   const doctor = useDoctor();
   const settings = useSettings();
   const [agentId, setAgentId] = useState<AgentId>(thread?.agentId ?? settings.data?.defaultAgent ?? "claude");
@@ -98,34 +105,44 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
 
   const send = useCallback(async () => {
     const typed = draft.trim();
-    if (!typed || sending || run) return;
+    if (!typed || sending) return;
     // `/shopping-list …` and friends expand into the instructions the agent needs.
     const content = expandSlashCommand(typed) ?? typed;
     setSending(true);
     setError(null);
+    let createdThreadId: string | null = null;
     try {
       let threadId = thread?.id;
       if (!threadId) {
         // No title: the daemon names the thread after this first message (and tells every client).
         threadId = await onCreateThread({ agentId, ...(model ? { model } : {}) });
+        createdThreadId = threadId;
       }
-      await client.sendMessage(threadId, {
+      const input = {
         content,
         attachments: pending.map((a) => ({ path: a.path, mime: a.mime })),
         agentId,
         ...(model ? { model } : {}),
-      });
+      };
+      // The queue endpoint starts immediately when idle and queues if a run began meanwhile.
+      await queueMessage.mutateAsync({ threadId, input });
       setDraft(draftKey, "");
       clearAttachments(draftKey);
       if (draftKey === DRAFT_KEY_NEW) setDraft(threadId, "");
       void qc.invalidateQueries({ queryKey: ["messages", threadId] });
       void qc.invalidateQueries({ queryKey: ["threads"] });
     } catch (e) {
+      if (createdThreadId) {
+        setDraft(createdThreadId, draft);
+        for (const attachment of pending) addAttachment(createdThreadId, attachment);
+        setDraft(DRAFT_KEY_NEW, "");
+        clearAttachments(DRAFT_KEY_NEW);
+      }
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setSending(false);
     }
-  }, [draft, sending, run, thread?.id, onCreateThread, agentId, model, client, pending, setDraft, draftKey, clearAttachments, qc]);
+  }, [draft, sending, thread, onCreateThread, agentId, model, pending, setDraft, draftKey, clearAttachments, addAttachment, qc, queueMessage]);
 
   useEffect(() => {
     composerHandlers.send = () => void send();
@@ -162,14 +179,27 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
       : "Pick or create a project, then describe the board...";
 
   return (
-    <div className="border-t border-border bg-bg px-4 pb-3 pt-2">
+    <div className="fd-composer-dock bg-bg px-5 pb-4 pt-3">
       <div className="mx-auto max-w-3xl">
+        {queued.length > 0 && <div className="mb-2 max-h-36 space-y-1 overflow-y-auto rounded-xl border border-border bg-panel p-2" aria-label="Queued messages">
+          <div className="px-1 text-[11px] text-muted">Queued · sends in order after the current run</div>
+          {queued.map((message, index) => <div key={message.id} className="flex items-center gap-2 rounded-lg bg-panel-2 px-2 py-1.5 text-xs">
+            <span className="shrink-0 text-muted">{index + 1}.</span><span className="min-w-0 flex-1 truncate" title={message.contentMd}>{message.contentMd}</span>
+            <button type="button" className="shrink-0 text-muted hover:text-fg" disabled={unqueueMessage.isPending} aria-label={`Cancel queued message ${index + 1}`} onClick={() => void unqueueMessage.mutateAsync({ threadId: thread!.id, messageId: message.id }).catch((failure: unknown) => {
+              void messages.refetch();
+              setError(failure instanceof CoreHttpError && failure.status === 409
+                ? "This message has already started and cannot be canceled."
+                : "Could not cancel this queued message. Check the connection and try again.");
+            })}>Cancel</button>
+          </div>)}
+          <div className="px-1 text-[11px] text-muted">Queued messages use this chat’s agent and model when they start.</div>
+        </div>}
         {pending.length > 0 && (
           <div className="mb-2 flex flex-wrap gap-1.5">
             {pending.map((a) => (
               <span
                 key={a.path}
-                className="inline-flex items-center gap-1 rounded-full border border-border bg-panel px-2 py-0.5 text-xs"
+                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-panel px-2.5 py-1 text-xs"
               >
                 <span className="text-muted">{a.mime.startsWith("image/") ? "img" : "file"}</span> {a.label}
                 <button
@@ -202,12 +232,12 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
             ))}
           </div>
         )}
-        <div className="rounded-xl border border-border bg-panel shadow-sm focus-within:border-accent">
+        <div className="fd-composer rounded-xl border border-border bg-panel transition-colors focus-within:border-accent">
           <Textarea
             ref={textareaRef}
             value={draft}
             placeholder={placeholder}
-            className="h-[44px] max-h-[240px] min-h-[44px] overflow-y-auto border-0 bg-transparent px-3.5 py-2.5 focus:border-0"
+            className="h-[52px] max-h-[240px] min-h-[52px] overflow-y-auto border-0 bg-transparent px-4 py-3 text-sm leading-6 focus:border-0"
             rows={1}
             onChange={(e) => setDraft(draftKey, e.target.value)}
             onKeyDown={(e) => {
@@ -217,21 +247,24 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
               }
             }}
           />
-          <div className="flex items-center gap-1.5 px-2 pb-2">
-            <div className="relative">
+          <div className="fd-composer-toolbar flex flex-wrap items-center gap-1.5 px-2.5 py-2">
+            <div className="fd-agent-control relative min-w-0">
               <Button
+                ref={agentButtonRef}
                 variant="ghost"
                 size="sm"
-                className="h-7 max-w-[280px] truncate font-normal"
-                title={`Agent & model (${mod}/)`}
+                className="fd-agent-button h-8 max-w-full font-medium"
+                title={`Agent & model (${mod} + /)`}
                 onClick={() => setAgentPickerOpen(!agentPickerOpen)}
+                disabled={!!run || queued.length > 0}
                 aria-haspopup="menu"
                 aria-expanded={agentPickerOpen}
                 data-testid="agent-model"
               >
-                {agentModelLabel(pickerAgents.find((a) => a.id === agentId), agentId, model)} <span className="text-muted">&#9662;</span>
+                <span className="min-w-0 truncate">{agentModelLabel(pickerAgents.find((a) => a.id === agentId), agentId, model)}</span> <Icon name="chevronDown" width={13} height={13} className="shrink-0" />
               </Button>
               <AgentModelMenu
+                anchorRef={agentButtonRef}
                 open={agentPickerOpen}
                 onClose={() => setAgentPickerOpen(false)}
                 agents={pickerAgents}
@@ -247,42 +280,51 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
               />
             </div>
             <IconButton title="Attach file" onClick={() => void pickFiles()}>
-              +
+              <Icon name="paperclip" />
             </IconButton>
             <Button
               variant="ghost"
               size="sm"
-              title={`Sketch (${mod}Shift+S)`}
+              className="fd-sketch-button"
+              aria-label="Sketch"
+              title={`Sketch (${mod} + Shift + S)`}
               onClick={() => setSketchOpen(true)}
               disabled={!projectId}
             >
-              Sketch
+              <Icon name="compose" width={16} height={16} /><span className="fd-action-label">Sketch</span>
             </Button>
             <div className="ml-auto flex items-center gap-2">
-              {run ? (
-                <Button variant="danger" size="sm" onClick={() => void client.abort(run.threadId)} title={`Abort (${mod}.)`}>
-                  &#9632; Stop
+              {run && (
+                <Button variant="danger" size="sm" onClick={() => void client.abort(run.threadId)} aria-label="Stop current run; queued messages stay scheduled" title={`Stop current run (${mod} + .). Queued messages stay scheduled.`}>
+                  <Icon name="stop" width={14} height={14} /> Stop
                 </Button>
-              ) : (
+              )}
                 <Button
                   variant="primary"
                   size="sm"
+                  aria-label={run ? "Queue message" : sending ? "Sending message" : "Send message"}
                   onClick={() => void send()}
                   disabled={!draft.trim() || sending}
-                  title={`Send (${mod}Enter)`}
+                  title={`${run ? "Queue" : "Send"} (${mod} + Enter)`}
                 >
-                  {sending ? "Sending..." : "Send"} <Kbd>&#8629;</Kbd>
+                  <span className="fd-action-label">{sending ? "Sending..." : run ? "Queue" : "Send"}</span> <Icon name="send" width={14} height={14} />
                 </Button>
-              )}
             </div>
           </div>
         </div>
         {agentMissing && selectedAgent && (
-          <div className="mt-1.5 text-xs text-warning">
-            {selectedAgent.displayName} is not installed. {selectedAgent.installHint}
-          </div>
+          <details className="fd-setup-notice mt-2 rounded-lg border border-warning/25 bg-warning/5 text-xs leading-5 text-warning">
+            <summary className="flex cursor-pointer items-center gap-2 px-3 py-2">
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />
+              <span className="min-w-0 flex-1 truncate">{selectedAgent.displayName} is not installed</span>
+              <span className="shrink-0 font-medium">Setup instructions</span>
+              <Icon name="chevronDown" width={14} height={14} className="fd-setup-chevron shrink-0 transition-transform" />
+            </summary>
+            <div className="border-t border-warning/20 px-3 py-2"><InstallHint text={selectedAgent.installHint} /></div>
+          </details>
         )}
-        {error && <div className="mt-1.5 text-xs text-danger">{error}</div>}
+        {error && <div className="mt-2 rounded-lg border border-danger/25 bg-danger/5 px-3 py-2 text-xs text-danger">{error}</div>}
+        <div className="fd-composer-hint"><span>{run ? "Enter to queue" : "Enter to send"}</span><span>Shift + Enter for a new line</span></div>
       </div>
     </div>
   );

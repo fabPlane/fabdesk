@@ -1,16 +1,17 @@
 import type { Thread } from "@fabdesk/protocol";
-import { useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState, type MouseEvent } from "react";
-import { Button, ContextMenu, IconButton, Input, MenuItem, Tabs } from "../components/ui";
-import { useCore } from "@fabdesk/client-core";
+import { CreateProjectDialog } from "./CreateProjectDialog";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { Button, ContextMenu, IconButton, Input, MenuItem } from "../components/ui";
+import { Icon } from "../components/Icon";
 import { useProjects, useThreads, useThreadMutations } from "@fabdesk/client-core";
 import { useBranchThread } from "../hooks/threadActions";
 import { useRunsStore } from "@fabdesk/client-core";
 import { SIDEBAR_LIST_TABS, SIDEBAR_LIST_TAB_LABELS, normalizeSidebarListTab, useUiStore } from "../stores/ui";
-import { cn, formatRelative, modKey } from "../util";
+import { cn } from "../util";
 import { groupThreadsByProject } from "@fabdesk/client-core";
 import { OpenSourceList } from "./OpenSourceList";
 import { UserFooter } from "./UserFooter";
+import { SearchResults } from "../chat/SearchResults";
 
 export interface ThreadSidebarProps {
   onNewChat: () => void;
@@ -22,21 +23,10 @@ interface Menu {
   thread: Thread;
 }
 
-function PinMark() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden className="shrink-0">
-      <path
-        fill="currentColor"
-        d="M10.16 1.4a1.1 1.1 0 0 1 1.56 0l1.38 1.38a1.1 1.1 0 0 1 0 1.56l-1.1 1.1.28 1.5a.9.9 0 0 1-.24.82L8.7 9.1l3.18 3.18-1.06 1.06L7.64 10.16l-2.1 3.26a.85.85 0 0 1-1.45-.18l-.62-1.24a.85.85 0 0 1 .16-.96l2.26-1.46-2.72-2.72a.9.9 0 0 1 .82-.24l1.5.28 1.1-1.1z"
-      />
-    </svg>
-  );
-}
-
 export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
-  const { client, host } = useCore();
-  const qc = useQueryClient();
+
   const [q, setQ] = useState("");
+  const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
   const setActiveProject = useUiStore((s) => s.setActiveProject);
   const startNewChatInProject = useUiStore((s) => s.startNewChatInProject);
   const projectId = useUiStore((s) => s.activeProjectId);
@@ -46,7 +36,17 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
   const setSidebarListTab = useUiStore((s) => s.setSidebarListTab);
   const setActiveOpenSourceId = useUiStore((s) => s.setActiveOpenSourceId);
   const projects = useProjects();
-  const threads = useThreads({ q });
+  const threads = useThreads();
+  const revealedChat = useRef<string | null>(null);
+  useEffect(() => {
+    if (!activeThreadId) { revealedChat.current = null; return; }
+    if (revealedChat.current === activeThreadId) return;
+    const active = threads.data?.find((thread) => thread.id === activeThreadId);
+    if (active) {
+      revealedChat.current = activeThreadId;
+      if (active.projectId) setExpandedProjects((current) => ({ ...current, [active.projectId!]: true }));
+    }
+  }, [activeThreadId, threads.data]);
   const projectGroups = useMemo(
     () => groupThreadsByProject(threads.data ?? [], projects.data ?? []),
     [threads.data, projects.data],
@@ -63,50 +63,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
     setMenu({ x: e.clientX, y: e.clientY, thread });
   };
 
-  // Electron renderers do not implement window.prompt, so text questions use an inline row.
-  const [ask, setAsk] = useState<{ kind: "project" } | null>(null);
-  const [askValue, setAskValue] = useState("");
-
-  const createProject = async (name: string) => {
-    const p = await client.createProject(name);
-    await qc.invalidateQueries({ queryKey: ["projects"] });
-    setActiveProject(p.id);
-  };
-
-  const submitAsk = async () => {
-    const value = askValue.trim();
-    setAsk(null);
-    setAskValue("");
-    if (value) await createProject(value);
-  };
-
-  const askRow = ask && (
-    <form
-      className="flex items-center gap-1 px-2 pt-2"
-      onSubmit={(e) => {
-        e.preventDefault();
-        void submitAsk();
-      }}
-    >
-      <Input
-        autoFocus
-        value={askValue}
-        placeholder="Project name"
-        onChange={(e) => setAskValue(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
-            setAsk(null);
-            setAskValue("");
-          }
-        }}
-        className="h-7 min-w-0 flex-1 text-xs"
-        data-testid="sidebar-ask"
-      />
-      <Button size="sm" variant="primary" type="submit">
-        OK
-      </Button>
-    </form>
-  );
+  const [creatingProject, setCreatingProject] = useState(false);
 
   const togglePin = (thread: Thread) => {
     patch.mutate({ id: thread.id, patch: { pinned: !thread.pinned } });
@@ -134,9 +91,10 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
       ) : (
         <button
           className={cn(
-            "flex w-full items-center gap-2 rounded-md px-2 py-1.5 pr-14 text-left text-[13px]",
-            t.id === activeThreadId ? "bg-panel-2 text-fg" : "text-fg/90 hover:bg-panel-2/70",
+            "fd-chat-row flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-colors",
+            t.id === activeThreadId ? "bg-panel-2 font-medium text-fg shadow-sm" : "text-fg/85 hover:bg-panel-2/60 hover:text-fg",
           )}
+          title={t.title || "Untitled"}
           onClick={() => openThread(t.id, t.projectId)}
           onContextMenu={(e) => openMenu(e, t)}
           data-testid={`sidebar-thread-${t.id}`}
@@ -144,33 +102,32 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
           {running[t.id] && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" title="running" />}
           {t.pinned && (
             <span className="text-accent" title="Pinned">
-              <PinMark />
+              <Icon name="pin" width={13} height={13} />
             </span>
           )}
           <span className="min-w-0 flex-1 truncate">{t.title || "Untitled"}</span>
-          <span className="shrink-0 text-[10px] text-muted opacity-0 group-hover:opacity-100">
-            {formatRelative(t.updatedAt)}
-          </span>
         </button>
       )}
       <IconButton
         title={t.pinned ? "Unpin" : "Pin"}
-        className={cn("absolute right-6 top-1 h-5 w-5", t.pinned ? "text-accent opacity-100" : "opacity-0 group-hover:opacity-100")}
+        style={{ width: 28, height: 28 }}
+        className={cn("absolute right-7 top-1 h-7 w-7 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100", t.pinned && "text-accent")}
         onClick={(e) => {
           e.stopPropagation();
           togglePin(t);
         }}
         data-testid={`thread-pin-${t.id}`}
       >
-        <PinMark />
+        <Icon name="pin" width={16} height={16} />
       </IconButton>
       <IconButton
-        title="Thread menu"
-        className="absolute right-1 top-1 h-5 w-5 opacity-0 group-hover:opacity-100"
+        title="Chat menu"
+        style={{ width: 28, height: 28 }}
+        className="absolute right-0 top-1 h-7 w-7 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
         onClick={(e) => openMenu(e, t)}
         data-testid={`thread-menu-${t.id}`}
       >
-        &#8943;
+        <Icon name="more" />
       </IconButton>
     </div>
   );
@@ -182,79 +139,100 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
   };
 
   return (
-    <div className="flex h-full flex-col bg-panel">
-      <Tabs
-        className="px-2 pt-2"
-        tabs={SIDEBAR_LIST_TABS.map((id) => ({ id, label: SIDEBAR_LIST_TAB_LABELS[id] }))}
-        value={sidebarListTab}
-        onChange={setSidebarListTab}
-      />
+    <div className="fd-sidebar flex h-full flex-col">
+      <nav className="fd-sidebar-nav" aria-label="Workspace navigation">
+        {SIDEBAR_LIST_TABS.map((id) => (
+          <button key={id} type="button" aria-current={sidebarListTab === id ? "page" : undefined} onClick={() => setSidebarListTab(id)}>
+            <Icon name={id === "projects" ? "folder" : "library"} width={17} height={17} />
+            {SIDEBAR_LIST_TAB_LABELS[id]}
+          </button>
+        ))}
+      </nav>
       {sidebarListTab === "projects" && (
         <>
-          <div className="flex items-center justify-end px-2 pt-2">
-            <IconButton title="New project" onClick={() => { setAskValue(""); setAsk({ kind: "project" }); }}>
-              +
-            </IconButton>
-          </div>
-          {askRow}
-          <div className="px-2 pt-2">
-            <Button variant="primary" className="w-full justify-between" onClick={onNewChat} data-testid="sidebar-new-chat">
-              <span>New chat</span>
-              <span className="text-[10px] opacity-70">{modKey(host.platform)}&#8679;O</span>
+          <div className="px-3 pt-1">
+            <Button variant="secondary" className="fd-new-chat-button w-full" onClick={onNewChat} aria-label="New chat" data-testid="sidebar-new-chat">
+              <Icon name="compose" width={18} height={18} /><span className="fd-new-chat-label text-left">New chat</span>
             </Button>
           </div>
-          <div className="px-2 pt-2">
-            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search threads..." className="h-7 text-xs" />
+          <div className="fd-sidebar-search relative mx-3 mb-1 mt-2">
+            <Icon name="search" width={15} height={15} className="pointer-events-none absolute left-2.5 top-2.5 text-muted" />
+            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search chats" aria-label="Search chats" />
+          </div>
+          <div className="flex items-center justify-between px-3 pt-1">
+            <span className="text-[11px] font-medium text-muted">Projects</span>
+            <IconButton title="New project" onClick={() => setCreatingProject(true)}>
+              <Icon name="plus" />
+            </IconButton>
           </div>
         </>
       )}
       {sidebarListTab === "open_source" ? (
         <OpenSourceList />
       ) : (
-      <div className="min-h-0 flex-1 overflow-y-auto px-1 pb-2 pt-1">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3 pt-1">
+        {q.trim().length >= 2 ? <SearchResults query={q} /> : <>
         {threads.isLoading && <div className="px-2 py-3 text-xs text-muted">Loading...</div>}
-        {threads.isError && <div className="px-2 py-3 text-xs text-danger">Could not load threads</div>}
-        {projectGroups.map((group) => (
-          <div key={group.key} className="mb-2" data-testid={`sidebar-group-${group.key}`}>
-            <div className="flex items-center gap-0.5 px-1 pb-1 pt-2">
+        {threads.isError && <div className="px-2 py-3 text-xs text-danger">Could not load chats</div>}
+        {projectGroups.map((group) => {
+          const expanded = group.kind !== "project" || q.trim().length > 0 || (expandedProjects[group.key] ?? group.projectId === projectId);
+          const pinnedCount = group.kind === "project" ? (threads.data ?? []).filter((t) => t.projectId === group.projectId && t.pinned && !t.archived).length : 0;
+          return (
+          <div key={group.key} className="fd-sidebar-project-group" data-testid={`sidebar-group-${group.key}`}>
+            <div className="group relative flex items-center gap-0.5 px-0.5">
               <button
                 type="button"
                 className={cn(
-                  "flex min-w-0 flex-1 items-center justify-between px-1 text-left text-[10.5px] font-semibold uppercase tracking-wide hover:text-fg",
-                  group.kind === "project" && group.projectId === projectId ? "text-fg" : "text-muted",
+                  "fd-project-row flex min-h-9 min-w-0 flex-1 items-center justify-between rounded-md px-2 text-left text-[13px] hover:bg-panel-2/60 hover:text-fg",
+                  group.kind === "project" && group.projectId === projectId ? "bg-panel-2/50 text-fg" : "text-muted",
                 )}
                 aria-current={group.kind === "project" && group.projectId === projectId ? "true" : undefined}
-                onClick={() => group.kind === "project" && group.projectId && setActiveProject(group.projectId)}
+                aria-expanded={group.kind === "project" ? expanded : undefined}
+                aria-controls={group.kind === "project" ? `project-chats-${group.key}` : undefined}
+                onClick={() => {
+                  if (group.kind === "project" && group.projectId) {
+                    setExpandedProjects((current) => ({ ...current, [group.key]: !expanded }));
+                  }
+                }}
               >
-                <span className="flex min-w-0 items-center gap-1 truncate">
-                  {group.kind === "pinned" && <PinMark />}
-                  {group.title}
+                <span className="flex min-w-0 flex-1 items-center gap-2">
+                  {group.kind === "pinned" && <Icon name="pin" width={13} height={13} />}
+                  {group.kind === "project" && <Icon name={expanded ? "folderOpen" : "folder"} width={17} height={17} className="shrink-0" />}
+                  <span className="min-w-0 truncate" title={group.title}>{group.title}</span>
                 </span>
-                <span className="shrink-0 pl-1">{group.threads.length}</span>
+                <span className="fd-project-count ml-2 shrink-0 text-[10px] tabular-nums text-muted">{group.threads.length + pinnedCount}</span>
               </button>
               {group.kind === "project" && group.projectId && (
                 <IconButton
                   title={`New chat in ${group.title}`}
-                  className="ml-auto h-5 w-5 shrink-0 text-muted hover:text-fg"
+                  className="fd-project-add absolute right-0 top-0 text-muted opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover:text-fg"
                   onClick={(e) => {
                     e.stopPropagation();
+                    setExpandedProjects((current) => ({ ...current, [group.key]: true }));
                     startNewChatInProject(group.projectId);
                   }}
                   data-testid={`project-new-chat-${group.projectId}`}
                 >
-                  +
+                  <Icon name="plus" />
                 </IconButton>
               )}
             </div>
-            {group.threads.map(renderThread)}
+            <div id={`project-chats-${group.key}`} hidden={!expanded} className={cn("fd-sidebar-chat-list", group.kind === "project" && "pl-5")}>
+              {group.threads.map(renderThread)}
+              {group.kind === "project" && group.threads.length === 0 && !threads.isLoading && !threads.isError && (
+                <div className="px-2.5 py-2 text-xs text-muted">{pinnedCount ? "Chats are in Pinned above" : q.trim() ? "No matching chats" : "No chats"}</div>
+              )}
+            </div>
           </div>
-        ))}
+        ); })}
         {!threads.isLoading && projectGroups.length === 0 && (
           <div className="px-2 py-6 text-center text-xs text-muted">No projects yet.</div>
         )}
+        </>}
       </div>
       )}
       <UserFooter />
+      {creatingProject && <CreateProjectDialog onClose={() => setCreatingProject(false)} onCreated={(id) => { setActiveProject(id); setCreatingProject(false); }} />}
       {menu && (
         <ContextMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)}>
           <MenuItem
