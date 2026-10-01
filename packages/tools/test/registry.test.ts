@@ -316,6 +316,233 @@ describe("registry", () => {
     expect(ids("pads")).not.toContain("pad-far");
   });
 
+  test("pcb_inspect references returns only fan-out tracks touching the footprint pads", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("reference-fanout");
+    await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb (version 20260831))\n");
+    const base = mockServices([project]);
+    const rows: Record<string, Array<Record<string, unknown>>> = {
+      pads: [
+        {
+          id: "j13-1",
+          component: "J13",
+          number: "1",
+          net: "USB_DP",
+          x: 10,
+          y: 10,
+          width: 1,
+          height: 1,
+        },
+        {
+          id: "j13-2",
+          component: "J13",
+          number: "2",
+          net: "USB_DN",
+          x: 10,
+          y: 12,
+          width: 1,
+          height: 1,
+        },
+        {
+          id: "j14-1",
+          component: "J14",
+          number: "1",
+          net: "OTHER",
+          x: 30,
+          y: 30,
+          width: 1,
+          height: 1,
+        },
+      ],
+      tracks: [
+        {
+          id: "fanout-1",
+          net: "USB_DP",
+          start: { x: 10, y: 10 },
+          end: { x: 8, y: 10 },
+          width: 0.2,
+        },
+        {
+          id: "fanout-2",
+          net: "USB_DN",
+          start: { x: 8, y: 12 },
+          end: { x: 10, y: 12 },
+          width: 0.2,
+        },
+        {
+          id: "unrelated",
+          net: "OTHER",
+          start: { x: 30, y: 30 },
+          end: { x: 32, y: 30 },
+          width: 0.2,
+        },
+      ],
+    };
+    const services = mockServices([project], {
+      design: { ...base.design, query: async (_dir, select) => rows[select] ?? [] },
+    });
+    const factory = contextFactory(services, project);
+    const result = await reg.invoke(
+      "pcb_inspect",
+      { references: ["J13"], kinds: ["tracks"] },
+      (ref) =>
+        factory({
+          def: reg.get("pcb_inspect")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+    );
+    expect((result.json as any).results.tracks).toMatchObject({ total: 2, returned: 2 });
+    expect((result.json as any).results.tracks.rows.map((row: any) => row.id)).toEqual([
+      "fanout-1",
+      "fanout-2",
+    ]);
+  });
+
+  test("pcb_inspect references matches post-rotation tracks regardless of net", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("reference-post-rotation");
+    await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb (version 20260831))\n");
+    const base = mockServices([project]);
+    const services = mockServices([project], {
+      design: {
+        ...base.design,
+        query: async (_dir, select) => {
+          if (select === "pads")
+            return [
+              {
+                id: "j13-1",
+                component: "J13",
+                number: "1",
+                net: "USB_DN",
+                x: 10,
+                y: 10,
+                width: 1,
+                height: 1,
+              },
+            ];
+          if (select === "tracks")
+            return [
+              {
+                id: "stale-usb-dp",
+                net: "USB_DP",
+                start: { x: 8, y: 10 },
+                end: { x: 10, y: 10 },
+                width: 0.2,
+              },
+            ];
+          return [];
+        },
+      },
+    });
+    const factory = contextFactory(services, project);
+    const result = await reg.invoke(
+      "pcb_inspect",
+      { references: ["J13"], kinds: ["tracks"] },
+      (ref) =>
+        factory({
+          def: reg.get("pcb_inspect")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+    );
+    expect((result.json as any).results.tracks.rows).toEqual([
+      expect.objectContaining({ id: "stale-usb-dp", net: "USB_DP" }),
+    ]);
+  });
+
+  test("pcb_inspect references returns via-in-pad, unrouted endpoints, and containing zones", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("reference-other-copper");
+    await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb (version 20260831))\n");
+    const base = mockServices([project]);
+    const rows: Record<string, Array<Record<string, unknown>>> = {
+      pads: [
+        {
+          id: "j13-1",
+          component: "J13",
+          number: "1",
+          net: "SIG",
+          x: 10,
+          y: 10,
+          width: 1,
+          height: 1,
+        },
+      ],
+      vias: [
+        { id: "via-in-pad", net: "SIG", x: 10, y: 10, diameter: 0.5 },
+        { id: "via-far", net: "SIG", x: 20, y: 20, diameter: 0.5 },
+      ],
+      unrouted: [
+        { id: "unrouted-pad", net: "SIG", from: { x: 10, y: 10 }, to: { x: 14, y: 10 } },
+        { id: "unrouted-far", net: "SIG", from: { x: 20, y: 20 }, to: { x: 24, y: 20 } },
+      ],
+      zones: [
+        {
+          id: "zone-around-pad",
+          net: "GND",
+          points: [
+            { x: 9, y: 9 },
+            { x: 11, y: 9 },
+            { x: 11, y: 11 },
+            { x: 9, y: 11 },
+          ],
+        },
+        {
+          id: "zone-far",
+          net: "GND",
+          points: [
+            { x: 19, y: 19 },
+            { x: 21, y: 19 },
+            { x: 21, y: 21 },
+            { x: 19, y: 21 },
+          ],
+        },
+      ],
+    };
+    const services = mockServices([project], {
+      design: { ...base.design, query: async (_dir, select) => rows[select] ?? [] },
+    });
+    const factory = contextFactory(services, project);
+    const result = await reg.invoke(
+      "pcb_inspect",
+      { references: ["J13"], kinds: ["vias", "unrouted", "zones"] },
+      (ref) =>
+        factory({
+          def: reg.get("pcb_inspect")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+    );
+    const json = result.json as any;
+    expect(json.results.vias.rows.map((row: any) => row.id)).toEqual(["via-in-pad"]);
+    expect(json.results.unrouted.rows.map((row: any) => row.id)).toEqual(["unrouted-pad"]);
+    expect(json.results.zones.rows.map((row: any) => row.id)).toEqual(["zone-around-pad"]);
+  });
+
+  test("pcb_inspect references rejects kinds without reference semantics", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("reference-unsupported-kind");
+    await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb (version 20260831))\n");
+    const factory = contextFactory(mockServices([project]), project);
+    await expect(
+      reg.invoke("pcb_inspect", { references: ["J13"], kinds: ["texts"] }, (ref) =>
+        factory({
+          def: reg.get("pcb_inspect")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+      ),
+    ).rejects.toMatchObject({
+      code: "invalid_args",
+      message: expect.stringMatching(/texts.*nets.*region.*near/),
+    });
+  });
+
   test("pcb_inspect region+layers matches F.Cu aliases and through vias without a layer field", async () => {
     const reg = createRegistry();
     const project = await tempProject("region-layers");

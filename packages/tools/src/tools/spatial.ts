@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { z } from "zod/v4";
 import { PROJECT_FILES } from "../fs";
 import { ToolError, defineTool } from "../registry";
-import type { DesignRow, DesignSelect } from "../services";
+import type { DesignRow } from "../services";
 import { ok, p, table } from "./common";
 
 const Kind = z.enum([
@@ -34,6 +34,19 @@ const Near = z.object({
 
 type Point = { x: number; y: number };
 
+const REFERENCE_UNSUPPORTED_KINDS = new Set<z.infer<typeof Kind>>([
+  "nets",
+  "keepouts",
+  "board_geometry",
+  "texts",
+]);
+const REFERENCE_COPPER_KINDS = new Set<z.infer<typeof Kind>>([
+  "tracks",
+  "vias",
+  "zones",
+  "unrouted",
+]);
+
 export const pcb_inspect = defineTool({
   name: "pcb_inspect",
   toolset: "circuit",
@@ -46,7 +59,13 @@ export const pcb_inspect = defineTool({
       .min(1)
       .max(11)
       .default(["components", "pads", "tracks", "vias", "unrouted"]),
-    references: z.array(z.string().min(1)).max(100).optional(),
+    references: z
+      .array(z.string().min(1))
+      .max(100)
+      .optional()
+      .describe(
+        "Filter components, pads, and footprint_geometry by reference. Tracks, vias, zones, and unrouted edges match when they directly touch the referenced footprints' pads, regardless of net. This filter does not apply to nets, keepouts, board_geometry, or texts; use nets, region, or near for those kinds.",
+      ),
     nets: z.array(z.string().min(1)).max(100).optional(),
     layers: z
       .array(z.union([z.string(), z.number().int()]))
@@ -88,6 +107,14 @@ export const pcb_inspect = defineTool({
         "region max coordinates must be greater than or equal to min coordinates",
         "invalid_args",
       );
+    if (references) {
+      const unsupported = kinds.filter((kind) => REFERENCE_UNSUPPORTED_KINDS.has(kind));
+      if (unsupported.length)
+        throw new ToolError(
+          `references cannot filter kind(s): ${unsupported.join(", ")}; use nets, region, or near instead`,
+          "invalid_args",
+        );
+    }
     const refSet = references ? new Set(references.map((value) => value.toLowerCase())) : null;
     const netSet = nets ? new Set(nets.map((value) => value.toLowerCase())) : null;
     const layerSet = layers ? new Set(layers.map(String)) : null;
@@ -114,18 +141,27 @@ export const pcb_inspect = defineTool({
         results,
       });
     }
+    const allPads = refSet ? await ctx.services.design.query(project.dir, "pads") : null;
+    const referencedPads = allPads
+      ? allPads.filter((row) =>
+          values(row, ["component"]).some((value) => refSet!.has(value.toLowerCase())),
+        )
+      : [];
     const allPoints: Point[] = [];
-    for (const kind of kinds as DesignSelect[]) {
-      const rows = await ctx.services.design.query(project.dir, kind);
+    for (const kind of kinds) {
+      const rows =
+        kind === "pads" && allPads ? allPads : await ctx.services.design.query(project.dir, kind);
       const filtered = rows.filter((row) => {
         if (
           refSet &&
-          !values(row, [
-            "ref",
-            "reference",
-            "component",
-            ...(kind === "footprint_geometry" ? ["owner"] : []),
-          ]).some((value) => refSet.has(value.toLowerCase()))
+          !(REFERENCE_COPPER_KINDS.has(kind)
+            ? rowTouchesReferencedPads(kind, row, referencedPads)
+            : values(row, [
+                "ref",
+                "reference",
+                "component",
+                ...(kind === "footprint_geometry" ? ["owner"] : []),
+              ]).some((value) => refSet.has(value.toLowerCase())))
         )
           return false;
         if (
@@ -279,6 +315,41 @@ function pointInPolygon(point: Point, polygon: Point[]): boolean {
   return inside;
 }
 
+function rowCenter(row: DesignRow): Point | null {
+  const x = Number(row["x"]);
+  const y = Number(row["y"]);
+  return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+}
+
+function pointTouchesRow(point: Point, row: DesignRow): boolean {
+  const at = rowCenter(row);
+  if (!at) return false;
+  const radius = Math.max(rowExtent(row), 0.05);
+  return Math.hypot(point.x - at.x, point.y - at.y) <= radius;
+}
+
+function rowTouchesReferencedPads(
+  kind: z.infer<typeof Kind>,
+  row: DesignRow,
+  pads: DesignRow[],
+): boolean {
+  if (kind === "zones") {
+    const polygon = rowPoints(row);
+    return (
+      polygon.length >= 3 &&
+      pads.some((pad) => {
+        const at = rowCenter(pad);
+        return at ? pointInPolygon(at, polygon) : false;
+      })
+    );
+  }
+  if (kind === "vias") {
+    const at = rowCenter(row);
+    return at ? pads.some((pad) => pointTouchesRow(at, pad)) : false;
+  }
+  return rowPoints(row).some((point) => pads.some((pad) => pointTouchesRow(point, pad)));
+}
+
 const COPPER_LAYER_INDEX: Map<string, string> = (() => {
   const map = new Map<string, string>();
   const add = (canonical: string, ...aliases: string[]) => {
@@ -350,42 +421,31 @@ export function connectedComponentsForNet(
   for (const [index, row] of vias.entries()) parent.set(viaKey(row, index), viaKey(row, index));
   for (const [index, row] of tracks.entries())
     parent.set(trackKey(row, index), trackKey(row, index));
-  const xy = (row: DesignRow): Point | null => {
-    const x = Number(row["x"]);
-    const y = Number(row["y"]);
-    return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
-  };
-  const touches = (point: Point, row: DesignRow): boolean => {
-    const at = xy(row);
-    if (!at) return false;
-    const radius = Math.max(rowExtent(row), 0.05);
-    return Math.hypot(point.x - at.x, point.y - at.y) <= radius;
-  };
   for (const [tIndex, track] of tracks.entries()) {
     const points = rowPoints(track);
     for (const point of points) {
       for (const [index, pad] of pads.entries())
-        if (touches(point, pad)) union(trackKey(track, tIndex), padKey(pad, index));
+        if (pointTouchesRow(point, pad)) union(trackKey(track, tIndex), padKey(pad, index));
       for (const [index, via] of vias.entries())
-        if (touches(point, via)) union(trackKey(track, tIndex), viaKey(via, index));
+        if (pointTouchesRow(point, via)) union(trackKey(track, tIndex), viaKey(via, index));
     }
   }
   for (const [pIndex, pad] of pads.entries()) {
-    const at = xy(pad);
+    const at = rowCenter(pad);
     if (!at) continue;
     for (const [index, via] of vias.entries())
-      if (touches(at, via)) union(padKey(pad, pIndex), viaKey(via, index));
+      if (pointTouchesRow(at, via)) union(padKey(pad, pIndex), viaKey(via, index));
   }
   for (const zone of zones) {
     const polygon = rowPoints(zone);
     if (polygon.length < 3) continue;
     const inside: string[] = [];
     for (const [index, pad] of pads.entries()) {
-      const at = xy(pad);
+      const at = rowCenter(pad);
       if (at && pointInPolygon(at, polygon)) inside.push(padKey(pad, index));
     }
     for (const [index, via] of vias.entries()) {
-      const at = xy(via);
+      const at = rowCenter(via);
       if (at && pointInPolygon(at, polygon)) inside.push(viaKey(via, index));
     }
     for (let i = 1; i < inside.length; i++) union(inside[0]!, inside[i]!);
@@ -397,7 +457,7 @@ export function connectedComponentsForNet(
   for (const [index, row] of pads.entries()) {
     const root = find(padKey(row, index));
     const group = groups.get(root) ?? { pads: [], vias: [], tracks: 0 };
-    const at = xy(row);
+    const at = rowCenter(row);
     group.pads.push({
       id: String(row["id"] ?? ""),
       component: String(row["component"] ?? ""),
@@ -410,7 +470,7 @@ export function connectedComponentsForNet(
   for (const [index, row] of vias.entries()) {
     const root = find(viaKey(row, index));
     const group = groups.get(root) ?? { pads: [], vias: [], tracks: 0 };
-    const at = xy(row);
+    const at = rowCenter(row);
     group.vias.push({ id: String(row["id"] ?? ""), x: at?.x ?? 0, y: at?.y ?? 0 });
     groups.set(root, group);
   }
