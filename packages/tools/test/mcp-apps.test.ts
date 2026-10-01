@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, relative } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -125,6 +126,27 @@ describe("MCP Apps views", () => {
     );
     expect(await names((await pair({ apps: "off" })).client)).not.toContain("board_viewer");
     expect(await names((await pair({ toolsOnly: true })).client)).not.toContain("board_viewer");
+  });
+
+  test("app tools carry explicit effect annotations; the dispatcher is marked destructive", async () => {
+    const { client } = await pair();
+    const tools = (await client.listTools()).tools.filter((t) => MCP_APP_TOOLS.includes(t.name as never));
+    expect(tools.map((t) => t.name).sort()).toEqual([...MCP_APP_TOOLS].sort());
+    for (const tool of tools) {
+      for (const key of ["readOnlyHint", "destructiveHint", "openWorldHint", "idempotentHint"] as const)
+        expect({ tool: tool.name, key, type: typeof tool.annotations?.[key] }).toEqual({
+          tool: tool.name,
+          key,
+          type: "boolean",
+        });
+      if (tool.annotations?.readOnlyHint) expect(tool.annotations.destructiveHint).toBe(false);
+    }
+    expect(tools.find((t) => t.name === "fabdesk_ui_call")?.annotations).toMatchObject({
+      readOnlyHint: false,
+      destructiveHint: true,
+      openWorldHint: true,
+      idempotentHint: false,
+    });
   });
 
   test("tools carry MCP Apps and OpenAI entrypoint metadata", async () => {
@@ -261,6 +283,34 @@ describe("MCP Apps views", () => {
     expect((denied.content as Array<{ text: string }>)[0]!.text).toContain(
       "not available to views",
     );
+  });
+
+  test("host_file only opens files inside a fabdesk project", async () => {
+    const { client, project } = await pair();
+    const elsewhere = await mkdtemp(join(tmpdir(), "fabdesk-outside-"));
+    const secret = join(elsewhere, "secret.dxf");
+    await writeFile(secret, LINE_DXF);
+    const text = (r: CallToolResult) => (r.content as Array<{ text: string }>)[0]!.text;
+
+    const outside = await ui(client, "host_file", {}, { "openai/resource": { path: secret } });
+    expect(outside.isError).toBe(true);
+    expect(text(outside)).toContain("inside a fabdesk project");
+
+    // `..` out of the project (kept raw: join() would normalise it away), even onto a real file.
+    const dotdot = `${project.dir}/${relative(project.dir, secret)}`;
+    expect(dotdot).toContain("..");
+    const viaDots = await ui(client, "host_file", {}, { "openai/resource": { path: dotdot } });
+    expect(viaDots.isError).toBe(true);
+
+    // A symlink inside the project that points outside it.
+    const link = join(project.dir, "exports", "escape.dxf");
+    await symlink(secret, link);
+    const viaLink = await ui(client, "host_file", {}, { "openai/resource": { path: link } });
+    expect(viaLink.isError).toBe(true);
+    expect(text(viaLink)).toContain("inside a fabdesk project");
+
+    const missing = await ui(client, "host_file", {}, { "openai/resource": { path: join(project.dir, "nope.dxf") } });
+    expect(missing.isError).toBe(true);
   });
 
   test("FreeCAD model: flagged in summaries, exported as STL for the drawings tab, live UI URL", async () => {
