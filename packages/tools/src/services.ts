@@ -259,6 +259,7 @@ export type NativeSchematicConnectionInput = {
   label?: "local" | "global" | "none" | undefined;
 };
 export type NativeSchematicEdit = {
+  sheet?: string | undefined;
   symbols?: NativeSchematicSymbolInput[];
   symbolUpdates?: NativeSchematicSymbolUpdate[];
   connections?: NativeSchematicConnectionInput[];
@@ -303,6 +304,7 @@ export type NativeSchematicSnapshot = {
   /** Live KiCad IPC authoring scope. This is never saved-file ERC evidence. */
   scope?: {
     kind: "current/root-sheet" | "selected-sheet";
+    identity?: string;
     hierarchyPath: string;
     nativePath: string | null;
     name: string;
@@ -342,6 +344,10 @@ export type SchematicHierarchy = {
   };
 };
 export type NativeSchematicEditResult = {
+  normalizedAwayObjectIds?: string[];
+  changedObjectIds?: { created: string[]; updated: string[]; deleted: string[] };
+  gridProblems?: Array<{ object: string; position: SchematicPoint; gridSpacing: number }>;
+
   created: {
     symbols: number;
     wires: number;

@@ -481,17 +481,24 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       return [sheet, ...sheet.children.flatMap(visit)];
     });
     const selected = selectedSheet
-      ? flat.find(
+      ? flat.filter(
           (sheet) =>
+            `uuid:${sheet.path?.path.map((id) => id.value).join("/")}` === selectedSheet ||
             sheet.path?.pathHumanReadable === selectedSheet ||
             sheet.name === selectedSheet ||
             sheet.filename === selectedSheet ||
             sheet.filename.endsWith(`/${selectedSheet}`),
         )
-      : flat[0];
-    if (!selected?.path)
+      : [flat[0]];
+    if (selected.length !== 1)
+      throw new ToolError(
+        `sheet: expected one unambiguous schematic sheet, got ${selectedSheet}`,
+        "invalid_args",
+      );
+    const selectedEntry = selected[0];
+    if (!selectedEntry?.path)
       throw new ToolError(`schematic sheet not found: ${selectedSheet ?? "root"}`, "not_found");
-    const root = schematic.sheet(selected.path, selected);
+    const root = schematic.sheet(selectedEntry.path, selectedEntry);
     const [symbols, items, nets, erc, revision, pcbRevision] = await Promise.all([
       root.getSymbols(),
       root.getAllItems(),
@@ -576,22 +583,79 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       erc: { errors: erc.errorCount, warnings: erc.warningCount },
       scope: {
         kind: selectedSheet ? "selected-sheet" : "current/root-sheet",
+        identity: `uuid:${selectedEntry.path.path.map((id) => id.value).join("/")}`,
         hierarchyPath:
-          selected.path.pathHumanReadable && selected.path.pathHumanReadable !== "/"
-            ? selected.path.pathHumanReadable
+          selectedEntry.path.pathHumanReadable && selectedEntry.path.pathHumanReadable !== "/"
+            ? selectedEntry.path.pathHumanReadable
             : hierarchy.length > 1
-              ? `/${selected.name || basename(selected.filename, ".kicad_sch")}/`
+              ? `/${selectedEntry.name || basename(selectedEntry.filename, ".kicad_sch")}/`
               : "/",
-        nativePath: selected.filename || null,
-        name: selected.name || (selectedSheet ?? "root"),
+        nativePath: selectedEntry.filename || null,
+        name: selectedEntry.name || (selectedSheet ?? "root"),
       },
     };
   };
 
   const schematicEdit = async (projectDir: string, edit: NativeSchematicEdit) => {
     const { schematic, session } = await deps.sessions.ensureProject(projectDir);
-    const root = await schematic.rootSheet();
+    const hierarchy = await schematic.hierarchy();
+    const flat = hierarchy.flatMap(function visit(sheet): typeof hierarchy {
+      return [sheet, ...sheet.children.flatMap(visit)];
+    });
+    const matches = edit.sheet
+      ? flat.filter(
+          (sheet) =>
+            `uuid:${sheet.path?.path.map((id) => id.value).join("/")}` === edit.sheet ||
+            sheet.path?.pathHumanReadable === edit.sheet ||
+            sheet.name === edit.sheet ||
+            sheet.filename === edit.sheet ||
+            sheet.filename.endsWith(`/${edit.sheet}`),
+        )
+      : [flat[0]];
+    if (matches.length !== 1 || !matches[0]?.path)
+      throw new ToolError(
+        `sheet: expected one unambiguous schematic sheet, got ${edit.sheet ?? "root"}`,
+        "invalid_args",
+      );
+    const root = schematic.sheet(matches[0].path, matches[0]);
+    const beforeItems = await root.getAllItems();
+    const beforeById = new Map(
+      beforeItems.map((item) => [
+        item.id,
+        JSON.stringify(item.proto, (_key, value) =>
+          typeof value === "bigint" ? value.toString() : value,
+        ),
+      ]),
+    );
     const existing = await root.getSymbols();
+    const gridProblems: Array<{
+      object: string;
+      position: { x: number; y: number };
+      gridSpacing: number;
+    }> = [];
+    const checkGrid = (object: string, position: { x: number; y: number }) => {
+      if (
+        Math.abs(position.x / 1.27 - Math.round(position.x / 1.27)) > 1e-6 ||
+        Math.abs(position.y / 1.27 - Math.round(position.y / 1.27)) > 1e-6
+      )
+        gridProblems.push({ object, position, gridSpacing: 1.27 });
+    };
+    for (const [kind, inputs] of Object.entries({
+      symbols: edit.symbols ?? [],
+      symbolUpdates: edit.symbolUpdates ?? [],
+      localLabels: edit.localLabels ?? [],
+      globalLabels: edit.globalLabels ?? [],
+      texts: edit.texts ?? [],
+    }))
+      inputs.forEach((input, i) => {
+        if (input.position) checkGrid(`${kind}[${i}]`, input.position);
+      });
+    (edit.wires ?? []).forEach((wire, i) => {
+      checkGrid(`wires[${i}].start`, wire.start);
+      checkGrid(`wires[${i}].end`, wire.end);
+    });
+    (edit.junctions ?? []).forEach((point, i) => checkGrid(`junctions[${i}]`, point));
+    (edit.noConnects ?? []).forEach((point, i) => checkGrid(`noConnects[${i}]`, point));
     const byReference = new Map(existing.map((symbol) => [symbol.reference, symbol]));
     const createdSymbols: SchematicSymbol[] = [];
     const updatedSymbols: SchematicSymbol[] = [];
@@ -865,9 +929,21 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       }
     }
 
-    const deleteItems = edit.deleteItemIds?.length
-      ? await root.getItemsById(edit.deleteItemIds)
-      : [];
+    const requestedDeletes = new Set(edit.deleteItemIds ?? []);
+    const deleteItems = beforeItems.filter((item) => requestedDeletes.has(item.id));
+    const deleteIds = new Set(deleteItems.map((item) => item.id));
+    for (const id of edit.deleteItemIds ?? [])
+      if (!deleteIds.has(id))
+        throw new ToolError(
+          `deleteItemIds: unknown object ${id} on selected sheet; expected an inspected native object ID`,
+          "invalid_args",
+        );
+    for (const symbol of updatedSymbols)
+      if (deleteIds.has(symbol.id))
+        throw new ToolError(
+          `symbolUpdates: ${symbol.reference} is also in deleteItemIds; choose update or deletion`,
+          "invalid_args",
+        );
     const createdItems = [
       ...createdSymbols,
       ...wires,
@@ -877,33 +953,75 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       ...noConnects,
       ...texts,
     ];
-    if (createdItems.length || updatedSymbols.length || deleteItems.length)
-      await root.commit("Fabdesk: edit native schematic", async (tx) => {
+    const changedObjectIds = {
+      created: [] as string[],
+      updated: [] as string[],
+      deleted: [] as string[],
+    };
+    if (createdItems.length || updatedSymbols.length || deleteItems.length) {
+      const committed = await root.commit("Fabdesk: edit native schematic", async (tx) => {
         if (deleteItems.length) await tx.delete(deleteItems);
         if (updatedSymbols.length) await tx.update(updatedSymbols);
         if (createdItems.length) await tx.create(createdItems);
       });
+      changedObjectIds.created = committed.created.map((item) => item.id);
+      changedObjectIds.updated = committed.updated.map((item) => item.id);
+      changedObjectIds.deleted = committed.deleted;
+    }
     const save = edit.save ?? true;
     if (save) await schematic.save();
     if (save && createdSymbols.some((symbol) => symbol.libraryId.startsWith("power:")))
       await normalizePowerSymbolMarkers(join(projectDir, "board.kicad_sch"));
-    const revision = Number((await schematic.revision()) ?? 0n);
     // KiCad's API document retains transient library-mismatch markers after a new symbol is
     // committed even though the saved file is clean. Reload after creation so the next inspect,
     // ERC, and forward annotation all evaluate the persisted representation.
     if (save && createdSymbols.length) await deps.sessions.restart(projectDir);
+    const resulting =
+      save && createdSymbols.length
+        ? (await deps.sessions.ensureProject(projectDir)).schematic
+        : schematic;
+    const afterItems = await resulting.sheet(matches[0].path, matches[0]).getAllItems();
+    const afterById = new Map(
+      afterItems.map((item) => [
+        item.id,
+        JSON.stringify(item.proto, (_key, value) =>
+          typeof value === "bigint" ? value.toString() : value,
+        ),
+      ]),
+    );
+    const normalizedAwayObjectIds = changedObjectIds.created.filter((id) => !afterById.has(id));
+    changedObjectIds.created = afterItems
+      .filter((item) => !beforeById.has(item.id))
+      .map((item) => item.id);
+    changedObjectIds.updated = afterItems
+      .filter(
+        (item) => beforeById.has(item.id) && beforeById.get(item.id) !== afterById.get(item.id),
+      )
+      .map((item) => item.id);
+    changedObjectIds.deleted = beforeItems
+      .filter((item) => !afterById.has(item.id))
+      .map((item) => item.id);
+    const actualCreated = afterItems.filter((item) => changedObjectIds.created.includes(item.id));
+    const revision = Number((await resulting.revision()) ?? 0n);
     return {
+      changedObjectIds,
+      normalizedAwayObjectIds,
+      gridProblems,
       created: {
-        symbols: createdSymbols.length,
-        wires: wires.length,
-        localLabels: localLabels.length,
-        globalLabels: globalLabels.length,
-        junctions: junctions.length,
-        noConnects: noConnects.length,
-        texts: texts.length,
+        symbols: actualCreated.filter((item) => item instanceof SchematicSymbol).length,
+        wires: actualCreated.filter((item) => item instanceof SchematicLine && item.isWire).length,
+        localLabels: actualCreated.filter((item) => item instanceof LocalLabel).length,
+        globalLabels: actualCreated.filter((item) => item instanceof GlobalLabel).length,
+        junctions: actualCreated.filter((item) => item instanceof Junction).length,
+        noConnects: actualCreated.filter((item) => item instanceof NoConnect).length,
+        texts: actualCreated.filter((item) => item instanceof SchematicText).length,
       },
-      updated: { symbols: updatedSymbols.length },
-      deleted: deleteItems.length,
+      updated: {
+        symbols: afterItems.filter(
+          (item) => item instanceof SchematicSymbol && changedObjectIds.updated.includes(item.id),
+        ).length,
+      },
+      deleted: changedObjectIds.deleted.length,
       saved: save,
       revision,
     };

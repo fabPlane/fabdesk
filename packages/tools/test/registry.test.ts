@@ -798,7 +798,7 @@ describe("registry", () => {
               rotation: 0,
               mirrorX: false,
               mirrorY: false,
-              pins: [{ number: "1", name: "~", position: { x: 25.4, y: 25.4 } }],
+              pins: [{ id: "pin-r1-1", number: "1", name: "~", position: { x: 25.4, y: 25.4 } }],
             },
           ],
           wires: [],
@@ -807,7 +807,7 @@ describe("registry", () => {
           junctions: [],
           noConnects: [],
           texts: [],
-          nets: [{ name: "VBUS", itemCount: 2 }],
+          nets: [{ name: "VBUS", itemCount: 2, itemIds: ["pin-r1-1"] }],
           erc: { errors: 0, warnings: 1 },
         }),
         schematicEdit: async (_dir, edit) => {
@@ -865,9 +865,8 @@ describe("registry", () => {
       ],
     });
     expect(edit.text).toContain("created 1 symbols");
-    expect(edits).toHaveLength(3);
-    expect(edits[0]?.symbols?.[0]).toMatchObject({ reference: "R1", rotation: 0 });
-    expect(edits[1]?.symbolUpdates?.[0]).toMatchObject({ reference: "R1", rotation: 90 });
+    expect(edits).toHaveLength(1);
+    expect(edits[0]?.symbols?.[0]).toMatchObject({ reference: "R1", rotation: 90 });
     const powerEdit = await call("schematic_edit", {
       symbols: [
         {
@@ -894,7 +893,7 @@ describe("registry", () => {
     expect(inspect.text).toContain("Device:R");
     expect((inspect.json as any).contract).toEqual({
       name: "fabdesk.schematic-inspection",
-      version: "3.0.0",
+      version: "4.0.0",
     });
     expect((inspect.json as any).symbols).toHaveLength(1);
     expect((inspect.json as any).nets).toBeUndefined();
