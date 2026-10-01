@@ -52,6 +52,8 @@ import {
   inspectBoardGeometry as inspectNativeBoardGeometry,
   mm as toNm,
   placeNativeSymbol,
+  schematicPinSheetPosition,
+  normalizeNativeSymbolTransform,
   moveNativeSymbol,
   toVector2,
   toMm,
@@ -515,13 +517,16 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         rotation: symbol.rotation,
         mirrorX: symbol.mirrorX,
         mirrorY: symbol.mirrorY,
-        pins: symbol.pins.map((pin) => ({
-          id: pin.id,
-          number: pin.number,
-          name: pin.name,
-          ...(netByItem.get(pin.id) ? { net: netByItem.get(pin.id)! } : {}),
-          position: { x: mm(pin.position.x), y: mm(pin.position.y) },
-        })),
+        pins: symbol.pins.map((pin) => {
+          const point = schematicPinSheetPosition(symbol, pin);
+          return {
+            id: pin.id,
+            number: pin.number,
+            name: pin.name,
+            ...(netByItem.get(pin.id) ? { net: netByItem.get(pin.id)! } : {}),
+            position: { x: mm(point.x), y: mm(point.y) },
+          };
+        }),
       })),
       wires: items
         .filter((item): item is SchematicLine => item instanceof SchematicLine && item.isWire)
@@ -608,6 +613,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         }[input.rotation];
       if (input.mirrorX !== undefined) symbol.proto.transform!.mirrorX = input.mirrorX;
       if (input.mirrorY !== undefined) symbol.proto.transform!.mirrorY = input.mirrorY;
+      normalizeNativeSymbolTransform(symbol);
       if (input.newReference !== undefined) {
         if (byReference.has(input.newReference))
           throw new ToolError(
@@ -633,7 +639,8 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     }
     const pins = new Map<string, { x: number; y: number }>();
     for (const symbol of existing)
-      for (const pin of symbol.pins) pins.set(`${symbol.reference}:${pin.number}`, pin.position);
+      for (const pin of symbol.pins)
+        pins.set(`${symbol.reference}:${pin.number}`, schematicPinSheetPosition(symbol, pin));
 
     for (const input of edit.symbols ?? []) {
       if (byReference.has(input.reference))
@@ -641,16 +648,18 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
           `schematic already contains ${input.reference}; delete or edit it explicitly before adding it again`,
           "invalid_args",
         );
-      const definition = await session.kicad
-        .openSymbol(input.libId)
-        .then((document) => document.libSymbol())
+      // Library lookup resolves inherited pins; a symbol-editor document exposes only the
+      // editable definition's own children and can be pinless for a derived symbol.
+      const definition = await session.kicad.libraries
+        .get("symbol", input.libId)
         .catch((error: unknown) => {
           throw new ToolError(
             `cannot load symbol ${input.libId}: ${error instanceof Error ? error.message : String(error)}`,
             "invalid_args",
           );
         });
-      if (!definition) throw new ToolError(`cannot load symbol ${input.libId}`, "invalid_args");
+      if (!(definition instanceof LibSymbol))
+        throw new ToolError(`cannot load symbol ${input.libId}`, "invalid_args");
       if (input.libId.startsWith("power:"))
         definition.proto.type = SchematicSymbolType.SST_GLOBAL_POWER;
       const placed = placeNativeSymbol(definition, {
