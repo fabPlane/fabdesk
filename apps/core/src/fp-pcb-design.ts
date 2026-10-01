@@ -13,6 +13,7 @@ import {
   BoardGraphicShapeSchema,
   BoardLayer,
   PadType,
+  PadstackPresence,
   GlobalLabelSchema,
   JunctionSchema,
   KiCadObjectType,
@@ -25,6 +26,8 @@ import {
   SchematicSymbolType,
   SchematicTextSchema,
   TextSchema,
+  type PolyLine,
+  type PolygonWithHoles,
 } from "@fp-pcb/proto";
 import {
   GlobalLabel,
@@ -57,6 +60,7 @@ import {
   moveNativeSymbol,
   toVector2,
   toMm,
+  vec2,
   type Board,
   type KiCad,
 } from "@fp-pcb/client";
@@ -86,6 +90,7 @@ import {
   type PcbFootprintEdit,
   type PcbGeometryEdit,
   type PcbGeometrySnapshot,
+  type PcbPlacementResult,
   type RouteJobOptions,
   type RouteProgress,
   type RouteSummary,
@@ -94,6 +99,14 @@ import type { FpPcbBridgeClient } from "./fp-pcb-bridge";
 import { BOARD_PCB, BOARD_PRO, type FpPcbSessions } from "./fp-pcb-session";
 import type { KicadLibraryCatalog } from "./kicad-library-catalog";
 import { partSearchTokens, rankPartSearch } from "./part-search-ranking";
+import {
+  analyzeStaleCopper,
+  type CopperPad,
+  type CopperPoint,
+  type CopperPolygon,
+  type CopperRoute,
+  type CopperZone,
+} from "./stale-copper";
 
 /** The `@fp-pcb/compile` frontend that reads `circuit.netlist.json` (its `NETLIST_JSON_KIND`). */
 export const NETLIST_JSON_KIND = "netlist-json";
@@ -129,6 +142,233 @@ function copperLayerUserName(id: BoardLayer): string {
   if (id >= BoardLayer.BL_In1_Cu && id < BoardLayer.BL_B_Cu)
     return `In${id - BoardLayer.BL_In1_Cu + 1}.Cu`;
   return BoardLayer[id] ?? String(id);
+}
+
+function arcPoints(start: CopperPoint, mid: CopperPoint, end: CopperPoint): CopperPoint[] {
+  const d = 2 * (start.x * (mid.y - end.y) + mid.x * (end.y - start.y) + end.x * (start.y - mid.y));
+  if (Math.abs(d) < 1) return [start, end];
+  const s2 = start.x * start.x + start.y * start.y;
+  const m2 = mid.x * mid.x + mid.y * mid.y;
+  const e2 = end.x * end.x + end.y * end.y;
+  const center = {
+    x: (s2 * (mid.y - end.y) + m2 * (end.y - start.y) + e2 * (start.y - mid.y)) / d,
+    y: (s2 * (end.x - mid.x) + m2 * (start.x - end.x) + e2 * (mid.x - start.x)) / d,
+  };
+  const tau = Math.PI * 2;
+  const norm = (angle: number) => ((angle % tau) + tau) % tau;
+  const a0 = Math.atan2(start.y - center.y, start.x - center.x);
+  const am = Math.atan2(mid.y - center.y, mid.x - center.x);
+  const a1 = Math.atan2(end.y - center.y, end.x - center.x);
+  const ccwEnd = norm(a1 - a0);
+  const ccwMid = norm(am - a0);
+  const sweep = ccwMid <= ccwEnd ? ccwEnd : ccwEnd - tau;
+  const steps = Math.max(2, Math.ceil(Math.abs(sweep) / (Math.PI / 180)));
+  const radius = Math.hypot(start.x - center.x, start.y - center.y);
+  return Array.from({ length: steps + 1 }, (_, index) => {
+    if (index === 0) return start;
+    if (index === steps) return end;
+    const angle = a0 + (sweep * index) / steps;
+    return { x: center.x + radius * Math.cos(angle), y: center.y + radius * Math.sin(angle) };
+  });
+}
+
+function polyLinePoints(line: PolyLine | undefined): CopperPoint[] {
+  const points: CopperPoint[] = [];
+  for (const node of line?.nodes ?? []) {
+    if (node.geometry.case === "point") points.push(vec2(node.geometry.value));
+    else if (node.geometry.case === "arc") {
+      const arc = node.geometry.value;
+      const part = arcPoints(vec2(arc.start), vec2(arc.mid), vec2(arc.end));
+      if (
+        points.length &&
+        part.length &&
+        points.at(-1)!.x === part[0]!.x &&
+        points.at(-1)!.y === part[0]!.y
+      )
+        part.shift();
+      points.push(...part);
+    }
+  }
+  return points;
+}
+
+function copperPolygon(polygon: PolygonWithHoles): CopperPolygon {
+  return {
+    outline: polyLinePoints(polygon.outline),
+    holes: polygon.holes.map(polyLinePoints),
+  };
+}
+
+async function copperPads(board: Board): Promise<CopperPad[]> {
+  const [pads, footprints, enabled] = await Promise.all([
+    board.getPads(),
+    board.getFootprints(),
+    board.enabledLayers(),
+  ]);
+  const references = new Map(footprints.map((footprint) => [footprint.id, footprint.reference]));
+  const layers = copperLayersOf(enabled.layers);
+  const presence = await board.padstackPresence(
+    pads.map((pad) => pad.id),
+    layers,
+  );
+  const hasCopper = (pad: (typeof pads)[number], layer: BoardLayer) => {
+    const value = presence.get(`${pad.id}|${BoardLayer[layer]}`);
+    return (
+      value === PadstackPresence.PSP_PRESENT ||
+      (value === PadstackPresence.PSP_UNKNOWN && pad.layers.includes(layer))
+    );
+  };
+  const shapes = new Map<BoardLayer, Map<string, PolygonWithHoles>>();
+  for (const layer of layers)
+    shapes.set(
+      layer,
+      await board.padShapesAsPolygons(
+        pads.filter((pad) => hasCopper(pad, layer)).map((pad) => pad.id),
+        layer,
+      ),
+    );
+  return pads.flatMap((pad) => {
+    const parent = pad.parent;
+    const reference = parent ? references.get(parent) : undefined;
+    if (!parent || !reference) return [];
+    return [
+      {
+        id: pad.id,
+        parent,
+        reference,
+        number: pad.number,
+        net: pad.net ?? "",
+        shapes: layers
+          .filter((layer) => hasCopper(pad, layer))
+          .flatMap((layer) => {
+            const polygon = shapes.get(layer)?.get(pad.id);
+            return polygon ? [{ layer, polygon: copperPolygon(polygon) }] : [];
+          }),
+      },
+    ];
+  });
+}
+
+function copperRoutes(
+  items: Awaited<ReturnType<Board["getTracks"]>>,
+  enabledLayers: BoardLayer[],
+): CopperRoute[] {
+  return items.flatMap<CopperRoute>((item) => {
+    if (item instanceof Track)
+      return [
+        {
+          id: item.id,
+          kind: "track" as const,
+          net: item.net ?? "",
+          layers: [item.layerId],
+          path: [item.start, item.end],
+          width: item.width,
+          locked: item.locked,
+        },
+      ];
+    if (item instanceof Arc)
+      return [
+        {
+          id: item.id,
+          kind: "arc" as const,
+          net: item.net ?? "",
+          layers: [item.layerId],
+          path: arcPoints(item.start, item.mid, item.end),
+          width: item.width,
+          locked: item.locked,
+        },
+      ];
+    if (item instanceof Via) {
+      const span = copperLayersOf(item.layers);
+      const first = span[0];
+      const last = span.at(-1);
+      const layers =
+        first === undefined || last === undefined
+          ? span
+          : enabledLayers.filter(
+              (layer) => layer >= Math.min(first, last) && layer <= Math.max(first, last),
+            );
+      return [
+        {
+          id: item.id,
+          kind: "via" as const,
+          net: item.net ?? "",
+          layers,
+          path: [item.position],
+          width: item.diameter,
+          locked: item.locked,
+        },
+      ];
+    }
+    return [];
+  });
+}
+
+function copperZones(zones: Zone[]): CopperZone[] {
+  return zones.flatMap((zone) =>
+    zone.filledPolygons.flatMap((filled) =>
+      filled.shapes
+        ? [{ layer: filled.layer, polygons: filled.shapes.polygons.map(copperPolygon) }]
+        : [],
+    ),
+  );
+}
+
+type FootprintCopperTransform = {
+  reference: string;
+  anchor: CopperPoint;
+  flip: boolean;
+  translation: CopperPoint;
+  rotation: number;
+};
+
+function transformedCopperPads(
+  pads: CopperPad[],
+  transforms: FootprintCopperTransform[],
+): CopperPad[] {
+  const byReference = new Map(transforms.map((transform) => [transform.reference, transform]));
+  const flipLayer = (layer: BoardLayer): BoardLayer => {
+    if (layer === BoardLayer.BL_F_Cu) return BoardLayer.BL_B_Cu;
+    if (layer === BoardLayer.BL_B_Cu) return BoardLayer.BL_F_Cu;
+    return layer;
+  };
+  return pads.map((pad) => {
+    const transform = byReference.get(pad.reference);
+    if (!transform) return pad;
+    const center = {
+      x: transform.anchor.x + transform.translation.x,
+      y: transform.anchor.y + transform.translation.y,
+    };
+    const radians = (transform.rotation * Math.PI) / 180;
+    const cos = Math.cos(radians);
+    const sin = Math.sin(radians);
+    const point = (original: CopperPoint): CopperPoint => {
+      const flipped = transform.flip
+        ? { x: 2 * transform.anchor.x - original.x, y: original.y }
+        : original;
+      const translated = {
+        x: flipped.x + transform.translation.x,
+        y: flipped.y + transform.translation.y,
+      };
+      const x = translated.x - center.x;
+      const y = translated.y - center.y;
+      // Match Footprint.rotate(): KiCad angles are counterclockwise while board Y grows down.
+      return {
+        x: Math.round(center.x + x * cos + y * sin),
+        y: Math.round(center.y - x * sin + y * cos),
+      };
+    };
+    return {
+      ...pad,
+      shapes: pad.shapes.map(({ layer, polygon }) => ({
+        layer: transform.flip ? flipLayer(layer) : layer,
+        polygon: {
+          outline: polygon.outline.map(point),
+          ...(polygon.holes ? { holes: polygon.holes.map((hole) => hole.map(point)) } : {}),
+        },
+      })),
+    };
+  });
 }
 
 async function normalizePowerSymbolMarkers(path: string): Promise<boolean> {
@@ -1065,7 +1305,11 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     };
   };
 
-  const placeFootprints = async (projectDir: string, placements: PcbFootprintEdit[]) => {
+  const placeFootprints = async (
+    projectDir: string,
+    placements: PcbFootprintEdit[],
+    options: { staleCopper?: "keep" | "remove" } = {},
+  ): Promise<PcbPlacementResult> => {
     const board = await deps.sessions.board(projectDir);
     const footprints = await board.getFootprints();
     const byReference = new Map(footprints.map((footprint) => [footprint.reference, footprint]));
@@ -1101,12 +1345,35 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         "invalid_args",
       );
 
+    const geometryReferences = new Set(
+      planned.flatMap(({ placement, footprint }) => {
+        const moved =
+          (placement.position !== undefined &&
+            (toNm(placement.position.x) !== footprint.position.x ||
+              toNm(placement.position.y) !== footprint.position.y)) ||
+          (placement.rotation !== undefined &&
+            (placement.rotation - footprint.orientation) % 360 !== 0) ||
+          (placement.flip !== undefined && placement.flip !== footprint.isFlipped);
+        return moved ? [placement.reference] : [];
+      }),
+    );
     if ((await board.modified()) !== false)
       throw new ToolError(
         "save the open PCB before placing footprints; placement recovery may restart KiCad",
         "precondition",
       );
     await deps.sessions.assertSchematicSaved(projectDir);
+    const [allPadsBefore, routeItems, zoneItems, enabled] = geometryReferences.size
+      ? await Promise.all([
+          copperPads(board),
+          board.getTracks(),
+          board.getZones(),
+          board.enabledLayers(),
+        ])
+      : [[], [], [], { copperLayerCount: 0, layers: [] }];
+    const beforePads = allPadsBefore.filter((pad) => geometryReferences.has(pad.reference));
+    const routes = copperRoutes(routeItems, copperLayersOf(enabled.layers));
+    const zones = copperZones(zoneItems);
     const originals = await Promise.all(
       [BOARD_PCB, BOARD_PRO].map(async (file) => ({
         path: join(projectDir, file),
@@ -1117,6 +1384,12 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       })),
     );
     const moved: string[] = [];
+    let staleAnalysis: ReturnType<typeof analyzeStaleCopper> = {
+      reports: {},
+      staleIds: [],
+      affectedNets: [],
+    };
+    let zoneRefill: { refilled: boolean; error?: string } | undefined;
     let revision = 0;
     try {
       await board.commit("Fabdesk: place native PCB footprints", async (tx) => {
@@ -1134,9 +1407,11 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
             .map((item) => [item.id, item]),
         );
         const updates: Footprint[] = [];
+        const copperTransforms: FootprintCopperTransform[] = [];
         for (const { placement, footprint: initial } of planned) {
           let footprint = initial;
           let changed = false;
+          const didFlip = placement.flip !== undefined && footprint.isFlipped !== placement.flip;
           if (placement.flip !== undefined && footprint.isFlipped !== placement.flip) {
             const canonical = flippedById.get(footprint.id);
             if (!canonical)
@@ -1144,6 +1419,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
             footprint = canonical.clone();
             changed = true;
           }
+          const translation = { x: 0, y: 0 };
           if (placement.position) {
             const delta = {
               x: toNm(placement.position.x) - footprint.position.x,
@@ -1151,13 +1427,17 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
             };
             if (delta.x || delta.y) {
               footprint.translate(delta);
+              translation.x = delta.x;
+              translation.y = delta.y;
               changed = true;
             }
           }
+          let rotation = 0;
           if (placement.rotation !== undefined) {
             const delta = (placement.rotation - footprint.orientation) % 360;
             if (delta) {
               footprint.rotate(delta);
+              rotation = delta;
               changed = true;
             }
           }
@@ -1195,9 +1475,32 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
             updates.push(footprint);
             moved.push(placement.reference);
           }
+          if (geometryReferences.has(placement.reference))
+            copperTransforms.push({
+              reference: placement.reference,
+              anchor: initial.position,
+              flip: didFlip,
+              translation,
+              rotation,
+            });
         }
         if (updates.length) await tx.update(updates);
+        if (geometryReferences.size) {
+          const allPadsAfter = transformedCopperPads(allPadsBefore, copperTransforms);
+          staleAnalysis = analyzeStaleCopper({
+            beforePads,
+            afterPads: allPadsAfter.filter((pad) => geometryReferences.has(pad.reference)),
+            allPadsBefore,
+            allPadsAfter,
+            routes,
+            zones,
+          });
+          if (options.staleCopper === "remove" && staleAnalysis.staleIds.length)
+            await tx.delete(staleAnalysis.staleIds);
+        }
       });
+      if (options.staleCopper === "remove" && staleAnalysis.staleIds.length)
+        zoneRefill = await refillAfterCopperChange(board);
       // KiCad SaveDocument writes the committed state, so save only after EndCommit.
       await board.save();
       await keepNetClass(projectDir);
@@ -1220,7 +1523,29 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       }
       throw error;
     }
-    return { moved, missing: [], libraryNormalized: 0, revision, saved: true };
+    const staleCopper = Object.fromEntries(
+      Object.entries(staleAnalysis.reports).map(([reference, report]) => [
+        reference,
+        { ...report, stale: report.stale.slice(0, 100), shorted: report.shorted.slice(0, 100) },
+      ]),
+    );
+    return {
+      moved,
+      missing: [],
+      ...(Object.keys(staleCopper).length ? { staleCopper } : {}),
+      ...(options.staleCopper === "remove" && staleAnalysis.staleIds.length
+        ? {
+            removedCopper: {
+              ids: staleAnalysis.staleIds,
+              nets: staleAnalysis.affectedNets,
+            },
+            ...(zoneRefill ? { zoneRefill } : {}),
+          }
+        : {}),
+      libraryNormalized: 0,
+      revision,
+      saved: true,
+    };
   };
 
   const editBoardGeometry = async (projectDir: string, edit: PcbGeometryEdit) => {

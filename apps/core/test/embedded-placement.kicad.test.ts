@@ -12,6 +12,60 @@ import {
 } from "../../../vendor/fab_pcb/packages/client/test/kicad-server";
 
 describe.skipIf(!haveKicad())("embedded placement against KiCad", () => {
+  test("stale fan-out is detected and removed inside the native placement commit", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "fabdesk-stale-copper-placement-"));
+    const path = join(dir, "board.kicad_pcb");
+    await cp(join(import.meta.dir, "fixtures/stale-copper-placement.kicad_pcb"), path);
+    let server: RunningKiCad | undefined;
+    const openBoard = async (): Promise<Board> => {
+      if (!server) server = await startKiCad(path, "fabdesk-stale-copper-placement");
+      return (await server.kicad.currentBoard())!;
+    };
+    const release = async () => {
+      await server?.stop();
+      server = undefined;
+    };
+    const design = createFpPcbDesign({
+      bridge: () => ({}) as never,
+      sessions: {
+        board: openBoard,
+        release,
+        assertSchematicSaved: async () => {},
+      } as unknown as FpPcbSessions,
+    });
+    try {
+      const before = await openBoard();
+      expect((await before.getTracks()).map((item) => item.id)).toEqual([
+        "10000000-0000-4000-8000-000000000005",
+      ]);
+      const result = await design.placeFootprints(dir, [{ reference: "J1", rotation: 180 }], {
+        staleCopper: "remove",
+      });
+      expect(result.staleCopper?.J1).toMatchObject({
+        staleCount: 1,
+        stale: [
+          {
+            id: "10000000-0000-4000-8000-000000000005",
+            kind: "track",
+            net: "A",
+            pad: "1",
+          },
+        ],
+      });
+      expect(result.removedCopper).toEqual({
+        ids: ["10000000-0000-4000-8000-000000000005"],
+        nets: ["A"],
+      });
+      expect(result.zoneRefill).toEqual({ refilled: true });
+      expect(await (await openBoard()).getTracks()).toEqual([]);
+      await release();
+      expect(await (await openBoard()).getTracks()).toEqual([]);
+    } finally {
+      await release();
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   test("move, rotate, flip and save failure recovery work without source libraries", async () => {
     const dir = await mkdtemp(join(tmpdir(), "fabdesk-embedded-placement-"));
     const path = join(dir, "board.kicad_pcb");
