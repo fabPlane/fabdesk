@@ -29,6 +29,27 @@ export const TOOLSETS = [
 export type ToolsetId = (typeof TOOLSETS)[number];
 export const ToolsetId = z.enum(TOOLSETS);
 
+/**
+ * Noun forms of toolset ids that load_toolset also accepts. Models asked for "routing" when the id
+ * is "route"; the others are the same noun-for-stem pattern. Exact matches only, no fuzzy matching.
+ */
+export const TOOLSET_ALIASES = {
+  routing: "route",
+  verification: "verify",
+  rendering: "render",
+  simulation: "sim",
+} as const satisfies Record<string, ToolsetId>;
+
+/** A toolset id or one of its aliases, normalised to the canonical id. */
+export const ToolsetIdOrAlias = z
+  .enum([...TOOLSETS, ...(Object.keys(TOOLSET_ALIASES) as Array<keyof typeof TOOLSET_ALIASES>)])
+  .transform(
+    (id): ToolsetId =>
+      id in TOOLSET_ALIASES
+        ? TOOLSET_ALIASES[id as keyof typeof TOOLSET_ALIASES]
+        : (id as ToolsetId),
+  );
+
 export const TOOL_NAME_RE = /^[a-z][a-z0-9_]*$/;
 
 export type ToolAnnotations = {

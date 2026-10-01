@@ -3701,7 +3701,7 @@ describe("registry", () => {
     expect(await Bun.file(join(project.dir, "board.kicad_pcb")).exists()).toBe(true);
     await mkdir(join(project.dir, "reports"), { recursive: true });
     await writeFile(join(project.dir, "reports/stats.json"), '{"stale":true}');
-    const route = await call("route_run", { timeoutMs: 5000 });
+    const route = await call("route_run", { timeoutMs: 5000, waitMs: 0 });
     expect(route.isError).toBeFalsy();
     const json = route.json as { runId: string; state: string };
     expect(["queued", "running"]).toContain(json.state);
