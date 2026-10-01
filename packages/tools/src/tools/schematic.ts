@@ -62,9 +62,9 @@ export const schematic_inspect = defineTool({
       .int()
       .min(1)
       .max(10000)
-      .default(1000)
+      .optional()
       .describe(
-        "Total native object budget including pins and their symbol containers; truncation is explicit",
+        "Native object budget including pins/containers. Default: 1000 for targeted calls; unlimited for untargeted full/authoring calls. Explicit limits report truncation",
       ),
     sheetOffset: z
       .number()
@@ -127,7 +127,7 @@ export const schematic_inspect = defineTool({
           ? kinds.filter((k) => k === "symbols" || k === "pins")
           : kinds,
       expand,
-      limit,
+      limit: limit ?? (targeted ? 1000 : null),
     });
     const snapshot = { ...source, ...selection };
     const coordinates = {
@@ -153,20 +153,20 @@ export const schematic_inspect = defineTool({
         .join(" "),
     }));
     const text = [
-      `${snapshot.scope?.kind ?? "current/root-sheet"} authoring detail for ${snapshot.scope?.hierarchyPath ?? "/"}, live KiCad IPC revision ${snapshot.revision}: ${snapshot.symbols.length} symbols, ${snapshot.wires.length} wires, ${snapshot.localLabels.length} local labels, ${snapshot.globalLabels.length} global labels, ${snapshot.junctions.length} junctions, ${snapshot.noConnects.length} no-connects, ${snapshot.texts.length} notes, ${snapshot.nets.length} returned live net rows. Complete saved hierarchy: ${hierarchy.counts.components} components, ${hierarchy.counts.nets} nets, ${hierarchy.counts.sheets} sheets at ${hierarchy.aggregateRevision} (${hierarchy.complete ? "complete" : "incomplete"}).`,
+      `${snapshot.scope?.kind ?? "current/root-sheet"} authoring detail for ${snapshot.scope?.hierarchyPath ?? "/"}, live KiCad IPC revision ${snapshot.revision}: ${source.symbols.length} symbols, ${source.wires.length} wires, ${source.localLabels.length} local labels, ${source.globalLabels.length} global labels, ${source.junctions.length} junctions, ${source.noConnects.length} no-connects, ${source.texts.length} notes, ${source.nets.length} project-wide live nets (sheet totals; selected objects below). Complete saved hierarchy: ${hierarchy.counts.components} components, ${hierarchy.counts.nets} nets, ${hierarchy.counts.sheets} sheets at ${hierarchy.aggregateRevision} (${hierarchy.complete ? "complete" : "incomplete"}).`,
       `Selected ${snapshot.selection.returned}/${snapshot.selection.matched} native objects${snapshot.selection.truncated ? " (TRUNCATED; raise limit before editing omitted objects)" : ""}.`,
       formatKicadIpcSessionDiagnostics(snapshot.erc),
       ...(symbols.length ? [table(symbols)] : ["No symbols yet."]),
     ].join("\n\n");
     const counts = {
-      symbols: snapshot.symbols.length,
-      wires: snapshot.wires.length,
-      localLabels: snapshot.localLabels.length,
-      globalLabels: snapshot.globalLabels.length,
-      junctions: snapshot.junctions.length,
-      noConnects: snapshot.noConnects.length,
-      notes: snapshot.texts.length,
-      projectNets: snapshot.nets.length,
+      symbols: source.symbols.length,
+      wires: source.wires.length,
+      localLabels: source.localLabels.length,
+      globalLabels: source.globalLabels.length,
+      junctions: source.junctions.length,
+      noConnects: source.noConnects.length,
+      notes: source.texts.length,
+      projectNets: source.nets.length,
     };
     const sessionDiagnostics = kicadIpcSessionDiagnostics(snapshot.erc);
     const contract = { name: "fabdesk.schematic-inspection", version: "4.0.0" } as const;
@@ -198,6 +198,7 @@ export const schematic_inspect = defineTool({
             ...fullSnapshot,
             coordinates,
             hierarchy: hierarchyResult,
+            counts,
             netScope: targeted
               ? ("selected-sheet-projection" as const)
               : ("bounded-live-ipc-session" as const),

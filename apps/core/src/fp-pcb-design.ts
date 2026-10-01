@@ -4,9 +4,10 @@
  * through the typed client on the project's session. Positions come back in millimetres; the
  * client speaks nanometres.
  */
+import { resolveSchematicSheet } from "./schematic-sheet";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { create } from "@bufbuild/protobuf";
 import {
   ElectricalPinType,
@@ -477,27 +478,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
   ): Promise<NativeSchematicSnapshot> => {
     const { schematic, board } = await deps.sessions.ensureProject(projectDir);
     const hierarchy = await schematic.hierarchy();
-    const flat = hierarchy.flatMap(function visit(sheet): typeof hierarchy {
-      return [sheet, ...sheet.children.flatMap(visit)];
-    });
-    const selected = selectedSheet
-      ? flat.filter(
-          (sheet) =>
-            `uuid:${sheet.path?.path.map((id) => id.value).join("/")}` === selectedSheet ||
-            sheet.path?.pathHumanReadable === selectedSheet ||
-            sheet.name === selectedSheet ||
-            sheet.filename === selectedSheet ||
-            sheet.filename.endsWith(`/${selectedSheet}`),
-        )
-      : [flat[0]];
-    if (selected.length !== 1)
-      throw new ToolError(
-        `sheet: expected one unambiguous schematic sheet, got ${selectedSheet}`,
-        "invalid_args",
-      );
-    const selectedEntry = selected[0];
-    if (!selectedEntry?.path)
-      throw new ToolError(`schematic sheet not found: ${selectedSheet ?? "root"}`, "not_found");
+    const { selected: selectedEntry } = resolveSchematicSheet(hierarchy, selectedSheet);
     const root = schematic.sheet(selectedEntry.path, selectedEntry);
     const [symbols, items, nets, erc, revision, pcbRevision] = await Promise.all([
       root.getSymbols(),
@@ -599,35 +580,35 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
   const schematicEdit = async (projectDir: string, edit: NativeSchematicEdit) => {
     const { schematic, session } = await deps.sessions.ensureProject(projectDir);
     const hierarchy = await schematic.hierarchy();
-    const flat = hierarchy.flatMap(function visit(sheet): typeof hierarchy {
-      return [sheet, ...sheet.children.flatMap(visit)];
-    });
-    const matches = edit.sheet
-      ? flat.filter(
-          (sheet) =>
-            `uuid:${sheet.path?.path.map((id) => id.value).join("/")}` === edit.sheet ||
-            sheet.path?.pathHumanReadable === edit.sheet ||
-            sheet.name === edit.sheet ||
-            sheet.filename === edit.sheet ||
-            sheet.filename.endsWith(`/${edit.sheet}`),
-        )
-      : [flat[0]];
-    if (matches.length !== 1 || !matches[0]?.path)
-      throw new ToolError(
-        `sheet: expected one unambiguous schematic sheet, got ${edit.sheet ?? "root"}`,
-        "invalid_args",
-      );
-    const root = schematic.sheet(matches[0].path, matches[0]);
+    const { selected: selectedEntry, flat } = resolveSchematicSheet(hierarchy, edit.sheet);
+    const root = schematic.sheet(selectedEntry.path, selectedEntry);
     const beforeItems = await root.getAllItems();
-    const beforeById = new Map(
-      beforeItems.map((item) => [
-        item.id,
-        JSON.stringify(item.proto, (_key, value) =>
-          typeof value === "bigint" ? value.toString() : value,
-        ),
-      ]),
+    const existing = beforeItems.filter(
+      (item): item is SchematicSymbol => item instanceof SchematicSymbol,
     );
-    const existing = await root.getSymbols();
+    // Native geometry may be normalized on save. Compare compact editable properties, never
+    // embedded library definitions or reload-only metadata on untouched symbols.
+    const signature = (item: (typeof beforeItems)[number]) => {
+      if (item instanceof SchematicSymbol) return null;
+      if (item instanceof SchematicLine) return JSON.stringify([item.start, item.end, item.isWire]);
+      if (item instanceof Junction || item instanceof NoConnect)
+        return JSON.stringify(item.position);
+      if (
+        item instanceof LocalLabel ||
+        item instanceof GlobalLabel ||
+        item instanceof SchematicText
+      )
+        return JSON.stringify([item.position, item.text]);
+      return null;
+    };
+    const beforeById = new Map(beforeItems.map((item) => [item.id, signature(item)]));
+    const projectReferences = new Map(existing.map((symbol) => [symbol.reference, symbol.id]));
+    if ((edit.symbols?.length ?? 0) || edit.symbolUpdates?.some((update) => update.newReference))
+      for (const sheet of flat) {
+        if (sheet === selectedEntry || !sheet.path) continue;
+        for (const symbol of await schematic.sheet(sheet.path, sheet).getSymbols())
+          projectReferences.set(symbol.reference, symbol.id);
+      }
     const gridProblems: Array<{
       object: string;
       position: { x: number; y: number };
@@ -679,11 +660,16 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       if (input.mirrorY !== undefined) symbol.proto.transform!.mirrorY = input.mirrorY;
       normalizeNativeSymbolTransform(symbol);
       if (input.newReference !== undefined) {
-        if (byReference.has(input.newReference))
+        if (
+          projectReferences.has(input.newReference) &&
+          projectReferences.get(input.newReference) !== symbol.id
+        )
           throw new ToolError(
             `cannot annotate ${input.reference} as existing reference ${input.newReference}`,
             "invalid_args",
           );
+        projectReferences.delete(input.reference);
+        projectReferences.set(input.newReference, symbol.id);
         symbol.reference = input.newReference;
         byReference.delete(input.reference);
         byReference.set(input.newReference, symbol);
@@ -707,9 +693,9 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         pins.set(`${symbol.reference}:${pin.number}`, schematicPinSheetPosition(symbol, pin));
 
     for (const input of edit.symbols ?? []) {
-      if (byReference.has(input.reference))
+      if (projectReferences.has(input.reference))
         throw new ToolError(
-          `schematic already contains ${input.reference}; delete or edit it explicitly before adding it again`,
+          `schematic hierarchy already contains ${input.reference}; delete or edit it explicitly before adding it again`,
           "invalid_args",
         );
       // Library lookup resolves inherited pins; a symbol-editor document exposes only the
@@ -747,6 +733,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       for (const [number, position] of placed.pins)
         pins.set(`${input.reference}:${number}`, position);
       byReference.set(input.reference, placed.symbol);
+      projectReferences.set(input.reference, placed.symbol.id);
     }
 
     const wires: SchematicLine[] = [];
@@ -971,7 +958,9 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     const save = edit.save ?? true;
     if (save) await schematic.save();
     if (save && createdSymbols.some((symbol) => symbol.libraryId.startsWith("power:")))
-      await normalizePowerSymbolMarkers(join(projectDir, "board.kicad_sch"));
+      await normalizePowerSymbolMarkers(
+        resolve(projectDir, selectedEntry.filename || "board.kicad_sch"),
+      );
     // KiCad's API document retains transient library-mismatch markers after a new symbol is
     // committed even though the saved file is clean. Reload after creation so the next inspect,
     // ERC, and forward annotation all evaluate the persisted representation.
@@ -980,28 +969,28 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       save && createdSymbols.length
         ? (await deps.sessions.ensureProject(projectDir)).schematic
         : schematic;
-    const afterItems = await resulting.sheet(matches[0].path, matches[0]).getAllItems();
-    const afterById = new Map(
-      afterItems.map((item) => [
-        item.id,
-        JSON.stringify(item.proto, (_key, value) =>
-          typeof value === "bigint" ? value.toString() : value,
-        ),
-      ]),
-    );
+    const afterItems = await resulting.sheet(selectedEntry.path, selectedEntry).getAllItems();
+    const afterById = new Map(afterItems.map((item) => [item.id, signature(item)]));
+    const requestedUpdated = new Set(changedObjectIds.updated);
     const normalizedAwayObjectIds = changedObjectIds.created.filter((id) => !afterById.has(id));
     changedObjectIds.created = afterItems
       .filter((item) => !beforeById.has(item.id))
       .map((item) => item.id);
     changedObjectIds.updated = afterItems
       .filter(
-        (item) => beforeById.has(item.id) && beforeById.get(item.id) !== afterById.get(item.id),
+        (item) =>
+          beforeById.has(item.id) &&
+          (item instanceof SchematicSymbol
+            ? requestedUpdated.has(item.id)
+            : beforeById.get(item.id) !== afterById.get(item.id)),
       )
       .map((item) => item.id);
     changedObjectIds.deleted = beforeItems
       .filter((item) => !afterById.has(item.id))
       .map((item) => item.id);
-    const actualCreated = afterItems.filter((item) => changedObjectIds.created.includes(item.id));
+    const createdIds = new Set(changedObjectIds.created);
+    const updatedIds = new Set(changedObjectIds.updated);
+    const actualCreated = afterItems.filter((item) => createdIds.has(item.id));
     const revision = Number((await resulting.revision()) ?? 0n);
     return {
       changedObjectIds,
@@ -1018,7 +1007,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       },
       updated: {
         symbols: afterItems.filter(
-          (item) => item instanceof SchematicSymbol && changedObjectIds.updated.includes(item.id),
+          (item) => item instanceof SchematicSymbol && updatedIds.has(item.id),
         ).length,
       },
       deleted: changedObjectIds.deleted.length,

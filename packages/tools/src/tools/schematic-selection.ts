@@ -1,5 +1,5 @@
 import { ToolError } from "../registry";
-import type { NativeSchematicSnapshot, SchematicPoint } from "../services";
+import type { NativeSchematicSnapshot } from "../services";
 
 export type SchematicSelection = {
   references: string[];
@@ -7,25 +7,10 @@ export type SchematicSelection = {
   objectIds: string[];
   kinds: string[];
   expand: "none" | "nets";
-  limit: number;
+  limit: number | null;
 };
 
-const pointOnWire = (p: SchematicPoint, w: NativeSchematicSnapshot["wires"][number]) => {
-  const dx = w.end.x - w.start.x,
-    dy = w.end.y - w.start.y;
-  return (
-    Math.abs((p.x - w.start.x) * dy - (p.y - w.start.y) * dx) < 1e-7 &&
-    p.x >= Math.min(w.start.x, w.end.x) - 1e-7 &&
-    p.x <= Math.max(w.start.x, w.end.x) + 1e-7 &&
-    p.y >= Math.min(w.start.y, w.end.y) - 1e-7 &&
-    p.y <= Math.max(w.start.y, w.end.y) + 1e-7
-  );
-};
-
-/** Selector union, followed by optional one-step electrical net expansion and kind filtering.
- * Geometry fills gaps in IPC net item membership. Wire interiors only meet at an explicit
- * junction or an endpoint: crossing lines alone never imply connectivity.
- */
+/** Select solely by KiCad net item membership; geometry and label text do not establish nets. */
 export function selectSchematic(snapshot: NativeSchematicSnapshot, selection: SchematicSelection) {
   const groups = {
     symbols: snapshot.symbols,
@@ -56,89 +41,37 @@ export function selectSchematic(snapshot: NativeSchematicSnapshot, selection: Sc
         "invalid_args",
       );
 
-  // Undirected physical graph: wire endpoints/pins/labels/junctions are anchors.
-  const adjacent = new Map<string, Set<string>>();
-  const connect = (a: string, b: string) => {
-    if (a === b) return;
-    if (!adjacent.has(a)) adjacent.set(a, new Set());
-    if (!adjacent.has(b)) adjacent.set(b, new Set());
-    adjacent.get(a)!.add(b);
-    adjacent.get(b)!.add(a);
-  };
-  if (selection.expand === "nets" || selection.netNames.length) {
-    const anchors = [...groups.pins, ...groups.labels, ...groups.junctions, ...groups.noConnects];
-    for (const anchor of anchors)
-      for (const wire of snapshot.wires)
-        if (pointOnWire(anchor.position, wire)) connect(anchor.id, wire.id);
-    for (const [i, wire] of snapshot.wires.entries())
-      for (const other of snapshot.wires.slice(i + 1))
-        if (
-          pointOnWire(wire.start, other) ||
-          pointOnWire(wire.end, other) ||
-          pointOnWire(other.start, wire) ||
-          pointOnWire(other.end, wire)
-        )
-          connect(wire.id, other.id);
-    const at = new Map<string, string[]>();
-    for (const a of anchors) {
-      const key = `${a.position.x},${a.position.y}`;
-      for (const id of at.get(key) ?? []) connect(id, a.id);
-      at.set(key, [...(at.get(key) ?? []), a.id]);
-    }
-    for (const net of snapshot.nets) {
-      const ids = [
-        ...net.itemIds,
-        ...groups.pins.filter((p) => p.net === net.name).map((p) => p.id),
-        ...groups.labels
-          .filter((l) => l.text === net.name || `/${l.text}` === net.name)
-          .map((l) => l.id),
-      ].filter((id) => allIds.has(id));
-      for (const id of ids.slice(1)) connect(ids[0]!, id);
-    }
-  }
-  const closure = (seed: Iterable<string>) => {
-    const ids = new Set(seed),
-      queue = [...ids];
-    for (let i = 0; i < queue.length; i++)
-      for (const id of adjacent.get(queue[i]!) ?? [])
-        if (!ids.has(id)) {
-          ids.add(id);
-          queue.push(id);
-        }
-    return ids;
-  };
+  const symbolIds = new Set(groups.symbols.map((s) => s.id));
+  const netMembers = new Map(
+    snapshot.nets.map((net) => [
+      net.name,
+      new Set(net.itemIds.filter((id) => allIds.has(id) && !symbolIds.has(id))),
+    ]),
+  );
+  for (const pin of groups.pins) if (pin.net) netMembers.get(pin.net)?.add(pin.id);
   const selected = new Set(selection.objectIds);
-  for (const s of snapshot.symbols)
-    if (selection.references.includes(s.reference)) {
-      selected.add(s.id);
-      for (const p of s.pins) selected.add(p.id);
+  for (const symbol of snapshot.symbols)
+    if (selection.references.includes(symbol.reference)) {
+      selected.add(symbol.id);
+      for (const pin of symbol.pins) selected.add(pin.id);
     }
-  for (const net of snapshot.nets)
-    if (selection.netNames.includes(net.name)) {
-      for (const id of net.itemIds) if (allIds.has(id)) selected.add(id);
-      for (const p of groups.pins) if (p.net === net.name) selected.add(p.id);
-      for (const l of groups.labels)
-        if (l.text === net.name || `/${l.text}` === net.name) selected.add(l.id);
-    }
-  // Net selectors always include their physical objects. Expansion adds nets of reference/ID seeds.
-  const netSeeds = new Set<string>();
-  for (const net of snapshot.nets.filter((n) => selection.netNames.includes(n.name))) {
-    net.itemIds.forEach((id) => netSeeds.add(id));
-    groups.pins.filter((p) => p.net === net.name).forEach((p) => netSeeds.add(p.id));
-    groups.labels
-      .filter((l) => l.text === net.name || `/${l.text}` === net.name)
-      .forEach((l) => netSeeds.add(l.id));
-  }
-  for (const id of closure(netSeeds)) if (allIds.has(id)) selected.add(id);
-  if (selection.expand === "nets") {
-    for (const s of snapshot.symbols)
-      if (selected.has(s.id)) s.pins.forEach((p) => selected.add(p.id));
-    for (const id of closure(selected)) selected.add(id);
-  }
+  // Expand once from the original seeds, never by transitive geometric contact between nets.
+  const seeds = new Set(selected);
+  if (selection.expand === "nets")
+    for (const symbol of snapshot.symbols)
+      if (seeds.has(symbol.id)) symbol.pins.forEach((pin) => seeds.add(pin.id));
+  for (const [name, members] of netMembers)
+    if (
+      selection.netNames.includes(name) ||
+      (selection.expand === "nets" && [...members].some((id) => seeds.has(id)))
+    )
+      members.forEach((id) => selected.add(id));
   const filtered =
     selection.references.length + selection.netNames.length + selection.objectIds.length > 0;
   if (!filtered) allIds.forEach((id) => selected.add(id));
-  let remaining = selection.limit;
+  const budget =
+    selection.limit ?? Object.values(groups).reduce((total, items) => total + items.length, 0);
+  let remaining = budget;
   const counts: Record<string, { matched: number; returned: number }> = {};
   const keep = (kind: string, id: string) => selection.kinds.includes(kind) && selected.has(id);
   const bound = <T>(kind: string, objects: T[]) => {
@@ -206,7 +139,7 @@ export function selectSchematic(snapshot: NativeSchematicSnapshot, selection: Sc
         symbols.some((s) => s.pins.some((p) => p.net === n.name)),
     )
     .map((n) => ({ ...n, itemIds: n.itemIds.filter((id) => returnedIds.has(id)) }));
-  const nets = matchedNets.slice(0, selection.limit);
+  const nets = matchedNets.slice(0, selection.limit ?? matchedNets.length);
   counts.nets = { matched: matchedNets.length, returned: nets.length };
   return {
     symbols,
@@ -222,8 +155,8 @@ export function selectSchematic(snapshot: NativeSchematicSnapshot, selection: Sc
       composition: "union",
       netScope: "selected-sheet objects; project net names",
       matched,
-      returned: selection.limit - remaining,
-      truncated: matched > selection.limit || matchedNets.length > nets.length,
+      returned: budget - remaining,
+      truncated: matched > budget || matchedNets.length > nets.length,
       counts,
     },
   };

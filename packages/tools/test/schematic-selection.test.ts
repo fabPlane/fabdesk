@@ -32,8 +32,8 @@ const snapshot: NativeSchematicSnapshot = {
   noConnects: [],
   texts: [{ id: "note", text: "unrelated", position: { x: 50, y: 50 } }],
   nets: [
-    { name: "/A", itemCount: 2, itemIds: ["R1:1", "R2:1"] },
-    { name: "/B", itemCount: 2, itemIds: ["R1:2", "R2:2"] },
+    { name: "/A", itemCount: 5, itemIds: ["R1:1", "R2:1", "wa", "la", "ja"] },
+    { name: "/B", itemCount: 3, itemIds: ["R1:2", "R2:2", "wb"] },
   ],
   erc: { errors: 0, warnings: 0 },
 };
@@ -55,12 +55,12 @@ test("selectors compose as union; kind filter follows expansion", () => {
     snapshot,
     options({ references: ["R1"], expand: "nets", kinds: ["wires", "junctions"] }),
   );
-  expect(expanded.wires.map((w) => w.id)).toEqual(["wa", "wb", "cross"]); // label anchor makes the crossing electrical here
+  expect(expanded.wires.map((w) => w.id)).toEqual(["wa", "wb"]);
   expect(expanded.junctions[0]?.position).toEqual({ x: 12, y: 5 });
 });
 test("net selection includes physical geometry but does not fan out through other pins", () => {
   const result = selectSchematic(snapshot, options({ netNames: ["/A"] }));
-  expect(result.wires.map((w) => w.id)).toEqual(["wa", "cross"]);
+  expect(result.wires.map((w) => w.id)).toEqual(["wa"]);
   expect(result.symbols.every((s) => s.pins.every((p) => p.number === "1"))).toBe(true);
   expect(result.localLabels.map((l) => l.id)).toEqual(["la"]);
   expect(result.junctions.map((j) => j.id)).toEqual(["ja"]);
@@ -85,4 +85,22 @@ test("unknown selectors fail specifically", () => {
   expect(() => selectSchematic(snapshot, options({ netNames: ["missing"] }))).toThrow(
     "netNames: unknown net missing",
   );
+});
+
+test("authoritative net selection cannot absorb crossing/T-connected wires or same-text labels on other nets", () => {
+  const other = {
+    ...snapshot,
+    wires: [...snapshot.wires, { id: "tee", start: { x: 15, y: 5 }, end: { x: 15, y: 20 } }],
+    globalLabels: [{ id: "global-A", text: "A", position: { x: 15, y: 5 } }],
+    localLabels: [...snapshot.localLabels, { id: "child-A", text: "A", position: { x: 10, y: 5 } }],
+    nets: [
+      ...snapshot.nets,
+      { name: "A", itemCount: 2, itemIds: ["tee", "global-A"] },
+      { name: "/child/A", itemCount: 1, itemIds: ["child-A"] },
+    ],
+  };
+  const selected = selectSchematic(other, options({ netNames: ["/A"], expand: "nets" }));
+  expect(selected.wires.map((w) => w.id)).toEqual(["wa"]);
+  expect(selected.globalLabels).toHaveLength(0);
+  expect(selected.localLabels.map((l) => l.id)).toEqual(["la"]);
 });

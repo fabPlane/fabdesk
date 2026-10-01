@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { runErc } from "@fabdesk/kicad";
 import { createFpPcbDesign } from "./fp-pcb-design";
 import { FpPcbBridgeClient } from "./fp-pcb-bridge";
 import { FpPcbSessions } from "./fp-pcb-session";
@@ -90,8 +91,89 @@ test.skipIf(!url || !workspace)(
       expect((await design.schematicInspect(dir)).symbols).toEqual(snapshot.symbols);
       await expect(
         design.schematicEdit(dir, { sheet: "missing-sheet", deleteItemIds: ["missing"] }),
-      ).rejects.toThrow("sheet: expected one unambiguous");
+      ).rejects.toThrow("sheet: schematic sheet not found");
       expect(await Promise.all(paths.map((p) => readFile(p)))).toEqual(bytes);
+      const added = await design.schematicEdit(dir, {
+        symbols: [
+          { libId: "Device:R", reference: "R3", value: "3k", position: { x: 152.4, y: 50.8 } },
+        ],
+      });
+      expect(added.changedObjectIds!.updated).toEqual([]);
+      expect(added.updated.symbols).toBe(0);
+    } finally {
+      await sessions.dispose();
+      await rm(dir, { recursive: true, force: true });
+    }
+  },
+  60_000,
+);
+
+test.skipIf(!url || !workspace || !process.env["KICAD_CLI"])(
+  "sub-sheet power edits normalize their own native file and reject project-wide duplicate references",
+  async () => {
+    const dir = await mkdtemp(join(workspace!, "schematic-hierarchy-"));
+    const bridge = new FpPcbBridgeClient({ url: url! }),
+      sessions = new FpPcbSessions(() => bridge);
+    const design = createFpPcbDesign({ bridge: () => bridge, sessions });
+    try {
+      await design.schematicEdit(dir, {
+        symbols: [
+          { libId: "Device:R", reference: "R1", value: "1k", position: { x: 50.8, y: 50.8 } },
+        ],
+      });
+      const sch = await sessions.schematic(dir);
+      await sch.newSheet({
+        name: "power",
+        filename: "power.kicad_sch",
+        position: { x: 150_000_000, y: 100_000_000 },
+      });
+      await sch.save();
+      const root = await design.schematicInspect(dir),
+        child = await design.schematicInspect(dir, "power.kicad_sch");
+      const paths = ["board.kicad_sch", "power.kicad_sch"].map((name) => join(dir, name));
+      const before = await Promise.all(paths.map((path) => readFile(path)));
+      await expect(
+        design.schematicEdit(dir, {
+          sheet: child.scope!.identity!,
+          symbols: [
+            { libId: "Device:R", reference: "R1", value: "2k", position: { x: 50.8, y: 50.8 } },
+          ],
+        }),
+      ).rejects.toThrow("hierarchy already contains R1");
+      expect(await Promise.all(paths.map((path) => readFile(path)))).toEqual(before);
+      const edited = await design.schematicEdit(dir, {
+        sheet: child.scope!.identity!,
+        symbols: [
+          { libId: "power:GND", reference: "#PWR01", value: "GND", position: { x: 50.8, y: 50.8 } },
+          { libId: "Device:R", reference: "R2", value: "2k", position: { x: 76.2, y: 50.8 } },
+        ],
+      });
+      expect(edited.changedObjectIds!.updated).toEqual([]);
+      expect((await design.schematicInspect(dir)).symbols).toEqual(root.symbols);
+      expect(await readFile(join(dir, "power.kicad_sch"), "utf8")).toMatch(
+        /\(symbol "power:GND"\s+\(power\)/,
+      );
+      const result = await runErc(
+        { path: process.env["KICAD_CLI"]!, version: "integration" },
+        {
+          schematic: join(dir, "board.kicad_sch"),
+          outFile: join(dir, "hierarchy-erc.json"),
+          severity: "all",
+        },
+      );
+      expect(
+        result.violations.filter((v) =>
+          /lib_symbol_mismatch|library.*mismatch/i.test(JSON.stringify(v)),
+        ),
+      ).toEqual([]);
+      const after = await Promise.all(paths.map((path) => readFile(path)));
+      await expect(
+        design.schematicEdit(dir, {
+          sheet: child.scope!.identity!,
+          symbolUpdates: [{ reference: "R2", newReference: "R1" }],
+        }),
+      ).rejects.toThrow("existing reference R1");
+      expect(await Promise.all(paths.map((path) => readFile(path)))).toEqual(after);
     } finally {
       await sessions.dispose();
       await rm(dir, { recursive: true, force: true });
