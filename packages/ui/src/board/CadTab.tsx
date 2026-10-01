@@ -4,6 +4,15 @@ import { useCoreClient } from "@fabdesk/client-core";
 import { Button, EmptyState, Spinner } from "../components/ui";
 import { useUiStore } from "../stores/ui";
 
+/**
+ * The fab_cad web UI is served by the loopback bridge, an origin other than the renderer's, so
+ * allow-same-origin keeps it at the bridge's own origin (its `/ws` trusts same-origin pages; it
+ * still cannot reach the renderer's) and allow-scripts runs the SPA. No top navigation and no popups
+ * that escape the sandbox; downloads for model exports, modals for its confirm dialogs.
+ */
+export const CAD_FRAME_SANDBOX =
+  "allow-scripts allow-same-origin allow-forms allow-downloads allow-modals";
+
 type ViewState =
   | { status: "loading" }
   | { status: "ready"; view: FabCadView }
@@ -71,6 +80,8 @@ export function CadTab() {
     <iframe
       title="FreeCAD"
       src={state.view.uiUrl}
+      sandbox={CAD_FRAME_SANDBOX}
+      referrerPolicy="no-referrer"
       className="h-full w-full border-0 bg-panel"
       data-testid="cad-frame"
     />

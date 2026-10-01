@@ -41,7 +41,10 @@ const STRICT_CSP = [
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self' data:",
   "worker-src 'self' blob:",
-  // The CAD tab embeds the fab_cad web UI served by the loopback FabPlane CAD bridge.
+  // The CAD tab embeds the fab_cad web UI served by the loopback FabPlane CAD bridge. Any loopback
+  // port, because the port is only known at run time: 4030 by default, but CadSupervisor moves to
+  // a free port when 4030 is taken, and FABDESK_FAB_CAD_BRIDGE_URL overrides it, while this CSP is
+  // fixed at build time. The frame itself is sandboxed (CadTab.tsx) and the bridge needs its token.
   "frame-src http://127.0.0.1:*",
 ];
 
@@ -54,6 +57,7 @@ const DEV_CSP = [
   "style-src 'self' 'unsafe-inline' http://localhost:*",
   "font-src 'self' data: http://localhost:*",
   "worker-src 'self' blob:",
+  // Any loopback port, as in STRICT_CSP: the CAD bridge's port is chosen at run time.
   "frame-src http://127.0.0.1:*",
 ].join("; ");
 
