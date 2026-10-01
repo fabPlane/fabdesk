@@ -74,7 +74,7 @@ export const cad_status = defineTool({
   description:
     "Report whether the FabPlane CAD bridge is reachable and which FreeCAD it runs, and summarise the current project's model (model.FCStd) when a project is selected.",
   inputSchema: {},
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
   scope: "global",
   handler: async (_args, ctx) => {
     const cad = requireCad(ctx);
@@ -102,7 +102,7 @@ export const cad_model = defineTool({
   description:
     "List the objects of the project's FreeCAD model (model.FCStd, created empty on first use): internal name, label, type, recompute status, children and bounding-box size in mm.",
   inputSchema: {},
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
   handler: async (_args, ctx) => {
     const project = ctx.requireProject();
     const model = await requireCad(ctx).model(project.dir);
@@ -123,7 +123,7 @@ export const cad_properties = defineTool({
     object: z.string().describe("Internal object name, e.g. Box"),
     names: z.array(z.string()).optional().describe("Only these properties"),
   },
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
   handler: async ({ object, names }, ctx) => {
     const project = ctx.requireProject();
     const props = await requireCad(ctx).properties(project.dir, object, names);
@@ -144,7 +144,7 @@ export const cad_add_object = defineTool({
     properties: PropertyValues.optional(),
     group: z.string().optional().describe("Internal name of a group or body to add it to"),
   },
-  annotations: { destructiveHint: false },
+  annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: false },
   handler: async ({ type, name, label, properties, group }, ctx) => {
     const project = ctx.requireProject();
     const cad = requireCad(ctx);
@@ -177,7 +177,7 @@ export const cad_set_properties = defineTool({
       .optional()
       .describe('Property path → expression, e.g. {"Height": "Box.Length * 2"}; null clears'),
   },
-  annotations: { destructiveHint: false, idempotentHint: true },
+  annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
   handler: async ({ object, values, expressions }, ctx) => {
     const project = ctx.requireProject();
     const cad = requireCad(ctx);
@@ -204,7 +204,7 @@ export const cad_remove_object = defineTool({
     object: z.string().describe("Internal object name"),
     recursive: z.boolean().default(false),
   },
-  annotations: { destructiveHint: true },
+  annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: false },
   handler: async ({ object, recursive }, ctx) => {
     const project = ctx.requireProject();
     const cad = requireCad(ctx);
@@ -221,7 +221,7 @@ export const cad_recompute = defineTool({
   description:
     "Recompute the project's FreeCAD model and save it; reports objects that failed to recompute.",
   inputSchema: {},
-  annotations: { idempotentHint: true },
+  annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
   handler: async (_args, ctx) => {
     const project = ctx.requireProject();
     const { recompute, saved } = await commit(requireCad(ctx), project.dir);
@@ -239,7 +239,7 @@ export const cad_undo = defineTool({
   description:
     "Undo (or with `redo`, redo) the last change to the project's FreeCAD model, recompute and save. Returns the remaining undo and redo steps.",
   inputSchema: { redo: z.boolean().default(false) },
-  annotations: { destructiveHint: true },
+  annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: false },
   handler: async ({ redo }, ctx) => {
     const project = ctx.requireProject();
     const cad = requireCad(ctx);
@@ -269,7 +269,7 @@ export const cad_export = defineTool({
       .default("model")
       .describe("Output base name under exports/"),
   },
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: true },
   handler: async ({ format, objects, name }, ctx) => {
     const project = ctx.requireProject();
     const out = await requireCad(ctx).export(project.dir, {
@@ -305,7 +305,7 @@ export const cad_python = defineTool({
       .default("auto")
       .describe("auto evaluates an expression and falls back to executing statements"),
   },
-  annotations: { destructiveHint: true, openWorldHint: true },
+  annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true, idempotentHint: false },
   handler: async ({ code, mode }, ctx) => {
     const project = ctx.requireProject();
     const cad = requireCad(ctx);
@@ -335,7 +335,7 @@ export const cad_view = defineTool({
   description:
     "Return the URL of the fab_cad web UI attached to the project's live FreeCAD session (what the app's CAD tab shows), and the session's WebSocket for a FreeCAD API client.",
   inputSchema: {},
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
   handler: async (_args, ctx) => {
     const project = ctx.requireProject();
     const view = await requireCad(ctx).view(project.dir);
