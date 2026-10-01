@@ -71,7 +71,7 @@ export function useShortcuts(actions: ShortcutActions, platform?: string): void 
       if (key === "s" && shift) return run(actions.openSketch ?? (() => ui.setSketchOpen(true)));
       if (key === "/" ) return run(() => ui.setAgentPickerOpen(true));
       if (key === ",") return run(actions.openSettings ?? (() => ui.setSettingsOpen(true)));
-      if (!shift && /^[1-8]$/.test(key)) {
+      if (!shift && /^[1-9]$/.test(key)) {
         const tab = BOARD_TABS[Number(key) - 1];
         if (tab) return run(() => ui.setBoardTab(tab));
       }

@@ -41,6 +41,8 @@ const STRICT_CSP = [
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self' data:",
   "worker-src 'self' blob:",
+  // The CAD tab embeds the fab_cad web UI served by the loopback FabPlane CAD bridge.
+  "frame-src http://127.0.0.1:*",
 ];
 
 /** Dev needs Vite's HMR websocket and the React refresh inline preamble. */
@@ -52,6 +54,7 @@ const DEV_CSP = [
   "style-src 'self' 'unsafe-inline' http://localhost:*",
   "font-src 'self' data: http://localhost:*",
   "worker-src 'self' blob:",
+  "frame-src http://127.0.0.1:*",
 ].join("; ");
 
 function sha256(value: string): string {

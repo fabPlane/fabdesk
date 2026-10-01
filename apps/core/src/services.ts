@@ -1,13 +1,15 @@
-/** Real CoreServices: wires the sibling packages and the FabPlane PCB bridge into the interface `@fabdesk/tools` expects. */
+/** Real CoreServices: wires the sibling packages and the FabPlane PCB and CAD bridges into the interface `@fabdesk/tools` expects. */
 import * as kicad from "@fabdesk/kicad";
 import * as sim from "@fabdesk/sim";
 import type { Principal, Settings } from "@fabdesk/protocol";
 import type { CoreServices, KicadCli, RouteRunStore, SimService } from "@fabdesk/tools";
 import type { Channel } from "./config";
-import { fpPcbBridgeUrl } from "./config";
+import { fabCadBridgeUrl, fpPcbBridgeUrl } from "./config";
 import type { EventBus } from "./bus";
 import type { ProjectStore } from "./projects";
 import { AppBridgeClient } from "./app-bridge";
+import { createFabCad } from "./fab-cad";
+import { FabCadBridgeClient } from "./fab-cad-bridge";
 import { FpPcbBridgeClient } from "./fp-pcb-bridge";
 import { createFpPcbDesign } from "./fp-pcb-design";
 import { FpPcbSessions } from "./fp-pcb-session";
@@ -98,6 +100,17 @@ export async function createServices(
     log: (m) => logger.info(m),
   });
   const routeTasks = new RouteTaskQueue();
+  let cadBridge: FabCadBridgeClient | null = null;
+  const cadBridgeClient = (): FabCadBridgeClient => {
+    const url = fabCadBridgeUrl();
+    if (!cadBridge || cadBridge.url !== url) cadBridge = new FabCadBridgeClient({ url });
+    return cadBridge;
+  };
+  const cad = createFabCad({
+    bridge: cadBridgeClient,
+    clientName: `fabdesk/core/${process.pid}`,
+    log: (m) => logger.info(m),
+  });
 
   const services: CoreServices & { dispose(): Promise<void> } = {
     version: deps.version,
@@ -144,7 +157,10 @@ export async function createServices(
     ...(deps.token && deps.appBridgeFile
       ? { appBridge: new AppBridgeClient({ file: deps.appBridgeFile, token: deps.token }) }
       : {}),
-    dispose: () => sessions.dispose(),
+    cad,
+    dispose: async () => {
+      await Promise.all([sessions.dispose(), cad.dispose()]);
+    },
   };
   return services;
 }

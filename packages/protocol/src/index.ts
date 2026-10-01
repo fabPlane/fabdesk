@@ -6,5 +6,6 @@ export * from "./devices";
 export * from "./opensource";
 export * from "./releases";
 export * from "./fp-pcb";
+export * from "./fab-cad";
 export * from "./cloud";
 export * from "./github";

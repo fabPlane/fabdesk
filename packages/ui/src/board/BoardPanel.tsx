@@ -4,6 +4,7 @@ import { useCore } from "@fabdesk/client-core";
 import { useProjectOrder, useProjects } from "@fabdesk/client-core";
 import { BOARD_TABS, BOARD_TAB_LABELS, useUiStore, type BoardTab } from "../stores/ui";
 import { modKey } from "../util";
+import { CadTab } from "./CadTab";
 import { CinemaTab } from "./cinema/CinemaTab";
 import { DrcTab } from "./DrcTab";
 import { FilesTab } from "./FilesTab";
@@ -22,6 +23,8 @@ function TabBody({ tab }: { tab: BoardTab }) {
       return <CinemaTab />;
     case "3d":
       return <ThreeDTab />;
+    case "cad":
+      return <CadTab />;
     case "drc":
       return <DrcTab />;
     case "renders":

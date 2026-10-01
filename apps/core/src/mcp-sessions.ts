@@ -6,7 +6,14 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import type { ZodRawShapeCompat } from "@modelcontextprotocol/sdk/server/zod-compat.js";
 import { z } from "zod/v4";
-import { attachToRegistry, TOOLSETS, type ContextFactory, type ToolRegistry } from "@fabdesk/tools";
+import {
+  attachToRegistry,
+  FABDESK_SERVER_ICONS,
+  TOOLSETS,
+  type ContextFactory,
+  type McpAppsMode,
+  type ToolRegistry,
+} from "@fabdesk/tools";
 import { PERMISSION_PROMPT_TOOL } from "@fabdesk/agents";
 import type { PermissionPromptResult } from "./agent-runs";
 import { logger, errMsg } from "./log";
@@ -129,7 +136,12 @@ export class McpSessionManager {
       });
     // New session: the transport validates that the body is an initialize request.
     const server = new McpServer(
-      { name: "fabdesk", version: this.opts.version },
+      {
+        name: "fabdesk",
+        title: "fabPlane",
+        version: this.opts.version,
+        icons: FABDESK_SERVER_ICONS,
+      },
       { instructions: INSTRUCTIONS },
     );
     const transport = new WebStandardStreamableHTTPServerTransport({
@@ -162,7 +174,17 @@ export class McpSessionManager {
     const profile = query.get("profile");
     const initialTools =
       profile === "native" ? [...NATIVE_AGENT_TOOLS] : profile === "substrate" ? [] : undefined;
+    // MCP Apps views: `auto` lists them for clients that advertise io.modelcontextprotocol/ui;
+    // `?apps=on` forces them (stdio proxy started with --apps). The agent profiles never get them.
+    const appsParam = query.get("apps");
+    const apps: McpAppsMode =
+      profile === "native" || profile === "substrate"
+        ? "off"
+        : appsParam === "on" || appsParam === "off"
+          ? appsParam
+          : "auto";
     attachToRegistry(server, this.opts.registry, this.opts.ctxFactory, {
+      apps,
       ...(initialToolsets ? { initialToolsets } : {}),
       ...(initialTools ? { initialTools } : {}),
       ...(profile === "native" ? { capabilityExclude: [...NATIVE_CAPABILITY_EXCLUDE] } : {}),

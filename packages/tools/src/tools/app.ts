@@ -16,6 +16,7 @@ export const APP_BOARD_TABS = [
   "pcb",
   "cinema",
   "3d",
+  "cad",
   "drc",
   "renders",
   "files",

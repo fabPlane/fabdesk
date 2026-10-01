@@ -25,6 +25,7 @@ export const TOOLSETS = [
   "sim",
   "app",
   "shopping",
+  "cad",
 ] as const;
 export type ToolsetId = (typeof TOOLSETS)[number];
 export const ToolsetId = z.enum(TOOLSETS);

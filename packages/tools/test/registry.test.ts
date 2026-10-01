@@ -235,6 +235,17 @@ describe("registry", () => {
       "shopping_list_destinations",
       "inventory_search",
       "inventory_add",
+      "cad_status",
+      "cad_model",
+      "cad_properties",
+      "cad_add_object",
+      "cad_set_properties",
+      "cad_remove_object",
+      "cad_recompute",
+      "cad_undo",
+      "cad_export",
+      "cad_python",
+      "cad_view",
     ]);
     for (const n of names) expect(n).toMatch(/^[a-z][a-z0-9_]*$/);
     expect(reg.byToolset("core").length).toBe(9);

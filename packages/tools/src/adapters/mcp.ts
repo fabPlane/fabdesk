@@ -31,6 +31,7 @@ import {
   type ToolsetId,
 } from "../registry";
 import { p } from "../tools/common";
+import { registerMcpApps, type McpAppsMode } from "./mcp-apps";
 import { readProjectStatusEvidence } from "../tools/project-status-evidence";
 
 /** How often a long-running tool repeats its last progress so the MCP client does not call it idle. */
@@ -57,6 +58,8 @@ export type AttachOptions = {
   capabilities?: boolean;
   /** Skip resources (e.g. lightweight test servers). */
   toolsOnly?: boolean;
+  /** MCP Apps views and OpenAI extensions (`mcp-apps.ts`). Default `auto`; off with `toolsOnly`. */
+  apps?: McpAppsMode;
 };
 
 export function attachToRegistry(
@@ -160,6 +163,8 @@ export function attachToRegistry(
   if (!opts.toolsOnly) {
     registerResources(server, registry, ctxFactory, session, sessionId);
     registerShoppingPrompt(server);
+    const apps = opts.apps ?? "auto";
+    if (apps !== "off") registerMcpApps(server, { registry, ctxFactory, session, sessionId }, apps);
   }
 
   return { session, registered };

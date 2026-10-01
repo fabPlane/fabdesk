@@ -1,0 +1,11 @@
+{
+  "name": "fabplane",
+  "owner": { "name": "fabPlane" },
+  "plugins": [
+    {
+      "name": "fabplane",
+      "source": "./plugins/fabplane",
+      "description": "fabdesk PCB tools plus interactive board, CAD and shopping-list views (MCP Apps)."
+    }
+  ]
+}

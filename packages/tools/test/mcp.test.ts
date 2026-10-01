@@ -164,8 +164,10 @@ describe("mcp adapter", () => {
     const templates = await client.listResourceTemplates();
     expect(templates.resourceTemplates.map((t) => t.uriTemplate).sort()).toEqual([
       "fabdesk://project/{id}/board-summary",
+      "fabdesk://project/{id}/files/{path}",
       "fabdesk://project/{id}/manifest",
       "fabdesk://project/{id}/reports/{name}",
+      "fabdesk://project/{id}/shopping-list",
     ]);
     const list = await client.listResources();
     expect(list.resources.some((r) => r.uri === `fabdesk://project/${project.id}/manifest`)).toBe(

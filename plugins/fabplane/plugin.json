@@ -1,0 +1,33 @@
+{
+  "name": "fabplane",
+  "version": "0.1.0",
+  "description": "Design, review and order PCBs with fabPlane: interactive board, CAD and shopping-list views plus the fabdesk PCB tools.",
+  "author": {
+    "name": "fabPlane"
+  },
+  "homepage": "https://fabplane.com",
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "repository": "https://github.com/TensorFleet/fabdesk",
+  "extensions": {
+    "com.openai": {
+      "onboardingSkill": "./skills/onboarding/SKILL.md",
+      "interface": {
+        "displayName": "fabPlane",
+        "shortDescription": "PCB boards, CAD drawings and parts shopping lists",
+        "longDescription": "Open your fabPlane projects next to the conversation: zoomable PCB and schematic renders, the 3D board, CAD drawings (DXF, SVG, STL, GLB) and the fabplane.com shopping list with inventory search. The agent gets the full fabdesk toolset for building, routing, DRC and fabrication exports.",
+        "developerName": "fabPlane",
+        "category": "Developer Tools",
+        "capabilities": ["Interactive", "Read", "Write"],
+        "composerIcon": "./assets/icon.svg",
+        "logo": "./assets/logo.png",
+        "logoDark": "./assets/logo.png",
+        "defaultPrompt": [
+          "@fabPlane open my boards",
+          "@fabPlane show the shopping list for this project"
+        ],
+        "brandColor": "#90BD6B",
+        "websiteURL": "https://fabplane.com"
+      }
+    }
+  }
+}
