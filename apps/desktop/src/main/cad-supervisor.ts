@@ -8,8 +8,13 @@
  *   executable, the fork's `FreeCADApiServer`, and optionally the built web UI;
  * - a source checkout, `FABDESK_FAB_CAD_SOURCE` (`bun run dev:cad` points it at `vendor/fab_cad`):
  *   the bridge runs from source under Bun, FreeCAD from `FREECAD_API_SERVER` or the mock server.
+ *
+ * The bridge runs arbitrary FreeCAD Python for whoever reaches its `/ws`, so every launch gets a
+ * fresh bearer token: the bridge reads it as `FAB_CAD_BRIDGE_TOKEN`, core as
+ * `FABDESK_FAB_CAD_BRIDGE_TOKEN`. A bridge older than the token ignores it.
  */
 import { spawn, type ChildProcess } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { homedir } from "node:os";
@@ -38,6 +43,13 @@ export interface CadBackendCommand {
   url: string;
   /** An explicitly configured URL must not be silently replaced after a collision. */
   fixedUrl: boolean;
+  /** Bearer token for the bridge (also `env.FAB_CAD_BRIDGE_TOKEN`); random per launch. */
+  token: string;
+}
+
+/** 32 random bytes, base64url: the bridge token for one launch. */
+export function mintCadBridgeToken(): string {
+  return randomBytes(32).toString("base64url");
 }
 
 export function resolveCadBackend(opts: {
@@ -47,10 +59,16 @@ export function resolveCadBackend(opts: {
   const env = opts.env ?? process.env;
   const url = env["FABDESK_FAB_CAD_BRIDGE_URL"] ?? "http://127.0.0.1:4030";
   const workspace = env["FABDESK_PROJECTS_DIR"] ?? join(homedir(), "fabdesk");
+  const fixedUrl = Boolean(env["FABDESK_FAB_CAD_BRIDGE_URL"]);
+  // A bridge the user runs elsewhere (FABDESK_FAB_CAD_BRIDGE_URL) has its own token, which they
+  // pass in FABDESK_FAB_CAD_BRIDGE_TOKEN; otherwise this launch mints one.
+  const token = (fixedUrl && env["FABDESK_FAB_CAD_BRIDGE_TOKEN"]?.trim()) || mintCadBridgeToken();
   const common = {
     url,
-    fixedUrl: Boolean(env["FABDESK_FAB_CAD_BRIDGE_URL"]),
+    fixedUrl,
+    token,
     base: {
+      FAB_CAD_BRIDGE_TOKEN: token,
       PORT: new URL(url).port || "4030",
       HOST: "127.0.0.1",
       WORKSPACE_ROOT:
@@ -75,6 +93,7 @@ export function resolveCadBackend(opts: {
       cwd: root,
       url: common.url,
       fixedUrl: common.fixedUrl,
+      token: common.token,
       env: {
         ...common.base,
         FREECAD_API_SERVER: env["FREECAD_API_SERVER"]?.trim() || `"${bun}" "${mock}"`,
@@ -107,6 +126,7 @@ export function resolveCadBackend(opts: {
     cwd: bundleRoot,
     url: common.url,
     fixedUrl: common.fixedUrl,
+    token: common.token,
     env: {
       ...(manifest.environment ?? {}),
       ...(libraryPaths.length
@@ -141,12 +161,17 @@ export class CadSupervisor {
     const command = this.command;
     if (!command) return {};
     const existing = await health(command.url);
-    if (existing && cadIdentityMismatch(existing, command) === null)
-      return { FABDESK_FAB_CAD_BRIDGE_URL: command.url };
+    // A bridge already running (a previous launch's, or one the user started) is reused only if
+    // it takes this token: an older bridge without auth does, one minted another token does not.
+    const mismatch = existing
+      ? (cadIdentityMismatch(existing, command) ??
+        ((await acceptsToken(command)) ? null : "it requires a different bridge token"))
+      : null;
+    if (existing && mismatch === null) return coreEnv(command);
     if (existing || (await portTaken(command.url))) {
       if (command.fixedUrl)
         throw new Error(
-          `FabPlane CAD bridge URL ${command.url} is taken by another server${existing ? ` (${cadIdentityMismatch(existing, command)})` : ""}`,
+          `FabPlane CAD bridge URL ${command.url} is taken by another server${existing ? ` (${mismatch})` : ""}${mismatch?.includes("token") ? "; set FABDESK_FAB_CAD_BRIDGE_TOKEN to its token" : ""}`,
         );
       const port = await availableLoopbackPort();
       command.url = `http://127.0.0.1:${port}`;
@@ -170,7 +195,7 @@ export class CadSupervisor {
       }
       await new Promise((done) => setTimeout(done, 100));
     }
-    return { FABDESK_FAB_CAD_BRIDGE_URL: command.url };
+    return coreEnv(command);
   }
 
   async stop(): Promise<void> {
@@ -183,6 +208,24 @@ export class CadSupervisor {
       new Promise<void>((done) => setTimeout(done, 3_000)),
     ]);
     if (child.exitCode === null) child.kill("SIGKILL");
+  }
+}
+
+/** Core's environment for a running bridge. */
+function coreEnv(command: CadBackendCommand): Record<string, string> {
+  return { FABDESK_FAB_CAD_BRIDGE_URL: command.url, FABDESK_FAB_CAD_BRIDGE_TOKEN: command.token };
+}
+
+/** Whether the bridge at the command's URL answers an authenticated request with its token. */
+async function acceptsToken(command: CadBackendCommand): Promise<boolean> {
+  try {
+    const response = await fetch(`${command.url}/sessions`, {
+      headers: { authorization: `Bearer ${command.token}` },
+      signal: AbortSignal.timeout(750),
+    });
+    return response.status !== 401 && response.status !== 403;
+  } catch {
+    return false;
   }
 }
 

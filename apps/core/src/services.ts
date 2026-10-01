@@ -4,7 +4,7 @@ import * as sim from "@fabdesk/sim";
 import type { Principal, Settings } from "@fabdesk/protocol";
 import { ToolError, type CoreServices, type KicadCli, type RouteRunStore, type SimService } from "@fabdesk/tools";
 import type { Channel } from "./config";
-import { fabCadBridgeUrl, fpPcbBridgeUrl } from "./config";
+import { fabCadBridgeToken, fabCadBridgeUrl, fpPcbBridgeUrl } from "./config";
 import type { EventBus } from "./bus";
 import type { ProjectStore } from "./projects";
 import { AppBridgeClient } from "./app-bridge";
@@ -103,7 +103,9 @@ export async function createServices(
   let cadBridge: FabCadBridgeClient | null = null;
   const cadBridgeClient = (): FabCadBridgeClient => {
     const url = fabCadBridgeUrl();
-    if (!cadBridge || cadBridge.url !== url) cadBridge = new FabCadBridgeClient({ url });
+    const token = fabCadBridgeToken();
+    if (!cadBridge || cadBridge.url !== url || cadBridge.token !== token)
+      cadBridge = new FabCadBridgeClient({ url, token });
     return cadBridge;
   };
   const cad = createFabCad({

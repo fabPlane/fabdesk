@@ -74,6 +74,8 @@ paths are confined to it.
 | variable                     | where   | what                                                                              |
 | ---------------------------- | ------- | --------------------------------------------------------------------------------- |
 | `FABDESK_FAB_CAD_BRIDGE_URL` | core    | bridge origin; default `http://127.0.0.1:4030`                                    |
+| `FABDESK_FAB_CAD_BRIDGE_TOKEN` | core  | bearer for the bridge (HTTP and the `/ws` upgrade); the desktop mints one per launch |
+| `FAB_CAD_BRIDGE_TOKEN`       | bridge  | the token the bridge requires of non-browser callers (set by the desktop)        |
 | `FABDESK_FAB_CAD_SOURCE`     | desktop | run the bridge from a fab_cad checkout under Bun (`bun run dev:cad` sets it)      |
 | `FABDESK_FAB_CAD_BUNDLE`     | desktop | a packaged backend's `bundle.json`; default `resources/cad/bundle.json`           |
 | `FREECAD_API_SERVER`         | bridge  | the FreeCAD API server command; with a source checkout, default is fab_cad's mock |
@@ -93,10 +95,15 @@ at it with `STATIC_DIR`, or copy the `dist` in; never run `bun install` inside `
 Without it the tab says so and the tools still work.
 
 **Desktop.** `CadSupervisor` (`apps/desktop/src/main/cad-supervisor.ts`) starts the bridge before
-core and hands core `FABDESK_FAB_CAD_BRIDGE_URL`. It is optional: no bundle and no source checkout
+core and hands core `FABDESK_FAB_CAD_BRIDGE_URL` and `FABDESK_FAB_CAD_BRIDGE_TOKEN`. The token is
+32 random bytes (base64url), new every launch, given to the bridge as `FAB_CAD_BRIDGE_TOKEN`; core
+sends it as `Authorization: Bearer` on HTTP and on the `/ws` upgrade, never in a URL (the `cad_view`
+WebSocket and the web UI URL stay token-free; the web UI is same-origin). A bridge pointed at with
+`FABDESK_FAB_CAD_BRIDGE_URL` keeps its own token: pass it in `FABDESK_FAB_CAD_BRIDGE_TOKEN`. A bridge
+from before tokens ignores the header. It is optional: no bundle and no source checkout
 means nothing starts, and a bridge that fails only disables the `cad` toolset (the PCB backend, by
-contrast, is fatal). A bridge already on the port is reused only when it serves the same workspace;
-otherwise a fresh loopback port is used, unless the URL was set explicitly.
+contrast, is fatal). A bridge already on the port is reused only when it serves the same workspace
+and accepts the token; otherwise a fresh loopback port is used, unless the URL was set explicitly.
 
 **Doctor.** `fabdesk-core doctor` lists `fab-cad` next to `fp-pcb` in the bridges line; it is never
 a warning.
