@@ -136,10 +136,16 @@ describe("FabPlane CAD backend", () => {
       hostname: "127.0.0.1",
       fetch(req) {
         const path = new URL(req.url).pathname;
+        const trusted =
+          required === null || req.headers.get("authorization") === `Bearer ${required}`;
+        // As fab_cad#1: an untrusted /health names the bridge but not its workspace.
         if (path === "/health")
-          return Response.json({ name: "@fab-cad/bridge", workspaceRoot: projects });
-        if (required !== null && req.headers.get("authorization") !== `Bearer ${required}`)
-          return Response.json({ error: "unauthorized" }, { status: 401 });
+          return Response.json(
+            trusted
+              ? { ok: true, name: "@fab-cad/bridge", workspaceRoot: projects }
+              : { ok: true, name: "@fab-cad/bridge", uptimeSec: 1 },
+          );
+        if (!trusted) return Response.json({ error: "unauthorized" }, { status: 401 });
         return Response.json({ sessions: [] });
       },
     });

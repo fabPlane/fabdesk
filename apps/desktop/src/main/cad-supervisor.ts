@@ -160,12 +160,14 @@ export class CadSupervisor {
   async start(): Promise<Record<string, string>> {
     const command = this.command;
     if (!command) return {};
-    const existing = await health(command.url);
+    const existing = await health(command.url, command.token);
     // A bridge already running (a previous launch's, or one the user started) is reused only if
-    // it takes this token: an older bridge without auth does, one minted another token does not.
+    // it takes this token: an older bridge without auth does, one minted another token does not
+    // (and answers `/health` without the workspace, so the token is checked first).
     const mismatch = existing
-      ? (cadIdentityMismatch(existing, command) ??
-        ((await acceptsToken(command)) ? null : "it requires a different bridge token"))
+      ? existing.name === "@fab-cad/bridge" && !(await acceptsToken(command))
+        ? "it requires a different bridge token"
+        : cadIdentityMismatch(existing, command)
       : null;
     if (existing && mismatch === null) return coreEnv(command);
     if (existing || (await portTaken(command.url))) {
@@ -185,7 +187,7 @@ export class CadSupervisor {
     });
     const deadline = Date.now() + 30_000;
     for (;;) {
-      const body = await health(command.url);
+      const body = await health(command.url, command.token);
       if (body && cadIdentityMismatch(body, command) === null) break;
       if (this.child.exitCode !== null)
         throw new Error(`FabPlane CAD bridge exited with code ${this.child.exitCode}`);
@@ -229,9 +231,13 @@ async function acceptsToken(command: CadBackendCommand): Promise<boolean> {
   }
 }
 
-async function health(url: string): Promise<BridgeHealth | null> {
+/** The bridge's `/health`; its workspace and FreeCAD fields are only shown to the token. */
+async function health(url: string, token: string): Promise<BridgeHealth | null> {
   try {
-    const response = await fetch(`${url}/health`, { signal: AbortSignal.timeout(750) });
+    const response = await fetch(`${url}/health`, {
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(750),
+    });
     if (!response.ok) return null;
     return (await response.json()) as BridgeHealth;
   } catch {
