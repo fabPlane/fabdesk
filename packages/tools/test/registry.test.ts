@@ -145,6 +145,84 @@ describe("registry", () => {
     expect(reg.inputObject(sync).parse({})).toMatchObject({ apply: true });
   });
 
+  test("pcb_place defaults stale copper handling to keep", () => {
+    const reg = createRegistry();
+    const tool = reg.get("pcb_place")!;
+    expect(
+      reg.inputObject(tool).parse({ placements: [{ reference: "J1", rotation: 180 }] }),
+    ).toMatchObject({ staleCopper: "keep" });
+  });
+
+  test("pcb_place reports stale copper and passes opt-in removal to the design service", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("pcb-place-stale-copper");
+    const base = mockServices([project]);
+    let received: unknown;
+    const services = mockServices([project], {
+      design: {
+        ...base.design,
+        placeFootprints: async (_dir, _placements, options) => {
+          received = options;
+          return {
+            moved: ["J1"],
+            missing: [],
+            staleCopper: {
+              J1: {
+                stale: [
+                  { id: "track-1", kind: "track", net: "A", layer: "F.Cu", pad: "1", locked: true },
+                ],
+                shorted: [
+                  {
+                    id: "track-1",
+                    kind: "track",
+                    net: "A",
+                    layer: "F.Cu",
+                    pad: "2",
+                    padNet: "B",
+                    locked: true,
+                  },
+                ],
+                staleCount: 1,
+                shortedCount: 1,
+                nets: ["A", "B"],
+              },
+            },
+            removedCopper: { ids: ["track-1"], nets: ["A", "B"] },
+            zoneRefill: { refilled: true },
+            libraryNormalized: 0,
+            revision: 4,
+            saved: true,
+          };
+        },
+      },
+    });
+    const result = await reg.invoke(
+      "pcb_place",
+      { placements: [{ reference: "J1", rotation: 180 }], staleCopper: "remove" },
+      (ref) =>
+        contextFactory(
+          services,
+          project,
+        )({
+          def: reg.get("pcb_place")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+    );
+    expect(received).toEqual({ staleCopper: "remove" });
+    expect(result.text).toContain(
+      "J1: 1 stale copper item(s) on 2 net(s); 1 now touch pads of other nets.",
+    );
+    expect(result.text).toContain(
+      "Removed 1 stale copper item(s) in the placement transaction on net(s) A, B; zone refill completed.",
+    );
+    expect(result.json).toMatchObject({
+      removedCopper: { ids: ["track-1"], nets: ["A", "B"] },
+      zoneRefill: { refilled: true },
+    });
+  });
+
   test("v1 tool set and naming", () => {
     const reg = createRegistry();
     const names = reg.list().map((t) => t.name);

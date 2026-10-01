@@ -373,9 +373,31 @@ export type SchematicPcbSyncResult = {
 export type PcbPlacementResult = {
   moved: string[];
   missing: string[];
+  /** Routed copper made stale or shorted by each transformed footprint. */
+  staleCopper?: Record<string, PcbStaleCopperReport>;
+  /** Stale attached fan-out deleted in the placement transaction. */
+  removedCopper?: { ids: string[]; nets: string[] };
+  /** Best-effort refill outcome after stale copper was removed. */
+  zoneRefill?: { refilled: boolean; error?: string };
   libraryNormalized?: number;
   revision: number;
   saved: boolean;
+};
+export type PcbStaleCopperItem = {
+  id: string;
+  kind: "track" | "arc" | "via";
+  net: string;
+  layer?: string;
+  pad: string;
+  locked: boolean;
+};
+export type PcbShortedCopperItem = PcbStaleCopperItem & { padNet: string };
+export type PcbStaleCopperReport = {
+  stale: PcbStaleCopperItem[];
+  shorted: PcbShortedCopperItem[];
+  staleCount: number;
+  shortedCount: number;
+  nets: string[];
 };
 export type PcbFootprintEdit = {
   reference: string;
@@ -504,7 +526,11 @@ export interface DesignService {
     replace: boolean,
   ): Promise<PcbOutlineResult>;
   /** Place native board footprints by reference without touching schematic connectivity. */
-  placeFootprints(projectDir: string, placements: PcbFootprintEdit[]): Promise<PcbPlacementResult>;
+  placeFootprints(
+    projectDir: string,
+    placements: PcbFootprintEdit[],
+    options?: { staleCopper?: "keep" | "remove" },
+  ): Promise<PcbPlacementResult>;
   /** Create and delete explicitly named native board geometry without replacing unrelated items. */
   editBoardGeometry(projectDir: string, edit: PcbGeometryEdit): Promise<PcbGeometryEditResult>;
   /** Canonical board geometry, transformed pads, nets, layers, and applicable clearance data. */
