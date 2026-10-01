@@ -25,28 +25,42 @@ export function jobClassFor(def: ToolDef): JobClass {
   return "default";
 }
 
-export function toolManifest(registry: ToolRegistry): ToolManifestEntry[] {
-  return registry.manifest();
+export function toolManifest(
+  registry: ToolRegistry,
+  allow: (def: ToolDef) => boolean = () => true,
+): ToolManifestEntry[] {
+  const allowed = new Set(registry.list().filter(allow).map((d) => d.name));
+  return registry.manifest().filter((entry) => allowed.has(entry.name));
 }
 
 export type HttpAdapterOptions = {
   registry: ToolRegistry;
   ctxFactory: ContextFactory;
   jobs: JobsLike;
+  /**
+   * Whether this caller may see and call `def`. Refused tools answer 403 `tool_local_only` and
+   * are left out of `/tools/manifest`. Every tool is allowed when omitted.
+   */
+  allowTool?: (def: ToolDef, token: string | undefined) => boolean;
 };
 
 export type HttpEnv = { Variables: { token?: string; principalSubject?: string } };
 
 export function toolRoutes(opts: HttpAdapterOptions): Hono<HttpEnv> {
   const { registry, ctxFactory, jobs } = opts;
+  const allowTool = opts.allowTool ?? (() => true);
   const app = new Hono<HttpEnv>();
 
-  app.get("/tools/manifest", (c) => c.json(toolManifest(registry)));
+  app.get("/tools/manifest", (c) => {
+    const token = c.get("token");
+    return c.json(toolManifest(registry, (def) => allowTool(def, token)));
+  });
 
   app.post("/tools/:name", async (c) => {
     const name = c.req.param("name");
     const def = registry.get(name);
     if (!def) return c.json({ error: `unknown tool ${name}` }, 404);
+    if (!allowTool(def, c.get("token"))) return c.json({ error: "tool_local_only" }, 403);
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
     const args = (body["args"] && typeof body["args"] === "object" ? { ...(body["args"] as Record<string, unknown>), ...(body["project"] ? { project: body["project"] } : {}) } : body) as Record<string, unknown>;
     const sync = c.req.query("sync") === "1" || body["sync"] === true;

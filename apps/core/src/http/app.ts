@@ -792,7 +792,17 @@ export function createApp(deps: AppDeps): Hono<Env> {
   /* ---------- tools & jobs ---------- */
   app.route(
     "/",
-    toolRoutes({ registry: deps.registry, ctxFactory: deps.ctxFactory, jobs: deps.jobs }),
+    toolRoutes({
+      registry: deps.registry,
+      ctxFactory: deps.ctxFactory,
+      jobs: deps.jobs,
+      // Tools that run arbitrary code on the host (cad_python, app_eval) are for the desktop
+      // over loopback only: not the remote listener, and not device tokens (paired phones, which
+      // also covers everything arriving through the relay).
+      allowTool: (def, token) =>
+        !def.localOnly ||
+        (deps.listener === "local" && deps.tokens.lookup(token)?.kind !== "device"),
+    }),
   );
   app.get("/jobs", (c) =>
     c.json(deps.jobs.list().length ? deps.jobs.list() : deps.store.jobs.list()),

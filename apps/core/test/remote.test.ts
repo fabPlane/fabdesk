@@ -239,6 +239,29 @@ describe("remote listener", () => {
     }
   });
 
+  test("refuses tools that run arbitrary host code, and leaves them out of its manifest", async () => {
+    for (const name of ["cad_python", "app_eval"]) {
+      const res = await fetch(`${remoteUrl}/tools/${name}?sync=1`, {
+        method: "POST",
+        headers: H(),
+        body: JSON.stringify({ code: "1+1" }),
+      });
+      expect({ name, status: res.status, body: await res.json() }).toEqual({
+        name,
+        status: 403,
+        body: { error: "tool_local_only" },
+      });
+    }
+    const names = (await (await fetch(`${remoteUrl}/tools/manifest`, { headers: H() })).json()) as Array<{ name: string }>;
+    expect(names.map((t) => t.name)).not.toContain("cad_python");
+    expect(names.map((t) => t.name)).toContain("project_read_file");
+    // The desktop over loopback still reaches them (they fail later, for want of a CAD session).
+    const localRes = await local("/tools/cad_python?sync=1", { method: "POST", body: JSON.stringify({ code: "1+1" }) });
+    expect(localRes.status).not.toBe(403);
+    const localNames = (await (await local("/tools/manifest")).json()) as Array<{ name: string }>;
+    expect(localNames.map((t) => t.name)).toContain("cad_python");
+  });
+
   test("turning the setting off unbinds it", async () => {
     await local("/settings", {
       method: "PATCH",
@@ -289,6 +312,33 @@ describe("pairing over http", () => {
     const devices = (await (await local("/v1/devices")).json()) as Device[];
     expect(devices.map((d) => d.id)).toContain(claim.device.id);
     expect(devices.find((d) => d.id === claim.device.id)?.lastSeenAt).not.toBeNull();
+  });
+
+  test("a device token cannot call local-only tools, even over loopback", async () => {
+    const start = (await (
+      await local("/v1/devices/pair/start", { method: "POST" })
+    ).json()) as PairStartResult;
+    const claim = (await (
+      await fetch(`${remoteUrl}/v1/devices/pair/claim`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ pairingToken: start.pairingToken, label: "Tool phone", platform: "ios" }),
+      })
+    ).json()) as PairClaimResult;
+    const asDevice = { authorization: `Bearer ${claim.deviceToken}`, "content-type": "application/json" };
+    // The loopback listener is where relay traffic lands too; the device token is what refuses it.
+    const res = await fetch(`${daemon.url}/tools/cad_python?sync=1`, {
+      method: "POST",
+      headers: asDevice,
+      body: JSON.stringify({ code: "import os" }),
+    });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "tool_local_only" });
+    const names = (await (await fetch(`${daemon.url}/tools/manifest`, { headers: asDevice })).json()) as Array<{ name: string }>;
+    expect(names.map((t) => t.name)).not.toContain("cad_python");
+    expect(names.map((t) => t.name)).not.toContain("app_eval");
+    // Ordinary tools still work for the phone.
+    expect((await fetch(`${daemon.url}/tools/load_toolset`, { method: "POST", headers: asDevice, body: JSON.stringify({ toolset: "cad" }) })).status).not.toBe(403);
   });
 
   test("the event socket admits a native client's own-host Origin and nothing foreign", async () => {

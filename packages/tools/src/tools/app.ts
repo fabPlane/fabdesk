@@ -573,6 +573,8 @@ export const app_eval = defineTool({
     openWorldHint: true,
     idempotentHint: false,
   },
+  // Arbitrary JavaScript in the renderer, which reaches the host bridge: desktop over loopback only.
+  localOnly: true,
   handler: async ({ code, timeoutMs, windowId }, ctx) => {
     // Arbitrary JavaScript reaches the host bridge too: an agent once called
     // `window.fabdesk.restartCore()` from here and killed every run, its own included.

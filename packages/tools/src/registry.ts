@@ -136,6 +136,12 @@ export type ToolDef<I extends z.ZodRawShape = z.ZodRawShape> = {
   mcpHeartbeat?: boolean;
   /** `project` tools accept an optional `project` argument (id or path) and require one at runtime. */
   scope?: "project" | "global";
+  /**
+   * Runs arbitrary code on the host (FreeCAD Python, renderer JavaScript). Served only to the
+   * desktop over loopback: adapters reachable from paired phones, the relay or the tailnet refuse
+   * it (HTTP: 403 `tool_local_only`) and leave it out of their manifests.
+   */
+  localOnly?: boolean;
   handler: ToolHandler<I>;
 };
 
