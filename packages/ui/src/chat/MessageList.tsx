@@ -333,7 +333,7 @@ export function MessageList({
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   }, [messages]);
   const lastId = messages.findLast((message) => message.role === "assistant")?.id;
-  const visibleMessages = messages;
+  const visibleMessages = messages.filter((message) => message.status !== "queued");
   const lastRole = visibleMessages[visibleMessages.length - 1]?.role;
   return (
     <div ref={ref} className="min-h-0 flex-1 overflow-y-auto px-5 py-6">
