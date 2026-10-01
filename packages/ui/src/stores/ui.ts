@@ -8,7 +8,7 @@ export const BOARD_TAB_LABELS: Record<BoardTab, string> = {
   schematic: "Schematic",
   pcb: "PCB",
   cinema: "Route Cinema",
-  "3d": "3D",
+  "3d": "3D export",
   drc: "DRC/ERC",
   renders: "Renders",
   files: "Files",
@@ -130,7 +130,7 @@ export const useUiStore = create<UiState>()(
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
   setBoardOpen: (boardOpen) => set({ boardOpen }),
   setActiveThread: (activeThreadId) => set({ activeThreadId, ...(activeThreadId ? { activeOpenSourceId: null, orderFlowOpen: false, inventoryOpen: false } : {}) }),
-  setActiveProject: (activeProjectId) => set({ activeProjectId }),
+  setActiveProject: (activeProjectId) => set((s) => ({ activeProjectId, ...(activeProjectId !== s.activeProjectId ? { activeThreadId: null, activeOpenSourceId: null, orderFlowOpen: false, inventoryOpen: false } : {}) })),
   startNewChatInProject: (projectId) =>
     set((s) => ({ ...newChatInProjectState(projectId), composerFocusNonce: s.composerFocusNonce + 1 })),
   setSidebarListTab: (sidebarListTab) => set({ sidebarListTab: normalizeSidebarListTab(sidebarListTab) }),

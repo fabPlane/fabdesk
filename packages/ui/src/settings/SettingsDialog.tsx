@@ -1,16 +1,18 @@
 import type { AgentId, Settings } from "@fabdesk/protocol";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Badge, Button, Dialog, Input, Select, Spinner } from "../components/ui";
 import { useCore } from "@fabdesk/client-core";
 import { useCloudStatus, useDoctor, usePatchSettings, useSettings } from "@fabdesk/client-core";
 import { dashboardUrlFor } from "@fabdesk/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { shortcutList } from "../hooks/useShortcuts";
-import { isThemeId, THEME_IDS, THEME_LABELS, useTheme } from "../hooks/useTheme";
+import { THEME_IDS, THEME_LABELS, useTheme } from "../hooks/useTheme";
+import { THEME_BACKGROUNDS, THEME_PANELS, THEME_FOREGROUNDS } from "../theme/resolve";
 import { useAuthStore } from "@fabdesk/client-core";
 import { RemoteSection } from "./RemoteSection";
 import { SETTINGS_SECTIONS, useUiStore, type SettingsSection } from "../stores/ui";
 import { cn } from "../util";
+import { InstallHint } from "../components/InstallHint";
 
 const LABELS: Record<SettingsSection, string> = {
   agents: "Agents",
@@ -28,10 +30,10 @@ const DEFAULT_AGENT: AgentSettings = { binaryPath: null, model: null, permission
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
-    <label className="grid grid-cols-[180px_1fr] items-center gap-3 py-1.5 text-xs">
+    <label className="fd-settings-row grid grid-cols-[180px_minmax(0,1fr)] items-center gap-4 py-2 text-[13px]">
       <span>
         <span className="font-medium">{label}</span>
-        {hint && <span className="block text-[11px] text-muted">{hint}</span>}
+        {hint && <span className="mt-0.5 block text-[11px] leading-4 text-muted">{hint}</span>}
       </span>
       {children}
     </label>
@@ -45,6 +47,9 @@ export function SettingsDialog() {
   const requestedSection = useUiStore((s) => s.settingsSection);
   const themeId = useTheme();
   const setThemeId = useUiStore((s) => s.setThemeId);
+  const storedTheme = useUiStore((s) => s.themeId);
+  const originalTheme = useRef(storedTheme);
+  const [confirmClose, setConfirmClose] = useState(false);
   const [section, setSection] = useState<SettingsSection>("agents");
   useEffect(() => {
     if (open && requestedSection) setSection(requestedSection);
@@ -56,32 +61,36 @@ export function SettingsDialog() {
   // Settings can change behind the dialog's back (PATCH /settings from an agent or a script); re-read them on
   // every open so the draft, and a later Save, start from what the core actually has.
   useEffect(() => {
-    if (open) void settings.refetch();
+    if (!open) return;
+    originalTheme.current = useUiStore.getState().themeId;
+    setDraft(null);
+    let active = true;
+    void settings.refetch().then((result) => { if (active && result.data) setDraft(structuredClone(result.data)); });
+    return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
-  useEffect(() => {
-    if (open && settings.data) setDraft(structuredClone(settings.data));
-  }, [open, settings.data]);
 
   const update = (fn: (s: Settings) => Settings) => setDraft((d) => (d ? fn(d) : d));
   const updateAgent = (id: string, p: Partial<AgentSettings>) =>
     update((s) => ({ ...s, agents: { ...s.agents, [id]: { ...(s.agents[id] ?? DEFAULT_AGENT), ...p } } }));
-  const dirty = !!draft && !!settings.data && JSON.stringify(draft) !== JSON.stringify(settings.data);
+  const dirty = (!!draft && !!settings.data && JSON.stringify(draft) !== JSON.stringify(settings.data)) || storedTheme !== originalTheme.current;
+  const reset = () => { if (settings.data) setDraft(structuredClone(settings.data)); setThemeId(originalTheme.current); };
+  const close = () => { if (patch.isPending) return; if (dirty) setConfirmClose(true); else setOpen(false); };
   const save = () => {
-    if (draft) patch.mutate(draft);
+    if (draft) patch.mutate(draft, { onSuccess: () => { originalTheme.current = useUiStore.getState().themeId; } });
   };
 
   return (
-    <Dialog open={open} onClose={() => setOpen(false)} title="Settings" className="h-[80vh] w-[860px]">
-      <div className="flex h-full gap-4">
-        <nav className="w-40 shrink-0">
+    <><Dialog open={open} onClose={close} title="Settings" className="fd-settings h-[80vh] w-[860px]">
+      <div className="fd-settings-layout flex min-h-0 flex-1 gap-6">
+        <nav className="w-40 shrink-0 overflow-y-auto border-r border-border pr-3" aria-label="Settings sections">
           {SETTINGS_SECTIONS.map((s) => (
             <button
               key={s}
               onClick={() => setSection(s)}
               className={cn(
-                "block w-full rounded-md px-2.5 py-1.5 text-left text-[13px]",
-                s === section ? "bg-panel-2 font-medium" : "text-muted hover:text-fg",
+                "mb-0.5 block min-h-9 w-full rounded-lg px-3 py-2 text-left text-[13px] transition-colors",
+                s === section ? "bg-panel-2 font-semibold text-fg" : "text-muted hover:bg-panel-2/50 hover:text-fg",
               )}
             >
               {LABELS[s]}
@@ -89,7 +98,8 @@ export function SettingsDialog() {
           ))}
         </nav>
         <div className="min-w-0 flex-1 overflow-auto pr-1">
-          {!draft ? (
+          <h2 className="mb-5 text-xl font-semibold tracking-tight">{LABELS[section]}</h2>
+          {!draft && settings.isError ? <div role="alert" className="text-sm text-danger">Could not load settings. Close and reopen Settings to retry.</div> : !draft ? (
             <Spinner />
           ) : section === "agents" ? (
             <div className="space-y-4">
@@ -115,7 +125,7 @@ export function SettingsDialog() {
                       )}
                       {a.path && <span className="truncate font-mono text-[11px] text-muted">{a.path}</span>}
                     </div>
-                    {!a.installed && <div className="mb-2 text-xs text-muted">{a.installHint}</div>}
+                    {!a.installed && <div className="mb-2"><InstallHint text={a.installHint} /></div>}
                     <Row label="Binary path" hint="Leave empty to use PATH">
                       <Input value={cfg.binaryPath ?? ""} onChange={(e) => updateAgent(a.id, { binaryPath: e.target.value || null })} placeholder={a.path ?? "auto-detect"} />
                     </Row>
@@ -200,23 +210,23 @@ export function SettingsDialog() {
           ) : section === "remote" ? (
             <RemoteSection />
           ) : section === "appearance" ? (
-            <Row label="Theme" hint="fabPlane themes match fabplane.com; the System themes are the neutral light/dark look. Stored on this device.">
-              <Select
-                value={themeId}
-                onChange={(e) => {
-                  const id = e.target.value;
-                  if (!isThemeId(id)) return;
-                  setThemeId(id);
-                  update((s) => ({ ...s, theme: id.endsWith("-dark") ? "dark" : "light" }));
-                }}
-              >
-                {THEME_IDS.map((id) => (
-                  <option key={id} value={id}>
-                    {THEME_LABELS[id]}
-                  </option>
-                ))}
-              </Select>
-            </Row>
+            <fieldset>
+              <legend className="text-[13px] font-medium">Theme</legend>
+              <p className="mb-5 mt-1 text-xs leading-5 text-muted">Choose FabPlane's signature palette or a neutral System theme. Your choice is stored on this device.</p>
+              <div className="fd-theme-options">
+                {THEME_IDS.map((id) => <label key={id} className="fd-theme-option">
+                  <input type="radio" name="appearance-theme" value={id} checked={themeId === id} onChange={() => {
+                    setThemeId(id);
+                    update((s) => ({ ...s, theme: id.endsWith("-dark") ? "dark" : "light" }));
+                  }} />
+                  <span className="fd-theme-preview" style={{ background: THEME_BACKGROUNDS[id], color: THEME_FOREGROUNDS[id] }} aria-hidden="true">
+                    <span className="fd-theme-preview-sidebar" style={{ background: THEME_PANELS[id] }}><i /><i /><i /></span>
+                    <span className="fd-theme-preview-chat"><i /><i /><b style={{ background: id.startsWith("plain") ? "#a78bfa" : "#addb75" }} /></span>
+                  </span>
+                  <span className="fd-theme-name">{THEME_LABELS[id]}<span className="fd-theme-check" aria-hidden="true" /></span>
+                </label>)}
+              </div>
+            </fieldset>
           ) : section === "privacy" ? (
             <div>
               <Row label="Error reporting" hint="Send crash and error reports to Sentry so bugs get fixed. Reports carry no prompts, board files, tokens or project paths. Turning this off applies immediately; turning it back on applies after a restart.">
@@ -241,10 +251,10 @@ export function SettingsDialog() {
         </div>
       </div>
       {section !== "auth" && section !== "remote" && section !== "shortcuts" && (
-        <div className="mt-3 flex items-center justify-end gap-2 border-t border-border pt-3">
+        <div className="mt-4 flex shrink-0 items-center justify-end gap-2 border-t border-border pt-4">
           {patch.isError && <span className="mr-auto text-xs text-danger">{(patch.error as Error).message}</span>}
           {patch.isSuccess && !dirty && <span className="mr-auto text-xs text-success">Saved</span>}
-          <Button onClick={() => settings.data && setDraft(structuredClone(settings.data))} disabled={!dirty}>
+          <Button onClick={reset} disabled={!dirty || patch.isPending}>
             Reset
           </Button>
           <Button variant="primary" onClick={save} disabled={!dirty || patch.isPending}>
@@ -253,6 +263,13 @@ export function SettingsDialog() {
         </div>
       )}
     </Dialog>
+    <Dialog open={open && confirmClose} onClose={() => setConfirmClose(false)} title="Unsaved changes" className="w-[420px]">
+      <p className="text-sm text-muted">Keep editing to save your changes, or discard them and close Settings.</p>
+      <div className="mt-5 flex flex-wrap justify-end gap-3">
+        <Button onClick={() => { reset(); setConfirmClose(false); setOpen(false); }}>Discard changes</Button>
+        <Button variant="primary" onClick={() => setConfirmClose(false)}>Keep editing</Button>
+      </div>
+    </Dialog></>
   );
 }
 

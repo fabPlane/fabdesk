@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { BOARD_TABS, BOARD_TAB_LABELS, SIDEBAR_LIST_TABS, SIDEBAR_LIST_TAB_LABELS, newChatInProjectState, normalizeSidebarListTab } from "./ui";
+import { BOARD_TABS, BOARD_TAB_LABELS, SIDEBAR_LIST_TABS, SIDEBAR_LIST_TAB_LABELS, newChatInProjectState, normalizeSidebarListTab, useUiStore } from "./ui";
 
 describe("sidebar list tabs", () => {
   test("exposes Projects and Open source (Parts Inventory lives in the user menu)", () => {
@@ -36,5 +36,30 @@ describe("board tabs", () => {
   test("the shopping list is the last board tab", () => {
     expect(BOARD_TABS.at(-1)).toBe("bom");
     expect(BOARD_TAB_LABELS.bom).toBe("Shopping list");
+  });
+});
+
+describe("project context", () => {
+  test("switching projects clears the previous conversation and project-specific screens", () => {
+    const previous = useUiStore.getState();
+    try {
+      useUiStore.setState({ activeProjectId: "a", activeThreadId: "chat-a", orderFlowOpen: true, inventoryOpen: true, activeOpenSourceId: "catalog-a" });
+      useUiStore.getState().setActiveProject("b");
+      const state = useUiStore.getState();
+      expect(state.activeProjectId).toBe("b");
+      expect(state.activeThreadId).toBeNull();
+      expect(state.activeOpenSourceId).toBeNull();
+      expect(state.orderFlowOpen).toBe(false);
+      expect(state.inventoryOpen).toBe(false);
+    } finally { useUiStore.setState(previous); }
+  });
+
+  test("toggling the current project's folder preserves its open conversation", () => {
+    const previous = useUiStore.getState();
+    try {
+      useUiStore.setState({ activeProjectId: "a", activeThreadId: "chat-a" });
+      useUiStore.getState().setActiveProject("a");
+      expect(useUiStore.getState().activeThreadId).toBe("chat-a");
+    } finally { useUiStore.setState(previous); }
   });
 });

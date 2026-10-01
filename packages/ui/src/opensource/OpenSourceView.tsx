@@ -50,7 +50,7 @@ export function OpenSourceView() {
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-bg" data-testid="opensource-view">
-      <div className="flex h-10 items-center justify-between gap-2 border-b border-border px-4">
+      <div className="fd-screen-header flex items-center justify-between gap-2 border-b border-border px-4">
         <div className="min-w-0">
           <div className="truncate text-sm font-medium">{entry.name}</div>
           <div className="truncate text-[11px] text-muted">
@@ -76,7 +76,7 @@ export function OpenSourceView() {
           </div>
         )}
       </div>
-      {entry.description && <div className="border-t border-border px-4 py-3 text-[13px] text-muted">{entry.description}</div>}
+      {entry.description && <div className="max-h-40 shrink-0 overflow-auto break-words border-t border-border px-4 py-3 text-[13px] text-muted">{entry.description}</div>}
       {remix.isError && (
         <div className="border-t border-danger/40 bg-danger/10 px-4 py-2 text-xs text-danger">
           {(remix.error as Error).message}

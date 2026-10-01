@@ -1,7 +1,9 @@
 import type { AgentId, Thread } from "@fabdesk/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Button, IconButton, Kbd, Textarea } from "../components/ui";
+import { Button, IconButton, Textarea } from "../components/ui";
+import { Icon } from "../components/Icon";
+import { InstallHint } from "../components/InstallHint";
 import { useCore } from "@fabdesk/client-core";
 import { useDoctor, useSettings } from "@fabdesk/client-core";
 import { useRunsStore } from "@fabdesk/client-core";
@@ -39,6 +41,7 @@ const FALLBACK_AGENTS = [
 const EMPTY: never[] = [];
 
 export function Composer({ thread, onCreateThread }: ComposerProps) {
+  const agentButtonRef = useRef<HTMLButtonElement>(null);
   const { client, host } = useCore();
   const qc = useQueryClient();
   const draftKey = thread?.id ?? DRAFT_KEY_NEW;
@@ -162,14 +165,14 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
       : "Pick or create a project, then describe the board...";
 
   return (
-    <div className="border-t border-border bg-bg px-4 pb-3 pt-2">
+    <div className="fd-composer-dock bg-bg px-5 pb-4 pt-3">
       <div className="mx-auto max-w-3xl">
         {pending.length > 0 && (
           <div className="mb-2 flex flex-wrap gap-1.5">
             {pending.map((a) => (
               <span
                 key={a.path}
-                className="inline-flex items-center gap-1 rounded-full border border-border bg-panel px-2 py-0.5 text-xs"
+                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-panel px-2.5 py-1 text-xs"
               >
                 <span className="text-muted">{a.mime.startsWith("image/") ? "img" : "file"}</span> {a.label}
                 <button
@@ -202,12 +205,12 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
             ))}
           </div>
         )}
-        <div className="rounded-xl border border-border bg-panel shadow-sm focus-within:border-accent">
+        <div className="fd-composer rounded-xl border border-border bg-panel transition-colors focus-within:border-accent">
           <Textarea
             ref={textareaRef}
             value={draft}
             placeholder={placeholder}
-            className="h-[44px] max-h-[240px] min-h-[44px] overflow-y-auto border-0 bg-transparent px-3.5 py-2.5 focus:border-0"
+            className="h-[52px] max-h-[240px] min-h-[52px] overflow-y-auto border-0 bg-transparent px-4 py-3 text-sm leading-6 focus:border-0"
             rows={1}
             onChange={(e) => setDraft(draftKey, e.target.value)}
             onKeyDown={(e) => {
@@ -217,21 +220,23 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
               }
             }}
           />
-          <div className="flex items-center gap-1.5 px-2 pb-2">
-            <div className="relative">
+          <div className="fd-composer-toolbar flex flex-wrap items-center gap-1.5 px-2.5 py-2">
+            <div className="fd-agent-control relative min-w-0">
               <Button
+                ref={agentButtonRef}
                 variant="ghost"
                 size="sm"
-                className="h-7 max-w-[280px] truncate font-normal"
-                title={`Agent & model (${mod}/)`}
+                className="fd-agent-button h-8 max-w-full font-medium"
+                title={`Agent & model (${mod} + /)`}
                 onClick={() => setAgentPickerOpen(!agentPickerOpen)}
                 aria-haspopup="menu"
                 aria-expanded={agentPickerOpen}
                 data-testid="agent-model"
               >
-                {agentModelLabel(pickerAgents.find((a) => a.id === agentId), agentId, model)} <span className="text-muted">&#9662;</span>
+                <span className="min-w-0 truncate">{agentModelLabel(pickerAgents.find((a) => a.id === agentId), agentId, model)}</span> <Icon name="chevronDown" width={13} height={13} className="shrink-0" />
               </Button>
               <AgentModelMenu
+                anchorRef={agentButtonRef}
                 open={agentPickerOpen}
                 onClose={() => setAgentPickerOpen(false)}
                 agents={pickerAgents}
@@ -247,42 +252,52 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
               />
             </div>
             <IconButton title="Attach file" onClick={() => void pickFiles()}>
-              +
+              <Icon name="paperclip" />
             </IconButton>
             <Button
               variant="ghost"
               size="sm"
-              title={`Sketch (${mod}Shift+S)`}
+              className="fd-sketch-button"
+              aria-label="Sketch"
+              title={`Sketch (${mod} + Shift + S)`}
               onClick={() => setSketchOpen(true)}
               disabled={!projectId}
             >
-              Sketch
+              <Icon name="compose" width={16} height={16} /><span className="fd-action-label">Sketch</span>
             </Button>
             <div className="ml-auto flex items-center gap-2">
               {run ? (
-                <Button variant="danger" size="sm" onClick={() => void client.abort(run.threadId)} title={`Abort (${mod}.)`}>
-                  &#9632; Stop
+                <Button variant="danger" size="sm" onClick={() => void client.abort(run.threadId)} title={`Abort (${mod} + .)`}>
+                  <Icon name="stop" width={14} height={14} /> Stop
                 </Button>
               ) : (
                 <Button
                   variant="primary"
                   size="sm"
+                  aria-label={sending ? "Sending message" : "Send message"}
                   onClick={() => void send()}
                   disabled={!draft.trim() || sending}
-                  title={`Send (${mod}Enter)`}
+                  title={`Send (${mod} + Enter)`}
                 >
-                  {sending ? "Sending..." : "Send"} <Kbd>&#8629;</Kbd>
+                  <span className="fd-action-label">{sending ? "Sending..." : "Send"}</span> <Icon name="send" width={14} height={14} />
                 </Button>
               )}
             </div>
           </div>
         </div>
         {agentMissing && selectedAgent && (
-          <div className="mt-1.5 text-xs text-warning">
-            {selectedAgent.displayName} is not installed. {selectedAgent.installHint}
-          </div>
+          <details className="fd-setup-notice mt-2 rounded-lg border border-warning/25 bg-warning/5 text-xs leading-5 text-warning">
+            <summary className="flex cursor-pointer items-center gap-2 px-3 py-2">
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />
+              <span className="min-w-0 flex-1 truncate">{selectedAgent.displayName} is not installed</span>
+              <span className="shrink-0 font-medium">Setup instructions</span>
+              <Icon name="chevronDown" width={14} height={14} className="fd-setup-chevron shrink-0 transition-transform" />
+            </summary>
+            <div className="border-t border-warning/20 px-3 py-2"><InstallHint text={selectedAgent.installHint} /></div>
+          </details>
         )}
-        {error && <div className="mt-1.5 text-xs text-danger">{error}</div>}
+        {error && <div className="mt-2 rounded-lg border border-danger/25 bg-danger/5 px-3 py-2 text-xs text-danger">{error}</div>}
+        <div className="fd-composer-hint"><span>Enter to send</span><span>Shift + Enter for a new line</span></div>
       </div>
     </div>
   );

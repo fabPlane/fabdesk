@@ -2,6 +2,7 @@ import type { Message, MessagePart, Thread } from "@fabdesk/protocol";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Spinner } from "../components/ui";
+import { Icon } from "../components/Icon";
 import { useCoreClient } from "@fabdesk/client-core";
 import { useRunsStore } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
@@ -39,19 +40,19 @@ export function ToolGroup({
   const images = calls.flatMap((c) => (c.result ? extractImages(c.result.output) : []));
   const label = `${calls.length} tool call${calls.length === 1 ? "" : "s"}`;
   return (
-    <div className="my-1 text-xs" data-testid="tool-group">
+    <div className="fd-tool-group my-2 overflow-hidden rounded-lg border border-border/70 bg-panel/70 text-xs" data-testid="tool-group">
       <button
         type="button"
         className={cn(
-          "flex w-full items-center gap-2 rounded px-1 py-0.5 text-left text-muted hover:bg-panel-2/60",
+          "flex min-h-9 w-full items-center gap-2 px-3 py-2 text-left text-muted hover:bg-panel-2/60",
           open && "text-fg",
         )}
         onClick={() => setOpen((o) => !o)}
         title={open ? "Hide tool calls" : "Show tool calls"}
         aria-expanded={open}
       >
-        <span className={cn("inline-block transition-transform", open && "rotate-90")}>
-          &#9656;
+        <span className={cn("inline-block -rotate-90 transition-transform", open && "rotate-0")}>
+          <Icon name="chevronDown" width={14} height={14} />
         </span>
         <span>{label}</span>
         {errors > 0 && (
@@ -75,7 +76,7 @@ export function ToolGroup({
         )}
       </button>
       {!open && images.length > 0 && (
-        <div className="flex flex-wrap gap-2 px-1 pt-1">
+        <div className="flex flex-wrap gap-2 border-t border-border/60 px-3 py-2">
           {images.map((img, i) =>
             img.kind === "data" ? (
               <img
@@ -91,7 +92,7 @@ export function ToolGroup({
         </div>
       )}
       {open && (
-        <div className="pl-1">
+        <div className="border-t border-border/60 px-3 py-2">
           {calls.map((c, i) => (
             <ToolCallCard key={c.use.id || i} use={c.use} result={c.result} />
           ))}
@@ -178,7 +179,7 @@ export function MessageBubble({ message, streaming }: { message: Message; stream
   const isUser = message.role === "user";
   if (message.role === "system") {
     return (
-      <div className="mx-auto my-2 max-w-xl text-center text-xs text-muted">
+      <div className="mx-auto my-3 max-w-xl text-center text-xs text-muted">
         {message.contentMd}
       </div>
     );
@@ -193,15 +194,16 @@ export function MessageBubble({ message, streaming }: { message: Message; stream
     <div className={cn("group flex w-full", isUser ? "justify-end" : "justify-start")}>
       <div
         className={cn(
-          "relative max-w-[85%] text-[13.5px]",
+          "relative min-w-0 text-sm leading-[1.75] [overflow-wrap:anywhere]",
           isUser
-            ? "whitespace-pre-wrap rounded-2xl rounded-br-md bg-accent/15 px-3.5 py-2"
-            : "w-full",
+            ? "fd-user-message max-w-[90%] rounded-2xl rounded-br-md border border-border/60 bg-panel-2/60 px-4 py-3"
+            : "w-full max-w-full",
         )}
       >
+        {!isUser && <div className="mb-3 flex items-center gap-2 text-[11px] font-medium text-muted"><span className="h-1.5 w-1.5 rounded-full bg-accent" />Agent{streaming && <span className="text-accent">· Working</span>}</div>}
         {isUser ? (
           <>
-            {message.contentMd}
+            {message.contentMd && <div className="whitespace-pre-wrap">{message.contentMd}</div>}
             {/* A photo attached on the phone arrives as an image part next to the text. */}
             {message.parts
               .filter((p) => p.type === "image")
@@ -222,14 +224,16 @@ export function MessageBubble({ message, streaming }: { message: Message; stream
             <Spinner /> waiting for the agent...
           </div>
         )}
-        <div
+        <time
+          dateTime={message.createdAt}
+          title={new Date(message.createdAt).toLocaleString()}
           className={cn(
-            "mt-0.5 text-[10px] text-muted opacity-0 transition-opacity group-hover:opacity-100",
-            isUser && "text-right",
+            "pointer-events-none absolute top-full mt-0.5 whitespace-nowrap text-[11px] leading-4 text-muted opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100",
+            isUser ? "right-0" : "left-0",
           )}
         >
           {formatRelative(message.createdAt)}
-        </div>
+        </time>
       </div>
     </div>
   );
@@ -286,8 +290,8 @@ export function MessageList({
   const lastId = messages[messages.length - 1]?.id;
   const lastRole = messages[messages.length - 1]?.role;
   return (
-    <div ref={ref} className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-      <div className="mx-auto flex max-w-3xl flex-col gap-4">
+    <div ref={ref} className="min-h-0 flex-1 overflow-y-auto px-5 py-6">
+      <div className="mx-auto flex max-w-3xl flex-col gap-5">
         {thread && <BranchHeader thread={thread} />}
         {loading && messages.length === 0 && (
           <div className="flex justify-center py-8">
