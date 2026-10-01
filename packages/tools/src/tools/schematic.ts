@@ -1,6 +1,7 @@
 /** Native KiCad schematic-first authoring and forward annotation. */
 import { z } from "zod/v4";
 import { ToolError, defineTool } from "../registry";
+import { selectSchematic } from "./schematic-selection";
 import { compactHierarchy, inspectSavedHierarchy, ok, table, writeReport } from "./common";
 import {
   formatKicadIpcSessionDiagnostics,
@@ -17,7 +18,7 @@ export const schematic_inspect = defineTool({
   toolset: "circuit",
   title: "Inspect native schematic",
   description:
-    "Inspect the complete saved native schematic hierarchy. The default is a compact packaged-KiCad project summary; request authoring or full for bounded live KiCad IPC details on the root/current or one selected sheet. Live session diagnostics are never presented as saved-file ERC.",
+    "Inspect selected native schematic objects using the union of references, netNames and objectIds; optional expand=nets includes their connected electrical objects. Pins are absolute sheet millimetres. Reuse wire.start/end and label.position in schematic_edit; junctions use junction.position as {x,y}, deleteItemIds uses object.id. Inspect-to-edit: {junctions:[result.junctions[0].position],deleteItemIds:[result.wires[0].id],sheet:result.scope.identity}. Selectors request object detail even with summary. Inspect the complete saved native schematic hierarchy. The default is a compact packaged-KiCad project summary; request authoring or full for bounded live KiCad IPC details on the root/current or one selected sheet. Live session diagnostics are never presented as saved-file ERC.",
   inputSchema: {
     detail: z
       .enum(["summary", "authoring", "full"])
@@ -30,7 +31,40 @@ export const schematic_inspect = defineTool({
       .min(1)
       .optional()
       .describe(
-        "For authoring/full detail, select one hierarchy path, sheet name, or native filename",
+        "For authoring/full detail, select inspected scope.identity (uuid:path), or one unambiguous hierarchy path, sheet name, or native filename",
+      ),
+    references: z
+      .array(z.string().min(1))
+      .max(200)
+      .default([])
+      .describe("Component references on selected sheet; union with netNames and objectIds"),
+    netNames: z
+      .array(z.string().min(1))
+      .max(200)
+      .default([])
+      .describe("Exact project net names; includes connected physical objects on selected sheet"),
+    objectIds: z
+      .array(z.string().min(1))
+      .max(1000)
+      .default([])
+      .describe("Inspected native IDs on selected sheet; union with other selectors"),
+    kinds: z
+      .array(z.enum(["symbols", "pins", "wires", "labels", "junctions", "noConnects", "texts"]))
+      .default(["symbols", "pins", "wires", "labels", "junctions", "noConnects", "texts"]),
+    expand: z
+      .enum(["none", "nets"])
+      .default("none")
+      .describe(
+        "nets includes complete electrical nets of reference/ID seeds on the selected sheet, without adding other pins of connected symbols",
+      ),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(10000)
+      .optional()
+      .describe(
+        "Native object budget including pins/containers. Default: 1000 for targeted calls; unlimited for untargeted full/authoring calls. Explicit limits report truncation",
       ),
     sheetOffset: z
       .number()
@@ -52,23 +86,59 @@ export const schematic_inspect = defineTool({
     openWorldHint: false,
     idempotentHint: true,
   },
-  handler: async ({ detail, sheet, sheetOffset, sheetLimit }, ctx) => {
+  handler: async (
+    {
+      detail,
+      sheet,
+      sheetOffset,
+      sheetLimit,
+      references,
+      netNames,
+      objectIds,
+      kinds,
+      expand,
+      limit,
+    },
+    ctx,
+  ) => {
     const project = ctx.requireProject();
     const hierarchy = await inspectSavedHierarchy(ctx, project);
     const hierarchyResult = compactHierarchy(hierarchy, sheetOffset, sheetLimit);
-    if (detail === "summary") {
+    const targeted = references.length + netNames.length + objectIds.length > 0;
+    if (detail === "summary" && !targeted) {
       const text = `Complete saved hierarchy ${hierarchy.complete ? "COMPLETE" : "INCOMPLETE"} at ${hierarchy.aggregateRevision}: ${hierarchy.counts.components} components, ${hierarchy.counts.nets} nets, ${hierarchy.counts.sheets} sheets; ${hierarchy.orphanFiles.length} orphan schematic file(s). Evidence: packaged-kicad-cli saved-file netlist; no live IPC authoring details requested.`;
       return {
         text,
         json: {
-          contract: { name: "fabdesk.schematic-inspection", version: "3.0.0" },
+          contract: { name: "fabdesk.schematic-inspection", version: "4.0.0" },
           scope: "complete-saved-hierarchy",
           hierarchy: hierarchyResult,
         },
         isError: !hierarchy.complete,
       };
     }
-    const snapshot = await ctx.services.design.schematicInspect(project.dir, sheet);
+    const source = await ctx.services.design.schematicInspect(project.dir, sheet);
+    const selection = selectSchematic(source, {
+      references,
+      netNames,
+      objectIds,
+      kinds:
+        detail === "authoring" && !targeted
+          ? kinds.filter((k) => k === "symbols" || k === "pins")
+          : kinds,
+      expand,
+      limit: limit ?? (targeted ? 1000 : null),
+    });
+    const snapshot = { ...source, ...selection };
+    const coordinates = {
+      units: "mm",
+      gridSpacing: 1.27,
+      origin: "sheet top-left",
+      xAxis: "right",
+      yAxis: "down",
+      pinPosition: "absolute sheet coordinates, including rotation and mirroring",
+    };
+
     const symbols = snapshot.symbols.map((symbol) => ({
       ref: symbol.reference,
       value: symbol.value,
@@ -83,22 +153,23 @@ export const schematic_inspect = defineTool({
         .join(" "),
     }));
     const text = [
-      `${snapshot.scope?.kind ?? "current/root-sheet"} authoring detail for ${snapshot.scope?.hierarchyPath ?? "/"}, live KiCad IPC revision ${snapshot.revision}: ${snapshot.symbols.length} symbols, ${snapshot.wires.length} wires, ${snapshot.localLabels.length} local labels, ${snapshot.globalLabels.length} global labels, ${snapshot.junctions.length} junctions, ${snapshot.noConnects.length} no-connects, ${snapshot.texts.length} notes, ${snapshot.nets.length} project-wide live nets. Complete saved hierarchy: ${hierarchy.counts.components} components, ${hierarchy.counts.nets} nets, ${hierarchy.counts.sheets} sheets at ${hierarchy.aggregateRevision} (${hierarchy.complete ? "complete" : "incomplete"}).`,
+      `${snapshot.scope?.kind ?? "current/root-sheet"} authoring detail for ${snapshot.scope?.hierarchyPath ?? "/"}, live KiCad IPC revision ${snapshot.revision}: ${source.symbols.length} symbols, ${source.wires.length} wires, ${source.localLabels.length} local labels, ${source.globalLabels.length} global labels, ${source.junctions.length} junctions, ${source.noConnects.length} no-connects, ${source.texts.length} notes, ${source.nets.length} project-wide live nets (sheet totals; selected objects below). Complete saved hierarchy: ${hierarchy.counts.components} components, ${hierarchy.counts.nets} nets, ${hierarchy.counts.sheets} sheets at ${hierarchy.aggregateRevision} (${hierarchy.complete ? "complete" : "incomplete"}).`,
+      `Selected ${snapshot.selection.returned}/${snapshot.selection.matched} native objects${snapshot.selection.truncated ? " (TRUNCATED; raise limit before editing omitted objects)" : ""}.`,
       formatKicadIpcSessionDiagnostics(snapshot.erc),
       ...(symbols.length ? [table(symbols)] : ["No symbols yet."]),
     ].join("\n\n");
     const counts = {
-      symbols: snapshot.symbols.length,
-      wires: snapshot.wires.length,
-      localLabels: snapshot.localLabels.length,
-      globalLabels: snapshot.globalLabels.length,
-      junctions: snapshot.junctions.length,
-      noConnects: snapshot.noConnects.length,
-      notes: snapshot.texts.length,
-      projectNets: snapshot.nets.length,
+      symbols: source.symbols.length,
+      wires: source.wires.length,
+      localLabels: source.localLabels.length,
+      globalLabels: source.globalLabels.length,
+      junctions: source.junctions.length,
+      noConnects: source.noConnects.length,
+      notes: source.texts.length,
+      projectNets: source.nets.length,
     };
     const sessionDiagnostics = kicadIpcSessionDiagnostics(snapshot.erc);
-    const contract = { name: "fabdesk.schematic-inspection", version: "3.0.0" } as const;
+    const contract = { name: "fabdesk.schematic-inspection", version: "4.0.0" } as const;
     const compact = {
       contract,
       scope: snapshot.scope ?? {
@@ -108,20 +179,29 @@ export const schematic_inspect = defineTool({
         name: "root",
       },
       hierarchy: hierarchyResult,
+      coordinates,
+      selection: snapshot.selection,
       revision: snapshot.revision,
       pcbRevision: snapshot.pcbRevision,
-      netScope: "complete-live-ipc-session" as const,
+      netScope: targeted
+        ? ("selected-sheet-projection" as const)
+        : ("bounded-live-ipc-session" as const),
       counts,
       sessionDiagnostics,
     };
     const { erc: _sessionErc, ...fullSnapshot } = snapshot;
     return ok(
       text,
-      detail === "full"
+      detail === "full" || targeted
         ? {
             contract,
             ...fullSnapshot,
-            netScope: "complete-live-ipc-session" as const,
+            coordinates,
+            hierarchy: hierarchyResult,
+            counts,
+            netScope: targeted
+              ? ("selected-sheet-projection" as const)
+              : ("bounded-live-ipc-session" as const),
             sessionDiagnostics,
           }
         : { ...compact, symbols: snapshot.symbols },
@@ -134,8 +214,15 @@ export const schematic_edit = defineTool({
   toolset: "circuit",
   title: "Edit native schematic",
   description:
-    "Apply one undoable edit batch directly to board.kicad_sch. Supports rotated or mirrored library symbols, symbol movement, safely labelled pin stubs, explicit wires, local and global labels, junctions, no-connect markers, notes, and deletion by inspected ID. Creates native KiCad files when absent. Coordinates are millimetres on KiCad's 1.27 mm schematic grid.",
+    "Apply one undoable edit batch directly to board.kicad_sch. Supports rotated or mirrored library symbols, symbol movement, safely labelled pin stubs, explicit wires, local and global labels, junctions, no-connect markers, notes, and deletion by inspected ID. Creates native KiCad files when absent. Coordinates are absolute sheet millimetres, origin top-left, +X right, +Y down, on KiCad's 1.27 mm grid. Off-grid arguments are preserved and reported as gridProblems. Each batch uses one commit; changedObjectIds and revision describe the applied result.",
   inputSchema: {
+    sheet: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "Select inspected scope.identity (uuid:path), or an unambiguous hierarchy path/name/native filename; default root",
+      ),
     symbols: z
       .array(
         z.object({
@@ -245,61 +332,7 @@ export const schematic_edit = defineTool({
           "invalid_args",
         );
     }
-    const transformedSymbols = edit.symbols.filter(
-      (symbol) => symbol.rotation !== 0 || symbol.mirrorX || symbol.mirrorY,
-    );
-    const directSymbols = edit.symbols.filter(
-      (symbol) => symbol.rotation === 0 && !symbol.mirrorX && !symbol.mirrorY,
-    );
-    if (transformedSymbols.length) {
-      await ctx.services.design.schematicEdit(project.dir, {
-        symbols: transformedSymbols.map((symbol) => ({
-          ...symbol,
-          rotation: 0 as const,
-          mirrorX: false,
-          mirrorY: false,
-        })),
-        save: true,
-      });
-      await ctx.services.design.schematicEdit(project.dir, {
-        symbolUpdates: transformedSymbols.map((symbol) => ({
-          reference: symbol.reference,
-          rotation: symbol.rotation,
-          mirrorX: symbol.mirrorX,
-          mirrorY: symbol.mirrorY,
-        })),
-        save: true,
-      });
-    }
-    const transformedUpdates = edit.symbolUpdates.filter(
-      (symbol) =>
-        symbol.rotation !== undefined ||
-        symbol.mirrorX !== undefined ||
-        symbol.mirrorY !== undefined,
-    );
-    if (transformedUpdates.length)
-      await ctx.services.design.schematicEdit(project.dir, {
-        symbolUpdates: transformedUpdates.map(({ reference, rotation, mirrorX, mirrorY }) => ({
-          reference,
-          ...(rotation !== undefined ? { rotation } : {}),
-          ...(mirrorX !== undefined ? { mirrorX } : {}),
-          ...(mirrorY !== undefined ? { mirrorY } : {}),
-        })),
-        save: true,
-      });
-    const finalUpdates = edit.symbolUpdates
-      .map(({ rotation: _rotation, mirrorX: _mirrorX, mirrorY: _mirrorY, ...symbol }) => symbol)
-      .filter((symbol) => Object.keys(symbol).some((key) => key !== "reference"));
-    const result = await ctx.services.design.schematicEdit(project.dir, {
-      ...edit,
-      symbols: directSymbols,
-      symbolUpdates: finalUpdates,
-    });
-    const reported = {
-      ...result,
-      created: { ...result.created, symbols: edit.symbols.length },
-      updated: { symbols: edit.symbolUpdates.length },
-    };
+    const reported = await ctx.services.design.schematicEdit(project.dir, edit);
     return ok(
       `Native schematic revision ${reported.revision}: created ${reported.created.symbols} symbols, ${reported.created.wires} wires, ${reported.created.localLabels} local/${reported.created.globalLabels} global labels, ${reported.created.junctions} junctions, ${reported.created.noConnects} no-connects and ${reported.created.texts} notes; updated ${reported.updated.symbols} symbols; deleted ${reported.deleted} items; ${reported.saved ? "saved" : "left in memory"}.`,
       reported,
@@ -489,7 +522,7 @@ export const schematic_review = defineTool({
         });
     }
     const review = {
-      contract: { name: "fabdesk.schematic-review", version: "3.0.0" },
+      contract: { name: "fabdesk.schematic-review", version: "4.0.0" },
       at: new Date().toISOString(),
       applicability: "selected-sheet-authoring-presentation",
       scope: snapshot.scope ?? {
