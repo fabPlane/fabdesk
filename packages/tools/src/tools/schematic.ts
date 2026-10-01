@@ -430,8 +430,8 @@ export const schematic_review = defineTool({
     if (snapshot.symbols.length >= 5 && labels.length > snapshot.symbols.length * 1.5)
       findings.push({
         code: "label-density",
-        severity: "warning",
-        message: `${labels.length} labels for ${snapshot.symbols.length} symbols makes the drawing hard to scan; use direct functional-block wiring and reserve labels for shared or long-distance nets.`,
+        severity: "info",
+        message: `${labels.length} labels for ${snapshot.symbols.length} symbols. Review the render for label legibility and traceable signal flow.`,
       });
     if (
       snapshot.symbols.length >= 5 &&
@@ -440,9 +440,9 @@ export const schematic_review = defineTool({
     )
       findings.push({
         code: "stub-dominated-connectivity",
-        severity: "warning",
+        severity: "info",
         message:
-          "Every wire is a short label stub; add direct visible wiring within functional blocks so signal flow can be read from the page.",
+          "All wire segments are at most 5.08 mm long. Review the render for traceable signal flow; segment length alone does not establish readability.",
       });
     if (
       snapshot.symbols.length >= 5 &&
@@ -451,9 +451,9 @@ export const schematic_review = defineTool({
     )
       findings.push({
         code: "label-only-connectivity",
-        severity: "warning",
+        severity: "info",
         message:
-          "Connectivity is label-only; add short visible pin stubs or functional-block wiring for readability.",
+          "No wires are present and labels are used throughout the sheet. Review the render for label legibility and traceable signal flow.",
       });
     const xs = snapshot.symbols.map((symbol) => symbol.position.x);
     const ys = snapshot.symbols.map((symbol) => symbol.position.y);
