@@ -8,6 +8,27 @@ import { appHtml, brandHeading } from "./shell";
 /** three.js for the 3D tab only; 2D views work when the CDN is unreachable. */
 export const THREE_CDN = "https://cdn.jsdelivr.net";
 const THREE_VERSION = "0.170.0";
+const THREE_BASE = `${THREE_CDN}/npm/three@${THREE_VERSION}`;
+
+/**
+ * Subresource integrity for every module the 3D tab loads from the CDN, three's own imports
+ * included (GLTFLoader pulls in BufferGeometryUtils). Chromium (and Safari / Firefox recently)
+ * enforce `integrity` in import maps, so a tampered CDN file fails to load instead of running in
+ * the view; hosts without support ignore it. Bumping THREE_VERSION means recomputing these:
+ * `curl -sL <url> | openssl dgst -sha384 -binary | openssl base64 -A`.
+ */
+export const THREE_INTEGRITY: Record<string, string> = {
+  [`${THREE_BASE}/build/three.module.js`]:
+    "sha384-GY5FqjttLCFRt/McQbyaVdCk2O1IQtOeX8Py6NfD89BIAsIyJFRl4UgSXrk2vXAk",
+  [`${THREE_BASE}/examples/jsm/controls/OrbitControls.js`]:
+    "sha384-aJoe4qqS/DgF2jh9njAuvA6QIveJYoCuYOfYjdFY8P3eawzmc9bEQ40jq2TvOyuP",
+  [`${THREE_BASE}/examples/jsm/loaders/STLLoader.js`]:
+    "sha384-1EfRoRFlW0okJLwii+CC5clEMVSDeI/MFRIPbyUpGQnNQP+Szo3cgWrhC6r9rHBg",
+  [`${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js`]:
+    "sha384-Lq1Wl94so5JCKGDvezrdVMJhdeKQkwb8iwRo59QrPPd61CnrCJZLxYmFlQ8ZuOKR",
+  [`${THREE_BASE}/examples/jsm/utils/BufferGeometryUtils.js`]:
+    "sha384-wOjwauvHlJO7K6APr7FmMGH2nupQa3Ndzas9bJZhsAMOK055efJud8ns4aYmASKv",
+};
 
 const BODY = `
 <div class="bar">
@@ -267,9 +288,10 @@ export function boardViewHtml(): string {
     title: "fabPlane Boards",
     head: `<script type="importmap">${JSON.stringify({
       imports: {
-        three: `${THREE_CDN}/npm/three@${THREE_VERSION}/build/three.module.js`,
-        "three/addons/": `${THREE_CDN}/npm/three@${THREE_VERSION}/examples/jsm/`,
+        three: `${THREE_BASE}/build/three.module.js`,
+        "three/addons/": `${THREE_BASE}/examples/jsm/`,
       },
+      integrity: THREE_INTEGRITY,
     })}</script>`,
     body: BODY,
     script: SCRIPT,

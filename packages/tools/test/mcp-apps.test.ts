@@ -411,3 +411,25 @@ describe("MCP Apps views", () => {
     expect(mentionItems([], "x")).toEqual([]);
   });
 });
+
+describe("board view import map", () => {
+  test("pins three.js and carries sha384 integrity for every module the 3D tab imports", async () => {
+    const { boardViewHtml } = await import("../src/apps/board-view");
+    const html = boardViewHtml();
+    const raw = /<script type="importmap">(.*?)<\/script>/s.exec(html)?.[1];
+    const map = JSON.parse(raw!) as {
+      imports: Record<string, string>;
+      integrity: Record<string, string>;
+    };
+    expect(map.imports["three"]).toMatch(/three@\d+\.\d+\.\d+\//);
+    const addons = map.imports["three/addons/"]!;
+    const used = [
+      map.imports["three"]!,
+      ...[...html.matchAll(/import\("three\/addons\/([^"]+)"\)/g)].map((m) => addons + m[1]),
+      // GLTFLoader's own relative import.
+      `${addons}utils/BufferGeometryUtils.js`,
+    ];
+    expect(used.length).toBeGreaterThan(3);
+    for (const url of used) expect(map.integrity[url]).toMatch(/^sha384-[A-Za-z0-9+/]{64}$/);
+  });
+});
