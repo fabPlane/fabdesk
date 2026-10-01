@@ -339,8 +339,8 @@ export function analyzeStaleCopper(input: {
     }
     report.stale.sort((a, b) => a.id.localeCompare(b.id) || a.pad.localeCompare(b.pad));
     report.shorted.sort((a, b) => a.id.localeCompare(b.id) || a.pad.localeCompare(b.pad));
-    report.staleCount = report.stale.length;
-    report.shortedCount = report.shorted.length;
+    report.staleCount = new Set(report.stale.map((item) => item.id)).size;
+    report.shortedCount = new Set(report.shorted.map((item) => item.id)).size;
     report.nets = [...nets].sort();
     if (!report.stale.length && !report.shorted.length) delete reports[reference];
   }

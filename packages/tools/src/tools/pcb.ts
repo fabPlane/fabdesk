@@ -89,6 +89,10 @@ export const pcb_place = defineTool({
       ([reference, report]) =>
         `${reference}: ${report.staleCount} stale copper item(s) on ${report.nets.length} net(s); ${report.shortedCount} now touch pads of other nets.`,
     );
+    if (result.removedCopper)
+      staleLines.push(
+        `Removed ${result.removedCopper.ids.length} stale copper item(s) in the placement transaction on net(s) ${result.removedCopper.nets.join(", ")}; zone refill ${result.zoneRefill ? (result.zoneRefill.refilled ? "completed" : `failed: ${result.zoneRefill.error ?? "unknown error"}`) : "not run"}.`,
+      );
     const base = result.missing.length
       ? `Placement blocked; unknown references: ${result.missing.join(", ")}.`
       : `Placed ${result.moved.length} footprint(s) and saved board revision ${result.revision}: ${result.moved.join(", ") || "already at requested positions"}.`;

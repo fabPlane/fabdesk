@@ -214,6 +214,9 @@ describe("registry", () => {
     expect(result.text).toContain(
       "J1: 1 stale copper item(s) on 2 net(s); 1 now touch pads of other nets.",
     );
+    expect(result.text).toContain(
+      "Removed 1 stale copper item(s) in the placement transaction on net(s) A, B; zone refill completed.",
+    );
     expect(result.json).toMatchObject({
       removedCopper: { ids: ["track-1"], nets: ["A", "B"] },
       zoneRefill: { refilled: true },

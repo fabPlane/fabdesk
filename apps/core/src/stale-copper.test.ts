@@ -74,6 +74,16 @@ describe("stale footprint fan-out copper", () => {
     expect(result.reports.J1?.nets).toEqual(["A", "B"]);
   });
 
+  test("counts copper items once when one item touches multiple pads", () => {
+    const before = [pad("p1", "1", "A", 0), pad("p2", "2", "A", 0)];
+    const after = [pad("p1", "1", "A", 10), pad("p2", "2", "A", 10)];
+    const result = analyze(before, after, [track("stale", "A", 0, -5), track("foreign", "B", 5, 15)]);
+    expect(result.reports.J1?.stale).toHaveLength(2);
+    expect(result.reports.J1?.staleCount).toBe(1);
+    expect(result.reports.J1?.shorted).toHaveLength(2);
+    expect(result.reports.J1?.shortedCount).toBe(1);
+  });
+
   test("a pad-to-segment-to-segment chain stops before its first via", () => {
     const before = [pad("p1", "1", "A", 0)];
     const after = [pad("p1", "1", "A", -10)];
