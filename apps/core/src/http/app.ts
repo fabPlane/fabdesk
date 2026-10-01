@@ -65,7 +65,8 @@ import {
   orderVendors,
   startOrderSession,
 } from "../opensource/order";
-import { remixCatalogProject } from "../opensource/remix";
+import { hydrateClonedBoard, listKicadPcbFiles, remixCatalogProject } from "../opensource/remix";
+import { parsePublicGitHubUrl } from "../github-import";
 import { applyErrorReporting, captureCoreException } from "../sentry";
 import { parseTopics, sseResponse } from "./sse";
 import { cloudRoutes } from "./cloud-routes";
@@ -264,8 +265,12 @@ export function createApp(deps: AppDeps): Hono<Env> {
   /* ---------- projects ---------- */
   app.get("/projects", (c) => c.json(deps.projects.summaries()));
   app.post("/projects", async (c) => {
-    const body = CreateProject.parse(await c.req.json());
-    return c.json(await deps.projects.create(body.name), 201);
+    const input = await c.req.json();
+    if (deps.listener === "remote" && input?.parentDirectory !== undefined) {
+      return c.json({ error: "Choosing a parent directory requires the local desktop connection" }, 403);
+    }
+    const body = CreateProject.parse(input);
+    return c.json(await deps.projects.create(body.name, body.parentDirectory), 201);
   });
   app.get("/projects/:id", async (c) => {
     const d = await deps.projects.detail(c.req.param("id"));
@@ -617,7 +622,67 @@ export function createApp(deps: AppDeps): Hono<Env> {
     if (!q.trim()) return c.json([]);
     return c.json(deps.store.threads.search(q));
   });
-
+  app.get("/projects/import-github/destination", async (c) => {
+    if (deps.listener === "remote" && c.req.query("parentDirectory") !== undefined) {
+      return c.json({ error: "Choosing a parent directory requires the local desktop connection" }, 403);
+    }
+    const name = c.req.query("name") ?? "";
+    if (!name.trim() || name.length > 80) return c.json({ error: "Enter a project name" }, 400);
+    return c.json(await deps.projects.importDestination(name, c.req.query("parentDirectory")));
+  });
+  app.post("/projects/import-github", async (c) => {
+    const input = await c.req.json();
+    if (deps.listener === "remote" && input?.parentDirectory !== undefined) {
+      return c.json({ error: "Choosing a parent directory requires the local desktop connection" }, 403);
+    }
+    const body = z.object({
+      url: z.string().min(1),
+      name: z.string().trim().min(1).max(80),
+      parentDirectory: z.string().optional(),
+    }).parse(input);
+    const source = parsePublicGitHubUrl(body.url);
+    const project = await deps.projects.importFromGit({
+      name: body.name,
+      gitUrl: source.url,
+      ...(body.parentDirectory ? { parentDirectory: body.parentDirectory } : {}),
+      signal: c.req.raw.signal,
+      failOnCollision: true,
+    });
+    try {
+      const handle = await deps.projects.handle(project.id);
+      const boards = handle ? (await listKicadPcbFiles(handle.dir)).map((entry) => entry.path) : [];
+      let adoptedBoard: string | null = null;
+      if (handle && boards.length === 1) {
+        const adopted = await hydrateClonedBoard({
+          project: handle, files: [{ path: boards[0]! }],
+          resolveCli: () => deps.services.kicad.resolveCli(),
+          exportPcbSvg: (cli, opts) => deps.services.kicad.exportPcbSvg(cli, opts),
+          boardStats: (cli, opts) => deps.services.kicad.boardStats(cli, opts),
+        });
+        adoptedBoard = adopted?.pcbPath ?? null;
+      }
+      c.req.raw.signal.throwIfAborted();
+      return c.json({ project: (await deps.projects.detail(project.id)) ?? project, boards, adoptedBoard }, 201);
+    } catch (error) {
+      await deps.projects.delete(project.id, { purge: true });
+      throw error;
+    }
+  });
+  app.post("/projects/:id/adopt-board", async (c) => {
+    const body = z.object({ path: z.string().min(1) }).parse(await c.req.json());
+    const handle = await deps.projects.handle(c.req.param("id"));
+    if (!handle) return c.json({ error: "project not found" }, 404);
+    const boards = await listKicadPcbFiles(handle.dir);
+    if (!boards.some((entry) => entry.path === body.path)) return c.json({ error: "board not found in this project" }, 400);
+    const adopted = await hydrateClonedBoard({
+      project: handle, files: [{ path: body.path }],
+      resolveCli: () => deps.services.kicad.resolveCli(),
+      exportPcbSvg: (cli, opts) => deps.services.kicad.exportPcbSvg(cli, opts),
+      boardStats: (cli, opts) => deps.services.kicad.boardStats(cli, opts),
+    });
+    if (!adopted) return c.json({ error: "could not load this KiCad board" }, 422);
+    return c.json({ project: await deps.projects.detail(c.req.param("id")), pcbPath: adopted.pcbPath });
+  });
   app.get("/search/results", (c) => {
     const q = (c.req.query("q") ?? "").trim();
     if (q.length < 2) return c.json({ titles: [], messages: [], nextOffset: null });
