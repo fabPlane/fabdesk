@@ -208,7 +208,7 @@ async function standalone(opts: McpStdioOptions, projectDir: string | null): Pro
     token: () => auth.token() ?? storedToken(),
     settings: () => store.settings.get(),
   });
-  const registry = createRegistry();
+  const registry = createRegistry({ channel: config.channel });
   let defaultProject: ProjectHandle | null = null;
   if (projectDir) {
     defaultProject = await projects.resolve(projectDir);

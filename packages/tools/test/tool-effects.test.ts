@@ -60,7 +60,7 @@ test("repeating route_run creates separate durable jobs and is not idempotent", 
   const factory = contextFactory(services, project);
   const ids: string[] = [];
   for (let index = 0; index < 2; index++) {
-    const output = await registry.invoke("route_run", { applyPolicy: "manual" }, (ref) =>
+    const output = await registry.invoke("route_run", { applyPolicy: "manual", waitMs: 0 }, (ref) =>
       factory({
         def: registry.get("route_run")!,
         projectRef: ref,

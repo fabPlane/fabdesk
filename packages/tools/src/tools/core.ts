@@ -4,7 +4,14 @@ import { readFile, readdir, unlink } from "node:fs/promises";
 import { z } from "zod/v4";
 import type { FpPcbBoardSpec, NetlistFile } from "@fabdesk/protocol";
 import { PROJECT_FILES, exists, mtimeMs, readJsonOrNull, writeJson } from "../fs";
-import { ToolError, ToolsetId, defineTool, TOOLSETS, type ProjectHandle } from "../registry";
+import {
+  ToolError,
+  ToolsetIdOrAlias,
+  TOOLSET_ALIASES,
+  defineTool,
+  TOOLSETS,
+  type ProjectHandle,
+} from "../registry";
 import type { BuildResult, DesignRow, DesignSelect, DrcReport, DrcViolation } from "../services";
 import { VIAGRID_9055, viagrid9055BoardSpec } from "../templates/viagrid-9055";
 import {
@@ -18,7 +25,13 @@ import {
   writeReport,
 } from "./common";
 import { formatLastRelease, readProjectStatusEvidence } from "./project-status-evidence";
-import { runRoute, RouteRunArgs } from "./route";
+import {
+  PackagedRouteRunArgs,
+  ROUTE_RUN_DEFAULT_WAIT_MS,
+  ROUTE_RUN_MAX_WAIT_MS,
+  runRoute,
+  RouteRunArgs,
+} from "./route";
 import { compilerSourceHelp, formatCompilerSourceHelp } from "./compiler-source-guide";
 
 export const load_toolset = defineTool({
@@ -29,7 +42,11 @@ export const load_toolset = defineTool({
   description:
     "Enable an additional group of fabdesk tools for this session. Available toolsets are project, circuit, route, kicad, verify, render, export, sim, app, and shopping (fabplane.com shopping list and team inventory). Core tools are always available.",
   inputSchema: {
-    toolset: ToolsetId.describe("Toolset to enable"),
+    toolset: ToolsetIdOrAlias.describe(
+      `Toolset to enable. Aliases ${Object.entries(TOOLSET_ALIASES)
+        .map(([alias, id]) => `${alias}=${id}`)
+        .join(", ")} are accepted; the result reports the canonical id.`,
+    ),
   },
   annotations: {
     readOnlyHint: false,
@@ -482,34 +499,41 @@ export const circuit_read_errors = defineTool({
   },
 });
 
-export const route_run = defineTool({
-  name: "route_run",
-  toolset: "core",
-  title: "Autoroute the board",
-  description:
-    "Start a durable asynchronous autoroute against a revision-bound board snapshot and return a run ID immediately. Progress, diagnostics and artifacts remain available through route_status after this request ends. applyPolicy=auto (default) atomically applies only while the starting PCB revision is current; manual preserves a validated native candidate for route_apply. onlyConnections limits the run to named nets.",
-  inputSchema: RouteRunArgs,
-  annotations: {
-    readOnlyHint: false,
-    destructiveHint: true,
-    openWorldHint: false,
-    idempotentHint: false,
-  },
-  longRunning: true,
-  handler: (args, ctx) =>
-    runRoute(
-      {
-        timeoutMs: args.timeoutMs,
-        ...(args.router ? { router: args.router } : {}),
-        ...(args.onlyConnections ? { onlyConnections: args.onlyConnections } : {}),
-        ...(args.targets ? { targets: args.targets } : {}),
-        ...(args.rules ? { rules: args.rules } : {}),
-        ...(args.settings ? { settings: args.settings } : {}),
-        applyPolicy: args.applyPolicy,
-      },
-      ctx,
-    ),
-});
+function routeRunTool(inputSchema: typeof RouteRunArgs | typeof PackagedRouteRunArgs) {
+  return defineTool({
+    name: "route_run",
+    toolset: "core",
+    title: "Autoroute the board",
+    description: `Start a durable autoroute against a revision-bound board snapshot. Waits up to waitMs (default ${ROUTE_RUN_DEFAULT_WAIT_MS / 1000} s, max ${ROUTE_RUN_MAX_WAIT_MS / 1000} s); returns the final result when the run finishes within that time, otherwise its run ID and running state. The run continues after the request returns, and its progress, diagnostics and artifacts remain available through route_status. applyPolicy=auto (default) atomically applies only while the starting PCB revision is current; manual preserves a validated native candidate for route_apply. onlyConnections limits the run to named nets.`,
+    inputSchema: inputSchema as typeof RouteRunArgs,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      openWorldHint: false,
+      idempotentHint: false,
+    },
+    longRunning: true,
+    handler: (args, ctx) =>
+      runRoute(
+        {
+          timeoutMs: args.timeoutMs,
+          ...(args.router ? { router: args.router } : {}),
+          ...(args.onlyConnections ? { onlyConnections: args.onlyConnections } : {}),
+          ...(args.targets ? { targets: args.targets } : {}),
+          ...(args.rules ? { rules: args.rules } : {}),
+          ...(args.settings ? { settings: args.settings } : {}),
+          applyPolicy: args.applyPolicy,
+          waitMs: args.waitMs,
+        },
+        ctx,
+      ),
+  });
+}
+
+export const route_run = routeRunTool(RouteRunArgs);
+
+/** route_run as served by runtimes without freerouting: the router enum offers capacity only. */
+export const packaged_route_run = routeRunTool(PackagedRouteRunArgs);
 
 /**
  * Byte budget for each inline violation category. The complete report is always on disk, so the
