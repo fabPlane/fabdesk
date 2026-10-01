@@ -329,7 +329,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     settings: () => store.settings.get(),
   });
 
-  const registry = createRegistry();
+  const registry = createRegistry({ channel: config.channel });
   const ctxFactory = createContextFactory({ services, projects, tokens, telemetry });
   const mcp = new McpSessionManager({
     registry,

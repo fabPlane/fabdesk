@@ -26,11 +26,18 @@ type Session = {
   lastSeen: number;
   token: string | null;
 };
+/**
+ * The complete inventory for clients that snapshot tools at turn start (Codex's `native` profile).
+ * Both schematic authoring paths are listed, `schematic_edit` and `circuit_build`, so the agent
+ * chooses between them rather than the profile choosing for it.
+ */
 export const NATIVE_AGENT_TOOLS = [
   "pcb_environment",
   "project_status",
   "circuit_search_parts",
   "circuit_describe_part",
+  "circuit_build",
+  "circuit_read_errors",
   "schematic_inspect",
   "schematic_edit",
   "pcb_update_from_schematic",
@@ -46,11 +53,13 @@ export const NATIVE_AGENT_TOOLS = [
   "release_build",
 ] as const;
 
-export const NATIVE_CAPABILITY_EXCLUDE = [
-  "circuit_build",
-  "circuit_read_errors",
-  "load_toolset",
-] as const;
+export const NATIVE_CAPABILITY_EXCLUDE = ["load_toolset"] as const;
+
+/**
+ * Toolsets every other client starts with besides `core`. `core` holds `circuit_build`; these hold
+ * `schematic_edit` and the tools both paths share, so neither path waits behind `load_toolset`.
+ */
+export const DEFAULT_AGENT_TOOLSETS = ["circuit", "verify", "render"] as const;
 
 export type McpSessionOptions = {
   registry: ToolRegistry;
@@ -170,7 +179,8 @@ export class McpSessionManager {
     // Codex snapshots MCP tools when a turn starts and currently ignores tools/list_changed.
     // Let clients that cannot refresh opt into the complete inventory at initialization.
     const query = new URL(req.url).searchParams;
-    const initialToolsets = query.get("toolsets") === "all" ? [...TOOLSETS] : undefined;
+    const initialToolsets =
+      query.get("toolsets") === "all" ? [...TOOLSETS] : [...DEFAULT_AGENT_TOOLSETS];
     const profile = query.get("profile");
     const initialTools =
       profile === "native" ? [...NATIVE_AGENT_TOOLS] : profile === "substrate" ? [] : undefined;
@@ -216,7 +226,13 @@ export class McpSessionManager {
         description:
           "Internal: Claude Code asks the fabdesk daemon whether a tool call may run in supervised mode. Not for the model to call.",
         inputSchema: PERMISSION_PROMPT_INPUT as unknown as ZodRawShapeCompat,
-        annotations: { title: "Permission prompt", readOnlyHint: true },
+        annotations: {
+          title: "Permission prompt",
+          readOnlyHint: false,
+          destructiveHint: false,
+          openWorldHint: false,
+          idempotentHint: false,
+        },
       },
       async (args: Record<string, unknown>, extra) => {
         let result: PermissionPromptResult;

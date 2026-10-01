@@ -2,7 +2,7 @@
 import * as kicad from "@fabdesk/kicad";
 import * as sim from "@fabdesk/sim";
 import type { Principal, Settings } from "@fabdesk/protocol";
-import type { CoreServices, KicadCli, RouteRunStore, SimService } from "@fabdesk/tools";
+import { ToolError, type CoreServices, type KicadCli, type RouteRunStore, type SimService } from "@fabdesk/tools";
 import type { Channel } from "./config";
 import { fabCadBridgeUrl, fpPcbBridgeUrl } from "./config";
 import type { EventBus } from "./bus";
@@ -141,8 +141,15 @@ export async function createServices(
       rasterizeSvg: (svg, o) => kicad.rasterizeSvg(svg, o),
       exportGlb: (cli, o) => kicad.exportGlb(cli, o),
       measureMechanical: (cli, o) => kicad.collectMechanical(cli, o),
-      boardStats: async (cli, o) =>
-        (await kicad.boardStats(cli, o.board, o.scratchFile)) as unknown as Record<string, unknown>,
+      boardStats: async (cli, o) => {
+        try {
+          return (await kicad.boardStats(cli, o.board, o.scratchFile)) as unknown as Record<string, unknown>;
+        } catch (error) {
+          if (error instanceof kicad.BoardStatsUnavailableError)
+            throw new ToolError(error.message, "unavailable");
+          throw error;
+        }
+      },
       exportGerbers: (cli, o) => kicad.exportGerbers(cli, o),
       exportDrill: (cli, o) => kicad.exportDrill(cli, o),
       exportDxf: (cli, o) => kicad.exportDxf(cli, o),

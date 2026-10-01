@@ -46,7 +46,11 @@ async function resolveDestination(cloud: CloudService, ref: string): Promise<str
   return hit.id;
 }
 
-function cartText(cart: Cart, destinations: readonly Destination[], cartUrl: string | null): string {
+function cartText(
+  cart: Cart,
+  destinations: readonly Destination[],
+  cartUrl: string | null,
+): string {
   const byDest = new Map<string, Cart["items"]>();
   for (const item of cart.items) {
     const list = byDest.get(item.destinationId) ?? [];
@@ -83,12 +87,18 @@ const itemFields = {
   kind: z
     .enum(["pcb", "part", "other"])
     .optional()
-    .describe('"part" (default) for components, "pcb" for the bare board order, "other" for tools/consumables'),
+    .describe(
+      '"part" (default) for components, "pcb" for the bare board order, "other" for tools/consumables',
+    ),
   mpn: z.string().max(200).optional().describe("Manufacturer part number"),
   manufacturer: z.string().max(200).optional(),
   description: z.string().max(2000).optional(),
   value: z.string().max(200).optional().describe('Component value, e.g. "10k", "100nF"'),
-  footprint: z.string().max(300).optional().describe('KiCad footprint, e.g. "Resistor_SMD:R_0603_1608Metric"'),
+  footprint: z
+    .string()
+    .max(300)
+    .optional()
+    .describe('KiCad footprint, e.g. "Resistor_SMD:R_0603_1608Metric"'),
   refs: z.array(z.string()).max(500).optional().describe('Designators, e.g. ["R1","R2"]'),
   destination: z
     .string()
@@ -132,7 +142,12 @@ export const shopping_list_get = defineTool({
   description:
     "Show the project's fabplane.com shopping list (BOM cart): every line grouped by purchase destination (JLCPCB, Manual purchase, DigiKey, custom ones like DigiKey Thailand) with item ids, quantities, refs, status (needed/ordered/received) and notes, plus the dashboard link. Returns cart: null when the project has no list yet (shopping_list_add or shopping_list_sync_bom create it). Requires fabplane sign-in.",
   inputSchema: {},
-  annotations: { readOnlyHint: true, openWorldHint: true },
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async (_args, ctx) =>
     withCloud(ctx, async (cloud) => {
       const project = ctx.requireProject();
@@ -152,11 +167,19 @@ export const shopping_list_add = defineTool({
   toolset: "shopping",
   title: "Add items to the shopping list",
   description:
-    "Append lines to the project's shopping list, creating the list if the project has none yet (named after the project and tagged with its git remotes). Use for parts not in the netlist, spares, tools, or a specific distributor listing. Each item needs a quantity; set destination to route it to a distributor or \"manual\". Items without refs are kept across BOM re-syncs. Returns the added items and the updated list.",
+    'Append lines to the project\'s shopping list, creating the list if the project has none yet (named after the project and tagged with its git remotes). Use for parts not in the netlist, spares, tools, or a specific distributor listing. Each item needs a quantity; set destination to route it to a distributor or "manual". Items without refs are kept across BOM re-syncs. Returns the added items and the updated list.',
   inputSchema: {
-    items: z.array(z.object({ ...itemFields, quantity: z.number().int().min(0) })).min(1).max(500),
+    items: z
+      .array(z.object({ ...itemFields, quantity: z.number().int().min(0) }))
+      .min(1)
+      .max(500),
   },
-  annotations: { openWorldHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: false,
+    openWorldHint: false,
+    idempotentHint: false,
+  },
   handler: async ({ items }, ctx) =>
     withCloud(ctx, async (cloud) => {
       const project = ctx.requireProject();
@@ -178,13 +201,18 @@ export const shopping_list_update = defineTool({
   toolset: "shopping",
   title: "Update a shopping list item",
   description:
-    "Change one shopping-list line by item id (from shopping_list_get): quantity, destination (move it from JLCPCB to a distributor or \"manual\"), status (needed → ordered → received), notes, sku/url/price or part fields. Only the fields you pass change. BOM re-syncs keep destination, status and notes.",
+    'Change one shopping-list line by item id (from shopping_list_get): quantity, destination (move it from JLCPCB to a distributor or "manual"), status (needed → ordered → received), notes, sku/url/price or part fields. Only the fields you pass change. BOM re-syncs keep destination, status and notes.',
   inputSchema: {
     itemId: z.string().min(1).describe("Item id from shopping_list_get"),
     ...itemFields,
     quantity: z.number().int().min(0).optional(),
   },
-  annotations: { idempotentHint: true, openWorldHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async ({ itemId, ...patch }, ctx) =>
     withCloud(ctx, async (cloud) => {
       const project = ctx.requireProject();
@@ -206,7 +234,12 @@ export const shopping_list_remove = defineTool({
   description:
     "Delete one line from the project's shopping list by item id. A line that came from the BOM returns on the next shopping_list_sync_bom unless the part is removed from the design; set quantity 0 instead to keep it out.",
   inputSchema: { itemId: z.string().min(1).describe("Item id from shopping_list_get") },
-  annotations: { destructiveHint: true, openWorldHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: false,
+  },
   handler: async ({ itemId }, ctx) =>
     withCloud(ctx, async (cloud) => {
       const project = ctx.requireProject();
@@ -220,9 +253,14 @@ export const shopping_list_sync_bom = defineTool({
   toolset: "shopping",
   title: "Sync the shopping list from the BOM",
   description:
-    "Rebuild the part lines of the project's shopping list from circuit.netlist.json: components grouped by value + footprint + MPN/manufacturer fields, quantity = count, refs listed, LCSC field → sku, excluding #PWR-style symbols and DNP parts. Lines matched to the previous sync (by MPN, else value + footprint) keep their destination, status and notes; hand-added lines are kept; parts no longer in the design are dropped. Adds a \"PCB – <project>\" × 5 line at the fab house if there is none. Creates the list on first use.",
+    'Rebuild the part lines of the project\'s shopping list from circuit.netlist.json: components grouped by value + footprint + MPN/manufacturer fields, quantity = count, refs listed, LCSC field → sku, excluding #PWR-style symbols and DNP parts. Lines matched to the previous sync (by MPN, else value + footprint) keep their destination, status and notes; hand-added lines are kept; parts no longer in the design are dropped. Adds a "PCB – <project>" × 5 line at the fab house if there is none. Creates the list on first use.',
   inputSchema: {},
-  annotations: { idempotentHint: true, openWorldHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async (_args, ctx) =>
     withCloud(ctx, async (cloud) => {
       const project = ctx.requireProject();
@@ -242,7 +280,7 @@ export const shopping_list_destinations = defineTool({
   scope: "global",
   title: "List or add purchase destinations",
   description:
-    "List where shopping-list items can be bought: built-in fab houses (JLCPCB, PCBWay, OSH Park), distributors (DigiKey, Mouser, LCSC, …), \"Manual purchase\", and the org's custom destinations. Pass `add` to create a custom destination (org admins only), e.g. { name: \"DigiKey Thailand\", url: \"https://www.digikey.co.th\", baseId: \"builtin:digikey\" }.",
+    'List where shopping-list items can be bought: built-in fab houses (JLCPCB, PCBWay, OSH Park), distributors (DigiKey, Mouser, LCSC, …), "Manual purchase", and the org\'s custom destinations. Pass `add` to create a custom destination (org admins only), e.g. { name: "DigiKey Thailand", url: "https://www.digikey.co.th", baseId: "builtin:digikey" }.',
   inputSchema: {
     add: z
       .object({
@@ -258,7 +296,12 @@ export const shopping_list_destinations = defineTool({
       .optional()
       .describe("Create this custom destination first"),
   },
-  annotations: { openWorldHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: false,
+    openWorldHint: false,
+    idempotentHint: false,
+  },
   handler: async ({ add }, ctx) =>
     withCloud(ctx, async (cloud) => {
       const created = add
@@ -304,7 +347,12 @@ export const inventory_search = defineTool({
     limit: z.number().int().min(1).max(200).optional().describe("Default 50"),
     cursor: z.string().optional(),
   },
-  annotations: { readOnlyHint: true, openWorldHint: true },
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async (args, ctx) =>
     withCloud(ctx, async (cloud) => {
       const query = Object.fromEntries(Object.entries(args).filter(([, v]) => v !== undefined));
@@ -322,7 +370,7 @@ export const inventory_add = defineTool({
   scope: "global",
   title: "Add an item to the team inventory",
   description:
-    "Record a part the team has on hand in the active fabplane org's inventory. You (the local agent) do the extraction: read labels, photos or datasheets yourself and send the structured fields plus any semi-structured facts as `attributes` (e.g. { package: \"SOT-23\", voltage_v: 3.3, esd_sensitive: true }). The server does no AI processing. Pass externalId to make repeated adds idempotent (same externalId updates the existing item). Images are not uploaded by this tool.",
+    'Record a part the team has on hand in the active fabplane org\'s inventory. You (the local agent) do the extraction: read labels, photos or datasheets yourself and send the structured fields plus any semi-structured facts as `attributes` (e.g. { package: "SOT-23", voltage_v: 3.3, esd_sensitive: true }). The server does no AI processing. Pass externalId to make repeated adds idempotent (same externalId updates the existing item). Images are not uploaded by this tool.',
   inputSchema: {
     name: z.string().min(1).max(200).describe('Human name, e.g. "AMS1117-3.3 LDO"'),
     mpn: z.string().max(200).optional(),
@@ -340,12 +388,19 @@ export const inventory_add = defineTool({
       .describe("Semi-structured facts you extracted, ≤ 100 keys"),
     externalId: z.string().max(200).optional().describe("Idempotency key"),
   },
-  annotations: { openWorldHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: false,
+  },
   handler: async (args, ctx) =>
     withCloud(ctx, async (cloud) => {
       const input = Object.fromEntries(Object.entries(args).filter(([, v]) => v !== undefined));
       const item = await cloud.addInventoryItem(input as typeof args);
-      return ok(`Inventory item ${item.name} (${item.id}): ${item.quantity} ${item.unit}.`, { item });
+      return ok(`Inventory item ${item.name} (${item.id}): ${item.quantity} ${item.unit}.`, {
+        item,
+      });
     }),
 });
 

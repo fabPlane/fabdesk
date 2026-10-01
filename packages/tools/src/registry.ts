@@ -30,6 +30,27 @@ export const TOOLSETS = [
 export type ToolsetId = (typeof TOOLSETS)[number];
 export const ToolsetId = z.enum(TOOLSETS);
 
+/**
+ * Noun forms of toolset ids that load_toolset also accepts. Models asked for "routing" when the id
+ * is "route"; the others are the same noun-for-stem pattern. Exact matches only, no fuzzy matching.
+ */
+export const TOOLSET_ALIASES = {
+  routing: "route",
+  verification: "verify",
+  rendering: "render",
+  simulation: "sim",
+} as const satisfies Record<string, ToolsetId>;
+
+/** A toolset id or one of its aliases, normalised to the canonical id. */
+export const ToolsetIdOrAlias = z
+  .enum([...TOOLSETS, ...(Object.keys(TOOLSET_ALIASES) as Array<keyof typeof TOOLSET_ALIASES>)])
+  .transform(
+    (id): ToolsetId =>
+      id in TOOLSET_ALIASES
+        ? TOOLSET_ALIASES[id as keyof typeof TOOLSET_ALIASES]
+        : (id as ToolsetId),
+  );
+
 export const TOOL_NAME_RE = /^[a-z][a-z0-9_]*$/;
 
 export type ToolAnnotations = {
@@ -106,7 +127,9 @@ export type ToolDef<I extends z.ZodRawShape = z.ZodRawShape> = {
   description: string;
   inputSchema: I;
   outputSchema?: z.ZodRawShape;
-  annotations: ToolAnnotations;
+  /** Declare effects explicitly; omitted MCP hints otherwise default to destructive/open-world. */
+  annotations: ToolAnnotations &
+    Required<Pick<ToolAnnotations, "readOnlyHint" | "destructiveHint" | "openWorldHint">>;
   /** Runs as a job over HTTP (`{jobId}`), streams progress over MCP. */
   longRunning?: boolean;
   /** False for durable jobs whose MCP request only schedules work. Keeps HTTP job behavior. */

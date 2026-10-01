@@ -16,7 +16,12 @@ export const export_gerbers = defineTool({
   description:
     "Export Gerber files for all copper, mask, paste, silkscreen and edge layers to exports/gerbers/. Requires kicad-cli and board.kicad_pcb.",
   inputSchema: {},
-  annotations: { idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   longRunning: true,
   handler: async (_args, ctx) => {
     const project = ctx.requireProject();
@@ -52,7 +57,12 @@ export const export_dxf = defineTool({
       .default(DXF_DEFAULT_LAYERS)
       .describe("KiCad layer names, e.g. F.Cu, B.Cu, Edge.Cuts, F.Mask"),
   },
-  annotations: { idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   longRunning: true,
   handler: async ({ layers }, ctx) => {
     const project = ctx.requireProject();
@@ -92,7 +102,12 @@ export const export_drill = defineTool({
   description:
     "Export Excellon drill files (plated/non-plated, with map) to exports/gerbers/. Requires kicad-cli and board.kicad_pcb.",
   inputSchema: {},
-  annotations: { idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   longRunning: true,
   handler: async (_args, ctx) => {
     const project = ctx.requireProject();
@@ -120,7 +135,12 @@ export const export_pos = defineTool({
   description:
     "Export the component placement (pick-and-place) CSV to exports/positions.csv. Requires kicad-cli and board.kicad_pcb.",
   inputSchema: {},
-  annotations: { idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   longRunning: true,
   handler: async (_args, ctx) => {
     const project = ctx.requireProject();
@@ -142,7 +162,12 @@ export const export_bom = defineTool({
   description:
     "Export a grouped bill of materials CSV from the saved native schematic to exports/bom.csv.",
   inputSchema: {},
-  annotations: { idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async (_args, ctx) => {
     const project = ctx.requireProject();
     const cli = await requireKicad(ctx);
@@ -166,7 +191,12 @@ export const export_netlist = defineTool({
   inputSchema: {
     format: z.enum(["kicadsexpr", "spice"]).default("kicadsexpr"),
   },
-  annotations: { idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async ({ format }, ctx) => {
     const project = ctx.requireProject();
     const cli = await requireKicad(ctx);
@@ -190,7 +220,12 @@ export const export_zip = defineTool({
   description:
     "Bundle the files currently present in exports/gerbers plus positions.csv and bom.csv into exports/fabrication.zip. Missing optional entries are reported.",
   inputSchema: {},
-  annotations: { idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async (_args, ctx) => {
     const project = ctx.requireProject();
     const exportsDir = p(project, PROJECT_FILES.exports);

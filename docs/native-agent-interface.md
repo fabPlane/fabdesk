@@ -24,20 +24,25 @@ published or packaged as an AppImage.
   coordinates; inspected coordinates retain nanometre-derived precision.
 - Native edit results report only changed IDs/counts and revisions, rather than returning a full
   board snapshot. Preview explicitly means structural validation only.
-- Native placement normalizes changed footprint instances from the exact packaged library. The
-  packaged bridge and `kicad-cli` now receive KiCad's standard versioned library variables.
+- Native placement moves and rotates the existing embedded footprint geometry without requiring
+  its source library. Save any open PCB and schematic first; unsaved or unknown modified state
+  rejects placement before the commit, since recovery can restart the shared KiCad session.
+  Flips use KiCad's native transform (including its angle change). Failed operations restore saved files
+  and discard the edited session before a later operation can reuse it.
 - `schematic_review` is initially visible, connection batches create safe labelled pin stubs, and
   legacy netlist compiler operations are excluded from native capability search.
 - Native symbol creation preserves library identity, power symbols need no fake footprint, and
   connection preflight rejects crossing or ambiguous labelled stubs before committing.
-- Release rejects relaxed design-rule floors and label-dense stub-only schematics. PCB placement
-  can also lay out reference fields after normalizing library geometry.
+- Release enforces design-rule floors, ERC, parity-enabled DRC, revision binding, and required
+  outputs. PCB placement can also lay out reference fields without refreshing the footprint library.
 - Agent shell scripts can search, describe, call, and batch any registry operation with
   `fabpcb tool`. This supplies programmable loops and JSONL batching without legacy Python
   `pcbnew` or a different KiCad build.
-- Rotated and mirrored schematic symbols are transparently created, saved, then transformed so
-  the saved library identity remains clean. Power-symbol serialization is normalized and covered
-  by a packaged-KiCad regression test.
+- Native connections and inspection resolve local library pins through the current symbol position,
+  rotation, and mirroring, including updates in the same call. Derived symbols are placed from
+  resolved library definitions. Save/reopen regressions compare exact net endpoints and ERC for
+  combined transforms, multi-unit symbols, and inherited pins. Power-symbol serialization remains
+  normalized.
 - USB-C library search accepts the `power-only-usb-c` role and ranks explicit power/charging-only
   parts ahead of generic data connectors. USB-C symbol/footprint pairs receive compatibility
   validation when they are added.
@@ -186,3 +191,25 @@ visual quality rather than rediscovering those serialization defects.
 The interface follows the official OpenAI guidance for GPT-5.6: use lean prompts, expose only
 task-relevant tools, keep descriptions concise, and validate changes on representative tasks.
 See <https://developers.openai.com/api/docs/guides/latest-model?model=gpt-5.6>.
+
+## MCP effect annotations
+
+Each registry definition explicitly declares `readOnlyHint`, `destructiveHint`, and `openWorldHint`;
+`idempotentHint` records whether repeating a call adds effects. The MCP adapter publishes these
+same values for direct tools and capability-search results. Metadata describes the broadest
+supported mode, including optional writes and previews.
+
+Saving reports, exports, screenshots, or render artifacts is a state change even when native
+KiCad files stay unchanged. Overwriting an artifact is a potentially destructive write. Starting
+another durable route job is not idempotent. A bounded project, library catalog, or signed-in
+team workspace is closed-world even when its service is remote. Arbitrary renderer JavaScript
+and general UI actions can reach beyond that boundary.
+
+Annotations are hints, not authorization. Existing supervised-mode classification consumes
+read-only and idempotent hints, so correcting those values also changes its classification of
+builds, route starts, screenshots, and JavaScript wait predicates. Tool handlers, input schemas,
+outputs, tool names, and exposure profiles retain their implementations.
+
+Sources: [OpenAI tool annotation guidance](https://developers.openai.com/plugins/plugin-guidelines),
+[Anthropic MCP tool guidance](https://www.anthropic.com/engineering/writing-tools-for-agents),
+and the [MCP annotation specification](https://modelcontextprotocol.io/specification/2025-11-25/schema#toolannotations).

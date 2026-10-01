@@ -29,7 +29,7 @@ import { resolveConfig } from "./config";
 import { createContextFactory } from "./context";
 import { Store } from "./db";
 import { logger, errMsg } from "./log";
-import { INSTRUCTIONS } from "./mcp-sessions";
+import { DEFAULT_AGENT_TOOLSETS, INSTRUCTIONS } from "./mcp-sessions";
 import { ProjectStore } from "./projects";
 import { pidAlive } from "./serve";
 
@@ -244,13 +244,15 @@ async function standalone(opts: McpStdioOptions, projectDir: string | null): Pro
     appBridgeFile: locateAppBridgeFile(config.handshakePath),
   });
   const storedToken =
-    auth.mode === "local" ? storedCredentialToken({ home: config.home, apiOrigin: config.apiOrigin }) : () => null;
+    auth.mode === "local"
+      ? storedCredentialToken({ home: config.home, apiOrigin: config.apiOrigin })
+      : () => null;
   services.cloud = createCloudService({
     apiOrigin: config.apiOrigin,
     token: () => auth.token() ?? storedToken(),
     settings: () => store.settings.get(),
   });
-  const registry = createRegistry();
+  const registry = createRegistry({ channel: config.channel });
   let defaultProject: ProjectHandle | null = null;
   if (projectDir) {
     defaultProject = await projects.resolve(projectDir);
@@ -269,7 +271,10 @@ async function standalone(opts: McpStdioOptions, projectDir: string | null): Pro
     { name: "fabdesk", title: "fabPlane", version: config.version, icons: FABDESK_SERVER_ICONS },
     { instructions: INSTRUCTIONS },
   );
-  attachToRegistry(server, registry, ctxFactory, { apps: opts.apps ? "on" : "auto" });
+  attachToRegistry(server, registry, ctxFactory, {
+    initialToolsets: [...DEFAULT_AGENT_TOOLSETS],
+    apps: opts.apps ? "on" : "auto",
+  });
   const stdio = new StdioServerTransport();
   await server.connect(stdio);
   await new Promise<void>((resolveDone) => {

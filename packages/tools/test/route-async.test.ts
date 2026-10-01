@@ -72,12 +72,16 @@ async function harness(name: string, delayMs = 120) {
   });
   const reg = createRegistry();
   const factory = contextFactory(services, project);
-  const call = (name: string, args: Record<string, unknown>) =>
+  const call = (
+    name: string,
+    args: Record<string, unknown>,
+    signal: AbortSignal = new AbortController().signal,
+  ) =>
     reg.invoke(name, args, (ref) =>
       factory({
         def: reg.get(name)!,
         projectRef: ref,
-        signal: new AbortController().signal,
+        signal,
         progress: () => {},
       }),
     );
@@ -89,7 +93,11 @@ describe("durable asynchronous routing", () => {
     const h = await harness("async-start", 180);
     const before = await hash(h.boardPath);
     const started = performance.now();
-    const response = await h.call("route_run", { timeoutMs: 5_000, applyPolicy: "manual" });
+    const response = await h.call("route_run", {
+      timeoutMs: 5_000,
+      applyPolicy: "manual",
+      waitMs: 0,
+    });
     const startMs = performance.now() - started;
     const startBytes = Buffer.byteLength(JSON.stringify(response.json));
     expect(startMs).toBeLessThan(2_000);
@@ -133,7 +141,11 @@ describe("durable asynchronous routing", () => {
   test("exact cancellation is idempotent and leaves canonical native bytes unchanged", async () => {
     const h = await harness("async-cancel", 600);
     const before = await hash(h.boardPath);
-    const response = await h.call("route_run", { timeoutMs: 5_000, applyPolicy: "auto" });
+    const response = await h.call("route_run", {
+      timeoutMs: 5_000,
+      applyPolicy: "auto",
+      waitMs: 0,
+    });
     const runId = (response.json as { runId: string }).runId;
     await Bun.sleep(60);
     const first = await h.call("route_cancel", { runId });
@@ -177,7 +189,7 @@ describe("durable asynchronous routing", () => {
 
   test("auto apply leaves a ready candidate unapplied when canonical revision changes", async () => {
     const h = await harness("async-auto-stale", 140);
-    const response = await h.call("route_run", { timeoutMs: 5_000 });
+    const response = await h.call("route_run", { timeoutMs: 5_000, waitMs: 0 });
     const runId = (response.json as { runId: string }).runId;
     await Bun.sleep(50);
     await writeFile(h.boardPath, "user-edit-during-route\n");
@@ -215,5 +227,132 @@ describe("durable asynchronous routing", () => {
     expect(await hash(h.boardPath)).toBe(before);
     expect(h.services.routeRuns.get(runId)?.application).toMatchObject({ state: "failed" });
     expect(h.services.routeRuns.get(runId)?.application.reason).toContain("prior board restored");
+  });
+});
+
+type InlineRun = {
+  runId: string;
+  state: string;
+  run?: {
+    id: string;
+    state: string;
+    heartbeatFreshnessMs: number;
+    candidate: { available: boolean; sha256: string | null };
+    application: { state: string; reason: string | null; resultingPcbRevision: string | null };
+  };
+  nextActions: Array<{ tool: string; runId: string; expectedPcbRevision?: string }>;
+};
+
+const withoutFreshness = (run: Record<string, unknown> | undefined) => {
+  const { heartbeatFreshnessMs: _, ...rest } = run ?? {};
+  return rest;
+};
+
+describe("route_run inline result", () => {
+  test("a run finishing within the wait returns route_status's content for that run", async () => {
+    const h = await harness("inline-terminal", 60);
+    const before = await hash(h.boardPath);
+    const response = await h.call("route_run", {
+      timeoutMs: 5_000,
+      applyPolicy: "manual",
+      waitMs: 5_000,
+    });
+    const json = response.json as InlineRun;
+    expect(json.state).toBe("completed");
+    expect(json.run?.state).toBe("completed");
+    expect(json.run?.candidate.available).toBe(true);
+    expect(json.run?.application.state).toBe("manual");
+    // A manual candidate is the only follow-up; status/cancel are not next actions for a finished run.
+    expect(json.nextActions).toEqual([
+      { tool: "route_apply", runId: json.runId, expectedPcbRevision: before },
+    ]);
+    const status = await h.call("route_status", { runId: json.runId });
+    expect(response.text).toBe(status.text);
+    expect(withoutFreshness((status.json as InlineRun).run)).toEqual(withoutFreshness(json.run));
+    expect(await hash(h.boardPath)).toBe(before);
+  });
+
+  test("a run still going when the wait ends returns the running response", async () => {
+    const h = await harness("inline-running", 600);
+    const started = performance.now();
+    const response = await h.call("route_run", {
+      timeoutMs: 5_000,
+      applyPolicy: "manual",
+      waitMs: 100,
+    });
+    expect(performance.now() - started).toBeLessThan(500);
+    const json = response.json as InlineRun & { run?: unknown };
+    expect(json.state).toBe("running");
+    expect(json.run).toBeUndefined();
+    expect(json.nextActions).toEqual([
+      { tool: "route_status", runId: json.runId },
+      { tool: "route_cancel", runId: json.runId },
+    ]);
+    expect(response.text).toContain("computation continues independently");
+    expect((await terminal(h.services, json.runId)).state).toBe("completed");
+  });
+
+  test("waitMs 0 returns the running response at once, as before", async () => {
+    const h = await harness("inline-zero", 60);
+    const response = await h.call("route_run", {
+      timeoutMs: 5_000,
+      applyPolicy: "manual",
+      waitMs: 0,
+    });
+    const json = response.json as Record<string, unknown> & { runId: string };
+    expect(Object.keys(json).filter((key) => key !== "_contract")).toEqual([
+      "runId",
+      "state",
+      "router",
+      "runtimeId",
+      "startingPcbRevision",
+      "requested",
+      "applyPolicy",
+      "nextActions",
+    ]);
+    expect(json["state"]).toBe("running");
+    expect(response.text).toBe(
+      `Route ${json.runId} running; computation continues independently. Use route_status with this runId or route_cancel with this exact runId.`,
+    );
+    await terminal(h.services, json.runId);
+  });
+
+  test("auto apply within the wait reports the application outcome", async () => {
+    const applied = await harness("inline-auto-applied", 60);
+    const appliedJson = (await applied.call("route_run", { timeoutMs: 5_000, waitMs: 5_000 }))
+      .json as InlineRun;
+    expect(appliedJson.state).toBe("completed");
+    expect(appliedJson.run?.application.state).toBe("applied");
+    expect(appliedJson.run?.application.resultingPcbRevision).toBe(await hash(applied.boardPath));
+    expect(appliedJson.nextActions).toEqual([]);
+
+    const stale = await harness("inline-auto-stale", 140);
+    const edit = Bun.sleep(50).then(() => writeFile(stale.boardPath, "user-edit-during-route\n"));
+    const staleResponse = await stale.call("route_run", { timeoutMs: 5_000, waitMs: 5_000 });
+    await edit;
+    const staleJson = staleResponse.json as InlineRun;
+    expect(staleJson.state).toBe("completed");
+    expect(staleJson.run?.application.state).toBe("stale");
+    expect(staleJson.run?.application.reason).toBeTruthy();
+    expect(staleResponse.text).toContain("apply stale");
+    expect(staleJson.nextActions).toEqual([]);
+  });
+
+  test("aborting the request during the wait leaves the run going", async () => {
+    const h = await harness("inline-abort", 300);
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 50);
+    const started = performance.now();
+    const response = await h.call(
+      "route_run",
+      { timeoutMs: 5_000, applyPolicy: "manual", waitMs: 10_000 },
+      controller.signal,
+    );
+    expect(performance.now() - started).toBeLessThan(250);
+    const json = response.json as InlineRun;
+    expect(json.state).toBe("running");
+    const done = await terminal(h.services, json.runId);
+    expect(done.state).toBe("completed");
+    expect(done.candidate.available).toBe(true);
   });
 });

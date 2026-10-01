@@ -63,7 +63,8 @@ describe.skipIf(!url || !workspace)("optional native schematic capabilities", ()
       ],
       connections: [
         {
-          name: "LEFT",
+          name: "+5V",
+          label: "global",
           nodes: [
             { reference: "R1", pin: "1" },
             { reference: "R2", pin: "1" },
@@ -88,13 +89,14 @@ describe.skipIf(!url || !workspace)("optional native schematic capabilities", ()
     });
     await design.schematicEdit(projectDir, {
       connections: [
-        { name: "LEFT", nodes: [{ reference: "R3", pin: "1" }] },
+        { name: "+5V", label: "global", nodes: [{ reference: "R3", pin: "1" }] },
         { name: "RIGHT", nodes: [{ reference: "R3", pin: "2" }] },
         {
           name: "+5V",
           nodes: [
             { reference: "#FLG01", pin: "1" },
             { reference: "#PWR01", pin: "1" },
+            { reference: "R1", pin: "1" },
           ],
           label: "global",
         },
@@ -102,6 +104,7 @@ describe.skipIf(!url || !workspace)("optional native schematic capabilities", ()
       save: true,
     });
 
+    await sessions.restart(projectDir);
     const schematic = await design.schematicInspect(projectDir);
     expect(schematic.symbols.map((symbol) => symbol.reference).sort()).toEqual([
       "#FLG01",
@@ -111,7 +114,7 @@ describe.skipIf(!url || !workspace)("optional native schematic capabilities", ()
       "R3",
     ]);
     expect(schematic.nets.map((net) => net.name)).toEqual(
-      expect.arrayContaining(["/LEFT", "/RIGHT"]),
+      expect.arrayContaining(["+5V", "/RIGHT"]),
     );
     expect(schematic.erc.errors).toBe(0);
     expect(schematic.erc.warnings).toBe(0);
@@ -145,6 +148,6 @@ describe.skipIf(!url || !workspace)("optional native schematic capabilities", ()
     ]);
     expect(placed.missing).toEqual([]);
     expect(placed.moved.sort()).toEqual(["R1", "R2"]);
-    expect(placed.libraryNormalized).toBeGreaterThanOrEqual(1);
+    expect(placed.libraryNormalized).toBe(0);
   }, 120_000);
 });

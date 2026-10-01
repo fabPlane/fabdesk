@@ -4,15 +4,17 @@
  * through the typed client on the project's session. Positions come back in millimetres; the
  * client speaks nanometres.
  */
+import { resolveSchematicSheet } from "./schematic-sheet";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { create } from "@bufbuild/protobuf";
 import {
   ElectricalPinType,
   BoardGraphicShapeSchema,
   BoardLayer,
   PadType,
+  PadstackPresence,
   GlobalLabelSchema,
   JunctionSchema,
   KiCadObjectType,
@@ -25,6 +27,8 @@ import {
   SchematicSymbolType,
   SchematicTextSchema,
   TextSchema,
+  type PolyLine,
+  type PolygonWithHoles,
 } from "@fp-pcb/proto";
 import {
   GlobalLabel,
@@ -33,6 +37,7 @@ import {
   NoConnect,
   BoardShape,
   BoardText,
+  Footprint,
   Track,
   Arc,
   Zone,
@@ -51,9 +56,12 @@ import {
   inspectBoardGeometry as inspectNativeBoardGeometry,
   mm as toNm,
   placeNativeSymbol,
+  schematicPinSheetPosition,
+  normalizeNativeSymbolTransform,
   moveNativeSymbol,
   toVector2,
   toMm,
+  vec2,
   type Board,
   type KiCad,
 } from "@fp-pcb/client";
@@ -83,6 +91,7 @@ import {
   type PcbFootprintEdit,
   type PcbGeometryEdit,
   type PcbGeometrySnapshot,
+  type PcbPlacementResult,
   type RouteJobOptions,
   type RouteProgress,
   type RouteSummary,
@@ -91,6 +100,14 @@ import type { FpPcbBridgeClient } from "./fp-pcb-bridge";
 import { BOARD_PCB, BOARD_PRO, type FpPcbSessions } from "./fp-pcb-session";
 import type { KicadLibraryCatalog } from "./kicad-library-catalog";
 import { partSearchTokens, rankPartSearch } from "./part-search-ranking";
+import {
+  analyzeStaleCopper,
+  type CopperPad,
+  type CopperPoint,
+  type CopperPolygon,
+  type CopperRoute,
+  type CopperZone,
+} from "./stale-copper";
 
 /** The `@fp-pcb/compile` frontend that reads `circuit.netlist.json` (its `NETLIST_JSON_KIND`). */
 export const NETLIST_JSON_KIND = "netlist-json";
@@ -126,6 +143,233 @@ function copperLayerUserName(id: BoardLayer): string {
   if (id >= BoardLayer.BL_In1_Cu && id < BoardLayer.BL_B_Cu)
     return `In${id - BoardLayer.BL_In1_Cu + 1}.Cu`;
   return BoardLayer[id] ?? String(id);
+}
+
+function arcPoints(start: CopperPoint, mid: CopperPoint, end: CopperPoint): CopperPoint[] {
+  const d = 2 * (start.x * (mid.y - end.y) + mid.x * (end.y - start.y) + end.x * (start.y - mid.y));
+  if (Math.abs(d) < 1) return [start, end];
+  const s2 = start.x * start.x + start.y * start.y;
+  const m2 = mid.x * mid.x + mid.y * mid.y;
+  const e2 = end.x * end.x + end.y * end.y;
+  const center = {
+    x: (s2 * (mid.y - end.y) + m2 * (end.y - start.y) + e2 * (start.y - mid.y)) / d,
+    y: (s2 * (end.x - mid.x) + m2 * (start.x - end.x) + e2 * (mid.x - start.x)) / d,
+  };
+  const tau = Math.PI * 2;
+  const norm = (angle: number) => ((angle % tau) + tau) % tau;
+  const a0 = Math.atan2(start.y - center.y, start.x - center.x);
+  const am = Math.atan2(mid.y - center.y, mid.x - center.x);
+  const a1 = Math.atan2(end.y - center.y, end.x - center.x);
+  const ccwEnd = norm(a1 - a0);
+  const ccwMid = norm(am - a0);
+  const sweep = ccwMid <= ccwEnd ? ccwEnd : ccwEnd - tau;
+  const steps = Math.max(2, Math.ceil(Math.abs(sweep) / (Math.PI / 180)));
+  const radius = Math.hypot(start.x - center.x, start.y - center.y);
+  return Array.from({ length: steps + 1 }, (_, index) => {
+    if (index === 0) return start;
+    if (index === steps) return end;
+    const angle = a0 + (sweep * index) / steps;
+    return { x: center.x + radius * Math.cos(angle), y: center.y + radius * Math.sin(angle) };
+  });
+}
+
+function polyLinePoints(line: PolyLine | undefined): CopperPoint[] {
+  const points: CopperPoint[] = [];
+  for (const node of line?.nodes ?? []) {
+    if (node.geometry.case === "point") points.push(vec2(node.geometry.value));
+    else if (node.geometry.case === "arc") {
+      const arc = node.geometry.value;
+      const part = arcPoints(vec2(arc.start), vec2(arc.mid), vec2(arc.end));
+      if (
+        points.length &&
+        part.length &&
+        points.at(-1)!.x === part[0]!.x &&
+        points.at(-1)!.y === part[0]!.y
+      )
+        part.shift();
+      points.push(...part);
+    }
+  }
+  return points;
+}
+
+function copperPolygon(polygon: PolygonWithHoles): CopperPolygon {
+  return {
+    outline: polyLinePoints(polygon.outline),
+    holes: polygon.holes.map(polyLinePoints),
+  };
+}
+
+async function copperPads(board: Board): Promise<CopperPad[]> {
+  const [pads, footprints, enabled] = await Promise.all([
+    board.getPads(),
+    board.getFootprints(),
+    board.enabledLayers(),
+  ]);
+  const references = new Map(footprints.map((footprint) => [footprint.id, footprint.reference]));
+  const layers = copperLayersOf(enabled.layers);
+  const presence = await board.padstackPresence(
+    pads.map((pad) => pad.id),
+    layers,
+  );
+  const hasCopper = (pad: (typeof pads)[number], layer: BoardLayer) => {
+    const value = presence.get(`${pad.id}|${BoardLayer[layer]}`);
+    return (
+      value === PadstackPresence.PSP_PRESENT ||
+      (value === PadstackPresence.PSP_UNKNOWN && pad.layers.includes(layer))
+    );
+  };
+  const shapes = new Map<BoardLayer, Map<string, PolygonWithHoles>>();
+  for (const layer of layers)
+    shapes.set(
+      layer,
+      await board.padShapesAsPolygons(
+        pads.filter((pad) => hasCopper(pad, layer)).map((pad) => pad.id),
+        layer,
+      ),
+    );
+  return pads.flatMap((pad) => {
+    const parent = pad.parent;
+    const reference = parent ? references.get(parent) : undefined;
+    if (!parent || !reference) return [];
+    return [
+      {
+        id: pad.id,
+        parent,
+        reference,
+        number: pad.number,
+        net: pad.net ?? "",
+        shapes: layers
+          .filter((layer) => hasCopper(pad, layer))
+          .flatMap((layer) => {
+            const polygon = shapes.get(layer)?.get(pad.id);
+            return polygon ? [{ layer, polygon: copperPolygon(polygon) }] : [];
+          }),
+      },
+    ];
+  });
+}
+
+function copperRoutes(
+  items: Awaited<ReturnType<Board["getTracks"]>>,
+  enabledLayers: BoardLayer[],
+): CopperRoute[] {
+  return items.flatMap<CopperRoute>((item) => {
+    if (item instanceof Track)
+      return [
+        {
+          id: item.id,
+          kind: "track" as const,
+          net: item.net ?? "",
+          layers: [item.layerId],
+          path: [item.start, item.end],
+          width: item.width,
+          locked: item.locked,
+        },
+      ];
+    if (item instanceof Arc)
+      return [
+        {
+          id: item.id,
+          kind: "arc" as const,
+          net: item.net ?? "",
+          layers: [item.layerId],
+          path: arcPoints(item.start, item.mid, item.end),
+          width: item.width,
+          locked: item.locked,
+        },
+      ];
+    if (item instanceof Via) {
+      const span = copperLayersOf(item.layers);
+      const first = span[0];
+      const last = span.at(-1);
+      const layers =
+        first === undefined || last === undefined
+          ? span
+          : enabledLayers.filter(
+              (layer) => layer >= Math.min(first, last) && layer <= Math.max(first, last),
+            );
+      return [
+        {
+          id: item.id,
+          kind: "via" as const,
+          net: item.net ?? "",
+          layers,
+          path: [item.position],
+          width: item.diameter,
+          locked: item.locked,
+        },
+      ];
+    }
+    return [];
+  });
+}
+
+function copperZones(zones: Zone[]): CopperZone[] {
+  return zones.flatMap((zone) =>
+    zone.filledPolygons.flatMap((filled) =>
+      filled.shapes
+        ? [{ layer: filled.layer, polygons: filled.shapes.polygons.map(copperPolygon) }]
+        : [],
+    ),
+  );
+}
+
+type FootprintCopperTransform = {
+  reference: string;
+  anchor: CopperPoint;
+  flip: boolean;
+  translation: CopperPoint;
+  rotation: number;
+};
+
+function transformedCopperPads(
+  pads: CopperPad[],
+  transforms: FootprintCopperTransform[],
+): CopperPad[] {
+  const byReference = new Map(transforms.map((transform) => [transform.reference, transform]));
+  const flipLayer = (layer: BoardLayer): BoardLayer => {
+    if (layer === BoardLayer.BL_F_Cu) return BoardLayer.BL_B_Cu;
+    if (layer === BoardLayer.BL_B_Cu) return BoardLayer.BL_F_Cu;
+    return layer;
+  };
+  return pads.map((pad) => {
+    const transform = byReference.get(pad.reference);
+    if (!transform) return pad;
+    const center = {
+      x: transform.anchor.x + transform.translation.x,
+      y: transform.anchor.y + transform.translation.y,
+    };
+    const radians = (transform.rotation * Math.PI) / 180;
+    const cos = Math.cos(radians);
+    const sin = Math.sin(radians);
+    const point = (original: CopperPoint): CopperPoint => {
+      const flipped = transform.flip
+        ? { x: 2 * transform.anchor.x - original.x, y: original.y }
+        : original;
+      const translated = {
+        x: flipped.x + transform.translation.x,
+        y: flipped.y + transform.translation.y,
+      };
+      const x = translated.x - center.x;
+      const y = translated.y - center.y;
+      // Match Footprint.rotate(): KiCad angles are counterclockwise while board Y grows down.
+      return {
+        x: Math.round(center.x + x * cos + y * sin),
+        y: Math.round(center.y - x * sin + y * cos),
+      };
+    };
+    return {
+      ...pad,
+      shapes: pad.shapes.map(({ layer, polygon }) => ({
+        layer: transform.flip ? flipLayer(layer) : layer,
+        polygon: {
+          outline: polygon.outline.map(point),
+          ...(polygon.holes ? { holes: polygon.holes.map((hole) => hole.map(point)) } : {}),
+        },
+      })),
+    };
+  });
 }
 
 async function normalizePowerSymbolMarkers(path: string): Promise<boolean> {
@@ -474,21 +718,8 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
   ): Promise<NativeSchematicSnapshot> => {
     const { schematic, board } = await deps.sessions.ensureProject(projectDir);
     const hierarchy = await schematic.hierarchy();
-    const flat = hierarchy.flatMap(function visit(sheet): typeof hierarchy {
-      return [sheet, ...sheet.children.flatMap(visit)];
-    });
-    const selected = selectedSheet
-      ? flat.find(
-          (sheet) =>
-            sheet.path?.pathHumanReadable === selectedSheet ||
-            sheet.name === selectedSheet ||
-            sheet.filename === selectedSheet ||
-            sheet.filename.endsWith(`/${selectedSheet}`),
-        )
-      : flat[0];
-    if (!selected?.path)
-      throw new ToolError(`schematic sheet not found: ${selectedSheet ?? "root"}`, "not_found");
-    const root = schematic.sheet(selected.path, selected);
+    const { selected: selectedEntry } = resolveSchematicSheet(hierarchy, selectedSheet);
+    const root = schematic.sheet(selectedEntry.path, selectedEntry);
     const [symbols, items, nets, erc, revision, pcbRevision] = await Promise.all([
       root.getSymbols(),
       root.getAllItems(),
@@ -514,13 +745,16 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         rotation: symbol.rotation,
         mirrorX: symbol.mirrorX,
         mirrorY: symbol.mirrorY,
-        pins: symbol.pins.map((pin) => ({
-          id: pin.id,
-          number: pin.number,
-          name: pin.name,
-          ...(netByItem.get(pin.id) ? { net: netByItem.get(pin.id)! } : {}),
-          position: { x: mm(pin.position.x), y: mm(pin.position.y) },
-        })),
+        pins: symbol.pins.map((pin) => {
+          const point = schematicPinSheetPosition(symbol, pin);
+          return {
+            id: pin.id,
+            number: pin.number,
+            name: pin.name,
+            ...(netByItem.get(pin.id) ? { net: netByItem.get(pin.id)! } : {}),
+            position: { x: mm(point.x), y: mm(point.y) },
+          };
+        }),
       })),
       wires: items
         .filter((item): item is SchematicLine => item instanceof SchematicLine && item.isWire)
@@ -570,22 +804,79 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       erc: { errors: erc.errorCount, warnings: erc.warningCount },
       scope: {
         kind: selectedSheet ? "selected-sheet" : "current/root-sheet",
+        identity: `uuid:${selectedEntry.path.path.map((id) => id.value).join("/")}`,
         hierarchyPath:
-          selected.path.pathHumanReadable && selected.path.pathHumanReadable !== "/"
-            ? selected.path.pathHumanReadable
+          selectedEntry.path.pathHumanReadable && selectedEntry.path.pathHumanReadable !== "/"
+            ? selectedEntry.path.pathHumanReadable
             : hierarchy.length > 1
-              ? `/${selected.name || basename(selected.filename, ".kicad_sch")}/`
+              ? `/${selectedEntry.name || basename(selectedEntry.filename, ".kicad_sch")}/`
               : "/",
-        nativePath: selected.filename || null,
-        name: selected.name || (selectedSheet ?? "root"),
+        nativePath: selectedEntry.filename || null,
+        name: selectedEntry.name || (selectedSheet ?? "root"),
       },
     };
   };
 
   const schematicEdit = async (projectDir: string, edit: NativeSchematicEdit) => {
     const { schematic, session } = await deps.sessions.ensureProject(projectDir);
-    const root = await schematic.rootSheet();
-    const existing = await root.getSymbols();
+    const hierarchy = await schematic.hierarchy();
+    const { selected: selectedEntry, flat } = resolveSchematicSheet(hierarchy, edit.sheet);
+    const root = schematic.sheet(selectedEntry.path, selectedEntry);
+    const beforeItems = await root.getAllItems();
+    const existing = beforeItems.filter(
+      (item): item is SchematicSymbol => item instanceof SchematicSymbol,
+    );
+    // Native geometry may be normalized on save. Compare compact editable properties, never
+    // embedded library definitions or reload-only metadata on untouched symbols.
+    const signature = (item: (typeof beforeItems)[number]) => {
+      if (item instanceof SchematicSymbol) return null;
+      if (item instanceof SchematicLine) return JSON.stringify([item.start, item.end, item.isWire]);
+      if (item instanceof Junction || item instanceof NoConnect)
+        return JSON.stringify(item.position);
+      if (
+        item instanceof LocalLabel ||
+        item instanceof GlobalLabel ||
+        item instanceof SchematicText
+      )
+        return JSON.stringify([item.position, item.text]);
+      return null;
+    };
+    const beforeById = new Map(beforeItems.map((item) => [item.id, signature(item)]));
+    const projectReferences = new Map(existing.map((symbol) => [symbol.reference, symbol.id]));
+    if ((edit.symbols?.length ?? 0) || edit.symbolUpdates?.some((update) => update.newReference))
+      for (const sheet of flat) {
+        if (sheet === selectedEntry || !sheet.path) continue;
+        for (const symbol of await schematic.sheet(sheet.path, sheet).getSymbols())
+          projectReferences.set(symbol.reference, symbol.id);
+      }
+    const gridProblems: Array<{
+      object: string;
+      position: { x: number; y: number };
+      gridSpacing: number;
+    }> = [];
+    const checkGrid = (object: string, position: { x: number; y: number }) => {
+      if (
+        Math.abs(position.x / 1.27 - Math.round(position.x / 1.27)) > 1e-6 ||
+        Math.abs(position.y / 1.27 - Math.round(position.y / 1.27)) > 1e-6
+      )
+        gridProblems.push({ object, position, gridSpacing: 1.27 });
+    };
+    for (const [kind, inputs] of Object.entries({
+      symbols: edit.symbols ?? [],
+      symbolUpdates: edit.symbolUpdates ?? [],
+      localLabels: edit.localLabels ?? [],
+      globalLabels: edit.globalLabels ?? [],
+      texts: edit.texts ?? [],
+    }))
+      inputs.forEach((input, i) => {
+        if (input.position) checkGrid(`${kind}[${i}]`, input.position);
+      });
+    (edit.wires ?? []).forEach((wire, i) => {
+      checkGrid(`wires[${i}].start`, wire.start);
+      checkGrid(`wires[${i}].end`, wire.end);
+    });
+    (edit.junctions ?? []).forEach((point, i) => checkGrid(`junctions[${i}]`, point));
+    (edit.noConnects ?? []).forEach((point, i) => checkGrid(`noConnects[${i}]`, point));
     const byReference = new Map(existing.map((symbol) => [symbol.reference, symbol]));
     const createdSymbols: SchematicSymbol[] = [];
     const updatedSymbols: SchematicSymbol[] = [];
@@ -607,12 +898,18 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         }[input.rotation];
       if (input.mirrorX !== undefined) symbol.proto.transform!.mirrorX = input.mirrorX;
       if (input.mirrorY !== undefined) symbol.proto.transform!.mirrorY = input.mirrorY;
+      normalizeNativeSymbolTransform(symbol);
       if (input.newReference !== undefined) {
-        if (byReference.has(input.newReference))
+        if (
+          projectReferences.has(input.newReference) &&
+          projectReferences.get(input.newReference) !== symbol.id
+        )
           throw new ToolError(
             `cannot annotate ${input.reference} as existing reference ${input.newReference}`,
             "invalid_args",
           );
+        projectReferences.delete(input.reference);
+        projectReferences.set(input.newReference, symbol.id);
         symbol.reference = input.newReference;
         byReference.delete(input.reference);
         byReference.set(input.newReference, symbol);
@@ -632,24 +929,27 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     }
     const pins = new Map<string, { x: number; y: number }>();
     for (const symbol of existing)
-      for (const pin of symbol.pins) pins.set(`${symbol.reference}:${pin.number}`, pin.position);
+      for (const pin of symbol.pins)
+        pins.set(`${symbol.reference}:${pin.number}`, schematicPinSheetPosition(symbol, pin));
 
     for (const input of edit.symbols ?? []) {
-      if (byReference.has(input.reference))
+      if (projectReferences.has(input.reference))
         throw new ToolError(
-          `schematic already contains ${input.reference}; delete or edit it explicitly before adding it again`,
+          `schematic hierarchy already contains ${input.reference}; delete or edit it explicitly before adding it again`,
           "invalid_args",
         );
-      const definition = await session.kicad
-        .openSymbol(input.libId)
-        .then((document) => document.libSymbol())
+      // Library lookup resolves inherited pins; a symbol-editor document exposes only the
+      // editable definition's own children and can be pinless for a derived symbol.
+      const definition = await session.kicad.libraries
+        .get("symbol", input.libId)
         .catch((error: unknown) => {
           throw new ToolError(
             `cannot load symbol ${input.libId}: ${error instanceof Error ? error.message : String(error)}`,
             "invalid_args",
           );
         });
-      if (!definition) throw new ToolError(`cannot load symbol ${input.libId}`, "invalid_args");
+      if (!(definition instanceof LibSymbol))
+        throw new ToolError(`cannot load symbol ${input.libId}`, "invalid_args");
       if (input.libId.startsWith("power:"))
         definition.proto.type = SchematicSymbolType.SST_GLOBAL_POWER;
       const placed = placeNativeSymbol(definition, {
@@ -673,6 +973,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       for (const [number, position] of placed.pins)
         pins.set(`${input.reference}:${number}`, position);
       byReference.set(input.reference, placed.symbol);
+      projectReferences.set(input.reference, placed.symbol.id);
     }
 
     const wires: SchematicLine[] = [];
@@ -855,9 +1156,21 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       }
     }
 
-    const deleteItems = edit.deleteItemIds?.length
-      ? await root.getItemsById(edit.deleteItemIds)
-      : [];
+    const requestedDeletes = new Set(edit.deleteItemIds ?? []);
+    const deleteItems = beforeItems.filter((item) => requestedDeletes.has(item.id));
+    const deleteIds = new Set(deleteItems.map((item) => item.id));
+    for (const id of edit.deleteItemIds ?? [])
+      if (!deleteIds.has(id))
+        throw new ToolError(
+          `deleteItemIds: unknown object ${id} on selected sheet; expected an inspected native object ID`,
+          "invalid_args",
+        );
+    for (const symbol of updatedSymbols)
+      if (deleteIds.has(symbol.id))
+        throw new ToolError(
+          `symbolUpdates: ${symbol.reference} is also in deleteItemIds; choose update or deletion`,
+          "invalid_args",
+        );
     const createdItems = [
       ...createdSymbols,
       ...wires,
@@ -867,33 +1180,77 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       ...noConnects,
       ...texts,
     ];
-    if (createdItems.length || updatedSymbols.length || deleteItems.length)
-      await root.commit("Fabdesk: edit native schematic", async (tx) => {
+    const changedObjectIds = {
+      created: [] as string[],
+      updated: [] as string[],
+      deleted: [] as string[],
+    };
+    if (createdItems.length || updatedSymbols.length || deleteItems.length) {
+      const committed = await root.commit("Fabdesk: edit native schematic", async (tx) => {
         if (deleteItems.length) await tx.delete(deleteItems);
         if (updatedSymbols.length) await tx.update(updatedSymbols);
         if (createdItems.length) await tx.create(createdItems);
       });
+      changedObjectIds.created = committed.created.map((item) => item.id);
+      changedObjectIds.updated = committed.updated.map((item) => item.id);
+      changedObjectIds.deleted = committed.deleted;
+    }
     const save = edit.save ?? true;
     if (save) await schematic.save();
     if (save && createdSymbols.some((symbol) => symbol.libraryId.startsWith("power:")))
-      await normalizePowerSymbolMarkers(join(projectDir, "board.kicad_sch"));
-    const revision = Number((await schematic.revision()) ?? 0n);
+      await normalizePowerSymbolMarkers(
+        resolve(projectDir, selectedEntry.filename || "board.kicad_sch"),
+      );
     // KiCad's API document retains transient library-mismatch markers after a new symbol is
     // committed even though the saved file is clean. Reload after creation so the next inspect,
     // ERC, and forward annotation all evaluate the persisted representation.
     if (save && createdSymbols.length) await deps.sessions.restart(projectDir);
+    const resulting =
+      save && createdSymbols.length
+        ? (await deps.sessions.ensureProject(projectDir)).schematic
+        : schematic;
+    const afterItems = await resulting.sheet(selectedEntry.path, selectedEntry).getAllItems();
+    const afterById = new Map(afterItems.map((item) => [item.id, signature(item)]));
+    const requestedUpdated = new Set(changedObjectIds.updated);
+    const normalizedAwayObjectIds = changedObjectIds.created.filter((id) => !afterById.has(id));
+    changedObjectIds.created = afterItems
+      .filter((item) => !beforeById.has(item.id))
+      .map((item) => item.id);
+    changedObjectIds.updated = afterItems
+      .filter(
+        (item) =>
+          beforeById.has(item.id) &&
+          (item instanceof SchematicSymbol
+            ? requestedUpdated.has(item.id)
+            : beforeById.get(item.id) !== afterById.get(item.id)),
+      )
+      .map((item) => item.id);
+    changedObjectIds.deleted = beforeItems
+      .filter((item) => !afterById.has(item.id))
+      .map((item) => item.id);
+    const createdIds = new Set(changedObjectIds.created);
+    const updatedIds = new Set(changedObjectIds.updated);
+    const actualCreated = afterItems.filter((item) => createdIds.has(item.id));
+    const revision = Number((await resulting.revision()) ?? 0n);
     return {
+      changedObjectIds,
+      normalizedAwayObjectIds,
+      gridProblems,
       created: {
-        symbols: createdSymbols.length,
-        wires: wires.length,
-        localLabels: localLabels.length,
-        globalLabels: globalLabels.length,
-        junctions: junctions.length,
-        noConnects: noConnects.length,
-        texts: texts.length,
+        symbols: actualCreated.filter((item) => item instanceof SchematicSymbol).length,
+        wires: actualCreated.filter((item) => item instanceof SchematicLine && item.isWire).length,
+        localLabels: actualCreated.filter((item) => item instanceof LocalLabel).length,
+        globalLabels: actualCreated.filter((item) => item instanceof GlobalLabel).length,
+        junctions: actualCreated.filter((item) => item instanceof Junction).length,
+        noConnects: actualCreated.filter((item) => item instanceof NoConnect).length,
+        texts: actualCreated.filter((item) => item instanceof SchematicText).length,
       },
-      updated: { symbols: updatedSymbols.length },
-      deleted: deleteItems.length,
+      updated: {
+        symbols: afterItems.filter(
+          (item) => item instanceof SchematicSymbol && updatedIds.has(item.id),
+        ).length,
+      },
+      deleted: changedObjectIds.deleted.length,
       saved: save,
       revision,
     };
@@ -1055,7 +1412,11 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     };
   };
 
-  const placeFootprints = async (projectDir: string, placements: PcbFootprintEdit[]) => {
+  const placeFootprints = async (
+    projectDir: string,
+    placements: PcbFootprintEdit[],
+    options: { staleCopper?: "keep" | "remove" } = {},
+  ): Promise<PcbPlacementResult> => {
     const board = await deps.sessions.board(projectDir);
     const footprints = await board.getFootprints();
     const byReference = new Map(footprints.map((footprint) => [footprint.reference, footprint]));
@@ -1064,106 +1425,232 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       .filter((reference) => !byReference.has(reference));
     if (missing.length)
       return { moved: [], missing, revision: Number((await board.revision()) ?? 0n), saved: false };
-    const physical = placements.flatMap((placement) => {
-      const footprint = byReference.get(placement.reference)!;
-      let changed = false;
-      if (placement.position) {
-        const target = { x: toNm(placement.position.x), y: toNm(placement.position.y) };
-        const delta = { x: target.x - footprint.position.x, y: target.y - footprint.position.y };
-        if (delta.x || delta.y) {
-          footprint.translate(delta);
-          changed = true;
-        }
-      }
-      if (placement.rotation !== undefined && footprint.orientation !== placement.rotation) {
-        footprint.orientation = placement.rotation;
-        changed = true;
-      }
-      if (placement.flip !== undefined && footprint.isFlipped !== placement.flip) {
-        footprint.layerId = placement.flip ? BoardLayer.BL_B_Cu : BoardLayer.BL_F_Cu;
-        changed = true;
-      }
-      if (placement.lock !== undefined && footprint.locked !== placement.lock) {
-        footprint.locked = placement.lock;
-        changed = true;
-      }
-      return changed ? [footprint] : [];
-    });
-    if (physical.length)
-      await board.commit("Fabdesk: place native PCB footprints", (tx) => tx.update(physical));
-    let libraryNormalized = 0;
-    if (physical.length) {
-      const normalized = await board.updateFootprintsFromLibrary(
-        physical.map((footprint) => footprint.id),
-        { onlyChanged: true },
-      );
-      if (normalized.missing.length)
-        throw new ToolError(
-          `packaged library footprints unavailable for ${normalized.missing.join(", ")}`,
-          "precondition",
-        );
-      libraryNormalized = normalized.updatedCount;
-    }
-    const refreshed = new Map(
-      (await board.getFootprints()).map((footprint) => [footprint.reference, footprint]),
-    );
-    const fieldEdited = placements.flatMap((placement) => {
-      if (!placement.referenceField) return [];
-      const footprint = refreshed.get(placement.reference)!;
+    // Work on detached snapshots: edits and preflight failures must not mutate cached items.
+    const planned = placements.map((placement) => {
+      const footprint = byReference.get(placement.reference)!.clone();
       const field = footprint.referenceField;
-      const text = field?.proto.text?.text;
-      if (!field || !text)
+      if (
+        placement.referenceField &&
+        (!field?.proto.text?.text ||
+          (placement.referenceField.sizeMm !== undefined && !field.proto.text.text.attributes))
+      )
         throw new ToolError(
           `footprint ${placement.reference} has no editable reference field`,
           "precondition",
         );
-      let changed = false;
+      // Validate ordinary rotations before entering a commit or flipping another footprint.
       if (
-        placement.referenceField.visible !== undefined &&
-        field.visible !== placement.referenceField.visible
-      ) {
-        field.visible = placement.referenceField.visible;
-        changed = true;
-      }
-      if (placement.referenceField.position) {
-        const target = {
-          x: toNm(placement.referenceField.position.x),
-          y: toNm(placement.referenceField.position.y),
-        };
-        if (field.position.x !== target.x || field.position.y !== target.y) {
-          text.position = toVector2(target);
-          changed = true;
-        }
-      }
-      if (placement.referenceField.sizeMm !== undefined) {
-        const size = toNm(placement.referenceField.sizeMm);
-        if (
-          text.attributes?.size?.xNm !== BigInt(size) ||
-          text.attributes?.size?.yNm !== BigInt(size)
-        ) {
-          if (!text.attributes)
-            throw new ToolError(
-              `footprint ${placement.reference} reference has no text attributes`,
-              "precondition",
-            );
-          text.attributes.size = toVector2({ x: size, y: size });
-          changed = true;
-        }
-      }
-      return changed ? [footprint] : [];
+        placement.rotation !== undefined &&
+        (placement.flip === undefined || footprint.isFlipped === placement.flip)
+      )
+        footprint.clone().rotate((placement.rotation - footprint.orientation) % 360);
+      return { placement, footprint };
     });
-    if (fieldEdited.length)
-      await board.commit("Fabdesk: adjust PCB reference fields", (tx) => tx.update(fieldEdited));
-    await board.save();
-    await keepNetClass(projectDir);
-    const changedReferences = [
-      ...new Set([...physical, ...fieldEdited].map((footprint) => footprint.reference)),
-    ];
+    if (new Set(placements.map((p) => p.reference)).size !== placements.length)
+      throw new ToolError(
+        "each footprint reference must appear only once per placement",
+        "invalid_args",
+      );
+
+    const geometryReferences = new Set(
+      planned.flatMap(({ placement, footprint }) => {
+        const moved =
+          (placement.position !== undefined &&
+            (toNm(placement.position.x) !== footprint.position.x ||
+              toNm(placement.position.y) !== footprint.position.y)) ||
+          (placement.rotation !== undefined &&
+            (placement.rotation - footprint.orientation) % 360 !== 0) ||
+          (placement.flip !== undefined && placement.flip !== footprint.isFlipped);
+        return moved ? [placement.reference] : [];
+      }),
+    );
+    if ((await board.modified()) !== false)
+      throw new ToolError(
+        "save the open PCB before placing footprints; placement recovery may restart KiCad",
+        "precondition",
+      );
+    await deps.sessions.assertSchematicSaved(projectDir);
+    const [allPadsBefore, routeItems, zoneItems, enabled] = geometryReferences.size
+      ? await Promise.all([
+          copperPads(board),
+          board.getTracks(),
+          board.getZones(),
+          board.enabledLayers(),
+        ])
+      : [[], [], [], { copperLayerCount: 0, layers: [] }];
+    const beforePads = allPadsBefore.filter((pad) => geometryReferences.has(pad.reference));
+    const routes = copperRoutes(routeItems, copperLayersOf(enabled.layers));
+    const zones = copperZones(zoneItems);
+    const originals = await Promise.all(
+      [BOARD_PCB, BOARD_PRO].map(async (file) => ({
+        path: join(projectDir, file),
+        text: await readText(join(projectDir, file)).catch((error: NodeJS.ErrnoException) => {
+          if (error.code !== "ENOENT") throw error;
+          return null;
+        }),
+      })),
+    );
+    const moved: string[] = [];
+    let staleAnalysis: ReturnType<typeof analyzeStaleCopper> = {
+      reports: {},
+      staleIds: [],
+      affectedNets: [],
+    };
+    let zoneRefill: { refilled: boolean; error?: string } | undefined;
+    let revision = 0;
+    try {
+      await board.commit("Fabdesk: place native PCB footprints", async (tx) => {
+        // KiCad's native flip transforms pads, fields, graphics and layers together.
+        const toFlip = planned.filter(
+          ({ placement, footprint }) =>
+            placement.flip !== undefined && footprint.isFlipped !== placement.flip,
+        );
+        const flipped = toFlip.length
+          ? await board.flip(toFlip.map(({ footprint }) => footprint.id))
+          : [];
+        const flippedById = new Map(
+          flipped
+            .filter((item): item is Footprint => item instanceof Footprint)
+            .map((item) => [item.id, item]),
+        );
+        const updates: Footprint[] = [];
+        const copperTransforms: FootprintCopperTransform[] = [];
+        for (const { placement, footprint: initial } of planned) {
+          let footprint = initial;
+          let changed = false;
+          const didFlip = placement.flip !== undefined && footprint.isFlipped !== placement.flip;
+          if (placement.flip !== undefined && footprint.isFlipped !== placement.flip) {
+            const canonical = flippedById.get(footprint.id);
+            if (!canonical)
+              throw new ToolError(`could not flip footprint ${placement.reference}`, "internal");
+            footprint = canonical.clone();
+            changed = true;
+          }
+          const translation = { x: 0, y: 0 };
+          if (placement.position) {
+            const delta = {
+              x: toNm(placement.position.x) - footprint.position.x,
+              y: toNm(placement.position.y) - footprint.position.y,
+            };
+            if (delta.x || delta.y) {
+              footprint.translate(delta);
+              translation.x = delta.x;
+              translation.y = delta.y;
+              changed = true;
+            }
+          }
+          let rotation = 0;
+          if (placement.rotation !== undefined) {
+            const delta = (placement.rotation - footprint.orientation) % 360;
+            if (delta) {
+              footprint.rotate(delta);
+              rotation = delta;
+              changed = true;
+            }
+          }
+          if (placement.lock !== undefined && footprint.locked !== placement.lock) {
+            footprint.locked = placement.lock;
+            changed = true;
+          }
+          const edit = placement.referenceField;
+          if (edit) {
+            const field = footprint.referenceField!;
+            const text = field.proto.text!.text!;
+            if (edit.visible !== undefined && field.visible !== edit.visible) {
+              field.visible = edit.visible;
+              changed = true;
+            }
+            if (edit.position) {
+              const target = { x: toNm(edit.position.x), y: toNm(edit.position.y) };
+              if (field.position.x !== target.x || field.position.y !== target.y) {
+                text.position = toVector2(target);
+                changed = true;
+              }
+            }
+            if (edit.sizeMm !== undefined) {
+              const size = toNm(edit.sizeMm);
+              if (
+                text.attributes!.size?.xNm !== BigInt(size) ||
+                text.attributes!.size?.yNm !== BigInt(size)
+              ) {
+                text.attributes!.size = toVector2({ x: size, y: size });
+                changed = true;
+              }
+            }
+          }
+          if (changed) {
+            updates.push(footprint);
+            moved.push(placement.reference);
+          }
+          if (geometryReferences.has(placement.reference))
+            copperTransforms.push({
+              reference: placement.reference,
+              anchor: initial.position,
+              flip: didFlip,
+              translation,
+              rotation,
+            });
+        }
+        if (updates.length) await tx.update(updates);
+        if (geometryReferences.size) {
+          const allPadsAfter = transformedCopperPads(allPadsBefore, copperTransforms);
+          staleAnalysis = analyzeStaleCopper({
+            beforePads,
+            afterPads: allPadsAfter.filter((pad) => geometryReferences.has(pad.reference)),
+            allPadsBefore,
+            allPadsAfter,
+            routes,
+            zones,
+          });
+          if (options.staleCopper === "remove" && staleAnalysis.staleIds.length)
+            await tx.delete(staleAnalysis.staleIds);
+        }
+      });
+      if (options.staleCopper === "remove" && staleAnalysis.staleIds.length)
+        zoneRefill = await refillAfterCopperChange(board);
+      // KiCad SaveDocument writes the committed state, so save only after EndCommit.
+      await board.save();
+      await keepNetClass(projectDir);
+      revision = Number((await board.revision()) ?? 0n);
+    } catch (error) {
+      // A save can fail after writing. Restore the saved files and discard the edited session
+      // so a failed transport, commit or save cannot leak into a later successful edit.
+      await deps.sessions.release(projectDir).catch((cleanupError) => {
+        console.warn("footprint placement session recovery failed:", cleanupError);
+      });
+      const cleanup = await Promise.allSettled(
+        originals.map(async (original) => {
+          if (original.text !== null) await writeText(original.path, original.text);
+          else await rm(original.path, { force: true });
+        }),
+      );
+      for (const result of cleanup) {
+        if (result.status === "rejected")
+          console.warn("footprint placement recovery failed:", result.reason);
+      }
+      throw error;
+    }
+    const staleCopper = Object.fromEntries(
+      Object.entries(staleAnalysis.reports).map(([reference, report]) => [
+        reference,
+        { ...report, stale: report.stale.slice(0, 100), shorted: report.shorted.slice(0, 100) },
+      ]),
+    );
     return {
-      moved: changedReferences,
+      moved,
       missing: [],
-      libraryNormalized,
-      revision: Number((await board.revision()) ?? 0n),
+      ...(Object.keys(staleCopper).length ? { staleCopper } : {}),
+      ...(options.staleCopper === "remove" && staleAnalysis.staleIds.length
+        ? {
+            removedCopper: {
+              ids: staleAnalysis.staleIds,
+              nets: staleAnalysis.affectedNets,
+            },
+            ...(zoneRefill ? { zoneRefill } : {}),
+          }
+        : {}),
+      libraryNormalized: 0,
+      revision,
       saved: true,
     };
   };
@@ -1761,11 +2248,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         .catch(() => 0);
   };
 
-  /**
-   * Move footprints by rewriting their transform in the saved file, then reload the board into the
-   * session: the API's UpdateItems moves only a footprint's anchor (fab_pcb gap G28), the file
-   * format keeps children relative, so this is the one way to place parts today.
-   */
+  /** Compatibility entry point; native placement transforms the existing embedded geometry. */
   const place = async (
     projectDir: string,
     placements: Array<{ ref: string; x: number; y: number; rotation?: number }>,

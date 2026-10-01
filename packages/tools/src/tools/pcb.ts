@@ -17,7 +17,12 @@ export const pcb_define_outline = defineTool({
     points: z.array(Point).min(3).max(100).optional(),
     replace: z.boolean().default(false),
   },
-  annotations: { idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async ({ widthMm, heightMm, points, replace }, ctx) => {
     if (!points && !(widthMm && heightMm))
       throw new ToolError("provide points or both widthMm and heightMm", "invalid_args");
@@ -41,7 +46,7 @@ export const pcb_place = defineTool({
   toolset: "circuit",
   title: "Place PCB footprints",
   description:
-    "Place native PCB footprints and adjust their silkscreen reference fields at explicit millimetre coordinates. Library geometry is normalized before reference-field edits. Unknown references fail without a partial placement.",
+    "Place native PCB footprints and adjust their silkscreen reference fields at explicit millimetre coordinates. Reports routed copper made stale or shorted by a transform. Existing embedded geometry is preserved; the source footprint library is not required. Unknown references fail without a partial placement. Save any open PCB and schematic first: placement recovery may restart KiCad.",
   inputSchema: {
     placements: z
       .array(
@@ -62,15 +67,37 @@ export const pcb_place = defineTool({
       )
       .min(1)
       .max(500),
+    staleCopper: z
+      .enum(["keep", "remove"])
+      .default("keep")
+      .describe(
+        "Whether to preserve stale attached fan-out copper or remove it in the placement transaction",
+      ),
   },
-  annotations: { idempotentHint: true },
-  handler: async ({ placements }, ctx) => {
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
+  handler: async ({ placements, staleCopper }, ctx) => {
     const project = ctx.requireProject();
-    const result = await ctx.services.design.placeFootprints(project.dir, placements);
+    const result = await ctx.services.design.placeFootprints(project.dir, placements, {
+      staleCopper,
+    });
+    const staleLines = Object.entries(result.staleCopper ?? {}).map(
+      ([reference, report]) =>
+        `${reference}: ${report.staleCount} stale copper item(s) on ${report.nets.length} net(s); ${report.shortedCount} now touch pads of other nets.`,
+    );
+    if (result.removedCopper)
+      staleLines.push(
+        `Removed ${result.removedCopper.ids.length} stale copper item(s) in the placement transaction on net(s) ${result.removedCopper.nets.join(", ")}; zone refill ${result.zoneRefill ? (result.zoneRefill.refilled ? "completed" : `failed: ${result.zoneRefill.error ?? "unknown error"}`) : "not run"}.`,
+      );
+    const base = result.missing.length
+      ? `Placement blocked; unknown references: ${result.missing.join(", ")}.`
+      : `Placed ${result.moved.length} footprint(s) and saved board revision ${result.revision}: ${result.moved.join(", ") || "already at requested positions"}.`;
     return {
-      text: result.missing.length
-        ? `Placement blocked; unknown references: ${result.missing.join(", ")}.`
-        : `Placed ${result.moved.length} footprint(s), normalized ${result.libraryNormalized ?? 0} library definition(s), and saved board revision ${result.revision}: ${result.moved.join(", ") || "already at requested positions"}.`,
+      text: [base, ...staleLines].join("\n"),
       json: result,
       isError: result.missing.length > 0,
     };

@@ -6,10 +6,20 @@ import { z } from "zod/v4";
 import type { CinemaShape, RouteResult } from "@fabdesk/protocol";
 import { PROJECT_FILES, writeAtomic, writeJson } from "../fs";
 import { DEFAULT_ROUTE_FRAME_MAX_BYTES, FrameSink } from "../frame-sink";
-import { ToolError, defineTool, type ToolContext, type ToolOutput } from "../registry";
+import {
+  ToolError,
+  defineTool,
+  type ProjectHandle,
+  type ToolContext,
+  type ToolOutput,
+} from "../registry";
 import type { RouteProgress, RouteRunRecord } from "../services";
 import { ok, p, throwIfAborted } from "./common";
 import { rowPoints } from "./spatial";
+
+/** Default and upper bound for how long one route_run request waits for its run to finish. */
+export const ROUTE_RUN_DEFAULT_WAIT_MS = 20_000;
+export const ROUTE_RUN_MAX_WAIT_MS = 60_000;
 
 export const RouteRunArgs = {
   router: z
@@ -37,7 +47,9 @@ export const RouteRunArgs = {
       }),
     )
     .optional()
-    .describe("Selected nets or exact remaining endpoint pairs"),
+    .describe(
+      "Whole-net selections only. Endpoint coordinates (from/to) are unsupported and rejected before a run starts.",
+    ),
   rules: z
     .object({
       widthMm: z.number().positive().optional(),
@@ -56,6 +68,30 @@ export const RouteRunArgs = {
     .default("auto")
     .describe(
       "auto applies only if the starting PCB revision is still current; manual preserves a candidate for route_apply",
+    ),
+  waitMs: z
+    .number()
+    .int()
+    .min(0)
+    .max(ROUTE_RUN_MAX_WAIT_MS)
+    .default(ROUTE_RUN_DEFAULT_WAIT_MS)
+    .describe(
+      "Milliseconds this request waits for the run to finish (including auto apply). A run that finishes in time returns its final status; otherwise the response is the running state. 0 returns immediately. The run continues after the request returns either way.",
+    ),
+};
+
+/**
+ * route_run arguments for runtimes that cannot run freerouting (every channel except internal):
+ * the router enum offers only what the runtime can execute. runRoute keeps its own check as a
+ * backstop for a project whose fabdesk.json names freerouting.
+ */
+export const PackagedRouteRunArgs = {
+  ...RouteRunArgs,
+  router: z
+    .enum(["capacity"])
+    .optional()
+    .describe(
+      "Router; defaults to the project's fabdesk.json router. This runtime provides the capacity router only.",
     ),
 };
 
@@ -171,6 +207,8 @@ type RouteArgs = {
   };
   settings?: Record<string, unknown>;
   applyPolicy: "auto" | "manual";
+  /** How long this request waits for a terminal run; 0 or absent returns the running state at once. */
+  waitMs?: number;
 };
 
 const iso = () => new Date().toISOString();
@@ -747,8 +785,70 @@ async function executeRoute(
   }
 }
 
+/** The route_status response for one run; route_run returns the same thing for a run that finished inline. */
+async function routeStatusOutput(
+  ctx: ToolContext,
+  project: ProjectHandle,
+  rec: RouteRunRecord,
+): Promise<ToolOutput> {
+  const current = sha256(await readFile(p(project, PROJECT_FILES.boardPcb)));
+  const run = {
+    ...rec,
+    currentPcbRevision: current,
+    canonicalMatchesStart: current === rec.startingPcbRevision,
+    heartbeatFreshnessMs: Date.now() - Date.parse(rec.progress.heartbeatAt),
+  };
+  ctx.services.routeRuns.update(rec.id, run);
+  return ok(
+    `Run ${rec.id} (${rec.router}): ${rec.state}; ${rec.progress.routed ?? "?"}/${rec.progress.total ?? "?"} routed; candidate ${rec.candidate.available ? "ready" : "unavailable"}; apply ${rec.application.state}.`,
+    { run },
+  );
+}
+
+/**
+ * Wait up to `waitMs` for the route worker to settle. Returns false on timeout or when the request
+ * is aborted; neither touches the run, which keeps going under the route task coordinator.
+ */
+async function waitForRun(
+  ctx: ToolContext,
+  runId: string,
+  settled: Promise<void>,
+  waitMs: number,
+): Promise<boolean> {
+  if (ctx.signal.aborted) return false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let ticker: ReturnType<typeof setInterval> | undefined;
+  let onAbort: (() => void) | undefined;
+  const reportProgress = () => {
+    const { progress } = ctx.services.routeRuns.get(runId) ?? {};
+    if (progress?.total) ctx.progress((progress.routed ?? 0) / progress.total, progress.phase);
+  };
+  try {
+    return await Promise.race([
+      settled.then(() => true),
+      new Promise<false>((resolve) => {
+        timer = setTimeout(() => resolve(false), waitMs);
+        ticker = setInterval(reportProgress, 1_000);
+        onAbort = () => resolve(false);
+        ctx.signal.addEventListener("abort", onAbort, { once: true });
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+    clearInterval(ticker);
+    if (onAbort) ctx.signal.removeEventListener("abort", onAbort);
+  }
+}
+
 export async function runRoute(args: RouteArgs, ctx: ToolContext): Promise<ToolOutput> {
   const project = ctx.requireProject();
+  // Keep legacy coordinate inputs recognizable so callers get an actionable error. The bridge
+  // accepts net names only; dropping coordinates would silently broaden the requested mutation.
+  if (args.targets?.some((target) => target.from !== undefined || target.to !== undefined))
+    throw new ToolError(
+      "route_run supports whole-net scope only; targets.from/to cannot be honored. Use net-only targets or onlyConnections if routing the whole net is intended.",
+      "precondition",
+    );
   const router = args.router ?? project.manifest().router;
   if (router === "freerouting" && ctx.services.channel !== "internal")
     return {
@@ -852,9 +952,12 @@ export async function runRoute(args: RouteArgs, ctx: ToolContext): Promise<ToolO
   });
   await writeJson(join(runDir, "progress.json"), record);
   ctx.services.routeRuns.start(record);
+  // Settles when the route worker (including auto apply) has finished, whichever way it ended.
+  let markSettled!: () => void;
+  const settled = new Promise<void>((resolve) => (markSettled = resolve));
   const queuedState = ctx.services.routeTasks.enqueue(
     { id: runId, projectId: project.id },
-    (signal) => executeRoute(args, ctx, record, snapshotDir, signal),
+    (signal) => executeRoute(args, ctx, record, snapshotDir, signal).finally(markSettled),
   );
   const startedRecord = {
     ...record,
@@ -863,6 +966,25 @@ export async function runRoute(args: RouteArgs, ctx: ToolContext): Promise<ToolO
     progress: { ...record.progress, phase: queuedState },
   };
   ctx.services.routeRuns.update(runId, startedRecord);
+  if ((args.waitMs ?? 0) > 0 && (await waitForRun(ctx, runId, settled, args.waitMs ?? 0))) {
+    const done = ctx.services.routeRuns.get(runId);
+    if (done && terminalStates.has(done.state)) {
+      const status = await routeStatusOutput(ctx, project, done);
+      const applyNext =
+        done.candidate.available && done.application.state === "manual"
+          ? [{ tool: "route_apply", runId, expectedPcbRevision: done.startingPcbRevision }]
+          : [];
+      return {
+        ...status,
+        json: {
+          runId,
+          state: done.state,
+          ...(status.json as { run: RouteRunRecord }),
+          nextActions: applyNext,
+        },
+      };
+    }
+  }
   return ok(
     `Route ${runId} ${queuedState}; computation continues independently. Use route_status with this runId or route_cancel with this exact runId.`,
     {
@@ -888,7 +1010,12 @@ export const route_status = defineTool({
   description:
     "Return compact persisted progress, heartbeat freshness, revision match, candidate/application state and artifact paths for the latest or exact durable route run.",
   inputSchema: { runId: z.string().optional() },
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async ({ runId }, ctx) => {
     const project = ctx.requireProject();
     const rec = runId
@@ -896,18 +1023,7 @@ export const route_status = defineTool({
       : ctx.services.routeRuns.latest(project.id);
     if (!rec || rec.projectId !== project.id)
       return ok("No matching route run for this project.", { run: null });
-    const current = sha256(await readFile(p(project, PROJECT_FILES.boardPcb)));
-    const run = {
-      ...rec,
-      currentPcbRevision: current,
-      canonicalMatchesStart: current === rec.startingPcbRevision,
-      heartbeatFreshnessMs: Date.now() - Date.parse(rec.progress.heartbeatAt),
-    };
-    ctx.services.routeRuns.update(rec.id, run);
-    return ok(
-      `Run ${rec.id} (${rec.router}): ${rec.state}; ${rec.progress.routed ?? "?"}/${rec.progress.total ?? "?"} routed; candidate ${rec.candidate.available ? "ready" : "unavailable"}; apply ${rec.application.state}.`,
-      { run },
-    );
+    return routeStatusOutput(ctx, project, rec);
   },
 });
 
@@ -918,7 +1034,12 @@ export const route_cancel = defineTool({
   description:
     "Idempotently request cancellation of one exact durable route run. It never cancels a different project or newer run.",
   inputSchema: { runId: z.string().min(1) },
-  annotations: { idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async ({ runId }, ctx) => {
     const project = ctx.requireProject();
     const rec = ctx.services.routeRuns.get(runId);
@@ -955,7 +1076,12 @@ export const route_apply = defineTool({
   description:
     "Atomically apply one validated route candidate only when the supplied expected PCB revision equals both the current board and the run's starting revision. Restores the prior board on validation failure.",
   inputSchema: { runId: z.string().min(1), expectedPcbRevision: z.string().length(64) },
-  annotations: { destructiveHint: true, idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async ({ runId, expectedPcbRevision }, ctx) => {
     const rec = ctx.services.routeRuns.get(runId);
     if (!rec) throw new ToolError(`route run not found: ${runId}`, "not_found");
@@ -988,7 +1114,12 @@ export const route_unroute = defineTool({
   inputSchema: {
     connections: z.array(z.string()).optional().describe("Net names to unroute; omit for all"),
   },
-  annotations: { destructiveHint: true, idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async ({ connections }, ctx) => {
     const project = ctx.requireProject();
     const removed = await ctx.services.design.unroute(project.dir, connections);
@@ -1013,7 +1144,12 @@ export const route_scope = defineTool({
     excludePlaneNets: z.boolean().default(true),
     excludeNets: z.array(z.string()).optional(),
   },
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async ({ refs, excludePlaneNets, excludeNets }, ctx) => {
     const project = ctx.requireProject();
     const scope = await ctx.services.design.scope(project.dir, refs, {

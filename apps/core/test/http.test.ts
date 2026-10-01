@@ -510,20 +510,24 @@ describe("http daemon", () => {
       return { client, transport };
     };
     const a = await connect(daemon.token);
-    const tools = await a.client.listTools();
-    expect(tools.tools.map((t) => t.name).sort()).toEqual([
-      "capability_call",
-      "capability_search",
-      "circuit_build",
-      "circuit_place",
-      "circuit_read_errors",
-      "load_toolset",
-      "pcb_environment",
-      "project_status",
-      "render_board",
-      "route_run",
-      "verify_drc",
-    ]);
+    const names = (await a.client.listTools()).tools.map((t) => t.name);
+    // Core plus the circuit, verify and render toolsets: both schematic authoring paths start listed.
+    expect(names).toHaveLength(35);
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "capability_call",
+        "capability_search",
+        "circuit_build",
+        "circuit_read_errors",
+        "load_toolset",
+        "project_status",
+        "schematic_edit",
+        "pcb_update_from_schematic",
+        "verify_erc",
+        "release_build",
+        "render_view",
+      ]),
+    );
     expect(daemon.mcp.activeCount()).toBe(1);
 
     // Without a project selector the tool asks for one; with it, it works.
@@ -537,11 +541,11 @@ describe("http daemon", () => {
     expect((withProject.structuredContent as { id: string }).id).toBe(created.id);
 
     await a.client.callTool({ name: "load_toolset", arguments: { toolset: "export" } });
-    expect((await a.client.listTools()).tools.length).toBe(18);
+    expect((await a.client.listTools()).tools.length).toBe(42);
 
-    // A second session starts with only the core toolset (state is per session).
+    // A second session starts with only the default toolsets (state is per session).
     const b = await connect(daemon.token);
-    expect((await b.client.listTools()).tools.length).toBe(11);
+    expect((await b.client.listTools()).tools.length).toBe(35);
     expect(daemon.mcp.activeCount()).toBe(2);
 
     // Clients that cannot process tools/list_changed can request the complete
@@ -551,11 +555,15 @@ describe("http daemon", () => {
 
     const native = await connect(daemon.token, "?profile=native");
     const nativeNames = (await native.client.listTools()).tools.map((tool) => tool.name);
-    expect(nativeNames).toHaveLength(19);
+    expect(nativeNames).toHaveLength(21);
     expect(nativeNames).toContain("circuit_describe_part");
     expect(nativeNames).toContain("pcb_inspect");
     expect(nativeNames).toContain("schematic_review");
-    expect(nativeNames).not.toContain("circuit_build");
+    // Clients that snapshot the list see both authoring paths as directly callable tools.
+    expect(nativeNames).toContain("schematic_edit");
+    expect(nativeNames).toContain("circuit_build");
+    expect(nativeNames).toContain("circuit_read_errors");
+    expect(nativeNames).not.toContain("load_toolset");
     expect(nativeNames).not.toContain("native_edit_transaction");
 
     const substrate = await connect(daemon.token, "?profile=substrate");

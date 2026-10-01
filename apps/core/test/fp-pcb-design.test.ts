@@ -1,7 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import type { FpPcbCompileJob } from "@fabdesk/protocol";
-import { BoardLayer } from "@fp-pcb/proto";
-import { createBoardGraphic } from "@fp-pcb/client";
+import { create } from "@bufbuild/protobuf";
+import {
+  BoardLayer,
+  FootprintInstanceSchema,
+  PadSchema,
+  PadStackShape,
+  packAny,
+} from "@fp-pcb/proto";
+import { Footprint, createBoardGraphic, createTrack } from "@fp-pcb/client";
 import {
   createFpPcbDesign,
   evaluatePartCompatibility,
@@ -657,5 +664,331 @@ describe("what a successful build checks against the saved board", () => {
       clearance: 0.15,
       track_width: 0.15,
     });
+  });
+});
+
+describe("embedded footprint placement recovery", () => {
+  function setup(
+    options: {
+      failSave?: boolean;
+      failRestore?: boolean;
+      unsavedSchematic?: boolean;
+      unsavedPcb?: boolean;
+      withCopper?: boolean;
+      failDelete?: boolean;
+    } = {},
+  ) {
+    const original = new Footprint(
+      create(FootprintInstanceSchema, {
+        id: { value: "connector" },
+        position: { xNm: 10000000n, yNm: 20000000n },
+        orientation: { valueDegrees: -90 },
+        layer: BoardLayer.BL_F_Cu,
+        referenceField: {
+          text: {
+            text: { text: "J13", position: { xNm: 10000000n, yNm: 20000000n }, attributes: {} },
+          },
+        },
+        definition: {
+          id: { libraryNickname: "Missing", entryName: "Embedded" },
+          items: [
+            packAny(
+              PadSchema,
+              create(PadSchema, {
+                id: { value: "pad1" },
+                number: "1",
+                position: { xNm: 11000000n, yNm: 22000000n },
+                net: { name: "GND", code: { value: 1 } },
+                parent: { value: "connector" },
+                padStack: {
+                  layers: [BoardLayer.BL_F_Cu],
+                  copperLayers: [
+                    {
+                      layer: BoardLayer.BL_F_Cu,
+                      shape: PadStackShape.PSS_RECTANGLE,
+                      size: { xNm: 1000000n, yNm: 1000000n },
+                    },
+                  ],
+                },
+              }),
+            ),
+          ],
+        },
+      }),
+    );
+    let live = original.clone();
+    const originalRoutes = options.withCopper
+      ? [
+          createTrack({
+            id: "fanout",
+            start: { x: 11_000_000, y: 22_000_000 },
+            end: { x: 15_000_000, y: 22_000_000 },
+            width: 200_000,
+            layer: BoardLayer.BL_F_Cu,
+            net: { name: "GND", code: 1 },
+            locked: true,
+          }),
+        ]
+      : [];
+    let routes = originalRoutes.map((route) => route.clone());
+    const files: Record<string, string> = {
+      "/p/board.kicad_pcb": "original pcb",
+      "/p/board.kicad_pro": "original project",
+    };
+    const calls: string[] = [];
+    let failSave = options.failSave ?? false;
+    const board = {
+      getFootprints: async () => [live],
+      getPads: async () => live.pads,
+      getTracks: async () => routes,
+      getZones: async () => [],
+      enabledLayers: async () => ({
+        copperLayerCount: 2,
+        layers: [BoardLayer.BL_F_Cu, BoardLayer.BL_B_Cu],
+      }),
+      padstackPresence: async (ids: string[], layers: BoardLayer[]) =>
+        new Map(
+          ids.flatMap((id) =>
+            layers.map(
+              (layer) =>
+                [`${id}|${BoardLayer[layer]}`, layer === BoardLayer.BL_F_Cu ? 1 : 2] as const,
+            ),
+          ),
+        ),
+      padShapesAsPolygons: async (ids: string[]) =>
+        new Map(
+          live.pads
+            .filter((pad) => ids.includes(pad.id))
+            .map((pad) => {
+              const { x, y } = pad.position;
+              const points = [
+                { x: x - 500_000, y: y - 500_000 },
+                { x: x + 500_000, y: y - 500_000 },
+                { x: x + 500_000, y: y + 500_000 },
+                { x: x - 500_000, y: y + 500_000 },
+              ];
+              return [
+                pad.id,
+                {
+                  outline: {
+                    closed: true,
+                    nodes: points.map((point) => ({
+                      geometry: {
+                        case: "point" as const,
+                        value: { xNm: BigInt(point.x), yNm: BigInt(point.y) },
+                      },
+                    })),
+                  },
+                  holes: [],
+                },
+              ];
+            }),
+        ),
+      revision: async () => 3n,
+      modified: async () => (!options.unsavedPcb ? false : true),
+      updateFootprintsFromLibrary: async () => {
+        throw new Error("unexpected library access");
+      },
+      commit: async (
+        _message: string,
+        run: (tx: {
+          update: (items: Footprint[]) => Promise<void>;
+          delete: (ids: string[]) => Promise<void>;
+        }) => Promise<void>,
+      ) => {
+        const before = live.clone();
+        const routesBefore = routes.map((route) => route.clone());
+        calls.push("commit");
+        try {
+          await run({
+            update: async (items) => {
+              live = items[0]!.clone();
+            },
+            delete: async (ids) => {
+              calls.push(`delete ${ids.join(",")}`);
+              if (options.failDelete) throw new Error("delete failed");
+              routes = routes.filter((route) => !ids.includes(route.id));
+            },
+          });
+        } catch (error) {
+          live = before;
+          routes = routesBefore;
+          throw error;
+        }
+      },
+      refillZones: async () => {
+        calls.push("refill");
+      },
+      save: async () => {
+        calls.push("save");
+        files["/p/board.kicad_pcb"] = `angle ${live.orientation}`;
+        if (failSave) {
+          failSave = false;
+          throw new Error("save failed after write");
+        }
+      },
+    };
+    const design = createFpPcbDesign({
+      bridge: () => ({}) as never,
+      sessions: {
+        board: async () => board,
+        assertSchematicSaved: async () => {
+          if (options.unsavedSchematic) throw new Error("save the open schematic");
+        },
+        release: async () => {
+          calls.push("release");
+          live = original.clone();
+          routes = originalRoutes.map((route) => route.clone());
+        },
+      } as unknown as FpPcbSessions,
+      readText: async (path) => {
+        if (!(path in files)) throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+        return files[path]!;
+      },
+      writeText: async (path, text) => {
+        if (options.failRestore && path.endsWith(".kicad_pcb")) throw new Error("restore failed");
+        files[path] = text;
+        calls.push(`restore ${path}`);
+      },
+    });
+    return {
+      design,
+      original,
+      files,
+      calls,
+      live: () => live,
+      routeIds: () => routes.map((route) => route.id),
+    };
+  }
+  test("moves and physically rotates embedded pads without accessing a library", async () => {
+    const state = setup();
+    const result = await state.design.placeFootprints("/p", [
+      { reference: "J13", position: { x: 20, y: 30 }, rotation: 90 },
+    ]);
+    expect(result).toMatchObject({ moved: ["J13"], saved: true, libraryNormalized: 0 });
+    expect(state.live().pads[0]?.position).toEqual({ x: 19000000, y: 28000000 });
+    expect(state.original.orientation).toBe(-90);
+    expect(state.original.pads[0]?.position).toEqual({ x: 11000000, y: 22000000 });
+  });
+  test("unknown references and invalid fields reject before any commit", async () => {
+    const state = setup();
+    const result = await state.design.placeFootprints("/p", [
+      { reference: "J13", rotation: 90 },
+      { reference: "Unknown", rotation: 90 },
+    ]);
+    expect(result.saved).toBe(false);
+    expect(state.calls).toEqual([]);
+    state.live().proto.referenceField!.text!.text!.attributes = undefined;
+    await expect(
+      state.design.placeFootprints("/p", [
+        { reference: "J13", rotation: 90, referenceField: { sizeMm: 0.8 } },
+      ]),
+    ).rejects.toThrow("no editable reference field");
+    expect(state.calls).toEqual([]);
+    expect(state.live().orientation).toBe(-90);
+  });
+  test("save failure restores both live and saved state, and retry performs the edit", async () => {
+    const state = setup({ failSave: true });
+    await expect(
+      state.design.placeFootprints("/p", [{ reference: "J13", rotation: 90 }]),
+    ).rejects.toThrow("save failed");
+    expect(state.live().equals(state.original)).toBe(true);
+    expect(state.files["/p/board.kicad_pcb"]).toBe("original pcb");
+    expect(state.files["/p/board.kicad_pro"]).toBe("original project");
+    expect(state.calls).toEqual([
+      "commit",
+      "save",
+      "release",
+      "restore /p/board.kicad_pcb",
+      "restore /p/board.kicad_pro",
+    ]);
+    const result = await state.design.placeFootprints("/p", [{ reference: "J13", rotation: 90 }]);
+    expect(result.moved).toEqual(["J13"]);
+    expect(state.live().pads[0]?.position).toEqual({ x: 9000000, y: 18000000 });
+  });
+  test("unsaved PCB rejects placement without a commit or restart", async () => {
+    const state = setup({ unsavedPcb: true });
+    await expect(
+      state.design.placeFootprints("/p", [{ reference: "J13", rotation: 90 }]),
+    ).rejects.toThrow("save the open PCB");
+    expect(state.calls).toEqual([]);
+    expect(state.live().equals(state.original)).toBe(true);
+  });
+  test("unsaved schematic rejects placement without a commit or restart", async () => {
+    const state = setup({ unsavedSchematic: true });
+    await expect(
+      state.design.placeFootprints("/p", [{ reference: "J13", rotation: 90 }]),
+    ).rejects.toThrow("save the open schematic");
+    expect(state.calls).toEqual([]);
+    expect(state.live().equals(state.original)).toBe(true);
+  });
+  test("a failed PCB restore still restores the project and preserves the original error", async () => {
+    const state = setup({ failSave: true, failRestore: true });
+    await expect(
+      state.design.placeFootprints("/p", [{ reference: "J13", rotation: 90 }]),
+    ).rejects.toThrow("save failed after write");
+    expect(state.calls).toContain("restore /p/board.kicad_pro");
+  });
+  test("unknown rotation content rejects before a commit or restart", async () => {
+    const state = setup();
+    state.live().proto.definition!.items.push({
+      $typeName: "google.protobuf.Any",
+      typeUrl: "type.googleapis.com/unknown.Child",
+      value: new Uint8Array(),
+    });
+    await expect(
+      state.design.placeFootprints("/p", [{ reference: "J13", rotation: 90 }]),
+    ).rejects.toThrow("unknown footprint child");
+    expect(state.calls).toEqual([]);
+  });
+  test("equivalent angles are a no-op and reference-field edits remain independent", async () => {
+    const state = setup();
+    const result = await state.design.placeFootprints("/p", [{ reference: "J13", rotation: 270 }]);
+    expect(result.moved).toEqual([]);
+    expect(state.live().equals(state.original)).toBe(true);
+    await state.design.placeFootprints("/p", [
+      {
+        reference: "J13",
+        referenceField: { position: { x: 12, y: 23 }, sizeMm: 0.8, visible: true },
+      },
+    ]);
+    expect(state.live().referenceField?.position).toEqual({ x: 12000000, y: 23000000 });
+    expect(state.live().pads[0]?.position).toEqual(state.original.pads[0]?.position);
+  });
+
+  test("opt-in stale fan-out removal is atomic, refills before save, and reports locked copper", async () => {
+    const state = setup({ withCopper: true });
+    const result = await state.design.placeFootprints("/p", [{ reference: "J13", rotation: 90 }], {
+      staleCopper: "remove",
+    });
+    expect(result.staleCopper?.J13).toMatchObject({
+      staleCount: 1,
+      stale: [{ id: "fanout", kind: "track", net: "GND", pad: "1", locked: true }],
+    });
+    expect(result.removedCopper).toEqual({ ids: ["fanout"], nets: ["GND"] });
+    expect(result.zoneRefill).toEqual({ refilled: true });
+    expect(state.routeIds()).toEqual([]);
+    expect(state.calls).toEqual(["commit", "delete fanout", "refill", "save"]);
+  });
+
+  test("default keep reports stale fan-out without changing copper or refilling", async () => {
+    const state = setup({ withCopper: true });
+    const result = await state.design.placeFootprints("/p", [{ reference: "J13", rotation: 90 }]);
+    expect(result.staleCopper?.J13?.staleCount).toBe(1);
+    expect(result.removedCopper).toBeUndefined();
+    expect(state.routeIds()).toEqual(["fanout"]);
+    expect(state.calls).toEqual(["commit", "save"]);
+  });
+
+  test("a stale-copper deletion failure rolls back both move and copper", async () => {
+    const state = setup({ withCopper: true, failDelete: true });
+    await expect(
+      state.design.placeFootprints("/p", [{ reference: "J13", rotation: 90 }], {
+        staleCopper: "remove",
+      }),
+    ).rejects.toThrow("delete failed");
+    expect(state.live().equals(state.original)).toBe(true);
+    expect(state.routeIds()).toEqual(["fanout"]);
+    expect(state.calls).toContain("delete fanout");
   });
 });

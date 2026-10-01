@@ -79,10 +79,21 @@ export class FpPcbSessions {
     });
     if (!schematic)
       throw new ToolError(
-        "board.kicad_sch not found: create it with schematic_edit",
+        "board.kicad_sch not found: create it with schematic_edit or circuit_build",
         "precondition",
       );
     return schematic;
+  }
+
+  /** Placement recovery may restart KiCad; never discard unsaved schematic work. */
+  async assertSchematicSaved(projectDir: string): Promise<void> {
+    const session = await this.session(projectDir);
+    const schematic = await session.kicad.currentSchematic();
+    if (schematic && (await schematic.modified()) !== false)
+      throw new ToolError(
+        "save the open schematic before placing footprints; placement recovery may restart KiCad",
+        "precondition",
+      );
   }
 
   /**

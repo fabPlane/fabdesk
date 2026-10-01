@@ -156,6 +156,84 @@ describe("registry", () => {
     expect(reg.inputObject(sync).parse({})).toMatchObject({ apply: true });
   });
 
+  test("pcb_place defaults stale copper handling to keep", () => {
+    const reg = createRegistry();
+    const tool = reg.get("pcb_place")!;
+    expect(
+      reg.inputObject(tool).parse({ placements: [{ reference: "J1", rotation: 180 }] }),
+    ).toMatchObject({ staleCopper: "keep" });
+  });
+
+  test("pcb_place reports stale copper and passes opt-in removal to the design service", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("pcb-place-stale-copper");
+    const base = mockServices([project]);
+    let received: unknown;
+    const services = mockServices([project], {
+      design: {
+        ...base.design,
+        placeFootprints: async (_dir, _placements, options) => {
+          received = options;
+          return {
+            moved: ["J1"],
+            missing: [],
+            staleCopper: {
+              J1: {
+                stale: [
+                  { id: "track-1", kind: "track", net: "A", layer: "F.Cu", pad: "1", locked: true },
+                ],
+                shorted: [
+                  {
+                    id: "track-1",
+                    kind: "track",
+                    net: "A",
+                    layer: "F.Cu",
+                    pad: "2",
+                    padNet: "B",
+                    locked: true,
+                  },
+                ],
+                staleCount: 1,
+                shortedCount: 1,
+                nets: ["A", "B"],
+              },
+            },
+            removedCopper: { ids: ["track-1"], nets: ["A", "B"] },
+            zoneRefill: { refilled: true },
+            libraryNormalized: 0,
+            revision: 4,
+            saved: true,
+          };
+        },
+      },
+    });
+    const result = await reg.invoke(
+      "pcb_place",
+      { placements: [{ reference: "J1", rotation: 180 }], staleCopper: "remove" },
+      (ref) =>
+        contextFactory(
+          services,
+          project,
+        )({
+          def: reg.get("pcb_place")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+    );
+    expect(received).toEqual({ staleCopper: "remove" });
+    expect(result.text).toContain(
+      "J1: 1 stale copper item(s) on 2 net(s); 1 now touch pads of other nets.",
+    );
+    expect(result.text).toContain(
+      "Removed 1 stale copper item(s) in the placement transaction on net(s) A, B; zone refill completed.",
+    );
+    expect(result.json).toMatchObject({
+      removedCopper: { ids: ["track-1"], nets: ["A", "B"] },
+      zoneRefill: { refilled: true },
+    });
+  });
+
   test("v1 tool set and naming", () => {
     const reg = createRegistry();
     const names = reg.list().map((t) => t.name);
@@ -256,7 +334,7 @@ describe("registry", () => {
         title: "",
         description: "",
         inputSchema: {},
-        annotations: {},
+        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
         handler: async () => ({}),
       }),
     ).toThrow();
@@ -336,6 +414,233 @@ describe("registry", () => {
     expect(ids("zones")).toContain("zone-gnd");
     // Still excludes what genuinely is not there.
     expect(ids("pads")).not.toContain("pad-far");
+  });
+
+  test("pcb_inspect references returns only fan-out tracks touching the footprint pads", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("reference-fanout");
+    await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb (version 20260831))\n");
+    const base = mockServices([project]);
+    const rows: Record<string, Array<Record<string, unknown>>> = {
+      pads: [
+        {
+          id: "j13-1",
+          component: "J13",
+          number: "1",
+          net: "USB_DP",
+          x: 10,
+          y: 10,
+          width: 1,
+          height: 1,
+        },
+        {
+          id: "j13-2",
+          component: "J13",
+          number: "2",
+          net: "USB_DN",
+          x: 10,
+          y: 12,
+          width: 1,
+          height: 1,
+        },
+        {
+          id: "j14-1",
+          component: "J14",
+          number: "1",
+          net: "OTHER",
+          x: 30,
+          y: 30,
+          width: 1,
+          height: 1,
+        },
+      ],
+      tracks: [
+        {
+          id: "fanout-1",
+          net: "USB_DP",
+          start: { x: 10, y: 10 },
+          end: { x: 8, y: 10 },
+          width: 0.2,
+        },
+        {
+          id: "fanout-2",
+          net: "USB_DN",
+          start: { x: 8, y: 12 },
+          end: { x: 10, y: 12 },
+          width: 0.2,
+        },
+        {
+          id: "unrelated",
+          net: "OTHER",
+          start: { x: 30, y: 30 },
+          end: { x: 32, y: 30 },
+          width: 0.2,
+        },
+      ],
+    };
+    const services = mockServices([project], {
+      design: { ...base.design, query: async (_dir, select) => rows[select] ?? [] },
+    });
+    const factory = contextFactory(services, project);
+    const result = await reg.invoke(
+      "pcb_inspect",
+      { references: ["J13"], kinds: ["tracks"] },
+      (ref) =>
+        factory({
+          def: reg.get("pcb_inspect")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+    );
+    expect((result.json as any).results.tracks).toMatchObject({ total: 2, returned: 2 });
+    expect((result.json as any).results.tracks.rows.map((row: any) => row.id)).toEqual([
+      "fanout-1",
+      "fanout-2",
+    ]);
+  });
+
+  test("pcb_inspect references matches post-rotation tracks regardless of net", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("reference-post-rotation");
+    await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb (version 20260831))\n");
+    const base = mockServices([project]);
+    const services = mockServices([project], {
+      design: {
+        ...base.design,
+        query: async (_dir, select) => {
+          if (select === "pads")
+            return [
+              {
+                id: "j13-1",
+                component: "J13",
+                number: "1",
+                net: "USB_DN",
+                x: 10,
+                y: 10,
+                width: 1,
+                height: 1,
+              },
+            ];
+          if (select === "tracks")
+            return [
+              {
+                id: "stale-usb-dp",
+                net: "USB_DP",
+                start: { x: 8, y: 10 },
+                end: { x: 10, y: 10 },
+                width: 0.2,
+              },
+            ];
+          return [];
+        },
+      },
+    });
+    const factory = contextFactory(services, project);
+    const result = await reg.invoke(
+      "pcb_inspect",
+      { references: ["J13"], kinds: ["tracks"] },
+      (ref) =>
+        factory({
+          def: reg.get("pcb_inspect")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+    );
+    expect((result.json as any).results.tracks.rows).toEqual([
+      expect.objectContaining({ id: "stale-usb-dp", net: "USB_DP" }),
+    ]);
+  });
+
+  test("pcb_inspect references returns via-in-pad, unrouted endpoints, and containing zones", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("reference-other-copper");
+    await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb (version 20260831))\n");
+    const base = mockServices([project]);
+    const rows: Record<string, Array<Record<string, unknown>>> = {
+      pads: [
+        {
+          id: "j13-1",
+          component: "J13",
+          number: "1",
+          net: "SIG",
+          x: 10,
+          y: 10,
+          width: 1,
+          height: 1,
+        },
+      ],
+      vias: [
+        { id: "via-in-pad", net: "SIG", x: 10, y: 10, diameter: 0.5 },
+        { id: "via-far", net: "SIG", x: 20, y: 20, diameter: 0.5 },
+      ],
+      unrouted: [
+        { id: "unrouted-pad", net: "SIG", from: { x: 10, y: 10 }, to: { x: 14, y: 10 } },
+        { id: "unrouted-far", net: "SIG", from: { x: 20, y: 20 }, to: { x: 24, y: 20 } },
+      ],
+      zones: [
+        {
+          id: "zone-around-pad",
+          net: "GND",
+          points: [
+            { x: 9, y: 9 },
+            { x: 11, y: 9 },
+            { x: 11, y: 11 },
+            { x: 9, y: 11 },
+          ],
+        },
+        {
+          id: "zone-far",
+          net: "GND",
+          points: [
+            { x: 19, y: 19 },
+            { x: 21, y: 19 },
+            { x: 21, y: 21 },
+            { x: 19, y: 21 },
+          ],
+        },
+      ],
+    };
+    const services = mockServices([project], {
+      design: { ...base.design, query: async (_dir, select) => rows[select] ?? [] },
+    });
+    const factory = contextFactory(services, project);
+    const result = await reg.invoke(
+      "pcb_inspect",
+      { references: ["J13"], kinds: ["vias", "unrouted", "zones"] },
+      (ref) =>
+        factory({
+          def: reg.get("pcb_inspect")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+    );
+    const json = result.json as any;
+    expect(json.results.vias.rows.map((row: any) => row.id)).toEqual(["via-in-pad"]);
+    expect(json.results.unrouted.rows.map((row: any) => row.id)).toEqual(["unrouted-pad"]);
+    expect(json.results.zones.rows.map((row: any) => row.id)).toEqual(["zone-around-pad"]);
+  });
+
+  test("pcb_inspect references rejects kinds without reference semantics", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("reference-unsupported-kind");
+    await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb (version 20260831))\n");
+    const factory = contextFactory(mockServices([project]), project);
+    await expect(
+      reg.invoke("pcb_inspect", { references: ["J13"], kinds: ["texts"] }, (ref) =>
+        factory({
+          def: reg.get("pcb_inspect")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+      ),
+    ).rejects.toMatchObject({
+      code: "invalid_args",
+      message: expect.stringMatching(/texts.*nets.*region.*near/),
+    });
   });
 
   test("pcb_inspect region+layers matches F.Cu aliases and through vias without a layer field", async () => {
@@ -820,7 +1125,7 @@ describe("registry", () => {
               rotation: 0,
               mirrorX: false,
               mirrorY: false,
-              pins: [{ number: "1", name: "~", position: { x: 25.4, y: 25.4 } }],
+              pins: [{ id: "pin-r1-1", number: "1", name: "~", position: { x: 25.4, y: 25.4 } }],
             },
           ],
           wires: [],
@@ -829,7 +1134,7 @@ describe("registry", () => {
           junctions: [],
           noConnects: [],
           texts: [],
-          nets: [{ name: "VBUS", itemCount: 2 }],
+          nets: [{ name: "VBUS", itemCount: 2, itemIds: ["pin-r1-1"] }],
           erc: { errors: 0, warnings: 1 },
         }),
         schematicEdit: async (_dir, edit) => {
@@ -887,9 +1192,8 @@ describe("registry", () => {
       ],
     });
     expect(edit.text).toContain("created 1 symbols");
-    expect(edits).toHaveLength(3);
-    expect(edits[0]?.symbols?.[0]).toMatchObject({ reference: "R1", rotation: 0 });
-    expect(edits[1]?.symbolUpdates?.[0]).toMatchObject({ reference: "R1", rotation: 90 });
+    expect(edits).toHaveLength(1);
+    expect(edits[0]?.symbols?.[0]).toMatchObject({ reference: "R1", rotation: 90 });
     const powerEdit = await call("schematic_edit", {
       symbols: [
         {
@@ -916,7 +1220,7 @@ describe("registry", () => {
     expect(inspect.text).toContain("Device:R");
     expect((inspect.json as any).contract).toEqual({
       name: "fabdesk.schematic-inspection",
-      version: "3.0.0",
+      version: "4.0.0",
     });
     expect((inspect.json as any).symbols).toHaveLength(1);
     expect((inspect.json as any).nets).toBeUndefined();
@@ -2931,135 +3235,230 @@ describe("registry", () => {
     });
   });
 
-  test("complete release is revision-bound and fails closed on missing outputs", async () => {
-    const reg = createRegistry();
-    const project = await tempProject("release");
-    for (const [name, body] of [
-      ["board.kicad_sch", "sch"],
-      ["board.kicad_pcb", "pcb"],
-      ["board.kicad_pro", "{}"],
-    ])
-      await writeFile(join(project.dir, name), body);
-    const base = mockServices([project]);
-    const put = async (path: string, body = "output") => {
-      await mkdir(join(path, ".."), { recursive: true }).catch(() => {});
-      await Bun.write(path, body);
-    };
-    const services = mockServices([project], {
-      kicad: {
-        ...base.kicad,
-        renderPng: async (_cli, { output }) => put(output, "png"),
-        exportSchematicSvg: async (_cli, { outDir }) => {
-          await mkdir(outDir, { recursive: true });
-          const path = join(outDir, "board.svg");
-          await put(path, "svg");
-          return { paths: [path] };
+  test.each(["clean", "labels", "stubs", "both"])(
+    "complete release keeps %s presentation metrics advisory",
+    async (presentation) => {
+      const reg = createRegistry();
+      const project = await tempProject("release");
+      for (const [name, body] of [
+        ["board.kicad_sch", "sch"],
+        ["board.kicad_pcb", "pcb"],
+        ["board.kicad_pro", "{}"],
+      ])
+        await writeFile(join(project.dir, name), body);
+      const base = mockServices([project]);
+      const put = async (path: string, body = "output") => {
+        await mkdir(join(path, ".."), { recursive: true }).catch(() => {});
+        await Bun.write(path, body);
+      };
+      const labels = presentation === "labels" || presentation === "both";
+      const stubs = presentation === "stubs" || presentation === "both";
+      const services = mockServices([project], {
+        design: {
+          ...base.design,
+          schematicInspect: async () => ({
+            ...(await base.design.schematicInspect(project.dir)),
+            symbols: Array.from({ length: 6 }, (_, index) => ({
+              id: `symbol-${index}`,
+              reference: `R${index + 1}`,
+              value: "1k",
+              footprint: "Resistor_SMD:R_0603_1608Metric",
+              libId: "Device:R",
+              position: { x: index * 12.7, y: 25.4 },
+              rotation: 0,
+              mirrorX: false,
+              mirrorY: false,
+              pins: [],
+            })),
+            localLabels: labels
+              ? Array.from({ length: 10 }, (_, index) => ({
+                  id: `label-${index}`,
+                  text: `NET${index}`,
+                  position: { x: index * 12.7, y: 30.48 },
+                  rotation: 0,
+                }))
+              : [],
+            wires: stubs
+              ? Array.from({ length: 6 }, (_, index) => ({
+                  id: `wire-${index}`,
+                  start: { x: index * 12.7, y: 25.4 },
+                  end: { x: index * 12.7, y: 27.94 },
+                }))
+              : [],
+          }),
         },
-        exportSchematicPdf: async (_cli, { output }) => {
-          await put(output, "pdf");
-          return { paths: [output] };
-        },
-        exportPcbSvg: async (_cli, { output }) => {
-          await put(output, "svg");
-          return { paths: [output] };
-        },
-        exportGerbers: async (_cli, { outDir }) => {
-          const gbr = join(outDir, "board-F_Cu.gbr"),
-            job = join(outDir, "board-job.gbrjob");
-          await put(gbr);
-          await put(job);
-          return { paths: [gbr, job] };
-        },
-        exportDrill: async (_cli, { outDir }) => {
-          const path = join(outDir, "board.drl");
-          await put(path);
-          return { paths: [path] };
-        },
-        exportPos: async (_cli, { output }) => {
-          await put(output);
-          return { paths: [output] };
-        },
-        exportBom: async (_cli, { output }) => {
-          await put(output);
-          return { paths: [output] };
-        },
-        exportNetlist: async (_cli, { output }) => {
-          await put(output);
-          return { paths: [output] };
-        },
-      },
-    });
-    const factory = contextFactory(services, project);
-    const release = await reg.invoke(
-      "release_build",
-      {
-        buildNotes: "Fit LED with marked cathode.",
-        circuitChecks: [
-          {
-            kind: "led-current",
-            supplyVolts: 5,
-            forwardVolts: 2,
-            resistanceOhms: 1000,
-            minMa: 2,
-            maxMa: 4,
+        kicad: {
+          ...base.kicad,
+          renderPng: async (_cli, { output }) => put(output, "png"),
+          exportSchematicSvg: async (_cli, { outDir }) => {
+            await mkdir(outDir, { recursive: true });
+            const path = join(outDir, "board.svg");
+            await put(path, "svg");
+            return { paths: [path] };
           },
-          {
-            kind: "assertion",
-            name: "Firmware controls the LED",
-            pass: true,
-            evidence: "Firmware will implement this behavior.",
+          exportSchematicPdf: async (_cli, { output }) => {
+            await put(output, "pdf");
+            return { paths: [output] };
           },
-        ],
-      },
-      (ref) =>
+          exportPcbSvg: async (_cli, { output }) => {
+            await put(output, "svg");
+            return { paths: [output] };
+          },
+          exportGerbers: async (_cli, { outDir }) => {
+            const gbr = join(outDir, "board-F_Cu.gbr"),
+              job = join(outDir, "board-job.gbrjob");
+            await put(gbr);
+            await put(job);
+            return { paths: [gbr, job] };
+          },
+          exportDrill: async (_cli, { outDir }) => {
+            const path = join(outDir, "board.drl");
+            await put(path);
+            return { paths: [path] };
+          },
+          exportPos: async (_cli, { output }) => {
+            await put(output);
+            return { paths: [output] };
+          },
+          exportBom: async (_cli, { output }) => {
+            await put(output);
+            return { paths: [output] };
+          },
+          exportNetlist: async (_cli, { output }) => {
+            await put(output);
+            return { paths: [output] };
+          },
+        },
+      });
+      const factory = contextFactory(services, project);
+      const callRelease = () =>
+        reg.invoke(
+          "release_build",
+          {
+            buildNotes: "Fit LED with marked cathode.",
+            circuitChecks: [
+              {
+                kind: "led-current",
+                supplyVolts: 5,
+                forwardVolts: 2,
+                resistanceOhms: 1000,
+                minMa: 2,
+                maxMa: 4,
+              },
+              {
+                kind: "assertion",
+                name: "Firmware controls the LED",
+                pass: true,
+                evidence: "Firmware will implement this behavior.",
+              },
+            ],
+          },
+          (ref) =>
+            factory({
+              def: reg.get("release_build")!,
+              projectRef: ref,
+              signal: new AbortController().signal,
+              progress: () => {},
+            }),
+        );
+      const release = await callRelease();
+      expect(release.isError).toBeFalsy();
+      expect((release.json as any).failureReasons).toEqual([]);
+      expect((release.json as any).checks.schematicPresentation).toMatchObject({
+        status: "advisory",
+        blocking: false,
+        violations: [],
+        counts: { symbols: 6, labels: labels ? 10 : 0, wires: stubs ? 6 : 0 },
+      });
+      expect((release.json as any).checks.schematicPresentation.advisories).toHaveLength(
+        Number(labels) + Number(stubs),
+      );
+      if (labels || stubs) expect(release.text).toContain("advisories (non-blocking)");
+      const review = await reg.invoke("schematic_review", {}, (ref) =>
         factory({
-          def: reg.get("release_build")!,
+          def: reg.get("schematic_review")!,
           projectRef: ref,
           signal: new AbortController().signal,
           progress: () => {},
         }),
-    );
-    expect(release.isError).toBeFalsy();
-    expect((release.json as any).pass).toBe(true);
-    expect((release.json as any).contract.version).toBe("2.0.0");
-    expect((release.json as any).verification).toEqual({
-      status: "pass",
-      scope: "configured release checks and outputs",
-      productCompletenessAssessed: false,
-    });
-    expect(release.text).toMatch(
-      /Complete saved-hierarchy ERC measured by packaged kicad-cli 10\.99\.0/,
-    );
-    expect((release.json as any).checks.erc).toMatchObject({
-      evidenceLevel: "measured",
-      source: "packaged-kicad-cli",
-      scope: "complete saved hierarchy",
-      revision: (release.json as any).revisions.schematic,
-    });
-    expect((release.json as any).checks.circuit).toEqual([
-      expect.objectContaining({ kind: "led-current", evidenceLevel: "computed", status: "pass" }),
-      expect.objectContaining({
-        kind: "assertion",
-        evidenceLevel: "declared",
-        status: "declared",
-        claim: "pass",
-      }),
-    ]);
-    expect((release.json as any).checks.circuit[1].measured).toBeUndefined();
-    expect((release.json as any).evidence.declaredClaims).toEqual([
-      {
-        name: "Firmware controls the LED",
-        claim: "pass",
-        evidence: "Firmware will implement this behavior.",
-      },
-    ]);
-    expect((release.json as any).revisions.schematic).toHaveLength(64);
-    expect(
-      (release.json as any).inventory.some(
-        (entry: any) => entry.path === "exports/fabrication.zip" && entry.status === "available",
-      ),
-    ).toBe(true);
-  });
+      );
+      const presentationFindings = (review.json as any).findings.filter((finding: any) =>
+        ["label-density", "stub-dominated-connectivity", "label-only-connectivity"].includes(
+          finding.code,
+        ),
+      );
+      expect(presentationFindings.map((finding: any) => finding.code)).toEqual([
+        ...(labels ? ["label-density"] : []),
+        ...(stubs ? ["stub-dominated-connectivity"] : []),
+        ...(labels && !stubs ? ["label-only-connectivity"] : []),
+      ]);
+      for (const finding of presentationFindings) {
+        expect(finding.severity).toBe("info");
+        expect(finding.message).toContain("Review the render");
+        expect(finding.message).not.toMatch(/use direct|add direct|add short|hard to scan/);
+      }
+      expect((release.json as any).pass).toBe(true);
+      expect((release.json as any).contract.version).toBe("2.0.0");
+      expect((release.json as any).verification).toEqual({
+        status: "pass",
+        scope: "configured release checks and outputs",
+        productCompletenessAssessed: false,
+      });
+      expect(release.text).toMatch(
+        /Complete saved-hierarchy ERC measured by packaged kicad-cli 10\.99\.0/,
+      );
+      expect((release.json as any).checks.erc).toMatchObject({
+        evidenceLevel: "measured",
+        source: "packaged-kicad-cli",
+        scope: "complete saved hierarchy",
+        revision: (release.json as any).revisions.schematic,
+      });
+      expect((release.json as any).checks.circuit).toEqual([
+        expect.objectContaining({ kind: "led-current", evidenceLevel: "computed", status: "pass" }),
+        expect.objectContaining({
+          kind: "assertion",
+          evidenceLevel: "declared",
+          status: "declared",
+          claim: "pass",
+        }),
+      ]);
+      expect((release.json as any).checks.circuit[1].measured).toBeUndefined();
+      expect((release.json as any).evidence.declaredClaims).toEqual([
+        {
+          name: "Firmware controls the LED",
+          claim: "pass",
+          evidence: "Firmware will implement this behavior.",
+        },
+      ]);
+      expect((release.json as any).revisions.schematic).toHaveLength(64);
+      expect(
+        (release.json as any).inventory.some(
+          (entry: any) => entry.path === "exports/fabrication.zip" && entry.status === "available",
+        ),
+      ).toBe(true);
+      if (presentation === "both") {
+        const cleanDrc = await base.kicad.runDrc({} as any, {} as any);
+        for (const [counts, reason] of [
+          [{ errors: 1, warnings: 0, unconnected: 0 }, "1 DRC errors"],
+          [{ errors: 0, warnings: 0, unconnected: 1 }, "1 unconnected"],
+        ] as const) {
+          services.kicad.runDrc = async () => ({ ...cleanDrc, counts });
+          const rejected = await callRelease();
+          expect(rejected.isError).toBe(true);
+          expect((rejected.json as any).failureReasons).toContain(reason);
+          expect((rejected.json as any).checks.schematicPresentation.blocking).toBe(false);
+        }
+        services.kicad.runDrc = async () => cleanDrc;
+        await rm(join(project.dir, "exports/bom.csv"));
+        services.kicad.exportBom = async () => ({ paths: [] });
+        const incomplete = await callRelease();
+        expect(incomplete.isError).toBe(true);
+        expect((incomplete.json as any).failureReasons).toContain(
+          "missing output: exports/bom.csv",
+        );
+      }
+    },
+  );
 
   test("circuit_build warns when the built stackup disagrees with fabdesk.json, never rewriting it", async () => {
     const reg = createRegistry();
@@ -3409,7 +3808,7 @@ describe("registry", () => {
     expect(await Bun.file(join(project.dir, "board.kicad_pcb")).exists()).toBe(true);
     await mkdir(join(project.dir, "reports"), { recursive: true });
     await writeFile(join(project.dir, "reports/stats.json"), '{"stale":true}');
-    const route = await call("route_run", { timeoutMs: 5000 });
+    const route = await call("route_run", { timeoutMs: 5000, waitMs: 0 });
     expect(route.isError).toBeFalsy();
     const json = route.json as { runId: string; state: string };
     expect(["queued", "running"]).toContain(json.state);

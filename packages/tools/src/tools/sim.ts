@@ -13,7 +13,12 @@ export const sim_spice_netlist = defineTool({
   description:
     "Export a SPICE netlist from the saved native schematic to exports/circuit.cir and return it.",
   inputSchema: {},
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async (_args, ctx) => {
     const project = ctx.requireProject();
     const cli = await requireKicad(ctx);
@@ -50,7 +55,12 @@ export const sim_run = defineTool({
     points: z.number().int().positive().optional().describe("ac: points per decade"),
     limit: z.number().int().min(1).max(500).default(40).describe("Rows in the text summary"),
   },
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   longRunning: true,
   handler: async ({ analysis, engine, stopS, stepS, startHz, stopHz, points, limit }, ctx) => {
     const project = ctx.requireProject();

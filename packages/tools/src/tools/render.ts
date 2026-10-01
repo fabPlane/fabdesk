@@ -32,7 +32,12 @@ export const render_schematic_svg = defineTool({
   inputSchema: {
     maxWidth: z.number().int().min(320).max(4096).default(1600),
   },
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   longRunning: true,
   handler: async ({ maxWidth }, ctx) => {
     const project = ctx.requireProject();
@@ -114,7 +119,12 @@ export const render_pcb_svg = defineTool({
   title: "Render PCB SVG",
   description: "Render board.kicad_pcb copper, silkscreen, and edge cuts to renders/pcb.svg.",
   inputSchema: {},
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   longRunning: true,
   handler: async (_args, ctx) => {
     const project = ctx.requireProject();
@@ -141,7 +151,12 @@ export const render_glb = defineTool({
   description:
     "Export a 3D model (GLB) of the KiCad board to renders/board.glb for the app's 3D tab. Requires kicad-cli and board.kicad_pcb.",
   inputSchema: {},
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   longRunning: true,
   handler: async (_args, ctx) => {
     const project = ctx.requireProject();
@@ -187,7 +202,12 @@ export const render_view = defineTool({
     highlightNets: z.array(z.string().min(1)).max(100).optional(),
     maxWidth: z.number().int().min(320).max(4096).default(1600),
   },
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   longRunning: true,
   handler: async (
     { document, region, layers, highlightReferences, highlightNets, maxWidth },
