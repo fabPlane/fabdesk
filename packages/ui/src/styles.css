@@ -183,6 +183,21 @@ body {
 .group:has(.fd-project-add):is(:hover, :focus-within) .fd-project-row { padding-right: 38px; }
 .group:has(.fd-project-add):is(:hover, :focus-within) .fd-project-count { display: none; }
 .fd-thread-body { display: flex; min-height: 0; flex: 1; flex-direction: column; }
+.fd-search-highlight { outline: 2px solid var(--fd-accent); outline-offset: 5px; background: color-mix(in srgb, var(--fd-accent) 10%, transparent); }
+/* Reserve one compact footer row so revealing actions never moves messages. */
+.fd-message-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-height: 32px; max-width: 100%; margin-top: 4px; color: var(--fd-muted); }
+.fd-message-copy { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; flex-shrink: 0; border-radius: 8px; }
+/* Align the assistant icon with the reply, while retaining its 32px hit target. */
+.fd-message-actions[data-role="assistant"] > .fd-message-copy { margin-inline-start: -8px; }
+.fd-message-copy:hover { background: var(--fd-panel-2); color: var(--fd-fg); }
+.fd-message-time { font-size: 11px; line-height: 16px; border-radius: 3px; }
+.fd-message-copy, .fd-message-time { opacity: 0; }
+.fd-message:is(:hover, :focus-within) > .fd-message-actions > :is(.fd-message-copy, .fd-message-time),
+.fd-message-actions[data-latest-reply] > .fd-message-copy { opacity: 1; }
+.fd-message-copy:focus-visible, .fd-message-time:focus-visible { outline: 2px solid var(--fd-accent); outline-offset: 2px; }
+@media (hover: none) {
+  .fd-message-copy, .fd-message-time { opacity: 1; }
+}
 .fd-new-chat-body { justify-content: safe center; overflow-y: auto; padding: clamp(20px, 4vw, 56px) clamp(20px, 3vw, 40px); }
 .fd-empty-hero { width: 100%; max-width: 640px; margin: 0 auto 26px; text-align: left; }
 .fd-empty-hero h1 { margin: 13px 0 12px; max-width: 500px; font-size: clamp(25px, 2.3vw, 34px); line-height: 1.18; font-weight: 600; letter-spacing: -0.045em; text-wrap: balance; }

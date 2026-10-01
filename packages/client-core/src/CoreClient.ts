@@ -364,6 +364,9 @@ export class CoreClient {
     const s = qs.toString();
     return this.request(`/threads${s ? `?${s}` : ""}`);
   }
+  searchChats(q: string, offset = 0): Promise<{ titles: Thread[]; messages: Array<{ message: Message; snippet: string; thread: Thread }>; nextOffset: number | null }> {
+    return this.request(`/search/results?q=${encodeURIComponent(q)}&offset=${offset}`);
+  }
   getThread(id: string): Promise<ThreadDetail> {
     return this.request(`/threads/${encodeURIComponent(id)}`);
   }
