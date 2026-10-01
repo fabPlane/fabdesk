@@ -49,7 +49,7 @@ import type { CoreConfig } from "../config";
 import type { Store } from "../db";
 import type { JobRunner } from "../jobs";
 import type { McpSessionManager } from "../mcp-sessions";
-import type { ProjectStore } from "../projects";
+import { InvalidParentDirectory, type ProjectStore } from "../projects";
 import type { AgentRunManager } from "../agent-runs";
 import type { DeviceStore } from "../devices";
 import type { RemoteListener } from "../remote";
@@ -131,6 +131,8 @@ export function createApp(deps: AppDeps): Hono<Env> {
   const app = new Hono<Env>();
 
   app.onError((err, c) => {
+    if (err instanceof InvalidParentDirectory)
+      return c.json({ error: "invalid_parent_directory", message: err.message }, 400);
     if (err instanceof ToolError) {
       const status =
         err.code === "invalid_args"
@@ -628,7 +630,12 @@ export function createApp(deps: AppDeps): Hono<Env> {
     }
     const name = c.req.query("name") ?? "";
     if (!name.trim() || name.length > 80) return c.json({ error: "Enter a project name" }, 400);
-    return c.json(await deps.projects.importDestination(name, c.req.query("parentDirectory")));
+    const destination = await deps.projects.importDestination(name, c.req.query("parentDirectory"));
+    // The default root is under the host's home directory: a remote caller (phone, relay) gets
+    // only the folder name it would create, not the host's absolute path.
+    if (deps.listener === "remote")
+      return c.json({ ...destination, path: basename(destination.path) });
+    return c.json(destination);
   });
   app.post("/projects/import-github", async (c) => {
     const input = await c.req.json();

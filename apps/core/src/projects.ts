@@ -25,6 +25,13 @@ import type { ProjectRepo } from "./db";
 import { newId } from "./db";
 import { logger } from "./log";
 
+/** A chosen parent directory that does not exist or is not a folder; HTTP answers 400 `invalid_parent_directory`. */
+export class InvalidParentDirectory extends ToolError {
+  constructor(message = "Project location does not exist") {
+    super(message, "invalid_args");
+  }
+}
+
 export function slugify(name: string): string {
   const s = name
     .toLowerCase()
@@ -95,10 +102,24 @@ export class ProjectStore implements ProjectResolver {
     return this.repo.list().map(({ slug: _slug, ...s }) => s);
   }
 
+  /**
+   * Where a new project folder goes: the projects root, or a chosen absolute folder (real path).
+   * A chosen folder that does not exist, or is not a folder, is `InvalidParentDirectory`.
+   */
+  private async parentRoot(parentDirectory: string | undefined): Promise<string> {
+    if (!parentDirectory) return this.rootDir;
+    if (!isAbsolute(parentDirectory)) throw new ToolError("Choose an absolute project location", "invalid_args");
+    const root = await realpath(parentDirectory).catch((e: NodeJS.ErrnoException) => {
+      if (e.code === "ENOENT" || e.code === "ENOTDIR" || e.code === "ELOOP" || e.code === "EACCES")
+        throw new InvalidParentDirectory();
+      throw e;
+    });
+    if (!(await stat(root)).isDirectory()) throw new InvalidParentDirectory("Project location must be a folder");
+    return root;
+  }
+
   async importDestination(name: string, parentDirectory?: string): Promise<{ path: string; exists: boolean }> {
-    if (parentDirectory && !isAbsolute(parentDirectory)) throw new ToolError("Choose an absolute project location", "invalid_args");
-    const root = parentDirectory ? await realpath(parentDirectory) : this.rootDir;
-    if (parentDirectory && !(await stat(root)).isDirectory()) throw new ToolError("Project location must be a folder", "invalid_args");
+    const root = await this.parentRoot(parentDirectory);
     const path = join(root, slugify(name));
     return { path, exists: !!(await stat(path).catch(() => null)) };
   }
@@ -191,9 +212,7 @@ export class ProjectStore implements ProjectResolver {
   }
 
   async create(name: string, parentDirectory?: string): Promise<ProjectDetail> {
-    if (parentDirectory && !isAbsolute(parentDirectory)) throw new ToolError("Choose an absolute project location", "invalid_args");
-    const root = parentDirectory ? await realpath(parentDirectory) : this.rootDir;
-    if (parentDirectory && !(await stat(root)).isDirectory()) throw new ToolError("Project location must be a folder", "invalid_args");
+    const root = await this.parentRoot(parentDirectory);
     await mkdir(root, { recursive: true });
     const base = slugify(name);
     let slug = base;
@@ -249,9 +268,7 @@ export class ProjectStore implements ProjectResolver {
     signal?: AbortSignal;
     failOnCollision?: boolean;
   }): Promise<ProjectDetail> {
-    if (opts.parentDirectory && !isAbsolute(opts.parentDirectory)) throw new ToolError("Choose an absolute project location", "invalid_args");
-    const root = opts.parentDirectory ? await realpath(opts.parentDirectory) : this.rootDir;
-    if (opts.parentDirectory && !(await stat(root)).isDirectory()) throw new ToolError("Project location must be a folder", "invalid_args");
+    const root = await this.parentRoot(opts.parentDirectory);
     await mkdir(root, { recursive: true });
     const base = slugify(opts.name);
     let slug = base;

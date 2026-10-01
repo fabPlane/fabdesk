@@ -211,6 +211,34 @@ describe("remote listener", () => {
     expect((await local(`/projects/import-github/destination?${new URLSearchParams({ name: "Local import", parentDirectory: home })}`)).status).toBe(200);
   });
 
+  test("the default import destination is a folder name remotely, the full path locally", async () => {
+    const remote = (await (
+      await fetch(`${remoteUrl}/projects/import-github/destination?name=My%20Board`, { headers: H() })
+    ).json()) as { path: string; exists: boolean };
+    expect(remote).toEqual({ path: "my-board", exists: false });
+    const near = (await (await local("/projects/import-github/destination?name=My%20Board")).json()) as {
+      path: string;
+    };
+    expect(near.path).toBe(join(home, "Fabdesk", "my-board"));
+  });
+
+  test("a parent directory that is missing or not a folder is a 400, not a 500", async () => {
+    const file = join(home, "not-a-folder.txt");
+    await Bun.write(file, "x");
+    for (const parentDirectory of [join(home, "missing"), join(file, "child"), file]) {
+      const query = new URLSearchParams({ name: "Bad parent", parentDirectory });
+      const res = await local(`/projects/import-github/destination?${query}`);
+      expect({ parentDirectory, status: res.status, error: ((await res.json()) as { error: string }).error }).toEqual({
+        parentDirectory,
+        status: 400,
+        error: "invalid_parent_directory",
+      });
+      const created = await local("/projects", { method: "POST", body: JSON.stringify({ name: "Bad parent", parentDirectory }) });
+      expect(created.status).toBe(400);
+      expect(((await created.json()) as { error: string }).error).toBe("invalid_parent_directory");
+    }
+  });
+
   test("does not serve mcp, shutdown or device administration", async () => {
     for (const [path, init] of [
       ["/mcp/sessions", {}],
