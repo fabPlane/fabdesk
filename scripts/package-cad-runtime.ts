@@ -38,6 +38,22 @@ function run(args: string[]) {
   const p = Bun.spawnSync(args, { stdout: "inherit", stderr: "inherit" });
   if (p.exitCode) throw new Error(`${args[0]} failed (${p.exitCode})`);
 }
+// The container's main executable lives above Resources; relocate its direct loader paths.
+// The managed API process still launches the original executable beside its modules.
+const topExecutable = join(app, "Contents", "MacOS", "FreeCADApiServer");
+const links = Bun.spawnSync(["/usr/bin/otool", "-L", topExecutable]);
+if (links.exitCode) throw new Error("Cannot inspect runtime container executable");
+for (const line of links.stdout.toString().split("\n").slice(1)) {
+  const dependency = line.trim().split(" (", 1)[0];
+  if (dependency?.startsWith("@loader_path/../"))
+    run([
+      "/usr/bin/install_name_tool",
+      "-change",
+      dependency,
+      dependency.replace("@loader_path/../", "@loader_path/../Resources/cad/freecad/"),
+      topExecutable,
+    ]);
+}
 if (!candidate) {
   // Uses the exact existing desktop signing secrets and electron-builder temporary-keychain helper.
   const required = [

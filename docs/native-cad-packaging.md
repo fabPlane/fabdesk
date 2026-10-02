@@ -72,7 +72,7 @@ OCCT/TBB linkage and official source/license receipt collection validated in the
 It never uses installed user FreeCAD preferences; the final native smoke uses disposable preferences.
 `cad:stage` builds the pinned web/bridge in a disposable checkout without installing into vendor.
 
-The unsigned measurement candidate is **560,546,312 bytes compressed** and **756,923,316 bytes
+The unsigned measurement candidate is **560,546,330 bytes compressed** and **756,923,316 bytes
 unpacked** (535 MiB / 722 MiB). This includes source/license material and dependencies; it is not
 FreeCAD alone. The source-only release archive is about 427 MiB. The final signed ZIP must be
 remeasured; production metadata is emitted only after signing/notarization. Unsigned candidates
