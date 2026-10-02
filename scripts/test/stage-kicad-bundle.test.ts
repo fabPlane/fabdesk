@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -20,11 +28,15 @@ describe("supplementKicadNotices", () => {
       await supplementKicadNotices(root, "0000000000000000000000000000000000000000");
       expect(() => statSync(join(root, "licenses"))).toThrow();
       await supplementKicadNotices(root, commit);
-      expect(readFileSync(join(root, "licenses", "LICENSE"), "utf8")).toContain("GNU GENERAL PUBLIC LICENSE");
+      expect(readFileSync(join(root, "licenses", "LICENSE"), "utf8")).toContain(
+        "GNU GENERAL PUBLIC LICENSE",
+      );
       expect(readFileSync(join(root, "licenses", "SOURCE.txt"), "utf8")).toContain(commit);
       writeFileSync(join(root, "licenses", "LICENSE"), "archive-supplied notices");
       await supplementKicadNotices(root, commit);
-      expect(readFileSync(join(root, "licenses", "LICENSE"), "utf8")).toBe("archive-supplied notices");
+      expect(readFileSync(join(root, "licenses", "LICENSE"), "utf8")).toBe(
+        "archive-supplied notices",
+      );
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -158,27 +170,33 @@ describe("stage-kicad-bundle --from", () => {
     rmSync(src, { recursive: true, force: true });
   });
 
-  test.skipIf(process.platform === "win32")("flattens nested kicad-cli/ when staging --from", async () => {
-    const src = mkdtempSync(join(tmpdir(), "fabdesk-kicad-nested-"));
-    mkdirSync(join(src, "kicad-cli"), { recursive: true });
-    writeFileSync(join(src, "kicad-cli", "kicad-cli"), "#!/bin/sh\necho nested\n");
-    chmodSync(join(src, "kicad-cli", "kicad-cli"), 0o755);
+  test.skipIf(process.platform === "win32")(
+    "flattens nested kicad-cli/ when staging --from",
+    async () => {
+      const src = mkdtempSync(join(tmpdir(), "fabdesk-kicad-nested-"));
+      mkdirSync(join(src, "kicad-cli"), { recursive: true });
+      writeFileSync(join(src, "kicad-cli", "kicad-cli"), "#!/bin/sh\necho nested\n");
+      chmodSync(join(src, "kicad-cli", "kicad-cli"), 0o755);
 
-    const os = process.platform === "darwin" ? "darwin" : "linux";
-    const arch = process.arch === "arm64" ? "arm64" : "x64";
-    const target = `bun-${os}-${arch}`;
-    const proc = Bun.spawn(["bun", "run", "scripts/stage-kicad-bundle.ts", "--from", src, "--target", target], {
-      cwd: join(import.meta.dir, "../.."),
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [stderr, code] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
-    expect(code).toBe(0);
-    expect(stderr).toContain("staged");
+      const os = process.platform === "darwin" ? "darwin" : "linux";
+      const arch = process.arch === "arm64" ? "arm64" : "x64";
+      const target = `bun-${os}-${arch}`;
+      const proc = Bun.spawn(
+        ["bun", "run", "scripts/stage-kicad-bundle.ts", "--from", src, "--target", target],
+        {
+          cwd: join(import.meta.dir, "../.."),
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      );
+      const [stderr, code] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
+      expect(code).toBe(0);
+      expect(stderr).toContain("staged");
 
-    const stagedRoot = join(import.meta.dir, "../../apps/desktop/kicad-bundle", `${os}-${arch}`);
-    expect(statSync(join(stagedRoot, "kicad-cli")).isFile()).toBe(true);
-    rmSync(stagedRoot, { recursive: true, force: true });
-    rmSync(src, { recursive: true, force: true });
-  });
+      const stagedRoot = join(import.meta.dir, "../../apps/desktop/kicad-bundle", `${os}-${arch}`);
+      expect(statSync(join(stagedRoot, "kicad-cli")).isFile()).toBe(true);
+      rmSync(stagedRoot, { recursive: true, force: true });
+      rmSync(src, { recursive: true, force: true });
+    },
+  );
 });
