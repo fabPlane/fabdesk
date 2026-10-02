@@ -55,6 +55,11 @@ export function cursorArgs(session: AgentSession, bin: string): string[] {
   return args;
 }
 
+/**
+ * MCP isolation gap: this adapter still loads foreign user/project/plugin servers.
+ * No verified strict-MCP control is available for this CLI; a config-home override
+ * alone does not establish an exclusive inventory. Do not claim Fabdesk-only MCP.
+ */
 export const cursorAdapter: AgentAdapter = {
   id: "cursor",
   displayName: "Cursor",

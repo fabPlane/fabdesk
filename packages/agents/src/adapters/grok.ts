@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, statSync, symlinkSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { detectBinary, resolveFirst } from "../detect";
 import { MessagesStreamParser } from "../parsers/messages";
@@ -12,6 +15,11 @@ import {
   tomlString,
   writeFileEnsuringDir,
 } from "./shared";
+
+// Runtime is Bun 1.4; the repo still pins @types/bun 1.2, before TOML.stringify.
+const toml = Bun.TOML as typeof Bun.TOML & {
+  stringify(value: Record<string, unknown>): string;
+};
 
 const CANDIDATES = ["grok", "~/.grok/bin/grok"];
 const START = "# fabdesk:mcp-start (generated per run; do not edit)";
@@ -78,6 +86,65 @@ export function grokArgs(session: AgentSession, bin: string): string[] {
   return args;
 }
 
+/**
+ * GROK_HOME is supported; native requirements bind MCP from every config/plugin source.
+ * Keep a project-specific overlay so concurrent projects cannot race their allowlists.
+ * Original global configs are only read. Share session storage to preserve resume IDs.
+ */
+export function grokEnv(session: AgentSession): Record<string, string> {
+  const env = agentEnv(session);
+  const source = env["GROK_HOME"] ?? join(env["HOME"] ?? env["USERPROFILE"] ?? homedir(), ".grok");
+  const id = createHash("sha256").update(session.cwd).digest("hex");
+  const isolated = join(source, "fabdesk-agents", id);
+  mkdirSync(isolated, { recursive: true, mode: 0o700 });
+  const config = readFileIfExists(join(source, "config.toml"));
+  // Preserve non-MCP preferences and permission rules. The native allowlist below
+  // restricts user, project, imported and plugin-provided MCP, not built-in tools.
+  const preferences: Record<string, unknown> =
+    config === undefined ? {} : (Bun.TOML.parse(config) as Record<string, unknown>);
+  delete preferences["mcp_servers"];
+  delete preferences["plugins"];
+  writeFileEnsuringDir(join(isolated, "config.toml"), toml.stringify(preferences), 0o600);
+  const auth = join(source, "auth.json");
+  const authCopy = join(isolated, "auth.json");
+  if (
+    existsSync(auth) &&
+    (!existsSync(authCopy) || statSync(auth).mtimeMs > statSync(authCopy).mtimeMs)
+  ) {
+    copyFileSync(auth, authCopy);
+    chmodSync(authCopy, 0o600);
+  }
+  const sessions = join(source, "sessions");
+  mkdirSync(sessions, { recursive: true });
+  if (!existsSync(join(isolated, "sessions")))
+    symlinkSync(
+      sessions,
+      join(isolated, "sessions"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
+  // Match endpoint rather than name: imported/plugin aliases must not gain authority
+  // merely by naming themselves fabdesk. Native requirements are enforced by 1.0.46.
+  const policy = (file: string, allow: Record<string, string>) => {
+    const raw = readFileIfExists(join(source, file));
+    const settings: Record<string, unknown> =
+      raw === undefined ? {} : (Bun.TOML.parse(raw) as Record<string, unknown>);
+    // Preserve non-MCP managed preferences and built-in permission rules.
+    delete settings["allowedMcpServers"];
+    settings["allowed_mcp_servers"] = [allow];
+    writeFileEnsuringDir(join(isolated, file), toml.stringify(settings), 0o600);
+  };
+  policy("managed_config.toml", { server_name: MCP_SERVER_NAME });
+  policy("requirements.toml", { server_url: session.mcp.url });
+  env["GROK_HOME"] = isolated;
+  // Grok imports other CLIs' MCP and plugins by default. Disable those MCP sources
+  // before startup, rather than reporting intentional policy exclusions as failures.
+  for (const vendor of ["CLAUDE", "CURSOR", "CODEX"]) {
+    env[`GROK_${vendor}_MCPS_ENABLED`] = "false";
+    env[`GROK_${vendor}_PLUGINS_ENABLED`] = "false";
+  }
+  return env;
+}
+
 export const grokAdapter: AgentAdapter = {
   id: "grok",
   displayName: "Grok",
@@ -93,7 +160,7 @@ export const grokAdapter: AgentAdapter = {
     return runAgentProcess({
       cmd: grokArgs(session, session.binaryPath ?? resolveFirst(CANDIDATES) ?? "grok"),
       cwd: session.cwd,
-      env: agentEnv(session),
+      env: grokEnv(session),
       parse: (line) => parser.feed(line),
       sessionId: () => parser.sessionId,
     });

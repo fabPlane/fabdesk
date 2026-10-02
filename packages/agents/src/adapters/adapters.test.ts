@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentSession } from "../types";
-import { claudeArgs, claudeMcpConfig } from "./claude";
-import { codexArgs } from "./codex";
+import { claudeArgs, claudeMcpConfig, claudeEnv } from "./claude";
+import { codexArgs, codexForeignServers, codexAdapter, codexEnv } from "./codex";
 import { cursorArgs, cursorMcpPath, writeCursorMcp } from "./cursor";
-import { grokArgs, grokConfigPath, writeGrokConfig } from "./grok";
+import { grokArgs, grokConfigPath, writeGrokConfig, grokEnv } from "./grok";
 import { agentEnv, promptWithAttachments, replaceMarkedBlock } from "./shared";
 
 const TOKEN = "super-secret-token";
@@ -288,5 +288,109 @@ describe("cursor adapter", () => {
     expect(args[args.indexOf("--model") + 1]).toBe("auto");
     expect(args).not.toContain("--resume");
     expect(args.at(-1)).toContain("Design a blinky");
+  });
+});
+
+describe("MCP isolation", () => {
+  test("Codex disables apps, plugins, and every foreign name on new turns and resume", () => {
+    const inventory = JSON.stringify([
+      { name: "user.with.dots", transport: { type: "stdio" } },
+      { name: "fabdesk", transport: { type: "streamable_http" } },
+      { name: 'quoted"name', transport: { type: "streamable_http" } },
+    ]);
+    const foreign = codexForeignServers(inventory);
+    expect(foreign).toEqual(["user.with.dots", 'quoted"name']);
+    for (const resume of [undefined, "old-thread"]) {
+      const args = codexArgs(session(resume ? { resume } : {}), "codex", foreign);
+      expect(args).toContain("features.apps=false");
+      expect(args).toContain("features.plugins=false");
+      expect(args).toContain("features.remote_plugin=false");
+      const table = args.find((arg) => arg.startsWith("mcp_servers={"))!;
+      const overrides = (
+        Bun.TOML.parse(table) as { mcp_servers: Record<string, { enabled: boolean }> }
+      ).mcp_servers;
+      expect(overrides["user.with.dots"]?.enabled).toBe(false);
+      expect(overrides['quoted"name']?.enabled).toBe(false);
+      expect(args).toContain("mcp_servers.fabdesk.enabled=true");
+    }
+  });
+
+  test("Codex refuses missing or malformed inventories and conflicting reserved transport", () => {
+    for (const raw of [
+      "broken",
+      "{}",
+      '[{"name":"x"}]',
+      '[{"name":"fabdesk","transport":{"type":"stdio"}}]',
+    ])
+      expect(() => codexForeignServers(raw)).toThrow();
+    expect(() =>
+      codexAdapter.run(
+        session({
+          binaryPath: join(dir, "missing-cli"),
+          env: { CODEX_HOME: join(dir, "empty-codex") },
+        }),
+      ),
+    ).toThrow();
+  });
+
+  test("Codex snapshots preferences/auth without MCP or plugins, and keeps trust writes private", () => {
+    const source = join(dir, "global-codex");
+    mkdirSync(source);
+    const config =
+      '[model_providers.custom]\nbase_url="https://example.test"\n[mcp_servers.foreign]\ncommand="foreign"\n[plugins.fixture]\nenabled=true\n[profiles.custom.mcp_servers.hidden]\ncommand="hidden"\n';
+    writeFileSync(join(source, "config.toml"), config);
+    writeFileSync(join(source, "auth.json"), '{"test":"credential"}');
+    const env = codexEnv(session({ env: { CODEX_HOME: source } }));
+    const isolated = env["CODEX_HOME"]!;
+    expect(isolated).not.toBe(source);
+    const child = readFileSync(join(isolated, "config.toml"), "utf8");
+    expect(child).not.toContain("mcp_servers");
+    expect(child).not.toContain("plugins");
+    expect(child).toContain("https://example.test");
+    writeFileSync(join(isolated, "config.toml"), "# simulated CLI trust write");
+    expect(readFileSync(join(source, "config.toml"), "utf8")).toBe(config);
+    expect(readFileSync(join(source, "auth.json"), "utf8")).toBe('{"test":"credential"}');
+    expect(readFileSync(join(isolated, "auth.json"), "utf8")).toBe('{"test":"credential"}');
+    expect(codexEnv(session({ env: { CODEX_HOME: source } }))["CODEX_HOME"]).toBe(isolated);
+  });
+
+  test("Claude forces account connectors off even if session env enables them", () => {
+    const env = claudeEnv(session({ env: { ENABLE_CLAUDEAI_MCP_SERVERS: "true" } }));
+    expect(env["ENABLE_CLAUDEAI_MCP_SERVERS"]).toBe("false");
+    expect(env["FABDESK_TOKEN"]).toBe(TOKEN);
+    expect(claudeArgs(session(), "claude")).toContain("--strict-mcp-config");
+  });
+
+  test("Grok scopes policy per project, preserves global config/auth and shares resume storage", () => {
+    const source = join(dir, "global-grok");
+    mkdirSync(source);
+    const config = '[mcp_servers.foreign]\ncommand="foreign"\n[ui]\nscreen_mode="minimal"\n';
+    writeFileSync(join(source, "config.toml"), config);
+    writeFileSync(join(source, "auth.json"), '{"test":"credential"}');
+    const env = grokEnv(session({ env: { GROK_HOME: source } }));
+    const isolated = env["GROK_HOME"]!;
+    expect(isolated).not.toBe(source);
+    expect(readFileSync(join(source, "config.toml"), "utf8")).toBe(config);
+    expect(readFileSync(join(source, "auth.json"), "utf8")).toBe('{"test":"credential"}');
+    expect(readFileSync(join(isolated, "auth.json"), "utf8")).toBe('{"test":"credential"}');
+    expect(readFileSync(join(isolated, "requirements.toml"), "utf8")).toContain(
+      'server_url = "http://127.0.0.1:4321/mcp"',
+    );
+    expect(readFileSync(join(isolated, "managed_config.toml"), "utf8")).toContain(
+      'server_name = "fabdesk"',
+    );
+    writeFileSync(join(source, "sessions", "resume-marker"), "prior session");
+    expect(readFileSync(join(isolated, "sessions", "resume-marker"), "utf8")).toBe("prior session");
+    const other = grokEnv(session({ cwd: join(dir, "other"), env: { GROK_HOME: source } }));
+    expect(other["GROK_HOME"]).not.toBe(isolated);
+    expect(env["FABDESK_TOKEN"]).toBe(TOKEN);
+    for (const vendor of ["CLAUDE", "CURSOR", "CODEX"]) {
+      expect(env[`GROK_${vendor}_MCPS_ENABLED`]).toBe("false");
+      expect(env[`GROK_${vendor}_PLUGINS_ENABLED`]).toBe("false");
+    }
+    const childConfig = readFileSync(join(isolated, "config.toml"), "utf8");
+    expect(childConfig).not.toContain(TOKEN);
+    expect(childConfig).not.toContain("foreign");
+    expect(childConfig).toContain('screen_mode = "minimal"');
   });
 });
