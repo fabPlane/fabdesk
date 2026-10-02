@@ -211,6 +211,8 @@ def main():
     shutil.copy2(Path(__file__).with_name("build-freecad-macos.py"), sources / "build-freecad-macos.py")
     (sources / "dependencies.json").write_text(json.dumps(manifest, indent=2) + "\n")
     for binary in origins:
+        if "arm64" not in run("lipo", "-archs", str(binary)).split():
+            raise RuntimeError(f"Native dependency lacks ARM64: {binary}")
         run("codesign", "--force", "--sign", "-", str(binary))
         if any(p.startswith(("/opt/", "/private/tmp/", "/tmp/", "/Users/")) for p in dependencies(binary)):
             raise RuntimeError(f"Unbundled dependency remains: {binary}")

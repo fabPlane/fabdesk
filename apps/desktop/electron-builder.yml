@@ -22,6 +22,8 @@ publish: null
 
 # The compiled Bun core is single-arch: apps/core/dist/<os>-<arch>/fabdesk-core[.exe] -> Resources/core/
 mac:
+  # The first native FreeCAD runtime and its dependency closure require macOS 15.
+  minimumSystemVersion: "15.0"
   icon: build/icon.icns
   category: public.app-category.developer-tools
   # No arch list here: each CI runner passes --arm64 or --x64 and must build only that arch.

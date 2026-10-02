@@ -86,7 +86,7 @@ Official references: [FreeCAD license](https://github.com/FreeCAD/FreeCAD/blob/m
 
 | Target | Status |
 | --- | --- |
-| macOS ARM64 | Native build and relocated FCStd/STEP/authentication smoke validated on this Mac |
+| macOS ARM64 (macOS 15+) | Native build and relocated FCStd/STEP/authentication smoke validated on this Mac |
 | macOS x64 | Build recipe/runtime not validated; requires its own native runner |
 | Linux x64 | Requires an equivalent native runtime and dependency-closure build |
 | Windows x64 | Requires its own API-server build, Python/native DLL assets and signing smoke |
