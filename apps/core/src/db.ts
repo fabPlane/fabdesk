@@ -630,14 +630,28 @@ export class ThreadRepo {
     return rows.map((r) => ({ message: this.toMessage(r), snippet: r.snippet }));
   }
 
-  searchResults(q: string, limit = 30, offset = 0): { titles: Thread[]; messages: Array<{ message: Message; snippet: string; thread: Thread }>; nextOffset: number | null } {
+  searchResults(
+    q: string,
+    limit = 30,
+    offset = 0,
+  ): {
+    titles: Thread[];
+    messages: Array<{ message: Message; snippet: string; thread: Thread }>;
+    nextOffset: number | null;
+  } {
     const like = q.replace(/[\\%_]/g, "\\$&");
-    const titles = this.db.query<ThreadRow, [string, string, string, number]>(
-      "SELECT * FROM threads WHERE title LIKE ? ESCAPE '\\' ORDER BY CASE WHEN lower(title) = lower(?) THEN 0 WHEN lower(title) LIKE lower(?) ESCAPE '\\' THEN 1 ELSE 2 END, updated_at DESC, id LIMIT ?",
-    ).all(`%${like}%`, q, `${like}%`, 20).map((row) => this.toThread(row));
-    const hits = this.db.query<MessageRow & { snippet: string }, [string, number, number]>(
-      "SELECT m.*, snippet(messages_fts, 0, '', '', '…', 12) AS snippet FROM messages_fts f JOIN messages m ON m.rowid = f.rowid WHERE messages_fts MATCH ? ORDER BY rank, m.created_at DESC, m.id LIMIT ? OFFSET ?",
-    ).all(ftsQuery(q), limit + 1, offset);
+    const titles = this.db
+      .query<ThreadRow, [string, string, string, number]>(
+        "SELECT * FROM threads WHERE title LIKE ? ESCAPE '\\' ORDER BY CASE WHEN lower(title) = lower(?) THEN 0 WHEN lower(title) LIKE lower(?) ESCAPE '\\' THEN 1 ELSE 2 END, updated_at DESC, id LIMIT ?",
+      )
+      .all(`%${like}%`, q, `${like}%`, 20)
+      .map((row) => this.toThread(row));
+    const hits = this.db
+      .query<
+        MessageRow & { snippet: string },
+        [string, number, number]
+      >("SELECT m.*, snippet(messages_fts, 0, '', '', '…', 12) AS snippet FROM messages_fts f JOIN messages m ON m.rowid = f.rowid WHERE messages_fts MATCH ? ORDER BY rank, m.created_at DESC, m.id LIMIT ? OFFSET ?")
+      .all(ftsQuery(q), limit + 1, offset);
     const messages = hits.slice(0, limit).flatMap((row) => {
       const thread = this.get(row.thread_id);
       return thread ? [{ message: this.toMessage(row), snippet: row.snippet, thread }] : [];
@@ -980,7 +994,24 @@ type RouteRunRow = {
 export class RouteRunRepo {
   constructor(private readonly db: Database) {}
   private toRec(r: RouteRunRow): RouteRunRecord {
-    if (r.record_json) return JSON.parse(r.record_json) as RouteRunRecord;
+    if (r.record_json) {
+      const record = JSON.parse(r.record_json) as RouteRunRecord;
+      return {
+        ...record,
+        router: record.router === "capacity" ? "fab_router" : record.router,
+        ...(record.result
+          ? {
+              result: {
+                ...record.result,
+                router:
+                  (record.result.router as string) === "capacity"
+                    ? "fab_router"
+                    : record.result.router,
+              },
+            }
+          : {}),
+      };
+    }
     const legacyResult = r.result_json ? (JSON.parse(r.result_json) as RouteResult) : null;
     const state =
       r.status === "done"
@@ -992,7 +1023,7 @@ export class RouteRunRepo {
     return {
       id: r.id,
       projectId: r.project_id,
-      router: r.router,
+      router: r.router === "capacity" ? "fab_router" : r.router,
       runtimeId: null,
       state,
       status: state,
@@ -1091,13 +1122,14 @@ export class RouteRunRepo {
       updatedAt: patch.updatedAt ?? nowIso(),
     };
     this.db.run(
-      "UPDATE route_runs SET status = ?, result_json = ?, error = ?, ended_at = ?, record_json = ? WHERE id = ?",
+      "UPDATE route_runs SET status = ?, result_json = ?, error = ?, ended_at = ?, record_json = ?, router = ? WHERE id = ?",
       [
         next.state,
         next.result ? JSON.stringify(next.result) : null,
         next.error,
         next.endedAt,
         JSON.stringify(next),
+        next.router,
         id,
       ],
     );

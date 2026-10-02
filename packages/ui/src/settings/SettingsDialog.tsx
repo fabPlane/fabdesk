@@ -184,12 +184,11 @@ export function SettingsDialog() {
             </div>
           ) : section === "router" ? (
             <div>
-              <Row label="Autorouter">
-                <Select value={draft.router} onChange={(e) => update((s) => ({ ...s, router: e.target.value as Settings["router"] }))}>
-                  <option value="capacity">capacity (built-in JS router)</option>
-                  <option value="freerouting">freerouting</option>
-                </Select>
-              </Row>
+              <p className="mb-3 text-xs leading-5 text-muted">
+                New projects use Freerouting by default and automatically fall back to fab_router
+                when Freerouting is unavailable or fails. A project can pin either router in its
+                board settings.
+              </p>
               <div className="mt-2 space-y-1 text-xs">
                 {(doctor.data?.routers ?? []).map((r) => (
                   <div key={r.id} className="flex items-center gap-2">

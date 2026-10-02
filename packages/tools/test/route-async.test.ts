@@ -312,7 +312,7 @@ describe("route_run inline result", () => {
     ]);
     expect(json["state"]).toBe("running");
     expect(response.text).toBe(
-      `Route ${json.runId} running; computation continues independently. Use route_status with this runId or route_cancel with this exact runId.`,
+      `Route ${json.runId} (fab_router) running; computation continues independently. Use route_status with this runId or route_cancel with this exact runId.`,
     );
     await terminal(h.services, json.runId);
   });

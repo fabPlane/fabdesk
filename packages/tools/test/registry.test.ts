@@ -3961,7 +3961,8 @@ describe("registry", () => {
     expect(blockedRun.state).toBe("failed");
     expect(blockedRun.error).toContain("no remaining endpoints");
     const unavailable = await call({ timeoutMs: 5000, router: "freerouting" });
-    expect((unavailable.json as any).state).toBe("unavailable");
+    const explicitRun = await waitForRoute(services, (unavailable.json as any).runId);
+    expect(explicitRun.router).toBe("freerouting");
     const noProgress = await call({
       timeoutMs: 5000,
       targets: [{ net: "N1" }],
@@ -4102,11 +4103,11 @@ test("RouteProgressFrames turns phase/percent-only progress into attempt frames,
       seen.push(`${m.event?.kind}:${m.event?.status ?? ""}`),
   };
   const frames = new RouteProgressFrames("run_x", Date.now(), sink as never);
-  frames.onProgress({ state: "routing", log: [], phase: "capacity", percent: 10 });
-  frames.onProgress({ state: "routing", log: [], phase: "capacity", percent: 10 });
-  frames.onProgress({ state: "routing", log: [], phase: "capacity", percent: 40 });
+  frames.onProgress({ state: "routing", log: [], phase: "fab_router", percent: 10 });
+  frames.onProgress({ state: "routing", log: [], phase: "fab_router", percent: 10 });
+  frames.onProgress({ state: "routing", log: [], phase: "fab_router", percent: 40 });
   frames.onProgress({ state: "routing", log: [], phase: "trace", percent: 0 });
-  expect(seen).toEqual(["attempt:capacity · 10%", "attempt:capacity · 40%", "attempt:trace · 0%"]);
+  expect(seen).toEqual(["attempt:fab_router · 10%", "attempt:fab_router · 40%", "attempt:trace · 0%"]);
 });
 
 test("circuit_place moves footprints through the design service", async () => {

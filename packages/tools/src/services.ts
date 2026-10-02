@@ -85,7 +85,8 @@ export type DesignSelect =
 export type DesignRow = Record<string, unknown>;
 
 export type RouteJobOptions = {
-  router: "capacity" | "freerouting";
+  router: "fab_router" | "freerouting";
+  freerouting?: { passes: number };
   /** Only these nets; default every unrouted connection. */
   nets?: string[];
   maxTimeMs?: number;
@@ -222,7 +223,7 @@ export type DesignStatus = {
   kicadCliExists?: boolean;
   frontends?: string[];
   routers?: {
-    capacity?: { ok: boolean; reason?: string };
+    fab_router?: { ok: boolean; reason?: string };
     freerouting?: { ok: boolean; reason?: string };
   };
 };
@@ -796,6 +797,15 @@ export type RouteRunRecord = {
   id: string;
   projectId: string;
   router: string;
+  /** Historical records may predate attempt tracking. router identifies the final producer. */
+  attempts?: Array<{
+    router: "fab_router" | "freerouting";
+    startedAt: string;
+    endedAt: string | null;
+    outcome: "running" | "completed" | "failed" | "unavailable" | "skipped" | "cancelled" | "timed_out";
+    reason: string | null;
+  }>;
+  fallbackReason?: string | null;
   runtimeId: string | null;
   state: RouteRunState;
   /** Compatibility alias for older HTTP/mobile consumers. */

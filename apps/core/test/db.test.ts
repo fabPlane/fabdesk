@@ -20,7 +20,7 @@ function routeRecord(id: string, state: RouteRunRecord["state"] = "running"): Ro
   return {
     id,
     projectId: "p1",
-    router: "capacity",
+    router: "fab_router",
     runtimeId: "test",
     state,
     status: state,
@@ -226,7 +226,7 @@ describe("sqlite", () => {
       status: "completed",
       result: {
         runId: "run_1",
-        router: "capacity",
+        router: "fab_router",
         complete: ["N1"],
         open: [],
         timedOut: false,
@@ -245,7 +245,7 @@ describe("sqlite", () => {
     });
     expect(store.routeRuns.get("run_1")!.status).toBe("completed");
 
-    expect(store.settings.get().router).toBe("capacity");
+    expect(store.settings.get().router).toBe("fab_router");
     const s = store.settings.patch({ kicadCliPath: "/usr/bin/kicad-cli", keepCoreRunning: true });
     expect(s.kicadCliPath).toBe("/usr/bin/kicad-cli");
     expect(new Store(store.db).settings.get().keepCoreRunning).toBe(true);

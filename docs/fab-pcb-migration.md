@@ -315,7 +315,7 @@ fabdesk's own packages carry no tscircuit-ecosystem dependency and no `circuit.j
   environment to the bridge and core. Compiling a netlist creates both a native KiCad board and
   schematic, so ERC, schematic parity, and schematic SVG rendering apply. SVG rendering remains
   explicit: `render_board` writes PCB PNGs; `render_schematic_svg` and `render_pcb_svg` populate
-  their corresponding tabs. The freerouting router stays internal-only at the tool layer.
+  their corresponding tabs. New projects default to Freerouting with automatic fab_router fallback.
 
 #### First end-to-end run — 2026-09-07
 

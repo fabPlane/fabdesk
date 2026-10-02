@@ -2144,6 +2144,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
           s.id,
           {
             router: opts.router === "freerouting" ? "freerouting" : "js",
+            ...(opts.freerouting ? { freerouting: opts.freerouting } : {}),
             options: {
               ...(opts.nets ? { nets: opts.nets } : {}),
               ...(opts.maxTimeMs ? { maxTimeMs: opts.maxTimeMs } : {}),
@@ -2520,7 +2521,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         routers: {
           ...(capacityRouter
             ? {
-                capacity: {
+                fab_router: {
                   ok: capacityRouter.ok,
                   ...(capacityRouter.reason ? { reason: capacityRouter.reason } : {}),
                 },
