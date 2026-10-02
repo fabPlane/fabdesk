@@ -2511,17 +2511,18 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     const bridge = deps.bridge();
     try {
       const h = await bridge.health();
+      const capacityRouter = h.capacityRouter ?? h.jsAutorouter;
       return {
         url: bridge.url,
         ok: h.ok,
         ...(h.kicadCliExists !== undefined ? { kicadCliExists: h.kicadCliExists } : {}),
         ...(h.compile?.frontends ? { frontends: h.compile.frontends } : {}),
         routers: {
-          ...(h.jsAutorouter
+          ...(capacityRouter
             ? {
                 capacity: {
-                  ok: h.jsAutorouter.ok,
-                  ...(h.jsAutorouter.reason ? { reason: h.jsAutorouter.reason } : {}),
+                  ok: capacityRouter.ok,
+                  ...(capacityRouter.reason ? { reason: capacityRouter.reason } : {}),
                 },
               }
             : {}),
