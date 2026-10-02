@@ -119,9 +119,8 @@ a missing runtime fails staging rather than omitting CAD.
 
 ## Pins and upstream state
 
-- `vendor/fab_cad` is pinned at `237ccee4` (the immutable security/viewer integration snapshot). fab_cad has no `main` branch yet (its only branch is
-  `claude/freecad-repos-ipc-wasm-53j8he`, which is also its default), so the submodule has no
-  `branch =` and `bun run submodules:update` does not bump it; bump it with
+- `vendor/fab_cad` is pinned at `65c72d69` (the merged security/viewer main tip). fab_cad now has `main`, bootstrapped at the previous default tip without rewriting history.
+  The submodule currently has no `branch =`; bump its reviewed commit with
   `git -C vendor/fab_cad fetch && git -C vendor/fab_cad checkout <commit>`.
 - `vendor/fab_cad/packages/protocol/FREECAD_COMMIT` pins the fork at `9bcf850`, which is on the
   fork's `claude/freecad-repos-ipc-wasm-53j8he` branch, not on its `main`. The `src/Api` work has to
