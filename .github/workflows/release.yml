@@ -246,6 +246,8 @@ jobs:
           bun -e 'const m=await Bun.file(process.argv[1]).json(); if(m.target!==process.argv[2]) throw new Error(`bundle target ${m.target} != ${process.argv[2]}`)' "dist/pcb/$target/bundle.json" "$target"
           # shellcheck disable=SC2016
           bun -e 'const m=await Bun.file(process.argv[1]).json(); if(!m.fabRouter) throw new Error("backend does not contain fab_router")' "dist/pcb/$target/bundle.json"
+          # shellcheck disable=SC2016
+          bun -e 'const {dirname,join}=await import("node:path"); const path=process.argv[1]; const m=await Bun.file(path).json(); if(!m.freerouting?.jar || !m.freerouting?.java) throw new Error("backend does not contain Freerouting"); for(const p of [m.freerouting.jar,m.freerouting.java]) if(!await Bun.file(join(dirname(path),p)).exists()) throw new Error(`backend Freerouting file missing: ${p}`)' "dist/pcb/$target/bundle.json"
 
       # electron-builder treats an empty CSC_LINK as a file path, so only export secrets that are set.
       - name: Signing environment
