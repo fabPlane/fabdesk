@@ -32,15 +32,15 @@ describe("FabPlane CAD backend", () => {
     expect(await new CadSupervisor(null).start()).toEqual({});
   });
 
-  test("packaged startup requires the native bundle and ignores development mock source", async () => {
+  test("packaged startup remains usable without CAD and ignores development mock source", async () => {
     const resources = await temp("fabplane-native-required-");
-    expect(() =>
+    expect(
       resolveCadBackend({
         packaged: true,
         resourcesPath: resources,
         env: { FABDESK_FAB_CAD_SOURCE: FAB_CAD },
       }),
-    ).toThrow(/Packaged FreeCAD engine is missing/);
+    ).toBeNull();
   });
 
   test("resolves the bundled Python runtime relative to a relocated native manifest", async () => {

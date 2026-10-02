@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { CAD_RELEASE } from "./cad-runtime";
 /**
  * Application menu.
  *
@@ -61,7 +63,20 @@ function template(): MenuItemConstructorOptions[] {
           ? [
               {
                 label: "FreeCAD licenses and source",
-                click: () => void shell.openPath(join(process.resourcesPath, "cad", "freecad")),
+                click: () => {
+                  const path = join(
+                    app.getPath("userData"),
+                    "cad-runtimes",
+                    CAD_RELEASE,
+                    "CADRuntime.app",
+                    "Contents",
+                    "Resources",
+                    "cad",
+                    "freecad",
+                  );
+                  if (existsSync(path)) void shell.openPath(path);
+                  else void shell.openExternal("https://github.com/fabPlane/FreeCAD");
+                },
               },
             ]
           : []),

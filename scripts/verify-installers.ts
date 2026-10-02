@@ -161,7 +161,7 @@ function checkMacApp(app: string, label: string): void {
   checkCore(join(resources, "core", "fabdesk-core"), label);
   checkBundledKicad(resources, label);
   checkPcbBundle(resources, label);
-  checkCadBundle(resources, label);
+  if (existsSync(join(resources, "cad", "bundle.json"))) checkCadBundle(resources, label);
   if (!run(["codesign", "--verify", "--deep", "--strict", app]).ok)
     fail(`${label}: native CAD execution modified sealed app resources`);
 }

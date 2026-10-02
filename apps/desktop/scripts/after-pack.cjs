@@ -58,18 +58,7 @@ function copyBundledKicad(context) {
   return dest;
 }
 
-function copyBundledCad(context) {
-  const target = platformArch(context);
-  const src = join(__dirname, "..", "..", "..", "dist", "cad", target.dir);
-  if (!existsSync(join(src, "bundle.json"))) throw new Error(`after-pack: native CAD bundle missing: ${src}`);
-  const dest = join(target.resources, "cad");
-  rmSync(dest, { recursive: true, force: true });
-  cpSync(src, dest, { recursive: true, verbatimSymlinks: true });
-  console.log(`after-pack: bundled native FreeCAD → ${dest}`);
-}
-
 module.exports = async function afterPack(context) {
-  copyBundledCad(context);
   copyBundledKicad(context);
 
   if (context.electronPlatformName !== "darwin") return;

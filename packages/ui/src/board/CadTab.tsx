@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { FabCadView } from "@fabdesk/protocol";
+import { FabCadView, type CadRuntimeBridge, type CadRuntimeState } from "@fabdesk/protocol";
 import { useCoreClient } from "@fabdesk/client-core";
 import { Button, EmptyState, Spinner } from "../components/ui";
 import { useUiStore } from "../stores/ui";
@@ -22,12 +22,28 @@ type ViewState =
 export function CadTab() {
   const client = useCoreClient();
   const projectId = useUiStore((s) => s.activeProjectId);
+  const runtimeBridge = (window as unknown as { fabdesk?: CadRuntimeBridge }).fabdesk;
+  const [runtime, setRuntime] = useState<CadRuntimeState | null>(null);
+  const [busy, setBusy] = useState(false);
   const [state, setState] = useState<ViewState>({ status: "loading" });
 
   const load = useCallback(async () => {
+    useEffect(() => {
+      if (!runtimeBridge || !busy) return;
+      const timer = setInterval(() => {
+        void runtimeBridge.cadRuntimeState().then(setRuntime);
+      }, 500);
+      return () => clearInterval(timer);
+    }, [runtimeBridge, busy]);
+
     if (!projectId) return;
     setState({ status: "loading" });
     try {
+      if (runtimeBridge?.prepareCadRuntime) {
+        const status = await runtimeBridge.prepareCadRuntime();
+        setRuntime(status);
+        if (status.status !== "ready") return;
+      }
       const res = (await client.callTool("cad_view", { projectId })) as {
         json?: unknown;
         result?: unknown;
@@ -41,13 +57,85 @@ export function CadTab() {
     } catch (e) {
       setState({ status: "failed", error: e instanceof Error ? e.message : String(e) });
     }
-  }, [client, projectId]);
+  }, [client, projectId, runtimeBridge]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   if (!projectId) return <EmptyState title="No project selected" />;
+  if (runtime && runtime.status !== "ready") {
+    const active = busy || runtime.status === "downloading" || runtime.status === "verifying";
+    const offer = runtime.offer;
+    const size = (n: number) => `${(n / 1048576).toFixed(1)} MiB`;
+    return (
+      <EmptyState
+        title={
+          runtime.status === "consent"
+            ? "Download the CAD runtime?"
+            : "CAD runtime is not installed"
+        }
+      >
+        <p>CAD needs our API-capable FreeCAD runtime. Your PCB workspace remains available.</p>
+        {offer && (
+          <p className="mt-2">
+            Version {offer.version} · {offer.target} · macOS {offer.minimumOS}+<br />
+            Download: {size(offer.downloadBytes)} ({offer.downloadBytes.toLocaleString()} bytes).
+            Installed: {size(offer.installedBytes)} ({offer.installedBytes.toLocaleString()} bytes).
+            <br />
+            Source:{" "}
+            <a href={offer.sourceUrl} target="_blank" rel="noreferrer">
+              fabPlane/FreeCAD on GitHub
+            </a>
+          </p>
+        )}
+        {runtime.message && <p className="mt-2">{runtime.message}</p>}
+        {active && (
+          <p>
+            {runtime.status === "verifying"
+              ? "Verifying signature and installing…"
+              : runtime.status !== "downloading"
+                ? "Waiting for download approval…"
+                : `Downloading ${size(runtime.received ?? 0)}…`}
+          </p>
+        )}
+        <div className="mt-3 flex gap-2 justify-center">
+          {offer && !active && (
+            <Button
+              size="sm"
+              onClick={async () => {
+                setBusy(true);
+                try {
+                  setRuntime(await runtimeBridge!.downloadCadRuntime());
+                  await load();
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              Download and install
+            </Button>
+          )}
+          {!active && runtime.status !== "unsupported" && !offer && (
+            <Button size="sm" onClick={() => void load()}>
+              Retry
+            </Button>
+          )}
+          {runtime.status !== "unsupported" && (
+            <Button
+              size="sm"
+              onClick={async () => {
+                await runtimeBridge!.cancelCadRuntime();
+                setRuntime(await runtimeBridge!.deferCadRuntime());
+              }}
+            >
+              {active ? "Cancel" : "Later"}
+            </Button>
+          )}
+        </div>
+      </EmptyState>
+    );
+  }
   if (state.status === "loading")
     return (
       <div className="flex h-full items-center justify-center">

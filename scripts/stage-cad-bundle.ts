@@ -98,6 +98,7 @@ export async function stageCad(runtime: string, target: string): Promise<string>
           target,
           engine: "native",
           freecadCommit: commit,
+          fabCadCommit: new TextDecoder().decode(pin).trim(),
           bridge: `bin/fab-cad-bridge${suffix}`,
           freecadApiServer: `freecad/${m.apiServer}`,
           web: "web",

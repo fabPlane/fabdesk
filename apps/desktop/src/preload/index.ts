@@ -9,6 +9,11 @@ export interface PickFileOptions {
 
 const api = {
   platform: process.platform,
+  cadRuntimeState: () => ipcRenderer.invoke("fabdesk:cad-runtime-state"),
+  prepareCadRuntime: () => ipcRenderer.invoke("fabdesk:prepare-cad-runtime"),
+  downloadCadRuntime: () => ipcRenderer.invoke("fabdesk:download-cad-runtime"),
+  deferCadRuntime: () => ipcRenderer.invoke("fabdesk:defer-cad-runtime"),
+  cancelCadRuntime: () => ipcRenderer.invoke("fabdesk:cancel-cad-runtime"),
   /** Main passes `--fabdesk-error-reporting` when its Sentry client is active. */
   errorReporting: process.argv.includes("--fabdesk-error-reporting"),
   /** `FABDESK_SENTRY_TEST=1` in main: the renderer sends one handled test event on startup. */

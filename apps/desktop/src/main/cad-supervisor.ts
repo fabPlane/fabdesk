@@ -73,6 +73,7 @@ export function resolveCadBackend(opts: {
     token,
     base: {
       FAB_CAD_BRIDGE_TOKEN: token,
+      ...(env["FREECAD_USER_HOME"] ? { FREECAD_USER_HOME: env["FREECAD_USER_HOME"] } : {}),
       PORT: new URL(url).port || "4030",
       HOST: "127.0.0.1",
       WORKSPACE_ROOT:
@@ -109,7 +110,6 @@ export function resolveCadBackend(opts: {
   const manifestPath =
     env["FABDESK_FAB_CAD_BUNDLE"] ?? join(opts.resourcesPath, "cad", "bundle.json");
   if (!existsSync(manifestPath)) {
-    if (opts.packaged) throw new Error(`Packaged FreeCAD engine is missing: ${manifestPath}`);
     return null;
   }
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as CadBundleManifest;
