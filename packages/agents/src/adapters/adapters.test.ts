@@ -1,5 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import {
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+  mkdirSync,
+  existsSync,
+  lstatSync,
+  renameSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentSession } from "../types";
@@ -333,7 +342,7 @@ describe("MCP isolation", () => {
     ).toThrow();
   });
 
-  test("Codex snapshots preferences/auth without MCP or plugins, and keeps trust writes private", () => {
+  test("Codex isolates preferences, shares live auth, and keeps trust writes private", () => {
     const source = join(dir, "global-codex");
     mkdirSync(source);
     const config =
@@ -351,6 +360,18 @@ describe("MCP isolation", () => {
     expect(readFileSync(join(source, "config.toml"), "utf8")).toBe(config);
     expect(readFileSync(join(source, "auth.json"), "utf8")).toBe('{"test":"credential"}');
     expect(readFileSync(join(isolated, "auth.json"), "utf8")).toBe('{"test":"credential"}');
+    expect(lstatSync(join(isolated, "auth.json")).isSymbolicLink()).toBe(true);
+    const other = codexEnv(session({ cwd: join(dir, "other"), env: { CODEX_HOME: source } }));
+    // Match Codex's real file-backend refresh write (truncate in place).
+    writeFileSync(join(isolated, "auth.json"), '{"test":"rotated"}');
+    expect(readFileSync(join(source, "auth.json"), "utf8")).toBe('{"test":"rotated"}');
+    expect(readFileSync(join(other["CODEX_HOME"]!, "auth.json"), "utf8")).toBe(
+      '{"test":"rotated"}',
+    );
+    // A standalone re-login replacing the source file remains visible to both projects.
+    writeFileSync(join(source, "replacement.json"), '{"test":"standalone-login"}');
+    renameSync(join(source, "replacement.json"), join(source, "auth.json"));
+    expect(readFileSync(join(isolated, "auth.json"), "utf8")).toBe('{"test":"standalone-login"}');
     expect(codexEnv(session({ env: { CODEX_HOME: source } }))["CODEX_HOME"]).toBe(isolated);
   });
 
@@ -372,7 +393,8 @@ describe("MCP isolation", () => {
     expect(isolated).not.toBe(source);
     expect(readFileSync(join(source, "config.toml"), "utf8")).toBe(config);
     expect(readFileSync(join(source, "auth.json"), "utf8")).toBe('{"test":"credential"}');
-    expect(readFileSync(join(isolated, "auth.json"), "utf8")).toBe('{"test":"credential"}');
+    expect(env["GROK_AUTH_PATH"]).toBe(join(source, "auth.json"));
+    expect(existsSync(join(isolated, "auth.json"))).toBe(false);
     expect(readFileSync(join(isolated, "requirements.toml"), "utf8")).toContain(
       'server_url = "http://127.0.0.1:4321/mcp"',
     );
@@ -383,6 +405,12 @@ describe("MCP isolation", () => {
     expect(readFileSync(join(isolated, "sessions", "resume-marker"), "utf8")).toBe("prior session");
     const other = grokEnv(session({ cwd: join(dir, "other"), env: { GROK_HOME: source } }));
     expect(other["GROK_HOME"]).not.toBe(isolated);
+    expect(other["GROK_AUTH_PATH"]).toBe(env["GROK_AUTH_PATH"]!);
+    // Match Grok's atomic credential replacement: every child and standalone reader
+    // uses the same file and adjacent native auth.json.lock, with no write-back race.
+    writeFileSync(join(source, "replacement.json"), '{"test":"rotated"}');
+    renameSync(join(source, "replacement.json"), env["GROK_AUTH_PATH"]!);
+    expect(readFileSync(other["GROK_AUTH_PATH"]!, "utf8")).toBe('{"test":"rotated"}');
     expect(env["FABDESK_TOKEN"]).toBe(TOKEN);
     for (const vendor of ["CLAUDE", "CURSOR", "CODEX"]) {
       expect(env[`GROK_${vendor}_MCPS_ENABLED`]).toBe("false");
@@ -392,5 +420,24 @@ describe("MCP isolation", () => {
     expect(childConfig).not.toContain(TOKEN);
     expect(childConfig).not.toContain("foreign");
     expect(childConfig).toContain('screen_mode = "minimal"');
+  });
+
+  test("Grok preserves an explicit shared auth path outside GROK_HOME", () => {
+    const auth = join(dir, "login", "auth.json");
+    const env = grokEnv(session({ env: { GROK_HOME: join(dir, "grok"), GROK_AUTH_PATH: auth } }));
+    expect(env["GROK_AUTH_PATH"]).toBe(auth);
+    expect(existsSync(auth)).toBe(false);
+  });
+
+  test("Grok preserves and rejects an earlier private refresh-token snapshot", () => {
+    const source = join(dir, "grok");
+    const request = session({ env: { GROK_HOME: source } });
+    const env = grokEnv(request);
+    writeFileSync(join(source, "auth.json"), "source token");
+    const snapshot = join(env["GROK_HOME"]!, "auth.json");
+    writeFileSync(snapshot, "possibly rotated token");
+    expect(() => grokEnv(request)).toThrow("private snapshot");
+    expect(readFileSync(join(source, "auth.json"), "utf8")).toBe("source token");
+    expect(readFileSync(snapshot, "utf8")).toBe("possibly rotated token");
   });
 });

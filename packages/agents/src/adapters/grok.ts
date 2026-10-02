@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, statSync, symlinkSync } from "node:fs";
+import { existsSync, mkdirSync, symlinkSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { detectBinary, resolveFirst } from "../detect";
 import { MessagesStreamParser } from "../parsers/messages";
 import { runAgentProcess } from "../process";
@@ -93,7 +93,10 @@ export function grokArgs(session: AgentSession, bin: string): string[] {
  */
 export function grokEnv(session: AgentSession): Record<string, string> {
   const env = agentEnv(session);
-  const source = env["GROK_HOME"] ?? join(env["HOME"] ?? env["USERPROFILE"] ?? homedir(), ".grok");
+  const source = resolve(
+    session.cwd,
+    env["GROK_HOME"] ?? join(env["HOME"] ?? env["USERPROFILE"] ?? homedir(), ".grok"),
+  );
   const id = createHash("sha256").update(session.cwd).digest("hex");
   const isolated = join(source, "fabdesk-agents", id);
   mkdirSync(isolated, { recursive: true, mode: 0o700 });
@@ -105,15 +108,13 @@ export function grokEnv(session: AgentSession): Record<string, string> {
   delete preferences["mcp_servers"];
   delete preferences["plugins"];
   writeFileEnsuringDir(join(isolated, "config.toml"), toml.stringify(preferences), 0o600);
-  const auth = join(source, "auth.json");
-  const authCopy = join(isolated, "auth.json");
-  if (
-    existsSync(auth) &&
-    (!existsSync(authCopy) || statSync(auth).mtimeMs > statSync(authCopy).mtimeMs)
-  ) {
-    copyFileSync(auth, authCopy);
-    chmodSync(authCopy, 0o600);
-  }
+  // Native auth-path override keeps both credentials and Grok's adjacent refresh lock
+  // in the original home. Config isolation must not split the live credential store.
+  if (existsSync(join(isolated, "auth.json")))
+    throw new Error(
+      "Grok credential overlay contains a private snapshot instead of the shared store",
+    );
+  env["GROK_AUTH_PATH"] = resolve(session.cwd, env["GROK_AUTH_PATH"] ?? join(source, "auth.json"));
   const sessions = join(source, "sessions");
   mkdirSync(sessions, { recursive: true });
   if (!existsSync(join(isolated, "sessions")))

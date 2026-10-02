@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, statSync, symlinkSync } from "node:fs";
+import { existsSync, mkdirSync, statSync, symlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { detectBinary, resolveFirst } from "../detect";
@@ -7,6 +7,7 @@ import { CodexStreamParser } from "../parsers/codex";
 import { runAgentProcess } from "../process";
 import type { AgentAdapter, AgentRun, AgentSession } from "../types";
 import { MCP_SERVER_NAME, TOKEN_ENV } from "../types";
+import { linkSharedAuth } from "./shared-auth";
 import {
   agentEnv,
   isImage,
@@ -140,15 +141,7 @@ export function codexEnv(session: AgentSession): Record<string, string> {
   // Bun 1.4 runtime API, not yet declared by the pinned @types/bun 1.2.
   const toml = Bun.TOML as typeof Bun.TOML & { stringify(value: Record<string, unknown>): string };
   writeFileEnsuringDir(join(isolated, "config.toml"), toml.stringify(config), 0o600);
-  const auth = join(source, "auth.json");
-  const authCopy = join(isolated, "auth.json");
-  if (
-    existsSync(auth) &&
-    (!existsSync(authCopy) || statSync(auth).mtimeMs > statSync(authCopy).mtimeMs)
-  ) {
-    copyFileSync(auth, authCopy);
-    chmodSync(authCopy, 0o600);
-  }
+  linkSharedAuth(join(isolated, "auth.json"), join(source, "auth.json"));
   // Preserve ordinary user skills/instructions and existing conversation paths. Plugin
   // skills stay excluded. New state databases and trust writes stay inside the overlay.
   for (const name of ["sessions", "archived_sessions", "skills", "rules", "AGENTS.md"]) {
