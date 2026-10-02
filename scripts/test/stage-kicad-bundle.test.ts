@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   chmodSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -12,6 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   NIGHTLY_PLATFORM_BY_TARGET,
+  deduplicateMacKicadLibraries,
   flattenIfNeeded,
   nightlyAssetName,
   nonEmptySetting,
@@ -19,6 +21,46 @@ import {
   supplementKicadNotices,
   type Target,
 } from "../stage-kicad-bundle";
+
+describe.skipIf(process.platform === "win32")("deduplicateMacKicadLibraries", () => {
+  test("aliases one compiled image while preserving different UUIDs, CPUs, and library families", async () => {
+    const root = mkdtempSync(join(tmpdir(), "fabdesk-kicad-dylibs-"));
+    const frameworks = join(root, "KiCad.app/Contents/Frameworks");
+    mkdirSync(frameworks, { recursive: true });
+    const dylib = (name: string, uuid: number, cpu = 0x100000c) => {
+      const data = Buffer.alloc(56);
+      for (const [offset, value] of [
+        [0, 0xfeedfacf],
+        [4, cpu],
+        [12, 6],
+        [16, 1],
+        [20, 24],
+        [32, 0x1b],
+        [36, 24],
+      ] as const)
+        data.writeUInt32LE(value, offset);
+      data.fill(uuid, 40, 56);
+      writeFileSync(join(frameworks, name), data);
+    };
+    try {
+      dylib("libwx_core-3.2.0.4.3.dylib", 1);
+      dylib("libwx_core-3.2.dylib", 1);
+      dylib("libwx_core-3.3.dylib", 2);
+      dylib("libwx_core-3.4.dylib", 1, 0x1000007);
+      dylib("libwx_other-3.2.dylib", 1);
+      await deduplicateMacKicadLibraries(root);
+      expect(lstatSync(join(frameworks, "libwx_core-3.2.dylib")).isSymbolicLink()).toBe(true);
+      for (const name of ["libwx_core-3.3.dylib", "libwx_core-3.4.dylib", "libwx_other-3.2.dylib"])
+        expect(lstatSync(join(frameworks, name)).isSymbolicLink()).toBe(false);
+      await deduplicateMacKicadLibraries(root);
+      expect(readFileSync(join(frameworks, "libwx_core-3.2.dylib"))).toEqual(
+        readFileSync(join(frameworks, "libwx_core-3.2.0.4.3.dylib")),
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("supplementKicadNotices", () => {
   test("adds exact-revision notices without replacing notices supplied by the archive", async () => {

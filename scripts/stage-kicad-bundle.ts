@@ -22,7 +22,7 @@
  */
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, renameSync, statSync } from "node:fs";
-import { cp, mkdir, rm, writeFile } from "node:fs/promises";
+import { cp, lstat, mkdir, readFile, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -31,6 +31,45 @@ export type Target = (typeof TARGETS)[number];
 
 export const DEFAULT_KICAD_REPO = "TensorFleet/kicad";
 export const DEFAULT_KICAD_RELEASE = "nightly";
+
+/** Relocation can copy a Homebrew library under both its full and short version names.
+ * Keep those names as aliases of one compiled image so dyld does not load wxWidgets twice.
+ * Only thin 64-bit dylibs with the same CPU, family, and source UUID are combined.
+ */
+export async function deduplicateMacKicadLibraries(stageDir: string): Promise<void> {
+  const frameworks = join(stageDir, "KiCad.app/Contents/Frameworks");
+  if (!existsSync(frameworks)) return;
+  const groups = new Map<string, string[]>();
+  for (const name of readdirSync(frameworks).filter((n) => /^libwx.*\.dylib$/.test(n))) {
+    const path = join(frameworks, name);
+    if ((await lstat(path)).isSymbolicLink()) continue;
+    const data = await readFile(path);
+    if (data.length < 32 || data.readUInt32LE(0) !== 0xfeedfacf || data.readUInt32LE(12) !== 6)
+      continue;
+    const commands = data.readUInt32LE(16);
+    let offset = 32;
+    for (let i = 0; i < commands && offset + 8 <= data.length; i++) {
+      const command = data.readUInt32LE(offset);
+      const size = data.readUInt32LE(offset + 4);
+      if (size < 8 || offset + size > data.length) break;
+      if (command === 0x1b && size === 24) {
+        const identity = `${name.split("-")[0]}:${data.readUInt32LE(4)}:${data.readUInt32LE(8)}:${data.subarray(offset + 8, offset + 24).toString("hex")}`;
+        groups.set(identity, [...(groups.get(identity) ?? []), name]);
+        break;
+      }
+      offset += size;
+    }
+  }
+  for (const names of groups.values()) {
+    names.sort((a, b) => b.length - a.length || a.localeCompare(b));
+    const canonical = names[0]!;
+    for (const alias of names.slice(1)) {
+      await unlink(join(frameworks, alias));
+      await symlink(canonical, join(frameworks, alias));
+      process.stderr.write(`▸ KiCad library alias ${alias} → ${canonical}\n`);
+    }
+  }
+}
 
 /** Legacy nightly archives omitted the source notices; supplement only a known exact revision. */
 export async function supplementKicadNotices(
@@ -237,7 +276,7 @@ function isCanonicalLayout(stageDir: string, os: string): boolean {
 async function promoteContents(fromDir: string, stageDir: string): Promise<void> {
   const tmp = `${stageDir}.flat`;
   await rm(tmp, { recursive: true, force: true });
-  await cp(fromDir, tmp, { recursive: true });
+  await cp(fromDir, tmp, { recursive: true, verbatimSymlinks: true });
   await rm(stageDir, { recursive: true, force: true });
   await mkdir(stageDir, { recursive: true });
   for (const name of readdirSync(tmp)) {
@@ -318,7 +357,7 @@ async function copyFrom(src: string, stageDir: string, os: string): Promise<stri
   await assertTree(src, os);
   await rm(stageDir, { recursive: true, force: true });
   await mkdir(dirname(stageDir), { recursive: true });
-  await cp(src, stageDir, { recursive: true });
+  await cp(src, stageDir, { recursive: true, verbatimSymlinks: true });
   await flattenIfNeeded(stageDir, os);
   return await assertTree(stageDir, os);
 }
@@ -437,6 +476,7 @@ async function main(): Promise<void> {
     }
   }
 
+  if (os === "darwin") await deduplicateMacKicadLibraries(stageDir);
   process.stderr.write(`▸ staged ${target} → ${stageDir}\n`);
   process.stderr.write(`  cli ${cli}\n`);
 }
