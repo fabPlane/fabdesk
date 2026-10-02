@@ -36,6 +36,8 @@ mac:
   binaries:
     - Contents/Resources/core/fabdesk-core
     - Contents/Resources/pcb/bin/fp-pcb-bridge
+    - Contents/Resources/cad/bin/fab-cad-bridge
+    - Contents/Resources/cad/freecad/MacOS/FreeCADApiServer
   # Notarize with the Apple ID / app-specific password / team id the release workflow exports
   # (APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID). electron-builder skips notarization
   # when they are absent (unsigned local builds), and the installer gate then requires a stapled ticket

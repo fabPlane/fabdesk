@@ -216,6 +216,27 @@ jobs:
           FABDESK_KICAD_REPO: ${{ vars.FABDESK_KICAD_REPO != '' && vars.FABDESK_KICAD_REPO || 'TensorFleet/kicad' }}
         run: bun run scripts/stage-kicad-bundle.ts --target ${{ matrix.target }} --require
 
+      # The CAD API is absent from stock FreeCAD. Build the exact protocol fork and its
+      # real modules; never ship a source-checkout mock as an installer fallback.
+      - name: Build native FreeCAD runtime (macOS ARM64)
+        if: matrix.target == 'bun-darwin-arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install cmake ninja llvm@22 qtbase qttools opencascade boost xerces-c eigen yaml-cpp python@3.12 icu4c@78 tbb
+          python3 scripts/build-freecad-macos.py --source "$RUNNER_TEMP/freecad-source" --build "$RUNNER_TEMP/freecad-build" --install "$RUNNER_TEMP/freecad-install"
+          python3 scripts/prepare-freecad-macos.py --install "$RUNNER_TEMP/freecad-install" --source "$RUNNER_TEMP/freecad-source" --python-home /opt/homebrew/opt/python@3.12/Frameworks/Python.framework/Versions/3.12 --output "$RUNNER_TEMP/freecad-runtime" --source-cache "$RUNNER_TEMP/freecad-sources"
+          echo "FABDESK_FREECAD_RUNTIME=$RUNNER_TEMP/freecad-runtime" >> "$GITHUB_ENV"
+
+      - name: Stage required native CAD backend
+        shell: bash
+        run: bun run cad:stage --target ${{ matrix.target }}
+
+      - name: Smoke real CAD engine and STEP export
+        if: matrix.target == 'bun-darwin-arm64'
+        shell: bash
+        run: bun run cad:smoke dist/cad/darwin-arm64/bundle.json
+
       - name: Build renderer/main
         run: bun run --cwd apps/desktop build
 

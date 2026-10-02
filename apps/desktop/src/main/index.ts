@@ -161,15 +161,19 @@ if (!app.requestSingleInstanceLock()) {
       app.exit(1);
       return;
     }
-    // FreeCAD is optional: a missing or failing CAD bridge only disables the `cad` toolset.
+    // Packaged CAD is required; development may omit the native bundle.
     let cadEnv: Record<string, string> = {};
     try {
       cadSupervisor = new CadSupervisor(
-        resolveCadBackend({ resourcesPath: process.resourcesPath }),
+        resolveCadBackend({ packaged: app.isPackaged, resourcesPath: process.resourcesPath }),
       );
       cadEnv = await cadSupervisor.start();
     } catch (error) {
       console.error(`[cad] ${error instanceof Error ? error.message : String(error)}`);
+      if (app.isPackaged) {
+        app.exit(1);
+        return;
+      }
     }
     supervisor = new CoreSupervisor({
       localAuth: localAuthEnabled(identity.devProfile),

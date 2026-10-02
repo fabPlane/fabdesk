@@ -108,38 +108,18 @@ and accepts the token; otherwise a fresh loopback port is used, unless the URL w
 **Doctor.** `fabdesk-core doctor` lists `fab-cad` next to `fp-pcb` in the bridges line; it is never
 a warning.
 
-## Packaging (not done yet)
+## Native packaging
 
-`resolveCadBackend` already reads a bundle manifest:
-
-```json
-{
-  "format": 1,
-  "target": "darwin-arm64",
-  "bridge": "bin/fab-cad-bridge",
-  "freecadApiServer": "freecad/bin/FreeCADApiServer",
-  "web": "web",
-  "libraryPaths": ["freecad/lib"],
-  "environment": {}
-}
-```
-
-What is missing before `apps/desktop/electron-builder.yml` can copy `dist/cad/<target>/` to
-`resources/cad` (the way it copies `dist/pcb`):
-
-- builds of the fork's `FreeCADApiServer` (with OCCT and Python) for macOS, Linux and Windows, signed
-  and notarised, plus LGPL redistribution notes;
-- a compiled bridge (`bun build --compile packages/bridge/src/main.ts`);
-- the web UI built **without source maps** — fab_cad's `vite.config.ts` has `sourcemap: true`, and
-  fabPlane never ships source maps (AGENTS.md), so the bundle step must build with it off or delete
-  every `*.map` before assembling.
-
-Until then `electron-builder.yml` is untouched: an `extraResources` entry for a directory that does
-not exist would fail packaging.
+See [native-cad-packaging.md](native-cad-packaging.md) for the real engine build, dependency
+closure, signing, source/notices and FCStd/STEP package smoke. `cad:stage` creates
+`dist/cad/<target>/bundle.json`; `afterPack` requires and copies it to `Resources/cad`.
+Packaged startup requires `engine: "native"` and ignores the development mock source.
+The first validated target is macOS ARM64. Other targets require their own native runtime;
+a missing runtime fails staging rather than omitting CAD.
 
 ## Pins and upstream state
 
-- `vendor/fab_cad` is pinned at `72539a9`. fab_cad has no `main` branch yet (its only branch is
+- `vendor/fab_cad` is pinned at `237ccee4` (the immutable security/viewer integration snapshot). fab_cad has no `main` branch yet (its only branch is
   `claude/freecad-repos-ipc-wasm-53j8he`, which is also its default), so the submodule has no
   `branch =` and `bun run submodules:update` does not bump it; bump it with
   `git -C vendor/fab_cad fetch && git -C vendor/fab_cad checkout <commit>`.

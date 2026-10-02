@@ -7,6 +7,7 @@
  * because the menu is still installed as the application menu.
  */
 import { app, BrowserWindow, Menu, shell, type MenuItemConstructorOptions } from "electron";
+import { join } from "node:path";
 
 /** Send a menu command to the focused (or only) window's renderer. */
 function send(command: string): void {
@@ -34,7 +35,11 @@ function template(): MenuItemConstructorOptions[] {
       label: "View",
       submenu: [
         { label: "Toggle sidebar", accelerator: "CmdOrCtrl+B", click: () => send("sidebar") },
-        { label: "Toggle board panel", accelerator: "CmdOrCtrl+Shift+B", click: () => send("board") },
+        {
+          label: "Toggle board panel",
+          accelerator: "CmdOrCtrl+Shift+B",
+          click: () => send("board"),
+        },
         { type: "separator" },
         { role: "reload" },
         { role: "forceReload" },
@@ -50,7 +55,17 @@ function template(): MenuItemConstructorOptions[] {
     { role: "windowMenu" },
     {
       role: "help",
-      submenu: [{ label: "fabPlane website", click: () => void shell.openExternal("https://fabplane.com") }],
+      submenu: [
+        { label: "fabPlane website", click: () => void shell.openExternal("https://fabplane.com") },
+        ...(app.isPackaged
+          ? [
+              {
+                label: "FreeCAD licenses and source",
+                click: () => void shell.openPath(join(process.resourcesPath, "cad", "freecad")),
+              },
+            ]
+          : []),
+      ],
     },
   ];
 }
