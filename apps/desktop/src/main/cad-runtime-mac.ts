@@ -5,6 +5,7 @@ import { isAbsolute, join, relative } from "node:path";
 import { CAD_BRIDGE_COMMIT, CAD_FREECAD_COMMIT, CAD_TEAM } from "./cad-runtime";
 import { validateCadArchive } from "./cad-runtime-archive";
 const exec = promisify(execFile);
+export const CAD_MAC_REQUIREMENT = `=anchor apple generic and certificate leaf[subject.OU] = "${CAD_TEAM}" and certificate leaf[field.1.2.840.113635.100.6.1.13] exists`;
 async function command(bin: string, args: string[]): Promise<void> {
   await exec(bin, args, { timeout: 120_000, maxBuffer: 1024 * 1024 });
 }
@@ -28,7 +29,7 @@ export async function verifyCadMacApp(app: string): Promise<string> {
     "--deep",
     "--strict",
     "-R",
-    `anchor apple generic and certificate leaf[subject.OU] = "${CAD_TEAM}" and certificate leaf[field.1.2.840.113635.100.6.1.13] exists`,
+    CAD_MAC_REQUIREMENT,
     root,
   ]);
   await command("/usr/bin/xcrun", ["stapler", "validate", root]);

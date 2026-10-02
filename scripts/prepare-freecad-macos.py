@@ -35,6 +35,17 @@ def rpaths(path):
     return re.findall(r"cmd LC_RPATH\n.*?path (.*?) \(offset", run("otool", "-l", str(path)), re.S)
 
 
+def normalize_python_framework(framework: Path, version: str):
+    """Restore standard framework aliases omitted by Homebrew's CLI-oriented layout."""
+    current = framework / "Versions/Current"
+    if not current.exists() and not current.is_symlink():
+        current.symlink_to(version)
+    for name in ("Python", "Resources", "Headers"):
+        link = framework / name
+        if (framework / "Versions" / version / name).exists() and not link.exists() and not link.is_symlink():
+            link.symlink_to(f"Versions/Current/{name}")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--install", required=True)
@@ -61,6 +72,7 @@ def main():
     frameworks.mkdir()
     py_framework = next(p for p in python_home.parents if p.name.endswith(".framework"))
     shutil.copytree(py_framework, frameworks / py_framework.name, symlinks=True)
+    normalize_python_framework(frameworks / py_framework.name, python_home.name)
     site_packages = frameworks / py_framework.name / python_home.relative_to(py_framework) / "lib/python3.12/site-packages"
     if site_packages.is_symlink():
         site_packages.unlink()

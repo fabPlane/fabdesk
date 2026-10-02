@@ -44,5 +44,5 @@ const path = require("node:path");
   }
 })().catch((e) => {
   console.error(e.message);
-  process.exitCode = 1;
+  process.exit(1);
 });

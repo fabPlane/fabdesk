@@ -36,7 +36,7 @@ await writeFile(
 );
 function run(args: string[]) {
   const p = Bun.spawnSync(args, { stdout: "inherit", stderr: "inherit" });
-  if (p.exitCode) throw new Error(`${args[0]} failed (${p.exitCode})`);
+  if (p.exitCode !== 0) throw new Error(`${args[0]} failed (${p.exitCode})`);
 }
 // The container's main executable lives above Resources; relocate its direct loader paths.
 // The managed API process still launches the original executable beside its modules.
