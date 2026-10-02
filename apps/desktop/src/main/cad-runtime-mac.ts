@@ -5,8 +5,8 @@ import { isAbsolute, join, relative } from "node:path";
 import { CAD_BRIDGE_COMMIT, CAD_FREECAD_COMMIT, CAD_TEAM } from "./cad-runtime";
 import { validateCadArchive } from "./cad-runtime-archive";
 const exec = promisify(execFile);
-// Parentheses make codesign -R parse an expression. A bare string is opened as a file.
-export const CAD_MAC_REQUIREMENT = `(anchor apple generic and certificate leaf[subject.OU] = "${CAD_TEAM}" and certificate leaf[field.1.2.840.113635.100.6.1.13] exists)`;
+// The = prefix makes codesign and csreq parse an inline expression rather than a filename.
+export const CAD_MAC_REQUIREMENT = `=anchor apple generic and certificate leaf[subject.OU] = "${CAD_TEAM}" and certificate leaf[field.1.2.840.113635.100.6.1.13] exists`;
 async function command(bin: string, args: string[]): Promise<void> {
   await exec(bin, args, { timeout: 120_000, maxBuffer: 1024 * 1024 });
 }

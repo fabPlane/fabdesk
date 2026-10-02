@@ -4,9 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CAD_TEAM } from "./cad-runtime";
 import { CAD_MAC_REQUIREMENT } from "./cad-runtime-mac";
-test("strict CAD trust requirement is parenthesized so codesign does not open it as a file", () => {
+test("strict CAD trust requirement uses the inline expression prefix", () => {
   expect(CAD_MAC_REQUIREMENT).toBe(
-    `(anchor apple generic and certificate leaf[subject.OU] = "${CAD_TEAM}" and certificate leaf[field.1.2.840.113635.100.6.1.13] exists)`,
+    `=anchor apple generic and certificate leaf[subject.OU] = "${CAD_TEAM}" and certificate leaf[field.1.2.840.113635.100.6.1.13] exists`,
   );
 });
 test.skipIf(process.platform !== "darwin")(
