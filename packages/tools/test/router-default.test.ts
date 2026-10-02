@@ -3,6 +3,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   createRegistry,
+  JobTimeoutError,
   type RouteJobOptions,
   type RouteRunRecord,
   type RouteSummary,
@@ -27,7 +28,7 @@ const summary = (): RouteSummary => ({
 
 async function routeCase(
   pin: "capacity" | "freerouting" | "fab_router" | undefined,
-  first: "failure" | "partial" | "timeout" | "unavailable" | "complete",
+  first: "failure" | "failure-with-timeout-log" | "deadline" | "partial" | "timeout" | "unavailable" | "complete",
   explicit?: string,
   selective = false,
 ) {
@@ -51,8 +52,10 @@ async function routeCase(
       }),
       route: async (dir, opts, hooks) => {
         calls.push(opts);
-        if (calls.length === 1 && first === "failure") {
+        if (calls.length === 1 && ["failure", "failure-with-timeout-log", "deadline"].includes(first)) {
           await writeFile(join(dir, "board.kicad_pcb"), "failed-job-mutated-snapshot");
+          if (first === "deadline") throw new JobTimeoutError("route exceeded its computation budget");
+          if (first === "failure-with-timeout-log") throw new Error("Java crashed; network timeout in diagnostic log");
           throw new Error("Java crashed; no session written");
         }
         if (calls.length === 2) {
@@ -120,6 +123,18 @@ test("explicit Freerouting fails without retrying a crash", async () => {
   expect(calls).toHaveLength(1);
   expect(record.state).toBe("failed");
 });
+test("a genuine crash mentioning timeout still falls back", async () => {
+  const { calls, record } = await routeCase(undefined, "failure-with-timeout-log");
+  expect(calls.map((call) => call.router)).toEqual(["freerouting", "fab_router"]);
+  expect(record.attempts?.map((attempt) => attempt.outcome)).toEqual(["failed", "completed"]);
+  expect(record.fallbackReason).toContain("network timeout");
+});
+test("a structured deadline does not fall back even without timeout words", async () => {
+  const { calls, record } = await routeCase(undefined, "deadline");
+  expect(calls).toHaveLength(1);
+  expect(record.state).toBe("timed_out");
+  expect(record.attempts?.[0]?.outcome).toBe("timed_out");
+});
 for (const first of ["partial", "timeout"] as const)
   test(`${first} Freerouting result does not trigger fallback`, async () => {
     const { calls, record } = await routeCase(undefined, first);
@@ -146,5 +161,6 @@ test("automatic selective routing uses fab_router with a truthful skipped attemp
   const { calls, record } = await routeCase(undefined, "complete", undefined, true);
   expect(calls.map((call) => call.router)).toEqual(["fab_router"]);
   expect(record.attempts?.[0]?.outcome).toBe("skipped");
-  expect(record.fallbackReason).toContain("failed the FFC DRC check");
+  expect(record.fallbackReason).toBe("Automatic selective reroutes use fab_router");
+  expect(record.fallbackReason).not.toMatch(/FFC|DSN|evaluation|DRC/);
 });

@@ -8,6 +8,7 @@ import { PROJECT_FILES, writeAtomic, writeJson } from "../fs";
 import { DEFAULT_ROUTE_FRAME_MAX_BYTES, FrameSink } from "../frame-sink";
 import {
   ToolError,
+  JobTimeoutError,
   defineTool,
   type ProjectHandle,
   type ToolContext,
@@ -601,7 +602,7 @@ async function executeRoute(
         return summary;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        const timedOut = /timed?\s*out|timeout|deadline/i.test(message);
+        const timedOut = error instanceof JobTimeoutError;
         rec = {
           ...rec,
           attempts: rec.attempts!.map((value, index) =>
@@ -929,7 +930,7 @@ export async function runRoute(args: RouteArgs, ctx: ToolContext): Promise<ToolO
   if (selective) {
     router = "fab_router";
     fallbackReason =
-      "Selective Freerouting skipped: its approximate DSN path failed the FFC DRC check; using fab_router";
+      "Automatic selective reroutes use fab_router";
   }
   if (router === "freerouting") {
     const health = await ctx.services.design.status();
