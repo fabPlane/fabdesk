@@ -45,15 +45,24 @@ message, retain PCB features, and never download a different architecture or a m
 The runtime release **does not exist yet**. First-use metadata reports this explicitly.
 `.github/workflows/cad-runtime.yml` prepares signed assets with the desktop's existing Apple
 secrets and runner setup. It uploads private review artifacts only, with no public write token
-and no public-publishing job. The build-only activation is [draft PR248](https://github.com/TensorFleet/fabdesk/pull/248),
-which changes only the workflow. It checks out immutable reviewed source `dda10c3`, uses the
-existing release submodule access and Apple secrets, has read-only contents permission, runs
-only on manual main dispatch, and accepts no caller-selected source or publication input.
-It must be reviewed/landed independently to become dispatchable; PR245 remains draft. Then
-run `gh workflow run cad-runtime.yml --repo TensorFleet/fabdesk --ref main` and review its
-private signed artifacts and final sizes before the separately approved public publication.
-Neither workflow nor public publication has been executed. Signing/notarization of
-this optional container remains unverified. Do not merge/publish the former bundled approach.
+and no public-publishing job. The build-only activation landed as [PR248](https://github.com/TensorFleet/fabdesk/pull/248).
+It checks out one immutable source commit, uses the existing release submodule access and
+Apple secrets, has read-only contents permission, runs only on manual main dispatch, and
+accepts no caller-selected source or publication input. A dispatch of pin `dda10c3`
+([run 36974228600](https://github.com/TensorFleet/fabdesk/actions/runs/36974228600)) built
+and smoked the engine, then `codesign` rejected
+`Python.framework` (`bundle format unrecognized, invalid, or unsuitable`) and the verify
+`-R` requirement was read as a file. [PR250](https://github.com/TensorFleet/fabdesk/pull/250)
+moved main's pin to `4e33f0c`, which restores the deleted framework symlinks but still
+passes `-R` with a leading `=` instead of parentheses. The packaging fix is `4f3cc7a`.
+Update main's workflow ref from `4e33f0cd2c60f854f02ca18cc1cc7896c17ab147` to
+`4f3cc7a63490a5adca08d475764f9682bdcad7d7` before another dispatch, or the runner checks
+out the earlier repair again. A retry of that earlier pin is already running
+([run 36976615032](https://github.com/TensorFleet/fabdesk/actions/runs/36976615032)); do not
+start a second one. After main pins `4f3cc7a`, run
+`gh workflow run "Prepare signed optional CAD runtime" --repo TensorFleet/fabdesk --ref main`.
+That uploads private review artifacts only. No public asset has been published. PR245 stays
+draft. Do not merge/publish the former bundled approach.
 
 After signed workflow artifacts are reviewed and the user approves public publication, an
 already-authorized maintainer can run `bun scripts/publish-cad-runtime.ts <artifact-directory>
