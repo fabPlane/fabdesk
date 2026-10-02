@@ -42,7 +42,8 @@ Bridge/viewer source: `fabPlane/fab_cad@65c72d69e59c503ad1d23790448a954d5fc283b7
 Only macOS ARM64 on macOS 15+ is supported initially. Other targets display an unsupported
 message, retain PCB features, and never download a different architecture or a mock.
 
-The runtime release **does not exist yet**. First-use metadata reports this explicitly.
+The signed [runtime release](https://github.com/fabPlane/FreeCAD/releases/tag/cad-runtime-v1-9bcf850-65c72d6)
+is public. macOS ARM64 on macOS 15+ is the supported platform.
 `.github/workflows/cad-runtime.yml` prepares signed assets with the desktop's existing Apple
 secrets and runner setup. It uploads private review artifacts only, with no public write token
 and no public-publishing job. The build-only activation landed as [PR248](https://github.com/TensorFleet/fabdesk/pull/248).
@@ -60,7 +61,8 @@ runtime build is required for this artifact. The shared draft adds more defensiv
 normalization; its workflow now pins source `8aac523`, which retains the validated `=anchor`
 inline trust expression. A parenthesized expression was tested on this Mac and rejected as a
 filename by both `csreq` and `codesign`, so do not dispatch the obsolete `4f3cc7a` pin.
-No public asset has been published. PR245 stays draft while installation/UI QA is pending.
+The approved public release was published after local macOS verification. PR245 stays draft
+while foreground native consent/editor UI QA is pending.
 
 After signed workflow artifacts are reviewed and the user approves public publication, an
 already-authorized maintainer can run `bun scripts/publish-cad-runtime.ts <artifact-directory>
@@ -104,9 +106,18 @@ this change does not launch an app or interfere with stable-release QA.
 Private runtime build [36976615032](https://github.com/TensorFleet/fabdesk/actions/runs/36976615032)
 succeeded from source `4e33f0c`, including genuine Developer ID signing/notarization and native
 engine smoke. Its final signed ZIP is **557,307,808 bytes**, installed payload **755,070,805 bytes**.
-Local verification, approved public publication, consented public installation and foreground
-edit/save/reopen/STEP testing remain pending. Unit tests use injected signature/transport fixtures
-and are not proof that a public runtime has been installed.
+Local macOS Developer ID/notarization/Gatekeeper checks and approved public publication passed.
+The production manager downloaded the actual public ZIP into an isolated cache; startup used no
+network, metadata-only preparation preceded consent, Later persisted without download, explicit
+approval installed atomically, and offline restart reused the verified cache. The signed cached
+runtime passed the constrained drawing, FCStd reopen and STEP reimport test (FCStd 9,267 bytes,
+STEP 6,808 bytes). These are real network/signature/native-engine checks, with an injected consent
+callback for the already-approved isolated download. Foreground native dialog and desktop editor
+interaction remain untested; do not count the callback as native UI evidence.
+
+Final signed payload audit found 163 Mach-O files, maximum minimum OS 15.0, none unknown.
+Root tests: 1,074 pass, 11 skip, zero failures; typechecks pass. Loopback tests require ordinary
+native execution permissions; sandbox-only binding failures do not indicate app regressions.
 
 ## Nightly CAD drawing check
 
