@@ -31,6 +31,7 @@ beforeAll(async () => {
   project = join(root, "enclosure");
   await mkdir(project);
   bridge = await startBridge({
+    token: "fabdesk-cad-test-token",
     port: 0,
     hostname: "127.0.0.1",
     serverCommand: [process.execPath, MOCK],
@@ -43,7 +44,7 @@ beforeAll(async () => {
     maxPayloadBytes: 64 * 1024 * 1024,
     log: () => {},
   });
-  client = new FabCadBridgeClient({ url: bridge.url });
+  client = new FabCadBridgeClient({ url: bridge.url, token: "fabdesk-cad-test-token" });
 });
 
 afterAll(async () => {
