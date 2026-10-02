@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { FpPcbCompileJob } from "@fabdesk/protocol";
+import { FpPcbHealth } from "@fabdesk/protocol";
 import { create } from "@bufbuild/protobuf";
 import {
   BoardLayer,
@@ -16,6 +17,26 @@ import {
 } from "../src/fp-pcb-design";
 import type { FpPcbBridgeClient } from "../src/fp-pcb-bridge";
 import { FpPcbSessions, type ProjectSession } from "../src/fp-pcb-session";
+
+describe("FabPCB router health", () => {
+  test.each([
+    [{ capacityRouter: { name: "fab-router", ok: true } }, { ok: true }],
+    [{ jsAutorouter: { ok: true } }, { ok: true }],
+    [{ capacityRouter: { ok: false, reason: "router missing" }, jsAutorouter: { ok: true } }, { ok: false, reason: "router missing" }],
+  ])("preserves current health and falls back to legacy health: %j", async (fields, expected) => {
+    const bridge = {
+      url: "http://127.0.0.1:4020",
+      health: async () => FpPcbHealth.parse({ ok: true, ...fields }),
+    } as unknown as FpPcbBridgeClient;
+    const design = createFpPcbDesign({
+      bridge: () => bridge,
+      sessions: {} as FpPcbSessions,
+      readText: async () => "",
+      exists: async () => false,
+    });
+    expect((await design.status()).routers?.capacity).toEqual(expected);
+  });
+});
 
 describe("FabPCB build recovery", () => {
   test("releases a bare session when NewProject leaves a board behind", async () => {

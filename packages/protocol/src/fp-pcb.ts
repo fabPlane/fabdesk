@@ -33,6 +33,9 @@ export const FpPcbHealth = z.object({
   kicadCli: z.string().optional(),
   kicadCliExists: z.boolean().optional(),
   workspaceRoot: z.string().optional(),
+  capacityRouter: z
+    .object({ ok: z.boolean(), reason: z.string().optional(), name: z.string().optional() })
+    .optional(),
   jsAutorouter: z
     .object({ ok: z.boolean(), reason: z.string().optional(), module: z.string().optional() })
     .optional(),
