@@ -34,8 +34,7 @@ function stageRoot(context) {
   return join(__dirname, "..", "kicad-bundle", platformArch(context).dir);
 }
 
-function copyBundledKicad(context) {
-  const src = stageRoot(context);
+function copyBundledKicad(context, src = stageRoot(context)) {
   if (!existsSync(src) || !statSync(src).isDirectory()) {
     const message = `after-pack: no staged KiCad at ${src} (run scripts/stage-kicad-bundle.ts before packaging)`;
     if (process.env.FABDESK_REQUIRE_KICAD_BUNDLE === "true") throw new Error(message);
@@ -53,7 +52,7 @@ function copyBundledKicad(context) {
   const dest = join(resources, "kicad");
   mkdirSync(resources, { recursive: true });
   rmSync(dest, { recursive: true, force: true });
-  cpSync(src, dest, { recursive: true });
+  cpSync(src, dest, { recursive: true, verbatimSymlinks: true });
   console.log(`after-pack: bundled KiCad → ${dest}`);
   return dest;
 }
@@ -93,3 +92,4 @@ module.exports = async function afterPack(context) {
 };
 
 module.exports.platformArch = platformArch;
+module.exports.copyBundledKicad = copyBundledKicad;
