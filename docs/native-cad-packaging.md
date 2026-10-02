@@ -103,10 +103,12 @@ real packaged API smoke proves native FCStd save/reopen and STEP export. Desktop
 loaded real FreeCAD; edit/export UI verification remains pending. The parent owns foreground UI;
 this change does not launch an app or interfere with stable-release QA.
 
-End-to-end public installation, genuine container Developer ID signing/notarization, final signed
-sizes, and foreground consent/edit/save/reopen/STEP testing remain blocked on the signed artifact
-build and approved publication. Unit tests use injected signature/transport fixtures and are not
-proof that a public runtime has been installed.
+Private runtime build [36976615032](https://github.com/TensorFleet/fabdesk/actions/runs/36976615032)
+succeeded from source `4e33f0c`, including genuine Developer ID signing/notarization and native
+engine smoke. Its final signed ZIP is **557,307,808 bytes**, installed payload **755,070,805 bytes**.
+Local verification, approved public publication, consented public installation and foreground
+edit/save/reopen/STEP testing remain pending. Unit tests use injected signature/transport fixtures
+and are not proof that a public runtime has been installed.
 
 ## Nightly CAD drawing check
 
