@@ -198,7 +198,16 @@ describe("FabPlane CAD backend", () => {
         FABDESK_FAB_CAD_BRIDGE_URL: `http://127.0.0.1:${port}`,
         FABDESK_FAB_CAD_BRIDGE_TOKEN: command.token,
       });
-      const health = (await (await fetch(`http://127.0.0.1:${port}/health`)).json()) as {
+      const url = `http://127.0.0.1:${port}/health`;
+      expect((await fetch(url)).status).toBe(401);
+      expect((await fetch(url, { headers: { origin: "https://untrusted.example" } })).status).toBe(
+        403,
+      );
+      const health = (await (
+        await fetch(url, {
+          headers: { authorization: `Bearer ${env.FABDESK_FAB_CAD_BRIDGE_TOKEN}` },
+        })
+      ).json()) as {
         name: string;
         workspaceRoot: string;
       };

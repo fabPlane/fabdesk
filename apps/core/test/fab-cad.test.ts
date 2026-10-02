@@ -4,7 +4,7 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { startBridge, type BridgeServer } from "@fab-cad/bridge";
@@ -31,6 +31,7 @@ beforeAll(async () => {
   project = join(root, "enclosure");
   await mkdir(project);
   bridge = await startBridge({
+    token: "fabdesk-cad-test-token",
     port: 0,
     hostname: "127.0.0.1",
     serverCommand: [process.execPath, MOCK],
@@ -43,7 +44,7 @@ beforeAll(async () => {
     maxPayloadBytes: 64 * 1024 * 1024,
     log: () => {},
   });
-  client = new FabCadBridgeClient({ url: bridge.url });
+  client = new FabCadBridgeClient({ url: bridge.url, token: "fabdesk-cad-test-token" });
 });
 
 afterAll(async () => {
@@ -110,7 +111,8 @@ describe("CadService over the fab_cad bridge", () => {
     const model = await cad.model(project);
     expect(model.objects.map((o) => o.name)).toEqual(["Lid"]);
     const now = await client.sessions();
-    expect(now.some((s) => s.path === join(project, "model.FCStd"))).toBe(true);
+    const savedPath = await realpath(join(project, "model.FCStd"));
+    expect(now.some((s) => s.path === savedPath)).toBe(true);
   });
 
   test("view never hands out a session the bridge no longer has", async () => {
