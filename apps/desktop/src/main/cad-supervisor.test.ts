@@ -99,6 +99,85 @@ describe("FabPlane CAD backend", () => {
     expect(cadIdentityMismatch({ name: "@fp-pcb/bridge" }, command)).toContain("@fp-pcb/bridge");
   });
 
+  test("mints a fresh bridge token per launch and hands it to the bridge", () => {
+    const env = { FABDESK_FAB_CAD_SOURCE: FAB_CAD, FABDESK_PROJECTS_DIR: "/boards" };
+    const a = resolveCadBackend({ resourcesPath: "/nowhere", env })!;
+    const b = resolveCadBackend({ resourcesPath: "/nowhere", env })!;
+    expect(a.token).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(Buffer.from(a.token, "base64url")).toHaveLength(32);
+    expect(a.env.FAB_CAD_BRIDGE_TOKEN).toBe(a.token);
+    expect(b.token).not.toBe(a.token);
+    // A token in the environment is only for a bridge the user points at; ours gets its own.
+    const own = resolveCadBackend({
+      resourcesPath: "/nowhere",
+      env: { ...env, FABDESK_FAB_CAD_BRIDGE_TOKEN: "user-token" },
+    })!;
+    expect(own.token).not.toBe("user-token");
+    const external = resolveCadBackend({
+      resourcesPath: "/nowhere",
+      env: {
+        ...env,
+        FABDESK_FAB_CAD_BRIDGE_URL: "http://127.0.0.1:4555",
+        FABDESK_FAB_CAD_BRIDGE_TOKEN: " user-token ",
+      },
+    })!;
+    expect(external).toMatchObject({
+      fixedUrl: true,
+      token: "user-token",
+      env: { FAB_CAD_BRIDGE_TOKEN: "user-token" },
+    });
+  });
+
+  test("reuses a running bridge only when it takes the token", async () => {
+    const projects = await temp("fabplane-cad-reuse-");
+    let required: string | null = "right-token";
+    const fake = Bun.serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      fetch(req) {
+        const path = new URL(req.url).pathname;
+        const trusted =
+          required === null || req.headers.get("authorization") === `Bearer ${required}`;
+        // As fab_cad#1: an untrusted /health names the bridge but not its workspace.
+        if (path === "/health")
+          return Response.json(
+            trusted
+              ? { ok: true, name: "@fab-cad/bridge", workspaceRoot: projects }
+              : { ok: true, name: "@fab-cad/bridge", uptimeSec: 1 },
+          );
+        if (!trusted) return Response.json({ error: "unauthorized" }, { status: 401 });
+        return Response.json({ sessions: [] });
+      },
+    });
+    try {
+      const url = `http://127.0.0.1:${fake.port}`;
+      const command = (token: string) =>
+        resolveCadBackend({
+          resourcesPath: "/nowhere",
+          env: {
+            FABDESK_FAB_CAD_SOURCE: FAB_CAD,
+            FABDESK_PROJECTS_DIR: projects,
+            FABDESK_FAB_CAD_BRIDGE_URL: url,
+            FABDESK_FAB_CAD_BRIDGE_TOKEN: token,
+          },
+        })!;
+      expect(await new CadSupervisor(command("right-token")).start()).toEqual({
+        FABDESK_FAB_CAD_BRIDGE_URL: url,
+        FABDESK_FAB_CAD_BRIDGE_TOKEN: "right-token",
+      });
+      await expect(new CadSupervisor(command("wrong-token")).start()).rejects.toThrow(
+        /different bridge token.*FABDESK_FAB_CAD_BRIDGE_TOKEN/,
+      );
+      // A bridge from before tokens ignores the header, so it is reused as before.
+      required = null;
+      expect(await new CadSupervisor(command("any")).start()).toMatchObject({
+        FABDESK_FAB_CAD_BRIDGE_URL: url,
+      });
+    } finally {
+      fake.stop(true);
+    }
+  });
+
   test("starts the bridge from a source checkout with the mock FreeCAD", async () => {
     const projects = await temp("fabplane-cad-projects-");
     const port = await freePort();
@@ -115,7 +194,10 @@ describe("FabPlane CAD backend", () => {
     const supervisor = new CadSupervisor(command);
     try {
       const env = await supervisor.start();
-      expect(env).toEqual({ FABDESK_FAB_CAD_BRIDGE_URL: `http://127.0.0.1:${port}` });
+      expect(env).toEqual({
+        FABDESK_FAB_CAD_BRIDGE_URL: `http://127.0.0.1:${port}`,
+        FABDESK_FAB_CAD_BRIDGE_TOKEN: command.token,
+      });
       const health = (await (await fetch(`http://127.0.0.1:${port}/health`)).json()) as {
         name: string;
         workspaceRoot: string;

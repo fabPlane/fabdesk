@@ -12,9 +12,9 @@ import { FABPLANE_MARK_SVG } from "../apps/brand";
  * Plain MCP clients that do not advertise `io.modelcontextprotocol/ui` never see these tools
  * (`auto` mode), so terminal agents keep the lean core list.
  */
-import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, realpath, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, extname, isAbsolute, join, relative, win32 } from "node:path";
+import { basename, extname, isAbsolute, join, relative, sep, win32 } from "node:path";
 import {
   ResourceTemplate,
   type McpServer,
@@ -207,7 +207,13 @@ export function registerMcpApps(
             .optional()
             .describe("Set by the host when the user opens a file with the viewer"),
         } as unknown as ZodRawShapeCompat,
-        annotations: { title: "fabPlane Boards", readOnlyHint: true, idempotentHint: true },
+        annotations: {
+          title: "fabPlane Boards",
+          readOnlyHint: true,
+          destructiveHint: false,
+          openWorldHint: false,
+          idempotentHint: true,
+        },
         _meta: {
           ui: { resourceUri: UI_RESOURCES.boards },
           "openai/ui": {
@@ -253,7 +259,13 @@ export function registerMcpApps(
         inputSchema: {
           project: z.string().min(1).optional().describe("Project id, name or absolute path"),
         } as unknown as ZodRawShapeCompat,
-        annotations: { title: "Shopping List", readOnlyHint: true, openWorldHint: true },
+        annotations: {
+          title: "Shopping List",
+          readOnlyHint: true,
+          destructiveHint: false,
+          openWorldHint: true,
+          idempotentHint: true,
+        },
         _meta: {
           ui: { resourceUri: UI_RESOURCES.shopping },
           "openai/ui": { entrypoints: [{ type: "global" }, { type: "thread" }] },
@@ -304,7 +316,15 @@ export function registerMcpApps(
           arguments: z.record(z.string(), z.unknown()).default({}),
           project: z.string().optional(),
         } as unknown as ZodRawShapeCompat,
-        annotations: { title: "fabPlane view operation", openWorldHint: true },
+        // Dispatches to UI_CALLABLE_TOOLS, which include shopping_list_remove / _update / _sync_bom
+        // (fabplane.com carts) and cad_export: as effectful as the most effectful of them.
+        annotations: {
+          title: "fabPlane view operation",
+          readOnlyHint: false,
+          destructiveHint: true,
+          openWorldHint: true,
+          idempotentHint: false,
+        },
         _meta: { ui: { visibility: ["app"] } },
       },
       async (raw: Record<string, unknown>, extra: Extra): Promise<CallToolResult> => {
@@ -352,7 +372,8 @@ export function registerMcpApps(
             'the host did not provide the opened file\'s path (_meta["openai/resource"].path)',
             "unavailable",
           );
-        return await hostFilePreview(await context(undefined, extra), path, extra.signal);
+        const ctx = await context(undefined, extra);
+        return await hostFilePreview(ctx, await projectFilePath(ctx, path), extra.signal);
       }
       case "convert": {
         const fileName = str(args["name"]) ?? "drawing.dxf";
@@ -391,7 +412,13 @@ export function registerMcpApps(
         description:
           "Composer @-mention search over fabPlane projects, their shopping lists and CAD files. Used by the host UI.",
         inputSchema: { query: z.string() } as unknown as ZodRawShapeCompat,
-        annotations: { title: "Search fabPlane", readOnlyHint: true },
+        annotations: {
+          title: "Search fabPlane",
+          readOnlyHint: true,
+          destructiveHint: false,
+          openWorldHint: false,
+          idempotentHint: true,
+        },
         _meta: { "openai/extensions": { "mentions/search": {} }, ui: { visibility: ["app"] } },
       },
       async (args: Record<string, unknown>, extra: Extra): Promise<CallToolResult> => {
@@ -598,6 +625,29 @@ async function preview(
 export function hostResourcePath(extra: { _meta?: Record<string, unknown> }): string | null {
   const path = (extra._meta?.["openai/resource"] as { path?: unknown } | undefined)?.path;
   return typeof path === "string" && (isAbsolute(path) || win32.isAbsolute(path)) ? path : null;
+}
+
+/**
+ * The host-supplied path, resolved (symlinks and `..` included) to a file inside one of the
+ * fabdesk projects, also resolved. The path comes from the MCP client, so without this any client
+ * could read any .svg/.dxf/.stl/.glb on disk or hand kicad-cli any .kicad_* file.
+ */
+export async function projectFilePath(ctx: ToolContext, path: string): Promise<string> {
+  const outside = () =>
+    new ToolError(
+      "the viewer only opens files inside a fabdesk project; open the project in fabdesk first",
+      "invalid_args",
+    );
+  if (path.split(/[\\/]/).includes("..")) throw outside();
+  const real = await realpath(path).catch(() => null);
+  if (!real) throw new ToolError(`file not found: ${basename(path)}`, "not_found");
+  for (const project of await ctx.services.projects.list()) {
+    const dir = await realpath(project.dir).catch(() => null);
+    if (!dir) continue;
+    const rel = relative(dir, real);
+    if (rel && !rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel)) return real;
+  }
+  throw outside();
 }
 
 async function hostFilePreview(

@@ -13,17 +13,29 @@ export type FabCadBridgeClientOptions = {
   fetch?: typeof fetch;
   /** Per-request timeout; creating a session waits for FreeCAD to start, so it gets longer. */
   timeoutMs?: number;
+  /**
+   * Bearer token for the bridge (`FABDESK_FAB_CAD_BRIDGE_TOKEN`), sent on every HTTP request and
+   * on the `/ws` upgrade. Never put into a URL: `wsUrl` and the web UI URL stay token-free.
+   */
+  token?: string | null;
 };
 
 export class FabCadBridgeClient {
   readonly url: string;
   private readonly fetchImpl: typeof fetch;
   private readonly timeoutMs: number;
+  readonly token: string | null;
 
   constructor(opts: FabCadBridgeClientOptions) {
     this.url = opts.url.replace(/\/+$/, "");
     this.fetchImpl = opts.fetch ?? fetch;
     this.timeoutMs = opts.timeoutMs ?? 15_000;
+    this.token = opts.token || null;
+  }
+
+  /** `Authorization` for the bridge when it has a token; empty otherwise. */
+  authHeaders(): Record<string, string> {
+    return this.token ? { authorization: `Bearer ${this.token}` } : {};
   }
 
   async health(): Promise<FabCadHealth> {
@@ -64,7 +76,10 @@ export class FabCadBridgeClient {
     try {
       res = await this.fetchImpl(`${this.url}${path}`, {
         method,
-        headers: body !== undefined ? { "content-type": "application/json" } : {},
+        headers: {
+          ...this.authHeaders(),
+          ...(body !== undefined ? { "content-type": "application/json" } : {}),
+        },
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
         signal: AbortSignal.timeout(timeoutMs),
       });

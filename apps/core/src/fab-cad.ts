@@ -19,6 +19,7 @@ import {
   TransportError,
   WebSocketTransport,
   type DocumentInfo,
+  type WebSocketLike,
   type ObjectInfo,
   type PropertyInfo,
   type PropertyInput,
@@ -27,6 +28,12 @@ import {
 import { PROJECT_FILES, ToolError } from "@fabdesk/tools";
 import type { CadObject, CadProperty, CadService, CadStatus, CadView } from "@fabdesk/tools";
 import type { FabCadBridgeClient } from "./fab-cad-bridge";
+
+/** Bun's WebSocket also takes upgrade-request headers, which the DOM typing of it does not know. */
+const BunWebSocket = WebSocket as unknown as new (
+  url: string,
+  options: { headers: Record<string, string> },
+) => WebSocketLike;
 
 /** Workbench modules the tools and the web UI expect; a server without one still works. */
 const MODULES = ["Part", "Sketcher", "PartDesign"] as const;
@@ -60,8 +67,15 @@ export function createFabCad(deps: {
   const open = new Map<string, Promise<Connection>>();
 
   async function attach(session: string): Promise<FreeCADClient> {
-    const transport = await WebSocketTransport.connect(deps.bridge().wsUrl(session), {
+    const bridge = deps.bridge();
+    const headers = bridge.authHeaders();
+    const transport = await WebSocketTransport.connect(bridge.wsUrl(session), {
       connectTimeoutMs: 10_000,
+      // The token rides on the upgrade request (Bun's WebSocket takes headers), never in the URL,
+      // which ends up in errors, logs and the `cad_view` result.
+      ...(Object.keys(headers).length
+        ? { createWebSocket: (url: string) => new BunWebSocket(url, { headers }) }
+        : {}),
     });
     try {
       const client = await FreeCADClient.connect(transport, { clientName });

@@ -306,6 +306,8 @@ export const cad_python = defineTool({
       .describe("auto evaluates an expression and falls back to executing statements"),
   },
   annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true, idempotentHint: false },
+  // Arbitrary Python in a FreeCAD process on the host: desktop over loopback only.
+  localOnly: true,
   handler: async ({ code, mode }, ctx) => {
     const project = ctx.requireProject();
     const cad = requireCad(ctx);

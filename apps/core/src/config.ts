@@ -52,6 +52,14 @@ export function fabCadBridgeUrl(env: NodeJS.ProcessEnv = process.env): string {
   return v.replace(/\/+$/, "");
 }
 
+/**
+ * `FABDESK_FAB_CAD_BRIDGE_TOKEN`: the bearer the bridge expects (the desktop mints one per launch);
+ * null when unset, and then nothing is sent — a bridge without auth needs none.
+ */
+export function fabCadBridgeToken(env: NodeJS.ProcessEnv = process.env): string | null {
+  return env["FABDESK_FAB_CAD_BRIDGE_TOKEN"]?.trim() || null;
+}
+
 export function authModeFromEnv(): AuthMode | undefined {
   const v = process.env["FABDESK_AUTH_MODE"];
   return v === "local" || v === "fabplane" ? v : undefined;
