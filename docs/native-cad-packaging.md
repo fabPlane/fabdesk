@@ -53,16 +53,14 @@ accepts no caller-selected source or publication input. A dispatch of pin `dda10
 and smoked the engine, then `codesign` rejected
 `Python.framework` (`bundle format unrecognized, invalid, or unsuitable`) and the verify
 `-R` requirement was read as a file. [PR250](https://github.com/TensorFleet/fabdesk/pull/250)
-moved main's pin to `4e33f0c`, which restores the deleted framework symlinks but still
-passes `-R` with a leading `=` instead of parentheses. The packaging fix is `4f3cc7a`.
-Update main's workflow ref from `4e33f0cd2c60f854f02ca18cc1cc7896c17ab147` to
-`4f3cc7a63490a5adca08d475764f9682bdcad7d7` before another dispatch, or the runner checks
-out the earlier repair again. A retry of that earlier pin is already running
-([run 36976615032](https://github.com/TensorFleet/fabdesk/actions/runs/36976615032)); do not
-start a second one. After main pins `4f3cc7a`, run
-`gh workflow run "Prepare signed optional CAD runtime" --repo TensorFleet/fabdesk --ref main`.
-That uploads private review artifacts only. No public asset has been published. PR245 stays
-draft. Do not merge/publish the former bundled approach.
+moved main's pin to `4e33f0c`. Its retry
+([run 36976615032](https://github.com/TensorFleet/fabdesk/actions/runs/36976615032))
+succeeded, including genuine signing/notarization and final measurements. No additional
+runtime build is required for this artifact. The shared draft adds more defensive framework
+normalization; its workflow now pins source `8aac523`, which retains the validated `=anchor`
+inline trust expression. A parenthesized expression was tested on this Mac and rejected as a
+filename by both `csreq` and `codesign`, so do not dispatch the obsolete `4f3cc7a` pin.
+No public asset has been published. PR245 stays draft while installation/UI QA is pending.
 
 After signed workflow artifacts are reviewed and the user approves public publication, an
 already-authorized maintainer can run `bun scripts/publish-cad-runtime.ts <artifact-directory>
