@@ -108,6 +108,7 @@ export type RouteProgress = {
 };
 
 export type RouteSummary = {
+  pairRouting?: import("@fabdesk/protocol").PairRouting;
   tracks: number;
   /** Vias the router added. */
   vias: number;

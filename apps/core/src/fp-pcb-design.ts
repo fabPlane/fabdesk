@@ -2180,6 +2180,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     await saveBoard(projectDir);
     const s = job.summary;
     return {
+      ...(s.pairRouting?{pairRouting:s.pairRouting}:{}),
       tracks: s.tracks,
       vias: s.vias,
       claimedVias: s.claimedVias,

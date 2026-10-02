@@ -1,4 +1,5 @@
 /** SHARED-003: revision-guarded, previewable native edit transactions with disk rollback. */
+import { readCopper, recordRemoval, qualityText } from "../routing-quality";
 import { createHash, randomUUID } from "node:crypto";
 import {
   copyFile,
@@ -225,8 +226,10 @@ async function transactionPaths(
   ctx: ToolContext,
   project: ProjectHandle,
   schematicAffecting: boolean,
+  captureReference = false,
 ): Promise<string[]> {
   const paths = new Set<string>(FILES);
+  if (captureReference || await exists(p(project,".fabdesk/removed-copper.json"))) paths.add(".fabdesk/removed-copper.json");
   if (schematicAffecting) {
     const hierarchy = await inspectSavedHierarchy(ctx, project);
     if (!hierarchy.complete)
@@ -550,13 +553,14 @@ export const native_edit_transaction = defineTool({
         },
       );
 
+    const copperBefore = geometry?.deleteItemIds?.length || removeCopperNets?.length ? await readCopper(project.dir) : null;
     const transactionId = `native-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
     const root = p(project, ".fabdesk/native-revisions");
     const directory = join(root, transactionId);
     const files = await backup(
       project.dir,
       directory,
-      await transactionPaths(ctx, project, schematic !== undefined),
+      await transactionPaths(ctx, project, schematic !== undefined, copperBefore !== null),
     );
     await writeJson(join(directory, "metadata.json"), {
       transactionId,
@@ -656,9 +660,11 @@ export const native_edit_transaction = defineTool({
         } as PcbGeometryEdit;
         changes["geometry"] = await ctx.services.design.editBoardGeometry(project.dir, resolved);
       }
+      const removedCopperFacts = copperBefore ? await recordRemoval(project.dir, copperBefore, await readCopper(project.dir)) : null;
       const after = await boundRevisions(ctx, project);
       await writeJson(join(root, "last-accepted.json"), { transactionId, before, after });
-      return ok(`Atomic native edit ${transactionId} accepted; design checks were not run.`, {
+      return ok(`Atomic native edit ${transactionId} accepted; design checks were not run.${removedCopperFacts ? `\n${qualityText({nets: removedCopperFacts.nets,pairs:[],reference:[],lengthConvention:"chord"})}` : ""}`, {
+        ...(removedCopperFacts ? { removedCopperFacts } : {}),
         status: "accepted",
         transactionId,
         before,

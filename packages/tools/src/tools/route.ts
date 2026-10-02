@@ -17,6 +17,7 @@ import {
 import type { RouteProgress, RouteRunRecord, RouteSummary } from "../services";
 import { ok, p, throwIfAborted } from "./common";
 import { rowPoints } from "./spatial";
+import { readCopper, copperBoard, quality, qualityText, referenceFacts, consumeReference, type PairDefinition } from "../routing-quality";
 
 /** Default and upper bound for how long one route_run request waits for its run to finish. */
 export const ROUTE_RUN_DEFAULT_WAIT_MS = 20_000;
@@ -63,6 +64,8 @@ export const RouteRunArgs = {
       viaDiameterMm: z.number().positive().optional(),
       viaDrillMm: z.number().positive().optional(),
       refillZones: z.boolean().optional(),
+      perNet: z.array(z.object({ net: z.string().min(1), widthMm: z.number().positive().optional(), viaDiameterMm: z.number().positive().optional(), viaDrillMm: z.number().positive().optional() }).strict()).optional().describe("Per-net width and via overrides; override global fields and net classes"),
+      pairs: z.array(z.object({ p: z.string().min(1), n: z.string().min(1), widthMm: z.number().positive().optional(), gapMm: z.number().nonnegative().optional(), skewToleranceMm: z.number().nonnegative().optional() }).strict()).optional().describe("Declared pairs for measurement; current routers route members independently. Pair width applies to both members; conflicting per-net widths are rejected"),
     })
     .optional()
     .describe(
@@ -208,6 +211,8 @@ type RouteArgs = {
     viaDiameterMm?: number | undefined;
     viaDrillMm?: number | undefined;
     refillZones?: boolean | undefined;
+    perNet?: Array<{ net: string; widthMm?: number | undefined; viaDiameterMm?: number | undefined; viaDrillMm?: number | undefined }> | undefined;
+    pairs?: PairDefinition[] | undefined;
   };
   settings?: Record<string, unknown>;
   applyPolicy: "auto" | "manual";
@@ -341,6 +346,10 @@ async function applyCandidate(
       throw new Error(
         `reopened board hash ${resulting} differs from candidate ${rec.candidate.sha256}`,
       );
+    if (rec.result?.quality) {
+      const facts = JSON.parse(await readFile(p(project, rec.result.quality.detailPath), "utf8")) as { nets: Array<{net:string}> };
+      await consumeReference(project.dir, current, resulting, facts.nets.map(n => n.net).filter(net => !rec.result!.open.includes(net)));
+    }
     next = {
       ...next,
       currentPcbRevision: resulting,
@@ -444,6 +453,7 @@ async function executeRoute(
   try {
     throwIfAborted(signal);
     const beforeInventory = await boardInventory(ctx, snapshotDir);
+    const startingCopper = await readCopper(snapshotDir);
     const endpoints = await ctx.services.design.query(snapshotDir, "unrouted");
     const requestedNets = [
       ...new Set([
@@ -457,6 +467,8 @@ async function executeRoute(
       throw new ToolError(`no remaining endpoints for ${missing.join(", ")}`, "precondition");
     const ruleSettings: Record<string, unknown> = {
       ...(args.settings ?? {}),
+      ...(args.rules?.perNet ? { perNet: args.rules.perNet } : {}),
+      ...(args.rules?.pairs ? { differentialPairs: args.rules.pairs } : {}),
       ...(args.rules?.widthMm !== undefined ? { trackWidthMm: args.rules.widthMm } : {}),
       ...(args.rules?.clearanceMm !== undefined ? { clearanceMm: args.rules.clearanceMm } : {}),
       ...(args.rules?.viaDiameterMm !== undefined
@@ -654,7 +666,14 @@ async function executeRoute(
         ),
       ),
     ].slice(0, 20);
+    const candidateBoard = await readCopper(snapshotDir);
+    const touchedNets = [...new Set([...endpoints.map(row => String(row["net"] ?? "")), ...candidateBoard.copper.filter(c => !startingCopper.copper.some(b => b.id === c.id)).map(c => c.net)])].filter(Boolean);
+    const selectedNets = requestedNets.length ? requestedNets : touchedNets;
+    const measuredQuality = quality(candidateBoard, selectedNets, args.rules?.pairs, await referenceFacts(project.dir, rec.startingPcbRevision));
+    if(summary.pairRouting)measuredQuality.pairRouting=summary.pairRouting;
+    await writeJson(join(runDir, "quality.json"), measuredQuality);
     const fullResult: RouteResult = {
+      quality: { text: qualityText(measuredQuality), detailPath: join(rec.artifacts.runDir, "quality.json") },
       runId: rec.id,
       router: rec.router as "fab_router" | "freerouting",
       complete: [],
@@ -871,7 +890,7 @@ async function routeStatusOutput(
   };
   ctx.services.routeRuns.update(rec.id, run);
   return ok(
-    `Run ${rec.id} (${rec.router}): ${rec.state}; ${rec.progress.routed ?? "?"}/${rec.progress.total ?? "?"} routed; candidate ${rec.candidate.available ? "ready" : "unavailable"}; apply ${rec.application.state}.${rec.fallbackReason ? ` Fallback: ${rec.fallbackReason}.` : ""}`,
+    `Run ${rec.id} (${rec.router}): ${rec.state}; ${rec.progress.routed ?? "?"}/${rec.progress.total ?? "?"} routed; candidate ${rec.candidate.available ? "ready" : "unavailable"}; apply ${rec.application.state}.${rec.fallbackReason ? ` Fallback: ${rec.fallbackReason}.` : ""}${rec.result?.quality ? `\n${rec.result.quality.text}` : ""}`,
     { run },
   );
 }
@@ -947,6 +966,17 @@ export async function runRoute(args: RouteArgs, ctx: ToolContext): Promise<ToolO
   const projectBytes = await readFile(p(project, PROJECT_FILES.boardPro)).catch(
     () => new Uint8Array(),
   );
+  const validationBoard = copperBoard(boardBytes.toString());
+  const bad = (args.rules?.perNet ?? []).map(r => r.net).concat((args.rules?.pairs ?? []).flatMap(p => [p.p,p.n])).filter(n => !validationBoard.nets.includes(n));
+  if (bad.length) throw new ToolError(`unknown routing rule nets: ${[...new Set(bad)].join(", ")}`, "precondition");
+  if (new Set((args.rules?.perNet ?? []).map(r => r.net)).size !== (args.rules?.perNet?.length ?? 0)) throw new ToolError("duplicate per-net routing rules", "precondition");
+  const pairMembers = new Set<string>();
+  for (const pair of args.rules?.pairs ?? []) {
+    if (pair.p === pair.n || pairMembers.has(pair.p) || pairMembers.has(pair.n)) throw new ToolError(`invalid or overlapping pair ${pair.p}/${pair.n}`, "precondition");
+    pairMembers.add(pair.p); pairMembers.add(pair.n);
+    for (const member of [pair.p,pair.n]) { const width = args.rules?.perNet?.find(r => r.net === member)?.widthMm;
+      if (width !== undefined && pair.widthMm !== undefined && width !== pair.widthMm) throw new ToolError(`conflicting pair width for ${member}`, "precondition"); }
+  }
   const startingPcbRevision = sha256(boardBytes);
   const runId = newRunId();
   const runRel = join(PROJECT_FILES.runs, runId);

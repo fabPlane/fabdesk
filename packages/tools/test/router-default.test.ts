@@ -38,7 +38,7 @@ async function routeCase(
     ...original,
     manifest: () => ({ ...manifest, ...(pin ? { router: pin } : {}) }),
   };
-  await writeFile(join(project.dir, "board.kicad_pcb"), "original");
+  await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb (net \"N1\") (property \"test\" \"original\"))");
   await writeFile(join(project.dir, "board.kicad_pro"), "original-pro");
   const base = mockServices([project]);
   const calls: RouteJobOptions[] = [];
@@ -59,7 +59,7 @@ async function routeCase(
           throw new Error("Java crashed; no session written");
         }
         if (calls.length === 2) {
-          expect(await readFile(join(dir, "board.kicad_pcb"), "utf8")).toBe("original");
+          expect(await readFile(join(dir, "board.kicad_pcb"), "utf8")).toBe("(kicad_pcb (net \"N1\") (property \"test\" \"original\"))");
           expect(await readFile(join(dir, "board.kicad_pro"), "utf8")).toBe("original-pro");
         }
         hooks.onProgress?.({
@@ -70,7 +70,7 @@ async function routeCase(
           total: 2,
           log: [],
         });
-        await writeFile(join(dir, "board.kicad_pcb"), "candidate");
+        await writeFile(join(dir, "board.kicad_pcb"), "(kicad_pcb (net \"N1\") (property \"test\" \"candidate\"))");
         return {
           ...summary(),
           ...(first === "partial"

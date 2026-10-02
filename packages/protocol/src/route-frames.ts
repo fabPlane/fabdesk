@@ -74,6 +74,7 @@ export const RouterId = z
 export type RouterId = z.infer<typeof RouterId>;
 
 export const RouteResult = z.object({
+  quality: z.object({ text: z.string(), detailPath: z.string() }).optional(),
   runId: z.string(),
   router: RouterId,
   complete: z.array(z.string()),

@@ -250,7 +250,14 @@ export const FpPcbRouteGeometry = z.object({
   width: z.number().optional(),
 });
 
+export const PairRouting = z.object({
+  capability:z.enum(["measurement-only","coupled"]),
+  pairs:z.array(z.object({p:z.string(),n:z.string(),status:z.enum(["coupled","independent-fallback","unrouted","unsupported"]),reason:z.string().nullable()}).passthrough()),
+});
+export type PairRouting = z.infer<typeof PairRouting>;
+
 export const FpPcbRouteSummary = z.object({
+  pairRouting:PairRouting.optional(),
   tracks: z.number().default(0),
   /** Vias the router added. */
   vias: z.number().default(0),
@@ -278,6 +285,14 @@ export const FpPcbRouteRequest = z.object({
   options: z
     .object({
       nets: z.array(z.string()).optional(),
+      trackWidthMm: z.number().positive().optional(),
+      clearanceMm: z.number().nonnegative().optional(),
+      viaDiameterMm: z.number().positive().optional(),
+      viaDrillMm: z.number().positive().optional(),
+      viaDiameterNm: z.number().positive().optional(),
+      viaDrillNm: z.number().positive().optional(),
+      perNet: z.array(z.object({net:z.string(),widthMm:z.number().positive().optional(),viaDiameterMm:z.number().positive().optional(),viaDrillMm:z.number().positive().optional()})).optional(),
+      differentialPairs: z.array(z.object({p:z.string(),n:z.string(),widthMm:z.number().positive().optional(),gapMm:z.number().nonnegative().optional(),skewToleranceMm:z.number().nonnegative().optional()})).optional(),
       maxTimeMs: z.number().optional(),
       layers: z.array(z.number()).optional(),
       viaCost: z.number().optional(),
