@@ -240,6 +240,16 @@ export function migrate(db: Database): number {
       .all()
       .map((r) => r.version),
   );
+  // Early installations recorded version 2 without the device-pairing schema. Repair that
+  // specific legacy state before version 3 tries to ALTER devices; keep the recorded history.
+  if (
+    applied.size === 2 &&
+    applied.has(1) &&
+    applied.has(2) &&
+    !db.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'devices'").get()
+  ) {
+    db.transaction(() => db.run(MIGRATIONS.find((m) => m.version === 2)!.sql))();
+  }
   let current = Math.max(0, ...applied);
   for (const m of MIGRATIONS) {
     if (applied.has(m.version)) continue;

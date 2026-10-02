@@ -4,7 +4,7 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { startBridge, type BridgeServer } from "@fab-cad/bridge";
@@ -111,8 +111,24 @@ describe("CadService over the fab_cad bridge", () => {
     const model = await cad.model(project);
     expect(model.objects.map((o) => o.name)).toEqual(["Lid"]);
     const now = await client.sessions();
-    const savedPath = await realpath(join(project, "model.FCStd"));
-    expect(now.some((s) => s.path === savedPath)).toBe(true);
+    const canonicalModelPath = await realpath(join(project, "model.FCStd"));
+    expect(now.some((s) => s.path === canonicalModelPath)).toBe(true);
+  });
+
+  test("a new daemon adopts a path-opened session through a project directory alias", async () => {
+    const cad = service();
+    const first = await cad.view(project);
+    const alias = join(root, "enclosure-alias");
+    await symlink(
+      await realpath(project),
+      alias,
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    const before = await client.sessions();
+    const second = await service().view(alias);
+    expect(second.session).toBe(first.session);
+    expect(second.document).toBe(first.document);
+    expect((await client.sessions()).length).toBe(before.length);
   });
 
   test("view never hands out a session the bridge no longer has", async () => {

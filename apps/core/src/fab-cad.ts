@@ -12,6 +12,7 @@
  * matches) is reconnected once per call, the way `FpPcbSessions.withRetry` does it.
  */
 import { join } from "node:path";
+import { realpath } from "node:fs/promises";
 import {
   FreeCADApiError,
   FreeCADClient,
@@ -36,6 +37,16 @@ const BunWebSocket = WebSocket as unknown as new (
 
 /** Workbench modules the tools and the web UI expect; a server without one still works. */
 const MODULES = ["Part", "Sketcher", "PartDesign"] as const;
+
+/** The bridge canonicalizes paths; projects can still be addressed through directory aliases. */
+async function sameModelPath(left: string, right: string): Promise<boolean> {
+  if (left === right) return true;
+  const [a, b] = await Promise.all([
+    realpath(left).catch(() => left),
+    realpath(right).catch(() => right),
+  ]);
+  return a === b;
+}
 
 interface Connection {
   session: string;
@@ -79,7 +90,13 @@ export function createFabCad(deps: {
   /** The project's document in `client`: already open, opened from disk, or created and saved. */
   async function projectDocument(client: FreeCADClient, path: string, label: string) {
     const docs = await client.listDocuments();
-    let doc: DocumentInfo | undefined = docs.find((d) => d.fileName === path);
+    let doc: DocumentInfo | undefined;
+    for (const candidate of docs) {
+      if (await sameModelPath(candidate.fileName, path)) {
+        doc = candidate;
+        break;
+      }
+    }
     if (!doc && (await exists(path))) doc = await client.openDocument(path);
     if (!doc) {
       doc = await client.newDocument({ name: "Model", label });
@@ -96,7 +113,17 @@ export function createFabCad(deps: {
     const live = (s: { state: string }) => s.state === "running";
     const sessions = await bridge.sessions();
     // A session the bridge started on this model.
-    const byPath = sessions.find((s) => s.path === path && live(s));
+    let byPath;
+    for (const candidate of sessions) {
+      if (
+        candidate.path !== null &&
+        live(candidate) &&
+        (await sameModelPath(candidate.path, path))
+      ) {
+        byPath = candidate;
+        break;
+      }
+    }
     if (byPath) {
       const client = await attach(byPath.id);
       return { session: byPath.id, client, doc: await projectDocument(client, path, label), path };
@@ -106,7 +133,13 @@ export function createFabCad(deps: {
       const client = await attach(s.id).catch(() => null);
       if (!client) continue;
       const docs = await client.listDocuments().catch(() => [] as DocumentInfo[]);
-      const doc = docs.find((d) => d.fileName === path);
+      let doc: DocumentInfo | undefined;
+      for (const candidate of docs) {
+        if (await sameModelPath(candidate.fileName, path)) {
+          doc = candidate;
+          break;
+        }
+      }
       if (doc) {
         deps.log?.(`fab-cad: adopting bare session ${s.id} that holds ${path}`);
         await client.setActiveDocument(doc.name);
