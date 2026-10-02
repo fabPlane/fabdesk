@@ -237,7 +237,7 @@ if (!app.requestSingleInstanceLock()) {
         type: "question",
         title: "Download CAD runtime?",
         message: "May fabPlane download and install its FreeCAD CAD runtime?",
-        detail: `Version ${offer.version}\nPlatform ${offer.target}, macOS ${offer.minimumOS}+\nDownload ${(offer.downloadBytes / 1048576).toFixed(1)} MiB (${offer.downloadBytes} bytes)\nInstalled ${(offer.installedBytes / 1048576).toFixed(1)} MiB (${offer.installedBytes} bytes)\nFrom ${offer.sourceUrl}\nThe signed runtime is cached outside the app. The local core restarts to enable CAD. PCB works without it.`,
+        detail: `Version ${offer.version}\nPlatform: Apple Silicon Mac (ARM64), macOS ${offer.minimumOS} or later\nDownload ${(offer.downloadBytes / 1048576).toFixed(1)} MiB (${offer.downloadBytes} bytes)\nInstalled ${(offer.installedBytes / 1048576).toFixed(1)} MiB (${offer.installedBytes} bytes)\nFrom ${offer.sourceUrl}\nThe signed runtime is cached outside the app. The local core restarts to enable CAD. PCB works without it.`,
         buttons: ["Later", "Download and install"],
         defaultId: 0,
         cancelId: 0,

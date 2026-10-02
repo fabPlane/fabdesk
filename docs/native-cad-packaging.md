@@ -45,7 +45,14 @@ message, retain PCB features, and never download a different architecture or a m
 The runtime release **does not exist yet**. First-use metadata reports this explicitly.
 `.github/workflows/cad-runtime.yml` prepares signed assets with the desktop's existing Apple
 secrets and runner setup. It uploads private review artifacts only, with no public write token
-and no public-publishing job. This new workflow has not been executed; signing/notarization of
+and no public-publishing job. The build-only activation is [draft PR248](https://github.com/TensorFleet/fabdesk/pull/248),
+which changes only the workflow. It checks out immutable reviewed source `dda10c3`, uses the
+existing release submodule access and Apple secrets, has read-only contents permission, runs
+only on manual main dispatch, and accepts no caller-selected source or publication input.
+It must be reviewed/landed independently to become dispatchable; PR245 remains draft. Then
+run `gh workflow run cad-runtime.yml --repo TensorFleet/fabdesk --ref main` and review its
+private signed artifacts and final sizes before the separately approved public publication.
+Neither workflow nor public publication has been executed. Signing/notarization of
 this optional container remains unverified. Do not merge/publish the former bundled approach.
 
 After signed workflow artifacts are reviewed and the user approves public publication, an

@@ -73,6 +73,6 @@ run([
   "--title",
   `Optional CAD runtime ${CAD_RELEASE}`,
   "--notes",
-  `macOS ARM64, macOS 15+. API fork ${catalog.freecadCommit}; bridge/viewer ${catalog.fabCadCommit}. Download ${catalog.downloadBytes} bytes; installed ${catalog.installedBytes} bytes. SHA-256 ${catalog.sha256}. Corresponding sources and license notices are attached and included in the signed runtime.`,
+  `Supports Apple Silicon Macs (ARM64), macOS 15 or later. Intel Macs, Windows and Linux are not supported yet. These sizes describe the signed/notarized release artifact, not an unsigned candidate. API fork ${catalog.freecadCommit}; bridge/viewer ${catalog.fabCadCommit}. Download ${catalog.downloadBytes} bytes; installed ${catalog.installedBytes} bytes. SHA-256 ${catalog.sha256}. Corresponding sources and license notices are attached and included in the signed runtime.`,
   "--latest=false",
 ]);

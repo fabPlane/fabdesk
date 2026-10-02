@@ -120,7 +120,7 @@ export class CadRuntimeManager {
       return this.set({
         status: "unsupported",
         message:
-          "CAD runtime currently requires Apple Silicon and macOS 15 or later. PCB remains available.",
+          "This CAD runtime supports Apple Silicon Macs (ARM64) on macOS 15 or later. Intel Macs, Windows and Linux are not supported yet. PCB remains available.",
       });
     try {
       await stat(this.installed);

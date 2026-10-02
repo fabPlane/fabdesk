@@ -79,7 +79,8 @@ export function CadTab() {
         <p>CAD needs our API-capable FreeCAD runtime. Your PCB workspace remains available.</p>
         {offer && (
           <p className="mt-2">
-            Version {offer.version} · {offer.target} · macOS {offer.minimumOS}+<br />
+            Version {offer.version} · Apple Silicon Mac (ARM64) · macOS {offer.minimumOS} or later
+            <br />
             Download: {size(offer.downloadBytes)} ({offer.downloadBytes.toLocaleString()} bytes).
             Installed: {size(offer.installedBytes)} ({offer.installedBytes.toLocaleString()} bytes).
             <br />
