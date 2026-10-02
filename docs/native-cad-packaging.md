@@ -98,3 +98,32 @@ End-to-end public installation, genuine container Developer ID signing/notarizat
 sizes, and foreground consent/edit/save/reopen/STEP testing remain blocked on the signed artifact
 build and approved publication. Unit tests use injected signature/transport fixtures and are not
 proof that a public runtime has been installed.
+
+## Nightly CAD drawing check
+
+After the signed runtime's consented first-use install, QA should pass its actual cached
+`CADRuntime.app/Contents/Resources/cad/bundle.json` to:
+
+```sh
+bun scripts/smoke-cad-drawing.ts "$CAD_RUNTIME_MANIFEST"
+```
+
+The default verifies Developer ID/notarization/Gatekeeper first and fails when the runtime is
+missing, incompatible, unsigned or unsupported. It must never silently download or pass a mock.
+Run the first-use Download/Later/Cancel UI check separately on the real desktop profile chosen
+for QA; a source bundle test is not installation evidence.
+
+The disposable drawing has four constrained sketch lines defining a **40 x 20 mm rectangle**
+and a **10 mm PartDesign pad**, one valid solid, and **8,000 mm³ volume**. QA saves a real FCStd
+ZIP, closes the native session, reopens it, verifies sketch/pad/dimensions/volume, exports an
+ISO-10303-21 STEP, and reimports STEP to verify the same volume and solid count. Auth/origin
+checks remain. The output is machine-readable JSON. Local native developer-payload validation
+passed with 11 constraints, FCStd 9,258 bytes and STEP 6,808 bytes; file sizes may vary with
+metadata. It is explicitly labelled unsigned developer-only and is not a public installation pass.
+
+The optional `--allow-unsigned-development` flag exists only for source-build debugging. Never
+use it for nightly/release acceptance. The root coordinator owns desktop nightly dispatch and
+the existing recurring schedule; this CAD task does not create a competing Release workflow
+or a duplicate scheduled task. Compare desktop installer sizes to the previous signed release
+separately from the optional runtime download; the 535 MiB unsigned runtime candidate is not
+an increase in every desktop installer.
