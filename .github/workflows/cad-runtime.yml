@@ -1,0 +1,73 @@
+name: Prepare signed optional CAD runtime
+
+# Build-only activation may land separately from draft PR245. Only this reviewed source can run
+# with the existing Apple signing credentials. No input can choose code, platform, or publication.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: optional-cad-runtime-darwin-arm64
+  cancel-in-progress: false
+jobs:
+  runtime:
+    if: github.ref == 'refs/heads/main'
+    runs-on: blacksmith-6vcpu-macos-15
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          repository: TensorFleet/fabdesk
+          ref: dda10c31056db6c023f4d63c0197e8d67199c590
+          submodules: false
+          persist-credentials: false
+      # Same read-only submodule access used by Release; no new token or expanded scope.
+      - uses: webfactory/ssh-agent@v0.10.0
+        with:
+          ssh-private-key: ${{ secrets.FABDESK_SUBMODULE_SSH_KEY }}
+      - name: Initialize existing source workspaces
+        run: git submodule update --init --depth 1 vendor/fabplane vendor/fabplane-cli vendor/fab_cad
+      - name: Resolve exact PCB workspace pin
+        id: fab-pcb
+        run: echo "commit=$(git ls-tree HEAD vendor/fab_pcb | awk '{print $3}')" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v5
+        with:
+          repository: fabPlane/fab_pcb
+          ref: ${{ steps.fab-pcb.outputs.commit }}
+          path: vendor/fab_pcb
+          token: ${{ secrets.FAB_PCB_RELEASE_TOKEN }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - run: bun install --frozen-lockfile
+      - name: Build and smoke the pinned API-capable engine
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          test "$(git rev-parse HEAD)" = dda10c31056db6c023f4d63c0197e8d67199c590
+          brew install cmake ninja llvm@22 qtbase qttools opencascade boost xerces-c eigen yaml-cpp python@3.12 icu4c@78 tbb
+          python3 scripts/build-freecad-macos.py --source "$RUNNER_TEMP/cad-source" --build "$RUNNER_TEMP/cad-build" --install "$RUNNER_TEMP/cad-install"
+          python3 scripts/prepare-freecad-macos.py --install "$RUNNER_TEMP/cad-install" --source "$RUNNER_TEMP/cad-source" --python-home /opt/homebrew/opt/python@3.12/Frameworks/Python.framework/Versions/3.12 --output "$RUNNER_TEMP/cad-runtime" --source-cache "$RUNNER_TEMP/cad-sources"
+          FABDESK_FREECAD_RUNTIME="$RUNNER_TEMP/cad-runtime" bun run cad:stage --target bun-darwin-arm64
+          bun run cad:smoke dist/cad/darwin-arm64/bundle.json
+      # Credentials are scoped to this step and are consumed by the existing release helpers.
+      - name: Sign, notarize, staple and measure optional runtime
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: bun scripts/package-cad-runtime.ts dist/cad/darwin-arm64 dist/cad-runtime
+      - name: Preserve private review artifacts (no public release)
+        uses: actions/upload-artifact@v6
+        with:
+          name: signed-cad-runtime-darwin-arm64
+          retention-days: 14
+          path: |
+            dist/cad-runtime/cad-runtime-darwin-arm64.zip
+            dist/cad-runtime/manifest-darwin-arm64.json
+            dist/cad-runtime/cad-runtime-sources.tar.gz
+            dist/cad-runtime/NOTICE.txt
+          if-no-files-found: error
