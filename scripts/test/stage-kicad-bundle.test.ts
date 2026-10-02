@@ -8,8 +8,28 @@ import {
   nightlyAssetName,
   nonEmptySetting,
   pickKicadReleaseAsset,
+  supplementKicadNotices,
   type Target,
 } from "../stage-kicad-bundle";
+
+describe("supplementKicadNotices", () => {
+  test("adds exact-revision notices without replacing notices supplied by the archive", async () => {
+    const root = mkdtempSync(join(tmpdir(), "fabdesk-kicad-notices-"));
+    const commit = "329aba9ff0f405542026dd57abeaef242e34237d";
+    try {
+      await supplementKicadNotices(root, "0000000000000000000000000000000000000000");
+      expect(() => statSync(join(root, "licenses"))).toThrow();
+      await supplementKicadNotices(root, commit);
+      expect(readFileSync(join(root, "licenses", "LICENSE"), "utf8")).toContain("GNU GENERAL PUBLIC LICENSE");
+      expect(readFileSync(join(root, "licenses", "SOURCE.txt"), "utf8")).toContain(commit);
+      writeFileSync(join(root, "licenses", "LICENSE"), "archive-supplied notices");
+      await supplementKicadNotices(root, commit);
+      expect(readFileSync(join(root, "licenses", "LICENSE"), "utf8")).toBe("archive-supplied notices");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("nonEmptySetting", () => {
   test("uses the fallback for unset, empty, and whitespace-only Actions variables", () => {

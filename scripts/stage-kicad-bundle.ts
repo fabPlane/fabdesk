@@ -32,6 +32,20 @@ export type Target = (typeof TARGETS)[number];
 export const DEFAULT_KICAD_REPO = "TensorFleet/kicad";
 export const DEFAULT_KICAD_RELEASE = "nightly";
 
+/** Legacy nightly archives omitted the source notices; supplement only a known exact revision. */
+export async function supplementKicadNotices(
+  stageDir: string,
+  commit: string | undefined,
+  noticesRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../third-party/kicad"),
+): Promise<void> {
+  if (existsSync(join(stageDir, "licenses", "LICENSE"))) return;
+  if (!commit || !/^[a-f0-9]{40}$/.test(commit)) return;
+  const source = join(noticesRoot, commit);
+  if (!existsSync(join(source, "LICENSE"))) return;
+  await mkdir(join(stageDir, "licenses"), { recursive: true });
+  await cp(source, join(stageDir, "licenses"), { recursive: true, force: false });
+}
+
 /** GitHub Actions exposes unset repository variables as empty strings. */
 export function nonEmptySetting(value: string | undefined, fallback: string): string {
   return value?.trim() || fallback;
@@ -409,6 +423,7 @@ async function main(): Promise<void> {
           "\n",
       );
       cli = await downloadUrl(dl.url, stageDir, os, token, dl.sha256);
+      await supplementKicadNotices(stageDir, dl.commit);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       if (!requireSource) {
