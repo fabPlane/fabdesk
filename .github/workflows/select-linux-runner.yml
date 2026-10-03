@@ -4,58 +4,55 @@ on:
   workflow_call:
     inputs:
       blacksmith-runner:
-        description: Blacksmith label to use when the NAS runner is unavailable
+        description: Blacksmith outage fallback label
         required: false
         type: string
         default: blacksmith-4vcpu-ubuntu-2204
-      selection-delay-seconds:
-        description: Delay before reading the NAS heartbeat so concurrent callers can observe an earlier claim
-        required: false
-        type: number
-        default: 0
     outputs:
       runner:
-        description: JSON runner selector for a NAS runner or Blacksmith fallback
+        description: JSON selector preferring NAS, with an explicit outage fallback
         value: ${{ jobs.select.outputs.runner }}
 
 permissions:
   contents: read
 
 jobs:
-  settle:
-    runs-on: ${{ inputs.blacksmith-runner }}
-    steps:
-      - name: Wait for earlier NAS claims to reach the heartbeat
-        env:
-          SELECTION_DELAY_SECONDS: ${{ inputs.selection-delay-seconds }}
-        run: sleep "$SELECTION_DELAY_SECONDS"
-
   select:
-    needs: settle
-    # Bootstrap on the same external fallback pool the caller would use. A GitHub-hosted
-    # selector cannot choose the self-hosted NAS when the repository's Actions budget is
-    # exhausted, even though the NAS itself is online and free to run. Do not put this
-    # reusable workflow in a shared concurrency group: GitHub retains only one pending
-    # member and cancels earlier callers when CI, mobile and board checks arrive together.
-    runs-on: ${{ inputs.blacksmith-runner }}
+    # One hosted control job replaces routine Blacksmith settle/select jobs. Requires
+    # GitHub-hosted Actions allowance; NAS cannot bootstrap its own outage fallback.
+    runs-on: ubuntu-latest
     outputs:
       runner: ${{ steps.pick.outputs.runner }}
     steps:
-      - name: Prefer an online NAS runner
+      # No checkout: fork code must never run on a private LAN runner.
+      - name: Prefer NAS unless a confirmed outage lease is active
         id: pick
         env:
+          FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
           BLACKSMITH_RUNNER: ${{ inputs.blacksmith-runner }}
           NAS_RUNNER_HEARTBEAT: ${{ vars.NAS_RUNNER_HEARTBEAT }}
+          NAS_RUNNER_OUTAGE_UNTIL: ${{ vars.NAS_RUNNER_OUTAGE_UNTIL }}
         run: |
-          set -uo pipefail
+          set -euo pipefail
+          runner='["self-hosted","Linux","X64","tf-nas-ephemeral","fabdesk"]'
           now="$(date +%s)"
-          runner="$(jq -cn --arg label "$BLACKSMITH_RUNNER" '$label')"
-          # The NAS publishes this only while its runner is online and idle, every 10 seconds.
-          # Keep the lease short so a newly busy or offline runner falls back promptly.
-          if [[ "${NAS_RUNNER_HEARTBEAT:-}" =~ ^[0-9]+$ ]] &&
+          idle=false
+          # This heartbeat proves idle capacity only. A stale heartbeat does not
+          # prove an outage: a busy runner stops publishing it too.
+          if [[ "${NAS_RUNNER_HEARTBEAT:-}" =~ ^[1-9][0-9]{0,9}$ ]] &&
              [ "$NAS_RUNNER_HEARTBEAT" -le "$now" ] &&
              [ $((now - NAS_RUNNER_HEARTBEAT)) -le 20 ]; then
-            runner='["self-hosted","Linux","X64","tf-nas-ephemeral","fabdesk"]'
+            idle=true
+          fi
+          if [ "$FORK_PR" = true ]; then
+            runner='"ubuntu-latest"'
+          elif [ "$idle" = false ] &&
+               [[ "${NAS_RUNNER_OUTAGE_UNTIL:-}" =~ ^[1-9][0-9]{0,9}$ ]] &&
+               [ "$NAS_RUNNER_OUTAGE_UNTIL" -gt "$now" ] &&
+               [ $((NAS_RUNNER_OUTAGE_UNTIL - now)) -le 900 ]; then
+            # An operator/health monitor confirms an outage with a bounded lease.
+            # The lease expires in at most 15 minutes; fresh idle evidence wins.
+            runner="$(jq -cn --arg label "$BLACKSMITH_RUNNER" '$label')"
           fi
           echo "runner=$runner" >> "$GITHUB_OUTPUT"
           echo "Selected runner: $runner"
