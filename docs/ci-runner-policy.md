@@ -54,3 +54,20 @@ or guarantee a monetary cap. A fresh selector can choose NAS after recovery.
 Run `python3 scripts/test-runner-selection.py` to exercise the workflow shell
 against idle, busy/stale, missing signals, outage lease boundaries and fork
 isolation. Validate workflow expressions and job dependencies with actionlint.
+
+## Tools on ephemeral Linux workers
+
+NAS jobs must configure the tools they use instead of assuming the hosted image
+contains them. Release version metadata uses the configured Bun runtime. Release
+and security jobs install GitHub CLI 2.102.0 from its official Linux X64 archive,
+verify the pinned SHA256, and add only the job's temporary directory to PATH.
+This requires no sudo, runner image change, or new credential. The release step
+is shared with YAML aliases so the website handoff can keep its empty token
+permissions and avoid a checkout.
+
+Run `bun run scripts/test-ci-tools.ts` to exercise the actual workflow commands
+with Node and gh absent from PATH. It checks version outputs, the verified
+archive, all release consumers, rejection of a corrupt archive, and unsupported
+architectures. On Linux it also executes the installed CLI's version command;
+on other platforms it verifies the Linux binary without executing it. The test
+never creates issues, releases, or workflow dispatches.
