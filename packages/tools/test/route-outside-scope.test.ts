@@ -4,12 +4,12 @@ import { join } from "node:path";
 import { createRegistry } from "../src";
 import { mockServices, contextFactory, tempProject } from "./mock-services";
 
-for (const declared of [true, false]) {
-  test(`selective ${declared ? "declared" : "undeclared"} route ${declared ? "reports anchors outside scope" : "has no extra scope message"}`, async () => {
-    const project = await tempProject(`route-scope-${declared}`);
+for (const removed of [true, false]) for (const declared of [true, false]) {
+  test(`selective ${declared ? "declared" : "undeclared"} route removals=${removed} ${declared ? "reports anchors outside scope" : "has no extra scope message"}`, async () => {
+    const project = await tempProject(`route-scope-${declared}-${removed}`);
     await writeFile(
       join(project.dir, "board.kicad_pcb"),
-      '(kicad_pcb (net "D_P") (net "D_N") (net "GND"))',
+      `(kicad_pcb (net "D_P") (net "D_N") (net "GND") ${removed ? '(segment (start 0 0) (end 1 0) (width 0.2) (layer "F.Cu") (net "GND") (uuid "old-track")) (via (at 2 2) (size 0.6) (drill 0.3) (layers "F.Cu" "B.Cu") (net "GND") (uuid "old-via"))' : ""})`,
     );
     await writeFile(join(project.dir, "board.kicad_pro"), "{}");
     const base = mockServices([project]);
@@ -98,13 +98,13 @@ for (const declared of [true, false]) {
       await readFile(join(project.dir, run.artifacts.runDir, "result.json"), "utf8"),
     );
     expect(result.changedGeometry.every((s: any) => s.net > 0 && s.netName)).toBe(true);
-    if (declared) {
-      const changes = [{ net: "GND", traces: 0, vias: 3 }];
+    if (declared || removed) {
+      const changes = [{ net: "GND", traces: removed ? 1 : 0, vias: (declared ? 3 : 0)+(removed ? 1 : 0), added:{traces:0,vias:declared ? 3 : 0},removed:{traces:removed ? 1 : 0,vias:removed ? 1 : 0} }];
       expect(result.outsideScopeChanges).toEqual(changes);
       expect((response.json as any).run.result.outsideScopeChanges).toEqual(changes);
       expect((status.json as any).run.result.outsideScopeChanges).toEqual(changes);
-      expect(response.text).toContain("Also changed outside scope: GND (3 vias).");
-      expect(status.text).toContain("Also changed outside scope: GND (3 vias).");
+      expect(response.text).toContain(`Also changed outside scope: GND (added ${declared ? "3 vias" : "0 items"}; removed ${removed ? "1 trace, 1 via" : "0 items"}).`);
+      expect(status.text).toContain(`Also changed outside scope: GND (added ${declared ? "3 vias" : "0 items"}; removed ${removed ? "1 trace, 1 via" : "0 items"}).`);
     } else {
       expect(result.outsideScopeChanges).toBeUndefined();
       expect((status.json as any).run.result.outsideScopeChanges).toBeUndefined();

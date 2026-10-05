@@ -676,21 +676,31 @@ async function executeRoute(
     const outsideScopeChanges: NonNullable<RouteResult["outsideScopeChanges"]> = [];
     if (requestedNets.length) {
       const scope = new Set(requestedNets);
-      const counts = new Map<string, { net: string; traces: number; vias: number }>();
-      for (const shape of namedGeometry) {
-        if (!shape.netName || scope.has(shape.netName)) continue;
-        const row = counts.get(shape.netName) ?? { net: shape.netName, traces: 0, vias: 0 };
-        if (shape.kind === "via") row.vias++;
-        else row.traces++;
-        counts.set(shape.netName, row);
-      }
-      outsideScopeChanges.push(...[...counts.values()].sort((a, b) => a.net.localeCompare(b.net)));
+      const counts = new Map<string, { net: string; traces: number; vias: number; added:{traces:number;vias:number}; removed:{traces:number;vias:number} }>();
+      const count = (net: string, via: boolean, change: "added" | "removed") => {
+        if (!net || scope.has(net)) return;
+        const row = counts.get(net) ?? {net,traces:0,vias:0,added:{traces:0,vias:0},removed:{traces:0,vias:0}};
+        const key = via ? "vias" : "traces";
+        row[change][key]++;
+        row[key]++;
+        counts.set(net,row);
+      };
+      // Geometry includes newly created or claimed items; union with the saved-board delta,
+      // because a solver may omit new copper from its summary. Count each UUID once.
+      const additions = new Map(namedGeometry.map(shape => [shape.id,{net:shape.netName,via:shape.kind === "via"}]));
+      const startIds = new Set(startingCopper.copper.map(item => item.id));
+      const candidateIds = new Set(candidateBoard.copper.map(item => item.id));
+      for (const item of candidateBoard.copper) if (!startIds.has(item.id)) additions.set(item.id,{net:item.net,via:item.diameter !== undefined});
+      for (const item of additions.values()) count(item.net,item.via,"added");
+      for (const item of startingCopper.copper) if (!candidateIds.has(item.id)) count(item.net,item.diameter !== undefined,"removed");
+      outsideScopeChanges.push(...[...counts.values()].sort((a,b) => a.net.localeCompare(b.net)));
     }
     const selectedNets = requestedNets.length ? requestedNets : touchedNets;
     const measuredQuality = quality(candidateBoard, selectedNets, args.rules?.pairs, await referenceFacts(project.dir, rec.startingPcbRevision));
     if(summary.pairRouting)measuredQuality.pairRouting=summary.pairRouting;
     await writeJson(join(runDir, "quality.json"), measuredQuality);
     const fullResult: RouteResult = {
+      ...(summary.diagnostics ? { diagnostics: summary.diagnostics } : {}),
       quality: { text: qualityText(measuredQuality), detailPath: join(rec.artifacts.runDir, "quality.json") },
       runId: rec.id,
       router: rec.router as "fab_router" | "freerouting",
@@ -705,7 +715,7 @@ async function executeRoute(
       nextActions:
         resultState === "complete"
           ? []
-          : ["inspect route candidate", "inspect remaining connectivity"],
+          : summary.diagnostics ? ["try Freerouting for these nets", "check remaining native opens"] : ["inspect route candidate", "inspect remaining connectivity"],
       stats: {
         vias: summary.vias,
         segments: summary.tracks,
@@ -894,14 +904,11 @@ async function executeRoute(
   }
 }
 
-function outsideScopeText(changes: RouteResult["outsideScopeChanges"]): string {
+export function outsideScopeText(changes: RouteResult["outsideScopeChanges"]): string {
   if (!changes?.length) return "";
   const nets = changes.map(change => {
-    const counts = [
-      change.traces ? `${change.traces} trace${change.traces === 1 ? "" : "s"}` : "",
-      change.vias ? `${change.vias} via${change.vias === 1 ? "" : "s"}` : "",
-    ].filter(Boolean).join(", ");
-    return `${change.net} (${counts})`;
+    const describe = (counts: {traces:number;vias:number}) => [counts.traces ? `${counts.traces} trace${counts.traces === 1 ? "" : "s"}` : "",counts.vias ? `${counts.vias} via${counts.vias === 1 ? "" : "s"}` : ""].filter(Boolean).join(", ") || "0 items";
+    return `${change.net} (${change.added && change.removed ? `added ${describe(change.added)}; removed ${describe(change.removed)}` : describe(change)})`;
   });
   return `\nAlso changed outside scope: ${nets.join("; ")}.`;
 }
@@ -921,7 +928,7 @@ async function routeStatusOutput(
   };
   ctx.services.routeRuns.update(rec.id, run);
   return ok(
-    `Run ${rec.id} (${rec.router}): ${rec.state}; ${rec.progress.routed ?? "?"}/${rec.progress.total ?? "?"} routed; candidate ${rec.candidate.available ? "ready" : "unavailable"}; apply ${rec.application.state}.${rec.fallbackReason ? ` Fallback: ${rec.fallbackReason}.` : ""}${outsideScopeText(rec.result?.outsideScopeChanges)}${rec.result?.quality ? `\n${rec.result.quality.text}` : ""}`,
+    `Run ${rec.id} (${rec.router}): ${rec.state}; ${rec.progress.routed ?? "?"}/${rec.progress.total ?? "?"} routed; candidate ${rec.candidate.available ? "ready" : "unavailable"}; apply ${rec.application.state}.${rec.fallbackReason ? ` Fallback: ${rec.fallbackReason}.` : ""}${rec.result?.diagnostics ? `\n${rec.result.diagnostics.text}` : rec.error ? `\n${rec.error}` : ""}${outsideScopeText(rec.result?.outsideScopeChanges)}${rec.result?.quality ? `\n${rec.result.quality.text}` : ""}`,
     { run },
   );
 }

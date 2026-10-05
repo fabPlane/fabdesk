@@ -257,7 +257,21 @@ export const PairRouting = z.object({
 });
 export type PairRouting = z.infer<typeof PairRouting>;
 
+export const RoutingDiagnostics = z.object({
+  text: z.string(), passes: z.number(), stoppedBy: z.string(),
+  solverOpens: z.object({before:z.number(),after:z.number()}),
+  generated: z.object({tracks:z.number(),vias:z.number()}),
+  discarded: z.object({tracks:z.number(),vias:z.number()}),
+  remaining: z.object({nets:z.number(),opens:z.number(),detail:z.array(z.object({net:z.string(),incomplete:z.number()}))}),
+  leftoverEndpoints: z.array(z.object({net:z.string(),x:z.number(),y:z.number(),itemId:z.string()})),
+  leftoverEndpointTotal: z.number(), physicalBlockerEstablished:z.boolean(),
+  collisions:z.array(z.object({endpoint:z.object({uuid:z.string(),ref:z.string(),pin:z.string(),layer:z.string()}),blocker:z.object({uuid:z.string(),type:z.string(),net:z.string()}),requiredClearanceMm:z.number(),measuredClearanceMm:z.number(),test:z.string()})),
+  search:z.object({searches:z.number(),popsUsed:z.number(),popLimit:z.number(),maxPopsUsed:z.number(),maxSearchLimit:z.number(),stoppedBy:z.record(z.string(),z.number())}).optional(),
+});
+export type RoutingDiagnostics = z.infer<typeof RoutingDiagnostics>;
+
 export const FpPcbRouteSummary = z.object({
+  diagnostics: RoutingDiagnostics.optional(),
   pairRouting:PairRouting.optional(),
   tracks: z.number().default(0),
   /** Vias the router added. */
