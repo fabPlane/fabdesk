@@ -668,6 +668,24 @@ async function executeRoute(
     ].slice(0, 20);
     const candidateBoard = await readCopper(snapshotDir);
     const touchedNets = [...new Set([...endpoints.map(row => String(row["net"] ?? "")), ...candidateBoard.copper.filter(c => !startingCopper.copper.some(b => b.id === c.id)).map(c => c.net)])].filter(Boolean);
+    const copperById = new Map(candidateBoard.copper.map(item => [item.id, item]));
+    const namedGeometry = geometry.map(shape => ({
+      ...shape,
+      netName: copperById.get(shape.id)?.net ?? shape.netName ?? "",
+    }));
+    const outsideScopeChanges: NonNullable<RouteResult["outsideScopeChanges"]> = [];
+    if (requestedNets.length) {
+      const scope = new Set(requestedNets);
+      const counts = new Map<string, { net: string; traces: number; vias: number }>();
+      for (const shape of namedGeometry) {
+        if (!shape.netName || scope.has(shape.netName)) continue;
+        const row = counts.get(shape.netName) ?? { net: shape.netName, traces: 0, vias: 0 };
+        if (shape.kind === "via") row.vias++;
+        else row.traces++;
+        counts.set(shape.netName, row);
+      }
+      outsideScopeChanges.push(...[...counts.values()].sort((a, b) => a.net.localeCompare(b.net)));
+    }
     const selectedNets = requestedNets.length ? requestedNets : touchedNets;
     const measuredQuality = quality(candidateBoard, selectedNets, args.rules?.pairs, await referenceFacts(project.dir, rec.startingPcbRevision));
     if(summary.pairRouting)measuredQuality.pairRouting=summary.pairRouting;
@@ -682,7 +700,8 @@ async function executeRoute(
       state: resultState,
       remainingEndpoints: summary.unrouted,
       obstacles,
-      changedGeometry: geometry,
+      changedGeometry: namedGeometry,
+      ...(outsideScopeChanges.length ? { outsideScopeChanges } : {}),
       nextActions:
         resultState === "complete"
           ? []
@@ -875,6 +894,18 @@ async function executeRoute(
   }
 }
 
+function outsideScopeText(changes: RouteResult["outsideScopeChanges"]): string {
+  if (!changes?.length) return "";
+  const nets = changes.map(change => {
+    const counts = [
+      change.traces ? `${change.traces} trace${change.traces === 1 ? "" : "s"}` : "",
+      change.vias ? `${change.vias} via${change.vias === 1 ? "" : "s"}` : "",
+    ].filter(Boolean).join(", ");
+    return `${change.net} (${counts})`;
+  });
+  return `\nAlso changed outside scope: ${nets.join("; ")}.`;
+}
+
 /** The route_status response for one run; route_run returns the same thing for a run that finished inline. */
 async function routeStatusOutput(
   ctx: ToolContext,
@@ -890,7 +921,7 @@ async function routeStatusOutput(
   };
   ctx.services.routeRuns.update(rec.id, run);
   return ok(
-    `Run ${rec.id} (${rec.router}): ${rec.state}; ${rec.progress.routed ?? "?"}/${rec.progress.total ?? "?"} routed; candidate ${rec.candidate.available ? "ready" : "unavailable"}; apply ${rec.application.state}.${rec.fallbackReason ? ` Fallback: ${rec.fallbackReason}.` : ""}${rec.result?.quality ? `\n${rec.result.quality.text}` : ""}`,
+    `Run ${rec.id} (${rec.router}): ${rec.state}; ${rec.progress.routed ?? "?"}/${rec.progress.total ?? "?"} routed; candidate ${rec.candidate.available ? "ready" : "unavailable"}; apply ${rec.application.state}.${rec.fallbackReason ? ` Fallback: ${rec.fallbackReason}.` : ""}${outsideScopeText(rec.result?.outsideScopeChanges)}${rec.result?.quality ? `\n${rec.result.quality.text}` : ""}`,
     { run },
   );
 }

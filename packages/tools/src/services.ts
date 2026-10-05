@@ -130,6 +130,7 @@ export type RouteSummary = {
     id: string;
     layer: number;
     net: number;
+    netName?: string;
     points: number[];
     width?: number;
   }>;

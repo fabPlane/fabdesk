@@ -100,11 +100,18 @@ export const RouteResult = z.object({
         id: z.string(),
         layer: z.number(),
         net: z.number(),
+        netName: z.string().optional(),
         points: z.array(z.number()),
         width: z.number().optional(),
       }),
     )
     .optional(),
+  /** Changed copper on nets outside a selective request, grouped by actual net. */
+  outsideScopeChanges: z.array(z.object({
+    net: z.string(),
+    traces: z.number().int().nonnegative(),
+    vias: z.number().int().nonnegative(),
+  })).optional(),
   nextActions: z.array(z.string()).optional(),
   stats: z.object({
     vias: z.number().int(),

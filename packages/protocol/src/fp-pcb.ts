@@ -245,6 +245,7 @@ export const FpPcbRouteGeometry = z.object({
   /** KiCad BoardLayer enum; -1 for through vias. */
   layer: z.number().int(),
   net: z.number().int(),
+  netName: z.string().optional(),
   /** Nanometre trace centreline points, or via bounding box. */
   points: z.array(z.number()),
   width: z.number().optional(),

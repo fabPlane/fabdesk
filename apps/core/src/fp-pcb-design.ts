@@ -2202,6 +2202,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         id: shape.id,
         layer: shape.layer,
         net: shape.net,
+        ...(shape.netName !== undefined ? { netName: shape.netName } : {}),
         points: shape.points.map(mm),
         ...(shape.width !== undefined ? { width: mm(shape.width) } : {}),
       })),
