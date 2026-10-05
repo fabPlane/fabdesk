@@ -292,9 +292,21 @@ function forbiddenDiff(diff: Record<string, { changed: number }>, allowZones: bo
   ].filter((key) => (diff[key]?.changed ?? 0) > 0);
 }
 
+// Every progress producer shares this queue. Capture bytes at enqueue time, so a later
+// terminal/application record cannot be overwritten by a delayed earlier heartbeat.
+const progressQueues = new Map<string, Promise<void>>();
 async function persistProgress(ctx: ToolContext, rec: RouteRunRecord, runDir: string) {
   ctx.services.routeRuns.update(rec.id, rec);
-  await writeJson(join(runDir, "progress.json"), compactRecord(rec));
+  const path = join(runDir, "progress.json");
+  const data = JSON.stringify(compactRecord(rec), null, 2) + "\n";
+  const pending = (progressQueues.get(path) ?? Promise.resolve())
+    .then(() => writeAtomic(path, data))
+    .catch((error: unknown) => {
+      console.error(`route ${rec.id}: progress write failed: ${String(error)}`);
+    });
+  progressQueues.set(path, pending);
+  await pending;
+  if (progressQueues.get(path) === pending) progressQueues.delete(path);
 }
 
 async function applyCandidate(
@@ -427,7 +439,6 @@ async function executeRoute(
       (error: unknown) => (error instanceof Error ? error.message : String(error)),
     );
   const frames = new RouteProgressFrames(rec.id, started, sink);
-  let progressWrites = Promise.resolve();
   let cancelPromise: Promise<void> | null = null;
   signal.addEventListener(
     "abort",
@@ -591,10 +602,7 @@ async function executeRoute(
                 },
                 updatedAt: at,
               };
-              ctx.services.routeRuns.update(rec.id, rec);
-              progressWrites = progressWrites.then(() =>
-                writeJson(join(runDir, "progress.json"), compactRecord(rec)),
-              );
+              void persistProgress(ctx, rec, runDir);
             },
           },
         );
@@ -631,7 +639,7 @@ async function executeRoute(
         // Cancellation and a routing deadline are not solver failures. Preserve their outcome.
         if (signal.aborted || timedOut || rec.router !== "freerouting" || !args.fallbackOnFailure)
           throw error;
-        await progressWrites;
+        await progressQueues.get(join(runDir, "progress.json"));
         await ctx.services.design.release(snapshotDir);
         // A failed job may have changed its live board. Restore the exact original snapshot.
         await copyFile(
@@ -649,7 +657,7 @@ async function executeRoute(
       }
     };
     const summary = await attemptRoute();
-    await progressWrites;
+    await progressQueues.get(join(runDir, "progress.json"));
     const geometry = summary.geometry ?? [];
     const open = [...new Set(summary.unrouted.map((row) => row.net))];
     const resultState = summary.timedOut
@@ -757,7 +765,11 @@ async function executeRoute(
         ...(frameMetadataError ? { metadataError: frameMetadataError } : {}),
       },
     });
-    await writeAtomic(join(runDir, "router.log"), `${summary.log.join("\n")}\n`);
+    await writeAtomic(join(runDir, "router.log"), `${summary.log.join("\n")}\n`).catch(
+      (error: unknown) => {
+        console.error(`route ${rec.id}: router log write failed: ${String(error)}`);
+      },
+    );
     const candidatePath = join(runDir, "candidate.kicad_pcb");
     await ctx.services.design.release(snapshotDir).catch(() => undefined);
     await copyFile(join(snapshotDir, PROJECT_FILES.boardPcb), candidatePath);
@@ -1116,8 +1128,8 @@ export async function runRoute(args: RouteArgs, ctx: ToolContext): Promise<ToolO
     startingPcbRevision,
     ...record.request,
   });
-  await writeJson(join(runDir, "progress.json"), record);
   ctx.services.routeRuns.start(record);
+  await persistProgress(ctx, record, runDir);
   // Settles when the route worker (including auto apply) has finished, whichever way it ended.
   let markSettled!: () => void;
   const settled = new Promise<void>((resolve) => (markSettled = resolve));

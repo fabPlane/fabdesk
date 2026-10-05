@@ -1,3 +1,4 @@
+import { AGENT_OWNER_DIR, trackAgentProcess } from "./process-ownership";
 import type { Subprocess } from "bun";
 import { readJsonl, readTail } from "./jsonl";
 import type { AgentEvent, AgentRun } from "./types";
@@ -120,6 +121,15 @@ export function runAgentProcess(opts: AgentProcessOptions): AgentRun {
     spawnError = err instanceof Error ? err.message : String(err);
   }
 
+  let releaseOwnership = () => {};
+  if (proc && opts.env[AGENT_OWNER_DIR]) {
+    try {
+      releaseOwnership = trackAgentProcess(opts.env[AGENT_OWNER_DIR]!, proc.pid, descendantPids);
+    } catch (error) {
+      killTree(proc.pid, "SIGKILL");
+      throw error;
+    }
+  }
   let aborted = false;
   let exited = false;
   /**
@@ -233,6 +243,7 @@ export function runAgentProcess(opts: AgentProcessOptions): AgentRun {
         // Consumer stopped iterating early: tear the tree down without waiting for the grace periods.
         killTree(proc.pid, "SIGTERM");
       }
+      releaseOwnership();
       await opts.cleanup?.();
     }
   }
