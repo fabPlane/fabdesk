@@ -42,7 +42,7 @@ function summary(wallMs: number): RouteSummary {
 async function harness(name: string, delayMs = 120) {
   const project = await tempProject(name);
   const boardPath = join(project.dir, "board.kicad_pcb");
-  await writeFile(boardPath, "canonical-board-v1\n");
+  await writeFile(boardPath, '(kicad_pcb (net "GND"))\n');
   await writeFile(join(project.dir, "board.kicad_pro"), "{}\n");
   const base = mockServices([project]);
   const services = mockServices([project], {
@@ -64,7 +64,10 @@ async function harness(name: string, delayMs = 120) {
             message: `slow frame ${index}`,
           });
         }
-        await writeFile(join(dir, "board.kicad_pcb"), "candidate-board-v2\n");
+        await writeFile(
+          join(dir, "board.kicad_pcb"),
+          '(kicad_pcb (net "GND") (segment (start 0 0) (end 1 1) (width 0.2) (layer "F.Cu") (net "GND") (uuid "slow-track")))\n',
+        );
         return summary(delayMs);
       },
     },
@@ -96,7 +99,10 @@ h.services.design.route = async (dir, _opts, hooks) => {
   for (let i = 0; i < 64; i++) hooks.onProgress?.({ state: "routing", routed: i, total: 64 });
   await Bun.sleep(250); // Rejection happens while the bridge is still routing.
   await rm(path, { recursive: true });
-  await writeFile(join(dir, "board.kicad_pcb"), "candidate-board-v2\n");
+  await writeFile(
+    join(dir, "board.kicad_pcb"),
+    '(kicad_pcb (net "GND") (segment (start 0 0) (end 1 1) (width 0.2) (layer "F.Cu") (net "GND") (uuid "slow-track")))\n',
+  );
   return summary(250);
 };
 const response = await h.call("route_run", {
