@@ -119,8 +119,13 @@ function withNativeProfile(url: string): string {
 /**
  * Child-only config home: Codex exec can persist project trust even with -c overrides.
  * Never let that touch the user's config. Persist the overlay for follow-up thread IDs.
+ * Exception: Windows EPERM uses the live home with a run warning, retaining credentials
+ * safely while giving up per-project config isolation.
  */
-export function codexEnv(session: AgentSession): Record<string, string> {
+export function codexEnv(
+  session: AgentSession,
+  onWarning?: (message: string) => void,
+): Record<string, string> {
   const env = agentEnv(session);
   const source = resolve(
     session.cwd,
@@ -141,21 +146,34 @@ export function codexEnv(session: AgentSession): Record<string, string> {
   // Bun 1.4 runtime API, not yet declared by the pinned @types/bun 1.2.
   const toml = Bun.TOML as typeof Bun.TOML & { stringify(value: Record<string, unknown>): string };
   writeFileEnsuringDir(join(isolated, "config.toml"), toml.stringify(config), 0o600);
-  linkSharedAuth(join(isolated, "auth.json"), join(source, "auth.json"));
-  // Preserve ordinary user skills/instructions and existing conversation paths. Plugin
-  // skills stay excluded. New state databases and trust writes stay inside the overlay.
-  for (const name of ["sessions", "archived_sessions", "skills", "rules", "AGENTS.md"]) {
-    const original = join(source, name);
-    if (existsSync(original) && !existsSync(join(isolated, name)))
-      symlinkSync(
-        original,
-        join(isolated, name),
-        statSync(original).isDirectory()
-          ? process.platform === "win32"
-            ? "junction"
-            : "dir"
-          : "file",
-      );
+  try {
+    linkSharedAuth(join(isolated, "auth.json"), join(source, "auth.json"));
+    // Preserve ordinary user skills/instructions and existing conversation paths. Plugin
+    // skills stay excluded. New state databases and trust writes stay inside the overlay.
+    for (const name of ["sessions", "archived_sessions", "skills", "rules", "AGENTS.md"]) {
+      const original = join(source, name);
+      if (existsSync(original) && !existsSync(join(isolated, name)))
+        symlinkSync(
+          original,
+          join(isolated, name),
+          statSync(original).isDirectory()
+            ? process.platform === "win32"
+              ? "junction"
+              : "dir"
+            : "file",
+        );
+    }
+  } catch (error) {
+    // Windows file symlinks require a privilege ordinary accounts may not have.
+    // Never substitute a credential copy or hard link: either can strand refreshes.
+    // Snapshot/store validation errors still block launch on every platform.
+    if (process.platform !== "win32" || (error as NodeJS.ErrnoException).code !== "EPERM")
+      throw error;
+    env["CODEX_HOME"] = source;
+    onWarning?.(
+      "Windows denied a Codex overlay symlink (EPERM). Using the original CODEX_HOME and live credential store; per-project config isolation is unavailable. Apps and plugins remain disabled and discovered foreign MCP servers are disabled, but full MCP isolation is not qualified. Codex may save config and state in the original home.",
+    );
+    return env;
   }
   env["CODEX_HOME"] = isolated;
   return env;
@@ -187,7 +205,10 @@ export const codexAdapter: AgentAdapter = {
   run(session: AgentSession): AgentRun {
     const parser = new CodexStreamParser();
     const bin = session.binaryPath ?? resolveFirst(CANDIDATES) ?? "codex";
-    const env = codexEnv(session);
+    let isolationWarning: string | undefined;
+    const env = codexEnv(session, (warning) => {
+      isolationWarning = warning;
+    });
     const inventory = Bun.spawnSync([bin, "mcp", "list", "--json", ...ISOLATION_CONFIG], {
       cwd: session.cwd,
       env,
@@ -198,12 +219,23 @@ export const codexAdapter: AgentAdapter = {
     // Never fall back to an unisolated launch when the CLI cannot enumerate its config.
     if (inventory.exitCode !== 0) throw new Error("Codex MCP isolation: inventory command failed");
     const foreignServers = codexForeignServers(inventory.stdout.toString());
-    return runAgentProcess({
+    const run = runAgentProcess({
       cmd: codexArgs(session, bin, foreignServers),
       cwd: session.cwd,
       env,
       parse: (line) => parser.feed(line),
       sessionId: () => parser.sessionId,
     });
+    if (!isolationWarning) return run;
+    const warning = isolationWarning;
+    return {
+      ...run,
+      events: (async function* () {
+        // A nonfatal warning belongs in the persisted run reply, not an error event
+        // (the core treats an error event as a failed run even if the CLI succeeds).
+        yield { type: "text" as const, delta: `⚠ ${warning}\n\n` };
+        yield* run.events;
+      })(),
+    };
   },
 };
