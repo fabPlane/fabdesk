@@ -4,12 +4,36 @@ import { join } from "node:path";
 import { createRegistry } from "../src";
 import { contextFactory, mockServices, tempProject } from "./mock-services";
 
+// Minimal two-layer KiCad 10 board, generated here as native S-expression text.
+// The candidate changes only generator metadata so the mock can identify its query rows.
+// Net membership variations remain controlled bridge responses, as in the original tests.
+const startingBoard = `(kicad_pcb
+  (version 20260831)
+  (generator "route-membership-before")
+  (generator_version "10.0")
+  (general (thickness 1.6))
+  (paper "A4")
+  (layers
+    (0 "F.Cu" signal)
+    (2 "B.Cu" signal)
+    (5 "F.SilkS" user "F.Silkscreen")
+    (7 "B.SilkS" user "B.Silkscreen")
+    (25 "Edge.Cuts" user)
+  )
+  (setup (pad_to_mask_clearance 0))
+  (gr_rect (start 0 0) (end 10 10)
+    (stroke (width 0.05) (type default)) (fill no) (layer "Edge.Cuts")
+    (uuid "11111111-1111-4111-8111-111111111111"))
+)
+`;
+const candidateBoard = startingBoard.replace("route-membership-before", "route-membership-after");
+
 // Exercise the route worker's inventory guard and automatic application, rather than a copy
 // of its comparator. The bridge rows deliberately vary net codes/declarations independently.
 async function routeWithRows(after: Record<string, Array<Record<string, unknown>>>) {
   const project = await tempProject("route-net-membership");
   const boardPath = join(project.dir, "board.kicad_pcb");
-  await writeFile(boardPath, "legacy-net-table");
+  await writeFile(boardPath, startingBoard);
   await writeFile(join(project.dir, "board.kicad_pro"), "{}");
   const before = {
     nets: [
@@ -29,8 +53,7 @@ async function routeWithRows(after: Record<string, Array<Record<string, unknown>
     design: {
       ...base.design,
       query: async (dir, select) => {
-        const candidate =
-          (await readFile(join(dir, "board.kicad_pcb"), "utf8")) === "inline-net-names";
+        const candidate = (await readFile(join(dir, "board.kicad_pcb"), "utf8")) === candidateBoard;
         const rows: Record<string, Array<Record<string, unknown>>> = candidate
           ? { ...before, ...after }
           : before;
@@ -38,7 +61,7 @@ async function routeWithRows(after: Record<string, Array<Record<string, unknown>
       },
       route: async (dir, opts, hooks) => {
         const result = await base.design.route(dir, opts, hooks);
-        await writeFile(join(dir, "board.kicad_pcb"), "inline-net-names");
+        await writeFile(join(dir, "board.kicad_pcb"), candidateBoard);
         return result;
       },
     },
@@ -68,7 +91,7 @@ test("legacy declarations removed and codes renumbered with identical assignment
   const { run, bytes } = await routeWithRows({ nets: [] });
   expect(run.state).toBe("completed");
   expect(run.application.state).toBe("applied");
-  expect(bytes).toBe("inline-net-names");
+  expect(bytes).toBe(candidateBoard);
   expect((await routeWithRows({ nets: [{ name: "GND", code: 99, pads: 1 }] })).run.state).toBe(
     "completed",
   );
@@ -83,7 +106,7 @@ test("pad reassignment is rejected even when the assigned name set is unchanged"
   });
   expect(run.error).toContain("nets");
   expect(run.application.state).toBe("rejected");
-  expect(bytes).toBe("legacy-net-table");
+  expect(bytes).toBe(startingBoard);
 });
 
 for (const select of ["tracks", "vias"] as const) {
