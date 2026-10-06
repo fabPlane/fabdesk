@@ -238,7 +238,7 @@ async function boardInventory(ctx: ToolContext, dir: string) {
     "components",
     "footprint_geometry",
     "board_geometry",
-    "nets",
+    "pads",
     "tracks",
     "vias",
     "zones",
@@ -247,9 +247,31 @@ async function boardInventory(ctx: ToolContext, dir: string) {
     "unrouted",
   ] as const;
   const values = await Promise.all(selects.map((select) => ctx.services.design.query(dir, select)));
-  return Object.fromEntries(
-    selects.map((select, index) => [select, stableRows(values[index]!)]),
-  ) as Record<(typeof selects)[number], string[]>;
+  const rows = Object.fromEntries(
+    selects.map((select, index) => [select, values[index]!]),
+  ) as Record<(typeof selects)[number], Array<Record<string, unknown>>>;
+  // Net codes and unused declarations are serialization details. Routing may replace copper,
+  // but must preserve assigned net names and every physical pad's net assignment.
+  const assignedNames = new Set(
+    [...rows.pads, ...rows.tracks, ...rows.vias, ...rows.zones]
+      .map((row) => String(row["net"] ?? ""))
+      .filter(Boolean),
+  );
+  const nets = stableRows([
+    ...[...assignedNames].map((name) => ({ name })),
+    ...rows.pads.map((pad) => ({
+      x: pad["x"],
+      y: pad["y"],
+      layer: pad["layer"],
+      component: pad["component"],
+      number: pad["number"],
+      net: pad["net"] ?? "",
+    })),
+  ]);
+  return {
+    ...Object.fromEntries(selects.map((select) => [select, stableRows(rows[select])])),
+    nets,
+  } as Record<(typeof selects)[number] | "nets", string[]>;
 }
 
 function inventoryDiff(
