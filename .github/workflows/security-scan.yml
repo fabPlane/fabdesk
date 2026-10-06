@@ -62,6 +62,20 @@ jobs:
           bun-version: 1.4.0
           no-cache: ${{ startsWith(runner.name, 'tf-nas-') }}
 
+      - name: Set up GitHub CLI for Linux
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ARCH" = X64
+          version=2.102.0
+          install_dir=$(mktemp -d "$RUNNER_TEMP/gh-cli.XXXXXX")
+          archive="$install_dir/gh.tar.gz"
+          curl -fsSL --retry 3 --max-time 120 \
+            "https://github.com/cli/cli/releases/download/v${version}/gh_${version}_linux_amd64.tar.gz" -o "$archive"
+          echo "bb766f710eef8ede859c18578c72c327597cd4c8a85b06001b1f3843c6019386  $archive" | sha256sum -c -
+          tar -xzf "$archive" --strip-components=2 -C "$install_dir" "gh_${version}_linux_amd64/bin/gh"
+          echo "$install_dir" >> "$GITHUB_PATH"
+
       - run: bun install --frozen-lockfile
 
       - name: Scan

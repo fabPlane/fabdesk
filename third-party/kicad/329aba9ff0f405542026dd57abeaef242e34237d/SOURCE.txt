@@ -1,0 +1,3 @@
+KiCad source and notices: https://github.com/fabPlane/kicad/tree/329aba9ff0f405542026dd57abeaef242e34237d
+Source commit: 329aba9ff0f405542026dd57abeaef242e34237d
+These notices supplement legacy nightly archives that omit their own notices.

@@ -68,12 +68,31 @@ jobs:
           bun-version: 1.4.0
           no-cache: ${{ startsWith(runner.name, 'tf-nas-') }}
 
+      # NAS containers do not include gh. Keep the verified binary in job temp
+      # and reuse this step in each Linux job that calls it, including website
+      # (which deliberately has no repository checkout or token permissions).
+      - &setup-linux-gh
+        name: Set up GitHub CLI for Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ARCH" = X64
+          version=2.102.0
+          install_dir=$(mktemp -d "$RUNNER_TEMP/gh-cli.XXXXXX")
+          archive="$install_dir/gh.tar.gz"
+          curl -fsSL --retry 3 --max-time 120 \
+            "https://github.com/cli/cli/releases/download/v${version}/gh_${version}_linux_amd64.tar.gz" -o "$archive"
+          echo "bb766f710eef8ede859c18578c72c327597cd4c8a85b06001b1f3843c6019386  $archive" | sha256sum -c -
+          tar -xzf "$archive" --strip-components=2 -C "$install_dir" "gh_${version}_linux_amd64/bin/gh"
+          echo "$install_dir" >> "$GITHUB_PATH"
+
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
 
       - id: v
         run: |
-          base=$(node -p "require('./package.json').version.split('.').slice(0,2).join('.')")
+          base=$(bun -p "require('./package.json').version.split('.').slice(0,2).join('.')")
           version="${base}.${{ github.run_number }}"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
@@ -154,6 +173,8 @@ jobs:
         with:
           package-manager-cache: false
           node-version: 22
+
+      - *setup-linux-gh
 
       - run: bun install --frozen-lockfile
       - name: Stamp version ${{ needs.version.outputs.version }}
@@ -330,6 +351,7 @@ jobs:
         with:
           bun-version: 1.4.0
           no-cache: ${{ startsWith(runner.name, 'tf-nas-') }}
+      - *setup-linux-gh
       - name: Download staged installers
         env:
           GH_TOKEN: ${{ github.token }}
@@ -384,6 +406,7 @@ jobs:
     runs-on: ${{ fromJSON(needs.select-website-runner.outputs.runner) }}
     permissions: {}
     steps:
+      - *setup-linux-gh
       - name: Trigger website installer and feed publishing
         env:
           GH_TOKEN: ${{ secrets.FABPLANE_RELEASE_DISPATCH_TOKEN }}

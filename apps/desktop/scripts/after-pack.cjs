@@ -2,13 +2,22 @@
  * electron-builder afterPack hook.
  * 1. Copy a staged FabPlane KiCad tree into Resources/kicad when present
  *    (`apps/desktop/kicad-bundle/<platform>-<arch>/`, produced by `scripts/stage-kicad-bundle.ts`).
+ *    Refresh the Mac PCB backend's KiCad copy too, after checking its exact API source pin.
  * 2. When no signing identity is configured (public CI without certificates), macOS builds keep the
  *    Electron template's signature, which no longer matches the bundle and is refused on Apple Silicon.
  *    Re-sign ad hoc (identity "-") with our bundle id so the app launches; Gatekeeper still warns because
  *    it is not notarized, and real signing takes over automatically once CSC_LINK is provided.
  */
 const { execFileSync } = require("node:child_process");
-const { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } = require("node:fs");
+const {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+} = require("node:fs");
 const { join } = require("node:path");
 const { Arch } = require("builder-util");
 
@@ -34,8 +43,32 @@ function stageRoot(context) {
   return join(__dirname, "..", "kicad-bundle", platformArch(context).dir);
 }
 
-function copyBundledKicad(context) {
-  const src = stageRoot(context);
+function refreshMacPcbKicad(context, src, resources) {
+  if (context.electronPlatformName !== "darwin") return;
+  const manifestPath = join(resources, "pcb", "bundle.json");
+  if (!existsSync(manifestPath)) return;
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  if (
+    manifest.format !== 1 ||
+    manifest.target !== platformArch(context).dir ||
+    manifest.kicadCli !== "kicad/kicad-cli" ||
+    manifest.stockData !== "kicad/KiCad.app/Contents/SharedSupport"
+  )
+    throw new Error("after-pack: unsupported Mac PCB KiCad layout or target");
+  const backend = join(resources, "pcb", "kicad");
+  const sourceCommit = readFileSync(join(src, "KICAD_COMMIT"), "utf8").trim();
+  const apiCommit = readFileSync(join(backend, "KICAD_COMMIT"), "utf8").trim();
+  if (!/^[a-f0-9]{40}$/.test(sourceCommit) || sourceCommit !== apiCommit)
+    throw new Error(`after-pack: KiCad source ${sourceCommit} does not match PCB API ${apiCommit}`);
+  for (const loader of ["oce", "vrml", "idf"])
+    if (!existsSync(join(src, "KiCad.app/Contents/PlugIns/3d", `libs3d_plugin_${loader}.so`)))
+      throw new Error(`after-pack: staged KiCad is missing the ${loader} model loader`);
+  rmSync(backend, { recursive: true, force: true });
+  cpSync(src, backend, { recursive: true, verbatimSymlinks: true });
+  console.log(`after-pack: refreshed PCB KiCad at API source ${sourceCommit} → ${backend}`);
+}
+
+function copyBundledKicad(context, src = stageRoot(context)) {
   if (!existsSync(src) || !statSync(src).isDirectory()) {
     const message = `after-pack: no staged KiCad at ${src} (run scripts/stage-kicad-bundle.ts before packaging)`;
     if (process.env.FABDESK_REQUIRE_KICAD_BUNDLE === "true") throw new Error(message);
@@ -54,6 +87,7 @@ function copyBundledKicad(context) {
   mkdirSync(resources, { recursive: true });
   rmSync(dest, { recursive: true, force: true });
   cpSync(src, dest, { recursive: true, verbatimSymlinks: true });
+  refreshMacPcbKicad(context, src, resources);
   console.log(`after-pack: bundled KiCad → ${dest}`);
   return dest;
 }
@@ -93,3 +127,4 @@ module.exports = async function afterPack(context) {
 };
 
 module.exports.platformArch = platformArch;
+module.exports.copyBundledKicad = copyBundledKicad;

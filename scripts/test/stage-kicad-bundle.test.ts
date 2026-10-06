@@ -1,15 +1,89 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   NIGHTLY_PLATFORM_BY_TARGET,
+  deduplicateMacKicadLibraries,
   flattenIfNeeded,
   nightlyAssetName,
   nonEmptySetting,
   pickKicadReleaseAsset,
+  supplementKicadNotices,
   type Target,
 } from "../stage-kicad-bundle";
+
+describe.skipIf(process.platform === "win32")("deduplicateMacKicadLibraries", () => {
+  test("aliases one compiled image while preserving different UUIDs, CPUs, and library families", async () => {
+    const root = mkdtempSync(join(tmpdir(), "fabdesk-kicad-dylibs-"));
+    const frameworks = join(root, "KiCad.app/Contents/Frameworks");
+    mkdirSync(frameworks, { recursive: true });
+    const dylib = (name: string, uuid: number, cpu = 0x100000c) => {
+      const data = Buffer.alloc(56);
+      for (const [offset, value] of [
+        [0, 0xfeedfacf],
+        [4, cpu],
+        [12, 6],
+        [16, 1],
+        [20, 24],
+        [32, 0x1b],
+        [36, 24],
+      ] as const)
+        data.writeUInt32LE(value, offset);
+      data.fill(uuid, 40, 56);
+      writeFileSync(join(frameworks, name), data);
+    };
+    try {
+      dylib("libwx_core-3.2.0.4.3.dylib", 1);
+      dylib("libwx_core-3.2.dylib", 1);
+      dylib("libwx_core-3.3.dylib", 2);
+      dylib("libwx_core-3.4.dylib", 1, 0x1000007);
+      dylib("libwx_other-3.2.dylib", 1);
+      await deduplicateMacKicadLibraries(root);
+      expect(lstatSync(join(frameworks, "libwx_core-3.2.dylib")).isSymbolicLink()).toBe(true);
+      for (const name of ["libwx_core-3.3.dylib", "libwx_core-3.4.dylib", "libwx_other-3.2.dylib"])
+        expect(lstatSync(join(frameworks, name)).isSymbolicLink()).toBe(false);
+      await deduplicateMacKicadLibraries(root);
+      expect(readFileSync(join(frameworks, "libwx_core-3.2.dylib"))).toEqual(
+        readFileSync(join(frameworks, "libwx_core-3.2.0.4.3.dylib")),
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("supplementKicadNotices", () => {
+  test("adds exact-revision notices without replacing notices supplied by the archive", async () => {
+    const root = mkdtempSync(join(tmpdir(), "fabdesk-kicad-notices-"));
+    const commit = "329aba9ff0f405542026dd57abeaef242e34237d";
+    try {
+      await supplementKicadNotices(root, "0000000000000000000000000000000000000000");
+      expect(() => statSync(join(root, "licenses"))).toThrow();
+      await supplementKicadNotices(root, commit);
+      expect(readFileSync(join(root, "licenses", "LICENSE"), "utf8")).toContain(
+        "GNU GENERAL PUBLIC LICENSE",
+      );
+      expect(readFileSync(join(root, "licenses", "SOURCE.txt"), "utf8")).toContain(commit);
+      writeFileSync(join(root, "licenses", "LICENSE"), "archive-supplied notices");
+      await supplementKicadNotices(root, commit);
+      expect(readFileSync(join(root, "licenses", "LICENSE"), "utf8")).toBe(
+        "archive-supplied notices",
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("nonEmptySetting", () => {
   test("uses the fallback for unset, empty, and whitespace-only Actions variables", () => {
@@ -138,27 +212,33 @@ describe("stage-kicad-bundle --from", () => {
     rmSync(src, { recursive: true, force: true });
   });
 
-  test.skipIf(process.platform === "win32")("flattens nested kicad-cli/ when staging --from", async () => {
-    const src = mkdtempSync(join(tmpdir(), "fabdesk-kicad-nested-"));
-    mkdirSync(join(src, "kicad-cli"), { recursive: true });
-    writeFileSync(join(src, "kicad-cli", "kicad-cli"), "#!/bin/sh\necho nested\n");
-    chmodSync(join(src, "kicad-cli", "kicad-cli"), 0o755);
+  test.skipIf(process.platform === "win32")(
+    "flattens nested kicad-cli/ when staging --from",
+    async () => {
+      const src = mkdtempSync(join(tmpdir(), "fabdesk-kicad-nested-"));
+      mkdirSync(join(src, "kicad-cli"), { recursive: true });
+      writeFileSync(join(src, "kicad-cli", "kicad-cli"), "#!/bin/sh\necho nested\n");
+      chmodSync(join(src, "kicad-cli", "kicad-cli"), 0o755);
 
-    const os = process.platform === "darwin" ? "darwin" : "linux";
-    const arch = process.arch === "arm64" ? "arm64" : "x64";
-    const target = `bun-${os}-${arch}`;
-    const proc = Bun.spawn(["bun", "run", "scripts/stage-kicad-bundle.ts", "--from", src, "--target", target], {
-      cwd: join(import.meta.dir, "../.."),
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [stderr, code] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
-    expect(code).toBe(0);
-    expect(stderr).toContain("staged");
+      const os = process.platform === "darwin" ? "darwin" : "linux";
+      const arch = process.arch === "arm64" ? "arm64" : "x64";
+      const target = `bun-${os}-${arch}`;
+      const proc = Bun.spawn(
+        ["bun", "run", "scripts/stage-kicad-bundle.ts", "--from", src, "--target", target],
+        {
+          cwd: join(import.meta.dir, "../.."),
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      );
+      const [stderr, code] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
+      expect(code).toBe(0);
+      expect(stderr).toContain("staged");
 
-    const stagedRoot = join(import.meta.dir, "../../apps/desktop/kicad-bundle", `${os}-${arch}`);
-    expect(statSync(join(stagedRoot, "kicad-cli")).isFile()).toBe(true);
-    rmSync(stagedRoot, { recursive: true, force: true });
-    rmSync(src, { recursive: true, force: true });
-  });
+      const stagedRoot = join(import.meta.dir, "../../apps/desktop/kicad-bundle", `${os}-${arch}`);
+      expect(statSync(join(stagedRoot, "kicad-cli")).isFile()).toBe(true);
+      rmSync(stagedRoot, { recursive: true, force: true });
+      rmSync(src, { recursive: true, force: true });
+    },
+  );
 });

@@ -49,6 +49,9 @@ jobs:
           bun-version: 1.4.0
           no-cache: ${{ startsWith(runner.name, 'tf-nas-') }}
 
+      - name: Validate workflow tool setup without preinstalled Node or gh
+        run: bun run scripts/test-ci-tools.ts
+
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
       - run: bun run test
