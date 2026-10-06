@@ -232,3 +232,54 @@ test("insufficient disk space prevents downloading and leaves PCB usable", async
   expect((await f.manager.download()).message).toContain("free space");
   expect(f.counts().engineRequests).toBe(0);
 });
+
+test("installed runtime failure stays an error; retry activates without offering a download", async () => {
+  let fail = true;
+  const f = await fixture({
+    verify: async () => {
+      if (fail) throw new Error("bridge stopped");
+      return "verified";
+    },
+  });
+  await mkdir(join(f.deps.cache, CAD_RELEASE, "CADRuntime.app"), { recursive: true });
+  expect((await f.manager.prepare()).status).toBe("error");
+  expect(f.manager.state().offer).toBeUndefined();
+  expect(f.counts().metadataRequests).toBe(0);
+  fail = false;
+  expect((await f.manager.prepare()).status).toBe("ready");
+  expect(f.counts().engineRequests).toBe(0);
+});
+
+test("cancel during native consent prevents a late approval from downloading", async () => {
+  const f = await fixture();
+  await f.manager.prepare();
+  let approve!: (allowed: boolean) => void;
+  const consent = new CadRuntimeConsent(f.manager, () => new Promise((r) => (approve = r)));
+  const request = consent.request();
+  consent.cancel();
+  await f.manager.defer();
+  approve(true);
+  expect((await request).status).toBe("deferred");
+  expect(f.counts().engineRequests).toBe(0);
+});
+
+test("a missing executable in an installed runtime is an error, not a new install offer", async () => {
+  const f = await fixture({
+    verify: async () => {
+      throw Object.assign(new Error("missing executable"), { code: "ENOENT" });
+    },
+  });
+  await mkdir(join(f.deps.cache, CAD_RELEASE, "CADRuntime.app"), { recursive: true });
+  expect((await f.manager.prepare()).status).toBe("error");
+  expect(f.counts().metadataRequests).toBe(0);
+});
+
+test("explicit reconnect re-verifies and reactivates installed runtime without a download", async () => {
+  const f = await fixture();
+  await f.manager.prepare();
+  await f.manager.download();
+  const count = f.counts();
+  expect((await f.manager.reconnect()).status).toBe("ready");
+  expect(f.counts().activations).toBe(count.activations + 1);
+  expect(f.counts().engineRequests).toBe(count.engineRequests);
+});

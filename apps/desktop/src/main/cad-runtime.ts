@@ -76,6 +76,7 @@ export class CadRuntimeManager {
   private abort: AbortController | null = null;
   private initialized = false;
   private deferred = false;
+  private installedFailure = false;
   constructor(private readonly deps: Dependencies) {}
   state(): CadRuntimeState {
     return this.current;
@@ -127,11 +128,19 @@ export class CadRuntimeManager {
       await this.deps.activate(await this.deps.verify(this.installed));
       return this.set({ status: "ready" });
     } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== "ENOENT")
+      if (
+        (e as NodeJS.ErrnoException).code !== "ENOENT" ||
+        (await stat(this.installed).then(
+          () => true,
+          () => false,
+        ))
+      ) {
+        this.installedFailure = true;
         return this.set({
           status: "error",
           message: `Installed CAD engine is incompatible or could not start: ${String(e)}`,
         });
+      }
     }
     for (const candidate of this.deps.installedApps ?? []) {
       try {
@@ -139,14 +148,28 @@ export class CadRuntimeManager {
         await this.deps.activate(await this.deps.verify(candidate));
         return this.set({ status: "ready" });
       } catch (e) {
-        if ((e as NodeJS.ErrnoException).code !== "ENOENT")
+        if (
+          (e as NodeJS.ErrnoException).code !== "ENOENT" ||
+          (await stat(candidate).then(
+            () => true,
+            () => false,
+          ))
+        ) {
+          this.installedFailure = true;
           return this.set({
             status: "error",
             message: `Installed CAD engine is incompatible: ${String(e)}`,
           });
+        }
       }
     }
     return this.set({ status: this.deferred ? "deferred" : "missing" });
+  }
+  /** Explicit connection recovery re-verifies the installed runtime before restarting it. */
+  reconnect(): Promise<CadRuntimeState> {
+    if (this.operation) return this.operation;
+    this.initialized = false;
+    return this.prepare();
   }
   /** Metadata only, on explicit CAD use. Never fetch an engine here. */
   prepare(): Promise<CadRuntimeState> {
@@ -161,7 +184,13 @@ export class CadRuntimeManager {
     return task;
   }
   private async prepareInner(): Promise<CadRuntimeState> {
+    if (this.installedFailure) {
+      this.initialized = false;
+      this.installedFailure = false;
+    }
     await this.initialize();
+    // Never turn an installed-but-failed runtime into an offer for another download.
+    if (this.installedFailure) return this.current;
     if (this.offer || ["ready", "unsupported"].includes(this.current.status)) return this.current;
     try {
       const response = await (this.deps.fetch ?? fetch)(BASE + "manifest-darwin-arm64.json", {
@@ -307,6 +336,11 @@ export class CadRuntimeManager {
 /** One native consent dialog across concurrent renderer requests; decline persists. */
 export class CadRuntimeConsent {
   private pending: Promise<CadRuntimeState> | null = null;
+  private generation = 0;
+  cancel(): void {
+    this.generation++;
+    this.manager.cancel();
+  }
   constructor(
     private readonly manager: CadRuntimeManager,
     private readonly confirm: (offer: CadRuntimeOffer) => Promise<boolean>,
@@ -316,8 +350,9 @@ export class CadRuntimeConsent {
     const state = this.manager.state();
     if (!state.offer || ["ready", "unsupported", "downloading", "verifying"].includes(state.status))
       return Promise.resolve(state);
+    const generation = this.generation;
     const task = this.confirm(state.offer).then((allowed) =>
-      allowed ? this.manager.download() : this.manager.defer(),
+      allowed && generation === this.generation ? this.manager.download() : this.manager.defer(),
     );
     this.pending = task;
     void task

@@ -10,6 +10,7 @@ export interface PickFileOptions {
 const api = {
   platform: process.platform,
   cadRuntimeState: () => ipcRenderer.invoke("fabdesk:cad-runtime-state"),
+  reconnectCadRuntime: () => ipcRenderer.invoke("fabdesk:reconnect-cad-runtime"),
   prepareCadRuntime: () => ipcRenderer.invoke("fabdesk:prepare-cad-runtime"),
   downloadCadRuntime: () => ipcRenderer.invoke("fabdesk:download-cad-runtime"),
   deferCadRuntime: () => ipcRenderer.invoke("fabdesk:defer-cad-runtime"),

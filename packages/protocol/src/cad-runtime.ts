@@ -23,6 +23,7 @@ export interface CadRuntimeState {
 }
 export interface CadRuntimeBridge {
   cadRuntimeState(): Promise<CadRuntimeState>;
+  reconnectCadRuntime?(): Promise<CadRuntimeState>;
   prepareCadRuntime(): Promise<CadRuntimeState>;
   downloadCadRuntime(): Promise<CadRuntimeState>;
   deferCadRuntime(): Promise<CadRuntimeState>;

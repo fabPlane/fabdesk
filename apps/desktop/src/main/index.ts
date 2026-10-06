@@ -232,6 +232,9 @@ if (!app.requestSingleInstanceLock()) {
     ipcMain.handle("fabdesk:prepare-cad-runtime", () =>
       developmentCadReady ? { status: "ready" } : cadRuntime.prepare(),
     );
+    ipcMain.handle("fabdesk:reconnect-cad-runtime", () =>
+      developmentCadReady ? { status: "ready" } : cadRuntime.reconnect(),
+    );
     const cadConsent = new CadRuntimeConsent(cadRuntime, async (offer) => {
       const result = await dialog.showMessageBox({
         type: "question",
@@ -247,7 +250,10 @@ if (!app.requestSingleInstanceLock()) {
     });
     ipcMain.handle("fabdesk:download-cad-runtime", () => cadConsent.request());
     ipcMain.handle("fabdesk:defer-cad-runtime", () => cadRuntime.defer());
-    ipcMain.handle("fabdesk:cancel-cad-runtime", () => cadRuntime.defer());
+    ipcMain.handle("fabdesk:cancel-cad-runtime", () => {
+      cadConsent.cancel();
+      return cadRuntime.defer();
+    });
     // Dev / FABDESK_AUTOMATION=1: loopback bridge for the core's `app` MCP toolset (docs/app-automation.md).
     const sup = supervisor;
     automation = await startAppAutomation({

@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
-import { FabCadView, type CadRuntimeBridge, type CadRuntimeState } from "@fabdesk/protocol";
-import { useCoreClient } from "@fabdesk/client-core";
+import { useEffect, useMemo, useState } from "react";
+import { type CadRuntimeBridge } from "@fabdesk/protocol";
+import { CadSession, type CadSessionState, useCoreClient } from "@fabdesk/client-core";
 import { Button, EmptyState, Spinner } from "../components/ui";
 import { useUiStore } from "../stores/ui";
 
@@ -13,123 +13,149 @@ import { useUiStore } from "../stores/ui";
 export const CAD_FRAME_SANDBOX =
   "allow-scripts allow-same-origin allow-forms allow-downloads allow-modals";
 
-type ViewState =
-  | { status: "loading" }
-  | { status: "ready"; view: FabCadView }
-  | { status: "failed"; error: string };
-
-/** The fab_cad web UI on the project's live FreeCAD session: edits by the agent show up here as they happen. */
+/** The CAD runtime is optional and installed only after native download consent. */
 export function CadTab() {
   const client = useCoreClient();
   const projectId = useUiStore((s) => s.activeProjectId);
   const runtimeBridge = (window as unknown as { fabdesk?: CadRuntimeBridge }).fabdesk;
-  const [runtime, setRuntime] = useState<CadRuntimeState | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [state, setState] = useState<ViewState>({ status: "loading" });
-
-  const load = useCallback(async () => {
-    useEffect(() => {
-      if (!runtimeBridge || !busy) return;
-      const timer = setInterval(() => {
-        void runtimeBridge.cadRuntimeState().then(setRuntime);
-      }, 500);
-      return () => clearInterval(timer);
-    }, [runtimeBridge, busy]);
-
-    if (!projectId) return;
-    setState({ status: "loading" });
-    try {
-      if (runtimeBridge?.prepareCadRuntime) {
-        const status = await runtimeBridge.prepareCadRuntime();
-        setRuntime(status);
-        if (status.status !== "ready") return;
-      }
-      const res = (await client.callTool("cad_view", { projectId })) as {
-        json?: unknown;
-        result?: unknown;
-      };
-      const parsed = FabCadView.safeParse(res.json ?? res.result);
-      setState(
-        parsed.success
-          ? { status: "ready", view: parsed.data }
-          : { status: "failed", error: "unexpected cad_view response" },
-      );
-    } catch (e) {
-      setState({ status: "failed", error: e instanceof Error ? e.message : String(e) });
-    }
-  }, [client, projectId, runtimeBridge]);
+  const [state, setState] = useState<CadSessionState>({
+    runtime: null,
+    busy: true,
+    view: null,
+    error: null,
+  });
+  const session = useMemo(
+    () =>
+      new CadSession(
+        runtimeBridge,
+        async () => {
+          const res = await client.callTool("cad_view", { projectId });
+          return "json" in res ? res.json : res.result;
+        },
+        setState,
+      ),
+    [client, projectId, runtimeBridge],
+  );
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (!projectId) return;
+    session.resume();
+    void session.refresh();
+    const timer = setInterval(() => void session.poll(), 500);
+    return () => {
+      clearInterval(timer);
+      session.dispose();
+    };
+  }, [session, projectId]);
 
-  if (!projectId) return <EmptyState title="No project selected" />;
+  return <CadScreen projectSelected={Boolean(projectId)} state={state} session={session} />;
+}
+
+/** Presentational surface shared by the desktop and local state previews. */
+export function CadScreen({
+  projectSelected,
+  state,
+  session,
+}: {
+  projectSelected: boolean;
+  state: CadSessionState;
+  session: Pick<CadSession, "refresh" | "install" | "cancel">;
+}) {
+  if (!projectSelected) return <EmptyState title="No project selected" />;
+  const { runtime, busy, view, error } = state;
+  const retry = (
+    <Button size="sm" disabled={busy} onClick={() => void session.refresh(true)}>
+      Retry connection
+    </Button>
+  );
   if (runtime && runtime.status !== "ready") {
     const active = busy || runtime.status === "downloading" || runtime.status === "verifying";
     const offer = runtime.offer;
+    const title =
+      runtime.status === "unsupported"
+        ? "CAD isn’t supported on this device"
+        : runtime.status === "error"
+          ? "CAD setup needs attention"
+          : runtime.status === "downloading"
+            ? "Downloading the CAD bridge"
+            : runtime.status === "verifying"
+              ? "Preparing your CAD workspace"
+              : "Add CAD to your workspace";
     const size = (n: number) => `${(n / 1048576).toFixed(1)} MiB`;
+    const percent =
+      offer && runtime.status === "downloading"
+        ? Math.min(100, Math.floor(((runtime.received ?? 0) / offer.downloadBytes) * 100))
+        : null;
     return (
-      <EmptyState
-        title={
-          runtime.status === "consent"
-            ? "Download the CAD runtime?"
-            : "CAD runtime is not installed"
-        }
-      >
-        <p>CAD needs our API-capable FreeCAD runtime. Your PCB workspace remains available.</p>
+      <EmptyState title={title} icon={<span className="text-3xl">◇</span>}>
+        <p>
+          Design enclosures and mechanical parts with the optional FreeCAD bridge. Your PCB
+          workspace remains available.
+        </p>
         {offer && (
-          <p className="mt-2">
-            Version {offer.version} · Apple Silicon Mac (ARM64) · macOS {offer.minimumOS} or later
-            <br />
-            Download: {size(offer.downloadBytes)} ({offer.downloadBytes.toLocaleString()} bytes).
-            Installed: {size(offer.installedBytes)} ({offer.installedBytes.toLocaleString()} bytes).
-            <br />
-            Source:{" "}
-            <a href={offer.sourceUrl} target="_blank" rel="noreferrer">
-              fabPlane/FreeCAD on GitHub
+          <div className="mt-4 rounded-lg border border-border bg-panel p-3 text-left">
+            <p>
+              Download {size(offer.downloadBytes)} · Uses {size(offer.installedBytes)} on disk
+            </p>
+            <p className="mt-1">Apple Silicon · macOS {offer.minimumOS} or later</p>
+            <a className="underline" href={offer.sourceUrl} target="_blank" rel="noreferrer">
+              Official FreeCAD runtime on GitHub
             </a>
+            <p className="mt-1 break-words text-xs">Version {offer.version}</p>
+          </div>
+        )}
+        {runtime.message && (
+          <p className="mt-3" role="alert">
+            {runtime.message}
           </p>
         )}
-        {runtime.message && <p className="mt-2">{runtime.message}</p>}
+        {error && (
+          <p className="mt-3" role="alert">
+            {error}
+          </p>
+        )}
         {active && (
-          <p>
-            {runtime.status === "verifying"
-              ? "Verifying signature and installing…"
-              : runtime.status !== "downloading"
-                ? "Waiting for download approval…"
-                : `Downloading ${size(runtime.received ?? 0)}…`}
+          <div className="mt-3" role="status" aria-live="polite">
+            {percent !== null ? (
+              <>
+                <progress
+                  className="w-full"
+                  value={percent}
+                  max={100}
+                  aria-label="CAD download progress"
+                />
+                <p>
+                  {percent}% · {size(runtime.received ?? 0)} downloaded
+                </p>
+              </>
+            ) : runtime.status === "verifying" ? (
+              "Checking signature and installing…"
+            ) : (
+              "Preparing CAD setup…"
+            )}
+          </div>
+        )}
+        {offer && !active && (
+          <p className="mt-3">
+            You’ll be asked to approve the download before installation begins.
           </p>
         )}
-        <div className="mt-3 flex gap-2 justify-center">
-          {offer && !active && (
+        <div className="mt-4 flex justify-center gap-2">
+          {!active && runtime.status !== "unsupported" && (
             <Button
               size="sm"
-              onClick={async () => {
-                setBusy(true);
-                try {
-                  setRuntime(await runtimeBridge!.downloadCadRuntime());
-                  await load();
-                } finally {
-                  setBusy(false);
-                }
-              }}
+              variant="primary"
+              onClick={() => void (offer ? session.install() : session.refresh())}
             >
-              Download and install
-            </Button>
-          )}
-          {!active && runtime.status !== "unsupported" && !offer && (
-            <Button size="sm" onClick={() => void load()}>
-              Retry
+              {offer
+                ? runtime.status === "error"
+                  ? "Retry installation"
+                  : "Install CAD bridge"
+                : "Retry setup"}
             </Button>
           )}
           {runtime.status !== "unsupported" && (
-            <Button
-              size="sm"
-              onClick={async () => {
-                await runtimeBridge!.cancelCadRuntime();
-                setRuntime(await runtimeBridge!.deferCadRuntime());
-              }}
-            >
+            <Button size="sm" variant="secondary" onClick={() => void session.cancel()}>
               {active ? "Cancel" : "Later"}
             </Button>
           )}
@@ -137,38 +163,40 @@ export function CadTab() {
       </EmptyState>
     );
   }
-  if (state.status === "loading")
+  if (error)
     return (
-      <div className="flex h-full items-center justify-center">
-        <Spinner />
-      </div>
-    );
-  const retry = (
-    <Button size="sm" onClick={() => void load()}>
-      Retry
-    </Button>
-  );
-  if (state.status === "failed")
-    return (
-      <EmptyState title="FreeCAD is not available" action={retry}>
-        {state.error}
-        <div className="mt-2">
-          Start the FabPlane CAD bridge with `bun run dev:cad`, or install the FreeCAD backend.
-        </div>
+      <EmptyState
+        title={
+          runtime?.status === "ready" ? "CAD bridge connection lost" : "CAD bridge is unavailable"
+        }
+        action={retry}
+      >
+        <p role="alert">{error}</p>
+        <p className="mt-2">
+          {runtime?.status === "ready"
+            ? "Your CAD runtime is installed. Retry to reconnect."
+            : "Check that your CAD bridge is running and reachable."}
+        </p>
       </EmptyState>
     );
-  if (!state.view.uiUrl)
+  if (busy || !view)
     return (
-      <EmptyState title="No CAD UI on this bridge" action={retry}>
-        The FreeCAD session for this project is running (document {state.view.document}), but the
-        bridge at {state.view.bridgeUrl} serves no web UI. Build fab_cad&apos;s apps/web and set
-        STATIC_DIR on the bridge.
+      <div className="flex h-full flex-col items-center justify-center gap-3" role="status">
+        <Spinner />
+        <span className="text-sm text-muted">Connecting to CAD…</span>
+      </div>
+    );
+  if (!view.uiUrl)
+    return (
+      <EmptyState title="This CAD bridge has no viewer" action={retry}>
+        Your FreeCAD session is running, but this bridge does not provide a CAD viewer. Update the
+        bridge and retry.
       </EmptyState>
     );
   return (
     <iframe
       title="FreeCAD"
-      src={state.view.uiUrl}
+      src={view.uiUrl}
       sandbox={CAD_FRAME_SANDBOX}
       referrerPolicy="no-referrer"
       className="h-full w-full border-0 bg-panel"
