@@ -176,6 +176,18 @@ jobs:
 
       - *setup-linux-gh
 
+      - name: Ensure Linux Debian packaging tools
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v ar >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq --no-install-recommends binutils
+          fi
+          command -v ar
+          ar --version
+
       - run: bun install --frozen-lockfile
       - name: Stamp version ${{ needs.version.outputs.version }}
         run: bun run scripts/set-version.ts ${{ needs.version.outputs.version }}
