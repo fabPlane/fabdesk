@@ -108,6 +108,7 @@ export type RouteProgress = {
 };
 
 export type RouteSummary = {
+  endpointCollisions?: import("@fabdesk/protocol").EndpointCollisions;
   diagnostics?: import("@fabdesk/protocol").RoutingDiagnostics;
   pairRouting?: import("@fabdesk/protocol").PairRouting;
   tracks: number;

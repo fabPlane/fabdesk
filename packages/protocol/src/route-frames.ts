@@ -5,7 +5,7 @@
  * not geometry, so frames carry events and an empty `shapes` list unless a router adds shapes.
  * Coordinates are in `meta.unitsPerMm` units.
  */
-import { RoutingDiagnostics } from "./fp-pcb";
+import { EndpointCollisions, RoutingDiagnostics } from "./fp-pcb";
 import { z } from "zod/v4";
 
 export const RouteProgressKind = z.enum(["pass-start", "attempt", "connection", "pair", "done"]);
@@ -75,6 +75,7 @@ export const RouterId = z
 export type RouterId = z.infer<typeof RouterId>;
 
 export const RouteResult = z.object({
+  endpointCollisions: EndpointCollisions.optional(),
   diagnostics: RoutingDiagnostics.optional(),
   quality: z.object({ text: z.string(), detailPath: z.string() }).optional(),
   runId: z.string(),

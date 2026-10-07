@@ -3,6 +3,33 @@ import {writeFile,readFile} from "node:fs/promises";
 import {join} from "node:path";
 import {createRegistry} from "../src";
 import {mockServices,contextFactory,tempProject} from "./mock-services";
+import { FpPcbRouteSummary } from "@fabdesk/protocol";
+
+test("Freerouting collisions survive summary parsing, run/status text and saved result", async () => {
+ const project = await tempProject("freerouting-endpoint-collisions");
+ await writeFile(join(project.dir,"board.kicad_pcb"), '(kicad_pcb (net "GND"))');
+ await writeFile(join(project.dir,"board.kicad_pro"), "{}");
+ const endpointCollisions = {
+   text: "Endpoint-track-width probe tested against the board before routing: 1 collision established. This does not establish that every escape is blocked.",
+   obstacleSet: "pre-route" as const, testedEndpoints: 2, unsupported: 0, total: 1, truncated: false, physicalBlockerEstablished: true,
+   collisions: [{ endpoint: { uuid: "pad-native", ref: "J1", pin: "1", layer: "F.Cu" }, blocker: { uuid: "via-native", type: "via" as const, net: "VBUS" }, requiredClearanceMm: 0.2, measuredClearanceMm: 0.1, test: "endpoint-track-width" as const }],
+ };
+ const summary = FpPcbRouteSummary.parse({ endpointCollisions, futureField: "stripped", total: 1, unrouted: [{net:"GND",from:{x:0,y:0},to:{x:1,y:1}}] });
+ expect(summary.endpointCollisions).toEqual(endpointCollisions);
+ expect(Object.hasOwn(summary,"futureField")).toBe(false);
+ const base = mockServices([project]);
+ const services = mockServices([project], { design: { ...base.design, query: async (dir,q) => q === "unrouted" ? [{net:"GND"}] : base.design.query(dir,q), route: async () => summary } });
+ const registry=createRegistry(), factory=contextFactory(services,project);
+ const call=(name:string,args:Record<string,unknown>)=>registry.invoke(name,args,ref=>factory({def:registry.get(name)!,projectRef:ref,signal:new AbortController().signal,progress:()=>{}}));
+ const response = await call("route_run", { router: "freerouting", onlyConnections: ["GND"], waitMs: 1000 });
+ const run = (response.json as any).run;
+ const status = await call("route_status", { runId: run.id });
+ const saved = JSON.parse(await readFile(join(project.dir,run.artifacts.runDir,"result.json"),"utf8"));
+ expect(saved.endpointCollisions).toEqual(endpointCollisions);
+ expect((status.json as any).run.result.endpointCollisions).toEqual(endpointCollisions);
+ expect(response.text).toContain(endpointCollisions.text);
+ expect(status.text).toContain(endpointCollisions.text);
+});
 
 test("route_run and route_status preserve no-progress diagnostics in text and saved JSON",async()=>{
  const project=await tempProject("honest-route-diagnostics");

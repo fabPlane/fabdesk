@@ -731,6 +731,7 @@ async function executeRoute(
     await writeJson(join(runDir, "quality.json"), measuredQuality);
     const fullResult: RouteResult = {
       ...(summary.diagnostics ? { diagnostics: summary.diagnostics } : {}),
+      ...(summary.endpointCollisions ? { endpointCollisions: summary.endpointCollisions } : {}),
       quality: { text: qualityText(measuredQuality), detailPath: join(rec.artifacts.runDir, "quality.json") },
       runId: rec.id,
       router: rec.router as "fab_router" | "freerouting",
@@ -962,7 +963,7 @@ async function routeStatusOutput(
   };
   ctx.services.routeRuns.update(rec.id, run);
   return ok(
-    `Run ${rec.id} (${rec.router}): ${rec.state}; ${rec.progress.routed ?? "?"}/${rec.progress.total ?? "?"} routed; candidate ${rec.candidate.available ? "ready" : "unavailable"}; apply ${rec.application.state}.${rec.fallbackReason ? ` Fallback: ${rec.fallbackReason}.` : ""}${rec.result?.diagnostics ? `\n${rec.result.diagnostics.text}` : rec.error ? `\n${rec.error}` : ""}${outsideScopeText(rec.result?.outsideScopeChanges)}${rec.result?.quality ? `\n${rec.result.quality.text}` : ""}`,
+    `Run ${rec.id} (${rec.router}): ${rec.state}; ${rec.progress.routed ?? "?"}/${rec.progress.total ?? "?"} routed; candidate ${rec.candidate.available ? "ready" : "unavailable"}; apply ${rec.application.state}.${rec.fallbackReason ? ` Fallback: ${rec.fallbackReason}.` : ""}${rec.result?.diagnostics ? `\n${rec.result.diagnostics.text}` : rec.error ? `\n${rec.error}` : ""}${rec.result?.endpointCollisions ? `\n${rec.result.endpointCollisions.text}` : ""}${outsideScopeText(rec.result?.outsideScopeChanges)}${rec.result?.quality ? `\n${rec.result.quality.text}` : ""}`,
     { run },
   );
 }

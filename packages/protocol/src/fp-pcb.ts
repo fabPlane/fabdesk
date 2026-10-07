@@ -270,7 +270,24 @@ export const RoutingDiagnostics = z.object({
 });
 export type RoutingDiagnostics = z.infer<typeof RoutingDiagnostics>;
 
+export const EndpointCollisions = z.object({
+  text: z.string(),
+  obstacleSet: z.literal("pre-route"),
+  testedEndpoints: z.number().int().nonnegative(),
+  unsupported: z.number().int().nonnegative(),
+  total: z.number().int().nonnegative(),
+  truncated: z.boolean(),
+  physicalBlockerEstablished: z.boolean(),
+  collisions: z.array(z.object({
+    endpoint: z.object({ uuid: z.string(), ref: z.string(), pin: z.string(), layer: z.string() }),
+    blocker: z.object({ uuid: z.string(), type: z.enum(["pad", "via", "track"]), net: z.string() }),
+    requiredClearanceMm: z.number(), measuredClearanceMm: z.number(), test: z.literal("endpoint-track-width"),
+  })).max(24),
+});
+export type EndpointCollisions = z.infer<typeof EndpointCollisions>;
+
 export const FpPcbRouteSummary = z.object({
+  endpointCollisions: EndpointCollisions.optional(),
   diagnostics: RoutingDiagnostics.optional(),
   pairRouting:PairRouting.optional(),
   tracks: z.number().default(0),
