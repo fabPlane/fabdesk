@@ -1,4 +1,5 @@
 /// <reference types="@mcp-b/webmcp-types" />
+import type { CadRuntimeBridge } from "@fabdesk/protocol";
 import type { CoreInfo } from "../shared/core-info";
 import type { UpdateCheckResult, UpdateDownloadState } from "@fabdesk/protocol";
 import type { CoreClient } from "@fabdesk/ui";
@@ -10,7 +11,7 @@ export interface PickFileOptions {
 }
 
 /** Surface exposed by src/preload/index.ts via contextBridge. */
-export interface FabdeskBridge {
+export interface FabdeskBridge extends CadRuntimeBridge {
   platform: NodeJS.Platform | string;
   /** True when the main process started Sentry (DSN configured and the user has not opted out). */
   errorReporting: boolean;

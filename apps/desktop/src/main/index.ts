@@ -1,5 +1,6 @@
-import { app, BrowserWindow, nativeTheme, shell } from "electron";
+import { app, ipcMain, dialog, BrowserWindow, nativeTheme, shell } from "electron";
 import { join } from "node:path";
+import { mkdir } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import type { CoreInfo } from "../shared/core-info";
@@ -22,6 +23,9 @@ import { registerUpdateIpc, UpdateChecker } from "./updates";
 import { registerUpdateDownloadIpc, UpdateDownloader } from "./update-download";
 import { migrateLegacyUserData } from "./user-data";
 import { CadSupervisor, resolveCadBackend } from "./cad-supervisor";
+import { CadRuntimeManager, CadRuntimeConsent } from "./cad-runtime";
+import { unpackCadMacApp, verifyCadMacApp } from "./cad-runtime-mac";
+import { release as osRelease } from "node:os";
 import { PcbSupervisor, resolvePcbBackend } from "./pcb-supervisor";
 import { resolveWindowTheme, titleBarOverlayFor } from "./window-theme";
 
@@ -161,30 +165,95 @@ if (!app.requestSingleInstanceLock()) {
       app.exit(1);
       return;
     }
-    // FreeCAD is optional: a missing or failing CAD bridge only disables the `cad` toolset.
+    // CAD is optional. Cached signed engines can start; absent CAD never blocks PCB startup.
     let cadEnv: Record<string, string> = {};
     try {
       cadSupervisor = new CadSupervisor(
-        resolveCadBackend({ resourcesPath: process.resourcesPath }),
+        app.isPackaged
+          ? null
+          : resolveCadBackend({ packaged: false, resourcesPath: process.resourcesPath }),
       );
       cadEnv = await cadSupervisor.start();
     } catch (error) {
       console.error(`[cad] ${error instanceof Error ? error.message : String(error)}`);
     }
+    const coreExtraEnv = {
+      ...coreSentryEnv(),
+      ...pcbEnv,
+      ...cadEnv,
+      ...(home ? { FABDESK_HOME: home } : {}),
+    };
+    const cadRuntime = new CadRuntimeManager({
+      cache: join(app.getPath("userData"), "cad-runtimes"),
+      target: `${process.platform}-${process.arch}`,
+      supportedOS: process.platform === "darwin" && Number(osRelease().split(".")[0]) >= 24,
+      installedApps: ["/Applications/CADRuntime.app"],
+      verify: verifyCadMacApp,
+      unpack: unpackCadMacApp,
+      activate: async (manifest) => {
+        const preferences = join(app.getPath("userData"), "cad-preferences");
+        await mkdir(preferences, { recursive: true });
+        await cadSupervisor?.stop();
+        cadSupervisor = new CadSupervisor(
+          resolveCadBackend({
+            packaged: true,
+            resourcesPath: process.resourcesPath,
+            env: {
+              ...process.env,
+              FABDESK_FAB_CAD_BUNDLE: manifest,
+              FREECAD_USER_HOME: preferences,
+            },
+          }),
+        );
+        Object.assign(coreExtraEnv, await cadSupervisor.start());
+        if (supervisor) await supervisor.restart();
+      },
+    });
+    if (app.isPackaged) {
+      try {
+        await cadRuntime.initialize();
+      } catch (e) {
+        console.error(`[cad] optional runtime unavailable: ${String(e)}`);
+      }
+    }
     supervisor = new CoreSupervisor({
       localAuth: localAuthEnabled(identity.devProfile),
       runtimeId,
       binaryOverride: process.env["FABDESK_CORE_BIN"],
-      extraEnv: {
-        ...coreSentryEnv(),
-        ...pcbEnv,
-        ...cadEnv,
-        ...(home ? { FABDESK_HOME: home } : {}),
-      },
+      extraEnv: coreExtraEnv,
       ...(identity.devProfile ? { devProfile: true } : {}),
     });
     installAppMenu();
     registerIpc(supervisor);
+    const developmentCadReady = !app.isPackaged && Boolean(cadEnv["FABDESK_FAB_CAD_BRIDGE_URL"]);
+    ipcMain.handle("fabdesk:cad-runtime-state", () =>
+      developmentCadReady ? { status: "ready" } : cadRuntime.state(),
+    );
+    ipcMain.handle("fabdesk:prepare-cad-runtime", () =>
+      developmentCadReady ? { status: "ready" } : cadRuntime.prepare(),
+    );
+    ipcMain.handle("fabdesk:reconnect-cad-runtime", () =>
+      developmentCadReady ? { status: "ready" } : cadRuntime.reconnect(),
+    );
+    const cadConsent = new CadRuntimeConsent(cadRuntime, async (offer) => {
+      const result = await dialog.showMessageBox({
+        type: "question",
+        title: "Download CAD runtime?",
+        message: "May fabPlane download and install its FreeCAD CAD runtime?",
+        detail: `Version ${offer.version}\nPlatform: Apple Silicon Mac (ARM64), macOS ${offer.minimumOS} or later\nDownload ${(offer.downloadBytes / 1048576).toFixed(1)} MiB (${offer.downloadBytes} bytes)\nInstalled ${(offer.installedBytes / 1048576).toFixed(1)} MiB (${offer.installedBytes} bytes)\nFrom ${offer.sourceUrl}\nThe signed runtime is cached outside the app. The local core restarts to enable CAD. PCB works without it.`,
+        buttons: ["Later", "Download and install"],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      });
+      return result.response === 1;
+    });
+    ipcMain.handle("fabdesk:download-cad-runtime", () => cadConsent.request());
+    ipcMain.handle("fabdesk:defer-cad-runtime", () => cadRuntime.defer());
+    ipcMain.handle("fabdesk:cancel-cad-runtime", () => {
+      cadConsent.cancel();
+      return cadRuntime.defer();
+    });
     // Dev / FABDESK_AUTOMATION=1: loopback bridge for the core's `app` MCP toolset (docs/app-automation.md).
     const sup = supervisor;
     automation = await startAppAutomation({

@@ -47,6 +47,8 @@
     "build:core": "bun run --cwd apps/core build",
     "build:desktop": "bun run --cwd apps/desktop build",
     "package": "bun run build:core && bun run --cwd apps/desktop package",
+    "cad:stage": "bun run scripts/stage-cad-bundle.ts",
+    "cad:smoke": "bun run scripts/smoke-cad-bundle.ts",
     "kicad:stage": "bun run scripts/stage-kicad-bundle.ts",
     "doctor": "bun run --cwd apps/core doctor",
     "submodules:update": "git submodule update --remote --merge vendor/fabplane vendor/fab_pcb vendor/fabplane-cli",

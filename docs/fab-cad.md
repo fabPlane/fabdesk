@@ -71,14 +71,14 @@ paths are confined to it.
 
 ## Running it
 
-| variable                     | where   | what                                                                              |
-| ---------------------------- | ------- | --------------------------------------------------------------------------------- |
-| `FABDESK_FAB_CAD_BRIDGE_URL` | core    | bridge origin; default `http://127.0.0.1:4030`                                    |
-| `FABDESK_FAB_CAD_BRIDGE_TOKEN` | core  | bearer for the bridge (HTTP and the `/ws` upgrade); the desktop mints one per launch |
-| `FAB_CAD_BRIDGE_TOKEN`       | bridge  | the token the bridge requires of non-browser callers (set by the desktop)        |
-| `FABDESK_FAB_CAD_SOURCE`     | desktop | run the bridge from a fab_cad checkout under Bun (`bun run dev:cad` sets it)      |
-| `FABDESK_FAB_CAD_BUNDLE`     | desktop | a packaged backend's `bundle.json`; default `resources/cad/bundle.json`           |
-| `FREECAD_API_SERVER`         | bridge  | the FreeCAD API server command; with a source checkout, default is fab_cad's mock |
+| variable                       | where   | what                                                                                 |
+| ------------------------------ | ------- | ------------------------------------------------------------------------------------ |
+| `FABDESK_FAB_CAD_BRIDGE_URL`   | core    | bridge origin; default `http://127.0.0.1:4030`                                       |
+| `FABDESK_FAB_CAD_BRIDGE_TOKEN` | core    | bearer for the bridge (HTTP and the `/ws` upgrade); the desktop mints one per launch |
+| `FAB_CAD_BRIDGE_TOKEN`         | bridge  | the token the bridge requires of non-browser callers (set by the desktop)            |
+| `FABDESK_FAB_CAD_SOURCE`       | desktop | run the bridge from a fab_cad checkout under Bun (`bun run dev:cad` sets it)         |
+| `FABDESK_FAB_CAD_BUNDLE`       | desktop | a packaged backend's `bundle.json`; default `resources/cad/bundle.json`              |
+| `FREECAD_API_SERVER`           | bridge  | the FreeCAD API server command; with a source checkout, default is fab_cad's mock    |
 
 **Development.** `bun run dev:cad` starts the desktop with the bridge from `vendor/fab_cad`. With
 no `FREECAD_API_SERVER` it runs fab_cad's mock server (Part primitives with real tessellation,
@@ -108,40 +108,22 @@ and accepts the token; otherwise a fresh loopback port is used, unless the URL w
 **Doctor.** `fabdesk-core doctor` lists `fab-cad` next to `fp-pcb` in the bridges line; it is never
 a warning.
 
-## Packaging (not done yet)
+## Native packaging
 
-`resolveCadBackend` already reads a bundle manifest:
-
-```json
-{
-  "format": 1,
-  "target": "darwin-arm64",
-  "bridge": "bin/fab-cad-bridge",
-  "freecadApiServer": "freecad/bin/FreeCADApiServer",
-  "web": "web",
-  "libraryPaths": ["freecad/lib"],
-  "environment": {}
-}
-```
-
-What is missing before `apps/desktop/electron-builder.yml` can copy `dist/cad/<target>/` to
-`resources/cad` (the way it copies `dist/pcb`):
-
-- builds of the fork's `FreeCADApiServer` (with OCCT and Python) for macOS, Linux and Windows, signed
-  and notarised, plus LGPL redistribution notes;
-- a compiled bridge (`bun build --compile packages/bridge/src/main.ts`);
-- the web UI built **without source maps** — fab_cad's `vite.config.ts` has `sourcemap: true`, and
-  fabPlane never ships source maps (AGENTS.md), so the bundle step must build with it off or delete
-  every `*.map` before assembling.
-
-Until then `electron-builder.yml` is untouched: an `extraResources` entry for a directory that does
-not exist would fail packaging.
+See [native-cad-packaging.md](native-cad-packaging.md) for the real engine build, dependency
+closure, signing, source/notices and FCStd/STEP package smoke. `cad:stage` creates
+`dist/cad/<target>/bundle.json`; `afterPack` requires and copies it to `Resources/cad`.
+The normal app does not bundle CAD and starts its PCB features without an engine. On first
+desktop CAD use, a signed compatible cached/installed runtime is reused, or the user is asked
+before downloading one from a versioned public `fabPlane/FreeCAD` release. Later persists and
+leaves a manual Download action. Packaged CAD requires `engine: "native"` and ignores the
+development mock source. The first supported optional target is macOS ARM64 on macOS 15+;
+unsupported platforms retain PCB features. Public signed runtime assets are not yet published.
 
 ## Pins and upstream state
 
-- `vendor/fab_cad` is pinned at `72539a9`. fab_cad has no `main` branch yet (its only branch is
-  `claude/freecad-repos-ipc-wasm-53j8he`, which is also its default), so the submodule has no
-  `branch =` and `bun run submodules:update` does not bump it; bump it with
+- `vendor/fab_cad` is pinned at `65c72d69` (the merged security/viewer main tip). fab_cad now has `main`, bootstrapped at the previous default tip without rewriting history.
+  The submodule currently has no `branch =`; bump its reviewed commit with
   `git -C vendor/fab_cad fetch && git -C vendor/fab_cad checkout <commit>`.
 - `vendor/fab_cad/packages/protocol/FREECAD_COMMIT` pins the fork at `9bcf850`, which is on the
   fork's `claude/freecad-repos-ipc-wasm-53j8he` branch, not on its `main`. The `src/Api` work has to
