@@ -275,6 +275,8 @@ describe("registry", () => {
       "route_unroute",
       "route_scope",
       "kicad_stats",
+      "board_revision_list",
+      "board_revision_diff",
       "verify_erc",
       "verify_gate",
       "verify_viagrid",

@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { readStoredThemeId, type ThemeId } from "../theme/resolve";
 
-export const BOARD_TABS = ["schematic", "pcb", "cinema", "3d", "cad", "drc", "renders", "files", "bom"] as const;
+export const BOARD_TABS = ["schematic", "pcb", "cinema", "3d", "cad", "drc", "renders", "files", "bom", "diff"] as const;
 export type BoardTab = (typeof BOARD_TABS)[number];
 export const BOARD_TAB_LABELS: Record<BoardTab, string> = {
   schematic: "Schematic",
@@ -14,6 +14,7 @@ export const BOARD_TAB_LABELS: Record<BoardTab, string> = {
   renders: "Renders",
   files: "Files",
   bom: "Shopping list",
+  diff: "Diff",
 };
 
 export const SETTINGS_SECTIONS = ["agents", "kicad", "router", "auth", "remote", "appearance", "privacy", "shortcuts"] as const;

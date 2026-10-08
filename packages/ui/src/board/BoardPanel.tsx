@@ -9,6 +9,7 @@ import { CinemaTab } from "./cinema/CinemaTab";
 import { DrcTab } from "./DrcTab";
 import { FilesTab } from "./FilesTab";
 import { RendersTab } from "./RendersTab";
+import { DiffTab } from "./DiffTab";
 import { ShoppingListTab } from "./ShoppingListTab";
 import { SvgTab } from "./SvgTab";
 import { ThreeDTab } from "./ThreeDTab";
@@ -33,6 +34,8 @@ function TabBody({ tab }: { tab: BoardTab }) {
       return <FilesTab />;
     case "bom":
       return <ShoppingListTab />;
+    case "diff":
+      return <DiffTab />;
     default:
       return null;
   }
@@ -59,7 +62,7 @@ export function BoardPanel() {
       <div className="fd-board-controls flex min-h-12 shrink-0 flex-wrap items-center gap-1.5 px-3 py-1.5">
         <Tabs
           className="fd-board-tabs min-w-0 flex-1"
-          tabs={BOARD_TABS.map((id, i) => ({ id, label: BOARD_TAB_LABELS[id], hint: `${mod} + ${i + 1}` }))}
+          tabs={BOARD_TABS.map((id, i) => ({ id, label: BOARD_TAB_LABELS[id], ...(i < 9 ? { hint: `${mod} + ${i + 1}` } : {}) }))}
           value={tab}
           onChange={setBoardTab}
         />
@@ -71,7 +74,7 @@ export function BoardPanel() {
             aria-label="Board view"
             className="h-8 min-w-0 flex-1 border-border bg-panel-2/70 text-xs font-medium"
           >
-            {BOARD_TABS.map((id, i) => <option key={id} value={id}>{BOARD_TAB_LABELS[id]} · {mod} + {i + 1}</option>)}
+            {BOARD_TABS.map((id, i) => <option key={id} value={id}>{BOARD_TAB_LABELS[id]}{i < 9 ? ` · ${mod} + ${i + 1}` : ""}</option>)}
           </Select>
         </label>
         {order.data && (order.data.hasKicadPcb || order.data.hasRouted || order.data.ready) && (

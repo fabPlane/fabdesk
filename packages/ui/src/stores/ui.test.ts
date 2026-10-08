@@ -33,8 +33,9 @@ describe("sidebar list tabs", () => {
 });
 
 describe("board tabs", () => {
-  test("the shopping list is the last board tab", () => {
-    expect(BOARD_TABS.at(-1)).toBe("bom");
+  test("the revision diff is the last board tab", () => {
+    expect(BOARD_TABS.at(-1)).toBe("diff");
+    expect(BOARD_TAB_LABELS.diff).toBe("Diff");
     expect(BOARD_TAB_LABELS.bom).toBe("Shopping list");
   });
 });

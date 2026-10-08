@@ -93,7 +93,7 @@ export function CommandPalette() {
           <Command.Group heading="Board tabs">
             {BOARD_TABS.map((tab, i) => (
               <Command.Item key={tab} value={`tab ${BOARD_TAB_LABELS[tab]}`} onSelect={pick(() => setBoardTab(tab))}>
-                {BOARD_TAB_LABELS[tab]} <span className="ml-auto"><Kbd>{mod} + {i + 1}</Kbd></span>
+                {BOARD_TAB_LABELS[tab]}{i < 9 ? <span className="ml-auto"><Kbd>{mod} + {i + 1}</Kbd></span> : null}
               </Command.Item>
             ))}
           </Command.Group>

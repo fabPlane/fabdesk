@@ -62,6 +62,8 @@ export { BoardPanel } from "./board/BoardPanel";
 export { SvgTab } from "./board/SvgTab";
 export { SvgViewer } from "./board/SvgViewer";
 export { DrcTab, normalizeReport } from "./board/DrcTab";
+export { DiffTab } from "./board/DiffTab";
+export { diffHeadline } from "./board/diff-copy";
 export { RendersTab } from "./board/RendersTab";
 export { FilesTab } from "./board/FilesTab";
 export { ThreeDTab } from "./board/ThreeDTab";

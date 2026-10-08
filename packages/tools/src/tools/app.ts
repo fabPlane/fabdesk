@@ -21,6 +21,7 @@ export const APP_BOARD_TABS = [
   "renders",
   "files",
   "bom",
+  "diff",
 ] as const;
 export const APP_SETTINGS_SECTIONS = [
   "agents",

@@ -4,6 +4,7 @@ import { cadTools } from "./cad";
 import { circuitTools } from "./circuit";
 import { coreTools } from "./core";
 import { exportTools } from "./export";
+import { boardDiffTools } from "./board-diff";
 import { kicadTools } from "./kicad";
 import { inspectionTools } from "./inspection";
 import { nativeEditTools } from "./native-edit";
@@ -29,6 +30,7 @@ export const allTools: ReadonlyArray<ToolDef> = [
   ...pcbTools,
   ...routeTools,
   ...kicadTools,
+  ...boardDiffTools,
   ...verifyTools,
   ...releaseTools,
   ...renderTools,
@@ -53,6 +55,7 @@ export * from "./pcb";
 export * from "./route";
 export { savedHierarchyRevision, type SavedSheetRef } from "./project-status-evidence";
 export * from "./kicad";
+export * from "./board-diff";
 export * from "./inspection";
 export * from "./native-edit";
 export * from "./release";
