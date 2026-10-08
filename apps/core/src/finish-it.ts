@@ -60,6 +60,7 @@ type Live = {
 
 export class FinishItManager {
   private readonly live = new Map<string, Live>();
+  private readonly syncTail = new Map<string, Promise<void>>();
   private readonly unsub: () => void;
   private readonly commit: (dir: string, message: string) => Promise<string | null>;
   private readonly maxFollowUps: number;
@@ -314,6 +315,24 @@ export class FinishItManager {
   }
 
   private async syncMilestones(project: ProjectHandle): Promise<void> {
+    const prev = this.syncTail.get(project.id) ?? Promise.resolve();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.syncTail.set(
+      project.id,
+      prev.then(() => gate),
+    );
+    await prev;
+    try {
+      await this.syncMilestonesLocked(project);
+    } finally {
+      release();
+    }
+  }
+
+  private async syncMilestonesLocked(project: ProjectHandle): Promise<void> {
     const live = this.live.get(project.id);
     if (!live || TERMINAL.has(live.session.status)) return;
     const snap = await this.snapshot(project);
