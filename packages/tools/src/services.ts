@@ -108,6 +108,8 @@ export type RouteProgress = {
 };
 
 export type RouteSummary = {
+  endpointCollisions?: import("@fabdesk/protocol").EndpointCollisions;
+  diagnostics?: import("@fabdesk/protocol").RoutingDiagnostics;
   pairRouting?: import("@fabdesk/protocol").PairRouting;
   tracks: number;
   /** Vias the router added. */
@@ -130,6 +132,7 @@ export type RouteSummary = {
     id: string;
     layer: number;
     net: number;
+    netName?: string;
     points: number[];
     width?: number;
   }>;

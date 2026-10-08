@@ -1,3 +1,4 @@
+import { AGENT_OWNER_DIR, trackAgentProcess } from "./process-ownership";
 import type { Subprocess } from "bun";
 import { readJsonl, readTail } from "./jsonl";
 import type { AgentEvent, AgentRun } from "./types";
@@ -120,6 +121,15 @@ export function runAgentProcess(opts: AgentProcessOptions): AgentRun {
     spawnError = err instanceof Error ? err.message : String(err);
   }
 
+  let ownership: Promise<() => Promise<void>> = Promise.resolve(async () => {});
+  if (proc && opts.env[AGENT_OWNER_DIR]) {
+    ownership = trackAgentProcess(opts.env[AGENT_OWNER_DIR]!, proc.pid);
+  }
+  // Attach a handler immediately: stream consumption may begin after initial capture fails.
+  ownership = ownership.catch((error) => {
+    console.error(`agent ownership capture failed: ${String(error)}`);
+    return async () => {};
+  });
   let aborted = false;
   let exited = false;
   /**
@@ -233,6 +243,8 @@ export function runAgentProcess(opts: AgentProcessOptions): AgentRun {
         // Consumer stopped iterating early: tear the tree down without waiting for the grace periods.
         killTree(proc.pid, "SIGTERM");
       }
+      const releaseOwnership = await ownership;
+      await releaseOwnership();
       await opts.cleanup?.();
     }
   }

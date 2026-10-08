@@ -2180,6 +2180,8 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     await saveBoard(projectDir);
     const s = job.summary;
     return {
+      ...(s.diagnostics ? { diagnostics: s.diagnostics } : {}),
+      ...(s.endpointCollisions ? { endpointCollisions: s.endpointCollisions } : {}),
       ...(s.pairRouting?{pairRouting:s.pairRouting}:{}),
       tracks: s.tracks,
       vias: s.vias,
@@ -2202,6 +2204,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         id: shape.id,
         layer: shape.layer,
         net: shape.net,
+        ...(shape.netName !== undefined ? { netName: shape.netName } : {}),
         points: shape.points.map(mm),
         ...(shape.width !== undefined ? { width: mm(shape.width) } : {}),
       })),

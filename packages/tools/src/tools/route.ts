@@ -238,7 +238,7 @@ async function boardInventory(ctx: ToolContext, dir: string) {
     "components",
     "footprint_geometry",
     "board_geometry",
-    "nets",
+    "pads",
     "tracks",
     "vias",
     "zones",
@@ -247,9 +247,31 @@ async function boardInventory(ctx: ToolContext, dir: string) {
     "unrouted",
   ] as const;
   const values = await Promise.all(selects.map((select) => ctx.services.design.query(dir, select)));
-  return Object.fromEntries(
-    selects.map((select, index) => [select, stableRows(values[index]!)]),
-  ) as Record<(typeof selects)[number], string[]>;
+  const rows = Object.fromEntries(
+    selects.map((select, index) => [select, values[index]!]),
+  ) as Record<(typeof selects)[number], Array<Record<string, unknown>>>;
+  // Net codes and unused declarations are serialization details. Routing may replace copper,
+  // but must preserve assigned net names and every physical pad's net assignment.
+  const assignedNames = new Set(
+    [...rows.pads, ...rows.tracks, ...rows.vias, ...rows.zones]
+      .map((row) => String(row["net"] ?? ""))
+      .filter(Boolean),
+  );
+  const nets = stableRows([
+    ...[...assignedNames].map((name) => ({ name })),
+    ...rows.pads.map((pad) => ({
+      x: pad["x"],
+      y: pad["y"],
+      layer: pad["layer"],
+      component: pad["component"],
+      number: pad["number"],
+      net: pad["net"] ?? "",
+    })),
+  ]);
+  return {
+    ...Object.fromEntries(selects.map((select) => [select, stableRows(rows[select])])),
+    nets,
+  } as Record<(typeof selects)[number] | "nets", string[]>;
 }
 
 function inventoryDiff(
@@ -292,9 +314,21 @@ function forbiddenDiff(diff: Record<string, { changed: number }>, allowZones: bo
   ].filter((key) => (diff[key]?.changed ?? 0) > 0);
 }
 
+// Every progress producer shares this queue. Capture bytes at enqueue time, so a later
+// terminal/application record cannot be overwritten by a delayed earlier heartbeat.
+const progressQueues = new Map<string, Promise<void>>();
 async function persistProgress(ctx: ToolContext, rec: RouteRunRecord, runDir: string) {
   ctx.services.routeRuns.update(rec.id, rec);
-  await writeJson(join(runDir, "progress.json"), compactRecord(rec));
+  const path = join(runDir, "progress.json");
+  const data = JSON.stringify(compactRecord(rec), null, 2) + "\n";
+  const pending = (progressQueues.get(path) ?? Promise.resolve())
+    .then(() => writeAtomic(path, data))
+    .catch((error: unknown) => {
+      console.error(`route ${rec.id}: progress write failed: ${String(error)}`);
+    });
+  progressQueues.set(path, pending);
+  await pending;
+  if (progressQueues.get(path) === pending) progressQueues.delete(path);
 }
 
 async function applyCandidate(
@@ -427,7 +461,6 @@ async function executeRoute(
       (error: unknown) => (error instanceof Error ? error.message : String(error)),
     );
   const frames = new RouteProgressFrames(rec.id, started, sink);
-  let progressWrites = Promise.resolve();
   let cancelPromise: Promise<void> | null = null;
   signal.addEventListener(
     "abort",
@@ -591,10 +624,7 @@ async function executeRoute(
                 },
                 updatedAt: at,
               };
-              ctx.services.routeRuns.update(rec.id, rec);
-              progressWrites = progressWrites.then(() =>
-                writeJson(join(runDir, "progress.json"), compactRecord(rec)),
-              );
+              void persistProgress(ctx, rec, runDir);
             },
           },
         );
@@ -631,7 +661,7 @@ async function executeRoute(
         // Cancellation and a routing deadline are not solver failures. Preserve their outcome.
         if (signal.aborted || timedOut || rec.router !== "freerouting" || !args.fallbackOnFailure)
           throw error;
-        await progressWrites;
+        await progressQueues.get(join(runDir, "progress.json"));
         await ctx.services.design.release(snapshotDir);
         // A failed job may have changed its live board. Restore the exact original snapshot.
         await copyFile(
@@ -649,7 +679,7 @@ async function executeRoute(
       }
     };
     const summary = await attemptRoute();
-    await progressWrites;
+    await progressQueues.get(join(runDir, "progress.json"));
     const geometry = summary.geometry ?? [];
     const open = [...new Set(summary.unrouted.map((row) => row.net))];
     const resultState = summary.timedOut
@@ -668,11 +698,40 @@ async function executeRoute(
     ].slice(0, 20);
     const candidateBoard = await readCopper(snapshotDir);
     const touchedNets = [...new Set([...endpoints.map(row => String(row["net"] ?? "")), ...candidateBoard.copper.filter(c => !startingCopper.copper.some(b => b.id === c.id)).map(c => c.net)])].filter(Boolean);
+    const copperById = new Map(candidateBoard.copper.map(item => [item.id, item]));
+    const namedGeometry = geometry.map(shape => ({
+      ...shape,
+      netName: copperById.get(shape.id)?.net ?? shape.netName ?? "",
+    }));
+    const outsideScopeChanges: NonNullable<RouteResult["outsideScopeChanges"]> = [];
+    if (requestedNets.length) {
+      const scope = new Set(requestedNets);
+      const counts = new Map<string, { net: string; traces: number; vias: number; added:{traces:number;vias:number}; removed:{traces:number;vias:number} }>();
+      const count = (net: string, via: boolean, change: "added" | "removed") => {
+        if (!net || scope.has(net)) return;
+        const row = counts.get(net) ?? {net,traces:0,vias:0,added:{traces:0,vias:0},removed:{traces:0,vias:0}};
+        const key = via ? "vias" : "traces";
+        row[change][key]++;
+        row[key]++;
+        counts.set(net,row);
+      };
+      // Geometry includes newly created or claimed items; union with the saved-board delta,
+      // because a solver may omit new copper from its summary. Count each UUID once.
+      const additions = new Map(namedGeometry.map(shape => [shape.id,{net:shape.netName,via:shape.kind === "via"}]));
+      const startIds = new Set(startingCopper.copper.map(item => item.id));
+      const candidateIds = new Set(candidateBoard.copper.map(item => item.id));
+      for (const item of candidateBoard.copper) if (!startIds.has(item.id)) additions.set(item.id,{net:item.net,via:item.diameter !== undefined});
+      for (const item of additions.values()) count(item.net,item.via,"added");
+      for (const item of startingCopper.copper) if (!candidateIds.has(item.id)) count(item.net,item.diameter !== undefined,"removed");
+      outsideScopeChanges.push(...[...counts.values()].sort((a,b) => a.net.localeCompare(b.net)));
+    }
     const selectedNets = requestedNets.length ? requestedNets : touchedNets;
     const measuredQuality = quality(candidateBoard, selectedNets, args.rules?.pairs, await referenceFacts(project.dir, rec.startingPcbRevision));
     if(summary.pairRouting)measuredQuality.pairRouting=summary.pairRouting;
     await writeJson(join(runDir, "quality.json"), measuredQuality);
     const fullResult: RouteResult = {
+      ...(summary.diagnostics ? { diagnostics: summary.diagnostics } : {}),
+      ...(summary.endpointCollisions ? { endpointCollisions: summary.endpointCollisions } : {}),
       quality: { text: qualityText(measuredQuality), detailPath: join(rec.artifacts.runDir, "quality.json") },
       runId: rec.id,
       router: rec.router as "fab_router" | "freerouting",
@@ -682,11 +741,12 @@ async function executeRoute(
       state: resultState,
       remainingEndpoints: summary.unrouted,
       obstacles,
-      changedGeometry: geometry,
+      changedGeometry: namedGeometry,
+      ...(outsideScopeChanges.length ? { outsideScopeChanges } : {}),
       nextActions:
         resultState === "complete"
           ? []
-          : ["inspect route candidate", "inspect remaining connectivity"],
+          : summary.diagnostics ? ["try Freerouting for these nets", "check remaining native opens"] : ["inspect route candidate", "inspect remaining connectivity"],
       stats: {
         vias: summary.vias,
         segments: summary.tracks,
@@ -728,7 +788,11 @@ async function executeRoute(
         ...(frameMetadataError ? { metadataError: frameMetadataError } : {}),
       },
     });
-    await writeAtomic(join(runDir, "router.log"), `${summary.log.join("\n")}\n`);
+    await writeAtomic(join(runDir, "router.log"), `${summary.log.join("\n")}\n`).catch(
+      (error: unknown) => {
+        console.error(`route ${rec.id}: router log write failed: ${String(error)}`);
+      },
+    );
     const candidatePath = join(runDir, "candidate.kicad_pcb");
     await ctx.services.design.release(snapshotDir).catch(() => undefined);
     await copyFile(join(snapshotDir, PROJECT_FILES.boardPcb), candidatePath);
@@ -875,6 +939,15 @@ async function executeRoute(
   }
 }
 
+export function outsideScopeText(changes: RouteResult["outsideScopeChanges"]): string {
+  if (!changes?.length) return "";
+  const nets = changes.map(change => {
+    const describe = (counts: {traces:number;vias:number}) => [counts.traces ? `${counts.traces} trace${counts.traces === 1 ? "" : "s"}` : "",counts.vias ? `${counts.vias} via${counts.vias === 1 ? "" : "s"}` : ""].filter(Boolean).join(", ") || "0 items";
+    return `${change.net} (${change.added && change.removed ? `added ${describe(change.added)}; removed ${describe(change.removed)}` : describe(change)})`;
+  });
+  return `\nAlso changed outside scope: ${nets.join("; ")}.`;
+}
+
 /** The route_status response for one run; route_run returns the same thing for a run that finished inline. */
 async function routeStatusOutput(
   ctx: ToolContext,
@@ -890,7 +963,7 @@ async function routeStatusOutput(
   };
   ctx.services.routeRuns.update(rec.id, run);
   return ok(
-    `Run ${rec.id} (${rec.router}): ${rec.state}; ${rec.progress.routed ?? "?"}/${rec.progress.total ?? "?"} routed; candidate ${rec.candidate.available ? "ready" : "unavailable"}; apply ${rec.application.state}.${rec.fallbackReason ? ` Fallback: ${rec.fallbackReason}.` : ""}${rec.result?.quality ? `\n${rec.result.quality.text}` : ""}`,
+    `Run ${rec.id} (${rec.router}): ${rec.state}; ${rec.progress.routed ?? "?"}/${rec.progress.total ?? "?"} routed; candidate ${rec.candidate.available ? "ready" : "unavailable"}; apply ${rec.application.state}.${rec.fallbackReason ? ` Fallback: ${rec.fallbackReason}.` : ""}${rec.result?.diagnostics ? `\n${rec.result.diagnostics.text}` : rec.error ? `\n${rec.error}` : ""}${rec.result?.endpointCollisions ? `\n${rec.result.endpointCollisions.text}` : ""}${outsideScopeText(rec.result?.outsideScopeChanges)}${rec.result?.quality ? `\n${rec.result.quality.text}` : ""}`,
     { run },
   );
 }
@@ -1078,8 +1151,8 @@ export async function runRoute(args: RouteArgs, ctx: ToolContext): Promise<ToolO
     startingPcbRevision,
     ...record.request,
   });
-  await writeJson(join(runDir, "progress.json"), record);
   ctx.services.routeRuns.start(record);
+  await persistProgress(ctx, record, runDir);
   // Settles when the route worker (including auto apply) has finished, whichever way it ended.
   let markSettled!: () => void;
   const settled = new Promise<void>((resolve) => (markSettled = resolve));
