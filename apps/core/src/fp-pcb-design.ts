@@ -2181,6 +2181,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     const s = job.summary;
     return {
       ...(s.diagnostics ? { diagnostics: s.diagnostics } : {}),
+      ...(s.endpointCollisions ? { endpointCollisions: s.endpointCollisions } : {}),
       ...(s.pairRouting?{pairRouting:s.pairRouting}:{}),
       tracks: s.tracks,
       vias: s.vias,
