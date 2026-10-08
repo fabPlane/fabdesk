@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { ToolError } from "@fabdesk/tools";
+import { JobTimeoutError, ToolError } from "@fabdesk/tools";
 import { FpPcbBridgeClient, parseSse } from "../src/fp-pcb-bridge";
 
 type Session = { id: string; state: string; path: string | null };
@@ -166,6 +166,31 @@ describe("FpPcbBridgeClient", () => {
   test("a vanished session is not_found so the caller can recreate it", async () => {
     const c = client();
     await expect(c.compile("nope", request("ok"))).rejects.toMatchObject({ code: "not_found" });
+  });
+
+  test("an SSE follow deadline is a structured timeout and cancels the job", async () => {
+    const c = client();
+    const s = await c.sessionFor(null);
+    const error = await c.compile(s.id, request("hang"), { maxMs: 30 }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(JobTimeoutError);
+    expect(calls).toContain(`DELETE /sessions/${s.id}/compile/hang`);
+  });
+
+  test("a deadline before SSE headers is also a structured timeout", async () => {
+    let cancelled = false;
+    const fetchImpl = (async (_url, init) => {
+      if (init?.method === "POST") return Response.json({ job: job("waiting", "queued") });
+      if (init?.method === "DELETE") { cancelled = true; return Response.json({ ok: true }); }
+      return new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal;
+        if (signal?.aborted) reject(signal.reason);
+        else signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+    }) as typeof fetch;
+    const c = new FpPcbBridgeClient({ url: "http://mock", fetch: fetchImpl });
+    const error = await c.compile("s", request("waiting"), { maxMs: 30 }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(JobTimeoutError);
+    expect(cancelled).toBe(true);
   });
 
   test("an unreachable bridge is unavailable, with the URL in the message", async () => {

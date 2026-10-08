@@ -234,7 +234,6 @@ export class ProjectStore implements ProjectResolver {
       createdAt: ts,
       updatedAt: ts,
       board: { layers: 2 },
-      router: "capacity",
     });
     for (const sub of [
       PROJECT_FILES.sketches,
@@ -305,7 +304,7 @@ export class ProjectStore implements ProjectResolver {
       createdAt: existing?.createdAt ?? ts,
       updatedAt: ts,
       board: existing?.board ?? { layers: 2 },
-      router: existing?.router ?? "capacity",
+      ...(existing?.router ? { router: existing.router } : {}),
     });
     for (const sub of [
       PROJECT_FILES.sketches,

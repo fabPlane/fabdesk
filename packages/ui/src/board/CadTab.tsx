@@ -3,6 +3,7 @@ import { type CadRuntimeBridge } from "@fabdesk/protocol";
 import { CadSession, type CadSessionState, useCoreClient } from "@fabdesk/client-core";
 import { Button, EmptyState, Spinner } from "../components/ui";
 import { useUiStore } from "../stores/ui";
+import { EnclosurePanel } from "./EnclosurePanel";
 
 /**
  * The fab_cad web UI is served by the loopback bridge, an origin other than the renderer's, so
@@ -48,7 +49,14 @@ export function CadTab() {
     };
   }, [session, projectId]);
 
-  return <CadScreen projectSelected={Boolean(projectId)} state={state} session={session} />;
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <EnclosurePanel />
+      <div className="min-h-0 flex-1">
+        <CadScreen projectSelected={Boolean(projectId)} state={state} session={session} />
+      </div>
+    </div>
+  );
 }
 
 /** Presentational surface shared by the desktop and local state previews. */

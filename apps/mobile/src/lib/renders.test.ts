@@ -24,7 +24,7 @@ function project(files: Array<[string, string]>): ProjectDetail {
       createdAt: "2026-09-01T00:00:00Z",
       updatedAt: "2026-09-01T00:00:00Z",
       board: { layers: 2 },
-      router: "capacity",
+      router: "fab_router",
       agent: {},
       allowedDrcWarnings: [],
     },

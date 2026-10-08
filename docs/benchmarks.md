@@ -51,7 +51,7 @@ bun run scripts/bench/vaio-b223.ts --router capacity --scenario full
 
 With the dev app running the script talks to its daemon (`daemon.json`), so the project appears in
 the app and the Route Cinema shows every run's frames. Routing runs through the FabPlane PCB bridge;
-use the internal channel when benchmarking internal-only router options.
+record the selected router when benchmarking router options.
 
 Direct CLI:
 

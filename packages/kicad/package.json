@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./board-features": "./src/board-features.ts",
+    "./enclosure": "./src/enclosure.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

@@ -209,7 +209,7 @@ Gotchas that cost time already:
 7. **Route Cinema on real boards.** Frames come from job progress (pass / connection events, no
    geometry); the JS router finished the test board before any progress streamed.
 8. Small: `apps/desktop` user-data test assumes a case-sensitive filesystem; Freerouting stays
-   internal-only at the tool layer; `docs/benchmarks.md` is historical.
+   available on every channel; `docs/benchmarks.md` is historical.
 
 ## 7. Decisions already taken (do not relitigate without a reason)
 

@@ -8,30 +8,37 @@ import { PROJECT_FILES, writeAtomic, writeJson } from "../fs";
 import { DEFAULT_ROUTE_FRAME_MAX_BYTES, FrameSink } from "../frame-sink";
 import {
   ToolError,
+  JobTimeoutError,
   defineTool,
   type ProjectHandle,
   type ToolContext,
   type ToolOutput,
 } from "../registry";
-import type { RouteProgress, RouteRunRecord } from "../services";
+import type { RouteProgress, RouteRunRecord, RouteSummary } from "../services";
 import { ok, p, throwIfAborted } from "./common";
 import { rowPoints } from "./spatial";
+import { readCopper, copperBoard, quality, qualityText, referenceFacts, consumeReference, type PairDefinition } from "../routing-quality";
 
 /** Default and upper bound for how long one route_run request waits for its run to finish. */
 export const ROUTE_RUN_DEFAULT_WAIT_MS = 20_000;
 export const ROUTE_RUN_MAX_WAIT_MS = 60_000;
+/** FFC smoke: 193 s at 20 passes; dense-board reference: 532 s. Inline wait is independent. */
+export const ROUTE_RUN_DEFAULT_TIMEOUT_MS = 600_000;
 
 export const RouteRunArgs = {
   router: z
-    .enum(["capacity", "freerouting"])
+    .enum(["fab_router", "freerouting", "capacity"])
     .optional()
-    .describe("Router; defaults to the project's fabdesk.json router"),
+    .describe(
+      "Router; capacity is a legacy fab_router alias. An unpinned project defaults to Freerouting, falling back to fab_router when unavailable or failed. Automatic selective reroutes use fab_router. Explicit Freerouting falls back only when unavailable.",
+    ),
   timeoutMs: z
     .number()
     .int()
     .min(1000)
     .max(30 * 60_000)
-    .default(120_000),
+    .default(ROUTE_RUN_DEFAULT_TIMEOUT_MS)
+    .describe("Per-router computation budget in milliseconds; default 10 minutes. Queue time and inline wait are separate. A deadline does not trigger fallback."),
   onlyConnections: z
     .array(z.string())
     .optional()
@@ -57,6 +64,8 @@ export const RouteRunArgs = {
       viaDiameterMm: z.number().positive().optional(),
       viaDrillMm: z.number().positive().optional(),
       refillZones: z.boolean().optional(),
+      perNet: z.array(z.object({ net: z.string().min(1), widthMm: z.number().positive().optional(), viaDiameterMm: z.number().positive().optional(), viaDrillMm: z.number().positive().optional() }).strict()).optional().describe("Per-net width and via overrides; override global fields and net classes"),
+      pairs: z.array(z.object({ p: z.string().min(1), n: z.string().min(1), widthMm: z.number().positive().optional(), gapMm: z.number().nonnegative().optional(), skewToleranceMm: z.number().nonnegative().optional() }).strict()).optional().describe("Declared pairs for measurement; current routers route members independently. Pair width applies to both members; conflicting per-net widths are rejected"),
     })
     .optional()
     .describe(
@@ -77,21 +86,6 @@ export const RouteRunArgs = {
     .default(ROUTE_RUN_DEFAULT_WAIT_MS)
     .describe(
       "Milliseconds this request waits for the run to finish (including auto apply). A run that finishes in time returns its final status; otherwise the response is the running state. 0 returns immediately. The run continues after the request returns either way.",
-    ),
-};
-
-/**
- * route_run arguments for runtimes that cannot run freerouting (every channel except internal):
- * the router enum offers only what the runtime can execute. runRoute keeps its own check as a
- * backstop for a project whose fabdesk.json names freerouting.
- */
-export const PackagedRouteRunArgs = {
-  ...RouteRunArgs,
-  router: z
-    .enum(["capacity"])
-    .optional()
-    .describe(
-      "Router; defaults to the project's fabdesk.json router. This runtime provides the capacity router only.",
     ),
 };
 
@@ -163,6 +157,19 @@ export class RouteProgressFrames {
       }
     }
   }
+  fallback(reason: string): void {
+    this.pass = undefined;
+    this.routed = 0;
+    this.lastStatus = undefined;
+    this.sink.onMessage({
+      kind: "frame",
+      runId: this.runId,
+      seq: this.seq++,
+      elapsedMs: Date.now() - this.started,
+      event: { kind: "attempt", status: `fab_router fallback: ${reason}` },
+      shapes: [],
+    });
+  }
   complete(shapes: CinemaShape[], total: number): void {
     this.sink.onMessage({
       kind: "frame",
@@ -190,7 +197,7 @@ export function cinemaLayer(layer: number, count: number): number {
 }
 
 type RouteArgs = {
-  router?: "capacity" | "freerouting";
+  router?: "fab_router" | "capacity" | "freerouting";
   timeoutMs: number;
   onlyConnections?: string[];
   targets?: Array<{
@@ -204,11 +211,14 @@ type RouteArgs = {
     viaDiameterMm?: number | undefined;
     viaDrillMm?: number | undefined;
     refillZones?: boolean | undefined;
+    perNet?: Array<{ net: string; widthMm?: number | undefined; viaDiameterMm?: number | undefined; viaDrillMm?: number | undefined }> | undefined;
+    pairs?: PairDefinition[] | undefined;
   };
   settings?: Record<string, unknown>;
   applyPolicy: "auto" | "manual";
   /** How long this request waits for a terminal run; 0 or absent returns the running state at once. */
   waitMs?: number;
+  fallbackOnFailure?: boolean;
 };
 
 const iso = () => new Date().toISOString();
@@ -228,7 +238,7 @@ async function boardInventory(ctx: ToolContext, dir: string) {
     "components",
     "footprint_geometry",
     "board_geometry",
-    "nets",
+    "pads",
     "tracks",
     "vias",
     "zones",
@@ -237,9 +247,31 @@ async function boardInventory(ctx: ToolContext, dir: string) {
     "unrouted",
   ] as const;
   const values = await Promise.all(selects.map((select) => ctx.services.design.query(dir, select)));
-  return Object.fromEntries(
-    selects.map((select, index) => [select, stableRows(values[index]!)]),
-  ) as Record<(typeof selects)[number], string[]>;
+  const rows = Object.fromEntries(
+    selects.map((select, index) => [select, values[index]!]),
+  ) as Record<(typeof selects)[number], Array<Record<string, unknown>>>;
+  // Net codes and unused declarations are serialization details. Routing may replace copper,
+  // but must preserve assigned net names and every physical pad's net assignment.
+  const assignedNames = new Set(
+    [...rows.pads, ...rows.tracks, ...rows.vias, ...rows.zones]
+      .map((row) => String(row["net"] ?? ""))
+      .filter(Boolean),
+  );
+  const nets = stableRows([
+    ...[...assignedNames].map((name) => ({ name })),
+    ...rows.pads.map((pad) => ({
+      x: pad["x"],
+      y: pad["y"],
+      layer: pad["layer"],
+      component: pad["component"],
+      number: pad["number"],
+      net: pad["net"] ?? "",
+    })),
+  ]);
+  return {
+    ...Object.fromEntries(selects.map((select) => [select, stableRows(rows[select])])),
+    nets,
+  } as Record<(typeof selects)[number] | "nets", string[]>;
 }
 
 function inventoryDiff(
@@ -282,9 +314,21 @@ function forbiddenDiff(diff: Record<string, { changed: number }>, allowZones: bo
   ].filter((key) => (diff[key]?.changed ?? 0) > 0);
 }
 
+// Every progress producer shares this queue. Capture bytes at enqueue time, so a later
+// terminal/application record cannot be overwritten by a delayed earlier heartbeat.
+const progressQueues = new Map<string, Promise<void>>();
 async function persistProgress(ctx: ToolContext, rec: RouteRunRecord, runDir: string) {
   ctx.services.routeRuns.update(rec.id, rec);
-  await writeJson(join(runDir, "progress.json"), compactRecord(rec));
+  const path = join(runDir, "progress.json");
+  const data = JSON.stringify(compactRecord(rec), null, 2) + "\n";
+  const pending = (progressQueues.get(path) ?? Promise.resolve())
+    .then(() => writeAtomic(path, data))
+    .catch((error: unknown) => {
+      console.error(`route ${rec.id}: progress write failed: ${String(error)}`);
+    });
+  progressQueues.set(path, pending);
+  await pending;
+  if (progressQueues.get(path) === pending) progressQueues.delete(path);
 }
 
 async function applyCandidate(
@@ -336,6 +380,10 @@ async function applyCandidate(
       throw new Error(
         `reopened board hash ${resulting} differs from candidate ${rec.candidate.sha256}`,
       );
+    if (rec.result?.quality) {
+      const facts = JSON.parse(await readFile(p(project, rec.result.quality.detailPath), "utf8")) as { nets: Array<{net:string}> };
+      await consumeReference(project.dir, current, resulting, facts.nets.map(n => n.net).filter(net => !rec.result!.open.includes(net)));
+    }
     next = {
       ...next,
       currentPcbRevision: resulting,
@@ -413,7 +461,6 @@ async function executeRoute(
       (error: unknown) => (error instanceof Error ? error.message : String(error)),
     );
   const frames = new RouteProgressFrames(rec.id, started, sink);
-  let progressWrites = Promise.resolve();
   let cancelPromise: Promise<void> | null = null;
   signal.addEventListener(
     "abort",
@@ -439,6 +486,7 @@ async function executeRoute(
   try {
     throwIfAborted(signal);
     const beforeInventory = await boardInventory(ctx, snapshotDir);
+    const startingCopper = await readCopper(snapshotDir);
     const endpoints = await ctx.services.design.query(snapshotDir, "unrouted");
     const requestedNets = [
       ...new Set([
@@ -452,6 +500,8 @@ async function executeRoute(
       throw new ToolError(`no remaining endpoints for ${missing.join(", ")}`, "precondition");
     const ruleSettings: Record<string, unknown> = {
       ...(args.settings ?? {}),
+      ...(args.rules?.perNet ? { perNet: args.rules.perNet } : {}),
+      ...(args.rules?.pairs ? { differentialPairs: args.rules.pairs } : {}),
       ...(args.rules?.widthMm !== undefined ? { trackWidthMm: args.rules.widthMm } : {}),
       ...(args.rules?.clearanceMm !== undefined ? { clearanceMm: args.rules.clearanceMm } : {}),
       ...(args.rules?.viaDiameterMm !== undefined
@@ -522,52 +572,114 @@ async function executeRoute(
     } catch {
       // Static cinema context is optional; durable route execution is not.
     }
-    const summary = await ctx.services.design.route(
-      snapshotDir,
-      {
-        router: rec.router as "capacity" | "freerouting",
-        maxTimeMs: args.timeoutMs,
-        ...(requestedNets.length ? { nets: requestedNets } : {}),
-        ...(Object.keys(ruleSettings).length ? { settings: ruleSettings } : {}),
-        ...(args.rules?.refillZones !== undefined ? { refillZones: args.rules.refillZones } : {}),
-      },
-      {
-        signal,
-        onProgress: (value) => {
-          frames.onProgress(value);
-          const at = iso();
-          const diagnostics = [
-            ...rec.progress.diagnostics,
-            ...(value.log ?? []),
-            ...(value.message ? [value.message] : []),
-          ].slice(-20);
-          rec = {
-            ...rec,
-            progress: {
-              phase: value.phase ?? value.state,
-              pass: value.pass ?? null,
-              routed: value.routed ?? rec.progress.routed,
-              total: value.total ?? rec.progress.total,
-              remaining:
-                value.total !== undefined && value.routed !== undefined
-                  ? Math.max(0, value.total - value.routed)
-                  : rec.progress.remaining,
-              violations: value.violations ?? rec.progress.violations,
-              elapsedMs: Date.now() - started,
-              measuredAt: at,
-              heartbeatAt: at,
-              diagnostics,
+    const attemptRoute = async (): Promise<RouteSummary> => {
+      const attempt = {
+        router: rec.router as "fab_router" | "freerouting",
+        startedAt: iso(),
+        endedAt: null as string | null,
+        outcome: "running" as const,
+        reason: null as string | null,
+      };
+      rec = { ...rec, attempts: [...(rec.attempts ?? []), attempt] };
+      await persistProgress(ctx, rec, runDir);
+      try {
+        const summary = await ctx.services.design.route(
+          snapshotDir,
+          {
+            router: rec.router as "fab_router" | "freerouting",
+            ...(rec.router === "freerouting" ? { freerouting: { passes: 20 } } : {}),
+            maxTimeMs: args.timeoutMs,
+            ...(requestedNets.length ? { nets: requestedNets } : {}),
+            ...(Object.keys(ruleSettings).length ? { settings: ruleSettings } : {}),
+            ...(args.rules?.refillZones !== undefined
+              ? { refillZones: args.rules.refillZones }
+              : {}),
+          },
+          {
+            signal,
+            onProgress: (value) => {
+              frames.onProgress(value);
+              const at = iso();
+              const diagnostics = [
+                ...rec.progress.diagnostics,
+                ...(value.log ?? []),
+                ...(value.message ? [value.message] : []),
+              ].slice(-20);
+              rec = {
+                ...rec,
+                progress: {
+                  phase: value.phase ?? value.state,
+                  pass: value.pass ?? rec.progress.pass,
+                  routed: value.routed ?? rec.progress.routed,
+                  total: value.total ?? rec.progress.total,
+                  remaining:
+                    value.total !== undefined && value.routed !== undefined
+                      ? Math.max(0, value.total - value.routed)
+                      : rec.progress.remaining,
+                  violations: value.violations ?? rec.progress.violations,
+                  elapsedMs: Date.now() - started,
+                  measuredAt: at,
+                  heartbeatAt: at,
+                  diagnostics,
+                },
+                updatedAt: at,
+              };
+              void persistProgress(ctx, rec, runDir);
             },
-            updatedAt: at,
-          };
-          ctx.services.routeRuns.update(rec.id, rec);
-          progressWrites = progressWrites.then(() =>
-            writeJson(join(runDir, "progress.json"), compactRecord(rec)),
-          );
-        },
-      },
-    );
-    await progressWrites;
+          },
+        );
+        rec = {
+          ...rec,
+          attempts: rec.attempts!.map((value, index) =>
+            index === rec.attempts!.length - 1
+              ? {
+                  ...value,
+                  endedAt: iso(),
+                  outcome: summary.timedOut ? "timed_out" : "completed",
+                  reason: summary.message,
+                }
+              : value,
+          ),
+        };
+        return summary;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const timedOut = error instanceof JobTimeoutError;
+        rec = {
+          ...rec,
+          attempts: rec.attempts!.map((value, index) =>
+            index === rec.attempts!.length - 1
+              ? {
+                  ...value,
+                  endedAt: iso(),
+                  outcome: signal.aborted ? "cancelled" : timedOut ? "timed_out" : "failed",
+                  reason: message,
+                }
+              : value,
+          ),
+        };
+        // Cancellation and a routing deadline are not solver failures. Preserve their outcome.
+        if (signal.aborted || timedOut || rec.router !== "freerouting" || !args.fallbackOnFailure)
+          throw error;
+        await progressQueues.get(join(runDir, "progress.json"));
+        await ctx.services.design.release(snapshotDir);
+        // A failed job may have changed its live board. Restore the exact original snapshot.
+        await copyFile(
+          join(runDir, "starting.kicad_pcb"),
+          join(snapshotDir, PROJECT_FILES.boardPcb),
+        );
+        await copyFile(
+          join(runDir, "starting.kicad_pro"),
+          join(snapshotDir, PROJECT_FILES.boardPro),
+        );
+        rec = { ...rec, router: "fab_router", fallbackReason: `Freerouting failed: ${message}` };
+        frames.fallback(rec.fallbackReason!);
+        await persistProgress(ctx, rec, runDir);
+        return attemptRoute();
+      }
+    };
+    const summary = await attemptRoute();
+    await progressQueues.get(join(runDir, "progress.json"));
     const geometry = summary.geometry ?? [];
     const open = [...new Set(summary.unrouted.map((row) => row.net))];
     const resultState = summary.timedOut
@@ -584,24 +696,61 @@ async function executeRoute(
         ),
       ),
     ].slice(0, 20);
+    const candidateBoard = await readCopper(snapshotDir);
+    const touchedNets = [...new Set([...endpoints.map(row => String(row["net"] ?? "")), ...candidateBoard.copper.filter(c => !startingCopper.copper.some(b => b.id === c.id)).map(c => c.net)])].filter(Boolean);
+    const copperById = new Map(candidateBoard.copper.map(item => [item.id, item]));
+    const namedGeometry = geometry.map(shape => ({
+      ...shape,
+      netName: copperById.get(shape.id)?.net ?? shape.netName ?? "",
+    }));
+    const outsideScopeChanges: NonNullable<RouteResult["outsideScopeChanges"]> = [];
+    if (requestedNets.length) {
+      const scope = new Set(requestedNets);
+      const counts = new Map<string, { net: string; traces: number; vias: number; added:{traces:number;vias:number}; removed:{traces:number;vias:number} }>();
+      const count = (net: string, via: boolean, change: "added" | "removed") => {
+        if (!net || scope.has(net)) return;
+        const row = counts.get(net) ?? {net,traces:0,vias:0,added:{traces:0,vias:0},removed:{traces:0,vias:0}};
+        const key = via ? "vias" : "traces";
+        row[change][key]++;
+        row[key]++;
+        counts.set(net,row);
+      };
+      // Geometry includes newly created or claimed items; union with the saved-board delta,
+      // because a solver may omit new copper from its summary. Count each UUID once.
+      const additions = new Map(namedGeometry.map(shape => [shape.id,{net:shape.netName,via:shape.kind === "via"}]));
+      const startIds = new Set(startingCopper.copper.map(item => item.id));
+      const candidateIds = new Set(candidateBoard.copper.map(item => item.id));
+      for (const item of candidateBoard.copper) if (!startIds.has(item.id)) additions.set(item.id,{net:item.net,via:item.diameter !== undefined});
+      for (const item of additions.values()) count(item.net,item.via,"added");
+      for (const item of startingCopper.copper) if (!candidateIds.has(item.id)) count(item.net,item.diameter !== undefined,"removed");
+      outsideScopeChanges.push(...[...counts.values()].sort((a,b) => a.net.localeCompare(b.net)));
+    }
+    const selectedNets = requestedNets.length ? requestedNets : touchedNets;
+    const measuredQuality = quality(candidateBoard, selectedNets, args.rules?.pairs, await referenceFacts(project.dir, rec.startingPcbRevision));
+    if(summary.pairRouting)measuredQuality.pairRouting=summary.pairRouting;
+    await writeJson(join(runDir, "quality.json"), measuredQuality);
     const fullResult: RouteResult = {
+      ...(summary.diagnostics ? { diagnostics: summary.diagnostics } : {}),
+      ...(summary.endpointCollisions ? { endpointCollisions: summary.endpointCollisions } : {}),
+      quality: { text: qualityText(measuredQuality), detailPath: join(rec.artifacts.runDir, "quality.json") },
       runId: rec.id,
-      router: rec.router as "capacity" | "freerouting",
+      router: rec.router as "fab_router" | "freerouting",
       complete: [],
       open,
       timedOut: summary.timedOut,
       state: resultState,
       remainingEndpoints: summary.unrouted,
       obstacles,
-      changedGeometry: geometry,
+      changedGeometry: namedGeometry,
+      ...(outsideScopeChanges.length ? { outsideScopeChanges } : {}),
       nextActions:
         resultState === "complete"
           ? []
-          : ["inspect route candidate", "inspect remaining connectivity"],
+          : summary.diagnostics ? ["try Freerouting for these nets", "check remaining native opens"] : ["inspect route candidate", "inspect remaining connectivity"],
       stats: {
         vias: summary.vias,
         segments: summary.tracks,
-        wallMs: summary.wallMs,
+        wallMs: Date.now() - started,
         frames: sink.stats.frames,
         viasOnFixed: summary.claimedVias,
       },
@@ -639,7 +788,11 @@ async function executeRoute(
         ...(frameMetadataError ? { metadataError: frameMetadataError } : {}),
       },
     });
-    await writeAtomic(join(runDir, "router.log"), `${summary.log.join("\n")}\n`);
+    await writeAtomic(join(runDir, "router.log"), `${summary.log.join("\n")}\n`).catch(
+      (error: unknown) => {
+        console.error(`route ${rec.id}: router log write failed: ${String(error)}`);
+      },
+    );
     const candidatePath = join(runDir, "candidate.kicad_pcb");
     await ctx.services.design.release(snapshotDir).catch(() => undefined);
     await copyFile(join(snapshotDir, PROJECT_FILES.boardPcb), candidatePath);
@@ -654,7 +807,7 @@ async function executeRoute(
       diff,
     });
     const forbidden = forbiddenDiff(diff, args.rules?.refillZones === true);
-    const usableCandidate = resultState !== "no-progress";
+    const usableCandidate = resultState === "complete" || summary.routed > 0 || geometry.length > 0;
     const endedAt = iso();
     const compact = {
       ...fullResult,
@@ -745,11 +898,12 @@ async function executeRoute(
     const endedAt = iso();
     const cancelled = signal.aborted;
     const message = error instanceof Error ? error.message : String(error);
+    const timedOut = !cancelled && rec.attempts?.at(-1)?.outcome === "timed_out";
     const canonical = sha256(await readFile(p(project, PROJECT_FILES.boardPcb)));
     rec = {
       ...rec,
-      state: cancelled ? "cancelled" : "failed",
-      status: cancelled ? "cancelled" : "failed",
+      state: cancelled ? "cancelled" : timedOut ? "timed_out" : "failed",
+      status: cancelled ? "cancelled" : timedOut ? "timed_out" : "failed",
       endedAt,
       updatedAt: endedAt,
       error: message,
@@ -785,6 +939,15 @@ async function executeRoute(
   }
 }
 
+export function outsideScopeText(changes: RouteResult["outsideScopeChanges"]): string {
+  if (!changes?.length) return "";
+  const nets = changes.map(change => {
+    const describe = (counts: {traces:number;vias:number}) => [counts.traces ? `${counts.traces} trace${counts.traces === 1 ? "" : "s"}` : "",counts.vias ? `${counts.vias} via${counts.vias === 1 ? "" : "s"}` : ""].filter(Boolean).join(", ") || "0 items";
+    return `${change.net} (${change.added && change.removed ? `added ${describe(change.added)}; removed ${describe(change.removed)}` : describe(change)})`;
+  });
+  return `\nAlso changed outside scope: ${nets.join("; ")}.`;
+}
+
 /** The route_status response for one run; route_run returns the same thing for a run that finished inline. */
 async function routeStatusOutput(
   ctx: ToolContext,
@@ -800,7 +963,7 @@ async function routeStatusOutput(
   };
   ctx.services.routeRuns.update(rec.id, run);
   return ok(
-    `Run ${rec.id} (${rec.router}): ${rec.state}; ${rec.progress.routed ?? "?"}/${rec.progress.total ?? "?"} routed; candidate ${rec.candidate.available ? "ready" : "unavailable"}; apply ${rec.application.state}.`,
+    `Run ${rec.id} (${rec.router}): ${rec.state}; ${rec.progress.routed ?? "?"}/${rec.progress.total ?? "?"} routed; candidate ${rec.candidate.available ? "ready" : "unavailable"}; apply ${rec.application.state}.${rec.fallbackReason ? ` Fallback: ${rec.fallbackReason}.` : ""}${rec.result?.diagnostics ? `\n${rec.result.diagnostics.text}` : rec.error ? `\n${rec.error}` : ""}${rec.result?.endpointCollisions ? `\n${rec.result.endpointCollisions.text}` : ""}${outsideScopeText(rec.result?.outsideScopeChanges)}${rec.result?.quality ? `\n${rec.result.quality.text}` : ""}`,
     { run },
   );
 }
@@ -849,13 +1012,26 @@ export async function runRoute(args: RouteArgs, ctx: ToolContext): Promise<ToolO
       "route_run supports whole-net scope only; targets.from/to cannot be honored. Use net-only targets or onlyConnections if routing the whole net is intended.",
       "precondition",
     );
-  const router = args.router ?? project.manifest().router;
-  if (router === "freerouting" && ctx.services.channel !== "internal")
-    return {
-      text: "Routing unavailable: freerouting is not present in this packaged runtime.",
-      json: { state: "unavailable", router },
-      isError: true,
-    };
+  const selected = args.router ?? project.manifest().router;
+  const automatic = selected === undefined;
+  let router: "fab_router" | "freerouting" =
+    selected === "capacity" || selected === "fab_router" ? "fab_router" : "freerouting";
+  let fallbackReason: string | null = null;
+  const selective =
+    automatic && ((args.onlyConnections?.length ?? 0) > 0 || (args.targets?.length ?? 0) > 0);
+  if (selective) {
+    router = "fab_router";
+    fallbackReason =
+      "Automatic selective reroutes use fab_router";
+  }
+  if (router === "freerouting") {
+    const health = await ctx.services.design.status();
+    if (health.routers?.freerouting?.ok === false) {
+      fallbackReason = `Freerouting unavailable: ${health.routers.freerouting.reason ?? "runtime unavailable"}`;
+      router = "fab_router";
+    }
+  }
+  args = { ...args, fallbackOnFailure: automatic };
   const boardPath = p(project, PROJECT_FILES.boardPcb);
   const boardBytes = await readFile(boardPath).catch(() => {
     throw new ToolError("board.kicad_pcb does not exist; build the board first", "precondition");
@@ -863,6 +1039,17 @@ export async function runRoute(args: RouteArgs, ctx: ToolContext): Promise<ToolO
   const projectBytes = await readFile(p(project, PROJECT_FILES.boardPro)).catch(
     () => new Uint8Array(),
   );
+  const validationBoard = copperBoard(boardBytes.toString());
+  const bad = (args.rules?.perNet ?? []).map(r => r.net).concat((args.rules?.pairs ?? []).flatMap(p => [p.p,p.n])).filter(n => !validationBoard.nets.includes(n));
+  if (bad.length) throw new ToolError(`unknown routing rule nets: ${[...new Set(bad)].join(", ")}`, "precondition");
+  if (new Set((args.rules?.perNet ?? []).map(r => r.net)).size !== (args.rules?.perNet?.length ?? 0)) throw new ToolError("duplicate per-net routing rules", "precondition");
+  const pairMembers = new Set<string>();
+  for (const pair of args.rules?.pairs ?? []) {
+    if (pair.p === pair.n || pairMembers.has(pair.p) || pairMembers.has(pair.n)) throw new ToolError(`invalid or overlapping pair ${pair.p}/${pair.n}`, "precondition");
+    pairMembers.add(pair.p); pairMembers.add(pair.n);
+    for (const member of [pair.p,pair.n]) { const width = args.rules?.perNet?.find(r => r.net === member)?.widthMm;
+      if (width !== undefined && pair.widthMm !== undefined && width !== pair.widthMm) throw new ToolError(`conflicting pair width for ${member}`, "precondition"); }
+  }
   const startingPcbRevision = sha256(boardBytes);
   const runId = newRunId();
   const runRel = join(PROJECT_FILES.runs, runId);
@@ -872,6 +1059,8 @@ export async function runRoute(args: RouteArgs, ctx: ToolContext): Promise<ToolO
   await Promise.all([
     writeAtomic(join(snapshotDir, PROJECT_FILES.boardPcb), boardBytes),
     writeAtomic(join(snapshotDir, PROJECT_FILES.boardPro), projectBytes),
+    writeAtomic(join(runDir, "starting.kicad_pcb"), boardBytes),
+    writeAtomic(join(runDir, "starting.kicad_pro"), projectBytes),
   ]);
   const createdAt = iso();
   const artifacts = {
@@ -888,6 +1077,18 @@ export async function runRoute(args: RouteArgs, ctx: ToolContext): Promise<ToolO
     id: runId,
     projectId: project.id,
     router,
+    fallbackReason,
+    attempts: fallbackReason
+      ? [
+          {
+            router: "freerouting",
+            startedAt: createdAt,
+            endedAt: createdAt,
+            outcome: selective ? "skipped" : "unavailable",
+            reason: fallbackReason,
+          },
+        ]
+      : [],
     runtimeId: ctx.services.runtimeId,
     state: "queued",
     status: "queued",
@@ -950,8 +1151,8 @@ export async function runRoute(args: RouteArgs, ctx: ToolContext): Promise<ToolO
     startingPcbRevision,
     ...record.request,
   });
-  await writeJson(join(runDir, "progress.json"), record);
   ctx.services.routeRuns.start(record);
+  await persistProgress(ctx, record, runDir);
   // Settles when the route worker (including auto apply) has finished, whichever way it ended.
   let markSettled!: () => void;
   const settled = new Promise<void>((resolve) => (markSettled = resolve));
@@ -986,7 +1187,7 @@ export async function runRoute(args: RouteArgs, ctx: ToolContext): Promise<ToolO
     }
   }
   return ok(
-    `Route ${runId} ${queuedState}; computation continues independently. Use route_status with this runId or route_cancel with this exact runId.`,
+    `Route ${runId} (${router}) ${queuedState}; computation continues independently.${fallbackReason ? ` Fallback: ${fallbackReason}.` : ""} Use route_status with this runId or route_cancel with this exact runId.`,
     {
       runId,
       state: queuedState,

@@ -177,6 +177,7 @@
       "name": "@fabdesk/tools",
       "version": "0.1.0",
       "dependencies": {
+        "@fabdesk/kicad": "workspace:*",
         "@fabdesk/protocol": "workspace:*",
         "@modelcontextprotocol/sdk": "^1.30.0",
         "hono": "4.13.7",
