@@ -94,6 +94,23 @@ function ErrorReportingBridge() {
   return null;
 }
 
+function OpenCatalogBridge() {
+  const setActiveOpenSourceId = useUiStore((s) => s.setActiveOpenSourceId);
+  const setSidebarListTab = useUiStore((s) => s.setSidebarListTab);
+  useEffect(() => {
+    if (!bridge?.onOpenCatalog) return;
+    const open = (catalogId: string) => {
+      setSidebarListTab("open_source");
+      setActiveOpenSourceId(catalogId);
+    };
+    void bridge.pendingOpenCatalog?.().then((id) => {
+      if (id) open(id);
+    });
+    return bridge.onOpenCatalog(open);
+  }, [setActiveOpenSourceId, setSidebarListTab]);
+  return null;
+}
+
 export function App() {
   const [info, setInfo] = useState<CoreInfo | null>(null);
   useEffect(() => {
@@ -143,6 +160,7 @@ export function App() {
       <ThemeSync />
       <WebMcpBridge />
       <ErrorReportingBridge />
+      <OpenCatalogBridge />
     </FabdeskApp>
   );
 }
