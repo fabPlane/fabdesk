@@ -96,10 +96,25 @@ export const comment_pin = defineTool({
   },
   handler: async (args, ctx) => {
     const project = ctx.requireProject();
-    const anchor = parseAnchorInput(args);
+    const anchor = parseAnchorInput({
+      view: args.view,
+      ...(args.x !== undefined ? { x: args.x } : {}),
+      ...(args.y !== undefined ? { y: args.y } : {}),
+      ...(args.xMm !== undefined ? { xMm: args.xMm } : {}),
+      ...(args.yMm !== undefined ? { yMm: args.yMm } : {}),
+      ...(args.ref ? { ref: args.ref } : {}),
+      ...(args.pin ? { pin: args.pin } : {}),
+      ...(args.pad ? { pad: args.pad } : {}),
+      ...(args.net ? { net: args.net } : {}),
+      ...(args.area ? { area: args.area } : {}),
+    });
     const author = args.author ?? ctx.principal?.handle ?? ctx.principal?.subject ?? "local";
     const loaded = await loadComments(project);
-    const { file, comment } = createComment(loaded, { question: args.question, anchor, author });
+    const { file, comment } = createComment(loaded, {
+      question: args.question,
+      anchor,
+      ...(author ? { author } : {}),
+    });
     await saveComments(project, file);
     return ok(`Pinned ${comment.id} on ${comment.anchor.view} · ${commentAnchorLabel(anchor)}.`, {
       comment,

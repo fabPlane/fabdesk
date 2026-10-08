@@ -121,14 +121,14 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
           <SvgViewer
             svg={rendered.data}
             commentMode={commentMode}
-            onDrawingClick={
-              commentMode
-                ? (point) => {
+            {...(commentMode
+              ? {
+                  onDrawingClick: (point: SvgPoint) => {
                     setDraftPoint(point);
                     setSelectedId(null);
-                  }
-                : undefined
-            }
+                  },
+                }
+              : {})}
             overlay={
               <CommentPins
                 comments={pins}
