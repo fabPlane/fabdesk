@@ -1,6 +1,7 @@
 export * from "./registry";
 export * from "./services";
 export * from "./fs";
+export * from "./comments";
 export * from "./tools/index";
 export * from "./templates/viagrid-9055";
 export * from "./adapters/mcp";

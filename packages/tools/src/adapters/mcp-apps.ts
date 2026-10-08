@@ -106,6 +106,7 @@ export const UI_CALLABLE_TOOLS = new Set([
   "cad_status",
   "cad_export",
   "cad_view",
+  "cad_enclosure",
 ]);
 
 export function clientSupportsApps(caps: ClientCapabilities | undefined): boolean {
@@ -393,7 +394,7 @@ export function registerMcpApps(
             : { result: out.json ?? null };
         // Views address drawings by project-relative path (export_dxf `files`, cad_export `path`).
         const dir =
-          name === "export_dxf" || name === "cad_export"
+          name === "export_dxf" || name === "cad_export" || name === "cad_enclosure"
             ? (await context(str(args["project"]), extra)).project?.dir
             : undefined;
         if (dir && Array.isArray(json["files"]))

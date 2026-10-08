@@ -1,9 +1,23 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { Button } from "../components/ui";
 import { Icon } from "../components/Icon";
+import { cn } from "../util";
+import { clientPointToSvg, parseSvgViewBox, type SvgPoint } from "./svg-coords";
 
 /** Zoomable host for an SVG string (schematic / PCB renders). */
-export function SvgViewer({ svg, toolbar }: { svg: string; toolbar?: React.ReactNode }) {
+export function SvgViewer({
+  svg,
+  toolbar,
+  overlay,
+  commentMode = false,
+  onDrawingClick,
+}: {
+  svg: string;
+  toolbar?: React.ReactNode;
+  overlay?: React.ReactNode;
+  commentMode?: boolean;
+  onDrawingClick?: (point: SvgPoint, event: MouseEvent<HTMLDivElement>) => void;
+}) {
   const [zoom, setZoom] = useState(1);
   const viewport = useRef<HTMLDivElement>(null);
   const drawing = useRef<HTMLDivElement>(null);
@@ -33,6 +47,17 @@ export function SvgViewer({ svg, toolbar }: { svg: string; toolbar?: React.React
     observer.observe(frame);
     return () => observer.disconnect();
   }, [svg]);
+
+  const handleClick = (event: MouseEvent<HTMLDivElement>) => {
+    if (!onDrawingClick) return;
+    if ((event.target as HTMLElement | null)?.closest("[data-comment-pin]")) return;
+    const host = drawing.current;
+    const box = parseSvgViewBox(svg) ?? svgElBox(host);
+    if (!host || !box) return;
+    const point = clientPointToSvg(box, host.getBoundingClientRect(), event.clientX, event.clientY);
+    if (point) onDrawingClick(point, event);
+  };
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-border px-3 py-2">
@@ -51,11 +76,21 @@ export function SvgViewer({ svg, toolbar }: { svg: string; toolbar?: React.React
       <div ref={viewport} className="min-h-0 flex-1 overflow-auto bg-panel-2/40 p-3">
         <div
           ref={drawing}
-          className="fd-svg-host mx-auto origin-top-left bg-panel"
+          className={cn("fd-svg-host relative mx-auto origin-top-left bg-panel", commentMode && "cursor-crosshair")}
           style={{ width: fitSize.width * zoom, height: fitSize.height * zoom }}
-          dangerouslySetInnerHTML={{ __html: svg }}
-        />
+          onClick={handleClick}
+        >
+          <div className="h-full w-full" dangerouslySetInnerHTML={{ __html: svg }} />
+          {overlay}
+        </div>
       </div>
     </div>
   );
+}
+
+function svgElBox(host: HTMLDivElement | null) {
+  const el = host?.querySelector("svg");
+  const box = el?.viewBox.baseVal;
+  if (!box || !box.width || !box.height) return null;
+  return { x: box.x, y: box.y, width: box.width, height: box.height };
 }

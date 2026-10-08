@@ -253,6 +253,12 @@ describe("registry", () => {
       "project_list_sketches",
       "project_set_board",
       "project_import_kicad",
+      "comment_list",
+      "comment_pin",
+      "comment_answer",
+      "comment_resolve",
+      "notes_read",
+      "notes_write",
       "circuit_query",
       "circuit_search_parts",
       "circuit_describe_part",
@@ -327,6 +333,7 @@ describe("registry", () => {
       "cad_export",
       "cad_python",
       "cad_view",
+      "cad_enclosure",
     ]);
     for (const n of names) expect(n).toMatch(/^[a-z][a-z0-9_]*$/);
     expect(reg.byToolset("core").length).toBe(9);

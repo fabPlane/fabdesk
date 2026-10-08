@@ -1,4 +1,5 @@
 import type {
+  AgentId,
   ApprovalDecision,
   PendingRequests,
   RuntimeMode,
@@ -738,4 +739,92 @@ export function useInventoryMutations() {
       onSuccess: refresh,
     }),
   };
+}
+
+export function useBoardComments(projectId: string | null) {
+  const client = useCoreClient();
+  return useQuery({
+    queryKey: ["comments", projectId],
+    queryFn: () => client.listComments(projectId!),
+    enabled: !!projectId,
+  });
+}
+
+export function useFinishIt(projectId: string | null) {
+  const client = useCoreClient();
+  return useQuery({
+    queryKey: ["finish-it", projectId],
+    queryFn: async () => (await client.getFinishIt(projectId!)).session,
+    enabled: !!projectId,
+  });
+}
+
+export function useBoardNotes(projectId: string | null) {
+  const client = useCoreClient();
+  return useQuery({
+    queryKey: ["notes", projectId],
+    queryFn: () => client.readNotes(projectId!),
+    enabled: !!projectId,
+  });
+}
+
+export function useBoardCommentMutations(projectId: string | null) {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: ["comments", projectId] });
+    void qc.invalidateQueries({ queryKey: ["notes", projectId] });
+    void qc.invalidateQueries({ queryKey: ["file", projectId] });
+    void qc.invalidateQueries({ queryKey: ["project", projectId] });
+  };
+  return {
+    pin: useMutation({
+      mutationFn: (input: Parameters<typeof client.pinComment>[1]) => client.pinComment(projectId!, input),
+      onSuccess: refresh,
+    }),
+    patch: useMutation({
+      mutationFn: ({ commentId, patch }: { commentId: string; patch: Parameters<typeof client.patchComment>[2] }) =>
+        client.patchComment(projectId!, commentId, patch),
+      onSuccess: refresh,
+    }),
+    writeNotes: useMutation({
+      mutationFn: (content: string) => client.writeNotes(projectId!, content),
+      onSuccess: refresh,
+    }),
+  };
+}
+
+export function useStartFinishIt() {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      projectId,
+      threadId,
+      agentId,
+      model,
+    }: {
+      projectId: string;
+      threadId?: string;
+      agentId?: AgentId;
+      model?: string;
+    }) => client.startFinishIt(projectId, { ...(threadId ? { threadId } : {}), ...(agentId ? { agentId } : {}), ...(model ? { model } : {}) }),
+    onSuccess: (data, vars) => {
+      qc.setQueryData(["finish-it", vars.projectId], data.session);
+      void qc.invalidateQueries({ queryKey: ["threads"] });
+      void qc.invalidateQueries({ queryKey: ["thread", data.session.threadId] });
+      void qc.invalidateQueries({ queryKey: messagesKey(data.session.threadId) });
+    },
+  });
+}
+
+export function useStopFinishIt() {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (projectId: string) => client.stopFinishIt(projectId),
+    onSuccess: (data, projectId) => {
+      qc.setQueryData(["finish-it", projectId], data.session);
+    },
+  });
 }

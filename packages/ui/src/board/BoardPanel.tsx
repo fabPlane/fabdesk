@@ -8,6 +8,7 @@ import { CadTab } from "./CadTab";
 import { CinemaTab } from "./cinema/CinemaTab";
 import { DrcTab } from "./DrcTab";
 import { FilesTab } from "./FilesTab";
+import { NotesTab } from "./NotesTab";
 import { RendersTab } from "./RendersTab";
 import { DiffTab } from "./DiffTab";
 import { ShoppingListTab } from "./ShoppingListTab";
@@ -30,6 +31,8 @@ function TabBody({ tab }: { tab: BoardTab }) {
       return <DrcTab />;
     case "renders":
       return <RendersTab />;
+    case "notes":
+      return <NotesTab />;
     case "files":
       return <FilesTab />;
     case "bom":

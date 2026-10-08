@@ -66,6 +66,8 @@ export { DiffTab } from "./board/DiffTab";
 export { diffHeadline } from "./board/diff-copy";
 export { RendersTab } from "./board/RendersTab";
 export { FilesTab } from "./board/FilesTab";
+export { NotesTab } from "./board/NotesTab";
+export { parseSvgViewBox, clientPointToSvg, svgPointToPercent } from "./board/svg-coords";
 export { ThreeDTab } from "./board/ThreeDTab";
 export { useRunTool, resolveToolName, TOOL_PATTERNS } from "@fabdesk/client-core";
 
@@ -84,6 +86,7 @@ export { ProjectPickerDialog } from "./chat/ProjectPickerDialog";
 export { ThreadView } from "./chat/ThreadView";
 export { MessageList, MessageBubble, BranchHeader } from "./chat/MessageList";
 export { Composer, composerHandlers } from "./chat/Composer";
+export { FinishItPanel } from "./chat/FinishItPanel";
 export { Markdown, CodeBlock } from "./chat/Markdown";
 export { ToolCallCard, extractImages, resultText } from "./chat/ToolCallCard";
 export { ThinkingBlock } from "./chat/ThinkingBlock";

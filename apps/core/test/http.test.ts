@@ -733,4 +733,48 @@ describe("http daemon", () => {
     const after = (await (await api(`/threads/${older.id}`)).json()) as { pinned: boolean };
     expect(after.pinned).toBe(false);
   });
+
+  test("board comments and NOTES.md are git-native project files", async () => {
+    const project = (await (
+      await api("/projects", { method: "POST", body: JSON.stringify({ name: "Comment Board" }) })
+    ).json()) as { id: string; path: string };
+    const empty = await api(`/projects/${project.id}/comments`);
+    expect(empty.status).toBe(200);
+    expect(await empty.json()).toMatchObject({
+      contract: { name: "fabplane.board-comments", version: "1.0.0" },
+      comments: [],
+    });
+    const created = await api(`/projects/${project.id}/comments`, {
+      method: "POST",
+      body: JSON.stringify({
+        question: "What does this chip do here?",
+        anchor: { view: "pcb", x: 12, y: 8, ref: "U12" },
+        author: "maya",
+      }),
+    });
+    expect(created.status).toBe(201);
+    const body = (await created.json()) as { comment: { id: string }; label: string };
+    expect(body.label).toBe("U12");
+    const answered = await api(`/projects/${project.id}/comments/${body.comment.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ answer: "U12 is the MCU." }),
+    });
+    expect(answered.status).toBe(200);
+    expect(((await answered.json()) as { comment: { status: string } }).comment.status).toBe(
+      "answered",
+    );
+    expect(
+      (
+        await api(`/projects/${project.id}/notes`, {
+          method: "PUT",
+          body: JSON.stringify({ content: "Shared notes.\n" }),
+        })
+      ).status,
+    ).toBe(200);
+    expect(((await (await api(`/projects/${project.id}/notes`)).json()) as { content: string }).content).toBe(
+      "Shared notes.\n",
+    );
+    expect(await Bun.file(join(project.path, "comments.json")).exists()).toBe(true);
+    expect(await Bun.file(join(project.path, "NOTES.md")).text()).toBe("Shared notes.\n");
+  });
 });

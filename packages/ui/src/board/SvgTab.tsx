@@ -1,8 +1,20 @@
-import { Button, EmptyState, LoadError, Spinner } from "../components/ui";
-import { useProject, useProjectText } from "@fabdesk/client-core";
-import { useUiStore } from "../stores/ui";
+import { useMemo, useState } from "react";
+import type { BoardComment, CommentView } from "@fabdesk/protocol";
+import { buildCommentAskPrompt, commentAnchorLabel } from "@fabdesk/protocol";
+import { Button, EmptyState, Input, LoadError, Spinner, Textarea } from "../components/ui";
+import { Icon } from "../components/Icon";
+import {
+  useBoardCommentMutations,
+  useBoardComments,
+  useCoreClient,
+  useProject,
+  useProjectText,
+  useRunTool,
+} from "@fabdesk/client-core";
+import { DRAFT_KEY_NEW, useUiStore } from "../stores/ui";
+import { CommentPins } from "./CommentPins";
 import { SvgViewer } from "./SvgViewer";
-import { useRunTool } from "@fabdesk/client-core";
+import { parseSvgViewBox, type SvgPoint } from "./svg-coords";
 
 const RENDER_TOOL = { schematic: "render_schematic_svg", pcb: "render_pcb_svg" } as const;
 
@@ -30,6 +42,61 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
   const project = useProject(projectId);
   const rendered = useProjectText(projectId, `renders/${kind}.svg`);
   const render = useRunTool();
+  const comments = useBoardComments(projectId);
+  const { pin, patch } = useBoardCommentMutations(projectId);
+  const client = useCoreClient();
+  const [commentMode, setCommentMode] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [draftPoint, setDraftPoint] = useState<SvgPoint | null>(null);
+  const [question, setQuestion] = useState("");
+  const [ref, setRef] = useState("");
+  const [net, setNet] = useState("");
+  const [pad, setPad] = useState("");
+
+  const view = kind as CommentView;
+  const pins = useMemo(
+    () => (comments.data?.comments ?? []).filter((comment) => comment.anchor.view === view),
+    [comments.data, view],
+  );
+  const selected = pins.find((comment) => comment.id === selectedId) ?? null;
+  const box = rendered.data ? parseSvgViewBox(rendered.data) : null;
+
+  const resetCompose = () => {
+    setDraftPoint(null);
+    setQuestion("");
+    setRef("");
+    setNet("");
+    setPad("");
+  };
+
+  const askAgent = async (comment: BoardComment) => {
+    const prompt = buildCommentAskPrompt(comment);
+    const threadId = useUiStore.getState().activeThreadId;
+    if (threadId) {
+      await client.sendMessage(threadId, { content: prompt });
+      return;
+    }
+    useUiStore.getState().setDraft(DRAFT_KEY_NEW, prompt);
+    useUiStore.getState().focusComposer();
+  };
+
+  const savePin = async () => {
+    if (!draftPoint || !question.trim()) return;
+    const created = await pin.mutateAsync({
+      question: question.trim(),
+      anchor: {
+        view,
+        x: draftPoint.x,
+        y: draftPoint.y,
+        ...(ref.trim() ? { ref: ref.trim() } : {}),
+        ...(net.trim() ? { net: net.trim() } : {}),
+        ...(pad.trim() ? { pad: pad.trim() } : {}),
+      },
+    });
+    setSelectedId(created.comment.id);
+    resetCompose();
+    setCommentMode(false);
+  };
 
   if (!projectId)
     return (
@@ -49,11 +116,105 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
   }
   if (rendered.data) {
     return (
-      <div className="h-full" data-testid={`board-${kind}-svg`}>
-        <SvgViewer
-          svg={rendered.data}
-          toolbar={<span className="text-[11px] text-muted">renders/{kind}.svg</span>}
-        />
+      <div className="flex h-full min-h-0" data-testid={`board-${kind}-svg`}>
+        <div className="min-w-0 flex-1">
+          <SvgViewer
+            svg={rendered.data}
+            commentMode={commentMode}
+            {...(commentMode
+              ? {
+                  onDrawingClick: (point: SvgPoint) => {
+                    setDraftPoint(point);
+                    setSelectedId(null);
+                  },
+                }
+              : {})}
+            overlay={
+              <CommentPins
+                comments={pins}
+                box={box}
+                selectedId={selectedId}
+                onSelect={(id) => {
+                  setSelectedId(id);
+                  setDraftPoint(null);
+                }}
+              />
+            }
+            toolbar={
+              <>
+                <Button
+                  size="sm"
+                  variant={commentMode ? "primary" : "secondary"}
+                  onClick={() => {
+                    setCommentMode((on) => !on);
+                    resetCompose();
+                  }}
+                  data-testid="comment-mode"
+                  title="Pin a question to this drawing"
+                >
+                  <Icon name="pin" width={14} height={14} />
+                  Comment
+                </Button>
+                <span className="text-[11px] text-muted">
+                  {commentMode ? "Click the board to drop a pin" : `${pins.length} pin${pins.length === 1 ? "" : "s"} · renders/${kind}.svg`}
+                </span>
+              </>
+            }
+          />
+        </div>
+        {(selected || draftPoint) && (
+          <aside className="flex w-72 shrink-0 flex-col gap-2 overflow-auto border-l border-border p-3" data-testid="comment-detail">
+            {draftPoint && (
+              <>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.09em] text-muted">New pin</div>
+                <Textarea
+                  value={question}
+                  onChange={(event) => setQuestion(event.target.value)}
+                  placeholder="What is this?"
+                  rows={4}
+                  aria-label="Comment question"
+                />
+                <Input value={ref} onChange={(event) => setRef(event.target.value)} placeholder="Ref (U12)" aria-label="Component reference" />
+                <Input value={pad} onChange={(event) => setPad(event.target.value)} placeholder="Pad / pin" aria-label="Pad or pin" />
+                <Input value={net} onChange={(event) => setNet(event.target.value)} placeholder="Net (SPI.CS)" aria-label="Net name" />
+                <div className="flex gap-1">
+                  <Button size="sm" variant="primary" disabled={!question.trim() || pin.isPending} onClick={() => void savePin()}>
+                    Pin
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={resetCompose}>Cancel</Button>
+                </div>
+              </>
+            )}
+            {selected && !draftPoint && (
+              <>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.09em] text-muted">
+                  {commentAnchorLabel(selected.anchor)}
+                </div>
+                <div className="text-[13px] font-medium">{selected.question}</div>
+                {selected.answer ? (
+                  <p className="text-[12.5px] leading-relaxed text-fg/90">{selected.answer}</p>
+                ) : (
+                  <p className="text-[12px] text-muted">No answer yet. Ask the project agent — it should call comment_answer.</p>
+                )}
+                <div className="mt-auto flex flex-wrap gap-1">
+                  <Button size="sm" variant="primary" onClick={() => void askAgent(selected)}>
+                    Ask agent
+                  </Button>
+                  {selected.status !== "resolved" && (
+                    <Button size="sm" onClick={() => void patch.mutateAsync({ commentId: selected.id, patch: { status: "resolved" } })}>
+                      Resolve
+                    </Button>
+                  )}
+                  {selected.status === "resolved" && (
+                    <Button size="sm" onClick={() => void patch.mutateAsync({ commentId: selected.id, patch: { status: "open" } })}>
+                      Reopen
+                    </Button>
+                  )}
+                </div>
+              </>
+            )}
+          </aside>
+        )}
       </div>
     );
   }

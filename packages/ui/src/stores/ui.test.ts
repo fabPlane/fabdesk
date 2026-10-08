@@ -37,6 +37,8 @@ describe("board tabs", () => {
     expect(BOARD_TABS.at(-1)).toBe("diff");
     expect(BOARD_TAB_LABELS.diff).toBe("Diff");
     expect(BOARD_TAB_LABELS.bom).toBe("Shopping list");
+    expect(BOARD_TABS).toContain("notes");
+    expect(BOARD_TAB_LABELS.notes).toBe("Notes");
   });
 });
 

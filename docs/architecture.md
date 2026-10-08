@@ -74,5 +74,6 @@ connectivity through that account is later work.
 ## Project on disk
 
 `~/fabdesk/<slug>/` — `fabdesk.json`, `circuit.netlist.json`, `board.kicad_pcb`, `board.kicad_pro`,
-`<name>.kicad_pcb|sch|pro`, `model.FCStd`, `sketches/`, `renders/`, `reports/`, `exports/`, `AGENTS.md`,
-`CLAUDE.md`, `.fabdesk/runs/<runId>/frames.jsonl`.
+`<name>.kicad_pcb|sch|pro`, `model.FCStd`, `sketches/`, `renders/`, `reports/`, `exports/`, `comments.json`,
+`NOTES.md`, `AGENTS.md`, `CLAUDE.md`, `.fabdesk/runs/<runId>/frames.jsonl`. Pins and the shared notes
+sheet are git-tracked; see [board comments](board-comments.md).

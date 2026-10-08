@@ -18,6 +18,65 @@ describe("CoreClient open-source preview URL", () => {
   });
 });
 
+describe("CoreClient board comments", () => {
+  test("pins and lists comments on encoded project ids", async () => {
+    const calls: Array<{ url: string; method: string | undefined }> = [];
+    const client = new CoreClient({
+      baseUrl: "http://127.0.0.1:47831",
+      token: "tok",
+      fetch: async (input, init) => {
+        calls.push({ url: input, method: init?.method });
+        return Response.json({
+          contract: { name: "fabplane.board-comments", version: "1.0.0" },
+          comments: [],
+        });
+      },
+    });
+    await client.listComments("project/one");
+    await client.pinComment("project/one", {
+      question: "What is this?",
+      anchor: { view: "pcb", ref: "U1" },
+    });
+    expect(calls[0]?.url).toBe("http://127.0.0.1:47831/projects/project%2Fone/comments");
+    expect(calls[1]?.method).toBe("POST");
+  });
+});
+
+describe("CoreClient finish-it", () => {
+  test("encodes the project id on start/stop/get", async () => {
+    const requested: string[] = [];
+    const session = {
+      id: "fin_1",
+      projectId: "project/one",
+      threadId: "th_1",
+      runId: null,
+      status: "running",
+      currentMilestone: "schematic",
+      milestones: [],
+      commits: [],
+      error: null,
+      startedAt: "2026-10-08T00:00:00.000Z",
+      endedAt: null,
+    };
+    const client = new CoreClient({
+      baseUrl: "http://127.0.0.1:47831",
+      token: "tok",
+      fetch: async (input, init) => {
+        requested.push(`${init?.method ?? "GET"} ${input}`);
+        return Response.json({ session });
+      },
+    });
+    expect((await client.getFinishIt("project/one")).session?.id).toBe("fin_1");
+    await client.startFinishIt("project/one", { agentId: "claude" });
+    await client.stopFinishIt("project/one");
+    expect(requested).toEqual([
+      "GET http://127.0.0.1:47831/projects/project%2Fone/finish-it",
+      "POST http://127.0.0.1:47831/projects/project%2Fone/finish-it",
+      "POST http://127.0.0.1:47831/projects/project%2Fone/finish-it/stop",
+    ]);
+  });
+});
+
 describe("CoreClient route runs", () => {
   test("lists persisted runs for an encoded project id", async () => {
     let requested = "";
