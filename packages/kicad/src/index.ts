@@ -81,3 +81,32 @@ export {
   type MechanicalSection,
   type MechanicalStatus,
 } from "./mechanical";
+export {
+  extractBoardFeatures,
+  estimatePartHeightMm,
+  type BoardEdge,
+  type BoardFeatures,
+  type BoardOutline,
+  type EdgeConnector,
+  type MountingHole,
+  type TallPart,
+} from "./board-features";
+export {
+  ENCLOSURE_CONTRACT,
+  DEFAULT_ENCLOSURE_PARAMS,
+  generateEnclosure,
+  checkEnclosureAlignment,
+  meshEnclosure,
+  mergeEnclosureParams,
+  writeBoxesStep,
+  isEnclosureSpec,
+  enclosureSummary,
+  type AlignmentIssue,
+  type AlignmentReport,
+  type EnclosureCutout,
+  type EnclosureMeshes,
+  type EnclosureParams,
+  type EnclosureSolid,
+  type EnclosureSpec,
+  type EnclosureStandoff,
+} from "./enclosure";

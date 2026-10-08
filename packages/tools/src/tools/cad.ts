@@ -9,6 +9,7 @@ import { z } from "zod/v4";
 import { PROJECT_FILES, ensureDir } from "../fs";
 import { defineTool, ToolError, type ToolContext } from "../registry";
 import type { CadObject, CadProperty, CadService } from "../services";
+import { cad_enclosure } from "./cad-enclosure";
 import { ok, p, table, trim } from "./common";
 
 export function requireCad(ctx: ToolContext): CadService {
@@ -362,4 +363,7 @@ export const cadTools = [
   cad_export,
   cad_python,
   cad_view,
+  cad_enclosure,
 ];
+
+export { cad_enclosure } from "./cad-enclosure";
