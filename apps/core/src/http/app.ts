@@ -70,6 +70,7 @@ import { parsePublicGitHubUrl } from "../github-import";
 import { applyErrorReporting, captureCoreException } from "../sentry";
 import { parseTopics, sseResponse } from "./sse";
 import { cloudRoutes } from "./cloud-routes";
+import { commentRoutes } from "./comment-routes";
 
 export type AppDeps = {
   /** The relay link, for `/v1/remote` and `/health`; optional so tests without a relay still build an app. */
@@ -335,6 +336,8 @@ export function createApp(deps: AppDeps): Hono<Env> {
     deps.store.projects.touch(id);
     return c.json({ ok: true, path: rel });
   });
+
+  commentRoutes(app, deps);
 
   app.get("/projects/:id/sketches", async (c) => {
     const h = await deps.projects.handle(c.req.param("id"));

@@ -737,3 +737,47 @@ export function useInventoryMutations() {
     }),
   };
 }
+
+export function useBoardComments(projectId: string | null) {
+  const client = useCoreClient();
+  return useQuery({
+    queryKey: ["comments", projectId],
+    queryFn: () => client.listComments(projectId!),
+    enabled: !!projectId,
+  });
+}
+
+export function useBoardNotes(projectId: string | null) {
+  const client = useCoreClient();
+  return useQuery({
+    queryKey: ["notes", projectId],
+    queryFn: () => client.readNotes(projectId!),
+    enabled: !!projectId,
+  });
+}
+
+export function useBoardCommentMutations(projectId: string | null) {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: ["comments", projectId] });
+    void qc.invalidateQueries({ queryKey: ["notes", projectId] });
+    void qc.invalidateQueries({ queryKey: ["file", projectId] });
+    void qc.invalidateQueries({ queryKey: ["project", projectId] });
+  };
+  return {
+    pin: useMutation({
+      mutationFn: (input: Parameters<typeof client.pinComment>[1]) => client.pinComment(projectId!, input),
+      onSuccess: refresh,
+    }),
+    patch: useMutation({
+      mutationFn: ({ commentId, patch }: { commentId: string; patch: Parameters<typeof client.patchComment>[2] }) =>
+        client.patchComment(projectId!, commentId, patch),
+      onSuccess: refresh,
+    }),
+    writeNotes: useMutation({
+      mutationFn: (content: string) => client.writeNotes(projectId!, content),
+      onSuccess: refresh,
+    }),
+  };
+}

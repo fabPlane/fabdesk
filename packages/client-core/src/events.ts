@@ -339,6 +339,8 @@ export function handleCoreEvent(event: CoreEvent, ctx: HandlerCtx): void {
       for (const p of event.paths)
         void qc.invalidateQueries({ queryKey: ["file", event.projectId, p] });
       void qc.invalidateQueries({ queryKey: ["file", event.projectId] });
+      void qc.invalidateQueries({ queryKey: ["comments", event.projectId] });
+      void qc.invalidateQueries({ queryKey: ["notes", event.projectId] });
       void qc.invalidateQueries({ queryKey: ["project-order", event.projectId] });
       break;
     case "thread.created":

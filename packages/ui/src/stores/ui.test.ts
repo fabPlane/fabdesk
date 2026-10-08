@@ -36,6 +36,8 @@ describe("board tabs", () => {
   test("the shopping list is the last board tab", () => {
     expect(BOARD_TABS.at(-1)).toBe("bom");
     expect(BOARD_TAB_LABELS.bom).toBe("Shopping list");
+    expect(BOARD_TABS).toContain("notes");
+    expect(BOARD_TAB_LABELS.notes).toBe("Notes");
   });
 });
 

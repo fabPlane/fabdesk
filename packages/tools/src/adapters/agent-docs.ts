@@ -3,7 +3,7 @@ import { TOOLSETS, type ToolDef, type ToolRegistry } from "../registry";
 
 const TOOLSET_BLURB: Record<string, string> = {
   core: "always available",
-  project: "files, sketches, board settings",
+  project: "files, sketches, board settings, pinned comments, NOTES.md",
   circuit: "query the board, footprint search",
   route: "routing status/cancel/partial reroute",
   kicad: "KiCad conversion and stats",
