@@ -25,7 +25,7 @@ import {
 const meta: RouteMeta = {
   kind: "meta",
   runId: "r1",
-  router: "capacity",
+  router: "fab_router",
   bounds: { x1: 0, y1: 0, x2: 100, y2: 50 },
   layers: ["F.Cu", "B.Cu"],
   unitsPerMm: 1,
@@ -115,7 +115,7 @@ describe("status and colours", () => {
       ...run,
       result: {
         runId: "r1",
-        router: "capacity" as const,
+        router: "fab_router" as const,
         traces: [],
         complete: ["A", "B", "C"],
         open: ["D"],
@@ -252,7 +252,7 @@ describe("incremental painter", () => {
 });
 
 describe("activity view", () => {
-  const meta = { kind: "meta" as const, runId: "r", router: "capacity", bounds: { x1: 0, y1: 0, x2: 100, y2: 60 }, layers: ["top", "bottom"], unitsPerMm: 1 };
+  const meta = { kind: "meta" as const, runId: "r", router: "fab_router", bounds: { x1: 0, y1: 0, x2: 100, y2: 60 }, layers: ["top", "bottom"], unitsPerMm: 1 };
   const frame = (seq: number, ids: number[], airline?: { from: { x: number; y: number }; to: { x: number; y: number } }) => ({
     kind: "frame" as const,
     runId: "r",

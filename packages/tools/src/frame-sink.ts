@@ -97,7 +97,11 @@ export class FrameSink {
     const chunk = this.#buffer.join("");
     this.#buffer = [];
     const path = this.framesPath;
-    this.#pending = this.#pending.then(() => appendFile(path, chunk));
+    this.#pending = this.#pending
+      .then(() => appendFile(path, chunk))
+      .catch((error: unknown) => {
+        console.error(`route frames write failed: ${String(error)}`);
+      });
     return this.#pending;
   }
 

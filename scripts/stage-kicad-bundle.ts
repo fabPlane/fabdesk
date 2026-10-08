@@ -439,7 +439,10 @@ async function main(): Promise<void> {
     argv.includes("--require") || process.env["FABDESK_KICAD_BUNDLE_REQUIRED"] === "1";
 
   const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-  const stageDir = join(repoRoot, "apps/desktop/kicad-bundle", `${os}-${arch}`);
+  // Explicit destination lets callers (including tests) isolate staging from the real bundle.
+  const stageDir = flag("--out-dir")
+    ? resolve(flag("--out-dir")!)
+    : join(repoRoot, "apps/desktop/kicad-bundle", `${os}-${arch}`);
   const token = process.env["GITHUB_TOKEN"] ?? process.env["GH_TOKEN"];
 
   let cli: string;

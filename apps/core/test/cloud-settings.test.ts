@@ -7,7 +7,7 @@ const settings = {
   kicadCliPath: "/opt/kicad",
   ngspicePath: null,
   fpPcbBridgeUrl: null,
-  router: "capacity",
+  router: "fab_router",
   defaultAgent: "claude",
   defaultRuntimeMode: "full",
   agents: {},

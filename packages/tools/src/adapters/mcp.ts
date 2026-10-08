@@ -474,7 +474,7 @@ function registerResources(
         id: pr.id,
         name: pr.name,
         board: pr.manifest().board,
-        router: pr.manifest().router,
+        router: pr.manifest().router === "capacity" ? "fab_router" : (pr.manifest().router ?? "auto"),
         built: await exists(p(pr, PROJECT_FILES.boardPcb)),
         lastSourceBuild,
         lastRelease,

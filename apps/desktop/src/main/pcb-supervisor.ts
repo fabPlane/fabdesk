@@ -18,6 +18,8 @@ export interface PcbBundleManifest {
   symbols: string;
   /** Optional bundle-relative entry point for the private fab_router module. */
   fabRouter?: string;
+  /** Optional for older bundles; missing files degrade routing to fab_router. */
+  freerouting?: { jar: string; java: string };
   /** Bundle-relative shared-library directories, in loader search order (Linux). */
   libraryPaths?: string[];
   environment?: Record<string, string>;
@@ -71,6 +73,11 @@ export function resolvePcbBackend(opts: {
   const footprints = resolve(bundleRoot, manifest.footprints);
   const symbols = resolve(bundleRoot, manifest.symbols);
   const fabRouter = manifest.fabRouter ? resolve(bundleRoot, manifest.fabRouter) : null;
+  // Always set explicit paths, including on degraded starts. Never borrow a host jar or Java.
+  const freeroutingJar = resolve(bundleRoot, manifest.freerouting?.jar ?? ".freerouting-unavailable.jar");
+  const freeroutingJava = resolve(bundleRoot, manifest.freerouting?.java ?? ".freerouting-unavailable-java");
+  if (!manifest.freerouting || !existsSync(freeroutingJar) || !existsSync(freeroutingJava))
+    console.warn("[pcb] bundled Freerouting unavailable; automatic routing will use fab_router");
   const libraryPaths = (manifest.libraryPaths ?? []).map((path) => resolve(bundleRoot, path));
   for (const [label, path] of [
     ["bridge", command],
@@ -121,6 +128,8 @@ export function resolvePcbBackend(opts: {
       FABDESK_RUNTIME_ID: runtimeId,
       FABDESK_DESKTOP_PID: desktopPid,
       ...(fabRouter ? { FAB_ROUTER_MODULE: fabRouter } : {}),
+      FREEROUTING_JAR: freeroutingJar,
+      FP_PCB_JAVA: freeroutingJava,
       WORKSPACE_ROOT: workspaceRoot,
     },
   };

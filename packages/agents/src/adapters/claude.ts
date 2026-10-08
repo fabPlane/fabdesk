@@ -84,6 +84,11 @@ export function claudeArgs(session: AgentSession, bin: string): string[] {
   return args;
 }
 
+/** Account connectors are independent of local strict MCP config. Override session env too. */
+export function claudeEnv(session: AgentSession): Record<string, string> {
+  return { ...agentEnv(session), ENABLE_CLAUDEAI_MCP_SERVERS: "false" };
+}
+
 export const claudeAdapter: AgentAdapter = {
   id: "claude",
   displayName: "Claude",
@@ -97,7 +102,7 @@ export const claudeAdapter: AgentAdapter = {
     return runAgentProcess({
       cmd: claudeArgs(session, session.binaryPath ?? resolveFirst(CANDIDATES) ?? "claude"),
       cwd: session.cwd,
-      env: agentEnv(session),
+      env: claudeEnv(session),
       parse: (line) => parser.feed(line),
       sessionId: () => parser.sessionId,
     });

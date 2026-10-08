@@ -5,6 +5,7 @@
  * not geometry, so frames carry events and an empty `shapes` list unless a router adds shapes.
  * Coordinates are in `meta.unitsPerMm` units.
  */
+import { EndpointCollisions, RoutingDiagnostics } from "./fp-pcb";
 import { z } from "zod/v4";
 
 export const RouteProgressKind = z.enum(["pass-start", "attempt", "connection", "pair", "done"]);
@@ -68,10 +69,15 @@ export type RouteFrame = z.infer<typeof RouteFrame>;
 export const RouteFrameLine = z.discriminatedUnion("kind", [RouteMeta, RouteStatic, RouteFrame]);
 export type RouteFrameLine = z.infer<typeof RouteFrameLine>;
 
-export const RouterId = z.enum(["capacity", "freerouting"]);
+export const RouterId = z
+  .enum(["fab_router", "freerouting", "capacity"])
+  .transform((value) => (value === "capacity" ? ("fab_router" as const) : value));
 export type RouterId = z.infer<typeof RouterId>;
 
 export const RouteResult = z.object({
+  endpointCollisions: EndpointCollisions.optional(),
+  diagnostics: RoutingDiagnostics.optional(),
+  quality: z.object({ text: z.string(), detailPath: z.string() }).optional(),
   runId: z.string(),
   router: RouterId,
   complete: z.array(z.string()),
@@ -97,11 +103,20 @@ export const RouteResult = z.object({
         id: z.string(),
         layer: z.number(),
         net: z.number(),
+        netName: z.string().optional(),
         points: z.array(z.number()),
         width: z.number().optional(),
       }),
     )
     .optional(),
+  /** Changed copper on nets outside a selective request, grouped by actual net. */
+  outsideScopeChanges: z.array(z.object({
+    net: z.string(),
+    traces: z.number().int().nonnegative(),
+    vias: z.number().int().nonnegative(),
+    added: z.object({traces:z.number().int().nonnegative(),vias:z.number().int().nonnegative()}).optional(),
+    removed: z.object({traces:z.number().int().nonnegative(),vias:z.number().int().nonnegative()}).optional(),
+  })).optional(),
   nextActions: z.array(z.string()).optional(),
   stats: z.object({
     vias: z.number().int(),

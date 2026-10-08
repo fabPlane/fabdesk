@@ -34,7 +34,7 @@ describe("FabPCB router health", () => {
       readText: async () => "",
       exists: async () => false,
     });
-    expect((await design.status()).routers?.capacity).toEqual(expected);
+    expect((await design.status()).routers?.fab_router).toEqual(expected);
   });
 });
 

@@ -9,7 +9,7 @@ function run(patch: Partial<RouteRunSummary>): RouteRunSummary {
   return {
     id: "r1",
     projectId: "p1",
-    router: "capacity",
+    router: "fab_router",
     status: "completed",
     framesPath: "/tmp/r1.jsonl",
     startedAt: at(3 * 3_600_000 + 65_000),
@@ -22,7 +22,7 @@ function run(patch: Partial<RouteRunSummary>): RouteRunSummary {
 
 const result: RouteRunSummary["result"] = {
   runId: "r1",
-  router: "capacity",
+  router: "fab_router",
   complete: ["a", "b", "c"],
   open: ["d"],
   timedOut: false,
@@ -61,7 +61,7 @@ test("describeRun joins router, duration and age, and flags a live run", () => {
   expect(row).toEqual({
     id: "r1",
     title: "3/4 routed, 1 open",
-    subtitle: "capacity · 1m 05s · 3h ago",
+    subtitle: "fab_router · 1m 05s · 3h ago",
     status: "completed",
     tone: "success",
     live: false,

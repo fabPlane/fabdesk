@@ -26,7 +26,6 @@ import {
 } from "./common";
 import { formatLastRelease, readProjectStatusEvidence } from "./project-status-evidence";
 import {
-  PackagedRouteRunArgs,
   ROUTE_RUN_DEFAULT_WAIT_MS,
   ROUTE_RUN_MAX_WAIT_MS,
   runRoute,
@@ -133,7 +132,7 @@ export const pcb_environment = defineTool({
         `KiCad CLI: ${cli ? `${cli.path} (${cli.version})` : "not found"}`,
         `FabPCB bridge: ${bridge.ok ? "ready" : "unavailable"} at ${bridge.url}${bridge.reason ? ` — ${bridge.reason}` : ""}`,
         "Scriptable registry: fabpcb tool search <words>; describe <name>; call <name> --request <json|@file>; batch --input @calls.jsonl.",
-        `Routers: capacity=${bridge.routers?.capacity?.ok ? "ready" : `unavailable${bridge.routers?.capacity?.reason ? ` — ${bridge.routers.capacity.reason}` : ""}`}; freerouting=${bridge.routers?.freerouting?.ok ? "ready" : `unavailable${bridge.routers?.freerouting?.reason ? ` — ${bridge.routers.freerouting.reason}` : ""}`}`,
+        `Routers (default freerouting → fab_router fallback): fab_router=${bridge.routers?.fab_router?.ok ? "ready" : `unavailable${bridge.routers?.fab_router?.reason ? ` — ${bridge.routers.fab_router.reason}` : ""}`}; freerouting=${bridge.routers?.freerouting?.ok ? "ready" : `unavailable${bridge.routers?.freerouting?.reason ? ` — ${bridge.routers.freerouting.reason}` : ""}`}`,
         `Desktop UI automation: ${app.running ? "available" : `unavailable${app.reason ? ` — ${app.reason}` : ""}`}`,
         `Project files: ${Object.entries(files)
           .map(([name, path]) => `${name}=${path}${present[name] ? "" : " (missing)"}`)
@@ -184,7 +183,7 @@ export const project_status = defineTool({
       name: project.name,
       dir: project.dir,
       board: manifest.board,
-      router: manifest.router,
+      router: manifest.router === "capacity" ? "fab_router" : (manifest.router ?? "auto"),
       files,
       sketches: sketches.map((s) => `${PROJECT_FILES.sketches}/${s}`),
       lastSourceBuild,
@@ -198,7 +197,7 @@ export const project_status = defineTool({
     };
     const lines = [
       `Project "${project.name}" (${project.id}) at ${project.dir}`,
-      `Board: ${manifest.board.layers} layers${manifest.board.widthMm ? `, ${manifest.board.widthMm}×${manifest.board.heightMm ?? "?"} mm` : ""}; router: ${manifest.router}`,
+      `Board: ${manifest.board.layers} layers${manifest.board.widthMm ? `, ${manifest.board.widthMm}×${manifest.board.heightMm ?? "?"} mm` : ""}; router: ${manifest.router === "capacity" ? "fab_router" : (manifest.router ?? "freerouting (default; fab_router fallback)")}`,
       `Files: ${Object.entries(files)
         .map(([k, v]) => `${k}=${v.exists ? "yes" : "no"}`)
         .join(", ")}`,
@@ -499,7 +498,7 @@ export const circuit_read_errors = defineTool({
   },
 });
 
-function routeRunTool(inputSchema: typeof RouteRunArgs | typeof PackagedRouteRunArgs) {
+function routeRunTool(inputSchema: typeof RouteRunArgs) {
   return defineTool({
     name: "route_run",
     toolset: "core",
@@ -531,9 +530,6 @@ function routeRunTool(inputSchema: typeof RouteRunArgs | typeof PackagedRouteRun
 }
 
 export const route_run = routeRunTool(RouteRunArgs);
-
-/** route_run as served by runtimes without freerouting: the router enum offers capacity only. */
-export const packaged_route_run = routeRunTool(PackagedRouteRunArgs);
 
 /**
  * Byte budget for each inline violation category. The complete report is always on disk, so the

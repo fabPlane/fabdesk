@@ -71,6 +71,10 @@ function checkPcbBundle(resourcesDir: string, label: string): void {
     const backend = resolvePcbBackend({ packaged: true, resourcesPath: resourcesDir, env: {} });
     if (!backend)
       return fail(`${label}: bundled PCB manifest missing under ${join(resourcesDir, "pcb")}`);
+    const manifest = JSON.parse(readFileSync(join(resourcesDir, "pcb", "bundle.json"), "utf8"));
+    if (!manifest.freerouting?.jar || !manifest.freerouting?.java ||
+        !existsSync(backend.env.FREEROUTING_JAR!) || !existsSync(backend.env.FP_PCB_JAVA!))
+      return fail(`${label}: backend does not contain Freerouting jar and Java`);
     console.log(`${label}: PCB bundle ${backend.command}`);
   } catch (error) {
     fail(

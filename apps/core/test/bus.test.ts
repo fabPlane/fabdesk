@@ -49,7 +49,7 @@ describe("EventBus", () => {
     bus.emit(frame("a", 5, "connection"));
     expect(batches.length).toBe(2);
     expect(batches[1]!.length).toBe(2);
-    bus.emit({ ts: 1, topic: "route.done", result: { runId: "a", router: "capacity", traces: [], complete: [], open: [], timedOut: false, stats: { vias: 0, segments: 0, wallMs: 1, frames: 5 } } });
+    bus.emit({ ts: 1, topic: "route.done", result: { runId: "a", router: "fab_router", traces: [], complete: [], open: [], timedOut: false, stats: { vias: 0, segments: 0, wallMs: 1, frames: 5 } } });
     expect(batches.length).toBe(3);
     // Everything is still in the ring for catch-up.
     expect(bus.replay(0, ["route.frame"]).length).toBe(6);

@@ -18,7 +18,7 @@ const {
   rmSync,
   statSync,
 } = require("node:fs");
-const { join } = require("node:path");
+const { join, relative } = require("node:path");
 const { Arch } = require("builder-util");
 
 function platformArch(context) {
@@ -92,20 +92,43 @@ function copyBundledKicad(context, src = stageRoot(context)) {
   return dest;
 }
 
+function jreSigningBinaries(appPath) {
+  const root = join(appPath, "Contents", "Resources", "pcb", "freerouting", "jre");
+  if (!existsSync(root)) return [];
+  const binaries = [];
+  function visit(dir) {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) visit(path);
+      else if (entry.isFile() && (entry.name.endsWith(".dylib") || path === join(root, "bin", "java")))
+        binaries.push(relative(appPath, path));
+    }
+  }
+  visit(root);
+  return binaries;
+}
+
 module.exports = async function afterPack(context) {
   copyBundledKicad(context);
 
   if (context.electronPlatformName !== "darwin") return;
-  if (process.env.CSC_LINK || process.env.CSC_NAME) return; // real signing will run
   const appName = `${context.packager.appInfo.productFilename}.app`;
   const appPath = join(context.appOutDir, appName);
   if (!existsSync(appPath)) {
     console.warn(`after-pack: ${appPath} not found, skipping ad-hoc signing`);
     return;
   }
+  // electron-builder's binaries list takes literal paths, not globs. Enumerate all JRE
+  // dylibs (including lib/server/libjvm.dylib) before its hardened-runtime signing step.
+  const jreBinaries = jreSigningBinaries(appPath);
+  const options = context.packager.platformSpecificBuildOptions;
+  options.binaries = [...new Set([...(options.binaries ?? []), ...jreBinaries])];
+  if (process.env.CSC_LINK || process.env.CSC_NAME) return; // real signing will run with this list
   const bundleId = context.packager.appInfo.id ?? "com.tensorfleet.fabdesk";
   const entitlements = join(__dirname, "..", "build", "entitlements.mac.plist");
   console.log(`after-pack: ad-hoc signing ${appName} as ${bundleId}`);
+  for (const binary of jreBinaries) execFileSync("codesign", ["--force", "--sign", "-", "--entitlements", entitlements,
+    "--options", "runtime", join(appPath, binary)], { stdio: "inherit" });
   execFileSync(
     "codesign",
     [
@@ -128,3 +151,4 @@ module.exports = async function afterPack(context) {
 
 module.exports.platformArch = platformArch;
 module.exports.copyBundledKicad = copyBundledKicad;
+module.exports.jreSigningBinaries = jreSigningBinaries;

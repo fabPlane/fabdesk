@@ -145,7 +145,12 @@ export const project_set_board = defineTool({
     layers: z.number().int().min(1).max(8).optional(),
     widthMm: z.number().positive().optional(),
     heightMm: z.number().positive().optional(),
-    router: z.enum(["capacity", "freerouting"]).optional(),
+    router: z
+      .enum(["fab_router", "capacity", "freerouting"])
+      .optional()
+      .describe(
+        "Pin this project to fab_router or Freerouting; capacity is a legacy fab_router alias",
+      ),
     template: z
       .enum(["viagrid-9055", "none"])
       .optional()
@@ -159,12 +164,6 @@ export const project_set_board = defineTool({
   },
   handler: async ({ layers, widthMm, heightMm, router, template }, ctx) => {
     const project = ctx.requireProject();
-    if (router === "freerouting" && ctx.services.channel !== "internal") {
-      throw new ToolError(
-        "the freerouting router is only available in internal builds",
-        "unavailable",
-      );
-    }
     const current = project.manifest();
     const { template: currentTemplate, ...currentBoard } = current.board;
     const templateBoard =
@@ -188,16 +187,27 @@ export const project_set_board = defineTool({
       ...(widthMm !== undefined ? { widthMm } : {}),
       ...(heightMm !== undefined ? { heightMm } : {}),
     };
-    const next = await project.updateManifest({ board, ...(router ? { router } : {}) });
+    const normalizedRouter = router === "capacity" ? "fab_router" : router;
+    const next = await project.updateManifest({
+      board,
+      ...(normalizedRouter ? { router: normalizedRouter } : {}),
+    });
+    const displayedRouter =
+      next.router === "capacity"
+        ? "fab_router"
+        : (next.router ?? "freerouting (default; fab_router fallback)");
     const text = [
-      `Board: ${next.board.layers} layers, ${next.board.widthMm ?? "?"}×${next.board.heightMm ?? "?"} mm, router ${next.router}${next.board.template ? `, template ${next.board.template}` : ""}.`,
+      `Board: ${next.board.layers} layers, ${next.board.widthMm ?? "?"}×${next.board.heightMm ?? "?"} mm, router ${displayedRouter}${next.board.template ? `, template ${next.board.template}` : ""}.`,
       ...(next.board.template === "viagrid-9055"
         ? [
             "Viagrid geometry: factory-via-free areas include x in -12..12 and |x| > 26 with |y| < 14; mounting-hole centres are at (±38.75, ±18.25) mm in the blank frame.",
           ]
         : []),
     ].join("\n");
-    return ok(text, { board: next.board, router: next.router });
+    return ok(text, {
+      board: next.board,
+      router: next.router === "capacity" ? "fab_router" : (next.router ?? "auto"),
+    });
   },
 });
 
