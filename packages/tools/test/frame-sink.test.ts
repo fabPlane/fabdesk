@@ -9,7 +9,7 @@ import { RouteProgressFrames } from "../src/tools/route";
 const meta: RouterWorkerMessage = {
   kind: "meta",
   runId: "run_test",
-  router: "capacity",
+  router: "fab_router",
   bounds: { x1: 0, y1: 0, x2: 10, y2: 10 },
   layers: ["top", "bottom"],
   unitsPerMm: 1,

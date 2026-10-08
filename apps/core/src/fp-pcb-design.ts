@@ -2144,6 +2144,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
           s.id,
           {
             router: opts.router === "freerouting" ? "freerouting" : "js",
+            ...(opts.freerouting ? { freerouting: opts.freerouting } : {}),
             options: {
               ...(opts.nets ? { nets: opts.nets } : {}),
               ...(opts.maxTimeMs ? { maxTimeMs: opts.maxTimeMs } : {}),
@@ -2179,6 +2180,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     await saveBoard(projectDir);
     const s = job.summary;
     return {
+      ...(s.pairRouting?{pairRouting:s.pairRouting}:{}),
       tracks: s.tracks,
       vias: s.vias,
       claimedVias: s.claimedVias,
@@ -2520,7 +2522,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         routers: {
           ...(capacityRouter
             ? {
-                capacity: {
+                fab_router: {
                   ok: capacityRouter.ok,
                   ...(capacityRouter.reason ? { reason: capacityRouter.reason } : {}),
                 },

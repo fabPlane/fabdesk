@@ -161,6 +161,14 @@ export class ToolError extends Error {
   }
 }
 
+/** A backend operation reached its explicit deadline, independently of its log text. */
+export class JobTimeoutError extends ToolError {
+  constructor(message: string) {
+    super(message, "unavailable");
+    this.name = "JobTimeoutError";
+  }
+}
+
 export function defineTool<I extends z.ZodRawShape>(def: ToolDef<I>): ToolDef<I> {
   if (!TOOL_NAME_RE.test(def.name))
     throw new Error(`tool name must match ${TOOL_NAME_RE}: ${def.name}`);

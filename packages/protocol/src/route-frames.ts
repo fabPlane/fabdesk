@@ -68,10 +68,13 @@ export type RouteFrame = z.infer<typeof RouteFrame>;
 export const RouteFrameLine = z.discriminatedUnion("kind", [RouteMeta, RouteStatic, RouteFrame]);
 export type RouteFrameLine = z.infer<typeof RouteFrameLine>;
 
-export const RouterId = z.enum(["capacity", "freerouting"]);
+export const RouterId = z
+  .enum(["fab_router", "freerouting", "capacity"])
+  .transform((value) => (value === "capacity" ? ("fab_router" as const) : value));
 export type RouterId = z.infer<typeof RouterId>;
 
 export const RouteResult = z.object({
+  quality: z.object({ text: z.string(), detailPath: z.string() }).optional(),
   runId: z.string(),
   router: RouterId,
   complete: z.array(z.string()),

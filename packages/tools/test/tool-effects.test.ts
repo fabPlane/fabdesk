@@ -44,7 +44,7 @@ test("SPICE tools persist artifacts while keeping canonical files unchanged", as
 
 test("repeating route_run creates separate durable jobs and is not idempotent", async () => {
   const project = await tempProject("route-effects");
-  await writeFile(join(project.dir, "board.kicad_pcb"), "canonical board\n");
+  await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb (net \"N1\") (property \"test\" \"canonical\"))\n");
   let queued = 0;
   const base = mockServices([project]);
   const services = mockServices([project], {
@@ -74,5 +74,5 @@ test("repeating route_run creates separate durable jobs and is not idempotent", 
   expect(queued).toBe(2);
   expect(await readdir(join(project.dir, ".fabdesk/runs"))).toHaveLength(2);
   expect(registry.get("route_run")!.annotations.idempotentHint).toBe(false);
-  expect(await readFile(join(project.dir, "board.kicad_pcb"), "utf8")).toBe("canonical board\n");
+  expect(await readFile(join(project.dir, "board.kicad_pcb"), "utf8")).toBe("(kicad_pcb (net \"N1\") (property \"test\" \"canonical\"))\n");
 });

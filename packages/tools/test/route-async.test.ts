@@ -43,7 +43,7 @@ function summary(wallMs: number): RouteSummary {
 async function harness(name: string, delayMs = 120) {
   const project = await tempProject(name);
   const boardPath = join(project.dir, "board.kicad_pcb");
-  await writeFile(boardPath, "canonical-board-v1\n");
+  await writeFile(boardPath, "(kicad_pcb (net \"N1\") (property \"test\" \"v1\"))\n");
   await writeFile(join(project.dir, "board.kicad_pro"), "{}\n");
   const base = mockServices([project]);
   const services = mockServices([project], {
@@ -65,7 +65,7 @@ async function harness(name: string, delayMs = 120) {
             message: `slow frame ${index}`,
           });
         }
-        await writeFile(join(dir, "board.kicad_pcb"), "candidate-board-v2\n");
+        await writeFile(join(dir, "board.kicad_pcb"), "(kicad_pcb (net \"N1\") (property \"test\" \"v2\"))\n");
         return summary(delayMs);
       },
     },
@@ -172,7 +172,7 @@ describe("durable asynchronous routing", () => {
     expect(appliedRevision).toBe(ready.candidate.sha256);
     expect(await hash(h.boardPath)).toBe(appliedRevision);
 
-    await writeFile(h.boardPath, "canonical-board-v3\n");
+    await writeFile(h.boardPath, "(kicad_pcb (net \"N1\") (property \"test\" \"v3\"))\n");
     const current = await hash(h.boardPath);
     const second = await h.call("route_run", { timeoutMs: 5_000, applyPolicy: "manual" });
     const secondId = (second.json as { runId: string }).runId;
@@ -312,7 +312,7 @@ describe("route_run inline result", () => {
     ]);
     expect(json["state"]).toBe("running");
     expect(response.text).toBe(
-      `Route ${json.runId} running; computation continues independently. Use route_status with this runId or route_cancel with this exact runId.`,
+      `Route ${json.runId} (fab_router) running; computation continues independently. Use route_status with this runId or route_cancel with this exact runId.`,
     );
     await terminal(h.services, json.runId);
   });

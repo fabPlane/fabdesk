@@ -1,0 +1,239 @@
+{
+  "ffc-candidate.kicad_pcb": {
+    "sha256": "94c89ac17bd506e0b1b39e380700aa71aa50cb442b4c04919bb144d92c5194d9",
+    "nets": {
+      "GND": {
+        "length": 6.6,
+        "minWidth": 0.2,
+        "vias": 4,
+        "layers": [
+          "F.Cu",
+          "In1.Cu"
+        ]
+      },
+      "USB1_CC1": {
+        "length": 124.664,
+        "minWidth": 0.2,
+        "vias": 2,
+        "layers": [
+          "B.Cu",
+          "F.Cu"
+        ]
+      },
+      "USB1_CC2": {
+        "length": 136.878,
+        "minWidth": 0.15,
+        "vias": 3,
+        "layers": [
+          "B.Cu",
+          "F.Cu",
+          "In1.Cu"
+        ]
+      },
+      "USB2_CC1": {
+        "length": 35.041,
+        "minWidth": 0.2,
+        "vias": 0,
+        "layers": [
+          "F.Cu"
+        ]
+      },
+      "USB2_CC2": {
+        "length": 23.545,
+        "minWidth": 0.2,
+        "vias": 0,
+        "layers": [
+          "F.Cu"
+        ]
+      },
+      "USB_A2_DN": {
+        "length": 66.108,
+        "minWidth": 0.15,
+        "vias": 5,
+        "layers": [
+          "B.Cu",
+          "F.Cu",
+          "In1.Cu",
+          "In2.Cu"
+        ]
+      },
+      "USB_A2_DP": {
+        "length": 64.624,
+        "minWidth": 0.15,
+        "vias": 5,
+        "layers": [
+          "B.Cu",
+          "F.Cu",
+          "In1.Cu",
+          "In2.Cu"
+        ]
+      },
+      "USB_A_DN": {
+        "length": 100.276,
+        "minWidth": 0.15,
+        "vias": 5,
+        "layers": [
+          "F.Cu",
+          "In1.Cu",
+          "In2.Cu"
+        ]
+      },
+      "USB_A_DP": {
+        "length": 105.485,
+        "minWidth": 0.15,
+        "vias": 5,
+        "layers": [
+          "B.Cu",
+          "F.Cu",
+          "In2.Cu"
+        ]
+      },
+      "VBUS_5V": {
+        "length": 62.81,
+        "minWidth": 0.15,
+        "vias": 3,
+        "layers": [
+          "B.Cu",
+          "F.Cu",
+          "In2.Cu"
+        ]
+      },
+      "VBUS_USBA": {
+        "length": 153.026,
+        "minWidth": 0.2,
+        "vias": 5,
+        "layers": [
+          "B.Cu",
+          "F.Cu",
+          "In1.Cu"
+        ]
+      },
+      "VBUS_USBA2": {
+        "length": 123.711,
+        "minWidth": 0.3,
+        "vias": 4,
+        "layers": [
+          "F.Cu",
+          "In1.Cu"
+        ]
+      }
+    }
+  },
+  "ffc-seed.kicad_pcb": {
+    "sha256": "79c98969884ca45587a5fd3213b8718cd9f7a5b0412c337b64f2d16d05ab76e5",
+    "nets": {
+      "GND": {
+        "length": 6.6,
+        "minWidth": 0.2,
+        "vias": 4,
+        "layers": [
+          "F.Cu",
+          "In1.Cu"
+        ]
+      },
+      "USB1_CC1": {
+        "length": 62.332,
+        "minWidth": 0.2,
+        "vias": 2,
+        "layers": [
+          "B.Cu",
+          "F.Cu"
+        ]
+      },
+      "USB1_CC2": {
+        "length": 68.439,
+        "minWidth": 0.15,
+        "vias": 3,
+        "layers": [
+          "B.Cu",
+          "F.Cu",
+          "In1.Cu"
+        ]
+      },
+      "USB2_CC1": {
+        "length": 20.256,
+        "minWidth": 0.2,
+        "vias": 0,
+        "layers": [
+          "F.Cu"
+        ]
+      },
+      "USB2_CC2": {
+        "length": 11.772,
+        "minWidth": 0.2,
+        "vias": 0,
+        "layers": [
+          "F.Cu"
+        ]
+      },
+      "USB_A2_DN": {
+        "length": 61.081,
+        "minWidth": 0.2,
+        "vias": 4,
+        "layers": [
+          "B.Cu",
+          "F.Cu",
+          "In2.Cu"
+        ]
+      },
+      "USB_A2_DP": {
+        "length": 61.376,
+        "minWidth": 0.2,
+        "vias": 4,
+        "layers": [
+          "B.Cu",
+          "F.Cu",
+          "In2.Cu"
+        ]
+      },
+      "USB_A_DN": {
+        "length": 107.296,
+        "minWidth": 0.15,
+        "vias": 5,
+        "layers": [
+          "F.Cu",
+          "In1.Cu",
+          "In2.Cu"
+        ]
+      },
+      "USB_A_DP": {
+        "length": 107.296,
+        "minWidth": 0.15,
+        "vias": 5,
+        "layers": [
+          "B.Cu",
+          "F.Cu",
+          "In2.Cu"
+        ]
+      },
+      "VBUS_5V": {
+        "length": 67.942,
+        "minWidth": 0.3,
+        "vias": 4,
+        "layers": [
+          "F.Cu",
+          "In2.Cu"
+        ]
+      },
+      "VBUS_USBA": {
+        "length": 76.513,
+        "minWidth": 0.2,
+        "vias": 5,
+        "layers": [
+          "B.Cu",
+          "F.Cu",
+          "In1.Cu"
+        ]
+      },
+      "VBUS_USBA2": {
+        "length": 61.856,
+        "minWidth": 0.3,
+        "vias": 4,
+        "layers": [
+          "F.Cu",
+          "In1.Cu"
+        ]
+      }
+    }
+  }
+}

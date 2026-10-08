@@ -121,7 +121,7 @@ describe("mcp adapter", () => {
     expect(names).not.toContain("load_toolset");
   });
 
-  test("route_run offers freerouting only on the internal channel", async () => {
+  test("route_run offers both routers on every channel", async () => {
     const routerEnum = async (channel: "public" | "internal") => {
       const { client, server } = await pair(undefined, undefined, channel);
       try {
@@ -139,11 +139,10 @@ describe("mcp adapter", () => {
       }
     };
     const packaged = await routerEnum("public");
-    expect(packaged.values).toEqual(["capacity"]);
-    expect(packaged.rejected.isError).toBe(true);
-    expect((packaged.rejected.content as Array<{ text: string }>)[0]!.text).toContain("router");
+    expect(packaged.values).toEqual(["fab_router", "freerouting", "capacity"]);
+    expect((packaged.rejected.content as Array<{ text: string }>)[0]!.text).toContain("board.kicad_pcb");
     const internal = await routerEnum("internal");
-    expect(internal.values).toEqual(["capacity", "freerouting"]);
+    expect(internal.values).toEqual(packaged.values);
   });
 
   test("load_toolset accepts a toolset alias and reports the canonical id", async () => {
