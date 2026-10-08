@@ -18,7 +18,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join, resolve, win32 } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, win32 } from "node:path";
 import { sidecarEnvironment } from "./child-process-env";
 
 export interface CadBundleManifest {
@@ -33,6 +33,9 @@ export interface CadBundleManifest {
   /** Bundle-relative shared-library directories, in loader search order (Linux). */
   libraryPaths?: string[];
   environment?: Record<string, string>;
+  engine?: "native";
+  pythonHome?: string;
+  environmentPaths?: Record<string, string>;
 }
 
 export interface CadBackendCommand {
@@ -54,6 +57,7 @@ export function mintCadBridgeToken(): string {
 
 export function resolveCadBackend(opts: {
   resourcesPath: string;
+  packaged?: boolean;
   env?: NodeJS.ProcessEnv;
 }): CadBackendCommand | null {
   const env = opts.env ?? process.env;
@@ -69,6 +73,7 @@ export function resolveCadBackend(opts: {
     token,
     base: {
       FAB_CAD_BRIDGE_TOKEN: token,
+      ...(env["FREECAD_USER_HOME"] ? { FREECAD_USER_HOME: env["FREECAD_USER_HOME"] } : {}),
       PORT: new URL(url).port || "4030",
       HOST: "127.0.0.1",
       WORKSPACE_ROOT:
@@ -77,7 +82,7 @@ export function resolveCadBackend(opts: {
   };
 
   const source = env["FABDESK_FAB_CAD_SOURCE"]?.trim();
-  if (source) {
+  if (source && !opts.packaged) {
     const root = resolve(source);
     const main = join(root, "packages", "bridge", "src", "main.ts");
     if (!existsSync(main))
@@ -104,11 +109,30 @@ export function resolveCadBackend(opts: {
 
   const manifestPath =
     env["FABDESK_FAB_CAD_BUNDLE"] ?? join(opts.resourcesPath, "cad", "bundle.json");
-  if (!existsSync(manifestPath)) return null;
+  if (!existsSync(manifestPath)) {
+    return null;
+  }
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as CadBundleManifest;
   if (manifest.format !== 1)
     throw new Error(`unsupported FabPlane CAD bundle format in ${manifestPath}`);
+  if (opts.packaged && manifest.engine !== "native")
+    throw new Error("Packaged CAD requires a native engine manifest; mock fallback is forbidden");
   const bundleRoot = dirname(manifestPath);
+  const environmentPaths = Object.fromEntries(
+    Object.entries(manifest.environmentPaths ?? {}).map(([name, path]) => {
+      const absolute = resolve(bundleRoot, path);
+      if (
+        relative(bundleRoot, absolute).startsWith("..") ||
+        isAbsolute(relative(bundleRoot, absolute)) ||
+        !existsSync(absolute)
+      )
+        throw new Error(`Invalid CAD runtime environment path: ${name}`);
+      return [name, absolute];
+    }),
+  );
+  const pythonHome = manifest.pythonHome ? resolve(bundleRoot, manifest.pythonHome) : null;
+  if (pythonHome && !existsSync(pythonHome))
+    throw new Error(`CAD Python runtime missing: ${pythonHome}`);
   const bridge = resolve(bundleRoot, manifest.bridge);
   const freecad = resolve(bundleRoot, manifest.freecadApiServer);
   const web = manifest.web ? resolve(bundleRoot, manifest.web) : null;
@@ -129,6 +153,15 @@ export function resolveCadBackend(opts: {
     token: common.token,
     env: {
       ...(manifest.environment ?? {}),
+      ...environmentPaths,
+      ...(pythonHome
+        ? {
+            PYTHONHOME: pythonHome,
+            PYTHONNOUSERSITE: "1",
+            PYTHONDONTWRITEBYTECODE: "1",
+            VIRTUAL_ENV: "",
+          }
+        : {}),
       ...(libraryPaths.length
         ? { LD_LIBRARY_PATH: [...libraryPaths, env["LD_LIBRARY_PATH"]].filter(Boolean).join(":") }
         : {}),
