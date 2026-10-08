@@ -8,7 +8,7 @@ async function harness() {
   const project = await tempProject("route-scope");
   const board = join(project.dir, "board.kicad_pcb");
   const pro = join(project.dir, "board.kicad_pro");
-  await writeFile(board, "original board\n");
+  await writeFile(board, "(kicad_pcb (net \"N1\") (property \"test\" \"original\"))\n");
   await writeFile(pro, "original project\n");
   const base = mockServices([project]);
   const routed: RouteJobOptions[] = [];
@@ -26,7 +26,7 @@ async function harness() {
       route: async (dir, opts, hooks) => {
         routed.push(opts);
         const result = await base.design.route(dir, opts, hooks);
-        await writeFile(join(dir, "board.kicad_pcb"), "routed whole net\n");
+        await writeFile(join(dir, "board.kicad_pcb"), "(kicad_pcb (net \"N1\") (property \"test\" \"routed\"))\n");
         return result;
       },
     },
@@ -84,7 +84,7 @@ describe("routing scope contract", () => {
       expect(h.queued()).toBe(0);
       expect(h.routed).toEqual([]);
       expect(h.services.routeRuns.latest(h.project.id)).toBeNull();
-      expect(await readFile(h.board, "utf8")).toBe("original board\n");
+      expect(await readFile(h.board, "utf8")).toBe("(kicad_pcb (net \"N1\") (property \"test\" \"original\"))\n");
       expect(await readFile(h.pro, "utf8")).toBe("original project\n");
       expect(await readdir(h.project.dir)).toEqual(before);
     });
@@ -100,7 +100,7 @@ describe("routing scope contract", () => {
       expect(h.routed).toHaveLength(1);
       expect(h.routed[0]?.nets).toEqual(["N1"]);
       expect(run.application.state).toBe("applied");
-      expect(await readFile(h.board, "utf8")).toBe("routed whole net\n");
+      expect(await readFile(h.board, "utf8")).toBe("(kicad_pcb (net \"N1\") (property \"test\" \"routed\"))\n");
       expect(await readFile(h.pro, "utf8")).toBe("original project\n");
     },
   );

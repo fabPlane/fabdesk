@@ -120,7 +120,7 @@ export {
   cloudErrorMessage,
 } from "./shopping";
 export type { DestinationGroup } from "./shopping";
-export { SLASH_COMMANDS, expandSlashCommand, slashSuggestions } from "./slash-commands";
+export { SLASH_COMMANDS, expandSlashCommand, isFinishItCommand, slashSuggestions } from "./slash-commands";
 export type { SlashCommand } from "./slash-commands";
 
 export { CadSession, type CadSessionState } from "./cad-session";

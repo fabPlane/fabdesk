@@ -68,11 +68,14 @@ describe("bundled PCB backend", () => {
       join(pcb, "libraries", "footprints"),
       join(pcb, "libraries", "symbols"),
       join(pcb, "private", "fab_router", "src"),
+      join(pcb, "freerouting", "jre", "bin"),
     ])
       await mkdir(dir, { recursive: true });
     await writeFile(join(pcb, "bin", "fp-pcb-bridge"), "binary");
     await writeFile(join(pcb, "kicad", "bin", "kicad-cli"), "binary");
     await writeFile(join(pcb, "private", "fab_router", "src", "api.ts"), "source");
+    await writeFile(join(pcb, "freerouting", "freerouting.jar"), "jar");
+    await writeFile(join(pcb, "freerouting", "jre", "bin", "java"), "java");
     await writeFile(
       join(pcb, "bundle.json"),
       JSON.stringify({
@@ -83,6 +86,7 @@ describe("bundled PCB backend", () => {
         footprints: "libraries/footprints",
         symbols: "libraries/symbols",
         fabRouter: "private/fab_router/src/api.ts",
+        freerouting: { jar: "freerouting/freerouting.jar", java: "freerouting/jre/bin/java" },
         libraryPaths: ["kicad/lib", "kicad/lib/runtime"],
         environment: { KICAD_SOCKET_TRANSPORT: "ipc" },
       }),
@@ -102,6 +106,12 @@ describe("bundled PCB backend", () => {
     expect(resolved?.env.FAB_ROUTER_MODULE).toBe(
       join(pcb, "private", "fab_router", "src", "api.ts"),
     );
+    expect(resolved?.env.FREEROUTING_JAR).toBe(join(pcb, "freerouting", "freerouting.jar"));
+    expect(resolved?.env.FP_PCB_JAVA).toBe(join(pcb, "freerouting", "jre", "bin", "java"));
+    // Missing optional runtime files do not prevent the bridge and fab_router starting.
+    await rm(join(pcb, "freerouting", "freerouting.jar"));
+    expect(resolvePcbBackend({ packaged: true, resourcesPath: resources, env: {} })?.env.FREEROUTING_JAR)
+      .toBe(join(pcb, "freerouting", "freerouting.jar"));
     expect(corePcbEnvironment(resolved!)).toMatchObject({
       KICAD_CLI: join(pcb, "kicad", "bin", "kicad-cli"),
       KICAD_STOCK_DATA_HOME: join(pcb, "kicad", "share", "kicad"),

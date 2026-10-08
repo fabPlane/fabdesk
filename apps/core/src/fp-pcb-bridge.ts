@@ -20,7 +20,7 @@ import {
   type FpPcbCompileRequest,
   type FpPcbRouteRequest,
 } from "@fabdesk/protocol";
-import { ToolError } from "@fabdesk/tools";
+import { JobTimeoutError, ToolError } from "@fabdesk/tools";
 
 export type FpPcbBridgeClientOptions = {
   /** Origin, e.g. `http://127.0.0.1:4020`. */
@@ -199,6 +199,10 @@ export class FpPcbBridgeClient {
         await cancel();
         throw new ToolError(`${kind} cancelled`, "cancelled");
       }
+      if (deadline.aborted) {
+        await cancel();
+        throw new JobTimeoutError(`${kind} exceeded ${Math.round(maxMs / 1000)} s`);
+      }
       throw this.unreachable(e);
     }
     if (!res.ok || !res.body) throw await this.failure(res, jobPath);
@@ -232,7 +236,7 @@ export class FpPcbBridgeClient {
       }
       if (deadline.aborted) {
         await cancel();
-        throw new ToolError(`${kind} exceeded ${Math.round(maxMs / 1000)} s`, "unavailable");
+        throw new JobTimeoutError(`${kind} exceeded ${Math.round(maxMs / 1000)} s`);
       }
       throw this.unreachable(e);
     }

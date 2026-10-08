@@ -62,9 +62,12 @@ export function runDuration(run: RouteRunSummary, now = Date.now()): string {
 }
 
 export function describeRun(run: RouteRunSummary, now = Date.now()): RunRow {
-  const parts = [run.router, runDuration(run, now), relativeTime(run.startedAt, now)].filter(
-    Boolean,
-  );
+  const parts = [
+    run.router === "capacity" ? "fab_router" : run.router,
+    runDuration(run, now),
+    relativeTime(run.startedAt, now),
+    run.fallbackReason ? `fallback: ${run.fallbackReason}` : "",
+  ].filter(Boolean);
   return {
     id: run.id,
     title: runTitle(run),

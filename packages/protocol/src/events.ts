@@ -1,5 +1,6 @@
 /** Event bus topics shared by core, renderer and CLI. Topic names are dotted; subscriptions glob. */
 import { z } from "zod/v4";
+import { FinishItMilestoneId, FinishItSession } from "./finish-it";
 import { RouteFrame, RouteMeta, RouteResult, RouteStatic } from "./route-frames";
 
 export const AgentId = z.enum(["claude", "codex", "cursor", "grok"]);
@@ -246,6 +247,40 @@ export const CoreEvent = z.discriminatedUnion("topic", [
     error: z.string().optional(),
   }),
   z.object({ ...base, topic: z.literal("core.shutdown"), reason: z.string() }),
+  z.object({
+    ...base,
+    topic: z.literal("finish_it.started"),
+    session: FinishItSession,
+  }),
+  z.object({
+    ...base,
+    topic: z.literal("finish_it.progress"),
+    session: FinishItSession,
+    note: z.string().optional(),
+  }),
+  z.object({
+    ...base,
+    topic: z.literal("finish_it.milestone"),
+    session: FinishItSession,
+    milestone: FinishItMilestoneId,
+    commitSha: z.string().optional(),
+  }),
+  z.object({
+    ...base,
+    topic: z.literal("finish_it.stopped"),
+    session: FinishItSession,
+  }),
+  z.object({
+    ...base,
+    topic: z.literal("finish_it.done"),
+    session: FinishItSession,
+  }),
+  z.object({
+    ...base,
+    topic: z.literal("finish_it.failed"),
+    session: FinishItSession,
+    error: z.string(),
+  }),
 ]);
 export type CoreEvent = z.infer<typeof CoreEvent>;
 export type CoreTopic = CoreEvent["topic"];

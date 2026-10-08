@@ -19,6 +19,10 @@ files:
 asar: true
 npmRebuild: false
 publish: null
+protocols:
+  - name: fabPlane
+    schemes:
+      - fabplane
 
 # The compiled Bun core is single-arch: apps/core/dist/<os>-<arch>/fabdesk-core[.exe] -> Resources/core/
 mac:
@@ -37,6 +41,8 @@ mac:
   binaries:
     - Contents/Resources/core/fabdesk-core
     - Contents/Resources/pcb/bin/fp-pcb-bridge
+    - Contents/Resources/pcb/freerouting/jre/bin/java
+    # Every JRE dylib is added to this list by scripts/after-pack.cjs.
   # Notarize with the Apple ID / app-specific password / team id the release workflow exports
   # (APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID). electron-builder skips notarization
   # when they are absent (unsigned local builds), and the installer gate then requires a stapled ticket

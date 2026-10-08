@@ -10,6 +10,11 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     usage: "/shopping-list [request]",
     hint: "Manage this project's fabplane shopping list and inventory with the shopping tools",
   },
+  {
+    name: "finish-it",
+    usage: "/finish-it",
+    hint: "Let the agent finish schematic, place, route and verify without step-by-step prompts",
+  },
 ];
 
 function shoppingListPrompt(request: string): string {
@@ -24,6 +29,11 @@ function shoppingListPrompt(request: string): string {
   ].join("\n");
 }
 
+/** True when the composer should start Finish it instead of sending a chat turn. */
+export function isFinishItCommand(text: string): boolean {
+  return /^\/finish-it(?:\s.*)?$/.test(text.trim());
+}
+
 /** The expanded message for a slash command, or null when `text` is not one. */
 export function expandSlashCommand(text: string): string | null {
   const m = /^\/([a-z][a-z0-9-]*)(?:\s+([\s\S]*))?$/.exec(text.trim());
@@ -32,6 +42,8 @@ export function expandSlashCommand(text: string): string | null {
   switch (m[1]) {
     case "shopping-list":
       return shoppingListPrompt(rest);
+    case "finish-it":
+      return null;
     default:
       return null;
   }

@@ -1,4 +1,5 @@
 import type {
+  AgentId,
   ApprovalDecision,
   PendingRequests,
   RuntimeMode,
@@ -315,6 +316,8 @@ export interface RouteRunSummary {
   id: string;
   projectId: string;
   router: string;
+  fallbackReason?: string | null;
+  attempts?: Array<{ router: string; outcome: string; reason: string | null }>;
   status:
     | "queued"
     | "running"
@@ -747,6 +750,15 @@ export function useBoardComments(projectId: string | null) {
   });
 }
 
+export function useFinishIt(projectId: string | null) {
+  const client = useCoreClient();
+  return useQuery({
+    queryKey: ["finish-it", projectId],
+    queryFn: async () => (await client.getFinishIt(projectId!)).session,
+    enabled: !!projectId,
+  });
+}
+
 export function useBoardNotes(projectId: string | null) {
   const client = useCoreClient();
   return useQuery({
@@ -780,4 +792,39 @@ export function useBoardCommentMutations(projectId: string | null) {
       onSuccess: refresh,
     }),
   };
+}
+
+export function useStartFinishIt() {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      projectId,
+      threadId,
+      agentId,
+      model,
+    }: {
+      projectId: string;
+      threadId?: string;
+      agentId?: AgentId;
+      model?: string;
+    }) => client.startFinishIt(projectId, { ...(threadId ? { threadId } : {}), ...(agentId ? { agentId } : {}), ...(model ? { model } : {}) }),
+    onSuccess: (data, vars) => {
+      qc.setQueryData(["finish-it", vars.projectId], data.session);
+      void qc.invalidateQueries({ queryKey: ["threads"] });
+      void qc.invalidateQueries({ queryKey: ["thread", data.session.threadId] });
+      void qc.invalidateQueries({ queryKey: messagesKey(data.session.threadId) });
+    },
+  });
+}
+
+export function useStopFinishIt() {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (projectId: string) => client.stopFinishIt(projectId),
+    onSuccess: (data, projectId) => {
+      qc.setQueryData(["finish-it", projectId], data.session);
+    },
+  });
 }

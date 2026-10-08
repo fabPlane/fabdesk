@@ -45,7 +45,8 @@ export const ProjectManifest = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   board: BoardSettings,
-  router: z.enum(["capacity", "freerouting"]).default("capacity"),
+  /** Omitted selects Freerouting with automatic fab_router fallback. `capacity` is a legacy fab_router alias. */
+  router: z.enum(["fab_router", "capacity", "freerouting"]).optional(),
   agent: z.object({ lastUsed: AgentId.optional() }).default({}),
   allowedDrcWarnings: z.array(z.string()).default([]),
 });
@@ -234,7 +235,8 @@ export const Settings = z.object({
   ngspicePath: z.string().nullable().default(null),
   /** FabPlane PCB bridge origin, e.g. `http://127.0.0.1:4020`; null means the default. Env `FABDESK_FP_PCB_BRIDGE_URL` overrides. */
   fpPcbBridgeUrl: z.string().nullable().default(null),
-  router: z.enum(["capacity", "freerouting"]).default("capacity"),
+  /** Deprecated storage compatibility only; router choice is project-local. No settings control reads this field. */
+  router: z.enum(["fab_router", "capacity", "freerouting"]).default("fab_router"),
   defaultAgent: AgentId.default("claude"),
   /** Runtime mode new threads start in. */
   defaultRuntimeMode: RuntimeMode.default("full"),
@@ -366,3 +368,10 @@ export const Me = z.object({
   mode: z.enum(["fabplane", "local"]),
 });
 export type Me = z.infer<typeof Me>;
+
+export const StartFinishIt = z.object({
+  threadId: z.string().optional(),
+  agentId: AgentId.optional(),
+  model: z.string().optional(),
+});
+export type StartFinishIt = z.infer<typeof StartFinishIt>;

@@ -1,4 +1,5 @@
 /** `fabdesk-core serve`: bind, write the handshake, print the ReadyLine, run until told to stop. */
+import { AGENT_OWNER_DIR, recoverAgentProcesses, stopAgentProcess } from "@fabdesk/agents";
 import { chmod, mkdir, rename, writeFile, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import type { DaemonHandshake, DoctorReport, ReadyLine, Settings } from "@fabdesk/protocol";
@@ -12,6 +13,7 @@ import {
 } from "@fabdesk/tools";
 import type { AgentId } from "@fabdesk/protocol";
 import { AgentRunManager, type AgentAdapterLike } from "./agent-runs";
+import { FinishItManager } from "./finish-it";
 import { TokenSet } from "./auth";
 import { DeviceStore } from "./devices";
 import { RemoteListener, type RemoteListenerOptions } from "./remote";
@@ -80,6 +82,9 @@ export function agentMcpProfile(
 }
 
 export type ServeOptions = {
+  /** Tests: simulate an orphan that cannot be stopped. */
+  recoveryStop?: (pid: number) => void | Promise<void>;
+  recoveryWaitMs?: number;
   port?: number;
   host?: string;
   handshakeFile?: string;
@@ -129,6 +134,7 @@ export type Daemon = {
   mcp: McpSessionManager;
   tokens: TokenSet;
   runs: AgentRunManager;
+  finishIt: FinishItManager;
   notifier: Notifier;
   relay: RelayLink;
   close(reason?: string): Promise<void>;
@@ -168,15 +174,41 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   await mkdir(config.home, { recursive: true });
   const startedAt = Date.now();
   const bus = new EventBus();
+  const ownerDir = join(config.home, "agent-processes");
+  const orphanAgents = await recoverAgentProcesses(
+    ownerDir,
+    opts.recoveryStop ?? stopAgentProcess,
+    { ...(opts.recoveryWaitMs !== undefined ? { waitMs: opts.recoveryWaitMs } : {}) },
+  );
+  if (orphanAgents.recovered)
+    logger.warn("stopped orphan agent writers after core crash", { count: orphanAgents.recovered });
   const store = Store.open(config.dbPath);
   await applyErrorReporting(store.settings.get().errorReporting);
-  const stale = store.jobs.failStale();
+  // Direct serve has no single-instance lock. Never mutate another live core's runs;
+  // legacy ownership records cannot map individual records to run IDs.
+  const stale = orphanAgents.liveOwners.length ? 0 : store.jobs.failStale();
   if (stale) logger.info("failed stale jobs from previous run", { count: stale });
-  const staleRuns = store.runs.failStale();
-  if (staleRuns.length)
+  const staleRuns = orphanAgents.liveOwners.length ? [] : store.runs.failStale();
+  if (staleRuns.length) {
     logger.info("failed stale agent runs from previous run", { threads: staleRuns });
-  const staleRoutes = store.routeRuns.failStale();
+    for (const threadId of staleRuns) {
+      const run = store.runs.latestForThread(threadId);
+      store.threads.addMessage({
+        threadId,
+        role: "assistant",
+        contentMd:
+          "The core restarted during this run. This run failed. " +
+          (orphanAgents.failures.length
+            ? `Agent recovery needs attention: ${orphanAgents.failures.join("; ")}. A surviving writer may prevent resume.`
+            : "The thread can be resumed."),
+        ...(run ? { runId: run.id } : {}),
+      });
+    }
+  }
+  const staleRoutes = orphanAgents.liveOwners.length ? 0 : store.routeRuns.failStale();
   if (staleRoutes) logger.info("failed stale route runs from previous run", { count: staleRoutes });
+  const staleFinish = store.finishIt.failStale();
+  if (staleFinish) logger.info("failed stale Finish it sessions from previous run", { count: staleFinish });
   const tokens = new TokenSet(config.token);
   const archiveDir = process.env["FABDESK_USAGE_ARCHIVE_DIR"]?.trim();
   const remoteArchiveEnabled = process.env["FABDESK_USAGE_REMOTE_BACKUP"] === "1";
@@ -362,6 +394,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
         services.design.status(),
       ]);
       return {
+        [AGENT_OWNER_DIR]: ownerDir,
         FABDESK_PROJECT_DIR: cwd,
         ...(mcpUrl ? { FABDESK_CORE_URL: new URL(mcpUrl).origin } : {}),
         ...(project
@@ -403,6 +436,13 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
         ...(agentInterface ? { interfaceMode: agentInterface } : {}),
       });
     },
+  });
+  const finishIt = new FinishItManager({
+    store,
+    bus,
+    runs,
+    projects,
+    settings: () => store.settings.get(),
   });
 
   let resolveClosed!: (reason: string) => void;
@@ -467,6 +507,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     mcp,
     auth,
     runs,
+    finishIt,
     devices,
     remote,
     relay,
@@ -697,6 +738,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     mcp,
     tokens,
     runs,
+    finishIt,
     notifier,
     relay,
     closed,
@@ -716,6 +758,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       relay.stop();
       notifier.stop();
       runs.abortAll();
+      finishIt.close();
       jobs.cancelAll();
       if (!(await runs.settleAll())) logger.warn("agent runs did not stop before shutdown timeout");
       await mcp.closeAll();
@@ -788,7 +831,7 @@ export function pidAlive(pid: number): boolean {
 
 export async function writeHandshake(path: string, hs: DaemonHandshake): Promise<void> {
   await mkdir(join(path, ".."), { recursive: true });
-  const tmp = `${path}.${process.pid}.tmp`;
+  const tmp = `${path}.${process.pid}.${crypto.randomUUID()}.tmp`;
   await writeFile(tmp, JSON.stringify(hs, null, 2) + "\n", { mode: 0o600 });
   await chmod(tmp, 0o600).catch(() => {});
   await rename(tmp, path);

@@ -167,6 +167,7 @@ describe("registry", () => {
   test("pcb_place reports stale copper and passes opt-in removal to the design service", async () => {
     const reg = createRegistry();
     const project = await tempProject("pcb-place-stale-copper");
+    await writeFile(join(project.dir,"board.kicad_pcb"), "(kicad_pcb)");
     const base = mockServices([project]);
     let received: unknown;
     const services = mockServices([project], {
@@ -330,6 +331,7 @@ describe("registry", () => {
       "cad_export",
       "cad_python",
       "cad_view",
+      "cad_enclosure",
     ]);
     for (const n of names) expect(n).toMatch(/^[a-z][a-z0-9_]*$/);
     expect(reg.byToolset("core").length).toBe(9);
@@ -3136,8 +3138,8 @@ describe("registry", () => {
     const reg = createRegistry();
     const project = await tempProject("atomic-copper-candidate");
     const board = join(project.dir, "board.kicad_pcb");
-    await writeFile(board, "existing-route\n");
-    const revision = createHash("sha256").update("existing-route\n").digest("hex");
+    await writeFile(board, "(kicad_pcb (property \"test\" \"existing-route\"))\n");
+    const revision = createHash("sha256").update("(kicad_pcb (property \"test\" \"existing-route\"))\n").digest("hex");
     const candidateFile = "routes/replacement.json";
     await mkdir(join(project.dir, "routes"), { recursive: true });
     await writeFile(
@@ -3162,7 +3164,7 @@ describe("registry", () => {
         ...base.design,
         unroute: async (_dir, nets) => {
           order.push(`remove:${nets?.join(",")}`);
-          await Bun.write(board, "route-removed\n");
+          await Bun.write(board, "(kicad_pcb (property \"test\" \"route-removed\"))\n");
           return { tracks: 12, vias: 2 };
         },
         editBoardGeometry: async (_dir, edit) => {
@@ -3193,7 +3195,7 @@ describe("registry", () => {
     await expect(call({ mode: "apply", removeNets: ["A", "B", "C", "D"] })).rejects.toThrow(
       /copper removal has no replacement/,
     );
-    expect(await Bun.file(board).text()).toBe("existing-route\n");
+    expect(await Bun.file(board).text()).toBe("(kicad_pcb (property \"test\" \"existing-route\"))\n");
     expect(order).toEqual([]);
 
     const preview = await call({
@@ -3203,7 +3205,7 @@ describe("registry", () => {
       candidateFile,
     });
     expect((preview.json as any).status).toBe("preview");
-    expect(await Bun.file(board).text()).toBe("existing-route\n");
+    expect(await Bun.file(board).text()).toBe("(kicad_pcb (property \"test\" \"existing-route\"))\n");
     expect(order).toEqual([]);
 
     await expect(
@@ -3223,7 +3225,7 @@ describe("registry", () => {
       }),
     ).rejects.toThrow(/canonical files restored: replacement rejected/);
     expect(order).toEqual(["remove:A,B,C,D", "create:1"]);
-    expect(await Bun.file(board).text()).toBe("existing-route\n");
+    expect(await Bun.file(board).text()).toBe("(kicad_pcb (property \"test\" \"existing-route\"))\n");
 
     rejectReplacement = false;
     order.length = 0;
@@ -3233,7 +3235,7 @@ describe("registry", () => {
       candidateFile,
     });
     expect(order).toEqual(["remove:A,B,C,D", "create:1"]);
-    expect(await Bun.file(board).text()).toBe("route-removed\nreplacement-route\n");
+    expect(await Bun.file(board).text()).toBe("(kicad_pcb (property \"test\" \"route-removed\"))\nreplacement-route\n");
     expect((accepted.json as any).candidateFile).toBe(candidateFile);
     expect((accepted.json as any).changes).toMatchObject({
       removedCopper: { tracks: 12, vias: 2 },
@@ -3927,13 +3929,13 @@ describe("registry", () => {
   test("diagnostic routing distinguishes blocked, unavailable and non-mutating no-progress", async () => {
     const reg = createRegistry();
     const project = await tempProject("diagnostic-route");
-    await writeFile(join(project.dir, "board.kicad_pcb"), "canonical-board");
+    await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb (property \"test\" \"canonical-board\"))");
     const base = mockServices([project]);
     const services = mockServices([project], {
       design: {
         ...base.design,
         route: async (dir) => {
-          await Bun.write(join(dir, "board.kicad_pcb"), "router-touched-board");
+          await Bun.write(join(dir, "board.kicad_pcb"), "(kicad_pcb (property \"test\" \"router-touched-board\"))");
           return {
             tracks: 0,
             vias: 0,
@@ -3967,7 +3969,8 @@ describe("registry", () => {
     expect(blockedRun.state).toBe("failed");
     expect(blockedRun.error).toContain("no remaining endpoints");
     const unavailable = await call({ timeoutMs: 5000, router: "freerouting" });
-    expect((unavailable.json as any).state).toBe("unavailable");
+    const explicitRun = await waitForRoute(services, (unavailable.json as any).runId);
+    expect(explicitRun.router).toBe("freerouting");
     const noProgress = await call({
       timeoutMs: 5000,
       targets: [{ net: "N1" }],
@@ -3976,7 +3979,7 @@ describe("registry", () => {
     const noProgressRun = await waitForRoute(services, (noProgress.json as any).runId);
     expect(noProgressRun.result?.state).toBe("no-progress");
     expect(noProgressRun.result?.obstacles[0]).toContain("blocked");
-    expect(await Bun.file(join(project.dir, "board.kicad_pcb")).text()).toBe("canonical-board");
+    expect(await Bun.file(join(project.dir, "board.kicad_pcb")).text()).toBe("(kicad_pcb (property \"test\" \"canonical-board\"))");
   });
 
   test("verify_gate baselines warnings", async () => {
@@ -4108,11 +4111,11 @@ test("RouteProgressFrames turns phase/percent-only progress into attempt frames,
       seen.push(`${m.event?.kind}:${m.event?.status ?? ""}`),
   };
   const frames = new RouteProgressFrames("run_x", Date.now(), sink as never);
-  frames.onProgress({ state: "routing", log: [], phase: "capacity", percent: 10 });
-  frames.onProgress({ state: "routing", log: [], phase: "capacity", percent: 10 });
-  frames.onProgress({ state: "routing", log: [], phase: "capacity", percent: 40 });
+  frames.onProgress({ state: "routing", log: [], phase: "fab_router", percent: 10 });
+  frames.onProgress({ state: "routing", log: [], phase: "fab_router", percent: 10 });
+  frames.onProgress({ state: "routing", log: [], phase: "fab_router", percent: 40 });
   frames.onProgress({ state: "routing", log: [], phase: "trace", percent: 0 });
-  expect(seen).toEqual(["attempt:capacity · 10%", "attempt:capacity · 40%", "attempt:trace · 0%"]);
+  expect(seen).toEqual(["attempt:fab_router · 10%", "attempt:fab_router · 40%", "attempt:trace · 0%"]);
 });
 
 test("circuit_place moves footprints through the design service", async () => {

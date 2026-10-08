@@ -1,5 +1,6 @@
 /** File helpers shared by tools: path jail, JSON I/O, project file layout. */
-import { mkdir, lstat, readFile, realpath, stat, writeFile, rename } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { rm, mkdir, lstat, readFile, realpath, stat, writeFile, rename } from "node:fs/promises";
 import { dirname, isAbsolute, join, normalize, relative, resolve, sep } from "node:path";
 import { ToolError } from "./registry";
 
@@ -15,6 +16,8 @@ export const PROJECT_FILES = {
   boardPro: "board.kicad_pro",
   /** The mechanical model, a FreeCAD document (`cad` toolset). */
   cadModel: "model.FCStd",
+  /** Parametric enclosure spec keyed to the board hash (`cad_enclosure`). */
+  enclosure: "enclosure.json",
   sketches: "sketches",
   renders: "renders",
   reports: "reports",
@@ -32,7 +35,8 @@ export const PROJECT_FILES = {
  * whose target leaves the root. Returns the absolute path (which may not exist yet).
  */
 export async function jailPath(root: string, rel: string): Promise<string> {
-  if (typeof rel !== "string" || rel.length === 0) throw new ToolError("path is required", "invalid_args");
+  if (typeof rel !== "string" || rel.length === 0)
+    throw new ToolError("path is required", "invalid_args");
   if (rel.includes("\0")) throw new ToolError("invalid path", "invalid_args");
   const rootAbs = resolve(root);
   const candidate = isAbsolute(rel) ? resolve(rel) : resolve(rootAbs, normalize(rel));
@@ -49,7 +53,10 @@ export async function jailPath(root: string, rel: string): Promise<string> {
       const real = await realpath(probe);
       const relReal = relative(realRoot, real);
       if (relReal.startsWith("..") || isAbsolute(relReal)) {
-        throw new ToolError(`path resolves outside the project directory via symlink: ${rel}`, "invalid_args");
+        throw new ToolError(
+          `path resolves outside the project directory via symlink: ${rel}`,
+          "invalid_args",
+        );
       }
       break;
     }
@@ -93,9 +100,13 @@ export async function readJsonOrNull<T = unknown>(path: string): Promise<T | nul
 /** Atomic write: temp file + rename, creating parent dirs. */
 export async function writeAtomic(path: string, data: string | Uint8Array): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
-  const tmp = `${path}.${process.pid}.${Date.now().toString(36)}.tmp`;
-  await writeFile(tmp, data);
-  await rename(tmp, path);
+  const tmp = `${path}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(tmp, data, { flag: "wx" });
+    await rename(tmp, path);
+  } finally {
+    await rm(tmp, { force: true }).catch(() => undefined);
+  }
 }
 
 export async function writeJson(path: string, value: unknown): Promise<void> {

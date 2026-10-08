@@ -1,4 +1,5 @@
 /** Compact, bounded geographic inspection of the saved native PCB. */
+import { readCopper, quality, qualityText, referenceFacts } from "../routing-quality";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { z } from "zod/v4";
@@ -8,6 +9,7 @@ import type { DesignRow } from "../services";
 import { ok, p, table } from "./common";
 
 const Kind = z.enum([
+  "routing_quality",
   "components",
   "nets",
   "pads",
@@ -52,12 +54,12 @@ export const pcb_inspect = defineTool({
   toolset: "circuit",
   title: "Inspect a PCB region",
   description:
-    "Inspect a bounded part of the saved native PCB by item kind, reference, net, layer, rectangle, or point/radius. Layers accept F.Cu, BL_F_Cu, or the KiCad enum number (3); vias occupy every copper layer they span. board_geometry returns board-owned outline and graphic shapes; request footprint_geometry explicitly for footprint-owned courtyard and fabrication primitives, and include zones to see pour occupancy. islandsOfNet returns the copper islands of those nets (pad/via/track/zone connectivity). Returns compact exact millimetre coordinates, AABB, source revision, bounds, and a truncation indicator.",
+    "routing_quality returns per-net copper widths, planar chord length, via counts and sizes, layers, and name-identified pairs; accepts nets and is requested alone. Inspect a bounded part of the saved native PCB by item kind, reference, net, layer, rectangle, or point/radius. Layers accept F.Cu, BL_F_Cu, or the KiCad enum number (3); vias occupy every copper layer they span. board_geometry returns board-owned outline and graphic shapes; request footprint_geometry explicitly for footprint-owned courtyard and fabrication primitives, and include zones to see pour occupancy. islandsOfNet returns the copper islands of those nets (pad/via/track/zone connectivity). Returns compact exact millimetre coordinates, AABB, source revision, bounds, and a truncation indicator.",
   inputSchema: {
     kinds: z
       .array(Kind)
       .min(1)
-      .max(11)
+      .max(12)
       .default(["components", "pads", "tracks", "vias", "unrouted"]),
     references: z
       .array(z.string().min(1))
@@ -93,6 +95,12 @@ export const pcb_inspect = defineTool({
     ctx,
   ) => {
     const project = ctx.requireProject();
+    if (kinds.includes("routing_quality")) {
+      if (kinds.length !== 1 || references || layers || region || near) throw new ToolError("routing_quality accepts nets only and must be requested alone", "invalid_args");
+      const board = await readCopper(project.dir);
+      const facts = quality(board, nets ?? board.nets, [], await referenceFacts(project.dir, board.revision));
+      return ok(qualityText(facts), { quality: facts, sourceRevision: board.revision });
+    }
     const boardPath = p(project, PROJECT_FILES.boardPcb);
     let revision: string | null;
     try {
@@ -115,6 +123,7 @@ export const pcb_inspect = defineTool({
           "invalid_args",
         );
     }
+    const ordinaryKinds = kinds.filter((kind) => kind !== "routing_quality");
     const refSet = references ? new Set(references.map((value) => value.toLowerCase())) : null;
     const netSet = nets ? new Set(nets.map((value) => value.toLowerCase())) : null;
     const layerSet = layers ? new Set(layers.map(String)) : null;
@@ -123,7 +132,7 @@ export const pcb_inspect = defineTool({
       { total: number; returned: number; truncated: boolean; rows: DesignRow[] }
     > = {};
     if (revision === null) {
-      for (const kind of kinds)
+      for (const kind of ordinaryKinds)
         results[kind] = { total: 0, returned: 0, truncated: false, rows: [] };
       return ok("PCB not created yet; inspection is empty.", {
         contract: { name: "fabdesk.pcb-inspection", version: "2.0.0" },
@@ -148,7 +157,7 @@ export const pcb_inspect = defineTool({
         )
       : [];
     const allPoints: Point[] = [];
-    for (const kind of kinds) {
+    for (const kind of ordinaryKinds) {
       const rows =
         kind === "pads" && allPads ? allPads : await ctx.services.design.query(project.dir, kind);
       const filtered = rows.filter((row) => {

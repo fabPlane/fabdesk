@@ -81,7 +81,7 @@ describe("ProjectStore absolute-path resolution", () => {
             createdAt: now,
             updatedAt: now,
             board: { layers: 2 },
-            router: "capacity",
+            router: "fab_router",
           }),
         );
         for (const path of ["board.kicad_pro", "board.kicad_sch", "board.kicad_pcb"])

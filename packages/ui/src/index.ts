@@ -84,6 +84,7 @@ export { ProjectPickerDialog } from "./chat/ProjectPickerDialog";
 export { ThreadView } from "./chat/ThreadView";
 export { MessageList, MessageBubble, BranchHeader } from "./chat/MessageList";
 export { Composer, composerHandlers } from "./chat/Composer";
+export { FinishItPanel } from "./chat/FinishItPanel";
 export { Markdown, CodeBlock } from "./chat/Markdown";
 export { ToolCallCard, extractImages, resultText } from "./chat/ToolCallCard";
 export { ThinkingBlock } from "./chat/ThinkingBlock";

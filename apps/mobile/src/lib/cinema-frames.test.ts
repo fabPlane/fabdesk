@@ -15,7 +15,7 @@ import {
 const meta: RouteMeta = {
   kind: "meta",
   runId: "r1",
-  router: "capacity",
+  router: "fab_router",
   bounds: { x1: 0, y1: 0, x2: 100, y2: 50 },
   layers: ["F.Cu", "B.Cu"],
   unitsPerMm: 1,
@@ -98,7 +98,7 @@ describe("playback", () => {
   test("done attaches the result to its own run only", () => {
     const result: RouteResult = {
       runId: "r1",
-      router: "capacity",
+      router: "fab_router",
       complete: ["a"],
       open: [],
       timedOut: false,

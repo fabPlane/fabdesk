@@ -67,6 +67,14 @@ const api = {
     ipcRenderer.on("fabdesk:update-download", listener);
     return () => ipcRenderer.removeListener("fabdesk:update-download", listener);
   },
+  pendingOpenCatalog: () => ipcRenderer.invoke("fabdesk:pending-open-catalog") as Promise<string | null>,
+  onOpenCatalog: (cb: (catalogId: string) => void) => {
+    const listener = (_e: unknown, catalogId: unknown) => {
+      if (typeof catalogId === "string") cb(catalogId);
+    };
+    ipcRenderer.on("fabdesk:open-catalog", listener);
+    return () => ipcRenderer.removeListener("fabdesk:open-catalog", listener);
+  },
 };
 
 export type FabdeskBridge = typeof api;

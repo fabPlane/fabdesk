@@ -339,7 +339,7 @@ describe("http daemon", () => {
     await mkdir(movedRunDir, { recursive: true });
     await writeFile(
       join(movedRunDir, "frames.jsonl"),
-      '{"kind":"meta","runId":"run_moved_project","router":"capacity","bounds":{"x1":0,"y1":0,"x2":1,"y2":1},"layers":["F.Cu","B.Cu"],"unitsPerMm":1}\n',
+      '{"kind":"meta","runId":"run_moved_project","router":"fab_router","bounds":{"x1":0,"y1":0,"x2":1,"y2":1},"layers":["F.Cu","B.Cu"],"unitsPerMm":1}\n',
     );
     const completedRoute = services.routeRuns.get(rr.json.runId)!;
     services.routeRuns.start({

@@ -16,6 +16,7 @@ import {
   ResolveInput,
   SendMessage,
   Settings,
+  StartFinishIt,
   StartOrder,
   TailscaleServeRequest,
   type AgentId,
@@ -51,6 +52,7 @@ import type { JobRunner } from "../jobs";
 import type { McpSessionManager } from "../mcp-sessions";
 import { InvalidParentDirectory, type ProjectStore } from "../projects";
 import type { AgentRunManager } from "../agent-runs";
+import type { FinishItManager } from "../finish-it";
 import type { DeviceStore } from "../devices";
 import type { RemoteListener } from "../remote";
 import { VIA_HEADER, type RelayState } from "../relay";
@@ -89,6 +91,7 @@ export type AppDeps = {
   mcp: McpSessionManager;
   auth: AuthFacade;
   runs: AgentRunManager | null;
+  finishIt?: FinishItManager | null;
   doctor: () => Promise<DoctorReport>;
   agents: () => Promise<AgentInfo[]>;
   shutdown: (reason: string) => void;
@@ -692,6 +695,33 @@ export function createApp(deps: AppDeps): Hono<Env> {
     });
     if (!adopted) return c.json({ error: "could not load this KiCad board" }, 422);
     return c.json({ project: await deps.projects.detail(c.req.param("id")), pcbPath: adopted.pcbPath });
+  });
+  app.get("/projects/:id/finish-it", async (c) => {
+    const id = c.req.param("id");
+    if (!(await deps.projects.handle(id))) return c.json({ error: "not found" }, 404);
+    return c.json({ session: deps.finishIt?.get(id) ?? null });
+  });
+  app.post("/projects/:id/finish-it", async (c) => {
+    if (!deps.finishIt) return c.json({ error: "Finish it is disabled in this daemon" }, 503);
+    if (!deps.runs) return c.json({ error: "agent runs are disabled in this daemon" }, 503);
+    const id = c.req.param("id");
+    if (!(await deps.projects.handle(id))) return c.json({ error: "not found" }, 404);
+    const raw = await c.req.json().catch(() => ({}));
+    const body = StartFinishIt.parse(raw ?? {});
+    const session = await deps.finishIt.start({
+      projectId: id,
+      ...(body.threadId ? { threadId: body.threadId } : {}),
+      ...(body.agentId ? { agentId: body.agentId } : {}),
+      ...(body.model ? { model: body.model } : {}),
+    });
+    return c.json({ session }, 202);
+  });
+  app.post("/projects/:id/finish-it/stop", async (c) => {
+    if (!deps.finishIt) return c.json({ error: "Finish it is disabled in this daemon" }, 503);
+    const id = c.req.param("id");
+    if (!(await deps.projects.handle(id))) return c.json({ error: "not found" }, 404);
+    const session = await deps.finishIt.stop(id);
+    return c.json({ session });
   });
   app.get("/search/results", (c) => {
     const q = (c.req.query("q") ?? "").trim();
