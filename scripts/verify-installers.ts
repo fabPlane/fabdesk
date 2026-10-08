@@ -19,6 +19,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { resolveCadBackend } from "../apps/desktop/src/main/cad-supervisor";
 import { resolvePcbBackend } from "../apps/desktop/src/main/pcb-supervisor";
 
 const dir = process.argv[2] ?? "release-out";
@@ -82,6 +83,35 @@ function checkPcbBundle(resourcesDir: string, label: string): void {
   }
 }
 
+/** Require a real engine, then smoke FCStd/STEP and bridge authentication on native hosts. */
+function checkCadBundle(resourcesDir: string, label: string): void {
+  if (!existsSync(join(resourcesDir, "cad"))) {
+    console.log(`${label}: CAD is optional; runtime downloads separately with consent`);
+    return;
+  }
+  try {
+    const backend = resolveCadBackend({ packaged: true, resourcesPath: resourcesDir, env: {} });
+    if (!backend) throw new Error("native CAD bundle missing");
+    if (targetArch && targetArch !== hostArch) {
+      console.log(
+        `${label}: foreign-arch CAD bundle resolved; execution requires its native runner`,
+      );
+      return;
+    }
+    const result = run([
+      process.execPath,
+      resolve(import.meta.dir, "smoke-cad-bundle.ts"),
+      join(resourcesDir, "cad/bundle.json"),
+    ]);
+    if (!result.ok) throw new Error(result.out.trim().slice(-1500));
+    console.log(`${label}: native CAD smoke ${result.out.trim().split("\n").at(-1)}`);
+  } catch (error) {
+    fail(
+      `${label}: native CAD package failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
 /** Soft-warn (or fail when FABDESK_REQUIRE_BUNDLED_KICAD=1) if Resources/kicad is missing. */
 function checkBundledKicad(resourcesDir: string, label: string): void {
   const root = join(resourcesDir, "kicad");
@@ -139,6 +169,9 @@ function checkMacApp(app: string, label: string): void {
   checkCore(join(resources, "core", "fabdesk-core"), label);
   checkBundledKicad(resources, label);
   checkPcbBundle(resources, label);
+  checkCadBundle(resources, label);
+  if (!run(["codesign", "--verify", "--deep", "--strict", app]).ok)
+    fail(`${label}: native CAD execution modified sealed app resources`);
 }
 
 function verifyDmg(file: string): void {
@@ -186,6 +219,7 @@ function verifyAppImage(file: string): void {
     checkCore(join(resources, "core", "fabdesk-core"), file);
     checkBundledKicad(resources, file);
     checkPcbBundle(resources, file);
+    checkCadBundle(resources, file);
   } finally {
     rmSync(out, { recursive: true, force: true });
   }
@@ -207,6 +241,7 @@ function verifyDeb(file: string): void {
       const resources = resolve(core, "..", "..");
       checkBundledKicad(resources, file);
       checkPcbBundle(resources, file);
+      checkCadBundle(resources, file);
     }
   } finally {
     rmSync(out, { recursive: true, force: true });
@@ -241,6 +276,11 @@ function verifyExe(file: string): void {
     const pcb = run(["7z", "x", "-y", `-o${out}`, innerPath, "resources/pcb/*"]);
     if (!pcb.ok) return fail(`${file}: could not extract the bundled PCB backend`);
     checkPcbBundle(join(out, "resources"), file);
+    if (/resources[\\/]cad[\\/]/.test(il)) {
+      const cad = run(["7z", "x", "-y", `-o${out}`, innerPath, "resources/cad/*"]);
+      if (!cad.ok) return fail(`${file}: could not extract the bundled CAD runtime`);
+    }
+    checkCadBundle(join(out, "resources"), file);
   } finally {
     rmSync(out, { recursive: true, force: true });
   }

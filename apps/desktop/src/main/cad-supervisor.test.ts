@@ -32,6 +32,45 @@ describe("FabPlane CAD backend", () => {
     expect(await new CadSupervisor(null).start()).toEqual({});
   });
 
+  test("packaged startup remains usable without CAD and ignores development mock source", async () => {
+    const resources = await temp("fabplane-native-required-");
+    expect(
+      resolveCadBackend({
+        packaged: true,
+        resourcesPath: resources,
+        env: { FABDESK_FAB_CAD_SOURCE: FAB_CAD },
+      }),
+    ).toBeNull();
+  });
+
+  test("resolves the bundled Python runtime relative to a relocated native manifest", async () => {
+    const resources = await temp("fabplane-native-python-");
+    const cad = join(resources, "cad");
+    await mkdir(join(cad, "python"), { recursive: true });
+    await writeFile(join(cad, "bridge"), "binary");
+    await writeFile(join(cad, "FreeCADApiServer"), "binary");
+    await writeFile(
+      join(cad, "bundle.json"),
+      JSON.stringify({
+        format: 1,
+        target: "darwin-arm64",
+        engine: "native",
+        bridge: "bridge",
+        freecadApiServer: "FreeCADApiServer",
+        pythonHome: "python",
+        environmentPaths: { CSF_STEPDefaults: "python" },
+      }),
+    );
+    expect(
+      resolveCadBackend({ packaged: true, resourcesPath: resources, env: {} })?.env,
+    ).toMatchObject({
+      PYTHONHOME: join(cad, "python"),
+      PYTHONNOUSERSITE: "1",
+      PYTHONDONTWRITEBYTECODE: "1",
+      CSF_STEPDefaults: join(cad, "python"),
+    });
+  });
+
   test("resolves a packaged bundle relative to its manifest", async () => {
     const resources = await temp("fabplane-cad-bundle-");
     const cad = join(resources, "cad");
