@@ -8,12 +8,18 @@ function verify(withInvalidCad: boolean) {
   const root = mkdtempSync(join(tmpdir(), "optional-cad-verifier-"));
   try {
     const resources = join(root, "payload/resources");
-    for (const directory of ["core", "kicad", "pcb/data", "pcb/footprints", "pcb/symbols"])
+    for (const directory of [
+      "core", "kicad", "pcb/data", "pcb/footprints", "pcb/symbols",
+      "pcb/freerouting/jre/bin",
+    ])
       mkdirSync(join(resources, directory), { recursive: true });
     const core = join(resources, "core/fabdesk-core");
     writeFileSync(core, "#!/bin/sh\necho 0.2.144\n");
     chmodSync(core, 0o755);
-    for (const path of ["kicad/kicad-cli", "pcb/bridge", "pcb/kicad-cli"])
+    for (const path of [
+      "kicad/kicad-cli", "pcb/bridge", "pcb/kicad-cli",
+      "pcb/freerouting/freerouting-2.4.1.jar", "pcb/freerouting/jre/bin/java",
+    ])
       writeFileSync(join(resources, path), "fixture");
     writeFileSync(
       join(resources, "pcb/bundle.json"),
@@ -25,6 +31,12 @@ function verify(withInvalidCad: boolean) {
         stockData: "data",
         footprints: "footprints",
         symbols: "symbols",
+        // Match packages/kicad-patches/bundle.ts in the PCB backend packager.
+        freerouting: {
+          jar: "freerouting/freerouting-2.4.1.jar",
+          java: "freerouting/jre/bin/java",
+          version: "2.4.1",
+        },
       }),
     );
     if (withInvalidCad) {
