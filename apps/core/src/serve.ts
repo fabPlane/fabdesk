@@ -1,4 +1,5 @@
 /** `fabdesk-core serve`: bind, write the handshake, print the ReadyLine, run until told to stop. */
+import { AGENT_OWNER_DIR, recoverAgentProcesses, stopAgentProcess } from "@fabdesk/agents";
 import { chmod, mkdir, rename, writeFile, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import type { DaemonHandshake, DoctorReport, ReadyLine, Settings } from "@fabdesk/protocol";
@@ -81,6 +82,9 @@ export function agentMcpProfile(
 }
 
 export type ServeOptions = {
+  /** Tests: simulate an orphan that cannot be stopped. */
+  recoveryStop?: (pid: number) => void | Promise<void>;
+  recoveryWaitMs?: number;
   port?: number;
   host?: string;
   handshakeFile?: string;
@@ -170,14 +174,38 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   await mkdir(config.home, { recursive: true });
   const startedAt = Date.now();
   const bus = new EventBus();
+  const ownerDir = join(config.home, "agent-processes");
+  const orphanAgents = await recoverAgentProcesses(
+    ownerDir,
+    opts.recoveryStop ?? stopAgentProcess,
+    { ...(opts.recoveryWaitMs !== undefined ? { waitMs: opts.recoveryWaitMs } : {}) },
+  );
+  if (orphanAgents.recovered)
+    logger.warn("stopped orphan agent writers after core crash", { count: orphanAgents.recovered });
   const store = Store.open(config.dbPath);
   await applyErrorReporting(store.settings.get().errorReporting);
-  const stale = store.jobs.failStale();
+  // Direct serve has no single-instance lock. Never mutate another live core's runs;
+  // legacy ownership records cannot map individual records to run IDs.
+  const stale = orphanAgents.liveOwners.length ? 0 : store.jobs.failStale();
   if (stale) logger.info("failed stale jobs from previous run", { count: stale });
-  const staleRuns = store.runs.failStale();
-  if (staleRuns.length)
+  const staleRuns = orphanAgents.liveOwners.length ? [] : store.runs.failStale();
+  if (staleRuns.length) {
     logger.info("failed stale agent runs from previous run", { threads: staleRuns });
-  const staleRoutes = store.routeRuns.failStale();
+    for (const threadId of staleRuns) {
+      const run = store.runs.latestForThread(threadId);
+      store.threads.addMessage({
+        threadId,
+        role: "assistant",
+        contentMd:
+          "The core restarted during this run. This run failed. " +
+          (orphanAgents.failures.length
+            ? `Agent recovery needs attention: ${orphanAgents.failures.join("; ")}. A surviving writer may prevent resume.`
+            : "The thread can be resumed."),
+        ...(run ? { runId: run.id } : {}),
+      });
+    }
+  }
+  const staleRoutes = orphanAgents.liveOwners.length ? 0 : store.routeRuns.failStale();
   if (staleRoutes) logger.info("failed stale route runs from previous run", { count: staleRoutes });
   const staleFinish = store.finishIt.failStale();
   if (staleFinish) logger.info("failed stale Finish it sessions from previous run", { count: staleFinish });
@@ -366,6 +394,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
         services.design.status(),
       ]);
       return {
+        [AGENT_OWNER_DIR]: ownerDir,
         FABDESK_PROJECT_DIR: cwd,
         ...(mcpUrl ? { FABDESK_CORE_URL: new URL(mcpUrl).origin } : {}),
         ...(project
@@ -802,7 +831,7 @@ export function pidAlive(pid: number): boolean {
 
 export async function writeHandshake(path: string, hs: DaemonHandshake): Promise<void> {
   await mkdir(join(path, ".."), { recursive: true });
-  const tmp = `${path}.${process.pid}.tmp`;
+  const tmp = `${path}.${process.pid}.${crypto.randomUUID()}.tmp`;
   await writeFile(tmp, JSON.stringify(hs, null, 2) + "\n", { mode: 0o600 });
   await chmod(tmp, 0o600).catch(() => {});
   await rename(tmp, path);

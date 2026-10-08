@@ -40,7 +40,7 @@ describe("frame retention", () => {
     s.ingest({
       kind: "meta",
       runId: "r1",
-      router: "capacity",
+      router: "fab_router",
       bounds: { x1: 0, y1: 0, x2: 1, y2: 1 },
       layers: ["top"],
       unitsPerMm: 1,

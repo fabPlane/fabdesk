@@ -171,60 +171,39 @@ describe.skipIf(process.platform === "win32")("flattenIfNeeded", () => {
 });
 
 describe("stage-kicad-bundle --from", () => {
-  test("copies a local nightly-shaped KiCad tree into apps/desktop/kicad-bundle", async () => {
+  test("copies a local nightly-shaped KiCad tree into an isolated staging directory", async () => {
     const src = mkdtempSync(join(tmpdir(), "fabdesk-kicad-src-"));
-    // Match the nightly archive layout after flattening `kicad-cli/`.
-    if (process.platform === "win32") {
-      mkdirSync(join(src, "bin"), { recursive: true });
-      writeFileSync(join(src, "bin", "kicad-cli.exe"), "MZ");
-    } else {
-      writeFileSync(join(src, "kicad-cli"), "#!/bin/sh\necho stub\n");
-      chmodSync(join(src, "kicad-cli"), 0o755);
-    }
+    const output = mkdtempSync(join(tmpdir(), "fabdesk-kicad-stage-"));
+    try {
+      // Match the nightly archive layout after flattening `kicad-cli/`.
+      if (process.platform === "win32") {
+        mkdirSync(join(src, "bin"), { recursive: true });
+        writeFileSync(join(src, "bin", "kicad-cli.exe"), "MZ");
+      } else {
+        writeFileSync(join(src, "kicad-cli"), "#!/bin/sh\necho stub\n");
+        chmodSync(join(src, "kicad-cli"), 0o755);
+      }
 
-    const os =
-      process.platform === "win32" ? "windows" : process.platform === "darwin" ? "darwin" : "linux";
-    const arch = process.arch === "arm64" ? "arm64" : "x64";
-    const target = `bun-${os}-${arch}`;
-    const proc = Bun.spawn(
-      ["bun", "run", "scripts/stage-kicad-bundle.ts", "--from", src, "--target", target],
-      {
-        cwd: join(import.meta.dir, "../.."),
-        stdout: "pipe",
-        stderr: "pipe",
-      },
-    );
-    const [stderr, code] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
-    expect(code).toBe(0);
-    expect(stderr).toContain("staged");
-
-    const stagedCli = join(
-      import.meta.dir,
-      "../../apps/desktop/kicad-bundle",
-      `${os}-${arch}`,
-      process.platform === "win32" ? "bin/kicad-cli.exe" : "kicad-cli",
-    );
-    expect(readFileSync(stagedCli, "utf8").length).toBeGreaterThan(0);
-    rmSync(join(import.meta.dir, "../../apps/desktop/kicad-bundle", `${os}-${arch}`), {
-      recursive: true,
-      force: true,
-    });
-    rmSync(src, { recursive: true, force: true });
-  });
-
-  test.skipIf(process.platform === "win32")(
-    "flattens nested kicad-cli/ when staging --from",
-    async () => {
-      const src = mkdtempSync(join(tmpdir(), "fabdesk-kicad-nested-"));
-      mkdirSync(join(src, "kicad-cli"), { recursive: true });
-      writeFileSync(join(src, "kicad-cli", "kicad-cli"), "#!/bin/sh\necho nested\n");
-      chmodSync(join(src, "kicad-cli", "kicad-cli"), 0o755);
-
-      const os = process.platform === "darwin" ? "darwin" : "linux";
+      const os =
+        process.platform === "win32"
+          ? "windows"
+          : process.platform === "darwin"
+            ? "darwin"
+            : "linux";
       const arch = process.arch === "arm64" ? "arm64" : "x64";
       const target = `bun-${os}-${arch}`;
       const proc = Bun.spawn(
-        ["bun", "run", "scripts/stage-kicad-bundle.ts", "--from", src, "--target", target],
+        [
+          "bun",
+          "run",
+          "scripts/stage-kicad-bundle.ts",
+          "--from",
+          src,
+          "--target",
+          target,
+          "--out-dir",
+          output,
+        ],
         {
           cwd: join(import.meta.dir, "../.."),
           stdout: "pipe",
@@ -235,10 +214,58 @@ describe("stage-kicad-bundle --from", () => {
       expect(code).toBe(0);
       expect(stderr).toContain("staged");
 
-      const stagedRoot = join(import.meta.dir, "../../apps/desktop/kicad-bundle", `${os}-${arch}`);
-      expect(statSync(join(stagedRoot, "kicad-cli")).isFile()).toBe(true);
-      rmSync(stagedRoot, { recursive: true, force: true });
+      const stagedCli = join(
+        output,
+        process.platform === "win32" ? "bin/kicad-cli.exe" : "kicad-cli",
+      );
+      expect(readFileSync(stagedCli, "utf8").length).toBeGreaterThan(0);
+    } finally {
+      rmSync(output, { recursive: true, force: true });
       rmSync(src, { recursive: true, force: true });
+    }
+  });
+
+  test.skipIf(process.platform === "win32")(
+    "flattens nested kicad-cli/ when staging --from",
+    async () => {
+      const src = mkdtempSync(join(tmpdir(), "fabdesk-kicad-nested-"));
+      const output = mkdtempSync(join(tmpdir(), "fabdesk-kicad-stage-"));
+      try {
+        mkdirSync(join(src, "kicad-cli"), { recursive: true });
+        writeFileSync(join(src, "kicad-cli", "kicad-cli"), "#!/bin/sh\necho nested\n");
+        chmodSync(join(src, "kicad-cli", "kicad-cli"), 0o755);
+
+        const os = process.platform === "darwin" ? "darwin" : "linux";
+        const arch = process.arch === "arm64" ? "arm64" : "x64";
+        const target = `bun-${os}-${arch}`;
+        const proc = Bun.spawn(
+          [
+            "bun",
+            "run",
+            "scripts/stage-kicad-bundle.ts",
+            "--from",
+            src,
+            "--target",
+            target,
+            "--out-dir",
+            output,
+          ],
+          {
+            cwd: join(import.meta.dir, "../.."),
+            stdout: "pipe",
+            stderr: "pipe",
+          },
+        );
+        const [stderr, code] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
+        expect(code).toBe(0);
+        expect(stderr).toContain("staged");
+
+        const stagedRoot = output;
+        expect(statSync(join(stagedRoot, "kicad-cli")).isFile()).toBe(true);
+      } finally {
+        rmSync(output, { recursive: true, force: true });
+        rmSync(src, { recursive: true, force: true });
+      }
     },
   );
 });

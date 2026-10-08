@@ -2,7 +2,7 @@ import { ToolRegistry, type ToolDef } from "../registry";
 import { appTools } from "./app";
 import { cadTools } from "./cad";
 import { circuitTools } from "./circuit";
-import { coreTools, packaged_route_run, route_run } from "./core";
+import { coreTools } from "./core";
 import { exportTools } from "./export";
 import { kicadTools } from "./kicad";
 import { inspectionTools } from "./inspection";
@@ -39,18 +39,10 @@ export const allTools: ReadonlyArray<ToolDef> = [
   ...cadTools,
 ] as unknown as ReadonlyArray<ToolDef>;
 
-/**
- * The v1 registry with every toolset. A runtime that names its channel gets the tool schemas that
- * channel can execute: off the internal channel, route_run's router enum omits freerouting. Without
- * a channel (tests, manifest export) the full schemas are returned.
- */
+/** The v1 registry exposes both routers on every channel. */
 export function createRegistry(opts: { channel?: "public" | "internal" } = {}): ToolRegistry {
-  if (opts.channel === undefined || opts.channel === "internal") return new ToolRegistry(allTools);
-  return new ToolRegistry(
-    allTools.map((def) =>
-      def.name === route_run.name ? (packaged_route_run as unknown as ToolDef) : def,
-    ),
-  );
+  void opts;
+  return new ToolRegistry(allTools);
 }
 
 export * from "./core";

@@ -44,7 +44,7 @@ prompt / sketch ─► agent writes circuit.netlist.json ─► circuit_build (c
   ─► export_* (gerbers, drill, pos, bom, netlist) · sim_run (circuit-json-to-spice → spicey / ngspice)
 ```
 
-Routers run on the bridge: `capacity` maps to its built-in JS router; `freerouting` (its Freerouting adapter)
+Routers run on the bridge: `fab_router` maps to its internal `js` router; `capacity` remains a legacy input alias. New unpinned projects default to `freerouting` with automatic `fab_router` fallback. `freerouting` (its Freerouting adapter)
 is offered only when `FABDESK_CHANNEL=internal`
 and is never included in public artifacts.
 

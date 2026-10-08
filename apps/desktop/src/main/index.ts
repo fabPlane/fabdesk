@@ -1,5 +1,5 @@
 import { app, ipcMain, dialog, BrowserWindow, nativeTheme, shell } from "electron";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { mkdir } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
@@ -28,6 +28,28 @@ import { unpackCadMacApp, verifyCadMacApp } from "./cad-runtime-mac";
 import { release as osRelease } from "node:os";
 import { PcbSupervisor, resolvePcbBackend } from "./pcb-supervisor";
 import { resolveWindowTheme, titleBarOverlayFor } from "./window-theme";
+import { OpenCatalogQueue } from "./open-catalog";
+
+const openCatalog = new OpenCatalogQueue();
+openCatalog.offer(process.argv);
+if (process.defaultApp) {
+  const appPath = process.argv[1];
+  if (appPath) app.setAsDefaultProtocolClient("fabplane", process.execPath, [resolve(appPath)]);
+} else {
+  app.setAsDefaultProtocolClient("fabplane");
+}
+
+function sendOpenCatalog(catalogId: string): void {
+  const win = BrowserWindow.getAllWindows()[0];
+  if (!win || win.isDestroyed()) return;
+  win.webContents.send("fabdesk:open-catalog", catalogId);
+}
+
+app.on("open-url", (event, url) => {
+  event.preventDefault();
+  const intent = openCatalog.offer(url);
+  if (intent) sendOpenCatalog(intent.catalogId);
+});
 
 // Name / userData / AUMID / WM_CLASS / FABDESK_HOME before any path read or the single-instance lock
 // (Electron keys the lock on userData). Packaged production identity is left untouched.
@@ -140,12 +162,14 @@ if (!app.requestSingleInstanceLock()) {
   console.error(`[main] another ${identity.productName} instance holds the lock; quitting`);
   app.quit();
 } else {
-  app.on("second-instance", () => {
+  app.on("second-instance", (_event, argv) => {
+    const intent = openCatalog.offer(argv);
     const win = BrowserWindow.getAllWindows()[0];
     if (win) {
       if (win.isMinimized()) win.restore();
       win.focus();
     }
+    if (intent) sendOpenCatalog(intent.catalogId);
   });
 
   void app.whenReady().then(async () => {
@@ -225,6 +249,7 @@ if (!app.requestSingleInstanceLock()) {
     });
     installAppMenu();
     registerIpc(supervisor);
+    ipcMain.handle("fabdesk:pending-open-catalog", () => openCatalog.take()?.catalogId ?? null);
     const developmentCadReady = !app.isPackaged && Boolean(cadEnv["FABDESK_FAB_CAD_BRIDGE_URL"]);
     ipcMain.handle("fabdesk:cad-runtime-state", () =>
       developmentCadReady ? { status: "ready" } : cadRuntime.state(),
@@ -273,6 +298,8 @@ if (!app.requestSingleInstanceLock()) {
     registerUpdateDownloadIpc(new UpdateDownloader(updates));
     updates.start();
     createWindow();
+    const pending = openCatalog.peek();
+    if (pending) sendOpenCatalog(pending.catalogId);
     // CI / smoke runs: quit on their own after N ms (FABDESK_SMOKE_MS).
     const smokeMs = Number(process.env["FABDESK_SMOKE_MS"] ?? 0);
     if (smokeMs > 0) setTimeout(() => app.quit(), smokeMs);

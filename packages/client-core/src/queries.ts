@@ -316,6 +316,8 @@ export interface RouteRunSummary {
   id: string;
   projectId: string;
   router: string;
+  fallbackReason?: string | null;
+  attempts?: Array<{ router: string; outcome: string; reason: string | null }>;
   status:
     | "queued"
     | "running"

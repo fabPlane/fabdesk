@@ -12,6 +12,8 @@ describe("PCB backend packaging", () => {
     for (const target of ["darwin-${arch}", "linux-${arch}", "windows-${arch}"])
       expect(config).toContain(`from: ../../dist/pcb/${target}/`);
     expect(config).toContain("Contents/Resources/pcb/bin/fp-pcb-bridge");
+    expect(config).toContain("Contents/Resources/pcb/freerouting/jre/bin/java");
+    expect(config).toContain("Every JRE dylib is added to this list");
   });
 
   test("release jobs fetch a backend pinned to the fab_pcb submodule revision", () => {
@@ -22,6 +24,7 @@ describe("PCB backend packaging", () => {
     expect(workflow).toContain('asset="fp-pcb-backend-${target}.tar.gz"');
     expect(workflow).toContain('test -f "dist/pcb/$target/bundle.json"');
     expect(workflow).toContain("backend does not contain fab_router");
+    expect(workflow).toContain("backend does not contain Freerouting");
     expect(workflow).not.toMatch(/js[_-]autorouter/i);
   });
 
@@ -40,6 +43,7 @@ describe("PCB backend packaging", () => {
 
     expect(verifier).toContain("resolvePcbBackend({ packaged: true");
     expect(verifier).toContain("bundled PCB manifest is invalid");
+    expect(verifier).toContain("backend does not contain Freerouting jar and Java");
     expect(verifier.match(/checkPcbBundle\(/g)?.length).toBeGreaterThanOrEqual(5);
   });
 });

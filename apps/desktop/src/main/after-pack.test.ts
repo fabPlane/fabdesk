@@ -9,6 +9,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -16,6 +17,7 @@ const require = createRequire(import.meta.url);
 const { Arch } = require("builder-util");
 const afterPack = require("../../scripts/after-pack.cjs") as {
   copyBundledKicad: (context: unknown, src: string) => string;
+  jreSigningBinaries: (appPath: string) => string[];
   platformArch: (context: {
     electronPlatformName: string;
     arch: number | string;
@@ -115,6 +117,18 @@ describe("after-pack platform mapping", () => {
       }
     },
   );
+  test("enumerates java and every nested JRE dylib for hardened-runtime signing", async () => {
+    const app = await mkdtemp(join(tmpdir(), "freerouting-mac-sign-"));
+    try {
+      const jre = "Contents/Resources/pcb/freerouting/jre";
+      const paths = [`${jre}/bin/java`, `${jre}/lib/libjava.dylib`, `${jre}/lib/server/libjvm.dylib`];
+      for (const path of [...paths, `${jre}/legal/LICENSE`]) {
+        await mkdir(join(app, path, ".."), { recursive: true });
+        await writeFile(join(app, path), "fixture");
+      }
+      expect(afterPack.jreSigningBinaries(app).sort()).toEqual(paths.sort());
+    } finally { await rm(app, { recursive: true, force: true }); }
+  });
   test("maps electron-builder's numeric ARM64 architecture to the staged bundle", () => {
     const result = afterPack.platformArch({
       electronPlatformName: "darwin",

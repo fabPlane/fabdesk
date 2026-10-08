@@ -48,6 +48,9 @@ export interface FabdeskBridge extends CadRuntimeBridge {
   cancelUpdateDownload(): Promise<void>;
   openUpdate(): Promise<string>;
   onUpdateDownload(cb: (state: UpdateDownloadState) => void): () => void;
+  /** Catalog id queued from a `fabplane://open` deep link before the renderer subscribed. */
+  pendingOpenCatalog(): Promise<string | null>;
+  onOpenCatalog(cb: (catalogId: string) => void): () => void;
 }
 
 declare global {

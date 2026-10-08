@@ -4,7 +4,7 @@
  *
  *   FABDESK_URL=http://127.0.0.1:47831 FABDESK_TOKEN=… bun scripts/router-repro.ts docs/router-cases/ps1-serial-dongle.netlist.json
  *
- * Options: `--router freerouting` (internal channel only), `--settings '{"effort":"high"}'` passed to
+ * Options: `--router freerouting` or `--router fab_router`, `--settings '{"effort":"high"}'` passed to
  * route_run, `--place <file.place.json>` (a `circuit_place` placements array applied after the build;
  * `<case>.place.json` next to the netlist is picked up automatically), `--keep` to leave the project in
  * place (default: deleted with its files afterwards). Project-local footprint libraries the netlist
