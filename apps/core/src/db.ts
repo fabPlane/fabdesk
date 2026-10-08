@@ -9,6 +9,11 @@ import {
   Run,
   Settings,
   Thread,
+  type FinishItCommit,
+  type FinishItMilestone,
+  type FinishItMilestoneId,
+  type FinishItSession,
+  type FinishItStatus,
   type JobStatus,
   type MessagePart,
   type ProjectSummary,
@@ -216,6 +221,26 @@ export const MIGRATIONS: Migration[] = [
         uploaded_at TEXT NOT NULL,
         PRIMARY KEY (destination, record_id)
       );
+    `,
+  },
+  {
+    // One-click Finish it sessions (autonomous schematic → place → route → verify).
+    version: 10,
+    sql: `
+      CREATE TABLE finish_it_sessions (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        thread_id TEXT NOT NULL,
+        run_id TEXT,
+        status TEXT NOT NULL,
+        current_milestone TEXT,
+        milestones_json TEXT NOT NULL,
+        commits_json TEXT NOT NULL,
+        error TEXT,
+        started_at TEXT NOT NULL,
+        ended_at TEXT
+      );
+      CREATE INDEX finish_it_sessions_project ON finish_it_sessions(project_id, started_at DESC);
     `,
   },
 ];
@@ -1244,6 +1269,114 @@ export class SettingsRepo {
 
 const CORE_ID_KEY = "core_id";
 
+type FinishItRow = {
+  id: string;
+  project_id: string;
+  thread_id: string;
+  run_id: string | null;
+  status: string;
+  current_milestone: string | null;
+  milestones_json: string;
+  commits_json: string;
+  error: string | null;
+  started_at: string;
+  ended_at: string | null;
+};
+
+export class FinishItRepo {
+  constructor(private readonly db: Database) {}
+
+  private toSession(r: FinishItRow): FinishItSession {
+    return {
+      id: r.id,
+      projectId: r.project_id,
+      threadId: r.thread_id,
+      runId: r.run_id,
+      status: r.status as FinishItStatus,
+      currentMilestone: (r.current_milestone as FinishItMilestoneId | null) ?? null,
+      milestones: JSON.parse(r.milestones_json) as FinishItMilestone[],
+      commits: JSON.parse(r.commits_json) as FinishItCommit[],
+      error: r.error,
+      startedAt: r.started_at,
+      endedAt: r.ended_at,
+    };
+  }
+
+  insert(session: FinishItSession): void {
+    this.db.run(
+      "INSERT INTO finish_it_sessions(id, project_id, thread_id, run_id, status, current_milestone, milestones_json, commits_json, error, started_at, ended_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      [
+        session.id,
+        session.projectId,
+        session.threadId,
+        session.runId,
+        session.status,
+        session.currentMilestone,
+        JSON.stringify(session.milestones),
+        JSON.stringify(session.commits),
+        session.error,
+        session.startedAt,
+        session.endedAt,
+      ],
+    );
+  }
+
+  update(session: FinishItSession): void {
+    this.db.run(
+      "UPDATE finish_it_sessions SET thread_id = ?, run_id = ?, status = ?, current_milestone = ?, milestones_json = ?, commits_json = ?, error = ?, ended_at = ? WHERE id = ?",
+      [
+        session.threadId,
+        session.runId,
+        session.status,
+        session.currentMilestone,
+        JSON.stringify(session.milestones),
+        JSON.stringify(session.commits),
+        session.error,
+        session.endedAt,
+        session.id,
+      ],
+    );
+  }
+
+  get(id: string): FinishItSession | null {
+    const r = this.db
+      .query<FinishItRow, [string]>("SELECT * FROM finish_it_sessions WHERE id = ?")
+      .get(id);
+    return r ? this.toSession(r) : null;
+  }
+
+  latestForProject(projectId: string): FinishItSession | null {
+    const r = this.db
+      .query<FinishItRow, [string]>(
+        "SELECT * FROM finish_it_sessions WHERE project_id = ? ORDER BY started_at DESC LIMIT 1",
+      )
+      .get(projectId);
+    return r ? this.toSession(r) : null;
+  }
+
+  activeForProject(projectId: string): FinishItSession | null {
+    const r = this.db
+      .query<FinishItRow, [string]>(
+        "SELECT * FROM finish_it_sessions WHERE project_id = ? AND status IN ('running', 'stopping') ORDER BY started_at DESC LIMIT 1",
+      )
+      .get(projectId);
+    return r ? this.toSession(r) : null;
+  }
+
+  failStale(): number {
+    const rows = this.db
+      .query<{ n: number }, []>(
+        "SELECT COUNT(*) AS n FROM finish_it_sessions WHERE status IN ('running', 'stopping')",
+      )
+      .get();
+    this.db.run(
+      "UPDATE finish_it_sessions SET status = 'failed', error = COALESCE(error, 'interrupted by daemon restart'), ended_at = ? WHERE status IN ('running', 'stopping')",
+      [nowIso()],
+    );
+    return rows?.n ?? 0;
+  }
+}
+
 export class Store {
   readonly projects: ProjectRepo;
   readonly threads: ThreadRepo;
@@ -1253,6 +1386,7 @@ export class Store {
   readonly jobs: JobRepo;
   readonly routeRuns: RouteRunRepo;
   readonly settings: SettingsRepo;
+  readonly finishIt: FinishItRepo;
   constructor(readonly db: Database) {
     this.projects = new ProjectRepo(db);
     this.threads = new ThreadRepo(db);
@@ -1262,6 +1396,7 @@ export class Store {
     this.jobs = new JobRepo(db);
     this.routeRuns = new RouteRunRepo(db);
     this.settings = new SettingsRepo(db);
+    this.finishIt = new FinishItRepo(db);
   }
   static open(path: string): Store {
     return new Store(openDatabase(path));

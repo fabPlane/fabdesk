@@ -366,3 +366,10 @@ export const Me = z.object({
   mode: z.enum(["fabplane", "local"]),
 });
 export type Me = z.infer<typeof Me>;
+
+export const StartFinishIt = z.object({
+  threadId: z.string().optional(),
+  agentId: AgentId.optional(),
+  model: z.string().optional(),
+});
+export type StartFinishIt = z.infer<typeof StartFinishIt>;

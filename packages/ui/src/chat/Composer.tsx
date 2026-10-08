@@ -5,18 +5,21 @@ import { Button, IconButton, Textarea } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { InstallHint } from "../components/InstallHint";
 import { useCore } from "@fabdesk/client-core";
-import { CoreHttpError, useDoctor, useSettings, useMessages, useQueueMessage, useUnqueueMessage } from "@fabdesk/client-core";
+import { CoreHttpError, useDoctor, useSettings, useMessages, useQueueMessage, useUnqueueMessage, useFinishIt, useStartFinishIt, useStopFinishIt } from "@fabdesk/client-core";
 import { useRunsStore } from "@fabdesk/client-core";
 import { DRAFT_KEY_NEW, useUiStore } from "../stores/ui";
 import { basename, mimeFromPath, modKey } from "../util";
 import { AgentModelMenu } from "./AgentModelMenu";
-import { agentModelLabel, expandSlashCommand, slashSuggestions } from "@fabdesk/client-core";
+import { agentModelLabel, expandSlashCommand, isFinishItCommand, slashSuggestions } from "@fabdesk/client-core";
 import { applyComposerTextareaHeight } from "./composer-autosize";
+import { FinishItPanel } from "./FinishItPanel";
+import { finishItActive } from "./finish-it-view";
 
 /** Bridge for the global shortcut hook (mod+Enter send, mod+. abort) and for app automation. */
 export const composerHandlers: {
   send: (() => void) | null;
   abort: (() => void) | null;
+  finishIt: (() => void) | null;
   /**
    * Picks agent (and optionally model) exactly as the dropdown does, for callers with no DOM to
    * click. Returns false when the agent is not one the composer offers.
@@ -25,6 +28,7 @@ export const composerHandlers: {
 } = {
   send: null,
   abort: null,
+  finishIt: null,
   setAgent: null,
 };
 
@@ -64,6 +68,10 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
   const unqueueMessage = useUnqueueMessage();
   const doctor = useDoctor();
   const settings = useSettings();
+  const finishIt = useFinishIt(projectId);
+  const startFinishIt = useStartFinishIt();
+  const stopFinishIt = useStopFinishIt();
+  const setActiveThread = useUiStore((s) => s.setActiveThread);
   const [agentId, setAgentId] = useState<AgentId>(thread?.agentId ?? settings.data?.defaultAgent ?? "claude");
   const [model, setModel] = useState<string>(thread?.model ?? "");
   const [sending, setSending] = useState(false);
@@ -103,9 +111,34 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
   const selectedAgent = agents.find((a) => a.id === agentId);
   const agentMissing = selectedAgent ? !selectedAgent.installed : false;
 
+  const finishItSession = finishIt.data ?? null;
+  const finishItBusy = finishItActive(finishItSession) || startFinishIt.isPending || stopFinishIt.isPending;
+
+  const beginFinishIt = useCallback(async () => {
+    if (!projectId || finishItBusy) return;
+    setError(null);
+    try {
+      const result = await startFinishIt.mutateAsync({
+        projectId,
+        ...(thread?.id ? { threadId: thread.id } : {}),
+        agentId,
+        ...(model ? { model } : {}),
+      });
+      setActiveThread(result.session.threadId);
+      void qc.invalidateQueries({ queryKey: ["messages", result.session.threadId] });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }, [projectId, finishItBusy, startFinishIt, thread?.id, agentId, model, setActiveThread, qc]);
+
   const send = useCallback(async () => {
     const typed = draft.trim();
     if (!typed || sending) return;
+    if (isFinishItCommand(typed)) {
+      setDraft(draftKey, "");
+      await beginFinishIt();
+      return;
+    }
     // `/shopping-list …` and friends expand into the instructions the agent needs.
     const content = expandSlashCommand(typed) ?? typed;
     setSending(true);
@@ -142,11 +175,12 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
     } finally {
       setSending(false);
     }
-  }, [draft, sending, thread, onCreateThread, agentId, model, pending, setDraft, draftKey, clearAttachments, addAttachment, qc, queueMessage]);
+  }, [draft, sending, thread, onCreateThread, agentId, model, pending, setDraft, draftKey, clearAttachments, addAttachment, qc, queueMessage, beginFinishIt]);
 
   useEffect(() => {
     composerHandlers.send = () => void send();
     composerHandlers.abort = thread ? () => void client.abort(thread.id) : null;
+    composerHandlers.finishIt = () => void beginFinishIt();
     composerHandlers.setAgent = (id, m) => {
       const offered = doctor.data?.agents ?? FALLBACK_AGENTS;
       const agent = offered.find((a) => a.id === id);
@@ -158,9 +192,10 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
     return () => {
       composerHandlers.send = null;
       composerHandlers.abort = null;
+      composerHandlers.finishIt = null;
       composerHandlers.setAgent = null;
     };
-  }, [send, client, thread, doctor.data, settings.data]);
+  }, [send, client, thread, doctor.data, settings.data, beginFinishIt]);
 
   const pickFiles = async () => {
     const paths = await host.pickFile({
@@ -212,6 +247,18 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
               </span>
             ))}
           </div>
+        )}
+        {finishItSession && (
+          <FinishItPanel
+            session={finishItSession}
+            stopping={stopFinishIt.isPending || finishItSession.status === "stopping"}
+            onStop={() => {
+              if (!projectId) return;
+              void stopFinishIt.mutateAsync(projectId).catch((failure: unknown) => {
+                setError(failure instanceof Error ? failure.message : String(failure));
+              });
+            }}
+          />
         )}
         {suggestions.length > 0 && (
           <div className="mb-1.5 flex flex-wrap gap-1.5" data-testid="slash-suggestions">
@@ -294,6 +341,20 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
               <Icon name="compose" width={16} height={16} /><span className="fd-action-label">Sketch</span>
             </Button>
             <div className="ml-auto flex items-center gap-2">
+              {projectId && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  aria-label="Finish it"
+                  title="Finish schematic, place, route and verify without step-by-step prompts"
+                  onClick={() => void beginFinishIt()}
+                  disabled={finishItBusy || agentMissing}
+                  data-testid="finish-it"
+                >
+                  <Icon name="play" width={14} height={14} />
+                  <span className="fd-action-label">Finish it</span>
+                </Button>
+              )}
               {run && (
                 <Button variant="danger" size="sm" onClick={() => void client.abort(run.threadId)} aria-label="Stop current run; queued messages stay scheduled" title={`Stop current run (${mod} + .). Queued messages stay scheduled.`}>
                   <Icon name="stop" width={14} height={14} /> Stop
