@@ -32,6 +32,9 @@ describe("renderAgentsMd", () => {
     expect(md).toContain("| `board.kicad_pcb` | Canonical KiCad PCB. |");
     expect(md).not.toContain("circuit.netlist.json");
     expect(md).not.toContain("### circuit_build");
+    expect(md).toContain("`project.parts.json`");
+    expect(md).toContain("## Off-board parts");
+    expect(md).toContain("parts_search");
     expect(md).toContain("## Shopping list");
     expect(md).toContain("`/shopping-list`");
     expect(md).toContain("shopping_list_sync_bom");

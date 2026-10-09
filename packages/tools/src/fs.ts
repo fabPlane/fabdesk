@@ -9,6 +9,8 @@ export const PROJECT_FILES = {
   manifest: "fabdesk.json",
   /** The design source: what exists and what connects (`NetlistFile` in @fabdesk/protocol). */
   netlistJson: "circuit.netlist.json",
+  /** Off-board / mechanical / accessory parts (`ProjectPartsFile` in @fabdesk/protocol). */
+  projectParts: "project.parts.json",
   /** The KiCad netlist the compile job wrote; `export_netlist` copies it. */
   compileNet: ".fabdesk/compile.net",
   boardPcb: "board.kicad_pcb",

@@ -16,6 +16,7 @@ import {
 import { useUiStore } from "../stores/ui";
 import { cn } from "../util";
 import { Icon } from "../components/Icon";
+import { ProjectBomPanel } from "./ProjectBomPanel";
 
 /** Text/number input that reports its value on blur or Enter, only when it changed. */
 function CommitInput({
@@ -203,6 +204,23 @@ function AddRow({ options, fab, onAdd, busy }: { options: Destination[]; fab: st
 const looksLikeMpn = (s: string) => !/\s/.test(s) && /\d/.test(s) && s.length <= 60;
 
 export function ShoppingListTab() {
+  const [view, setView] = useState<"bom" | "order">("bom");
+  return (
+    <div className="flex h-full min-h-0 flex-col" data-testid="bom-tab">
+      <div className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1">
+        <Button size="sm" variant={view === "bom" ? "secondary" : "ghost"} onClick={() => setView("bom")} data-testid="bom-view-project">
+          Project BOM
+        </Button>
+        <Button size="sm" variant={view === "order" ? "secondary" : "ghost"} onClick={() => setView("order")} data-testid="bom-view-shopping">
+          Shopping list
+        </Button>
+      </div>
+      <div className="min-h-0 flex-1">{view === "bom" ? <ProjectBomPanel /> : <ShoppingListCloud />}</div>
+    </div>
+  );
+}
+
+function ShoppingListCloud() {
   const { host } = useCore();
   const projectId = useUiStore((s) => s.activeProjectId);
   const status = useCloudStatus();

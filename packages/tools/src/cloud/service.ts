@@ -7,8 +7,10 @@ import { join } from "node:path";
 import {
   DEFAULT_FAB_DESTINATION,
   NetlistFile,
+  ProjectPartsFile,
   cartDashboardUrl,
   dashboardUrlFor,
+  emptyProjectParts,
   type BomSyncSummary,
   type Cart,
   type CartItem,
@@ -33,7 +35,7 @@ import {
   type CloudApiFactory,
   type CloudImageUpload,
 } from "./api";
-import { BOM_SOURCE, bomLinesFromNetlist, mergeBomItems } from "./bom";
+import { BOM_SOURCE, bomLinesFromNetlist, bomLinesFromOffboard, mergeBomItems } from "./bom";
 import { gitRemotes } from "./git";
 
 /** What the service needs to know about a project. `ProjectHandle` satisfies it. */
@@ -198,14 +200,24 @@ export class CloudService {
     await this.call((api) => api.deleteCartItem(orgId, cart.id, itemId));
   }
 
-  /** Rebuild the part lines from `circuit.netlist.json`, keeping user edits (see mergeBomItems). */
+  /** Rebuild the part lines from the netlist and `project.parts.json`, keeping user edits. */
   async syncBom(
     project: CloudProject,
   ): Promise<{ cart: Cart; summary: BomSyncSummary; cartUrl: string }> {
-    const netlist = await readNetlist(project);
+    const netlist = await readNetlistOrNull(project);
+    const offboard = await readProjectParts(project);
     const { orgId, cart } = await this.ensureShoppingList(project);
     const fab = cart.fabDestinationId || DEFAULT_FAB_DESTINATION;
-    const fresh = bomLinesFromNetlist(netlist.netlist.components, { destinationId: fab });
+    const fresh = [
+      ...bomLinesFromNetlist(netlist?.netlist.components ?? [], { destinationId: fab }),
+      ...bomLinesFromOffboard(offboard.parts, { destinationId: fab }),
+    ];
+    if (fresh.length === 0 && !netlist && offboard.parts.length === 0) {
+      throw new ToolError(
+        `${PROJECT_FILES.netlistJson} not found in project "${project.name}"; write the netlist or add off-board parts first`,
+        "precondition",
+      );
+    }
     const { items, summary } = mergeBomItems(fresh, cart.items, {
       projectName: project.name,
       fabDestinationId: fab,
@@ -262,14 +274,29 @@ export class CloudService {
 }
 
 export async function readNetlist(project: CloudProject): Promise<NetlistFile> {
-  const raw = await readJsonOrNull<unknown>(join(project.dir, PROJECT_FILES.netlistJson));
-  if (raw === null)
+  const file = await readNetlistOrNull(project);
+  if (file === null)
     throw new ToolError(
       `${PROJECT_FILES.netlistJson} not found in project "${project.name}"; build the circuit first`,
       "precondition",
     );
+  return file;
+}
+
+export async function readNetlistOrNull(project: CloudProject): Promise<NetlistFile | null> {
+  const raw = await readJsonOrNull<unknown>(join(project.dir, PROJECT_FILES.netlistJson));
+  if (raw === null) return null;
   const parsed = NetlistFile.safeParse(raw);
   if (!parsed.success)
     throw new ToolError(`${PROJECT_FILES.netlistJson} is not a valid netlist`, "precondition");
+  return parsed.data;
+}
+
+export async function readProjectParts(project: CloudProject): Promise<ProjectPartsFile> {
+  const raw = await readJsonOrNull<unknown>(join(project.dir, PROJECT_FILES.projectParts));
+  if (raw === null) return emptyProjectParts();
+  const parsed = ProjectPartsFile.safeParse(raw);
+  if (!parsed.success)
+    throw new ToolError(`${PROJECT_FILES.projectParts} is not valid`, "precondition");
   return parsed.data;
 }

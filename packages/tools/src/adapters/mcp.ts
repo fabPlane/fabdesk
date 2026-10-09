@@ -178,7 +178,7 @@ export function shoppingListPromptText(request?: string, project?: string): stri
       ? `Project: ${project} (pass project="${project}" to the shopping_list_* tools).`
       : "Use the currently selected project.",
     'First make the tools available: call load_toolset {"toolset":"shopping"}, or if load_toolset is not offered, find them with capability_search "shopping list" and run them through capability_call.',
-    "Tools: shopping_list_get (show the list), shopping_list_sync_bom (rebuild part lines from the netlist, keeping edits), shopping_list_add / shopping_list_update / shopping_list_remove (edit lines: quantity, destination such as JLCPCB, a distributor or \"manual\", status needed/ordered/received, notes), shopping_list_destinations (list or add purchase destinations), inventory_search / inventory_add (the team's parts on hand).",
+    "Tools: shopping_list_get (show the list), shopping_list_sync_bom (rebuild part lines from the netlist and project.parts.json off-board hardware, keeping edits), shopping_list_add / shopping_list_update / shopping_list_remove (edit lines: quantity, destination such as JLCPCB, a distributor or \"manual\", status needed/ordered/received, notes), shopping_list_destinations (list or add purchase destinations), inventory_search / inventory_add (the team's parts on hand).",
     "Check inventory_search before buying parts the team may already have. Finish with a short summary of the list grouped by destination and the dashboard link.",
     request?.trim()
       ? `Request: ${request.trim()}`

@@ -79,6 +79,9 @@ describe("workLog", () => {
     expect(workLog([use("apply_patch", { patch })]).filesWritten).toEqual(["src/a.ts", "src/b.ts"]);
     expect(workLog([use("apply_patch", { input: patch })]).filesWritten).toHaveLength(2);
     expect(workLog([use("apply_patch", { patch: 42 })]).filesWritten).toEqual([]);
+    expect(workLog([use("parts_add", { catalogId: "nema-17-stepper" })]).filesWritten).toEqual([
+      "project.parts.json",
+    ]);
   });
 
   test("falls back to the tool-call count and appends failures", () => {

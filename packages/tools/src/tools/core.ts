@@ -39,7 +39,7 @@ export const load_toolset = defineTool({
   scope: "global",
   title: "Load a toolset",
   description:
-    "Enable an additional group of fabdesk tools for this session. Available toolsets are project, circuit, route, kicad, verify, render, export, sim, app, shopping (fabplane.com shopping list and team inventory), and cad (the mechanical model in FreeCAD). Core tools are always available.",
+    "Enable an additional group of fabdesk tools for this session. Available toolsets are project (files, board settings, off-board parts library), circuit, route, kicad, verify, render, export, sim, app, shopping (fabplane.com shopping list and team inventory), and cad (the mechanical model in FreeCAD). Core tools are always available.",
   inputSchema: {
     toolset: ToolsetIdOrAlias.describe(
       `Toolset to enable. Aliases ${Object.entries(TOOLSET_ALIASES)
@@ -163,7 +163,7 @@ export const project_status = defineTool({
     const project = ctx.requireProject();
     const manifest = project.manifest();
     const files: Record<string, { exists: boolean; mtime?: string }> = {};
-    for (const rel of [PROJECT_FILES.boardPro, PROJECT_FILES.boardSch, PROJECT_FILES.boardPcb]) {
+    for (const rel of [PROJECT_FILES.boardPro, PROJECT_FILES.boardSch, PROJECT_FILES.boardPcb, PROJECT_FILES.projectParts]) {
       const m = await mtimeMs(p(project, rel));
       files[rel] =
         m === null ? { exists: false } : { exists: true, mtime: new Date(m).toISOString() };
