@@ -29,10 +29,12 @@ fi
 head -n 20 "$out_dir/help.txt"
 
 echo "== version =="
-if "$binary" --version >"$out_dir/version.txt" 2>&1; then
+if "$binary" version >"$out_dir/version.txt" 2>&1; then
+  cat "$out_dir/version.txt"
+elif "$binary" --version >"$out_dir/version.txt" 2>&1; then
   cat "$out_dir/version.txt"
 else
-  echo "no --version flag; help output is enough"
+  echo "no version / --version subcommand; help output is enough"
 fi
 
 echo "== route fixture =="

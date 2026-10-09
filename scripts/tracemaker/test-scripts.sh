@@ -117,6 +117,7 @@ chmod +x "$fake_bin"
 )
 assert_file "$ROOT/smoke-out/routed.kicad_pcb"
 assert_contains "$ROOT/smoke.log" "smoke ok"
+assert_contains "$ROOT/smoke.log" "tracemaker 0.9.0"
 
 # --- package both platforms (relative dest + TRACEMAKER_SRC) ---
 src_tree="$ROOT/tm-src"
@@ -339,6 +340,24 @@ else
   echo "ok   force is off by default"
 fi
 
+# --- keep-going summary lists every FAILED target ---
+cat > "$ROOT/ninja-fail.log" <<'EOF'
+[12/80] Building CXX object src/drc/CMakeFiles/tm_drc.dir/engine.cpp.o
+[13/80] Building CXX object src/drc/CMakeFiles/tm_drc.dir/rule_engine.cpp.o
+FAILED: src/drc/CMakeFiles/tm_drc.dir/rule_engine.cpp.o
+src/drc/rule_engine.cpp:154:23: error: no member named 'atof' in namespace 'std'; did you mean 'stof'?
+[40/80] Building CXX object src/route/CMakeFiles/tm_route.dir/router.cpp.o
+FAILED: src/route/CMakeFiles/tm_route.dir/router.cpp.o
+src/route/router.cpp:3083:40: error: no member named 'atof' in namespace 'std'
+ninja: build stopped: subcommand failed.
+EOF
+bash "$SCRIPT_DIR/summarize-build.sh" "$ROOT/ninja-fail.log" > "$ROOT/summary.out"
+assert_contains "$ROOT/summary.out" "FAILED: src/drc/CMakeFiles/tm_drc.dir/rule_engine.cpp.o"
+assert_contains "$ROOT/summary.out" "no member named 'atof'"
+assert_contains "$ROOT/summary.out" "FAILED: src/route/CMakeFiles/tm_route.dir/router.cpp.o"
+assert_contains "$ROOT/summary.out" "failed_targets=2"
+assert_contains "$SCRIPT_DIR/macos-llvm.sh" "-include cstdlib"
+
 # --- apply-macos-patch is commit-pinned (wrong SHA is a no-op) ---
 empty="$ROOT/empty-src"
 mkdir -p "$empty/.git"
@@ -360,6 +379,10 @@ if [ -n "${TRACEMAKER_FIXTURE_SRC:-}" ]; then
   assert_contains "$ROOT/patch-apply.log" "Applying"
   assert_file "$pinned/.fabdesk-macos-patch"
   assert_file "$pinned/src/core/from_chars_double.hpp"
+  assert_contains "$pinned/src/drc/rule_engine.cpp" "#include <cstdlib>"
+  assert_contains "$pinned/src/route/router.cpp" "#include <cstdlib>"
+  assert_contains "$pinned/src/io/kicad/board_reader.cpp" "#include <cstdlib>"
+  assert_contains "$pinned/src/server/view_main.cpp" "#include <cstdlib>"
   if grep -R --include='*.cpp' 'std::from_chars(' "$pinned/src"; then
     echo "FAIL leftover std::from_chars( in patched cpp"
     fail=1

@@ -47,7 +47,30 @@ case "$platform" in
 esac
 
 cmake --preset "$preset" "${cmake_extra[@]}"
-cmake --build --preset "$preset" --target tracemaker --parallel "$jobs"
+
+build_dir="$src/build/${preset}"
+mkdir -p "$build_dir"
+build_log="$build_dir/fabdesk-build.log"
+if [[ "$platform" == macos-* ]]; then
+  # Keep going so one 10+ minute macOS job reports every missing include / API,
+  # not just the first ninja target (run 38003551366 stopped at rule_engine.cpp).
+  set +e
+  set +o pipefail
+  cmake --build --preset "$preset" --target tracemaker --parallel "$jobs" -- -k 0 2>&1 | tee "$build_log"
+  build_code="${PIPESTATUS[0]}"
+  set -e
+  set -o pipefail
+  bash "$SCRIPT_DIR/summarize-build.sh" "$build_log"
+  if [ -n "${GITHUB_OUTPUT:-}" ]; then
+    echo "build_log=$build_log" >> "$GITHUB_OUTPUT"
+  fi
+  if [ "$build_code" -ne 0 ]; then
+    echo "::error::macOS tracemaker build failed; see the FABDESK BUILD FAILURE SUMMARY and $build_log" >&2
+    exit "$build_code"
+  fi
+else
+  cmake --build --preset "$preset" --target tracemaker --parallel "$jobs"
+fi
 
 binary="$src/build/${preset}/src/app/tracemaker"
 if [ ! -f "$binary" ]; then

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Apply a commit-pinned from_chars(double) patch when HEAD matches a known
-# upstream SHA. Used on macOS so Apple libc++ (no from_chars(double) before
-# macOS 26) can still compile TraceMaker without raising the deployment target.
+# Apply a commit-pinned macOS patch when HEAD matches a known upstream SHA.
+# Covers Apple libc++ from_chars(double) (missing before macOS 26) and
+# Homebrew LLVM libc++ missing <cstdlib> for std::atof / std::atoi.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

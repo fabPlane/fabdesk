@@ -38,7 +38,11 @@ macos_llvm_prepare() {
     return 0
   fi
 
-  local cxx_flags="-nostdinc++ -isystem ${inc}"
+  # Homebrew LLVM -nostdinc++ does not pull C stdlib headers through libc++
+  # (std::atof needs <cstdlib>; run 38003551366). Force-include the C wrappers
+  # used across the tree so one missing transitive include cannot stop ninja.
+  local force_includes="-include cstdlib -include cstdio -include cstring -include cmath -include cstdint"
+  local cxx_flags="-nostdinc++ -isystem ${inc} ${force_includes}"
   local link_flags="-nostdlib++ ${libcxx}"
   if [ -n "$libcxxabi" ]; then
     link_flags+=" ${libcxxabi}"

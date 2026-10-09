@@ -5,7 +5,8 @@
 #   Linux:  cmake --preset cpu-only   (Ubuntu 26.04, GCC 15, no CUDA)
 #   macOS:  cmake --preset macos-metal with Homebrew LLVM clang++ / static libc++
 #           and CMAKE_OSX_DEPLOYMENT_TARGET=15.0 (not macOS 26). A commit-pinned
-#           from_chars(double) patch is applied when HEAD matches v0.9.0.
+#           from_chars(double) + <cstdlib> patch is applied when HEAD matches v0.9.0.
+#           The macOS compile uses ninja -k 0 and uploads the log on failure.
 # Each archive ships LICENSE, NOTICE, and SOURCE.txt (pinned commit + tag).
 #
 # Not built (marked, not blocking):
@@ -156,6 +157,15 @@ jobs:
       - name: Build tracemaker
         id: build
         run: bash "${GITHUB_WORKSPACE}/scripts/tracemaker/build.sh" "${GITHUB_WORKSPACE}/TraceMaker" macos-arm64
+
+      - name: Upload macOS keep-going build log
+        if: failure() && steps.build.outcome == 'failure'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: tracemaker-macos-arm64-build-log
+          path: TraceMaker/build/macos-metal/fabdesk-build.log
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: macOS linkage probe (file, otool, minos <= 15)
         run: bash "${GITHUB_WORKSPACE}/scripts/tracemaker/verify-macos.sh" "${{ steps.build.outputs.binary }}"

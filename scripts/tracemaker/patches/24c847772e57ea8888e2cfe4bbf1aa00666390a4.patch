@@ -1,15 +1,24 @@
 # Commit-pinned macOS patch for DingoOz/TraceMaker v0.9.0
 # (24c847772e57ea8888e2cfe4bbf1aa00666390a4). Applied only when HEAD matches.
-# Replaces std::from_chars(double) — deleted in Apple libc++ before macOS 26 —
-# with a locale-independent iostreams parse (std::locale::classic()) so the
-# binary can keep minos 15.0. Do not use strtod_l / newlocale: Homebrew LLVM
-# with -nostdinc++ does not declare them on macOS 15 (run 37999311656).
 #
-# Sites grepped in that commit (all double/float; no other from_chars in src/):
+# 1. Replaces std::from_chars(double) — deleted in Apple libc++ before macOS 26 —
+#    with a locale-independent iostreams parse (std::locale::classic()) so the
+#    binary can keep minos 15.0. Do not use strtod_l / newlocale: Homebrew LLVM
+#    with -nostdinc++ does not declare them on macOS 15 (run 37999311656).
+# 2. Adds #include <cstdlib> wherever upstream calls std::atof / std::atoi
+#    without it. Homebrew LLVM libc++ does not put atof in namespace std via
+#    transitive includes (run 38003551366: rule_engine.cpp:154).
+#
+# from_chars sites grepped in that commit (all double/float; no other from_chars in src/):
 #   src/sexpr/sexpr.cpp:145
 #   src/sexpr/sexpr.cpp:337
 #   src/route/layer_limits.cpp:43
 #   src/io/kicad/project_reader.cpp:30
+# std::atof / std::atoi sites without <cstdlib>:
+#   src/drc/rule_engine.cpp:154,208,209
+#   src/route/router.cpp:3083
+#   src/io/kicad/board_reader.cpp:236
+#   src/server/view_main.cpp:408
 diff --git a/src/core/from_chars_double.hpp b/src/core/from_chars_double.hpp
 new file mode 100644
 index 0000000..71048fd
@@ -57,6 +66,30 @@ index 0000000..71048fd
 +}
 +
 +}  // namespace tmk
+diff --git a/src/drc/rule_engine.cpp b/src/drc/rule_engine.cpp
+index 36d51ad..162e98b 100644
+--- a/src/drc/rule_engine.cpp
++++ b/src/drc/rule_engine.cpp
+@@ -6,6 +6,7 @@
+ #include <cmath>
+ #include <initializer_list>
+ #include <string_view>
++#include <cstdlib>
+ 
+ namespace tmk::drc {
+ 
+diff --git a/src/io/kicad/board_reader.cpp b/src/io/kicad/board_reader.cpp
+index f148f72..e7ac2d2 100644
+--- a/src/io/kicad/board_reader.cpp
++++ b/src/io/kicad/board_reader.cpp
+@@ -7,6 +7,7 @@
+ #include <charconv>
+ #include <cmath>
+ #include <stdexcept>
++#include <cstdlib>
+ 
+ namespace tmk::io {
+ namespace {
 diff --git a/src/io/kicad/project_reader.cpp b/src/io/kicad/project_reader.cpp
 index d2fede5..1eeffef 100644
 --- a/src/io/kicad/project_reader.cpp
@@ -97,6 +130,30 @@ index 5ef7a79..c5028c2 100644
      // Below 1 a track would cost less than its length, which the search's distance bounds do not allow for.
      if (ec != std::errc() || end != last || !(f >= 1.0) || f > kMaxLayerCost)
        throw std::invalid_argument("--layer-cost: the factor in \"" + entry + "\" must be a number from 1 to " + std::to_string(static_cast<int>(kMaxLayerCost)));
+diff --git a/src/route/router.cpp b/src/route/router.cpp
+index 3a4f8e0..b43c71b 100644
+--- a/src/route/router.cpp
++++ b/src/route/router.cpp
+@@ -19,6 +19,7 @@
+ #include <set>
+ #include <thread>
+ #include <unordered_map>
++#include <cstdlib>
+ 
+ #include "core/rng.hpp"
+ #include "drc/connectivity.hpp"
+diff --git a/src/server/view_main.cpp b/src/server/view_main.cpp
+index ce2265a..0d395a6 100644
+--- a/src/server/view_main.cpp
++++ b/src/server/view_main.cpp
+@@ -15,6 +15,7 @@
+ #include <string>
+ #include <thread>
+ #include <vector>
++#include <cstdlib>
+ 
+ #include <CLI/CLI.hpp>
+ 
 diff --git a/src/sexpr/sexpr.cpp b/src/sexpr/sexpr.cpp
 index de8c76f..fe3b388 100644
 --- a/src/sexpr/sexpr.cpp

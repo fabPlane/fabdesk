@@ -58,6 +58,13 @@ notes="$work/DEPENDENCIES.txt"
 } > "$notes"
 bash "$SCRIPT_DIR/bundle-libs.sh" "$work/$exe_name" "$work/lib" "$notes"
 
+# strip + install_name_tool invalidate any signature. Ad-hoc sign so the
+# arm64 binary is runnable on Gatekeeper-ish CI and owner Macs (no identity).
+if [[ "$platform" == macos-* ]] && command -v codesign >/dev/null; then
+  codesign --force -s - "$work/$exe_name"
+  echo "ad-hoc codesign -s - $exe_name" | tee -a "$notes"
+fi
+
 patch_note=""
 if [ -n "$src_tree" ] && [ -f "$src_tree/.fabdesk-macos-patch" ]; then
   patch_note="$(cat "$src_tree/.fabdesk-macos-patch")"

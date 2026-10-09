@@ -34,7 +34,7 @@ Each published archive contains the upstream `LICENSE` (and `NOTICE` when presen
 `SOURCE.txt` with the pinned upstream tag and commit. That is the GPL-3.0 §6 source offer
 for the binary. Linux builds are unmodified upstream. macOS builds of the pinned `v0.9.0`
 commit also apply `scripts/tracemaker/patches/24c847772e57ea8888e2cfe4bbf1aa00666390a4.patch`
-(Apple libc++ `from_chars(double)`); that patch is named in `SOURCE.txt` when used.
+(Apple libc++ `from_chars(double)` plus `#include <cstdlib>` for `std::atof`); that patch is named in `SOURCE.txt` when used.
 
 Measured 2026-10-09 (source fallback, still used when no binary exists for the platform):
 
@@ -50,7 +50,7 @@ Measured 2026-10-09 (source fallback, still used when no binary exists for the p
 | Platform | Built? | Preset | Notes |
 |---|---|---|---|
 | `linux-x86_64` | yes | `cpu-only` on Ubuntu 26.04 / GCC 15 | No CUDA. Non-system libs (zstd, sqlite) are bundled with `$ORIGIN/lib` when present. Remaining dynamic deps are glibc. |
-| `macos-arm64` | yes | `macos-metal` | Homebrew LLVM `clang++` + **static** `libc++` (not the system one; `from_chars(double)` is missing from Apple libc++ until macOS 26). `CMAKE_OSX_DEPLOYMENT_TARGET=15.0` so the binary runs on macOS 15. `TM_WERROR=OFF`. For upstream `v0.9.0` (`24c8477…`) a commit-pinned `from_chars` → C-locale `strtod` patch is also applied and listed in `SOURCE.txt`. Metal is a system framework. Remaining Homebrew dylibs are rewritten to `@executable_path/lib`. |
+| `macos-arm64` | yes | `macos-metal` | Homebrew LLVM `clang++` + **static** `libc++` (not the system one; `from_chars(double)` is missing from Apple libc++ until macOS 26). `CMAKE_OSX_DEPLOYMENT_TARGET=15.0` so the binary runs on macOS 15. `TM_WERROR=OFF`. LLVM flags force-include `<cstdlib>` / `<cstdio>` / `<cstring>` / `<cmath>` / `<cstdint>` because `-nostdinc++` hides `std::atof`. For upstream `v0.9.0` (`24c8477…`) a commit-pinned `from_chars` + `<cstdlib>` patch is also applied and listed in `SOURCE.txt`. Metal kernels are embedded and compiled at runtime (`newLibraryWithSource`); no Xcode `metal` tool. Links system Metal + Foundation. The packaged arm64 binary is ad-hoc signed (`codesign -s -`). Remaining Homebrew dylibs are rewritten to `@executable_path/lib`. The macOS compile step uses `ninja -k 0` and uploads the full log on failure. |
 | `macos-x86_64` | no | — | Intel macOS runners are not cheap enough for a weekly job; brew bottles on the arm64 runner are arm64. |
 | `windows-x86_64` | no | — | Upstream has no Windows CMake preset. |
 
