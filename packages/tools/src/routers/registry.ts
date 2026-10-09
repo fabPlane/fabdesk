@@ -15,7 +15,7 @@ import {
   type RouterCatalogEntry,
 } from "./catalog";
 import { bundledHint, installHintFor } from "./hints";
-import { resolveTraceMakerInstallArtifact } from "./tracemaker-release";
+import { parseTraceMakerVersion, resolveTraceMakerInstallArtifact } from "./tracemaker-release";
 
 const STATE_FILE = "state.json";
 const MAX_ARTIFACT_BYTES = 200 * 1024 * 1024;
@@ -43,12 +43,18 @@ type PersistedState = { routers: Partial<Record<RouterCatalogId, PersistedRouter
 
 export type BundledRouter = { version?: string; path?: string };
 
+export type RouterRegistrySettings = {
+  tracemakerManifestUrl?: string | null;
+};
+
 export type RouterRegistryDeps = {
   home: string;
   fetch?: typeof fetch;
   catalog?: RouterCatalogEntry[];
   bundled?: Partial<Record<RouterCatalogId, BundledRouter>>;
   env?: NodeJS.ProcessEnv;
+  /** Live settings (re-read on each install). Env FABDESK_TRACEMAKER_MANIFEST_URL still wins. */
+  settings?: () => RouterRegistrySettings;
   spawn?: (cmd: string, args: string[]) => Promise<number>;
 };
 
@@ -67,6 +73,20 @@ export function routersRoot(home: string): string {
 
 export function createRouterRegistry(deps: RouterRegistryDeps): RouterRegistry {
   return new FileRouterRegistry(deps);
+}
+
+/** TraceMaker prints `tracemaker 0.9.0` on `version`; `--version` is not a flag. */
+export function probeTraceMakerCliVersion(path: string): string | null {
+  for (const args of [["version"], ["--version"]] as const) {
+    try {
+      const out = spawnSync(path, args, { timeout: 1500, encoding: "utf8" });
+      const parsed = parseTraceMakerVersion(`${out.stdout ?? ""} ${out.stderr ?? ""}`);
+      if (parsed) return parsed;
+    } catch {
+      // try the next invocation
+    }
+  }
+  return null;
 }
 
 class FileRouterRegistry implements RouterRegistry {
@@ -318,7 +338,7 @@ class FileRouterRegistry implements RouterRegistry {
     return this.resolveRunnable(entry, path) !== null;
   }
 
-  /** `<bin> --version`, cached per path + mtime, so a router supplied by env shows its real version. */
+  /** `tracemaker version`, then `--version`. Cached per path + mtime. */
   private probeVersion(id: RouterCatalogId, path: string): string | null {
     if (id !== "tracemaker") return null;
     let key = path;
@@ -328,14 +348,7 @@ class FileRouterRegistry implements RouterRegistry {
       return null;
     }
     if (this.versionProbes.has(key)) return this.versionProbes.get(key) ?? null;
-    let version: string | null = null;
-    try {
-      const out = spawnSync(path, ["--version"], { timeout: 1500, encoding: "utf8" });
-      const match = /\d+\.\d+\.\d+[0-9A-Za-z.+-]*/.exec(`${out.stdout ?? ""} ${out.stderr ?? ""}`);
-      version = match ? match[0] : null;
-    } catch {
-      version = null;
-    }
+    const version = probeTraceMakerCliVersion(path);
     this.versionProbes.set(key, version);
     return version;
   }
@@ -364,6 +377,7 @@ class FileRouterRegistry implements RouterRegistry {
           source: artifact,
           ...(entry.binaryRelease ? { binaryRelease: entry.binaryRelease } : {}),
           env: this.env,
+          ...(this.deps.settings ? { settings: this.deps.settings() } : {}),
           ...(this.deps.fetch ? { fetchImpl: this.deps.fetch } : {}),
           signal: abort.signal,
         });

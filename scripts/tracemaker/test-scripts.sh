@@ -80,9 +80,13 @@ if [ "$1" = "--help" ] || [ "$1" = help ]; then
   echo "tracemaker help"
   exit 0
 fi
-if [ "$1" = "--version" ]; then
+if [ "$1" = "version" ]; then
   echo "tracemaker 0.9.0"
   exit 0
+fi
+if [ "$1" = "--version" ]; then
+  echo "A subcommand is required" >&2
+  exit 2
 fi
 if [ "$1" = route ]; then
   out=""
@@ -142,12 +146,33 @@ assert_file "$ROOT/pack/macos-arm64/tracemaker-macos-arm64.tar.gz"
 assert_contains "$ROOT/pack/macos-arm64/SOURCE.txt" "24c847772e57ea8888e2cfe4bbf1aa00666390a4.patch"
 assert_contains "$ROOT/pack/linux-x86_64/LICENSE" "GPL-3.0-or-later"
 
-# --- publish: join platforms, --latest=false, skip if immutable tag exists ---
-mkdir -p "$ROOT/ghbin"
+# --- expected-platform helpers ---
+# shellcheck source=platforms.sh
+source "$SCRIPT_DIR/platforms.sh"
+assert_eq "$(expected_platforms_csv)" "linux-x86_64,macos-arm64" "expected platform list"
+python3 - <<PY
+import json, pathlib
+partial = pathlib.Path("$ROOT/partial-manifest.json")
+partial.write_text(json.dumps({
+  "name": "tracemaker",
+  "builtAt": "2026-10-09T22:00:00Z",
+  "upstream": {"repository": "https://github.com/DingoOz/TraceMaker", "tag": "v0.9.0",
+               "commit": "24c847772e57ea8888e2cfe4bbf1aa00666390a4", "license": "GPL-3.0-or-later",
+               "sourceUrl": "https://example.test/src.tgz"},
+  "assets": [{"platform": "linux-x86_64", "filename": "tracemaker-linux-x86_64.tar.gz",
+              "url": "https://example.test/linux.tgz", "sha256": "a"*64, "bytes": 1, "format": "tar.gz",
+              "executable": "tracemaker"}]
+}) + "\n")
+PY
+assert_eq "$(missing_expected_platforms "$ROOT/partial-manifest.json")" "macos-arm64" "linux-only manifest is missing macos-arm64"
+assert_eq "$(missing_expected_platforms "$ROOT/no-such-manifest.json")" "linux-x86_64 macos-arm64" "missing file → all platforms"
+
+# --- publish: join platforms, --latest=false, complete a partial release ---
+mkdir -p "$ROOT/ghbin" "$ROOT/ghstore"
 cat > "$ROOT/ghbin/gh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-: "${GH_LOG:?}" "${GH_RELEASES:?}"
+: "${GH_LOG:?}" "${GH_RELEASES:?}" "${GH_STORE:?}"
 printf '%s\n' "$*" >> "$GH_LOG"
 cmd="$1"
 sub="$2"
@@ -162,17 +187,51 @@ fi
 if [ "$cmd" = release ] && [ "$sub" = create ]; then
   tag="$1"
   latest=true
+  dest="$GH_STORE/$tag"
+  mkdir -p "$dest"
   for arg in "$@"; do
     if [ "$arg" = "--latest=false" ]; then latest=false; fi
+    if [ -f "$arg" ]; then cp "$arg" "$dest/$(basename "$arg")"; fi
   done
   echo "$tag latest=$latest" >> "${GH_LOG}.meta"
   echo "$tag" >> "$GH_RELEASES"
   exit 0
 fi
+if [ "$cmd" = release ] && [ "$sub" = upload ]; then
+  tag="$1"
+  dest="$GH_STORE/$tag"
+  mkdir -p "$dest"
+  echo "$tag upload" >> "${GH_LOG}.meta"
+  for arg in "$@"; do
+    if [ -f "$arg" ]; then cp "$arg" "$dest/$(basename "$arg")"; fi
+  done
+  exit 0
+fi
+if [ "$cmd" = release ] && [ "$sub" = download ]; then
+  tag=""
+  pattern=""
+  dir="."
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --pattern) pattern="$2"; shift 2 ;;
+      --dir) dir="$2"; shift 2 ;;
+      --repo) shift 2 ;;
+      *) if [ -z "$tag" ]; then tag="$1"; fi; shift ;;
+    esac
+  done
+  src="$GH_STORE/$tag"
+  mkdir -p "$dir"
+  if [ -n "$pattern" ] && [ -f "$src/$pattern" ]; then
+    cp "$src/$pattern" "$dir/"
+    exit 0
+  fi
+  exit 1
+fi
 if [ "$cmd" = release ] && [ "$sub" = delete ]; then
   tag="$1"
   grep -vx "$tag" "$GH_RELEASES" > "${GH_RELEASES}.tmp" || true
   mv "${GH_RELEASES}.tmp" "$GH_RELEASES"
+  rm -rf "$GH_STORE/$tag"
   exit 0
 fi
 echo "unexpected gh $*" >&2
@@ -183,6 +242,7 @@ chmod +x "$ROOT/ghbin/gh"
 export GH_TOKEN=fake
 export GH_LOG="$ROOT/gh.log"
 export GH_RELEASES="$ROOT/gh.releases"
+export GH_STORE="$ROOT/ghstore"
 : > "$GH_RELEASES"
 : > "$GH_LOG"
 PATH="$ROOT/ghbin:$PATH" bash "$SCRIPT_DIR/publish.sh" "$ROOT/pack"
@@ -201,16 +261,82 @@ PY
 assert_contains "$ROOT/gh.log.meta" "tracemaker-v0.9.0-24c8477 latest=false"
 assert_contains "$ROOT/gh.log.meta" "tracemaker-latest latest=false"
 
-# skip-if-already-published: second publish must not recreate the immutable tag
+# second publish of a complete set uploads into the existing tag (force/rebuild) and does not
+# recreate it with `release create` / --latest=true
 : > "$GH_LOG"
 : > "$ROOT/gh.log.meta"
-PATH="$ROOT/ghbin:$PATH" bash "$SCRIPT_DIR/publish.sh" "$ROOT/pack" > "$ROOT/publish-skip.log"
-assert_contains "$ROOT/publish-skip.log" "already exists"
+PATH="$ROOT/ghbin:$PATH" bash "$SCRIPT_DIR/publish.sh" "$ROOT/pack" > "$ROOT/publish-complete.log"
+assert_contains "$ROOT/publish-complete.log" "Completing existing"
 if grep -q "release create tracemaker-v0.9.0-24c8477" "$GH_LOG"; then
-  echo "FAIL republished immutable tag"
+  echo "FAIL recreated immutable tag instead of uploading"
   fail=1
 else
-  echo "ok   did not recreate immutable tag"
+  echo "ok   completed existing immutable tag via upload --clobber"
+fi
+assert_contains "$ROOT/gh.log.meta" "tracemaker-latest latest=false"
+
+# partial release: only macos is new; linux is already published and must be merged
+partial_pack="$ROOT/pack-macos-only"
+mkdir -p "$partial_pack"
+cp -a "$ROOT/pack/macos-arm64" "$partial_pack/"
+rm -rf "$ROOT/pack"   # isolate
+# Seed a linux-only immutable release (the state after run 37999311656).
+linux_only="$ROOT/linux-only"
+mkdir -p "$linux_only/linux-x86_64"
+# Re-pack linux so we have a known archive + asset.json to seed the store.
+bash "$SCRIPT_DIR/package.sh" "$fake_bin" linux-x86_64 "$linux_only/linux-x86_64" >/dev/null
+: > "$GH_RELEASES"
+: > "$GH_LOG"
+: > "$ROOT/gh.log.meta"
+rm -rf "$GH_STORE"
+mkdir -p "$GH_STORE/tracemaker-v0.9.0-24c8477"
+python3 - <<PY
+import json, pathlib, shutil
+src = pathlib.Path("$linux_only/linux-x86_64")
+asset = json.loads((src / "asset.json").read_text())
+store = pathlib.Path("$GH_STORE/tracemaker-v0.9.0-24c8477")
+shutil.copy(src / asset["filename"], store / asset["filename"])
+manifest = {
+  "name": "tracemaker",
+  "builtAt": "2026-10-09T21:00:00Z",
+  "upstream": {
+    "repository": "https://github.com/DingoOz/TraceMaker",
+    "tag": "v0.9.0",
+    "commit": "24c847772e57ea8888e2cfe4bbf1aa00666390a4",
+    "license": "GPL-3.0-or-later",
+    "sourceUrl": "https://github.com/DingoOz/TraceMaker/archive/24c847772e57ea8888e2cfe4bbf1aa00666390a4.tar.gz",
+  },
+  "assets": [asset],
+}
+(store / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+print("seeded linux-only release", asset["filename"], asset["sha256"][:12])
+PY
+echo "tracemaker-v0.9.0-24c8477" >> "$GH_RELEASES"
+PATH="$ROOT/ghbin:$PATH" bash "$SCRIPT_DIR/publish.sh" "$partial_pack" > "$ROOT/publish-partial.log"
+python3 - <<PY
+import json, pathlib
+m = json.loads(pathlib.Path("$partial_pack/manifest.json").read_text())
+plats = sorted(a["platform"] for a in m["assets"])
+assert plats == ["linux-x86_64", "macos-arm64"], plats
+print("ok   partial publish merged", plats)
+PY
+assert_contains "$ROOT/publish-partial.log" "verified existing"
+assert_contains "$ROOT/gh.log.meta" "tracemaker-v0.9.0-24c8477 upload"
+assert_contains "$ROOT/gh.log.meta" "tracemaker-latest latest=false"
+assert_eq "$(missing_expected_platforms "$partial_pack/manifest.json")" "" "merged manifest lists every expected platform"
+TRACEMAKER_FORCE=1
+if force_rebuild_requested; then
+  echo "ok   TRACEMAKER_FORCE=1 is a rebuild"
+else
+  echo "FAIL TRACEMAKER_FORCE=1 not detected"
+  fail=1
+fi
+unset TRACEMAKER_FORCE
+if force_rebuild_requested; then
+  echo "FAIL force defaulted on"
+  fail=1
+else
+  echo "ok   force is off by default"
 fi
 
 # --- apply-macos-patch is commit-pinned (wrong SHA is a no-op) ---
@@ -240,13 +366,46 @@ if [ -n "${TRACEMAKER_FIXTURE_SRC:-}" ]; then
   else
     echo "ok   v0.9.0 patch removed every std::from_chars( in *.cpp"
   fi
+  if grep -E 'strtod_l\(|newlocale\(|freelocale\(|<xlocale.h>' "$pinned/src/core/from_chars_double.hpp"; then
+    echo "FAIL shim still uses locale C APIs that Homebrew LLVM does not declare"
+    fail=1
+  else
+    echo "ok   shim has no strtod_l / newlocale"
+  fi
+  CXX=""
+  if command -v g++ >/dev/null; then CXX=g++; elif command -v clang++ >/dev/null; then CXX=clang++; fi
+  if [ -n "$CXX" ]; then
+    cat > "$ROOT/shim_main.cpp" <<EOF
+#include "$pinned/src/core/from_chars_double.hpp"
+#include <cmath>
+int main() {
+  const char ok[] = "1.25";
+  double v = 0;
+  auto r = tmk::from_chars_double(ok, ok + 4, v);
+  if (r.ec != std::errc{} || r.ptr != ok + 4 || std::fabs(v - 1.25) > 1e-9) return 1;
+  const char bad[] = "1.25x";
+  auto r2 = tmk::from_chars_double(bad, bad + 5, v);
+  if (r2.ec == std::errc{}) return 2;
+  const char expn[] = "1e3";
+  auto r3 = tmk::from_chars_double(expn, expn + 3, v);
+  if (r3.ec != std::errc{} || std::fabs(v - 1000) > 1e-9) return 3;
+  return 0;
+}
+EOF
+    if "$CXX" -std=c++20 -O0 -o "$ROOT/shim_main" "$ROOT/shim_main.cpp" && "$ROOT/shim_main"; then
+      echo "ok   shim compiles and parses 1.25 / 1e3 with $CXX"
+    else
+      echo "FAIL shim compile or runtime check ($CXX)"
+      fail=1
+    fi
+  fi
 fi
 
 # Packaged manifest must satisfy the TypeScript zod schema (same parser the app uses).
 if command -v bun >/dev/null; then
   # JS, not a shell snippet — $MANIFEST is passed via the environment.
   # shellcheck disable=SC2016
-  MANIFEST="$ROOT/pack/manifest.json" bun --cwd "$SCRIPT_DIR/../../packages/tools" -e '
+  MANIFEST="$partial_pack/manifest.json" bun --cwd "$SCRIPT_DIR/../../packages/tools" -e '
     import { parseTraceMakerManifest } from "./src/routers/tracemaker-release";
     const raw = JSON.parse(await Bun.file(process.env.MANIFEST!).text());
     const m = parseTraceMakerManifest(raw);

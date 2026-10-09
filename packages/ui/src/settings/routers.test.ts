@@ -153,11 +153,12 @@ describe("router settings helpers", () => {
   });
 
   test("the Settings draft never carries the router default, so Save cannot revert Set default", () => {
-    const stale = { theme: "dark", preferredRouter: "freerouting" } as const;
-    const fresh = { theme: "dark", preferredRouter: "tracemaker" } as const;
+    const stale = { theme: "dark", preferredRouter: "freerouting", tracemakerManifestUrl: "https://a.test/m.json" } as const;
+    const fresh = { theme: "dark", preferredRouter: "tracemaker", tracemakerManifestUrl: "https://b.test/m.json" } as const;
     expect(withoutRouterDefault(stale)).toEqual({ theme: "dark" });
     expect(JSON.stringify(withoutRouterDefault(stale))).toBe(JSON.stringify(withoutRouterDefault(fresh)));
     expect("preferredRouter" in withoutRouterDefault(stale)).toBe(false);
+    expect("tracemakerManifestUrl" in withoutRouterDefault(stale)).toBe(false);
   });
 
   test("a saved default that is not ready is called out in the picker", () => {

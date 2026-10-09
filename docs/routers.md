@@ -84,9 +84,33 @@ fab_pcb’s older five-board JS vs Freerouting table remains in `vendor/fab_pcb/
   default that is no longer ready (e.g. `TRACEMAKER_BIN` removed) makes unpinned `route_run` fall back to the
   automatic path with a fallback note instead of failing; an explicit `router` still returns the install hint.
 - **`TRACEMAKER_BIN` / `FREEROUTING_JAR`** routers are labelled with the env var, show the version reported by
-  `tracemaker --version`, and have no Uninstall (unset the variable instead).
-- **Local fixture for demos.** Point `FABDESK_TRACEMAKER_MANIFEST_URL` at a local server that serves a manifest
-  (and a throttled asset) to exercise progress, checksum-mismatch and 404 paths without a real release.
+  `tracemaker version` (then `--version`), and have no Uninstall (unset the variable instead).
+- **Local fixture for demos.** Point `FABDESK_TRACEMAKER_MANIFEST_URL` (or Settings → Routers → TraceMaker
+  manifest URL) at a local server that serves a manifest (and a throttled asset) to exercise progress,
+  checksum-mismatch and 404 paths without a real release.
+
+## Public download channel (owner decision)
+
+Desktop installers are public: the update feed is `https://fabplane.com/desktop/latest.json` and binaries
+live on `https://downloads.fabplane.com/desktop/<tag>/…` (R2). There is **no equivalent public path for
+TraceMaker**. The weekly workflow publishes only to GitHub Releases on `TensorFleet/fabdesk`, which is
+private, so an anonymous `releases/download/tracemaker-latest/manifest.json` is HTTP 404.
+
+The shipped app never embeds a GitHub token. Install therefore:
+
+1. Honours `TRACEMAKER_BIN`.
+2. Fetches the manifest from `FABDESK_TRACEMAKER_MANIFEST_URL`, else Settings → Routers → TraceMaker
+   manifest URL, else the default GitHub URL above.
+3. Falls back to the public upstream source tarball, with a card notice that names the private-repo 404
+   when the default GitHub URL was used.
+
+Until the owner picks one of:
+
+- make the `tracemaker-*` GitHub releases (or the whole repo) public, or
+- mirror `manifest.json` + archives to the same R2 bucket / a public repo and set
+  `FABDESK_TRACEMAKER_MANIFEST_URL` (and rewrite asset URLs in the manifest to that public host),
+
+end-user Install will keep falling back to source-only. Do not put a token in the app.
 
 ## Test on a Mac (no staging login)
 
@@ -113,6 +137,13 @@ desktop app after a first-time Freerouting install.
 
 Tests can override artifact URLs and checksums with `FABDESK_TRACEMAKER_URL`,
 `FABDESK_TRACEMAKER_SHA256`, `FABDESK_FREEROUTING_URL`, and `FABDESK_FREEROUTING_SHA256`.
-The binary release pointer is `FABDESK_TRACEMAKER_MANIFEST_URL` /
+The binary release pointer is `FABDESK_TRACEMAKER_MANIFEST_URL` (wins) /
+Settings `tracemakerManifestUrl` /
 `FABDESK_TRACEMAKER_RELEASE_TAG` / `FABDESK_TRACEMAKER_RELEASE_REPO`. Setting
 `FABDESK_TRACEMAKER_URL` disables the binary lookup and uses the source artifact.
+
+The weekly workflow publishes `linux-x86_64` and `macos-arm64`. A partial immutable tag
+(one platform) is completed on the next run: missing platforms are built, uploaded with
+`--clobber`, and merged into `manifest.json` after the existing archives are checksum-verified.
+`workflow_dispatch` input `force` rebuilds every expected platform. `tracemaker-latest` is never
+GitHub’s “Latest” release.

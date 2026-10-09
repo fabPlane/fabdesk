@@ -177,6 +177,7 @@ export async function createServices(
       : {}),
     routers: createRouterRegistry({
       home: deps.home,
+      settings: () => deps.settings(),
       bundled: {
         fab_router: { version: "bundled" },
         ...(process.env["FREEROUTING_JAR"] && existsSync(process.env["FREEROUTING_JAR"])

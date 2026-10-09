@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
-# Resolve DingoOz/TraceMaker to a commit and skip if fabdesk already published it.
+# Resolve DingoOz/TraceMaker to a commit. Skip only when the immutable fabdesk
+# release already lists every expected platform (unless TRACEMAKER_FORCE=1).
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=platforms.sh
+source "$SCRIPT_DIR/platforms.sh"
 
 UPSTREAM_REPO="${TRACEMAKER_UPSTREAM_REPO:-DingoOz/TraceMaker}"
 API="https://api.github.com/repos/${UPSTREAM_REPO}"
@@ -50,12 +55,39 @@ else
   RELEASE_TAG="tracemaker-${UPSTREAM_TAG}-${UPSTREAM_SHORT}"
 fi
 
+FORCE=false
+if force_rebuild_requested; then
+  FORCE=true
+fi
+
+EXPECTED_CSV="$(expected_platforms_csv)"
+MISSING="$(expected_platforms | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+PUBLISHED=""
 SKIP=false
-if command -v gh >/dev/null && [ -n "${GH_TOKEN:-${GITHUB_TOKEN:-}}" ]; then
+
+if [ "$FORCE" = true ]; then
+  echo "Force rebuild requested; ignoring any existing ${RELEASE_TAG} assets."
+elif command -v gh >/dev/null && [ -n "${GH_TOKEN:-${GITHUB_TOKEN:-}}" ]; then
   if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-    SKIP=true
+    work="$(mktemp -d "${TMPDIR:-/tmp}/tm-resolve.XXXXXX")"
+    trap 'rm -rf "$work"' EXIT
+    if gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern manifest.json --dir "$work" 2>/dev/null \
+      && [ -f "$work/manifest.json" ]; then
+      PUBLISHED="$(published_platforms_from_manifest "$work/manifest.json")"
+      MISSING="$(missing_expected_platforms "$work/manifest.json")"
+      if [ -z "$MISSING" ]; then
+        SKIP=true
+      else
+        echo "Immutable release ${RELEASE_TAG} is incomplete (have: ${PUBLISHED:-none}; missing: ${MISSING})."
+      fi
+    else
+      echo "Immutable release ${RELEASE_TAG} exists but has no manifest.json; treating every expected platform as missing."
+    fi
   fi
 fi
+
+MISSING_CSV="$(printf '%s' "$MISSING" | tr ' ' ',')"
+PUBLISHED_CSV="$(printf '%s' "$PUBLISHED" | tr ' ' ',')"
 
 SOURCE_URL="https://github.com/${UPSTREAM_REPO}/archive/${UPSTREAM_COMMIT}.tar.gz"
 
@@ -68,6 +100,10 @@ SOURCE_URL="https://github.com/${UPSTREAM_REPO}/archive/${UPSTREAM_COMMIT}.tar.g
   echo "release_tag=$RELEASE_TAG"
   echo "source_url=$SOURCE_URL"
   echo "skip=$SKIP"
+  echo "force=$FORCE"
+  echo "expected_platforms=$EXPECTED_CSV"
+  echo "missing_platforms=$MISSING_CSV"
+  echo "published_platforms=$PUBLISHED_CSV"
 }
 
 if [ -n "${GITHUB_OUTPUT:-}" ]; then
@@ -80,7 +116,11 @@ if [ -n "${GITHUB_OUTPUT:-}" ]; then
     echo "release_tag=$RELEASE_TAG"
     echo "source_url=$SOURCE_URL"
     echo "skip=$SKIP"
+    echo "force=$FORCE"
+    echo "expected_platforms=$EXPECTED_CSV"
+    echo "missing_platforms=$MISSING_CSV"
+    echo "published_platforms=$PUBLISHED_CSV"
   } >> "$GITHUB_OUTPUT"
 fi
 
-echo "Resolved ${UPSTREAM_REPO}@${UPSTREAM_REF} -> ${UPSTREAM_COMMIT} (release ${RELEASE_TAG}, skip=${SKIP})"
+echo "Resolved ${UPSTREAM_REPO}@${UPSTREAM_REF} -> ${UPSTREAM_COMMIT} (release ${RELEASE_TAG}, skip=${SKIP}, missing=${MISSING_CSV:-none}, force=${FORCE})"

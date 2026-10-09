@@ -145,7 +145,7 @@ describe("source-only TraceMaker is installed but not ready", () => {
     const snap = await registry.install("tracemaker");
     expect(snap.state).toBe("installed");
     expect(snap.ready).toBe(false);
-    expect(snap.notice).toMatch(/TraceMaker binary manifest not published yet/);
+    expect(snap.notice).toMatch(/TraceMaker binary manifest was not reachable|not published yet/);
     expect(snap.notice).toMatch(/source package/);
   });
 
@@ -323,7 +323,7 @@ describe("TRACEMAKER_BIN", () => {
   test("is flagged as env-supplied, reports its real version, and a bad path is explained", async () => {
     const dir = await mkdtemp(join(tmpdir(), "fabdesk-envbin-"));
     const bin = join(dir, "tracemaker");
-    await writeFile(bin, '#!/bin/sh\necho "tracemaker 1.2.3-test (stub)"\n');
+    await writeFile(bin, '#!/bin/sh\nif [ "$1" = "version" ]; then echo "tracemaker 1.2.3-test (stub)"; exit 0; fi\necho "A subcommand is required" >&2; exit 2\n');
     await chmod(bin, 0o755);
     const home = await mkdtemp(join(tmpdir(), "fabdesk-env-"));
     const ok = createRouterRegistry({ home, catalog: sourceCatalog("http://127.0.0.1:1/x"), env: { TRACEMAKER_BIN: bin } });

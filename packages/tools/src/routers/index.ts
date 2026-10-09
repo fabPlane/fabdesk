@@ -16,8 +16,10 @@ export {
   TRACEMAKER_BINARY_RELEASE_TAG,
   TRACEMAKER_PLATFORMS,
   TRACEMAKER_UPSTREAM_REPO,
+  defaultTraceMakerManifestUrl,
   detectTraceMakerPlatform,
   parseTraceMakerManifest,
+  parseTraceMakerVersion,
   resolveTraceMakerInstallArtifact,
   selectTraceMakerAsset,
   type TraceMakerBinaryRelease,
@@ -35,10 +37,12 @@ export {
 export { bundledHint, installHintFor } from "./hints";
 export {
   createRouterRegistry,
+  probeTraceMakerCliVersion,
   routersRoot,
   type BundledRouter,
   type RouterRegistry,
   type RouterRegistryDeps,
+  type RouterRegistrySettings,
 } from "./registry";
 export {
   normalizeRouterId,

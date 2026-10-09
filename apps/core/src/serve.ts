@@ -361,6 +361,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     const { existsSync } = await import("node:fs");
     services.routers = createRouterRegistry({
       home: config.home,
+      settings: () => store.settings.get(),
       bundled: {
         fab_router: { version: "bundled" },
         ...(process.env["FREEROUTING_JAR"] && existsSync(process.env["FREEROUTING_JAR"])

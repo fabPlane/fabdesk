@@ -72,15 +72,35 @@ export function detectTraceMakerPlatform(opts?: {
   return null;
 }
 
+export function defaultTraceMakerManifestUrl(opts?: {
+  repo?: string;
+  tag?: string;
+}): string {
+  const repo = opts?.repo?.trim() || TRACEMAKER_BINARY_RELEASE_REPO;
+  const tag = opts?.tag?.trim() || TRACEMAKER_BINARY_RELEASE_TAG;
+  return `https://github.com/${repo}/releases/download/${tag}/manifest.json`;
+}
+
 export function defaultTraceMakerBinaryRelease(
   env: NodeJS.ProcessEnv = process.env,
+  settings?: { tracemakerManifestUrl?: string | null },
 ): TraceMakerBinaryRelease {
   const repo = env["FABDESK_TRACEMAKER_RELEASE_REPO"]?.trim() || TRACEMAKER_BINARY_RELEASE_REPO;
   const tag = env["FABDESK_TRACEMAKER_RELEASE_TAG"]?.trim() || TRACEMAKER_BINARY_RELEASE_TAG;
-  const manifestUrl =
-    env["FABDESK_TRACEMAKER_MANIFEST_URL"]?.trim() ||
-    `https://github.com/${repo}/releases/download/${tag}/manifest.json`;
+  const fromEnv = env["FABDESK_TRACEMAKER_MANIFEST_URL"]?.trim();
+  const fromSettings = settings?.tracemakerManifestUrl?.trim();
+  const manifestUrl = fromEnv || fromSettings || defaultTraceMakerManifestUrl({ repo, tag });
   return { repo, tag, manifestUrl };
+}
+
+/** Semver (with optional pre-release / build suffix) from CLI stdout/stderr. */
+export function parseTraceMakerVersion(text: string): string | null {
+  const match = /\d+\.\d+\.\d+[0-9A-Za-z.+-]*/.exec(text);
+  return match ? match[0] : null;
+}
+
+export function githubReleaseLooksPrivate(url: string): boolean {
+  return /https?:\/\/github\.com\/TensorFleet\/fabdesk\//i.test(url);
 }
 
 export function parseTraceMakerManifest(raw: unknown): TraceMakerManifest {
@@ -139,7 +159,11 @@ export async function fetchTraceMakerManifest(
     throw offlineOrFetchError(error, url);
   }
   if (response.status === 404) throw new ManifestNotFoundError(url);
-  if (!response.ok) throw new Error(`TraceMaker manifest download failed (${response.status}) from ${url}`);
+  if (!response.ok) {
+    throw new Error(
+      `TraceMaker manifest download failed (${response.status}) from ${url}.${privateRepoAdvice(url)}`,
+    );
+  }
   let raw: unknown;
   try {
     raw = await response.json();
@@ -149,9 +173,25 @@ export async function fetchTraceMakerManifest(
   return parseTraceMakerManifest(raw);
 }
 
+function privateRepoAdvice(url: string): string {
+  if (!githubReleaseLooksPrivate(url)) return "";
+  return (
+    " TensorFleet/fabdesk is a private repository, so unauthenticated GitHub release" +
+    " downloads return 404. Point FABDESK_TRACEMAKER_MANIFEST_URL or Settings → Routers" +
+    " → TraceMaker manifest URL at a public copy of manifest.json whose asset URLs are" +
+    " also public (the desktop installer uses downloads.fabplane.com / R2 — TraceMaker" +
+    " is not mirrored there yet), or set TRACEMAKER_BIN."
+  );
+}
+
 export class ManifestNotFoundError extends Error {
   constructor(url: string) {
-    super(`TraceMaker binary manifest not published yet (${url})`);
+    super(
+      `TraceMaker binary manifest was not reachable at ${url} (HTTP 404).` +
+        (githubReleaseLooksPrivate(url)
+          ? privateRepoAdvice(url)
+          : " The weekly binaries may not be published yet, or the URL is wrong."),
+    );
     this.name = "ManifestNotFoundError";
   }
 }
@@ -177,17 +217,23 @@ export async function resolveTraceMakerInstallArtifact(opts: {
   source: RouterArtifact;
   binaryRelease?: TraceMakerBinaryRelease;
   env?: NodeJS.ProcessEnv;
+  settings?: { tracemakerManifestUrl?: string | null };
   fetchImpl?: typeof fetch;
   platform?: string;
   arch?: string;
   signal?: AbortSignal;
 }): Promise<ResolvedTraceMakerArtifact> {
   const env = opts.env ?? process.env;
+  const overrideUrl =
+    env["FABDESK_TRACEMAKER_MANIFEST_URL"]?.trim() || opts.settings?.tracemakerManifestUrl?.trim();
+  const binaryRelease = opts.binaryRelease
+    ? { ...opts.binaryRelease, ...(overrideUrl ? { manifestUrl: overrideUrl } : {}) }
+    : undefined;
   const detected = detectTraceMakerPlatform({
     ...(opts.platform ? { platform: opts.platform } : {}),
     ...(opts.arch ? { arch: opts.arch } : {}),
   });
-  if (env["FABDESK_TRACEMAKER_URL"]?.trim() || !opts.binaryRelease) {
+  if (env["FABDESK_TRACEMAKER_URL"]?.trim() || !binaryRelease) {
     return {
       artifact: opts.source,
       origin: "source",
@@ -204,7 +250,7 @@ export async function resolveTraceMakerInstallArtifact(opts: {
     };
   }
   try {
-    const manifest = await fetchTraceMakerManifest(opts.binaryRelease.manifestUrl, {
+    const manifest = await fetchTraceMakerManifest(binaryRelease.manifestUrl, {
       ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
       ...(opts.signal ? { signal: opts.signal } : {}),
     });

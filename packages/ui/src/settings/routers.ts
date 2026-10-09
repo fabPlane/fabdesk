@@ -101,10 +101,10 @@ export function installProgressView(router: RouterSnapshot): InstallProgressView
  * default" is clicked, so it is left out of the draft: a stale copy in the draft must never revert it
  * on Save, nor make the dialog look dirty.
  */
-export function withoutRouterDefault<T extends { preferredRouter?: unknown }>(
+export function withoutRouterDefault<T extends { preferredRouter?: unknown; tracemakerManifestUrl?: unknown }>(
   settings: T,
-): Omit<T, "preferredRouter"> {
-  const { preferredRouter: _ignored, ...rest } = settings;
+): Omit<T, "preferredRouter" | "tracemakerManifestUrl"> {
+  const { preferredRouter: _preferred, tracemakerManifestUrl: _manifest, ...rest } = settings;
   return rest;
 }
 

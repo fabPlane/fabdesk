@@ -75,7 +75,8 @@ export function SettingsDialog() {
   const update = (fn: (s: Settings) => Settings) => setDraft((d) => (d ? fn(d) : d));
   const updateAgent = (id: string, p: Partial<AgentSettings>) =>
     update((s) => ({ ...s, agents: { ...s.agents, [id]: { ...(s.agents[id] ?? DEFAULT_AGENT), ...p } } }));
-  // The router default is saved by its own buttons (see withoutRouterDefault); it is not part of the draft.
+  // The router default and TraceMaker manifest URL are saved by their own controls
+  // (see withoutRouterDefault); they are not part of the draft.
   const dirty = (!!draft && !!settings.data && JSON.stringify(withoutRouterDefault(draft)) !== JSON.stringify(withoutRouterDefault(settings.data))) || storedTheme !== originalTheme.current;
   const reset = () => { if (settings.data) setDraft(structuredClone(settings.data)); setThemeId(originalTheme.current); };
   const close = () => { if (patch.isPending) return; if (dirty) setConfirmClose(true); else setOpen(false); };

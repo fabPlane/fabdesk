@@ -26,6 +26,11 @@ on:
         description: "Upstream tag, branch, or commit (empty = latest DingoOz/TraceMaker release tag, else default-branch HEAD)"
         required: false
         type: string
+      force:
+        description: "Rebuild every expected platform even if the immutable tag already has them"
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: tracemaker-binaries
@@ -43,6 +48,10 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       skip: ${{ steps.resolve.outputs.skip }}
+      force: ${{ steps.resolve.outputs.force }}
+      missing_platforms: ${{ steps.resolve.outputs.missing_platforms }}
+      published_platforms: ${{ steps.resolve.outputs.published_platforms }}
+      expected_platforms: ${{ steps.resolve.outputs.expected_platforms }}
       upstream_repo: ${{ steps.resolve.outputs.upstream_repo }}
       upstream_ref: ${{ steps.resolve.outputs.upstream_ref }}
       upstream_tag: ${{ steps.resolve.outputs.upstream_tag }}
@@ -60,12 +69,13 @@ jobs:
         id: resolve
         env:
           GH_TOKEN: ${{ github.token }}
+          TRACEMAKER_FORCE: ${{ inputs.force == true }}
         run: bash "${GITHUB_WORKSPACE}/scripts/tracemaker/resolve-upstream.sh" "${{ inputs.upstream_ref }}"
 
   build-linux:
     name: linux-x86_64
     needs: resolve
-    if: needs.resolve.outputs.skip != 'true'
+    if: needs.resolve.outputs.skip != 'true' && (needs.resolve.outputs.force == 'true' || contains(format(',{0},', needs.resolve.outputs.missing_platforms), ',linux-x86_64,'))
     runs-on: ubuntu-latest
     container: ubuntu:26.04
     timeout-minutes: 60
@@ -121,7 +131,7 @@ jobs:
   build-macos:
     name: macos-arm64
     needs: resolve
-    if: needs.resolve.outputs.skip != 'true'
+    if: needs.resolve.outputs.skip != 'true' && (needs.resolve.outputs.force == 'true' || contains(format(',{0},', needs.resolve.outputs.missing_platforms), ',macos-arm64,'))
     runs-on: macos-15
     timeout-minutes: 60
     steps:

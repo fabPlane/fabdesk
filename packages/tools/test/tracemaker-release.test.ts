@@ -4,7 +4,7 @@ import { chmod, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { defaultRouterCatalog } from "../src/routers/catalog";
-import { createRouterRegistry } from "../src/routers/registry";
+import { createRouterRegistry, probeTraceMakerCliVersion } from "../src/routers/registry";
 import {
   TRACEMAKER_BINARY_RELEASE_REPO,
   TRACEMAKER_BINARY_RELEASE_TAG,
@@ -12,6 +12,7 @@ import {
   defaultTraceMakerBinaryRelease,
   detectTraceMakerPlatform,
   parseTraceMakerManifest,
+  parseTraceMakerVersion,
   resolveTraceMakerInstallArtifact,
   selectTraceMakerAsset,
   traceMakerAssetToArtifact,
@@ -62,6 +63,21 @@ const SOURCE = {
   format: "tar.gz" as const,
   executable: "tracemaker",
 };
+
+describe("parseTraceMakerVersion / probeTraceMakerCliVersion", () => {
+  test("reads `tracemaker 0.9.0` and ignores a failing --version", async () => {
+    expect(parseTraceMakerVersion("tracemaker 0.9.0\n")).toBe("0.9.0");
+    expect(parseTraceMakerVersion("A subcommand is required")).toBeNull();
+    const dir = await mkdtemp(join(tmpdir(), "fabdesk-tm-ver-"));
+    const bin = join(dir, "tracemaker");
+    await writeFile(
+      bin,
+      '#!/bin/sh\nif [ "$1" = "version" ]; then echo "tracemaker 0.9.0"; exit 0; fi\necho "A subcommand is required" >&2; exit 2\n',
+    );
+    await chmod(bin, 0o755);
+    expect(probeTraceMakerCliVersion(bin)).toBe("0.9.0");
+  });
+});
 
 describe("detectTraceMakerPlatform", () => {
   test("maps Node platform/arch pairs used by fabdesk", () => {
@@ -169,7 +185,53 @@ describe("resolveTraceMakerInstallArtifact", () => {
       arch: "arm64",
     });
     expect(fallback.origin).toBe("source");
-    expect(fallback.warning).toMatch(/not published yet/);
+    expect(fallback.warning).toMatch(/not reachable|not published yet|URL is wrong/);
+  });
+
+  test("default GitHub 404 names the private-repo problem", async () => {
+    const resolved = await resolveTraceMakerInstallArtifact({
+      source: SOURCE,
+      binaryRelease: defaultTraceMakerBinaryRelease({}),
+      fetchImpl: async () => new Response("missing", { status: 404 }),
+      platform: "linux",
+      arch: "x64",
+    });
+    expect(resolved.origin).toBe("source");
+    expect(resolved.warning).toMatch(/private repository/);
+    expect(resolved.warning).toMatch(/FABDESK_TRACEMAKER_MANIFEST_URL/);
+  });
+
+  test("settings and env override the default GitHub manifest URL (env wins)", async () => {
+    const server = Bun.serve({
+      port: 0,
+      fetch() {
+        return Response.json(SAMPLE_MANIFEST);
+      },
+    });
+    servers.push(server);
+    const viaSettings = await resolveTraceMakerInstallArtifact({
+      source: SOURCE,
+      binaryRelease: defaultTraceMakerBinaryRelease({}),
+      settings: { tracemakerManifestUrl: `http://127.0.0.1:${server.port}/manifest.json` },
+      platform: "linux",
+      arch: "x64",
+    });
+    expect(viaSettings.origin).toBe("binary");
+    expect(viaSettings.artifact.sha256).toBe("a".repeat(64));
+
+    const viaEnv = await resolveTraceMakerInstallArtifact({
+      source: SOURCE,
+      binaryRelease: defaultTraceMakerBinaryRelease({}),
+      env: { FABDESK_TRACEMAKER_MANIFEST_URL: `http://127.0.0.1:${server.port}/from-env` },
+      settings: { tracemakerManifestUrl: "http://127.0.0.1:9/ignored" },
+      fetchImpl: async (input) => {
+        expect(String(input)).toContain("/from-env");
+        return Response.json(SAMPLE_MANIFEST);
+      },
+      platform: "linux",
+      arch: "x64",
+    });
+    expect(viaEnv.origin).toBe("binary");
   });
 
   test("FABDESK_TRACEMAKER_URL keeps the explicit source artifact", async () => {

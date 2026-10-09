@@ -149,6 +149,28 @@ export function RoutersSection() {
           Use automatic default (Freerouting → fab_router)
         </Button>
       )}
+      <label className="block space-y-1 pt-2">
+        <span className="text-xs font-medium">TraceMaker manifest URL</span>
+        <span className="block text-[11px] leading-4 text-muted">
+          Weekly binary index. Defaults to the fabdesk GitHub release, which is 404 for anonymous
+          clients while the repo is private. Env <code className="font-mono">FABDESK_TRACEMAKER_MANIFEST_URL</code>{" "}
+          overrides this. Asset URLs inside the manifest must also be publicly reachable (or set{" "}
+          <code className="font-mono">TRACEMAKER_BIN</code>).
+        </span>
+        <input
+          key={settings.data?.tracemakerManifestUrl ?? "empty"}
+          className="mt-1 w-full rounded-md border border-border bg-panel-2 px-2 py-1 font-mono text-[11px]"
+          data-testid="tracemaker-manifest-url"
+          placeholder="https://github.com/TensorFleet/fabdesk/releases/download/tracemaker-latest/manifest.json"
+          defaultValue={settings.data?.tracemakerManifestUrl ?? ""}
+          disabled={busyBase}
+          onBlur={(event) => {
+            const next = event.target.value.trim() || null;
+            const current = settings.data?.tracemakerManifestUrl ?? null;
+            if (next !== current) void patch.mutateAsync({ tracemakerManifestUrl: next });
+          }}
+        />
+      </label>
     </div>
   );
 }
