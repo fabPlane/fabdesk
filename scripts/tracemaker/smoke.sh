@@ -2,12 +2,23 @@
 # --help / --version, then a tiny route on the bundled fixture.
 set -euo pipefail
 
-binary="${1:?tracemaker binary}"
-fixture="${2:-$(dirname "$0")/fixtures/smoke.kicad_pcb}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=paths.sh
+source "$SCRIPT_DIR/paths.sh"
+
+binary="$(abs_existing_file "${1:?tracemaker binary}")"
+fixture="$(abs_existing_file "${2:-$SCRIPT_DIR/fixtures/smoke.kicad_pcb}")"
 out_dir="${3:-${RUNNER_TEMP:-/tmp}/tracemaker-smoke}"
+out_dir="$(abs_path "$out_dir")"
 mkdir -p "$out_dir"
 
 chmod +x "$binary" || true
+
+if [ "$(uname -s)" = Darwin ]; then
+  echo "== macos probe =="
+  file "$binary"
+  otool -L "$binary" || true
+fi
 
 echo "== help =="
 if ! "$binary" --help >"$out_dir/help.txt" 2>&1 && ! "$binary" help >"$out_dir/help.txt" 2>&1; then

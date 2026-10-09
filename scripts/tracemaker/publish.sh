@@ -2,7 +2,11 @@
 # Create the immutable fabdesk release and refresh the rolling tracemaker-latest pointer.
 set -euo pipefail
 
-artifacts_dir="${1:?artifacts directory}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=paths.sh
+source "$SCRIPT_DIR/paths.sh"
+
+artifacts_dir="$(abs_existing_dir "${1:?artifacts directory}")"
 repo="${GITHUB_REPOSITORY:?}"
 release_tag="${TRACEMAKER_RELEASE_TAG:?}"
 upstream_repo="${TRACEMAKER_UPSTREAM_REPO:-DingoOz/TraceMaker}"
@@ -68,7 +72,9 @@ with the pinned commit. Corresponding source:
 - ${source_url}
 - https://github.com/${upstream_repo}/archive/refs/tags/${upstream_tag}.tar.gz
 
-TensorFleet did not modify the C++ sources. The build recipe is
+macOS builds may apply a commit-pinned from_chars(double) patch (Apple libc++
+before macOS 26); that patch is listed in each archive's \`SOURCE.txt\` when used.
+Linux builds are unmodified upstream. The recipe is
 \`.github/workflows/tracemaker-binaries.yml\`.
 
 ## Assets

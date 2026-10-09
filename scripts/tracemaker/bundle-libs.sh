@@ -2,9 +2,16 @@
 # Copy non-system shared libraries next to the binary so users do not need a toolchain.
 set -euo pipefail
 
-binary="${1:?binary path}"
-libdir="${2:?lib output directory}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=paths.sh
+source "$SCRIPT_DIR/paths.sh"
+
+binary="$(abs_existing_file "${1:?binary path}")"
+libdir="$(abs_path "${2:?lib output directory}")"
 notes="${3:-/dev/null}"
+if [ "$notes" != /dev/null ]; then
+  notes="$(abs_path "$notes")"
+fi
 mkdir -p "$libdir"
 
 is_system_linux() {

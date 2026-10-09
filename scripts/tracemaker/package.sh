@@ -2,9 +2,13 @@
 # Pack the binary + GPL license + pinned source offer for one platform.
 set -euo pipefail
 
-binary="${1:?built tracemaker binary}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=paths.sh
+source "$SCRIPT_DIR/paths.sh"
+
+binary="$(abs_existing_file "${1:?built tracemaker binary}")"
 platform="${2:?platform id}"
-dest_dir="${3:?output directory}"
+dest_dir="$(abs_path "${3:?output directory}")"
 upstream_repo="${TRACEMAKER_UPSTREAM_REPO:-DingoOz/TraceMaker}"
 upstream_tag="${TRACEMAKER_UPSTREAM_TAG:?}"
 upstream_commit="${TRACEMAKER_UPSTREAM_COMMIT:?}"
@@ -13,6 +17,10 @@ src_tree="${TRACEMAKER_SRC:-}"
 built_at="${TRACEMAKER_BUILT_AT:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}"
 release_tag="${TRACEMAKER_RELEASE_TAG:?}"
 repo="${GITHUB_REPOSITORY:-TensorFleet/fabdesk}"
+
+if [ -n "$src_tree" ]; then
+  src_tree="$(abs_existing_dir "$src_tree")"
+fi
 
 mkdir -p "$dest_dir"
 work="$(mktemp -d "${TMPDIR:-/tmp}/tm-pack.XXXXXX")"
@@ -48,16 +56,30 @@ notes="$work/DEPENDENCIES.txt"
   echo "Boost, Eigen, CLI11 and nlohmann_json are header-only at link time."
   echo
 } > "$notes"
-bash "$(dirname "$0")/bundle-libs.sh" "$work/$exe_name" "$work/lib" "$notes"
+bash "$SCRIPT_DIR/bundle-libs.sh" "$work/$exe_name" "$work/lib" "$notes"
+
+patch_note=""
+if [ -n "$src_tree" ] && [ -f "$src_tree/.fabdesk-macos-patch" ]; then
+  patch_note="$(cat "$src_tree/.fabdesk-macos-patch")"
+fi
+
+source_body="This archive is a binary built by ${repo} from the pinned upstream commit."
+if [ -n "$patch_note" ]; then
+  source_body="${source_body}
+${patch_note}
+The patch is part of the corresponding source (GPL-3.0 §6)."
+else
+  source_body="${source_body}
+TensorFleet did not patch the C++ tree for this build. Corresponding complete
+source is the exact commit below (GPL-3.0 §6 network source offer)."
+fi
 
 cat > "$work/SOURCE.txt" <<EOF
 TraceMaker
 License: GPL-3.0-or-later (see LICENSE in this archive; NOTICE if present)
 
-This archive is a binary built by ${repo} from unmodified upstream sources.
-Corresponding complete source is the exact commit below (GPL-3.0 §6 network
-source offer). TensorFleet did not patch the C++ tree for this build; the
-workflow is .github/workflows/tracemaker-binaries.yml in ${repo}.
+${source_body}
+The workflow is .github/workflows/tracemaker-binaries.yml in ${repo}.
 
 Upstream repository: https://github.com/${upstream_repo}
 Upstream tag: ${upstream_tag}
@@ -103,7 +125,11 @@ asset = {
   "executable": os.environ["EXE_NAME"],
 }
 notes = pathlib.Path(os.environ["NOTES"]).read_text(encoding="utf-8")
-asset["linkage"] = "bundled-non-system-libs" if "bundled" in notes else "system-libc-or-frameworks"
+asset["linkage"] = (
+    "bundled-non-system-libs"
+    if any(line.startswith("bundled ") for line in notes.splitlines())
+    else "system-libc-or-frameworks"
+)
 path = pathlib.Path(os.environ["DEST_DIR"]) / "asset.json"
 path.write_text(json.dumps(asset, indent=2) + "\n", encoding="utf-8")
 print(json.dumps(asset, indent=2))

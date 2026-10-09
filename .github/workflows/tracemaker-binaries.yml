@@ -3,7 +3,9 @@
 # Upstream (DingoOz/TraceMaker) is C++20 / GPL-3.0-or-later and publishes no
 # official router binaries. This workflow follows their README + CI:
 #   Linux:  cmake --preset cpu-only   (Ubuntu 26.04, GCC 15, no CUDA)
-#   macOS:  cmake --preset macos-metal -DCMAKE_PREFIX_PATH="$(brew --prefix)"
+#   macOS:  cmake --preset macos-metal with Homebrew LLVM clang++ / static libc++
+#           and CMAKE_OSX_DEPLOYMENT_TARGET=15.0 (not macOS 26). A commit-pinned
+#           from_chars(double) patch is applied when HEAD matches v0.9.0.
 # Each archive ships LICENSE, NOTICE, and SOURCE.txt (pinned commit + tag).
 #
 # Not built (marked, not blocking):
@@ -58,7 +60,7 @@ jobs:
         id: resolve
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash scripts/tracemaker/resolve-upstream.sh "${{ inputs.upstream_ref }}"
+        run: bash "${GITHUB_WORKSPACE}/scripts/tracemaker/resolve-upstream.sh" "${{ inputs.upstream_ref }}"
 
   build-linux:
     name: linux-x86_64
@@ -91,10 +93,10 @@ jobs:
 
       - name: Build tracemaker
         id: build
-        run: bash scripts/tracemaker/build.sh TraceMaker linux-x86_64
+        run: bash "${GITHUB_WORKSPACE}/scripts/tracemaker/build.sh" "${GITHUB_WORKSPACE}/TraceMaker" linux-x86_64
 
       - name: Smoke test
-        run: bash scripts/tracemaker/smoke.sh "${{ steps.build.outputs.binary }}" scripts/tracemaker/fixtures/smoke.kicad_pcb
+        run: bash "${GITHUB_WORKSPACE}/scripts/tracemaker/smoke.sh" "${{ steps.build.outputs.binary }}" "${GITHUB_WORKSPACE}/scripts/tracemaker/fixtures/smoke.kicad_pcb"
 
       - name: Package (binary + LICENSE + SOURCE.txt)
         env:
@@ -103,8 +105,11 @@ jobs:
           TRACEMAKER_UPSTREAM_COMMIT: ${{ needs.resolve.outputs.upstream_commit }}
           TRACEMAKER_SOURCE_URL: ${{ needs.resolve.outputs.source_url }}
           TRACEMAKER_RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}
-          TRACEMAKER_SRC: TraceMaker
-        run: bash scripts/tracemaker/package.sh "${{ steps.build.outputs.binary }}" linux-x86_64 pack/linux-x86_64
+        run: |
+          export TRACEMAKER_SRC="${GITHUB_WORKSPACE}/TraceMaker"
+          bash "${GITHUB_WORKSPACE}/scripts/tracemaker/package.sh" \
+            "${{ steps.build.outputs.binary }}" linux-x86_64 \
+            "${GITHUB_WORKSPACE}/pack/linux-x86_64"
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -120,11 +125,11 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 60
     steps:
-      - name: Install build dependencies (upstream README brew list, tests/python omitted)
+      - name: Install build dependencies (upstream README brew list + LLVM libc++)
         env:
           HOMEBREW_NO_AUTO_UPDATE: "1"
           HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: "1"
-        run: brew install cmake ninja eigen cli11 nlohmann-json zstd boost
+        run: brew install cmake ninja eigen cli11 nlohmann-json zstd boost llvm
 
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
@@ -140,10 +145,13 @@ jobs:
 
       - name: Build tracemaker
         id: build
-        run: bash scripts/tracemaker/build.sh TraceMaker macos-arm64
+        run: bash "${GITHUB_WORKSPACE}/scripts/tracemaker/build.sh" "${GITHUB_WORKSPACE}/TraceMaker" macos-arm64
+
+      - name: macOS linkage probe (file, otool, minos <= 15)
+        run: bash "${GITHUB_WORKSPACE}/scripts/tracemaker/verify-macos.sh" "${{ steps.build.outputs.binary }}"
 
       - name: Smoke test
-        run: bash scripts/tracemaker/smoke.sh "${{ steps.build.outputs.binary }}" scripts/tracemaker/fixtures/smoke.kicad_pcb
+        run: bash "${GITHUB_WORKSPACE}/scripts/tracemaker/smoke.sh" "${{ steps.build.outputs.binary }}" "${GITHUB_WORKSPACE}/scripts/tracemaker/fixtures/smoke.kicad_pcb"
 
       - name: Package (binary + LICENSE + SOURCE.txt)
         env:
@@ -152,8 +160,11 @@ jobs:
           TRACEMAKER_UPSTREAM_COMMIT: ${{ needs.resolve.outputs.upstream_commit }}
           TRACEMAKER_SOURCE_URL: ${{ needs.resolve.outputs.source_url }}
           TRACEMAKER_RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}
-          TRACEMAKER_SRC: TraceMaker
-        run: bash scripts/tracemaker/package.sh "${{ steps.build.outputs.binary }}" macos-arm64 pack/macos-arm64
+        run: |
+          export TRACEMAKER_SRC="${GITHUB_WORKSPACE}/TraceMaker"
+          bash "${GITHUB_WORKSPACE}/scripts/tracemaker/package.sh" \
+            "${{ steps.build.outputs.binary }}" macos-arm64 \
+            "${GITHUB_WORKSPACE}/pack/macos-arm64"
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -189,4 +200,4 @@ jobs:
           TRACEMAKER_UPSTREAM_TAG: ${{ needs.resolve.outputs.upstream_tag }}
           TRACEMAKER_UPSTREAM_COMMIT: ${{ needs.resolve.outputs.upstream_commit }}
           TRACEMAKER_SOURCE_URL: ${{ needs.resolve.outputs.source_url }}
-        run: bash scripts/tracemaker/publish.sh artifacts
+        run: bash "${GITHUB_WORKSPACE}/scripts/tracemaker/publish.sh" "${GITHUB_WORKSPACE}/artifacts"

@@ -1,0 +1,111 @@
+# Commit-pinned macOS patch for DingoOz/TraceMaker v0.9.0
+# (24c847772e57ea8888e2cfe4bbf1aa00666390a4). Applied only when HEAD matches.
+# Replaces std::from_chars(double) — deleted in Apple libc++ before macOS 26 —
+# with a C-locale strtod helper so the binary can keep minos 15.0.
+#
+# Sites grepped in that commit (all double/float):
+#   src/sexpr/sexpr.cpp:145
+#   src/sexpr/sexpr.cpp:337
+#   src/route/layer_limits.cpp:43
+#   src/io/kicad/project_reader.cpp:30
+--- a/src/core/from_chars_double.hpp
++++ b/src/core/from_chars_double.hpp
+@@ -0,0 +1,35 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// Fabdesk macOS build helper. Apple libc++ before macOS 26 deletes
++// std::from_chars(double). This C-locale strtod path matches from_chars
++// "entire string consumed" semantics without requiring a newer minos.
++#pragma once
++
++#include <charconv>
++#include <string>
++#include <xlocale.h>
++
++namespace tmk {
++
++inline std::from_chars_result from_chars_double(const char* first, const char* last, double& value) {
++  if (first == nullptr || last == nullptr || first > last) {
++    return {first, std::errc::invalid_argument};
++  }
++  const std::string buf(first, static_cast<std::size_t>(last - first));
++  char* end = nullptr;
++  const locale_t loc = newlocale(LC_NUMERIC_MASK, "C", static_cast<locale_t>(0));
++  if (loc == static_cast<locale_t>(0)) {
++    return {first, std::errc::invalid_argument};
++  }
++  value = strtod_l(buf.c_str(), &end, loc);
++  freelocale(loc);
++  if (end == buf.c_str()) {
++    return {first, std::errc::invalid_argument};
++  }
++  const auto consumed = static_cast<std::size_t>(end - buf.c_str());
++  if (consumed != buf.size()) {
++    return {first + consumed, std::errc::invalid_argument};
++  }
++  return {last, std::errc{}};
++}
++
++}  // namespace tmk
+--- a/src/sexpr/sexpr.cpp
++++ b/src/sexpr/sexpr.cpp
+@@ -1,5 +1,6 @@
+ // SPDX-License-Identifier: GPL-3.0-or-later
+ #include "sexpr/sexpr.hpp"
++#include "core/from_chars_double.hpp"
+ 
+ #include <algorithm>
+ #include <cstring>
+@@ -142,7 +143,7 @@
+   if (c == kNoNode || nodes_[c].kind != Kind::Symbol) return std::nullopt;
+   const std::string_view r = raw(c);
+   double v = 0;
+-  const auto res = std::from_chars(r.data(), r.data() + r.size(), v);
++  const auto res = tmk::from_chars_double(r.data(), r.data() + r.size(), v);
+   if (res.ec != std::errc{} || res.ptr != r.data() + r.size()) return std::nullopt;
+   return v;
+ }
+@@ -334,7 +335,7 @@
+   if (i < s.size() && (s[i] == 'e' || s[i] == 'E')) {
+     // Exponent notation is not written by KiCad, but accept it through floating point.
+     double v = 0;
+-    const auto r = std::from_chars(s.data(), s.data() + s.size(), v);
++    const auto r = tmk::from_chars_double(s.data(), s.data() + s.size(), v);
+     if (r.ec != std::errc{} || r.ptr != s.data() + s.size()) return std::nullopt;
+     return static_cast<std::int64_t>(v * 1e6 + (v < 0 ? -0.5 : 0.5));
+   }
+--- a/src/route/layer_limits.cpp
++++ b/src/route/layer_limits.cpp
+@@ -1,5 +1,6 @@
+ // SPDX-License-Identifier: GPL-3.0-or-later
+ #include "route/layer_limits.hpp"
++#include "core/from_chars_double.hpp"
+ 
+ #include <charconv>
+ #include <cmath>
+@@ -40,7 +41,7 @@
+     double f = 0;
+     const char* first = entry.data() + eq + 1;
+     const char* last = entry.data() + entry.size();
+-    const auto [end, ec] = std::from_chars(first, last, f);
++    const auto [end, ec] = tmk::from_chars_double(first, last, f);
+     // Below 1 a track would cost less than its length, which the search's distance bounds do not allow for.
+     if (ec != std::errc() || end != last || !(f >= 1.0) || f > kMaxLayerCost)
+       throw std::invalid_argument("--layer-cost: the factor in \"" + entry + "\" must be a number from 1 to " + std::to_string(static_cast<int>(kMaxLayerCost)));
+--- a/src/io/kicad/project_reader.cpp
++++ b/src/io/kicad/project_reader.cpp
+@@ -1,5 +1,6 @@
+ // SPDX-License-Identifier: GPL-3.0-or-later
+ #include "io/kicad/project_reader.hpp"
++#include "core/from_chars_double.hpp"
+ 
+ #include <climits>
+ #include <filesystem>
+@@ -27,7 +28,7 @@
+   else if (strip("in")) scale = 25.4;
+   if (scale == 1.0) return sexpr::parse_mm(s);
+   double v = 0;
+-  const auto r = std::from_chars(s.data(), s.data() + s.size(), v);
++  const auto r = tmk::from_chars_double(s.data(), s.data() + s.size(), v);
+   if (r.ec != std::errc{} || r.ptr != s.data() + s.size()) return std::nullopt;
+   const double nm = v * scale * 1e6;
+   return static_cast<Coord>(nm < 0 ? nm - 0.5 : nm + 0.5);
