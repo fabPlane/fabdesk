@@ -50,6 +50,11 @@ describe("parseSlashCommand", () => {
       tool: "export_gerbers",
       doneLabel: "Exported gerbers",
     });
+    const stencil = parseSlashCommand("/export stencil");
+    expect(stencil.ok && stencil.command).toMatchObject({
+      tool: "export_stencil",
+      doneLabel: "Exported stencil",
+    });
     const missing = parseSlashCommand("/export");
     expect(missing).toMatchObject({ ok: false, partial: true });
     expect(!missing.ok && missing.error).toContain("gerbers");

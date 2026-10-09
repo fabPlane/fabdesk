@@ -161,6 +161,7 @@ export async function createServices(
       exportSchematicSvg: (cli, o) => kicad.exportSchematicSvg(cli, o),
       exportSchematicPdf: (cli, o) => kicad.exportSchematicPdf(cli, o),
       exportPcbSvg: (cli, o) => kicad.exportPcbSvg(cli, o),
+      exportStencil: (o) => kicad.exportStencil(o),
     },
     sim: simService(deps.settings),
     ...(deps.token && deps.appBridgeFile

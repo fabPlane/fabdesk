@@ -63,6 +63,9 @@ export function CommandPalette() {
             <Command.Item value="render board" onSelect={pick(() => void actions.renderBoard())}>
               Render board
             </Command.Item>
+            <Command.Item value="export solder stencil" onSelect={pick(() => void actions.exportStencil())}>
+              Export solder stencil
+            </Command.Item>
             <Command.Item value="pin thread" onSelect={pick(() => void actions.pinThread())}>
               Pin / unpin chat <span className="ml-auto"><Kbd>{mod} + Shift + P</Kbd></span>
             </Command.Item>

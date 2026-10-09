@@ -61,6 +61,12 @@ export function useAppActions() {
         ui().setBoardTab("renders");
         await run("render", { projectId });
       },
+      async exportStencil() {
+        const projectId = ui().activeProjectId;
+        if (!projectId) return;
+        ui().setBoardTab("files");
+        await run("stencil", { projectId });
+      },
     };
   }, [data, patch, branch, run]);
 }

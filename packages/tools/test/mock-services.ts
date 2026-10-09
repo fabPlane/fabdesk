@@ -375,6 +375,10 @@ export function mockServices(
         await Bun.write(output, "<svg xmlns='http://www.w3.org/2000/svg'><text>pcb</text></svg>");
         return { paths: [output] };
       },
+      exportStencil: async (opts) => {
+        const { exportStencil } = await import("@fabdesk/kicad/stencil");
+        return exportStencil(opts);
+      },
     },
     sim: {
       runSpiceSimulation: async () => ({

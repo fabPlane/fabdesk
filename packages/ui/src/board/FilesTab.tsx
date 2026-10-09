@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ProjectImage } from "../chat/ProjectImage";
-import { EmptyState, LoadError, Spinner } from "../components/ui";
-import { useProject, useProjectText } from "@fabdesk/client-core";
+import { Button, EmptyState, LoadError, Spinner } from "../components/ui";
+import { useProject, useProjectText, useRunTool } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { cn, isImagePath } from "../util";
 
@@ -11,6 +11,8 @@ export function FilesTab() {
   const projectId = useUiStore((s) => s.activeProjectId);
   const project = useProject(projectId);
   const [selected, setSelected] = useState<string | null>(null);
+  const { run, state } = useRunTool();
+  const busy = state.status === "running";
   const files = [...(project.data?.files ?? [])].sort((a, b) => a.path.localeCompare(b.path));
   const file = files.find((f) => f.path === selected);
   const isImage = !!file && isImagePath(file.path) && !file.path.endsWith(".svg");
@@ -27,8 +29,22 @@ export function FilesTab() {
     );
   }
   return (
-    <div className="fd-files flex h-full min-h-0">
-      <div className="fd-files-list w-56 shrink-0 overflow-auto border-r border-border py-1">
+    <div className="fd-files flex h-full min-h-0 flex-col">
+      <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-2 py-1">
+        <Button size="sm" disabled={busy} onClick={() => void run("export_gerbers", { projectId })}>
+          Export gerbers
+        </Button>
+        <Button size="sm" disabled={busy} onClick={() => void run("export_bom", { projectId })}>
+          Export BOM
+        </Button>
+        <Button size="sm" disabled={busy} onClick={() => void run("stencil", { projectId })}>
+          {busy ? "Exporting…" : "Export stencil"}
+        </Button>
+        {state.error && <span className="text-xs text-danger">{state.error}</span>}
+        <span className="ml-auto text-[11px] text-muted">Writes under exports/</span>
+      </div>
+      <div className="flex min-h-0 flex-1">
+        <div className="fd-files-list w-56 shrink-0 overflow-auto border-r border-border py-1">
         {files.length === 0 && <div className="px-3 py-4 text-xs text-muted">Empty project.</div>}
         {files.map((f) => (
           <button
@@ -58,6 +74,7 @@ export function FilesTab() {
             <pre className="whitespace-pre-wrap font-mono text-[11.5px] leading-relaxed [overflow-wrap:anywhere]">{text.data ?? ""}</pre>
           )
         )}
+      </div>
       </div>
     </div>
   );

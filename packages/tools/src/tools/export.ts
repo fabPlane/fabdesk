@@ -330,6 +330,85 @@ function crc32(data: Uint8Array, table: Uint32Array): number {
   return (crc ^ 0xffffffff) >>> 0;
 }
 
+export const export_stencil = defineTool({
+  name: "export_stencil",
+  toolset: "export",
+  title: "Export 3D-printed solder stencil",
+  description:
+    "Build a printable solder-stencil STL from the board's F.Paste (or B.Paste) pads: a thin plate with shrunk apertures, a frame, and alignment holes or pegs. Writes exports/stencil/<side>-Paste.stl plus JSON/markdown/SVG summaries. Optional jig tray. Pure TypeScript — does not need kicad-cli. Skip very small or fine-pitch pads (default) and report them as warnings. For hand assembly / Opulo paste printing instead of ordering a metal stencil.",
+  inputSchema: {
+    side: z.enum(["F", "B"]).default("F").describe("Paste layer: F.Paste or B.Paste"),
+    thicknessMm: z
+      .number()
+      .positive()
+      .default(0.15)
+      .describe("Plate thickness in mm (0.12–0.2 is typical for FDM/resin)"),
+    frameMm: z.number().nonnegative().default(5).describe("Border around the board outline in mm"),
+    apertureOffsetMm: z
+      .number()
+      .default(0.05)
+      .describe("Per-pad shrink (positive) or grow (negative) in mm"),
+    minApertureMm: z
+      .number()
+      .nonnegative()
+      .default(0.35)
+      .describe("Skip pads whose opening is smaller than this after shrink"),
+    skipFinePitch: z
+      .boolean()
+      .default(true)
+      .describe("Skip footprints whose paste-pad pitch is below finePitchMm"),
+    finePitchMm: z.number().positive().default(0.5).describe("Fine-pitch threshold in mm"),
+    alignment: z
+      .enum(["holes", "pegs", "none"])
+      .default("holes")
+      .describe("Registration: NPTH/tooling holes, or frame-corner holes if the board has none"),
+    alignmentHoleMm: z.number().positive().default(3.2).describe("Frame-corner hole diameter when no NPTH tooling holes exist"),
+    includeJig: z
+      .boolean()
+      .default(false)
+      .describe("Also write a simple PCB-holder tray STL with a board pocket and alignment pegs"),
+    pcbThicknessMm: z.number().positive().default(1.6).describe("Pocket depth for the optional jig"),
+  },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
+  longRunning: true,
+  handler: async (args, ctx) => {
+    const project = ctx.requireProject();
+    const board = await requireBoard(project);
+    const outDir = await ensureDir(p(project, PROJECT_FILES.exports, "stencil"));
+    ctx.progress(0.2, "building stencil");
+    const summary = await ctx.services.kicad.exportStencil({
+      board,
+      outDir,
+      side: args.side,
+      thicknessMm: args.thicknessMm,
+      frameMm: args.frameMm,
+      apertureOffsetMm: args.apertureOffsetMm,
+      minApertureMm: args.minApertureMm,
+      skipFinePitch: args.skipFinePitch,
+      finePitchMm: args.finePitchMm,
+      alignment: args.alignment,
+      alignmentHoleMm: args.alignmentHoleMm,
+      includeJig: args.includeJig,
+      pcbThicknessMm: args.pcbThicknessMm,
+    });
+    ctx.progress(1, "done");
+    const files = [summary.files.stl, summary.files.json, summary.files.markdown, summary.files.svg];
+    if (summary.files.jig) files.push(summary.files.jig);
+    const warn = summary.warnings.length
+      ? `\nWarnings:\n${summary.warnings.map((w) => `- ${w.message}`).join("\n")}`
+      : "";
+    return ok(
+      `Exported 3D-printed ${summary.side}.Paste stencil to exports/stencil/: ${summary.apertureCount} aperture(s) from ${summary.padCount} paste pad(s), ${summary.triangleCount} triangles, min opening ${summary.minApertureMm == null ? "n/a" : `${summary.minApertureMm.toFixed(3)} mm`}.${warn}\n${files.map((f) => `- ${rel(project, f)}`).join("\n")}`,
+      { ...summary, files, path: summary.files.stl },
+    );
+  },
+});
+
 export const exportTools = [
   export_gerbers,
   export_drill,
@@ -338,4 +417,5 @@ export const exportTools = [
   export_netlist,
   export_zip,
   export_dxf,
+  export_stencil,
 ];

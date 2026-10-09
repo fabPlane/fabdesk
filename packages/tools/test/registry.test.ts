@@ -290,6 +290,7 @@ describe("registry", () => {
       "export_netlist",
       "export_zip",
       "export_dxf",
+      "export_stencil",
       "sim_spice_netlist",
       "sim_run",
       "app_state",

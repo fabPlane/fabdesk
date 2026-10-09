@@ -10,6 +10,7 @@
 - Import fabplane's KiCad CLI helpers via the `@pcb/pcb/kicad-cli` subpath only. The package root pulls in sharp and the AWS SDK.
 - fabPlane code imports `zod/v4` (root pins zod 3.25.x).
 - MCP tool names use underscores (`circuit_build`), never dots.
+- `export_stencil` builds a 3D-printed solder stencil STL from `F.Paste` / `B.Paste` (pure TypeScript in `@fabdesk/kicad`, no kicad-cli).
 - MCP Apps views and OpenAI MCP Extensions (`board_viewer`, `shopping_list_viewer`, `ui://fabdesk/*`) live in `packages/tools/src/adapters/mcp-apps.ts` and `packages/tools/src/apps/`; the Codex / Claude Code plugin is `plugins/fabplane/`. Views reach the server only through `fabdesk_ui_call` and its `UI_CALLABLE_TOOLS` allowlist. See `docs/mcp-extensions.md`.
 - Routing, compiling and library search run on the FabPlane PCB bridge (`docs/fab-pcb-migration.md`); fabdesk's own packages carry no tscircuit-ecosystem dependency and no `circuit.json`. New projects default to Freerouting with automatic fab_router fallback; either router can be selected explicitly.
 - Relative imports are extensionless (`./events`, not `./events.ts`); `allowImportingTsExtensions` is off, matching fabplane.

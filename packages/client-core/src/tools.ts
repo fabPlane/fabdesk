@@ -15,6 +15,7 @@ export const TOOL_PATTERNS = {
     patterns: [/^render_board$/, /^kicad_render$/, /render(?!_glb)/],
   },
   glb: { preferred: "render_glb", patterns: [/^render_glb$/, /glb/, /3d/] },
+  stencil: { preferred: "export_stencil", patterns: [/^export_stencil$/, /stencil/] },
 } as const;
 export type ToolKind = keyof typeof TOOL_PATTERNS;
 
