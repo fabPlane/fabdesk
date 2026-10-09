@@ -8,8 +8,9 @@ import type {
   ProjectSummary,
   RouteFrameLine,
   RouteResult,
+  RouterCatalogId,
 } from "@fabdesk/protocol";
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useIsMutating, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useCoreClient } from "./provider";
 import { messagesKey } from "./events";
@@ -149,12 +150,67 @@ export function useSettings() {
   return useQuery({ queryKey: ["settings"], queryFn: () => client.getSettings() });
 }
 
+export const ROUTER_INSTALL_MUTATION_KEY = ["router-install"] as const;
+
+export function useRouters() {
+  const client = useCoreClient();
+  // `POST /routers/:id/install` only answers when the install ends, so the list must keep polling while
+  // that request is in flight, or the card would never show progress.
+  const installRequestInFlight = useIsMutating({ mutationKey: ROUTER_INSTALL_MUTATION_KEY }) > 0;
+  return useQuery({
+    queryKey: ["routers"],
+    queryFn: () => client.listRouters(),
+    // Keep the progress bar moving even when the window is occluded: it only polls while an install runs.
+    refetchIntervalInBackground: true,
+    refetchInterval: (query) =>
+      installRequestInFlight || query.state.data?.routers.some((row) => row.state === "installing")
+        ? 500
+        : false,
+  });
+}
+
+export function useInstallRouter() {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationKey: ROUTER_INSTALL_MUTATION_KEY,
+    mutationFn: (id: RouterCatalogId) => client.installRouter(id),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["routers"] }),
+  });
+}
+
+export function useUninstallRouter() {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: RouterCatalogId) => client.uninstallRouter(id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["routers"] });
+      // The core resets the saved default when the default router is uninstalled.
+      void qc.invalidateQueries({ queryKey: ["settings"] });
+    },
+  });
+}
+
+export function useCancelRouterInstall() {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: RouterCatalogId) => client.cancelRouterInstall(id),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["routers"] }),
+  });
+}
+
 export function usePatchSettings() {
   const client = useCoreClient();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (patch: Parameters<typeof client.patchSettings>[0]) => client.patchSettings(patch),
-    onSuccess: (data) => qc.setQueryData(["settings"], data),
+    onSuccess: (data) => {
+      qc.setQueryData(["settings"], data);
+      // The router list echoes the saved default (the Route Cinema picker reads it from there).
+      void qc.invalidateQueries({ queryKey: ["routers"] });
+    },
   });
 }
 

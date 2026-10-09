@@ -1,0 +1,192 @@
+# Weekly TraceMaker binaries for Settings → Routers.
+#
+# Upstream (DingoOz/TraceMaker) is C++20 / GPL-3.0-or-later and publishes no
+# official router binaries. This workflow follows their README + CI:
+#   Linux:  cmake --preset cpu-only   (Ubuntu 26.04, GCC 15, no CUDA)
+#   macOS:  cmake --preset macos-metal -DCMAKE_PREFIX_PATH="$(brew --prefix)"
+# Each archive ships LICENSE, NOTICE, and SOURCE.txt (pinned commit + tag).
+#
+# Not built (marked, not blocking):
+#   - windows-x86_64: no upstream CMake preset or documented Windows deps.
+#   - macos-x86_64: GitHub Intel macOS runners are deprecated and expensive;
+#     brew bottles on Apple silicon are arm64, so a cheap extra cell is not practical.
+#
+# Triggers: weekly cron + workflow_dispatch only. No push/PR builds.
+
+name: TraceMaker binaries
+
+on:
+  schedule:
+    - cron: "17 4 * * 1" # Monday 04:17 UTC — after the Sunday desktop nightly, before the 13:00 security scan
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: "Upstream tag, branch, or commit (empty = latest DingoOz/TraceMaker release tag, else default-branch HEAD)"
+        required: false
+        type: string
+
+concurrency:
+  group: tracemaker-binaries
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  TRACEMAKER_UPSTREAM_REPO: DingoOz/TraceMaker
+
+jobs:
+  resolve:
+    name: Resolve upstream ref
+    runs-on: ubuntu-latest
+    outputs:
+      skip: ${{ steps.resolve.outputs.skip }}
+      upstream_repo: ${{ steps.resolve.outputs.upstream_repo }}
+      upstream_ref: ${{ steps.resolve.outputs.upstream_ref }}
+      upstream_tag: ${{ steps.resolve.outputs.upstream_tag }}
+      upstream_commit: ${{ steps.resolve.outputs.upstream_commit }}
+      upstream_short: ${{ steps.resolve.outputs.upstream_short }}
+      release_tag: ${{ steps.resolve.outputs.release_tag }}
+      source_url: ${{ steps.resolve.outputs.source_url }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+          submodules: false
+
+      - name: Resolve DingoOz/TraceMaker and skip if already published
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/tracemaker/resolve-upstream.sh "${{ inputs.upstream_ref }}"
+
+  build-linux:
+    name: linux-x86_64
+    needs: resolve
+    if: needs.resolve.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    container: ubuntu:26.04
+    timeout-minutes: 60
+    steps:
+      - name: Install build dependencies (matches DingoOz/TraceMaker CI)
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends \
+            g++-15 cmake ninja-build git ca-certificates curl python3 \
+            libboost-dev libboost-system-dev libeigen3-dev nlohmann-json3-dev libcli11-dev \
+            libsqlite3-dev libzstd-dev patchelf
+
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+          submodules: false
+
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          repository: DingoOz/TraceMaker
+          ref: ${{ needs.resolve.outputs.upstream_commit }}
+          path: TraceMaker
+          persist-credentials: false
+
+      - name: Build tracemaker
+        id: build
+        run: bash scripts/tracemaker/build.sh TraceMaker linux-x86_64
+
+      - name: Smoke test
+        run: bash scripts/tracemaker/smoke.sh "${{ steps.build.outputs.binary }}" scripts/tracemaker/fixtures/smoke.kicad_pcb
+
+      - name: Package (binary + LICENSE + SOURCE.txt)
+        env:
+          TRACEMAKER_UPSTREAM_REPO: ${{ needs.resolve.outputs.upstream_repo }}
+          TRACEMAKER_UPSTREAM_TAG: ${{ needs.resolve.outputs.upstream_tag }}
+          TRACEMAKER_UPSTREAM_COMMIT: ${{ needs.resolve.outputs.upstream_commit }}
+          TRACEMAKER_SOURCE_URL: ${{ needs.resolve.outputs.source_url }}
+          TRACEMAKER_RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}
+          TRACEMAKER_SRC: TraceMaker
+        run: bash scripts/tracemaker/package.sh "${{ steps.build.outputs.binary }}" linux-x86_64 pack/linux-x86_64
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: tracemaker-linux-x86_64
+          path: pack/linux-x86_64/
+          if-no-files-found: error
+          retention-days: 7
+
+  build-macos:
+    name: macos-arm64
+    needs: resolve
+    if: needs.resolve.outputs.skip != 'true'
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - name: Install build dependencies (upstream README brew list, tests/python omitted)
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+          HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: "1"
+        run: brew install cmake ninja eigen cli11 nlohmann-json zstd boost
+
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+          submodules: false
+
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          repository: DingoOz/TraceMaker
+          ref: ${{ needs.resolve.outputs.upstream_commit }}
+          path: TraceMaker
+          persist-credentials: false
+
+      - name: Build tracemaker
+        id: build
+        run: bash scripts/tracemaker/build.sh TraceMaker macos-arm64
+
+      - name: Smoke test
+        run: bash scripts/tracemaker/smoke.sh "${{ steps.build.outputs.binary }}" scripts/tracemaker/fixtures/smoke.kicad_pcb
+
+      - name: Package (binary + LICENSE + SOURCE.txt)
+        env:
+          TRACEMAKER_UPSTREAM_REPO: ${{ needs.resolve.outputs.upstream_repo }}
+          TRACEMAKER_UPSTREAM_TAG: ${{ needs.resolve.outputs.upstream_tag }}
+          TRACEMAKER_UPSTREAM_COMMIT: ${{ needs.resolve.outputs.upstream_commit }}
+          TRACEMAKER_SOURCE_URL: ${{ needs.resolve.outputs.source_url }}
+          TRACEMAKER_RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}
+          TRACEMAKER_SRC: TraceMaker
+        run: bash scripts/tracemaker/package.sh "${{ steps.build.outputs.binary }}" macos-arm64 pack/macos-arm64
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: tracemaker-macos-arm64
+          path: pack/macos-arm64/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish GitHub release
+    needs: [resolve, build-linux, build-macos]
+    if: needs.resolve.outputs.skip != 'true' && !cancelled() && (needs.build-linux.result == 'success' || needs.build-macos.result == 'success')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+          submodules: false
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: tracemaker-*
+          path: artifacts
+          merge-multiple: false
+
+      - name: Publish immutable tag and rolling tracemaker-latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRACEMAKER_RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}
+          TRACEMAKER_UPSTREAM_REPO: ${{ needs.resolve.outputs.upstream_repo }}
+          TRACEMAKER_UPSTREAM_TAG: ${{ needs.resolve.outputs.upstream_tag }}
+          TRACEMAKER_UPSTREAM_COMMIT: ${{ needs.resolve.outputs.upstream_commit }}
+          TRACEMAKER_SOURCE_URL: ${{ needs.resolve.outputs.source_url }}
+        run: bash scripts/tracemaker/publish.sh artifacts

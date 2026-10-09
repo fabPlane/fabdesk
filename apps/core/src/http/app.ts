@@ -15,6 +15,7 @@ import {
   ResolveApproval,
   ResolveInput,
   SendMessage,
+  RouterCatalogId,
   Settings,
   StartOrder,
   TailscaleServeRequest,
@@ -255,6 +256,47 @@ export function createApp(deps: AppDeps): Hono<Env> {
 
   app.get("/doctor", async (c) => c.json(await deps.doctor()));
   app.get("/agents", async (c) => c.json(await deps.agents()));
+  app.get("/routers", (c) => {
+    const preferred = deps.store.settings.get().preferredRouter;
+    return c.json(
+      deps.services.routers?.list(preferred ?? undefined) ?? {
+        routers: [],
+        ...(preferred ? { preferredRouter: preferred } : {}),
+      },
+    );
+  });
+  app.post("/routers/:id/install", async (c) => {
+    const id = RouterCatalogId.parse(c.req.param("id"));
+    const registry = deps.services.routers;
+    if (!registry) return c.json({ error: "router registry unavailable" }, 503);
+    return c.json(await registry.install(id));
+  });
+  app.post("/routers/:id/cancel", async (c) => {
+    const id = RouterCatalogId.parse(c.req.param("id"));
+    const registry = deps.services.routers;
+    if (!registry) return c.json({ error: "router registry unavailable" }, 503);
+    return c.json(await registry.cancel(id));
+  });
+  app.delete("/routers/:id", async (c) => {
+    const id = RouterCatalogId.parse(c.req.param("id"));
+    const registry = deps.services.routers;
+    if (!registry) return c.json({ error: "router registry unavailable" }, 503);
+    try {
+      const snapshot = await registry.uninstall(id);
+      // Removing the router that is the saved default must not leave unpinned routes pointing at it.
+      if (deps.store.settings.get().preferredRouter === id && !snapshot.ready) {
+        const next = deps.store.settings.patch({ preferredRouter: null });
+        try {
+          deps.onSettingsChanged?.(next);
+        } catch (e) {
+          logger.warn("onSettingsChanged failed", { error: errMsg(e) });
+        }
+      }
+      return c.json(snapshot);
+    } catch (e) {
+      return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
+    }
+  });
 
   app.get("/events", (c) => {
     const topics = parseTopics(c.req.query("topics"));

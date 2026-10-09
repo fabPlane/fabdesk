@@ -2,7 +2,16 @@
 import * as kicad from "@fabdesk/kicad";
 import * as sim from "@fabdesk/sim";
 import type { Principal, Settings } from "@fabdesk/protocol";
-import { ToolError, type CoreServices, type KicadCli, type RouteRunStore, type SimService } from "@fabdesk/tools";
+import { existsSync } from "node:fs";
+import {
+  FREEROUTING_VERSION,
+  ToolError,
+  createRouterRegistry,
+  type CoreServices,
+  type KicadCli,
+  type RouteRunStore,
+  type SimService,
+} from "@fabdesk/tools";
 import type { Channel } from "./config";
 import { fabCadBridgeToken, fabCadBridgeUrl, fpPcbBridgeUrl } from "./config";
 import type { EventBus } from "./bus";
@@ -166,6 +175,15 @@ export async function createServices(
     ...(deps.token && deps.appBridgeFile
       ? { appBridge: new AppBridgeClient({ file: deps.appBridgeFile, token: deps.token }) }
       : {}),
+    routers: createRouterRegistry({
+      home: deps.home,
+      bundled: {
+        fab_router: { version: "bundled" },
+        ...(process.env["FREEROUTING_JAR"] && existsSync(process.env["FREEROUTING_JAR"])
+          ? { freerouting: { version: FREEROUTING_VERSION, path: process.env["FREEROUTING_JAR"] } }
+          : {}),
+      },
+    }),
     cad,
     dispose: async () => {
       await Promise.all([sessions.dispose(), cad.dispose()]);

@@ -5,7 +5,10 @@ import { useCinemaStore } from "../../stores/cinema";
 import { useUiStore } from "../../stores/ui";
 import { Icon } from "../../components/Icon";
 import { cn } from "../../util";
-import { useRunTool } from "@fabdesk/client-core";
+import { useRouteRun, useRouters, useRunTool } from "@fabdesk/client-core";
+import type { RouterCatalogId } from "@fabdesk/protocol";
+import { routerPickerOptions } from "../../settings/routers";
+import { runFailureText } from "./runError";
 import { CinemaPainter, DARK_THEME, LIGHT_THEME, frameStatusText, layerColor, nextFrameSeq, perfStatusText, type OffscreenLike } from "./renderer";
 
 /** Offscreen layers for the painter: statics and settled copper, sized like the visible canvas. */
@@ -45,11 +48,16 @@ export function CinemaTab() {
   const setViewMode = useCinemaStore((s) => s.setViewMode);
   const { seek, step, goLive, togglePlaying, toggleLayer, setActiveRun, ingestMany, setPlaybackMs, reportDraw } = useCinemaStore.getState();
   const route = useRunTool();
+  const routers = useRouters();
+  const [pickedRouter, setPickedRouter] = useState<"default" | RouterCatalogId>("default");
+  const picker = routerPickerOptions(routers.data?.routers ?? [], routers.data?.preferredRouter);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const painterRef = useRef<{ painter: CinemaPainter; ctor: typeof CinemaPainter; width: number; height: number } | null>(null);
   const [size, setSize] = useState({ w: 0, h: 0, dpr: 1 });
   const [shapeCount, setShapeCount] = useState(0);
   const run = activeRunId ? runs[activeRunId] : undefined;
+  const runRecord = useRouteRun(activeRunId);
+  const runError = runFailureText(runRecord.data);
   const frames = run?.frames.length ?? 0;
 
   // The store receives live route events, but starts empty after an app restart. Restore the
@@ -170,14 +178,34 @@ export function CinemaTab() {
       <EmptyState
         title="No routing run yet"
         action={
-          <Button
-            variant="primary"
-            size="sm"
-            disabled={!projectId || route.state.status === "running"}
-            onClick={() => void route.run("route", { projectId })}
-          >
-            {route.state.status === "running" ? "Routing..." : "Route board"}
-          </Button>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <Select
+              aria-label="Router"
+              className="h-8 text-xs"
+              value={pickedRouter}
+              onChange={(e) => setPickedRouter(e.target.value as "default" | RouterCatalogId)}
+            >
+              {picker.map((option) => (
+                <option key={option.id} value={option.id} disabled={option.disabled} title={option.hint}>
+                  {option.label}
+                  {option.disabled ? ` (${option.note ?? "not installed"})` : ""}
+                </option>
+              ))}
+            </Select>
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={!projectId || route.state.status === "running"}
+              onClick={() =>
+                void route.run("route", {
+                  projectId,
+                  ...(pickedRouter !== "default" ? { router: pickedRouter } : {}),
+                })
+              }
+            >
+              {route.state.status === "running" ? "Routing..." : "Route board"}
+            </Button>
+          </div>
         }
       >
         Frames stream in live while the router works; scrub through them afterwards with [ and ].
@@ -252,6 +280,11 @@ export function CinemaTab() {
           {perfStatusText(perf, shapeCount)}
         </span>
       </div>
+      {runError && (
+        <div role="alert" className="border-b border-danger/40 bg-danger/10 px-3 py-1.5 text-xs text-danger" data-testid="route-run-error">
+          <span className="font-semibold">Routing {runRecord.data?.status === "timed_out" ? "timed out" : "failed"}</span> ({runRecord.data?.router}): {runError}
+        </div>
+      )}
       {/* The box owns the size; the canvas is absolutely positioned so its bitmap size never feeds back into layout. */}
       <div ref={boxRef} className="relative min-h-0 flex-1">
         <canvas ref={canvasRef} className="absolute inset-0 block h-full w-full" />
