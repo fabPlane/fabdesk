@@ -9,5 +9,6 @@ export * from "./adapters/agent-docs";
 export * from "./frame-sink";
 export * from "./tools/spatial";
 export * from "./cloud/index";
+export * from "./routers/index";
 export * from "./adapters/mcp-apps";
 export * from "./apps/dxf";

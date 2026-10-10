@@ -18,6 +18,7 @@ import type { RouteProgress, RouteRunRecord, RouteSummary } from "../services";
 import { ok, p, throwIfAborted } from "./common";
 import { rowPoints } from "./spatial";
 import { readCopper, copperBoard, quality, qualityText, referenceFacts, consumeReference, type PairDefinition } from "../routing-quality";
+import { installHintFor, runTraceMaker } from "../routers";
 
 /** Default and upper bound for how long one route_run request waits for its run to finish. */
 export const ROUTE_RUN_DEFAULT_WAIT_MS = 20_000;
@@ -27,10 +28,10 @@ export const ROUTE_RUN_DEFAULT_TIMEOUT_MS = 600_000;
 
 export const RouteRunArgs = {
   router: z
-    .enum(["fab_router", "freerouting", "capacity"])
+    .enum(["fab_router", "freerouting", "capacity", "tracemaker"])
     .optional()
     .describe(
-      "Router; capacity is a legacy fab_router alias. An unpinned project defaults to Freerouting, falling back to fab_router when unavailable or failed. Automatic selective reroutes use fab_router. Explicit Freerouting falls back only when unavailable.",
+      "Router; capacity is a legacy fab_router alias. An unpinned project defaults to Freerouting, falling back to fab_router when unavailable or failed. Automatic selective reroutes use fab_router. Explicit Freerouting falls back only when unavailable. tracemaker is install-on-demand (Settings → Routers) and errors with an install hint if it is not installed.",
     ),
   timeoutMs: z
     .number()
@@ -197,7 +198,7 @@ export function cinemaLayer(layer: number, count: number): number {
 }
 
 type RouteArgs = {
-  router?: "fab_router" | "capacity" | "freerouting";
+  router?: "fab_router" | "capacity" | "freerouting" | "tracemaker";
   timeoutMs: number;
   onlyConnections?: string[];
   targets?: Array<{
@@ -574,7 +575,7 @@ async function executeRoute(
     }
     const attemptRoute = async (): Promise<RouteSummary> => {
       const attempt = {
-        router: rec.router as "fab_router" | "freerouting",
+        router: rec.router as "fab_router" | "freerouting" | "tracemaker",
         startedAt: iso(),
         endedAt: null as string | null,
         outcome: "running" as const,
@@ -583,6 +584,24 @@ async function executeRoute(
       rec = { ...rec, attempts: [...(rec.attempts ?? []), attempt] };
       await persistProgress(ctx, rec, runDir);
       try {
+        if (rec.router === "tracemaker") {
+          const binary = ctx.services.routers?.executable("tracemaker");
+          if (!binary) {
+            throw new ToolError(
+              installHintFor("tracemaker", ctx.services.routers?.get("tracemaker")),
+              "unavailable",
+            );
+          }
+          return await runTraceMaker({
+            binary,
+            snapshotDir,
+            timeoutMs: args.timeoutMs,
+            signal,
+            onProgress: (value) => {
+              frames.onProgress(value);
+            },
+          });
+        }
         const summary = await ctx.services.design.route(
           snapshotDir,
           {
@@ -734,7 +753,7 @@ async function executeRoute(
       ...(summary.endpointCollisions ? { endpointCollisions: summary.endpointCollisions } : {}),
       quality: { text: qualityText(measuredQuality), detailPath: join(rec.artifacts.runDir, "quality.json") },
       runId: rec.id,
-      router: rec.router as "fab_router" | "freerouting",
+      router: rec.router as "fab_router" | "freerouting" | "tracemaker",
       complete: [],
       open,
       timedOut: summary.timedOut,
@@ -1012,11 +1031,32 @@ export async function runRoute(args: RouteArgs, ctx: ToolContext): Promise<ToolO
       "route_run supports whole-net scope only; targets.from/to cannot be honored. Use net-only targets or onlyConnections if routing the whole net is intended.",
       "precondition",
     );
-  const selected = args.router ?? project.manifest().router;
+  const pinned = args.router ?? project.manifest().router ?? undefined;
+  const preferred = ctx.services.settings().preferredRouter ?? undefined;
+  // A saved default that is no longer usable (its binary was removed, or TRACEMAKER_BIN went away) must not
+  // make every unpinned route fail: fall back to the automatic path and say so. An explicit router still errors.
+  const staleDefault =
+    pinned === undefined && preferred !== undefined && preferred !== "fab_router"
+      ? ctx.services.routers?.get(preferred)
+      : undefined;
+  const defaultUnusable = !!staleDefault && !staleDefault.ready;
+  const selected = pinned ?? (defaultUnusable ? undefined : preferred);
   const automatic = selected === undefined;
-  let router: "fab_router" | "freerouting" =
-    selected === "capacity" || selected === "fab_router" ? "fab_router" : "freerouting";
-  let fallbackReason: string | null = null;
+  let router: "fab_router" | "freerouting" | "tracemaker" =
+    selected === "capacity" || selected === "fab_router"
+      ? "fab_router"
+      : selected === "tracemaker"
+        ? "tracemaker"
+        : "freerouting";
+  if (router === "tracemaker") {
+    const snap = ctx.services.routers?.get("tracemaker");
+    if (!snap?.ready) {
+      throw new ToolError(installHintFor("tracemaker", snap), "unavailable");
+    }
+  }
+  let fallbackReason: string | null = defaultUnusable
+    ? `Default router ${staleDefault!.displayName} is not ready (${staleDefault!.state}); using the automatic default`
+    : null;
   const selective =
     automatic && ((args.onlyConnections?.length ?? 0) > 0 || (args.targets?.length ?? 0) > 0);
   if (selective) {

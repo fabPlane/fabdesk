@@ -139,7 +139,7 @@ describe("mcp adapter", () => {
       }
     };
     const packaged = await routerEnum("public");
-    expect(packaged.values).toEqual(["fab_router", "freerouting", "capacity"]);
+    expect(packaged.values).toEqual(["fab_router", "freerouting", "capacity", "tracemaker"]);
     expect((packaged.rejected.content as Array<{ text: string }>)[0]!.text).toContain("board.kicad_pcb");
     const internal = await routerEnum("internal");
     expect(internal.values).toEqual(packaged.values);
