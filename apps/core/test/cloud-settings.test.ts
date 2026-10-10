@@ -8,6 +8,7 @@ const settings = {
   ngspicePath: null,
   fpPcbBridgeUrl: null,
   router: "fab_router",
+  tracemakerManifestUrl: null,
   defaultAgent: "claude",
   defaultRuntimeMode: "full",
   agents: {},

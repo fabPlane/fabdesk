@@ -1,0 +1,46 @@
+# Configure-time harness for the macOS weekly-build shims.
+# Loaded the same way the runner does: CMAKE_PROJECT_INCLUDE at project(),
+# then a subdirectory that find_package(zstd CONFIG) and links tm_replay
+# the way upstream src/server/CMakeLists.txt does (prefer shared if present).
+cmake_minimum_required(VERSION 3.19)
+if(NOT TM_ZSTD_LIBRARY)
+  message(FATAL_ERROR "harness: pass -DTM_ZSTD_LIBRARY=/path/to/libzstd.a")
+endif()
+if(NOT DEFINED CMAKE_PROJECT_INCLUDE OR CMAKE_PROJECT_INCLUDE STREQUAL "")
+  set(CMAKE_PROJECT_INCLUDE "${CMAKE_CURRENT_SOURCE_DIR}/../macos-static-deps.cmake")
+endif()
+project(tm_shim_harness C)
+add_subdirectory(src)
+
+function(fabdesk_harness_assert)
+  foreach(_name zstd::libzstd_static zstd::libzstd_shared zstd::libzstd)
+    if(NOT TARGET ${_name})
+      message(FATAL_ERROR "harness: missing imported target ${_name}")
+    endif()
+    get_target_property(_loc ${_name} IMPORTED_LOCATION)
+    if(NOT _loc MATCHES "\\.a$")
+      message(FATAL_ERROR "harness: ${_name} must be a static archive, got ${_loc}")
+    endif()
+    get_target_property(_inc ${_name} INTERFACE_INCLUDE_DIRECTORIES)
+    file(APPEND "${CMAKE_BINARY_DIR}/harness-report.txt"
+      "${_name} loc=${_loc} inc=${_inc}\n")
+  endforeach()
+  if(NOT TARGET tm_replay)
+    message(FATAL_ERROR "harness: tm_replay was not created")
+  endif()
+  get_target_property(_libs tm_replay LINK_LIBRARIES)
+  if(NOT _libs)
+    set(_libs "")
+  endif()
+  file(APPEND "${CMAKE_BINARY_DIR}/harness-report.txt" "tm_replay LINK_LIBRARIES=${_libs}\n")
+  if(NOT "zstd::libzstd_static" IN_LIST _libs)
+    message(FATAL_ERROR "harness: tm_replay does not link zstd::libzstd_static (libs=${_libs})")
+  endif()
+  if("zstd::libzstd_shared" IN_LIST _libs)
+    message(FATAL_ERROR "harness: tm_replay still links zstd::libzstd_shared after rewrite")
+  endif()
+  message(STATUS "harness: tm_replay links zstd::libzstd_static (${TM_ZSTD_LIBRARY})")
+endfunction()
+
+# Registered after project(), so this runs after the shim's DEFER rewrite.
+cmake_language(DEFER CALL fabdesk_harness_assert)

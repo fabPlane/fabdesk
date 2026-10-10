@@ -132,7 +132,7 @@ export const pcb_environment = defineTool({
         `KiCad CLI: ${cli ? `${cli.path} (${cli.version})` : "not found"}`,
         `FabPCB bridge: ${bridge.ok ? "ready" : "unavailable"} at ${bridge.url}${bridge.reason ? ` — ${bridge.reason}` : ""}`,
         "Scriptable registry: fabpcb tool search <words>; describe <name>; call <name> --request <json|@file>; batch --input @calls.jsonl.",
-        `Routers (default freerouting → fab_router fallback): fab_router=${bridge.routers?.fab_router?.ok ? "ready" : `unavailable${bridge.routers?.fab_router?.reason ? ` — ${bridge.routers.fab_router.reason}` : ""}`}; freerouting=${bridge.routers?.freerouting?.ok ? "ready" : `unavailable${bridge.routers?.freerouting?.reason ? ` — ${bridge.routers.freerouting.reason}` : ""}`}`,
+        `Routers (default freerouting → fab_router fallback): fab_router=${bridge.routers?.fab_router?.ok ? "ready" : `unavailable${bridge.routers?.fab_router?.reason ? ` — ${bridge.routers.fab_router.reason}` : ""}`}; freerouting=${bridge.routers?.freerouting?.ok ? "ready" : `unavailable${bridge.routers?.freerouting?.reason ? ` — ${bridge.routers.freerouting.reason}` : ""}`}; tracemaker=${ctx.services.routers?.get("tracemaker").ready ? "ready" : "not installed — Settings → Routers or TRACEMAKER_BIN"}`,
         `Desktop UI automation: ${app.running ? "available" : `unavailable${app.reason ? ` — ${app.reason}` : ""}`}`,
         `Project files: ${Object.entries(files)
           .map(([name, path]) => `${name}=${path}${present[name] ? "" : " (missing)"}`)

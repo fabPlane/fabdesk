@@ -10,6 +10,8 @@ import { THEME_IDS, THEME_LABELS, useTheme } from "../hooks/useTheme";
 import { THEME_BACKGROUNDS, THEME_PANELS, THEME_FOREGROUNDS } from "../theme/resolve";
 import { useAuthStore } from "@fabdesk/client-core";
 import { RemoteSection } from "./RemoteSection";
+import { RoutersSection } from "./RoutersSection";
+import { withoutRouterDefault } from "./routers";
 import { SETTINGS_SECTIONS, useUiStore, type SettingsSection } from "../stores/ui";
 import { cn } from "../util";
 import { InstallHint } from "../components/InstallHint";
@@ -17,7 +19,7 @@ import { InstallHint } from "../components/InstallHint";
 const LABELS: Record<SettingsSection, string> = {
   agents: "Agents",
   kicad: "KiCad & ngspice",
-  router: "Router",
+  router: "Routers",
   auth: "Account",
   remote: "Remote access",
   appearance: "Appearance",
@@ -73,11 +75,13 @@ export function SettingsDialog() {
   const update = (fn: (s: Settings) => Settings) => setDraft((d) => (d ? fn(d) : d));
   const updateAgent = (id: string, p: Partial<AgentSettings>) =>
     update((s) => ({ ...s, agents: { ...s.agents, [id]: { ...(s.agents[id] ?? DEFAULT_AGENT), ...p } } }));
-  const dirty = (!!draft && !!settings.data && JSON.stringify(draft) !== JSON.stringify(settings.data)) || storedTheme !== originalTheme.current;
+  // The router default and TraceMaker manifest URL are saved by their own controls
+  // (see withoutRouterDefault); they are not part of the draft.
+  const dirty = (!!draft && !!settings.data && JSON.stringify(withoutRouterDefault(draft)) !== JSON.stringify(withoutRouterDefault(settings.data))) || storedTheme !== originalTheme.current;
   const reset = () => { if (settings.data) setDraft(structuredClone(settings.data)); setThemeId(originalTheme.current); };
   const close = () => { if (patch.isPending) return; if (dirty) setConfirmClose(true); else setOpen(false); };
   const save = () => {
-    if (draft) patch.mutate(draft, { onSuccess: () => { originalTheme.current = useUiStore.getState().themeId; } });
+    if (draft) patch.mutate(withoutRouterDefault(draft), { onSuccess: () => { originalTheme.current = useUiStore.getState().themeId; } });
   };
 
   return (
@@ -184,12 +188,9 @@ export function SettingsDialog() {
             </div>
           ) : section === "router" ? (
             <div>
-              <p className="mb-3 text-xs leading-5 text-muted">
-                New projects use Freerouting by default and automatically fall back to fab_router
-                when Freerouting is unavailable or fails. A project can pin either router in its
-                board settings.
-              </p>
-              <div className="mt-2 space-y-1 text-xs">
+              <RoutersSection />
+              <div className="mt-4 space-y-1 text-xs">
+                <div className="font-medium">Bridge</div>
                 {(doctor.data?.routers ?? []).map((r) => (
                   <div key={r.id} className="flex items-center gap-2">
                     <Badge tone={r.ready ? "success" : r.present ? "warning" : "neutral"}>{r.id}</Badge>
