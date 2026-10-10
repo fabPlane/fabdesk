@@ -14,7 +14,10 @@
 #           uploads unpackaged binaries + lldb/dyld/crash logs.
 #   Windows: no upstream CMake preset (base prepends /usr/bin; Warnings.cmake
 #           is GCC-only). Best-effort MSYS2 UCRT64 + Ninja, static libgcc/
-#           libstdc++ / zstd / sqlite. continue-on-error so a Windows failure
+#           libstdc++ / zstd / sqlite, plus ws2_32/mswsock/bcrypt. A
+#           commit-pinned MinGW patch is applied only on this platform when
+#           HEAD matches v0.9.0 (M_PI, filesystem::path::string()).
+#           continue-on-error so a Windows failure
 #           leaves linux/macos published and the workflow green. After
 #           TRACEMAKER_OPTIONAL_FAIL_LIMIT consecutive failures the platform
 #           is waived (platform-status.json) so the weekly run can skip.

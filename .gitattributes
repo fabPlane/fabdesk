@@ -1,4 +1,6 @@
 scripts/tracemaker/**/*.sh text eol=lf
 scripts/tracemaker/**/*.py text eol=lf
 scripts/tracemaker/**/*.cmake text eol=lf
+scripts/tracemaker/patches/** text eol=lf
+scripts/tracemaker/fixtures/** text eol=lf
 .github/workflows/tracemaker-binaries.yml text eol=lf

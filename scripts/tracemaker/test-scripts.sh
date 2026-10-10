@@ -898,6 +898,98 @@ else
   echo "ok   verify-macos rejects Homebrew sqlite dylib"
 fi
 
+# --- apply-windows-patch is commit-pinned and does not touch Linux/macOS trees ---
+assert_contains "$SCRIPT_DIR/build.sh" "apply-windows-patch.sh"
+assert_contains "$SCRIPT_DIR/cmake/windows-static-runtime.cmake" "link_libraries(ws2_32 mswsock bcrypt)"
+assert_contains "$SCRIPT_DIR/cmake/windows-static-runtime.cmake" "if(WIN32)"
+win_patch="$SCRIPT_DIR/patches/24c847772e57ea8888e2cfe4bbf1aa00666390a4-windows.patch"
+win_pre="$SCRIPT_DIR/fixtures/upstream-24c847772e57ea8888e2cfe4bbf1aa00666390a4"
+assert_file "$win_patch"
+assert_file "$win_pre/src/route/escape.cpp"
+assert_file "$win_pre/src/server/viewer_server.cpp"
+if grep -E '^diff --git ' "$win_patch" | grep -v -e 'a/src/route/escape.cpp' -e 'a/src/server/viewer_server.cpp' | grep -q .; then
+  echo "FAIL windows patch touches more than escape.cpp and viewer_server.cpp"
+  grep -E '^diff --git ' "$win_patch"
+  fail=1
+else
+  echo "ok   windows patch is limited to escape.cpp and viewer_server.cpp"
+fi
+win_tree="$ROOT/win-preimage"
+mkdir -p "$win_tree"
+cp -a "$win_pre/src" "$win_tree/src"
+git -C "$win_tree" init -q
+if git -C "$win_tree" apply --check "$win_patch" && git -C "$win_tree" apply "$win_patch"; then
+  echo "ok   windows patch applies to the vendored v0.9.0 preimage"
+else
+  echo "FAIL windows patch did not apply to the vendored preimage"
+  fail=1
+fi
+assert_contains "$win_tree/src/route/escape.cpp" "std::numbers::pi"
+assert_contains "$win_tree/src/route/escape.cpp" "#include <numbers>"
+if grep -q 'M_PI' "$win_tree/src/route/escape.cpp"; then
+  echo "FAIL windows patch left M_PI in escape.cpp"
+  fail=1
+else
+  echo "ok   windows patch removed M_PI"
+fi
+assert_contains "$win_tree/src/server/viewer_server.cpp" "path->string()"
+if grep -q 'path->c_str()' "$win_tree/src/server/viewer_server.cpp"; then
+  echo "FAIL windows patch left path->c_str()"
+  fail=1
+else
+  echo "ok   windows patch stopped passing wchar_t path::c_str() to Beast"
+fi
+if grep -q 'mime_type(path->native())' "$win_tree/src/server/viewer_server.cpp"; then
+  echo "FAIL windows patch left mime_type(path->native())"
+  fail=1
+else
+  echo "ok   windows patch passes a narrow path to mime_type"
+fi
+# Non-git tree (the fake cmake build) must not fail the Windows recipe.
+if [ -f "$ws/TraceMaker/.fabdesk-windows-patch" ]; then
+  echo "FAIL windows patch note written for a non-git TraceMaker tree"
+  fail=1
+else
+  echo "ok   windows patch skipped when TraceMaker is not a git checkout"
+fi
+win_unknown="$ROOT/win-unknown"
+mkdir -p "$win_unknown/.git"
+git -C "$win_unknown" init -q
+git -C "$win_unknown" -c user.email=tracemaker-test@example.test -c user.name=test commit --allow-empty -m init -q
+if bash "$SCRIPT_DIR/apply-windows-patch.sh" "$win_unknown" > "$ROOT/win-patch-skip.log"; then
+  assert_contains "$ROOT/win-patch-skip.log" "No commit-pinned Windows patch"
+  if [ -f "$win_unknown/.fabdesk-windows-patch" ]; then
+    echo "FAIL windows patch note written for an unknown commit"
+    fail=1
+  else
+    echo "ok   apply-windows-patch no-ops on an unknown commit"
+  fi
+else
+  echo "FAIL apply-windows-patch on unknown commit"
+  cat "$ROOT/win-patch-skip.log"
+  fail=1
+fi
+# Applying the script to the already-patched preimage (right commit via the
+# real checkout is covered when TRACEMAKER_FIXTURE_SRC is set). Here, confirm
+# the script's git apply path by replaying it onto a throwaway clone of the
+# preimage whose HEAD we cannot pin: call git apply the same way, then check
+# a second apply is rejected (the script must not be a silent no-op on mismatch).
+if git -C "$win_tree" apply --check "$win_patch"; then
+  echo "FAIL windows patch applied twice"
+  fail=1
+else
+  echo "ok   windows patch does not apply twice"
+fi
+printf '%s\n' 'Applied fabdesk Windows patch 24c847772e57ea8888e2cfe4bbf1aa00666390a4-windows.patch' \
+  > "$src_tree/.fabdesk-windows-patch"
+(
+  cd "$ROOT"
+  bash "$SCRIPT_DIR/package.sh" "$fake_bin" windows-x86_64 "$ROOT/pack/windows-patched" \
+    >"$ROOT/windows-patched.log"
+)
+assert_contains "$ROOT/pack/windows-patched/SOURCE.txt" "24c847772e57ea8888e2cfe4bbf1aa00666390a4-windows.patch"
+assert_contains "$ROOT/pack/windows-patched/SOURCE.txt" "corresponding source"
+
 # --- apply-macos-patch is commit-pinned (wrong SHA is a no-op) ---
 empty="$ROOT/empty-src"
 mkdir -p "$empty/.git"
@@ -940,6 +1032,21 @@ if [ -n "${TRACEMAKER_FIXTURE_SRC:-}" ]; then
     fail=1
   else
     echo "ok   patched tree has no std::format / tzdb / current_zone"
+  fi
+  win_pinned="$ROOT/tm-v090-windows"
+  rm -rf "$win_pinned"
+  cp -a "$fixture" "$win_pinned"
+  bash "$SCRIPT_DIR/apply-windows-patch.sh" "$win_pinned" > "$ROOT/win-patch-apply.log"
+  assert_contains "$ROOT/win-patch-apply.log" "Applying"
+  assert_file "$win_pinned/.fabdesk-windows-patch"
+  assert_contains "$win_pinned/.fabdesk-windows-patch" "24c847772e57ea8888e2cfe4bbf1aa00666390a4-windows.patch"
+  assert_contains "$win_pinned/src/route/escape.cpp" "std::numbers::pi"
+  assert_contains "$win_pinned/src/server/viewer_server.cpp" "path->string()"
+  if [ -f "$win_pinned/src/core/from_chars_double.hpp" ]; then
+    echo "FAIL windows patch pulled in the macOS from_chars shim"
+    fail=1
+  else
+    echo "ok   windows patch did not apply the macOS from_chars shim"
   fi
   if grep -E 'strtod_l\(|newlocale\(|freelocale\(|<xlocale.h>' "$pinned/src/core/from_chars_double.hpp"; then
     echo "FAIL shim still uses locale C APIs that Homebrew LLVM does not declare"

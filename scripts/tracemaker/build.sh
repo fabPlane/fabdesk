@@ -72,7 +72,9 @@ case "$platform" in
       echo "SQLite ${WINDOWS_SQLITE_LIBRARY:-FindSQLite3}."
       echo "TM_ENABLE_CUDA=OFF TM_WERROR=OFF. Smoke uses --no-gpu."
       echo "Non-system DLLs are bundled next to tracemaker.exe."
+      echo "MinGW system libs: ws2_32, mswsock, bcrypt (Boost.Asio has no auto-link pragma)."
     } > "$src/.fabdesk-windows-link"
+    bash "$SCRIPT_DIR/apply-windows-patch.sh" "$src"
     ;;
   *)
     echo "::error::No supported CMake recipe for $platform (weekly matrix is linux-x86_64, macos-arm64, windows-x86_64)" >&2

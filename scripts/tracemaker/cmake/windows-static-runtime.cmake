@@ -3,6 +3,7 @@
 # /usr/bin to PATH and Warnings.cmake is GCC-only (-Wall), so we do not use
 # MSVC or clang-cl. This shim:
 #   - static libgcc / libstdc++
+#   - ws2_32, mswsock, bcrypt (MinGW Boost.Asio does not auto-link them)
 #   - force libzstd.a (reject a zstd DLL, same idea as macos-static-deps.cmake)
 #   - prefer static libsqlite3.a when TM / SQLite3_* point at one
 # User-defined function calls require parentheses:
@@ -12,6 +13,15 @@
 function(fabdesk_windows_static_runtime)
   add_link_options(-static-libgcc -static-libstdc++)
   add_compile_definitions(_WIN32_WINNT=0x0A00)
+endfunction()
+
+# MinGW does not honor the MSVC `#pragma comment(lib)` hints inside Boost.Asio.
+# After escape.cpp / viewer_server.cpp compile, the v0.9.0 link fails with
+# undefined ws2_32 imports (WSAStartup, select, closesocket, …) and mswsock
+# (AcceptEx, GetAcceptExSockaddrs). bcrypt covers UCRT64 libstdc++ / newer
+# Asio random and is already a system DLL in verify-windows.sh.
+function(fabdesk_windows_system_libs)
+  link_libraries(ws2_32 mswsock bcrypt)
 endfunction()
 
 function(fabdesk_require_static_zstd_archive_win)
@@ -131,4 +141,9 @@ if(WIN32 OR TM_WINDOWS_STATIC)
     fabdesk_import_static_zstd_win()
     cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL fabdesk_prefer_static_zstd_win)
   endif()
+endif()
+# WIN32 only. The Linux cmake harness sets TM_WINDOWS_STATIC without a Windows
+# toolchain; linking ws2_32 there would not resolve.
+if(WIN32)
+  fabdesk_windows_system_libs()
 endif()
