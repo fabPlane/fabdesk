@@ -6,6 +6,9 @@
 #   macOS:  cmake --preset macos-metal with Homebrew LLVM clang++ / static libc++
 #           and CMAKE_OSX_DEPLOYMENT_TARGET=15.0 (not macOS 26). A commit-pinned
 #           from_chars(double) + <cstdlib> patch is applied when HEAD matches v0.9.0.
+#           SQLite headers are copied into a headers-only dir so FindSQLite3 does
+#           not -isystem the Xcode SDK usr/include ahead of libc++ (run 38005104781).
+#           Link system /usr/lib/libsqlite3.dylib, not Homebrew's sqlite dylib.
 #           The macOS compile uses ninja -k 0 and uploads the log on failure.
 # Each archive ships LICENSE, NOTICE, and SOURCE.txt (pinned commit + tag).
 #

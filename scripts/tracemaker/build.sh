@@ -27,7 +27,7 @@ case "$platform" in
   macos-arm64|macos-x86_64)
     preset=macos-metal
     prefix="${HOMEBREW_PREFIX:-$(brew --prefix)}"
-    macos_llvm_prepare
+    macos_llvm_prepare "$src/.fabdesk-sqlite-inc"
     cmake_extra+=(
       -DCMAKE_PREFIX_PATH="$prefix"
       -DTM_BUILD_TESTS=OFF
@@ -52,6 +52,12 @@ build_dir="$src/build/${preset}"
 mkdir -p "$build_dir"
 build_log="$build_dir/fabdesk-build.log"
 if [[ "$platform" == macos-* ]]; then
+  cache="$build_dir/CMakeCache.txt"
+  if [ -f "$cache" ]; then
+    echo "========== CMAKE CACHE (compiler / sqlite / libc++) =========="
+    grep -E '^(CMAKE_CXX_COMPILER|CMAKE_OBJCXX_COMPILER|CMAKE_CXX_FLAGS|CMAKE_OBJCXX_FLAGS|CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES|CMAKE_OBJCXX_STANDARD_INCLUDE_DIRECTORIES|CMAKE_EXE_LINKER_FLAGS|CMAKE_CXX_STANDARD_LIBRARIES|CMAKE_OBJCXX_STANDARD_LIBRARIES|CMAKE_CXX_IMPLICIT_LINK_LIBRARIES|SQLite3_INCLUDE_DIR|SQLite3_LIBRARY|CMAKE_PROJECT_INCLUDE):' "$cache" || true
+    echo "========== END CMAKE CACHE =========="
+  fi
   # Keep going so one 10+ minute macOS job reports every missing include / API,
   # not just the first ninja target (run 38003551366 stopped at rule_engine.cpp).
   set +e
@@ -60,6 +66,14 @@ if [[ "$platform" == macos-* ]]; then
   build_code="${PIPESTATUS[0]}"
   set -e
   set -o pipefail
+  if [ -f "$cache" ]; then
+    {
+      echo
+      echo "========== CMAKE CACHE (compiler / sqlite / libc++) =========="
+      grep -E '^(CMAKE_CXX_COMPILER|CMAKE_OBJCXX_COMPILER|CMAKE_CXX_FLAGS|CMAKE_OBJCXX_FLAGS|CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES|CMAKE_OBJCXX_STANDARD_INCLUDE_DIRECTORIES|CMAKE_EXE_LINKER_FLAGS|CMAKE_CXX_STANDARD_LIBRARIES|CMAKE_OBJCXX_STANDARD_LIBRARIES|CMAKE_CXX_IMPLICIT_LINK_LIBRARIES|SQLite3_INCLUDE_DIR|SQLite3_LIBRARY|CMAKE_PROJECT_INCLUDE):' "$cache" || true
+      echo "========== END CMAKE CACHE =========="
+    } >> "$build_log"
+  fi
   bash "$SCRIPT_DIR/summarize-build.sh" "$build_log"
   if [ -n "${GITHUB_OUTPUT:-}" ]; then
     echo "build_log=$build_log" >> "$GITHUB_OUTPUT"

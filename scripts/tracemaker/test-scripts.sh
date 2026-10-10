@@ -357,6 +357,156 @@ assert_contains "$ROOT/summary.out" "no member named 'atof'"
 assert_contains "$ROOT/summary.out" "FAILED: src/route/CMakeFiles/tm_route.dir/router.cpp.o"
 assert_contains "$ROOT/summary.out" "failed_targets=2"
 assert_contains "$SCRIPT_DIR/macos-llvm.sh" "-include cstdlib"
+assert_contains "$SCRIPT_DIR/build.sh" ".fabdesk-sqlite-inc"
+assert_contains "$SCRIPT_DIR/macos-llvm.sh" "SQLite3_INCLUDE_DIR"
+assert_contains "$SCRIPT_DIR/macos-llvm.sh" "SQLite3_LIBRARY"
+assert_contains "$SCRIPT_DIR/macos-llvm.sh" "CMAKE_CXX_STANDARD_LIBRARIES"
+assert_contains "$SCRIPT_DIR/macos-llvm.sh" "-nostdlib++"
+assert_contains "$SCRIPT_DIR/macos-llvm.sh" "-Wl,-search_paths_first"
+assert_contains "$SCRIPT_DIR/macos-llvm.sh" "-Wl,-force_load"
+assert_contains "$SCRIPT_DIR/macos-llvm.sh" "lib/unwind"
+assert_contains "$SCRIPT_DIR/macos-llvm.sh" "CMAKE_CXX_IMPLICIT_LINK_LIBRARIES"
+assert_contains "$SCRIPT_DIR/macos-llvm.sh" "CMAKE_PROJECT_INCLUDE"
+assert_contains "$SCRIPT_DIR/cmake/macos-static-deps.cmake" "zstd::libzstd_static"
+assert_contains "$SCRIPT_DIR/verify-macos.sh" "/opt/homebrew"
+assert_contains "$SCRIPT_DIR/verify-macos.sh" "/usr/lib/libsqlite3.dylib"
+
+# ninja 1.12 FAILED: [code=1] + libc++ include-order hint (run 38005104781)
+cat > "$ROOT/ninja-sqlite.log" <<'EOF'
+[49/64] Building CXX object src/learn/CMakeFiles/tm_learn.dir/knowledge_base.cpp.o
+FAILED: [code=1] src/learn/CMakeFiles/tm_learn.dir/knowledge_base.cpp.o
+/opt/homebrew/opt/llvm/bin/clang++ -isystem /Applications/Xcode_16.4.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include -nostdinc++ -isystem /opt/homebrew/opt/llvm/include/c++/v1 -c knowledge_base.cpp
+In file included from <built-in>:1:
+/opt/homebrew/opt/llvm/include/c++/v1/cstdlib:93:5: error: <cstdlib> tried including <stdlib.h> but didn't find libc++'s <stdlib.h> header.
+[60/64] Building CXX object src/server/CMakeFiles/tm_server.dir/viewer_server.cpp.o
+ninja: build stopped: cannot make progress due to previous errors.
+EOF
+bash "$SCRIPT_DIR/summarize-build.sh" "$ROOT/ninja-sqlite.log" > "$ROOT/summary-sqlite.out"
+assert_contains "$ROOT/summary-sqlite.out" "FAILED: src/learn/CMakeFiles/tm_learn.dir/knowledge_base.cpp.o"
+assert_contains "$ROOT/summary-sqlite.out" "tried including <stdlib.h>"
+assert_contains "$ROOT/summary-sqlite.out" "last_progress:"
+assert_contains "$ROOT/summary-sqlite.out" "failed_targets=1"
+assert_contains "$ROOT/summary-sqlite.out" "isolated sqlite3.h"
+
+# --- isolated sqlite3.h (no SDK usr/include) + refuse brew sqlite dylib ---
+# shellcheck source=macos-llvm.sh
+source "$SCRIPT_DIR/macos-llvm.sh"
+sdk_inc="$ROOT/sdk/usr/include"
+mkdir -p "$sdk_inc"
+printf '%s\n' '/* fake sqlite3.h */' > "$sdk_inc/sqlite3.h"
+printf '%s\n' '/* ext */' > "$sdk_inc/sqlite3ext.h"
+mkdir -p "$ROOT/fakebin"
+cat > "$ROOT/fakebin/xcrun" <<EOF
+#!/bin/sh
+if [ "\$1" = "--show-sdk-path" ]; then
+  echo "$ROOT/sdk"
+  exit 0
+fi
+exit 1
+EOF
+chmod +x "$ROOT/fakebin/xcrun"
+PATH="$ROOT/fakebin:$PATH" TM_SQLITE_LIBRARY="$ROOT/libsqlite3-missing.dylib" \
+  macos_isolate_sqlite "$ROOT/sqlite-inc-fail" >"$ROOT/sqlite-fail.out" 2>"$ROOT/sqlite-fail.err" && {
+  echo "FAIL isolate accepted a missing SQLite library"
+  fail=1
+} || echo "ok   isolate rejects a missing SQLite library"
+brew_dylib="$ROOT/opt/homebrew/opt/sqlite/lib/libsqlite3.dylib"
+mkdir -p "$(dirname "$brew_dylib")"
+touch "$brew_dylib"
+if PATH="$ROOT/fakebin:$PATH" TM_SQLITE_LIBRARY="$brew_dylib" \
+  macos_isolate_sqlite "$ROOT/sqlite-inc-brew" >"$ROOT/sqlite-brew.out" 2>"$ROOT/sqlite-brew.err"; then
+  echo "FAIL isolate accepted a Homebrew sqlite dylib"
+  fail=1
+else
+  assert_contains "$ROOT/sqlite-brew.err" "refusing"
+  echo "ok   isolate refuses Homebrew sqlite dylib"
+fi
+static_a="$ROOT/libsqlite3.a"
+touch "$static_a"
+PATH="$ROOT/fakebin:$PATH" TM_SQLITE_LIBRARY="$static_a" \
+  macos_isolate_sqlite "$ROOT/sqlite-inc" >"$ROOT/sqlite-ok.out"
+assert_file "$ROOT/sqlite-inc/sqlite3.h"
+assert_file "$ROOT/sqlite-inc/sqlite3ext.h"
+if [ -f "$ROOT/sqlite-inc/stdlib.h" ]; then
+  echo "FAIL isolated sqlite dir contains stdlib.h"
+  fail=1
+else
+  echo "ok   isolated sqlite dir has no C stdlib headers"
+fi
+assert_eq "$MACOS_SQLITE_INCLUDE_DIR" "$ROOT/sqlite-inc" "MACOS_SQLITE_INCLUDE_DIR is the isolated dir"
+assert_eq "$MACOS_SQLITE_LIBRARY" "$static_a" "static libsqlite3.a is allowed"
+assert_contains "$SCRIPT_DIR/macos-llvm.sh" "/usr/lib/libsqlite3.dylib"
+fake_llvm="$ROOT/fake-llvm"
+mkdir -p "$fake_llvm/lib/c++" "$fake_llvm/lib/unwind"
+touch "$fake_llvm/lib/c++/libc++.a" "$fake_llvm/lib/c++/libc++abi.a" "$fake_llvm/lib/unwind/libunwind.a"
+assert_eq "$(macos_find_llvm_archive "$fake_llvm" "libc++.a")" "$fake_llvm/lib/c++/libc++.a" "libc++.a from lib/c++"
+assert_eq "$(macos_find_llvm_archive "$fake_llvm" "libunwind.a")" "$fake_llvm/lib/unwind/libunwind.a" "libunwind.a from lib/unwind"
+
+# --- verify-macos.sh: allow system+sqlite+frameworks; reject brew / libc++ dylib ---
+fake_macho="$ROOT/fake-tracemaker"
+touch "$fake_macho"
+mkdir -p "$ROOT/verifybin"
+cat > "$ROOT/verifybin/file" <<'EOF'
+#!/bin/sh
+echo "Mach-O 64-bit executable arm64"
+EOF
+cat > "$ROOT/verifybin/otool" <<'EOF'
+#!/bin/sh
+case "$1" in
+  -L)
+    echo "$2:"
+    echo "	/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1351.0.0)"
+    echo "	/usr/lib/libsqlite3.dylib (compatibility version 9.0.0, current version 3.43.2)"
+    echo "	/usr/lib/libobjc.A.dylib (compatibility version 1.0.0, current version 228.0.0)"
+    echo "	/System/Library/Frameworks/Metal.framework/Versions/A/Metal (compatibility version 1.0.0, current version 367.8.0)"
+    echo "	/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation (compatibility version 300.0.0, current version 4201.0.0)"
+    if [ -n "${FAKE_OTOOL_EXTRA:-}" ]; then
+      echo "	${FAKE_OTOOL_EXTRA} (compatibility version 1.0.0, current version 1.0.0)"
+    fi
+    exit 0
+    ;;
+  -l)
+    echo "      cmd LC_BUILD_VERSION"
+    echo "  minos 15.0"
+    echo "    sdk 15.5"
+    exit 0
+    ;;
+esac
+echo "unexpected otool $*" >&2
+exit 3
+EOF
+chmod +x "$ROOT/verifybin/file" "$ROOT/verifybin/otool"
+if PATH="$ROOT/verifybin:$PATH" TM_MACOS_LIBCXX=llvm-static \
+  bash "$SCRIPT_DIR/verify-macos.sh" "$fake_macho" >"$ROOT/verify-ok.out"; then
+  assert_contains "$ROOT/verify-ok.out" "macos probe ok"
+else
+  echo "FAIL verify-macos rejected a clean system linkage"
+  fail=1
+fi
+if PATH="$ROOT/verifybin:$PATH" TM_MACOS_LIBCXX=llvm-static FAKE_OTOOL_EXTRA=/opt/homebrew/opt/zstd/lib/libzstd.1.dylib \
+  bash "$SCRIPT_DIR/verify-macos.sh" "$fake_macho" >"$ROOT/verify-brew.out" 2>"$ROOT/verify-brew.err"; then
+  echo "FAIL verify-macos accepted a Homebrew zstd dylib"
+  fail=1
+else
+  assert_contains "$ROOT/verify-brew.err" "/opt/homebrew"
+  echo "ok   verify-macos rejects Homebrew zstd"
+fi
+if PATH="$ROOT/verifybin:$PATH" TM_MACOS_LIBCXX=llvm-static FAKE_OTOOL_EXTRA=/usr/lib/libc++.1.dylib \
+  bash "$SCRIPT_DIR/verify-macos.sh" "$fake_macho" >"$ROOT/verify-libcxx.out" 2>"$ROOT/verify-libcxx.err"; then
+  echo "FAIL verify-macos accepted system libc++ under llvm-static"
+  fail=1
+else
+  assert_contains "$ROOT/verify-libcxx.err" "static LLVM libc++"
+  echo "ok   verify-macos rejects /usr/lib/libc++.1.dylib when llvm-static"
+fi
+if PATH="$ROOT/verifybin:$PATH" TM_MACOS_LIBCXX=llvm-static FAKE_OTOOL_EXTRA=/opt/homebrew/opt/sqlite/lib/libsqlite3.dylib \
+  bash "$SCRIPT_DIR/verify-macos.sh" "$fake_macho" >"$ROOT/verify-sqlbrew.out" 2>"$ROOT/verify-sqlbrew.err"; then
+  echo "FAIL verify-macos accepted Homebrew sqlite dylib"
+  fail=1
+else
+  assert_contains "$ROOT/verify-sqlbrew.err" "libsqlite3"
+  echo "ok   verify-macos rejects Homebrew sqlite dylib"
+fi
 
 # --- apply-macos-patch is commit-pinned (wrong SHA is a no-op) ---
 empty="$ROOT/empty-src"

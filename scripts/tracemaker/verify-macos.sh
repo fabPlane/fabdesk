@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Print file(1) / otool linkage and fail if the binary requires macOS > 15
-# or (when we asked for static LLVM libc++) still links the system libc++.
+# Print file(1) / otool linkage and fail if the binary requires macOS > 15,
+# links Homebrew / non-system dylibs, or (when we asked for static LLVM
+# libc++) still links any libc++ dylib.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -36,11 +37,43 @@ if [ -n "$minos" ]; then
   fi
 fi
 
-if [ "$libcxx" = llvm-static ]; then
-  if otool -L "$binary" | grep -q '/usr/lib/libc++\.1\.dylib'; then
-    echo "::error::asked for static LLVM libc++ but the binary links /usr/lib/libc++.1.dylib" >&2
-    exit 1
-  fi
+# Direct LC_LOAD_DYLIB entries. Frameworks pull libobjc / CoreFoundation
+# transitively; otool -L only lists what we linked. Allow system /usr/lib
+# and /System/Library; reject Homebrew, MacPorts, and any libc++ dylib when
+# we asked for a static LLVM libc++.
+fail_dylib=0
+while read -r dest _; do
+  dest="${dest#"${dest%%[![:space:]]*}"}"
+  case "$dest" in
+    ""|*:)
+      continue
+      ;;
+  esac
+  case "$dest" in
+    /opt/homebrew/*|/usr/local/*|/opt/local/*|*/Cellar/*)
+      echo "::error::binary links non-system $dest (Homebrew/MacPorts dylibs are not allowed; system libsqlite3 is /usr/lib/libsqlite3.dylib)" >&2
+      fail_dylib=1
+      continue
+      ;;
+    /usr/lib/libc++.1.dylib|/usr/lib/libc++.dylib|/usr/lib/libc++abi.1.dylib|/usr/lib/libunwind.dylib|/usr/lib/libunwind.1.dylib)
+      if [ "$libcxx" = llvm-static ]; then
+        echo "::error::asked for static LLVM libc++ but the binary links $dest" >&2
+        fail_dylib=1
+      fi
+      continue
+      ;;
+    /usr/lib/*|/System/Library/*|/Library/Apple/*)
+      continue
+      ;;
+    *)
+      echo "::error::binary links unexpected $dest (allowed: /usr/lib/libSystem.B.dylib, /usr/lib/libsqlite3.dylib, /usr/lib/libobjc.A.dylib, system frameworks)" >&2
+      fail_dylib=1
+      ;;
+  esac
+done < <(otool -L "$binary" | tail -n +2)
+
+if [ "$fail_dylib" -ne 0 ]; then
+  exit 1
 fi
 
 echo "macos probe ok (libcxx=$libcxx)"
