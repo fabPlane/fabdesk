@@ -71,6 +71,34 @@ binary="$(awk -F= '/^binary=/{print $2}' "$ROOT/build.out")"
 assert_eq "$binary" "$ws/TraceMaker/build/cpu-only/src/app/tracemaker" "build.sh emits an absolute binary path"
 assert_file "$binary"
 
+# Windows configure uses cmake -S/-B, not --preset (upstream PATH is Unix-only).
+cat > "$ws/fakebin/cmake" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ " $* " == *" --build "* ]]; then
+  mkdir -p build/windows-x86_64/src/app
+  printf 'MZ\n' > build/windows-x86_64/src/app/tracemaker.exe
+  echo "[63/63] Linking CXX executable src/app/tracemaker.exe"
+  exit 0
+fi
+if [[ " $* " == *" -S "* ]] || [[ " $* " == *"-S "* ]]; then
+  mkdir -p build/windows-x86_64
+  echo "-- configured windows-x86_64 in $PWD"
+  exit 0
+fi
+mkdir -p build/cpu-only
+echo "-- configured cpu-only in $PWD"
+EOF
+chmod +x "$ws/fakebin/cmake"
+(
+  cd "$ws"
+  TM_WINDOWS_SKIP_DEPS=1 \
+  PATH="$ws/fakebin:$PATH" bash "$SCRIPT_DIR/build.sh" TraceMaker windows-x86_64 > "$ROOT/build-win.out"
+)
+win_binary="$(awk -F= '/^binary=/{print $2}' "$ROOT/build-win.out")"
+assert_eq "$win_binary" "$ws/TraceMaker/build/windows-x86_64/src/app/tracemaker.exe" "build.sh windows emits tracemaker.exe"
+assert_file "$win_binary"
+
 # --- fake tracemaker CLI for smoke + package ---
 fake_bin="$ROOT/bin/tracemaker"
 mkdir -p "$ROOT/bin"
@@ -145,11 +173,14 @@ export GITHUB_REPOSITORY=TensorFleet/fabdesk
   cd "$ROOT"
   bash "$SCRIPT_DIR/package.sh" "$fake_bin" linux-x86_64 pack/linux-x86_64
   bash "$SCRIPT_DIR/package.sh" "$fake_bin" macos-arm64 pack/macos-arm64
+  bash "$SCRIPT_DIR/package.sh" "$fake_bin" windows-x86_64 pack/windows-x86_64
 )
 assert_file "$ROOT/pack/linux-x86_64/asset.json"
 assert_file "$ROOT/pack/macos-arm64/asset.json"
+assert_file "$ROOT/pack/windows-x86_64/asset.json"
 assert_file "$ROOT/pack/linux-x86_64/tracemaker-linux-x86_64.tar.gz"
 assert_file "$ROOT/pack/macos-arm64/tracemaker-macos-arm64.tar.gz"
+assert_file "$ROOT/pack/windows-x86_64/tracemaker-windows-x86_64.zip"
 assert_contains "$ROOT/pack/macos-arm64/SOURCE.txt" "24c847772e57ea8888e2cfe4bbf1aa00666390a4.patch"
 assert_contains "$ROOT/pack/macos-arm64/SOURCE.txt" "libzstd.a"
 assert_contains "$ROOT/pack/linux-x86_64/LICENSE" "GPL-3.0-or-later"
@@ -183,7 +214,27 @@ linux = json.loads(pathlib.Path("$ROOT/pack/linux-x86_64/asset.json").read_text(
 assert "minos" not in linux
 assert "cxxRuntime" not in linux
 print("ok   macos asset.json has minos 15.0 / linkage / cxxRuntime / format / executable")
+win = json.loads(pathlib.Path("$ROOT/pack/windows-x86_64/asset.json").read_text())
+assert win["platform"] == "windows-x86_64"
+assert win["format"] == "zip"
+assert win["executable"] == "tracemaker.exe"
+assert "minos" not in win
+print("ok   windows asset.json has format zip / executable tracemaker.exe")
 PY
+if command -v unzip >/dev/null; then
+  unzip -l "$ROOT/pack/windows-x86_64/tracemaker-windows-x86_64.zip" > "$ROOT/windows-zip.list"
+  for _need in tracemaker.exe LICENSE NOTICE SOURCE.txt DEPENDENCIES.txt; do
+    if grep -q "${_need}" "$ROOT/windows-zip.list"; then
+      echo "ok   windows archive contains $_need"
+    else
+      echo "FAIL windows archive missing $_need"
+      cat "$ROOT/windows-zip.list"
+      fail=1
+    fi
+  done
+fi
+assert_contains "$ROOT/pack/windows-x86_64/DEPENDENCIES.txt" "Windows best-effort"
+assert_contains "$ROOT/pack/windows-x86_64/SOURCE.txt" "GPL-3.0"
 printf '%s\n' system > "$src_tree/.fabdesk-macos-libcxx"
 {
   echo "macOS variant A (preferred): Apple clang + system /usr/lib/libc++.1.dylib."
@@ -202,7 +253,9 @@ PY
 # --- expected-platform helpers ---
 # shellcheck source=platforms.sh
 source "$SCRIPT_DIR/platforms.sh"
-assert_eq "$(expected_platforms_csv)" "linux-x86_64,macos-arm64" "expected platform list"
+assert_eq "$(expected_platforms_csv)" "linux-x86_64,macos-arm64,windows-x86_64" "expected platform list"
+assert_eq "$(required_platforms_csv)" "linux-x86_64,macos-arm64" "required platform list"
+assert_eq "$(optional_platforms_csv)" "windows-x86_64" "optional platform list"
 python3 - <<PY
 import json, pathlib
 partial = pathlib.Path("$ROOT/partial-manifest.json")
@@ -217,8 +270,13 @@ partial.write_text(json.dumps({
               "executable": "tracemaker"}]
 }) + "\n")
 PY
-assert_eq "$(missing_expected_platforms "$ROOT/partial-manifest.json")" "macos-arm64" "linux-only manifest is missing macos-arm64"
-assert_eq "$(missing_expected_platforms "$ROOT/no-such-manifest.json")" "linux-x86_64 macos-arm64" "missing file → all platforms"
+assert_eq "$(missing_expected_platforms "$ROOT/partial-manifest.json")" "macos-arm64 windows-x86_64" "linux-only manifest is missing macos + windows"
+assert_eq "$(missing_expected_platforms "$ROOT/no-such-manifest.json")" "linux-x86_64 macos-arm64 windows-x86_64" "missing file → all platforms"
+printf '%s\n' '{"platforms":{"windows-x86_64":{"status":"failed","attempts":3}}}' > "$ROOT/waived-status.json"
+assert_eq "$(missing_build_platforms "$ROOT/partial-manifest.json" "$ROOT/waived-status.json")" "macos-arm64" "waived windows is omitted from the next build list"
+assert_eq "$(waived_optional_platforms "$ROOT/waived-status.json")" "windows-x86_64" "three failures waive windows"
+printf '%s\n' '{"platforms":{"windows-x86_64":{"status":"failed","attempts":1}}}' > "$ROOT/retry-status.json"
+assert_eq "$(missing_build_platforms "$ROOT/partial-manifest.json" "$ROOT/retry-status.json")" "macos-arm64 windows-x86_64" "one Windows failure still rebuilds windows"
 
 # --- publish: join platforms, --latest=false, complete a partial release ---
 mkdir -p "$ROOT/ghbin" "$ROOT/ghstore"
@@ -306,7 +364,7 @@ m = json.loads(pathlib.Path("$ROOT/pack/manifest.json").read_text())
 plats = sorted(a["platform"] for a in m["assets"])
 assert m["name"] == "tracemaker", m
 assert m["upstream"]["commit"] == "24c847772e57ea8888e2cfe4bbf1aa00666390a4", m
-assert plats == ["linux-x86_64", "macos-arm64"], plats
+assert plats == ["linux-x86_64", "macos-arm64", "windows-x86_64"], plats
 for a in m["assets"]:
     assert len(a["sha256"]) == 64 and a["bytes"] > 0
 print("ok   manifest joins", plats, "commit", m["upstream"]["commit"])
@@ -389,7 +447,8 @@ PY
 assert_contains "$ROOT/publish-partial.log" "verified existing"
 assert_contains "$ROOT/gh.log.meta" "tracemaker-v0.9.0-24c8477 upload"
 assert_contains "$ROOT/gh.log.meta" "tracemaker-latest latest=false"
-assert_eq "$(missing_expected_platforms "$partial_pack/manifest.json")" "" "merged manifest lists every expected platform"
+assert_eq "$(missing_expected_platforms "$partial_pack/manifest.json")" "windows-x86_64" "linux+macos merge is still missing windows"
+assert_eq "$(missing_build_platforms "$partial_pack/manifest.json" "$ROOT/waived-status.json")" "" "waived windows lets the weekly run skip"
 TRACEMAKER_FORCE=1
 if force_rebuild_requested; then
   echo "ok   TRACEMAKER_FORCE=1 is a rebuild"
@@ -670,6 +729,10 @@ fi
 assert_contains "$SCRIPT_DIR/macos-variants.sh" "for variant in system llvm-static"
 assert_contains "$SCRIPT_DIR/macos-variants.sh" "diagnose-macos.sh"
 assert_contains "$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml" "tracemaker-macos-arm64-debug"
+assert_contains "$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml" "tracemaker-windows-x86_64-debug"
+assert_contains "$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml" "continue-on-error: true"
+assert_contains "$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml" "windows-x86_64"
+assert_contains "$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml" "mirror-public.sh"
 
 # --- verify-macos.sh: allow system+sqlite+frameworks; reject brew / libc++ dylib ---
 fake_macho="$ROOT/fake-tracemaker"
@@ -883,6 +946,32 @@ else
   cat "$ROOT/cmake-skip.out" "$ROOT/cmake-skip.err"
   fail=1
 fi
+
+# --- public manifest rewrite + skip when credentials are unset ---
+python3 "$SCRIPT_DIR/rewrite-public-manifest.py" "$partial_pack/manifest.json" \
+  --base-url "https://downloads.fabplane.com/tracemaker" \
+  --tag "tracemaker-v0.9.0-24c8477" \
+  --out "$ROOT/public-manifest.json"
+python3 - <<PY
+import json, pathlib
+priv = json.loads(pathlib.Path("$partial_pack/manifest.json").read_text())
+pub = json.loads(pathlib.Path("$ROOT/public-manifest.json").read_text())
+assert len(priv["assets"]) == len(pub["assets"])
+for a, b in zip(priv["assets"], pub["assets"]):
+    assert a["sha256"] == b["sha256"], (a, b)
+    assert a["bytes"] == b["bytes"]
+    assert b["url"].startswith("https://downloads.fabplane.com/tracemaker/tracemaker-v0.9.0-24c8477/")
+    assert not b["url"].startswith("https://github.com/")
+print("ok   rewritten public manifest keeps sha256 and retargets URLs")
+PY
+env -u TRACEMAKER_S3_ACCESS_KEY_ID -u TRACEMAKER_S3_SECRET_ACCESS_KEY \
+  -u TRACEMAKER_S3_BUCKET -u TRACEMAKER_S3_ENDPOINT \
+  -u TRACEMAKER_PUBLIC_BASE_URL -u TRACEMAKER_PUBLIC_RELEASE_REPO \
+  -u TRACEMAKER_PUBLIC_RELEASE_TOKEN \
+  -u DESKTOP_R2_ACCESS_KEY_ID -u CLOUDFLARE_ACCOUNT_ID -u CLOUDFLARE_API_TOKEN \
+  TRACEMAKER_RELEASE_TAG=tracemaker-v0.9.0-24c8477 \
+  bash "$SCRIPT_DIR/mirror-public.sh" "$partial_pack" > "$ROOT/mirror-skip.out"
+assert_contains "$ROOT/mirror-skip.out" "Public TraceMaker mirror skipped"
 
 # Packaged manifest must satisfy the TypeScript zod schema (same parser the app uses).
 if command -v bun >/dev/null; then

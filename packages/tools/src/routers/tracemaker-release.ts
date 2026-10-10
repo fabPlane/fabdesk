@@ -5,6 +5,11 @@ import type { RouterArtifact, RouterArtifactFormat } from "./catalog";
 export const TRACEMAKER_UPSTREAM_REPO = "DingoOz/TraceMaker";
 export const TRACEMAKER_BINARY_RELEASE_REPO = "TensorFleet/fabdesk";
 export const TRACEMAKER_BINARY_RELEASE_TAG = "tracemaker-latest";
+/** Same public host as desktop installers (`docs/releases.md`). */
+export const TRACEMAKER_PUBLIC_DOWNLOADS_ORIGIN = "https://downloads.fabplane.com";
+/** Rolling public manifest. Env / Settings override still win. */
+export const TRACEMAKER_PUBLIC_MANIFEST_URL =
+  `${TRACEMAKER_PUBLIC_DOWNLOADS_ORIGIN}/tracemaker/tracemaker-latest/manifest.json`;
 
 export const TRACEMAKER_PLATFORMS = [
   "linux-x86_64",
@@ -81,7 +86,14 @@ export function defaultTraceMakerManifestUrl(opts?: {
 }): string {
   const repo = opts?.repo?.trim() || TRACEMAKER_BINARY_RELEASE_REPO;
   const tag = opts?.tag?.trim() || TRACEMAKER_BINARY_RELEASE_TAG;
+  if (repo === TRACEMAKER_BINARY_RELEASE_REPO && tag === TRACEMAKER_BINARY_RELEASE_TAG) {
+    return TRACEMAKER_PUBLIC_MANIFEST_URL;
+  }
   return `https://github.com/${repo}/releases/download/${tag}/manifest.json`;
+}
+
+export function isDefaultPublicManifestUrl(url: string): boolean {
+  return url.replace(/\/$/, "") === TRACEMAKER_PUBLIC_MANIFEST_URL;
 }
 
 export function defaultTraceMakerBinaryRelease(
@@ -164,7 +176,7 @@ export async function fetchTraceMakerManifest(
   if (response.status === 404) throw new ManifestNotFoundError(url);
   if (!response.ok) {
     throw new Error(
-      `TraceMaker manifest download failed (${response.status}) from ${url}.${privateRepoAdvice(url)}`,
+      `TraceMaker manifest download failed (${response.status}) from ${url}.${unreachableManifestAdvice(url)}`,
     );
   }
   let raw: unknown;
@@ -176,14 +188,20 @@ export async function fetchTraceMakerManifest(
   return parseTraceMakerManifest(raw);
 }
 
-function privateRepoAdvice(url: string): string {
+function unreachableManifestAdvice(url: string): string {
+  if (isDefaultPublicManifestUrl(url)) {
+    return (
+      " The public downloads host (downloads.fabplane.com/tracemaker) was not reachable." +
+      " Try again later, set FABDESK_TRACEMAKER_MANIFEST_URL or Settings → Routers" +
+      " → TraceMaker manifest URL, or TRACEMAKER_BIN."
+    );
+  }
   if (!githubReleaseLooksPrivate(url)) return "";
   return (
     " TensorFleet/fabdesk is a private repository, so unauthenticated GitHub release" +
     " downloads return 404. Point FABDESK_TRACEMAKER_MANIFEST_URL or Settings → Routers" +
     " → TraceMaker manifest URL at a public copy of manifest.json whose asset URLs are" +
-    " also public (the desktop installer uses downloads.fabplane.com / R2 — TraceMaker" +
-    " is not mirrored there yet), or set TRACEMAKER_BIN."
+    " also public, or set TRACEMAKER_BIN."
   );
 }
 
@@ -191,8 +209,8 @@ export class ManifestNotFoundError extends Error {
   constructor(url: string) {
     super(
       `TraceMaker binary manifest was not reachable at ${url} (HTTP 404).` +
-        (githubReleaseLooksPrivate(url)
-          ? privateRepoAdvice(url)
+        (isDefaultPublicManifestUrl(url) || githubReleaseLooksPrivate(url)
+          ? unreachableManifestAdvice(url)
           : " The weekly binaries may not be published yet, or the URL is wrong."),
     );
     this.name = "ManifestNotFoundError";

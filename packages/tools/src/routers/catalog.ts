@@ -43,7 +43,7 @@ export const FREEROUTING_URL = `https://github.com/freerouting/freerouting/relea
  * binaries are not published (the v0.8.0 "zip" is an 8.7 KB KiCad plugin).
  * Install prefers a platform binary from the weekly `tracemaker-latest` manifest
  * (`FABDESK_TRACEMAKER_MANIFEST_URL` / Settings `tracemakerManifestUrl`, defaulting
- * to TensorFleet/fabdesk GitHub releases — 404 while that repo is private).
+ * to https://downloads.fabplane.com/tracemaker/tracemaker-latest/manifest.json).
  * (see `.github/workflows/tracemaker-binaries.yml`) and uses this tarball only
  * when no binary exists for the current OS/arch, or when FABDESK_TRACEMAKER_URL
  * is set.

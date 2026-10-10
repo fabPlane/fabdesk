@@ -32,7 +32,7 @@ if [[ "$platform" == windows-* ]]; then
 fi
 cp "$binary" "$work/$exe_name"
 chmod 755 "$work/$exe_name" || true
-if command -v strip >/dev/null && [[ "$platform" != windows-* ]]; then
+if command -v strip >/dev/null; then
   strip "$work/$exe_name" || true
 fi
 
@@ -72,9 +72,19 @@ notes="$work/DEPENDENCIES.txt"
     echo "No Homebrew dylibs (zstd/sqlite). Metal + Foundation + libobjc + libSystem."
     echo "Published cxxRuntime=${macos_libcxx}."
   fi
+  if [[ "$platform" == windows-* ]]; then
+    echo "Windows best-effort: MSYS2 UCRT64 MinGW, static libgcc/libstdc++,"
+    echo "static libzstd.a, static libsqlite3.a when present. Remaining"
+    echo "non-system DLLs are copied next to tracemaker.exe (Windows loads"
+    echo "the executable directory). CUDA is not included."
+  fi
   echo
 } > "$notes"
-bash "$SCRIPT_DIR/bundle-libs.sh" "$work/$exe_name" "$work/lib" "$notes"
+if [[ "$platform" == windows-* ]]; then
+  bash "$SCRIPT_DIR/bundle-libs.sh" "$work/$exe_name" "$work" "$notes"
+else
+  bash "$SCRIPT_DIR/bundle-libs.sh" "$work/$exe_name" "$work/lib" "$notes"
+fi
 
 # strip + install_name_tool invalidate any signature. Ad-hoc sign so the
 # arm64 binary is runnable on Gatekeeper-ish CI and owner Macs (no identity).
@@ -90,6 +100,22 @@ fi
 link_note=""
 if [ -n "$src_tree" ] && [ -f "$src_tree/.fabdesk-macos-link" ]; then
   link_note="$(cat "$src_tree/.fabdesk-macos-link")"
+fi
+if [ -n "$src_tree" ] && [ -f "$src_tree/.fabdesk-windows-link" ]; then
+  if [ -n "$link_note" ]; then
+    link_note="${link_note}
+$(cat "$src_tree/.fabdesk-windows-link")"
+  else
+    link_note="$(cat "$src_tree/.fabdesk-windows-link")"
+  fi
+fi
+if [ -n "$src_tree" ] && [ -f "$src_tree/.fabdesk-windows-patch" ]; then
+  if [ -n "$patch_note" ]; then
+    patch_note="${patch_note}
+$(cat "$src_tree/.fabdesk-windows-patch")"
+  else
+    patch_note="$(cat "$src_tree/.fabdesk-windows-patch")"
+  fi
 fi
 
 source_body="This archive is a binary built by ${repo} from the pinned upstream commit."
@@ -127,6 +153,7 @@ EOF
 
 archive_name="tracemaker-${platform}"
 if [[ "$platform" == windows-* ]]; then
+  bash "$SCRIPT_DIR/verify-windows.sh" "$work/$exe_name"
   archive="${dest_dir}/${archive_name}.zip"
   (cd "$work" && zip -r "$archive" .)
   format="zip"

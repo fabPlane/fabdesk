@@ -12,10 +12,21 @@
 #           so FindSQLite3 does not -isystem the Xcode SDK (run 38005104781).
 #           zstd is libzstd.a (run 38009143938). ninja -k 0; smoke abort
 #           uploads unpackaged binaries + lldb/dyld/crash logs.
-# Each archive ships LICENSE, NOTICE, and SOURCE.txt (pinned commit + tag).
+#   Windows: no upstream CMake preset (base prepends /usr/bin; Warnings.cmake
+#           is GCC-only). Best-effort MSYS2 UCRT64 + Ninja, static libgcc/
+#           libstdc++ / zstd / sqlite. continue-on-error so a Windows failure
+#           leaves linux/macos published and the workflow green. After
+#           TRACEMAKER_OPTIONAL_FAIL_LIMIT consecutive failures the platform
+#           is waived (platform-status.json) so the weekly run can skip.
+# Each archive ships LICENSE, NOTICE, SOURCE.txt, DEPENDENCIES.txt.
+#
+# Public downloads: TensorFleet/fabdesk is private, so GitHub release URLs
+# 404 for real users. After the private tag is published, mirror-public.sh
+# copies archives + a rewritten manifest to downloads.fabplane.com/tracemaker
+# (same R2 bucket as desktop installers) when the owner has configured
+# secrets. Unset credentials skip with a notice and never fail the release.
 #
 # Not built (marked, not blocking):
-#   - windows-x86_64: no upstream CMake preset or documented Windows deps.
 #   - macos-x86_64: GitHub Intel macOS runners are deprecated and expensive;
 #     brew bottles on Apple silicon are arm64, so a cheap extra cell is not practical.
 #
@@ -58,6 +69,7 @@ jobs:
       missing_platforms: ${{ steps.resolve.outputs.missing_platforms }}
       published_platforms: ${{ steps.resolve.outputs.published_platforms }}
       expected_platforms: ${{ steps.resolve.outputs.expected_platforms }}
+      waived_platforms: ${{ steps.resolve.outputs.waived_platforms }}
       upstream_repo: ${{ steps.resolve.outputs.upstream_repo }}
       upstream_ref: ${{ steps.resolve.outputs.upstream_ref }}
       upstream_tag: ${{ steps.resolve.outputs.upstream_tag }}
@@ -199,10 +211,105 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  build-windows:
+    name: windows-x86_64
+    needs: resolve
+    if: needs.resolve.outputs.skip != 'true' && (needs.resolve.outputs.force == 'true' || contains(format(',{0},', needs.resolve.outputs.missing_platforms), ',windows-x86_64,'))
+    runs-on: windows-latest
+    timeout-minutes: 90
+    # A Windows failure must not fail the workflow or block linux/macos publish.
+    continue-on-error: true
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Enable long paths
+        shell: pwsh
+        run: |
+          New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force
+          git config --system core.longpaths true
+
+      - uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-cc
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-boost
+            mingw-w64-ucrt-x86_64-eigen3
+            mingw-w64-ucrt-x86_64-nlohmann-json
+            mingw-w64-ucrt-x86_64-cli11
+            mingw-w64-ucrt-x86_64-sqlite3
+            mingw-w64-ucrt-x86_64-zstd
+            zip
+            python
+            git
+
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+          submodules: false
+
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          repository: DingoOz/TraceMaker
+          ref: ${{ needs.resolve.outputs.upstream_commit }}
+          path: TraceMaker
+          persist-credentials: false
+
+      - name: Build tracemaker.exe
+        id: build
+        env:
+          MSYSTEM: UCRT64
+        run: |
+          # GITHUB_WORKSPACE is D:\...; backslashes are escapes in bash.
+          ws="$(cygpath -u "${GITHUB_WORKSPACE}")"
+          bash "${ws}/scripts/tracemaker/build.sh" "${ws}/TraceMaker" windows-x86_64
+
+      - name: Upload unpackaged binary + build log
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: tracemaker-windows-x86_64-debug
+          path: |
+            TraceMaker/build/windows-x86_64/src/app/tracemaker.exe
+            TraceMaker/build/windows-x86_64/fabdesk-build.log
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Smoke test
+        run: |
+          ws="$(cygpath -u "${GITHUB_WORKSPACE}")"
+          bash "${ws}/scripts/tracemaker/smoke.sh" "${{ steps.build.outputs.binary }}" "${ws}/scripts/tracemaker/fixtures/smoke.kicad_pcb"
+
+      - name: Package (zip + LICENSE + SOURCE.txt)
+        env:
+          TRACEMAKER_UPSTREAM_REPO: ${{ needs.resolve.outputs.upstream_repo }}
+          TRACEMAKER_UPSTREAM_TAG: ${{ needs.resolve.outputs.upstream_tag }}
+          TRACEMAKER_UPSTREAM_COMMIT: ${{ needs.resolve.outputs.upstream_commit }}
+          TRACEMAKER_SOURCE_URL: ${{ needs.resolve.outputs.source_url }}
+          TRACEMAKER_RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}
+        run: |
+          ws="$(cygpath -u "${GITHUB_WORKSPACE}")"
+          export TRACEMAKER_SRC="${ws}/TraceMaker"
+          bash "${ws}/scripts/tracemaker/package.sh" \
+            "${{ steps.build.outputs.binary }}" windows-x86_64 \
+            "${ws}/pack/windows-x86_64"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: tracemaker-windows-x86_64
+          path: pack/windows-x86_64/
+          if-no-files-found: error
+          retention-days: 7
+
   publish:
     name: Publish GitHub release
-    needs: [resolve, build-linux, build-macos]
-    if: needs.resolve.outputs.skip != 'true' && !cancelled() && (needs.build-linux.result == 'success' || needs.build-macos.result == 'success')
+    needs: [resolve, build-linux, build-macos, build-windows]
+    if: needs.resolve.outputs.skip != 'true' && !cancelled() && (needs.build-linux.result == 'success' || needs.build-macos.result == 'success' || needs.build-windows.result == 'success')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -214,8 +321,8 @@ jobs:
 
       # tracemaker-* also matches the failure-only build-log artifact; publish.sh
       # only reads */asset.json, then merges with the existing immutable tag
-      # (Linux-only tracemaker-v0.9.0-24c8477) after checksum-verifying kept
-      # archives. Uploads use --clobber; both tags use --latest=false.
+      # after checksum-verifying kept archives. Uploads use --clobber; both
+      # tags use --latest=false.
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: tracemaker-*
@@ -231,3 +338,48 @@ jobs:
           TRACEMAKER_UPSTREAM_COMMIT: ${{ needs.resolve.outputs.upstream_commit }}
           TRACEMAKER_SOURCE_URL: ${{ needs.resolve.outputs.source_url }}
         run: bash "${GITHUB_WORKSPACE}/scripts/tracemaker/publish.sh" "${GITHUB_WORKSPACE}/artifacts"
+
+      - name: Mirror to public downloads (R2 or public repo)
+        # Never fail the private GitHub release. Unset secrets skip with a notice.
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRACEMAKER_RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}
+          TRACEMAKER_PUBLIC_BASE_URL: ${{ vars.TRACEMAKER_PUBLIC_BASE_URL }}
+          TRACEMAKER_S3_BUCKET: ${{ vars.TRACEMAKER_S3_BUCKET }}
+          TRACEMAKER_S3_ENDPOINT: ${{ vars.TRACEMAKER_S3_ENDPOINT }}
+          TRACEMAKER_S3_REGION: ${{ vars.TRACEMAKER_S3_REGION }}
+          TRACEMAKER_S3_PREFIX: ${{ vars.TRACEMAKER_S3_PREFIX }}
+          TRACEMAKER_S3_ACCESS_KEY_ID: ${{ secrets.TRACEMAKER_S3_ACCESS_KEY_ID }}
+          TRACEMAKER_S3_SECRET_ACCESS_KEY: ${{ secrets.TRACEMAKER_S3_SECRET_ACCESS_KEY }}
+          TRACEMAKER_PUBLIC_RELEASE_REPO: ${{ vars.TRACEMAKER_PUBLIC_RELEASE_REPO }}
+          TRACEMAKER_PUBLIC_RELEASE_TOKEN: ${{ secrets.TRACEMAKER_PUBLIC_RELEASE_TOKEN }}
+          DESKTOP_R2_ACCESS_KEY_ID: ${{ vars.DESKTOP_R2_ACCESS_KEY_ID }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: bash "${GITHUB_WORKSPACE}/scripts/tracemaker/mirror-public.sh" "${GITHUB_WORKSPACE}/artifacts"
+
+  summarize:
+    name: Summarize platform status
+    needs: [resolve, build-linux, build-macos, build-windows, publish]
+    if: always() && !cancelled() && needs.resolve.result == 'success' && needs.resolve.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+          submodules: false
+
+      - name: Record Windows waiver / job summary
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRACEMAKER_RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}
+          TRACEMAKER_LINUX_RESULT: ${{ needs.build-linux.result }}
+          TRACEMAKER_MACOS_RESULT: ${{ needs.build-macos.result }}
+          TRACEMAKER_WINDOWS_RESULT: ${{ needs.build-windows.result }}
+          TRACEMAKER_PUBLISH_RESULT: ${{ needs.publish.result }}
+          TRACEMAKER_MISSING_PLATFORMS: ${{ needs.resolve.outputs.missing_platforms }}
+          TRACEMAKER_PUBLISHED_PLATFORMS: ${{ needs.resolve.outputs.published_platforms }}
+        run: bash "${GITHUB_WORKSPACE}/scripts/tracemaker/summarize-run.sh"

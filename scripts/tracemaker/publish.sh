@@ -182,9 +182,10 @@ Linux builds are unmodified upstream. The recipe is
 See \`manifest.json\` (platform, sha256, size, upstream tag/commit, build date).
 \`tracemaker-latest\` is a rolling pointer at this same immutable tag.
 
-CUDA is not included (cpu-only on Linux, Metal on macOS). Windows and macOS x86_64
-are omitted unless a matrix cell uploaded an asset — upstream has no Windows
-preset, and Intel macOS runners are not cheap enough for a weekly job.
+CUDA is not included (cpu-only on Linux, Metal on macOS, cpu-only MinGW on Windows).
+macOS x86_64 is omitted (Intel runners are not cheap enough for a weekly job).
+Windows is best-effort: a failed windows-x86_64 job leaves linux/macos published
+and is reported in the run summary.
 EOF
 
 uploads=()

@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Resolve DingoOz/TraceMaker to a commit. Skip only when the immutable fabdesk
-# release already lists every expected platform (unless TRACEMAKER_FORCE=1).
+# release already lists every expected platform that is still scheduled to
+# build (unless TRACEMAKER_FORCE=1). Optional platforms (windows-x86_64) that
+# have failed TRACEMAKER_OPTIONAL_FAIL_LIMIT times are waived so the weekly
+# run does not loop red forever; force rebuilds them again.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -63,22 +66,36 @@ fi
 EXPECTED_CSV="$(expected_platforms_csv)"
 MISSING="$(expected_platforms | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
 PUBLISHED=""
+WAIVED=""
 SKIP=false
 
 if [ "$FORCE" = true ]; then
-  echo "Force rebuild requested; ignoring any existing ${RELEASE_TAG} assets."
+  echo "Force rebuild requested; ignoring any existing ${RELEASE_TAG} assets and Windows waivers."
 elif command -v gh >/dev/null && [ -n "${GH_TOKEN:-${GITHUB_TOKEN:-}}" ]; then
   if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
     work="$(mktemp -d "${TMPDIR:-/tmp}/tm-resolve.XXXXXX")"
     trap 'rm -rf "$work"' EXIT
+    status_file=""
+    if gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern platform-status.json --dir "$work" 2>/dev/null \
+      && [ -f "$work/platform-status.json" ]; then
+      status_file="$work/platform-status.json"
+      WAIVED="$(waived_optional_platforms "$status_file")"
+    fi
     if gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern manifest.json --dir "$work" 2>/dev/null \
       && [ -f "$work/manifest.json" ]; then
       PUBLISHED="$(published_platforms_from_manifest "$work/manifest.json")"
-      MISSING="$(missing_expected_platforms "$work/manifest.json")"
+      if [ -n "$status_file" ]; then
+        MISSING="$(missing_build_platforms "$work/manifest.json" "$status_file")"
+      else
+        MISSING="$(missing_expected_platforms "$work/manifest.json")"
+      fi
       if [ -z "$MISSING" ]; then
         SKIP=true
+        if [ -n "$WAIVED" ]; then
+          echo "Immutable release ${RELEASE_TAG} is complete for required platforms (have: ${PUBLISHED:-none}); waived optional: ${WAIVED}."
+        fi
       else
-        echo "Immutable release ${RELEASE_TAG} is incomplete (have: ${PUBLISHED:-none}; missing: ${MISSING})."
+        echo "Immutable release ${RELEASE_TAG} is incomplete (have: ${PUBLISHED:-none}; missing: ${MISSING}${WAIVED:+; waived: ${WAIVED}})."
       fi
     else
       echo "Immutable release ${RELEASE_TAG} exists but has no manifest.json; treating every expected platform as missing."
@@ -104,6 +121,7 @@ SOURCE_URL="https://github.com/${UPSTREAM_REPO}/archive/${UPSTREAM_COMMIT}.tar.g
   echo "expected_platforms=$EXPECTED_CSV"
   echo "missing_platforms=$MISSING_CSV"
   echo "published_platforms=$PUBLISHED_CSV"
+  echo "waived_platforms=${WAIVED}"
 }
 
 if [ -n "${GITHUB_OUTPUT:-}" ]; then
@@ -120,7 +138,19 @@ if [ -n "${GITHUB_OUTPUT:-}" ]; then
     echo "expected_platforms=$EXPECTED_CSV"
     echo "missing_platforms=$MISSING_CSV"
     echo "published_platforms=$PUBLISHED_CSV"
+    echo "waived_platforms=${WAIVED}"
   } >> "$GITHUB_OUTPUT"
 fi
 
-echo "Resolved ${UPSTREAM_REPO}@${UPSTREAM_REF} -> ${UPSTREAM_COMMIT} (release ${RELEASE_TAG}, skip=${SKIP}, missing=${MISSING_CSV:-none}, force=${FORCE})"
+echo "Resolved ${UPSTREAM_REPO}@${UPSTREAM_REF} -> ${UPSTREAM_COMMIT} (release ${RELEASE_TAG}, skip=${SKIP}, missing=${MISSING_CSV:-none}, waived=${WAIVED:-none}, force=${FORCE})"
+if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+  {
+    echo "## Resolve"
+    echo
+    echo "- release: \`${RELEASE_TAG}\`"
+    echo "- skip: \`${SKIP}\`"
+    echo "- published: \`${PUBLISHED:-none}\`"
+    echo "- missing (will build): \`${MISSING:-none}\`"
+    echo "- waived optional: \`${WAIVED:-none}\`"
+  } >> "$GITHUB_STEP_SUMMARY"
+fi
