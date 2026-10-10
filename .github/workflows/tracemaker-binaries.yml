@@ -17,6 +17,8 @@
 #           libstdc++ / zstd / sqlite, plus ws2_32/mswsock/bcrypt. A
 #           commit-pinned MinGW patch is applied only on this platform when
 #           HEAD matches v0.9.0 (M_PI, filesystem::path::string()).
+#           Git for Windows checkouts force core.autocrlf=false / core.eol=lf
+#           (run 38082482176: LF patch vs CRLF sources).
 #           continue-on-error so a Windows failure
 #           leaves linux/macos published and the workflow green. After
 #           TRACEMAKER_OPTIONAL_FAIL_LIMIT consecutive failures the platform
@@ -232,11 +234,17 @@ jobs:
       run:
         shell: msys2 {0}
     steps:
-      - name: Enable long paths
+      - name: Enable long paths and LF checkouts
         shell: pwsh
         run: |
           New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force
           git config --system core.longpaths true
+          # Git for Windows defaults to core.autocrlf=true. actions/checkout
+          # overrides HOME, so --global is ignored during the TraceMaker
+          # checkout; --system is what that git.exe actually reads.
+          # Run 38082482176: LF patch vs CRLF escape.cpp / viewer_server.cpp.
+          git config --system core.autocrlf false
+          git config --system core.eol lf
 
       - uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
         with:
@@ -261,11 +269,25 @@ jobs:
           # Linux verify runner. UCRT64 gets both so either path works.
 
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        env:
+          # Survives actions/checkout's temporary HOME (system config alone
+          # is enough for git.exe; this pins MSYS2 git the same way).
+          GIT_CONFIG_COUNT: "2"
+          GIT_CONFIG_KEY_0: core.autocrlf
+          GIT_CONFIG_VALUE_0: "false"
+          GIT_CONFIG_KEY_1: core.eol
+          GIT_CONFIG_VALUE_1: lf
         with:
           persist-credentials: false
           submodules: false
 
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        env:
+          GIT_CONFIG_COUNT: "2"
+          GIT_CONFIG_KEY_0: core.autocrlf
+          GIT_CONFIG_VALUE_0: "false"
+          GIT_CONFIG_KEY_1: core.eol
+          GIT_CONFIG_VALUE_1: lf
         with:
           repository: DingoOz/TraceMaker
           ref: ${{ needs.resolve.outputs.upstream_commit }}

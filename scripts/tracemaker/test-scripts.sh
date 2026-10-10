@@ -804,6 +804,16 @@ assert_contains "$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml" "t
 assert_contains "$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml" "tracemaker-windows-x86_64-debug"
 assert_contains "$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml" "continue-on-error: true"
 assert_contains "$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml" "windows-x86_64"
+assert_contains "$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml" "core.autocrlf false"
+assert_contains "$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml" "core.eol lf"
+assert_contains "$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml" "GIT_CONFIG_KEY_0: core.autocrlf"
+assert_contains "$SCRIPT_DIR/../../.gitattributes" "-text eol=lf"
+if grep -F -q 'scripts/tracemaker/patches/* -text eol=lf' "$SCRIPT_DIR/../../.gitattributes"; then
+  echo "ok   .gitattributes keeps patch files unconverted (-text)"
+else
+  echo "FAIL .gitattributes does not pin scripts/tracemaker/patches/* -text eol=lf"
+  fail=1
+fi
 assert_contains "$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml" "mirror-public.sh"
 assert_contains "$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml" "github.event_name == 'workflow_dispatch' && (inputs.force == true || inputs.force == 'true')"
 assert_contains "$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml" "release_exists"
@@ -900,6 +910,8 @@ fi
 
 # --- apply-windows-patch is commit-pinned and does not touch Linux/macOS trees ---
 assert_contains "$SCRIPT_DIR/build.sh" "apply-windows-patch.sh"
+assert_contains "$SCRIPT_DIR/apply-windows-patch.sh" "--ignore-whitespace"
+assert_contains "$SCRIPT_DIR/apply-windows-patch.sh" "--whitespace=nowarn"
 assert_contains "$SCRIPT_DIR/cmake/windows-static-runtime.cmake" "link_libraries(ws2_32 mswsock bcrypt)"
 assert_contains "$SCRIPT_DIR/cmake/windows-static-runtime.cmake" "if(WIN32)"
 win_patch="$SCRIPT_DIR/patches/24c847772e57ea8888e2cfe4bbf1aa00666390a4-windows.patch"
@@ -980,6 +992,106 @@ if git -C "$win_tree" apply --check "$win_patch"; then
 else
   echo "ok   windows patch does not apply twice"
 fi
+
+# Run 38082482176: Git for Windows autocrlf turned TraceMaker into CRLF while
+# the patch stayed LF (or the reverse). Both mismatches fail the exact hunks
+# the runner printed. The apply script must succeed, and still fail loudly
+# when the context is actually wrong.
+win_crlf_src() {
+  local dest="$1"
+  rm -rf "$dest"
+  mkdir -p "$dest"
+  cp -a "$win_pre/src" "$dest/src"
+  git -C "$dest" init -q
+  git -C "$dest" -c user.email=tracemaker-test@example.test -c user.name=test commit --allow-empty -m init -q
+  python3 - "$dest" <<'PY'
+import pathlib, sys
+root = pathlib.Path(sys.argv[1]) / "src"
+for path in root.rglob("*"):
+    if path.is_file():
+        data = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+        path.write_bytes(data)
+PY
+}
+
+assert_windows_patched() {
+  local tree="$1"
+  assert_contains "$tree/src/route/escape.cpp" "std::numbers::pi"
+  assert_contains "$tree/src/server/viewer_server.cpp" "path->string()"
+  if grep -q 'M_PI' "$tree/src/route/escape.cpp"; then
+    echo "FAIL CRLF apply left M_PI in $tree"
+    fail=1
+  fi
+}
+
+win_crlf_tree="$ROOT/win-crlf-src"
+win_crlf_src "$win_crlf_tree"
+if TRACEMAKER_WINDOWS_PATCH="$win_patch" bash "$SCRIPT_DIR/apply-windows-patch.sh" "$win_crlf_tree" \
+  >"$ROOT/win-crlf-lf-patch.log" 2>"$ROOT/win-crlf-lf-patch.err"; then
+  assert_contains "$ROOT/win-crlf-lf-patch.log" "Retrying apply with --ignore-whitespace"
+  assert_file "$win_crlf_tree/.fabdesk-windows-patch"
+  assert_contains "$win_crlf_tree/.fabdesk-windows-patch" "Apply mode: ignore-whitespace"
+  assert_windows_patched "$win_crlf_tree"
+  echo "ok   apply-windows-patch applies an LF patch onto a CRLF tree"
+else
+  echo "FAIL apply-windows-patch on CRLF sources + LF patch"
+  cat "$ROOT/win-crlf-lf-patch.log" "$ROOT/win-crlf-lf-patch.err"
+  fail=1
+fi
+
+win_crlf_patch="$ROOT/win-crlf.patch"
+python3 - "$win_patch" "$win_crlf_patch" <<'PY'
+import pathlib, sys
+src, dest = map(pathlib.Path, sys.argv[1:])
+data = src.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+dest.write_bytes(data)
+PY
+win_crlf_patch_tree="$ROOT/win-crlf-src-crlf-patch"
+win_crlf_src "$win_crlf_patch_tree"
+# CRLF patch + CRLF tree applies exactly; also cover CRLF patch + LF tree.
+if TRACEMAKER_WINDOWS_PATCH="$win_crlf_patch" bash "$SCRIPT_DIR/apply-windows-patch.sh" "$win_crlf_patch_tree" \
+  >"$ROOT/win-crlf-crlf-patch.log" 2>"$ROOT/win-crlf-crlf-patch.err"; then
+  assert_windows_patched "$win_crlf_patch_tree"
+  echo "ok   apply-windows-patch applies a CRLF patch onto a CRLF tree"
+else
+  echo "FAIL apply-windows-patch on CRLF sources + CRLF patch"
+  cat "$ROOT/win-crlf-crlf-patch.log" "$ROOT/win-crlf-crlf-patch.err"
+  fail=1
+fi
+
+win_lf_crlf_patch="$ROOT/win-lf-src-crlf-patch"
+rm -rf "$win_lf_crlf_patch"
+mkdir -p "$win_lf_crlf_patch"
+cp -a "$win_pre/src" "$win_lf_crlf_patch/src"
+git -C "$win_lf_crlf_patch" init -q
+git -C "$win_lf_crlf_patch" -c user.email=tracemaker-test@example.test -c user.name=test commit --allow-empty -m init -q
+if TRACEMAKER_WINDOWS_PATCH="$win_crlf_patch" bash "$SCRIPT_DIR/apply-windows-patch.sh" "$win_lf_crlf_patch" \
+  >"$ROOT/win-lf-crlf-patch.log" 2>"$ROOT/win-lf-crlf-patch.err"; then
+  assert_windows_patched "$win_lf_crlf_patch"
+  echo "ok   apply-windows-patch applies a CRLF patch onto an LF tree"
+else
+  echo "FAIL apply-windows-patch on LF sources + CRLF patch"
+  cat "$ROOT/win-lf-crlf-patch.log" "$ROOT/win-lf-crlf-patch.err"
+  fail=1
+fi
+
+win_mismatch="$ROOT/win-mismatch"
+win_crlf_src "$win_mismatch"
+python3 - "$win_mismatch/src/route/escape.cpp" <<'PY'
+import pathlib, sys
+path = pathlib.Path(sys.argv[1])
+text = path.read_bytes().replace(b"#include <map>", b"#include <set>")
+path.write_bytes(text)
+PY
+if TRACEMAKER_WINDOWS_PATCH="$win_patch" bash "$SCRIPT_DIR/apply-windows-patch.sh" "$win_mismatch" \
+  >"$ROOT/win-mismatch.log" 2>"$ROOT/win-mismatch.err"; then
+  echo "FAIL apply-windows-patch succeeded on a content-mismatched tree"
+  fail=1
+else
+  assert_contains "$ROOT/win-mismatch.err" "does not apply"
+  echo "ok   apply-windows-patch fails loudly on a real content mismatch"
+fi
+
 printf '%s\n' 'Applied fabdesk Windows patch 24c847772e57ea8888e2cfe4bbf1aa00666390a4-windows.patch' \
   > "$src_tree/.fabdesk-windows-patch"
 (
