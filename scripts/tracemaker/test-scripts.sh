@@ -310,6 +310,19 @@ else
 fi
 assert_contains "$ROOT/gh.log.meta" "tracemaker-latest latest=false"
 
+# GNU cp (ubuntu-latest) errors when src and dest are the same file. After the
+# first publish, find $artifacts_dir -name LICENSE can return the root copy
+# (CI run 38015352358). publish.sh must not cp that onto itself.
+same_dir="$ROOT/same-file"
+mkdir -p "$same_dir"
+printf 'x\n' > "$same_dir/LICENSE"
+if cp "$same_dir/LICENSE" "$same_dir/LICENSE" 2>"$ROOT/same-file.err"; then
+  echo "ok   this cp allows same-file (not GNU); publish.sh still skips via -ef"
+else
+  assert_contains "$ROOT/same-file.err" "same file"
+  echo "ok   GNU cp rejects same-file (the publish.sh second-run bug)"
+fi
+
 # partial release: only macos is new; linux is already published and must be merged
 partial_pack="$ROOT/pack-macos-only"
 mkdir -p "$partial_pack"
@@ -672,7 +685,11 @@ else
   fail=1
 fi
 
-# Real v0.9.0 tree when the caller cloned it (optional; skipped otherwise).
+# Real v0.9.0 tree when the caller cloned it. CI does not set this and must
+# not clone or hit the network.
+if [ -z "${TRACEMAKER_FIXTURE_SRC:-}" ]; then
+  echo "skip v0.9.0 tree tests (TRACEMAKER_FIXTURE_SRC unset; no network)"
+fi
 if [ -n "${TRACEMAKER_FIXTURE_SRC:-}" ]; then
   fixture="$(abs_existing_dir "$TRACEMAKER_FIXTURE_SRC")"
   pinned="$ROOT/tm-v090"
@@ -724,6 +741,66 @@ EOF
       fail=1
     fi
   fi
+fi
+
+# bash -n + CMake shim configure (run 38013328567: missing `()` only showed up on macos-15).
+for _sh in "$SCRIPT_DIR"/*.sh; do
+  if bash -n "$_sh"; then
+    echo "ok   bash -n $(basename "$_sh")"
+  else
+    echo "FAIL bash -n $_sh"
+    fail=1
+  fi
+done
+# Inherit TM_REQUIRE_CMAKE from the caller. The hosted ubuntu-latest job
+# sets it to 1 so missing cmake/cc/ar fail CI. verify is self-hosted and
+# cannot sudo-install cmake; forcing 1 here made that job fail even though
+# check-cmake.sh would have skipped with a notice (run 38015800636).
+if bash "$SCRIPT_DIR/check-cmake.sh" "$ROOT/cmake-check" >"$ROOT/cmake-check.out" 2>&1; then
+  cat "$ROOT/cmake-check.out"
+  if grep -q "cmake shim checks passed" "$ROOT/cmake-check.out"; then
+    echo "ok   check-cmake.sh (parse + harness + fatal dylib/missing)"
+  elif grep -q "skip cmake harness" "$ROOT/cmake-check.out"; then
+    if [ "${TM_REQUIRE_CMAKE:-}" = 1 ]; then
+      echo "FAIL check-cmake.sh skipped while TM_REQUIRE_CMAKE=1"
+      fail=1
+    else
+      echo "ok   check-cmake.sh skipped (tools missing; hosted job is the gate)"
+    fi
+  else
+    echo "FAIL check-cmake.sh exited 0 without a pass or skip marker"
+    fail=1
+  fi
+else
+  cat "$ROOT/cmake-check.out"
+  echo "FAIL check-cmake.sh"
+  fail=1
+fi
+mkdir -p "$ROOT/emptybin"
+# Coreutils only — no cmake/cc/ar — so we can test skip vs TM_REQUIRE_CMAKE=1.
+for _t in dirname mkdir pwd; do
+  _src="$(command -v "$_t" || true)"
+  if [ -n "$_src" ]; then
+    ln -s "$_src" "$ROOT/emptybin/$_t"
+  fi
+done
+# Invoke with /bin/bash so PATH can omit cmake without hiding the shell.
+if PATH="$ROOT/emptybin" TM_REQUIRE_CMAKE=1 /bin/bash "$SCRIPT_DIR/check-cmake.sh" "$ROOT/cmake-missing" \
+  >"$ROOT/cmake-req.out" 2>"$ROOT/cmake-req.err"; then
+  echo "FAIL TM_REQUIRE_CMAKE=1 succeeded without cmake"
+  fail=1
+else
+  assert_contains "$ROOT/cmake-req.err" "required"
+  echo "ok   TM_REQUIRE_CMAKE=1 fails when cmake/cc/ar are missing"
+fi
+if PATH="$ROOT/emptybin" /usr/bin/env -u TM_REQUIRE_CMAKE /bin/bash "$SCRIPT_DIR/check-cmake.sh" "$ROOT/cmake-skip" \
+  >"$ROOT/cmake-skip.out" 2>"$ROOT/cmake-skip.err"; then
+  assert_contains "$ROOT/cmake-skip.out" "skip cmake harness"
+  echo "ok   check-cmake.sh skips with notice when tools are missing"
+else
+  echo "FAIL optional cmake harness failed instead of skipping"
+  cat "$ROOT/cmake-skip.out" "$ROOT/cmake-skip.err"
+  fail=1
 fi
 
 # Packaged manifest must satisfy the TypeScript zod schema (same parser the app uses).

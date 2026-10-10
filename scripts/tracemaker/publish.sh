@@ -140,10 +140,23 @@ print(json.dumps(manifest, indent=2))
 PY
 
 # Copy a license/source offer next to the manifest so the pointer release stays complete.
-license_src="$(find "$artifacts_dir" -name LICENSE -type f | head -n 1 || true)"
-source_src="$(find "$artifacts_dir" -name SOURCE.txt -type f | head -n 1 || true)"
-[ -n "$license_src" ] && cp "$license_src" "$artifacts_dir/LICENSE"
-[ -n "$source_src" ] && cp "$source_src" "$artifacts_dir/SOURCE.txt"
+# Search only platform artifact dirs (mindepth 2). A second publish of the same
+# folder already has LICENSE/SOURCE.txt at the root; GNU cp errors on same-file
+# (ubuntu-latest, CI run 38015352358).
+copy_unless_same() {
+  local src="${1:-}" dest="$2"
+  if [ -z "$src" ] || [ ! -f "$src" ]; then
+    return 0
+  fi
+  if [ -e "$dest" ] && [ "$src" -ef "$dest" ]; then
+    return 0
+  fi
+  cp "$src" "$dest"
+}
+license_src="$(find "$artifacts_dir" -mindepth 2 -name LICENSE -type f | head -n 1 || true)"
+source_src="$(find "$artifacts_dir" -mindepth 2 -name SOURCE.txt -type f | head -n 1 || true)"
+copy_unless_same "$license_src" "$artifacts_dir/LICENSE"
+copy_unless_same "$source_src" "$artifacts_dir/SOURCE.txt"
 
 notes="$artifacts_dir/NOTES.md"
 cat > "$notes" <<EOF

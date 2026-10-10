@@ -4,6 +4,9 @@
 # We also pass -Dzstd_DIR at a config that imports libzstd.a under both
 # zstd::libzstd_static and zstd::libzstd_shared (upstream prefers shared).
 # This file fails configure if that archive is missing or still a dylib.
+# User-defined function calls require parentheses:
+#   fabdesk_collect_targets(_child "${_s}")
+# A bare `fabdesk_collect_targets _child` is a parse error (run 38013328567).
 
 function(fabdesk_require_static_zstd_archive)
   if(NOT TM_ZSTD_LIBRARY)
@@ -79,12 +82,12 @@ endfunction()
 
 function(fabdesk_collect_targets out dir)
   get_property(_here DIRECTORY "${dir}" PROPERTY BUILDSYSTEM_TARGETS)
-  set(_acc ${${out}})
+  set(_acc "${${out}}")
   list(APPEND _acc ${_here})
   get_property(_subs DIRECTORY "${dir}" PROPERTY SUBDIRECTORIES)
   foreach(_s ${_subs})
     set(_child "")
-    fabdesk_collect_targets _child "${_s}"
+    fabdesk_collect_targets(_child "${_s}")
     list(APPEND _acc ${_child})
   endforeach()
   set(${out} "${_acc}" PARENT_SCOPE)
@@ -93,7 +96,7 @@ endfunction()
 function(fabdesk_prefer_static_zstd)
   fabdesk_import_static_zstd()
   set(_targets "")
-  fabdesk_collect_targets _targets "${CMAKE_SOURCE_DIR}"
+  fabdesk_collect_targets(_targets "${CMAKE_SOURCE_DIR}")
   foreach(_tgt ${_targets})
     fabdesk_retarget_zstd(${_tgt})
   endforeach()
