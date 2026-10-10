@@ -44,7 +44,11 @@ fi
 if [ -n "$src_tree" ] && [ -f "$src_tree/NOTICE" ]; then
   cp "$src_tree/NOTICE" "$work/NOTICE"
 else
-  curl -fsSL "https://raw.githubusercontent.com/${upstream_repo}/${upstream_commit}/NOTICE" -o "$work/NOTICE" || true
+  curl -fsSL "https://raw.githubusercontent.com/${upstream_repo}/${upstream_commit}/NOTICE" -o "$work/NOTICE"
+fi
+if [ ! -f "$work/NOTICE" ]; then
+  echo "::error::NOTICE is required in the TraceMaker archive" >&2
+  exit 1
 fi
 
 notes="$work/DEPENDENCIES.txt"
@@ -54,6 +58,11 @@ notes="$work/DEPENDENCIES.txt"
   echo
   echo "This is a cpu-only / Metal build. CUDA is not included; users do not need nvcc or a GPU."
   echo "Boost, Eigen, CLI11 and nlohmann_json are header-only at link time."
+  if [[ "$platform" == macos-* ]]; then
+    echo "macOS: Homebrew LLVM static libc++ / libc++abi / libunwind; static libzstd.a;"
+    echo "SQLite is static libsqlite3.a or /usr/lib/libsqlite3.dylib; minos 15.0."
+    echo "No Homebrew dylibs (zstd/sqlite/libc++). Metal + Foundation + libobjc + libSystem."
+  fi
   echo
 } > "$notes"
 bash "$SCRIPT_DIR/bundle-libs.sh" "$work/$exe_name" "$work/lib" "$notes"
@@ -69,6 +78,10 @@ patch_note=""
 if [ -n "$src_tree" ] && [ -f "$src_tree/.fabdesk-macos-patch" ]; then
   patch_note="$(cat "$src_tree/.fabdesk-macos-patch")"
 fi
+link_note=""
+if [ -n "$src_tree" ] && [ -f "$src_tree/.fabdesk-macos-link" ]; then
+  link_note="$(cat "$src_tree/.fabdesk-macos-link")"
+fi
 
 source_body="This archive is a binary built by ${repo} from the pinned upstream commit."
 if [ -n "$patch_note" ]; then
@@ -79,6 +92,11 @@ else
   source_body="${source_body}
 TensorFleet did not patch the C++ tree for this build. Corresponding complete
 source is the exact commit below (GPL-3.0 §6 network source offer)."
+fi
+if [ -n "$link_note" ]; then
+  source_body="${source_body}
+
+${link_note}"
 fi
 
 cat > "$work/SOURCE.txt" <<EOF
@@ -137,6 +155,8 @@ asset["linkage"] = (
     if any(line.startswith("bundled ") for line in notes.splitlines())
     else "system-libc-or-frameworks"
 )
+if os.environ["PLATFORM"].startswith("macos-"):
+    asset["minos"] = "15.0"
 path = pathlib.Path(os.environ["DEST_DIR"]) / "asset.json"
 path.write_text(json.dumps(asset, indent=2) + "\n", encoding="utf-8")
 print(json.dumps(asset, indent=2))

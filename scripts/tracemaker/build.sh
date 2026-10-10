@@ -39,6 +39,12 @@ case "$platform" in
       echo "TM_MACOS_LIBCXX=${MACOS_LIBCXX}" >> "$GITHUB_ENV"
     fi
     printf '%s\n' "${MACOS_LIBCXX}" > "$src/.fabdesk-macos-libcxx"
+    {
+      echo "macOS link: Homebrew LLVM static libc++ / libc++abi / libunwind; -nostdlib++."
+      echo "SQLite: isolated headers ${MACOS_SQLITE_INCLUDE_DIR:-} + ${MACOS_SQLITE_LIBRARY:-}."
+      echo "zstd: static ${MACOS_ZSTD_LIBRARY:-} (not Homebrew libzstd.dylib)."
+      echo "CMAKE_OSX_DEPLOYMENT_TARGET=15.0 TM_WERROR=OFF. No TBB/OpenSSL dylibs."
+    } > "$src/.fabdesk-macos-link"
     ;;
   *)
     echo "::error::No supported CMake preset for $platform (upstream is Linux + macOS only)" >&2
@@ -54,8 +60,8 @@ build_log="$build_dir/fabdesk-build.log"
 if [[ "$platform" == macos-* ]]; then
   cache="$build_dir/CMakeCache.txt"
   if [ -f "$cache" ]; then
-    echo "========== CMAKE CACHE (compiler / sqlite / libc++) =========="
-    grep -E '^(CMAKE_CXX_COMPILER|CMAKE_OBJCXX_COMPILER|CMAKE_CXX_FLAGS|CMAKE_OBJCXX_FLAGS|CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES|CMAKE_OBJCXX_STANDARD_INCLUDE_DIRECTORIES|CMAKE_EXE_LINKER_FLAGS|CMAKE_CXX_STANDARD_LIBRARIES|CMAKE_OBJCXX_STANDARD_LIBRARIES|CMAKE_CXX_IMPLICIT_LINK_LIBRARIES|SQLite3_INCLUDE_DIR|SQLite3_LIBRARY|CMAKE_PROJECT_INCLUDE):' "$cache" || true
+    echo "========== CMAKE CACHE (compiler / sqlite / libc++ / zstd) =========="
+    grep -E '^(CMAKE_CXX_COMPILER|CMAKE_OBJCXX_COMPILER|CMAKE_CXX_FLAGS|CMAKE_OBJCXX_FLAGS|CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES|CMAKE_OBJCXX_STANDARD_INCLUDE_DIRECTORIES|CMAKE_EXE_LINKER_FLAGS|CMAKE_CXX_STANDARD_LIBRARIES|CMAKE_OBJCXX_STANDARD_LIBRARIES|CMAKE_CXX_IMPLICIT_LINK_LIBRARIES|SQLite3_INCLUDE_DIR|SQLite3_LIBRARY|TM_ZSTD_LIBRARY|TM_ZSTD_INCLUDE_DIR|ZSTD_LIBRARY|ZSTD_INCLUDE_DIR|zstd_DIR|CMAKE_PROJECT_INCLUDE):' "$cache" || true
     echo "========== END CMAKE CACHE =========="
   fi
   # Keep going so one 10+ minute macOS job reports every missing include / API,
@@ -69,16 +75,16 @@ if [[ "$platform" == macos-* ]]; then
   if [ -f "$cache" ]; then
     {
       echo
-      echo "========== CMAKE CACHE (compiler / sqlite / libc++) =========="
-      grep -E '^(CMAKE_CXX_COMPILER|CMAKE_OBJCXX_COMPILER|CMAKE_CXX_FLAGS|CMAKE_OBJCXX_FLAGS|CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES|CMAKE_OBJCXX_STANDARD_INCLUDE_DIRECTORIES|CMAKE_EXE_LINKER_FLAGS|CMAKE_CXX_STANDARD_LIBRARIES|CMAKE_OBJCXX_STANDARD_LIBRARIES|CMAKE_CXX_IMPLICIT_LINK_LIBRARIES|SQLite3_INCLUDE_DIR|SQLite3_LIBRARY|CMAKE_PROJECT_INCLUDE):' "$cache" || true
+      echo "========== CMAKE CACHE (compiler / sqlite / libc++ / zstd) =========="
+      grep -E '^(CMAKE_CXX_COMPILER|CMAKE_OBJCXX_COMPILER|CMAKE_CXX_FLAGS|CMAKE_OBJCXX_FLAGS|CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES|CMAKE_OBJCXX_STANDARD_INCLUDE_DIRECTORIES|CMAKE_EXE_LINKER_FLAGS|CMAKE_CXX_STANDARD_LIBRARIES|CMAKE_OBJCXX_STANDARD_LIBRARIES|CMAKE_CXX_IMPLICIT_LINK_LIBRARIES|SQLite3_INCLUDE_DIR|SQLite3_LIBRARY|TM_ZSTD_LIBRARY|TM_ZSTD_INCLUDE_DIR|ZSTD_LIBRARY|ZSTD_INCLUDE_DIR|zstd_DIR|CMAKE_PROJECT_INCLUDE):' "$cache" || true
       echo "========== END CMAKE CACHE =========="
     } >> "$build_log"
   fi
-  bash "$SCRIPT_DIR/summarize-build.sh" "$build_log"
   if [ -n "${GITHUB_OUTPUT:-}" ]; then
     echo "build_log=$build_log" >> "$GITHUB_OUTPUT"
   fi
   if [ "$build_code" -ne 0 ]; then
+    bash "$SCRIPT_DIR/summarize-build.sh" "$build_log"
     echo "::error::macOS tracemaker build failed; see the FABDESK BUILD FAILURE SUMMARY and $build_log" >&2
     exit "$build_code"
   fi

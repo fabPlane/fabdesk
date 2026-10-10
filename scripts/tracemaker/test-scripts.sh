@@ -125,6 +125,11 @@ mkdir -p "$src_tree"
 printf 'GPL-3.0-or-later\n' > "$src_tree/LICENSE"
 printf 'NOTICE\n' > "$src_tree/NOTICE"
 printf 'Applied fabdesk patch 24c847772e57ea8888e2cfe4bbf1aa00666390a4.patch\n' > "$src_tree/.fabdesk-macos-patch"
+{
+  echo "macOS link: Homebrew LLVM static libc++ / libc++abi / libunwind; -nostdlib++."
+  echo "SQLite: isolated headers /tmp/sqlite + /opt/homebrew/opt/sqlite/lib/libsqlite3.a."
+  echo "zstd: static /opt/homebrew/opt/zstd/lib/libzstd.a (not Homebrew libzstd.dylib)."
+} > "$src_tree/.fabdesk-macos-link"
 
 export TRACEMAKER_UPSTREAM_REPO=DingoOz/TraceMaker
 export TRACEMAKER_UPSTREAM_TAG=v0.9.0
@@ -145,7 +150,36 @@ assert_file "$ROOT/pack/macos-arm64/asset.json"
 assert_file "$ROOT/pack/linux-x86_64/tracemaker-linux-x86_64.tar.gz"
 assert_file "$ROOT/pack/macos-arm64/tracemaker-macos-arm64.tar.gz"
 assert_contains "$ROOT/pack/macos-arm64/SOURCE.txt" "24c847772e57ea8888e2cfe4bbf1aa00666390a4.patch"
+assert_contains "$ROOT/pack/macos-arm64/SOURCE.txt" "libzstd.a"
 assert_contains "$ROOT/pack/linux-x86_64/LICENSE" "GPL-3.0-or-later"
+assert_file "$ROOT/pack/macos-arm64/DEPENDENCIES.txt"
+assert_file "$ROOT/pack/macos-arm64/NOTICE"
+assert_contains "$ROOT/pack/macos-arm64/DEPENDENCIES.txt" "static libzstd.a"
+assert_contains "$SCRIPT_DIR/package.sh" "shasum -a 256"
+tar -tzf "$ROOT/pack/macos-arm64/tracemaker-macos-arm64.tar.gz" > "$ROOT/macos-tar.list"
+for _need in tracemaker LICENSE NOTICE SOURCE.txt DEPENDENCIES.txt; do
+  if grep -q "${_need}$" "$ROOT/macos-tar.list" || grep -q "/${_need}$" "$ROOT/macos-tar.list"; then
+    echo "ok   macos archive contains $_need"
+  else
+    echo "FAIL macos archive missing $_need"
+    echo "  listing:"
+    cat "$ROOT/macos-tar.list"
+    fail=1
+  fi
+done
+python3 - <<PY
+import json, pathlib
+mac = json.loads(pathlib.Path("$ROOT/pack/macos-arm64/asset.json").read_text())
+assert mac["platform"] == "macos-arm64"
+assert mac["format"] == "tar.gz"
+assert mac["executable"] == "tracemaker"
+assert mac["linkage"] == "system-libc-or-frameworks"
+assert mac["minos"] == "15.0"
+assert len(mac["sha256"]) == 64 and mac["bytes"] > 0
+linux = json.loads(pathlib.Path("$ROOT/pack/linux-x86_64/asset.json").read_text())
+assert "minos" not in linux
+print("ok   macos asset.json has minos 15.0 / linkage / format / executable")
+PY
 
 # --- expected-platform helpers ---
 # shellcheck source=platforms.sh
@@ -358,6 +392,14 @@ assert_contains "$ROOT/summary.out" "FAILED: src/route/CMakeFiles/tm_route.dir/r
 assert_contains "$ROOT/summary.out" "failed_targets=2"
 assert_contains "$SCRIPT_DIR/macos-llvm.sh" "-include cstdlib"
 assert_contains "$SCRIPT_DIR/build.sh" ".fabdesk-sqlite-inc"
+assert_contains "$SCRIPT_DIR/macos-llvm.sh" "TM_ZSTD_LIBRARY"
+assert_contains "$SCRIPT_DIR/macos-llvm.sh" "ZSTD_LIBRARY"
+assert_contains "$SCRIPT_DIR/macos-llvm.sh" "zstd_DIR"
+assert_contains "$SCRIPT_DIR/macos-llvm.sh" "macos_append_static_dep_cmake_args"
+assert_contains "$SCRIPT_DIR/cmake/zstd-static/zstdConfig.cmake" "libzstd.a"
+assert_contains "$SCRIPT_DIR/cmake/zstd-static/zstdConfig.cmake" "zstd::libzstd_shared"
+assert_contains "$SCRIPT_DIR/cmake/macos-static-deps.cmake" "FATAL_ERROR"
+assert_contains "$SCRIPT_DIR/build.sh" "summarize-build.sh"
 assert_contains "$SCRIPT_DIR/macos-llvm.sh" "SQLite3_INCLUDE_DIR"
 assert_contains "$SCRIPT_DIR/macos-llvm.sh" "SQLite3_LIBRARY"
 assert_contains "$SCRIPT_DIR/macos-llvm.sh" "CMAKE_CXX_STANDARD_LIBRARIES"
@@ -387,6 +429,21 @@ assert_contains "$ROOT/summary-sqlite.out" "tried including <stdlib.h>"
 assert_contains "$ROOT/summary-sqlite.out" "last_progress:"
 assert_contains "$ROOT/summary-sqlite.out" "failed_targets=1"
 assert_contains "$ROOT/summary-sqlite.out" "isolated sqlite3.h"
+
+# Successful ninja log with SDK warning text containing "error:" must stay quiet
+# (run 38009143938 printed a FAILURE SUMMARY after [64/64] Linking).
+cat > "$ROOT/ninja-ok.log" <<'EOF'
+[64/64] Linking CXX executable src/app/tracemaker
+ld: warning: ignoring duplicate libraries: 'src/core/libtm_core.a'
+   36 |   kLSRequestAllInfo = (UInt32)0xFFFFFFFF /* resourceValuesForKeys:error: */
+EOF
+bash "$SCRIPT_DIR/summarize-build.sh" "$ROOT/ninja-ok.log" > "$ROOT/summary-ok.out"
+if grep -q "FABDESK BUILD FAILURE SUMMARY" "$ROOT/summary-ok.out"; then
+  echo "FAIL summary printed on a successful build"
+  fail=1
+else
+  echo "ok   summarize is silent on a successful ninja log"
+fi
 
 # --- isolated sqlite3.h (no SDK usr/include) + refuse brew sqlite dylib ---
 # shellcheck source=macos-llvm.sh
@@ -441,6 +498,101 @@ mkdir -p "$fake_llvm/lib/c++" "$fake_llvm/lib/unwind"
 touch "$fake_llvm/lib/c++/libc++.a" "$fake_llvm/lib/c++/libc++abi.a" "$fake_llvm/lib/unwind/libunwind.a"
 assert_eq "$(macos_find_llvm_archive "$fake_llvm" "libc++.a")" "$fake_llvm/lib/c++/libc++.a" "libc++.a from lib/c++"
 assert_eq "$(macos_find_llvm_archive "$fake_llvm" "libunwind.a")" "$fake_llvm/lib/unwind/libunwind.a" "libunwind.a from lib/unwind"
+zstd_a="$ROOT/zstd/lib/libzstd.a"
+mkdir -p "$(dirname "$zstd_a")" "$ROOT/zstd/include"
+touch "$zstd_a"
+TM_ZSTD_LIBRARY="$zstd_a" TM_ZSTD_INCLUDE_DIR="$ROOT/zstd/include" macos_zstd_static >/dev/null
+assert_eq "$MACOS_ZSTD_LIBRARY" "$zstd_a" "macos_zstd_static accepts libzstd.a"
+zstd_dylib="$ROOT/opt/homebrew/opt/zstd/lib/libzstd.dylib"
+mkdir -p "$(dirname "$zstd_dylib")"
+touch "$zstd_dylib"
+if TM_ZSTD_LIBRARY="$zstd_dylib" macos_zstd_static >"$ROOT/zstd-brew.out" 2>"$ROOT/zstd-brew.err"; then
+  echo "FAIL macos_zstd_static accepted a zstd dylib"
+  fail=1
+else
+  assert_contains "$ROOT/zstd-brew.err" "refusing"
+  echo "ok   macos_zstd_static refuses a zstd dylib"
+fi
+if command -v cmake >/dev/null; then
+  cmake_probe="$ROOT/cmake-zstd"
+  mkdir -p "$cmake_probe"
+  cat > "$cmake_probe/CMakeLists.txt" <<'EOF'
+cmake_minimum_required(VERSION 3.16)
+project(zstdprobe NONE)
+find_package(zstd CONFIG REQUIRED)
+if(NOT TARGET zstd::libzstd_shared OR NOT TARGET zstd::libzstd_static)
+  message(FATAL_ERROR "fabdesk zstd config must define both imported names")
+endif()
+get_target_property(_loc zstd::libzstd_shared IMPORTED_LOCATION)
+if(NOT _loc MATCHES "\\.a$")
+  message(FATAL_ERROR "zstd::libzstd_shared must resolve to libzstd.a, got ${_loc}")
+endif()
+EOF
+  if cmake -S "$cmake_probe" -B "$cmake_probe/ok" \
+    -Dzstd_DIR="$SCRIPT_DIR/cmake/zstd-static" \
+    -DTM_ZSTD_LIBRARY="$zstd_a" \
+    -DTM_ZSTD_INCLUDE_DIR="$ROOT/zstd/include" >"$ROOT/cmake-zstd-ok.out" 2>&1; then
+    echo "ok   zstd CONFIG shim imports libzstd.a under shared+static names"
+  else
+    echo "FAIL cmake zstd CONFIG shim"
+    cat "$ROOT/cmake-zstd-ok.out"
+    fail=1
+  fi
+  if cmake -S "$cmake_probe" -B "$cmake_probe/bad" \
+    -Dzstd_DIR="$SCRIPT_DIR/cmake/zstd-static" \
+    -DTM_ZSTD_LIBRARY="$ROOT/missing-libzstd.a" >"$ROOT/cmake-zstd-bad.out" 2>&1; then
+    echo "FAIL cmake zstd CONFIG accepted a missing archive"
+    fail=1
+  else
+    assert_contains "$ROOT/cmake-zstd-bad.out" "TM_ZSTD_LIBRARY"
+    echo "ok   zstd CONFIG fails loudly when libzstd.a is missing"
+  fi
+else
+  echo "skip cmake zstd CONFIG probe (cmake not installed)"
+fi
+
+# zstd_DIR / TM_ZSTD_LIBRARY must be passed even when Homebrew LLVM is absent.
+PATH="$ROOT/fakebin:$PATH" TM_SQLITE_LIBRARY="$static_a" \
+  TM_ZSTD_LIBRARY="$zstd_a" TM_ZSTD_INCLUDE_DIR="$ROOT/zstd/include" \
+  macos_llvm_prepare "$ROOT/sqlite-prep" >"$ROOT/prepare-no-llvm.out"
+printf '%s\n' "${MACOS_LLVM_CMAKE_ARGS[@]}" > "$ROOT/prepare-args.txt"
+assert_contains "$ROOT/prepare-args.txt" "zstd_DIR="
+assert_contains "$ROOT/prepare-args.txt" "TM_ZSTD_LIBRARY="
+assert_contains "$ROOT/prepare-args.txt" "ZSTD_LIBRARY="
+assert_contains "$ROOT/prepare-no-llvm.out" "static zstd="
+
+# strip then codesign last (install_name_tool, if used, is between them).
+mkdir -p "$ROOT/mactools"
+export MAC_TOOL_LOG="$ROOT/mac-tools.log"
+: > "$MAC_TOOL_LOG"
+for _tool in strip codesign install_name_tool; do
+  cat > "$ROOT/mactools/$_tool" <<'EOF'
+#!/bin/sh
+printf '%s %s\n' "$(basename "$0")" "$*" >> "${MAC_TOOL_LOG:?}"
+exit 0
+EOF
+  chmod +x "$ROOT/mactools/$_tool"
+done
+PATH="$ROOT/mactools:$PATH" bash "$SCRIPT_DIR/package.sh" "$fake_bin" macos-arm64 "$ROOT/pack/macos-order" >/dev/null
+python3 - <<PY
+from pathlib import Path
+log = Path("$MAC_TOOL_LOG").read_text().splitlines()
+names = [line.split()[0] for line in log if line.strip()]
+if "strip" not in names or "codesign" not in names:
+    raise SystemExit(f"FAIL expected strip+codesign in {names}")
+if names.index("strip") > names.index("codesign"):
+    raise SystemExit(f"FAIL codesign ran before strip: {names}")
+print("ok   package.sh codesign runs after strip")
+PY
+if grep -E 'declare -A|mapfile|readarray|\$\{[A-Za-z_][A-Za-z0-9_]*,,\}' \
+  "$SCRIPT_DIR/build.sh" "$SCRIPT_DIR/macos-llvm.sh" "$SCRIPT_DIR/verify-macos.sh" \
+  "$SCRIPT_DIR/package.sh" "$SCRIPT_DIR/smoke.sh" "$SCRIPT_DIR/summarize-build.sh" \
+  "$SCRIPT_DIR/bundle-libs.sh" "$SCRIPT_DIR/apply-macos-patch.sh"; then
+  echo "FAIL macOS-path tracemaker scripts use bash 4+ features (/bin/bash is 3.2)"
+  fail=1
+else
+  echo "ok   no bash 4+ features on the macOS script path (/bin/bash is 3.2)"
+fi
 
 # --- verify-macos.sh: allow system+sqlite+frameworks; reject brew / libc++ dylib ---
 fake_macho="$ROOT/fake-tracemaker"
@@ -587,6 +739,10 @@ if command -v bun >/dev/null; then
       if (a.linkage !== "system-libc-or-frameworks" && a.linkage !== "bundled-non-system-libs") {
         throw new Error(`unexpected linkage ${a.linkage}`);
       }
+    }
+    const mac = m.assets.find((a) => a.platform === "macos-arm64");
+    if (!mac || mac.minos !== "15.0" || mac.format !== "tar.gz" || mac.executable !== "tracemaker") {
+      throw new Error(`macos-arm64 asset fields: ${JSON.stringify(mac)}`);
     }
     console.log("ok   parseTraceMakerManifest accepts packaged manifest");
   '

@@ -18,6 +18,11 @@ if [ "$(uname -s)" = Darwin ]; then
   echo "== macos probe =="
   file "$binary"
   otool -L "$binary" || true
+  # Freshly-linked arm64 binaries on macos-15 can be unrunnable until signed.
+  # This is the build-tree copy; package.sh strips and ad-hoc signs last.
+  if command -v codesign >/dev/null; then
+    codesign --force -s - "$binary" || true
+  fi
 fi
 
 echo "== help =="

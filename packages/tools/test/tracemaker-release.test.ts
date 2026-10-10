@@ -50,7 +50,10 @@ const SAMPLE_MANIFEST: TraceMakerManifest = {
       url: "https://github.com/TensorFleet/fabdesk/releases/download/tracemaker-v0.9.0-24c8477/tracemaker-macos-arm64.tar.gz",
       sha256: "b".repeat(64),
       bytes: 5120,
+      format: "tar.gz",
       executable: "tracemaker",
+      linkage: "system-libc-or-frameworks",
+      minos: "15.0",
     },
   ],
 };

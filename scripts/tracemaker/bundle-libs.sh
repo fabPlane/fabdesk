@@ -58,6 +58,7 @@ if command -v ldd >/dev/null; then
   fi
 elif command -v otool >/dev/null; then
   otool -L "$binary" | tee -a "$notes"
+  bundled=0
   while read -r line; do
     dest="$(printf '%s' "$line" | awk '{print $1}')"
     [ -f "$dest" ] || continue
@@ -66,8 +67,13 @@ elif command -v otool >/dev/null; then
     cp -L "$dest" "$libdir/$name"
     install_name_tool -change "$dest" "@executable_path/lib/$name" "$binary"
     echo "bundled $name -> @executable_path/lib/$name" | tee -a "$notes"
+    bundled=1
   done < <(otool -L "$binary" | tail -n +2)
-  install_name_tool -add_rpath "@executable_path/lib" "$binary" 2>/dev/null || true
+  # install_name_tool invalidates ad-hoc signatures; package.sh codesigns last.
+  # Do not add an rpath when nothing was bundled (static libc++ / zstd / sqlite).
+  if [ "$bundled" -ne 0 ]; then
+    install_name_tool -add_rpath "@executable_path/lib" "$binary" 2>/dev/null || true
+  fi
 else
   echo "no ldd/otool; left the linker default" | tee -a "$notes"
 fi

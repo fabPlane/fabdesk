@@ -84,6 +84,35 @@ macos_sqlite_library() {
   printf '%s\n' "$lib"
 }
 
+# Homebrew zstd ships libzstd.a but its CMake config has no zstd::libzstd_static
+# (run 38009143938 linked the dylib). Fail configure if the archive is missing.
+macos_zstd_static() {
+  local lib="${TM_ZSTD_LIBRARY:-}" inc="${TM_ZSTD_INCLUDE_DIR:-}" brew_zstd=""
+  if command -v brew >/dev/null; then
+    brew_zstd="$(brew --prefix zstd 2>/dev/null || true)"
+  fi
+  if [ -z "$lib" ] && [ -n "$brew_zstd" ] && [ -f "$brew_zstd/lib/libzstd.a" ]; then
+    lib="$brew_zstd/lib/libzstd.a"
+  fi
+  if [ -z "$inc" ] && [ -n "$brew_zstd" ] && [ -d "$brew_zstd/include" ]; then
+    inc="$brew_zstd/include"
+  fi
+  if [ -z "$lib" ] || [ ! -f "$lib" ]; then
+    echo "::error::libzstd.a not found (brew --prefix zstd)/lib/libzstd.a. Homebrew's libzstd.dylib is not allowed." >&2
+    return 1
+  fi
+  case "$lib" in
+    *.a) ;;
+    *)
+      echo "::error::refusing $lib — link static libzstd.a, not a dylib" >&2
+      return 1
+      ;;
+  esac
+  MACOS_ZSTD_LIBRARY="$lib"
+  MACOS_ZSTD_INCLUDE_DIR="$inc"
+  echo "zstd static $lib include=${inc:-none}"
+}
+
 # Copy sqlite3.h into dest so FindSQLite3 does not -isystem the whole SDK usr/include.
 macos_isolate_sqlite() {
   local dest="${1:?sqlite include dest}"
@@ -120,23 +149,50 @@ macos_find_llvm_archive() {
   return 1
 }
 
+macos_append_static_dep_cmake_args() {
+  local project_include="${_MACOS_LLVM_DIR}/cmake/macos-static-deps.cmake"
+  local zstd_config_dir="${_MACOS_LLVM_DIR}/cmake/zstd-static"
+  MACOS_LLVM_CMAKE_ARGS+=(
+    -DSQLite3_INCLUDE_DIR="$MACOS_SQLITE_INCLUDE_DIR"
+    -DSQLite3_LIBRARY="$MACOS_SQLITE_LIBRARY"
+    -DTM_ZSTD_LIBRARY="$MACOS_ZSTD_LIBRARY"
+    -DTM_ZSTD_INCLUDE_DIR="$MACOS_ZSTD_INCLUDE_DIR"
+    -DZSTD_LIBRARY="$MACOS_ZSTD_LIBRARY"
+    -DZSTD_INCLUDE_DIR="$MACOS_ZSTD_INCLUDE_DIR"
+    -Dzstd_DIR="$zstd_config_dir"
+    -DCMAKE_PROJECT_INCLUDE="$project_include"
+  )
+}
+
 macos_llvm_prepare() {
   local sqlite_dest="${1:-}"
   MACOS_LIBCXX=system
   MACOS_SQLITE_INCLUDE_DIR=""
   MACOS_SQLITE_LIBRARY=""
+  MACOS_ZSTD_LIBRARY=""
+  MACOS_ZSTD_INCLUDE_DIR=""
   MACOS_LLVM_CMAKE_ARGS=(
     -DTM_WERROR=OFF
     -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0
   )
   export MACOSX_DEPLOYMENT_TARGET=15.0
 
+  if [ -z "$sqlite_dest" ]; then
+    echo "::error::macos_llvm_prepare requires a headers-only SQLite include directory (run 38005104781)." >&2
+    return 1
+  fi
+  # Static zstd + isolated SQLite apply on every macOS path, including the
+  # Apple clang fallback. Run 38009143938 linked Homebrew libzstd.1.dylib.
+  macos_isolate_sqlite "$sqlite_dest" || return 1
+  macos_zstd_static || return 1
+  macos_append_static_dep_cmake_args
+
   local prefix=""
   if command -v brew >/dev/null; then
     prefix="$(brew --prefix llvm 2>/dev/null || true)"
   fi
   if [ -z "$prefix" ] || [ ! -x "$prefix/bin/clang++" ]; then
-    echo "Homebrew LLVM clang++ not found; using Apple clang + commit-pinned from_chars patch."
+    echo "Homebrew LLVM clang++ not found; using Apple clang + commit-pinned from_chars patch (static zstd=$MACOS_ZSTD_LIBRARY)."
     return 0
   fi
 
@@ -147,7 +203,7 @@ macos_llvm_prepare() {
   libunwind="$(macos_find_llvm_archive "$prefix" "libunwind.a" || true)"
 
   if [ ! -d "$inc" ]; then
-    echo "Homebrew LLVM is installed but libc++ headers were not found under $inc; using Apple clang + patch."
+    echo "Homebrew LLVM is installed but libc++ headers were not found under $inc; using Apple clang + patch (static zstd=$MACOS_ZSTD_LIBRARY)."
     return 0
   fi
   if [ -z "$libcxx" ]; then
@@ -162,12 +218,6 @@ macos_llvm_prepare() {
     echo "::error::Homebrew LLVM $prefix has libc++.a but no libunwind.a (searched lib/c++, lib/unwind, lib). Refusing to risk a Homebrew libunwind.dylib." >&2
     return 1
   fi
-
-  if [ -z "$sqlite_dest" ]; then
-    echo "::error::macos_llvm_prepare requires a headers-only SQLite include directory (run 38005104781)." >&2
-    return 1
-  fi
-  macos_isolate_sqlite "$sqlite_dest" || return 1
 
   # Homebrew LLVM -nostdinc++ does not pull C stdlib headers through libc++
   # (std::atof needs <cstdlib>; run 38003551366). Force-include the C wrappers
@@ -191,7 +241,6 @@ macos_llvm_prepare() {
   # (that would let -lc++ resolve to Homebrew's libc++.dylib).
   local link_flags="-nostdlib++ -Wl,-search_paths_first"
   local std_libs="-Wl,-force_load,${libcxx} ${libcxxabi} ${libunwind}"
-  local project_include="${_MACOS_LLVM_DIR}/cmake/macos-static-deps.cmake"
 
   MACOS_LIBCXX=llvm-static
   MACOS_LLVM_CMAKE_ARGS+=(
@@ -208,9 +257,6 @@ macos_llvm_prepare() {
     -DCMAKE_OBJCXX_STANDARD_LIBRARIES="$std_libs"
     -DCMAKE_CXX_IMPLICIT_LINK_LIBRARIES=""
     -DCMAKE_OBJCXX_IMPLICIT_LINK_LIBRARIES=""
-    -DSQLite3_INCLUDE_DIR="$MACOS_SQLITE_INCLUDE_DIR"
-    -DSQLite3_LIBRARY="$MACOS_SQLITE_LIBRARY"
-    -DCMAKE_PROJECT_INCLUDE="$project_include"
   )
-  echo "Using Homebrew LLVM $prefix (static libc++=$libcxx abi=$libcxxabi unwind=$libunwind, sqlite include=$MACOS_SQLITE_INCLUDE_DIR lib=$MACOS_SQLITE_LIBRARY, deployment target 15.0, TM_WERROR=OFF)"
+  echo "Using Homebrew LLVM $prefix (static libc++=$libcxx abi=$libcxxabi unwind=$libunwind, sqlite include=$MACOS_SQLITE_INCLUDE_DIR lib=$MACOS_SQLITE_LIBRARY, zstd=$MACOS_ZSTD_LIBRARY, deployment target 15.0, TM_WERROR=OFF)"
 }
