@@ -68,38 +68,50 @@ MISSING="$(expected_platforms | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
 PUBLISHED=""
 WAIVED=""
 SKIP=false
+RELEASE_EXISTS=false
 
 if [ "$FORCE" = true ]; then
   echo "Force rebuild requested; ignoring any existing ${RELEASE_TAG} assets and Windows waivers."
-elif command -v gh >/dev/null && [ -n "${GH_TOKEN:-${GITHUB_TOKEN:-}}" ]; then
+fi
+
+# Record whether the immutable tag exists even when force skips the
+# missing-platform calculation. The public mirror job still runs for an
+# existing release (including when this run rebuilds nothing).
+if command -v gh >/dev/null && [ -n "${GH_TOKEN:-${GITHUB_TOKEN:-}}" ]; then
   if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-    work="$(mktemp -d "${TMPDIR:-/tmp}/tm-resolve.XXXXXX")"
-    trap 'rm -rf "$work"' EXIT
-    status_file=""
-    if gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern platform-status.json --dir "$work" 2>/dev/null \
-      && [ -f "$work/platform-status.json" ]; then
-      status_file="$work/platform-status.json"
-      WAIVED="$(waived_optional_platforms "$status_file")"
+    RELEASE_EXISTS=true
+  fi
+fi
+
+if [ "$FORCE" != true ] && [ "$RELEASE_EXISTS" = true ]; then
+  work="$(mktemp -d "${TMPDIR:-/tmp}/tm-resolve.XXXXXX")"
+  trap 'rm -rf "$work"' EXIT
+  status_file=""
+  if gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern platform-status.json --dir "$work" 2>/dev/null \
+    && [ -f "$work/platform-status.json" ]; then
+    status_file="$work/platform-status.json"
+    WAIVED="$(waived_optional_platforms "$status_file")"
+  fi
+  if gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern manifest.json --dir "$work" 2>/dev/null \
+    && [ -f "$work/manifest.json" ]; then
+    PUBLISHED="$(published_platforms_from_manifest "$work/manifest.json")"
+    if [ -n "$status_file" ]; then
+      MISSING="$(missing_build_platforms "$work/manifest.json" "$status_file")"
+    else
+      MISSING="$(missing_expected_platforms "$work/manifest.json")"
     fi
-    if gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern manifest.json --dir "$work" 2>/dev/null \
-      && [ -f "$work/manifest.json" ]; then
-      PUBLISHED="$(published_platforms_from_manifest "$work/manifest.json")"
-      if [ -n "$status_file" ]; then
-        MISSING="$(missing_build_platforms "$work/manifest.json" "$status_file")"
+    if [ -z "$MISSING" ]; then
+      SKIP=true
+      if [ -n "$WAIVED" ]; then
+        echo "Immutable release ${RELEASE_TAG} is complete for required platforms (have: ${PUBLISHED:-none}); waived optional: ${WAIVED}. Public mirror still runs."
       else
-        MISSING="$(missing_expected_platforms "$work/manifest.json")"
-      fi
-      if [ -z "$MISSING" ]; then
-        SKIP=true
-        if [ -n "$WAIVED" ]; then
-          echo "Immutable release ${RELEASE_TAG} is complete for required platforms (have: ${PUBLISHED:-none}); waived optional: ${WAIVED}."
-        fi
-      else
-        echo "Immutable release ${RELEASE_TAG} is incomplete (have: ${PUBLISHED:-none}; missing: ${MISSING}${WAIVED:+; waived: ${WAIVED}})."
+        echo "Immutable release ${RELEASE_TAG} already has every expected platform. Skipping rebuilds; public mirror still runs."
       fi
     else
-      echo "Immutable release ${RELEASE_TAG} exists but has no manifest.json; treating every expected platform as missing."
+      echo "Immutable release ${RELEASE_TAG} is incomplete (have: ${PUBLISHED:-none}; missing: ${MISSING}${WAIVED:+; waived: ${WAIVED}})."
     fi
+  else
+    echo "Immutable release ${RELEASE_TAG} exists but has no manifest.json; treating every expected platform as missing."
   fi
 fi
 
@@ -118,6 +130,7 @@ SOURCE_URL="https://github.com/${UPSTREAM_REPO}/archive/${UPSTREAM_COMMIT}.tar.g
   echo "source_url=$SOURCE_URL"
   echo "skip=$SKIP"
   echo "force=$FORCE"
+  echo "release_exists=$RELEASE_EXISTS"
   echo "expected_platforms=$EXPECTED_CSV"
   echo "missing_platforms=$MISSING_CSV"
   echo "published_platforms=$PUBLISHED_CSV"
@@ -135,6 +148,7 @@ if [ -n "${GITHUB_OUTPUT:-}" ]; then
     echo "source_url=$SOURCE_URL"
     echo "skip=$SKIP"
     echo "force=$FORCE"
+    echo "release_exists=$RELEASE_EXISTS"
     echo "expected_platforms=$EXPECTED_CSV"
     echo "missing_platforms=$MISSING_CSV"
     echo "published_platforms=$PUBLISHED_CSV"
@@ -142,13 +156,14 @@ if [ -n "${GITHUB_OUTPUT:-}" ]; then
   } >> "$GITHUB_OUTPUT"
 fi
 
-echo "Resolved ${UPSTREAM_REPO}@${UPSTREAM_REF} -> ${UPSTREAM_COMMIT} (release ${RELEASE_TAG}, skip=${SKIP}, missing=${MISSING_CSV:-none}, waived=${WAIVED:-none}, force=${FORCE})"
+echo "Resolved ${UPSTREAM_REPO}@${UPSTREAM_REF} -> ${UPSTREAM_COMMIT} (release ${RELEASE_TAG}, skip=${SKIP}, missing=${MISSING_CSV:-none}, waived=${WAIVED:-none}, force=${FORCE}, release_exists=${RELEASE_EXISTS})"
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
   {
     echo "## Resolve"
     echo
     echo "- release: \`${RELEASE_TAG}\`"
     echo "- skip: \`${SKIP}\`"
+    echo "- release exists: \`${RELEASE_EXISTS}\`"
     echo "- published: \`${PUBLISHED:-none}\`"
     echo "- missing (will build): \`${MISSING:-none}\`"
     echo "- waived optional: \`${WAIVED:-none}\`"

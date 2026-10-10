@@ -62,12 +62,15 @@ a matching OS/arch (glibc x86_64 Linux, Apple silicon macOS 15+, or 64-bit Windo
 Release tags: immutable `tracemaker-<upstream-tag>-<shortsha>`, plus a rolling
 `tracemaker-latest` pointer whose `manifest.json` lists checksums and points at the
 immutable asset URLs. Both use `--latest=false` so they do not become the repo's GitHub
-"Latest release" (that stays the desktop installer). The workflow skips the whole run
+"Latest release" (that stays the desktop installer). The workflow skips rebuilds
 when that immutable tag already lists every **required** platform and any missing
 **optional** platform (Windows) has been waived after
 `TRACEMAKER_OPTIONAL_FAIL_LIMIT` (default 3) consecutive failures. A missing Windows
 entry still triggers a Windows-only rebuild next week until it is published or waived.
-`workflow_dispatch` input `force` rebuilds every expected platform and clears the waiver.
+The public mirror still runs in that case and re-uploads
+`https://downloads.fabplane.com/tracemaker/tracemaker-latest/manifest.json`.
+`workflow_dispatch` input `force` (boolean `true`, or the string `true` from the CLI)
+rebuilds every expected platform and clears the waiver. A scheduled run never sets force.
 
 The team’s comparison is not checked into this repo. TraceMaker’s own harness is
 `bench/compare.py` / `bench/run.py` in that project (PCBench + Freerouting baselines).
@@ -123,8 +126,11 @@ The shipped app never embeds a GitHub token. Install therefore:
 
 ### Owner configuration (fabdesk repository)
 
-The mirror step **skips with a notice and exits 0** when credentials are unset. It must
-never fail the private GitHub release. The owner creates these (do not commit values):
+The mirror step **skips with a notice and exits 0** when credentials are unset.
+When credentials are configured, a failed upload or sha256 re-check **exits non-zero**
+(the private GitHub release from the publish step is not rolled back). The mirror job
+also runs when the immutable tag already exists, so a completed release still uploads
+`tracemaker-latest/manifest.json`. The owner creates these (do not commit values):
 
 **Recommended — same R2 bucket as desktop installers**
 
@@ -199,7 +205,10 @@ The weekly workflow publishes `linux-x86_64` and `macos-arm64`, and best-effort
 are built, uploaded with `--clobber`, and merged into `manifest.json` after the existing
 archives are checksum-verified. Windows failures increment `platform-status.json` on the
 tag; after three consecutive failures Windows is waived so the weekly run can stay green
-and skip. `workflow_dispatch` input `force` rebuilds every expected platform.
+and skip the rebuild. The public mirror still runs and uploads
+`tracemaker-latest/manifest.json`. `workflow_dispatch` input `force` rebuilds every
+expected platform. A configured mirror that fails its upload or sha256 re-check fails
+the mirror job.
 `tracemaker-latest` is never GitHub’s “Latest” release.
 
 ### Dispatch (owner)

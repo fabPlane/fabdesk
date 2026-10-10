@@ -21,10 +21,12 @@
 # Each archive ships LICENSE, NOTICE, SOURCE.txt, DEPENDENCIES.txt.
 #
 # Public downloads: TensorFleet/fabdesk is private, so GitHub release URLs
-# 404 for real users. After the private tag is published, mirror-public.sh
-# copies archives + a rewritten manifest to downloads.fabplane.com/tracemaker
-# (same R2 bucket as desktop installers) when the owner has configured
-# secrets. Unset credentials skip with a notice and never fail the release.
+# 404 for real users. mirror-public.sh copies archives + a rewritten manifest
+# to downloads.fabplane.com/tracemaker (same R2 bucket as desktop installers)
+# when the owner has configured secrets. Unset credentials skip with a notice
+# and exit 0. A configured upload or sha256 failure exits non-zero. The mirror
+# still runs when the immutable tag already exists (skip=true): it re-uploads
+# tracemaker-latest/manifest.json instead of skipping the whole workflow.
 #
 # Not built (marked, not blocking):
 #   - macos-x86_64: GitHub Intel macOS runners are deprecated and expensive;
@@ -66,6 +68,7 @@ jobs:
     outputs:
       skip: ${{ steps.resolve.outputs.skip }}
       force: ${{ steps.resolve.outputs.force }}
+      release_exists: ${{ steps.resolve.outputs.release_exists }}
       missing_platforms: ${{ steps.resolve.outputs.missing_platforms }}
       published_platforms: ${{ steps.resolve.outputs.published_platforms }}
       expected_platforms: ${{ steps.resolve.outputs.expected_platforms }}
@@ -87,8 +90,11 @@ jobs:
         id: resolve
         env:
           GH_TOKEN: ${{ github.token }}
-          TRACEMAKER_FORCE: ${{ inputs.force == true }}
-        run: bash "${GITHUB_WORKSPACE}/scripts/tracemaker/resolve-upstream.sh" "${{ inputs.upstream_ref }}"
+          # `inputs` is empty on schedule. Boolean dispatch values stay booleans
+          # in `inputs` and become the strings "true"/"false" from the CLI, so
+          # accept both. A scheduled run must not force a rebuild.
+          TRACEMAKER_FORCE: ${{ github.event_name == 'workflow_dispatch' && (inputs.force == true || inputs.force == 'true') }}
+        run: bash "${GITHUB_WORKSPACE}/scripts/tracemaker/resolve-upstream.sh" "${{ github.event_name == 'workflow_dispatch' && inputs.upstream_ref || '' }}"
 
   build-linux:
     name: linux-x86_64
@@ -247,6 +253,9 @@ jobs:
             zip
             python
             git
+          # `zip` is preferred. package.sh falls back to `python3 -m zipfile -c`
+          # (then `python`) when zip is not on PATH, which is the self-hosted
+          # Linux verify runner. UCRT64 gets both so either path works.
 
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
@@ -339,9 +348,35 @@ jobs:
           TRACEMAKER_SOURCE_URL: ${{ needs.resolve.outputs.source_url }}
         run: bash "${GITHUB_WORKSPACE}/scripts/tracemaker/publish.sh" "${GITHUB_WORKSPACE}/artifacts"
 
+  mirror:
+    name: Mirror to public downloads
+    needs: [resolve, publish]
+    # Run after a successful publish, and also when the immutable tag already
+    # exists (skip=true, or publish skipped/failed). A cancelled publish does
+    # not mirror. Unset credentials still exit 0 inside the script; a
+    # configured upload or sha256 failure fails this job.
+    if: always() && !cancelled() && needs.resolve.result == 'success' && (needs.publish.result == 'success' || (needs.resolve.outputs.release_exists == 'true' && needs.publish.result != 'cancelled'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+          submodules: false
+
+      - name: Download the immutable GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRACEMAKER_RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${GITHUB_WORKSPACE}/artifacts"
+          gh release download "$TRACEMAKER_RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir "${GITHUB_WORKSPACE}/artifacts"
+
       - name: Mirror to public downloads (R2 or public repo)
-        # Never fail the private GitHub release. Unset secrets skip with a notice.
-        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
           TRACEMAKER_RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}

@@ -151,11 +151,35 @@ Platform: ${platform}
 Build date (UTC): ${built_at}
 EOF
 
+# Info-ZIP when it is installed. Self-hosted Linux verify has no `zip`, and
+# MSYS2 UCRT64 may only have `python`/`python3`, so fall back to the stdlib
+# zipfile CLI. Names stay at the archive root (tracemaker.exe, LICENSE, …).
+pack_windows_zip() {
+  local archive="$1" workdir="$2" py
+  if command -v zip >/dev/null 2>&1; then
+    echo "packaging $(basename "$archive") with zip"
+    (cd "$workdir" && zip -r "$archive" .)
+    return 0
+  fi
+  py=""
+  if command -v python3 >/dev/null 2>&1; then
+    py="python3"
+  elif command -v python >/dev/null 2>&1; then
+    py="python"
+  fi
+  if [ -z "$py" ]; then
+    echo "::error::windows zip packaging needs 'zip' or python3 (python3 -m zipfile)" >&2
+    exit 1
+  fi
+  echo "packaging $(basename "$archive") with ${py} -m zipfile (zip not on PATH)"
+  (cd "$workdir" && "$py" -m zipfile -c "$archive" .)
+}
+
 archive_name="tracemaker-${platform}"
 if [[ "$platform" == windows-* ]]; then
   bash "$SCRIPT_DIR/verify-windows.sh" "$work/$exe_name"
   archive="${dest_dir}/${archive_name}.zip"
-  (cd "$work" && zip -r "$archive" .)
+  pack_windows_zip "$archive" "$work"
   format="zip"
 else
   archive="${dest_dir}/${archive_name}.tar.gz"

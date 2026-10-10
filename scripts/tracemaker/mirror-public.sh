@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Mirror a published TraceMaker release (manifest + archives) to a public host.
-# Never fails the GitHub release: unset/partial credentials print a notice and
-# exit 0. A configured-but-failed upload also exits 0 after a notice so the
-# private tag stays published; the workflow step still records the warning.
+# Unset or partial credentials print a notice and exit 0. When a channel is
+# configured, a failed upload, a missing archive, or a sha256 mismatch exits
+# non-zero. The private GitHub release is not rolled back either way.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,10 +24,6 @@ warn() {
 }
 
 manifest="$artifacts_dir/manifest.json"
-if [ ! -f "$manifest" ]; then
-  warn "mirror-public: no manifest.json in $artifacts_dir; skipping public mirror"
-  exit 0
-fi
 
 # --- resolve public channel ------------------------------------------------
 # Preferred: same R2 bucket as desktop installers (fabplane-downloads) under
@@ -77,6 +73,37 @@ if [ "$have_s3" -eq 0 ] && [ "$have_repo" -eq 0 ]; then
   exit 0
 fi
 
+if [ ! -f "$manifest" ]; then
+  warn "mirror-public: credentials are configured but no manifest.json in $artifacts_dir"
+  exit 1
+fi
+
+# Every manifest archive must be on disk (flat `gh release download` or the
+# nested artifact layout). A missing file would publish a manifest whose
+# public URL 404s.
+if ! MANIFEST="$manifest" ARTIFACTS="$artifacts_dir" python3 - <<'PY'
+import json, os, pathlib, sys
+manifest = json.loads(pathlib.Path(os.environ["MANIFEST"]).read_text(encoding="utf-8"))
+root = pathlib.Path(os.environ["ARTIFACTS"])
+missing = []
+for asset in manifest.get("assets", []):
+    name = asset.get("filename") if isinstance(asset, dict) else None
+    if not name:
+        missing.append("<unnamed>")
+        continue
+    found = [p for p in root.rglob(name) if p.is_file() and p.name == name]
+    if not found:
+        missing.append(str(name))
+if missing:
+    print("::error::mirror-public: missing archives: " + ", ".join(missing), file=sys.stderr)
+    raise SystemExit(1)
+print(f"mirror-public: found {len(manifest.get('assets', []))} manifest archives on disk")
+PY
+then
+  warn "mirror-public: refusing to upload; a manifest archive is missing on disk"
+  exit 1
+fi
+
 work="$(mktemp -d "${TMPDIR:-/tmp}/tm-mirror.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 
@@ -107,7 +134,11 @@ upload_s3() {
 }
 
 if [ "$have_s3" -eq 1 ]; then
-  echo "Mirroring to s3://$s3_bucket/${s3_prefix}/ (public base $public_base)${derived_desktop:+ using desktop R2 credentials}"
+  desktop_note=""
+  if [ "$derived_desktop" -eq 1 ]; then
+    desktop_note=" using desktop R2 credentials"
+  fi
+  echo "Mirroring to s3://$s3_bucket/${s3_prefix}/ (public base $public_base)${desktop_note}"
   while IFS= read -r archive; do
     [ -f "$archive" ] || continue
     name="$(basename "$archive")"
@@ -115,7 +146,7 @@ if [ "$have_s3" -eq 1 ]; then
       warn "mirror-public: S3 upload failed for $name"
       mirror_failed=1
     fi
-  done < <(find "$artifacts_dir" -mindepth 2 \( -name '*.tar.gz' -o -name '*.zip' \) -type f | sort)
+  done < <(find "$artifacts_dir" \( -name '*.tar.gz' -o -name '*.zip' \) -type f | sort)
   for extra in SHA256SUMS NOTES.md LICENSE SOURCE.txt; do
     if [ -f "$artifacts_dir/$extra" ]; then
       upload_s3 "$artifacts_dir/$extra" "${s3_prefix}/${release_tag}/${extra}" "public, max-age=31536000, immutable" \
@@ -138,7 +169,7 @@ if [ "$have_repo" -eq 1 ]; then
   while IFS= read -r archive; do
     [ -f "$archive" ] || continue
     uploads+=("$archive")
-  done < <(find "$artifacts_dir" -mindepth 2 \( -name '*.tar.gz' -o -name '*.zip' \) -type f | sort)
+  done < <(find "$artifacts_dir" \( -name '*.tar.gz' -o -name '*.zip' \) -type f | sort)
   uploads+=("$public_manifest")
   [ -f "$artifacts_dir/SHA256SUMS" ] && uploads+=("$artifacts_dir/SHA256SUMS")
   [ -f "$artifacts_dir/NOTES.md" ] && uploads+=("$artifacts_dir/NOTES.md")
@@ -177,20 +208,23 @@ if [ "$have_repo" -eq 1 ]; then
 fi
 
 # Re-download every rewritten asset and compare sha256 to the private manifest.
+# Also require tracemaker-latest/manifest.json to match the bytes we uploaded.
 export TRACEMAKER_PUBLIC_BASE_URL="$public_base"
 if [ "$mirror_failed" -eq 0 ]; then
-  PUBLIC_MANIFEST="$public_manifest" WORK="$work/verify" python3 - <<'PY'
+  if ! PUBLIC_MANIFEST="$public_manifest" WORK="$work/verify" python3 - <<'PY'
 import json, os, pathlib, subprocess, sys
-manifest = json.loads(pathlib.Path(os.environ["PUBLIC_MANIFEST"]).read_text(encoding="utf-8"))
+manifest_path = pathlib.Path(os.environ["PUBLIC_MANIFEST"])
+manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+uploaded = manifest_path.read_bytes()
 work = pathlib.Path(os.environ["WORK"])
 work.mkdir(parents=True, exist_ok=True)
 failed = 0
 for asset in manifest.get("assets", []):
-    url = asset.get("url")
-    want = asset.get("sha256")
-    name = asset.get("filename")
+    url = asset.get("url") if isinstance(asset, dict) else None
+    want = asset.get("sha256") if isinstance(asset, dict) else None
+    name = asset.get("filename") if isinstance(asset, dict) else None
     if not url or not want or not name:
-        print(f"::warning::mirror-public: asset missing url/sha256/filename", file=sys.stderr)
+        print("::warning::mirror-public: asset missing url/sha256/filename", file=sys.stderr)
         failed = 1
         continue
     dest = work / name
@@ -202,7 +236,8 @@ for asset in manifest.get("assets", []):
     proc = subprocess.run(["sha256sum", str(dest)], capture_output=True, text=True)
     if proc.returncode != 0:
         proc = subprocess.run(["shasum", "-a", "256", str(dest)], capture_output=True, text=True)
-    got = (proc.stdout or "").split()[0] if proc.returncode == 0 else ""
+    parts = (proc.stdout or "").split()
+    got = parts[0] if proc.returncode == 0 and parts else ""
     if got != want:
         print(f"::warning::mirror-public: checksum mismatch for {url}: manifest {want} downloaded {got}", file=sys.stderr)
         failed = 1
@@ -212,23 +247,25 @@ latest = f"{os.environ.get('TRACEMAKER_PUBLIC_BASE_URL', '').rstrip('/')}/tracem
 if latest.startswith("http"):
     dest = work / "latest-manifest.json"
     rc = subprocess.run(["curl", "-fsSL", "--retry", "3", latest, "-o", str(dest)]).returncode
-    if rc != 0:
+    if rc != 0 or not dest.is_file():
         print(f"::warning::mirror-public: failed to re-download {latest}", file=sys.stderr)
+        failed = 1
+    elif dest.read_bytes() != uploaded:
+        print(f"::warning::mirror-public: latest manifest bytes differ from upload at {latest}", file=sys.stderr)
         failed = 1
     else:
         print(f"verified public latest manifest at {latest}")
 raise SystemExit(failed)
 PY
-  verify_rc=$?
-  if [ "$verify_rc" -ne 0 ]; then
-    warn "mirror-public: post-upload checksum verification failed; GitHub release ${release_tag} is unchanged"
+  then
+    warn "mirror-public: post-upload checksum verification failed; private GitHub release ${release_tag} was not rolled back"
     mirror_failed=1
   fi
 fi
 
 if [ "$mirror_failed" -eq 0 ]; then
   echo "Public TraceMaker mirror is live at ${public_base}/tracemaker-latest/manifest.json"
-else
-  warn "Public mirror had errors; the private GitHub release still succeeded. See warnings above."
+  exit 0
 fi
-exit 0
+warn "Public mirror failed (upload or checksum). The private GitHub release ${release_tag} was not rolled back."
+exit 1
