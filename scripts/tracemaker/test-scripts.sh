@@ -130,6 +130,7 @@ printf 'Applied fabdesk patch 24c847772e57ea8888e2cfe4bbf1aa00666390a4.patch\n' 
   echo "SQLite: isolated headers /tmp/sqlite + /opt/homebrew/opt/sqlite/lib/libsqlite3.a."
   echo "zstd: static /opt/homebrew/opt/zstd/lib/libzstd.a (not Homebrew libzstd.dylib)."
 } > "$src_tree/.fabdesk-macos-link"
+printf '%s\n' llvm-static > "$src_tree/.fabdesk-macos-libcxx"
 
 export TRACEMAKER_UPSTREAM_REPO=DingoOz/TraceMaker
 export TRACEMAKER_UPSTREAM_TAG=v0.9.0
@@ -175,10 +176,27 @@ assert mac["format"] == "tar.gz"
 assert mac["executable"] == "tracemaker"
 assert mac["linkage"] == "system-libc-or-frameworks"
 assert mac["minos"] == "15.0"
+assert mac["cxxRuntime"] == "llvm-static"
+assert mac["macosVariant"] == "llvm-static"
 assert len(mac["sha256"]) == 64 and mac["bytes"] > 0
 linux = json.loads(pathlib.Path("$ROOT/pack/linux-x86_64/asset.json").read_text())
 assert "minos" not in linux
-print("ok   macos asset.json has minos 15.0 / linkage / format / executable")
+assert "cxxRuntime" not in linux
+print("ok   macos asset.json has minos 15.0 / linkage / cxxRuntime / format / executable")
+PY
+printf '%s\n' system > "$src_tree/.fabdesk-macos-libcxx"
+{
+  echo "macOS variant A (preferred): Apple clang + system /usr/lib/libc++.1.dylib."
+} > "$src_tree/.fabdesk-macos-link"
+bash "$SCRIPT_DIR/package.sh" "$fake_bin" macos-arm64 "$ROOT/pack/macos-system" >/dev/null
+assert_contains "$ROOT/pack/macos-system/DEPENDENCIES.txt" "variant A"
+assert_contains "$ROOT/pack/macos-system/SOURCE.txt" "system /usr/lib/libc++.1.dylib"
+python3 - <<PY
+import json, pathlib
+mac = json.loads(pathlib.Path("$ROOT/pack/macos-system/asset.json").read_text())
+assert mac["cxxRuntime"] == "system"
+assert mac["macosVariant"] == "system"
+print("ok   system-libcxx package records cxxRuntime=system")
 PY
 
 # --- expected-platform helpers ---
@@ -474,7 +492,11 @@ if [ "\$1" = "--show-sdk-path" ]; then
 fi
 exit 1
 EOF
-chmod +x "$ROOT/fakebin/xcrun"
+cat > "$ROOT/fakebin/brew" <<'EOF'
+#!/bin/sh
+exit 1
+EOF
+chmod +x "$ROOT/fakebin/xcrun" "$ROOT/fakebin/brew"
 PATH="$ROOT/fakebin:$PATH" TM_SQLITE_LIBRARY="$ROOT/libsqlite3-missing.dylib" \
   macos_isolate_sqlite "$ROOT/sqlite-inc-fail" >"$ROOT/sqlite-fail.out" 2>"$ROOT/sqlite-fail.err" && {
   echo "FAIL isolate accepted a missing SQLite library"
@@ -573,6 +595,36 @@ assert_contains "$ROOT/prepare-args.txt" "zstd_DIR="
 assert_contains "$ROOT/prepare-args.txt" "TM_ZSTD_LIBRARY="
 assert_contains "$ROOT/prepare-args.txt" "ZSTD_LIBRARY="
 assert_contains "$ROOT/prepare-no-llvm.out" "static zstd="
+assert_contains "$ROOT/prepare-args.txt" "Werror=unguarded-availability-new"
+if grep -q 'CMAKE_CXX_COMPILER=.*/llvm/' "$ROOT/prepare-args.txt"; then
+  echo "FAIL auto-without-llvm still pointed CMAKE_CXX_COMPILER at Homebrew LLVM"
+  fail=1
+else
+  echo "ok   auto-without-llvm uses Apple clang (no Homebrew CMAKE_CXX_COMPILER)"
+fi
+
+PATH="$ROOT/fakebin:$PATH" TM_SQLITE_LIBRARY="$static_a" \
+  TM_ZSTD_LIBRARY="$zstd_a" TM_ZSTD_INCLUDE_DIR="$ROOT/zstd/include" \
+  TM_MACOS_LIBCXX=system macos_llvm_prepare "$ROOT/sqlite-prep-system" >"$ROOT/prepare-system.out"
+printf '%s\n' "${MACOS_LLVM_CMAKE_ARGS[@]}" > "$ROOT/prepare-system-args.txt"
+assert_contains "$ROOT/prepare-system-args.txt" "Werror=unguarded-availability-new"
+assert_eq "$MACOS_LIBCXX" "system" "TM_MACOS_LIBCXX=system forces MACOS_LIBCXX=system"
+if grep -q 'CMAKE_CXX_COMPILER=' "$ROOT/prepare-system-args.txt"; then
+  echo "FAIL system variant set CMAKE_CXX_COMPILER (preset must keep /usr/bin/clang++)"
+  fail=1
+else
+  echo "ok   system variant leaves CMAKE_CXX_COMPILER to the macos-metal preset"
+fi
+if PATH="$ROOT/fakebin:$PATH" TM_SQLITE_LIBRARY="$static_a" \
+  TM_ZSTD_LIBRARY="$zstd_a" TM_ZSTD_INCLUDE_DIR="$ROOT/zstd/include" \
+  TM_MACOS_LIBCXX=llvm-static macos_llvm_prepare "$ROOT/sqlite-prep-llvm" \
+  >"$ROOT/prepare-llvm-missing.out" 2>"$ROOT/prepare-llvm-missing.err"; then
+  echo "FAIL TM_MACOS_LIBCXX=llvm-static succeeded without Homebrew LLVM"
+  fail=1
+else
+  assert_contains "$ROOT/prepare-llvm-missing.err" "llvm-static"
+  echo "ok   TM_MACOS_LIBCXX=llvm-static fails when Homebrew LLVM is absent"
+fi
 
 # strip then codesign last (install_name_tool, if used, is between them).
 mkdir -p "$ROOT/mactools"
@@ -600,12 +652,24 @@ PY
 if grep -E 'declare -A|mapfile|readarray|\$\{[A-Za-z_][A-Za-z0-9_]*,,\}' \
   "$SCRIPT_DIR/build.sh" "$SCRIPT_DIR/macos-llvm.sh" "$SCRIPT_DIR/verify-macos.sh" \
   "$SCRIPT_DIR/package.sh" "$SCRIPT_DIR/smoke.sh" "$SCRIPT_DIR/summarize-build.sh" \
-  "$SCRIPT_DIR/bundle-libs.sh" "$SCRIPT_DIR/apply-macos-patch.sh"; then
+  "$SCRIPT_DIR/bundle-libs.sh" "$SCRIPT_DIR/apply-macos-patch.sh" \
+  "$SCRIPT_DIR/diagnose-macos.sh" "$SCRIPT_DIR/macos-variants.sh"; then
   echo "FAIL macOS-path tracemaker scripts use bash 4+ features (/bin/bash is 3.2)"
   fail=1
 else
   echo "ok   no bash 4+ features on the macOS script path (/bin/bash is 3.2)"
 fi
+
+if bash "$SCRIPT_DIR/diagnose-macos.sh" "$fake_bin" "$ROOT/diag-linux" >"$ROOT/diag-linux.out"; then
+  assert_contains "$ROOT/diag-linux.out" "skip macos abort diagnostics"
+  echo "ok   diagnose-macos.sh skips on non-Darwin"
+else
+  echo "FAIL diagnose-macos.sh exited non-zero on Linux"
+  fail=1
+fi
+assert_contains "$SCRIPT_DIR/macos-variants.sh" "for variant in system llvm-static"
+assert_contains "$SCRIPT_DIR/macos-variants.sh" "diagnose-macos.sh"
+assert_contains "$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml" "tracemaker-macos-arm64-debug"
 
 # --- verify-macos.sh: allow system+sqlite+frameworks; reject brew / libc++ dylib ---
 fake_macho="$ROOT/fake-tracemaker"
@@ -664,6 +728,15 @@ else
   assert_contains "$ROOT/verify-libcxx.err" "static LLVM libc++"
   echo "ok   verify-macos rejects /usr/lib/libc++.1.dylib when llvm-static"
 fi
+if PATH="$ROOT/verifybin:$PATH" TM_MACOS_LIBCXX=system FAKE_OTOOL_EXTRA=/usr/lib/libc++.1.dylib \
+  bash "$SCRIPT_DIR/verify-macos.sh" "$fake_macho" >"$ROOT/verify-system.out" 2>"$ROOT/verify-system.err"; then
+  assert_contains "$ROOT/verify-system.out" "macos probe ok"
+  echo "ok   verify-macos allows /usr/lib/libc++.1.dylib for variant A (system)"
+else
+  echo "FAIL verify-macos rejected system libc++ under TM_MACOS_LIBCXX=system"
+  cat "$ROOT/verify-system.err"
+  fail=1
+fi
 if PATH="$ROOT/verifybin:$PATH" TM_MACOS_LIBCXX=llvm-static FAKE_OTOOL_EXTRA=/opt/homebrew/opt/sqlite/lib/libsqlite3.dylib \
   bash "$SCRIPT_DIR/verify-macos.sh" "$fake_macho" >"$ROOT/verify-sqlbrew.out" 2>"$ROOT/verify-sqlbrew.err"; then
   echo "FAIL verify-macos accepted Homebrew sqlite dylib"
@@ -707,6 +780,14 @@ if [ -n "${TRACEMAKER_FIXTURE_SRC:-}" ]; then
     fail=1
   else
     echo "ok   v0.9.0 patch removed every std::from_chars( in *.cpp"
+  fi
+  if grep -R --include='*.cpp' --include='*.hpp' --include='*.mm' \
+    -e 'std::format' -e 'std::print(' -e 'std::println' -e 'std::chrono::tzdb' \
+    -e 'std::chrono::current_zone' "$pinned/src"; then
+    echo "FAIL patched tree still references macOS-15-unavailable libc++ APIs"
+    fail=1
+  else
+    echo "ok   patched tree has no std::format / tzdb / current_zone"
   fi
   if grep -E 'strtod_l\(|newlocale\(|freelocale\(|<xlocale.h>' "$pinned/src/core/from_chars_double.hpp"; then
     echo "FAIL shim still uses locale C APIs that Homebrew LLVM does not declare"
@@ -818,7 +899,8 @@ if command -v bun >/dev/null; then
       }
     }
     const mac = m.assets.find((a) => a.platform === "macos-arm64");
-    if (!mac || mac.minos !== "15.0" || mac.format !== "tar.gz" || mac.executable !== "tracemaker") {
+    if (!mac || mac.minos !== "15.0" || mac.format !== "tar.gz" || mac.executable !== "tracemaker"
+        || (mac.cxxRuntime !== "llvm-static" && mac.cxxRuntime !== "system")) {
       throw new Error(`macos-arm64 asset fields: ${JSON.stringify(mac)}`);
     }
     console.log("ok   parseTraceMakerManifest accepts packaged manifest");

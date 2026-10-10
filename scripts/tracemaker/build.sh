@@ -40,10 +40,18 @@ case "$platform" in
     fi
     printf '%s\n' "${MACOS_LIBCXX}" > "$src/.fabdesk-macos-libcxx"
     {
-      echo "macOS link: Homebrew LLVM static libc++ / libc++abi / libunwind; -nostdlib++."
+      if [ "$MACOS_LIBCXX" = system ]; then
+        echo "macOS variant A (preferred): Apple clang + system /usr/lib/libc++.1.dylib."
+        echo "Single C++ runtime so Metal.framework / Foundation do not load a second libc++."
+        echo "Availability: -Wunguarded-availability -Werror=unguarded-availability-new."
+      else
+        echo "macOS variant B: Homebrew LLVM static libc++ / libc++abi / libunwind; -nostdlib++."
+      fi
       echo "SQLite: isolated headers ${MACOS_SQLITE_INCLUDE_DIR:-} + ${MACOS_SQLITE_LIBRARY:-}."
       echo "zstd: static ${MACOS_ZSTD_LIBRARY:-} (not Homebrew libzstd.dylib)."
       echo "CMAKE_OSX_DEPLOYMENT_TARGET=15.0 TM_WERROR=OFF. No TBB/OpenSSL dylibs."
+      echo "help/version do not call Metal (MTLCopyAllDevices is lazy in gpu::list_devices)."
+      echo "route --no-gpu never enumerates Metal devices."
     } > "$src/.fabdesk-macos-link"
     ;;
   *)
@@ -52,10 +60,17 @@ case "$platform" in
     ;;
 esac
 
-cmake --preset "$preset" "${cmake_extra[@]}"
-
 build_dir="$src/build/${preset}"
+if [[ "$platform" == macos-* ]] && [ -n "${TM_MACOS_BUILD_DIR:-}" ]; then
+  build_dir="$(abs_path "$TM_MACOS_BUILD_DIR")"
+fi
 mkdir -p "$build_dir"
+
+if [[ "$platform" == macos-* ]] && [ -n "${TM_MACOS_BUILD_DIR:-}" ]; then
+  cmake --preset "$preset" -B "$build_dir" "${cmake_extra[@]}"
+else
+  cmake --preset "$preset" "${cmake_extra[@]}"
+fi
 build_log="$build_dir/fabdesk-build.log"
 if [[ "$platform" == macos-* ]]; then
   cache="$build_dir/CMakeCache.txt"
@@ -68,7 +83,11 @@ if [[ "$platform" == macos-* ]]; then
   # not just the first ninja target (run 38003551366 stopped at rule_engine.cpp).
   set +e
   set +o pipefail
-  cmake --build --preset "$preset" --target tracemaker --parallel "$jobs" -- -k 0 2>&1 | tee "$build_log"
+  if [ -n "${TM_MACOS_BUILD_DIR:-}" ]; then
+    cmake --build "$build_dir" --target tracemaker --parallel "$jobs" -- -k 0 2>&1 | tee "$build_log"
+  else
+    cmake --build --preset "$preset" --target tracemaker --parallel "$jobs" -- -k 0 2>&1 | tee "$build_log"
+  fi
   build_code="${PIPESTATUS[0]}"
   set -e
   set -o pipefail
@@ -92,7 +111,7 @@ else
   cmake --build --preset "$preset" --target tracemaker --parallel "$jobs"
 fi
 
-binary="$src/build/${preset}/src/app/tracemaker"
+binary="$build_dir/src/app/tracemaker"
 if [ ! -f "$binary" ]; then
   echo "::error::expected $binary after the build" >&2
   echo "build tree:" >&2

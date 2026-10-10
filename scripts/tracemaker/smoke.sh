@@ -25,10 +25,20 @@ if [ "$(uname -s)" = Darwin ]; then
   fi
 fi
 
+diagnose_if_darwin() {
+  if [ "$(uname -s)" != Darwin ]; then
+    return 0
+  fi
+  local diag="${TRACEMAKER_DIAG_DIR:-$out_dir/diagnose}"
+  bash "$SCRIPT_DIR/diagnose-macos.sh" "$binary" "$diag" || true
+}
+
 echo "== help =="
 if ! "$binary" --help >"$out_dir/help.txt" 2>&1 && ! "$binary" help >"$out_dir/help.txt" 2>&1; then
   echo "::error::tracemaker --help failed" >&2
+  echo "help.txt ($(wc -c <"$out_dir/help.txt" | tr -d ' ') bytes):" >&2
   cat "$out_dir/help.txt" >&2 || true
+  diagnose_if_darwin
   exit 1
 fi
 head -n 20 "$out_dir/help.txt"
@@ -53,6 +63,7 @@ cat "$out_dir/route.txt" || true
 # Upstream: 0 success, 3 partial routing.
 if [ "$code" != 0 ] && [ "$code" != 3 ]; then
   echo "::error::tracemaker route exited $code on the smoke fixture" >&2
+  diagnose_if_darwin
   exit 1
 fi
 test -s "$routed"

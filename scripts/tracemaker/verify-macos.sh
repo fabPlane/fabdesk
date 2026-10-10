@@ -33,6 +33,9 @@ if [ -n "$minos" ]; then
   major="${minos%%.*}"
   if [ "$major" -gt 15 ]; then
     echo "::error::binary minos $minos is newer than macOS 15; the owner's Mac cannot run it" >&2
+    if [ "$(uname -s)" = Darwin ]; then
+      bash "$SCRIPT_DIR/diagnose-macos.sh" "$binary" "${TRACEMAKER_DIAG_DIR:-${RUNNER_TEMP:-/tmp}/tracemaker-macos-debug}/probe" || true
+    fi
     exit 1
   fi
 fi
@@ -73,6 +76,9 @@ while read -r dest _; do
 done < <(otool -L "$binary" | tail -n +2)
 
 if [ "$fail_dylib" -ne 0 ]; then
+  if [ "$(uname -s)" = Darwin ]; then
+    bash "$SCRIPT_DIR/diagnose-macos.sh" "$binary" "${TRACEMAKER_DIAG_DIR:-${RUNNER_TEMP:-/tmp}/tracemaker-macos-debug}/probe" || true
+  fi
   exit 1
 fi
 

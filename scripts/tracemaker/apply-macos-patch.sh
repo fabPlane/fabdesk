@@ -34,6 +34,16 @@ if [ -n "$sites" ]; then
   printf '%s\n' "$sites"
 fi
 
+# Apple libc++ on macOS 15 deletes / availability-gates some C++20 APIs.
+# Variant A compiles with -Werror=unguarded-availability-new; warn here too.
+risky="$(grep -R -n --include='*.cpp' --include='*.hpp' --include='*.mm' \
+  -e 'std::format' -e 'std::print(' -e 'std::println' -e 'std::chrono::tzdb' \
+  -e 'std::chrono::current_zone' -e 'std::chrono::locate_zone' "$src/src" || true)"
+if [ -n "$risky" ]; then
+  echo "::warning::macOS-15-unavailable libc++ APIs still referenced (variant A will fail compile):"
+  printf '%s\n' "$risky"
+fi
+
 {
   echo "Applied fabdesk patch ${patch##*/} (GPL-3.0-or-later corresponding source:"
   echo "upstream commit $commit plus this patch in TensorFleet/fabdesk"

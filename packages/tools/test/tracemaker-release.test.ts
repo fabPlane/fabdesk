@@ -54,6 +54,8 @@ const SAMPLE_MANIFEST: TraceMakerManifest = {
       executable: "tracemaker",
       linkage: "system-libc-or-frameworks",
       minos: "15.0",
+      cxxRuntime: "system",
+      macosVariant: "system",
     },
   ],
 };
@@ -97,6 +99,9 @@ describe("parseTraceMakerManifest / selectTraceMakerAsset", () => {
   test("accepts a weekly release manifest and picks the platform asset", () => {
     const parsed = parseTraceMakerManifest(SAMPLE_MANIFEST);
     expect(parsed.upstream.tag).toBe("v0.9.0");
+    const mac = selectTraceMakerAsset(parsed, "macos-arm64");
+    expect(mac.cxxRuntime).toBe("system");
+    expect(mac.macosVariant).toBe("system");
     const linux = selectTraceMakerAsset(parsed, "linux-x86_64");
     expect(linux.filename).toBe("tracemaker-linux-x86_64.tar.gz");
     expect(traceMakerAssetToArtifact(linux)).toEqual({

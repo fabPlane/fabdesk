@@ -59,9 +59,18 @@ notes="$work/DEPENDENCIES.txt"
   echo "This is a cpu-only / Metal build. CUDA is not included; users do not need nvcc or a GPU."
   echo "Boost, Eigen, CLI11 and nlohmann_json are header-only at link time."
   if [[ "$platform" == macos-* ]]; then
-    echo "macOS: Homebrew LLVM static libc++ / libc++abi / libunwind; static libzstd.a;"
+    macos_libcxx="llvm-static"
+    if [ -n "$src_tree" ] && [ -f "$src_tree/.fabdesk-macos-libcxx" ]; then
+      macos_libcxx="$(tr -d '[:space:]' < "$src_tree/.fabdesk-macos-libcxx")"
+    fi
+    if [ "$macos_libcxx" = system ]; then
+      echo "macOS variant A: Apple clang + system /usr/lib/libc++.1.dylib; static libzstd.a;"
+    else
+      echo "macOS variant B: Homebrew LLVM static libc++ / libc++abi / libunwind; static libzstd.a;"
+    fi
     echo "SQLite is static libsqlite3.a or /usr/lib/libsqlite3.dylib; minos 15.0."
-    echo "No Homebrew dylibs (zstd/sqlite/libc++). Metal + Foundation + libobjc + libSystem."
+    echo "No Homebrew dylibs (zstd/sqlite). Metal + Foundation + libobjc + libSystem."
+    echo "Published cxxRuntime=${macos_libcxx}."
   fi
   echo
 } > "$notes"
@@ -136,8 +145,19 @@ bytes="$(wc -c < "$archive" | tr -d ' ')"
 filename="$(basename "$archive")"
 asset_url="https://github.com/${repo}/releases/download/${release_tag}/${filename}"
 
+cxx_runtime=""
+macos_variant=""
+if [[ "$platform" == macos-* ]]; then
+  cxx_runtime="llvm-static"
+  if [ -n "$src_tree" ] && [ -f "$src_tree/.fabdesk-macos-libcxx" ]; then
+    cxx_runtime="$(tr -d '[:space:]' < "$src_tree/.fabdesk-macos-libcxx")"
+  fi
+  macos_variant="$cxx_runtime"
+fi
+
 PLATFORM="$platform" FILENAME="$filename" ASSET_URL="$asset_url" SHA="$sha" \
 BYTES="$bytes" FORMAT="$format" EXE_NAME="$exe_name" NOTES="$notes" DEST_DIR="$dest_dir" \
+CXX_RUNTIME="$cxx_runtime" MACOS_VARIANT="$macos_variant" \
 python3 - <<'PY'
 import json, os, pathlib
 asset = {
@@ -157,6 +177,10 @@ asset["linkage"] = (
 )
 if os.environ["PLATFORM"].startswith("macos-"):
     asset["minos"] = "15.0"
+    if os.environ.get("CXX_RUNTIME"):
+        asset["cxxRuntime"] = os.environ["CXX_RUNTIME"]
+    if os.environ.get("MACOS_VARIANT"):
+        asset["macosVariant"] = os.environ["MACOS_VARIANT"]
 path = pathlib.Path(os.environ["DEST_DIR"]) / "asset.json"
 path.write_text(json.dumps(asset, indent=2) + "\n", encoding="utf-8")
 print(json.dumps(asset, indent=2))

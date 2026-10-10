@@ -3,14 +3,15 @@
 # Upstream (DingoOz/TraceMaker) is C++20 / GPL-3.0-or-later and publishes no
 # official router binaries. This workflow follows their README + CI:
 #   Linux:  cmake --preset cpu-only   (Ubuntu 26.04, GCC 15, no CUDA)
-#   macOS:  cmake --preset macos-metal with Homebrew LLVM clang++ / static libc++
-#           and CMAKE_OSX_DEPLOYMENT_TARGET=15.0 (not macOS 26). A commit-pinned
-#           from_chars(double) + <cstdlib> patch is applied when HEAD matches v0.9.0.
-#           SQLite headers are copied into a headers-only dir so FindSQLite3 does
-#           not -isystem the Xcode SDK usr/include ahead of libc++ (run 38005104781).
-#           Link static libsqlite3.a or /usr/lib/libsqlite3.dylib, not Homebrew's
-#           sqlite dylib. zstd is forced to libzstd.a (run 38009143938).
-#           The macOS compile uses ninja -k 0 and uploads the log on failure.
+#   macOS:  cmake --preset macos-metal, CMAKE_OSX_DEPLOYMENT_TARGET=15.0.
+#           Two libc++ variants in one job (prefer A): Apple clang + system
+#           libc++.1.dylib, then Homebrew LLVM static libc++ (run 38016562996
+#           linked B then SIGABRT on --help). Smoke each; publish the first
+#           that passes. A commit-pinned from_chars(double) + <cstdlib> patch
+#           is applied when HEAD matches v0.9.0. SQLite headers are isolated
+#           so FindSQLite3 does not -isystem the Xcode SDK (run 38005104781).
+#           zstd is libzstd.a (run 38009143938). ninja -k 0; smoke abort
+#           uploads unpackaged binaries + lldb/dyld/crash logs.
 # Each archive ships LICENSE, NOTICE, and SOURCE.txt (pinned commit + tag).
 #
 # Not built (marked, not blocking):
@@ -158,24 +159,25 @@ jobs:
           path: TraceMaker
           persist-credentials: false
 
-      - name: Build tracemaker
+      - name: Build, probe, and smoke macOS variants (system libc++ then llvm-static)
         id: build
-        run: bash "${GITHUB_WORKSPACE}/scripts/tracemaker/build.sh" "${GITHUB_WORKSPACE}/TraceMaker" macos-arm64
+        env:
+          TRACEMAKER_DIAG_DIR: ${{ runner.temp }}/tracemaker-macos-debug
+        run: bash "${GITHUB_WORKSPACE}/scripts/tracemaker/macos-variants.sh" "${GITHUB_WORKSPACE}/TraceMaker" macos-arm64 "${GITHUB_WORKSPACE}/scripts/tracemaker/fixtures/smoke.kicad_pcb"
 
-      - name: Upload macOS keep-going build log
+      - name: Upload unpackaged binaries + abort diagnostics
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: tracemaker-macos-arm64-build-log
-          path: TraceMaker/build/macos-metal/fabdesk-build.log
+          name: tracemaker-macos-arm64-debug
+          path: |
+            ${{ runner.temp }}/tracemaker-macos-debug/
+            TraceMaker/build/macos-metal-system/src/app/tracemaker
+            TraceMaker/build/macos-metal-llvm-static/src/app/tracemaker
+            TraceMaker/build/macos-metal-system/fabdesk-build.log
+            TraceMaker/build/macos-metal-llvm-static/fabdesk-build.log
           if-no-files-found: warn
           retention-days: 7
-
-      - name: macOS linkage probe (file, otool, minos <= 15)
-        run: bash "${GITHUB_WORKSPACE}/scripts/tracemaker/verify-macos.sh" "${{ steps.build.outputs.binary }}"
-
-      - name: Smoke test
-        run: bash "${GITHUB_WORKSPACE}/scripts/tracemaker/smoke.sh" "${{ steps.build.outputs.binary }}" "${GITHUB_WORKSPACE}/scripts/tracemaker/fixtures/smoke.kicad_pcb"
 
       - name: Package (binary + LICENSE + SOURCE.txt)
         env:

@@ -27,6 +27,8 @@ export const TraceMakerAssetSchema = z.object({
   executable: z.string().min(1).optional(),
   linkage: z.string().optional(),
   minos: z.string().min(1).optional(),
+  cxxRuntime: z.string().min(1).optional(),
+  macosVariant: z.string().min(1).optional(),
 });
 export type TraceMakerAsset = z.infer<typeof TraceMakerAssetSchema>;
 

@@ -12,6 +12,11 @@
 # We copy sqlite3.h into a headers-only directory and still link the
 # system /usr/lib/libsqlite3.dylib (Homebrew's sqlite dylib is forbidden).
 #
+# TM_MACOS_LIBCXX selects the C++ runtime:
+#   system      — Apple clang + /usr/lib/libc++.1.dylib (variant A, preferred)
+#   llvm-static — Homebrew LLVM clang++ + static libc++ (variant B)
+#   auto        — llvm-static when the bottle is complete, else system
+#
 # Sets:
 #   MACOS_LIBCXX=llvm-static|system
 #   MACOS_LLVM_CMAKE_ARGS  (bash array of extra cmake -D flags)
@@ -164,8 +169,20 @@ macos_append_static_dep_cmake_args() {
   )
 }
 
+macos_append_system_libcxx_cmake_args() {
+  # Catch SDK APIs annotated unavailable before macOS 15 (std::format /
+  # chrono::tzdb / some ranges) instead of shipping a binary that abort-traps
+  # on the owner's Mac. The from_chars(double) sites are already patched.
+  local flags="-Wunguarded-availability -Werror=unguarded-availability-new"
+  MACOS_LLVM_CMAKE_ARGS+=(
+    -DCMAKE_CXX_FLAGS="$flags"
+    -DCMAKE_OBJCXX_FLAGS="$flags"
+  )
+}
+
 macos_llvm_prepare() {
   local sqlite_dest="${1:-}"
+  local requested="${TM_MACOS_LIBCXX:-auto}"
   MACOS_LIBCXX=system
   MACOS_SQLITE_INCLUDE_DIR=""
   MACOS_SQLITE_LIBRARY=""
@@ -187,11 +204,32 @@ macos_llvm_prepare() {
   macos_zstd_static || return 1
   macos_append_static_dep_cmake_args
 
+  case "$requested" in
+    system|llvm-static|auto) ;;
+    *)
+      echo "::error::TM_MACOS_LIBCXX must be system, llvm-static, or auto (got $requested)" >&2
+      return 1
+      ;;
+  esac
+
+  if [ "$requested" = system ]; then
+    MACOS_LIBCXX=system
+    macos_append_system_libcxx_cmake_args
+    echo "Using Apple clang + system libc++ (variant A; static zstd=$MACOS_ZSTD_LIBRARY, sqlite include=$MACOS_SQLITE_INCLUDE_DIR lib=$MACOS_SQLITE_LIBRARY, deployment target 15.0, -Werror=unguarded-availability-new)."
+    return 0
+  fi
+
   local prefix=""
   if command -v brew >/dev/null; then
     prefix="$(brew --prefix llvm 2>/dev/null || true)"
   fi
   if [ -z "$prefix" ] || [ ! -x "$prefix/bin/clang++" ]; then
+    if [ "$requested" = llvm-static ]; then
+      echo "::error::TM_MACOS_LIBCXX=llvm-static but Homebrew LLVM clang++ was not found." >&2
+      return 1
+    fi
+    MACOS_LIBCXX=system
+    macos_append_system_libcxx_cmake_args
     echo "Homebrew LLVM clang++ not found; using Apple clang + commit-pinned from_chars patch (static zstd=$MACOS_ZSTD_LIBRARY)."
     return 0
   fi
@@ -203,6 +241,12 @@ macos_llvm_prepare() {
   libunwind="$(macos_find_llvm_archive "$prefix" "libunwind.a" || true)"
 
   if [ ! -d "$inc" ]; then
+    if [ "$requested" = llvm-static ]; then
+      echo "::error::TM_MACOS_LIBCXX=llvm-static but libc++ headers were not found under $inc." >&2
+      return 1
+    fi
+    MACOS_LIBCXX=system
+    macos_append_system_libcxx_cmake_args
     echo "Homebrew LLVM is installed but libc++ headers were not found under $inc; using Apple clang + patch (static zstd=$MACOS_ZSTD_LIBRARY)."
     return 0
   fi
