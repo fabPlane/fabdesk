@@ -243,8 +243,9 @@ export const Settings = z.object({
    */
   preferredRouter: z.enum(["fab_router", "freerouting", "tracemaker"]).nullable().optional(),
   /**
-   * HTTPS URL of the weekly TraceMaker binary `manifest.json`. Null uses the default
-   * GitHub release URL. Env `FABDESK_TRACEMAKER_MANIFEST_URL` overrides this.
+   * HTTPS URL of the weekly TraceMaker binary `manifest.json`. Null uses
+   * `https://downloads.fabplane.com/tracemaker/tracemaker-latest/manifest.json`.
+   * Env `FABDESK_TRACEMAKER_MANIFEST_URL` overrides this.
    */
   tracemakerManifestUrl: z.string().nullable().default(null),
   defaultAgent: AgentId.default("claude"),

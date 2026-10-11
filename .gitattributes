@@ -1,0 +1,9 @@
+scripts/tracemaker/**/*.sh text eol=lf
+scripts/tracemaker/**/*.py text eol=lf
+scripts/tracemaker/**/*.cmake text eol=lf
+# -text: no CRLF conversion. eol=lf documents the stored / working-tree form.
+# text eol=lf was not enough on the Windows runner: a CRLF patch or a CRLF
+# TraceMaker tree makes git apply fail (run 38082482176).
+scripts/tracemaker/patches/* -text eol=lf
+scripts/tracemaker/fixtures/** text eol=lf
+.github/workflows/tracemaker-binaries.yml text eol=lf

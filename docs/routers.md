@@ -24,9 +24,11 @@ on this repo.
 **Install** (Settings → Routers) does this:
 
 1. Honour `TRACEMAKER_BIN` if it points at an existing binary.
-2. Fetch `tracemaker-latest/manifest.json` from this repo, pick the asset for the current
-   OS/arch, and download it with SHA-256 verification.
-3. If that release does not exist yet, or has no asset for this platform, fall back to the
+2. Fetch the public rolling manifest
+   `https://downloads.fabplane.com/tracemaker/tracemaker-latest/manifest.json`
+   (overridable via `FABDESK_TRACEMAKER_MANIFEST_URL` or Settings), pick the asset for the
+   current OS/arch, and download it with SHA-256 verification.
+3. If that host is unreachable, or has no asset for this platform, fall back to the
    pinned upstream source tarball. The package is then `installed` but **not ready** until
    you build it or set `TRACEMAKER_BIN`.
 
@@ -52,16 +54,23 @@ Measured 2026-10-09 (source fallback, still used when no binary exists for the p
 | `linux-x86_64` | yes | `cpu-only` on Ubuntu 26.04 / GCC 15 | No CUDA. Non-system libs (zstd, sqlite) are bundled with `$ORIGIN/lib` when present. Remaining dynamic deps are glibc. |
 | `macos-arm64` | yes | `macos-metal` | Two variants in one job; **publish the first that passes smoke**. **A (preferred):** Apple clang + system `/usr/lib/libc++.1.dylib` (single C++ runtime; Metal/Foundation already load Apple libc++). **B:** Homebrew LLVM `clang++` + **static** `libc++` / `libc++abi` / `libunwind` (run 38016562996 linked B then SIGABRT on `--help`). Both apply the v0.9.0 `from_chars(double)` + `<cstdlib>` patch and `-Werror=unguarded-availability-new` on A. `CMAKE_OSX_DEPLOYMENT_TARGET=15.0`. SQLite: isolated headers + static `libsqlite3.a` or `/usr/lib/libsqlite3.dylib`. zstd is **static** `libzstd.a`. `--help` / `version` do not call Metal (`MTLCopyAllDevices` is lazy; smoke uses `route --no-gpu`). Smoke abort uploads unpackaged binaries + `lldb` / `DYLD_PRINT_LIBRARIES` / crash reports as `tracemaker-macos-arm64-debug`. Manifest records `minos=15.0`, `cxxRuntime`, and `macosVariant`. |
 | `macos-x86_64` | no | — | Intel macOS runners are not cheap enough for a weekly job; brew bottles on the arm64 runner are arm64. |
-| `windows-x86_64` | no | — | Upstream has no Windows CMake preset. |
+| `windows-x86_64` | best-effort | no upstream preset; MSYS2 UCRT64 + Ninja | GCC-only `Warnings.cmake` and the `base` preset's Unix `PATH` rule out MSVC. Static libgcc/libstdc++ / zstd / sqlite. Archive is `.zip` with `tracemaker.exe`. A Windows failure does not block linux/macos. |
 
 Users do not need CMake or a C++ toolchain to *install* a published binary. They still need
-a glibc x86_64 Linux or Apple silicon macOS that matches the build.
+a matching OS/arch (glibc x86_64 Linux, Apple silicon macOS 15+, or 64-bit Windows).
 
 Release tags: immutable `tracemaker-<upstream-tag>-<shortsha>`, plus a rolling
 `tracemaker-latest` pointer whose `manifest.json` lists checksums and points at the
 immutable asset URLs. Both use `--latest=false` so they do not become the repo's GitHub
-"Latest release" (that stays the desktop installer). The workflow skips the whole run
-when that immutable tag already exists, so a week with no upstream change publishes nothing.
+"Latest release" (that stays the desktop installer). The workflow skips rebuilds
+when that immutable tag already lists every **required** platform and any missing
+**optional** platform (Windows) has been waived after
+`TRACEMAKER_OPTIONAL_FAIL_LIMIT` (default 3) consecutive failures. A missing Windows
+entry still triggers a Windows-only rebuild next week until it is published or waived.
+The public mirror still runs in that case and re-uploads
+`https://downloads.fabplane.com/tracemaker/tracemaker-latest/manifest.json`.
+`workflow_dispatch` input `force` (boolean `true`, or the string `true` from the CLI)
+rebuilds every expected platform and clears the waiver. A scheduled run never sets force.
 
 The team’s comparison is not checked into this repo. TraceMaker’s own harness is
 `bench/compare.py` / `bench/run.py` in that project (PCBench + Freerouting baselines).
@@ -89,28 +98,77 @@ fab_pcb’s older five-board JS vs Freerouting table remains in `vendor/fab_pcb/
   manifest URL) at a local server that serves a manifest (and a throttled asset) to exercise progress,
   checksum-mismatch and 404 paths without a real release.
 
-## Public download channel (owner decision)
+## Public download channel
 
-Desktop installers are public: the update feed is `https://fabplane.com/desktop/latest.json` and binaries
-live on `https://downloads.fabplane.com/desktop/<tag>/…` (R2). There is **no equivalent public path for
-TraceMaker**. The weekly workflow publishes only to GitHub Releases on `TensorFleet/fabdesk`, which is
-private, so an anonymous `releases/download/tracemaker-latest/manifest.json` is HTTP 404.
+Desktop installers already use `https://downloads.fabplane.com/desktop/<tag>/…` on the
+`fabplane-downloads` R2 bucket (see `docs/releases.md` and fabplane.com
+`docs/desktop-releases.md`). TraceMaker reuses that **same public host** under a
+`tracemaker/` prefix:
+
+| Role | URL |
+|---|---|
+| Shipped default manifest | `https://downloads.fabplane.com/tracemaker/tracemaker-latest/manifest.json` |
+| Versioned archive | `https://downloads.fabplane.com/tracemaker/<immutable-tag>/tracemaker-<platform>.tar.gz` (or `.zip` on Windows) |
+| Private GitHub copy (CI merge only) | `https://github.com/TensorFleet/fabdesk/releases/download/<tag>/…` (404 for anonymous users) |
+
+The weekly `publish` job still writes the private GitHub release (so the next run can
+merge checksums). `scripts/tracemaker/mirror-public.sh` then rewrites asset URLs onto the
+public base, uploads archives + `manifest.json`, and **re-downloads each public URL to
+compare sha256**. sha256s in the mirrored manifest are identical to the private ones.
 
 The shipped app never embeds a GitHub token. Install therefore:
 
 1. Honours `TRACEMAKER_BIN`.
 2. Fetches the manifest from `FABDESK_TRACEMAKER_MANIFEST_URL`, else Settings → Routers → TraceMaker
-   manifest URL, else the default GitHub URL above.
-3. Falls back to the public upstream source tarball, with a card notice that names the private-repo 404
-   when the default GitHub URL was used.
+   manifest URL, else `TRACEMAKER_PUBLIC_MANIFEST_URL` (the downloads.fabplane.com constant).
+3. Falls back to the public upstream source tarball, with a card notice that the public
+   downloads host was unreachable (or that a private GitHub override 404'd).
 
-Until the owner picks one of:
+### Owner configuration (fabdesk repository)
 
-- make the `tracemaker-*` GitHub releases (or the whole repo) public, or
-- mirror `manifest.json` + archives to the same R2 bucket / a public repo and set
-  `FABDESK_TRACEMAKER_MANIFEST_URL` (and rewrite asset URLs in the manifest to that public host),
+The mirror step **skips with a notice and exits 0** when credentials are unset.
+When credentials are configured, a failed upload or sha256 re-check **exits non-zero**
+(the private GitHub release from the publish step is not rolled back). The mirror job
+also runs when the immutable tag already exists, so a completed release still uploads
+`tracemaker-latest/manifest.json`. The owner creates these (do not commit values):
 
-end-user Install will keep falling back to source-only. Do not put a token in the app.
+**Recommended — same R2 bucket as desktop installers**
+
+| Name | Kind | Example / notes |
+|---|---|---|
+| `TRACEMAKER_PUBLIC_BASE_URL` | variable | `https://downloads.fabplane.com/tracemaker` |
+| `TRACEMAKER_S3_BUCKET` | variable | `fabplane-downloads` |
+| `TRACEMAKER_S3_ENDPOINT` | variable | `https://<CLOUDFLARE_ACCOUNT_ID>.r2.cloudflarestorage.com` |
+| `TRACEMAKER_S3_REGION` | variable | `auto` (optional) |
+| `TRACEMAKER_S3_PREFIX` | variable | `tracemaker` (optional; object key is `<prefix>/<tag>/<file>`) |
+| `TRACEMAKER_S3_ACCESS_KEY_ID` | secret | R2 S3 access key id, scoped to `fabplane-downloads` (or `tracemaker/*`) |
+| `TRACEMAKER_S3_SECRET_ACCESS_KEY` | secret | R2 S3 secret access key |
+
+Also accepted, if the owner copies the **desktop** trio onto this repo instead of the
+`TRACEMAKER_S3_*` pair:
+
+| Name | Kind | Notes |
+|---|---|---|
+| `DESKTOP_R2_ACCESS_KEY_ID` | variable | Same as fabplane.com desktop-release.yml |
+| `CLOUDFLARE_ACCOUNT_ID` | secret | R2 account id |
+| `CLOUDFLARE_API_TOKEN` | secret | Secret key is `SHA-256(token)` (Cloudflare S3 credential derivation) |
+
+Extend the existing `fabplane-downloads` token to allow object write under `tracemaker/`
+if it is prefix-scoped. Custom domain `downloads.fabplane.com` already serves the bucket.
+
+**Alternative — owner-created public GitHub repo**
+
+Do **not** make TensorFleet/fabdesk public from this PR. If the owner prefers a public
+release repo:
+
+| Name | Kind | Notes |
+|---|---|---|
+| `TRACEMAKER_PUBLIC_RELEASE_REPO` | variable | e.g. `TensorFleet/fabdesk-tracemaker` — **create the public repo yourself** |
+| `TRACEMAKER_PUBLIC_RELEASE_TOKEN` | secret | PAT with Contents: write on that repo only |
+
+The shipped default URL stays `downloads.fabplane.com`. A public-repo-only mirror is
+useful as a backup; users will not see it unless R2 is also configured or the app
+constant / Settings override is changed.
 
 ## Test on a Mac (no staging login)
 
@@ -142,8 +200,25 @@ Settings `tracemakerManifestUrl` /
 `FABDESK_TRACEMAKER_RELEASE_TAG` / `FABDESK_TRACEMAKER_RELEASE_REPO`. Setting
 `FABDESK_TRACEMAKER_URL` disables the binary lookup and uses the source artifact.
 
-The weekly workflow publishes `linux-x86_64` and `macos-arm64`. A partial immutable tag
-(one platform) is completed on the next run: missing platforms are built, uploaded with
-`--clobber`, and merged into `manifest.json` after the existing archives are checksum-verified.
-`workflow_dispatch` input `force` rebuilds every expected platform. `tracemaker-latest` is never
-GitHub’s “Latest” release.
+The weekly workflow publishes `linux-x86_64` and `macos-arm64`, and best-effort
+`windows-x86_64`. A partial immutable tag is completed on the next run: missing platforms
+are built, uploaded with `--clobber`, and merged into `manifest.json` after the existing
+archives are checksum-verified. Windows failures increment `platform-status.json` on the
+tag; after three consecutive failures Windows is waived so the weekly run can stay green
+and skip the rebuild. The public mirror still runs and uploads
+`tracemaker-latest/manifest.json`. `workflow_dispatch` input `force` rebuilds every
+expected platform. A configured mirror that fails its upload or sha256 re-check fails
+the mirror job.
+`tracemaker-latest` is never GitHub’s “Latest” release.
+
+### Dispatch (owner)
+
+```bash
+gh workflow run tracemaker-binaries.yml --repo TensorFleet/fabdesk --ref <this-branch>
+# after a known-good Windows + public-mirror run, the same on main
+```
+
+Check: linux/macos/windows job results, the run summary (Windows pending/failed/waived),
+the private `tracemaker-*` GitHub release, then anonymous
+`curl -fsSI https://downloads.fabplane.com/tracemaker/tracemaker-latest/manifest.json`
+and sha256 of each rewritten archive URL. This agent cannot dispatch Actions.

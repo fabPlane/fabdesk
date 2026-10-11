@@ -9,7 +9,9 @@ import {
   TRACEMAKER_BINARY_RELEASE_REPO,
   TRACEMAKER_BINARY_RELEASE_TAG,
   artifactFormatForFilename,
+  TRACEMAKER_PUBLIC_MANIFEST_URL,
   defaultTraceMakerBinaryRelease,
+  defaultTraceMakerManifestUrl,
   detectTraceMakerPlatform,
   parseTraceMakerManifest,
   parseTraceMakerVersion,
@@ -113,6 +115,22 @@ describe("parseTraceMakerManifest / selectTraceMakerAsset", () => {
       executable: "tracemaker",
     });
     expect(artifactFormatForFilename("tracemaker-windows-x86_64.zip")).toBe("zip");
+    const windowsAsset = {
+      platform: "windows-x86_64" as const,
+      filename: "tracemaker-windows-x86_64.zip",
+      url: "https://downloads.fabplane.com/tracemaker/tracemaker-v0.9.0-24c8477/tracemaker-windows-x86_64.zip",
+      sha256: "d".repeat(64),
+      bytes: 6144,
+      format: "zip" as const,
+      executable: "tracemaker.exe",
+      linkage: "system-libc-or-frameworks",
+    };
+    const withWindows = parseTraceMakerManifest({
+      ...SAMPLE_MANIFEST,
+      assets: [...SAMPLE_MANIFEST.assets, windowsAsset],
+    });
+    expect(selectTraceMakerAsset(withWindows, "windows-x86_64").executable).toBe("tracemaker.exe");
+    expect(traceMakerAssetToArtifact(windowsAsset).format).toBe("zip");
   });
 
   test("rejects a truncated checksum and a missing platform with a clear error", () => {
@@ -196,7 +214,9 @@ describe("resolveTraceMakerInstallArtifact", () => {
     expect(fallback.warning).toMatch(/not reachable|not published yet|URL is wrong/);
   });
 
-  test("default GitHub 404 names the private-repo problem", async () => {
+  test("default public 404 names the downloads host and keeps the override hint", async () => {
+    expect(defaultTraceMakerManifestUrl()).toBe(TRACEMAKER_PUBLIC_MANIFEST_URL);
+    expect(defaultTraceMakerBinaryRelease({}).manifestUrl).toBe(TRACEMAKER_PUBLIC_MANIFEST_URL);
     const resolved = await resolveTraceMakerInstallArtifact({
       source: SOURCE,
       binaryRelease: defaultTraceMakerBinaryRelease({}),
@@ -205,11 +225,11 @@ describe("resolveTraceMakerInstallArtifact", () => {
       arch: "x64",
     });
     expect(resolved.origin).toBe("source");
-    expect(resolved.warning).toMatch(/private repository/);
+    expect(resolved.warning).toMatch(/downloads\.fabplane\.com\/tracemaker/);
     expect(resolved.warning).toMatch(/FABDESK_TRACEMAKER_MANIFEST_URL/);
   });
 
-  test("settings and env override the default GitHub manifest URL (env wins)", async () => {
+  test("settings and env override the default public manifest URL (env wins)", async () => {
     const server = Bun.serve({
       port: 0,
       fetch() {
@@ -242,6 +262,22 @@ describe("resolveTraceMakerInstallArtifact", () => {
     expect(viaEnv.origin).toBe("binary");
   });
 
+  test("a private GitHub manifest URL still names the private-repo 404", async () => {
+    const resolved = await resolveTraceMakerInstallArtifact({
+      source: SOURCE,
+      binaryRelease: {
+        repo: TRACEMAKER_BINARY_RELEASE_REPO,
+        tag: TRACEMAKER_BINARY_RELEASE_TAG,
+        manifestUrl: `https://github.com/${TRACEMAKER_BINARY_RELEASE_REPO}/releases/download/${TRACEMAKER_BINARY_RELEASE_TAG}/manifest.json`,
+      },
+      fetchImpl: async () => new Response("missing", { status: 404 }),
+      platform: "linux",
+      arch: "x64",
+    });
+    expect(resolved.origin).toBe("source");
+    expect(resolved.warning).toMatch(/private repository/);
+  });
+
   test("FABDESK_TRACEMAKER_URL keeps the explicit source artifact", async () => {
     const resolved = await resolveTraceMakerInstallArtifact({
       source: SOURCE,
@@ -261,7 +297,7 @@ describe("default catalog + registry install", () => {
     expect(plain?.binaryRelease).toEqual({
       repo: TRACEMAKER_BINARY_RELEASE_REPO,
       tag: TRACEMAKER_BINARY_RELEASE_TAG,
-      manifestUrl: `https://github.com/${TRACEMAKER_BINARY_RELEASE_REPO}/releases/download/${TRACEMAKER_BINARY_RELEASE_TAG}/manifest.json`,
+      manifestUrl: TRACEMAKER_PUBLIC_MANIFEST_URL,
     });
     const overridden = defaultRouterCatalog({ FABDESK_TRACEMAKER_URL: "http://127.0.0.1/tm.tgz" }).find(
       (row) => row.id === "tracemaker",

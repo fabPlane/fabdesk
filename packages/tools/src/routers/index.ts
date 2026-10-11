@@ -15,8 +15,11 @@ export {
   TRACEMAKER_BINARY_RELEASE_REPO,
   TRACEMAKER_BINARY_RELEASE_TAG,
   TRACEMAKER_PLATFORMS,
+  TRACEMAKER_PUBLIC_DOWNLOADS_ORIGIN,
+  TRACEMAKER_PUBLIC_MANIFEST_URL,
   TRACEMAKER_UPSTREAM_REPO,
   defaultTraceMakerManifestUrl,
+  isDefaultPublicManifestUrl,
   detectTraceMakerPlatform,
   parseTraceMakerManifest,
   parseTraceMakerVersion,
@@ -37,6 +40,7 @@ export {
 export { bundledHint, installHintFor } from "./hints";
 export {
   createRouterRegistry,
+  extractZipArchive,
   probeTraceMakerCliVersion,
   routersRoot,
   type BundledRouter,
