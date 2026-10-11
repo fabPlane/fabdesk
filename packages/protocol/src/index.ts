@@ -13,3 +13,4 @@ export * from "./github";
 export * from "./cad-runtime";
 export * from "./comments";
 export * from "./finish-it";
+export * from "./routers";

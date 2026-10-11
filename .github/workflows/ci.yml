@@ -14,6 +14,31 @@ jobs:
     uses: ./.github/workflows/select-linux-runner.yml
     secrets: inherit
 
+  # Cheap, no-submodule job so a CMake parse error in the macOS-only shims
+  # fails PR CI before anyone dispatches the weekly macos-15 build
+  # (run 38013328567: fabdesk_collect_targets _child without parentheses).
+  tracemaker-scripts:
+    name: TraceMaker scripts + CMake shims
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          submodules: false
+
+      - name: Install cmake
+        run: |
+          if ! command -v cmake >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq cmake
+          fi
+          cmake --version
+
+      - name: Run TraceMaker script tests
+        env:
+          TM_REQUIRE_CMAKE: "1"
+        run: bash scripts/tracemaker/test-scripts.sh
+
   verify:
     needs: select-linux-runner
     runs-on: ${{ fromJSON(needs.select-linux-runner.outputs.runner) }}
@@ -66,6 +91,13 @@ jobs:
           test "$(ar p "$fixture/test.a" member)" = 'packaging smoke'
 
       - run: bun install --frozen-lockfile
+
+      # No sudo. If cmake/cc/ar are missing, check-cmake.sh prints a notice and
+      # exits 0 unless TM_REQUIRE_CMAKE=1 (the hosted job above). When the tools
+      # are present the harness still fails the step on a real error.
+      - name: TraceMaker script tests
+        run: bash scripts/tracemaker/test-scripts.sh
+
       - run: bun run typecheck
       - run: bun run test
 

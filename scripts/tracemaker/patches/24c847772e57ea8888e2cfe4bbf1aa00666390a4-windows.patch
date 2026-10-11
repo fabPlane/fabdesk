@@ -1,0 +1,59 @@
+# Commit-pinned Windows patch for DingoOz/TraceMaker v0.9.0
+# (24c847772e57ea8888e2cfe4bbf1aa00666390a4). Applied only by
+# scripts/tracemaker/apply-windows-patch.sh on the windows-x86_64 build.
+# Linux and macOS do not apply this file.
+#
+# MSYS2 UCRT64 GCC, -std=c++20 (run 38075992766):
+#   src/route/escape.cpp — the POSIX pi macro is undeclared unless
+#     _USE_MATH_DEFINES is set before <cmath>. Use std::numbers::pi instead.
+#   src/server/viewer_server.cpp — path::c_str() is const wchar_t* and
+#     path::native() is std::wstring. Beast file_body::open wants const char*,
+#     and mime_type wants std::string_view. Use path::string().
+diff --git a/src/route/escape.cpp b/src/route/escape.cpp
+index da5812e..a470901 100644
+--- a/src/route/escape.cpp
++++ b/src/route/escape.cpp
+@@ -9,6 +9,7 @@
+ #include <cstdlib>
+ #include <deque>
+ #include <map>
++#include <numbers>
+ 
+ namespace tmk::route {
+ 
+@@ -21,7 +22,8 @@ std::pair<Coord, Coord> half_extents(const model::Pad& p) { return pad_half_exte
+ }  // namespace
+ 
+ std::pair<Coord, Coord> pad_half_extents(const model::Pad& p) {
+-  const double a = p.angle * M_PI / 180.0;
++  // MinGW libstdc++ with -std=c++20 hides the POSIX pi macro (run 38075992766).
++  const double a = p.angle * std::numbers::pi / 180.0;
+   const double c = std::fabs(std::cos(a)), s = std::fabs(std::sin(a));
+   const double hx = c * static_cast<double>(p.size_x) / 2 + s * static_cast<double>(p.size_y) / 2;
+   const double hy = s * static_cast<double>(p.size_x) / 2 + c * static_cast<double>(p.size_y) / 2;
+diff --git a/src/server/viewer_server.cpp b/src/server/viewer_server.cpp
+index 196a09f..a4dd461 100644
+--- a/src/server/viewer_server.cpp
++++ b/src/server/viewer_server.cpp
+@@ -444,7 +444,11 @@ http::message_generator handle_request(const std::string& root, http::request<Bo
+ 
+   beast::error_code ec;
+   http::file_body::value_type body;
+-  body.open(path->c_str(), beast::file_mode::scan, ec);
++  // Win32 path::c_str() is const wchar_t* and path::native() is std::wstring.
++  // Beast's Win32 file_body::open takes const char*, and mime_type takes
++  // std::string_view (run 38075992766).
++  const std::string path_bytes = path->string();
++  body.open(path_bytes.c_str(), beast::file_mode::scan, ec);
+   std::error_code fec;
+   if (ec || !fs::is_regular_file(*path, fec)) {
+     const std::string t(req.target().data(), req.target().size());
+@@ -453,7 +457,7 @@ http::message_generator handle_request(const std::string& root, http::request<Bo
+     return text(http::status::not_found, "text/plain", "not found\n");
+   }
+   const auto size = body.size();
+-  const auto mime = mime_type(path->native());
++  const auto mime = mime_type(path_bytes);
+   // Vite puts content-hashed files under assets/: cache those; revalidate everything else.
+   const bool immutable = path->parent_path().filename() == "assets";
+   if (req.method() == http::verb::head) {
