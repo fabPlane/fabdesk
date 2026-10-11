@@ -776,6 +776,8 @@ describe("http daemon", () => {
     );
     expect(await Bun.file(join(project.path, "comments.json")).exists()).toBe(true);
     expect(await Bun.file(join(project.path, "NOTES.md")).text()).toBe("Shared notes.\n");
+  });
+
   test("GET /routers lists bundled fab_router and install-on-demand TraceMaker", async () => {
     const res = await api("/routers");
     expect(res.status).toBe(200);
