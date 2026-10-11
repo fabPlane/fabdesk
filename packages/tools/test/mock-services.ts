@@ -70,6 +70,7 @@ export function mockServices(
       ngspicePath: null,
       fpPcbBridgeUrl: null,
       router: "capacity",
+      tracemakerManifestUrl: null,
       defaultAgent: "claude",
       agents: {},
       keepCoreRunning: false,

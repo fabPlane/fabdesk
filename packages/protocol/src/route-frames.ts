@@ -70,7 +70,7 @@ export const RouteFrameLine = z.discriminatedUnion("kind", [RouteMeta, RouteStat
 export type RouteFrameLine = z.infer<typeof RouteFrameLine>;
 
 export const RouterId = z
-  .enum(["fab_router", "freerouting", "capacity"])
+  .enum(["fab_router", "freerouting", "capacity", "tracemaker"])
   .transform((value) => (value === "capacity" ? ("fab_router" as const) : value));
 export type RouterId = z.infer<typeof RouterId>;
 

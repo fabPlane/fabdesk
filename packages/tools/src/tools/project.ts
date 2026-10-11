@@ -146,10 +146,10 @@ export const project_set_board = defineTool({
     widthMm: z.number().positive().optional(),
     heightMm: z.number().positive().optional(),
     router: z
-      .enum(["fab_router", "capacity", "freerouting"])
+      .enum(["fab_router", "capacity", "freerouting", "tracemaker"])
       .optional()
       .describe(
-        "Pin this project to fab_router or Freerouting; capacity is a legacy fab_router alias",
+        "Pin this project to fab_router, Freerouting, or TraceMaker; capacity is a legacy fab_router alias. TraceMaker must be installed (Settings → Routers) before route_run uses it.",
       ),
     template: z
       .enum(["viagrid-9055", "none"])
