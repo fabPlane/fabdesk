@@ -107,6 +107,14 @@
         "typescript": "5.9.2",
       },
     },
+    "packages/board-diff": {
+      "name": "@fabdesk/board-diff",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@types/bun": "1.2.21",
+        "typescript": "5.9.2",
+      },
+    },
     "packages/client-core": {
       "name": "@fabdesk/client-core",
       "version": "0.1.0",
@@ -177,6 +185,7 @@
       "name": "@fabdesk/tools",
       "version": "0.1.0",
       "dependencies": {
+        "@fabdesk/board-diff": "workspace:*",
         "@fabdesk/kicad": "workspace:*",
         "@fabdesk/protocol": "workspace:*",
         "@modelcontextprotocol/sdk": "^1.30.0",
@@ -661,6 +670,8 @@
     "@fabdesk/agents": ["@fabdesk/agents@workspace:packages/agents"],
 
     "@fabdesk/auth-client": ["@fabdesk/auth-client@workspace:packages/auth-client"],
+
+    "@fabdesk/board-diff": ["@fabdesk/board-diff@workspace:packages/board-diff"],
 
     "@fabdesk/client-core": ["@fabdesk/client-core@workspace:packages/client-core"],
 
