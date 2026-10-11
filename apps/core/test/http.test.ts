@@ -777,4 +777,39 @@ describe("http daemon", () => {
     expect(await Bun.file(join(project.path, "comments.json")).exists()).toBe(true);
     expect(await Bun.file(join(project.path, "NOTES.md")).text()).toBe("Shared notes.\n");
   });
+
+  test("GET /routers lists bundled fab_router and install-on-demand TraceMaker", async () => {
+    const res = await api("/routers");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      routers: Array<{ id: string; state: string; ready: boolean }>;
+    };
+    const ids = body.routers.map((row) => row.id);
+    expect(ids).toContain("fab_router");
+    expect(ids).toContain("freerouting");
+    expect(ids).toContain("tracemaker");
+    expect(body.routers.find((row) => row.id === "fab_router")).toMatchObject({
+      state: "bundled",
+      ready: true,
+    });
+    expect(body.routers.find((row) => row.id === "tracemaker")?.state).toBe("not_installed");
+  });
+
+  test("uninstalling the router that is the saved default resets the default to automatic", async () => {
+    const set = await api("/settings", { method: "PATCH", body: JSON.stringify({ preferredRouter: "tracemaker" }) });
+    expect(((await set.json()) as { preferredRouter?: string }).preferredRouter).toBe("tracemaker");
+    const gone = await api("/routers/tracemaker", { method: "DELETE" });
+    expect(gone.status).toBe(200);
+    const after = (await (await api("/settings")).json()) as { preferredRouter?: string | null };
+    expect(after.preferredRouter ?? null).toBeNull();
+    const list = (await (await api("/routers")).json()) as { preferredRouter?: string };
+    expect(list.preferredRouter).toBeUndefined();
+
+    // uninstalling some other router leaves the default alone
+    await api("/settings", { method: "PATCH", body: JSON.stringify({ preferredRouter: "fab_router" }) });
+    await api("/routers/tracemaker", { method: "DELETE" });
+    const kept = (await (await api("/settings")).json()) as { preferredRouter?: string | null };
+    expect(kept.preferredRouter).toBe("fab_router");
+    await api("/settings", { method: "PATCH", body: JSON.stringify({ preferredRouter: null }) });
+  });
 });

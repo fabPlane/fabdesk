@@ -37,6 +37,9 @@ import type {
   ProjectSummary,
   RemixResult,
   RemoteStatus,
+  RouterCatalogId,
+  RouterList,
+  RouterSnapshot,
   RouteFrameLine,
   RouteResult,
   Settings,
@@ -561,6 +564,18 @@ export class CoreClient {
   }
 
   // Settings / lifecycle
+  listRouters(): Promise<RouterList> {
+    return this.request("/routers");
+  }
+  installRouter(id: RouterCatalogId): Promise<RouterSnapshot> {
+    return this.request(`/routers/${encodeURIComponent(id)}/install`, { method: "POST" });
+  }
+  cancelRouterInstall(id: RouterCatalogId): Promise<RouterSnapshot> {
+    return this.request(`/routers/${encodeURIComponent(id)}/cancel`, { method: "POST" });
+  }
+  uninstallRouter(id: RouterCatalogId): Promise<RouterSnapshot> {
+    return this.request(`/routers/${encodeURIComponent(id)}`, { method: "DELETE" });
+  }
   getSettings(): Promise<Settings> {
     return this.request("/settings");
   }
