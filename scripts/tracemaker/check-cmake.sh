@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Parse and configure every TraceMaker CMake shim. These files only run on
-# macos-15 in the weekly job; a missing `()` (run 38013328567) must fail here
-# before anyone dispatches that runner.
+# macos-15 / windows-latest in the weekly job; a missing `()` (run 38013328567)
+# must fail here before anyone dispatches those runners.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -187,6 +187,43 @@ else
   else
     echo "FAIL dylib configure failed for an unexpected reason"
     cat "$WORK/dylib.out"
+    fail=1
+  fi
+fi
+
+win_happy="$WORK/win-happy"
+rm -rf "$win_happy"
+if cmake -S "$harness" -B "$win_happy" \
+  -DTM_WINDOWS_STATIC=1 \
+  -DTM_ZSTD_LIBRARY="$zstd_a" \
+  -DTM_ZSTD_INCLUDE_DIR="$inc" \
+  -Dzstd_DIR="$SCRIPT_DIR/cmake/zstd-static" \
+  -DCMAKE_PROJECT_INCLUDE="$SCRIPT_DIR/cmake/windows-static-runtime.cmake" \
+  >"$WORK/win-happy.out" 2>&1; then
+  echo "ok   cmake harness configure (windows-static-runtime + find_package zstd)"
+else
+  echo "FAIL windows cmake harness configure"
+  cat "$WORK/win-happy.out"
+  fail=1
+fi
+
+touch "$WORK/lib/libzstd.dll"
+win_dll="$WORK/win-dll"
+rm -rf "$win_dll"
+if cmake -S "$harness" -B "$win_dll" \
+  -DTM_WINDOWS_STATIC=1 \
+  -DTM_ZSTD_LIBRARY="$WORK/lib/libzstd.dll" \
+  -Dzstd_DIR="$SCRIPT_DIR/cmake/zstd-static" \
+  -DCMAKE_PROJECT_INCLUDE="$SCRIPT_DIR/cmake/windows-static-runtime.cmake" \
+  >"$WORK/win-dll.out" 2>&1; then
+  echo "FAIL windows harness accepted a zstd DLL"
+  fail=1
+else
+  if grep -qi 'dll\|refusing' "$WORK/win-dll.out"; then
+    echo "ok   windows harness fatals on a zstd DLL"
+  else
+    echo "FAIL windows DLL configure failed for an unexpected reason"
+    cat "$WORK/win-dll.out"
     fail=1
   fi
 fi

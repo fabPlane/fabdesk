@@ -2,17 +2,51 @@
 # Single source of truth for platforms the weekly workflow is expected to publish.
 # Source this file; do not execute it.
 #
-# Override with TRACEMAKER_EXPECTED_PLATFORMS (space-separated) in tests.
+# Required platforms (linux, macos-arm64) must be present before a release is
+# treated as complete. Optional platforms (windows-x86_64) are still built when
+# missing, but after TRACEMAKER_OPTIONAL_FAIL_LIMIT consecutive failures they
+# are waived so the weekly run can stay green and skip instead of looping.
+#
+# Override in tests:
+#   TRACEMAKER_REQUIRED_PLATFORMS
+#   TRACEMAKER_OPTIONAL_PLATFORMS
+#   TRACEMAKER_EXPECTED_PLATFORMS (space-separated union; defaults to required + optional)
+#   TRACEMAKER_OPTIONAL_FAIL_LIMIT (default 3)
 
-TRACEMAKER_EXPECTED_PLATFORMS="${TRACEMAKER_EXPECTED_PLATFORMS:-linux-x86_64 macos-arm64}"
+TRACEMAKER_REQUIRED_PLATFORMS="${TRACEMAKER_REQUIRED_PLATFORMS:-linux-x86_64 macos-arm64}"
+TRACEMAKER_OPTIONAL_PLATFORMS="${TRACEMAKER_OPTIONAL_PLATFORMS:-windows-x86_64}"
+if [ -z "${TRACEMAKER_EXPECTED_PLATFORMS:-}" ]; then
+  TRACEMAKER_EXPECTED_PLATFORMS="${TRACEMAKER_REQUIRED_PLATFORMS} ${TRACEMAKER_OPTIONAL_PLATFORMS}"
+fi
+TRACEMAKER_OPTIONAL_FAIL_LIMIT="${TRACEMAKER_OPTIONAL_FAIL_LIMIT:-3}"
+
+_tm_words() {
+  # shellcheck disable=SC2086
+  printf '%s\n' $1
+}
+
+required_platforms() {
+  _tm_words "$TRACEMAKER_REQUIRED_PLATFORMS"
+}
+
+optional_platforms() {
+  _tm_words "$TRACEMAKER_OPTIONAL_PLATFORMS"
+}
 
 expected_platforms() {
-  # shellcheck disable=SC2086
-  printf '%s\n' $TRACEMAKER_EXPECTED_PLATFORMS
+  _tm_words "$TRACEMAKER_EXPECTED_PLATFORMS"
 }
 
 expected_platforms_csv() {
   expected_platforms | paste -sd, -
+}
+
+required_platforms_csv() {
+  required_platforms | paste -sd, -
+}
+
+optional_platforms_csv() {
+  optional_platforms | paste -sd, -
 }
 
 # Print expected platforms that are missing from a manifest.json (or none).
@@ -29,6 +63,91 @@ raw = json.loads(path.read_text(encoding="utf-8"))
 published = {a.get("platform") for a in raw.get("assets", []) if isinstance(a, dict)}
 missing = [p for p in expected if p not in published]
 print(" ".join(missing))
+PY
+}
+
+# Like missing_expected_platforms, but omit optional platforms waived after
+# TRACEMAKER_OPTIONAL_FAIL_LIMIT consecutive failures (platform-status.json).
+missing_build_platforms() {
+  local manifest="${1:?manifest.json}"
+  local status="${2:-}"
+  EXPECTED="$TRACEMAKER_EXPECTED_PLATFORMS" \
+  OPTIONAL="$TRACEMAKER_OPTIONAL_PLATFORMS" \
+  LIMIT="$TRACEMAKER_OPTIONAL_FAIL_LIMIT" \
+  STATUS="$status" python3 - "$manifest" <<'PY'
+import json, os, pathlib, sys
+
+def waived(path, optional, limit):
+    if not path:
+        return set()
+    p = pathlib.Path(path)
+    if not p.is_file():
+        return set()
+    raw = json.loads(p.read_text(encoding="utf-8"))
+    rows = raw.get("platforms", raw if isinstance(raw, dict) else {})
+    out = set()
+    for plat, row in rows.items():
+        if plat not in optional:
+            continue
+        if not isinstance(row, dict):
+            continue
+        if row.get("status") != "failed":
+            continue
+        try:
+            attempts = int(row.get("attempts") or 0)
+        except (TypeError, ValueError):
+            attempts = 0
+        if attempts >= limit:
+            out.add(plat)
+    return out
+
+expected = [p for p in os.environ["EXPECTED"].split() if p]
+optional = {p for p in os.environ["OPTIONAL"].split() if p}
+try:
+    limit = int(os.environ.get("LIMIT") or "3")
+except ValueError:
+    limit = 3
+path = pathlib.Path(sys.argv[1])
+if not path.is_file():
+    missing = expected
+else:
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    published = {a.get("platform") for a in raw.get("assets", []) if isinstance(a, dict)}
+    missing = [p for p in expected if p not in published]
+skip = waived(os.environ.get("STATUS", ""), optional, limit)
+print(" ".join(p for p in missing if p not in skip))
+PY
+}
+
+waived_optional_platforms() {
+  local status="${1:-}"
+  OPTIONAL="$TRACEMAKER_OPTIONAL_PLATFORMS" \
+  LIMIT="$TRACEMAKER_OPTIONAL_FAIL_LIMIT" \
+  python3 - "$status" <<'PY'
+import json, os, pathlib, sys
+optional = {p for p in os.environ["OPTIONAL"].split() if p}
+try:
+    limit = int(os.environ.get("LIMIT") or "3")
+except ValueError:
+    limit = 3
+path = pathlib.Path(sys.argv[1]) if sys.argv[1] else None
+if not path or not path.is_file():
+    raise SystemExit(0)
+raw = json.loads(path.read_text(encoding="utf-8"))
+rows = raw.get("platforms", raw if isinstance(raw, dict) else {})
+waived = []
+for plat, row in rows.items():
+    if plat not in optional or not isinstance(row, dict):
+        continue
+    if row.get("status") != "failed":
+        continue
+    try:
+        attempts = int(row.get("attempts") or 0)
+    except (TypeError, ValueError):
+        attempts = 0
+    if attempts >= limit:
+        waived.append(plat)
+print(" ".join(waived))
 PY
 }
 

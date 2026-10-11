@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RouterCatalogEntry } from "../src/routers/catalog";
 import { downloadAndVerify, sha256File, verifyFileSha256 } from "../src/routers/checksum";
-import { createRouterRegistry } from "../src/routers/registry";
+import { createRouterRegistry, extractZipArchive } from "../src/routers/registry";
 import { resolveRequestedRouter } from "../src/routers/select";
 
 const fixture = Buffer.from("fabdesk-router-fixture-v1\n");
@@ -186,6 +186,38 @@ describe("router registry state machine", () => {
     expect(snap.state).toBe("installed");
     expect(snap.ready).toBe(true);
     expect(snap.path).toBe(bin);
+  });
+});
+
+describe("extractZipArchive", () => {
+  test("uses unzip first, then tar and PowerShell on win32", async () => {
+    const seen: string[] = [];
+    await expect(
+      extractZipArchive(
+        "C:\\tmp\\tracemaker-windows-x86_64.zip",
+        "C:\\tmp\\out",
+        async (cmd) => {
+          seen.push(cmd);
+          return 1;
+        },
+        "win32",
+      ),
+    ).rejects.toThrow(/failed to extract zip artifact/);
+    expect(seen).toEqual(["unzip", "tar", "powershell"]);
+  });
+
+  test("stops after the first successful extractor", async () => {
+    const seen: string[] = [];
+    await extractZipArchive(
+      "archive.zip",
+      "/tmp/out",
+      async (cmd) => {
+        seen.push(cmd);
+        return cmd === "tar" ? 0 : 1;
+      },
+      "win32",
+    );
+    expect(seen).toEqual(["unzip", "tar"]);
   });
 });
 

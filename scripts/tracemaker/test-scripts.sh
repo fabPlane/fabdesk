@@ -71,6 +71,34 @@ binary="$(awk -F= '/^binary=/{print $2}' "$ROOT/build.out")"
 assert_eq "$binary" "$ws/TraceMaker/build/cpu-only/src/app/tracemaker" "build.sh emits an absolute binary path"
 assert_file "$binary"
 
+# Windows configure uses cmake -S/-B, not --preset (upstream PATH is Unix-only).
+cat > "$ws/fakebin/cmake" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ " $* " == *" --build "* ]]; then
+  mkdir -p build/windows-x86_64/src/app
+  printf 'MZ\n' > build/windows-x86_64/src/app/tracemaker.exe
+  echo "[63/63] Linking CXX executable src/app/tracemaker.exe"
+  exit 0
+fi
+if [[ " $* " == *" -S "* ]] || [[ " $* " == *"-S "* ]]; then
+  mkdir -p build/windows-x86_64
+  echo "-- configured windows-x86_64 in $PWD"
+  exit 0
+fi
+mkdir -p build/cpu-only
+echo "-- configured cpu-only in $PWD"
+EOF
+chmod +x "$ws/fakebin/cmake"
+(
+  cd "$ws"
+  TM_WINDOWS_SKIP_DEPS=1 \
+  PATH="$ws/fakebin:$PATH" bash "$SCRIPT_DIR/build.sh" TraceMaker windows-x86_64 > "$ROOT/build-win.out"
+)
+win_binary="$(awk -F= '/^binary=/{print $2}' "$ROOT/build-win.out")"
+assert_eq "$win_binary" "$ws/TraceMaker/build/windows-x86_64/src/app/tracemaker.exe" "build.sh windows emits tracemaker.exe"
+assert_file "$win_binary"
+
 # --- fake tracemaker CLI for smoke + package ---
 fake_bin="$ROOT/bin/tracemaker"
 mkdir -p "$ROOT/bin"
@@ -145,11 +173,14 @@ export GITHUB_REPOSITORY=TensorFleet/fabdesk
   cd "$ROOT"
   bash "$SCRIPT_DIR/package.sh" "$fake_bin" linux-x86_64 pack/linux-x86_64
   bash "$SCRIPT_DIR/package.sh" "$fake_bin" macos-arm64 pack/macos-arm64
+  bash "$SCRIPT_DIR/package.sh" "$fake_bin" windows-x86_64 pack/windows-x86_64
 )
 assert_file "$ROOT/pack/linux-x86_64/asset.json"
 assert_file "$ROOT/pack/macos-arm64/asset.json"
+assert_file "$ROOT/pack/windows-x86_64/asset.json"
 assert_file "$ROOT/pack/linux-x86_64/tracemaker-linux-x86_64.tar.gz"
 assert_file "$ROOT/pack/macos-arm64/tracemaker-macos-arm64.tar.gz"
+assert_file "$ROOT/pack/windows-x86_64/tracemaker-windows-x86_64.zip"
 assert_contains "$ROOT/pack/macos-arm64/SOURCE.txt" "24c847772e57ea8888e2cfe4bbf1aa00666390a4.patch"
 assert_contains "$ROOT/pack/macos-arm64/SOURCE.txt" "libzstd.a"
 assert_contains "$ROOT/pack/linux-x86_64/LICENSE" "GPL-3.0-or-later"
@@ -183,6 +214,98 @@ linux = json.loads(pathlib.Path("$ROOT/pack/linux-x86_64/asset.json").read_text(
 assert "minos" not in linux
 assert "cxxRuntime" not in linux
 print("ok   macos asset.json has minos 15.0 / linkage / cxxRuntime / format / executable")
+win = json.loads(pathlib.Path("$ROOT/pack/windows-x86_64/asset.json").read_text())
+assert win["platform"] == "windows-x86_64"
+assert win["format"] == "zip"
+assert win["executable"] == "tracemaker.exe"
+assert "minos" not in win
+print("ok   windows asset.json has format zip / executable tracemaker.exe")
+PY
+if command -v unzip >/dev/null; then
+  unzip -l "$ROOT/pack/windows-x86_64/tracemaker-windows-x86_64.zip" > "$ROOT/windows-zip.list"
+  for _need in tracemaker.exe LICENSE NOTICE SOURCE.txt DEPENDENCIES.txt; do
+    if grep -q "${_need}" "$ROOT/windows-zip.list"; then
+      echo "ok   windows archive contains $_need"
+    else
+      echo "FAIL windows archive missing $_need"
+      cat "$ROOT/windows-zip.list"
+      fail=1
+    fi
+  done
+fi
+assert_contains "$ROOT/pack/windows-x86_64/DEPENDENCIES.txt" "Windows best-effort"
+assert_contains "$ROOT/pack/windows-x86_64/SOURCE.txt" "GPL-3.0"
+
+# zip present → Info-ZIP. Missing zip (self-hosted verify) → python3 -m zipfile.
+if command -v zip >/dev/null 2>&1; then
+  bash "$SCRIPT_DIR/package.sh" "$fake_bin" windows-x86_64 "$ROOT/pack/windows-zipbin" \
+    >"$ROOT/windows-zipbin.log"
+  assert_contains "$ROOT/windows-zipbin.log" "with zip"
+  if grep -q "zipfile" "$ROOT/windows-zipbin.log"; then
+    echo "FAIL zip was on PATH but python zipfile ran"
+    fail=1
+  else
+    echo "ok   package.sh uses zip when it is on PATH"
+  fi
+else
+  echo "ok   this machine has no zip; the fallback test below is the zip path"
+fi
+
+# Simulate a runner whose PATH has no zip binary (do not shadow it with a function;
+# `command -v zip` would still see a function).
+nozip_root="$ROOT/nozip-path"
+mkdir -p "$nozip_root"
+nozip_path=""
+nozip_i=0
+nozip_ifs="$IFS"
+IFS=':'
+for nozip_p in $PATH; do
+  nozip_i=$((nozip_i + 1))
+  if [ -z "$nozip_p" ]; then
+    continue
+  fi
+  if [ -e "$nozip_p/zip" ]; then
+    nozip_s="$nozip_root/$nozip_i"
+    mkdir -p "$nozip_s"
+    for nozip_f in "$nozip_p"/*; do
+      if [ ! -e "$nozip_f" ]; then
+        continue
+      fi
+      nozip_base="${nozip_f##*/}"
+      if [ "$nozip_base" = "zip" ]; then
+        continue
+      fi
+      ln -s "$nozip_f" "$nozip_s/$nozip_base"
+    done
+    nozip_path="${nozip_path:+$nozip_path:}$nozip_s"
+  else
+    nozip_path="${nozip_path:+$nozip_path:}$nozip_p"
+  fi
+done
+IFS="$nozip_ifs"
+if PATH="$nozip_path" command -v zip >/dev/null 2>&1; then
+  echo "FAIL filtered PATH still contains zip"
+  fail=1
+else
+  echo "ok   filtered PATH has no zip"
+fi
+if ! PATH="$nozip_path" command -v python3 >/dev/null 2>&1 && ! PATH="$nozip_path" command -v python >/dev/null 2>&1; then
+  echo "FAIL filtered PATH lost python"
+  fail=1
+fi
+PATH="$nozip_path" bash "$SCRIPT_DIR/package.sh" "$fake_bin" windows-x86_64 "$ROOT/pack/windows-nozip" \
+  >"$ROOT/windows-nozip.log"
+assert_contains "$ROOT/windows-nozip.log" "-m zipfile"
+assert_contains "$ROOT/windows-nozip.log" "zip not on PATH"
+assert_file "$ROOT/pack/windows-nozip/tracemaker-windows-x86_64.zip"
+python3 - <<PY
+import zipfile
+z = zipfile.ZipFile("$ROOT/pack/windows-nozip/tracemaker-windows-x86_64.zip")
+names = set(z.namelist())
+missing = [n for n in ("tracemaker.exe", "LICENSE", "NOTICE", "SOURCE.txt", "DEPENDENCIES.txt") if n not in names]
+if missing:
+    raise SystemExit(f"FAIL python zipfile layout missing {missing}; have {sorted(names)}")
+print("ok   python zipfile fallback layout", sorted(n for n in names if "/" not in n.rstrip("/")))
 PY
 printf '%s\n' system > "$src_tree/.fabdesk-macos-libcxx"
 {
@@ -202,7 +325,9 @@ PY
 # --- expected-platform helpers ---
 # shellcheck source=platforms.sh
 source "$SCRIPT_DIR/platforms.sh"
-assert_eq "$(expected_platforms_csv)" "linux-x86_64,macos-arm64" "expected platform list"
+assert_eq "$(expected_platforms_csv)" "linux-x86_64,macos-arm64,windows-x86_64" "expected platform list"
+assert_eq "$(required_platforms_csv)" "linux-x86_64,macos-arm64" "required platform list"
+assert_eq "$(optional_platforms_csv)" "windows-x86_64" "optional platform list"
 python3 - <<PY
 import json, pathlib
 partial = pathlib.Path("$ROOT/partial-manifest.json")
@@ -217,8 +342,13 @@ partial.write_text(json.dumps({
               "executable": "tracemaker"}]
 }) + "\n")
 PY
-assert_eq "$(missing_expected_platforms "$ROOT/partial-manifest.json")" "macos-arm64" "linux-only manifest is missing macos-arm64"
-assert_eq "$(missing_expected_platforms "$ROOT/no-such-manifest.json")" "linux-x86_64 macos-arm64" "missing file → all platforms"
+assert_eq "$(missing_expected_platforms "$ROOT/partial-manifest.json")" "macos-arm64 windows-x86_64" "linux-only manifest is missing macos + windows"
+assert_eq "$(missing_expected_platforms "$ROOT/no-such-manifest.json")" "linux-x86_64 macos-arm64 windows-x86_64" "missing file → all platforms"
+printf '%s\n' '{"platforms":{"windows-x86_64":{"status":"failed","attempts":3}}}' > "$ROOT/waived-status.json"
+assert_eq "$(missing_build_platforms "$ROOT/partial-manifest.json" "$ROOT/waived-status.json")" "macos-arm64" "waived windows is omitted from the next build list"
+assert_eq "$(waived_optional_platforms "$ROOT/waived-status.json")" "windows-x86_64" "three failures waive windows"
+printf '%s\n' '{"platforms":{"windows-x86_64":{"status":"failed","attempts":1}}}' > "$ROOT/retry-status.json"
+assert_eq "$(missing_build_platforms "$ROOT/partial-manifest.json" "$ROOT/retry-status.json")" "macos-arm64 windows-x86_64" "one Windows failure still rebuilds windows"
 
 # --- publish: join platforms, --latest=false, complete a partial release ---
 mkdir -p "$ROOT/ghbin" "$ROOT/ghstore"
@@ -306,7 +436,7 @@ m = json.loads(pathlib.Path("$ROOT/pack/manifest.json").read_text())
 plats = sorted(a["platform"] for a in m["assets"])
 assert m["name"] == "tracemaker", m
 assert m["upstream"]["commit"] == "24c847772e57ea8888e2cfe4bbf1aa00666390a4", m
-assert plats == ["linux-x86_64", "macos-arm64"], plats
+assert plats == ["linux-x86_64", "macos-arm64", "windows-x86_64"], plats
 for a in m["assets"]:
     assert len(a["sha256"]) == 64 and a["bytes"] > 0
 print("ok   manifest joins", plats, "commit", m["upstream"]["commit"])
@@ -389,7 +519,8 @@ PY
 assert_contains "$ROOT/publish-partial.log" "verified existing"
 assert_contains "$ROOT/gh.log.meta" "tracemaker-v0.9.0-24c8477 upload"
 assert_contains "$ROOT/gh.log.meta" "tracemaker-latest latest=false"
-assert_eq "$(missing_expected_platforms "$partial_pack/manifest.json")" "" "merged manifest lists every expected platform"
+assert_eq "$(missing_expected_platforms "$partial_pack/manifest.json")" "windows-x86_64" "linux+macos merge is still missing windows"
+assert_eq "$(missing_build_platforms "$partial_pack/manifest.json" "$ROOT/waived-status.json")" "" "waived windows lets the weekly run skip"
 TRACEMAKER_FORCE=1
 if force_rebuild_requested; then
   echo "ok   TRACEMAKER_FORCE=1 is a rebuild"
@@ -670,6 +801,37 @@ fi
 assert_contains "$SCRIPT_DIR/macos-variants.sh" "for variant in system llvm-static"
 assert_contains "$SCRIPT_DIR/macos-variants.sh" "diagnose-macos.sh"
 assert_contains "$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml" "tracemaker-macos-arm64-debug"
+assert_contains "$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml" "tracemaker-windows-x86_64-debug"
+assert_contains "$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml" "continue-on-error: true"
+assert_contains "$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml" "windows-x86_64"
+assert_contains "$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml" "core.autocrlf false"
+assert_contains "$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml" "core.eol lf"
+assert_contains "$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml" "GIT_CONFIG_KEY_0: core.autocrlf"
+assert_contains "$SCRIPT_DIR/../../.gitattributes" "-text eol=lf"
+if grep -F -q 'scripts/tracemaker/patches/* -text eol=lf' "$SCRIPT_DIR/../../.gitattributes"; then
+  echo "ok   .gitattributes keeps patch files unconverted (-text)"
+else
+  echo "FAIL .gitattributes does not pin scripts/tracemaker/patches/* -text eol=lf"
+  fail=1
+fi
+assert_contains "$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml" "mirror-public.sh"
+assert_contains "$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml" "github.event_name == 'workflow_dispatch' && (inputs.force == true || inputs.force == 'true')"
+assert_contains "$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml" "release_exists"
+assert_contains "$SCRIPT_DIR/package.sh" "python3 -m zipfile"
+python3 - <<PY
+from pathlib import Path
+text = Path("$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml").read_text()
+needle = 'bash "\${GITHUB_WORKSPACE}/scripts/tracemaker/mirror-public.sh"'
+idx = text.find(needle)
+if idx < 0:
+    raise SystemExit("FAIL workflow does not run mirror-public.sh")
+window = text[max(0, idx - 1200):idx]
+if "continue-on-error" in window:
+    raise SystemExit("FAIL mirror-public.sh step is continue-on-error")
+if "needs.resolve.outputs.release_exists == 'true'" not in text:
+    raise SystemExit("FAIL mirror job does not run when the release already exists")
+print("ok   mirror job fails loudly and still runs when the release exists")
+PY
 
 # --- verify-macos.sh: allow system+sqlite+frameworks; reject brew / libc++ dylib ---
 fake_macho="$ROOT/fake-tracemaker"
@@ -746,6 +908,200 @@ else
   echo "ok   verify-macos rejects Homebrew sqlite dylib"
 fi
 
+# --- apply-windows-patch is commit-pinned and does not touch Linux/macOS trees ---
+assert_contains "$SCRIPT_DIR/build.sh" "apply-windows-patch.sh"
+assert_contains "$SCRIPT_DIR/apply-windows-patch.sh" "--ignore-whitespace"
+assert_contains "$SCRIPT_DIR/apply-windows-patch.sh" "--whitespace=nowarn"
+assert_contains "$SCRIPT_DIR/cmake/windows-static-runtime.cmake" "link_libraries(ws2_32 mswsock bcrypt)"
+assert_contains "$SCRIPT_DIR/cmake/windows-static-runtime.cmake" "if(WIN32)"
+win_patch="$SCRIPT_DIR/patches/24c847772e57ea8888e2cfe4bbf1aa00666390a4-windows.patch"
+win_pre="$SCRIPT_DIR/fixtures/upstream-24c847772e57ea8888e2cfe4bbf1aa00666390a4"
+assert_file "$win_patch"
+assert_file "$win_pre/src/route/escape.cpp"
+assert_file "$win_pre/src/server/viewer_server.cpp"
+if grep -E '^diff --git ' "$win_patch" | grep -v -e 'a/src/route/escape.cpp' -e 'a/src/server/viewer_server.cpp' | grep -q .; then
+  echo "FAIL windows patch touches more than escape.cpp and viewer_server.cpp"
+  grep -E '^diff --git ' "$win_patch"
+  fail=1
+else
+  echo "ok   windows patch is limited to escape.cpp and viewer_server.cpp"
+fi
+win_tree="$ROOT/win-preimage"
+mkdir -p "$win_tree"
+cp -a "$win_pre/src" "$win_tree/src"
+git -C "$win_tree" init -q
+if git -C "$win_tree" apply --check "$win_patch" && git -C "$win_tree" apply "$win_patch"; then
+  echo "ok   windows patch applies to the vendored v0.9.0 preimage"
+else
+  echo "FAIL windows patch did not apply to the vendored preimage"
+  fail=1
+fi
+assert_contains "$win_tree/src/route/escape.cpp" "std::numbers::pi"
+assert_contains "$win_tree/src/route/escape.cpp" "#include <numbers>"
+if grep -q 'M_PI' "$win_tree/src/route/escape.cpp"; then
+  echo "FAIL windows patch left M_PI in escape.cpp"
+  fail=1
+else
+  echo "ok   windows patch removed M_PI"
+fi
+assert_contains "$win_tree/src/server/viewer_server.cpp" "path->string()"
+if grep -q 'path->c_str()' "$win_tree/src/server/viewer_server.cpp"; then
+  echo "FAIL windows patch left path->c_str()"
+  fail=1
+else
+  echo "ok   windows patch stopped passing wchar_t path::c_str() to Beast"
+fi
+if grep -q 'mime_type(path->native())' "$win_tree/src/server/viewer_server.cpp"; then
+  echo "FAIL windows patch left mime_type(path->native())"
+  fail=1
+else
+  echo "ok   windows patch passes a narrow path to mime_type"
+fi
+# Non-git tree (the fake cmake build) must not fail the Windows recipe.
+if [ -f "$ws/TraceMaker/.fabdesk-windows-patch" ]; then
+  echo "FAIL windows patch note written for a non-git TraceMaker tree"
+  fail=1
+else
+  echo "ok   windows patch skipped when TraceMaker is not a git checkout"
+fi
+win_unknown="$ROOT/win-unknown"
+mkdir -p "$win_unknown/.git"
+git -C "$win_unknown" init -q
+git -C "$win_unknown" -c user.email=tracemaker-test@example.test -c user.name=test commit --allow-empty -m init -q
+if bash "$SCRIPT_DIR/apply-windows-patch.sh" "$win_unknown" > "$ROOT/win-patch-skip.log"; then
+  assert_contains "$ROOT/win-patch-skip.log" "No commit-pinned Windows patch"
+  if [ -f "$win_unknown/.fabdesk-windows-patch" ]; then
+    echo "FAIL windows patch note written for an unknown commit"
+    fail=1
+  else
+    echo "ok   apply-windows-patch no-ops on an unknown commit"
+  fi
+else
+  echo "FAIL apply-windows-patch on unknown commit"
+  cat "$ROOT/win-patch-skip.log"
+  fail=1
+fi
+# Applying the script to the already-patched preimage (right commit via the
+# real checkout is covered when TRACEMAKER_FIXTURE_SRC is set). Here, confirm
+# the script's git apply path by replaying it onto a throwaway clone of the
+# preimage whose HEAD we cannot pin: call git apply the same way, then check
+# a second apply is rejected (the script must not be a silent no-op on mismatch).
+if git -C "$win_tree" apply --check "$win_patch"; then
+  echo "FAIL windows patch applied twice"
+  fail=1
+else
+  echo "ok   windows patch does not apply twice"
+fi
+
+# Run 38082482176: Git for Windows autocrlf turned TraceMaker into CRLF while
+# the patch stayed LF (or the reverse). Both mismatches fail the exact hunks
+# the runner printed. The apply script must succeed, and still fail loudly
+# when the context is actually wrong.
+win_crlf_src() {
+  local dest="$1"
+  rm -rf "$dest"
+  mkdir -p "$dest"
+  cp -a "$win_pre/src" "$dest/src"
+  git -C "$dest" init -q
+  git -C "$dest" -c user.email=tracemaker-test@example.test -c user.name=test commit --allow-empty -m init -q
+  python3 - "$dest" <<'PY'
+import pathlib, sys
+root = pathlib.Path(sys.argv[1]) / "src"
+for path in root.rglob("*"):
+    if path.is_file():
+        data = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+        path.write_bytes(data)
+PY
+}
+
+assert_windows_patched() {
+  local tree="$1"
+  assert_contains "$tree/src/route/escape.cpp" "std::numbers::pi"
+  assert_contains "$tree/src/server/viewer_server.cpp" "path->string()"
+  if grep -q 'M_PI' "$tree/src/route/escape.cpp"; then
+    echo "FAIL CRLF apply left M_PI in $tree"
+    fail=1
+  fi
+}
+
+win_crlf_tree="$ROOT/win-crlf-src"
+win_crlf_src "$win_crlf_tree"
+if TRACEMAKER_WINDOWS_PATCH="$win_patch" bash "$SCRIPT_DIR/apply-windows-patch.sh" "$win_crlf_tree" \
+  >"$ROOT/win-crlf-lf-patch.log" 2>"$ROOT/win-crlf-lf-patch.err"; then
+  assert_contains "$ROOT/win-crlf-lf-patch.log" "Retrying apply with --ignore-whitespace"
+  assert_file "$win_crlf_tree/.fabdesk-windows-patch"
+  assert_contains "$win_crlf_tree/.fabdesk-windows-patch" "Apply mode: ignore-whitespace"
+  assert_windows_patched "$win_crlf_tree"
+  echo "ok   apply-windows-patch applies an LF patch onto a CRLF tree"
+else
+  echo "FAIL apply-windows-patch on CRLF sources + LF patch"
+  cat "$ROOT/win-crlf-lf-patch.log" "$ROOT/win-crlf-lf-patch.err"
+  fail=1
+fi
+
+win_crlf_patch="$ROOT/win-crlf.patch"
+python3 - "$win_patch" "$win_crlf_patch" <<'PY'
+import pathlib, sys
+src, dest = map(pathlib.Path, sys.argv[1:])
+data = src.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+dest.write_bytes(data)
+PY
+win_crlf_patch_tree="$ROOT/win-crlf-src-crlf-patch"
+win_crlf_src "$win_crlf_patch_tree"
+# CRLF patch + CRLF tree applies exactly; also cover CRLF patch + LF tree.
+if TRACEMAKER_WINDOWS_PATCH="$win_crlf_patch" bash "$SCRIPT_DIR/apply-windows-patch.sh" "$win_crlf_patch_tree" \
+  >"$ROOT/win-crlf-crlf-patch.log" 2>"$ROOT/win-crlf-crlf-patch.err"; then
+  assert_windows_patched "$win_crlf_patch_tree"
+  echo "ok   apply-windows-patch applies a CRLF patch onto a CRLF tree"
+else
+  echo "FAIL apply-windows-patch on CRLF sources + CRLF patch"
+  cat "$ROOT/win-crlf-crlf-patch.log" "$ROOT/win-crlf-crlf-patch.err"
+  fail=1
+fi
+
+win_lf_crlf_patch="$ROOT/win-lf-src-crlf-patch"
+rm -rf "$win_lf_crlf_patch"
+mkdir -p "$win_lf_crlf_patch"
+cp -a "$win_pre/src" "$win_lf_crlf_patch/src"
+git -C "$win_lf_crlf_patch" init -q
+git -C "$win_lf_crlf_patch" -c user.email=tracemaker-test@example.test -c user.name=test commit --allow-empty -m init -q
+if TRACEMAKER_WINDOWS_PATCH="$win_crlf_patch" bash "$SCRIPT_DIR/apply-windows-patch.sh" "$win_lf_crlf_patch" \
+  >"$ROOT/win-lf-crlf-patch.log" 2>"$ROOT/win-lf-crlf-patch.err"; then
+  assert_windows_patched "$win_lf_crlf_patch"
+  echo "ok   apply-windows-patch applies a CRLF patch onto an LF tree"
+else
+  echo "FAIL apply-windows-patch on LF sources + CRLF patch"
+  cat "$ROOT/win-lf-crlf-patch.log" "$ROOT/win-lf-crlf-patch.err"
+  fail=1
+fi
+
+win_mismatch="$ROOT/win-mismatch"
+win_crlf_src "$win_mismatch"
+python3 - "$win_mismatch/src/route/escape.cpp" <<'PY'
+import pathlib, sys
+path = pathlib.Path(sys.argv[1])
+text = path.read_bytes().replace(b"#include <map>", b"#include <set>")
+path.write_bytes(text)
+PY
+if TRACEMAKER_WINDOWS_PATCH="$win_patch" bash "$SCRIPT_DIR/apply-windows-patch.sh" "$win_mismatch" \
+  >"$ROOT/win-mismatch.log" 2>"$ROOT/win-mismatch.err"; then
+  echo "FAIL apply-windows-patch succeeded on a content-mismatched tree"
+  fail=1
+else
+  assert_contains "$ROOT/win-mismatch.err" "does not apply"
+  echo "ok   apply-windows-patch fails loudly on a real content mismatch"
+fi
+
+printf '%s\n' 'Applied fabdesk Windows patch 24c847772e57ea8888e2cfe4bbf1aa00666390a4-windows.patch' \
+  > "$src_tree/.fabdesk-windows-patch"
+(
+  cd "$ROOT"
+  bash "$SCRIPT_DIR/package.sh" "$fake_bin" windows-x86_64 "$ROOT/pack/windows-patched" \
+    >"$ROOT/windows-patched.log"
+)
+assert_contains "$ROOT/pack/windows-patched/SOURCE.txt" "24c847772e57ea8888e2cfe4bbf1aa00666390a4-windows.patch"
+assert_contains "$ROOT/pack/windows-patched/SOURCE.txt" "corresponding source"
+
 # --- apply-macos-patch is commit-pinned (wrong SHA is a no-op) ---
 empty="$ROOT/empty-src"
 mkdir -p "$empty/.git"
@@ -788,6 +1144,21 @@ if [ -n "${TRACEMAKER_FIXTURE_SRC:-}" ]; then
     fail=1
   else
     echo "ok   patched tree has no std::format / tzdb / current_zone"
+  fi
+  win_pinned="$ROOT/tm-v090-windows"
+  rm -rf "$win_pinned"
+  cp -a "$fixture" "$win_pinned"
+  bash "$SCRIPT_DIR/apply-windows-patch.sh" "$win_pinned" > "$ROOT/win-patch-apply.log"
+  assert_contains "$ROOT/win-patch-apply.log" "Applying"
+  assert_file "$win_pinned/.fabdesk-windows-patch"
+  assert_contains "$win_pinned/.fabdesk-windows-patch" "24c847772e57ea8888e2cfe4bbf1aa00666390a4-windows.patch"
+  assert_contains "$win_pinned/src/route/escape.cpp" "std::numbers::pi"
+  assert_contains "$win_pinned/src/server/viewer_server.cpp" "path->string()"
+  if [ -f "$win_pinned/src/core/from_chars_double.hpp" ]; then
+    echo "FAIL windows patch pulled in the macOS from_chars shim"
+    fail=1
+  else
+    echo "ok   windows patch did not apply the macOS from_chars shim"
   fi
   if grep -E 'strtod_l\(|newlocale\(|freelocale\(|<xlocale.h>' "$pinned/src/core/from_chars_double.hpp"; then
     echo "FAIL shim still uses locale C APIs that Homebrew LLVM does not declare"
@@ -881,6 +1252,254 @@ if PATH="$ROOT/emptybin" /usr/bin/env -u TM_REQUIRE_CMAKE /bin/bash "$SCRIPT_DIR
 else
   echo "FAIL optional cmake harness failed instead of skipping"
   cat "$ROOT/cmake-skip.out" "$ROOT/cmake-skip.err"
+  fail=1
+fi
+
+# --- public manifest rewrite + skip when credentials are unset ---
+python3 "$SCRIPT_DIR/rewrite-public-manifest.py" "$partial_pack/manifest.json" \
+  --base-url "https://downloads.fabplane.com/tracemaker" \
+  --tag "tracemaker-v0.9.0-24c8477" \
+  --out "$ROOT/public-manifest.json"
+python3 - <<PY
+import json, pathlib
+priv = json.loads(pathlib.Path("$partial_pack/manifest.json").read_text())
+pub = json.loads(pathlib.Path("$ROOT/public-manifest.json").read_text())
+assert len(priv["assets"]) == len(pub["assets"])
+for a, b in zip(priv["assets"], pub["assets"]):
+    assert a["sha256"] == b["sha256"], (a, b)
+    assert a["bytes"] == b["bytes"]
+    assert b["url"].startswith("https://downloads.fabplane.com/tracemaker/tracemaker-v0.9.0-24c8477/")
+    assert not b["url"].startswith("https://github.com/")
+print("ok   rewritten public manifest keeps sha256 and retargets URLs")
+PY
+env -u TRACEMAKER_S3_ACCESS_KEY_ID -u TRACEMAKER_S3_SECRET_ACCESS_KEY \
+  -u TRACEMAKER_S3_BUCKET -u TRACEMAKER_S3_ENDPOINT \
+  -u TRACEMAKER_PUBLIC_BASE_URL -u TRACEMAKER_PUBLIC_RELEASE_REPO \
+  -u TRACEMAKER_PUBLIC_RELEASE_TOKEN \
+  -u DESKTOP_R2_ACCESS_KEY_ID -u CLOUDFLARE_ACCOUNT_ID -u CLOUDFLARE_API_TOKEN \
+  TRACEMAKER_RELEASE_TAG=tracemaker-v0.9.0-24c8477 \
+  bash "$SCRIPT_DIR/mirror-public.sh" "$partial_pack" > "$ROOT/mirror-skip.out"
+assert_contains "$ROOT/mirror-skip.out" "Public TraceMaker mirror skipped"
+
+# Credentials configured, but the merged manifest names an archive that is not
+# on disk (linux was kept on the private release, not copied into this folder).
+set +e
+env -u TRACEMAKER_PUBLIC_RELEASE_REPO -u TRACEMAKER_PUBLIC_RELEASE_TOKEN \
+  -u DESKTOP_R2_ACCESS_KEY_ID -u CLOUDFLARE_ACCOUNT_ID -u CLOUDFLARE_API_TOKEN \
+  TRACEMAKER_S3_ACCESS_KEY_ID=dummy-access \
+  TRACEMAKER_S3_SECRET_ACCESS_KEY=dummy-secret \
+  TRACEMAKER_S3_BUCKET=fabplane-downloads \
+  TRACEMAKER_S3_ENDPOINT=http://127.0.0.1:9 \
+  TRACEMAKER_PUBLIC_BASE_URL=http://127.0.0.1:9 \
+  TRACEMAKER_S3_PREFIX=tracemaker \
+  TRACEMAKER_RELEASE_TAG=tracemaker-v0.9.0-24c8477 \
+  bash "$SCRIPT_DIR/mirror-public.sh" "$partial_pack" >"$ROOT/mirror-missing.out" 2>&1
+mirror_missing_rc=$?
+set -e
+if [ "$mirror_missing_rc" -eq 0 ]; then
+  echo "FAIL mirror exited 0 with a manifest archive missing on disk"
+  fail=1
+else
+  echo "ok   mirror exits non-zero when a manifest archive is missing"
+fi
+assert_contains "$ROOT/mirror-missing.out" "missing archives"
+if grep -q "dummy-secret" "$ROOT/mirror-missing.out"; then
+  echo "FAIL mirror log printed the dummy secret"
+  fail=1
+fi
+
+# Flat release download (gh release download) plus a local stand-in for R2.
+mirror_flat="$ROOT/mirror-flat"
+mkdir -p "$mirror_flat"
+cp "$partial_pack/manifest.json" "$mirror_flat/manifest.json"
+python3 - <<PY
+import json, pathlib, shutil
+manifest = json.loads(pathlib.Path("$partial_pack/manifest.json").read_text())
+dest = pathlib.Path("$mirror_flat")
+roots = [pathlib.Path("$partial_pack"), pathlib.Path("$linux_only"), pathlib.Path("$ROOT/pack")]
+for asset in manifest["assets"]:
+    name = asset["filename"]
+    found = None
+    for root in roots:
+        hits = [p for p in root.rglob(name) if p.is_file() and p.name == name]
+        if hits:
+            found = hits[0]
+            break
+    if found is None:
+        raise SystemExit(f"FAIL could not stage {name} for mirror test")
+    shutil.copy(found, dest / name)
+print("ok   staged flat mirror dir", sorted(p.name for p in dest.iterdir()))
+PY
+
+cat > "$ROOT/mirror-http.py" <<'PY'
+#!/usr/bin/env python3
+"""PUT stores the body; GET serves it by path suffix. Optional corrupt GETs."""
+from __future__ import annotations
+
+import sys
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+store: dict[str, bytes] = {}
+corrupt = "--corrupt" in sys.argv
+
+
+class Handler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
+    def _send(self, status: int, body: bytes) -> None:
+        self.send_response(status)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_PUT(self) -> None:  # noqa: N802
+        length = int(self.headers.get("Content-Length", "0"))
+        store[self.path.split("?", 1)[0]] = self.rfile.read(length)
+        self._send(200, b"")
+
+    def do_GET(self) -> None:  # noqa: N802
+        path = self.path.split("?", 1)[0]
+        if corrupt:
+            self._send(200, b"corrupt")
+            return
+        if path in store:
+            self._send(200, store[path])
+            return
+        matches = [(len(key), body) for key, body in store.items() if key.endswith(path)]
+        if not matches:
+            self._send(404, b"missing")
+            return
+        matches.sort()
+        self._send(200, matches[-1][1])
+
+    def log_message(self, fmt: str, *args: object) -> None:
+        return
+
+
+server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+print(server.server_address[1], flush=True)
+server.serve_forever()
+PY
+
+http_pid=""
+trap 'if [ -n "${http_pid:-}" ]; then kill "$http_pid" 2>/dev/null || true; wait "$http_pid" 2>/dev/null || true; fi; rm -rf "$ROOT"' EXIT
+
+start_mirror_http() {
+  http_pid=""
+  : > "$ROOT/mirror-http.port"
+  python3 "$ROOT/mirror-http.py" "$@" >"$ROOT/mirror-http.port" &
+  http_pid=$!
+  mirror_port=""
+  _i=0
+  while [ "$_i" -lt 50 ]; do
+    mirror_port="$(tr -d '[:space:]' < "$ROOT/mirror-http.port" || true)"
+    if [ -n "$mirror_port" ]; then
+      break
+    fi
+    _i=$((_i + 1))
+    sleep 0.05
+  done
+  if [ -z "$mirror_port" ]; then
+    echo "FAIL mirror http stub did not bind"
+    fail=1
+    return 1
+  fi
+}
+
+stop_mirror_http() {
+  if [ -n "${http_pid:-}" ]; then
+    kill "$http_pid" 2>/dev/null || true
+    wait "$http_pid" 2>/dev/null || true
+    http_pid=""
+  fi
+}
+
+start_mirror_http
+set +e
+env -u TRACEMAKER_PUBLIC_RELEASE_REPO -u TRACEMAKER_PUBLIC_RELEASE_TOKEN \
+  -u DESKTOP_R2_ACCESS_KEY_ID -u CLOUDFLARE_ACCOUNT_ID -u CLOUDFLARE_API_TOKEN \
+  TRACEMAKER_S3_ACCESS_KEY_ID=dummy-access \
+  TRACEMAKER_S3_SECRET_ACCESS_KEY=dummy-secret \
+  TRACEMAKER_S3_BUCKET=fabplane-downloads \
+  TRACEMAKER_S3_ENDPOINT="http://127.0.0.1:${mirror_port}" \
+  TRACEMAKER_PUBLIC_BASE_URL="http://127.0.0.1:${mirror_port}" \
+  TRACEMAKER_S3_PREFIX=tracemaker \
+  TRACEMAKER_RELEASE_TAG=tracemaker-v0.9.0-24c8477 \
+  bash "$SCRIPT_DIR/mirror-public.sh" "$mirror_flat" >"$ROOT/mirror-ok.out" 2>&1
+mirror_ok_rc=$?
+set -e
+if [ "$mirror_ok_rc" -ne 0 ]; then
+  echo "FAIL configured mirror did not succeed against the local stub"
+  cat "$ROOT/mirror-ok.out"
+  fail=1
+else
+  echo "ok   configured mirror uploads and re-checks sha256"
+fi
+assert_contains "$ROOT/mirror-ok.out" "tracemaker-latest/manifest.json"
+assert_contains "$ROOT/mirror-ok.out" "verified public"
+if grep -q "using desktop R2 credentials" "$ROOT/mirror-ok.out"; then
+  echo "FAIL TRACEMAKER_S3_* path claimed desktop credentials"
+  fail=1
+else
+  echo "ok   TRACEMAKER_S3_* mirror does not claim desktop credentials"
+fi
+if grep -q "dummy-secret" "$ROOT/mirror-ok.out"; then
+  echo "FAIL mirror success log printed the dummy secret"
+  fail=1
+fi
+stop_mirror_http
+
+start_mirror_http --corrupt
+set +e
+env -u TRACEMAKER_PUBLIC_RELEASE_REPO -u TRACEMAKER_PUBLIC_RELEASE_TOKEN \
+  -u DESKTOP_R2_ACCESS_KEY_ID -u CLOUDFLARE_ACCOUNT_ID -u CLOUDFLARE_API_TOKEN \
+  TRACEMAKER_S3_ACCESS_KEY_ID=dummy-access \
+  TRACEMAKER_S3_SECRET_ACCESS_KEY=dummy-secret \
+  TRACEMAKER_S3_BUCKET=fabplane-downloads \
+  TRACEMAKER_S3_ENDPOINT="http://127.0.0.1:${mirror_port}" \
+  TRACEMAKER_PUBLIC_BASE_URL="http://127.0.0.1:${mirror_port}" \
+  TRACEMAKER_S3_PREFIX=tracemaker \
+  TRACEMAKER_RELEASE_TAG=tracemaker-v0.9.0-24c8477 \
+  bash "$SCRIPT_DIR/mirror-public.sh" "$mirror_flat" >"$ROOT/mirror-badsha.out" 2>&1
+mirror_bad_rc=$?
+set -e
+if [ "$mirror_bad_rc" -eq 0 ]; then
+  echo "FAIL mirror exited 0 after a sha256 mismatch"
+  fail=1
+else
+  echo "ok   mirror exits non-zero when the sha256 re-check fails"
+fi
+assert_contains "$ROOT/mirror-badsha.out" "checksum mismatch"
+if grep -q "Public TraceMaker mirror is live" "$ROOT/mirror-badsha.out"; then
+  echo "FAIL checksum failure still reported the mirror live"
+  fail=1
+fi
+stop_mirror_http
+
+# Upload itself fails (connection refused) when every archive is present.
+set +e
+env -u TRACEMAKER_PUBLIC_RELEASE_REPO -u TRACEMAKER_PUBLIC_RELEASE_TOKEN \
+  -u DESKTOP_R2_ACCESS_KEY_ID -u CLOUDFLARE_ACCOUNT_ID -u CLOUDFLARE_API_TOKEN \
+  TRACEMAKER_S3_ACCESS_KEY_ID=dummy-access \
+  TRACEMAKER_S3_SECRET_ACCESS_KEY=dummy-secret \
+  TRACEMAKER_S3_BUCKET=fabplane-downloads \
+  TRACEMAKER_S3_ENDPOINT=http://127.0.0.1:9 \
+  TRACEMAKER_PUBLIC_BASE_URL=http://127.0.0.1:9 \
+  TRACEMAKER_S3_PREFIX=tracemaker \
+  TRACEMAKER_RELEASE_TAG=tracemaker-v0.9.0-24c8477 \
+  bash "$SCRIPT_DIR/mirror-public.sh" "$mirror_flat" >"$ROOT/mirror-upload-fail.out" 2>&1
+mirror_upload_rc=$?
+set -e
+if [ "$mirror_upload_rc" -eq 0 ]; then
+  echo "FAIL mirror exited 0 when S3 upload failed"
+  fail=1
+else
+  echo "ok   mirror exits non-zero when the upload fails"
+fi
+assert_contains "$ROOT/mirror-upload-fail.out" "S3 upload failed"
+if grep -q "Public TraceMaker mirror skipped" "$ROOT/mirror-upload-fail.out"; then
+  echo "FAIL upload failure was reported as a credential skip"
   fail=1
 fi
 

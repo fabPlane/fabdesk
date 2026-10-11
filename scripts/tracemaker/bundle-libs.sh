@@ -32,8 +32,39 @@ is_system_macos() {
   return 1
 }
 
+is_system_windows_dll() {
+  local base
+  base="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+  case "$base" in
+    kernel32.dll|kernelbase.dll|ntdll.dll|user32.dll|gdi32.dll|shell32.dll|advapi32.dll|ole32.dll|oleaut32.dll|ws2_32.dll|wsock32.dll|secur32.dll|crypt32.dll|bcrypt.dll|bcryptprimitives.dll|normaliz.dll|imm32.dll|comdlg32.dll|comctl32.dll|winmm.dll|iphlpapi.dll|mswsock.dll|dnsapi.dll|userenv.dll|version.dll|shlwapi.dll|setupapi.dll|winspool.drv|ucrtbase.dll|msvcrt.dll|vcruntime140.dll|vcruntime140_1.dll|msvcp140.dll|concrt140.dll|api-ms-win-*.dll|ext-ms-*.dll)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
 echo "Dynamic libraries for ${binary}:" | tee -a "$notes"
-if command -v ldd >/dev/null; then
+windows_exe=0
+case "$(basename -- "$binary")" in
+  *.exe|*.EXE) windows_exe=1 ;;
+esac
+if [ "$windows_exe" -eq 1 ] && command -v ldd >/dev/null; then
+  # Windows: the loader looks next to the .exe, not in ./lib. Copy DLLs
+  # into $libdir (package.sh passes the archive root for windows-*).
+  ldd "$binary" | tee -a "$notes" || true
+  while read -r line; do
+    dest="${line#* => }"
+    dest="${dest%% (*}"
+    dest="${dest## }"
+    if [ -z "$dest" ] || [ ! -f "$dest" ]; then
+      continue
+    fi
+    name="$(basename -- "$dest")"
+    is_system_windows_dll "$name" && continue
+    cp -L "$dest" "$libdir/$name"
+    echo "bundled $name (exe directory)" | tee -a "$notes"
+  done < <(ldd "$binary" || true)
+elif command -v ldd >/dev/null; then
   ldd "$binary" | tee -a "$notes" || true
   while read -r line; do
     lib="${line%% =>*}"
