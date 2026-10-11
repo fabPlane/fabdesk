@@ -17,8 +17,8 @@ import {
 import type { EventBus } from "../bus";
 import type { ProjectStore } from "../projects";
 
-export function commentRoutes(
-  app: Hono,
+export function commentRoutes<E extends { Variables?: object }>(
+  app: Hono<E>,
   deps: { projects: ProjectStore; bus: EventBus; store: { projects: { touch(id: string): void } } },
 ): void {
   const changed = (projectId: string, paths: string[]) => {
