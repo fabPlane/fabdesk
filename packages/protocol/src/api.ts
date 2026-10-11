@@ -46,7 +46,7 @@ export const ProjectManifest = z.object({
   updatedAt: z.string(),
   board: BoardSettings,
   /** Omitted selects Freerouting with automatic fab_router fallback. `capacity` is a legacy fab_router alias. */
-  router: z.enum(["fab_router", "capacity", "freerouting"]).optional(),
+  router: z.enum(["fab_router", "capacity", "freerouting", "tracemaker"]).optional(),
   agent: z.object({ lastUsed: AgentId.optional() }).default({}),
   allowedDrcWarnings: z.array(z.string()).default([]),
 });
@@ -235,8 +235,19 @@ export const Settings = z.object({
   ngspicePath: z.string().nullable().default(null),
   /** FabPlane PCB bridge origin, e.g. `http://127.0.0.1:4020`; null means the default. Env `FABDESK_FP_PCB_BRIDGE_URL` overrides. */
   fpPcbBridgeUrl: z.string().nullable().default(null),
-  /** Deprecated storage compatibility only; router choice is project-local. No settings control reads this field. */
+  /** Deprecated storage compatibility only; unused by routing. Do not start reading this — existing DBs default to fab_router. */
   router: z.enum(["fab_router", "capacity", "freerouting"]).default("fab_router"),
+  /**
+   * User-chosen default from Settings → Routers. Omitted keeps today's unpinned path
+   * (Freerouting with automatic fab_router fallback).
+   */
+  preferredRouter: z.enum(["fab_router", "freerouting", "tracemaker"]).nullable().optional(),
+  /**
+   * HTTPS URL of the weekly TraceMaker binary `manifest.json`. Null uses
+   * `https://downloads.fabplane.com/tracemaker/tracemaker-latest/manifest.json`.
+   * Env `FABDESK_TRACEMAKER_MANIFEST_URL` overrides this.
+   */
+  tracemakerManifestUrl: z.string().nullable().default(null),
   defaultAgent: AgentId.default("claude"),
   /** Runtime mode new threads start in. */
   defaultRuntimeMode: RuntimeMode.default("full"),

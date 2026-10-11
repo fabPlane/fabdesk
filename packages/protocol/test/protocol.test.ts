@@ -232,6 +232,7 @@ describe("pairing url", () => {
 
   test("Settings.remote.preferredEndpointKind defaults to unset and rejects made-up kinds", () => {
     expect(Settings.parse({}).remote.preferredEndpointKind).toBeUndefined();
+    expect(Settings.parse({}).tracemakerManifestUrl).toBeNull();
     expect(
       Settings.parse({ remote: { preferredEndpointKind: null } }).remote.preferredEndpointKind,
     ).toBeNull();

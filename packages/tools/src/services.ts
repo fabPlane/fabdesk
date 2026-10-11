@@ -8,6 +8,7 @@
  * runs the fork `kicad-cli` for DRC, renders and exports; `SimService` reads the netlist source.
  */
 import type { CloudService } from "./cloud/service";
+import type { RouterRegistry } from "./routers/registry";
 import type {
   CoreEvent,
   FpPcbBoardSpec,
@@ -803,7 +804,7 @@ export type RouteRunRecord = {
   router: string;
   /** Historical records may predate attempt tracking. router identifies the final producer. */
   attempts?: Array<{
-    router: "fab_router" | "freerouting";
+    router: "fab_router" | "freerouting" | "tracemaker";
     startedAt: string;
     endedAt: string | null;
     outcome: "running" | "completed" | "failed" | "unavailable" | "skipped" | "cancelled" | "timed_out";
@@ -1067,4 +1068,6 @@ export interface CoreServices {
   cloud?: CloudService;
   /** Optional: FreeCAD over the FabPlane CAD bridge (`cad` toolset). */
   cad?: CadService;
+  /** Install-on-demand autorouter catalog (Settings → Routers). */
+  routers?: RouterRegistry;
 }
