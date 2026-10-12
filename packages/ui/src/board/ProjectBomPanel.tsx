@@ -2,6 +2,7 @@ import {
   OFFBOARD_KIND_LABELS,
   OFFBOARD_KINDS,
   PROJECT_PARTS_FILE,
+  ProjectPartsFile as ProjectPartsFileSchema,
   findOffboardCatalogPart,
   nextOffboardRef,
   projectBomLines,
@@ -19,6 +20,75 @@ import { cn } from "../util";
 
 function emptyParts(): ProjectPartsFile {
   return { schema: 1, parts: [] };
+}
+
+export type BomPartsState =
+  | { status: "ok"; parts: ProjectPartsFile; exists: boolean }
+  | { status: "error"; parts: ProjectPartsFile; message: string };
+
+/**
+ * Only a confirmed-absent file (404) starts empty. An unreadable, unparsable or unsupported file is
+ * an error: editing would persist a replacement built from nothing and drop the existing lines.
+ */
+export function bomPartsState(q: {
+  data: unknown;
+  parseError: string | null;
+  isError: boolean;
+  error?: unknown;
+}): BomPartsState {
+  if (q.isError) {
+    const msg = q.error instanceof Error ? q.error.message : String(q.error ?? "read failed");
+    return { status: "error", parts: emptyParts(), message: `Could not read ${PROJECT_PARTS_FILE}: ${msg}` };
+  }
+  if (q.parseError)
+    return { status: "error", parts: emptyParts(), message: `${PROJECT_PARTS_FILE} is not valid JSON: ${q.parseError}` };
+  if (q.data === null || q.data === undefined) return { status: "ok", parts: emptyParts(), exists: false };
+  const parsed = ProjectPartsFileSchema.safeParse(q.data);
+  if (!parsed.success) {
+    const schema = (q.data as { schema?: unknown }).schema;
+    return {
+      status: "error",
+      parts: emptyParts(),
+      message:
+        schema !== 1
+          ? `${PROJECT_PARTS_FILE} uses unsupported schema ${JSON.stringify(schema)}; this version edits schema 1.`
+          : `${PROJECT_PARTS_FILE} does not match schema 1: ${parsed.error.issues[0]?.message ?? "invalid"}`,
+    };
+  }
+  return { status: "ok", parts: parsed.data, exists: true };
+}
+
+/** The parts file after adding a catalog line, or null when the current file must not be replaced. */
+export function planAddOffboard(
+  state: BomPartsState,
+  catalogId: string,
+  qty: number,
+  newId: () => string = () => `line_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`,
+): ProjectPartsFile | null {
+  if (state.status !== "ok") return null;
+  const catalog = findOffboardCatalogPart(catalogId);
+  if (!catalog) return null;
+  const count = Number.isInteger(qty) && qty > 0 ? qty : 1;
+  const parts = state.parts.parts;
+  return {
+    schema: 1,
+    parts: [
+      ...parts,
+      {
+        id: newId(),
+        catalogId: catalog.id,
+        ref: nextOffboardRef(
+          catalog.kind,
+          parts.map((p) => p.ref),
+        ),
+        name: catalog.name,
+        kind: catalog.kind,
+        qty: count,
+        ...(catalog.mpn ? { mpn: catalog.mpn } : {}),
+        ...(catalog.manufacturer ? { manufacturer: catalog.manufacturer } : {}),
+      },
+    ],
+  };
 }
 
 const KIND_TONE: Record<ProjectBomLine["kind"], "neutral" | "accent" | "warning" | "success"> = {
@@ -42,7 +112,9 @@ export function ProjectBomPanel() {
   const [kind, setKind] = useState<OffboardKind | "">("");
   const [qty, setQty] = useState("1");
 
-  const parts = partsFile.data && partsFile.data.schema === 1 ? partsFile.data : emptyParts();
+  const partsState = bomPartsState(partsFile);
+  const parts = partsState.parts;
+  const editable = partsState.status === "ok";
   const components = netlist.data?.netlist.components ?? [];
   const lines = useMemo(() => projectBomLines(components, parts.parts), [components, parts.parts]);
   const shown = filter === "all" ? lines : lines.filter((l) => l.kind === filter);
@@ -60,33 +132,20 @@ export function ProjectBomPanel() {
     );
   }
 
-  const persist = (next: ProjectPartsFile) =>
+  const persist = (next: ProjectPartsFile) => {
+    if (!editable) return;
     write.mutate({ projectId, path: PROJECT_PARTS_FILE, content: `${JSON.stringify(next, null, 2)}\n` });
+  };
 
   const addCatalog = (catalogId: string) => {
-    const catalog = findOffboardCatalogPart(catalogId);
-    if (!catalog) return;
-    const n = Number(qty);
-    const count = Number.isInteger(n) && n > 0 ? n : 1;
-    const line = {
-      id: `line_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`,
-      catalogId: catalog.id,
-      ref: nextOffboardRef(
-        catalog.kind,
-        parts.parts.map((p) => p.ref),
-      ),
-      name: catalog.name,
-      kind: catalog.kind,
-      qty: count,
-      ...(catalog.mpn ? { mpn: catalog.mpn } : {}),
-      ...(catalog.manufacturer ? { manufacturer: catalog.manufacturer } : {}),
-    };
-    persist({ schema: 1, parts: [...parts.parts, line] });
+    const next = planAddOffboard(partsState, catalogId, Number(qty));
+    if (!next) return;
+    persist(next);
     setQuery("");
   };
 
   const setQtyFor = (lineId: string, nextQty: number) => {
-    if (!Number.isInteger(nextQty) || nextQty < 1) return;
+    if (!editable || !Number.isInteger(nextQty) || nextQty < 1) return;
     persist({
       schema: 1,
       parts: parts.parts.map((p) => (p.id === lineId ? { ...p, qty: nextQty } : p)),
@@ -130,6 +189,18 @@ export function ProjectBomPanel() {
         </div>
       </div>
       {exportBom.state.error && <div className="border-b border-border px-2 py-1 text-xs text-danger">{exportBom.state.error}</div>}
+      {partsState.status === "error" && (
+        <div
+          className="flex items-center gap-2 border-b border-border px-2 py-1.5 text-xs text-danger"
+          role="alert"
+          data-testid="bom-parts-error"
+        >
+          <span className="min-w-0 flex-1">{partsState.message} Off-board editing is off so the file is not overwritten.</span>
+          <Button size="sm" onClick={() => void partsFile.refetch()}>
+            Retry
+          </Button>
+        </div>
+      )}
       <div className="min-h-0 flex-1 overflow-auto">
         {shown.length === 0 ? (
           <div className="px-3 py-6 text-center text-xs text-muted">
@@ -165,7 +236,7 @@ export function ProjectBomPanel() {
                     <Badge tone={KIND_TONE[line.kind]}>{line.kind === "pcb" ? "PCB" : OFFBOARD_KIND_LABELS[line.kind]}</Badge>
                   </td>
                   <td className="px-2 py-1.5">
-                    {line.source === "offboard" && line.lineId ? (
+                    {line.source === "offboard" && line.lineId && editable ? (
                       <Input
                         type="number"
                         min={1}
@@ -180,7 +251,7 @@ export function ProjectBomPanel() {
                   </td>
                   <td className="px-2 py-1.5 font-mono text-[11px] text-muted">{line.mpn ?? ""}</td>
                   <td className="px-2 py-1.5 text-right">
-                    {line.source === "offboard" && line.lineId && (
+                    {line.source === "offboard" && line.lineId && editable && (
                       <Button size="sm" variant="ghost" className="text-muted hover:text-danger" onClick={() => removeLine(line.lineId!)}>
                         Remove
                       </Button>
@@ -200,6 +271,7 @@ export function ProjectBomPanel() {
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search motors, displays, standoffs, screws…"
             aria-label="Search off-board library"
+            disabled={!editable}
             className="text-xs"
             data-testid="offboard-search"
           />
@@ -207,6 +279,7 @@ export function ProjectBomPanel() {
             value={kind}
             onChange={(e) => setKind(e.target.value as OffboardKind | "")}
             aria-label="Off-board kind"
+            disabled={!editable}
             className="h-8 text-xs"
           >
             <option value="">Any kind</option>
@@ -222,6 +295,7 @@ export function ProjectBomPanel() {
             value={qty}
             onChange={(e) => setQty(e.target.value)}
             aria-label="Quantity to add"
+            disabled={!editable}
             className="h-8 w-14 px-1.5 text-xs"
           />
         </div>
@@ -230,8 +304,9 @@ export function ProjectBomPanel() {
             <button
               key={hit.id}
               type="button"
+              disabled={!editable}
               className={cn(
-                "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] hover:bg-panel-2",
+                "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] hover:bg-panel-2 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent",
               )}
               onClick={() => addCatalog(hit.id)}
               data-testid={`offboard-hit-${hit.id}`}
