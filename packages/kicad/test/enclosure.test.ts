@@ -80,6 +80,32 @@ describe("meshEnclosure", () => {
     expect(mesh.step).toContain("END-ISO-10303-21;");
   });
 
+  test("STEP keeps every standoff as a tube with its screw bore", () => {
+    const spec = generateEnclosure(extractBoardFeatures(fixture));
+    const { step } = meshEnclosure(spec);
+    const standoffs = spec.solids.filter((s) => s.role === "standoff");
+    expect(standoffs).toHaveLength(2);
+    for (const s of standoffs) expect(step).toContain(`MANIFOLD_SOLID_BREP('${s.name}'`);
+    expect(step.match(/MANIFOLD_SOLID_BREP/g)?.length).toBe(spec.solids.length);
+    expect(step.match(/CYLINDRICAL_SURFACE/g)?.length).toBe(2 * standoffs.length);
+    const radii = [...step.matchAll(/CYLINDRICAL_SURFACE\('',#\d+,([\d.]+)\)/g)].map((m) => Number(m[1]));
+    for (const st of spec.standoffs) {
+      expect(radii).toContain(st.outerDiameterMm / 2);
+      expect(radii).toContain(st.innerDiameterMm / 2);
+    }
+    expect(step).toContain(`CARTESIAN_POINT('',(4,4,`);
+  });
+
+  test("writeBoxesStep emits an annular tube", () => {
+    const step = writeBoxesStep([], [{ name: "T", cx: 1, cy: 2, z0: 0, z1: 5, innerRadiusMm: 1, outerRadiusMm: 3 }]);
+    expect(step.match(/CLOSED_SHELL/g)?.length).toBe(1);
+    expect(step.match(/ADVANCED_FACE/g)?.length).toBe(4);
+    expect(step.match(/CIRCLE\(/g)?.length).toBe(4);
+    expect(step).toContain("CYLINDRICAL_SURFACE('',#");
+    expect(step).toContain(",3)");
+    expect(step.match(/FACE_BOUND\(/g)?.length).toBe(2);
+  });
+
   test("writeBoxesStep emits one closed shell per box", () => {
     const step = writeBoxesStep([
       { name: "A", min: { x: 0, y: 0, z: 0 }, max: { x: 1, y: 2, z: 3 } },
