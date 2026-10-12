@@ -556,12 +556,43 @@ export function meshEnclosure(spec: EnclosureSpec): EnclosureMeshes {
     lidStl: asciiStl("fabplane_enclosure_lid", lid),
     step: writeBoxesStep(
       spec.solids.filter((s) => s.kind === "box").map((s) => ({ name: s.name, min: s.min, max: s.max })),
+      spec.solids.flatMap((s): StepTube[] => {
+        if (s.kind !== "cylinder" || !s.radiusMm) return [];
+        const cx = (s.min.x + s.max.x) / 2;
+        const cy = (s.min.y + s.max.y) / 2;
+        const stand = spec.standoffs.find((h) => Math.abs(h.x - cx) < 1e-6 && Math.abs(h.y - cy) < 1e-6);
+        return [
+          {
+            name: s.name,
+            cx,
+            cy,
+            z0: s.min.z,
+            z1: s.max.z,
+            innerRadiusMm: (stand?.innerDiameterMm ?? s.radiusMm * 0.5) / 2,
+            outerRadiusMm: s.radiusMm,
+          },
+        ];
+      }),
     ),
   };
 }
 
-/** Minimal AP214 assembly of axis-aligned boxes (one closed shell each). */
-export function writeBoxesStep(boxes: Array<{ name: string; min: EnclosureSolid["min"]; max: EnclosureSolid["max"] }>): string {
+/** Vertical hollow cylinder (standoff with a screw bore) on the z axis through (cx, cy). */
+export type StepTube = {
+  name: string;
+  cx: number;
+  cy: number;
+  z0: number;
+  z1: number;
+  innerRadiusMm: number;
+  outerRadiusMm: number;
+};
+
+/** Minimal AP214 assembly of axis-aligned boxes and vertical tubes (one closed shell each). */
+export function writeBoxesStep(
+  boxes: Array<{ name: string; min: EnclosureSolid["min"]; max: EnclosureSolid["max"] }>,
+  tubes: StepTube[] = [],
+): string {
   const ents: string[] = [];
   const next = (): number => {
     ents.push("");
@@ -597,6 +628,39 @@ export function writeBoxesStep(boxes: Array<{ name: string; min: EnclosureSolid[
     `(GEOMETRIC_REPRESENTATION_CONTEXT(3)GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#${nUnc}))GLOBAL_UNIT_ASSIGNED_CONTEXT((#${nLen}))REPRESENTATION_CONTEXT('enclosure','3D'))`,
   );
 
+  const point = (x: number, y: number, z: number) => {
+    const n = next();
+    set(n, `CARTESIAN_POINT('',(${x},${y},${z}))`);
+    return n;
+  };
+  const axis = (dx: number, dy: number, dz: number) => {
+    const d = next();
+    set(d, `DIRECTION('',(${dx},${dy},${dz}))`);
+    return d;
+  };
+  const placement = (x: number, y: number, z: number, nz: number) => {
+    const ax2 = next();
+    set(ax2, `AXIS2_PLACEMENT_3D('',#${point(x, y, z)},#${axis(0, 0, nz)},#${axis(1, 0, 0)})`);
+    return ax2;
+  };
+  const oriented = (e: number, sense: boolean) => {
+    const oe = next();
+    set(oe, `ORIENTED_EDGE('',*,*,#${e},${sense ? ".T." : ".F."})`);
+    return oe;
+  };
+  const bound = (edges: number[], outer: boolean) => {
+    const loop = next();
+    set(loop, `EDGE_LOOP('',(${edges.map((e) => `#${e}`).join(",")}))`);
+    const fb = next();
+    set(fb, `${outer ? "FACE_OUTER_BOUND" : "FACE_BOUND"}('',#${loop},.T.)`);
+    return fb;
+  };
+  const advancedFace = (bounds: number[], surface: number, sameSense: boolean) => {
+    const af = next();
+    set(af, `ADVANCED_FACE('',(${bounds.map((b) => `#${b}`).join(",")}),#${surface},${sameSense ? ".T." : ".F."})`);
+    return af;
+  };
+
   const shapeIds: number[] = [];
   for (const box of boxes) {
     const [x0, y0, z0, x1, y1, z1] = [box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z];
@@ -609,24 +673,14 @@ export function writeBoxesStep(boxes: Array<{ name: string; min: EnclosureSolid[
       [x1, y0, z1],
       [x1, y1, z1],
       [x0, y1, z1],
-    ].map(([x, y, z]) => {
-      const n = next();
-      set(n, `CARTESIAN_POINT('',(${x},${y},${z}))`);
-      return n;
-    });
+    ].map(([x, y, z]) => point(x!, y!, z!));
     const verts = pts.map((p) => {
       const n = next();
       set(n, `VERTEX_POINT('',#${p})`);
       return n;
     });
-    const axis = (dx: number, dy: number, dz: number) => {
-      const d = next();
-      set(d, `DIRECTION('',(${dx},${dy},${dz}))`);
-      return d;
-    };
     const edge = (a: number, b: number, dx: number, dy: number, dz: number) => {
-      const p = next();
-      set(p, `CARTESIAN_POINT('',(${[x0, y0, z0].join(",")}))`);
+      const p = pts[a]!;
       const dir = axis(dx, dy, dz);
       const vec = next();
       set(vec, `VECTOR('',#${dir},1.)`);
@@ -680,6 +734,72 @@ export function writeBoxesStep(boxes: Array<{ name: string; min: EnclosureSolid[
     set(shell, `CLOSED_SHELL('',(${faces.map((f) => `#${f}`).join(",")}))`);
     const solid = next();
     set(solid, `MANIFOLD_SOLID_BREP('${box.name}',#${shell})`);
+    shapeIds.push(solid);
+  }
+
+  // Each tube: outer and inner cylindrical faces plus annular top and bottom caps. Closed circles
+  // start and end on a seam vertex on the +x side; a vertical seam line joins the z0 and z1 circles.
+  for (const t of tubes) {
+    const vertex = (r: number, z: number) => {
+      const v = next();
+      set(v, `VERTEX_POINT('',#${point(t.cx + r, t.cy, z)})`);
+      return v;
+    };
+    const circle = (v: number, r: number, z: number) => {
+      const c = next();
+      set(c, `CIRCLE('',#${placement(t.cx, t.cy, z, 1)},${r})`);
+      const e = next();
+      set(e, `EDGE_CURVE('',#${v},#${v},#${c},.T.)`);
+      return e;
+    };
+    const seam = (a: number, b: number, r: number) => {
+      const vec = next();
+      set(vec, `VECTOR('',#${axis(0, 0, 1)},1.)`);
+      const line = next();
+      set(line, `LINE('',#${point(t.cx + r, t.cy, t.z0)},#${vec})`);
+      const e = next();
+      set(e, `EDGE_CURVE('',#${a},#${b},#${line},.T.)`);
+      return e;
+    };
+    const cylinder = (r: number) => {
+      const s = next();
+      set(s, `CYLINDRICAL_SURFACE('',#${placement(t.cx, t.cy, t.z0, 1)},${r})`);
+      return s;
+    };
+    const plane = (z: number, nz: number) => {
+      const s = next();
+      set(s, `PLANE('',#${placement(t.cx, t.cy, z, nz)})`);
+      return s;
+    };
+    const [ro, ri] = [t.outerRadiusMm, t.innerRadiusMm];
+    const vo0 = vertex(ro, t.z0);
+    const vo1 = vertex(ro, t.z1);
+    const vi0 = vertex(ri, t.z0);
+    const vi1 = vertex(ri, t.z1);
+    const co0 = circle(vo0, ro, t.z0);
+    const co1 = circle(vo1, ro, t.z1);
+    const ci0 = circle(vi0, ri, t.z0);
+    const ci1 = circle(vi1, ri, t.z1);
+    const so = seam(vo0, vo1, ro);
+    const si = seam(vi0, vi1, ri);
+    const faces = [
+      advancedFace(
+        [bound([oriented(co0, true), oriented(so, true), oriented(co1, false), oriented(so, false)], true)],
+        cylinder(ro),
+        true,
+      ),
+      advancedFace(
+        [bound([oriented(ci0, false), oriented(si, true), oriented(ci1, true), oriented(si, false)], true)],
+        cylinder(ri),
+        false,
+      ),
+      advancedFace([bound([oriented(co0, false)], true), bound([oriented(ci0, true)], false)], plane(t.z0, -1), true),
+      advancedFace([bound([oriented(co1, true)], true), bound([oriented(ci1, false)], false)], plane(t.z1, 1), true),
+    ];
+    const shell = next();
+    set(shell, `CLOSED_SHELL('',(${faces.map((f) => `#${f}`).join(",")}))`);
+    const solid = next();
+    set(solid, `MANIFOLD_SOLID_BREP('${t.name}',#${shell})`);
     shapeIds.push(solid);
   }
   const nRep = next();
