@@ -107,6 +107,7 @@ export {
   type EnclosureMeshes,
   type EnclosureParams,
   type EnclosureSolid,
+  type StepTube,
   type EnclosureSpec,
   type EnclosureStandoff,
 } from "./enclosure";

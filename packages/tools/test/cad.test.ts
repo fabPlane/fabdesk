@@ -275,6 +275,20 @@ describe("cad_enclosure", () => {
     expect((out.json as { appliedToCad: boolean }).appliedToCad).toBe(true);
     expect(cad.calls.some((c) => c.startsWith("add App::DocumentObjectGroup"))).toBe(true);
     expect(cad.calls.some((c) => c.startsWith("add Part::Box"))).toBe(true);
+    const spec = JSON.parse(await readFile(join(project.dir, "enclosure.json"), "utf8")) as {
+      standoffs: Array<{ innerDiameterMm: number; outerDiameterMm: number }>;
+    };
+    expect(spec.standoffs.length).toBeGreaterThan(0);
+    const cylinders = cad.calls.filter((c) => c.startsWith("add Part::Cylinder"));
+    const cuts = cad.calls.filter((c) => c.startsWith("add Part::Cut"));
+    expect(cylinders).toHaveLength(2 * spec.standoffs.length);
+    expect(cuts).toHaveLength(spec.standoffs.length);
+    for (const st of spec.standoffs) {
+      expect(cylinders.some((c) => c.includes(`"Radius":${st.outerDiameterMm / 2},`))).toBe(true);
+      expect(cylinders.some((c) => c.includes(`"Radius":${st.innerDiameterMm / 2},`))).toBe(true);
+    }
+    expect(cuts[0]).toContain('"Base":{"$type":"Object","doc":"Model","name":"EnclosureStandoff_');
+    expect(cuts[0]).toMatch(/"Tool":\{"\$type":"Object","doc":"Model","name":"EnclosureStandoff_\w+_Bore"\}/);
     expect(cad.calls).toContain("recompute");
     expect(cad.calls).toContain("save");
   });
