@@ -43,7 +43,14 @@ export type BoardSnapshot = {
   outline: Point[];
 };
 
-export type ComponentChangeReason = "moved" | "rotated" | "layer" | "value" | "footprint";
+export type ComponentChangeReason =
+  | "moved"
+  | "rotated"
+  | "layer"
+  | "value"
+  | "footprint"
+  | "schematic-moved"
+  | "schematic-rotated";
 
 export type ComponentChange = {
   ref: string;
@@ -52,6 +59,9 @@ export type ComponentChange = {
   reasons: ComponentChangeReason[];
   dx?: number;
   dy?: number;
+  /** Schematic placement delta, set with `schematic-moved`. */
+  schDx?: number;
+  schDy?: number;
 };
 
 export type NetChange = {
@@ -85,6 +95,8 @@ export type BoardDiff = {
 export type DiffOptions = {
   /** PCB movement below this (mm) is treated as unchanged. Default 0.05. */
   moveToleranceMm?: number;
+  /** Schematic movement below this (sheet mm) is treated as unchanged. Default 0.05. */
+  schematicMoveToleranceMm?: number;
   /** Rotation delta below this (degrees) is treated as unchanged. Default 0.5. */
   rotationToleranceDeg?: number;
 };

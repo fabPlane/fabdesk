@@ -15,6 +15,7 @@ function nodeSet(nodes: NetNode[]): Set<string> {
  */
 export function diffBoards(from: BoardSnapshot, to: BoardSnapshot, opts: DiffOptions = {}): BoardDiff {
   const moveTol = opts.moveToleranceMm ?? 0.05;
+  const schMoveTol = opts.schematicMoveToleranceMm ?? 0.05;
   const rotTol = opts.rotationToleranceDeg ?? 0.5;
 
   const fromParts = new Map(from.components.map((c) => [c.ref, c]));
@@ -36,6 +37,18 @@ export function diffBoards(from: BoardSnapshot, to: BoardSnapshot, opts: DiffOpt
     if (!nearlyEqual(before.rotation, after.rotation, rotTol) && (before.rotation !== undefined || after.rotation !== undefined)) {
       reasons.push("rotated");
     }
+    const schDx = (after.schX ?? 0) - (before.schX ?? 0);
+    const schDy = (after.schY ?? 0) - (before.schY ?? 0);
+    const hadSch = before.schX !== undefined && before.schY !== undefined;
+    const hasSch = after.schX !== undefined && after.schY !== undefined;
+    if (hadSch && hasSch && (Math.abs(schDx) > schMoveTol || Math.abs(schDy) > schMoveTol)) reasons.push("schematic-moved");
+    if (
+      before.schRotation !== undefined &&
+      after.schRotation !== undefined &&
+      !nearlyEqual(before.schRotation, after.schRotation, rotTol)
+    ) {
+      reasons.push("schematic-rotated");
+    }
     if ((before.layer ?? "") !== (after.layer ?? "") && (before.layer !== undefined || after.layer !== undefined)) {
       reasons.push("layer");
     }
@@ -53,6 +66,7 @@ export function diffBoards(from: BoardSnapshot, to: BoardSnapshot, opts: DiffOpt
         after,
         reasons,
         ...(reasons.includes("moved") ? { dx, dy } : {}),
+        ...(reasons.includes("schematic-moved") ? { schDx, schDy } : {}),
       });
     }
   }
@@ -105,6 +119,7 @@ export function diffSummary(diff: BoardDiff): {
   added: number;
   removed: number;
   moved: number;
+  schematicMoved: number;
   changed: number;
   netsAdded: number;
   netsRemoved: number;
@@ -116,6 +131,7 @@ export function diffSummary(diff: BoardDiff): {
     added: diff.components.added.length,
     removed: diff.components.removed.length,
     moved: diff.components.changed.filter((c) => c.reasons.includes("moved")).length,
+    schematicMoved: diff.components.changed.filter((c) => c.reasons.includes("schematic-moved")).length,
     changed: diff.components.changed.length,
     netsAdded: diff.nets.added.length,
     netsRemoved: diff.nets.removed.length,
@@ -128,7 +144,7 @@ export function diffSummary(diff: BoardDiff): {
 export function formatDiffText(diff: BoardDiff): string {
   const s = diffSummary(diff);
   const lines = [
-    `Components +${s.added} / -${s.removed} / ~${s.changed} (${s.moved} moved)`,
+    `Components +${s.added} / -${s.removed} / ~${s.changed} (${s.moved} moved on PCB, ${s.schematicMoved} on schematic)`,
     `Nets +${s.netsAdded} / -${s.netsRemoved} / ~${s.netsChanged}`,
     `Tracks +${s.tracksAdded} / -${s.tracksRemoved} / ${diff.tracks.unchanged} unchanged`,
   ];

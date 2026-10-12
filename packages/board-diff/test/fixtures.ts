@@ -133,3 +133,11 @@ export const NETLIST_TO = {
     ],
   },
 };
+
+/** SCH_FROM with only R1 moved 10.16 mm right and rotated 90° on the sheet. */
+export const SCH_R1_MOVED = SCH_FROM.replace(
+  `(at 50.8 38.1 0)
+    (property "Reference" "R1"`,
+  `(at 60.96 38.1 90)
+    (property "Reference" "R1"`,
+);

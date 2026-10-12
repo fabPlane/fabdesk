@@ -8,7 +8,7 @@ import {
   snapshotFromKicadSch,
   snapshotFromNetlist,
 } from "../src";
-import { NETLIST_FROM, NETLIST_TO, PCB_FROM, PCB_TO, SCH_FROM, SCH_TO } from "./fixtures";
+import { NETLIST_FROM, NETLIST_TO, PCB_FROM, PCB_TO, SCH_FROM, SCH_R1_MOVED, SCH_TO } from "./fixtures";
 
 describe("snapshotFromKicadPcb", () => {
   test("reads footprints, nets, segments, and edge cuts", () => {
@@ -108,6 +108,28 @@ describe("compareRevisions", () => {
     expect(result.schematic.structured).toContain("data-board-diff=\"schematic\"");
     expect(result.text).toContain("Added: C1");
     expect(result.text).toContain("Removed: R2");
+  });
+
+  test("a schematic-only move and rotation is a schematic change, not a PCB one", () => {
+    expect(SCH_R1_MOVED).not.toBe(SCH_FROM);
+    const result = compareRevisions(
+      { kicadPcb: PCB_FROM, kicadSch: SCH_FROM },
+      { kicadPcb: PCB_FROM, kicadSch: SCH_R1_MOVED },
+    );
+    const r1 = result.diff.components.changed.find((c) => c.ref === "R1");
+    expect(r1?.reasons).toEqual(["schematic-moved", "schematic-rotated"]);
+    expect(r1?.schDx).toBeCloseTo(10.16);
+    expect(r1?.schDy).toBeCloseTo(0);
+    expect(r1?.dx).toBeUndefined();
+    expect(result.diff.components.unchanged).toEqual(["R2"]);
+    expect(diffSummary(result.diff)).toMatchObject({ moved: 0, schematicMoved: 1, changed: 1 });
+    expect(result.text).toContain("R1 (schematic-moved, schematic-rotated)");
+
+    const amberR1 = /data-ref="R1"[^>]*>\s*<rect[^>]*stroke="#d97706"/;
+    expect(result.schematic.structured).toMatch(amberR1);
+    expect(result.schematic.structured).toContain('marker-end="url(#board-diff-arrow)"');
+    expect(result.pcb.structured).not.toMatch(amberR1);
+    expect(result.pcb.structured).not.toContain('marker-end="url(#board-diff-arrow)"');
   });
 
   test("overlays two KiCad-style SVGs as red/green layers", () => {

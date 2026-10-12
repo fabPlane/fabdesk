@@ -1,4 +1,4 @@
-import type { BoardDiff, BoardSnapshot, ComponentSnapshot, Point, TrackSnapshot } from "./types";
+import type { BoardDiff, BoardSnapshot, ComponentChangeReason, ComponentSnapshot, Point, TrackSnapshot } from "./types";
 
 const COLORS = {
   added: "#16a34a",
@@ -12,10 +12,17 @@ const COLORS = {
 export type VisualKind = "pcb" | "schematic";
 export type ComponentRole = "added" | "removed" | "changed" | "unchanged";
 
-export function componentRole(ref: string, diff: BoardDiff): ComponentRole {
+const SURFACE_REASONS: Record<VisualKind, ReadonlySet<ComponentChangeReason>> = {
+  pcb: new Set(["moved", "rotated", "layer", "value", "footprint"]),
+  schematic: new Set(["schematic-moved", "schematic-rotated", "value", "footprint"]),
+};
+
+/** With `kind`, a part only counts as changed when a reason applies to that surface. */
+export function componentRole(ref: string, diff: BoardDiff, kind?: VisualKind): ComponentRole {
   if (diff.components.added.some((c) => c.ref === ref)) return "added";
   if (diff.components.removed.some((c) => c.ref === ref)) return "removed";
-  if (diff.components.changed.some((c) => c.ref === ref)) return "changed";
+  const change = diff.components.changed.find((c) => c.ref === ref);
+  if (change && (!kind || change.reasons.some((r) => SURFACE_REASONS[kind].has(r)))) return "changed";
   return "unchanged";
 }
 
@@ -121,7 +128,7 @@ function drawOutline(outline: Point[], color: string): string {
 
 function drawMoves(diff: BoardDiff, kind: VisualKind): string {
   return diff.components.changed
-    .filter((c) => c.reasons.includes("moved"))
+    .filter((c) => c.reasons.includes(kind === "schematic" ? "schematic-moved" : "moved"))
     .map((c) => {
       const a = componentPoint(c.before, kind);
       const b = componentPoint(c.after, kind);
@@ -135,7 +142,7 @@ function snapshotSvgBody(snapshot: BoardSnapshot, diff: BoardDiff, kind: VisualK
   const size = kind === "schematic" ? 2.4 : 1.6;
   const parts = snapshot.components
     .map((c) => {
-      const role = componentRole(c.ref, diff);
+      const role = componentRole(c.ref, diff, kind);
       const color = COLORS[role === "unchanged" && roleForMissing !== "unchanged" ? roleForMissing : role];
       return drawComponent(c, kind, color, size);
     })
