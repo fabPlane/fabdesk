@@ -52,18 +52,29 @@ async function applyEnclosureToCad(cad: CadService, dir: string, spec: Enclosure
     const dy = solid.max.y - solid.min.y;
     const dz = solid.max.z - solid.min.z;
     if (solid.kind === "cylinder" && solid.radiusMm) {
+      const cx = (solid.min.x + solid.max.x) / 2;
+      const cy = (solid.min.y + solid.max.y) / 2;
+      const stand = spec.standoffs.find((h) => Math.abs(h.x - cx) < 1e-6 && Math.abs(h.y - cy) < 1e-6);
+      const cylinder = (suffix: string, radius: number) =>
+        cad.addObject(dir, {
+          type: "Part::Cylinder",
+          name: `${solid.name}_${suffix}`,
+          label: `${solid.name}_${suffix}`,
+          properties: { Radius: radius, Height: dz, Placement: placement(cx, cy, solid.min.z) },
+        });
+      const outer = await cylinder("Outer", solid.radiusMm);
+      const bore = await cylinder("Bore", (stand?.innerDiameterMm ?? solid.radiusMm) / 2);
       const added = await cad.addObject(dir, {
-        type: "Part::Cylinder",
+        type: "Part::Cut",
         name: solid.name,
         label: solid.name,
         group: group.name,
         properties: {
-          Radius: solid.radiusMm,
-          Height: dz,
-          Placement: placement((solid.min.x + solid.max.x) / 2, (solid.min.y + solid.max.y) / 2, solid.min.z),
+          Base: { $type: "Object", doc: model.document, name: outer.name },
+          Tool: { $type: "Object", doc: model.document, name: bore.name },
         },
       });
-      created.push(added.name);
+      created.push(outer.name, bore.name, added.name);
       continue;
     }
     const added = await cad.addObject(dir, {
@@ -240,7 +251,7 @@ function fileTable(payload: { spec: string; stl: string; lidStl: string; step: s
     { file: payload.spec, what: "parametric spec keyed to the board hash" },
     { file: payload.stl, what: "printable base (walls, floor, standoffs)" },
     { file: payload.lidStl, what: "printable lid" },
-    { file: payload.step, what: "STEP assembly of the same boxes" },
+    { file: payload.step, what: "STEP assembly of the same solids, standoffs bored" },
   ]);
 }
 
