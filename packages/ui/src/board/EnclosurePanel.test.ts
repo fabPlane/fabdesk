@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { EnclosureScreen, enclosureFromTool, type EnclosureView } from "./EnclosurePanel";
+import { EnclosureScreen, enclosureFailure, enclosureFromTool, type EnclosureView } from "./EnclosurePanel";
 
 const view = (partial: Partial<EnclosureView> = {}): EnclosureView => ({
   exists: true,
@@ -62,5 +62,46 @@ describe("enclosureFromTool", () => {
     expect(fromHttp.cutouts).toEqual([{ ref: "J1", edge: "minY" }]);
     expect(fromHttp.holes).toBe(2);
     expect(fromHttp.files).toContain("exports/enclosure.stl");
+  });
+});
+
+describe("enclosureFailure", () => {
+  const failedCheck = {
+    ok: false,
+    text: "Enclosure 56 × 36 × 12 mm; board changed since generation.",
+    json: {
+      exists: true,
+      alignment: {
+        ok: false,
+        stale: true,
+        issues: [
+          { code: "stale-board", message: "Board changed since the enclosure was generated." },
+          { code: "moved-cutout", ref: "J1", message: "J1 moved 6 mm from its cutout." },
+        ],
+      },
+      cutouts: [{ ref: "J1", edge: "minY" }],
+      stl: "exports/enclosure.stl",
+    },
+  };
+
+  test("turns a thrown 422 alignment envelope into a stale view without raw JSON", () => {
+    const failure = enclosureFailure(new Error(JSON.stringify(failedCheck)));
+    expect(failure.message).toBe("");
+    const v = enclosureFromTool(failure.result);
+    expect(v.stale).toBe(true);
+    expect(v.ok).toBe(false);
+    const out = html(v);
+    expect(out).toContain("Board changed");
+    expect(out).toContain("J1 moved 6 mm from its cutout.");
+    expect(out).not.toContain("In sync");
+    expect(out).not.toContain("{&quot;");
+  });
+
+  test("keeps readable text for plain error bodies and non-JSON errors", () => {
+    expect(enclosureFailure(new Error('{"error":"no board.kicad_pcb","code":"precondition"}'))).toEqual({
+      result: null,
+      message: "no board.kicad_pcb",
+    });
+    expect(enclosureFailure(new Error("network down"))).toEqual({ result: null, message: "network down" });
   });
 });
