@@ -1,6 +1,10 @@
 import { BOARD_FINISH, type Primitive, type ResolvedArtOptions } from "./types";
 import { outlinePrimitives } from "./gerber";
 
+/**
+ * Composite the layers the Gerber set actually carries: FR4, copper (art or flood fill), soldermask
+ * with art-shaped openings when mask is selected, and silkscreen art only when silk is selected.
+ */
 export function previewSvg(o: ResolvedArtOptions, art: readonly Primitive[]): string {
   const finish = BOARD_FINISH[o.color];
   const pad = 4;
@@ -8,17 +12,31 @@ export function previewSvg(o: ResolvedArtOptions, art: readonly Primitive[]): st
   const h = o.heightMm + pad * 2;
   const clipId = "board";
   const path = outlinePath(o);
-  const body = art.map((p) => primSvg(p, finish.silk)).join("");
+  const silkArt = o.layers.includes("silk");
+  const maskArt = o.layers.includes("mask");
+  const copperArt = o.layers.includes("copper");
+  const board = `x="0" y="0" width="${o.widthMm}" height="${o.heightMm}"`;
+  const copper = copperArt
+    ? `<g data-layer="copper">${art.map((p) => primSvg(p, finish.copper)).join("")}</g>`
+    : o.fillCopper
+      ? `<rect data-layer="copper-fill" ${board} fill="${finish.copper}"/>`
+      : "";
+  const maskDef = maskArt
+    ? `<mask id="mask-openings"><rect ${board} fill="#fff"/>${art.map((p) => primSvg(p, "#000")).join("")}</mask>`
+    : "";
+  const silk = silkArt ? `<g data-layer="silk">${art.map((p) => primSvg(p, finish.silk)).join("")}</g>` : "";
   return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="${-pad} ${-pad} ${w} ${h}" width="${Math.round(w * 8)}" height="${Math.round(h * 8)}">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="${-pad} ${-pad} ${w} ${h}" width="${Math.round(w * 8)}" height="${Math.round(h * 8)}" data-layers="${o.layers.join(" ")}">
   <defs>
     <clipPath id="${clipId}">${outlineFill(o)}</clipPath>
+    ${maskDef}
   </defs>
   <rect x="${-pad}" y="${-pad}" width="${w}" height="${h}" fill="#111"/>
   <g clip-path="url(#${clipId})">
-    <rect x="0" y="0" width="${o.widthMm}" height="${o.heightMm}" fill="${finish.copper}"/>
-    <rect x="0" y="0" width="${o.widthMm}" height="${o.heightMm}" fill="${finish.mask}" fill-opacity="0.92"/>
-    ${body}
+    <rect data-layer="fr4" ${board} fill="${finish.fr4}"/>
+    ${copper}
+    <rect data-layer="mask" ${board} fill="${finish.mask}" fill-opacity="0.75"${maskArt ? ` mask="url(#mask-openings)"` : ""}/>
+    ${silk}
   </g>
   <path d="${path}" fill="none" stroke="#0a0a0a" stroke-width="0.25"/>
 </svg>
