@@ -1,5 +1,17 @@
-import { inflateSync, deflateSync } from "node:zlib";
 import type { RgbaImage } from "./types";
+
+type Zlib = {
+  inflateSync(data: Uint8Array): Uint8Array;
+  deflateSync(data: Uint8Array): Uint8Array;
+};
+
+/** Resolved at call time so the desktop renderer, which imports this package, never bundles `node:zlib`. */
+function zlib(): Zlib {
+  const proc = (globalThis as { process?: { getBuiltinModule?: (id: string) => unknown } }).process;
+  const mod = proc?.getBuiltinModule?.("node:zlib") as Zlib | undefined;
+  if (!mod) throw new Error("PNG encode/decode needs Bun or Node");
+  return mod;
+}
 
 const PNG_SIG = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
 
@@ -40,7 +52,7 @@ export function decodePng(bytes: Uint8Array): RgbaImage {
   }
   if (width < 1 || height < 1) throw new Error("invalid PNG size");
   const compressed = concat(idat);
-  const raw = new Uint8Array(inflateSync(compressed));
+  const raw = new Uint8Array(zlib().inflateSync(compressed));
   const bpp = bytesPerPixel(colorType);
   const stride = width * bpp;
   const rows: Uint8Array[] = [];
@@ -75,7 +87,7 @@ export function encodePng(img: RgbaImage): Uint8Array {
   writeU32(ihdr, 4, height);
   ihdr[8] = 8;
   ihdr[9] = 6;
-  const chunks = [PNG_SIG, chunk("IHDR", ihdr), chunk("IDAT", new Uint8Array(deflateSync(raw))), chunk("IEND", new Uint8Array())];
+  const chunks = [PNG_SIG, chunk("IHDR", ihdr), chunk("IDAT", new Uint8Array(zlib().deflateSync(raw))), chunk("IEND", new Uint8Array())];
   return concat(chunks);
 }
 
