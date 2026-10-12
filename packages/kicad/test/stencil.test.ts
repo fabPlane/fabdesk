@@ -3,6 +3,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  arcExtentPoints,
   buildSolderStencil,
   checkMesh,
   decodeBinaryStl,
@@ -14,6 +15,7 @@ import {
 
 const SAMPLE = join(import.meta.dir, "fixtures/stencil-sample.kicad_pcb");
 const MINI = join(import.meta.dir, "fixtures/mini-two-layer.kicad_pcb");
+const LINE_OUTLINE = join(import.meta.dir, "fixtures/stencil-line-outline.kicad_pcb");
 
 describe("buildSolderStencil", () => {
   test("cuts 0805 apertures, skips fine-pitch QFN pads, and matches the board outline", async () => {
@@ -89,6 +91,34 @@ describe("buildSolderStencil", () => {
     expect(built.warnings.some((w) => w.code === "no_edge_cuts")).toBe(true);
     expect(built.board.widthMm).toBeCloseTo(2, 5);
     expect(built.plate.widthMm).toBeCloseTo(8, 5);
+    expect(() => buildSolderStencil(pcb, { includeJig: true })).toThrow(/Edge.Cuts outline/);
+  });
+
+  test("sizes the plate and jig pocket from a gr_line / gr_arc outline, not the pads", async () => {
+    const pcb = await Bun.file(LINE_OUTLINE).text();
+    const built = buildSolderStencil(pcb, { includeJig: true, frameMm: 5 });
+    expect(built.warnings.some((w) => w.code === "no_edge_cuts")).toBe(false);
+    const pads = built.pads.map((p) => p.x);
+    expect(Math.max(...pads) - Math.min(...pads)).toBeLessThan(3);
+    expect(built.board.minX).toBeCloseTo(0, 4);
+    expect(built.board.minY).toBeCloseTo(0, 4);
+    expect(built.board.maxX).toBeCloseTo(45, 3);
+    expect(built.board.maxY).toBeCloseTo(30, 4);
+    expect(built.plate.widthMm).toBeCloseTo(55, 3);
+    const jig = checkMesh(built.jigMesh!);
+    expect(jig.bounds.min[0]).toBeLessThan(built.board.minX);
+    expect(jig.bounds.max[0]).toBeGreaterThan(built.plate.maxX);
+  });
+});
+
+describe("arcExtentPoints", () => {
+  test("adds the axis extreme an arc sweeps through, in either direction", () => {
+    const maxX = (pts: Array<[number, number]>) => Math.max(...pts.map((p) => p[0]));
+    expect(maxX(arcExtentPoints([40, 0], [41.650635, 27.5], [40, 30]))).toBeCloseTo(45, 4);
+    expect(maxX(arcExtentPoints([40, 30], [41.650635, 27.5], [40, 0]))).toBeCloseTo(45, 4);
+    const corner = arcExtentPoints([0, 3], [0.87868, 0.87868], [3, 0]);
+    expect(Math.min(...corner.map((p) => p[0]))).toBeCloseTo(0, 4);
+    expect(Math.min(...corner.map((p) => p[1]))).toBeCloseTo(0, 4);
   });
 });
 

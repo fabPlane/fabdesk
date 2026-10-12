@@ -147,7 +147,7 @@ export function buildSolderStencil(pcbText: string, opts: StencilOptions = {}): 
   if (pads.length === 0) {
     throw new Error(`no ${options.side}.Paste pads on the board`);
   }
-  const board = boardOutline(pcb, pads, warnings);
+  const board = boardOutline(pcb, pads, warnings, options.includeJig);
   const { apertures, skipped } = selectApertures(pads, options, warnings);
   const plate = expandBounds(board, options.frameMm);
   const alignmentHoles = alignmentHolesFor(pcb, plate, board, options, warnings);
@@ -312,25 +312,79 @@ function layerHasPaste(layers: string[], side: StencilSide): boolean {
   return layers.some((l) => l === want || l === "*.Paste" || l === "F&B.Paste");
 }
 
-function boardOutline(pcb: Pcb, pads: StencilPadInfo[], warnings: StencilWarning[]): StencilBounds {
-  const rects = pcb.graphicRects.filter((r) => (r.layer?.names ?? []).includes("Edge.Cuts"));
-  const first = rects[0];
-  if (first?.startPoint && first.endPoint) {
-    return boundsOf([
-      [first.startPoint.x, first.startPoint.y],
-      [first.endPoint.x, first.endPoint.y],
-    ]);
+const onEdgeCuts = (item: { layer?: { names?: string[] } | undefined }) => (item.layer?.names ?? []).includes("Edge.Cuts");
+const xy = (p: { x: number; y: number } | undefined): Vec2[] => (p ? [[p.x, p.y]] : []);
+
+/** Points bounding a three-point arc: its ends plus every axis extreme the sweep passes. */
+export function arcExtentPoints(start: Vec2, mid: Vec2, end: Vec2): Vec2[] {
+  const [ax, ay] = start;
+  const [bx, by] = mid;
+  const [cx, cy] = end;
+  const d = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by));
+  if (Math.abs(d) < 1e-12) return [start, mid, end];
+  const a2 = ax * ax + ay * ay;
+  const b2 = bx * bx + by * by;
+  const c2 = cx * cx + cy * cy;
+  const ox = (a2 * (by - cy) + b2 * (cy - ay) + c2 * (ay - by)) / d;
+  const oy = (a2 * (cx - bx) + b2 * (ax - cx) + c2 * (bx - ax)) / d;
+  const r = Math.hypot(ax - ox, ay - oy);
+  const TAU = Math.PI * 2;
+  const ang = (x: number, y: number) => (Math.atan2(y - oy, x - ox) + TAU) % TAU;
+  const a0 = ang(ax, ay);
+  const ccw = (t: number) => (t - a0 + TAU) % TAU;
+  const toMid = ccw(ang(bx, by));
+  const toEnd = ccw(ang(cx, cy));
+  const forward = toMid <= toEnd;
+  const sweep = forward ? toEnd : TAU - toEnd;
+  const pts: Vec2[] = [start, mid, end];
+  for (let k = 0; k < 4; k++) {
+    const t = (k * Math.PI) / 2;
+    const off = forward ? ccw(t) : (a0 - t + TAU) % TAU;
+    if (off <= sweep) pts.push([ox + r * Math.cos(t), oy + r * Math.sin(t)]);
   }
-  for (const poly of pcb.graphicPolys) {
-    if (!(poly.layer?.names ?? []).includes("Edge.Cuts")) continue;
-    const pts = (poly.points?.points ?? []).flatMap((p) =>
-      "x" in p && "y" in p && typeof p.x === "number" && typeof p.y === "number" ? [[p.x, p.y] as Vec2] : [],
-    );
-    if (pts.length >= 3) return boundsOf(pts);
+  return pts;
+}
+
+/** Bounds of every Edge.Cuts primitive (rect, poly, line, arc, circle), or null when there are none. */
+export function edgeCutsBounds(pcb: Pcb): StencilBounds | null {
+  const pts: Vec2[] = [];
+  for (const r of pcb.graphicRects.filter(onEdgeCuts)) pts.push(...xy(r.startPoint), ...xy(r.endPoint));
+  for (const poly of pcb.graphicPolys.filter(onEdgeCuts)) {
+    for (const p of poly.points?.points ?? []) {
+      if ("x" in p && "y" in p && typeof p.x === "number" && typeof p.y === "number") pts.push([p.x, p.y]);
+    }
+  }
+  for (const l of pcb.graphicLines.filter(onEdgeCuts)) pts.push(...xy(l.startPoint), ...xy(l.endPoint));
+  for (const a of pcb.graphicArcs.filter(onEdgeCuts)) {
+    const [s0, m0, e0] = [a.startPoint, a.midPoint, a.endPoint];
+    if (s0 && m0 && e0) pts.push(...arcExtentPoints([s0.x, s0.y], [m0.x, m0.y], [e0.x, e0.y]));
+    else pts.push(...xy(s0), ...xy(e0));
+  }
+  for (const c of pcb.graphicCircles.filter(onEdgeCuts)) {
+    const [o, e] = [c.centerPoint, c.endPoint];
+    if (!o || !e) continue;
+    const r = Math.hypot(e.x - o.x, e.y - o.y);
+    pts.push([o.x - r, o.y - r], [o.x + r, o.y + r]);
+  }
+  if (pts.length < 2) return null;
+  const box = boundsOf(pts);
+  return box.widthMm > 0 && box.heightMm > 0 ? box : null;
+}
+
+function boardOutline(
+  pcb: Pcb,
+  pads: StencilPadInfo[],
+  warnings: StencilWarning[],
+  includeJig: boolean,
+): StencilBounds {
+  const outline = edgeCutsBounds(pcb);
+  if (outline) return outline;
+  if (includeJig) {
+    throw new Error("no Edge.Cuts outline; a jig pocket needs the real board size (draw the outline or omit the jig)");
   }
   warnings.push({
     code: "no_edge_cuts",
-    message: "No Edge.Cuts rectangle; plate sized from paste-pad bounding box plus 1 mm.",
+    message: "No Edge.Cuts outline; plate sized from paste-pad bounding box plus 1 mm.",
   });
   const box = boundsOf(pads.map((p) => [p.x, p.y] as Vec2));
   return expandBounds(box, 1);
