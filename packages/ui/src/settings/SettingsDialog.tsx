@@ -2,8 +2,8 @@ import type { AgentId, Settings } from "@fabdesk/protocol";
 import { useEffect, useRef, useState } from "react";
 import { Badge, Button, Dialog, Input, Select, Spinner } from "../components/ui";
 import { useCore } from "@fabdesk/client-core";
-import { useCloudStatus, useDoctor, usePatchSettings, useSettings } from "@fabdesk/client-core";
-import { dashboardUrlFor } from "@fabdesk/protocol";
+import { useCloudStatus, useDoctor, usePatchSettings, usePrivacy, useSettings } from "@fabdesk/client-core";
+import { dashboardUrlFor, usageArchiveAllowed, usageArchiveChoice } from "@fabdesk/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { shortcutList } from "../hooks/useShortcuts";
 import { THEME_IDS, THEME_LABELS, useTheme } from "../hooks/useTheme";
@@ -15,6 +15,7 @@ import { withoutRouterDefault } from "./routers";
 import { SETTINGS_SECTIONS, useUiStore, type SettingsSection } from "../stores/ui";
 import { cn } from "../util";
 import { InstallHint } from "../components/InstallHint";
+import { privacyScreenRequired } from "../app/privacy-gate";
 
 const LABELS: Record<SettingsSection, string> = {
   agents: "Agents",
@@ -59,6 +60,7 @@ export function SettingsDialog() {
   const settings = useSettings();
   const doctor = useDoctor();
   const patch = usePatchSettings();
+  const privacyScreen = privacyScreenRequired(usePrivacy());
   const [draft, setDraft] = useState<Settings | null>(null);
   // Settings can change behind the dialog's back (PATCH /settings from an agent or a script); re-read them on
   // every open so the draft, and a later Save, start from what the core actually has.
@@ -232,8 +234,8 @@ export function SettingsDialog() {
               <Row label="Error reporting" hint="Send crash and error reports to Sentry so bugs get fixed. Reports carry no prompts, board files, tokens or project paths. Turning this off applies immediately; turning it back on applies after a restart.">
                 <input type="checkbox" checked={draft.errorReporting} onChange={(e) => update((s) => ({ ...s, errorReporting: e.target.checked }))} />
               </Row>
-              <Row label="Usage data backup" hint="Back up this installation's conversations and tool traces for analysis, including existing history. Requires an administrator-configured destination. Turning this off stops future backups; it does not erase prior copies.">
-                <input type="checkbox" checked={draft.usageArchiveConsent} onChange={(e) => update((s) => ({ ...s, usageArchiveConsent: e.target.checked }))} />
+              <Row label="Share usage data" hint="Share your sessions with us so we can see where Fabdesk gets stuck and make it better. This includes your conversations and agent activity, past ones too, and can include your prompts and project files. We keep it private. Turning this off stops future sharing; it doesn't remove what was already shared.">
+                <input type="checkbox" checked={usageArchiveAllowed(draft, privacyScreen ?? true)} onChange={(e) => update((s) => ({ ...s, ...usageArchiveChoice(e.target.checked) }))} />
               </Row>
             </div>
           ) : (
