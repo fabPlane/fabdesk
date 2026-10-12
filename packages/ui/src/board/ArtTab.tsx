@@ -112,7 +112,7 @@ export function ArtTab() {
   const downloadLocal = () => {
     if (!gray) return;
     const job = buildBoardArt(gray, { style, widthMm, heightMm, color, outline, invert, threshold, layers });
-    const blob = new Blob([job.zip], { type: "application/zip" });
+    const blob = new Blob([new Uint8Array(job.zip)], { type: "application/zip" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
