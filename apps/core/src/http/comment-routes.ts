@@ -11,8 +11,8 @@ import {
   loadComments,
   loadNotes,
   patchComment,
-  saveComments,
   saveNotes,
+  updateComments,
 } from "@fabdesk/tools";
 import type { EventBus } from "../bus";
 import type { ProjectStore } from "../projects";
@@ -37,9 +37,10 @@ export function commentRoutes<E extends { Variables?: object }>(
     const h = await deps.projects.handle(id);
     if (!h) return c.json({ error: "not found" }, 404);
     const body = CreateBoardComment.parse(await c.req.json());
-    const loaded = await loadComments(h);
-    const { file, comment } = createComment(loaded, body);
-    await saveComments(h, file);
+    const comment = await updateComments(h, (loaded) => {
+      const { file, comment } = createComment(loaded, body);
+      return { file, result: comment };
+    });
     changed(id, ["comments.json"]);
     return c.json({ comment, label: commentAnchorLabel(comment.anchor) }, 201);
   });
@@ -49,9 +50,11 @@ export function commentRoutes<E extends { Variables?: object }>(
     const h = await deps.projects.handle(id);
     if (!h) return c.json({ error: "not found" }, 404);
     const body = PatchBoardComment.parse(await c.req.json());
-    const loaded = await loadComments(h);
-    const { file, comment } = patchComment(loaded, c.req.param("commentId"), body);
-    await saveComments(h, file);
+    const commentId = c.req.param("commentId");
+    const comment = await updateComments(h, (loaded) => {
+      const { file, comment } = patchComment(loaded, commentId, body);
+      return { file, result: comment };
+    });
     changed(id, ["comments.json"]);
     return c.json({ comment, label: commentAnchorLabel(comment.anchor) });
   });

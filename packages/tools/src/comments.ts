@@ -46,6 +46,34 @@ export async function saveComments(project: ProjectHandle, file: BoardCommentsFi
   await writeJson(await commentsPath(project), BoardCommentsFile.parse(file));
 }
 
+const commentLocks = new Map<string, Promise<unknown>>();
+
+/**
+ * Load, mutate and save `comments.json` under a per-file lock. HTTP routes and MCP tools share one
+ * daemon process, so this serializes every writer; `writeAtomic` alone prevents torn JSON but not
+ * lost updates.
+ */
+export async function updateComments<T>(
+  project: ProjectHandle,
+  mutate: (file: BoardCommentsFile) => { file: BoardCommentsFile; result: T } | Promise<{ file: BoardCommentsFile; result: T }>,
+): Promise<T> {
+  const key = await commentsPath(project);
+  const prev = commentLocks.get(key) ?? Promise.resolve();
+  const run = prev
+    .catch(() => {})
+    .then(async () => {
+      const { file, result } = await mutate(await loadComments(project));
+      await saveComments(project, file);
+      return result;
+    });
+  commentLocks.set(key, run);
+  try {
+    return await run;
+  } finally {
+    if (commentLocks.get(key) === run) commentLocks.delete(key);
+  }
+}
+
 export async function loadNotes(project: ProjectHandle): Promise<string> {
   const path = await notesPath(project);
   if (!(await exists(path))) return "";

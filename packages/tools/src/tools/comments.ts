@@ -13,8 +13,8 @@ import {
   loadNotes,
   parseAnchorInput,
   patchComment,
-  saveComments,
   saveNotes,
+  updateComments,
 } from "../comments";
 import { defineTool } from "../registry";
 import { ok, table, trim } from "./common";
@@ -109,13 +109,14 @@ export const comment_pin = defineTool({
       ...(args.area ? { area: args.area } : {}),
     });
     const author = args.author ?? ctx.principal?.handle ?? ctx.principal?.subject ?? "local";
-    const loaded = await loadComments(project);
-    const { file, comment } = createComment(loaded, {
-      question: args.question,
-      anchor,
-      ...(author ? { author } : {}),
+    const comment = await updateComments(project, (loaded) => {
+      const { file, comment } = createComment(loaded, {
+        question: args.question,
+        anchor,
+        ...(author ? { author } : {}),
+      });
+      return { file, result: comment };
     });
-    await saveComments(project, file);
     return ok(`Pinned ${comment.id} on ${comment.anchor.view} · ${commentAnchorLabel(anchor)}.`, {
       comment,
       path: "comments.json",
@@ -143,13 +144,14 @@ export const comment_answer = defineTool({
   },
   handler: async ({ id, answer, status, answeredBy }, ctx) => {
     const project = ctx.requireProject();
-    const loaded = await loadComments(project);
-    const { file, comment } = patchComment(loaded, id, {
-      answer,
-      ...(status ? { status } : {}),
-      answeredBy: answeredBy ?? "agent",
+    const comment = await updateComments(project, (loaded) => {
+      const { file, comment } = patchComment(loaded, id, {
+        answer,
+        ...(status ? { status } : {}),
+        answeredBy: answeredBy ?? "agent",
+      });
+      return { file, result: comment };
     });
-    await saveComments(project, file);
     return ok(`Answered ${comment.id} (${comment.status}).`, { comment, path: "comments.json" });
   },
 });
@@ -171,9 +173,10 @@ export const comment_resolve = defineTool({
   },
   handler: async ({ id, status }, ctx) => {
     const project = ctx.requireProject();
-    const loaded = await loadComments(project);
-    const { file, comment } = patchComment(loaded, id, { status });
-    await saveComments(project, file);
+    const comment = await updateComments(project, (loaded) => {
+      const { file, comment } = patchComment(loaded, id, { status });
+      return { file, result: comment };
+    });
     return ok(`${status === "open" ? "Reopened" : "Resolved"} ${comment.id}.`, {
       comment,
       path: "comments.json",
