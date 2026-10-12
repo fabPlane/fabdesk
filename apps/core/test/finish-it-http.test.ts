@@ -205,6 +205,36 @@ describe("finish-it HTTP", () => {
     expect(messages).toContain("finish-it:");
   });
 
+  test("an agent that makes no progress on failing DRC fails instead of completing", async () => {
+    mode = "quick";
+    const project = await createProject("Stuck DRC Board");
+    await writeFile(join(project.path, "circuit.netlist.json"), JSON.stringify(NETLIST));
+    await writeFile(join(project.path, "board.kicad_pcb"), "(kicad_pcb)\n");
+    await mkdir(join(project.path, "reports"), { recursive: true });
+    await writeFile(join(project.path, "reports", "route.json"), JSON.stringify({ ok: true, open: 0 }));
+    await writeFile(
+      join(project.path, "reports", "drc.json"),
+      JSON.stringify({ counts: { errors: 4, warnings: 0, unconnected: 0 } }),
+    );
+    const started = await api(`/projects/${project.id}/finish-it`, {
+      method: "POST",
+      body: JSON.stringify({ agentId: "claude" }),
+    });
+    expect(started.status).toBe(202);
+    expect(((await started.json()) as { session: FinishItSession }).session.status).toBe("running");
+    const session = await waitForSession(
+      project.id,
+      (s) => s?.status === "completed" || s?.status === "failed" || s?.status === "stopped",
+      8000,
+    );
+    expect(session?.status).toBe("failed");
+    expect(session?.error).toContain("verify");
+    const verify = session?.milestones.find((m) => m.id === "verify");
+    expect(verify?.status).toBe("failed");
+    expect(verify?.note).toContain("DRC 4 errors");
+    expect(session?.milestones.some((m) => m.status === "running")).toBe(false);
+  });
+
   test("stop aborts a live run and does not start a follow-up", async () => {
     mode = "hang";
     hangRelease = null;

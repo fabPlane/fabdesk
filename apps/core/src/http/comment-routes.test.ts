@@ -88,6 +88,38 @@ describe("comment routes", () => {
     expect(emitted.flatMap((event) => event.paths ?? [])).toEqual(["comments.json", "comments.json", "NOTES.md"]);
   });
 
+  test("parallel creates and answers are all kept in comments.json", async () => {
+    const project = await tempProject("http-comments-parallel");
+    const app = appWithComments(async (id) => (id === project.id ? project : null));
+    const url = `http://127.0.0.1/projects/${project.id}/comments`;
+    const created = await Promise.all(
+      Array.from({ length: 8 }, (_, i) =>
+        app.request(url, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ question: `Q${i}?`, anchor: { view: "pcb", ref: `R${i}` } }),
+        }),
+      ),
+    );
+    expect(created.map((r) => r.status)).toEqual(Array(8).fill(201));
+    const ids = await Promise.all(created.map(async (r) => ((await r.json()) as { comment: { id: string } }).comment.id));
+    const answered = await Promise.all(
+      ids.map((id, i) =>
+        app.request(`${url}/${id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ answer: `A${i}` }),
+        }),
+      ),
+    );
+    expect(answered.map((r) => r.status)).toEqual(Array(8).fill(200));
+    const saved = JSON.parse(await readFile(join(project.dir, "comments.json"), "utf8")) as {
+      comments: Array<{ id: string; question: string; answer?: string; status: string }>;
+    };
+    expect(saved.comments.map((c) => c.id).sort()).toEqual([...ids].sort());
+    expect(saved.comments.every((c) => c.status === "answered" && c.answer === `A${c.question.slice(1, -1)}`)).toBe(true);
+  });
+
   test("rejects a pin with no locator", async () => {
     const project = await tempProject("http-comments-bad");
     const app = appWithComments(async () => project);

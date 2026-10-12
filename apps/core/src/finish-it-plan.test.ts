@@ -67,6 +67,8 @@ describe("inspectProject / planMilestones", () => {
     expect(milestoneDone("route", snap)).toBe(true);
     expect(milestoneDone("verify", snap)).toBe(false);
     expect(remainingMilestones(planMilestones(snap))).toEqual(["verify"]);
+    const running = planMilestones(snap).map((m) => (m.id === "verify" ? { ...m, status: "running" as const } : m));
+    expect(remainingMilestones(running)).toEqual(["verify"]);
   });
 
   test("verify requires ERC when a schematic exists, and honors lastRoute", async () => {

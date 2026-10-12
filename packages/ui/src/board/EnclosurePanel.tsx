@@ -57,6 +57,24 @@ export function enclosureFromTool(result: unknown): EnclosureView {
   };
 }
 
+/**
+ * A tool that reports `isError` comes back as HTTP 422 whose body is the tool envelope; the client
+ * throws it as the error message. Recover the envelope (or a plain `{ error }` body) so the panel
+ * can show the alignment report instead of raw JSON.
+ */
+export function enclosureFailure(e: unknown): { result: Record<string, unknown> | null; message: string } {
+  const raw = e instanceof Error ? e.message : String(e);
+  let body: Record<string, unknown> | null = null;
+  try {
+    body = asRecord(JSON.parse(raw));
+  } catch {
+    return { result: null, message: raw };
+  }
+  if (body && "json" in body && asRecord(body["json"])) return { result: body, message: "" };
+  const err = body?.["error"] ?? body?.["text"];
+  return { result: null, message: typeof err === "string" ? err : raw };
+}
+
 function asRecord(v: unknown): Record<string, unknown> | null {
   return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
 }
@@ -114,6 +132,13 @@ export function EnclosureScreen({
           {view.files.length ? ` · ${view.files.join(", ")}` : ""}
         </p>
       )}
+      {view && view.issues.length > 1 && (
+        <ul className="mt-1 list-disc pl-4 text-xs text-warning" data-testid="enclosure-issues">
+          {view.issues.slice(0, 6).map((issue) => (
+            <li key={issue}>{issue}</li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }
@@ -140,7 +165,9 @@ export function EnclosurePanel() {
         const rec = asRecord(res);
         if (rec && rec["ok"] === false && typeof rec["text"] === "string") setError(rec["text"]);
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
+        const failure = enclosureFailure(e);
+        if (failure.result) setView(enclosureFromTool(failure.result));
+        if (failure.message) setError(failure.message);
       } finally {
         setBusy(false);
       }

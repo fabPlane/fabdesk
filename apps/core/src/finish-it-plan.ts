@@ -137,8 +137,9 @@ export function planMilestones(snap: FinishItSnapshot): FinishItMilestone[] {
   });
 }
 
+/** Everything not yet done or skipped, including a milestone the agent is still working on. */
 export function remainingMilestones(milestones: FinishItMilestone[]): FinishItMilestoneId[] {
-  return milestones.filter((m) => m.status === "pending" || m.status === "failed").map((m) => m.id);
+  return milestones.filter((m) => m.status !== "done" && m.status !== "skipped").map((m) => m.id);
 }
 
 export function progressFraction(milestones: FinishItMilestone[]): number {

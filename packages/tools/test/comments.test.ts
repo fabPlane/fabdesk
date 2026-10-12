@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { BOARD_COMMENTS_CONTRACT, commentAnchorLabel } from "@fabdesk/protocol";
-import { createRegistry } from "../src";
+import { createComment, createRegistry, updateComments } from "../src";
 import { contextFactory, mockServices, tempProject } from "./mock-services";
 
 async function invoke(name: string, args: Record<string, unknown> = {}) {
@@ -79,6 +79,34 @@ describe("board comment tools", () => {
     expect(raw.comments[0]?.status).toBe("resolved");
     expect(raw.comments[0]?.answer).toContain("SPI flash");
     expect(await readFile(join(project.dir, "NOTES.md"), "utf8")).toContain("U12");
+  });
+
+  test("parallel comment_pin / comment_answer / updateComments never lose a write", async () => {
+    const project = await tempProject("comments-parallel");
+    const services = mockServices([project]);
+    const registry = createRegistry();
+    const factory = contextFactory(services, project);
+    const call = (name: string, args: Record<string, unknown> = {}) =>
+      registry.invoke(name, args, (ref) =>
+        factory({ def: registry.get(name)!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }),
+      );
+    const pinned = await Promise.all([
+      ...Array.from({ length: 6 }, (_, i) => call("comment_pin", { question: `Tool ${i}?`, view: "pcb", ref: `U${i}` })),
+      ...Array.from({ length: 4 }, (_, i) =>
+        updateComments(project, (file) => {
+          const { file: next, comment } = createComment(file, { question: `Http ${i}?`, anchor: { view: "pcb", ref: `J${i}` } });
+          return { file: next, result: { json: { comment } } };
+        }),
+      ),
+    ]);
+    const ids = pinned.map((r) => (r.json as { comment: { id: string } }).comment.id);
+    await Promise.all(ids.map((id, i) => (i % 2 ? call("comment_resolve", { id }) : call("comment_answer", { id, answer: `A${i}` }))));
+    const raw = JSON.parse(await readFile(join(project.dir, "comments.json"), "utf8")) as {
+      comments: Array<{ id: string; status: string }>;
+    };
+    expect(raw.comments.map((c) => c.id).sort()).toEqual([...ids].sort());
+    expect(raw.comments.filter((c) => c.status === "answered")).toHaveLength(5);
+    expect(raw.comments.filter((c) => c.status === "resolved")).toHaveLength(5);
   });
 
   test("rejects a pin with no locator", async () => {
