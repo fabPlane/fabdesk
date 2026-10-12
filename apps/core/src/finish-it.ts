@@ -233,6 +233,7 @@ export class FinishItManager {
           this.finish(project.id, "stopped");
           return;
         }
+        this.settleRunning(project.id, done === "failed" ? "failed" : "pending");
         followUps += 1;
       }
     } catch (error) {
@@ -401,6 +402,14 @@ export class FinishItManager {
     if (session) this.emitProgress(session, note);
   }
 
+  /** A run ended: whatever it left running is unfinished; the next sync marks it done if it now passes. */
+  private settleRunning(projectId: string, status: "pending" | "failed"): void {
+    this.patch(projectId, (s) => ({
+      ...s,
+      milestones: s.milestones.map((m) => (m.status === "running" ? { ...m, status } : m)),
+    }));
+  }
+
   private patch(projectId: string, fn: (s: FinishItSession) => FinishItSession): FinishItSession | null {
     const live = this.live.get(projectId);
     if (!live) return null;
@@ -417,8 +426,17 @@ export class FinishItManager {
       this.live.delete(projectId);
       return;
     }
+    const milestones =
+      status === "completed"
+        ? live.session.milestones
+        : live.session.milestones.map((m) =>
+            m.status === "done" || m.status === "skipped"
+              ? m
+              : { ...m, status: status === "failed" ? ("failed" as const) : m.status === "running" ? ("pending" as const) : m.status },
+          );
     const ended: FinishItSession = {
       ...live.session,
+      milestones,
       status,
       runId: live.session.runId,
       error: error ?? live.session.error,
