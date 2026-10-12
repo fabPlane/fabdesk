@@ -178,6 +178,41 @@ function roundedContains(x: number, y: number, w: number, h: number, r: number):
   return (x - cx) ** 2 + (y - cy) ** 2 <= r * r + 1e-9;
 }
 
+/** x-interval of the outline at height y, or null outside it. */
+function chordAt(y: number, o: ResolvedArtOptions): [number, number] | null {
+  const W = o.widthMm;
+  const H = o.heightMm;
+  if (y < -1e-9 || y > H + 1e-9) return null;
+  if (o.outline === "circle") {
+    const r = Math.min(W, H) / 2;
+    const dy = y - H / 2;
+    if (Math.abs(dy) > r) return null;
+    const dx = Math.sqrt(Math.max(0, r * r - dy * dy));
+    return [W / 2 - dx, W / 2 + dx];
+  }
+  if (o.outline === "rounded") {
+    const r = Math.min(W, H) * 0.08;
+    const t = y < r ? r - y : y > H - r ? y - (H - r) : 0;
+    const inset = r - Math.sqrt(Math.max(0, r * r - t * t));
+    return [inset, W - inset];
+  }
+  return [0, W];
+}
+
+/**
+ * Inside x-interval for a horizontal band y0..y1. Both outlines are convex, so the chord is
+ * narrowest at one of the band edges and their intersection is inside for the whole band.
+ */
+function bandInterval(y0: number, y1: number, o: ResolvedArtOptions): [number, number] | null {
+  const a = chordAt(y0, o);
+  const b = chordAt(y1, o);
+  if (!a || !b) return null;
+  const lo = Math.max(a[0], b[0]);
+  const hi = Math.min(a[1], b[1]);
+  return hi > lo ? [lo, hi] : null;
+}
+
+/** Trim horizontal runs to the outline instead of dropping them; dots stay all-or-nothing. */
 export function clipToOutline(primitives: readonly Primitive[], o: ResolvedArtOptions): Primitive[] {
   if (o.outline === "rectangle") return [...primitives];
   const out: Primitive[] = [];
@@ -185,12 +220,18 @@ export function clipToOutline(primitives: readonly Primitive[], o: ResolvedArtOp
     if (p.kind === "circle") {
       if (pointInOutline(p.x, p.y, o)) out.push(p);
     } else if (p.kind === "rect") {
-      const samples = [
-        [p.x + p.w / 2, p.y + p.h / 2],
-        [p.x, p.y],
-        [p.x + p.w, p.y + p.h],
-      ];
-      if (samples.every(([x, y]) => pointInOutline(x ?? 0, y ?? 0, o))) out.push(p);
+      const span = bandInterval(p.y, p.y + p.h, o);
+      if (!span) continue;
+      const x1 = Math.max(p.x, span[0]);
+      const x2 = Math.min(p.x + p.w, span[1]);
+      if (x2 - x1 >= o.minFeatureMm) out.push({ ...p, x: x1, w: x2 - x1 });
+    } else if (Math.abs(p.y1 - p.y2) < 1e-9) {
+      const half = p.w / 2;
+      const span = bandInterval(p.y1 - half, p.y1 + half, o);
+      if (!span) continue;
+      const x1 = Math.max(Math.min(p.x1, p.x2), span[0] + half);
+      const x2 = Math.min(Math.max(p.x1, p.x2), span[1] - half);
+      if (x2 - x1 >= o.minFeatureMm) out.push({ ...p, x1, x2 });
     } else if (pointInOutline(p.x1, p.y1, o) && pointInOutline(p.x2, p.y2, o)) {
       out.push(p);
     }

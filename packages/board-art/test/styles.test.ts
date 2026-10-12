@@ -67,10 +67,53 @@ describe("conversion styles", () => {
     expect(darkLeft).toBeGreaterThan(lightLeft);
   });
 
-  test("circle outline drops primitives outside the disk", () => {
+  test("circle outline trims runs to the disk and keeps interior coverage", () => {
     const img = makeGray(32, 32, 0);
-    const art = convertImage(img, { ...base, style: "poster", outline: "circle", pitchMm: 2 });
-    expect(art.clipped.length).toBeLessThan(art.primitives.length);
-    expect(art.clipped.length).toBeGreaterThan(0);
+    const o = { ...base, style: "poster" as const, outline: "circle" as const, pitchMm: 1 };
+    const art = convertImage(img, o);
+    const r = 20;
+    const inDisk = (x: number, y: number) => (x - 20) ** 2 + (y - 20) ** 2 <= r * r + 1e-6;
+    let expected = 0;
+    const step = 0.1;
+    for (let y = 2 + step / 2; y < 38; y += step)
+      for (let x = 2 + step / 2; x < 38; x += step) if (inDisk(x, y)) expected += step * step;
+    let kept = 0;
+    for (const p of art.clipped) {
+      if (p.kind !== "rect") throw new Error("poster emits rects");
+      for (const [x, y] of [
+        [p.x, p.y],
+        [p.x + p.w, p.y],
+        [p.x, p.y + p.h],
+        [p.x + p.w, p.y + p.h],
+      ] as const)
+        expect(inDisk(x, y)).toBe(true);
+      kept += p.w * p.h;
+    }
+    expect(art.clipped.length).toBe(art.primitives.length);
+    expect(kept / expected).toBeGreaterThan(0.93);
+    expect(kept).toBeLessThanOrEqual(expected + 1e-6);
+  });
+
+  test("retro lines on a rounded board are trimmed, caps included, not dropped", () => {
+    const img = makeGray(32, 32, 0);
+    const o = { ...base, style: "retro" as const, outline: "rounded" as const, marginMm: 0, pitchMm: 1 };
+    const art = convertImage(img, o);
+    const lines = art.clipped.filter((p) => p.kind === "line");
+    expect(lines.length).toBe(art.primitives.length);
+    const rr = 40 * 0.08;
+    const inside = (x: number, y: number) => {
+      const cx = Math.min(Math.max(x, rr), 40 - rr);
+      const cy = Math.min(Math.max(y, rr), 40 - rr);
+      return (x - cx) ** 2 + (y - cy) ** 2 <= rr * rr + 1e-6;
+    };
+    for (const p of lines) {
+      if (p.kind !== "line") continue;
+      for (const dy of [-p.w / 2, p.w / 2]) {
+        expect(inside(p.x1 - p.w / 2, p.y1 + dy)).toBe(true);
+        expect(inside(p.x2 + p.w / 2, p.y1 + dy)).toBe(true);
+      }
+    }
+    const first = lines[0];
+    expect(first && first.kind === "line" ? first.x2 - first.x1 : 0).toBeGreaterThan(30);
   });
 });
