@@ -1,3 +1,5 @@
+export { previewEnclosureSvg } from "./enclosure-preview";
+
 /**
  * Parametric printable enclosure from {@link extractBoardFeatures}: a two-piece clamshell
  * (base + lid) that follows the board outline, mounting holes and edge-connector cutouts.
@@ -8,11 +10,17 @@
  */
 import type { BoardEdge, BoardFeatures, Point, Rect } from "./board-features";
 
-export const ENCLOSURE_CONTRACT = { name: "fabdesk.enclosure", version: "1.0.0" } as const;
+export const ENCLOSURE_CONTRACT = { name: "fabdesk.enclosure", version: "2.0.0" } as const;
+
+export type VentPattern = "none" | "grid" | "slots" | "honeycomb";
+export type VentFace = "lid" | "walls" | "both";
 
 export type EnclosureParams = {
   wallMm: number;
+  /** Gap between the board outline and the inner cavity. */
   clearanceMm: number;
+  /** Extra outward offset applied after clearance (larger case without changing the board gap). */
+  outlineOffsetMm: number;
   floorMm: number;
   lidMm: number;
   standoffMm: number;
@@ -20,26 +28,66 @@ export type EnclosureParams = {
   headroomMm: number;
   cutoutClearanceMm: number;
   lipMm: number;
+  ventPattern: VentPattern;
+  ventPitchMm: number;
+  ventSizeMm: number;
+  ventMarginMm: number;
+  ventFaces: VentFace;
+  snapFit: boolean;
+  /** Clips on each long edge. */
+  snapCount: number;
+  snapWidthMm: number;
+  snapDepthMm: number;
+  snapHeightMm: number;
+  snapOverhangMm: number;
 };
 
 export const DEFAULT_ENCLOSURE_PARAMS: EnclosureParams = {
   wallMm: 2,
   clearanceMm: 1,
+  outlineOffsetMm: 0,
   floorMm: 2,
   lidMm: 2,
   standoffMm: 3,
   headroomMm: 1.5,
   cutoutClearanceMm: 0.4,
   lipMm: 1,
+  ventPattern: "none",
+  ventPitchMm: 6,
+  ventSizeMm: 2.5,
+  ventMarginMm: 6,
+  ventFaces: "lid",
+  snapFit: false,
+  snapCount: 2,
+  snapWidthMm: 6,
+  snapDepthMm: 1.4,
+  snapHeightMm: 4,
+  snapOverhangMm: 1.2,
 };
 
 export type EnclosureSolid = {
   name: string;
   kind: "box" | "cylinder";
-  role: "floor" | "wall" | "lid" | "lip" | "standoff";
+  role: "floor" | "wall" | "lid" | "lip" | "standoff" | "clip";
   min: { x: number; y: number; z: number };
   max: { x: number; y: number; z: number };
   radiusMm?: number;
+};
+
+export type EnclosureVent = {
+  id: string;
+  face: "lid" | "wall";
+  edge?: BoardEdge;
+  min: { x: number; y: number; z: number };
+  max: { x: number; y: number; z: number };
+};
+
+export type EnclosureClip = {
+  id: string;
+  edge: BoardEdge;
+  x: number;
+  y: number;
+  widthMm: number;
 };
 
 export type EnclosureCutout = {
@@ -77,6 +125,8 @@ export type EnclosureSpec = {
   solids: EnclosureSolid[];
   cutouts: EnclosureCutout[];
   standoffs: EnclosureStandoff[];
+  vents: EnclosureVent[];
+  clips: EnclosureClip[];
   warnings: string[];
 };
 
@@ -106,13 +156,109 @@ export function mergeEnclosureParams(input: Partial<EnclosureParams> = {}): Encl
   return {
     wallMm: input.wallMm ?? DEFAULT_ENCLOSURE_PARAMS.wallMm,
     clearanceMm: input.clearanceMm ?? DEFAULT_ENCLOSURE_PARAMS.clearanceMm,
+    outlineOffsetMm: input.outlineOffsetMm ?? DEFAULT_ENCLOSURE_PARAMS.outlineOffsetMm,
     floorMm: input.floorMm ?? DEFAULT_ENCLOSURE_PARAMS.floorMm,
     lidMm: input.lidMm ?? DEFAULT_ENCLOSURE_PARAMS.lidMm,
     standoffMm: input.standoffMm ?? DEFAULT_ENCLOSURE_PARAMS.standoffMm,
     headroomMm: input.headroomMm ?? DEFAULT_ENCLOSURE_PARAMS.headroomMm,
     cutoutClearanceMm: input.cutoutClearanceMm ?? DEFAULT_ENCLOSURE_PARAMS.cutoutClearanceMm,
     lipMm: input.lipMm ?? DEFAULT_ENCLOSURE_PARAMS.lipMm,
+    ventPattern: input.ventPattern ?? DEFAULT_ENCLOSURE_PARAMS.ventPattern,
+    ventPitchMm: input.ventPitchMm ?? DEFAULT_ENCLOSURE_PARAMS.ventPitchMm,
+    ventSizeMm: input.ventSizeMm ?? DEFAULT_ENCLOSURE_PARAMS.ventSizeMm,
+    ventMarginMm: input.ventMarginMm ?? DEFAULT_ENCLOSURE_PARAMS.ventMarginMm,
+    ventFaces: input.ventFaces ?? DEFAULT_ENCLOSURE_PARAMS.ventFaces,
+    snapFit: input.snapFit ?? DEFAULT_ENCLOSURE_PARAMS.snapFit,
+    snapCount: input.snapCount ?? DEFAULT_ENCLOSURE_PARAMS.snapCount,
+    snapWidthMm: input.snapWidthMm ?? DEFAULT_ENCLOSURE_PARAMS.snapWidthMm,
+    snapDepthMm: input.snapDepthMm ?? DEFAULT_ENCLOSURE_PARAMS.snapDepthMm,
+    snapHeightMm: input.snapHeightMm ?? DEFAULT_ENCLOSURE_PARAMS.snapHeightMm,
+    snapOverhangMm: input.snapOverhangMm ?? DEFAULT_ENCLOSURE_PARAMS.snapOverhangMm,
   };
+}
+
+type XyRect = { minX: number; minY: number; maxX: number; maxY: number };
+
+function intersectXy(a: XyRect, b: XyRect): XyRect | null {
+  const minX = Math.max(a.minX, b.minX);
+  const minY = Math.max(a.minY, b.minY);
+  const maxX = Math.min(a.maxX, b.maxX);
+  const maxY = Math.min(a.maxY, b.maxY);
+  if (maxX - minX < 0.05 || maxY - minY < 0.05) return null;
+  return { minX, minY, maxX, maxY };
+}
+
+function subtractXy(a: XyRect, hole: XyRect): XyRect[] {
+  const hit = intersectXy(a, hole);
+  if (!hit) return [a];
+  const out: XyRect[] = [];
+  if (hit.minX - a.minX > 0.05) out.push({ minX: a.minX, minY: a.minY, maxX: hit.minX, maxY: a.maxY });
+  if (a.maxX - hit.maxX > 0.05) out.push({ minX: hit.maxX, minY: a.minY, maxX: a.maxX, maxY: a.maxY });
+  if (hit.minY - a.minY > 0.05) out.push({ minX: hit.minX, minY: a.minY, maxX: hit.maxX, maxY: hit.minY });
+  if (a.maxY - hit.maxY > 0.05) out.push({ minX: hit.minX, minY: hit.maxY, maxX: hit.maxX, maxY: a.maxY });
+  return out;
+}
+
+/** Remaining axis-aligned rectangles after punching holes out of a plate. */
+export function punchRects(base: XyRect, holes: XyRect[]): XyRect[] {
+  let pieces = [base];
+  for (const hole of holes) pieces = pieces.flatMap((piece) => subtractXy(piece, hole));
+  return pieces;
+}
+
+function overlapsStandoff(x: number, y: number, size: number, standoffs: EnclosureStandoff[]): boolean {
+  const r = size / 2 + 1.2;
+  return standoffs.some((s) => Math.hypot(s.x - x, s.y - y) < s.outerDiameterMm / 2 + r);
+}
+
+function lidVentRects(
+  inner: XyRect,
+  params: EnclosureParams,
+  standoffs: EnclosureStandoff[],
+): XyRect[] {
+  if (params.ventPattern === "none" || params.ventFaces === "walls") return [];
+  const size = params.ventSizeMm;
+  const pitch = Math.max(params.ventPitchMm, size + 0.8);
+  const margin = params.ventMarginMm;
+  const minX = inner.minX + margin;
+  const minY = inner.minY + margin;
+  const maxX = inner.maxX - margin;
+  const maxY = inner.maxY - margin;
+  if (maxX - minX < size || maxY - minY < size) return [];
+  const holes: XyRect[] = [];
+  if (params.ventPattern === "slots") {
+    for (let y = minY, row = 0; y + size <= maxY + 1e-6; y += pitch, row++) {
+      const hole = { minX, minY: y, maxX, maxY: y + size };
+      if (!standoffs.some((s) => s.y >= hole.minY - 1 && s.y <= hole.maxY + 1)) holes.push(hole);
+      if (row > 40) break;
+    }
+    return holes;
+  }
+  const rowPitch = params.ventPattern === "honeycomb" ? pitch * Math.sin(Math.PI / 3) : pitch;
+  for (let row = 0, y = minY + size / 2; y + size / 2 <= maxY + 1e-6; row++, y += rowPitch) {
+    const xOff = params.ventPattern === "honeycomb" && row % 2 === 1 ? pitch / 2 : 0;
+    for (let x = minX + size / 2 + xOff; x + size / 2 <= maxX + 1e-6; x += pitch) {
+      if (overlapsStandoff(x, y, size, standoffs)) continue;
+      holes.push({ minX: x - size / 2, minY: y - size / 2, maxX: x + size / 2, maxY: y + size / 2 });
+    }
+    if (row > 40) break;
+  }
+  return holes;
+}
+
+function longEdges(inner: XyRect): BoardEdge[] {
+  const wide = inner.maxX - inner.minX >= inner.maxY - inner.minY;
+  return wide ? ["minY", "maxY"] : ["minX", "maxX"];
+}
+
+function clipStations(inner: XyRect, edge: BoardEdge, count: number): number[] {
+  const lo = edge === "minX" || edge === "maxX" ? inner.minY : inner.minX;
+  const hi = edge === "minX" || edge === "maxX" ? inner.maxY : inner.maxX;
+  const inset = Math.min(8, Math.max(4, (hi - lo) * 0.18));
+  const span = hi - lo - 2 * inset;
+  if (span <= 0 || count <= 0) return [];
+  if (count === 1) return [mm(lo + (hi - lo) / 2)];
+  return Array.from({ length: count }, (_, i) => mm(lo + inset + (span * i) / (count - 1)));
 }
 
 function box(
@@ -174,11 +320,12 @@ export function generateEnclosure(
   const { outline } = features;
   const tallest = features.tallParts[0]?.heightMm ?? features.connectors.reduce((m, c) => Math.max(m, c.heightMm), 0);
   const cavityHeight = params.standoffMm + features.thicknessMm + Math.max(tallest, 2) + params.headroomMm;
+  const pad = params.clearanceMm + params.outlineOffsetMm;
   const inner: EnclosureSpec["inner"] = {
-    minX: mm(outline.minX - params.clearanceMm),
-    minY: mm(outline.minY - params.clearanceMm),
-    maxX: mm(outline.maxX + params.clearanceMm),
-    maxY: mm(outline.maxY + params.clearanceMm),
+    minX: mm(outline.minX - pad),
+    minY: mm(outline.minY - pad),
+    maxX: mm(outline.maxX + pad),
+    maxY: mm(outline.maxY + pad),
     z0: mm(params.floorMm),
     z1: mm(params.floorMm + cavityHeight),
   };
@@ -192,7 +339,9 @@ export function generateEnclosure(
   };
   const warnings = [...features.warnings];
   if (outline.source !== "gr_rect" && outline.source !== "gr_poly")
-    warnings.push("enclosure uses the Edge.Cuts bounding box; non-rectangular outlines are not offset");
+    warnings.push("enclosure offsets the Edge.Cuts bounding box; non-rectangular outlines are not polygon-offset");
+  if (params.outlineOffsetMm > 0)
+    warnings.push(`outline offset ${params.outlineOffsetMm} mm is applied outside the ${params.clearanceMm} mm board clearance`);
 
   const cutouts: EnclosureCutout[] = features.connectors.map((c) => {
     const widthMm = mm(c.widthMm + 2 * params.cutoutClearanceMm);
@@ -233,13 +382,58 @@ export function generateEnclosure(
     ),
   ];
 
-  const openingsFor = (edge: BoardEdge): Array<{ start: number; end: number }> =>
-    cutouts
+  const vents: EnclosureVent[] = [];
+  const wallVentOpenings: Record<BoardEdge, Array<{ start: number; end: number }>> = {
+    minX: [],
+    maxX: [],
+    minY: [],
+    maxY: [],
+  };
+  if (params.ventPattern !== "none" && params.ventFaces !== "lid") {
+    const size = params.ventSizeMm;
+    const pitch = Math.max(params.ventPitchMm, size + 1.5);
+    for (const edge of longEdges(inner)) {
+      const lo = edge === "minX" || edge === "maxX" ? inner.minY : inner.minX;
+      const hi = edge === "minX" || edge === "maxX" ? inner.maxY : inner.maxX;
+      let slot = 0;
+      for (let mid = lo + params.ventMarginMm + size / 2; mid + size / 2 <= hi - params.ventMarginMm + 1e-6; mid += pitch) {
+        const hitConnector = cutouts.some((c) => {
+          if (c.edge !== edge) return false;
+          const along = edge === "minX" || edge === "maxX" ? c.center.y : c.center.x;
+          return Math.abs(along - mid) < c.widthMm / 2 + size;
+        });
+        if (hitConnector) continue;
+        wallVentOpenings[edge].push({ start: mid - size / 2, end: mid + size / 2 });
+        const id = `wall-${edge}-${++slot}`;
+        const along0 = mid - size / 2;
+        const along1 = mid + size / 2;
+        vents.push({
+          id,
+          face: "wall",
+          edge,
+          min:
+            edge === "minX" || edge === "maxX"
+              ? { x: edge === "minX" ? outer.minX : inner.maxX, y: along0, z: inner.z0 }
+              : { x: along0, y: edge === "minY" ? outer.minY : inner.maxY, z: inner.z0 },
+          max:
+            edge === "minX" || edge === "maxX"
+              ? { x: edge === "minX" ? inner.minX : outer.maxX, y: along1, z: inner.z1 }
+              : { x: along1, y: edge === "minY" ? inner.minY : outer.maxY, z: inner.z1 },
+        });
+        if (slot > 20) break;
+      }
+    }
+  }
+
+  const openingsFor = (edge: BoardEdge): Array<{ start: number; end: number }> => [
+    ...cutouts
       .filter((c) => c.edge === edge)
       .map((c) => {
         const mid = edge === "minX" || edge === "maxX" ? c.center.y : c.center.x;
         return { start: mid - c.widthMm / 2, end: mid + c.widthMm / 2 };
-      });
+      }),
+    ...wallVentOpenings[edge],
+  ];
 
   solids.push(
     ...splitWall(
@@ -292,19 +486,146 @@ export function generateEnclosure(
     });
   }
 
+  const clips: EnclosureClip[] = [];
+  const clipSlots: XyRect[] = [];
+  const lipOpenings: Record<BoardEdge, Array<{ start: number; end: number }>> = {
+    minX: [],
+    maxX: [],
+    minY: [],
+    maxY: [],
+  };
+  if (params.snapFit && params.snapCount > 0) {
+    for (const edge of longEdges(inner)) {
+      for (const [i, pos] of clipStations(inner, edge, params.snapCount).entries()) {
+        const half = params.snapWidthMm / 2;
+        const stemZ0 = mm(inner.z1 - params.snapHeightMm);
+        const stemZ1 = mm(outer.z1 + params.snapOverhangMm);
+        const hookZ0 = mm(outer.z1);
+        const hookZ1 = mm(outer.z1 + params.snapOverhangMm);
+        const id = `clip-${edge}-${i + 1}`;
+        const stem =
+          edge === "minY"
+            ? {
+                min: { x: pos - half, y: inner.minY, z: stemZ0 },
+                max: { x: pos + half, y: inner.minY + params.snapDepthMm, z: stemZ1 },
+              }
+            : edge === "maxY"
+              ? {
+                  min: { x: pos - half, y: inner.maxY - params.snapDepthMm, z: stemZ0 },
+                  max: { x: pos + half, y: inner.maxY, z: stemZ1 },
+                }
+              : edge === "minX"
+                ? {
+                    min: { x: inner.minX, y: pos - half, z: stemZ0 },
+                    max: { x: inner.minX + params.snapDepthMm, y: pos + half, z: stemZ1 },
+                  }
+                : {
+                    min: { x: inner.maxX - params.snapDepthMm, y: pos - half, z: stemZ0 },
+                    max: { x: inner.maxX, y: pos + half, z: stemZ1 },
+                  };
+        const hook =
+          edge === "minY"
+            ? {
+                min: { x: pos - half, y: inner.minY + params.snapDepthMm, z: hookZ0 },
+                max: { x: pos + half, y: inner.minY + params.snapDepthMm + params.snapOverhangMm, z: hookZ1 },
+              }
+            : edge === "maxY"
+              ? {
+                  min: { x: pos - half, y: inner.maxY - params.snapDepthMm - params.snapOverhangMm, z: hookZ0 },
+                  max: { x: pos + half, y: inner.maxY - params.snapDepthMm, z: hookZ1 },
+                }
+              : edge === "minX"
+                ? {
+                    min: { x: inner.minX + params.snapDepthMm, y: pos - half, z: hookZ0 },
+                    max: { x: inner.minX + params.snapDepthMm + params.snapOverhangMm, y: pos + half, z: hookZ1 },
+                  }
+                : {
+                    min: { x: inner.maxX - params.snapDepthMm - params.snapOverhangMm, y: pos - half, z: hookZ0 },
+                    max: { x: inner.maxX - params.snapDepthMm, y: pos + half, z: hookZ1 },
+                  };
+        solids.push(box(`EnclosureClip_${edge}_${i + 1}`, "clip", stem.min, stem.max));
+        solids.push(box(`EnclosureClipHook_${edge}_${i + 1}`, "clip", hook.min, hook.max));
+        clips.push({
+          id,
+          edge,
+          x: mm(edge === "minX" || edge === "maxX" ? (stem.min.x + stem.max.x) / 2 : pos),
+          y: mm(edge === "minY" || edge === "maxY" ? (stem.min.y + stem.max.y) / 2 : pos),
+          widthMm: params.snapWidthMm,
+        });
+        clipSlots.push({
+          minX: mm(stem.min.x - 0.3),
+          minY: mm(stem.min.y - 0.3),
+          maxX: mm(stem.max.x + 0.3),
+          maxY: mm(stem.max.y + 0.3),
+        });
+        lipOpenings[edge].push({ start: pos - half - 0.4, end: pos + half + 0.4 });
+      }
+    }
+  }
+
+  const lidVentHoles = lidVentRects(inner, params, standoffs);
+  const lidHoles = [...lidVentHoles, ...clipSlots];
+  for (const [i, hole] of lidVentHoles.entries()) {
+    vents.push({
+      id: `lid-${i + 1}`,
+      face: "lid",
+      min: { x: mm(hole.minX), y: mm(hole.minY), z: inner.z1 },
+      max: { x: mm(hole.maxX), y: mm(hole.maxY), z: outer.z1 },
+    });
+  }
+  const lidPieces = punchRects(
+    { minX: outer.minX, minY: outer.minY, maxX: outer.maxX, maxY: outer.maxY },
+    lidHoles,
+  );
+  for (const [i, piece] of lidPieces.entries()) {
+    solids.push(
+      box(
+        lidPieces.length === 1 ? "EnclosureLid" : `EnclosureLid_${i + 1}`,
+        "lid",
+        { x: piece.minX, y: piece.minY, z: inner.z1 },
+        { x: piece.maxX, y: piece.maxY, z: outer.z1 },
+      ),
+    );
+  }
+
+  const lipOpeningsFor = (edge: BoardEdge) => lipOpenings[edge];
   solids.push(
-    box(
-      "EnclosureLid",
-      "lid",
-      { x: outer.minX, y: outer.minY, z: inner.z1 },
-      { x: outer.maxX, y: outer.maxY, z: outer.z1 },
-    ),
-    box(
-      "EnclosureLidLip",
-      "lip",
-      { x: inner.minX, y: inner.minY, z: mm(inner.z1 - params.lipMm) },
-      { x: inner.maxX, y: inner.maxY, z: inner.z1 },
-    ),
+    ...splitWall(
+      "EnclosureLidLipMinY",
+      {
+        min: { x: inner.minX, y: inner.minY, z: mm(inner.z1 - params.lipMm) },
+        max: { x: inner.maxX, y: inner.minY + Math.min(params.lipMm, 1.2), z: inner.z1 },
+      },
+      "x",
+      lipOpeningsFor("minY"),
+    ).map((s) => ({ ...s, role: "lip" as const, name: s.name.replace("EnclosureWall", "EnclosureLidLip") })),
+    ...splitWall(
+      "EnclosureLidLipMaxY",
+      {
+        min: { x: inner.minX, y: inner.maxY - Math.min(params.lipMm, 1.2), z: mm(inner.z1 - params.lipMm) },
+        max: { x: inner.maxX, y: inner.maxY, z: inner.z1 },
+      },
+      "x",
+      lipOpeningsFor("maxY"),
+    ).map((s) => ({ ...s, role: "lip" as const, name: s.name.replace("EnclosureWall", "EnclosureLidLip") })),
+    ...splitWall(
+      "EnclosureLidLipMinX",
+      {
+        min: { x: inner.minX, y: inner.minY, z: mm(inner.z1 - params.lipMm) },
+        max: { x: inner.minX + Math.min(params.lipMm, 1.2), y: inner.maxY, z: inner.z1 },
+      },
+      "y",
+      lipOpeningsFor("minX"),
+    ).map((s) => ({ ...s, role: "lip" as const, name: s.name.replace("EnclosureWall", "EnclosureLidLip") })),
+    ...splitWall(
+      "EnclosureLidLipMaxX",
+      {
+        min: { x: inner.maxX - Math.min(params.lipMm, 1.2), y: inner.minY, z: mm(inner.z1 - params.lipMm) },
+        max: { x: inner.maxX, y: inner.maxY, z: inner.z1 },
+      },
+      "y",
+      lipOpeningsFor("maxX"),
+    ).map((s) => ({ ...s, role: "lip" as const, name: s.name.replace("EnclosureWall", "EnclosureLidLip") })),
   );
 
   return {
@@ -329,6 +650,8 @@ export function generateEnclosure(
     solids,
     cutouts,
     standoffs,
+    vents,
+    clips,
     warnings,
   };
 }
@@ -846,8 +1169,16 @@ export function enclosureSummary(spec: EnclosureSpec, alignment: AlignmentReport
   const cut = spec.cutouts.length
     ? spec.cutouts.map((c) => `${c.ref} ${c.edge} ${c.widthMm}×${c.heightMm}`).join(", ")
     : "none";
+  const vents = spec.vents ?? [];
+  const clips = spec.clips ?? [];
+  const ventLabel =
+    spec.params.ventPattern && spec.params.ventPattern !== "none"
+      ? `${vents.length} ${spec.params.ventPattern} vent(s) on ${spec.params.ventFaces}`
+      : "no vents";
+  const snapLabel = spec.params.snapFit ? `${clips.length} snap-fit clip(s)` : "no snap-fits";
   return [
     `Enclosure ${size}, ${spec.standoffs.length} standoff(s), ${spec.cutouts.length} cutout(s); ${sync}.`,
+    `Offset ${spec.params.outlineOffsetMm} mm + clearance ${spec.params.clearanceMm} mm · ${ventLabel} · ${snapLabel}.`,
     `Cutouts: ${cut}.`,
     alignment.issues.length ? `Checks:\n${alignment.issues.map((i) => `- ${i.message}`).join("\n")}` : "Cutouts and holes align with the current board.",
   ].join("\n");

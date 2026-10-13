@@ -7,8 +7,10 @@ import {
   generateEnclosure,
   isEnclosureSpec,
   meshEnclosure,
+  punchRects,
   writeBoxesStep,
 } from "../src/enclosure";
+import { previewEnclosureSvg } from "../src/enclosure-preview";
 
 const fixture = readFileSync(join(import.meta.dir, "fixtures/enclosure/board.kicad_pcb"), "utf8");
 
@@ -115,5 +117,97 @@ describe("meshEnclosure", () => {
     expect(step.match(/CLOSED_SHELL/g)?.length).toBe(2);
     expect(step).toContain("CARTESIAN_POINT('',(0,0,0))");
     expect(step).toContain("CARTESIAN_POINT('',(1,2,3))");
+  });
+});
+
+describe("enclosure v2", () => {
+  test("outline offset grows the case independently of clearance", () => {
+    const features = extractBoardFeatures(fixture);
+    const tight = generateEnclosure(features, { clearanceMm: 1, outlineOffsetMm: 0 });
+    const offset = generateEnclosure(features, { clearanceMm: 1, outlineOffsetMm: 3 });
+    const roomy = generateEnclosure(features, { clearanceMm: 4, outlineOffsetMm: 0 });
+    expect(offset.outer.maxX - offset.outer.minX).toBeCloseTo((tight.outer.maxX - tight.outer.minX) + 6, 4);
+    expect(offset.inner.minX).toBeCloseTo(features.outline.minX - 4, 4);
+    expect(roomy.inner.minX).toBeCloseTo(features.outline.minX - 4, 4);
+    expect(offset.params.outlineOffsetMm).toBe(3);
+    expect(offset.params.clearanceMm).toBe(1);
+  });
+
+  test("grid vents punch the lid and survive STL/STEP export", () => {
+    const spec = generateEnclosure(extractBoardFeatures(fixture), {
+      ventPattern: "grid",
+      ventFaces: "lid",
+      ventPitchMm: 8,
+      ventSizeMm: 2.5,
+      ventMarginMm: 8,
+    });
+    expect(spec.vents.length).toBeGreaterThan(3);
+    expect(spec.vents.every((v) => v.face === "lid")).toBe(true);
+    expect(spec.solids.filter((s) => s.role === "lid").length).toBeGreaterThan(1);
+    const mesh = meshEnclosure(spec);
+    expect(mesh.lidStl).toContain("solid fabplane_enclosure_lid");
+    expect((mesh.lidStl.match(/facet normal/g) ?? []).length).toBeGreaterThan(40);
+    expect(mesh.step).toContain("ISO-10303-21;");
+    expect(mesh.step).toContain("MANIFOLD_SOLID_BREP('EnclosureLid");
+  });
+
+  test("honeycomb and slot vents plus wall faces produce openings", () => {
+    const honeycomb = generateEnclosure(extractBoardFeatures(fixture), {
+      ventPattern: "honeycomb",
+      ventFaces: "lid",
+      ventPitchMm: 7,
+      ventSizeMm: 2,
+      ventMarginMm: 7,
+    });
+    const slots = generateEnclosure(extractBoardFeatures(fixture), {
+      ventPattern: "slots",
+      ventFaces: "both",
+      ventPitchMm: 8,
+      ventSizeMm: 2,
+      ventMarginMm: 8,
+    });
+    expect(honeycomb.vents.length).toBeGreaterThan(2);
+    expect(slots.vents.some((v) => v.face === "lid")).toBe(true);
+    expect(slots.vents.some((v) => v.face === "wall")).toBe(true);
+    expect(slots.solids.filter((s) => s.role === "wall").length).toBeGreaterThan(4);
+  });
+
+  test("snap-fit clips add through-lid hooks and appear in the mesh", () => {
+    const spec = generateEnclosure(extractBoardFeatures(fixture), { snapFit: true, snapCount: 2 });
+    expect(spec.clips.length).toBe(4);
+    expect(spec.solids.filter((s) => s.role === "clip").length).toBe(8);
+    expect(spec.solids.some((s) => s.name.startsWith("EnclosureClip_"))).toBe(true);
+    expect(spec.solids.some((s) => s.name.startsWith("EnclosureClipHook_"))).toBe(true);
+    const mesh = meshEnclosure(spec);
+    expect(mesh.baseStl).toContain("facet normal");
+    expect(mesh.step).toContain("MANIFOLD_SOLID_BREP('EnclosureClip_");
+    expect(mesh.step.match(/MANIFOLD_SOLID_BREP/g)?.length).toBe(spec.solids.length);
+  });
+
+  test("preview SVG shows offset, vents and snap-fits", () => {
+    const spec = generateEnclosure(extractBoardFeatures(fixture), {
+      outlineOffsetMm: 2,
+      clearanceMm: 1,
+      ventPattern: "grid",
+      ventFaces: "lid",
+      snapFit: true,
+      snapCount: 2,
+      ventMarginMm: 8,
+      ventPitchMm: 8,
+    });
+    const svg = previewEnclosureSvg(spec);
+    expect(svg).toContain("data-testid=\"enclosure-preview-svg\"");
+    expect(svg).toContain("offset 2 mm");
+    expect(svg).toContain("clearance 1 mm");
+    expect(svg).toContain("data-layer=\"vent\"");
+    expect(svg).toContain("data-layer=\"clip\"");
+    expect(svg).toContain("data-view=\"iso\"");
+  });
+
+  test("punchRects leaves a frame around a hole", () => {
+    const pieces = punchRects({ minX: 0, minY: 0, maxX: 10, maxY: 10 }, [{ minX: 3, minY: 3, maxX: 7, maxY: 7 }]);
+    expect(pieces.length).toBe(4);
+    const area = pieces.reduce((sum, p) => sum + (p.maxX - p.minX) * (p.maxY - p.minY), 0);
+    expect(area).toBeCloseTo(100 - 16, 6);
   });
 });

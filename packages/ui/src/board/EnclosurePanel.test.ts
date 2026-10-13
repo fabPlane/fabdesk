@@ -13,15 +13,35 @@ const view = (partial: Partial<EnclosureView> = {}): EnclosureView => ({
   holes: 2,
   connectors: 1,
   files: ["enclosure.json", "exports/enclosure.stl"],
+  vents: 0,
+  clips: 0,
+  draft: {
+    outlineOffsetMm: "0",
+    clearanceMm: "1",
+    ventPattern: "none",
+    ventFaces: "lid",
+    snapFit: false,
+  },
   ...partial,
 });
 
-const html = (v: EnclosureView | null, extra: { busy?: boolean; error?: string | null } = {}) =>
+const html = (
+  v: EnclosureView | null,
+  extra: { busy?: boolean; error?: string | null; draft?: EnclosureView["draft"] } = {},
+) =>
   renderToStaticMarkup(
     createElement(EnclosureScreen, {
       view: v,
+      draft: extra.draft ?? v?.draft ?? {
+        outlineOffsetMm: "0",
+        clearanceMm: "1",
+        ventPattern: "none",
+        ventFaces: "lid",
+        snapFit: false,
+      },
       busy: extra.busy ?? false,
       error: extra.error ?? null,
+      onDraftChange: () => {},
       onGenerate: () => {},
       onCheck: () => {},
     }),
@@ -35,6 +55,26 @@ describe("EnclosureScreen", () => {
     expect(html(view())).toContain("Check alignment");
     expect(html(view())).toContain("In sync");
     expect(html(view())).toContain("exports/enclosure.stl");
+    expect(html(view())).toContain("Outline offset");
+    expect(html(view())).toContain("Clearance");
+    expect(html(view())).toContain("Vent pattern");
+    expect(html(view())).toContain("Snap-fit clips");
+  });
+
+  test("renders a preview and v2 export paths", () => {
+    const out = html(
+      view({
+        previewSvg: '<svg data-testid="enclosure-preview-svg"></svg>',
+        vents: 8,
+        clips: 4,
+        files: ["exports/enclosure.stl", "exports/enclosure.step", "exports/enclosure-preview.svg"],
+      }),
+    );
+    expect(out).toContain("enclosure-preview");
+    expect(out).toContain("8 vent(s)");
+    expect(out).toContain("4 clip(s)");
+    expect(out).toContain("exports/enclosure.step");
+    expect(out).toContain("exports/enclosure-preview.svg");
   });
 
   test("warns when the board hash no longer matches", () => {
@@ -62,6 +102,39 @@ describe("enclosureFromTool", () => {
     expect(fromHttp.cutouts).toEqual([{ ref: "J1", edge: "minY" }]);
     expect(fromHttp.holes).toBe(2);
     expect(fromHttp.files).toContain("exports/enclosure.stl");
+    expect(fromHttp.vents).toBe(0);
+    expect(fromHttp.draft.ventPattern).toBe("none");
+  });
+
+  test("reads v2 params, preview and export paths", () => {
+    const fromHttp = enclosureFromTool({
+      ok: true,
+      text: "Enclosure ready.",
+      json: {
+        exists: true,
+        alignment: { ok: true, stale: false, issues: [] },
+        params: { outlineOffsetMm: 2, clearanceMm: 1.5, ventPattern: "honeycomb", ventFaces: "both", snapFit: true },
+        vents: 12,
+        clips: 4,
+        previewSvg: "<svg></svg>",
+        stl: "exports/enclosure.stl",
+        step: "exports/enclosure.step",
+        preview: "exports/enclosure-preview.svg",
+        board: { holes: 2, connectors: [{ ref: "J1" }] },
+      },
+    });
+    expect(fromHttp.draft).toEqual({
+      outlineOffsetMm: "2",
+      clearanceMm: "1.5",
+      ventPattern: "honeycomb",
+      ventFaces: "both",
+      snapFit: true,
+    });
+    expect(fromHttp.previewSvg).toBe("<svg></svg>");
+    expect(fromHttp.vents).toBe(12);
+    expect(fromHttp.clips).toBe(4);
+    expect(fromHttp.files).toContain("exports/enclosure.step");
+    expect(fromHttp.files).toContain("exports/enclosure-preview.svg");
   });
 });
 
