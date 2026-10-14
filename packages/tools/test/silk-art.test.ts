@@ -55,6 +55,9 @@ describe("silk_art", () => {
     expect(silk.trim().endsWith("M02*")).toBe(true);
     expect(project.manifest().board.widthMm).toBe(40);
     expect(out.images?.[0]?.mime).toBe("image/svg+xml");
+    const report = JSON.parse(await Bun.file(join(project.dir, "reports/board-art.json")).text()) as { image: string };
+    expect(report.image).toBe("sketches/logo.png");
+    expect(report.image).not.toMatch(/^\//);
   });
 
   test("rejects a missing image", async () => {

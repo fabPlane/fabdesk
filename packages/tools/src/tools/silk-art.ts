@@ -53,7 +53,8 @@ export const silk_art = defineTool({
   handler: async (args, ctx) => {
     const project = ctx.requireProject();
     ctx.progress(0.1, "loading image");
-    const imagePath = await resolveImage(project.dir, args.image);
+    const imageRel = await resolveImageRel(project.dir, args.image);
+    const imagePath = await jailPath(project.dir, imageRel);
     const bytes = new Uint8Array(await readFile(imagePath));
     let gray;
     try {
@@ -100,7 +101,7 @@ export const silk_art = defineTool({
       primitives: job.stats.primitives,
       minFeatureMm: job.stats.minFeatureMm,
       pitchMm: job.stats.pitchMm,
-      image: imagePath,
+      image: imageRel,
     });
     await project.updateManifest({
       board: {
@@ -141,12 +142,12 @@ export const silk_art = defineTool({
   },
 });
 
-async function resolveImage(projectDir: string, image: string | undefined): Promise<string> {
-  if (image) return jailPath(projectDir, image);
+async function resolveImageRel(projectDir: string, image: string | undefined): Promise<string> {
+  if (image) return image.replace(/^\//, "");
   const names = (await readdir(`${projectDir}/${PROJECT_FILES.sketches}`).catch(() => [])).filter((f) =>
     /\.(png|jpe?g|webp|gif)$/i.test(f),
   );
   const first = names.sort()[0];
   if (!first) throw new ToolError("no image: pass image= or add a PNG/JPEG/WebP/GIF under sketches/", "precondition");
-  return jailPath(projectDir, `${PROJECT_FILES.sketches}/${first}`);
+  return `${PROJECT_FILES.sketches}/${first}`;
 }
