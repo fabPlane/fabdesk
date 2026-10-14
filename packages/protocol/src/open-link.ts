@@ -7,6 +7,12 @@ export type OpenCatalogIntent = {
   remix: boolean;
 };
 
+export function isOpenCatalogIntent(value: unknown): value is OpenCatalogIntent {
+  if (!value || typeof value !== "object") return false;
+  const rec = value as { catalogId?: unknown; remix?: unknown };
+  return typeof rec.catalogId === "string" && isCatalogDeepLinkId(rec.catalogId) && typeof rec.remix === "boolean";
+}
+
 const CATALOG_ID_RE = /^[a-z0-9][a-z0-9-]{0,62}\/[a-z0-9][a-z0-9-]{0,62}$/;
 
 export function isCatalogDeepLinkId(value: string): boolean {

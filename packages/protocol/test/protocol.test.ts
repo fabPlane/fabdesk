@@ -19,6 +19,7 @@ import {
   Settings,
   CloudSettings,
   findOpenCatalogArg,
+  isOpenCatalogIntent,
   isCatalogWebsiteAsset,
   isGitHubAssetHost,
   openCatalogHref,
@@ -376,6 +377,8 @@ describe("open-catalog deep links", () => {
       remix: false,
     });
     expect(parseOpenCatalogHref("https://fabplane.com/explore")).toBeNull();
+    expect(isOpenCatalogIntent({ catalogId: "foostan/crkbd", remix: true })).toBe(true);
+    expect(isOpenCatalogIntent({ catalogId: "foostan/crkbd" })).toBe(false);
   });
 });
 
