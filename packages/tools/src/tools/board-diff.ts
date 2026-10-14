@@ -3,7 +3,7 @@
  * diff plus generated PCB/schematic SVGs. Writes reports/board-diff.json and renders/diff/*.
  */
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join, relative, resolve } from "node:path";
 import { z } from "zod/v4";
 import {
   compareRevisions,
@@ -49,15 +49,51 @@ export async function isGitRepo(dir: string, signal?: AbortSignal): Promise<bool
   return result.ok && result.stdout.trim() === "true";
 }
 
-async function gitShow(dir: string, ref: string, path: string, signal?: AbortSignal): Promise<string | undefined> {
-  const result = await git(dir, ["show", `${ref}:${path}`], signal);
+/** Project directory relative to the git toplevel (`""` when they are the same). */
+export async function projectGitPrefix(dir: string, signal?: AbortSignal): Promise<string> {
+  const result = await git(dir, ["rev-parse", "--show-toplevel"], signal);
+  if (!result.ok) return "";
+  const rel = relative(resolve(result.stdout.trim()), resolve(dir)).replaceAll("\\", "/");
+  if (!rel || rel === "." || rel.startsWith("..")) return "";
+  return rel;
+}
+
+function toGitPath(projectRel: string, prefix: string): string {
+  return prefix ? `${prefix}/${projectRel}` : projectRel;
+}
+
+async function gitShow(
+  dir: string,
+  ref: string,
+  path: string,
+  signal?: AbortSignal,
+  prefix = "",
+): Promise<string | undefined> {
+  const result = await git(dir, ["show", `${ref}:${toGitPath(path, prefix)}`], signal);
   return result.ok ? result.stdout : undefined;
 }
 
-async function listTree(dir: string, ref: string, signal?: AbortSignal): Promise<string[]> {
+/**
+ * `git ls-tree` is repo-root relative when the cwd is the toplevel, and
+ * already scoped to the cwd on Git 2.43+ when `-C` is a subfolder. Normalize
+ * either listing to project-relative paths so a sibling `.kicad_pcb` outside
+ * the project cannot become the preferred-board fallback.
+ */
+export function projectRelGitPaths(paths: string[], prefix: string): string[] {
+  if (!prefix) return paths;
+  const pre = `${prefix}/`;
+  const rooted = paths.filter((path) => path === prefix || path.startsWith(pre));
+  if (rooted.length > 0) {
+    return rooted.map((path) => (path === prefix ? "" : path.slice(pre.length))).filter(Boolean);
+  }
+  return paths;
+}
+
+async function listTree(dir: string, ref: string, signal?: AbortSignal, prefix = ""): Promise<string[]> {
   const result = await git(dir, ["ls-tree", "-r", "--name-only", ref], signal);
   if (!result.ok) return [];
-  return result.stdout.split("\n").map((l) => l.trim()).filter(Boolean);
+  const files = result.stdout.split("\n").map((l) => l.trim()).filter(Boolean);
+  return projectRelGitPaths(files, prefix);
 }
 
 async function walkFiles(root: string, rel = ""): Promise<string[]> {
@@ -73,8 +109,20 @@ async function walkFiles(root: string, rel = ""): Promise<string[]> {
   return out;
 }
 
-function pickDesignFile(paths: string[], preferred: string, ext: RegExp): string | undefined {
+/**
+ * Pick a design file from a project-relative (or repo-relative) path list.
+ * Matches the preferred path exactly, as a project-relative suffix, or by
+ * basename before falling back to the first extension match inside the list.
+ * Callers must already restrict `paths` to the project directory so a missing
+ * preferred board is never compared against a PCB from a parent/sibling folder.
+ */
+export function pickDesignFile(paths: string[], preferred: string, ext: RegExp): string | undefined {
   if (paths.includes(preferred)) return preferred;
+  const projectRel = paths.find((path) => path === preferred || path.endsWith(`/${preferred}`));
+  if (projectRel) return projectRel;
+  const prefBase = basename(preferred);
+  const byBase = paths.find((path) => basename(path) === prefBase);
+  if (byBase) return byBase;
   return paths.find((path) => ext.test(path) && !path.includes("/renders/"));
 }
 
@@ -121,10 +169,11 @@ async function readRevisionSources(
     return { sources, paths };
   }
 
-  const paths = pickDesignPaths(await listTree(project.dir, ref, signal));
+  const prefix = await projectGitPrefix(project.dir, signal);
+  const paths = pickDesignPaths(await listTree(project.dir, ref, signal, prefix));
   const sources: RevisionSources = {};
   if (paths.netlist) {
-    const raw = await gitShow(project.dir, ref, paths.netlist, signal);
+    const raw = await gitShow(project.dir, ref, paths.netlist, signal, prefix);
     if (raw) {
       try {
         sources.netlistJson = JSON.parse(raw) as unknown;
@@ -134,19 +183,19 @@ async function readRevisionSources(
     }
   }
   if (paths.pcb) {
-    const raw = await gitShow(project.dir, ref, paths.pcb, signal);
+    const raw = await gitShow(project.dir, ref, paths.pcb, signal, prefix);
     if (raw) sources.kicadPcb = raw;
   }
   if (paths.schematic) {
-    const raw = await gitShow(project.dir, ref, paths.schematic, signal);
+    const raw = await gitShow(project.dir, ref, paths.schematic, signal, prefix);
     if (raw) sources.kicadSch = raw;
   }
   if (paths.pcbSvg) {
-    const raw = await gitShow(project.dir, ref, paths.pcbSvg, signal);
+    const raw = await gitShow(project.dir, ref, paths.pcbSvg, signal, prefix);
     if (raw) sources.pcbSvg = raw;
   }
   if (paths.schematicSvg) {
-    const raw = await gitShow(project.dir, ref, paths.schematicSvg, signal);
+    const raw = await gitShow(project.dir, ref, paths.schematicSvg, signal, prefix);
     if (raw) sources.schematicSvg = raw;
   }
   const commit = await git(project.dir, ["rev-parse", ref], signal);

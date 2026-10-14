@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createRegistry } from "../src";
-import { assertGitRef, pickDesignPaths } from "../src/tools/board-diff";
+import { assertGitRef, pickDesignFile, pickDesignPaths, projectRelGitPaths } from "../src/tools/board-diff";
 import { contextFactory, mockServices, tempProject } from "./mock-services";
 import { PCB_FROM, PCB_TO } from "../../board-diff/test/fixtures";
 
@@ -34,6 +34,26 @@ describe("board revision tools", () => {
       schematic: "foo.kicad_sch",
       netlist: "circuit.netlist.json",
     });
+  });
+
+  test("projectRelGitPaths strips a repo-root listing and keeps a cwd-scoped listing", () => {
+    expect(
+      projectRelGitPaths(["widget/board.kicad_pcb", "widget/circuit.netlist.json", "sibling.kicad_pcb"], "widget"),
+    ).toEqual(["board.kicad_pcb", "circuit.netlist.json"]);
+    expect(projectRelGitPaths(["board.kicad_pcb", "circuit.netlist.json"], "widget")).toEqual([
+      "board.kicad_pcb",
+      "circuit.netlist.json",
+    ]);
+    expect(projectRelGitPaths(["board.kicad_pcb"], "")).toEqual(["board.kicad_pcb"]);
+  });
+
+  test("pickDesignFile matches basename and project-relative paths", () => {
+    expect(pickDesignFile(["projects/widget/board.kicad_pcb", "other.kicad_pcb"], "board.kicad_pcb", /\.kicad_pcb$/i)).toBe(
+      "projects/widget/board.kicad_pcb",
+    );
+    expect(pickDesignFile(["nested/board.kicad_sch"], "board.kicad_sch", /\.kicad_sch$/i)).toBe("nested/board.kicad_sch");
+    expect(pickDesignFile(["vendor/lib.kicad_pcb"], "board.kicad_pcb", /\.kicad_pcb$/i)).toBe("vendor/lib.kicad_pcb");
+    expect(pickDesignFile([], "board.kicad_pcb", /\.kicad_pcb$/i)).toBeUndefined();
   });
 
   test("diffs two git commits of a KiCad board", async () => {
@@ -102,5 +122,60 @@ describe("board revision tools", () => {
         }),
     );
     expect(result.text).toContain("Components +0 / -0 / ~0");
+  });
+
+  test("nested git repo only sees the project folder; missing preferred board is not replaced by a sibling PCB", async () => {
+    const project = await tempProject("widget");
+    const repoRoot = join(project.dir, "..");
+    const services = mockServices([project]);
+    const registry = createRegistry();
+    const factory = contextFactory(services, project);
+    const invoke = (name: string, args: Record<string, unknown>) =>
+      registry.invoke(name, args, (ref) =>
+        factory({
+          def: registry.get(name)!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+      );
+
+    await git(repoRoot, ["init"]);
+    await git(repoRoot, ["config", "user.email", "diff@test"]);
+    await git(repoRoot, ["config", "user.name", "Diff Test"]);
+    await git(repoRoot, ["config", "commit.gpgsign", "false"]);
+    await writeFile(join(repoRoot, "sibling.kicad_pcb"), PCB_FROM);
+    await writeFile(join(project.dir, "board.kicad_pcb"), PCB_FROM);
+    await git(repoRoot, ["add", "."]);
+    await git(repoRoot, ["commit", "-m", "from"]);
+    const from = (await git(repoRoot, ["rev-parse", "HEAD"])).trim();
+    await writeFile(join(project.dir, "board.kicad_pcb"), PCB_TO);
+    await git(repoRoot, ["add", "."]);
+    await git(repoRoot, ["commit", "-m", "to"]);
+    const to = (await git(repoRoot, ["rev-parse", "HEAD"])).trim();
+
+    const result = await invoke("board_revision_diff", { from, to });
+    expect(result.text).toContain("Added: C1");
+    expect(result.text).toContain("Removed: R2");
+    const report = result.json as { from: { paths: { pcb?: string } }; to: { paths: { pcb?: string } } };
+    expect(report.from.paths.pcb).toBe("board.kicad_pcb");
+    expect(report.to.paths.pcb).toBe("board.kicad_pcb");
+
+    const listed = await invoke("board_revision_list", { limit: 5 });
+    expect((listed.json as { revisions: Array<{ ref: string }> }).revisions[0]?.ref).toBe("worktree");
+
+    await unlink(join(project.dir, "board.kicad_pcb"));
+    const boardless = await invoke("board_revision_diff", { from: "worktree", to: "worktree" });
+    const boardlessReport = boardless.json as { to: { paths: { pcb?: string } } };
+    expect(boardlessReport.to.paths.pcb).toBeUndefined();
+    expect(boardless.text).toContain("Components +0 / -0 / ~0");
+
+    const vsHead = await invoke("board_revision_diff", { from: to, to: "worktree" });
+    const vsHeadReport = vsHead.json as {
+      to: { paths: { pcb?: string } };
+      diff: { components: { added: Array<{ ref: string }> } };
+    };
+    expect(vsHeadReport.to.paths.pcb).toBeUndefined();
+    expect(vsHeadReport.diff.components.added.map((c) => c.ref)).not.toContain("R2");
   });
 });

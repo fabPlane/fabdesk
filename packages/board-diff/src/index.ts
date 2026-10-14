@@ -8,11 +8,18 @@ export type {
   NetChange,
   NetNode,
   NetSnapshot,
+  PadSnapshot,
   Point,
   TrackSnapshot,
+  ViaChange,
+  ViaChangeReason,
+  ViaSnapshot,
+  ZoneChange,
+  ZoneChangeReason,
+  ZoneSnapshot,
 } from "./types";
 export { emptySnapshot, nodeKey } from "./types";
-export { snapshotFromKicadPcb } from "./kicad-pcb";
+export { flattenArc, snapshotFromKicadPcb } from "./kicad-pcb";
 export { snapshotFromKicadSch } from "./kicad-sch";
 export { snapshotFromNetlist } from "./netlist";
 export { mergeSnapshots, snapshotFromSources } from "./snapshot";
@@ -23,6 +30,7 @@ export {
   extractSvgInner,
   overlaySvgs,
   parseViewBox,
+  prefixSvgIds,
   sideBySideSvgs,
   snapshotSvg,
   visualDiffSvg,

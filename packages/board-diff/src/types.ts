@@ -7,6 +7,15 @@ export type NetNode = {
   pin: string;
 };
 
+export type PadSnapshot = {
+  pin: string;
+  shape?: string;
+  width?: number;
+  height?: number;
+  drill?: number;
+  net?: string;
+};
+
 export type ComponentSnapshot = {
   ref: string;
   value?: string;
@@ -19,6 +28,7 @@ export type ComponentSnapshot = {
   schX?: number;
   schY?: number;
   schRotation?: number;
+  pads?: PadSnapshot[];
 };
 
 export type NetSnapshot = {
@@ -34,12 +44,32 @@ export type TrackSnapshot = {
   width: number;
   layer: string;
   net?: string;
+  /** Flattened polyline for arcs; omitted for straight segments. */
+  points?: Point[];
+};
+
+export type ViaSnapshot = {
+  id: string;
+  x: number;
+  y: number;
+  diameter: number;
+  drill: number;
+  net?: string;
+};
+
+export type ZoneSnapshot = {
+  id: string;
+  points: Point[];
+  layers: string[];
+  net?: string;
 };
 
 export type BoardSnapshot = {
   components: ComponentSnapshot[];
   nets: NetSnapshot[];
   tracks: TrackSnapshot[];
+  vias: ViaSnapshot[];
+  zones: ZoneSnapshot[];
   outline: Point[];
 };
 
@@ -49,6 +79,7 @@ export type ComponentChangeReason =
   | "layer"
   | "value"
   | "footprint"
+  | "pads"
   | "schematic-moved"
   | "schematic-rotated";
 
@@ -72,6 +103,24 @@ export type NetChange = {
   removedNodes: NetNode[];
 };
 
+export type ViaChangeReason = "moved" | "resized" | "net";
+
+export type ViaChange = {
+  before: ViaSnapshot;
+  after: ViaSnapshot;
+  reasons: ViaChangeReason[];
+  dx?: number;
+  dy?: number;
+};
+
+export type ZoneChangeReason = "reshaped" | "net" | "layers";
+
+export type ZoneChange = {
+  before: ZoneSnapshot;
+  after: ZoneSnapshot;
+  reasons: ZoneChangeReason[];
+};
+
 export type BoardDiff = {
   components: {
     added: ComponentSnapshot[];
@@ -90,6 +139,18 @@ export type BoardDiff = {
     removed: TrackSnapshot[];
     unchanged: number;
   };
+  vias: {
+    added: ViaSnapshot[];
+    removed: ViaSnapshot[];
+    changed: ViaChange[];
+    unchanged: number;
+  };
+  zones: {
+    added: ZoneSnapshot[];
+    removed: ZoneSnapshot[];
+    changed: ZoneChange[];
+    unchanged: number;
+  };
 };
 
 export type DiffOptions = {
@@ -102,7 +163,7 @@ export type DiffOptions = {
 };
 
 export function emptySnapshot(): BoardSnapshot {
-  return { components: [], nets: [], tracks: [], outline: [] };
+  return { components: [], nets: [], tracks: [], vias: [], zones: [], outline: [] };
 }
 
 export function nodeKey(node: NetNode): string {

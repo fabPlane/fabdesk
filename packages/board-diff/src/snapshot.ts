@@ -1,4 +1,12 @@
-import { emptySnapshot, type BoardSnapshot, type ComponentSnapshot, type NetSnapshot, type TrackSnapshot } from "./types";
+import {
+  emptySnapshot,
+  type BoardSnapshot,
+  type ComponentSnapshot,
+  type NetSnapshot,
+  type TrackSnapshot,
+  type ViaSnapshot,
+  type ZoneSnapshot,
+} from "./types";
 
 function pickDefined<T>(primary: T | undefined, fallback: T | undefined): T | undefined {
   return primary !== undefined ? primary : fallback;
@@ -15,6 +23,7 @@ function mergeComponent(base: ComponentSnapshot | undefined, next: ComponentSnap
   const schX = pickDefined(next.schX, base?.schX);
   const schY = pickDefined(next.schY, base?.schY);
   const schRotation = pickDefined(next.schRotation, base?.schRotation);
+  const pads = pickDefined(next.pads, base?.pads);
   return {
     ref: next.ref,
     ...(value !== undefined ? { value } : {}),
@@ -27,6 +36,7 @@ function mergeComponent(base: ComponentSnapshot | undefined, next: ComponentSnap
     ...(schX !== undefined ? { schX } : {}),
     ...(schY !== undefined ? { schY } : {}),
     ...(schRotation !== undefined ? { schRotation } : {}),
+    ...(pads !== undefined ? { pads } : {}),
   };
 }
 
@@ -50,6 +60,8 @@ export function mergeSnapshots(...sources: BoardSnapshot[]): BoardSnapshot {
   const components = new Map<string, ComponentSnapshot>();
   const nets = new Map<string, NetSnapshot>();
   const tracks = new Map<string, TrackSnapshot>();
+  const vias = new Map<string, ViaSnapshot>();
+  const zones = new Map<string, ZoneSnapshot>();
   let outline: BoardSnapshot["outline"] = [];
 
   for (const source of sources) {
@@ -60,14 +72,47 @@ export function mergeSnapshots(...sources: BoardSnapshot[]): BoardSnapshot {
       nets.set(net.name, mergeNet(nets.get(net.name), net));
     }
     for (const track of source.tracks) tracks.set(track.id, track);
+    for (const via of source.vias ?? []) vias.set(via.id, via);
+    for (const zone of source.zones ?? []) zones.set(zone.id, zone);
     if (source.outline.length > 0) outline = source.outline;
   }
 
   out.components = [...components.values()].sort((a, b) => a.ref.localeCompare(b.ref));
   out.nets = [...nets.values()].sort((a, b) => a.name.localeCompare(b.name));
   out.tracks = [...tracks.values()];
+  out.vias = [...vias.values()];
+  out.zones = [...zones.values()];
   out.outline = outline;
   return out;
+}
+
+/**
+ * When a PCB source exists it is the authority for component presence and net
+ * membership. Schematic coords/fields and omitted netlist fields are merged onto
+ * PCB refs only — netlist-only or schematic-only refs are dropped. Copper
+ * (tracks/vias/zones) stays PCB-owned; schematic wires are kept on the
+ * `schematic` layer.
+ */
+function overlayOntoPcb(pcb: BoardSnapshot, extras: BoardSnapshot[]): BoardSnapshot {
+  const extraByRef = extras.flatMap((source) => source.components);
+  const fieldsByRef = new Map<string, ComponentSnapshot>();
+  for (const component of extraByRef) {
+    fieldsByRef.set(component.ref, mergeComponent(fieldsByRef.get(component.ref), component));
+  }
+
+  const components = pcb.components
+    .map((component) => mergeComponent(fieldsByRef.get(component.ref), component))
+    .sort((a, b) => a.ref.localeCompare(b.ref));
+
+  const schTracks = extras.flatMap((source) => source.tracks.filter((t) => t.layer === "schematic"));
+  return {
+    components,
+    nets: pcb.nets,
+    tracks: [...pcb.tracks, ...schTracks],
+    vias: pcb.vias ?? [],
+    zones: pcb.zones ?? [],
+    outline: pcb.outline,
+  };
 }
 
 /** Build a snapshot from whichever sources a revision actually has. */
@@ -79,9 +124,11 @@ export function snapshotFromSources(input: {
   fromPcb: (text: string) => BoardSnapshot;
   fromSch: (text: string) => BoardSnapshot;
 }): BoardSnapshot {
-  const parts: BoardSnapshot[] = [];
-  if (input.netlistJson !== undefined) parts.push(input.fromNetlist(input.netlistJson));
-  if (input.kicadSch) parts.push(input.fromSch(input.kicadSch));
-  if (input.kicadPcb) parts.push(input.fromPcb(input.kicadPcb));
-  return mergeSnapshots(...parts);
+  const netlist = input.netlistJson !== undefined ? input.fromNetlist(input.netlistJson) : undefined;
+  const sch = input.kicadSch ? input.fromSch(input.kicadSch) : undefined;
+  const pcb = input.kicadPcb ? input.fromPcb(input.kicadPcb) : undefined;
+  if (pcb) {
+    return overlayOntoPcb(pcb, [netlist, sch].filter((s): s is BoardSnapshot => s !== undefined));
+  }
+  return mergeSnapshots(...[netlist, sch].filter((s): s is BoardSnapshot => s !== undefined));
 }

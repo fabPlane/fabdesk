@@ -90,7 +90,7 @@ export function parseAt(text: string): { x: number; y: number; rotation: number 
 }
 
 export function parseXy(text: string): { x: number; y: number } | undefined {
-  const match = /\((?:xy|start|end|at|center)\s+(-?[\d.]+)\s+(-?[\d.]+)/.exec(text);
+  const match = /\((?:xy|start|end|mid|at|center)\s+(-?[\d.]+)\s+(-?[\d.]+)/.exec(text);
   if (!match?.[1] || !match[2]) return undefined;
   return { x: Number(match[1]), y: Number(match[2]) };
 }
