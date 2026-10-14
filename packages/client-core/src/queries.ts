@@ -150,6 +150,12 @@ export function useSettings() {
   return useQuery({ queryKey: ["settings"], queryFn: () => client.getSettings() });
 }
 
+/** The core's first-install privacy decision; it does not change while the core runs. */
+export function usePrivacy() {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["privacy"], queryFn: () => client.getPrivacy(), staleTime: Infinity, retry: false });
+}
+
 export const ROUTER_INSTALL_MUTATION_KEY = ["router-install"] as const;
 
 export function useRouters() {
