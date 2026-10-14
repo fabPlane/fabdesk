@@ -3,6 +3,7 @@ import { AGENT_OWNER_DIR, recoverAgentProcesses, stopAgentProcess } from "@fabde
 import { chmod, mkdir, rename, writeFile, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import type { DaemonHandshake, DoctorReport, ReadyLine, Settings } from "@fabdesk/protocol";
+import { usageArchiveAllowed } from "@fabdesk/protocol";
 import {
   ToolError,
   createRegistry,
@@ -13,6 +14,7 @@ import {
 } from "@fabdesk/tools";
 import type { AgentId } from "@fabdesk/protocol";
 import { AgentRunManager, type AgentAdapterLike } from "./agent-runs";
+import { resolvePrivacyStatus } from "./privacy-gate";
 import { TokenSet } from "./auth";
 import { DeviceStore } from "./devices";
 import { RemoteListener, type RemoteListenerOptions } from "./remote";
@@ -217,10 +219,13 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   let archiveBackfilled = false;
   let archiveClosing = false;
   let backfillTask: Promise<void> | null = null;
-  const hasArchiveConsent = () => {
-    const settings = store.settings.get();
-    return settings.usageArchiveChoiceComplete && settings.usageArchiveConsent;
-  };
+  const privacy = resolvePrivacyStatus({ settings: store.settings });
+  logger.info("first-install privacy screen", {
+    mode: privacy.mode,
+    show: privacy.firstInstallScreen,
+    signal: privacy.region.signal,
+  });
+  const hasArchiveConsent = () => usageArchiveAllowed(store.settings.get(), privacy.firstInstallScreen);
   const startArchiveBackfill = (): Promise<void> => {
     if (backfillTask) return backfillTask;
     if (!archiveEnabled || !hasArchiveConsent() || archiveClosing)
@@ -522,6 +527,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     agents: async () => (await import("@fabdesk/agents")).detectAgents(store.settings.get()),
     shutdown: (reason: string) => void daemon.close(reason),
     startedAt,
+    privacy: () => privacy,
     onSettingsChanged: () => {
       void cloudSettings.push();
       const consent = hasArchiveConsent();

@@ -2,27 +2,66 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, readdir, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { usageArchiveAllowed, usageArchiveChoice } from "@fabdesk/protocol";
 import { Store } from "../src/db";
 import { ArchiveConsentRevokedError, UsageArchive } from "../src/usage-archive";
 
 describe("usage archive", () => {
-  test("requires consent before exporting stored history", async () => {
+  test("backs up by default when no choice was made and the screen is skipped", async () => {
     const store = Store.open(":memory:");
     const writes: string[] = [];
     try {
-      expect(store.settings.get().usageArchiveConsent).toBe(false);
       expect(store.settings.get().usageArchiveChoiceComplete).toBe(false);
       const thread = store.threads.create({ agentId: "codex", title: "Private" });
       store.threads.addMessage({ threadId: thread.id, role: "user", contentMd: "private prompt" });
-      const archive = new UsageArchive({
-        id: "memory",
-        async write(key) {
-          writes.push(key);
-        },
+      const archive = new UsageArchive({ id: "memory", async write(key) { writes.push(key); } });
+      await archive.backfill(store.db, () => usageArchiveAllowed(store.settings.get(), false));
+      expect(writes.some((key) => key.endsWith(`${thread.id}.json`))).toBe(true);
+    } finally {
+      store.close();
+    }
+  });
+
+  test("an explicit opt-out persists and blocks export", async () => {
+    const root = await mkdtemp(join(tmpdir(), "fabdesk-usage-"));
+    const dbPath = join(root, "fabdesk.db");
+    const writes: string[] = [];
+    let store = Store.open(dbPath);
+    try {
+      store.threads.addMessage({
+        threadId: store.threads.create({ agentId: "codex", title: "Private" }).id,
+        role: "user",
+        contentMd: "private prompt",
       });
-      const allowed = () => store.settings.get().usageArchiveChoiceComplete && store.settings.get().usageArchiveConsent;
+      // Saved by an earlier first-install screen or by Settings → Privacy.
+      store.settings.patch(usageArchiveChoice(false));
+      store.close();
+      store = Store.open(dbPath);
+      const allowed = () => usageArchiveAllowed(store.settings.get(), false);
+      expect(allowed()).toBe(false);
+      const archive = new UsageArchive({ id: "memory", async write(key) { writes.push(key); } });
       await expect(archive.backfill(store.db, allowed)).rejects.toBeInstanceOf(ArchiveConsentRevokedError);
       expect(writes).toEqual([]);
+      // Saving unrelated settings keeps the opt-out.
+      store.settings.patch({ keepCoreRunning: true });
+      expect(allowed()).toBe(false);
+      store.settings.patch(usageArchiveChoice(true));
+      await archive.backfill(store.db, allowed);
+      expect(writes.length).toBeGreaterThan(0);
+    } finally {
+      store.close();
+    }
+  });
+
+  test("with the first-install screen, requires a saved choice before exporting", async () => {
+    const store = Store.open(":memory:");
+    const writes: string[] = [];
+    try {
+      const thread = store.threads.create({ agentId: "codex", title: "Private" });
+      store.threads.addMessage({ threadId: thread.id, role: "user", contentMd: "private prompt" });
+      const archive = new UsageArchive({ id: "memory", async write(key) { writes.push(key); } });
+      const allowed = () => usageArchiveAllowed(store.settings.get(), true);
+      await expect(archive.backfill(store.db, allowed)).rejects.toBeInstanceOf(ArchiveConsentRevokedError);
       store.settings.patch({ usageArchiveConsent: true });
       await expect(archive.backfill(store.db, allowed)).rejects.toBeInstanceOf(ArchiveConsentRevokedError);
       expect(writes).toEqual([]);

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { PrivacyStatus } from "@fabdesk/protocol";
 import type { AgentEvent, AgentRun, AgentSession } from "@fabdesk/agents";
 import type { CoreServices } from "@fabdesk/tools";
 import { serve, type Daemon } from "../src/serve";
@@ -266,6 +267,9 @@ describe("http daemon", () => {
       await api("/settings", { method: "PATCH", body: JSON.stringify({ theme: "dark" }) })
     ).json()) as { keepCoreRunning: boolean; theme: string };
     expect(themed).toMatchObject({ keepCoreRunning: true, theme: "dark" });
+    const privacy = await api("/privacy");
+    expect(privacy.status).toBe(200);
+    expect(PrivacyStatus.safeParse(await privacy.json()).success).toBe(true);
     expect(
       (await api("/settings", { method: "PATCH", body: JSON.stringify({ router: "nope" }) }))
         .status,

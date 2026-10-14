@@ -8,6 +8,7 @@ export * from "./releases";
 export * from "./fp-pcb";
 export * from "./fab-cad";
 export * from "./cloud";
+export * from "./privacy-region";
 export * from "./github";
 export * from "./cad-runtime";
 export * from "./routers";
