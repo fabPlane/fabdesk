@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { BOARD_COMMENTS_CONTRACT, commentAnchorLabel } from "@fabdesk/protocol";
 import { createComment, createRegistry, updateComments } from "../src";
@@ -119,5 +119,38 @@ describe("board comment tools", () => {
     expect(commentAnchorLabel({ view: "schematic", ref: "J1", pin: "3", net: "D+" })).toBe(
       "J1 · pin 3 · D+",
     );
+  });
+
+  test("loads existing pins whose ids use a dotted fabplane suffix", async () => {
+    const project = await tempProject("comments-legacy-id");
+    await writeFile(
+      join(project.dir, "comments.json"),
+      JSON.stringify({
+        contract: BOARD_COMMENTS_CONTRACT,
+        comments: [
+          {
+            id: "cmt_2026.10",
+            createdAt: "2026-10-08T00:00:00.000Z",
+            updatedAt: "2026-10-08T00:00:00.000Z",
+            author: "maya",
+            status: "open",
+            question: "Keep this pin?",
+            anchor: { view: "pcb", x: 1, y: 2, xMm: 1, yMm: 2 },
+          },
+        ],
+      }),
+    );
+    const services = mockServices([project]);
+    const registry = createRegistry();
+    const factory = contextFactory(services, project);
+    const listed = await registry.invoke("comment_list", {}, (ref) =>
+      factory({
+        def: registry.get("comment_list")!,
+        projectRef: ref,
+        signal: new AbortController().signal,
+        progress: () => {},
+      }),
+    );
+    expect((listed.json as { comments: Array<{ id: string }> }).comments[0]?.id).toBe("cmt_2026.10");
   });
 });

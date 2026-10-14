@@ -53,7 +53,11 @@ export const CommentAnchor = z
 export type CommentAnchor = z.infer<typeof CommentAnchor>;
 
 export const BoardComment = z.object({
-  id: z.string().min(1).regex(/^cmt_[a-z0-9_-]+$/i),
+  id: z
+    .string()
+    .min(5)
+    .max(80)
+    .regex(/^cmt_[A-Za-z0-9._:-]+$/, "comment id must start with cmt_ and use a short identifier charset"),
   createdAt: z.string().min(1),
   updatedAt: z.string().min(1),
   author: z.string().min(1).max(80).default("local"),

@@ -3,6 +3,7 @@ import {
   BOARD_COMMENTS_CONTRACT,
   BOARD_COMMENTS_FILE,
   BOARD_NOTES_FILE,
+  BoardComment,
   BoardCommentsFile,
   CommentAnchor,
   buildCommentAskPrompt,
@@ -45,5 +46,21 @@ describe("board comments protocol", () => {
     expect(prompt).toContain("pcb_inspect");
     expect(prompt).toContain("comment_answer");
     expect(prompt).toContain("cmt_u12");
+  });
+
+  test("ask prompt includes Near (mm) when the pin stores millimetres", () => {
+    const prompt = buildCommentAskPrompt({
+      ...pin,
+      anchor: { view: "pcb", x: 12.4, y: 8, xMm: 12.4, yMm: 8 },
+    });
+    expect(prompt).toContain("Near (mm): 12.4, 8");
+  });
+
+  test("loads fabplane-style ids such as cmt_2026.10", () => {
+    expect(BoardComment.safeParse({ ...pin, id: "cmt_2026.10" }).success).toBe(true);
+    expect(BoardComment.safeParse({ ...pin, id: "cmt_2026-10-08T00:00:00" }).success).toBe(true);
+    expect(BoardComment.safeParse({ ...pin, id: "note_1" }).success).toBe(false);
+    expect(BoardComment.safeParse({ ...pin, id: "cmt_" }).success).toBe(false);
+    expect(BoardComment.safeParse({ ...pin, id: `cmt_${"a".repeat(80)}` }).success).toBe(false);
   });
 });

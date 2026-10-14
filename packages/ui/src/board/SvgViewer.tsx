@@ -1,8 +1,8 @@
-import { useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type MouseEvent } from "react";
 import { Button } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { cn } from "../util";
-import { clientPointToSvg, parseSvgViewBox, type SvgPoint } from "./svg-coords";
+import { clientPointToSvg, resolveSvgBox, svgElementBox, type SvgBox, type SvgPoint } from "./svg-coords";
 
 /** Zoomable host for an SVG string (schematic / PCB renders). */
 export function SvgViewer({
@@ -14,7 +14,7 @@ export function SvgViewer({
 }: {
   svg: string;
   toolbar?: React.ReactNode;
-  overlay?: React.ReactNode;
+  overlay?: React.ReactNode | ((box: SvgBox | null) => React.ReactNode);
   commentMode?: boolean;
   onDrawingClick?: (point: SvgPoint, event: MouseEvent<HTMLDivElement>) => void;
 }) {
@@ -22,18 +22,22 @@ export function SvgViewer({
   const viewport = useRef<HTMLDivElement>(null);
   const drawing = useRef<HTMLDivElement>(null);
   const [fitSize, setFitSize] = useState({ width: 1, height: 1 });
+  const [domBox, setDomBox] = useState<SvgBox | null>(null);
   useLayoutEffect(() => {
     const el = drawing.current?.querySelector("svg");
     const frame = viewport.current;
     if (!el || !frame) return;
-    let box = el.viewBox.baseVal;
-    if (!box.width || !box.height) {
-      const bounds = el.getBBox();
-      if (!bounds.width || !bounds.height) return;
-      el.setAttribute("viewBox", `${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}`);
-      box = el.viewBox.baseVal;
+    const resolved = svgElementBox(el);
+    if (!resolved) {
+      setDomBox(null);
+      return;
     }
-    const width = box.width, height = box.height;
+    if (!el.viewBox.baseVal.width || !el.viewBox.baseVal.height) {
+      el.setAttribute("viewBox", `${resolved.x} ${resolved.y} ${resolved.width} ${resolved.height}`);
+    }
+    setDomBox(resolved);
+    const box = el.viewBox.baseVal;
+    const width = box.width || resolved.width, height = box.height || resolved.height;
     el.setAttribute("preserveAspectRatio", "xMidYMid meet");
     el.style.width = "100%";
     el.style.height = "100%";
@@ -52,7 +56,7 @@ export function SvgViewer({
     if (!onDrawingClick) return;
     if ((event.target as HTMLElement | null)?.closest("[data-comment-pin]")) return;
     const host = drawing.current;
-    const box = parseSvgViewBox(svg) ?? svgElBox(host);
+    const box = resolveSvgBox(svg, host?.querySelector("svg"));
     if (!host || !box) return;
     const point = clientPointToSvg(box, host.getBoundingClientRect(), event.clientX, event.clientY);
     if (point) onDrawingClick(point, event);
@@ -81,16 +85,9 @@ export function SvgViewer({
           onClick={handleClick}
         >
           <div className="h-full w-full" dangerouslySetInnerHTML={{ __html: svg }} />
-          {overlay}
+          {typeof overlay === "function" ? overlay(resolveSvgBox(svg) ?? domBox) : overlay}
         </div>
       </div>
     </div>
   );
-}
-
-function svgElBox(host: HTMLDivElement | null) {
-  const el = host?.querySelector("svg");
-  const box = el?.viewBox.baseVal;
-  if (!box || !box.width || !box.height) return null;
-  return { x: box.x, y: box.y, width: box.width, height: box.height };
 }
