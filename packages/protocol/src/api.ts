@@ -268,9 +268,12 @@ export const Settings = z.object({
   webmcpWriteTools: z.boolean().default(false),
   /** Send crash/error reports to Sentry (only when a DSN is configured; see docs/sentry.md). */
   errorReporting: z.boolean().default(true),
-  /** Local, installation-wide consent to back up stored conversations and tool traces for analysis. */
+  /**
+   * Local, installation-wide consent to back up stored conversations and tool traces for analysis.
+   * Only meaningful once `usageArchiveChoiceComplete` is set; read it through `usageArchiveAllowed`.
+   */
   usageArchiveConsent: z.boolean().default(false),
-  /** First-install privacy choice is saved before any archive upload begins. */
+  /** The person has explicitly chosen (first-install screen or Settings → Privacy). */
   usageArchiveChoiceComplete: z.boolean().default(false),
   theme: z.enum(["system", "light", "dark"]).default("system"),
   /** Opt-in second listener on a tailnet/LAN address so paired phones can reach the daemon. */
@@ -300,6 +303,45 @@ export const Settings = z.object({
   cloudOrgId: z.string().nullable().default(null),
 });
 export type Settings = z.infer<typeof Settings>;
+
+export const PrivacyScreenMode = z.enum(["auto", "always", "never"]);
+export type PrivacyScreenMode = z.infer<typeof PrivacyScreenMode>;
+
+/**
+ * Who sees the first-install privacy screen: `auto` shows it only where `detectConsentRegion`
+ * places the installation in the EU/EEA, UK or Switzerland; `always` / `never` force it for
+ * testing. The core's `FABDESK_PRIVACY_SCREEN` env var overrides this at run time.
+ */
+export const FIRST_INSTALL_PRIVACY_SCREEN: PrivacyScreenMode = "auto";
+
+/** `GET /privacy`: the core's decision, so every client gates on the same answer the uploader uses. */
+export const PrivacyStatus = z.object({
+  mode: PrivacyScreenMode,
+  /** Undecided installations must answer the screen before anything is backed up. */
+  firstInstallScreen: z.boolean(),
+  region: z.object({
+    likelyInRegion: z.boolean(),
+    signal: z.enum(["time-zone", "locale", "remembered"]).nullable(),
+    country: z.string().nullable(),
+  }),
+});
+export type PrivacyStatus = z.infer<typeof PrivacyStatus>;
+
+type UsageArchiveChoice = Pick<Settings, "usageArchiveConsent" | "usageArchiveChoiceComplete">;
+
+/**
+ * Effective usage-data backup consent. A saved choice always wins; otherwise backup is on unless
+ * this installation gets the first-install screen, in which case it waits for an answer.
+ */
+export function usageArchiveAllowed(settings: UsageArchiveChoice, privacyScreen: boolean): boolean {
+  if (settings.usageArchiveChoiceComplete) return settings.usageArchiveConsent;
+  return !privacyScreen;
+}
+
+/** Records an explicit usage-data backup choice so it is never replaced by the default. */
+export function usageArchiveChoice(consent: boolean): UsageArchiveChoice {
+  return { usageArchiveConsent: consent, usageArchiveChoiceComplete: true };
+}
 
 /**
  * Portable preferences stored on the fabplane.com account (`GET`/`PUT /v1/private/settings`).

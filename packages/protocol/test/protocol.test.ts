@@ -26,6 +26,9 @@ import {
   ReleaseManifest,
   RouteFrameLine,
   topicMatches,
+  FIRST_INSTALL_PRIVACY_SCREEN,
+  usageArchiveAllowed,
+  usageArchiveChoice,
 } from "../src/index";
 
 describe("topicMatches", () => {
@@ -347,5 +350,31 @@ describe("pairing url", () => {
         },
       }).tailscale?.serve?.port,
     ).toBe(443);
+  });
+});
+
+describe("usage archive consent", () => {
+  test("the first-install privacy screen follows the detected region", () => {
+    expect(FIRST_INSTALL_PRIVACY_SCREEN).toBe("auto");
+  });
+
+  test("defaults on for undecided installations that skip the screen", () => {
+    const fresh = Settings.parse({});
+    expect(fresh.usageArchiveChoiceComplete).toBe(false);
+    expect(usageArchiveAllowed(fresh, false)).toBe(true);
+    // A stale unchecked value without a recorded choice is not an opt-out.
+    expect(usageArchiveAllowed({ usageArchiveConsent: false, usageArchiveChoiceComplete: false }, false)).toBe(true);
+  });
+
+  test("an explicit choice always wins", () => {
+    for (const screen of [true, false]) {
+      expect(usageArchiveAllowed(usageArchiveChoice(false), screen)).toBe(false);
+      expect(usageArchiveAllowed(usageArchiveChoice(true), screen)).toBe(true);
+    }
+  });
+
+  test("with the screen, nothing is allowed until the person chooses", () => {
+    expect(usageArchiveAllowed(Settings.parse({}), true)).toBe(false);
+    expect(usageArchiveAllowed({ usageArchiveConsent: true, usageArchiveChoiceComplete: false }, true)).toBe(false);
   });
 });
