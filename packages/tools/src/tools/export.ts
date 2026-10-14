@@ -335,7 +335,7 @@ export const export_stencil = defineTool({
   toolset: "export",
   title: "Export 3D-printed solder stencil",
   description:
-    "Build a printable solder-stencil STL from the board's F.Paste (or B.Paste) pads: a thin plate with shrunk apertures, a frame, and alignment holes or pegs. Writes exports/stencil/<side>-Paste.stl plus JSON/markdown/SVG summaries. Optional jig tray. Pure TypeScript — does not need kicad-cli. Skip very small or fine-pitch pads (default) and report them as warnings. For hand assembly / Opulo paste printing instead of ordering a metal stencil.",
+    "Build a solder-stencil STL from the board's F.Paste (or B.Paste) pads, preserving paste geometry by default. Writes exports/stencil/<side>-Paste.stl plus JSON/markdown/SVG summaries. Shrink, small-opening/fine-pitch filters and alignment holes are opt-in; skipped pads are reported. Optional jig tray. Pure TypeScript — does not need kicad-cli. Inspect the sliced openings for your nozzle before printing.",
   inputSchema: {
     side: z.enum(["F", "B"]).default("F").describe("Paste layer: F.Paste or B.Paste"),
     thicknessMm: z
@@ -346,28 +346,38 @@ export const export_stencil = defineTool({
     frameMm: z.number().nonnegative().default(5).describe("Border around the board outline in mm"),
     apertureOffsetMm: z
       .number()
-      .default(0.05)
-      .describe("Per-pad shrink (positive) or grow (negative) in mm"),
+      .default(0)
+      .describe(
+        "Additional per-pad shrink (positive) or grow (negative) in mm, after KiCad paste margins",
+      ),
     minApertureMm: z
       .number()
       .nonnegative()
-      .default(0.35)
+      .default(0)
       .describe("Skip pads whose opening is smaller than this after shrink"),
     skipFinePitch: z
       .boolean()
-      .default(true)
+      .default(false)
       .describe("Skip footprints whose paste-pad pitch is below finePitchMm"),
     finePitchMm: z.number().positive().default(0.5).describe("Fine-pitch threshold in mm"),
     alignment: z
       .enum(["holes", "pegs", "none"])
-      .default("holes")
+      .default("none")
       .describe("Registration: NPTH/tooling holes, or frame-corner holes if the board has none"),
-    alignmentHoleMm: z.number().positive().default(3.2).describe("Frame-corner hole diameter when no NPTH tooling holes exist"),
+    alignmentHoleMm: z
+      .number()
+      .positive()
+      .default(3.2)
+      .describe("Frame-corner hole diameter when no NPTH tooling holes exist"),
     includeJig: z
       .boolean()
       .default(false)
       .describe("Also write a simple PCB-holder tray STL with a board pocket and alignment pegs"),
-    pcbThicknessMm: z.number().positive().default(1.6).describe("Pocket depth for the optional jig"),
+    pcbThicknessMm: z
+      .number()
+      .positive()
+      .default(1.6)
+      .describe("Pocket depth for the optional jig"),
   },
   annotations: {
     readOnlyHint: false,
@@ -397,7 +407,12 @@ export const export_stencil = defineTool({
       pcbThicknessMm: args.pcbThicknessMm,
     });
     ctx.progress(1, "done");
-    const files = [summary.files.stl, summary.files.json, summary.files.markdown, summary.files.svg];
+    const files = [
+      summary.files.stl,
+      summary.files.json,
+      summary.files.markdown,
+      summary.files.svg,
+    ];
     if (summary.files.jig) files.push(summary.files.jig);
     const warn = summary.warnings.length
       ? `\nWarnings:\n${summary.warnings.map((w) => `- ${w.message}`).join("\n")}`

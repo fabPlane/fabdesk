@@ -7,6 +7,7 @@ import { join } from "node:path";
 import earcut, { flatten } from "earcut";
 import { parseKicadPcb } from "kicadts";
 import polygonClipping from "polygon-clipping";
+import { stencilParseInput } from "./stencil-input";
 
 export type StencilSide = "F" | "B";
 export type StencilAlignment = "holes" | "pegs" | "none";
@@ -42,6 +43,8 @@ export type Vec2 = [number, number];
 export type Ring = Vec2[];
 
 export type StencilPadInfo = {
+  /** Footprint identity, independent of possibly repeated reference labels. */
+  footprintIndex: number;
   ref: string;
   number: string;
   x: number;
@@ -51,6 +54,9 @@ export type StencilPadInfo = {
   angle: number;
   shape: string;
   layers: string[];
+  roundrectRatio: number;
+  pasteMargin: number;
+  pasteRatio: number;
 };
 
 export type StencilAperture = {
@@ -63,7 +69,14 @@ export type StencilAperture = {
   polygon: Ring;
 };
 
-export type StencilBounds = { minX: number; minY: number; maxX: number; maxY: number; widthMm: number; heightMm: number };
+export type StencilBounds = {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+  widthMm: number;
+  heightMm: number;
+};
 
 export type StencilAlignmentHole = { x: number; y: number; diameterMm: number };
 
@@ -108,11 +121,11 @@ export const STENCIL_DEFAULTS = {
   side: "F" as StencilSide,
   thicknessMm: 0.15,
   frameMm: 5,
-  apertureOffsetMm: 0.05,
-  minApertureMm: 0.35,
-  skipFinePitch: true,
+  apertureOffsetMm: 0,
+  minApertureMm: 0,
+  skipFinePitch: false,
   finePitchMm: 0.5,
-  alignment: "holes" as StencilAlignment,
+  alignment: "none" as StencilAlignment,
   alignmentHoleMm: 3.2,
   includeJig: false,
   pcbThicknessMm: 1.6,
@@ -139,11 +152,27 @@ export function resolveStencilOptions(opts: StencilOptions = {}): Required<Stenc
 
 export function buildSolderStencil(pcbText: string, opts: StencilOptions = {}): StencilBuild {
   const options = resolveStencilOptions(opts);
+  for (const key of [
+    "thicknessMm",
+    "frameMm",
+    "apertureOffsetMm",
+    "minApertureMm",
+    "finePitchMm",
+    "alignmentHoleMm",
+    "pcbThicknessMm",
+  ] as const) {
+    if (!Number.isFinite(options[key])) throw new Error(`${key} must be finite`);
+  }
   if (!(options.thicknessMm > 0)) throw new Error("thicknessMm must be > 0");
   if (options.frameMm < 0) throw new Error("frameMm must be >= 0");
-  const pcb = parseKicadPcb(pcbText);
+  if (options.minApertureMm < 0) throw new Error("minApertureMm must be >= 0");
+  if (options.finePitchMm <= 0 || options.alignmentHoleMm <= 0 || options.pcbThicknessMm <= 0) {
+    throw new Error("finePitchMm, alignmentHoleMm and pcbThicknessMm must be > 0");
+  }
+  const pcb = parseKicadPcb(stencilParseInput(pcbText, options.side));
+  assertSupportedPasteItems(pcb, options.side);
   const warnings: StencilWarning[] = [];
-  const pads = collectPastePads(pcb, options.side);
+  const pads = [...collectPastePads(pcb, options.side), ...collectPasteRects(pcb, options.side)];
   if (pads.length === 0) {
     throw new Error(`no ${options.side}.Paste pads on the board`);
   }
@@ -153,10 +182,14 @@ export function buildSolderStencil(pcbText: string, opts: StencilOptions = {}): 
   const alignmentHoles = alignmentHolesFor(pcb, plate, board, options, warnings);
   const holePolys: Ring[] = [
     ...apertures.map((a) => a.polygon),
-    ...(options.alignment === "none" ? [] : alignmentHoles.map((h) => circleRing(h.x, h.y, h.diameterMm / 2))),
+    ...(options.alignment === "none"
+      ? []
+      : alignmentHoles.map((h) => circleRing(h.x, h.y, h.diameterMm / 2))),
   ];
   const plate2d = cutPlate(rectRing(plate.minX, plate.minY, plate.maxX, plate.maxY), holePolys);
   const plateMesh = extrude(plate2d, 0, options.thicknessMm);
+  if (!checkMesh(plateMesh).watertight)
+    throw new Error("Stencil mesh is not watertight; export native paste Gerbers instead.");
   let jigMesh: StencilMesh | undefined;
   if (options.includeJig) {
     jigMesh = buildJigMesh(plate, board, alignmentHoles, options);
@@ -164,7 +197,8 @@ export function buildSolderStencil(pcbText: string, opts: StencilOptions = {}): 
   if (options.side === "B") {
     warnings.push({
       code: "bottom_view",
-      message: "Bottom stencil is as seen from above (KiCad coordinates). Mirror it in the slicer if you print against the board's back.",
+      message:
+        "Bottom stencil is as seen from above (KiCad coordinates). Mirror it in the slicer if you print against the board's back.",
     });
   }
   return {
@@ -193,8 +227,15 @@ export async function exportStencil(opts: StencilExportOptions): Promise<Stencil
   const svg = join(opts.outDir, `${stem}.svg`);
   await writeFile(stl, encodeBinaryStl(built.plateMesh, `fabdesk ${stem} stencil`));
   const jigPath = built.jigMesh ? join(opts.outDir, `${stem}-jig.stl`) : undefined;
-  if (built.jigMesh && jigPath) await writeFile(jigPath, encodeBinaryStl(built.jigMesh, `fabdesk ${stem} jig`));
-  const summary = toSummary(built, { stl, json, markdown, svg, ...(jigPath ? { jig: jigPath } : {}) });
+  if (built.jigMesh && jigPath)
+    await writeFile(jigPath, encodeBinaryStl(built.jigMesh, `fabdesk ${stem} jig`));
+  const summary = toSummary(built, {
+    stl,
+    json,
+    markdown,
+    svg,
+    ...(jigPath ? { jig: jigPath } : {}),
+  });
   await writeFile(json, `${JSON.stringify(summary, null, 2)}\n`);
   await writeFile(markdown, stencilMarkdown(summary));
   await writeFile(svg, stencilPreviewSvg(built));
@@ -206,7 +247,7 @@ function toSummary(built: StencilBuild, files: StencilSummary["files"]): Stencil
   return {
     side: built.side,
     padCount: built.pads.length,
-    apertureCount: built.apertures.length,
+    apertureCount: apertureCount(built.apertures),
     skippedCount: built.skipped.length,
     minApertureMm: sizes.length ? Math.min(...sizes) : null,
     thicknessMm: built.options.thicknessMm,
@@ -227,7 +268,7 @@ export function stencilMarkdown(s: StencilSummary): string {
 
 | | |
 | --- | --- |
-| Pads on paste layer | ${s.padCount} |
+| Paste records (pads + filled rectangles) | ${s.padCount} |
 | Apertures cut | ${s.apertureCount} |
 | Skipped | ${s.skippedCount} |
 | Min aperture | ${min} |
@@ -241,7 +282,8 @@ export function stencilMarkdown(s: StencilSummary): string {
 ## Warnings
 ${warn}
 
-Print the STL as a single layer (FDM) or thin resin sheet. Keep the plate on the bed; apertures are through-holes.
+Paste geometry is preserved by default. Shrink, minimum-opening and fine-pitch filters are opt-in; inspect skipped-pad warnings if enabled.
+Choose layers that sum to the requested thickness, and inspect the sliced openings. Geometry preservation does not guarantee that your nozzle can print every divider or that paste will release.
 `;
 }
 
@@ -254,7 +296,9 @@ export function stencilPreviewSvg(built: StencilBuild): string {
   const ty = (y: number) => y - plate.minY + pad;
   const ring = (pts: Ring, extra = "") =>
     `<polygon points="${pts.map(([x, y]) => `${tx(x).toFixed(3)},${ty(y).toFixed(3)}`).join(" ")}"${extra}/>`;
-  const aperturesSvg = apertures.map((a) => ring(a.polygon, ` fill="#111" stroke="none"`)).join("\n");
+  const aperturesSvg = apertures
+    .map((a) => ring(a.polygon, ` fill="#111" stroke="none"`))
+    .join("\n");
   const holesSvg = alignmentHoles
     .map(
       (h) =>
@@ -268,7 +312,7 @@ export function stencilPreviewSvg(built: StencilBuild): string {
   ${ring(rectRing(board.minX, board.minY, board.maxX, board.maxY), ` fill="none" stroke="#2563eb" stroke-width="0.12" stroke-dasharray="0.6 0.35"`)}
   ${aperturesSvg}
   ${holesSvg}
-  <text x="${pad}" y="${(h - 0.35).toFixed(3)}" font-size="0.9" font-family="ui-sans-serif,system-ui,sans-serif" fill="#374151">${built.side}.Paste stencil · ${options.thicknessMm} mm · ${apertures.length} apertures</text>
+  <text x="${pad}" y="${(h - 0.35).toFixed(3)}" font-size="0.9" font-family="ui-sans-serif,system-ui,sans-serif" fill="#374151">${built.side}.Paste stencil · ${options.thicknessMm} mm · ${apertureCount(apertures)} apertures</text>
 </svg>
 `;
 }
@@ -277,30 +321,136 @@ export function stencilPreviewSvg(built: StencilBuild): string {
 
 type Pcb = ReturnType<typeof parseKicadPcb>;
 
+function apertureCount(apertures: StencilAperture[]): number {
+  const polys = apertures.map((a) => [closeRing(a.polygon)]);
+  return polys.length ? polygonClipping.union(polys[0]!, ...polys.slice(1)).length : 0;
+}
+
+/** Do not silently export a partial stencil for features we cannot yet render. */
+function assertSupportedPasteItems(pcb: Pcb, side: StencilSide): void {
+  for (const parent of [pcb, ...pcb.footprints]) {
+    for (const item of parent.getChildren()) {
+      // Pads are handled below. Check every other layer-bearing item, including
+      // footprint properties and dimensions, so unsupported paste text/artwork
+      // cannot disappear silently just because it has a different token name.
+      if (item.token === "pad") continue;
+      const layer = item.getChildren().find((c) => c.token === "layer" || c.token === "layers");
+      const names =
+        layer && "names" in layer ? layer.names : layer && "layers" in layer ? layer.layers : [];
+      if (Array.isArray(names) && layerHasPaste(names, side)) {
+        if (item.token === "gr_rect" || item.token === "fp_rect") continue; // Validated by collectPasteRects.
+        throw new Error(
+          `Unsupported ${side}.Paste ${item.token}; export native paste Gerbers instead of a partial stencil.`,
+        );
+      }
+    }
+  }
+}
+
+function footprintPosition(fp: Pcb["footprints"][number]) {
+  const scale = fp.transform?.scale;
+  if (scale && (scale.x !== 1 || scale.y !== 1)) {
+    throw new Error(
+      "Stencil export does not yet support scaled footprint transforms; export native paste Gerbers instead.",
+    );
+  }
+  return xyOf(fp.position);
+}
+
+/** Some connectors put paste openings in footprint graphics, separate from the
+ * copper pads. KiCad paste margins do not resize these explicit rectangles. */
+function collectPasteRects(pcb: Pcb, side: StencilSide): StencilPadInfo[] {
+  const groups = [
+    { rects: pcb.graphicRects, at: { x: 0, y: 0, angle: 0 }, ref: "board", footprintIndex: -1 },
+    ...pcb.footprints.map((fp, footprintIndex) => ({
+      rects: fp.fpRects,
+      at: footprintPosition(fp),
+      ref: fp.properties.find((p) => p.key === "Reference")?.value ?? "?",
+      footprintIndex,
+    })),
+  ];
+  const result: StencilPadInfo[] = [];
+  for (const { rects, at, ref, footprintIndex } of groups) {
+    for (const [index, rect] of rects.entries()) {
+      const layers = rect.layer?.names ?? [];
+      if (!layerHasPaste(layers, side)) continue;
+      const fill =
+        rect
+          .getChildren()
+          .find((c) => c.token === "fill")
+          ?.getString() ?? "";
+      if (!/\(fill (?:yes|solid)\)/.test(fill) || (rect.stroke?.width ?? rect.width ?? 0) !== 0) {
+        throw new Error(
+          `Unsupported ${side}.Paste ${rect.token}: only filled zero-stroke rectangles are supported; export native paste Gerbers instead.`,
+        );
+      }
+      const a = rect.start,
+        b = rect.end;
+      if (!a || !b) throw new Error(`Missing coordinates on ${ref} paste rectangle`);
+      const world = rotate((a.x + b.x) / 2, (a.y + b.y) / 2, at.angle);
+      result.push({
+        footprintIndex,
+        ref,
+        number: `graphic-${index + 1}`,
+        x: at.x + world[0],
+        y: at.y + world[1],
+        width: Math.abs(b.x - a.x),
+        height: Math.abs(b.y - a.y),
+        angle: at.angle,
+        shape: "rect",
+        layers,
+        roundrectRatio: 0,
+        pasteMargin: 0,
+        pasteRatio: 0,
+      });
+    }
+  }
+  return result;
+}
+
 function collectPastePads(pcb: Pcb, side: StencilSide): StencilPadInfo[] {
   const out: StencilPadInfo[] = [];
-  for (const fp of pcb.footprints) {
+  for (const [footprintIndex, fp] of pcb.footprints.entries()) {
     const ref = fp.properties.find((p) => p.key === "Reference")?.value ?? "?";
-    const fpAt = xyOf(fp.position);
-    const mirrored = (fp.layer?.names ?? []).some((n) => n === "B.Cu");
+    const fpAt = footprintPosition(fp);
     for (const pad of fp.fpPads) {
       const layers = pad.layers?.layers ?? [];
       if (!layerHasPaste(layers, side)) continue;
       const size = pad.size;
-      if (!size) continue;
+      if (!size) throw new Error(`Missing size on paste pad ${ref}.${pad.number}`);
       const padAt = xyOf(pad.at);
-      const local = mirrored ? { x: -padAt.x, y: padAt.y, angle: -(padAt.angle ?? 0) } : padAt;
-      const world = rotate(local.x, local.y, fpAt.angle);
+      // KiCad board coordinates have Y down. Saved bottom pads are already
+      // flipped, and pad angles are absolute (including transform-format files).
+      const world = rotate(padAt.x, padAt.y, fpAt.angle);
+      if (!["rect", "roundrect", "circle", "oval"].includes(pad.shape) || pad.chamfer) {
+        throw new Error(
+          `Unsupported paste pad ${ref}.${pad.number}: ${pad.shape}/chamfer. Export native paste Gerbers instead.`,
+        );
+      }
       out.push({
+        footprintIndex,
         ref,
         number: pad.number || "",
         x: fpAt.x + world[0],
         y: fpAt.y + world[1],
         width: size.width,
         height: size.height,
-        angle: fpAt.angle + local.angle,
+        angle: padAt.angle,
         shape: pad.shape || "rect",
         layers,
+        roundrectRatio: pad.roundrectRatio ?? 0,
+        // Margin and ratio resolve independently: pad -> footprint -> board.
+        // An explicit zero is an override, not the same as an absent field.
+        pasteMargin:
+          pad.solderPasteMargin ??
+          fp.solderPasteMargin?.value ??
+          pcb.setup?.padToPasteClearance ??
+          0,
+        pasteRatio:
+          pad.solderPasteMarginRatio ??
+          fp.solderPasteRatio?.value ??
+          pcb.setup?.padToPasteClearanceRatio ??
+          0,
       });
     }
   }
@@ -312,7 +462,8 @@ function layerHasPaste(layers: string[], side: StencilSide): boolean {
   return layers.some((l) => l === want || l === "*.Paste" || l === "F&B.Paste");
 }
 
-const onEdgeCuts = (item: { layer?: { names?: string[] } | undefined }) => (item.layer?.names ?? []).includes("Edge.Cuts");
+const onEdgeCuts = (item: { layer?: { names?: string[] } | undefined }) =>
+  (item.layer?.names ?? []).includes("Edge.Cuts");
 const xy = (p: { x: number; y: number } | undefined): Vec2[] => (p ? [[p.x, p.y]] : []);
 
 /** Points bounding a three-point arc: its ends plus every axis extreme the sweep passes. */
@@ -348,13 +499,16 @@ export function arcExtentPoints(start: Vec2, mid: Vec2, end: Vec2): Vec2[] {
 /** Bounds of every Edge.Cuts primitive (rect, poly, line, arc, circle), or null when there are none. */
 export function edgeCutsBounds(pcb: Pcb): StencilBounds | null {
   const pts: Vec2[] = [];
-  for (const r of pcb.graphicRects.filter(onEdgeCuts)) pts.push(...xy(r.startPoint), ...xy(r.endPoint));
+  for (const r of pcb.graphicRects.filter(onEdgeCuts))
+    pts.push(...xy(r.startPoint), ...xy(r.endPoint));
   for (const poly of pcb.graphicPolys.filter(onEdgeCuts)) {
     for (const p of poly.points?.points ?? []) {
-      if ("x" in p && "y" in p && typeof p.x === "number" && typeof p.y === "number") pts.push([p.x, p.y]);
+      if ("x" in p && "y" in p && typeof p.x === "number" && typeof p.y === "number")
+        pts.push([p.x, p.y]);
     }
   }
-  for (const l of pcb.graphicLines.filter(onEdgeCuts)) pts.push(...xy(l.startPoint), ...xy(l.endPoint));
+  for (const l of pcb.graphicLines.filter(onEdgeCuts))
+    pts.push(...xy(l.startPoint), ...xy(l.endPoint));
   for (const a of pcb.graphicArcs.filter(onEdgeCuts)) {
     const [s0, m0, e0] = [a.startPoint, a.midPoint, a.endPoint];
     if (s0 && m0 && e0) pts.push(...arcExtentPoints([s0.x, s0.y], [m0.x, m0.y], [e0.x, e0.y]));
@@ -380,7 +534,9 @@ function boardOutline(
   const outline = edgeCutsBounds(pcb);
   if (outline) return outline;
   if (includeJig) {
-    throw new Error("no Edge.Cuts outline; a jig pocket needs the real board size (draw the outline or omit the jig)");
+    throw new Error(
+      "no Edge.Cuts outline; a jig pocket needs the real board size (draw the outline or omit the jig)",
+    );
   }
   warnings.push({
     code: "no_edge_cuts",
@@ -393,15 +549,13 @@ function boardOutline(
 function collectToolingHoles(pcb: Pcb): StencilAlignmentHole[] {
   const holes: StencilAlignmentHole[] = [];
   for (const fp of pcb.footprints) {
-    const fpAt = xyOf(fp.position);
-    const mirrored = (fp.layer?.names ?? []).some((n) => n === "B.Cu");
+    const fpAt = footprintPosition(fp);
     for (const pad of fp.fpPads) {
-      if (pad.padType !== "npth") continue;
+      if (pad.padType !== "npth" && pad.padType !== "np_thru_hole") continue;
       const d = pad.drill?.diameter ?? pad.size?.width ?? 0;
       if (d < 1.5) continue;
       const padAt = xyOf(pad.at);
-      const local = mirrored ? { x: -padAt.x, y: padAt.y } : padAt;
-      const world = rotate(local.x, local.y, fpAt.angle);
+      const world = rotate(padAt.x, padAt.y, fpAt.angle);
       holes.push({ x: fpAt.x + world[0], y: fpAt.y + world[1], diameterMm: d });
     }
   }
@@ -426,7 +580,8 @@ function alignmentHolesFor(
   } else {
     warnings.push({
       code: "no_tooling_holes",
-      message: "No NPTH tooling holes ≥ 1.5 mm; placing registration holes in the stencil frame corners.",
+      message:
+        "No NPTH tooling holes ≥ 1.5 mm; placing registration holes in the stencil frame corners.",
     });
   }
   const inset = Math.min(options.frameMm * 0.45, 2.2);
@@ -436,7 +591,13 @@ function alignmentHolesFor(
     { x: plate.maxX - inset, y: plate.minY + inset, diameterMm: d },
     { x: plate.maxX - inset, y: plate.maxY - inset, diameterMm: d },
     { x: plate.minX + inset, y: plate.maxY - inset, diameterMm: d },
-  ].filter((h) => h.x < board.minX - d / 2 || h.x > board.maxX + d / 2 || h.y < board.minY - d / 2 || h.y > board.maxY + d / 2);
+  ].filter(
+    (h) =>
+      h.x < board.minX - d / 2 ||
+      h.x > board.maxX + d / 2 ||
+      h.y < board.minY - d / 2 ||
+      h.y > board.maxY + d / 2,
+  );
   return [...tooling, ...corners];
 }
 
@@ -447,11 +608,11 @@ function selectApertures(
 ): { apertures: StencilAperture[]; skipped: StencilPadInfo[] } {
   const fine = new Set<StencilPadInfo>();
   if (options.skipFinePitch) {
-    const byRef = new Map<string, StencilPadInfo[]>();
+    const byRef = new Map<number, StencilPadInfo[]>();
     for (const p of pads) {
-      const list = byRef.get(p.ref) ?? [];
+      const list = byRef.get(p.footprintIndex) ?? [];
       list.push(p);
-      byRef.set(p.ref, list);
+      byRef.set(p.footprintIndex, list);
     }
     for (const group of byRef.values()) {
       if (group.length < 2) continue;
@@ -460,10 +621,12 @@ function selectApertures(
         for (let j = i + 1; j < group.length; j++) {
           const a = group[i]!;
           const b = group[j]!;
-          minPitch = Math.min(minPitch, Math.hypot(a.x - b.x, a.y - b.y));
+          const distance = Math.hypot(a.x - b.x, a.y - b.y);
+          // Stacked pad records (e.g. USB-C) are one location, not zero pitch.
+          if (distance > 1e-7) minPitch = Math.min(minPitch, distance);
         }
       }
-      if (minPitch < options.finePitchMm) {
+      if (minPitch < options.finePitchMm - 1e-7) {
         for (const p of group) fine.add(p);
         const first = group[0]!;
         warnings.push({
@@ -481,8 +644,10 @@ function selectApertures(
       skipped.push(pad);
       continue;
     }
-    const w = pad.width - 2 * options.apertureOffsetMm;
-    const h = pad.height - 2 * options.apertureOffsetMm;
+    const w =
+      pad.width * (1 + 2 * pad.pasteRatio) + 2 * pad.pasteMargin - 2 * options.apertureOffsetMm;
+    const h =
+      pad.height * (1 + 2 * pad.pasteRatio) + 2 * pad.pasteMargin - 2 * options.apertureOffsetMm;
     if (w < options.minApertureMm || h < options.minApertureMm || w <= 0 || h <= 0) {
       skipped.push(pad);
       warnings.push({
@@ -500,34 +665,50 @@ function selectApertures(
       y: pad.y,
       width: w,
       height: h,
-      polygon: padPolygon(pad.x, pad.y, w, h, pad.angle, pad.shape),
+      polygon: padPolygon(pad.x, pad.y, w, h, pad.angle, pad.shape, pad.roundrectRatio),
     });
   }
   return { apertures, skipped };
 }
 
-function padPolygon(x: number, y: number, w: number, h: number, angle: number, shape: string): Ring {
+function padPolygon(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  angle: number,
+  shape: string,
+  ratio = 0,
+): Ring {
   if (shape === "circle") return circleRing(x, y, Math.min(w, h) / 2);
   if (shape === "oval") return ovalRing(x, y, w, h, angle);
+  if (shape === "roundrect") return roundedRectRing(x, y, w, h, Math.min(w, h) * ratio, angle);
   return rectRingCentered(x, y, w, h, angle);
 }
 
 /* ── 2D helpers ──────────────────────────────────────────────────────────── */
 
-function xyOf(p: { x: number; y: number; angle?: number } | undefined): { x: number; y: number; angle: number } {
+function xyOf(p: { x: number; y: number; angle?: number } | undefined): {
+  x: number;
+  y: number;
+  angle: number;
+} {
   if (!p) return { x: 0, y: 0, angle: 0 };
   return { x: p.x, y: p.y, angle: typeof p.angle === "number" ? p.angle : 0 };
 }
 
 function rotate(x: number, y: number, deg: number): Vec2 {
-  const a = (deg * Math.PI) / 180;
+  const a = (-deg * Math.PI) / 180;
   const c = Math.cos(a);
   const s = Math.sin(a);
   return [x * c - y * s, x * s + y * c];
 }
 
 function boundsOf(pts: Vec2[]): StencilBounds {
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
   for (const [x, y] of pts) {
     if (x < minX) minX = x;
     if (y < minY) minY = y;
@@ -607,20 +788,60 @@ function circleRing(x: number, y: number, r: number, segs = CIRCLE_SEGS): Ring {
   return ensureWinding(pts, true);
 }
 
-function ovalRing(x: number, y: number, w: number, h: number, angle: number, segs = CIRCLE_SEGS): Ring {
+function ovalRing(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  angle: number,
+  segs = CIRCLE_SEGS,
+): Ring {
+  return roundedRectRing(x, y, w, h, Math.min(w, h) / 2, angle, segs);
+}
+
+/** KiCad ovals are capsules, not ellipses. Roundrects share this construction. */
+function roundedRectRing(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  radius: number,
+  angle: number,
+  segs = CIRCLE_SEGS,
+): Ring {
+  const r = Math.min(Math.max(radius, 0), Math.min(w, h) / 2);
+  if (r === 0) return rectRingCentered(x, y, w, h, angle);
   const pts: Ring = [];
-  for (let i = 0; i < segs; i++) {
-    const t = (i / segs) * Math.PI * 2;
-    const [rx, ry] = rotate((w / 2) * Math.cos(t), (h / 2) * Math.sin(t), angle);
-    pts.push([x + rx, y + ry]);
+  const corners: Vec2[] = [
+    [w / 2 - r, h / 2 - r],
+    [-w / 2 + r, h / 2 - r],
+    [-w / 2 + r, -h / 2 + r],
+    [w / 2 - r, -h / 2 + r],
+  ];
+  for (let c = 0; c < 4; c++) {
+    for (let i = 0; i <= segs / 4; i++) {
+      const t = ((c + i / (segs / 4)) * Math.PI) / 2;
+      const [rx, ry] = rotate(
+        corners[c]![0] + r * Math.cos(t),
+        corners[c]![1] + r * Math.sin(t),
+        angle,
+      );
+      const point: Vec2 = [x + rx, y + ry];
+      const last = pts.at(-1);
+      if (!last || Math.hypot(point[0] - last[0], point[1] - last[1]) > 1e-9) pts.push(point);
+    }
   }
+  if (Math.hypot(pts[0]![0] - pts.at(-1)![0], pts[0]![1] - pts.at(-1)![1]) < 1e-9) pts.pop();
   return ensureWinding(pts, true);
 }
 
 function cutPlate(outer: Ring, holes: Ring[]): Ring[][] {
   const subject = [closeRing(ensureWinding(outer, true))];
   const clips = holes.filter((h) => h.length >= 3).map((h) => [closeRing(ensureWinding(h, true))]);
-  const result = clips.length === 0 ? polygonClipping.union(subject) : polygonClipping.difference(subject, ...clips);
+  const result =
+    clips.length === 0
+      ? polygonClipping.union(subject)
+      : polygonClipping.difference(subject, ...clips);
   return result.map((poly) =>
     poly.map((ring, i) => ensureWinding(openRing(ring.map(([x, y]) => [x, y] as Vec2)), i === 0)),
   );
@@ -681,14 +902,28 @@ function addWalls(buf: TriBuf, ring: Ring, z0: number, z1: number, outer: boolea
   }
 }
 
-function addTri(buf: TriBuf, a: [number, number, number], b: [number, number, number], c: [number, number, number]): void {
-  const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
-  const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+function addTri(
+  buf: TriBuf,
+  a: [number, number, number],
+  b: [number, number, number],
+  c: [number, number, number],
+): void {
+  const ux = b[0] - a[0],
+    uy = b[1] - a[1],
+    uz = b[2] - a[2];
+  const vx = c[0] - a[0],
+    vy = c[1] - a[1],
+    vz = c[2] - a[2];
   let nx = uy * vz - uz * vy;
   let ny = uz * vx - ux * vz;
   let nz = ux * vy - uy * vx;
-  const len = Math.hypot(nx, ny, nz) || 1;
-  nx /= len; ny /= len; nz /= len;
+  const len = Math.hypot(nx, ny, nz);
+  // Earcut / float32 conversion can leave a collinear cap triangle. It has no
+  // surface area and creates duplicated edges if emitted into the STL.
+  if (len < 1e-14) return;
+  nx /= len;
+  ny /= len;
+  nz /= len;
   buf.pos.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
   buf.nrm.push(nx, ny, nz);
 }
@@ -711,7 +946,8 @@ function splitTJunctions(mesh: StencilMesh): StencilMesh {
   }
   const unique: Array<[number, number, number]> = [];
   const seen = new Set<string>();
-  const qk = (v: [number, number, number]) => `${Math.round(v[0] * 1e6)},${Math.round(v[1] * 1e6)},${Math.round(v[2] * 1e6)}`;
+  const qk = (v: [number, number, number]) =>
+    `${Math.round(v[0] * 1e6)},${Math.round(v[1] * 1e6)},${Math.round(v[2] * 1e6)}`;
   for (const v of verts) {
     const k = qk(v);
     if (seen.has(k)) continue;
@@ -719,7 +955,11 @@ function splitTJunctions(mesh: StencilMesh): StencilMesh {
     unique.push(v);
   }
   const buf: TriBuf = { pos: [], nrm: [] };
-  const emit = (a: [number, number, number], b: [number, number, number], c: [number, number, number]): void => {
+  const emit = (
+    a: [number, number, number],
+    b: [number, number, number],
+    c: [number, number, number],
+  ): void => {
     const ab = closestOn(a, b, unique);
     if (ab) {
       emit(a, ab, c);
@@ -762,10 +1002,28 @@ function closestOn(
   return best;
 }
 
-function onSegment(a: [number, number, number], b: [number, number, number], p: [number, number, number], eps = 1e-7): boolean {
+function onSegment(
+  a: [number, number, number],
+  b: [number, number, number],
+  p: [number, number, number],
+  eps = 1e-7,
+): boolean {
+  // Most vertices cannot lie on this edge. Reject them before expensive norms;
+  // rounded pads on real boards otherwise make T-junction repair very slow.
+  for (let axis = 0; axis < 3; axis++) {
+    if (
+      p[axis]! < Math.min(a[axis]!, b[axis]!) - eps ||
+      p[axis]! > Math.max(a[axis]!, b[axis]!) + eps
+    )
+      return false;
+  }
   if (samePt(a, p) || samePt(b, p)) return false;
-  const abx = b[0] - a[0], aby = b[1] - a[1], abz = b[2] - a[2];
-  const apx = p[0] - a[0], apy = p[1] - a[1], apz = p[2] - a[2];
+  const abx = b[0] - a[0],
+    aby = b[1] - a[1],
+    abz = b[2] - a[2];
+  const apx = p[0] - a[0],
+    apy = p[1] - a[1],
+    apz = p[2] - a[2];
   const ab2 = abx * abx + aby * aby + abz * abz;
   if (ab2 < eps * eps) return false;
   const cross = Math.hypot(aby * apz - abz * apy, abz * apx - abx * apz, abx * apy - aby * apx);
@@ -805,11 +1063,15 @@ function buildJigMesh(
   const wallH = baseH + pocket;
   const base = extrude([[rectRing(jig.minX, jig.minY, jig.maxX, jig.maxY)]], 0, baseH);
   const walls = extrude(
-    cutPlate(rectRing(jig.minX, jig.minY, jig.maxX, jig.maxY), [rectRing(board.minX, board.minY, board.maxX, board.maxY)]),
+    cutPlate(rectRing(jig.minX, jig.minY, jig.maxX, jig.maxY), [
+      rectRing(board.minX, board.minY, board.maxX, board.maxY),
+    ]),
     baseH,
     wallH,
   );
-  const pegs = holes.map((h) => cylinder(h.x, h.y, Math.max(0.4, h.diameterMm / 2 - 0.15), baseH, wallH + 2));
+  const pegs = holes.map((h) =>
+    cylinder(h.x, h.y, Math.max(0.4, h.diameterMm / 2 - 0.15), baseH, wallH + 2),
+  );
   return mergeMeshes([base, walls, ...pegs]);
 }
 
@@ -840,7 +1102,8 @@ export function decodeBinaryStl(data: Uint8Array): StencilMesh {
   if (data.length < 84) throw new Error("STL too short");
   const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
   const count = view.getUint32(80, true);
-  if (data.length !== 84 + count * 50) throw new Error(`STL size mismatch: ${data.length} bytes for ${count} triangles`);
+  if (data.length !== 84 + count * 50)
+    throw new Error(`STL size mismatch: ${data.length} bytes for ${count} triangles`);
   const positions = new Float32Array(count * 9);
   const normals = new Float32Array(count * 3);
   for (let t = 0; t < count; t++) {
@@ -862,14 +1125,19 @@ export type MeshCheck = {
 
 export function checkMesh(mesh: StencilMesh, eps = 1e-5): MeshCheck {
   const count = mesh.positions.length / 9;
-  let minX = Infinity, minY = Infinity, minZ = Infinity;
-  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+  let minX = Infinity,
+    minY = Infinity,
+    minZ = Infinity;
+  let maxX = -Infinity,
+    maxY = -Infinity,
+    maxZ = -Infinity;
   const edges = new Map<string, number>();
   const q = (n: number) => Math.round(n / eps);
   const key = (a: [number, number, number], b: [number, number, number]) => {
     const a1: [number, number, number] = [q(a[0]), q(a[1]), q(a[2])];
     const b1: [number, number, number] = [q(b[0]), q(b[1]), q(b[2])];
-    const fwd = a1[0] < b1[0] || (a1[0] === b1[0] && (a1[1] < b1[1] || (a1[1] === b1[1] && a1[2] < b1[2])));
+    const fwd =
+      a1[0] < b1[0] || (a1[0] === b1[0] && (a1[1] < b1[1] || (a1[1] === b1[1] && a1[2] < b1[2])));
     const lo = fwd ? a1 : b1;
     const hi = fwd ? b1 : a1;
     return `${lo[0]},${lo[1]},${lo[2]}>${hi[0]},${hi[1]},${hi[2]}`;
@@ -906,8 +1174,10 @@ export function checkMesh(mesh: StencilMesh, eps = 1e-5): MeshCheck {
 export function pointInRing(x: number, y: number, ring: Ring): boolean {
   let inside = false;
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const xi = ring[i]![0], yi = ring[i]![1];
-    const xj = ring[j]![0], yj = ring[j]![1];
+    const xi = ring[i]![0],
+      yi = ring[i]![1];
+    const xj = ring[j]![0],
+      yj = ring[j]![1];
     if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi || 1e-12) + xi) inside = !inside;
   }
   return inside;

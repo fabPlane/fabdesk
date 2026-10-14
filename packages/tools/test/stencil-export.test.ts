@@ -22,10 +22,10 @@ describe("export_stencil", () => {
       }),
     );
     expect(out.isError).toBeFalsy();
-    expect(out.text).toContain("2 aperture");
-    expect(out.text).toContain("pitch 0.40 mm");
+    expect(out.text).toContain("6 aperture");
+    expect(out.text).not.toContain("Skipped");
     const json = out.json as { apertureCount: number; path: string; files: string[] };
-    expect(json.apertureCount).toBe(2);
+    expect(json.apertureCount).toBe(6);
     expect(json.path).toContain("F-Paste.stl");
     const stl = new Uint8Array(await Bun.file(json.path).arrayBuffer());
     expect(stl.length).toBeGreaterThan(84);
@@ -49,5 +49,38 @@ describe("export_stencil", () => {
         }),
       ),
     ).rejects.toThrow(/board.kicad_pcb not found/);
+  });
+
+  test("the real tool preserves stacked USB holes by default and still accepts explicit filtering", async () => {
+    const reg = createRegistry();
+    const project = await tempProject("stencil-geometry");
+    await cp(
+      join(import.meta.dir, "../../kicad/test/fixtures/stencil-geometry-regressions.kicad_pcb"),
+      join(project.dir, "board.kicad_pcb"),
+    );
+    const factory = contextFactory(mockServices([project]), project);
+    const invoke = (args: Record<string, unknown>) =>
+      reg.invoke("export_stencil", args, (ref) =>
+        factory({
+          def: reg.get("export_stencil")!,
+          projectRef: ref,
+          signal: new AbortController().signal,
+          progress: () => {},
+        }),
+      );
+    const complete = await invoke({});
+    expect(complete.isError).toBeFalsy();
+    expect(complete.json).toMatchObject({ apertureCount: 9 });
+    const summary = await Bun.file(join(project.dir, "exports/stencil/F-Paste.json")).json();
+    expect(summary).toMatchObject({
+      padCount: 10,
+      apertureCount: 9,
+      skippedCount: 0,
+      alignment: { kind: "none", holes: [] },
+    });
+    const filtered = await invoke({ skipFinePitch: true, finePitchMm: 0.6 });
+    expect(filtered.isError).toBeFalsy();
+    expect(filtered.text).toContain("pitch 0.50 mm");
+    expect(filtered.json).toMatchObject({ apertureCount: 6 });
   });
 });

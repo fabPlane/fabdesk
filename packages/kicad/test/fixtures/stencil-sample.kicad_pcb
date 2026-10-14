@@ -10,6 +10,8 @@
 	(layers
 		(0 "F.Cu" signal)
 		(31 "B.Cu" signal)
+ (34 "B.Paste" user)
+ (35 "F.Paste" user)
 		(36 "B.SilkS" user "B.Silkscreen")
 		(37 "F.SilkS" user "F.Silkscreen")
 		(38 "B.Mask" user)
@@ -155,7 +157,7 @@
 			)
 		)
 		(attr exclude_from_pos_files exclude_from_bom)
-		(pad "" npth circle
+		(pad "" np_thru_hole circle
 			(at 0 0)
 			(size 3.2 3.2)
 			(drill 3.2)
@@ -179,7 +181,7 @@
 			)
 		)
 		(attr exclude_from_pos_files exclude_from_bom)
-		(pad "" npth circle
+		(pad "" np_thru_hole circle
 			(at 0 0)
 			(size 3.2 3.2)
 			(drill 3.2)

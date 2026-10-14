@@ -20,7 +20,11 @@ const LINE_OUTLINE = join(import.meta.dir, "fixtures/stencil-line-outline.kicad_
 describe("buildSolderStencil", () => {
   test("cuts 0805 apertures, skips fine-pitch QFN pads, and matches the board outline", async () => {
     const pcb = await Bun.file(SAMPLE).text();
-    const built = buildSolderStencil(pcb);
+    const built = buildSolderStencil(pcb, {
+      skipFinePitch: true,
+      minApertureMm: 0.35,
+      apertureOffsetMm: 0.05,
+    });
     expect(built.side).toBe("F");
     expect(built.pads.map((p) => `${p.ref}.${p.number}`).sort()).toEqual([
       "R1.1",
@@ -34,8 +38,22 @@ describe("buildSolderStencil", () => {
     expect(built.skipped.every((p) => p.ref === "U1")).toBe(true);
     expect(built.warnings.some((w) => w.code === "fine_pitch")).toBe(true);
 
-    expect(built.board).toMatchObject({ minX: 0, minY: 0, maxX: 20, maxY: 12, widthMm: 20, heightMm: 12 });
-    expect(built.plate).toMatchObject({ minX: -5, minY: -5, maxX: 25, maxY: 17, widthMm: 30, heightMm: 22 });
+    expect(built.board).toMatchObject({
+      minX: 0,
+      minY: 0,
+      maxX: 20,
+      maxY: 12,
+      widthMm: 20,
+      heightMm: 12,
+    });
+    expect(built.plate).toMatchObject({
+      minX: -5,
+      minY: -5,
+      maxX: 25,
+      maxY: 17,
+      widthMm: 30,
+      heightMm: 22,
+    });
 
     for (const a of built.apertures) {
       expect(a.width).toBeCloseTo(1.4, 5);
@@ -61,7 +79,7 @@ describe("buildSolderStencil", () => {
 
   test("uses NPTH mounting holes for registration", async () => {
     const pcb = await Bun.file(SAMPLE).text();
-    const built = buildSolderStencil(pcb);
+    const built = buildSolderStencil(pcb, { alignment: "holes" });
     expect(built.alignmentHoles).toEqual([
       { x: 2, y: 2, diameterMm: 3.2 },
       { x: 18, y: 10, diameterMm: 3.2 },
@@ -76,7 +94,11 @@ describe("buildSolderStencil", () => {
     expect(bottom.apertures).toHaveLength(2);
     expect(bottom.warnings.some((w) => w.code === "bottom_view")).toBe(true);
 
-    const keep = buildSolderStencil(pcb, { skipFinePitch: false, minApertureMm: 0.1, apertureOffsetMm: 0 });
+    const keep = buildSolderStencil(pcb, {
+      skipFinePitch: false,
+      minApertureMm: 0.1,
+      apertureOffsetMm: 0,
+    });
     expect(keep.apertures).toHaveLength(6);
     expect(keep.warnings.some((w) => w.code === "fine_pitch")).toBe(false);
   });
@@ -141,19 +163,21 @@ describe("exportStencil", () => {
     const dir = await mkdtemp(join(tmpdir(), "fabdesk-stencil-"));
     const summary = await exportStencil({ board: SAMPLE, outDir: dir });
     expect(summary.padCount).toBe(6);
-    expect(summary.apertureCount).toBe(2);
-    expect(summary.minApertureMm).toBeCloseTo(0.9, 5);
-    expect(summary.warnings.some((w) => w.code === "fine_pitch")).toBe(true);
+    expect(summary.apertureCount).toBe(6);
+    expect(summary.skippedCount).toBe(0);
+    expect(summary.alignment.holes).toHaveLength(0);
+    expect(summary.minApertureMm).toBeCloseTo(0.22, 5);
+    expect(summary.warnings.some((w) => w.code === "fine_pitch")).toBe(false);
     const stl = decodeBinaryStl(new Uint8Array(await Bun.file(summary.files.stl).arrayBuffer()));
     expect(checkMesh(stl).watertight).toBe(true);
     const json = (await Bun.file(summary.files.json).json()) as { apertureCount: number };
-    expect(json.apertureCount).toBe(2);
+    expect(json.apertureCount).toBe(6);
     const md = await Bun.file(summary.files.markdown).text();
     expect(md).toContain("Apertures cut");
     expect(md).toContain("F.Paste");
     const svg = await Bun.file(summary.files.svg).text();
     expect(svg).toContain("<svg");
-    expect(svg).toContain("2 apertures");
+    expect(svg).toContain("6 apertures");
   });
 
   test("works on the mini two-layer fixture", async () => {
