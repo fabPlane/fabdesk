@@ -2,7 +2,7 @@
  * Pure planner for Finish it: inspect a project directory, decide remaining milestones,
  * write the autonomous agent prompt, and map MCP tools onto those milestones.
  */
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import {
   FINISH_IT_MILESTONE_LABELS,
@@ -39,6 +39,21 @@ async function readJson(path: string): Promise<unknown | null> {
   } catch {
     return null;
   }
+}
+
+async function mtimeMs(path: string): Promise<number | null> {
+  const info = await stat(path).catch(() => null);
+  return info?.mtimeMs ?? null;
+}
+
+/** Ignore a report that is older than the board it describes. */
+async function readFreshJson(path: string, sourceMtime: number | null): Promise<unknown | null> {
+  const raw = await readJson(path);
+  if (raw === null) return null;
+  if (sourceMtime === null) return raw;
+  const reportMtime = await mtimeMs(path);
+  if (reportMtime === null || reportMtime < sourceMtime) return null;
+  return raw;
 }
 
 function countsOf(value: unknown): { errors?: number; unconnected?: number } | null {
@@ -78,12 +93,14 @@ export async function inspectProject(
   const parsed = netlistRaw === null ? null : NetlistFile.safeParse(netlistRaw);
   const netlist = parsed?.success ? parsed.data : null;
 
-  const board = await readFile(join(dir, "board.kicad_pcb"), "utf8").catch(() => null);
+  const boardPath = join(dir, "board.kicad_pcb");
+  const board = await readFile(boardPath, "utf8").catch(() => null);
   const schematic = await readFile(join(dir, "board.kicad_sch"), "utf8").catch(() => null);
-  const drc = countsOf(await readJson(join(dir, "reports", "drc.json")));
-  const erc = countsOf(await readJson(join(dir, "reports", "erc.json")));
-  const spice = spicePassed(await readJson(join(dir, "reports", "spice.json")));
-  const routeFile = routeFilePassed(await readJson(join(dir, "reports", "route.json")));
+  const boardMtime = board ? await mtimeMs(boardPath) : null;
+  const drc = countsOf(await readFreshJson(join(dir, "reports", "drc.json"), boardMtime));
+  const erc = countsOf(await readFreshJson(join(dir, "reports", "erc.json"), boardMtime));
+  const spice = spicePassed(await readFreshJson(join(dir, "reports", "spice.json"), boardMtime));
+  const routeFile = routeFilePassed(await readFreshJson(join(dir, "reports", "route.json"), boardMtime));
 
   const lastRoute = extras.lastRoute;
   const routeFromStore =

@@ -284,4 +284,18 @@ describe("finish-it HTTP", () => {
     await api(`/projects/${project.id}/finish-it/stop`, { method: "POST" });
     await waitForSession(project.id, (s) => s?.status === "stopped" || s?.status === "failed");
   });
+
+  test("two POSTs in flight on the same project yield one run and one 412", async () => {
+    mode = "hang";
+    hangRelease = null;
+    const project = await createProject("Race Board");
+    const [a, b] = await Promise.all([
+      api(`/projects/${project.id}/finish-it`, { method: "POST", body: JSON.stringify({}) }),
+      api(`/projects/${project.id}/finish-it`, { method: "POST", body: JSON.stringify({}) }),
+    ]);
+    const statuses = [a.status, b.status].sort((x, y) => x - y);
+    expect(statuses).toEqual([202, 412]);
+    await api(`/projects/${project.id}/finish-it/stop`, { method: "POST" });
+    await waitForSession(project.id, (s) => s?.status === "stopped" || s?.status === "failed");
+  });
 });

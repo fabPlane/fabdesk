@@ -60,6 +60,7 @@ type Live = {
 
 export class FinishItManager {
   private readonly live = new Map<string, Live>();
+  private readonly starting = new Set<string>();
   private readonly syncTail = new Map<string, Promise<void>>();
   private readonly unsub: () => void;
   private readonly commit: (dir: string, message: string) => Promise<string | null>;
@@ -86,6 +87,21 @@ export class FinishItManager {
   }
 
   async start(input: FinishItStartInput): Promise<FinishItSession> {
+    if (
+      this.starting.has(input.projectId) ||
+      this.live.has(input.projectId) ||
+      this.deps.store.finishIt.activeForProject(input.projectId)
+    )
+      throw new ToolError("a Finish it run is already active on this project", "precondition");
+    this.starting.add(input.projectId);
+    try {
+      return await this.startLocked(input);
+    } finally {
+      this.starting.delete(input.projectId);
+    }
+  }
+
+  private async startLocked(input: FinishItStartInput): Promise<FinishItSession> {
     const project = await this.deps.projects.handle(input.projectId);
     if (!project) throw new ToolError("project not found", "not_found");
     if (this.live.has(project.id) || this.deps.store.finishIt.activeForProject(project.id))

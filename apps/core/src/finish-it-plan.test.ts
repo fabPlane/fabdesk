@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -93,6 +93,29 @@ describe("inspectProject / planMilestones", () => {
     const clean = await inspectProject(dir, { lastRoute: { status: "completed", open: 0 } });
     expect(milestoneDone("verify", clean)).toBe(true);
     expect(remainingMilestones(planMilestones(clean))).toEqual([]);
+  });
+
+  test("ignores DRC/route reports older than the board", async () => {
+    const dir = await tempDir();
+    await writeFile(join(dir, "circuit.netlist.json"), JSON.stringify(NETLIST));
+    await writeFile(join(dir, "board.kicad_pcb"), "(kicad_pcb old)\n");
+    await mkdir(join(dir, "reports"), { recursive: true });
+    await writeFile(join(dir, "reports", "route.json"), JSON.stringify({ ok: true, open: 0 }));
+    await writeFile(
+      join(dir, "reports", "drc.json"),
+      JSON.stringify({ counts: { errors: 0, warnings: 0, unconnected: 0 } }),
+    );
+    const past = new Date(Date.now() - 120_000);
+    const now = new Date();
+    await utimes(join(dir, "reports", "route.json"), past, past);
+    await utimes(join(dir, "reports", "drc.json"), past, past);
+    await writeFile(join(dir, "board.kicad_pcb"), "(kicad_pcb moved footprint)\n");
+    await utimes(join(dir, "board.kicad_pcb"), now, now);
+    const snap = await inspectProject(dir);
+    expect(milestoneDone("route", snap)).toBe(false);
+    expect(milestoneDone("verify", snap)).toBe(false);
+    expect(snap.drcErrors).toBeNull();
+    expect(remainingMilestones(planMilestones(snap))).toEqual(["route", "verify"]);
   });
 
   test("rejects a netlist that does not parse", async () => {
