@@ -136,10 +136,16 @@ export async function inspectProject(
   const boardMtime = board ? await mtimeMs(boardPath) : null;
   const netlistMtime = await mtimeMs(netlistPath);
   const schematicMtime = await newestMtime(schematicFiles);
+  // Git checkout writes files in index order (`board.kicad_pcb` before
+  // `circuit.netlist.json`), so the netlist can be a few ms newer on a
+  // finished clone. Treat sub-second / low-second skew as the same generation.
+  const CHECKOUT_MTIME_SLACK_MS = 2_000;
   const boardCurrent =
     board !== null &&
     board.length > 0 &&
-    (netlistMtime === null || boardMtime === null || boardMtime >= netlistMtime);
+    (netlistMtime === null ||
+      boardMtime === null ||
+      boardMtime + CHECKOUT_MTIME_SLACK_MS >= netlistMtime);
   const reportSource = laterOf(boardMtime, netlistMtime);
   const ercSource = laterOf(schematicMtime, boardMtime);
   const drc = countsOf(await readFreshJson(join(dir, "reports", "drc.json"), reportSource));

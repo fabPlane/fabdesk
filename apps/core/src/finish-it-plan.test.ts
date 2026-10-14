@@ -133,6 +133,18 @@ describe("inspectProject / planMilestones", () => {
     expect(milestoneDone("build", snap)).toBe(false);
   });
 
+  test("a git-checkout mtime skew of a few ms does not mark the board stale", async () => {
+    const dir = await tempDir();
+    await writeFile(join(dir, "board.kicad_pcb"), "(kicad_pcb)\n");
+    await writeFile(join(dir, "circuit.netlist.json"), JSON.stringify(NETLIST));
+    const t0 = Date.now();
+    await utimes(join(dir, "board.kicad_pcb"), new Date(t0), new Date(t0));
+    await utimes(join(dir, "circuit.netlist.json"), new Date(t0 + 40), new Date(t0 + 40));
+    const snap = await inspectProject(dir);
+    expect(snap.hasBoard).toBe(true);
+    expect(milestoneDone("build", snap)).toBe(true);
+  });
+
   test("ignores ERC older than the schematic", async () => {
     const dir = await tempDir();
     await writeFile(join(dir, "circuit.netlist.json"), JSON.stringify(NETLIST));
