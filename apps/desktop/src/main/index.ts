@@ -27,6 +27,7 @@ import { CadRuntimeManager, CadRuntimeConsent } from "./cad-runtime";
 import { unpackCadMacApp, verifyCadMacApp } from "./cad-runtime-mac";
 import { release as osRelease } from "node:os";
 import { PcbSupervisor, resolvePcbBackend } from "./pcb-supervisor";
+import { systemLocaleEnv } from "./system-locales";
 import { resolveWindowTheme, titleBarOverlayFor } from "./window-theme";
 import { OpenCatalogQueue } from "./open-catalog";
 
@@ -205,6 +206,7 @@ if (!app.requestSingleInstanceLock()) {
       ...coreSentryEnv(),
       ...pcbEnv,
       ...cadEnv,
+      ...systemLocaleEnv(app),
       ...(home ? { FABDESK_HOME: home } : {}),
     };
     const cadRuntime = new CadRuntimeManager({
