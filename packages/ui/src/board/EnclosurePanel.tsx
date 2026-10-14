@@ -44,7 +44,7 @@ export function enclosureFromTool(result: unknown): EnclosureView {
   return {
     exists: data["exists"] !== false && (Boolean(alignment) || files.length > 0),
     stale: alignment?.["stale"] === true,
-    ok: alignment?.["ok"] !== false && issues.length === 0,
+    ok: data["exists"] !== false && alignment?.["ok"] !== false && issues.length === 0,
     summary: firstLine(text) || (data["exists"] === false ? "No enclosure yet." : "Enclosure"),
     issues,
     cutouts,

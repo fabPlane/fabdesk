@@ -130,9 +130,11 @@ function box(
   };
 }
 
+type Box3 = { min: { x: number; y: number; z: number }; max: { x: number; y: number; z: number } };
+
 function splitWall(
   name: string,
-  wall: { min: { x: number; y: number; z: number }; max: { x: number; y: number; z: number } },
+  wall: Box3,
   axis: "x" | "y",
   openings: Array<{ start: number; end: number }>,
 ): EnclosureSolid[] {
@@ -162,6 +164,56 @@ function splitWall(
         : { x: wall.max.x, y: span.end, z: wall.max.z },
     ),
   );
+}
+
+function subtractAabb(solid: Box3, hole: Box3): Box3[] {
+  const ix0 = Math.max(solid.min.x, hole.min.x);
+  const iy0 = Math.max(solid.min.y, hole.min.y);
+  const iz0 = Math.max(solid.min.z, hole.min.z);
+  const ix1 = Math.min(solid.max.x, hole.max.x);
+  const iy1 = Math.min(solid.max.y, hole.max.y);
+  const iz1 = Math.min(solid.max.z, hole.max.z);
+  if (ix1 - ix0 <= 0.05 || iy1 - iy0 <= 0.05 || iz1 - iz0 <= 0.05) return [solid];
+  const out: Box3[] = [];
+  if (ix0 - solid.min.x > 0.05)
+    out.push({ min: { ...solid.min }, max: { x: ix0, y: solid.max.y, z: solid.max.z } });
+  if (solid.max.x - ix1 > 0.05)
+    out.push({ min: { x: ix1, y: solid.min.y, z: solid.min.z }, max: { ...solid.max } });
+  if (iy0 - solid.min.y > 0.05)
+    out.push({
+      min: { x: ix0, y: solid.min.y, z: solid.min.z },
+      max: { x: ix1, y: iy0, z: solid.max.z },
+    });
+  if (solid.max.y - iy1 > 0.05)
+    out.push({
+      min: { x: ix0, y: iy1, z: solid.min.z },
+      max: { x: ix1, y: solid.max.y, z: solid.max.z },
+    });
+  if (iz0 - solid.min.z > 0.05)
+    out.push({
+      min: { x: ix0, y: iy0, z: solid.min.z },
+      max: { x: ix1, y: iy1, z: iz0 },
+    });
+  if (solid.max.z - iz1 > 0.05)
+    out.push({
+      min: { x: ix0, y: iy0, z: iz1 },
+      max: { x: ix1, y: iy1, z: solid.max.z },
+    });
+  return out;
+}
+
+function punchWall(name: string, wall: Box3, holes: Box3[]): EnclosureSolid[] {
+  let remain: Box3[] = [wall];
+  for (const hole of holes) remain = remain.flatMap((b) => subtractAabb(b, hole));
+  if (!remain.length) return [];
+  return remain.map((b, i) => box(remain.length === 1 ? name : `${name}_${i + 1}`, "wall", b.min, b.max));
+}
+
+function connectorAlong(c: { edge: BoardEdge; x: number; y: number; bounds: Rect }): number {
+  const cx = (c.bounds.minX + c.bounds.maxX) / 2;
+  const cy = (c.bounds.minY + c.bounds.maxY) / 2;
+  const along = c.edge === "minX" || c.edge === "maxX" ? cy : cx;
+  return Number.isFinite(along) ? along : c.edge === "minX" || c.edge === "maxX" ? c.y : c.x;
 }
 
 /** Build a two-piece case whose cutouts and standoffs track the current board features. */
@@ -198,7 +250,7 @@ export function generateEnclosure(
     const widthMm = mm(c.widthMm + 2 * params.cutoutClearanceMm);
     const heightMm = mm(c.heightMm + 2 * params.cutoutClearanceMm);
     const z = mm(params.floorMm + params.standoffMm + features.thicknessMm + c.heightMm / 2);
-    const along = c.edge === "minX" || c.edge === "maxX" ? c.y : c.x;
+    const along = connectorAlong(c);
     const wall =
       c.edge === "minX" ? inner.minX : c.edge === "maxX" ? inner.maxX : c.edge === "minY" ? inner.minY : inner.maxY;
     return {
@@ -233,51 +285,49 @@ export function generateEnclosure(
     ),
   ];
 
-  const openingsFor = (edge: BoardEdge): Array<{ start: number; end: number }> =>
+  const wallBox = (
+    min: { x: number; y: number; z: number },
+    max: { x: number; y: number; z: number },
+  ): Box3 => ({ min, max });
+  const holesFor = (edge: BoardEdge, wall: Box3): Box3[] =>
     cutouts
       .filter((c) => c.edge === edge)
       .map((c) => {
-        const mid = edge === "minX" || edge === "maxX" ? c.center.y : c.center.x;
-        return { start: mid - c.widthMm / 2, end: mid + c.widthMm / 2 };
+        const halfW = c.widthMm / 2;
+        const halfH = c.heightMm / 2;
+        if (edge === "minY" || edge === "maxY") {
+          return {
+            min: { x: c.center.x - halfW, y: wall.min.y, z: c.center.z - halfH },
+            max: { x: c.center.x + halfW, y: wall.max.y, z: c.center.z + halfH },
+          };
+        }
+        return {
+          min: { x: wall.min.x, y: c.center.y - halfW, z: c.center.z - halfH },
+          max: { x: wall.max.x, y: c.center.y + halfW, z: c.center.z + halfH },
+        };
       });
 
+  const minY = wallBox(
+    { x: outer.minX, y: outer.minY, z: inner.z0 },
+    { x: outer.maxX, y: inner.minY, z: inner.z1 },
+  );
+  const maxY = wallBox(
+    { x: outer.minX, y: inner.maxY, z: inner.z0 },
+    { x: outer.maxX, y: outer.maxY, z: inner.z1 },
+  );
+  const minX = wallBox(
+    { x: outer.minX, y: inner.minY, z: inner.z0 },
+    { x: inner.minX, y: inner.maxY, z: inner.z1 },
+  );
+  const maxX = wallBox(
+    { x: inner.maxX, y: inner.minY, z: inner.z0 },
+    { x: outer.maxX, y: inner.maxY, z: inner.z1 },
+  );
   solids.push(
-    ...splitWall(
-      "EnclosureWallMinY",
-      {
-        min: { x: outer.minX, y: outer.minY, z: inner.z0 },
-        max: { x: outer.maxX, y: inner.minY, z: inner.z1 },
-      },
-      "x",
-      openingsFor("minY"),
-    ),
-    ...splitWall(
-      "EnclosureWallMaxY",
-      {
-        min: { x: outer.minX, y: inner.maxY, z: inner.z0 },
-        max: { x: outer.maxX, y: outer.maxY, z: inner.z1 },
-      },
-      "x",
-      openingsFor("maxY"),
-    ),
-    ...splitWall(
-      "EnclosureWallMinX",
-      {
-        min: { x: outer.minX, y: inner.minY, z: inner.z0 },
-        max: { x: inner.minX, y: inner.maxY, z: inner.z1 },
-      },
-      "y",
-      openingsFor("minX"),
-    ),
-    ...splitWall(
-      "EnclosureWallMaxX",
-      {
-        min: { x: inner.maxX, y: inner.minY, z: inner.z0 },
-        max: { x: outer.maxX, y: inner.maxY, z: inner.z1 },
-      },
-      "y",
-      openingsFor("maxX"),
-    ),
+    ...punchWall("EnclosureWallMinY", minY, holesFor("minY", minY)),
+    ...punchWall("EnclosureWallMaxY", maxY, holesFor("maxY", maxY)),
+    ...punchWall("EnclosureWallMinX", minX, holesFor("minX", minX)),
+    ...punchWall("EnclosureWallMaxX", maxX, holesFor("maxX", maxX)),
   );
 
   for (const s of standoffs) {
@@ -364,7 +414,7 @@ export function checkEnclosureAlignment(
       });
       continue;
     }
-    const along = live.edge === "minX" || live.edge === "maxX" ? live.y : live.x;
+    const along = connectorAlong(live);
     const specAlong = cut.edge === "minX" || cut.edge === "maxX" ? cut.center.y : cut.center.x;
     if (Math.abs(along - specAlong) > CUTOUT_POS_TOL_MM)
       issues.push({

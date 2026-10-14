@@ -42,8 +42,10 @@ describe("generateEnclosure", () => {
     const spec = generateEnclosure(features);
     const moved = structuredClone(features);
     const j1 = moved.connectors.find((c) => c.ref === "J1")!;
+    const dx = 6;
     j1.x = 31;
     j1.y = 0;
+    j1.bounds = { ...j1.bounds, minX: j1.bounds.minX + dx, maxX: j1.bounds.maxX + dx };
     const report = checkEnclosureAlignment(spec, moved);
     expect(report.ok).toBe(false);
     expect(report.issues.some((i) => i.code === "moved-cutout" && i.ref === "J1")).toBe(true);
@@ -62,6 +64,41 @@ describe("generateEnclosure", () => {
     const usb = refreshed.cutouts.find((c) => c.ref === "J1")!;
     expect(usb.center.x).toBe(31);
     expect(checkEnclosureAlignment(refreshed, after).ok).toBe(true);
+  });
+
+  test("centres a pin-1-origin header cutout on the body, not the origin", () => {
+    const board = `(kicad_pcb (version 20260831) (general (thickness 1.6))
+      (gr_rect (start 0 0) (end 40 20) (layer "Edge.Cuts"))
+      (footprint "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical"
+        (layer "F.Cu") (at 10 0 90)
+        (property "Reference" "J3")
+        (pad "1" thru_hole circle (at 0 0) (size 1.7 1.7) (drill 1))
+        (pad "2" thru_hole circle (at 0 2.54) (size 1.7 1.7) (drill 1))
+        (pad "3" thru_hole circle (at 0 5.08) (size 1.7 1.7) (drill 1))
+        (pad "4" thru_hole circle (at 0 7.62) (size 1.7 1.7) (drill 1))))`;
+    const features = extractBoardFeatures(board);
+    const spec = generateEnclosure(features);
+    const cut = spec.cutouts.find((c) => c.ref === "J3")!;
+    const bodyMid = (features.connectors[0]!.bounds.minX + features.connectors[0]!.bounds.maxX) / 2;
+    expect(cut.center.x).toBeCloseTo(bodyMid, 3);
+    expect(cut.center.x).not.toBeCloseTo(10, 0);
+    expect(checkEnclosureAlignment(spec, features).ok).toBe(true);
+  });
+
+  test("punches a window at the cutout height instead of a floor-to-lid slot", () => {
+    const spec = generateEnclosure(extractBoardFeatures(fixture));
+    const usb = spec.cutouts.find((c) => c.ref === "J1")!;
+    const zLo = usb.center.z - usb.heightMm / 2 + 0.05;
+    const zHi = usb.center.z + usb.heightMm / 2 - 0.05;
+    const walls = spec.solids.filter((s) => s.role === "wall");
+    const covers = (x: number, y: number, z: number) =>
+      walls.some((s) => x >= s.min.x && x <= s.max.x && y >= s.min.y && y <= s.max.y && z >= s.min.z && z <= s.max.z);
+    const wallY = (spec.outer.minY + spec.inner.minY) / 2;
+    expect(covers(usb.center.x, wallY, usb.center.z)).toBe(false);
+    expect(covers(usb.center.x, wallY, zLo)).toBe(false);
+    expect(covers(usb.center.x, wallY, zHi)).toBe(false);
+    expect(covers(usb.center.x, wallY, spec.inner.z0 + 0.1)).toBe(true);
+    expect(covers(usb.center.x, wallY, spec.inner.z1 - 0.1)).toBe(true);
   });
 });
 

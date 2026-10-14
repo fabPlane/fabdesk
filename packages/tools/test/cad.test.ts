@@ -300,5 +300,14 @@ describe("cad_enclosure", () => {
     expect(out.text).toContain("No enclosure yet");
     expect((out.json as { exists: boolean; features: { holes: number } }).features.holes).toBe(1);
   });
+
+  test("status on a project without a board is not an error", async () => {
+    const { invoke } = await setup();
+    const out = await invoke("cad_enclosure", { action: "status" });
+    expect(out.isError).toBeUndefined();
+    expect(out.text).toMatch(/no board\.kicad_pcb/i);
+    expect((out.json as { exists: boolean; noBoard: boolean }).exists).toBe(false);
+    expect((out.json as { noBoard: boolean }).noBoard).toBe(true);
+  });
 });
 

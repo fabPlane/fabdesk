@@ -45,6 +45,21 @@ describe("EnclosureScreen", () => {
 });
 
 describe("enclosureFromTool", () => {
+  test("status without a board is an empty state, not a red alert", () => {
+    const fromHttp = enclosureFromTool({
+      ok: true,
+      text: "No board.kicad_pcb yet. Add a board to generate an enclosure.",
+      json: { exists: false, noBoard: true },
+    });
+    expect(fromHttp.exists).toBe(false);
+    expect(fromHttp.summary).toMatch(/No board/);
+    const out = html(fromHttp);
+    expect(out).toContain("No board.kicad_pcb yet");
+    expect(out).not.toContain("In sync");
+    expect(out).not.toContain("role=\"alert\"");
+    expect(out).not.toContain("board.kicad_pcb not found");
+  });
+
   test("reads the HTTP tool envelope and a bare json payload", () => {
     const fromHttp = enclosureFromTool({
       ok: true,

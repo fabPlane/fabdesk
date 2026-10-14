@@ -19,7 +19,7 @@ import {
 import { PROJECT_FILES, projectRelative, readJsonOrNull, writeAtomic, writeJson } from "../fs";
 import { defineTool, ToolError, type ProjectHandle } from "../registry";
 import type { CadService } from "../services";
-import { ok, p, requireBoard, table } from "./common";
+import { findBoard, ok, p, requireBoard, table } from "./common";
 
 const ENCLOSURE_NAME = z
   .string()
@@ -141,6 +141,22 @@ export const cad_enclosure = defineTool({
   annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
   handler: async (args, ctx) => {
     const project = ctx.requireProject();
+    if (args.action === "status") {
+      const board = await findBoard(project);
+      if (!board) {
+        const spec = await loadSpec(project);
+        if (!spec)
+          return ok("No board.kicad_pcb yet. Add a board to generate an enclosure.", {
+            exists: false,
+            noBoard: true,
+          });
+        return ok("Enclosure exists, but this project has no board.kicad_pcb.", {
+          exists: true,
+          noBoard: true,
+          stale: true,
+        });
+      }
+    }
     const features = await loadFeatures(project);
     if (args.action === "status" || args.action === "check") {
       const spec = await loadSpec(project);
