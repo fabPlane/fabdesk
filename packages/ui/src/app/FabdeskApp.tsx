@@ -1,7 +1,7 @@
 import { useEffect, useMemo, type ReactNode } from "react";
 import { LoginScreen } from "../auth/LoginScreen";
 import { Button, Spinner } from "../components/ui";
-import { useCore, useSettings, type HostAdapter } from "@fabdesk/client-core";
+import { useCore, usePrivacy, useSettings, type HostAdapter } from "@fabdesk/client-core";
 import { CoreProvider } from "../core/CoreProvider";
 import { browserHost } from "../core/host";
 import type { CoreClient } from "@fabdesk/client-core";
@@ -17,6 +17,7 @@ import { DRAFT_KEY_NEW, useUiStore } from "../stores/ui";
 import type { CoreStatusInfo } from "./types";
 import { useAppActions } from "./useAppActions";
 import { FirstInstallPrivacy } from "./FirstInstallPrivacy";
+import { needsPrivacyScreen, privacyScreenRequired } from "./privacy-gate";
 
 export interface FabdeskAppProps {
   client: CoreClient;
@@ -41,6 +42,7 @@ function AppInner({ coreStatus, onRestartCore }: { coreStatus?: CoreStatusInfo |
   useTheme();
   const auth = useAuthState();
   const settings = useSettings();
+  const privacyScreen = privacyScreenRequired(usePrivacy());
   const authState = useAuthStore((s) => s.state);
   const setLocalAllowed = useAuthStore((s) => s.setLocalAllowed);
   const actions = useAppActions();
@@ -102,7 +104,7 @@ function AppInner({ coreStatus, onRestartCore }: { coreStatus?: CoreStatusInfo |
       <div className="border-b border-warning/40 bg-warning/10 px-3 py-1 text-xs">Reconnecting to core events...</div>
     ) : null;
 
-  if (!authState || !settings.data) {
+  if (!authState || !settings.data || privacyScreen === null) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 bg-bg text-sm text-muted">
         <Spinner />
@@ -120,7 +122,7 @@ function AppInner({ coreStatus, onRestartCore }: { coreStatus?: CoreStatusInfo |
       </div>
     );
   }
-  if (!settings.data.usageArchiveChoiceComplete) return <FirstInstallPrivacy />;
+  if (needsPrivacyScreen(settings.data, privacyScreen)) return <FirstInstallPrivacy />;
   if (authState.status !== "signed_in") return <LoginScreen />;
   return (
     <>
