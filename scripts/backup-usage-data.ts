@@ -1,6 +1,8 @@
-/** Backfill the opt-in usage archive from Fabdesk's current local database. */
+/** Backfill the usage archive from Fabdesk's current local database. */
+import { usageArchiveAllowed } from "@fabdesk/protocol";
 import { resolveConfig } from "../apps/core/src/config";
 import { Store } from "../apps/core/src/db";
+import { resolvePrivacyStatus } from "../apps/core/src/privacy-gate";
 import { UsageArchive } from "../apps/core/src/usage-archive";
 
 async function main(): Promise<void> {
@@ -14,10 +16,9 @@ async function main(): Promise<void> {
   }
   const store = Store.open(resolveConfig().dbPath);
   try {
-    if (!store.settings.get().usageArchiveChoiceComplete || !store.settings.get().usageArchiveConsent) {
-      throw new Error("enable Usage data backup in Fabdesk Settings > Privacy before exporting");
-    }
-    const allowed = () => store.settings.get().usageArchiveChoiceComplete && store.settings.get().usageArchiveConsent;
+    const { firstInstallScreen } = resolvePrivacyStatus({ settings: store.settings });
+    const allowed = () => usageArchiveAllowed(store.settings.get(), firstInstallScreen);
+    if (!allowed()) throw new Error("enable Share usage data in Fabdesk Settings > Privacy before exporting");
     if (destination === "--remote") {
       const config = resolveConfig();
       const { createAuth } = await import("../apps/core/src/auth-facade");

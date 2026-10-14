@@ -33,6 +33,7 @@ import type {
   BoardCommentsFile,
   CreateBoardComment,
   PatchBoardComment,
+  PrivacyStatus,
   ProjectDetail,
   ProjectSummary,
   RemixResult,
@@ -578,6 +579,9 @@ export class CoreClient {
   }
   getSettings(): Promise<Settings> {
     return this.request("/settings");
+  }
+  getPrivacy(): Promise<PrivacyStatus> {
+    return this.request("/privacy");
   }
   patchSettings(patch: Partial<Settings>): Promise<Settings> {
     return this.request("/settings", { method: "PATCH", json: patch });
