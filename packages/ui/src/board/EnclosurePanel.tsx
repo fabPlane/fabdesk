@@ -66,7 +66,7 @@ export function enclosureFromTool(result: unknown): EnclosureView {
   return {
     exists: data["exists"] !== false && (Boolean(alignment) || files.length > 0),
     stale: alignment?.["stale"] === true,
-    ok: alignment?.["ok"] !== false && issues.length === 0,
+    ok: data["exists"] !== false && alignment?.["ok"] !== false && issues.length === 0,
     summary: firstLine(text) || (data["exists"] === false ? "No enclosure yet." : "Enclosure"),
     issues,
     cutouts,
@@ -126,7 +126,8 @@ function firstLine(text: string): string {
   return text.split("\n").find((l) => l.trim()) ?? "";
 }
 
-function parseMm(value: string, fallback: number): number {
+export function parseMm(value: string, fallback: number): number {
+  if (value.trim() === "") return fallback;
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
 }
@@ -261,7 +262,7 @@ export function EnclosureScreen({
       )}
       {view?.previewSvg && (
         <div
-          className="mt-2 overflow-hidden rounded-md border border-border bg-bg"
+          className="mt-2 max-w-full overflow-auto rounded-md border border-border bg-bg [&_svg]:h-auto [&_svg]:max-w-full"
           data-testid="enclosure-preview"
           dangerouslySetInnerHTML={{ __html: view.previewSvg }}
         />

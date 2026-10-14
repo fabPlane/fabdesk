@@ -200,10 +200,10 @@ export function previewEnclosureSvg(spec: EnclosureSpec): string {
     params.ventPattern === "none" ? "vents off" : `${vents.length} ${params.ventPattern} vent(s)`;
   const snapNote = params.snapFit ? `${clips.length} snap clip(s)` : "no snap-fits";
   return [
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${panelW * 2} ${panelH}" width="880" height="400" data-testid="enclosure-preview-svg" role="img" aria-label="Enclosure preview">`,
-    `<rect width="100%" height="100%" fill="#191d1a"/>`,
-    `<text x="${pad}" y="16" fill="#eef3e9" font-size="11" font-family="Inter, system-ui, sans-serif">Plan · offset ${offsetMm} mm · clearance ${clearanceMm} mm</text>`,
-    `<text x="${panelW + pad}" y="16" fill="#eef3e9" font-size="11" font-family="Inter, system-ui, sans-serif">Isometric · ${ventNote} · ${snapNote}</text>`,
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${panelW * 2} ${panelH}" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" data-testid="enclosure-preview-svg" role="img" aria-label="Enclosure preview">`,
+    `<rect width="100%" height="100%" fill="var(--bg, #191d1a)"/>`,
+    `<text x="${pad}" y="16" fill="var(--fg, #eef3e9)" font-size="11" font-family="Inter, system-ui, sans-serif">Plan · offset ${offsetMm} mm · clearance ${clearanceMm} mm</text>`,
+    `<text x="${panelW + pad}" y="16" fill="var(--fg, #eef3e9)" font-size="11" font-family="Inter, system-ui, sans-serif">Isometric · ${ventNote} · ${snapNote}</text>`,
     `<g data-view="plan">${plan.join("")}</g>`,
     `<g data-view="iso">${isoMarkup}</g>`,
     `</svg>`,

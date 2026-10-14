@@ -101,6 +101,7 @@ export {
   punchRects,
   writeBoxesStep,
   isEnclosureSpec,
+  normalizeEnclosureSpec,
   enclosureSummary,
   type AlignmentIssue,
   type AlignmentReport,

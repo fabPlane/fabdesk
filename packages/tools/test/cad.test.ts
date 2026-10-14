@@ -329,6 +329,9 @@ describe("cad_enclosure", () => {
     expect(await readFile(join(project.dir, json.stl), "utf8")).toStartWith("solid fabplane_enclosure_base");
     expect(await readFile(join(project.dir, json.step), "utf8")).toContain("ISO-10303-21;");
     expect(json.outerMm.width).toBeCloseTo(40 + 2 * (1.5 + 2) + 2 * 2, 4);
+    const status = await invoke("cad_enclosure", { action: "status" });
+    expect((status.json as { preview?: string; previewSvg?: string }).preview).toBe(json.preview);
+    expect((status.json as { previewSvg?: string }).previewSvg).toBeUndefined();
   });
 
   test("status without a spec lists board features", async () => {
@@ -337,6 +340,15 @@ describe("cad_enclosure", () => {
     const out = await invoke("cad_enclosure", { action: "status" });
     expect(out.text).toContain("No enclosure yet");
     expect((out.json as { exists: boolean; features: { holes: number } }).features.holes).toBe(1);
+  });
+
+  test("status on a project without a board is not an error", async () => {
+    const { invoke } = await setup();
+    const out = await invoke("cad_enclosure", { action: "status" });
+    expect(out.isError).toBeUndefined();
+    expect(out.text).toMatch(/no board\.kicad_pcb/i);
+    expect((out.json as { exists: boolean; noBoard: boolean }).exists).toBe(false);
+    expect((out.json as { noBoard: boolean }).noBoard).toBe(true);
   });
 });
 

@@ -38,9 +38,14 @@ export async function requireKicad(ctx: ToolContext): Promise<KicadCli> {
   return cli;
 }
 
-export async function requireBoard(project: ProjectHandle): Promise<string> {
+export async function findBoard(project: ProjectHandle): Promise<string | null> {
   const board = p(project, PROJECT_FILES.boardPcb);
-  if (!(await exists(board))) throw new ToolError("board.kicad_pcb not found", "precondition");
+  return (await exists(board)) ? board : null;
+}
+
+export async function requireBoard(project: ProjectHandle): Promise<string> {
+  const board = await findBoard(project);
+  if (!board) throw new ToolError("board.kicad_pcb not found", "precondition");
   return board;
 }
 

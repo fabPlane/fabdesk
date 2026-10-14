@@ -11,6 +11,7 @@ import {
   enclosureSummary,
   generateEnclosure,
   isEnclosureSpec,
+  normalizeEnclosureSpec,
   meshEnclosure,
   previewEnclosureSvg,
   type AlignmentReport,
@@ -22,7 +23,7 @@ import {
 import { PROJECT_FILES, projectRelative, readJsonOrNull, writeAtomic, writeJson } from "../fs";
 import { defineTool, ToolError, type ProjectHandle } from "../registry";
 import type { CadService } from "../services";
-import { ok, p, requireBoard, table } from "./common";
+import { findBoard, ok, p, requireBoard, table } from "./common";
 
 const ENCLOSURE_NAME = z
   .string()
@@ -37,7 +38,7 @@ async function loadFeatures(project: ProjectHandle) {
 
 async function loadSpec(project: ProjectHandle): Promise<EnclosureSpec | null> {
   const raw = await readJsonOrNull<unknown>(p(project, PROJECT_FILES.enclosure));
-  return isEnclosureSpec(raw) ? raw : null;
+  return normalizeEnclosureSpec(raw) ?? (isEnclosureSpec(raw) ? raw : null);
 }
 
 function placement(x: number, y: number, z: number) {
@@ -159,6 +160,22 @@ export const cad_enclosure = defineTool({
   annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
   handler: async (args, ctx) => {
     const project = ctx.requireProject();
+    if (args.action === "status") {
+      const board = await findBoard(project);
+      if (!board) {
+        const spec = await loadSpec(project);
+        if (!spec)
+          return ok("No board.kicad_pcb yet. Add a board to generate an enclosure.", {
+            exists: false,
+            noBoard: true,
+          });
+        return ok("Enclosure exists, but this project has no board.kicad_pcb.", {
+          exists: true,
+          noBoard: true,
+          stale: true,
+        });
+      }
+    }
     const features = await loadFeatures(project);
     if (args.action === "status" || args.action === "check") {
       const spec = await loadSpec(project);
@@ -173,7 +190,7 @@ export const cad_enclosure = defineTool({
         );
       }
       const alignment = checkEnclosureAlignment(spec, features);
-      const payload = resultPayload(project, spec, alignment, args.name, features);
+      const payload = resultPayload(project, spec, alignment, args.name, features, false);
       if (args.action === "check" && !alignment.ok)
         return ok(enclosureSummary(spec, alignment), payload, { isError: true });
       return ok(enclosureSummary(spec, alignment), payload);
@@ -218,7 +235,7 @@ export const cad_enclosure = defineTool({
       }
     }
     const payload = {
-      ...resultPayload(project, spec, alignment, args.name, features),
+      ...resultPayload(project, spec, alignment, args.name, features, true),
       generated: true,
       appliedToCad,
       cadObjects,
@@ -252,6 +269,7 @@ function resultPayload(
   alignment: AlignmentReport,
   name: string,
   features: Awaited<ReturnType<typeof loadFeatures>>,
+  includePreviewSvg = false,
 ) {
   const files = filesJson(project, name);
   return {
@@ -261,7 +279,7 @@ function resultPayload(
     lidStl: files.lidStl,
     step: files.step,
     preview: files.preview,
-    previewSvg: previewEnclosureSvg(spec),
+    ...(includePreviewSvg ? { previewSvg: previewEnclosureSvg(spec) } : {}),
     pcbRevision: spec.pcbRevision,
     alignment,
     board: summarizeFeatures(features),
