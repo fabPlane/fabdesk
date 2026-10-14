@@ -93,6 +93,16 @@ export async function readJsonOrNull<T = unknown>(path: string): Promise<T | nul
   }
 }
 
+/** Null only when the file is absent. Malformed JSON and other read errors throw. */
+export async function readJsonIfPresent<T = unknown>(path: string): Promise<T | null> {
+  try {
+    return await readJson<T>(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+}
+
 /** Atomic write: temp file + rename, creating parent dirs. */
 export async function writeAtomic(path: string, data: string | Uint8Array): Promise<void> {
   await mkdir(dirname(path), { recursive: true });

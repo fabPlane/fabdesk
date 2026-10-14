@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createRegistry, makeContext, type ProjectHandle } from "../src";
 import { mockServices, tempProject } from "./mock-services";
@@ -81,5 +81,16 @@ describe("off-board parts tools", () => {
       parts: Array<{ ref: string; qty: number }>;
     };
     expect(parts.parts).toEqual([expect.objectContaining({ ref: "H1", qty: 8 })]);
+  });
+
+  test("parts_add does not overwrite a malformed project.parts.json", async () => {
+    const { project, invoke } = await setup();
+    const path = join(project.dir, "project.parts.json");
+    const bad = `{ "schema": 1, "parts": [], }\n`;
+    await writeFile(path, bad);
+    await expect(invoke("parts_add", { catalogId: "nema-17-stepper" })).rejects.toMatchObject({
+      code: "precondition",
+    });
+    expect(await readFile(path, "utf8")).toBe(bad);
   });
 });

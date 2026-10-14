@@ -25,7 +25,7 @@ import {
   type Org,
   type ShoppingListResponse,
 } from "@fabdesk/protocol";
-import { PROJECT_FILES, readJsonOrNull } from "../fs";
+import { PROJECT_FILES, readJsonIfPresent, readJsonOrNull } from "../fs";
 import { ToolError } from "../registry";
 import {
   CloudSignedOutError,
@@ -293,7 +293,13 @@ export async function readNetlistOrNull(project: CloudProject): Promise<NetlistF
 }
 
 export async function readProjectParts(project: CloudProject): Promise<ProjectPartsFile> {
-  const raw = await readJsonOrNull<unknown>(join(project.dir, PROJECT_FILES.projectParts));
+  let raw: unknown;
+  try {
+    raw = await readJsonIfPresent<unknown>(join(project.dir, PROJECT_FILES.projectParts));
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    throw new ToolError(`${PROJECT_FILES.projectParts} is not valid JSON: ${msg}`, "precondition");
+  }
   if (raw === null) return emptyProjectParts();
   const parsed = ProjectPartsFile.safeParse(raw);
   if (!parsed.success)
