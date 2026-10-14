@@ -19,6 +19,7 @@ import { useCoreClient } from "@fabdesk/client-core";
 import { useProject, useRunTool } from "@fabdesk/client-core";
 import { Button, EmptyState, Select } from "../components/ui";
 import { useUiStore } from "../stores/ui";
+import { buildSketchPngFile } from "./art-sketch-upload";
 
 const SIZES: Array<{ label: string; w: number; h: number }> = [
   { label: "50 × 50 mm", w: 50, h: 50 },
@@ -127,8 +128,9 @@ export function ArtTab() {
     setNote(null);
     try {
       let image = sourceName && sourceName.startsWith("sketches/") ? sourceName : undefined;
-      if (localFile) {
-        const { path } = await client.uploadSketch(projectId, localFile, localFile.name);
+      if (localFile && gray) {
+        const png = await buildSketchPngFile(gray, localFile.name);
+        const { path } = await client.uploadSketch(projectId, png, png.name);
         image = path.replace(/^\//, "");
         setSourceName(image);
         setLocalFile(null);
@@ -159,25 +161,32 @@ export function ArtTab() {
 
   const newProject = async () => {
     if (!gray) return;
+    setError(null);
+    setNote(null);
     const created = await client.createProject(sourceName ? `Art ${sourceName}` : "Board art");
     useUiStore.getState().setActiveProject(created.id);
     await qc.invalidateQueries({ queryKey: ["projects"] });
-    const file = localFile ?? (gray ? new File([await grayToPng(gray)], "art.png", { type: "image/png" }) : null);
-    if (file) {
-      const { path } = await client.uploadSketch(created.id, file, file.name);
-      await tool.run("silk_art", {
-        projectId: created.id,
-        image: path.replace(/^\//, ""),
-        style,
-        widthMm,
-        heightMm,
-        color,
-        outline,
-        invert,
-        threshold,
-        layers,
-      });
+    const png = await buildSketchPngFile(gray, localFile?.name ?? sourceName);
+    const { path } = await client.uploadSketch(created.id, png, png.name);
+    const result = await tool.run("silk_art", {
+      projectId: created.id,
+      image: path.replace(/^\//, ""),
+      style,
+      widthMm,
+      heightMm,
+      color,
+      outline,
+      invert,
+      threshold,
+      layers,
+    });
+    if (result.status === "failed") {
+      setError(result.error ?? "silk_art failed");
+      return;
     }
+    await qc.invalidateQueries({ queryKey: ["project", created.id] });
+    await qc.invalidateQueries({ queryKey: ["file", created.id] });
+    setLocalFile(null);
     setNote(`Created project ${created.name}.`);
   };
 
@@ -286,6 +295,7 @@ export function ArtTab() {
             size="sm"
             variant="primary"
             disabled={!gray || !projectId || tool.state.status === "running"}
+            aria-disabled={!gray || !projectId || tool.state.status === "running"}
             onClick={() => void saveProject()}
             data-testid="board-art-save"
           >
@@ -313,22 +323,3 @@ export function ArtTab() {
   );
 }
 
-async function grayToPng(img: GrayImage): Promise<Blob> {
-  const canvas = document.createElement("canvas");
-  canvas.width = img.width;
-  canvas.height = img.height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("could not encode preview");
-  const pix = ctx.createImageData(img.width, img.height);
-  for (let i = 0; i < img.pixels.length; i++) {
-    const v = img.pixels[i] ?? 0;
-    pix.data[i * 4] = v;
-    pix.data[i * 4 + 1] = v;
-    pix.data[i * 4 + 2] = v;
-    pix.data[i * 4 + 3] = 255;
-  }
-  ctx.putImageData(pix, 0, 0);
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
-  if (!blob) throw new Error("could not encode PNG");
-  return blob;
-}
