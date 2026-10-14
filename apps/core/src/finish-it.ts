@@ -321,7 +321,14 @@ export class FinishItManager {
   private async snapshot(project: ProjectHandle): Promise<FinishItSnapshot> {
     const route = this.deps.store.routeRuns.latest(project.id);
     const lastRoute: FinishItRouteHint | null = route
-      ? { status: route.status, open: route.result?.open.length ?? null }
+      ? {
+          status: route.status,
+          open: route.result?.open.length ?? null,
+          applied: route.application.state === "applied",
+          ...(route.application.resultingPcbRevision
+            ? { pcbRevision: route.application.resultingPcbRevision }
+            : {}),
+        }
       : null;
     return inspectProject(project.dir, { ...(lastRoute ? { lastRoute } : {}) });
   }
