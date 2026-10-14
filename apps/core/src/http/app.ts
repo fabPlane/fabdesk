@@ -28,6 +28,7 @@ import {
   type Health,
   type Me,
   type PairClaimResult,
+  type PrivacyStatus,
   type RelayPhase,
   type RemoteStatus,
   type TailscaleState,
@@ -106,6 +107,8 @@ export type AppDeps = {
   tailscale?: TailscaleProvider;
   /** After a successful `PATCH /settings`, e.g. to push the portable slice to fabplane.com. */
   onSettingsChanged?: (settings: Settings) => void;
+  /** Whether undecided installations must answer the first-install privacy screen. */
+  privacy?: () => PrivacyStatus;
 };
 
 export type Env = { Variables: { token?: string; principalSubject?: string } };
@@ -958,6 +961,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
 
   /* ---------- settings ---------- */
   app.get("/settings", (c) => c.json(deps.store.settings.get()));
+  app.get("/privacy", (c) => (deps.privacy ? c.json(deps.privacy()) : c.json({ error: "not found" }, 404)));
   app.patch("/settings", async (c) => {
     const raw: unknown = await c.req.json();
     // `.partial()` still fills every defaulted key, so a `{ theme }` patch would otherwise reset the
