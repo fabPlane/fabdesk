@@ -224,9 +224,24 @@ body {
   .fd-empty-hero h1 { font-size: 27px; }
   .fd-composer-hint { font-size: 9px; }
 }
-.fd-board-heading { display: flex; align-items: center; gap: 9px; min-height: 48px; padding: 0 16px; font-size: 12px; font-weight: 500; color: var(--fd-fg); border-bottom: 1px solid var(--fd-border); }
-.fd-board-heading > span:first-of-type { white-space: nowrap; }
-.fd-board-heading { flex-shrink: 0; }
+.fd-board-heading { display: flex; align-items: center; gap: 10px; min-height: 64px; padding: 10px 14px; color: var(--fd-fg); flex-shrink: 0; }
+.fd-board-mark { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; flex-shrink: 0; border: 1px solid var(--fd-border); border-radius: 9px; background: var(--fd-panel); color: var(--fd-muted); }
+.fd-board-eyebrow { font-size: 10px; line-height: 16px; color: var(--fd-muted); }
+.fd-board-title { font-size: 13px; font-weight: 600; line-height: 20px; letter-spacing: -.01em; }
+.fd-board-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; margin-left: auto; }
+.fd-board-controls { min-height: 44px; margin-bottom: 10px; border-bottom: 1px solid var(--fd-border); }
+.fd-tabs-underline { gap: 2px; }
+.fd-tabs-underline .fd-underline-tab { position: relative; height: 43px; color: var(--fd-muted); background: transparent; border-radius: 0; box-shadow: none; }
+.fd-tabs-underline .fd-underline-tab:hover { color: var(--fd-fg); background: color-mix(in srgb, var(--fd-panel-2) 40%, transparent); }
+.fd-tabs-underline .fd-underline-tab[aria-selected="true"] { color: var(--fd-fg); font-weight: 600; }
+.fd-tabs-underline .fd-underline-tab[aria-selected="true"]::after { content: ""; position: absolute; bottom: 0; left: 10px; right: 10px; height: 2px; border-radius: 2px 2px 0 0; background: var(--fd-accent); }
+.fd-tabs-underline .fd-underline-tab:focus-visible { outline: 2px solid var(--fd-accent); outline-offset: -4px; border-radius: 5px; }
+@container (max-width: 440px) {
+  .fd-board-heading { flex-wrap: wrap; gap: 8px; }
+  .fd-board-mark { display: none; }
+  .fd-board-heading > .min-w-0 { flex-basis: calc(100% - 42px); }
+  .fd-board-actions { width: 100%; justify-content: flex-end; }
+}
 .fd-board-stage { margin: 0 10px 10px; overflow: hidden; border: 1px solid var(--fd-border); border-radius: 10px; background: var(--fd-panel); }
 .fd-canvas-empty { background-color: var(--fd-panel); background-image: radial-gradient(color-mix(in srgb, var(--fd-muted) 13%, transparent) .7px, transparent .7px); background-size: 20px 20px; }
 .fd-canvas-empty .fd-empty-state { padding: 24px; }

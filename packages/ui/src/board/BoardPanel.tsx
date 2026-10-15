@@ -52,13 +52,32 @@ export function BoardPanel() {
   return (
     <div className="fd-board-panel flex h-full min-w-0 flex-col bg-panel" data-testid="board-panel">
       <div className="fd-board-heading">
-        <Icon name="panel" width={16} height={16} />
-        <span>Board workspace</span>
-        {project && <span className="ml-auto min-w-0 truncate text-[11px] text-muted" title={project.name}>{project.name}</span>}
+        <span className="fd-board-mark"><Icon name="panel" width={18} height={18} /></span>
+        <div className="min-w-0 flex-1">
+          <div className="fd-board-eyebrow">Board workspace</div>
+          <div className="fd-board-title truncate" title={project?.name}>{project?.name ?? "Select a project"}</div>
+        </div>
+        <div className="fd-board-actions">
+          {order.data && (order.data.hasKicadPcb || order.data.hasRouted || order.data.ready) && (
+            <Button
+              size="sm"
+              variant={order.data.ready ? "primary" : "ghost"}
+              onClick={() => setOrderFlowOpen(true)}
+              title={order.data.ready ? "Board checks passed" : order.data.reasons.join(" ")}
+              data-testid="order-now"
+            >
+              {order.data.ready ? "Order now" : "Order checks"}
+            </Button>
+          )}
+          <IconButton size="sm" title={`Hide board panel (${mod} + Shift + B)`} onClick={() => setBoardOpen(false)}>
+            <Icon name="close" width={16} height={16} />
+          </IconButton>
+        </div>
       </div>
-      <div className="fd-board-controls flex min-h-12 shrink-0 flex-wrap items-center gap-1.5 px-3 py-1.5">
+      <div className="fd-board-controls flex shrink-0 items-center px-3">
         <Tabs
           className="fd-board-tabs min-w-0 flex-1"
+          variant="underline"
           tabs={BOARD_TABS.map((id, i) => ({ id, label: BOARD_TAB_LABELS[id], hint: `${mod} + ${i + 1}` }))}
           value={tab}
           onChange={setBoardTab}
@@ -74,20 +93,6 @@ export function BoardPanel() {
             {BOARD_TABS.map((id, i) => <option key={id} value={id}>{BOARD_TAB_LABELS[id]} · {mod} + {i + 1}</option>)}
           </Select>
         </label>
-        {order.data && (order.data.hasKicadPcb || order.data.hasRouted || order.data.ready) && (
-          <Button
-            size="sm"
-            variant={order.data.ready ? "primary" : "secondary"}
-            onClick={() => setOrderFlowOpen(true)}
-            title={order.data.ready ? "Board checks passed" : order.data.reasons.join(" ")}
-            data-testid="order-now"
-          >
-            {order.data.ready ? "Order now" : "Order checks"}
-          </Button>
-        )}
-        <IconButton title={`Hide board panel (${mod} + Shift + B)`} onClick={() => setBoardOpen(false)}>
-          <Icon name="close" />
-        </IconButton>
       </div>
       <div className="fd-board-stage min-h-0 flex-1">
         <TabBody tab={tab} />
