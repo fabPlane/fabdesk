@@ -496,7 +496,7 @@ async function executeRoute(
       throw new ToolError("Freerouting requires native DRC before candidate application; KiCad CLI is unavailable", "precondition");
     const beforeDrc = drcCli ? await ctx.services.kicad.runDrc(drcCli, {
       board: join(snapshotDir, PROJECT_FILES.boardPcb), outFile: join(runDir, "routing-drc-before.json"),
-      severity: "all", signal,
+      severity: "all", refillZones: true, signal,
     }) : null;
     const endpoints = await ctx.services.design.query(snapshotDir, "unrouted");
     const requestedNets = [
@@ -839,12 +839,12 @@ async function executeRoute(
     if (drcCli && beforeDrc) {
       const afterDrc = await ctx.services.kicad.runDrc(drcCli, {
         board: join(snapshotDir, PROJECT_FILES.boardPcb), outFile: join(runDir, "routing-drc-after.json"),
-        severity: "all", signal,
+        severity: "all", refillZones: true, signal,
       });
       const newErrors = newRoutingDrcErrors(beforeDrc, afterDrc);
       await writeJson(join(runDir, "routing-drc-check.json"), {
         before: beforeDrc.counts, after: afterDrc.counts, newErrors,
-        boundary: "native saved-board DRC errors; opens and warnings retained separately",
+        boundary: "native DRC with zones refilled in memory for both snapshots; opens and warnings retained separately",
       });
       rec = { ...rec, drcErrors: newErrors, artifacts: {
         ...rec.artifacts, drcCheck: join(rec.artifacts.runDir, "routing-drc-check.json"),

@@ -666,6 +666,7 @@ export interface KicadService {
       outFile: string;
       severity?: "error" | "all";
       schematicParity?: boolean;
+      refillZones?: boolean;
       signal?: AbortSignal;
     },
   ): Promise<DrcReport>;

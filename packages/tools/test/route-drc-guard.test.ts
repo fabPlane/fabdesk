@@ -60,6 +60,8 @@ for (const rule of ["track_width", "hole_clearance", null])
         kicad: {
           ...base.kicad,
           runDrc: async (_cli, options) => {
+            // Routing changes copper while cached zone fill can still overlap it.
+            expect(options.refillZones).toBe(true);
             expect(await readFile(join(options.board, "..", "board.kicad_dru"), "utf8")).toBe(customRules);
             return report([violation("old"), ...(checks++ > 0 && rule ? [violation(rule)] : [])]);
           },
