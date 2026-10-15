@@ -200,7 +200,6 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
                   {group.kind === "project" && <Icon name={expanded ? "folderOpen" : "folder"} width={17} height={17} className="shrink-0" />}
                   <span className="min-w-0 truncate" title={group.title}>{group.title}</span>
                 </span>
-                <span className="fd-project-count ml-2 shrink-0 text-[10px] tabular-nums text-muted">{group.threads.length + pinnedCount}</span>
               </button>
               {group.kind === "project" && group.projectId && (
                 <IconButton

@@ -205,7 +205,6 @@ body {
 .fd-project-reveal[data-open="true"] .fd-sidebar-chat-list { transform: translateY(0); }
 .group:is(:hover, :focus-within) > .fd-chat-row { padding-right: 60px; }
 .group:has(.fd-project-add):is(:hover, :focus-within) .fd-project-row { padding-right: 38px; }
-.group:has(.fd-project-add):is(:hover, :focus-within) .fd-project-count { display: none; }
 .fd-thread-body { display: flex; min-height: 0; flex: 1; flex-direction: column; }
 .fd-search-highlight { outline: 2px solid var(--fd-accent); outline-offset: 5px; background: color-mix(in srgb, var(--fd-accent) 10%, transparent); }
 /* Reserve one compact footer row so revealing actions never moves messages. */
