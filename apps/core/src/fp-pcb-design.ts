@@ -64,6 +64,7 @@ import {
   schematicPinSheetPosition,
   normalizeNativeSymbolTransform,
   moveNativeSymbol,
+  CommitRecoveryError,
   toVector2,
   toMm,
   vec2,
@@ -2666,6 +2667,21 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       nativeOperations.set(dir, (nativeOperations.get(dir) ?? 0) + 1);
       try {
         return await operation(dir, ...args);
+      } catch (error) {
+        if (error instanceof CommitRecoveryError) {
+          const recovery = JSON.stringify({
+            name: "project_import_kicad",
+            arguments: { project: "<new-project-id>", path: join(dir, "board.kicad_pcb") },
+          });
+          throw new ToolError(
+            `${error.message} To resume from saved files only: create a fresh project, find ` +
+            `project_import_kicad with capability_search, call it through capability_call with ` +
+            `${recovery}, then schematic_inspect on the new project. This retains the original ` +
+            `live session; it does not recover unsaved edits.`,
+            "internal",
+          );
+        }
+        throw error;
       } finally {
         const remaining = (nativeOperations.get(dir) ?? 1) - 1;
         if (remaining) nativeOperations.set(dir, remaining);
