@@ -19,6 +19,7 @@ import { ok, p, throwIfAborted } from "./common";
 import { rowPoints } from "./spatial";
 import { readCopper, copperBoard, quality, qualityText, referenceFacts, consumeReference, type PairDefinition } from "../routing-quality";
 import { installHintFor, runTraceMaker } from "../routers";
+import { newRoutingDrcErrors } from "../routing-drc";
 
 /** Default and upper bound for how long one route_run request waits for its run to finish. */
 export const ROUTE_RUN_DEFAULT_WAIT_MS = 20_000;
@@ -342,6 +343,8 @@ async function applyCandidate(
     throw new ToolError(`route ${rec.id} belongs to another project`, "precondition");
   if (!rec.candidate.available || !rec.candidate.reopenable)
     throw new ToolError(`route ${rec.id} has no validated candidate`, "precondition");
+  if (rec.application.state === "rejected")
+    throw new ToolError(rec.application.reason ?? "route candidate was rejected", "precondition");
   const boardPath = p(project, PROJECT_FILES.boardPcb);
   const before = await readFile(boardPath);
   const current = sha256(before);
@@ -488,6 +491,13 @@ async function executeRoute(
     throwIfAborted(signal);
     const beforeInventory = await boardInventory(ctx, snapshotDir);
     const startingCopper = await readCopper(snapshotDir);
+    const drcCli = rec.router === "freerouting" ? await ctx.services.kicad.resolveCli() : null;
+    if (rec.router === "freerouting" && !drcCli)
+      throw new ToolError("Freerouting requires native DRC before candidate application; KiCad CLI is unavailable", "precondition");
+    const beforeDrc = drcCli ? await ctx.services.kicad.runDrc(drcCli, {
+      board: join(snapshotDir, PROJECT_FILES.boardPcb), outFile: join(runDir, "routing-drc-before.json"),
+      severity: "all", signal,
+    }) : null;
     const endpoints = await ctx.services.design.query(snapshotDir, "unrouted");
     const requestedNets = [
       ...new Set([
@@ -826,6 +836,18 @@ async function executeRoute(
       diff,
     });
     const forbidden = forbiddenDiff(diff, args.rules?.refillZones === true);
+    if (drcCli && beforeDrc) {
+      const afterDrc = await ctx.services.kicad.runDrc(drcCli, {
+        board: join(snapshotDir, PROJECT_FILES.boardPcb), outFile: join(runDir, "routing-drc-after.json"),
+        severity: "all", signal,
+      });
+      const newErrors = newRoutingDrcErrors(beforeDrc, afterDrc);
+      await writeJson(join(runDir, "routing-drc-check.json"), {
+        before: beforeDrc.counts, after: afterDrc.counts, newErrors,
+        boundary: "native saved-board DRC errors; opens and warnings retained separately",
+      });
+      if (newErrors.length) forbidden.push(`native DRC: ${newErrors.length} new error(s): ${[...new Set(newErrors.map(v => v.rule))].join(", ")}`);
+    }
     const usableCandidate = resultState === "complete" || summary.routed > 0 || geometry.length > 0;
     const endedAt = iso();
     const compact = {
