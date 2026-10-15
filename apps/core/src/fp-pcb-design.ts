@@ -5,6 +5,10 @@
  * client speaks nanometres.
  */
 import { resolveSchematicSheet } from "./schematic-sheet";
+import {
+  assertConsistentSymbolMetadata,
+  assertEditableSymbolField,
+} from "./schematic-symbol-update-validation";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
@@ -870,7 +874,12 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     const projectReferences = new Map(
       projectSymbols.map((symbol) => [symbol.reference, symbol.id]),
     );
-    if ((edit.symbols?.length ?? 0) || edit.symbolUpdates?.some((update) => update.newReference))
+    if (
+      (edit.symbols?.length ?? 0) ||
+      edit.symbolUpdates?.some((update) =>
+        update.newReference !== undefined || update.value !== undefined || update.footprint !== undefined,
+      )
+    )
       for (const sheet of flat) {
         if (sheet === selectedEntry || !sheet.path) continue;
         for (const symbol of await schematic.sheet(sheet.path, sheet).getSymbols()) {
@@ -939,13 +948,11 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       if (input.mirrorY !== undefined) symbol.proto.transform!.mirrorY = input.mirrorY;
       normalizeNativeSymbolTransform(symbol);
       if (
-        (input.newReference !== undefined ||
-          input.value !== undefined ||
-          input.footprint !== undefined) &&
+        input.newReference !== undefined &&
         projectSymbols.filter((item) => item.reference === input.reference).length > 1
       )
         throw new ToolError(
-          `symbolUpdates: ${input.reference} is a multi-unit part; replace all its inspected symbol IDs in one schematic_edit batch to change its reference, value or footprint consistently`,
+          `symbolUpdates: ${input.reference} is a multi-unit part; replace all its inspected symbol IDs in one schematic_edit batch to change its reference consistently`,
           "invalid_args",
         );
       if (input.newReference !== undefined) {
@@ -966,6 +973,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       if (input.value !== undefined) symbol.value = input.value;
       if (input.footprint !== undefined) symbol.footprint = input.footprint;
       for (const [name, value] of Object.entries(input.fields ?? {})) {
+        assertEditableSymbolField(name);
         const field = symbol.field(name);
         if (!field)
           throw new ToolError(
@@ -976,6 +984,12 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       }
       updatedSymbols.push(symbol);
     }
+    assertConsistentSymbolMetadata(
+      projectSymbols,
+      (edit.symbolUpdates ?? [])
+        .filter((update) => update.value !== undefined || update.footprint !== undefined)
+        .map((update) => update.reference),
+    );
     const pins = new Map<
       string,
       Array<{
