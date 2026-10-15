@@ -103,9 +103,8 @@ export class FpPcbSessions {
     const session = await this.session(projectDir);
     const schematic = await session.kicad.currentSchematic();
     if (schematic && (await schematic.modified()) !== false)
-      throw new ToolError(
+      throw new NativeRevisionConflict(
         "save the open schematic before placing footprints; placement recovery may restart KiCad",
-        "precondition",
       );
   }
 

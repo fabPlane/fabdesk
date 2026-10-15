@@ -480,7 +480,7 @@ export const native_edit_transaction = defineTool({
   toolset: "circuit",
   title: "Preview or apply an atomic native edit",
   description:
-    "Preview or atomically apply explicit native KiCad schematic, footprint, outline, copper, zone, keepout, text, and graphic changes. Revision mismatches reject the transaction; rejected changes restore the prior files.",
+    "Preview or atomically apply explicit native KiCad schematic, footprint, outline, copper, zone, keepout, text, and graphic changes. Revision mismatches reject the transaction; ordinary failures restore the prior files. Saved-revision or unsaved-work conflicts preserve the live session and may leave earlier operations applied; the error identifies the backup record.",
   inputSchema: {
     mode: z.enum(["preview", "apply"]).default("preview"),
     expectedSchematicRevision: z.string().length(64).nullable().optional(),
@@ -569,8 +569,8 @@ export const native_edit_transaction = defineTool({
       plan,
       files,
     } satisfies TransactionMetadata);
+    const changes: Record<string, unknown> = {};
     try {
-      const changes: Record<string, unknown> = {};
       if (schematic)
         changes["schematic"] = await ctx.services.design.schematicEdit(project.dir, {
           ...(schematic as NativeSchematicEdit),
@@ -676,7 +676,14 @@ export const native_edit_transaction = defineTool({
     } catch (error) {
       // Conflict refusal preserves external saved bytes and unsaved live edits. Rollback must
       // not overwrite the former or release the latter.
-      if (error instanceof NativeRevisionConflict) throw error;
+      if (error instanceof NativeRevisionConflict) {
+        throw new NativeRevisionConflict(
+          `native edit ${transactionId} refused; session and current files preserved; ` +
+          `completed operations: ${Object.keys(changes).join(", ") || "none"}; ` +
+          `earlier operations may remain applied; pre-edit backup: .fabdesk/native-revisions/${transactionId}/metadata.json; ` +
+          `save live work before explicit recovery: ${error.message}`,
+        );
+      }
       await ctx.services.design.release(project.dir).catch(() => undefined);
       const restoredFiles = await restore(project.dir, directory, files);
       throw new ToolError(

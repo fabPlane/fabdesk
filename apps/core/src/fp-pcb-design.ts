@@ -1465,9 +1465,8 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       }),
     );
     if ((await board.modified()) !== false)
-      throw new ToolError(
+      throw new NativeRevisionConflict(
         "save the open PCB before placing footprints; placement recovery may restart KiCad",
-        "precondition",
       );
     await deps.sessions.assertSchematicSaved(projectDir);
     const [allPadsBefore, routeItems, zoneItems, enabled] = geometryReferences.size
