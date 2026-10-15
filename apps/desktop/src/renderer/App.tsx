@@ -12,6 +12,7 @@ import {
   type CoreInfo,
   type HostAdapter,
 } from "@fabdesk/ui";
+import { ReleaseNotes } from "@fabdesk/protocol";
 import { useEffect, useMemo, useState } from "react";
 import { sentryUserFromAuth } from "../shared/sentry-user";
 import { disableRendererSentry, setRendererSentryUser } from "./sentry";
@@ -29,30 +30,50 @@ function ThemeSync() {
   return null;
 }
 
-const host: HostAdapter = bridge
-  ? {
-      platform: bridge.platform,
-      devBuild: bridge.devBuild,
-      openExternal: (url) => bridge.openExternal(url),
-      openPath: (path) => bridge.openPath(path),
-      ...(typeof bridge.pickDirectory === "function" ? { pickDirectory: () => bridge.pickDirectory() } : {}),
-      pickFile: (opts) => bridge.pickFile(opts),
-      localAuthAllowed: () => bridge.localAuthAllowed(),
-      setLocalAuth: (enabled) => bridge.setLocalAuth(enabled),
-      restartCore: () => bridge.restartCore(),
-      showAppMenu: (pos) => bridge.showAppMenu(pos),
-      onMenu: (cb) => bridge.onMenu(cb),
-      openLogs: () => bridge.openLogs(),
-      updateStatus: () => bridge.updateStatus(),
-      checkForUpdates: () => bridge.checkForUpdates(),
-      onUpdateStatus: (cb) => bridge.onUpdateStatus(cb),
-      updateDownloadState: () => bridge.updateDownloadState(),
-      downloadUpdate: () => bridge.downloadUpdate(),
-      cancelUpdateDownload: () => bridge.cancelUpdateDownload(),
-      openUpdate: () => bridge.openUpdate(),
-      onUpdateDownload: (cb) => bridge.onUpdateDownload(cb),
-    }
-  : browserHost;
+/**
+ * Notes baked in at build time; the same text fabplane.com shows for this release. Read lazily:
+ * Vite dev serves `define` values as globals that may be set after this module first runs.
+ */
+let cachedNotes: ReleaseNotes | undefined;
+function withReleaseNotes(base: HostAdapter): HostAdapter {
+  return Object.defineProperty({ ...base }, "releaseNotes", {
+    enumerable: true,
+    get(): ReleaseNotes | undefined {
+      if (cachedNotes) return cachedNotes;
+      const raw = typeof __FABDESK_RELEASE_NOTES__ === "undefined" ? null : __FABDESK_RELEASE_NOTES__;
+      const parsed = ReleaseNotes.safeParse(raw);
+      cachedNotes = parsed.success ? parsed.data : undefined;
+      return cachedNotes;
+    },
+  });
+}
+
+const host: HostAdapter = withReleaseNotes(
+  bridge
+    ? {
+        platform: bridge.platform,
+        devBuild: bridge.devBuild,
+        openExternal: (url) => bridge.openExternal(url),
+        openPath: (path) => bridge.openPath(path),
+        ...(typeof bridge.pickDirectory === "function" ? { pickDirectory: () => bridge.pickDirectory() } : {}),
+        pickFile: (opts) => bridge.pickFile(opts),
+        localAuthAllowed: () => bridge.localAuthAllowed(),
+        setLocalAuth: (enabled) => bridge.setLocalAuth(enabled),
+        restartCore: () => bridge.restartCore(),
+        showAppMenu: (pos) => bridge.showAppMenu(pos),
+        onMenu: (cb) => bridge.onMenu(cb),
+        openLogs: () => bridge.openLogs(),
+        updateStatus: () => bridge.updateStatus(),
+        checkForUpdates: () => bridge.checkForUpdates(),
+        onUpdateStatus: (cb) => bridge.onUpdateStatus(cb),
+        updateDownloadState: () => bridge.updateDownloadState(),
+        downloadUpdate: () => bridge.downloadUpdate(),
+        cancelUpdateDownload: () => bridge.cancelUpdateDownload(),
+        openUpdate: () => bridge.openUpdate(),
+        onUpdateDownload: (cb) => bridge.onUpdateDownload(cb),
+      }
+    : browserHost,
+);
 
 /** Without the Electron bridge (plain browser), read the daemon address from the query string. */
 function webCoreInfo(): CoreInfo {

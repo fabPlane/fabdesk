@@ -6,6 +6,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Plugin } from "vite";
+import { generateReleaseNotes } from "../../scripts/release-notes";
 import { themeBootInlineCss, themeBootInlineScript } from "../../packages/ui/src/theme/boot-inline";
 
 /** Short git sha for the Sentry release: CI has GITHUB_SHA, local builds ask git, else `dev`. */
@@ -25,6 +26,21 @@ function sentryRelease(): string {
   if (explicit) return explicit;
   const pkg = JSON.parse(readFileSync(resolve(__dirname, "package.json"), "utf8")) as { version: string };
   return `fabdesk@${pkg.version}+${gitSha()}`;
+}
+
+/**
+ * This build's "What's new" notes. Release CI generates them once and passes the file in
+ * FABDESK_RELEASE_NOTES_FILE, so the app and fabplane.com show the same text; local builds
+ * generate them from git here.
+ */
+function releaseNotes(): unknown {
+  const file = process.env["FABDESK_RELEASE_NOTES_FILE"]?.trim();
+  if (file) return JSON.parse(readFileSync(file, "utf8"));
+  try {
+    return generateReleaseNotes({ cwd: resolve(__dirname, "../..") });
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -115,7 +131,11 @@ export default defineConfig(({ mode }) => {
         ],
       },
       plugins: [react(), tailwindcss(), cspPlugin(dev)],
-      define: { "process.env.IS_PREACT": JSON.stringify("false"), ...sentryDefine },
+      define: {
+        "process.env.IS_PREACT": JSON.stringify("false"),
+        __FABDESK_RELEASE_NOTES__: JSON.stringify(releaseNotes()),
+        ...sentryDefine,
+      },
       build: {
         rollupOptions: { input: resolve(__dirname, "src/renderer/index.html") },
         chunkSizeWarningLimit: 3000,

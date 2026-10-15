@@ -69,3 +69,34 @@ export const UpdateDownloadState = z.discriminatedUnion("state", [
   z.object({ state: z.literal("error"), version: z.string().optional(), message: z.string() }),
 ]);
 export type UpdateDownloadState = z.infer<typeof UpdateDownloadState>;
+
+/**
+ * One entry in the repo-root `release-notes.json`, written by hand. A release uses the entries
+ * added since the previous release tag; with none, its notes are the commit subjects instead.
+ */
+export const HandReleaseNote = z.object({
+  /** Unique, stable id (for example `2026-10-15-whats-new`); how a release tells old entries from new. */
+  id: z.string().min(1),
+  new: z.array(z.string()).optional(),
+  improved: z.array(z.string()).optional(),
+  fixed: z.array(z.string()).optional(),
+});
+export type HandReleaseNote = z.infer<typeof HandReleaseNote>;
+
+/**
+ * The notes for one build, generated once per release by scripts/release-notes.ts. The same object
+ * is baked into the app (the "What's new" dialog) and rendered into manifest.json `notes`
+ * (fabplane.com/download), so the two always say the same thing.
+ */
+export const ReleaseNotes = z.object({
+  /** Changes whenever the notes do; the app's "What's new" link hides once this id was opened. */
+  id: z.string(),
+  /** App version these notes describe; null for local builds. */
+  version: z.string().nullable(),
+  /** ISO date of the release commit. */
+  date: z.string(),
+  previousTag: z.string().nullable(),
+  source: z.enum(["hand", "commits"]),
+  sections: z.array(z.object({ title: z.string(), items: z.array(z.string()) })),
+});
+export type ReleaseNotes = z.infer<typeof ReleaseNotes>;
