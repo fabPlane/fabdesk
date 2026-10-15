@@ -87,7 +87,7 @@ for (const router of ["freerouting", "fab_router"] as const) {
       const response = await call("route_run", {
         router,
         onlyConnections: ["GND"],
-        cleanReroute: "never",
+        rerouteMode: "never",
         waitMs: 1000,
       });
       const run = (response.json as any).run;
