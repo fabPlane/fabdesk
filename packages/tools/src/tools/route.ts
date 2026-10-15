@@ -1478,6 +1478,8 @@ async function routeStatusOutput(
   rec: RouteRunRecord,
 ): Promise<ToolOutput> {
   const current = sha256(await readFile(p(project, PROJECT_FILES.boardPcb)));
+  // The worker may finish while the disk read yields; never publish an older application state.
+  rec = ctx.services.routeRuns.get(rec.id) ?? rec;
   const run = {
     ...rec,
     currentPcbRevision: current,
