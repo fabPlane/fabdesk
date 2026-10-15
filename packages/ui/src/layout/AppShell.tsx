@@ -21,28 +21,36 @@ export interface AppShellProps {
   banner?: React.ReactNode;
 }
 
-/** Three resizable panes: thread sidebar | chat | board panel. */
-export function AppShell({ onNewChat, coreStatus, banner }: AppShellProps) {
-  const shellRef = useRef<HTMLDivElement>(null);
-  const [shellWidth, setShellWidth] = useState(() => window.innerWidth);
+/** Measure each split independently so its pixel minimums use its own width. */
+function usePaneWidth(initialWidth: number) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(initialWidth);
   useEffect(() => {
-    const shell = shellRef.current;
+    const shell = ref.current;
     if (!shell) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    let width = shell.clientWidth;
+    let measuredWidth = shell.clientWidth;
     const observer = new ResizeObserver(([entry]) => {
       if (!entry) return;
-      width = Math.max(1, entry.contentRect.width);
+      measuredWidth = Math.max(1, entry.contentRect.width);
       // Update minimums at most ten times a second during window resizing.
       if (timer === undefined) timer = setTimeout(() => {
-        setShellWidth(width);
+        setWidth(measuredWidth);
         timer = undefined;
       }, 100);
     });
     observer.observe(shell);
     return () => { observer.disconnect(); clearTimeout(timer); };
   }, []);
+  return { ref, width };
+}
+
+/** The sidebar owns an outer split; only chat and board share the inner split. */
+export function AppShell({ onNewChat, coreStatus, banner }: AppShellProps) {
+  const { ref: shellRef, width: shellWidth } = usePaneWidth(window.innerWidth);
+  const { ref: mainRef, width: mainWidth } = usePaneWidth(window.innerWidth - 240);
   const percent = (pixels: number) => (pixels / Math.max(760, shellWidth)) * 100;
+  const mainPercent = (pixels: number) => (pixels / Math.max(560, mainWidth)) * 100;
   const sidebarOpen = useUiStore((s) => s.sidebarOpen);
   const boardOpen = useUiStore((s) => s.boardOpen);
   const openSourceId = useUiStore((s) => s.activeOpenSourceId);
@@ -62,7 +70,7 @@ export function AppShell({ onNewChat, coreStatus, banner }: AppShellProps) {
       <TopBar coreStatus={coreStatus} />
       {banner}
       <div className="min-h-0 flex-1">
-        <PanelGroup direction="horizontal" autoSaveId="fabdesk-shell">
+        <PanelGroup direction="horizontal" autoSaveId="fabdesk-shell-sidebar">
           {sidebarOpen && (
             <>
               <Panel id="sidebar" order={1} defaultSize={percent(240)} minSize={percent(190)} maxSize={percent(280)}>
@@ -71,17 +79,23 @@ export function AppShell({ onNewChat, coreStatus, banner }: AppShellProps) {
               <Handle />
             </>
           )}
-          <Panel id="chat" order={2} minSize={percent(300)}>
-            {center}
+          <Panel id="main" order={2} minSize={percent(300)}>
+            <div ref={mainRef} className="h-full min-w-0">
+              <PanelGroup direction="horizontal" autoSaveId="fabdesk-shell-content">
+                <Panel id="chat" order={1} minSize={mainPercent(300)}>
+                  {center}
+                </Panel>
+                {boardOpen && !openSourceId && !inventory && (
+                  <>
+                    <Handle />
+                    <Panel id="board" order={2} defaultSize={40} minSize={mainPercent(260)}>
+                      <BoardPanel />
+                    </Panel>
+                  </>
+                )}
+              </PanelGroup>
+            </div>
           </Panel>
-          {boardOpen && !openSourceId && !inventory && (
-            <>
-              <Handle />
-              <Panel id="board" order={3} defaultSize={40} minSize={percent(260)}>
-                <BoardPanel />
-              </Panel>
-            </>
-          )}
         </PanelGroup>
       </div>
       <ProjectPickerDialog />
