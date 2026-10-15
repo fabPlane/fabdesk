@@ -12,6 +12,7 @@ import { groupThreadsByProject } from "@fabdesk/client-core";
 import { OpenSourceList } from "./OpenSourceList";
 import { UserFooter } from "./UserFooter";
 import { SearchResults } from "../chat/SearchResults";
+import { ScrollingTitle } from "./ScrollingTitle";
 
 export interface ThreadSidebarProps {
   onNewChat: () => void;
@@ -105,7 +106,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
               <Icon name="pin" width={13} height={13} />
             </span>
           )}
-          <span className="min-w-0 flex-1 truncate">{t.title || "Untitled"}</span>
+          <ScrollingTitle text={t.title || "Untitled"} />
         </button>
       )}
       <IconButton
@@ -198,7 +199,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
                 <span className="flex min-w-0 flex-1 items-center gap-2">
                   {group.kind === "pinned" && <Icon name="pin" width={13} height={13} />}
                   {group.kind === "project" && <Icon name={expanded ? "folderOpen" : "folder"} width={17} height={17} className="shrink-0" />}
-                  <span className="min-w-0 truncate" title={group.title}>{group.title}</span>
+                  <ScrollingTitle text={group.title} />
                 </span>
               </button>
               {group.kind === "project" && group.projectId && (
@@ -212,7 +213,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
                   }}
                   data-testid={`project-new-chat-${group.projectId}`}
                 >
-                  <Icon name="plus" />
+                  <Icon name="compose" width={16} height={16} />
                 </IconButton>
               )}
             </div>
