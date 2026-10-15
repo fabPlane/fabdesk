@@ -84,6 +84,16 @@ async function simulatedProject() {
 }
 
 describe("saved file/session restoration", () => {
+  test("a pre-reload handle cannot save even when disk returns to the same bytes", async () =>
+    fixture(async f => {
+      const old = await f.sessions.board(f.dir);
+      await writeFile(f.path, "candidate");
+      await f.sessions.board(f.dir);
+      await writeFile(f.path, "checkpoint:pad-A");
+      await f.sessions.board(f.dir);
+      await expect(old.save()).rejects.toThrow("handle predates recovery/reload");
+      expect(f.counts().saves).toBe(0);
+    }));
   test("external checkpoint restore reloads before inspect and no-op save", async () =>
     fixture(async (f) => {
       await f.sessions.board(f.dir);
@@ -151,6 +161,51 @@ describe("saved file/session restoration", () => {
         expect(u.counts()).toEqual({ saves: 0, closes: 0, opens: 0 });
       });
     }));
+});
+
+test("pair reconciliation preflights unsaved schematic before closing changed saved PCB", async () => {
+  await fixture(async f => {
+    const schematicPath = join(f.dir, "board.kicad_sch");
+    await writeFile(schematicPath, "schematic A");
+    const original = await f.sessions.session(f.dir);
+    let dirty = false, closes = 0;
+    original.kicad.currentSchematic = async () => ({ modified: async () => dirty, close: async () => { closes++; } }) as never;
+    original.kicad.openSchematic = async () => ({}) as never;
+    await f.sessions.board(f.dir);
+    const before = f.counts();
+    dirty = true;
+    await writeFile(f.path, "PCB B");
+    await writeFile(schematicPath, "schematic B");
+    await expect(f.sessions.board(f.dir)).rejects.toThrow("unsaved or unknown changes");
+    expect(f.counts()).toEqual(before);
+    expect(closes).toBe(1);
+  });
+});
+
+test("saved-file recovery refuses unsaved state, blocks access while replacing, and expires handles", async () => {
+  await fixture(async f => {
+    const old = await f.sessions.board(f.dir);
+    const session = await f.sessions.session(f.dir);
+    let terminations = 0;
+    session.ws = { close: async () => {} } as never;
+    (f.sessions as any).open.set(f.dir, Promise.resolve(session));
+    (f.sessions as any).bridge = () => ({ deleteSession: async () => { terminations++; } });
+    f.edit("unsaved candidate");
+    let replaced = false;
+    await expect(f.sessions.withSavedFilesRecovery(f.dir, async () => { replaced = true; })).rejects.toThrow("unsaved or unknown");
+    expect(replaced).toBe(false);
+    expect(terminations).toBe(0);
+    expect(f.live()).toBe("unsaved candidate");
+    f.edit("checkpoint:pad-A", false);
+    await f.sessions.withSavedFilesRecovery(f.dir, async () => {
+      await expect(old.save()).rejects.toThrow("handle predates recovery/reload");
+      await expect(f.sessions.withSavedFilesRecovery(f.dir, async () => {})).rejects.toThrow("already active");
+      await writeFile(f.path, "restored");
+    });
+    expect(terminations).toBe(1);
+    await expect(old.save()).rejects.toThrow("handle predates recovery/reload");
+    expect(await readFile(f.path, "utf8")).toBe("restored");
+  });
 });
 
 test("new project can retain unsaved documents until its first owned save", async () => {

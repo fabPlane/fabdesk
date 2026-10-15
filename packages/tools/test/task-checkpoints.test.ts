@@ -1,8 +1,9 @@
-import { expect, test } from "bun:test";
-import { mkdir, readFile, writeFile, symlink } from "node:fs/promises";
+import { expect, test, spyOn } from "bun:test";
+import * as fs from "node:fs/promises";
+import { mkdir, readFile, writeFile, symlink, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { createRegistry } from "../src";
-import { compareTaskCheckpoint, compareTaskPcb, listTaskCheckpoints } from "../src/task-checkpoints";
+import { createRegistry, NativeRevisionConflict } from "../src";
+import { compareTaskCheckpoint, compareTaskPcb, listTaskCheckpoints, restoreTaskCheckpoint } from "../src/task-checkpoints";
 import { contextFactory, mockServices, tempProject } from "./mock-services";
 
 const track = (id: string, net: string, y = 0) => `(segment (start 0 ${y}) (end 3 ${y}) (width .2) (layer "F.Cu") (net "${net}") (uuid "${id}"))`;
@@ -121,4 +122,117 @@ test("equivalent copper with replaced UUIDs is identity change, not new geometry
   const changes = compareTaskPcb(before, after, { nets: [], references: [] });
   expect(changes.length).toBe(1);
   expect(changes[0]!.kind).toBe("identity-only");
+});
+
+test("restore retains displaced saved project, removes later child files, and survives context restart", async () => {
+  const { project, services, call } = await harness("task-restore");
+  services.design.withSavedFilesRecovery = async (_dir, replace) => replace();
+  const original = board(track("usb", "USB_DP"));
+  await writeFile(join(project.dir, "board.kicad_pcb"), original);
+  await writeFile(join(project.dir, "board.kicad_sch"), "original schematic");
+  const checkpoint = (await call("project_checkpoint", { action: "retain", name: "good work", reason: "before experiment", role: "baseline" })).json as any;
+  await writeFile(join(project.dir, "board.kicad_pcb"), board(track("usb", "USB_DP", 1)));
+  await writeFile(join(project.dir, "board.kicad_sch"), "experimental schematic");
+  await writeFile(join(project.dir, "extra.kicad_sch"), "new child sheet");
+  const compare = (await compareTaskCheckpoint({ ...project }))!;
+  const response = (await call("project_checkpoint", { action: "restore", checkpointId: checkpoint.id, expectedRevision: compare.currentRevision, reason: "reject experiment" })).json as any;
+  expect(response.status).toBe("restored");
+  expect(response.validation).toEqual({ designChecksRun: false, taskAccepted: false });
+  expect(await readFile(join(project.dir, "board.kicad_pcb"), "utf8")).toBe(original);
+  expect(await readFile(join(project.dir, "board.kicad_sch"), "utf8")).toBe("original schematic");
+  expect(await Bun.file(join(project.dir, "extra.kicad_sch")).exists()).toBe(false);
+  expect(await readFile(join(project.dir, ".fabdesk/task-checkpoints", response.displacedCheckpointId, "files/extra.kicad_sch"), "utf8")).toBe("new child sheet");
+  expect((await compareTaskCheckpoint({ ...project }))!.currentRevision).toBe(checkpoint.revision);
+  expect((await listTaskCheckpoints({ ...project })).filter(value => value.role === "baseline").map(value => value.id)).toEqual([checkpoint.id]);
+  // Restore the displaced work through a fresh context: recovery is genuinely reversible.
+  await call("project_checkpoint", { action: "restore", checkpointId: response.displacedCheckpointId, expectedRevision: checkpoint.revision, reason: "resume experiment" });
+  expect(await readFile(join(project.dir, "extra.kicad_sch"), "utf8")).toBe("new child sheet");
+});
+
+test("stale, tampered, foreign and unsaved restores preserve canonical files", async () => {
+  const { project, services, call } = await harness("task-restore-refusal");
+  services.design.withSavedFilesRecovery = async (_dir, replace) => replace();
+  const original = board(track("usb", "USB_DP"));
+  await writeFile(join(project.dir, "board.kicad_pcb"), original);
+  const checkpoint = (await call("project_checkpoint", { action: "retain", name: "before", reason: "fixture", role: "baseline" })).json as any;
+  const compare = (await compareTaskCheckpoint(project))!;
+  const args = { action: "restore", checkpointId: checkpoint.id, expectedRevision: compare.currentRevision, reason: "restore" };
+  const candidate = board(track("usb", "USB_DP", 2));
+  await writeFile(join(project.dir, "board.kicad_pcb"), candidate);
+  await expect(call("project_checkpoint", args)).rejects.toThrow("refusing stale checkpoint restore");
+  const fresh = (await compareTaskCheckpoint(project))!;
+  services.design.withSavedFilesRecovery = async () => { throw new NativeRevisionConflict("unsaved live conflict"); };
+  await expect(call("project_checkpoint", { ...args, expectedRevision: fresh.currentRevision })).rejects.toThrow("unsaved live conflict");
+  expect((await listTaskCheckpoints(project)).length).toBe(1);
+  await expect(restoreTaskCheckpoint({ ...project, id: "foreign" }, checkpoint.id, fresh.currentRevision, "restore", null, async run => run())).rejects.toThrow("identity mismatch");
+  await rm(join(project.dir, ".fabdesk/task-checkpoints", checkpoint.id, "files/board.kicad_pcb"));
+  await expect(call("project_checkpoint", { ...args, expectedRevision: fresh.currentRevision })).rejects.toThrow("bytes no longer match");
+  expect(await readFile(join(project.dir, "board.kicad_pcb"), "utf8")).toBe(candidate);
+});
+
+test("a racing writer during multi-file restore gives partial journal and recoverable saved versions", async () => {
+  const { project, services, call } = await harness("task-restore-partial");
+  await writeFile(join(project.dir, "board.kicad_pcb"), board(track("a", "A")));
+  await writeFile(join(project.dir, "board.kicad_sch"), "A");
+  const checkpoint = (await call("project_checkpoint", { action: "retain", name: "A", reason: "fixture", role: "baseline" })).json as any;
+  await writeFile(join(project.dir, "board.kicad_pcb"), board(track("a", "A", 1)));
+  await writeFile(join(project.dir, "board.kicad_sch"), "B");
+  const fresh = (await compareTaskCheckpoint(project))!;
+  // Inject an actual filesystem refusal at commit, after validating and retaining all bytes.
+  // A directory appears at a later target immediately after an earlier target is replaced.
+  const rename = fs.rename;
+  const writer = spyOn(fs, "rename").mockImplementation(async (from, to) => {
+    await rename(from, to);
+    if (to === join(project.dir, "board.kicad_pcb")) {
+      await fs.unlink(join(project.dir, "board.kicad_sch"));
+      await fs.mkdir(join(project.dir, "board.kicad_sch"));
+    }
+  });
+  services.design.withSavedFilesRecovery = async (_dir, run) => run();
+  try {
+    await expect(call("project_checkpoint", { action: "restore", checkpointId: checkpoint.id, expectedRevision: fresh.currentRevision, reason: "partial test" })).rejects.toThrow("checkpoint restore partial");
+    const records = await listTaskCheckpoints(project);
+    expect(records.length).toBe(2);
+    expect(await readFile(join(project.dir, ".fabdesk/task-checkpoints", records.find(value => value.id !== checkpoint.id)!.id, "files/board.kicad_sch"), "utf8")).toBe("B");
+  } finally { writer.mockRestore(); }
+});
+
+test("outer native transaction cannot overwrite an external file or discard live state on conflict", async () => {
+  const { project, services, call } = await harness("native-conflict-preservation");
+  await writeFile(join(project.dir, "board.kicad_pcb"), board(track("a", "A")));
+  let releases = 0;
+  services.design.release = async () => { releases++; };
+  services.design.editBoardGeometry = async () => {
+    await writeFile(join(project.dir, "board.kicad_pcb"), "external restored bytes");
+    throw new NativeRevisionConflict("refusing stale save");
+  };
+  await expect(call("native_edit_transaction", { mode: "apply", geometry: { tracks: [{ start: { x: 0, y: 0 }, end: { x: 1, y: 1 }, net: "A", layer: "F.Cu", width: 0.2 }] } })).rejects.toThrow("refusing stale save");
+  expect(releases).toBe(0);
+  expect(await readFile(join(project.dir, "board.kicad_pcb"), "utf8")).toBe("external restored bytes");
+});
+
+test("native transaction rollback respects the same unsaved-live recovery refusal", async () => {
+  const { project, services, call } = await harness("native-rollback-conflict");
+  const original = board(track("a", "A"));
+  await writeFile(join(project.dir, "board.kicad_pcb"), original);
+  services.design.editBoardGeometry = async () => {
+    await writeFile(join(project.dir, "board.kicad_pcb"), board(track("a", "A", 1)));
+    return { created: { tracks: 1, vias: 0, zones: 0, texts: 0, graphics: 0 }, deleted: 0, saved: true, revision: 1 } as any;
+  };
+  const accepted = (await call("native_edit_transaction", { mode: "apply", geometry: { tracks: [{ start: { x: 0, y: 0 }, end: { x: 1, y: 1 }, net: "A", layer: "F.Cu", width: 0.2 }] } })).json as any;
+  services.design.withSavedFilesRecovery = async () => { throw new NativeRevisionConflict("unsaved live work must survive"); };
+  await expect(call("native_edit_rollback", { transactionId: accepted.transactionId })).rejects.toThrow("unsaved live work must survive");
+  expect(await readFile(join(project.dir, "board.kicad_pcb"), "utf8")).toBe(board(track("a", "A", 1)));
+});
+
+test("checkpoint restore rejects in-project native aliases before replacing another file", async () => {
+  const { project, call } = await harness("restore-native-alias");
+  await writeFile(join(project.dir, "board.kicad_pcb"), board(track("a", "A")));
+  await writeFile(join(project.dir, "board.kicad_sch"), "A");
+  const checkpoint = (await call("project_checkpoint", { action: "retain", name: "A", reason: "fixture", role: "baseline" })).json as any;
+  const fresh = (await compareTaskCheckpoint(project))!;
+  await rm(join(project.dir, "board.kicad_sch"));
+  await symlink("board.kicad_pcb", join(project.dir, "board.kicad_sch"));
+  await expect(call("project_checkpoint", { action: "restore", checkpointId: checkpoint.id, expectedRevision: fresh.currentRevision, reason: "must reject alias" })).rejects.toThrow("non-file/symlink");
+  expect(await readFile(join(project.dir, "board.kicad_pcb"), "utf8")).toBe(board(track("a", "A")));
 });

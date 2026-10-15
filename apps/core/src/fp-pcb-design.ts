@@ -2549,27 +2549,46 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     }
   };
 
+  const nativeOperations = new Map<string, number>();
+  const recovering = new Set<string>();
+  const nativeOperation = <Args extends unknown[], Result>(operation: (dir: string, ...args: Args) => Promise<Result>) =>
+    async (dir: string, ...args: Args): Promise<Result> => {
+      if (recovering.has(dir)) throw new NativeRevisionConflict("native project recovery is active; retry after it finishes");
+      nativeOperations.set(dir, (nativeOperations.get(dir) ?? 0) + 1);
+      try { return await operation(dir, ...args); }
+      finally {
+        const remaining = (nativeOperations.get(dir) ?? 1) - 1;
+        if (remaining) nativeOperations.set(dir, remaining); else nativeOperations.delete(dir);
+      }
+    };
   return {
-    build,
-    schematicInspect,
-    schematicEdit,
-    syncSchematicToPcb,
-    defineBoardOutline,
-    placeFootprints,
-    editBoardGeometry,
-    inspectBoardGeometry,
-    query,
-    route,
+    withSavedFilesRecovery: async <T>(dir: string, replace: () => Promise<T>): Promise<T> => {
+      if (active.has(dir) || nativeOperations.has(dir) || recovering.has(dir))
+        throw new NativeRevisionConflict("checkpoint restore refused: a native operation or routing is active; wait for it to finish");
+      recovering.add(dir);
+      try { return await deps.sessions.withSavedFilesRecovery(dir, replace); }
+      finally { recovering.delete(dir); }
+    },
+    build: (opts: BuildOptions) => nativeOperation((_dir: string) => build(opts))(opts.projectDir),
+    schematicInspect: nativeOperation(schematicInspect),
+    schematicEdit: nativeOperation(schematicEdit),
+    syncSchematicToPcb: nativeOperation(syncSchematicToPcb),
+    defineBoardOutline: nativeOperation(defineBoardOutline),
+    placeFootprints: nativeOperation(placeFootprints),
+    editBoardGeometry: nativeOperation(editBoardGeometry),
+    inspectBoardGeometry: nativeOperation(inspectBoardGeometry),
+    query: nativeOperation(query),
+    route: nativeOperation(route),
     cancelRoute,
-    unroute,
-    scope,
+    unroute: nativeOperation(unroute),
+    scope: nativeOperation(scope),
     searchFootprints,
     searchSymbols,
     describePart,
     checkPartCompatibility,
-    place,
+    place: nativeOperation(place),
     status,
-    release: (dir) => deps.sessions.release(dir),
+    release: nativeOperation((dir: string) => deps.sessions.release(dir)),
   };
 }
 

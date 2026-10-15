@@ -15,7 +15,7 @@ import {
 import { dirname, join } from "node:path";
 import { z } from "zod/v4";
 import { PROJECT_FILES, exists, jailPath, projectRelative, readJson, writeJson } from "../fs";
-import { ToolError, defineTool, type ProjectHandle, type ToolContext } from "../registry";
+import { ToolError, NativeRevisionConflict, defineTool, type ProjectHandle, type ToolContext } from "../registry";
 import type { NativeSchematicEdit, PcbFootprintEdit, PcbGeometryEdit } from "../services";
 import { inspectSavedHierarchy, ok, p } from "./common";
 
@@ -674,6 +674,9 @@ export const native_edit_transaction = defineTool({
         validation: { structural: true, designChecksRun: false },
       });
     } catch (error) {
+      // Conflict refusal preserves external saved bytes and unsaved live edits. Rollback must
+      // not overwrite the former or release the latter.
+      if (error instanceof NativeRevisionConflict) throw error;
       await ctx.services.design.release(project.dir).catch(() => undefined);
       const restoredFiles = await restore(project.dir, directory, files);
       throw new ToolError(
@@ -718,7 +721,6 @@ export const native_edit_rollback = defineTool({
         "native files changed after the accepted transaction; refusing stale rollback",
         "precondition",
       );
-    await ctx.services.design.release(project.dir).catch(() => undefined);
     const directory = await jailPath(root, accepted.transactionId)
       .then((path) => jailPath(project.dir, projectRelative(project.dir, path)))
       .catch(() => {
@@ -727,7 +729,15 @@ export const native_edit_rollback = defineTool({
     const metadata = await transactionMetadata(directory);
     if (metadata.transactionId !== accepted.transactionId)
       throw new ToolError("native transaction backup identity mismatch", "precondition");
-    const restoredFiles = await restore(project.dir, directory, metadata.files);
+    await preflightRestore(project.dir, directory, metadata.files);
+    if (!ctx.services.design.withSavedFilesRecovery)
+      throw new ToolError("native saved-file recovery is unavailable in this runtime", "unavailable");
+    const restoredFiles = await ctx.services.design.withSavedFilesRecovery(project.dir, async () => {
+      const immediatelyBefore = await boundRevisions(ctx, project);
+      if (JSON.stringify(immediatelyBefore) !== JSON.stringify(accepted.after))
+        throw new ToolError("native files changed before rollback; refusing stale rollback", "precondition");
+      return restore(project.dir, directory, metadata.files);
+    });
     return ok(`Rolled back ${accepted.transactionId}.`, {
       status: "rolled-back",
       transactionId: accepted.transactionId,

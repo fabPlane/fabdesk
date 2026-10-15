@@ -16,7 +16,8 @@ import { createHash } from "node:crypto";
 import { KiCad, type Board, type Schematic } from "@fp-pcb/client";
 import { DocumentType } from "@fp-pcb/proto";
 import { WebSocketTransport, bridgeWsUrl } from "@fp-pcb/client/transport";
-import { ToolError } from "@fabdesk/tools";
+import { ToolError, NativeRevisionConflict } from "@fabdesk/tools";
+export { NativeRevisionConflict } from "@fabdesk/tools";
 import type { FpPcbBridgeClient } from "./fp-pcb-bridge";
 
 export const BOARD_PRO = "board.kicad_pro";
@@ -30,17 +31,13 @@ export interface ProjectSession {
   path: string | null;
 }
 
-/** A refused stale write must bypass mutation recovery that would overwrite external files. */
-export class NativeRevisionConflict extends ToolError {
-  constructor(message: string) {
-    super(message, "precondition");
-  }
-}
-
 export class FpPcbSessions {
   private readonly open = new Map<string, Promise<ProjectSession>>();
   private readonly revisions = new Map<string, Map<string, string | null>>();
   private readonly guarded = new WeakSet<Board | Schematic>();
+  private readonly generations = new Map<string, number>();
+  private readonly documentGenerations = new Map<string, number>();
+  private readonly recovering = new Set<string>();
 
   constructor(
     private readonly bridge: () => FpPcbBridgeClient,
@@ -53,6 +50,8 @@ export class FpPcbSessions {
 
   /** The session for `projectDir`, creating or reconnecting it as needed. */
   session(projectDir: string): Promise<ProjectSession> {
+    if (this.recovering.has(projectDir))
+      return Promise.reject(new NativeRevisionConflict("native project recovery is active; retry after it finishes"));
     const cached = this.open.get(projectDir);
     if (cached) return cached;
     const pending = this.connect(projectDir).catch((e) => {
@@ -169,6 +168,7 @@ export class FpPcbSessions {
    * that could not re-adopt) left a ~500 MB kicad-cli behind.
    */
   async release(projectDir: string): Promise<void> {
+    this.generations.set(projectDir, (this.generations.get(projectDir) ?? 0) + 1);
     const pending = this.open.get(projectDir);
     this.open.delete(projectDir);
     this.revisions.delete(projectDir);
@@ -183,6 +183,7 @@ export class FpPcbSessions {
 
   /** Close the API server so the next operation reloads the exact saved native files. */
   async restart(projectDir: string): Promise<void> {
+    this.generations.set(projectDir, (this.generations.get(projectDir) ?? 0) + 1);
     const pending = this.open.get(projectDir);
     this.open.delete(projectDir);
     this.revisions.delete(projectDir);
@@ -197,6 +198,37 @@ export class FpPcbSessions {
 
   async dispose(): Promise<void> {
     for (const dir of [...this.open.keys()]) await this.release(dir);
+  }
+
+  /** Suspend session access while saved files are replaced. Never discard unsaved live work. */
+  async withSavedFilesRecovery<T>(projectDir: string, replace: () => Promise<T>): Promise<T> {
+    if (this.recovering.has(projectDir))
+      throw new NativeRevisionConflict("native project recovery is already active");
+    this.recovering.add(projectDir);
+    try {
+      // Also inspect an adopted bridge session after a core restart; absence from our map
+      // does not prove there is no live work.
+      let pending = this.open.get(projectDir);
+      if (!pending) {
+        pending = this.connect(projectDir).catch(error => { this.open.delete(projectDir); throw error; });
+        this.open.set(projectDir, pending);
+      }
+      const session = await pending;
+      if (session) {
+        const documents = [await session.kicad.currentBoard(), await session.kicad.currentSchematic()];
+        for (const document of documents) if (document && (await document.modified()) !== false)
+          throw new NativeRevisionConflict("checkpoint restore refused: live document has unsaved or unknown changes; save or preserve that work before restoring");
+        // A failed termination must not proceed to replacing saved files.
+        await this.bridge().deleteSession(session.id);
+        await session.ws.close().catch(() => undefined);
+        this.open.delete(projectDir);
+      }
+      this.revisions.delete(projectDir);
+      this.generations.set(projectDir, (this.generations.get(projectDir) ?? 0) + 1);
+      return await replace();
+    } finally {
+      this.recovering.delete(projectDir);
+    }
   }
 
   private async diskRevision(path: string): Promise<string | null> {
@@ -218,6 +250,8 @@ export class FpPcbSessions {
       known = new Map();
       this.revisions.set(projectDir, known);
     }
+    const pending: Array<{ filename: string; path: string; disk: string | null; document: Board | Schematic | undefined }> = [];
+    // Preflight the entire pair before closing either document.
     for (const filename of [BOARD_PCB, "board.kicad_sch"]) {
       const path = join(projectDir, filename);
       const disk = await this.diskRevision(path);
@@ -242,6 +276,16 @@ export class FpPcbSessions {
           throw new NativeRevisionConflict(
             `${filename} changed during reconciliation; retry after the external writer finishes`,
           );
+      }
+      pending.push({ filename, path, disk, document });
+    }
+    for (const { filename, path, disk, document } of pending) {
+      if ((await this.diskRevision(path)) !== disk)
+        throw new NativeRevisionConflict(`${filename} changed before reconciliation; retry after the external writer finishes`);
+      if (document) {
+        if ((await document.modified()) !== false)
+          throw new NativeRevisionConflict(`${filename} became modified during reconciliation; preserve live work before continuing`);
+        this.documentGenerations.set(path, (this.documentGenerations.get(path) ?? 0) + 1);
         await document.close();
         if (filename === BOARD_PCB) await session.kicad.openBoard(path);
         else await session.kicad.openSchematic(path);
@@ -263,12 +307,16 @@ export class FpPcbSessions {
   ): Promise<T> {
     if (this.guarded.has(document)) return document;
     const path = join(projectDir, filename);
+    const generation = this.generations.get(projectDir) ?? 0;
+    const documentGeneration = this.documentGenerations.get(path) ?? 0;
     let expected = await this.diskRevision(path);
     // ensureProject can create a new document after reconciliation saw a missing file.
     if (this.revisions.get(projectDir)?.get(filename) === null)
       this.revisions.get(projectDir)?.set(filename, expected);
     const save = document.save.bind(document);
     document.save = async () => {
+      if (this.recovering.has(projectDir) || generation !== (this.generations.get(projectDir) ?? 0) || documentGeneration !== (this.documentGenerations.get(path) ?? 0))
+        throw new NativeRevisionConflict(`${filename} document handle predates recovery/reload; refusing stale save. Reacquire the current document.`);
       const disk = await this.diskRevision(path);
       if (disk !== expected)
         throw new NativeRevisionConflict(

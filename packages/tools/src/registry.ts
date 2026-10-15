@@ -161,6 +161,13 @@ export class ToolError extends Error {
   }
 }
 
+/** A conflict whose saved and live states must survive higher-level rollback handlers. */
+export class NativeRevisionConflict extends ToolError {
+  constructor(message: string) {
+    super(message, "precondition");
+  }
+}
+
 /** A backend operation reached its explicit deadline, independently of its log text. */
 export class JobTimeoutError extends ToolError {
   constructor(message: string) {

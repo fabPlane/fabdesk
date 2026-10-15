@@ -1,9 +1,9 @@
-/** Saved native task checkpoints. Observation only: no restore, native check, or inferred acceptance. */
+/** Saved native checkpoints and guarded recovery; no native check or inferred acceptance. */
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { lstat, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { z } from "zod/v4";
-import { jailPath, writeJson } from "./fs";
+import { jailPath, projectRelative, writeJson } from "./fs";
 import { ToolError, type ProjectHandle } from "./registry";
 
 type Node = string | Node[];
@@ -12,11 +12,11 @@ const ROOT = ".fabdesk/task-checkpoints";
 const MAX_FILES = 500;
 const MAX_BYTES = 100 * 1024 * 1024;
 export const TaskScope = z.object({ nets: z.array(z.string().min(1)).max(500).default([]), references: z.array(z.string().min(1)).max(500).default([]) });
-const FileIdentity = z.object({ path: z.string(), sha256: z.string().nullable(), bytes: z.number().nullable() });
+const FileIdentity = z.object({ path: z.string(), sha256: z.string().regex(/^[0-9a-f]{64}$/).nullable(), bytes: z.number().int().min(0).max(MAX_BYTES).nullable() });
 const Manifest = z.object({
   version: z.literal(1), id: z.string(), projectId: z.string(), name: z.string(), reason: z.string(),
   role: z.enum(["baseline", "checkpoint"]), createdAt: z.string(), revision: z.string(),
-  scope: TaskScope.nullable(), files: z.array(FileIdentity), runtimeId: z.string().nullable(),
+  scope: TaskScope.nullable(), files: z.array(FileIdentity).min(1).max(MAX_FILES), runtimeId: z.string().nullable(),
   validation: z.object({ designChecksRun: z.literal(false), taskAccepted: z.literal(false) }),
 });
 export type TaskCheckpoint = z.infer<typeof Manifest>;
@@ -67,6 +67,50 @@ async function stableCapture(project: ProjectHandle) {
 }
 async function root(project: ProjectHandle) { return jailPath(project.dir, ROOT); }
 
+async function nativeTarget(project: ProjectHandle, path: string) {
+  const target = await jailPath(project.dir, path);
+  if (projectRelative(project.dir, target) !== path || path.split("/").some(part => [".git", ".fabdesk", "node_modules", "reports", "renders", "exports", "releases"].includes(part)) ||
+      !(/\.(kicad_pcb|kicad_sch|kicad_pro|kicad_dru)$/.test(path) || ["fp-lib-table", "sym-lib-table"].includes(path.split("/").at(-1)!)))
+    throw new ToolError(`unsafe native checkpoint path: ${path}`, "precondition");
+  // Reject even in-project aliases: restoring one must not overwrite a different native input.
+  let probe = target;
+  while (probe !== project.dir) {
+    const stat = await lstat(probe).catch((error: NodeJS.ErrnoException) => { if (error.code === "ENOENT") return null; throw error; });
+    if (stat?.isSymbolicLink() || (probe === target && stat && !stat.isFile()))
+      throw new ToolError(`native checkpoint refuses non-file/symlink: ${path}`, "precondition");
+    probe = dirname(probe);
+  }
+  return target;
+}
+
+async function checkpointFiles(project: ProjectHandle, checkpoint: TaskCheckpoint): Promise<Captured[]> {
+  const saved: Captured[] = [], seen = new Set<string>();
+  let total = 0;
+  for (const file of checkpoint.files) {
+    await nativeTarget(project, file.path);
+    if (seen.has(file.path) || (file.sha256 === null) !== (file.bytes === null))
+      throw new ToolError(`invalid checkpoint file identity: ${file.path}`, "precondition");
+    seen.add(file.path);
+    total += file.bytes ?? 0;
+    if (total > MAX_BYTES) throw new ToolError("native checkpoint size exceeds limit", "precondition");
+    const data = file.sha256 === null ? null : await readFile(await jailPath(project.dir, `${ROOT}/${checkpoint.id}/files/${file.path}`)).catch(() => null);
+    if ((data ? digest(data) : null) !== file.sha256 || (data?.length ?? null) !== file.bytes)
+      throw new ToolError(`task checkpoint bytes no longer match: ${file.path}`, "precondition");
+    saved.push({ ...file, data });
+  }
+  return saved;
+}
+
+async function withCheckpointLock<T>(project: ProjectHandle, run: () => Promise<T>): Promise<T> {
+  await mkdir(await root(project), { recursive: true });
+  const lock = await jailPath(project.dir, `${ROOT}/capture.lock`);
+  try { await mkdir(lock); } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") throw new ToolError("another checkpoint capture or restore is active", "precondition");
+    throw error;
+  }
+  try { return await run(); } finally { await rm(lock, { recursive: true, force: true }); }
+}
+
 export async function listTaskCheckpoints(project: ProjectHandle): Promise<TaskCheckpoint[]> {
   const directory = await root(project);
   const names = await readdir(directory).catch((error: NodeJS.ErrnoException) => {
@@ -91,13 +135,12 @@ export async function listTaskCheckpoints(project: ProjectHandle): Promise<TaskC
 export async function retainTaskCheckpoint(project: ProjectHandle, input: {
   name: string; reason: string; role: "baseline" | "checkpoint"; scope?: z.infer<typeof TaskScope>;
 }, runtimeId: string | null) {
-  // Serialize checkpoint publication, not editor writes. Native bytes are checked twice below.
-  await mkdir(await root(project), { recursive: true });
-  const lock = await jailPath(project.dir, `${ROOT}/capture.lock`);
-  try { await mkdir(lock); } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "EEXIST") throw new ToolError("another checkpoint capture is active", "precondition");
-    throw error;
-  }
+  return withCheckpointLock(project, () => retainUnlocked(project, input, runtimeId));
+}
+
+async function retainUnlocked(project: ProjectHandle, input: {
+  name: string; reason: string; role: "baseline" | "checkpoint"; scope?: z.infer<typeof TaskScope>;
+}, runtimeId: string | null) {
   const id = `task-${Date.now().toString(36)}-${randomUUID()}`;
   const temporary = await jailPath(project.dir, `${ROOT}/.pending-${id}`);
   try {
@@ -121,13 +164,83 @@ export async function retainTaskCheckpoint(project: ProjectHandle, input: {
     if (manifest.revision !== revision(identities(await capture(project))))
       throw new ToolError("native files changed before checkpoint publication; retry", "precondition");
     await writeJson(join(temporary, "manifest.json"), manifest);
-    const { rename } = await import("node:fs/promises");
     await rename(temporary, await jailPath(project.dir, `${ROOT}/${id}`));
     return manifest;
   } finally {
     await rm(temporary, { recursive: true, force: true });
-    await rm(lock, { recursive: true, force: true });
   }
+}
+
+/** Explicit saved-file restore; the runtime must preserve unsaved state and quiesce its session. */
+export async function restoreTaskCheckpoint(project: ProjectHandle, checkpointId: string, expectedRevision: string, reason: string,
+  runtimeId: string | null, recover: <T>(replace: () => Promise<T>) => Promise<T>) {
+  return withCheckpointLock(project, async () => {
+    const checkpoint = (await listTaskCheckpoints(project)).find(value => value.id === checkpointId);
+    if (!checkpoint) throw new ToolError("task checkpoint not found", "not_found");
+    const saved = await checkpointFiles(project, checkpoint);
+    if (revision(identities(await stableCapture(project))) !== expectedRevision)
+      throw new ToolError("native files changed since comparison; refusing stale checkpoint restore", "precondition");
+    return recover(async () => {
+      const current = await stableCapture(project);
+      if (revision(identities(current)) !== expectedRevision)
+        throw new ToolError("native files changed before restore; refusing stale checkpoint restore", "precondition");
+      const displaced = await retainUnlocked(project, { name: `Before restoring ${checkpoint.name}`.slice(0, 100), reason, role: "checkpoint" }, runtimeId);
+      const savedByPath = new Map(saved.map(file => [file.path, file]));
+      const currentByPath = new Map(current.map(file => [file.path, file]));
+      const paths = [...new Set([...savedByPath.keys(), ...currentByPath.keys()])].sort();
+      // Validate all destinations before replacing any file. Extra native files created after
+      // capture are removed, with their bytes retained in the displaced checkpoint.
+      for (const path of paths) await nativeTarget(project, path);
+      const restoreId = `restore-${randomUUID()}`;
+      const journalPath = `${ROOT}/restores/${restoreId}.json`;
+      const journal = { restoreId, checkpointId, displacedCheckpointId: displaced.id, expectedRevision,
+        targetRevision: checkpoint.revision, reason, startedAt: new Date().toISOString(), status: "prepared", completedPaths: [] as string[] };
+      const staged = new Map<string, string>();
+      try {
+        for (const path of paths) {
+          const data = savedByPath.get(path)?.data;
+          if (data === null || data === undefined) continue;
+          const temporary = await jailPath(project.dir, `${ROOT}/restores/${restoreId}/files/${path}`);
+          await mkdir(dirname(temporary), { recursive: true });
+          await writeFile(temporary, data, { flag: "wx" });
+          if (digest(await readFile(temporary)) !== digest(data)) throw new ToolError(`restore staging failed: ${path}`, "internal");
+          staged.set(path, temporary);
+        }
+        await writeJson(await jailPath(project.dir, journalPath), journal);
+        if (revision(identities(await stableCapture(project))) !== expectedRevision)
+          throw new ToolError("native files changed during restore staging; no files replaced", "precondition");
+        for (const path of paths) {
+          const target = await nativeTarget(project, path);
+          const before = await readFile(target).catch((error: NodeJS.ErrnoException) => { if (error.code === "ENOENT") return null; throw error; });
+          if ((before ? digest(before) : null) !== (currentByPath.get(path)?.sha256 ?? null))
+            throw new ToolError(`native file changed during restore: ${path}`, "precondition");
+          const temporary = staged.get(path);
+          if (temporary) { await mkdir(dirname(target), { recursive: true }); await rename(temporary, target); staged.delete(path); }
+          else await rm(target, { force: true });
+          journal.completedPaths.push(path);
+          journal.status = "replacing";
+          await writeJson(await jailPath(project.dir, journalPath), journal);
+        }
+        const restored = await stableCapture(project);
+        if (revision(identities(restored)) !== checkpoint.revision)
+          throw new ToolError("restored native file set differs from checkpoint", "precondition");
+        journal.status = "restored";
+        await writeJson(await jailPath(project.dir, journalPath), journal);
+        return { status: "restored", checkpointId, displacedCheckpointId: displaced.id, beforeRevision: expectedRevision,
+          restoredRevision: checkpoint.revision, restoredFiles: paths.length, journal: journalPath,
+          validation: { designChecksRun: false, taskAccepted: false },
+          limits: "captured saved native files only; unsaved conflicts are refused; arbitrary external writers are not atomically excluded; release evidence must be checked against restored revisions" };
+      } catch (error) {
+        journal.status = journal.completedPaths.length ? "partial" : "refused";
+        await writeJson(await jailPath(project.dir, journalPath), { ...journal, error: String(error) });
+        // Never automatically roll back over a racing external writer. Both retained saved
+        // versions and the journal give a deliberate recovery path.
+        throw new ToolError(`checkpoint restore ${journal.status}; ${journal.completedPaths.length} file(s) replaced. Target ${checkpointId}, displaced ${displaced.id}, journal ${journalPath}. ${String(error)}`, "precondition");
+      } finally {
+        await rm(await jailPath(project.dir, `${ROOT}/restores/${restoreId}`), { recursive: true, force: true });
+      }
+    });
+  });
 }
 
 function parsePcb(text: string): Node[] {
@@ -221,13 +334,7 @@ export async function compareTaskCheckpoint(project: ProjectHandle, checkpointId
     if (checkpointId) throw new ToolError("task checkpoint not found", "not_found");
     return null;
   }
-  const saved: Captured[] = [];
-  for (const file of checkpoint.files) {
-    const data = file.sha256 === null ? null : await readFile(await jailPath(project.dir, `${ROOT}/${checkpoint.id}/files/${file.path}`));
-    if ((data ? digest(data) : null) !== file.sha256 || (data?.length ?? null) !== file.bytes)
-      throw new ToolError(`task checkpoint bytes no longer match: ${file.path}`, "precondition");
-    saved.push({ ...file, data });
-  }
+  const saved = await checkpointFiles(project, checkpoint);
   const current = await stableCapture(project);
   const paths = new Set([...saved.map(value => value.path), ...current.map(value => value.path)]);
   const files = [...paths].map(path => ({ path, before: saved.find(value => value.path === path)?.sha256 ?? null, after: current.find(value => value.path === path)?.sha256 ?? null })).filter(file => file.before !== file.after);
