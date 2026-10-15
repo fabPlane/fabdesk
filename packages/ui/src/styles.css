@@ -225,7 +225,7 @@ body {
   .fd-composer-hint { font-size: 9px; }
 }
 .fd-board-heading { display: flex; align-items: center; gap: 10px; min-height: 64px; padding: 10px 14px; color: var(--fd-fg); flex-shrink: 0; }
-.fd-board-mark { display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; flex-shrink: 0; color: var(--fd-fg); }
+.fd-board-mark { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; flex-shrink: 0; border: 1px solid var(--fd-border); border-radius: 9px; background: var(--fd-panel); color: var(--fd-fg); }
 .dark .fd-board-mark { color: #fff; }
 .fd-board-eyebrow { font-size: 10px; line-height: 16px; color: var(--fd-muted); }
 .fd-board-title { font-size: 13px; font-weight: 600; line-height: 20px; letter-spacing: -.01em; }

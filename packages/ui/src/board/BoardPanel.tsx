@@ -53,7 +53,7 @@ export function BoardPanel() {
   return (
     <div className="fd-board-panel flex h-full min-w-0 flex-col bg-panel" data-testid="board-panel">
       <div className="fd-board-heading">
-        <span className="fd-board-mark"><CircuitLogo width={34} height={34} viewBox="6 6 40 40" /></span>
+        <span className="fd-board-mark"><CircuitLogo width={22} height={22} viewBox="6 6 40 40" /></span>
         <div className="min-w-0 flex-1">
           <div className="fd-board-eyebrow">Board workspace</div>
           <div className="fd-board-title truncate" title={project?.name}>{project?.name ?? "Select a project"}</div>
