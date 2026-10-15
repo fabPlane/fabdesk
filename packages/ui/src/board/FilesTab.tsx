@@ -9,6 +9,13 @@ const MAX_TEXT_BYTES = 1_000_000;
 
 export function FilesTab() {
   const projectId = useUiStore((s) => s.activeProjectId);
+  if (!projectId) return <EmptyState title="No project selected" />;
+  // File selection and export status belong to one project. Remount on a switch
+  // so a previous project's error (or late export completion) cannot leak here.
+  return <ProjectFiles key={projectId} projectId={projectId} />;
+}
+
+function ProjectFiles({ projectId }: { projectId: string }) {
   const project = useProject(projectId);
   const [selected, setSelected] = useState<string | null>(null);
   const { run, state } = useRunTool();
@@ -19,7 +26,6 @@ export function FilesTab() {
   const tooBig = !!file && file.size > MAX_TEXT_BYTES;
   const text = useProjectText(projectId, file && !isImage && !tooBig ? file.path : null);
 
-  if (!projectId) return <EmptyState title="No project selected" />;
   if (project.isError) return <LoadError title="Could not load project files" onRetry={() => void project.refetch()} />;
   if (project.isLoading) {
     return (
