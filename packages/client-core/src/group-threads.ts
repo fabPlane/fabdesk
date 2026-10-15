@@ -10,6 +10,20 @@ export type ProjectThreadGroup = {
   threads: Thread[];
 };
 
+/** Separate favorites from the project list without duplicating their chats. */
+export function sidebarSections(groups: readonly ProjectThreadGroup[], pinnedProjectIds: readonly string[]) {
+  const pins = new Set(pinnedProjectIds);
+  const projects = groups.filter((group) => group.kind === "project");
+  const byName = (a: ProjectThreadGroup, b: ProjectThreadGroup) => a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: "base" }) || a.key.localeCompare(b.key);
+  return {
+    pinnedProjects: projects.filter((group) => pins.has(group.projectId!)).sort(byName),
+    pinnedChats: groups.filter((group) => group.kind === "pinned").flatMap((group) => group.threads)
+      .sort((a, b) => (a.title || "Untitled").localeCompare(b.title || "Untitled", undefined, { numeric: true, sensitivity: "base" }) || a.id.localeCompare(b.id)),
+    projects: projects.filter((group) => !pins.has(group.projectId!)).sort(byName),
+    chats: groups.filter((group) => group.kind === "unassigned").flatMap((group) => group.threads),
+  };
+}
+
 /**
  * Sidebar list order: pinned first, then threads with no project, then
  * project groups (pinned projects first, then A–Z within each group), including empty projects.
