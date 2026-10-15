@@ -55,6 +55,7 @@ export function BoardPanel() {
       <div className="fd-board-heading">
         <span className="fd-board-mark"><CircuitLogo width={34} height={34} viewBox="6 6 40 40" /></span>
         <div className="min-w-0 flex-1">
+          <div className="fd-board-eyebrow">Board workspace</div>
           <div className="fd-board-title truncate" title={project?.name}>{project?.name ?? "Select a project"}</div>
         </div>
         <div className="fd-board-actions">
