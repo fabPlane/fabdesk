@@ -231,11 +231,11 @@ body {
 .fd-board-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; margin-left: auto; }
 .fd-board-controls { min-height: 44px; margin-bottom: 10px; border-bottom: 1px solid var(--fd-border); }
 .fd-tabs-underline { gap: 2px; }
-.fd-tabs-underline .fd-underline-tab { position: relative; height: 43px; color: var(--fd-muted); background: transparent; border-radius: 0; box-shadow: none; }
+.fd-tabs-underline .fd-underline-tab { position: relative; height: 43px; color: var(--fd-muted); background: transparent; border-radius: 8px; box-shadow: none; }
 .fd-tabs-underline .fd-underline-tab:hover { color: var(--fd-fg); background: color-mix(in srgb, var(--fd-panel-2) 40%, transparent); }
 .fd-tabs-underline .fd-underline-tab[aria-selected="true"] { color: var(--fd-fg); font-weight: 600; }
 .fd-tabs-underline .fd-underline-tab[aria-selected="true"]::after { content: ""; position: absolute; bottom: 0; left: 10px; right: 10px; height: 2px; border-radius: 2px 2px 0 0; background: var(--fd-accent); }
-.fd-tabs-underline .fd-underline-tab:focus-visible { outline: 2px solid var(--fd-accent); outline-offset: -4px; border-radius: 5px; }
+.fd-tabs-underline .fd-underline-tab:focus-visible { outline: 2px solid var(--fd-accent); outline-offset: -4px; }
 @container (max-width: 440px) {
   .fd-board-heading { flex-wrap: wrap; gap: 8px; }
   .fd-board-mark { display: none; }
@@ -367,7 +367,7 @@ body {
 .fd-content-pane { container-type: inline-size; }
 .fd-render-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); }
 .fd-files-list { max-width: 48%; }
-.fd-file-row { display: flex; align-items: center; gap: 7px; min-height: 32px; width: 100%; padding: 5px 10px; text-align: left; font-size: 12px; border-left: 2px solid transparent; }
+.fd-file-row { display: flex; align-items: center; gap: 7px; min-height: 32px; width: 100%; padding: 5px 10px; text-align: left; font-size: 12px; border-left: 2px solid transparent; border-radius: 6px; }
 .fd-file-row:hover { background: var(--fd-panel-2); }
 .fd-file-row:focus-visible { outline: 2px solid var(--fd-accent); outline-offset: -2px; }
 .fd-file-row.is-selected { background: color-mix(in srgb, var(--fd-accent) 12%, transparent); border-left-color: var(--fd-accent); }
