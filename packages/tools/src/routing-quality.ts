@@ -23,6 +23,7 @@ export type NetFacts = {
   viaSizes: Array<{ diameterMm: number; drillMm: number }>;
 };
 type Copper = {
+  signature: string;
   id: string;
   net: string;
   layer: string[];
@@ -88,7 +89,21 @@ export function copperBoard(text: string): CopperBoard {
     ...children(root, "via"),
   ].map((n, i): Copper => {
     const via = n[0] === "via";
+    const signature = JSON.stringify({
+      net: netOf(n),
+      kind: n[0],
+      layer: child(n, "layer").slice(1),
+      layers: child(n, "layers").slice(1),
+      start: child(n, "start").slice(1).map(Number),
+      end: child(n, "end").slice(1).map(Number),
+      mid: child(n, "mid").slice(1).map(Number),
+      at: child(n, "at").slice(1).map(Number),
+      width: number(n, "width"),
+      size: number(n, "size"),
+      drill: number(n, "drill"),
+    });
     return {
+      signature,
       id: str(n, "uuid") || str(n, "tstamp") || `anonymous-${i}`,
       net: netOf(n),
       layer: via ? child(n, "layers").slice(1).map(String) : [str(n, "layer")],
@@ -166,10 +181,7 @@ export function quality(
       }
     }
   }
-  const facts = netFacts(board, [
-    ...nets,
-    ...pairs.filter((p) => nets.includes(p.p) || nets.includes(p.n)).flatMap((p) => [p.p, p.n]),
-  ]);
+  const facts = netFacts(board, [...nets, ...pairs.flatMap((p) => [p.p, p.n])]);
   const byNet = new Map(facts.map((n) => [n.net, n]));
   return {
     nets: facts,
@@ -271,4 +283,51 @@ export function qualityText(q: Quality, maxBytes = 1800) {
     out += line + "\n";
   }
   return out.trimEnd();
+}
+
+export type QualityWarning = { kind: "narrowing" | "skew"; text: string };
+export function compareQuality(
+  before: Quality,
+  after: Quality,
+  opens: { before: number; after: number },
+  outside: number,
+) {
+  const warnings: QualityWarning[] = [];
+  const lines = [
+    `Opens: ${opens.before} → ${opens.after}${opens.after ? `; partial, ${opens.after} opens left` : "; complete"}.`,
+    `Copper outside request changed: ${outside}.`,
+  ];
+  const beforeNets = new Map(before.nets.map((n) => [n.net, n]));
+  const reference = new Map(before.reference.map((n) => [n.net, n]));
+  for (const net of after.nets) {
+    const old = beforeNets.get(net.net);
+    const narrowed =
+      old?.minWidthMm != null &&
+      net.minWidthMm != null &&
+      net.minWidthMm < old.minWidthMm - 0.000001;
+    lines.push(
+      `${net.net}: minimum width ${old?.minWidthMm ?? "none"} → ${net.minWidthMm ?? "none"} mm${narrowed ? "; WARNING narrowing" : ""}.`,
+    );
+    if (narrowed)
+      warnings.push({
+        kind: "narrowing",
+        text: `${net.net}: existing minimum width ${old!.minWidthMm} → ${net.minWidthMm} mm`,
+      });
+  }
+  for (const pair of after.pairs) {
+    const old = before.pairs.find((p) => p.p === pair.p && p.n === pair.n)!;
+    const rp = reference.get(pair.p),
+      rn = reference.get(pair.n);
+    const limit = rp && rn ? round(Math.abs(rp.lengthMm - rn.lengthMm)) : old.skewMm;
+    const worse = pair.skewMm > limit + 0.001;
+    lines.push(
+      `${pair.p}/${pair.n}: skew ${old.skewMm} → ${pair.skewMm} mm${rp && rn ? ` (before edit ${limit})` : ""}; vias ${old.viasP}/${old.viasN} → ${pair.viasP}/${pair.viasN}${worse ? "; WARNING increased skew" : ""}.`,
+    );
+    if (worse)
+      warnings.push({
+        kind: "skew",
+        text: `${pair.p}/${pair.n}: skew ${pair.skewMm} mm exceeds reference ${limit} mm`,
+      });
+  }
+  return { opens, outsideScopeItems: outside, warnings, text: lines.join("\n") };
 }

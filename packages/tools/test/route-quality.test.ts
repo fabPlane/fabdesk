@@ -71,7 +71,10 @@ test("route_run carries explicit rules and retains capability outcomes with save
   const id = data.run?.id ?? data.runId;
   const run = services.routeRuns.get(id)!;
   expect(run.state).toBe("completed");
-  expect(received.settings).toMatchObject({ differentialPairs: pairs, perNet });
+  expect(received.settings).toMatchObject({
+    differentialPairs: pairs,
+    perNet: [...perNet, { net: "D_N", widthMm: 0.15 }],
+  });
   const detail = JSON.parse(
     await readFile(join(project.dir, run.result!.quality!.detailPath), "utf8"),
   );

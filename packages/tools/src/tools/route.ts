@@ -21,8 +21,10 @@ import { rowPoints } from "./spatial";
 import {
   readCopper,
   copperBoard,
+  netFacts,
   quality,
   qualityText,
+  compareQuality,
   referenceFacts,
   consumeReference,
   type PairDefinition,
@@ -112,6 +114,12 @@ export const RouteRunArgs = {
       "Explicit routing width, clearance, via and zone rules; the router uses the board's enabled copper layers",
     ),
   settings: z.record(z.string(), z.unknown()).optional().describe("Router specific settings"),
+  allowQualityRegression: z
+    .array(z.enum(["narrowing", "skew"]))
+    .optional()
+    .describe(
+      "Explicitly allow warned width narrowing or increased pair skew. Default holds these candidates for inspection; scope and native DRC errors can never be allowed.",
+    ),
   applyPolicy: z
     .enum(["auto", "manual"])
     .default("auto")
@@ -262,6 +270,7 @@ type RouteArgs = {
     pairs?: PairDefinition[] | undefined;
   };
   settings?: Record<string, unknown>;
+  allowQualityRegression?: Array<"narrowing" | "skew">;
   applyPolicy: "auto" | "manual";
   /** How long this request waits for a terminal run; 0 or absent returns the running state at once. */
   waitMs?: number;
@@ -382,6 +391,7 @@ async function applyCandidate(
   ctx: ToolContext,
   rec: RouteRunRecord,
   expectedRevision: string,
+  allowed: Array<"narrowing" | "skew"> = [],
 ): Promise<RouteRunRecord> {
   const project = ctx.requireProject();
   if (rec.projectId !== project.id)
@@ -390,6 +400,12 @@ async function applyCandidate(
     throw new ToolError(`route ${rec.id} has no validated candidate`, "precondition");
   if (rec.application.state === "rejected")
     throw new ToolError(rec.application.reason ?? "route candidate was rejected", "precondition");
+  const blocked = (rec.result?.quality?.warnings ?? []).filter((w) => !allowed.includes(w.kind));
+  if (blocked.length)
+    throw new ToolError(
+      `quality warning requires allowQualityRegression: ${blocked.map((w) => w.text).join("; ")}`,
+      "precondition",
+    );
   const boardPath = p(project, PROJECT_FILES.boardPcb);
   const before = await readFile(boardPath);
   const current = sha256(before);
@@ -535,6 +551,7 @@ async function executeRoute(
     );
   const frames = new RouteProgressFrames(rec.id, started, sink);
   let cancelPromise: Promise<void> | null = null;
+  let preflightQuality: RouteResult["quality"];
   signal.addEventListener(
     "abort",
     () => {
@@ -586,10 +603,67 @@ async function executeRoute(
     const missing = requestedNets.filter((net) => !endpointNets.has(net));
     if (missing.length)
       throw new ToolError(`no remaining endpoints for ${missing.join(", ")}`, "precondition");
+    const reference = await referenceFacts(project.dir, rec.startingPcbRevision);
+    const beforeQuality = quality(
+      startingCopper,
+      requestedNets.length ? requestedNets : startingCopper.nets,
+      args.rules?.pairs,
+      reference,
+    );
+    preflightQuality = {
+      text: `Opens: ${endpoints.length} → unavailable; candidate not validated. Copper outside request: unmeasured.\n${qualityText(beforeQuality)}`,
+      detailPath: join(rec.artifacts.runDir, "quality.json"),
+      warnings: [],
+    };
+    await writeJson(join(runDir, "quality.json"), {
+      ...beforeQuality,
+      candidate: "not yet validated",
+      opensBefore: endpoints.length,
+    });
+    const perNet = new Map((args.rules?.perNet ?? []).map((r) => [r.net, { ...r }]));
+    if (!args.allowQualityRegression?.includes("narrowing")) {
+      for (const n of [
+        ...netFacts(startingCopper, requestedNets.length ? requestedNets : startingCopper.nets),
+        ...reference,
+      ]) {
+        if (requestedNets.length && !requestedNets.includes(n.net)) continue;
+        const floor = Math.max(0, ...n.widthsMm);
+        if (!floor) continue;
+        const own = perNet.get(n.net);
+        const requested =
+          own?.widthMm ??
+          args.rules?.pairs?.find((p) => p.p === n.net || p.n === n.net)?.widthMm ??
+          args.rules?.widthMm ??
+          0;
+        perNet.set(n.net, { ...own, net: n.net, widthMm: Math.max(floor, requested) });
+      }
+      for (const pair of args.rules?.pairs ?? []) {
+        const width = Math.max(
+          pair.widthMm ?? 0,
+          perNet.get(pair.p)?.widthMm ?? 0,
+          perNet.get(pair.n)?.widthMm ?? 0,
+        );
+        if (width)
+          for (const net of [pair.p, pair.n])
+            perNet.set(net, { ...perNet.get(net), net, widthMm: width });
+      }
+    }
+    const effectivePairs = args.rules?.pairs?.map((pair) => ({
+      ...pair,
+      ...(pair.widthMm !== undefined
+        ? {
+            widthMm: Math.max(
+              pair.widthMm,
+              perNet.get(pair.p)?.widthMm ?? 0,
+              perNet.get(pair.n)?.widthMm ?? 0,
+            ),
+          }
+        : {}),
+    }));
     const ruleSettings: Record<string, unknown> = {
       ...(args.settings ?? {}),
-      ...(args.rules?.perNet ? { perNet: args.rules.perNet } : {}),
-      ...(args.rules?.pairs ? { differentialPairs: args.rules.pairs } : {}),
+      ...(perNet.size ? { perNet: [...perNet.values()] } : {}),
+      ...(effectivePairs ? { differentialPairs: effectivePairs } : {}),
       ...(args.rules?.widthMm !== undefined ? { trackWidthMm: args.rules.widthMm } : {}),
       ...(args.rules?.clearanceMm !== undefined ? { clearanceMm: args.rules.clearanceMm } : {}),
       ...(args.rules?.viaDiameterMm !== undefined
@@ -848,30 +922,50 @@ async function executeRoute(
       const additions = new Map(
         namedGeometry.map((shape) => [shape.id, { net: shape.netName, via: shape.kind === "via" }]),
       );
-      const startIds = new Set(startingCopper.copper.map((item) => item.id));
-      const candidateIds = new Set(candidateBoard.copper.map((item) => item.id));
+      const startIds = new Map(startingCopper.copper.map((item) => [item.id, item.signature]));
+      const candidateIds = new Map(candidateBoard.copper.map((item) => [item.id, item.signature]));
       for (const item of candidateBoard.copper)
-        if (!startIds.has(item.id))
+        if (startIds.get(item.id) !== item.signature)
           additions.set(item.id, { net: item.net, via: item.diameter !== undefined });
       for (const item of additions.values()) count(item.net, item.via, "added");
       for (const item of startingCopper.copper)
-        if (!candidateIds.has(item.id)) count(item.net, item.diameter !== undefined, "removed");
+        if (candidateIds.get(item.id) !== item.signature)
+          count(item.net, item.diameter !== undefined, "removed");
       outsideScopeChanges.push(...[...counts.values()].sort((a, b) => a.net.localeCompare(b.net)));
     }
     const selectedNets = requestedNets.length ? requestedNets : touchedNets;
-    const measuredQuality = quality(
-      candidateBoard,
-      selectedNets,
-      args.rules?.pairs,
-      await referenceFacts(project.dir, rec.startingPcbRevision),
-    );
+    const measuredQuality = quality(candidateBoard, selectedNets, args.rules?.pairs, reference);
     if (summary.pairRouting) measuredQuality.pairRouting = summary.pairRouting;
-    await writeJson(join(runDir, "quality.json"), measuredQuality);
+    const comparison = compareQuality(
+      beforeQuality,
+      measuredQuality,
+      { before: endpoints.length, after: summary.unrouted.length },
+      outsideScopeChanges.reduce((s, c) => s + c.traces + c.vias, 0),
+    );
+    const heldWarnings = comparison.warnings.filter(
+      (w) => !args.allowQualityRegression?.includes(w.kind),
+    );
+    await writeJson(join(runDir, "quality.json"), {
+      ...measuredQuality,
+      before: beforeQuality,
+      comparison,
+    });
     const fullResult: RouteResult = {
       ...(summary.diagnostics ? { diagnostics: summary.diagnostics } : {}),
       ...(summary.endpointCollisions ? { endpointCollisions: summary.endpointCollisions } : {}),
       quality: {
-        text: qualityText(measuredQuality),
+        text:
+          comparison.text +
+          (summary.pairRouting
+            ? "\n" +
+              summary.pairRouting.pairs
+                .map(
+                  (p) =>
+                    `${p.p}/${p.n}: ${p.status}; capability ${summary.pairRouting!.capability}`,
+                )
+                .join("\n")
+            : ""),
+        warnings: comparison.warnings,
         detailPath: join(rec.artifacts.runDir, "quality.json"),
       },
       runId: rec.id,
@@ -950,6 +1044,8 @@ async function executeRoute(
       diff,
     });
     const forbidden = forbiddenDiff(diff, args.rules?.refillZones === true);
+    if (outsideScopeChanges.length)
+      forbidden.push(`copper outside request: ${outsideScopeChanges.map((c) => c.net).join(", ")}`);
     if (drcCli && beforeDrc) {
       const afterDrc = await ctx.services.kicad.runDrc(drcCli, {
         board: join(snapshotDir, PROJECT_FILES.boardPcb),
@@ -1033,7 +1129,7 @@ async function executeRoute(
           ? "rejected"
           : !usableCandidate
             ? "not_available"
-            : args.applyPolicy === "manual"
+            : args.applyPolicy === "manual" || heldWarnings.length > 0
               ? "manual"
               : "pending",
         reason: forbidden.length
@@ -1041,13 +1137,20 @@ async function executeRoute(
           : !usableCandidate
             ? summary.message ||
               "no usable route progress; inspect the run diagnostics and remaining endpoints"
-            : null,
+            : heldWarnings.length
+              ? `Candidate held: ${heldWarnings.map((w) => w.text).join("; ")}. Set allowQualityRegression to explicitly allow these costs.`
+              : null,
       },
     };
     await persistProgress(ctx, rec, runDir);
-    if (!forbidden.length && usableCandidate && args.applyPolicy === "auto") {
+    if (
+      !forbidden.length &&
+      !heldWarnings.length &&
+      usableCandidate &&
+      args.applyPolicy === "auto"
+    ) {
       try {
-        rec = await applyCandidate(ctx, rec, rec.startingPcbRevision);
+        rec = await applyCandidate(ctx, rec, rec.startingPcbRevision, args.allowQualityRegression);
       } catch (error) {
         const current = sha256(await readFile(p(project, PROJECT_FILES.boardPcb)));
         rec = {
@@ -1080,6 +1183,25 @@ async function executeRoute(
       endedAt,
       updatedAt: endedAt,
       error: message,
+      result: preflightQuality
+        ? {
+            runId: rec.id,
+            router: rec.router as "fab_router" | "freerouting",
+            complete: [],
+            open: [],
+            timedOut,
+            state: "failed",
+            detail: message,
+            changedGeometryCount: 0,
+            stats: {
+              vias: 0,
+              segments: 0,
+              frames: sink.stats.frames,
+              wallMs: Date.now() - started,
+            },
+            quality: preflightQuality,
+          }
+        : rec.result,
       terminalReason: cancelled
         ? "exact-run cancellation reached the route worker; canonical board was never routed"
         : message,
@@ -1142,7 +1264,7 @@ async function routeStatusOutput(
   };
   ctx.services.routeRuns.update(rec.id, run);
   return ok(
-    `Run ${rec.id} (${rec.router}): ${rec.state}; ${rec.progress.routed ?? "?"}/${rec.progress.total ?? "?"} routed; candidate ${rec.candidate.available ? "ready" : "unavailable"}; apply ${rec.application.state}.${rec.fallbackReason ? ` Fallback: ${rec.fallbackReason}.` : ""}${rec.result?.diagnostics ? `\n${rec.result.diagnostics.text}` : rec.error ? `\n${rec.error}` : ""}${rec.result?.endpointCollisions ? `\n${rec.result.endpointCollisions.text}` : ""}${outsideScopeText(rec.result?.outsideScopeChanges)}${rec.result?.quality ? `\n${rec.result.quality.text}` : ""}`,
+    `Run ${rec.id} (${rec.router}): ${rec.state}; ${rec.progress.routed ?? "?"}/${rec.progress.total ?? "?"} routed; candidate ${rec.candidate.available ? "ready" : "unavailable"}; apply ${rec.application.state}.${rec.application.reason ? ` ${rec.application.reason}` : ""}${rec.fallbackReason ? ` Fallback: ${rec.fallbackReason}.` : ""}${rec.result?.diagnostics ? `\n${rec.result.diagnostics.text}` : rec.error ? `\n${rec.error}` : ""}${rec.result?.endpointCollisions ? `\n${rec.result.endpointCollisions.text}` : ""}${outsideScopeText(rec.result?.outsideScopeChanges)}${rec.result?.quality ? `\n${rec.result.quality.text}` : "\nQuality pending; no candidate applied."}`,
     { run },
   );
 }
@@ -1502,14 +1624,18 @@ export const route_apply = defineTool({
   title: "Apply route candidate",
   description:
     "Atomically apply one validated route candidate only when the supplied expected PCB revision equals both the current board and the run's starting revision. Restores the prior board on validation failure.",
-  inputSchema: { runId: z.string().min(1), expectedPcbRevision: z.string().length(64) },
+  inputSchema: {
+    runId: z.string().min(1),
+    expectedPcbRevision: z.string().length(64),
+    allowQualityRegression: RouteRunArgs.allowQualityRegression,
+  },
   annotations: {
     readOnlyHint: false,
     destructiveHint: true,
     openWorldHint: false,
     idempotentHint: true,
   },
-  handler: async ({ runId, expectedPcbRevision }, ctx) => {
+  handler: async ({ runId, expectedPcbRevision, allowQualityRegression }, ctx) => {
     const rec = ctx.services.routeRuns.get(runId);
     if (!rec) throw new ToolError(`route run not found: ${runId}`, "not_found");
     if (rec.application.state === "applied" && rec.application.resultingPcbRevision)
@@ -1519,7 +1645,7 @@ export const route_apply = defineTool({
         resultingPcbRevision: rec.application.resultingPcbRevision,
         state: "applied",
       });
-    const applied = await applyCandidate(ctx, rec, expectedPcbRevision);
+    const applied = await applyCandidate(ctx, rec, expectedPcbRevision, allowQualityRegression);
     return ok(
       `Applied route ${runId} candidate ${applied.candidate.identity}; PCB revision is ${applied.application.resultingPcbRevision}.`,
       {

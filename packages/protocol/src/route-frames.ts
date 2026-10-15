@@ -77,7 +77,7 @@ export type RouterId = z.infer<typeof RouterId>;
 export const RouteResult = z.object({
   endpointCollisions: EndpointCollisions.optional(),
   diagnostics: RoutingDiagnostics.optional(),
-  quality: z.object({ text: z.string(), detailPath: z.string() }).optional(),
+  quality: z.object({ text: z.string(), detailPath: z.string(), warnings: z.array(z.object({ kind: z.enum(["narrowing", "skew"]), text: z.string() })).optional() }).optional(),
   runId: z.string(),
   router: RouterId,
   complete: z.array(z.string()),
