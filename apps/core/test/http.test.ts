@@ -433,8 +433,10 @@ describe("http daemon", () => {
     const agentInstructions = await Bun.file(join(created.path, "AGENTS.md")).text();
     expect(agentInstructions).toContain("Canonical KiCad PCB");
     expect(agentInstructions).not.toMatch(
-      /workflow|circuit_build|prefer|retry|repeat until|run .* first/i,
+      /workflow|prefer|retry|repeat until|run .* first/i,
     );
+    // Neutral discovery must give both authoring paths equal visibility.
+    expect(/circuit_build/i.test(agentInstructions)).toBe(/schematic_edit/i.test(agentInstructions));
     expect((await Bun.file(join(created.path, "CLAUDE.md")).text()).trim()).toBe("@AGENTS.md");
 
     const msgs = (await (await api(`/threads/${thread.id}/messages`)).json()) as Array<{
