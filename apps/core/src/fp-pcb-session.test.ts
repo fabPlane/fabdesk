@@ -252,3 +252,19 @@ test("new project can retain unsaved documents until its first owned save", asyn
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("read-only project access does not register libraries or rewrite their saved tables", async () => {
+  await fixture(async f => {
+    let registrations = 0;
+    const project = await f.sessions.session(f.dir);
+    (f.sessions as any).bridge = () => ({ registerBundledLibraries: async () => { registrations++; } });
+    await writeFile(join(f.dir, "board.kicad_pro"), "project");
+    const sch = join(f.dir, "board.kicad_sch"); await writeFile(sch, "schematic");
+    project.kicad.currentSchematic = async () => ({ modified: async () => false, close: async () => {}, save: async () => {} }) as never;
+    project.kicad.openSchematic = async () => ({}) as never;
+    await f.sessions.ensureProject(f.dir, { registerLibraries: false });
+    expect(registrations).toBe(0);
+    await f.sessions.ensureProject(f.dir);
+    expect(registrations).toBe(1);
+  });
+});

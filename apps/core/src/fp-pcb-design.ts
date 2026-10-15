@@ -716,7 +716,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     projectDir: string,
     selectedSheet?: string,
   ): Promise<NativeSchematicSnapshot> => {
-    const { schematic, board } = await deps.sessions.ensureProject(projectDir);
+    const { schematic, board } = await deps.sessions.ensureProject(projectDir, { registerLibraries: false });
     const hierarchy = await schematic.hierarchy();
     const { selected: selectedEntry } = resolveSchematicSheet(hierarchy, selectedSheet);
     const root = schematic.sheet(selectedEntry.path, selectedEntry);

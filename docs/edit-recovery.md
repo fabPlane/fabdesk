@@ -13,6 +13,8 @@ The shared session boundary refuses unsaved or unmeasurable live schematic/PCB s
 native operations. It stops the saved headless session before replacement; subsequent inspection
 opens the restored state. Previously acquired handles cannot save afterward. Native transaction
 rollback uses the same boundary. Conflict refusals bypass destructive outer transaction rollback.
+Schematic inspection leaves saved library tables intact; editing/construction may explicitly
+register the current bundled libraries, and comparison exposes the resulting saved-file changes.
 
 Replacement is staged and revision checked but cannot atomically exclude arbitrary external
 writers or make a multi-file filesystem replacement crash-atomic. A partial restore reports the

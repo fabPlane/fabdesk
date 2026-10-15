@@ -115,6 +115,7 @@ export class FpPcbSessions {
    */
   async ensureProject(
     projectDir: string,
+    options: { registerLibraries?: boolean } = {},
   ): Promise<{ session: ProjectSession; schematic: Schematic; board: Board }> {
     return this.withRetry(projectDir, async (s) => {
       const exists = this.opts.exists ?? ((p: string) => Bun.file(p).exists());
@@ -125,7 +126,9 @@ export class FpPcbSessions {
         await s.kicad.newProject(pro);
         s.path = pro;
       }
-      await this.bridge().registerBundledLibraries(s.id);
+      // Read-only inspection must not rewrite retained project library tables. Mutation and
+      // construction paths can explicitly use bundled libraries through the default behavior.
+      if (options.registerLibraries !== false) await this.bridge().registerBundledLibraries(s.id);
       let schematic = await s.kicad.currentSchematic();
       if (!schematic)
         schematic = (await exists(sch))
