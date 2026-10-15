@@ -183,6 +183,8 @@ body {
 
 /* Workspace surfaces and a conversation-first start screen. */
 .fd-sidebar { background: var(--fd-sidebar); container-type: inline-size; }
+.fd-sidebar .fd-icon-button { background: transparent; }
+.fd-sidebar .fd-icon-button:hover { background: transparent; color: var(--fd-fg); }
 .fd-sidebar-nav { display: flex; flex-direction: column; gap: 3px; padding: 15px 12px 8px; }
 .fd-sidebar-nav button { display: flex; align-items: center; gap: 10px; min-height: 37px; padding: 8px 10px; border-radius: 7px; color: var(--fd-muted); text-align: left; font-size: 13px; }
 .fd-sidebar-nav button:hover { background: var(--fd-panel-2); color: var(--fd-fg); }
@@ -204,7 +206,8 @@ body {
 .fd-sidebar-chat-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; margin-top: 8px; padding-bottom: 4px; transform: translateY(-4px); transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1); }
 .fd-project-reveal[data-open="true"] .fd-sidebar-chat-list { transform: translateY(0); }
 .group:is(:hover, :focus-within) > .fd-chat-row { padding-right: 60px; }
-.group:has(.fd-project-add):is(:hover, :focus-within) .fd-project-row { padding-right: 38px; }
+.fd-project-heading:has(.fd-project-add):is(:hover, :focus-within, [data-menu-open="true"]) .fd-project-row { padding-right: 72px; }
+.fd-project-heading[data-menu-open="true"] > .fd-icon-button { opacity: 1; }
 .fd-scrolling-title { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .fd-scrolling-title-text { display: block; width: max-content; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @keyframes fd-title-scroll { from { transform: translateX(0); } to { transform: translateX(var(--title-travel)); } }
