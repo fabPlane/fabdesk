@@ -756,7 +756,10 @@ describe("http daemon", () => {
   });
 
   test("uninstalling the router that is the saved default resets the default to automatic", async () => {
-    const set = await api("/settings", { method: "PATCH", body: JSON.stringify({ preferredRouter: "tracemaker" }) });
+    const set = await api("/settings", {
+      method: "PATCH",
+      body: JSON.stringify({ preferredRouter: "tracemaker" }),
+    });
     expect(((await set.json()) as { preferredRouter?: string }).preferredRouter).toBe("tracemaker");
     const gone = await api("/routers/tracemaker", { method: "DELETE" });
     expect(gone.status).toBe(200);
@@ -766,7 +769,10 @@ describe("http daemon", () => {
     expect(list.preferredRouter).toBeUndefined();
 
     // uninstalling some other router leaves the default alone
-    await api("/settings", { method: "PATCH", body: JSON.stringify({ preferredRouter: "fab_router" }) });
+    await api("/settings", {
+      method: "PATCH",
+      body: JSON.stringify({ preferredRouter: "fab_router" }),
+    });
     await api("/routers/tracemaker", { method: "DELETE" });
     const kept = (await (await api("/settings")).json()) as { preferredRouter?: string | null };
     expect(kept.preferredRouter).toBe("fab_router");

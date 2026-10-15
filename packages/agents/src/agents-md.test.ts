@@ -55,7 +55,9 @@ describe("renderAgentsMd", () => {
 
   test("keeps direct IPC absent from the substrate control", () => {
     expect(renderAgentsMd({ ...ctx, interfaceMode: "substrate" })).not.toContain("fabpcb ipc");
-    expect(renderAgentsMd({ ...ctx, interfaceMode: "substrate" })).not.toContain("## Shopping list");
+    expect(renderAgentsMd({ ...ctx, interfaceMode: "substrate" })).not.toContain(
+      "## Shopping list",
+    );
   });
 
   test("handles missing sketches and unconstrained size", () => {

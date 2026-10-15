@@ -51,10 +51,7 @@ import {
 } from "./sentry";
 import { RunTelemetry } from "./run-telemetry";
 import { buildInfo } from "./build-info";
-import {
-  ArchiveConsentRevokedError,
-  UsageArchive,
-} from "./usage-archive";
+import { ArchiveConsentRevokedError, UsageArchive } from "./usage-archive";
 import { UsageApiArchiveWriter } from "./usage-api";
 
 export type ExperimentalAgentInterface = "substrate" | "programmable";
@@ -215,7 +212,11 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   if (archiveDir) archives.push(new UsageArchive(archiveDir));
   let archiveBearer: () => string | null = () => null;
   if (remoteArchiveEnabled)
-    archives.push(new UsageArchive(new UsageApiArchiveWriter(config.apiOrigin, () => archiveBearer(), store.settings)));
+    archives.push(
+      new UsageArchive(
+        new UsageApiArchiveWriter(config.apiOrigin, () => archiveBearer(), store.settings),
+      ),
+    );
   let archiveBackfilled = false;
   let archiveClosing = false;
   let backfillTask: Promise<void> | null = null;
@@ -225,11 +226,11 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     show: privacy.firstInstallScreen,
     signal: privacy.region.signal,
   });
-  const hasArchiveConsent = () => usageArchiveAllowed(store.settings.get(), privacy.firstInstallScreen);
+  const hasArchiveConsent = () =>
+    usageArchiveAllowed(store.settings.get(), privacy.firstInstallScreen);
   const startArchiveBackfill = (): Promise<void> => {
     if (backfillTask) return backfillTask;
-    if (!archiveEnabled || !hasArchiveConsent() || archiveClosing)
-      return Promise.resolve();
+    if (!archiveEnabled || !hasArchiveConsent() || archiveClosing) return Promise.resolve();
     archiveBackfilled = false;
     const task = (async () => {
       try {
@@ -355,7 +356,9 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
 
   // fabplane.com carts and inventory (`shopping` tools, `/cloud` routes); tests may inject their own.
   const storedToken =
-    auth.mode === "local" ? storedCredentialToken({ home: config.home, apiOrigin: config.apiOrigin }) : () => null;
+    auth.mode === "local"
+      ? storedCredentialToken({ home: config.home, apiOrigin: config.apiOrigin })
+      : () => null;
   services.cloud ??= createCloudService({
     apiOrigin: config.apiOrigin,
     token: () => auth.token() ?? storedToken(),
