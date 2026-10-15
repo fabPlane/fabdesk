@@ -1,5 +1,6 @@
 import { Button, IconButton, Select, Tabs } from "../components/ui";
 import { Icon } from "../components/Icon";
+import { CircuitLogo } from "../components/CircuitLogo";
 import { useCore } from "@fabdesk/client-core";
 import { useProjectOrder, useProjects } from "@fabdesk/client-core";
 import { BOARD_TABS, BOARD_TAB_LABELS, useUiStore, type BoardTab } from "../stores/ui";
@@ -52,9 +53,8 @@ export function BoardPanel() {
   return (
     <div className="fd-board-panel flex h-full min-w-0 flex-col bg-panel" data-testid="board-panel">
       <div className="fd-board-heading">
-        <span className="fd-board-mark"><Icon name="pcb" width={18} height={18} /></span>
+        <span className="fd-board-mark"><CircuitLogo width={34} height={34} viewBox="6 6 40 40" /></span>
         <div className="min-w-0 flex-1">
-          <div className="fd-board-eyebrow">Board workspace</div>
           <div className="fd-board-title truncate" title={project?.name}>{project?.name ?? "Select a project"}</div>
         </div>
         <div className="fd-board-actions">
