@@ -15,6 +15,7 @@ export type IconName =
   | "chevronDown"
   | "paperclip"
   | "send"
+  | "export"
   | "pin"
   | "more"
   | "stop"
@@ -51,6 +52,7 @@ export function Icon({ name, ...props }: SVGProps<SVGSVGElement> & { name: IconN
     chevronDown: <path d="m6 9 6 6 6-6" />,
     paperclip: <path d="m20.5 11.5-8.8 8.8a5.2 5.2 0 0 1-7.4-7.4l9.4-9.4a3.5 3.5 0 0 1 5 5l-9.5 9.4a1.8 1.8 0 0 1-2.6-2.6l8.7-8.7" />,
     send: <><path d="M5 12h14M13 6l6 6-6 6" /></>,
+    export: <><path d="M12 15V3m-4 4 4-4 4 4" /><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6" /></>,
     pin: <><path d="M8 3h8l-1 7 3 3v2H6v-2l3-3-1-7Z" /><path d="M12 15v7" /></>,
     more: <><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></>,
     stop: <rect x="6" y="6" width="12" height="12" rx="2" />,

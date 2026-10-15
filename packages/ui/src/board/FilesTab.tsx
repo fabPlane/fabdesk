@@ -77,7 +77,7 @@ function ProjectFiles({ projectId }: { projectId: string }) {
         <span className="text-xs font-semibold">Project files</span>
         <span className="text-[11px] text-muted">{files.length}</span>
         <Button size="sm" className="ml-auto" aria-label="Export project files" onClick={() => setExportOpen(true)} disabled={busy}>
-          {busy ? <Spinner /> : <Icon name="send" width={14} height={14} />} {busy ? "Exporting…" : "Export…"}
+          {busy ? <Spinner /> : <Icon name="export" width={16} height={16} />} {busy ? "Exporting…" : "Export"}
         </Button>
       </div>
       {state.status !== "idle" && !exportOpen && <div role={state.error ? "alert" : "status"} className={cn("border-b border-border px-3 py-2 text-xs", state.error ? "text-danger" : "text-muted")}>
