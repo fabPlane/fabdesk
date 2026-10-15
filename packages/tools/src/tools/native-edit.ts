@@ -15,12 +15,12 @@ import {
 import { dirname, join } from "node:path";
 import { z } from "zod/v4";
 import { PROJECT_FILES, exists, jailPath, projectRelative, readJson, writeJson } from "../fs";
-import { ToolError, NativeRevisionConflict, defineTool, type ProjectHandle, type ToolContext } from "../registry";
+import { ToolError, NativeRevisionConflict, defineTool, mutationInputObject, type ProjectHandle, type ToolContext } from "../registry";
 import type { NativeSchematicEdit, PcbFootprintEdit, PcbGeometryEdit } from "../services";
 import { inspectSavedHierarchy, ok, p } from "./common";
 
-const Point = z.object({ x: z.number().finite(), y: z.number().finite() });
-const PadEndpoint = z.object({ reference: z.string().min(1), pad: z.string().min(1) });
+const Point = mutationInputObject({ x: z.number().finite(), y: z.number().finite() });
+const PadEndpoint = mutationInputObject({ reference: z.string().min(1), pad: z.string().min(1) });
 const CopperEndpoint = z
   .union([Point, PadEndpoint])
   .describe("Exact millimetre point or a footprint pad resolved to its exact saved-board position");
@@ -274,10 +274,10 @@ async function transactionMetadata(directory: string): Promise<TransactionMetada
   return { ...metadata, files };
 }
 
-const SchematicEdit = z.object({
+const SchematicEdit = mutationInputObject({
   symbols: z
     .array(
-      z.object({
+      mutationInputObject({
         libId: z.string().min(3),
         reference: z.string().min(1),
         value: z.string(),
@@ -292,7 +292,7 @@ const SchematicEdit = z.object({
     .optional(),
   symbolUpdates: z
     .array(
-      z.object({
+      mutationInputObject({
         reference: z.string().min(1),
         newReference: z.string().min(1).optional(),
         position: Point.optional(),
@@ -305,10 +305,9 @@ const SchematicEdit = z.object({
     .optional(),
   connections: z
     .array(
-      z
-        .object({
+      mutationInputObject({
           name: z.string().min(1),
-          nodes: z.array(z.object({ reference: z.string(), pin: z.string() })).min(1),
+          nodes: z.array(mutationInputObject({ reference: z.string(), pin: z.string() })).min(1),
           label: z.enum(["local", "global", "none"]).optional(),
         })
         .refine((connection) => connection.label !== "none" || connection.nodes.length >= 2, {
@@ -319,27 +318,27 @@ const SchematicEdit = z.object({
     .max(500)
     .optional(),
   wires: z
-    .array(z.object({ start: Point, end: Point }))
+    .array(mutationInputObject({ start: Point, end: Point }))
     .max(1000)
     .optional(),
   localLabels: z
-    .array(z.object({ text: z.string(), position: Point }))
+    .array(mutationInputObject({ text: z.string(), position: Point }))
     .max(500)
     .optional(),
   globalLabels: z
-    .array(z.object({ text: z.string(), position: Point }))
+    .array(mutationInputObject({ text: z.string(), position: Point }))
     .max(500)
     .optional(),
   junctions: z.array(Point).max(1000).optional(),
   noConnects: z.array(Point).max(1000).optional(),
   texts: z
-    .array(z.object({ text: z.string(), position: Point }))
+    .array(mutationInputObject({ text: z.string(), position: Point }))
     .max(200)
     .optional(),
   deleteItemIds: z.array(z.string()).max(1000).optional(),
 });
 
-const FootprintEdit = z.object({
+const FootprintEdit = mutationInputObject({
   reference: z.string().min(1),
   position: Point.optional(),
   rotation: z.number().finite().optional(),
@@ -347,7 +346,7 @@ const FootprintEdit = z.object({
   lock: z.boolean().optional(),
 });
 
-const Polygon = z.object({
+const Polygon = mutationInputObject({
   points: z.array(Point).min(3).max(5000),
   holes: z.array(z.array(Point).min(3).max(5000)).max(100).optional(),
 });
@@ -388,10 +387,10 @@ export function layerId(layer: string | number): number {
   if (value === undefined) throw new ToolError(`unknown KiCad PCB layer ${layer}`, "invalid_args");
   return value;
 }
-const PcbGeometry = z.object({
+const PcbGeometry = mutationInputObject({
   tracks: z
     .array(
-      z.object({
+      mutationInputObject({
         start: CopperEndpoint,
         end: CopperEndpoint,
         width: z.number().positive(),
@@ -403,7 +402,7 @@ const PcbGeometry = z.object({
     .optional(),
   vias: z
     .array(
-      z.object({
+      mutationInputObject({
         position: Point,
         diameter: z.number().positive(),
         drill: z.number().positive(),
@@ -442,7 +441,7 @@ const PcbGeometry = z.object({
     .optional(),
   texts: z
     .array(
-      z.object({
+      mutationInputObject({
         text: z.string(),
         position: Point,
         layer: Layer,
@@ -456,7 +455,7 @@ const PcbGeometry = z.object({
     .optional(),
   graphics: z
     .array(
-      z.object({
+      mutationInputObject({
         kind: z.enum(["segment", "rectangle", "arc", "circle", "polygon"]),
         layer: Layer,
         start: Point.optional(),
@@ -486,8 +485,7 @@ export const native_edit_transaction = defineTool({
     expectedSchematicRevision: z.string().length(64).nullable().optional(),
     expectedPcbRevision: z.string().length(64).nullable().optional(),
     schematic: SchematicEdit.optional(),
-    outline: z
-      .object({ points: z.array(Point).min(3).max(100), replace: z.boolean().default(false) })
+    outline: mutationInputObject({ points: z.array(Point).min(3).max(100), replace: z.boolean().default(false) })
       .optional(),
     footprints: z.array(FootprintEdit).max(500).optional(),
     geometry: PcbGeometry.optional(),
@@ -880,8 +878,7 @@ export const pcb_edit_graphics = defineTool({
   inputSchema: {
     mode: z.enum(["preview", "apply"]).default("apply"),
     expectedPcbRevision: z.string().length(64).optional(),
-    outline: z
-      .object({ points: z.array(Point).min(3).max(100), replace: z.boolean().default(false) })
+    outline: mutationInputObject({ points: z.array(Point).min(3).max(100), replace: z.boolean().default(false) })
       .optional(),
     zones: PcbGeometry.shape.zones,
     keepouts: PcbGeometry.shape.keepouts,

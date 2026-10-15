@@ -1,10 +1,10 @@
 /** Explicit native PCB setup and placement following schematic forward annotation. */
 import { readCopper, recordRemoval, quality, qualityText } from "../routing-quality";
 import { z } from "zod/v4";
-import { ToolError, defineTool } from "../registry";
+import { ToolError, defineTool, mutationInputObject } from "../registry";
 import { ok } from "./common";
 
-const Point = z.object({ x: z.number().finite(), y: z.number().finite() });
+const Point = mutationInputObject({ x: z.number().finite(), y: z.number().finite() });
 
 export const pcb_define_outline = defineTool({
   name: "pcb_define_outline",
@@ -51,14 +51,13 @@ export const pcb_place = defineTool({
   inputSchema: {
     placements: z
       .array(
-        z.object({
+        mutationInputObject({
           reference: z.string().min(1),
           position: Point.optional(),
           rotation: z.number().finite().optional(),
           flip: z.boolean().optional(),
           lock: z.boolean().optional(),
-          referenceField: z
-            .object({
+          referenceField: mutationInputObject({
               visible: z.boolean().optional(),
               position: Point.optional().describe("Absolute board position in millimetres"),
               sizeMm: z.number().positive().max(5).optional(),

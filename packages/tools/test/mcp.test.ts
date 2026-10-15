@@ -287,3 +287,31 @@ describe("mcp adapter", () => {
     expect(text).toContain("Request: add 10 spare LEDs");
   });
 });
+
+test("direct MCP rejects Qwen placement coordinates before mutation", async () => {
+  const { client, server } = await pair(["pcb_place"]);
+  try {
+    const result = await client.callTool({
+      name: "pcb_place",
+      arguments: {
+        placements: [{ reference: "D1", x: 27, y: 23, flip: true }],
+      },
+    });
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result.content)).toContain("use position: {x, y} in mm");
+  } finally {
+    await client.close();
+    await server.close();
+  }
+});
+
+test("direct MCP rejects unknown top-level mutation fields", async () => {
+  const { client, server } = await pair(["pcb_place"]);
+  try {
+    const result = await client.callTool({ name: "pcb_place", arguments: {
+      placements: [{ reference: "D1", position: { x: 27, y: 23 } }], typo: true,
+    } });
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result.content)).toContain("typo");
+  } finally { await client.close(); await server.close(); }
+});
