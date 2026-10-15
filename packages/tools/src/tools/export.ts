@@ -218,15 +218,22 @@ export const export_zip = defineTool({
   toolset: "export",
   title: "Zip fabrication outputs",
   description:
-    "Bundle the files currently present in exports/gerbers plus positions.csv and bom.csv into exports/fabrication.zip. Missing optional entries are reported.",
-  inputSchema: {},
+    "Bundle the files currently present in exports/gerbers plus positions.csv and bom.csv into exports/fabrication.zip or a named filename under exports/. Missing optional entries are reported.",
+  inputSchema: {
+    filename: z
+      .string()
+      .regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*\.zip$/)
+      .max(200)
+      .default("fabrication.zip")
+      .describe("Archive basename under exports/, such as controller-fabrication.zip"),
+  },
   annotations: {
     readOnlyHint: false,
     destructiveHint: true,
     openWorldHint: false,
     idempotentHint: true,
   },
-  handler: async (_args, ctx) => {
+  handler: async ({ filename }, ctx) => {
     const project = ctx.requireProject();
     const exportsDir = p(project, PROJECT_FILES.exports);
     const gerbersDir = join(exportsDir, "gerbers");
@@ -243,11 +250,11 @@ export const export_zip = defineTool({
     }
     if (entries.length === 0)
       throw new ToolError("no fabrication outputs found in exports/", "precondition");
-    const output = join(exportsDir, "fabrication.zip");
+    const output = join(exportsDir, filename);
     await zipFiles(output, entries);
     const size = (await stat(output)).size;
     return ok(
-      `Wrote exports/fabrication.zip (${entries.length} files, ${size} bytes).${missing.length ? ` Missing: ${missing.join(", ")}.` : ""}`,
+      `Wrote exports/${filename} (${entries.length} files, ${size} bytes).${missing.length ? ` Missing: ${missing.join(", ")}.` : ""}`,
       { path: output, files: entries.map((e) => e.name), missing, size },
     );
   },

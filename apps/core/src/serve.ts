@@ -440,9 +440,17 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
         .filter((f) => /\.(png|jpe?g)$/i.test(f.path))
         .map((f) => join(project.dir, "sketches", f.path));
       const board = project.manifest().board;
+      const cli = await services.kicad.resolveCli().catch(() => null);
       await agents.writeAgentDocs(project.dir, {
         projectName: project.name,
         toolsMarkdown: toolsMarkdown(registry),
+        ...(cli ? { kicadCli: cli.path } : {}),
+        shellExecutables: Object.fromEntries(
+          ["python3", "rg", "bun"].flatMap((name) => {
+            const path = Bun.which(name);
+            return path ? [[name, path]] : [];
+          }),
+        ),
         sketches,
         board: {
           layers: board.layers,

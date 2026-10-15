@@ -30,7 +30,10 @@ describe("renderAgentsMd", () => {
     expect(md).toContain("Its MCP server is `fabdesk`");
     expect(md).not.toContain("fabpcb ipc");
     expect(md).toContain("| `board.kicad_pcb` | Canonical KiCad PCB. |");
-    expect(md).not.toContain("circuit.netlist.json");
+    expect(md).toContain("Both authoring paths are available");
+    expect(md).toContain("`circuit.netlist.json`");
+    expect(md).toContain("`route_status`");
+    expect(md).toContain("`$KICAD_CLI`");
     expect(md).not.toContain("### circuit_build");
     expect(md).toContain("## Shopping list");
     expect(md).toContain("`/shopping-list`");

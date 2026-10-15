@@ -250,6 +250,7 @@ export type NativeSchematicSymbolInput = {
 };
 export type NativeSchematicSymbolUpdate = {
   reference: string;
+  unit?: number | undefined;
   newReference?: string | undefined;
   position?: SchematicPoint | undefined;
   rotation?: 0 | 90 | 180 | 270 | undefined;
@@ -287,6 +288,7 @@ export type NativeSchematicSnapshot = {
     value: string;
     footprint: string;
     libId: string;
+    unit?: number;
     position: SchematicPoint;
     rotation: number;
     mirrorX: boolean;
@@ -306,7 +308,13 @@ export type NativeSchematicSnapshot = {
   noConnects: Array<{ id: string; position: SchematicPoint }>;
   texts: Array<{ id: string; text: string; position: SchematicPoint }>;
   nets: Array<{ name: string; itemCount: number; itemIds: string[] }>;
-  erc: { errors: number; warnings: number };
+  erc: {
+    errors: number;
+    warnings: number;
+    issues?: Array<{ type: string; description: string; itemIds: string[] }>;
+    issueCount?: number;
+    danglingItemIds?: string[];
+  };
   /** Live KiCad IPC authoring scope. This is never saved-file ERC evidence. */
   scope?: {
     kind: "current/root-sheet" | "selected-sheet";
