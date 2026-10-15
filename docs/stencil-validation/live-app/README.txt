@@ -62,7 +62,7 @@ Automatic folder opening follow-up (2026-10-15):
 
 Thickness dropdown follow-up (2026-10-15):
 - Files now offers 0.10, 0.15, 0.20, 0.25, 0.30, 0.40 and 0.50 mm total thickness.
-  The desktop UI defaults to 0.20 mm; the headless tool's default is unchanged.
+  The desktop UI initially defaulted to 0.20 mm; the headless tool's default was unchanged.
 - Selection is saved per project. The command palette shows and uses that value.
 - Exported V4.0 through the real Files button at all seven settings and inspected
   binary STL vertex Z bounds: every measured thickness matches the selection.
@@ -74,3 +74,8 @@ Thickness dropdown follow-up (2026-10-15):
 - 93 UI tests / 333 assertions, full workspace typecheck and desktop build passed.
   See thickness-results.json, thickness-ui-checks.json and thickness-dropdown.png.
   These verify exported geometry/settings, not printability at every thickness.
+
+Default correction (2026-10-15): the UI now defaults to 0.15 mm, matching the
+export tool. Previously saved per-project choices are preserved, including the
+PS1 project's explicit 0.20 mm selection. The 0.20 mm printing starting point is
+project-specific, not a universal stencil recommendation.
