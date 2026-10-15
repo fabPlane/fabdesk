@@ -24,6 +24,7 @@
   --fd-warning: #b7791f;
   --fd-code-bg: #e7ebe3;
   --fd-code-fg: #2f5d1f;
+  --fd-link: #2563eb;
   color-scheme: light;
 }
 .dark {
@@ -44,6 +45,7 @@
   --fd-warning: #e0b24a;
   --fd-code-bg: #0d120d;
   --fd-code-fg: #98c777;
+  --fd-link: #60a5fa;
   color-scheme: dark;
 }
 /* "System" skins: the neutral light/dark look, selectable in Settings → Appearance. */
@@ -103,6 +105,7 @@
   --color-primary-fg: var(--fd-primary-fg);
   --color-code: var(--fd-code-bg);
   --color-code-fg: var(--fd-code-fg);
+  --color-link: var(--fd-link);
   --font-sans: "Inter Variable", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --radius-sm: 5px;

@@ -151,13 +151,23 @@ export function UserFooter() {
           aria-haspopup="menu"
           aria-expanded={open}
           disabled={busy}
-          title={email ? `${label} (${email})` : label}
+          title={`${email ? `${label} (${email})` : label}${local ? " · Local mode" : ""}`}
           data-testid="user-menu-button"
         >
           <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-border bg-panel-2 text-[11px] font-semibold text-fg">
             {principalInitials(label)}
           </span>
-          <span className="min-w-0 flex-1 truncate">{label}</span>
+          <span className="min-w-0 truncate">{label}</span>
+          {local && (
+            <span
+              className="h-2 w-2 shrink-0 rounded-full bg-warning"
+              title="Local mode: running with --local-auth; no fabPlane account"
+              data-testid="local-mode-status"
+            >
+              <span className="sr-only">Local mode</span>
+            </span>
+          )}
+          <span className="flex-1" />
         </button>
         <IconButton title={`Settings (${mod} + ,)`} onClick={() => openSettings()}>
           <Icon name="settings" />
