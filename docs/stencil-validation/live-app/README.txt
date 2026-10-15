@@ -59,3 +59,18 @@ Automatic folder opening follow-up (2026-10-15):
 - 207 client-core/UI tests (834 assertions), full workspace typecheck, and the
   desktop build passed. This includes Windows/POSIX output paths, failure and
   missing-path cases, remote/browser hosts, and file-manager opening failures.
+
+Thickness dropdown follow-up (2026-10-15):
+- Files now offers 0.10, 0.15, 0.20, 0.25, 0.30, 0.40 and 0.50 mm total thickness.
+  The desktop UI defaults to 0.20 mm; the headless tool's default is unchanged.
+- Selection is saved per project. The command palette shows and uses that value.
+- Exported V4.0 through the real Files button at all seven settings and inspected
+  binary STL vertex Z bounds: every measured thickness matches the selection.
+  Every STL retained 240 openings and byte-identical X/Y vertex coordinates to
+  the previously validated export. The source board was unchanged.
+- Switched from V4.0 at 0.30 to V1 (default 0.20); set V1 to 0.10, returned to V4.0
+  and reloaded: V4.0 remained 0.30. Palette exports at 0.30 and 0.20 produced the
+  matching STL thickness. Left the PS1 V4.0 project selected at 0.20 mm.
+- 93 UI tests / 333 assertions, full workspace typecheck and desktop build passed.
+  See thickness-results.json, thickness-ui-checks.json and thickness-dropdown.png.
+  These verify exported geometry/settings, not printability at every thickness.

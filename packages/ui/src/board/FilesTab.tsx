@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { ProjectImage } from "../chat/ProjectImage";
-import { Button, EmptyState, LoadError, Spinner } from "../components/ui";
+import { Button, EmptyState, LoadError, Select, Spinner } from "../components/ui";
 import { useProject, useProjectText, useRunTool } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
+import { STENCIL_THICKNESSES_MM, DEFAULT_STENCIL_THICKNESS_MM, stencilThicknessMm } from "../stores/stencil-thickness";
 import { cn, isImagePath } from "../util";
 
 const MAX_TEXT_BYTES = 1_000_000;
@@ -17,6 +18,8 @@ export function FilesTab() {
 
 function ProjectFiles({ projectId }: { projectId: string }) {
   const project = useProject(projectId);
+  const thicknessMm = useUiStore((s) => stencilThicknessMm(s.stencilThicknessByProject?.[projectId]));
+  const setThickness = useUiStore((s) => s.setStencilThickness);
   const [selected, setSelected] = useState<string | null>(null);
   const { run, state } = useRunTool();
   const busy = state.status === "running";
@@ -43,12 +46,24 @@ function ProjectFiles({ projectId }: { projectId: string }) {
         <Button size="sm" disabled={busy} onClick={() => void run("export_bom", { projectId })}>
           Export BOM
         </Button>
-        <Button size="sm" disabled={busy} onClick={() => void run("stencil", { projectId })}>
+        <span className="ml-auto text-[11px] text-muted">Writes under exports/</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 border-b border-border px-2 py-2">
+        <label className="flex items-center gap-2 text-xs">
+          Stencil thickness
+          <Select aria-label="Stencil thickness" className="h-8" value={thicknessMm} disabled={busy}
+            onChange={(e) => setThickness(projectId, Number(e.target.value))}>
+            {STENCIL_THICKNESSES_MM.map((mm) => (
+              <option key={mm} value={mm}>{mm.toFixed(2)} mm{mm === DEFAULT_STENCIL_THICKNESS_MM ? " (default)" : ""}</option>
+            ))}
+          </Select>
+        </label>
+        <Button size="sm" disabled={busy} onClick={() => void run("stencil", { projectId, thicknessMm })}>
           {busy ? "Exporting…" : "Export stencil"}
         </Button>
+        <p className="w-full text-[11px] text-muted">Total thickness, not layer height. Thicker stencils hold more paste. Match your slicer's total layer thickness.</p>
         {state.error && <span className="text-xs text-danger">{state.error}</span>}
         {state.note && <span role="status" className="text-xs text-muted">{state.note}</span>}
-        <span className="ml-auto text-[11px] text-muted">Writes under exports/</span>
       </div>
       <div className="flex min-h-0 flex-1">
         <div className="fd-files-list w-56 shrink-0 overflow-auto border-r border-border py-1">

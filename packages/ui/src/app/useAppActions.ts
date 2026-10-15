@@ -4,6 +4,7 @@ import { composerHandlers } from "../chat/Composer";
 import { useThread, useThreadMutations } from "@fabdesk/client-core";
 import { useBranchThread } from "../hooks/threadActions";
 import { useUiStore } from "../stores/ui";
+import { stencilThicknessMm } from "../stores/stencil-thickness";
 
 /** App-level actions shared by the shortcut hook, the command palette and the top bar. */
 export function useAppActions() {
@@ -65,7 +66,7 @@ export function useAppActions() {
         const projectId = ui().activeProjectId;
         if (!projectId) return;
         ui().setBoardTab("files");
-        await run("stencil", { projectId });
+        await run("stencil", { projectId, thicknessMm: stencilThicknessMm(ui().stencilThicknessByProject?.[projectId]) });
       },
     };
   }, [data, patch, branch, run]);
