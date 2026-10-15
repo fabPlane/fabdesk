@@ -1,5 +1,5 @@
-import { Button, IconButton, Select, Tabs } from "../components/ui";
-import { Icon } from "../components/Icon";
+import { Button, Select, Tabs } from "../components/ui";
+import { BoardPanelToggle } from "../components/BoardPanelToggle";
 import { CircuitLogo } from "../components/CircuitLogo";
 import { useCore } from "@fabdesk/client-core";
 import { useProjectOrder, useProjects } from "@fabdesk/client-core";
@@ -43,7 +43,6 @@ export function BoardPanel() {
   const { host } = useCore();
   const tab = useUiStore((s) => s.boardTab);
   const setBoardTab = useUiStore((s) => s.setBoardTab);
-  const setBoardOpen = useUiStore((s) => s.setBoardOpen);
   const projectId = useUiStore((s) => s.activeProjectId);
   const setOrderFlowOpen = useUiStore((s) => s.setOrderFlowOpen);
   const order = useProjectOrder(projectId);
@@ -70,10 +69,8 @@ export function BoardPanel() {
               {order.data.ready ? "Order now" : "Order checks"}
             </Button>
           )}
-          <IconButton size="sm" title={`Hide board panel (${mod} + Shift + B)`} onClick={() => setBoardOpen(false)}>
-            <Icon name="close" width={16} height={16} />
-          </IconButton>
         </div>
+        <BoardPanelToggle location="board" />
       </div>
       <div className="fd-board-controls flex shrink-0 items-center px-3">
         <Tabs
