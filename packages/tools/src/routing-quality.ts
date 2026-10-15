@@ -11,6 +11,7 @@ export type PairDefinition = {
   widthMm?: number | undefined;
   gapMm?: number | undefined;
   skewToleranceMm?: number | undefined;
+  source?: "native netclass" | "identified by name";
 };
 export type NetFacts = {
   net: string;
@@ -39,7 +40,7 @@ export type Quality = {
   pairs: Array<{
     p: string;
     n: string;
-    identification: "declared" | "identified by name";
+    identification: "declared" | "native netclass" | "identified by name";
     lengthPMm: number;
     lengthNMm: number;
     skewMm: number;
@@ -161,15 +162,15 @@ export function quality(
   reference: NetFacts[] = [],
 ): Quality {
   const seen = new Set(declared.flatMap((p) => [p.p, p.n]));
-  const pairs: Array<PairDefinition & { identification: "declared" | "identified by name" }> =
-    declared.map((p) => ({ ...p, identification: "declared" }));
+  const pairs: Array<
+    PairDefinition & { identification: "declared" | "native netclass" | "identified by name" }
+  > = declared.map((p) => ({ ...p, identification: p.source ?? "declared" }));
   for (const p of board.nets) {
     if (seen.has(p)) continue;
     for (const [positive, negative] of [
-      ["_DP", "_DN"],
+      ["DP", "DN"],
       ["_P", "_N"],
       ["+", "-"],
-      ["P", "N"],
     ]) {
       if (!p.endsWith(positive!)) continue;
       const n = p.slice(0, -positive!.length) + negative!;
@@ -332,4 +333,55 @@ export function compareQuality(
       });
   }
   return { opens, outsideScopeItems: outside, warnings, text: lines.join("\n") };
+}
+
+/** Netclass dimensions first, standard member names second; no arbitrary trailing P/N guess. */
+export async function projectPairs(
+  dir: string,
+  board: CopperBoard,
+  declared: PairDefinition[] = [],
+): Promise<PairDefinition[]> {
+  const named = quality(board, board.nets, declared).pairs;
+  let settings: any;
+  try {
+    settings = JSON.parse(await readFile(join(dir, PROJECT_FILES.boardPro), "utf8"))?.net_settings;
+  } catch {
+    /* Older native boards may have no project sidecar; names remain measurable. */
+  }
+  const classes: Array<{
+    name: string;
+    diff_pair_width?: number;
+    diff_pair_gap?: number;
+    priority?: number;
+  }> = settings?.classes ?? [];
+  const forNet = (net: string) => {
+    const exact = settings?.netclass_assignments?.[net];
+    const assignments: string[] = exact ? (Array.isArray(exact) ? exact : [exact]) : [];
+    for (const p of settings?.netclass_patterns ?? [])
+      if (new Bun.Glob(p.pattern).match(net)) assignments.push(p.netclass);
+    return (
+      classes
+        .filter((c) => assignments.includes(c.name))
+        .sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0))[0] ??
+      classes.find((c) => c.name === "Default")
+    );
+  };
+  return named.map((pair) => {
+    const explicit = declared.find((p) => p.p === pair.p && p.n === pair.n);
+    if (explicit) return explicit;
+    const pc = forNet(pair.p),
+      nc = forNet(pair.n),
+      width = pc?.diff_pair_width ?? nc?.diff_pair_width,
+      gap = pc?.diff_pair_gap ?? nc?.diff_pair_gap;
+    return {
+      p: pair.p,
+      n: pair.n,
+      source:
+        width !== undefined || gap !== undefined
+          ? ("native netclass" as const)
+          : ("identified by name" as const),
+      ...(width !== undefined && width > 0 ? { widthMm: width } : {}),
+      ...(gap !== undefined ? { gapMm: gap } : {}),
+    };
+  });
 }

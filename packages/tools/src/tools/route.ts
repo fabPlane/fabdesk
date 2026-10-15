@@ -25,6 +25,7 @@ import {
   quality,
   qualityText,
   compareQuality,
+  projectPairs,
   referenceFacts,
   consumeReference,
   type PairDefinition,
@@ -622,10 +623,11 @@ async function executeRoute(
     if (missing.length)
       throw new ToolError(`no remaining endpoints for ${missing.join(", ")}`, "precondition");
     const reference = await referenceFacts(project.dir, rec.startingPcbRevision);
+    const detectedPairs = await projectPairs(snapshotDir, startingCopper, args.rules?.pairs);
     const beforeQuality = quality(
       startingCopper,
       requestedNets.length ? requestedNets : startingCopper.nets,
-      args.rules?.pairs,
+      detectedPairs,
       reference,
     );
     preflightQuality = {
@@ -666,7 +668,7 @@ async function executeRoute(
             perNet.set(net, { ...perNet.get(net), net, widthMm: width });
       }
     }
-    const effectivePairs = args.rules?.pairs?.map((pair) => ({
+    const effectivePairs = detectedPairs.map(({ source, ...pair }) => ({
       ...pair,
       ...(pair.widthMm !== undefined
         ? {
@@ -752,7 +754,7 @@ async function executeRoute(
     } catch {
       // Static cinema context is optional; durable route execution is not.
     }
-    const attemptRoute = async (): Promise<RouteSummary> => {
+    const attemptRoute = async (scopeNets = requestedNets): Promise<RouteSummary> => {
       const attempt = {
         router: rec.router as "fab_router" | "freerouting" | "tracemaker",
         startedAt: iso(),
@@ -789,7 +791,7 @@ async function executeRoute(
               ? { freerouting: { passes: args.freeroutingPasses ?? 20 } }
               : {}),
             maxTimeMs: args.timeoutMs,
-            ...(requestedNets.length ? { nets: requestedNets } : {}),
+            ...(scopeNets.length ? { nets: scopeNets } : {}),
             ...(Object.keys(ruleSettings).length ? { settings: ruleSettings } : {}),
             ...(args.rules?.refillZones !== undefined
               ? { refillZones: args.rules.refillZones }
@@ -875,7 +877,7 @@ async function executeRoute(
         rec = { ...rec, router: "fab_router", fallbackReason: `Freerouting failed: ${message}` };
         frames.fallback(rec.fallbackReason!);
         await persistProgress(ctx, rec, runDir);
-        return attemptRoute();
+        return attemptRoute(scopeNets);
       }
     };
     const retryMode = args.rerouteMode ?? "onOpen";
@@ -889,6 +891,40 @@ async function executeRoute(
         `Clean retry: removed ${removed.tracks} tracks and ${removed.vias} vias on requested nets only.`,
       );
       await ctx.services.design.release(snapshotDir);
+    };
+    const score = async (value: RouteSummary, label: string): Promise<CandidateScore> => {
+      const copper = await readCopper(snapshotDir);
+      const scope = new Set(requestedNets.length ? requestedNets : startingCopper.nets);
+      const outside = (b: typeof copper) =>
+        b.copper
+          .filter((c) => !scope.has(c.net))
+          .map((c) => c.signature)
+          .sort();
+      const outsideScope =
+        JSON.stringify(outside(startingCopper)) === JSON.stringify(outside(copper)) ? 0 : 1;
+      const drc = await ctx.services.kicad.runDrc(drcCli!, {
+        board: join(snapshotDir, PROJECT_FILES.boardPcb),
+        outFile: join(runDir, `${label}-drc.json`),
+        severity: "all",
+        refillZones: true,
+        signal,
+      });
+      const facts = quality(
+        copper,
+        requestedNets.length ? requestedNets : copper.nets,
+        detectedPairs,
+        reference,
+      );
+      return {
+        opens: value.unrouted.length,
+        newErrors: newRoutingDrcErrors(beforeDrc!, drc).length,
+        outsideScope,
+        skewMm: facts.pairs
+          .filter((p) => !scope.size || scope.has(p.p) || scope.has(p.n))
+          .reduce((sum, p) => sum + p.skewMm, 0),
+        vias: facts.nets.reduce((s, n) => s + n.viaCount, 0),
+        lengthMm: facts.nets.reduce((s, n) => s + n.lengthMm, 0),
+      };
     };
     if (retryMode === "always") await clean();
     let summary: RouteSummary;
@@ -933,33 +969,6 @@ async function executeRoute(
     ) {
       await ctx.services.design.release(snapshotDir);
       const first = await readFile(join(snapshotDir, PROJECT_FILES.boardPcb));
-      const score = async (value: RouteSummary, label: string): Promise<CandidateScore> => {
-        const copper = await readCopper(snapshotDir);
-        const scope = new Set(requestedNets);
-        const outside = (b: typeof copper) =>
-          b.copper
-            .filter((c) => !scope.has(c.net))
-            .map((c) => c.signature)
-            .sort();
-        const outsideScope =
-          JSON.stringify(outside(startingCopper)) === JSON.stringify(outside(copper)) ? 0 : 1;
-        const drc = await ctx.services.kicad.runDrc(drcCli!, {
-          board: join(snapshotDir, PROJECT_FILES.boardPcb),
-          outFile: join(runDir, `${label}-drc.json`),
-          severity: "all",
-          refillZones: true,
-          signal,
-        });
-        const facts = quality(copper, requestedNets, args.rules?.pairs, reference);
-        return {
-          opens: value.unrouted.length,
-          newErrors: newRoutingDrcErrors(beforeDrc!, drc).length,
-          outsideScope,
-          skewMm: Math.max(0, ...facts.pairs.map((p) => p.skewMm)),
-          vias: facts.nets.reduce((s, n) => s + n.viaCount, 0),
-          lengthMm: facts.nets.reduce((s, n) => s + n.lengthMm, 0),
-        };
-      };
       const beforeScore = await score(summary, "retained");
       const trials: unknown[] = [{ kind: "retained", score: beforeScore }];
       try {
@@ -985,6 +994,82 @@ async function executeRoute(
         `Clean retry attempted once; selected by opens, new errors, skew, vias, length. Detail: retry.json.`,
       );
     }
+    const pairAttempts: unknown[] = [];
+    const initialFacts = quality(
+      await readCopper(snapshotDir),
+      startingCopper.nets,
+      detectedPairs,
+      reference,
+    );
+    for (const warning of compareQuality(
+      beforeQuality,
+      initialFacts,
+      { before: endpoints.length, after: summary.unrouted.length },
+      0,
+    ).warnings.filter((w) => w.kind === "skew")) {
+      const pair = detectedPairs.find((p) => warning.text.startsWith(`${p.p}/${p.n}:`));
+      if (
+        !pair ||
+        (requestedNets.length &&
+          (!requestedNets.includes(pair.p) || !requestedNets.includes(pair.n)))
+      )
+        continue;
+      if (signal.aborted) throwIfAborted(signal);
+      await ctx.services.design.release(snapshotDir);
+      const prior = await readFile(join(snapshotDir, PROJECT_FILES.boardPcb));
+      const priorSummary = summary;
+      const priorScore = await score(summary, `pair-${pairAttempts.length}-before`);
+      try {
+        await ctx.services.design.unroute(snapshotDir, [pair.p, pair.n]);
+        const routed = await attemptRoute([pair.p, pair.n]);
+        // Native connectivity for the original scope, not only the just-routed pair.
+        const rows = await ctx.services.design.query(snapshotDir, "unrouted");
+        const allOpen = rows.filter(
+          (row) => !requestedNets.length || requestedNets.includes(String(row["net"])),
+        );
+        const trial = {
+          ...routed,
+          total: priorSummary.total,
+          unrouted: allOpen.map((row) => ({
+            net: String(row["net"]),
+            from: { x: Number(row["x1"] ?? 0), y: Number(row["y1"] ?? 0) },
+            to: { x: Number(row["x2"] ?? 0), y: Number(row["y2"] ?? 0) },
+          })),
+          geometry: [...(priorSummary.geometry ?? []), ...(routed.geometry ?? [])],
+        };
+        const afterScore = await score(trial, `pair-${pairAttempts.length}-after`);
+        const lowerSkew = afterScore.skewMm < priorScore.skewMm - 0.001;
+        const safe =
+          afterScore.opens <= priorScore.opens && !afterScore.newErrors && !afterScore.outsideScope;
+        const selected = lowerSkew && safe;
+        pairAttempts.push({
+          pair: { p: pair.p, n: pair.n },
+          before: priorScore,
+          after: afterScore,
+          selected,
+        });
+        if (selected) {
+          summary = trial;
+          summary.routed = Math.max(0, summary.total - summary.unrouted.length);
+        } else {
+          await ctx.services.design.release(snapshotDir);
+          await writeAtomic(join(snapshotDir, PROJECT_FILES.boardPcb), prior);
+        }
+      } catch (error) {
+        if (signal.aborted) throw error;
+        pairAttempts.push({
+          pair: { p: pair.p, n: pair.n },
+          error: String(error),
+          selected: false,
+        });
+        await ctx.services.design.release(snapshotDir);
+        await writeAtomic(join(snapshotDir, PROJECT_FILES.boardPcb), prior);
+      }
+    }
+    await writeJson(join(runDir, "pair-attempts.json"), pairAttempts);
+    summary.log.push(
+      `Pair routing capability: measurement-only; ${pairAttempts.length} pair-only routing attempt(s). Detail: pair-attempts.json.`,
+    );
     await progressQueues.get(join(runDir, "progress.json"));
     const geometry = summary.geometry ?? [];
     const open = [...new Set(summary.unrouted.map((row) => row.net))];
@@ -1012,10 +1097,12 @@ async function executeRoute(
       ]),
     ].filter(Boolean);
     const copperById = new Map(candidateBoard.copper.map((item) => [item.id, item]));
-    const namedGeometry = geometry.map((shape) => ({
-      ...shape,
-      netName: copperById.get(shape.id)?.net ?? shape.netName ?? "",
-    }));
+    const namedGeometry = geometry
+      .filter((shape) => copperById.has(shape.id))
+      .map((shape) => ({
+        ...shape,
+        netName: copperById.get(shape.id)?.net ?? shape.netName ?? "",
+      }));
     const outsideScopeChanges: NonNullable<RouteResult["outsideScopeChanges"]> = [];
     if (requestedNets.length) {
       const scope = new Set(requestedNets);
@@ -1060,7 +1147,7 @@ async function executeRoute(
       outsideScopeChanges.push(...[...counts.values()].sort((a, b) => a.net.localeCompare(b.net)));
     }
     const selectedNets = requestedNets.length ? requestedNets : touchedNets;
-    const measuredQuality = quality(candidateBoard, selectedNets, args.rules?.pairs, reference);
+    const measuredQuality = quality(candidateBoard, selectedNets, detectedPairs, reference);
     if (summary.pairRouting) measuredQuality.pairRouting = summary.pairRouting;
     const comparison = compareQuality(
       beforeQuality,
@@ -1268,13 +1355,12 @@ async function executeRoute(
               : null,
       },
     };
+    const willApply =
+      !forbidden.length && !heldWarnings.length && usableCandidate && args.applyPolicy === "auto";
+    // A terminal run must include the final application outcome, not an in-flight replace.
+    if (willApply) rec = { ...rec, state: "running", status: "running" };
     await persistProgress(ctx, rec, runDir);
-    if (
-      !forbidden.length &&
-      !heldWarnings.length &&
-      usableCandidate &&
-      args.applyPolicy === "auto"
-    ) {
+    if (willApply) {
       try {
         rec = await applyCandidate(ctx, rec, rec.startingPcbRevision, args.allowQualityRegression);
       } catch (error) {
@@ -1291,6 +1377,16 @@ async function executeRoute(
         };
         await persistProgress(ctx, rec, runDir);
       }
+    }
+    if (willApply) {
+      rec = {
+        ...rec,
+        state: summary.timedOut ? "timed_out" : "completed",
+        status: summary.timedOut ? "timed_out" : "completed",
+        endedAt: iso(),
+        updatedAt: iso(),
+      };
+      await persistProgress(ctx, rec, runDir);
     }
     ctx.services.bus.emit({ ts: Date.now(), topic: "route.done", result: fullResult });
   } catch (error) {
