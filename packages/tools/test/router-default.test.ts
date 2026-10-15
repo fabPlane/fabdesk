@@ -129,7 +129,7 @@ test("new unpinned project uses Freerouting and persists pass progress", async (
   expect(record.router).toBe("freerouting");
   expect(record.progress.pass).toBe(3);
   expect(record.attempts?.[0]?.outcome).toBe("completed");
-  expect(calls[0]?.freerouting?.passes).toBe(20);
+  expect(calls[0]?.freerouting?.passes).toBe(100);
 });
 test("automatic failure restores original snapshot and records both attempts and producer", async () => {
   const { calls, record, output } = await routeCase(undefined, "failure");

@@ -39,6 +39,8 @@ export const ROUTE_RUN_DEFAULT_WAIT_MS = 20_000;
 export const ROUTE_RUN_MAX_WAIT_MS = 60_000;
 /** FFC smoke: 193 s at 20 passes; dense-board reference: 532 s. Inline wait is independent. */
 export const ROUTE_RUN_DEFAULT_TIMEOUT_MS = 600_000;
+/** The measured 100-pass arm retained lower-skew native-safe copper; time limits still apply. */
+export const ROUTE_RUN_DEFAULT_FREEROUTING_PASSES = 100;
 
 export const RouteRunArgs = {
   router: z
@@ -128,7 +130,7 @@ export const RouteRunArgs = {
     .min(1)
     .max(1000)
     .optional()
-    .describe("Freerouting pass budget; time limit still applies."),
+    .describe("Freerouting pass budget; default 100. The time limit still applies."),
   allowQualityRegression: z
     .array(z.enum(["narrowing", "skew"]))
     .optional()
@@ -791,7 +793,11 @@ async function executeRoute(
           {
             router: rec.router as "fab_router" | "freerouting",
             ...(rec.router === "freerouting"
-              ? { freerouting: { passes: args.freeroutingPasses ?? 20 } }
+              ? {
+                  freerouting: {
+                    passes: args.freeroutingPasses ?? ROUTE_RUN_DEFAULT_FREEROUTING_PASSES,
+                  },
+                }
               : {}),
             maxTimeMs: args.timeoutMs,
             ...(scopeNets.length ? { nets: scopeNets } : {}),
@@ -1149,7 +1155,9 @@ async function executeRoute(
           count(item.net, item.diameter !== undefined, "removed");
       outsideScopeChanges.push(...[...counts.values()].sort((a, b) => a.net.localeCompare(b.net)));
     }
-    const selectedNets = requestedNets.length ? requestedNets : [...new Set([...startingCopper.nets,...touchedNets])];
+    const selectedNets = requestedNets.length
+      ? requestedNets
+      : [...new Set([...startingCopper.nets, ...touchedNets])];
     const measuredQuality = quality(candidateBoard, selectedNets, detectedPairs, reference);
     if (summary.pairRouting) measuredQuality.pairRouting = summary.pairRouting;
     const comparison = compareQuality(
@@ -1678,7 +1686,7 @@ export async function runRoute(args: RouteArgs, ctx: ToolContext): Promise<ToolO
       settings: args.settings ?? null,
       applyPolicy: args.applyPolicy,
       rerouteMode: args.rerouteMode ?? "onOpen",
-      freeroutingPasses: args.freeroutingPasses ?? 20,
+      freeroutingPasses: args.freeroutingPasses ?? ROUTE_RUN_DEFAULT_FREEROUTING_PASSES,
       allowQualityRegression: args.allowQualityRegression ?? [],
     },
     startingPcbRevision,
