@@ -851,6 +851,9 @@ export type RouteRunRecord = {
     rules: Record<string, unknown> | null;
     settings: Record<string, unknown> | null;
     applyPolicy: "auto" | "manual";
+    rerouteMode?: "onOpen" | "always" | "never";
+    freeroutingPasses?: number;
+    allowQualityRegression?: Array<"narrowing" | "skew">;
   };
   startingPcbRevision: string;
   currentPcbRevision: string | null;

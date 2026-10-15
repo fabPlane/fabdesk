@@ -609,13 +609,16 @@ async function executeRoute(
           signal,
         })
       : null;
-    const endpoints = await ctx.services.design.query(snapshotDir, "unrouted");
+    const allEndpoints = await ctx.services.design.query(snapshotDir, "unrouted");
     const requestedNets = [
       ...new Set([
         ...(args.onlyConnections ?? []),
         ...(args.targets ?? []).map((target) => target.net),
       ]),
     ];
+    const endpoints = allEndpoints.filter(
+      (row) => !requestedNets.length || requestedNets.includes(String(row["net"])),
+    );
     const endpointNets = new Set(endpoints.map((row) => String(row["net"] ?? "")));
     const missing = requestedNets.filter(
       (net) => !endpointNets.has(net) && !startingCopper.nets.includes(net),
@@ -942,8 +945,8 @@ async function executeRoute(
       await copyFile(join(runDir, "starting.kicad_pcb"), join(snapshotDir, PROJECT_FILES.boardPcb));
       const rows = endpoints.map((row) => ({
         net: String(row["net"]),
-        from: { x: Number(row["x1"] ?? 0), y: Number(row["y1"] ?? 0) },
-        to: { x: Number(row["x2"] ?? 0), y: Number(row["y2"] ?? 0) },
+        from: (row["from"] as { x: number; y: number }) ?? { x: 0, y: 0 },
+        to: (row["to"] as { x: number; y: number }) ?? { x: 0, y: 0 },
       }));
       summary = {
         tracks: 0,
@@ -1032,8 +1035,8 @@ async function executeRoute(
           total: priorSummary.total,
           unrouted: allOpen.map((row) => ({
             net: String(row["net"]),
-            from: { x: Number(row["x1"] ?? 0), y: Number(row["y1"] ?? 0) },
-            to: { x: Number(row["x2"] ?? 0), y: Number(row["y2"] ?? 0) },
+            from: (row["from"] as { x: number; y: number }) ?? { x: 0, y: 0 },
+            to: (row["to"] as { x: number; y: number }) ?? { x: 0, y: 0 },
           })),
           geometry: [...(priorSummary.geometry ?? []), ...(routed.geometry ?? [])],
         };
@@ -1674,6 +1677,9 @@ export async function runRoute(args: RouteArgs, ctx: ToolContext): Promise<ToolO
       rules: args.rules ?? null,
       settings: args.settings ?? null,
       applyPolicy: args.applyPolicy,
+      rerouteMode: args.rerouteMode ?? "onOpen",
+      freeroutingPasses: args.freeroutingPasses ?? 20,
+      allowQualityRegression: args.allowQualityRegression ?? [],
     },
     startingPcbRevision,
     currentPcbRevision: startingPcbRevision,
