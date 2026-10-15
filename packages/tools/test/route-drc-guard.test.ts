@@ -44,9 +44,10 @@ test("native DRC occurrence comparison cannot hide a new error behind a removed 
   ).toEqual([]);
 });
 
+for (const router of ["freerouting", "fab_router"] as const)
 for (const rule of ["track_width", "hole_clearance", null])
   for (const policy of ["auto", "manual"] as const) {
-    test(`Freerouting ${policy} candidate ${rule ? `rejects new ${rule}` : "allows unchanged native errors"}`, async () => {
+    test(`${router} ${policy} candidate ${rule ? `rejects new ${rule}` : "allows unchanged native errors"}`, async () => {
       const project = await tempProject(`fr-drc-${policy}-${rule}`);
       const board = join(project.dir, "board.kicad_pcb");
       const starting = '(kicad_pcb (net "N1"))';
@@ -116,7 +117,7 @@ for (const rule of ["track_width", "hole_clearance", null])
           }),
         );
       const response = await call("route_run", {
-        router: "freerouting",
+        router,
         waitMs: 1000,
         applyPolicy: policy,
       });

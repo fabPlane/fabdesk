@@ -560,10 +560,10 @@ async function executeRoute(
     throwIfAborted(signal);
     const beforeInventory = await boardInventory(ctx, snapshotDir);
     const startingCopper = await readCopper(snapshotDir);
-    const drcCli = rec.router === "freerouting" ? await ctx.services.kicad.resolveCli() : null;
-    if (rec.router === "freerouting" && !drcCli)
+    const drcCli = await ctx.services.kicad.resolveCli();
+    if (!drcCli)
       throw new ToolError(
-        "Freerouting requires native DRC before candidate application; KiCad CLI is unavailable",
+        "Routing requires native DRC before candidate application; KiCad CLI is unavailable",
         "precondition",
       );
     const beforeDrc = drcCli
@@ -1039,7 +1039,8 @@ async function executeRoute(
         reason: forbidden.length
           ? `forbidden candidate deltas: ${forbidden.join(", ")}`
           : !usableCandidate
-            ? summary.message || "no usable route progress; inspect the run diagnostics and remaining endpoints"
+            ? summary.message ||
+              "no usable route progress; inspect the run diagnostics and remaining endpoints"
             : null,
       },
     };
