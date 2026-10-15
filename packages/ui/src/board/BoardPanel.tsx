@@ -1,4 +1,4 @@
-import { Button, Select, Tabs } from "../components/ui";
+import { Select, Tabs } from "../components/ui";
 import { BoardPanelToggle } from "../components/BoardPanelToggle";
 import { CircuitLogo } from "../components/CircuitLogo";
 import { useCore } from "@fabdesk/client-core";
@@ -13,6 +13,7 @@ import { RendersTab } from "./RendersTab";
 import { ShoppingListTab } from "./ShoppingListTab";
 import { SvgTab } from "./SvgTab";
 import { ThreeDTab } from "./ThreeDTab";
+import { OrderChecksButton } from "./OrderChecksButton";
 
 function TabBody({ tab }: { tab: BoardTab }) {
   switch (tab) {
@@ -59,15 +60,11 @@ export function BoardPanel() {
         </div>
         <div className="fd-board-actions">
           {order.data && (order.data.hasKicadPcb || order.data.hasRouted || order.data.ready) && (
-            <Button
-              size="sm"
-              variant={order.data.ready ? "primary" : "ghost"}
+            <OrderChecksButton
+              order={order.data}
+              unavailable={order.isError}
               onClick={() => setOrderFlowOpen(true)}
-              title={order.data.ready ? "Board checks passed" : order.data.reasons.join(" ")}
-              data-testid="order-now"
-            >
-              {order.data.ready ? "Order now" : "Order checks"}
-            </Button>
+            />
           )}
         </div>
         <BoardPanelToggle location="board" />

@@ -4,6 +4,8 @@ export type IconName =
   | "compose"
   | "copy"
   | "check"
+  | "checklist"
+  | "warning"
   | "folderOpen"
   | "menu"
   | "sidebar"
@@ -34,6 +36,8 @@ export function Icon({ name, ...props }: SVGProps<SVGSVGElement> & { name: IconN
   const paths: Record<IconName, React.ReactNode> = {
     copy: <><rect x="8" y="8" width="12" height="13" rx="2" /><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h3" /></>,
     check: <path d="m5 12 4 4L19 6" />,
+    checklist: <><path d="m3 6 1.5 1.5L7 4M10 6h11M3 12h4m3 0h11M3 18h4m3 0h11" /></>,
+    warning: <><path d="m12 3 10 18H2L12 3Z" /><path d="M12 9v5m0 3h.01" /></>,
     compose: <><path d="M12 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-7" /><path d="m16 3 5 5-10 10-5 1 1-5 9-11Z" /></>,
     folderOpen: <><path d="M3 18V6a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v2" /><path d="M3 18a2 2 0 0 0 2 2h13a2 2 0 0 0 1.9-1.4l2-6A1.2 1.2 0 0 0 20.8 11H7.5a2 2 0 0 0-1.9 1.4L3 18Z" /></>,
     minus: <path d="M5 12h14" />,
