@@ -83,7 +83,13 @@ for (const router of ["freerouting", "fab_router"] as const) {
             progress: () => {},
           }),
         );
-      const response = await call("route_run", { router, onlyConnections: ["GND"], waitMs: 1000 });
+      // This fixture tests diagnostic forwarding for one attempt; retry behavior has separate coverage.
+      const response = await call("route_run", {
+        router,
+        onlyConnections: ["GND"],
+        cleanReroute: "never",
+        waitMs: 1000,
+      });
       const run = (response.json as any).run;
       const status = await call("route_status", { runId: run.id });
       const saved = JSON.parse(
