@@ -212,7 +212,7 @@ export const release_build = defineTool({
   toolset: "verify",
   title: "Verify and build the complete release",
   description:
-    "Run full-severity complete-hierarchy ERC, parity-enabled DRC, unconnected/library checks, design-rule floor, advisory root-sheet presentation metrics, PCB-reference visibility, automatic saved-design LED direction, task-derived circuit checks (pass led and driveNet for design-bound LED current; omitted led uses declared arithmetic), renders, and native/document/fabrication export for one aggregate saved revision. Missing hierarchy members or outputs fail the release; any referenced-sheet edit makes the evidence stale.",
+    "Run full-severity complete-hierarchy ERC, parity-enabled DRC, unconnected/library checks, design-rule floor, advisory root-sheet presentation metrics, PCB-reference visibility, automatic saved-design LED direction (proven reversal blocks; undecided topology warns), task-derived circuit checks (pass led and driveNet for design-bound LED current; omitted led uses declared arithmetic), renders, and native/document/fabrication export for one aggregate saved revision. Missing hierarchy members or outputs fail the release; any referenced-sheet edit makes the evidence stale.",
   inputSchema: {
     circuitChecks: z
       .array(CircuitCheck)
@@ -541,7 +541,7 @@ export const release_build = defineTool({
       .filter((check) =>
         check.kind === "assertion"
           ? !check.pass
-          : check.status === "fail" || check.status === "unknown",
+          : check.status === "fail",
       )
       .map((check) => check.name);
     const declaredClaims = calculations.flatMap((check) =>
@@ -549,6 +549,20 @@ export const release_build = defineTool({
         ? [{ name: check.name, claim: check.claim, evidence: check.evidence }]
         : [],
     );
+    const warnings = [
+      ...ledDirections.leds
+        .filter((led) => led.status === "unknown")
+        .map(
+          (led) =>
+            `LED direction not decided: ${led.reference} A=${led.anodeNet} K=${led.cathodeNet}: ${led.reasons.join("; ")}`,
+        ),
+      ...ledDirections.reasons.map((reason) => `LED direction not decided: ${reason}`),
+      ...calculations.flatMap((check) =>
+        check.kind === "led-current" && check.status === "unknown"
+          ? [`Circuit check not decided: ${check.name} (${check.led ?? "unbound LED"}): ${check.reasons.join("; ")}`]
+          : [],
+      ),
+    ];
     const failureReasons = [
       ...gate.reasons,
       ...(ledDirections.status === "fail"
@@ -558,9 +572,6 @@ export const release_build = defineTool({
               (led) =>
                 `LED direction: ${led.reference} A=${led.anodeNet} K=${led.cathodeNet}: ${led.reasons.join("; ")}`,
             )
-        : []),
-      ...(ledDirections.status === "unknown"
-        ? ["LED direction not decided: inspect checks.ledDirections"]
         : []),
       ...(libraryMismatchViolations.length &&
       !gate.reasons.some((reason) => /warning/i.test(reason))
@@ -580,7 +591,7 @@ export const release_build = defineTool({
     const pass =
       stable &&
       gate.pass &&
-      ledDirections.status === "pass" &&
+      ledDirections.status !== "fail" &&
       libraryMismatchViolations.length === 0 &&
       designRules.status === "pass" &&
       schematicRenderCoverage.status === "pass" &&
@@ -611,6 +622,7 @@ export const release_build = defineTool({
       },
       gate,
       failureReasons,
+      warnings,
       checks,
       inventory,
       missing,
@@ -622,6 +634,9 @@ export const release_build = defineTool({
       `Complete saved-hierarchy ERC measured by packaged kicad-cli ${cli.version} for aggregate revision ${before.schematic} across ${beforeHierarchy.sheets.length} referenced sheet(s): ${erc.counts.errors} errors, ${erc.counts.warnings} warnings.`,
       ...(failureReasons.length
         ? ["Failure reasons:", ...failureReasons.map((reason) => `- ${reason}`)]
+        : []),
+      ...(warnings.length
+        ? ["Warnings (non-blocking):", ...warnings.map((warning) => `- ${warning}`)]
         : []),
       ...(presentationAdvisories.length
         ? [

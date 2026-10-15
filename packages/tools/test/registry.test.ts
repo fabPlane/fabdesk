@@ -3237,7 +3237,7 @@ describe("registry", () => {
     });
   });
 
-  test.each(["clean", "labels", "stubs", "both", "reversed"])(
+  test.each(["clean", "labels", "stubs", "both", "reversed", "unknown-led", "unknown-current", "jumper"])(
     "complete release keeps %s presentation metrics advisory",
     async (presentation) => {
       const reg = createRegistry();
@@ -3331,7 +3331,11 @@ describe("registry", () => {
               output,
               presentation === "reversed"
                 ? "(export (components (comp (ref D1) (libsource (lib Device) (part LED)))) (nets (net (name ground) (node (ref D1) (pin 2) (pinfunction A)) (node (ref U1) (pin 1) (pinfunction GND) (pintype power_in))) (net (name drive) (node (ref D1) (pin 1) (pinfunction K)))))"
-                : "(export (components) (nets))",
+                : presentation === "unknown-led" || presentation === "unknown-current"
+                  ? '(export (components (comp (ref D1) (libsource (lib Device) (part LED)))) (nets (net (name output) (node (ref D1) (pin 2) (pinfunction A))) (net (name led-k) (node (ref D1) (pin 1) (pinfunction K)))))'
+                  : presentation === "jumper"
+                    ? '(export (components (comp (ref SJ1) (libsource (lib Jumper) (part SolderJumper_2_Open)))) (nets (net (name input) (node (ref SJ1) (pin 1) (pinfunction A))) (net (name output) (node (ref SJ1) (pin 2) (pinfunction B)))))'
+                    : "(export (components) (nets))",
             );
             return { paths: [output] };
           },
@@ -3346,6 +3350,7 @@ describe("registry", () => {
             circuitChecks: [
               {
                 kind: "led-current",
+                ...(presentation === "unknown-current" ? { led: "D1", driveNet: "output" } : {}),
                 supplyVolts: 5,
                 forwardVolts: 2,
                 resistanceOhms: 1000,
@@ -3379,6 +3384,23 @@ describe("registry", () => {
       }
       expect(release.isError).toBeFalsy();
       expect((release.json as any).failureReasons).toEqual([]);
+      if (presentation === "unknown-led" || presentation === "unknown-current") {
+        expect((release.json as any).pass).toBe(true);
+        expect((release.json as any).checks.ledDirections.status).toBe("unknown");
+        expect((release.json as any).warnings.join(" ")).toContain("D1");
+        expect(release.text).toContain("Warnings (non-blocking)");
+        expect(release.text).toContain("forward path not decided");
+        if (presentation === "unknown-current") {
+          expect((release.json as any).checks.circuit[0].status).toBe("unknown");
+          expect((release.json as any).warnings.join(" ")).toContain("LED current");
+          expect(release.text).toContain("unique forward source/sink path");
+        }
+        return;
+      }
+      if (presentation === "jumper") {
+        expect((release.json as any).checks.ledDirections.leds).toEqual([]);
+        expect((release.json as any).warnings).toEqual([]);
+      }
       expect((release.json as any).checks.schematicPresentation).toMatchObject({
         status: "advisory",
         blocking: false,

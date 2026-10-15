@@ -148,7 +148,7 @@ function leds(s: Saved) {
       cathodes = pins.filter((p) => fn(p.function) === "K");
     const fallback = c.lib === "Device" && /^(LED|LED_Small|LED_ALT)$/.test(c.part);
     const libraryLed = /^LED(?:_|$)/.test(c.part);
-    if (!anodes.length && !cathodes.length && !libraryLed) return [];
+    if (!(anodes.length && cathodes.length) && !libraryLed) return [];
     const a =
       anodes.length === 1 ? anodes[0] : fallback ? pins.find((p) => p.pin === "2") : undefined;
     const k =
