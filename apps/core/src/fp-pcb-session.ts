@@ -11,6 +11,8 @@
  * exist yet.
  */
 import { join } from "node:path";
+import { readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { KiCad, type Board, type Schematic } from "@fp-pcb/client";
 import { DocumentType } from "@fp-pcb/proto";
 import { WebSocketTransport, bridgeWsUrl } from "@fp-pcb/client/transport";
@@ -28,8 +30,17 @@ export interface ProjectSession {
   path: string | null;
 }
 
+/** A refused stale write must bypass mutation recovery that would overwrite external files. */
+export class NativeRevisionConflict extends ToolError {
+  constructor(message: string) {
+    super(message, "precondition");
+  }
+}
+
 export class FpPcbSessions {
   private readonly open = new Map<string, Promise<ProjectSession>>();
+  private readonly revisions = new Map<string, Map<string, string | null>>();
+  private readonly guarded = new WeakSet<Board | Schematic>();
 
   constructor(
     private readonly bridge: () => FpPcbBridgeClient,
@@ -57,11 +68,12 @@ export class FpPcbSessions {
     const exists = this.opts.exists ?? ((p: string) => Bun.file(p).exists());
     const board = await this.withRetry(projectDir, async (s) => {
       const open = await s.kicad.currentBoard();
-      if (open) return open;
+      if (open) return this.guardSave(projectDir, BOARD_PCB, open);
       // A session started on the .kicad_pro (or bare, then given a project) has the project but no
       // board document open yet.
       const pcb = join(projectDir, BOARD_PCB);
-      if (s.path && (await exists(pcb))) return s.kicad.openBoard(pcb);
+      if (s.path && (await exists(pcb)))
+        return this.guardSave(projectDir, BOARD_PCB, await s.kicad.openBoard(pcb));
       return null;
     });
     if (!board) throw new ToolError("no board is open for this project yet", "precondition");
@@ -73,9 +85,11 @@ export class FpPcbSessions {
     const exists = this.opts.exists ?? ((p: string) => Bun.file(p).exists());
     const schematic = await this.withRetry(projectDir, async (s) => {
       const open = await s.kicad.currentSchematic();
-      if (open) return open;
+      if (open) return this.guardSave(projectDir, "board.kicad_sch", open);
       const path = join(projectDir, "board.kicad_sch");
-      return (await exists(path)) ? s.kicad.openSchematic(path) : null;
+      return (await exists(path))
+        ? this.guardSave(projectDir, "board.kicad_sch", await s.kicad.openSchematic(path))
+        : null;
     });
     if (!schematic)
       throw new ToolError(
@@ -123,7 +137,11 @@ export class FpPcbSessions {
         board = (await exists(pcb))
           ? await s.kicad.openBoard(pcb)
           : await s.kicad.newDocument(DocumentType.DOCTYPE_PCB, pcb);
-      return { session: s, schematic, board };
+      return {
+        session: s,
+        schematic: await this.guardSave(projectDir, "board.kicad_sch", schematic),
+        board: await this.guardSave(projectDir, BOARD_PCB, board),
+      };
     });
   }
 
@@ -131,6 +149,7 @@ export class FpPcbSessions {
   async withRetry<T>(projectDir: string, fn: (s: ProjectSession) => Promise<T>): Promise<T> {
     const s = await this.session(projectDir);
     try {
+      await this.reconcile(projectDir, s);
       return await fn(s);
     } catch (e) {
       if (!isGone(e)) throw e;
@@ -138,7 +157,9 @@ export class FpPcbSessions {
         `fp-pcb session for ${projectDir} is gone (${e instanceof Error ? e.message : String(e)}); reconnecting`,
       );
       await this.release(projectDir);
-      return fn(await this.session(projectDir));
+      const replacement = await this.session(projectDir);
+      await this.reconcile(projectDir, replacement);
+      return fn(replacement);
     }
   }
 
@@ -150,6 +171,7 @@ export class FpPcbSessions {
   async release(projectDir: string): Promise<void> {
     const pending = this.open.get(projectDir);
     this.open.delete(projectDir);
+    this.revisions.delete(projectDir);
     if (!pending) return;
     const s = await pending.catch(() => null);
     await s?.ws.close().catch(() => undefined);
@@ -163,6 +185,7 @@ export class FpPcbSessions {
   async restart(projectDir: string): Promise<void> {
     const pending = this.open.get(projectDir);
     this.open.delete(projectDir);
+    this.revisions.delete(projectDir);
     if (!pending) return;
     const session = await pending.catch(() => null);
     if (!session) return;
@@ -174,6 +197,89 @@ export class FpPcbSessions {
 
   async dispose(): Promise<void> {
     for (const dir of [...this.open.keys()]) await this.release(dir);
+  }
+
+  private async diskRevision(path: string): Promise<string | null> {
+    try {
+      return createHash("sha256")
+        .update(await readFile(path))
+        .digest("hex");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw error;
+    }
+  }
+
+  /** Reconcile saved documents only; never discard unsaved or unknown live state. */
+  private async reconcile(projectDir: string, session: ProjectSession): Promise<void> {
+    if (!projectDir) return;
+    let known = this.revisions.get(projectDir);
+    if (!known) {
+      known = new Map();
+      this.revisions.set(projectDir, known);
+    }
+    for (const filename of [BOARD_PCB, "board.kicad_sch"]) {
+      const path = join(projectDir, filename);
+      const disk = await this.diskRevision(path);
+      // A document not seen before has unknown loaded provenance (including adopted sessions).
+      // Reopen it from disk once rather than declaring its current bytes to be the loaded bytes.
+      if (known.has(filename) && known.get(filename) === disk) continue;
+      const document =
+        filename === BOARD_PCB
+          ? await session.kicad.currentBoard()
+          : await session.kicad.currentSchematic();
+      if (document) {
+        if ((await document.modified()) !== false)
+          throw new NativeRevisionConflict(
+            `${filename} disk/session conflict: saved revision ${disk ?? "missing"}, loaded revision ${known.get(filename) ?? "unknown"}; live document has unsaved or unknown changes. Preserve both versions and explicitly resolve them before continuing.`,
+          );
+        if (disk === null)
+          throw new NativeRevisionConflict(
+            `${filename} was removed on disk; refusing to overwrite it from the loaded session`,
+          );
+        // Verify once more after querying live state; fail closed on a moving target.
+        if ((await this.diskRevision(path)) !== disk)
+          throw new NativeRevisionConflict(
+            `${filename} changed during reconciliation; retry after the external writer finishes`,
+          );
+        await document.close();
+        if (filename === BOARD_PCB) await session.kicad.openBoard(path);
+        else await session.kicad.openSchematic(path);
+        if ((await this.diskRevision(path)) !== disk)
+          throw new NativeRevisionConflict(
+            `${filename} changed while reopening; retry after the external writer finishes`,
+          );
+        this.opts.log?.(`fp-pcb: reloaded ${filename} from saved revision ${disk}`);
+      }
+      known.set(filename, disk);
+    }
+  }
+
+  /** A document acquired before an external restore must never save over that restore. */
+  private async guardSave<T extends Board | Schematic>(
+    projectDir: string,
+    filename: string,
+    document: T,
+  ): Promise<T> {
+    if (this.guarded.has(document)) return document;
+    const path = join(projectDir, filename);
+    let expected = await this.diskRevision(path);
+    // ensureProject can create a new document after reconciliation saw a missing file.
+    if (this.revisions.get(projectDir)?.get(filename) === null)
+      this.revisions.get(projectDir)?.set(filename, expected);
+    const save = document.save.bind(document);
+    document.save = async () => {
+      const disk = await this.diskRevision(path);
+      if (disk !== expected)
+        throw new NativeRevisionConflict(
+          `${filename} changed on disk since this document was acquired (expected ${expected ?? "missing"}, found ${disk ?? "missing"}); refusing stale save. Live edits and saved file are preserved.`,
+        );
+      await save();
+      expected = await this.diskRevision(path);
+      this.revisions.get(projectDir)?.set(filename, expected);
+    };
+    this.guarded.add(document);
+    return document;
   }
 
   private async connect(projectDir: string): Promise<ProjectSession> {

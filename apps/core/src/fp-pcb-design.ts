@@ -97,7 +97,7 @@ import {
   type RouteSummary,
 } from "@fabdesk/tools";
 import type { FpPcbBridgeClient } from "./fp-pcb-bridge";
-import { BOARD_PCB, BOARD_PRO, type FpPcbSessions } from "./fp-pcb-session";
+import { BOARD_PCB, BOARD_PRO, NativeRevisionConflict, type FpPcbSessions } from "./fp-pcb-session";
 import type { KicadLibraryCatalog } from "./kicad-library-catalog";
 import { partSearchTokens, rankPartSearch } from "./part-search-ranking";
 import {
@@ -1613,6 +1613,9 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       await keepNetClass(projectDir);
       revision = Number((await board.revision()) ?? 0n);
     } catch (error) {
+      // A stale save did not write anything. Preserve external disk state and unsaved live work;
+      // ordinary recovery would overwrite the external restore with our pre-edit originals.
+      if (error instanceof NativeRevisionConflict) throw error;
       // A save can fail after writing. Restore the saved files and discard the edited session
       // so a failed transport, commit or save cannot leak into a later successful edit.
       await deps.sessions.release(projectDir).catch((cleanupError) => {
