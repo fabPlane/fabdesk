@@ -217,11 +217,15 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
                 </IconButton>
               )}
             </div>
-            <div id={`project-chats-${group.key}`} hidden={!expanded} className={cn("fd-sidebar-chat-list", group.kind === "project" && "pl-5")}>
-              {group.threads.map(renderThread)}
-              {group.kind === "project" && group.threads.length === 0 && !threads.isLoading && !threads.isError && (
-                <div className="px-2.5 py-2 text-xs text-muted">{pinnedCount ? "Chats are in Pinned above" : q.trim() ? "No matching chats" : "No chats"}</div>
-              )}
+            <div id={`project-chats-${group.key}`} className="fd-project-reveal" data-open={expanded} inert={!expanded} aria-hidden={!expanded}>
+              <div className="min-h-0 overflow-hidden">
+                <div className={cn("fd-sidebar-chat-list", group.kind === "project" && "pl-5")}>
+                  {group.threads.map(renderThread)}
+                  {group.kind === "project" && group.threads.length === 0 && !threads.isLoading && !threads.isError && (
+                    <div className="px-2.5 py-2 text-xs text-muted">{pinnedCount ? "Chats are in Pinned above" : q.trim() ? "No matching chats" : "No chats"}</div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         ); })}

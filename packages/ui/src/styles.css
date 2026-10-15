@@ -199,7 +199,10 @@ body {
 .fd-sidebar-search input { border-radius: 12px; }
 .fd-project-row[aria-current="true"] { box-shadow: inset 2px 0 var(--fd-accent); }
 .fd-sidebar-project-group { margin-bottom: 8px; }
-.fd-sidebar-chat-list:not([hidden]) { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; margin-top: 8px; padding-bottom: 4px; }
+.fd-project-reveal { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows 240ms cubic-bezier(0.22, 1, 0.36, 1), opacity 180ms ease; }
+.fd-project-reveal[data-open="true"] { grid-template-rows: 1fr; opacity: 1; }
+.fd-sidebar-chat-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; margin-top: 8px; padding-bottom: 4px; transform: translateY(-4px); transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1); }
+.fd-project-reveal[data-open="true"] .fd-sidebar-chat-list { transform: translateY(0); }
 .group:is(:hover, :focus-within) > .fd-chat-row { padding-right: 60px; }
 .group:has(.fd-project-add):is(:hover, :focus-within) .fd-project-row { padding-right: 38px; }
 .group:has(.fd-project-add):is(:hover, :focus-within) .fd-project-count { display: none; }
