@@ -1039,7 +1039,7 @@ async function executeRoute(
         reason: forbidden.length
           ? `forbidden candidate deltas: ${forbidden.join(", ")}`
           : !usableCandidate
-            ? "no usable route progress"
+            ? summary.message || "no usable route progress; inspect the run diagnostics and remaining endpoints"
             : null,
       },
     };
