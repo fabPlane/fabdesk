@@ -10,9 +10,18 @@ import { OrderFlow } from "../order/OrderFlow";
 import { ThreadSidebar } from "../sidebar/ThreadSidebar";
 import { useUiStore } from "../stores/ui";
 import { TopBar } from "./TopBar";
+import { useSlidingPane } from "./useSlidingPane";
 
-function Handle() {
-  return <PanelResizeHandle className="fd-splitter w-px bg-border transition-colors hover:bg-accent data-[resize-handle-active]:bg-accent" />;
+function Handle({ open, moving, onResizeEnd }: { open: boolean; moving: boolean; onResizeEnd: () => void }) {
+  return <PanelResizeHandle
+    disabled={!open || moving}
+    tabIndex={open ? 0 : -1}
+    aria-hidden={!open}
+    data-open={open}
+    onDragging={(dragging) => { if (!dragging) onResizeEnd(); }}
+    onKeyUp={onResizeEnd}
+    className="fd-splitter fd-sliding-handle bg-border hover:bg-accent data-[resize-handle-active]:bg-accent"
+  />;
 }
 
 export interface AppShellProps {
@@ -56,6 +65,9 @@ export function AppShell({ onNewChat, coreStatus, banner }: AppShellProps) {
   const openSourceId = useUiStore((s) => s.activeOpenSourceId);
   const orderFlowOpen = useUiStore((s) => s.orderFlowOpen);
   const inventory = useUiStore((s) => s.inventoryOpen);
+  const sidebar = useSlidingPane(sidebarOpen, useUiStore((s) => s.setSidebarOpen));
+  const boardVisible = boardOpen && !openSourceId && !inventory;
+  const board = useSlidingPane(boardVisible, useUiStore((s) => s.setBoardOpen));
   const center = orderFlowOpen ? (
     <OrderFlow />
   ) : inventory ? (
@@ -71,28 +83,27 @@ export function AppShell({ onNewChat, coreStatus, banner }: AppShellProps) {
       {banner}
       <div className="min-h-0 flex-1">
         <PanelGroup direction="horizontal" autoSaveId="fabdesk-shell-sidebar">
-          {sidebarOpen && (
-            <>
-              <Panel id="sidebar" order={1} defaultSize={percent(240)} minSize={percent(190)} maxSize={percent(280)}>
-                <ThreadSidebar onNewChat={onNewChat} />
-              </Panel>
-              <Handle />
-            </>
-          )}
+          <Panel ref={sidebar.panel} id="sidebar" order={1} collapsible
+            className="fd-sliding-pane" data-side="left"
+            defaultSize={percent(240)} minSize={percent(190)} maxSize={percent(280)}>
+            <div ref={sidebar.content} className="fd-pane-content" inert={!sidebarOpen} aria-hidden={!sidebarOpen}>
+              {sidebar.present && <ThreadSidebar onNewChat={onNewChat} />}
+            </div>
+          </Panel>
+          <Handle open={sidebarOpen} moving={sidebar.moving} onResizeEnd={sidebar.syncOpen} />
           <Panel id="main" order={2} minSize={percent(300)}>
             <div ref={mainRef} className="h-full min-w-0">
               <PanelGroup direction="horizontal" autoSaveId="fabdesk-shell-content">
                 <Panel id="chat" order={1} minSize={mainPercent(300)}>
                   {center}
                 </Panel>
-                {boardOpen && !openSourceId && !inventory && (
-                  <>
-                    <Handle />
-                    <Panel id="board" order={2} defaultSize={40} minSize={mainPercent(260)}>
-                      <BoardPanel />
-                    </Panel>
-                  </>
-                )}
+                <Handle open={boardVisible} moving={board.moving} onResizeEnd={board.syncOpen} />
+                <Panel ref={board.panel} id="board" order={2} collapsible
+                  className="fd-sliding-pane" data-side="right" defaultSize={40} minSize={mainPercent(260)}>
+                  <div ref={board.content} className="fd-pane-content" inert={!boardVisible} aria-hidden={!boardVisible}>
+                    {board.present && <BoardPanel />}
+                  </div>
+                </Panel>
               </PanelGroup>
             </div>
           </Panel>
