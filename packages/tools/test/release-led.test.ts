@@ -106,3 +106,10 @@ test("solder jumper A/B pins are not an LED", () => {
   const net = '(export (components (comp (ref SJ1) (libsource (lib Jumper) (part SolderJumper_2_Open)))) (nets (net (name ground) (node (ref SJ1) (pin 1) (pinfunction A)) (node (ref U1) (pin 1) (pinfunction GND) (pintype power_in))) (net (name supply) (node (ref SJ1) (pin 2) (pinfunction B)) (node (ref U1) (pin 8) (pinfunction VCC) (pintype power_in)))))';
   expect(inspectLedDirections(net)).toMatchObject({ status: "pass", leds: [] });
 });
+
+test("unknown direction explains the missing rail evidence", () => {
+  const result = inspectLedDirections(fixture().replaceAll("power_in", "passive"));
+  expect(result.leds[0]?.reasons).toEqual([
+    "forward path not decided: no recognized ground or positive-supply rail evidence",
+  ]);
+});

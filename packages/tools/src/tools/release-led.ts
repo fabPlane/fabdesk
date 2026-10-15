@@ -169,7 +169,13 @@ function leds(s: Saved) {
         : "unknown";
     if (status === "unknown")
       reasons.push(
-        "forward path not decided: missing pins, ambiguous rails, or unsupported topology",
+        !anodeNet || !cathodeNet
+          ? "forward path not decided: anode or cathode net not resolved"
+          : source && sink
+            ? "forward path not decided: both source and sink rail paths found"
+            : !s.grounds.size && !s.supplies.size
+              ? "forward path not decided: no recognized ground or positive-supply rail evidence"
+              : "forward path not decided: no supported direct or single-resistor path to a recognized rail",
       );
     return [
       {
