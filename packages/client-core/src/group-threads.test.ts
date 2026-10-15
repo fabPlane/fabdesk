@@ -49,6 +49,14 @@ describe("groupThreadsByProject", () => {
     expect(groups.find((g) => g.projectId === "p1")?.threads.map((t) => t.id)).toEqual(["t1"]);
   });
 
+  test("pinned projects move first without duplicating projects or changing chat groups", () => {
+    const threads = [thread("chat", "Board chat", "p2"), thread("favorite", "Pinned chat", "p1", true)];
+    const groups = groupThreadsByProject(threads, projects, ["p2", "deleted-project"]);
+    expect(groups.map((g) => g.key)).toEqual(["pinned", "p2", "p1"]);
+    expect(groups[1]?.threads.map((t) => t.id)).toEqual(["chat"]);
+    expect(groupThreadsByProject(threads, projects, []).map((g) => g.key)).toEqual(["pinned", "p1", "p2"]);
+  });
+
   test("puts pinned threads above unassigned and project groups", () => {
     const groups = groupThreadsByProject(
       [

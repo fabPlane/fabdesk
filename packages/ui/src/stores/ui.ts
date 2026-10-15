@@ -47,6 +47,9 @@ export interface UiState {
   activeThreadId: string | null;
   focusMessageId: string | null;
   activeProjectId: string | null;
+  /** Local sidebar preference, retained across app restarts. */
+  pinnedProjectIds: string[];
+  setProjectPinned: (id: string, pinned: boolean) => void;
   sidebarListTab: SidebarListTab;
   activeOpenSourceId: string | null;
   projectPickerOpen: boolean;
@@ -123,6 +126,10 @@ export const useUiStore = create<UiState>()(
   activeThreadId: null,
   focusMessageId: null,
   activeProjectId: null,
+  pinnedProjectIds: [],
+  setProjectPinned: (id, pinned) => set((s) => ({
+    pinnedProjectIds: pinned ? [...s.pinnedProjectIds.filter((value) => value !== id), id] : s.pinnedProjectIds.filter((value) => value !== id),
+  })),
   sidebarListTab: "projects",
   activeOpenSourceId: null,
   projectPickerOpen: false,
@@ -199,6 +206,7 @@ export const useUiStore = create<UiState>()(
         boardOpen: s.boardOpen,
         activeThreadId: s.activeThreadId,
         activeProjectId: s.activeProjectId,
+        pinnedProjectIds: s.pinnedProjectIds,
         sidebarListTab: s.sidebarListTab,
         boardTab: s.boardTab,
         stencilThicknessByProject: s.stencilThicknessByProject,

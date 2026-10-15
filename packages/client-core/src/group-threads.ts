@@ -12,13 +12,15 @@ export type ProjectThreadGroup = {
 
 /**
  * Sidebar list order: pinned first, then threads with no project, then
- * project groups (A–Z), including remixed projects that have no threads yet.
+ * project groups (pinned projects first, then A–Z within each group), including empty projects.
  * Pinned threads are not repeated under a project.
  */
 export function groupThreadsByProject(
   threads: readonly Thread[],
   projects: readonly ProjectSummary[],
+  pinnedProjectIds: readonly string[] = [],
 ): ProjectThreadGroup[] {
+  const pinnedProjects = new Set(pinnedProjectIds);
   const names = new Map(projects.map((p) => [p.id, p.name]));
   const byProject = new Map<string, Thread[]>();
   const pinned: Thread[] = [];
@@ -64,7 +66,7 @@ export function groupThreadsByProject(
         projectId,
         threads: byProject.get(projectId) ?? [],
       }))
-      .sort((a, b) => a.title.localeCompare(b.title)),
+      .sort((a, b) => Number(pinnedProjects.has(b.projectId)) - Number(pinnedProjects.has(a.projectId)) || a.title.localeCompare(b.title)),
   );
   return groups;
 }

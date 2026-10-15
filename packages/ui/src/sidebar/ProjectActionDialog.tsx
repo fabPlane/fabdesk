@@ -23,6 +23,7 @@ export function ProjectActionDialog({ project, onClose }: { project: ProjectActi
       if (deleting) {
         await remove.mutateAsync({ projectId: project.id });
         const ui = useUiStore.getState();
+        ui.setProjectPinned(project.id, false);
         if (ui.activeProjectId === project.id) ui.setActiveProject(null);
       } else {
         await rename.mutateAsync({ projectId: project.id, name: name.trim() });

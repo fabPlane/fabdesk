@@ -32,6 +32,8 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
   const setActiveProject = useUiStore((s) => s.setActiveProject);
   const startNewChatInProject = useUiStore((s) => s.startNewChatInProject);
   const projectId = useUiStore((s) => s.activeProjectId);
+  const pinnedProjectIds = useUiStore((s) => s.pinnedProjectIds);
+  const setProjectPinned = useUiStore((s) => s.setProjectPinned);
   const activeThreadId = useUiStore((s) => s.activeThreadId);
   const setActiveThread = useUiStore((s) => s.setActiveThread);
   const sidebarListTab = normalizeSidebarListTab(useUiStore((s) => s.sidebarListTab));
@@ -50,8 +52,8 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
     }
   }, [activeThreadId, threads.data]);
   const projectGroups = useMemo(
-    () => groupThreadsByProject(threads.data ?? [], projects.data ?? []),
-    [threads.data, projects.data],
+    () => groupThreadsByProject(threads.data ?? [], projects.data ?? [], pinnedProjectIds),
+    [threads.data, projects.data, pinnedProjectIds],
   );
   const { patch, remove } = useThreadMutations();
   const branch = useBranchThread();
@@ -116,7 +118,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
       <IconButton
         title={t.pinned ? "Unpin" : "Pin"}
         style={{ width: 28, height: 28 }}
-        className={cn("absolute right-7 top-1 h-7 w-7 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100", t.pinned && "text-accent")}
+        className={cn("absolute right-0 top-1 h-7 w-7 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100", t.pinned && "text-accent")}
         onClick={(e) => {
           e.stopPropagation();
           togglePin(t);
@@ -128,7 +130,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
       <IconButton
         title="Chat menu"
         style={{ width: 28, height: 28 }}
-        className="absolute right-0 top-1 h-7 w-7 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+        className="absolute right-7 top-1 h-7 w-7 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
         onClick={(e) => openMenu(e, t)}
         data-testid={`thread-menu-${t.id}`}
       >
@@ -204,13 +206,27 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
                   {group.kind === "pinned" && <Icon name="pin" width={13} height={13} />}
                   {group.kind === "project" && <Icon name={expanded ? "folderOpen" : "folder"} width={17} height={17} className="shrink-0" />}
                   <ScrollingTitle text={group.title} />
+                  {group.projectId && pinnedProjectIds.includes(group.projectId) && <span title="Pinned project" className="shrink-0 text-muted"><Icon name="pin" width={12} height={12} /></span>}
                 </span>
               </button>
               {group.kind === "project" && group.projectId && (
                 <>
                 <IconButton
+                  title={`Project menu for ${group.title}`}
+                  aria-haspopup="menu"
+                  aria-expanded={projectMenu?.id === group.projectId}
+                  className="fd-project-menu absolute right-8 top-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+                  data-testid={`project-menu-${group.projectId}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    setMenu(null);
+                    setProjectMenu(projectMenu?.id === group.projectId ? null : { x: rect.left, y: rect.bottom + 4, id: group.projectId!, name: group.title });
+                  }}
+                ><Icon name="more" /></IconButton>
+                <IconButton
                   title={`New chat in ${group.title}`}
-                  className="fd-project-add absolute right-8 top-0 text-muted opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover:text-fg"
+                  className="fd-project-add absolute right-0 top-0 text-muted opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover:text-fg"
                   onClick={(e) => {
                     e.stopPropagation();
                     setExpandedProjects((current) => ({ ...current, [group.key]: true }));
@@ -220,19 +236,6 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
                 >
                   <Icon name="compose" width={16} height={16} />
                 </IconButton>
-                <IconButton
-                  title={`Project menu for ${group.title}`}
-                  aria-haspopup="menu"
-                  aria-expanded={projectMenu?.id === group.projectId}
-                  className="fd-project-menu absolute right-0 top-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
-                  data-testid={`project-menu-${group.projectId}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    setMenu(null);
-                    setProjectMenu(projectMenu?.id === group.projectId ? null : { x: rect.left, y: rect.bottom + 4, id: group.projectId!, name: group.title });
-                  }}
-                ><Icon name="more" /></IconButton>
                 </>
               )}
             </div>
@@ -258,6 +261,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
       {creatingProject && <CreateProjectDialog onClose={() => setCreatingProject(false)} onCreated={(id) => { setActiveProject(id); setCreatingProject(false); }} />}
       {projectAction && <ProjectActionDialog project={projectAction} onClose={() => setProjectAction(null)} />}
       {projectMenu && <ContextMenu x={projectMenu.x} y={projectMenu.y} onClose={() => setProjectMenu(null)}>
+        <MenuItem onClick={() => { setProjectPinned(projectMenu.id, !pinnedProjectIds.includes(projectMenu.id)); setProjectMenu(null); }}>{pinnedProjectIds.includes(projectMenu.id) ? "Unpin" : "Pin"}</MenuItem>
         <MenuItem onClick={() => { setProjectAction({ id: projectMenu.id, name: projectMenu.name, action: "rename" }); setProjectMenu(null); }}>Rename</MenuItem>
         <MenuItem danger onClick={() => { setProjectAction({ id: projectMenu.id, name: projectMenu.name, action: "delete" }); setProjectMenu(null); }}>Delete</MenuItem>
       </ContextMenu>}
