@@ -140,6 +140,13 @@ try {
         texts: [{ text: "SAVED_ROUTE_REGRESSION", position: { x: 10, y: 10 } }],
         save: true,
       });
+      if (
+        !(await readFile(join(project.path, "board.kicad_sch"), "utf8")).includes(
+          "SAVED_ROUTE_REGRESSION",
+        )
+      )
+        throw Error("the saved schematic edit did not reach the native file");
+      c.savedEditVerified = true;
       if (mode === "unsaved") {
         const retained = await api("/tools/project_checkpoint?sync=1", {
           project: project.id,
@@ -221,8 +228,10 @@ try {
           )
         )
           throw Error("live unsaved work lost");
-        if(c.run.application.state === "applied") throw Error("route application discarded unsaved work");
-        if(!JSON.stringify(c.run.application).includes("unsaved or unknown")) throw Error("route application did not report live-work refusal");
+        if (c.run.application.state === "applied")
+          throw Error("route application discarded unsaved work");
+        if (!JSON.stringify(c.run.application).includes("unsaved or unknown"))
+          throw Error("route application did not report live-work refusal");
         c.unsavedProtection = "pass";
         delete c.beforeUnsaved;
       }
