@@ -716,7 +716,9 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     projectDir: string,
     selectedSheet?: string,
   ): Promise<NativeSchematicSnapshot> => {
-    const { schematic, board } = await deps.sessions.ensureProject(projectDir, { registerLibraries: false });
+    const { schematic, board } = await deps.sessions.ensureProject(projectDir, {
+      registerLibraries: false,
+    });
     const hierarchy = await schematic.hierarchy();
     const { selected: selectedEntry } = resolveSchematicSheet(hierarchy, selectedSheet);
     const root = schematic.sheet(selectedEntry.path, selectedEntry);
@@ -2184,7 +2186,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     return {
       ...(s.diagnostics ? { diagnostics: s.diagnostics } : {}),
       ...(s.endpointCollisions ? { endpointCollisions: s.endpointCollisions } : {}),
-      ...(s.pairRouting?{pairRouting:s.pairRouting}:{}),
+      ...(s.pairRouting ? { pairRouting: s.pairRouting } : {}),
       tracks: s.tracks,
       vias: s.vias,
       claimedVias: s.claimedVias,
@@ -2550,23 +2552,34 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
 
   const nativeOperations = new Map<string, number>();
   const recovering = new Set<string>();
-  const nativeOperation = <Args extends unknown[], Result>(operation: (dir: string, ...args: Args) => Promise<Result>) =>
+  const nativeOperation =
+    <Args extends unknown[], Result>(operation: (dir: string, ...args: Args) => Promise<Result>) =>
     async (dir: string, ...args: Args): Promise<Result> => {
-      if (recovering.has(dir)) throw new NativeRevisionConflict("native project recovery is active; retry after it finishes");
+      if (recovering.has(dir))
+        throw new NativeRevisionConflict(
+          "native project recovery is active; retry after it finishes",
+        );
       nativeOperations.set(dir, (nativeOperations.get(dir) ?? 0) + 1);
-      try { return await operation(dir, ...args); }
-      finally {
+      try {
+        return await operation(dir, ...args);
+      } finally {
         const remaining = (nativeOperations.get(dir) ?? 1) - 1;
-        if (remaining) nativeOperations.set(dir, remaining); else nativeOperations.delete(dir);
+        if (remaining) nativeOperations.set(dir, remaining);
+        else nativeOperations.delete(dir);
       }
     };
   return {
     withSavedFilesRecovery: async <T>(dir: string, replace: () => Promise<T>): Promise<T> => {
       if (active.has(dir) || nativeOperations.has(dir) || recovering.has(dir))
-        throw new NativeRevisionConflict("checkpoint restore refused: a native operation or routing is active; wait for it to finish");
+        throw new NativeRevisionConflict(
+          "checkpoint restore refused: a native operation or routing is active; wait for it to finish",
+        );
       recovering.add(dir);
-      try { return await deps.sessions.withSavedFilesRecovery(dir, replace); }
-      finally { recovering.delete(dir); }
+      try {
+        return await deps.sessions.withSavedFilesRecovery(dir, replace);
+      } finally {
+        recovering.delete(dir);
+      }
     },
     build: (opts: BuildOptions) => nativeOperation((_dir: string) => build(opts))(opts.projectDir),
     schematicInspect: nativeOperation(schematicInspect),

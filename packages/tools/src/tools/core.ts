@@ -1,4 +1,8 @@
-import { compareTaskCheckpoint, compactTaskComparison, taskCheckpointText } from "../task-checkpoints";
+import {
+  compareTaskCheckpoint,
+  compactTaskComparison,
+  taskCheckpointText,
+} from "../task-checkpoints";
 /** Core toolset: always loaded. */
 import { createHash } from "node:crypto";
 import { readFile, readdir, unlink } from "node:fs/promises";
@@ -26,12 +30,7 @@ import {
   writeReport,
 } from "./common";
 import { formatLastRelease, readProjectStatusEvidence } from "./project-status-evidence";
-import {
-  ROUTE_RUN_DEFAULT_WAIT_MS,
-  ROUTE_RUN_MAX_WAIT_MS,
-  runRoute,
-  RouteRunArgs,
-} from "./route";
+import { ROUTE_RUN_DEFAULT_WAIT_MS, ROUTE_RUN_MAX_WAIT_MS, runRoute, RouteRunArgs } from "./route";
 import { compilerSourceHelp, formatCompilerSourceHelp } from "./compiler-source-guide";
 
 export const load_toolset = defineTool({

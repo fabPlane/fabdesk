@@ -52,7 +52,9 @@ export class FpPcbSessions {
   /** The session for `projectDir`, creating or reconnecting it as needed. */
   session(projectDir: string): Promise<ProjectSession> {
     if (this.recovering.has(projectDir))
-      return Promise.reject(new NativeRevisionConflict("native project recovery is active; retry after it finishes"));
+      return Promise.reject(
+        new NativeRevisionConflict("native project recovery is active; retry after it finishes"),
+      );
     const cached = this.open.get(projectDir);
     if (cached) return cached;
     const pending = this.connect(projectDir).catch((e) => {
@@ -127,7 +129,9 @@ export class FpPcbSessions {
         s.path = pro;
         // NewProject owns the stub writes that occur after the initial missing-file check.
         for (const filename of [BOARD_PCB, "board.kicad_sch"])
-          this.revisions.get(projectDir)?.set(filename, await this.diskRevision(join(projectDir, filename)));
+          this.revisions
+            .get(projectDir)
+            ?.set(filename, await this.diskRevision(join(projectDir, filename)));
       }
       // Read-only inspection must not rewrite retained project library tables. Mutation and
       // construction paths can explicitly use bundled libraries through the default behavior.
@@ -222,14 +226,23 @@ export class FpPcbSessions {
       // does not prove there is no live work.
       let pending = this.open.get(projectDir);
       if (!pending) {
-        pending = this.connect(projectDir).catch(error => { this.open.delete(projectDir); throw error; });
+        pending = this.connect(projectDir).catch((error) => {
+          this.open.delete(projectDir);
+          throw error;
+        });
         this.open.set(projectDir, pending);
       }
       const session = await pending;
       if (session) {
-        const documents = [await session.kicad.currentBoard(), await session.kicad.currentSchematic()];
-        for (const document of documents) if (document && (await document.modified()) !== false)
-          throw new NativeRevisionConflict("checkpoint restore refused: live document has unsaved or unknown changes; save or preserve that work before restoring");
+        const documents = [
+          await session.kicad.currentBoard(),
+          await session.kicad.currentSchematic(),
+        ];
+        for (const document of documents)
+          if (document && (await document.modified()) !== false)
+            throw new NativeRevisionConflict(
+              "checkpoint restore refused: live document has unsaved or unknown changes; save or preserve that work before restoring",
+            );
         // A failed termination must not proceed to replacing saved files.
         await this.bridge().deleteSession(session.id);
         await session.ws.close().catch(() => undefined);
@@ -275,7 +288,12 @@ export class FpPcbSessions {
       known = new Map();
       this.revisions.set(projectDir, known);
     }
-    const pending: Array<{ filename: string; path: string; disk: string | null; document: Board | Schematic | undefined }> = [];
+    const pending: Array<{
+      filename: string;
+      path: string;
+      disk: string | null;
+      document: Board | Schematic | undefined;
+    }> = [];
     // Preflight the entire pair before closing either document.
     for (const filename of [BOARD_PCB, "board.kicad_sch"]) {
       const path = join(projectDir, filename);
@@ -306,10 +324,14 @@ export class FpPcbSessions {
     }
     for (const { filename, path, disk, document } of pending) {
       if ((await this.diskRevision(path)) !== disk)
-        throw new NativeRevisionConflict(`${filename} changed before reconciliation; retry after the external writer finishes`);
+        throw new NativeRevisionConflict(
+          `${filename} changed before reconciliation; retry after the external writer finishes`,
+        );
       if (document) {
         if ((await document.modified()) !== false)
-          throw new NativeRevisionConflict(`${filename} became modified during reconciliation; preserve live work before continuing`);
+          throw new NativeRevisionConflict(
+            `${filename} became modified during reconciliation; preserve live work before continuing`,
+          );
         this.documentGenerations.set(path, (this.documentGenerations.get(path) ?? 0) + 1);
         await document.close();
         if (filename === BOARD_PCB) await session.kicad.openBoard(path);
@@ -338,11 +360,19 @@ export class FpPcbSessions {
     // have changed between reconciliation and acquiring the document wrapper.
     let expected = this.revisions.get(projectDir)?.get(filename);
     if (expected === undefined || (await this.diskRevision(path)) !== expected)
-      throw new NativeRevisionConflict(`${filename} changed while acquiring the native document; refusing access to potentially stale state. Retry after the external writer finishes.`);
+      throw new NativeRevisionConflict(
+        `${filename} changed while acquiring the native document; refusing access to potentially stale state. Retry after the external writer finishes.`,
+      );
     const save = document.save.bind(document);
     document.save = async () => {
-      if (this.recovering.has(projectDir) || generation !== (this.generations.get(projectDir) ?? 0) || documentGeneration !== (this.documentGenerations.get(path) ?? 0))
-        throw new NativeRevisionConflict(`${filename} document handle predates recovery/reload; refusing stale save. Reacquire the current document.`);
+      if (
+        this.recovering.has(projectDir) ||
+        generation !== (this.generations.get(projectDir) ?? 0) ||
+        documentGeneration !== (this.documentGenerations.get(path) ?? 0)
+      )
+        throw new NativeRevisionConflict(
+          `${filename} document handle predates recovery/reload; refusing stale save. Reacquire the current document.`,
+        );
       const disk = await this.diskRevision(path);
       if (disk !== expected)
         throw new NativeRevisionConflict(

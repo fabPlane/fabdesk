@@ -44,7 +44,7 @@ function summary(wallMs: number): RouteSummary {
 async function harness(name: string, delayMs = 120) {
   const project = await tempProject(name);
   const boardPath = join(project.dir, "board.kicad_pcb");
-  await writeFile(boardPath, "(kicad_pcb (net \"N1\") (property \"test\" \"v1\"))\n");
+  await writeFile(boardPath, '(kicad_pcb (net "N1") (property "test" "v1"))\n');
   await writeFile(join(project.dir, "board.kicad_pro"), "{}\n");
   const base = mockServices([project]);
   const services = mockServices([project], {
@@ -66,7 +66,10 @@ async function harness(name: string, delayMs = 120) {
             message: `slow frame ${index}`,
           });
         }
-        await writeFile(join(dir, "board.kicad_pcb"), "(kicad_pcb (net \"N1\") (property \"test\" \"v2\"))\n");
+        await writeFile(
+          join(dir, "board.kicad_pcb"),
+          '(kicad_pcb (net "N1") (property "test" "v2"))\n',
+        );
         return summary(delayMs);
       },
     },
@@ -173,7 +176,7 @@ describe("durable asynchronous routing", () => {
     expect(appliedRevision).toBe(ready.candidate.sha256);
     expect(await hash(h.boardPath)).toBe(appliedRevision);
 
-    await writeFile(h.boardPath, "(kicad_pcb (net \"N1\") (property \"test\" \"v3\"))\n");
+    await writeFile(h.boardPath, '(kicad_pcb (net "N1") (property "test" "v3"))\n');
     const current = await hash(h.boardPath);
     const second = await h.call("route_run", { timeoutMs: 5_000, applyPolicy: "manual" });
     const secondId = (second.json as { runId: string }).runId;
@@ -218,9 +221,16 @@ describe("durable asynchronous routing", () => {
     await terminal(h.services, runId);
     let releases = 0;
     const release = h.services.design.release;
-    h.services.design.release = async dir => { if (dir === h.project.dir) releases++; return release(dir); };
-    h.services.design.withSavedFilesRecovery = async () => { throw new NativeRevisionConflict("live document has unsaved or unknown changes"); };
-    await expect(h.call("route_apply", { runId, expectedPcbRevision: before })).rejects.toThrow("unsaved or unknown");
+    h.services.design.release = async (dir) => {
+      if (dir === h.project.dir) releases++;
+      return release(dir);
+    };
+    h.services.design.withSavedFilesRecovery = async () => {
+      throw new NativeRevisionConflict("live document has unsaved or unknown changes");
+    };
+    await expect(h.call("route_apply", { runId, expectedPcbRevision: before })).rejects.toThrow(
+      "unsaved or unknown",
+    );
     expect(releases).toBe(0);
     expect(await hash(h.boardPath)).toBe(before);
     expect(h.services.routeRuns.get(runId)?.application.reason).toContain("unsaved or unknown");

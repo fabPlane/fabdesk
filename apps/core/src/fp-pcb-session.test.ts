@@ -85,16 +85,20 @@ async function simulatedProject() {
 
 describe("saved file/session restoration", () => {
   test("disk replacement between reconciliation and acquisition cannot bless stale loaded bytes", async () =>
-    fixture(async f => {
+    fixture(async (f) => {
       await f.sessions.board(f.dir);
-      const session = await f.sessions.session(f.dir), original = session.kicad.currentBoard.bind(session.kicad);
-      session.kicad.currentBoard = async () => { await writeFile(f.path, "external B"); return original(); };
+      const session = await f.sessions.session(f.dir),
+        original = session.kicad.currentBoard.bind(session.kicad);
+      session.kicad.currentBoard = async () => {
+        await writeFile(f.path, "external B");
+        return original();
+      };
       await expect(f.sessions.board(f.dir)).rejects.toThrow("changed while acquiring");
       expect(f.counts().saves).toBe(0);
       expect(await readFile(f.path, "utf8")).toBe("external B");
     }));
   test("a pre-reload handle cannot save even when disk returns to the same bytes", async () =>
-    fixture(async f => {
+    fixture(async (f) => {
       const old = await f.sessions.board(f.dir);
       await writeFile(f.path, "candidate");
       await f.sessions.board(f.dir);
@@ -173,12 +177,19 @@ describe("saved file/session restoration", () => {
 });
 
 test("pair reconciliation preflights unsaved schematic before closing changed saved PCB", async () => {
-  await fixture(async f => {
+  await fixture(async (f) => {
     const schematicPath = join(f.dir, "board.kicad_sch");
     await writeFile(schematicPath, "schematic A");
     const original = await f.sessions.session(f.dir);
-    let dirty = false, closes = 0;
-    original.kicad.currentSchematic = async () => ({ modified: async () => dirty, close: async () => { closes++; } }) as never;
+    let dirty = false,
+      closes = 0;
+    original.kicad.currentSchematic = async () =>
+      ({
+        modified: async () => dirty,
+        close: async () => {
+          closes++;
+        },
+      }) as never;
     original.kicad.openSchematic = async () => ({}) as never;
     await f.sessions.board(f.dir);
     const before = f.counts();
@@ -192,23 +203,33 @@ test("pair reconciliation preflights unsaved schematic before closing changed sa
 });
 
 test("saved-file recovery refuses unsaved state, blocks access while replacing, and expires handles", async () => {
-  await fixture(async f => {
+  await fixture(async (f) => {
     const old = await f.sessions.board(f.dir);
     const session = await f.sessions.session(f.dir);
     let terminations = 0;
     session.ws = { close: async () => {} } as never;
     (f.sessions as any).open.set(f.dir, Promise.resolve(session));
-    (f.sessions as any).bridge = () => ({ deleteSession: async () => { terminations++; } });
+    (f.sessions as any).bridge = () => ({
+      deleteSession: async () => {
+        terminations++;
+      },
+    });
     f.edit("unsaved candidate");
     let replaced = false;
-    await expect(f.sessions.withSavedFilesRecovery(f.dir, async () => { replaced = true; })).rejects.toThrow("unsaved or unknown");
+    await expect(
+      f.sessions.withSavedFilesRecovery(f.dir, async () => {
+        replaced = true;
+      }),
+    ).rejects.toThrow("unsaved or unknown");
     expect(replaced).toBe(false);
     expect(terminations).toBe(0);
     expect(f.live()).toBe("unsaved candidate");
     f.edit("checkpoint:pad-A", false);
     await f.sessions.withSavedFilesRecovery(f.dir, async () => {
       await expect(old.save()).rejects.toThrow("handle predates recovery/reload");
-      await expect(f.sessions.withSavedFilesRecovery(f.dir, async () => {})).rejects.toThrow("already active");
+      await expect(f.sessions.withSavedFilesRecovery(f.dir, async () => {})).rejects.toThrow(
+        "already active",
+      );
       await writeFile(f.path, "restored");
     });
     expect(terminations).toBe(1);
@@ -263,13 +284,19 @@ test("new project can retain unsaved documents until its first owned save", asyn
 });
 
 test("read-only project access does not register libraries or rewrite their saved tables", async () => {
-  await fixture(async f => {
+  await fixture(async (f) => {
     let registrations = 0;
     const project = await f.sessions.session(f.dir);
-    (f.sessions as any).bridge = () => ({ registerBundledLibraries: async () => { registrations++; } });
+    (f.sessions as any).bridge = () => ({
+      registerBundledLibraries: async () => {
+        registrations++;
+      },
+    });
     await writeFile(join(f.dir, "board.kicad_pro"), "project");
-    const sch = join(f.dir, "board.kicad_sch"); await writeFile(sch, "schematic");
-    project.kicad.currentSchematic = async () => ({ modified: async () => false, close: async () => {}, save: async () => {} }) as never;
+    const sch = join(f.dir, "board.kicad_sch");
+    await writeFile(sch, "schematic");
+    project.kicad.currentSchematic = async () =>
+      ({ modified: async () => false, close: async () => {}, save: async () => {} }) as never;
     project.kicad.openSchematic = async () => ({}) as never;
     await f.sessions.ensureProject(f.dir, { registerLibraries: false });
     expect(registrations).toBe(0);

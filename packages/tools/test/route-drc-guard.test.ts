@@ -52,7 +52,8 @@ for (const rule of ["track_width", "hole_clearance", null])
       const starting = '(kicad_pcb (net "N1"))';
       await writeFile(board, starting);
       await writeFile(join(project.dir, "board.kicad_pro"), "{}");
-      const customRules = '(version 1)\n(rule "custom-width" (constraint track_width (min 0.8mm)))\n';
+      const customRules =
+        '(version 1)\n(rule "custom-width" (constraint track_width (min 0.8mm)))\n';
       await writeFile(join(project.dir, "board.kicad_dru"), customRules);
       const base = mockServices([project]);
       let checks = 0;
@@ -62,7 +63,9 @@ for (const rule of ["track_width", "hole_clearance", null])
           runDrc: async (_cli, options) => {
             // Routing changes copper while cached zone fill can still overlap it.
             expect(options.refillZones).toBe(true);
-            expect(await readFile(join(options.board, "..", "board.kicad_dru"), "utf8")).toBe(customRules);
+            expect(await readFile(join(options.board, "..", "board.kicad_dru"), "utf8")).toBe(
+              customRules,
+            );
             return report([violation("old"), ...(checks++ > 0 && rule ? [violation(rule)] : [])]);
           },
         },

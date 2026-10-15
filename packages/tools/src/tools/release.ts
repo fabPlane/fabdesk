@@ -538,11 +538,7 @@ export const release_build = defineTool({
       revisionStable: { evidenceLevel: "measured", status: stable ? "pass" : "fail" },
     };
     const failedCircuitChecks = calculations
-      .filter((check) =>
-        check.kind === "assertion"
-          ? !check.pass
-          : check.status === "fail",
-      )
+      .filter((check) => (check.kind === "assertion" ? !check.pass : check.status === "fail"))
       .map((check) => check.name);
     const declaredClaims = calculations.flatMap((check) =>
       check.kind === "assertion"
@@ -559,7 +555,9 @@ export const release_build = defineTool({
       ...ledDirections.reasons.map((reason) => `LED direction not decided: ${reason}`),
       ...calculations.flatMap((check) =>
         check.kind === "led-current" && check.status === "unknown"
-          ? [`Circuit check not decided: ${check.name} (${check.led ?? "unbound LED"}): ${check.reasons.join("; ")}`]
+          ? [
+              `Circuit check not decided: ${check.name} (${check.led ?? "unbound LED"}): ${check.reasons.join("; ")}`,
+            ]
           : [],
       ),
     ];

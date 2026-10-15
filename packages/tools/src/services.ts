@@ -810,7 +810,14 @@ export type RouteRunRecord = {
     router: "fab_router" | "freerouting" | "tracemaker";
     startedAt: string;
     endedAt: string | null;
-    outcome: "running" | "completed" | "failed" | "unavailable" | "skipped" | "cancelled" | "timed_out";
+    outcome:
+      | "running"
+      | "completed"
+      | "failed"
+      | "unavailable"
+      | "skipped"
+      | "cancelled"
+      | "timed_out";
     reason: string | null;
   }>;
   fallbackReason?: string | null;

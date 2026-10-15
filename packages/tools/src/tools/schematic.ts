@@ -269,19 +269,18 @@ export const schematic_edit = defineTool({
     connections: z
       .array(
         mutationInputObject({
-            name: z.string().min(1).describe("Electrical net name"),
-            nodes: z
-              .array(mutationInputObject({ reference: z.string().min(1), pin: z.string().min(1) }))
-              .min(1)
-              .describe(
-                "Symbol pin endpoints joined electrically by matching labels on short visible wire stubs",
-              ),
-            label: z.enum(["local", "global", "none"]).default("local"),
-          })
-          .refine((connection) => connection.label !== "none" || connection.nodes.length >= 2, {
-            message: "direct wire connections require at least two nodes",
-            path: ["nodes"],
-          }),
+          name: z.string().min(1).describe("Electrical net name"),
+          nodes: z
+            .array(mutationInputObject({ reference: z.string().min(1), pin: z.string().min(1) }))
+            .min(1)
+            .describe(
+              "Symbol pin endpoints joined electrically by matching labels on short visible wire stubs",
+            ),
+          label: z.enum(["local", "global", "none"]).default("local"),
+        }).refine((connection) => connection.label !== "none" || connection.nodes.length >= 2, {
+          message: "direct wire connections require at least two nodes",
+          path: ["nodes"],
+        }),
       )
       .max(500)
       .default([]),

@@ -20,22 +20,37 @@ import { FpPcbSessions, NativeRevisionConflict, type ProjectSession } from "../s
 
 test("recovery and an entire native operation cannot run over each other", async () => {
   let finish!: () => void, entered!: () => void;
-  const started = new Promise<void>(resolve => { entered = resolve; });
-  const blocked = new Promise<void>(resolve => { finish = resolve; });
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const blocked = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
   let recovered = 0;
   const sessions = {
-    release: async () => { entered(); await blocked; },
-    withSavedFilesRecovery: async (_dir: string, replace: () => Promise<unknown>) => { recovered++; return replace(); },
+    release: async () => {
+      entered();
+      await blocked;
+    },
+    withSavedFilesRecovery: async (_dir: string, replace: () => Promise<unknown>) => {
+      recovered++;
+      return replace();
+    },
   } as unknown as FpPcbSessions;
   const design = createFpPcbDesign({ bridge: () => ({}) as FpPcbBridgeClient, sessions });
   const operation = design.release("/project");
   await started;
-  await expect(design.withSavedFilesRecovery!("/project", async () => {})).rejects.toThrow("native operation or routing is active");
+  await expect(design.withSavedFilesRecovery!("/project", async () => {})).rejects.toThrow(
+    "native operation or routing is active",
+  );
   expect(recovered).toBe(0);
-  finish(); await operation;
+  finish();
+  await operation;
   await design.withSavedFilesRecovery!("/project", async () => {
     await expect(design.placeFootprints("/project", [])).rejects.toThrow("recovery is active");
-    await expect(design.withSavedFilesRecovery!("/project", async () => {})).rejects.toThrow("native operation or routing is active");
+    await expect(design.withSavedFilesRecovery!("/project", async () => {})).rejects.toThrow(
+      "native operation or routing is active",
+    );
   });
   expect(recovered).toBe(1);
 });

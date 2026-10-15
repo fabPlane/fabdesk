@@ -140,7 +140,9 @@ describe("mcp adapter", () => {
     };
     const packaged = await routerEnum("public");
     expect(packaged.values).toEqual(["fab_router", "freerouting", "capacity", "tracemaker"]);
-    expect((packaged.rejected.content as Array<{ text: string }>)[0]!.text).toContain("board.kicad_pcb");
+    expect((packaged.rejected.content as Array<{ text: string }>)[0]!.text).toContain(
+      "board.kicad_pcb",
+    );
     const internal = await routerEnum("internal");
     expect(internal.values).toEqual(packaged.values);
   });
@@ -308,10 +310,17 @@ test("direct MCP rejects Qwen placement coordinates before mutation", async () =
 test("direct MCP rejects unknown top-level mutation fields", async () => {
   const { client, server } = await pair(["pcb_place"]);
   try {
-    const result = await client.callTool({ name: "pcb_place", arguments: {
-      placements: [{ reference: "D1", position: { x: 27, y: 23 } }], typo: true,
-    } });
+    const result = await client.callTool({
+      name: "pcb_place",
+      arguments: {
+        placements: [{ reference: "D1", position: { x: 27, y: 23 } }],
+        typo: true,
+      },
+    });
     expect(result.isError).toBe(true);
     expect(JSON.stringify(result.content)).toContain("typo");
-  } finally { await client.close(); await server.close(); }
+  } finally {
+    await client.close();
+    await server.close();
+  }
 });
