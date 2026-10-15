@@ -877,8 +877,11 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     );
     if (
       (edit.symbols?.length ?? 0) ||
-      edit.symbolUpdates?.some((update) =>
-        update.newReference !== undefined || update.value !== undefined || update.footprint !== undefined,
+      edit.symbolUpdates?.some(
+        (update) =>
+          update.newReference !== undefined ||
+          update.value !== undefined ||
+          update.footprint !== undefined,
       )
     )
       for (const sheet of flat) {
@@ -2675,9 +2678,9 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
           });
           throw new ToolError(
             `${error.message} To resume from saved files only: create a fresh project, find ` +
-            `project_import_kicad with capability_search, call it through capability_call with ` +
-            `${recovery}, then schematic_inspect on the new project. This retains the original ` +
-            `live session; it does not recover unsaved edits.`,
+              `project_import_kicad with capability_search, call it through capability_call with ` +
+              `${recovery}, then schematic_inspect on the new project. This retains the original ` +
+              `live session; it does not recover unsaved edits.`,
             "internal",
           );
         }
