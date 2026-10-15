@@ -84,6 +84,15 @@ async function simulatedProject() {
 }
 
 describe("saved file/session restoration", () => {
+  test("disk replacement between reconciliation and acquisition cannot bless stale loaded bytes", async () =>
+    fixture(async f => {
+      await f.sessions.board(f.dir);
+      const session = await f.sessions.session(f.dir), original = session.kicad.currentBoard.bind(session.kicad);
+      session.kicad.currentBoard = async () => { await writeFile(f.path, "external B"); return original(); };
+      await expect(f.sessions.board(f.dir)).rejects.toThrow("changed while acquiring");
+      expect(f.counts().saves).toBe(0);
+      expect(await readFile(f.path, "utf8")).toBe("external B");
+    }));
   test("a pre-reload handle cannot save even when disk returns to the same bytes", async () =>
     fixture(async f => {
       const old = await f.sessions.board(f.dir);

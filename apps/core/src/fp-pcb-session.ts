@@ -125,20 +125,29 @@ export class FpPcbSessions {
       if (!(await exists(pro))) {
         await s.kicad.newProject(pro);
         s.path = pro;
+        // NewProject owns the stub writes that occur after the initial missing-file check.
+        for (const filename of [BOARD_PCB, "board.kicad_sch"])
+          this.revisions.get(projectDir)?.set(filename, await this.diskRevision(join(projectDir, filename)));
       }
       // Read-only inspection must not rewrite retained project library tables. Mutation and
       // construction paths can explicitly use bundled libraries through the default behavior.
       if (options.registerLibraries !== false) await this.bridge().registerBundledLibraries(s.id);
       let schematic = await s.kicad.currentSchematic();
-      if (!schematic)
-        schematic = (await exists(sch))
-          ? await s.kicad.openSchematic(sch)
-          : await s.kicad.newDocument(DocumentType.DOCTYPE_SCHEMATIC, sch);
+      if (!schematic) {
+        if (await exists(sch)) schematic = await s.kicad.openSchematic(sch);
+        else {
+          schematic = await s.kicad.newDocument(DocumentType.DOCTYPE_SCHEMATIC, sch);
+          this.revisions.get(projectDir)?.set("board.kicad_sch", await this.diskRevision(sch));
+        }
+      }
       let board = await s.kicad.currentBoard();
-      if (!board)
-        board = (await exists(pcb))
-          ? await s.kicad.openBoard(pcb)
-          : await s.kicad.newDocument(DocumentType.DOCTYPE_PCB, pcb);
+      if (!board) {
+        if (await exists(pcb)) board = await s.kicad.openBoard(pcb);
+        else {
+          board = await s.kicad.newDocument(DocumentType.DOCTYPE_PCB, pcb);
+          this.revisions.get(projectDir)?.set(BOARD_PCB, await this.diskRevision(pcb));
+        }
+      }
       return {
         session: s,
         schematic: await this.guardSave(projectDir, "board.kicad_sch", schematic),
@@ -312,10 +321,11 @@ export class FpPcbSessions {
     const path = join(projectDir, filename);
     const generation = this.generations.get(projectDir) ?? 0;
     const documentGeneration = this.documentGenerations.get(path) ?? 0;
-    let expected = await this.diskRevision(path);
-    // ensureProject can create a new document after reconciliation saw a missing file.
-    if (this.revisions.get(projectDir)?.get(filename) === null)
-      this.revisions.get(projectDir)?.set(filename, expected);
+    // Bind to the state reconciled/created by the owner, not newly sampled bytes that may
+    // have changed between reconciliation and acquiring the document wrapper.
+    let expected = this.revisions.get(projectDir)?.get(filename);
+    if (expected === undefined || (await this.diskRevision(path)) !== expected)
+      throw new NativeRevisionConflict(`${filename} changed while acquiring the native document; refusing access to potentially stale state. Retry after the external writer finishes.`);
     const save = document.save.bind(document);
     document.save = async () => {
       if (this.recovering.has(projectDir) || generation !== (this.generations.get(projectDir) ?? 0) || documentGeneration !== (this.documentGenerations.get(path) ?? 0))
