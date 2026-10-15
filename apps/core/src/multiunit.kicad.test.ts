@@ -22,7 +22,8 @@ for (const [libId,units] of [["Amplifier_Operational:LM358",3],["Amplifier_Opera
    await design.schematicEdit(dir,{symbolUpdates:[{reference:"U1",unit:1,position:{x:25.4,y:25.4}}]});
    const moved=await design.schematicInspect(dir);
    expect(moved.symbols.find(s=>s.unit===1)?.position).toEqual({x:25.4,y:25.4});
-   expect(moved.symbols.filter(s=>s.unit!==1).map(s=>s.position)).toEqual(snapshot.symbols.filter(s=>s.unit!==1).map(s=>s.position));
+   for (const beforeSymbol of snapshot.symbols.filter(s=>s.unit!==1))
+    expect(moved.symbols.find(s=>s.unit===beforeSymbol.unit)?.position).toEqual(beforeSymbol.position);
    // Replacement is one transaction; another part cannot take a remaining unit's reference.
    const id=moved.symbols.find(s=>s.unit===1)!.id;
    await expect(design.schematicEdit(dir,{deleteItemIds:[id],symbols:[symbol(1,"different part value")]})).rejects.toThrow("same libId, value and footprint");
