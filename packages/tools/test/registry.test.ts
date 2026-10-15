@@ -3237,13 +3237,13 @@ describe("registry", () => {
     });
   });
 
-  test.each(["clean", "labels", "stubs", "both"])(
+  test.each(["clean", "labels", "stubs", "both", "reversed"])(
     "complete release keeps %s presentation metrics advisory",
     async (presentation) => {
       const reg = createRegistry();
       const project = await tempProject("release");
       for (const [name, body] of [
-        ["board.kicad_sch", "sch"],
+        ["board.kicad_sch", "(kicad_sch)"],
         ["board.kicad_pcb", "pcb"],
         ["board.kicad_pro", "{}"],
       ])
@@ -3327,7 +3327,12 @@ describe("registry", () => {
             return { paths: [output] };
           },
           exportNetlist: async (_cli, { output }) => {
-            await put(output);
+            await put(
+              output,
+              presentation === "reversed"
+                ? "(export (components (comp (ref D1) (libsource (lib Device) (part LED)))) (nets (net (name ground) (node (ref D1) (pin 2) (pinfunction A)) (node (ref U1) (pin 1) (pinfunction GND) (pintype power_in))) (net (name drive) (node (ref D1) (pin 1) (pinfunction K)))))"
+                : "(export (components) (nets))",
+            );
             return { paths: [output] };
           },
         },
@@ -3364,6 +3369,14 @@ describe("registry", () => {
             }),
         );
       const release = await callRelease();
+      if (presentation === "reversed") {
+        expect(release.isError).toBe(true);
+        expect((release.json as any).checks.ledDirections.status).toBe("fail");
+        expect((release.json as any).failureReasons.join(" ")).toContain("anode tied to ground");
+        // Omitted LED reference retains declared arithmetic, but cannot bypass the automatic gate.
+        expect((release.json as any).checks.circuit[0].status).toBe("pass");
+        return;
+      }
       expect(release.isError).toBeFalsy();
       expect((release.json as any).failureReasons).toEqual([]);
       expect((release.json as any).checks.schematicPresentation).toMatchObject({
@@ -3416,7 +3429,7 @@ describe("registry", () => {
         revision: (release.json as any).revisions.schematic,
       });
       expect((release.json as any).checks.circuit).toEqual([
-        expect.objectContaining({ kind: "led-current", evidenceLevel: "computed", status: "pass" }),
+        expect.objectContaining({ kind: "led-current", evidenceLevel: "declared", status: "pass" }),
         expect.objectContaining({
           kind: "assertion",
           evidenceLevel: "declared",
