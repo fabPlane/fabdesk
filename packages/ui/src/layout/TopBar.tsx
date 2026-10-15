@@ -1,16 +1,15 @@
 import { Badge, IconButton } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { UpdateBadge } from "../components/UpdateBadge";
+import { WhatsNewLink } from "../whatsnew/WhatsNew";
 import { useCore } from "@fabdesk/client-core";
 import { useProjects } from "@fabdesk/client-core";
-import { useAuthStore } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { cn, modKey } from "../util";
 import type { CoreStatusInfo } from "../app/types";
 
 export function TopBar({ coreStatus }: { coreStatus?: CoreStatusInfo | undefined }) {
   const { host, sseStatus, client } = useCore();
-  const auth = useAuthStore((s) => s.state);
   const projectId = useUiStore((s) => s.activeProjectId);
   const sidebarOpen = useUiStore((s) => s.sidebarOpen);
   const boardOpen = useUiStore((s) => s.boardOpen);
@@ -69,13 +68,9 @@ export function TopBar({ coreStatus }: { coreStatus?: CoreStatusInfo | undefined
         </Badge>
       )}
       {project && <span className="fd-topbar-project min-w-0 max-w-60 truncate border-l border-border pl-3 text-[12px] font-medium text-muted" title={project.name}>{project.name}</span>}
-      <div className="fd-topbar-actions ml-auto flex min-w-0 items-center gap-2" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+      <div data-topbar-actions className="fd-topbar-actions ml-auto flex min-w-0 items-center gap-2" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+        <WhatsNewLink />
         <UpdateBadge />
-        {auth?.mode === "local" && (
-          <Badge tone="warning" title="Running with --local-auth; no fabPlane account" className="fd-topbar-local">
-            Local mode
-          </Badge>
-        )}
         <Badge
           tone={connected ? "success" : coreStatus?.state === "crashed" ? "danger" : "warning"}
           title={coreStatus?.message ?? `Core ${coreStatus?.state ?? "ready"}; SSE ${sseStatus}${port ? `; port ${port}` : ""}`}
