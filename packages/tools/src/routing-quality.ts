@@ -319,7 +319,9 @@ export function compareQuality(
     const rp = reference.get(pair.p),
       rn = reference.get(pair.n);
     const limit = rp && rn ? round(Math.abs(rp.lengthMm - rn.lengthMm)) : old.skewMm;
-    const worse = pair.skewMm > limit + 0.001;
+    const hasReference =
+      rp && rn ? rp.lengthMm > 0 && rn.lengthMm > 0 : old.lengthPMm > 0 && old.lengthNMm > 0;
+    const worse = hasReference && pair.skewMm > limit + 0.001;
     lines.push(
       `${pair.p}/${pair.n}: skew ${old.skewMm} → ${pair.skewMm} mm${rp && rn ? ` (before edit ${limit})` : ""}; vias ${old.viasP}/${old.viasN} → ${pair.viasP}/${pair.viasN}${worse ? "; WARNING increased skew" : ""}.`,
     );
