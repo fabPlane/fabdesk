@@ -1149,7 +1149,7 @@ async function executeRoute(
           count(item.net, item.diameter !== undefined, "removed");
       outsideScopeChanges.push(...[...counts.values()].sort((a, b) => a.net.localeCompare(b.net)));
     }
-    const selectedNets = requestedNets.length ? requestedNets : touchedNets;
+    const selectedNets = requestedNets.length ? requestedNets : [...new Set([...startingCopper.nets,...touchedNets])];
     const measuredQuality = quality(candidateBoard, selectedNets, detectedPairs, reference);
     if (summary.pairRouting) measuredQuality.pairRouting = summary.pairRouting;
     const comparison = compareQuality(

@@ -39,3 +39,11 @@ for (const scenario of ["width", "skew", "outside", "failure"] as const) {
     expect(services.routeRuns.get(run.id)!.application.state).toBe("applied");
   });
 }
+
+test("whole-board routing reports retained widths when no geometry is added",async()=>{
+ const project=await tempProject("retained-widths");
+ await writeFile(join(project.dir,"board.kicad_pcb"),`(kicad_pcb (net "N1") ${segment("N1",0.3,1)})`);await writeFile(join(project.dir,"board.kicad_pro"),"{}");
+ const base=mockServices([project]);const services=mockServices([project],{design:{...base.design,query:async(dir,select)=>select==="unrouted"?[]:base.design.query(dir,select),route:async()=>({tracks:0,vias:0,claimedVias:0,routed:0,total:0,trackLengthNm:0,elapsedMs:1,wallMs:1,timedOut:false,message:"already connected",unrouted:[],log:[]})}});
+ const registry=createRegistry(),factory=contextFactory(services,project);const response=await registry.invoke("route_run",{router:"freerouting",waitMs:1000},ref=>factory({def:registry.get("route_run")!,projectRef:ref,signal:new AbortController().signal,progress:()=>{}}));
+ expect(response.text).toContain("N1: minimum width 0.3 → 0.3 mm");expect((response.json as any).run.application.state).toBe("applied");
+});
