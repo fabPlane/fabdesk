@@ -4,6 +4,7 @@ import { runAgentProcess } from "../process";
 import type { AgentAdapter, AgentPermission, AgentRun, AgentSession } from "../types";
 import { MCP_SERVER_NAME, PERMISSION_PROMPT_TOOL, TOKEN_ENV } from "../types";
 import { agentEnv, promptWithAttachments } from "./shared";
+import { readClaudeModelCatalog } from "../claude-models";
 
 const CANDIDATES = ["claude", "~/.local/bin/claude", "~/.claude/local/claude"];
 const BUILTIN_TOOLS = ["Read", "Edit", "Write", "Glob", "Grep"];
@@ -94,7 +95,11 @@ export const claudeAdapter: AgentAdapter = {
   displayName: "Claude",
   installHint:
     "Install Claude Code: https://code.claude.com/docs/en/setup (curl -fsSL https://claude.ai/install.sh | bash), then run `claude` once to sign in.",
-  detect: (binaryPath) => detectBinary(CANDIDATES, binaryPath),
+  detect: async (binaryPath) => {
+    const result = await detectBinary(CANDIDATES, binaryPath);
+    const catalog = result.installed && result.path ? await readClaudeModelCatalog(result.path, result.version) : undefined;
+    return { ...result, ...catalog };
+  },
   models: () => ["fable", "opus", "sonnet", "haiku"],
   supportsSupervised: true,
   run(session: AgentSession): AgentRun {

@@ -206,6 +206,10 @@ export const AgentInfo = z.object({
   path: z.string().optional(),
   installHint: z.string(),
   models: z.array(z.string()),
+  /** Versioned IDs reported by the installed CLI for selectable aliases. */
+  modelAliases: z.record(z.string(), z.string()).optional(),
+  /** Resolved CLI default, for display; absence means the version is unknown. */
+  defaultModel: z.string().optional(),
   /** Whether the adapter can pause a tool call for approval (`runtimeMode: "supervised"`). Absent = no. */
   supportsSupervised: z.boolean().optional(),
 });

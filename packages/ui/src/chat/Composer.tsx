@@ -103,6 +103,8 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
   const pickerAgents = agents.length > 0 ? agents : FALLBACK_AGENTS;
   const selectedAgent = agents.find((a) => a.id === agentId);
   const agentMissing = selectedAgent ? !selectedAgent.installed : false;
+  const displayedModel = model || settings.data?.agents[agentId]?.model || selectedAgent?.defaultModel || "";
+  const pickerLabel = `${pickerAgents.find((agent) => agent.id === agentId)?.displayName ?? agentId} · ${displayedModel ? modelDisplayName(displayedModel, selectedAgent?.modelAliases) : "Default"}`;
 
   const send = useCallback(async () => {
     const typed = draft.trim();
@@ -270,14 +272,14 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
                   variant="ghost"
                   size="sm"
                   className="fd-agent-button h-8 max-w-full font-medium"
-                  title={`Agent & model (${mod} + /)`}
+                  title={`${pickerLabel} (${mod} + /)`}
                   onClick={() => setAgentPickerOpen(!agentPickerOpen)}
                   disabled={!!run || queued.length > 0}
                   aria-haspopup="menu"
                   aria-expanded={agentPickerOpen}
                   data-testid="agent-model"
                 >
-                  <span className="min-w-0 truncate">{model ? modelDisplayName(model) : (pickerAgents.find((a) => a.id === agentId)?.displayName ?? agentId)}</span> <Icon name="chevronDown" width={13} height={13} className="shrink-0" />
+                  <span className="min-w-0 truncate">{pickerLabel}</span> <Icon name="chevronDown" width={13} height={13} className="shrink-0" />
                 </Button>
                 <AgentModelMenu
                   anchorRef={agentButtonRef}
