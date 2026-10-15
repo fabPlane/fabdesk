@@ -52,7 +52,7 @@ export function BoardPanel() {
   return (
     <div className="fd-board-panel flex h-full min-w-0 flex-col bg-panel" data-testid="board-panel">
       <div className="fd-board-heading">
-        <span className="fd-board-mark"><Icon name="panel" width={18} height={18} /></span>
+        <span className="fd-board-mark"><Icon name="pcb" width={18} height={18} /></span>
         <div className="min-w-0 flex-1">
           <div className="fd-board-eyebrow">Board workspace</div>
           <div className="fd-board-title truncate" title={project?.name}>{project?.name ?? "Select a project"}</div>
