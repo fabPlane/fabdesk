@@ -248,6 +248,7 @@ describe("registry", () => {
       "route_run",
       "verify_drc",
       "render_board",
+      "project_checkpoint",
       "project_read_file",
       "project_write_file",
       "project_list_sketches",
