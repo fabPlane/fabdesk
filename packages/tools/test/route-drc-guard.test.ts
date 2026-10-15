@@ -52,13 +52,17 @@ for (const rule of ["track_width", "hole_clearance", null])
       const starting = '(kicad_pcb (net "N1"))';
       await writeFile(board, starting);
       await writeFile(join(project.dir, "board.kicad_pro"), "{}");
+      const customRules = '(version 1)\n(rule "custom-width" (constraint track_width (min 0.8mm)))\n';
+      await writeFile(join(project.dir, "board.kicad_dru"), customRules);
       const base = mockServices([project]);
       let checks = 0;
       const services = mockServices([project], {
         kicad: {
           ...base.kicad,
-          runDrc: async () =>
-            report([violation("old"), ...(checks++ > 0 && rule ? [violation(rule)] : [])]),
+          runDrc: async (_cli, options) => {
+            expect(await readFile(join(options.board, "..", "board.kicad_dru"), "utf8")).toBe(customRules);
+            return report([violation("old"), ...(checks++ > 0 && rule ? [violation(rule)] : [])]);
+          },
         },
         design: {
           ...base.design,
@@ -117,6 +121,8 @@ for (const rule of ["track_width", "hole_clearance", null])
       if (rule) {
         expect(run.application.state).toBe("rejected");
         expect(run.error).toContain(rule);
+        expect(run.drcErrors).toEqual([violation(rule)]);
+        expect(run.artifacts.drcCheck).toContain("routing-drc-check.json");
         expect(await readFile(board, "utf8")).toBe(starting);
         await expect(
           call("route_apply", { runId: run.id, expectedPcbRevision: run.startingPcbRevision }),

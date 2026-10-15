@@ -846,6 +846,9 @@ async function executeRoute(
         before: beforeDrc.counts, after: afterDrc.counts, newErrors,
         boundary: "native saved-board DRC errors; opens and warnings retained separately",
       });
+      rec = { ...rec, drcErrors: newErrors, artifacts: {
+        ...rec.artifacts, drcCheck: join(rec.artifacts.runDir, "routing-drc-check.json"),
+      } };
       if (newErrors.length) forbidden.push(`native DRC: ${newErrors.length} new error(s): ${[...new Set(newErrors.map(v => v.rule))].join(", ")}`);
     }
     const usableCandidate = resultState === "complete" || summary.routed > 0 || geometry.length > 0;
@@ -1101,6 +1104,10 @@ export async function runRoute(args: RouteArgs, ctx: ToolContext): Promise<ToolO
   const projectBytes = await readFile(p(project, PROJECT_FILES.boardPro)).catch(
     () => new Uint8Array(),
   );
+  const customRules = await readFile(p(project, "board.kicad_dru")).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  });
   const validationBoard = copperBoard(boardBytes.toString());
   const bad = (args.rules?.perNet ?? []).map(r => r.net).concat((args.rules?.pairs ?? []).flatMap(p => [p.p,p.n])).filter(n => !validationBoard.nets.includes(n));
   if (bad.length) throw new ToolError(`unknown routing rule nets: ${[...new Set(bad)].join(", ")}`, "precondition");
@@ -1123,6 +1130,10 @@ export async function runRoute(args: RouteArgs, ctx: ToolContext): Promise<ToolO
     writeAtomic(join(snapshotDir, PROJECT_FILES.boardPro), projectBytes),
     writeAtomic(join(runDir, "starting.kicad_pcb"), boardBytes),
     writeAtomic(join(runDir, "starting.kicad_pro"), projectBytes),
+    ...(customRules ? [
+      writeAtomic(join(snapshotDir, "board.kicad_dru"), customRules),
+      writeAtomic(join(runDir, "starting.kicad_dru"), customRules),
+    ] : []),
   ]);
   const createdAt = iso();
   const artifacts = {

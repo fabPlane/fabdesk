@@ -827,7 +827,10 @@ export type RouteRunRecord = {
     result: string;
     candidate: string;
     diff: string;
+    drcCheck?: string;
   };
+  /** New native errors that blocked this candidate; retained for agent inspection. */
+  drcErrors?: DrcViolation[];
   request: {
     timeoutMs: number;
     deadlineAt: string;
