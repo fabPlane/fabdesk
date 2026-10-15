@@ -20,6 +20,7 @@ export type IconName =
   | "send"
   | "export"
   | "pin"
+  | "pinFilled"
   | "more"
   | "stop"
   | "command"
@@ -60,6 +61,7 @@ export function Icon({ name, ...props }: SVGProps<SVGSVGElement> & { name: IconN
     send: <><path d="M5 12h14M13 6l6 6-6 6" /></>,
     export: <><path d="M12 15V3m-4 4 4-4 4 4" /><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6" /></>,
     pin: <><path d="M8 3h8l-1 7 3 3v2H6v-2l3-3-1-7Z" /><path d="M12 15v7" /></>,
+    pinFilled: <><path d="M8 3h8l-1 7 3 3v2H6v-2l3-3-1-7Z" fill="currentColor" /><path d="M12 15v7" /></>,
     more: <><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></>,
     stop: <rect x="6" y="6" width="12" height="12" rx="2" />,
     command: <><path d="M9 7V5a2 2 0 1 0-2 2h10a2 2 0 1 0-2-2v14a2 2 0 1 0 2-2H7a2 2 0 1 0 2 2V7Z" /></>,

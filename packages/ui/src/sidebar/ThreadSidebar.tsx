@@ -121,7 +121,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
         }}
         data-testid={`thread-pin-${t.id}`}
       >
-        <Icon name="pin" width={16} height={16} />
+        <Icon name={t.pinned ? "pinFilled" : "pin"} width={16} height={16} />
       </IconButton>
       <IconButton
         title="Chat menu"
@@ -265,7 +265,10 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
       {creatingProject && <CreateProjectDialog onClose={() => setCreatingProject(false)} onCreated={(id) => { setActiveProject(id); setCreatingProject(false); }} />}
       {projectAction && <ProjectActionDialog project={projectAction} onClose={() => setProjectAction(null)} />}
       {projectMenu && <ContextMenu x={projectMenu.x} y={projectMenu.y} onClose={() => setProjectMenu(null)}>
-        <MenuItem onClick={() => { setProjectPinned(projectMenu.id, !pinnedProjectIds.includes(projectMenu.id)); setProjectMenu(null); }}>{pinnedProjectIds.includes(projectMenu.id) ? "Unpin" : "Pin"}</MenuItem>
+        <MenuItem onClick={() => { setProjectPinned(projectMenu.id, !pinnedProjectIds.includes(projectMenu.id)); setProjectMenu(null); }}>
+          <Icon name={pinnedProjectIds.includes(projectMenu.id) ? "pinFilled" : "pin"} width={16} height={16} className="mr-2" />
+          {pinnedProjectIds.includes(projectMenu.id) ? "Unpin" : "Pin"}
+        </MenuItem>
         <MenuItem onClick={() => { setProjectAction({ id: projectMenu.id, name: projectMenu.name, action: "rename" }); setProjectMenu(null); }}>Rename</MenuItem>
         <MenuItem danger onClick={() => { setProjectAction({ id: projectMenu.id, name: projectMenu.name, action: "delete" }); setProjectMenu(null); }}>Delete</MenuItem>
       </ContextMenu>}
@@ -277,6 +280,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
               setMenu(null);
             }}
           >
+            <Icon name={menu.thread.pinned ? "pinFilled" : "pin"} width={16} height={16} className="mr-2" />
             {menu.thread.pinned ? "Unpin" : "Pin"}
           </MenuItem>
           <MenuItem
