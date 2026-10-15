@@ -8,6 +8,7 @@ import { PROJECT_FILES, writeAtomic, writeJson } from "../fs";
 import { DEFAULT_ROUTE_FRAME_MAX_BYTES, FrameSink } from "../frame-sink";
 import {
   ToolError,
+  NativeRevisionConflict,
   JobTimeoutError,
   defineTool,
   type ProjectHandle,
@@ -372,11 +373,18 @@ async function applyCandidate(
   };
   await persistProgress(ctx, next, p(project, rec.artifacts.runDir));
   try {
-    await ctx.services.design.release(project.dir).catch(() => undefined);
-    const check = sha256(await readFile(boardPath));
-    if (check !== current)
-      throw new ToolError(`PCB changed before atomic replace: ${check}`, "precondition");
-    await writeAtomic(boardPath, candidate);
+    const replace = async () => {
+      const check = sha256(await readFile(boardPath));
+      if (check !== current)
+        throw new NativeRevisionConflict(`PCB changed before atomic replace: ${check}`);
+      await writeAtomic(boardPath, candidate);
+    };
+    if (ctx.services.design.withSavedFilesRecovery)
+      await ctx.services.design.withSavedFilesRecovery(project.dir, replace);
+    else {
+      await ctx.services.design.release(project.dir);
+      await replace();
+    }
     await ctx.services.design.release(project.dir).catch(() => undefined);
     await ctx.services.design.query(project.dir, "nets");
     const resulting = sha256(await readFile(boardPath));
@@ -408,6 +416,16 @@ async function applyCandidate(
         .boardStats(cli, { board: boardPath, scratchFile: statsPath })
         .catch(() => undefined);
   } catch (error) {
+    // Refusal is not a failed replacement: preserve live work and any external saved revision.
+    // In particular, do not run the generic release/rollback path after the recovery guard refuses.
+    if (error instanceof NativeRevisionConflict) {
+      next = {
+        ...next,
+        application: { ...next.application, state: "failed", reason: error.message },
+      };
+      await persistProgress(ctx, next, p(project, rec.artifacts.runDir));
+      throw error;
+    }
     await ctx.services.design.release(project.dir).catch(() => undefined);
     await writeAtomic(boardPath, before);
     await ctx.services.design.release(project.dir).catch(() => undefined);

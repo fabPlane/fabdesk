@@ -277,3 +277,31 @@ test("read-only project access does not register libraries or rewrite their save
     expect(registrations).toBe(1);
   });
 });
+
+describe("concurrent saved document reconciliation", () => {
+  test("parallel routing inventory reads reload an unknown board once", async () =>
+    fixture(async (f) => {
+      await Promise.all(Array.from({ length: 8 }, () => f.sessions.board(f.dir)));
+      expect(f.counts()).toEqual({ saves: 0, closes: 1, opens: 1 });
+    }));
+  test("parallel reads of externally replaced saved bytes reload once", async () =>
+    fixture(async (f) => {
+      await f.sessions.board(f.dir);
+      await writeFile(f.path, "external saved replacement");
+      await Promise.all(Array.from({ length: 8 }, () => f.sessions.board(f.dir)));
+      expect(f.counts()).toEqual({ saves: 0, closes: 2, opens: 2 });
+      expect(f.live()).toBe("external saved replacement");
+    }));
+  test("a refused reconciliation does not unblock a second reader by discarding live work", async () =>
+    fixture(async (f) => {
+      await f.sessions.board(f.dir);
+      f.edit("unsaved live copper");
+      await writeFile(f.path, "external saved replacement");
+      const results = await Promise.allSettled(
+        Array.from({ length: 8 }, () => f.sessions.board(f.dir)),
+      );
+      expect(results.every((result) => result.status === "rejected")).toBe(true);
+      expect(f.counts()).toEqual({ saves: 0, closes: 1, opens: 1 });
+      expect(f.live()).toBe("unsaved live copper");
+    }));
+});

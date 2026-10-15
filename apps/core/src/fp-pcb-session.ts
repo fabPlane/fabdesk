@@ -38,6 +38,7 @@ export class FpPcbSessions {
   private readonly generations = new Map<string, number>();
   private readonly documentGenerations = new Map<string, number>();
   private readonly recovering = new Set<string>();
+  private readonly reconciliation = new Map<string, Promise<void>>();
 
   constructor(
     private readonly bridge: () => FpPcbBridgeClient,
@@ -255,6 +256,19 @@ export class FpPcbSessions {
 
   /** Reconcile saved documents only; never discard unsaved or unknown live state. */
   private async reconcile(projectDir: string, session: ProjectSession): Promise<void> {
+    const previous = this.reconciliation.get(projectDir) ?? Promise.resolve();
+    const pending = previous
+      .catch(() => undefined)
+      .then(() => this.reconcileSaved(projectDir, session));
+    this.reconciliation.set(projectDir, pending);
+    try {
+      await pending;
+    } finally {
+      if (this.reconciliation.get(projectDir) === pending) this.reconciliation.delete(projectDir);
+    }
+  }
+
+  private async reconcileSaved(projectDir: string, session: ProjectSession): Promise<void> {
     if (!projectDir) return;
     let known = this.revisions.get(projectDir);
     if (!known) {
@@ -382,8 +396,23 @@ export class FpPcbSessions {
         await a.ws.close().catch(() => undefined);
       }
     }
+    const initial = new Map<string, string | null>();
+    for (const filename of [BOARD_PCB, "board.kicad_sch"])
+      initial.set(filename, await this.diskRevision(join(projectDir, filename)));
     const session = await bridge.createSession(path);
-    return { id: session.id, ...(await attach(session.id)), path };
+    const connection = await attach(session.id);
+    for (const [filename, revision] of initial) {
+      if ((await this.diskRevision(join(projectDir, filename))) !== revision) {
+        await connection.ws.close().catch(() => undefined);
+        await bridge.deleteSession(session.id).catch(() => undefined);
+        throw new NativeRevisionConflict(
+          `${filename} changed while starting the native session; retry after the external writer finishes`,
+        );
+      }
+    }
+    // Only a session we just launched has known provenance. Adopted sessions still reconcile.
+    this.revisions.set(projectDir, initial);
+    return { id: session.id, ...connection, path };
   }
 }
 
