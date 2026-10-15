@@ -47,6 +47,7 @@ function ProjectFiles({ projectId }: { projectId: string }) {
           {busy ? "Exporting…" : "Export stencil"}
         </Button>
         {state.error && <span className="text-xs text-danger">{state.error}</span>}
+        {state.note && <span role="status" className="text-xs text-muted">{state.note}</span>}
         <span className="ml-auto text-[11px] text-muted">Writes under exports/</span>
       </div>
       <div className="flex min-h-0 flex-1">

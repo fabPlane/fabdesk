@@ -48,3 +48,14 @@ geometry diagram, not a screenshot or physical print result. JSON files contain
 the independent geometry and live recovery measurements. No physical print or
 paste transfer was performed. Files/palette exports use default options; the UI
 has no thickness/nozzle settings dialog. The existing print profile is separate.
+
+Automatic folder opening follow-up (2026-10-15):
+- Files -> Export stencil opened Windows File Explorer at the actual
+  ps1-v4-original/exports/stencil directory after the job completed.
+- Closed that Explorer window; exporting the no-PCB project showed the expected
+  error and did not open another folder.
+- Ctrl+K -> Export solder stencil on V4.0 opened the same correct directory.
+- The exported STL SHA256 still matches the value above.
+- 207 client-core/UI tests (834 assertions), full workspace typecheck, and the
+  desktop build passed. This includes Windows/POSIX output paths, failure and
+  missing-path cases, remote/browser hosts, and file-manager opening failures.
