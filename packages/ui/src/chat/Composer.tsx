@@ -1,3 +1,4 @@
+import { modelDisplayName } from "./model-display-name";
 import type { AgentId, Thread } from "@fabdesk/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -10,7 +11,7 @@ import { useRunsStore } from "@fabdesk/client-core";
 import { DRAFT_KEY_NEW, useUiStore } from "../stores/ui";
 import { basename, mimeFromPath, modKey } from "../util";
 import { AgentModelMenu } from "./AgentModelMenu";
-import { agentModelLabel, expandSlashCommand, slashSuggestions } from "@fabdesk/client-core";
+import { expandSlashCommand, slashSuggestions } from "@fabdesk/client-core";
 import { applyComposerTextareaHeight } from "./composer-autosize";
 
 /** Bridge for the global shortcut hook (mod+Enter send, mod+. abort) and for app automation. */
@@ -248,37 +249,6 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
             }}
           />
           <div className="fd-composer-toolbar flex flex-wrap items-center gap-1.5 px-2.5 py-2">
-            <div className="fd-agent-control relative min-w-0">
-              <Button
-                ref={agentButtonRef}
-                variant="ghost"
-                size="sm"
-                className="fd-agent-button h-8 max-w-full font-medium"
-                title={`Agent & model (${mod} + /)`}
-                onClick={() => setAgentPickerOpen(!agentPickerOpen)}
-                disabled={!!run || queued.length > 0}
-                aria-haspopup="menu"
-                aria-expanded={agentPickerOpen}
-                data-testid="agent-model"
-              >
-                <span className="min-w-0 truncate">{agentModelLabel(pickerAgents.find((a) => a.id === agentId), agentId, model)}</span> <Icon name="chevronDown" width={13} height={13} className="shrink-0" />
-              </Button>
-              <AgentModelMenu
-                anchorRef={agentButtonRef}
-                open={agentPickerOpen}
-                onClose={() => setAgentPickerOpen(false)}
-                agents={pickerAgents}
-                agentId={agentId}
-                model={model}
-                defaultModel={(id) => settings.data?.agents[id]?.model ?? ""}
-                configuredModels={(id) => settings.data?.agents[id]?.pickerModels ?? []}
-                onSelect={(id, m) => {
-                  setAgentId(id);
-                  setModel(m);
-                }}
-                onOpenSettings={() => setSettingsOpen(true, "agents")}
-              />
-            </div>
             <IconButton title="Attach file" onClick={() => void pickFiles()}>
               <Icon name="paperclip" />
             </IconButton>
@@ -293,7 +263,38 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
             >
               <Icon name="compose" width={16} height={16} /><span className="fd-action-label">Sketch</span>
             </Button>
-            <div className="ml-auto flex items-center gap-2">
+            <div className="fd-composer-send-group ml-auto flex min-w-0 items-center gap-2">
+              <div className="fd-agent-control relative min-w-0">
+                <Button
+                  ref={agentButtonRef}
+                  variant="ghost"
+                  size="sm"
+                  className="fd-agent-button h-8 max-w-full font-medium"
+                  title={`Agent & model (${mod} + /)`}
+                  onClick={() => setAgentPickerOpen(!agentPickerOpen)}
+                  disabled={!!run || queued.length > 0}
+                  aria-haspopup="menu"
+                  aria-expanded={agentPickerOpen}
+                  data-testid="agent-model"
+                >
+                  <span className="min-w-0 truncate">{model ? modelDisplayName(model) : (pickerAgents.find((a) => a.id === agentId)?.displayName ?? agentId)}</span> <Icon name="chevronDown" width={13} height={13} className="shrink-0" />
+                </Button>
+                <AgentModelMenu
+                  anchorRef={agentButtonRef}
+                  open={agentPickerOpen}
+                  onClose={() => setAgentPickerOpen(false)}
+                  agents={pickerAgents}
+                  agentId={agentId}
+                  model={model}
+                  defaultModel={(id) => settings.data?.agents[id]?.model ?? ""}
+                  configuredModels={(id) => settings.data?.agents[id]?.pickerModels ?? []}
+                  onSelect={(id, m) => {
+                    setAgentId(id);
+                    setModel(m);
+                  }}
+                  onOpenSettings={() => setSettingsOpen(true, "agents")}
+                />
+              </div>
               {run && (
                 <Button variant="danger" size="sm" onClick={() => void client.abort(run.threadId)} aria-label="Stop current run; queued messages stay scheduled" title={`Stop current run (${mod} + .). Queued messages stay scheduled.`}>
                   <Icon name="stop" width={14} height={14} /> Stop
