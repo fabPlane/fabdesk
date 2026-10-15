@@ -62,6 +62,9 @@ export interface UiState {
   settingsSection: SettingsSection | null;
   sketchOpen: boolean;
   agentPickerOpen: boolean;
+  whatsNewOpen: boolean;
+  /** Id of the release notes the user last read (set on close); the top-bar link hides once it matches. */
+  whatsNewSeenId: string | null;
   /** Bumps to request focus on the composer. */
   composerFocusNonce: number;
   toggleSidebar: () => void;
@@ -87,6 +90,8 @@ export interface UiState {
   setSettingsOpen: (open: boolean, section?: SettingsSection) => void;
   setSketchOpen: (open: boolean) => void;
   setAgentPickerOpen: (open: boolean) => void;
+  setWhatsNewOpen: (open: boolean) => void;
+  markWhatsNewSeen: (id: string) => void;
   focusComposer: () => void;
 }
 
@@ -129,6 +134,8 @@ export const useUiStore = create<UiState>()(
   settingsSection: null,
   sketchOpen: false,
   agentPickerOpen: false,
+  whatsNewOpen: false,
+  whatsNewSeenId: null,
   composerFocusNonce: 0,
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   toggleBoard: () => set((s) => ({ boardOpen: !s.boardOpen })),
@@ -164,6 +171,8 @@ export const useUiStore = create<UiState>()(
   setSettingsOpen: (settingsOpen, section) => set({ settingsOpen, settingsSection: settingsOpen ? (section ?? null) : null }),
   setSketchOpen: (sketchOpen) => set({ sketchOpen }),
   setAgentPickerOpen: (agentPickerOpen) => set({ agentPickerOpen }),
+  setWhatsNewOpen: (whatsNewOpen) => set({ whatsNewOpen }),
+  markWhatsNewSeen: (whatsNewSeenId) => set({ whatsNewSeenId }),
   focusComposer: () => set((s) => ({ composerFocusNonce: s.composerFocusNonce + 1 })),
 }),
     {
@@ -187,6 +196,7 @@ export const useUiStore = create<UiState>()(
         sidebarListTab: s.sidebarListTab,
         boardTab: s.boardTab,
         drafts: s.drafts,
+        whatsNewSeenId: s.whatsNewSeenId,
       }),
     },
   ),

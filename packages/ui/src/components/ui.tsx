@@ -155,10 +155,14 @@ export interface DialogProps {
   className?: string;
   /** Skip the padded panel chrome (used by the sketch pad). */
   bare?: boolean;
+  /** Where focus goes on close when the element that had it before opening is gone. */
+  fallbackFocus?: () => HTMLElement | null | undefined;
 }
 
-export function Dialog({ open, onClose, title, ariaLabel, children, className, bare }: DialogProps) {
+export function Dialog({ open, onClose, title, ariaLabel, children, className, bare, fallbackFocus }: DialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
+  const fallbackFocusRef = useRef(fallbackFocus);
+  fallbackFocusRef.current = fallbackFocus;
   useEffect(() => {
     if (!open) return;
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -172,6 +176,7 @@ export function Dialog({ open, onClose, title, ariaLabel, children, className, b
     return () => {
       cancelAnimationFrame(frame);
       if (previous?.isConnected) previous.focus();
+      else fallbackFocusRef.current?.()?.focus();
     };
   }, [open]);
   useEffect(() => {

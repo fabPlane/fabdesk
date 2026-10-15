@@ -31,7 +31,15 @@
      this handoff. See fabplane.com's `docs/desktop-releases.md`.
    - Merges to `main` no longer cut releases. Manual public dispatches on `main`
      publish just like the nightly; internal builds remain workflow artifacts only.
-3. **In-app update check**: `@fabdesk/updates` fetches `https://fabplane.com/desktop/latest.json`
+3. **Release notes**: the `version` job runs `scripts/release-notes.ts` once. If entries were added
+   to the repo-root `release-notes.json` since the previous `v*` tag, those hand-written New /
+   Improved / Fixed bullets are the notes; otherwise they are the commit subjects since that tag.
+   The JSON is baked into every installer (`FABDESK_RELEASE_NOTES_FILE` →
+   `electron.vite.config.ts`) for the app's "What's new" dialog, and its Markdown rendering is
+   `manifest.json` `notes`, which fabplane.com shows on `/download#v<version>`. One generation,
+   so the app and the site always match. To write notes by hand, add an entry with a new unique
+   `id` to `release-notes.json`; it applies to the next release only.
+4. **In-app update check**: `@fabdesk/updates` fetches `https://fabplane.com/desktop/latest.json`
    at startup and every 6 hours (`FABDESK_UPDATE_URL` overrides), compares semver with the running
    version and points the user at the right installer. It never downloads or installs on its own.
 

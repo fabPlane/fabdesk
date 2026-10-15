@@ -7,6 +7,7 @@ import { useAuthStore, useChatSearch, useProjects, useThreads } from "@fabdesk/c
 import { openChatSearchResult } from "../chat/SearchResults";
 import { BOARD_TABS, BOARD_TAB_LABELS, useUiStore } from "../stores/ui";
 import { modKey } from "../util";
+import { useOpenWhatsNew } from "../whatsnew/WhatsNew";
 
 export function CommandPalette() {
   const { host } = useCore();
@@ -21,6 +22,7 @@ export function CommandPalette() {
   const setInventoryOpen = useUiStore((s) => s.setInventoryOpen);
   const dashboardUrl = useAuthStore((s) => s.state?.dashboardUrl);
   const actions = useAppActions();
+  const openWhatsNew = useOpenWhatsNew();
   const threads = useThreads();
   const projects = useProjects();
   const [query, setQuery] = useState("");
@@ -75,6 +77,11 @@ export function CommandPalette() {
             <Command.Item value="settings" onSelect={pick(actions.openSettings)}>
               Settings <span className="ml-auto"><Kbd>{mod} + ,</Kbd></span>
             </Command.Item>
+            {openWhatsNew && (
+              <Command.Item value="whats new release notes" onSelect={pick(openWhatsNew)}>
+                What’s new
+              </Command.Item>
+            )}
             <Command.Item value="parts inventory" onSelect={pick(() => setInventoryOpen(true))}>
               Parts Inventory
             </Command.Item>
