@@ -1434,7 +1434,7 @@ export const route_status = defineTool({
   toolset: "route",
   title: "Routing status",
   description:
-    "Return compact persisted progress, heartbeat freshness, revision match, candidate/application state and artifact paths for the latest or exact durable route run.",
+    "Return persisted progress and terminal run.state (completed/failed/timed_out/cancelled), result and candidate/application state for the latest or exact runId. Includes heartbeat freshness, revision match and artifact paths.",
   inputSchema: { runId: z.string().optional() },
   annotations: {
     readOnlyHint: false,

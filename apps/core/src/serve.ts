@@ -51,10 +51,7 @@ import {
 } from "./sentry";
 import { RunTelemetry } from "./run-telemetry";
 import { buildInfo } from "./build-info";
-import {
-  ArchiveConsentRevokedError,
-  UsageArchive,
-} from "./usage-archive";
+import { ArchiveConsentRevokedError, UsageArchive } from "./usage-archive";
 import { UsageApiArchiveWriter } from "./usage-api";
 
 /** Delay before retrying a failed usage-archive backfill (rate or daily limits, an outage). */
@@ -218,7 +215,11 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   if (archiveDir) archives.push(new UsageArchive(archiveDir));
   let archiveBearer: () => string | null = () => null;
   if (remoteArchiveEnabled)
-    archives.push(new UsageArchive(new UsageApiArchiveWriter(config.apiOrigin, () => archiveBearer(), store.settings)));
+    archives.push(
+      new UsageArchive(
+        new UsageApiArchiveWriter(config.apiOrigin, () => archiveBearer(), store.settings),
+      ),
+    );
   const archiveDestinations = archives.map((archive) => archive.destination);
   let archiveClosing = false;
   let backfillTask: Promise<void> | null = null;
@@ -233,11 +234,11 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     show: privacy.firstInstallScreen,
     signal: privacy.region.signal,
   });
-  const hasArchiveConsent = () => usageArchiveAllowed(store.settings.get(), privacy.firstInstallScreen);
+  const hasArchiveConsent = () =>
+    usageArchiveAllowed(store.settings.get(), privacy.firstInstallScreen);
   const startArchiveBackfill = (): Promise<void> => {
     if (backfillTask) return backfillTask;
-    if (!archiveEnabled || !hasArchiveConsent() || archiveClosing)
-      return Promise.resolve();
+    if (!archiveEnabled || !hasArchiveConsent() || archiveClosing) return Promise.resolve();
     cancelBackfillRetry();
     const task = (async () => {
       try {
@@ -368,7 +369,9 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
 
   // fabplane.com carts and inventory (`shopping` tools, `/cloud` routes); tests may inject their own.
   const storedToken =
-    auth.mode === "local" ? storedCredentialToken({ home: config.home, apiOrigin: config.apiOrigin }) : () => null;
+    auth.mode === "local"
+      ? storedCredentialToken({ home: config.home, apiOrigin: config.apiOrigin })
+      : () => null;
   services.cloud ??= createCloudService({
     apiOrigin: config.apiOrigin,
     token: () => auth.token() ?? storedToken(),
@@ -450,9 +453,17 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
         .filter((f) => /\.(png|jpe?g)$/i.test(f.path))
         .map((f) => join(project.dir, "sketches", f.path));
       const board = project.manifest().board;
+      const cli = await services.kicad.resolveCli().catch(() => null);
       await agents.writeAgentDocs(project.dir, {
         projectName: project.name,
         toolsMarkdown: toolsMarkdown(registry),
+        ...(cli ? { kicadCli: cli.path } : {}),
+        shellExecutables: Object.fromEntries(
+          ["python3", "rg", "bun"].flatMap((name) => {
+            const path = Bun.which(name);
+            return path ? [[name, path]] : [];
+          }),
+        ),
         sketches,
         board: {
           layers: board.layers,
