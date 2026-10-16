@@ -751,7 +751,44 @@ export interface KicadService {
     cli: KicadCli,
     opts: { board: string; output: string; layers?: string[]; signal?: AbortSignal },
   ): Promise<{ paths: string[] }>;
+  /**
+   * 3D-printed solder stencil from F.Paste / B.Paste. Pure TypeScript — no kicad-cli.
+   */
+  exportStencil(opts: StencilExportOpts): Promise<StencilExportResult>;
 }
+
+export type StencilSide = "F" | "B";
+export type StencilAlignment = "holes" | "pegs" | "none";
+export type StencilExportOpts = {
+  board: string;
+  outDir: string;
+  side?: StencilSide;
+  thicknessMm?: number;
+  frameMm?: number;
+  apertureOffsetMm?: number;
+  minApertureMm?: number;
+  skipFinePitch?: boolean;
+  finePitchMm?: number;
+  alignment?: StencilAlignment;
+  alignmentHoleMm?: number;
+  includeJig?: boolean;
+  pcbThicknessMm?: number;
+};
+export type StencilExportResult = {
+  side: StencilSide;
+  padCount: number;
+  apertureCount: number;
+  skippedCount: number;
+  minApertureMm: number | null;
+  thicknessMm: number;
+  frameMm: number;
+  board: { minX: number; minY: number; maxX: number; maxY: number; widthMm: number; heightMm: number };
+  plate: { minX: number; minY: number; maxX: number; maxY: number; widthMm: number; heightMm: number };
+  alignment: { kind: StencilAlignment; holes: Array<{ x: number; y: number; diameterMm: number }> };
+  warnings: Array<{ code: string; message: string; ref?: string; number?: string }>;
+  triangleCount: number;
+  files: { stl: string; json: string; markdown: string; svg: string; jig?: string };
+};
 
 export type SimAnalysis =
   | { type: "op" }

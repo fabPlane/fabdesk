@@ -1,0 +1,586 @@
+{
+  "kicad_version": "10.99.0-5073-g05cc3edacc",
+  "ps1_source_commit": "fc0e21947b4d8ab6ddc4e523a43e669158542632",
+  "comparisons": {
+    "Fixed actual app": {
+      "source_area_mm2": 231.95829065298233,
+      "output_area_mm2": 231.73086648424916,
+      "missing_area_mm2": 0.2275678099778695,
+      "extra_area_mm2": 0.00014364124396726237,
+      "intersection_over_union": 0.99901830924185,
+      "openings": 240,
+      "missing_source_centers": 0,
+      "boundary_error_mm": 0.0021405559232421335,
+      "watertight": true,
+      "dimensions_mm": [
+        78.0,
+        70.0,
+        0.15000000596046448
+      ],
+      "file": "artifacts/pr286-app-projects/ps1-v4-original/exports/stencil/F-Paste.stl",
+      "sha256": "adbee24c8384d56f70be83ce06c3ff5984c4bd71a8f6ad802956017310a0ef8d"
+    },
+    "Saved Stenchill": {
+      "source_area_mm2": 231.95829065298233,
+      "output_area_mm2": 231.9506449949713,
+      "missing_area_mm2": 0.008264390775424965,
+      "extra_area_mm2": 0.0006187327636588826,
+      "intersection_over_union": 0.999961703891596,
+      "openings": 240,
+      "missing_source_centers": 0,
+      "boundary_error_mm": 0.00010400281462580476,
+      "watertight": true,
+      "dimensions_mm": [
+        88.0,
+        80.0,
+        0.10000000149011612
+      ],
+      "file": "deliverables/Stenchill-BEST-240-X1C/Stenchill-240-pads-88x80x0.10mm.stl",
+      "sha256": "037ccfd5f68b86d10a02a28624757a9d8672ce10be6824386c5b9b21abadff2d"
+    },
+    "Earlier agent stencil": {
+      "source_area_mm2": 231.95829065298233,
+      "output_area_mm2": 231.95550759252728,
+      "missing_area_mm2": 0.00306311139901868,
+      "extra_area_mm2": 0.0002800509432366575,
+      "intersection_over_union": 0.9999855872437394,
+      "openings": 240,
+      "missing_source_centers": 0,
+      "boundary_error_mm": 3.691008255314574e-05,
+      "watertight": true,
+      "dimensions_mm": [
+        88.0,
+        80.0,
+        0.10000000149011612
+      ],
+      "file": "deliverables/NewPlayBridge2-v4.0-3D-print/NewPlayBridge2-v4.0-88x80x0.10mm.stl",
+      "sha256": "562828bb2ae3d04c04b74553175fd82cf65aadc0cebae3122eec2b3e97b1f509"
+    },
+    "Earlier PR app": {
+      "source_area_mm2": 231.95829065298233,
+      "output_area_mm2": 186.1841215010889,
+      "missing_area_mm2": 46.18300833628434,
+      "extra_area_mm2": 0.408839184390152,
+      "intersection_over_union": 0.7994903687398367,
+      "openings": 208,
+      "missing_source_centers": 36,
+      "boundary_error_mm": 5.7894112666167254,
+      "watertight": true,
+      "dimensions_mm": [
+        77.54499816894531,
+        61.825000047683716,
+        0.15000000596046448
+      ],
+      "file": "artifacts/pr286-app-projects/v4-0-compatibility-test-same-paste/exports/stencil/F-Paste.stl",
+      "sha256": "f4ea9e02344c7aa59010e151d96e85f006019d61b204f14d2db4a747e297c686"
+    }
+  },
+  "native_corpus": {
+    "mini-two-layer": {
+      "source_area_mm2": 0.6599059426148376,
+      "output_area_mm2": 0.65860745032783,
+      "missing_area_mm2": 0.0012984922870066778,
+      "extra_area_mm2": 0.0,
+      "intersection_over_union": 0.9980323070256637,
+      "native_openings": 2,
+      "app_openings": 2,
+      "stl_openings": 2,
+      "native_records": 2,
+      "source_centers_missing": 0,
+      "max_boundary_error_mm": 0.001154943714546704,
+      "stl_vs_apertures_error_mm2": 5.692852058264843e-06,
+      "watertight": true,
+      "winding_consistent": true,
+      "positive_volume": true,
+      "mesh_check": {
+        "triangleCount": 244,
+        "bounds": {
+          "min": [
+            90,
+            85,
+            0
+          ],
+          "max": [
+            125,
+            120,
+            0.20000000298023224
+          ]
+        },
+        "watertight": true,
+        "unmatchedEdges": 0
+      }
+    },
+    "stencil-geometry-back": {
+      "source_area_mm2": 1.8047999999999964,
+      "output_area_mm2": 1.8047999999999964,
+      "missing_area_mm2": 0.0,
+      "extra_area_mm2": 0.0,
+      "intersection_over_union": 1.0,
+      "native_openings": 1,
+      "app_openings": 1,
+      "stl_openings": 1,
+      "native_records": 1,
+      "source_centers_missing": 0,
+      "max_boundary_error_mm": 0.0,
+      "stl_vs_apertures_error_mm2": 2.7084349486862914e-06,
+      "watertight": true,
+      "winding_consistent": true,
+      "positive_volume": true,
+      "mesh_check": {
+        "triangleCount": 32,
+        "bounds": {
+          "min": [
+            -10,
+            -10,
+            0
+          ],
+          "max": [
+            70,
+            50,
+            0.20000000298023224
+          ]
+        },
+        "watertight": true,
+        "unmatchedEdges": 0
+      }
+    },
+    "stencil-geometry-regressions": {
+      "source_area_mm2": 11.310261733709313,
+      "output_area_mm2": 11.300424905947205,
+      "missing_area_mm2": 0.00983774935538244,
+      "extra_area_mm2": 9.215932718353163e-07,
+      "intersection_over_union": 0.9991301111876438,
+      "native_openings": 9,
+      "app_openings": 9,
+      "stl_openings": 9,
+      "native_records": 10,
+      "source_centers_missing": 0,
+      "max_boundary_error_mm": 0.004021018553334994,
+      "stl_vs_apertures_error_mm2": 1.2161292711012812e-05,
+      "watertight": true,
+      "winding_consistent": true,
+      "positive_volume": true,
+      "mesh_check": {
+        "triangleCount": 376,
+        "bounds": {
+          "min": [
+            -10,
+            -10,
+            0
+          ],
+          "max": [
+            70,
+            50,
+            0.20000000298023224
+          ]
+        },
+        "watertight": true,
+        "unmatchedEdges": 0
+      }
+    },
+    "stencil-line-outline": {
+      "source_area_mm2": 2.433072062818905,
+      "output_area_mm2": 2.429465139799557,
+      "missing_area_mm2": 0.003606923019350381,
+      "extra_area_mm2": 5.679798517591285e-29,
+      "intersection_over_union": 0.9985175436952847,
+      "native_openings": 2,
+      "app_openings": 2,
+      "stl_openings": 2,
+      "native_records": 2,
+      "source_centers_missing": 0,
+      "max_boundary_error_mm": 0.001924906190896095,
+      "stl_vs_apertures_error_mm2": 1.8114904662695044e-06,
+      "watertight": true,
+      "winding_consistent": true,
+      "positive_volume": true,
+      "mesh_check": {
+        "triangleCount": 244,
+        "bounds": {
+          "min": [
+            -10,
+            -10,
+            0
+          ],
+          "max": [
+            55,
+            40,
+            0.20000000298023224
+          ]
+        },
+        "watertight": true,
+        "unmatchedEdges": 0
+      }
+    },
+    "stencil-nightly-metadata": {
+      "source_area_mm2": 0.20100000000000073,
+      "output_area_mm2": 0.20100000000000073,
+      "missing_area_mm2": 0.0,
+      "extra_area_mm2": 0.0,
+      "intersection_over_union": 1.0,
+      "native_openings": 1,
+      "app_openings": 1,
+      "stl_openings": 1,
+      "native_records": 1,
+      "source_centers_missing": 0,
+      "max_boundary_error_mm": 0.0,
+      "stl_vs_apertures_error_mm2": 5.340575592107667e-07,
+      "watertight": true,
+      "winding_consistent": true,
+      "positive_volume": true,
+      "mesh_check": {
+        "triangleCount": 32,
+        "bounds": {
+          "min": [
+            -10,
+            -10,
+            0
+          ],
+          "max": [
+            70,
+            50,
+            0.20000000298023224
+          ]
+        },
+        "watertight": true,
+        "unmatchedEdges": 0
+      }
+    },
+    "stencil-sample": {
+      "source_area_mm2": 3.5086815590356837,
+      "output_area_mm2": 3.5042285676537763,
+      "missing_area_mm2": 0.004452991381901783,
+      "extra_area_mm2": 0.0,
+      "intersection_over_union": 0.9987308647687231,
+      "native_openings": 6,
+      "app_openings": 6,
+      "stl_openings": 6,
+      "native_records": 6,
+      "source_centers_missing": 0,
+      "max_boundary_error_mm": 0.002138784656547871,
+      "stl_vs_apertures_error_mm2": 1.9860574817220115e-06,
+      "watertight": true,
+      "winding_consistent": true,
+      "positive_volume": true,
+      "mesh_check": {
+        "triangleCount": 324,
+        "bounds": {
+          "min": [
+            -10,
+            -10,
+            0
+          ],
+          "max": [
+            30,
+            22,
+            0.20000000298023224
+          ]
+        },
+        "watertight": true,
+        "unmatchedEdges": 0
+      }
+    },
+    "v1-pcb-mounted-pin-array": {
+      "source_area_mm2": 207.42713895501515,
+      "output_area_mm2": 207.25619286988234,
+      "missing_area_mm2": 0.17094608512437862,
+      "extra_area_mm2": 8.619438306405059e-12,
+      "intersection_over_union": 0.9991758740635681,
+      "native_openings": 210,
+      "app_openings": 210,
+      "stl_openings": 210,
+      "native_records": 210,
+      "source_centers_missing": 0,
+      "max_boundary_error_mm": 0.0021389078575226378,
+      "stl_vs_apertures_error_mm2": 0.00029057100643274333,
+      "watertight": true,
+      "winding_consistent": true,
+      "positive_volume": true,
+      "mesh_check": {
+        "triangleCount": 17748,
+        "bounds": {
+          "min": [
+            -16.799999237060547,
+            -17.350000381469727,
+            0
+          ],
+          "max": [
+            58.20000076293945,
+            54.650001525878906,
+            0.20000000298023224
+          ]
+        },
+        "watertight": true,
+        "unmatchedEdges": 0
+      }
+    },
+    "v2-donor-plug-modular-adapter": {
+      "source_area_mm2": 207.42713895501527,
+      "output_area_mm2": 207.2561928698823,
+      "missing_area_mm2": 0.17094608512438006,
+      "extra_area_mm2": 8.619438011769832e-12,
+      "intersection_over_union": 0.999175874063567,
+      "native_openings": 210,
+      "app_openings": 210,
+      "stl_openings": 210,
+      "native_records": 210,
+      "source_centers_missing": 0,
+      "max_boundary_error_mm": 0.0021389078575226378,
+      "stl_vs_apertures_error_mm2": 0.0003747144824186437,
+      "watertight": true,
+      "winding_consistent": true,
+      "positive_volume": true,
+      "mesh_check": {
+        "triangleCount": 17748,
+        "bounds": {
+          "min": [
+            -10,
+            -10,
+            0
+          ],
+          "max": [
+            66.29499816894531,
+            72,
+            0.20000000298023224
+          ]
+        },
+        "watertight": true,
+        "unmatchedEdges": 0
+      }
+    },
+    "v2.1-status-leds-uart-debug": {
+      "source_area_mm2": 210.45878947143478,
+      "output_area_mm2": 210.28158415029068,
+      "missing_area_mm2": 0.17720532113556656,
+      "extra_area_mm2": 8.619438011769832e-12,
+      "intersection_over_union": 0.9991580046545495,
+      "native_openings": 214,
+      "app_openings": 214,
+      "stl_openings": 214,
+      "native_records": 214,
+      "source_centers_missing": 0,
+      "max_boundary_error_mm": 0.0021389078575226378,
+      "stl_vs_apertures_error_mm2": 0.00038531406616708114,
+      "watertight": true,
+      "winding_consistent": true,
+      "positive_volume": true,
+      "mesh_check": {
+        "triangleCount": 18212,
+        "bounds": {
+          "min": [
+            -10,
+            -10,
+            0
+          ],
+          "max": [
+            66.29499816894531,
+            72,
+            0.20000000298023224
+          ]
+        },
+        "watertight": true,
+        "unmatchedEdges": 0
+      }
+    },
+    "v3.0-ps1-serial-harness": {
+      "source_area_mm2": 213.36142186700047,
+      "output_area_mm2": 213.1785167168876,
+      "missing_area_mm2": 0.182905150104396,
+      "extra_area_mm2": 8.619438011769832e-12,
+      "intersection_over_union": 0.9991427449793299,
+      "native_openings": 218,
+      "app_openings": 218,
+      "stl_openings": 218,
+      "native_records": 218,
+      "source_centers_missing": 0,
+      "max_boundary_error_mm": 0.0021389078575226378,
+      "stl_vs_apertures_error_mm2": 0.00039839043814378827,
+      "watertight": true,
+      "winding_consistent": true,
+      "positive_volume": true,
+      "mesh_check": {
+        "triangleCount": 18676,
+        "bounds": {
+          "min": [
+            -10,
+            -10,
+            0
+          ],
+          "max": [
+            66.29499816894531,
+            72,
+            0.20000000298023224
+          ]
+        },
+        "watertight": true,
+        "unmatchedEdges": 0
+      }
+    },
+    "v4.0-controller-serial-bridge": {
+      "source_area_mm2": 231.95829065298233,
+      "output_area_mm2": 231.73093694642853,
+      "missing_area_mm2": 0.22735370652477832,
+      "extra_area_mm2": 1.2929157400883249e-11,
+      "intersection_over_union": 0.9990198509141576,
+      "native_openings": 240,
+      "app_openings": 240,
+      "stl_openings": 240,
+      "native_records": 244,
+      "source_centers_missing": 0,
+      "max_boundary_error_mm": 0.0021389078575215566,
+      "stl_vs_apertures_error_mm2": 0.00045508490442639274,
+      "watertight": true,
+      "winding_consistent": true,
+      "positive_volume": true,
+      "mesh_check": {
+        "triangleCount": 23340,
+        "bounds": {
+          "min": [
+            -10,
+            -10,
+            0
+          ],
+          "max": [
+            78,
+            70,
+            0.20000000298023224
+          ]
+        },
+        "watertight": true,
+        "unmatchedEdges": 0
+      }
+    },
+    "v4.1-controller-serial-bridge": {
+      "source_area_mm2": 231.95829065298233,
+      "output_area_mm2": 231.73093694642853,
+      "missing_area_mm2": 0.22735370652477832,
+      "extra_area_mm2": 1.2929157400883249e-11,
+      "intersection_over_union": 0.9990198509141576,
+      "native_openings": 240,
+      "app_openings": 240,
+      "stl_openings": 240,
+      "native_records": 244,
+      "source_centers_missing": 0,
+      "max_boundary_error_mm": 0.0021389078575215566,
+      "stl_vs_apertures_error_mm2": 0.00045508490442639274,
+      "watertight": true,
+      "winding_consistent": true,
+      "positive_volume": true,
+      "mesh_check": {
+        "triangleCount": 23340,
+        "bounds": {
+          "min": [
+            -10,
+            -10,
+            0
+          ],
+          "max": [
+            78,
+            70,
+            0.20000000298023224
+          ]
+        },
+        "watertight": true,
+        "unmatchedEdges": 0
+      }
+    }
+  },
+  "tests": {
+    "workspace_baseline_commit": "1377b6a90ab3158449e1c6f815417a079b785780",
+    "baseline_failures": [
+      "64 simultaneous atomic writes with a frozen clock have unique temporary files",
+      "FFC seed and routed candidate match independent accept_lib fixtures",
+      "MCP Apps views > FreeCAD model: flagged in summaries, exported as STL for the drawings tab, live UI URL",
+      "MCP Apps views > host_file only opens files inside a fabdesk project",
+      "MCP isolation > Codex isolates preferences, shares live auth, and keeps trust writes private",
+      "TRACEMAKER_BIN > is flagged as env-supplied, reports its real version, and a bad path is explained",
+      "Windows fallback logs a nonfatal warning on initial and resumed runs and retains MCP restrictions",
+      "a link to an unrelated credential store is preserved and rejected",
+      "absent auth stays a shared store when the CLI first saves credentials",
+      "after-pack platform mapping > enumerates java and every nested JRE dylib for hardened-runtime signing",
+      "crashed owner releases its verified orphan writer; live owner and reused PID remain protected",
+      "embedded footprint placement recovery > a failed PCB restore still restores the project and preserves the original error",
+      "embedded footprint placement recovery > save failure restores both live and saved state, and retry performs the edit",
+      "http daemon > threads: create, message \u2192 agent run streams agent.* events and persists parts; abort; search",
+      "mcp adapter > project_status, build with progress, structured content and errors",
+      "normal agent completion removes its durable owner record",
+      "optional pcb export stats capability > a broken CLI probe remains a runtime error, not an unsupported capability",
+      "optional pcb export stats capability > a supported build exports, normalizes and returns measured statistics",
+      "optional pcb export stats capability > a supported export that fails retains the real board error",
+      "optional pcb export stats capability > an unsupported 10.99 build gives clear guidance without exporting or replacing a report",
+      "parseTraceMakerVersion / probeTraceMakerCliVersion > reads `tracemaker 0.9.0` and ignores a failing --version",
+      "recovery stops a recorded native child even after its CLI wrapper was reaped",
+      "source-only TraceMaker is installed but not ready > a non-executable file named tracemaker is not ready",
+      "startup continues with live-owner ownership and preserves a live owner's run",
+      "startup continues with stubborn ownership and preserves a live owner's run",
+      "startup stops a stale thread writer, marks its run failed, and resumes the same thread",
+      "statistics service classifies missing capability as unavailable and preserves runtime errors",
+      "successful links keep the existing live overlay on Linux, macOS and privileged Windows"
+    ],
+    "current_failures": [
+      "64 simultaneous atomic writes with a frozen clock have unique temporary files",
+      "FFC seed and routed candidate match independent accept_lib fixtures",
+      "MCP Apps views > FreeCAD model: flagged in summaries, exported as STL for the drawings tab, live UI URL",
+      "MCP Apps views > host_file only opens files inside a fabdesk project",
+      "MCP isolation > Codex isolates preferences, shares live auth, and keeps trust writes private",
+      "TRACEMAKER_BIN > is flagged as env-supplied, reports its real version, and a bad path is explained",
+      "Windows fallback logs a nonfatal warning on initial and resumed runs and retains MCP restrictions",
+      "a link to an unrelated credential store is preserved and rejected",
+      "absent auth stays a shared store when the CLI first saves credentials",
+      "after-pack platform mapping > enumerates java and every nested JRE dylib for hardened-runtime signing",
+      "crashed owner releases its verified orphan writer; live owner and reused PID remain protected",
+      "embedded footprint placement recovery > a failed PCB restore still restores the project and preserves the original error",
+      "embedded footprint placement recovery > save failure restores both live and saved state, and retry performs the edit",
+      "http daemon > threads: create, message \u2192 agent run streams agent.* events and persists parts; abort; search",
+      "mcp adapter > project_status, build with progress, structured content and errors",
+      "normal agent completion removes its durable owner record",
+      "optional pcb export stats capability > a broken CLI probe remains a runtime error, not an unsupported capability",
+      "optional pcb export stats capability > a supported build exports, normalizes and returns measured statistics",
+      "optional pcb export stats capability > a supported export that fails retains the real board error",
+      "optional pcb export stats capability > an unsupported 10.99 build gives clear guidance without exporting or replacing a report",
+      "parseTraceMakerVersion / probeTraceMakerCliVersion > reads `tracemaker 0.9.0` and ignores a failing --version",
+      "recovery stops a recorded native child even after its CLI wrapper was reaped",
+      "source-only TraceMaker is installed but not ready > a non-executable file named tracemaker is not ready",
+      "startup continues with live-owner ownership and preserves a live owner's run",
+      "startup continues with stubborn ownership and preserves a live owner's run",
+      "startup stops a stale thread writer, marks its run failed, and resumes the same thread",
+      "statistics service classifies missing capability as unavailable and preserves runtime errors",
+      "successful links keep the existing live overlay on Linux, macOS and privileged Windows"
+    ],
+    "new_failures": [],
+    "script_failures": [
+      "an included CAD payload still requires a real native engine",
+      "fabPlane plugin package > installed package contains its branding, onboarding and skills",
+      "links a missing framework executable at the in-bundle libpython",
+      "main installer passes with PCB and no optional CAD payload",
+      "restores a codesign-valid Python.framework from Homebrew's altinstall layout"
+    ],
+    "script_baseline_failures": [
+      "an included CAD payload still requires a real native engine",
+      "fabPlane plugin package > installed package contains its branding, onboarding and skills",
+      "links a missing framework executable at the in-bundle libpython",
+      "main installer passes with PCB and no optional CAD payload",
+      "restores a codesign-valid Python.framework from Homebrew's altinstall layout"
+    ],
+    "focused": {
+      "passed": 27,
+      "failed": 0,
+      "assertions": 389
+    },
+    "typecheck": "passed",
+    "desktop_build": "passed",
+    "baseline_totals": {
+      "pass": 1117,
+      "skip": 26,
+      "fail": 28
+    },
+    "current_totals": {
+      "pass": 1133,
+      "skip": 26,
+      "fail": 28
+    }
+  },
+  "corpus_checkout_commit": "125f885f2d6745c09e983acd62535c28e34251d1",
+  "v4_source_git_blob_sha256": "55547e15ad8372b8ee5ed35aa6e1b8c1242d4903766b599b63c3a6ae3d871c63",
+  "source_line_endings": "Git blob uses LF; Windows source and app copy use CRLF. Normalized contents identical."
+}

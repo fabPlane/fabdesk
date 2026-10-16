@@ -7,9 +7,11 @@ import { useAuthStore, useChatSearch, useProjects, useThreads } from "@fabdesk/c
 import { openChatSearchResult } from "../chat/SearchResults";
 import { BOARD_TABS, BOARD_TAB_LABELS, useUiStore } from "../stores/ui";
 import { modKey } from "../util";
+import { stencilThicknessMm } from "../stores/stencil-thickness";
 import { useOpenWhatsNew } from "../whatsnew/WhatsNew";
 
 export function CommandPalette() {
+  const thicknessMm = useUiStore((s) => stencilThicknessMm(s.activeProjectId ? s.stencilThicknessByProject?.[s.activeProjectId] : undefined));
   const { host } = useCore();
   const open = useUiStore((s) => s.paletteOpen);
   const setOpen = useUiStore((s) => s.setPaletteOpen);
@@ -64,6 +66,9 @@ export function CommandPalette() {
             </Command.Item>
             <Command.Item value="render board" onSelect={pick(() => void actions.renderBoard())}>
               Render board
+            </Command.Item>
+            <Command.Item value="export solder stencil" onSelect={pick(() => void actions.exportStencil())}>
+              Export solder stencil · {thicknessMm.toFixed(2)} mm
             </Command.Item>
             <Command.Item value="pin thread" onSelect={pick(() => void actions.pinThread())}>
               Pin / unpin chat <span className="ml-auto"><Kbd>{mod} + Shift + P</Kbd></span>

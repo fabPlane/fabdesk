@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from "electron";
+import { isAbsolute } from "node:path";
 import { isThemeId, themeBackground, themeIsDark } from "../../../../packages/ui/src/theme/resolve";
 import { resolveWindowTheme, titleBarOverlayFor, titleBarOverlayHeight, writeCachedThemeId } from "./window-theme";
 import type { CoreSupervisor } from "./core-supervisor";
@@ -80,7 +81,7 @@ export function registerIpc(supervisor: CoreSupervisor): void {
     await shell.openExternal(url);
   });
   ipcMain.handle("fabdesk:open-path", async (_e, path: unknown) => {
-    if (typeof path !== "string" || !path.startsWith("/")) throw new Error("an absolute local path is required");
+    if (typeof path !== "string" || !isAbsolute(path)) throw new Error("an absolute local path is required");
     const error = await shell.openPath(path);
     if (error) throw new Error(error);
   });
