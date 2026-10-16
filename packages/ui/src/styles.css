@@ -243,6 +243,8 @@ body {
 .fd-new-chat-body .fd-composer-dock { width: 100%; max-width: 640px; padding: 0; margin: 0 auto; background: transparent; }
 .fd-composer-toolbar { gap: 8px; padding: 10px 12px; }
 .fd-topbar-tools { gap: 6px; }
+/* Native Windows caption glyphs ignore page zoom; match them with stable app chrome. */
+.fd-topbar-windows { zoom: var(--fd-titlebar-zoom-compensation, 1); }
 .fd-order-checks[data-status="passed"] { color: var(--fd-success); border-color: color-mix(in srgb, var(--fd-success) 35%, transparent); background: color-mix(in srgb, var(--fd-success) 10%, transparent); }
 .fd-order-checks[data-status="passed"]:hover { background: color-mix(in srgb, var(--fd-success) 18%, transparent); }
 .fd-order-checks[data-status="review"] { color: var(--fd-warning); border-color: color-mix(in srgb, var(--fd-warning) 35%, transparent); background: color-mix(in srgb, var(--fd-warning) 10%, transparent); }
