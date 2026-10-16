@@ -1,5 +1,6 @@
+import { Icon } from "../components/Icon";
 import type { Run } from "@fabdesk/protocol";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useCore, type LiveRun } from "@fabdesk/client-core";
 
 /** Only this small status line ticks; the message tree and header do not. */
@@ -32,14 +33,21 @@ export function RunActivity({ run, waiting = false }: { run: LiveRun; waiting?: 
   </div>;
 }
 
-/** Only persisted, finished timing is presented as completed work. */
-export function WorkedActivity({ run }: { run: Run }) {
-  if (run.status === "running" || !run.endedAt) return null;
-  const elapsedMs = Date.parse(run.endedAt) - Date.parse(run.startedAt);
-  if (!Number.isFinite(elapsedMs) || elapsedMs < 0) return null;
+/** Older runs can still fold their history when persisted timing is unavailable. */
+export function WorkedActivity({ run, children, hasError = false }: { run?: Run | null; children?: ReactNode; hasError?: boolean }) {
+  if (run?.status === "running") return null;
+  const elapsedMs = run?.endedAt ? Date.parse(run.endedAt) - Date.parse(run.startedAt) : NaN;
   const seconds = Math.floor(elapsedMs / 1000);
-  const duration = seconds < 60 ? seconds + "s" : Math.floor(seconds / 60) + "m " + String(seconds % 60).padStart(2, "0") + "s";
-  return <div className="mb-4 border-b border-border pb-3 text-xs text-muted" data-testid="worked-activity">
-    Worked for {duration}{run.status === "failed" ? " · Failed" : run.status === "aborted" ? " · Stopped" : ""}
-  </div>;
+  const duration = Number.isFinite(seconds) && seconds >= 0
+    ? seconds < 60 ? seconds + "s" : Math.floor(seconds / 60) + "m " + String(seconds % 60).padStart(2, "0") + "s"
+    : null;
+  const label = <><span>{duration ? "Worked for " + duration : "Worked"}{run?.status === "failed" ? " · Failed" : run?.status === "aborted" ? " · Stopped" : ""}</span>
+    {hasError && <span role="img" aria-label="Activity contains an error" title="Expand to inspect the error" className="inline-flex text-danger"><Icon name="warning" width={15} height={15} /></span>}</>;
+  if (!children) return <div className="mb-4 flex items-center gap-2 border-b border-border pb-3 text-xs text-muted" data-testid="worked-activity">{label}</div>;
+  return <details className="fd-worked-history group mb-4 border-b border-border pb-3 text-xs text-muted" data-testid="worked-activity">
+    <summary className="flex w-fit cursor-pointer list-none items-center gap-2 rounded py-1 hover:text-fg [&::-webkit-details-marker]:hidden">
+      {label}<Icon name="chevronRight" width={13} height={13} className="transition-transform group-open:rotate-90" />
+    </summary>
+    <div className="mt-3 space-y-4 text-fg">{children}</div>
+  </details>;
 }

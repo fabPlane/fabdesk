@@ -9,6 +9,7 @@ import { useUiStore } from "../stores/ui";
 import { cn } from "../util";
 import { Markdown } from "./Markdown";
 import { ProjectImage } from "./ProjectImage";
+import { splitCompletedActivity } from "./completed-activity";
 import { RunActivity, WorkedActivity } from "./RunActivity";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { PendingApprovalCard, PendingQuestionCard } from "./PendingRequestCard";
@@ -289,6 +290,9 @@ export function MessageList({
     if (!focusMessageId || !messages.some((message) => message.id === focusMessageId)) return;
     const target = [...(ref.current?.querySelectorAll<HTMLElement>("[data-message-id]") ?? [])].find((element) => element.dataset.messageId === focusMessageId);
     if (!target) return;
+    for (let parent = target.parentElement; parent; parent = parent.parentElement) {
+      if (parent instanceof HTMLDetailsElement) parent.open = true;
+    }
     stick.current = false;
     target.scrollIntoView({ block: "center", behavior: "smooth" });
     target.classList.add("fd-search-highlight");
@@ -316,7 +320,7 @@ export function MessageList({
   const activeMessages = run ? visibleMessages.filter((m) => m.role === "assistant" && m.runId === run.runId) : [];
   const firstActiveId = activeMessages[0]?.id;
   const finished = thread?.run && thread.run.status !== "running" && thread.run.id !== run?.runId ? thread.run : null;
-  const firstFinishedId = finished ? visibleMessages.find((m) => m.role === "assistant" && m.runId === finished.id)?.id : undefined;
+
   const waiting = activeMessages.some((m) => m.parts.some((p) => (p.type === "approval" && p.decision === "pending") || (p.type === "question" && p.answer === null)));
   return (
     <div ref={ref} className="min-h-0 flex-1 overflow-y-auto px-5 py-6">
@@ -328,13 +332,27 @@ export function MessageList({
           </div>
         )}
         {visibleMessages.map((m, index, visible) => {
+          const completed = m.role === "assistant" && !!m.runId && m.runId !== run?.runId && !(thread?.running && thread.run?.id === m.runId);
+          if (completed && index > 0 && visible[index - 1]?.role === "assistant" && visible[index - 1]?.runId === m.runId) return null;
+          const batch: Message[] = [m];
+          if (completed) for (let next = index + 1; next < visible.length; next++) {
+            const candidate = visible[next]!;
+            if (candidate.role !== "assistant" || candidate.runId !== m.runId) break;
+            batch.push(candidate);
+          }
+          const savedRun = finished?.id === m.runId ? finished : null;
+          const split = completed ? splitCompletedActivity(batch, savedRun?.status === "failed" || savedRun?.status === "aborted") : null;
           const day = new Date(m.createdAt).toDateString();
           const previousDay = visible[index - 1] ? new Date(visible[index - 1]!.createdAt).toDateString() : null;
-          return <div key={m.id} data-message-id={m.id} className="scroll-mt-8 rounded-xl">
+          return <div key={m.id} data-message-id={completed ? undefined : m.id} className="scroll-mt-8 rounded-xl">
             {day !== previousDay && <div className="my-3 flex items-center gap-3 text-[11px] text-muted"><span className="h-px flex-1 bg-border" /><time dateTime={m.createdAt}>{new Date(m.createdAt).toLocaleDateString([], { dateStyle: "medium" })}</time><span className="h-px flex-1 bg-border" /></div>}
             {run && m.id === firstActiveId && <RunActivity key={run.runId} run={run} waiting={waiting} />}
-            {finished && m.id === firstFinishedId && <WorkedActivity run={finished} />}
-            <MessageBubble message={m} latestReply={m.role === "assistant" && m.id === lastId} streaming={!!run && m.runId === run.runId && m.role === "assistant"} />
+            {split ? <>
+              <WorkedActivity run={savedRun} hasError={split.history.some(item => item.parts.some(p => p.type === "tool_result" && p.isError))}>
+                {split.history.length ? split.history.map(item => <div key={item.id} data-message-id={item.id}><MessageBubble message={item} streaming={false} /></div>) : undefined}
+              </WorkedActivity>
+              {split.answer && <div data-message-id={split.answer.id}><MessageBubble message={split.answer} streaming={false} latestReply={batch.some(item => item.id === lastId)} /></div>}
+            </> : <MessageBubble message={m} latestReply={m.role === "assistant" && m.id === lastId} streaming={!!run && m.runId === run.runId && m.role === "assistant"} />}
           </div>;
         })}
         {run && !firstActiveId && <div><RunActivity key={run.runId} run={run} /><div className="text-[13px] text-muted" role="status"><span className="fd-activity-shimmer">Working…</span></div></div>}

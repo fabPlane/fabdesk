@@ -75,8 +75,8 @@ test("command icons recognize explicit namespaced shell tools", () => {
 const finishedRun = { id: "finished", threadId: "thread", agentId: "codex" as const, agentSessionId: null, status: "completed" as const, startedAt: "2026-10-16T10:00:00Z", endedAt: "2026-10-16T10:04:11Z", exitCode: 0 };
 test("finished duration uses persisted timestamps, with no invented timing", () => {
   expect(render(<WorkedActivity run={finishedRun} />)).toContain("Worked for 4m 11s");
-  expect(render(<WorkedActivity run={{ ...finishedRun, endedAt: null }} />)).toBe("");
-  expect(render(<WorkedActivity run={{ ...finishedRun, endedAt: "invalid" }} />)).toBe("");
+  expect(render(<WorkedActivity run={{ ...finishedRun, endedAt: null }} />)).toContain(">Worked</span>");
+  expect(render(<WorkedActivity run={{ ...finishedRun, endedAt: "invalid" }} />)).toContain(">Worked</span>");
   expect(render(<WorkedActivity run={{ ...finishedRun, status: "running" }} />)).toBe("");
   expect(render(<WorkedActivity run={{ ...finishedRun, status: "aborted" }} />)).toContain("Stopped");
 });
@@ -86,7 +86,7 @@ test("finished summary appears once above matching assistant messages and surviv
   const html = render(<MessageList thread={thread} messages={[message, { ...message, id: "reply-2" }]} loading={false} />);
   expect(html.split('data-testid="worked-activity"').length - 1).toBe(1);
   expect(html).toContain("border-b");
-  expect(render(<MessageBubble message={message} />)).not.toContain(">Agent<");
+  expect(render(<MessageBubble message={message} streaming={false} />)).not.toContain(">Agent<");
 });
 test("collapsed tool errors show a labeled warning icon without counts", () => {
   const html = render(<ToolGroup calls={[{ use: command, result: { ...result, isError: true } }]} streaming={false} />);
