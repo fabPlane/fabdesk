@@ -1,7 +1,6 @@
 import type { MessagePart } from "@fabdesk/protocol";
 import { useId, useState } from "react";
 import { Icon } from "../components/Icon";
-import { Spinner } from "../components/ui";
 import { useUiStore } from "../stores/ui";
 import { cn, isImagePath, stringifyPretty } from "../util";
 import { ProjectImage } from "./ProjectImage";
@@ -58,7 +57,18 @@ export function resultText(output: unknown): string {
 }
 
 export function isCommandTool(name: string): boolean {
-  return ["command_execution", "bash", "shell", "shell_command", "exec_command", "run_shell_command", "powershell"].includes(name.toLowerCase());
+  return ["command_execution", "bash", "shell", "shell_command", "exec_command", "run_shell_command", "powershell"].includes(name.replace(/^mcp__.+?__/, "").replace(/^functions\./, "").toLowerCase());
+}
+
+export function isImageTool(name: string): boolean {
+  return ["view_image", "image_view", "open_image"].includes(name.replace(/^mcp__.+?__/, "").replace(/^functions\./, "").toLowerCase());
+}
+
+function imagePath(input: unknown): string {
+  if (!input || typeof input !== "object") return "";
+  const args = input as Record<string, unknown>;
+  const path = args["path"] ?? args["file_path"] ?? args["image_path"];
+  return typeof path === "string" ? path.split(/[\\/]/).pop() ?? "" : "";
 }
 
 function commandText(input: unknown): string {
@@ -85,17 +95,21 @@ export function ToolCallCard({ use, result, streaming = false }: { use: ToolUse;
   const error = result?.isError === true;
   const images = result ? extractImages(result.output) : [];
   const command = isCommandTool(use.name);
+  const viewingImage = isImageTool(use.name);
+  const active = pending && streaming;
   const name = use.name.replace(/^mcp__.+?__/, "");
   const action = error ? "Failed" : pending ? (streaming ? "Running" : "Pending") : command ? "Ran" : "Used";
   const detail = command ? commandText(use.input) || name : [name, summarizeArgs(use.input)].filter(Boolean).join(" · ");
-  const label = action + " " + detail;
+  const imageName = imagePath(use.input);
+  const label = viewingImage
+    ? (error ? "Could not view image" : pending ? (streaming ? "Viewing image" : "Image viewing pending") : "Viewed image") + (imageName ? " · " + imageName : "")
+    : action + " " + detail;
   return (
-    <div className="fd-tool-call min-w-0 text-[13px]">
+    <div className="fd-tool-call min-w-0 text-[13px]" data-active={active || undefined} data-kind={viewingImage ? "image" : command ? "command" : "tool"}>
       <button type="button" className="flex min-h-8 w-full min-w-0 items-center gap-2 rounded-md py-1.5 text-left text-muted hover:text-fg"
         onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-controls={open ? detailsId : undefined} title={use.name + ": " + label}>
-        <Icon name={command ? "terminal" : "tool"} width={16} height={16} className={cn("shrink-0", error && "text-danger")} />
-        <span className="min-w-0 flex-1 truncate">{label}</span>
-        {pending && streaming && <Spinner className="h-3 w-3 shrink-0" />}
+        <Icon name={viewingImage ? "image" : command ? "terminal" : "tool"} width={16} height={16} className={cn("shrink-0", error && "text-danger")} />
+        <span className="min-w-0 flex-1 truncate"><span className={cn(active && "fd-activity-shimmer")}>{label}</span></span>
         {error && <span className="shrink-0 text-xs text-danger">Error</span>}
         <Icon name={open ? "chevronDown" : "chevronRight"} width={12} height={12} className="shrink-0" />
       </button>

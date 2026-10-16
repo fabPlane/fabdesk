@@ -491,3 +491,18 @@ img.fd-file-image { background: #fff; padding: 8px; }
   .fd-composer-send-group { flex: 1 0 100%; }
   .fd-agent-button { width: 100%; justify-content: space-between; }
 }
+
+/* A soft left-to-right text highlight, only on activity confirmed by the live run. */
+@keyframes fd-activity-sweep { from { background-position: 100% 0; } to { background-position: 0% 0; } }
+@media (prefers-reduced-motion: no-preference) and (forced-colors: none) {
+  @supports (background-clip: text) {
+    .fd-activity-shimmer {
+      color: transparent;
+      background-image: linear-gradient(100deg, var(--fd-muted) 35%, var(--fd-fg) 50%, var(--fd-muted) 65%);
+      background-size: 240% 100%;
+      background-clip: text;
+      -webkit-background-clip: text;
+      animation: fd-activity-sweep 2.6s ease-in-out infinite;
+    }
+  }
+}

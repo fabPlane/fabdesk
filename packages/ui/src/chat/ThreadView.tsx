@@ -1,26 +1,9 @@
 import type { AgentId } from "@fabdesk/protocol";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
 import { Icon } from "../components/Icon";
 import { CircuitLogo } from "../components/CircuitLogo";
-
-/** Seconds since `startedAt`, ticking once a second while a run is active (undefined otherwise). */
-function useElapsedSeconds(startedAt: number | undefined): number | undefined {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (startedAt === undefined) return;
-    setNow(Date.now());
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, [startedAt]);
-  return startedAt === undefined ? undefined : Math.max(0, Math.floor((now - startedAt) / 1000));
-}
-
-function formatElapsed(s: number): string {
-  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
-}
 import { Badge } from "../components/ui";
 import { useMessages, useThread, useThreadMutations } from "@fabdesk/client-core";
-import { useRunsStore } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { Composer } from "./Composer";
 import { MessageList } from "./MessageList";
@@ -38,8 +21,6 @@ export function ThreadView() {
   }, [thread]);
   const messages = useMessages(activeThreadId);
   const { create } = useThreadMutations();
-  const run = useRunsStore((s) => (activeThreadId ? s.runsByThread[activeThreadId] : undefined));
-  const elapsed = useElapsedSeconds(run?.startedAt);
   const onCreateThread = useCallback(
     async (input: { agentId: AgentId; model?: string }) => {
       const t = await create.mutateAsync({
@@ -61,21 +42,6 @@ export function ThreadView() {
           <div className="min-w-0 truncate text-[13px] font-semibold tracking-[-0.01em]" title={thread?.title ?? "New chat"}>{thread?.title ?? "New chat"}</div>
         </div>
         {thread?.pinned && <Badge tone="accent">pinned</Badge>}
-        {run && (
-          <Badge className="ml-auto"
-            tone="success"
-            title={
-              run.usage
-                ? `${run.usage.inputTokens ?? 0} in / ${run.usage.outputTokens ?? 0} out`
-                : "running"
-            }
-          >
-            running{elapsed !== undefined ? ` · ${formatElapsed(elapsed)}` : ""}
-          </Badge>
-        )}
-        {run?.usage?.costUsd !== undefined && (
-          <span className="text-xs text-muted">${run.usage.costUsd.toFixed(3)}</span>
-        )}
       </div>
       <div className={activeThreadId ? "fd-thread-body" : "fd-thread-body fd-new-chat-body"}>
       {activeThreadId ? (

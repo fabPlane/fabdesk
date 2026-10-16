@@ -9,9 +9,10 @@ import { useUiStore } from "../stores/ui";
 import { cn } from "../util";
 import { Markdown } from "./Markdown";
 import { ProjectImage } from "./ProjectImage";
+import { RunActivity } from "./RunActivity";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { PendingApprovalCard, PendingQuestionCard } from "./PendingRequestCard";
-import { extractImages, isCommandTool, ToolCallCard } from "./ToolCallCard";
+import { extractImages, isCommandTool, isImageTool, ToolCallCard } from "./ToolCallCard";
 
 type ToolResult = Extract<MessagePart, { type: "tool_result" }>;
 type ToolUse = Extract<MessagePart, { type: "tool_use" }>;
@@ -34,14 +35,15 @@ export function ToolGroup({
   const errors = calls.filter((c) => c.result?.isError === true).length;
   const pending = calls.filter((c) => !c.result);
   const running = streaming && pending.length > 0 ? pending[pending.length - 1] : undefined;
-  const images = calls.flatMap((c) => (c.result ? extractImages(c.result.output) : []));
+  const visibleCalls = open ? calls : calls.filter((c) => (streaming && !c.result) || isImageTool(c.use.name));
+  const images = calls.filter((c) => !visibleCalls.includes(c)).flatMap((c) => (c.result ? extractImages(c.result.output) : []));
   const commandsOnly = calls.every((call) => isCommandTool(call.use.name));
   const noun = commandsOnly ? "commands" : "tools";
   const label = running ? "Running " + noun : pending.length > 0 ? (commandsOnly ? "Commands" : "Tool activity") : commandsOnly ? "Ran commands" : "Used tools";
   return (
     <div className="fd-tool-group my-2 min-w-0 text-[13px]" data-testid="tool-group">
       <button type="button" className="flex min-h-8 max-w-full items-center gap-2 rounded-md py-1.5 text-left text-muted hover:text-fg"
-        onClick={() => setOpen((o) => !o)} title={open ? "Hide tool calls" : "Show tool calls"} aria-expanded={open} aria-controls={open ? detailsId : undefined}>
+        onClick={() => setOpen((o) => !o)} title={open ? "Hide tool calls" : "Show tool calls"} aria-expanded={open} aria-controls={visibleCalls.length > 0 ? detailsId : undefined}>
         {running ? <Spinner className="h-4 w-4 shrink-0" /> : <Icon name={commandsOnly ? "terminal" : "tool"} width={16} height={16} className="shrink-0" />}
         <span>{label}</span><span className="text-xs tabular-nums">{calls.length}</span>
         {errors > 0 && <span className="text-xs text-danger">{errors} error{errors === 1 ? "" : "s"}</span>}
@@ -63,9 +65,9 @@ export function ToolGroup({
           )}
         </div>
       )}
-      {open && (
+      {visibleCalls.length > 0 && (
         <div id={detailsId} className="min-w-0">
-          {calls.map((c, i) => (
+          {visibleCalls.map((c, i) => (
             <ToolCallCard key={c.use.id || i} use={c.use} result={c.result} streaming={streaming} />
           ))}
         </div>
@@ -84,6 +86,7 @@ function ImagePart({ path }: { path: string }) {
 }
 
 export function renderParts(m: Message, streaming: boolean): ReactNode[] {
+  const executing = streaming && !m.parts.some((p) => (p.type === "approval" && p.decision === "pending") || (p.type === "question" && p.answer === null));
   const results = new Map<string, ToolResult>();
   for (const p of m.parts) if (p.type === "tool_result") results.set(p.id, p);
   const consumed = new Set<string>();
@@ -93,7 +96,7 @@ export function renderParts(m: Message, streaming: boolean): ReactNode[] {
   let groupKey = 0;
   const flush = () => {
     if (group.length === 0) return;
-    out.push(<ToolGroup key={`g${groupKey}`} calls={group} streaming={streaming} />);
+    out.push(<ToolGroup key={`g${groupKey}`} calls={group} streaming={executing} />);
     group = [];
   };
   m.parts.forEach((p, i) => {
@@ -187,6 +190,10 @@ export function MessageActions({ message, latestReply = false }: { message: Mess
 
 export function MessageBubble({ message, streaming, latestReply = false }: { message: Message; streaming: boolean; latestReply?: boolean }) {
   const isUser = message.role === "user";
+  const waitingApproval = message.parts.some((p) => p.type === "approval" && p.decision === "pending");
+  const waitingAnswer = message.parts.some((p) => p.type === "question" && p.answer === null);
+  const hasPendingTool = message.parts.some((p) => p.type === "tool_use" && !message.parts.some((r) => r.type === "tool_result" && r.id === p.id));
+  const thinking = message.parts.at(-1)?.type === "thinking";
   if (message.role === "system") {
     return (
       <div className="fd-message mx-auto my-3 flex max-w-xl flex-col items-center text-center text-xs text-muted">
@@ -211,7 +218,7 @@ export function MessageBubble({ message, streaming, latestReply = false }: { mes
             : "w-full max-w-full leading-[1.75]",
         )}
       >
-        {!isUser && <div className="mb-3 flex items-center gap-2 text-[11px] font-medium text-muted"><span className="h-1.5 w-1.5 rounded-full bg-accent" />Agent{streaming && <span className="text-accent">· Working</span>}</div>}
+        {!isUser && <div className="mb-3 flex items-center gap-2 text-[11px] font-medium text-muted"><span className="h-1.5 w-1.5 rounded-full bg-accent" />Agent</div>}
         {isUser ? (
           <>
             {message.contentMd && <div className="whitespace-pre-wrap">{message.contentMd}</div>}
@@ -230,9 +237,11 @@ export function MessageBubble({ message, streaming, latestReply = false }: { mes
             Queued · sends when the run ends
           </div>
         )}
-        {!isUser && streaming && body.length === 0 && (
-          <div className="flex items-center gap-2 text-xs text-muted">
-            <Spinner /> waiting for the agent...
+        {!isUser && streaming && (waitingApproval || waitingAnswer || (!hasPendingTool && !thinking)) && (
+          <div className="mt-2 text-[13px] text-muted" role="status">
+            <span className={cn(!waitingApproval && !waitingAnswer && "fd-activity-shimmer")}>
+              {waitingApproval ? "Waiting for approval" : waitingAnswer ? "Waiting for your answer" : "Working…"}
+            </span>
           </div>
         )}
       </div>
@@ -306,7 +315,9 @@ export function MessageList({
   }, [messages]);
   const lastId = messages.findLast((message) => message.role === "assistant")?.id;
   const visibleMessages = messages.filter((message) => message.status !== "queued");
-  const lastRole = visibleMessages[visibleMessages.length - 1]?.role;
+  const activeMessages = run ? visibleMessages.filter((m) => m.role === "assistant" && m.runId === run.runId) : [];
+  const firstActiveId = activeMessages[0]?.id;
+  const waiting = activeMessages.some((m) => m.parts.some((p) => (p.type === "approval" && p.decision === "pending") || (p.type === "question" && p.answer === null)));
   return (
     <div ref={ref} className="min-h-0 flex-1 overflow-y-auto px-5 py-6">
       <div className="mx-auto flex max-w-3xl flex-col gap-5">
@@ -321,14 +332,11 @@ export function MessageList({
           const previousDay = visible[index - 1] ? new Date(visible[index - 1]!.createdAt).toDateString() : null;
           return <div key={m.id} data-message-id={m.id} className="scroll-mt-8 rounded-xl">
             {day !== previousDay && <div className="my-3 flex items-center gap-3 text-[11px] text-muted"><span className="h-px flex-1 bg-border" /><time dateTime={m.createdAt}>{new Date(m.createdAt).toLocaleDateString([], { dateStyle: "medium" })}</time><span className="h-px flex-1 bg-border" /></div>}
-            <MessageBubble message={m} latestReply={m.role === "assistant" && m.id === lastId} streaming={!!run && lastRole === "assistant" && m.id === lastId && m.role === "assistant"} />
+            {run && m.id === firstActiveId && <RunActivity key={run.runId} run={run} waiting={waiting} />}
+            <MessageBubble message={m} latestReply={m.role === "assistant" && m.id === lastId} streaming={!!run && m.runId === run.runId && m.role === "assistant"} />
           </div>;
         })}
-        {run && (messages.length === 0 || lastRole === "user") && (
-          <div className="flex items-center gap-2 text-xs text-muted">
-            <Spinner /> {run.agentId} is working...
-          </div>
-        )}
+        {run && !firstActiveId && <div><RunActivity key={run.runId} run={run} /><div className="text-[13px] text-muted" role="status"><span className="fd-activity-shimmer">Working…</span></div></div>}
         {run?.error && (
           <div className="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">
             {run.error}
