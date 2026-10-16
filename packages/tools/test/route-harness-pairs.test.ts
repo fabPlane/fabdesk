@@ -62,7 +62,7 @@ for (const better of [true, false])
       factory = contextFactory(services, project);
     const response = await registry.invoke(
       "route_run",
-      { router: "fab_router", waitMs: 1000 },
+      { router: "fab_router", onlyConnections: ["D_P", "D_N"], waitMs: 1000 },
       (ref) =>
         factory({
           def: registry.get("route_run")!,

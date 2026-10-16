@@ -11,7 +11,7 @@ export type PairDefinition = {
   widthMm?: number | undefined;
   gapMm?: number | undefined;
   skewToleranceMm?: number | undefined;
-  source?: "native netclass" | "identified by name";
+  source?: "native netclass" | "native diff-pair rule" | "identified by name";
 };
 export type NetFacts = {
   net: string;
@@ -41,7 +41,7 @@ export type Quality = {
   pairs: Array<{
     p: string;
     n: string;
-    identification: "declared" | "native netclass" | "identified by name";
+    identification: "declared" | "native netclass" | "native diff-pair rule" | "identified by name";
     lengthPMm: number;
     lengthNMm: number;
     skewMm: number;
@@ -58,7 +58,7 @@ const child = (n: Node[], key: string) => children(n, key)[0] ?? [];
 const number = (n: Node[], key: string, i = 1) => Number(child(n, key)[i] ?? 0);
 const str = (n: Node[], key: string, i = 1) => String(child(n, key)[i] ?? "");
 
-export function copperBoard(text: string): CopperBoard {
+function sexpressions(text: string): Node[] {
   const stack: Node[][] = [[]];
   for (const token of text.match(/\(|\)|"(?:[^"\\]|\\.)*"|[^\s()"]+/g) ?? []) {
     if (token === "(") {
@@ -70,8 +70,12 @@ export function copperBoard(text: string): CopperBoard {
       stack.pop();
     } else stack.at(-1)!.push(token.startsWith('"') ? (JSON.parse(token) as string) : token);
   }
-  if (stack.length !== 1 || !Array.isArray(stack[0]![0])) throw new Error("invalid PCB");
-  const root = stack[0]![0] as Node[];
+  if (stack.length !== 1) throw new Error("unbalanced native file");
+  return stack[0]!;
+}
+export function copperBoard(text: string): CopperBoard {
+  const root = sexpressions(text)[0];
+  if (!Array.isArray(root)) throw new Error("invalid PCB");
   if (root[0] !== "kicad_pcb") throw new Error("expected kicad_pcb");
   const names = new Map(children(root, "net").map((n) => [String(n[1]), String(n[2] ?? n[1])]));
   const netOf = (n: Node[]) => {
@@ -165,7 +169,13 @@ export function quality(
 ): Quality {
   const seen = new Set(declared.flatMap((p) => [p.p, p.n]));
   const pairs: Array<
-    PairDefinition & { identification: "declared" | "native netclass" | "identified by name" }
+    PairDefinition & {
+      identification:
+        | "declared"
+        | "native netclass"
+        | "native diff-pair rule"
+        | "identified by name";
+    }
   > = declared.map((p) => ({ ...p, identification: p.source ?? "declared" }));
   for (const p of board.nets) {
     if (seen.has(p)) continue;
@@ -184,11 +194,13 @@ export function quality(
       }
     }
   }
-  const facts = netFacts(board, [...nets, ...pairs.flatMap((p) => [p.p, p.n])]);
+  const scope = new Set(nets);
+  const scopedPairs = pairs.filter((p) => scope.has(p.p) || scope.has(p.n));
+  const facts = netFacts(board, [...nets, ...scopedPairs.flatMap((p) => [p.p, p.n])]);
   const byNet = new Map(facts.map((n) => [n.net, n]));
   return {
     nets: facts,
-    pairs: pairs
+    pairs: scopedPairs
       .filter((p) => byNet.has(p.p) && byNet.has(p.n))
       .map((p) => {
         const a = byNet.get(p.p)!,
@@ -324,7 +336,8 @@ export function compareQuality(
     const limit = rp && rn ? round(Math.abs(rp.lengthMm - rn.lengthMm)) : old.skewMm;
     const hasReference =
       rp && rn ? rp.lengthMm > 0 && rn.lengthMm > 0 : old.lengthPMm > 0 && old.lengthNMm > 0;
-    const worse = hasReference && pair.skewMm > limit + 0.001;
+    const worse =
+      pair.identification !== "identified by name" && hasReference && pair.skewMm > limit + 0.001;
     lines.push(
       `${pair.p}/${pair.n}: skew ${old.skewMm} → ${pair.skewMm} mm${rp && rn ? ` (before edit ${limit})` : ""}; vias ${old.viasP}/${old.viasN} → ${pair.viasP}/${pair.viasN}${worse ? "; WARNING increased skew" : ""}.`,
     );
@@ -337,7 +350,24 @@ export function compareQuality(
   return { opens, outsideScopeItems: outside, warnings, text: lines.join("\n") };
 }
 
-/** Netclass dimensions first, standard member names second; no arbitrary trailing P/N guess. */
+/** KiCad net-name wildcards are strings, not filesystem paths: * and ? cross / too. */
+export function netPatternMatches(pattern: string, net: string) {
+  const escaped = pattern
+    .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+    .replace(/\*/g, ".*")
+    .replace(/\?/g, ".");
+  return new RegExp(`^${escaped}$`).test(net);
+}
+function pairClassName(name: string, pair: PairDefinition) {
+  if (/(?:diff(?:erential)?|pair)/i.test(name)) return true;
+  const key = name.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const stem = pair.p
+    .replace(/(?:_P|\+|P)$/, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+  return key.length >= 2 && stem.includes(key);
+}
+/** Only explicit pair intent supplies dimensions; fields saved on every KiCad class do not. */
 export async function projectPairs(
   dir: string,
   board: CopperBoard,
@@ -356,33 +386,92 @@ export async function projectPairs(
     diff_pair_gap?: number;
     priority?: number;
   }> = settings?.classes ?? [];
-  const forNet = (net: string) => {
+  let rules: Node[] = [];
+  try {
+    rules = sexpressions(await readFile(join(dir, "board.kicad_dru"), "utf8"));
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+  }
+  const forNet = (net: string, pair: PairDefinition) => {
     const exact = settings?.netclass_assignments?.[net];
     const assignments: string[] = exact ? (Array.isArray(exact) ? exact : [exact]) : [];
-    for (const p of settings?.netclass_patterns ?? [])
-      if (new Bun.Glob(p.pattern).match(net)) assignments.push(p.netclass);
-    // A suffix can identify power rails too. Only an actual assignment supplies pair rules;
-    // the Default fallback would turn every named +/- rail into a constrained signal pair.
+    const targeted = new Set<string>();
+    for (const p of settings?.netclass_patterns ?? []) {
+      if (netPatternMatches(p.pattern, net)) assignments.push(p.netclass);
+      // A broad assignment (*) is not a pair signal. Require a literal from the pair stem.
+      const literal = p.pattern.replace(/[*?]/g, "").replace(/[^a-z0-9]/gi, "");
+      const stem = pair.p.replace(/(?:_P|\+|P)$/, "").replace(/[^a-z0-9]/gi, "");
+      if (
+        literal &&
+        stem.includes(literal) &&
+        netPatternMatches(p.pattern, pair.p) &&
+        netPatternMatches(p.pattern, pair.n)
+      )
+        targeted.add(p.netclass);
+    }
+    // Require pair intent in addition to assignment; KiCad writes pair dimensions on Power too.
     return classes
-      .filter((c) => assignments.includes(c.name))
+      .filter(
+        (c) =>
+          assignments.includes(c.name) && (pairClassName(c.name, pair) || targeted.has(c.name)),
+      )
       .sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0))[0];
   };
   return named.map((pair) => {
     const explicit = declared.find((p) => p.p === pair.p && p.n === pair.n);
     if (explicit) return explicit;
-    const pc = forNet(pair.p),
-      nc = forNet(pair.n),
+    const pc = forNet(pair.p, pair),
+      nc = forNet(pair.n, pair),
       width = pc?.diff_pair_width ?? nc?.diff_pair_width,
       gap = pc?.diff_pair_gap ?? nc?.diff_pair_gap;
+    // Recognize unconditioned rules and simple KiCad net-name/class selectors. Complex
+    // expressions remain KiCad's responsibility; never guess that they apply to a pair.
+    const nativeRule = children(rules, "rule").some((rule) => {
+      if (!children(rule, "constraint").some((c) => String(c[1]).startsWith("diff_pair_")))
+        return false;
+      const condition = str(rule, "condition");
+      if (!condition) return true;
+      const selector = /^A\.(NetName|NetClass)\s*==\s*'([^']*)'$/.exec(condition);
+      if (!selector) return false;
+      if (selector[1] === "NetName")
+        return [pair.p, pair.n].every((net) => netPatternMatches(selector[2]!, net));
+      return [pair.p, pair.n].every((net) => {
+        const assignment = settings?.netclass_assignments?.[net];
+        return (
+          [assignment].flat().includes(selector[2]) ||
+          (settings?.netclass_patterns ?? []).some(
+            (p: any) => p.netclass === selector[2] && netPatternMatches(p.pattern, net),
+          )
+        );
+      });
+    });
     return {
       p: pair.p,
       n: pair.n,
       source:
         width !== undefined || gap !== undefined
           ? ("native netclass" as const)
-          : ("identified by name" as const),
+          : nativeRule
+            ? ("native diff-pair rule" as const)
+            : ("identified by name" as const),
       ...(width !== undefined && width > 0 ? { widthMm: width } : {}),
       ...(gap !== undefined ? { gapMm: gap } : {}),
     };
   });
+}
+
+/** Keep public summaries bounded without cutting a UTF-8 codepoint; JSON retains full detail. */
+export function boundedQualityText(text: string, maxBytes = 1800) {
+  if (Buffer.byteLength(text) <= maxBytes) return text;
+  const suffix = "\nFull detail in quality.json.";
+  const budget = Math.max(0, maxBytes - Buffer.byteLength(suffix));
+  let out = "",
+    bytes = 0;
+  for (const char of text) {
+    const size = Buffer.byteLength(char);
+    if (bytes + size > budget) break;
+    out += char;
+    bytes += size;
+  }
+  return out + suffix;
 }

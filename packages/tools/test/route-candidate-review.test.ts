@@ -1,0 +1,287 @@
+import { expect, test } from "bun:test";
+import { readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { createRegistry } from "../src";
+import { copperBoard, projectPairs } from "../src/routing-quality";
+import { contextFactory, mockServices, tempProject } from "./mock-services";
+
+const seg = (net: string, length = 1, width = 0.3, locked = false) =>
+  `(segment ${locked ? "locked" : ""} (start 0 0) (end ${length} 0) (width ${width}) (layer "F.Cu") (net "${net}") (uuid "${net}"))`;
+const pcb = (length = 1, other = 1, p = "D_P", n = "D_N", locked = false) =>
+  `(kicad_pcb (net "${p}") (net "${n}") (net "LED") ${seg(p, length, 0.3, locked)} ${seg(n)} ${seg("LED", other)})`;
+const summary = (extra: any = {}) => ({
+  tracks: 2,
+  vias: 0,
+  claimedVias: 0,
+  routed: 2,
+  total: 2,
+  trackLengthNm: 2e6,
+  elapsedMs: 1,
+  wallMs: 1,
+  timedOut: false,
+  message: "route",
+  unrouted: [],
+  log: [],
+  ...extra,
+});
+async function fixture(name: string, start = pcb(), settings: any = {}) {
+  const project = await tempProject(name);
+  await writeFile(join(project.dir, "board.kicad_pcb"), start);
+  await writeFile(join(project.dir, "board.kicad_pro"), JSON.stringify(settings));
+  return project;
+}
+async function invoke(project: any, services: any, args: any = {}) {
+  const registry = createRegistry(),
+    factory = contextFactory(services, project);
+  const response = await registry.invoke(
+    "route_run",
+    { router: "fab_router", waitMs: 1000, ...args },
+    (ref) =>
+      factory({
+        def: registry.get("route_run")!,
+        projectRef: ref,
+        signal: new AbortController().signal,
+        progress: () => {},
+      }),
+  );
+  return { response, run: services.routeRuns.get((response.json as any).run.id)! };
+}
+for (const missing of [false, true])
+  test(`#1 router failure cannot complete a scoped run; missing TraceMaker=${missing}`, async () => {
+    const project = await fixture(`review-error-${missing}`),
+      base = mockServices([project]);
+    const services = mockServices([project], {
+      design: {
+        ...base.design,
+        query: async (dir, select) => (select === "unrouted" ? [] : base.design.query(dir, select)),
+        route: async () => {
+          throw Error("missing router binary");
+        },
+      },
+    });
+    if (missing) {
+      await expect(
+        invoke(project, services, { router: "tracemaker", onlyConnections: ["LED"] }),
+      ).rejects.toThrow("not installed");
+      return;
+    }
+    const { run } = await invoke(project, services, { onlyConnections: ["LED"] });
+    expect(run.state).toBe("failed");
+    expect(run.candidate.available).toBe(false);
+    expect(run.application.state).toBe("not_available");
+  });
+test("#2 Power assignments with KiCad default pair fields do not constrain VBAT rails", async () => {
+  const project = await fixture("review-power", pcb(1, 1, "VBAT+", "VBAT-"), {
+    net_settings: {
+      classes: [{ name: "Power", track_width: 0.5, diff_pair_width: 0.2, diff_pair_gap: 0.15 }],
+      netclass_assignments: { "VBAT+": "Power", "VBAT-": "Power" },
+      netclass_patterns: [{ pattern: "*", netclass: "Power" }],
+    },
+  });
+  const pairs = await projectPairs(project.dir, copperBoard(pcb(1, 1, "VBAT+", "VBAT-")));
+  expect(pairs).toEqual([{ p: "VBAT+", n: "VBAT-", source: "identified by name" }]);
+});
+test("#3 automatic whole-board fallback must not erase first-pass copper in a pair retry", async () => {
+  const project = await fixture("review-fallback-pair"),
+    base = mockServices([project]);
+  project.manifest().router = undefined;
+  let calls = 0;
+  const services = mockServices([project], {
+    design: {
+      ...base.design,
+      query: async (dir, select) => (select === "unrouted" ? [] : base.design.query(dir, select)),
+      unroute: async (dir) => {
+        await writeFile(join(dir, "board.kicad_pcb"), pcb(0, 2));
+        return { tracks: 2, vias: 0 };
+      },
+      route: async (dir, opts) => {
+        calls++;
+        if (calls === 1) {
+          await writeFile(join(dir, "board.kicad_pcb"), pcb(3, 2));
+          return summary();
+        }
+        if (opts.router === "freerouting") {
+          await writeFile(join(dir, "board.kicad_pcb"), pcb(9));
+          throw Error("freerouting failed");
+        }
+        expect(await readFile(join(dir, "board.kicad_pcb"), "utf8")).toBe(pcb(0, 2));
+        return summary();
+      },
+    },
+  });
+  const { run } = await invoke(project, services, {
+    router: undefined,
+    rules: { pairs: [{ p: "D_P", n: "D_N" }] },
+  });
+  expect(run.router).toBe("freerouting");
+  expect(
+    await readFile(join(project.dir, run.artifacts.runDir, "router.log"), "utf8"),
+  ).not.toContain("Expected:");
+  expect(run.attempts).toHaveLength(1);
+});
+for (const mode of ["never", "whole", "locked"] as const)
+  test(`#4 pair retry respects ${mode} copper retention`, async () => {
+    const project = await fixture(
+        `review-mode-${mode}`,
+        pcb(1, 1, "D_P", "D_N", mode === "locked"),
+      ),
+      base = mockServices([project]);
+    let clean = 0,
+      calls = 0;
+    const services = mockServices([project], {
+      design: {
+        ...base.design,
+        query: async (dir, select) => (select === "unrouted" ? [] : base.design.query(dir, select)),
+        unroute: async () => {
+          clean++;
+          return { tracks: 2, vias: 0 };
+        },
+        route: async (dir) => {
+          calls++;
+          await writeFile(join(dir, "board.kicad_pcb"), pcb(3, 1, "D_P", "D_N", mode === "locked"));
+          return summary();
+        },
+      },
+    });
+    await invoke(project, services, {
+      ...(mode !== "whole" ? { onlyConnections: ["D_P", "D_N"] } : {}),
+      ...(mode === "never" ? { rerouteMode: "never" } : {}),
+      rules: { pairs: [{ p: "D_P", n: "D_N" }] },
+    });
+    expect(clean).toBe(0);
+    expect(calls).toBe(1);
+  });
+test("#5 scoped LED quality excludes an unrelated USB pair", async () => {
+  const project = await fixture("review-quality-scope", pcb(3)),
+    base = mockServices([project]);
+  const services = mockServices([project], {
+    design: {
+      ...base.design,
+      query: async (dir, select) => (select === "unrouted" ? [] : base.design.query(dir, select)),
+      route: async () => summary(),
+    },
+  });
+  const { run } = await invoke(project, services, {
+    onlyConnections: ["LED"],
+    rules: { pairs: [{ p: "D_P", n: "D_N" }] },
+  });
+  const q = JSON.parse(
+    await readFile(join(project.dir, run.artifacts.runDir, "quality.json"), "utf8"),
+  );
+  expect(q.nets.map((n: any) => n.net)).toEqual(["LED"]);
+  expect(q.pairs).toEqual([]);
+});
+test("#6 name-only rail skew remains measurable without holding application", async () => {
+  const project = await fixture("review-rail-skew", pcb(1, 1, "VBAT+", "VBAT-")),
+    base = mockServices([project]);
+  const services = mockServices([project], {
+    design: {
+      ...base.design,
+      query: async (dir, select) => (select === "unrouted" ? [] : base.design.query(dir, select)),
+      route: async (dir) => {
+        await writeFile(join(dir, "board.kicad_pcb"), pcb(3, 1, "VBAT+", "VBAT-"));
+        return summary();
+      },
+    },
+  });
+  const { run } = await invoke(project, services);
+  expect(run.application.state).toBe("applied");
+  expect(run.result.quality.warnings).toEqual([]);
+  const q = JSON.parse(
+    await readFile(join(project.dir, run.artifacts.runDir, "quality.json"), "utf8"),
+  );
+  expect(q.pairs[0].skewMm).toBe(2);
+});
+test("#7 selected pair trial retains main-route log, diagnostics and measured board counts", async () => {
+  const project = await fixture("review-pair-summary"),
+    base = mockServices([project]);
+  let calls = 0;
+  const diagnostics = { text: "main route warning", nets: [] };
+  const services = mockServices([project], {
+    design: {
+      ...base.design,
+      query: async (dir, select) => (select === "unrouted" ? [] : base.design.query(dir, select)),
+      unroute: async () => ({ tracks: 2, vias: 0 }),
+      route: async (dir) => {
+        calls++;
+        await writeFile(join(dir, "board.kicad_pcb"), pcb(calls === 1 ? 3 : 1));
+        return summary(
+          calls === 1
+            ? { tracks: 10, log: ["main route log"], diagnostics }
+            : { tracks: 2, log: ["pair log"] },
+        );
+      },
+    },
+  });
+  const { run } = await invoke(project, services, {
+    onlyConnections: ["D_P", "D_N", "LED"],
+    rules: { pairs: [{ p: "D_P", n: "D_N" }] },
+  });
+  expect(calls).toBe(2);
+  expect(run.result.diagnostics).toEqual(diagnostics);
+  expect(await readFile(join(project.dir, run.artifacts.runDir, "router.log"), "utf8")).toContain(
+    "main route log",
+  );
+  expect(run.result.stats.segments).toBe(3);
+});
+test("#8 public quality text stays within 1800 UTF-8 bytes on 300 nets", async () => {
+  const text = `(kicad_pcb ${Array.from({ length: 300 }, (_, i) => `(net "net-${i}-µ") ${seg(`net-${i}-µ`)}`).join(" ")})`;
+  const project = await fixture("review-text-bound", text),
+    base = mockServices([project]);
+  const services = mockServices([project], {
+    design: {
+      ...base.design,
+      query: async (dir, select) => (select === "unrouted" ? [] : base.design.query(dir, select)),
+      route: async () => summary(),
+    },
+  });
+  const { run } = await invoke(project, services);
+  expect(Buffer.byteLength(run.result.quality.text)).toBeLessThanOrEqual(1800);
+  const q = JSON.parse(
+    await readFile(join(project.dir, run.artifacts.runDir, "quality.json"), "utf8"),
+  );
+  expect(q.nets).toHaveLength(300);
+});
+test("#9 benchmarked widest retained width remains the per-net floor", async () => {
+  const project = await fixture(
+      "review-width-floor",
+      `(kicad_pcb (net "GND") ${seg("GND", 2, 0.2)} ${seg("GND", 1, 1.5)})`,
+    ),
+    base = mockServices([project]);
+  let width: number | undefined;
+  const services = mockServices([project], {
+    design: {
+      ...base.design,
+      query: async (dir, select) => (select === "unrouted" ? [] : base.design.query(dir, select)),
+      route: async (_dir, opts) => {
+        width = (opts.settings as any).perNet[0].widthMm;
+        return summary();
+      },
+    },
+  });
+  await invoke(project, services);
+  expect(width).toBe(1.5);
+});
+test("#10 KiCad net patterns match hierarchical USB members", async () => {
+  const text = pcb(1, 1, "/usb/USB_DP", "/usb/USB_DN");
+  const project = await fixture("review-hierarchical-pair", text, {
+    net_settings: {
+      classes: [{ name: "Signals", diff_pair_width: 0.2, diff_pair_gap: 0.15 }],
+      netclass_patterns: [{ pattern: "*USB_D*", netclass: "Signals" }],
+    },
+  });
+  expect(await projectPairs(project.dir, copperBoard(text))).toEqual([
+    { p: "/usb/USB_DP", n: "/usb/USB_DN", source: "native netclass", widthMm: 0.2, gapMm: 0.15 },
+  ]);
+});
+
+test("#2 explicit KiCad pair rules mark the measured pair as constrained", async () => {
+  const project = await fixture("review-native-pair-rule");
+  await writeFile(
+    join(project.dir, "board.kicad_dru"),
+    `(version 1) (rule "USB pair" (condition "A.NetName == 'D_*'") (constraint diff_pair_gap (min 0.15mm)))`,
+  );
+  expect((await projectPairs(project.dir, copperBoard(pcb())))[0]?.source).toBe(
+    "native diff-pair rule",
+  );
+});

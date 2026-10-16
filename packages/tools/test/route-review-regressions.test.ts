@@ -52,8 +52,10 @@ for (const assigned of [true, false])
       join(project.dir, "board.kicad_pro"),
       JSON.stringify({
         net_settings: {
-          classes: [{ name: "USB", diff_pair_width: 0.25, diff_pair_gap: 0.2 }],
-          netclass_assignments: assigned ? { "D+": "USB", "D-": "USB" } : {},
+          classes: [{ name: "Differential USB", diff_pair_width: 0.25, diff_pair_gap: 0.2 }],
+          netclass_assignments: assigned
+            ? { "D+": "Differential USB", "D-": "Differential USB" }
+            : {},
         },
       }),
     );

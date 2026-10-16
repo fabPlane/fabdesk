@@ -58,7 +58,7 @@ for (const scenario of ["width", "skew", "outside", "failure"] as const) {
       router: "fab_router",
       onlyConnections: ["D_P", "D_N"],
       waitMs: 1000,
-      rules: { widthMm: 0.2 },
+      rules: { widthMm: 0.2, pairs: [{ p: "D_P", n: "D_N" }] },
     });
     const run = services.routeRuns.get((response.json as any).run.id)!;
     expect(response.text).toContain("Opens: 2 →");

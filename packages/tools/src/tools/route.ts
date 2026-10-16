@@ -24,6 +24,7 @@ import {
   netFacts,
   quality,
   qualityText,
+  boundedQualityText,
   compareQuality,
   projectPairs,
   referenceFacts,
@@ -764,6 +765,9 @@ async function executeRoute(
     }
     let routingTimedOut = false;
     const attemptRoute = async (scopeNets = requestedNets): Promise<RouteSummary> => {
+      await ctx.services.design.release(snapshotDir);
+      const attemptPcb = await readFile(join(snapshotDir, PROJECT_FILES.boardPcb));
+      const attemptPro = await readFile(join(snapshotDir, PROJECT_FILES.boardPro));
       const attempt = {
         router: rec.router as "fab_router" | "freerouting" | "tracemaker",
         startedAt: iso(),
@@ -879,15 +883,9 @@ async function executeRoute(
           throw error;
         await progressQueues.get(join(runDir, "progress.json"));
         await ctx.services.design.release(snapshotDir);
-        // A failed job may have changed its live board. Restore the exact original snapshot.
-        await copyFile(
-          join(runDir, "starting.kicad_pcb"),
-          join(snapshotDir, PROJECT_FILES.boardPcb),
-        );
-        await copyFile(
-          join(runDir, "starting.kicad_pro"),
-          join(snapshotDir, PROJECT_FILES.boardPro),
-        );
+        // Restore this attempt's input, including retained first-pass or freshly cleaned copper.
+        await writeAtomic(join(snapshotDir, PROJECT_FILES.boardPcb), attemptPcb);
+        await writeAtomic(join(snapshotDir, PROJECT_FILES.boardPro), attemptPro);
         rec = { ...rec, router: "fab_router", fallbackReason: `Freerouting failed: ${message}` };
         frames.fallback(rec.fallbackReason!);
         await persistProgress(ctx, rec, runDir);
@@ -950,40 +948,7 @@ async function executeRoute(
       };
     };
     if (retryMode === "always") await clean();
-    let summary: RouteSummary;
-    try {
-      summary = await attemptRoute();
-    } catch (error) {
-      if (
-        !requestedNets.length ||
-        retryMode !== "onOpen" ||
-        signal.aborted ||
-        error instanceof JobTimeoutError
-      )
-        throw error;
-      await ctx.services.design.release(snapshotDir);
-      await copyFile(join(runDir, "starting.kicad_pcb"), join(snapshotDir, PROJECT_FILES.boardPcb));
-      const rows = endpoints.map((row) => ({
-        net: String(row["net"]),
-        from: (row["from"] as { x: number; y: number }) ?? { x: 0, y: 0 },
-        to: (row["to"] as { x: number; y: number }) ?? { x: 0, y: 0 },
-      }));
-      summary = {
-        tracks: 0,
-        vias: 0,
-        claimedVias: 0,
-        routed: 0,
-        total: rows.length,
-        trackLengthNm: 0,
-        elapsedMs: 0,
-        wallMs: 0,
-        timedOut: false,
-        message: String(error),
-        unrouted: rows,
-        log: [String(error)],
-        geometry: [],
-      };
-    }
+    let summary = await attemptRoute();
     if (
       requestedNets.length &&
       retryMode === "onOpen" &&
@@ -994,6 +959,9 @@ async function executeRoute(
     ) {
       await ctx.services.design.release(snapshotDir);
       const first = await readFile(join(snapshotDir, PROJECT_FILES.boardPcb));
+      const firstPro = await readFile(join(snapshotDir, PROJECT_FILES.boardPro));
+      const firstRouter = rec.router,
+        firstFallback = rec.fallbackReason ?? null;
       const beforeScore = await score(summary, "retained");
       const trials: unknown[] = [{ kind: "retained", score: beforeScore }];
       try {
@@ -1007,12 +975,16 @@ async function executeRoute(
         else {
           await ctx.services.design.release(snapshotDir);
           await writeAtomic(join(snapshotDir, PROJECT_FILES.boardPcb), first);
+          await writeAtomic(join(snapshotDir, PROJECT_FILES.boardPro), firstPro);
+          rec = { ...rec, router: firstRouter, fallbackReason: firstFallback };
         }
       } catch (error) {
         if (signal.aborted) throw error;
         trials.push({ kind: "clean-retry", error: String(error), selected: false });
         await ctx.services.design.release(snapshotDir);
         await writeAtomic(join(snapshotDir, PROJECT_FILES.boardPcb), first);
+        await writeAtomic(join(snapshotDir, PROJECT_FILES.boardPro), firstPro);
+        rec = { ...rec, router: firstRouter, fallbackReason: firstFallback };
       }
       await writeJson(join(runDir, "retry.json"), trials);
       summary.log.push(
@@ -1022,7 +994,7 @@ async function executeRoute(
     const pairAttempts: unknown[] = [];
     const initialFacts = quality(
       await readCopper(snapshotDir),
-      startingCopper.nets,
+      requestedNets.length ? requestedNets : startingCopper.nets,
       detectedPairs,
       reference,
     );
@@ -1034,6 +1006,8 @@ async function executeRoute(
     ).warnings.filter((w) => w.kind === "skew")) {
       const pair = detectedPairs.find((p) => warning.text.startsWith(`${p.p}/${p.n}:`));
       if (
+        retryMode === "never" ||
+        !requestedNets.length ||
         routingTimedOut ||
         !pair ||
         pair.source === "identified by name" ||
@@ -1045,6 +1019,9 @@ async function executeRoute(
       if (signal.aborted) throwIfAborted(signal);
       await ctx.services.design.release(snapshotDir);
       const prior = await readFile(join(snapshotDir, PROJECT_FILES.boardPcb));
+      const priorPro = await readFile(join(snapshotDir, PROJECT_FILES.boardPro));
+      const priorRouter = rec.router,
+        priorFallback = rec.fallbackReason ?? null;
       const priorSummary = summary;
       const priorScore = await score(summary, `pair-${pairAttempts.length}-before`);
       try {
@@ -1057,6 +1034,12 @@ async function executeRoute(
         );
         const trial = {
           ...routed,
+          log: [...priorSummary.log, ...routed.log],
+          ...(priorSummary.diagnostics ? { diagnostics: priorSummary.diagnostics } : {}),
+          ...(priorSummary.endpointCollisions
+            ? { endpointCollisions: priorSummary.endpointCollisions }
+            : {}),
+          ...(priorSummary.pairRouting ? { pairRouting: priorSummary.pairRouting } : {}),
           total: priorSummary.total,
           unrouted: allOpen.map((row) => ({
             net: String(row["net"]),
@@ -1082,6 +1065,8 @@ async function executeRoute(
         } else {
           await ctx.services.design.release(snapshotDir);
           await writeAtomic(join(snapshotDir, PROJECT_FILES.boardPcb), prior);
+          await writeAtomic(join(snapshotDir, PROJECT_FILES.boardPro), priorPro);
+          rec = { ...rec, router: priorRouter, fallbackReason: priorFallback };
         }
       } catch (error) {
         if (signal.aborted) throw error;
@@ -1092,6 +1077,8 @@ async function executeRoute(
         });
         await ctx.services.design.release(snapshotDir);
         await writeAtomic(join(snapshotDir, PROJECT_FILES.boardPcb), prior);
+        await writeAtomic(join(snapshotDir, PROJECT_FILES.boardPro), priorPro);
+        rec = { ...rec, router: priorRouter, fallbackReason: priorFallback };
       }
     }
     await writeJson(join(runDir, "pair-attempts.json"), pairAttempts);
@@ -1197,17 +1184,18 @@ async function executeRoute(
       ...(summary.diagnostics ? { diagnostics: summary.diagnostics } : {}),
       ...(summary.endpointCollisions ? { endpointCollisions: summary.endpointCollisions } : {}),
       quality: {
-        text:
+        text: boundedQualityText(
           comparison.text +
-          (summary.pairRouting
-            ? "\n" +
-              summary.pairRouting.pairs
-                .map(
-                  (p) =>
-                    `${p.p}/${p.n}: ${p.status}; capability ${summary.pairRouting!.capability}`,
-                )
-                .join("\n")
-            : ""),
+            (summary.pairRouting
+              ? "\n" +
+                summary.pairRouting.pairs
+                  .map(
+                    (p) =>
+                      `${p.p}/${p.n}: ${p.status}; capability ${summary.pairRouting!.capability}`,
+                  )
+                  .join("\n")
+              : ""),
+        ),
         warnings: comparison.warnings,
         detailPath: join(rec.artifacts.runDir, "quality.json"),
       },
@@ -1228,8 +1216,12 @@ async function executeRoute(
             ? ["try Freerouting for these nets", "check remaining native opens"]
             : ["inspect route candidate", "inspect remaining connectivity"],
       stats: {
-        vias: summary.vias,
-        segments: summary.tracks,
+        vias: pairAttempts.some((p: any) => p.selected)
+          ? candidateBoard.copper.filter((c) => c.diameter !== undefined).length
+          : summary.vias,
+        segments: pairAttempts.some((p: any) => p.selected)
+          ? candidateBoard.copper.filter((c) => c.width !== undefined).length
+          : summary.tracks,
         wallMs: Date.now() - started,
         frames: sink.stats.frames,
         viasOnFixed: summary.claimedVias,
