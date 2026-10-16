@@ -21,6 +21,5 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 Source: https://github.com/lobehub/lobe-icons/tree/8a1b2821bb768c484fe8da20c5e1838b6bf551a9/packages/static-svg/icons
-Marks: codex.svg, claude.svg, cursor.svg, grok.svg. Converted to inline React SVGs.
+Marks: openai.svg (Codex), claude.svg, cursor.svg, grok.svg. Converted to inline React SVGs.
 
-Codex mark adapted to an outline silhouette with stroked terminal glyph for small-size readability.
