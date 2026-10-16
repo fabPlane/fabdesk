@@ -815,7 +815,17 @@ export type RunDump = {
   dumpJson: string;
 };
 
-export const RUN_DUMP_RETENTION = { rows: 100, bytes: 512 * 1024 * 1024 } as const;
+/**
+ * Local run-dump retention. Past `rows` / `bytes`, dumps a usage-archive destination still needs
+ * are kept until the hard `pendingRows` / `pendingBytes` ceiling, so a failing upload cannot grow
+ * the database without bound.
+ */
+export const RUN_DUMP_RETENTION = {
+  rows: 100,
+  bytes: 512 * 1024 * 1024,
+  pendingRows: 200,
+  pendingBytes: 1024 * 1024 * 1024,
+} as const;
 
 type RunDumpRow = {
   run_id: string;
@@ -829,7 +839,11 @@ type RunDumpRow = {
 
 export class RunDumpRepo {
   constructor(private readonly db: Database) {}
-  put(dump: RunDump, prune = true): void {
+  /**
+   * Stores a dump and applies retention. Dumps not yet recorded in `usage_archive_uploads` for every
+   * one of `archiveDestinations` survive normal retention, up to the hard ceiling.
+   */
+  put(dump: RunDump, archiveDestinations: readonly string[] = []): void {
     this.db.transaction(() => {
       this.db.run(
         "INSERT INTO run_dumps(run_id, trace_id, thread_id, agent_id, project_id, created_at, dump_json) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(run_id) DO UPDATE SET trace_id = excluded.trace_id, thread_id = excluded.thread_id, agent_id = excluded.agent_id, project_id = excluded.project_id, created_at = excluded.created_at, dump_json = excluded.dump_json",
@@ -843,18 +857,33 @@ export class RunDumpRepo {
           dump.dumpJson,
         ],
       );
-      if (prune)
-        this.db.run(
-          `DELETE FROM run_dumps WHERE run_id IN (
+      this.db.run(
+        `DELETE FROM run_dumps WHERE run_id IN (
           SELECT run_id FROM (
             SELECT run_id,
               ROW_NUMBER() OVER (ORDER BY created_at DESC, run_id DESC) AS row_number,
               SUM(length(CAST(dump_json AS BLOB))) OVER (ORDER BY created_at DESC, run_id DESC) AS cumulative_bytes
             FROM run_dumps
-          ) WHERE row_number > ? OR cumulative_bytes > ?
+          ) AS ranked
+          WHERE (row_number > ? OR cumulative_bytes > ?)
+            AND (
+              row_number > ? OR cumulative_bytes > ?
+              OR (
+                SELECT COUNT(*) FROM usage_archive_uploads
+                WHERE record_id = 'run-dump:' || ranked.run_id
+                  AND destination IN (SELECT value FROM json_each(?))
+              ) >= ?
+            )
         )`,
-          [RUN_DUMP_RETENTION.rows, RUN_DUMP_RETENTION.bytes],
-        );
+        [
+          RUN_DUMP_RETENTION.rows,
+          RUN_DUMP_RETENTION.bytes,
+          RUN_DUMP_RETENTION.pendingRows,
+          RUN_DUMP_RETENTION.pendingBytes,
+          JSON.stringify(archiveDestinations),
+          archiveDestinations.length,
+        ],
+      );
     })();
   }
   get(runId: string): RunDump | null {

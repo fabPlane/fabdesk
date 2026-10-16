@@ -354,8 +354,8 @@ describe("pairing url", () => {
 });
 
 describe("usage archive consent", () => {
-  test("the first-install privacy screen follows the detected region", () => {
-    expect(FIRST_INSTALL_PRIVACY_SCREEN).toBe("auto");
+  test("every undecided installation gets the first-install privacy screen", () => {
+    expect(FIRST_INSTALL_PRIVACY_SCREEN).toBe("always");
   });
 
   test("defaults on for undecided installations that skip the screen", () => {
