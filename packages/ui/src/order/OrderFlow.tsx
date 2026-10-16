@@ -27,7 +27,7 @@ export function OrderFlow() {
 
   return (
     <div className="fd-content-pane flex h-full min-w-0 flex-col bg-bg" data-testid="order-flow">
-      <div className="fd-screen-header flex items-center justify-between border-b border-border px-4">
+      <div className="fd-screen-header flex items-center justify-between border-b border-border pl-4 pr-[52px]">
         <div className="text-sm font-medium">Order now</div>
         <Button size="sm" onClick={() => setOrderFlowOpen(false)}>
           Back

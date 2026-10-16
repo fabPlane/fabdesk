@@ -1,5 +1,4 @@
 import { Select, Tabs } from "../components/ui";
-import { BoardPanelToggle } from "../components/BoardPanelToggle";
 import { CircuitLogo } from "../components/CircuitLogo";
 import { useCore } from "@fabdesk/client-core";
 import { useProjectOrder, useProjects } from "@fabdesk/client-core";
@@ -67,7 +66,6 @@ export function BoardPanel() {
             />
           )}
         </div>
-        <BoardPanelToggle location="board" />
       </div>
       <div className="fd-board-controls flex shrink-0 items-center px-3">
         <Tabs

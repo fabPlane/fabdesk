@@ -1,7 +1,6 @@
 import type { AgentId } from "@fabdesk/protocol";
 import { useCallback, useEffect, useState } from "react";
 import { CircuitLogo } from "../components/CircuitLogo";
-import { BoardPanelToggle } from "../components/BoardPanelToggle";
 
 /** Seconds since `startedAt`, ticking once a second while a run is active (undefined otherwise). */
 function useElapsedSeconds(startedAt: number | undefined): number | undefined {
@@ -122,7 +121,6 @@ export function ThreadView() {
         {run?.usage?.costUsd !== undefined && (
           <span className="text-xs text-muted">${run.usage.costUsd.toFixed(3)}</span>
         )}
-        <BoardPanelToggle location="chat" />
       </div>
       <div className={activeThreadId ? "fd-thread-body" : "fd-thread-body fd-new-chat-body"}>
       {activeThreadId ? (
