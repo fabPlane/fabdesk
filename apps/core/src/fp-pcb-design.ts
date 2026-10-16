@@ -2170,6 +2170,8 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
           },
         );
       } finally {
+        // The job saved the live board itself; adopt that revision while routing still owns it.
+        await deps.sessions.adoptSaved?.(projectDir, BOARD_PCB);
         active.delete(projectDir);
       }
     });

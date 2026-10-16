@@ -169,7 +169,14 @@ export const project_status = defineTool({
         m === null ? { exists: false } : { exists: true, mtime: new Date(m).toISOString() };
     }
     const { lastSourceBuild, lastRelease } = await readProjectStatusEvidence(project);
-    const taskComparison = await compareTaskCheckpoint(project);
+    // A read-only status must not fail because KiCad saved mid-comparison or a manifest is bad.
+    let taskComparison: Awaited<ReturnType<typeof compareTaskCheckpoint>> = null;
+    let taskComparisonError: string | null = null;
+    try {
+      taskComparison = await compareTaskCheckpoint(project);
+    } catch (error) {
+      taskComparisonError = error instanceof Error ? error.message : String(error);
+    }
     const reports = (await readdir(p(project, PROJECT_FILES.reports)).catch(() => [])).filter((f) =>
       f.endsWith(".json"),
     );
@@ -193,7 +200,9 @@ export const project_status = defineTool({
         ? { runId: route.id, status: route.status, open: route.result?.open.length ?? null }
         : null,
       lastDrc: drc ? drc.counts : null,
-      taskComparison: compactTaskComparison(taskComparison),
+      taskComparison: taskComparisonError
+        ? { error: taskComparisonError }
+        : compactTaskComparison(taskComparison),
       reports: reports.map((r) => `${PROJECT_FILES.reports}/${r}`),
       enabledToolsets: ctx.session?.enabledToolsets() ?? [...TOOLSETS],
     };
@@ -206,7 +215,9 @@ export const project_status = defineTool({
       `Sketches: ${sketches.length ? sketches.join(", ") : "none"}`,
       `Last source/compiler build: ${lastSourceBuild ? `${lastSourceBuild.ok ? "ok" : "FAILED"} (${lastSourceBuild.errors} errors, ${lastSourceBuild.warnings} warnings, captured ${lastSourceBuild.at})` : "never"}`,
       `Last release: ${formatLastRelease(lastRelease)}`,
-      taskCheckpointText(taskComparison),
+      taskComparisonError
+        ? `Task baseline comparison unavailable: ${taskComparisonError}`
+        : taskCheckpointText(taskComparison),
       `Last route: ${route ? `${route.status} (${route.result ? `${route.result.open.length} open` : "no result"})` : "never"}`,
       `Last DRC: ${drc ? `${drc.counts.errors} errors, ${drc.counts.warnings} warnings, ${drc.counts.unconnected} unconnected` : "never"}`,
     ];
