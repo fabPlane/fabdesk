@@ -300,7 +300,6 @@ body {
 .fd-canvas-empty .fd-empty-state { padding: 24px; }
 .fd-canvas-empty .fd-empty-state > div { max-width: 310px; }
 .fd-canvas-empty .fd-empty-state > div:first-child { opacity: .6; }
-.fd-tool-group { border-color: transparent; background: color-mix(in srgb, var(--fd-panel) 65%, transparent); }
 .fd-settings { width: min(860px, calc(100vw - 40px)); height: min(700px, calc(100vh - 64px)); }
 .fd-settings > div:last-child { display: flex; flex-direction: column; overflow: hidden; }
 .fd-settings-layout > div:last-child { container-type: inline-size; }

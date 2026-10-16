@@ -1,6 +1,6 @@
 import type { Message, MessagePart, Thread } from "@fabdesk/protocol";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { useCoreClient } from "@fabdesk/client-core";
@@ -11,18 +11,14 @@ import { Markdown } from "./Markdown";
 import { ProjectImage } from "./ProjectImage";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { PendingApprovalCard, PendingQuestionCard } from "./PendingRequestCard";
-import { extractImages, ToolCallCard } from "./ToolCallCard";
+import { extractImages, isCommandTool, ToolCallCard } from "./ToolCallCard";
 
 type ToolResult = Extract<MessagePart, { type: "tool_result" }>;
 type ToolUse = Extract<MessagePart, { type: "tool_use" }>;
 
-function shortToolName(name: string): string {
-  return name.replace(/^mcp__[^_]+__/, "");
-}
-
 /**
  * A run of consecutive tool calls, folded into one row under the paragraph that preceded it.
- * Collapsed by default: count, errors, and the tool still running; the arrow expands the cards.
+ * Collapsed by default: activity, count, and errors; the arrow expands compact tool rows.
  * Image results (board renders) stay visible even when collapsed.
  */
 export function ToolGroup({
@@ -33,50 +29,26 @@ export function ToolGroup({
   streaming: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const detailsId = useId();
   const projectId = useUiStore((s) => s.activeProjectId);
   const errors = calls.filter((c) => c.result?.isError === true).length;
   const pending = calls.filter((c) => !c.result);
   const running = streaming && pending.length > 0 ? pending[pending.length - 1] : undefined;
   const images = calls.flatMap((c) => (c.result ? extractImages(c.result.output) : []));
-  const label = `${calls.length} tool call${calls.length === 1 ? "" : "s"}`;
+  const commandsOnly = calls.every((call) => isCommandTool(call.use.name));
+  const noun = commandsOnly ? "commands" : "tools";
+  const label = running ? "Running " + noun : pending.length > 0 ? (commandsOnly ? "Commands" : "Tool activity") : commandsOnly ? "Ran commands" : "Used tools";
   return (
-    <div className="fd-tool-group my-2 overflow-hidden rounded-lg border border-border/70 bg-panel/70 text-xs" data-testid="tool-group">
-      <button
-        type="button"
-        className={cn(
-          "flex min-h-9 w-full items-center gap-2 px-3 py-2 text-left text-muted hover:bg-panel-2/60",
-          open && "text-fg",
-        )}
-        onClick={() => setOpen((o) => !o)}
-        title={open ? "Hide tool calls" : "Show tool calls"}
-        aria-expanded={open}
-      >
-        <span className={cn("inline-block -rotate-90 transition-transform", open && "rotate-0")}>
-          <Icon name="chevronDown" width={14} height={14} />
-        </span>
-        <span>{label}</span>
-        {errors > 0 && (
-          <span className="text-danger">
-            {errors} error{errors === 1 ? "" : "s"}
-          </span>
-        )}
-        {running && (
-          <span className="flex items-center gap-1.5 font-mono">
-            <Spinner className="h-3 w-3" />
-            {shortToolName(running.use.name)}
-          </span>
-        )}
-        {!running && !open && calls.length > 0 && (
-          <span className="truncate font-mono opacity-70">
-            {calls
-              .map((c) => shortToolName(c.use.name))
-              .slice(-3)
-              .join(" · ")}
-          </span>
-        )}
+    <div className="fd-tool-group my-2 min-w-0 text-[13px]" data-testid="tool-group">
+      <button type="button" className="flex min-h-8 max-w-full items-center gap-2 rounded-md py-1.5 text-left text-muted hover:text-fg"
+        onClick={() => setOpen((o) => !o)} title={open ? "Hide tool calls" : "Show tool calls"} aria-expanded={open} aria-controls={open ? detailsId : undefined}>
+        {running ? <Spinner className="h-4 w-4 shrink-0" /> : <Icon name={commandsOnly ? "terminal" : "tool"} width={16} height={16} className="shrink-0" />}
+        <span>{label}</span><span className="text-xs tabular-nums">{calls.length}</span>
+        {errors > 0 && <span className="text-xs text-danger">{errors} error{errors === 1 ? "" : "s"}</span>}
+        <Icon name={open ? "chevronDown" : "chevronRight"} width={12} height={12} className="shrink-0" />
       </button>
       {!open && images.length > 0 && (
-        <div className="flex flex-wrap gap-2 border-t border-border/60 px-3 py-2">
+        <div className="flex flex-wrap gap-2 py-2">
           {images.map((img, i) =>
             img.kind === "data" ? (
               <img
@@ -92,9 +64,9 @@ export function ToolGroup({
         </div>
       )}
       {open && (
-        <div className="border-t border-border/60 px-3 py-2">
+        <div id={detailsId} className="min-w-0">
           {calls.map((c, i) => (
-            <ToolCallCard key={c.use.id || i} use={c.use} result={c.result} />
+            <ToolCallCard key={c.use.id || i} use={c.use} result={c.result} streaming={streaming} />
           ))}
         </div>
       )}
@@ -233,10 +205,10 @@ export function MessageBubble({ message, streaming, latestReply = false }: { mes
     <div className={cn("fd-message flex w-full flex-col", isUser ? "items-end" : "items-start")}>
       <div
         className={cn(
-          "relative min-w-0 text-sm leading-[1.75] [overflow-wrap:anywhere]",
+          "relative min-w-0 text-sm [overflow-wrap:anywhere]",
           isUser
-            ? "fd-user-message max-w-[90%] rounded-2xl rounded-br-md border border-border/60 bg-panel-2/60 px-4 py-3"
-            : "w-full max-w-full",
+            ? "fd-user-message max-w-[90%] rounded-2xl rounded-br-md border border-border/60 bg-panel-2/60 px-3 py-2 leading-[1.5]"
+            : "w-full max-w-full leading-[1.75]",
         )}
       >
         {!isUser && <div className="mb-3 flex items-center gap-2 text-[11px] font-medium text-muted"><span className="h-1.5 w-1.5 rounded-full bg-accent" />Agent{streaming && <span className="text-accent">· Working</span>}</div>}
