@@ -2,7 +2,13 @@ import { expect, test } from "bun:test";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createRegistry } from "../src";
-import { copperBoard, projectPairs } from "../src/routing-quality";
+import {
+  copperBoard,
+  projectPairs,
+  quality,
+  compareQuality,
+  netFacts,
+} from "../src/routing-quality";
 import { contextFactory, mockServices, tempProject } from "./mock-services";
 
 const seg = (net: string, length = 1, width = 0.3, locked = false) =>
@@ -321,4 +327,72 @@ test("native rule comments may contain parentheses and quoted net names may cont
   expect((await projectPairs(project.dir, copperBoard(text)))[0]?.source).toBe(
     "native diff-pair rule",
   );
+});
+
+test("fresh review: hierarchy-only Power pattern is not pair intent", async () => {
+  const text = pcb(1, 1, "/power/VBAT+", "/power/VBAT-");
+  const project = await fixture("review-hierarchy-power", text, {
+    net_settings: {
+      classes: [{ name: "Power", track_width: 0.5, diff_pair_width: 0.2, diff_pair_gap: 0.15 }],
+      netclass_patterns: [{ pattern: "/power/*", netclass: "Power" }],
+    },
+  });
+  expect((await projectPairs(project.dir, copperBoard(text)))[0]?.source).toBe(
+    "identified by name",
+  );
+});
+for (const explicitPair of [false, true])
+  test(`fresh review: explicit width precedence; declared pair=${explicitPair}`, async () => {
+    const text = '(kicad_pcb (net "USB_DP") (net "USB_DN"))';
+    const project = await fixture(`review-global-width-${explicitPair}`, text, {
+        net_settings: {
+          classes: [{ name: "USB", diff_pair_width: 0.2, diff_pair_gap: 0.15 }],
+          netclass_patterns: [{ pattern: "USB_D*", netclass: "USB" }],
+        },
+      }),
+      base = mockServices([project]);
+    let options: any;
+    const services = mockServices([project], {
+      design: {
+        ...base.design,
+        query: async (dir, select) => (select === "unrouted" ? [] : base.design.query(dir, select)),
+        route: async (_dir, opts) => {
+          options = opts;
+          return summary();
+        },
+      },
+    });
+    await invoke(project, services, {
+      rules: {
+        widthMm: 0.4,
+        ...(explicitPair ? { pairs: [{ p: "USB_DP", n: "USB_DN", widthMm: 0.25 }] } : {}),
+      },
+    });
+    expect(options.settings.perNet.map((p: any) => p.widthMm)).toEqual([
+      explicitPair ? 0.25 : 0.4,
+      explicitPair ? 0.25 : 0.4,
+    ]);
+    expect(options.settings.differentialPairs[0].widthMm).toBe(explicitPair ? 0.25 : 0.4);
+  });
+test("fresh review: native Default selector sees implicit class membership", async () => {
+  const project = await fixture("review-native-default");
+  await writeFile(
+    join(project.dir, "board.kicad_dru"),
+    `(version 1) (rule "Default pairs" (condition "A.NetClass == 'Default'") (constraint diff_pair_gap (min 0.2mm)))`,
+  );
+  expect((await projectPairs(project.dir, copperBoard(pcb())))[0]?.source).toBe(
+    "native diff-pair rule",
+  );
+});
+test("fresh review: entirely removed copper still supplies a narrowing baseline", () => {
+  const original = copperBoard(`(kicad_pcb (net "GND") ${seg("GND", 1, 0.3)})`);
+  const empty = copperBoard('(kicad_pcb (net "GND"))');
+  const after = copperBoard(`(kicad_pcb (net "GND") ${seg("GND", 1, 0.2)})`);
+  const comparison = compareQuality(
+    quality(empty, ["GND"], [], netFacts(original)),
+    quality(after, ["GND"]),
+    { before: 1, after: 0 },
+    0,
+  );
+  expect(comparison.warnings.map((w) => w.kind)).toContain("narrowing");
 });

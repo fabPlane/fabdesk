@@ -316,17 +316,17 @@ export function compareQuality(
   const reference = new Map(before.reference.map((n) => [n.net, n]));
   for (const net of after.nets) {
     const old = beforeNets.get(net.net);
+    const baselineWidth =
+      Math.max(old?.minWidthMm ?? 0, reference.get(net.net)?.minWidthMm ?? 0) || null;
     const narrowed =
-      old?.minWidthMm != null &&
-      net.minWidthMm != null &&
-      net.minWidthMm < old.minWidthMm - 0.000001;
+      baselineWidth != null && net.minWidthMm != null && net.minWidthMm < baselineWidth - 0.000001;
     lines.push(
-      `${net.net}: minimum width ${old?.minWidthMm ?? "none"} → ${net.minWidthMm ?? "none"} mm${narrowed ? "; WARNING narrowing" : ""}.`,
+      `${net.net}: minimum width ${baselineWidth ?? "none"} → ${net.minWidthMm ?? "none"} mm${narrowed ? "; WARNING narrowing" : ""}.`,
     );
     if (narrowed)
       warnings.push({
         kind: "narrowing",
-        text: `${net.net}: existing minimum width ${old!.minWidthMm} → ${net.minWidthMm} mm`,
+        text: `${net.net}: existing minimum width ${baselineWidth} → ${net.minWidthMm} mm`,
       });
   }
   for (const pair of after.pairs) {
@@ -362,6 +362,8 @@ function pairClassName(name: string, pair: PairDefinition) {
   if (/(?:^|[^a-z])(?:diff(?:erential)?|pairs?)(?:$|[^a-z])/i.test(name)) return true;
   const key = name.toLowerCase().replace(/[^a-z0-9]/g, "");
   const stem = pair.p
+    .split("/")
+    .at(-1)!
     .replace(/(?:_P|\+|P)$/, "")
     .toLowerCase()
     .replace(/[^a-z0-9]/g, "");
@@ -406,8 +408,16 @@ export async function projectPairs(
     for (const p of settings?.netclass_patterns ?? []) {
       if (netPatternMatches(p.pattern, net)) assignments.push(p.netclass);
       // A broad assignment (*) is not a pair signal. Require a literal from the pair stem.
-      const literal = p.pattern.replace(/[*?]/g, "").replace(/[^a-z0-9]/gi, "");
-      const stem = pair.p.replace(/(?:_P|\+|P)$/, "").replace(/[^a-z0-9]/gi, "");
+      const literal = p.pattern
+        .split("/")
+        .at(-1)!
+        .replace(/[*?]/g, "")
+        .replace(/[^a-z0-9]/gi, "");
+      const stem = pair.p
+        .split("/")
+        .at(-1)!
+        .replace(/(?:_P|\+|P)$/, "")
+        .replace(/[^a-z0-9]/gi, "");
       if (
         literal &&
         stem.includes(literal) &&
@@ -443,13 +453,12 @@ export async function projectPairs(
       if (selector[1] === "NetName")
         return [pair.p, pair.n].every((net) => netPatternMatches(selector[2]!, net));
       return [pair.p, pair.n].every((net) => {
-        const assignment = settings?.netclass_assignments?.[net];
-        return (
-          [assignment].flat().includes(selector[2]) ||
-          (settings?.netclass_patterns ?? []).some(
-            (p: any) => p.netclass === selector[2] && netPatternMatches(p.pattern, net),
-          )
-        );
+        const exact = settings?.netclass_assignments?.[net];
+        const assignments: string[] = exact ? [exact].flat() : [];
+        for (const p of settings?.netclass_patterns ?? [])
+          if (netPatternMatches(p.pattern, net)) assignments.push(p.netclass);
+        if (!assignments.length) assignments.push("Default");
+        return assignments.includes(selector[2]!);
       });
     });
     return {

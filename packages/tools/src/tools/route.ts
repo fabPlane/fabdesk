@@ -666,10 +666,15 @@ async function executeRoute(
         perNet.set(n.net, { ...own, net: n.net, widthMm: Math.max(floor, requested) });
       }
     }
+    const requestedPairWidth = (pair: PairDefinition) =>
+      args.rules?.pairs?.find((p) => p.p === pair.p && p.n === pair.n)?.widthMm ??
+      args.rules?.widthMm ??
+      pair.widthMm ??
+      0;
     for (const pair of detectedPairs) {
       if (pair.source === "identified by name") continue;
       const width = Math.max(
-        pair.widthMm ?? 0,
+        requestedPairWidth(pair),
         perNet.get(pair.p)?.widthMm ?? 0,
         perNet.get(pair.n)?.widthMm ?? 0,
       );
@@ -682,7 +687,7 @@ async function executeRoute(
       ...(pair.widthMm !== undefined
         ? {
             widthMm: Math.max(
-              pair.widthMm,
+              requestedPairWidth(pair),
               perNet.get(pair.p)?.widthMm ?? 0,
               perNet.get(pair.n)?.widthMm ?? 0,
             ),
