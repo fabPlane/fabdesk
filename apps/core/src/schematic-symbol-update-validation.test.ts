@@ -39,3 +39,20 @@ test("custom fields are editable; shared metadata cannot bypass its validation v
   for (const name of ["Reference", "Value", "Footprint"])
     expect(() => assertEditableSymbolField(name)).toThrow("use newReference, value or footprint");
 });
+
+test("cross-sheet metadata mismatch explains the limit and offers a possible recovery", () => {
+  const units = [
+    { reference: "U7", value: "new", footprint: "Package:New" },
+    { reference: "U7", value: "old", footprint: "Package:New" },
+  ];
+  try {
+    assertConsistentSymbolMetadata(units, ["U7"], new Set(["U7"]));
+    throw Error("expected rejection");
+  } catch (error) {
+    expect((error as Error).message).toContain("different sheets");
+    expect((error as Error).message).toContain("only one sheet per batch");
+    expect((error as Error).message).toContain("Keep shared metadata unchanged");
+    expect((error as Error).message).toContain("import the saved project into a fresh project");
+    expect((error as Error).message).not.toContain("include every affected unit in the batch");
+  }
+});

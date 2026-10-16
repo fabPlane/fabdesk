@@ -8,8 +8,11 @@ import {
   PadSchema,
   PadStackShape,
   packAny,
+  SheetInstanceSchema,
+  SheetPathSchema,
+  SchematicSymbolInstanceSchema,
 } from "@fp-pcb/proto";
-import { Footprint, createBoardGraphic, createTrack } from "@fp-pcb/client";
+import { Footprint, SchematicSymbol, createBoardGraphic, createTrack } from "@fp-pcb/client";
 import {
   createFpPcbDesign,
   evaluatePartCompatibility,
@@ -17,6 +20,70 @@ import {
 } from "../src/fp-pcb-design";
 import type { FpPcbBridgeClient } from "../src/fp-pcb-bridge";
 import { FpPcbSessions, NativeRevisionConflict, type ProjectSession } from "../src/fp-pcb-session";
+
+for (const crossSheet of [false, true])
+  test(`schematic unit 1 matches a missing unit field; cross-sheet metadata=${crossSheet}`, async () => {
+    const instance = (name: string) =>
+      create(SheetInstanceSchema, {
+        name,
+        filename: `${name}.kicad_sch`,
+        path: create(SheetPathSchema, { path: [{ value: name }], pathHumanReadable: `/${name}` }),
+      });
+    const rootEntry = instance("root"),
+      childEntry = instance("child");
+    const symbol = new SchematicSymbol(
+      create(SchematicSymbolInstanceSchema, {
+        id: { value: "unit-one" },
+        referenceField: { text: { text: "U1" } },
+        valueField: { text: { text: "old" } },
+      }),
+    );
+    const other = new SchematicSymbol(
+      create(SchematicSymbolInstanceSchema, {
+        id: { value: "unit-two" },
+        unit: { unit: 2 },
+        referenceField: { text: { text: "U1" } },
+        valueField: { text: { text: "old" } },
+      }),
+    );
+    let committed = false;
+    const root = {
+      getAllItems: async () => [symbol],
+      commit: async (_message: string, fn: (tx: any) => Promise<void>) => {
+        await fn({
+          update: async (items: SchematicSymbol[]) => {
+            expect(items).toEqual([symbol]);
+          },
+        });
+        committed = true;
+        return { created: [], updated: [symbol], deleted: [] };
+      },
+    };
+    const schematic = {
+      hierarchy: async () => (crossSheet ? [rootEntry, childEntry] : [rootEntry]),
+      sheet: (path: any) =>
+        path.path[0].value === "root" ? root : { getSymbols: async () => [other] },
+      revision: async () => 1n,
+    };
+    const sessions = {
+      ensureProject: async () => ({ schematic, session: {} }),
+    } as unknown as FpPcbSessions;
+    const design = createFpPcbDesign({ bridge: () => ({}) as never, sessions });
+    expect(symbol.proto.unit).toBeUndefined();
+    const edit = design.schematicEdit("/unit-default", {
+      symbolUpdates: [{ reference: "U1", unit: 1, value: "new" }],
+      save: false,
+    });
+    if (crossSheet) {
+      await expect(edit).rejects.toThrow("different sheets");
+      expect(committed).toBe(false);
+    } else {
+      const result = await edit;
+      expect(result.updated.symbols).toBe(1);
+      expect(symbol.value).toBe("new");
+      expect(committed).toBe(true);
+    }
+  });
 
 test("recovery and an entire native operation cannot run over each other", async () => {
   let finish!: () => void, entered!: () => void;
