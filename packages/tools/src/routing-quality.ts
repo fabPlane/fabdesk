@@ -359,13 +359,17 @@ export function netPatternMatches(pattern: string, net: string) {
   return new RegExp(`^${escaped}$`).test(net);
 }
 function pairClassName(name: string, pair: PairDefinition) {
-  if (/(?:diff(?:erential)?|pair)/i.test(name)) return true;
+  if (/(?:^|[^a-z])(?:diff(?:erential)?|pairs?)(?:$|[^a-z])/i.test(name)) return true;
   const key = name.toLowerCase().replace(/[^a-z0-9]/g, "");
   const stem = pair.p
     .replace(/(?:_P|\+|P)$/, "")
     .toLowerCase()
     .replace(/[^a-z0-9]/g, "");
-  return key.length >= 2 && stem.includes(key);
+  return (
+    !["default", "power", "signal", "signals"].includes(key) &&
+    key.length >= 2 &&
+    stem.includes(key)
+  );
 }
 /** Only explicit pair intent supplies dimensions; fields saved on every KiCad class do not. */
 export async function projectPairs(
@@ -388,7 +392,10 @@ export async function projectPairs(
   }> = settings?.classes ?? [];
   let rules: Node[] = [];
   try {
-    rules = sexpressions(await readFile(join(dir, "board.kicad_dru"), "utf8"));
+    const text = await readFile(join(dir, "board.kicad_dru"), "utf8");
+    rules = sexpressions(
+      text.replace(/"(?:[^"\\]|\\.)*"|#[^\n]*/g, (token) => (token.startsWith("#") ? "" : token)),
+    );
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
   }

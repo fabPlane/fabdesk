@@ -285,3 +285,40 @@ test("#2 explicit KiCad pair rules mark the measured pair as constrained", async
     "native diff-pair rule",
   );
 });
+
+test("pair intent excludes generic Power even when the net stem is POWER", async () => {
+  const text = pcb(1, 1, "POWER+", "POWER-");
+  const project = await fixture("review-generic-power", text, {
+    net_settings: {
+      classes: [{ name: "Power", diff_pair_width: 0.2, diff_pair_gap: 0.15 }],
+      netclass_assignments: { "POWER+": "Power", "POWER-": "Power" },
+    },
+  });
+  expect((await projectPairs(project.dir, copperBoard(text)))[0]?.source).toBe(
+    "identified by name",
+  );
+});
+
+test("ordinary Repair class is not an explicit pair class", async () => {
+  const project = await fixture("review-repair-class", pcb(), {
+    net_settings: {
+      classes: [{ name: "Repair", diff_pair_width: 0.2 }],
+      netclass_assignments: { D_P: "Repair", D_N: "Repair" },
+    },
+  });
+  expect((await projectPairs(project.dir, copperBoard(pcb())))[0]?.source).toBe(
+    "identified by name",
+  );
+});
+
+test("native rule comments may contain parentheses and quoted net names may contain #", async () => {
+  const text = pcb(1, 1, "USB#1_DP", "USB#1_DN");
+  const project = await fixture("review-native-rule-comments", text);
+  await writeFile(
+    join(project.dir, "board.kicad_dru"),
+    `(version 1)\n# a human comment (intentional unmatched parenthesis\n(rule "USB #1" (condition "A.NetName == 'USB#1_D*'") (constraint diff_pair_gap (min 0.15mm)))`,
+  );
+  expect((await projectPairs(project.dir, copperBoard(text)))[0]?.source).toBe(
+    "native diff-pair rule",
+  );
+});
