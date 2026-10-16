@@ -110,6 +110,7 @@ export function mockServices(
       },
     },
     design: {
+      withSavedFilesRecovery: async (_dir, replace) => replace(),
       build: async ({ projectDir, progress }) => {
         const src = await Bun.file(join(projectDir, "circuit.netlist.json")).text();
         const bad = src.includes("BROKEN");

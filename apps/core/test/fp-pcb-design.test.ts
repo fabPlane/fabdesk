@@ -16,13 +16,53 @@ import {
   persistDefaultNetClass,
 } from "../src/fp-pcb-design";
 import type { FpPcbBridgeClient } from "../src/fp-pcb-bridge";
-import { FpPcbSessions, type ProjectSession } from "../src/fp-pcb-session";
+import { FpPcbSessions, NativeRevisionConflict, type ProjectSession } from "../src/fp-pcb-session";
+
+test("recovery and an entire native operation cannot run over each other", async () => {
+  let finish!: () => void, entered!: () => void;
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const blocked = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  let recovered = 0;
+  const sessions = {
+    release: async () => {
+      entered();
+      await blocked;
+    },
+    withSavedFilesRecovery: async (_dir: string, replace: () => Promise<unknown>) => {
+      recovered++;
+      return replace();
+    },
+  } as unknown as FpPcbSessions;
+  const design = createFpPcbDesign({ bridge: () => ({}) as FpPcbBridgeClient, sessions });
+  const operation = design.release("/project");
+  await started;
+  await expect(design.withSavedFilesRecovery!("/project", async () => {})).rejects.toThrow(
+    "native operation or routing is active",
+  );
+  expect(recovered).toBe(0);
+  finish();
+  await operation;
+  await design.withSavedFilesRecovery!("/project", async () => {
+    await expect(design.placeFootprints("/project", [])).rejects.toThrow("recovery is active");
+    await expect(design.withSavedFilesRecovery!("/project", async () => {})).rejects.toThrow(
+      "native operation or routing is active",
+    );
+  });
+  expect(recovered).toBe(1);
+});
 
 describe("FabPCB router health", () => {
   test.each([
     [{ capacityRouter: { name: "fab-router", ok: true } }, { ok: true }],
     [{ jsAutorouter: { ok: true } }, { ok: true }],
-    [{ capacityRouter: { ok: false, reason: "router missing" }, jsAutorouter: { ok: true } }, { ok: false, reason: "router missing" }],
+    [
+      { capacityRouter: { ok: false, reason: "router missing" }, jsAutorouter: { ok: true } },
+      { ok: false, reason: "router missing" },
+    ],
   ])("preserves current health and falls back to legacy health: %j", async (fields, expected) => {
     const bridge = {
       url: "http://127.0.0.1:4020",
@@ -692,6 +732,7 @@ describe("embedded footprint placement recovery", () => {
   function setup(
     options: {
       failSave?: boolean;
+      staleSave?: boolean;
       failRestore?: boolean;
       unsavedSchematic?: boolean;
       unsavedPcb?: boolean;
@@ -842,6 +883,10 @@ describe("embedded footprint placement recovery", () => {
       },
       save: async () => {
         calls.push("save");
+        if (options.staleSave) {
+          files["/p/board.kicad_pcb"] = "external checkpoint";
+          throw new NativeRevisionConflict("refusing stale save");
+        }
         files["/p/board.kicad_pcb"] = `angle ${live.orientation}`;
         if (failSave) {
           failSave = false;
@@ -908,6 +953,16 @@ describe("embedded footprint placement recovery", () => {
     expect(state.calls).toEqual([]);
     expect(state.live().orientation).toBe(-90);
   });
+  test("stale placement save preserves external checkpoint and unsaved live edit", async () => {
+    const state = setup({ staleSave: true });
+    await expect(
+      state.design.placeFootprints("/p", [{ reference: "J13", rotation: 90 }]),
+    ).rejects.toThrow("refusing stale save");
+    expect(state.files["/p/board.kicad_pcb"]).toBe("external checkpoint");
+    expect(state.live().orientation).toBe(90);
+    expect(state.calls).toEqual(["commit", "save"]);
+  });
+
   test("save failure restores both live and saved state, and retry performs the edit", async () => {
     const state = setup({ failSave: true });
     await expect(

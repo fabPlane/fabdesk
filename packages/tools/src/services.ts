@@ -517,6 +517,8 @@ export type PcbGeometrySnapshot = Record<string, unknown> & {
 };
 
 export interface DesignService {
+  /** Refuse unsaved live state and suspend session access while captured saved files are restored. */
+  withSavedFilesRecovery?<T>(projectDir: string, replace: () => Promise<T>): Promise<T>;
   /** Compile the project's netlist into `board.kicad_pcb` through the bridge. */
   build(opts: BuildOptions): Promise<BuildResult>;
   /** Inspect the native KiCad schematic; creates the project's KiCad documents when requested by an edit. */
@@ -664,6 +666,7 @@ export interface KicadService {
       outFile: string;
       severity?: "error" | "all";
       schematicParity?: boolean;
+      refillZones?: boolean;
       signal?: AbortSignal;
     },
   ): Promise<DrcReport>;
@@ -844,7 +847,14 @@ export type RouteRunRecord = {
     router: "fab_router" | "freerouting" | "tracemaker";
     startedAt: string;
     endedAt: string | null;
-    outcome: "running" | "completed" | "failed" | "unavailable" | "skipped" | "cancelled" | "timed_out";
+    outcome:
+      | "running"
+      | "completed"
+      | "failed"
+      | "unavailable"
+      | "skipped"
+      | "cancelled"
+      | "timed_out";
     reason: string | null;
   }>;
   fallbackReason?: string | null;
@@ -862,7 +872,10 @@ export type RouteRunRecord = {
     result: string;
     candidate: string;
     diff: string;
+    drcCheck?: string;
   };
+  /** New native errors that blocked this candidate; retained for agent inspection. */
+  drcErrors?: DrcViolation[];
   request: {
     timeoutMs: number;
     deadlineAt: string;

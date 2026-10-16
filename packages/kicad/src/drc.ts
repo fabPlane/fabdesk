@@ -124,11 +124,13 @@ export async function runDrc(
     outFile: string;
     severity?: "error" | "all";
     schematicParity?: boolean;
+    refillZones?: boolean;
     signal?: AbortSignal;
   },
 ): Promise<DrcReport> {
   const args = ["pcb", "drc", "--format", "json", "--units", "mm", severityArg(opts.severity)];
   if (opts.schematicParity) args.push("--schematic-parity");
+  if (opts.refillZones) args.push("--refill-zones");
   args.push("-o", opts.outFile, opts.board);
   await runKicadCli(cli, args, { ...(opts.signal ? { signal: opts.signal } : {}) });
   const file = Bun.file(opts.outFile);

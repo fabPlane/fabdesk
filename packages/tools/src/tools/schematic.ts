@@ -1,6 +1,6 @@
 /** Native KiCad schematic-first authoring and forward annotation. */
 import { z } from "zod/v4";
-import { ToolError, defineTool } from "../registry";
+import { ToolError, defineTool, mutationInputObject } from "../registry";
 import { selectSchematic } from "./schematic-selection";
 import { compactHierarchy, inspectSavedHierarchy, ok, table, writeReport } from "./common";
 import {
@@ -8,7 +8,7 @@ import {
   kicadIpcSessionDiagnostics,
 } from "./diagnostic-evidence";
 
-const Point = z.object({
+const Point = mutationInputObject({
   x: z.number().finite().describe("Schematic X coordinate in millimetres"),
   y: z.number().finite().describe("Schematic Y coordinate in millimetres"),
 });
@@ -225,7 +225,7 @@ export const schematic_edit = defineTool({
       ),
     symbols: z
       .array(
-        z.object({
+        mutationInputObject({
           libId: z.string().min(3).describe("Exact KiCad symbol ID, such as Device:R"),
           reference: z.string().min(1).describe("Unique annotated reference, such as R1"),
           value: z.string(),
@@ -250,7 +250,7 @@ export const schematic_edit = defineTool({
       .default([]),
     symbolUpdates: z
       .array(
-        z.object({
+        mutationInputObject({
           reference: z.string().min(1),
           newReference: z.string().min(1).optional(),
           position: Point.optional(),
@@ -268,40 +268,38 @@ export const schematic_edit = defineTool({
       .default([]),
     connections: z
       .array(
-        z
-          .object({
-            name: z.string().min(1).describe("Electrical net name"),
-            nodes: z
-              .array(z.object({ reference: z.string().min(1), pin: z.string().min(1) }))
-              .min(1)
-              .describe(
-                "Symbol pin endpoints joined electrically by matching labels on short visible wire stubs",
-              ),
-            label: z.enum(["local", "global", "none"]).default("local"),
-          })
-          .refine((connection) => connection.label !== "none" || connection.nodes.length >= 2, {
-            message: "direct wire connections require at least two nodes",
-            path: ["nodes"],
-          }),
+        mutationInputObject({
+          name: z.string().min(1).describe("Electrical net name"),
+          nodes: z
+            .array(mutationInputObject({ reference: z.string().min(1), pin: z.string().min(1) }))
+            .min(1)
+            .describe(
+              "Symbol pin endpoints joined electrically by matching labels on short visible wire stubs",
+            ),
+          label: z.enum(["local", "global", "none"]).default("local"),
+        }).refine((connection) => connection.label !== "none" || connection.nodes.length >= 2, {
+          message: "direct wire connections require at least two nodes",
+          path: ["nodes"],
+        }),
       )
       .max(500)
       .default([]),
     wires: z
-      .array(z.object({ start: Point, end: Point }))
+      .array(mutationInputObject({ start: Point, end: Point }))
       .max(1000)
       .default([]),
     localLabels: z
-      .array(z.object({ text: z.string().min(1), position: Point }))
+      .array(mutationInputObject({ text: z.string().min(1), position: Point }))
       .max(500)
       .default([]),
     globalLabels: z
-      .array(z.object({ text: z.string().min(1), position: Point }))
+      .array(mutationInputObject({ text: z.string().min(1), position: Point }))
       .max(500)
       .default([]),
     junctions: z.array(Point).max(1000).default([]),
     noConnects: z.array(Point).max(1000).default([]),
     texts: z
-      .array(z.object({ text: z.string().min(1), position: Point }))
+      .array(mutationInputObject({ text: z.string().min(1), position: Point }))
       .max(200)
       .default([]),
     deleteItemIds: z.array(z.string().min(1)).max(1000).default([]),

@@ -8,6 +8,7 @@ import { PROJECT_FILES, writeAtomic, writeJson } from "../fs";
 import { DEFAULT_ROUTE_FRAME_MAX_BYTES, FrameSink } from "../frame-sink";
 import {
   ToolError,
+  NativeRevisionConflict,
   JobTimeoutError,
   defineTool,
   type ProjectHandle,
@@ -17,8 +18,17 @@ import {
 import type { RouteProgress, RouteRunRecord, RouteSummary } from "../services";
 import { ok, p, throwIfAborted } from "./common";
 import { rowPoints } from "./spatial";
-import { readCopper, copperBoard, quality, qualityText, referenceFacts, consumeReference, type PairDefinition } from "../routing-quality";
+import {
+  readCopper,
+  copperBoard,
+  quality,
+  qualityText,
+  referenceFacts,
+  consumeReference,
+  type PairDefinition,
+} from "../routing-quality";
 import { installHintFor, runTraceMaker } from "../routers";
+import { newRoutingDrcErrors } from "../routing-drc";
 
 /** Default and upper bound for how long one route_run request waits for its run to finish. */
 export const ROUTE_RUN_DEFAULT_WAIT_MS = 20_000;
@@ -39,7 +49,9 @@ export const RouteRunArgs = {
     .min(1000)
     .max(30 * 60_000)
     .default(ROUTE_RUN_DEFAULT_TIMEOUT_MS)
-    .describe("Per-router computation budget in milliseconds; default 10 minutes. Queue time and inline wait are separate. A deadline does not trigger fallback."),
+    .describe(
+      "Per-router computation budget in milliseconds; default 10 minutes. Queue time and inline wait are separate. A deadline does not trigger fallback.",
+    ),
   onlyConnections: z
     .array(z.string())
     .optional()
@@ -65,8 +77,35 @@ export const RouteRunArgs = {
       viaDiameterMm: z.number().positive().optional(),
       viaDrillMm: z.number().positive().optional(),
       refillZones: z.boolean().optional(),
-      perNet: z.array(z.object({ net: z.string().min(1), widthMm: z.number().positive().optional(), viaDiameterMm: z.number().positive().optional(), viaDrillMm: z.number().positive().optional() }).strict()).optional().describe("Per-net width and via overrides; override global fields and net classes"),
-      pairs: z.array(z.object({ p: z.string().min(1), n: z.string().min(1), widthMm: z.number().positive().optional(), gapMm: z.number().nonnegative().optional(), skewToleranceMm: z.number().nonnegative().optional() }).strict()).optional().describe("Declared pairs for measurement; current routers route members independently. Pair width applies to both members; conflicting per-net widths are rejected"),
+      perNet: z
+        .array(
+          z
+            .object({
+              net: z.string().min(1),
+              widthMm: z.number().positive().optional(),
+              viaDiameterMm: z.number().positive().optional(),
+              viaDrillMm: z.number().positive().optional(),
+            })
+            .strict(),
+        )
+        .optional()
+        .describe("Per-net width and via overrides; override global fields and net classes"),
+      pairs: z
+        .array(
+          z
+            .object({
+              p: z.string().min(1),
+              n: z.string().min(1),
+              widthMm: z.number().positive().optional(),
+              gapMm: z.number().nonnegative().optional(),
+              skewToleranceMm: z.number().nonnegative().optional(),
+            })
+            .strict(),
+        )
+        .optional()
+        .describe(
+          "Declared pairs for measurement; current routers route members independently. Pair width applies to both members; conflicting per-net widths are rejected",
+        ),
     })
     .optional()
     .describe(
@@ -212,7 +251,14 @@ type RouteArgs = {
     viaDiameterMm?: number | undefined;
     viaDrillMm?: number | undefined;
     refillZones?: boolean | undefined;
-    perNet?: Array<{ net: string; widthMm?: number | undefined; viaDiameterMm?: number | undefined; viaDrillMm?: number | undefined }> | undefined;
+    perNet?:
+      | Array<{
+          net: string;
+          widthMm?: number | undefined;
+          viaDiameterMm?: number | undefined;
+          viaDrillMm?: number | undefined;
+        }>
+      | undefined;
     pairs?: PairDefinition[] | undefined;
   };
   settings?: Record<string, unknown>;
@@ -342,6 +388,8 @@ async function applyCandidate(
     throw new ToolError(`route ${rec.id} belongs to another project`, "precondition");
   if (!rec.candidate.available || !rec.candidate.reopenable)
     throw new ToolError(`route ${rec.id} has no validated candidate`, "precondition");
+  if (rec.application.state === "rejected")
+    throw new ToolError(rec.application.reason ?? "route candidate was rejected", "precondition");
   const boardPath = p(project, PROJECT_FILES.boardPcb);
   const before = await readFile(boardPath);
   const current = sha256(before);
@@ -369,11 +417,18 @@ async function applyCandidate(
   };
   await persistProgress(ctx, next, p(project, rec.artifacts.runDir));
   try {
-    await ctx.services.design.release(project.dir).catch(() => undefined);
-    const check = sha256(await readFile(boardPath));
-    if (check !== current)
-      throw new ToolError(`PCB changed before atomic replace: ${check}`, "precondition");
-    await writeAtomic(boardPath, candidate);
+    const replace = async () => {
+      const check = sha256(await readFile(boardPath));
+      if (check !== current)
+        throw new NativeRevisionConflict(`PCB changed before atomic replace: ${check}`);
+      await writeAtomic(boardPath, candidate);
+    };
+    if (ctx.services.design.withSavedFilesRecovery)
+      await ctx.services.design.withSavedFilesRecovery(project.dir, replace);
+    else {
+      await ctx.services.design.release(project.dir);
+      await replace();
+    }
     await ctx.services.design.release(project.dir).catch(() => undefined);
     await ctx.services.design.query(project.dir, "nets");
     const resulting = sha256(await readFile(boardPath));
@@ -382,8 +437,15 @@ async function applyCandidate(
         `reopened board hash ${resulting} differs from candidate ${rec.candidate.sha256}`,
       );
     if (rec.result?.quality) {
-      const facts = JSON.parse(await readFile(p(project, rec.result.quality.detailPath), "utf8")) as { nets: Array<{net:string}> };
-      await consumeReference(project.dir, current, resulting, facts.nets.map(n => n.net).filter(net => !rec.result!.open.includes(net)));
+      const facts = JSON.parse(
+        await readFile(p(project, rec.result.quality.detailPath), "utf8"),
+      ) as { nets: Array<{ net: string }> };
+      await consumeReference(
+        project.dir,
+        current,
+        resulting,
+        facts.nets.map((n) => n.net).filter((net) => !rec.result!.open.includes(net)),
+      );
     }
     next = {
       ...next,
@@ -405,6 +467,16 @@ async function applyCandidate(
         .boardStats(cli, { board: boardPath, scratchFile: statsPath })
         .catch(() => undefined);
   } catch (error) {
+    // Refusal is not a failed replacement: preserve live work and any external saved revision.
+    // In particular, do not run the generic release/rollback path after the recovery guard refuses.
+    if (error instanceof NativeRevisionConflict) {
+      next = {
+        ...next,
+        application: { ...next.application, state: "failed", reason: error.message },
+      };
+      await persistProgress(ctx, next, p(project, rec.artifacts.runDir));
+      throw error;
+    }
     await ctx.services.design.release(project.dir).catch(() => undefined);
     await writeAtomic(boardPath, before);
     await ctx.services.design.release(project.dir).catch(() => undefined);
@@ -488,6 +560,21 @@ async function executeRoute(
     throwIfAborted(signal);
     const beforeInventory = await boardInventory(ctx, snapshotDir);
     const startingCopper = await readCopper(snapshotDir);
+    const drcCli = rec.router === "freerouting" ? await ctx.services.kicad.resolveCli() : null;
+    if (rec.router === "freerouting" && !drcCli)
+      throw new ToolError(
+        "Freerouting requires native DRC before candidate application; KiCad CLI is unavailable",
+        "precondition",
+      );
+    const beforeDrc = drcCli
+      ? await ctx.services.kicad.runDrc(drcCli, {
+          board: join(snapshotDir, PROJECT_FILES.boardPcb),
+          outFile: join(runDir, "routing-drc-before.json"),
+          severity: "all",
+          refillZones: true,
+          signal,
+        })
+      : null;
     const endpoints = await ctx.services.design.query(snapshotDir, "unrouted");
     const requestedNets = [
       ...new Set([
@@ -716,42 +803,77 @@ async function executeRoute(
       ),
     ].slice(0, 20);
     const candidateBoard = await readCopper(snapshotDir);
-    const touchedNets = [...new Set([...endpoints.map(row => String(row["net"] ?? "")), ...candidateBoard.copper.filter(c => !startingCopper.copper.some(b => b.id === c.id)).map(c => c.net)])].filter(Boolean);
-    const copperById = new Map(candidateBoard.copper.map(item => [item.id, item]));
-    const namedGeometry = geometry.map(shape => ({
+    const touchedNets = [
+      ...new Set([
+        ...endpoints.map((row) => String(row["net"] ?? "")),
+        ...candidateBoard.copper
+          .filter((c) => !startingCopper.copper.some((b) => b.id === c.id))
+          .map((c) => c.net),
+      ]),
+    ].filter(Boolean);
+    const copperById = new Map(candidateBoard.copper.map((item) => [item.id, item]));
+    const namedGeometry = geometry.map((shape) => ({
       ...shape,
       netName: copperById.get(shape.id)?.net ?? shape.netName ?? "",
     }));
     const outsideScopeChanges: NonNullable<RouteResult["outsideScopeChanges"]> = [];
     if (requestedNets.length) {
       const scope = new Set(requestedNets);
-      const counts = new Map<string, { net: string; traces: number; vias: number; added:{traces:number;vias:number}; removed:{traces:number;vias:number} }>();
+      const counts = new Map<
+        string,
+        {
+          net: string;
+          traces: number;
+          vias: number;
+          added: { traces: number; vias: number };
+          removed: { traces: number; vias: number };
+        }
+      >();
       const count = (net: string, via: boolean, change: "added" | "removed") => {
         if (!net || scope.has(net)) return;
-        const row = counts.get(net) ?? {net,traces:0,vias:0,added:{traces:0,vias:0},removed:{traces:0,vias:0}};
+        const row = counts.get(net) ?? {
+          net,
+          traces: 0,
+          vias: 0,
+          added: { traces: 0, vias: 0 },
+          removed: { traces: 0, vias: 0 },
+        };
         const key = via ? "vias" : "traces";
         row[change][key]++;
         row[key]++;
-        counts.set(net,row);
+        counts.set(net, row);
       };
       // Geometry includes newly created or claimed items; union with the saved-board delta,
       // because a solver may omit new copper from its summary. Count each UUID once.
-      const additions = new Map(namedGeometry.map(shape => [shape.id,{net:shape.netName,via:shape.kind === "via"}]));
-      const startIds = new Set(startingCopper.copper.map(item => item.id));
-      const candidateIds = new Set(candidateBoard.copper.map(item => item.id));
-      for (const item of candidateBoard.copper) if (!startIds.has(item.id)) additions.set(item.id,{net:item.net,via:item.diameter !== undefined});
-      for (const item of additions.values()) count(item.net,item.via,"added");
-      for (const item of startingCopper.copper) if (!candidateIds.has(item.id)) count(item.net,item.diameter !== undefined,"removed");
-      outsideScopeChanges.push(...[...counts.values()].sort((a,b) => a.net.localeCompare(b.net)));
+      const additions = new Map(
+        namedGeometry.map((shape) => [shape.id, { net: shape.netName, via: shape.kind === "via" }]),
+      );
+      const startIds = new Set(startingCopper.copper.map((item) => item.id));
+      const candidateIds = new Set(candidateBoard.copper.map((item) => item.id));
+      for (const item of candidateBoard.copper)
+        if (!startIds.has(item.id))
+          additions.set(item.id, { net: item.net, via: item.diameter !== undefined });
+      for (const item of additions.values()) count(item.net, item.via, "added");
+      for (const item of startingCopper.copper)
+        if (!candidateIds.has(item.id)) count(item.net, item.diameter !== undefined, "removed");
+      outsideScopeChanges.push(...[...counts.values()].sort((a, b) => a.net.localeCompare(b.net)));
     }
     const selectedNets = requestedNets.length ? requestedNets : touchedNets;
-    const measuredQuality = quality(candidateBoard, selectedNets, args.rules?.pairs, await referenceFacts(project.dir, rec.startingPcbRevision));
-    if(summary.pairRouting)measuredQuality.pairRouting=summary.pairRouting;
+    const measuredQuality = quality(
+      candidateBoard,
+      selectedNets,
+      args.rules?.pairs,
+      await referenceFacts(project.dir, rec.startingPcbRevision),
+    );
+    if (summary.pairRouting) measuredQuality.pairRouting = summary.pairRouting;
     await writeJson(join(runDir, "quality.json"), measuredQuality);
     const fullResult: RouteResult = {
       ...(summary.diagnostics ? { diagnostics: summary.diagnostics } : {}),
       ...(summary.endpointCollisions ? { endpointCollisions: summary.endpointCollisions } : {}),
-      quality: { text: qualityText(measuredQuality), detailPath: join(rec.artifacts.runDir, "quality.json") },
+      quality: {
+        text: qualityText(measuredQuality),
+        detailPath: join(rec.artifacts.runDir, "quality.json"),
+      },
       runId: rec.id,
       router: rec.router as "fab_router" | "freerouting" | "tracemaker",
       complete: [],
@@ -765,7 +887,9 @@ async function executeRoute(
       nextActions:
         resultState === "complete"
           ? []
-          : summary.diagnostics ? ["try Freerouting for these nets", "check remaining native opens"] : ["inspect route candidate", "inspect remaining connectivity"],
+          : summary.diagnostics
+            ? ["try Freerouting for these nets", "check remaining native opens"]
+            : ["inspect route candidate", "inspect remaining connectivity"],
       stats: {
         vias: summary.vias,
         segments: summary.tracks,
@@ -826,6 +950,35 @@ async function executeRoute(
       diff,
     });
     const forbidden = forbiddenDiff(diff, args.rules?.refillZones === true);
+    if (drcCli && beforeDrc) {
+      const afterDrc = await ctx.services.kicad.runDrc(drcCli, {
+        board: join(snapshotDir, PROJECT_FILES.boardPcb),
+        outFile: join(runDir, "routing-drc-after.json"),
+        severity: "all",
+        refillZones: true,
+        signal,
+      });
+      const newErrors = newRoutingDrcErrors(beforeDrc, afterDrc);
+      await writeJson(join(runDir, "routing-drc-check.json"), {
+        before: beforeDrc.counts,
+        after: afterDrc.counts,
+        newErrors,
+        boundary:
+          "native DRC with zones refilled in memory for both snapshots; opens and warnings retained separately",
+      });
+      rec = {
+        ...rec,
+        drcErrors: newErrors,
+        artifacts: {
+          ...rec.artifacts,
+          drcCheck: join(rec.artifacts.runDir, "routing-drc-check.json"),
+        },
+      };
+      if (newErrors.length)
+        forbidden.push(
+          `native DRC: ${newErrors.length} new error(s): ${[...new Set(newErrors.map((v) => v.rule))].join(", ")}`,
+        );
+    }
     const usableCandidate = resultState === "complete" || summary.routed > 0 || geometry.length > 0;
     const endedAt = iso();
     const compact = {
@@ -960,8 +1113,14 @@ async function executeRoute(
 
 export function outsideScopeText(changes: RouteResult["outsideScopeChanges"]): string {
   if (!changes?.length) return "";
-  const nets = changes.map(change => {
-    const describe = (counts: {traces:number;vias:number}) => [counts.traces ? `${counts.traces} trace${counts.traces === 1 ? "" : "s"}` : "",counts.vias ? `${counts.vias} via${counts.vias === 1 ? "" : "s"}` : ""].filter(Boolean).join(", ") || "0 items";
+  const nets = changes.map((change) => {
+    const describe = (counts: { traces: number; vias: number }) =>
+      [
+        counts.traces ? `${counts.traces} trace${counts.traces === 1 ? "" : "s"}` : "",
+        counts.vias ? `${counts.vias} via${counts.vias === 1 ? "" : "s"}` : "",
+      ]
+        .filter(Boolean)
+        .join(", ") || "0 items";
     return `${change.net} (${change.added && change.removed ? `added ${describe(change.added)}; removed ${describe(change.removed)}` : describe(change)})`;
   });
   return `\nAlso changed outside scope: ${nets.join("; ")}.`;
@@ -1061,8 +1220,7 @@ export async function runRoute(args: RouteArgs, ctx: ToolContext): Promise<ToolO
     automatic && ((args.onlyConnections?.length ?? 0) > 0 || (args.targets?.length ?? 0) > 0);
   if (selective) {
     router = "fab_router";
-    fallbackReason =
-      "Automatic selective reroutes use fab_router";
+    fallbackReason = "Automatic selective reroutes use fab_router";
   }
   if (router === "freerouting") {
     const health = await ctx.services.design.status();
@@ -1079,16 +1237,37 @@ export async function runRoute(args: RouteArgs, ctx: ToolContext): Promise<ToolO
   const projectBytes = await readFile(p(project, PROJECT_FILES.boardPro)).catch(
     () => new Uint8Array(),
   );
+  const customRules = await readFile(p(project, "board.kicad_dru")).catch(
+    (error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    },
+  );
   const validationBoard = copperBoard(boardBytes.toString());
-  const bad = (args.rules?.perNet ?? []).map(r => r.net).concat((args.rules?.pairs ?? []).flatMap(p => [p.p,p.n])).filter(n => !validationBoard.nets.includes(n));
-  if (bad.length) throw new ToolError(`unknown routing rule nets: ${[...new Set(bad)].join(", ")}`, "precondition");
-  if (new Set((args.rules?.perNet ?? []).map(r => r.net)).size !== (args.rules?.perNet?.length ?? 0)) throw new ToolError("duplicate per-net routing rules", "precondition");
+  const bad = (args.rules?.perNet ?? [])
+    .map((r) => r.net)
+    .concat((args.rules?.pairs ?? []).flatMap((p) => [p.p, p.n]))
+    .filter((n) => !validationBoard.nets.includes(n));
+  if (bad.length)
+    throw new ToolError(
+      `unknown routing rule nets: ${[...new Set(bad)].join(", ")}`,
+      "precondition",
+    );
+  if (
+    new Set((args.rules?.perNet ?? []).map((r) => r.net)).size !== (args.rules?.perNet?.length ?? 0)
+  )
+    throw new ToolError("duplicate per-net routing rules", "precondition");
   const pairMembers = new Set<string>();
   for (const pair of args.rules?.pairs ?? []) {
-    if (pair.p === pair.n || pairMembers.has(pair.p) || pairMembers.has(pair.n)) throw new ToolError(`invalid or overlapping pair ${pair.p}/${pair.n}`, "precondition");
-    pairMembers.add(pair.p); pairMembers.add(pair.n);
-    for (const member of [pair.p,pair.n]) { const width = args.rules?.perNet?.find(r => r.net === member)?.widthMm;
-      if (width !== undefined && pair.widthMm !== undefined && width !== pair.widthMm) throw new ToolError(`conflicting pair width for ${member}`, "precondition"); }
+    if (pair.p === pair.n || pairMembers.has(pair.p) || pairMembers.has(pair.n))
+      throw new ToolError(`invalid or overlapping pair ${pair.p}/${pair.n}`, "precondition");
+    pairMembers.add(pair.p);
+    pairMembers.add(pair.n);
+    for (const member of [pair.p, pair.n]) {
+      const width = args.rules?.perNet?.find((r) => r.net === member)?.widthMm;
+      if (width !== undefined && pair.widthMm !== undefined && width !== pair.widthMm)
+        throw new ToolError(`conflicting pair width for ${member}`, "precondition");
+    }
   }
   const startingPcbRevision = sha256(boardBytes);
   const runId = newRunId();
@@ -1101,6 +1280,12 @@ export async function runRoute(args: RouteArgs, ctx: ToolContext): Promise<ToolO
     writeAtomic(join(snapshotDir, PROJECT_FILES.boardPro), projectBytes),
     writeAtomic(join(runDir, "starting.kicad_pcb"), boardBytes),
     writeAtomic(join(runDir, "starting.kicad_pro"), projectBytes),
+    ...(customRules
+      ? [
+          writeAtomic(join(snapshotDir, "board.kicad_dru"), customRules),
+          writeAtomic(join(runDir, "starting.kicad_dru"), customRules),
+        ]
+      : []),
   ]);
   const createdAt = iso();
   const artifacts = {

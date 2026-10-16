@@ -1,3 +1,4 @@
+import { project_checkpoint } from "./task-checkpoint";
 /** Project toolset: files, sketches and board settings. All paths are jailed under the project dir. */
 import { copyFile, readdir, readFile, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join } from "node:path";
@@ -310,6 +311,7 @@ export function mimeFor(name: string): string {
 }
 
 export const projectTools = [
+  project_checkpoint,
   project_read_file,
   project_write_file,
   project_list_sketches,
