@@ -926,7 +926,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       const matches = existing.filter(
         (symbol) =>
           symbol.reference === input.reference &&
-          (input.unit === undefined || symbol.proto.unit?.unit === input.unit),
+          (input.unit === undefined || (symbol.proto.unit?.unit ?? 1) === input.unit),
       );
       if (matches.length > 1)
         throw new ToolError(
