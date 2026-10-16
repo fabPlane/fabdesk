@@ -6,8 +6,8 @@ import { Icon } from "../components/Icon";
 import { Button } from "../components/ui";
 
 const OPTIONS = [
-  { mode: "supervised", label: "Ask for approval", description: "Pause supported writes for your approval." },
-  { mode: "full", label: "Run without approval", description: "Let the agent run without approval pauses." },
+  { mode: "supervised", icon: "shield", tone: "text-success", label: "Ask for approval", description: "Pause supported writes for your approval." },
+  { mode: "full", icon: "warning", tone: "text-warning", label: "Run without approval", description: "Let the agent run without approval pauses." },
 ] as const;
 
 /** Changes the existing chat setting; the daemon still validates agent support. */
@@ -22,7 +22,8 @@ export function PermissionsMenu({ thread }: { thread: Thread }) {
   const [error, setError] = useState<string | null>(null);
   const [position, setPosition] = useState({ left: 8, top: 8, maxHeight: 300 });
   const mode = thread.runtimeMode ?? "full";
-  const label = OPTIONS.find((item) => item.mode === mode)!.label;
+  const selected = OPTIONS.find((item) => item.mode === mode)!;
+  const label = selected.label;
   const close = (restoreFocus = true) => {
     setOpen(false);
     if (restoreFocus) anchor.current?.focus();
@@ -91,7 +92,7 @@ export function PermissionsMenu({ thread }: { thread: Thread }) {
     <Button ref={anchor} variant="ghost" size="sm" className="fd-permissions-button"
       title={`Permissions: ${label}`} aria-label={`Permissions: ${label}`} aria-haspopup="menu" aria-expanded={open} aria-controls={open ? id : undefined}
       data-testid="runtime-mode-toggle" onClick={() => setOpen(!open)}>
-      <Icon name="shield" width={16} height={16} />
+      <Icon name={selected.icon} width={16} height={16} className={selected.tone} />
       <span className="fd-permissions-label">{label}</span>
       <Icon name="chevronDown" width={12} height={12} className="fd-permissions-chevron" />
     </Button>
@@ -102,11 +103,12 @@ export function PermissionsMenu({ thread }: { thread: Thread }) {
       {OPTIONS.map((item) => <button key={item.mode} type="button" role="menuitemradio" aria-checked={mode === item.mode} aria-disabled={pending}
         className="flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left text-fg hover:bg-panel-2 focus-visible:bg-panel-2 aria-disabled:opacity-50"
         onClick={() => void select(item.mode)}>
+        <Icon name={item.icon} width={20} height={20} className={`shrink-0 ${item.tone}`} />
         <span className="min-w-0 flex-1"><span className="block text-[13px] font-medium">{item.label}</span><span className="mt-1 block text-xs leading-5 text-muted">{item.description}</span></span>
-        {mode === item.mode && <Icon name="check" width={16} height={16} className="shrink-0 text-accent" />}
+        {mode === item.mode && <Icon name="check" width={16} height={16} className={`shrink-0 ${item.tone}`} />}
       </button>)}
       {pending && <div role="status" className="px-3 py-2 text-xs text-muted">Saving permissions…</div>}
-      {error && <div role="alert" className="px-3 py-2 text-xs leading-5 text-danger">{error}</div>}
+      {error && <div role="alert" className="flex items-start gap-2 px-3 py-2 text-xs leading-5 text-danger"><Icon name="warning" width={16} height={16} className="mt-0.5 shrink-0" /><span>{error}</span></div>}
     </div>, document.body)}
   </>;
 }
