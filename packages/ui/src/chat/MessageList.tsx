@@ -32,23 +32,22 @@ export function ToolGroup({
   const [open, setOpen] = useState(false);
   const detailsId = useId();
   const projectId = useUiStore((s) => s.activeProjectId);
-  const errors = calls.filter((c) => c.result?.isError === true).length;
-  const pending = calls.filter((c) => !c.result);
-  const running = streaming && pending.length > 0 ? pending[pending.length - 1] : undefined;
+  const history = calls.filter((c) => !isImageTool(c.use.name) && (!!c.result || !streaming));
+  const errors = history.filter((c) => c.result?.isError === true).length;
+  const pending = history.filter((c) => !c.result);
   const visibleCalls = open ? calls : calls.filter((c) => (streaming && !c.result) || isImageTool(c.use.name));
   const images = calls.filter((c) => !visibleCalls.includes(c)).flatMap((c) => (c.result ? extractImages(c.result.output) : []));
-  const commandsOnly = calls.every((call) => isCommandTool(call.use.name));
-  const noun = commandsOnly ? "commands" : "tools";
-  const label = running ? "Running " + noun : pending.length > 0 ? (commandsOnly ? "Commands" : "Tool activity") : commandsOnly ? "Ran commands" : "Used tools";
+  const commandsOnly = history.every((call) => isCommandTool(call.use.name));
+  const label = pending.length > 0 ? (commandsOnly ? "Commands" : "Tool activity") : commandsOnly ? "Ran commands" : "Used tools";
   return (
     <div className="fd-tool-group my-2 min-w-0 text-[13px]" data-testid="tool-group">
-      <button type="button" className="flex min-h-8 max-w-full items-center gap-2 rounded-md py-1.5 text-left text-muted hover:text-fg"
+      {history.length > 0 && <button type="button" className="flex min-h-8 max-w-full items-center gap-2 rounded-md py-1.5 text-left text-muted hover:text-fg"
         onClick={() => setOpen((o) => !o)} title={open ? "Hide tool calls" : "Show tool calls"} aria-expanded={open} aria-controls={visibleCalls.length > 0 ? detailsId : undefined}>
-        {running ? <Spinner className="h-4 w-4 shrink-0" /> : <Icon name={commandsOnly ? "terminal" : "tool"} width={16} height={16} className="shrink-0" />}
-        <span>{label}</span><span className="text-xs tabular-nums">{calls.length}</span>
+        <Icon name={commandsOnly ? "terminal" : "tool"} width={16} height={16} className="shrink-0" />
+        <span>{label}</span><span className="text-xs tabular-nums">{history.length}</span>
         {errors > 0 && <span className="text-xs text-danger">{errors} error{errors === 1 ? "" : "s"}</span>}
         <Icon name={open ? "chevronDown" : "chevronRight"} width={12} height={12} className="shrink-0" />
-      </button>
+      </button>}
       {!open && images.length > 0 && (
         <div className="flex flex-wrap gap-2 py-2">
           {images.map((img, i) =>
