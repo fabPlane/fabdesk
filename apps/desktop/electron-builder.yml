@@ -33,6 +33,8 @@ mac:
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
+  extendInfo:
+    NSMicrophoneUsageDescription: Speak to the fabPlane agent instead of typing. Audio is used only while you are speaking and is not saved after the transcript is ready.
   # Sign the sidecar with the app so hardened runtime + notarization accept it.
   binaries:
     - Contents/Resources/core/fabdesk-core

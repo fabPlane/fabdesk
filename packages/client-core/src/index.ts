@@ -124,3 +124,19 @@ export { SLASH_COMMANDS, expandSlashCommand, slashSuggestions } from "./slash-co
 export type { SlashCommand } from "./slash-commands";
 
 export { CadSession, type CadSessionState } from "./cad-session";
+
+export {
+  reduceVoice,
+  voiceBusy,
+  voiceDraft,
+  DEFAULT_VOICE_STATE,
+  VOICE_PHASES,
+} from "./speech/composer-state";
+export type { VoiceEvent, VoicePhase, VoiceState, VoiceMode, VoiceErrorKind } from "./speech/composer-state";
+export {
+  parseVoiceShortcut,
+  formatVoiceShortcut,
+  matchVoiceShortcut,
+  DEFAULT_VOICE_SHORTCUT,
+} from "./speech/shortcut";
+export type { VoiceShortcut } from "./speech/shortcut";

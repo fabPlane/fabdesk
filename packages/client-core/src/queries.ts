@@ -207,6 +207,11 @@ export function useCancelRouterInstall() {
   });
 }
 
+export function useSpeechStatus() {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["speech"], queryFn: () => client.speechStatus(), staleTime: 10_000 });
+}
+
 export function usePatchSettings() {
   const client = useCoreClient();
   const qc = useQueryClient();

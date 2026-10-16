@@ -5,13 +5,15 @@ import { Button, IconButton, Textarea } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { InstallHint } from "../components/InstallHint";
 import { useCore } from "@fabdesk/client-core";
-import { CoreHttpError, useDoctor, useSettings, useMessages, useQueueMessage, useUnqueueMessage } from "@fabdesk/client-core";
+import { CoreHttpError, formatVoiceShortcut, parseVoiceShortcut, useDoctor, useSettings, useSpeechStatus, useMessages, useQueueMessage, useUnqueueMessage } from "@fabdesk/client-core";
 import { useRunsStore } from "@fabdesk/client-core";
 import { DRAFT_KEY_NEW, useUiStore } from "../stores/ui";
 import { basename, mimeFromPath, modKey } from "../util";
 import { AgentModelMenu } from "./AgentModelMenu";
 import { agentModelLabel, expandSlashCommand, slashSuggestions } from "@fabdesk/client-core";
 import { applyComposerTextareaHeight } from "./composer-autosize";
+import { useVoiceInput } from "./voice/useVoiceInput";
+import { MicButton, VoiceBar } from "./voice/VoiceBar";
 
 /** Bridge for the global shortcut hook (mod+Enter send, mod+. abort) and for app automation. */
 export const composerHandlers: {
@@ -22,10 +24,12 @@ export const composerHandlers: {
    * click. Returns false when the agent is not one the composer offers.
    */
   setAgent: ((agentId: string, model?: string | null) => boolean) | null;
+  voiceToggle: (() => void) | null;
 } = {
   send: null,
   abort: null,
   setAgent: null,
+  voiceToggle: null,
 };
 
 export interface ComposerProps {
@@ -64,6 +68,17 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
   const unqueueMessage = useUnqueueMessage();
   const doctor = useDoctor();
   const settings = useSettings();
+  const speech = useSpeechStatus();
+  const voice = useVoiceInput({
+    client,
+    voice: settings.data?.voice,
+    status: speech.data,
+    onTranscript: (text) => {
+      const current = useUiStore.getState().drafts[draftKey] ?? "";
+      const next = current.trim() ? `${current.trim()} ${text}` : text;
+      setDraft(draftKey, next);
+    },
+  });
   const [agentId, setAgentId] = useState<AgentId>(thread?.agentId ?? settings.data?.defaultAgent ?? "claude");
   const [model, setModel] = useState<string>(thread?.model ?? "");
   const [sending, setSending] = useState(false);
@@ -126,6 +141,7 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
       };
       // The queue endpoint starts immediately when idle and queues if a run began meanwhile.
       await queueMessage.mutateAsync({ threadId, input });
+      voice.reset();
       setDraft(draftKey, "");
       clearAttachments(draftKey);
       if (draftKey === DRAFT_KEY_NEW) setDraft(threadId, "");
@@ -142,11 +158,12 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
     } finally {
       setSending(false);
     }
-  }, [draft, sending, thread, onCreateThread, agentId, model, pending, setDraft, draftKey, clearAttachments, addAttachment, qc, queueMessage]);
+  }, [draft, sending, thread, onCreateThread, agentId, model, pending, setDraft, draftKey, clearAttachments, addAttachment, qc, queueMessage, voice.reset]);
 
   useEffect(() => {
     composerHandlers.send = () => void send();
     composerHandlers.abort = thread ? () => void client.abort(thread.id) : null;
+    composerHandlers.voiceToggle = () => voice.toggle();
     composerHandlers.setAgent = (id, m) => {
       const offered = doctor.data?.agents ?? FALLBACK_AGENTS;
       const agent = offered.find((a) => a.id === id);
@@ -159,8 +176,9 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
       composerHandlers.send = null;
       composerHandlers.abort = null;
       composerHandlers.setAgent = null;
+      composerHandlers.voiceToggle = null;
     };
-  }, [send, client, thread, doctor.data, settings.data]);
+  }, [send, client, thread, doctor.data, settings.data, voice.toggle]);
 
   const pickFiles = async () => {
     const paths = await host.pickFile({
@@ -233,6 +251,13 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
           </div>
         )}
         <div className="fd-composer rounded-xl border border-border bg-panel transition-colors focus-within:border-accent">
+          <VoiceBar
+            state={voice.state}
+            shortcut={settings.data?.voice.pushToTalkShortcut ?? "Alt+Space"}
+            platform={host.platform}
+            onCancel={voice.cancel}
+            onOpenSettings={() => setSettingsOpen(true, "voice")}
+          />
           <Textarea
             ref={textareaRef}
             value={draft}
@@ -241,6 +266,12 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
             rows={1}
             onChange={(e) => setDraft(draftKey, e.target.value)}
             onKeyDown={(e) => {
+              if (e.key === "Escape" && voice.state.phase !== "idle") {
+                e.preventDefault();
+                voice.cancel();
+                return;
+              }
+              if (voice.state.phase === "recording" || voice.state.phase === "transcribing") return;
               if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault();
                 void send();
@@ -279,6 +310,15 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
                 onOpenSettings={() => setSettingsOpen(true, "agents")}
               />
             </div>
+            <MicButton
+              active={voice.state.phase === "recording"}
+              disabled={sending}
+              mode={settings.data?.voice.pushToTalkMode ?? "hold"}
+              title={`Speak (${formatVoiceShortcut(parseVoiceShortcut(settings.data?.voice.pushToTalkShortcut), host.platform)})`}
+              onHoldStart={() => void voice.holdStart()}
+              onHoldEnd={voice.holdEnd}
+              onToggle={voice.toggle}
+            />
             <IconButton title="Attach file" onClick={() => void pickFiles()}>
               <Icon name="paperclip" />
             </IconButton>

@@ -11,6 +11,7 @@ import { THEME_BACKGROUNDS, THEME_PANELS, THEME_FOREGROUNDS } from "../theme/res
 import { useAuthStore } from "@fabdesk/client-core";
 import { RemoteSection } from "./RemoteSection";
 import { RoutersSection } from "./RoutersSection";
+import { VoiceSection } from "./VoiceSection";
 import { withoutRouterDefault } from "./routers";
 import { SETTINGS_SECTIONS, useUiStore, type SettingsSection } from "../stores/ui";
 import { cn } from "../util";
@@ -23,6 +24,7 @@ const LABELS: Record<SettingsSection, string> = {
   router: "Routers",
   auth: "Account",
   remote: "Remote access",
+  voice: "Voice",
   appearance: "Appearance",
   privacy: "Privacy",
   shortcuts: "Shortcuts",
@@ -211,6 +213,8 @@ export function SettingsDialog() {
             <AuthSection />
           ) : section === "remote" ? (
             <RemoteSection />
+          ) : section === "voice" ? (
+            draft ? <VoiceSection draft={draft} update={update} /> : <Spinner />
           ) : section === "appearance" ? (
             <fieldset>
               <legend className="text-[13px] font-medium">Theme</legend>

@@ -1,4 +1,4 @@
-import { app, ipcMain, dialog, BrowserWindow, nativeTheme, shell } from "electron";
+import { app, ipcMain, dialog, BrowserWindow, nativeTheme, session, shell } from "electron";
 import { join } from "node:path";
 import { mkdir } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
@@ -29,6 +29,7 @@ import { release as osRelease } from "node:os";
 import { PcbSupervisor, resolvePcbBackend } from "./pcb-supervisor";
 import { systemLocaleEnv } from "./system-locales";
 import { resolveWindowTheme, titleBarOverlayFor } from "./window-theme";
+import { decideMediaPermission } from "./media-permission";
 
 // Name / userData / AUMID / WM_CLASS / FABDESK_HOME before any path read or the single-instance lock
 // (Electron keys the lock on userData). Packaged production identity is left untouched.
@@ -151,6 +152,12 @@ if (!app.requestSingleInstanceLock()) {
 
   void app.whenReady().then(async () => {
     app.setAppUserModelId(identity.appUserModelId);
+    session.defaultSession.setPermissionRequestHandler((wc, permission, callback) => {
+      callback(decideMediaPermission(permission, wc.getURL()));
+    });
+    session.defaultSession.setPermissionCheckHandler((wc, permission, requestingOrigin) =>
+      decideMediaPermission(permission, wc?.getURL() || requestingOrigin),
+    );
     const icon = developmentIconPath();
     if (process.platform === "darwin" && icon) app.dock?.setIcon(icon);
     void runSentryTest();

@@ -1,0 +1,60 @@
+/**
+ * Hardware / EE words offered as a transcription hint when the provider accepts one.
+ * Keeps part numbers and shop slang from turning into lookalikes.
+ */
+export const HARDWARE_VOCABULARY: readonly string[] = [
+  "KiCad",
+  "DRC",
+  "ERC",
+  "USB-C",
+  "USB-A",
+  "ESP32",
+  "ESP32-S3",
+  "RP2040",
+  "STM32",
+  "nRF52",
+  "ATmega",
+  "I2C",
+  "SPI",
+  "UART",
+  "GPIO",
+  "PWM",
+  "ADC",
+  "DAC",
+  "JTAG",
+  "SWD",
+  "QSPI",
+  "PCIe",
+  "HDMI",
+  "DisplayPort",
+  "CAN bus",
+  "RS-485",
+  "LiPo",
+  "Li-ion",
+  "MOSFET",
+  "TVS",
+  "MLCC",
+  "0603",
+  "0402",
+  "0805",
+  "QFN",
+  "BGA",
+  "SOIC",
+  "SOT-23",
+  "BOM",
+  "Gerber",
+  "Netlist",
+  "footprint",
+  "schematic",
+  "autorouter",
+  "TraceMaker",
+  "FreeCAD",
+  "STEP",
+  "STL",
+  "fabPlane",
+];
+
+export function vocabularyPrompt(extra: readonly string[] = []): string {
+  const words = [...HARDWARE_VOCABULARY, ...extra].filter((w) => w.trim());
+  return `Hardware and electronics terms: ${words.join(", ")}.`;
+}

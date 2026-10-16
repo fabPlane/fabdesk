@@ -34,6 +34,7 @@ export function shortcutList(platform?: string): ShortcutDef[] {
     { keys: `${m}1…8`, label: "Board tabs" },
     { keys: `${m}/`, label: "Agent & model" },
     { keys: `${m},`, label: "Settings" },
+    { keys: isMac(platform) ? "⌥Space" : "Alt + Space", label: "Speak to the agent (hold or toggle)" },
     { keys: "Space", label: "Cinema: play / pause" },
     { keys: "[ / ]", label: "Cinema: previous / next frame" },
     { keys: "Home / End", label: "Cinema: first frame / live" },

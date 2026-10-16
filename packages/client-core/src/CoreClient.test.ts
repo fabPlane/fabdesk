@@ -66,6 +66,22 @@ describe("CoreClient push registration (docs/mobile-notifications.md §4.1)", ()
     });
   });
 
+  test("transcribeSpeech posts multipart without a JSON content-type", async () => {
+    calls.length = 0;
+    await client.transcribeSpeech({
+      audio: new Blob([new Uint8Array([1])], { type: "audio/webm" }),
+      filename: "clip.webm",
+      language: "en",
+    });
+    expect(calls.at(-1)?.url).toBe("http://127.0.0.1:47831/v1/speech/transcribe");
+    expect(calls.at(-1)?.init?.method).toBe("POST");
+    expect(calls.at(-1)?.init?.body).toBeInstanceOf(FormData);
+    expect((calls.at(-1)?.init?.headers as Record<string, string>).Authorization).toBe(
+      "Bearer dev-tok",
+    );
+    expect((calls.at(-1)?.init?.headers as Record<string, string>)["Content-Type"]).toBeUndefined();
+  });
+
   test("unregisterPush DELETEs, deviceMe GETs", async () => {
     calls.length = 0;
     await client.unregisterPush();

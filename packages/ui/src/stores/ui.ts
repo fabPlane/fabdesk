@@ -16,7 +16,7 @@ export const BOARD_TAB_LABELS: Record<BoardTab, string> = {
   bom: "Shopping list",
 };
 
-export const SETTINGS_SECTIONS = ["agents", "kicad", "router", "auth", "remote", "appearance", "privacy", "shortcuts"] as const;
+export const SETTINGS_SECTIONS = ["agents", "kicad", "router", "auth", "remote", "voice", "appearance", "privacy", "shortcuts"] as const;
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 
 export const SIDEBAR_LIST_TABS = ["projects", "open_source"] as const;

@@ -12,3 +12,4 @@ export * from "./privacy-region";
 export * from "./github";
 export * from "./cad-runtime";
 export * from "./routers";
+export * from "./speech";

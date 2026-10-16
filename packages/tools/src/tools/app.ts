@@ -27,6 +27,8 @@ export const APP_SETTINGS_SECTIONS = [
   "kicad",
   "router",
   "auth",
+  "remote",
+  "voice",
   "appearance",
   "privacy",
   "shortcuts",
