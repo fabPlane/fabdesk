@@ -466,3 +466,17 @@ img.fd-file-image { background: #fff; padding: 8px; }
 .fd-spin { animation: fd-spin 0.9s linear infinite; }
 @keyframes fd-blink { 50% { opacity: 0.2; } }
 .fd-caret::after { content: "▍"; animation: fd-blink 1s steps(1) infinite; color: var(--fd-accent); }
+
+/* Keep permissions discoverable without squeezing the model and Send controls. */
+.fd-permissions-button { flex-shrink: 0; }
+@container (max-width: 640px) {
+  .fd-permissions-label, .fd-permissions-chevron, .fd-sketch-button .fd-action-label { display: none; }
+  .fd-sketch-button { width: 32px; padding-inline: 0; flex-shrink: 0; }
+  .fd-permissions-button { width: 32px; padding-inline: 0; }
+}
+
+@container (max-width: 360px) {
+  .fd-composer-toolbar { flex-wrap: wrap; }
+  .fd-composer-send-group { flex: 1 0 100%; }
+  .fd-agent-button { width: 100%; justify-content: space-between; }
+}

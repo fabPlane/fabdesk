@@ -11,6 +11,7 @@ import { useRunsStore } from "@fabdesk/client-core";
 import { DRAFT_KEY_NEW, useUiStore } from "../stores/ui";
 import { basename, mimeFromPath, modKey } from "../util";
 import { AgentModelMenu } from "./AgentModelMenu";
+import { PermissionsMenu } from "./PermissionsMenu";
 import { expandSlashCommand, slashSuggestions } from "@fabdesk/client-core";
 import { applyComposerTextareaHeight } from "./composer-autosize";
 
@@ -265,6 +266,7 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
             >
               <Icon name="compose" width={16} height={16} /><span className="fd-action-label">Sketch</span>
             </Button>
+            {thread && <PermissionsMenu key={thread.id} thread={thread} />}
             <div className="fd-composer-send-group ml-auto flex min-w-0 items-center gap-2">
               <div className="fd-agent-control relative min-w-0">
                 <Button
