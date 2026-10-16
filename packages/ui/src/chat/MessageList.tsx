@@ -3,13 +3,13 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
-import { useCoreClient } from "@fabdesk/client-core";
+import { useCoreClient, type ThreadDetail } from "@fabdesk/client-core";
 import { useRunsStore } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { cn } from "../util";
 import { Markdown } from "./Markdown";
 import { ProjectImage } from "./ProjectImage";
-import { RunActivity } from "./RunActivity";
+import { RunActivity, WorkedActivity } from "./RunActivity";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { PendingApprovalCard, PendingQuestionCard } from "./PendingRequestCard";
 import { extractImages, isCommandTool, isImageTool, ToolCallCard } from "./ToolCallCard";
@@ -19,7 +19,7 @@ type ToolUse = Extract<MessagePart, { type: "tool_use" }>;
 
 /**
  * A run of consecutive tool calls, folded into one row under the paragraph that preceded it.
- * Collapsed by default: activity, count, and errors; the arrow expands compact tool rows.
+ * Collapsed by default: activity and an error indicator; the arrow expands compact tool rows.
  * Image results (board renders) stay visible even when collapsed.
  */
 export function ToolGroup({
@@ -44,8 +44,8 @@ export function ToolGroup({
       {history.length > 0 && <button type="button" className="flex min-h-8 max-w-full items-center gap-2 rounded-md py-1.5 text-left text-muted hover:text-fg"
         onClick={() => setOpen((o) => !o)} title={open ? "Hide tool calls" : "Show tool calls"} aria-expanded={open} aria-controls={visibleCalls.length > 0 ? detailsId : undefined}>
         <Icon name={commandsOnly ? "terminal" : "tool"} width={16} height={16} className="shrink-0" />
-        <span>{label}</span><span className="text-xs tabular-nums">{history.length}</span>
-        {errors > 0 && <span className="text-xs text-danger">{errors} error{errors === 1 ? "" : "s"}</span>}
+        <span>{label}</span>
+        {errors > 0 && <span role="img" aria-label="Tool error" title="A tool failed. Expand to see details." className="inline-flex text-danger"><Icon name="warning" width={15} height={15} /></span>}
         <Icon name={open ? "chevronDown" : "chevronRight"} width={12} height={12} className="shrink-0" />
       </button>}
       {!open && images.length > 0 && (
@@ -217,7 +217,6 @@ export function MessageBubble({ message, streaming, latestReply = false }: { mes
             : "w-full max-w-full leading-[1.75]",
         )}
       >
-        {!isUser && <div className="mb-3 flex items-center gap-2 text-[11px] font-medium text-muted"><span className="h-1.5 w-1.5 rounded-full bg-accent" />Agent</div>}
         {isUser ? (
           <>
             {message.contentMd && <div className="whitespace-pre-wrap">{message.contentMd}</div>}
@@ -277,7 +276,7 @@ export function MessageList({
   messages,
   loading,
 }: {
-  thread: Thread | null;
+  thread: ThreadDetail | null;
   messages: Message[];
   loading: boolean;
 }) {
@@ -316,6 +315,8 @@ export function MessageList({
   const visibleMessages = messages.filter((message) => message.status !== "queued");
   const activeMessages = run ? visibleMessages.filter((m) => m.role === "assistant" && m.runId === run.runId) : [];
   const firstActiveId = activeMessages[0]?.id;
+  const finished = thread?.run && thread.run.status !== "running" && thread.run.id !== run?.runId ? thread.run : null;
+  const firstFinishedId = finished ? visibleMessages.find((m) => m.role === "assistant" && m.runId === finished.id)?.id : undefined;
   const waiting = activeMessages.some((m) => m.parts.some((p) => (p.type === "approval" && p.decision === "pending") || (p.type === "question" && p.answer === null)));
   return (
     <div ref={ref} className="min-h-0 flex-1 overflow-y-auto px-5 py-6">
@@ -332,6 +333,7 @@ export function MessageList({
           return <div key={m.id} data-message-id={m.id} className="scroll-mt-8 rounded-xl">
             {day !== previousDay && <div className="my-3 flex items-center gap-3 text-[11px] text-muted"><span className="h-px flex-1 bg-border" /><time dateTime={m.createdAt}>{new Date(m.createdAt).toLocaleDateString([], { dateStyle: "medium" })}</time><span className="h-px flex-1 bg-border" /></div>}
             {run && m.id === firstActiveId && <RunActivity key={run.runId} run={run} waiting={waiting} />}
+            {finished && m.id === firstFinishedId && <WorkedActivity run={finished} />}
             <MessageBubble message={m} latestReply={m.role === "assistant" && m.id === lastId} streaming={!!run && m.runId === run.runId && m.role === "assistant"} />
           </div>;
         })}
