@@ -1,0 +1,74 @@
+[
+  {
+    "selectedMm": 0.1,
+    "entry": "button",
+    "reportedMm": 0.1,
+    "actualStlMm": 0.10000000149011612,
+    "apertureCount": 240,
+    "xyUnchanged": true
+  },
+  {
+    "selectedMm": 0.15,
+    "entry": "button",
+    "reportedMm": 0.15,
+    "actualStlMm": 0.15000000596046448,
+    "apertureCount": 240,
+    "xyUnchanged": true
+  },
+  {
+    "selectedMm": 0.25,
+    "entry": "button",
+    "reportedMm": 0.25,
+    "actualStlMm": 0.25,
+    "apertureCount": 240,
+    "xyUnchanged": true
+  },
+  {
+    "selectedMm": 0.3,
+    "entry": "button",
+    "reportedMm": 0.3,
+    "actualStlMm": 0.30000001192092896,
+    "apertureCount": 240,
+    "xyUnchanged": true
+  },
+  {
+    "selectedMm": 0.4,
+    "entry": "button",
+    "reportedMm": 0.4,
+    "actualStlMm": 0.4000000059604645,
+    "apertureCount": 240,
+    "xyUnchanged": true
+  },
+  {
+    "selectedMm": 0.5,
+    "entry": "button",
+    "reportedMm": 0.5,
+    "actualStlMm": 0.5,
+    "apertureCount": 240,
+    "xyUnchanged": true
+  },
+  {
+    "selectedMm": 0.2,
+    "entry": "button",
+    "reportedMm": 0.2,
+    "actualStlMm": 0.20000000298023224,
+    "apertureCount": 240,
+    "xyUnchanged": true
+  },
+  {
+    "selectedMm": 0.3,
+    "entry": "palette",
+    "reportedMm": 0.3,
+    "actualStlMm": 0.30000001192092896,
+    "apertureCount": 240,
+    "xyUnchanged": true
+  },
+  {
+    "selectedMm": 0.2,
+    "entry": "palette",
+    "reportedMm": 0.2,
+    "actualStlMm": 0.20000000298023224,
+    "apertureCount": 240,
+    "xyUnchanged": true
+  }
+]

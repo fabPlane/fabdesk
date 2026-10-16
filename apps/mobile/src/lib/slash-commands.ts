@@ -39,9 +39,9 @@ export const SLASH_COMMANDS: readonly SlashCommandSpec[] = [
   { name: "erc", usage: "/erc", description: "Run KiCad ERC", choices: null, defaultChoice: null },
   {
     name: "export",
-    usage: "/export gerbers|bom|drill|pos|zip",
+    usage: "/export gerbers|bom|drill|pos|zip|stencil",
     description: "Export fabrication files",
-    choices: ["gerbers", "bom", "drill", "pos", "zip"],
+    choices: ["gerbers", "bom", "drill", "pos", "zip", "stencil"],
     defaultChoice: null,
   },
   {
