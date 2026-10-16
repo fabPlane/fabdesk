@@ -1,8 +1,19 @@
 import { useEffect, useState } from "react";
-import type { LiveRun } from "@fabdesk/client-core";
+import { useCore, type LiveRun } from "@fabdesk/client-core";
 
 /** Only this small status line ticks; the message tree and header do not. */
 export function RunActivity({ run, waiting = false }: { run: LiveRun; waiting?: boolean }) {
+  const { client } = useCore();
+  const [stopping, setStopping] = useState(false);
+  const [error, setError] = useState(false);
+  useEffect(() => { setError(false); setStopping(false); }, [run.runId]);
+  const stop = async () => {
+    if (stopping) return;
+    setStopping(true); setError(false);
+    try { await client.abort(run.threadId); }
+    catch { setError(true); }
+    finally { setStopping(false); }
+  };
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     setNow(Date.now());
@@ -15,5 +26,7 @@ export function RunActivity({ run, waiting = false }: { run: LiveRun; waiting?: 
   return <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-muted" data-testid="run-activity" title={usage}>
     <span>{waiting ? "Waiting" : "Working"} for {elapsed}</span>
     {run.usage?.costUsd !== undefined && <span>· {"$" + run.usage.costUsd.toFixed(3)}</span>}
+    <button type="button" className="rounded px-1 hover:text-fg focus-visible:text-fg" disabled={stopping} onClick={() => void stop()} aria-label="Stop current run; queued messages stay scheduled" title="Stop current run. Queued messages stay scheduled.">{stopping ? "Stopping…" : "Stop"}</button>
+    {error && <span role="alert" className="text-danger">Could not stop. Try again.</span>}
   </div>;
 }

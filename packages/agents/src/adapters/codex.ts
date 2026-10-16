@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, statSync, symlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { detectBinary, resolveFirst } from "../detect";
+import { readCodexConfiguredModel } from "../codex-model";
 import { CodexStreamParser } from "../parsers/codex";
 import { runAgentProcess } from "../process";
 import type { AgentAdapter, AgentRun, AgentSession } from "../types";
@@ -184,7 +185,11 @@ export const codexAdapter: AgentAdapter = {
   displayName: "Codex",
   installHint:
     "Install Codex: npm install -g @openai/codex (or brew install codex), then run `codex login`.",
-  detect: (binaryPath) => detectBinary(CANDIDATES, binaryPath),
+  detect: async (binaryPath) => {
+    const detected = await detectBinary(CANDIDATES, binaryPath);
+    const defaultModel = detected.installed ? readCodexConfiguredModel() : undefined;
+    return { ...detected, ...(defaultModel ? { defaultModel } : {}) };
+  },
   models: () => [
     "gpt-5.5",
     "gpt-5.6-sol",

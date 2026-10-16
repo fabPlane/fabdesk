@@ -70,6 +70,7 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
   const [agentId, setAgentId] = useState<AgentId>(thread?.agentId ?? settings.data?.defaultAgent ?? "claude");
   const [model, setModel] = useState<string>(thread?.model ?? "");
   const [sending, setSending] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -106,7 +107,7 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
   const selectedAgent = agents.find((a) => a.id === agentId);
   const agentMissing = selectedAgent ? !selectedAgent.installed : false;
   const displayedModel = model || settings.data?.agents[agentId]?.model || selectedAgent?.defaultModel || "";
-  const modelLabel = displayedModel ? modelDisplayName(displayedModel, selectedAgent?.modelAliases) : "Default";
+  const modelLabel = displayedModel ? modelDisplayName(displayedModel, selectedAgent?.modelAliases) : "Choose model";
   const pickerLabel = `${pickerAgents.find((agent) => agent.id === agentId)?.displayName ?? agentId}: ${modelLabel}`;
 
   const send = useCallback(async () => {
@@ -150,9 +151,18 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
     }
   }, [draft, sending, thread, onCreateThread, agentId, model, pending, setDraft, draftKey, clearAttachments, addAttachment, qc, queueMessage]);
 
+  const stop = useCallback(async () => {
+    if (!run || stopping) return;
+    setStopping(true);
+    setError(null);
+    try { await client.abort(run.threadId); }
+    catch { setError("Could not stop the run. Check the connection and try again."); }
+    finally { setStopping(false); }
+  }, [run, stopping, client]);
+
   useEffect(() => {
     composerHandlers.send = () => void send();
-    composerHandlers.abort = thread ? () => void client.abort(thread.id) : null;
+    composerHandlers.abort = run ? () => void stop() : null;
     composerHandlers.setAgent = (id, m) => {
       const offered = doctor.data?.agents ?? FALLBACK_AGENTS;
       const agent = offered.find((a) => a.id === id);
@@ -166,7 +176,9 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
       composerHandlers.abort = null;
       composerHandlers.setAgent = null;
     };
-  }, [send, client, thread, doctor.data, settings.data]);
+  }, [send, stop, run, doctor.data, settings.data]);
+
+  const showStop = !!run && !draft.trim() && !sending;
 
   const pickFiles = async () => {
     const paths = await host.pickFile({
@@ -303,21 +315,19 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
                   onOpenSettings={() => setSettingsOpen(true, "agents")}
                 />
               </div>
-              {run && (
-                <Button variant="danger" size="sm" onClick={() => void client.abort(run.threadId)} aria-label="Stop current run; queued messages stay scheduled" title={`Stop current run (${mod} + .). Queued messages stay scheduled.`}>
-                  <Icon name="stop" width={14} height={14} /> Stop
-                </Button>
-              )}
-                <Button
-                  variant="primary"
-                  size="sm"
-                  aria-label={run ? "Queue message" : sending ? "Sending message" : "Send message"}
-                  onClick={() => void send()}
-                  disabled={!draft.trim() || sending}
-                  title={`${run ? "Queue" : "Send"} (${mod} + Enter)`}
-                >
-                  <span className="fd-action-label">{sending ? "Sending..." : run ? "Queue" : "Send"}</span> <Icon name="send" width={14} height={14} />
-                </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                className="fd-composer-primary"
+                style={{ width: 36, height: 36, padding: 0, borderRadius: "50%", flexShrink: 0 }}
+                aria-label={showStop ? "Stop current run; queued messages stay scheduled" : sending ? "Sending message" : run ? "Queue message" : "Send message"}
+                aria-busy={showStop ? stopping : sending}
+                onClick={() => void (showStop ? stop() : send())}
+                disabled={showStop ? stopping : !draft.trim() || sending}
+                title={showStop ? "Stop current run. Queued messages stay scheduled." : run ? "Queue message (Enter). Stop current run with " + mod + " + ." : "Send message (Enter)"}
+              >
+                <Icon name={showStop ? "stop" : run ? "queue" : "arrowUp"} width={18} height={18} {...(showStop ? { fill: "currentColor" } : {})} />
+              </Button>
             </div>
           </div>
         </div>
@@ -333,7 +343,6 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
           </details>
         )}
         {error && <div className="mt-2 rounded-lg border border-danger/25 bg-danger/5 px-3 py-2 text-xs text-danger">{error}</div>}
-        <div className="fd-composer-hint"><span>{run ? "Enter to queue" : "Enter to send"}</span><span>Shift + Enter for a new line</span></div>
       </div>
     </div>
   );
