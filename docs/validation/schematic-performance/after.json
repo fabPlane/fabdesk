@@ -1,0 +1,116 @@
+[
+  {
+    "project": "Corne keyboard (crkbd)",
+    "run": 0,
+    "result": {
+      "openedMs": 52.69999998807907,
+      "paintedMs": 56,
+      "maxFrameGapMs": 133.39999999999998,
+      "longTasks": [
+        {
+          "start": 55.79999999701977,
+          "duration": 106
+        },
+        {
+          "start": 244.19999998807907,
+          "duration": 107
+        }
+      ],
+      "nodeCount": 1,
+      "imageLoaded": true
+    }
+  },
+  {
+    "project": "Corne keyboard (crkbd)",
+    "run": 1,
+    "result": {
+      "openedMs": 9.700000002980232,
+      "paintedMs": 131.40000000596046,
+      "maxFrameGapMs": 116.69999999999982,
+      "longTasks": [
+        {
+          "start": 14.700000002980232,
+          "duration": 115
+        }
+      ],
+      "nodeCount": 1,
+      "imageLoaded": true
+    }
+  },
+  {
+    "project": "Corne keyboard (crkbd)",
+    "run": 2,
+    "result": {
+      "openedMs": 9.899999991059303,
+      "paintedMs": 131.69999998807907,
+      "maxFrameGapMs": 116.70000000000027,
+      "longTasks": [
+        {
+          "start": 14.899999991059303,
+          "duration": 113
+        }
+      ],
+      "nodeCount": 1,
+      "imageLoaded": true
+    }
+  },
+  {
+    "project": "PlayBridge V4.0 controller + serial bridge",
+    "run": 0,
+    "result": {
+      "openedMs": 12.600000008940697,
+      "paintedMs": 137,
+      "maxFrameGapMs": 100,
+      "longTasks": [
+        {
+          "start": 17.100000008940697,
+          "duration": 50
+        },
+        {
+          "start": 164.5,
+          "duration": 54
+        },
+        {
+          "start": 227.1000000089407,
+          "duration": 72
+        }
+      ],
+      "nodeCount": 1,
+      "imageLoaded": true
+    }
+  },
+  {
+    "project": "PlayBridge V4.0 controller + serial bridge",
+    "run": 1,
+    "result": {
+      "openedMs": 10,
+      "paintedMs": 126.6000000089407,
+      "maxFrameGapMs": 111.10000000000036,
+      "longTasks": [
+        {
+          "start": 15.100000008940697,
+          "duration": 111
+        }
+      ],
+      "nodeCount": 1,
+      "imageLoaded": true
+    }
+  },
+  {
+    "project": "PlayBridge V4.0 controller + serial bridge",
+    "run": 2,
+    "result": {
+      "openedMs": 9.899999991059303,
+      "paintedMs": 126.09999999403954,
+      "maxFrameGapMs": 111.19999999999982,
+      "longTasks": [
+        {
+          "start": 14.899999991059303,
+          "duration": 108
+        }
+      ],
+      "nodeCount": 1,
+      "imageLoaded": true
+    }
+  }
+]

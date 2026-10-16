@@ -1,0 +1,80 @@
+{
+  "displayScaleFactor": 2,
+  "repaintWaitMs": 200,
+  "before": {
+    "header": 47.9925,
+    "overlay": 83
+  },
+  "samples": [
+    {
+      "label": "reload 57.87%",
+      "dpr": 1.1574074029922485,
+      "header": 47.99250030517578,
+      "overlay": 47,
+      "pass": true
+    },
+    {
+      "label": "reset",
+      "dpr": 2,
+      "header": 48,
+      "overlay": 47,
+      "pass": true
+    },
+    {
+      "label": "zoom in",
+      "dpr": 2.190890312194824,
+      "header": 47.997039794921875,
+      "overlay": 47,
+      "pass": true
+    },
+    {
+      "label": "reset again",
+      "dpr": 2,
+      "header": 48,
+      "overlay": 47,
+      "pass": true
+    },
+    {
+      "label": "zoom out 1",
+      "dpr": 1.8257418870925903,
+      "header": 47.99419021606445,
+      "overlay": 47,
+      "pass": true
+    },
+    {
+      "label": "zoom out 2",
+      "dpr": 1.6666666269302368,
+      "header": 48,
+      "overlay": 47,
+      "pass": true
+    },
+    {
+      "label": "zoom out 3",
+      "dpr": 1.5214515924453735,
+      "header": 47.99076461791992,
+      "overlay": 47,
+      "pass": true
+    },
+    {
+      "label": "zoom out 4",
+      "dpr": 1.3888888359069824,
+      "header": 47.99250030517578,
+      "overlay": 47,
+      "pass": true
+    },
+    {
+      "label": "zoom out 5",
+      "dpr": 1.2678762674331665,
+      "header": 47.988712310791016,
+      "overlay": 46,
+      "pass": true
+    },
+    {
+      "label": "zoom out 6",
+      "dpr": 1.1574074029922485,
+      "header": 47.99250030517578,
+      "overlay": 47,
+      "pass": true
+    }
+  ]
+}
