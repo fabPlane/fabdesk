@@ -1,0 +1,22 @@
+{
+  "agentOrder": [
+    "codex",
+    "claude",
+    "grok",
+    "cursor"
+  ],
+  "expandingDoesNotSelect": true,
+  "selectionClosesMenu": true,
+  "composerShowsVersion": true,
+  "keyboardArrowAndEscape": true,
+  "focusRestored": true,
+  "liveClaudeCatalog": true,
+  "uiTests": 110,
+  "protocolTests": 70,
+  "targetedAgentTests": 8,
+  "baselineAndCurrentAgentSuite": {
+    "passed": 71,
+    "failed": 8,
+    "reason": "Existing Windows symlink/native-process fixture failures; identical failure names on prior source."
+  }
+}

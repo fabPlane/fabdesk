@@ -6,6 +6,15 @@ import { createRoot } from "react-dom/client";
 import { BrowserApp } from "@fabdesk/ui";
 import { App } from "./App";
 
+// Menu/keyboard zoom and reset all resize the renderer viewport. Native Windows
+// caption buttons need an explicit update; Chromium does not scale them for us.
+if (window.fabdesk?.platform === "win32") {
+  const syncTitleBar = () => window.fabdesk?.syncTitleBar();
+  window.addEventListener("resize", syncTitleBar);
+  syncTitleBar();
+  if (import.meta.hot) import.meta.hot.dispose(() => window.removeEventListener("resize", syncTitleBar));
+}
+
 // Dev / FABDESK_AUTOMATION=1 only: window.__fabdeskApp for the core's `app` toolset (docs/app-automation.md).
 if (window.fabdesk?.automationEnabled) {
   void import("./automation")

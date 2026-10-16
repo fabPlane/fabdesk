@@ -112,7 +112,7 @@ ${sketches}
 | \`sketches/\` | User-provided drawings and photos. |
 | \`renders/\` | Rendered artifacts. |
 | \`reports/\` | Machine-readable reports. |
-| \`exports/\` | Manufacturing and interchange outputs. |
+| \`exports/\` | Manufacturing and interchange outputs (gerbers, BOM, 3D-printed stencil STL). |
 
 ${
   ctx.interfaceMode
