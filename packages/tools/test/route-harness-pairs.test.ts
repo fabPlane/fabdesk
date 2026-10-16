@@ -15,7 +15,10 @@ for (const better of [true, false])
     await writeFile(
       join(project.dir, "board.kicad_pro"),
       JSON.stringify({
-        net_settings: { classes: [{ name: "Default", diff_pair_width: 0.3, diff_pair_gap: 0.2 }] },
+        net_settings: {
+          classes: [{ name: "USB", diff_pair_width: 0.3, diff_pair_gap: 0.2 }],
+          netclass_patterns: [{ pattern: "D_*", netclass: "USB" }],
+        },
       }),
     );
     const definitions = await projectPairs(project.dir, copperBoard(pcb(1)));

@@ -652,6 +652,8 @@ async function executeRoute(
         ...reference,
       ]) {
         if (requestedNets.length && !requestedNets.includes(n.net)) continue;
+        // Keep the widest retained/reference copper as the floor: this policy was benchmarked
+        // with the routing harness. A minimum-width floor needs its own quality measurement.
         const floor = Math.max(0, ...n.widthsMm);
         if (!floor) continue;
         const own = perNet.get(n.net);
@@ -662,16 +664,17 @@ async function executeRoute(
           0;
         perNet.set(n.net, { ...own, net: n.net, widthMm: Math.max(floor, requested) });
       }
-      for (const pair of args.rules?.pairs ?? []) {
-        const width = Math.max(
-          pair.widthMm ?? 0,
-          perNet.get(pair.p)?.widthMm ?? 0,
-          perNet.get(pair.n)?.widthMm ?? 0,
-        );
-        if (width)
-          for (const net of [pair.p, pair.n])
-            perNet.set(net, { ...perNet.get(net), net, widthMm: width });
-      }
+    }
+    for (const pair of detectedPairs) {
+      if (pair.source === "identified by name") continue;
+      const width = Math.max(
+        pair.widthMm ?? 0,
+        perNet.get(pair.p)?.widthMm ?? 0,
+        perNet.get(pair.n)?.widthMm ?? 0,
+      );
+      if (width)
+        for (const net of [pair.p, pair.n])
+          perNet.set(net, { ...perNet.get(net), net, widthMm: width });
     }
     const effectivePairs = detectedPairs.map(({ source, ...pair }) => ({
       ...pair,
@@ -688,7 +691,7 @@ async function executeRoute(
     const ruleSettings: Record<string, unknown> = {
       ...(args.settings ?? {}),
       ...(perNet.size ? { perNet: [...perNet.values()] } : {}),
-      ...(effectivePairs ? { differentialPairs: effectivePairs } : {}),
+      ...(effectivePairs.length ? { differentialPairs: effectivePairs } : {}),
       ...(args.rules?.widthMm !== undefined ? { trackWidthMm: args.rules.widthMm } : {}),
       ...(args.rules?.clearanceMm !== undefined ? { clearanceMm: args.rules.clearanceMm } : {}),
       ...(args.rules?.viaDiameterMm !== undefined
@@ -759,6 +762,7 @@ async function executeRoute(
     } catch {
       // Static cinema context is optional; durable route execution is not.
     }
+    let routingTimedOut = false;
     const attemptRoute = async (scopeNets = requestedNets): Promise<RouteSummary> => {
       const attempt = {
         router: rec.router as "fab_router" | "freerouting" | "tracemaker",
@@ -839,6 +843,7 @@ async function executeRoute(
             },
           },
         );
+        routingTimedOut ||= summary.timedOut;
         rec = {
           ...rec,
           attempts: rec.attempts!.map((value, index) =>
@@ -890,11 +895,20 @@ async function executeRoute(
       }
     };
     const retryMode = args.rerouteMode ?? "onOpen";
+    const scopeHasLockedCopper = startingCopper.copper.some(
+      (item) => item.locked && requestedNets.includes(item.net),
+    );
+    if (scopeHasLockedCopper && retryMode !== "never")
+      rec.progress.diagnostics.push("Clean retry skipped: requested nets contain locked copper.");
     const clean = async () => {
       if (!requestedNets.length)
         throw new ToolError("rerouteMode requires explicit requested nets", "precondition");
+      // Internal unroute removes every item on a net. Keep the original route when locked
+      // copper is present rather than discarding the user's protected geometry.
+      if (scopeHasLockedCopper) return;
       await ctx.services.design.release(snapshotDir);
       await copyFile(join(runDir, "starting.kicad_pcb"), join(snapshotDir, PROJECT_FILES.boardPcb));
+      await copyFile(join(runDir, "starting.kicad_pro"), join(snapshotDir, PROJECT_FILES.boardPro));
       const removed = await ctx.services.design.unroute(snapshotDir, requestedNets);
       rec.progress.diagnostics.push(
         `Clean retry: removed ${removed.tracks} tracks and ${removed.vias} vias on requested nets only.`,
@@ -974,6 +988,8 @@ async function executeRoute(
       requestedNets.length &&
       retryMode === "onOpen" &&
       summary.unrouted.length &&
+      !routingTimedOut &&
+      !scopeHasLockedCopper &&
       !signal.aborted
     ) {
       await ctx.services.design.release(snapshotDir);
@@ -1018,7 +1034,10 @@ async function executeRoute(
     ).warnings.filter((w) => w.kind === "skew")) {
       const pair = detectedPairs.find((p) => warning.text.startsWith(`${p.p}/${p.n}:`));
       if (
+        routingTimedOut ||
         !pair ||
+        pair.source === "identified by name" ||
+        startingCopper.copper.some((item) => item.locked && [pair.p, pair.n].includes(item.net)) ||
         (requestedNets.length &&
           (!requestedNets.includes(pair.p) || !requestedNets.includes(pair.n)))
       )

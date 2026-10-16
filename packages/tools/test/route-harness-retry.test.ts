@@ -31,10 +31,12 @@ for (const result of ["better", "worse", "unsafe", "failure"] as const)
         unroute: async (dir, nets) => {
           scopes.push(nets!);
           expect(await readFile(join(dir, "board.kicad_pcb"), "utf8")).toBe(board(0.3));
+          expect(await readFile(join(dir, "board.kicad_pro"), "utf8")).toBe("{}");
           return { tracks: 1, vias: 0 };
         },
         route: async (dir) => {
           calls++;
+          await writeFile(join(dir, "board.kicad_pro"), '{"changedByAttempt":true}');
           if (calls === 2 && result === "failure") throw Error("retry search failed");
           const opens = calls === 1 ? 1 : result === "worse" ? 2 : 0;
           await writeFile(

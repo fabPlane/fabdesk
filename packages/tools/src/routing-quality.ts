@@ -28,6 +28,7 @@ type Copper = {
   id: string;
   net: string;
   layer: string[];
+  locked: boolean;
   width?: number;
   length: number;
   diameter?: number;
@@ -108,6 +109,7 @@ export function copperBoard(text: string): CopperBoard {
       id: str(n, "uuid") || str(n, "tstamp") || `anonymous-${i}`,
       net: netOf(n),
       layer: via ? child(n, "layers").slice(1).map(String) : [str(n, "layer")],
+      locked: n.includes("locked") || (child(n, "locked").length > 0 && str(n, "locked") !== "no"),
       length: via
         ? 0
         : Math.hypot(
@@ -359,12 +361,11 @@ export async function projectPairs(
     const assignments: string[] = exact ? (Array.isArray(exact) ? exact : [exact]) : [];
     for (const p of settings?.netclass_patterns ?? [])
       if (new Bun.Glob(p.pattern).match(net)) assignments.push(p.netclass);
-    return (
-      classes
-        .filter((c) => assignments.includes(c.name))
-        .sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0))[0] ??
-      classes.find((c) => c.name === "Default")
-    );
+    // A suffix can identify power rails too. Only an actual assignment supplies pair rules;
+    // the Default fallback would turn every named +/- rail into a constrained signal pair.
+    return classes
+      .filter((c) => assignments.includes(c.name))
+      .sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0))[0];
   };
   return named.map((pair) => {
     const explicit = declared.find((p) => p.p === pair.p && p.n === pair.n);
