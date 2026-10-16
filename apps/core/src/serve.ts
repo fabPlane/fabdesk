@@ -57,6 +57,9 @@ import {
 } from "./usage-archive";
 import { UsageApiArchiveWriter } from "./usage-api";
 
+/** Delay before retrying a failed usage-archive backfill (rate or daily limits, an outage). */
+const BACKFILL_RETRY_MS = 30 * 60_000;
+
 export type ExperimentalAgentInterface = "substrate" | "programmable";
 
 export function configuredAgentInterface(
@@ -216,9 +219,14 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   let archiveBearer: () => string | null = () => null;
   if (remoteArchiveEnabled)
     archives.push(new UsageArchive(new UsageApiArchiveWriter(config.apiOrigin, () => archiveBearer(), store.settings)));
-  let archiveBackfilled = false;
+  const archiveDestinations = archives.map((archive) => archive.destination);
   let archiveClosing = false;
   let backfillTask: Promise<void> | null = null;
+  let backfillRetry: ReturnType<typeof setTimeout> | null = null;
+  const cancelBackfillRetry = () => {
+    if (backfillRetry) clearTimeout(backfillRetry);
+    backfillRetry = null;
+  };
   const privacy = resolvePrivacyStatus({ settings: store.settings });
   logger.info("first-install privacy screen", {
     mode: privacy.mode,
@@ -230,7 +238,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     if (backfillTask) return backfillTask;
     if (!archiveEnabled || !hasArchiveConsent() || archiveClosing)
       return Promise.resolve();
-    archiveBackfilled = false;
+    cancelBackfillRetry();
     const task = (async () => {
       try {
         for (const archive of archives) {
@@ -240,13 +248,18 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
           );
           logger.info("usage archive backfilled", counts);
         }
-        archiveBackfilled = hasArchiveConsent() && !archiveClosing;
       } catch (error) {
-        if (!(error instanceof ArchiveConsentRevokedError)) {
-          logger.warn("usage archive backfill failed; local dump pruning disabled", {
-            error: errMsg(error),
-          });
-        }
+        if (error instanceof ArchiveConsentRevokedError || archiveClosing) return;
+        // Usually a rate or daily limit; dumps not yet backed up stay local (bounded) meanwhile.
+        logger.warn("usage archive backfill failed; retrying later", {
+          error: errMsg(error),
+          retryInMs: BACKFILL_RETRY_MS,
+        });
+        backfillRetry = setTimeout(() => {
+          backfillRetry = null;
+          void startArchiveBackfill();
+        }, BACKFILL_RETRY_MS);
+        backfillRetry.unref?.();
       }
     })();
     backfillTask = task;
@@ -262,24 +275,24 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     runDumps: archiveEnabled
       ? {
           async put(dump) {
-            if (!hasArchiveConsent() || archiveClosing) {
-              store.runDumps.put(dump);
-              return;
-            }
-            let backedUp = archiveBackfilled;
+            const consent = hasArchiveConsent();
+            // Save locally first so a slow or retrying upload never delays the local copy. While
+            // backup is consented, retention keeps dumps a destination has not received yet (up to
+            // a hard ceiling) so a later backfill can still send them.
+            store.runDumps.put(dump, consent ? archiveDestinations : []);
+            if (!consent || archiveClosing) return;
+            // Background only: upload failures are logged, never surfaced to the person.
             for (const archive of archives) {
               try {
                 await archive.put(dump, store.db, hasArchiveConsent);
               } catch (error) {
-                backedUp = false;
+                if (error instanceof ArchiveConsentRevokedError) continue;
                 logger.warn("usage archive failed; retained run dump locally", {
                   runId: dump.runId,
                   error: errMsg(error),
                 });
               }
             }
-            // Keep the local copy until backup succeeds; bounded pruning could otherwise erase it.
-            store.runDumps.put(dump, backedUp);
           },
         }
       : store.runDumps,
@@ -531,8 +544,14 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     onSettingsChanged: () => {
       void cloudSettings.push();
       const consent = hasArchiveConsent();
-      if (consent && !lastArchiveConsent) void startArchiveBackfill();
-      if (!consent) archiveBackfilled = false;
+      if (consent && !lastArchiveConsent) {
+        // Let a cancelled backfill settle before starting the new consent period's backfill.
+        void (backfillTask ?? Promise.resolve()).then(() => startArchiveBackfill());
+      }
+      if (!consent && lastArchiveConsent) {
+        cancelBackfillRetry();
+        for (const archive of archives) archive.cancelPending();
+      }
       lastArchiveConsent = consent;
     },
   };
@@ -780,8 +799,11 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       remote.stop();
       server.stop(true);
       if (!opts.noHandshake) await removeHandshake(config.handshakePath);
-      await telemetry.shutdown();
+      // Stop uploads first so a retry wait cannot hold shutdown; unsent dumps stay for the next backfill.
       archiveClosing = true;
+      cancelBackfillRetry();
+      for (const archive of archives) archive.close();
+      await telemetry.shutdown();
       await backfillTask;
       store.close();
       await closeSentry();

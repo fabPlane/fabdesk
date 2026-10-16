@@ -1,0 +1,200 @@
+[
+  {
+    "project": "Corne keyboard (crkbd)",
+    "run": 0,
+    "result": {
+      "openedMs": 1309,
+      "paintedMs": 1312.5,
+      "maxFrameGapMs": 542.9780000029714,
+      "longTasks": [
+        {
+          "start": -0.19999998807907104,
+          "duration": 553
+        },
+        {
+          "start": 553.6000000089407,
+          "duration": 375
+        },
+        {
+          "start": 929.1000000089407,
+          "duration": 130
+        },
+        {
+          "start": 1059.1000000089407,
+          "duration": 248
+        },
+        {
+          "start": 1460.2000000029802,
+          "duration": 106
+        }
+      ],
+      "nodeCount": 56069,
+      "imageLoaded": null
+    }
+  },
+  {
+    "project": "Corne keyboard (crkbd)",
+    "run": 1,
+    "result": {
+      "openedMs": 891.7999999970198,
+      "paintedMs": 892.5,
+      "maxFrameGapMs": 400.20000000001164,
+      "longTasks": [
+        {
+          "start": 0,
+          "duration": 330
+        },
+        {
+          "start": 330.59999999403954,
+          "duration": 267
+        },
+        {
+          "start": 598.0999999940395,
+          "duration": 119
+        },
+        {
+          "start": 717.5,
+          "duration": 174
+        },
+        {
+          "start": 1042.2999999970198,
+          "duration": 103
+        }
+      ],
+      "nodeCount": 56069,
+      "imageLoaded": null
+    }
+  },
+  {
+    "project": "Corne keyboard (crkbd)",
+    "run": 2,
+    "result": {
+      "openedMs": 1016.2000000029802,
+      "paintedMs": 1017.2000000029802,
+      "maxFrameGapMs": 411.25,
+      "longTasks": [
+        {
+          "start": -0.20000000298023224,
+          "duration": 411
+        },
+        {
+          "start": 411.70000000298023,
+          "duration": 306
+        },
+        {
+          "start": 718.6000000089407,
+          "duration": 116
+        },
+        {
+          "start": 835.1000000089407,
+          "duration": 175
+        },
+        {
+          "start": 1167.1000000089407,
+          "duration": 105
+        }
+      ],
+      "nodeCount": 56069,
+      "imageLoaded": null
+    }
+  },
+  {
+    "project": "PlayBridge V4.0 controller + serial bridge",
+    "run": 0,
+    "result": {
+      "openedMs": 662.2000000029802,
+      "paintedMs": 667.1000000089407,
+      "maxFrameGapMs": 372.29999999998836,
+      "longTasks": [
+        {
+          "start": -0.09999999403953552,
+          "duration": 263
+        },
+        {
+          "start": 263.20000000298023,
+          "duration": 178
+        },
+        {
+          "start": 441.70000000298023,
+          "duration": 94
+        },
+        {
+          "start": 535.9000000059605,
+          "duration": 126
+        },
+        {
+          "start": 817,
+          "duration": 65
+        }
+      ],
+      "nodeCount": 41321,
+      "imageLoaded": null
+    }
+  },
+  {
+    "project": "PlayBridge V4.0 controller + serial bridge",
+    "run": 1,
+    "result": {
+      "openedMs": 852.1000000089407,
+      "paintedMs": 862.5,
+      "maxFrameGapMs": 461.20000000001164,
+      "longTasks": [
+        {
+          "start": 0,
+          "duration": 265
+        },
+        {
+          "start": 265.29999999701977,
+          "duration": 198
+        },
+        {
+          "start": 463.90000000596046,
+          "duration": 188
+        },
+        {
+          "start": 652.5,
+          "duration": 199
+        },
+        {
+          "start": 1002.2999999970198,
+          "duration": 66
+        }
+      ],
+      "nodeCount": 41321,
+      "imageLoaded": null
+    }
+  },
+  {
+    "project": "PlayBridge V4.0 controller + serial bridge",
+    "run": 2,
+    "result": {
+      "openedMs": 637.2999999970198,
+      "paintedMs": 642.7999999970198,
+      "maxFrameGapMs": 288.9000000000233,
+      "longTasks": [
+        {
+          "start": -0.20000000298023224,
+          "duration": 237
+        },
+        {
+          "start": 237.20000000298023,
+          "duration": 177
+        },
+        {
+          "start": 414.79999999701977,
+          "duration": 91
+        },
+        {
+          "start": 506.79999999701977,
+          "duration": 130
+        },
+        {
+          "start": 789.2999999970198,
+          "duration": 81
+        }
+      ],
+      "nodeCount": 41321,
+      "imageLoaded": null
+    }
+  }
+]

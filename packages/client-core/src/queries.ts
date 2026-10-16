@@ -450,7 +450,22 @@ export function useRouteRunFrames(
   });
 }
 
-/* ---------- projects: create / delete ---------- */
+/* ---------- projects: create / rename / delete ---------- */
+
+export function useRenameProject() {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, name }: { projectId: string; name: string }) =>
+      client.request(`/projects/${encodeURIComponent(projectId)}`, {
+        method: "PATCH", json: { name },
+      }),
+    onSuccess: (_data, { projectId }) => {
+      void qc.invalidateQueries({ queryKey: ["projects"] });
+      void qc.invalidateQueries({ queryKey: ["project", projectId] });
+    },
+  });
+}
 
 export function useCreateProject() {
   const client = useCoreClient();
