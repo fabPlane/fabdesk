@@ -1,11 +1,11 @@
 # Composer permissions
 
-Source: `a7b5c5e96b972770743f6302553f5644056fa074`.
+Source: `e92deec5a4749f35f188a46a9deb9861ab5bc32c`.
 
-The chat header now shows the title and existing pin/run status. Agent/model remains in the composer. Existing chats have a shield button in the composer that opens the approval choices; the old header toggle is removed.
+The chat header now shows the title and existing pin/run status. Agent/model remains in the composer. Existing chats have a permission button in the composer that opens the approval choices; the old header toggle is removed.
 
-- **Ask for approval:** pauses supported writes for approval.
-- **Run without approval:** runs without approval pauses.
+- **Ask for approval:** green shield; pauses supported writes for approval.
+- **Run without approval:** amber warning icon; runs without approval pauses.
 - Changes take effect on the next run; the existing useSetRuntimeMode hook and daemon validation are reused. This is not a change to permission enforcement or new-chat defaults.
 - A rejected save retains the prior mode and shows the error. Escape/selection return focus; outside clicks preserve the clicked target; Tab advances to the next toolbar control.
 - Compact panes use an accessible icon/tooltip. At the 300 px chat minimum, the model and run controls get a separate row rather than disappearing.
@@ -18,3 +18,5 @@ UI typecheck and 110 UI tests passed. Desktop build passed. Physical Mac was not
 
 ![Composer permissions at 1440 x 920](wide.png)
 ![Composer permissions at 960 x 600](narrow.png)
+
+Color follow-up: trigger and selection check match the mode; errors pair red text with a warning icon. Labels and descriptions stay neutral. Existing theme tokens cover all four themes. UI typecheck, both-size popup checks, and desktop build passed again.
