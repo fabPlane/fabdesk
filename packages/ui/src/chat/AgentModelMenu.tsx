@@ -2,6 +2,7 @@ import type { AgentId, AgentInfo } from "@fabdesk/protocol";
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "../util";
+import { AgentLogo } from "../components/AgentLogo";
 import { Icon } from "../components/Icon";
 import { modelDisplayName } from "./model-display-name";
 
@@ -104,6 +105,7 @@ export function AgentModelMenu({ open, anchorRef, onClose, agents, agentId, mode
             onKeyDown={(event) => {
               if (event.key === "ArrowRight" || event.key === "ArrowLeft") { event.preventDefault(); setExpanded(event.key === "ArrowRight" ? agent.id : null); }
             }}>
+            <AgentLogo agentId={agent.id} />
             <span>{agent.displayName}</span>
             {selected && <span className="h-1.5 w-1.5 rounded-full bg-accent" aria-label="Selected agent" />}
             {!agent.installed && <span className="ml-auto text-[11px] font-normal text-muted">Not installed</span>}

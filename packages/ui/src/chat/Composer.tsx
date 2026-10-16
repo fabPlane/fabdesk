@@ -10,6 +10,7 @@ import { CoreHttpError, useDoctor, useSettings, useMessages, useQueueMessage, us
 import { useRunsStore } from "@fabdesk/client-core";
 import { DRAFT_KEY_NEW, useUiStore } from "../stores/ui";
 import { basename, mimeFromPath, modKey } from "../util";
+import { AgentLogo } from "../components/AgentLogo";
 import { AgentModelMenu } from "./AgentModelMenu";
 import { PermissionsMenu } from "./PermissionsMenu";
 import { expandSlashCommand, slashSuggestions } from "@fabdesk/client-core";
@@ -105,7 +106,8 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
   const selectedAgent = agents.find((a) => a.id === agentId);
   const agentMissing = selectedAgent ? !selectedAgent.installed : false;
   const displayedModel = model || settings.data?.agents[agentId]?.model || selectedAgent?.defaultModel || "";
-  const pickerLabel = `${pickerAgents.find((agent) => agent.id === agentId)?.displayName ?? agentId} · ${displayedModel ? modelDisplayName(displayedModel, selectedAgent?.modelAliases) : "Default"}`;
+  const modelLabel = displayedModel ? modelDisplayName(displayedModel, selectedAgent?.modelAliases) : "Default";
+  const pickerLabel = `${pickerAgents.find((agent) => agent.id === agentId)?.displayName ?? agentId}: ${modelLabel}`;
 
   const send = useCallback(async () => {
     const typed = draft.trim();
@@ -275,13 +277,15 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
                   size="sm"
                   className="fd-agent-button h-8 max-w-full font-medium"
                   title={`${pickerLabel} (${mod} + /)`}
+                  aria-label={`Agent and model: ${pickerLabel}`}
                   onClick={() => setAgentPickerOpen(!agentPickerOpen)}
                   disabled={!!run || queued.length > 0}
                   aria-haspopup="menu"
                   aria-expanded={agentPickerOpen}
                   data-testid="agent-model"
                 >
-                  <span className="min-w-0 truncate">{pickerLabel}</span> <Icon name="chevronDown" width={13} height={13} className="shrink-0" />
+                  <AgentLogo agentId={agentId} />
+                  <span className="min-w-0 truncate">{modelLabel}</span> <Icon name="chevronDown" width={13} height={13} className="shrink-0" />
                 </Button>
                 <AgentModelMenu
                   anchorRef={agentButtonRef}
