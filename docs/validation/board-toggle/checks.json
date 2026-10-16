@@ -1,0 +1,61 @@
+{
+  "environment": "Windows Edge Chromium; real AppShell with mock API data, darwin/win32 host adapters; not native macOS verification",
+  "results": [
+    {
+      "platform": "darwin",
+      "width": 1440,
+      "height": 920,
+      "oneControl": true,
+      "stationaryAnimationSamples": 391,
+      "focusRetained": true,
+      "rapidReversals": true,
+      "enterSpace": true,
+      "sidebarToggle": true,
+      "reducedMotion": true,
+      "orderingClearance": true,
+      "noHorizontalOverflow": true
+    },
+    {
+      "platform": "darwin",
+      "width": 960,
+      "height": 600,
+      "oneControl": true,
+      "stationaryAnimationSamples": 393,
+      "focusRetained": true,
+      "rapidReversals": true,
+      "enterSpace": true,
+      "sidebarToggle": true,
+      "reducedMotion": true,
+      "orderingClearance": true,
+      "noHorizontalOverflow": true
+    },
+    {
+      "platform": "win32",
+      "width": 1440,
+      "height": 920,
+      "oneControl": true,
+      "stationaryAnimationSamples": 400,
+      "focusRetained": true,
+      "rapidReversals": true,
+      "enterSpace": true,
+      "sidebarToggle": true,
+      "reducedMotion": true,
+      "orderingClearance": true,
+      "noHorizontalOverflow": true
+    },
+    {
+      "platform": "win32",
+      "width": 960,
+      "height": 600,
+      "oneControl": true,
+      "stationaryAnimationSamples": 399,
+      "focusRetained": true,
+      "rapidReversals": true,
+      "enterSpace": true,
+      "sidebarToggle": true,
+      "reducedMotion": true,
+      "orderingClearance": true,
+      "noHorizontalOverflow": true
+    }
+  ]
+}
