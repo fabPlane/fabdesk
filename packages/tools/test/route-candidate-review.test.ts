@@ -396,3 +396,39 @@ test("fresh review: entirely removed copper still supplies a narrowing baseline"
   );
   expect(comparison.warnings.map((w) => w.kind)).toContain("narrowing");
 });
+
+test("fresh review follow-up: explicit per-net widths outrank the global width", async () => {
+  const project = await fixture(
+      "review-per-net-precedence",
+      '(kicad_pcb (net "USB_DP") (net "USB_DN"))',
+      {
+        net_settings: {
+          classes: [{ name: "USB", diff_pair_width: 0.2 }],
+          netclass_patterns: [{ pattern: "USB_D*", netclass: "USB" }],
+        },
+      },
+    ),
+    base = mockServices([project]);
+  let options: any;
+  const services = mockServices([project], {
+    design: {
+      ...base.design,
+      query: async (dir, select) => (select === "unrouted" ? [] : base.design.query(dir, select)),
+      route: async (_dir, opts) => {
+        options = opts;
+        return summary();
+      },
+    },
+  });
+  await invoke(project, services, {
+    rules: {
+      widthMm: 0.4,
+      perNet: [
+        { net: "USB_DP", widthMm: 0.25 },
+        { net: "USB_DN", widthMm: 0.25 },
+      ],
+    },
+  });
+  expect(options.settings.perNet.map((p: any) => p.widthMm)).toEqual([0.25, 0.25]);
+  expect(options.settings.differentialPairs[0].widthMm).toBe(0.25);
+});
