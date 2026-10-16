@@ -210,9 +210,21 @@ body {
 .fd-project-heading[data-menu-open="true"] > .fd-icon-button { opacity: 1; }
 .fd-scrolling-title { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .fd-scrolling-title-text { display: block; width: max-content; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Fade only clipped text; the first and final characters remain clear at rest. */
+@property --fd-title-fade-start { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@property --fd-title-fade-end { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@keyframes fd-title-edge-fade {
+  0% { --fd-title-fade-start: 0px; --fd-title-fade-end: 14px; }
+  8%, 92% { --fd-title-fade-start: 14px; --fd-title-fade-end: 14px; }
+  100% { --fd-title-fade-start: 14px; --fd-title-fade-end: 0px; }
+}
 @keyframes fd-title-scroll { from { transform: translateX(0); } to { transform: translateX(var(--title-travel)); } }
 @media (prefers-reduced-motion: no-preference) {
-  :is(.fd-project-row, .fd-chat-row):is(:hover, :focus-visible) .fd-scrolling-title[data-overflow="true"] { text-overflow: clip; }
+  :is(.fd-project-row, .fd-chat-row):is(:hover, :focus-visible) .fd-scrolling-title[data-overflow="true"] {
+    text-overflow: clip;
+    mask-image: linear-gradient(to right, transparent, #000 var(--fd-title-fade-start), #000 calc(100% - var(--fd-title-fade-end)), transparent);
+    animation: fd-title-edge-fade var(--title-duration) linear 600ms both;
+  }
   :is(.fd-project-row, .fd-chat-row):is(:hover, :focus-visible) .fd-scrolling-title[data-overflow="true"] .fd-scrolling-title-text {
     max-width: none;
     overflow: visible;

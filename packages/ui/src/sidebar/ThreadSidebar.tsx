@@ -256,7 +256,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
         </section>
         {sections.chats.length > 0 && <section aria-labelledby="sidebar-chats-heading" className="mt-4" data-testid="sidebar-chats-section">
           <h2 id="sidebar-chats-heading" className="px-2 py-2 text-[11px] font-medium text-muted">Chats</h2>
-          <div className="grid gap-1">{sections.chats.map(renderThread)}</div>
+          <div className="grid grid-cols-[minmax(0,1fr)] gap-1">{sections.chats.map(renderThread)}</div>
         </section>}
         </>}
       </div>
