@@ -5,12 +5,17 @@
  * client speaks nanometres.
  */
 import { resolveSchematicSheet } from "./schematic-sheet";
+import {
+  assertConsistentSymbolMetadata,
+  assertEditableSymbolField,
+} from "./schematic-symbol-update-validation";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { create } from "@bufbuild/protobuf";
 import {
   ElectricalPinType,
+  ErcErrorType,
   BoardGraphicShapeSchema,
   BoardLayer,
   PadType,
@@ -59,6 +64,7 @@ import {
   schematicPinSheetPosition,
   normalizeNativeSymbolTransform,
   moveNativeSymbol,
+  CommitRecoveryError,
   toVector2,
   toMm,
   vec2,
@@ -740,6 +746,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       symbols: symbols.map((symbol) => ({
         id: symbol.id,
         reference: symbol.reference,
+        unit: symbol.unit,
         value: symbol.value,
         footprint: symbol.footprint,
         libId: symbol.libraryId,
@@ -803,7 +810,26 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         itemCount: net.sheets.reduce((count, sheet) => count + sheet.items.length, 0),
         itemIds: net.sheets.flatMap((sheet) => sheet.items.map((item) => item.value)),
       })),
-      erc: { errors: erc.errorCount, warnings: erc.warningCount },
+      erc: {
+        errors: erc.errorCount,
+        warnings: erc.warningCount,
+        issues: erc.markers
+          .filter((m) => !m.excluded)
+          .slice(0, 200)
+          .map((m) => ({
+            type: ErcErrorType[m.errorType] ?? String(m.errorType),
+            description: m.description,
+            itemIds: m.items.map((id) => id.value),
+          })),
+        issueCount: erc.markers.filter((m) => !m.excluded).length,
+        danglingItemIds: [
+          ...new Set(
+            erc.markers
+              .filter((m) => !m.excluded && /unconnected.*endpoint|dangling/i.test(m.description))
+              .flatMap((m) => m.items.map((id) => id.value)),
+          ),
+        ],
+      },
       scope: {
         kind: selectedSheet ? "selected-sheet" : "current/root-sheet",
         identity: `uuid:${selectedEntry.path.path.map((id) => id.value).join("/")}`,
@@ -844,12 +870,26 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       return null;
     };
     const beforeById = new Map(beforeItems.map((item) => [item.id, signature(item)]));
-    const projectReferences = new Map(existing.map((symbol) => [symbol.reference, symbol.id]));
-    if ((edit.symbols?.length ?? 0) || edit.symbolUpdates?.some((update) => update.newReference))
+    const requestedDeletes = new Set(edit.deleteItemIds ?? []);
+    const projectSymbols = existing.filter((symbol) => !requestedDeletes.has(symbol.id));
+    const projectReferences = new Map(
+      projectSymbols.map((symbol) => [symbol.reference, symbol.id]),
+    );
+    if (
+      (edit.symbols?.length ?? 0) ||
+      edit.symbolUpdates?.some(
+        (update) =>
+          update.newReference !== undefined ||
+          update.value !== undefined ||
+          update.footprint !== undefined,
+      )
+    )
       for (const sheet of flat) {
         if (sheet === selectedEntry || !sheet.path) continue;
-        for (const symbol of await schematic.sheet(sheet.path, sheet).getSymbols())
+        for (const symbol of await schematic.sheet(sheet.path, sheet).getSymbols()) {
+          projectSymbols.push(symbol);
           projectReferences.set(symbol.reference, symbol.id);
+        }
       }
     const gridProblems: Array<{
       object: string;
@@ -883,7 +923,17 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     const createdSymbols: SchematicSymbol[] = [];
     const updatedSymbols: SchematicSymbol[] = [];
     for (const input of edit.symbolUpdates ?? []) {
-      const symbol = byReference.get(input.reference);
+      const matches = existing.filter(
+        (symbol) =>
+          symbol.reference === input.reference &&
+          (input.unit === undefined || (symbol.proto.unit?.unit ?? 1) === input.unit),
+      );
+      if (matches.length > 1)
+        throw new ToolError(
+          `symbolUpdates: ${input.reference} has multiple units; specify unit to select one, or inspect IDs and deleteItemIds to replace it`,
+          "invalid_args",
+        );
+      const symbol = matches[0];
       if (!symbol)
         throw new ToolError(
           `cannot update missing schematic symbol ${input.reference}`,
@@ -901,6 +951,14 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       if (input.mirrorX !== undefined) symbol.proto.transform!.mirrorX = input.mirrorX;
       if (input.mirrorY !== undefined) symbol.proto.transform!.mirrorY = input.mirrorY;
       normalizeNativeSymbolTransform(symbol);
+      if (
+        input.newReference !== undefined &&
+        projectSymbols.filter((item) => item.reference === input.reference).length > 1
+      )
+        throw new ToolError(
+          `symbolUpdates: ${input.reference} is a multi-unit part; replace all its inspected symbol IDs in one schematic_edit batch to change its reference consistently`,
+          "invalid_args",
+        );
       if (input.newReference !== undefined) {
         if (
           projectReferences.has(input.newReference) &&
@@ -919,6 +977,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       if (input.value !== undefined) symbol.value = input.value;
       if (input.footprint !== undefined) symbol.footprint = input.footprint;
       for (const [name, value] of Object.entries(input.fields ?? {})) {
+        assertEditableSymbolField(name);
         const field = symbol.field(name);
         if (!field)
           throw new ToolError(
@@ -929,17 +988,36 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       }
       updatedSymbols.push(symbol);
     }
-    const pins = new Map<string, { x: number; y: number }>();
-    for (const symbol of existing)
+    assertConsistentSymbolMetadata(
+      projectSymbols,
+      (edit.symbolUpdates ?? [])
+        .filter((update) => update.value !== undefined || update.footprint !== undefined)
+        .map((update) => update.reference),
+    );
+    const pins = new Map<
+      string,
+      Array<{
+        x: number;
+        y: number;
+        symbol: SchematicSymbol;
+        node: { reference: string; pin: string };
+      }>
+    >();
+    const addPin = (
+      symbol: SchematicSymbol,
+      number: string,
+      position: { x: number; y: number },
+    ) => {
+      const key = `${symbol.reference}:${number}`;
+      const values = pins.get(key) ?? [];
+      values.push({ ...position, symbol, node: { reference: symbol.reference, pin: number } });
+      pins.set(key, values);
+    };
+    for (const symbol of existing.filter((item) => !requestedDeletes.has(item.id)))
       for (const pin of symbol.pins)
-        pins.set(`${symbol.reference}:${pin.number}`, schematicPinSheetPosition(symbol, pin));
+        addPin(symbol, pin.number, schematicPinSheetPosition(symbol, pin));
 
     for (const input of edit.symbols ?? []) {
-      if (projectReferences.has(input.reference))
-        throw new ToolError(
-          `schematic hierarchy already contains ${input.reference}; delete or edit it explicitly before adding it again`,
-          "invalid_args",
-        );
       // Library lookup resolves inherited pins; a symbol-editor document exposes only the
       // editable definition's own children and can be pinless for a derived symbol.
       const definition = await session.kicad.libraries
@@ -952,12 +1030,39 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         });
       if (!(definition instanceof LibSymbol))
         throw new ToolError(`cannot load symbol ${input.libId}`, "invalid_args");
+      const unit = input.unit ?? 1;
+      const unitCount = Math.max(1, definition.proto.unitCount);
+      if (unit < 1 || unit > unitCount)
+        throw new ToolError(
+          `${input.reference}: ${input.libId} has units 1..${unitCount}; choose a valid unit in schematic_edit`,
+          "invalid_args",
+        );
+      const companions = projectSymbols.filter((symbol) => symbol.reference === input.reference);
+      const duplicate = companions.find((symbol) => (symbol.proto.unit?.unit ?? 1) === unit);
+      if (duplicate)
+        throw new ToolError(
+          `schematic hierarchy already contains ${input.reference} unit ${unit}; use symbolUpdates with reference and unit, or deleteItemIds:["${duplicate.id}"] before replacing it`,
+          "invalid_args",
+        );
+      const footprint = input.footprint ?? companions[0]?.footprint ?? "";
+      if (
+        companions.some(
+          (symbol) =>
+            symbol.libraryId !== input.libId ||
+            symbol.value !== input.value ||
+            symbol.footprint !== footprint,
+        )
+      )
+        throw new ToolError(
+          `${input.reference}: additional units must use the same libId, value and footprint; inspect the part or replace all its symbol IDs with schematic_edit`,
+          "invalid_args",
+        );
       if (input.libId.startsWith("power:"))
         definition.proto.type = SchematicSymbolType.SST_GLOBAL_POWER;
       const placed = placeNativeSymbol(definition, {
         reference: input.reference,
         value: input.value,
-        footprint: input.footprint ?? "",
+        footprint,
         position: { x: toNm(input.position.x), y: toNm(input.position.y) },
         ...(input.unit !== undefined ? { unit: input.unit } : {}),
         ...(input.bodyStyle !== undefined ? { bodyStyle: input.bodyStyle } : {}),
@@ -972,8 +1077,8 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       placed.symbol.proto.showPinNumbers = definition.proto.showPinNumbers;
       placed.symbol.proto.pinNameOffset = definition.proto.pinNameOffset;
       createdSymbols.push(placed.symbol);
-      for (const [number, position] of placed.pins)
-        pins.set(`${input.reference}:${number}`, position);
+      projectSymbols.push(placed.symbol);
+      for (const [number, position] of placed.pins) addPin(placed.symbol, number, position);
       byReference.set(input.reference, placed.symbol);
       projectReferences.set(input.reference, placed.symbol.id);
     }
@@ -1072,7 +1177,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
           `net ${connection.name} needs one labelled node or at least two direct-wire nodes`,
           "invalid_args",
         );
-      const points = connection.nodes.map((node) => {
+      const points = connection.nodes.flatMap((node) => {
         const point = pins.get(`${node.reference}:${node.pin}`);
         if (!point)
           throw new ToolError(
@@ -1096,9 +1201,9 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         }
         continue;
       }
-      for (const [index, pin] of points.entries()) {
-        const node = connection.nodes[index]!;
-        const symbol = byReference.get(node.reference);
+      for (const pin of points) {
+        const node = pin.node;
+        const symbol = pin.symbol;
         const center = symbol?.position ?? pin;
         const dx = pin.x - center.x;
         const dy = pin.y - center.y;
@@ -1108,14 +1213,16 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
           ? { x: pin.x + (dx >= 0 ? step : -step), y: pin.y }
           : { x: pin.x, y: pin.y + (dy >= 0 ? step : -step) };
         const nodeKey = `${node.reference}:${node.pin}`;
-        for (const [otherKey, otherPin] of pins) {
-          if (otherKey === nodeKey || (otherPin.x === pin.x && otherPin.y === pin.y)) continue;
-          if (pinNets.get(otherKey) === connection.name) continue;
-          if (pointOnSegment(otherPin, pin, anchor))
-            throw new ToolError(
-              `net ${connection.name} stub ${nodeKey} would cross ${otherKey} at ${mm(otherPin.x)},${mm(otherPin.y)}; move a symbol or use explicit wiring`,
-              "invalid_args",
-            );
+        for (const [otherKey, otherPins] of pins) {
+          for (const otherPin of otherPins) {
+            if (otherKey === nodeKey || (otherPin.x === pin.x && otherPin.y === pin.y)) continue;
+            if (pinNets.get(otherKey) === connection.name) continue;
+            if (pointOnSegment(otherPin, pin, anchor))
+              throw new ToolError(
+                `net ${connection.name} stub ${nodeKey} would cross ${otherKey} at ${mm(otherPin.x)},${mm(otherPin.y)}; move a symbol or use explicit wiring`,
+                "invalid_args",
+              );
+          }
         }
         const candidate = { net: connection.name, node: nodeKey, start: pin, end: anchor };
         const crossing = plannedStubs.find(
@@ -1158,7 +1265,6 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       }
     }
 
-    const requestedDeletes = new Set(edit.deleteItemIds ?? []);
     const deleteItems = beforeItems.filter((item) => requestedDeletes.has(item.id));
     const deleteIds = new Set(deleteItems.map((item) => item.id));
     for (const id of edit.deleteItemIds ?? [])
@@ -2564,6 +2670,21 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       nativeOperations.set(dir, (nativeOperations.get(dir) ?? 0) + 1);
       try {
         return await operation(dir, ...args);
+      } catch (error) {
+        if (error instanceof CommitRecoveryError) {
+          const recovery = JSON.stringify({
+            name: "project_import_kicad",
+            arguments: { project: "<new-project-id>", path: join(dir, "board.kicad_pcb") },
+          });
+          throw new ToolError(
+            `${error.message} To resume from saved files only: create a fresh project, find ` +
+              `project_import_kicad with capability_search, call it through capability_call with ` +
+              `${recovery}, then schematic_inspect on the new project. This retains the original ` +
+              `live session; it does not recover unsaved edits.`,
+            "internal",
+          );
+        }
+        throw error;
       } finally {
         const remaining = (nativeOperations.get(dir) ?? 1) - 1;
         if (remaining) nativeOperations.set(dir, remaining);
