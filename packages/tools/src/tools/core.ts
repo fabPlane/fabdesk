@@ -535,6 +535,13 @@ function routeRunTool(inputSchema: typeof RouteRunArgs) {
           ...(args.targets ? { targets: args.targets } : {}),
           ...(args.rules ? { rules: args.rules } : {}),
           ...(args.settings ? { settings: args.settings } : {}),
+          ...(args.rerouteMode ? { rerouteMode: args.rerouteMode } : {}),
+          ...(args.freeroutingPasses !== undefined
+            ? { freeroutingPasses: args.freeroutingPasses }
+            : {}),
+          ...(args.allowQualityRegression
+            ? { allowQualityRegression: args.allowQualityRegression }
+            : {}),
           applyPolicy: args.applyPolicy,
           waitMs: args.waitMs,
         },

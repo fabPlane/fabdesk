@@ -793,8 +793,22 @@ export type StencilExportResult = {
   minApertureMm: number | null;
   thicknessMm: number;
   frameMm: number;
-  board: { minX: number; minY: number; maxX: number; maxY: number; widthMm: number; heightMm: number };
-  plate: { minX: number; minY: number; maxX: number; maxY: number; widthMm: number; heightMm: number };
+  board: {
+    minX: number;
+    minY: number;
+    maxX: number;
+    maxY: number;
+    widthMm: number;
+    heightMm: number;
+  };
+  plate: {
+    minX: number;
+    minY: number;
+    maxX: number;
+    maxY: number;
+    widthMm: number;
+    heightMm: number;
+  };
   alignment: { kind: StencilAlignment; holes: Array<{ x: number; y: number; diameterMm: number }> };
   warnings: Array<{ code: string; message: string; ref?: string; number?: string }>;
   triangleCount: number;
@@ -896,6 +910,9 @@ export type RouteRunRecord = {
     rules: Record<string, unknown> | null;
     settings: Record<string, unknown> | null;
     applyPolicy: "auto" | "manual";
+    rerouteMode?: "onOpen" | "always" | "never";
+    freeroutingPasses?: number;
+    allowQualityRegression?: Array<"narrowing" | "skew">;
   };
   startingPcbRevision: string;
   currentPcbRevision: string | null;
