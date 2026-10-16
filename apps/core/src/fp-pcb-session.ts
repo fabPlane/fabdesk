@@ -346,6 +346,18 @@ export class FpPcbSessions {
     }
   }
 
+  /**
+   * Record a save the bridge made of the live document (the route job refills and saves before
+   * exporting its DSN) as the loaded revision. That save bypasses `guardSave`, so without this the
+   * next acquisition sees changed disk bytes plus the job's unsaved applied copper and refuses.
+   * Only call it while the caller holds the operation that owned the save.
+   */
+  async adoptSaved(projectDir: string, filename: string): Promise<void> {
+    this.revisions
+      .get(projectDir)
+      ?.set(filename, await this.diskRevision(join(projectDir, filename)));
+  }
+
   /** A document acquired before an external restore must never save over that restore. */
   private async guardSave<T extends Board | Schematic>(
     projectDir: string,

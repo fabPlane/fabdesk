@@ -12,11 +12,8 @@ export function TopBar({ coreStatus }: { coreStatus?: CoreStatusInfo | undefined
   const { host, sseStatus, client } = useCore();
   const projectId = useUiStore((s) => s.activeProjectId);
   const sidebarOpen = useUiStore((s) => s.sidebarOpen);
-  const boardOpen = useUiStore((s) => s.boardOpen);
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
-  const toggleBoard = useUiStore((s) => s.toggleBoard);
   const setPaletteOpen = useUiStore((s) => s.setPaletteOpen);
-  const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
   const projects = useProjects();
   const project = projects.data?.find((p) => p.id === projectId);
   const mod = modKey(host.platform);
@@ -82,12 +79,6 @@ export function TopBar({ coreStatus }: { coreStatus?: CoreStatusInfo | undefined
         <div className="fd-topbar-tools flex items-center gap-1">
           <IconButton title={`Command palette (${mod} + K)`} onClick={() => setPaletteOpen(true)}>
             <Icon name="search" width={20} height={20} />
-          </IconButton>
-          <IconButton title={`Board panel (${mod} + Shift + B)`} onClick={toggleBoard} className={cn(boardOpen && "text-accent")}>
-            <Icon name="panel" width={20} height={20} />
-          </IconButton>
-          <IconButton title={`Settings (${mod} + ,)`} onClick={() => setSettingsOpen(true)}>
-            <Icon name="settings" width={20} height={20} />
           </IconButton>
         </div>
       </div>

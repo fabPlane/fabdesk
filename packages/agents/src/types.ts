@@ -66,6 +66,9 @@ export interface DetectResult {
   installed: boolean;
   version?: string;
   path?: string;
+  models?: string[];
+  modelAliases?: Record<string, string>;
+  defaultModel?: string;
 }
 
 export interface AgentAdapter {

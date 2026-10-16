@@ -478,3 +478,23 @@ test("checkpoint restore rejects in-project native aliases before replacing anot
   ).rejects.toThrow("non-file/symlink");
   expect(await readFile(join(project.dir, "board.kicad_pcb"), "utf8")).toBe(board(track("a", "A")));
 });
+
+test("project_status reports an unreadable task baseline instead of failing", async () => {
+  const { project, call } = await harness("task-status-corrupt");
+  await writeFile(join(project.dir, "board.kicad_pcb"), board(track("usb", "USB_DP")));
+  const checkpoint = (
+    await call("project_checkpoint", {
+      action: "retain",
+      name: "baseline",
+      reason: "status robustness",
+      role: "baseline",
+    })
+  ).json as any;
+  await writeFile(
+    join(project.dir, ".fabdesk/task-checkpoints", checkpoint.id, "manifest.json"),
+    "{ not json",
+  );
+  const result = await call("project_status", {});
+  expect((result.json as any).taskComparison.error).toBeString();
+  expect(result.text).toContain("Task baseline comparison unavailable");
+});

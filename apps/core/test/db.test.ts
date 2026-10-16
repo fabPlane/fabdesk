@@ -319,21 +319,49 @@ describe("sqlite", () => {
     }
     expect(store.runDumps.list(RUN_DUMP_RETENTION.rows + 1)).toHaveLength(RUN_DUMP_RETENTION.rows);
     expect(store.runDumps.get("run_000")).toBeNull();
-    store.runDumps.put(
-      {
-        runId: "run_unbacked",
-        traceId: "trace_unbacked",
-        threadId: "thread_1",
-        agentId: "codex",
-        projectId: null,
-        createdAt: "2026-09-10T00:00:00.000Z",
-        dumpJson: "{}",
-      },
-      false,
-    );
-    expect(store.runDumps.list(RUN_DUMP_RETENTION.rows + 1)).toHaveLength(
-      RUN_DUMP_RETENTION.rows + 1,
-    );
+    store.close();
+  });
+
+  test("run dump retention keeps dumps an archive destination still needs, up to a ceiling", () => {
+    const store = new Store(openDatabase(":memory:"));
+    const destinations = ["api:test"];
+    const put = (index: number) => {
+      const suffix = String(index).padStart(3, "0");
+      store.runDumps.put(
+        {
+          runId: `run_${suffix}`,
+          traceId: `trace_${suffix}`,
+          threadId: "thread_1",
+          agentId: "codex",
+          projectId: null,
+          createdAt: `2026-09-09T00:00:00.${suffix}Z`,
+          dumpJson: "{}",
+        },
+        destinations,
+      );
+    };
+    const count = () => store.runDumps.list(1_000).length;
+    for (let index = 0; index < RUN_DUMP_RETENTION.rows + 10; index++) put(index);
+    // Nothing has been backed up yet, so retention keeps every dump past the normal limit.
+    expect(count()).toBe(RUN_DUMP_RETENTION.rows + 10);
+    // Once the oldest five are recorded as uploaded, the next put prunes exactly those.
+    for (let index = 0; index < 5; index++)
+      store.db.run(
+        "INSERT INTO usage_archive_uploads(destination, record_id, sha256, uploaded_at) VALUES (?, ?, ?, ?)",
+        ["api:test", `run-dump:run_${String(index).padStart(3, "0")}`, "x", "2026-09-09T00:00:00Z"],
+      );
+    put(RUN_DUMP_RETENTION.rows + 10);
+    expect(count()).toBe(RUN_DUMP_RETENTION.rows + 6);
+    expect(store.runDumps.get("run_004")).toBeNull();
+    expect(store.runDumps.get("run_005")).not.toBeNull();
+    // A destination that never accepts anything cannot grow the table past the hard ceiling.
+    for (
+      let index = RUN_DUMP_RETENTION.rows + 11;
+      index < RUN_DUMP_RETENTION.pendingRows + 20;
+      index++
+    )
+      put(index);
+    expect(count()).toBe(RUN_DUMP_RETENTION.pendingRows);
     store.close();
   });
 

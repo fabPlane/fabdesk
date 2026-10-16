@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { usageArchiveAllowed, usageArchiveChoice } from "@fabdesk/protocol";
 import { Store } from "../src/db";
 import { CONSENT_REGION_REMEMBERED_KEY, resolvePrivacyStatus, systemLocales } from "../src/privacy-gate";
 
@@ -15,16 +16,44 @@ function withStore(fn: (store: Store) => void) {
 }
 
 describe("privacy gate", () => {
+  test("outside the consent region, undecided installations back up without a startup prompt", () => {
+    withStore((store) => {
+      const privacy = resolvePrivacyStatus({ settings: store.settings, env: {}, ...US });
+      expect(privacy).toMatchObject({
+        mode: "auto",
+        firstInstallScreen: false,
+        region: { likelyInRegion: false },
+      });
+      expect(usageArchiveAllowed(store.settings.get(), privacy.firstInstallScreen)).toBe(true);
+      store.settings.patch(usageArchiveChoice(false));
+      expect(usageArchiveAllowed(store.settings.get(), privacy.firstInstallScreen)).toBe(false);
+    });
+  });
+
+  test("inside the consent region, the default waits for an explicit opt-in", () => {
+    withStore((store) => {
+      const privacy = resolvePrivacyStatus({ settings: store.settings, env: {}, ...DE });
+      expect(privacy).toMatchObject({
+        mode: "auto",
+        firstInstallScreen: true,
+        region: { likelyInRegion: true },
+      });
+      expect(usageArchiveAllowed(store.settings.get(), privacy.firstInstallScreen)).toBe(false);
+      store.settings.patch(usageArchiveChoice(true));
+      expect(usageArchiveAllowed(store.settings.get(), privacy.firstInstallScreen)).toBe(true);
+    });
+  });
+
   test("auto shows the screen only in the consent region", () => {
     withStore((store) => {
-      expect(resolvePrivacyStatus({ settings: store.settings, env: {}, ...US })).toEqual({
+      expect(resolvePrivacyStatus({ settings: store.settings, env: {}, mode: "auto", ...US })).toEqual({
         mode: "auto",
         firstInstallScreen: false,
         region: { likelyInRegion: false, signal: null, country: null },
       });
     });
     withStore((store) => {
-      expect(resolvePrivacyStatus({ settings: store.settings, env: {}, ...DE })).toEqual({
+      expect(resolvePrivacyStatus({ settings: store.settings, env: {}, mode: "auto", ...DE })).toEqual({
         mode: "auto",
         firstInstallScreen: true,
         region: { likelyInRegion: true, signal: "time-zone", country: "DE" },

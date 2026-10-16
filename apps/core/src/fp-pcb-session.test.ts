@@ -155,6 +155,20 @@ describe("saved file/session restoration", () => {
       expect(f.counts()).toEqual({ saves: 1, closes: 1, opens: 1 });
     }));
 
+  test("a bridge save adopted by its owner permits the owner's later unsaved edits", async () =>
+    fixture(async (f) => {
+      await f.sessions.board(f.dir);
+      // The route job refills and saves inside the bridge, then applies copper without saving.
+      await writeFile(f.path, "bridge:refilled");
+      f.edit("bridge:refilled+routed");
+      await expect(f.sessions.board(f.dir)).rejects.toThrow("disk/session conflict");
+      await f.sessions.adoptSaved(f.dir, "board.kicad_pcb");
+      const board = await f.sessions.board(f.dir);
+      await board.save();
+      expect(await readFile(f.path, "utf8")).toBe("bridge:refilled+routed");
+      expect(f.counts()).toEqual({ saves: 1, closes: 1, opens: 1 });
+    }));
+
   test("removed saved file refuses overwrite", async () =>
     fixture(async (f) => {
       await f.sessions.board(f.dir);
