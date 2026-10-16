@@ -1,9 +1,9 @@
 # Inline live activity
 
-Capture source: 5ac23dd63d377f06ee3ee8c6a090a6d7e7d31ff3. Actual AppShell with isolated mock messages/run state, captured in Windows Edge Chromium at 1440 x 920 and 960 x 600. No paid agent runs were started.
+Capture source: a59bac5ae25252dfa6e5fd1f6aac8afd35e0b0be. Actual AppShell with isolated mock messages/run state, captured in Windows Edge Chromium at 1440 x 920 and 960 x 600. No paid agent runs were started.
 
 - Removed running/time/cost from the chat header. Timing, cost, and token tooltip now sit beside the active conversation response.
-- Active command/tool steps remain visible when their group is collapsed. Explicit image-view steps show Viewing image / Viewed image and a dedicated icon.
+- Completed command/tool summaries stay quiet; active steps appear directly underneath without a duplicate Running tools heading, even when the completed history is collapsed. Explicit image-view steps show Viewing image / Viewed image and a dedicated icon.
 - Current activity has a gentle 2.6-second left-to-right text shimmer. Completed/failed/stopped work stays static. Approval/input waits stay static. Reduced-motion and forced-colors modes keep ordinary text.
 - Live activity matches message run IDs; an unfinished call from an older run is never animated as new work.
 
