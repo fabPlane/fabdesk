@@ -93,6 +93,23 @@ async function harness(name: string, delayMs = 120) {
 }
 
 describe("durable asynchronous routing", () => {
+  test("no-progress application reason preserves the router diagnosis", async () => {
+    const h = await harness("async-no-progress-detail");
+    const diagnosis = "solver stopped stagnant; N1 remains open; partial copper discarded";
+    h.services.design.route = async () => ({
+      ...summary(1),
+      tracks: 0,
+      routed: 0,
+      geometry: [],
+      message: diagnosis,
+      unrouted: [{ net: "N1", from: { x: 0, y: 0 }, to: { x: 1, y: 1 } }],
+    });
+    const response = await h.call("route_run", { router: "fab_router", waitMs: 0 });
+    const run = await terminal(h.services, (response.json as { runId: string }).runId);
+    expect(run.candidate.available).toBe(false);
+    expect(run.application.state).toBe("not_available");
+    expect(run.application.reason).toBe(diagnosis);
+  });
   test("start returns promptly while progress and compact terminal status survive independent calls", async () => {
     const h = await harness("async-start", 180);
     const before = await hash(h.boardPath);

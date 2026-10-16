@@ -28,7 +28,14 @@ const summary = (): RouteSummary => ({
 
 async function routeCase(
   pin: "capacity" | "freerouting" | "fab_router" | undefined,
-  first: "failure" | "failure-with-timeout-log" | "deadline" | "partial" | "timeout" | "unavailable" | "complete",
+  first:
+    | "failure"
+    | "failure-with-timeout-log"
+    | "deadline"
+    | "partial"
+    | "timeout"
+    | "unavailable"
+    | "complete",
   explicit?: string,
   selective = false,
 ) {
@@ -38,7 +45,10 @@ async function routeCase(
     ...original,
     manifest: () => ({ ...manifest, ...(pin ? { router: pin } : {}) }),
   };
-  await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb (net \"N1\") (property \"test\" \"original\"))");
+  await writeFile(
+    join(project.dir, "board.kicad_pcb"),
+    '(kicad_pcb (net "N1") (property "test" "original"))',
+  );
   await writeFile(join(project.dir, "board.kicad_pro"), "original-pro");
   const base = mockServices([project]);
   const calls: RouteJobOptions[] = [];
@@ -52,14 +62,21 @@ async function routeCase(
       }),
       route: async (dir, opts, hooks) => {
         calls.push(opts);
-        if (calls.length === 1 && ["failure", "failure-with-timeout-log", "deadline"].includes(first)) {
+        if (
+          calls.length === 1 &&
+          ["failure", "failure-with-timeout-log", "deadline"].includes(first)
+        ) {
           await writeFile(join(dir, "board.kicad_pcb"), "failed-job-mutated-snapshot");
-          if (first === "deadline") throw new JobTimeoutError("route exceeded its computation budget");
-          if (first === "failure-with-timeout-log") throw new Error("Java crashed; network timeout in diagnostic log");
+          if (first === "deadline")
+            throw new JobTimeoutError("route exceeded its computation budget");
+          if (first === "failure-with-timeout-log")
+            throw new Error("Java crashed; network timeout in diagnostic log");
           throw new Error("Java crashed; no session written");
         }
         if (calls.length === 2) {
-          expect(await readFile(join(dir, "board.kicad_pcb"), "utf8")).toBe("(kicad_pcb (net \"N1\") (property \"test\" \"original\"))");
+          expect(await readFile(join(dir, "board.kicad_pcb"), "utf8")).toBe(
+            '(kicad_pcb (net "N1") (property "test" "original"))',
+          );
           expect(await readFile(join(dir, "board.kicad_pro"), "utf8")).toBe("original-pro");
         }
         hooks.onProgress?.({
@@ -70,7 +87,10 @@ async function routeCase(
           total: 2,
           log: [],
         });
-        await writeFile(join(dir, "board.kicad_pcb"), "(kicad_pcb (net \"N1\") (property \"test\" \"candidate\"))");
+        await writeFile(
+          join(dir, "board.kicad_pcb"),
+          '(kicad_pcb (net "N1") (property "test" "candidate"))',
+        );
         return {
           ...summary(),
           ...(first === "partial"
@@ -109,7 +129,7 @@ test("new unpinned project uses Freerouting and persists pass progress", async (
   expect(record.router).toBe("freerouting");
   expect(record.progress.pass).toBe(3);
   expect(record.attempts?.[0]?.outcome).toBe("completed");
-  expect(calls[0]?.freerouting?.passes).toBe(20);
+  expect(calls[0]?.freerouting?.passes).toBe(100);
 });
 test("automatic failure restores original snapshot and records both attempts and producer", async () => {
   const { calls, record, output } = await routeCase(undefined, "failure");
