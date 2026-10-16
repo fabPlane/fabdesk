@@ -1,4 +1,5 @@
 import type { Thread } from "@fabdesk/protocol";
+import { DeleteChatDialog } from "./DeleteChatDialog";
 import { CreateProjectDialog } from "./CreateProjectDialog";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { Button, ContextMenu, IconButton, Input, MenuItem } from "../components/ui";
@@ -56,8 +57,9 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
     [threads.data, projects.data, pinnedProjectIds],
   );
   const sections = useMemo(() => sidebarSections(projectGroups, pinnedProjectIds), [projectGroups, pinnedProjectIds]);
-  const { patch, remove } = useThreadMutations();
+  const { patch } = useThreadMutations();
   const branch = useBranchThread();
+  const [deletingChat, setDeletingChat] = useState<Thread | null>(null);
   const [menu, setMenu] = useState<Menu | null>(null);
   const [projectMenu, setProjectMenu] = useState<{ x: number; y: number; id: string; name: string } | null>(null);
   const [projectAction, setProjectAction] = useState<ProjectAction | null>(null);
@@ -272,6 +274,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
         <MenuItem onClick={() => { setProjectAction({ id: projectMenu.id, name: projectMenu.name, action: "rename" }); setProjectMenu(null); }}>Rename</MenuItem>
         <MenuItem danger onClick={() => { setProjectAction({ id: projectMenu.id, name: projectMenu.name, action: "delete" }); setProjectMenu(null); }}>Delete</MenuItem>
       </ContextMenu>}
+      {deletingChat && <DeleteChatDialog thread={deletingChat} onClose={() => setDeletingChat(null)} />}
       {menu && (
         <ContextMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)}>
           <MenuItem
@@ -302,10 +305,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
           <MenuItem
             danger
             onClick={() => {
-              if (window.confirm(`Delete "${menu.thread.title}"?`)) {
-                remove.mutate(menu.thread.id);
-                if (activeThreadId === menu.thread.id) setActiveThread(null);
-              }
+              setDeletingChat(menu.thread);
               setMenu(null);
             }}
           >
