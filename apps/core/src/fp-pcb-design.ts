@@ -872,6 +872,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     const beforeById = new Map(beforeItems.map((item) => [item.id, signature(item)]));
     const requestedDeletes = new Set(edit.deleteItemIds ?? []);
     const projectSymbols = existing.filter((symbol) => !requestedDeletes.has(symbol.id));
+    const referencesOnOtherSheets = new Set<string>();
     const projectReferences = new Map(
       projectSymbols.map((symbol) => [symbol.reference, symbol.id]),
     );
@@ -888,6 +889,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         if (sheet === selectedEntry || !sheet.path) continue;
         for (const symbol of await schematic.sheet(sheet.path, sheet).getSymbols()) {
           projectSymbols.push(symbol);
+          referencesOnOtherSheets.add(symbol.reference);
           projectReferences.set(symbol.reference, symbol.id);
         }
       }
@@ -993,6 +995,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       (edit.symbolUpdates ?? [])
         .filter((update) => update.value !== undefined || update.footprint !== undefined)
         .map((update) => update.reference),
+      referencesOnOtherSheets,
     );
     const pins = new Map<
       string,
