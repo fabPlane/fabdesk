@@ -1,6 +1,6 @@
 name: Installer test
 
-# Fresh-machine install + launch test of the released installers, on self-hosted macOS / Blacksmith Ubuntu /
+# Fresh-machine install + launch test of the released installers, on fresh Blacksmith macOS / Ubuntu /
 # Windows runners (a clean VM per job). Runs after every successful Release (testing that tag),
 # weekly against what fabplane.com serves, and on demand. Uses the same guest scripts as the
 # local VM tests (scripts/vm/guest); see docs/installer-vms.md.
@@ -76,10 +76,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # The self-hosted Mini is offline; test Apple Silicon on Blacksmith until it is back.
+          # Installer verification requires a fresh machine; keep it off the shared build VM.
           - { arch: arm64, ext: dmg, os: blacksmith-6vcpu-macos-15 }
           - { arch: arm64, ext: zip, os: blacksmith-6vcpu-macos-15 }
-          # The self-hosted Mini does not have Rosetta yet, so keep Intel testing hosted.
+          # Intel installer verification uses the Rosetta-capable hosted image.
           - { arch: x64, ext: dmg, os: blacksmith-6vcpu-macos-15 }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30

@@ -125,17 +125,25 @@ jobs:
     uses: ./.github/workflows/select-linux-runner.yml
     secrets: inherit
 
+  select-build-macos-runner:
+    needs: version
+    permissions:
+      contents: write
+    uses: ./.github/workflows/select-macos-runner.yml
+
   build:
-    needs: [version, select-build-linux-runner]
+    needs: [version, select-build-linux-runner, select-build-macos-runner]
     permissions:
       contents: write
     strategy:
       fail-fast: false
       matrix:
         include:
-          # The self-hosted Mini is offline; build Apple Silicon on Blacksmith until it is back.
-          - { os: blacksmith-6vcpu-macos-15, target: bun-darwin-arm64, eb: "--mac --arm64" }
-          # The self-hosted Mini does not have Rosetta yet, so keep Intel packaging hosted.
+          # The shared Mac handles one native Apple Silicon build; overflow uses Blacksmith.
+          - os: ${{ fromJSON(needs.select-build-macos-runner.outputs.runner) }}
+            target: bun-darwin-arm64
+            eb: "--mac --arm64"
+          # Intel packaging stays on the Rosetta-provisioned Blacksmith image.
           - { os: blacksmith-6vcpu-macos-15, target: bun-darwin-x64, eb: "--mac --x64" }
           - os: ${{ fromJSON(needs.select-build-linux-runner.outputs.runner) }}
             target: bun-linux-x64
@@ -542,3 +550,12 @@ jobs:
           EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
         run: eas build --platform all --profile preview --non-interactive --no-wait
         working-directory: apps/mobile
+
+  release-build-macos-runner:
+    needs: [select-build-macos-runner, build]
+    if: always() && needs.select-build-macos-runner.outputs.lease != ''
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release-macos-runner.yml
+    with:
+      lease: ${{ needs.select-build-macos-runner.outputs.lease }}

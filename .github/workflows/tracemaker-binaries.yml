@@ -157,11 +157,18 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  select-tracemaker-macos-runner:
+    needs: resolve
+    permissions:
+      contents: write
+    uses: ./.github/workflows/select-macos-runner.yml
+    if: needs.resolve.outputs.skip != 'true' && (needs.resolve.outputs.force == 'true' || contains(format(',{0},', needs.resolve.outputs.missing_platforms), ',macos-arm64,'))
+
   build-macos:
     name: macos-arm64
-    needs: resolve
+    needs: [resolve, select-tracemaker-macos-runner]
     if: needs.resolve.outputs.skip != 'true' && (needs.resolve.outputs.force == 'true' || contains(format(',{0},', needs.resolve.outputs.missing_platforms), ',macos-arm64,'))
-    runs-on: macos-15
+    runs-on: ${{ fromJSON(needs.select-tracemaker-macos-runner.outputs.runner) }}
     timeout-minutes: 60
     steps:
       - name: Install build dependencies (upstream README brew list + LLVM libc++)
@@ -443,3 +450,12 @@ jobs:
           TRACEMAKER_MISSING_PLATFORMS: ${{ needs.resolve.outputs.missing_platforms }}
           TRACEMAKER_PUBLISHED_PLATFORMS: ${{ needs.resolve.outputs.published_platforms }}
         run: bash "${GITHUB_WORKSPACE}/scripts/tracemaker/summarize-run.sh"
+
+  release-tracemaker-macos-runner:
+    needs: [select-tracemaker-macos-runner, build-macos]
+    if: always() && needs.select-tracemaker-macos-runner.outputs.lease != ''
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release-macos-runner.yml
+    with:
+      lease: ${{ needs.select-tracemaker-macos-runner.outputs.lease }}
