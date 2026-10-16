@@ -13,6 +13,11 @@ on:
     - cron: "17 22 * * 0" # 05:17 Monday Asia/Bangkok
   workflow_dispatch:
     inputs:
+      platform:
+        description: "Installer platform to check"
+        type: choice
+        options: [all, macos, linux, windows]
+        default: all
       run_id:
         description: "Release workflow run ID to test exactly"
         required: false
@@ -33,20 +38,20 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  select-metadata-runner:
-    uses: ./.github/workflows/select-linux-runner.yml
-    secrets: inherit
-
   select:
-    # A triggering Release is always tested from that exact run's artifacts. Manual/scheduled tests
+    # Resolve a public Release run to its exact published tag; internal runs use artifacts. Manual/scheduled tests
     # can still select a published tag or the site's latest release.
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
-    needs: select-metadata-runner
-    runs-on: ${{ fromJSON(needs.select-metadata-runner.outputs.runner) }}
+    # Metadata selection must not wait for a disposable NAS VM to rebuild.
+    runs-on: ubuntu-latest
     outputs:
       args: ${{ steps.pick.outputs.args }}
       label: ${{ steps.pick.outputs.label }}
     steps:
+      - uses: actions/checkout@v5
+        with: { sparse-checkout: scripts/vm, sparse-checkout-cone-mode: false }
+      - name: Test exact-run installer selection
+        run: python3 -m unittest discover -s scripts/vm/tests
       - id: pick
         env:
           GH_TOKEN: ${{ github.token }}
@@ -71,6 +76,7 @@ jobs:
           fi
 
   macos:
+    if: inputs.platform == '' || inputs.platform == 'all' || inputs.platform == 'macos'
     needs: select
     strategy:
       fail-fast: false
@@ -94,25 +100,22 @@ jobs:
         env: { GH_TOKEN: "${{ github.token }}" }
         run: bash scripts/vm/runner-test.sh mac ${{ matrix.arch }} ${{ matrix.ext }} ${{ needs.select.outputs.args }}
       - uses: actions/upload-artifact@v6
-        if: always()
+        if: always() && steps.t.outputs.RESULTS_DIR != ''
         with:
           name: installer-test-macos-${{ matrix.arch }}-${{ matrix.ext }}-${{ needs.select.outputs.label }}
           path: ${{ steps.t.outputs.RESULTS_DIR }}
           if-no-files-found: ignore
           retention-days: 7
 
-  select-linux-test-runner:
-    needs: select
-    uses: ./.github/workflows/select-linux-runner.yml
-    secrets: inherit
-
   linux:
-    needs: [select, select-linux-test-runner]
+    if: inputs.platform == '' || inputs.platform == 'all' || inputs.platform == 'linux'
+    needs: select
     strategy:
       fail-fast: false
       matrix:
         format: [AppImage, deb]
-    runs-on: ${{ fromJSON(needs.select-linux-test-runner.outputs.runner) }}
+    # Installing desktop packages requires sudo and a fresh machine.
+    runs-on: blacksmith-4vcpu-ubuntu-2204
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
@@ -124,7 +127,7 @@ jobs:
         env: { GH_TOKEN: "${{ github.token }}" }
         run: bash scripts/vm/runner-test.sh linux "(x64|amd64|x86_64)" ${{ matrix.format }} ${{ needs.select.outputs.args }}
       - uses: actions/upload-artifact@v6
-        if: always()
+        if: always() && steps.t.outputs.RESULTS_DIR != ''
         with:
           name: installer-test-linux-${{ matrix.format }}-${{ needs.select.outputs.label }}
           path: ${{ steps.t.outputs.RESULTS_DIR }}
@@ -132,6 +135,7 @@ jobs:
           retention-days: 7
 
   windows:
+    if: inputs.platform == '' || inputs.platform == 'all' || inputs.platform == 'windows'
     needs: select
     runs-on: blacksmith-4vcpu-windows-2025
     timeout-minutes: 30
