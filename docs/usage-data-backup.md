@@ -11,15 +11,16 @@ Unpackaged development launches, packaged development profiles and standalone co
 require the operator flag described below. The consent rules are:
 
 - **A saved choice always wins.** That covers both the first-install **Help improve Fabdesk** screen (`FirstInstallPrivacy`) and **Share usage data** in Settings → Privacy, so people who opted out stay opted out.
-- **Every undecided installation gets the screen.** The checkbox starts unchecked, and nothing uploads until the person clicks Continue with it checked.
+- **Outside the consent region, sharing is on by default with no startup prompt.** Undecided installations can turn it off in Settings → Privacy.
+- **In the consent region, undecided installations must opt in first.** The screen's checkbox starts unchecked, and nothing uploads until the person clicks Continue with it checked.
 
 The choice is installation-wide and covers existing conversations and run dumps. Turning it off
 cancels waiting uploads and retries, and aborts requests still in flight. Data the server already
 received is not erased. Turning sharing on again resumes backup of unsent records.
 
-The core daemon decides once at startup whether the screen is required and serves the answer at `GET /privacy`, so every client gates on the same answer the uploader uses. `FIRST_INSTALL_PRIVACY_SCREEN` in `packages/protocol/src/api.ts` is `always`. To force a mode for a single run without rebuilding, set `FABDESK_PRIVACY_SCREEN=always|never|auto` in the core's environment.
+The core daemon decides once at startup whether the screen is required and serves the answer at `GET /privacy`, so every client gates on the same answer the uploader uses. `FIRST_INSTALL_PRIVACY_SCREEN` in `packages/protocol/src/api.ts` is `auto`. To force a mode for a single run without rebuilding, set `FABDESK_PRIVACY_SCREEN=always|never|auto` in the core's environment.
 
-`auto` is kept for a possible regional rollout but is not the default: it shows the screen only where the installation is likely in the EU/EEA, UK or Switzerland, and backs everyone else up by default. It matches the system time zone against `CONSENT_REGION_TIME_ZONES` and each OS locale region against `CONSENT_REGION_COUNTRIES` (`packages/protocol/src/privacy-region.ts`); the locales come from `FABDESK_SYSTEM_LOCALES` (the desktop app passes Electron's system locale and preferred languages), then `LC_ALL`, `LC_MESSAGES`, `LANG` and `LANGUAGE`. The core remembers an installation once detected in the region. This is a heuristic: a VPN does not change it, and anyone can set any zone or locale.
+`auto` shows the screen only where the installation is likely in the EU/EEA, UK or Switzerland, and backs everyone else up by default. It matches the system time zone against `CONSENT_REGION_TIME_ZONES` and each OS locale region against `CONSENT_REGION_COUNTRIES` (`packages/protocol/src/privacy-region.ts`); the locales come from `FABDESK_SYSTEM_LOCALES` (the desktop app passes Electron's system locale and preferred languages), then `LC_ALL`, `LC_MESSAGES`, `LANG` and `LANGUAGE`. The core remembers an installation once detected in the region. This is a heuristic: a VPN does not change it, and anyone can set any zone or locale.
 
 To enable remote upload for a development or standalone core launch, set this flag in the
 environment that launches the daemon:
