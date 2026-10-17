@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ProjectSummary, Thread } from "@fabdesk/protocol";
-import { groupThreadsByProject } from "./group-threads";
+import { groupThreadsByProject, sidebarSections } from "./group-threads";
 
 function thread(id: string, title: string, projectId: string | null, pinned = false): Thread {
   return {
@@ -49,6 +49,14 @@ describe("groupThreadsByProject", () => {
     expect(groups.find((g) => g.projectId === "p1")?.threads.map((t) => t.id)).toEqual(["t1"]);
   });
 
+  test("pinned projects move first without duplicating projects or changing chat groups", () => {
+    const threads = [thread("chat", "Board chat", "p2"), thread("favorite", "Pinned chat", "p1", true)];
+    const groups = groupThreadsByProject(threads, projects, ["p2", "deleted-project"]);
+    expect(groups.map((g) => g.key)).toEqual(["pinned", "p2", "p1"]);
+    expect(groups[1]?.threads.map((t) => t.id)).toEqual(["chat"]);
+    expect(groupThreadsByProject(threads, projects, []).map((g) => g.key)).toEqual(["pinned", "p1", "p2"]);
+  });
+
   test("puts pinned threads above unassigned and project groups", () => {
     const groups = groupThreadsByProject(
       [
@@ -71,5 +79,20 @@ describe("groupThreadsByProject", () => {
     const groups = groupThreadsByProject([archived], projects);
     expect(groups.map((g) => g.title)).toEqual(["Amplifier", "Blinky"]);
     expect(groups.every((g) => g.threads.length === 0)).toBe(true);
+  });
+
+  test("separates pinned projects and chats from ordinary projects without duplicate rows", () => {
+    const data = [thread("z", "Chat 10", "p2", true), thread("a", "chat 2", "p2", true), thread("child", "Child", "p2"), thread("loose", "Loose", null)];
+    const sections = sidebarSections(groupThreadsByProject(data, projects), ["p2", "deleted"]);
+    expect(sections.pinnedProjects.map((g) => g.key)).toEqual(["p2"]);
+    expect(sections.projects.map((g) => g.key)).toEqual(["p1"]);
+    expect(sections.pinnedChats.map((t) => t.id)).toEqual(["a", "z"]);
+    expect(sections.pinnedProjects[0]?.threads.map((t) => t.id)).toEqual(["child"]);
+    expect(sections.chats.map((t) => t.id)).toEqual(["loose"]);
+    const unpinned = sidebarSections(groupThreadsByProject(data.map((t) => ({ ...t, pinned: false })), projects), []);
+    expect(unpinned.pinnedProjects).toEqual([]);
+    expect(unpinned.pinnedChats).toEqual([]);
+    expect(unpinned.projects.map((g) => g.key)).toEqual(["p1", "p2"]);
+    expect(unpinned.projects[1]?.threads).toHaveLength(3);
   });
 });

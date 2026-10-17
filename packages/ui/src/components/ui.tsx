@@ -243,14 +243,16 @@ export function Tabs<T extends string>({
   value,
   onChange,
   className,
+  variant = "pills",
 }: {
   tabs: Array<{ id: T; label: string; hint?: string }>;
   value: T;
   onChange: (t: T) => void;
   className?: string;
+  variant?: "pills" | "underline";
 }) {
   return (
-    <div className={cn("flex items-center gap-1 overflow-x-auto", className)} role="tablist">
+      <div className={cn("flex items-center overflow-x-auto", variant === "underline" ? "fd-tabs-underline" : "gap-1", className)} role="tablist">
       {tabs.map((t) => (
         <button
           key={t.id}
@@ -269,8 +271,10 @@ export function Tabs<T extends string>({
           data-testid={`tab-${t.id}`}
           onClick={() => onChange(t.id)}
           className={cn(
-            "h-8 rounded-md px-2.5 text-xs font-medium whitespace-nowrap transition-colors",
-            t.id === value ? "bg-panel-2 text-fg shadow-sm" : "text-muted hover:text-fg hover:bg-panel-2/60",
+            "px-2.5 text-xs font-medium whitespace-nowrap transition-colors",
+            variant === "underline"
+              ? "fd-underline-tab"
+              : cn("h-8 rounded-md", t.id === value ? "bg-panel-2 text-fg shadow-sm" : "text-muted hover:text-fg hover:bg-panel-2/60"),
           )}
         >
           {t.label}

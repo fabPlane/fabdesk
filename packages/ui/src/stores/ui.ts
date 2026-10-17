@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { readStoredThemeId, type ThemeId } from "../theme/resolve";
+import { stencilThicknessMm } from "./stencil-thickness";
 
 export const BOARD_TABS = ["schematic", "pcb", "cinema", "3d", "cad", "drc", "renders", "files", "bom", "art"] as const;
 export type BoardTab = (typeof BOARD_TABS)[number];
@@ -47,6 +48,9 @@ export interface UiState {
   activeThreadId: string | null;
   focusMessageId: string | null;
   activeProjectId: string | null;
+  /** Local sidebar preference, retained across app restarts. */
+  pinnedProjectIds: string[];
+  setProjectPinned: (id: string, pinned: boolean) => void;
   sidebarListTab: SidebarListTab;
   activeOpenSourceId: string | null;
   projectPickerOpen: boolean;
@@ -54,6 +58,8 @@ export interface UiState {
   /** Parts Inventory (opened from the user menu) replaces the chat pane while true. */
   inventoryOpen: boolean;
   boardTab: BoardTab;
+  stencilThicknessByProject: Record<string, number>;
+  setStencilThickness: (projectId: string, thicknessMm: number) => void;
   drafts: Record<string, string>;
   attachments: Record<string, PendingAttachment[]>;
   paletteOpen: boolean;
@@ -121,12 +127,20 @@ export const useUiStore = create<UiState>()(
   activeThreadId: null,
   focusMessageId: null,
   activeProjectId: null,
+  pinnedProjectIds: [],
+  setProjectPinned: (id, pinned) => set((s) => ({
+    pinnedProjectIds: pinned ? [...s.pinnedProjectIds.filter((value) => value !== id), id] : s.pinnedProjectIds.filter((value) => value !== id),
+  })),
   sidebarListTab: "projects",
   activeOpenSourceId: null,
   projectPickerOpen: false,
   orderFlowOpen: false,
   inventoryOpen: false,
   boardTab: "schematic",
+  stencilThicknessByProject: {},
+  setStencilThickness: (projectId, thicknessMm) => set((s) => ({
+    stencilThicknessByProject: { ...s.stencilThicknessByProject, [projectId]: stencilThicknessMm(thicknessMm) },
+  })),
   drafts: {},
   attachments: {},
   paletteOpen: false,
@@ -193,8 +207,10 @@ export const useUiStore = create<UiState>()(
         boardOpen: s.boardOpen,
         activeThreadId: s.activeThreadId,
         activeProjectId: s.activeProjectId,
+        pinnedProjectIds: s.pinnedProjectIds,
         sidebarListTab: s.sidebarListTab,
         boardTab: s.boardTab,
+        stencilThicknessByProject: s.stencilThicknessByProject,
         drafts: s.drafts,
         whatsNewSeenId: s.whatsNewSeenId,
       }),

@@ -42,6 +42,18 @@ describe("board tabs", () => {
 });
 
 describe("project context", () => {
+  test("pinning is idempotent and does not switch the active chat", () => {
+    const previous = useUiStore.getState();
+    try {
+      useUiStore.setState({ pinnedProjectIds: [], activeProjectId: "a", activeThreadId: "chat-a" });
+      useUiStore.getState().setProjectPinned("b", true);
+      useUiStore.getState().setProjectPinned("b", true);
+      expect(useUiStore.getState().pinnedProjectIds).toEqual(["b"]);
+      expect(useUiStore.getState().activeThreadId).toBe("chat-a");
+      useUiStore.getState().setProjectPinned("b", false);
+      expect(useUiStore.getState().pinnedProjectIds).toEqual([]);
+    } finally { useUiStore.setState(previous); }
+  });
   test("switching projects clears the previous conversation and project-specific screens", () => {
     const previous = useUiStore.getState();
     try {

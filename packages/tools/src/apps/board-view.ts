@@ -157,7 +157,8 @@ function renderDrawings(p) {
     h("span", { class: "grow" }),
     p && p.hasCadModel ? h("button", { onclick: exportCad, title: "FreeCAD model.FCStd → exports/model.stl" }, "Export FreeCAD model") : null,
     p && p.hasCadModel ? h("button", { onclick: openFreecad, title: "The live FreeCAD web UI on this project's session" }, "Open in FreeCAD") : null,
-    h("button", { onclick: exportDxf, title: "kicad-cli: copper and Edge.Cuts DXF" }, "Export DXF")));
+    h("button", { onclick: exportDxf, title: "kicad-cli: copper and Edge.Cuts DXF" }, "Export DXF"),
+    h("button", { onclick: exportStencil, title: "F.Paste apertures → printable stencil STL" }, "Export stencil")));
 }
 
 /** Run an export, refresh the file list and show the file it wrote. */
@@ -173,6 +174,7 @@ async function exportAndShow(label, tool, args, pickFile) {
   } catch (e) { setStatus(e.message, "err"); } finally { busy(false); }
 }
 function exportDxf() { return exportAndShow("Exporting DXF", "export_dxf", {}, function (r) { return r.files && r.files[0]; }); }
+function exportStencil() { return exportAndShow("Exporting solder stencil", "export_stencil", {}, function (r) { return r.path; }); }
 function exportCad() { return exportAndShow("Exporting the FreeCAD model", "cad_export", { format: "stl", name: "model" }, function (r) { return r.path; }); }
 
 async function openFreecad() {

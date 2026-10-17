@@ -60,6 +60,14 @@ if ($cfg.installer -match "Setup.*\.exe$" -or $cfg.installer -notmatch "portable
     (Join-Path $env:ProgramFiles "Fabdesk\Fabdesk.exe")
   )
   $motw = ""
+  if ($env:GITHUB_ACTIONS -eq "true") {
+    # A hosted runner cannot approve an interactive SmartScreen dialog. Keep the
+    # Authenticode verdict above, then test unattended install/launch separately.
+    # Local user-facing VM tests still exercise the downloaded-file path.
+    $motw = "CI removed download quarantine before unattended install; SmartScreen approval not tested"
+    Log $motw
+    Unblock-File $installer
+  }
   try { $p = Start-Process -FilePath $installer -ArgumentList "/S" -PassThru -ErrorAction Stop }
   catch {
     # Windows refused the downloaded (mark-of-the-web) file: what SmartScreen shows a user for an unsigned build.

@@ -7,10 +7,21 @@ import { PROJECT_FILES, ensureDir, exists, projectRelative, writeAtomic, writeJs
 import { ToolError, defineTool } from "../registry";
 import { inspectSavedHierarchy, p, requireKicad } from "./common";
 import { zipFiles } from "./export";
+import { evaluateLedCurrent, inspectLedDirections } from "./release-led";
 
 const CircuitCheck = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("led-current"),
+    led: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("LED reference to verify against the saved design; recommended with driveNet"),
+    driveNet: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Exact saved net name driving the LED in source or sink mode"),
     name: z.string().default("LED current"),
     supplyVolts: z.number().positive(),
     forwardVolts: z.number().nonnegative(),
@@ -49,7 +60,7 @@ async function hash(path: string): Promise<string> {
     .digest("hex");
 }
 
-function evaluate(check: z.infer<typeof CircuitCheck>) {
+function evaluate(check: z.infer<typeof CircuitCheck>, netlist: string, schematics: string[]) {
   if (check.kind === "assertion")
     return {
       ...check,
@@ -58,15 +69,9 @@ function evaluate(check: z.infer<typeof CircuitCheck>) {
       claim: check.pass ? ("pass" as const) : ("fail" as const),
     };
   if (check.kind === "led-current") {
-    const measuredMa =
-      (Math.max(0, check.supplyVolts - check.forwardVolts) / check.resistanceOhms) * 1000;
-    return {
-      ...check,
-      evidenceLevel: "computed" as const,
-      measured: { currentMa: measuredMa },
-      status: measuredMa >= check.minMa && measuredMa <= check.maxMa ? "pass" : "fail",
-    };
+    return { ...check, ...evaluateLedCurrent(check, netlist, schematics) };
   }
+
   if (check.kind === "usb-c-cc") {
     const tolerance = (check.expectedOhms * check.tolerancePercent) / 100;
     const pass = [check.cc1Ohms, check.cc2Ohms].every(
@@ -207,7 +212,7 @@ export const release_build = defineTool({
   toolset: "verify",
   title: "Verify and build the complete release",
   description:
-    "Run full-severity complete-hierarchy ERC, parity-enabled DRC, unconnected/library checks, design-rule floor, advisory root-sheet presentation metrics, PCB-reference visibility, task-derived circuit checks, renders, and native/document/fabrication export for one aggregate saved revision. Missing hierarchy members or outputs fail the release; any referenced-sheet edit makes the evidence stale.",
+    "Run full-severity complete-hierarchy ERC, parity-enabled DRC, unconnected/library checks, design-rule floor, advisory root-sheet presentation metrics, PCB-reference visibility, automatic saved-design LED direction (proven reversal blocks; undecided topology warns), task-derived circuit checks (pass led and driveNet for design-bound LED current; omitted led uses declared arithmetic), renders, and native/document/fabrication export for one aggregate saved revision. Missing hierarchy members or outputs fail the release; any referenced-sheet edit makes the evidence stale.",
   inputSchema: {
     circuitChecks: z
       .array(CircuitCheck)
@@ -297,7 +302,21 @@ export const release_build = defineTool({
       erc,
       project.manifest().allowedDrcWarnings,
     );
-    const calculations = circuitChecks.map(evaluate);
+    const connectivity = join(exportsDir, "connectivity.net");
+    await ctx.services.kicad.exportNetlist(cli, {
+      schematic,
+      output: connectivity,
+      format: "kicadsexpr",
+      signal: ctx.signal,
+    });
+    const savedNetlist = await readFile(connectivity, "utf8");
+    const savedSchematics = await Promise.all(
+      beforeHierarchy.referencedFiles.map((file) => readFile(join(project.dir, file), "utf8")),
+    );
+    const ledDirections = inspectLedDirections(savedNetlist, savedSchematics);
+    const calculations = circuitChecks.map((check) =>
+      evaluate(check, savedNetlist, savedSchematics),
+    );
     const designRules = inspectDesignRuleFloors(await readFile(pro, "utf8"));
     const pcbPresentation = inspectPcbPresentation(await readFile(board, "utf8"));
     const schematicSnapshot = await ctx.services.design.schematicInspect(project.dir);
@@ -396,13 +415,6 @@ export const release_build = defineTool({
     await ctx.services.kicad.exportPos(cli, { board, output: positions, signal: ctx.signal });
     const bom = join(exportsDir, "bom.csv");
     await ctx.services.kicad.exportBom(cli, { schematic, output: bom, signal: ctx.signal });
-    const connectivity = join(exportsDir, "connectivity.net");
-    await ctx.services.kicad.exportNetlist(cli, {
-      schematic,
-      output: connectivity,
-      format: "kicadsexpr",
-      signal: ctx.signal,
-    });
     const notes = join(exportsDir, "build-notes.md");
     await writeAtomic(notes, `${buildNotes.trim()}\n`);
 
@@ -521,6 +533,7 @@ export const release_build = defineTool({
       schematicPresentation: { evidenceLevel: "computed", ...schematicPresentation },
       schematicRenderCoverage,
       pcbPresentation: { evidenceLevel: "computed", ...pcbPresentation },
+      ledDirections,
       circuit: calculations,
       revisionStable: { evidenceLevel: "measured", status: stable ? "pass" : "fail" },
     };
@@ -532,8 +545,32 @@ export const release_build = defineTool({
         ? [{ name: check.name, claim: check.claim, evidence: check.evidence }]
         : [],
     );
+    const warnings = [
+      ...ledDirections.leds
+        .filter((led) => led.status === "unknown")
+        .map(
+          (led) =>
+            `LED direction not decided: ${led.reference} A=${led.anodeNet} K=${led.cathodeNet}: ${led.reasons.join("; ")}`,
+        ),
+      ...ledDirections.reasons.map((reason) => `LED direction not decided: ${reason}`),
+      ...calculations.flatMap((check) =>
+        check.kind === "led-current" && check.status === "unknown"
+          ? [
+              `Circuit check not decided: ${check.name} (${check.led ?? "unbound LED"}): ${check.reasons.join("; ")}`,
+            ]
+          : [],
+      ),
+    ];
     const failureReasons = [
       ...gate.reasons,
+      ...(ledDirections.status === "fail"
+        ? ledDirections.leds
+            .filter((led) => led.status === "fail")
+            .map(
+              (led) =>
+                `LED direction: ${led.reference} A=${led.anodeNet} K=${led.cathodeNet}: ${led.reasons.join("; ")}`,
+            )
+        : []),
       ...(libraryMismatchViolations.length &&
       !gate.reasons.some((reason) => /warning/i.test(reason))
         ? [`${libraryMismatchViolations.length} library mismatch(es)`]
@@ -552,6 +589,7 @@ export const release_build = defineTool({
     const pass =
       stable &&
       gate.pass &&
+      ledDirections.status !== "fail" &&
       libraryMismatchViolations.length === 0 &&
       designRules.status === "pass" &&
       schematicRenderCoverage.status === "pass" &&
@@ -582,6 +620,7 @@ export const release_build = defineTool({
       },
       gate,
       failureReasons,
+      warnings,
       checks,
       inventory,
       missing,
@@ -593,6 +632,9 @@ export const release_build = defineTool({
       `Complete saved-hierarchy ERC measured by packaged kicad-cli ${cli.version} for aggregate revision ${before.schematic} across ${beforeHierarchy.sheets.length} referenced sheet(s): ${erc.counts.errors} errors, ${erc.counts.warnings} warnings.`,
       ...(failureReasons.length
         ? ["Failure reasons:", ...failureReasons.map((reason) => `- ${reason}`)]
+        : []),
+      ...(warnings.length
+        ? ["Warnings (non-blocking):", ...warnings.map((warning) => `- ${warning}`)]
         : []),
       ...(presentationAdvisories.length
         ? [
