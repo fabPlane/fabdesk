@@ -113,3 +113,18 @@ archive, all release consumers, rejection of a corrupt archive, and unsupported
 architectures. On Linux it also executes the installed CLI's version command;
 on other platforms it verifies the Linux binary without executing it. The test
 never creates issues, releases, or workflow dispatches.
+
+## CI control tests
+
+The main CI workflow runs Linux selector regression tests and the shared Mac
+selector/job-hook tests at the beginning of `verify`, before private submodule
+checkout. They reuse its owned-first Linux allocation rather than starting
+separate GitHub-hosted or Blacksmith jobs. Node 22 is provided per job because
+the minimal NAS image does not include Node. The reusable routing bootstrap
+stays on GitHub-hosted Ubuntu so NAS unavailability cannot prevent fallback,
+and fork PRs still select GitHub-hosted Ubuntu rather than an owned runner.
+
+The standalone TraceMaker scripts job continues to require CMake, a C compiler
+and `ar` on GitHub-hosted Ubuntu. These tools are absent on the minimal NAS
+image; its optional TraceMaker check in `verify` does not replace that gate.
+Native macOS, Windows and ARM builds keep their existing selectors.
