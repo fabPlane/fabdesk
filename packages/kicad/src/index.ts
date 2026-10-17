@@ -66,6 +66,26 @@ export {
   exportPcbSvg,
 } from "./exports";
 export {
+  STENCIL_DEFAULTS,
+  buildSolderStencil,
+  checkMesh,
+  decodeBinaryStl,
+  encodeBinaryStl,
+  exportStencil,
+  resolveStencilOptions,
+  stencilMarkdown,
+  stencilPreviewSvg,
+  type StencilAlignment,
+  type StencilAperture,
+  type StencilBuild,
+  type StencilExportOptions,
+  type StencilMesh,
+  type StencilOptions,
+  type StencilSide,
+  type StencilSummary,
+  type StencilWarning,
+} from "./stencil";
+export {
   MECHANICAL_COLLECTOR,
   MECHANICAL_CACHE_LIMIT,
   MECHANICAL_CONTRACT,

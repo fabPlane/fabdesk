@@ -20,7 +20,11 @@ async function atomicWrite(path: string, content: string): Promise<void> {
 export type ArchiveWriter = {
   /** Stable name for this destination; keys the record of what has already been written there. */
   readonly id: string;
-  write(key: string, content: string): Promise<void>;
+  write(key: string, content: string, allowed?: () => boolean): Promise<void>;
+  /** Cancels writes from the current consent period; future writes remain usable. */
+  cancelPending?(): void;
+  /** Cancels in-flight writes and retry waits; optional. */
+  close?(): void;
 };
 
 const sha256 = (content: string): string => createHash("sha256").update(content).digest("hex");
@@ -28,6 +32,13 @@ const sha256 = (content: string): string => createHash("sha256").update(content)
 export class ArchiveConsentRevokedError extends Error {
   constructor() {
     super("usage archive consent revoked");
+  }
+}
+
+/** The destination can never accept this record; backfill skips it instead of failing. */
+export class ArchiveRecordTooLargeError extends Error {
+  constructor(key: string, bytes: number) {
+    super(`usage archive record too large: ${key} (${bytes} bytes)`);
   }
 }
 
@@ -73,6 +84,30 @@ export class UsageArchive {
       typeof destination === "string" ? new FileArchiveWriter(destination) : destination;
   }
 
+  /** Destination id in `usage_archive_uploads`; run-dump retention keeps records not yet written here. */
+  get destination(): string {
+    return this.writer.id;
+  }
+
+  close(): void {
+    this.writer.close?.();
+  }
+
+  cancelPending(): void {
+    this.writer.cancelPending?.();
+  }
+
+  /** False when the destination rejects the record as too large; other failures throw. */
+  private async writeRecord(key: string, content: string, allowed: () => boolean): Promise<boolean> {
+    try {
+      await this.writer.write(key, content, allowed);
+      return true;
+    } catch (error) {
+      if (error instanceof ArchiveRecordTooLargeError) return false;
+      throw error;
+    }
+  }
+
   private written(db: Database, recordId: string, content: string): boolean {
     const row = db
       .query<{ sha256: string }, [string, string]>(
@@ -95,34 +130,39 @@ export class UsageArchive {
     const runId = safeId(dump.runId);
     const threadId = safeId(dump.threadId);
     requireConsent(allowed);
-    await this.writer.write(`run-dumps/${runId}.json`, dump.dumpJson);
+    await this.writer.write(`run-dumps/${runId}.json`, dump.dumpJson, allowed);
     this.markWritten(db, `run-dump:${runId}`, dump.dumpJson);
     const conversation = conversationRecord(db, threadId);
     if (conversation) {
       requireConsent(allowed);
-      await this.writer.write(`conversations/${threadId}/${runId}.json`, conversation);
+      await this.writer.write(`conversations/${threadId}/${runId}.json`, conversation, allowed);
       this.markWritten(db, `conversation:${threadId}`, conversation);
     }
   }
 
   /**
    * Backfill current SQLite history, including conversations that have no agent run. Records this
-   * destination already holds unchanged are skipped unless `all` is set; counts are records written.
+   * destination already holds unchanged are skipped unless `all` is set; counts are records written,
+   * plus `tooLarge` records the destination cannot accept (skipped; the backfill carries on).
    */
   async backfill(
     db: Database,
     allowed: () => boolean = () => true,
     { all = false }: { all?: boolean } = {},
-  ): Promise<{ conversations: number; runDumps: number }> {
+  ): Promise<{ conversations: number; runDumps: number; tooLarge: number }> {
     const snapshot = `${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID()}`;
     let conversations = 0;
+    let tooLarge = 0;
     for (const row of db
       .query<{ id: string }, []>("SELECT id FROM threads ORDER BY created_at, id")
       .all()) {
       const record = conversationRecord(db, row.id);
       if (!record || (!all && this.written(db, `conversation:${row.id}`, record))) continue;
       requireConsent(allowed);
-      await this.writer.write(`snapshots/${snapshot}/conversations/${safeId(row.id)}.json`, record);
+      if (!(await this.writeRecord(`snapshots/${snapshot}/conversations/${safeId(row.id)}.json`, record, allowed))) {
+        tooLarge++;
+        continue;
+      }
       this.markWritten(db, `conversation:${row.id}`, record);
       conversations++;
     }
@@ -143,12 +183,15 @@ export class UsageArchive {
         lastRunId = row.run_id;
         if (!all && this.written(db, `run-dump:${row.run_id}`, row.dump_json)) continue;
         requireConsent(allowed);
-        await this.writer.write(`run-dumps/${safeId(row.run_id)}.json`, row.dump_json);
+        if (!(await this.writeRecord(`run-dumps/${safeId(row.run_id)}.json`, row.dump_json, allowed))) {
+          tooLarge++;
+          continue;
+        }
         this.markWritten(db, `run-dump:${row.run_id}`, row.dump_json);
         runDumps++;
       }
     }
-    if (conversations === 0 && runDumps === 0) return { conversations, runDumps };
+    if (conversations === 0 && runDumps === 0) return { conversations, runDumps, tooLarge };
     requireConsent(allowed);
     await this.writer.write(
       `snapshots/${snapshot}/manifest.json`,
@@ -157,8 +200,10 @@ export class UsageArchive {
         createdAt: new Date().toISOString(),
         conversations,
         runDumps,
+        tooLarge,
       }) + "\n",
+      allowed,
     );
-    return { conversations, runDumps };
+    return { conversations, runDumps, tooLarge };
   }
 }

@@ -206,6 +206,10 @@ export const AgentInfo = z.object({
   path: z.string().optional(),
   installHint: z.string(),
   models: z.array(z.string()),
+  /** Versioned IDs reported by the installed CLI for selectable aliases. */
+  modelAliases: z.record(z.string(), z.string()).optional(),
+  /** Resolved CLI default, for display; absence means the version is unknown. */
+  defaultModel: z.string().optional(),
   /** Whether the adapter can pause a tool call for approval (`runtimeMode: "supervised"`). Absent = no. */
   supportsSupervised: z.boolean().optional(),
 });
@@ -308,9 +312,10 @@ export const PrivacyScreenMode = z.enum(["auto", "always", "never"]);
 export type PrivacyScreenMode = z.infer<typeof PrivacyScreenMode>;
 
 /**
- * Who sees the first-install privacy screen: `auto` shows it only where `detectConsentRegion`
- * places the installation in the EU/EEA, UK or Switzerland; `always` / `never` force it for
- * testing. The core's `FABDESK_PRIVACY_SCREEN` env var overrides this at run time.
+ * Who sees the first-install privacy screen: `auto` (the default) asks only where
+ * `detectConsentRegion` places the installation in the EU/EEA, UK or Switzerland and backs up
+ * everyone else by default; `always` asks every undecided installation before anything is backed
+ * up; `never` skips it. The core's `FABDESK_PRIVACY_SCREEN` env var overrides this at run time.
  */
 export const FIRST_INSTALL_PRIVACY_SCREEN: PrivacyScreenMode = "auto";
 

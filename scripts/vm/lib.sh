@@ -53,6 +53,14 @@ resolve_installer() {
   if [ -n "$FILE" ]; then [ -f "$FILE" ] || die "no such file: $FILE"; echo "$FILE"; return; fi
   if [ -n "$RUN" ]; then
     need gh "install GitHub CLI"
+    need python3 "install Python 3"
+    local release_tag
+    release_tag="$(python3 "$VM_SCRIPTS/resolve-run-release.py" "$RUN")" || die "could not resolve release workflow run $RUN"
+    if [ -n "$release_tag" ]; then
+      log "workflow run $RUN published $release_tag; testing its permanent release installers"
+      (RUN=""; TAG="$release_tag"; resolve_installer "$os" "$arch" "$ext")
+      return
+    fi
     local artifact
     case "$os:$arch" in
       mac:*arm64*) artifact="installers-bun-darwin-arm64" ;;

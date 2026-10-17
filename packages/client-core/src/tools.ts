@@ -1,6 +1,7 @@
 import type { Job, ToolManifestEntry } from "@fabdesk/protocol";
 import { useCallback, useState } from "react";
-import { useCoreClient } from "./provider";
+import { useCore } from "./provider";
+import { openStencilFolder } from "./stencil-folder";
 import { useToolManifest } from "./queries";
 import { useRunsStore } from "./stores/runs";
 
@@ -15,6 +16,7 @@ export const TOOL_PATTERNS = {
     patterns: [/^render_board$/, /^kicad_render$/, /render(?!_glb)/],
   },
   glb: { preferred: "render_glb", patterns: [/^render_glb$/, /glb/, /3d/] },
+  stencil: { preferred: "export_stencil", patterns: [/^export_stencil$/, /stencil/] },
 } as const;
 export type ToolKind = keyof typeof TOOL_PATTERNS;
 
@@ -38,12 +40,19 @@ export interface ToolRunState {
 
 /** Calls a tool; if the daemon answers with a job, waits for it (progress arrives via the runs store). */
 export function useRunTool() {
-  const client = useCoreClient();
+  const { client, host } = useCore();
   const manifest = useToolManifest();
   const [state, setState] = useState<ToolRunState>({ status: "idle" });
   const run = useCallback(
     async (kind: ToolKind | string, args: Record<string, unknown>): Promise<ToolRunState> => {
       const name = kind in TOOL_PATTERNS ? resolveToolName(manifest.data, kind as ToolKind) : kind;
+      const finish = async (next: ToolRunState) => {
+        const completed = kind === "stencil" || name === "export_stencil"
+          ? await openStencilFolder(next, host, client.baseUrl)
+          : next;
+        setState(completed);
+        return completed;
+      };
       setState({ status: "running" });
       try {
         const res = await client.callTool(name, args);
@@ -57,12 +66,10 @@ export function useRunTool() {
             job.status === "done"
               ? { status: "done", jobId: res.jobId, result: job.result }
               : { status: "failed", jobId: res.jobId, error: job.error ?? job.status };
-          setState(next);
-          return next;
+          return await finish(next);
         }
         const next: ToolRunState = { status: "done", result: res.result };
-        setState(next);
-        return next;
+        return await finish(next);
       } catch (e) {
         const next: ToolRunState = {
           status: "failed",
@@ -72,7 +79,7 @@ export function useRunTool() {
         return next;
       }
     },
-    [client, manifest.data],
+    [client, host, manifest.data],
   );
   return { run, state, manifest: manifest.data };
 }

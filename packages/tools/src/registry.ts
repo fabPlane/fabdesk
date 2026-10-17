@@ -161,12 +161,32 @@ export class ToolError extends Error {
   }
 }
 
+/** A conflict whose saved and live states must survive higher-level rollback handlers. */
+export class NativeRevisionConflict extends ToolError {
+  constructor(message: string) {
+    super(message, "precondition");
+  }
+}
+
 /** A backend operation reached its explicit deadline, independently of its log text. */
 export class JobTimeoutError extends ToolError {
   constructor(message: string) {
     super(message, "unavailable");
     this.name = "JobTimeoutError";
   }
+}
+
+/** Nested mutation objects must reject unknown fields even when an adapter parses first. */
+export function mutationInputObject<I extends z.ZodRawShape>(shape: I) {
+  return z.strictObject(shape, {
+    error: (issue) => {
+      if (issue.code !== "unrecognized_keys") return undefined;
+      const hint = issue.keys.some((key) => key === "x" || key === "y")
+        ? "; use position: {x, y} in mm for placement coordinates"
+        : "";
+      return `Unknown input fields: ${issue.keys.join(", ")}${hint}`;
+    },
+  });
 }
 
 export function defineTool<I extends z.ZodRawShape>(def: ToolDef<I>): ToolDef<I> {
@@ -182,6 +202,28 @@ export const PROJECT_ARG = z
   .describe(
     "Project id, name or absolute path. Optional when the session already has a current project.",
   );
+
+/** A parsed mutating call must never lose input fields before reaching its handler.
+ * Compare recursively so this also covers nested objects in arrays/unions, while declared
+ * records and opaque payloads (which Zod preserves) remain available to their tools.
+ */
+function droppedInputFields(raw: unknown, parsed: unknown, path = ""): string[] {
+  if (Array.isArray(raw) && Array.isArray(parsed))
+    return raw.flatMap((value, index) =>
+      droppedInputFields(value, parsed[index], `${path}[${index}]`),
+    );
+  if (!raw || typeof raw !== "object" || !parsed || typeof parsed !== "object") return [];
+  const output = parsed as Record<string, unknown>;
+  return Object.entries(raw).flatMap(([key, value]) => {
+    const field = path ? `${path}.${key}` : key;
+    if (!Object.hasOwn(output, key)) {
+      const hint =
+        key === "x" || key === "y" ? "; use position: {x, y} in mm for placement coordinates" : "";
+      return [`${field}: unknown input field${hint}`];
+    }
+    return droppedInputFields(value, output[key], field);
+  });
+}
 
 export class ToolRegistry {
   private readonly tools = new Map<string, ToolDef>();
@@ -276,6 +318,11 @@ export class ToolRegistry {
         `invalid arguments for ${name}: ${z.prettifyError(parsed.error)}`,
         "invalid_args",
       );
+    if (!def.annotations.readOnlyHint) {
+      const dropped = droppedInputFields(rawArgs, parsed.data);
+      if (dropped.length)
+        throw new ToolError(`invalid arguments for ${name}: ${dropped.join("\n")}`, "invalid_args");
+    }
     const global = (def.scope ?? "project") === "global";
     // Project-scoped tools get the injected `project` selector split off; global tools keep their own arguments intact.
     const { project: projectRef, ...rest } = parsed.data as Record<string, unknown> & {

@@ -1,0 +1,47 @@
+{
+  "method": "Nominal G-code line-width sweep, not a physical print or paste transfer test",
+  "layers": [
+    {
+      "blocked_centers": 0,
+      "unenclosed_centers": 0,
+      "separate_openings": 240,
+      "extra_voids_above_0.01_mm2": 22,
+      "largest_extra_void_mm2": 0.1351978839078863,
+      "minimum_opening_area_mm2": 0.061684545046887515
+    },
+    {
+      "blocked_centers": 0,
+      "unenclosed_centers": 0,
+      "separate_openings": 240,
+      "extra_voids_above_0.01_mm2": 2,
+      "largest_extra_void_mm2": 0.013989504508300969,
+      "minimum_opening_area_mm2": 0.054767536808729166
+    }
+  ],
+  "combined_through_openings": {
+    "blocked_centers": 0,
+    "unenclosed_centers": 0,
+    "separate_openings": 240,
+    "extra_voids_above_0.01_mm2": 0,
+    "largest_extra_void_mm2": 0.00222523509153716,
+    "minimum_opening_area_mm2": 0.05225688258357437
+  },
+  "slicer": {
+    "exit_code": 0,
+    "slicer_warnings": [
+      {
+        "msg": "bed_temperature_too_high_than_filament",
+        "level": "3",
+        "error_code": "1000C001"
+      }
+    ],
+    "model": "Fixed exporter V4.0; thickness .20 mm; frame 10 mm; same XY aperture geometry as actual-app export",
+    "nozzle_mm": 0.2,
+    "layer_height_mm": 0.1,
+    "plate": "Smooth PEI",
+    "material": "Bambu PLA Lite",
+    "limits": "Slicer validation only; no physical print or paste transfer tested."
+  },
+  "estimated_minutes": 86.5289794921875,
+  "estimated_grams": 2.264897584915161
+}

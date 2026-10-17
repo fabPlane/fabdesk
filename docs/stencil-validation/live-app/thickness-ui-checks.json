@@ -1,0 +1,9 @@
+{
+  "defaultMm": 0.2,
+  "perProjectSelection": true,
+  "survivesReload": true,
+  "paletteUsesSelection": true,
+  "allSevenThicknesses": true,
+  "sourceUnchanged": true,
+  "sourceSha256": "b2cc3a1123a4df24954942d0b57a1613c5ff7946209aeaf1fc40d2588b273cc3"
+}
