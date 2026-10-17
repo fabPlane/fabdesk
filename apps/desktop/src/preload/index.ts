@@ -9,6 +9,8 @@ export interface PickFileOptions {
 
 const api = {
   platform: process.platform,
+  /** Main computes the native caption height from its own zoom factor. */
+  syncTitleBar: () => ipcRenderer.send("fabdesk:sync-title-bar"),
   cadRuntimeState: () => ipcRenderer.invoke("fabdesk:cad-runtime-state"),
   reconnectCadRuntime: () => ipcRenderer.invoke("fabdesk:reconnect-cad-runtime"),
   prepareCadRuntime: () => ipcRenderer.invoke("fabdesk:prepare-cad-runtime"),

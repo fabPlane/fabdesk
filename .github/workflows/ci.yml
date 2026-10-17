@@ -10,6 +10,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  macos-runner-controls:
+    name: Shared Mac runner controls
+    runs-on: blacksmith-4vcpu-ubuntu-2204
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: |
+            .github/workflows
+            scripts/ci/macos
+          sparse-checkout-cone-mode: false
+      - run: node scripts/ci/macos/tests/selection.test.cjs
+      - run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/ci/macos/tests -p 'test_*.py'
+
   select-linux-runner:
     uses: ./.github/workflows/select-linux-runner.yml
     secrets: inherit

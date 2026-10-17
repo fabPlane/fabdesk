@@ -1,0 +1,47 @@
+[
+  {
+    "name": "viewBox-only SVG keeps 2:1 aspect ratio",
+    "pass": true
+  },
+  {
+    "name": "Zoom in scales vector by 1.25",
+    "pass": true
+  },
+  {
+    "name": "Fit adapts when panel narrows",
+    "pass": true
+  },
+  {
+    "name": "Reopening unchanged source reuses cached URL",
+    "pass": true
+  },
+  {
+    "name": "Malformed SVG displays recoverable error",
+    "pass": true
+  },
+  {
+    "name": "Valid Corne SVG recovers after malformed preview",
+    "pass": true
+  },
+  {
+    "name": "All Corne source content preserved",
+    "pass": true
+  },
+  {
+    "name": "Large schematic adds only one image node",
+    "pass": true
+  },
+  {
+    "name": "Switching boards displays the new PS1 image",
+    "pass": true
+  },
+  {
+    "name": "All PS1 source content preserved",
+    "pass": true
+  },
+  {
+    "name": "No browser runtime errors",
+    "pass": true,
+    "details": []
+  }
+]

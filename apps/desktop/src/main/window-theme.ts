@@ -43,9 +43,18 @@ export interface WindowTheme {
 /** Height of the top bar (`h-12` in TopBar.tsx); the Windows controls overlay matches it. */
 export const TITLE_BAR_HEIGHT = 48;
 
+export function titleBarOverlayHeight(zoomFactor = 1): number {
+  // Electron takes window DIPs; the renderer's h-12 is in zoomed CSS pixels.
+  // Leave the header's bottom border uncovered, including at fractional zoom.
+  return Math.max(1, Math.floor((TITLE_BAR_HEIGHT - 1) * zoomFactor));
+}
+
 /** Windows controls-overlay colours for a theme: the top bar's panel colour and its foreground. */
-export function titleBarOverlayFor(themeId: ThemeId): { color: string; symbolColor: string; height: number } {
-  return { color: themePanel(themeId), symbolColor: themeForeground(themeId), height: TITLE_BAR_HEIGHT };
+export function titleBarOverlayFor(themeId: ThemeId, zoomFactor = 1): { color: string; symbolColor: string; height: number } {
+  return {
+    color: themePanel(themeId), symbolColor: themeForeground(themeId),
+    height: titleBarOverlayHeight(zoomFactor),
+  };
 }
 
 /** Resolve the BrowserWindow background and nativeTheme source from the cached Appearance choice. */

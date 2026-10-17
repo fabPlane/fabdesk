@@ -1,0 +1,8 @@
+(kicad_pcb (version 20260831) (generator "pcbnew")
+(general (thickness 1.6)) (paper "A4")
+(layers (0 "F.Cu" signal) (31 "B.Cu" signal) (34 "B.Paste" user) (35 "F.Paste" user) (36 "B.SilkS" user) (37 "F.SilkS" user) (38 "B.Mask" user) (39 "F.Mask" user) (44 "Edge.Cuts" user))
+(setup (pad_to_mask_clearance 0) )
+(gr_rect (start 0 0) (end 60 40) (stroke (width .05) (type default)) (fill none) (layer "Edge.Cuts"))
+(footprint "Test:U6" (layer "F.Cu") (transform (translate 10 10)(rotate 90)(scale 1 1)) (property "Reference" "U6" (at 0 0) (layer "F.SilkS") (effects (font (size 1 1)(thickness .15))))  (pad "1" smd rect (at 2 0 90) (size .67 .3) (layers "F.Cu" "F.Paste" "F.Mask") ))
+(gr_line (start 0 0)(end 1 0)(stroke (width .05)(type default))(layer "Edge.Cuts")(custom_property "provenance" "quoted \"label\" and (parentheses)"))
+)

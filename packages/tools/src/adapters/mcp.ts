@@ -90,7 +90,7 @@ export function attachToRegistry(
         title: def.title,
         description: def.description,
         // The SDK bundles its own zod 4; runtime-compatible with our zod/v4 schemas (`_zod` present).
-        inputSchema: registry.inputShape(def) as unknown as ZodRawShapeCompat,
+        inputSchema: registry.inputObject(def) as unknown as ZodRawShapeCompat,
         annotations: { title: def.title, ...def.annotations },
       },
       async (
@@ -474,7 +474,8 @@ function registerResources(
         id: pr.id,
         name: pr.name,
         board: pr.manifest().board,
-        router: pr.manifest().router === "capacity" ? "fab_router" : (pr.manifest().router ?? "auto"),
+        router:
+          pr.manifest().router === "capacity" ? "fab_router" : (pr.manifest().router ?? "auto"),
         built: await exists(p(pr, PROJECT_FILES.boardPcb)),
         lastSourceBuild,
         lastRelease,
