@@ -41,7 +41,7 @@ prompt / sketch ─► agent writes circuit.netlist.json ─► circuit_build (c
   ImportNetlist + autoplace into board.kicad_pcb) ─► route_run (route job on the bridge, progress streamed to the UI)
   ─► circuit.routed.json ─► kicad_convert (circuit-json-to-kicad) ─► board.kicad_pcb / .kicad_sch
   ─► verify_drc / verify_erc / verify_gate (kicad-cli --format json) ─► render_board (kicad-cli render)
-  ─► export_* (gerbers, drill, pos, bom, netlist) · sim_run (circuit-json-to-spice → spicey / ngspice)
+  ─► export_* (gerbers, drill, pos, bom, netlist, stencil) · sim_run (circuit-json-to-spice → spicey / ngspice)
 ```
 
 Routers run on the bridge: `fab_router` maps to its internal `js` router; `capacity` remains a legacy input alias. New unpinned projects default to `freerouting` with automatic `fab_router` fallback. `freerouting` (its Freerouting adapter)

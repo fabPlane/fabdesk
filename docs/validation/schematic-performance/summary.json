@@ -1,0 +1,23 @@
+{
+  "method": "Three Files-to-Schematic tab switches per board in the same Windows Electron app, 200% device scaling, 57.87% page zoom. Preview-ready timing waits for SVG image load and two animation frames; it is not a hardware presentation timestamp.",
+  "results": [
+    {
+      "project": "Corne keyboard (crkbd)",
+      "beforePreviewReadyMs": 1017.2000000029802,
+      "afterPreviewReadyMs": 131.40000000596046,
+      "beforeDomNodes": 56069,
+      "afterDomNodes": 1,
+      "beforeMedianMaxFrameGapMs": 411.25,
+      "afterMedianMaxFrameGapMs": 116.70000000000027
+    },
+    {
+      "project": "PlayBridge V4.0 controller + serial bridge",
+      "beforePreviewReadyMs": 667.1000000089407,
+      "afterPreviewReadyMs": 126.6000000089407,
+      "beforeDomNodes": 41321,
+      "afterDomNodes": 1,
+      "beforeMedianMaxFrameGapMs": 372.29999999998836,
+      "afterMedianMaxFrameGapMs": 111.10000000000036
+    }
+  ]
+}

@@ -8,21 +8,128 @@ import {
   PadSchema,
   PadStackShape,
   packAny,
+  SheetInstanceSchema,
+  SheetPathSchema,
+  SchematicSymbolInstanceSchema,
 } from "@fp-pcb/proto";
-import { Footprint, createBoardGraphic, createTrack } from "@fp-pcb/client";
+import { Footprint, SchematicSymbol, createBoardGraphic, createTrack } from "@fp-pcb/client";
 import {
   createFpPcbDesign,
   evaluatePartCompatibility,
   persistDefaultNetClass,
 } from "../src/fp-pcb-design";
 import type { FpPcbBridgeClient } from "../src/fp-pcb-bridge";
-import { FpPcbSessions, type ProjectSession } from "../src/fp-pcb-session";
+import { FpPcbSessions, NativeRevisionConflict, type ProjectSession } from "../src/fp-pcb-session";
+
+for (const crossSheet of [false, true])
+  test(`schematic unit 1 matches a missing unit field; cross-sheet metadata=${crossSheet}`, async () => {
+    const instance = (name: string) =>
+      create(SheetInstanceSchema, {
+        name,
+        filename: `${name}.kicad_sch`,
+        path: create(SheetPathSchema, { path: [{ value: name }], pathHumanReadable: `/${name}` }),
+      });
+    const rootEntry = instance("root"),
+      childEntry = instance("child");
+    const symbol = new SchematicSymbol(
+      create(SchematicSymbolInstanceSchema, {
+        id: { value: "unit-one" },
+        referenceField: { text: { text: "U1" } },
+        valueField: { text: { text: "old" } },
+      }),
+    );
+    const other = new SchematicSymbol(
+      create(SchematicSymbolInstanceSchema, {
+        id: { value: "unit-two" },
+        unit: { unit: 2 },
+        referenceField: { text: { text: "U1" } },
+        valueField: { text: { text: "old" } },
+      }),
+    );
+    let committed = false;
+    const root = {
+      getAllItems: async () => [symbol],
+      commit: async (_message: string, fn: (tx: any) => Promise<void>) => {
+        await fn({
+          update: async (items: SchematicSymbol[]) => {
+            expect(items).toEqual([symbol]);
+          },
+        });
+        committed = true;
+        return { created: [], updated: [symbol], deleted: [] };
+      },
+    };
+    const schematic = {
+      hierarchy: async () => (crossSheet ? [rootEntry, childEntry] : [rootEntry]),
+      sheet: (path: any) =>
+        path.path[0].value === "root" ? root : { getSymbols: async () => [other] },
+      revision: async () => 1n,
+    };
+    const sessions = {
+      ensureProject: async () => ({ schematic, session: {} }),
+    } as unknown as FpPcbSessions;
+    const design = createFpPcbDesign({ bridge: () => ({}) as never, sessions });
+    expect(symbol.proto.unit).toBeUndefined();
+    const edit = design.schematicEdit("/unit-default", {
+      symbolUpdates: [{ reference: "U1", unit: 1, value: "new" }],
+      save: false,
+    });
+    if (crossSheet) {
+      await expect(edit).rejects.toThrow("different sheets");
+      expect(committed).toBe(false);
+    } else {
+      const result = await edit;
+      expect(result.updated.symbols).toBe(1);
+      expect(symbol.value).toBe("new");
+      expect(committed).toBe(true);
+    }
+  });
+
+test("recovery and an entire native operation cannot run over each other", async () => {
+  let finish!: () => void, entered!: () => void;
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const blocked = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  let recovered = 0;
+  const sessions = {
+    release: async () => {
+      entered();
+      await blocked;
+    },
+    withSavedFilesRecovery: async (_dir: string, replace: () => Promise<unknown>) => {
+      recovered++;
+      return replace();
+    },
+  } as unknown as FpPcbSessions;
+  const design = createFpPcbDesign({ bridge: () => ({}) as FpPcbBridgeClient, sessions });
+  const operation = design.release("/project");
+  await started;
+  await expect(design.withSavedFilesRecovery!("/project", async () => {})).rejects.toThrow(
+    "native operation or routing is active",
+  );
+  expect(recovered).toBe(0);
+  finish();
+  await operation;
+  await design.withSavedFilesRecovery!("/project", async () => {
+    await expect(design.placeFootprints("/project", [])).rejects.toThrow("recovery is active");
+    await expect(design.withSavedFilesRecovery!("/project", async () => {})).rejects.toThrow(
+      "native operation or routing is active",
+    );
+  });
+  expect(recovered).toBe(1);
+});
 
 describe("FabPCB router health", () => {
   test.each([
     [{ capacityRouter: { name: "fab-router", ok: true } }, { ok: true }],
     [{ jsAutorouter: { ok: true } }, { ok: true }],
-    [{ capacityRouter: { ok: false, reason: "router missing" }, jsAutorouter: { ok: true } }, { ok: false, reason: "router missing" }],
+    [
+      { capacityRouter: { ok: false, reason: "router missing" }, jsAutorouter: { ok: true } },
+      { ok: false, reason: "router missing" },
+    ],
   ])("preserves current health and falls back to legacy health: %j", async (fields, expected) => {
     const bridge = {
       url: "http://127.0.0.1:4020",
@@ -692,6 +799,7 @@ describe("embedded footprint placement recovery", () => {
   function setup(
     options: {
       failSave?: boolean;
+      staleSave?: boolean;
       failRestore?: boolean;
       unsavedSchematic?: boolean;
       unsavedPcb?: boolean;
@@ -842,6 +950,10 @@ describe("embedded footprint placement recovery", () => {
       },
       save: async () => {
         calls.push("save");
+        if (options.staleSave) {
+          files["/p/board.kicad_pcb"] = "external checkpoint";
+          throw new NativeRevisionConflict("refusing stale save");
+        }
         files["/p/board.kicad_pcb"] = `angle ${live.orientation}`;
         if (failSave) {
           failSave = false;
@@ -908,6 +1020,16 @@ describe("embedded footprint placement recovery", () => {
     expect(state.calls).toEqual([]);
     expect(state.live().orientation).toBe(-90);
   });
+  test("stale placement save preserves external checkpoint and unsaved live edit", async () => {
+    const state = setup({ staleSave: true });
+    await expect(
+      state.design.placeFootprints("/p", [{ reference: "J13", rotation: 90 }]),
+    ).rejects.toThrow("refusing stale save");
+    expect(state.files["/p/board.kicad_pcb"]).toBe("external checkpoint");
+    expect(state.live().orientation).toBe(90);
+    expect(state.calls).toEqual(["commit", "save"]);
+  });
+
   test("save failure restores both live and saved state, and retry performs the edit", async () => {
     const state = setup({ failSave: true });
     await expect(

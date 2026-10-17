@@ -1,3 +1,4 @@
+import { NativeRevisionConflict } from "../src/registry";
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
@@ -43,7 +44,7 @@ function summary(wallMs: number): RouteSummary {
 async function harness(name: string, delayMs = 120) {
   const project = await tempProject(name);
   const boardPath = join(project.dir, "board.kicad_pcb");
-  await writeFile(boardPath, "(kicad_pcb (net \"N1\") (property \"test\" \"v1\"))\n");
+  await writeFile(boardPath, '(kicad_pcb (net "N1") (property "test" "v1"))\n');
   await writeFile(join(project.dir, "board.kicad_pro"), "{}\n");
   const base = mockServices([project]);
   const services = mockServices([project], {
@@ -65,7 +66,10 @@ async function harness(name: string, delayMs = 120) {
             message: `slow frame ${index}`,
           });
         }
-        await writeFile(join(dir, "board.kicad_pcb"), "(kicad_pcb (net \"N1\") (property \"test\" \"v2\"))\n");
+        await writeFile(
+          join(dir, "board.kicad_pcb"),
+          '(kicad_pcb (net "N1") (property "test" "v2"))\n',
+        );
         return summary(delayMs);
       },
     },
@@ -89,6 +93,23 @@ async function harness(name: string, delayMs = 120) {
 }
 
 describe("durable asynchronous routing", () => {
+  test("no-progress application reason preserves the router diagnosis", async () => {
+    const h = await harness("async-no-progress-detail");
+    const diagnosis = "solver stopped stagnant; N1 remains open; partial copper discarded";
+    h.services.design.route = async () => ({
+      ...summary(1),
+      tracks: 0,
+      routed: 0,
+      geometry: [],
+      message: diagnosis,
+      unrouted: [{ net: "N1", from: { x: 0, y: 0 }, to: { x: 1, y: 1 } }],
+    });
+    const response = await h.call("route_run", { router: "fab_router", waitMs: 0 });
+    const run = await terminal(h.services, (response.json as { runId: string }).runId);
+    expect(run.candidate.available).toBe(false);
+    expect(run.application.state).toBe("not_available");
+    expect(run.application.reason).toBe(diagnosis);
+  });
   test("start returns promptly while progress and compact terminal status survive independent calls", async () => {
     const h = await harness("async-start", 180);
     const before = await hash(h.boardPath);
@@ -172,7 +193,7 @@ describe("durable asynchronous routing", () => {
     expect(appliedRevision).toBe(ready.candidate.sha256);
     expect(await hash(h.boardPath)).toBe(appliedRevision);
 
-    await writeFile(h.boardPath, "(kicad_pcb (net \"N1\") (property \"test\" \"v3\"))\n");
+    await writeFile(h.boardPath, '(kicad_pcb (net "N1") (property "test" "v3"))\n');
     const current = await hash(h.boardPath);
     const second = await h.call("route_run", { timeoutMs: 5_000, applyPolicy: "manual" });
     const secondId = (second.json as { runId: string }).runId;
@@ -207,6 +228,29 @@ describe("durable asynchronous routing", () => {
     expect(done.candidate.available).toBe(true);
     expect(done.application.state).toBe("stale");
     expect(await hash(h.boardPath)).toBe(edited);
+  });
+
+  test("route apply refuses unsaved live work without release or rollback", async () => {
+    const h = await harness("async-live-refusal", 60);
+    const before = await hash(h.boardPath);
+    const response = await h.call("route_run", { timeoutMs: 5_000, applyPolicy: "manual" });
+    const runId = (response.json as { runId: string }).runId;
+    await terminal(h.services, runId);
+    let releases = 0;
+    const release = h.services.design.release;
+    h.services.design.release = async (dir) => {
+      if (dir === h.project.dir) releases++;
+      return release(dir);
+    };
+    h.services.design.withSavedFilesRecovery = async () => {
+      throw new NativeRevisionConflict("live document has unsaved or unknown changes");
+    };
+    await expect(h.call("route_apply", { runId, expectedPcbRevision: before })).rejects.toThrow(
+      "unsaved or unknown",
+    );
+    expect(releases).toBe(0);
+    expect(await hash(h.boardPath)).toBe(before);
+    expect(h.services.routeRuns.get(runId)?.application.reason).toContain("unsaved or unknown");
   });
 
   test("atomic apply restores prior native bytes when reopen validation fails", async () => {

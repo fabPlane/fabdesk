@@ -250,6 +250,7 @@ export type NativeSchematicSymbolInput = {
 };
 export type NativeSchematicSymbolUpdate = {
   reference: string;
+  unit?: number | undefined;
   newReference?: string | undefined;
   position?: SchematicPoint | undefined;
   rotation?: 0 | 90 | 180 | 270 | undefined;
@@ -287,6 +288,7 @@ export type NativeSchematicSnapshot = {
     value: string;
     footprint: string;
     libId: string;
+    unit?: number;
     position: SchematicPoint;
     rotation: number;
     mirrorX: boolean;
@@ -306,7 +308,13 @@ export type NativeSchematicSnapshot = {
   noConnects: Array<{ id: string; position: SchematicPoint }>;
   texts: Array<{ id: string; text: string; position: SchematicPoint }>;
   nets: Array<{ name: string; itemCount: number; itemIds: string[] }>;
-  erc: { errors: number; warnings: number };
+  erc: {
+    errors: number;
+    warnings: number;
+    issues?: Array<{ type: string; description: string; itemIds: string[] }>;
+    issueCount?: number;
+    danglingItemIds?: string[];
+  };
   /** Live KiCad IPC authoring scope. This is never saved-file ERC evidence. */
   scope?: {
     kind: "current/root-sheet" | "selected-sheet";
@@ -517,6 +525,8 @@ export type PcbGeometrySnapshot = Record<string, unknown> & {
 };
 
 export interface DesignService {
+  /** Refuse unsaved live state and suspend session access while captured saved files are restored. */
+  withSavedFilesRecovery?<T>(projectDir: string, replace: () => Promise<T>): Promise<T>;
   /** Compile the project's netlist into `board.kicad_pcb` through the bridge. */
   build(opts: BuildOptions): Promise<BuildResult>;
   /** Inspect the native KiCad schematic; creates the project's KiCad documents when requested by an edit. */
@@ -664,6 +674,7 @@ export interface KicadService {
       outFile: string;
       severity?: "error" | "all";
       schematicParity?: boolean;
+      refillZones?: boolean;
       signal?: AbortSignal;
     },
   ): Promise<DrcReport>;
@@ -751,7 +762,58 @@ export interface KicadService {
     cli: KicadCli,
     opts: { board: string; output: string; layers?: string[]; signal?: AbortSignal },
   ): Promise<{ paths: string[] }>;
+  /**
+   * 3D-printed solder stencil from F.Paste / B.Paste. Pure TypeScript — no kicad-cli.
+   */
+  exportStencil(opts: StencilExportOpts): Promise<StencilExportResult>;
 }
+
+export type StencilSide = "F" | "B";
+export type StencilAlignment = "holes" | "pegs" | "none";
+export type StencilExportOpts = {
+  board: string;
+  outDir: string;
+  side?: StencilSide;
+  thicknessMm?: number;
+  frameMm?: number;
+  apertureOffsetMm?: number;
+  minApertureMm?: number;
+  skipFinePitch?: boolean;
+  finePitchMm?: number;
+  alignment?: StencilAlignment;
+  alignmentHoleMm?: number;
+  includeJig?: boolean;
+  pcbThicknessMm?: number;
+};
+export type StencilExportResult = {
+  side: StencilSide;
+  padCount: number;
+  apertureCount: number;
+  skippedCount: number;
+  minApertureMm: number | null;
+  thicknessMm: number;
+  frameMm: number;
+  board: {
+    minX: number;
+    minY: number;
+    maxX: number;
+    maxY: number;
+    widthMm: number;
+    heightMm: number;
+  };
+  plate: {
+    minX: number;
+    minY: number;
+    maxX: number;
+    maxY: number;
+    widthMm: number;
+    heightMm: number;
+  };
+  alignment: { kind: StencilAlignment; holes: Array<{ x: number; y: number; diameterMm: number }> };
+  warnings: Array<{ code: string; message: string; ref?: string; number?: string }>;
+  triangleCount: number;
+  files: { stl: string; json: string; markdown: string; svg: string; jig?: string };
+};
 
 export type SimAnalysis =
   | { type: "op" }
@@ -807,7 +869,14 @@ export type RouteRunRecord = {
     router: "fab_router" | "freerouting" | "tracemaker";
     startedAt: string;
     endedAt: string | null;
-    outcome: "running" | "completed" | "failed" | "unavailable" | "skipped" | "cancelled" | "timed_out";
+    outcome:
+      | "running"
+      | "completed"
+      | "failed"
+      | "unavailable"
+      | "skipped"
+      | "cancelled"
+      | "timed_out";
     reason: string | null;
   }>;
   fallbackReason?: string | null;
@@ -825,7 +894,10 @@ export type RouteRunRecord = {
     result: string;
     candidate: string;
     diff: string;
+    drcCheck?: string;
   };
+  /** New native errors that blocked this candidate; retained for agent inspection. */
+  drcErrors?: DrcViolation[];
   request: {
     timeoutMs: number;
     deadlineAt: string;
@@ -838,6 +910,9 @@ export type RouteRunRecord = {
     rules: Record<string, unknown> | null;
     settings: Record<string, unknown> | null;
     applyPolicy: "auto" | "manual";
+    rerouteMode?: "onOpen" | "always" | "never";
+    freeroutingPasses?: number;
+    allowQualityRegression?: Array<"narrowing" | "skew">;
   };
   startingPcbRevision: string;
   currentPcbRevision: string | null;

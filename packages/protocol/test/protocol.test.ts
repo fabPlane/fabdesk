@@ -369,7 +369,7 @@ describe("pairing url", () => {
 });
 
 describe("usage archive consent", () => {
-  test("the first-install privacy screen follows the detected region", () => {
+  test("the first-install privacy screen defaults to regional detection", () => {
     expect(FIRST_INSTALL_PRIVACY_SCREEN).toBe("auto");
   });
 

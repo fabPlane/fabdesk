@@ -8,6 +8,56 @@ import { FpPcbSessions } from "./fp-pcb-session";
 const url = process.env["FABDESK_FP_PCB_TEST_URL"];
 const workspace = process.env["FABDESK_FP_PCB_TEST_WORKSPACE"];
 test.skipIf(!url || !workspace)(
+  "cross-sheet multi-unit metadata rejection gives feasible guidance and preserves both files",
+  async () => {
+    const dir = await mkdtemp(join(workspace!, "multiunit-cross-sheet-"));
+    const bridge = new FpPcbBridgeClient({ url: url! });
+    const sessions = new FpPcbSessions(() => bridge);
+    const design = createFpPcbDesign({ bridge: () => bridge, sessions });
+    const unit = (number: number) => ({
+      libId: "Amplifier_Operational:LM358",
+      reference: "U7",
+      unit: number,
+      value: "LM358",
+      position: { x: 50.8, y: 50.8 },
+    });
+    try {
+      await design.schematicEdit(dir, { symbols: [unit(1)] });
+      const schematic = await sessions.schematic(dir);
+      await schematic.newSheet({
+        name: "other-unit",
+        filename: "other-unit.kicad_sch",
+        position: { x: 150_000_000, y: 100_000_000 },
+      });
+      await schematic.save();
+      const child = await design.schematicInspect(dir, "other-unit.kicad_sch");
+      await design.schematicEdit(dir, { sheet: child.scope!.identity!, symbols: [unit(2)] });
+      const paths = ["board.kicad_sch", "other-unit.kicad_sch"].map((name) => join(dir, name));
+      const before = await Promise.all(paths.map((path) => readFile(path)));
+      await expect(
+        design.schematicEdit(dir, {
+          symbolUpdates: [{ reference: "U7", unit: 1, value: "new value" }],
+        }),
+      ).rejects.toThrow("different sheets");
+      expect(await Promise.all(paths.map((path) => readFile(path)))).toEqual(before);
+      for (const sheet of [undefined, "other-unit.kicad_sch"])
+        expect((await design.schematicInspect(dir, sheet)).symbols[0]?.value).toBe("LM358");
+      await design.schematicEdit(dir, {
+        symbolUpdates: [{ reference: "U7", unit: 1, position: { x: 76.2, y: 50.8 } }],
+      });
+      expect((await design.schematicInspect(dir)).symbols[0]?.position.x).toBe(76.2);
+      expect(
+        (await design.schematicInspect(dir, "other-unit.kicad_sch")).symbols[0]?.position.x,
+      ).toBe(50.8);
+    } finally {
+      await sessions.dispose();
+      await rm(dir, { recursive: true, force: true });
+    }
+  },
+  60_000,
+);
+
+test.skipIf(!url || !workspace)(
   "schematic edits report canonical IDs, preserve grid geometry and reject local failures without saved changes",
   async () => {
     const dir = await mkdtemp(join(workspace!, "schematic-contract-"));

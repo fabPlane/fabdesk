@@ -1,6 +1,6 @@
 /** Native KiCad schematic-first authoring and forward annotation. */
 import { z } from "zod/v4";
-import { ToolError, defineTool } from "../registry";
+import { ToolError, defineTool, mutationInputObject } from "../registry";
 import { selectSchematic } from "./schematic-selection";
 import { compactHierarchy, inspectSavedHierarchy, ok, table, writeReport } from "./common";
 import {
@@ -8,7 +8,7 @@ import {
   kicadIpcSessionDiagnostics,
 } from "./diagnostic-evidence";
 
-const Point = z.object({
+const Point = mutationInputObject({
   x: z.number().finite().describe("Schematic X coordinate in millimetres"),
   y: z.number().finite().describe("Schematic Y coordinate in millimetres"),
 });
@@ -18,7 +18,7 @@ export const schematic_inspect = defineTool({
   toolset: "circuit",
   title: "Inspect native schematic",
   description:
-    "Inspect selected native schematic objects using the union of references, netNames and objectIds; optional expand=nets includes their connected electrical objects. Pins are absolute sheet millimetres. Reuse wire.start/end and label.position in schematic_edit; junctions use junction.position as {x,y}, deleteItemIds uses object.id. Inspect-to-edit: {junctions:[result.junctions[0].position],deleteItemIds:[result.wires[0].id],sheet:result.scope.identity}. Selectors request object detail even with summary. Inspect the complete saved native schematic hierarchy. The default is a compact packaged-KiCad project summary; request authoring or full for bounded live KiCad IPC details on the root/current or one selected sheet. Live session diagnostics are never presented as saved-file ERC.",
+    "Inspect selected native schematic objects using the union of references, netNames and objectIds; optional expand=nets includes their connected electrical objects. Pins are absolute sheet millimetres. Reuse wire.start/end and label.position in schematic_edit; junctions use junction.position as {x,y}, deleteItemIds uses object.id. Inspect-to-edit: {junctions:[result.junctions[0].position],deleteItemIds:[result.wires[0].id],sheet:result.scope.identity}. Selectors request object detail even with summary. Inspect the complete saved native schematic hierarchy. The default is a compact packaged-KiCad project summary; request authoring or full for bounded live KiCad IPC details on the root/current or one selected sheet. Live session diagnostics include issue descriptions, itemIds and danglingItemIds (up to 200 issues; issueCount reports the total) and are never presented as saved-file ERC.",
   inputSchema: {
     detail: z
       .enum(["summary", "authoring", "full"])
@@ -214,7 +214,7 @@ export const schematic_edit = defineTool({
   toolset: "circuit",
   title: "Edit native schematic",
   description:
-    "Apply one undoable edit batch directly to board.kicad_sch. Supports rotated or mirrored library symbols, symbol movement, safely labelled pin stubs, explicit wires, local and global labels, junctions, no-connect markers, notes, and deletion by inspected ID. Creates native KiCad files when absent. Coordinates are absolute sheet millimetres, origin top-left, +X right, +Y down, on KiCad's 1.27 mm grid. Off-grid arguments are preserved and reported as gridProblems. Each batch uses one commit; changedObjectIds and revision describe the applied result.",
+    "Apply one undoable edit batch directly to board.kicad_sch. Multi-unit parts share reference/libId/value/footprint with distinct unit numbers; place every required unit, including power units. Use symbolUpdates {reference,unit} for a placed unit or deleteItemIds from schematic_inspect to replace it. Supports rotated or mirrored library symbols, symbol movement, safely labelled pin stubs, explicit wires, local and global labels, junctions, no-connect markers, notes, and deletion by inspected ID. Creates native KiCad files when absent. Coordinates are absolute sheet millimetres, origin top-left, +X right, +Y down, on KiCad's 1.27 mm grid. Off-grid arguments are preserved and reported as gridProblems. Each batch uses one commit; changedObjectIds and revision describe the applied result.",
   inputSchema: {
     sheet: z
       .string()
@@ -225,9 +225,12 @@ export const schematic_edit = defineTool({
       ),
     symbols: z
       .array(
-        z.object({
+        mutationInputObject({
           libId: z.string().min(3).describe("Exact KiCad symbol ID, such as Device:R"),
-          reference: z.string().min(1).describe("Unique annotated reference, such as R1"),
+          reference: z
+            .string()
+            .min(1)
+            .describe("Annotated reference; distinct units of one part share it, such as U1"),
           value: z.string(),
           footprint: z
             .union([z.literal(""), z.string().min(3)])
@@ -236,7 +239,14 @@ export const schematic_edit = defineTool({
               "Exact KiCad footprint ID; omit or use an empty string for non-physical symbols such as power flags",
             ),
           position: Point,
-          unit: z.number().int().positive().optional(),
+          unit: z
+            .number()
+            .int()
+            .positive()
+            .optional()
+            .describe(
+              "Library unit number; repeat reference with distinct units, including power units",
+            ),
           bodyStyle: z.number().int().positive().optional(),
           rotation: z
             .union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)])
@@ -250,8 +260,14 @@ export const schematic_edit = defineTool({
       .default([]),
     symbolUpdates: z
       .array(
-        z.object({
+        mutationInputObject({
           reference: z.string().min(1),
+          unit: z
+            .number()
+            .int()
+            .positive()
+            .optional()
+            .describe("Select one unit when the reference has multiple placed units"),
           newReference: z.string().min(1).optional(),
           position: Point.optional(),
           rotation: z
@@ -268,40 +284,38 @@ export const schematic_edit = defineTool({
       .default([]),
     connections: z
       .array(
-        z
-          .object({
-            name: z.string().min(1).describe("Electrical net name"),
-            nodes: z
-              .array(z.object({ reference: z.string().min(1), pin: z.string().min(1) }))
-              .min(1)
-              .describe(
-                "Symbol pin endpoints joined electrically by matching labels on short visible wire stubs",
-              ),
-            label: z.enum(["local", "global", "none"]).default("local"),
-          })
-          .refine((connection) => connection.label !== "none" || connection.nodes.length >= 2, {
-            message: "direct wire connections require at least two nodes",
-            path: ["nodes"],
-          }),
+        mutationInputObject({
+          name: z.string().min(1).describe("Electrical net name"),
+          nodes: z
+            .array(mutationInputObject({ reference: z.string().min(1), pin: z.string().min(1) }))
+            .min(1)
+            .describe(
+              "Symbol pin endpoints joined electrically by matching labels on short visible wire stubs",
+            ),
+          label: z.enum(["local", "global", "none"]).default("local"),
+        }).refine((connection) => connection.label !== "none" || connection.nodes.length >= 2, {
+          message: "direct wire connections require at least two nodes",
+          path: ["nodes"],
+        }),
       )
       .max(500)
       .default([]),
     wires: z
-      .array(z.object({ start: Point, end: Point }))
+      .array(mutationInputObject({ start: Point, end: Point }))
       .max(1000)
       .default([]),
     localLabels: z
-      .array(z.object({ text: z.string().min(1), position: Point }))
+      .array(mutationInputObject({ text: z.string().min(1), position: Point }))
       .max(500)
       .default([]),
     globalLabels: z
-      .array(z.object({ text: z.string().min(1), position: Point }))
+      .array(mutationInputObject({ text: z.string().min(1), position: Point }))
       .max(500)
       .default([]),
     junctions: z.array(Point).max(1000).default([]),
     noConnects: z.array(Point).max(1000).default([]),
     texts: z
-      .array(z.object({ text: z.string().min(1), position: Point }))
+      .array(mutationInputObject({ text: z.string().min(1), position: Point }))
       .max(200)
       .default([]),
     deleteItemIds: z.array(z.string().min(1)).max(1000).default([]),
