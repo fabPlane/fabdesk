@@ -107,6 +107,7 @@ describe("detectAgents", () => {
       remote: { enabled: false, host: "0.0.0.0", port: 47820 },
       notifications: { enabled: true },
       cloudOrgId: null,
+      voice: { provider: "auto", language: "en", pushToTalkMode: "hold", pushToTalkShortcut: "Alt+Space" },
     });
     expect(infos.map((i) => i.id)).toEqual(["claude", "codex", "grok", "cursor"]);
     const byId = Object.fromEntries(infos.map((i) => [i.id, i]));

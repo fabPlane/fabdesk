@@ -27,7 +27,9 @@ export function createCloudSpeechProvider(opts: {
       const url = `${cloudBaseUrl(config)}/audio/transcriptions`;
       const form = new FormData();
       const name = input.audio.filename?.trim() || guessFilename(input.audio.mime);
-      form.append("file", new Blob([input.audio.bytes], { type: input.audio.mime || "audio/webm" }), name);
+      const copy = new ArrayBuffer(input.audio.bytes.byteLength);
+      new Uint8Array(copy).set(input.audio.bytes);
+      form.append("file", new Blob([copy], { type: input.audio.mime || "audio/webm" }), name);
       form.append("model", opts.model ?? "whisper-1");
       if (input.language.trim()) form.append("language", input.language.trim());
       form.append("prompt", vocabularyPrompt(input.hints ?? []));
