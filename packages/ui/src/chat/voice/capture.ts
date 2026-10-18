@@ -47,6 +47,11 @@ export function createVoiceCapture(
   let raf = 0;
   let analyser: AnalyserNode | null = null;
   let context: AudioContext | null = null;
+  let cancelled = false;
+
+  const stopStream = (media: MediaStream | null) => {
+    media?.getTracks().forEach((t) => t.stop());
+  };
 
   const teardown = () => {
     if (raf) cancelAnimationFrame(raf);
@@ -59,7 +64,7 @@ export function createVoiceCapture(
       /* already stopped */
     }
     recorder = null;
-    stream?.getTracks().forEach((t) => t.stop());
+    stopStream(stream);
     stream = null;
     void context?.close();
     context = null;
@@ -68,6 +73,7 @@ export function createVoiceCapture(
 
   return {
     async start(language) {
+      cancelled = false;
       const gum =
         deps.getUserMedia ??
         (typeof navigator !== "undefined" ? navigator.mediaDevices?.getUserMedia.bind(navigator.mediaDevices) : undefined);
@@ -75,12 +81,18 @@ export function createVoiceCapture(
         handlers.onError({ type: "unavailable", message: "This window cannot open the microphone." });
         return;
       }
+      let media: MediaStream;
       try {
-        stream = await gum({ audio: true, video: false });
+        media = await gum({ audio: true, video: false });
       } catch (e) {
         handlers.onError(classifyMediaError(e));
         return;
       }
+      if (cancelled) {
+        stopStream(media);
+        return;
+      }
+      stream = media;
       chunks = [];
       finalText = "";
       mime = pickMime();
@@ -159,6 +171,7 @@ export function createVoiceCapture(
       });
     },
     cancel() {
+      cancelled = true;
       chunks = [];
       teardown();
     },

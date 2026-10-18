@@ -24,6 +24,23 @@ describe("mobile hold-to-talk", () => {
     expect(voice.getState().phase).toBe("editing");
   });
 
+  test("on_device desktop setting falls back to auto on the daemon", async () => {
+    let provider: string | undefined;
+    const voice = createMobileVoice({
+      recorder: createFakeRecorder({ bytes: new Uint8Array([1]) }),
+      provider: "on_device",
+      client: {
+        transcribeSpeech: async (input) => {
+          provider = input.provider;
+          return { text: "from desktop", backend: "cloud" };
+        },
+      },
+    });
+    await voice.holdStart();
+    expect(await voice.holdEnd()).toBe("from desktop");
+    expect(provider).toBe("auto");
+  });
+
   test("permission denied stays idle with a clear error", async () => {
     const voice = createMobileVoice({
       recorder: createFakeRecorder({ permission: "denied" }),

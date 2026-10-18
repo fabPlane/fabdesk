@@ -35,17 +35,44 @@ export type LocalRunner = (args: {
   prompt: string;
 }) => Promise<string>;
 
+export type LocalTranscode = (src: string, mime: string) => Promise<string>;
+
+const WHISPER_NATIVE = /\.(?:wav|flac|mp3|ogg)$/i;
+
+export function whisperCliArgs(args: {
+  model: string;
+  audio: string;
+  language: string;
+  prompt: string;
+}): string[] {
+  const flags = ["-m", args.model, "-f", args.audio, "-nt", "-np", "-l", args.language];
+  if (args.prompt) flags.push("--prompt", args.prompt);
+  return flags;
+}
+
+export function audioExtension(mime: string, filename?: string): string {
+  const name = filename?.toLowerCase() ?? "";
+  if (name.endsWith(".wav") || mime.includes("wav")) return ".wav";
+  if (name.endsWith(".flac") || mime.includes("flac")) return ".flac";
+  if (name.endsWith(".mp3") || mime.includes("mpeg") || mime.includes("mp3")) return ".mp3";
+  if (name.endsWith(".ogg") || mime.includes("ogg")) return ".ogg";
+  if (name.endsWith(".m4a") || name.endsWith(".mp4") || mime.includes("mp4") || mime.includes("m4a")) return ".m4a";
+  return ".webm";
+}
+
 export function createLocalSpeechProvider(opts: {
   home: string;
   which?: (name: string) => string | null;
   exists?: (path: string) => Promise<boolean>;
   run?: LocalRunner;
+  transcode?: LocalTranscode;
   platform?: NodeJS.Platform;
 }): SpeechProvider {
   const paths = localSpeechPaths(opts.home, opts.platform);
   const exists = opts.exists ?? pathExists;
   const which = opts.which ?? whichOnPath;
   const run = opts.run ?? runWhisperCli;
+  const transcode = opts.transcode ?? ffmpegToWav;
   const resolveBin = async (): Promise<string | null> => {
     const envBin = process.env["FABDESK_WHISPER_CLI"]?.trim();
     if (envBin && (await exists(envBin))) return envBin;
@@ -87,15 +114,20 @@ export function createLocalSpeechProvider(opts: {
       if (input.audio.bytes.byteLength === 0) {
         throw new SpeechProviderError("audio is empty", "invalid_audio");
       }
-      const tmp = join(paths.binDir, `speech-${Date.now()}-${Math.random().toString(16).slice(2)}.bin`);
+      const ext = audioExtension(input.audio.mime, input.audio.filename);
+      const tmp = join(paths.binDir, `speech-${Date.now()}-${Math.random().toString(16).slice(2)}${ext}`);
       await mkdir(paths.binDir, { recursive: true });
       await writeFile(tmp, input.audio.bytes);
+      let wav = tmp;
       try {
+        if (!WHISPER_NATIVE.test(tmp) && (opts.transcode || !opts.run)) {
+          wav = await transcode(tmp, input.audio.mime);
+        }
         const text = (
           await run({
             bin,
             model: paths.modelPath,
-            audio: tmp,
+            audio: wav,
             language: input.language,
             prompt: vocabularyPrompt(input.hints ?? []),
           })
@@ -104,6 +136,7 @@ export function createLocalSpeechProvider(opts: {
         return { text, backend: "local", language: input.language };
       } finally {
         await unlink(tmp).catch(() => undefined);
+        if (wav !== tmp) await unlink(wav).catch(() => undefined);
       }
     },
   };
@@ -146,6 +179,41 @@ function whichOnPath(name: string): string | null {
   return null;
 }
 
+async function ffmpegToWav(src: string, _mime: string): Promise<string> {
+  const dest = `${src.replace(/\.[^.]+$/, "")}.wav`;
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(
+      "ffmpeg",
+      ["-y", "-i", src, "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", dest],
+      { stdio: ["ignore", "ignore", "pipe"] },
+    );
+    let err = "";
+    child.stderr.on("data", (chunk: Buffer) => {
+      err += chunk.toString();
+    });
+    child.on("error", (e) => {
+      reject(
+        new SpeechProviderError(
+          e instanceof Error && "code" in e && (e as NodeJS.ErrnoException).code === "ENOENT"
+            ? "Local speech needs ffmpeg on PATH to convert captured audio to WAV."
+            : e instanceof Error
+              ? e.message
+              : String(e),
+          "unavailable",
+        ),
+      );
+    });
+    child.on("close", (code) => {
+      if (code !== 0) {
+        reject(new SpeechProviderError(err.trim() || `ffmpeg exited ${code}`, "provider"));
+        return;
+      }
+      resolve();
+    });
+  });
+  return dest;
+}
+
 async function downloadFile(url: string, dest: string): Promise<void> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Could not download the local speech model (${res.status}).`);
@@ -160,11 +228,7 @@ async function runWhisperCli(args: {
   prompt: string;
 }): Promise<string> {
   return await new Promise((resolve, reject) => {
-    const child = spawn(
-      args.bin,
-      ["-m", args.model, "-f", args.audio, "-nt", "-np", "-l", args.language, "-prompt", args.prompt],
-      { stdio: ["ignore", "pipe", "pipe"] },
-    );
+    const child = spawn(args.bin, whisperCliArgs(args), { stdio: ["ignore", "pipe", "pipe"] });
     let out = "";
     let err = "";
     child.stdout.on("data", (chunk: Buffer) => {

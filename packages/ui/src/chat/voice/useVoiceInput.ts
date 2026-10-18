@@ -35,6 +35,7 @@ export function useVoiceInput({
   const captureRef = useRef<VoiceCapture | null>(null);
   const onTranscriptRef = useRef(onTranscript);
   onTranscriptRef.current = onTranscript;
+  const takeRef = useRef(0);
 
   const dispatch = useCallback((event: VoiceEvent) => {
     setState((prev) => reduceVoice(prev, event));
@@ -45,16 +46,24 @@ export function useVoiceInput({
     captureRef.current = null;
   }, []);
 
+  const deliverTranscript = useCallback((take: number, text: string) => {
+    if (take !== takeRef.current) return false;
+    dispatch({ type: "transcript", text });
+    onTranscriptRef.current(text.trim());
+    return true;
+  }, [dispatch]);
+
   const stopAndTranscribe = useCallback(async () => {
+    const take = takeRef.current;
     const capture = captureRef.current;
     captureRef.current = null;
     dispatch({ type: "stop" });
     const result = capture ? await capture.stop() : null;
+    if (take !== takeRef.current) return;
     const preferOnDevice = shouldUseOnDevice(voice?.provider ?? "auto", !!result?.onDeviceText);
     try {
       if (preferOnDevice && result?.onDeviceText.trim()) {
-        dispatch({ type: "transcript", text: result.onDeviceText });
-        onTranscriptRef.current(result.onDeviceText.trim());
+        deliverTranscript(take, result.onDeviceText);
         return;
       }
       if (result && result.blob.size > 0 && canUseCore(voice?.provider ?? "auto", status)) {
@@ -66,26 +75,27 @@ export function useVoiceInput({
             ? { provider: voice.provider }
             : {}),
         });
-        dispatch({ type: "transcript", text: transcript.text });
-        onTranscriptRef.current(transcript.text);
+        if (take !== takeRef.current) return;
+        deliverTranscript(take, transcript.text);
         return;
       }
       if (result?.onDeviceText.trim()) {
-        dispatch({ type: "transcript", text: result.onDeviceText });
-        onTranscriptRef.current(result.onDeviceText.trim());
+        deliverTranscript(take, result.onDeviceText);
         return;
       }
+      if (take !== takeRef.current) return;
       dispatch({
         type: "unavailable",
         message: statusUnavailableMessage(status, voice?.provider ?? "auto"),
       });
     } catch (e) {
+      if (take !== takeRef.current) return;
       dispatch({
         type: "transcribe_failed",
         message: e instanceof Error ? e.message : String(e),
       });
     }
-  }, [client, dispatch, status, voice]);
+  }, [client, deliverTranscript, dispatch, status, voice]);
 
   const start = useCallback(async () => {
     if (!enabled || voiceBusy(stateRef.current)) return;
@@ -96,6 +106,7 @@ export function useVoiceInput({
       });
       return;
     }
+    takeRef.current += 1;
     dispatch({ type: "start", mode: voice?.pushToTalkMode ?? "hold" });
     const capture = createVoiceCapture({
       onLevel: (value) => dispatch({ type: "level", value }),
@@ -110,6 +121,7 @@ export function useVoiceInput({
   }, [discard, dispatch, enabled, status, voice]);
 
   const cancel = useCallback(() => {
+    takeRef.current += 1;
     discard();
     dispatch({ type: "cancel" });
   }, [discard, dispatch]);

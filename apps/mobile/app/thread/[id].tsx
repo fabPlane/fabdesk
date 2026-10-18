@@ -308,6 +308,7 @@ function ThreadScreenBody() {
             <HoldToTalk
               disabled={sending}
               {...(settings.data?.voice.language ? { language: settings.data.voice.language } : {})}
+              {...(settings.data?.voice.provider ? { provider: settings.data.voice.provider } : {})}
               onTranscript={(text) => void sendContent(text)}
             />
             <Pressable

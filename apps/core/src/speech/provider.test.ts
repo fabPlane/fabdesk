@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createCloudSpeechProvider } from "./cloud";
-import { createLocalSpeechProvider, installLocalSpeechModel, localSpeechPaths } from "./local";
+import { createLocalSpeechProvider, installLocalSpeechModel, localSpeechPaths, whisperCliArgs } from "./local";
 import { createFakeSpeechProvider, SpeechProviderError } from "./provider";
 import { pickActive } from "./service";
 import { HARDWARE_VOCABULARY, vocabularyPrompt } from "./vocabulary";
@@ -74,6 +74,40 @@ describe("speech providers", () => {
     });
     expect(result).toMatchObject({ text: "place the ESP32", backend: "local" });
     expect(ran[0]).toContain("speech-");
+    expect(ran[0]?.endsWith(".webm")).toBe(true);
+  });
+
+  test("whisper-cli uses --prompt and transcodes non-WAV captures", async () => {
+    expect(whisperCliArgs({ model: "m.bin", audio: "a.wav", language: "en", prompt: "USB-C" })).toEqual([
+      "-m",
+      "m.bin",
+      "-f",
+      "a.wav",
+      "-nt",
+      "-np",
+      "-l",
+      "en",
+      "--prompt",
+      "USB-C",
+    ]);
+    const home = `/tmp/fabdesk-speech-wav-${Date.now()}`;
+    const converted: string[] = [];
+    const provider = createLocalSpeechProvider({
+      home,
+      which: () => "/usr/bin/whisper-cli",
+      exists: async () => true,
+      transcode: async (src) => {
+        converted.push(src);
+        return `${src}.wav`;
+      },
+      run: async ({ audio }) => audio.endsWith(".wav") ? "ok" : "wrong",
+    });
+    const result = await provider.transcribe({
+      audio: { bytes: new Uint8Array([1]), mime: "audio/webm", filename: "speech.webm" },
+      language: "en",
+    });
+    expect(result.text).toBe("ok");
+    expect(converted).toHaveLength(1);
   });
 
   test("auto prefers cloud, then local, then on-device", () => {

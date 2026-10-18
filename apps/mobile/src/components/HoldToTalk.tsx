@@ -8,10 +8,12 @@ import { useTheme } from "@/theme";
 export function HoldToTalk({
   disabled,
   language,
+  provider,
   onTranscript,
 }: {
   disabled?: boolean;
   language?: string;
+  provider?: "auto" | "on_device" | "cloud" | "local";
   onTranscript: (text: string) => void;
 }) {
   const t = useTheme();
@@ -26,6 +28,7 @@ export function HoldToTalk({
         recorder: createExpoAvRecorder(),
         client,
         ...(language ? { language } : {}),
+        ...(provider ? { provider } : {}),
       });
     }
     return voiceRef.current;

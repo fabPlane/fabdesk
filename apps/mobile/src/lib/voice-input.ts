@@ -13,6 +13,8 @@ export interface MobileVoiceDeps {
   client: Pick<CoreClient, "transcribeSpeech">;
   onDeviceTranscribe?: (recording: { uri: string; mime: string; read: () => Promise<Uint8Array> }) => Promise<string | null>;
   language?: string;
+  /** Saved desktop provider. On-device cannot run on the daemon, so the phone falls back to auto. */
+  provider?: "auto" | "on_device" | "cloud" | "local";
 }
 
 export interface MobileVoiceController {
@@ -83,10 +85,12 @@ export function createMobileVoice(deps: MobileVoiceDeps): MobileVoiceController 
         const copy = new ArrayBuffer(bytes.byteLength);
         new Uint8Array(copy).set(bytes);
         const blob = new Blob([copy], { type: recording.mime });
+        const coreProvider = deps.provider === "cloud" || deps.provider === "local" ? deps.provider : "auto";
         const result = await deps.client.transcribeSpeech({
           audio: blob,
           filename: "speech.m4a",
           ...(deps.language ? { language: deps.language } : {}),
+          provider: coreProvider,
         });
         dispatch({ type: "transcript", text: result.text });
         return result.text;
