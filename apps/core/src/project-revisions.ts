@@ -13,6 +13,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { withoutAppImageRuntime } from "./appimage-env";
 
 const EXCLUDED_DIRECTORIES = new Set([
   ".fabdesk",
@@ -169,9 +170,12 @@ async function snapshot(project: string, label: string | undefined): Promise<Rev
 }
 
 async function spawn(command: string[], options: { cwd: string; env: NodeJS.ProcessEnv }) {
+  const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(withoutAppImageRuntime(options.env)))
+    if (typeof value === "string") env[key] = value;
   const child = Bun.spawn(command, {
     cwd: options.cwd,
-    env: options.env,
+    env,
     stdout: "pipe",
     stderr: "pipe",
   });
