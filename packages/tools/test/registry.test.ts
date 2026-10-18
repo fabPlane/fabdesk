@@ -292,6 +292,7 @@ describe("registry", () => {
       "export_zip",
       "export_dxf",
       "export_stencil",
+      "export_laser_stencil",
       "sim_spice_netlist",
       "sim_run",
       "app_state",

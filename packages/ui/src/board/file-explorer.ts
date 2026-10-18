@@ -12,7 +12,7 @@ export function fileAppearance(path: string): { kind: FileKind; label: string; p
   if (["dxf", "dwg", "pdf"].includes(ext)) return { kind: "drawing", label: ext.toUpperCase(), preview: "none" };
   if (["zip", "gz", "7z", "rar", "tar"].includes(ext)) return { kind: "archive", label: ext.toUpperCase(), preview: "none" };
   if (["ts", "tsx", "js", "jsx", "py", "c", "h", "cpp", "rs", "go", "sh", "ps1", "html", "css", "scad"].includes(ext)) return { kind: "code", label: "CODE", preview: "text" };
-  if (["json", "yaml", "yml", "toml", "xml", "csv", "tsv", "kicad_pro", "kicad_prl", "kicad_sym", "kicad_mod", "gbr", "gbrjob", "gbl", "gtl", "gtp", "gbp", "gts", "gbs", "gto", "gbo", "gm1", "drl", "net", "d356", "ipc2581"].includes(ext)) return { kind: "data", label: ext.toUpperCase(), preview: "text" };
+  if (["json", "yaml", "yml", "toml", "xml", "csv", "tsv", "lbrn", "lbrn2", "kicad_pro", "kicad_prl", "kicad_sym", "kicad_mod", "gbr", "gbrjob", "gbl", "gtl", "gtp", "gbp", "gts", "gbs", "gto", "gbo", "gm1", "drl", "net", "d356", "ipc2581"].includes(ext)) return { kind: "data", label: ext.toUpperCase(), preview: "text" };
   if (["txt", "md", "log", "ini", "cfg", "gitignore"].includes(ext) || ["readme", "license", "dockerfile", "makefile", "fp-lib-table", "sym-lib-table"].includes(name)) return { kind: "text", label: ext.toUpperCase() || "TXT", preview: "text" };
   return { kind: "file", label: ext.toUpperCase() || "FILE", preview: "none" };
 }
