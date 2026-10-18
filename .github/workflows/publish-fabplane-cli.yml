@@ -1,0 +1,99 @@
+# Publishes the vendored fabplane-cli package (vendor/fabplane-cli) to npm.
+# Source of truth: https://github.com/fabPlane/fabplane-cli (do not edit vendor/).
+# Needs the NPM_TOKEN repository secret. Without it the job fails before publish.
+#
+# Trigger: push a tag that matches the vendored package.json version.
+# The pin on this repo is often behind upstream (see docs/fabplane-cli.md);
+# bump with `bun run submodules:update` before tagging. Example: after the pin
+# is 0.3.0, push cli-v0.3.0.
+# Prefer tagging fabPlane/fabplane-cli (v*) when you have write access there;
+# this workflow is the TensorFleet path. Never publish from a PR or from main.
+#
+# Do not pass --provenance: npm provenance requires a public repository whose
+# package.json "repository" matches the workflow repo. TensorFleet/fabdesk is
+# private and vendor/fabplane-cli names fabPlane/fabplane-cli.
+name: Publish fabplane-cli
+
+on:
+  push:
+    tags:
+      - "cli-v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-fabplane-cli
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check NPM_TOKEN
+        id: token
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NPM_TOKEN" ]; then
+            echo "::error title=NPM_TOKEN missing::Add the NPM_TOKEN repository secret (Settings → Secrets and variables → Actions) to publish fabplane-cli."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          submodules: false
+
+      - name: Init fabplane-cli submodule
+        run: git submodule update --init --depth 1 vendor/fabplane-cli
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: npm
+          cache-dependency-path: vendor/fabplane-cli/package-lock.json
+
+      - name: Tag matches package.json
+        working-directory: vendor/fabplane-cli
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          tag="${GITHUB_REF_NAME#cli-v}"
+          if [ "$version" != "$tag" ]; then
+            echo "::error::Tag cli-v$tag does not match vendor/fabplane-cli package.json version $version. Bump the submodule with bun run submodules:update first."
+            exit 1
+          fi
+
+      - name: Skip versions already on npm
+        id: published
+        working-directory: vendor/fabplane-cli
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if npm view "fabplane-cli@$version" version >/dev/null 2>&1; then
+            echo "fabplane-cli@$version is already published; nothing to do."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # vendor/fabplane-cli is a bun workspace of this repo. npm walks up to the
+      # root package.json and then fails because there is no root package-lock.json
+      # (AGENTS.md only forbids installs inside vendor/fabplane and vendor/fab_pcb).
+      # Copy the pin out of the workspace before npm ci / publish.
+      - name: Install, build and test
+        if: steps.published.outputs.exists == 'false'
+        run: |
+          set -euo pipefail
+          workdir="${RUNNER_TEMP}/fabplane-cli-publish"
+          rm -rf "$workdir"
+          cp -a vendor/fabplane-cli "$workdir"
+          cd "$workdir"
+          npm ci && npm run build && npm test
+
+      - name: npm publish
+        if: steps.published.outputs.exists == 'false'
+        working-directory: ${{ runner.temp }}/fabplane-cli-publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public
