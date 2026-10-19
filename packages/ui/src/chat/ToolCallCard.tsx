@@ -4,6 +4,7 @@ import { Icon } from "../components/Icon";
 import { useUiStore } from "../stores/ui";
 import { cn, isImagePath, stringifyPretty } from "../util";
 import { ProjectImage } from "./ProjectImage";
+import { ErrorNotice } from "../components/ErrorNotice";
 
 type ToolUse = Extract<MessagePart, { type: "tool_use" }>;
 type ToolResult = Extract<MessagePart, { type: "tool_result" }>;
@@ -113,6 +114,7 @@ export function ToolCallCard({ use, result, streaming = false }: { use: ToolUse;
         {error && <span className="shrink-0 text-xs text-danger">Error</span>}
         <Icon name={open ? "chevronDown" : "chevronRight"} width={12} height={12} className="shrink-0" />
       </button>
+      {error && result && <ErrorNotice error={resultText(result.output)} />}
       {images.length > 0 && (
         <div className="flex flex-wrap gap-2 px-2.5 pb-2">
           {images.map((img, i) =>

@@ -3,7 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
-import { useCoreClient, type ThreadDetail } from "@fabdesk/client-core";
+import { deduplicateChatNotices, splitAgentError, useCoreClient, type ThreadDetail } from "@fabdesk/client-core";
+import { ErrorAgentContext, ErrorNotice } from "../components/ErrorNotice";
 import { useRunsStore } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { cn } from "../util";
@@ -85,6 +86,12 @@ function ImagePart({ path }: { path: string }) {
   );
 }
 
+function AssistantText({ text, streaming = false }: { text: string; streaming?: boolean }) {
+  const failure = splitAgentError(text);
+  if (!failure) return <Markdown text={text} className={cn(streaming && "fd-caret")} />;
+  return <>{failure.before && <Markdown text={failure.before} />}<ErrorNotice error={failure.error} />{failure.after && <AssistantText text={failure.after} streaming={streaming} />}</>;
+}
+
 export function renderParts(m: Message, streaming: boolean): ReactNode[] {
   const executing = streaming && !m.parts.some((p) => (p.type === "approval" && p.decision === "pending") || (p.type === "question" && p.answer === null));
   const results = new Map<string, ToolResult>();
@@ -108,7 +115,9 @@ export function renderParts(m: Message, streaming: boolean): ReactNode[] {
     switch (p.type) {
       case "text":
         out.push(
-          <Markdown key={i} text={p.text} className={cn(streaming && last && "fd-caret")} />,
+          m.role === "assistant"
+            ? <AssistantText key={i} text={p.text} streaming={streaming && last} />
+            : <Markdown key={i} text={p.text} className={cn(streaming && last && "fd-caret")} />,
         );
         break;
       case "thinking":
@@ -206,7 +215,9 @@ export function MessageBubble({ message, streaming, latestReply = false }: { mes
     message.parts.length > 0
       ? renderParts(message, streaming)
       : message.contentMd
-        ? [<Markdown key="md" text={message.contentMd} className={cn(streaming && "fd-caret")} />]
+        ? [message.role === "assistant"
+          ? <AssistantText key="md" text={message.contentMd} streaming={streaming} />
+          : <Markdown key="md" text={message.contentMd} className={cn(streaming && "fd-caret")} />]
         : [];
   return (
     <div className={cn("fd-message flex w-full flex-col", isUser ? "items-end" : "items-start")}>
@@ -316,7 +327,7 @@ export function MessageList({
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   }, [messages]);
   const lastId = messages.findLast((message) => message.role === "assistant")?.id;
-  const visibleMessages = messages.filter((message) => message.status !== "queued");
+  const visibleMessages = deduplicateChatNotices(messages.filter((message) => message.status !== "queued"));
   const activeMessages = run ? visibleMessages.filter((m) => m.role === "assistant" && m.runId === run.runId) : [];
   const firstActiveId = activeMessages[0]?.id;
   const finished = thread?.run && thread.run.status !== "running" && thread.run.id !== run?.runId ? thread.run : null;
@@ -344,7 +355,7 @@ export function MessageList({
           const split = completed ? splitCompletedActivity(batch, savedRun?.status === "failed" || savedRun?.status === "aborted") : null;
           const day = new Date(m.createdAt).toDateString();
           const previousDay = visible[index - 1] ? new Date(visible[index - 1]!.createdAt).toDateString() : null;
-          return <div key={m.id} data-message-id={completed ? undefined : m.id} className="scroll-mt-8 rounded-xl">
+          return <ErrorAgentContext.Provider key={m.id} value={savedRun?.agentId ?? (run?.runId === m.runId ? run.agentId : undefined)}><div data-message-id={completed ? undefined : m.id} className="scroll-mt-8 rounded-xl">
             {day !== previousDay && <div className="my-3 flex items-center gap-3 text-[11px] text-muted"><span className="h-px flex-1 bg-border" /><time dateTime={m.createdAt}>{new Date(m.createdAt).toLocaleDateString([], { dateStyle: "medium" })}</time><span className="h-px flex-1 bg-border" /></div>}
             {run && m.id === firstActiveId && <RunActivity key={run.runId} run={run} waiting={waiting} />}
             {split ? <>
@@ -353,14 +364,10 @@ export function MessageList({
               </WorkedActivity>
               {split.answer && <div data-message-id={split.answer.id}><MessageBubble message={split.answer} streaming={false} latestReply={batch.some(item => item.id === lastId)} /></div>}
             </> : <MessageBubble message={m} latestReply={m.role === "assistant" && m.id === lastId} streaming={!!run && m.runId === run.runId && m.role === "assistant"} />}
-          </div>;
+          </div></ErrorAgentContext.Provider>;
         })}
         {run && !firstActiveId && <div><RunActivity key={run.runId} run={run} /><div className="text-[13px] text-muted" role="status"><span className="fd-activity-shimmer">Working…</span></div></div>}
-        {run?.error && (
-          <div className="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">
-            {run.error}
-          </div>
-        )}
+        {run?.error && !activeMessages.some(m => m.contentMd.includes(run.error!)) && <ErrorNotice error={run.error} agentId={run.agentId} />}
       </div>
     </div>
   );

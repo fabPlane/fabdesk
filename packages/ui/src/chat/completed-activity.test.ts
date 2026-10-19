@@ -28,3 +28,11 @@ test("plain-text responses are preserved without guessing sentence boundaries", 
   const plain = { ...message, parts: [], contentMd: "Complete answer" };
   expect(splitCompletedActivity([plain])).toEqual({ history: [], answer: plain });
 });
+
+test("failed-run recovery instructions are visible outside folded activity", () => {
+  const text = "Failed to authenticate: OAuth session expired and could not be refreshed";
+  const failed = { ...message, parts: [{ type: "text" as const, text: `${text}\n\n⚠ ${text}` }] };
+  const split = splitCompletedActivity([failed], true);
+  expect(split.history).toHaveLength(0);
+  expect(split.answer?.parts).toEqual(failed.parts);
+});

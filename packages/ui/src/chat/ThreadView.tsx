@@ -3,7 +3,7 @@ import { useCallback, useEffect } from "react";
 import { Icon } from "../components/Icon";
 import { CircuitLogo } from "../components/CircuitLogo";
 import { Badge } from "../components/ui";
-import { useMessages, useThread, useThreadMutations } from "@fabdesk/client-core";
+import { CoreHttpError, useMessages, useThread, useThreadMutations } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { Composer } from "./Composer";
 import { MessageList } from "./MessageList";
@@ -23,13 +23,25 @@ export function ThreadView() {
   const { create } = useThreadMutations();
   const onCreateThread = useCallback(
     async (input: { agentId: AgentId; model?: string }) => {
-      const t = await create.mutateAsync({
-        projectId,
-        agentId: input.agentId,
-        ...(input.model ? { model: input.model } : {}),
-      });
-      setActiveThread(t.id);
-      return t.id;
+      try {
+        const t = await create.mutateAsync({
+          projectId,
+          agentId: input.agentId,
+          ...(input.model ? { model: input.model } : {}),
+        });
+        setActiveThread(t.id);
+        return t.id;
+      } catch (error) {
+        if (error instanceof CoreHttpError && error.code === "project_not_found") {
+          const ui = useUiStore.getState();
+          if (ui.activeProjectId === projectId && ui.activeThreadId === null) {
+            ui.setActiveProject(null);
+            ui.setProjectPickerOpen(true);
+          }
+        }
+        // The composer keeps the draft and attachments on failure; never silently resend.
+        throw error;
+      }
     },
     [create, projectId, setActiveThread],
   );

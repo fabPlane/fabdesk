@@ -25,6 +25,8 @@ export type IconName =
   | "arrowUp"
   | "queue"
   | "export"
+  | "externalLink"
+  | "refresh"
   | "pin"
   | "pinFilled"
   | "more"
@@ -41,6 +43,8 @@ export type IconName =
 /** One stroke language for the desktop chrome. Icons inherit the control's color. */
 export function Icon({ name, ...props }: SVGProps<SVGSVGElement> & { name: IconName }) {
   const paths: Record<IconName, React.ReactNode> = {
+    externalLink: <><path d="M14 3h7v7m0-7L10 14" /><path d="M10 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5" /></>,
+    refresh: <><path d="M20 7v5h-5M4 17v-5h5" /><path d="M6.1 7a7 7 0 0 1 11.5-1L20 9M4 15l2.4 3A7 7 0 0 0 17.9 17" /></>,
     image: <><rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="8" cy="8" r="1.5" /><path d="m3 17 5-5 4 4 3-3 6 6" /></>,
     terminal: <><rect x="3" y="4" width="18" height="16" rx="3" /><path d="m7 9 3 3-3 3m6 0h4" /></>,
     tool: <path d="M14 6a5 5 0 0 0-6 6L3 17a2.8 2.8 0 0 0 4 4l5-5a5 5 0 0 0 6-6l-3 3-4-4 3-3Z" />,

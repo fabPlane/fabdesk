@@ -87,6 +87,20 @@ const api = (path: string, init: RequestInit = {}) =>
   });
 
 describe("http daemon", () => {
+  test("stale project and parent chat return actionable codes instead of SQLite errors", async () => {
+    for (const [input, code] of [
+      [{ agentId: "claude", projectId: "prj_missing" }, "project_not_found"],
+      [{ agentId: "claude", parentThreadId: "th_missing" }, "parent_thread_not_found"],
+    ] as const) {
+      const before = await (await api("/threads")).json() as unknown[];
+      const response = await api("/threads", { method: "POST", body: JSON.stringify(input) });
+      expect(response.status).toBe(404);
+      const body = await response.json();
+      expect(body.code).toBe(code);
+      expect(body.error).not.toContain("FOREIGN KEY");
+      expect((await (await api("/threads")).json() as unknown[]).length).toBe(before.length);
+    }
+  });
   test("health open, auth required, foreign origin rejected, handshake written", async () => {
     const health = await fetch(`${daemon.url}/health`);
     expect(health.status).toBe(200);
@@ -458,8 +472,13 @@ describe("http daemon", () => {
     expect(detail.run.agentSessionId).toBe("sess-42");
     const tracePath = join(created.path, ".fabdesk", "runs", runId, "trace.jsonl");
     expect(await Bun.file(tracePath).exists()).toBe(true);
+    // Export finishes asynchronously after agent.done; wait for the artifact, not a fixed delay.
+    const dumpPath = join(created.path, ".fabdesk", "runs", runId, "llm-dump.json");
+    const dumpDeadline = Date.now() + 3_000;
+    while ((!daemon.store.runDumps.get(runId) || !(await Bun.file(dumpPath).exists())) && Date.now() < dumpDeadline)
+      await Bun.sleep(10);
     expect(
-      await Bun.file(join(created.path, ".fabdesk", "runs", runId, "llm-dump.json")).exists(),
+      await Bun.file(dumpPath).exists(),
     ).toBe(true);
     expect(JSON.parse(daemon.store.runDumps.get(runId)!.dumpJson)).toMatchObject({
       schema: "fabdesk.llm-run-dump/v1",

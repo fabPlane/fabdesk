@@ -5,6 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { Button, IconButton, Textarea } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { InstallHint } from "../components/InstallHint";
+import { ErrorNotice } from "../components/ErrorNotice";
 import { useCore } from "@fabdesk/client-core";
 import { CoreHttpError, useDoctor, useSettings, useMessages, useQueueMessage, useUnqueueMessage } from "@fabdesk/client-core";
 import { useRunsStore } from "@fabdesk/client-core";
@@ -71,7 +72,7 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
   const [model, setModel] = useState<string>(thread?.model ?? "");
   const [sending, setSending] = useState(false);
   const [stopping, setStopping] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -145,7 +146,7 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
         setDraft(DRAFT_KEY_NEW, "");
         clearAttachments(DRAFT_KEY_NEW);
       }
-      setError(e instanceof Error ? e.message : String(e));
+      setError(e);
     } finally {
       setSending(false);
     }
@@ -342,7 +343,7 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
             <div className="border-t border-warning/20 px-3 py-2"><InstallHint text={selectedAgent.installHint} /></div>
           </details>
         )}
-        {error && <div className="mt-2 rounded-lg border border-danger/25 bg-danger/5 px-3 py-2 text-xs text-danger">{error}</div>}
+        {error != null && <ErrorNotice error={error} agentId={agentId} />}
       </div>
     </div>
   );

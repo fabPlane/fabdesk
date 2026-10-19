@@ -171,7 +171,7 @@ function relative(iso: string | null): string {
   return `${Math.floor(ms / 86_400_000)}d ago`;
 }
 
-/** The daemon's `{ error }` body when there is one; a `CoreHttpError` message is the raw response text. */
+/** Also accept plain errors from older daemon integrations. CoreHttpError is already readable. */
 export function daemonError(e: unknown): string {
   const message = e instanceof Error ? e.message : String(e);
   try {

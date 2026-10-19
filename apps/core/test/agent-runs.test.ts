@@ -75,6 +75,21 @@ function harness(
 const settle = () => Bun.sleep(20);
 
 describe("AgentRunManager project lease", () => {
+  test("a CLI failure emitted as text and repeated errors is saved only once", async () => {
+    const h = await harness();
+    const t = h.thread();
+    const failure = "Failed to authenticate: OAuth session expired and could not be refreshed";
+    await h.start(t.id, null);
+    h.runs[0]!.finish([
+      { type: "text", delta: failure },
+      { type: "error", message: failure },
+      { type: "error", message: failure },
+    ]);
+    await settle();
+    const reply = h.store.threads.messages(t.id).find(m => m.role === "assistant");
+    expect(reply?.contentMd).toBe(failure);
+    expect(h.store.runs.latestForThread(t.id)?.status).toBe("failed");
+  });
   test("a second thread cannot start a writer on a busy project, and is told which thread holds it", async () => {
     const h = await harness();
     const p = h.project("proj-a");

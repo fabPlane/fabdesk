@@ -2,7 +2,7 @@ import type { Thread } from "@fabdesk/protocol";
 import { DeleteChatDialog } from "./DeleteChatDialog";
 import { CreateProjectDialog } from "./CreateProjectDialog";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
-import { Button, ContextMenu, IconButton, Input, MenuItem } from "../components/ui";
+import { Button, ContextMenu, IconButton, Input, MenuItem, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { useProjects, useThreads, useThreadMutations } from "@fabdesk/client-core";
 import { useBranchThread } from "../hooks/threadActions";
@@ -102,6 +102,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
         <button
           className={cn(
             "fd-chat-row flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-colors",
+            running[t.id] && "pr-9",
             t.id === activeThreadId ? "bg-panel-2 font-medium text-fg shadow-sm" : "text-fg/85 hover:bg-panel-2/60 hover:text-fg",
           )}
           title={t.title || "Untitled"}
@@ -109,14 +110,24 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
           onContextMenu={(e) => openMenu(e, t)}
           data-testid={`sidebar-thread-${t.id}`}
         >
-          {running[t.id] && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" title="running" />}
           <ScrollingTitle text={t.title || "Untitled"} />
+          {running[t.id] && <span className="sr-only">Agent working</span>}
         </button>
+      )}
+      {running[t.id] && renaming?.id !== t.id && (
+        <span
+          className={cn("pointer-events-none absolute right-0 top-1 flex h-7 w-7 items-center justify-center group-hover:invisible group-focus-within:invisible", menu?.thread.id === t.id && "invisible")}
+          title="Agent working"
+          aria-hidden="true"
+          data-testid={`thread-working-${t.id}`}
+        >
+          <Spinner />
+        </span>
       )}
       <IconButton
         title={t.pinned ? "Unpin" : "Pin"}
         style={{ width: 28, height: 28 }}
-        className={cn("absolute right-0 top-1 h-7 w-7 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100", t.pinned && "text-accent")}
+        className={cn("absolute right-0 top-1 h-7 w-7 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100", t.pinned && "text-accent", menu?.thread.id === t.id && "opacity-100")}
         onClick={(e) => {
           e.stopPropagation();
           togglePin(t);
@@ -128,7 +139,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
       <IconButton
         title="Chat menu"
         style={{ width: 28, height: 28 }}
-        className="absolute right-7 top-1 h-7 w-7 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+        className={cn("absolute right-7 top-1 h-7 w-7 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100", menu?.thread.id === t.id && "opacity-100")}
         onClick={(e) => openMenu(e, t)}
         data-testid={`thread-menu-${t.id}`}
       >

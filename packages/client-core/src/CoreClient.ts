@@ -55,6 +55,7 @@ export interface LiveRunSummary {
 }
 
 import { subscribeSse, type EventSourceFactory, type SseStatus, type SseSubscription } from "./sse";
+import { errorMessage, errorPayload } from "./error-help";
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
@@ -66,13 +67,15 @@ export interface CoreClientOptions {
 }
 
 export class CoreHttpError extends Error {
+  readonly code: string | undefined;
   constructor(
     public readonly status: number,
     public readonly path: string,
-    message: string,
+    public readonly rawMessage: string,
   ) {
-    super(message);
+    super(errorMessage(rawMessage, { status, path }));
     this.name = "CoreHttpError";
+    this.code = errorPayload(rawMessage).code;
   }
 }
 
@@ -145,7 +148,17 @@ export class CoreClient {
   constructor(options: CoreClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/$/, "");
     this.token = options.token;
-    this.fetchImpl = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
+    const fetchImpl = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
+    this.fetchImpl = async (input, init) => {
+      try { return await fetchImpl(input, init); }
+      catch (error) {
+        // Keep intentional cancellation and relay-specific errors distinguishable.
+        if (init?.signal?.aborted || (error instanceof Error && error.name === "AbortError") || error instanceof CoreHttpError) throw error;
+        const failure = new Error(errorMessage(error));
+        Object.assign(failure, { rawMessage: error instanceof Error ? error.message : String(error), cause: error });
+        throw failure;
+      }
+    };
     this.esFactory =
       options.eventSourceFactory ??
       ((url) => new EventSource(url) as unknown as ReturnType<EventSourceFactory>);

@@ -541,6 +541,118 @@ describe("Claude Code's permission prompt (MCP permission_prompt)", () => {
   });
 });
 
+describe("interactive questions for full-mode agents", () => {
+  test("Codex native tools wait for a choice or custom answer, persist it, and never invent timeout answers", async () => {
+    const t = await newThread({ agentId: "codex", runtimeMode: "full" });
+    const other = await newThread({ runtimeMode: "full" });
+    const bus = listen("agent.*");
+    await bus.ready;
+    await send(t.id, "hold:interactive");
+    await waitFor(() => sessions.some((s) => s.prompt === "hold:interactive"));
+    const session = sessions.find((s) => s.prompt === "hold:interactive")!;
+    const client = new Client({ name: "question-test", version: "0" });
+    const transport = new StreamableHTTPClientTransport(
+      new URL(`${daemon.url}/mcp?profile=native`),
+      {
+        requestInit: { headers: { authorization: `Bearer ${session.mcp.token}` } },
+      },
+    );
+    const result = (r: Awaited<ReturnType<Client["callTool"]>>) =>
+      JSON.parse((r.content as Array<{ text: string }>)[0]!.text);
+    try {
+      await client.connect(transport);
+      const names = (await client.listTools()).tools.map((x) => x.name);
+      expect(names).toContain("request_user_input");
+      expect(names).not.toContain("permission_prompt");
+      expect(client.getInstructions()).toContain("Wait for the submitted answer");
+      for (const [index, answer] of ["USB", "My own adapter"].entries()) {
+        let resolved = false;
+        const pending = client
+          .callTool({
+            name: "request_user_input",
+            arguments: { question: "Connect to what?", options: ["USB", "Serial port"] },
+          })
+          .then((r) => {
+            resolved = true;
+            return r;
+          });
+        await waitFor(() => ofTopic(bus.events, "agent.input_requested").length === index + 1);
+        const q = ofTopic(bus.events, "agent.input_requested")[index]!;
+        expect(resolved).toBe(false);
+        expect(q.threadId).toBe(t.id);
+        expect(
+          (
+            await local(`/threads/${other.id}/inputs/${q.requestId}`, {
+              method: "POST",
+              body: JSON.stringify({ answer }),
+            })
+          ).status,
+        ).toBe(404);
+        const stored = (await messages(t.id))
+          .flatMap((m) => m.parts ?? [])
+          .find((p) => p.type === "question" && p.requestId === q.requestId);
+        expect(stored).toMatchObject({
+          type: "question",
+          answer: null,
+          options: ["USB", "Serial port"],
+        });
+        expect(
+          (
+            await local(`/threads/${t.id}/inputs/${q.requestId}`, {
+              method: "POST",
+              body: JSON.stringify({ answer }),
+            })
+          ).status,
+        ).toBe(200);
+        expect(result(await pending)).toEqual({ status: "answered", answer });
+        const persisted = (await messages(t.id))
+          .flatMap((m) => m.parts ?? [])
+          .find((p) => p.type === "question" && p.requestId === q.requestId);
+        expect(persisted).toMatchObject({ answer });
+      }
+      const timedOut = result(
+        await client.callTool({
+          name: "request_user_input",
+          arguments: { question: "Unanswered?" },
+        }),
+      );
+      expect(timedOut).toMatchObject({ status: "unanswered", answer: null });
+      expect(timedOut.instruction).toContain("Do not guess");
+      expect((await detail(t.id)).pending.inputs).toHaveLength(0);
+
+      const stopped = client.callTool({
+        name: "request_user_input",
+        arguments: { question: "Stop while waiting?" },
+      });
+      await waitFor(() => ofTopic(bus.events, "agent.input_requested").length === 4);
+      await local(`/threads/${t.id}/abort`, { method: "POST" });
+      expect(result(await stopped)).toMatchObject({ status: "unanswered", answer: null });
+      expect((await detail(t.id)).pending.inputs).toHaveLength(0);
+      expect(
+        (
+          await client.callTool({
+            name: "request_user_input",
+            arguments: { question: "Too late?" },
+          })
+        ).isError,
+      ).toBe(true);
+    } finally {
+      await transport.terminateSession();
+      await client.close();
+      release("interactive");
+      bus.close();
+    }
+    const stray = new Client({ name: "not-a-run", version: "0" });
+    await stray.connect(
+      new StreamableHTTPClientTransport(new URL(`${daemon.url}/mcp?profile=native`), {
+        requestInit: { headers: H() },
+      }),
+    );
+    expect((await stray.listTools()).tools.map((x) => x.name)).not.toContain("request_user_input");
+    await stray.close();
+  });
+});
+
 describe("queued messages (C5)", () => {
   test("queued while a run is live, sent when it ends, removable until then", async () => {
     const t = await newThread({ runtimeMode: "full" });
