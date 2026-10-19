@@ -1,3 +1,25 @@
+# Linux runner selector.
+#
+# Default: trusted work uses the existing ephemeral NAS label set
+#   ["self-hosted","Linux","X64","tf-nas-ephemeral","fabdesk"]
+# Fork PRs stay on isolated GitHub-hosted Ubuntu (never NAS).
+#
+# Durable Blacksmith override (stays set until an admin unsets it):
+#   FORCE_BLACKSMITH_LINUX=true   (also 1 / yes / on)
+#   LINUX_RUNNER=blacksmith
+# Either repository Actions variable makes this selector always emit the
+# Blacksmith label for trusted work. Unset or set a non-matching value to
+# restore the default NAS path. This is the long-lived recovery switch when
+# the NAS host is offline or missing libraries.
+#
+# Bounded lease (existing, max 15 minutes):
+#   NAS_RUNNER_OUTAGE_UNTIL=<future unix timestamp>
+# Used only when there is no fresh idle heartbeat. Fresh idle evidence still
+# wins over this lease.
+#
+# Live "is any NAS runner online?" probes are not used. Listing self-hosted
+# runners needs Administration scope; GITHUB_TOKEN cannot read that API.
+# This workflow does not add a credential. Use the durable override instead.
 name: Select Linux runner
 
 on:
@@ -10,7 +32,7 @@ on:
         default: blacksmith-4vcpu-ubuntu-2204
     outputs:
       runner:
-        description: JSON selector preferring NAS, with an explicit outage fallback
+        description: JSON selector preferring NAS, with durable or bounded Blacksmith fallback
         value: ${{ jobs.select.outputs.runner }}
 
 permissions:
@@ -25,11 +47,13 @@ jobs:
       runner: ${{ steps.pick.outputs.runner }}
     steps:
       # No checkout: fork code must never run on a private LAN runner.
-      - name: Prefer NAS unless a confirmed outage lease is active
+      - name: Prefer NAS unless a durable or bounded Blacksmith override is active
         id: pick
         env:
           FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
           BLACKSMITH_RUNNER: ${{ inputs.blacksmith-runner }}
+          FORCE_BLACKSMITH_LINUX: ${{ vars.FORCE_BLACKSMITH_LINUX }}
+          LINUX_RUNNER: ${{ vars.LINUX_RUNNER }}
           NAS_RUNNER_HEARTBEAT: ${{ vars.NAS_RUNNER_HEARTBEAT }}
           NAS_RUNNER_OUTAGE_UNTIL: ${{ vars.NAS_RUNNER_OUTAGE_UNTIL }}
         run: |
@@ -44,8 +68,20 @@ jobs:
              [ $((now - NAS_RUNNER_HEARTBEAT)) -le 20 ]; then
             idle=true
           fi
+          force_flag="$(printf '%s' "${FORCE_BLACKSMITH_LINUX:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+          linux_choice="$(printf '%s' "${LINUX_RUNNER:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+          force_blacksmith=false
+          if [ "$force_flag" = true ] || [ "$force_flag" = 1 ] ||
+             [ "$force_flag" = yes ] || [ "$force_flag" = on ] ||
+             [ "$linux_choice" = blacksmith ]; then
+            force_blacksmith=true
+          fi
           if [ "$FORK_PR" = true ]; then
             runner='"ubuntu-latest"'
+          elif [ "$force_blacksmith" = true ]; then
+            # Durable admin override. Idle evidence does not win; unset the
+            # variable to return trusted work to NAS.
+            runner="$(jq -cn --arg label "$BLACKSMITH_RUNNER" '$label')"
           elif [ "$idle" = false ] &&
                [[ "${NAS_RUNNER_OUTAGE_UNTIL:-}" =~ ^[1-9][0-9]{0,9}$ ]] &&
                [ "$NAS_RUNNER_OUTAGE_UNTIL" -gt "$now" ] &&

@@ -135,6 +135,36 @@ describe("hermetic packaged-KiCad environment", () => {
     expect(observed?.cwd).toBe(resolve("/work", "board"));
     expect(observed?.env.PATH).toBe(`${dirname(baseEnv.KICAD_CLI)}${delimiter}/usr/bin`);
     expect(observed?.env.FABDESK_PROJECT_DIR).toBe(resolve("/work", "board"));
+    expect(observed?.env.APPDIR).toBeUndefined();
+  });
+
+  test("strips AppImage launcher variables before spawning packaged KiCad", async () => {
+    let observed: Record<string, string> = {};
+    expect(
+      await runHermeticEnv(
+        { action: "exec", command: ["kicad-cli", "version"] },
+        {
+          env: {
+            ...baseEnv,
+            APPDIR: "/tmp/.mount_fabplane",
+            APPIMAGE: "/downloads/fabplane.AppImage",
+            ARGV0: "./fabplane.AppImage",
+            OWD: "/downloads",
+          },
+          cwd: () => "/work",
+          pathExists: async () => true,
+          execute: async ({ env }) => {
+            observed = env;
+            return 0;
+          },
+        },
+      ),
+    ).toBe(0);
+    expect(observed.APPDIR).toBeUndefined();
+    expect(observed.APPIMAGE).toBeUndefined();
+    expect(observed.ARGV0).toBeUndefined();
+    expect(observed.OWD).toBeUndefined();
+    expect(observed.KICAD_CLI).toBe(baseEnv.KICAD_CLI);
   });
 
   test("fails closed when the packaged executable is unavailable", async () => {

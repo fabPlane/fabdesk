@@ -544,11 +544,11 @@ export class AgentRunManager {
     } catch (e) {
       logger.warn("agent trace could not be started", { runId: run.id, error: errMsg(e) });
     }
-    const finishTrace = (
+    const finishTrace = async (
       status: "completed" | "aborted" | "failed",
       details: Record<string, unknown>,
     ) => {
-      void agentTrace
+      await agentTrace
         ?.finish(status, details)
         .catch((e) =>
           logger.warn("agent trace could not be finished", { runId: run.id, error: errMsg(e) }),
@@ -683,7 +683,7 @@ export class AgentRunManager {
       tokens.revokeRun(run.id);
       this.active.delete(run.id);
       emit({ ts: Date.now(), topic: "agent.error", runId: run.id, message: msg });
-      finishTrace("failed", { phase: "start", error: msg });
+      await finishTrace("failed", { phase: "start", error: msg });
       emit({
         ts: Date.now(),
         topic: "agent.done",
@@ -816,7 +816,7 @@ export class AgentRunManager {
       store.runs.finish(run.id, { status, exitCode: exitCode ?? null, cost });
       tokens.revokeRun(run.id);
       store.threads.touch(input.threadId);
-      finishTrace(status, {
+      await finishTrace(status, {
         ...(sessionId ? { sessionId } : {}),
         ...(exitCode !== undefined ? { exitCode } : {}),
         cost,

@@ -47,9 +47,10 @@ export function useRunTool() {
     async (kind: ToolKind | string, args: Record<string, unknown>): Promise<ToolRunState> => {
       const name = kind in TOOL_PATTERNS ? resolveToolName(manifest.data, kind as ToolKind) : kind;
       const finish = async (next: ToolRunState) => {
-        const completed = kind === "stencil" || name === "export_stencil"
-          ? await openStencilFolder(next, host, client.baseUrl)
-          : next;
+        const completed =
+          kind === "stencil" || name === "export_stencil" || name === "export_laser_stencil"
+            ? await openStencilFolder(next, host, client.baseUrl)
+            : next;
         setState(completed);
         return completed;
       };
