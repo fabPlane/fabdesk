@@ -2,6 +2,16 @@ import { expect, test } from "bun:test";
 import { agentErrorText, errorHelp, errorPayload, splitAgentError } from "./error-help";
 import { CoreClient, CoreHttpError } from "./CoreClient";
 
+test("ordinary assistant diagnostics stay visible, while marked failures keep recovery guidance", () => {
+  expect(splitAgentError("Error: your USB differential pair is unrouted.")).toBeNull();
+  expect(splitAgentError("MCP server is now connected.")).toBeNull();
+  expect(splitAgentError("⚠ Error: tool failed.")?.error).toBe("Error: tool failed.");
+  const raw = "No answer was received for the question. Send a message to ask it again.";
+  expect(splitAgentError(`⚠ ${raw}`)?.error).toBe(raw);
+  expect(errorHelp(raw).title).toBe("The question was not answered");
+  expect(errorHelp({ error: "agent cannot run supervised", code: "approval_not_supported" }, { status: 400 }).title).toBe("Approval pauses are unavailable for this agent");
+});
+
 test("raw API JSON becomes recovery guidance without losing status, code or diagnostics", async () => {
   const raw = JSON.stringify({ error: "FOREIGN KEY constraint failed", code: "internal" });
   const client = new CoreClient({ baseUrl: "http://test", token: "t", fetch: async () => new Response(raw, { status: 500 }) });

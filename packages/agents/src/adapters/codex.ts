@@ -20,6 +20,20 @@ import {
 } from "./shared";
 
 const CANDIDATES = ["codex", "~/.local/bin/codex"];
+const standaloneCapabilities = new Map<string, { stamp: string; supported: boolean }>();
+
+function supportsStandalone(bin: string, env: Record<string, string>): boolean {
+  const path = Bun.which(bin, env.PATH ? { PATH: env.PATH } : {}) ?? bin;
+  let stamp: string;
+  try { const info = statSync(path); stamp = `${info.mtimeMs}:${info.size}`; }
+  catch { return false; }
+  const cached = standaloneCapabilities.get(path);
+  if (cached?.stamp === stamp) return cached.supported;
+  const help = Bun.spawnSync([bin, "--help"], { env, stdout: "pipe", stderr: "ignore", timeout: 5_000 });
+  const supported = help.exitCode === 0 && /(?:^|\s)--no-daemon(?:\s|$)/m.test(help.stdout.toString());
+  if (help.exitCode === 0) standaloneCapabilities.set(path, { stamp, supported });
+  return supported;
+}
 
 export const CODEX_QUESTION_INSTRUCTIONS =
   "You are running inside fabPlane. When asking the user a question, use the fabdesk MCP tool request_user_input (mcp__fabdesk__request_user_input) to display clickable options and a custom-answer field. This tool works in full/default mode. Ask one question per call and wait for its submitted answer before asking the next or doing dependent work. Do not use the built-in request_user_input or request_user_input_async tools: this exec integration renders those as plain text and cannot collect their replies. Do not replace the fabdesk question tool with a Markdown list, or claim clickable controls are visible without calling it. If the fabdesk tool is unavailable, say that interactive questions are unavailable; never pretend that plain text is an interactive form. An unanswered question is not permission to choose for the user.";
@@ -217,9 +231,10 @@ export const codexAdapter: AgentAdapter = {
   /**
    * `codex exec --json` (0.150) has no approval channel: the exec subcommand has no
    * `--ask-for-approval`, and with `approval_policy="on-request"` it runs writes without emitting
-   * any approval item. Supervising Codex needs the app-server JSON-RPC client
+   * any approval item. Supervising Codex needs client handling for
    * (`item/commandExecution/requestApproval`, `item/permissions/requestApproval`,
-   * `item/tool/requestUserInput`), which this adapter does not speak yet.
+   * `item/tool/requestUserInput`). This branch supports questions, but native
+   * permission decisions remain in the separate approvals integration.
    */
   supportsSupervised: false,
   run(session: AgentSession): AgentRun {
@@ -242,11 +257,14 @@ export const codexAdapter: AgentAdapter = {
     // New desktop CLIs otherwise reuse the app's shared server, which has its own tool
     // inventory and ignores this child process's per-run MCP setup. Older CLIs already run
     // standalone and do not recognize this flag, so detect support instead of version-guessing.
-    const help = Bun.spawnSync([bin, "--help"], { env, stdout: "pipe", stderr: "ignore", timeout: 5_000 });
-    const standalone = help.exitCode === 0 && /(?:^|\s)--no-daemon(?:\s|$)/m.test(help.stdout.toString());
+    const standalone = supportsStandalone(bin, env);
     const args = codexArgs(session, bin, foreignServers, standalone);
     const configArgs: string[] = [];
-    for (let i = 0; i < args.length - 1; i++) if (args[i] === "-c") configArgs.push("-c", args[++i]!);
+    for (let i = 0; i < args.length - 1; i++) if (args[i] === "-c") {
+      const config = args[++i]!;
+      // Native question instructions are supplied on thread/start, not exec's MCP-only prompt.
+      if (!config.startsWith("developer_instructions=")) configArgs.push("-c", config);
+    }
     const run = standalone && session.requestInput ? runCodexAppServer(session, [bin, "--no-daemon", "app-server", "--stdio", ...configArgs, "-c", "features.default_mode_request_user_input=true"], env) : runAgentProcess({
       cmd: args,
       cwd: session.cwd,

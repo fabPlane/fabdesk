@@ -456,7 +456,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
           ? null
           : "full"
         : runtimeMode;
-    if (mode === null) return c.json({ error: "agent cannot run supervised" }, 400);
+    if (mode === null) return c.json({ error: "agent cannot run supervised", code: "approval_not_supported" }, 400);
     const t = deps.store.threads.create({
       agentId: body.agentId,
       runtimeMode: mode,
@@ -501,7 +501,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
     if (!current) return c.json({ error: "not found" }, 404);
     const mode = body.runtimeMode ?? current.runtimeMode ?? "full";
     if (mode === "supervised" && !canSupervise(body.agentId ?? current.agentId))
-      return c.json({ error: "agent cannot run supervised" }, 400);
+      return c.json({ error: "agent cannot run supervised", code: "approval_not_supported" }, 400);
     const t = deps.store.threads.patch(current.id, body);
     if (!t) return c.json({ error: "not found" }, 404);
     deps.bus.emit({

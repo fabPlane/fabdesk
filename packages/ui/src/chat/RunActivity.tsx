@@ -34,7 +34,7 @@ export function RunActivity({ run, waiting = false }: { run: LiveRun; waiting?: 
 }
 
 /** Older runs can still fold their history when persisted timing is unavailable. */
-export function WorkedActivity({ run, children, hasError = false }: { run?: Run | null; children?: ReactNode; hasError?: boolean }) {
+export function WorkedActivity({ run, children, hasError = false, unanswered = false }: { run?: Run | null; children?: ReactNode; hasError?: boolean; unanswered?: boolean }) {
   if (run?.status === "running") return null;
   const elapsedMs = run?.endedAt ? Date.parse(run.endedAt) - Date.parse(run.startedAt) : NaN;
   const seconds = Math.floor(elapsedMs / 1000);
@@ -44,7 +44,7 @@ export function WorkedActivity({ run, children, hasError = false }: { run?: Run 
   const label = <><span>{duration ? "Worked for " + duration : "Worked"}{run?.status === "failed" ? " · Failed" : run?.status === "aborted" ? " · Stopped" : ""}</span>
     {hasError && <span role="img" aria-label="Activity contains an error" title="Expand to inspect the error" className="inline-flex text-danger"><Icon name="warning" width={15} height={15} /></span>}</>;
   if (!children) return <div className="mb-4 flex items-center gap-2 border-b border-border pb-3 text-xs text-muted" data-testid="worked-activity">{label}</div>;
-  return <details className="fd-worked-history group mb-4 border-b border-border pb-3 text-xs text-muted" data-testid="worked-activity">
+  return <details open={run?.status === "failed" || run?.status === "aborted" || hasError || unanswered} className="fd-worked-history group mb-4 border-b border-border pb-3 text-xs text-muted" data-testid="worked-activity">
     <summary className="flex w-fit cursor-pointer list-none items-center gap-2 rounded py-1 hover:text-fg [&::-webkit-details-marker]:hidden">
       {label}<Icon name="chevronRight" width={13} height={13} className="transition-transform group-open:rotate-90" />
     </summary>

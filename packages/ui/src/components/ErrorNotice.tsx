@@ -12,7 +12,8 @@ export function ErrorNotice({ error, agentId }: { error: unknown; agentId?: stri
   const context: ErrorContext = selectedAgent ? { agentId: selectedAgent } : {};
   const help = errorHelp(error, context);
   const raw = errorPayload(error).raw;
-  const ui = useUiStore();
+  const setProjectPickerOpen = useUiStore((s) => s.setProjectPickerOpen);
+  const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
   const action = help.action;
   const warning = help.severity === "warning";
   return <div role={warning ? "status" : "alert"} className={`my-2 rounded-lg border px-3 py-2 text-sm ${warning ? "border-warning/25 bg-warning/5" : "border-danger/25 bg-danger/5"}`} data-testid="error-notice" data-severity={warning ? "warning" : "error"}>
@@ -20,8 +21,8 @@ export function ErrorNotice({ error, agentId }: { error: unknown; agentId?: stri
     <p className="mt-1 text-fg">{help.message}</p>
     {help.command && <p className="mt-2 text-xs">Open a terminal and run <code className="select-all rounded bg-panel-2 px-1 py-0.5">{help.command}</code>, then finish signing in in your browser.</p>}
     {action && <Button size="sm" className="mt-2" onClick={() => {
-      if (action === "projects") ui.setProjectPickerOpen(true);
-      else ui.setSettingsOpen(true, action);
+      if (action === "projects") setProjectPickerOpen(true);
+      else setSettingsOpen(true, action);
     }}>{action === "projects" ? "Choose project" : action === "agents" ? "Agent settings" : action === "auth" ? "Account settings" : "KiCad settings"}</Button>}
     {raw && <details className="mt-2 text-xs text-muted">
       <summary className="cursor-pointer">Technical details</summary>

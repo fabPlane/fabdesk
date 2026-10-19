@@ -218,6 +218,10 @@ export const MIGRATIONS: Migration[] = [
       );
     `,
   },
+  {
+    version: 10,
+    sql: "CREATE INDEX runs_thread_started ON runs(thread_id, started_at DESC);",
+  },
 ];
 
 export function openDatabase(path: string): Database {
@@ -794,7 +798,7 @@ export class RunRepo {
   /** Include runs referenced by copied messages so branched chats retain their timing. */
   historyForThread(threadId: string): Run[] {
     return this.db.query<RunRow, [string, string]>(
-      `SELECT * FROM runs WHERE thread_id = ? OR id IN (
+      `SELECT * FROM runs WHERE thread_id = ? UNION SELECT * FROM runs WHERE id IN (
         SELECT run_id FROM messages WHERE thread_id = ? AND run_id IS NOT NULL
       ) ORDER BY started_at DESC, id DESC`,
     ).all(threadId, threadId).map((r) => this.toRun(r));

@@ -118,7 +118,7 @@ describe("claude adapter", () => {
       url: "http://127.0.0.1:4321/mcp",
       headers: { Authorization: "Bearer ${FABDESK_TOKEN}" },
       // Longer than Claude Code's ~5 min idle abort: a route may run its whole timeoutMs.
-      timeout: 1_200_000,
+      timeout: 1_830_000,
     });
   });
 

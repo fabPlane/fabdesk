@@ -46,6 +46,14 @@ export function errorHelp(input: unknown, context: ErrorContext = {}): ErrorHelp
   const status = context.status ?? (input instanceof Error && "status" in input && typeof input.status === "number" ? input.status : undefined);
   const agent = context.agentId ? agentNames[context.agentId] ?? "The selected agent" : "The selected agent";
   const command = context.agentId ? loginCommands[context.agentId] : undefined;
+  if (code === "approval_not_supported" || text === "agent cannot run supervised") return {
+    title: "Approval pauses are unavailable for this agent",
+    message: "Keep the current permission setting to continue. Your selected agent and model have not changed.",
+  };
+  if (text.startsWith("No answer was received for the question.")) return {
+    title: "The question was not answered",
+    message: "Send a message to ask the question again, then choose an option or type your answer.",
+  };
   if (text.startsWith("Windows denied a Codex overlay symlink (EPERM).")) return {
     title: "Codex is using your shared settings",
     message: "Windows blocked the link needed to keep this project’s Codex settings separate. Codex can continue with your usual login, but it may update your shared settings and app data. Extra integrations are disabled, but complete separation from your usual setup is not guaranteed. If you need separate settings, stop this run and ask your administrator to allow symbolic links, then restart fabPlane.",
@@ -189,8 +197,10 @@ export function agentErrorText(text: string): string | null {
   const unique = [...new Set(chunks)];
   if (unique.length !== 1) return null;
   const raw = unique[0]!;
+  // A core-generated warning marker identifies a failure; plain assistant prose does not.
+  if (clean.startsWith("⚠ ") && /^(?:Error:|MCP server|No answer was received for the question\.)/i.test(raw)) return raw;
   if (raw.startsWith("Windows denied a Codex overlay symlink (EPERM).")) return raw;
-  const failure = /^(?:Failed to authenticate:|OAuth session expired|Error:|API Error:|Not logged in|authentication_error|rate_limit_error|insufficient_quota|quota exceeded|credit balance is too low|prompt is too long|model_not_found|context_length_exceeded|failed to start|(?:claude|codex|cursor|grok) (?:could not be started|exited with code)|Queued message could not be sent:|MCP server|SQLITE_|FOREIGN KEY constraint failed|database is locked|ENOSPC|EACCES|EPERM|ENOENT|ECONNREFUSED|ECONNRESET|ETIMEDOUT|Failed to fetch|fetch failed)/i;
+  const failure = /^(?:Failed to authenticate:|OAuth session expired|API Error:|Not logged in|authentication_error|rate_limit_error|insufficient_quota|quota exceeded|credit balance is too low|prompt is too long|model_not_found|context_length_exceeded|failed to start|(?:claude|codex|cursor|grok) (?:could not be started|exited with code)|Queued message could not be sent:|SQLITE_|FOREIGN KEY constraint failed|database is locked|ENOSPC|EACCES|EPERM|ENOENT|ECONNREFUSED|ECONNRESET|ETIMEDOUT|Failed to fetch|fetch failed)/i;
   return failure.test(raw) ? raw : null;
 }
 

@@ -1,5 +1,5 @@
 import type { Thread } from "@fabdesk/protocol";
-import { useSetRuntimeMode } from "@fabdesk/client-core";
+import { useDoctor, useSetRuntimeMode } from "@fabdesk/client-core";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "../components/Icon";
@@ -13,6 +13,11 @@ const OPTIONS = [
 /** Changes the existing chat setting; the daemon still validates agent support. */
 export function PermissionsMenu({ thread }: { thread: Thread }) {
   const updateMode = useSetRuntimeMode();
+  const doctor = useDoctor();
+  const supportsApproval = doctor.data?.agents.find((agent) => agent.id === thread.agentId)?.supportsSupervised === true;
+  const approvalDescription = supportsApproval ? OPTIONS[0].description : doctor.isPending
+    ? "Checking whether this agent supports approval pauses…"
+    : "Approval pauses are not available for this agent yet. Your selected agent and model will stay unchanged.";
   const id = useId();
   const anchor = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
@@ -74,7 +79,7 @@ export function PermissionsMenu({ thread }: { thread: Thread }) {
   }, [open]);
 
   const select = async (runtimeMode: "supervised" | "full") => {
-    if (saving.current) return;
+    if (saving.current || (runtimeMode === "supervised" && !supportsApproval)) return;
     if (runtimeMode === mode) { close(); return; }
     saving.current = true;
     setPending(true); setError(null);
@@ -100,11 +105,11 @@ export function PermissionsMenu({ thread }: { thread: Thread }) {
       className="fd-elevated fixed z-40 w-[360px] max-w-[calc(100vw-16px)] overflow-y-auto rounded-xl border border-border bg-panel p-2 font-sans" data-testid="permissions-menu">
       <div className="px-3 pt-2 pb-1 text-[13px] font-semibold text-fg">How should actions be approved?</div>
       <div className="px-3 pb-2 text-xs text-muted">Changes apply to the next run.</div>
-      {OPTIONS.map((item) => <button key={item.mode} type="button" role="menuitemradio" aria-checked={mode === item.mode} aria-disabled={pending}
+      {OPTIONS.map((item) => <button key={item.mode} type="button" role="menuitemradio" aria-checked={mode === item.mode} aria-disabled={pending || (item.mode === "supervised" && !supportsApproval)}
         className="flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left text-fg hover:bg-panel-2 focus-visible:bg-panel-2 aria-disabled:opacity-50"
         onClick={() => void select(item.mode)}>
         <Icon name={item.icon} width={20} height={20} className={`shrink-0 ${item.tone}`} />
-        <span className="min-w-0 flex-1"><span className="block text-[13px] font-medium">{item.label}</span><span className="mt-1 block text-xs leading-5 text-muted">{item.description}</span></span>
+        <span className="min-w-0 flex-1"><span className="block text-[13px] font-medium">{item.label}</span><span className="mt-1 block text-xs leading-5 text-muted">{item.mode === "supervised" ? approvalDescription : item.description}</span></span>
         {mode === item.mode && <Icon name="check" width={16} height={16} className={`shrink-0 ${item.tone}`} />}
       </button>)}
       {pending && <div role="status" className="px-3 py-2 text-xs text-muted">Saving permissions…</div>}

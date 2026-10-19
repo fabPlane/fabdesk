@@ -1,6 +1,6 @@
 import type { AgentEvent, AgentRun, AgentSession } from "../types";
 import { readJsonl, readTail } from "../jsonl";
-import { killTree } from "../process";
+import { stopAgentProcess } from "../process";
 import { AGENT_OWNER_DIR, trackAgentProcess } from "../process-ownership";
 import { CodexStreamParser } from "../parsers/codex";
 import { isImage, promptWithAttachments } from "./shared";
@@ -14,57 +14,79 @@ export function runCodexAppServer(session: AgentSession, cmd: string[], env: Rec
   const events: AgentEvent[] = [];
   let wake: (() => void) | undefined;
   let finished = false;
+  let finishing = false;
+  let shutdown: Promise<void> | undefined;
   let stopped = false;
   let threadId: string | undefined;
   let turnId: string | undefined;
   let nextId = 0;
-  let asyncQuestionBatches = 0;
   const askedItems = new Set<string>();
-  const turnEndWaiters = new Map<string, () => void>();
+  type QuestionTurn = { id: string; pending: number; ended: boolean; interrupted: boolean; answers: Array<{ question: string; answer: string }> };
+  let questionTurn: QuestionTurn | undefined;
   let stderr = "";
   const parser = new CodexStreamParser();
   const pending = new Map<number, { resolve(v: any): void; reject(e: Error): void; timer: ReturnType<typeof setTimeout> }>();
   const questionControllers = new Map<string | number, AbortController>();
   const push = (event: AgentEvent) => { events.push(event); wake?.(); wake = undefined; };
-  const send = (message: unknown) => { if (!finished) child.stdin.write(JSON.stringify(message) + "\n"); };
+  const send = (message: unknown) => { if (!finishing) child.stdin.write(JSON.stringify(message) + "\n"); };
   const rpc = (method: string, params: unknown): Promise<any> => new Promise((resolve, reject) => {
+    if (finishing) { reject(new Error("Codex connection closed.")); return; }
     const id = ++nextId;
     const timer = setTimeout(() => { pending.delete(id); reject(new Error(`Codex did not respond to ${method}.`)); }, 30_000);
     pending.set(id, { resolve, reject, timer });
     send({ id, method, params });
   });
   const finish = (exitCode: number) => {
-    if (finished) return;
-    finished = true;
+    if (finishing) return;
+    finishing = true;
     for (const controller of questionControllers.values()) controller.abort();
-    for (const resolve of turnEndWaiters.values()) resolve();
+    questionControllers.clear();
+    questionTurn = undefined;
     for (const request of pending.values()) { clearTimeout(request.timer); request.reject(new Error("Codex connection closed.")); }
     pending.clear();
-    push({ type: "done", exitCode, ...(threadId ? { sessionId: threadId } : {}) });
-    killTree(child.pid, "SIGTERM");
+    shutdown = (async () => {
+      await stopAgentProcess(child);
+      const cleanup = await ownership;
+      await cleanup().catch((error) => console.error(`agent ownership cleanup failed: ${String(error)}`));
+      finished = true;
+      push({ type: "done", exitCode, ...(threadId ? { sessionId: threadId } : {}) });
+    })();
   };
-  const fail = (error: unknown) => { if (!finished && !stopped) push({ type: "error", message: error instanceof Error ? error.message : String(error) }); finish(1); };
+  const fail = (error: unknown) => { if (!finishing && !stopped) push({ type: "error", message: error instanceof Error ? error.message : String(error) }); finish(1); };
+  const noAnswer = () => new Error("No answer was received for the question. Send a message to ask it again, then choose an option or type your answer.");
+  const resumeQuestions = (state: QuestionTurn) => {
+    if (finishing || questionTurn !== state || state.pending || !state.ended || !state.interrupted) return;
+    questionTurn = undefined;
+    void rpc("turn/start", { threadId, input: [{ type: "text", text: `My answers to your questions:\n${JSON.stringify(state.answers)}`, text_elements: [] }] }).catch(fail);
+  };
   const onRequest = async (message: any) => {
+    if (finishing) return;
     const { id, method, params } = message;
     if (method === "item/tool/requestUserInput" || method === "tool/requestUserInput") {
-      if (!session.requestInput || params.threadId !== threadId) {
+      if (!session.requestInput || params.threadId !== threadId || params.turnId !== turnId) {
         send({ id, error: { code: -32600, message: "Question is not attached to this chat." } });
         return;
       }
       const controller = new AbortController();
       questionControllers.set(id, controller);
       try {
+        // Validate the entire batch before opening any cards (especially secret inputs).
+        if (!Array.isArray(params.questions) || !params.questions.length) throw new Error("The question request was empty.");
+        if (params.questions.some((q: any) => q.isSecret)) throw new Error("Secret input cannot be collected in chat history.");
         const answers: Record<string, { answers: string[] }> = {};
         // Create every card immediately; each answer still uses its original protocol ID.
         await Promise.all(params.questions.map(async (question: any) => {
-          if (question.isSecret) throw new Error("Secret input cannot be collected in chat history.");
           const options = question.options?.map((option: any) => option.description ? `${option.label} — ${option.description}` : option.label);
           const value = await session.requestInput!({ question: question.question, ...(options?.length ? { options } : {}), signal: controller.signal });
-          answers[question.id] = { answers: value ? [value] : [] };
+          if (!value.trim() && !controller.signal.aborted) throw noAnswer();
+          answers[question.id] = { answers: [value] };
         }));
         if (!controller.signal.aborted) send({ id, result: { answers } });
       } catch (error) {
+        const cancelled = controller.signal.aborted;
+        controller.abort();
         send({ id, error: { code: -32603, message: error instanceof Error ? error.message : "Could not ask the question." } });
+        if (!cancelled) fail(error);
       } finally { questionControllers.delete(id); }
       return;
     }
@@ -76,11 +98,18 @@ export function runCodexAppServer(session: AgentSession, cmd: string[], env: Rec
     } else send({ id, error: { code: -32601, message: `Unsupported client request: ${method}` } });
   };
   const onNotification = (method: string, p: any) => {
+    if (finishing) return;
     if (p?.threadId && threadId && p.threadId !== threadId) return;
+    if (p?.turnId && turnId && p.turnId !== turnId) return;
     if (method === "serverRequest/resolved") { questionControllers.get(p.requestId)?.abort(); return; }
     if (method === "item/agentMessage/delta") {
       for (const e of parser.feed({ type: "item.updated", item: { id: p.itemId, type: "agent_message", text: (textById.get(p.itemId) ?? "") + p.delta } })) push(e);
       textById.set(p.itemId, (textById.get(p.itemId) ?? "") + p.delta);
+    } else if (method === "item/reasoning/summaryTextDelta") {
+      const parts = summaries.get(p.itemId) ?? [];
+      parts[p.summaryIndex ?? 0] = (parts[p.summaryIndex ?? 0] ?? "") + p.delta;
+      summaries.set(p.itemId, parts);
+      for (const e of parser.feed({ type: "item.updated", item: { id: p.itemId, type: "reasoning", text: parts.join("\n\n") } })) push(e);
     } else if (method === "item/started" || method === "item/completed") {
       const types: Record<string, string> = { agentMessage: "agent_message", reasoning: "reasoning", commandExecution: "command_execution", fileChange: "file_change", mcpToolCall: "mcp_tool_call", webSearch: "web_search" };
       const item = p.item;
@@ -88,45 +117,58 @@ export function runCodexAppServer(session: AgentSession, cmd: string[], env: Rec
       if (item.type === "agentMessage" && item.questions?.length && session.requestInput) {
         if (askedItems.has(item.id)) return;
         askedItems.add(item.id);
-        asyncQuestionBatches++;
+        let state = questionTurn;
+        if (!state) {
+          state = { id: p.turnId, pending: 0, ended: false, interrupted: false, answers: [] };
+          questionTurn = state;
+          const current = state;
+          // Attach rejection handling immediately, even while the user is still answering.
+          void rpc("turn/interrupt", { threadId, turnId: p.turnId }).then(() => {
+            current.interrupted = true;
+            resumeQuestions(current);
+          }).catch(fail);
+        }
+        const current = state;
+        current.pending++;
         const controller = new AbortController();
         questionControllers.set(item.id, controller);
         // Native async questions are structured AgentMessage metadata, not server requests.
         // Pause the native turn so it cannot guess and continue; resume with the actual answers.
-        const end = new Promise<void>((resolve) => turnEndWaiters.set(p.turnId, resolve));
-        const interrupted = rpc("turn/interrupt", { threadId, turnId: p.turnId });
         void (async () => {
           try {
             const answers = await Promise.all(item.questions.map(async (question: any) => ({
               question: question.title,
               answer: await session.requestInput!({ question: question.title, ...(question.options?.length ? { options: question.options } : {}), signal: controller.signal }),
             })));
-            await interrupted;
-            await end;
-            asyncQuestionBatches--;
-            questionControllers.delete(item.id);
-            if (finished || controller.signal.aborted) return;
-            if (answers.some((a: { answer: string }) => !a.answer)) { finish(1); return; }
-            await rpc("turn/start", { threadId, input: [{ type: "text", text: `My answers to your questions:\n${JSON.stringify(answers)}`, text_elements: [] }] });
-          } catch (error) { fail(error); }
+            if (finishing || controller.signal.aborted) return;
+            if (answers.some((a: { answer: string }) => !a.answer.trim())) throw noAnswer();
+            current.answers.push(...answers);
+            current.pending--;
+            resumeQuestions(current);
+          } catch (error) { if (!controller.signal.aborted) fail(error); }
+          finally { questionControllers.delete(item.id); }
         })();
         return;
       }
-      const converted = { ...item, type: types[item.type], aggregated_output: item.aggregatedOutput, exit_code: item.exitCode };
+      const converted = { ...item, type: types[item.type], ...(item.type === "reasoning" ? { text: (item.summary ?? summaries.get(item.id) ?? []).join("\n\n") } : {}), aggregated_output: item.aggregatedOutput, exit_code: item.exitCode };
       for (const e of parser.feed({ type: method === "item/started" ? "item.started" : "item.completed", item: converted })) push(e);
     } else if (method === "thread/tokenUsage/updated") {
       const usage = p.tokenUsage?.last;
       if (usage) push({ type: "usage", inputTokens: usage.inputTokens ?? 0, outputTokens: usage.outputTokens ?? 0 });
     } else if (method === "turn/started") turnId = p.turn.id;
     else if (method === "turn/completed") {
-      turnEndWaiters.get(p.turn.id)?.();
-      turnEndWaiters.delete(p.turn.id);
-      if (asyncQuestionBatches > 0) return;
+      if (p.turn.id !== turnId) return;
+      if (questionTurn && questionTurn.id === p.turn.id && p.turn.status !== "failed") {
+        questionTurn.ended = true;
+        resumeQuestions(questionTurn);
+        return;
+      }
       if (p.turn.status === "failed") fail(p.turn.error?.message ?? "Codex could not complete the request.");
       else finish(p.turn.status === "interrupted" ? 1 : 0);
     } else if (method === "error" && !p.willRetry) fail(p.error?.message ?? "Codex connection failed.");
   };
   const textById = new Map<string, string>();
+  const summaries = new Map<string, string[]>();
   const stderrDone = readTail(child.stderr, 4000).then((text) => { stderr = text; }).catch(() => {});
   void (async () => {
     try {
@@ -143,9 +185,11 @@ export function runCodexAppServer(session: AgentSession, cmd: string[], env: Rec
       }
     } catch (error) { fail(error); }
   })();
-  void child.exited.then(async (code) => { await stderrDone; if (!finished) fail(stderr.trim() || `Codex stopped unexpectedly (${code}).`); });
-  const ownership = env[AGENT_OWNER_DIR] ? trackAgentProcess(env[AGENT_OWNER_DIR]!, child.pid) : Promise.resolve(async () => {});
-  void child.exited.then(async () => { const cleanup = await ownership; await cleanup(); }).catch(() => {});
+  void child.exited.then(async (code) => { await stderrDone; if (!finishing) fail(stderr.trim() || `Codex stopped unexpectedly (${code}).`); });
+  const ownership = (env[AGENT_OWNER_DIR] ? trackAgentProcess(env[AGENT_OWNER_DIR]!, child.pid) : Promise.resolve(async () => {})).catch((error) => {
+    console.error(`agent ownership capture failed: ${String(error)}`);
+    return async () => {};
+  });
   void (async () => {
     await rpc("initialize", { clientInfo: { name: "fabplane", version: "0.2.0" }, capabilities: { experimentalApi: true } });
     send({ method: "initialized", params: {} });
@@ -167,10 +211,12 @@ export function runCodexAppServer(session: AgentSession, cmd: string[], env: Rec
     pid: child.pid,
     abort() { stopped = true; if (threadId && turnId) send({ id: ++nextId, method: "turn/interrupt", params: { threadId, turnId } }); finish(1); },
     events: (async function* () {
-      while (!finished || events.length) {
-        if (events.length) yield events.shift()!;
-        else await new Promise<void>((resolve) => { wake = resolve; });
-      }
+      try {
+        while (!finished || events.length) {
+          if (events.length) yield events.shift()!;
+          else await new Promise<void>((resolve) => { wake = resolve; });
+        }
+      } finally { finish(1); await shutdown; }
     })(),
   };
 }

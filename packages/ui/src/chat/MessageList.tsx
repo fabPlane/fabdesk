@@ -365,7 +365,7 @@ export function MessageList({
             {day !== previousDay && <div className="my-3 flex items-center gap-3 text-[11px] text-muted"><span className="h-px flex-1 bg-border" /><time dateTime={m.createdAt}>{new Date(m.createdAt).toLocaleDateString([], { dateStyle: "medium" })}</time><span className="h-px flex-1 bg-border" /></div>}
             {run && m.id === firstActiveId && <RunActivity key={run.runId} run={run} waiting={waiting} />}
             {split ? <>
-              <WorkedActivity run={savedRun} hasError={split.history.some(item => item.parts.some(p => p.type === "tool_result" && p.isError))}>
+              <WorkedActivity run={savedRun} hasError={split.history.some(item => item.parts.some(p => p.type === "tool_result" && p.isError))} unanswered={split.history.some(item => item.parts.some(p => p.type === "question" && !p.answer))}>
                 {split.history.length ? split.history.map(item => <div key={item.id} data-message-id={item.id}><MessageBubble message={item} streaming={false} /></div>) : undefined}
               </WorkedActivity>
               {split.answer && <div data-message-id={split.answer.id}><MessageBubble message={split.answer} streaming={false} latestReply={batch.some(item => item.id === lastId)} /></div>}

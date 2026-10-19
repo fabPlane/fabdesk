@@ -73,6 +73,14 @@ test("command icons recognize explicit namespaced shell tools", () => {
 });
 
 const finishedRun = { id: "finished", threadId: "thread", agentId: "codex" as const, agentSessionId: null, status: "completed" as const, startedAt: "2026-10-16T10:00:00Z", endedAt: "2026-10-16T10:04:11Z", exitCode: 0 };
+
+test("stopped, failed, and unanswered activity starts expanded so useful content stays visible", () => {
+  for (const status of ["aborted", "failed"] as const) {
+    expect(render(<WorkedActivity run={{ ...finishedRun, status }}>Partial progress</WorkedActivity>)).toContain('<details open=""');
+  }
+  expect(render(<WorkedActivity run={finishedRun} unanswered>Unanswered question</WorkedActivity>)).toContain('<details open=""');
+  expect(render(<WorkedActivity run={finishedRun}>Finished progress</WorkedActivity>)).not.toContain('<details open=""');
+});
 test("reopened chats show each saved duration instead of only the latest run's timing", () => {
   const earlier = { ...finishedRun, id: "earlier", endedAt: "2026-10-16T10:07:05Z" };
   const stopped = { ...finishedRun, id: "stopped", status: "aborted" as const, endedAt: "2026-10-16T10:00:12Z" };

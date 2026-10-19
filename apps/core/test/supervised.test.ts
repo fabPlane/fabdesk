@@ -233,7 +233,7 @@ describe("runtime mode", () => {
       body: JSON.stringify({ agentId: "codex", runtimeMode: "supervised" }),
     });
     expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: "agent cannot run supervised" });
+    expect(await res.json()).toEqual({ error: "agent cannot run supervised", code: "approval_not_supported" });
     const t = await newThread();
     const switched = await local(`/threads/${t.id}`, {
       method: "PATCH",
