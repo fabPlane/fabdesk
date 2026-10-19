@@ -54,7 +54,7 @@ Use \`capability_search\` to find a tool and its arguments; \`load_toolset\` loa
 | Schematic pins, unit numbers, dangling item IDs | \`schematic_inspect\` (detail=authoring/full, selectors); live session diagnostics are informational |
 | Saved DRC/ERC results by item | \`verify_drc\` (responseMode=full for all geometry); \`verify_erc\` |
 | Router progress and terminal result | \`route_status\` (latest or runId); returns final state and application outcome |
-| Fabrication files and named archive | \`export_gerbers\`, \`export_drill\`, \`export_pos\`, \`export_bom\`, \`export_zip\` (filename); \`release_build\` checks and packages a release |
+| Fabrication files and named archive | \`export_gerbers\`, \`export_drill\`, \`export_pos\`, \`export_bom\`, \`export_zip\` (filename), \`export_stencil\`, \`export_laser_stencil\`; \`release_build\` checks and packages a release |
 | Board/schematic images | \`render_view\`, \`render_schematic_svg\` |
 | Symbols, footprints and pins | \`circuit_describe_part\`, \`circuit_search_parts\` |
 
@@ -119,7 +119,7 @@ ${sketches}
 | \`sketches/\` | User-provided drawings and photos. |
 | \`renders/\` | Rendered artifacts. |
 | \`reports/\` | Machine-readable reports. |
-| \`exports/\` | Manufacturing and interchange outputs (gerbers, BOM, 3D-printed stencil STL). |
+| \`exports/\` | Manufacturing and interchange outputs (gerbers, BOM, 3D-printed stencil STL, laser-cut stencil SVG/DXF/.lbrn2). |
 | \`project.parts.json\` | Off-board and mechanical parts (motors, displays, standoffs, screws). |
 
 ${

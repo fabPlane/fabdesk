@@ -381,6 +381,10 @@ export function mockServices(
         const { exportStencil } = await import("@fabdesk/kicad/stencil");
         return exportStencil(opts);
       },
+      exportLaserStencil: async (opts) => {
+        const { exportLaserStencil } = await import("@fabdesk/kicad/stencil-laser");
+        return exportLaserStencil(opts);
+      },
     },
     sim: {
       runSpiceSimulation: async () => ({

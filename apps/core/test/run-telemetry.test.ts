@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, mkdir, readFile, truncate, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, truncate, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ProjectHandle } from "@fabdesk/tools";
 import { Store, openDatabase } from "../src/db";
-import { RUN_TELEMETRY_LIMITS, RunTelemetry } from "../src/run-telemetry";
+import { RunTelemetry } from "../src/run-telemetry";
+import { parseDumpFile } from "../src/run-dump-file";
+import { createHash } from "node:crypto";
 
 describe("agent run telemetry", () => {
   test("persists ordered MCP/KiCad events and a content-addressed pre-tool snapshot", async () => {
@@ -66,9 +68,10 @@ describe("agent run telemetry", () => {
       "kicad.started",
       "kicad.finished",
       "mcp.result",
+      "snapshot.final",
       "run.finished",
     ]);
-    expect(records.map((record) => record.seq)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    expect(records.map((record) => record.seq)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
     expect(records[0]!.body["build"]).toEqual(build);
     expect(
       records.every(
@@ -177,12 +180,12 @@ describe("agent run telemetry", () => {
     store.close();
   });
 
-  test("reuses unchanged snapshots and omits oversized files without reading them", async () => {
+  test("reuses unchanged snapshots and preserves large binary files exactly", async () => {
     const projectDir = await mkdtemp(join(tmpdir(), "fabdesk-incremental-snapshot-"));
     await writeFile(join(projectDir, "board.kicad_pcb"), "board");
     const oversized = join(projectDir, "large.bin");
     await writeFile(oversized, "");
-    await truncate(oversized, RUN_TELEMETRY_LIMITS.snapshotFileBytes + 1);
+    await truncate(oversized, 6 * 1024 * 1024 + 1);
     const project = {
       id: "project_incremental",
       name: "Incremental",
@@ -221,10 +224,69 @@ describe("agent run telemetry", () => {
     const manifest = JSON.parse(
       await readFile(requests[0]!.body.snapshot!["manifestPath"] as string, "utf8"),
     ) as { entries: Array<{ path: string; sha256: string | null; omitted?: string }> };
-    expect(manifest.entries.find((entry) => entry.path === "large.bin")).toMatchObject({
-      sha256: null,
-      omitted: "file-over-limit",
-    });
+    const entry = manifest.entries.find((entry) => entry.path === "large.bin")!;
+    expect(entry.sha256).toMatch(/^[a-f0-9]{64}$/);
+    const dump = JSON.parse(await readFile(join(projectDir, ".fabdesk/runs/run_incremental/llm-dump.json"), "utf8"));
+    const bytes = Buffer.from(dump.blobs[entry.sha256!].content, "base64");
+    expect(bytes.length).toBe(6 * 1024 * 1024 + 1);
+    expect(createHash("sha256").update(bytes).digest("hex")).toBe(entry.sha256!);
+  });
+
+  test("keeps >2 MiB events, >12 MiB history, >32 MiB dumps and a final event", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "fabdesk-full-trace-"));
+    const store = new Store(openDatabase(":memory:"));
+    const telemetry = new RunTelemetry({ version: "test", runDumps: store.runDumps });
+    try {
+      const run = await telemetry.startAgentRun({ runId: "large", threadId: "thread", agentId: "codex", projectId: null, cwd: dir, prompt: "large full capture" });
+      const output = "begin-" + "a".repeat(3 * 1024 * 1024) + "-end";
+      for (let i = 0; i < 14; i++) run.record("agent.tool_result", { id: String(i), output });
+      await run.finish("completed");
+      const reference = parseDumpFile(store.runDumps.get("large")!.dumpJson)!;
+      expect(reference.bytes).toBeGreaterThan(40 * 1024 * 1024);
+      const bytes = await readFile(reference.path);
+      expect(createHash("sha256").update(bytes).digest("hex")).toBe(reference.sha256);
+      const dump = JSON.parse(bytes.toString());
+      expect(dump.events).toHaveLength(16);
+      for (const event of dump.events.slice(1, -1)) expect(event.body.output).toBe(output);
+      expect(dump.events.at(-1).type).toBe("run.finished");
+      expect(dump.events.some((e: {type:string}) => e.type === "telemetry.truncated")).toBe(false);
+    } finally { await telemetry.shutdown(); store.close(); await rm(dir, {recursive:true,force:true}); }
+  });
+
+  test("preserves more than 128 snapshots and 2000 files, including final native edits", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "fabdesk-full-snapshots-"));
+    const project = { id:"full", name:"full", dir, manifest:()=>({}) as ReturnType<ProjectHandle["manifest"]>, updateManifest:async()=>({}) as Awaited<ReturnType<ProjectHandle["updateManifest"]>> } satisfies ProjectHandle;
+    const telemetry = new RunTelemetry({version:"test"});
+    try {
+      await Promise.all(Array.from({length:2001},(_,i)=>writeFile(join(dir,`f${i}.txt`), String(i))));
+      const run = await telemetry.startAgentRun({runId:"snapshots",threadId:"thread",agentId:"codex",projectId:project.id,cwd:dir,prompt:"snapshot boundaries"});
+      const tools = telemetry.forToolCall("snapshots")!;
+      for(let i=0;i<130;i++) await tools.traceToolCall({name:"edit",args:{},project,readOnly:false}, async()=>{await writeFile(join(dir,"board.txt"),String(i));return {text:"ok"};});
+      await writeFile(join(dir,"final-native.txt"),"last file");
+      await run.finish("completed");
+      const dump = JSON.parse(await readFile(join(dir,".fabdesk/runs/snapshots/llm-dump.json"),"utf8"));
+      expect(dump.snapshots.length).toBe(131);
+      expect(dump.snapshots[0].entries.length).toBe(2001);
+      expect(dump.snapshots.at(-1).entries.some((e:{path:string})=>e.path==="final-native.txt")).toBe(true);
+      expect(dump.snapshots.every((s:{omissions:unknown[]})=>s.omissions.length===0)).toBe(true);
+    } finally {await telemetry.shutdown();await rm(dir,{recursive:true,force:true});}
+  }, 30000);
+
+  test("pending large run survives project removal in stable profile storage",async()=>{
+    const dir=await mkdtemp(join(tmpdir(),"fabdesk-stable-dump-")),projectDir=join(dir,"project");
+    await mkdir(projectDir);
+    const store=Store.open(join(dir,"fabdesk.db"));
+    const telemetry=new RunTelemetry({version:"test",runDumps:store.runDumps,dumpDirectory:join(dir,"run-dumps")});
+    try {
+      const run=await telemetry.startAgentRun({runId:"stable",threadId:"thread",agentId:"codex",projectId:null,cwd:projectDir,prompt:"test"});
+      run.record("agent.tool_result",{output:"x".repeat(2*1024*1024)});
+      await run.finish("completed");
+      const ref=parseDumpFile(store.runDumps.get("stable")!.dumpJson)!;
+      await rm(projectDir,{recursive:true,force:true});
+      const bytes=await readFile(ref.path);
+      expect(createHash("sha256").update(bytes).digest("hex")).toBe(ref.sha256);
+      expect(JSON.parse(bytes.toString()).events.at(-1).type).toBe("run.finished");
+    } finally {await telemetry.shutdown();store.close();await rm(dir,{recursive:true,force:true});}
   });
 
   test("isolates unserializable agent events from the run", async () => {

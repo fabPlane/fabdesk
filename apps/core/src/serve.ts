@@ -251,7 +251,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
         }
       } catch (error) {
         if (error instanceof ArchiveConsentRevokedError || archiveClosing) return;
-        // Usually a rate or daily limit; dumps not yet backed up stay local (bounded) meanwhile.
+        // Usually a rate or daily limit; dumps not yet backed up remain local until accepted.
         logger.warn("usage archive backfill failed; retrying later", {
           error: errMsg(error),
           retryInMs: BACKFILL_RETRY_MS,
@@ -269,31 +269,45 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     });
     return task;
   };
+  const archiveTasks = new Set<Promise<void>>();
   let lastArchiveConsent = hasArchiveConsent();
   const telemetry = new RunTelemetry({
     version: config.version,
     build: buildInfo(),
+    dumpDirectory: join(config.home, "run-dumps"),
     runDumps: archiveEnabled
       ? {
-          async put(dump) {
+          begin: (runId, capture) => store.runDumps.begin(runId, capture, hasArchiveConsent() ? archiveDestinations : []),
+          end: (runId) => store.runDumps.end(runId),
+          put(dump) {
             const consent = hasArchiveConsent();
             // Save locally first so a slow or retrying upload never delays the local copy. While
-            // backup is consented, retention keeps dumps a destination has not received yet (up to
-            // a hard ceiling) so a later backfill can still send them.
+            // backup is consented, retention keeps pending dumps until every destination accepts
+            // the complete record. Large dumps are small SQLite references to immutable files.
             store.runDumps.put(dump, consent ? archiveDestinations : []);
             if (!consent || archiveClosing) return;
-            // Background only: upload failures are logged, never surfaced to the person.
-            for (const archive of archives) {
-              try {
-                await archive.put(dump, store.db, hasArchiveConsent);
-              } catch (error) {
-                if (error instanceof ArchiveConsentRevokedError) continue;
-                logger.warn("usage archive failed; retained run dump locally", {
-                  runId: dump.runId,
-                  error: errMsg(error),
-                });
+            const task = (async () => {
+              // The local dump is durable before agent.done; network delivery runs independently.
+              for (const archive of archives) {
+                try {
+                  await archive.put(dump, store.db, hasArchiveConsent);
+                } catch (error) {
+                  if (error instanceof ArchiveConsentRevokedError) continue;
+                  logger.warn("usage archive failed; retained run dump locally", {
+                    runId: dump.runId,
+                    error: errMsg(error),
+                  });
+                  if (!backfillRetry && !archiveClosing) {
+                    backfillRetry = setTimeout(() => {
+                      backfillRetry = null;
+                      void startArchiveBackfill();
+                    }, BACKFILL_RETRY_MS);
+                    backfillRetry.unref?.();
+                  }
+                }
               }
-            }
+            })().finally(() => archiveTasks.delete(task));
+            archiveTasks.add(task);
           },
         }
       : store.runDumps,
@@ -816,6 +830,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       for (const archive of archives) archive.close();
       await telemetry.shutdown();
       await backfillTask;
+      await Promise.allSettled([...archiveTasks]);
       store.close();
       await closeSentry();
       resolveClosed(reason);

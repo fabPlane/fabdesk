@@ -1,0 +1,54 @@
+{
+  "cliVersion": "10.99.0",
+  "results": [
+    {
+      "case": "original-unquoted",
+      "beforeComplete": false,
+      "afterComplete": true,
+      "counts": {
+        "components": 178,
+        "nets": 158,
+        "sheets": 3
+      },
+      "issues": []
+    },
+    {
+      "case": "quoted-control",
+      "beforeComplete": true,
+      "afterComplete": true,
+      "counts": {
+        "components": 178,
+        "nets": 158,
+        "sheets": 3
+      },
+      "issues": []
+    },
+    {
+      "case": "PS1 V4",
+      "afterComplete": true,
+      "counts": {
+        "components": 80,
+        "nets": 82,
+        "sheets": 1
+      },
+      "issues": []
+    }
+  ],
+  "erc": {
+    "executed": true,
+    "counts": {
+      "errors": 8,
+      "warnings": 489
+    }
+  },
+  "drc": {
+    "executed": true,
+    "schematicParity": true,
+    "counts": {
+      "errors": 14,
+      "warnings": 331,
+      "unconnected": 0
+    }
+  },
+  "note": "ERC/DRC execute and produce reports; existing design violations are not fixed by the hierarchy parser."
+}

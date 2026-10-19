@@ -78,3 +78,10 @@ Final cross-repository PR stack, merge order, issue mapping, and Linux packaging
 Some stock and packaged KiCad builds omit it, regardless of version. `doctor` probes
 the command and reports when board statistics are unavailable; other supported exports,
 DRC and rendering remain usable.
+
+## CI Linux runners
+
+Trusted Linux workflows pick the repository NAS runner by default. Set the Actions
+variable `FORCE_BLACKSMITH_LINUX=true` (or `LINUX_RUNNER=blacksmith`) to pin Blacksmith
+until it is unset. A short `NAS_RUNNER_OUTAGE_UNTIL` lease still covers brief outages.
+See [docs/ci-runner-policy.md](docs/ci-runner-policy.md).

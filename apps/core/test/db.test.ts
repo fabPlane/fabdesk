@@ -322,7 +322,7 @@ describe("sqlite", () => {
     store.close();
   });
 
-  test("run dump retention keeps dumps an archive destination still needs, up to a ceiling", () => {
+  test("run dump retention keeps pending dumps below the storage cap, including after opt-out", () => {
     const store = new Store(openDatabase(":memory:"));
     const destinations = ["api:test"];
     const put = (index: number) => {
@@ -354,14 +354,17 @@ describe("sqlite", () => {
     expect(count()).toBe(RUN_DUMP_RETENTION.rows + 6);
     expect(store.runDumps.get("run_004")).toBeNull();
     expect(store.runDumps.get("run_005")).not.toBeNull();
-    // A destination that never accepts anything cannot grow the table past the hard ceiling.
+    // Pending records survive beyond the old 200-row ceiling.
     for (
       let index = RUN_DUMP_RETENTION.rows + 11;
-      index < RUN_DUMP_RETENTION.pendingRows + 20;
+      index < 220;
       index++
     )
       put(index);
-    expect(count()).toBe(RUN_DUMP_RETENTION.pendingRows);
+    expect(count()).toBe(215);
+    // Another run while sharing is off cannot erase previous pending backups.
+    store.runDumps.put({ runId: "after_optout", traceId: "trace", threadId: "thread_1", agentId:"codex",projectId:null,createdAt:"2026-10-01T00:00:00Z",dumpJson:"{}" });
+    expect(store.runDumps.get("run_005")).not.toBeNull();
     store.close();
   });
 

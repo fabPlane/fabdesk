@@ -34,6 +34,45 @@ test("failed and canceled clones leave no registered or partial project; collisi
     expect(made.path).toBe(join(root, "projects", "good"));
     await expect(projects.importFromGit({ name: "good", gitUrl: "https://github.com/o/good.git", failOnCollision: true, clone: async () => { throw new Error("must not clone"); } })).rejects.toThrow("already exists");
     expect(projects.summaries()).toHaveLength(1);
+    const missing = Object.assign(new Error('Executable not found in $PATH: "git"'), {
+      code: "ENOENT",
+      syscall: "spawn git",
+      path: "git",
+    });
+    try {
+      await projects.importFromGit({
+        name: "no-git",
+        gitUrl: "https://github.com/greatscottgadgets/hackrf.git",
+        failOnCollision: true,
+        clone: async () => { throw missing; },
+      });
+      throw new Error("expected importFromGit to fail when git is missing");
+    } catch (error) {
+      const text = error instanceof Error ? error.message : String(error);
+      expect(text).toMatch(/Git is not installed or is not on your PATH/);
+      expect(text).not.toMatch(/could not clone/);
+      expect(text).not.toMatch(/Executable not found/);
+    }
+    const otherEnoent = Object.assign(new Error("ENOENT: no such file or directory, open '/tmp/gone/helper'"), {
+      code: "ENOENT",
+      syscall: "open",
+      path: "/tmp/gone/helper",
+    });
+    try {
+      await projects.importFromGit({
+        name: "other-enoent",
+        gitUrl: "https://github.com/o/other.git",
+        failOnCollision: true,
+        clone: async () => { throw otherEnoent; },
+      });
+      throw new Error("expected importFromGit to keep the original error when ENOENT is not git");
+    } catch (error) {
+      const text = error instanceof Error ? error.message : String(error);
+      expect(text).toMatch(/could not clone/);
+      expect(text).toMatch(/ENOENT/);
+      expect(text).not.toMatch(/Git is not installed/);
+    }
+    expect(projects.summaries()).toHaveLength(1);
   } finally { projects.close(); store.close(); }
 });
 

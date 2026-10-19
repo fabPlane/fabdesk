@@ -1,7 +1,13 @@
-/** OpenTelemetry spans plus a bounded local JSONL bundle for agent-run debugging. */
+/** Full disk-backed run capture; OTLP remains a separate metadata-oriented export. */
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomBytes } from "node:crypto";
-import { appendFile, lstat, mkdir, readFile, readdir, readlink, rm, writeFile } from "node:fs/promises";
+import { appendFile, copyFile, link, lstat, mkdir, open, readFile, readdir, readlink, rename, rm, stat, writeFile } from "node:fs/promises";
+import { createReadStream, createWriteStream } from "node:fs";
+import { createInterface } from "node:readline";
+import { Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import { INLINE_DUMP_BYTES, fileDumpReference } from "./run-dump-file";
+import type { RunCapture } from "./run-retention";
 import { join, relative } from "node:path";
 import {
   ROOT_CONTEXT,
@@ -26,6 +32,7 @@ type RunRecord = {
   projectId: string | null;
   traceId: string;
   dir: string;
+  projectDir: string | null;
   logPath: string;
   span: Span;
   otelContext: Context;
@@ -34,7 +41,6 @@ type RunRecord = {
   pending: TraceRecord[];
   flushTimer: ReturnType<typeof setTimeout> | null;
   traceBytes: number;
-  traceTruncated: boolean;
   writes: Promise<void>;
   snapshotCache: Map<string, SnapshotCacheEntry>;
   blobHashes: Set<string>;
@@ -67,6 +73,8 @@ export type AgentTrace = {
 };
 
 export type RunDumpSink = {
+  begin?(runId: string, capture?: RunCapture): void;
+  end?(runId: string): void;
   put(dump: {
     runId: string;
     traceId: string;
@@ -75,24 +83,16 @@ export type RunDumpSink = {
     projectId: string | null;
     createdAt: string;
     dumpJson: string;
+    runDirectory?: string;
   }): void | Promise<void>;
 };
 
 /** `build` is written on every `run.started` so usage analysis can tell builds apart. */
-export type RunTelemetryOptions = { version: string; build?: BuildInfo; runDumps?: RunDumpSink };
+export type RunTelemetryOptions = { version: string; build?: BuildInfo; runDumps?: RunDumpSink; dumpDirectory?: string };
 
-export const RUN_TELEMETRY_LIMITS = {
-  traceBytes: 12 * 1024 * 1024,
-  eventBytes: 2 * 1024 * 1024,
-  snapshotFileBytes: 5 * 1024 * 1024,
-  snapshotBlobBytes: 16 * 1024 * 1024,
-  snapshotManifestBytes: 8 * 1024 * 1024,
-  snapshotFiles: 2_000,
-  snapshots: 128,
-  dumpBlobBytes: 8 * 1024 * 1024,
-  dumpBytes: 32 * 1024 * 1024,
-  localRuns: 50,
-} as const;
+/** Transport/memory windows, never capture/discard budgets. */
+export const RUN_TELEMETRY_LIMITS = { capture: "full", localRuns: 50 } as const;
+const INLINE_TEXT_BYTES = 1024 * 1024;
 
 const NS_PER_MS = 1_000_000n;
 const clockWallNs = BigInt(Date.now()) * NS_PER_MS;
@@ -142,10 +142,12 @@ export class RunTelemetry {
   private readonly captureOtlpContent = process.env["FABDESK_OTEL_CAPTURE_CONTENT"] === "1";
   private readonly runDumps: RunDumpSink | undefined;
   private readonly build: BuildInfo | undefined;
+  private readonly dumpDirectory: string | undefined;
 
   constructor(opts: RunTelemetryOptions) {
     this.runDumps = opts.runDumps;
     this.build = opts.build;
+    this.dumpDirectory = opts.dumpDirectory;
     const endpoint =
       process.env["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"] ??
       process.env["OTEL_EXPORTER_OTLP_ENDPOINT"];
@@ -177,10 +179,9 @@ export class RunTelemetry {
     const runsDir = join(input.cwd, ".fabdesk", "runs");
     const dir = join(runsDir, input.runId);
     const logPath = join(dir, "trace.jsonl");
-    await mkdir(dir, { recursive: true });
-    void pruneRunDirectories(runsDir, input.runId).catch((error) =>
-      logger.warn("could not prune old agent traces", { error: errMsg(error) }),
-    );
+    this.runDumps?.begin?.(input.runId, { createdAt: new Date().toISOString(), runDirectory: dir });
+    try { await mkdir(dir, { recursive: true }); }
+    catch (error) { this.runDumps?.end?.(input.runId); throw error; }
     const span = this.tracer.startSpan("fabdesk.agent.run", {
       kind: SpanKind.INTERNAL,
       attributes: {
@@ -204,6 +205,7 @@ export class RunTelemetry {
       projectId: input.projectId,
       traceId,
       dir,
+      projectDir: input.projectId ? input.cwd : null,
       logPath,
       span,
       otelContext,
@@ -212,7 +214,6 @@ export class RunTelemetry {
       pending: [],
       flushTimer: null,
       traceBytes: 0,
-      traceTruncated: false,
       writes: Promise.resolve(),
       snapshotCache: new Map(),
       blobHashes: new Set(),
@@ -383,6 +384,7 @@ export class RunTelemetry {
   }
 
   private recordAgentEvent(run: RunRecord, type: string, body: unknown): void {
+    if (type === "agent.tool_result") run.snapshotDirty = true;
     try {
       run.span.addEvent(
         type,
@@ -431,8 +433,13 @@ export class RunTelemetry {
     status: "completed" | "aborted" | "failed",
     details: Record<string, unknown>,
   ): Promise<void> {
+    if (run.projectDir) {
+      run.snapshotDirty = true;
+      try { await this.write(run, "snapshot.final", await snapshotProject(run, run.projectDir)); }
+      catch (error) { await this.write(run, "snapshot.failed", { phase: "final", error }); }
+    }
     await this.write(run, "run.finished", { status, ...details });
-    await createLlmDump(run, this.runDumps).catch((error) =>
+    await createLlmDump(run, this.runDumps, this.dumpDirectory).catch((error) =>
       logger.warn("could not persist LLM run dump", { runId: run.runId, error: errMsg(error) }),
     );
     run.span.setStatus({
@@ -442,6 +449,7 @@ export class RunTelemetry {
     run.span.setAttribute("fabdesk.run.status", status);
     run.span.end();
     this.runs.delete(run.runId);
+    this.runDumps?.end?.(run.runId);
   }
 
   private enqueue(run: RunRecord, type: string, body: unknown): void {
@@ -479,13 +487,8 @@ export class RunTelemetry {
     if (!records.length) return run.writes;
     run.writes = run.writes
       .then(async () => {
-        const lines: string[] = [];
-        for (const record of records) {
-          const line = boundedTraceLine(run, record);
-          if (line) lines.push(line);
-        }
-        if (lines.length)
-          await appendFile(run.logPath, lines.join(""), { encoding: "utf8", mode: 0o600 });
+        for (const record of records)
+          await appendFile(run.logPath, completeTraceLine(run, record), { encoding: "utf8", mode: 0o600 });
       })
       .catch((error) =>
         logger.warn("could not persist agent trace", { runId: run.runId, error: errMsg(error) }),
@@ -494,43 +497,14 @@ export class RunTelemetry {
   }
 }
 
-function boundedTraceLine(run: RunRecord, record: TraceRecord): string | null {
-  if (run.traceTruncated) return null;
+function completeTraceLine(run: RunRecord, record: TraceRecord): string {
   let line: string;
   try {
     line = json(record) + "\n";
   } catch (error) {
-    line =
-      json({
-        ...record,
-        body: { omitted: "serialization-error", error: errMsg(error) },
-      }) + "\n";
+    line = json({ ...record, body: { omitted: "serialization-error", error: errMsg(error) } }) + "\n";
   }
-  let bytes = Buffer.byteLength(line);
-  if (bytes > RUN_TELEMETRY_LIMITS.eventBytes) {
-    line =
-      json({
-        ...record,
-        body: { omitted: "event-over-limit", originalBytes: bytes },
-      }) + "\n";
-    bytes = Buffer.byteLength(line);
-  }
-  if (run.traceBytes + bytes > RUN_TELEMETRY_LIMITS.traceBytes) {
-    run.traceTruncated = true;
-    const notice =
-      json({
-        ...record,
-        type: "telemetry.truncated",
-        body: {
-          omitted: "trace-budget-exhausted",
-          droppedType: record.type,
-          limitBytes: RUN_TELEMETRY_LIMITS.traceBytes,
-        },
-      }) + "\n";
-    run.traceBytes += Buffer.byteLength(notice);
-    return notice;
-  }
-  run.traceBytes += bytes;
+  run.traceBytes += Buffer.byteLength(line);
   return line;
 }
 
@@ -542,100 +516,91 @@ type SnapshotManifest = {
   omissions: string[];
 };
 
-type DumpBlob =
-  | { encoding: "utf8"; content: string }
-  | {
-      encoding: "omitted";
-      size: number;
-      reason: "binary" | "over-limit" | "missing" | "dump-budget";
-    };
-
-async function createLlmDump(run: RunRecord, sink: RunDumpSink | undefined): Promise<void> {
-  const events = (await readFile(run.logPath, "utf8"))
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as unknown);
-  const snapshotsDir = join(run.dir, "snapshots");
-  const names = await readdir(snapshotsDir).catch(() => [] as string[]);
-  const snapshots: SnapshotManifest[] = [];
-  for (const name of names.filter((value) => /^\d+\.json$/.test(value)).sort()) {
-    snapshots.push(
-      JSON.parse(await readFile(join(snapshotsDir, name), "utf8")) as SnapshotManifest,
-    );
-  }
-  const files = new Map<string, SnapshotEntry>();
-  for (const snapshot of snapshots) {
-    for (const entry of snapshot.entries)
-      if (entry.kind === "file" && entry.sha256 && !files.has(entry.sha256))
-        files.set(entry.sha256, entry);
-  }
-  const blobs: Record<string, DumpBlob> = {};
-  let embeddedBlobBytes = 0;
-  for (const [sha256, entry] of files) {
-    if (entry.size > RUN_TELEMETRY_LIMITS.snapshotFileBytes) {
-      blobs[sha256] = { encoding: "omitted", size: entry.size, reason: "over-limit" };
-      continue;
-    }
-    const bytes = await readFile(join(snapshotsDir, "blobs", sha256)).catch(() => null);
-    if (!bytes) {
-      blobs[sha256] = { encoding: "omitted", size: entry.size, reason: "missing" };
-      continue;
-    }
-    try {
-      const content = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-      if (content.includes("\0")) {
-        blobs[sha256] = { encoding: "omitted", size: entry.size, reason: "binary" };
-      } else if (embeddedBlobBytes + bytes.byteLength > RUN_TELEMETRY_LIMITS.dumpBlobBytes) {
-        blobs[sha256] = { encoding: "omitted", size: entry.size, reason: "dump-budget" };
-      } else {
-        blobs[sha256] = { encoding: "utf8", content };
-        embeddedBlobBytes += bytes.byteLength;
-      }
-    } catch {
-      blobs[sha256] = { encoding: "omitted", size: entry.size, reason: "binary" };
-    }
-  }
+/** Stream a complete portable JSON dump; never load the entire run/files into RAM. */
+async function createLlmDump(run: RunRecord, sink: RunDumpSink | undefined, dumpDirectory?: string): Promise<void> {
   const createdAtUnixNano = unixNano();
-  const dump = {
-    schema: "fabdesk.llm-run-dump/v1",
-    runId: run.runId,
-    traceId: run.traceId,
-    threadId: run.threadId,
-    agentId: run.agentId,
-    projectId: run.projectId,
-    createdAtUnixNano,
-    instructions:
-      "Analyze the ordered events, compare each MCP request with its preceding project snapshot, and identify where the agent's model of the KiCad project diverged from the recorded files or CLI results.",
-    events,
-    snapshots,
-    blobs,
+  const header = {
+    schema: "fabdesk.llm-run-dump/v1", runId: run.runId, traceId: run.traceId,
+    threadId: run.threadId, agentId: run.agentId, projectId: run.projectId, createdAtUnixNano,
+    instructions: "Analyze ordered events, preceding project snapshots and CLI results. Decode base64 blobs to restore exact original bytes. Capture errors are explicit; size alone never omits data.",
     limits: RUN_TELEMETRY_LIMITS,
   };
-  let dumpText = json(dump) + "\n";
-  if (Buffer.byteLength(dumpText) > RUN_TELEMETRY_LIMITS.dumpBytes) {
-    dumpText =
-      json({
-        ...dump,
-        snapshots: [],
-        blobs: {},
-        omissions: [
-          "Snapshot manifests and embedded files exceeded the total dump budget; use the project-local snapshots directory.",
-        ],
-      }) + "\n";
+  const path = join(run.dir, "llm-dump.json");
+  const temporary = `${path}.part`;
+  const file = await open(temporary, "w", 0o600);
+  let buffered = "";
+  const emit = async (text: string) => {
+    buffered += text;
+    if (Buffer.byteLength(buffered) >= 1024 * 1024) { await file.writeFile(buffered); buffered = ""; }
+  };
+  try {
+    await emit(json(header).slice(0, -1) + ',"events":[');
+    let separator = "";
+    for await (const line of createInterface({ input: createReadStream(run.logPath), crlfDelay: Infinity })) {
+      if (!line) continue;
+      await emit(separator + line); separator = ",";
+    }
+    await emit('],"snapshots":[');
+    const snapshotsDir = join(run.dir, "snapshots");
+    const names = await readdir(snapshotsDir).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return [] as string[];
+      throw error;
+    });
+    const hashes = new Set<string>();
+    separator = "";
+    for (const name of names.filter((value) => /^\d+\.json$/.test(value)).sort()) {
+      const text = await readFile(join(snapshotsDir, name), "utf8");
+      const snapshot = JSON.parse(text) as SnapshotManifest;
+      for (const entry of snapshot.entries) if (entry.kind === "file" && entry.sha256) hashes.add(entry.sha256);
+      await emit(separator + text.trimEnd()); separator = ",";
+    }
+    await emit('],"blobs":{'); separator = "";
+    for (const sha256 of hashes) {
+      const blobPath = join(snapshotsDir, "blobs", sha256);
+      const info = await stat(blobPath);
+      let text: string | null = null;
+      if (info.size <= INLINE_TEXT_BYTES) {
+        try {
+          const decoded = new TextDecoder("utf-8", { fatal: true }).decode(await readFile(blobPath));
+          if (!decoded.includes("\0")) text = decoded;
+        } catch { /* arbitrary bytes are streamed losslessly as base64 below */ }
+      }
+      await emit(separator + json(sha256) + ":"); separator = ",";
+      if (text !== null) await emit(json({ encoding: "utf8", content: text }));
+      else {
+        await emit('{"encoding":"base64","content":"');
+        let carry = Buffer.alloc(0);
+        for await (const chunk of createReadStream(blobPath)) {
+          const bytes = Buffer.concat([carry, chunk as Buffer]);
+          const end = bytes.length - bytes.length % 3;
+          await emit(bytes.subarray(0, end).toString("base64"));
+          carry = bytes.subarray(end);
+        }
+        if (carry.length) await emit(carry.toString("base64"));
+        await emit('"}');
+      }
+    }
+    await emit("}}\n");
+    if (buffered) await file.writeFile(buffered);
+    await file.sync();
+  } finally { await file.close(); }
+  await rename(temporary, path);
+  const size = (await stat(path)).size;
+  let durablePath = path;
+  if (size > INLINE_DUMP_BYTES && dumpDirectory) {
+    await mkdir(dumpDirectory, { recursive: true });
+    durablePath = join(dumpDirectory, `${run.runId}.json`);
+    const pending = `${durablePath}.${crypto.randomUUID()}.part`;
+    try {
+      // Stable profile storage survives a project move/purge; hard links avoid duplicate disk usage.
+      await link(path, pending).catch(() => copyFile(path, pending));
+      await rename(pending, durablePath);
+    } finally { await rm(pending, { force: true }); }
   }
-  await writeFile(join(run.dir, "llm-dump.json"), dumpText, {
-    encoding: "utf8",
-    mode: 0o600,
-  });
-  await sink?.put({
-    runId: run.runId,
-    traceId: run.traceId,
-    threadId: run.threadId,
-    agentId: run.agentId,
-    projectId: run.projectId,
-    createdAt: new Date(Number(BigInt(createdAtUnixNano) / NS_PER_MS)).toISOString(),
-    dumpJson: dumpText,
-  });
+  const dumpJson = size <= INLINE_DUMP_BYTES ? await readFile(path, "utf8") : await fileDumpReference(durablePath);
+  await sink?.put({ runId: run.runId, traceId: run.traceId, threadId: run.threadId,
+    agentId: run.agentId, projectId: run.projectId,
+    createdAt: new Date(Number(BigInt(createdAtUnixNano) / NS_PER_MS)).toISOString(), dumpJson, runDirectory: run.dir });
 }
 
 function failedKicadResult(error: unknown): RunResult | null {
@@ -653,12 +618,12 @@ function failedKicadResult(error: unknown): RunResult | null {
 type SnapshotEntry = {
   path: string;
   kind: "file" | "symlink";
+  error?: string;
   size: number;
   mtimeNs: string;
   sha256: string | null;
   blob?: string;
   target?: string;
-  omitted?: "file-over-limit" | "run-blob-budget";
 };
 
 type SnapshotCacheEntry = { signature: string; entry: SnapshotEntry };
@@ -677,20 +642,13 @@ async function snapshotProject(
 ): Promise<SnapshotResult> {
   if (!run.snapshotDirty && run.lastSnapshot)
     return { ...run.lastSnapshot.result, reusedFiles: run.lastSnapshot.result.files, reused: true };
-  if (run.snapshotSeq >= RUN_TELEMETRY_LIMITS.snapshots)
-    return { files: 0, reusedFiles: 0, omitted: "snapshot-limit" };
   const snapshotsDir = join(run.dir, "snapshots");
   const blobsDir = join(snapshotsDir, "blobs");
   await mkdir(blobsDir, { recursive: true });
   const entries: SnapshotEntry[] = [];
   const nextCache = new Map<string, SnapshotCacheEntry>();
   let reusedFiles = 0;
-  let hitFileLimit = false;
   await walk(projectDir, "", async (absolute, path) => {
-    if (entries.length >= RUN_TELEMETRY_LIMITS.snapshotFiles) {
-      hitFileLimit = true;
-      return false;
-    }
     const st = await lstat(absolute, { bigint: true });
     const signature = `${st.dev}:${st.ino}:${st.size}:${st.mtimeNs}:${st.ctimeNs}`;
     const cached = run.snapshotCache.get(path);
@@ -715,59 +673,15 @@ async function snapshotProject(
       return true;
     }
     if (!st.isFile()) return true;
-    const size = Number(st.size);
-    if (size > RUN_TELEMETRY_LIMITS.snapshotFileBytes) {
-      const entry: SnapshotEntry = {
-        path,
-        kind: "file",
-        size,
-        mtimeNs: st.mtimeNs.toString(),
-        sha256: null,
-        omitted: "file-over-limit",
-      };
-      entries.push(entry);
-      nextCache.set(path, { signature, entry });
-      return true;
-    }
-    const bytes = await readFile(absolute);
-    const sha256 = createHash("sha256").update(bytes).digest("hex");
-    if (
-      !run.blobHashes.has(sha256) &&
-      run.blobBytes + bytes.byteLength > RUN_TELEMETRY_LIMITS.snapshotBlobBytes
-    ) {
-      const entry: SnapshotEntry = {
-        path,
-        kind: "file",
-        size,
-        mtimeNs: st.mtimeNs.toString(),
-        sha256,
-        omitted: "run-blob-budget",
-      };
-      entries.push(entry);
-      nextCache.set(path, { signature, entry });
-      return true;
-    }
-    const blob = join("blobs", sha256);
-    const blobPath = join(blobsDir, sha256);
-    await writeFile(blobPath, bytes, { flag: "wx", mode: 0o600 }).catch(
-      async (error: NodeJS.ErrnoException) => {
-        if (error.code !== "EEXIST") throw error;
-      },
-    );
-    if (!run.blobHashes.has(sha256)) {
-      run.blobHashes.add(sha256);
-      run.blobBytes += bytes.byteLength;
-    }
-    const entry: SnapshotEntry = {
-      path,
-      kind: "file",
-      size,
-      mtimeNs: st.mtimeNs.toString(),
-      sha256,
-      blob,
-    };
+    const captured = await captureSnapshotFile(absolute, path, blobsDir);
+    const entry = captured.entry;
     entries.push(entry);
-    nextCache.set(path, { signature, entry });
+    if (entry.sha256) {
+      if (!run.blobHashes.has(entry.sha256)) {
+        run.blobHashes.add(entry.sha256); run.blobBytes += entry.size;
+      }
+      nextCache.set(path, { signature: captured.signature, entry });
+    }
     return true;
   });
   run.snapshotCache = nextCache;
@@ -782,17 +696,10 @@ async function snapshotProject(
     projectDir,
     capturedAtUnixNano: unixNano(),
     entries,
-    omissions: hitFileLimit
-      ? [`file count exceeded ${RUN_TELEMETRY_LIMITS.snapshotFiles}`]
-      : [],
+    omissions: [],
   };
   const manifestText = json(manifest) + "\n";
   const manifestBytes = Buffer.byteLength(manifestText);
-  if (
-    manifestBytes > RUN_TELEMETRY_LIMITS.snapshotManifestBytes ||
-    run.snapshotManifestBytes + manifestBytes > RUN_TELEMETRY_LIMITS.snapshotManifestBytes
-  )
-    return { files: entries.length, reusedFiles, omitted: "manifest-budget" };
   const snapshotNo = String(run.snapshotSeq++).padStart(6, "0");
   const manifestPath = join(snapshotsDir, `${snapshotNo}.json`);
   await writeFile(manifestPath, manifestText, { encoding: "utf8", mode: 0o600 });
@@ -825,14 +732,40 @@ async function walk(
   return true;
 }
 
-async function pruneRunDirectories(runsDir: string, currentRunId: string): Promise<void> {
-  const candidates: Array<{ path: string; mtimeMs: number }> = [];
-  for (const entry of await readdir(runsDir, { withFileTypes: true })) {
-    if (!entry.isDirectory() || entry.name === currentRunId) continue;
-    const path = join(runsDir, entry.name);
-    candidates.push({ path, mtimeMs: Number((await lstat(path, { bigint: true })).mtimeMs) });
+/** Retry a changing file once. A second change is a manifest entry, not a failed snapshot. */
+export async function captureSnapshotFile(absolute: string, path: string, blobsDir: string,
+  copy: (source: string, temporary: string) => Promise<string> = async (source, temporary) => {
+    const hash = createHash("sha256");
+    await pipeline(createReadStream(source), new Transform({
+      transform(chunk: Buffer, _encoding, callback) { hash.update(chunk); callback(null, chunk); },
+    }), createWriteStream(temporary, { mode: 0o600, flags: "wx" }));
+    return hash.digest("hex");
+  },
+): Promise<{entry: SnapshotEntry; signature: string}> {
+  let lastSize = 0, lastMtime = "0", signature = "";
+  const failure = () => ({ signature, entry: { path, kind: "file" as const, size: lastSize,
+    mtimeNs: lastMtime, sha256: null, error: "project file changed during snapshot after retry" } });
+  for (let attempt = 0; ; attempt++) {
+    const temporary = join(blobsDir, `.capture-${crypto.randomUUID()}`);
+    try {
+      const before = await lstat(absolute, { bigint: true });
+      signature = `${before.dev}:${before.ino}:${before.size}:${before.mtimeNs}:${before.ctimeNs}`;
+      lastSize = Number(before.size); lastMtime = before.mtimeNs.toString();
+      if (!before.isFile()) { if (attempt === 0) continue; return failure(); }
+      const sha256 = await copy(absolute, temporary);
+      const after = await lstat(absolute, { bigint: true });
+      if (`${after.dev}:${after.ino}:${after.size}:${after.mtimeNs}:${after.ctimeNs}` !== signature) {
+        lastSize = Number(after.size); lastMtime = after.mtimeNs.toString();
+        if (attempt === 0) continue;
+        return failure();
+      }
+      const blob = join("blobs", sha256);
+      await rename(temporary, join(blobsDir, sha256));
+      return { signature, entry: { path, kind: "file", size: Number(before.size),
+        mtimeNs: before.mtimeNs.toString(), sha256, blob } };
+    } catch (error) {
+      if (!["ENOENT", "ENOTDIR", "EISDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
+      if (attempt === 1) return failure();
+    } finally { await rm(temporary, { force: true }); }
   }
-  candidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
-  for (const stale of candidates.slice(RUN_TELEMETRY_LIMITS.localRuns - 1))
-    await rm(stale.path, { recursive: true, force: true });
 }

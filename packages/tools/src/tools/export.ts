@@ -444,6 +444,142 @@ export const export_stencil = defineTool({
   },
 });
 
+export const export_laser_stencil = defineTool({
+  name: "export_laser_stencil",
+  toolset: "export",
+  title: "Export laser-cut solder stencil",
+  description:
+    "Export a LightBurn .lbrn2 job plus layered SVG/DXF of F.Paste (or B.Paste) for a ComMarker Omni X 355 nm UV galvo (LightBurn / EZCAD). Presets: mylar-uv (default, 0.1 mm Mylar/PET), kapton (0.075 mm PI), stainless-0.1. Applies paste-release shrink plus kerf compensation, minimum-aperture checks, a frame, and printer-frame fiducials. Power/speed/frequency/passes are editable starting points written into the .lbrn2. Pure TypeScript — does not need kicad-cli.",
+  inputSchema: {
+    side: z.enum(["F", "B"]).default("F").describe("Paste layer: F.Paste or B.Paste"),
+    preset: z
+      .enum(["mylar-uv", "kapton", "stainless-0.1"])
+      .default("mylar-uv")
+      .describe(
+        "mylar-uv = 0.1 mm Mylar/PET on Omni X 355 nm UV (default); kapton = 0.075 mm PI; stainless-0.1 = 0.1 mm stainless foil",
+      ),
+    frameMm: z
+      .number()
+      .nonnegative()
+      .optional()
+      .describe("Border around the board outline in mm (preset default 8)"),
+    thicknessMm: z.number().positive().optional().describe("Film / foil thickness in mm"),
+    apertureOffsetMm: z
+      .number()
+      .optional()
+      .describe("Per-side paste-release shrink (positive) or grow (negative) in mm"),
+    kerfMm: z
+      .number()
+      .optional()
+      .describe("Additional per-side kerf compensation in mm, added to apertureOffsetMm"),
+    minApertureMm: z
+      .number()
+      .nonnegative()
+      .optional()
+      .describe("Skip pads whose opening is smaller than this after shrink"),
+    skipFinePitch: z
+      .boolean()
+      .optional()
+      .describe("Skip footprints whose paste-pad pitch is below finePitchMm"),
+    finePitchMm: z.number().positive().optional().describe("Fine-pitch threshold in mm"),
+    alignmentHoleMm: z
+      .number()
+      .positive()
+      .optional()
+      .describe("Printer-frame fiducial diameter in mm (preset default 3.2)"),
+    includeFiducials: z
+      .boolean()
+      .optional()
+      .describe("Cut frame-corner + board NPTH registration holes (default true)"),
+    powerPct: z
+      .number()
+      .min(0)
+      .max(100)
+      .optional()
+      .describe("Starting-point laser power percent (not a certified recipe)"),
+    speedMmPerS: z
+      .number()
+      .positive()
+      .optional()
+      .describe("Starting-point cut speed in mm/s (not a certified recipe)"),
+    frequencyKhz: z
+      .number()
+      .positive()
+      .optional()
+      .describe("Starting-point pulse frequency in kHz (not a certified recipe)"),
+    pulseNs: z
+      .number()
+      .positive()
+      .optional()
+      .describe("Starting-point pulse width in ns (not a certified recipe)"),
+    passes: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe("Starting-point pass count (not a certified recipe)"),
+    lensMm: z.number().positive().optional().describe("Lens focal length in mm used for the starting-point table"),
+  },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
+  longRunning: true,
+  handler: async (args, ctx) => {
+    const project = ctx.requireProject();
+    const board = await requireBoard(project);
+    const outDir = await ensureDir(p(project, PROJECT_FILES.exports, "stencil"));
+    ctx.progress(0.2, "building laser stencil");
+    let summary;
+    try {
+      summary = await ctx.services.kicad.exportLaserStencil({
+        board,
+        outDir,
+        side: args.side,
+        preset: args.preset,
+        ...(args.frameMm != null ? { frameMm: args.frameMm } : {}),
+        ...(args.thicknessMm != null ? { thicknessMm: args.thicknessMm } : {}),
+        ...(args.apertureOffsetMm != null ? { apertureOffsetMm: args.apertureOffsetMm } : {}),
+        ...(args.kerfMm != null ? { kerfMm: args.kerfMm } : {}),
+        ...(args.minApertureMm != null ? { minApertureMm: args.minApertureMm } : {}),
+        ...(args.skipFinePitch != null ? { skipFinePitch: args.skipFinePitch } : {}),
+        ...(args.finePitchMm != null ? { finePitchMm: args.finePitchMm } : {}),
+        ...(args.alignmentHoleMm != null ? { alignmentHoleMm: args.alignmentHoleMm } : {}),
+        ...(args.includeFiducials != null ? { includeFiducials: args.includeFiducials } : {}),
+        ...(args.powerPct != null ? { powerPct: args.powerPct } : {}),
+        ...(args.speedMmPerS != null ? { speedMmPerS: args.speedMmPerS } : {}),
+        ...(args.frequencyKhz != null ? { frequencyKhz: args.frequencyKhz } : {}),
+        ...(args.pulseNs != null ? { pulseNs: args.pulseNs } : {}),
+        ...(args.passes != null ? { passes: args.passes } : {}),
+        ...(args.lensMm != null ? { lensMm: args.lensMm } : {}),
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === "LaserStencilOptionsError") {
+        throw new ToolError(error.message, "invalid_args");
+      }
+      throw error;
+    }
+    ctx.progress(1, "done");
+    const files = [
+      summary.files.lbrn2,
+      summary.files.svg,
+      summary.files.dxf,
+      summary.files.json,
+      summary.files.markdown,
+      summary.files.notes,
+    ];
+    const warn = summary.warnings.length
+      ? `\nWarnings:\n${summary.warnings.map((w) => `- ${w.message}`).join("\n")}`
+      : "";
+    return ok(
+      `Exported laser-cut ${summary.side}.Paste stencil (${summary.presetTitle}) to exports/stencil/: ${summary.apertureCount} aperture(s), ${summary.fiducialCount} fiducial(s), shrink ${summary.totalShrinkMm} mm/side. Starting-point job ${summary.job.powerPct}% · ${summary.job.speedMmPerS} mm/s · ${summary.job.frequencyKhz} kHz · ${summary.job.passes} pass(es). Open the .lbrn2 in LightBurn; SVG/DXF are for EZCAD.${warn}\n${files.map((f) => `- ${rel(project, f)}`).join("\n")}`,
+      { ...summary, files, path: summary.files.lbrn2 },
+    );
+  },
+});
+
 export const exportTools = [
   export_gerbers,
   export_drill,
@@ -453,4 +589,5 @@ export const exportTools = [
   export_zip,
   export_dxf,
   export_stencil,
+  export_laser_stencil,
 ];
