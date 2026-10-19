@@ -17,6 +17,7 @@ export function PermissionsMenu({ thread }: { thread: Thread }) {
   const supportsApproval = doctor.data?.agents.find((agent) => agent.id === thread.agentId)?.supportsSupervised === true;
   const approvalDescription = supportsApproval ? OPTIONS[0].description : doctor.isPending
     ? "Checking whether this agent supports approval pauses…"
+    : doctor.isError ? "Could not check approval support. Close and reopen this menu to retry."
     : "Approval pauses are not available for this agent yet. Your selected agent and model will stay unchanged.";
   const id = useId();
   const anchor = useRef<HTMLButtonElement>(null);
@@ -96,7 +97,7 @@ export function PermissionsMenu({ thread }: { thread: Thread }) {
   return <>
     <Button ref={anchor} variant="ghost" size="sm" className="fd-permissions-button"
       title={`Permissions: ${label}`} aria-label={`Permissions: ${label}`} aria-haspopup="menu" aria-expanded={open} aria-controls={open ? id : undefined}
-      data-testid="runtime-mode-toggle" onClick={() => setOpen(!open)}>
+      data-testid="runtime-mode-toggle" onClick={() => { if (!open && doctor.isError) void doctor.refetch(); setOpen(!open); }}>
       <Icon name={selected.icon} width={16} height={16} className={selected.tone} />
       <span className="fd-permissions-label">{label}</span>
       <Icon name="chevronDown" width={12} height={12} className="fd-permissions-chevron" />
