@@ -1,10 +1,10 @@
 /** Explicit native PCB setup and placement following schematic forward annotation. */
 import { readCopper, recordRemoval, quality, qualityText } from "../routing-quality";
 import { z } from "zod/v4";
-import { ToolError, defineTool } from "../registry";
+import { ToolError, defineTool, mutationInputObject } from "../registry";
 import { ok } from "./common";
 
-const Point = z.object({ x: z.number().finite(), y: z.number().finite() });
+const Point = mutationInputObject({ x: z.number().finite(), y: z.number().finite() });
 
 export const pcb_define_outline = defineTool({
   name: "pcb_define_outline",
@@ -51,19 +51,17 @@ export const pcb_place = defineTool({
   inputSchema: {
     placements: z
       .array(
-        z.object({
+        mutationInputObject({
           reference: z.string().min(1),
           position: Point.optional(),
           rotation: z.number().finite().optional(),
           flip: z.boolean().optional(),
           lock: z.boolean().optional(),
-          referenceField: z
-            .object({
-              visible: z.boolean().optional(),
-              position: Point.optional().describe("Absolute board position in millimetres"),
-              sizeMm: z.number().positive().max(5).optional(),
-            })
-            .optional(),
+          referenceField: mutationInputObject({
+            visible: z.boolean().optional(),
+            position: Point.optional().describe("Absolute board position in millimetres"),
+            sizeMm: z.number().positive().max(5).optional(),
+          }).optional(),
         }),
       )
       .min(1)
@@ -87,7 +85,10 @@ export const pcb_place = defineTool({
     const result = await ctx.services.design.placeFootprints(project.dir, placements, {
       staleCopper,
     });
-    const removedFacts = copperBefore && result.removedCopper ? await recordRemoval(project.dir, copperBefore, await readCopper(project.dir)) : null;
+    const removedFacts =
+      copperBefore && result.removedCopper
+        ? await recordRemoval(project.dir, copperBefore, await readCopper(project.dir))
+        : null;
     const staleLines = Object.entries(result.staleCopper ?? {}).map(
       ([reference, report]) =>
         `${reference}: ${report.staleCount} stale copper item(s) on ${report.nets.length} net(s); ${report.shortedCount} now touch pads of other nets.`,
@@ -96,7 +97,15 @@ export const pcb_place = defineTool({
       staleLines.push(
         `Removed ${result.removedCopper.ids.length} stale copper item(s) in the placement transaction on net(s) ${result.removedCopper.nets.join(", ")}; zone refill ${result.zoneRefill ? (result.zoneRefill.refilled ? "completed" : `failed: ${result.zoneRefill.error ?? "unknown error"}`) : "not run"}.`,
       );
-    if (removedFacts) staleLines.push(qualityText({ nets: removedFacts.nets, pairs: [], reference: [], lengthConvention: "chord" }));
+    if (removedFacts)
+      staleLines.push(
+        qualityText({
+          nets: removedFacts.nets,
+          pairs: [],
+          reference: [],
+          lengthConvention: "chord",
+        }),
+      );
     const base = result.missing.length
       ? `Placement blocked; unknown references: ${result.missing.join(", ")}.`
       : `Placed ${result.moved.length} footprint(s) and saved board revision ${result.revision}: ${result.moved.join(", ") || "already at requested positions"}.`;

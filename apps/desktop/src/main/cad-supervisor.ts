@@ -13,13 +13,13 @@
  * fresh bearer token: the bridge reads it as `FAB_CAD_BRIDGE_TOKEN`, core as
  * `FABDESK_FAB_CAD_BRIDGE_TOKEN`. A bridge older than the token ignores it.
  */
-import { spawn, type ChildProcess } from "node:child_process";
+import { type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, win32 } from "node:path";
-import { sidecarEnvironment } from "./child-process-env";
+import { spawnSidecar } from "./child-process-env";
 
 export interface CadBundleManifest {
   format: 1;
@@ -212,9 +212,9 @@ export class CadSupervisor {
       command.url = `http://127.0.0.1:${port}`;
       command.env.PORT = String(port);
     }
-    this.child = spawn(command.command, command.args, {
+    this.child = spawnSidecar(command.command, command.args, {
       cwd: command.cwd,
-      env: sidecarEnvironment(process.env, command.env),
+      env: { ...process.env, ...command.env },
       stdio: ["ignore", "inherit", "inherit"],
       windowsHide: true,
     });

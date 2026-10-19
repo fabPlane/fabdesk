@@ -68,6 +68,12 @@ export function useAppActions() {
         ui().setBoardTab("files");
         await run("stencil", { projectId, thicknessMm: stencilThicknessMm(ui().stencilThicknessByProject?.[projectId]) });
       },
+      async exportLaserStencil() {
+        const projectId = ui().activeProjectId;
+        if (!projectId) return;
+        ui().setBoardTab("files");
+        await run("export_laser_stencil", { projectId, preset: "mylar-uv" });
+      },
     };
   }, [data, patch, branch, run]);
 }

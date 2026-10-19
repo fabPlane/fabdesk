@@ -288,6 +288,15 @@ export class ProjectStore implements ProjectResolver {
     } catch (e) {
       await rm(dir, { recursive: true, force: true });
       if (opts.signal?.aborted) throw new ToolError("GitHub import canceled", "unavailable");
+      // Git is assumed present. Surface a missing binary only at clone time.
+      const missingGit = gitMissingFromClone(e);
+      if (missingGit) {
+        logger.warn("git missing at clone time", {
+          error: e instanceof Error ? e.message : String(e),
+          ...(e instanceof Error && "path" in e ? { path: String((e as NodeJS.ErrnoException).path ?? "") } : {}),
+        });
+        throw new ToolError(missingGit, "unavailable");
+      }
       throw new ToolError(
         `could not clone ${opts.gitUrl}: ${e instanceof Error ? e.message : String(e)}`,
         "unavailable",
@@ -488,6 +497,20 @@ export class ProjectStore implements ProjectResolver {
 export function requireProject(h: ProjectHandle | null, ref: string): ProjectHandle {
   if (!h) throw new ToolError(`project not found: ${ref}`, "not_found");
   return h;
+}
+
+/** True when spawn failed because `git` is not on PATH (Bun/Node ENOENT). */
+export function gitMissingFromClone(error: unknown): string | null {
+  const err = error as NodeJS.ErrnoException;
+  const message = error instanceof Error ? error.message : String(error);
+  const spawnGit = err?.syscall === "spawn git" || err?.path === "git";
+  if (
+    (err?.code === "ENOENT" && spawnGit) ||
+    /executable not found in \$PATH:\s*"?git"?/i.test(message)
+  ) {
+    return "Git is not installed or is not on your PATH. Install Git, then try cloning again.";
+  }
+  return null;
 }
 
 async function defaultGitClone(url: string, dir: string, signal?: AbortSignal): Promise<void> {

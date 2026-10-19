@@ -110,6 +110,7 @@ export function mockServices(
       },
     },
     design: {
+      withSavedFilesRecovery: async (_dir, replace) => replace(),
       build: async ({ projectDir, progress }) => {
         const src = await Bun.file(join(projectDir, "circuit.netlist.json")).text();
         const bad = src.includes("BROKEN");
@@ -379,6 +380,10 @@ export function mockServices(
       exportStencil: async (opts) => {
         const { exportStencil } = await import("@fabdesk/kicad/stencil");
         return exportStencil(opts);
+      },
+      exportLaserStencil: async (opts) => {
+        const { exportLaserStencil } = await import("@fabdesk/kicad/stencil-laser");
+        return exportLaserStencil(opts);
       },
     },
     sim: {

@@ -9,7 +9,9 @@
 
 ## Verification
 
-341 focused UI/client-core/core/agent tests passed; one POSIX-only SIGTERM escalation test is skipped on Windows. All five affected package typechecks and the desktop production build passed.
+After merging current main, 348 focused UI/client-core/core/agent tests passed, plus four Claude configuration checks; one POSIX-only SIGTERM escalation test is skipped on Windows. The full repository typecheck and the desktop production build passed.
+
+The merge preserves main's migrations 10–12 and assigns the history index to migration 13. An upgrade regression also covers a development database that applied the earlier draft's version-10 index, repairing the missing archive column without losing data.
 
 A real installed Codex app-server session with GPT Astra and the automatic reviewer completed a harmless shell command, displayed a native question, accepted `56`, and finished successfully in a temporary non-Git directory. The session was ephemeral and read-only. Command fields matched the generated v2 protocol; synthetic tests also cover file/MCP/web tool items.
 

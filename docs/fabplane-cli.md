@@ -20,7 +20,41 @@ and `apps/core/tsconfig.typecheck.json` maps it to `src/index.ts` for `tsc`.
   `bun scripts/export-tool-manifest.ts` and opens a PR on fabplane-cli updating
   `spec/fabdesk-tools.json`.
 
-fabplane-cli's npm publish workflow separately uses `NPM_TOKEN`; see the Publishing section of its
+## Publishing `fabplane-cli` to npm
+
+The package is already named `fabplane-cli` (bin `fabplane`, Node 20+, build `tsc → dist/`).
+It is **not** on npm until someone publishes it. Do not publish from a laptop or from this PR.
+
+Preferred path (when you can write to `fabPlane/fabplane-cli`):
+
+1. Add an npm **granular** access token (read/write, **Bypass 2FA** enabled — CI cannot
+   answer an OTP prompt) as the `NPM_TOKEN` Actions secret on **fabPlane/fabplane-cli**.
+   Legacy “automation” tokens are no longer issued. Rotate within the token lifetime.
+2. Confirm `package.json` and `src/version.ts` share the same version (upstream `main` is `0.3.0`).
+3. Push a matching `v*` tag or publish a GitHub release (`v0.3.0`). That repo's
+   `.github/workflows/publish.yml` builds, tests, and runs `npm publish --provenance --access public`.
+
+TensorFleet path (this repo, when you cannot tag fabPlane/fabplane-cli):
+
+1. Add the same kind of npm granular token (read/write, Bypass 2FA) as the `NPM_TOKEN`
+   Actions secret on **TensorFleet/fabdesk**.
+2. The submodule pin on `main` is currently **`0.1.0`** (`3526b60`), not `0.3.0`. A
+   `cli-v0.3.0` tag fails the "Tag matches package.json" step. Run
+   `bun run submodules:update` (and land a PR that bumps `vendor/fabplane-cli`) so the
+   pin matches the version you want, then confirm `vendor/fabplane-cli/package.json`.
+   **The bump PR must land before the first tag.** Do not push `cli-v0.1.0` — that
+   pin is the stale checkout, not a release we intend to publish.
+3. After the bump lands, push a `cli-v*` tag that matches **that pin** (e.g.
+   `cli-v0.3.0`). `.github/workflows/publish-fabplane-cli.yml` checks the secret first,
+   inits only the `vendor/fabplane-cli` submodule, copies that pin out of the bun
+   workspace (so `npm ci` does not walk up to this repo's root `package.json`),
+   builds and tests, then publishes without `--provenance` (this repo is private;
+   npm provenance would 422). It never runs on pull requests or on `main`.
+
+Without `NPM_TOKEN` the workflow fails on its first step and publishes nothing.
+Until the first release, install from source: `git clone https://github.com/fabPlane/fabplane-cli && npm ci && npm pack && npm i -g ./fabplane-cli-*.tgz`.
+
+fabplane-cli's own npm publish workflow also uses `NPM_TOKEN`; see the Publishing section of its
 README.
 
 ## GitHub App setup for weekly sync

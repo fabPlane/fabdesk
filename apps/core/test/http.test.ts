@@ -477,8 +477,10 @@ describe("http daemon", () => {
     // AGENTS.md / CLAUDE.md regenerated before the run.
     const agentInstructions = await Bun.file(join(created.path, "AGENTS.md")).text();
     expect(agentInstructions).toContain("Canonical KiCad PCB");
-    expect(agentInstructions).not.toMatch(
-      /workflow|circuit_build|prefer|retry|repeat until|run .* first/i,
+    expect(agentInstructions).not.toMatch(/workflow|prefer|retry|repeat until|run .* first/i);
+    // Neutral discovery must give both authoring paths equal visibility.
+    expect(/circuit_build/i.test(agentInstructions)).toBe(
+      /schematic_edit/i.test(agentInstructions),
     );
     expect((await Bun.file(join(created.path, "CLAUDE.md")).text()).trim()).toBe("@AGENTS.md");
 
@@ -595,7 +597,7 @@ describe("http daemon", () => {
     expect((withProject.structuredContent as { id: string }).id).toBe(created.id);
 
     await a.client.callTool({ name: "load_toolset", arguments: { toolset: "export" } });
-    expect((await a.client.listTools()).tools.length).toBe(43);
+    expect((await a.client.listTools()).tools.length).toBe(44);
 
     // A second session starts with only the default toolsets (state is per session).
     const b = await connect(daemon.token);
@@ -806,7 +808,10 @@ describe("http daemon", () => {
   });
 
   test("uninstalling the router that is the saved default resets the default to automatic", async () => {
-    const set = await api("/settings", { method: "PATCH", body: JSON.stringify({ preferredRouter: "tracemaker" }) });
+    const set = await api("/settings", {
+      method: "PATCH",
+      body: JSON.stringify({ preferredRouter: "tracemaker" }),
+    });
     expect(((await set.json()) as { preferredRouter?: string }).preferredRouter).toBe("tracemaker");
     const gone = await api("/routers/tracemaker", { method: "DELETE" });
     expect(gone.status).toBe(200);
@@ -816,7 +821,10 @@ describe("http daemon", () => {
     expect(list.preferredRouter).toBeUndefined();
 
     // uninstalling some other router leaves the default alone
-    await api("/settings", { method: "PATCH", body: JSON.stringify({ preferredRouter: "fab_router" }) });
+    await api("/settings", {
+      method: "PATCH",
+      body: JSON.stringify({ preferredRouter: "fab_router" }),
+    });
     await api("/routers/tracemaker", { method: "DELETE" });
     const kept = (await (await api("/settings")).json()) as { preferredRouter?: string | null };
     expect(kept.preferredRouter).toBe("fab_router");

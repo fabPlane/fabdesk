@@ -39,4 +39,9 @@ test("binary CAD, drawings and unknown formats never enter the text preview", ()
   expect(fileAppearance("exports/F-Paste.SVG").preview).toBe("image");
   expect(fileAppearance("source/code.ts").kind).toBe("code");
   expect(fileAppearance("board.kicad_pcb").kind).toBe("board");
+  expect(fileAppearance("exports/stencil/F-Paste-laser.lbrn2")).toEqual({
+    kind: "data",
+    label: "LBRN2",
+    preview: "text",
+  });
 });

@@ -133,3 +133,11 @@ export { SLASH_COMMANDS, expandSlashCommand, slashSuggestions } from "./slash-co
 export type { SlashCommand } from "./slash-commands";
 
 export { CadSession, type CadSessionState } from "./cad-session";
+export {
+  DEFAULT_LASER_STENCIL_PRESET,
+  LASER_STENCIL_PRESET_IDS,
+  LASER_STENCIL_UI_PRESETS,
+  laserStencilFormDefaults,
+  parseLaserNumber,
+} from "./laser-stencil-presets";
+export type { LaserStencilPresetId, LaserStencilUiPreset } from "./laser-stencil-presets";

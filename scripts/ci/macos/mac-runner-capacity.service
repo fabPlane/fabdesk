@@ -1,0 +1,6 @@
+[Unit]
+Description=Publish shared Mac runner capacity to GitHub
+After=network-online.target
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 %h/.local/bin/publish-mac-runner-capacity

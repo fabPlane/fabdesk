@@ -267,6 +267,23 @@ describe("sqlite", () => {
     db.close();
   });
 
+  test("upgrade repairs a development database with the draft run index at version 10", () => {
+    const db = new Database(":memory:");
+    db.run("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)");
+    for (const migration of MIGRATIONS.filter((m) => m.version <= 9)) {
+      migration.up?.(db);
+      db.run(migration.sql);
+      db.run("INSERT INTO schema_migrations VALUES (?, ?)", [migration.version, new Date().toISOString()]);
+    }
+    db.run("CREATE INDEX runs_thread_started ON runs(thread_id, started_at DESC)");
+    db.run("INSERT INTO schema_migrations VALUES (10, ?)", [new Date().toISOString()]);
+    expect(migrate(db)).toBe(MIGRATIONS.at(-1)!.version);
+    expect(migrate(db)).toBe(MIGRATIONS.at(-1)!.version);
+    expect(db.query<{ name: string }, []>("PRAGMA table_info(run_dumps)").all().map((c) => c.name)).toContain("archive_destinations_json");
+    expect(db.query<{ name: string }, []>("PRAGMA table_info(run_dump_history)").all().map((c) => c.name)).toContain("directory_bytes");
+    db.close();
+  });
+
   test("thread pin persists across database reopen", async () => {
     const dir = await mkdtemp(join(tmpdir(), "fabdesk-db-pin-"));
     const path = join(dir, "fabdesk.db");
@@ -337,7 +354,7 @@ describe("sqlite", () => {
     store.close();
   });
 
-  test("run dump retention keeps dumps an archive destination still needs, up to a ceiling", () => {
+  test("run dump retention keeps pending dumps below the storage cap, including after opt-out", () => {
     const store = new Store(openDatabase(":memory:"));
     const destinations = ["api:test"];
     const put = (index: number) => {
@@ -369,14 +386,17 @@ describe("sqlite", () => {
     expect(count()).toBe(RUN_DUMP_RETENTION.rows + 6);
     expect(store.runDumps.get("run_004")).toBeNull();
     expect(store.runDumps.get("run_005")).not.toBeNull();
-    // A destination that never accepts anything cannot grow the table past the hard ceiling.
+    // Pending records survive beyond the old 200-row ceiling.
     for (
       let index = RUN_DUMP_RETENTION.rows + 11;
-      index < RUN_DUMP_RETENTION.pendingRows + 20;
+      index < 220;
       index++
     )
       put(index);
-    expect(count()).toBe(RUN_DUMP_RETENTION.pendingRows);
+    expect(count()).toBe(215);
+    // Another run while sharing is off cannot erase previous pending backups.
+    store.runDumps.put({ runId: "after_optout", traceId: "trace", threadId: "thread_1", agentId:"codex",projectId:null,createdAt:"2026-10-01T00:00:00Z",dumpJson:"{}" });
+    expect(store.runDumps.get("run_005")).not.toBeNull();
     store.close();
   });
 

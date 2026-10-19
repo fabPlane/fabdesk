@@ -1,16 +1,18 @@
 /** Installation-authenticated usage archive upload. R2 credentials stay on the API. */
 import { createHash } from "node:crypto";
+import { ARCHIVE_PART_BYTES, partKey, partReceiptPrefix, type ArchiveChunk, type ArchivePart, type ArchiveRecord } from "./usage-parts";
 import { ArchiveConsentRevokedError, ArchiveRecordTooLargeError, type ArchiveWriter } from "./usage-archive";
 
 type Installation = { installationId: string; token: string };
 export type InstallationStore = {
   readRaw(key: string): unknown;
   writeRaw(key: string, value: unknown): void;
+  deleteRaw(key: string): void;
 };
 
 const INSTALLATION_KEY = "usage_archive_installation";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-/** The API's `MAX_ARCHIVE_BYTES`; larger records are rejected with 413, so they are not sent. */
+/** Upper bound per API request; logical records use smaller ingress-compatible pieces. */
 export const MAX_UPLOAD_BYTES = 40 * 1024 * 1024;
 
 /**
@@ -136,6 +138,65 @@ export class UsageApiArchiveWriter implements ArchiveWriter {
     const signal = AbortSignal.any([this.closing.signal, this.pending.signal]);
     requireConsent(allowed, signal);
     const body = Buffer.from(content, "utf8");
+    if (body.length <= ARCHIVE_PART_BYTES) return this.writeBody(key, body, allowed, signal);
+    await this.writeParts(key, body.length, async (start, end) => body.subarray(start, end), allowed, signal);
+  }
+
+  async writeFile(key: string, path: string, allowed: () => boolean = () => true,
+    expected?: { bytes: number; sha256: string }): Promise<void> {
+    const signal = AbortSignal.any([this.closing.signal, this.pending.signal]);
+    requireConsent(allowed, signal);
+    const file = Bun.file(path);
+    const size = file.size;
+    if (expected && expected.bytes !== size) throw new Error("local run-dump size changed before upload");
+    if (size <= ARCHIVE_PART_BYTES) {
+      const body = Buffer.from(await file.arrayBuffer());
+      if (expected && createHash("sha256").update(body).digest("hex") !== expected.sha256)
+        throw new Error("local run-dump checksum changed before upload");
+      return this.writeBody(key, body, allowed, signal);
+    }
+    await this.writeParts(key, size, async (start, end) => Buffer.from(await file.slice(start, end).arrayBuffer()),
+      allowed, signal, expected?.sha256);
+  }
+
+  private async writeParts(key: string, bytes: number, read: (start: number, end: number) => Promise<Buffer<ArrayBuffer>>,
+    allowed: () => boolean, signal: AbortSignal, expectedSha256?: string): Promise<void> {
+    const installation = await this.installation(allowed, signal);
+    const hash = createHash("sha256");
+    const parts: ArchivePart[] = [];
+    for (let start = 0; start < bytes; start += ARCHIVE_PART_BYTES) {
+      requireConsent(allowed, signal);
+      const end = Math.min(bytes, start + ARCHIVE_PART_BYTES);
+      const body = await read(start, end);
+      if (body.length !== end - start) throw new Error("short read while backing up run");
+      hash.update(body);
+      const sha256 = createHash("sha256").update(body).digest("hex");
+      const part = { key: partKey(sha256), bytes: body.length, sha256 };
+      // Persist receipts across core restarts, so retries send only missing pieces.
+      const receipt = `${partReceiptPrefix(key)}${installation.installationId}_${sha256}`;
+      const legacyReceipt = `usage_archive_part_${installation.installationId}_${sha256}`;
+      if (this.installationStore.readRaw(receipt) !== true && this.installationStore.readRaw(legacyReceipt) !== true) {
+        const chunk: ArchiveChunk = { schema: "fabdesk.usage-chunk/v1", encoding: "base64",
+          bytes: body.length, sha256, content: body.toString("base64") };
+        await this.writeBody(part.key, Buffer.from(JSON.stringify(chunk)+"\n"), allowed, signal);
+        requireConsent(allowed, signal);
+        this.installationStore.writeRaw(receipt, true);
+      }
+      parts.push(part);
+    }
+    const sha256 = hash.digest("hex");
+    if (expectedSha256 && sha256 !== expectedSha256) throw new Error("local run-dump checksum changed during upload");
+    const manifest: ArchiveRecord = { schema: "fabdesk.usage-record/v1", encoding: "chunked-base64", bytes, sha256, parts };
+    // This is the commit point; consumers reject missing/corrupt parts, never return a partial run.
+    await this.writeBody(key, Buffer.from(JSON.stringify(manifest)+"\n"), allowed, signal);
+    for (const part of parts) {
+      this.installationStore.deleteRaw(`${partReceiptPrefix(key)}${installation.installationId}_${part.sha256}`);
+      this.installationStore.deleteRaw(`usage_archive_part_${installation.installationId}_${part.sha256}`);
+    }
+  }
+
+  private async writeBody(key: string, body: Buffer<ArrayBuffer>, allowed: () => boolean, signal: AbortSignal): Promise<void> {
+    requireConsent(allowed, signal);
     if (body.byteLength > MAX_UPLOAD_BYTES) throw new ArchiveRecordTooLargeError(key, body.byteLength);
     const installation = await this.installation(allowed, signal);
     for (let attempt = 0; ; attempt++) {
