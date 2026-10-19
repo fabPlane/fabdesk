@@ -70,6 +70,12 @@ export function CommandPalette() {
             <Command.Item value="export solder stencil" onSelect={pick(() => void actions.exportStencil())}>
               Export solder stencil · {thicknessMm.toFixed(2)} mm
             </Command.Item>
+            <Command.Item
+              value="export laser cut stencil mylar lightburn"
+              onSelect={pick(() => void actions.exportLaserStencil())}
+            >
+              Export laser-cut stencil (0.1 mm Mylar)
+            </Command.Item>
             <Command.Item value="pin thread" onSelect={pick(() => void actions.pinThread())}>
               Pin / unpin chat <span className="ml-auto"><Kbd>{mod} + Shift + P</Kbd></span>
             </Command.Item>

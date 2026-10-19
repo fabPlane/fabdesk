@@ -27,7 +27,8 @@ views and the DXF converter). Plugin package: `plugins/fabplane/`.
   and `enclosure/`. DXF is converted to SVG on the server (`dxfToSvg`: LINE, CIRCLE, ARC,
   LWPOLYLINE with bulges, POLYLINE, SPLINE control polygon, SOLID/TRACE/3DFACE, POINT; text, blocks
   and dimensions are listed as not drawn). _Export DXF_ runs `export_dxf`. _Export stencil_
-  runs `export_stencil` (F.Paste apertures → `exports/stencil/F-Paste.stl`).
+  runs `export_stencil` (F.Paste apertures → `exports/stencil/F-Paste.stl`). _Export laser stencil_
+  runs `export_laser_stencil` (LightBurn `.lbrn2` + layered SVG/DXF).
 - **FreeCAD** ([fab-cad.md](fab-cad.md)): for a project with a `model.FCStd`, _Export FreeCAD model_
   runs `cad_export` (STL to `exports/model.stl`) and shows it in the 3D viewer, and _Open in
   FreeCAD_ asks the host to open the fab_cad web UI on the project's live session (`cad_view`,

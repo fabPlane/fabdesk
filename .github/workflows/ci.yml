@@ -29,6 +29,17 @@ jobs:
     uses: ./.github/workflows/select-linux-runner.yml
     secrets: inherit
 
+  linux-runner-policy:
+    name: Linux runner selector policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          submodules: false
+      - name: Exercise Linux runner selector
+        run: python3 scripts/test-runner-selection.py
+
   # Cheap, no-submodule job so a CMake parse error in the macOS-only shims
   # fails PR CI before anyone dispatches the weekly macos-15 build
   # (run 38013328567: fabdesk_collect_targets _child without parentheses).

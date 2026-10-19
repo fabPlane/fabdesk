@@ -8,6 +8,8 @@ on:
       - "packages/protocol/**"
       - "packages/tools/**"
       - "scripts/board-regressions.ts"
+      - "scripts/setup-kicad-libraries.sh"
+      - "scripts/test-setup-kicad-libraries.sh"
       - "scripts/lib/board-regression.ts"
       - "docs/router-cases/**"
       - "vendor/fab_pcb"
@@ -150,6 +152,11 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends "${packages[@]}"
 
+      - name: Ensure KiCad symbols and footprints are available
+        run: |
+          bash scripts/test-setup-kicad-libraries.sh
+          bash scripts/setup-kicad-libraries.sh
+
       - name: Download the pinned headless KiCad
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -165,31 +172,30 @@ jobs:
           mkdir -p "$RUNNER_TEMP/board-workspace/projects" "$RUNNER_TEMP/fabdesk-home"
           touch "$RUNNER_TEMP/fabdesk-home/.fabdesk-dev"
           KICAD_CLI="$KICAD_CLI" \
-            KICAD10_FOOTPRINT_DIR=/usr/share/kicad/footprints \
-            KICAD_SYMBOL_DIR=/usr/share/kicad/symbols \
+            KICAD10_FOOTPRINT_DIR="$KICAD10_FOOTPRINT_DIR" \
+            KICAD_SYMBOL_DIR="$KICAD_SYMBOL_DIR" \
             FAB_ROUTER_MODULE="$GITHUB_WORKSPACE/.ci-private/fab_router/src/api.ts" \
             WORKSPACE_ROOT="$RUNNER_TEMP/board-workspace" PORT=4020 \
             bun run --cwd "$RUNNER_TEMP/fab-pcb/packages/bridge" start >"$RUNNER_TEMP/bridge.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/bridge.pid"
           for n in $(seq 1 60); do curl -fsS http://127.0.0.1:4020/health && break || sleep 1; done
-          curl -fsS http://127.0.0.1:4020/health
+          curl -fsS http://127.0.0.1:4020/health || { cat "$RUNNER_TEMP/bridge.log"; exit 1; }
 
           FABDESK_HOME="$RUNNER_TEMP/fabdesk-home" \
             FABDESK_PROJECTS_DIR="$RUNNER_TEMP/board-workspace/projects" \
             FABDESK_TOKEN="$FABDESK_TOKEN" FABDESK_AUTH_MODE=local \
             FABDESK_FP_PCB_BRIDGE_URL=http://127.0.0.1:4020 \
-            KICAD_CLI="$KICAD_CLI" KICAD10_FOOTPRINT_DIR=/usr/share/kicad/footprints \
+            KICAD_CLI="$KICAD_CLI" KICAD10_FOOTPRINT_DIR="$KICAD10_FOOTPRINT_DIR" \
             bun run --cwd apps/core src/main.ts serve --port 47999 \
               --data-dir "$RUNNER_TEMP/fabdesk-home" --local-auth >"$RUNNER_TEMP/core.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/core.pid"
           for n in $(seq 1 60); do curl -fsS http://127.0.0.1:47999/health && break || sleep 1; done
-          curl -fsS http://127.0.0.1:47999/health
+          curl -fsS http://127.0.0.1:47999/health || { cat "$RUNNER_TEMP/core.log"; exit 1; }
 
       - name: Run board corpus
         env:
           FABDESK_URL: http://127.0.0.1:47999
           FABDESK_TOKEN: board-regression-token-0123456789
-          KICAD10_FOOTPRINT_DIR: /usr/share/kicad/footprints
           DISPATCH_TIER: ${{ inputs.tier }}
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then tier=pr;

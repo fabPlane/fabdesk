@@ -766,6 +766,10 @@ export interface KicadService {
    * 3D-printed solder stencil from F.Paste / B.Paste. Pure TypeScript — no kicad-cli.
    */
   exportStencil(opts: StencilExportOpts): Promise<StencilExportResult>;
+  /**
+   * Laser-cut paste stencil (LightBurn .lbrn2 + layered SVG/DXF). Pure TypeScript.
+   */
+  exportLaserStencil(opts: LaserStencilExportOpts): Promise<LaserStencilExportResult>;
 }
 
 export type StencilSide = "F" | "B";
@@ -813,6 +817,73 @@ export type StencilExportResult = {
   warnings: Array<{ code: string; message: string; ref?: string; number?: string }>;
   triangleCount: number;
   files: { stl: string; json: string; markdown: string; svg: string; jig?: string };
+};
+
+export type LaserStencilPresetId = "mylar-uv" | "kapton" | "stainless-0.1";
+export type LaserJobSettings = {
+  powerPct: number;
+  speedMmPerS: number;
+  frequencyKhz: number;
+  pulseNs: number;
+  passes: number;
+  lensMm: number;
+};
+export type LaserStencilExportOpts = {
+  board: string;
+  outDir: string;
+  side?: StencilSide;
+  preset?: LaserStencilPresetId;
+  frameMm?: number;
+  thicknessMm?: number;
+  apertureOffsetMm?: number;
+  kerfMm?: number;
+  minApertureMm?: number;
+  skipFinePitch?: boolean;
+  finePitchMm?: number;
+  alignmentHoleMm?: number;
+  includeFiducials?: boolean;
+  powerPct?: number;
+  speedMmPerS?: number;
+  frequencyKhz?: number;
+  pulseNs?: number;
+  passes?: number;
+  lensMm?: number;
+};
+export type LaserStencilExportResult = {
+  side: StencilSide;
+  preset: LaserStencilPresetId;
+  presetTitle: string;
+  material: string;
+  padCount: number;
+  apertureCount: number;
+  skippedCount: number;
+  fiducialCount: number;
+  minApertureMm: number | null;
+  apertureOffsetMm: number;
+  kerfMm: number;
+  totalShrinkMm: number;
+  thicknessMm: number;
+  frameMm: number;
+  job: LaserJobSettings;
+  board: {
+    minX: number;
+    minY: number;
+    maxX: number;
+    maxY: number;
+    widthMm: number;
+    heightMm: number;
+  };
+  plate: {
+    minX: number;
+    minY: number;
+    maxX: number;
+    maxY: number;
+    widthMm: number;
+    heightMm: number;
+  };
+  fiducials: Array<{ x: number; y: number; diameterMm: number }>;
+  warnings: Array<{ code: string; message: string; ref?: string; number?: string }>;
+  files: { lbrn2: string; svg: string; dxf: string; json: string; markdown: string; notes: string };
 };
 
 export type SimAnalysis =

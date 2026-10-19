@@ -9,6 +9,12 @@ import { cn } from "../util";
 import { buildFileTree, fileAppearance, formatFileSize, type ExplorerNode } from "./file-explorer";
 import { FileGlyph } from "./FileGlyph";
 import { FILE_EXPORTS as EXPORTS, fileExportChoices, type FileExportKind as ExportKind } from "./file-exports";
+import {
+  DEFAULT_LASER_STENCIL_FORM,
+  LaserStencilPresetPanel,
+  laserStencilToolArgs,
+  type LaserStencilFormState,
+} from "./LaserStencilPresetPanel";
 
 const MAX_TEXT_BYTES = 1_000_000;
 
@@ -29,6 +35,7 @@ function ProjectFiles({ projectId }: { projectId: string }) {
   const [exportOpen, setExportOpen] = useState(false);
   const [requestedExport, setExportKind] = useState<ExportKind>("export_stencil");
   const [lastExport, setLastExport] = useState<ExportKind>("export_stencil");
+  const [laserForm, setLaserForm] = useState<LaserStencilFormState>(DEFAULT_LASER_STENCIL_FORM);
   const { run, state, manifest } = useRunTool();
   const exportChoices = fileExportChoices(manifest);
   const exportKind = exportChoices.includes(requestedExport) ? requestedExport : "export_gerbers";
@@ -42,7 +49,13 @@ function ProjectFiles({ projectId }: { projectId: string }) {
   const closeExport = () => { if (!busy) setExportOpen(false); };
   async function exportFiles() {
     setLastExport(exportKind);
-    const result = await run(exportKind, { projectId, ...(exportKind === "export_stencil" ? { thicknessMm } : {}) });
+    const extras =
+      exportKind === "export_stencil"
+        ? { thicknessMm }
+        : exportKind === "export_laser_stencil"
+          ? laserStencilToolArgs(laserForm)
+          : {};
+    const result = await run(exportKind, { projectId, ...extras });
     if (result.status === "done") { setExportOpen(false); void project.refetch(); }
   }
   function toggleFolder(path: string) {
@@ -124,7 +137,7 @@ function ProjectFiles({ projectId }: { projectId: string }) {
           </>}
         </section>
       </div>
-      <Dialog open={exportOpen} onClose={closeExport} title="Export project files" className="w-[480px]">
+      <Dialog open={exportOpen} onClose={closeExport} title="Export project files" className={exportKind === "export_laser_stencil" ? "w-[560px]" : "w-[480px]"}>
         <fieldset disabled={busy}>
           <legend className="mb-3 text-xs text-muted">What would you like to make?</legend>
           <div className="space-y-2">
@@ -142,6 +155,7 @@ function ProjectFiles({ projectId }: { projectId: string }) {
             </label>
             <p className="mt-2 text-xs leading-5 text-muted">Total stencil thickness. Match this to the total printed layer thickness in your slicer. Thicker stencils hold more paste.</p>
           </div>}
+          {exportKind === "export_laser_stencil" && <LaserStencilPresetPanel form={laserForm} onChange={setLaserForm} />}
         </fieldset>
         {state.error && <p role="alert" className="mt-3 break-words text-xs text-danger">{EXPORTS[lastExport].title}: {state.error}</p>}
         <div className="mt-5 flex flex-wrap items-center justify-end gap-2 border-t border-border pt-4">

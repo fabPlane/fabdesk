@@ -163,7 +163,7 @@ describe("usage archive", () => {
     }
   });
 
-  test("backfill skips a record the destination rejects as too large and carries on", async () => {
+  test("backfill rejects incomplete uploads so the daemon retries instead of silently skipping", async () => {
     const store = Store.open(":memory:");
     const writes: string[] = [];
     try {
@@ -176,12 +176,10 @@ describe("usage archive", () => {
           writes.push(key);
         },
       });
-      const counts = await archive.backfill(store.db);
-      expect(counts).toMatchObject({ conversations: 1, tooLarge: 1 });
-      expect(writes.some((key) => key.includes(small.id))).toBe(true);
+      await expect(archive.backfill(store.db)).rejects.toBeInstanceOf(ArchiveRecordTooLargeError);
       // Only the accepted record is in the ledger, so the rejected one is never treated as backed up.
       const ledger = store.db.query<{ record_id: string }, []>("SELECT record_id FROM usage_archive_uploads").all();
-      expect(ledger.map((row) => row.record_id)).toEqual([`conversation:${small.id}`]);
+      expect(ledger.some((row) => row.record_id === `conversation:${big.id}`)).toBe(false);
     } finally {
       store.close();
     }
