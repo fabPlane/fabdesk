@@ -490,6 +490,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
     return c.json({
       ...t,
       run: deps.store.runs.latestForThread(t.id),
+      runs: deps.store.runs.historyForThread(t.id),
       running: deps.runs?.isRunning(t.id) ?? false,
       pending: deps.runs?.pending(t.id) ?? { approvals: [], inputs: [] },
     });

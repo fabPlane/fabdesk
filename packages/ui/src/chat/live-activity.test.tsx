@@ -73,6 +73,22 @@ test("command icons recognize explicit namespaced shell tools", () => {
 });
 
 const finishedRun = { id: "finished", threadId: "thread", agentId: "codex" as const, agentSessionId: null, status: "completed" as const, startedAt: "2026-10-16T10:00:00Z", endedAt: "2026-10-16T10:04:11Z", exitCode: 0 };
+test("reopened chats show each saved duration instead of only the latest run's timing", () => {
+  const earlier = { ...finishedRun, id: "earlier", endedAt: "2026-10-16T10:07:05Z" };
+  const stopped = { ...finishedRun, id: "stopped", status: "aborted" as const, endedAt: "2026-10-16T10:00:12Z" };
+  const thread = { id: "thread", parentThreadId: null, run: finishedRun, runs: [finishedRun, stopped, earlier] } as Thread & { run: typeof finishedRun; runs: (typeof earlier | typeof stopped)[] };
+  const messages: Message[] = [earlier, stopped, finishedRun].flatMap((run, i) => [
+    { id: `user-${i}`, threadId: "thread", role: "user", runId: null, contentMd: "Continue", parts: [], createdAt: run.startedAt },
+    { id: `reply-${i}`, threadId: "thread", role: "assistant", runId: run.id, contentMd: "Reply", parts: [], createdAt: run.startedAt },
+  ]);
+  const html = render(<MessageList thread={thread} messages={messages} loading={false} />);
+  expect(html).toContain("Worked for 7m 5s");
+  expect(html).toContain("Worked for 12s · Stopped");
+  expect(html).toContain("Worked for 4m 11s");
+  expect(html.split('data-testid="worked-activity"').length - 1).toBe(3);
+  expect(html).not.toContain(">Worked</span>");
+});
+
 test("finished duration uses persisted timestamps, with no invented timing", () => {
   expect(render(<WorkedActivity run={finishedRun} />)).toContain("Worked for 4m 11s");
   expect(render(<WorkedActivity run={{ ...finishedRun, endedAt: null }} />)).toContain(">Worked</span>");

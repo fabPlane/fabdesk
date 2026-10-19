@@ -172,7 +172,7 @@ body {
 [data-panel-group][data-sliding="true"] > [data-side="left"] > .fd-pane-content { right: 0; }
 [data-panel-group][data-sliding="true"] > [data-side="right"] > .fd-pane-content { left: 0; }
 .fd-board-panel { container-type: inline-size; background: var(--fd-sidebar); }
-.fd-board-compact { display: none; }
+.fd-board-compact { display: none; min-width: 0; max-width: 100%; }
 @container (max-width: 760px) {
   .fd-board-tabs { display: none; }
   .fd-board-compact { display: flex; }

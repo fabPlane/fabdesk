@@ -791,6 +791,14 @@ export class RunRepo {
       .get(threadId);
     return r ? this.toRun(r) : null;
   }
+  /** Include runs referenced by copied messages so branched chats retain their timing. */
+  historyForThread(threadId: string): Run[] {
+    return this.db.query<RunRow, [string, string]>(
+      `SELECT * FROM runs WHERE thread_id = ? OR id IN (
+        SELECT run_id FROM messages WHERE thread_id = ? AND run_id IS NOT NULL
+      ) ORDER BY started_at DESC, id DESC`,
+    ).all(threadId, threadId).map((r) => this.toRun(r));
+  }
   /** Most recent agent session id for resume, per thread + agent. */
   lastSession(threadId: string, agentId: string): string | null {
     const r = this.db

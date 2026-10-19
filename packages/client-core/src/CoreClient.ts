@@ -43,8 +43,8 @@ import type {
   Thread,
   ToolManifestEntry,
 } from "@fabdesk/protocol";
-/** `GET /threads/:id`: the thread plus its latest run and whether an agent is working on it now. */
-export type ThreadDetail = Thread & { run?: Run | null; running?: boolean };
+/** `GET /threads/:id`: the thread, saved run history, latest run, and current activity. */
+export type ThreadDetail = Thread & { run?: Run | null; runs?: Run[]; running?: boolean };
 
 /** One row of `GET /runs/live`. */
 export interface LiveRunSummary {

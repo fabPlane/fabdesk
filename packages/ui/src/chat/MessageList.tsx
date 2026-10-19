@@ -1,6 +1,6 @@
 import type { Message, MessagePart, Thread } from "@fabdesk/protocol";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { deduplicateChatNotices, splitAgentError, useCoreClient, type ThreadDetail } from "@fabdesk/client-core";
@@ -330,7 +330,12 @@ export function MessageList({
   const visibleMessages = deduplicateChatNotices(messages.filter((message) => message.status !== "queued"));
   const activeMessages = run ? visibleMessages.filter((m) => m.role === "assistant" && m.runId === run.runId) : [];
   const firstActiveId = activeMessages[0]?.id;
-  const finished = thread?.run && thread.run.status !== "running" && thread.run.id !== run?.runId ? thread.run : null;
+  const savedRuns = useMemo(() => {
+    const runs = new Map((thread?.runs ?? []).map(saved => [saved.id, saved]));
+    // Older daemons only supply the latest run. Keep that response compatible.
+    if (thread?.run) runs.set(thread.run.id, thread.run);
+    return runs;
+  }, [thread?.runs, thread?.run]);
 
   const waiting = activeMessages.some((m) => m.parts.some((p) => (p.type === "approval" && p.decision === "pending") || (p.type === "question" && p.answer === null)));
   return (
@@ -351,7 +356,8 @@ export function MessageList({
             if (candidate.role !== "assistant" || candidate.runId !== m.runId) break;
             batch.push(candidate);
           }
-          const savedRun = finished?.id === m.runId ? finished : null;
+          const candidateRun = m.runId ? savedRuns.get(m.runId) : undefined;
+          const savedRun = completed && candidateRun && candidateRun.status !== "running" ? candidateRun : null;
           const split = completed ? splitCompletedActivity(batch, savedRun?.status === "failed" || savedRun?.status === "aborted") : null;
           const day = new Date(m.createdAt).toDateString();
           const previousDay = visible[index - 1] ? new Date(visible[index - 1]!.createdAt).toDateString() : null;

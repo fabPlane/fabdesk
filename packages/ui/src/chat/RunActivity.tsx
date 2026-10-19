@@ -23,7 +23,7 @@ export function RunActivity({ run, waiting = false }: { run: LiveRun; waiting?: 
     return () => clearInterval(timer);
   }, [run.runId, run.startedAt]);
   const seconds = Math.max(0, Math.floor((now - run.startedAt) / 1000));
-  const elapsed = seconds < 60 ? seconds + "s" : Math.floor(seconds / 60) + "m " + String(seconds % 60).padStart(2, "0") + "s";
+  const elapsed = seconds < 60 ? seconds + "s" : Math.floor(seconds / 60) + "m " + (seconds % 60) + "s";
   const usage = run.usage ? (run.usage.inputTokens ?? 0) + " input tokens / " + (run.usage.outputTokens ?? 0) + " output tokens" : undefined;
   return <div className="mb-4 flex flex-wrap items-center gap-2 border-b border-border pb-3 text-xs text-muted" data-testid="run-activity" title={usage}>
     <span>{waiting ? "Waiting" : "Working"} for {elapsed}</span>
@@ -39,7 +39,7 @@ export function WorkedActivity({ run, children, hasError = false }: { run?: Run 
   const elapsedMs = run?.endedAt ? Date.parse(run.endedAt) - Date.parse(run.startedAt) : NaN;
   const seconds = Math.floor(elapsedMs / 1000);
   const duration = Number.isFinite(seconds) && seconds >= 0
-    ? seconds < 60 ? seconds + "s" : Math.floor(seconds / 60) + "m " + String(seconds % 60).padStart(2, "0") + "s"
+    ? seconds < 60 ? seconds + "s" : Math.floor(seconds / 60) + "m " + (seconds % 60) + "s"
     : null;
   const label = <><span>{duration ? "Worked for " + duration : "Worked"}{run?.status === "failed" ? " · Failed" : run?.status === "aborted" ? " · Stopped" : ""}</span>
     {hasError && <span role="img" aria-label="Activity contains an error" title="Expand to inspect the error" className="inline-flex text-danger"><Icon name="warning" width={15} height={15} /></span>}</>;

@@ -87,6 +87,37 @@ const api = (path: string, init: RequestInit = {}) =>
   });
 
 describe("http daemon", () => {
+  test("thread snapshots retain timing for older replies and copied branch history", async () => {
+    const store = daemon.store;
+    const thread = store.threads.create({ agentId: "claude" });
+    const older = store.runs.create({ threadId: thread.id, agentId: "claude" });
+    store.runs.finish(older.id, { status: "completed", exitCode: 0 });
+    store.db.run("UPDATE runs SET started_at = ?, ended_at = ? WHERE id = ?", ["2026-10-19T10:00:00Z", "2026-10-19T10:07:05Z", older.id]);
+    const reply = store.threads.addMessage({ threadId: thread.id, role: "assistant", contentMd: "Earlier reply", runId: older.id });
+    // Multiple messages for one run must not duplicate its history entry.
+    store.threads.addMessage({ threadId: thread.id, role: "assistant", contentMd: "More details", runId: older.id });
+    const latest = store.runs.create({ threadId: thread.id, agentId: "claude" });
+    store.runs.finish(latest.id, { status: "aborted" });
+    store.db.run("UPDATE runs SET started_at = ?, ended_at = ? WHERE id = ?", ["2026-10-19T11:00:00Z", "2026-10-19T11:00:12Z", latest.id]);
+    store.threads.addMessage({ threadId: thread.id, role: "assistant", contentMd: "Stopped reply", runId: latest.id });
+    const unrelated = store.threads.create({ agentId: "claude" });
+    store.runs.create({ threadId: unrelated.id, agentId: "claude" });
+
+    for (let read = 0; read < 2; read++) {
+      const snapshot = await (await api(`/threads/${thread.id}`)).json();
+      expect(snapshot.run.id).toBe(latest.id);
+      expect(snapshot.runs).toHaveLength(2);
+      expect(snapshot.runs.find((run: { id: string }) => run.id === older.id)).toMatchObject({
+        startedAt: "2026-10-19T10:00:00Z", endedAt: "2026-10-19T10:07:05Z", status: "completed",
+      });
+    }
+    const branch = store.threads.create({ agentId: "claude", parentThreadId: thread.id, branchFromMessageId: reply.id });
+    const snapshot = await (await api(`/threads/${branch.id}`)).json();
+    expect(snapshot.run).toBeNull();
+    expect(snapshot.runs.map((run: { id: string }) => run.id)).toEqual([older.id]);
+    expect((await api("/threads/missing-history")).status).toBe(404);
+  });
+
   test("stale project and parent chat return actionable codes instead of SQLite errors", async () => {
     for (const [input, code] of [
       [{ agentId: "claude", projectId: "prj_missing" }, "project_not_found"],
