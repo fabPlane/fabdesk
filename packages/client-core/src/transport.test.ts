@@ -128,7 +128,8 @@ describe("ProxyTransport", () => {
     expect(err).toBeInstanceOf(CoreHttpError);
     expect((err as CoreOfflineError).status).toBe(503);
     expect((err as CoreOfflineError).path).toBe("/projects");
-    expect((err as Error).message).toMatch(/not connected/);
+    expect((err as Error).message).toContain("Your computer is disconnected");
+    expect((err as Error).message).toContain("computer you paired with");
     expect(t.coreOffline).toBe(true);
     // The same verdict twice is one notification; it flips back on the next daemon answer.
     await t

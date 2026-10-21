@@ -442,6 +442,11 @@ export function createApp(deps: AppDeps): Hono<Env> {
     deps.runs?.supportsSupervised(agentId) ?? false;
   app.post("/threads", async (c) => {
     const body = CreateThread.parse(await c.req.json());
+    // Check stale persisted selections before SQLite reports an opaque constraint failure.
+    if (body.projectId && !deps.store.projects.get(body.projectId))
+      return c.json({ code: "project_not_found", error: "The selected project is no longer available. Choose a project again." }, 404);
+    if (body.parentThreadId && !deps.store.threads.get(body.parentThreadId))
+      return c.json({ code: "parent_thread_not_found", error: "The original chat is no longer available. Start a new chat." }, 404);
     const runtimeMode = body.runtimeMode ?? deps.store.settings.get().defaultRuntimeMode;
     // A default of `supervised` must not make an agent that cannot do it unusable: fall back silently
     // unless the request asked for it by name.
@@ -451,7 +456,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
           ? null
           : "full"
         : runtimeMode;
-    if (mode === null) return c.json({ error: "agent cannot run supervised" }, 400);
+    if (mode === null) return c.json({ error: "agent cannot run supervised", code: "approval_not_supported" }, 400);
     const t = deps.store.threads.create({
       agentId: body.agentId,
       runtimeMode: mode,
@@ -485,6 +490,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
     return c.json({
       ...t,
       run: deps.store.runs.latestForThread(t.id),
+      runs: deps.store.runs.historyForThread(t.id),
       running: deps.runs?.isRunning(t.id) ?? false,
       pending: deps.runs?.pending(t.id) ?? { approvals: [], inputs: [] },
     });
@@ -495,7 +501,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
     if (!current) return c.json({ error: "not found" }, 404);
     const mode = body.runtimeMode ?? current.runtimeMode ?? "full";
     if (mode === "supervised" && !canSupervise(body.agentId ?? current.agentId))
-      return c.json({ error: "agent cannot run supervised" }, 400);
+      return c.json({ error: "agent cannot run supervised", code: "approval_not_supported" }, 400);
     const t = deps.store.threads.patch(current.id, body);
     if (!t) return c.json({ error: "not found" }, 404);
     deps.bus.emit({

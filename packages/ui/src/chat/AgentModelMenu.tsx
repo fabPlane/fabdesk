@@ -2,6 +2,7 @@ import type { AgentId, AgentInfo } from "@fabdesk/protocol";
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "../util";
+import { AgentLogo } from "../components/AgentLogo";
 import { Icon } from "../components/Icon";
 import { modelDisplayName } from "./model-display-name";
 
@@ -99,19 +100,21 @@ export function AgentModelMenu({ open, anchorRef, onClose, agents, agentId, mode
         const choices = [...new Set([...configuredModels(agent.id), ...agent.models, ...(selected && model ? [model] : [])])].filter(Boolean);
         return <div key={agent.id}>
           <button type="button" role="menuitem" aria-expanded={isOpen} aria-controls={`agent-models-${agent.id}`} data-agent={agent.id}
-            className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] font-medium text-fg hover:bg-panel-2 focus-visible:bg-panel-2"
+            className="grid min-h-10 w-full grid-cols-[18px_minmax(0,1fr)_auto_15px] items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] font-medium text-fg hover:bg-panel-2 focus-visible:bg-panel-2"
             onClick={() => setExpanded(isOpen ? null : agent.id)}
             onKeyDown={(event) => {
               if (event.key === "ArrowRight" || event.key === "ArrowLeft") { event.preventDefault(); setExpanded(event.key === "ArrowRight" ? agent.id : null); }
             }}>
-            <span>{agent.displayName}</span>
-            {selected && <span className="h-1.5 w-1.5 rounded-full bg-accent" aria-label="Selected agent" />}
-            {!agent.installed && <span className="ml-auto text-[11px] font-normal text-muted">Not installed</span>}
-            <Icon name={isOpen ? "chevronDown" : "chevronRight"} className="ml-auto shrink-0 text-muted" width={15} height={15} />
+            <AgentLogo agentId={agent.id} />
+            <span className="flex min-w-0 items-center gap-2"><span className="truncate">{agent.displayName}</span>
+              {selected && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" aria-label="Selected agent" />}
+            </span>
+            <span className="whitespace-nowrap text-[11px] font-normal text-muted">{!agent.installed && "Not installed"}</span>
+            <Icon name={isOpen ? "chevronDown" : "chevronRight"} className="shrink-0 text-muted" width={15} height={15} />
           </button>
           {isOpen && <div id={`agent-models-${agent.id}`} role="group" aria-label={`${agent.displayName} models`} className="mb-1 ml-3 border-l border-border pl-2">
             <Item selected={selected && (!model || model === fallback)} onClick={() => choose(agent.id, fallback)} title={defaultLabel || "Use the agent's default model"}>
-              <span className="min-w-0"><span className="block truncate">{defaultLabel ? modelDisplayName(defaultLabel, agent.modelAliases) : "Default model"}</span><span className="block text-[11px] font-normal text-muted">{defaultLabel ? "Default" : "Version provided by agent at runtime"}</span></span>
+              <span className="min-w-0"><span className="block truncate">{defaultLabel ? modelDisplayName(defaultLabel, agent.modelAliases) : "Agent setting"}</span><span className="block text-[11px] font-normal text-muted">{defaultLabel ? "Default" : "Model not reported; choose one below"}</span></span>
             </Item>
             {choices.filter((id) => id !== fallback).map((id) => <Item key={id} selected={selected && model === id} onClick={() => choose(agent.id, id)} title={agent.modelAliases?.[id] ?? id}>
               <span className="min-w-0"><span className="block truncate">{modelDisplayName(id, agent.modelAliases)}</span>

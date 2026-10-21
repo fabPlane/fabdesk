@@ -68,6 +68,14 @@ export type McpSessionOptions = {
   /** Hosts accepted in the `Host` header (DNS rebinding protection). Set after bind. */
   allowedHosts?: string[];
   idleMs?: number;
+  userInput?: {
+    enabledFor(token: string | null): boolean;
+    handle(
+      token: string | null,
+      req: { question: string; options?: string[] },
+      signal: AbortSignal,
+    ): Promise<{ status: "answered" | "unanswered"; answer: string | null }>;
+  };
   /**
    * Serves the `permission_prompt` tool Claude Code's `--permission-prompt-tool` calls in
    * supervised mode. Blocks until the daemon has a decision; absent, the tool is not registered.
@@ -144,6 +152,8 @@ export class McpSessionManager {
         id: null,
       });
     // New session: the transport validates that the body is an initialize request.
+    const userInput = this.opts.userInput;
+    const canAsk = userInput?.enabledFor(opts.token ?? null) === true;
     const server = new McpServer(
       {
         name: "fabdesk",
@@ -151,7 +161,7 @@ export class McpSessionManager {
         version: this.opts.version,
         icons: FABDESK_SERVER_ICONS,
       },
-      { instructions: INSTRUCTIONS },
+      { instructions: INSTRUCTIONS + (canAsk ? USER_INPUT_INSTRUCTIONS : "") },
     );
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: () => crypto.randomUUID(),
@@ -201,6 +211,88 @@ export class McpSessionManager {
       ...(profile === "substrate" ? { capabilities: false, toolsOnly: true } : {}),
     });
     const prompt = this.opts.permissionPrompt;
+    if (userInput && canAsk) {
+      const sessionToken = opts.token ?? null;
+      server.registerTool(
+        "request_user_input",
+        {
+          title: "Ask a question",
+          description:
+            "Ask the user a question in the chat with clickable choices and a custom-answer field. Waits for their submitted answer. Use this instead of asking questions as plain text or guessing the user's choice. Ask one question at a time. If unanswered, stop dependent work and ask the user to resume; never treat it as consent or select a default.",
+          inputSchema: {
+            question: z.string().trim().min(1).max(2000),
+            options: z.array(z.string().trim().min(1).max(500)).max(8).optional(),
+          } as unknown as ZodRawShapeCompat,
+          annotations: {
+            readOnlyHint: false,
+            destructiveHint: false,
+            openWorldHint: false,
+            idempotentHint: false,
+          },
+        },
+        async (args: Record<string, unknown>, extra) => {
+          if (
+            !sessionToken ||
+            extra.authInfo?.token !== sessionToken ||
+            !userInput.enabledFor(sessionToken)
+          )
+            return {
+              isError: true,
+              content: [
+                {
+                  type: "text" as const,
+                  text: "This question requires the original active chat run. Do not assume an answer.",
+                },
+              ],
+            };
+          const progressToken = extra._meta?.progressToken;
+          let progress = 0;
+          const heartbeat =
+            progressToken === undefined
+              ? null
+              : setInterval(() => {
+                  void extra
+                    .sendNotification({
+                      method: "notifications/progress",
+                      params: {
+                        progressToken,
+                        progress: ++progress,
+                        message: "Waiting for the user's answer",
+                      },
+                    })
+                    .catch(() => {});
+                }, 15_000);
+          try {
+            const result = await userInput.handle(
+              sessionToken,
+              {
+                question: String(args["question"]),
+                ...(Array.isArray(args["options"]) ? { options: args["options"] as string[] } : {}),
+              },
+              extra.signal,
+            );
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: JSON.stringify({
+                    ...result,
+                    ...(result.status === "unanswered"
+                      ? {
+                          instruction:
+                            "No answer was received. Stop work that depends on this choice. Do not guess or treat this as consent.",
+                        }
+                      : {}),
+                  }),
+                },
+              ],
+            };
+          } finally {
+            if (heartbeat !== null) clearInterval(heartbeat);
+          }
+        },
+      );
+    }
     if (prompt && prompt.enabledFor(opts.token ?? null))
       this.registerPermissionPrompt(server, (token, req) => prompt.handle(token, req));
     await server.connect(transport);
@@ -276,3 +368,6 @@ function json(status: number, body: unknown): Response {
 
 export const INSTRUCTIONS =
   "Project-scoped tools use the selected project unless `project` is supplied.";
+
+export const USER_INPUT_INSTRUCTIONS =
+  " When you need the user's preference or clarification, use request_user_input to display an interactive question, rather than asking in prose. Supply concise options when useful; the UI always allows a custom answer. Wait for the submitted answer before doing work that depends on it. An unanswered or cancelled question is not permission to choose for the user.";
