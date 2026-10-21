@@ -252,6 +252,7 @@ export function handleCoreEvent(event: CoreEvent, ctx: HandlerCtx): void {
       break;
     case "agent.done": {
       runs.endRun(event.runId);
+      void qc.invalidateQueries({ queryKey: ["thread", event.threadId] });
       void qc.invalidateQueries({ queryKey: messagesKey(event.threadId) });
       void qc.invalidateQueries({ queryKey: ["threads"] });
       break;

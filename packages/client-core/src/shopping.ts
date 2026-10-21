@@ -2,9 +2,54 @@
 import {
   BUILTIN_DESTINATIONS,
   type CartItem,
+  type CartItemPatch,
+  type CartItemStatus,
   type Destination,
 } from "@fabdesk/protocol";
 import { CoreHttpError } from "./CoreClient";
+
+type EditableItem = Pick<CartItem, "quantity" | "destinationId" | "status" | "notes">;
+export type ShoppingItemDraft = {
+  base: EditableItem;
+  quantity: string;
+  destinationId: string;
+  status: CartItemStatus;
+  notes: string;
+};
+
+export function createShoppingDraft(item: EditableItem): ShoppingItemDraft {
+  return { base: { ...item }, quantity: String(item.quantity), destinationId: item.destinationId, status: item.status, notes: item.notes ?? "" };
+}
+
+/** Patch only fields the user changed, leaving team/agent updates alone. */
+export function shoppingDraftPatch(draft: ShoppingItemDraft): CartItemPatch {
+  const patch: CartItemPatch = {};
+  if (Number(draft.quantity) !== draft.base.quantity) patch.quantity = Number(draft.quantity);
+  if (draft.destinationId !== draft.base.destinationId) patch.destinationId = draft.destinationId;
+  if (draft.status !== draft.base.status) patch.status = draft.status;
+  if (draft.notes !== (draft.base.notes ?? "")) patch.notes = draft.notes;
+  return patch;
+}
+
+export function rebaseShoppingDraft(draft: ShoppingItemDraft, current: EditableItem): ShoppingItemDraft {
+  const patch = shoppingDraftPatch(draft);
+  return {
+    base: { ...current },
+    quantity: "quantity" in patch ? draft.quantity : String(current.quantity),
+    destinationId: patch.destinationId ?? current.destinationId,
+    status: patch.status ?? current.status,
+    notes: patch.notes ?? current.notes ?? "",
+  };
+}
+
+/** Detect overlapping edits seen by polling; the API does not support atomic revisions. */
+export function shoppingDraftConflicts(draft: ShoppingItemDraft, current: EditableItem): string[] {
+  const patch = shoppingDraftPatch(draft);
+  const labels = { quantity: "quantity", destinationId: "supplier", status: "order status", notes: "notes" } as const;
+  return (Object.keys(labels) as (keyof EditableItem)[]).filter(key =>
+    key in patch && (current[key] ?? "") !== (draft.base[key] ?? "") && (current[key] ?? "") !== patch[key],
+  ).map(key => labels[key]);
+}
 
 export type DestinationGroup = {
   destinationId: string;
@@ -63,6 +108,18 @@ export function itemLabel(item: Pick<CartItem, "mpn" | "value" | "description" |
   return item.mpn || item.value || item.description || item.kind;
 }
 
+/** Search both visible labels and the details tucked into the item editor. */
+export function filterShoppingItems(items: readonly CartItem[], query: string, status: CartItemStatus | "all", destinations: readonly Destination[] = []): CartItem[] {
+  const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  const names = new Map([...BUILTIN_DESTINATIONS, ...destinations].map(d => [d.id, d.name]));
+  return items.filter(item => {
+    if (status !== "all" && item.status !== status) return false;
+    const text = [itemLabel(item), item.value, item.description, item.mpn, item.manufacturer, item.footprint, item.sku, item.notes, ...(item.refs ?? []), names.get(item.destinationId)]
+      .filter(Boolean).join(" ").toLocaleLowerCase();
+    return terms.every(term => text.includes(term));
+  });
+}
+
 /** Destinations for a picker: fab houses, distributors, manual, then the org's custom ones. */
 export function destinationOptions(destinations: readonly Destination[]): Destination[] {
   const list = destinations.length ? destinations : BUILTIN_DESTINATIONS;
@@ -76,18 +133,10 @@ export function destinationOptions(destinations: readonly Destination[]): Destin
 
 /** The core answers 401 `cloud_signed_out` when fabplane has no (valid) sign-in. */
 export function isCloudSignedOut(e: unknown): boolean {
-  return e instanceof CoreHttpError && e.status === 401 && e.message.includes("cloud_signed_out");
+  return e instanceof CoreHttpError && e.status === 401 && e.code === "cloud_signed_out";
 }
 
 /** A readable message from a core error body (`{ error, message }`) or any Error. */
 export function cloudErrorMessage(e: unknown): string {
-  if (e instanceof CoreHttpError) {
-    try {
-      const body = JSON.parse(e.message) as { error?: string; message?: string };
-      return body.message ?? body.error ?? e.message;
-    } catch {
-      return e.message;
-    }
-  }
   return e instanceof Error ? e.message : String(e);
 }

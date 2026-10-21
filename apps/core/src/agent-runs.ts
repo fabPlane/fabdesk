@@ -120,6 +120,7 @@ export type ActiveRun = {
   projectId: string | null;
   runtimeMode: RuntimeMode;
   abort(): void;
+  stopping?: boolean;
   /** Settles once the run has ended and released its project lease (before any queued message goes out). */
   ended: Promise<void>;
   /** `ended`, then the queued-message drain. */
@@ -209,6 +210,25 @@ export class AgentRunManager {
     const info = this.deps.tokens.lookup(token);
     const run = info?.kind === "run" && info.runId ? this.active.get(info.runId) : undefined;
     return run?.runtimeMode === "supervised";
+  }
+
+  isActiveRunToken(token: string | null): boolean {
+    const info = this.deps.tokens.lookup(token);
+    const run = info?.kind === "run" && info.runId ? this.active.get(info.runId) : undefined;
+    return !!run && !run.stopping;
+  }
+
+  /** A question belongs to the authenticated run, never to an agent-supplied thread ID. */
+  async requestUserInput(
+    token: string | null,
+    req: { question: string; options?: string[] },
+    signal?: AbortSignal,
+  ): Promise<{ status: "answered" | "unanswered"; answer: string | null }> {
+    const info = this.deps.tokens.lookup(token);
+    const run = info?.kind === "run" && info.runId ? this.active.get(info.runId) : undefined;
+    if (!run || run.stopping) throw new Error("This question requires an active chat run.");
+    const answer = await this.requestInput(run, req, signal);
+    return answer ? { status: "answered", answer } : { status: "unanswered", answer: null };
   }
 
   /**
@@ -383,7 +403,12 @@ export class AgentRunManager {
   }
 
   /** Like `requestApproval`; an unanswered question resolves with an empty answer after the timeout. */
-  requestInput(run: ActiveRun, req: { question: string; options?: string[] }): Promise<string> {
+  requestInput(
+    run: ActiveRun,
+    req: { question: string; options?: string[] },
+    signal?: AbortSignal,
+  ): Promise<string> {
+    if (signal?.aborted || run.stopping) return Promise.resolve("");
     const requestId = newId("ask");
     const event: InputRequestedEvent = {
       ts: Date.now(),
@@ -407,6 +432,7 @@ export class AgentRunManager {
         const entry = run.pending.get(requestId);
         if (!entry) return;
         clearTimeout(entry.timer);
+        signal?.removeEventListener("abort", cancel);
         run.pending.delete(requestId);
         run.patchPart(requestId, (p) => (p.type === "question" ? { ...p, answer } : p));
         this.deps.emit({
@@ -420,12 +446,14 @@ export class AgentRunManager {
         this.deps.emit({ ts: Date.now(), topic: "thread.updated", threadId: run.threadId });
         resolve(answer);
       };
+      const cancel = () => settle("");
       const timer = setTimeout(
         () => settle(""),
         this.deps.approvalTimeoutMs ?? APPROVAL_TIMEOUT_MS,
       );
       if (typeof timer === "object" && "unref" in timer) timer.unref();
       run.pending.set(requestId, { kind: "input", event, resolve: settle, timer });
+      signal?.addEventListener("abort", cancel, { once: true });
       this.deps.emit(event);
       this.deps.emit({ ts: Date.now(), topic: "thread.updated", threadId: run.threadId });
     });
@@ -640,7 +668,7 @@ export class AgentRunManager {
           input: req.input,
           summary: req.summary ?? classifyToolCall(req.tool, req.input, () => undefined).summary,
         }),
-      requestInput: (req) => this.requestInput(active, req),
+      requestInput: (req) => this.requestInput(active, req, req.signal),
     };
 
     const session: AgentSession = {
@@ -658,6 +686,7 @@ export class AgentRunManager {
       permission: agentSettings?.permissionMode ?? "acceptEdits",
       ...(workbenchEnv && Object.keys(workbenchEnv).length ? { env: workbenchEnv } : {}),
       runtimeMode,
+      requestInput: (req) => this.requestInput(active, req, req.signal),
       ...(runtimeMode === "supervised" ? { supervisor } : {}),
       ...(agentSettings?.extraAllowedTools?.length
         ? { extraAllowedTools: agentSettings.extraAllowedTools }
@@ -667,7 +696,16 @@ export class AgentRunManager {
 
     // A failure has to be visible in the chat, not only on the event bus: after a reload the message is all
     // the user has, and an empty assistant turn looks like the agent simply never answered.
+    const reportedErrors = new Set<string>();
     const recordError = (message: string) => {
+      const normalized = message.trim();
+      if (reportedErrors.has(normalized)) return;
+      reportedErrors.add(normalized);
+      // Some CLIs emit the same failure first as text, then as a result error.
+      if (parts.some((p) => p.type === "text" && p.text.trim() === normalized)) {
+        persist(true);
+        return;
+      }
       appendText("text", `${contentMd.length || parts.length ? "\n\n" : ""}⚠ ${message}`);
       persist(true);
     };
@@ -801,7 +839,7 @@ export class AgentRunManager {
       if (aborted) status = "aborted";
       // A non-zero exit with no explanation so far (the CLI printed plain text instead of JSONL, e.g.
       // "Not logged in") still has to say something in the chat.
-      if (status === "failed" && !parts.some((p) => p.type === "text" && p.text.includes("⚠"))) {
+      if (status === "failed" && reportedErrors.size === 0) {
         recordError(
           `${input.agentId} exited with code ${exitCode ?? "unknown"} without producing a reply. Check that it is installed and signed in (run it once in a terminal), then send the message again.`,
         );
@@ -856,6 +894,10 @@ export class AgentRunManager {
 
     active.abort = () => {
       aborted = true;
+      active.stopping = true;
+      for (const pending of active.pending.values()) {
+        if (pending.kind === "input") pending.resolve("");
+      }
       try {
         handle.abort();
       } catch (e) {

@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentSession } from "../types";
 import { claudeArgs, claudeMcpConfig, claudeEnv } from "./claude";
-import { codexArgs, codexForeignServers, codexAdapter, codexEnv } from "./codex";
+import { codexArgs, codexForeignServers, codexAdapter, codexEnv, CODEX_QUESTION_INSTRUCTIONS } from "./codex";
 import { cursorArgs, cursorMcpPath, writeCursorMcp } from "./cursor";
 import { grokArgs, grokConfigPath, writeGrokConfig, grokEnv } from "./grok";
 import { agentEnv, promptWithAttachments, replaceMarkedBlock } from "./shared";
@@ -118,7 +118,7 @@ describe("claude adapter", () => {
       url: "http://127.0.0.1:4321/mcp",
       headers: { Authorization: "Bearer ${FABDESK_TOKEN}" },
       // Longer than Claude Code's ~5 min idle abort: a route may run its whole timeoutMs.
-      timeout: 1_200_000,
+      timeout: 1_830_000,
     });
   });
 
@@ -158,6 +158,24 @@ describe("claude adapter", () => {
 });
 
 describe("codex adapter", () => {
+  test("desktop CLIs with daemon support use a separate server on new and resumed turns", () => {
+    for (const resume of [undefined, "existing-thread"]) {
+      const args = codexArgs(session(resume ? { resume } : {}), "codex", [], true);
+      expect(args.slice(0, 3)).toEqual(["codex", "--no-daemon", "exec"]);
+      expect(args).toContain('mcp_servers.fabdesk.url="http://127.0.0.1:4321/mcp?profile=native"');
+    }
+    expect(codexArgs(session(), "codex")).not.toContain("--no-daemon");
+  });
+  test("new and resumed chats route questions to fabPlane instead of the CLI's text-only question fallback", () => {
+    for (const resume of [undefined, "existing-thread"]) {
+      const args = codexArgs(session(resume ? { resume } : {}), "codex");
+      const override = args.find((arg) => arg.startsWith("developer_instructions="));
+      expect(override).toBeDefined();
+      expect((Bun.TOML.parse(override!) as { developer_instructions: string }).developer_instructions).toBe(CODEX_QUESTION_INSTRUCTIONS);
+      expect(override).toContain("mcp__fabdesk__request_user_input");
+      expect(override).toContain("request_user_input_async");
+    }
+  });
   test("new thread: exec with sandbox, cwd, mcp overrides, image flag", () => {
     const args = codexArgs(session({ model: "gpt-5.5" }), "codex");
     expect(args.slice(0, 2)).toEqual(["codex", "exec"]);
@@ -168,6 +186,7 @@ describe("codex adapter", () => {
     expect(args).toContain('sandbox_mode="workspace-write"');
     expect(args).toContain('mcp_servers.fabdesk.url="http://127.0.0.1:4321/mcp?profile=native"');
     expect(args).toContain('mcp_servers.fabdesk.bearer_token_env_var="FABDESK_TOKEN"');
+    expect(args).toContain("mcp_servers.fabdesk.tool_timeout_sec=1830");
     expect(args[args.indexOf("-i") + 1]).toBe("/p/sketches/a.png");
     expect(args[args.indexOf("-m") + 1]).toBe("gpt-5.5");
     expect(args.at(-2)).toBe("--");

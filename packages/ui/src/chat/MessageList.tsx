@@ -1,28 +1,27 @@
 import type { Message, MessagePart, Thread } from "@fabdesk/protocol";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
-import { useCoreClient } from "@fabdesk/client-core";
+import { deduplicateChatNotices, splitAgentError, useCoreClient, type ThreadDetail } from "@fabdesk/client-core";
+import { ErrorAgentContext, ErrorNotice } from "../components/ErrorNotice";
 import { useRunsStore } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { cn } from "../util";
 import { Markdown } from "./Markdown";
 import { ProjectImage } from "./ProjectImage";
+import { splitCompletedActivity } from "./completed-activity";
+import { RunActivity, WorkedActivity } from "./RunActivity";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { PendingApprovalCard, PendingQuestionCard } from "./PendingRequestCard";
-import { extractImages, ToolCallCard } from "./ToolCallCard";
+import { extractImages, isCommandTool, isImageTool, ToolCallCard } from "./ToolCallCard";
 
 type ToolResult = Extract<MessagePart, { type: "tool_result" }>;
 type ToolUse = Extract<MessagePart, { type: "tool_use" }>;
 
-function shortToolName(name: string): string {
-  return name.replace(/^mcp__[^_]+__/, "");
-}
-
 /**
  * A run of consecutive tool calls, folded into one row under the paragraph that preceded it.
- * Collapsed by default: count, errors, and the tool still running; the arrow expands the cards.
+ * Collapsed by default: activity and an error indicator; the arrow expands compact tool rows.
  * Image results (board renders) stay visible even when collapsed.
  */
 export function ToolGroup({
@@ -33,50 +32,26 @@ export function ToolGroup({
   streaming: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const detailsId = useId();
   const projectId = useUiStore((s) => s.activeProjectId);
-  const errors = calls.filter((c) => c.result?.isError === true).length;
-  const pending = calls.filter((c) => !c.result);
-  const running = streaming && pending.length > 0 ? pending[pending.length - 1] : undefined;
-  const images = calls.flatMap((c) => (c.result ? extractImages(c.result.output) : []));
-  const label = `${calls.length} tool call${calls.length === 1 ? "" : "s"}`;
+  const history = calls.filter((c) => !isImageTool(c.use.name) && (!!c.result || !streaming));
+  const errors = history.filter((c) => c.result?.isError === true).length;
+  const pending = history.filter((c) => !c.result);
+  const visibleCalls = open ? calls : calls.filter((c) => (streaming && !c.result) || isImageTool(c.use.name));
+  const images = calls.filter((c) => !visibleCalls.includes(c)).flatMap((c) => (c.result ? extractImages(c.result.output) : []));
+  const commandsOnly = history.every((call) => isCommandTool(call.use.name));
+  const label = pending.length > 0 ? (commandsOnly ? "Commands" : "Tool activity") : commandsOnly ? "Ran commands" : "Used tools";
   return (
-    <div className="fd-tool-group my-2 overflow-hidden rounded-lg border border-border/70 bg-panel/70 text-xs" data-testid="tool-group">
-      <button
-        type="button"
-        className={cn(
-          "flex min-h-9 w-full items-center gap-2 px-3 py-2 text-left text-muted hover:bg-panel-2/60",
-          open && "text-fg",
-        )}
-        onClick={() => setOpen((o) => !o)}
-        title={open ? "Hide tool calls" : "Show tool calls"}
-        aria-expanded={open}
-      >
-        <span className={cn("inline-block -rotate-90 transition-transform", open && "rotate-0")}>
-          <Icon name="chevronDown" width={14} height={14} />
-        </span>
+    <div className="fd-tool-group my-2 min-w-0 text-[13px]" data-testid="tool-group">
+      {history.length > 0 && <button type="button" className="flex min-h-8 max-w-full items-center gap-2 rounded-md py-1.5 text-left text-muted hover:text-fg"
+        onClick={() => setOpen((o) => !o)} title={open ? "Hide tool calls" : "Show tool calls"} aria-expanded={open} aria-controls={visibleCalls.length > 0 ? detailsId : undefined}>
+        <Icon name={commandsOnly ? "terminal" : "tool"} width={16} height={16} className="shrink-0" />
         <span>{label}</span>
-        {errors > 0 && (
-          <span className="text-danger">
-            {errors} error{errors === 1 ? "" : "s"}
-          </span>
-        )}
-        {running && (
-          <span className="flex items-center gap-1.5 font-mono">
-            <Spinner className="h-3 w-3" />
-            {shortToolName(running.use.name)}
-          </span>
-        )}
-        {!running && !open && calls.length > 0 && (
-          <span className="truncate font-mono opacity-70">
-            {calls
-              .map((c) => shortToolName(c.use.name))
-              .slice(-3)
-              .join(" · ")}
-          </span>
-        )}
-      </button>
+        {errors > 0 && <span role="img" aria-label="Tool error" title="A tool failed. Expand to see details." className="inline-flex text-danger"><Icon name="warning" width={15} height={15} /></span>}
+        <Icon name={open ? "chevronDown" : "chevronRight"} width={12} height={12} className="shrink-0" />
+      </button>}
       {!open && images.length > 0 && (
-        <div className="flex flex-wrap gap-2 border-t border-border/60 px-3 py-2">
+        <div className="flex flex-wrap gap-2 py-2">
           {images.map((img, i) =>
             img.kind === "data" ? (
               <img
@@ -91,10 +66,10 @@ export function ToolGroup({
           )}
         </div>
       )}
-      {open && (
-        <div className="border-t border-border/60 px-3 py-2">
-          {calls.map((c, i) => (
-            <ToolCallCard key={c.use.id || i} use={c.use} result={c.result} />
+      {visibleCalls.length > 0 && (
+        <div id={detailsId} className="min-w-0">
+          {visibleCalls.map((c, i) => (
+            <ToolCallCard key={c.use.id || i} use={c.use} result={c.result} streaming={streaming} />
           ))}
         </div>
       )}
@@ -111,7 +86,14 @@ function ImagePart({ path }: { path: string }) {
   );
 }
 
+function AssistantText({ text, streaming = false }: { text: string; streaming?: boolean }) {
+  const failure = splitAgentError(text);
+  if (!failure) return <Markdown text={text} className={cn(streaming && "fd-caret")} />;
+  return <>{failure.before && <Markdown text={failure.before} />}<ErrorNotice error={failure.error} />{failure.after && <AssistantText text={failure.after} streaming={streaming} />}</>;
+}
+
 export function renderParts(m: Message, streaming: boolean): ReactNode[] {
+  const executing = streaming && !m.parts.some((p) => (p.type === "approval" && p.decision === "pending") || (p.type === "question" && p.answer === null));
   const results = new Map<string, ToolResult>();
   for (const p of m.parts) if (p.type === "tool_result") results.set(p.id, p);
   const consumed = new Set<string>();
@@ -121,7 +103,7 @@ export function renderParts(m: Message, streaming: boolean): ReactNode[] {
   let groupKey = 0;
   const flush = () => {
     if (group.length === 0) return;
-    out.push(<ToolGroup key={`g${groupKey}`} calls={group} streaming={streaming} />);
+    out.push(<ToolGroup key={`g${groupKey}`} calls={group} streaming={executing} />);
     group = [];
   };
   m.parts.forEach((p, i) => {
@@ -133,7 +115,9 @@ export function renderParts(m: Message, streaming: boolean): ReactNode[] {
     switch (p.type) {
       case "text":
         out.push(
-          <Markdown key={i} text={p.text} className={cn(streaming && last && "fd-caret")} />,
+          m.role === "assistant"
+            ? <AssistantText key={i} text={p.text} streaming={streaming && last} />
+            : <Markdown key={i} text={p.text} className={cn(streaming && last && "fd-caret")} />,
         );
         break;
       case "thinking":
@@ -215,6 +199,10 @@ export function MessageActions({ message, latestReply = false }: { message: Mess
 
 export function MessageBubble({ message, streaming, latestReply = false }: { message: Message; streaming: boolean; latestReply?: boolean }) {
   const isUser = message.role === "user";
+  const waitingApproval = message.parts.some((p) => p.type === "approval" && p.decision === "pending");
+  const waitingAnswer = message.parts.some((p) => p.type === "question" && p.answer === null);
+  const hasPendingTool = message.parts.some((p) => p.type === "tool_use" && !message.parts.some((r) => r.type === "tool_result" && r.id === p.id));
+  const thinking = message.parts.at(-1)?.type === "thinking";
   if (message.role === "system") {
     return (
       <div className="fd-message mx-auto my-3 flex max-w-xl flex-col items-center text-center text-xs text-muted">
@@ -227,19 +215,20 @@ export function MessageBubble({ message, streaming, latestReply = false }: { mes
     message.parts.length > 0
       ? renderParts(message, streaming)
       : message.contentMd
-        ? [<Markdown key="md" text={message.contentMd} className={cn(streaming && "fd-caret")} />]
+        ? [message.role === "assistant"
+          ? <AssistantText key="md" text={message.contentMd} streaming={streaming} />
+          : <Markdown key="md" text={message.contentMd} className={cn(streaming && "fd-caret")} />]
         : [];
   return (
     <div className={cn("fd-message flex w-full flex-col", isUser ? "items-end" : "items-start")}>
       <div
         className={cn(
-          "relative min-w-0 text-sm leading-[1.75] [overflow-wrap:anywhere]",
+          "relative min-w-0 text-sm [overflow-wrap:anywhere]",
           isUser
-            ? "fd-user-message max-w-[90%] rounded-2xl rounded-br-md border border-border/60 bg-panel-2/60 px-4 py-3"
-            : "w-full max-w-full",
+            ? "fd-user-message max-w-[90%] rounded-2xl rounded-br-md border border-border/60 bg-panel-2/60 px-3 py-2 leading-[1.5]"
+            : "w-full max-w-full leading-[1.75]",
         )}
       >
-        {!isUser && <div className="mb-3 flex items-center gap-2 text-[11px] font-medium text-muted"><span className="h-1.5 w-1.5 rounded-full bg-accent" />Agent{streaming && <span className="text-accent">· Working</span>}</div>}
         {isUser ? (
           <>
             {message.contentMd && <div className="whitespace-pre-wrap">{message.contentMd}</div>}
@@ -258,9 +247,11 @@ export function MessageBubble({ message, streaming, latestReply = false }: { mes
             Queued · sends when the run ends
           </div>
         )}
-        {!isUser && streaming && body.length === 0 && (
-          <div className="flex items-center gap-2 text-xs text-muted">
-            <Spinner /> waiting for the agent...
+        {!isUser && streaming && (waitingApproval || waitingAnswer || (!hasPendingTool && !thinking)) && (
+          <div className="mt-2 text-[13px] text-muted" role="status">
+            <span className={cn(!waitingApproval && !waitingAnswer && "fd-activity-shimmer")}>
+              {waitingApproval ? "Waiting for approval" : waitingAnswer ? "Waiting for your answer" : "Working…"}
+            </span>
           </div>
         )}
       </div>
@@ -297,7 +288,7 @@ export function MessageList({
   messages,
   loading,
 }: {
-  thread: Thread | null;
+  thread: ThreadDetail | null;
   messages: Message[];
   loading: boolean;
 }) {
@@ -310,6 +301,9 @@ export function MessageList({
     if (!focusMessageId || !messages.some((message) => message.id === focusMessageId)) return;
     const target = [...(ref.current?.querySelectorAll<HTMLElement>("[data-message-id]") ?? [])].find((element) => element.dataset.messageId === focusMessageId);
     if (!target) return;
+    for (let parent = target.parentElement; parent; parent = parent.parentElement) {
+      if (parent instanceof HTMLDetailsElement) parent.open = true;
+    }
     stick.current = false;
     target.scrollIntoView({ block: "center", behavior: "smooth" });
     target.classList.add("fd-search-highlight");
@@ -333,8 +327,17 @@ export function MessageList({
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   }, [messages]);
   const lastId = messages.findLast((message) => message.role === "assistant")?.id;
-  const visibleMessages = messages.filter((message) => message.status !== "queued");
-  const lastRole = visibleMessages[visibleMessages.length - 1]?.role;
+  const visibleMessages = deduplicateChatNotices(messages.filter((message) => message.status !== "queued"));
+  const activeMessages = run ? visibleMessages.filter((m) => m.role === "assistant" && m.runId === run.runId) : [];
+  const firstActiveId = activeMessages[0]?.id;
+  const savedRuns = useMemo(() => {
+    const runs = new Map((thread?.runs ?? []).map(saved => [saved.id, saved]));
+    // Older daemons only supply the latest run. Keep that response compatible.
+    if (thread?.run) runs.set(thread.run.id, thread.run);
+    return runs;
+  }, [thread?.runs, thread?.run]);
+
+  const waiting = activeMessages.some((m) => m.parts.some((p) => (p.type === "approval" && p.decision === "pending") || (p.type === "question" && p.answer === null)));
   return (
     <div ref={ref} className="min-h-0 flex-1 overflow-y-auto px-5 py-6">
       <div className="mx-auto flex max-w-3xl flex-col gap-5">
@@ -345,23 +348,32 @@ export function MessageList({
           </div>
         )}
         {visibleMessages.map((m, index, visible) => {
+          const completed = m.role === "assistant" && !!m.runId && m.runId !== run?.runId && !(thread?.running && thread.run?.id === m.runId);
+          if (completed && index > 0 && visible[index - 1]?.role === "assistant" && visible[index - 1]?.runId === m.runId) return null;
+          const batch: Message[] = [m];
+          if (completed) for (let next = index + 1; next < visible.length; next++) {
+            const candidate = visible[next]!;
+            if (candidate.role !== "assistant" || candidate.runId !== m.runId) break;
+            batch.push(candidate);
+          }
+          const candidateRun = m.runId ? savedRuns.get(m.runId) : undefined;
+          const savedRun = completed && candidateRun && candidateRun.status !== "running" ? candidateRun : null;
+          const split = completed ? splitCompletedActivity(batch, savedRun?.status === "failed" || savedRun?.status === "aborted") : null;
           const day = new Date(m.createdAt).toDateString();
           const previousDay = visible[index - 1] ? new Date(visible[index - 1]!.createdAt).toDateString() : null;
-          return <div key={m.id} data-message-id={m.id} className="scroll-mt-8 rounded-xl">
+          return <ErrorAgentContext.Provider key={m.id} value={savedRun?.agentId ?? (run?.runId === m.runId ? run.agentId : undefined)}><div data-message-id={completed ? undefined : m.id} className="scroll-mt-8 rounded-xl">
             {day !== previousDay && <div className="my-3 flex items-center gap-3 text-[11px] text-muted"><span className="h-px flex-1 bg-border" /><time dateTime={m.createdAt}>{new Date(m.createdAt).toLocaleDateString([], { dateStyle: "medium" })}</time><span className="h-px flex-1 bg-border" /></div>}
-            <MessageBubble message={m} latestReply={m.role === "assistant" && m.id === lastId} streaming={!!run && lastRole === "assistant" && m.id === lastId && m.role === "assistant"} />
-          </div>;
+            {run && m.id === firstActiveId && <RunActivity key={run.runId} run={run} waiting={waiting} />}
+            {split ? <>
+              <WorkedActivity run={savedRun} hasError={split.history.some(item => item.parts.some(p => p.type === "tool_result" && p.isError))} unanswered={split.history.some(item => item.parts.some(p => p.type === "question" && !p.answer))}>
+                {split.history.length ? split.history.map(item => <div key={item.id} data-message-id={item.id}><MessageBubble message={item} streaming={false} /></div>) : undefined}
+              </WorkedActivity>
+              {split.answer && <div data-message-id={split.answer.id}><MessageBubble message={split.answer} streaming={false} latestReply={batch.some(item => item.id === lastId)} /></div>}
+            </> : <MessageBubble message={m} latestReply={m.role === "assistant" && m.id === lastId} streaming={!!run && m.runId === run.runId && m.role === "assistant"} />}
+          </div></ErrorAgentContext.Provider>;
         })}
-        {run && (messages.length === 0 || lastRole === "user") && (
-          <div className="flex items-center gap-2 text-xs text-muted">
-            <Spinner /> {run.agentId} is working...
-          </div>
-        )}
-        {run?.error && (
-          <div className="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">
-            {run.error}
-          </div>
-        )}
+        {run && !firstActiveId && <div><RunActivity key={run.runId} run={run} /><div className="text-[13px] text-muted" role="status"><span className="fd-activity-shimmer">Working…</span></div></div>}
+        {run?.error && !activeMessages.some(m => m.contentMd.includes(run.error!)) && <ErrorNotice error={run.error} agentId={run.agentId} />}
       </div>
     </div>
   );
