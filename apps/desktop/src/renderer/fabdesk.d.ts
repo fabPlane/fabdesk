@@ -12,7 +12,7 @@ export interface PickFileOptions {
 
 /** Surface exposed by src/preload/index.ts via contextBridge. */
 export interface FabdeskBridge extends CadRuntimeBridge {
-  syncTitleBar(): void;
+  getZoomFactor(): number;
   platform: NodeJS.Platform | string;
   /** True when the main process started Sentry (DSN configured and the user has not opted out). */
   errorReporting: boolean;

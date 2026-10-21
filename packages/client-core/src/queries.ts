@@ -770,7 +770,7 @@ export function useShoppingList(projectId: string | null, enabled = true) {
 export function useShoppingListMutations(projectId: string | null) {
   const client = useCoreClient();
   const qc = useQueryClient();
-  const refresh = () => void qc.invalidateQueries({ queryKey: shoppingListKey(projectId) });
+  const refresh = () => qc.invalidateQueries({ queryKey: shoppingListKey(projectId) });
   const need = () => {
     if (!projectId) throw new Error("no project selected");
     return projectId;

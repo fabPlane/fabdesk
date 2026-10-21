@@ -1,6 +1,10 @@
 import type { SVGProps } from "react";
 
 export type IconName =
+  | "image"
+  | "terminal"
+  | "tool"
+  | "shield"
   | "compose"
   | "copy"
   | "check"
@@ -18,7 +22,11 @@ export type IconName =
   | "chevronDown"
   | "paperclip"
   | "send"
+  | "arrowUp"
+  | "queue"
   | "export"
+  | "externalLink"
+  | "refresh"
   | "pin"
   | "pinFilled"
   | "more"
@@ -36,6 +44,12 @@ export type IconName =
 /** One stroke language for the desktop chrome. Icons inherit the control's color. */
 export function Icon({ name, ...props }: SVGProps<SVGSVGElement> & { name: IconName }) {
   const paths: Record<IconName, React.ReactNode> = {
+    externalLink: <><path d="M14 3h7v7m0-7L10 14" /><path d="M10 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5" /></>,
+    refresh: <><path d="M20 7v5h-5M4 17v-5h5" /><path d="M6.1 7a7 7 0 0 1 11.5-1L20 9M4 15l2.4 3A7 7 0 0 0 17.9 17" /></>,
+    image: <><rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="8" cy="8" r="1.5" /><path d="m3 17 5-5 4 4 3-3 6 6" /></>,
+    terminal: <><rect x="3" y="4" width="18" height="16" rx="3" /><path d="m7 9 3 3-3 3m6 0h4" /></>,
+    tool: <path d="M14 6a5 5 0 0 0-6 6L3 17a2.8 2.8 0 0 0 4 4l5-5a5 5 0 0 0 6-6l-3 3-4-4 3-3Z" />,
+    shield: <><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Z" /><path d="m8.5 12 2.5 2.5 4.5-5" /></>,
     copy: <><rect x="8" y="8" width="12" height="13" rx="2" /><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h3" /></>,
     check: <path d="m5 12 4 4L19 6" />,
     checklist: <><path d="m3 6 1.5 1.5L7 4M10 6h11M3 12h4m3 0h11M3 18h4m3 0h11" /></>,
@@ -60,6 +74,8 @@ export function Icon({ name, ...props }: SVGProps<SVGSVGElement> & { name: IconN
     close: <path d="M5 5 19 19M19 5 5 19" />,
     chevronDown: <path d="m6 9 6 6 6-6" />,
     paperclip: <path d="m20.5 11.5-8.8 8.8a5.2 5.2 0 0 1-7.4-7.4l9.4-9.4a3.5 3.5 0 0 1 5 5l-9.5 9.4a1.8 1.8 0 0 1-2.6-2.6l8.7-8.7" />,
+    arrowUp: <path d="M12 19V5m-6 6 6-6 6 6" />,
+    queue: <><path d="M5 5h14M12 20V10m-5 5 5-5 5 5" /></>,
     send: <><path d="M5 12h14M13 6l6 6-6 6" /></>,
     export: <><path d="M12 15V3m-4 4 4-4 4 4" /><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6" /></>,
     pin: <><path d="M8 3h8l-1 7 3 3v2H6v-2l3-3-1-7Z" /><path d="M12 15v7" /></>,

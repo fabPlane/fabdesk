@@ -1,5 +1,5 @@
-import { Select, Tabs } from "../components/ui";
-import { BoardPanelToggle } from "../components/BoardPanelToggle";
+import { Tabs } from "../components/ui";
+import { BoardViewMenu } from "./BoardViewMenu";
 import { CircuitLogo } from "../components/CircuitLogo";
 import { useCore } from "@fabdesk/client-core";
 import { useProjectOrder, useProjects } from "@fabdesk/client-core";
@@ -67,7 +67,6 @@ export function BoardPanel() {
             />
           )}
         </div>
-        <BoardPanelToggle location="board" />
       </div>
       <div className="fd-board-controls flex shrink-0 items-center px-3">
         <Tabs
@@ -77,17 +76,7 @@ export function BoardPanel() {
           value={tab}
           onChange={setBoardTab}
         />
-        <label className="fd-board-compact min-w-0 flex-1 basis-44 items-center gap-2" data-testid="board-view-menu">
-          <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.09em] text-muted">View</span>
-          <Select
-            value={tab}
-            onChange={(e) => setBoardTab(e.target.value as BoardTab)}
-            aria-label="Board view"
-            className="h-8 min-w-0 flex-1 border-border bg-panel-2/70 text-xs font-medium"
-          >
-            {BOARD_TABS.map((id, i) => <option key={id} value={id}>{BOARD_TAB_LABELS[id]} · {mod} + {i + 1}</option>)}
-          </Select>
-        </label>
+        <BoardViewMenu value={tab} onChange={setBoardTab} modifier={mod} />
       </div>
       <div className="fd-board-stage min-h-0 flex-1">
         <TabBody tab={tab} />

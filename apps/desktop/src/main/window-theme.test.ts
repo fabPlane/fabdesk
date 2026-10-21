@@ -10,20 +10,15 @@ function tmpUserData(): string {
 }
 
 describe("Windows title bar overlay", () => {
-  test("tracks zoom in, zoom out and reset without covering the divider", () => {
-    // Includes the user's 57.87% zoom and repeated returns to 100%.
-    for (const zoom of [1, 1.2, 1.44, 0.833333, 0.5787037, 1, 2, 0.5, 1]) {
-      const height = titleBarOverlayFor("fabplane-dark", zoom).height;
-      expect(height).toBe(Math.floor(47 * zoom));
-      expect(height).toBeLessThan(TITLE_BAR_HEIGHT * zoom);
-      expect(Number.isInteger(height)).toBe(true);
+  test("native chrome keeps its height independent of workspace zoom", () => {
+    for (const theme of ["fabplane-dark", "fabplane-light", "plain-dark", "plain-light"] as const) {
+      expect(titleBarOverlayFor(theme).height).toBe(TITLE_BAR_HEIGHT - 1);
     }
-    expect(titleBarOverlayFor("fabplane-dark").height).toBe(47);
   });
 
-  test("theme changes preserve zoomed geometry and update native colours", () => {
-    const dark = titleBarOverlayFor("fabplane-dark", 0.5787037);
-    const light = titleBarOverlayFor("fabplane-light", 0.5787037);
+  test("theme changes preserve fixed geometry and update native colours", () => {
+    const dark = titleBarOverlayFor("fabplane-dark");
+    const light = titleBarOverlayFor("fabplane-light");
     expect(light.height).toBe(dark.height);
     expect(light.color).not.toBe(dark.color);
     expect(light.symbolColor).not.toBe(dark.symbolColor);

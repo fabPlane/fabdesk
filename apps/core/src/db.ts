@@ -241,6 +241,17 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE run_dump_history ADD COLUMN file_bytes INTEGER;
       ALTER TABLE run_dump_history ADD COLUMN shared_bytes INTEGER;`,
   },
+  {
+    version: 13,
+    // An earlier draft of #344 used version 10 for this index. Repair that development
+    // database too, without changing main's already-shipped migration numbering.
+    up(db) {
+      if (!db.query<{ name: string }, []>("PRAGMA table_info(run_dumps)").all().some((c) => c.name === "archive_destinations_json")) {
+        db.run("ALTER TABLE run_dumps ADD COLUMN archive_destinations_json TEXT NOT NULL DEFAULT '[]'");
+      }
+    },
+    sql: "CREATE INDEX IF NOT EXISTS runs_thread_started ON runs(thread_id, started_at DESC);",
+  },
 ];
 
 export function openDatabase(path: string): Database {
@@ -813,6 +824,14 @@ export class RunRepo {
       >("SELECT * FROM runs WHERE thread_id = ? ORDER BY started_at DESC LIMIT 1")
       .get(threadId);
     return r ? this.toRun(r) : null;
+  }
+  /** Include runs referenced by copied messages so branched chats retain their timing. */
+  historyForThread(threadId: string): Run[] {
+    return this.db.query<RunRow, [string, string]>(
+      `SELECT * FROM runs WHERE thread_id = ? UNION SELECT * FROM runs WHERE id IN (
+        SELECT run_id FROM messages WHERE thread_id = ? AND run_id IS NOT NULL
+      ) ORDER BY started_at DESC, id DESC`,
+    ).all(threadId, threadId).map((r) => this.toRun(r));
   }
   /** Most recent agent session id for resume, per thread + agent. */
   lastSession(threadId: string, agentId: string): string | null {

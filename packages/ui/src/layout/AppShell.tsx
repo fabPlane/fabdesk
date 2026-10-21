@@ -2,6 +2,7 @@ import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { useEffect, useRef, useState } from "react";
 import type { CoreStatusInfo } from "../app/types";
 import { BoardPanel } from "../board/BoardPanel";
+import { BoardPanelToggle } from "../components/BoardPanelToggle";
 import { ProjectPickerDialog } from "../chat/ProjectPickerDialog";
 import { ThreadView } from "../chat/ThreadView";
 import { InventoryView } from "../inventory/InventoryView";
@@ -92,7 +93,8 @@ export function AppShell({ onNewChat, coreStatus, banner }: AppShellProps) {
           </Panel>
           <Handle open={sidebarOpen} moving={sidebar.moving} onResizeEnd={sidebar.syncOpen} />
           <Panel id="main" order={2} minSize={percent(300)}>
-            <div ref={mainRef} className="h-full min-w-0">
+            <div ref={mainRef} className="relative h-full min-w-0">
+              {!openSourceId && !inventory && <BoardPanelToggle />}
               <PanelGroup direction="horizontal" autoSaveId="fabdesk-shell-content">
                 <Panel id="chat" order={1} minSize={mainPercent(300)}>
                   {center}

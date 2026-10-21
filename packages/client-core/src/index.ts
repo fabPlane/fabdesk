@@ -5,6 +5,9 @@
  * view packages.
  */
 export { CoreClient, CoreHttpError, parseJsonl } from "./CoreClient";
+export { deduplicateChatNotices } from "./chat-notices";
+export { errorHelp, errorMessage, errorPayload, agentErrorText, splitAgentError } from "./error-help";
+export type { ErrorHelp, ErrorAction, ErrorContext } from "./error-help";
 export type {
   CoreClientOptions,
   ThreadDetail,
@@ -114,6 +117,12 @@ export * from "./cinema";
 
 export {
   groupByDestination,
+  filterShoppingItems,
+  createShoppingDraft,
+  shoppingDraftPatch,
+  shoppingDraftConflicts,
+  rebaseShoppingDraft,
+  type ShoppingItemDraft,
   itemLabel,
   destinationOptions,
   isCloudSignedOut,

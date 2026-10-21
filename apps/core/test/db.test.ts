@@ -252,6 +252,38 @@ describe("sqlite", () => {
     expect(() => store.settings.patch({ router: "bogus" })).toThrow();
   });
 
+  test("run history keeps branch references without scanning unrelated runs", () => {
+    const db = openDatabase(":memory:");
+    const store = new Store(db);
+    const parent = store.threads.create({ agentId: "codex" });
+    const run = store.runs.create({ threadId: parent.id, agentId: "codex" });
+    const message = store.threads.addMessage({ threadId: parent.id, role: "assistant", runId: run.id, contentMd: "Done" });
+    const branch = store.threads.create({ agentId: "codex", parentThreadId: parent.id, branchFromMessageId: message.id });
+    expect(store.runs.historyForThread(branch.id).map((r) => r.id)).toEqual([run.id]);
+    expect(store.runs.historyForThread(parent.id).map((r) => r.id)).toEqual([run.id]);
+    const plan = db.query("EXPLAIN QUERY PLAN SELECT * FROM runs WHERE thread_id = ? UNION SELECT * FROM runs WHERE id IN (SELECT run_id FROM messages WHERE thread_id = ? AND run_id IS NOT NULL) ORDER BY started_at DESC, id DESC").all(parent.id, parent.id);
+    expect(JSON.stringify(plan)).toContain("runs_thread_started");
+    expect(JSON.stringify(plan)).not.toContain("SCAN runs");
+    db.close();
+  });
+
+  test("upgrade repairs a development database with the draft run index at version 10", () => {
+    const db = new Database(":memory:");
+    db.run("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)");
+    for (const migration of MIGRATIONS.filter((m) => m.version <= 9)) {
+      migration.up?.(db);
+      db.run(migration.sql);
+      db.run("INSERT INTO schema_migrations VALUES (?, ?)", [migration.version, new Date().toISOString()]);
+    }
+    db.run("CREATE INDEX runs_thread_started ON runs(thread_id, started_at DESC)");
+    db.run("INSERT INTO schema_migrations VALUES (10, ?)", [new Date().toISOString()]);
+    expect(migrate(db)).toBe(MIGRATIONS.at(-1)!.version);
+    expect(migrate(db)).toBe(MIGRATIONS.at(-1)!.version);
+    expect(db.query<{ name: string }, []>("PRAGMA table_info(run_dumps)").all().map((c) => c.name)).toContain("archive_destinations_json");
+    expect(db.query<{ name: string }, []>("PRAGMA table_info(run_dump_history)").all().map((c) => c.name)).toContain("directory_bytes");
+    db.close();
+  });
+
   test("thread pin persists across database reopen", async () => {
     const dir = await mkdtemp(join(tmpdir(), "fabdesk-db-pin-"));
     const path = join(dir, "fabdesk.db");
