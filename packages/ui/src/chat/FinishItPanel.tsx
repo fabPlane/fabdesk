@@ -1,7 +1,7 @@
 import type { FinishItSession } from "@fabdesk/protocol";
 import { Button } from "../components/ui";
 import { Icon } from "../components/Icon";
-import { finishItActive, finishItMilestoneTone, finishItSummary, FINISH_IT_STATUS_LABEL } from "./finish-it-view";
+import { finishItActive, finishItDisplayedMilestoneStatus, finishItMilestoneTone, finishItSummary, FINISH_IT_STATUS_LABEL } from "./finish-it-view";
 
 export interface FinishItPanelProps {
   session: FinishItSession;
@@ -38,9 +38,10 @@ export function FinishItPanel({ session, onStop, stopping }: FinishItPanelProps)
       </div>
       <ol className="mt-2 grid gap-1">
         {session.milestones.map((m) => {
-          const tone = finishItMilestoneTone(m.status);
+          const status = finishItDisplayedMilestoneStatus(session, m);
+          const tone = finishItMilestoneTone(status);
           return (
-            <li key={m.id} className="flex items-center gap-2 text-xs" data-milestone={m.id} data-status={m.status}>
+            <li key={m.id} className="flex items-center gap-2 text-xs" data-milestone={m.id} data-status={status} aria-busy={tone === "running"}>
               <span
                 className={
                   tone === "done"
@@ -52,14 +53,12 @@ export function FinishItPanel({ session, onStop, stopping }: FinishItPanelProps)
                         : "text-muted"
                 }
               >
-                {tone === "done" ? "✓" : tone === "running" ? "●" : tone === "failed" ? "!" : "○"}
+                {tone === "running" ? (
+                  <span className="fd-finish-it-spinner" aria-hidden="true" />
+                ) : tone === "done" ? "✓" : tone === "failed" ? "!" : "○"}
+                <span className="sr-only">{tone === "running" ? "In progress: " : tone === "done" ? "Complete: " : tone === "failed" ? "Failed: " : "Pending: "}</span>
               </span>
               <span className={tone === "pending" ? "text-muted" : "text-fg"}>{m.label}</span>
-              {m.commitSha && (
-                <span className="font-mono text-[10px] text-muted" title={m.commitSha}>
-                  {m.commitSha.slice(0, 7)}
-                </span>
-              )}
             </li>
           );
         })}
