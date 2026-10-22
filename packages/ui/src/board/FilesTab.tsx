@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ProjectImage } from "../chat/ProjectImage";
 import { Button, Dialog, EmptyState, IconButton, Input, LoadError, Select, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
@@ -32,6 +32,19 @@ function ProjectFiles({ projectId }: { projectId: string }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const fileToReveal = useUiStore((s) => s.fileToReveal);
+  useEffect(() => {
+    if (fileToReveal?.projectId !== projectId) return;
+    const path = fileToReveal.path;
+    setSelected(path);
+    setQuery("");
+    const parts = path.split("/");
+    setExpanded((previous) => {
+      const next = new Set(previous);
+      for (let i = 1; i < parts.length; i++) next.add(parts.slice(0, i).join("/"));
+      return next;
+    });
+  }, [fileToReveal, projectId]);
   const [exportOpen, setExportOpen] = useState(false);
   const [requestedExport, setExportKind] = useState<ExportKind>("export_stencil");
   const [lastExport, setLastExport] = useState<ExportKind>("export_stencil");

@@ -295,6 +295,7 @@ describe("registry", () => {
       "export_netlist",
       "export_zip",
       "export_dxf",
+      "silk_art",
       "export_stencil",
       "export_laser_stencil",
       "sim_spice_netlist",
@@ -332,6 +333,7 @@ describe("registry", () => {
       "cad_export",
       "cad_python",
       "cad_view",
+      "cad_enclosure",
     ]);
     for (const n of names) expect(n).toMatch(/^[a-z][a-z0-9_]*$/);
     expect(reg.byToolset("core").length).toBe(9);

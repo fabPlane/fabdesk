@@ -6,6 +6,7 @@ import { projectBomCsv, projectBomLines } from "@fabdesk/protocol";
 import { PROJECT_FILES, ensureDir, writeAtomic } from "../fs";
 import { ToolError, defineTool } from "../registry";
 import { loadNetlistOrNull, loadProjectParts, ok, p, requireBoard, requireKicad, requireSchematic } from "./common";
+import { silk_art } from "./silk-art";
 
 const rel = (project: { dir: string }, abs: string) =>
   abs.startsWith(project.dir) ? abs.slice(project.dir.length + 1) : abs;
@@ -588,6 +589,7 @@ export const exportTools = [
   export_netlist,
   export_zip,
   export_dxf,
+  silk_art,
   export_stencil,
   export_laser_stencil,
 ];

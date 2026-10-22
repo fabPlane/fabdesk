@@ -64,6 +64,7 @@ export { SvgViewer } from "./board/SvgViewer";
 export { DrcTab, normalizeReport } from "./board/DrcTab";
 export { RendersTab } from "./board/RendersTab";
 export { FilesTab } from "./board/FilesTab";
+export { ArtTab } from "./board/ArtTab";
 export { ThreeDTab } from "./board/ThreeDTab";
 export { useRunTool, resolveToolName, TOOL_PATTERNS } from "@fabdesk/client-core";
 

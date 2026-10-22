@@ -3,7 +3,7 @@ import { persist } from "zustand/middleware";
 import { readStoredThemeId, type ThemeId } from "../theme/resolve";
 import { stencilThicknessMm } from "./stencil-thickness";
 
-export const BOARD_TABS = ["schematic", "pcb", "cinema", "3d", "cad", "drc", "renders", "files", "bom"] as const;
+export const BOARD_TABS = ["schematic", "pcb", "cinema", "3d", "cad", "drc", "renders", "files", "bom", "art"] as const;
 export type BoardTab = (typeof BOARD_TABS)[number];
 export const BOARD_TAB_LABELS: Record<BoardTab, string> = {
   schematic: "Schematic",
@@ -14,6 +14,7 @@ export const BOARD_TAB_LABELS: Record<BoardTab, string> = {
   drc: "DRC/ERC",
   renders: "Renders",
   files: "Files",
+  art: "Art",
   bom: "Shopping list",
 };
 
@@ -57,6 +58,8 @@ export interface UiState {
   /** Parts Inventory (opened from the user menu) replaces the chat pane while true. */
   inventoryOpen: boolean;
   boardTab: BoardTab;
+  fileToReveal: { projectId: string; path: string } | null;
+  openProjectFile: (path: string) => void;
   stencilThicknessByProject: Record<string, number>;
   setStencilThickness: (projectId: string, thicknessMm: number) => void;
   drafts: Record<string, string>;
@@ -136,6 +139,11 @@ export const useUiStore = create<UiState>()(
   orderFlowOpen: false,
   inventoryOpen: false,
   boardTab: "schematic",
+  fileToReveal: null,
+  openProjectFile: (path) => set((s) => s.activeProjectId ? {
+    boardTab: "files", boardOpen: true,
+    fileToReveal: { projectId: s.activeProjectId, path },
+  } : {}),
   stencilThicknessByProject: {},
   setStencilThickness: (projectId, thicknessMm) => set((s) => ({
     stencilThicknessByProject: { ...s.stencilThicknessByProject, [projectId]: stencilThicknessMm(thicknessMm) },

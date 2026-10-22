@@ -46,12 +46,15 @@ file on disk always matches the session.
 | `cad_export`         | STEP / IGES / BREP / STL / OBJ to `exports/<name>.<ext>`                                      |
 | `cad_python`         | Python in the project's FreeCAD (sketches, pads, booleans, fillets): what the others don't do |
 | `cad_view`           | the web UI URL attached to the project's session (what the CAD tab loads)                     |
+| `cad_enclosure`      | printable two-piece case from the KiCad outline, holes and edge connectors. v2: outline offset + clearance, vent patterns, snap-fit clips, SVG preview, STL/STEP. Alignment check. FreeCAD optional. |
 
 Values use the FreeCAD API's JSON form: numbers in base units (mm, deg), strings with units
 (`"25 mm"`), tagged objects (`{"$type":"Placement", …}`), see `PROTOCOL.md` in the fork.
 
 `CadService` is optional in `CoreServices` (like `cloud` and `appBridge`); without a reachable
-bridge the tools fail with `unavailable` and say how to start one.
+bridge the editing tools fail with `unavailable` and say how to start one. `cad_enclosure` still
+writes `enclosure.json` and printable STL/STEP from the KiCad board so cutouts can be checked
+without FreeCAD.
 
 ## Sessions
 
@@ -145,6 +148,9 @@ session through the host.
 - `apps/core/test/fab-cad.test.ts` runs `CadService` against the real `@fab-cad/bridge` with the
   mock as FreeCAD: create, edit, expressions, recompute, export, adopting a session after a restart,
   reconnecting after the bridge lost one, error mapping, release.
-- `packages/tools/test/cad.test.ts` covers the tools over a fake `CadService`.
+- `packages/tools/test/cad.test.ts` covers the tools over a fake `CadService`, including
+  `cad_enclosure` generate / stale-check / FreeCAD mirror / v2 offset-vents-snaps-preview.
+- `packages/kicad/test/board-features.test.ts` and `packages/kicad/test/enclosure.test.ts` cover
+  board extraction, cutout sync after a connector move, STL/STEP emission, vents, snap-fits, and the SVG preview.
 - `apps/desktop/src/main/cad-supervisor.test.ts` covers bundle/source resolution and starts the
   bridge from `vendor/fab_cad`.

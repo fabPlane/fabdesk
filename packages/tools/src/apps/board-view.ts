@@ -155,6 +155,7 @@ function renderDrawings(p) {
       return h("button", { "aria-pressed": String(f === state.drawing), onclick: function () { state.drawing = f; load(); } }, f);
     }) : h("span", { class: "muted" }, "No CAD drawings yet."),
     h("span", { class: "grow" }),
+    h("button", { onclick: generateEnclosure, title: "Parametric case from the board outline, holes and connectors" }, "Generate enclosure"),
     p && p.hasCadModel ? h("button", { onclick: exportCad, title: "FreeCAD model.FCStd → exports/model.stl" }, "Export FreeCAD model") : null,
     p && p.hasCadModel ? h("button", { onclick: openFreecad, title: "The live FreeCAD web UI on this project's session" }, "Open in FreeCAD") : null,
     h("button", { onclick: exportDxf, title: "kicad-cli: copper and Edge.Cuts DXF" }, "Export DXF"),
@@ -178,6 +179,7 @@ function exportDxf() { return exportAndShow("Exporting DXF", "export_dxf", {}, f
 function exportStencil() { return exportAndShow("Exporting solder stencil", "export_stencil", {}, function (r) { return r.path; }); }
 function exportLaserStencil() { return exportAndShow("Exporting laser stencil", "export_laser_stencil", {}, function (r) { return r.path; }); }
 function exportCad() { return exportAndShow("Exporting the FreeCAD model", "cad_export", { format: "stl", name: "model" }, function (r) { return r.path; }); }
+function generateEnclosure() { return exportAndShow("Generating enclosure", "cad_enclosure", { action: "generate" }, function (r) { return r.stl; }); }
 
 async function openFreecad() {
   var p = current(); if (!p) return;

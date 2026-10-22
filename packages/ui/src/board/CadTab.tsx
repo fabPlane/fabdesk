@@ -3,6 +3,7 @@ import { type CadRuntimeBridge } from "@fabdesk/protocol";
 import { CadSession, type CadSessionState, useCoreClient } from "@fabdesk/client-core";
 import { Button, EmptyState, Spinner } from "../components/ui";
 import { useUiStore } from "../stores/ui";
+import { EnclosurePanel } from "./EnclosurePanel";
 
 /**
  * The fab_cad web UI is served by the loopback bridge, an origin other than the renderer's, so
@@ -48,7 +49,33 @@ export function CadTab() {
     };
   }, [session, projectId]);
 
-  return <CadScreen projectSelected={Boolean(projectId)} state={state} session={session} />;
+  return (
+    <div className="flex h-full min-h-0 flex-col overflow-auto">
+      <EnclosurePanel key={projectId} />
+      {!state.busy &&
+      !state.view &&
+      state.runtime?.status !== "ready" &&
+      state.runtime?.status !== "downloading" &&
+      state.runtime?.status !== "verifying" ? (
+        <details className="m-4 rounded-xl border border-border bg-panel p-4">
+          <summary className="cursor-pointer text-sm font-medium">
+            Advanced CAD editing — optional
+          </summary>
+          <p className="mt-2 text-xs leading-5 text-muted">
+            Enclosure generation and STL/STEP downloads work without the CAD bridge. Install it only
+            to edit mechanical parts in FreeCAD.
+          </p>
+          <div className="mt-4">
+            <CadScreen projectSelected={Boolean(projectId)} state={state} session={session} />
+          </div>
+        </details>
+      ) : (
+        <div className="min-h-0 flex-1">
+          <CadScreen projectSelected={Boolean(projectId)} state={state} session={session} />
+        </div>
+      )}
+    </div>
+  );
 }
 
 /** Presentational surface shared by the desktop and local state previews. */
@@ -80,7 +107,7 @@ export function CadScreen({
             ? "Downloading the CAD bridge"
             : runtime.status === "verifying"
               ? "Preparing your CAD workspace"
-              : "Add CAD to your workspace";
+              : "Install advanced CAD editing";
     const size = (n: number) => `${(n / 1048576).toFixed(1)} MiB`;
     const percent =
       offer && runtime.status === "downloading"
@@ -89,8 +116,8 @@ export function CadScreen({
     return (
       <EmptyState title={title} icon={<span className="text-3xl">◇</span>}>
         <p>
-          Design enclosures and mechanical parts with the optional FreeCAD bridge. Your PCB
-          workspace remains available.
+          Edit mechanical parts with the optional FreeCAD bridge. Generating an enclosure and
+          downloading STL/STEP files does not require installation.
         </p>
         {offer && (
           <div className="mt-4 rounded-lg border border-border bg-panel p-3 text-left">
