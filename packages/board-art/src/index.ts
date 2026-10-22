@@ -8,3 +8,4 @@ export * from "./kicad";
 export * from "./preview";
 export * from "./zip";
 export * from "./job";
+export * from "./placement";

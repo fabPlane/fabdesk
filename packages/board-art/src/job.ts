@@ -67,6 +67,12 @@ function readme(o: ResolvedArtOptions, primitives: number): string {
     `Style: ${o.style}`,
     `Board: ${o.widthMm} x ${o.heightMm} mm, ${o.color} soldermask, ${o.outline} outline`,
     `Layers: ${o.layers.join(", ")}`,
+    ...(o.placement
+      ? [
+          `Artwork centre: ${o.placement.centerXmm} x ${o.placement.centerYmm} mm`,
+          `Artwork size: ${o.placement.widthMm} x ${o.placement.heightMm} mm; rotation: ${o.placement.rotationDeg} degrees clockwise`,
+        ]
+      : []),
     `Minimum feature: ${o.minFeatureMm} mm (typical fab silkscreen floor is 0.15 mm)`,
     `Pitch: ${o.pitchMm.toFixed(3)} mm`,
     `Primitives: ${primitives}`,

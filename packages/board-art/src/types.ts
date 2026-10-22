@@ -1,3 +1,4 @@
+import { validateArtPlacement } from "./placement";
 /** Deterministic image → PCB art. Units are millimetres unless noted. */
 
 export const ART_STYLES = ["realistic", "retro", "poster"] as const;
@@ -39,7 +40,16 @@ export type LinePrim = { kind: "line"; x1: number; y1: number; x2: number; y2: n
 export type RectPrim = { kind: "rect"; x: number; y: number; w: number; h: number };
 export type Primitive = CirclePrim | LinePrim | RectPrim;
 
+export type ArtPlacement = {
+  centerXmm: number;
+  centerYmm: number;
+  widthMm: number;
+  heightMm: number;
+  rotationDeg: number;
+};
+
 export type ArtOptions = {
+  placement?: ArtPlacement;
   style: ArtStyle;
   widthMm: number;
   heightMm: number;
@@ -59,6 +69,7 @@ export type ArtOptions = {
 };
 
 export type ResolvedArtOptions = {
+  placement?: ArtPlacement;
   style: ArtStyle;
   widthMm: number;
   heightMm: number;
@@ -105,10 +116,12 @@ export function resolveArtOptions(raw: ArtOptions): ResolvedArtOptions {
   const minFeatureMm = Math.max(MIN_FEATURE_MM, raw.minFeatureMm ?? DEFAULT_FEATURE_MM);
   const marginMm = Math.max(0, raw.marginMm ?? DEFAULT_MARGIN_MM);
   const usable = Math.min(widthMm, heightMm) - 2 * marginMm;
-  if (usable <= minFeatureMm) throw new Error("board is too small for the margin and minimum feature size");
+  if (usable <= minFeatureMm)
+    throw new Error("board is too small for the margin and minimum feature size");
   const pitchMm = Math.max(minFeatureMm, raw.pitchMm ?? Math.max(minFeatureMm, usable / 90));
   const layers = raw.layers && raw.layers.length > 0 ? raw.layers : (["silk"] as const);
   return {
+    ...(raw.placement ? { placement: validateArtPlacement(raw.placement) } : {}),
     style: raw.style,
     widthMm,
     heightMm,

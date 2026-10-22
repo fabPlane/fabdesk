@@ -4,6 +4,8 @@ import {
   BOARD_COLORS,
   OUTLINE_KINDS,
   buildBoardArt,
+  fitArtPlacement,
+  type ArtPlacement,
   convertImage,
   decodeGray,
   previewSvg,
@@ -21,6 +23,7 @@ import { Button, Dialog, Select } from "../components/ui";
 import { useUiStore } from "../stores/ui";
 import { Icon } from "../components/Icon";
 import "./art-tab.css";
+import { ArtPlacementControls, ArtPlacementOverlay } from "./ArtPlacementEditor";
 import { buildSketchPngFile } from "./art-sketch-upload";
 
 const SIZES: Array<{ label: string; w: number; h: number }> = [
@@ -58,6 +61,9 @@ export function ArtTab() {
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const [confirmSave, setConfirmSave] = useState(false);
+  const [placement, setPlacement] = useState<ArtPlacement | null>(null);
+  const [lockProportions, setLockProportions] = useState(true);
+  const [placing, setPlacing] = useState(true);
   const [svg, setSvg] = useState<string | null>(null);
   const [gray, setGray] = useState<GrayImage | null>(null);
   const [sourceName, setSourceName] = useState<string | null>(null);
@@ -72,6 +78,7 @@ export function ArtTab() {
   const [layers, setLayers] = useState<ArtLayer[]>(["silk"]);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const resolvedPlacement = gray ? (placement ?? fitArtPlacement(gray, widthMm, heightMm)) : null;
 
   const sketches = (project.data?.files ?? []).filter((f) =>
     /^sketches\/.+\.(png|jpe?g|webp|gif)$/i.test(f.path),
@@ -98,6 +105,7 @@ export function ArtTab() {
       if (id !== loadId.current) return;
       const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)]));
       setGray(img);
+      setPlacement(null);
       setSourceName(name);
       setSourceUrl(url);
       setLocalFile(file);
@@ -151,6 +159,7 @@ export function ArtTab() {
       timer = setTimeout(() => {
         try {
           const art = convertImage(gray, {
+            ...(placement ? { placement } : {}),
             style,
             widthMm,
             heightMm,
@@ -173,11 +182,11 @@ export function ArtTab() {
       cancelAnimationFrame(frame);
       clearTimeout(timer);
     };
-  }, [gray, style, widthMm, heightMm, color, outline, invert, threshold, layers]);
+  }, [gray, style, widthMm, heightMm, color, outline, invert, threshold, layers, placement]);
 
   useEffect(() => {
     setNote(null);
-  }, [style, color, outline, widthMm, heightMm, invert, threshold, layers, gray]);
+  }, [style, color, outline, widthMm, heightMm, invert, threshold, layers, gray, placement]);
 
   const toggleLayer = (layer: ArtLayer) => {
     setLayers((cur) => {
@@ -189,6 +198,7 @@ export function ArtTab() {
   const downloadLocal = () => {
     if (!gray) return;
     const job = buildBoardArt(gray, {
+      ...(resolvedPlacement ? { placement: resolvedPlacement } : {}),
       style,
       widthMm,
       heightMm,
@@ -223,6 +233,7 @@ export function ArtTab() {
       setLocalFile(null);
       const result = await tool.run("silk_art", {
         projectId,
+        ...(resolvedPlacement ? { placement: resolvedPlacement } : {}),
         ...(image ? { image } : {}),
         style,
         widthMm,
@@ -263,6 +274,7 @@ export function ArtTab() {
       const { path } = await client.uploadSketch(created.id, png, png.name);
       const result = await tool.run("silk_art", {
         projectId: created.id,
+        ...(resolvedPlacement ? { placement: resolvedPlacement } : {}),
         image: path.replace(/^\//, ""),
         style,
         widthMm,
@@ -427,6 +439,22 @@ export function ArtTab() {
             <input type="checkbox" checked={invert} onChange={(e) => setInvert(e.target.checked)} />
             Invert light and dark
           </label>
+          {gray && resolvedPlacement && (
+            <ArtPlacementControls
+              value={resolvedPlacement}
+              onChange={setPlacement}
+              lock={lockProportions}
+              onLock={setLockProportions}
+              widthMm={widthMm}
+              heightMm={heightMm}
+              onFit={() =>
+                setPlacement(
+                  fitArtPlacement(gray, widthMm, heightMm, resolvedPlacement.rotationDeg),
+                )
+              }
+              onReset={() => setPlacement(null)}
+            />
+          )}
           <details className="fd-art-advanced">
             <summary>Advanced</summary>
             <div className="mt-3 space-y-3">
@@ -499,7 +527,10 @@ export function ArtTab() {
             {widthMm} × {heightMm} mm · {STYLE_LABELS[style]}
           </span>
           {svg && (
-            <div className="flex items-center gap-1">
+            <div className="flex flex-wrap items-center gap-1">
+              <button type="button" aria-pressed={placing} onClick={() => setPlacing((p) => !p)}>
+                {placing ? "Finish placing" : "Place artwork"}
+              </button>
               <button
                 type="button"
                 aria-label="Zoom out"
@@ -561,10 +592,21 @@ export function ArtTab() {
               </figcaption>
               <div className="fd-art-canvas">
                 <div
+                  className="fd-art-board-surface"
                   style={{ width: `${zoom * 100}%`, minWidth: `${zoom * 100}%` }}
-                  data-testid="board-art-preview"
-                  dangerouslySetInnerHTML={{ __html: svg }}
-                />
+                >
+                  <div data-testid="board-art-preview" dangerouslySetInnerHTML={{ __html: svg }} />
+                  {placing && resolvedPlacement && (
+                    <ArtPlacementOverlay
+                      value={resolvedPlacement}
+                      onChange={setPlacement}
+                      widthMm={widthMm}
+                      heightMm={heightMm}
+                      lock={lockProportions}
+                      disabled={busy || loading}
+                    />
+                  )}
+                </div>
               </div>
             </figure>
           </div>

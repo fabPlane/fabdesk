@@ -1,3 +1,4 @@
+import { fitArtPlacement, imagePointAt } from "./placement";
 import { sampleDarkness } from "./image";
 import {
   MAX_PRIMITIVES,
@@ -28,22 +29,19 @@ function rasterize(img: GrayImage, o: ResolvedArtOptions): Primitive[] {
   return threshold(img, o);
 }
 
-function sourceMap(img: GrayImage, o: ResolvedArtOptions): { sx: (x: number) => number; sy: (y: number) => number } {
-  const box = artBox(o);
-  const scale = Math.min(box.w / img.width, box.h / img.height);
-  const dw = img.width * scale;
-  const dh = img.height * scale;
-  const ox = box.x + (box.w - dw) / 2;
-  const oy = box.y + (box.h - dh) / 2;
-  return {
-    sx: (x) => ((x - ox) / scale),
-    sy: (y) => ((y - oy) / scale),
-  };
+function sourceMap(img: GrayImage, o: ResolvedArtOptions) {
+  const placement = o.placement ?? fitArtPlacement(img, o.widthMm, o.heightMm, 0, o.marginMm);
+  return (x: number, y: number) => imagePointAt(placement, img, x, y);
 }
 
-function darknessAt(img: GrayImage, o: ResolvedArtOptions, map: ReturnType<typeof sourceMap>, x: number, y: number): number {
-  const px = map.sx(x);
-  const py = map.sy(y);
+function darknessAt(
+  img: GrayImage,
+  o: ResolvedArtOptions,
+  map: ReturnType<typeof sourceMap>,
+  x: number,
+  y: number,
+): number {
+  const { x: px, y: py } = map(x, y);
   if (px < -0.5 || py < -0.5 || px > img.width - 0.5 || py > img.height - 0.5) return 0;
   const d = sampleDarkness(img, px, py);
   return o.invert ? 1 - d : d;
@@ -213,12 +211,17 @@ function bandInterval(y0: number, y1: number, o: ResolvedArtOptions): [number, n
 }
 
 /** Trim horizontal runs to the outline instead of dropping them; dots stay all-or-nothing. */
-export function clipToOutline(primitives: readonly Primitive[], o: ResolvedArtOptions): Primitive[] {
+export function clipToOutline(
+  primitives: readonly Primitive[],
+  o: ResolvedArtOptions,
+): Primitive[] {
   if (o.outline === "rectangle") return [...primitives];
   const out: Primitive[] = [];
   for (const p of primitives) {
     if (p.kind === "circle") {
-      if (pointInOutline(p.x, p.y, o)) out.push(p);
+      const r = p.d / 2;
+      const span = bandInterval(p.y - r, p.y + r, o);
+      if (span && p.x - r >= span[0] && p.x + r <= span[1]) out.push(p);
     } else if (p.kind === "rect") {
       const span = bandInterval(p.y, p.y + p.h, o);
       if (!span) continue;

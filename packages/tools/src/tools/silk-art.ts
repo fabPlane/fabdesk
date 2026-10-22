@@ -31,6 +31,18 @@ export const silk_art = defineTool({
       .min(1)
       .optional()
       .describe("Project-relative image path. Defaults to the first file in sketches/."),
+    placement: z
+      .object({
+        centerXmm: z.number().finite(),
+        centerYmm: z.number().finite(),
+        widthMm: z.number().positive().max(800),
+        heightMm: z.number().positive().max(800),
+        rotationDeg: z.number().finite(),
+      })
+      .optional()
+      .describe(
+        "Artwork centre X/Y and dimensions in millimetres, clockwise rotation in degrees. Defaults to centred fit.",
+      ),
     style: z.enum(ART_STYLES).default("realistic"),
     widthMm: z.number().positive().max(400).default(DEFAULT_WIDTH_MM),
     heightMm: z.number().positive().max(400).default(DEFAULT_HEIGHT_MM),
@@ -64,6 +76,7 @@ export const silk_art = defineTool({
     }
     ctx.progress(0.4, "converting");
     const options: ArtOptions = {
+      ...(args.placement ? { placement: args.placement } : {}),
       style: args.style,
       widthMm: args.widthMm,
       heightMm: args.heightMm,
@@ -98,6 +111,7 @@ export const silk_art = defineTool({
       color: job.options.color,
       outline: job.options.outline,
       layers: job.options.layers,
+      placement: job.options.placement,
       primitives: job.stats.primitives,
       minFeatureMm: job.stats.minFeatureMm,
       pitchMm: job.stats.pitchMm,
@@ -126,6 +140,7 @@ export const silk_art = defineTool({
         color: job.options.color,
         outline: job.options.outline,
         layers: [...job.options.layers],
+        placement: job.options.placement,
         primitives: job.stats.primitives,
         minFeatureMm: job.stats.minFeatureMm,
         pitchMm: job.stats.pitchMm,
@@ -144,10 +159,14 @@ export const silk_art = defineTool({
 
 async function resolveImageRel(projectDir: string, image: string | undefined): Promise<string> {
   if (image) return image.replace(/^\//, "");
-  const names = (await readdir(`${projectDir}/${PROJECT_FILES.sketches}`).catch(() => [])).filter((f) =>
-    /\.(png|jpe?g|webp|gif)$/i.test(f),
+  const names = (await readdir(`${projectDir}/${PROJECT_FILES.sketches}`).catch(() => [])).filter(
+    (f) => /\.(png|jpe?g|webp|gif)$/i.test(f),
   );
   const first = names.sort()[0];
-  if (!first) throw new ToolError("no image: pass image= or add a PNG/JPEG/WebP/GIF under sketches/", "precondition");
+  if (!first)
+    throw new ToolError(
+      "no image: pass image= or add a PNG/JPEG/WebP/GIF under sketches/",
+      "precondition",
+    );
   return `${PROJECT_FILES.sketches}/${first}`;
 }

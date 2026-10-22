@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { encodePng } from "@fabdesk/board-art";
+import { buildBoardArt, decodeGray, encodePng } from "@fabdesk/board-art";
 import { createRegistry } from "../src";
 import { contextFactory, mockServices, tempProject } from "./mock-services";
 
@@ -11,7 +11,7 @@ function markPng(): Uint8Array {
   const data = new Uint8Array(w * h * 4);
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      const ink = x > 4 && x < 10 && y > 4 && y < 20 || y > 10 && y < 14 && x > 4 && x < 20;
+      const ink = (x > 4 && x < 10 && y > 4 && y < 20) || (y > 10 && y < 14 && x > 4 && x < 20);
       const i = (y * w + x) * 4;
       const v = ink ? 20 : 240;
       data[i] = v;
@@ -32,9 +32,17 @@ describe("silk_art", () => {
     const services = mockServices([project]);
     const factory = contextFactory(services, project);
     const reg = createRegistry();
+    const placement = { centerXmm: 12, centerYmm: 15, widthMm: 12, heightMm: 8, rotationDeg: 35 };
     const out = await reg.invoke(
       "silk_art",
-      { style: "poster", widthMm: 40, heightMm: 30, color: "black", outline: "rectangle" },
+      {
+        style: "poster",
+        widthMm: 40,
+        heightMm: 30,
+        color: "black",
+        outline: "rectangle",
+        placement,
+      },
       (ref) =>
         factory({
           def: reg.get("silk_art")!,
@@ -49,14 +57,29 @@ describe("silk_art", () => {
     expect(json.primitives).toBeGreaterThan(0);
     expect(await Bun.file(join(project.dir, "board.kicad_pcb")).exists()).toBe(true);
     expect(await Bun.file(join(project.dir, "exports/fabrication.zip")).exists()).toBe(true);
-    expect(await Bun.file(join(project.dir, "exports/gerbers/board-F_Silkscreen.gbr")).exists()).toBe(true);
+    expect(
+      await Bun.file(join(project.dir, "exports/gerbers/board-F_Silkscreen.gbr")).exists(),
+    ).toBe(true);
     const silk = await Bun.file(join(project.dir, "exports/gerbers/board-F_Silkscreen.gbr")).text();
     expect(silk).toContain("%MOMM*%");
     expect(silk.trim().endsWith("M02*")).toBe(true);
     expect(project.manifest().board.widthMm).toBe(40);
     expect(out.images?.[0]?.mime).toBe("image/svg+xml");
-    const report = JSON.parse(await Bun.file(join(project.dir, "reports/board-art.json")).text()) as { image: string };
+    const report = JSON.parse(
+      await Bun.file(join(project.dir, "reports/board-art.json")).text(),
+    ) as { image: string };
     expect(report.image).toBe("sketches/logo.png");
+    expect((report as unknown as { placement: unknown }).placement).toEqual(placement);
+    const expected = buildBoardArt(await decodeGray(markPng()), {
+      style: "poster",
+      widthMm: 40,
+      heightMm: 30,
+      color: "black",
+      outline: "rectangle",
+      placement,
+    });
+    expect(await Bun.file(join(project.dir, "board.kicad_pcb")).text()).toBe(expected.kicadPcb);
+    expect(silk).toBe(expected.gerbers.find((g) => g.name === "board-F_Silkscreen.gbr")!.body);
     expect(report.image).not.toMatch(/^\//);
   });
 
