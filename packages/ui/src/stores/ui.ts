@@ -58,6 +58,8 @@ export interface UiState {
   /** Parts Inventory (opened from the user menu) replaces the chat pane while true. */
   inventoryOpen: boolean;
   boardTab: BoardTab;
+  fileToReveal: { projectId: string; path: string } | null;
+  openProjectFile: (path: string) => void;
   stencilThicknessByProject: Record<string, number>;
   setStencilThickness: (projectId: string, thicknessMm: number) => void;
   drafts: Record<string, string>;
@@ -137,6 +139,11 @@ export const useUiStore = create<UiState>()(
   orderFlowOpen: false,
   inventoryOpen: false,
   boardTab: "schematic",
+  fileToReveal: null,
+  openProjectFile: (path) => set((s) => s.activeProjectId ? {
+    boardTab: "files", boardOpen: true,
+    fileToReveal: { projectId: s.activeProjectId, path },
+  } : {}),
   stencilThicknessByProject: {},
   setStencilThickness: (projectId, thicknessMm) => set((s) => ({
     stencilThicknessByProject: { ...s.stencilThicknessByProject, [projectId]: stencilThicknessMm(thicknessMm) },
