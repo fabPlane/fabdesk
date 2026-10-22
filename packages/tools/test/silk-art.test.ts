@@ -42,6 +42,7 @@ describe("silk_art", () => {
         color: "black",
         outline: "rectangle",
         placement,
+        crop: "circle",
       },
       (ref) =>
         factory({
@@ -77,6 +78,7 @@ describe("silk_art", () => {
       color: "black",
       outline: "rectangle",
       placement,
+      crop: "circle",
     });
     expect(await Bun.file(join(project.dir, "board.kicad_pcb")).text()).toBe(expected.kicadPcb);
     expect(silk).toBe(expected.gerbers.find((g) => g.name === "board-F_Silkscreen.gbr")!.body);

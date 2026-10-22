@@ -1,9 +1,10 @@
 import { useEffect, useRef, type PointerEvent } from "react";
-import type { ArtPlacement } from "@fabdesk/board-art";
+import type { ArtPlacement, ImageCrop } from "@fabdesk/board-art";
 import { Button } from "../components/ui";
 import { resizeArtwork } from "./art-placement";
 
 export function ArtPlacementControls({
+  crop,
   value,
   onChange,
   lock,
@@ -13,6 +14,7 @@ export function ArtPlacementControls({
   widthMm,
   heightMm,
 }: {
+  crop: ImageCrop;
   value: ArtPlacement;
   onChange: (p: ArtPlacement) => void;
   lock: boolean;
@@ -37,8 +39,10 @@ export function ArtPlacementControls({
           if (!Number.isFinite(next)) return;
           if ((key === "widthMm" || key === "heightMm") && (next < 1 || next > 800)) return;
           const updated = { ...value, [key]: next };
-          if (lock && key === "widthMm") updated.heightMm = (next * value.heightMm) / value.widthMm;
-          if (lock && key === "heightMm") updated.widthMm = (next * value.widthMm) / value.heightMm;
+          if ((lock || crop === "circle") && key === "widthMm")
+            updated.heightMm = (next * value.heightMm) / value.widthMm;
+          if ((lock || crop === "circle") && key === "heightMm")
+            updated.widthMm = (next * value.widthMm) / value.heightMm;
           if (updated.widthMm > 800 || updated.heightMm > 800) return;
           onChange(updated);
         }}
@@ -51,15 +55,23 @@ export function ArtPlacementControls({
       <p className="mt-1 text-[11px] text-muted">
         Drag the outlined image on the board. Pull a corner to resize or the round handle to rotate.
       </p>
-      <div className="fd-art-position-fields">
-        {field("centerXmm", "Centre X (mm)")}
-        {field("centerYmm", "Centre Y (mm)")}
-        {field("widthMm", "Image width (mm)")}
-        {field("heightMm", "Image height (mm)")}
-        {field("rotationDeg", "Rotation (°)")}
-      </div>
+      <details className="fd-art-precise">
+        <summary>Exact position & size</summary>
+        <div className="fd-art-position-fields">
+          {field("centerXmm", "Centre X (mm)")}
+          {field("centerYmm", "Centre Y (mm)")}
+          {field("widthMm", "Image width (mm)")}
+          {field("heightMm", "Image height (mm)")}
+          {field("rotationDeg", "Rotation (°)")}
+        </div>
+      </details>
       <label className="mt-2 flex items-center gap-2 text-xs">
-        <input type="checkbox" checked={lock} onChange={(e) => onLock(e.target.checked)} />
+        <input
+          type="checkbox"
+          checked={lock || crop === "circle"}
+          disabled={crop === "circle"}
+          onChange={(e) => onLock(e.target.checked)}
+        />
         Lock proportions
       </label>
       <div className="mt-3 flex flex-wrap gap-2">
@@ -77,14 +89,14 @@ export function ArtPlacementControls({
         </Button>
       </div>
       <p className="mt-2 text-[11px] text-muted">
-        X/Y measure the image centre from the board’s top-left. Artwork is cropped to the board
-        outline and 2 mm edge margin.
+        Crop and image move together. The board stays fixed.
       </p>
     </section>
   );
 }
 
 export function ArtPlacementOverlay({
+  crop,
   value,
   onChange,
   widthMm,
@@ -92,6 +104,7 @@ export function ArtPlacementOverlay({
   lock,
   disabled,
 }: {
+  crop: ImageCrop;
   value: ArtPlacement;
   onChange: (p: ArtPlacement) => void;
   widthMm: number;
@@ -163,7 +176,9 @@ export function ArtPlacementOverlay({
             centerYmm: d.value.centerYmm + p.y - d.y,
           });
         if (d.kind === "resize")
-          schedule(resizeArtwork(d.value, p.x, p.y, d.cornerX, d.cornerY, lock));
+          schedule(
+            resizeArtwork(d.value, p.x, p.y, d.cornerX, d.cornerY, lock || crop === "circle"),
+          );
         if (d.kind === "rotate") {
           const initial = Math.atan2(d.y - d.value.centerYmm, d.x - d.value.centerXmm);
           const current = Math.atan2(p.y - d.value.centerYmm, p.x - d.value.centerXmm);
@@ -190,6 +205,20 @@ export function ArtPlacementOverlay({
       >
         <rect
           className="fd-art-placement-box"
+          rx={
+            crop === "circle"
+              ? value.widthMm / 2
+              : crop === "rounded"
+                ? Math.min(value.widthMm, value.heightMm) * 0.12
+                : 0
+          }
+          ry={
+            crop === "circle"
+              ? value.heightMm / 2
+              : crop === "rounded"
+                ? Math.min(value.widthMm, value.heightMm) * 0.12
+                : 0
+          }
           x={-value.widthMm / 2}
           y={-value.heightMm / 2}
           width={value.widthMm}

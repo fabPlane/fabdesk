@@ -1,4 +1,4 @@
-import { fitArtPlacement, imagePointAt } from "./placement";
+import { fitArtPlacement, imagePointAt, pointInArtworkCrop } from "./placement";
 import { sampleDarkness } from "./image";
 import {
   MAX_PRIMITIVES,
@@ -20,7 +20,53 @@ export function convertImage(img: GrayImage, raw: ArtOptions): BoardArt {
     guard++;
   }
   if (primitives.length > MAX_PRIMITIVES) primitives = primitives.slice(0, MAX_PRIMITIVES);
-  return { options, primitives, clipped: clipToOutline(primitives, options) };
+  const placement =
+    options.placement ??
+    fitArtPlacement(img, options.widthMm, options.heightMm, 0, options.marginMm, options.crop);
+  const cropped =
+    options.crop === "none"
+      ? primitives
+      : primitives.flatMap((p): Primitive[] => {
+          if (p.kind === "circle")
+            return pointInArtworkCrop(placement, options.crop, p.x, p.y, p.d / 2) ? [p] : [];
+          const x0 = p.kind === "line" ? p.x1 : p.x;
+          const x1 = p.kind === "line" ? p.x2 : p.x + p.w;
+          const y0 = p.kind === "line" ? p.y1 : p.y;
+          const y1 = p.kind === "line" ? p.y2 : p.y + p.h;
+          const inset = p.kind === "line" ? p.w / 2 : 0;
+          const inside = (x: number) =>
+            pointInArtworkCrop(placement, options.crop, x, y0, inset) &&
+            pointInArtworkCrop(placement, options.crop, x, y1, inset);
+          const mid = (x0 + x1) / 2;
+          if (!inside(mid)) return [];
+          let left = x0,
+            right = x1;
+          if (!inside(left)) {
+            let lo = left,
+              hi = mid;
+            for (let i = 0; i < 20; i++) {
+              const m = (lo + hi) / 2;
+              if (inside(m)) hi = m;
+              else lo = m;
+            }
+            left = hi;
+          }
+          if (!inside(right)) {
+            let lo = mid,
+              hi = right;
+            for (let i = 0; i < 20; i++) {
+              const m = (lo + hi) / 2;
+              if (inside(m)) lo = m;
+              else hi = m;
+            }
+            right = lo;
+          }
+          if (right - left < options.minFeatureMm) return [];
+          return p.kind === "line"
+            ? [{ ...p, x1: left, x2: right }]
+            : [{ ...p, x: left, w: right - left }];
+        });
+  return { options, primitives, clipped: clipToOutline(cropped, options) };
 }
 
 function rasterize(img: GrayImage, o: ResolvedArtOptions): Primitive[] {
@@ -30,8 +76,12 @@ function rasterize(img: GrayImage, o: ResolvedArtOptions): Primitive[] {
 }
 
 function sourceMap(img: GrayImage, o: ResolvedArtOptions) {
-  const placement = o.placement ?? fitArtPlacement(img, o.widthMm, o.heightMm, 0, o.marginMm);
-  return (x: number, y: number) => imagePointAt(placement, img, x, y);
+  const placement =
+    o.placement ?? fitArtPlacement(img, o.widthMm, o.heightMm, 0, o.marginMm, o.crop);
+  return (x: number, y: number) => ({
+    ...imagePointAt(placement, img, x, y, o.crop),
+    inside: pointInArtworkCrop(placement, o.crop, x, y),
+  });
 }
 
 function darknessAt(
@@ -41,7 +91,8 @@ function darknessAt(
   x: number,
   y: number,
 ): number {
-  const { x: px, y: py } = map(x, y);
+  const { x: px, y: py, inside } = map(x, y);
+  if (!inside) return 0;
   if (px < -0.5 || py < -0.5 || px > img.width - 0.5 || py > img.height - 0.5) return 0;
   const d = sampleDarkness(img, px, py);
   return o.invert ? 1 - d : d;

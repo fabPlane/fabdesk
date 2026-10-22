@@ -67,6 +67,7 @@ function readme(o: ResolvedArtOptions, primitives: number): string {
     `Style: ${o.style}`,
     `Board: ${o.widthMm} x ${o.heightMm} mm, ${o.color} soldermask, ${o.outline} outline`,
     `Layers: ${o.layers.join(", ")}`,
+    `Image crop: ${o.crop}`,
     ...(o.placement
       ? [
           `Artwork centre: ${o.placement.centerXmm} x ${o.placement.centerYmm} mm`,

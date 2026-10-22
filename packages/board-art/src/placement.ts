@@ -1,4 +1,4 @@
-import type { ArtPlacement, GrayImage } from "./types";
+import type { ArtPlacement, GrayImage, ImageCrop } from "./types";
 
 /** Image bounds are centred at X/Y in board coordinates; positive rotation is clockwise. */
 export function fitArtPlacement(
@@ -7,7 +7,9 @@ export function fitArtPlacement(
   heightMm: number,
   rotationDeg = 0,
   marginMm = 2,
+  crop: ImageCrop = "none",
 ): ArtPlacement {
+  if (crop === "circle") img = { width: 1, height: 1 };
   const radians = (rotationDeg * Math.PI) / 180;
   const c = Math.abs(Math.cos(radians));
   const s = Math.abs(Math.sin(radians));
@@ -38,12 +40,43 @@ export function imagePointAt(
   img: Pick<GrayImage, "width" | "height">,
   x: number,
   y: number,
+  crop: ImageCrop = "none",
 ) {
   const a = (p.rotationDeg * Math.PI) / 180;
   const dx = x - p.centerXmm,
     dy = y - p.centerYmm;
+  if (crop !== "none") {
+    const scale = Math.max(p.widthMm / img.width, p.heightMm / img.height);
+    return {
+      x: (dx * Math.cos(a) + dy * Math.sin(a)) / scale + img.width / 2,
+      y: (-dx * Math.sin(a) + dy * Math.cos(a)) / scale + img.height / 2,
+    };
+  }
   return {
     x: ((dx * Math.cos(a) + dy * Math.sin(a)) / p.widthMm + 0.5) * img.width,
     y: ((-dx * Math.sin(a) + dy * Math.cos(a)) / p.heightMm + 0.5) * img.height,
   };
+}
+
+/** Crop coordinates follow the artwork transform, independently of the physical PCB outline. */
+export function pointInArtworkCrop(
+  p: ArtPlacement,
+  crop: ImageCrop,
+  x: number,
+  y: number,
+  inset = 0,
+): boolean {
+  if (crop === "none") return true;
+  const a = (p.rotationDeg * Math.PI) / 180;
+  const dx = x - p.centerXmm,
+    dy = y - p.centerYmm;
+  const lx = Math.abs(dx * Math.cos(a) + dy * Math.sin(a));
+  const ly = Math.abs(-dx * Math.sin(a) + dy * Math.cos(a));
+  if (crop === "circle")
+    return Math.hypot(lx, ly) <= Math.min(p.widthMm, p.heightMm) / 2 - inset + 1e-9;
+  const halfW = p.widthMm / 2 - inset,
+    halfH = p.heightMm / 2 - inset;
+  if (halfW < 0 || halfH < 0 || lx > halfW || ly > halfH) return false;
+  const r = Math.max(0, Math.min(p.widthMm, p.heightMm) * 0.12 - inset);
+  return Math.hypot(Math.max(0, lx - (halfW - r)), Math.max(0, ly - (halfH - r))) <= r + 1e-9;
 }

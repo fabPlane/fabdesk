@@ -368,3 +368,19 @@
   border-radius: 6px;
   pointer-events: none;
 }
+.fd-art-precise {
+  margin-top: 10px;
+  font-size: 12px;
+}
+.fd-art-precise summary {
+  cursor: pointer;
+  color: var(--fd-muted);
+}
+.fd-art-actions {
+  position: sticky;
+  bottom: -18px;
+  z-index: 3;
+  padding: 14px 0 18px;
+  border-top: 1px solid var(--fd-border);
+  background: var(--fd-panel);
+}

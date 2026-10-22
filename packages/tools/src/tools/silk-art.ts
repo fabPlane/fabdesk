@@ -3,6 +3,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { z } from "zod/v4";
 import {
   ART_LAYERS,
+  IMAGE_CROPS,
   ART_STYLES,
   BOARD_COLORS,
   DEFAULT_HEIGHT_MM,
@@ -31,6 +32,10 @@ export const silk_art = defineTool({
       .min(1)
       .optional()
       .describe("Project-relative image path. Defaults to the first file in sketches/."),
+    crop: z
+      .enum(IMAGE_CROPS)
+      .default("none")
+      .describe("Image crop independent of board outline. The crop follows artwork placement."),
     placement: z
       .object({
         centerXmm: z.number().finite(),
@@ -77,6 +82,7 @@ export const silk_art = defineTool({
     ctx.progress(0.4, "converting");
     const options: ArtOptions = {
       ...(args.placement ? { placement: args.placement } : {}),
+      crop: args.crop,
       style: args.style,
       widthMm: args.widthMm,
       heightMm: args.heightMm,
@@ -111,6 +117,7 @@ export const silk_art = defineTool({
       color: job.options.color,
       outline: job.options.outline,
       layers: job.options.layers,
+      crop: job.options.crop,
       placement: job.options.placement,
       primitives: job.stats.primitives,
       minFeatureMm: job.stats.minFeatureMm,
@@ -140,6 +147,7 @@ export const silk_art = defineTool({
         color: job.options.color,
         outline: job.options.outline,
         layers: [...job.options.layers],
+        crop: job.options.crop,
         placement: job.options.placement,
         primitives: job.stats.primitives,
         minFeatureMm: job.stats.minFeatureMm,

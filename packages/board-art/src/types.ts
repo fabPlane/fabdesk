@@ -40,6 +40,9 @@ export type LinePrim = { kind: "line"; x1: number; y1: number; x2: number; y2: n
 export type RectPrim = { kind: "rect"; x: number; y: number; w: number; h: number };
 export type Primitive = CirclePrim | LinePrim | RectPrim;
 
+export const IMAGE_CROPS = ["none", "circle", "rounded"] as const;
+export type ImageCrop = (typeof IMAGE_CROPS)[number];
+
 export type ArtPlacement = {
   centerXmm: number;
   centerYmm: number;
@@ -49,6 +52,7 @@ export type ArtPlacement = {
 };
 
 export type ArtOptions = {
+  crop?: ImageCrop;
   placement?: ArtPlacement;
   style: ArtStyle;
   widthMm: number;
@@ -69,6 +73,7 @@ export type ArtOptions = {
 };
 
 export type ResolvedArtOptions = {
+  crop: ImageCrop;
   placement?: ArtPlacement;
   style: ArtStyle;
   widthMm: number;
@@ -122,6 +127,7 @@ export function resolveArtOptions(raw: ArtOptions): ResolvedArtOptions {
   const layers = raw.layers && raw.layers.length > 0 ? raw.layers : (["silk"] as const);
   return {
     ...(raw.placement ? { placement: validateArtPlacement(raw.placement) } : {}),
+    crop: raw.crop ?? "none",
     style: raw.style,
     widthMm,
     heightMm,

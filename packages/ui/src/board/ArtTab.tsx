@@ -1,5 +1,7 @@
 import {
   ART_LAYERS,
+  IMAGE_CROPS,
+  type ImageCrop,
   ART_STYLES,
   BOARD_COLORS,
   OUTLINE_KINDS,
@@ -71,6 +73,7 @@ export function ArtTab() {
   const [localFile, setLocalFile] = useState<File | null>(null);
   const [style, setStyle] = useState<ArtStyle>("realistic");
   const [color, setColor] = useState<BoardColor>("green");
+  const [crop, setCrop] = useState<ImageCrop>("none");
   const [outline, setOutline] = useState<OutlineKind>("rectangle");
   const [widthMm, setWidthMm] = useState(80);
   const [heightMm, setHeightMm] = useState(50);
@@ -79,7 +82,9 @@ export function ArtTab() {
   const [layers, setLayers] = useState<ArtLayer[]>(["silk"]);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const resolvedPlacement = gray ? (placement ?? fitArtPlacement(gray, widthMm, heightMm)) : null;
+  const resolvedPlacement = gray
+    ? (placement ?? fitArtPlacement(gray, widthMm, heightMm, 0, 2, crop))
+    : null;
 
   const sketches = (project.data?.files ?? []).filter((f) =>
     /^sketches\/.+\.(png|jpe?g|webp|gif)$/i.test(f.path),
@@ -208,6 +213,7 @@ export function ArtTab() {
     setConverting(true);
     previewQueue.current.request({
       ...(placement ? { placement } : {}),
+      crop,
       style,
       widthMm,
       heightMm,
@@ -217,11 +223,11 @@ export function ArtTab() {
       threshold,
       layers,
     });
-  }, [gray, style, widthMm, heightMm, color, outline, invert, threshold, layers, placement]);
+  }, [gray, style, widthMm, heightMm, color, outline, invert, threshold, layers, placement, crop]);
 
   useEffect(() => {
     setNote(null);
-  }, [style, color, outline, widthMm, heightMm, invert, threshold, layers, gray, placement]);
+  }, [style, color, outline, widthMm, heightMm, invert, threshold, layers, gray, placement, crop]);
 
   const toggleLayer = (layer: ArtLayer) => {
     setLayers((cur) => {
@@ -234,6 +240,7 @@ export function ArtTab() {
     if (!gray) return;
     const job = buildBoardArt(gray, {
       ...(resolvedPlacement ? { placement: resolvedPlacement } : {}),
+      crop,
       style,
       widthMm,
       heightMm,
@@ -270,6 +277,7 @@ export function ArtTab() {
         projectId,
         ...(resolvedPlacement ? { placement: resolvedPlacement } : {}),
         ...(image ? { image } : {}),
+        crop,
         style,
         widthMm,
         heightMm,
@@ -311,6 +319,7 @@ export function ArtTab() {
         projectId: created.id,
         ...(resolvedPlacement ? { placement: resolvedPlacement } : {}),
         image: path.replace(/^\//, ""),
+        crop,
         style,
         widthMm,
         heightMm,
@@ -412,6 +421,45 @@ export function ArtTab() {
               ))}
             </Select>
           )}
+          <label className="fd-art-field">
+            Image crop
+            <Select
+              value={crop}
+              onChange={(e) => {
+                const next = e.target.value as ImageCrop;
+                setCrop(next);
+                setLockProportions(true);
+                if (gray) setPlacement(fitArtPlacement(gray, widthMm, heightMm, 0, 2, next));
+              }}
+            >
+              {IMAGE_CROPS.map((c) => (
+                <option key={c} value={c}>
+                  {c === "none"
+                    ? "None — full image"
+                    : c === "circle"
+                      ? "Circle"
+                      : "Rounded rectangle"}
+                </option>
+              ))}
+            </Select>
+          </label>
+          {gray && resolvedPlacement && (
+            <ArtPlacementControls
+              crop={crop}
+              value={resolvedPlacement}
+              onChange={setPlacement}
+              lock={lockProportions}
+              onLock={setLockProportions}
+              widthMm={widthMm}
+              heightMm={heightMm}
+              onFit={() =>
+                setPlacement(
+                  fitArtPlacement(gray, widthMm, heightMm, resolvedPlacement.rotationDeg, 2, crop),
+                )
+              }
+              onReset={() => setPlacement(null)}
+            />
+          )}
           <div>
             <div className="fd-art-label">Art style</div>
             <div className="fd-art-styles" role="group" aria-label="Art style">
@@ -431,65 +479,58 @@ export function ArtTab() {
             </div>
             <p className="mt-1 text-[11px] text-muted">{STYLE_HELP[style]}</p>
           </div>
-          <label className="fd-art-field">
-            Board colour
-            <Select value={color} onChange={(e) => setColor(e.target.value as BoardColor)}>
-              {BOARD_COLORS.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </Select>
-          </label>
-          <label className="fd-art-field">
-            Board size
-            <Select
-              value={`${widthMm}x${heightMm}`}
-              onChange={(e) => {
-                const hit = SIZES.find((s) => `${s.w}x${s.h}` === e.target.value);
-                if (hit) {
-                  setWidthMm(hit.w);
-                  setHeightMm(hit.h);
-                }
-              }}
-            >
-              {SIZES.map((s) => (
-                <option key={s.label} value={`${s.w}x${s.h}`}>
-                  {s.label}
-                </option>
-              ))}
-            </Select>
-          </label>
-          <label className="fd-art-field">
-            Outline
-            <Select value={outline} onChange={(e) => setOutline(e.target.value as OutlineKind)}>
-              {OUTLINE_KINDS.map((o) => (
-                <option key={o} value={o}>
-                  {o === "rounded" ? "Rounded rectangle" : o[0]!.toUpperCase() + o.slice(1)}
-                </option>
-              ))}
-            </Select>
-          </label>
+          <details className="fd-art-advanced">
+            <summary>Board settings</summary>
+            <div className="mt-3 space-y-4">
+              {" "}
+              <label className="fd-art-field">
+                Board colour
+                <Select value={color} onChange={(e) => setColor(e.target.value as BoardColor)}>
+                  {BOARD_COLORS.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+              <label className="fd-art-field">
+                Board size
+                <Select
+                  value={`${widthMm}x${heightMm}`}
+                  onChange={(e) => {
+                    const hit = SIZES.find((s) => `${s.w}x${s.h}` === e.target.value);
+                    if (hit) {
+                      setWidthMm(hit.w);
+                      setHeightMm(hit.h);
+                    }
+                  }}
+                >
+                  {SIZES.map((s) => (
+                    <option key={s.label} value={`${s.w}x${s.h}`}>
+                      {s.label}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+              <label className="fd-art-field">
+                Board shape
+                <Select value={outline} onChange={(e) => setOutline(e.target.value as OutlineKind)}>
+                  {OUTLINE_KINDS.map((o) => (
+                    <option key={o} value={o}>
+                      {o === "rounded" ? "Rounded rectangle" : o[0]!.toUpperCase() + o.slice(1)}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+              <p className="text-[11px] text-muted">
+                Board shape changes the physical PCB edge, independently of the image crop.
+              </p>
+            </div>
+          </details>
           <label className="flex items-center gap-2 text-xs">
             <input type="checkbox" checked={invert} onChange={(e) => setInvert(e.target.checked)} />
             Invert light and dark
           </label>
-          {gray && resolvedPlacement && (
-            <ArtPlacementControls
-              value={resolvedPlacement}
-              onChange={setPlacement}
-              lock={lockProportions}
-              onLock={setLockProportions}
-              widthMm={widthMm}
-              heightMm={heightMm}
-              onFit={() =>
-                setPlacement(
-                  fitArtPlacement(gray, widthMm, heightMm, resolvedPlacement.rotationDeg),
-                )
-              }
-              onReset={() => setPlacement(null)}
-            />
-          )}
           <details className="fd-art-advanced">
             <summary>Advanced</summary>
             <div className="mt-3 space-y-3">
@@ -638,6 +679,7 @@ export function ArtTab() {
                   />
                   {placing && resolvedPlacement && (
                     <ArtPlacementOverlay
+                      crop={crop}
                       value={resolvedPlacement}
                       onChange={setPlacement}
                       widthMm={widthMm}
