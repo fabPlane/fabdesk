@@ -1,4 +1,5 @@
 import type {
+  AgentId,
   ApprovalDecision,
   PendingRequests,
   RuntimeMode,
@@ -815,4 +816,48 @@ export function useInventoryMutations() {
       onSuccess: refresh,
     }),
   };
+}
+
+export function useFinishIt(projectId: string | null) {
+  const client = useCoreClient();
+  return useQuery({
+    queryKey: ["finish-it", projectId],
+    queryFn: async () => (await client.getFinishIt(projectId!)).session,
+    enabled: !!projectId,
+  });
+}
+
+export function useStartFinishIt() {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      projectId,
+      threadId,
+      agentId,
+      model,
+    }: {
+      projectId: string;
+      threadId?: string;
+      agentId?: AgentId;
+      model?: string;
+    }) => client.startFinishIt(projectId, { ...(threadId ? { threadId } : {}), ...(agentId ? { agentId } : {}), ...(model ? { model } : {}) }),
+    onSuccess: (data, vars) => {
+      qc.setQueryData(["finish-it", vars.projectId], data.session);
+      void qc.invalidateQueries({ queryKey: ["threads"] });
+      void qc.invalidateQueries({ queryKey: ["thread", data.session.threadId] });
+      void qc.invalidateQueries({ queryKey: messagesKey(data.session.threadId) });
+    },
+  });
+}
+
+export function useStopFinishIt() {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (projectId: string) => client.stopFinishIt(projectId),
+    onSuccess: (data, projectId) => {
+      qc.setQueryData(["finish-it", projectId], data.session);
+    },
+  });
 }

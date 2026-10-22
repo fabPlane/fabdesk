@@ -73,6 +73,11 @@ describe("migrate", () => {
     expect(schemaVersion(db)).toBe(LATEST);
     expect(hasColumn(db, "runs", "log_path")).toBe(true);
     expect(hasColumn(db, "run_dumps", "dump_json")).toBe(true);
+    expect(
+      db.query<{ n: number }, []>(
+        "SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name = 'finish_it_sessions'",
+      ).get()?.n,
+    ).toBe(1);
   });
 
   test("a database created by 0.2.87 upgrades although runs.log_path already exists", () => {
