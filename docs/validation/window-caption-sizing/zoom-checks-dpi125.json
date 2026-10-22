@@ -1,0 +1,90 @@
+[
+  {
+    "zoom": 1,
+    "barHeight": 48,
+    "iconWidth": 20,
+    "right": 1296.0125274658203,
+    "overlayRight": 1304,
+    "padding": "145.6px",
+    "comp": "1",
+    "actualZoom": 1,
+    "viewport": 1442
+  },
+  {
+    "zoom": 0.5787037,
+    "barHeight": 82.94400024414062,
+    "iconWidth": 34.560001373291016,
+    "right": 2240.1792602539062,
+    "overlayRight": 2254,
+    "padding": "145.202px",
+    "comp": "1.728",
+    "actualZoom": 0.5787037,
+    "viewport": 2491
+  },
+  {
+    "zoom": 0.833333,
+    "barHeight": 57.60002517700195,
+    "iconWidth": 24.000009536743164,
+    "right": 1555.410659790039,
+    "overlayRight": 1565,
+    "padding": "145.434px",
+    "comp": "1.2",
+    "actualZoom": 0.833333,
+    "viewport": 1730
+  },
+  {
+    "zoom": 1.2,
+    "barHeight": 40,
+    "iconWidth": 16.666667938232422,
+    "right": 1080.3333740234375,
+    "overlayRight": 1087,
+    "padding": "145.2px",
+    "comp": "0.833333",
+    "actualZoom": 1.2,
+    "viewport": 1201
+  },
+  {
+    "zoom": 1.44,
+    "barHeight": 33.33333206176758,
+    "iconWidth": 13.888888359069824,
+    "right": 900.4513244628906,
+    "overlayRight": 906,
+    "padding": "144.96px",
+    "comp": "0.694444",
+    "actualZoom": 1.44,
+    "viewport": 1001
+  },
+  {
+    "zoom": 2,
+    "barHeight": 24,
+    "iconWidth": 10,
+    "right": 648.0062866210938,
+    "overlayRight": 652,
+    "padding": "145.6px",
+    "comp": "0.5",
+    "actualZoom": 2,
+    "viewport": 721
+  },
+  {
+    "zoom": 0.5,
+    "barHeight": 96,
+    "iconWidth": 40,
+    "right": 2592.0249633789062,
+    "overlayRight": 2608,
+    "padding": "145.6px",
+    "comp": "2",
+    "actualZoom": 0.5,
+    "viewport": 2883
+  },
+  {
+    "zoom": 1,
+    "barHeight": 48,
+    "iconWidth": 20,
+    "right": 1296.0124816894531,
+    "overlayRight": 1304,
+    "padding": "145.6px",
+    "comp": "1",
+    "actualZoom": 1,
+    "viewport": 1442
+  }
+]

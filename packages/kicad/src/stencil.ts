@@ -87,7 +87,7 @@ export type StencilMesh = {
   normals: Float32Array;
 };
 
-export type StencilBuild = {
+export type StencilLayout = {
   side: StencilSide;
   pads: StencilPadInfo[];
   apertures: StencilAperture[];
@@ -96,9 +96,12 @@ export type StencilBuild = {
   plate: StencilBounds;
   alignmentHoles: StencilAlignmentHole[];
   warnings: StencilWarning[];
+  options: Required<StencilOptions>;
+};
+
+export type StencilBuild = StencilLayout & {
   plateMesh: StencilMesh;
   jigMesh?: StencilMesh;
-  options: Required<StencilOptions>;
 };
 
 export type StencilSummary = {
@@ -150,7 +153,7 @@ export function resolveStencilOptions(opts: StencilOptions = {}): Required<Stenc
   };
 }
 
-export function buildSolderStencil(pcbText: string, opts: StencilOptions = {}): StencilBuild {
+export function buildStencilLayout(pcbText: string, opts: StencilOptions = {}): StencilLayout {
   const options = resolveStencilOptions(opts);
   for (const key of [
     "thicknessMm",
@@ -180,27 +183,6 @@ export function buildSolderStencil(pcbText: string, opts: StencilOptions = {}): 
   const { apertures, skipped } = selectApertures(pads, options, warnings);
   const plate = expandBounds(board, options.frameMm);
   const alignmentHoles = alignmentHolesFor(pcb, plate, board, options, warnings);
-  const holePolys: Ring[] = [
-    ...apertures.map((a) => a.polygon),
-    ...(options.alignment === "none"
-      ? []
-      : alignmentHoles.map((h) => circleRing(h.x, h.y, h.diameterMm / 2))),
-  ];
-  const plate2d = cutPlate(rectRing(plate.minX, plate.minY, plate.maxX, plate.maxY), holePolys);
-  const plateMesh = extrude(plate2d, 0, options.thicknessMm);
-  if (!checkMesh(plateMesh).watertight)
-    throw new Error("Stencil mesh is not watertight; export native paste Gerbers instead.");
-  let jigMesh: StencilMesh | undefined;
-  if (options.includeJig) {
-    jigMesh = buildJigMesh(plate, board, alignmentHoles, options);
-  }
-  if (options.side === "B") {
-    warnings.push({
-      code: "bottom_view",
-      message:
-        "Bottom stencil is as seen from above (KiCad coordinates). Mirror it in the slicer if you print against the board's back.",
-    });
-  }
   return {
     side: options.side,
     pads,
@@ -210,9 +192,40 @@ export function buildSolderStencil(pcbText: string, opts: StencilOptions = {}): 
     plate,
     alignmentHoles,
     warnings,
+    options,
+  };
+}
+
+export function buildSolderStencil(pcbText: string, opts: StencilOptions = {}): StencilBuild {
+  const layout = buildStencilLayout(pcbText, opts);
+  const holePolys: Ring[] = [
+    ...layout.apertures.map((a) => a.polygon),
+    ...(layout.options.alignment === "none"
+      ? []
+      : layout.alignmentHoles.map((h) => circleRing(h.x, h.y, h.diameterMm / 2))),
+  ];
+  const plate2d = cutPlate(
+    rectRing(layout.plate.minX, layout.plate.minY, layout.plate.maxX, layout.plate.maxY),
+    holePolys,
+  );
+  const plateMesh = extrude(plate2d, 0, layout.options.thicknessMm);
+  if (!checkMesh(plateMesh).watertight)
+    throw new Error("Stencil mesh is not watertight; export native paste Gerbers instead.");
+  let jigMesh: StencilMesh | undefined;
+  if (layout.options.includeJig) {
+    jigMesh = buildJigMesh(layout.plate, layout.board, layout.alignmentHoles, layout.options);
+  }
+  if (layout.options.side === "B") {
+    layout.warnings.push({
+      code: "bottom_view",
+      message:
+        "Bottom stencil is as seen from above (KiCad coordinates). Mirror it in the slicer if you print against the board's back.",
+    });
+  }
+  return {
+    ...layout,
     plateMesh,
     ...(jigMesh ? { jigMesh } : {}),
-    options,
   };
 }
 

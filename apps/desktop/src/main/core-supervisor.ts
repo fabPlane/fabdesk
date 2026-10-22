@@ -11,14 +11,14 @@
 import type { CoreInfo, CoreStatusInfo } from "../shared/core-info";
 import type { DaemonHandshake, ReadyLine } from "@fabdesk/protocol";
 import { app } from "electron";
-import { spawn, type ChildProcess } from "node:child_process";
+import { type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { createWriteStream, existsSync, mkdirSync, readFileSync, type WriteStream } from "node:fs";
 import { createInterface } from "node:readline";
 import { join, resolve } from "node:path";
 import { spawnCorePort } from "./dev-profile";
-import { coreEnvironment } from "./child-process-env";
+import { coreEnvironment, spawnSidecar } from "./child-process-env";
 import { coreExitReason, isTranslocated, StderrTail, withTranslocationHint } from "./core-crash";
 import { packagedKicadEnv } from "./packaged-kicad";
 
@@ -288,7 +288,7 @@ export class CoreSupervisor extends EventEmitter {
     try {
       const packagedResources =
         app.isPackaged && !this.opts.binaryOverride ? packagedKicadEnv(process.resourcesPath) : {};
-      child = spawn(cmd.command, args, {
+      child = spawnSidecar(cmd.command, args, {
         cwd: cmd.cwd,
         env: coreEnvironment(
           process.env,
@@ -296,7 +296,6 @@ export class CoreSupervisor extends EventEmitter {
             ...packagedResources,
             ...(this.opts.extraEnv ?? {}),
             FABDESK_TOKEN: token,
-            ELECTRON_RUN_AS_NODE: undefined,
           },
           app.isPackaged && !this.opts.devProfile,
         ),

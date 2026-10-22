@@ -31,13 +31,14 @@ export function TopBar({ coreStatus }: { coreStatus?: CoreStatusInfo | undefined
   const connected = sseStatus === "open" && (coreStatus?.state ?? "ready") === "ready";
   return (
     <div
-      className={cn("fd-topbar fd-surface-inset flex h-12 shrink-0 items-center gap-2 border-b border-border bg-panel px-2.5 text-xs", mac && "pl-20")}
+      className={cn("fd-topbar fd-surface-inset flex h-12 shrink-0 items-center gap-2 border-b border-border bg-panel px-2.5 text-xs", mac && "pl-20", host.platform === "win32" && "fd-topbar-windows")}
       style={
         {
           WebkitAppRegion: "drag",
           // Windows controls overlay: keep the right-hand actions clear of minimize/maximize/close.
-          // Without an overlay the env() fallbacks make this exactly the normal 0.5rem padding.
-          paddingRight: "calc(0.5rem + 100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw))",
+          // Convert viewport CSS units to unzoomed chrome units. Without an overlay the
+          // env() fallbacks leave exactly the normal 0.5rem padding.
+          paddingRight: "calc(0.5rem + (100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)) * var(--fd-page-zoom, 1))",
         } as React.CSSProperties
       }
     >

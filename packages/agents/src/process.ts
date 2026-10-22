@@ -90,6 +90,26 @@ async function waitForExit(pids: readonly number[], timeoutMs: number): Promise<
   while (pids.some(isAlive) && Date.now() < deadline) await Bun.sleep(50);
 }
 
+/** Reap the transport before releasing its project lease, including stubborn tool children. */
+export async function stopAgentProcess(proc: Subprocess, graceMs = TERM_GRACE_MS): Promise<void> {
+  if (proc.exitCode !== null || proc.signalCode !== null) { await proc.exited; return; }
+  const children = descendantPids(proc.pid).reverse();
+  killTree(proc.pid, "SIGTERM");
+  const escalation = setTimeout(() => {
+    // Never signal a root PID after it has been reaped and could have been reused.
+    if (proc.exitCode === null && proc.signalCode === null) killTree(proc.pid, "SIGKILL");
+  }, graceMs);
+  try { await proc.exited; } finally { clearTimeout(escalation); }
+  const survivors = children.filter(isAlive);
+  if (survivors.length) {
+    signalPids(survivors, "SIGTERM");
+    await waitForExit(survivors, graceMs);
+    const stubborn = survivors.filter(isAlive);
+    signalPids(stubborn, "SIGKILL");
+    await waitForExit(stubborn, 1000);
+  }
+}
+
 export interface AgentProcessOptions {
   cmd: string[];
   cwd: string;

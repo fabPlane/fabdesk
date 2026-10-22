@@ -1,0 +1,32 @@
+[
+  {
+    "before": true,
+    "height": 47.979000091552734,
+    "zoom": 0.5787037
+  },
+  {
+    "before": false,
+    "height": 82.94400024414062,
+    "zoom": 0.5787037
+  },
+  {
+    "action": "maximize",
+    "minimized": false,
+    "maximized": true
+  },
+  {
+    "action": "unmaximize",
+    "minimized": false,
+    "maximized": false
+  },
+  {
+    "action": "minimize",
+    "minimized": true,
+    "maximized": false
+  },
+  {
+    "action": "restore",
+    "minimized": false,
+    "maximized": false
+  }
+]
