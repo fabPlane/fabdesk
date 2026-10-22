@@ -6,9 +6,8 @@ import {
   buildBoardArt,
   fitArtPlacement,
   type ArtPlacement,
-  convertImage,
+  type ArtOptions,
   decodeGray,
-  previewSvg,
   type ArtLayer,
   type ArtStyle,
   type BoardColor,
@@ -23,6 +22,8 @@ import { Button, Dialog, Select } from "../components/ui";
 import { useUiStore } from "../stores/ui";
 import { Icon } from "../components/Icon";
 import "./art-tab.css";
+import { latestPreviewQueue } from "./art-preview-queue";
+import type { PreviewResult } from "./art-preview.worker";
 import { ArtPlacementControls, ArtPlacementOverlay } from "./ArtPlacementEditor";
 import { buildSketchPngFile } from "./art-sketch-upload";
 
@@ -147,41 +148,75 @@ export function ArtTab() {
     }
   };
 
+  const previewWorker = useRef<Worker | null>(null);
+  const previewQueue = useRef<ReturnType<
+    typeof latestPreviewQueue<ArtOptions, PreviewResult>
+  > | null>(null);
+  const workerImage = useRef<GrayImage | null>(null);
+  useEffect(() => {
+    let worker: Worker;
+    try {
+      worker = new Worker(new URL("./art-preview.worker.ts", import.meta.url), { type: "module" });
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Could not start artwork preview.");
+      return;
+    }
+    previewWorker.current = worker;
+    const queue = latestPreviewQueue<ArtOptions, PreviewResult>(
+      (id, options) => worker.postMessage({ kind: "render", id, options }),
+      (result) => {
+        if (result.svg) {
+          setSvg(URL.createObjectURL(new Blob([result.svg], { type: "image/svg+xml" })));
+        } else {
+          setSvg(null);
+          setError(result.error ?? "Could not update artwork preview.");
+        }
+        setConverting(false);
+      },
+    );
+    previewQueue.current = queue;
+    worker.onmessage = (event: MessageEvent<PreviewResult>) =>
+      queue.complete(event.data.id, event.data);
+    worker.onerror = () => {
+      setConverting(false);
+      setError("Artwork preview stopped. Reload the app to try again.");
+    };
+    return () => {
+      worker.terminate();
+      previewWorker.current = null;
+      previewQueue.current = null;
+      workerImage.current = null;
+    };
+  }, []);
+  useEffect(
+    () => () => {
+      if (svg) URL.revokeObjectURL(svg);
+    },
+    [svg],
+  );
   useEffect(() => {
     if (!gray) {
       setSvg(null);
       return;
     }
+    if (!previewWorker.current || !previewQueue.current) return;
+    if (workerImage.current !== gray) {
+      // Clone the source once per upload, never for each pointer movement.
+      previewWorker.current.postMessage({ kind: "image", image: gray });
+      workerImage.current = gray;
+    }
     setConverting(true);
-    // Give the loading state a paint before the deterministic conversion.
-    let timer: ReturnType<typeof setTimeout>;
-    const frame = requestAnimationFrame(() => {
-      timer = setTimeout(() => {
-        try {
-          const art = convertImage(gray, {
-            ...(placement ? { placement } : {}),
-            style,
-            widthMm,
-            heightMm,
-            color,
-            outline,
-            invert,
-            threshold,
-            layers,
-          });
-          setSvg(previewSvg(art.options, art.clipped));
-        } catch (e) {
-          setSvg(null);
-          setError(e instanceof Error ? e.message : String(e));
-        } finally {
-          setConverting(false);
-        }
-      }, 0);
+    previewQueue.current.request({
+      ...(placement ? { placement } : {}),
+      style,
+      widthMm,
+      heightMm,
+      color,
+      outline,
+      invert,
+      threshold,
+      layers,
     });
-    return () => {
-      cancelAnimationFrame(frame);
-      clearTimeout(timer);
-    };
   }, [gray, style, widthMm, heightMm, color, outline, invert, threshold, layers, placement]);
 
   useEffect(() => {
@@ -595,7 +630,12 @@ export function ArtTab() {
                   className="fd-art-board-surface"
                   style={{ width: `${zoom * 100}%`, minWidth: `${zoom * 100}%` }}
                 >
-                  <div data-testid="board-art-preview" dangerouslySetInnerHTML={{ __html: svg }} />
+                  <img
+                    data-testid="board-art-preview"
+                    src={svg}
+                    alt="PCB artwork preview"
+                    draggable={false}
+                  />
                   {placing && resolvedPlacement && (
                     <ArtPlacementOverlay
                       value={resolvedPlacement}

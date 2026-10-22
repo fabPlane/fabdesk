@@ -1,4 +1,4 @@
-import { useRef, type PointerEvent } from "react";
+import { useEffect, useRef, type PointerEvent } from "react";
 import type { ArtPlacement } from "@fabdesk/board-art";
 import { Button } from "../components/ui";
 import { resizeArtwork } from "./art-placement";
@@ -100,6 +100,26 @@ export function ArtPlacementOverlay({
   disabled: boolean;
 }) {
   const svg = useRef<SVGSVGElement>(null);
+  const pending = useRef<ArtPlacement | null>(null);
+  const frame = useRef<number | null>(null);
+  const flush = () => {
+    if (frame.current !== null) cancelAnimationFrame(frame.current);
+    frame.current = null;
+    if (pending.current) {
+      onChange(pending.current);
+      pending.current = null;
+    }
+  };
+  const schedule = (next: ArtPlacement) => {
+    pending.current = next;
+    if (frame.current === null) frame.current = requestAnimationFrame(flush);
+  };
+  useEffect(
+    () => () => {
+      if (frame.current !== null) cancelAnimationFrame(frame.current);
+    },
+    [],
+  );
   const drag = useRef<{
     value: ArtPlacement;
     x: number;
@@ -137,28 +157,31 @@ export function ArtPlacementOverlay({
           p = point(e);
         if (!d || !p) return;
         if (d.kind === "move")
-          onChange({
+          schedule({
             ...d.value,
             centerXmm: d.value.centerXmm + p.x - d.x,
             centerYmm: d.value.centerYmm + p.y - d.y,
           });
         if (d.kind === "resize")
-          onChange(resizeArtwork(d.value, p.x, p.y, d.cornerX, d.cornerY, lock));
+          schedule(resizeArtwork(d.value, p.x, p.y, d.cornerX, d.cornerY, lock));
         if (d.kind === "rotate") {
           const initial = Math.atan2(d.y - d.value.centerYmm, d.x - d.value.centerXmm);
           const current = Math.atan2(p.y - d.value.centerYmm, p.x - d.value.centerXmm);
           let angle = d.value.rotationDeg + ((current - initial) * 180) / Math.PI;
           if (e.shiftKey) angle = Math.round(angle / 15) * 15;
-          onChange({ ...d.value, rotationDeg: ((angle % 360) + 360) % 360 });
+          schedule({ ...d.value, rotationDeg: ((angle % 360) + 360) % 360 });
         }
       }}
       onPointerUp={() => {
+        flush();
         drag.current = null;
       }}
       onPointerCancel={() => {
+        flush();
         drag.current = null;
       }}
       onLostPointerCapture={() => {
+        flush();
         drag.current = null;
       }}
     >

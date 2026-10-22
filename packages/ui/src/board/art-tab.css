@@ -352,3 +352,19 @@
   stroke-width: 1.5;
   vector-effect: non-scaling-stroke;
 }
+
+/* Preview decoding stays outside the DOM tree of thousands of individual SVG primitives. */
+.fd-art-board-surface > img {
+  display: block;
+  width: 100%;
+  height: auto;
+  user-select: none;
+}
+.fd-art-progress {
+  position: absolute;
+  z-index: 2;
+  top: 54px;
+  right: 12px;
+  border-radius: 6px;
+  pointer-events: none;
+}
