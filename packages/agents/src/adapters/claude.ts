@@ -33,9 +33,9 @@ export function claudeMcpConfig(url: string): string {
         type: "http",
         url,
         headers: { Authorization: `Bearer \${${TOKEN_ENV}}` },
-        // A route can legitimately run for its whole timeoutMs (up to 10 min); Claude Code's default
-        // idle abort is ~5 min. The daemon also heartbeats progress, this is the belt to those braces.
-        timeout: 1_200_000,
+        // Let the daemon's 30-minute question deadline resolve before the MCP client times out.
+        // Progress heartbeats also keep long-running routing calls alive.
+        timeout: 1_830_000,
       },
     },
   });

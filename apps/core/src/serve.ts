@@ -412,6 +412,10 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     registry,
     ctxFactory,
     version: config.version,
+    userInput: {
+      enabledFor: (token) => runs.isActiveRunToken(token),
+      handle: (token, req, signal) => runs.requestUserInput(token, req, signal),
+    },
     permissionPrompt: {
       enabledFor: (token) => runs.isSupervisedRunToken(token),
       handle: (token, req) => runs.permissionPrompt(token, req),

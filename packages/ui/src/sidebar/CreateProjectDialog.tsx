@@ -4,6 +4,7 @@ import { useCore } from "@fabdesk/client-core";
 import { parsePublicGitHubUrl } from "@fabdesk/protocol";
 import { Button, Dialog, Input } from "../components/ui";
 import { Icon } from "../components/Icon";
+import { ErrorNotice } from "../components/ErrorNotice";
 
 /** Mounted only while open, so canceled names and locations never leak into the next project. */
 export function CreateProjectDialog({ onClose, onCreated, initialMode = "create" }: { onClose: () => void; onCreated: (id: string) => void; initialMode?: "create" | "github" }) {
@@ -17,7 +18,7 @@ export function CreateProjectDialog({ onClose, onCreated, initialMode = "create"
   const [destination, setDestination] = useState<{ path: string; exists: boolean } | null>(null);
   const [pending, setPending] = useState(false);
   const [picking, setPicking] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [result, setResult] = useState<{ id: string; boards: string[] } | null>(null);
   const abort = useRef<AbortController | null>(null);
   const local = ["localhost", "127.0.0.1", "[::1]"].includes(new URL(client.baseUrl).hostname);
@@ -40,7 +41,7 @@ export function CreateProjectDialog({ onClose, onCreated, initialMode = "create"
     if (!canPick || !host.pickDirectory) return;
     setPicking(true); setError(null);
     try { const path = await host.pickDirectory(); if (path) setDirectory(path); }
-    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    catch (e) { setError(e); }
     finally { setPicking(false); }
   };
   const finish = async (id: string) => {
@@ -63,14 +64,14 @@ export function CreateProjectDialog({ onClose, onCreated, initialMode = "create"
         else await finish(imported.project.id);
       }
     } catch (e) {
-      setError(abort.current?.signal.aborted ? "Import canceled. No project was added." : e instanceof Error ? e.message : String(e));
+      setError(abort.current?.signal.aborted ? "Import canceled. No project was added." : e);
     } finally { abort.current = null; setPending(false); }
   };
   const adopt = async (path: string) => {
     if (!result || pending) return;
     setPending(true); setError(null);
     try { await client.adoptImportedBoard(result.id, path); await finish(result.id); }
-    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    catch (e) { setError(e); }
     finally { setPending(false); }
   };
   return <Dialog open onClose={close} title={mode === "github" ? "Import from GitHub" : "Create project"} className="!w-[520px]">
@@ -85,7 +86,7 @@ export function CreateProjectDialog({ onClose, onCreated, initialMode = "create"
           {result.boards.map((path) => <Button key={path} type="button" disabled={pending} className="w-full justify-start break-all text-left" onClick={() => void adopt(path)}>{path}</Button>)}
         </div>
       </>}
-      {error && <p role="alert" className="break-words text-[13px] text-danger">{error}</p>}
+      {error != null && <ErrorNotice error={error} />}
       <div className="flex justify-end"><Button type="button" onClick={() => void finish(result.id)}>{result.boards.length ? "Open without board" : "Open project"}</Button></div>
     </div> : <form className="flex flex-col gap-4" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
       {mode === "github" && <label className="flex flex-col gap-2 text-[13px] font-medium">Public GitHub URL
@@ -114,7 +115,7 @@ export function CreateProjectDialog({ onClose, onCreated, initialMode = "create"
       </div>
       {mode === "github" && name.trim() && <div className="rounded-xl bg-panel-2/70 px-3 py-2 text-xs leading-5" aria-live="polite">Destination: <span className="break-all font-medium">{destination?.path ?? "Checking…"}</span>{destination?.exists && <span className="block text-danger">This folder already exists. Choose another name or location.</span>}</div>}
       {pending && mode === "github" && <p role="status" className="text-xs text-muted">Cloning repository and checking for KiCad boards…</p>}
-      {error && <p role="alert" className="break-words text-[13px] text-danger">{error}</p>}
+      {error != null && <ErrorNotice error={error} />}
       <div className="sticky bottom-0 z-10 flex flex-wrap justify-end gap-3 border-t border-border bg-panel py-3">
         <Button type="button" disabled={picking} onClick={() => { if (pending && abort.current) abort.current.abort(); else close(); }}>{pending && mode === "github" ? "Cancel import" : "Cancel"}</Button>
         <Button type="submit" variant="primary" disabled={!name.trim() || pending || picking || (mode === "github" && (!url.trim() || !destination || destination.exists))}>{pending ? mode === "github" ? "Importing…" : "Creating…" : mode === "github" ? "Import project" : "Create project"}</Button>
