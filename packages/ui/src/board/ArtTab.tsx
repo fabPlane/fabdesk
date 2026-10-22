@@ -24,6 +24,7 @@ import { Button, Dialog, Select } from "../components/ui";
 import { useUiStore } from "../stores/ui";
 import { Icon } from "../components/Icon";
 import "./art-tab.css";
+import { placementAfterBoardResize } from "./art-placement";
 import { latestPreviewQueue } from "./art-preview-queue";
 import type { PreviewResult } from "./art-preview.worker";
 import { ArtPlacementControls, ArtPlacementOverlay } from "./ArtPlacementEditor";
@@ -500,6 +501,17 @@ export function ArtTab() {
                   onChange={(e) => {
                     const hit = SIZES.find((s) => `${s.w}x${s.h}` === e.target.value);
                     if (hit) {
+                      setPlacement((p) =>
+                        placementAfterBoardResize(
+                          p,
+                          widthMm,
+                          heightMm,
+                          hit.w,
+                          hit.h,
+                          outline,
+                          crop,
+                        ),
+                      );
                       setWidthMm(hit.w);
                       setHeightMm(hit.h);
                     }
@@ -512,6 +524,9 @@ export function ArtTab() {
                   ))}
                 </Select>
               </label>
+              <p className="text-[11px] text-muted">
+                Changing board size scales and repositions the artwork to keep it visible.
+              </p>
               <label className="fd-art-field">
                 Board shape
                 <Select value={outline} onChange={(e) => setOutline(e.target.value as OutlineKind)}>

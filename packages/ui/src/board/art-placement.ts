@@ -36,3 +36,61 @@ export function resizeArtwork(
     centerYmm: oppositeY + (cornerX * w * s + cornerY * h * c) / 2,
   };
 }
+
+/** Resize the board without leaving a manually placed image outside the new canvas. */
+export function placementAfterBoardResize(
+  p: ArtPlacement | null,
+  oldWidth: number,
+  oldHeight: number,
+  width: number,
+  height: number,
+  shape: "rectangle" | "rounded" | "circle" = "rectangle",
+  crop: "none" | "circle" | "rounded" = "none",
+): ArtPlacement | null {
+  if (!p) return null; // Auto-fit continues to follow the board dimensions.
+  const margin = 2;
+  const a = (p.rotationDeg * Math.PI) / 180;
+  const c = Math.abs(Math.cos(a)),
+    s = Math.abs(Math.sin(a));
+  const boundsW = crop === "circle" ? p.widthMm : p.widthMm * c + p.heightMm * s;
+  const boundsH = crop === "circle" ? p.heightMm : p.widthMm * s + p.heightMm * c;
+  const scale = Math.min(
+    width / oldWidth,
+    height / oldHeight,
+    (width - 2 * margin) / boundsW,
+    (height - 2 * margin) / boundsH,
+  );
+  const next = {
+    ...p,
+    widthMm: p.widthMm * scale,
+    heightMm: p.heightMm * scale,
+    centerXmm: (p.centerXmm * width) / oldWidth,
+    centerYmm: (p.centerYmm * height) / oldHeight,
+  };
+  if (shape === "circle") {
+    const radius = Math.min(width, height) / 2 - margin;
+    let imageRadius =
+      crop === "circle" ? next.widthMm / 2 : Math.hypot(next.widthMm, next.heightMm) / 2;
+    if (imageRadius > radius) {
+      const fit = radius / imageRadius;
+      next.widthMm *= fit;
+      next.heightMm *= fit;
+      imageRadius = radius;
+    }
+    const dx = next.centerXmm - width / 2,
+      dy = next.centerYmm - height / 2;
+    const distance = Math.hypot(dx, dy),
+      allowed = radius - imageRadius;
+    if (distance > allowed && distance > 0) {
+      next.centerXmm = width / 2 + (dx / distance) * allowed;
+      next.centerYmm = height / 2 + (dy / distance) * allowed;
+    }
+  } else {
+    const halfW = crop === "circle" ? next.widthMm / 2 : (next.widthMm * c + next.heightMm * s) / 2;
+    const halfH =
+      crop === "circle" ? next.heightMm / 2 : (next.widthMm * s + next.heightMm * c) / 2;
+    next.centerXmm = Math.max(margin + halfW, Math.min(width - margin - halfW, next.centerXmm));
+    next.centerYmm = Math.max(margin + halfH, Math.min(height - margin - halfH, next.centerYmm));
+  }
+  return next;
+}
