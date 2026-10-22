@@ -20,6 +20,7 @@ import type {
   DevicePushRegistrationInput,
   DevicePushState,
   DoctorReport,
+  FinishItSession,
   Job,
   Message,
   OpenCatalogEntry,
@@ -428,6 +429,24 @@ export class CoreClient {
   }
   abort(threadId: string): Promise<void> {
     return this.request(`/threads/${encodeURIComponent(threadId)}/abort`, { method: "POST" });
+  }
+
+  getFinishIt(projectId: string): Promise<{ session: FinishItSession | null; needsWork?: boolean }> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/finish-it`);
+  }
+  startFinishIt(
+    projectId: string,
+    input: { threadId?: string; agentId?: Thread["agentId"]; model?: string } = {},
+  ): Promise<{ session: FinishItSession }> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/finish-it`, {
+      method: "POST",
+      json: input,
+    });
+  }
+  stopFinishIt(projectId: string): Promise<{ session: FinishItSession | null }> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/finish-it/stop`, {
+      method: "POST",
+    });
   }
 
   // Tools / jobs

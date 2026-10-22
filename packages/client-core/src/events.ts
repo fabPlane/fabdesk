@@ -23,6 +23,7 @@ export const EVENT_TOPICS = [
   "thread.*",
   "auth.*",
   "core.*",
+  "finish_it.*",
 ];
 
 /**
@@ -335,6 +336,7 @@ export function handleCoreEvent(event: CoreEvent, ctx: HandlerCtx): void {
       ctx.route?.setDone(event.result);
       break;
     case "project.changed":
+      void qc.invalidateQueries({ queryKey: ["finish-it-needs-work", event.projectId] });
       void qc.invalidateQueries({ queryKey: ["project", event.projectId] });
       void qc.invalidateQueries({ queryKey: ["projects"] });
       for (const p of event.paths)
@@ -367,6 +369,19 @@ export function handleCoreEvent(event: CoreEvent, ctx: HandlerCtx): void {
       qc.setQueryData(["auth"], event.state);
       break;
     case "core.shutdown":
+      break;
+    case "finish_it.started":
+    case "finish_it.progress":
+    case "finish_it.milestone":
+    case "finish_it.stopped":
+    case "finish_it.done":
+    case "finish_it.failed":
+      qc.setQueryData(["finish-it", event.session.projectId], event.session);
+      if (event.topic === "finish_it.done")
+        void qc.invalidateQueries({ queryKey: ["finish-it-needs-work", event.session.projectId] });
+      void qc.invalidateQueries({ queryKey: ["threads"] });
+      void qc.invalidateQueries({ queryKey: ["thread", event.session.threadId] });
+      void qc.invalidateQueries({ queryKey: messagesKey(event.session.threadId) });
       break;
     default:
       break;

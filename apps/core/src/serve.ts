@@ -14,6 +14,7 @@ import {
 } from "@fabdesk/tools";
 import type { AgentId } from "@fabdesk/protocol";
 import { AgentRunManager, type AgentAdapterLike } from "./agent-runs";
+import { FinishItManager } from "./finish-it";
 import { resolvePrivacyStatus } from "./privacy-gate";
 import { TokenSet } from "./auth";
 import { DeviceStore } from "./devices";
@@ -135,6 +136,7 @@ export type Daemon = {
   mcp: McpSessionManager;
   tokens: TokenSet;
   runs: AgentRunManager;
+  finishIt: FinishItManager;
   notifier: Notifier;
   relay: RelayLink;
   close(reason?: string): Promise<void>;
@@ -207,6 +209,8 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   }
   const staleRoutes = orphanAgents.liveOwners.length ? 0 : store.routeRuns.failStale();
   if (staleRoutes) logger.info("failed stale route runs from previous run", { count: staleRoutes });
+  const staleFinish = store.finishIt.failStale();
+  if (staleFinish) logger.info("failed stale Finish it sessions from previous run", { count: staleFinish });
   const tokens = new TokenSet(config.token);
   const archiveDir = process.env["FABDESK_USAGE_ARCHIVE_DIR"]?.trim();
   const remoteArchiveEnabled = process.env["FABDESK_USAGE_REMOTE_BACKUP"] === "1";
@@ -494,6 +498,13 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       });
     },
   });
+  const finishIt = new FinishItManager({
+    store,
+    bus,
+    runs,
+    projects,
+    settings: () => store.settings.get(),
+  });
 
   let resolveClosed!: (reason: string) => void;
   const closed = new Promise<string>((r) => (resolveClosed = r));
@@ -557,6 +568,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     mcp,
     auth,
     runs,
+    finishIt,
     devices,
     remote,
     relay,
@@ -794,6 +806,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     mcp,
     tokens,
     runs,
+    finishIt,
     notifier,
     relay,
     closed,
@@ -813,6 +826,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       relay.stop();
       notifier.stop();
       runs.abortAll();
+      finishIt.close();
       jobs.cancelAll();
       if (!(await runs.settleAll())) logger.warn("agent runs did not stop before shutdown timeout");
       await mcp.closeAll();

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { Message, Thread } from "@fabdesk/protocol";
+import type { FinishItSession, Message, Thread } from "@fabdesk/protocol";
 import { QueryClient } from "@tanstack/react-query";
 import type { CoreClient } from "./CoreClient";
 import { useRunsStore } from "./stores/runs";
@@ -402,5 +402,31 @@ describe("patchMessages on an unseen thread", () => {
     expect(
       spy.filter((o) => JSON.stringify(o) === JSON.stringify({ queryKey: messagesKey("th_seed") })),
     ).toHaveLength(1);
+  });
+});
+
+describe("finish_it events", () => {
+  test("progress writes the session into the finish-it query cache", () => {
+    const qc = new QueryClient();
+    qc.setQueryData(["thread", "th_1"], { id: "th_1" });
+    const session: FinishItSession = {
+      id: "fin_1",
+      projectId: "p1",
+      threadId: "th_1",
+      runId: "run_1",
+      status: "running",
+      currentMilestone: "route",
+      milestones: [],
+      commits: [],
+      error: null,
+      startedAt: "2026-10-08T00:00:00.000Z",
+      endedAt: null,
+    };
+    handleCoreEvent(
+      { ts: 1, topic: "finish_it.progress", session, note: "Routing closed" },
+      { qc, client: {} as CoreClient },
+    );
+    expect(qc.getQueryData<FinishItSession>(["finish-it", "p1"])).toEqual(session);
+    expect(qc.getQueryState(["thread", "th_1"])?.isInvalidated).toBe(true);
   });
 });

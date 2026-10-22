@@ -58,6 +58,9 @@ export function CommandPalette() {
             <Command.Item value="new chat" onSelect={pick(actions.newChat)}>
               New chat <span className="ml-auto"><Kbd>{mod} + Shift + O</Kbd></span>
             </Command.Item>
+            <Command.Item value="finish it" onSelect={pick(() => void actions.finishIt())}>
+              Finish it
+            </Command.Item>
             <Command.Item value="route board" onSelect={pick(() => void actions.routeBoard())}>
               Route board
             </Command.Item>

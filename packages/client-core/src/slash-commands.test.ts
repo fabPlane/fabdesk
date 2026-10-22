@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { expandSlashCommand, slashSuggestions } from "./slash-commands";
+import { expandSlashCommand, isFinishItCommand, slashSuggestions } from "./slash-commands";
 
 describe("slash commands", () => {
   test("/parts expands into an off-board parts instruction", () => {
@@ -29,9 +29,19 @@ describe("slash commands", () => {
 
   test("suggestions while typing the command name", () => {
     expect(slashSuggestions("/sh").map((c) => c.name)).toEqual(["shopping-list"]);
-    expect(slashSuggestions("/").map((c) => c.name)).toEqual(["parts", "shopping-list"]);
+    expect(slashSuggestions("/").map((c) => c.name)).toEqual(["parts", "shopping-list", "finish-it"]);
     expect(slashSuggestions("/pa").map((c) => c.name)).toEqual(["parts"]);
     expect(slashSuggestions("/shopping-list x")).toEqual([]);
     expect(slashSuggestions("hello")).toEqual([]);
+    expect(slashSuggestions("/fin").map((c) => c.name)).toEqual(["finish-it"]);
+  });
+});
+
+describe("finish-it command", () => {
+  test("is intercepted instead of expanded into a prompt", () => {
+    expect(isFinishItCommand("/finish-it")).toBe(true);
+    expect(isFinishItCommand("  /finish-it please  ")).toBe(true);
+    expect(isFinishItCommand("/finish-item")).toBe(false);
+    expect(expandSlashCommand("/finish-it")).toBeNull();
   });
 });
