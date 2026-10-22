@@ -74,7 +74,7 @@ describe("EnclosureScreen", () => {
     expect(out).toContain("8 vent(s)");
     expect(out).toContain("4 clip(s)");
     expect(out).toContain("exports/enclosure.step");
-    expect(out).toContain("exports/enclosure-preview.svg");
+    expect(out).toContain("View generated files");
   });
 
   test("warns when the board hash no longer matches", () => {
