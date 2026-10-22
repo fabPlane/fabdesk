@@ -18,8 +18,12 @@ import {
   parsePairingUrl,
   Settings,
   CloudSettings,
+  findOpenCatalogArg,
+  isOpenCatalogIntent,
   isCatalogWebsiteAsset,
   isGitHubAssetHost,
+  openCatalogHref,
+  parseOpenCatalogHref,
   DEFAULT_CATALOG_PUBLIC_ORIGIN,
   LatestRelease,
   NetlistFile,
@@ -350,6 +354,31 @@ describe("pairing url", () => {
         },
       }).tailscale?.serve?.port,
     ).toBe(443);
+  });
+});
+
+describe("open-catalog deep links", () => {
+  test("parses protocol and website URLs", () => {
+    expect(openCatalogHref("foostan/crkbd")).toBe("fabplane://open?catalog=foostan%2Fcrkbd");
+    expect(parseOpenCatalogHref("fabplane://open?catalog=tensorfleet/koyomi-lvds-hat")).toEqual({
+      catalogId: "tensorfleet/koyomi-lvds-hat",
+      remix: false,
+    });
+    expect(parseOpenCatalogHref("fabplane://open/foostan/crkbd?remix=1")).toEqual({
+      catalogId: "foostan/crkbd",
+      remix: true,
+    });
+    expect(parseOpenCatalogHref("https://fabplane.com/open/im-tomu/fomu-hardware/")).toEqual({
+      catalogId: "im-tomu/fomu-hardware",
+      remix: false,
+    });
+    expect(findOpenCatalogArg(["--hidden", "fabplane://open?catalog=foostan/crkbd"])).toEqual({
+      catalogId: "foostan/crkbd",
+      remix: false,
+    });
+    expect(parseOpenCatalogHref("https://fabplane.com/explore")).toBeNull();
+    expect(isOpenCatalogIntent({ catalogId: "foostan/crkbd", remix: true })).toBe(true);
+    expect(isOpenCatalogIntent({ catalogId: "foostan/crkbd" })).toBe(false);
   });
 });
 
