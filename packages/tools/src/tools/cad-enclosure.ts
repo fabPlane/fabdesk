@@ -11,10 +11,14 @@ import {
   enclosureSummary,
   generateEnclosure,
   isEnclosureSpec,
+  normalizeEnclosureSpec,
   meshEnclosure,
+  previewEnclosureSvg,
   type AlignmentReport,
   type EnclosureParams,
   type EnclosureSpec,
+  type VentFace,
+  type VentPattern,
 } from "@fabdesk/kicad/enclosure";
 import { PROJECT_FILES, projectRelative, readJsonOrNull, writeAtomic, writeJson } from "../fs";
 import { defineTool, ToolError, type ProjectHandle } from "../registry";
@@ -34,7 +38,7 @@ async function loadFeatures(project: ProjectHandle) {
 
 async function loadSpec(project: ProjectHandle): Promise<EnclosureSpec | null> {
   const raw = await readJsonOrNull<unknown>(p(project, PROJECT_FILES.enclosure));
-  return isEnclosureSpec(raw) ? raw : null;
+  return normalizeEnclosureSpec(raw) ?? (isEnclosureSpec(raw) ? raw : null);
 }
 
 function placement(x: number, y: number, z: number) {
@@ -104,12 +108,14 @@ function filesJson(project: ProjectHandle, name: string) {
     stl: p(project, PROJECT_FILES.exports, `${name}.stl`),
     lidStl: p(project, PROJECT_FILES.exports, `${name}-lid.stl`),
     step: p(project, PROJECT_FILES.exports, `${name}.step`),
+    preview: p(project, PROJECT_FILES.exports, `${name}-preview.svg`),
   };
   return {
     spec: projectRelative(project.dir, paths.spec),
     stl: projectRelative(project.dir, paths.stl),
     lidStl: projectRelative(project.dir, paths.lidStl),
     step: projectRelative(project.dir, paths.step),
+    preview: projectRelative(project.dir, paths.preview),
     paths,
   };
 }
@@ -119,7 +125,7 @@ export const cad_enclosure = defineTool({
   toolset: "cad",
   title: "Generate a board-synced enclosure",
   description:
-    "Generate a printable two-piece enclosure from board.kicad_pcb (Edge.Cuts outline, NPTH / mounting holes, edge connectors, tall parts). Cutouts and standoffs stay keyed to the board hash: regenerate after a board change and run the alignment check. Writes enclosure.json plus exports/<name>.stl, <name>-lid.stl and <name>.step. FreeCAD is optional — when the CAD bridge is up, the same primitives are mirrored into model.FCStd.",
+    "Generate a printable two-piece enclosure from board.kicad_pcb (Edge.Cuts outline, NPTH / mounting holes, edge connectors, tall parts). v2 adds a separate outline offset, vent patterns (grid / slots / honeycomb), snap-fit clips, an SVG preview, and STL/STEP export. Cutouts and standoffs stay keyed to the board hash. Writes enclosure.json plus exports/<name>.stl, <name>-lid.stl, <name>.step and <name>-preview.svg. FreeCAD is optional — when the CAD bridge is up, the same primitives are mirrored into model.FCStd.",
   inputSchema: {
     action: z
       .enum(["generate", "status", "check"])
@@ -127,11 +133,24 @@ export const cad_enclosure = defineTool({
       .describe("generate writes the case; status reports sync; check compares cutouts to the current board"),
     wallMm: z.number().positive().max(20).optional(),
     clearanceMm: z.number().nonnegative().max(20).optional(),
+    outlineOffsetMm: z
+      .number()
+      .nonnegative()
+      .max(40)
+      .optional()
+      .describe("Extra outward offset beyond clearanceMm"),
     floorMm: z.number().positive().max(20).optional(),
     lidMm: z.number().positive().max(20).optional(),
     standoffMm: z.number().nonnegative().max(30).optional(),
     headroomMm: z.number().nonnegative().max(40).optional(),
     cutoutClearanceMm: z.number().nonnegative().max(5).optional(),
+    ventPattern: z.enum(["none", "grid", "slots", "honeycomb"]).optional(),
+    ventPitchMm: z.number().positive().max(30).optional(),
+    ventSizeMm: z.number().positive().max(20).optional(),
+    ventMarginMm: z.number().nonnegative().max(40).optional(),
+    ventFaces: z.enum(["lid", "walls", "both"]).optional(),
+    snapFit: z.boolean().optional().describe("Through-lid snap-fit clips on the long walls"),
+    snapCount: z.number().int().min(1).max(6).optional(),
     applyToCad: z
       .boolean()
       .default(true)
@@ -171,7 +190,7 @@ export const cad_enclosure = defineTool({
         );
       }
       const alignment = checkEnclosureAlignment(spec, features);
-      const payload = resultPayload(project, spec, alignment, args.name, features);
+      const payload = resultPayload(project, spec, alignment, args.name, features, false);
       if (args.action === "check" && !alignment.ok)
         return ok(enclosureSummary(spec, alignment), payload, { isError: true });
       return ok(enclosureSummary(spec, alignment), payload);
@@ -180,19 +199,29 @@ export const cad_enclosure = defineTool({
     const params: Partial<EnclosureParams> = {
       ...(args.wallMm !== undefined ? { wallMm: args.wallMm } : {}),
       ...(args.clearanceMm !== undefined ? { clearanceMm: args.clearanceMm } : {}),
+      ...(args.outlineOffsetMm !== undefined ? { outlineOffsetMm: args.outlineOffsetMm } : {}),
       ...(args.floorMm !== undefined ? { floorMm: args.floorMm } : {}),
       ...(args.lidMm !== undefined ? { lidMm: args.lidMm } : {}),
       ...(args.standoffMm !== undefined ? { standoffMm: args.standoffMm } : {}),
       ...(args.headroomMm !== undefined ? { headroomMm: args.headroomMm } : {}),
       ...(args.cutoutClearanceMm !== undefined ? { cutoutClearanceMm: args.cutoutClearanceMm } : {}),
+      ...(args.ventPattern !== undefined ? { ventPattern: args.ventPattern as VentPattern } : {}),
+      ...(args.ventPitchMm !== undefined ? { ventPitchMm: args.ventPitchMm } : {}),
+      ...(args.ventSizeMm !== undefined ? { ventSizeMm: args.ventSizeMm } : {}),
+      ...(args.ventMarginMm !== undefined ? { ventMarginMm: args.ventMarginMm } : {}),
+      ...(args.ventFaces !== undefined ? { ventFaces: args.ventFaces as VentFace } : {}),
+      ...(args.snapFit !== undefined ? { snapFit: args.snapFit } : {}),
+      ...(args.snapCount !== undefined ? { snapCount: args.snapCount } : {}),
     };
     const spec = generateEnclosure(features, params);
     const mesh = meshEnclosure(spec);
+    const previewSvg = previewEnclosureSvg(spec);
     const files = filesJson(project, args.name);
     await writeJson(files.paths.spec, spec);
     await writeAtomic(files.paths.stl, mesh.baseStl);
     await writeAtomic(files.paths.lidStl, mesh.lidStl);
     await writeAtomic(files.paths.step, mesh.step);
+    await writeAtomic(files.paths.preview, previewSvg);
     const alignment = checkEnclosureAlignment(spec, features);
     let appliedToCad = false;
     let cadObjects: string[] = [];
@@ -206,7 +235,7 @@ export const cad_enclosure = defineTool({
       }
     }
     const payload = {
-      ...resultPayload(project, spec, alignment, args.name, features),
+      ...resultPayload(project, spec, alignment, args.name, features, true),
       generated: true,
       appliedToCad,
       cadObjects,
@@ -240,6 +269,7 @@ function resultPayload(
   alignment: AlignmentReport,
   name: string,
   features: Awaited<ReturnType<typeof loadFeatures>>,
+  includePreviewSvg = false,
 ) {
   const files = filesJson(project, name);
   return {
@@ -248,11 +278,16 @@ function resultPayload(
     stl: files.stl,
     lidStl: files.lidStl,
     step: files.step,
+    preview: files.preview,
+    ...(includePreviewSvg ? { previewSvg: previewEnclosureSvg(spec) } : {}),
     pcbRevision: spec.pcbRevision,
     alignment,
     board: summarizeFeatures(features),
+    params: spec.params,
     cutouts: spec.cutouts,
     standoffs: spec.standoffs.length,
+    vents: (spec.vents ?? []).length,
+    clips: (spec.clips ?? []).length,
     outerMm: {
       width: spec.outer.maxX - spec.outer.minX,
       depth: spec.outer.maxY - spec.outer.minY,
@@ -262,12 +297,13 @@ function resultPayload(
   };
 }
 
-function fileTable(payload: { spec: string; stl: string; lidStl: string; step: string }): string {
+function fileTable(payload: { spec: string; stl: string; lidStl: string; step: string; preview: string }): string {
   return table([
     { file: payload.spec, what: "parametric spec keyed to the board hash" },
-    { file: payload.stl, what: "printable base (walls, floor, standoffs)" },
-    { file: payload.lidStl, what: "printable lid" },
+    { file: payload.stl, what: "printable base (walls, floor, standoffs, clips)" },
+    { file: payload.lidStl, what: "printable lid (vents and snap slots)" },
     { file: payload.step, what: "STEP assembly of the same solids, standoffs bored" },
+    { file: payload.preview, what: "SVG plan + isometric preview" },
   ]);
 }
 
