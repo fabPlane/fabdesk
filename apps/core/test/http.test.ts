@@ -597,7 +597,11 @@ describe("http daemon", () => {
     expect((withProject.structuredContent as { id: string }).id).toBe(created.id);
 
     await a.client.callTool({ name: "load_toolset", arguments: { toolset: "export" } });
-    expect((await a.client.listTools()).tools.length).toBe(44);
+    const exportNames = (await a.client.listTools()).tools.map((tool) => tool.name);
+    expect(exportNames).toHaveLength(45);
+    expect(exportNames).toEqual(
+      expect.arrayContaining(["silk_art", "export_stencil", "export_laser_stencil"]),
+    );
 
     // A second session starts with only the default toolsets (state is per session).
     const b = await connect(daemon.token);

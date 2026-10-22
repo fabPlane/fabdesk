@@ -291,6 +291,7 @@ describe("registry", () => {
       "export_netlist",
       "export_zip",
       "export_dxf",
+      "silk_art",
       "export_stencil",
       "export_laser_stencil",
       "sim_spice_netlist",
