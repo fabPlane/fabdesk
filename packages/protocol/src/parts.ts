@@ -285,7 +285,7 @@ function excludedFromBom(c: NetlistComponent): boolean {
   return inBom !== undefined && FALSY.has(inBom.toLowerCase());
 }
 
-/** Grouped electrical lines plus each off-board line. PCB first, then off-board, each by first ref. */
+/** Grouped electrical lines plus each off-board line. PCB first by reference, then off-board in saved insertion order. */
 export function projectBomLines(
   components: readonly NetlistComponent[] | null | undefined,
   parts: readonly ProjectPartLine[] | null | undefined,
@@ -320,8 +320,6 @@ export function projectBomLines(
   pcb.sort((a, b) => naturalCompare(a.refs[0] ?? "", b.refs[0] ?? ""));
 
   const offboard: ProjectBomLine[] = [...(parts ?? [])]
-    .slice()
-    .sort((a, b) => naturalCompare(a.ref, b.ref))
     .map((p) => ({
       source: "offboard" as const,
       kind: p.kind,

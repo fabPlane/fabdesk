@@ -49,9 +49,9 @@ describe("off-board parts tools", () => {
     const bom = (listed.json as { bom: Array<{ refs: string[]; kind: string; source: string }> }).bom;
     expect(bom.map((l) => [l.source, l.kind, l.refs.join(" ")])).toEqual([
       ["pcb", "pcb", "R1"],
-      ["offboard", "accessory", "A1"],
-      ["offboard", "display", "DS1"],
       ["offboard", "motor", "M1"],
+      ["offboard", "display", "DS1"],
+      ["offboard", "accessory", "A1"],
     ]);
 
     const off = await invoke("parts_list", { scope: "offboard" });

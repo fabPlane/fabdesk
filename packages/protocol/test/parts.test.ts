@@ -101,8 +101,8 @@ describe("project BOM", () => {
     expect(lines.map((l) => [l.source, l.refs.join(" "), l.qty, l.kind])).toEqual([
       ["pcb", "C1 C2", 2, "pcb"],
       ["pcb", "U1", 1, "pcb"],
-      ["offboard", "DS1", 1, "display"],
       ["offboard", "M1", 1, "motor"],
+      ["offboard", "DS1", 1, "display"],
     ]);
     expect(lines.find((l) => l.refs[0] === "U1")?.mpn).toBe("STM32F103C8T6");
     expect(lines.find((l) => l.lineId === "line_m")?.catalogId).toBe("nema-17-stepper");

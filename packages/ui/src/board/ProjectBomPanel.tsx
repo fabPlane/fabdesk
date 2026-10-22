@@ -13,7 +13,7 @@ import {
   type ProjectPartsFile,
 } from "@fabdesk/protocol";
 import { useProjectJson, useRunTool, useWriteProjectFile } from "@fabdesk/client-core";
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { Badge, Button, EmptyState, IconButton, Input, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
@@ -148,7 +148,7 @@ function PartsToolbar({ label, query, onQueryChange, selected, onChange, include
         <div className="relative min-w-0 flex-1">
           <Icon name="search" width={15} height={15} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
           <Input value={query} onChange={(e) => onQueryChange(e.target.value)}
-            placeholder={includePcb ? "Search project parts…" : "Search parts library…"}
+            placeholder={includePcb ? "Search name, reference or part number…" : "Search motors, displays or hardware…"}
             aria-label={label} className="h-8 pl-8 pr-8 text-xs" />
           {query && <IconButton size="xs" title={`Clear ${includePcb ? "BOM" : "library"} search`}
             className="absolute right-1 top-1" onClick={() => onQueryChange("")}><Icon name="close" width={14} height={14} /></IconButton>}
@@ -167,7 +167,7 @@ function PartsToolbar({ label, query, onQueryChange, selected, onChange, include
   );
 }
 
-export function ProjectBomPanel() {
+export function ProjectBomPanel({ navigation }: { navigation?: ReactNode } = {}) {
   const projectId = useUiStore((s) => s.activeProjectId);
   const netlist = useProjectJson<NetlistFile>(projectId, "circuit.netlist.json");
   const partsFile = useProjectJson<ProjectPartsFile>(projectId, PROJECT_PARTS_FILE);
@@ -177,6 +177,10 @@ export function ProjectBomPanel() {
   const [query, setQuery] = useState("");
   const [bomQuery, setBomQuery] = useState("");
   const [kinds, setKinds] = useState<PartKind[]>([]);
+  const [pendingReveal, setPendingReveal] = useState<{ projectId: string; lineId: string } | null>(null);
+  const [highlightedLine, setHighlightedLine] = useState<string | null>(null);
+  const addedRow = useRef<HTMLTableRowElement>(null);
+  const bomScroll = useRef<HTMLDivElement>(null);
 
 
   const partsState = bomPartsState(partsFile);
@@ -195,6 +199,27 @@ export function ProjectBomPanel() {
     [query, kinds],
   );
 
+  useEffect(() => {
+    if (!pendingReveal || pendingReveal.projectId !== projectId || !addedRow.current || !bomScroll.current) return;
+    const container = bomScroll.current;
+    const row = addedRow.current;
+    const headerHeight = container.querySelector("thead")?.getBoundingClientRect().height ?? 0;
+    const rowTop = row.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop;
+    const visibleHeight = Math.max(0, container.clientHeight - headerHeight);
+    container.scrollTo({
+      top: Math.max(0, rowTop - headerHeight - Math.max(0, (visibleHeight - row.offsetHeight) / 2)),
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
+    });
+    setHighlightedLine(pendingReveal.lineId);
+    setPendingReveal(null);
+  }, [lines, pendingReveal, projectId]);
+
+  useEffect(() => {
+    if (!highlightedLine) return;
+    const timer = setTimeout(() => setHighlightedLine(null), 2000);
+    return () => clearTimeout(timer);
+  }, [highlightedLine]);
+
   if (!projectId) return <EmptyState title="No project selected" />;
   if (netlist.isLoading || partsFile.isLoading) {
     return (
@@ -212,8 +237,23 @@ export function ProjectBomPanel() {
   const addCatalog = (catalogId: string) => {
     if (write.isPending) return;
     const next = planAddOffboard(partsState, catalogId, 1);
-    if (!next) return;
-    persist(next);
+    if (!next || !projectId) return;
+    const lineId = next.parts.at(-1)!.id;
+    write.mutate({ projectId, path: PROJECT_PARTS_FILE, content: `${JSON.stringify(next, null, 2)}\n` }, {
+      onSuccess: () => {
+        setFilters([]);
+        setBomQuery("");
+        setPendingReveal({ projectId, lineId });
+      },
+    });
+  };
+
+  const revealCatalogPart = (catalogId: string) => {
+    const part = parts.parts.find((part) => part.catalogId === catalogId);
+    if (!part || !projectId) return;
+    setFilters([]);
+    setBomQuery("");
+    setPendingReveal({ projectId, lineId: part.id });
   };
 
   const setQtyFor = (lineId: string, nextQty: number) => {
@@ -232,7 +272,7 @@ export function ProjectBomPanel() {
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-sm font-semibold">Project parts</h2>
+            {navigation ?? <h2 className="text-sm font-semibold">Project parts</h2>}
             <span className="text-xs text-muted">{lines.length} items</span>
             <Badge tone="accent" title="Off-board parts are separate from components mounted on the PCB.">
               {parts.parts.length} off-board
@@ -270,7 +310,7 @@ export function ProjectBomPanel() {
       )}
       <PanelGroup direction="vertical" autoSaveId="fabdesk-project-bom-library" className="min-h-0 flex-1">
         <Panel id="bom-lines" order={1} defaultSize={60} minSize={15}>
-          <div id="project-bom-lines" className="h-full min-h-0 overflow-auto" aria-label="Project BOM lines">
+          <div ref={bomScroll} id="project-bom-lines" className="h-full min-h-0 overflow-auto" aria-label="Project BOM lines">
             {shown.length === 0 ? (
               <div className="px-3 py-6 text-center text-xs text-muted">
                 {lines.length === 0
@@ -294,7 +334,8 @@ export function ProjectBomPanel() {
                   {shown.map((line) => (
                     <tr
                       key={`${line.source}:${line.lineId ?? line.refs.join(",")}`}
-                      className="border-t border-border/60"
+                      ref={pendingReveal?.projectId === projectId && pendingReveal.lineId === line.lineId ? addedRow : undefined}
+                      className={cn("border-t border-border/60 transition-colors", highlightedLine === line.lineId && "bg-accent/10")}
                       data-testid={`bom-row-${line.refs[0] ?? line.lineId}`}
                     >
                       <td className="w-10 px-2 py-1.5 text-right text-[11px] tabular-nums text-muted">{lines.indexOf(line) + 1}</td>
@@ -364,7 +405,16 @@ export function ProjectBomPanel() {
                   <span><Badge tone={KIND_TONE[hit.kind]}>{OFFBOARD_KIND_LABELS[hit.kind]}</Badge></span>
                   <span className="min-w-0 flex-1 truncate font-medium">{hit.name}</span>
                   <span className="truncate text-right font-mono text-[10.5px] text-muted" title={hit.mpn ?? hit.id}>{hit.mpn ?? "—"}</span>
-                  <span className="text-right text-[11px] font-medium text-accent">{addedCatalogIds.has(hit.id) ? "In BOM" : ""}</span>
+                  <span className="text-right">
+                    {addedCatalogIds.has(hit.id) && (
+                      <button type="button" onClick={() => revealCatalogPart(hit.id)}
+                        aria-label={`Show ${hit.name} in project parts`}
+                        title="Show in project parts"
+                        className="cursor-pointer rounded text-[11px] font-medium text-accent underline decoration-accent/40 underline-offset-2 hover:decoration-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+                        In BOM
+                      </button>
+                    )}
+                  </span>
                   <IconButton
                     size="sm"
                     title={addedCatalogIds.has(hit.id) ? `${hit.name} is already in BOM — edit quantity above` : `Add ${hit.name}`}

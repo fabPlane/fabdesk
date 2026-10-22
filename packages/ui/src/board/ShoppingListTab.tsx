@@ -164,17 +164,21 @@ const looksLikeMpn = (s: string) => !/\s/.test(s) && /\d/.test(s) && s.length <=
 export function ShoppingListTab() {
   const [view, setView] = useState<"bom" | "order">("bom");
   const projectId = useUiStore(s => s.activeProjectId);
+  const navigation = (
+    <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-panel-2/50 p-0.5" role="group" aria-label="Parts view">
+      {(["bom", "order"] as const).map((value) => (
+        <button key={value} type="button" aria-pressed={view === value} onClick={() => setView(value)}
+          data-testid={value === "bom" ? "bom-view-project" : "bom-view-shopping"}
+          className={`rounded-md px-2 py-1 text-xs font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${view === value ? "bg-panel text-fg shadow-sm" : "text-muted hover:text-fg"}`}>
+          {value === "bom" ? "Project parts" : "Shopping list"}
+        </button>
+      ))}
+    </div>
+  );
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="bom-tab">
-      <div className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1">
-        <Button size="sm" variant={view === "bom" ? "secondary" : "ghost"} onClick={() => setView("bom")} data-testid="bom-view-project">
-          Project BOM
-        </Button>
-        <Button size="sm" variant={view === "order" ? "secondary" : "ghost"} onClick={() => setView("order")} data-testid="bom-view-shopping">
-          Shopping list
-        </Button>
-      </div>
-      <div className="min-h-0 flex-1">{view === "bom" ? <ProjectBomPanel /> : <ShoppingListContent key={projectId} />}</div>
+      {view === "order" && <div className="shrink-0 border-b border-border px-3 py-2">{navigation}</div>}
+      <div className="min-h-0 flex-1">{view === "bom" ? <ProjectBomPanel navigation={navigation} /> : <ShoppingListContent key={projectId} />}</div>
     </div>
   );
 }
