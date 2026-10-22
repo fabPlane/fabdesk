@@ -22,6 +22,7 @@ import { useCoreClient } from "@fabdesk/client-core";
 import { useProject, useRunTool } from "@fabdesk/client-core";
 import { Button, Dialog, Select } from "../components/ui";
 import { useUiStore } from "../stores/ui";
+import { BoardDimensions } from "./BoardDimensions";
 import { Icon } from "../components/Icon";
 import "./art-tab.css";
 import { placementAfterBoardResize } from "./art-placement";
@@ -29,13 +30,6 @@ import { latestPreviewQueue } from "./art-preview-queue";
 import type { PreviewResult } from "./art-preview.worker";
 import { ArtPlacementControls, ArtPlacementOverlay } from "./ArtPlacementEditor";
 import { buildSketchPngFile } from "./art-sketch-upload";
-
-const SIZES: Array<{ label: string; w: number; h: number }> = [
-  { label: "50 × 50 mm", w: 50, h: 50 },
-  { label: "80 × 50 mm", w: 80, h: 50 },
-  { label: "100 × 100 mm", w: 100, h: 100 },
-  { label: "40 × 40 mm", w: 40, h: 40 },
-];
 
 const STYLE_LABELS: Record<ArtStyle, string> = {
   realistic: "Halftone",
@@ -348,6 +342,12 @@ export function ArtTab() {
     }
   };
 
+  const resizeBoard = (w: number, h: number, shape: OutlineKind = outline) => {
+    setPlacement((p) => placementAfterBoardResize(p, widthMm, heightMm, w, h, shape, crop));
+    setWidthMm(w);
+    setHeightMm(h);
+    setOutline(shape);
+  };
   const unavailable = !gray || !svg || busy || loading || converting;
   const existingBoard = project.data?.files.some((f) => f.path === "board.kicad_pcb");
   const drop = (event: React.DragEvent) => {
@@ -485,6 +485,27 @@ export function ArtTab() {
             <div className="mt-3 space-y-4">
               {" "}
               <label className="fd-art-field">
+                Board shape
+                <Select
+                  value={outline}
+                  onChange={(e) => {
+                    const shape = e.target.value as OutlineKind;
+                    const diameter = Math.min(widthMm, heightMm);
+                    resizeBoard(
+                      shape === "circle" ? diameter : widthMm,
+                      shape === "circle" ? diameter : heightMm,
+                      shape,
+                    );
+                  }}
+                >
+                  {OUTLINE_KINDS.map((o) => (
+                    <option key={o} value={o}>
+                      {o === "rounded" ? "Rounded rectangle" : o[0]!.toUpperCase() + o.slice(1)}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+              <label className="fd-art-field">
                 Board colour
                 <Select value={color} onChange={(e) => setColor(e.target.value as BoardColor)}>
                   {BOARD_COLORS.map((c) => (
@@ -494,49 +515,15 @@ export function ArtTab() {
                   ))}
                 </Select>
               </label>
-              <label className="fd-art-field">
-                Board size
-                <Select
-                  value={`${widthMm}x${heightMm}`}
-                  onChange={(e) => {
-                    const hit = SIZES.find((s) => `${s.w}x${s.h}` === e.target.value);
-                    if (hit) {
-                      setPlacement((p) =>
-                        placementAfterBoardResize(
-                          p,
-                          widthMm,
-                          heightMm,
-                          hit.w,
-                          hit.h,
-                          outline,
-                          crop,
-                        ),
-                      );
-                      setWidthMm(hit.w);
-                      setHeightMm(hit.h);
-                    }
-                  }}
-                >
-                  {SIZES.map((s) => (
-                    <option key={s.label} value={`${s.w}x${s.h}`}>
-                      {s.label}
-                    </option>
-                  ))}
-                </Select>
-              </label>
+              <BoardDimensions
+                widthMm={widthMm}
+                heightMm={heightMm}
+                circular={outline === "circle"}
+                onChange={(w, h) => resizeBoard(w, h)}
+              />
               <p className="text-[11px] text-muted">
                 Changing board size scales and repositions the artwork to keep it visible.
               </p>
-              <label className="fd-art-field">
-                Board shape
-                <Select value={outline} onChange={(e) => setOutline(e.target.value as OutlineKind)}>
-                  {OUTLINE_KINDS.map((o) => (
-                    <option key={o} value={o}>
-                      {o === "rounded" ? "Rounded rectangle" : o[0]!.toUpperCase() + o.slice(1)}
-                    </option>
-                  ))}
-                </Select>
-              </label>
               <p className="text-[11px] text-muted">
                 Board shape changes the physical PCB edge, independently of the image crop.
               </p>
@@ -615,7 +602,8 @@ export function ArtTab() {
       >
         <div className="fd-art-toolbar">
           <span>
-            {widthMm} × {heightMm} mm · {STYLE_LABELS[style]}
+            {outline === "circle" ? `Ø ${widthMm} mm` : `${widthMm} × ${heightMm} mm`} ·{" "}
+            {STYLE_LABELS[style]}
           </span>
           {svg && (
             <div className="flex flex-wrap items-center gap-1">
