@@ -33,6 +33,7 @@ export type IconName =
   | "stop"
   | "command"
   | "folder"
+  | "trash"
   | "minus"
   | "play"
   | "pause"
@@ -55,6 +56,7 @@ export function Icon({ name, ...props }: SVGProps<SVGSVGElement> & { name: IconN
     warning: <><path d="m12 3 10 18H2L12 3Z" /><path d="M12 9v5m0 3h.01" /></>,
     compose: <><path d="M12 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-7" /><path d="m16 3 5 5-10 10-5 1 1-5 9-11Z" /></>,
     folderOpen: <><path d="M3 18V6a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v2" /><path d="M3 18a2 2 0 0 0 2 2h13a2 2 0 0 0 1.9-1.4l2-6A1.2 1.2 0 0 0 20.8 11H7.5a2 2 0 0 0-1.9 1.4L3 18Z" /></>,
+    trash: <><path d="M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6M14 10v6" /></>,
     minus: <path d="M5 12h14" />,
     play: <path d="m8 5 11 7-11 7V5Z" />,
     pause: <><path d="M8 5v14M16 5v14" /></>,

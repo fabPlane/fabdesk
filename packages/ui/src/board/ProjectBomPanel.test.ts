@@ -28,6 +28,14 @@ describe("bomPartsState / planAddOffboard", () => {
     expect(next?.parts[1]?.qty).toBe(3);
   });
 
+  test("an already-added catalog part stays unchanged; removing it enables Add again", () => {
+    const state = bomPartsState(query({ data: existing }));
+    expect(planAddOffboard(state, "nema-17-stepper", 1)).toBeNull();
+    expect(existing.parts[0]?.qty).toBe(2);
+    const removed = bomPartsState(query({ data: { schema: 1, parts: [] } }));
+    expect(planAddOffboard(removed, "nema-17-stepper", 1)?.parts).toHaveLength(1);
+  });
+
   test("an existing unsupported-schema file cannot be overwritten by Add", () => {
     const state = bomPartsState(query({ data: { schema: 2, parts: [{ id: "future" }] } }));
     expect(state.status).toBe("error");
