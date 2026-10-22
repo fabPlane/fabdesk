@@ -30,6 +30,9 @@ export function useAppActions() {
       abort() {
         composerHandlers.abort?.();
       },
+      finishIt() {
+        composerHandlers.finishIt?.();
+      },
       async pinThread() {
         const t = active();
         if (t) await patch.mutateAsync({ id: t.id, patch: { pinned: !t.pinned } });
