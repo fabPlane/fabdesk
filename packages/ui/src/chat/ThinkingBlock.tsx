@@ -11,7 +11,7 @@ export function ThinkingBlock({ text, streaming }: { text: string; streaming?: b
         onClick={() => setOpen((o) => !o)}
       >
         <span className={cn("inline-block transition-transform", open && "rotate-90")}>&#9656;</span>
-        <span className="font-medium">{streaming ? "Thinking..." : "Thought"}</span>
+        <span className={cn("font-medium", streaming && "fd-activity-shimmer")}>{streaming ? "Thinking..." : "Thought"}</span>
         {!open && <span className="truncate italic opacity-70">{preview}</span>}
       </button>
       {open && <pre className="whitespace-pre-wrap px-3 pb-2.5 font-sans text-muted">{text}</pre>}

@@ -3,11 +3,13 @@ import { existsSync, mkdirSync, statSync, symlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { detectBinary, resolveFirst } from "../detect";
+import { readCodexConfiguredModel } from "../codex-model";
 import { CodexStreamParser } from "../parsers/codex";
 import { runAgentProcess } from "../process";
 import type { AgentAdapter, AgentRun, AgentSession } from "../types";
 import { MCP_SERVER_NAME, TOKEN_ENV } from "../types";
 import { linkSharedAuth } from "./shared-auth";
+import { runCodexAppServer } from "./codex-app-server";
 import {
   agentEnv,
   isImage,
@@ -18,6 +20,23 @@ import {
 } from "./shared";
 
 const CANDIDATES = ["codex", "~/.local/bin/codex"];
+const standaloneCapabilities = new Map<string, { stamp: string; supported: boolean }>();
+
+function supportsStandalone(bin: string, env: Record<string, string>): boolean {
+  const path = Bun.which(bin, env.PATH ? { PATH: env.PATH } : {}) ?? bin;
+  let stamp: string;
+  try { const info = statSync(path); stamp = `${info.mtimeMs}:${info.size}`; }
+  catch { return false; }
+  const cached = standaloneCapabilities.get(path);
+  if (cached?.stamp === stamp) return cached.supported;
+  const help = Bun.spawnSync([bin, "--help"], { env, stdout: "pipe", stderr: "ignore", timeout: 5_000 });
+  const supported = help.exitCode === 0 && /(?:^|\s)--no-daemon(?:\s|$)/m.test(help.stdout.toString());
+  if (help.exitCode === 0) standaloneCapabilities.set(path, { stamp, supported });
+  return supported;
+}
+
+export const CODEX_QUESTION_INSTRUCTIONS =
+  "You are running inside fabPlane. When asking the user a question, use the fabdesk MCP tool request_user_input (mcp__fabdesk__request_user_input) to display clickable options and a custom-answer field. This tool works in full/default mode. Ask one question per call and wait for its submitted answer before asking the next or doing dependent work. Do not use the built-in request_user_input or request_user_input_async tools: this exec integration renders those as plain text and cannot collect their replies. Do not replace the fabdesk question tool with a Markdown list, or claim clickable controls are visible without calling it. If the fabdesk tool is unavailable, say that interactive questions are unavailable; never pretend that plain text is an interactive form. An unanswered question is not permission to choose for the user.";
 
 /**
  * `codex exec` (new thread) or `codex exec resume <thread_id>` (follow-up). The resume subcommand
@@ -66,13 +85,17 @@ export function codexArgs(
   session: AgentSession,
   bin: string,
   foreignServers: string[] = [],
+  standalone = false,
 ): string[] {
-  const args = [bin, "exec"];
+  const args = [bin, ...(standalone ? ["--no-daemon"] : []), "exec"];
   // This is an `exec` option rather than an `exec resume` option, so it must precede the
   // subcommand. Keeping it here also lets follow-up messages use approval-requiring MCP tools.
   if (session.permission !== "bypass") args.push("--approve-for-me");
   if (session.resume) args.push("resume", session.resume);
   args.push("--json", "--skip-git-repo-check", ...ISOLATION_CONFIG);
+  // `exec resume` also exposes Codex's own question tools, whose UI events this adapter cannot
+  // answer. Route questions explicitly to our MCP bridge on every turn, including resumes.
+  args.push("-c", `developer_instructions=${tomlString(CODEX_QUESTION_INSTRUCTIONS)}`);
   // A whole-table -c override merges with user config (0.160), so disable each
   // foreign entry explicitly. Keys must be inside the TOML value: Codex's dotted
   // override-path parser treats quote characters literally (0.160).
@@ -101,6 +124,10 @@ export function codexArgs(
     "-c",
     `mcp_servers.${MCP_SERVER_NAME}.enabled=true`,
     "-c",
+    // Interactive questions wait up to 30 minutes; allow the server to return an unanswered
+    // result before the CLI's tool deadline (normally only 60 seconds).
+    `mcp_servers.${MCP_SERVER_NAME}.tool_timeout_sec=1830`,
+    "-c",
     `mcp_servers.${MCP_SERVER_NAME}.bearer_token_env_var=${tomlString(TOKEN_ENV)}`,
   );
   for (const a of session.attachments) if (isImage(a)) args.push("-i", a.path);
@@ -127,6 +154,9 @@ export function codexEnv(
   onWarning?: (message: string) => void,
 ): Record<string, string> {
   const env = agentEnv(session);
+  // A desktop-launched fabPlane can inherit its parent's chat bridge. A child agent must
+  // connect to fabPlane's MCP server, not route UI tools back through that desktop chat.
+  for (const name of ["CODEX_APP_TOOLS_PIPE_PATH", "CODEX_THREAD_ID", "CODEX_SESSION_ID", "CODEX_INTERNAL_ORIGINATOR_OVERRIDE", "CODEX_TASK_WORKSPACE_VERIFYING_IDENTITY"]) delete env[name];
   const source = resolve(
     session.cwd,
     env["CODEX_HOME"] ?? join(env["HOME"] ?? env["USERPROFILE"] ?? homedir(), ".codex"),
@@ -184,7 +214,11 @@ export const codexAdapter: AgentAdapter = {
   displayName: "Codex",
   installHint:
     "Install Codex: npm install -g @openai/codex (or brew install codex), then run `codex login`.",
-  detect: (binaryPath) => detectBinary(CANDIDATES, binaryPath),
+  detect: async (binaryPath) => {
+    const detected = await detectBinary(CANDIDATES, binaryPath);
+    const defaultModel = detected.installed ? readCodexConfiguredModel() : undefined;
+    return { ...detected, ...(defaultModel ? { defaultModel } : {}) };
+  },
   models: () => [
     "gpt-5.5",
     "gpt-5.6-sol",
@@ -197,9 +231,10 @@ export const codexAdapter: AgentAdapter = {
   /**
    * `codex exec --json` (0.150) has no approval channel: the exec subcommand has no
    * `--ask-for-approval`, and with `approval_policy="on-request"` it runs writes without emitting
-   * any approval item. Supervising Codex needs the app-server JSON-RPC client
+   * any approval item. Supervising Codex needs client handling for
    * (`item/commandExecution/requestApproval`, `item/permissions/requestApproval`,
-   * `item/tool/requestUserInput`), which this adapter does not speak yet.
+   * `item/tool/requestUserInput`). This branch supports questions, but native
+   * permission decisions remain in the separate approvals integration.
    */
   supportsSupervised: false,
   run(session: AgentSession): AgentRun {
@@ -219,8 +254,19 @@ export const codexAdapter: AgentAdapter = {
     // Never fall back to an unisolated launch when the CLI cannot enumerate its config.
     if (inventory.exitCode !== 0) throw new Error("Codex MCP isolation: inventory command failed");
     const foreignServers = codexForeignServers(inventory.stdout.toString());
-    const run = runAgentProcess({
-      cmd: codexArgs(session, bin, foreignServers),
+    // New desktop CLIs otherwise reuse the app's shared server, which has its own tool
+    // inventory and ignores this child process's per-run MCP setup. Older CLIs already run
+    // standalone and do not recognize this flag, so detect support instead of version-guessing.
+    const standalone = supportsStandalone(bin, env);
+    const args = codexArgs(session, bin, foreignServers, standalone);
+    const configArgs: string[] = [];
+    for (let i = 0; i < args.length - 1; i++) if (args[i] === "-c") {
+      const config = args[++i]!;
+      // Native question instructions are supplied on thread/start, not exec's MCP-only prompt.
+      if (!config.startsWith("developer_instructions=")) configArgs.push("-c", config);
+    }
+    const run = standalone && session.requestInput ? runCodexAppServer(session, [bin, "--no-daemon", "app-server", "--stdio", ...configArgs, "-c", "features.default_mode_request_user_input=true"], env) : runAgentProcess({
+      cmd: args,
       cwd: session.cwd,
       env,
       parse: (line) => parser.feed(line),

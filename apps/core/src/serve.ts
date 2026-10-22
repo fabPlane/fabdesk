@@ -51,11 +51,11 @@ import {
 } from "./sentry";
 import { RunTelemetry } from "./run-telemetry";
 import { buildInfo } from "./build-info";
-import {
-  ArchiveConsentRevokedError,
-  UsageArchive,
-} from "./usage-archive";
+import { ArchiveConsentRevokedError, UsageArchive } from "./usage-archive";
 import { UsageApiArchiveWriter } from "./usage-api";
+
+/** Delay before retrying a failed usage-archive backfill (rate or daily limits, an outage). */
+const BACKFILL_RETRY_MS = 30 * 60_000;
 
 export type ExperimentalAgentInterface = "substrate" | "programmable";
 
@@ -215,22 +215,31 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   if (archiveDir) archives.push(new UsageArchive(archiveDir));
   let archiveBearer: () => string | null = () => null;
   if (remoteArchiveEnabled)
-    archives.push(new UsageArchive(new UsageApiArchiveWriter(config.apiOrigin, () => archiveBearer(), store.settings)));
-  let archiveBackfilled = false;
+    archives.push(
+      new UsageArchive(
+        new UsageApiArchiveWriter(config.apiOrigin, () => archiveBearer(), store.settings),
+      ),
+    );
+  const archiveDestinations = archives.map((archive) => archive.destination);
   let archiveClosing = false;
   let backfillTask: Promise<void> | null = null;
+  let backfillRetry: ReturnType<typeof setTimeout> | null = null;
+  const cancelBackfillRetry = () => {
+    if (backfillRetry) clearTimeout(backfillRetry);
+    backfillRetry = null;
+  };
   const privacy = resolvePrivacyStatus({ settings: store.settings });
   logger.info("first-install privacy screen", {
     mode: privacy.mode,
     show: privacy.firstInstallScreen,
     signal: privacy.region.signal,
   });
-  const hasArchiveConsent = () => usageArchiveAllowed(store.settings.get(), privacy.firstInstallScreen);
+  const hasArchiveConsent = () =>
+    usageArchiveAllowed(store.settings.get(), privacy.firstInstallScreen);
   const startArchiveBackfill = (): Promise<void> => {
     if (backfillTask) return backfillTask;
-    if (!archiveEnabled || !hasArchiveConsent() || archiveClosing)
-      return Promise.resolve();
-    archiveBackfilled = false;
+    if (!archiveEnabled || !hasArchiveConsent() || archiveClosing) return Promise.resolve();
+    cancelBackfillRetry();
     const task = (async () => {
       try {
         for (const archive of archives) {
@@ -240,13 +249,18 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
           );
           logger.info("usage archive backfilled", counts);
         }
-        archiveBackfilled = hasArchiveConsent() && !archiveClosing;
       } catch (error) {
-        if (!(error instanceof ArchiveConsentRevokedError)) {
-          logger.warn("usage archive backfill failed; local dump pruning disabled", {
-            error: errMsg(error),
-          });
-        }
+        if (error instanceof ArchiveConsentRevokedError || archiveClosing) return;
+        // Usually a rate or daily limit; dumps not yet backed up remain local until accepted.
+        logger.warn("usage archive backfill failed; retrying later", {
+          error: errMsg(error),
+          retryInMs: BACKFILL_RETRY_MS,
+        });
+        backfillRetry = setTimeout(() => {
+          backfillRetry = null;
+          void startArchiveBackfill();
+        }, BACKFILL_RETRY_MS);
+        backfillRetry.unref?.();
       }
     })();
     backfillTask = task;
@@ -255,31 +269,45 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     });
     return task;
   };
+  const archiveTasks = new Set<Promise<void>>();
   let lastArchiveConsent = hasArchiveConsent();
   const telemetry = new RunTelemetry({
     version: config.version,
     build: buildInfo(),
+    dumpDirectory: join(config.home, "run-dumps"),
     runDumps: archiveEnabled
       ? {
-          async put(dump) {
-            if (!hasArchiveConsent() || archiveClosing) {
-              store.runDumps.put(dump);
-              return;
-            }
-            let backedUp = archiveBackfilled;
-            for (const archive of archives) {
-              try {
-                await archive.put(dump, store.db, hasArchiveConsent);
-              } catch (error) {
-                backedUp = false;
-                logger.warn("usage archive failed; retained run dump locally", {
-                  runId: dump.runId,
-                  error: errMsg(error),
-                });
+          begin: (runId, capture) => store.runDumps.begin(runId, capture, hasArchiveConsent() ? archiveDestinations : []),
+          end: (runId) => store.runDumps.end(runId),
+          put(dump) {
+            const consent = hasArchiveConsent();
+            // Save locally first so a slow or retrying upload never delays the local copy. While
+            // backup is consented, retention keeps pending dumps until every destination accepts
+            // the complete record. Large dumps are small SQLite references to immutable files.
+            store.runDumps.put(dump, consent ? archiveDestinations : []);
+            if (!consent || archiveClosing) return;
+            const task = (async () => {
+              // The local dump is durable before agent.done; network delivery runs independently.
+              for (const archive of archives) {
+                try {
+                  await archive.put(dump, store.db, hasArchiveConsent);
+                } catch (error) {
+                  if (error instanceof ArchiveConsentRevokedError) continue;
+                  logger.warn("usage archive failed; retained run dump locally", {
+                    runId: dump.runId,
+                    error: errMsg(error),
+                  });
+                  if (!backfillRetry && !archiveClosing) {
+                    backfillRetry = setTimeout(() => {
+                      backfillRetry = null;
+                      void startArchiveBackfill();
+                    }, BACKFILL_RETRY_MS);
+                    backfillRetry.unref?.();
+                  }
+                }
               }
-            }
-            // Keep the local copy until backup succeeds; bounded pruning could otherwise erase it.
-            store.runDumps.put(dump, backedUp);
+            })().finally(() => archiveTasks.delete(task));
+            archiveTasks.add(task);
           },
         }
       : store.runDumps,
@@ -355,7 +383,9 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
 
   // fabplane.com carts and inventory (`shopping` tools, `/cloud` routes); tests may inject their own.
   const storedToken =
-    auth.mode === "local" ? storedCredentialToken({ home: config.home, apiOrigin: config.apiOrigin }) : () => null;
+    auth.mode === "local"
+      ? storedCredentialToken({ home: config.home, apiOrigin: config.apiOrigin })
+      : () => null;
   services.cloud ??= createCloudService({
     apiOrigin: config.apiOrigin,
     token: () => auth.token() ?? storedToken(),
@@ -382,6 +412,10 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     registry,
     ctxFactory,
     version: config.version,
+    userInput: {
+      enabledFor: (token) => runs.isActiveRunToken(token),
+      handle: (token, req, signal) => runs.requestUserInput(token, req, signal),
+    },
     permissionPrompt: {
       enabledFor: (token) => runs.isSupervisedRunToken(token),
       handle: (token, req) => runs.permissionPrompt(token, req),
@@ -437,9 +471,17 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
         .filter((f) => /\.(png|jpe?g)$/i.test(f.path))
         .map((f) => join(project.dir, "sketches", f.path));
       const board = project.manifest().board;
+      const cli = await services.kicad.resolveCli().catch(() => null);
       await agents.writeAgentDocs(project.dir, {
         projectName: project.name,
         toolsMarkdown: toolsMarkdown(registry),
+        ...(cli ? { kicadCli: cli.path } : {}),
+        shellExecutables: Object.fromEntries(
+          ["python3", "rg", "bun"].flatMap((name) => {
+            const path = Bun.which(name);
+            return path ? [[name, path]] : [];
+          }),
+        ),
         sketches,
         board: {
           layers: board.layers,
@@ -531,8 +573,14 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     onSettingsChanged: () => {
       void cloudSettings.push();
       const consent = hasArchiveConsent();
-      if (consent && !lastArchiveConsent) void startArchiveBackfill();
-      if (!consent) archiveBackfilled = false;
+      if (consent && !lastArchiveConsent) {
+        // Let a cancelled backfill settle before starting the new consent period's backfill.
+        void (backfillTask ?? Promise.resolve()).then(() => startArchiveBackfill());
+      }
+      if (!consent && lastArchiveConsent) {
+        cancelBackfillRetry();
+        for (const archive of archives) archive.cancelPending();
+      }
       lastArchiveConsent = consent;
     },
   };
@@ -780,9 +828,13 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       remote.stop();
       server.stop(true);
       if (!opts.noHandshake) await removeHandshake(config.handshakePath);
-      await telemetry.shutdown();
+      // Stop uploads first so a retry wait cannot hold shutdown; unsent dumps stay for the next backfill.
       archiveClosing = true;
+      cancelBackfillRetry();
+      for (const archive of archives) archive.close();
+      await telemetry.shutdown();
       await backfillTask;
+      await Promise.allSettled([...archiveTasks]);
       store.close();
       await closeSentry();
       resolveClosed(reason);

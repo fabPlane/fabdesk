@@ -4,6 +4,7 @@ import { composerHandlers } from "../chat/Composer";
 import { useThread, useThreadMutations } from "@fabdesk/client-core";
 import { useBranchThread } from "../hooks/threadActions";
 import { useUiStore } from "../stores/ui";
+import { stencilThicknessMm } from "../stores/stencil-thickness";
 
 /** App-level actions shared by the shortcut hook, the command palette and the top bar. */
 export function useAppActions() {
@@ -60,6 +61,18 @@ export function useAppActions() {
         if (!projectId) return;
         ui().setBoardTab("renders");
         await run("render", { projectId });
+      },
+      async exportStencil() {
+        const projectId = ui().activeProjectId;
+        if (!projectId) return;
+        ui().setBoardTab("files");
+        await run("stencil", { projectId, thicknessMm: stencilThicknessMm(ui().stencilThicknessByProject?.[projectId]) });
+      },
+      async exportLaserStencil() {
+        const projectId = ui().activeProjectId;
+        if (!projectId) return;
+        ui().setBoardTab("files");
+        await run("export_laser_stencil", { projectId, preset: "mylar-uv" });
       },
     };
   }, [data, patch, branch, run]);

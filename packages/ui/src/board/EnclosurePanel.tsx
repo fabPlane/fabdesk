@@ -88,14 +88,21 @@ export function draftFromParams(params: Record<string, unknown> | null): Enclosu
   const faces = params?.["ventFaces"];
   return {
     outlineOffsetMm:
-      typeof params?.["outlineOffsetMm"] === "number" ? String(params["outlineOffsetMm"]) : DEFAULT_ENCLOSURE_DRAFT.outlineOffsetMm,
+      typeof params?.["outlineOffsetMm"] === "number"
+        ? String(params["outlineOffsetMm"])
+        : DEFAULT_ENCLOSURE_DRAFT.outlineOffsetMm,
     clearanceMm:
-      typeof params?.["clearanceMm"] === "number" ? String(params["clearanceMm"]) : DEFAULT_ENCLOSURE_DRAFT.clearanceMm,
+      typeof params?.["clearanceMm"] === "number"
+        ? String(params["clearanceMm"])
+        : DEFAULT_ENCLOSURE_DRAFT.clearanceMm,
     ventPattern:
       vent === "grid" || vent === "slots" || vent === "honeycomb" || vent === "none"
         ? vent
         : DEFAULT_ENCLOSURE_DRAFT.ventPattern,
-    ventFaces: faces === "walls" || faces === "both" || faces === "lid" ? faces : DEFAULT_ENCLOSURE_DRAFT.ventFaces,
+    ventFaces:
+      faces === "walls" || faces === "both" || faces === "lid"
+        ? faces
+        : DEFAULT_ENCLOSURE_DRAFT.ventFaces,
     snapFit: params?.["snapFit"] === true,
   };
 }
@@ -105,7 +112,10 @@ export function draftFromParams(params: Record<string, unknown> | null): Enclosu
  * throws it as the error message. Recover the envelope (or a plain `{ error }` body) so the panel
  * can show the alignment report instead of raw JSON.
  */
-export function enclosureFailure(e: unknown): { result: Record<string, unknown> | null; message: string } {
+export function enclosureFailure(e: unknown): {
+  result: Record<string, unknown> | null;
+  message: string;
+} {
   const raw = e instanceof Error ? e.message : String(e);
   let body: Record<string, unknown> | null = null;
   try {
@@ -141,6 +151,9 @@ export function EnclosureScreen({
   onDraftChange,
   onGenerate,
   onCheck,
+  onDownload,
+  onOpenFiles,
+  downloading,
 }: {
   view: EnclosureView | null;
   draft: EnclosureDraft;
@@ -149,28 +162,45 @@ export function EnclosureScreen({
   onDraftChange: (patch: Partial<EnclosureDraft>) => void;
   onGenerate: () => void;
   onCheck: () => void;
+  onDownload?: (path: string) => void;
+  onOpenFiles?: (path: string) => void;
+  downloading?: string | null;
 }) {
+  const modelFile =
+    view?.files.find((path) => /\.stl$/i.test(path) && !/-lid\.stl$/i.test(path)) ??
+    view?.files.find((path) => /\.(stl|step)$/i.test(path));
   return (
     <section
-      className="shrink-0 border-b border-border bg-panel-2/40 px-3 py-2"
+      className="m-4 shrink-0 rounded-xl border border-border bg-panel p-5"
       data-testid="enclosure-panel"
     >
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[11px] font-semibold uppercase tracking-[0.09em] text-muted">
-          Enclosure v2
-        </span>
-        <span className="min-w-0 flex-1 text-xs text-fg" data-testid="enclosure-summary">
-          {view?.summary ?? "Generate a printable case from the board outline, holes and connectors."}
-        </span>
+        <div className="min-w-0 flex-1">
+          <h2 className="text-base font-semibold">
+            {view?.exists ? "Your enclosure" : "Create a printable enclosure"}
+          </h2>
+          <p className="mt-1 text-sm text-muted" data-testid="enclosure-summary">
+            {view?.summary ??
+              "Generate a printable case from the board outline, holes and connectors."}
+          </p>
+        </div>
         {busy && <Spinner />}
-        <Button size="sm" variant="primary" disabled={busy} onClick={onGenerate} data-testid="enclosure-generate">
-          {view?.exists ? "Regenerate" : "Generate"}
-        </Button>
-        <Button size="sm" disabled={busy || !view?.exists} onClick={onCheck} data-testid="enclosure-check">
-          Check alignment
-        </Button>
+        {!view?.exists && (
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={busy}
+            onClick={onGenerate}
+            data-testid="enclosure-generate"
+          >
+            Generate
+          </Button>
+        )}
       </div>
-      <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6" data-testid="enclosure-v2-controls">
+      <div
+        className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6"
+        data-testid="enclosure-v2-controls"
+      >
         <label className="flex flex-col gap-1 text-[10px] uppercase tracking-[0.08em] text-muted">
           Outline offset mm
           <Input
@@ -217,7 +247,9 @@ export function EnclosureScreen({
           Vent faces
           <Select
             value={draft.ventFaces}
-            onChange={(e) => onDraftChange({ ventFaces: e.target.value as EnclosureDraft["ventFaces"] })}
+            onChange={(e) =>
+              onDraftChange({ ventFaces: e.target.value as EnclosureDraft["ventFaces"] })
+            }
             data-testid="enclosure-vent-faces"
             className="h-8"
             disabled={draft.ventPattern === "none"}
@@ -243,16 +275,53 @@ export function EnclosureScreen({
           {error}
         </p>
       )}
-      {view && (
+      {view?.exists && (
         <p className="mt-1 text-xs text-muted" data-testid="enclosure-meta">
           {view.stale
             ? "Board changed — regenerate so cutouts stay aligned."
             : view.ok
               ? `In sync · ${view.cutouts.length} cutout(s) · ${view.holes} hole(s) · ${view.vents} vent(s) · ${view.clips} clip(s)`
-              : view.issues[0] ?? "Cutouts need attention."}
-          {view.files.length ? ` · ${view.files.join(", ")}` : ""}
+              : (view.issues[0] ?? "Cutouts need attention.")}
         </p>
       )}
+      {view?.exists && view.files.some((path) => /\.(stl|step)$/i.test(path)) && (
+        <div className="mt-5 border-t border-border pt-4">
+          <h3 className="text-sm font-medium">Open in your slicer or CAD app</h3>
+          <p className="mt-1 text-xs leading-5 text-muted">
+            Download the base and lid for 3D printing, or STEP for CAD editing. These files are also
+            saved in your project’s exports folder.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {view.files
+              .filter((path) => /\.(stl|step)$/i.test(path))
+              .map((path) => (
+                <Button
+                  key={path}
+                  size="sm"
+                  disabled={busy || !!downloading}
+                  title={path}
+                  onClick={() => onDownload?.(path)}
+                >
+                  {downloading === path
+                    ? "Downloading…"
+                    : /\.step$/i.test(path)
+                      ? "Download STEP"
+                      : /-lid\.stl$/i.test(path)
+                        ? "Download lid STL"
+                        : "Download base STL"}
+                </Button>
+              ))}
+          </div>
+          <button
+            type="button"
+            className="mt-3 text-xs text-accent underline underline-offset-2 hover:text-fg"
+            onClick={() => modelFile && onOpenFiles?.(modelFile)}
+          >
+            View generated files →
+          </button>
+        </div>
+      )}
+      <p className="mt-4 text-xs text-muted">No CAD bridge installation required.</p>
       {view && view.issues.length > 1 && (
         <ul className="mt-1 list-disc pl-4 text-xs text-warning" data-testid="enclosure-issues">
           {view.issues.slice(0, 6).map((issue) => (
@@ -267,6 +336,30 @@ export function EnclosureScreen({
           dangerouslySetInnerHTML={{ __html: view.previewSvg }}
         />
       )}
+      {view?.exists && (
+        <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-border pt-3">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-xs text-muted"
+            disabled={busy}
+            onClick={onCheck}
+            data-testid="enclosure-check"
+          >
+            Check alignment
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-xs text-muted"
+            disabled={busy}
+            onClick={onGenerate}
+            data-testid="enclosure-generate"
+          >
+            Regenerate
+          </Button>
+        </div>
+      )}
     </section>
   );
 }
@@ -278,6 +371,26 @@ export function EnclosurePanel() {
   const [draft, setDraft] = useState<EnclosureDraft>(DEFAULT_ENCLOSURE_DRAFT);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState<string | null>(null);
+
+  const download = async (path: string) => {
+    if (!projectId || downloading) return;
+    setDownloading(path);
+    setError(null);
+    try {
+      const blob = await client.readFileBlob(projectId, path);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = path.split("/").pop() ?? "enclosure.stl";
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    } catch (e) {
+      setError(`Could not download ${path}: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setDownloading(null);
+    }
+  };
 
   const call = useCallback(
     async (action: "generate" | "status" | "check", extras: Record<string, unknown> = {}) => {
@@ -333,6 +446,9 @@ export function EnclosurePanel() {
         })
       }
       onCheck={() => void call("check")}
+      onDownload={(path) => void download(path)}
+      onOpenFiles={(path) => useUiStore.getState().openProjectFile(path)}
+      downloading={downloading}
     />
   );
 }

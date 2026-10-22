@@ -52,23 +52,41 @@ snapshots/
   blobs/<sha256>           # deduplicated original file bodies
 ```
 
-`llm-dump.json` contains:
+`llm-dump.json` contains the complete ordered event timeline, every distinct snapshot manifest,
+and every unique captured project file. Small UTF-8 files are embedded directly; large or binary
+files use base64 so their exact bytes survive export. The final project state is captured after
+the agent exits, including files written by native shell/file tools. Pre-tool snapshots are taken
+for project-scoped Fabdesk calls; native agent calls also appear in the agent timeline.
 
-- the ordered event timeline;
-- every snapshot manifest;
-- every unique UTF-8 project file up to 5 MiB, keyed by SHA-256;
-- metadata and omission reasons for binary or unusually large files;
-- an analysis instruction telling the next model to compare each tool call with the preceding project state and KiCad result.
+Capture has no policy limits on event size, total events, file size/count, snapshot count or total
+dump size. Events append to disk; file hashing/copying and portable-dump export stream through
+bounded memory windows. Unchanged files and project states remain deduplicated. Local history
+keeps the newest 50 run directories per project and a SQLite cache of 100 rows / 512 MiB,
+with or without backup enabled. Runs beyond those limits remain until every destination required
+when captured has acknowledged them; captures made with backup off need no acknowledgement.
+The daemon indexes capture ownership at start, including captures interrupted before dump creation,
+and registers completed dumps at finalization. With no local archive directory and the remote
+backup flag unset or set to `0`, captures require no destinations and attempt no uploads.
+Profile `run-dumps/` copies are removed together with their SQLite row. Current runs and the newest
+run are protected. A separate 5 GiB pending-backup storage cap can drop older unsent runs: see
+[usage data archive](usage-data-backup.md) for accounting and internal durable drop records. `.git`, `.fabdesk` and symlink targets remain outside the
+captured file tree; symlinks themselves are recorded. Files that change while being copied are retried once; a second change becomes an explicit
+per-file manifest error and the snapshot continues. I/O/serialization errors are reported explicitly. Complete capture still requires working storage,
+and cannot recover content an agent CLI itself withheld or truncated.
 
-Text source, KiCad documents, JSON reports and SVG renders are normally embedded. PNG, GLB and other binary renders remain in the run/project directory and are represented by path, size and hash.
+Small dumps are also stored directly in SQLite. For dumps over 1 MiB, `run_dumps.dump_json` holds
+a `fabdesk.llm-run-file/v1` descriptor with the immutable local file's path, full byte size and
+SHA-256 instead of loading the whole run into a database string. The daemon keeps a stable copy
+under its profile's `run-dumps/` directory (a hard link where possible), so moving or deleting the
+project does not erase a pending backup. This threshold changes storage
+representation only; no content is omitted. `runs:export` resolves either representation and
+streams large dumps to a file or stdout. Consumers that read SQLite directly must resolve the
+reference; do not treat that small descriptor as the run's size/content.
 
-Capture is bounded so telemetry cannot dominate a run:
-
-- unchanged files reuse their prior metadata, SHA-256 and content blob; identical project states reuse the preceding manifest;
-- files over 5 MiB are represented by metadata and an omission reason without being read;
-- each run is capped at 2,000 files, 128 distinct snapshots, 16 MiB of snapshot blobs, 8 MiB of manifests and 12 MiB of event JSONL;
-- at most 8 MiB of text files is embedded into the portable dump, whose total size is capped at 32 MiB; any omitted content remains identified by path, size and hash where available;
-- the 50 newest project-local run directories and 100 newest database dumps are retained. Database dumps also have a combined 512 MiB cap.
+Remote backup uses checked transport chunks and a final manifest; see
+[usage data archive](usage-data-backup.md). A 60 MB run is a complete logical run even though
+no single network request contains 60 MB. Older truncated runs remain truncated; these changes
+apply to new captures.
 
 Agent stream events are buffered and appended in batches. Snapshot, serialization, exporter and span-event failures are isolated from the agent run.
 
@@ -80,7 +98,7 @@ The SQLite `runs.log_path` column points to the raw `trace.jsonl`; the LLM dump 
 
 ## Common database
 
-Every completed dump is also stored in the `run_dumps` table of Fabdesk's existing WAL-backed SQLite database, `fabdesk.db`. This happens automatically: there is no Docker container, database server, dashboard or setup variable.
+Every completed dump or its verified file reference is also stored in the `run_dumps` table of Fabdesk's existing WAL-backed SQLite database, `fabdesk.db`. This happens automatically: there is no Docker container, database server, dashboard or setup variable.
 
 The database lives under the normal platform-specific Fabdesk data directory. Set `FABDESK_HOME` if you want an explicit, easy-to-find location:
 
@@ -98,6 +116,6 @@ bun run runs:export -- run_abc123
 
 Pass a second argument for a different output path, or `-` for stdout.
 
-`runs:export` reads `fabdesk.db` from the normal data directory (or `FABDESK_HOME`) and does not modify the dump. The database copy makes all local runs available from one place; the project-local copy remains useful if a project is moved to another machine. For long-term retention of conversations and run dumps, see [usage data archive](usage-data-backup.md).
+`runs:export` reads `fabdesk.db` from the normal data directory (or `FABDESK_HOME`), resolves file-backed records and does not modify the dump. Keep the profile's pending `run-dumps/` files available until backup has completed. The database record makes retained runs discoverable; the project-local bundle remains useful when a project is moved. For long-term retention of conversations and run dumps, see [usage data archive](usage-data-backup.md).
 
 Optional OpenTelemetry export remains available for an already-managed OTLP/HTTP endpoint by setting `OTEL_EXPORTER_OTLP_ENDPOINT`. It is not needed to create or export LLM dumps. By default OTLP spans contain only metadata, paths, hashes and statuses; set `FABDESK_OTEL_CAPTURE_CONTENT=1` only if you also want truncated prompts, tool inputs/results and KiCad output duplicated into span attributes.

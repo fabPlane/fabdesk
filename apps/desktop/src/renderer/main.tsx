@@ -5,6 +5,14 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserApp } from "@fabdesk/ui";
 import { App } from "./App";
+import { watchWindowChrome } from "./window-chrome";
+
+// Keep Windows chrome at the same physical size as its native caption controls.
+// The workspace still follows menu/keyboard zoom, reset, and restored page zoom.
+if (window.fabdesk?.platform === "win32") {
+  const stop = watchWindowChrome(() => window.fabdesk?.getZoomFactor() ?? 1);
+  if (import.meta.hot) import.meta.hot.dispose(stop);
+}
 
 // Dev / FABDESK_AUTOMATION=1 only: window.__fabdeskApp for the core's `app` toolset (docs/app-automation.md).
 if (window.fabdesk?.automationEnabled) {

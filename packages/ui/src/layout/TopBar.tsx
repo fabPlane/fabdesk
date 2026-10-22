@@ -1,23 +1,19 @@
 import { Badge, IconButton } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { UpdateBadge } from "../components/UpdateBadge";
+import { WhatsNewLink } from "../whatsnew/WhatsNew";
 import { useCore } from "@fabdesk/client-core";
 import { useProjects } from "@fabdesk/client-core";
-import { useAuthStore } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { cn, modKey } from "../util";
 import type { CoreStatusInfo } from "../app/types";
 
 export function TopBar({ coreStatus }: { coreStatus?: CoreStatusInfo | undefined }) {
   const { host, sseStatus, client } = useCore();
-  const auth = useAuthStore((s) => s.state);
   const projectId = useUiStore((s) => s.activeProjectId);
   const sidebarOpen = useUiStore((s) => s.sidebarOpen);
-  const boardOpen = useUiStore((s) => s.boardOpen);
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
-  const toggleBoard = useUiStore((s) => s.toggleBoard);
   const setPaletteOpen = useUiStore((s) => s.setPaletteOpen);
-  const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
   const projects = useProjects();
   const project = projects.data?.find((p) => p.id === projectId);
   const mod = modKey(host.platform);
@@ -35,13 +31,14 @@ export function TopBar({ coreStatus }: { coreStatus?: CoreStatusInfo | undefined
   const connected = sseStatus === "open" && (coreStatus?.state ?? "ready") === "ready";
   return (
     <div
-      className={cn("fd-topbar fd-surface-inset flex h-12 shrink-0 items-center gap-2 border-b border-border bg-panel px-2.5 text-xs", mac && "pl-20")}
+      className={cn("fd-topbar fd-surface-inset flex h-12 shrink-0 items-center gap-2 border-b border-border bg-panel px-2.5 text-xs", mac && "pl-20", host.platform === "win32" && "fd-topbar-windows")}
       style={
         {
           WebkitAppRegion: "drag",
           // Windows controls overlay: keep the right-hand actions clear of minimize/maximize/close.
-          // Without an overlay the env() fallbacks make this exactly the normal 0.5rem padding.
-          paddingRight: "calc(0.5rem + 100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw))",
+          // Convert viewport CSS units to unzoomed chrome units. Without an overlay the
+          // env() fallbacks leave exactly the normal 0.5rem padding.
+          paddingRight: "calc(0.5rem + (100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)) * var(--fd-page-zoom, 1))",
         } as React.CSSProperties
       }
     >
@@ -69,13 +66,9 @@ export function TopBar({ coreStatus }: { coreStatus?: CoreStatusInfo | undefined
         </Badge>
       )}
       {project && <span className="fd-topbar-project min-w-0 max-w-60 truncate border-l border-border pl-3 text-[12px] font-medium text-muted" title={project.name}>{project.name}</span>}
-      <div className="fd-topbar-actions ml-auto flex min-w-0 items-center gap-2" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+      <div data-topbar-actions className="fd-topbar-actions ml-auto flex min-w-0 items-center gap-2" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+        <WhatsNewLink />
         <UpdateBadge />
-        {auth?.mode === "local" && (
-          <Badge tone="warning" title="Running with --local-auth; no fabPlane account" className="fd-topbar-local">
-            Local mode
-          </Badge>
-        )}
         <Badge
           tone={connected ? "success" : coreStatus?.state === "crashed" ? "danger" : "warning"}
           title={coreStatus?.message ?? `Core ${coreStatus?.state ?? "ready"}; SSE ${sseStatus}${port ? `; port ${port}` : ""}`}
@@ -87,12 +80,6 @@ export function TopBar({ coreStatus }: { coreStatus?: CoreStatusInfo | undefined
         <div className="fd-topbar-tools flex items-center gap-1">
           <IconButton title={`Command palette (${mod} + K)`} onClick={() => setPaletteOpen(true)}>
             <Icon name="search" width={20} height={20} />
-          </IconButton>
-          <IconButton title={`Board panel (${mod} + Shift + B)`} onClick={toggleBoard} className={cn(boardOpen && "text-accent")}>
-            <Icon name="panel" width={20} height={20} />
-          </IconButton>
-          <IconButton title={`Settings (${mod} + ,)`} onClick={() => setSettingsOpen(true)}>
-            <Icon name="settings" width={20} height={20} />
           </IconButton>
         </div>
       </div>

@@ -1,6 +1,6 @@
 // Exposes `window.__SENTRY_IPC__` so renderer Sentry events reach the main process (docs/sentry.md).
 import "@sentry/electron/preload";
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webFrame } from "electron";
 
 export interface PickFileOptions {
   multiple?: boolean;
@@ -9,6 +9,8 @@ export interface PickFileOptions {
 
 const api = {
   platform: process.platform,
+  /** Read-only zoom value so Windows toolbar icons can match native caption sizing. */
+  getZoomFactor: () => webFrame.getZoomFactor(),
   cadRuntimeState: () => ipcRenderer.invoke("fabdesk:cad-runtime-state"),
   reconnectCadRuntime: () => ipcRenderer.invoke("fabdesk:reconnect-cad-runtime"),
   prepareCadRuntime: () => ipcRenderer.invoke("fabdesk:prepare-cad-runtime"),

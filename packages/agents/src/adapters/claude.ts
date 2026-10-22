@@ -4,6 +4,7 @@ import { runAgentProcess } from "../process";
 import type { AgentAdapter, AgentPermission, AgentRun, AgentSession } from "../types";
 import { MCP_SERVER_NAME, PERMISSION_PROMPT_TOOL, TOKEN_ENV } from "../types";
 import { agentEnv, promptWithAttachments } from "./shared";
+import { readClaudeModelCatalog } from "../claude-models";
 
 const CANDIDATES = ["claude", "~/.local/bin/claude", "~/.claude/local/claude"];
 const BUILTIN_TOOLS = ["Read", "Edit", "Write", "Glob", "Grep"];
@@ -32,9 +33,9 @@ export function claudeMcpConfig(url: string): string {
         type: "http",
         url,
         headers: { Authorization: `Bearer \${${TOKEN_ENV}}` },
-        // A route can legitimately run for its whole timeoutMs (up to 10 min); Claude Code's default
-        // idle abort is ~5 min. The daemon also heartbeats progress, this is the belt to those braces.
-        timeout: 1_200_000,
+        // Let the daemon's 30-minute question deadline resolve before the MCP client times out.
+        // Progress heartbeats also keep long-running routing calls alive.
+        timeout: 1_830_000,
       },
     },
   });
@@ -94,7 +95,11 @@ export const claudeAdapter: AgentAdapter = {
   displayName: "Claude",
   installHint:
     "Install Claude Code: https://code.claude.com/docs/en/setup (curl -fsSL https://claude.ai/install.sh | bash), then run `claude` once to sign in.",
-  detect: (binaryPath) => detectBinary(CANDIDATES, binaryPath),
+  detect: async (binaryPath) => {
+    const result = await detectBinary(CANDIDATES, binaryPath);
+    const catalog = result.installed && result.path ? await readClaudeModelCatalog(result.path, result.version) : undefined;
+    return { ...result, ...catalog };
+  },
   models: () => ["fable", "opus", "sonnet", "haiku"],
   supportsSupervised: true,
   run(session: AgentSession): AgentRun {

@@ -11,6 +11,7 @@ import { useTheme } from "../hooks/useTheme";
 import { AppShell } from "../layout/AppShell";
 import { CommandPalette } from "../palette/CommandPalette";
 import { SettingsDialog } from "../settings/SettingsDialog";
+import { WhatsNewDialog } from "../whatsnew/WhatsNew";
 import { SketchPad } from "../sketch/SketchPad";
 import { useAuthStore } from "@fabdesk/client-core";
 import { DRAFT_KEY_NEW, useUiStore } from "../stores/ui";
@@ -129,6 +130,7 @@ function AppInner({ coreStatus, onRestartCore }: { coreStatus?: CoreStatusInfo |
       <AppShell onNewChat={actions.newChat} coreStatus={coreStatus} banner={banner} />
       <CommandPalette />
       <SettingsDialog />
+      <WhatsNewDialog />
       <SketchPad onAttach={(att) => addAttachment(activeThreadId ?? DRAFT_KEY_NEW, att)} />
     </>
   );

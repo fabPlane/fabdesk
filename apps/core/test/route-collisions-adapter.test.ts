@@ -3,7 +3,11 @@ import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { FpPcbRouteSummary } from "@fabdesk/protocol";
 import { createRegistry } from "@fabdesk/tools";
-import { contextFactory, mockServices, tempProject } from "../../../packages/tools/test/mock-services";
+import {
+  contextFactory,
+  mockServices,
+  tempProject,
+} from "../../../packages/tools/test/mock-services";
 import { createFpPcbDesign } from "../src/fp-pcb-design";
 import type { FpPcbBridgeClient } from "../src/fp-pcb-bridge";
 import type { FpPcbSessions, ProjectSession } from "../src/fp-pcb-session";
@@ -16,17 +20,25 @@ for (const router of ["freerouting", "fab_router"] as const) {
       await writeFile(join(project.dir, "board.kicad_pro"), "{}");
       const endpointCollisions = {
         text: "Endpoint-track-width probe tested against the board before routing: 1 collision established. This does not establish that every escape is blocked.",
-        obstacleSet: "pre-route" as const, testedEndpoints: 2, unsupported: 0,
-        total: 1, truncated: false, physicalBlockerEstablished: true,
-        collisions: [{
-          endpoint: { uuid: "pad-native", ref: "J1", pin: "1", layer: "F.Cu" },
-          blocker: { uuid: "via-native", type: "via" as const, net: "VBUS" },
-          requiredClearanceMm: 0.2, measuredClearanceMm: 0.1,
-          test: "endpoint-track-width" as const,
-        }],
+        obstacleSet: "pre-route" as const,
+        testedEndpoints: 2,
+        unsupported: 0,
+        total: 1,
+        truncated: false,
+        physicalBlockerEstablished: true,
+        collisions: [
+          {
+            endpoint: { uuid: "pad-native", ref: "J1", pin: "1", layer: "F.Cu" },
+            blocker: { uuid: "via-native", type: "via" as const, net: "VBUS" },
+            requiredClearanceMm: 0.2,
+            measuredClearanceMm: 0.1,
+            test: "endpoint-track-width" as const,
+          },
+        ],
       };
       const summary = FpPcbRouteSummary.parse({
-        endpointCollisions, total: 1,
+        endpointCollisions,
+        total: 1,
         unrouted: [{ net: "GND", from: { x: 0, y: 0 }, to: { x: 1_000_000, y: 1_000_000 } }],
       });
       let requestedRouter: string | undefined;
@@ -38,7 +50,11 @@ for (const router of ["freerouting", "fab_router"] as const) {
         },
       } as unknown as FpPcbBridgeClient;
       const sessions = {
-        board: async () => ({ save: async () => { saves++; } }),
+        board: async () => ({
+          save: async () => {
+            saves++;
+          },
+        }),
         withRetry: async (_dir: string, run: (session: ProjectSession) => Promise<unknown>) =>
           run({ id: "fake-session" } as ProjectSession),
       } as unknown as FpPcbSessions;
@@ -48,18 +64,37 @@ for (const router of ["freerouting", "fab_router"] as const) {
       const services = mockServices([project], {
         design: {
           ...base.design,
-          query: async (dir, q) => q === "unrouted" ? [{ net: "GND" }] : base.design.query(dir, q),
-          route: async (...args) => { toolsSummary = await adapter.route(...args); return toolsSummary; },
+          query: async (dir, q) =>
+            q === "unrouted" ? [{ net: "GND" }] : base.design.query(dir, q),
+          route: async (...args) => {
+            toolsSummary = await adapter.route(...args);
+            return toolsSummary;
+          },
         },
       });
-      const registry = createRegistry(), factory = contextFactory(services, project);
-      const call = (name: string, args: Record<string, unknown>) => registry.invoke(name, args,
-        ref => factory({ def: registry.get(name)!, projectRef: ref,
-          signal: new AbortController().signal, progress: () => {} }));
-      const response = await call("route_run", { router, onlyConnections: ["GND"], waitMs: 1000 });
+      const registry = createRegistry(),
+        factory = contextFactory(services, project);
+      const call = (name: string, args: Record<string, unknown>) =>
+        registry.invoke(name, args, (ref) =>
+          factory({
+            def: registry.get(name)!,
+            projectRef: ref,
+            signal: new AbortController().signal,
+            progress: () => {},
+          }),
+        );
+      // This fixture tests diagnostic forwarding for one attempt; retry behavior has separate coverage.
+      const response = await call("route_run", {
+        router,
+        onlyConnections: ["GND"],
+        rerouteMode: "never",
+        waitMs: 1000,
+      });
       const run = (response.json as any).run;
       const status = await call("route_status", { runId: run.id });
-      const saved = JSON.parse(await readFile(join(project.dir, run.artifacts.runDir, "result.json"), "utf8"));
+      const saved = JSON.parse(
+        await readFile(join(project.dir, run.artifacts.runDir, "result.json"), "utf8"),
+      );
       expect(requestedRouter).toBe(router === "freerouting" ? "freerouting" : "js");
       expect(saves).toBe(1);
       expect(toolsSummary?.endpointCollisions).toEqual(endpointCollisions);

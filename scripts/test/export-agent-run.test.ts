@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../../apps/core/src/db";
 import { fetchRunDump } from "../export-agent-run";
+import { fileDumpReference } from "../../apps/core/src/run-dump-file";
 
 describe("fetchRunDump", () => {
   test("returns a complete dump from Fabdesk's SQLite database", async () => {
@@ -27,4 +28,14 @@ describe("fetchRunDump", () => {
     });
     expect(() => fetchRunDump("missing", dbPath)).toThrow("run dump not found: missing");
   });
+  test("exports the complete file rather than its SQLite reference",async()=>{
+    const dir=await mkdtemp(join(tmpdir(),"fabdesk-file-export-"));
+    const path=join(dir,"llm-dump.json"),content=JSON.stringify({schema:"fabdesk.llm-run-dump/v1",events:["x".repeat(2*1024*1024)]});
+    await writeFile(path,content);
+    const db=join(dir,"fabdesk.db"),store=Store.open(db);
+    store.runDumps.put({runId:"large",traceId:"trace",threadId:"thread",agentId:"codex",projectId:null,createdAt:new Date().toISOString(),dumpJson:await fileDumpReference(path)});
+    store.close();
+    expect(fetchRunDump("large",db)).toBe(content);
+  });
+
 });

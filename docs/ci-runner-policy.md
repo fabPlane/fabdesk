@@ -16,44 +16,86 @@ that dependency; this change does not create a new runner or credential.
 old proves recent idle capacity. A busy worker stops publishing the heartbeat,
 so stale, missing, malformed or future timestamps do **not** prove an outage.
 Those states queue work on owned runners. Work already queued on NAS cannot
-switch runners dynamically; cancel/re-run after setting an outage override if
-needed.
+switch runners dynamically; cancel/re-run after setting an override if needed.
 
-Blacksmith is used only when no fresh idle evidence exists and the repository
-variable `NAS_RUNNER_OUTAGE_UNTIL` holds a future Unix timestamp within 15 minutes
-of selection. Confirm an actual NAS/service outage independently before setting
-it. Fresh idle evidence overrides the outage lease. This variable is not
-currently populated by an automated health monitor, and no new access is
-requested by the workflow. It is an explicit recovery override, not reliable
-automatic outage detection.
+Blacksmith is selected for trusted (non-fork) work in two cases:
 
-## Manual recovery using existing repository administrator access
+1. **Durable override** — repository variable `FORCE_BLACKSMITH_LINUX` is a
+   truthy value (`true`, `1`, `yes`, or `on`), or `LINUX_RUNNER` is
+   `blacksmith`. This stays in effect until an administrator unsets it or sets
+   a non-matching value. Fresh idle evidence does **not** override it. Use this
+   when the NAS host is offline for a long stretch or is missing libraries.
+2. **Bounded lease** — no fresh idle evidence exists and `NAS_RUNNER_OUTAGE_UNTIL`
+   holds a future Unix timestamp within 15 minutes of selection. Fresh idle
+   evidence overrides this lease.
 
-After confirming an outage, set the variable in GitHub repository Settings →
-Secrets and variables → Actions → Variables. Use a Unix timestamp five minutes
-in the future. Alternatively, from an existing authenticated administrator shell:
+Fork PRs stay on isolated GitHub-hosted Ubuntu in every case.
+
+Listing whether a self-hosted NAS runner is online needs Administration scope.
+`GITHUB_TOKEN` cannot read that API, and this workflow does not add a
+credential. There is no automatic "no online NAS runner" probe. Use the durable
+override when the host is down.
+
+`NAS_RUNNER_OUTAGE_UNTIL` is not currently populated by an automated health
+monitor. It is a short recovery override, not reliable automatic outage
+detection.
+
+No override is set by preparing this change.
+
+## Durable Blacksmith override
+
+Set the variable in GitHub repository Settings → Secrets and variables →
+Actions → Variables. Alternatively, from an existing authenticated
+administrator shell:
+
+```sh
+gh variable set FORCE_BLACKSMITH_LINUX --repo TensorFleet/fabdesk --body true
+```
+
+`LINUX_RUNNER=blacksmith` is equivalent:
+
+```sh
+gh variable set LINUX_RUNNER --repo TensorFleet/fabdesk --body blacksmith
+```
+
+Restore the default NAS path by unsetting the variable or setting a
+non-matching value:
+
+```sh
+gh variable set FORCE_BLACKSMITH_LINUX --repo TensorFleet/fabdesk --body false
+gh variable set LINUX_RUNNER --repo TensorFleet/fabdesk --body ""
+```
+
+The durable override does not cancel already-running jobs. Re-run queued NAS
+jobs after setting it if those jobs must move.
+
+## Bounded outage lease
+
+After confirming a short outage, set `NAS_RUNNER_OUTAGE_UNTIL` to a Unix
+timestamp five minutes in the future:
 
 ```sh
 outage_until=$(( $(date +%s) + 300 ))
 gh variable set NAS_RUNNER_OUTAGE_UNTIL --repo TensorFleet/fabdesk --body "$outage_until"
 ```
 
-After recovery, set the variable to `0` to disable the override:
+After recovery, set the variable to `0` to disable the lease:
 
 ```sh
 gh variable set NAS_RUNNER_OUTAGE_UNTIL --repo TensorFleet/fabdesk --body 0
 ```
 
-No override was set as part of preparing this change. The lease limits how long
-new jobs may be routed to Blacksmith; it does not cancel already-running jobs
-or guarantee a monetary cap. A fresh selector can choose NAS after recovery.
-
+The lease limits how long new jobs may be routed to Blacksmith; it does not
+cancel already-running jobs or guarantee a monetary cap. A fresh selector can
+choose NAS after recovery. Prefer the durable override when the outage will
+last longer than 15 minutes.
 
 ## Validate the policy
 
 Run `python3 scripts/test-runner-selection.py` to exercise the workflow shell
-against idle, busy/stale, missing signals, outage lease boundaries and fork
-isolation. Validate workflow expressions and job dependencies with actionlint.
+against idle, busy/stale, missing signals, the durable override, outage lease
+boundaries and fork isolation. Validate workflow expressions and job
+dependencies with actionlint.
 
 ## Tools on ephemeral Linux workers
 

@@ -19,19 +19,41 @@
      builds are uploaded only as workflow artifacts and never released.
 2. **Automatic website handoff**: after the public GitHub release succeeds, the
    `website` job dispatches `TensorFleet/fabplane.com`'s `desktop-release.yml` with
-   the new tag. That workflow checks installer hashes, uploads to the public R2
-   downloads bucket, commits the website feed and history, dispatches the normal
-   production site deployment, and verifies the live feed. The website also retries
-   daily at 23:17 UTC if a handoff or deployment failed. A failed handoff can be
-   rerun without rebuilding the installers.
+   the new tag, **waits for that run to finish**, and fails if the live feed
+   `https://fabplane.com/desktop/latest.json` is not the new version. That
+   workflow checks installer hashes, uploads installers and the feed to the
+   public R2 downloads bucket, commits the website feed and history, dispatches
+   `deploy-public.yml` for production, and verifies the live site. The website
+   also retries daily at 23:17 UTC if a handoff or deployment failed; that retry
+   **fails** (instead of skip-succeeding) when FabDesk left newer unpublished
+   drafts. A failed handoff can be rerun without rebuilding the installers.
    - Configure `FABPLANE_RELEASE_DISPATCH_TOKEN` here: a fine-grained token with
-     **Actions write** on **only `TensorFleet/fabplane.com`**. The website needs
-     its separate `FABDESK_RELEASE_READ_TOKEN` with **Contents read** on this repo.
+     **Actions read and write** on **only `TensorFleet/fabplane.com`**. Write is
+     required to dispatch; read is required to poll the run (`gh run view`, not
+     `gh run watch` — watch needs `checks:read`, which fine-grained PATs cannot
+     grant). The website needs its separate `FABDESK_RELEASE_READ_TOKEN` with
+     **Contents read** on this repo.
+   - The public feed is the committed file
+     `apps/web/public/desktop/latest.json` on fabplane.com, served by
+     `deploy-public.yml`. R2 (`downloads.fabplane.com`) hosts the installers and,
+     after publish, a copy of `desktop/latest.json` for the download page.
+   - Nightlies never reach this job unless every build can download
+     `fabPlane/fab_pcb` tag `backend-<vendor/fab_pcb sha10>`. A missing backend
+     release fails the build with that tag name; do not treat a green
+     `desktop-release.yml` skip as a refreshed feed.
    - Merge the website workflow and configure both credentials before enabling
      this handoff. See fabplane.com's `docs/desktop-releases.md`.
    - Merges to `main` no longer cut releases. Manual public dispatches on `main`
      publish just like the nightly; internal builds remain workflow artifacts only.
-3. **In-app update check**: `@fabdesk/updates` fetches `https://fabplane.com/desktop/latest.json`
+3. **Release notes**: the `version` job runs `scripts/release-notes.ts` once. If entries were added
+   to the repo-root `release-notes.json` since the previous `v*` tag, those hand-written New /
+   Improved / Fixed bullets are the notes; otherwise they are the commit subjects since that tag.
+   The JSON is baked into every installer (`FABDESK_RELEASE_NOTES_FILE` →
+   `electron.vite.config.ts`) for the app's "What's new" dialog, and its Markdown rendering is
+   `manifest.json` `notes`, which fabplane.com shows on `/download#v<version>`. One generation,
+   so the app and the site always match. To write notes by hand, add an entry with a new unique
+   `id` to `release-notes.json`; it applies to the next release only.
+4. **In-app update check**: `@fabdesk/updates` fetches `https://fabplane.com/desktop/latest.json`
    at startup and every 6 hours (`FABDESK_UPDATE_URL` overrides), compares semver with the running
    version and points the user at the right installer. It never downloads or installs on its own.
 
@@ -82,7 +104,8 @@ identity do not reset; in-app updates fetch this feed by URL and do not use `app
 | `CSC_LINK`, `CSC_KEY_PASSWORD` | macOS Developer ID certificate (base64 .p12) |
 | `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` | Notarization |
 | `WIN_CSC_LINK`, `WIN_CSC_KEY_PASSWORD` | Windows code-signing certificate |
-| `FAB_PCB_RELEASE_TOKEN` | Fine-grained contents-read token for private `fabPlane/fab_pcb`. Workflows use it to check out the exact submodule commit and desktop builds download tag `backend-<vendor/fab_pcb commit prefix>`, refusing an unpinned/latest bundle. |
+| `FAB_PCB_RELEASE_TOKEN` | Fine-grained contents-read token for private `fabPlane/fab_pcb`. Workflows use it to check out the exact submodule commit and desktop builds download tag `backend-<vendor/fab_pcb commit prefix>`, refusing an unpinned/latest bundle. A missing token or missing tag fails the build before packaging. |
+| `FABPLANE_RELEASE_DISPATCH_TOKEN` | Fine-grained token with **Actions read+write** on **only `TensorFleet/fabplane.com`**. The `website` job uses it to dispatch `desktop-release.yml`, poll that run with `gh run view`, and fail if the public feed does not update. |
 
 Without signing secrets the workflow still produces unsigned installers.
 

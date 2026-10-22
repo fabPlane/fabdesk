@@ -1,8 +1,9 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { readStoredThemeId, type ThemeId } from "../theme/resolve";
+import { stencilThicknessMm } from "./stencil-thickness";
 
-export const BOARD_TABS = ["schematic", "pcb", "cinema", "3d", "cad", "drc", "renders", "files", "bom"] as const;
+export const BOARD_TABS = ["schematic", "pcb", "cinema", "3d", "cad", "drc", "renders", "files", "bom", "art"] as const;
 export type BoardTab = (typeof BOARD_TABS)[number];
 export const BOARD_TAB_LABELS: Record<BoardTab, string> = {
   schematic: "Schematic",
@@ -13,6 +14,7 @@ export const BOARD_TAB_LABELS: Record<BoardTab, string> = {
   drc: "DRC/ERC",
   renders: "Renders",
   files: "Files",
+  art: "Art",
   bom: "Shopping list",
 };
 
@@ -46,6 +48,9 @@ export interface UiState {
   activeThreadId: string | null;
   focusMessageId: string | null;
   activeProjectId: string | null;
+  /** Local sidebar preference, retained across app restarts. */
+  pinnedProjectIds: string[];
+  setProjectPinned: (id: string, pinned: boolean) => void;
   sidebarListTab: SidebarListTab;
   activeOpenSourceId: string | null;
   projectPickerOpen: boolean;
@@ -53,6 +58,10 @@ export interface UiState {
   /** Parts Inventory (opened from the user menu) replaces the chat pane while true. */
   inventoryOpen: boolean;
   boardTab: BoardTab;
+  fileToReveal: { projectId: string; path: string } | null;
+  openProjectFile: (path: string) => void;
+  stencilThicknessByProject: Record<string, number>;
+  setStencilThickness: (projectId: string, thicknessMm: number) => void;
   drafts: Record<string, string>;
   attachments: Record<string, PendingAttachment[]>;
   paletteOpen: boolean;
@@ -61,6 +70,9 @@ export interface UiState {
   settingsSection: SettingsSection | null;
   sketchOpen: boolean;
   agentPickerOpen: boolean;
+  whatsNewOpen: boolean;
+  /** Id of the release notes the user last read (set on close); the top-bar link hides once it matches. */
+  whatsNewSeenId: string | null;
   /** Bumps to request focus on the composer. */
   composerFocusNonce: number;
   toggleSidebar: () => void;
@@ -86,6 +98,8 @@ export interface UiState {
   setSettingsOpen: (open: boolean, section?: SettingsSection) => void;
   setSketchOpen: (open: boolean) => void;
   setAgentPickerOpen: (open: boolean) => void;
+  setWhatsNewOpen: (open: boolean) => void;
+  markWhatsNewSeen: (id: string) => void;
   focusComposer: () => void;
 }
 
@@ -115,12 +129,25 @@ export const useUiStore = create<UiState>()(
   activeThreadId: null,
   focusMessageId: null,
   activeProjectId: null,
+  pinnedProjectIds: [],
+  setProjectPinned: (id, pinned) => set((s) => ({
+    pinnedProjectIds: pinned ? [...s.pinnedProjectIds.filter((value) => value !== id), id] : s.pinnedProjectIds.filter((value) => value !== id),
+  })),
   sidebarListTab: "projects",
   activeOpenSourceId: null,
   projectPickerOpen: false,
   orderFlowOpen: false,
   inventoryOpen: false,
   boardTab: "schematic",
+  fileToReveal: null,
+  openProjectFile: (path) => set((s) => s.activeProjectId ? {
+    boardTab: "files", boardOpen: true,
+    fileToReveal: { projectId: s.activeProjectId, path },
+  } : {}),
+  stencilThicknessByProject: {},
+  setStencilThickness: (projectId, thicknessMm) => set((s) => ({
+    stencilThicknessByProject: { ...s.stencilThicknessByProject, [projectId]: stencilThicknessMm(thicknessMm) },
+  })),
   drafts: {},
   attachments: {},
   paletteOpen: false,
@@ -128,6 +155,8 @@ export const useUiStore = create<UiState>()(
   settingsSection: null,
   sketchOpen: false,
   agentPickerOpen: false,
+  whatsNewOpen: false,
+  whatsNewSeenId: null,
   composerFocusNonce: 0,
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   toggleBoard: () => set((s) => ({ boardOpen: !s.boardOpen })),
@@ -163,6 +192,8 @@ export const useUiStore = create<UiState>()(
   setSettingsOpen: (settingsOpen, section) => set({ settingsOpen, settingsSection: settingsOpen ? (section ?? null) : null }),
   setSketchOpen: (sketchOpen) => set({ sketchOpen }),
   setAgentPickerOpen: (agentPickerOpen) => set({ agentPickerOpen }),
+  setWhatsNewOpen: (whatsNewOpen) => set({ whatsNewOpen }),
+  markWhatsNewSeen: (whatsNewSeenId) => set({ whatsNewSeenId }),
   focusComposer: () => set((s) => ({ composerFocusNonce: s.composerFocusNonce + 1 })),
 }),
     {
@@ -183,9 +214,12 @@ export const useUiStore = create<UiState>()(
         boardOpen: s.boardOpen,
         activeThreadId: s.activeThreadId,
         activeProjectId: s.activeProjectId,
+        pinnedProjectIds: s.pinnedProjectIds,
         sidebarListTab: s.sidebarListTab,
         boardTab: s.boardTab,
+        stencilThicknessByProject: s.stencilThicknessByProject,
         drafts: s.drafts,
+        whatsNewSeenId: s.whatsNewSeenId,
       }),
     },
   ),

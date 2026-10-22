@@ -64,6 +64,16 @@ test("Windows EPERM uses the live home without a credential snapshot and warns",
   expect(fs.readFileSync(join(source, "config.toml"), "utf8")).toContain("mcp_servers.foreign");
 });
 
+test("child Codex does not inherit a desktop chat's routing identity", () => {
+  seed();
+  const s = session();
+  s.env = { ...s.env, CODEX_APP_TOOLS_PIPE_PATH: "parent-pipe", CODEX_THREAD_ID: "parent", CODEX_SESSION_ID: "parent-session", CODEX_INTERNAL_ORIGINATOR_OVERRIDE: "desktop", CODEX_TASK_WORKSPACE_VERIFYING_IDENTITY: "parent-identity" };
+  const env = codexEnv(s);
+  for (const key of ["CODEX_APP_TOOLS_PIPE_PATH", "CODEX_THREAD_ID", "CODEX_SESSION_ID", "CODEX_INTERNAL_ORIGINATOR_OVERRIDE", "CODEX_TASK_WORKSPACE_VERIFYING_IDENTITY"]) expect(env[key]).toBeUndefined();
+  expect(env.FABDESK_TOKEN).toBe("fixture-token");
+  expect(env.CODEX_HOME).toBe(join(dir, "source"));
+});
+
 test("Linux and macOS still propagate EPERM instead of falling back", () => {
   seed();
   for (const platform of ["linux", "darwin"]) {
@@ -119,6 +129,7 @@ test("Windows fallback logs a nonfatal warning on initial and resumed runs and r
     `#!/usr/bin/env bun
 const fs = require("node:fs");
 const args = process.argv.slice(2);
+if (args[0] === "--help") process.exit(0);
 fs.appendFileSync(process.env.W1_CAPTURE, JSON.stringify({args,home:process.env.CODEX_HOME})+"\\n");
 if (args[0] === "mcp") console.log(JSON.stringify([{name:"foreign",transport:{type:"stdio"}}]));
 else {

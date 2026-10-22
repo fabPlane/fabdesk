@@ -1,0 +1,8 @@
+[Unit]
+Description=Refresh shared Mac capacity every ten seconds
+[Timer]
+OnBootSec=20s
+OnUnitActiveSec=10s
+AccuracySec=1s
+[Install]
+WantedBy=timers.target
