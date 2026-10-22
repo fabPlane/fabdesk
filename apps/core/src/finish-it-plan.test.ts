@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -176,6 +177,35 @@ describe("inspectProject / planMilestones", () => {
       lastRoute: { status: "completed", open: 0, applied: true },
     });
     expect(milestoneDone("route", applied)).toBe(true);
+  });
+
+  test("final PCB connectivity proves routing after cleanup changes the router revision", async () => {
+    const dir = await tempDir();
+    const pcb = "(kicad_pcb final-cleanup)\n";
+    await writeFile(join(dir, "circuit.netlist.json"), JSON.stringify(NETLIST));
+    await writeFile(join(dir, "board.kicad_pcb"), pcb);
+    await mkdir(join(dir, "reports"), { recursive: true });
+    const report = {
+      counts: { errors: 0, unconnected: 0 },
+      schematicParityChecked: true,
+      pcbRevision: { sha256: createHash("sha256").update(pcb).digest("hex") },
+    };
+    await writeFile(join(dir, "reports/drc.json"), JSON.stringify(report));
+    const snap = await inspectProject(dir, {
+      lastRoute: { status: "completed", open: 0, applied: true, pcbRevision: "old-router-revision" },
+    });
+    expect(remainingMilestones(planMilestones(snap))).toEqual([]);
+    expect(snap.routeOpen).toBe(0);
+
+    // A stale or incomplete check must never suppress real remaining work.
+    for (const invalid of [
+      { ...report, pcbRevision: { sha256: "different-board" } },
+      { ...report, schematicParityChecked: false },
+      { ...report, counts: { errors: 0, unconnected: 1 } },
+    ]) {
+      await writeFile(join(dir, "reports/drc.json"), JSON.stringify(invalid));
+      expect((await inspectProject(dir)).routed).toBe(false);
+    }
   });
 
   test("rejects a netlist that does not parse", async () => {

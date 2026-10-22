@@ -362,8 +362,8 @@ export class FinishItManager {
     const snap = await this.snapshot(project);
     const newlyDone: FinishItMilestoneId[] = [];
     const milestones = live.session.milestones.map((m) => {
-      if (m.status === "skipped") return m;
       if (milestoneDone(m.id, snap)) {
+        if (m.status === "skipped") return m;
         if (m.status !== "done") newlyDone.push(m.id);
         return {
           ...m,
@@ -372,7 +372,14 @@ export class FinishItManager {
           endedAt: m.endedAt ?? new Date().toISOString(),
         };
       }
-      return { ...m, note: snapshotNote(m.id, snap) };
+      // Later board edits can invalidate both completed and initially skipped steps.
+      // Keep historical commits in the session, but do not present them as current proof.
+      const { endedAt: _endedAt, commitSha: _commitSha, ...unfinished } = m;
+      return {
+        ...unfinished,
+        status: m.status === "running" ? "running" as const : "pending" as const,
+        note: snapshotNote(m.id, snap),
+      };
     });
     let commits = live.session.commits;
     for (const id of newlyDone) {
@@ -400,7 +407,7 @@ export class FinishItManager {
       ...s,
       milestones,
       commits,
-      currentMilestone: remaining[0] ?? s.currentMilestone,
+      currentMilestone: remaining[0] ?? null,
     }));
     const next = this.live.get(project.id)?.session ?? live.session;
     this.emitProgress(next, snapshotNote(remaining[0] ?? "verify", snap));

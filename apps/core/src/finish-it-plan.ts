@@ -148,13 +148,20 @@ export async function inspectProject(
       boardMtime + CHECKOUT_MTIME_SLACK_MS >= netlistMtime);
   const reportSource = laterOf(boardMtime, netlistMtime);
   const ercSource = laterOf(schematicMtime, boardMtime);
-  const drc = countsOf(await readFreshJson(join(dir, "reports", "drc.json"), reportSource));
+  const boardHash = board !== null ? createHash("sha256").update(board).digest("hex") : null;
+  const drcReport = await readFreshJson(join(dir, "reports", "drc.json"), reportSource);
+  const drcEvidence = drcReport as {
+    pcbRevision?: { sha256?: string };
+    schematicParityChecked?: boolean;
+  } | null;
+  const drcMatchesBoard = drcEvidence?.pcbRevision?.sha256 === boardHash && boardHash !== null;
+  // Legacy reports use timestamps; revision-bearing reports must describe this exact PCB.
+  const drc = drcEvidence?.pcbRevision?.sha256 && !drcMatchesBoard ? null : countsOf(drcReport);
   const erc = countsOf(await readFreshJson(join(dir, "reports", "erc.json"), ercSource));
   const spice = spicePassed(await readFreshJson(join(dir, "reports", "spice.json"), reportSource));
   const routeFile = routeFilePassed(await readFreshJson(join(dir, "reports", "route.json"), reportSource));
 
   const lastRoute = extras.lastRoute;
-  const boardHash = board !== null ? createHash("sha256").update(board).digest("hex") : null;
   const routeApplied =
     lastRoute?.applied === true &&
     (lastRoute.pcbRevision == null || lastRoute.pcbRevision === boardHash);
@@ -162,8 +169,12 @@ export async function inspectProject(
     lastRoute && ROUTED_STATUSES.has(lastRoute.status) && routeApplied
       ? { routed: lastRoute.open === 0, open: lastRoute.open }
       : null;
-  const routed = routeFromStore?.routed === true || routeFile?.routed === true;
-  const routeOpen = routeFromStore?.open ?? routeFile?.open ?? null;
+  // Cleanup can change the PCB hash after routing. A parity-aware connectivity check
+  // on the final revision proves routing without applying the router a second time.
+  const connectivityVerified = boardCurrent && drcMatchesBoard &&
+    drcEvidence?.schematicParityChecked === true && drc?.errors === 0 && drc.unconnected === 0;
+  const routed = connectivityVerified || routeFromStore?.routed === true || routeFile?.routed === true;
+  const routeOpen = connectivityVerified ? 0 : routeFromStore?.open ?? routeFile?.open ?? null;
 
   return {
     hasNetlist: netlist !== null,

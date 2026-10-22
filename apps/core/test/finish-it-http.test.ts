@@ -1,5 +1,6 @@
+import { createHash } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentEvent, AgentRun, AgentSession } from "@fabdesk/agents";
@@ -18,7 +19,7 @@ const NETLIST = {
 let hangRelease: (() => void) | null = null;
 let hangAbort = false;
 let lastPrompt: string | null = null;
-let mode: "hang" | "complete" | "quick" = "quick";
+let mode: "hang" | "complete" | "invalidate" | "quick" = "quick";
 
 async function* hangEvents(): AsyncGenerator<AgentEvent> {
   hangAbort = false;
@@ -47,6 +48,13 @@ async function* completeEvents(session: AgentSession): AsyncGenerator<AgentEvent
   yield { type: "tool_result", id: "t2", output: { ok: true } };
   yield { type: "tool_use", id: "t3", name: "verify_drc", input: {} };
   yield { type: "tool_result", id: "t3", output: { ok: true } };
+  if (mode === "invalidate") {
+    await new Promise<void>((resolve) => { hangRelease = resolve; });
+    await writeFile(join(session.cwd, "board.kicad_pcb"), "(kicad_pcb later-edit)\n");
+    const stale = new Date(Date.now() - 120_000);
+    await utimes(join(session.cwd, "reports/route.json"), stale, stale);
+    await utimes(join(session.cwd, "reports/drc.json"), stale, stale);
+  }
   yield { type: "done", exitCode: 0, sessionId: "fin-ok" };
 }
 
@@ -93,7 +101,7 @@ beforeAll(async () => {
                 hangRelease?.();
               },
             };
-          if (mode === "complete")
+          if (mode === "complete" || mode === "invalidate")
             return { events: completeEvents(session), abort() {} };
           return { events: quickEvents(), abort() {} };
         },
@@ -204,6 +212,63 @@ describe("finish-it HTTP", () => {
     const messages = await new Response(log.stdout).text();
     expect(messages).toContain("finish-it:");
   });
+
+  test("repeated Finish it on a verified final PCB does not start an agent", async () => {
+    mode = "quick";
+    lastPrompt = null;
+    const project = await createProject("Verified Final Board");
+    const pcb = "(kicad_pcb final-cleanup)\n";
+    await writeFile(join(project.path, "circuit.netlist.json"), JSON.stringify(NETLIST));
+    await writeFile(join(project.path, "board.kicad_pcb"), pcb);
+    await mkdir(join(project.path, "reports"), { recursive: true });
+    await writeFile(join(project.path, "reports/drc.json"), JSON.stringify({
+      counts: { errors: 0, unconnected: 0 },
+      schematicParityChecked: true,
+      pcbRevision: { sha256: createHash("sha256").update(pcb).digest("hex") },
+    }));
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const response = await api(`/projects/${project.id}/finish-it`, {
+        method: "POST", body: JSON.stringify({ agentId: "claude" }),
+      });
+      expect(response.status).toBe(202);
+      const { session } = await response.json() as { session: FinishItSession };
+      expect(session.status).toBe("completed");
+      expect(session.runId).toBeNull();
+    }
+    expect(lastPrompt).toBeNull();
+  });
+
+  for (const skippedVerify of [false, true]) {
+    test(`later edits invalidate ${skippedVerify ? "skipped" : "completed"} milestones before completion`, async () => {
+      mode = "invalidate";
+      hangRelease = null;
+      const project = await createProject("Edited After Checks");
+      if (skippedVerify) {
+        await writeFile(join(project.path, "circuit.netlist.json"), JSON.stringify(NETLIST));
+        await writeFile(join(project.path, "board.kicad_pcb"), "(kicad_pcb initial)\n");
+        await mkdir(join(project.path, "reports"), { recursive: true });
+        await writeFile(join(project.path, "reports/drc.json"), JSON.stringify({ counts: { errors: 0, unconnected: 0 } }));
+      }
+      const response = await api(`/projects/${project.id}/finish-it`, {
+        method: "POST", body: JSON.stringify({ agentId: "claude" }),
+      });
+      expect(response.status).toBe(202);
+      try {
+        await waitForSession(project.id, (s) => !!hangRelease && !!s?.milestones.every((m) => m.status === "done" || m.status === "skipped"));
+      } finally {
+        mode = "quick";
+        (hangRelease as (() => void) | null)?.();
+      }
+      const ended = await waitForSession(project.id, (s) => s?.status === "failed" || s?.status === "completed", 8000);
+      expect(ended?.status).toBe("failed");
+      expect(ended?.milestones.find((m) => m.id === "route")?.status).not.toBe("done");
+      const verify = ended?.milestones.find((m) => m.id === "verify");
+      expect(verify?.status).not.toBe("done");
+      expect(verify?.status).not.toBe("skipped");
+      expect(verify?.commitSha).toBeUndefined();
+      expect(verify?.note).toContain("DRC not run");
+    });
+  }
 
   test("an agent that makes no progress on failing DRC fails instead of completing", async () => {
     mode = "quick";
