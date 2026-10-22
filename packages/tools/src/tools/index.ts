@@ -47,6 +47,7 @@ export function createRegistry(opts: { channel?: "public" | "internal" } = {}): 
 
 export * from "./core";
 export * from "./project";
+export * from "./parts";
 export * from "./circuit";
 export * from "./schematic";
 export * from "./pcb";

@@ -1,7 +1,7 @@
 /** Helpers shared by tool handlers. */
 import { join } from "node:path";
-import { NetlistFile } from "@fabdesk/protocol";
-import { PROJECT_FILES, exists, readJsonOrNull, writeJson } from "../fs";
+import { NetlistFile, ProjectPartsFile, emptyProjectParts } from "@fabdesk/protocol";
+import { PROJECT_FILES, exists, readJsonIfPresent, readJsonOrNull, writeJson } from "../fs";
 import { ToolError, type ProjectHandle, type ToolContext, type ToolOutput } from "../registry";
 import type { KicadCli, SchematicHierarchy } from "../services";
 
@@ -25,6 +25,38 @@ export async function loadNetlist(project: ProjectHandle): Promise<NetlistFile> 
       "precondition",
     );
   return parsed.data;
+}
+
+export async function loadNetlistOrNull(project: ProjectHandle): Promise<NetlistFile | null> {
+  const path = p(project, PROJECT_FILES.netlistJson);
+  const raw = await readJsonOrNull<unknown>(path);
+  if (raw === null) return null;
+  const parsed = NetlistFile.safeParse(raw);
+  return parsed.success ? parsed.data : null;
+}
+
+/** Off-board parts file; missing file is an empty list. Invalid JSON / unreadable file is a precondition error. */
+export async function loadProjectParts(project: ProjectHandle): Promise<ProjectPartsFile> {
+  const path = p(project, PROJECT_FILES.projectParts);
+  let raw: unknown;
+  try {
+    raw = await readJsonIfPresent<unknown>(path);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    throw new ToolError(`${PROJECT_FILES.projectParts} is not valid JSON: ${msg}`, "precondition");
+  }
+  if (raw === null) return emptyProjectParts();
+  const parsed = ProjectPartsFile.safeParse(raw);
+  if (!parsed.success)
+    throw new ToolError(
+      `${PROJECT_FILES.projectParts} is not valid: ${parsed.error.issues.map((i) => `${i.path.join("/")}: ${i.message}`).join("; ")}`,
+      "precondition",
+    );
+  return parsed.data;
+}
+
+export async function saveProjectParts(project: ProjectHandle, file: ProjectPartsFile): Promise<void> {
+  await writeJson(p(project, PROJECT_FILES.projectParts), file);
 }
 
 export async function requireKicad(ctx: ToolContext): Promise<KicadCli> {

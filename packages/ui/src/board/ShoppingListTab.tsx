@@ -8,6 +8,7 @@ import {
 } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { Icon } from "../components/Icon";
+import { ProjectBomPanel } from "./ProjectBomPanel";
 import "./shopping-list.css";
 
 const STATUS_LABEL: Record<CartItemStatus, string> = { needed: "To order", ordered: "Ordered", received: "Received" };
@@ -161,8 +162,25 @@ export function ShoppingAddItem({ options, fab, onAdd, onClose }: { options: Des
 const looksLikeMpn = (s: string) => !/\s/.test(s) && /\d/.test(s) && s.length <= 60;
 
 export function ShoppingListTab() {
+  const [view, setView] = useState<"bom" | "order">("bom");
   const projectId = useUiStore(s => s.activeProjectId);
-  return <ShoppingListContent key={projectId} />;
+  const navigation = (
+    <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-panel-2/50 p-0.5" role="group" aria-label="Parts view">
+      {(["bom", "order"] as const).map((value) => (
+        <button key={value} type="button" aria-pressed={view === value} onClick={() => setView(value)}
+          data-testid={value === "bom" ? "bom-view-project" : "bom-view-shopping"}
+          className={`rounded-md px-2 py-1 text-xs font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${view === value ? "bg-panel text-fg shadow-sm" : "text-muted hover:text-fg"}`}>
+          {value === "bom" ? "Parts" : "Shopping"}
+        </button>
+      ))}
+    </div>
+  );
+  return (
+    <div className="flex h-full min-h-0 flex-col" data-testid="bom-tab">
+      <div className="shrink-0 border-b border-border px-3 py-1.5">{navigation}</div>
+      <div className="min-h-0 flex-1">{view === "bom" ? <ProjectBomPanel /> : <ShoppingListContent key={projectId} />}</div>
+    </div>
+  );
 }
 
 function ShoppingListContent() {

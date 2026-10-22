@@ -154,7 +154,7 @@ export const shopping_list_get = defineTool({
       const list = await cloud.shoppingList(project);
       if (!list.cart)
         return ok(
-          `Project "${project.name}" has no shopping list yet. shopping_list_sync_bom builds one from the netlist; shopping_list_add creates it with the given items.`,
+          `Project "${project.name}" has no shopping list yet. shopping_list_sync_bom builds one from the netlist and off-board parts; shopping_list_add creates it with the given items.`,
           list,
         );
       const destinations = await cloud.destinations().catch(() => [] as Destination[]);
@@ -253,7 +253,7 @@ export const shopping_list_sync_bom = defineTool({
   toolset: "shopping",
   title: "Sync the shopping list from the BOM",
   description:
-    'Rebuild the part lines of the project\'s shopping list from circuit.netlist.json: components grouped by value + footprint + MPN/manufacturer fields, quantity = count, refs listed, LCSC field → sku, excluding #PWR-style symbols and DNP parts. Lines matched to the previous sync (by MPN, else value + footprint) keep their destination, status and notes; hand-added lines are kept; parts no longer in the design are dropped. Adds a "PCB – <project>" × 5 line at the fab house if there is none. Creates the list on first use.',
+    'Rebuild the part lines of the project\'s shopping list from circuit.netlist.json and project.parts.json: electrical components grouped by value + footprint + MPN/manufacturer, plus off-board motors/displays/hardware (quantity from the off-board line). Lines matched to the previous sync (by MPN, else value + footprint) keep their destination, status and notes; hand-added lines are kept; parts no longer in the design are dropped. Adds a "PCB – <project>" × 5 line at the fab house if there is none. Creates the list on first use.',
   inputSchema: {},
   annotations: {
     readOnlyHint: false,

@@ -6,11 +6,28 @@ export type SlashCommand = { name: string; usage: string; hint: string };
 
 export const SLASH_COMMANDS: readonly SlashCommand[] = [
   {
+    name: "parts",
+    usage: "/parts [request]",
+    hint: "Add off-board motors, displays, standoffs or screws to this project's BOM",
+  },
+  {
     name: "shopping-list",
     usage: "/shopping-list [request]",
     hint: "Manage this project's fabplane shopping list and inventory with the shopping tools",
   },
 ];
+
+function partsPrompt(request: string): string {
+  return [
+    "Use the fabdesk `project` MCP tools to manage this project's off-board parts (motors, displays, standoffs, screws and similar hardware that is not placed on the PCB).",
+    'Load them with load_toolset {"toolset":"project"}.',
+    "Tools: parts_search (library), parts_add (catalogId from search, or name + kind), parts_list (project BOM: electrical + off-board), parts_remove.",
+    "Do not put off-board hardware in the electrical netlist. End with the updated BOM.",
+    request
+      ? `Request: ${request}`
+      : "Request: search the off-board library for the hardware this project needs and add it so the BOM lists it next to the board parts.",
+  ].join("\n");
+}
 
 function shoppingListPrompt(request: string): string {
   return [
@@ -30,6 +47,8 @@ export function expandSlashCommand(text: string): string | null {
   if (!m) return null;
   const rest = (m[2] ?? "").trim();
   switch (m[1]) {
+    case "parts":
+      return partsPrompt(rest);
     case "shopping-list":
       return shoppingListPrompt(rest);
     default:

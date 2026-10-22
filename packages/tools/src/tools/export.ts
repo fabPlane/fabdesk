@@ -2,9 +2,10 @@
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod/v4";
-import { PROJECT_FILES, ensureDir } from "../fs";
+import { projectBomCsv, projectBomLines } from "@fabdesk/protocol";
+import { PROJECT_FILES, ensureDir, writeAtomic } from "../fs";
 import { ToolError, defineTool } from "../registry";
-import { ok, p, requireBoard, requireKicad, requireSchematic } from "./common";
+import { loadNetlistOrNull, loadProjectParts, ok, p, requireBoard, requireKicad, requireSchematic } from "./common";
 import { silk_art } from "./silk-art";
 
 const rel = (project: { dir: string }, abs: string) =>
@@ -161,7 +162,7 @@ export const export_bom = defineTool({
   toolset: "export",
   title: "Export BOM",
   description:
-    "Export a grouped bill of materials CSV from the saved native schematic to exports/bom.csv.",
+    "Export the project bill of materials to exports/bom.csv: electrical parts from circuit.netlist.json plus off-board / mechanical lines from project.parts.json (motors, displays, standoffs, screws). Falls back to the KiCad schematic BOM when there is no netlist and no off-board file.",
   inputSchema: {},
   annotations: {
     readOnlyHint: false,
@@ -171,10 +172,22 @@ export const export_bom = defineTool({
   },
   handler: async (_args, ctx) => {
     const project = ctx.requireProject();
-    const cli = await requireKicad(ctx);
-    const schematic = await requireSchematic(project);
+    const netlist = await loadNetlistOrNull(project);
+    const parts = await loadProjectParts(project);
+    const lines = projectBomLines(netlist?.netlist.components ?? [], parts.parts);
     await ensureDir(p(project, PROJECT_FILES.exports));
     const output = p(project, PROJECT_FILES.exports, "bom.csv");
+    if (lines.length > 0) {
+      await writeAtomic(output, projectBomCsv(lines));
+      const pcb = lines.filter((l) => l.source === "pcb").length;
+      const offboard = lines.filter((l) => l.source === "offboard").length;
+      return ok(
+        `Exported exports/bom.csv (${lines.length} lines: ${pcb} electrical, ${offboard} off-board).`,
+        { path: output, lines: lines.length, pcb, offboard, source: "project" },
+      );
+    }
+    const cli = await requireKicad(ctx);
+    const schematic = await requireSchematic(project);
     await ctx.services.kicad.exportBom(cli, { schematic, output, signal: ctx.signal });
     return ok("Exported exports/bom.csv from board.kicad_sch.", {
       path: output,

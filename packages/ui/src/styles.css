@@ -504,3 +504,20 @@ img.fd-file-image { background: #fff; padding: 8px; }
     }
   }
 }
+
+/* Keep available catalog actions visibly distinct from the non-interactive checkmark. */
+.fd-icon-button.fd-bom-add {
+  border-color: var(--fd-accent);
+  background: color-mix(in srgb, var(--fd-accent) 10%, transparent);
+  color: var(--fd-accent);
+  cursor: pointer;
+}
+.fd-icon-button.fd-bom-add:hover:not(:disabled) {
+  background: var(--fd-accent);
+  color: var(--fd-accent-fg);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--fd-accent) 20%, transparent);
+}
+.fd-icon-button.fd-bom-add:focus-visible {
+  outline: 2px solid var(--fd-accent);
+  outline-offset: 2px;
+}
