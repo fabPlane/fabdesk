@@ -1,7 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { EnclosureScreen, enclosureFailure, enclosureFromTool, parseMm, type EnclosureView } from "./EnclosurePanel";
+import {
+  EnclosureScreen,
+  enclosureFailure,
+  enclosureFromTool,
+  enclosureDimensionError,
+  enclosureDraftChanged,
+  enclosureWithSavedPreview,
+  parseMm,
+  type EnclosureView,
+} from "./EnclosurePanel";
 
 const view = (partial: Partial<EnclosureView> = {}): EnclosureView => ({
   exists: true,
@@ -32,13 +41,14 @@ const html = (
   renderToStaticMarkup(
     createElement(EnclosureScreen, {
       view: v,
-      draft: extra.draft ?? v?.draft ?? {
-        outlineOffsetMm: "0",
-        clearanceMm: "1",
-        ventPattern: "none",
-        ventFaces: "lid",
-        snapFit: false,
-      },
+      draft: extra.draft ??
+        v?.draft ?? {
+          outlineOffsetMm: "0",
+          clearanceMm: "1",
+          ventPattern: "none",
+          ventFaces: "lid",
+          snapFit: false,
+        },
       busy: extra.busy ?? false,
       error: extra.error ?? null,
       onDraftChange: () => {},
@@ -105,7 +115,7 @@ describe("enclosureFromTool", () => {
     const out = html(fromHttp);
     expect(out).toContain("No board.kicad_pcb yet");
     expect(out).not.toContain("In sync");
-    expect(out).not.toContain("role=\"alert\"");
+    expect(out).not.toContain('role="alert"');
     expect(out).not.toContain("board.kicad_pcb not found");
   });
 
@@ -137,7 +147,13 @@ describe("enclosureFromTool", () => {
       json: {
         exists: true,
         alignment: { ok: true, stale: false, issues: [] },
-        params: { outlineOffsetMm: 2, clearanceMm: 1.5, ventPattern: "honeycomb", ventFaces: "both", snapFit: true },
+        params: {
+          outlineOffsetMm: 2,
+          clearanceMm: 1.5,
+          ventPattern: "honeycomb",
+          ventFaces: "both",
+          snapFit: true,
+        },
         vents: 12,
         clips: 4,
         previewSvg: "<svg></svg>",
@@ -195,10 +211,67 @@ describe("enclosureFailure", () => {
   });
 
   test("keeps readable text for plain error bodies and non-JSON errors", () => {
-    expect(enclosureFailure(new Error('{"error":"no board.kicad_pcb","code":"precondition"}'))).toEqual({
+    expect(
+      enclosureFailure(new Error('{"error":"no board.kicad_pcb","code":"precondition"}')),
+    ).toEqual({
       result: null,
       message: "no board.kicad_pcb",
     });
-    expect(enclosureFailure(new Error("network down"))).toEqual({ result: null, message: "network down" });
+    expect(enclosureFailure(new Error("network down"))).toEqual({
+      result: null,
+      message: "network down",
+    });
   });
+});
+
+describe("pending enclosure settings", () => {
+  test("ignores equivalent numeric input and restores the saved state", () => {
+    const saved = view().draft;
+    expect(
+      enclosureDraftChanged({ ...saved, outlineOffsetMm: "0.0", clearanceMm: "" }, saved),
+    ).toBe(false);
+    expect(enclosureDraftChanged({ ...saved, clearanceMm: "2" }, saved)).toBe(true);
+    expect(enclosureDraftChanged({ ...saved, snapFit: true }, saved)).toBe(true);
+    expect(enclosureDraftChanged({ ...saved, ventPattern: "slots" }, saved)).toBe(true);
+    expect(enclosureDraftChanged(saved, saved)).toBe(false);
+  });
+});
+
+describe("saved enclosure preview", () => {
+  test("restores the preview from a status/check response without inline SVG", async () => {
+    const status = view({
+      files: ["exports/enclosure.stl", "exports/enclosure-preview.svg"],
+      stale: true,
+    });
+    const restored = await enclosureWithSavedPreview(status, async (path) => {
+      expect(path).toBe("exports/enclosure-preview.svg");
+      return '<svg aria-label="Enclosure preview"></svg>';
+    });
+    expect(restored.previewSvg).toContain("Enclosure preview");
+    expect(restored.stale).toBe(true);
+  });
+  test("uses fresh generation output and tolerates missing preview files", async () => {
+    const generated = view({ previewSvg: "<svg/>" });
+    expect(
+      await enclosureWithSavedPreview(generated, async () => {
+        throw Error("must not read");
+      }),
+    ).toBe(generated);
+    const missing = view({ files: ["exports/enclosure-preview.svg"] });
+    expect(
+      await enclosureWithSavedPreview(missing, async () => {
+        throw Error("404");
+      }),
+    ).toBe(missing);
+  });
+});
+
+test("enclosure dimensions explain range errors and allow defaults and boundaries", () => {
+  expect(enclosureDimensionError("101", 20, "Clearance")).toBe(
+    "Clearance must be between 0 and 20 mm.",
+  );
+  expect(enclosureDimensionError("-1", 40, "Outline offset")).toContain("0 and 40 mm");
+  expect(enclosureDimensionError("Infinity", 20, "Clearance")).not.toBeNull();
+  for (const value of ["", "0", "0.5", "20"])
+    expect(enclosureDimensionError(value, 20, "Clearance")).toBeNull();
 });

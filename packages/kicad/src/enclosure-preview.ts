@@ -108,11 +108,11 @@ export function previewEnclosureSvg(spec: EnclosureSpec): string {
   const isoH = Math.max(isoMaxY - isoMinY, 1);
   const panelW = 220;
   const panelH = 200;
-  const planScale = Math.min((panelW - 2 * pad) / planW, (panelH - 36) / planH);
-  const isoScale = Math.min((panelW - 2 * pad) / isoW, (panelH - 36) / isoH);
+  const planScale = Math.min((panelW - 2 * pad) / planW, (panelH - 64) / planH);
+  const isoScale = Math.min((panelW - 2 * pad) / isoW, (panelH - 64) / isoH);
 
   const planOx = pad - outer.minX * planScale;
-  const planOy = 28 - outer.minY * planScale;
+  const planOy = 56 - outer.minY * planScale;
   const toPlan = (x: number, y: number) => ({ x: planOx + x * planScale, y: planOy + y * planScale });
 
   const plan: string[] = [];
@@ -182,7 +182,7 @@ export function previewEnclosureSvg(spec: EnclosureSpec): string {
   }
 
   const isoOx = panelW + pad - isoMinX * isoScale;
-  const isoOy = 28 - isoMinY * isoScale;
+  const isoOy = 56 - isoMinY * isoScale;
   const isoMarkup = isoParts
     .join("")
     .replace(/points="([^"]+)"/g, (_m, pts: string) => {
@@ -202,8 +202,12 @@ export function previewEnclosureSvg(spec: EnclosureSpec): string {
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${panelW * 2} ${panelH}" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" data-testid="enclosure-preview-svg" role="img" aria-label="Enclosure preview">`,
     `<rect width="100%" height="100%" fill="var(--bg, #191d1a)"/>`,
-    `<text x="${pad}" y="16" fill="var(--fg, #eef3e9)" font-size="11" font-family="Inter, system-ui, sans-serif">Plan · offset ${offsetMm} mm · clearance ${clearanceMm} mm</text>`,
-    `<text x="${panelW + pad}" y="16" fill="var(--fg, #eef3e9)" font-size="11" font-family="Inter, system-ui, sans-serif">Isometric · ${ventNote} · ${snapNote}</text>`,
+    `<text x="${pad}" y="16" fill="var(--fg, #eef3e9)" font-size="11" font-family="Inter, system-ui, sans-serif">Plan</text>`,
+    `<text x="${pad}" y="31" fill="var(--fg, #eef3e9)" font-size="10" font-family="Inter, system-ui, sans-serif">offset ${offsetMm} mm</text>`,
+    `<text x="${pad}" y="44" fill="var(--fg, #eef3e9)" font-size="10" font-family="Inter, system-ui, sans-serif">clearance ${clearanceMm} mm</text>`,
+    `<text x="${panelW + pad}" y="16" fill="var(--fg, #eef3e9)" font-size="11" font-family="Inter, system-ui, sans-serif">Isometric</text>`,
+    `<text x="${panelW + pad}" y="31" fill="var(--fg, #eef3e9)" font-size="10" font-family="Inter, system-ui, sans-serif">${ventNote}</text>`,
+    `<text x="${panelW + pad}" y="44" fill="var(--fg, #eef3e9)" font-size="10" font-family="Inter, system-ui, sans-serif">${snapNote}</text>`,
     `<g data-view="plan">${plan.join("")}</g>`,
     `<g data-view="iso">${isoMarkup}</g>`,
     `</svg>`,
