@@ -3,7 +3,7 @@ import { TOOLSETS, type ToolDef, type ToolRegistry } from "../registry";
 
 const TOOLSET_BLURB: Record<string, string> = {
   core: "always available",
-  project: "files, sketches, board settings",
+  project: "files, sketches, board settings, off-board parts",
   circuit: "query the board, footprint search",
   route: "routing status/cancel/partial reroute",
   kicad: "KiCad conversion and stats",
@@ -13,7 +13,7 @@ const TOOLSET_BLURB: Record<string, string> = {
   sim: "SPICE",
   app: "screenshot and drive the desktop app (dev / FABDESK_AUTOMATION=1)",
   shopping: "fabplane.com shopping list (BOM cart) and team inventory",
-  cad: "mechanical model in FreeCAD (model.FCStd): objects, properties, Python, STEP/STL export",
+  cad: "mechanical model in FreeCAD (model.FCStd): objects, properties, Python, board-synced enclosure, STEP/STL export",
 };
 
 export function toolsMarkdown(registry: ToolRegistry, opts: { serverName?: string } = {}): string {

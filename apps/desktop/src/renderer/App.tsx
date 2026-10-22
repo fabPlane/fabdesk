@@ -115,6 +115,56 @@ function ErrorReportingBridge() {
   return null;
 }
 
+function OpenCatalogBridge() {
+  const client = useCoreClient();
+  const setActiveOpenSourceId = useUiStore((s) => s.setActiveOpenSourceId);
+  const setSidebarListTab = useUiStore((s) => s.setSidebarListTab);
+  const setActiveProject = useUiStore((s) => s.setActiveProject);
+  const setActiveThread = useUiStore((s) => s.setActiveThread);
+  const setBoardOpen = useUiStore((s) => s.setBoardOpen);
+  const setBoardTab = useUiStore((s) => s.setBoardTab);
+  const focusComposer = useUiStore((s) => s.focusComposer);
+  useEffect(() => {
+    if (!bridge?.onOpenCatalog) return;
+    const open = (intent: { catalogId: string; remix: boolean }) => {
+      if (intent.remix) {
+        void client
+          .remixOpenSource(intent.catalogId)
+          .then((result) => {
+            setActiveProject(result.project.id);
+            setActiveThread(null);
+            setActiveOpenSourceId(null);
+            setSidebarListTab("projects");
+            setBoardTab("pcb");
+            setBoardOpen(true);
+            focusComposer();
+          })
+          .catch(() => {
+            setSidebarListTab("open_source");
+            setActiveOpenSourceId(intent.catalogId);
+          });
+        return;
+      }
+      setSidebarListTab("open_source");
+      setActiveOpenSourceId(intent.catalogId);
+    };
+    void bridge.pendingOpenCatalog?.().then((intent) => {
+      if (intent) open(intent);
+    });
+    return bridge.onOpenCatalog(open);
+  }, [
+    client,
+    setActiveOpenSourceId,
+    setSidebarListTab,
+    setActiveProject,
+    setActiveThread,
+    setBoardOpen,
+    setBoardTab,
+    focusComposer,
+  ]);
+  return null;
+}
+
 export function App() {
   const [info, setInfo] = useState<CoreInfo | null>(null);
   useEffect(() => {
@@ -164,6 +214,7 @@ export function App() {
       <ThemeSync />
       <WebMcpBridge />
       <ErrorReportingBridge />
+      <OpenCatalogBridge />
     </FabdeskApp>
   );
 }

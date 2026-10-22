@@ -31,7 +31,7 @@ export function shortcutList(platform?: string): ShortcutDef[] {
     { keys: `${m}${s}P`, label: "Pin / unpin chat" },
     { keys: `${m}${s}D`, label: "Branch chat" },
     { keys: `${m}${s}S`, label: "Sketch pad" },
-    { keys: `${m}1…8`, label: "Board tabs" },
+    { keys: `${m}1…9`, label: "Board tabs" },
     { keys: `${m}/`, label: "Agent & model" },
     { keys: `${m},`, label: "Settings" },
     { keys: isMac(platform) ? "⌥Space" : "Alt + Space", label: "Speak to the agent (hold or toggle)" },

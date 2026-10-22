@@ -254,6 +254,10 @@ describe("registry", () => {
       "project_list_sketches",
       "project_set_board",
       "project_import_kicad",
+      "parts_search",
+      "parts_add",
+      "parts_list",
+      "parts_remove",
       "circuit_query",
       "circuit_search_parts",
       "circuit_describe_part",
@@ -291,6 +295,7 @@ describe("registry", () => {
       "export_netlist",
       "export_zip",
       "export_dxf",
+      "silk_art",
       "export_stencil",
       "export_laser_stencil",
       "sim_spice_netlist",
@@ -328,6 +333,7 @@ describe("registry", () => {
       "cad_export",
       "cad_python",
       "cad_view",
+      "cad_enclosure",
     ]);
     for (const n of names) expect(n).toMatch(/^[a-z][a-z0-9_]*$/);
     expect(reg.byToolset("core").length).toBe(9);

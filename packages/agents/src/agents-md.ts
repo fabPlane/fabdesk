@@ -29,13 +29,20 @@ the fabrication method. Layer changes are physically limited to the factory vias
 - KiCad-frame coordinates are x = blank x + 45, y = 27.5 − blank y.`,
 };
 
+const OFFBOARD_SECTION = `## Off-board parts
+Motors, displays, standoffs, screws and similar hardware live in \`project.parts.json\` and appear
+on the project BOM next to electrical parts. The \`project\` toolset exposes \`parts_search\`,
+\`parts_add\`, \`parts_list\` and \`parts_remove\`. A message starting with \`/parts\` is a request to
+use these tools.`;
+
 const SHOPPING_SECTION = `## Shopping list
 The project's parts order lives on fabplane.com as a shopping list (a cart grouped by where each
 line is bought: JLCPCB, a distributor, or manual purchase), next to the team's parts inventory.
 Manage it with the \`shopping\` toolset (\`load_toolset {"toolset":"shopping"}\`): \`shopping_list_get\`,
-\`shopping_list_sync_bom\`, \`shopping_list_add\`, \`shopping_list_update\`, \`shopping_list_remove\`,
-\`shopping_list_destinations\`, \`inventory_search\`, \`inventory_add\`. A message starting with
-\`/shopping-list\` is a request to use these tools. They need the user to be signed in to fabplane.`;
+\`shopping_list_sync_bom\` (netlist plus off-board parts), \`shopping_list_add\`, \`shopping_list_update\`,
+\`shopping_list_remove\`, \`shopping_list_destinations\`, \`inventory_search\`, \`inventory_add\`. A
+message starting with \`/shopping-list\` is a request to use these tools. They need the user to be
+signed in to fabplane.`;
 
 const TOOL_NEEDS = `## Tools and runtime
 Both authoring paths are available: \`circuit_build\` compiles \`circuit.netlist.json\`; \`schematic_edit\` edits native symbols and wires. Multi-unit parts share a reference and use distinct unit numbers, including power units.
@@ -113,6 +120,7 @@ ${sketches}
 | \`renders/\` | Rendered artifacts. |
 | \`reports/\` | Machine-readable reports. |
 | \`exports/\` | Manufacturing and interchange outputs (gerbers, BOM, 3D-printed stencil STL, laser-cut stencil SVG/DXF/.lbrn2). |
+| \`project.parts.json\` | Off-board and mechanical parts (motors, displays, standoffs, screws). |
 
 ${
   ctx.interfaceMode
@@ -123,7 +131,7 @@ ${
               .map(([name, path]) => `\`${name}\` = \`${path}\``)
               .join("; ")}.\n`
           : ""
-      }\n${SHOPPING_SECTION}\n\n`
+      }\n${OFFBOARD_SECTION}\n\n${SHOPPING_SECTION}\n\n`
 }${USER_START}
 ${userSection.trim() === "" ? DEFAULT_USER_SECTION : userSection.trim()}
 ${USER_END}

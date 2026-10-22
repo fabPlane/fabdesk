@@ -33,6 +33,8 @@ views and the DXF converter). Plugin package: `plugins/fabplane/`.
   runs `cad_export` (STL to `exports/model.stl`) and shows it in the 3D viewer, and _Open in
   FreeCAD_ asks the host to open the fab_cad web UI on the project's live session (`cad_view`,
   `ui/open-link`). Both need the FreeCAD bridge; without it they report `unavailable`.
+  _Generate enclosure_ runs `cad_enclosure` from the board outline, mounting holes and edge
+  connectors (STL/STEP even when FreeCAD is down).
 
 Buttons run _Run DRC_ (`verify_drc`, parity only when the project has a schematic) and _Ask agent_
 (`ui/message`). Selecting a project sends `ui/update-model-context`, so the next turn knows which
@@ -48,7 +50,7 @@ sign-in, like the `shopping` toolset.
 extensions only).
 
 The views call only the tools in `UI_CALLABLE_TOOLS` (status, DRC, DXF / stencil / GLB export, the
-shopping tools and `cad_status` / `cad_export` / `cad_view`) plus four view helpers (`projects`, `preview`, `host_file`, `convert`), whatever
+shopping tools and `cad_status` / `cad_export` / `cad_view` / `cad_enclosure`) plus four view helpers (`projects`, `preview`, `host_file`, `convert`), whatever
 toolsets the session has loaded.
 
 ## When the views are listed

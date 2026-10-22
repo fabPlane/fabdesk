@@ -7,6 +7,7 @@ import { PROJECT_FILES, jailPath, projectRelative, writeAtomic } from "../fs";
 import { ToolError, defineTool } from "../registry";
 import { VIAGRID_9055 } from "../templates/viagrid-9055";
 import { ok, p, trim } from "./common";
+import { partsTools } from "./parts";
 
 const MAX_READ = 512 * 1024;
 
@@ -317,4 +318,5 @@ export const projectTools = [
   project_list_sketches,
   project_set_board,
   project_import_kicad,
+  ...partsTools,
 ];

@@ -47,6 +47,7 @@ export function createRegistry(opts: { channel?: "public" | "internal" } = {}): 
 
 export * from "./core";
 export * from "./project";
+export * from "./parts";
 export * from "./circuit";
 export * from "./schematic";
 export * from "./pcb";
@@ -59,6 +60,7 @@ export * from "./release";
 export * from "./verify";
 export * from "./render";
 export * from "./export";
+export * from "./silk-art";
 export * from "./sim";
 export * from "./app";
 export * from "./shopping";

@@ -9,6 +9,8 @@ export const PROJECT_FILES = {
   manifest: "fabdesk.json",
   /** The design source: what exists and what connects (`NetlistFile` in @fabdesk/protocol). */
   netlistJson: "circuit.netlist.json",
+  /** Off-board / mechanical / accessory parts (`ProjectPartsFile` in @fabdesk/protocol). */
+  projectParts: "project.parts.json",
   /** The KiCad netlist the compile job wrote; `export_netlist` copies it. */
   compileNet: ".fabdesk/compile.net",
   boardPcb: "board.kicad_pcb",
@@ -16,6 +18,8 @@ export const PROJECT_FILES = {
   boardPro: "board.kicad_pro",
   /** The mechanical model, a FreeCAD document (`cad` toolset). */
   cadModel: "model.FCStd",
+  /** Parametric enclosure spec keyed to the board hash (`cad_enclosure`). */
+  enclosure: "enclosure.json",
   sketches: "sketches",
   renders: "renders",
   reports: "reports",
@@ -88,6 +92,16 @@ export async function readJsonOrNull<T = unknown>(path: string): Promise<T | nul
     return await readJson<T>(path);
   } catch {
     return null;
+  }
+}
+
+/** Null only when the file is absent. Malformed JSON and other read errors throw. */
+export async function readJsonIfPresent<T = unknown>(path: string): Promise<T | null> {
+  try {
+    return await readJson<T>(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
   }
 }
 

@@ -1,5 +1,5 @@
 import { app, ipcMain, dialog, BrowserWindow, nativeTheme, session, shell } from "electron";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { mkdir } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
@@ -30,6 +30,33 @@ import { PcbSupervisor, resolvePcbBackend } from "./pcb-supervisor";
 import { systemLocaleEnv } from "./system-locales";
 import { resolveWindowTheme, titleBarOverlayFor } from "./window-theme";
 import { decideMediaPermission } from "./media-permission";
+import type { OpenCatalogIntent } from "@fabdesk/protocol";
+import { OpenCatalogQueue } from "./open-catalog";
+
+const openCatalog = new OpenCatalogQueue();
+openCatalog.offer(process.argv);
+if (process.defaultApp) {
+  const appPath = process.argv[1];
+  if (appPath) app.setAsDefaultProtocolClient("fabplane", process.execPath, [resolve(appPath)]);
+} else {
+  app.setAsDefaultProtocolClient("fabplane");
+}
+
+function sendOpenCatalog(intent: OpenCatalogIntent): void {
+  const win = BrowserWindow.getAllWindows()[0];
+  if (!win || win.isDestroyed()) return;
+  // A send before the renderer loads is dropped; leave pending for take() on mount.
+  if (win.webContents.isLoadingMainFrame()) return;
+  win.webContents.send("fabdesk:open-catalog", intent);
+  // Delivered to a live window; drop pending so a remount cannot replay take().
+  openCatalog.take();
+}
+
+app.on("open-url", (event, url) => {
+  event.preventDefault();
+  const intent = openCatalog.offer(url);
+  if (intent) sendOpenCatalog(intent);
+});
 
 // Name / userData / AUMID / WM_CLASS / FABDESK_HOME before any path read or the single-instance lock
 // (Electron keys the lock on userData). Packaged production identity is left untouched.
@@ -142,12 +169,14 @@ if (!app.requestSingleInstanceLock()) {
   console.error(`[main] another ${identity.productName} instance holds the lock; quitting`);
   app.quit();
 } else {
-  app.on("second-instance", () => {
+  app.on("second-instance", (_event, argv) => {
+    const intent = openCatalog.offer(argv);
     const win = BrowserWindow.getAllWindows()[0];
     if (win) {
       if (win.isMinimized()) win.restore();
       win.focus();
     }
+    if (intent) sendOpenCatalog(intent);
   });
 
   void app.whenReady().then(async () => {
@@ -234,6 +263,7 @@ if (!app.requestSingleInstanceLock()) {
     });
     installAppMenu();
     registerIpc(supervisor);
+    ipcMain.handle("fabdesk:pending-open-catalog", () => openCatalog.take());
     const developmentCadReady = !app.isPackaged && Boolean(cadEnv["FABDESK_FAB_CAD_BRIDGE_URL"]);
     ipcMain.handle("fabdesk:cad-runtime-state", () =>
       developmentCadReady ? { status: "ready" } : cadRuntime.state(),
@@ -282,6 +312,8 @@ if (!app.requestSingleInstanceLock()) {
     registerUpdateDownloadIpc(new UpdateDownloader(updates));
     updates.start();
     createWindow();
+    // Startup deep links stay queued for take() after the renderer mounts.
+    // Sending here is always lost because webContents has not loaded yet.
     // CI / smoke runs: quit on their own after N ms (FABDESK_SMOKE_MS).
     const smokeMs = Number(process.env["FABDESK_SMOKE_MS"] ?? 0);
     if (smokeMs > 0) setTimeout(() => app.quit(), smokeMs);

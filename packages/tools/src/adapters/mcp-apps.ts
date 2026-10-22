@@ -108,6 +108,7 @@ export const UI_CALLABLE_TOOLS = new Set([
   "cad_status",
   "cad_export",
   "cad_view",
+  "cad_enclosure",
 ]);
 
 export function clientSupportsApps(caps: ClientCapabilities | undefined): boolean {
@@ -398,7 +399,8 @@ export function registerMcpApps(
           name === "export_dxf" ||
           name === "export_stencil" ||
           name === "export_laser_stencil" ||
-          name === "cad_export"
+          name === "cad_export" ||
+          name === "cad_enclosure"
             ? (await context(str(args["project"]), extra)).project?.dir
             : undefined;
         if (dir && Array.isArray(json["files"]))
