@@ -5,6 +5,7 @@ import { z } from "zod/v4";
 import { PROJECT_FILES, ensureDir } from "../fs";
 import { ToolError, defineTool } from "../registry";
 import { ok, p, requireBoard, requireKicad, requireSchematic } from "./common";
+import { silk_art } from "./silk-art";
 
 const rel = (project: { dir: string }, abs: string) =>
   abs.startsWith(project.dir) ? abs.slice(project.dir.length + 1) : abs;
@@ -575,6 +576,7 @@ export const exportTools = [
   export_netlist,
   export_zip,
   export_dxf,
+  silk_art,
   export_stencil,
   export_laser_stencil,
 ];

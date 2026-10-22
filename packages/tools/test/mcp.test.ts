@@ -193,8 +193,10 @@ describe("mcp adapter", () => {
     const res = await client.callTool({ name: "load_toolset", arguments: { toolset: "export" } });
     expect(res.isError).toBeFalsy();
     const after = await client.listTools();
-    expect(after.tools.map((t) => t.name)).toContain("export_gerbers");
-    expect(after.tools.length).toBe(11 + 9);
+    expect(after.tools.map((t) => t.name)).toEqual(
+      expect.arrayContaining(["export_gerbers", "silk_art", "export_stencil", "export_laser_stencil"]),
+    );
+    expect(after.tools.length).toBe(11 + 10);
     expect(attachment.session.enabledToolsets()).toEqual(["core", "export"]);
     await new Promise((r) => setTimeout(r, 10));
     expect(listChanged).toBeGreaterThan(0);

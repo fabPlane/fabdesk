@@ -8,6 +8,7 @@ import { modKey } from "../util";
 import { CadTab } from "./CadTab";
 import { CinemaTab } from "./cinema/CinemaTab";
 import { DrcTab } from "./DrcTab";
+import { ArtTab } from "./ArtTab";
 import { FilesTab } from "./FilesTab";
 import { RendersTab } from "./RendersTab";
 import { ShoppingListTab } from "./ShoppingListTab";
@@ -33,6 +34,8 @@ function TabBody({ tab }: { tab: BoardTab }) {
       return <RendersTab />;
     case "files":
       return <FilesTab />;
+    case "art":
+      return <ArtTab />;
     case "bom":
       return <ShoppingListTab />;
     default:
