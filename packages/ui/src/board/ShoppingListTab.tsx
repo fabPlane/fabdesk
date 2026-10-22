@@ -170,15 +170,15 @@ export function ShoppingListTab() {
         <button key={value} type="button" aria-pressed={view === value} onClick={() => setView(value)}
           data-testid={value === "bom" ? "bom-view-project" : "bom-view-shopping"}
           className={`rounded-md px-2 py-1 text-xs font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${view === value ? "bg-panel text-fg shadow-sm" : "text-muted hover:text-fg"}`}>
-          {value === "bom" ? "Project parts" : "Shopping list"}
+          {value === "bom" ? "Parts" : "Shopping"}
         </button>
       ))}
     </div>
   );
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="bom-tab">
-      {view === "order" && <div className="shrink-0 border-b border-border px-3 py-2">{navigation}</div>}
-      <div className="min-h-0 flex-1">{view === "bom" ? <ProjectBomPanel navigation={navigation} /> : <ShoppingListContent key={projectId} />}</div>
+      <div className="shrink-0 border-b border-border px-3 py-1.5">{navigation}</div>
+      <div className="min-h-0 flex-1">{view === "bom" ? <ProjectBomPanel /> : <ShoppingListContent key={projectId} />}</div>
     </div>
   );
 }

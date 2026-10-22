@@ -13,7 +13,7 @@ import {
   type ProjectPartsFile,
 } from "@fabdesk/protocol";
 import { useProjectJson, useRunTool, useWriteProjectFile } from "@fabdesk/client-core";
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { Badge, Button, EmptyState, IconButton, Input, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
@@ -167,7 +167,7 @@ function PartsToolbar({ label, query, onQueryChange, selected, onChange, include
   );
 }
 
-export function ProjectBomPanel({ navigation }: { navigation?: ReactNode } = {}) {
+export function ProjectBomPanel() {
   const projectId = useUiStore((s) => s.activeProjectId);
   const netlist = useProjectJson<NetlistFile>(projectId, "circuit.netlist.json");
   const partsFile = useProjectJson<ProjectPartsFile>(projectId, PROJECT_PARTS_FILE);
@@ -272,7 +272,7 @@ export function ProjectBomPanel({ navigation }: { navigation?: ReactNode } = {})
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            {navigation ?? <h2 className="text-sm font-semibold">Project parts</h2>}
+            <h2 className="text-sm font-semibold">Project parts</h2>
             <span className="text-xs text-muted">{lines.length} items</span>
             <Badge tone="accent" title="Off-board parts are separate from components mounted on the PCB.">
               {parts.parts.length} off-board
