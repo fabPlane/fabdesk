@@ -747,7 +747,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
   app.get("/projects/:id/finish-it", async (c) => {
     const id = c.req.param("id");
     if (!(await deps.projects.handle(id))) return c.json({ error: "not found" }, 404);
-    return c.json({ session: deps.finishIt?.get(id) ?? null });
+    return c.json({ session: deps.finishIt?.get(id) ?? null, needsWork: deps.finishIt ? await deps.finishIt.needsWork(id) : false });
   });
   app.post("/projects/:id/finish-it", async (c) => {
     if (!deps.finishIt) return c.json({ error: "Finish it is disabled in this daemon" }, 503);

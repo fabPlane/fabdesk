@@ -66,5 +66,6 @@ export type FinishItSession = z.infer<typeof FinishItSession>;
 
 export const FinishItResponse = z.object({
   session: FinishItSession.nullable(),
+  needsWork: z.boolean().optional(),
 });
 export type FinishItResponse = z.infer<typeof FinishItResponse>;

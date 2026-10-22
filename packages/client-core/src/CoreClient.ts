@@ -431,7 +431,7 @@ export class CoreClient {
     return this.request(`/threads/${encodeURIComponent(threadId)}/abort`, { method: "POST" });
   }
 
-  getFinishIt(projectId: string): Promise<{ session: FinishItSession | null }> {
+  getFinishIt(projectId: string): Promise<{ session: FinishItSession | null; needsWork?: boolean }> {
     return this.request(`/projects/${encodeURIComponent(projectId)}/finish-it`);
   }
   startFinishIt(

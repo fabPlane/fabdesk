@@ -7,7 +7,7 @@ import { Icon } from "../components/Icon";
 import { InstallHint } from "../components/InstallHint";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { useCore } from "@fabdesk/client-core";
-import { CoreHttpError, useDoctor, useSettings, useMessages, useQueueMessage, useUnqueueMessage, useFinishIt, useStartFinishIt, useStopFinishIt } from "@fabdesk/client-core";
+import { CoreHttpError, useDoctor, useSettings, useMessages, useQueueMessage, useUnqueueMessage, useFinishIt, useFinishItNeedsWork, useStartFinishIt, useStopFinishIt } from "@fabdesk/client-core";
 import { useRunsStore } from "@fabdesk/client-core";
 import { DRAFT_KEY_NEW, useUiStore } from "../stores/ui";
 import { basename, mimeFromPath, modKey } from "../util";
@@ -120,10 +120,12 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
   const pickerLabel = `${pickerAgents.find((agent) => agent.id === agentId)?.displayName ?? agentId}: ${modelLabel}`;
 
   const finishItSession = finishIt.data ?? null;
+  const finishedNeedsWork = useFinishItNeedsWork(projectId, finishItSession?.status === "completed");
+  const alreadyFinished = finishItSession?.status === "completed" && finishedNeedsWork.data !== true;
   const finishItBusy = finishItActive(finishItSession) || startFinishIt.isPending || stopFinishIt.isPending;
 
   const beginFinishIt = useCallback(async () => {
-    if (!projectId || finishItBusy) return;
+    if (!projectId || finishItBusy || alreadyFinished) return;
     setError(null);
     try {
       const result = await startFinishIt.mutateAsync({
@@ -137,7 +139,7 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [projectId, finishItBusy, startFinishIt, thread?.id, agentId, model, setActiveThread, qc]);
+  }, [projectId, finishItBusy, alreadyFinished, startFinishIt, thread?.id, agentId, model, setActiveThread, qc]);
 
   const send = useCallback(async () => {
     const typed = draft.trim();
@@ -331,8 +333,8 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
             {thread && <PermissionsMenu key={thread.id} thread={thread} />}
             {projectId && (
               <Button variant="secondary" size="sm" aria-label="Finish it"
-                title="Finish schematic, place, route and verify without step-by-step prompts"
-                onClick={() => void beginFinishIt()} disabled={finishItBusy || agentMissing} data-testid="finish-it">
+                title={alreadyFinished ? "Board already finished. Make changes to enable Finish it again." : "Finish schematic, place, route and verify without step-by-step prompts"}
+                onClick={() => void beginFinishIt()} disabled={finishItBusy || alreadyFinished || agentMissing} data-testid="finish-it">
                 <Icon name="play" width={14} height={14} />
                 <span className="fd-action-label">Finish it</span>
               </Button>

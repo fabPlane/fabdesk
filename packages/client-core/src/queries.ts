@@ -827,6 +827,16 @@ export function useFinishIt(projectId: string | null) {
   });
 }
 
+/** Recheck completed boards after project changes without rewriting session history. */
+export function useFinishItNeedsWork(projectId: string | null, enabled: boolean) {
+  const client = useCoreClient();
+  return useQuery({
+    queryKey: ["finish-it-needs-work", projectId],
+    queryFn: async () => (await client.getFinishIt(projectId!)).needsWork ?? true,
+    enabled: !!projectId && enabled,
+  });
+}
+
 export function useStartFinishIt() {
   const client = useCoreClient();
   const qc = useQueryClient();

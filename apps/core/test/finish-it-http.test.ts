@@ -161,8 +161,9 @@ async function waitForSession(
 describe("finish-it HTTP", () => {
   test("GET is null before a run; 404 for an unknown project", async () => {
     const project = await createProject("Idle Board");
-    expect((await (await api(`/projects/${project.id}/finish-it`)).json()) as { session: null }).toEqual({
+    expect((await (await api(`/projects/${project.id}/finish-it`)).json()) as { session: null; needsWork: boolean }).toEqual({
       session: null,
+      needsWork: true,
     });
     expect((await api("/projects/missing/finish-it")).status).toBe(404);
   });
@@ -236,6 +237,12 @@ describe("finish-it HTTP", () => {
       expect(session.runId).toBeNull();
     }
     expect(lastPrompt).toBeNull();
+    const finished = await (await api(`/projects/${project.id}/finish-it`)).json() as { needsWork: boolean };
+    expect(finished.needsWork).toBe(false);
+    await writeFile(join(project.path, "board.kicad_pcb"), "(kicad_pcb changed)\n");
+    const edited = await (await api(`/projects/${project.id}/finish-it`)).json() as { needsWork: boolean; session: FinishItSession };
+    expect(edited.needsWork).toBe(true);
+    expect(edited.session.status).toBe("completed"); // Preserve the historical result.
   });
 
   for (const skippedVerify of [false, true]) {

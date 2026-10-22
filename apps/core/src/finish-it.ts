@@ -86,6 +86,12 @@ export class FinishItManager {
     return this.live.get(projectId)?.session ?? this.deps.store.finishIt.latestForProject(projectId);
   }
 
+  async needsWork(projectId: string): Promise<boolean> {
+    const project = await this.deps.projects.handle(projectId);
+    if (!project) throw new ToolError("project not found", "not_found");
+    return remainingMilestones(planMilestones(await this.snapshot(project))).length > 0;
+  }
+
   async start(input: FinishItStartInput): Promise<FinishItSession> {
     if (
       this.starting.has(input.projectId) ||
