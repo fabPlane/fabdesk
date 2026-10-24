@@ -307,6 +307,9 @@ export function mimeFor(name: string): string {
       svg: "image/svg+xml",
       glb: "model/gltf-binary",
       json: "application/json",
+      gif: "image/gif",
+      mp4: "video/mp4",
+      webm: "video/webm",
     }[ext] ?? "application/octet-stream"
   );
 }

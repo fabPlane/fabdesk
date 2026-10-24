@@ -97,6 +97,7 @@ export const UI_CALLABLE_TOOLS = new Set([
   "export_stencil",
   "export_laser_stencil",
   "render_glb",
+  "render_product_video",
   "shopping_list_get",
   "shopping_list_add",
   "shopping_list_update",

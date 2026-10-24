@@ -288,6 +288,7 @@ describe("registry", () => {
       "render_pcb_svg",
       "render_view",
       "render_glb",
+      "render_product_video",
       "export_gerbers",
       "export_drill",
       "export_pos",

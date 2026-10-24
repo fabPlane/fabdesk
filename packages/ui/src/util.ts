@@ -72,12 +72,18 @@ export function mimeFromPath(path: string): string {
     kicad_pcb: "text/plain",
     kicad_sch: "text/plain",
     glb: "model/gltf-binary",
+    mp4: "video/mp4",
+    webm: "video/webm",
   };
   return table[ext] ?? "application/octet-stream";
 }
 
 export function isImagePath(path: string): boolean {
   return /\.(png|jpe?g|gif|webp|svg)$/i.test(path);
+}
+
+export function isVideoPath(path: string): boolean {
+  return /\.(mp4|webm|gif)$/i.test(path);
 }
 
 export function basename(path: string): string {

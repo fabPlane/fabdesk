@@ -13,6 +13,7 @@
   "dependencies": {
     "@fabdesk/board-art": "workspace:*",
     "@fabdesk/kicad": "workspace:*",
+    "@fabdesk/product-video": "workspace:*",
     "@fabdesk/protocol": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "hono": "4.13.7",

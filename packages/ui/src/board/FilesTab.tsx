@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ProjectImage } from "../chat/ProjectImage";
+import { ProjectVideo } from "../chat/ProjectVideo";
 import { Button, Dialog, EmptyState, IconButton, Input, LoadError, Select, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { useProject, useProjectText, useRunTool } from "@fabdesk/client-core";
@@ -137,6 +138,7 @@ function ProjectFiles({ projectId }: { projectId: string }) {
             </div>
             <div className="min-h-0 flex-1 overflow-auto p-4">
               {appearance.preview === "image" && <ProjectImage projectId={projectId} path={file.path} className="fd-file-image max-h-none max-w-full" />}
+              {appearance.preview === "video" && <ProjectVideo projectId={projectId} path={file.path} className="max-h-[75vh] max-w-full" />}
               {appearance.preview === "none" && <EmptyState title={`${appearance.label} file`} icon={<FileGlyph kind={appearance.kind} className="!h-10 !w-10" />}>
                 {appearance.kind === "model" ? "Open this file in a compatible 3D viewer or slicer." : "A preview for this format is not available here."}
                 <p className="mt-2 break-all font-mono text-xs">{file.path}</p>

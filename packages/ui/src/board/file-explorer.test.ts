@@ -37,6 +37,8 @@ test("binary CAD, drawings and unknown formats never enter the text preview", ()
   expect(fileAppearance("shape.DXF")).toEqual({ kind: "drawing", label: "DXF", preview: "none" });
   expect(fileAppearance("folder.PNG/readme.TXT").preview).toBe("text");
   expect(fileAppearance("exports/F-Paste.SVG").preview).toBe("image");
+  expect(fileAppearance("renders/orbit.mp4")).toEqual({ kind: "video", label: "MP4", preview: "video" });
+  expect(fileAppearance("renders/orbit.webm").preview).toBe("video");
   expect(fileAppearance("source/code.ts").kind).toBe("code");
   expect(fileAppearance("board.kicad_pcb").kind).toBe("board");
   expect(fileAppearance("exports/stencil/F-Paste-laser.lbrn2")).toEqual({

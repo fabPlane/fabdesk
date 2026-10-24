@@ -1,5 +1,5 @@
-export type FileKind = "board" | "schematic" | "code" | "text" | "data" | "image" | "drawing" | "model" | "archive" | "file";
-export type PreviewKind = "text" | "image" | "none";
+export type FileKind = "board" | "schematic" | "code" | "text" | "data" | "image" | "video" | "drawing" | "model" | "archive" | "file";
+export type PreviewKind = "text" | "image" | "video" | "none";
 
 /** Unknown and potentially binary formats must not be fetched as UTF-8 text. */
 export function fileAppearance(path: string): { kind: FileKind; label: string; preview: PreviewKind } {
@@ -8,6 +8,7 @@ export function fileAppearance(path: string): { kind: FileKind; label: string; p
   if (ext === "kicad_pcb") return { kind: "board", label: "PCB", preview: "text" };
   if (ext === "kicad_sch") return { kind: "schematic", label: "SCH", preview: "text" };
   if (["png", "jpg", "jpeg", "webp", "gif", "bmp", "svg", "ico", "avif"].includes(ext)) return { kind: "image", label: ext.toUpperCase(), preview: "image" };
+  if (["mp4", "webm"].includes(ext)) return { kind: "video", label: ext.toUpperCase(), preview: "video" };
   if (["stl", "step", "stp", "3mf", "glb", "gltf", "obj", "fcstd"].includes(ext)) return { kind: "model", label: ext.toUpperCase(), preview: "none" };
   if (["dxf", "dwg", "pdf"].includes(ext)) return { kind: "drawing", label: ext.toUpperCase(), preview: "none" };
   if (["zip", "gz", "7z", "rar", "tar"].includes(ext)) return { kind: "archive", label: ext.toUpperCase(), preview: "none" };

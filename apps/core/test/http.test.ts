@@ -568,7 +568,7 @@ describe("http daemon", () => {
     const a = await connect(daemon.token);
     const names = (await a.client.listTools()).tools.map((t) => t.name);
     // Core plus the circuit, verify and render toolsets: both schematic authoring paths start listed.
-    expect(names).toHaveLength(35);
+    expect(names).toHaveLength(36);
     expect(names).toEqual(
       expect.arrayContaining([
         "capability_call",
@@ -582,6 +582,7 @@ describe("http daemon", () => {
         "verify_erc",
         "release_build",
         "render_view",
+        "render_product_video",
       ]),
     );
     expect(daemon.mcp.activeCount()).toBe(1);
@@ -598,14 +599,14 @@ describe("http daemon", () => {
 
     await a.client.callTool({ name: "load_toolset", arguments: { toolset: "export" } });
     const exportNames = (await a.client.listTools()).tools.map((tool) => tool.name);
-    expect(exportNames).toHaveLength(45);
+    expect(exportNames).toHaveLength(46);
     expect(exportNames).toEqual(
       expect.arrayContaining(["silk_art", "export_stencil", "export_laser_stencil"]),
     );
 
     // A second session starts with only the default toolsets (state is per session).
     const b = await connect(daemon.token);
-    expect((await b.client.listTools()).tools.length).toBe(35);
+    expect((await b.client.listTools()).tools.length).toBe(36);
     expect(daemon.mcp.activeCount()).toBe(2);
 
     // Clients that cannot process tools/list_changed can request the complete

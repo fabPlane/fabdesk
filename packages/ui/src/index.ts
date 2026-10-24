@@ -89,6 +89,7 @@ export { Markdown, CodeBlock } from "./chat/Markdown";
 export { ToolCallCard, extractImages, resultText } from "./chat/ToolCallCard";
 export { ThinkingBlock } from "./chat/ThinkingBlock";
 export { ProjectImage } from "./chat/ProjectImage";
+export { ProjectVideo } from "./chat/ProjectVideo";
 export { SketchPad } from "./sketch/SketchPad";
 export { CommandPalette } from "./palette/CommandPalette";
 export { SettingsDialog } from "./settings/SettingsDialog";

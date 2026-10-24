@@ -1,10 +1,19 @@
-/** Render toolset: schematic/PCB images and GLB from native KiCad files. */
+/** Render toolset: schematic/PCB images, GLB, and product videos. */
 import { createHash } from "node:crypto";
 import { readFile, rm, stat } from "node:fs/promises";
 import { z } from "zod/v4";
-import { PROJECT_FILES, ensureDir } from "../fs";
+import {
+  extractSpecs,
+  renderProductVideo,
+  VIDEO_ASPECTS,
+  VIDEO_BACKGROUNDS,
+  VIDEO_FORMATS,
+  VIDEO_PRESETS,
+  VIDEO_RESOLUTIONS,
+} from "@fabdesk/product-video";
+import { PROJECT_FILES, ensureDir, exists, mtimeMs } from "../fs";
 import { ToolError, defineTool } from "../registry";
-import { fileUrl, ok, p, requireBoard, requireKicad, requireSchematic } from "./common";
+import { fileUrl, loadNetlist, ok, p, requireBoard, requireKicad, requireSchematic } from "./common";
 import { rowPoints } from "./spatial";
 
 async function fileRevision(
@@ -332,4 +341,119 @@ function highlightShape(row: Record<string, unknown>): string {
   return `<circle cx="${point.x}" cy="${point.y}" r="${radius}" />`;
 }
 
-export const renderTools = [render_schematic_svg, render_pcb_svg, render_view, render_glb];
+export const render_product_video = defineTool({
+  name: "render_product_video",
+  toolset: "render",
+  title: "Make a product video",
+  description:
+    "Render a short product video of the project's 3D scene (board GLB plus enclosure/mechanical meshes when present) for design reviews, customer updates and launch pages. Presets: orbit, explode (exploded → assembled), flip (top/bottom), push_in, review (title + orbit + flip + assemble + specs). Writes exports/product-video.mp4 / .webm / .gif plus a poster PNG. MP4 and WebM need ffmpeg on PATH (or FABDESK_FFMPEG); GIF is always produced. If renders/board.glb is missing, exports it first when a board exists.",
+  inputSchema: {
+    preset: z.enum(VIDEO_PRESETS).default("review"),
+    durationSec: z.number().min(2).max(20).default(6),
+    resolution: z.enum(VIDEO_RESOLUTIONS).default("720p"),
+    aspect: z.enum(VIDEO_ASPECTS).default("landscape"),
+    background: z.enum(VIDEO_BACKGROUNDS).default("light"),
+    captions: z.boolean().default(true),
+    formats: z.array(z.enum(VIDEO_FORMATS)).min(1).default(["mp4", "webm", "gif"]),
+    fps: z.number().int().min(8).max(30).default(24),
+    width: z.number().int().min(64).max(1920).optional().describe("Override frame width (CI / preview)"),
+    height: z.number().int().min(64).max(1920).optional().describe("Override frame height (CI / preview)"),
+  },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
+  longRunning: true,
+  handler: async (args, ctx) => {
+    const project = ctx.requireProject();
+    const boardGlb = p(project, PROJECT_FILES.renders, "board.glb");
+    const board = p(project, PROJECT_FILES.boardPcb);
+    const pcbMtime = await mtimeMs(board);
+    const glbMtime = await mtimeMs(boardGlb);
+    const glbStale = glbMtime === null || (pcbMtime !== null && pcbMtime > glbMtime);
+    if (glbStale && (await exists(board))) {
+      const cli = await requireKicad(ctx);
+      ctx.progress(0.05, "exporting glb");
+      await ensureDir(p(project, PROJECT_FILES.renders));
+      await ctx.services.kicad.exportGlb(cli, { board, output: boardGlb, signal: ctx.signal });
+    }
+    const manifest = project.manifest();
+    let components: Array<{ ref: string; value: string; footprint?: string }> = [];
+    try {
+      const netlist = await loadNetlist(project);
+      components = netlist.netlist.components.map((c) => ({
+        ref: c.ref,
+        value: c.value,
+        ...(c.footprint ? { footprint: c.footprint } : {}),
+      }));
+    } catch {
+      /* captions still work from the manifest */
+    }
+    const specs = extractSpecs({
+      name: manifest.name,
+      board: {
+        layers: manifest.board.layers,
+        ...(manifest.board.widthMm !== undefined ? { widthMm: manifest.board.widthMm } : {}),
+        ...(manifest.board.heightMm !== undefined ? { heightMm: manifest.board.heightMm } : {}),
+      },
+      components,
+    });
+    const outputDir = await ensureDir(p(project, PROJECT_FILES.exports));
+    ctx.progress(0.1, "rendering frames");
+    let result;
+    try {
+      result = await renderProductVideo({
+        projectDir: project.dir,
+        outputDir,
+        preset: args.preset,
+        durationSec: args.durationSec,
+        fps: args.fps,
+        resolution: args.resolution,
+        aspect: args.aspect,
+        background: args.background,
+        captions: args.captions,
+        formats: args.formats,
+        specs,
+        ...(args.width ? { width: args.width } : {}),
+        ...(args.height ? { height: args.height } : {}),
+        signal: ctx.signal,
+        progress: (fraction, note) => ctx.progress(0.1 + fraction * 0.9, note),
+      });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      if (message === "cancelled") throw new ToolError("cancelled", "cancelled");
+      throw new ToolError(message, "precondition");
+    }
+    const files = Object.values(result.files).filter((path): path is string => Boolean(path));
+    const urls = files.map(fileUrl);
+    const skipNote = result.skipped.length
+      ? `\nSkipped: ${result.skipped.map((s) => `${s.format} (${s.reason})`).join("; ")}`
+      : "";
+    const posterUrl = fileUrl(result.poster);
+    return ok(
+      `Wrote product video (${args.preset}, ${result.width}×${result.height}, ${result.frameCount} frames) to ${files.map((f) => f.slice(project.dir.length + 1)).join(", ") || "exports/"}.${skipNote}`,
+      {
+        ...result,
+        url: result.files.mp4 ? fileUrl(result.files.mp4) : result.files.gif ? fileUrl(result.files.gif) : posterUrl,
+        fileUrl: result.files.mp4 ? fileUrl(result.files.mp4) : result.files.gif ? fileUrl(result.files.gif) : posterUrl,
+        urls,
+      },
+      {
+        images: [
+          { path: result.poster, mime: "image/png", requiredInline: true },
+          ...(result.files.gif ? [{ path: result.files.gif, mime: "image/gif" }] : []),
+        ],
+      },
+    );
+  },
+});
+
+export const renderTools = [
+  render_schematic_svg,
+  render_pcb_svg,
+  render_view,
+  render_glb,
+  render_product_video,
+];

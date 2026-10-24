@@ -147,6 +147,14 @@
         "typescript": "5.9.2",
       },
     },
+    "packages/product-video": {
+      "name": "@fabdesk/product-video",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@types/bun": "1.2.21",
+        "typescript": "5.9.2",
+      },
+    },
     "packages/protocol": {
       "name": "@fabdesk/protocol",
       "version": "0.1.0",
@@ -187,6 +195,7 @@
       "dependencies": {
         "@fabdesk/board-art": "workspace:*",
         "@fabdesk/kicad": "workspace:*",
+        "@fabdesk/product-video": "workspace:*",
         "@fabdesk/protocol": "workspace:*",
         "@modelcontextprotocol/sdk": "^1.30.0",
         "hono": "4.13.7",
@@ -682,6 +691,8 @@
     "@fabdesk/desktop": ["@fabdesk/desktop@workspace:apps/desktop"],
 
     "@fabdesk/kicad": ["@fabdesk/kicad@workspace:packages/kicad"],
+
+    "@fabdesk/product-video": ["@fabdesk/product-video@workspace:packages/product-video"],
 
     "@fabdesk/protocol": ["@fabdesk/protocol@workspace:packages/protocol"],
 

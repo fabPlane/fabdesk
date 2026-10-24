@@ -8,7 +8,7 @@ const TOOLSET_BLURB: Record<string, string> = {
   route: "routing status/cancel/partial reroute",
   kicad: "KiCad conversion and stats",
   verify: "ERC and release gate",
-  render: "SVG/GLB renders",
+  render: "SVG/GLB renders and product videos",
   export: "fabrication outputs (gerbers, BOM, 3D-printed and laser-cut stencils)",
   sim: "SPICE",
   app: "screenshot and drive the desktop app (dev / FABDESK_AUTOMATION=1)",
