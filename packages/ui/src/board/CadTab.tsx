@@ -14,6 +14,16 @@ import { EnclosurePanel } from "./EnclosurePanel";
 export const CAD_FRAME_SANDBOX =
   "allow-scripts allow-same-origin allow-forms allow-downloads allow-modals";
 
+/** How often the kernel tree refreshes while a project is open (cad_kernels is cached server-side). */
+export const CAD_KERNEL_TREE_POLL_MS = 15_000;
+
+export function shouldShowCadKernelTree(
+  projectId: string | null | undefined,
+  tree: CadKernelTreeModel | null,
+): boolean {
+  return Boolean(projectId && tree);
+}
+
 /** The CAD runtime is optional and installed only after native download consent. */
 export function CadTab() {
   const client = useCoreClient();
@@ -49,34 +59,137 @@ export function CadTab() {
     };
   }, [session, projectId]);
 
+  const [tree, setTree] = useState<CadKernelTreeModel | null>(null);
+  useEffect(() => {
+    setTree(null);
+    if (!projectId) return;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await client.callTool("cad_kernels", { projectId });
+        const body = (res && typeof res === "object" && "result" in res ? res.result : res) as {
+          json?: CadKernelTreeModel;
+        };
+        const json = body && typeof body === "object" && "json" in body ? body.json : undefined;
+        if (!cancelled && json) setTree(json);
+      } catch {
+        if (!cancelled) setTree(null);
+      }
+    };
+    void load();
+    const timer = setInterval(() => void load(), CAD_KERNEL_TREE_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [client, projectId]);
+
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-auto">
-      <EnclosurePanel key={projectId} />
-      {!state.busy &&
-      !state.view &&
-      state.runtime?.status !== "ready" &&
-      state.runtime?.status !== "downloading" &&
-      state.runtime?.status !== "verifying" ? (
-        <details className="m-4 rounded-xl border border-border bg-panel p-4">
-          <summary className="cursor-pointer text-sm font-medium">
-            Advanced CAD editing — optional
-          </summary>
-          <p className="mt-2 text-xs leading-5 text-muted">
-            Enclosure generation and STL/STEP downloads work without the CAD bridge. Install it only
-            to edit mechanical parts in FreeCAD.
-          </p>
-          <div className="mt-4">
+    <div className="flex h-full min-h-0">
+      {shouldShowCadKernelTree(projectId, tree) ? <CadKernelTree model={tree!} /> : null}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto">
+        <EnclosurePanel key={projectId} />
+        {!state.busy &&
+        !state.view &&
+        state.runtime?.status !== "ready" &&
+        state.runtime?.status !== "downloading" &&
+        state.runtime?.status !== "verifying" ? (
+          <details className="m-4 rounded-xl border border-border bg-panel p-4">
+            <summary className="cursor-pointer text-sm font-medium">
+              Advanced CAD editing — optional
+            </summary>
+            <p className="mt-2 text-xs leading-5 text-muted">
+              Enclosure generation and STL/STEP downloads work without the CAD bridge. Install it only
+              to edit mechanical parts in FreeCAD.
+            </p>
+            <div className="mt-4">
+              <CadScreen projectSelected={Boolean(projectId)} state={state} session={session} />
+            </div>
+          </details>
+        ) : (
+          <div className="min-h-0 flex-1">
             <CadScreen projectSelected={Boolean(projectId)} state={state} session={session} />
           </div>
-        </details>
-      ) : (
-        <div className="min-h-0 flex-1">
-          <CadScreen projectSelected={Boolean(projectId)} state={state} session={session} />
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
+
+export type CadKernelTreeKernel = {
+  id: string;
+  label?: string;
+  available?: boolean;
+  experimental?: boolean;
+  detail?: string;
+};
+
+export type CadKernelTreePart = {
+  id: string;
+  name: string;
+  kernel: string;
+  reason?: string;
+  fallbacks?: Array<{ from: string; to: string; featureKind: string; error: string }>;
+  step?: string;
+};
+
+export type CadKernelTreeModel = {
+  kernels?: CadKernelTreeKernel[];
+  store?: {
+    parts?: CadKernelTreePart[];
+    assembly?: { step: string; partIds: string[] } | null;
+  };
+};
+
+export function CadKernelTree({ model }: { model: CadKernelTreeModel }) {
+  const kernels = model.kernels ?? [];
+  const parts = model.store?.parts ?? [];
+  const assembly = model.store?.assembly;
+  return (
+    <aside
+      className="flex h-full w-56 shrink-0 flex-col gap-3 overflow-auto border-r border-border bg-panel-2/40 p-3 text-xs"
+      data-testid="cad-kernel-tree"
+    >
+      <div>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-muted">Kernels</p>
+        <ul className="mt-1 space-y-1">
+          {kernels.map((k) => (
+            <li key={k.id} data-kernel={k.id}>
+              <span className="font-medium">{k.label ?? k.id}</span>
+              {k.experimental ? <span className="ml-1 text-muted">experimental</span> : null}
+              <span className="ml-1 text-muted">{k.available ? "ready" : "off"}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+      <div>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-muted">Parts</p>
+        {parts.length === 0 ? (
+          <p className="mt-1 text-muted">No kernel-built parts yet.</p>
+        ) : (
+          <ul className="mt-1 space-y-2">
+            {parts.map((p) => (
+              <li key={p.id} data-part={p.id}>
+                <div className="font-medium">{p.name}</div>
+                <div className="text-muted">
+                  kernel {p.kernel}
+                  {p.fallbacks?.length ? ` · switched ${p.fallbacks.map((f) => `${f.from}→${f.to}`).join(", ")}` : ""}
+                </div>
+                {p.reason ? <div className="text-muted">{p.reason}</div> : null}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      {assembly ? (
+        <p className="text-muted" data-testid="cad-assembly">
+          Assembly {assembly.step}
+        </p>
+      ) : null}
+    </aside>
+  );
+}
+
 
 /** Presentational surface shared by the desktop and local state previews. */
 export function CadScreen({

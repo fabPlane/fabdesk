@@ -333,6 +333,9 @@ describe("registry", () => {
       "cad_export",
       "cad_python",
       "cad_view",
+      "cad_kernels",
+      "cad_build_part",
+      "cad_combine_parts",
       "cad_enclosure",
     ]);
     for (const n of names) expect(n).toMatch(/^[a-z][a-z0-9_]*$/);

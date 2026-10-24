@@ -144,10 +144,13 @@ describe("cad toolset", () => {
       "cad_export",
       "cad_python",
       "cad_view",
+      "cad_kernels",
+      "cad_build_part",
+      "cad_combine_parts",
       "cad_enclosure",
     ]);
     expect(registry.get("cad_python")!.annotations.openWorldHint).toBe(true);
-    expect(toolsMarkdown(registry)).toContain("### cad — mechanical model in FreeCAD");
+    expect(toolsMarkdown(registry)).toContain("### cad — mechanical model (OpenCascade");
   });
 
   test("says how to get FreeCAD when the daemon has no CAD bridge", async () => {
@@ -164,7 +167,12 @@ describe("cad toolset", () => {
       properties: { Length: "40 mm" },
     });
     expect(out.text).toContain("Added Lid (Part::Box");
+    expect(out.text).toContain("OpenCascade / FreeCAD");
     expect(cad.calls).toEqual(['add Part::Box {"Length":"40 mm"}', "recompute", "save"]);
+
+    await expect(
+      invoke("cad_add_object", { type: "Part::Box", name: "Bad", kernel: "smlib" }),
+    ).rejects.toThrow(/cad_build_part/);
 
     cad.calls.length = 0;
     await invoke("cad_set_properties", {

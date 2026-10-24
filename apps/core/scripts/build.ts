@@ -104,5 +104,7 @@ for (const target of targets) {
   }
   const catalogAssets = join(coreDir, "assets/open-catalog");
   await cp(catalogAssets, join(outDir, "open-catalog"), { recursive: true });
+  const smlibDriver = join(repoRoot, "packages/tools/src/cad-kernel/smlib-driver.py");
+  await cp(smlibDriver, join(outDir, "smlib-driver.py"));
 }
 process.stderr.write("done\n");

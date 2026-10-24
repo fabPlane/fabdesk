@@ -46,6 +46,9 @@ file on disk always matches the session.
 | `cad_export`         | STEP / IGES / BREP / STL / OBJ to `exports/<name>.<ext>`                                      |
 | `cad_python`         | Python in the project's FreeCAD (sketches, pads, booleans, fillets): what the others don't do |
 | `cad_view`           | the web UI URL attached to the project's session (what the CAD tab loads)                     |
+| `cad_kernels`        | kernels (OpenCascade, experimental SMLib), capabilities, and which kernel built each part     |
+| `cad_build_part`     | kernel-agnostic feature list; picks a kernel, falls back if a feature fails, writes STEP      |
+| `cad_combine_parts`  | one project model via STEP (`cad/assembly.step`)                                              |
 | `cad_enclosure`      | printable two-piece case from the KiCad outline, holes and edge connectors. v2: outline offset + clearance, vent patterns, snap-fit clips, SVG preview, STL/STEP. Alignment check. FreeCAD optional. |
 
 Values use the FreeCAD API's JSON form: numbers in base units (mm, deg), strings with units
@@ -150,7 +153,16 @@ session through the host.
   reconnecting after the bridge lost one, error mapping, release.
 - `packages/tools/test/cad.test.ts` covers the tools over a fake `CadService`, including
   `cad_enclosure` generate / stale-check / FreeCAD mirror / v2 offset-vents-snaps-preview.
+- `packages/tools/test/cad-kernel.test.ts` covers kernel selection, fallback, STEP combination,
+  the OpenCascade adapter, and SMLib (skipped when `smlibpy` / `@classcad/smlibwasm` is missing).
 - `packages/kicad/test/board-features.test.ts` and `packages/kicad/test/enclosure.test.ts` cover
   board extraction, cutout sync after a connector move, STL/STEP emission, vents, snap-fits, and the SVG preview.
 - `apps/desktop/src/main/cad-supervisor.test.ts` covers bundle/source resolution and starts the
   bridge from `vendor/fab_cad`.
+
+## Kernel-agnostic CAD
+
+Traditional CAD locks every part to one geometry kernel. fabPlane picks a kernel per part
+(OpenCascade by default; experimental SMLib for G2 / consumer surfaces), retries another kernel
+when a feature fails, and brings the parts together as `cad/assembly.step`. See
+[cad-kernels.md](cad-kernels.md). Parasolid is not offered (commercial license).

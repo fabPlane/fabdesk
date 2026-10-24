@@ -1214,6 +1214,8 @@ export interface CoreServices {
   cloud?: CloudService;
   /** Optional: FreeCAD over the FabPlane CAD bridge (`cad` toolset). */
   cad?: CadService;
+  /** Optional: CAD kernel host (OpenCascade + experimental kernels). Tools build a default if omitted. */
+  cadKernels?: import("./cad-kernel").CadKernelHost;
   /** Install-on-demand autorouter catalog (Settings → Routers). */
   routers?: RouterRegistry;
 }

@@ -1,4 +1,5 @@
 export * from "./registry";
+export * from "./cad-kernel";
 export * from "./services";
 export * from "./fs";
 export * from "./tools/index";

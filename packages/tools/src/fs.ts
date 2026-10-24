@@ -18,6 +18,9 @@ export const PROJECT_FILES = {
   boardPro: "board.kicad_pro",
   /** The mechanical model, a FreeCAD document (`cad` toolset). */
   cadModel: "model.FCStd",
+  /** Per-part kernel records and STEP paths (`cad/kernels.json`). */
+  cadKernels: "cad/kernels.json",
+  cadAssembly: "cad/assembly.step",
   /** Parametric enclosure spec keyed to the board hash (`cad_enclosure`). */
   enclosure: "enclosure.json",
   sketches: "sketches",
