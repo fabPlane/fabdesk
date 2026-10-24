@@ -1,0 +1,613 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Fine-Tuning Report</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Report page made for screenshots: one light look on purpose, each case a slide-sized card.
+   Colour roles: blue = input, ink = model, green = judge/check, orange = output. */
+:root {
+  --paper: #eef1f0; --card: #ffffff; --ink: #14202a; --ink-2: #4c5a64; --ink-3: #7d8a93;
+  --line: #dbe2e4; --soft: #f5f7f7; --in: #2a78d6; --in-tint: #e7f0fb; --judge: #0c7a57; --judge-tint: #e2f3ec;
+  --out: #d95926; --out-tint: #fcebe2; --bad: #c43b3b; --bad-tint: #fbe8e7; --code: #f1f4f4;
+  --display: "Archivo", "Arial Narrow", system-ui, sans-serif; --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 400 16px/1.45 var(--display);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 36px 80px; }
+main { max-width: 1240px; margin: 0 auto; display: grid; gap: 36px; }
+h1, h2, h3 { margin: 0; text-wrap: balance; line-height: 1.05; }
+p { margin: 0; }
+code, .mono { font-family: var(--mono); }
+.part { display: grid; gap: 8px; padding-top: 20px; }
+.part .k { font: 600 0.78rem/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--judge); }
+.part h1 { font-size: clamp(2.2rem, 5vw, 3.4rem); font-weight: 800; font-stretch: 112%; letter-spacing: -0.02em; }
+.part p { font-size: 1.15rem; color: var(--ink-2); max-width: 46em; }
+
+/* recipe strip */
+.recipe { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+@media (max-width: 760px) { .recipe { grid-template-columns: minmax(0, 1fr); } }
+.recipe div { padding: 18px 20px; display: grid; gap: 4px; align-content: start; border-right: 1px solid var(--line); }
+.recipe div:last-child { border-right: 0; }
+.recipe b { font: 800 1.25rem/1.1 var(--display); font-stretch: 108%; }
+.recipe span { font-size: 0.92rem; color: var(--ink-2); }
+.recipe .n { font: 700 0.72rem/1 var(--mono); letter-spacing: 0.1em; color: var(--ink-3); }
+.recipe .r-in b { color: var(--in); } .recipe .r-judge b { color: var(--judge); } .recipe .r-out b { color: var(--out); }
+
+/* case card */
+.case { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 26px 28px 22px; display: grid; gap: 20px; min-width: 0; }
+.head { display: flex; justify-content: space-between; align-items: end; gap: 12px 24px; flex-wrap: wrap; }
+.head h2 { font-size: clamp(1.9rem, 4vw, 2.6rem); font-weight: 800; font-stretch: 112%; letter-spacing: -0.015em; }
+.head .tag { font: 600 0.74rem/1 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px; }
+.head .one { font-size: 1.12rem; color: var(--ink-2); max-width: 32em; }
+.status { font: 700 0.74rem/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; padding: 7px 10px; border-radius: 6px; white-space: nowrap; }
+.status.go { background: var(--judge-tint); color: var(--judge); }
+.status.ref { background: var(--soft); color: var(--ink-2); border: 1px solid var(--line); }
+
+/* flow: input → process → output */
+.flow { display: grid; grid-template-columns: minmax(0, 1fr) 44px minmax(0, 0.82fr) 44px minmax(0, 1fr); align-items: stretch; }
+@media (max-width: 900px) { .flow { grid-template-columns: minmax(0, 1fr); gap: 10px; } .arrow { transform: rotate(90deg); min-height: 28px; } }
+.arrow { display: grid; place-items: center; color: var(--ink-3); font: 700 1.6rem/1 var(--display); }
+.box { border-radius: 12px; padding: 14px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.box > .lab { font: 700 0.72rem/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; }
+.box.in { background: var(--in-tint); } .box.in > .lab { color: var(--in); }
+.box.out { background: var(--out-tint); } .box.out > .lab { color: var(--out); }
+.box.proc { background: var(--soft); border: 1px solid var(--line); }
+.box.proc > .lab { color: var(--ink-2); }
+.shot { background: #fff; border-radius: 8px; border: 1px solid var(--line); display: grid; place-items: center; overflow: hidden; min-height: 120px; }
+.shot img { display: block; max-width: 100%; height: auto; }
+.shot.dark { background: #0b0f12; border-color: #0b0f12; }
+.shot.pad { padding: 10px; }
+.bubble { background: #fff; border: 1px solid var(--line); border-radius: 14px 14px 14px 4px; padding: 14px 16px; font-size: 1.12rem; line-height: 1.4; }
+.bubble.big { font-size: 1.3rem; font-weight: 600; }
+pre { margin: 0; font: 400 0.76rem/1.55 var(--mono); background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; overflow-x: auto; white-space: pre; color: var(--ink); }
+pre .c { color: var(--ink-3); } pre .add { background: var(--judge-tint); color: var(--judge); display: block; margin: 0 -14px; padding: 0 14px; }
+pre .err { color: var(--bad); }
+.term { background: #10191f; color: #d9e6ea; border-radius: 8px; padding: 12px 14px; font: 400 0.76rem/1.55 var(--mono); white-space: pre-wrap; }
+.term .bad { color: #ff8a80; }
+.steps { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; counter-reset: s; }
+.steps li { counter-increment: s; display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 10px; align-items: start; font-size: 0.98rem; line-height: 1.35; }
+.steps li::before { content: counter(s); width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font: 700 0.76rem/1 var(--mono); background: #fff; border: 1px solid var(--line); color: var(--ink-2); }
+.steps li.j::before { background: var(--judge); border-color: var(--judge); color: #fff; }
+.steps li.j { color: var(--judge); font-weight: 650; }
+.model { background: var(--ink); color: #fff; border-radius: 10px; padding: 12px 14px; display: grid; gap: 2px; }
+.model b { font: 800 1.15rem/1.15 var(--display); font-stretch: 108%; }
+.model span { font-size: 0.84rem; opacity: 0.75; }
+.judge { background: var(--judge-tint); border: 1px solid color-mix(in srgb, var(--judge) 35%, transparent); color: var(--ink); border-radius: 10px; padding: 10px 14px; display: grid; gap: 2px; }
+.judge b { color: var(--judge); font: 700 0.72rem/1 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; }
+.judge span { font-size: 0.95rem; }
+.thumbs { display: grid; grid-template-columns: repeat(2, minmax(0, 220px)); gap: 8px; }
+.thumbs .shot { min-height: 0; padding: 4px; }
+.cap { font: 400 0.8rem/1.35 var(--display); color: var(--ink-3); }
+.pair2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+
+/* stats */
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--line); padding-top: 16px; gap: 16px; }
+@media (max-width: 760px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.stats div { display: grid; gap: 4px; align-content: start; }
+.stats small { font: 600 0.68rem/1 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); }
+.stats b { font: 800 1.3rem/1.15 var(--display); font-stretch: 106%; font-variant-numeric: tabular-nums; }
+.stats span { font-size: 0.86rem; color: var(--ink-2); line-height: 1.3; }
+.stats b.hi { color: var(--judge); }
+.src { font: 400 0.78rem/1.4 var(--display); color: var(--ink-3); }
+.src a { color: var(--in); }
+
+/* verdict */
+.verdict { display: grid; gap: 8px; }
+.vrow { display: flex; gap: 10px; align-items: flex-start; background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; font-size: 0.95rem; line-height: 1.3; }
+.vrow i { flex: 0 0 auto; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font: 700 0.78rem/1 var(--display); font-style: normal; color: #fff; }
+.vrow.ok i { background: var(--judge); } .vrow.no i { background: var(--bad); }
+.vbig { font: 800 1.6rem/1 var(--display); font-stretch: 110%; color: var(--bad); display: flex; align-items: center; gap: 10px; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.82rem; color: var(--ink-2); }
+.legend i { display: inline-block; width: 18px; height: 4px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+
+/* router results */
+.routes { display: grid; gap: 8px; }
+.route { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 10px; align-items: center; background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 6px; }
+.route .shot { min-height: 0; border: 0; }
+.route p { font-size: 0.9rem; line-height: 1.3; }
+.route p b { display: block; font-size: 1rem; }
+.route.best { border: 2px solid var(--judge); }
+.route.best p b { color: var(--judge); }
+.route .bad { color: var(--bad); font-weight: 650; }
+
+/* part picker */
+.parts { display: grid; gap: 10px; }
+.part-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; justify-items: start; background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.part-row code { font-size: 0.8rem; word-break: break-all; color: var(--out); font-weight: 600; }
+.part-row .shot { min-height: 0; border: 0; justify-self: center; }
+.part-row .shot img { height: 110px; width: auto; }
+.q { font: 600 1.05rem/1.3 var(--display); }
+
+.jump { display: flex; flex-wrap: wrap; gap: 8px; }
+.jump a { font: 600 0.85rem/1 var(--display); color: var(--ink); text-decoration: none; background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 9px 14px; }
+.jump a:hover { border-color: var(--in); color: var(--in); }
+.tasks { overflow-x: auto; background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
+.tasks table { width: 100%; min-width: 1000px; border-collapse: collapse; font-size: 0.95rem; line-height: 1.4; }
+.tasks th { text-align: left; font: 600 0.7rem/1 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); padding: 14px 16px 10px; border-bottom: 1px solid var(--line); }
+.tasks th.j { color: var(--judge); }
+.tasks td { padding: 12px 16px; border-bottom: 1px solid var(--line); vertical-align: top; color: var(--ink-2); }
+.tasks td b { color: var(--ink); }
+.tasks tr:last-child td { border-bottom: 0; }
+.tasks td:first-child a { font: 800 1.2rem/1 var(--display); color: var(--ink); text-decoration: none; }
+.tasks td.j { background: var(--judge-tint); color: var(--ink); }
+footer { font-size: 0.82rem; color: var(--ink-3); line-height: 1.5; max-width: 60em; }
+footer a { color: var(--in); }
+</style>
+</head>
+<body>
+<main>
+<nav class="jump"><a href="#part1">Part 1 · What others did</a><a href="#biome">Biome-S1</a><a href="#moduplace">ModuPlace</a><a href="#part2">Part 2 · What we can train now</a><a href="#intent">1 · Placement intent</a><a href="#judge">2 · Edit judge</a><a href="#parts">3 · Part picker</a><a href="#router">4 · Router picker</a><a href="#repair">5 · Circuit repair</a><a href="#whole">6 · Whole circuit</a></nav>
+
+<!-- ================= PART 1 ================= -->
+<section class="part" id="part1">
+  <span class="k">Part 1 · What others did</span>
+  <h1>Five models, each checked by a tool</h1>
+</section>
+
+<div class="recipe">
+  <div class="r-in"><span class="n">1</span><b>Input</b><span>A request, a 3D scan, a CAD state, or a board's parts</span></div>
+  <div><span class="n">2</span><b>Model writes something runnable</b><span>Code, the next action, or a constraint graph</span></div>
+  <div class="r-judge"><span class="n">3</span><b>A tool checks it</b><span>KiCad ERC, the CAD program, or a placer and router</span></div>
+  <div class="r-out"><span class="n">4</span><b>Output</b><span>A schematic, a 3D part, or a placed board</span></div>
+</div>
+
+<!-- SchGen -->
+<article class="case" id="schgen">
+  <div class="head">
+    <div><div class="tag">Microsoft · PCB schematics · 2026</div><h2>SchGen</h2></div>
+    <p class="one">A request in plain English → a working KiCad schematic.</p>
+  </div>
+  <div class="flow">
+    <div class="box in"><span class="lab">Input</span>
+      <div class="bubble">"I want a 3.3V AVR ISP-6 programming header exposing MISO, MOSI/SDA, SCK/SCL, RESET, VCC, and GND to program a microcontroller."</div>
+      <p class="cap">User request, paper Fig. 6b</p>
+    </div>
+    <div class="arrow">→</div>
+    <div class="box proc"><span class="lab">Process</span>
+      <div class="model"><b>GPT-oss 20B + LoRA</b><span>trained on schematics written as code</span></div>
+<pre><span class="c"># the model writes calls like these</span>
+add_schematic_symbol(..., "J9", ...)
+connect_pins("J9", "1", ...)
+add_label(..., "MISO", ...)</pre>
+      <div class="judge"><b>Check</b><span>Run the code → KiCad ERC → expert review</span></div>
+    </div>
+    <div class="arrow">→</div>
+    <div class="box out"><span class="lab">Output</span>
+      <div class="shot pad"><img src="img/schgen-eg_gen_2.png" alt="Generated KiCad schematic: AVR-ISP-6 header J9 with MISO, MOSI, SCK, RESET labels, +3.3V and GND"></div>
+      <p class="cap">Generated schematic, paper Fig. 6b</p>
+    </div>
+  </div>
+  <div class="stats">
+    <div><small>Data</small><b>1,390 designs</b><span>real KiCad projects → 8,420 samples</span></div>
+    <div><small>Model</small><b>20B, LoRA rank 8</b><span>GPT-oss 20B</span></div>
+    <div><small>Compute</small><b>21 A100-hours</b><span>one training run</span></div>
+    <div><small>Result</small><b class="hi">17% → 60.5%</b><span>circuits judged correct by experts; 82% pass ERC</span></div>
+  </div>
+  <p class="src">Source: <a href="https://arxiv.org/html/2605.30345v1">paper</a> · <a href="https://github.com/microsoft/SchGen">code</a> · <a href="https://huggingface.co/datasets/microsoft/SchGen_dataset">dataset</a> · <a href="https://huggingface.co/microsoft/SchGen">model</a>. Numbers as reported by the authors.</p>
+</article>
+
+<!-- CAD-Recode -->
+<article class="case" id="cadrecode">
+  <div class="head">
+    <div><div class="tag">Mechanical CAD · 2024</div><h2>CAD-Recode</h2></div>
+    <p class="one">A 3D scan → the CAD program that makes the part. Trained only on generated data.</p>
+  </div>
+  <div class="flow">
+    <div class="box in"><span class="lab">Input</span>
+      <div class="shot pad"><img src="img/cadrecode-input-cloud.png" alt="Point cloud of a gear" style="width:100%;max-width:320px"></div>
+      <p class="cap">Point cloud (3D scan), paper Fig. 1</p>
+    </div>
+    <div class="arrow">→</div>
+    <div class="box proc"><span class="lab">Process</span>
+      <div class="model"><b>Qwen2 1.5B</b><span>+ small point-cloud encoder</span></div>
+<pre>import cadquery as cq
+w = cq.Workplane('XY')
+w.box(50, 50, 7).union(
+  w.sketch().circle(20)
+   .circle(15, mode='s')
+   .finalize().extrude(-5))</pre>
+      <div class="judge"><b>Check</b><span>Run the code → compare the shape with the scan</span></div>
+    </div>
+    <div class="arrow">→</div>
+    <div class="box out"><span class="lab">Output</span>
+      <div class="shot pad"><img src="img/cadrecode-output-gear.png" alt="Rebuilt CAD gear" style="width:100%;max-width:320px"></div>
+      <p class="cap">Rebuilt CAD part, paper Fig. 1. Code: example from paper Fig. 2</p>
+    </div>
+  </div>
+  <div class="flow" style="grid-template-columns: minmax(0,1fr)">
+    <div class="box proc" style="grid-template-columns: 220px minmax(0,1fr); align-items:center; gap:16px">
+      <div><span class="lab" style="display:block;margin-bottom:6px">Training data</span><b style="font-size:1.25rem">1,000,000 programs, all generated</b><p class="cap" style="margin-top:4px">A script writes random valid programs and runs them. Each part comes with its answer.</p></div>
+      <div class="thumbs">
+        <div class="shot"><img src="img/cadrecode-images-renderings-train-39460.png" alt="Generated training part"></div>
+        <div class="shot"><img src="img/cadrecode-images-renderings-train-50040.png" alt="Generated training part"></div>
+      </div>
+    </div>
+  </div>
+  <div class="stats">
+    <div><small>Data</small><b>1M generated</b><span>no human labels</span></div>
+    <div><small>Model</small><b>1.5B</b><span>Qwen2 1.5B, full training</span></div>
+    <div><small>Compute</small><b>~12 h, 4 × H100</b><span>one training run</span></div>
+    <div><small>Result</small><b class="hi">10× lower error</b><span>shape error 3.43 → 0.308 vs the previous best method</span></div>
+  </div>
+  <p class="src">Source: <a href="https://arxiv.org/html/2412.14042v1">paper</a> · <a href="https://cad-recode.github.io/">project page</a> · <a href="https://github.com/filaPro/cad-recode">code</a> · <a href="https://huggingface.co/filapro/cad-recode">weights</a> (non-commercial licence). Numbers as reported by the authors.</p>
+</article>
+
+<!-- C3D -->
+<article class="case" id="c3d">
+  <div class="head">
+    <div><div class="tag">Hobby project · mechanical CAD</div><h2>C3D</h2></div>
+    <p class="one">A text prompt → a 3D part, on a laptop. One person, free GPUs.</p>
+  </div>
+  <div class="flow">
+    <div class="box in"><span class="lab">Input</span>
+      <div class="bubble big">"generate a rounded cube"</div>
+      <p class="cap">Prompt typed in the C3D terminal app</p>
+    </div>
+    <div class="arrow">→</div>
+    <div class="box proc"><span class="lab">Process</span>
+      <div class="model"><b>Gemma 3n E4B + LoRA</b><span>small model, runs locally with Ollama</span></div>
+<pre>import cadquery as cq
+cube_size = 15
+rounded_cube = cq.Workplane("XY")
+  .box(cube_size, cube_size, ...
+cq.exporters.export(rounded_cube,
+                    "output.stl")</pre>
+      <div class="judge"><b>Check</b><span>Run the code; retry on error; show the part</span></div>
+    </div>
+    <div class="arrow">→</div>
+    <div class="box out"><span class="lab">Output</span>
+      <div class="shot dark"><img src="img/c3d-output-cube-crop.png" alt="Rendered rounded cube in the C3D viewer" style="width:100%;max-width:340px"></div>
+      <p class="cap">Frame from the C3D demo video. Code retyped from the same demo; one line is cut off on screen.</p>
+    </div>
+  </div>
+  <div class="stats">
+    <div><small>Data</small><b>~48,000 pairs</b><span>text → CAD code, from a public dataset</span></div>
+    <div><small>Model</small><b>Gemma 3n E4B</b><span>LoRA, one pass over the data</span></div>
+    <div><small>Compute</small><b>Free tier</b><span>Kaggle / Colab notebooks</span></div>
+    <div><small>Result</small><b>Working demo</b><span>no accuracy measured; runs on a laptop</span></div>
+  </div>
+  <p class="src">Source: <a href="https://github.com/unxversal/c3d">code and demo videos</a> · <a href="https://joshuaokolo.com/c3d">builder's write-up</a> · <a href="https://ollama.com/joshuaokolo/C3Dv0">model on Ollama</a>.</p>
+</article>
+
+<!-- Biome-S1 -->
+<article class="case" id="biome">
+  <div class="head">
+    <div><div class="tag">Mechanical CAD · open source</div><h2>Biome-S1</h2></div>
+    <p class="one">A tiny model drives FreeCAD one click at a time. No LLM, no screenshots.</p>
+  </div>
+  <div class="flow">
+    <div class="box in"><span class="lab">Input</span>
+      <div class="shot"><img src="img/biome-state-crop.jpg" alt="FreeCAD mid-build: a sketch on a disc, with the model tree and constraints panel"></div>
+      <p class="cap">Current FreeCAD state, plus the next goal from a planner (e.g. pad, pocket, 6 holes, chamfer)</p>
+    </div>
+    <div class="arrow">→</div>
+    <div class="box proc"><span class="lab">Process</span>
+      <div class="model"><b>1.2M-weight scorer</b><span>trained from scratch; picks one of the valid actions</span></div>
+      <div class="term">MESA-S1 cmd:Sketcher_LeaveSketch
+16 options · decided in 7.3 ms</div>
+      <div class="judge"><b>Check</b><span>A scripted expert that built the task knows the right action; the finished part must match the goal</span></div>
+    </div>
+    <div class="arrow">→</div>
+    <div class="box out"><span class="lab">Output</span>
+      <div class="shot"><img src="img/biome-end-crop.jpg" alt="Finished flange part in FreeCAD"></div>
+      <p class="cap">38 actions later: the finished part, built exactly. Frames from the Mesa-S1 demo video.</p>
+    </div>
+  </div>
+  <div class="stats">
+    <div><small>Data</small><b>~391k decisions</b><span>12k scripted sessions, plus DAgger on its own mistakes</span></div>
+    <div><small>Model</small><b>1.2M weights</b><span>about 5 MB; runs on a CPU</span></div>
+    <div><small>Speed</small><b>0.32 s</b><span>model time for all 38 actions</span></div>
+    <div><small>Result</small><b class="hi">97% clean</b><span>on its own test goals; 55% when the start is messy</span></div>
+  </div>
+  <p class="src">Source: <a href="https://github.com/shhivv/biome-s1">code</a> · <a href="https://github.com/shhivv/biome-s1/blob/84fdd19c487658a59805531fa306fa40e8f72555/release/mesa-s1/assets/teaser.mp4">demo video</a> · <a href="https://huggingface.co/shhivv/taiga-s1">weights</a>. Numbers from the authors' released results.</p>
+</article>
+
+<!-- ModuPlace -->
+<article class="case" id="moduplace">
+  <div class="head">
+    <div><div class="tag">PCB placement · research paper</div><h2>ModuPlace</h2></div>
+    <p class="one">The model says which parts belong together. A normal placer does the geometry.</p>
+  </div>
+  <div class="flow">
+    <div class="box in"><span class="lab">Input</span>
+      <div class="shot pad"><img src="img/moduplace-input-parts.png" alt="All components of a board, unplaced"></div>
+      <p class="cap">The board's parts and nets, paper Fig. 2</p>
+    </div>
+    <div class="arrow">→</div>
+    <div class="box proc"><span class="lab">Process</span>
+      <div class="model"><b>Qwen2.5 7B</b><span>fine-tuned (SFT), then reinforced (GRPO)</span></div>
+      <ol class="steps"><li>Split parts into modules and sub-modules</li><li>Write how modules sit relative to each other</li><li class="j">Placer + router build it; score wirelength, violations, vias</li></ol>
+    </div>
+    <div class="arrow">→</div>
+    <div class="box out"><span class="lab">Output</span>
+      <div class="shot pad"><img src="img/moduplace-partition.png" alt="Module tree: PCB top split into control, power supply and operation modules, then sub-modules"></div>
+      <p class="cap">The model's output: a module tree, paper Fig. 2</p>
+    </div>
+  </div>
+  <div class="flow" style="grid-template-columns: minmax(0,1fr)">
+    <div class="box proc"><span class="lab">Then a normal placer does the geometry, module by module</span>
+      <div class="shot pad"><img src="img/moduplace-placement.png" alt="Hierarchical placement: modules M1 to M3, then sub-modules, until all parts are placed"></div>
+      <p class="cap">Paper Fig. 5</p>
+    </div>
+  </div>
+  <div class="stats">
+    <div><small>Data</small><b>426 expert graphs</b><span>written by engineers</span></div>
+    <div><small>Model</small><b>7B</b><span>Qwen2.5 7B, SFT then GRPO</span></div>
+    <div><small>Compute</small><b>4 × A100 80GB</b><span>as reported</span></div>
+    <div><small>Result</small><b class="hi">97 → 49 vias</b><span>vs the untuned model, average over 11 boards</span></div>
+  </div>
+  <p class="src">Source: <a href="https://yhhan.com/PDFs/ModuPlace_paper.pdf">paper</a>. No code or weights released. Numbers as reported by the authors.</p>
+</article>
+
+<!-- ================= PART 2 ================= -->
+<section class="part" id="part2">
+  <span class="k">Part 2 · What we can train now</span>
+  <h1>Six fine-tuning tasks for Fabdesk</h1>
+  <p>Same recipe. Each has an automatic judge and a way to make examples without people. Images come from our own runs.</p>
+</section>
+
+<div class="recipe recent">
+  <div><span class="n">Since 2026-10-14</span><b>14 runs</b><span>6 pass · 6 pass with issues · 2 fail</span></div>
+  <div class="r-out"><span class="n">Still live</span><b>USB pair balance</b><span>7 of 14 runs: unequal vias or length</span></div>
+  <div><span class="n">Also seen</span><b>Edits outside the request</b><span>3 of 14 runs</span></div>
+  <div class="r-judge"><span class="n">Mostly fixed</span><b>Unconnected nets</b><span>1 of 14 runs, which hit the time limit</span></div>
+</div>
+<p class="src" style="margin-top:-24px">Small sample: a direction, not proof. Earlier runs (from late September) failed more often and differently.</p>
+
+<div class="tasks">
+  <table>
+    <thead><tr><th>#</th><th>Fine-tune for</th><th>Examples come from</th><th class="j">Judge</th><th>Laptop</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td><a href="#intent">1</a></td><td><b>Placement intent:</b> netlist → "these parts group together, keep this pair short"</td><td>Public finished boards. Read the intent back out of a good layout: which caps sit by which IC, which nets were routed as pairs.</td><td class="j">Our placer and router, then the bin/accept checks (vias, skew, DRC)</td><td>4B LoRA, yes</td><td>Needs a first test</td></tr>
+      <tr><td><a href="#judge">2</a></td><td><b>Small edit judge:</b> request + before/after diff → "was the change done, was anything else touched?"</td><td>Take good edits and spoil them automatically: skip the change, move an extra part, narrow a trace. Our 125 verdicts are the real test.</td><td class="j">Agreement with bin/accept and human verdicts</td><td>4B, yes</td><td>Ready to test</td></tr>
+      <tr><td><a href="#parts">3</a></td><td><b>Part and footprint picker:</b> "10k 0603 resistor" → exact symbol, footprint, libSource</td><td>The KiCad library itself: generate many ways of asking for each part</td><td class="j">Library lookup + circuit_build</td><td>Small embedding model, easily</td><td>Smaller payoff</td></tr>
+      <tr><td><a href="#router">4</a></td><td><b>Router-strategy picker:</b> board → which router settings to use</td><td>Run every setting offline; our own router labels the winner</td><td class="j">Unconnected nets, vias, skew</td><td>Tiny model, CPU</td><td>On hold: no router handles USB pairs yet</td></tr>
+      <tr><td><a href="#repair">5</a></td><td><b>Circuit repair:</b> broken netlist + error → fix</td><td>Fault injection on designs we've converted</td><td class="j">circuit_build + intent check</td><td>4B LoRA, yes</td><td>Ready: proves the method</td></tr>
+      <tr><td><a href="#whole">6</a></td><td><b>Request → whole circuit,</b> like SchGen</td><td>Converted public designs + descriptions</td><td class="j">circuit_build, then an expert</td><td>8B is tight; big bet</td><td>Later</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<article class="case" id="intent">
+  <div class="head">
+    <div><div class="tag">Task 1 · placement</div><h2>Say what goes together</h2></div>
+    <span class="status ref">Needs a first test</span>
+  </div>
+  <div class="flow">
+    <div class="box in"><span class="lab">Input</span>
+<pre>"components": [
+  {"ref": "J1", "value": "USB_C_Power", ...},
+  {"ref": "R1", "value": "5.1k", ...},
+  {"ref": "U1", "value": "NE555D", ...},
+  {"ref": "C2", "value": "100nF", ...}, ...
+],
+"nets": [
+  CC1:    J1.A5, R1.1
+  TIMING: U1.6, U1.2, R4.2, C3.1
+  VBUS:   J1.A9, C2.1, U1.8, ...
+]</pre>
+      <p class="cap">The circuit file: parts and connections, no positions</p>
+    </div>
+    <div class="arrow">→</div>
+    <div class="box proc"><span class="lab">Process</span>
+      <div class="model"><b>Qwen3 4B + LoRA</b><span>writes placement intent, not coordinates</span></div>
+      <ol class="steps"><li>Read parts and nets</li><li>Write groups and rules</li><li>Our placer and router build the board</li><li class="j">Check: vias, pair skew, DRC (bin/accept)</li></ol>
+    </div>
+    <div class="arrow">→</div>
+    <div class="box out"><span class="lab">Output</span>
+      <div class="verdict">
+        <div class="vrow ok"><i>1</i><span><b>USB-C power:</b> J1, R1, R2, C1 together at the connector</span></div>
+        <div class="vrow ok"><i>2</i><span><b>555 timing:</b> U1 with R3, R4, C3, C4</span></div>
+        <div class="vrow ok"><i>3</i><span><b>Decoupling:</b> C2 right next to U1's power pin</span></div>
+        <div class="vrow ok"><i>4</i><span><b>LED:</b> R5 and D1 together</span></div>
+      </div>
+      <div class="shot"><img src="img/intent-555.svg" alt="555 blinker board with the four groups outlined"></div>
+      <p class="cap">The same intent read back from a finished board (our 555 run). For training, every good public board gives one of these labels for free.</p>
+    </div>
+  </div>
+  <div class="stats">
+    <div><small>Examples</small><b>Finished boards</b><span>read groups and pairs back out of good public layouts</span></div>
+    <div><small>Check</small><b class="hi">Placer + router</b><span>then bin/accept: vias, skew, DRC</span></div>
+    <div><small>Laptop</small><b>4B LoRA</b><span>fits in 12 GB</span></div>
+    <div><small>Why</small><b>Biggest upside</b><span>targets USB pair balance, still live in 7 of 14 recent runs. Unproven: do layouts reveal intent reliably?</span></div>
+  </div>
+  <p class="src">Precedent: ModuPlace (Qwen2.5 7B writes constraint graphs; a normal placer does the geometry; vias 97 → 49). <a href="https://yhhan.com/PDFs/ModuPlace_paper.pdf">paper</a></p>
+</article>
+
+<article class="case" id="judge">
+  <div class="head">
+    <div><div class="tag">Task 2 · board edits</div><h2>Judge an edit</h2></div>
+    <span class="status go">Ready to test</span>
+  </div>
+  <div class="flow">
+    <div class="box in"><span class="lab">Input</span>
+      <div class="bubble">"Swap the positions of the two USB-A ports, J5 and J8."</div>
+      <div class="shot"><img src="img/swap-seed.svg" alt="Board before the edit, USB pairs highlighted"></div>
+      <p class="cap">Request + board before the edit</p>
+      <div class="shot"><img src="img/swap-final-1015.svg" alt="Board after the agent's edit, USB pairs highlighted, R5 labelled"></div>
+      <p class="cap">Board after the agent's edit (recent run, 2026-10-15)</p>
+      <div class="legend"><span><i style="background:#3987e5"></i>USB_A pair</span><span><i style="background:#eb6834"></i>USB_A2 pair</span><span>dashed = bottom layer, rings = vias</span></div>
+    </div>
+    <div class="arrow">→</div>
+    <div class="box proc"><span class="lab">Process</span>
+      <div class="model"><b>Qwen3 4B judge</b><span>reads the request + a before/after summary</span></div>
+      <ol class="steps"><li>Was the asked-for change made?</li><li>Did anything else get worse or move?</li><li class="j">Graded against bin/accept and human verdicts</li></ol>
+    </div>
+    <div class="arrow">→</div>
+    <div class="box out"><span class="lab">Output</span>
+      <div class="vbig" style="color:var(--out)">! Pass with issues</div>
+      <div class="verdict">
+        <div class="vrow ok"><i>✓</i><span>Ports swapped exactly (J5, J8 offset 0.0 mm)</span></div>
+        <div class="vrow ok"><i>✓</i><span>0 DRC errors, 0 unconnected nets</span></div>
+        <div class="vrow no"><i>✕</i><span>R5 also moved: outside the request</span></div>
+        <div class="vrow no"><i>✕</i><span>USB_A2 pair unequal vias, 5 vs 3</span></div>
+      </div>
+      <p class="cap">Verdict from bin/accept for this run: the job was done cleanly, with two things a reviewer must catch</p>
+    </div>
+  </div>
+  <div class="stats">
+    <div><small>Examples now</small><b>125 judged runs</b><span>pass / with issues / fail</span></div>
+    <div><small>More examples</small><b>Spoil good edits</b><span>skip the change, move a part, narrow a trace</span></div>
+    <div><small>Check</small><b class="hi">Agreement</b><span>with bin/accept and human verdicts</span></div>
+    <div><small>Why</small><b>Live problems</b><span>recent issues are board edits like this: pair balance (7 of 14), extra edits (3 of 14)</span></div>
+  </div>
+</article>
+
+<article class="case" id="parts">
+  <div class="head">
+    <div><div class="tag">Task 3 · parts</div><h2>Pick the exact part</h2></div>
+    <span class="status ref">Smaller payoff</span>
+  </div>
+  <div class="flow">
+    <div class="box in"><span class="lab">Input</span>
+      <div class="bubble big">"555 timer, 8-pin surface mount"</div>
+      <div class="bubble big">"10k resistor, 0805"</div>
+      <p class="cap">What the agent asks for</p>
+    </div>
+    <div class="arrow">→</div>
+    <div class="box proc"><span class="lab">Process</span>
+      <div class="model"><b>Small embedding model</b><span>fine-tuned to match descriptions to library parts</span></div>
+      <ol class="steps"><li>Search the KiCad library</li><li>Return symbol + footprint IDs</li><li class="j">Check: the IDs exist, and circuit_build passes</li></ol>
+    </div>
+    <div class="arrow">→</div>
+    <div class="box out"><span class="lab">Output</span>
+      <div class="parts">
+        <div class="part-row"><div><code>Package_SO:SOIC-8_3.9x4.9mm_P1.27mm</code></div><div class="shot"><img src="img/fp-SOIC-8_3.9x4.9mm_P1.27mm.svg" alt="SOIC-8 footprint"></div></div>
+        <div class="part-row"><div><code>Resistor_SMD:R_0805_2012Metric</code></div><div class="shot"><img src="img/fp-R_0805_2012Metric.svg" alt="0805 resistor footprint"></div></div>
+      </div>
+      <p class="cap">Footprints drawn from the KiCad library</p>
+    </div>
+  </div>
+  <div class="stats">
+    <div><small>Examples</small><b>The library itself</b><span>thousands of parts, with generated descriptions</span></div>
+    <div><small>Model</small><b>Tiny</b><span>fits easily on the laptop</span></div>
+    <div><small>Check</small><b class="hi">Library lookup</b><span>plus circuit_build</span></div>
+    <div><small>Why not first</small><b>Rare today</b><span>4 of 28 real fixes involved symbol errors</span></div>
+  </div>
+</article>
+
+<article class="case" id="router">
+  <div class="head">
+    <div><div class="tag">Task 4 · routing</div><h2>Pick the router setting</h2></div>
+    <span class="status ref">On hold</span>
+  </div>
+  <div class="flow">
+    <div class="box in"><span class="lab">Input</span>
+      <div class="shot pad"><img src="img/router-input.svg" alt="Unrouted open-source board"></div>
+      <p class="cap">Unrouted board (open-source Paperino shield, 32 connections to route)</p>
+    </div>
+    <div class="arrow">→</div>
+    <div class="box proc"><span class="lab">Process</span>
+      <div class="model"><b>Tiny model</b><span>board features → which setting to use. Runs on a CPU.</span></div>
+      <ol class="steps"><li>Offline: route every board with every setting</li><li>Label the winner for each board</li><li class="j">Check: unconnected nets, DRC errors, vias</li></ol>
+    </div>
+    <div class="arrow">→</div>
+    <div class="box out"><span class="lab">Output</span>
+      <div class="routes">
+        <div class="route"><div class="shot"><img src="img/router-a.svg" alt="Routing result A"></div><p><b>Setting A</b><span class="bad">10 DRC errors</span></p></div>
+        <div class="route"><div class="shot"><img src="img/router-b.svg" alt="Routing result B"></div><p><b>Setting B</b><span class="bad">6 nets unconnected</span></p></div>
+        <div class="route best"><div class="shot"><img src="img/router-c.svg" alt="Routing result C"></div><p><b>Setting C · pick this</b>clean: 0 open, 0 errors</p></div>
+      </div>
+      <p class="cap">Same board, three real results from our router comparison. The best one changes from board to board.</p>
+    </div>
+  </div>
+  <div class="stats">
+    <div><small>Examples now</small><b>26 boards</b><span>× 6 routers, from the router comparison</span></div>
+    <div><small>More examples</small><b>Compute only</b><span>our own router makes every label</span></div>
+    <div><small>Check</small><b class="hi">Router result</b><span>unconnected, DRC, vias</span></div>
+    <div><small>Why on hold</small><b>Can't fix USB pairs</b><span>no router routed them in the 2026-10-15 test (0 of 24); unconnected nets now rare (1 of 14)</span></div>
+  </div>
+</article>
+
+<article class="case" id="repair">
+  <div class="head">
+    <div><div class="tag">Task 5 · circuit file</div><h2>Fix a broken circuit</h2></div>
+    <span class="status go">Ready to test</span>
+  </div>
+  <div class="flow">
+    <div class="box in"><span class="lab">Input</span>
+<pre>"components": [ ...
+  {"ref": "R5", "value": "330", ...},
+  {"ref": "D1", "value": "LED", ...}
+],
+"nets": [ {"name": "VBUS", "nodes": [...]},
+          {"name": "GND",  "nodes": [...]} ]</pre>
+<div class="term"><span class="bad">Build FAILED</span> [erc_errors]: 2 ERC errors:
+Input Power pin not driven by any
+Output Power pins</div>
+      <p class="cap">Broken file + build error, real run (555 blinker, 2026-10-01)</p>
+    </div>
+    <div class="arrow">→</div>
+    <div class="box proc"><span class="lab">Process</span>
+      <div class="model"><b>Qwen3 4B + LoRA</b><span>small model, on the laptop</span></div>
+      <ol class="steps"><li>Read the file and the error</li><li>Write the fixed file</li><li class="j">circuit_build must pass, and the intended parts and nets must survive</li></ol>
+    </div>
+    <div class="arrow">→</div>
+    <div class="box out"><span class="lab">Output</span>
+<pre><span class="add">+ {"ref": "#FLG01", "value": "PWR_FLAG", ...}</span><span class="add">+ {"ref": "#FLG02", "value": "PWR_FLAG", ...}</span>  VBUS: ..., <span class="add" style="display:inline;margin:0;padding:0">#FLG01 pin 1</span>
+  GND:  ..., <span class="add" style="display:inline;margin:0;padding:0">#FLG02 pin 1</span></pre>
+      <div class="shot pad"><img src="img/repair-flags.png" alt="The two added PWR_FLAG symbols on VBUS and GND in the generated schematic"></div>
+      <div class="pair2">
+        <div class="shot pad"><img src="img/repair-schematic.png" alt="Full fixed 555 blinker schematic"></div>
+        <div class="shot"><img src="img/repair-board.png" alt="Built 555 blinker board"></div>
+      </div>
+      <p class="cap">The fix in the generated schematic (top), and the full schematic and board that now build. Same run.</p>
+    </div>
+  </div>
+  <div class="stats">
+    <div><small>Examples now</small><b>28 real pairs</b><span>broken → fixed, from 2 circuits</span></div>
+    <div><small>More examples</small><b>Generator</b><span>break good circuits on purpose; the original is the answer</span></div>
+    <div><small>Check</small><b class="hi">circuit_build</b><span>exact pass / fail, plus an intent check</span></div>
+    <div><small>Why</small><b>Prove the method</b><span>77% of build calls fail, though agents usually recover</span></div>
+  </div>
+</article>
+
+<article class="case" id="whole">
+  <div class="head">
+    <div><div class="tag">Task 6 · whole circuit</div><h2>Request → whole circuit</h2></div>
+    <span class="status ref">Big bet</span>
+  </div>
+  <div class="flow">
+    <div class="box in"><span class="lab">Input</span>
+      <div class="bubble big">"Build a USB-C-powered 555 timer LED blinker that flashes about once per second."</div>
+      <p class="cap">Real task prompt from our sandbox runs</p>
+    </div>
+    <div class="arrow">→</div>
+    <div class="box proc"><span class="lab">Process</span>
+      <div class="model"><b>Qwen3 8B + LoRA</b><span>tight on 12 GB; SchGen used 20B</span></div>
+      <ol class="steps"><li>Pick parts and values (R4 68k, C3 10µF ≈ 1 Hz)</li><li>Write circuit.netlist.json</li><li class="j">circuit_build passes, then an expert checks it works</li></ol>
+    </div>
+    <div class="arrow">→</div>
+    <div class="box out"><span class="lab">Output</span>
+<pre>{"ref": "U1", "value": "NE555D", ...},
+{"ref": "R4", "value": "68k", ...},
+{"ref": "C3", "value": "10uF", ...}, ...
+TIMING: U1.6, U1.2, R4.2, C3.1</pre>
+      <div class="pair2">
+        <div class="shot pad"><img src="img/repair-schematic.png" alt="Generated 555 blinker schematic"></div>
+        <div class="shot"><img src="img/repair-board.png" alt="Built 555 blinker board"></div>
+      </div>
+      <p class="cap">What a passing answer looks like: a strong agent's result for this prompt (2026-10-01)</p>
+    </div>
+  </div>
+  <div class="stats">
+    <div><small>Examples</small><b>Converted designs</b><span>public designs (e.g. SchGen's 1,390) + descriptions; licence to check</span></div>
+    <div><small>Check</small><b class="hi">circuit_build</b><span>then an expert, as SchGen did</span></div>
+    <div><small>Laptop</small><b>8B is tight</b><span>longer examples than the other tasks</span></div>
+    <div><small>Why last</small><b>Hardest</b><span>SchGen reached 60.5% correct with 1,390 designs; we have 2</span></div>
+  </div>
+</article>
+
+<footer>
+  Fabdesk evals, 2026-10-19. Part 1 numbers are the authors' own reports; images are their published figures and frames from their demo videos. Part 2 images are from local sandbox runs (555 blinker <code>20261001T100945Z-d1001-555-opus55</code>; USB swap <code>20261015T064648Z-mu1015-io-swap-usba-fabdesk-r2</code>), the 2026-10-09 router comparison, and the KiCad library. Part 2 tasks are proposed; none has been trained. Task 1 and 6 images reuse the same 555 run.
+</footer>
+
+</main>
+</body>
+</html>
