@@ -7,7 +7,7 @@ import { Icon } from "../components/Icon";
 import { InstallHint } from "../components/InstallHint";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { useCore } from "@fabdesk/client-core";
-import { CoreHttpError, useDoctor, useSettings, useMessages, useQueueMessage, useUnqueueMessage, useFinishIt, useFinishItNeedsWork, useStartFinishIt, useStopFinishIt } from "@fabdesk/client-core";
+import { CoreHttpError, formatVoiceShortcut, parseVoiceShortcut, useDoctor, useSettings, useSpeechStatus, useMessages, useQueueMessage, useUnqueueMessage, useFinishIt, useFinishItNeedsWork, useStartFinishIt, useStopFinishIt } from "@fabdesk/client-core";
 import { useRunsStore } from "@fabdesk/client-core";
 import { DRAFT_KEY_NEW, useUiStore } from "../stores/ui";
 import { basename, mimeFromPath, modKey } from "../util";
@@ -16,6 +16,8 @@ import { AgentModelMenu } from "./AgentModelMenu";
 import { PermissionsMenu } from "./PermissionsMenu";
 import { expandSlashCommand, isFinishItCommand, slashSuggestions } from "@fabdesk/client-core";
 import { applyComposerTextareaHeight } from "./composer-autosize";
+import { useVoiceInput } from "./voice/useVoiceInput";
+import { MicButton, VoiceBar } from "./voice/VoiceBar";
 import { FinishItPanel } from "./FinishItPanel";
 import { finishItActive } from "./finish-it-view";
 
@@ -29,11 +31,13 @@ export const composerHandlers: {
    * click. Returns false when the agent is not one the composer offers.
    */
   setAgent: ((agentId: string, model?: string | null) => boolean) | null;
+  voiceToggle: (() => void) | null;
 } = {
   send: null,
   abort: null,
   finishIt: null,
   setAgent: null,
+  voiceToggle: null,
 };
 
 export interface ComposerProps {
@@ -72,6 +76,17 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
   const unqueueMessage = useUnqueueMessage();
   const doctor = useDoctor();
   const settings = useSettings();
+  const speech = useSpeechStatus();
+  const voice = useVoiceInput({
+    client,
+    voice: settings.data?.voice,
+    status: speech.data,
+    onTranscript: (text) => {
+      const current = useUiStore.getState().drafts[draftKey] ?? "";
+      const next = current.trim() ? `${current.trim()} ${text}` : text;
+      setDraft(draftKey, next);
+    },
+  });
   const finishIt = useFinishIt(projectId);
   const startFinishIt = useStartFinishIt();
   const stopFinishIt = useStopFinishIt();
@@ -169,6 +184,7 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
       };
       // The queue endpoint starts immediately when idle and queues if a run began meanwhile.
       await queueMessage.mutateAsync({ threadId, input });
+      voice.reset();
       setDraft(draftKey, "");
       clearAttachments(draftKey);
       if (draftKey === DRAFT_KEY_NEW) setDraft(threadId, "");
@@ -185,7 +201,7 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
     } finally {
       setSending(false);
     }
-  }, [draft, sending, thread, onCreateThread, agentId, model, pending, setDraft, draftKey, clearAttachments, addAttachment, qc, queueMessage, beginFinishIt]);
+  }, [draft, sending, thread, onCreateThread, agentId, model, pending, setDraft, draftKey, clearAttachments, addAttachment, qc, queueMessage, voice.reset, beginFinishIt]);
 
   const stop = useCallback(async () => {
     if (!run || stopping) return;
@@ -199,6 +215,7 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
   useEffect(() => {
     composerHandlers.send = () => void send();
     composerHandlers.abort = run ? () => void stop() : null;
+    composerHandlers.voiceToggle = () => voice.toggle();
     composerHandlers.finishIt = () => void beginFinishIt();
     composerHandlers.setAgent = (id, m) => {
       const offered = doctor.data?.agents ?? FALLBACK_AGENTS;
@@ -213,8 +230,9 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
       composerHandlers.abort = null;
       composerHandlers.finishIt = null;
       composerHandlers.setAgent = null;
+      composerHandlers.voiceToggle = null;
     };
-  }, [send, stop, run, doctor.data, settings.data, beginFinishIt]);
+  }, [send, stop, run, doctor.data, settings.data, voice.toggle, beginFinishIt]);
 
   const showStop = !!run && !draft.trim() && !sending;
 
@@ -301,6 +319,13 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
           </div>
         )}
         <div className="fd-composer rounded-xl border border-border bg-panel transition-colors focus-within:border-accent">
+          <VoiceBar
+            state={voice.state}
+            shortcut={settings.data?.voice.pushToTalkShortcut ?? "Alt+Space"}
+            platform={host.platform}
+            onCancel={voice.cancel}
+            onOpenSettings={() => setSettingsOpen(true, "voice")}
+          />
           <Textarea
             ref={textareaRef}
             value={draft}
@@ -309,6 +334,12 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
             rows={1}
             onChange={(e) => setDraft(draftKey, e.target.value)}
             onKeyDown={(e) => {
+              if (e.key === "Escape" && voice.state.phase !== "idle") {
+                e.preventDefault();
+                voice.cancel();
+                return;
+              }
+              if (voice.state.phase === "recording" || voice.state.phase === "transcribing") return;
               if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault();
                 void send();
@@ -330,6 +361,15 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
             >
               <Icon name="compose" width={16} height={16} /><span className="fd-action-label">Sketch</span>
             </Button>
+            <MicButton
+              active={voice.state.phase === "recording"}
+              disabled={sending}
+              mode={settings.data?.voice.pushToTalkMode ?? "hold"}
+              title={`Speak (${formatVoiceShortcut(parseVoiceShortcut(settings.data?.voice.pushToTalkShortcut), host.platform)})`}
+              onHoldStart={() => void voice.holdStart()}
+              onHoldEnd={voice.holdEnd}
+              onToggle={voice.toggle}
+            />
             {thread && <PermissionsMenu key={thread.id} thread={thread} />}
             {projectId && (
               <Button variant="secondary" size="sm" aria-label="Finish it"

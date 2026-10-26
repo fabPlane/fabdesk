@@ -247,6 +247,21 @@ describe("pairing url", () => {
     expect(Settings.safeParse({ remote: { preferredEndpointKind: "wifi" } }).success).toBe(false);
   });
 
+  test("Settings.voice defaults and rejects an unknown provider", () => {
+    expect(Settings.parse({}).voice).toEqual({
+      provider: "auto",
+      language: "en",
+      pushToTalkMode: "hold",
+      pushToTalkShortcut: "Alt+Space",
+    });
+    expect(Settings.parse({ voice: { language: "de", provider: "cloud" } }).voice).toMatchObject({
+      provider: "cloud",
+      language: "de",
+      pushToTalkMode: "hold",
+    });
+    expect(Settings.safeParse({ voice: { provider: "whisper" } }).success).toBe(false);
+  });
+
   test("an https endpoint adds a parallel s= list and is tried first, on 443 without a port", () => {
     const endpoints = orderEndpoints(
       [

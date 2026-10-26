@@ -13,6 +13,13 @@ export interface FilePickOptions {
 /** What the surrounding shell (Electron preload, a web host, or the mobile app) provides to the UI. */
 export interface HostAdapter {
   platform: string;
+  /** Optional offline system recognizer provided by the desktop host. */
+  nativeSpeech?: {
+    status: (language: string) => Promise<{ available: boolean; message: string; needsDownload?: boolean }>;
+    prepare: (language: string, id: string) => Promise<{ available: boolean; message: string; needsDownload?: boolean }>;
+    transcribe: (request: { id: string; audio: ArrayBuffer; language: string }) => Promise<{ text: string }>;
+    cancel: (id: string) => Promise<void>;
+  };
   /** Dev-profile build (unpackaged, or FABDESK_DEV_PROFILE=1): staging/local sign-in is shown up front. */
   devBuild?: boolean;
   openExternal: (url: string) => Promise<void> | void;

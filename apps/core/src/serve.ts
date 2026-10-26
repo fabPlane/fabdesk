@@ -121,6 +121,8 @@ export type ServeOptions = {
   relayEnv?: NodeJS.ProcessEnv;
   /** Tests: capture the relay discovery probe (`GET <api>/v1/config`). */
   relayDiscoveryFetch?: typeof fetch;
+  /** Tests: inject a speech service with a fake provider. */
+  speech?: import("./speech").SpeechService;
 };
 
 export type Daemon = {
@@ -595,6 +597,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       }
       lastArchiveConsent = consent;
     },
+    ...(opts.speech ? { speech: opts.speech } : {}),
   };
   const app = createApp({ ...appDeps, listener: "local" });
   // A browser at fabplane.com pairs against the remote listener directly (docs/mobile.md, hosted

@@ -15,3 +15,4 @@ export * from "./github";
 export * from "./cad-runtime";
 export * from "./finish-it";
 export * from "./routers";
+export * from "./speech";

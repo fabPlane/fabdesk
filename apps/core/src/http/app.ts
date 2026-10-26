@@ -17,6 +17,7 @@ import {
   SendMessage,
   RouterCatalogId,
   Settings,
+  SpeechCloudSecret,
   StartFinishIt,
   StartOrder,
   TailscaleServeRequest,
@@ -74,6 +75,7 @@ import { parsePublicGitHubUrl } from "../github-import";
 import { applyErrorReporting, captureCoreException } from "../sentry";
 import { parseTopics, sseResponse } from "./sse";
 import { cloudRoutes } from "./cloud-routes";
+import { createSpeechService, SpeechProviderError, type SpeechService } from "../speech";
 
 export type AppDeps = {
   /** The relay link, for `/v1/remote` and `/health`; optional so tests without a relay still build an app. */
@@ -112,6 +114,8 @@ export type AppDeps = {
   onSettingsChanged?: (settings: Settings) => void;
   /** Whether undecided installations must answer the first-install privacy screen. */
   privacy?: () => PrivacyStatus;
+  /** Speak-to-the-agent transcription. Tests inject a fake provider. */
+  speech?: SpeechService;
 };
 
 export type Env = { Variables: { token?: string; principalSubject?: string } };
@@ -139,6 +143,8 @@ const MIME: Record<string, string> = {
 
 export function createApp(deps: AppDeps): Hono<Env> {
   const app = new Hono<Env>();
+  const speech =
+    deps.speech ?? createSpeechService({ settings: deps.store.settings, home: deps.config.home });
 
   app.onError((err, c) => {
     if (err instanceof InvalidParentDirectory)
@@ -1011,6 +1017,17 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const body = Object.fromEntries(
       Object.entries(parsed).filter(([k]) => sent.has(k)),
     ) as typeof parsed;
+    if (body.voice && typeof raw === "object" && raw !== null) {
+      const sentVoice = (raw as { voice?: unknown }).voice;
+      const sentVoiceKeys =
+        sentVoice && typeof sentVoice === "object" && sentVoice !== null
+          ? new Set(Object.keys(sentVoice))
+          : new Set<string>();
+      const incoming = Object.fromEntries(
+        Object.entries(body.voice).filter(([k]) => sentVoiceKeys.has(k)),
+      );
+      body.voice = { ...deps.store.settings.get().voice, ...incoming };
+    }
     const next = deps.store.settings.patch(body);
     await applyErrorReporting(next.errorReporting);
     // Remote access is a runtime toggle: the listener starts, stops or rebinds without a restart.
@@ -1169,6 +1186,78 @@ export function createApp(deps: AppDeps): Hono<Env> {
     deps.devices.clearPush(device.id);
     logger.info("device push cleared", { id: device.id });
     return c.json({ ok: true });
+  });
+
+  /* ---------- speak-to-the-agent (desktop composer + paired phone) ---------- */
+  const daemonOnly = (c: Context<Env>) => {
+    if (deps.listener !== "local") return c.json({ error: "not found" }, 404);
+    if (deps.tokens.lookup(c.get("token"))?.kind !== "daemon") {
+      return c.json({ error: "desktop token required", code: "forbidden" }, 403);
+    }
+    return null;
+  };
+
+  app.get("/v1/speech/status", async (c) => c.json(await speech.status()));
+  app.post("/v1/speech/transcribe", async (c) => {
+    const ct = c.req.header("content-type") ?? "";
+    if (!ct.startsWith("multipart/form-data")) {
+      return c.json({ error: "multipart field `file` required", code: "invalid_args" }, 400);
+    }
+    const form = await c.req.formData();
+    const file = form.get("file");
+    if (!(file instanceof File)) {
+      return c.json({ error: "multipart field `file` required", code: "invalid_args" }, 400);
+    }
+    const language = typeof form.get("language") === "string" ? String(form.get("language")) : undefined;
+    const providerRaw = typeof form.get("provider") === "string" ? String(form.get("provider")) : undefined;
+    const provider =
+      providerRaw === "auto" ||
+      providerRaw === "on_device" ||
+      providerRaw === "cloud" ||
+      providerRaw === "local"
+        ? providerRaw
+        : undefined;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    try {
+      const result = await speech.transcribe({
+        audio: {
+          bytes,
+          mime: file.type || "application/octet-stream",
+          ...(file.name ? { filename: file.name } : {}),
+        },
+        ...(language ? { language } : {}),
+        ...(provider ? { provider } : {}),
+      });
+      return c.json(result);
+    } catch (e) {
+      if (e instanceof SpeechProviderError) {
+        const status = e.code === "unavailable" ? 503 : e.code === "invalid_audio" ? 400 : e.code === "unauthorized" ? 401 : 502;
+        return c.json({ error: e.message, code: e.code }, status);
+      }
+      throw e;
+    }
+  });
+  app.put("/v1/speech/cloud", async (c) => {
+    const denied = daemonOnly(c);
+    if (denied) return denied;
+    const body = SpeechCloudSecret.parse(await c.req.json());
+    speech.setCloud({
+      apiKey: body.apiKey,
+      baseUrl: body.baseUrl?.trim() ? body.baseUrl.trim() : null,
+    });
+    return c.json(await speech.status());
+  });
+  app.delete("/v1/speech/cloud", async (c) => {
+    const denied = daemonOnly(c);
+    if (denied) return denied;
+    speech.setCloud(null);
+    return c.json(await speech.status());
+  });
+  app.post("/v1/speech/local/install", async (c) => {
+    const denied = daemonOnly(c);
+    if (denied) return denied;
+    const installed = await speech.installLocal();
+    return c.json({ ...installed, status: await speech.status() });
   });
 
   app.post("/shutdown", (c) => {

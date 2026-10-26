@@ -40,6 +40,8 @@ import type {
   RouteFrameLine,
   RouteResult,
   Settings,
+  SpeechStatus,
+  SpeechTranscript,
   Run,
   Thread,
   ToolManifestEntry,
@@ -551,6 +553,42 @@ export class CoreClient {
   }
   uninstallRouter(id: RouterCatalogId): Promise<RouterSnapshot> {
     return this.request(`/routers/${encodeURIComponent(id)}`, { method: "DELETE" });
+  }
+  speechStatus(): Promise<SpeechStatus> {
+    return this.request("/v1/speech/status");
+  }
+  async transcribeSpeech(input: {
+    audio: Blob;
+    filename?: string;
+    language?: string;
+    provider?: Settings["voice"]["provider"];
+  }): Promise<SpeechTranscript> {
+    const form = new FormData();
+    form.append("file", input.audio, input.filename ?? "speech.webm");
+    if (input.language) form.append("language", input.language);
+    if (input.provider) form.append("provider", input.provider);
+    const res = await this.fetchImpl(`${this.baseUrl}/v1/speech/transcribe`, {
+      method: "POST",
+      headers: this.headers(),
+      body: form,
+    });
+    if (!res.ok) {
+      throw new CoreHttpError(
+        res.status,
+        "/v1/speech/transcribe",
+        await res.text().catch(() => res.statusText),
+      );
+    }
+    return (await res.json()) as SpeechTranscript;
+  }
+  setSpeechCloud(input: { apiKey: string; baseUrl?: string | null }): Promise<SpeechStatus> {
+    return this.request("/v1/speech/cloud", { method: "PUT", json: input });
+  }
+  clearSpeechCloud(): Promise<SpeechStatus> {
+    return this.request("/v1/speech/cloud", { method: "DELETE" });
+  }
+  installLocalSpeech(): Promise<{ modelPath: string; status: SpeechStatus }> {
+    return this.request("/v1/speech/local/install", { method: "POST" });
   }
   getSettings(): Promise<Settings> {
     return this.request("/settings");

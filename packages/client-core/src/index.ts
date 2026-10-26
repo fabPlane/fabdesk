@@ -141,3 +141,20 @@ export {
   parseLaserNumber,
 } from "./laser-stencil-presets";
 export type { LaserStencilPresetId, LaserStencilUiPreset } from "./laser-stencil-presets";
+
+export {
+  reduceVoice,
+  voiceBusy,
+  voiceDraft,
+  DEFAULT_VOICE_STATE,
+  VOICE_PHASES,
+} from "./speech/composer-state";
+export type { VoiceEvent, VoicePhase, VoiceState, VoiceMode, VoiceErrorKind } from "./speech/composer-state";
+export {
+  parseVoiceShortcut,
+  formatVoiceShortcut,
+  matchVoiceShortcut,
+  releasesVoiceShortcut,
+  DEFAULT_VOICE_SHORTCUT,
+} from "./speech/shortcut";
+export type { VoiceShortcut } from "./speech/shortcut";

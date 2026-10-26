@@ -56,6 +56,7 @@ import { pendingCount } from "@/lib/pending-requests";
 import { composerAction, queuedMessages } from "@/lib/queued-messages";
 import { useKeyboardShortcut } from "@/layout/keyboard";
 import { useTheme } from "@/theme";
+import { HoldToTalk } from "@/components/HoldToTalk";
 
 /**
  * Reached by deep link and notification tap as well as from the tabs, so the gate lives here:
@@ -157,11 +158,15 @@ function ThreadScreenBody() {
   const queued = useMemo(() => queuedMessages(messages.data), [messages.data]);
   const action = composerAction({ running, hasContent, sending, slash: slash.state });
 
-  const send = async () => {
-    if (!canSend || !id || slash.active) return;
-    const text = draft;
+  const sendContent = async (raw: string) => {
+    if (!id || slash.active) return;
+    const text = raw;
     const sent = attachments.pending;
-    const body = { content, attachments: toMessageAttachments(sent) };
+    const body = {
+      content: messageContent(raw, sent) ?? raw.trim(),
+      attachments: toMessageAttachments(sent),
+    };
+    if (!body.content || !attachmentsSettled(sent)) return;
     setSending(true);
     setDraft("");
     attachments.clear();
@@ -179,6 +184,11 @@ function ThreadScreenBody() {
     } finally {
       setSending(false);
     }
+  };
+
+  const send = async () => {
+    if (!canSend || !id || slash.active) return;
+    await sendContent(draft);
   };
 
   const primary = () => {
@@ -295,6 +305,12 @@ function ThreadScreenBody() {
           </View>
           {attachSheet.sheet}
           <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 8, ...readable }}>
+            <HoldToTalk
+              disabled={sending}
+              {...(settings.data?.voice.language ? { language: settings.data.voice.language } : {})}
+              {...(settings.data?.voice.provider ? { provider: settings.data.voice.provider } : {})}
+              onTranscript={(text) => void sendContent(text)}
+            />
             <Pressable
               onPress={addPhoto}
               disabled={sending}
