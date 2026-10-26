@@ -232,6 +232,7 @@ export function DiffTab() {
             <p className="mb-2 font-medium">
               {shortRef(report.from?.ref ?? from)} → {shortRef(report.to?.ref ?? to)}
             </p>
+            <DiffLegend mode={mode} />
             <p className="mb-3 text-[11px] text-muted">Click a change to highlight and zoom. Click again or press Esc to clear.</p>
             <DiffGroup
               selection={selection} onSelect={select}
@@ -269,6 +270,37 @@ export function DiffTab() {
         </div>
       )}
     </div>
+  );
+}
+
+function DiffLegend({ mode }: { mode: Mode }) {
+  const entries = mode === "structured"
+    ? [
+        { color: "#16a34a", label: "Added" },
+        { color: "#dc2626", label: "Removed" },
+        { color: "#d97706", label: "Moved / changed" },
+        { color: "#64748b", label: "Unchanged" },
+      ]
+    : mode === "overlay"
+      ? [
+          { color: "#dc2626", label: "From revision" },
+          { color: "#16a34a", label: "To revision" },
+        ]
+      : [{ color: "#64748b", label: "Revision geometry" }];
+  return (
+    <section aria-label="Drawing color legend" className="mb-3 rounded border border-border bg-panel p-2">
+      <p className="mb-1.5 text-[11px] font-medium">Drawing colors</p>
+      <ul className="space-y-1 text-[11px]">
+        {[...entries, { color: "#2563eb", label: "Selected item" }].map(({ color, label }) => (
+          <li key={label} className="flex items-center gap-2">
+            <span aria-hidden="true" className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: color }} />
+            {label}
+          </li>
+        ))}
+      </ul>
+      {mode === "overlay" && <p className="mt-2 text-[11px] text-muted">Both drawings are transparent. Matching geometry blends; separated edges show differences.</p>}
+      {mode === "side-by-side" && <p className="mt-2 text-[11px] text-muted">From is on the left; To is on the right.</p>}
+    </section>
   );
 }
 
