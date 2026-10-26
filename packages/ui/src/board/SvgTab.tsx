@@ -226,9 +226,22 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
                   rows={4}
                   aria-label="Comment question"
                 />
-                <Input value={ref} onChange={(event) => setRef(event.target.value)} placeholder="Ref (U12)" aria-label="Component reference" />
-                <Input value={pad} onChange={(event) => setPad(event.target.value)} placeholder="Pad / pin" aria-label="Pad or pin" />
-                <Input value={net} onChange={(event) => setNet(event.target.value)} placeholder="Net (SPI.CS)" aria-label="Net name" />
+                <p className="mt-1 text-[11px] text-muted">Optional details: the board location is already captured. Add these only if you know them.</p>
+                <label className="flex flex-col gap-1 text-xs">
+                  <span>Component reference <span className="text-muted">(optional)</span></span>
+                  <Input value={ref} onChange={(event) => setRef(event.target.value)} placeholder="e.g. R2, D1, U12" />
+                  <span className="text-[11px] text-muted">The part’s label on the board or schematic.</span>
+                </label>
+                <label className="flex flex-col gap-1 text-xs">
+                  <span>Pin or pad number <span className="text-muted">(optional)</span></span>
+                  <Input value={pad} onChange={(event) => setPad(event.target.value)} placeholder="e.g. 1 or A1" />
+                  <span className="text-[11px] text-muted">A specific connection on that component.</span>
+                </label>
+                <label className="flex flex-col gap-1 text-xs">
+                  <span>Signal / net name <span className="text-muted">(optional)</span></span>
+                  <Input value={net} onChange={(event) => setNet(event.target.value)} placeholder="e.g. GND, VCC, SPI.CS" />
+                  <span className="text-[11px] text-muted">The named electrical connection you’re asking about.</span>
+                </label>
                 <div className="flex gap-1">
                   <Button size="sm" variant="primary" disabled={!question.trim() || pin.isPending} onClick={() => void savePin()}>
                     Save pin
