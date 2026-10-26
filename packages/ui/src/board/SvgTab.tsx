@@ -14,7 +14,7 @@ import {
 import { DRAFT_KEY_NEW, useUiStore } from "../stores/ui";
 import { CommentPins } from "./CommentPins";
 import { SvgViewer } from "./SvgViewer";
-import { parseSvgViewBox, type SvgPoint } from "./svg-coords";
+import { type SvgPoint } from "./svg-coords";
 
 const RENDER_TOOL = { schematic: "render_schematic_svg", pcb: "render_pcb_svg" } as const;
 
@@ -33,6 +33,23 @@ export function svgArtifactCopy(kind: "schematic" | "pcb") {
     label,
     title: `No ${label} SVG render yet`,
     action: `Render ${label} SVG`,
+  };
+}
+
+/** PCB SVG user units are millimetres; copy them so ask-agent prompts include Near (mm). */
+export function commentPinAnchor(
+  view: CommentView,
+  point: SvgPoint,
+  fields: { ref?: string; net?: string; pad?: string } = {},
+) {
+  return {
+    view,
+    x: point.x,
+    y: point.y,
+    ...(view === "pcb" ? { xMm: point.x, yMm: point.y } : {}),
+    ...(fields.ref ? { ref: fields.ref } : {}),
+    ...(fields.net ? { net: fields.net } : {}),
+    ...(fields.pad ? { pad: fields.pad } : {}),
   };
 }
 
@@ -59,7 +76,6 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
     [comments.data, view],
   );
   const selected = pins.find((comment) => comment.id === selectedId) ?? null;
-  const box = rendered.data ? parseSvgViewBox(rendered.data) : null;
 
   const resetCompose = () => {
     setDraftPoint(null);
@@ -84,14 +100,11 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
     if (!draftPoint || !question.trim()) return;
     const created = await pin.mutateAsync({
       question: question.trim(),
-      anchor: {
-        view,
-        x: draftPoint.x,
-        y: draftPoint.y,
+      anchor: commentPinAnchor(view, draftPoint, {
         ...(ref.trim() ? { ref: ref.trim() } : {}),
         ...(net.trim() ? { net: net.trim() } : {}),
         ...(pad.trim() ? { pad: pad.trim() } : {}),
-      },
+      }),
     });
     setSelectedId(created.comment.id);
     resetCompose();
@@ -129,7 +142,7 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
                   },
                 }
               : {})}
-            overlay={
+            overlay={(box) => (
               <CommentPins
                 comments={pins}
                 box={box}
@@ -139,7 +152,7 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
                   setDraftPoint(null);
                 }}
               />
-            }
+            )}
             toolbar={
               <>
                 <Button

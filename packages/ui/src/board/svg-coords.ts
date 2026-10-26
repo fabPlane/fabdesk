@@ -3,6 +3,31 @@
 export type SvgBox = { x: number; y: number; width: number; height: number };
 export type SvgPoint = { x: number; y: number };
 
+/** Enough of an SVG element to read viewBox or fall back to getBBox. */
+export type SvgBoxSource = {
+  viewBox: { baseVal: { x: number; y: number; width: number; height: number } };
+  getBBox: () => { x: number; y: number; width: number; height: number };
+};
+
+export function svgElementBox(el: SvgBoxSource | null | undefined): SvgBox | null {
+  if (!el) return null;
+  const box = el.viewBox.baseVal;
+  if (box.width && box.height && Number.isFinite(box.x) && Number.isFinite(box.y)) {
+    return { x: box.x, y: box.y, width: box.width, height: box.height };
+  }
+  try {
+    const bounds = el.getBBox();
+    if (!bounds.width || !bounds.height) return null;
+    return { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
+  } catch {
+    return null;
+  }
+}
+
+export function resolveSvgBox(svg: string, el?: SvgBoxSource | null): SvgBox | null {
+  return parseSvgViewBox(svg) ?? svgElementBox(el);
+}
+
 export function parseSvgViewBox(svg: string): SvgBox | null {
   const match = svg.match(
     /viewBox=["']\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)\s+([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)\s+([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)\s+([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)\s*["']/,
