@@ -147,6 +147,7 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
                 comments={pins}
                 box={box}
                 selectedId={selectedId}
+                draftPoint={draftPoint}
                 onSelect={(id) => {
                   setSelectedId(id);
                   setDraftPoint(null);
@@ -180,6 +181,7 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
             {draftPoint && (
               <>
                 <div className="text-[11px] font-semibold uppercase tracking-[0.09em] text-muted">New pin</div>
+                <p className="text-xs text-muted">The blue marker shows the selected location. Click another spot on the board to move it.</p>
                 <Textarea
                   value={question}
                   onChange={(event) => setQuestion(event.target.value)}
