@@ -1,4 +1,4 @@
-import type { UpdateCheckResult, UpdateDownloadState } from "@fabdesk/protocol";
+import type { ReleaseNotes, UpdateCheckResult, UpdateDownloadState } from "@fabdesk/protocol";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { CoreClient } from "./CoreClient";
@@ -13,6 +13,13 @@ export interface FilePickOptions {
 /** What the surrounding shell (Electron preload, a web host, or the mobile app) provides to the UI. */
 export interface HostAdapter {
   platform: string;
+  /** Optional offline system recognizer provided by the desktop host. */
+  nativeSpeech?: {
+    status: (language: string) => Promise<{ available: boolean; message: string; needsDownload?: boolean }>;
+    prepare: (language: string, id: string) => Promise<{ available: boolean; message: string; needsDownload?: boolean }>;
+    transcribe: (request: { id: string; audio: ArrayBuffer; language: string }) => Promise<{ text: string }>;
+    cancel: (id: string) => Promise<void>;
+  };
   /** Dev-profile build (unpackaged, or FABDESK_DEV_PROFILE=1): staging/local sign-in is shown up front. */
   devBuild?: boolean;
   openExternal: (url: string) => Promise<void> | void;
@@ -38,6 +45,8 @@ export interface HostAdapter {
   cancelUpdateDownload?: () => Promise<void>;
   openUpdate?: () => Promise<string>;
   onUpdateDownload?: (cb: (state: UpdateDownloadState) => void) => () => void;
+  /** Notes baked into this build (scripts/release-notes.ts); drives the "What's new" link and dialog. */
+  releaseNotes?: ReleaseNotes;
 }
 
 /** A host that can do nothing. Platform hosts (`browserHost`, the Electron preload) override it. */

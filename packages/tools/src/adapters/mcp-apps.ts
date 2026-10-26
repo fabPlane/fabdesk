@@ -94,7 +94,10 @@ export const UI_CALLABLE_TOOLS = new Set([
   "project_status",
   "verify_drc",
   "export_dxf",
+  "export_stencil",
+  "export_laser_stencil",
   "render_glb",
+  "render_product_video",
   "shopping_list_get",
   "shopping_list_add",
   "shopping_list_update",
@@ -394,7 +397,11 @@ export function registerMcpApps(
             : { result: out.json ?? null };
         // Views address drawings by project-relative path (export_dxf `files`, cad_export `path`).
         const dir =
-          name === "export_dxf" || name === "cad_export" || name === "cad_enclosure"
+          name === "export_dxf" ||
+          name === "export_stencil" ||
+          name === "export_laser_stencil" ||
+          name === "cad_export" ||
+          name === "cad_enclosure"
             ? (await context(str(args["project"]), extra)).project?.dir
             : undefined;
         if (dir && Array.isArray(json["files"]))

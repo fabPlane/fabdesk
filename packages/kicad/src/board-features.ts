@@ -76,7 +76,7 @@ export type BoardOutline = Rect & {
   widthMm: number;
   heightMm: number;
   closed: boolean;
-  source: "gr_rect" | "gr_poly" | "segments" | "mixed";
+  source: "gr_rect" | "gr_poly" | "gr_arc" | "segments" | "mixed";
 };
 
 export type MountingHole = {
@@ -133,16 +133,18 @@ const validRect = (r: Rect): boolean =>
   Number.isFinite(r.minX) && Number.isFinite(r.minY) && r.maxX > r.minX && r.maxY > r.minY;
 const widthOf = (r: Rect) => r.maxX - r.minX;
 const heightOf = (r: Rect) => r.maxY - r.minY;
+/** KiCad RotatePoint: clockwise about the footprint origin (Y down). */
 const rotateLocal = (x: number, y: number, deg: number): Point => {
   const r = (deg * Math.PI) / 180;
   const c = Math.cos(r);
   const s = Math.sin(r);
-  return { x: x * c - y * s, y: x * s + y * c };
+  return { x: x * c + y * s, y: y * c - x * s };
 };
 
 const CONNECTOR_RE =
   /usb|hdmi|displayport|dp_?conn|rj45|ethernet|sma|u\.?fl|jack|barrel|jst|type-?c|usb_c|conn_|connector|header|pinheader|pin_header|audio|trrs|trs|sd.?card|micro.?sd|dc.?in|molex|picoblade|pico.?lock|swd|tag-?connect|qwiic|stemma/i;
-const MOUNT_RE = /mounting.?hole|^mh[_:]|hole_pad|fiducial|npt?h/i;
+const MOUNT_RE = /mounting.?hole|^mh[_:]|hole_pad|npt?h/i;
+const FIDUCIAL_RE = /fiducial/i;
 const EDGE_TOLERANCE_MM = 2.5;
 
 export function estimatePartHeightMm(footprint: string, value = ""): number {
@@ -175,6 +177,69 @@ function collectPts(node: Sexpr[]): Point[] {
   return children(pts, "xy")
     .map((p) => xy(p))
     .filter((p): p is Point => p !== null);
+}
+
+const TAU = Math.PI * 2;
+const normAngle = (a: number): number => {
+  let x = a % TAU;
+  if (x < 0) x += TAU;
+  return x;
+};
+
+function circleFrom3(a: Point, b: Point, c: Point): { cx: number; cy: number; r: number } | null {
+  const d = 2 * (a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y));
+  if (Math.abs(d) < 1e-12) return null;
+  const a2 = a.x * a.x + a.y * a.y;
+  const b2 = b.x * b.x + b.y * b.y;
+  const c2 = c.x * c.x + c.y * c.y;
+  const cx = (a2 * (b.y - c.y) + b2 * (c.y - a.y) + c2 * (a.y - b.y)) / d;
+  const cy = (a2 * (c.x - b.x) + b2 * (a.x - c.x) + c2 * (b.x - a.x)) / d;
+  return { cx, cy, r: Math.hypot(a.x - cx, a.y - cy) };
+}
+
+/** Sweep from start to end that passes through mid, in radians (signed: +CCW / −CW). */
+function directedSweep(start: Point, mid: Point, end: Point, cx: number, cy: number): number {
+  const a0 = Math.atan2(start.y - cy, start.x - cx);
+  const aM = Math.atan2(mid.y - cy, mid.x - cx);
+  const a1 = Math.atan2(end.y - cy, end.x - cx);
+  let ccw = normAngle(a1 - a0);
+  if (ccw < 1e-12) ccw = TAU;
+  const midFrom0 = normAngle(aM - a0);
+  if (midFrom0 <= ccw + 1e-9) return ccw;
+  let cw = normAngle(a0 - a1);
+  if (cw < 1e-12) cw = TAU;
+  return -cw;
+}
+
+function expandArc(box: Rect, start: Point, mid: Point, end: Point): void {
+  expand(box, start.x, start.y);
+  expand(box, mid.x, mid.y);
+  expand(box, end.x, end.y);
+  const circ = circleFrom3(start, mid, end);
+  if (!circ) return;
+  const sweep = directedSweep(start, mid, end, circ.cx, circ.cy);
+  const a0 = Math.atan2(start.y - circ.cy, start.x - circ.cx);
+  const steps = Math.max(8, Math.ceil((Math.abs(sweep) / TAU) * 32));
+  for (let i = 1; i < steps; i++) {
+    const a = a0 + (sweep * i) / steps;
+    expand(box, circ.cx + circ.r * Math.cos(a), circ.cy + circ.r * Math.sin(a));
+  }
+}
+
+function expandLegacyArc(box: Rect, center: Point, end: Point, angleDeg: number): void {
+  const r = Math.hypot(end.x - center.x, end.y - center.y);
+  if (r <= 0) {
+    expand(box, center.x, center.y);
+    return;
+  }
+  const a0 = Math.atan2(end.y - center.y, end.x - center.x);
+  // KiCad 5 `angle` is a clockwise sweep from `end` about `start` (the center).
+  const sweep = (-angleDeg * Math.PI) / 180;
+  const steps = Math.max(8, Math.ceil((Math.abs(sweep) / TAU) * 32));
+  for (let i = 0; i <= steps; i++) {
+    const a = a0 + (sweep * i) / steps;
+    expand(box, center.x + r * Math.cos(a), center.y + r * Math.sin(a));
+  }
 }
 
 function footprintPlacement(fp: Sexpr[]): { x: number; y: number; rotationDeg: number } | null {
@@ -306,6 +371,20 @@ function outlineFromGraphics(root: Sexpr[]): { outline: BoardOutline | null; cir
       for (const p of collectPts(g)) expand(box, p.x, p.y);
       if (collectPts(g).length >= 3) closed = true;
     });
+  for (const g of children(root, "gr_arc"))
+    consider(layerOf(g), "gr_arc", () => {
+      const start = xy(child(g, "start"));
+      const mid = xy(child(g, "mid"));
+      const end = xy(child(g, "end"));
+      const angle = numberAt(child(g, "angle"), 1);
+      if (start && mid && end) {
+        expandArc(box, start, mid, end);
+        closed = true;
+      } else if (start && end && angle !== null) {
+        expandLegacyArc(box, start, end, angle);
+        closed = Math.abs(angle) >= 359.9;
+      }
+    });
   for (const g of children(root, "gr_circle")) {
     if (!isEdgeCuts(layerOf(g))) continue;
     const c = xy(child(g, "center"));
@@ -398,7 +477,12 @@ export function extractBoardFeatures(boardText: string): BoardFeatures {
       ? bounds
       : { minX: origin.x - 1, minY: origin.y - 1, maxX: origin.x + 1, maxY: origin.y + 1 };
     const heightMm = estimatePartHeightMm(libId, value);
-    if (MOUNT_RE.test(`${libId} ${ref}`) && !holes.some((h) => h.ref === ref)) {
+    const mountLabel = `${libId} ${ref}`;
+    if (
+      !FIDUCIAL_RE.test(mountLabel) &&
+      MOUNT_RE.test(mountLabel) &&
+      !holes.some((h) => h.ref === ref)
+    ) {
       holes.push({
         id: ref || `mount-${holes.length + 1}`,
         x: mm(origin.x),

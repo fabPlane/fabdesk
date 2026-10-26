@@ -9,6 +9,9 @@ export interface AgentDocsContext {
   sketches: string[];
   board: { layers: number; widthMm?: number; heightMm?: number; template?: string };
   mcpServerName: string;
+  /** Resolved executable verified by the core; no guessed runtime paths. */
+  kicadCli?: string | undefined;
+  shellExecutables?: Record<string, string> | undefined;
   /** Experimental interfaces without Fabdesk MCP tools. */
   interfaceMode?: "substrate" | "programmable";
 }
@@ -26,13 +29,37 @@ the fabrication method. Layer changes are physically limited to the factory vias
 - KiCad-frame coordinates are x = blank x + 45, y = 27.5 − blank y.`,
 };
 
+const OFFBOARD_SECTION = `## Off-board parts
+Motors, displays, standoffs, screws and similar hardware live in \`project.parts.json\` and appear
+on the project BOM next to electrical parts. The \`project\` toolset exposes \`parts_search\`,
+\`parts_add\`, \`parts_list\` and \`parts_remove\`. A message starting with \`/parts\` is a request to
+use these tools.`;
+
 const SHOPPING_SECTION = `## Shopping list
 The project's parts order lives on fabplane.com as a shopping list (a cart grouped by where each
 line is bought: JLCPCB, a distributor, or manual purchase), next to the team's parts inventory.
 Manage it with the \`shopping\` toolset (\`load_toolset {"toolset":"shopping"}\`): \`shopping_list_get\`,
-\`shopping_list_sync_bom\`, \`shopping_list_add\`, \`shopping_list_update\`, \`shopping_list_remove\`,
-\`shopping_list_destinations\`, \`inventory_search\`, \`inventory_add\`. A message starting with
-\`/shopping-list\` is a request to use these tools. They need the user to be signed in to fabplane.`;
+\`shopping_list_sync_bom\` (netlist plus off-board parts), \`shopping_list_add\`, \`shopping_list_update\`,
+\`shopping_list_remove\`, \`shopping_list_destinations\`, \`inventory_search\`, \`inventory_add\`. A
+message starting with \`/shopping-list\` is a request to use these tools. They need the user to be
+signed in to fabplane.`;
+
+const TOOL_NEEDS = `## Tools and runtime
+Both authoring paths are available: \`circuit_build\` compiles \`circuit.netlist.json\`; \`schematic_edit\` edits native symbols and wires. Multi-unit parts share a reference and use distinct unit numbers, including power units.
+Use \`capability_search\` to find a tool and its arguments; \`load_toolset\` loads a toolset.
+
+| Need | Available tool |
+| --- | --- |
+| Board geometry, pads, copper and object IDs | \`pcb_inspect\` (references/nets/kinds, region/near, limitPerKind) |
+| Schematic pins, unit numbers, dangling item IDs | \`schematic_inspect\` (detail=authoring/full, selectors); live session diagnostics are informational |
+| Saved DRC/ERC results by item | \`verify_drc\` (responseMode=full for all geometry); \`verify_erc\` |
+| Router progress and terminal result | \`route_status\` (latest or runId); returns final state and application outcome |
+| Fabrication files and named archive | \`export_gerbers\`, \`export_drill\`, \`export_pos\`, \`export_bom\`, \`export_zip\` (filename), \`export_stencil\`, \`export_laser_stencil\`; \`release_build\` checks and packages a release |
+| Board/schematic images | \`render_view\`, \`render_schematic_svg\` |
+| Symbols, footprints and pins | \`circuit_describe_part\`, \`circuit_search_parts\` |
+
+Shell file reads and scripts are available too. The agent environment exposes the resolved CLI as \`$KICAD_CLI\`: \`"$KICAD_CLI" version\`, \`"$KICAD_CLI" --help\`.
+Shell executables and Python modules come from the host. A host \`pcbnew\` may use a different KiCad format; native tools use the packaged KiCad API. No Python/pcbnew runtime is supplied by the PCB bundle.`;
 
 export const USER_START = "<!-- fabdesk:user-start -->";
 export const USER_END = "<!-- fabdesk:user-end -->";
@@ -92,9 +119,20 @@ ${sketches}
 | \`sketches/\` | User-provided drawings and photos. |
 | \`renders/\` | Rendered artifacts. |
 | \`reports/\` | Machine-readable reports. |
-| \`exports/\` | Manufacturing and interchange outputs. |
+| \`exports/\` | Manufacturing and interchange outputs (gerbers, BOM, 3D-printed stencil STL, laser-cut stencil SVG/DXF/.lbrn2). |
+| \`project.parts.json\` | Off-board and mechanical parts (motors, displays, standoffs, screws). |
 
-${ctx.interfaceMode ? "" : `${SHOPPING_SECTION}\n\n`}${USER_START}
+${
+  ctx.interfaceMode
+    ? ""
+    : `${TOOL_NEEDS}\n${ctx.kicadCli ? `Resolved KiCad CLI: \`${ctx.kicadCli}\`.\n` : ""}${
+        ctx.shellExecutables
+          ? `Host executables available to the agent: ${Object.entries(ctx.shellExecutables)
+              .map(([name, path]) => `\`${name}\` = \`${path}\``)
+              .join("; ")}.\n`
+          : ""
+      }\n${OFFBOARD_SECTION}\n\n${SHOPPING_SECTION}\n\n`
+}${USER_START}
 ${userSection.trim() === "" ? DEFAULT_USER_SECTION : userSection.trim()}
 ${USER_END}
 `;

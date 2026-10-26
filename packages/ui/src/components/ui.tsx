@@ -31,7 +31,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       ref={ref}
       type={type}
       className={cn(
-        "inline-flex items-center justify-center rounded-md border font-medium transition-[background-color,color,border-color,filter,box-shadow] duration-150 disabled:opacity-45 disabled:pointer-events-none select-none whitespace-nowrap",
+        "inline-flex items-center justify-center rounded-md border font-medium transition-[background-color,color,border-color,filter,box-shadow] duration-150 disabled:cursor-not-allowed disabled:opacity-40 disabled:saturate-50 disabled:pointer-events-none select-none whitespace-nowrap",
         variants[variant],
         sizes[size],
         className,
@@ -155,10 +155,14 @@ export interface DialogProps {
   className?: string;
   /** Skip the padded panel chrome (used by the sketch pad). */
   bare?: boolean;
+  /** Where focus goes on close when the element that had it before opening is gone. */
+  fallbackFocus?: () => HTMLElement | null | undefined;
 }
 
-export function Dialog({ open, onClose, title, ariaLabel, children, className, bare }: DialogProps) {
+export function Dialog({ open, onClose, title, ariaLabel, children, className, bare, fallbackFocus }: DialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
+  const fallbackFocusRef = useRef(fallbackFocus);
+  fallbackFocusRef.current = fallbackFocus;
   useEffect(() => {
     if (!open) return;
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -172,6 +176,7 @@ export function Dialog({ open, onClose, title, ariaLabel, children, className, b
     return () => {
       cancelAnimationFrame(frame);
       if (previous?.isConnected) previous.focus();
+      else fallbackFocusRef.current?.()?.focus();
     };
   }, [open]);
   useEffect(() => {
@@ -238,14 +243,16 @@ export function Tabs<T extends string>({
   value,
   onChange,
   className,
+  variant = "pills",
 }: {
   tabs: Array<{ id: T; label: string; hint?: string }>;
   value: T;
   onChange: (t: T) => void;
   className?: string;
+  variant?: "pills" | "underline";
 }) {
   return (
-    <div className={cn("flex items-center gap-1 overflow-x-auto", className)} role="tablist">
+      <div className={cn("flex items-center overflow-x-auto", variant === "underline" ? "fd-tabs-underline" : "gap-1", className)} role="tablist">
       {tabs.map((t) => (
         <button
           key={t.id}
@@ -264,8 +271,10 @@ export function Tabs<T extends string>({
           data-testid={`tab-${t.id}`}
           onClick={() => onChange(t.id)}
           className={cn(
-            "h-8 rounded-md px-2.5 text-xs font-medium whitespace-nowrap transition-colors",
-            t.id === value ? "bg-panel-2 text-fg shadow-sm" : "text-muted hover:text-fg hover:bg-panel-2/60",
+            "px-2.5 text-xs font-medium whitespace-nowrap transition-colors",
+            variant === "underline"
+              ? "fd-underline-tab"
+              : cn("h-8 rounded-md", t.id === value ? "bg-panel-2 text-fg shadow-sm" : "text-muted hover:text-fg hover:bg-panel-2/60"),
           )}
         >
           {t.label}

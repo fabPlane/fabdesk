@@ -208,6 +208,11 @@ export function useCancelRouterInstall() {
   });
 }
 
+export function useSpeechStatus() {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["speech"], queryFn: () => client.speechStatus(), staleTime: 10_000 });
+}
+
 export function usePatchSettings() {
   const client = useCoreClient();
   const qc = useQueryClient();
@@ -451,7 +456,22 @@ export function useRouteRunFrames(
   });
 }
 
-/* ---------- projects: create / delete ---------- */
+/* ---------- projects: create / rename / delete ---------- */
+
+export function useRenameProject() {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, name }: { projectId: string; name: string }) =>
+      client.request(`/projects/${encodeURIComponent(projectId)}`, {
+        method: "PATCH", json: { name },
+      }),
+    onSuccess: (_data, { projectId }) => {
+      void qc.invalidateQueries({ queryKey: ["projects"] });
+      void qc.invalidateQueries({ queryKey: ["project", projectId] });
+    },
+  });
+}
 
 export function useCreateProject() {
   const client = useCoreClient();
@@ -751,7 +771,7 @@ export function useShoppingList(projectId: string | null, enabled = true) {
 export function useShoppingListMutations(projectId: string | null) {
   const client = useCoreClient();
   const qc = useQueryClient();
-  const refresh = () => void qc.invalidateQueries({ queryKey: shoppingListKey(projectId) });
+  const refresh = () => qc.invalidateQueries({ queryKey: shoppingListKey(projectId) });
   const need = () => {
     if (!projectId) throw new Error("no project selected");
     return projectId;
@@ -854,6 +874,16 @@ export function useBoardCommentMutations(projectId: string | null) {
       onSuccess: refresh,
     }),
   };
+}
+
+/** Recheck completed boards after project changes without rewriting session history. */
+export function useFinishItNeedsWork(projectId: string | null, enabled: boolean) {
+  const client = useCoreClient();
+  return useQuery({
+    queryKey: ["finish-it-needs-work", projectId],
+    queryFn: async () => (await client.getFinishIt(projectId!)).needsWork ?? true,
+    enabled: !!projectId && enabled,
+  });
 }
 
 export function useStartFinishIt() {

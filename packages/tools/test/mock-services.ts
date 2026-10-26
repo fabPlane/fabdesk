@@ -83,6 +83,7 @@ export function mockServices(
       remote: { enabled: false, host: "0.0.0.0", port: 47820 },
       notifications: { enabled: true },
       cloudOrgId: null,
+      voice: { provider: "auto", language: "en", pushToTalkMode: "hold", pushToTalkShortcut: "Alt+Space" },
     }),
     projects: {
       resolve: async (ref) =>
@@ -117,6 +118,7 @@ export function mockServices(
       },
     },
     design: {
+      withSavedFilesRecovery: async (_dir, replace) => replace(),
       build: async ({ projectDir, progress }) => {
         const src = await Bun.file(join(projectDir, "circuit.netlist.json")).text();
         const bad = src.includes("BROKEN");
@@ -410,6 +412,14 @@ export function mockServices(
       exportPcbSvg: async (_cli, { output }) => {
         await Bun.write(output, "<svg xmlns='http://www.w3.org/2000/svg'><text>pcb</text></svg>");
         return { paths: [output] };
+      },
+      exportStencil: async (opts) => {
+        const { exportStencil } = await import("@fabdesk/kicad/stencil");
+        return exportStencil(opts);
+      },
+      exportLaserStencil: async (opts) => {
+        const { exportLaserStencil } = await import("@fabdesk/kicad/stencil-laser");
+        return exportLaserStencil(opts);
       },
     },
     sim: {

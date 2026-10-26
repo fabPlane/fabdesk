@@ -6,6 +6,7 @@ import {
   BOM_SOURCE,
   CloudService,
   bomLinesFromNetlist,
+  bomLinesFromOffboard,
   createRegistry,
   excludedFromBom,
   fieldValue,
@@ -79,6 +80,37 @@ const item = (over: Partial<CartItem> & Pick<CartItem, "id">): CartItem => ({
   createdAt: "t",
   updatedAt: "t",
   ...over,
+});
+
+describe("BOM lines from off-board parts", () => {
+  test("keeps qty and a stable offboard footprint for re-sync", () => {
+    const lines = bomLinesFromOffboard(
+      [
+        {
+          id: "line_m",
+          catalogId: "nema-17-stepper",
+          ref: "M1",
+          name: "NEMA 17 stepper motor",
+          kind: "motor",
+          qty: 2,
+          mpn: "17HS4401",
+        },
+      ],
+      { destinationId: "builtin:jlcpcb" },
+    );
+    expect(lines).toEqual([
+      {
+        kind: "part",
+        value: "NEMA 17 stepper motor",
+        footprint: "offboard:nema-17-stepper",
+        description: "Off-board motor · NEMA 17 stepper motor",
+        refs: ["M1"],
+        quantity: 2,
+        destinationId: "builtin:jlcpcb",
+        mpn: "17HS4401",
+      },
+    ]);
+  });
 });
 
 describe("BOM merge", () => {
@@ -190,6 +222,39 @@ describe("shopping toolset", () => {
     expect(items.filter((i) => i.kind === "pcb")).toHaveLength(1);
     expect(items.find((i) => i.kind === "part")).toMatchObject({ destinationId: "builtin:manual", status: "ordered", notes: "have some", refs: ["R1"] });
     expect(api.calls.filter((c) => c.startsWith("createCart"))).toHaveLength(1);
+  });
+
+  test("BOM sync includes off-board motors next to netlist parts", async () => {
+    const { invoke, project } = await setup();
+    await writeFile(
+      join(project.dir, "project.parts.json"),
+      JSON.stringify({
+        schema: 1,
+        parts: [
+          {
+            id: "line_m",
+            catalogId: "nema-17-stepper",
+            ref: "M1",
+            name: "NEMA 17 stepper motor",
+            kind: "motor",
+            qty: 2,
+            mpn: "17HS4401",
+          },
+        ],
+      }),
+    );
+    const synced = await invoke("shopping_list_sync_bom");
+    const items = (synced.json as { cart: { items: CartItem[] } }).cart.items;
+    expect(items.map((i) => [i.kind, i.refs?.[0], i.quantity])).toEqual([
+      ["pcb", undefined, 5],
+      ["part", "R1", 1],
+      ["part", "M1", 2],
+    ]);
+    expect(items.find((i) => i.refs?.[0] === "M1")).toMatchObject({
+      mpn: "17HS4401",
+      footprint: "offboard:nema-17-stepper",
+      description: "Off-board motor · NEMA 17 stepper motor",
+    });
   });
 
   test("add resolves destination names, custom destinations, remove", async () => {

@@ -17,6 +17,7 @@ import {
   SendMessage,
   RouterCatalogId,
   Settings,
+  SpeechCloudSecret,
   StartFinishIt,
   StartOrder,
   TailscaleServeRequest,
@@ -75,6 +76,7 @@ import { applyErrorReporting, captureCoreException } from "../sentry";
 import { parseTopics, sseResponse } from "./sse";
 import { cloudRoutes } from "./cloud-routes";
 import { commentRoutes } from "./comment-routes";
+import { createSpeechService, SpeechProviderError, type SpeechService } from "../speech";
 
 export type AppDeps = {
   /** The relay link, for `/v1/remote` and `/health`; optional so tests without a relay still build an app. */
@@ -113,6 +115,8 @@ export type AppDeps = {
   onSettingsChanged?: (settings: Settings) => void;
   /** Whether undecided installations must answer the first-install privacy screen. */
   privacy?: () => PrivacyStatus;
+  /** Speak-to-the-agent transcription. Tests inject a fake provider. */
+  speech?: SpeechService;
 };
 
 export type Env = { Variables: { token?: string; principalSubject?: string } };
@@ -128,6 +132,9 @@ const MIME: Record<string, string> = {
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
   ".glb": "model/gltf-binary",
+  ".gif": "image/gif",
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
   ".csv": "text/csv; charset=utf-8",
   ".zip": "application/zip",
   ".kicad_pcb": "text/plain; charset=utf-8",
@@ -137,6 +144,8 @@ const MIME: Record<string, string> = {
 
 export function createApp(deps: AppDeps): Hono<Env> {
   const app = new Hono<Env>();
+  const speech =
+    deps.speech ?? createSpeechService({ settings: deps.store.settings, home: deps.config.home });
 
   app.onError((err, c) => {
     if (err instanceof InvalidParentDirectory)
@@ -448,6 +457,11 @@ export function createApp(deps: AppDeps): Hono<Env> {
     deps.runs?.supportsSupervised(agentId) ?? false;
   app.post("/threads", async (c) => {
     const body = CreateThread.parse(await c.req.json());
+    // Check stale persisted selections before SQLite reports an opaque constraint failure.
+    if (body.projectId && !deps.store.projects.get(body.projectId))
+      return c.json({ code: "project_not_found", error: "The selected project is no longer available. Choose a project again." }, 404);
+    if (body.parentThreadId && !deps.store.threads.get(body.parentThreadId))
+      return c.json({ code: "parent_thread_not_found", error: "The original chat is no longer available. Start a new chat." }, 404);
     const runtimeMode = body.runtimeMode ?? deps.store.settings.get().defaultRuntimeMode;
     // A default of `supervised` must not make an agent that cannot do it unusable: fall back silently
     // unless the request asked for it by name.
@@ -457,7 +471,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
           ? null
           : "full"
         : runtimeMode;
-    if (mode === null) return c.json({ error: "agent cannot run supervised" }, 400);
+    if (mode === null) return c.json({ error: "agent cannot run supervised", code: "approval_not_supported" }, 400);
     const t = deps.store.threads.create({
       agentId: body.agentId,
       runtimeMode: mode,
@@ -491,6 +505,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
     return c.json({
       ...t,
       run: deps.store.runs.latestForThread(t.id),
+      runs: deps.store.runs.historyForThread(t.id),
       running: deps.runs?.isRunning(t.id) ?? false,
       pending: deps.runs?.pending(t.id) ?? { approvals: [], inputs: [] },
     });
@@ -501,7 +516,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
     if (!current) return c.json({ error: "not found" }, 404);
     const mode = body.runtimeMode ?? current.runtimeMode ?? "full";
     if (mode === "supervised" && !canSupervise(body.agentId ?? current.agentId))
-      return c.json({ error: "agent cannot run supervised" }, 400);
+      return c.json({ error: "agent cannot run supervised", code: "approval_not_supported" }, 400);
     const t = deps.store.threads.patch(current.id, body);
     if (!t) return c.json({ error: "not found" }, 404);
     deps.bus.emit({
@@ -744,7 +759,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
   app.get("/projects/:id/finish-it", async (c) => {
     const id = c.req.param("id");
     if (!(await deps.projects.handle(id))) return c.json({ error: "not found" }, 404);
-    return c.json({ session: deps.finishIt?.get(id) ?? null });
+    return c.json({ session: deps.finishIt?.get(id) ?? null, needsWork: deps.finishIt ? await deps.finishIt.needsWork(id) : false });
   });
   app.post("/projects/:id/finish-it", async (c) => {
     if (!deps.finishIt) return c.json({ error: "Finish it is disabled in this daemon" }, 503);
@@ -1005,6 +1020,17 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const body = Object.fromEntries(
       Object.entries(parsed).filter(([k]) => sent.has(k)),
     ) as typeof parsed;
+    if (body.voice && typeof raw === "object" && raw !== null) {
+      const sentVoice = (raw as { voice?: unknown }).voice;
+      const sentVoiceKeys =
+        sentVoice && typeof sentVoice === "object" && sentVoice !== null
+          ? new Set(Object.keys(sentVoice))
+          : new Set<string>();
+      const incoming = Object.fromEntries(
+        Object.entries(body.voice).filter(([k]) => sentVoiceKeys.has(k)),
+      );
+      body.voice = { ...deps.store.settings.get().voice, ...incoming };
+    }
     const next = deps.store.settings.patch(body);
     await applyErrorReporting(next.errorReporting);
     // Remote access is a runtime toggle: the listener starts, stops or rebinds without a restart.
@@ -1163,6 +1189,78 @@ export function createApp(deps: AppDeps): Hono<Env> {
     deps.devices.clearPush(device.id);
     logger.info("device push cleared", { id: device.id });
     return c.json({ ok: true });
+  });
+
+  /* ---------- speak-to-the-agent (desktop composer + paired phone) ---------- */
+  const daemonOnly = (c: Context<Env>) => {
+    if (deps.listener !== "local") return c.json({ error: "not found" }, 404);
+    if (deps.tokens.lookup(c.get("token"))?.kind !== "daemon") {
+      return c.json({ error: "desktop token required", code: "forbidden" }, 403);
+    }
+    return null;
+  };
+
+  app.get("/v1/speech/status", async (c) => c.json(await speech.status()));
+  app.post("/v1/speech/transcribe", async (c) => {
+    const ct = c.req.header("content-type") ?? "";
+    if (!ct.startsWith("multipart/form-data")) {
+      return c.json({ error: "multipart field `file` required", code: "invalid_args" }, 400);
+    }
+    const form = await c.req.formData();
+    const file = form.get("file");
+    if (!(file instanceof File)) {
+      return c.json({ error: "multipart field `file` required", code: "invalid_args" }, 400);
+    }
+    const language = typeof form.get("language") === "string" ? String(form.get("language")) : undefined;
+    const providerRaw = typeof form.get("provider") === "string" ? String(form.get("provider")) : undefined;
+    const provider =
+      providerRaw === "auto" ||
+      providerRaw === "on_device" ||
+      providerRaw === "cloud" ||
+      providerRaw === "local"
+        ? providerRaw
+        : undefined;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    try {
+      const result = await speech.transcribe({
+        audio: {
+          bytes,
+          mime: file.type || "application/octet-stream",
+          ...(file.name ? { filename: file.name } : {}),
+        },
+        ...(language ? { language } : {}),
+        ...(provider ? { provider } : {}),
+      });
+      return c.json(result);
+    } catch (e) {
+      if (e instanceof SpeechProviderError) {
+        const status = e.code === "unavailable" ? 503 : e.code === "invalid_audio" ? 400 : e.code === "unauthorized" ? 401 : 502;
+        return c.json({ error: e.message, code: e.code }, status);
+      }
+      throw e;
+    }
+  });
+  app.put("/v1/speech/cloud", async (c) => {
+    const denied = daemonOnly(c);
+    if (denied) return denied;
+    const body = SpeechCloudSecret.parse(await c.req.json());
+    speech.setCloud({
+      apiKey: body.apiKey,
+      baseUrl: body.baseUrl?.trim() ? body.baseUrl.trim() : null,
+    });
+    return c.json(await speech.status());
+  });
+  app.delete("/v1/speech/cloud", async (c) => {
+    const denied = daemonOnly(c);
+    if (denied) return denied;
+    speech.setCloud(null);
+    return c.json(await speech.status());
+  });
+  app.post("/v1/speech/local/install", async (c) => {
+    const denied = daemonOnly(c);
+    if (denied) return denied;
+    const installed = await speech.installLocal();
+    return c.json({ ...installed, status: await speech.status() });
   });
 
   app.post("/shutdown", (c) => {

@@ -1,5 +1,6 @@
+import { createHash } from "node:crypto";
 import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -83,16 +84,128 @@ describe("inspectProject / planMilestones", () => {
     );
     const withoutRoute = await inspectProject(dir);
     expect(milestoneDone("route", withoutRoute)).toBe(false);
-    const withRoute = await inspectProject(dir, { lastRoute: { status: "completed", open: 0 } });
+    const withRoute = await inspectProject(dir, {
+      lastRoute: { status: "completed", open: 0, applied: true },
+    });
     expect(milestoneDone("route", withRoute)).toBe(true);
     expect(milestoneDone("verify", withRoute)).toBe(false);
     await writeFile(
       join(dir, "reports", "erc.json"),
       JSON.stringify({ counts: { errors: 0, warnings: 0 } }),
     );
-    const clean = await inspectProject(dir, { lastRoute: { status: "completed", open: 0 } });
+    const clean = await inspectProject(dir, {
+      lastRoute: { status: "completed", open: 0, applied: true },
+    });
     expect(milestoneDone("verify", clean)).toBe(true);
     expect(remainingMilestones(planMilestones(clean))).toEqual([]);
+  });
+
+  test("ignores DRC/route reports older than the board", async () => {
+    const dir = await tempDir();
+    await writeFile(join(dir, "circuit.netlist.json"), JSON.stringify(NETLIST));
+    await writeFile(join(dir, "board.kicad_pcb"), "(kicad_pcb old)\n");
+    await mkdir(join(dir, "reports"), { recursive: true });
+    await writeFile(join(dir, "reports", "route.json"), JSON.stringify({ ok: true, open: 0 }));
+    await writeFile(
+      join(dir, "reports", "drc.json"),
+      JSON.stringify({ counts: { errors: 0, warnings: 0, unconnected: 0 } }),
+    );
+    const past = new Date(Date.now() - 120_000);
+    const now = new Date();
+    await utimes(join(dir, "reports", "route.json"), past, past);
+    await utimes(join(dir, "reports", "drc.json"), past, past);
+    await writeFile(join(dir, "board.kicad_pcb"), "(kicad_pcb moved footprint)\n");
+    await utimes(join(dir, "board.kicad_pcb"), now, now);
+    const snap = await inspectProject(dir);
+    expect(milestoneDone("route", snap)).toBe(false);
+    expect(milestoneDone("verify", snap)).toBe(false);
+    expect(snap.drcErrors).toBeNull();
+    expect(remainingMilestones(planMilestones(snap))).toEqual(["route", "verify"]);
+  });
+
+  test("build is incomplete when the netlist is newer than the board", async () => {
+    const dir = await tempDir();
+    await writeFile(join(dir, "board.kicad_pcb"), "(kicad_pcb old)\n");
+    const past = new Date(Date.now() - 120_000);
+    await utimes(join(dir, "board.kicad_pcb"), past, past);
+    await writeFile(join(dir, "circuit.netlist.json"), JSON.stringify(NETLIST));
+    const snap = await inspectProject(dir);
+    expect(snap.hasBoard).toBe(false);
+    expect(milestoneDone("build", snap)).toBe(false);
+  });
+
+  test("a git-checkout mtime skew of a few ms does not mark the board stale", async () => {
+    const dir = await tempDir();
+    await writeFile(join(dir, "board.kicad_pcb"), "(kicad_pcb)\n");
+    await writeFile(join(dir, "circuit.netlist.json"), JSON.stringify(NETLIST));
+    const t0 = Date.now();
+    await utimes(join(dir, "board.kicad_pcb"), new Date(t0), new Date(t0));
+    await utimes(join(dir, "circuit.netlist.json"), new Date(t0 + 40), new Date(t0 + 40));
+    const snap = await inspectProject(dir);
+    expect(snap.hasBoard).toBe(true);
+    expect(milestoneDone("build", snap)).toBe(true);
+  });
+
+  test("ignores ERC older than the schematic", async () => {
+    const dir = await tempDir();
+    await writeFile(join(dir, "circuit.netlist.json"), JSON.stringify(NETLIST));
+    await writeFile(join(dir, "board.kicad_pcb"), "(kicad_pcb)\n");
+    await writeFile(join(dir, "board.kicad_sch"), "(kicad_sch old)\n");
+    await mkdir(join(dir, "reports"), { recursive: true });
+    await writeFile(
+      join(dir, "reports", "drc.json"),
+      JSON.stringify({ counts: { errors: 0, warnings: 0, unconnected: 0 } }),
+    );
+    await writeFile(join(dir, "reports", "erc.json"), JSON.stringify({ counts: { errors: 0 } }));
+    const past = new Date(Date.now() - 120_000);
+    await utimes(join(dir, "reports", "erc.json"), past, past);
+    await writeFile(join(dir, "board.kicad_sch"), "(kicad_sch edited)\n");
+    const snap = await inspectProject(dir, {
+      lastRoute: { status: "completed", open: 0, applied: true },
+    });
+    expect(snap.ercErrors).toBeNull();
+    expect(milestoneDone("verify", snap)).toBe(false);
+  });
+
+  test("a completed route that was not applied does not finish routing", async () => {
+    const dir = await tempDir();
+    await writeFile(join(dir, "circuit.netlist.json"), JSON.stringify(NETLIST));
+    await writeFile(join(dir, "board.kicad_pcb"), "(kicad_pcb)\n");
+    const snap = await inspectProject(dir, { lastRoute: { status: "completed", open: 0 } });
+    expect(milestoneDone("route", snap)).toBe(false);
+    const applied = await inspectProject(dir, {
+      lastRoute: { status: "completed", open: 0, applied: true },
+    });
+    expect(milestoneDone("route", applied)).toBe(true);
+  });
+
+  test("final PCB connectivity proves routing after cleanup changes the router revision", async () => {
+    const dir = await tempDir();
+    const pcb = "(kicad_pcb final-cleanup)\n";
+    await writeFile(join(dir, "circuit.netlist.json"), JSON.stringify(NETLIST));
+    await writeFile(join(dir, "board.kicad_pcb"), pcb);
+    await mkdir(join(dir, "reports"), { recursive: true });
+    const report = {
+      counts: { errors: 0, unconnected: 0 },
+      schematicParityChecked: true,
+      pcbRevision: { sha256: createHash("sha256").update(pcb).digest("hex") },
+    };
+    await writeFile(join(dir, "reports/drc.json"), JSON.stringify(report));
+    const snap = await inspectProject(dir, {
+      lastRoute: { status: "completed", open: 0, applied: true, pcbRevision: "old-router-revision" },
+    });
+    expect(remainingMilestones(planMilestones(snap))).toEqual([]);
+    expect(snap.routeOpen).toBe(0);
+
+    // A stale or incomplete check must never suppress real remaining work.
+    for (const invalid of [
+      { ...report, pcbRevision: { sha256: "different-board" } },
+      { ...report, schematicParityChecked: false },
+      { ...report, counts: { errors: 0, unconnected: 1 } },
+    ]) {
+      await writeFile(join(dir, "reports/drc.json"), JSON.stringify(invalid));
+      expect((await inspectProject(dir)).routed).toBe(false);
+    }
   });
 
   test("rejects a netlist that does not parse", async () => {

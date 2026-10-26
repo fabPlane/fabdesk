@@ -44,12 +44,14 @@ import type {
   RouteFrameLine,
   RouteResult,
   Settings,
+  SpeechStatus,
+  SpeechTranscript,
   Run,
   Thread,
   ToolManifestEntry,
 } from "@fabdesk/protocol";
-/** `GET /threads/:id`: the thread plus its latest run and whether an agent is working on it now. */
-export type ThreadDetail = Thread & { run?: Run | null; running?: boolean };
+/** `GET /threads/:id`: the thread, saved run history, latest run, and current activity. */
+export type ThreadDetail = Thread & { run?: Run | null; runs?: Run[]; running?: boolean };
 
 /** One row of `GET /runs/live`. */
 export interface LiveRunSummary {
@@ -60,6 +62,7 @@ export interface LiveRunSummary {
 }
 
 import { subscribeSse, type EventSourceFactory, type SseStatus, type SseSubscription } from "./sse";
+import { errorMessage, errorPayload } from "./error-help";
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
@@ -71,13 +74,15 @@ export interface CoreClientOptions {
 }
 
 export class CoreHttpError extends Error {
+  readonly code: string | undefined;
   constructor(
     public readonly status: number,
     public readonly path: string,
-    message: string,
+    public readonly rawMessage: string,
   ) {
-    super(message);
+    super(errorMessage(rawMessage, { status, path }));
     this.name = "CoreHttpError";
+    this.code = errorPayload(rawMessage).code;
   }
 }
 
@@ -150,7 +155,17 @@ export class CoreClient {
   constructor(options: CoreClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/$/, "");
     this.token = options.token;
-    this.fetchImpl = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
+    const fetchImpl = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
+    this.fetchImpl = async (input, init) => {
+      try { return await fetchImpl(input, init); }
+      catch (error) {
+        // Keep intentional cancellation and relay-specific errors distinguishable.
+        if (init?.signal?.aborted || (error instanceof Error && error.name === "AbortError") || error instanceof CoreHttpError) throw error;
+        const failure = new Error(errorMessage(error));
+        Object.assign(failure, { rawMessage: error instanceof Error ? error.message : String(error), cause: error });
+        throw failure;
+      }
+    };
     this.esFactory =
       options.eventSourceFactory ??
       ((url) => new EventSource(url) as unknown as ReturnType<EventSourceFactory>);
@@ -456,7 +471,7 @@ export class CoreClient {
     return this.request(`/threads/${encodeURIComponent(threadId)}/abort`, { method: "POST" });
   }
 
-  getFinishIt(projectId: string): Promise<{ session: FinishItSession | null }> {
+  getFinishIt(projectId: string): Promise<{ session: FinishItSession | null; needsWork?: boolean }> {
     return this.request(`/projects/${encodeURIComponent(projectId)}/finish-it`);
   }
   startFinishIt(
@@ -576,6 +591,42 @@ export class CoreClient {
   }
   uninstallRouter(id: RouterCatalogId): Promise<RouterSnapshot> {
     return this.request(`/routers/${encodeURIComponent(id)}`, { method: "DELETE" });
+  }
+  speechStatus(): Promise<SpeechStatus> {
+    return this.request("/v1/speech/status");
+  }
+  async transcribeSpeech(input: {
+    audio: Blob;
+    filename?: string;
+    language?: string;
+    provider?: Settings["voice"]["provider"];
+  }): Promise<SpeechTranscript> {
+    const form = new FormData();
+    form.append("file", input.audio, input.filename ?? "speech.webm");
+    if (input.language) form.append("language", input.language);
+    if (input.provider) form.append("provider", input.provider);
+    const res = await this.fetchImpl(`${this.baseUrl}/v1/speech/transcribe`, {
+      method: "POST",
+      headers: this.headers(),
+      body: form,
+    });
+    if (!res.ok) {
+      throw new CoreHttpError(
+        res.status,
+        "/v1/speech/transcribe",
+        await res.text().catch(() => res.statusText),
+      );
+    }
+    return (await res.json()) as SpeechTranscript;
+  }
+  setSpeechCloud(input: { apiKey: string; baseUrl?: string | null }): Promise<SpeechStatus> {
+    return this.request("/v1/speech/cloud", { method: "PUT", json: input });
+  }
+  clearSpeechCloud(): Promise<SpeechStatus> {
+    return this.request("/v1/speech/cloud", { method: "DELETE" });
+  }
+  installLocalSpeech(): Promise<{ modelPath: string; status: SpeechStatus }> {
+    return this.request("/v1/speech/local/install", { method: "POST" });
   }
   getSettings(): Promise<Settings> {
     return this.request("/settings");

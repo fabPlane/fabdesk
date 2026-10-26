@@ -1,3 +1,8 @@
+import {
+  compareTaskCheckpoint,
+  compactTaskComparison,
+  taskCheckpointText,
+} from "../task-checkpoints";
 /** Core toolset: always loaded. */
 import { createHash } from "node:crypto";
 import { readFile, readdir, unlink } from "node:fs/promises";
@@ -25,12 +30,7 @@ import {
   writeReport,
 } from "./common";
 import { formatLastRelease, readProjectStatusEvidence } from "./project-status-evidence";
-import {
-  ROUTE_RUN_DEFAULT_WAIT_MS,
-  ROUTE_RUN_MAX_WAIT_MS,
-  runRoute,
-  RouteRunArgs,
-} from "./route";
+import { ROUTE_RUN_DEFAULT_WAIT_MS, ROUTE_RUN_MAX_WAIT_MS, runRoute, RouteRunArgs } from "./route";
 import { compilerSourceHelp, formatCompilerSourceHelp } from "./compiler-source-guide";
 
 export const load_toolset = defineTool({
@@ -39,7 +39,7 @@ export const load_toolset = defineTool({
   scope: "global",
   title: "Load a toolset",
   description:
-    "Enable an additional group of fabdesk tools for this session. Available toolsets are project, circuit, route, kicad, verify, render, export, sim, app, shopping (fabplane.com shopping list and team inventory), and cad (the mechanical model in FreeCAD). Core tools are always available.",
+    "Enable an additional group of fabdesk tools for this session. Available toolsets are project (files, board settings, off-board parts library), circuit, route, kicad, verify, render, export, sim, app, shopping (fabplane.com shopping list and team inventory), and cad (the mechanical model in FreeCAD). Core tools are always available.",
   inputSchema: {
     toolset: ToolsetIdOrAlias.describe(
       `Toolset to enable. Aliases ${Object.entries(TOOLSET_ALIASES)
@@ -163,12 +163,20 @@ export const project_status = defineTool({
     const project = ctx.requireProject();
     const manifest = project.manifest();
     const files: Record<string, { exists: boolean; mtime?: string }> = {};
-    for (const rel of [PROJECT_FILES.boardPro, PROJECT_FILES.boardSch, PROJECT_FILES.boardPcb]) {
+    for (const rel of [PROJECT_FILES.boardPro, PROJECT_FILES.boardSch, PROJECT_FILES.boardPcb, PROJECT_FILES.projectParts]) {
       const m = await mtimeMs(p(project, rel));
       files[rel] =
         m === null ? { exists: false } : { exists: true, mtime: new Date(m).toISOString() };
     }
     const { lastSourceBuild, lastRelease } = await readProjectStatusEvidence(project);
+    // A read-only status must not fail because KiCad saved mid-comparison or a manifest is bad.
+    let taskComparison: Awaited<ReturnType<typeof compareTaskCheckpoint>> = null;
+    let taskComparisonError: string | null = null;
+    try {
+      taskComparison = await compareTaskCheckpoint(project);
+    } catch (error) {
+      taskComparisonError = error instanceof Error ? error.message : String(error);
+    }
     const reports = (await readdir(p(project, PROJECT_FILES.reports)).catch(() => [])).filter((f) =>
       f.endsWith(".json"),
     );
@@ -192,6 +200,9 @@ export const project_status = defineTool({
         ? { runId: route.id, status: route.status, open: route.result?.open.length ?? null }
         : null,
       lastDrc: drc ? drc.counts : null,
+      taskComparison: taskComparisonError
+        ? { error: taskComparisonError }
+        : compactTaskComparison(taskComparison),
       reports: reports.map((r) => `${PROJECT_FILES.reports}/${r}`),
       enabledToolsets: ctx.session?.enabledToolsets() ?? [...TOOLSETS],
     };
@@ -204,6 +215,9 @@ export const project_status = defineTool({
       `Sketches: ${sketches.length ? sketches.join(", ") : "none"}`,
       `Last source/compiler build: ${lastSourceBuild ? `${lastSourceBuild.ok ? "ok" : "FAILED"} (${lastSourceBuild.errors} errors, ${lastSourceBuild.warnings} warnings, captured ${lastSourceBuild.at})` : "never"}`,
       `Last release: ${formatLastRelease(lastRelease)}`,
+      taskComparisonError
+        ? `Task baseline comparison unavailable: ${taskComparisonError}`
+        : taskCheckpointText(taskComparison),
       `Last route: ${route ? `${route.status} (${route.result ? `${route.result.open.length} open` : "no result"})` : "never"}`,
       `Last DRC: ${drc ? `${drc.counts.errors} errors, ${drc.counts.warnings} warnings, ${drc.counts.unconnected} unconnected` : "never"}`,
     ];
@@ -298,7 +312,7 @@ export const circuit_build = defineTool({
   toolset: "core",
   title: "Build the board",
   description:
-    "Compile circuit.netlist.json into board.kicad_pcb and a generated board.kicad_sch. Footprints are pulled from KiCad libraries, explicitly placed when board.placements names them, and connected into the ratsnest; libSource draws searchable schematic symbols with labelled wire stubs. Returns actionable errors/warnings, with source-format guidance and an example when the entrypoint is missing or malformed. Rebuilds replace only generated schematic items, preserve manual schematic work and unlisted manual footprint placement, keep tracks whose nets still exist, and remove footprints the netlist no longer names.",
+    "Compile circuit.netlist.json into board.kicad_pcb and a generated board.kicad_sch. Footprints are pulled from KiCad libraries, explicitly placed when board.placements names them, and connected into the ratsnest; libSource draws all library units, including power units, with labelled wire stubs. For a rejected build, fix the source and call circuit_build again, or use schematic_edit to create native units (same reference, distinct unit numbers); schematic_inspect returns IDs for editing or replacement. Returns actionable errors/warnings, with source-format guidance and an example when the entrypoint is missing or malformed. Rebuilds replace only generated schematic items, preserve manual schematic work and unlisted manual footprint placement, keep tracks whose nets still exist, and remove footprints the netlist no longer names.",
   inputSchema: {
     entrypoint: z
       .string()
@@ -521,6 +535,13 @@ function routeRunTool(inputSchema: typeof RouteRunArgs) {
           ...(args.targets ? { targets: args.targets } : {}),
           ...(args.rules ? { rules: args.rules } : {}),
           ...(args.settings ? { settings: args.settings } : {}),
+          ...(args.rerouteMode ? { rerouteMode: args.rerouteMode } : {}),
+          ...(args.freeroutingPasses !== undefined
+            ? { freeroutingPasses: args.freeroutingPasses }
+            : {}),
+          ...(args.allowQualityRegression
+            ? { allowQualityRegression: args.allowQualityRegression }
+            : {}),
           applyPolicy: args.applyPolicy,
           waitMs: args.waitMs,
         },
@@ -542,7 +563,7 @@ export const verify_drc = defineTool({
   toolset: "core",
   title: "Run KiCad DRC",
   description:
-    "Run KiCad design rule check on board.kicad_pcb. When parity is enabled, require a complete saved schematic hierarchy and bind parity evidence to its aggregate revision. Writes reports/drc.json with actionable geometry.",
+    "Run KiCad design rule check on board.kicad_pcb. When parity is enabled, require a complete saved schematic hierarchy and bind parity evidence to its aggregate revision. Returns violation descriptions, rule types and native item IDs with actionable geometry; responseMode=full returns all rows. Writes reports/drc.json.",
   inputSchema: {
     severity: z
       .enum(["all", "error"])

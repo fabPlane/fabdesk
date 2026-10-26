@@ -3,6 +3,8 @@ import { Database, type SQLQueryBindings } from "bun:sqlite";
 import { randomBytes } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
+import { RunRetention, type RunCapture } from "./run-retention";
+export { RUN_DUMP_RETENTION } from "./run-retention";
 import {
   Job,
   Message,
@@ -224,8 +226,40 @@ export const MIGRATIONS: Migration[] = [
     `,
   },
   {
-    // One-click Finish it sessions (autonomous schematic → place → route → verify).
     version: 10,
+    sql: `ALTER TABLE run_dumps ADD COLUMN archive_destinations_json TEXT NOT NULL DEFAULT '[]';`,
+  },
+  {
+    version: 11,
+    sql: `CREATE TABLE run_dump_history (
+      run_id TEXT PRIMARY KEY, created_at TEXT NOT NULL, run_directory TEXT, file_path TEXT,
+      destinations_json TEXT NOT NULL DEFAULT '[]'
+    );
+    CREATE TABLE run_backup_drops (
+      run_id TEXT PRIMARY KEY, bytes INTEGER NOT NULL, reason TEXT NOT NULL, dropped_at TEXT NOT NULL
+    );`,
+  },
+  {
+    version: 12,
+    // Immutable capture footprint, independent of SQLite payload eviction. NULL means legacy/unmeasured.
+    sql: `ALTER TABLE run_dump_history ADD COLUMN directory_bytes INTEGER;
+      ALTER TABLE run_dump_history ADD COLUMN file_bytes INTEGER;
+      ALTER TABLE run_dump_history ADD COLUMN shared_bytes INTEGER;`,
+  },
+  {
+    version: 13,
+    // An earlier draft of #344 used version 10 for this index. Repair that development
+    // database too, without changing main's already-shipped migration numbering.
+    up(db) {
+      if (!db.query<{ name: string }, []>("PRAGMA table_info(run_dumps)").all().some((c) => c.name === "archive_destinations_json")) {
+        db.run("ALTER TABLE run_dumps ADD COLUMN archive_destinations_json TEXT NOT NULL DEFAULT '[]'");
+      }
+    },
+    sql: "CREATE INDEX IF NOT EXISTS runs_thread_started ON runs(thread_id, started_at DESC);",
+  },
+  {
+    // One-click Finish it sessions (autonomous schematic → place → route → verify).
+    version: 14,
     sql: `
       CREATE TABLE finish_it_sessions (
         id TEXT PRIMARY KEY,
@@ -816,6 +850,14 @@ export class RunRepo {
       .get(threadId);
     return r ? this.toRun(r) : null;
   }
+  /** Include runs referenced by copied messages so branched chats retain their timing. */
+  historyForThread(threadId: string): Run[] {
+    return this.db.query<RunRow, [string, string]>(
+      `SELECT * FROM runs WHERE thread_id = ? UNION SELECT * FROM runs WHERE id IN (
+        SELECT run_id FROM messages WHERE thread_id = ? AND run_id IS NOT NULL
+      ) ORDER BY started_at DESC, id DESC`,
+    ).all(threadId, threadId).map((r) => this.toRun(r));
+  }
   /** Most recent agent session id for resume, per thread + agent. */
   lastSession(threadId: string, agentId: string): string | null {
     const r = this.db
@@ -838,9 +880,8 @@ export type RunDump = {
   projectId: string | null;
   createdAt: string;
   dumpJson: string;
+  runDirectory?: string;
 };
-
-export const RUN_DUMP_RETENTION = { rows: 100, bytes: 512 * 1024 * 1024 } as const;
 
 type RunDumpRow = {
   run_id: string;
@@ -853,8 +894,16 @@ type RunDumpRow = {
 };
 
 export class RunDumpRepo {
-  constructor(private readonly db: Database) {}
-  put(dump: RunDump, prune = true): void {
+  readonly retention: RunRetention;
+  constructor(private readonly db: Database) { this.retention = new RunRetention(db); this.retention.prune(); }
+  begin(runId: string, capture?: RunCapture, destinations: readonly string[] = []): void { this.retention.begin(runId, capture, destinations); }
+  end(runId: string): void { this.retention.end(runId); this.retention.prune(); }
+  /**
+   * Stores a dump and applies retention. Dumps not yet recorded in `usage_archive_uploads` for every
+   * one of `archiveDestinations` survive retention until every destination accepts them.
+   */
+  put(dump: RunDump, archiveDestinations: readonly string[] = []): void {
+    if (this.db.query("SELECT 1 FROM run_backup_drops WHERE run_id = ?").get(dump.runId)) return;
     this.db.transaction(() => {
       this.db.run(
         "INSERT INTO run_dumps(run_id, trace_id, thread_id, agent_id, project_id, created_at, dump_json) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(run_id) DO UPDATE SET trace_id = excluded.trace_id, thread_id = excluded.thread_id, agent_id = excluded.agent_id, project_id = excluded.project_id, created_at = excluded.created_at, dump_json = excluded.dump_json",
@@ -868,19 +917,18 @@ export class RunDumpRepo {
           dump.dumpJson,
         ],
       );
-      if (prune)
-        this.db.run(
-          `DELETE FROM run_dumps WHERE run_id IN (
-          SELECT run_id FROM (
-            SELECT run_id,
-              ROW_NUMBER() OVER (ORDER BY created_at DESC, run_id DESC) AS row_number,
-              SUM(length(CAST(dump_json AS BLOB))) OVER (ORDER BY created_at DESC, run_id DESC) AS cumulative_bytes
-            FROM run_dumps
-          ) WHERE row_number > ? OR cumulative_bytes > ?
-        )`,
-          [RUN_DUMP_RETENTION.rows, RUN_DUMP_RETENTION.bytes],
-        );
+      const capture = this.db.query<{ destinations_json: string }, [string]>(
+        "SELECT destinations_json FROM run_dump_history WHERE run_id = ?").get(dump.runId);
+      const required = [...new Set([...(capture ? JSON.parse(capture.destinations_json) as string[] : []), ...archiveDestinations])];
+      if (required.length)
+        this.db.run("UPDATE run_dumps SET archive_destinations_json = ? WHERE run_id = ? AND archive_destinations_json = '[]'",
+          [JSON.stringify(required), dump.runId]);
+      const destinations = this.db.query<{ archive_destinations_json: string }, [string]>(
+        "SELECT archive_destinations_json FROM run_dumps WHERE run_id = ?").get(dump.runId)!;
+      this.retention.register(dump.runId, dump.createdAt, dump.runDirectory ?? null, dump.dumpJson,
+        JSON.parse(destinations.archive_destinations_json) as string[]);
     })();
+    this.retention.prune();
   }
   get(runId: string): RunDump | null {
     const row = this.db
@@ -1290,6 +1338,8 @@ export class SettingsRepo {
       return undefined;
     }
   }
+
+  deleteRaw(key: string): void { this.db.run("DELETE FROM settings WHERE key = ?", [key]); }
 
   writeRaw(key: string, value: unknown): void {
     this.db.run(

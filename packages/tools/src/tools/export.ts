@@ -2,9 +2,11 @@
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod/v4";
-import { PROJECT_FILES, ensureDir } from "../fs";
+import { projectBomCsv, projectBomLines } from "@fabdesk/protocol";
+import { PROJECT_FILES, ensureDir, writeAtomic } from "../fs";
 import { ToolError, defineTool } from "../registry";
-import { ok, p, requireBoard, requireKicad, requireSchematic } from "./common";
+import { loadNetlistOrNull, loadProjectParts, ok, p, requireBoard, requireKicad, requireSchematic } from "./common";
+import { silk_art } from "./silk-art";
 
 const rel = (project: { dir: string }, abs: string) =>
   abs.startsWith(project.dir) ? abs.slice(project.dir.length + 1) : abs;
@@ -160,7 +162,7 @@ export const export_bom = defineTool({
   toolset: "export",
   title: "Export BOM",
   description:
-    "Export a grouped bill of materials CSV from the saved native schematic to exports/bom.csv.",
+    "Export the project bill of materials to exports/bom.csv: electrical parts from circuit.netlist.json plus off-board / mechanical lines from project.parts.json (motors, displays, standoffs, screws). Falls back to the KiCad schematic BOM when there is no netlist and no off-board file.",
   inputSchema: {},
   annotations: {
     readOnlyHint: false,
@@ -170,10 +172,22 @@ export const export_bom = defineTool({
   },
   handler: async (_args, ctx) => {
     const project = ctx.requireProject();
-    const cli = await requireKicad(ctx);
-    const schematic = await requireSchematic(project);
+    const netlist = await loadNetlistOrNull(project);
+    const parts = await loadProjectParts(project);
+    const lines = projectBomLines(netlist?.netlist.components ?? [], parts.parts);
     await ensureDir(p(project, PROJECT_FILES.exports));
     const output = p(project, PROJECT_FILES.exports, "bom.csv");
+    if (lines.length > 0) {
+      await writeAtomic(output, projectBomCsv(lines));
+      const pcb = lines.filter((l) => l.source === "pcb").length;
+      const offboard = lines.filter((l) => l.source === "offboard").length;
+      return ok(
+        `Exported exports/bom.csv (${lines.length} lines: ${pcb} electrical, ${offboard} off-board).`,
+        { path: output, lines: lines.length, pcb, offboard, source: "project" },
+      );
+    }
+    const cli = await requireKicad(ctx);
+    const schematic = await requireSchematic(project);
     await ctx.services.kicad.exportBom(cli, { schematic, output, signal: ctx.signal });
     return ok("Exported exports/bom.csv from board.kicad_sch.", {
       path: output,
@@ -218,15 +232,22 @@ export const export_zip = defineTool({
   toolset: "export",
   title: "Zip fabrication outputs",
   description:
-    "Bundle the files currently present in exports/gerbers plus positions.csv and bom.csv into exports/fabrication.zip. Missing optional entries are reported.",
-  inputSchema: {},
+    "Bundle the files currently present in exports/gerbers plus positions.csv and bom.csv into exports/fabrication.zip or a named filename under exports/. Missing optional entries are reported.",
+  inputSchema: {
+    filename: z
+      .string()
+      .regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*\.zip$/)
+      .max(200)
+      .default("fabrication.zip")
+      .describe("Archive basename under exports/, such as controller-fabrication.zip"),
+  },
   annotations: {
     readOnlyHint: false,
     destructiveHint: true,
     openWorldHint: false,
     idempotentHint: true,
   },
-  handler: async (_args, ctx) => {
+  handler: async ({ filename }, ctx) => {
     const project = ctx.requireProject();
     const exportsDir = p(project, PROJECT_FILES.exports);
     const gerbersDir = join(exportsDir, "gerbers");
@@ -243,11 +264,11 @@ export const export_zip = defineTool({
     }
     if (entries.length === 0)
       throw new ToolError("no fabrication outputs found in exports/", "precondition");
-    const output = join(exportsDir, "fabrication.zip");
+    const output = join(exportsDir, filename);
     await zipFiles(output, entries);
     const size = (await stat(output)).size;
     return ok(
-      `Wrote exports/fabrication.zip (${entries.length} files, ${size} bytes).${missing.length ? ` Missing: ${missing.join(", ")}.` : ""}`,
+      `Wrote exports/${filename} (${entries.length} files, ${size} bytes).${missing.length ? ` Missing: ${missing.join(", ")}.` : ""}`,
       { path: output, files: entries.map((e) => e.name), missing, size },
     );
   },
@@ -330,6 +351,236 @@ function crc32(data: Uint8Array, table: Uint32Array): number {
   return (crc ^ 0xffffffff) >>> 0;
 }
 
+export const export_stencil = defineTool({
+  name: "export_stencil",
+  toolset: "export",
+  title: "Export 3D-printed solder stencil",
+  description:
+    "Build a solder-stencil STL from the board's F.Paste (or B.Paste) pads, preserving paste geometry by default. Writes exports/stencil/<side>-Paste.stl plus JSON/markdown/SVG summaries. Shrink, small-opening/fine-pitch filters and alignment holes are opt-in; skipped pads are reported. Optional jig tray. Pure TypeScript — does not need kicad-cli. Inspect the sliced openings for your nozzle before printing.",
+  inputSchema: {
+    side: z.enum(["F", "B"]).default("F").describe("Paste layer: F.Paste or B.Paste"),
+    thicknessMm: z
+      .number()
+      .positive()
+      .default(0.15)
+      .describe("Plate thickness in mm (0.12–0.2 is typical for FDM/resin)"),
+    frameMm: z.number().nonnegative().default(5).describe("Border around the board outline in mm"),
+    apertureOffsetMm: z
+      .number()
+      .default(0)
+      .describe(
+        "Additional per-pad shrink (positive) or grow (negative) in mm, after KiCad paste margins",
+      ),
+    minApertureMm: z
+      .number()
+      .nonnegative()
+      .default(0)
+      .describe("Skip pads whose opening is smaller than this after shrink"),
+    skipFinePitch: z
+      .boolean()
+      .default(false)
+      .describe("Skip footprints whose paste-pad pitch is below finePitchMm"),
+    finePitchMm: z.number().positive().default(0.5).describe("Fine-pitch threshold in mm"),
+    alignment: z
+      .enum(["holes", "pegs", "none"])
+      .default("none")
+      .describe("Registration: NPTH/tooling holes, or frame-corner holes if the board has none"),
+    alignmentHoleMm: z
+      .number()
+      .positive()
+      .default(3.2)
+      .describe("Frame-corner hole diameter when no NPTH tooling holes exist"),
+    includeJig: z
+      .boolean()
+      .default(false)
+      .describe("Also write a simple PCB-holder tray STL with a board pocket and alignment pegs"),
+    pcbThicknessMm: z
+      .number()
+      .positive()
+      .default(1.6)
+      .describe("Pocket depth for the optional jig"),
+  },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
+  longRunning: true,
+  handler: async (args, ctx) => {
+    const project = ctx.requireProject();
+    const board = await requireBoard(project);
+    const outDir = await ensureDir(p(project, PROJECT_FILES.exports, "stencil"));
+    ctx.progress(0.2, "building stencil");
+    const summary = await ctx.services.kicad.exportStencil({
+      board,
+      outDir,
+      side: args.side,
+      thicknessMm: args.thicknessMm,
+      frameMm: args.frameMm,
+      apertureOffsetMm: args.apertureOffsetMm,
+      minApertureMm: args.minApertureMm,
+      skipFinePitch: args.skipFinePitch,
+      finePitchMm: args.finePitchMm,
+      alignment: args.alignment,
+      alignmentHoleMm: args.alignmentHoleMm,
+      includeJig: args.includeJig,
+      pcbThicknessMm: args.pcbThicknessMm,
+    });
+    ctx.progress(1, "done");
+    const files = [
+      summary.files.stl,
+      summary.files.json,
+      summary.files.markdown,
+      summary.files.svg,
+    ];
+    if (summary.files.jig) files.push(summary.files.jig);
+    const warn = summary.warnings.length
+      ? `\nWarnings:\n${summary.warnings.map((w) => `- ${w.message}`).join("\n")}`
+      : "";
+    return ok(
+      `Exported 3D-printed ${summary.side}.Paste stencil to exports/stencil/: ${summary.apertureCount} aperture(s) from ${summary.padCount} paste pad(s), ${summary.triangleCount} triangles, min opening ${summary.minApertureMm == null ? "n/a" : `${summary.minApertureMm.toFixed(3)} mm`}.${warn}\n${files.map((f) => `- ${rel(project, f)}`).join("\n")}`,
+      { ...summary, files, path: summary.files.stl },
+    );
+  },
+});
+
+export const export_laser_stencil = defineTool({
+  name: "export_laser_stencil",
+  toolset: "export",
+  title: "Export laser-cut solder stencil",
+  description:
+    "Export a LightBurn .lbrn2 job plus layered SVG/DXF of F.Paste (or B.Paste) for a ComMarker Omni X 355 nm UV galvo (LightBurn / EZCAD). Presets: mylar-uv (default, 0.1 mm Mylar/PET), kapton (0.075 mm PI), stainless-0.1. Applies paste-release shrink plus kerf compensation, minimum-aperture checks, a frame, and printer-frame fiducials. Power/speed/frequency/passes are editable starting points written into the .lbrn2. Pure TypeScript — does not need kicad-cli.",
+  inputSchema: {
+    side: z.enum(["F", "B"]).default("F").describe("Paste layer: F.Paste or B.Paste"),
+    preset: z
+      .enum(["mylar-uv", "kapton", "stainless-0.1"])
+      .default("mylar-uv")
+      .describe(
+        "mylar-uv = 0.1 mm Mylar/PET on Omni X 355 nm UV (default); kapton = 0.075 mm PI; stainless-0.1 = 0.1 mm stainless foil",
+      ),
+    frameMm: z
+      .number()
+      .nonnegative()
+      .optional()
+      .describe("Border around the board outline in mm (preset default 8)"),
+    thicknessMm: z.number().positive().optional().describe("Film / foil thickness in mm"),
+    apertureOffsetMm: z
+      .number()
+      .optional()
+      .describe("Per-side paste-release shrink (positive) or grow (negative) in mm"),
+    kerfMm: z
+      .number()
+      .optional()
+      .describe("Additional per-side kerf compensation in mm, added to apertureOffsetMm"),
+    minApertureMm: z
+      .number()
+      .nonnegative()
+      .optional()
+      .describe("Skip pads whose opening is smaller than this after shrink"),
+    skipFinePitch: z
+      .boolean()
+      .optional()
+      .describe("Skip footprints whose paste-pad pitch is below finePitchMm"),
+    finePitchMm: z.number().positive().optional().describe("Fine-pitch threshold in mm"),
+    alignmentHoleMm: z
+      .number()
+      .positive()
+      .optional()
+      .describe("Printer-frame fiducial diameter in mm (preset default 3.2)"),
+    includeFiducials: z
+      .boolean()
+      .optional()
+      .describe("Cut frame-corner + board NPTH registration holes (default true)"),
+    powerPct: z
+      .number()
+      .min(0)
+      .max(100)
+      .optional()
+      .describe("Starting-point laser power percent (not a certified recipe)"),
+    speedMmPerS: z
+      .number()
+      .positive()
+      .optional()
+      .describe("Starting-point cut speed in mm/s (not a certified recipe)"),
+    frequencyKhz: z
+      .number()
+      .positive()
+      .optional()
+      .describe("Starting-point pulse frequency in kHz (not a certified recipe)"),
+    pulseNs: z
+      .number()
+      .positive()
+      .optional()
+      .describe("Starting-point pulse width in ns (not a certified recipe)"),
+    passes: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe("Starting-point pass count (not a certified recipe)"),
+    lensMm: z.number().positive().optional().describe("Lens focal length in mm used for the starting-point table"),
+  },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
+  longRunning: true,
+  handler: async (args, ctx) => {
+    const project = ctx.requireProject();
+    const board = await requireBoard(project);
+    const outDir = await ensureDir(p(project, PROJECT_FILES.exports, "stencil"));
+    ctx.progress(0.2, "building laser stencil");
+    let summary;
+    try {
+      summary = await ctx.services.kicad.exportLaserStencil({
+        board,
+        outDir,
+        side: args.side,
+        preset: args.preset,
+        ...(args.frameMm != null ? { frameMm: args.frameMm } : {}),
+        ...(args.thicknessMm != null ? { thicknessMm: args.thicknessMm } : {}),
+        ...(args.apertureOffsetMm != null ? { apertureOffsetMm: args.apertureOffsetMm } : {}),
+        ...(args.kerfMm != null ? { kerfMm: args.kerfMm } : {}),
+        ...(args.minApertureMm != null ? { minApertureMm: args.minApertureMm } : {}),
+        ...(args.skipFinePitch != null ? { skipFinePitch: args.skipFinePitch } : {}),
+        ...(args.finePitchMm != null ? { finePitchMm: args.finePitchMm } : {}),
+        ...(args.alignmentHoleMm != null ? { alignmentHoleMm: args.alignmentHoleMm } : {}),
+        ...(args.includeFiducials != null ? { includeFiducials: args.includeFiducials } : {}),
+        ...(args.powerPct != null ? { powerPct: args.powerPct } : {}),
+        ...(args.speedMmPerS != null ? { speedMmPerS: args.speedMmPerS } : {}),
+        ...(args.frequencyKhz != null ? { frequencyKhz: args.frequencyKhz } : {}),
+        ...(args.pulseNs != null ? { pulseNs: args.pulseNs } : {}),
+        ...(args.passes != null ? { passes: args.passes } : {}),
+        ...(args.lensMm != null ? { lensMm: args.lensMm } : {}),
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === "LaserStencilOptionsError") {
+        throw new ToolError(error.message, "invalid_args");
+      }
+      throw error;
+    }
+    ctx.progress(1, "done");
+    const files = [
+      summary.files.lbrn2,
+      summary.files.svg,
+      summary.files.dxf,
+      summary.files.json,
+      summary.files.markdown,
+      summary.files.notes,
+    ];
+    const warn = summary.warnings.length
+      ? `\nWarnings:\n${summary.warnings.map((w) => `- ${w.message}`).join("\n")}`
+      : "";
+    return ok(
+      `Exported laser-cut ${summary.side}.Paste stencil (${summary.presetTitle}) to exports/stencil/: ${summary.apertureCount} aperture(s), ${summary.fiducialCount} fiducial(s), shrink ${summary.totalShrinkMm} mm/side. Starting-point job ${summary.job.powerPct}% · ${summary.job.speedMmPerS} mm/s · ${summary.job.frequencyKhz} kHz · ${summary.job.passes} pass(es). Open the .lbrn2 in LightBurn; SVG/DXF are for EZCAD.${warn}\n${files.map((f) => `- ${rel(project, f)}`).join("\n")}`,
+      { ...summary, files, path: summary.files.lbrn2 },
+    );
+  },
+});
+
 export const exportTools = [
   export_gerbers,
   export_drill,
@@ -338,4 +589,7 @@ export const exportTools = [
   export_netlist,
   export_zip,
   export_dxf,
+  silk_art,
+  export_stencil,
+  export_laser_stencil,
 ];

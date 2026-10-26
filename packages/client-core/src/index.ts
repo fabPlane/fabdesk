@@ -5,6 +5,9 @@
  * view packages.
  */
 export { CoreClient, CoreHttpError, parseJsonl } from "./CoreClient";
+export { deduplicateChatNotices } from "./chat-notices";
+export { errorHelp, errorMessage, errorPayload, agentErrorText, splitAgentError } from "./error-help";
+export type { ErrorHelp, ErrorAction, ErrorContext } from "./error-help";
 export type {
   CoreClientOptions,
   ThreadDetail,
@@ -103,7 +106,7 @@ export type { LiveRun, LiveJob } from "./stores/runs";
 export { useRunTool, resolveToolName, TOOL_PATTERNS } from "./tools";
 export type { ToolKind, ToolRunState } from "./tools";
 
-export { groupThreadsByProject } from "./group-threads";
+export { groupThreadsByProject, sidebarSections } from "./group-threads";
 export type { ProjectThreadGroup, ProjectThreadGroupKind } from "./group-threads";
 export { pickerModelChoices, agentModelLabel } from "./agent-model-choices";
 
@@ -114,6 +117,12 @@ export * from "./cinema";
 
 export {
   groupByDestination,
+  filterShoppingItems,
+  createShoppingDraft,
+  shoppingDraftPatch,
+  shoppingDraftConflicts,
+  rebaseShoppingDraft,
+  type ShoppingItemDraft,
   itemLabel,
   destinationOptions,
   isCloudSignedOut,
@@ -124,3 +133,28 @@ export { SLASH_COMMANDS, expandSlashCommand, isFinishItCommand, slashSuggestions
 export type { SlashCommand } from "./slash-commands";
 
 export { CadSession, type CadSessionState } from "./cad-session";
+export {
+  DEFAULT_LASER_STENCIL_PRESET,
+  LASER_STENCIL_PRESET_IDS,
+  LASER_STENCIL_UI_PRESETS,
+  laserStencilFormDefaults,
+  parseLaserNumber,
+} from "./laser-stencil-presets";
+export type { LaserStencilPresetId, LaserStencilUiPreset } from "./laser-stencil-presets";
+
+export {
+  reduceVoice,
+  voiceBusy,
+  voiceDraft,
+  DEFAULT_VOICE_STATE,
+  VOICE_PHASES,
+} from "./speech/composer-state";
+export type { VoiceEvent, VoicePhase, VoiceState, VoiceMode, VoiceErrorKind } from "./speech/composer-state";
+export {
+  parseVoiceShortcut,
+  formatVoiceShortcut,
+  matchVoiceShortcut,
+  releasesVoiceShortcut,
+  DEFAULT_VOICE_SHORTCUT,
+} from "./speech/shortcut";
+export type { VoiceShortcut } from "./speech/shortcut";

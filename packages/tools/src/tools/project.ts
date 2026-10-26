@@ -1,3 +1,4 @@
+import { project_checkpoint } from "./task-checkpoint";
 /** Project toolset: files, sketches and board settings. All paths are jailed under the project dir. */
 import { copyFile, readdir, readFile, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join } from "node:path";
@@ -6,6 +7,7 @@ import { PROJECT_FILES, jailPath, projectRelative, writeAtomic } from "../fs";
 import { ToolError, defineTool } from "../registry";
 import { VIAGRID_9055 } from "../templates/viagrid-9055";
 import { ok, p, trim } from "./common";
+import { partsTools } from "./parts";
 
 const MAX_READ = 512 * 1024;
 
@@ -305,14 +307,19 @@ export function mimeFor(name: string): string {
       svg: "image/svg+xml",
       glb: "model/gltf-binary",
       json: "application/json",
+      gif: "image/gif",
+      mp4: "video/mp4",
+      webm: "video/webm",
     }[ext] ?? "application/octet-stream"
   );
 }
 
 export const projectTools = [
+  project_checkpoint,
   project_read_file,
   project_write_file,
   project_list_sketches,
   project_set_board,
   project_import_kicad,
+  ...partsTools,
 ];

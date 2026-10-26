@@ -144,10 +144,13 @@ describe("cad toolset", () => {
       "cad_export",
       "cad_python",
       "cad_view",
+      "cad_kernels",
+      "cad_build_part",
+      "cad_combine_parts",
       "cad_enclosure",
     ]);
     expect(registry.get("cad_python")!.annotations.openWorldHint).toBe(true);
-    expect(toolsMarkdown(registry)).toContain("### cad — mechanical model in FreeCAD");
+    expect(toolsMarkdown(registry)).toContain("### cad — mechanical model (OpenCascade");
   });
 
   test("says how to get FreeCAD when the daemon has no CAD bridge", async () => {
@@ -164,7 +167,12 @@ describe("cad toolset", () => {
       properties: { Length: "40 mm" },
     });
     expect(out.text).toContain("Added Lid (Part::Box");
+    expect(out.text).toContain("OpenCascade / FreeCAD");
     expect(cad.calls).toEqual(['add Part::Box {"Length":"40 mm"}', "recompute", "save"]);
+
+    await expect(
+      invoke("cad_add_object", { type: "Part::Box", name: "Bad", kernel: "smlib" }),
+    ).rejects.toThrow(/cad_build_part/);
 
     cad.calls.length = 0;
     await invoke("cad_set_properties", {
@@ -293,12 +301,62 @@ describe("cad_enclosure", () => {
     expect(cad.calls).toContain("save");
   });
 
+  test("v2 writes offset, vents, snap-fits, preview and STL/STEP", async () => {
+    const { invoke, project } = await setup();
+    await writeFile(join(project.dir, "board.kicad_pcb"), ENCLOSURE_BOARD);
+    const generated = await invoke("cad_enclosure", {
+      action: "generate",
+      applyToCad: false,
+      outlineOffsetMm: 2,
+      clearanceMm: 1.5,
+      ventPattern: "grid",
+      ventFaces: "lid",
+      snapFit: true,
+      snapCount: 2,
+    });
+    const json = generated.json as {
+      preview: string;
+      stl: string;
+      step: string;
+      previewSvg: string;
+      vents: number;
+      clips: number;
+      params: { outlineOffsetMm: number; clearanceMm: number; ventPattern: string; snapFit: boolean };
+      outerMm: { width: number };
+    };
+    expect(json.params.outlineOffsetMm).toBe(2);
+    expect(json.params.clearanceMm).toBe(1.5);
+    expect(json.params.ventPattern).toBe("grid");
+    expect(json.params.snapFit).toBe(true);
+    expect(json.vents).toBeGreaterThan(0);
+    expect(json.clips).toBeGreaterThan(0);
+    expect(json.previewSvg).toContain("enclosure-preview-svg");
+    expect(generated.text).toContain("snap-fit");
+    const preview = await readFile(join(project.dir, json.preview), "utf8");
+    expect(preview).toContain("<svg");
+    expect(await readFile(join(project.dir, json.stl), "utf8")).toStartWith("solid fabplane_enclosure_base");
+    expect(await readFile(join(project.dir, json.step), "utf8")).toContain("ISO-10303-21;");
+    expect(json.outerMm.width).toBeCloseTo(40 + 2 * (1.5 + 2) + 2 * 2, 4);
+    const status = await invoke("cad_enclosure", { action: "status" });
+    expect((status.json as { preview?: string; previewSvg?: string }).preview).toBe(json.preview);
+    expect((status.json as { previewSvg?: string }).previewSvg).toBeUndefined();
+  });
+
   test("status without a spec lists board features", async () => {
     const { invoke, project } = await setup();
     await writeFile(join(project.dir, "board.kicad_pcb"), ENCLOSURE_BOARD);
     const out = await invoke("cad_enclosure", { action: "status" });
     expect(out.text).toContain("No enclosure yet");
     expect((out.json as { exists: boolean; features: { holes: number } }).features.holes).toBe(1);
+  });
+
+  test("status on a project without a board is not an error", async () => {
+    const { invoke } = await setup();
+    const out = await invoke("cad_enclosure", { action: "status" });
+    expect(out.isError).toBeUndefined();
+    expect(out.text).toMatch(/no board\.kicad_pcb/i);
+    expect((out.json as { exists: boolean; noBoard: boolean }).exists).toBe(false);
+    expect((out.json as { noBoard: boolean }).noBoard).toBe(true);
   });
 });
 

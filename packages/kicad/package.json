@@ -6,7 +6,9 @@
   "exports": {
     ".": "./src/index.ts",
     "./board-features": "./src/board-features.ts",
-    "./enclosure": "./src/enclosure.ts"
+    "./enclosure": "./src/enclosure.ts",
+    "./stencil": "./src/stencil.ts",
+    "./stencil-laser": "./src/stencil-laser.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

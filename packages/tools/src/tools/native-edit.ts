@@ -15,12 +15,19 @@ import {
 import { dirname, join } from "node:path";
 import { z } from "zod/v4";
 import { PROJECT_FILES, exists, jailPath, projectRelative, readJson, writeJson } from "../fs";
-import { ToolError, defineTool, type ProjectHandle, type ToolContext } from "../registry";
+import {
+  ToolError,
+  NativeRevisionConflict,
+  defineTool,
+  mutationInputObject,
+  type ProjectHandle,
+  type ToolContext,
+} from "../registry";
 import type { NativeSchematicEdit, PcbFootprintEdit, PcbGeometryEdit } from "../services";
 import { inspectSavedHierarchy, ok, p } from "./common";
 
-const Point = z.object({ x: z.number().finite(), y: z.number().finite() });
-const PadEndpoint = z.object({ reference: z.string().min(1), pad: z.string().min(1) });
+const Point = mutationInputObject({ x: z.number().finite(), y: z.number().finite() });
+const PadEndpoint = mutationInputObject({ reference: z.string().min(1), pad: z.string().min(1) });
 const CopperEndpoint = z
   .union([Point, PadEndpoint])
   .describe("Exact millimetre point or a footprint pad resolved to its exact saved-board position");
@@ -229,7 +236,8 @@ async function transactionPaths(
   captureReference = false,
 ): Promise<string[]> {
   const paths = new Set<string>(FILES);
-  if (captureReference || await exists(p(project,".fabdesk/removed-copper.json"))) paths.add(".fabdesk/removed-copper.json");
+  if (captureReference || (await exists(p(project, ".fabdesk/removed-copper.json"))))
+    paths.add(".fabdesk/removed-copper.json");
   if (schematicAffecting) {
     const hierarchy = await inspectSavedHierarchy(ctx, project);
     if (!hierarchy.complete)
@@ -274,10 +282,10 @@ async function transactionMetadata(directory: string): Promise<TransactionMetada
   return { ...metadata, files };
 }
 
-const SchematicEdit = z.object({
+const SchematicEdit = mutationInputObject({
   symbols: z
     .array(
-      z.object({
+      mutationInputObject({
         libId: z.string().min(3),
         reference: z.string().min(1),
         value: z.string(),
@@ -292,7 +300,7 @@ const SchematicEdit = z.object({
     .optional(),
   symbolUpdates: z
     .array(
-      z.object({
+      mutationInputObject({
         reference: z.string().min(1),
         newReference: z.string().min(1).optional(),
         position: Point.optional(),
@@ -305,41 +313,39 @@ const SchematicEdit = z.object({
     .optional(),
   connections: z
     .array(
-      z
-        .object({
-          name: z.string().min(1),
-          nodes: z.array(z.object({ reference: z.string(), pin: z.string() })).min(1),
-          label: z.enum(["local", "global", "none"]).optional(),
-        })
-        .refine((connection) => connection.label !== "none" || connection.nodes.length >= 2, {
-          message: "direct wire connections require at least two nodes",
-          path: ["nodes"],
-        }),
+      mutationInputObject({
+        name: z.string().min(1),
+        nodes: z.array(mutationInputObject({ reference: z.string(), pin: z.string() })).min(1),
+        label: z.enum(["local", "global", "none"]).optional(),
+      }).refine((connection) => connection.label !== "none" || connection.nodes.length >= 2, {
+        message: "direct wire connections require at least two nodes",
+        path: ["nodes"],
+      }),
     )
     .max(500)
     .optional(),
   wires: z
-    .array(z.object({ start: Point, end: Point }))
+    .array(mutationInputObject({ start: Point, end: Point }))
     .max(1000)
     .optional(),
   localLabels: z
-    .array(z.object({ text: z.string(), position: Point }))
+    .array(mutationInputObject({ text: z.string(), position: Point }))
     .max(500)
     .optional(),
   globalLabels: z
-    .array(z.object({ text: z.string(), position: Point }))
+    .array(mutationInputObject({ text: z.string(), position: Point }))
     .max(500)
     .optional(),
   junctions: z.array(Point).max(1000).optional(),
   noConnects: z.array(Point).max(1000).optional(),
   texts: z
-    .array(z.object({ text: z.string(), position: Point }))
+    .array(mutationInputObject({ text: z.string(), position: Point }))
     .max(200)
     .optional(),
   deleteItemIds: z.array(z.string()).max(1000).optional(),
 });
 
-const FootprintEdit = z.object({
+const FootprintEdit = mutationInputObject({
   reference: z.string().min(1),
   position: Point.optional(),
   rotation: z.number().finite().optional(),
@@ -347,7 +353,7 @@ const FootprintEdit = z.object({
   lock: z.boolean().optional(),
 });
 
-const Polygon = z.object({
+const Polygon = mutationInputObject({
   points: z.array(Point).min(3).max(5000),
   holes: z.array(z.array(Point).min(3).max(5000)).max(100).optional(),
 });
@@ -388,10 +394,10 @@ export function layerId(layer: string | number): number {
   if (value === undefined) throw new ToolError(`unknown KiCad PCB layer ${layer}`, "invalid_args");
   return value;
 }
-const PcbGeometry = z.object({
+const PcbGeometry = mutationInputObject({
   tracks: z
     .array(
-      z.object({
+      mutationInputObject({
         start: CopperEndpoint,
         end: CopperEndpoint,
         width: z.number().positive(),
@@ -403,7 +409,7 @@ const PcbGeometry = z.object({
     .optional(),
   vias: z
     .array(
-      z.object({
+      mutationInputObject({
         position: Point,
         diameter: z.number().positive(),
         drill: z.number().positive(),
@@ -442,7 +448,7 @@ const PcbGeometry = z.object({
     .optional(),
   texts: z
     .array(
-      z.object({
+      mutationInputObject({
         text: z.string(),
         position: Point,
         layer: Layer,
@@ -456,7 +462,7 @@ const PcbGeometry = z.object({
     .optional(),
   graphics: z
     .array(
-      z.object({
+      mutationInputObject({
         kind: z.enum(["segment", "rectangle", "arc", "circle", "polygon"]),
         layer: Layer,
         start: Point.optional(),
@@ -480,15 +486,16 @@ export const native_edit_transaction = defineTool({
   toolset: "circuit",
   title: "Preview or apply an atomic native edit",
   description:
-    "Preview or atomically apply explicit native KiCad schematic, footprint, outline, copper, zone, keepout, text, and graphic changes. Revision mismatches reject the transaction; rejected changes restore the prior files.",
+    "Preview or atomically apply explicit native KiCad schematic, footprint, outline, copper, zone, keepout, text, and graphic changes. Revision mismatches reject the transaction; ordinary failures restore the prior files. Saved-revision or unsaved-work conflicts preserve the live session and may leave earlier operations applied; the error identifies the backup record.",
   inputSchema: {
     mode: z.enum(["preview", "apply"]).default("preview"),
     expectedSchematicRevision: z.string().length(64).nullable().optional(),
     expectedPcbRevision: z.string().length(64).nullable().optional(),
     schematic: SchematicEdit.optional(),
-    outline: z
-      .object({ points: z.array(Point).min(3).max(100), replace: z.boolean().default(false) })
-      .optional(),
+    outline: mutationInputObject({
+      points: z.array(Point).min(3).max(100),
+      replace: z.boolean().default(false),
+    }).optional(),
     footprints: z.array(FootprintEdit).max(500).optional(),
     geometry: PcbGeometry.optional(),
     removeCopperNets: z.array(z.string().min(1)).max(500).optional(),
@@ -553,7 +560,10 @@ export const native_edit_transaction = defineTool({
         },
       );
 
-    const copperBefore = geometry?.deleteItemIds?.length || removeCopperNets?.length ? await readCopper(project.dir) : null;
+    const copperBefore =
+      geometry?.deleteItemIds?.length || removeCopperNets?.length
+        ? await readCopper(project.dir)
+        : null;
     const transactionId = `native-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
     const root = p(project, ".fabdesk/native-revisions");
     const directory = join(root, transactionId);
@@ -569,8 +579,8 @@ export const native_edit_transaction = defineTool({
       plan,
       files,
     } satisfies TransactionMetadata);
+    const changes: Record<string, unknown> = {};
     try {
-      const changes: Record<string, unknown> = {};
       if (schematic)
         changes["schematic"] = await ctx.services.design.schematicEdit(project.dir, {
           ...(schematic as NativeSchematicEdit),
@@ -660,20 +670,35 @@ export const native_edit_transaction = defineTool({
         } as PcbGeometryEdit;
         changes["geometry"] = await ctx.services.design.editBoardGeometry(project.dir, resolved);
       }
-      const removedCopperFacts = copperBefore ? await recordRemoval(project.dir, copperBefore, await readCopper(project.dir)) : null;
+      const removedCopperFacts = copperBefore
+        ? await recordRemoval(project.dir, copperBefore, await readCopper(project.dir))
+        : null;
       const after = await boundRevisions(ctx, project);
       await writeJson(join(root, "last-accepted.json"), { transactionId, before, after });
-      return ok(`Atomic native edit ${transactionId} accepted; design checks were not run.${removedCopperFacts ? `\n${qualityText({nets: removedCopperFacts.nets,pairs:[],reference:[],lengthConvention:"chord"})}` : ""}`, {
-        ...(removedCopperFacts ? { removedCopperFacts } : {}),
-        status: "accepted",
-        transactionId,
-        before,
-        after,
-        plan,
-        changes,
-        validation: { structural: true, designChecksRun: false },
-      });
+      return ok(
+        `Atomic native edit ${transactionId} accepted; design checks were not run.${removedCopperFacts ? `\n${qualityText({ nets: removedCopperFacts.nets, pairs: [], reference: [], lengthConvention: "chord" })}` : ""}`,
+        {
+          ...(removedCopperFacts ? { removedCopperFacts } : {}),
+          status: "accepted",
+          transactionId,
+          before,
+          after,
+          plan,
+          changes,
+          validation: { structural: true, designChecksRun: false },
+        },
+      );
     } catch (error) {
+      // Conflict refusal preserves external saved bytes and unsaved live edits. Rollback must
+      // not overwrite the former or release the latter.
+      if (error instanceof NativeRevisionConflict) {
+        throw new NativeRevisionConflict(
+          `native edit ${transactionId} refused; session and current files preserved; ` +
+            `completed operations: ${Object.keys(changes).join(", ") || "none"}; ` +
+            `earlier operations may remain applied; pre-edit backup: .fabdesk/native-revisions/${transactionId}/metadata.json; ` +
+            `save live work before explicit recovery: ${error.message}`,
+        );
+      }
       await ctx.services.design.release(project.dir).catch(() => undefined);
       const restoredFiles = await restore(project.dir, directory, files);
       throw new ToolError(
@@ -718,7 +743,6 @@ export const native_edit_rollback = defineTool({
         "native files changed after the accepted transaction; refusing stale rollback",
         "precondition",
       );
-    await ctx.services.design.release(project.dir).catch(() => undefined);
     const directory = await jailPath(root, accepted.transactionId)
       .then((path) => jailPath(project.dir, projectRelative(project.dir, path)))
       .catch(() => {
@@ -727,7 +751,24 @@ export const native_edit_rollback = defineTool({
     const metadata = await transactionMetadata(directory);
     if (metadata.transactionId !== accepted.transactionId)
       throw new ToolError("native transaction backup identity mismatch", "precondition");
-    const restoredFiles = await restore(project.dir, directory, metadata.files);
+    await preflightRestore(project.dir, directory, metadata.files);
+    if (!ctx.services.design.withSavedFilesRecovery)
+      throw new ToolError(
+        "native saved-file recovery is unavailable in this runtime",
+        "unavailable",
+      );
+    const restoredFiles = await ctx.services.design.withSavedFilesRecovery(
+      project.dir,
+      async () => {
+        const immediatelyBefore = await boundRevisions(ctx, project);
+        if (JSON.stringify(immediatelyBefore) !== JSON.stringify(accepted.after))
+          throw new ToolError(
+            "native files changed before rollback; refusing stale rollback",
+            "precondition",
+          );
+        return restore(project.dir, directory, metadata.files);
+      },
+    );
     return ok(`Rolled back ${accepted.transactionId}.`, {
       status: "rolled-back",
       transactionId: accepted.transactionId,
@@ -863,9 +904,10 @@ export const pcb_edit_graphics = defineTool({
   inputSchema: {
     mode: z.enum(["preview", "apply"]).default("apply"),
     expectedPcbRevision: z.string().length(64).optional(),
-    outline: z
-      .object({ points: z.array(Point).min(3).max(100), replace: z.boolean().default(false) })
-      .optional(),
+    outline: mutationInputObject({
+      points: z.array(Point).min(3).max(100),
+      replace: z.boolean().default(false),
+    }).optional(),
     zones: PcbGeometry.shape.zones,
     keepouts: PcbGeometry.shape.keepouts,
     texts: PcbGeometry.shape.texts,

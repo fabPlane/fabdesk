@@ -3,9 +3,11 @@ import react from "@vitejs/plugin-react";
 import { defineConfig, externalizeDepsPlugin } from "electron-vite";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { tmpdir } from "node:os";
 import type { Plugin } from "vite";
+import { generateReleaseNotes } from "../../scripts/release-notes";
 import { themeBootInlineCss, themeBootInlineScript } from "../../packages/ui/src/theme/boot-inline";
 
 /** Short git sha for the Sentry release: CI has GITHUB_SHA, local builds ask git, else `dev`. */
@@ -25,6 +27,21 @@ function sentryRelease(): string {
   if (explicit) return explicit;
   const pkg = JSON.parse(readFileSync(resolve(__dirname, "package.json"), "utf8")) as { version: string };
   return `fabdesk@${pkg.version}+${gitSha()}`;
+}
+
+/**
+ * This build's "What's new" notes. Release CI generates them once and passes the file in
+ * FABDESK_RELEASE_NOTES_FILE, so the app and fabplane.com show the same text; local builds
+ * generate them from git here.
+ */
+function releaseNotes(): unknown {
+  const file = process.env["FABDESK_RELEASE_NOTES_FILE"]?.trim();
+  if (file) return JSON.parse(readFileSync(file, "utf8"));
+  try {
+    return generateReleaseNotes({ cwd: resolve(__dirname, "../..") });
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -85,13 +102,28 @@ function cspPlugin(dev: boolean): Plugin {
   };
 }
 
+/** Ship the native recognizer with the app; users never need Xcode or a CLI install. */
+function nativeSpeechPlugin(): Plugin {
+  return {
+    name: "native-macos-speech",
+    closeBundle() {
+      if (process.platform !== "darwin") return;
+      const output = resolve(__dirname, "out/native");
+      mkdirSync(output, { recursive: true });
+      execFileSync("xcrun", ["swiftc", "-O", "-module-cache-path", resolve(tmpdir(), "fabdesk-swift-cache"), "-target", `${process.arch === "arm64" ? "arm64" : "x86_64"}-apple-macosx15.0`,
+        resolve(__dirname, "native/speech.swift"),
+        "-Xlinker", "-sectcreate", "-Xlinker", "__TEXT", "-Xlinker", "__info_plist", "-Xlinker", resolve(__dirname, "native/speech-info.plist"), "-o", resolve(output, "fabdesk-speech")], { stdio: "inherit" });
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => {
   const dev = mode === "development";
   const sentryDefine = { __FABDESK_SENTRY_RELEASE__: JSON.stringify(sentryRelease()) };
   return {
     main: {
       // Workspace packages (and their zod) are bundled into main; everything else stays external.
-      plugins: [externalizeDepsPlugin({ exclude: ["@fabdesk/updates", "@fabdesk/protocol", "zod"] })],
+      plugins: [nativeSpeechPlugin(), externalizeDepsPlugin({ exclude: ["@fabdesk/updates", "@fabdesk/protocol", "zod"] })],
       define: sentryDefine,
       build: {
         rollupOptions: { input: resolve(__dirname, "src/main/index.ts") },
@@ -115,7 +147,11 @@ export default defineConfig(({ mode }) => {
         ],
       },
       plugins: [react(), tailwindcss(), cspPlugin(dev)],
-      define: { "process.env.IS_PREACT": JSON.stringify("false"), ...sentryDefine },
+      define: {
+        "process.env.IS_PREACT": JSON.stringify("false"),
+        __FABDESK_RELEASE_NOTES__: JSON.stringify(releaseNotes()),
+        ...sentryDefine,
+      },
       build: {
         rollupOptions: { input: resolve(__dirname, "src/renderer/index.html") },
         chunkSizeWarningLimit: 3000,

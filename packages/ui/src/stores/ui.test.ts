@@ -33,15 +33,29 @@ describe("sidebar list tabs", () => {
 });
 
 describe("board tabs", () => {
-  test("the shopping list is the last board tab", () => {
-    expect(BOARD_TABS.at(-1)).toBe("bom");
+  test("shopping list keeps the ninth board-tab shortcut and art follows it", () => {
+    expect(BOARD_TABS[8]).toBe("bom");
     expect(BOARD_TAB_LABELS.bom).toBe("Shopping list");
     expect(BOARD_TABS).toContain("notes");
     expect(BOARD_TAB_LABELS.notes).toBe("Notes");
+    expect(BOARD_TABS[9]).toBe("art");
+    expect(BOARD_TAB_LABELS.art).toBe("Art");
   });
 });
 
 describe("project context", () => {
+  test("pinning is idempotent and does not switch the active chat", () => {
+    const previous = useUiStore.getState();
+    try {
+      useUiStore.setState({ pinnedProjectIds: [], activeProjectId: "a", activeThreadId: "chat-a" });
+      useUiStore.getState().setProjectPinned("b", true);
+      useUiStore.getState().setProjectPinned("b", true);
+      expect(useUiStore.getState().pinnedProjectIds).toEqual(["b"]);
+      expect(useUiStore.getState().activeThreadId).toBe("chat-a");
+      useUiStore.getState().setProjectPinned("b", false);
+      expect(useUiStore.getState().pinnedProjectIds).toEqual([]);
+    } finally { useUiStore.setState(previous); }
+  });
   test("switching projects clears the previous conversation and project-specific screens", () => {
     const previous = useUiStore.getState();
     try {

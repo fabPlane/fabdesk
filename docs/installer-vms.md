@@ -21,6 +21,16 @@ destination only when something fails. Base images live under `/home/openclaw/.f
 always leaving 3 GiB for the host) and runs them one at a time; a full run takes about five
 minutes under KVM. Re-run `install-agent.sh` after changing the scripts.
 
+Automatic Release-triggered tests resolve the exact run number and source commit to the matching
+public release tag. Public installers are downloaded from that permanent GitHub Release; internal
+and branch builds continue to use artifacts from the exact requested run. A GitHub permission
+failure or mismatched release commit fails selection instead of silently testing another version.
+
+Manual workflow dispatches can select `platform=macos|linux|windows` for a focused check;
+the default and automatic runs test all platforms. Hosted Windows CI records Authenticode
+status and removes download quarantine before unattended installation. It verifies installation
+and app startup, not interactive SmartScreen approval; local user-facing VM tests retain that path.
+
 ## Local VMs (debugging)
 
 

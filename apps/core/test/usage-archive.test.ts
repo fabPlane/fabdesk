@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { usageArchiveAllowed, usageArchiveChoice } from "@fabdesk/protocol";
 import { Store } from "../src/db";
-import { ArchiveConsentRevokedError, UsageArchive } from "../src/usage-archive";
+import { ArchiveConsentRevokedError, ArchiveRecordTooLargeError, UsageArchive } from "../src/usage-archive";
 
 describe("usage archive", () => {
   test("backs up by default when no choice was made and the screen is skipped", async () => {
@@ -103,7 +103,7 @@ describe("usage archive", () => {
       if (process.platform !== "win32") expect((await stat(conversationPath)).mode & 0o077).toBe(0);
 
       const counts = await archive.backfill(store.db, () => true, { all: true });
-      expect(counts).toEqual({ conversations: 1, runDumps: 1 });
+      expect(counts).toEqual({ conversations: 1, runDumps: 1, tooLarge: 0 });
       const [snapshot] = await readdir(join(root, "backup", "snapshots"));
       expect(snapshot).toBeDefined();
       expect(
@@ -138,25 +138,48 @@ describe("usage archive", () => {
       // A live run already sent its dump and conversation, so the first backfill sends only the rest.
       await archive.put(dump, store.db);
       writes.length = 0;
-      expect(await archive.backfill(store.db)).toEqual({ conversations: 1, runDumps: 0 });
+      expect(await archive.backfill(store.db)).toEqual({ conversations: 1, runDumps: 0, tooLarge: 0 });
       expect(writes.filter((key) => key.includes("/conversations/"))).toEqual([
         expect.stringContaining(`${other.id}.json`),
       ]);
 
       writes.length = 0;
-      expect(await archive.backfill(store.db)).toEqual({ conversations: 0, runDumps: 0 });
+      expect(await archive.backfill(store.db)).toEqual({ conversations: 0, runDumps: 0, tooLarge: 0 });
       expect(writes).toEqual([]);
 
       store.threads.addMessage({ threadId: other.id, role: "user", contentMd: "Edited later" });
-      expect(await archive.backfill(store.db)).toEqual({ conversations: 1, runDumps: 0 });
+      expect(await archive.backfill(store.db)).toEqual({ conversations: 1, runDumps: 0, tooLarge: 0 });
 
       // Another destination has its own record, and `all` resends everything.
       const second = new UsageArchive({ id: "other", async write() {} });
-      expect(await second.backfill(store.db)).toEqual({ conversations: 2, runDumps: 1 });
+      expect(await second.backfill(store.db)).toEqual({ conversations: 2, runDumps: 1, tooLarge: 0 });
       expect(await archive.backfill(store.db, () => true, { all: true })).toEqual({
         conversations: 2,
         runDumps: 1,
+        tooLarge: 0,
       });
+    } finally {
+      store.close();
+    }
+  });
+
+  test("backfill rejects incomplete uploads so the daemon retries instead of silently skipping", async () => {
+    const store = Store.open(":memory:");
+    const writes: string[] = [];
+    try {
+      const big = store.threads.create({ agentId: "codex", title: "Big" });
+      const small = store.threads.create({ agentId: "codex", title: "Small" });
+      const archive = new UsageArchive({
+        id: "memory",
+        async write(key) {
+          if (key.includes(big.id)) throw new ArchiveRecordTooLargeError(key, 1);
+          writes.push(key);
+        },
+      });
+      await expect(archive.backfill(store.db)).rejects.toBeInstanceOf(ArchiveRecordTooLargeError);
+      // Only the accepted record is in the ledger, so the rejected one is never treated as backed up.
+      const ledger = store.db.query<{ record_id: string }, []>("SELECT record_id FROM usage_archive_uploads").all();
+      expect(ledger.some((row) => row.record_id === `conversation:${big.id}`)).toBe(false);
     } finally {
       store.close();
     }

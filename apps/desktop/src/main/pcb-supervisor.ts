@@ -1,11 +1,11 @@
 /** Starts the bundled FabPlane PCB bridge before core, and supplies core's bridge/KiCad env. */
-import { spawn, type ChildProcess } from "node:child_process";
+import { type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve, win32 } from "node:path";
-import { sidecarEnvironment } from "./child-process-env";
+import { spawnSidecar } from "./child-process-env";
 
 export interface PcbBundleManifest {
   format: 1;
@@ -74,8 +74,14 @@ export function resolvePcbBackend(opts: {
   const symbols = resolve(bundleRoot, manifest.symbols);
   const fabRouter = manifest.fabRouter ? resolve(bundleRoot, manifest.fabRouter) : null;
   // Always set explicit paths, including on degraded starts. Never borrow a host jar or Java.
-  const freeroutingJar = resolve(bundleRoot, manifest.freerouting?.jar ?? ".freerouting-unavailable.jar");
-  const freeroutingJava = resolve(bundleRoot, manifest.freerouting?.java ?? ".freerouting-unavailable-java");
+  const freeroutingJar = resolve(
+    bundleRoot,
+    manifest.freerouting?.jar ?? ".freerouting-unavailable.jar",
+  );
+  const freeroutingJava = resolve(
+    bundleRoot,
+    manifest.freerouting?.java ?? ".freerouting-unavailable-java",
+  );
   if (!manifest.freerouting || !existsSync(freeroutingJar) || !existsSync(freeroutingJava))
     console.warn("[pcb] bundled Freerouting unavailable; automatic routing will use fab_router");
   const libraryPaths = (manifest.libraryPaths ?? []).map((path) => resolve(bundleRoot, path));
@@ -159,9 +165,9 @@ export class PcbSupervisor {
       );
     }
     if (!(await healthy(this.command.url, this.command))) {
-      this.child = spawn(this.command.command, this.command.args, {
+      this.child = spawnSidecar(this.command.command, this.command.args, {
         cwd: this.command.cwd,
-        env: sidecarEnvironment(process.env, this.command.env),
+        env: { ...process.env, ...this.command.env },
         stdio: ["ignore", "inherit", "inherit"],
         windowsHide: true,
       });

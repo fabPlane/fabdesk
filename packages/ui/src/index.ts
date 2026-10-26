@@ -66,6 +66,7 @@ export { RendersTab } from "./board/RendersTab";
 export { FilesTab } from "./board/FilesTab";
 export { NotesTab } from "./board/NotesTab";
 export { parseSvgViewBox, clientPointToSvg, svgPointToPercent } from "./board/svg-coords";
+export { ArtTab } from "./board/ArtTab";
 export { ThreeDTab } from "./board/ThreeDTab";
 export { useRunTool, resolveToolName, TOOL_PATTERNS } from "@fabdesk/client-core";
 
@@ -78,6 +79,7 @@ export type { ProjectThreadGroup, ProjectThreadGroupKind } from "@fabdesk/client
 export { OpenSourceView } from "./opensource/OpenSourceView";
 export { InventoryView } from "./inventory/InventoryView";
 export { ShoppingListTab } from "./board/ShoppingListTab";
+export { ProjectBomPanel } from "./board/ProjectBomPanel";
 export { CatalogThumb } from "./opensource/CatalogThumb";
 export { OrderFlow } from "./order/OrderFlow";
 export { ProjectPickerDialog } from "./chat/ProjectPickerDialog";
@@ -89,6 +91,7 @@ export { Markdown, CodeBlock } from "./chat/Markdown";
 export { ToolCallCard, extractImages, resultText } from "./chat/ToolCallCard";
 export { ThinkingBlock } from "./chat/ThinkingBlock";
 export { ProjectImage } from "./chat/ProjectImage";
+export { ProjectVideo } from "./chat/ProjectVideo";
 export { SketchPad } from "./sketch/SketchPad";
 export { CommandPalette } from "./palette/CommandPalette";
 export { SettingsDialog } from "./settings/SettingsDialog";

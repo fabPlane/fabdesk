@@ -28,6 +28,49 @@ describe("extractBoardFeatures", () => {
     expect(() => extractBoardFeatures("(kicad_sch)")).toThrow(/kicad_pcb/);
     expect(() => extractBoardFeatures("(kicad_pcb (version 20260831))")).toThrow(/Edge\.Cuts/);
   });
+
+  test("rotates footprint pads clockwise like KiCad RotatePoint", () => {
+    const board = `(kicad_pcb (version 20260831) (general (thickness 1.6))
+      (gr_rect (start 0 0) (end 40 20) (layer "Edge.Cuts"))
+      (footprint "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical"
+        (layer "F.Cu") (at 10 0 90)
+        (property "Reference" "J3")
+        (pad "1" thru_hole circle (at 0 0) (size 1.7 1.7) (drill 1))
+        (pad "2" thru_hole circle (at 0 2.54) (size 1.7 1.7) (drill 1))
+        (pad "3" thru_hole circle (at 0 5.08) (size 1.7 1.7) (drill 1))
+        (pad "4" thru_hole circle (at 0 7.62) (size 1.7 1.7) (drill 1))))`;
+    const features = extractBoardFeatures(board);
+    const header = features.connectors.find((c) => c.ref === "J3");
+    expect(header).toBeDefined();
+    // CW 90° maps local +Y onto +X, so the 1x04 body sits to the +X side of pin 1.
+    expect(header!.bounds.minX).toBeGreaterThan(10 - 1);
+    expect(header!.bounds.maxX).toBeGreaterThan(10 + 6);
+    expect((header!.bounds.minX + header!.bounds.maxX) / 2).toBeCloseTo(10 + 3.81, 1);
+  });
+
+  test("does not invent a standoff under a fiducial copper pad", () => {
+    const board = `(kicad_pcb (version 20260831) (general (thickness 1.6))
+      (gr_rect (start 0 0) (end 20 20) (layer "Edge.Cuts"))
+      (footprint "Fiducial:Fiducial_0.5mm_Mask1mm"
+        (layer "F.Cu") (at 10 10)
+        (property "Reference" "FID1")
+        (pad "1" smd circle (at 0 0) (size 0.5 0.5) (layers "F.Cu" "F.Mask"))))`;
+    const features = extractBoardFeatures(board);
+    expect(features.holes).toEqual([]);
+  });
+
+  test("reads a round board whose Edge.Cuts are only gr_arc", () => {
+    const board = `(kicad_pcb (version 20260831) (general (thickness 1.6))
+      (gr_arc (start 20 0) (mid 0 20) (end -20 0) (layer "Edge.Cuts"))
+      (gr_arc (start -20 0) (mid 0 -20) (end 20 0) (layer "Edge.Cuts")))`;
+    const features = extractBoardFeatures(board);
+    expect(features.outline.source).toBe("gr_arc");
+    expect(features.outline.closed).toBe(true);
+    expect(features.outline.minX).toBeCloseTo(-20, 1);
+    expect(features.outline.maxX).toBeCloseTo(20, 1);
+    expect(features.outline.minY).toBeCloseTo(-20, 1);
+    expect(features.outline.maxY).toBeCloseTo(20, 1);
+  });
 });
 
 describe("estimatePartHeightMm", () => {

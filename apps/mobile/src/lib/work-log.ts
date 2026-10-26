@@ -28,6 +28,8 @@ const EMPTY: WorkLog = {
 const FILE_TOOLS: Record<string, (input: Record<string, unknown>) => string[]> = {
   project_write_file: (i) => str(i["path"]),
   project_import_kicad: (i) => str(i["path"]),
+  parts_add: () => ["project.parts.json"],
+  parts_remove: () => ["project.parts.json"],
   write: (i) => str(i["file_path"]),
   edit: (i) => str(i["file_path"]),
   multiedit: (i) => str(i["file_path"]),

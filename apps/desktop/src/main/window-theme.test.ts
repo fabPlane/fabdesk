@@ -3,11 +3,27 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { THEME_BACKGROUNDS } from "../../../../packages/ui/src/theme/resolve";
-import { readCachedThemeId, resolveWindowTheme, writeCachedThemeId } from "./window-theme";
+import { readCachedThemeId, resolveWindowTheme, titleBarOverlayFor, TITLE_BAR_HEIGHT, writeCachedThemeId } from "./window-theme";
 
 function tmpUserData(): string {
   return mkdtempSync(join(tmpdir(), "fabdesk-theme-"));
 }
+
+describe("Windows title bar overlay", () => {
+  test("native chrome keeps its height independent of workspace zoom", () => {
+    for (const theme of ["fabplane-dark", "fabplane-light", "plain-dark", "plain-light"] as const) {
+      expect(titleBarOverlayFor(theme).height).toBe(TITLE_BAR_HEIGHT - 1);
+    }
+  });
+
+  test("theme changes preserve fixed geometry and update native colours", () => {
+    const dark = titleBarOverlayFor("fabplane-dark");
+    const light = titleBarOverlayFor("fabplane-light");
+    expect(light.height).toBe(dark.height);
+    expect(light.color).not.toBe(dark.color);
+    expect(light.symbolColor).not.toBe(dark.symbolColor);
+  });
+});
 
 describe("resolveWindowTheme", () => {
   test("uses the cached Appearance id for background and locks nativeTheme", () => {

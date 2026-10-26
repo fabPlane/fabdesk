@@ -1,11 +1,21 @@
 /**
- * CAD toolset: the project's mechanical model in FreeCAD, over the FabPlane CAD bridge
- * (`@fab-cad/bridge`, fabPlane/fab_cad). One `FreeCADApiServer` per project holds
- * `model.FCStd` open; every editing tool recomputes and saves, so the file on disk always matches
- * what the agent and the CAD tab in the app see.
+ * CAD toolset: the project's mechanical model. The default kernel is FreeCAD / OpenCascade
+ * (`model.FCStd` over the FabPlane CAD bridge). Agents can pick another kernel per part
+ * (`cad_build_part`), fall back when a feature fails, and combine every part through STEP.
  */
 import { writeFile } from "node:fs/promises";
 import { z } from "zod/v4";
+import {
+  CadFeature,
+  CadKernelChoice,
+  CadPartHints,
+  CadPartPlacement,
+  createCadKernelHost,
+  isCadFeatureError,
+  isCadKernelUnavailableError,
+  type CadKernelHealth,
+  type CadKernelHost,
+} from "../cad-kernel";
 import { PROJECT_FILES, ensureDir } from "../fs";
 import { defineTool, ToolError, type ToolContext } from "../registry";
 import type { CadObject, CadProperty, CadService } from "../services";
@@ -21,6 +31,20 @@ export function requireCad(ctx: ToolContext): CadService {
     );
   return cad;
 }
+
+export function cadKernels(ctx: ToolContext): CadKernelHost {
+  return ctx.services.cadKernels ?? createCadKernelHost({ cad: ctx.services.cad });
+}
+
+function asToolError(e: unknown): never {
+  if (e instanceof ToolError) throw e;
+  if (isCadKernelUnavailableError(e)) throw new ToolError(e.message, "unavailable");
+  if (isCadFeatureError(e)) throw new ToolError(e.message, "precondition");
+  throw e instanceof Error ? e : new Error(String(e));
+}
+
+const KERNEL_LIST_CACHE_MS = 10_000;
+let kernelListCache: { at: number; kernels: CadKernelHealth[] } | null = null;
 
 const PropertyValues = z
   .record(z.string(), z.unknown())
@@ -92,7 +116,11 @@ export const cad_status = defineTool({
         `Model: ${PROJECT_FILES.cadModel} (document ${model.document}, ${model.objects.length} objects${model.modified ? ", unsaved changes" : ""})`,
       );
     }
-    return ok(lines.join("\n"), { status, ...(model ? { model } : {}) });
+    const kernels = await cadKernels(ctx).list();
+    lines.push(
+      `Kernels: ${kernels.map((k) => `${k.id}${k.available ? "" : " (unavailable)"}${k.experimental ? " [experimental]" : ""}`).join(", ")}`,
+    );
+    return ok(lines.join("\n"), { status, kernels, ...(model ? { model } : {}) });
   },
 });
 
@@ -144,9 +172,18 @@ export const cad_add_object = defineTool({
     label: z.string().optional(),
     properties: PropertyValues.optional(),
     group: z.string().optional().describe("Internal name of a group or body to add it to"),
+    kernel: CadKernelChoice.optional().describe(
+      "Which geometry kernel owns this object. FreeCAD objects are always OpenCascade; use cad_build_part to build on SMLib.",
+    ),
   },
   annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: false },
-  handler: async ({ type, name, label, properties, group }, ctx) => {
+  handler: async ({ type, name, label, properties, group, kernel }, ctx) => {
+    if (kernel && kernel !== "opencascade" && kernel !== "auto") {
+      throw new ToolError(
+        'cad_add_object only edits the FreeCAD / OpenCascade model; build on SMLib with cad_build_part and kernel: "smlib".',
+        "invalid_args",
+      );
+    }
     const project = ctx.requireProject();
     const cad = requireCad(ctx);
     const added = await cad.addObject(project.dir, {
@@ -158,8 +195,8 @@ export const cad_add_object = defineTool({
     });
     const { recompute } = await commit(cad, project.dir);
     return ok(
-      `Added ${added.name} (${added.type}, label "${added.label}") to ${PROJECT_FILES.cadModel}.${recomputeNote(recompute.errors)}`,
-      { object: added, recompute },
+      `Added ${added.name} (${added.type}, label "${added.label}") to ${PROJECT_FILES.cadModel} (OpenCascade / FreeCAD).${recomputeNote(recompute.errors)}`,
+      { object: added, recompute, kernel: "opencascade" as const },
     );
   },
 });
@@ -351,6 +388,113 @@ export const cad_view = defineTool({
   },
 });
 
+export const cad_kernels = defineTool({
+  name: "cad_kernels",
+  toolset: "cad",
+  title: "List CAD kernels",
+  description:
+    "List geometry kernels (OpenCascade / FreeCAD by default, experimental SMLib when FABDESK_EXPERIMENTAL_CAD_KERNELS=1), their capabilities and availability, and each part already built for this project (which kernel built it, and why it switched).",
+  inputSchema: {},
+  annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
+  handler: async (_args, ctx) => {
+    const project = ctx.requireProject();
+    const host = cadKernels(ctx);
+    const now = Date.now();
+    let kernels: CadKernelHealth[];
+    if (kernelListCache && now - kernelListCache.at < KERNEL_LIST_CACHE_MS) {
+      kernels = kernelListCache.kernels;
+    } else {
+      kernels = await host.list();
+      kernelListCache = { at: now, kernels };
+    }
+    const store = await host.store(project.dir);
+    const kernelRows = kernels.map((k) => ({
+      id: k.id,
+      label: k.label,
+      available: k.available,
+      experimental: k.experimental,
+      g2: k.capabilities.g2Fillets,
+      step: k.capabilities.step,
+      detail: k.detail,
+    }));
+    const partRows = store.parts.map((p) => ({
+      id: p.id,
+      name: p.name,
+      kernel: p.kernel,
+      requested: p.requested,
+      reason: p.reason,
+      fallbacks: p.fallbacks.map((f) => `${f.from}→${f.to} (${f.featureKind})`).join("; "),
+      step: p.step,
+    }));
+    const lines = [
+      `Kernels:\n${table(kernelRows)}`,
+      store.parts.length ? `Parts:\n${table(partRows)}` : "Parts: (none yet — cad_build_part)",
+      store.assembly
+        ? `Assembly: ${store.assembly.step} (${store.assembly.partIds.join(", ")})`
+        : "Assembly: not combined yet — cad_combine_parts",
+      "Parasolid is not offered (commercial license; out of scope).",
+    ];
+    return ok(lines.join("\n\n"), { kernels, store });
+  },
+});
+
+export const cad_build_part = defineTool({
+  name: "cad_build_part",
+  toolset: "cad",
+  title: "Build a CAD part on a chosen kernel",
+  description:
+    "Build one mechanical part from a kernel-agnostic feature list (box/cylinder/sphere, fillet, chamfer, cut_cylinder). `kernel` is auto (heuristic: G2/consumer → SMLib, machined/prismatic → OpenCascade), or an explicit kernel. When the chosen kernel fails a feature, the next available kernel is tried and the switch is recorded. Writes cad/parts/<id>.step and cad/kernels.json.",
+  inputSchema: {
+    id: z
+      .string()
+      .regex(/^[A-Za-z][A-Za-z0-9_-]{0,47}$/)
+      .describe("Part id, used as the STEP file name"),
+    name: z.string().min(1).max(80).optional(),
+    features: z.array(CadFeature).min(1),
+    kernel: CadKernelChoice.optional(),
+    hints: CadPartHints.optional(),
+    placement: CadPartPlacement.optional(),
+  },
+  annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: false },
+  handler: async (args, ctx) => {
+    const project = ctx.requireProject();
+    try {
+      const { part, store } = await cadKernels(ctx).buildPart(project.dir, args);
+      const switched = part.fallbacks.length
+        ? ` Switched ${part.fallbacks.map((f) => `${f.from} → ${f.to} (${f.featureKind}: ${f.error})`).join("; ")}.`
+        : "";
+      return ok(
+        `Built ${part.name} (${part.id}) on ${part.kernel}: ${part.reason}.${switched} STEP ${part.step}${part.volumeMm3 !== undefined ? `, volume ${part.volumeMm3.toFixed(1)} mm³` : ""}.`,
+        { part, store },
+      );
+    } catch (e) {
+      asToolError(e);
+    }
+  },
+});
+
+export const cad_combine_parts = defineTool({
+  name: "cad_combine_parts",
+  toolset: "cad",
+  title: "Combine CAD parts into one model",
+  description:
+    "Bring every part in cad/kernels.json together as one project model via STEP (SMLib fuse when the experimental kernel is up; otherwise a remapped ISO-10303-21 assembly). Writes cad/assembly.step.",
+  inputSchema: {},
+  annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
+  handler: async (_args, ctx) => {
+    const project = ctx.requireProject();
+    try {
+      const { assembly, store } = await cadKernels(ctx).combine(project.dir);
+      return ok(
+        `Combined ${assembly.partIds.join(", ")} into ${assembly.step}. ${assembly.notes.join(" ")}`,
+        { assembly, store },
+      );
+    } catch (e) {
+      asToolError(e);
+    }
+  },
+});
+
 export const cadTools = [
   cad_status,
   cad_model,
@@ -363,6 +507,9 @@ export const cadTools = [
   cad_export,
   cad_python,
   cad_view,
+  cad_kernels,
+  cad_build_part,
+  cad_combine_parts,
   cad_enclosure,
 ];
 

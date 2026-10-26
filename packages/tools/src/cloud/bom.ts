@@ -2,7 +2,13 @@
  * Shopping-list lines from `circuit.netlist.json`, and the merge that keeps what the user changed
  * on the synced list (destination, status, notes, prices) across re-syncs. Pure functions.
  */
-import type { BomSyncSummary, CartItem, CartItemInput, NetlistComponent } from "@fabdesk/protocol";
+import type {
+  BomSyncSummary,
+  CartItem,
+  CartItemInput,
+  NetlistComponent,
+  ProjectPartLine,
+} from "@fabdesk/protocol";
 
 /** `source` passed to `replaceCartItems` for a BOM sync. */
 export const BOM_SOURCE = "fabdesk-bom";
@@ -84,6 +90,35 @@ export function bomLinesFromNetlist(
     return line;
   });
   return lines.sort((a, b) => naturalCompare(a.refs?.[0] ?? "", b.refs?.[0] ?? ""));
+}
+
+/**
+ * One shopping-list line per off-board project part. Footprint is `offboard:<catalogId|kind>` so
+ * re-syncs match without colliding with PCB footprints. Quantity is the line qty, not a ref count.
+ */
+export function bomLinesFromOffboard(
+  parts: readonly ProjectPartLine[],
+  opts: { destinationId: string },
+): CartItemInput[] {
+  return [...parts]
+    .slice()
+    .sort((a, b) => naturalCompare(a.ref, b.ref))
+    .map((p) => {
+      const description = `Off-board ${p.kind} · ${p.name}`;
+      const line: CartItemInput = {
+        kind: "part",
+        value: p.name,
+        footprint: `offboard:${p.catalogId ?? p.kind}`,
+        description,
+        refs: [p.ref],
+        quantity: p.qty,
+        destinationId: opts.destinationId,
+        ...(p.mpn ? { mpn: p.mpn } : {}),
+        ...(p.manufacturer ? { manufacturer: p.manufacturer } : {}),
+        ...(p.notes ? { notes: p.notes } : {}),
+      };
+      return line;
+    });
 }
 
 /** A server item back to an input: drops ids, timestamps and null fields. */

@@ -60,6 +60,7 @@ type Live = {
 
 export class FinishItManager {
   private readonly live = new Map<string, Live>();
+  private readonly starting = new Set<string>();
   private readonly syncTail = new Map<string, Promise<void>>();
   private readonly unsub: () => void;
   private readonly commit: (dir: string, message: string) => Promise<string | null>;
@@ -85,7 +86,28 @@ export class FinishItManager {
     return this.live.get(projectId)?.session ?? this.deps.store.finishIt.latestForProject(projectId);
   }
 
+  async needsWork(projectId: string): Promise<boolean> {
+    const project = await this.deps.projects.handle(projectId);
+    if (!project) throw new ToolError("project not found", "not_found");
+    return remainingMilestones(planMilestones(await this.snapshot(project))).length > 0;
+  }
+
   async start(input: FinishItStartInput): Promise<FinishItSession> {
+    if (
+      this.starting.has(input.projectId) ||
+      this.live.has(input.projectId) ||
+      this.deps.store.finishIt.activeForProject(input.projectId)
+    )
+      throw new ToolError("a Finish it run is already active on this project", "precondition");
+    this.starting.add(input.projectId);
+    try {
+      return await this.startLocked(input);
+    } finally {
+      this.starting.delete(input.projectId);
+    }
+  }
+
+  private async startLocked(input: FinishItStartInput): Promise<FinishItSession> {
     const project = await this.deps.projects.handle(input.projectId);
     if (!project) throw new ToolError("project not found", "not_found");
     if (this.live.has(project.id) || this.deps.store.finishIt.activeForProject(project.id))
@@ -305,7 +327,14 @@ export class FinishItManager {
   private async snapshot(project: ProjectHandle): Promise<FinishItSnapshot> {
     const route = this.deps.store.routeRuns.latest(project.id);
     const lastRoute: FinishItRouteHint | null = route
-      ? { status: route.status, open: route.result?.open.length ?? null }
+      ? {
+          status: route.status,
+          open: route.result?.open.length ?? null,
+          applied: route.application.state === "applied",
+          ...(route.application.resultingPcbRevision
+            ? { pcbRevision: route.application.resultingPcbRevision }
+            : {}),
+        }
       : null;
     return inspectProject(project.dir, { ...(lastRoute ? { lastRoute } : {}) });
   }
@@ -339,8 +368,8 @@ export class FinishItManager {
     const snap = await this.snapshot(project);
     const newlyDone: FinishItMilestoneId[] = [];
     const milestones = live.session.milestones.map((m) => {
-      if (m.status === "skipped") return m;
       if (milestoneDone(m.id, snap)) {
+        if (m.status === "skipped") return m;
         if (m.status !== "done") newlyDone.push(m.id);
         return {
           ...m,
@@ -349,7 +378,14 @@ export class FinishItManager {
           endedAt: m.endedAt ?? new Date().toISOString(),
         };
       }
-      return { ...m, note: snapshotNote(m.id, snap) };
+      // Later board edits can invalidate both completed and initially skipped steps.
+      // Keep historical commits in the session, but do not present them as current proof.
+      const { endedAt: _endedAt, commitSha: _commitSha, ...unfinished } = m;
+      return {
+        ...unfinished,
+        status: m.status === "running" ? "running" as const : "pending" as const,
+        note: snapshotNote(m.id, snap),
+      };
     });
     let commits = live.session.commits;
     for (const id of newlyDone) {
@@ -377,7 +413,7 @@ export class FinishItManager {
       ...s,
       milestones,
       commits,
-      currentMilestone: remaining[0] ?? s.currentMilestone,
+      currentMilestone: remaining[0] ?? null,
     }));
     const next = this.live.get(project.id)?.session ?? live.session;
     this.emitProgress(next, snapshotNote(remaining[0] ?? "verify", snap));
