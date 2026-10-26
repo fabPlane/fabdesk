@@ -6,8 +6,10 @@ import { clientPointToSvg, parseSvgViewBox, type SvgPoint } from "./svg-coords";
 import { svgImageCache } from "./svg-image-cache";
 
 /** Zoomable vector image, isolated from the app's DOM and CSS layout. */
-export function SvgViewer({ svg, toolbar, overlay, commentMode = false, onDrawingClick }: {
+export function SvgViewer({ svg, viewKey, toolbar, overlay, commentMode = false, onDrawingClick }: {
   svg: string;
+  /** Preserve zoom and scroll when only presentation (such as blend) changes. */
+  viewKey?: string;
   toolbar?: ReactNode;
   overlay?: ReactNode;
   commentMode?: boolean;
@@ -21,7 +23,9 @@ export function SvgViewer({ svg, toolbar, overlay, commentMode = false, onDrawin
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
   const [fitSize, setFitSize] = useState({ width: 1, height: 1 });
   const current = source?.svg === svg ? source : null;
-  const size = current && loaded?.url === current.url ? loaded : null;
+  // Keep the canvas dimensions while a presentation-only update loads, so the
+  // browser does not collapse the scroll area and lose the comparison position.
+  const size = current && loaded?.url === current.url ? loaded : viewKey ? loaded : null;
   const failed = current && failedUrl === current.url;
 
   useEffect(() => {
@@ -29,10 +33,13 @@ export function SvgViewer({ svg, toolbar, overlay, commentMode = false, onDrawin
     // nodes out of React's document and avoids synchronous SVG layout on mount.
     const image = svgImageCache.acquire(svg);
     setSource({ svg, url: image.url });
-    setZoom(1);
-    viewport.current?.scrollTo(0, 0);
     return image.release;
   }, [svg]);
+
+  useEffect(() => {
+    setZoom(1);
+    viewport.current?.scrollTo(0, 0);
+  }, [viewKey ?? svg]);
 
   useEffect(() => {
     const frame = viewport.current;

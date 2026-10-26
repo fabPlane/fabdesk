@@ -7,6 +7,7 @@ import { SvgViewer } from "./SvgViewer";
 import { cn } from "../util";
 import { diffHeadline } from "./diff-copy";
 import { selectDiffGeometry, type DiffSelection } from "./diff-selection";
+import { blendDiffOverlay } from "./diff-blend";
 
 export { diffHeadline } from "./diff-copy";
 
@@ -90,6 +91,7 @@ export function DiffTab() {
   ]);
   const [surface, setSurface] = useState<Surface>("pcb");
   const [mode, setMode] = useState<Mode>("structured");
+  const [blend, setBlend] = useState(50);
   const [selection, setSelection] = useState<DiffSelection | null>(null);
   useEffect(() => setSelection(null), [projectId, reportQuery.dataUpdatedAt]);
   useEffect(() => {
@@ -193,15 +195,30 @@ export function DiffTab() {
             key={id}
             size="sm"
             variant={mode === id ? "secondary" : "ghost"}
-            disabled={!report?.files?.[FILE_KEYS[surface][id]] && id !== "structured"}
+            aria-pressed={mode === id}
+            disabled={id !== "structured" && !report?.files?.[FILE_KEYS[surface][id]]}
             onClick={() => setMode(id)}
           >
             {id === "structured" ? "Highlights" : id === "overlay" ? "Overlay" : "Side by side"}
           </Button>
         ))}
-        {mode !== "structured" && <span className="text-[11px] text-muted">Matching simplified drawings from both revisions</span>}
         {compare.state.error && <span className="text-xs text-danger">{compare.state.error}</span>}
       </div>
+      {mode === "overlay" && report && (
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2 text-xs">
+          <span className="text-muted">Compare revisions</span>
+          {([{ label: "Before", value: 0 }, { label: "Both", value: 50 }, { label: "After", value: 100 }]).map(({ label, value }) => (
+            <Button key={label} size="sm" variant={blend === value ? "secondary" : "ghost"} aria-pressed={blend === value} onClick={() => setBlend(value)}>{label}</Button>
+          ))}
+          <label className="flex items-center gap-2">
+            <span>From</span>
+            <input type="range" min={0} max={100} value={blend} aria-label="Revision blend" aria-valuetext={`${100 - blend}% From, ${blend}% To`}
+              onChange={(event) => setBlend(Number(event.target.value))} className="w-36 accent-accent" />
+            <span>To</span>
+          </label>
+          <span className="text-[11px] text-muted">{100 - blend}% From / {blend}% To · position and zoom stay fixed</span>
+        </div>
+      )}
       {reportQuery.isError ? (
         <LoadError title="Could not load the last diff report" onRetry={() => void reportQuery.refetch()} />
       ) : !report ? (
@@ -216,7 +233,8 @@ export function DiffTab() {
           <div className="min-w-0 flex-1">
             {svgPath && svg.data ? (
               <SvgViewer
-                svg={drawing.svg}
+                svg={mode === "overlay" ? blendDiffOverlay(drawing.svg, blend) : drawing.svg}
+                viewKey={`${projectId}:${svgPath}:${reportQuery.dataUpdatedAt}:${selection?.kind ?? ""}:${selection?.id ?? ""}`}
                 toolbar={selection ? <>
                   <span role="status" className="text-[11px] text-muted">{drawing.found ? `Selected ${selection.id}` : `${selection.id}: no geometry in this view`}</span>
                   <Button size="sm" onClick={() => setSelection(null)}>Clear selection</Button>
