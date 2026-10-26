@@ -29,6 +29,10 @@ export const PROJECT_FILES = {
   exports: "exports",
   runs: ".fabdesk/runs",
   cache: ".fabdesk/cache",
+  /** Git-tracked pins: questions on the schematic/PCB plus agent answers. */
+  comments: "comments.json",
+  /** Git-tracked shared notes sheet for the board. */
+  notes: "NOTES.md",
 } as const;
 
 /**

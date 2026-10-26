@@ -72,7 +72,7 @@ the file up on the next tool call; no restart needed.
 | `app_type` | type text with key events, optionally focusing `selector` first |
 | `app_key` | press an accelerator: `Enter`, `Escape`, `CommandOrControl+K`, `Shift+Enter` |
 | `app_select_project` | make a project (id, name or path) active in the UI |
-| `app_open_tab` | schematic, pcb, cinema, 3d, drc, renders, files, bom (Shopping list) |
+| `app_open_tab` | schematic, pcb, cinema, 3d, drc, renders, notes, files, bom (Shopping list) |
 | `app_open_thread`, `app_new_chat` | switch threads / start a fresh chat |
 | `app_send_message` | put text in the composer and send through the UI (creates the thread, starts the agent run) |
 | `app_cinema` | `view` (board/activity), `seek`, `live`, `layer`, `load` (replay a persisted run id) |

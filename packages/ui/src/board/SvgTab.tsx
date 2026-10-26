@@ -1,8 +1,21 @@
-import { Button, EmptyState, LoadError, Spinner } from "../components/ui";
-import { useProject, useProjectText } from "@fabdesk/client-core";
-import { useUiStore } from "../stores/ui";
+import { useMemo, useState } from "react";
+import type { BoardComment, CommentView } from "@fabdesk/protocol";
+import { commentAnchorLabel } from "@fabdesk/protocol";
+import { Button, EmptyState, Input, LoadError, Spinner, Textarea } from "../components/ui";
+import { Icon } from "../components/Icon";
+import {
+  useBoardCommentMutations,
+  useBoardComments,
+  useCoreClient,
+  useProject,
+  useProjectText,
+  useRunTool,
+} from "@fabdesk/client-core";
+import { DRAFT_KEY_NEW, useUiStore } from "../stores/ui";
+import { CommentPins } from "./CommentPins";
 import { SvgViewer } from "./SvgViewer";
-import { useRunTool } from "@fabdesk/client-core";
+import { type SvgPoint } from "./svg-coords";
+import { buildCommentsAskPrompt, pendingBoardComments } from "./comment-requests";
 
 const RENDER_TOOL = { schematic: "render_schematic_svg", pcb: "render_pcb_svg" } as const;
 
@@ -24,12 +37,97 @@ export function svgArtifactCopy(kind: "schematic" | "pcb") {
   };
 }
 
+/** PCB SVG user units are millimetres; copy them so ask-agent prompts include Near (mm). */
+export function commentPinAnchor(
+  view: CommentView,
+  point: SvgPoint,
+  fields: { ref?: string; net?: string; pad?: string } = {},
+) {
+  return {
+    view,
+    x: point.x,
+    y: point.y,
+    ...(view === "pcb" ? { xMm: point.x, yMm: point.y } : {}),
+    ...(fields.ref ? { ref: fields.ref } : {}),
+    ...(fields.net ? { net: fields.net } : {}),
+    ...(fields.pad ? { pad: fields.pad } : {}),
+  };
+}
+
 /** Schematic / PCB tab: shows the daemon's rendered SVG (`renders/<kind>.svg`, drawn by kicad-cli) and offers to render it. */
 export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
   const projectId = useUiStore((s) => s.activeProjectId);
   const project = useProject(projectId);
   const rendered = useProjectText(projectId, `renders/${kind}.svg`);
   const render = useRunTool();
+  const comments = useBoardComments(projectId);
+  const { pin, patch } = useBoardCommentMutations(projectId);
+  const client = useCoreClient();
+  const [commentMode, setCommentMode] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [draftPoint, setDraftPoint] = useState<SvgPoint | null>(null);
+  const [question, setQuestion] = useState("");
+  const [ref, setRef] = useState("");
+  const [net, setNet] = useState("");
+  const [pad, setPad] = useState("");
+  const [asking, setAsking] = useState(false);
+  const [askError, setAskError] = useState<string | null>(null);
+
+  const view = kind as CommentView;
+  const pins = useMemo(
+    () => (comments.data?.comments ?? []).filter((comment) => comment.anchor.view === view),
+    [comments.data, view],
+  );
+  const selected = pins.find((comment) => comment.id === selectedId) ?? null;
+  const pendingPins = pendingBoardComments(pins, view);
+  const beginPin = () => {
+    resetCompose();
+    setSelectedId(null);
+    setCommentMode(true);
+  };
+
+  const resetCompose = () => {
+    setDraftPoint(null);
+    setQuestion("");
+    setRef("");
+    setNet("");
+    setPad("");
+  };
+
+  const askAgent = async (targets: BoardComment[]) => {
+    if (asking || targets.length === 0) return;
+    setAsking(true);
+    setAskError(null);
+    try {
+      const prompt = buildCommentsAskPrompt(targets);
+      const threadId = useUiStore.getState().activeThreadId;
+      if (threadId) {
+        await client.sendMessage(threadId, { content: prompt });
+      } else {
+        useUiStore.getState().setDraft(DRAFT_KEY_NEW, prompt);
+        useUiStore.getState().focusComposer();
+      }
+    } catch (error) {
+      setAskError(error instanceof Error ? error.message : "Could not send the pinned comments. Try again.");
+    } finally {
+      setAsking(false);
+    }
+  };
+
+  const savePin = async () => {
+    if (!draftPoint || !question.trim()) return;
+    const created = await pin.mutateAsync({
+      question: question.trim(),
+      anchor: commentPinAnchor(view, draftPoint, {
+        ...(ref.trim() ? { ref: ref.trim() } : {}),
+        ...(net.trim() ? { net: net.trim() } : {}),
+        ...(pad.trim() ? { pad: pad.trim() } : {}),
+      }),
+    });
+    setSelectedId(created.comment.id);
+    resetCompose();
+    setCommentMode(true);
+  };
 
   if (!projectId)
     return (
@@ -49,11 +147,148 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
   }
   if (rendered.data) {
     return (
-      <div className="h-full" data-testid={`board-${kind}-svg`}>
-        <SvgViewer
-          svg={rendered.data}
-          toolbar={<span className="text-[11px] text-muted">renders/{kind}.svg</span>}
-        />
+      <div className="flex h-full min-h-0" data-testid={`board-${kind}-svg`}>
+        <div className="min-w-0 flex-1">
+          <SvgViewer
+            svg={rendered.data}
+            commentMode={commentMode}
+            {...(commentMode
+              ? {
+                  onDrawingClick: (point: SvgPoint) => {
+                    setDraftPoint(point);
+                    setSelectedId(null);
+                  },
+                }
+              : {})}
+            overlay={(box) => (
+              <CommentPins
+                comments={pins}
+                box={box}
+                selectedId={selectedId}
+                draftPoint={draftPoint}
+                onSelect={(id) => {
+                  setSelectedId(id);
+                  setDraftPoint(null);
+                }}
+              />
+            )}
+            toolbar={
+              <>
+                <Button
+                  size="sm"
+                  variant={commentMode ? "primary" : "secondary"}
+                  onClick={() => {
+                    setCommentMode((on) => !on);
+                    resetCompose();
+                  }}
+                  data-testid="comment-mode"
+                  title="Pin a question to this drawing"
+                >
+                  <Icon name="pin" width={14} height={14} />
+                  Comment
+                </Button>
+                <span className="text-[11px] text-muted">
+                  {commentMode ? "Click the board to drop a pin" : `${pins.length} pin${pins.length === 1 ? "" : "s"} · renders/${kind}.svg`}
+                </span>
+              </>
+            }
+          />
+        </div>
+        {(selected || draftPoint || commentMode) && (
+          <aside className="flex w-72 shrink-0 flex-col gap-2 overflow-auto border-l border-border p-3" data-testid="comment-detail">
+            {pins.length > 0 && (
+              <div className="mb-1 border-b border-border pb-3">
+                <p className="mb-2 text-xs font-medium">Pins on this {kind === "pcb" ? "PCB" : "schematic"}</p>
+                <ul className="max-h-40 space-y-1 overflow-auto">
+                  {pins.map((comment, index) => (
+                    <li key={comment.id}>
+                      <button type="button" aria-pressed={selectedId === comment.id && !draftPoint}
+                        className="flex w-full items-center gap-2 rounded border border-transparent px-2 py-1.5 text-left text-xs hover:bg-panel-2 aria-pressed:border-accent aria-pressed:bg-panel-2"
+                        onClick={() => { setSelectedId(comment.id); resetCompose(); }} title={comment.question}>
+                        <span className="font-mono text-muted">{index + 1}</span>
+                        <span className="min-w-0 flex-1 truncate">{comment.question}</span>
+                        <span className="text-[10px] text-muted">{comment.status === "resolved" ? "Resolved" : comment.answer ? "Answered" : "Pending"}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {commentMode && !selected && !draftPoint && <p className="text-xs text-muted">Click a location on the board to add a pin. Collect your comments, then ask the agent about them together.</p>}
+            {draftPoint && (
+              <>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.09em] text-muted">New pin</div>
+                <p className="text-xs text-muted">The blue marker shows the selected location. Click another spot on the board to move it.</p>
+                <Textarea
+                  value={question}
+                  onChange={(event) => setQuestion(event.target.value)}
+                  placeholder="What is this?"
+                  rows={4}
+                  aria-label="Comment question"
+                />
+                <p className="mt-1 text-[11px] text-muted">Optional details: the board location is already captured. Add these only if you know them.</p>
+                <label className="flex flex-col gap-1 text-xs">
+                  <span>Component reference <span className="text-muted">(optional)</span></span>
+                  <Input value={ref} onChange={(event) => setRef(event.target.value)} placeholder="e.g. R2, D1, U12" />
+                  <span className="text-[11px] text-muted">The part’s label on the board or schematic.</span>
+                </label>
+                <label className="flex flex-col gap-1 text-xs">
+                  <span>Pin or pad number <span className="text-muted">(optional)</span></span>
+                  <Input value={pad} onChange={(event) => setPad(event.target.value)} placeholder="e.g. 1 or A1" />
+                  <span className="text-[11px] text-muted">A specific connection on that component.</span>
+                </label>
+                <label className="flex flex-col gap-1 text-xs">
+                  <span>Signal / net name <span className="text-muted">(optional)</span></span>
+                  <Input value={net} onChange={(event) => setNet(event.target.value)} placeholder="e.g. GND, VCC, SPI.CS" />
+                  <span className="text-[11px] text-muted">The named electrical connection you’re asking about.</span>
+                </label>
+                <div className="flex gap-1">
+                  <Button size="sm" variant="primary" disabled={!question.trim() || pin.isPending} onClick={() => void savePin()}>
+                    Save pin
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={resetCompose}>Cancel</Button>
+                </div>
+              </>
+            )}
+            {selected && !draftPoint && (
+              <>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.09em] text-muted">
+                  {commentAnchorLabel(selected.anchor)}
+                </div>
+                <div className="text-[13px] font-medium">{selected.question}</div>
+                {selected.answer ? (
+                  <p className="text-[12.5px] leading-relaxed text-fg/90">{selected.answer}</p>
+                ) : (
+                  <p className="text-[12px] text-muted">Saved. Add more pins, or ask the agent when you’re ready.</p>
+                )}
+                <div className="flex flex-wrap gap-1">
+                  {selected.status !== "resolved" && (
+                    <Button size="sm" onClick={() => void patch.mutateAsync({ commentId: selected.id, patch: { status: "resolved" } })}>
+                      Resolve
+                    </Button>
+                  )}
+                  {selected.status === "resolved" && (
+                    <Button size="sm" onClick={() => void patch.mutateAsync({ commentId: selected.id, patch: { status: "open" } })}>
+                      Reopen
+                    </Button>
+                  )}
+                </div>
+              </>
+            )}
+            {!draftPoint && (
+              <div className="mt-auto flex flex-col gap-2 border-t border-border pt-3">
+                <Button size="sm" onClick={beginPin}>Add another pin</Button>
+                {pendingPins.length > 0 ? <>
+                  <p className="text-[11px] text-muted">Send all {pendingPins.length} unanswered pin{pendingPins.length === 1 ? "" : "s"} in this view as one request.</p>
+                  <Button size="sm" variant="primary" disabled={asking} onClick={() => void askAgent(pendingPins)}>
+                    {asking ? "Sending…" : `Ask agent about ${pendingPins.length} pin${pendingPins.length === 1 ? "" : "s"}`}
+                  </Button>
+                </> : selected && <Button size="sm" disabled={asking} onClick={() => void askAgent([selected])}>{asking ? "Sending…" : "Ask again about this pin"}</Button>}
+                {askError && <p role="alert" className="text-xs text-danger">{askError}</p>}
+              </div>
+            )}
+          </aside>
+        )}
       </div>
     );
   }

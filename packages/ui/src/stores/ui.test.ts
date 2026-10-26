@@ -36,7 +36,9 @@ describe("board tabs", () => {
   test("shopping list keeps the ninth board-tab shortcut and art follows it", () => {
     expect(BOARD_TABS[8]).toBe("bom");
     expect(BOARD_TAB_LABELS.bom).toBe("Shopping list");
-    expect(BOARD_TABS.at(-1)).toBe("art");
+    expect(BOARD_TABS).toContain("notes");
+    expect(BOARD_TAB_LABELS.notes).toBe("Notes");
+    expect(BOARD_TABS[9]).toBe("art");
     expect(BOARD_TAB_LABELS.art).toBe("Art");
   });
 });

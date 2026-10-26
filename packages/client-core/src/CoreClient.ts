@@ -29,6 +29,10 @@ import type {
   OrderSession,
   OrderVendorId,
   PairStartResult,
+  BoardComment,
+  BoardCommentsFile,
+  CreateBoardComment,
+  PatchBoardComment,
   PrivacyStatus,
   ProjectDetail,
   ProjectSummary,
@@ -228,6 +232,40 @@ export class CoreClient {
   }
   async readJson<T = unknown>(projectId: string, path: string): Promise<T> {
     return JSON.parse(await this.readFile(projectId, path)) as T;
+  }
+  listComments(projectId: string): Promise<BoardCommentsFile> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/comments`);
+  }
+  pinComment(
+    projectId: string,
+    input: CreateBoardComment,
+  ): Promise<{ comment: BoardComment; label: string }> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/comments`, {
+      method: "POST",
+      json: input,
+    });
+  }
+  patchComment(
+    projectId: string,
+    commentId: string,
+    patch: PatchBoardComment,
+  ): Promise<{ comment: BoardComment; label: string }> {
+    return this.request(
+      `/projects/${encodeURIComponent(projectId)}/comments/${encodeURIComponent(commentId)}`,
+      { method: "PATCH", json: patch },
+    );
+  }
+  readNotes(projectId: string): Promise<{ path: string; content: string; chars: number }> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/notes`);
+  }
+  writeNotes(
+    projectId: string,
+    content: string,
+  ): Promise<{ ok: true; path: string; chars: number }> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/notes`, {
+      method: "PUT",
+      json: { content },
+    });
   }
   async writeFile(projectId: string, path: string, content: string | Blob): Promise<void> {
     const res = await this.fetchImpl(this.fileUrl(projectId, path), {

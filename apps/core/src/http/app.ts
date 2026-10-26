@@ -75,6 +75,7 @@ import { parsePublicGitHubUrl } from "../github-import";
 import { applyErrorReporting, captureCoreException } from "../sentry";
 import { parseTopics, sseResponse } from "./sse";
 import { cloudRoutes } from "./cloud-routes";
+import { commentRoutes } from "./comment-routes";
 import { createSpeechService, SpeechProviderError, type SpeechService } from "../speech";
 
 export type AppDeps = {
@@ -392,6 +393,8 @@ export function createApp(deps: AppDeps): Hono<Env> {
     deps.store.projects.touch(id);
     return c.json({ ok: true, path: rel });
   });
+
+  commentRoutes(app, deps);
 
   app.get("/projects/:id/sketches", async (c) => {
     const h = await deps.projects.handle(c.req.param("id"));
