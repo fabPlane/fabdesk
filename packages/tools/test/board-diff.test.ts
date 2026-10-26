@@ -165,6 +165,8 @@ describe("board revision tools", () => {
     expect((listed.json as { revisions: Array<{ ref: string }> }).revisions[0]?.ref).toBe("worktree");
 
     await unlink(join(project.dir, "board.kicad_pcb"));
+    // Keep a valid empty design so the missing PCB is not confused with an absent project.
+    await writeFile(join(project.dir, "circuit.netlist.json"), JSON.stringify({ components: [], nets: [] }));
     const boardless = await invoke("board_revision_diff", { from: "worktree", to: "worktree" });
     const boardlessReport = boardless.json as { to: { paths: { pcb?: string } } };
     expect(boardlessReport.to.paths.pcb).toBeUndefined();

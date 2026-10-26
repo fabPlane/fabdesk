@@ -29,10 +29,12 @@ Only the core toolset is listed at first (`pcb_environment`, `project_status`, `
 `export`, `verify`, `shopping`, ... for more, or find one with `capability_search`.
 
 - Board status: `project_status`. Checks: `verify_drc`, `verify_erc`.
-- Drawings: `export_dxf` (per-layer DXF in `exports/dxf/`), `render_glb` (3D board), then
+- Drawings: `export_dxf` (per-layer DXF in `exports/dxf/`), `export_stencil` (3D-printed
+  F.Paste / B.Paste stencil STL in `exports/stencil/`), `export_laser_stencil` (LightBurn
+  `.lbrn2` + layered SVG/DXF), `render_glb` (3D board), then
   `board_viewer` with `view: "drawings"` or `"3d"`.
 - Mechanical parts (enclosure, brackets): the `cad` toolset edits the project's FreeCAD model
-  (`model.FCStd`): `cad_model`, `cad_add_object`, `cad_set_properties`, `cad_python`, ...
+  (`model.FCStd`): `cad_model`, `cad_add_object`, `cad_build_part`, `cad_kernels`, `cad_python`, ...
   `cad_export` with `format: "stl"` writes `exports/<name>.stl`, which `board_viewer` shows in
   the drawings tab (`drawing: "exports/model.stl"`); `format: "step"` is for fabrication.
 - Shopping: load the `shopping` toolset. `shopping_list_get`, `shopping_list_sync_bom`,

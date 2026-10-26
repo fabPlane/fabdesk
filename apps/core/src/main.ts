@@ -7,6 +7,7 @@ import { REMOTE_DEFAULT_PORT } from "@fabdesk/protocol";
 import { VERSION, channel, fabdeskHome, resolveConfig } from "./config";
 import { logger, errMsg, setLogLevel } from "./log";
 import { initSentry } from "./sentry";
+import { scrubAppImageRuntimeEnv } from "./appimage-env";
 
 const FULL_USAGE = `fabdesk-core ${VERSION}
 
@@ -413,6 +414,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
 }
 
 if (import.meta.main) {
+  // Core is never an AppImage. Drop launcher identity before any kicad-cli spawn.
+  scrubAppImageRuntimeEnv(process.env);
   main().then(
     (code) => process.exit(code),
     (e) => {

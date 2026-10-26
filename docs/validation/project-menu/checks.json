@@ -1,0 +1,20 @@
+{
+  "renamePersists": true,
+  "emptyNameDisabled": true,
+  "deleteCancelKeepsProject": true,
+  "deletePreservesDirectory": true,
+  "deleteDetachesChats": true,
+  "keyboardMenuFocus": true,
+  "hover": {
+    "before": {
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(170, 184, 166)"
+    },
+    "after": {
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(238, 243, 233)"
+    }
+  },
+  "uiTests": 108,
+  "typecheck": "passed"
+}

@@ -21,6 +21,7 @@ export const APP_BOARD_TABS = [
   "renders",
   "notes",
   "files",
+  "art",
   "bom",
   "diff",
 ] as const;
@@ -29,6 +30,8 @@ export const APP_SETTINGS_SECTIONS = [
   "kicad",
   "router",
   "auth",
+  "remote",
+  "voice",
   "appearance",
   "privacy",
   "shortcuts",
@@ -373,7 +376,7 @@ export const app_open_tab = defineTool({
   scope: "global",
   title: "Open a board tab",
   description:
-    "Open one of the board panel tabs (schematic, pcb, cinema = Route Cinema, 3d, drc, renders, notes, files, bom = Shopping list) and make sure the board panel is visible.",
+    "Open one of the board panel tabs (schematic, pcb, cinema = Route Cinema, 3d, cad, drc, renders, notes, files, art = picture-to-silkscreen, bom = Shopping list, diff = revision comparison) and make sure the board panel is visible.",
   inputSchema: {
     tab: z.enum(APP_BOARD_TABS),
   },

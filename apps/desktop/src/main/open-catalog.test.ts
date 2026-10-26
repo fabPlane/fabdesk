@@ -13,4 +13,15 @@ describe("OpenCatalogQueue", () => {
     expect(queue.take()).toEqual({ catalogId: "foostan/crkbd", remix: false });
     expect(queue.take()).toBeNull();
   });
+
+  test("preserves remix and clears after take so a remount cannot replay", () => {
+    const queue = new OpenCatalogQueue();
+    expect(queue.offer("fabplane://open/foostan/crkbd?remix=1")).toEqual({
+      catalogId: "foostan/crkbd",
+      remix: true,
+    });
+    expect(queue.peek()).toEqual({ catalogId: "foostan/crkbd", remix: true });
+    expect(queue.take()).toEqual({ catalogId: "foostan/crkbd", remix: true });
+    expect(queue.peek()).toBeNull();
+  });
 });

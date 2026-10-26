@@ -253,6 +253,7 @@ export function handleCoreEvent(event: CoreEvent, ctx: HandlerCtx): void {
       break;
     case "agent.done": {
       runs.endRun(event.runId);
+      void qc.invalidateQueries({ queryKey: ["thread", event.threadId] });
       void qc.invalidateQueries({ queryKey: messagesKey(event.threadId) });
       void qc.invalidateQueries({ queryKey: ["threads"] });
       break;
@@ -335,6 +336,7 @@ export function handleCoreEvent(event: CoreEvent, ctx: HandlerCtx): void {
       ctx.route?.setDone(event.result);
       break;
     case "project.changed":
+      void qc.invalidateQueries({ queryKey: ["finish-it-needs-work", event.projectId] });
       void qc.invalidateQueries({ queryKey: ["project", event.projectId] });
       void qc.invalidateQueries({ queryKey: ["projects"] });
       for (const p of event.paths)
@@ -377,6 +379,8 @@ export function handleCoreEvent(event: CoreEvent, ctx: HandlerCtx): void {
     case "finish_it.done":
     case "finish_it.failed":
       qc.setQueryData(["finish-it", event.session.projectId], event.session);
+      if (event.topic === "finish_it.done")
+        void qc.invalidateQueries({ queryKey: ["finish-it-needs-work", event.session.projectId] });
       void qc.invalidateQueries({ queryKey: ["threads"] });
       void qc.invalidateQueries({ queryKey: ["thread", event.session.threadId] });
       void qc.invalidateQueries({ queryKey: messagesKey(event.session.threadId) });

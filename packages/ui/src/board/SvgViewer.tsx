@@ -1,63 +1,61 @@
-import { useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
-import { Button } from "../components/ui";
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { Button, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { cn } from "../util";
 import { clientPointToSvg, parseSvgViewBox, type SvgPoint } from "./svg-coords";
+import { svgImageCache } from "./svg-image-cache";
 
-/** Zoomable host for an SVG string (schematic / PCB renders). */
-export function SvgViewer({
-  svg,
-  toolbar,
-  overlay,
-  commentMode = false,
-  onDrawingClick,
-}: {
+/** Zoomable vector image, isolated from the app's DOM and CSS layout. */
+export function SvgViewer({ svg, toolbar, overlay, commentMode = false, onDrawingClick }: {
   svg: string;
-  toolbar?: React.ReactNode;
-  overlay?: React.ReactNode;
+  toolbar?: ReactNode;
+  overlay?: ReactNode;
   commentMode?: boolean;
   onDrawingClick?: (point: SvgPoint, event: MouseEvent<HTMLDivElement>) => void;
 }) {
+  const drawing = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(1);
   const viewport = useRef<HTMLDivElement>(null);
-  const drawing = useRef<HTMLDivElement>(null);
+  const [source, setSource] = useState<{ svg: string; url: string } | null>(null);
+  const [loaded, setLoaded] = useState<{ url: string; width: number; height: number } | null>(null);
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
   const [fitSize, setFitSize] = useState({ width: 1, height: 1 });
-  useLayoutEffect(() => {
-    const el = drawing.current?.querySelector("svg");
+  const current = source?.svg === svg ? source : null;
+  const size = current && loaded?.url === current.url ? loaded : null;
+  const failed = current && failedUrl === current.url;
+
+  useEffect(() => {
+    // KiCad renders can contain tens of thousands of paths. An image keeps those
+    // nodes out of React's document and avoids synchronous SVG layout on mount.
+    const image = svgImageCache.acquire(svg);
+    setSource({ svg, url: image.url });
+    setZoom(1);
+    viewport.current?.scrollTo(0, 0);
+    return image.release;
+  }, [svg]);
+
+  useEffect(() => {
     const frame = viewport.current;
-    if (!el || !frame) return;
-    let box = el.viewBox.baseVal;
-    if (!box.width || !box.height) {
-      const bounds = el.getBBox();
-      if (!bounds.width || !bounds.height) return;
-      el.setAttribute("viewBox", `${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}`);
-      box = el.viewBox.baseVal;
-    }
-    const width = box.width, height = box.height;
-    el.setAttribute("preserveAspectRatio", "xMidYMid meet");
-    el.style.width = "100%";
-    el.style.height = "100%";
+    if (!size || !frame) return;
+    const { width, height } = size;
     const measure = () => {
       const scale = Math.min(Math.max(1, frame.clientWidth - 24) / width, Math.max(1, frame.clientHeight - 24) / height);
-      setFitSize({ width: width * scale, height: height * scale });
+      const next = { width: width * scale, height: height * scale };
+      setFitSize((prev) => prev.width === next.width && prev.height === next.height ? prev : next);
     };
-    setZoom(1);
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(frame);
     return () => observer.disconnect();
-  }, [svg]);
-
+  }, [size]);
   const handleClick = (event: MouseEvent<HTMLDivElement>) => {
-    if (!onDrawingClick) return;
-    if ((event.target as HTMLElement | null)?.closest("[data-comment-pin]")) return;
+    if (!onDrawingClick || (event.target as HTMLElement | null)?.closest("[data-comment-pin]")) return;
     const host = drawing.current;
-    const box = parseSvgViewBox(svg) ?? svgElBox(host);
+    const box = parseSvgViewBox(svg) ?? (size ? { x: 0, y: 0, width: size.width, height: size.height } : null);
     if (!host || !box) return;
     const point = clientPointToSvg(box, host.getBoundingClientRect(), event.clientX, event.clientY);
     if (point) onDrawingClick(point, event);
   };
-
   return (
     <div className="flex h-full flex-col">
       <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-border px-3 py-2">
@@ -74,23 +72,31 @@ export function SvgViewer({
         <div className="ml-auto flex items-center gap-1">{toolbar}</div>
       </div>
       <div ref={viewport} className="min-h-0 flex-1 overflow-auto bg-panel-2/40 p-3">
+        {!size && !failed && <div className="flex h-full items-center justify-center" role="status" aria-label="Loading board preview"><Spinner /></div>}
+        {failed && <div className="p-4 text-sm text-muted" role="alert">Could not display this SVG preview. Try rendering it again.</div>}
         <div
           ref={drawing}
-          className={cn("fd-svg-host relative mx-auto origin-top-left bg-panel", commentMode && "cursor-crosshair")}
-          style={{ width: fitSize.width * zoom, height: fitSize.height * zoom }}
           onClick={handleClick}
+          className={cn("fd-svg-host relative mx-auto origin-top-left bg-panel", commentMode && "cursor-crosshair")}
+          style={{ width: fitSize.width * zoom, height: fitSize.height * zoom, display: size ? "block" : "none" }}
         >
-          <div className="h-full w-full" dangerouslySetInnerHTML={{ __html: svg }} />
+          {current && <img
+            src={current.url}
+            alt="Board preview"
+            decoding="async"
+            draggable={false}
+            className="block h-full w-full max-w-none"
+            onLoad={(e) => {
+              const image = e.currentTarget;
+              if (image.naturalWidth && image.naturalHeight) {
+                setLoaded({ url: current.url, width: image.naturalWidth, height: image.naturalHeight });
+              } else setFailedUrl(current.url);
+            }}
+            onError={() => setFailedUrl(current.url)}
+          />}
           {overlay}
         </div>
       </div>
     </div>
   );
-}
-
-function svgElBox(host: HTMLDivElement | null) {
-  const el = host?.querySelector("svg");
-  const box = el?.viewBox.baseVal;
-  if (!box || !box.width || !box.height) return null;
-  return { x: box.x, y: box.y, width: box.width, height: box.height };
 }

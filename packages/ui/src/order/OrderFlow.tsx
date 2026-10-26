@@ -16,6 +16,7 @@ const VENDOR_COPY: Record<OrderVendorId, { blurb: string }> = {
 export function OrderFlow() {
   const projectId = useUiStore((s) => s.activeProjectId);
   const setOrderFlowOpen = useUiStore((s) => s.setOrderFlowOpen);
+  const boardOpen = useUiStore((s) => s.boardOpen);
   const setBoardTab = useUiStore((s) => s.setBoardTab);
   const order = useProjectOrder(projectId);
   const start = useStartOrder();
@@ -27,7 +28,7 @@ export function OrderFlow() {
 
   return (
     <div className="fd-content-pane flex h-full min-w-0 flex-col bg-bg" data-testid="order-flow">
-      <div className="fd-screen-header flex items-center justify-between border-b border-border px-4">
+      <div className={cn("fd-screen-header flex items-center justify-between border-b border-border pl-4", boardOpen ? "pr-4" : "pr-[52px]")}>
         <div className="text-sm font-medium">Order now</div>
         <Button size="sm" onClick={() => setOrderFlowOpen(false)}>
           Back

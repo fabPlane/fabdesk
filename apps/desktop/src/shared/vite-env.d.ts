@@ -10,3 +10,5 @@ interface ImportMetaEnv {
 
 /** `fabdesk@<version>+<git-sha>` (or `VITE_SENTRY_RELEASE` / `SENTRY_RELEASE` at build time); electron.vite.config.ts `define`. */
 declare const __FABDESK_SENTRY_RELEASE__: string;
+/** This build's release notes (scripts/release-notes.ts), as JSON; parsed with `ReleaseNotes`. */
+declare const __FABDESK_RELEASE_NOTES__: unknown;

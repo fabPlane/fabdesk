@@ -1,17 +1,23 @@
+import { modelDisplayName } from "./model-display-name";
 import type { AgentId, Thread } from "@fabdesk/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button, IconButton, Textarea } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { InstallHint } from "../components/InstallHint";
+import { ErrorNotice } from "../components/ErrorNotice";
 import { useCore } from "@fabdesk/client-core";
-import { CoreHttpError, useDoctor, useSettings, useMessages, useQueueMessage, useUnqueueMessage, useFinishIt, useStartFinishIt, useStopFinishIt } from "@fabdesk/client-core";
+import { CoreHttpError, formatVoiceShortcut, parseVoiceShortcut, useDoctor, useSettings, useSpeechStatus, useMessages, useQueueMessage, useUnqueueMessage, useFinishIt, useFinishItNeedsWork, useStartFinishIt, useStopFinishIt } from "@fabdesk/client-core";
 import { useRunsStore } from "@fabdesk/client-core";
 import { DRAFT_KEY_NEW, useUiStore } from "../stores/ui";
 import { basename, mimeFromPath, modKey } from "../util";
+import { AgentLogo } from "../components/AgentLogo";
 import { AgentModelMenu } from "./AgentModelMenu";
-import { agentModelLabel, expandSlashCommand, isFinishItCommand, slashSuggestions } from "@fabdesk/client-core";
+import { PermissionsMenu } from "./PermissionsMenu";
+import { expandSlashCommand, isFinishItCommand, slashSuggestions } from "@fabdesk/client-core";
 import { applyComposerTextareaHeight } from "./composer-autosize";
+import { useVoiceInput } from "./voice/useVoiceInput";
+import { MicButton, VoiceBar } from "./voice/VoiceBar";
 import { FinishItPanel } from "./FinishItPanel";
 import { finishItActive } from "./finish-it-view";
 
@@ -25,11 +31,13 @@ export const composerHandlers: {
    * click. Returns false when the agent is not one the composer offers.
    */
   setAgent: ((agentId: string, model?: string | null) => boolean) | null;
+  voiceToggle: (() => void) | null;
 } = {
   send: null,
   abort: null,
   finishIt: null,
   setAgent: null,
+  voiceToggle: null,
 };
 
 export interface ComposerProps {
@@ -68,6 +76,17 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
   const unqueueMessage = useUnqueueMessage();
   const doctor = useDoctor();
   const settings = useSettings();
+  const speech = useSpeechStatus();
+  const voice = useVoiceInput({
+    client,
+    voice: settings.data?.voice,
+    status: speech.data,
+    onTranscript: (text) => {
+      const current = useUiStore.getState().drafts[draftKey] ?? "";
+      const next = current.trim() ? `${current.trim()} ${text}` : text;
+      setDraft(draftKey, next);
+    },
+  });
   const finishIt = useFinishIt(projectId);
   const startFinishIt = useStartFinishIt();
   const stopFinishIt = useStopFinishIt();
@@ -75,7 +94,8 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
   const [agentId, setAgentId] = useState<AgentId>(thread?.agentId ?? settings.data?.defaultAgent ?? "claude");
   const [model, setModel] = useState<string>(thread?.model ?? "");
   const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [stopping, setStopping] = useState(false);
+  const [error, setError] = useState<unknown>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -110,12 +130,17 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
   const pickerAgents = agents.length > 0 ? agents : FALLBACK_AGENTS;
   const selectedAgent = agents.find((a) => a.id === agentId);
   const agentMissing = selectedAgent ? !selectedAgent.installed : false;
+  const displayedModel = model || settings.data?.agents[agentId]?.model || selectedAgent?.defaultModel || "";
+  const modelLabel = displayedModel ? modelDisplayName(displayedModel, selectedAgent?.modelAliases) : "Choose model";
+  const pickerLabel = `${pickerAgents.find((agent) => agent.id === agentId)?.displayName ?? agentId}: ${modelLabel}`;
 
   const finishItSession = finishIt.data ?? null;
+  const finishedNeedsWork = useFinishItNeedsWork(projectId, finishItSession?.status === "completed");
+  const alreadyFinished = finishItSession?.status === "completed" && finishedNeedsWork.data !== true;
   const finishItBusy = finishItActive(finishItSession) || startFinishIt.isPending || stopFinishIt.isPending;
 
   const beginFinishIt = useCallback(async () => {
-    if (!projectId || finishItBusy) return;
+    if (!projectId || finishItBusy || alreadyFinished) return;
     setError(null);
     try {
       const result = await startFinishIt.mutateAsync({
@@ -129,7 +154,7 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [projectId, finishItBusy, startFinishIt, thread?.id, agentId, model, setActiveThread, qc]);
+  }, [projectId, finishItBusy, alreadyFinished, startFinishIt, thread?.id, agentId, model, setActiveThread, qc]);
 
   const send = useCallback(async () => {
     const typed = draft.trim();
@@ -159,6 +184,7 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
       };
       // The queue endpoint starts immediately when idle and queues if a run began meanwhile.
       await queueMessage.mutateAsync({ threadId, input });
+      voice.reset();
       setDraft(draftKey, "");
       clearAttachments(draftKey);
       if (draftKey === DRAFT_KEY_NEW) setDraft(threadId, "");
@@ -171,15 +197,25 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
         setDraft(DRAFT_KEY_NEW, "");
         clearAttachments(DRAFT_KEY_NEW);
       }
-      setError(e instanceof Error ? e.message : String(e));
+      setError(e);
     } finally {
       setSending(false);
     }
-  }, [draft, sending, thread, onCreateThread, agentId, model, pending, setDraft, draftKey, clearAttachments, addAttachment, qc, queueMessage, beginFinishIt]);
+  }, [draft, sending, thread, onCreateThread, agentId, model, pending, setDraft, draftKey, clearAttachments, addAttachment, qc, queueMessage, voice.reset, beginFinishIt]);
+
+  const stop = useCallback(async () => {
+    if (!run || stopping) return;
+    setStopping(true);
+    setError(null);
+    try { await client.abort(run.threadId); }
+    catch { setError("Could not stop the run. Check the connection and try again."); }
+    finally { setStopping(false); }
+  }, [run, stopping, client]);
 
   useEffect(() => {
     composerHandlers.send = () => void send();
-    composerHandlers.abort = thread ? () => void client.abort(thread.id) : null;
+    composerHandlers.abort = run ? () => void stop() : null;
+    composerHandlers.voiceToggle = () => voice.toggle();
     composerHandlers.finishIt = () => void beginFinishIt();
     composerHandlers.setAgent = (id, m) => {
       const offered = doctor.data?.agents ?? FALLBACK_AGENTS;
@@ -194,8 +230,11 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
       composerHandlers.abort = null;
       composerHandlers.finishIt = null;
       composerHandlers.setAgent = null;
+      composerHandlers.voiceToggle = null;
     };
-  }, [send, client, thread, doctor.data, settings.data, beginFinishIt]);
+  }, [send, stop, run, doctor.data, settings.data, voice.toggle, beginFinishIt]);
+
+  const showStop = !!run && !draft.trim() && !sending;
 
   const pickFiles = async () => {
     const paths = await host.pickFile({
@@ -280,6 +319,13 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
           </div>
         )}
         <div className="fd-composer rounded-xl border border-border bg-panel transition-colors focus-within:border-accent">
+          <VoiceBar
+            state={voice.state}
+            shortcut={settings.data?.voice.pushToTalkShortcut ?? "Alt+Space"}
+            platform={host.platform}
+            onCancel={voice.cancel}
+            onOpenSettings={() => setSettingsOpen(true, "voice")}
+          />
           <Textarea
             ref={textareaRef}
             value={draft}
@@ -288,6 +334,12 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
             rows={1}
             onChange={(e) => setDraft(draftKey, e.target.value)}
             onKeyDown={(e) => {
+              if (e.key === "Escape" && voice.state.phase !== "idle") {
+                e.preventDefault();
+                voice.cancel();
+                return;
+              }
+              if (voice.state.phase === "recording" || voice.state.phase === "transcribing") return;
               if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault();
                 void send();
@@ -295,37 +347,6 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
             }}
           />
           <div className="fd-composer-toolbar flex flex-wrap items-center gap-1.5 px-2.5 py-2">
-            <div className="fd-agent-control relative min-w-0">
-              <Button
-                ref={agentButtonRef}
-                variant="ghost"
-                size="sm"
-                className="fd-agent-button h-8 max-w-full font-medium"
-                title={`Agent & model (${mod} + /)`}
-                onClick={() => setAgentPickerOpen(!agentPickerOpen)}
-                disabled={!!run || queued.length > 0}
-                aria-haspopup="menu"
-                aria-expanded={agentPickerOpen}
-                data-testid="agent-model"
-              >
-                <span className="min-w-0 truncate">{agentModelLabel(pickerAgents.find((a) => a.id === agentId), agentId, model)}</span> <Icon name="chevronDown" width={13} height={13} className="shrink-0" />
-              </Button>
-              <AgentModelMenu
-                anchorRef={agentButtonRef}
-                open={agentPickerOpen}
-                onClose={() => setAgentPickerOpen(false)}
-                agents={pickerAgents}
-                agentId={agentId}
-                model={model}
-                defaultModel={(id) => settings.data?.agents[id]?.model ?? ""}
-                configuredModels={(id) => settings.data?.agents[id]?.pickerModels ?? []}
-                onSelect={(id, m) => {
-                  setAgentId(id);
-                  setModel(m);
-                }}
-                onOpenSettings={() => setSettingsOpen(true, "agents")}
-              />
-            </div>
             <IconButton title="Attach file" onClick={() => void pickFiles()}>
               <Icon name="paperclip" />
             </IconButton>
@@ -340,36 +361,71 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
             >
               <Icon name="compose" width={16} height={16} /><span className="fd-action-label">Sketch</span>
             </Button>
-            <div className="ml-auto flex items-center gap-2">
-              {projectId && (
+            <MicButton
+              active={voice.state.phase === "recording"}
+              disabled={sending}
+              mode={settings.data?.voice.pushToTalkMode ?? "hold"}
+              title={`Speak (${formatVoiceShortcut(parseVoiceShortcut(settings.data?.voice.pushToTalkShortcut), host.platform)})`}
+              onHoldStart={() => void voice.holdStart()}
+              onHoldEnd={voice.holdEnd}
+              onToggle={voice.toggle}
+            />
+            {thread && <PermissionsMenu key={thread.id} thread={thread} />}
+            {projectId && (
+              <Button variant="secondary" size="sm" aria-label="Finish it"
+                title={alreadyFinished ? "Board already finished. Make changes to enable Finish it again." : "Finish schematic, place, route and verify without step-by-step prompts"}
+                onClick={() => void beginFinishIt()} disabled={finishItBusy || alreadyFinished || agentMissing} data-testid="finish-it">
+                <Icon name="play" width={14} height={14} />
+                <span className="fd-action-label">Finish it</span>
+              </Button>
+            )}
+            <div className="fd-composer-send-group ml-auto flex min-w-0 items-center gap-2">
+              <div className="fd-agent-control relative min-w-0">
                 <Button
-                  variant="secondary"
+                  ref={agentButtonRef}
+                  variant="ghost"
                   size="sm"
-                  aria-label="Finish it"
-                  title="Finish schematic, place, route and verify without step-by-step prompts"
-                  onClick={() => void beginFinishIt()}
-                  disabled={finishItBusy || agentMissing}
-                  data-testid="finish-it"
+                  className="fd-agent-button h-8 max-w-full font-medium"
+                  title={`${pickerLabel} (${mod} + /)`}
+                  aria-label={`Agent and model: ${pickerLabel}`}
+                  onClick={() => setAgentPickerOpen(!agentPickerOpen)}
+                  disabled={!!run || queued.length > 0}
+                  aria-haspopup="menu"
+                  aria-expanded={agentPickerOpen}
+                  data-testid="agent-model"
                 >
-                  <Icon name="play" width={14} height={14} />
-                  <span className="fd-action-label">Finish it</span>
+                  <AgentLogo agentId={agentId} />
+                  <span className="min-w-0 truncate">{modelLabel}</span> <Icon name="chevronDown" width={13} height={13} className="shrink-0" />
                 </Button>
-              )}
-              {run && (
-                <Button variant="danger" size="sm" onClick={() => void client.abort(run.threadId)} aria-label="Stop current run; queued messages stay scheduled" title={`Stop current run (${mod} + .). Queued messages stay scheduled.`}>
-                  <Icon name="stop" width={14} height={14} /> Stop
-                </Button>
-              )}
-                <Button
-                  variant="primary"
-                  size="sm"
-                  aria-label={run ? "Queue message" : sending ? "Sending message" : "Send message"}
-                  onClick={() => void send()}
-                  disabled={!draft.trim() || sending}
-                  title={`${run ? "Queue" : "Send"} (${mod} + Enter)`}
-                >
-                  <span className="fd-action-label">{sending ? "Sending..." : run ? "Queue" : "Send"}</span> <Icon name="send" width={14} height={14} />
-                </Button>
+                <AgentModelMenu
+                  anchorRef={agentButtonRef}
+                  open={agentPickerOpen}
+                  onClose={() => setAgentPickerOpen(false)}
+                  agents={pickerAgents}
+                  agentId={agentId}
+                  model={model}
+                  defaultModel={(id) => settings.data?.agents[id]?.model ?? ""}
+                  configuredModels={(id) => settings.data?.agents[id]?.pickerModels ?? []}
+                  onSelect={(id, m) => {
+                    setAgentId(id);
+                    setModel(m);
+                  }}
+                  onOpenSettings={() => setSettingsOpen(true, "agents")}
+                />
+              </div>
+              <Button
+                variant="primary"
+                size="sm"
+                className="fd-composer-primary"
+                style={{ width: 36, height: 36, padding: 0, borderRadius: "50%", flexShrink: 0 }}
+                aria-label={showStop ? "Stop current run; queued messages stay scheduled" : sending ? "Sending message" : run ? "Queue message" : "Send message"}
+                aria-busy={showStop ? stopping : sending}
+                onClick={() => void (showStop ? stop() : send())}
+                disabled={showStop ? stopping : !draft.trim() || sending}
+                title={showStop ? "Stop current run. Queued messages stay scheduled." : run ? "Queue message (Enter). Stop current run with " + mod + " + ." : "Send message (Enter)"}
+              >
+                <Icon name={showStop ? "stop" : run ? "queue" : "arrowUp"} width={18} height={18} {...(showStop ? { fill: "currentColor" } : {})} />
+              </Button>
             </div>
           </div>
         </div>
@@ -384,8 +440,7 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
             <div className="border-t border-warning/20 px-3 py-2"><InstallHint text={selectedAgent.installHint} /></div>
           </details>
         )}
-        {error && <div className="mt-2 rounded-lg border border-danger/25 bg-danger/5 px-3 py-2 text-xs text-danger">{error}</div>}
-        <div className="fd-composer-hint"><span>{run ? "Enter to queue" : "Enter to send"}</span><span>Shift + Enter for a new line</span></div>
+        {error != null && <ErrorNotice error={error} agentId={agentId} />}
       </div>
     </div>
   );

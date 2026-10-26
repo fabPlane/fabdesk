@@ -252,6 +252,38 @@ describe("sqlite", () => {
     expect(() => store.settings.patch({ router: "bogus" })).toThrow();
   });
 
+  test("run history keeps branch references without scanning unrelated runs", () => {
+    const db = openDatabase(":memory:");
+    const store = new Store(db);
+    const parent = store.threads.create({ agentId: "codex" });
+    const run = store.runs.create({ threadId: parent.id, agentId: "codex" });
+    const message = store.threads.addMessage({ threadId: parent.id, role: "assistant", runId: run.id, contentMd: "Done" });
+    const branch = store.threads.create({ agentId: "codex", parentThreadId: parent.id, branchFromMessageId: message.id });
+    expect(store.runs.historyForThread(branch.id).map((r) => r.id)).toEqual([run.id]);
+    expect(store.runs.historyForThread(parent.id).map((r) => r.id)).toEqual([run.id]);
+    const plan = db.query("EXPLAIN QUERY PLAN SELECT * FROM runs WHERE thread_id = ? UNION SELECT * FROM runs WHERE id IN (SELECT run_id FROM messages WHERE thread_id = ? AND run_id IS NOT NULL) ORDER BY started_at DESC, id DESC").all(parent.id, parent.id);
+    expect(JSON.stringify(plan)).toContain("runs_thread_started");
+    expect(JSON.stringify(plan)).not.toContain("SCAN runs");
+    db.close();
+  });
+
+  test("upgrade repairs a development database with the draft run index at version 10", () => {
+    const db = new Database(":memory:");
+    db.run("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)");
+    for (const migration of MIGRATIONS.filter((m) => m.version <= 9)) {
+      migration.up?.(db);
+      db.run(migration.sql);
+      db.run("INSERT INTO schema_migrations VALUES (?, ?)", [migration.version, new Date().toISOString()]);
+    }
+    db.run("CREATE INDEX runs_thread_started ON runs(thread_id, started_at DESC)");
+    db.run("INSERT INTO schema_migrations VALUES (10, ?)", [new Date().toISOString()]);
+    expect(migrate(db)).toBe(MIGRATIONS.at(-1)!.version);
+    expect(migrate(db)).toBe(MIGRATIONS.at(-1)!.version);
+    expect(db.query<{ name: string }, []>("PRAGMA table_info(run_dumps)").all().map((c) => c.name)).toContain("archive_destinations_json");
+    expect(db.query<{ name: string }, []>("PRAGMA table_info(run_dump_history)").all().map((c) => c.name)).toContain("directory_bytes");
+    db.close();
+  });
+
   test("thread pin persists across database reopen", async () => {
     const dir = await mkdtemp(join(tmpdir(), "fabdesk-db-pin-"));
     const path = join(dir, "fabdesk.db");
@@ -319,21 +351,52 @@ describe("sqlite", () => {
     }
     expect(store.runDumps.list(RUN_DUMP_RETENTION.rows + 1)).toHaveLength(RUN_DUMP_RETENTION.rows);
     expect(store.runDumps.get("run_000")).toBeNull();
-    store.runDumps.put(
-      {
-        runId: "run_unbacked",
-        traceId: "trace_unbacked",
-        threadId: "thread_1",
-        agentId: "codex",
-        projectId: null,
-        createdAt: "2026-09-10T00:00:00.000Z",
-        dumpJson: "{}",
-      },
-      false,
-    );
-    expect(store.runDumps.list(RUN_DUMP_RETENTION.rows + 1)).toHaveLength(
-      RUN_DUMP_RETENTION.rows + 1,
-    );
+    store.close();
+  });
+
+  test("run dump retention keeps pending dumps below the storage cap, including after opt-out", () => {
+    const store = new Store(openDatabase(":memory:"));
+    const destinations = ["api:test"];
+    const put = (index: number) => {
+      const suffix = String(index).padStart(3, "0");
+      store.runDumps.put(
+        {
+          runId: `run_${suffix}`,
+          traceId: `trace_${suffix}`,
+          threadId: "thread_1",
+          agentId: "codex",
+          projectId: null,
+          createdAt: `2026-09-09T00:00:00.${suffix}Z`,
+          dumpJson: "{}",
+        },
+        destinations,
+      );
+    };
+    const count = () => store.runDumps.list(1_000).length;
+    for (let index = 0; index < RUN_DUMP_RETENTION.rows + 10; index++) put(index);
+    // Nothing has been backed up yet, so retention keeps every dump past the normal limit.
+    expect(count()).toBe(RUN_DUMP_RETENTION.rows + 10);
+    // Once the oldest five are recorded as uploaded, the next put prunes exactly those.
+    for (let index = 0; index < 5; index++)
+      store.db.run(
+        "INSERT INTO usage_archive_uploads(destination, record_id, sha256, uploaded_at) VALUES (?, ?, ?, ?)",
+        ["api:test", `run-dump:run_${String(index).padStart(3, "0")}`, "x", "2026-09-09T00:00:00Z"],
+      );
+    put(RUN_DUMP_RETENTION.rows + 10);
+    expect(count()).toBe(RUN_DUMP_RETENTION.rows + 6);
+    expect(store.runDumps.get("run_004")).toBeNull();
+    expect(store.runDumps.get("run_005")).not.toBeNull();
+    // Pending records survive beyond the old 200-row ceiling.
+    for (
+      let index = RUN_DUMP_RETENTION.rows + 11;
+      index < 220;
+      index++
+    )
+      put(index);
+    expect(count()).toBe(215);
+    // Another run while sharing is off cannot erase previous pending backups.
+    store.runDumps.put({ runId: "after_optout", traceId: "trace", threadId: "thread_1", agentId:"codex",projectId:null,createdAt:"2026-10-01T00:00:00Z",dumpJson:"{}" });
+    expect(store.runDumps.get("run_005")).not.toBeNull();
     store.close();
   });
 

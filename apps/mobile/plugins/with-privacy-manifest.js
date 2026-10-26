@@ -54,6 +54,14 @@ const COLLECTED_DATA = [
     NSPrivacyCollectedDataTypeTracking: false,
     NSPrivacyCollectedDataTypePurposes: ["NSPrivacyCollectedDataTypePurposeAppFunctionality"],
   },
+  {
+    // Hold-to-talk: audio is transcribed (on this phone when possible, else on the paired
+    // computer) and discarded. It is not stored and not used for tracking.
+    NSPrivacyCollectedDataType: "NSPrivacyCollectedDataTypeAudioData",
+    NSPrivacyCollectedDataTypeLinked: false,
+    NSPrivacyCollectedDataTypeTracking: false,
+    NSPrivacyCollectedDataTypePurposes: ["NSPrivacyCollectedDataTypePurposeAppFunctionality"],
+  },
 ];
 
 /** @param {import("expo/config").ExpoConfig} config */

@@ -12,6 +12,7 @@ import {
   type CoreInfo,
   type HostAdapter,
 } from "@fabdesk/ui";
+import { ReleaseNotes } from "@fabdesk/protocol";
 import { useEffect, useMemo, useState } from "react";
 import { sentryUserFromAuth } from "../shared/sentry-user";
 import { disableRendererSentry, setRendererSentryUser } from "./sentry";
@@ -29,30 +30,51 @@ function ThemeSync() {
   return null;
 }
 
-const host: HostAdapter = bridge
-  ? {
-      platform: bridge.platform,
-      devBuild: bridge.devBuild,
-      openExternal: (url) => bridge.openExternal(url),
-      openPath: (path) => bridge.openPath(path),
-      ...(typeof bridge.pickDirectory === "function" ? { pickDirectory: () => bridge.pickDirectory() } : {}),
-      pickFile: (opts) => bridge.pickFile(opts),
-      localAuthAllowed: () => bridge.localAuthAllowed(),
-      setLocalAuth: (enabled) => bridge.setLocalAuth(enabled),
-      restartCore: () => bridge.restartCore(),
-      showAppMenu: (pos) => bridge.showAppMenu(pos),
-      onMenu: (cb) => bridge.onMenu(cb),
-      openLogs: () => bridge.openLogs(),
-      updateStatus: () => bridge.updateStatus(),
-      checkForUpdates: () => bridge.checkForUpdates(),
-      onUpdateStatus: (cb) => bridge.onUpdateStatus(cb),
-      updateDownloadState: () => bridge.updateDownloadState(),
-      downloadUpdate: () => bridge.downloadUpdate(),
-      cancelUpdateDownload: () => bridge.cancelUpdateDownload(),
-      openUpdate: () => bridge.openUpdate(),
-      onUpdateDownload: (cb) => bridge.onUpdateDownload(cb),
-    }
-  : browserHost;
+/**
+ * Notes baked in at build time; the same text fabplane.com shows for this release. Read lazily:
+ * Vite dev serves `define` values as globals that may be set after this module first runs.
+ */
+let cachedNotes: ReleaseNotes | undefined;
+function withReleaseNotes(base: HostAdapter): HostAdapter {
+  return Object.defineProperty({ ...base }, "releaseNotes", {
+    enumerable: true,
+    get(): ReleaseNotes | undefined {
+      if (cachedNotes) return cachedNotes;
+      const raw = typeof __FABDESK_RELEASE_NOTES__ === "undefined" ? null : __FABDESK_RELEASE_NOTES__;
+      const parsed = ReleaseNotes.safeParse(raw);
+      cachedNotes = parsed.success ? parsed.data : undefined;
+      return cachedNotes;
+    },
+  });
+}
+
+const host: HostAdapter = withReleaseNotes(
+  bridge
+    ? {
+        platform: bridge.platform,
+        ...(bridge.platform === "darwin" ? { nativeSpeech: bridge.nativeSpeech } : {}),
+        devBuild: bridge.devBuild,
+        openExternal: (url) => bridge.openExternal(url),
+        openPath: (path) => bridge.openPath(path),
+        ...(typeof bridge.pickDirectory === "function" ? { pickDirectory: () => bridge.pickDirectory() } : {}),
+        pickFile: (opts) => bridge.pickFile(opts),
+        localAuthAllowed: () => bridge.localAuthAllowed(),
+        setLocalAuth: (enabled) => bridge.setLocalAuth(enabled),
+        restartCore: () => bridge.restartCore(),
+        showAppMenu: (pos) => bridge.showAppMenu(pos),
+        onMenu: (cb) => bridge.onMenu(cb),
+        openLogs: () => bridge.openLogs(),
+        updateStatus: () => bridge.updateStatus(),
+        checkForUpdates: () => bridge.checkForUpdates(),
+        onUpdateStatus: (cb) => bridge.onUpdateStatus(cb),
+        updateDownloadState: () => bridge.updateDownloadState(),
+        downloadUpdate: () => bridge.downloadUpdate(),
+        cancelUpdateDownload: () => bridge.cancelUpdateDownload(),
+        openUpdate: () => bridge.openUpdate(),
+        onUpdateDownload: (cb) => bridge.onUpdateDownload(cb),
+      }
+    : browserHost,
+);
 
 /** Without the Electron bridge (plain browser), read the daemon address from the query string. */
 function webCoreInfo(): CoreInfo {
@@ -95,19 +117,52 @@ function ErrorReportingBridge() {
 }
 
 function OpenCatalogBridge() {
+  const client = useCoreClient();
   const setActiveOpenSourceId = useUiStore((s) => s.setActiveOpenSourceId);
   const setSidebarListTab = useUiStore((s) => s.setSidebarListTab);
+  const setActiveProject = useUiStore((s) => s.setActiveProject);
+  const setActiveThread = useUiStore((s) => s.setActiveThread);
+  const setBoardOpen = useUiStore((s) => s.setBoardOpen);
+  const setBoardTab = useUiStore((s) => s.setBoardTab);
+  const focusComposer = useUiStore((s) => s.focusComposer);
   useEffect(() => {
     if (!bridge?.onOpenCatalog) return;
-    const open = (catalogId: string) => {
+    const open = (intent: { catalogId: string; remix: boolean }) => {
+      if (intent.remix) {
+        void client
+          .remixOpenSource(intent.catalogId)
+          .then((result) => {
+            setActiveProject(result.project.id);
+            setActiveThread(null);
+            setActiveOpenSourceId(null);
+            setSidebarListTab("projects");
+            setBoardTab("pcb");
+            setBoardOpen(true);
+            focusComposer();
+          })
+          .catch(() => {
+            setSidebarListTab("open_source");
+            setActiveOpenSourceId(intent.catalogId);
+          });
+        return;
+      }
       setSidebarListTab("open_source");
-      setActiveOpenSourceId(catalogId);
+      setActiveOpenSourceId(intent.catalogId);
     };
-    void bridge.pendingOpenCatalog?.().then((id) => {
-      if (id) open(id);
+    void bridge.pendingOpenCatalog?.().then((intent) => {
+      if (intent) open(intent);
     });
     return bridge.onOpenCatalog(open);
-  }, [setActiveOpenSourceId, setSidebarListTab]);
+  }, [
+    client,
+    setActiveOpenSourceId,
+    setSidebarListTab,
+    setActiveProject,
+    setActiveThread,
+    setBoardOpen,
+    setBoardTab,
+    focusComposer,
+  ]);
   return null;
 }
 

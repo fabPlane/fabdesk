@@ -40,12 +40,16 @@ export interface WindowTheme {
   themeSource: "system" | "light" | "dark";
 }
 
-/** Height of the top bar (`h-12` in TopBar.tsx); the Windows controls overlay matches it. */
+/** Windows app chrome stays 48 DIPs high, independent of workspace page zoom. */
 export const TITLE_BAR_HEIGHT = 48;
 
 /** Windows controls-overlay colours for a theme: the top bar's panel colour and its foreground. */
 export function titleBarOverlayFor(themeId: ThemeId): { color: string; symbolColor: string; height: number } {
-  return { color: themePanel(themeId), symbolColor: themeForeground(themeId), height: TITLE_BAR_HEIGHT };
+  return {
+    color: themePanel(themeId), symbolColor: themeForeground(themeId),
+    // Preserve the bottom divider; native caption glyphs do not follow page zoom.
+    height: TITLE_BAR_HEIGHT - 1,
+  };
 }
 
 /** Resolve the BrowserWindow background and nativeTheme source from the cached Appearance choice. */

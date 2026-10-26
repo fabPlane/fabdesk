@@ -206,6 +206,10 @@ export const AgentInfo = z.object({
   path: z.string().optional(),
   installHint: z.string(),
   models: z.array(z.string()),
+  /** Versioned IDs reported by the installed CLI for selectable aliases. */
+  modelAliases: z.record(z.string(), z.string()).optional(),
+  /** Resolved CLI default, for display; absence means the version is unknown. */
+  defaultModel: z.string().optional(),
   /** Whether the adapter can pause a tool call for approval (`runtimeMode: "supervised"`). Absent = no. */
   supportsSupervised: z.boolean().optional(),
 });
@@ -301,16 +305,41 @@ export const Settings = z.object({
   notifications: z.object({ enabled: z.boolean().default(true) }).default({ enabled: true }),
   /** fabplane.com org whose carts and inventory fabdesk uses; null means the caller's personal org. */
   cloudOrgId: z.string().nullable().default(null),
+  /**
+   * Speak-to-the-agent prefs. The cloud speech key is stored separately in the daemon and is
+   * never returned here. Audio is used only while the person is speaking and is not kept after
+   * the transcript is ready.
+   */
+  voice: z
+    .object({
+      /** `auto` uses on-device speech in the app when it produces a transcript; otherwise a cloud key, then a local model. */
+      provider: z.enum(["auto", "on_device", "cloud", "local"]).default("auto"),
+      /** BCP-47-ish language tag the provider should prefer (`en`, `en-US`, `de`). */
+      language: z.string().min(2).max(16).default("en"),
+      /** Hold the shortcut to talk, or tap it to start/stop. */
+      pushToTalkMode: z.enum(["hold", "toggle"]).default("hold"),
+      /** Modifier+key, e.g. `Alt+Space`. Parsed by the desktop composer. */
+      pushToTalkShortcut: z.string().min(1).max(40).default("Alt+Space"),
+    })
+    .default({
+      provider: "auto",
+      language: "en",
+      pushToTalkMode: "hold",
+      pushToTalkShortcut: "Alt+Space",
+    }),
 });
 export type Settings = z.infer<typeof Settings>;
+export type VoiceSettings = Settings["voice"];
+export type VoiceProviderId = VoiceSettings["provider"];
 
 export const PrivacyScreenMode = z.enum(["auto", "always", "never"]);
 export type PrivacyScreenMode = z.infer<typeof PrivacyScreenMode>;
 
 /**
- * Who sees the first-install privacy screen: `auto` shows it only where `detectConsentRegion`
- * places the installation in the EU/EEA, UK or Switzerland; `always` / `never` force it for
- * testing. The core's `FABDESK_PRIVACY_SCREEN` env var overrides this at run time.
+ * Who sees the first-install privacy screen: `auto` (the default) asks only where
+ * `detectConsentRegion` places the installation in the EU/EEA, UK or Switzerland and backs up
+ * everyone else by default; `always` asks every undecided installation before anything is backed
+ * up; `never` skips it. The core's `FABDESK_PRIVACY_SCREEN` env var overrides this at run time.
  */
 export const FIRST_INSTALL_PRIVACY_SCREEN: PrivacyScreenMode = "auto";
 

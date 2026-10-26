@@ -20,7 +20,7 @@ export interface JobsLike {
 export function jobClassFor(def: ToolDef): JobClass {
   if (def.name === "route_run") return "router";
   if (def.name === "circuit_build") return "build";
-  if (def.name === "render_board") return "render";
+  if (def.name === "render_board" || def.name === "render_product_video") return "render";
   if (["kicad", "verify", "export", "render"].includes(def.toolset) || def.name === "verify_drc") return "kicad";
   return "default";
 }

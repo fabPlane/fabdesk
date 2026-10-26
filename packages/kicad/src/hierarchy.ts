@@ -70,11 +70,13 @@ const unquote = (value: string) => value.replace(/\\([\\"])/g, "$1");
 /** Tolerant native S-expression traversal: only top-level `sheet` blocks are interpreted. */
 function parseNativeSchematic(text: string): { identity: string; sheets: NativeSheetReference[] } {
   if (!/^\s*\(kicad_sch\b/.test(text)) throw new Error("not a native kicad_sch document");
-  const blocks: string[] = [];
+  const blocks: Array<{ text: string; identity: string }> = [];
   let depth = 0;
   let quoted = false;
   let escaped = false;
   let sheetStart = -1;
+  let rootIdentity = "unknown";
+  let sheetIdentity = "unknown";
   for (let index = 0; index < text.length; index++) {
     const character = text[index]!;
     if (quoted) {
@@ -88,34 +90,42 @@ function parseNativeSchematic(text: string): { identity: string; sheets: NativeS
       continue;
     }
     if (character === "(") {
-      if (depth === 1 && /^\(sheet(?:\s|\r|\n)/.test(text.slice(index, index + 16)))
+      if (depth === 1 && /^\(sheet\s/.test(text.slice(index, index + 16))) {
         sheetStart = index;
+        sheetIdentity = "unknown";
+      }
+      // KiCad 7 writes bare UUID atoms; newer files quote them. Only read the
+      // document/sheet's own UUID, never a nested symbol, pin, or quoted property.
+      if (depth === 1 || (depth === 2 && sheetStart >= 0)) {
+        const match = /^\(uuid\s+(?:"([^"\\]+)"|([^\s()"]+))\s*\)/.exec(text.slice(index));
+        const identity = match?.[1] ?? match?.[2];
+        if (identity) {
+          if (depth === 1) rootIdentity = identity;
+          else sheetIdentity = identity;
+        }
+      }
       depth++;
     } else if (character === ")") {
       depth--;
       if (depth < 0) throw new Error("unbalanced closing parenthesis");
       if (sheetStart >= 0 && depth === 1) {
-        blocks.push(text.slice(sheetStart, index + 1));
+        blocks.push({ text: text.slice(sheetStart, index + 1), identity: sheetIdentity });
         sheetStart = -1;
       }
     }
   }
   if (quoted || depth !== 0) throw new Error("unterminated string or unbalanced parentheses");
-  const rootIdentity = /\(uuid\s+"([^"]+)"\)/.exec(text)?.[1] ?? "unknown";
-  const sheets = blocks.map((block) => {
+  const sheets = blocks.map(({ text: block, identity }) => {
     const property = (key: string) => {
       const match = new RegExp(`\\(property\\s+"${key}"\\s+"((?:\\\\.|[^"])*)"`).exec(block);
       return match?.[1] ? unquote(match[1]) : undefined;
     };
     const filename = property("Sheetfile");
-    if (!filename)
-      throw new Error(
-        `sheet ${uuid(/\(uuid\s+"([^"]+)"\)/.exec(block)?.[1])} has no Sheetfile property`,
-      );
+    if (!filename) throw new Error(`sheet ${uuid(identity)} has no Sheetfile property`);
     return {
       filename,
       name: property("Sheetname") ?? basename(filename, extname(filename)),
-      identity: /\(uuid\s+"([^"]+)"\)/.exec(block)?.[1] ?? "unknown",
+      identity,
     };
   });
   return { identity: rootIdentity, sheets };

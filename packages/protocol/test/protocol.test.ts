@@ -19,6 +19,7 @@ import {
   Settings,
   CloudSettings,
   findOpenCatalogArg,
+  isOpenCatalogIntent,
   isCatalogWebsiteAsset,
   isGitHubAssetHost,
   openCatalogHref,
@@ -246,6 +247,21 @@ describe("pairing url", () => {
     expect(Settings.safeParse({ remote: { preferredEndpointKind: "wifi" } }).success).toBe(false);
   });
 
+  test("Settings.voice defaults and rejects an unknown provider", () => {
+    expect(Settings.parse({}).voice).toEqual({
+      provider: "auto",
+      language: "en",
+      pushToTalkMode: "hold",
+      pushToTalkShortcut: "Alt+Space",
+    });
+    expect(Settings.parse({ voice: { language: "de", provider: "cloud" } }).voice).toMatchObject({
+      provider: "cloud",
+      language: "de",
+      pushToTalkMode: "hold",
+    });
+    expect(Settings.safeParse({ voice: { provider: "whisper" } }).success).toBe(false);
+  });
+
   test("an https endpoint adds a parallel s= list and is tried first, on 443 without a port", () => {
     const endpoints = orderEndpoints(
       [
@@ -376,11 +392,13 @@ describe("open-catalog deep links", () => {
       remix: false,
     });
     expect(parseOpenCatalogHref("https://fabplane.com/explore")).toBeNull();
+    expect(isOpenCatalogIntent({ catalogId: "foostan/crkbd", remix: true })).toBe(true);
+    expect(isOpenCatalogIntent({ catalogId: "foostan/crkbd" })).toBe(false);
   });
 });
 
 describe("usage archive consent", () => {
-  test("the first-install privacy screen follows the detected region", () => {
+  test("the first-install privacy screen defaults to regional detection", () => {
     expect(FIRST_INSTALL_PRIVACY_SCREEN).toBe("auto");
   });
 

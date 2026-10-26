@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@excalidraw/excalidraw": "^0.18.0",
+    "@fabdesk/board-art": "workspace:*",
     "@fabdesk/client-core": "workspace:*",
     "@fabdesk/protocol": "workspace:*",
     "@fontsource-variable/inter": "^5.2.0",

@@ -1,6 +1,6 @@
 // Exposes `window.__SENTRY_IPC__` so renderer Sentry events reach the main process (docs/sentry.md).
 import "@sentry/electron/preload";
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webFrame } from "electron";
 
 export interface PickFileOptions {
   multiple?: boolean;
@@ -9,6 +9,14 @@ export interface PickFileOptions {
 
 const api = {
   platform: process.platform,
+  nativeSpeech: {
+    status: (language: string) => ipcRenderer.invoke("fabdesk:speech-status", language),
+    prepare: (language: string, id: string) => ipcRenderer.invoke("fabdesk:speech-prepare", language, id),
+    transcribe: (request: { id: string; audio: ArrayBuffer; language: string }) => ipcRenderer.invoke("fabdesk:speech-transcribe", request),
+    cancel: (id: string) => ipcRenderer.invoke("fabdesk:speech-cancel", id),
+  },
+  /** Read-only zoom value so Windows toolbar icons can match native caption sizing. */
+  getZoomFactor: () => webFrame.getZoomFactor(),
   cadRuntimeState: () => ipcRenderer.invoke("fabdesk:cad-runtime-state"),
   reconnectCadRuntime: () => ipcRenderer.invoke("fabdesk:reconnect-cad-runtime"),
   prepareCadRuntime: () => ipcRenderer.invoke("fabdesk:prepare-cad-runtime"),
@@ -67,10 +75,13 @@ const api = {
     ipcRenderer.on("fabdesk:update-download", listener);
     return () => ipcRenderer.removeListener("fabdesk:update-download", listener);
   },
-  pendingOpenCatalog: () => ipcRenderer.invoke("fabdesk:pending-open-catalog") as Promise<string | null>,
-  onOpenCatalog: (cb: (catalogId: string) => void) => {
-    const listener = (_e: unknown, catalogId: unknown) => {
-      if (typeof catalogId === "string") cb(catalogId);
+  pendingOpenCatalog: () =>
+    ipcRenderer.invoke("fabdesk:pending-open-catalog") as Promise<{ catalogId: string; remix: boolean } | null>,
+  onOpenCatalog: (cb: (intent: { catalogId: string; remix: boolean }) => void) => {
+    const listener = (_e: unknown, intent: unknown) => {
+      if (!intent || typeof intent !== "object") return;
+      const rec = intent as { catalogId?: unknown; remix?: unknown };
+      if (typeof rec.catalogId === "string") cb({ catalogId: rec.catalogId, remix: rec.remix === true });
     };
     ipcRenderer.on("fabdesk:open-catalog", listener);
     return () => ipcRenderer.removeListener("fabdesk:open-catalog", listener);

@@ -87,6 +87,51 @@ const api = (path: string, init: RequestInit = {}) =>
   });
 
 describe("http daemon", () => {
+  test("thread snapshots retain timing for older replies and copied branch history", async () => {
+    const store = daemon.store;
+    const thread = store.threads.create({ agentId: "claude" });
+    const older = store.runs.create({ threadId: thread.id, agentId: "claude" });
+    store.runs.finish(older.id, { status: "completed", exitCode: 0 });
+    store.db.run("UPDATE runs SET started_at = ?, ended_at = ? WHERE id = ?", ["2026-10-19T10:00:00Z", "2026-10-19T10:07:05Z", older.id]);
+    const reply = store.threads.addMessage({ threadId: thread.id, role: "assistant", contentMd: "Earlier reply", runId: older.id });
+    // Multiple messages for one run must not duplicate its history entry.
+    store.threads.addMessage({ threadId: thread.id, role: "assistant", contentMd: "More details", runId: older.id });
+    const latest = store.runs.create({ threadId: thread.id, agentId: "claude" });
+    store.runs.finish(latest.id, { status: "aborted" });
+    store.db.run("UPDATE runs SET started_at = ?, ended_at = ? WHERE id = ?", ["2026-10-19T11:00:00Z", "2026-10-19T11:00:12Z", latest.id]);
+    store.threads.addMessage({ threadId: thread.id, role: "assistant", contentMd: "Stopped reply", runId: latest.id });
+    const unrelated = store.threads.create({ agentId: "claude" });
+    store.runs.create({ threadId: unrelated.id, agentId: "claude" });
+
+    for (let read = 0; read < 2; read++) {
+      const snapshot = await (await api(`/threads/${thread.id}`)).json();
+      expect(snapshot.run.id).toBe(latest.id);
+      expect(snapshot.runs).toHaveLength(2);
+      expect(snapshot.runs.find((run: { id: string }) => run.id === older.id)).toMatchObject({
+        startedAt: "2026-10-19T10:00:00Z", endedAt: "2026-10-19T10:07:05Z", status: "completed",
+      });
+    }
+    const branch = store.threads.create({ agentId: "claude", parentThreadId: thread.id, branchFromMessageId: reply.id });
+    const snapshot = await (await api(`/threads/${branch.id}`)).json();
+    expect(snapshot.run).toBeNull();
+    expect(snapshot.runs.map((run: { id: string }) => run.id)).toEqual([older.id]);
+    expect((await api("/threads/missing-history")).status).toBe(404);
+  });
+
+  test("stale project and parent chat return actionable codes instead of SQLite errors", async () => {
+    for (const [input, code] of [
+      [{ agentId: "claude", projectId: "prj_missing" }, "project_not_found"],
+      [{ agentId: "claude", parentThreadId: "th_missing" }, "parent_thread_not_found"],
+    ] as const) {
+      const before = await (await api("/threads")).json() as unknown[];
+      const response = await api("/threads", { method: "POST", body: JSON.stringify(input) });
+      expect(response.status).toBe(404);
+      const body = await response.json();
+      expect(body.code).toBe(code);
+      expect(body.error).not.toContain("FOREIGN KEY");
+      expect((await (await api("/threads")).json() as unknown[]).length).toBe(before.length);
+    }
+  });
   test("health open, auth required, foreign origin rejected, handshake written", async () => {
     const health = await fetch(`${daemon.url}/health`);
     expect(health.status).toBe(200);
@@ -432,8 +477,10 @@ describe("http daemon", () => {
     // AGENTS.md / CLAUDE.md regenerated before the run.
     const agentInstructions = await Bun.file(join(created.path, "AGENTS.md")).text();
     expect(agentInstructions).toContain("Canonical KiCad PCB");
-    expect(agentInstructions).not.toMatch(
-      /workflow|circuit_build|prefer|retry|repeat until|run .* first/i,
+    expect(agentInstructions).not.toMatch(/workflow|prefer|retry|repeat until|run .* first/i);
+    // Neutral discovery must give both authoring paths equal visibility.
+    expect(/circuit_build/i.test(agentInstructions)).toBe(
+      /schematic_edit/i.test(agentInstructions),
     );
     expect((await Bun.file(join(created.path, "CLAUDE.md")).text()).trim()).toBe("@AGENTS.md");
 
@@ -458,8 +505,13 @@ describe("http daemon", () => {
     expect(detail.run.agentSessionId).toBe("sess-42");
     const tracePath = join(created.path, ".fabdesk", "runs", runId, "trace.jsonl");
     expect(await Bun.file(tracePath).exists()).toBe(true);
+    // Export finishes asynchronously after agent.done; wait for the artifact, not a fixed delay.
+    const dumpPath = join(created.path, ".fabdesk", "runs", runId, "llm-dump.json");
+    const dumpDeadline = Date.now() + 3_000;
+    while ((!daemon.store.runDumps.get(runId) || !(await Bun.file(dumpPath).exists())) && Date.now() < dumpDeadline)
+      await Bun.sleep(10);
     expect(
-      await Bun.file(join(created.path, ".fabdesk", "runs", runId, "llm-dump.json")).exists(),
+      await Bun.file(dumpPath).exists(),
     ).toBe(true);
     expect(JSON.parse(daemon.store.runDumps.get(runId)!.dumpJson)).toMatchObject({
       schema: "fabdesk.llm-run-dump/v1",
@@ -516,7 +568,7 @@ describe("http daemon", () => {
     const a = await connect(daemon.token);
     const names = (await a.client.listTools()).tools.map((t) => t.name);
     // Core plus the circuit, verify and render toolsets: both schematic authoring paths start listed.
-    expect(names).toHaveLength(35);
+    expect(names).toHaveLength(36);
     expect(names).toEqual(
       expect.arrayContaining([
         "capability_call",
@@ -530,6 +582,7 @@ describe("http daemon", () => {
         "verify_erc",
         "release_build",
         "render_view",
+        "render_product_video",
       ]),
     );
     expect(daemon.mcp.activeCount()).toBe(1);
@@ -545,11 +598,15 @@ describe("http daemon", () => {
     expect((withProject.structuredContent as { id: string }).id).toBe(created.id);
 
     await a.client.callTool({ name: "load_toolset", arguments: { toolset: "export" } });
-    expect((await a.client.listTools()).tools.length).toBe(42);
+    const exportNames = (await a.client.listTools()).tools.map((tool) => tool.name);
+    expect(exportNames).toHaveLength(46);
+    expect(exportNames).toEqual(
+      expect.arrayContaining(["silk_art", "export_stencil", "export_laser_stencil"]),
+    );
 
     // A second session starts with only the default toolsets (state is per session).
     const b = await connect(daemon.token);
-    expect((await b.client.listTools()).tools.length).toBe(35);
+    expect((await b.client.listTools()).tools.length).toBe(36);
     expect(daemon.mcp.activeCount()).toBe(2);
 
     // Clients that cannot process tools/list_changed can request the complete
@@ -800,7 +857,10 @@ describe("http daemon", () => {
   });
 
   test("uninstalling the router that is the saved default resets the default to automatic", async () => {
-    const set = await api("/settings", { method: "PATCH", body: JSON.stringify({ preferredRouter: "tracemaker" }) });
+    const set = await api("/settings", {
+      method: "PATCH",
+      body: JSON.stringify({ preferredRouter: "tracemaker" }),
+    });
     expect(((await set.json()) as { preferredRouter?: string }).preferredRouter).toBe("tracemaker");
     const gone = await api("/routers/tracemaker", { method: "DELETE" });
     expect(gone.status).toBe(200);
@@ -810,7 +870,10 @@ describe("http daemon", () => {
     expect(list.preferredRouter).toBeUndefined();
 
     // uninstalling some other router leaves the default alone
-    await api("/settings", { method: "PATCH", body: JSON.stringify({ preferredRouter: "fab_router" }) });
+    await api("/settings", {
+      method: "PATCH",
+      body: JSON.stringify({ preferredRouter: "fab_router" }),
+    });
     await api("/routers/tracemaker", { method: "DELETE" });
     const kept = (await (await api("/settings")).json()) as { preferredRouter?: string | null };
     expect(kept.preferredRouter).toBe("fab_router");

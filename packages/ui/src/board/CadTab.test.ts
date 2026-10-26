@@ -1,7 +1,24 @@
 import { describe, expect, test } from "bun:test";
-import { CAD_FRAME_SANDBOX } from "./CadTab";
+import {
+  CAD_FRAME_SANDBOX,
+  CAD_KERNEL_TREE_POLL_MS,
+  CadKernelTree,
+  shouldShowCadKernelTree,
+} from "./CadTab";
 
 describe("CAD frame sandbox", () => {
+  test("polls cad_kernels infrequently to avoid repeated SMLib probes", () => {
+    expect(CAD_KERNEL_TREE_POLL_MS).toBeGreaterThanOrEqual(10_000);
+  });
+
+  test("kernel tree is shown only when a project is selected and data is loaded", () => {
+    const model = { kernels: [], store: { parts: [], assembly: null } };
+    expect(shouldShowCadKernelTree(null, model)).toBe(false);
+    expect(shouldShowCadKernelTree("", model)).toBe(false);
+    expect(shouldShowCadKernelTree("proj-1", null)).toBe(false);
+    expect(shouldShowCadKernelTree("proj-1", model)).toBe(true);
+  });
+
   test("lets the fab_cad SPA run at its own origin and nothing that escapes the frame", () => {
     const tokens = CAD_FRAME_SANDBOX.split(" ");
     for (const needed of ["allow-scripts", "allow-same-origin"]) expect(tokens).toContain(needed);
@@ -70,4 +87,34 @@ test("installed connection failure offers retry; running and no-project states r
       },
     }),
   ).toContain('data-testid="cad-frame"');
+});
+test("kernel tree names the kernel that built each part and any fallback", () => {
+  const html = renderToStaticMarkup(
+    createElement(CadKernelTree, {
+      model: {
+        kernels: [
+          { id: "opencascade", label: "OpenCascade (FreeCAD)", available: true },
+          { id: "smlib", label: "SMLib (NVIDIA USD BRep)", available: true, experimental: true },
+        ],
+        store: {
+          parts: [
+            {
+              id: "Grip",
+              name: "Grip",
+              kernel: "smlib",
+              reason: "fell back to smlib",
+              fallbacks: [{ from: "opencascade", to: "smlib", featureKind: "fillet", error: "G2" }],
+              step: "cad/parts/Grip.step",
+            },
+          ],
+          assembly: { step: "cad/assembly.step", partIds: ["Grip"] },
+        },
+      },
+    }),
+  );
+  expect(html).toContain("data-testid=\"cad-kernel-tree\"");
+  expect(html).toContain("kernel smlib");
+  expect(html).toContain("opencascade→smlib");
+  expect(html).toContain("cad/assembly.step");
+  expect(html).toContain("experimental");
 });

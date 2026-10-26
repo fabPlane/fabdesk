@@ -1,4 +1,4 @@
-import { app, ipcMain, dialog, BrowserWindow, nativeTheme, shell } from "electron";
+import { app, ipcMain, dialog, BrowserWindow, nativeTheme, session, shell } from "electron";
 import { join, resolve } from "node:path";
 import { mkdir } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
@@ -29,6 +29,8 @@ import { release as osRelease } from "node:os";
 import { PcbSupervisor, resolvePcbBackend } from "./pcb-supervisor";
 import { systemLocaleEnv } from "./system-locales";
 import { resolveWindowTheme, titleBarOverlayFor } from "./window-theme";
+import { decideMediaPermission } from "./media-permission";
+import type { OpenCatalogIntent } from "@fabdesk/protocol";
 import { OpenCatalogQueue } from "./open-catalog";
 
 const openCatalog = new OpenCatalogQueue();
@@ -40,16 +42,20 @@ if (process.defaultApp) {
   app.setAsDefaultProtocolClient("fabplane");
 }
 
-function sendOpenCatalog(catalogId: string): void {
+function sendOpenCatalog(intent: OpenCatalogIntent): void {
   const win = BrowserWindow.getAllWindows()[0];
   if (!win || win.isDestroyed()) return;
-  win.webContents.send("fabdesk:open-catalog", catalogId);
+  // A send before the renderer loads is dropped; leave pending for take() on mount.
+  if (win.webContents.isLoadingMainFrame()) return;
+  win.webContents.send("fabdesk:open-catalog", intent);
+  // Delivered to a live window; drop pending so a remount cannot replay take().
+  openCatalog.take();
 }
 
 app.on("open-url", (event, url) => {
   event.preventDefault();
   const intent = openCatalog.offer(url);
-  if (intent) sendOpenCatalog(intent.catalogId);
+  if (intent) sendOpenCatalog(intent);
 });
 
 // Name / userData / AUMID / WM_CLASS / FABDESK_HOME before any path read or the single-instance lock
@@ -170,11 +176,17 @@ if (!app.requestSingleInstanceLock()) {
       if (win.isMinimized()) win.restore();
       win.focus();
     }
-    if (intent) sendOpenCatalog(intent.catalogId);
+    if (intent) sendOpenCatalog(intent);
   });
 
   void app.whenReady().then(async () => {
     app.setAppUserModelId(identity.appUserModelId);
+    session.defaultSession.setPermissionRequestHandler((wc, permission, callback) => {
+      callback(decideMediaPermission(permission, wc.getURL()));
+    });
+    session.defaultSession.setPermissionCheckHandler((wc, permission, requestingOrigin) =>
+      decideMediaPermission(permission, wc?.getURL() || requestingOrigin),
+    );
     const icon = developmentIconPath();
     if (process.platform === "darwin" && icon) app.dock?.setIcon(icon);
     void runSentryTest();
@@ -251,7 +263,7 @@ if (!app.requestSingleInstanceLock()) {
     });
     installAppMenu();
     registerIpc(supervisor);
-    ipcMain.handle("fabdesk:pending-open-catalog", () => openCatalog.take()?.catalogId ?? null);
+    ipcMain.handle("fabdesk:pending-open-catalog", () => openCatalog.take());
     const developmentCadReady = !app.isPackaged && Boolean(cadEnv["FABDESK_FAB_CAD_BRIDGE_URL"]);
     ipcMain.handle("fabdesk:cad-runtime-state", () =>
       developmentCadReady ? { status: "ready" } : cadRuntime.state(),
@@ -300,8 +312,8 @@ if (!app.requestSingleInstanceLock()) {
     registerUpdateDownloadIpc(new UpdateDownloader(updates));
     updates.start();
     createWindow();
-    const pending = openCatalog.peek();
-    if (pending) sendOpenCatalog(pending.catalogId);
+    // Startup deep links stay queued for take() after the renderer mounts.
+    // Sending here is always lost because webContents has not loaded yet.
     // CI / smoke runs: quit on their own after N ms (FABDESK_SMOKE_MS).
     const smokeMs = Number(process.env["FABDESK_SMOKE_MS"] ?? 0);
     if (smokeMs > 0) setTimeout(() => app.quit(), smokeMs);

@@ -2,7 +2,8 @@
  * Pure planner for Finish it: inspect a project directory, decide remaining milestones,
  * write the autonomous agent prompt, and map MCP tools onto those milestones.
  */
-import { readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import {
   FINISH_IT_MILESTONE_LABELS,
@@ -29,6 +30,10 @@ export type FinishItSnapshot = {
 export type FinishItRouteHint = {
   status: string;
   open: number | null;
+  /** Only completed+applied routes count; manual/stale/failed candidates do not. */
+  applied?: boolean;
+  /** sha256 of the PCB after apply; must match the live board when set. */
+  pcbRevision?: string | null;
 };
 
 const ROUTED_STATUSES = new Set(["completed", "done"]);
@@ -39,6 +44,43 @@ async function readJson(path: string): Promise<unknown | null> {
   } catch {
     return null;
   }
+}
+
+async function mtimeMs(path: string): Promise<number | null> {
+  const info = await stat(path).catch(() => null);
+  return info?.mtimeMs ?? null;
+}
+
+async function newestMtime(paths: string[]): Promise<number | null> {
+  let max: number | null = null;
+  for (const path of paths) {
+    const t = await mtimeMs(path);
+    if (t !== null && (max === null || t > max)) max = t;
+  }
+  return max;
+}
+
+function laterOf(...times: Array<number | null>): number | null {
+  let max: number | null = null;
+  for (const t of times) {
+    if (t !== null && (max === null || t > max)) max = t;
+  }
+  return max;
+}
+
+async function schematicPaths(dir: string): Promise<string[]> {
+  const names = await readdir(dir).catch(() => [] as string[]);
+  return names.filter((name) => name.endsWith(".kicad_sch")).map((name) => join(dir, name));
+}
+
+/** Ignore a report that is older than the board it describes. */
+async function readFreshJson(path: string, sourceMtime: number | null): Promise<unknown | null> {
+  const raw = await readJson(path);
+  if (raw === null) return null;
+  if (sourceMtime === null) return raw;
+  const reportMtime = await mtimeMs(path);
+  if (reportMtime === null || reportMtime < sourceMtime) return null;
+  return raw;
 }
 
 function countsOf(value: unknown): { errors?: number; unconnected?: number } | null {
@@ -62,8 +104,16 @@ function spicePassed(value: unknown): boolean | null {
 
 function routeFilePassed(value: unknown): { routed: boolean; open: number | null } | null {
   if (!value || typeof value !== "object") return null;
-  const rec = value as { ok?: unknown; open?: unknown; status?: unknown };
+  const rec = value as {
+    ok?: unknown;
+    open?: unknown;
+    status?: unknown;
+    application?: { state?: unknown };
+    applied?: unknown;
+  };
   const open = typeof rec.open === "number" ? rec.open : null;
+  if (rec.application && rec.application.state !== "applied") return { routed: false, open };
+  if (rec.applied === false) return { routed: false, open };
   if (rec.ok === true || ROUTED_STATUSES.has(String(rec.status ?? "")))
     return { routed: open === null || open === 0, open };
   if (rec.ok === false) return { routed: false, open };
@@ -78,26 +128,59 @@ export async function inspectProject(
   const parsed = netlistRaw === null ? null : NetlistFile.safeParse(netlistRaw);
   const netlist = parsed?.success ? parsed.data : null;
 
-  const board = await readFile(join(dir, "board.kicad_pcb"), "utf8").catch(() => null);
-  const schematic = await readFile(join(dir, "board.kicad_sch"), "utf8").catch(() => null);
-  const drc = countsOf(await readJson(join(dir, "reports", "drc.json")));
-  const erc = countsOf(await readJson(join(dir, "reports", "erc.json")));
-  const spice = spicePassed(await readJson(join(dir, "reports", "spice.json")));
-  const routeFile = routeFilePassed(await readJson(join(dir, "reports", "route.json")));
+  const boardPath = join(dir, "board.kicad_pcb");
+  const netlistPath = join(dir, "circuit.netlist.json");
+  const board = await readFile(boardPath, "utf8").catch(() => null);
+  const schematicFiles = await schematicPaths(dir);
+  const schematic = schematicFiles.length > 0;
+  const boardMtime = board ? await mtimeMs(boardPath) : null;
+  const netlistMtime = await mtimeMs(netlistPath);
+  const schematicMtime = await newestMtime(schematicFiles);
+  // Git checkout writes files in index order (`board.kicad_pcb` before
+  // `circuit.netlist.json`), so the netlist can be a few ms newer on a
+  // finished clone. Treat sub-second / low-second skew as the same generation.
+  const CHECKOUT_MTIME_SLACK_MS = 2_000;
+  const boardCurrent =
+    board !== null &&
+    board.length > 0 &&
+    (netlistMtime === null ||
+      boardMtime === null ||
+      boardMtime + CHECKOUT_MTIME_SLACK_MS >= netlistMtime);
+  const reportSource = laterOf(boardMtime, netlistMtime);
+  const ercSource = laterOf(schematicMtime, boardMtime);
+  const boardHash = board !== null ? createHash("sha256").update(board).digest("hex") : null;
+  const drcReport = await readFreshJson(join(dir, "reports", "drc.json"), reportSource);
+  const drcEvidence = drcReport as {
+    pcbRevision?: { sha256?: string };
+    schematicParityChecked?: boolean;
+  } | null;
+  const drcMatchesBoard = drcEvidence?.pcbRevision?.sha256 === boardHash && boardHash !== null;
+  // Legacy reports use timestamps; revision-bearing reports must describe this exact PCB.
+  const drc = drcEvidence?.pcbRevision?.sha256 && !drcMatchesBoard ? null : countsOf(drcReport);
+  const erc = countsOf(await readFreshJson(join(dir, "reports", "erc.json"), ercSource));
+  const spice = spicePassed(await readFreshJson(join(dir, "reports", "spice.json"), reportSource));
+  const routeFile = routeFilePassed(await readFreshJson(join(dir, "reports", "route.json"), reportSource));
 
   const lastRoute = extras.lastRoute;
+  const routeApplied =
+    lastRoute?.applied === true &&
+    (lastRoute.pcbRevision == null || lastRoute.pcbRevision === boardHash);
   const routeFromStore =
-    lastRoute && ROUTED_STATUSES.has(lastRoute.status)
+    lastRoute && ROUTED_STATUSES.has(lastRoute.status) && routeApplied
       ? { routed: lastRoute.open === 0, open: lastRoute.open }
       : null;
-  const routed = routeFromStore?.routed === true || routeFile?.routed === true;
-  const routeOpen = routeFromStore?.open ?? routeFile?.open ?? null;
+  // Cleanup can change the PCB hash after routing. A parity-aware connectivity check
+  // on the final revision proves routing without applying the router a second time.
+  const connectivityVerified = boardCurrent && drcMatchesBoard &&
+    drcEvidence?.schematicParityChecked === true && drc?.errors === 0 && drc.unconnected === 0;
+  const routed = connectivityVerified || routeFromStore?.routed === true || routeFile?.routed === true;
+  const routeOpen = connectivityVerified ? 0 : routeFromStore?.open ?? routeFile?.open ?? null;
 
   return {
     hasNetlist: netlist !== null,
     netlistComponents: netlist?.netlist.components.length ?? 0,
-    hasBoard: board !== null && board.length > 0,
-    hasSchematic: schematic !== null && schematic.length > 0,
+    hasBoard: boardCurrent,
+    hasSchematic: schematic,
     routed,
     routeOpen,
     drcErrors: drc?.errors ?? null,

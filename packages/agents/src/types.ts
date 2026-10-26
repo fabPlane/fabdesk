@@ -32,7 +32,7 @@ export interface AgentSupervisor {
     input: unknown;
     summary?: string;
   }): Promise<"approve" | "deny">;
-  requestInput(req: { question: string; options?: string[] }): Promise<string>;
+  requestInput(req: { question: string; options?: string[]; signal?: AbortSignal }): Promise<string>;
 }
 
 export interface AgentAttachment {
@@ -51,6 +51,8 @@ export interface AgentSession {
   /** `supervised` pauses writes for approval; adapters that cannot must not be started with it. */
   runtimeMode?: AgentRuntimeMode;
   supervisor?: AgentSupervisor;
+  /** Interactive questions are available independently of tool-approval supervision. */
+  requestInput?: AgentSupervisor["requestInput"];
   extraAllowedTools?: string[];
   binaryPath?: string;
   env?: Record<string, string>;
@@ -66,6 +68,9 @@ export interface DetectResult {
   installed: boolean;
   version?: string;
   path?: string;
+  models?: string[];
+  modelAliases?: Record<string, string>;
+  defaultModel?: string;
 }
 
 export interface AgentAdapter {

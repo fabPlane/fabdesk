@@ -1,17 +1,20 @@
 import type { Thread } from "@fabdesk/protocol";
+import { DeleteChatDialog } from "./DeleteChatDialog";
 import { CreateProjectDialog } from "./CreateProjectDialog";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
-import { Button, ContextMenu, IconButton, Input, MenuItem } from "../components/ui";
+import { Button, ContextMenu, IconButton, Input, MenuItem, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { useProjects, useThreads, useThreadMutations } from "@fabdesk/client-core";
 import { useBranchThread } from "../hooks/threadActions";
 import { useRunsStore } from "@fabdesk/client-core";
 import { SIDEBAR_LIST_TABS, SIDEBAR_LIST_TAB_LABELS, normalizeSidebarListTab, useUiStore } from "../stores/ui";
 import { cn } from "../util";
-import { groupThreadsByProject } from "@fabdesk/client-core";
+import { groupThreadsByProject, sidebarSections, type ProjectThreadGroup } from "@fabdesk/client-core";
 import { OpenSourceList } from "./OpenSourceList";
 import { UserFooter } from "./UserFooter";
 import { SearchResults } from "../chat/SearchResults";
+import { ScrollingTitle } from "./ScrollingTitle";
+import { ProjectActionDialog, type ProjectAction } from "./ProjectActionDialog";
 
 export interface ThreadSidebarProps {
   onNewChat: () => void;
@@ -30,6 +33,8 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
   const setActiveProject = useUiStore((s) => s.setActiveProject);
   const startNewChatInProject = useUiStore((s) => s.startNewChatInProject);
   const projectId = useUiStore((s) => s.activeProjectId);
+  const pinnedProjectIds = useUiStore((s) => s.pinnedProjectIds);
+  const setProjectPinned = useUiStore((s) => s.setProjectPinned);
   const activeThreadId = useUiStore((s) => s.activeThreadId);
   const setActiveThread = useUiStore((s) => s.setActiveThread);
   const sidebarListTab = normalizeSidebarListTab(useUiStore((s) => s.sidebarListTab));
@@ -48,18 +53,23 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
     }
   }, [activeThreadId, threads.data]);
   const projectGroups = useMemo(
-    () => groupThreadsByProject(threads.data ?? [], projects.data ?? []),
-    [threads.data, projects.data],
+    () => groupThreadsByProject(threads.data ?? [], projects.data ?? [], pinnedProjectIds),
+    [threads.data, projects.data, pinnedProjectIds],
   );
-  const { patch, remove } = useThreadMutations();
+  const sections = useMemo(() => sidebarSections(projectGroups, pinnedProjectIds), [projectGroups, pinnedProjectIds]);
+  const { patch } = useThreadMutations();
   const branch = useBranchThread();
+  const [deletingChat, setDeletingChat] = useState<Thread | null>(null);
   const [menu, setMenu] = useState<Menu | null>(null);
+  const [projectMenu, setProjectMenu] = useState<{ x: number; y: number; id: string; name: string } | null>(null);
+  const [projectAction, setProjectAction] = useState<ProjectAction | null>(null);
   const [renaming, setRenaming] = useState<{ id: string; title: string } | null>(null);
   const running = useRunsStore((s) => s.runsByThread);
 
   const openMenu = (e: MouseEvent, thread: Thread) => {
     e.preventDefault();
     e.stopPropagation();
+    setProjectMenu(null);
     setMenu({ x: e.clientX, y: e.clientY, thread });
   };
 
@@ -92,6 +102,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
         <button
           className={cn(
             "fd-chat-row flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-colors",
+            running[t.id] && "pr-9",
             t.id === activeThreadId ? "bg-panel-2 font-medium text-fg shadow-sm" : "text-fg/85 hover:bg-panel-2/60 hover:text-fg",
           )}
           title={t.title || "Untitled"}
@@ -99,31 +110,36 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
           onContextMenu={(e) => openMenu(e, t)}
           data-testid={`sidebar-thread-${t.id}`}
         >
-          {running[t.id] && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" title="running" />}
-          {t.pinned && (
-            <span className="text-accent" title="Pinned">
-              <Icon name="pin" width={13} height={13} />
-            </span>
-          )}
-          <span className="min-w-0 flex-1 truncate">{t.title || "Untitled"}</span>
+          <ScrollingTitle text={t.title || "Untitled"} />
+          {running[t.id] && <span className="sr-only">Agent working</span>}
         </button>
+      )}
+      {running[t.id] && renaming?.id !== t.id && (
+        <span
+          className={cn("pointer-events-none absolute right-0 top-1 flex h-7 w-7 items-center justify-center group-hover:invisible group-focus-within:invisible", menu?.thread.id === t.id && "invisible")}
+          title="Agent working"
+          aria-hidden="true"
+          data-testid={`thread-working-${t.id}`}
+        >
+          <Spinner />
+        </span>
       )}
       <IconButton
         title={t.pinned ? "Unpin" : "Pin"}
         style={{ width: 28, height: 28 }}
-        className={cn("absolute right-7 top-1 h-7 w-7 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100", t.pinned && "text-accent")}
+        className={cn("absolute right-0 top-1 h-7 w-7 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100", t.pinned && "text-accent", menu?.thread.id === t.id && "opacity-100")}
         onClick={(e) => {
           e.stopPropagation();
           togglePin(t);
         }}
         data-testid={`thread-pin-${t.id}`}
       >
-        <Icon name="pin" width={16} height={16} />
+        <Icon name={t.pinned ? "pinFilled" : "pin"} width={16} height={16} />
       </IconButton>
       <IconButton
         title="Chat menu"
         style={{ width: 28, height: 28 }}
-        className="absolute right-0 top-1 h-7 w-7 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+        className={cn("absolute right-7 top-1 h-7 w-7 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100", menu?.thread.id === t.id && "opacity-100")}
         onClick={(e) => openMenu(e, t)}
         data-testid={`thread-menu-${t.id}`}
       >
@@ -136,6 +152,76 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
     setActiveOpenSourceId(null);
     setActiveProject(threadProjectId ?? null);
     setActiveThread(id);
+  };
+
+  const renderProject = (group: ProjectThreadGroup) => {
+          const expanded = group.kind !== "project" || q.trim().length > 0 || (expandedProjects[group.key] ?? group.projectId === projectId);
+          const pinnedCount = group.kind === "project" ? (threads.data ?? []).filter((t) => t.projectId === group.projectId && t.pinned && !t.archived).length : 0;
+          return (
+          <div key={group.key} className="fd-sidebar-project-group" data-testid={`sidebar-group-${group.key}`}>
+            <div className="fd-project-heading group relative flex items-center gap-0.5 px-0.5" data-menu-open={projectMenu?.id === group.projectId}>
+              <button
+                type="button"
+                className={cn(
+                  "fd-project-row flex min-h-9 min-w-0 flex-1 items-center justify-between rounded-md px-2 text-left text-[13px] hover:bg-panel-2/60 hover:text-fg",
+                  group.kind === "project" && group.projectId === projectId ? "bg-panel-2/50 text-fg" : "text-muted",
+                )}
+                aria-current={group.kind === "project" && group.projectId === projectId ? "true" : undefined}
+                aria-expanded={group.kind === "project" ? expanded : undefined}
+                aria-controls={group.kind === "project" ? `project-chats-${group.key}` : undefined}
+                onClick={() => {
+                  if (group.kind === "project" && group.projectId) {
+                    setExpandedProjects((current) => ({ ...current, [group.key]: !expanded }));
+                  }
+                }}
+              >
+                <span className="flex min-w-0 flex-1 items-center gap-2">
+                  {group.kind === "project" && <Icon name={expanded ? "folderOpen" : "folder"} width={17} height={17} className="shrink-0" />}
+                  <ScrollingTitle text={group.title} />
+                </span>
+              </button>
+              {group.kind === "project" && group.projectId && (
+                <>
+                <IconButton
+                  title={`Project menu for ${group.title}`}
+                  aria-haspopup="menu"
+                  aria-expanded={projectMenu?.id === group.projectId}
+                  className="fd-project-menu absolute right-8 top-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+                  data-testid={`project-menu-${group.projectId}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    setMenu(null);
+                    setProjectMenu(projectMenu?.id === group.projectId ? null : { x: rect.left, y: rect.bottom + 4, id: group.projectId!, name: group.title });
+                  }}
+                ><Icon name="more" /></IconButton>
+                <IconButton
+                  title={`New chat in ${group.title}`}
+                  className="fd-project-add absolute right-0 top-0 text-muted opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover:text-fg"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setExpandedProjects((current) => ({ ...current, [group.key]: true }));
+                    startNewChatInProject(group.projectId);
+                  }}
+                  data-testid={`project-new-chat-${group.projectId}`}
+                >
+                  <Icon name="compose" width={16} height={16} />
+                </IconButton>
+                </>
+              )}
+            </div>
+            <div id={`project-chats-${group.key}`} className="fd-project-reveal" data-open={expanded} inert={!expanded} aria-hidden={!expanded}>
+              <div className="min-h-0 overflow-hidden">
+                <div className={cn("fd-sidebar-chat-list", group.kind === "project" && "pl-5")}>
+                  {group.threads.map(renderThread)}
+                  {group.kind === "project" && group.threads.length === 0 && !threads.isLoading && !threads.isError && (
+                    <div className="px-2.5 py-2 text-xs text-muted">{pinnedCount ? "Chats are in Pinned" : q.trim() ? "No matching chats" : "No chats"}</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
   };
 
   return (
@@ -159,12 +245,6 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
             <Icon name="search" width={15} height={15} className="pointer-events-none absolute left-2.5 top-2.5 text-muted" />
             <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search chats" aria-label="Search chats" />
           </div>
-          <div className="flex items-center justify-between px-3 pt-1">
-            <span className="text-[11px] font-medium text-muted">Projects</span>
-            <IconButton title="New project" onClick={() => setCreatingProject(true)}>
-              <Icon name="plus" />
-            </IconButton>
-          </div>
         </>
       )}
       {sidebarListTab === "open_source" ? (
@@ -174,65 +254,38 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
         {q.trim().length >= 2 ? <SearchResults query={q} /> : <>
         {threads.isLoading && <div className="px-2 py-3 text-xs text-muted">Loading...</div>}
         {threads.isError && <div className="px-2 py-3 text-xs text-danger">Could not load chats</div>}
-        {projectGroups.map((group) => {
-          const expanded = group.kind !== "project" || q.trim().length > 0 || (expandedProjects[group.key] ?? group.projectId === projectId);
-          const pinnedCount = group.kind === "project" ? (threads.data ?? []).filter((t) => t.projectId === group.projectId && t.pinned && !t.archived).length : 0;
-          return (
-          <div key={group.key} className="fd-sidebar-project-group" data-testid={`sidebar-group-${group.key}`}>
-            <div className="group relative flex items-center gap-0.5 px-0.5">
-              <button
-                type="button"
-                className={cn(
-                  "fd-project-row flex min-h-9 min-w-0 flex-1 items-center justify-between rounded-md px-2 text-left text-[13px] hover:bg-panel-2/60 hover:text-fg",
-                  group.kind === "project" && group.projectId === projectId ? "bg-panel-2/50 text-fg" : "text-muted",
-                )}
-                aria-current={group.kind === "project" && group.projectId === projectId ? "true" : undefined}
-                aria-expanded={group.kind === "project" ? expanded : undefined}
-                aria-controls={group.kind === "project" ? `project-chats-${group.key}` : undefined}
-                onClick={() => {
-                  if (group.kind === "project" && group.projectId) {
-                    setExpandedProjects((current) => ({ ...current, [group.key]: !expanded }));
-                  }
-                }}
-              >
-                <span className="flex min-w-0 flex-1 items-center gap-2">
-                  {group.kind === "pinned" && <Icon name="pin" width={13} height={13} />}
-                  {group.kind === "project" && <Icon name={expanded ? "folderOpen" : "folder"} width={17} height={17} className="shrink-0" />}
-                  <span className="min-w-0 truncate" title={group.title}>{group.title}</span>
-                </span>
-                <span className="fd-project-count ml-2 shrink-0 text-[10px] tabular-nums text-muted">{group.threads.length + pinnedCount}</span>
-              </button>
-              {group.kind === "project" && group.projectId && (
-                <IconButton
-                  title={`New chat in ${group.title}`}
-                  className="fd-project-add absolute right-0 top-0 text-muted opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover:text-fg"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setExpandedProjects((current) => ({ ...current, [group.key]: true }));
-                    startNewChatInProject(group.projectId);
-                  }}
-                  data-testid={`project-new-chat-${group.projectId}`}
-                >
-                  <Icon name="plus" />
-                </IconButton>
-              )}
-            </div>
-            <div id={`project-chats-${group.key}`} hidden={!expanded} className={cn("fd-sidebar-chat-list", group.kind === "project" && "pl-5")}>
-              {group.threads.map(renderThread)}
-              {group.kind === "project" && group.threads.length === 0 && !threads.isLoading && !threads.isError && (
-                <div className="px-2.5 py-2 text-xs text-muted">{pinnedCount ? "Chats are in Pinned above" : q.trim() ? "No matching chats" : "No chats"}</div>
-              )}
-            </div>
+        {(sections.pinnedProjects.length > 0 || sections.pinnedChats.length > 0) && <section aria-labelledby="sidebar-pinned-heading" className="mb-4" data-testid="sidebar-pinned-section">
+          <h2 id="sidebar-pinned-heading" className="px-2 py-2 text-[11px] font-medium text-muted">Pinned</h2>
+          {sections.pinnedProjects.map(renderProject)}
+          <div className="grid gap-1">{sections.pinnedChats.map(renderThread)}</div>
+        </section>}
+        <section aria-labelledby="sidebar-projects-heading" data-testid="sidebar-projects-section">
+          <div className="flex min-h-9 items-center justify-between px-2">
+            <h2 id="sidebar-projects-heading" className="text-[11px] font-medium text-muted">Projects</h2>
+            <IconButton title="New project" onClick={() => setCreatingProject(true)}><Icon name="plus" /></IconButton>
           </div>
-        ); })}
-        {!threads.isLoading && projectGroups.length === 0 && (
-          <div className="px-2 py-6 text-center text-xs text-muted">No projects yet.</div>
-        )}
+          {sections.projects.map(renderProject)}
+          {!projects.isLoading && !projects.isError && projectGroups.filter((group) => group.kind === "project").length === 0 && <div className="px-2 py-3 text-xs text-muted">No projects yet.</div>}
+        </section>
+        {sections.chats.length > 0 && <section aria-labelledby="sidebar-chats-heading" className="mt-4" data-testid="sidebar-chats-section">
+          <h2 id="sidebar-chats-heading" className="px-2 py-2 text-[11px] font-medium text-muted">Chats</h2>
+          <div className="grid grid-cols-[minmax(0,1fr)] gap-1">{sections.chats.map(renderThread)}</div>
+        </section>}
         </>}
       </div>
       )}
       <UserFooter />
       {creatingProject && <CreateProjectDialog onClose={() => setCreatingProject(false)} onCreated={(id) => { setActiveProject(id); setCreatingProject(false); }} />}
+      {projectAction && <ProjectActionDialog project={projectAction} onClose={() => setProjectAction(null)} />}
+      {projectMenu && <ContextMenu x={projectMenu.x} y={projectMenu.y} onClose={() => setProjectMenu(null)}>
+        <MenuItem onClick={() => { setProjectPinned(projectMenu.id, !pinnedProjectIds.includes(projectMenu.id)); setProjectMenu(null); }}>
+          <Icon name={pinnedProjectIds.includes(projectMenu.id) ? "pinFilled" : "pin"} width={16} height={16} className="mr-2" />
+          {pinnedProjectIds.includes(projectMenu.id) ? "Unpin" : "Pin"}
+        </MenuItem>
+        <MenuItem onClick={() => { setProjectAction({ id: projectMenu.id, name: projectMenu.name, action: "rename" }); setProjectMenu(null); }}>Rename</MenuItem>
+        <MenuItem danger onClick={() => { setProjectAction({ id: projectMenu.id, name: projectMenu.name, action: "delete" }); setProjectMenu(null); }}>Delete</MenuItem>
+      </ContextMenu>}
+      {deletingChat && <DeleteChatDialog thread={deletingChat} onClose={() => setDeletingChat(null)} />}
       {menu && (
         <ContextMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)}>
           <MenuItem
@@ -241,6 +294,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
               setMenu(null);
             }}
           >
+            <Icon name={menu.thread.pinned ? "pinFilled" : "pin"} width={16} height={16} className="mr-2" />
             {menu.thread.pinned ? "Unpin" : "Pin"}
           </MenuItem>
           <MenuItem
@@ -262,10 +316,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
           <MenuItem
             danger
             onClick={() => {
-              if (window.confirm(`Delete "${menu.thread.title}"?`)) {
-                remove.mutate(menu.thread.id);
-                if (activeThreadId === menu.thread.id) setActiveThread(null);
-              }
+              setDeletingChat(menu.thread);
               setMenu(null);
             }}
           >

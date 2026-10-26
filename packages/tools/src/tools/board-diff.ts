@@ -2,8 +2,8 @@
  * Compare two git revisions (or the worktree) of a board: structured part/net/track
  * diff plus generated PCB/schematic SVGs. Writes reports/board-diff.json and renders/diff/*.
  */
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
-import { basename, join, relative, resolve } from "node:path";
+import { mkdir, readdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { basename, join, relative } from "node:path";
 import { z } from "zod/v4";
 import {
   compareRevisions,
@@ -53,7 +53,7 @@ export async function isGitRepo(dir: string, signal?: AbortSignal): Promise<bool
 export async function projectGitPrefix(dir: string, signal?: AbortSignal): Promise<string> {
   const result = await git(dir, ["rev-parse", "--show-toplevel"], signal);
   if (!result.ok) return "";
-  const rel = relative(resolve(result.stdout.trim()), resolve(dir)).replaceAll("\\", "/");
+  const rel = relative(await realpath(result.stdout.trim()), await realpath(dir)).replaceAll("\\", "/");
   if (!rel || rel === "." || rel.startsWith("..")) return "";
   return rel;
 }
