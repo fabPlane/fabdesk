@@ -131,9 +131,9 @@ function drawTracks(tracks: TrackSnapshot[], kind: VisualKind, color: string, wi
       const w = kind === "schematic" ? 0.15 : Math.max(0.12, t.width * widthScale);
       const pts = trackPoints(t);
       if (pts.length > 2) {
-        return `<polyline points="${pts.map((p) => `${p.x},${p.y}`).join(" ")}" fill="none" stroke="${color}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"/>`;
+        return `<polyline data-net="${escapeXml(t.net ?? "")}" data-track="${escapeXml(t.id)}" points="${pts.map((p) => `${p.x},${p.y}`).join(" ")}" fill="none" stroke="${color}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"/>`;
       }
-      return `<line x1="${t.start.x}" y1="${t.start.y}" x2="${t.end.x}" y2="${t.end.y}" stroke="${color}" stroke-width="${w}" stroke-linecap="round"/>`;
+      return `<line data-net="${escapeXml(t.net ?? "")}" data-track="${escapeXml(t.id)}" x1="${t.start.x}" y1="${t.start.y}" x2="${t.end.x}" y2="${t.end.y}" stroke="${color}" stroke-width="${w}" stroke-linecap="round"/>`;
     })
     .join("");
 }
@@ -142,7 +142,7 @@ function drawVias(vias: ViaSnapshot[], color: string): string {
   return vias
     .map((v) => {
       const r = Math.max(0.15, v.diameter / 2);
-      return `<circle cx="${v.x}" cy="${v.y}" r="${r}" fill="${color}" fill-opacity="0.35" stroke="${color}" stroke-width="${Math.max(0.08, v.diameter * 0.12)}" data-via="${escapeXml(v.id)}"/>`;
+      return `<circle cx="${v.x}" cy="${v.y}" r="${r}" fill="${color}" fill-opacity="0.35" stroke="${color}" stroke-width="${Math.max(0.08, v.diameter * 0.12)}" data-via="${escapeXml(v.id)}" data-net="${escapeXml(v.net ?? "")}"/>`;
     })
     .join("");
 }
@@ -152,7 +152,7 @@ function drawZones(zones: ZoneSnapshot[], color: string): string {
     .map((z) => {
       if (z.points.length < 3) return "";
       const d = z.points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x} ${p.y}`).join(" ") + " Z";
-      return `<path d="${d}" fill="${color}" fill-opacity="0.12" stroke="${color}" stroke-width="0.15" data-zone="${escapeXml(z.id)}"/>`;
+      return `<path d="${d}" fill="${color}" fill-opacity="0.12" stroke="${color}" stroke-width="0.15" data-zone="${escapeXml(z.id)}" data-net="${escapeXml(z.net ?? "")}"/>`;
     })
     .join("");
 }

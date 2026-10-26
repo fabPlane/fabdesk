@@ -6,6 +6,7 @@ import { useUiStore } from "../stores/ui";
 import { SvgViewer } from "./SvgViewer";
 import { cn } from "../util";
 import { diffHeadline } from "./diff-copy";
+import { selectDiffGeometry, type DiffSelection } from "./diff-selection";
 
 export { diffHeadline } from "./diff-copy";
 
@@ -41,9 +42,9 @@ type BoardDiffReport = {
       changed: ComponentChange[];
     };
     nets: {
-      added: Array<{ name: string }>;
-      removed: Array<{ name: string }>;
-      changed: Array<{ name: string; addedNodes: unknown[]; removedNodes: unknown[] }>;
+      added: Array<{ name: string; nodes?: Array<{ ref: string }> }>;
+      removed: Array<{ name: string; nodes?: Array<{ ref: string }> }>;
+      changed: Array<{ name: string; addedNodes: unknown[]; removedNodes: unknown[]; before?: { nodes: Array<{ ref: string }> }; after?: { nodes: Array<{ ref: string }> } }>;
     };
   };
 };
@@ -89,6 +90,16 @@ export function DiffTab() {
   ]);
   const [surface, setSurface] = useState<Surface>("pcb");
   const [mode, setMode] = useState<Mode>("structured");
+  const [selection, setSelection] = useState<DiffSelection | null>(null);
+  useEffect(() => setSelection(null), [projectId, reportQuery.dataUpdatedAt]);
+  useEffect(() => {
+    if (!selection) return;
+    const clear = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSelection(null);
+    };
+    window.addEventListener("keydown", clear);
+    return () => window.removeEventListener("keydown", clear);
+  }, [selection]);
 
   useEffect(() => {
     if (!projectId) return;
@@ -106,6 +117,10 @@ export function DiffTab() {
   const fileKey = FILE_KEYS[surface][mode];
   const svgPath = report?.files?.[fileKey] ?? report?.files?.[FILE_KEYS[surface].structured];
   const svg = useProjectText(projectId, svgPath ?? null);
+  const drawing = useMemo(() => selectDiffGeometry(svg.data ?? "", selection), [svg.data, selection]);
+  const select = (next: DiffSelection) => setSelection(current =>
+    current?.kind === next.kind && current.id === next.id ? null : next,
+  );
 
   const running = compare.state.status === "running" || list.state.status === "running";
   const options = useMemo(() => {
@@ -201,8 +216,11 @@ export function DiffTab() {
           <div className="min-w-0 flex-1">
             {svgPath && svg.data ? (
               <SvgViewer
-                svg={svg.data}
-                toolbar={<span className="text-[11px] text-muted">{svgPath}</span>}
+                svg={drawing.svg}
+                toolbar={selection ? <>
+                  <span role="status" className="text-[11px] text-muted">{drawing.found ? `Selected ${selection.id}` : `${selection.id}: no geometry in this view`}</span>
+                  <Button size="sm" onClick={() => setSelection(null)}>Clear selection</Button>
+                </> : <span className="text-[11px] text-muted">Click a change to locate it</span>}
               />
             ) : (
               <EmptyState title="No SVG for this view">
@@ -214,31 +232,36 @@ export function DiffTab() {
             <p className="mb-2 font-medium">
               {shortRef(report.from?.ref ?? from)} → {shortRef(report.to?.ref ?? to)}
             </p>
+            <p className="mb-3 text-[11px] text-muted">Click a change to highlight and zoom. Click again or press Esc to clear.</p>
             <DiffGroup
+              selection={selection} onSelect={select}
               title="Added"
               tone="success"
-              items={diff?.components.added.map((c) => `${c.ref}${c.value ? ` ${c.value}` : ""}`) ?? []}
+              items={diff?.components.added.map((c) => ({ label: `${c.ref}${c.value ? ` ${c.value}` : ""}`, target: { kind: "part" as const, id: c.ref } })) ?? []}
             />
             <DiffGroup
+              selection={selection} onSelect={select}
               title="Removed"
               tone="danger"
-              items={diff?.components.removed.map((c) => `${c.ref}${c.value ? ` ${c.value}` : ""}`) ?? []}
+              items={diff?.components.removed.map((c) => ({ label: `${c.ref}${c.value ? ` ${c.value}` : ""}`, target: { kind: "part" as const, id: c.ref } })) ?? []}
             />
             <DiffGroup
+              selection={selection} onSelect={select}
               title="Changed"
               tone="warning"
               items={
-                diff?.components.changed.map((c) => `${c.ref} (${c.reasons.join(", ")})`) ?? []
+                diff?.components.changed.map((c) => ({ label: `${c.ref} (${c.reasons.join(", ")})`, target: { kind: "part" as const, id: c.ref } })) ?? []
               }
             />
-            <DiffGroup title="Nets added" tone="success" items={diff?.nets.added.map((n) => n.name) ?? []} />
-            <DiffGroup title="Nets removed" tone="danger" items={diff?.nets.removed.map((n) => n.name) ?? []} />
+            <DiffGroup selection={selection} onSelect={select} title="Nets added" tone="success" items={diff?.nets.added.map((n) => ({ label: n.name, target: { kind: "net" as const, id: n.name, refs: (n.nodes ?? []).map(node => node.ref) } })) ?? []} />
+            <DiffGroup selection={selection} onSelect={select} title="Nets removed" tone="danger" items={diff?.nets.removed.map((n) => ({ label: n.name, target: { kind: "net" as const, id: n.name, refs: (n.nodes ?? []).map(node => node.ref) } })) ?? []} />
             <DiffGroup
+              selection={selection} onSelect={select}
               title="Nets changed"
               tone="warning"
               items={
                 diff?.nets.changed.map(
-                  (n) => `${n.name} (+${n.addedNodes.length}/−${n.removedNodes.length})`,
+                  (n) => ({ label: `${n.name} (+${n.addedNodes.length}/−${n.removedNodes.length})`, target: { kind: "net" as const, id: n.name, refs: [...(n.before?.nodes ?? []), ...(n.after?.nodes ?? [])].map(node => node.ref) } }),
                 ) ?? []
               }
             />
@@ -249,7 +272,13 @@ export function DiffTab() {
   );
 }
 
-function DiffGroup({ title, items, tone }: { title: string; items: string[]; tone: "success" | "danger" | "warning" }) {
+function DiffGroup({ title, items, tone, selection, onSelect }: {
+  title: string;
+  items: Array<{ label: string; target: DiffSelection }>;
+  tone: "success" | "danger" | "warning";
+  selection: DiffSelection | null;
+  onSelect: (target: DiffSelection) => void;
+}) {
   if (items.length === 0) return null;
   return (
     <div className="mb-3">
@@ -259,7 +288,13 @@ function DiffGroup({ title, items, tone }: { title: string; items: string[]; ton
       </div>
       <ul className="space-y-0.5 font-mono text-[11px]">
         {items.slice(0, 40).map((item) => (
-          <li key={item}>{item}</li>
+          <li key={item.target.id}>
+            <button type="button" aria-label={`Highlight ${item.label}`} aria-pressed={selection?.kind === item.target.kind && selection.id === item.target.id}
+              onClick={() => onSelect(item.target)}
+              className="w-full rounded border border-transparent px-2 py-1.5 text-left hover:bg-panel-2 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent aria-pressed:border-accent aria-pressed:bg-panel-2 aria-pressed:font-semibold">
+              {item.label}
+            </button>
+          </li>
         ))}
         {items.length > 40 && <li className="text-muted">+{items.length - 40} more</li>}
       </ul>
