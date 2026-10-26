@@ -38,6 +38,10 @@ describe("voice input policy", () => {
   test("start is refused when the chosen backend is missing", () => {
     expect(canStart("cloud", status({ backends: [{ id: "cloud", ready: false }] }))).toBe(false);
     expect(canStart("local", status())).toBe(false);
+    expect(canStart("auto", status({ active: "on_device", backends: [{ id: "on_device", ready: true }] }))).toBe(false);
+    expect(statusUnavailableMessage(status(), "on_device")).toContain("not available in this app");
+    expect(canStart("on_device", status(), true)).toBe(true);
+    expect(canStart("auto", undefined, true)).toBe(true);
     expect(statusUnavailableMessage(status(), "local")).toMatch(/not installed/i);
   });
 });

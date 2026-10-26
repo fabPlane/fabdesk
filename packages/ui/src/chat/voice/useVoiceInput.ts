@@ -3,6 +3,7 @@ import type { Settings, SpeechStatus } from "@fabdesk/protocol";
 import {
   DEFAULT_VOICE_STATE,
   matchVoiceShortcut,
+  releasesVoiceShortcut,
   parseVoiceShortcut,
   reduceVoice,
   voiceBusy,
@@ -12,6 +13,10 @@ import {
 } from "@fabdesk/client-core";
 import type { CoreClient } from "@fabdesk/client-core";
 import { createVoiceCapture, type VoiceCapture } from "./capture";
+import { speechErrorMessage } from "./speech-error";
+import { useNativeSpeech } from "./useNativeSpeech";
+import { nativeSpeechWav } from "./native-wav";
+import { availableSpeechBackend } from "./availability";
 import { webSpeechAvailable } from "./web-speech";
 
 export interface UseVoiceInputOptions {
@@ -29,6 +34,8 @@ export function useVoiceInput({
   enabled = true,
   onTranscript,
 }: UseVoiceInputOptions) {
+  const native = useNativeSpeech(voice?.language ?? "en");
+  const nativeRequest = useRef<string | null>(null);
   const [state, setState] = useState<VoiceState>(DEFAULT_VOICE_STATE);
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -42,9 +49,13 @@ export function useVoiceInput({
   }, []);
 
   const discard = useCallback(() => {
+    if (nativeRequest.current) {
+      void native.service?.cancel(nativeRequest.current).catch(() => {});
+      nativeRequest.current = null;
+    }
     captureRef.current?.cancel();
     captureRef.current = null;
-  }, []);
+  }, [native.service]);
 
   const deliverTranscript = useCallback((take: number, text: string) => {
     if (take !== takeRef.current) return false;
@@ -66,6 +77,19 @@ export function useVoiceInput({
         deliverTranscript(take, result.onDeviceText);
         return;
       }
+      if (result && result.blob.size > 0 && native.available && native.service &&
+          (voice?.provider === "on_device" || !voice?.provider || voice.provider === "auto")) {
+        const id = crypto.randomUUID();
+        nativeRequest.current = id;
+        try {
+          const audio = await nativeSpeechWav(result.blob);
+          if (take !== takeRef.current) return;
+          const transcript = await native.service.transcribe({ id, audio, language: voice?.language || "en" });
+          if (take !== takeRef.current) return;
+          deliverTranscript(take, transcript.text);
+          return;
+        } finally { if (nativeRequest.current === id) nativeRequest.current = null; }
+      }
       if (result && result.blob.size > 0 && canUseCore(voice?.provider ?? "auto", status)) {
         const transcript = await client.transcribeSpeech({
           audio: result.blob,
@@ -86,23 +110,25 @@ export function useVoiceInput({
       if (take !== takeRef.current) return;
       dispatch({
         type: "unavailable",
-        message: statusUnavailableMessage(status, voice?.provider ?? "auto"),
+        message: (voice?.provider === "on_device" || !voice?.provider || voice.provider === "auto") && native.message
+          ? native.message : statusUnavailableMessage(status, voice?.provider ?? "auto"),
       });
     } catch (e) {
       if (take !== takeRef.current) return;
       dispatch({
         type: "transcribe_failed",
-        message: e instanceof Error ? e.message : String(e),
+        message: speechErrorMessage(e),
       });
     }
-  }, [client, deliverTranscript, dispatch, status, voice]);
+  }, [client, deliverTranscript, dispatch, status, voice, native.available, native.service, native.message]);
 
   const start = useCallback(async () => {
     if (!enabled || voiceBusy(stateRef.current)) return;
-    if (!canStart(voice?.provider ?? "auto", status)) {
+    if (!canStart(voice?.provider ?? "auto", status, native.available)) {
       dispatch({
         type: "unavailable",
-        message: statusUnavailableMessage(status, voice?.provider ?? "auto"),
+        message: (voice?.provider === "on_device" || !voice?.provider || voice.provider === "auto") && native.message
+          ? native.message : statusUnavailableMessage(status, voice?.provider ?? "auto"),
       });
       return;
     }
@@ -118,7 +144,7 @@ export function useVoiceInput({
     });
     captureRef.current = capture;
     await capture.start(voice?.language ?? "en");
-  }, [discard, dispatch, enabled, status, voice]);
+  }, [discard, dispatch, enabled, status, voice, native.available, native.message]);
 
   const cancel = useCallback(() => {
     takeRef.current += 1;
@@ -156,7 +182,7 @@ export function useVoiceInput({
     };
     const onUp = (e: KeyboardEvent) => {
       if (mode !== "hold" || e.repeat) return;
-      if (!matchVoiceShortcut(e, shortcut)) return;
+      if (!releasesVoiceShortcut(e, shortcut)) return;
       if (stateRef.current.phase === "recording") {
         e.preventDefault();
         void stopAndTranscribe();
@@ -187,11 +213,8 @@ export function useVoiceInput({
   };
 }
 
-export function canStart(provider: Settings["voice"]["provider"], status: SpeechStatus | undefined): boolean {
-  if (provider === "on_device") return webSpeechAvailable();
-  if (provider === "cloud") return !!status?.backends.find((b) => b.id === "cloud")?.ready;
-  if (provider === "local") return !!status?.backends.find((b) => b.id === "local")?.ready;
-  return webSpeechAvailable() || !!status?.active;
+export function canStart(provider: Settings["voice"]["provider"], status: SpeechStatus | undefined, nativeAvailable = false): boolean {
+  return availableSpeechBackend(provider, status, webSpeechAvailable() || nativeAvailable) !== null;
 }
 
 export function canUseCore(provider: Settings["voice"]["provider"], status: SpeechStatus | undefined): boolean {
@@ -217,7 +240,10 @@ export function statusUnavailableMessage(
     return status?.backends.find((b) => b.id === "local")?.message
       ?? "The local speech model is not installed. Download it in Settings → Voice.";
   }
-  return "No speech provider is ready. Use on-device speech, add a cloud key, or install the local model in Settings → Voice.";
+  if (provider === "on_device" && !webSpeechAvailable()) {
+    return "Built-in speech recognition is not available in this app. Choose Cloud or Local model in Settings → Voice.";
+  }
+  return "Speech recognition needs setup. Add a cloud key or configure a local speech engine in Settings → Voice.";
 }
 
 function filenameFor(mime: string): string {

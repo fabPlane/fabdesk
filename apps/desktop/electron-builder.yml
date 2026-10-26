@@ -16,6 +16,7 @@ files:
   - out/**
   - package.json
   - "!**/*.map"
+  - "!out/native/**"
 asar: true
 npmRebuild: false
 publish: null
@@ -38,9 +39,11 @@ mac:
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
+    NSSpeechRecognitionUsageDescription: Convert your voice into text using macOS speech recognition. On-device mode keeps the recording on this Mac.
     NSMicrophoneUsageDescription: Speak to the fabPlane agent instead of typing. Audio is used only while you are speaking and is not saved after the transcript is ready.
   # Sign the sidecar with the app so hardened runtime + notarization accept it.
   binaries:
+    - Contents/Resources/speech/fabdesk-speech
     - Contents/Resources/core/fabdesk-core
     - Contents/Resources/pcb/bin/fp-pcb-bridge
     - Contents/Resources/pcb/freerouting/jre/bin/java
@@ -51,6 +54,9 @@ mac:
   # whenever APPLE_ID is set.
   notarize: true
   extraResources:
+    - from: out/native/
+      to: speech
+      filter: ["fabdesk-speech"]
     - from: ../core/dist/darwin-${arch}/
       to: core
       filter: ["fabdesk-core*", "open-catalog/**"]

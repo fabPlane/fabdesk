@@ -1,3 +1,4 @@
+import { registerNativeSpeech } from "./native-speech";
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from "electron";
 import { isAbsolute } from "node:path";
 import { isThemeId, themeBackground, themeIsDark } from "../../../../packages/ui/src/theme/resolve";
@@ -13,6 +14,7 @@ export interface PickFileOptions {
 }
 
 export function registerIpc(supervisor: CoreSupervisor): void {
+  registerNativeSpeech();
   ipcMain.handle("fabdesk:pick-directory", async (e) => {
     const win = BrowserWindow.fromWebContents(e.sender);
     const options = { title: "Choose project location", properties: ["openDirectory", "createDirectory"] as Array<"openDirectory" | "createDirectory"> };

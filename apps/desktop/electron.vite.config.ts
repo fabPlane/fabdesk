@@ -3,8 +3,9 @@ import react from "@vitejs/plugin-react";
 import { defineConfig, externalizeDepsPlugin } from "electron-vite";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { tmpdir } from "node:os";
 import type { Plugin } from "vite";
 import { generateReleaseNotes } from "../../scripts/release-notes";
 import { themeBootInlineCss, themeBootInlineScript } from "../../packages/ui/src/theme/boot-inline";
@@ -101,13 +102,28 @@ function cspPlugin(dev: boolean): Plugin {
   };
 }
 
+/** Ship the native recognizer with the app; users never need Xcode or a CLI install. */
+function nativeSpeechPlugin(): Plugin {
+  return {
+    name: "native-macos-speech",
+    closeBundle() {
+      if (process.platform !== "darwin") return;
+      const output = resolve(__dirname, "out/native");
+      mkdirSync(output, { recursive: true });
+      execFileSync("xcrun", ["swiftc", "-O", "-module-cache-path", resolve(tmpdir(), "fabdesk-swift-cache"), "-target", `${process.arch === "arm64" ? "arm64" : "x86_64"}-apple-macosx15.0`,
+        resolve(__dirname, "native/speech.swift"),
+        "-Xlinker", "-sectcreate", "-Xlinker", "__TEXT", "-Xlinker", "__info_plist", "-Xlinker", resolve(__dirname, "native/speech-info.plist"), "-o", resolve(output, "fabdesk-speech")], { stdio: "inherit" });
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => {
   const dev = mode === "development";
   const sentryDefine = { __FABDESK_SENTRY_RELEASE__: JSON.stringify(sentryRelease()) };
   return {
     main: {
       // Workspace packages (and their zod) are bundled into main; everything else stays external.
-      plugins: [externalizeDepsPlugin({ exclude: ["@fabdesk/updates", "@fabdesk/protocol", "zod"] })],
+      plugins: [nativeSpeechPlugin(), externalizeDepsPlugin({ exclude: ["@fabdesk/updates", "@fabdesk/protocol", "zod"] })],
       define: sentryDefine,
       build: {
         rollupOptions: { input: resolve(__dirname, "src/main/index.ts") },

@@ -50,11 +50,11 @@ export function formatVoiceShortcut(shortcut: VoiceShortcut, platform?: string):
 }
 
 export function matchVoiceShortcut(
-  event: { key: string; altKey: boolean; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean },
+  event: { key: string; code?: string; altKey: boolean; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean },
   shortcut: VoiceShortcut,
 ): boolean {
   return (
-    normalizeKey(event.key) === shortcut.key &&
+    (event.code === "Space" ? "Space" : normalizeKey(event.key)) === shortcut.key &&
     event.altKey === shortcut.alt &&
     event.ctrlKey === shortcut.ctrl &&
     event.metaKey === shortcut.meta &&
@@ -62,8 +62,15 @@ export function matchVoiceShortcut(
   );
 }
 
+/** Releasing either the trigger or a held modifier ends push-to-talk. */
+export function releasesVoiceShortcut(event: { key: string; code?: string }, shortcut: VoiceShortcut): boolean {
+  return (event.code === "Space" ? "Space" : normalizeKey(event.key)) === shortcut.key ||
+    (event.key === "Alt" && shortcut.alt) || (event.key === "Control" && shortcut.ctrl) ||
+    (event.key === "Meta" && shortcut.meta) || (event.key === "Shift" && shortcut.shift);
+}
+
 function normalizeKey(raw: string): string {
-  if (raw === " " || /^space$/i.test(raw.trim())) return "Space";
+  if (raw === " " || raw === "\u00a0" || /^space$/i.test(raw.trim())) return "Space";
   const k = raw.trim();
   if (!k) return "";
   if (MODS.includes(k.toLowerCase() as (typeof MODS)[number])) return "";

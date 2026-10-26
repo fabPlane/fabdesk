@@ -41,3 +41,17 @@ describe("voice shortcut", () => {
     ).toBe(false);
   });
 });
+
+test("push-to-talk stops when Option is released before Space", async () => {
+  const { releasesVoiceShortcut } = await import("./shortcut");
+  const shortcut = parseVoiceShortcut("Alt+Space");
+  expect(releasesVoiceShortcut({ key: "Alt" }, shortcut)).toBe(true);
+  expect(releasesVoiceShortcut({ key: " " }, shortcut)).toBe(true);
+  expect(releasesVoiceShortcut({ key: "a" }, shortcut)).toBe(false);
+});
+
+test("macOS Option+Space matches its non-breaking-space key value", () => {
+  const shortcut = parseVoiceShortcut("Alt+Space");
+  expect(matchVoiceShortcut({ key: "\u00a0", code: "Space", altKey: true, ctrlKey: false, metaKey: false, shiftKey: false }, shortcut)).toBe(true);
+  expect(matchVoiceShortcut({ key: "\u00a0", altKey: true, ctrlKey: false, metaKey: false, shiftKey: false }, shortcut)).toBe(true);
+});

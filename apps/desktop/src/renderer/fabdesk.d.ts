@@ -2,7 +2,7 @@
 import type { CadRuntimeBridge } from "@fabdesk/protocol";
 import type { CoreInfo } from "../shared/core-info";
 import type { UpdateCheckResult, UpdateDownloadState } from "@fabdesk/protocol";
-import type { CoreClient } from "@fabdesk/ui";
+import type { CoreClient, HostAdapter } from "@fabdesk/ui";
 import type { FabdeskAutomationApi } from "./automation";
 
 export interface PickFileOptions {
@@ -13,6 +13,7 @@ export interface PickFileOptions {
 /** Surface exposed by src/preload/index.ts via contextBridge. */
 export interface FabdeskBridge extends CadRuntimeBridge {
   getZoomFactor(): number;
+  nativeSpeech: NonNullable<HostAdapter["nativeSpeech"]>;
   platform: NodeJS.Platform | string;
   /** True when the main process started Sentry (DSN configured and the user has not opted out). */
   errorReporting: boolean;

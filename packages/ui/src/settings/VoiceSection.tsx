@@ -1,6 +1,10 @@
+import { speechErrorMessage } from "../chat/voice/speech-error";
+import { useNativeSpeech } from "../chat/voice/useNativeSpeech";
+import { availableSpeechBackend } from "../chat/voice/availability";
+import { webSpeechAvailable } from "../chat/voice/web-speech";
 import type { Settings } from "@fabdesk/protocol";
 import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Button, Input, Select } from "../components/ui";
 import { useCore, useSpeechStatus } from "@fabdesk/client-core";
 import { formatVoiceShortcut, parseVoiceShortcut } from "@fabdesk/client-core";
@@ -29,9 +33,31 @@ export function VoiceSection({
   const qc = useQueryClient();
   const [apiKey, setApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState(speech.data?.cloudBaseUrl ?? "");
-  const [busy, setBusy] = useState<"cloud" | "clear" | "local" | null>(null);
+  const [busy, setBusy] = useState<"cloud" | "clear" | "local" | "native" | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const nativeSetupId = useRef<string | null>(null);
   const status = speech.data;
+  const native = useNativeSpeech(draft.voice.language);
+  const builtInAvailable = webSpeechAvailable() || native.available;
+  const activeBackend = availableSpeechBackend(draft.voice.provider, status, builtInAvailable);
+  const backendLabels = { on_device: native.available ? "macOS on-device speech" : "Built-in speech", cloud: "Cloud speech", local: "Local model" };
+
+  useEffect(() => () => {
+    if (nativeSetupId.current) void native.service?.cancel(nativeSetupId.current).catch(() => {});
+  }, [native.service]);
+
+  const prepareNative = async () => {
+    if (!native.service) return;
+    const id = crypto.randomUUID();
+    nativeSetupId.current = id;
+    setBusy("native"); setNote(null);
+    try {
+      const result = await native.service.prepare(draft.voice.language, id);
+      setNote(result.message);
+      await qc.invalidateQueries({ queryKey: ["native-speech"] });
+    } catch (error) { setNote(speechErrorMessage(error)); }
+    finally { nativeSetupId.current = null; setBusy(null); }
+  };
 
   const refresh = async () => {
     await qc.invalidateQueries({ queryKey: ["speech"] });
@@ -91,7 +117,7 @@ export function VoiceSection({
         kept after the transcript is ready. The cloud key stays in the daemon and is never shown
         to the app window.
       </p>
-      <Row label="Provider" hint="Auto uses on-device speech when it produces a transcript, then a cloud key, then the local model.">
+      <Row label="Provider" hint="Auto uses built-in speech when available, then a cloud key, then the local model.">
         <Select
           value={draft.voice.provider}
           onChange={(e) =>
@@ -102,7 +128,7 @@ export function VoiceSection({
           }
         >
           <option value="auto">Auto</option>
-          <option value="on_device">On-device</option>
+          <option value="on_device" disabled={!builtInAvailable}>{native.available ? "On-device (macOS)" : "Built-in speech"}{builtInAvailable ? "" : " (unavailable in this app)"}</option>
           <option value="cloud">Cloud</option>
           <option value="local">Local model</option>
         </Select>
@@ -147,11 +173,22 @@ export function VoiceSection({
           }}
         />
       </Row>
-      <p className="text-[11px] text-muted">
-        Currently {formatVoiceShortcut(parseVoiceShortcut(draft.voice.pushToTalkShortcut), host.platform)}.
-        {status ? ` Auto would use ${status.active ?? "nothing ready"}.` : ""}
-      </p>
+      <div role="status" className={`rounded-lg border px-3 py-2 text-xs ${activeBackend ? "border-border text-muted" : "border-warning/30 bg-warning/5 text-warning"}`}>
+        {native.checking ? "Checking on-device speech…" : activeBackend ? `Ready: ${backendLabels[activeBackend]}.` : (draft.voice.provider === "on_device" || native.needsDownload)
+          ? native.message || "Built-in speech recognition is not available in this app. Choose Cloud or Local model below."
+          : "Speech recognition needs setup. Add a cloud key or configure a local speech engine below."}
+        {activeBackend === "on_device" && native.available && <p className="mt-1 text-[11px] text-muted">Audio stays on this Mac. macOS manages the speech model.</p>}
+        <p className="mt-1 text-[11px] text-muted">Hold {formatVoiceShortcut(parseVoiceShortcut(draft.voice.pushToTalkShortcut), host.platform)} to speak.</p>
+      </div>
 
+      {native.needsDownload && (
+        <div className="rounded-lg border border-border p-3">
+          <div className="mb-1 text-[13px] font-medium">On-device speech</div>
+          <p className="mb-3 text-xs leading-5 text-muted">Download the speech model from Apple for this language. No API key is needed, and your recordings stay on this Mac. Siri and keyboard Dictation can stay off.</p>
+          <Button size="sm" disabled={busy !== null} onClick={() => void prepareNative()}>{busy === "native" ? "Preparing on-device speech…" : "Prepare on-device speech"}</Button>
+          {busy === "native" && <Button size="sm" variant="ghost" onClick={() => { if (nativeSetupId.current) void native.service?.cancel(nativeSetupId.current); }}>Cancel</Button>}
+        </div>
+      )}
       <div className="rounded-lg border border-border p-3">
         <div className="mb-2 text-[13px] font-medium">Cloud speech key</div>
         <p className="mb-3 text-[11px] leading-4 text-muted">

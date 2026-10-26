@@ -154,6 +154,7 @@ export {
   parseVoiceShortcut,
   formatVoiceShortcut,
   matchVoiceShortcut,
+  releasesVoiceShortcut,
   DEFAULT_VOICE_SHORTCUT,
 } from "./speech/shortcut";
 export type { VoiceShortcut } from "./speech/shortcut";

@@ -52,6 +52,7 @@ const host: HostAdapter = withReleaseNotes(
   bridge
     ? {
         platform: bridge.platform,
+        ...(bridge.platform === "darwin" ? { nativeSpeech: bridge.nativeSpeech } : {}),
         devBuild: bridge.devBuild,
         openExternal: (url) => bridge.openExternal(url),
         openPath: (path) => bridge.openPath(path),
