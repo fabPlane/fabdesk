@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { BoardComment, CommentView } from "@fabdesk/protocol";
-import { buildCommentAskPrompt, commentAnchorLabel } from "@fabdesk/protocol";
+import { commentAnchorLabel } from "@fabdesk/protocol";
 import { Button, EmptyState, Input, LoadError, Spinner, Textarea } from "../components/ui";
 import { Icon } from "../components/Icon";
 import {
@@ -15,6 +15,7 @@ import { DRAFT_KEY_NEW, useUiStore } from "../stores/ui";
 import { CommentPins } from "./CommentPins";
 import { SvgViewer } from "./SvgViewer";
 import { type SvgPoint } from "./svg-coords";
+import { buildCommentsAskPrompt, pendingBoardComments } from "./comment-requests";
 
 const RENDER_TOOL = { schematic: "render_schematic_svg", pcb: "render_pcb_svg" } as const;
 
@@ -69,6 +70,8 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
   const [ref, setRef] = useState("");
   const [net, setNet] = useState("");
   const [pad, setPad] = useState("");
+  const [asking, setAsking] = useState(false);
+  const [askError, setAskError] = useState<string | null>(null);
 
   const view = kind as CommentView;
   const pins = useMemo(
@@ -76,6 +79,12 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
     [comments.data, view],
   );
   const selected = pins.find((comment) => comment.id === selectedId) ?? null;
+  const pendingPins = pendingBoardComments(pins, view);
+  const beginPin = () => {
+    resetCompose();
+    setSelectedId(null);
+    setCommentMode(true);
+  };
 
   const resetCompose = () => {
     setDraftPoint(null);
@@ -85,15 +94,24 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
     setPad("");
   };
 
-  const askAgent = async (comment: BoardComment) => {
-    const prompt = buildCommentAskPrompt(comment);
-    const threadId = useUiStore.getState().activeThreadId;
-    if (threadId) {
-      await client.sendMessage(threadId, { content: prompt });
-      return;
+  const askAgent = async (targets: BoardComment[]) => {
+    if (asking || targets.length === 0) return;
+    setAsking(true);
+    setAskError(null);
+    try {
+      const prompt = buildCommentsAskPrompt(targets);
+      const threadId = useUiStore.getState().activeThreadId;
+      if (threadId) {
+        await client.sendMessage(threadId, { content: prompt });
+      } else {
+        useUiStore.getState().setDraft(DRAFT_KEY_NEW, prompt);
+        useUiStore.getState().focusComposer();
+      }
+    } catch (error) {
+      setAskError(error instanceof Error ? error.message : "Could not send the pinned comments. Try again.");
+    } finally {
+      setAsking(false);
     }
-    useUiStore.getState().setDraft(DRAFT_KEY_NEW, prompt);
-    useUiStore.getState().focusComposer();
   };
 
   const savePin = async () => {
@@ -108,7 +126,7 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
     });
     setSelectedId(created.comment.id);
     resetCompose();
-    setCommentMode(false);
+    setCommentMode(true);
   };
 
   if (!projectId)
@@ -176,8 +194,27 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
             }
           />
         </div>
-        {(selected || draftPoint) && (
+        {(selected || draftPoint || commentMode) && (
           <aside className="flex w-72 shrink-0 flex-col gap-2 overflow-auto border-l border-border p-3" data-testid="comment-detail">
+            {pins.length > 0 && (
+              <div className="mb-1 border-b border-border pb-3">
+                <p className="mb-2 text-xs font-medium">Pins on this {kind === "pcb" ? "PCB" : "schematic"}</p>
+                <ul className="max-h-40 space-y-1 overflow-auto">
+                  {pins.map((comment, index) => (
+                    <li key={comment.id}>
+                      <button type="button" aria-pressed={selectedId === comment.id && !draftPoint}
+                        className="flex w-full items-center gap-2 rounded border border-transparent px-2 py-1.5 text-left text-xs hover:bg-panel-2 aria-pressed:border-accent aria-pressed:bg-panel-2"
+                        onClick={() => { setSelectedId(comment.id); resetCompose(); }} title={comment.question}>
+                        <span className="font-mono text-muted">{index + 1}</span>
+                        <span className="min-w-0 flex-1 truncate">{comment.question}</span>
+                        <span className="text-[10px] text-muted">{comment.status === "resolved" ? "Resolved" : comment.answer ? "Answered" : "Pending"}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {commentMode && !selected && !draftPoint && <p className="text-xs text-muted">Click a location on the board to add a pin. Collect your comments, then ask the agent about them together.</p>}
             {draftPoint && (
               <>
                 <div className="text-[11px] font-semibold uppercase tracking-[0.09em] text-muted">New pin</div>
@@ -194,7 +231,7 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
                 <Input value={net} onChange={(event) => setNet(event.target.value)} placeholder="Net (SPI.CS)" aria-label="Net name" />
                 <div className="flex gap-1">
                   <Button size="sm" variant="primary" disabled={!question.trim() || pin.isPending} onClick={() => void savePin()}>
-                    Pin
+                    Save pin
                   </Button>
                   <Button size="sm" variant="ghost" onClick={resetCompose}>Cancel</Button>
                 </div>
@@ -209,12 +246,9 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
                 {selected.answer ? (
                   <p className="text-[12.5px] leading-relaxed text-fg/90">{selected.answer}</p>
                 ) : (
-                  <p className="text-[12px] text-muted">No answer yet. Ask the project agent — it should call comment_answer.</p>
+                  <p className="text-[12px] text-muted">Saved. Add more pins, or ask the agent when you’re ready.</p>
                 )}
-                <div className="mt-auto flex flex-wrap gap-1">
-                  <Button size="sm" variant="primary" onClick={() => void askAgent(selected)}>
-                    Ask agent
-                  </Button>
+                <div className="flex flex-wrap gap-1">
                   {selected.status !== "resolved" && (
                     <Button size="sm" onClick={() => void patch.mutateAsync({ commentId: selected.id, patch: { status: "resolved" } })}>
                       Resolve
@@ -227,6 +261,18 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
                   )}
                 </div>
               </>
+            )}
+            {!draftPoint && (
+              <div className="mt-auto flex flex-col gap-2 border-t border-border pt-3">
+                <Button size="sm" onClick={beginPin}>Add another pin</Button>
+                {pendingPins.length > 0 ? <>
+                  <p className="text-[11px] text-muted">Send all {pendingPins.length} unanswered pin{pendingPins.length === 1 ? "" : "s"} in this view as one request.</p>
+                  <Button size="sm" variant="primary" disabled={asking} onClick={() => void askAgent(pendingPins)}>
+                    {asking ? "Sending…" : `Ask agent about ${pendingPins.length} pin${pendingPins.length === 1 ? "" : "s"}`}
+                  </Button>
+                </> : selected && <Button size="sm" disabled={asking} onClick={() => void askAgent([selected])}>{asking ? "Sending…" : "Ask again about this pin"}</Button>}
+                {askError && <p role="alert" className="text-xs text-danger">{askError}</p>}
+              </div>
             )}
           </aside>
         )}
