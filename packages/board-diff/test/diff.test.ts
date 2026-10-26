@@ -217,6 +217,34 @@ describe("compareRevisions", () => {
     expect(compared.pcb.sideBySide).toContain("data-board-diff=\"side-by-side\"");
   });
 
+  test("overlay recolors geometry without turning revision backgrounds into solid color layers", () => {
+    const result = compareRevisions({ kicadPcb: PCB_FROM }, { kicadPcb: PCB_TO });
+    expect(result.pcb.sideBySide.match(/data-board-diff-background="true"/g)).toHaveLength(2);
+    expect(result.pcb.overlay).not.toContain('data-board-diff-background="true"');
+    expect(result.pcb.overlay).toContain('stroke="#dc2626"');
+    expect(result.pcb.overlay).toContain('stroke="#16a34a"');
+    expect(result.pcb.overlay).toContain('fill="#ffffff"');
+  });
+
+  test("native comparisons ignore asymmetric or stale saved renders on both surfaces", () => {
+    const before = { kicadPcb: PCB_FROM, kicadSch: SCH_FROM };
+    const after = { kicadPcb: PCB_TO, kicadSch: SCH_TO };
+    const stale = '<svg viewBox="0 0 999 999"><text>STALE ARTWORK</text></svg>';
+    const expected = compareRevisions(before, after);
+    for (const [from, to] of [
+      [before, { ...after, pcbSvg: stale, schematicSvg: stale }],
+      [{ ...before, pcbSvg: stale, schematicSvg: stale }, after],
+      [{ ...before, pcbSvg: stale, schematicSvg: stale }, { ...after, pcbSvg: stale, schematicSvg: stale }],
+    ]) {
+      const actual = compareRevisions(from!, to!);
+      for (const surface of ["pcb", "schematic"] as const) {
+        expect(actual[surface].overlay).toBe(expected[surface].overlay);
+        expect(actual[surface].sideBySide).toBe(expected[surface].sideBySide);
+        expect(actual[surface].sideBySide).not.toContain("STALE ARTWORK");
+      }
+    }
+  });
+
   test("PCB without R1 plus a stale netlist that still has R1 treats R1 as removed", () => {
     const result = compareRevisions(
       { netlistJson: NETLIST_FROM, kicadPcb: PCB_FROM },

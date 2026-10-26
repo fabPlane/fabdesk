@@ -244,7 +244,7 @@ export function snapshotSvg(snapshot: BoardSnapshot, kind: VisualKind = "pcb", c
   const zones = kind === "pcb" ? drawZones(snapshot.zones ?? [], color) : "";
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBoxAttr(box)}" data-board-diff="${kind}-revision">
-  <rect x="${box.minX}" y="${box.minY}" width="${box.maxX - box.minX}" height="${box.maxY - box.minY}" fill="#ffffff"/>
+  <rect data-board-diff-background="true" x="${box.minX}" y="${box.minY}" width="${box.maxX - box.minX}" height="${box.maxY - box.minY}" fill="#ffffff"/>
   ${drawOutline(snapshot.outline, COLORS.outline)}
   ${zones}
   ${tracks}
@@ -324,6 +324,8 @@ export function extractSvgInner(svg: string): { viewBox?: string; inner: string 
 /** Recolor explicit fill/stroke so two KiCad SVGs can be overlaid as a red/green revision pair. */
 export function colorizeSvgMarkup(inner: string, color: string): string {
   return inner
+    // Snapshot backgrounds belong to the canvas, not either revision's geometry.
+    .replace(/<rect\b[^>]*\bdata-board-diff-background="true"[^>]*\/>/gi, "")
     .replace(/\sfill="(?!none|transparent|url\()[^"]*"/gi, ` fill="${color}"`)
     .replace(/\sstroke="(?!none|transparent|url\()[^"]*"/gi, ` stroke="${color}"`)
     .replace(/\sfill='(?!none|transparent|url\()[^']*'/gi, ` fill="${color}"`)

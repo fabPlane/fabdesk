@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Badge, Button, EmptyState, LoadError, Select, Spinner } from "../components/ui";
 import { useProjectJson, useProjectText, useRunTool } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
@@ -75,6 +76,7 @@ function shortRef(ref: string): string {
 
 export function DiffTab() {
   const projectId = useUiStore((s) => s.activeProjectId);
+  const queryClient = useQueryClient();
   const list = useRunTool();
   const compare = useRunTool();
   const reportQuery = useProjectJson(projectId, "reports/board-diff.json");
@@ -128,8 +130,9 @@ export function DiffTab() {
   const onCompare = async () => {
     const result = await compare.run("board_revision_diff", { projectId, from, to });
     if (result.status === "done") {
-      await reportQuery.refetch();
-      await svg.refetch();
+      // All six view artifacts are overwritten. Invalidate inactive views too,
+      // otherwise switching modes can resurrect an older comparison image.
+      await queryClient.invalidateQueries({ queryKey: ["file", projectId] });
     }
   };
 
@@ -181,6 +184,7 @@ export function DiffTab() {
             {id === "structured" ? "Highlights" : id === "overlay" ? "Overlay" : "Side by side"}
           </Button>
         ))}
+        {mode !== "structured" && <span className="text-[11px] text-muted">Matching simplified drawings from both revisions</span>}
         {compare.state.error && <span className="text-xs text-danger">{compare.state.error}</span>}
       </div>
       {reportQuery.isError ? (
@@ -202,8 +206,7 @@ export function DiffTab() {
               />
             ) : (
               <EmptyState title="No SVG for this view">
-                Highlights always generate from the parsed board. Overlay / side-by-side need KiCad SVGs committed in both
-                revisions.
+                Comparison drawings use the selected revisions’ design data. Run Compare again to refresh this view.
               </EmptyState>
             )}
           </div>

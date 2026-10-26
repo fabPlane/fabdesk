@@ -84,10 +84,19 @@ export function compareRevisions(
   const diff = diffBoards(fromSnap, toSnap, opts);
   const pcbStructured = visualDiffSvg(fromSnap, toSnap, diff, "pcb");
   const schStructured = visualDiffSvg(fromSnap, toSnap, diff, "schematic");
-  const pcbFrom = from.pcbSvg ?? snapshotSvg(fromSnap, "pcb", "#dc2626");
-  const pcbTo = to.pcbSvg ?? snapshotSvg(toSnap, "pcb", "#16a34a");
-  const schFrom = from.schematicSvg ?? snapshotSvg(fromSnap, "schematic", "#dc2626");
-  const schTo = to.schematicSvg ?? snapshotSvg(toSnap, "schematic", "#16a34a");
+  // Saved renders may be absent or stale at either revision. When design data
+  // exists, draw both revisions from the parsed sources using the same renderer.
+  // Keep SVG-only callers supported, but never mix one saved render with a
+  // generated snapshot on the other side.
+  const hasDesignSources = [from, to].some((source) =>
+    source.kicadPcb !== undefined || source.kicadSch !== undefined || source.netlistJson !== undefined,
+  );
+  const pcbSvgPair = !hasDesignSources && from.pcbSvg && to.pcbSvg;
+  const schSvgPair = !hasDesignSources && from.schematicSvg && to.schematicSvg;
+  const pcbFrom = pcbSvgPair ? from.pcbSvg! : snapshotSvg(fromSnap, "pcb");
+  const pcbTo = pcbSvgPair ? to.pcbSvg! : snapshotSvg(toSnap, "pcb");
+  const schFrom = schSvgPair ? from.schematicSvg! : snapshotSvg(fromSnap, "schematic");
+  const schTo = schSvgPair ? to.schematicSvg! : snapshotSvg(toSnap, "schematic");
   const pcbOverlay = overlaySvgs(pcbFrom, pcbTo);
   const schOverlay = overlaySvgs(schFrom, schTo);
   const pcbSide = sideBySideSvgs(pcbFrom, pcbTo);
