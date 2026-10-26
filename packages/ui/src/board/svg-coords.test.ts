@@ -45,4 +45,14 @@ describe("svg pin coordinates", () => {
       height: 50,
     });
   });
+
+  test("legacy SVG pins and clicks share bounds with a nonzero origin at any zoom", () => {
+    const box = resolveSvgBox("<svg/>", fakeSvg(null, { x: 20, y: -10, width: 80, height: 40 }))!;
+    for (const zoom of [1, 1.25, 2]) {
+      const rect = { left: 12, top: 24, width: 400 * zoom, height: 200 * zoom };
+      const point = clientPointToSvg(box, rect, rect.left + rect.width * 0.75, rect.top + rect.height * 0.25)!;
+      expect(point).toEqual({ x: 80, y: 0 });
+      expect(svgPointToPercent(box, point)).toEqual({ left: 75, top: 25 });
+    }
+  });
 });

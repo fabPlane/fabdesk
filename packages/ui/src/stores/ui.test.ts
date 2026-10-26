@@ -33,13 +33,15 @@ describe("sidebar list tabs", () => {
 });
 
 describe("board tabs", () => {
-  test("shopping list keeps the ninth board-tab shortcut and art follows it", () => {
+  test("existing shortcuts remain stable while notes and revision diff stay available", () => {
     expect(BOARD_TABS[8]).toBe("bom");
     expect(BOARD_TAB_LABELS.bom).toBe("Shopping list");
-    expect(BOARD_TABS).toContain("notes");
-    expect(BOARD_TAB_LABELS.notes).toBe("Notes");
     expect(BOARD_TABS[9]).toBe("art");
     expect(BOARD_TAB_LABELS.art).toBe("Art");
+    expect(BOARD_TABS).toContain("notes");
+    expect(BOARD_TAB_LABELS.notes).toBe("Notes");
+    expect(BOARD_TABS.at(-1)).toBe("diff");
+    expect(BOARD_TAB_LABELS.diff).toBe("Diff");
   });
 });
 

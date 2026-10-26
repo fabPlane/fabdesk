@@ -83,7 +83,7 @@ export function mockServices(
       remote: { enabled: false, host: "0.0.0.0", port: 47820 },
       notifications: { enabled: true },
       cloudOrgId: null,
-      voice: { provider: "auto", language: "en", pushToTalkMode: "hold", pushToTalkShortcut: "Alt+Space" },
+      voice: { provider: "auto", language: "en", pushToTalkMode: "hold", pushToTalkShortcut: "Alt+Space", cloud: { model: "gpt-4o-mini-transcribe" }, local: { model: "base.en" } },
     }),
     projects: {
       resolve: async (ref) =>

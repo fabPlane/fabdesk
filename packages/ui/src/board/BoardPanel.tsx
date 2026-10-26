@@ -12,6 +12,7 @@ import { ArtTab } from "./ArtTab";
 import { FilesTab } from "./FilesTab";
 import { NotesTab } from "./NotesTab";
 import { RendersTab } from "./RendersTab";
+import { DiffTab } from "./DiffTab";
 import { ShoppingListTab } from "./ShoppingListTab";
 import { SvgTab } from "./SvgTab";
 import { ThreeDTab } from "./ThreeDTab";
@@ -41,6 +42,8 @@ function TabBody({ tab }: { tab: BoardTab }) {
       return <ArtTab />;
     case "bom":
       return <ShoppingListTab />;
+    case "diff":
+      return <DiffTab />;
     default:
       return null;
   }
@@ -78,7 +81,7 @@ export function BoardPanel() {
         <Tabs
           className="fd-board-tabs min-w-0 flex-1"
           variant="underline"
-          tabs={BOARD_TABS.map((id, i) => ({ id, label: BOARD_TAB_LABELS[id], hint: `${mod} + ${i + 1}` }))}
+          tabs={BOARD_TABS.map((id, i) => ({ id, label: BOARD_TAB_LABELS[id], ...(i < 9 ? { hint: `${mod} + ${i + 1}` } : {}) }))}
           value={tab}
           onChange={setBoardTab}
         />

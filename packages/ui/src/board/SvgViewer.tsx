@@ -6,8 +6,10 @@ import { clientPointToSvg, parseSvgViewBox, resolveSvgBox, type SvgBox, type Svg
 import { svgImageCache } from "./svg-image-cache";
 
 /** Zoomable vector image, isolated from the app's DOM and CSS layout. */
-export function SvgViewer({ svg, toolbar, overlay, commentMode = false, onDrawingClick }: {
+export function SvgViewer({ svg, viewKey, toolbar, overlay, commentMode = false, onDrawingClick }: {
   svg: string;
+  /** Preserve zoom and scroll when only presentation (such as blend) changes. */
+  viewKey?: string;
   toolbar?: ReactNode;
   overlay?: ReactNode | ((box: SvgBox | null) => ReactNode);
   commentMode?: boolean;
@@ -24,8 +26,10 @@ export function SvgViewer({ svg, toolbar, overlay, commentMode = false, onDrawin
   const [fallback, setFallback] = useState<{ svg: string; box: SvgBox } | null>(null);
   const box = viewBox ?? (fallback?.svg === svg ? fallback.box : null);
   const current = source?.svg === svg ? source : null;
+  // Keep the canvas dimensions while a presentation-only update loads, so the
+  // browser does not collapse the scroll area and lose the comparison position.
   const size = viewBox
-    ? current && loaded?.url === current.url ? loaded : null
+    ? current && loaded?.url === current.url ? loaded : viewKey ? loaded : null
     : box;
   const failed = current && failedUrl === current.url;
 
@@ -55,7 +59,7 @@ export function SvgViewer({ svg, toolbar, overlay, commentMode = false, onDrawin
   useEffect(() => {
     setZoom(1);
     viewport.current?.scrollTo(0, 0);
-  }, [svg]);
+  }, [viewKey ?? svg]);
 
   useEffect(() => {
     const frame = viewport.current;

@@ -100,7 +100,7 @@ export function BoardViewMenu({ value, onChange, modifier }: {
       {BOARD_TABS.map((tab, index) => <button key={tab} type="button" role="menuitemradio" aria-checked={tab === value} tabIndex={-1} data-label={BOARD_TAB_LABELS[tab]} className="fd-board-view-option" onClick={() => { onChange(tab); close(true); }}>
         <span className="fd-board-view-check">{tab === value && <Icon name="check" width={15} height={15} />}</span>
         <span>{BOARD_TAB_LABELS[tab]}</span>
-        <kbd aria-hidden="true">{modifier} {index + 1}</kbd>
+        {index < 9 && <kbd aria-hidden="true">{modifier} {index + 1}</kbd>}
       </button>)}
     </div>, document.body)}
   </div>;
