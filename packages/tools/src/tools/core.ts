@@ -9,7 +9,7 @@ import { readFile, readdir, lstat, mkdtemp, rm } from "node:fs/promises";
 import { z } from "zod/v4";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ASSEMBLY_MANIFEST_PATH, type ProjectBoardSources, type FpPcbBoardSpec, type NetlistFile } from "@fabdesk/protocol";
+import { ASSEMBLY_MANIFEST_PATH, AssemblyPcbCheckReceipt, type ProjectBoardSources, type FpPcbBoardSpec, type NetlistFile } from "@fabdesk/protocol";
 import { PROJECT_FILES, exists, jailPath, mtimeMs, readJsonOrNull, writeJson } from "../fs";
 import {
   ToolError,
@@ -225,7 +225,7 @@ export const project_status = defineTool({
     const lines = [
       `Project "${project.name}" (${project.id}) at ${project.dir}`,
       ...(assembly ? [assembly.status === "inspected"
-        ? `Assembly instances: ${assembly.membership.assembly!.instances.length}; source boards: ${assembly.membership.sources.length}; declared connections: ${assembly.membership.assembly!.connections.length}. Source files available: ${assembly.membership.sources.filter(source => source.status === "available").length}/${assembly.membership.sources.length}. Geometry, schematic parity and connection compatibility are unverified. Explicit source tools pcb_inspect, render_pcb_svg, pcb_place and pcb_resize_outline accept board {sourceId, manifestSha256}. Placement and resize require the selected source's inspected expectedSourceSha256; shared physical instances use the same edited source. Other member workflows remain unavailable. Canvas placement and rectangular resizing require verified preview coordinates and captured source ownership. Remaining native status below describes only the project root.`
+        ? `Assembly instances: ${assembly.membership.assembly!.instances.length}; source boards: ${assembly.membership.sources.length}; declared connections: ${assembly.membership.assembly!.connections.length}. Source files available: ${assembly.membership.sources.filter(source => source.status === "available").length}/${assembly.membership.sources.length}. Geometry, schematic parity and connection compatibility are unverified. Explicit source tools pcb_inspect, render_pcb_svg, pcb_place, pcb_resize_outline and verify_drc accept board {sourceId, manifestSha256}. Placement, resize and member DRC require the selected source's inspected expectedSourceSha256. Member DRC is PCB-only: pass schematicParity=false explicitly; its report is not schematic parity, ERC or inter-board compatibility. Shared physical instances use the same source. Other member workflows remain unavailable. Canvas placement and rectangular resizing require verified preview coordinates and captured source ownership. Remaining native status below describes only the project root.`
         : assembly.reason] : []),
       `${assembly ? "Root project defaults" : "Board"}: ${manifest.board.layers} layers${manifest.board.widthMm ? `, ${manifest.board.widthMm}×${manifest.board.heightMm ?? "?"} mm` : ""}; router: ${manifest.router === "capacity" ? "fab_router" : (manifest.router ?? "freerouting (default; fab_router fallback)")}`,
       `${assembly ? "Root files" : "Files"}: ${Object.entries(files)
@@ -579,11 +579,13 @@ const DRC_SAMPLE_BUDGET_BYTES = 8192;
 
 export const verify_drc = defineTool({
   name: "verify_drc",
+  boardScoped: true,
   toolset: "core",
   title: "Run KiCad DRC",
   description:
-    "Run KiCad design rule check on board.kicad_pcb. When parity is enabled, require a complete saved schematic hierarchy and bind parity evidence to its aggregate revision. Returns violation descriptions, rule types and native item IDs with actionable geometry; responseMode=full returns all rows. Writes reports/drc.json.",
+    "Run KiCad design rule check on board.kicad_pcb. When parity is enabled, require a complete saved schematic hierarchy and bind parity evidence to its aggregate revision. Explicit assembly members currently support PCB-only DRC: provide expectedSourceSha256 and schematicParity=false. Returns violation descriptions, rule types and native item IDs with actionable geometry; responseMode=full returns all rows. Writes reports/drc.json inside the selected source directory.",
   inputSchema: {
+    expectedSourceSha256: z.string().regex(/^[a-f0-9]{64}$/).optional().describe("Required for an assembly member: SHA256 of its inspected saved PCB"),
     severity: z
       .enum(["all", "error"])
       .default("all")
@@ -612,12 +614,15 @@ export const verify_drc = defineTool({
     idempotentHint: true,
   },
   longRunning: true,
-  handler: async ({ severity, schematicParity, limit, responseMode }, ctx) => {
+  handler: async ({ severity, schematicParity, limit, responseMode, expectedSourceSha256 }, ctx) => {
     const project = ctx.requireProject();
+    if (ctx.board && !expectedSourceSha256) throw new ToolError("Inspect the selected member PCB and provide expectedSourceSha256 before running its check.", "precondition");
+    if (ctx.board && schematicParity) throw new ToolError("Member checks currently support PCB-only DRC. Set schematicParity=false explicitly; member schematic parity is not yet available.", "precondition");
     const cli = await requireKicad(ctx);
     const board = p(project, PROJECT_FILES.boardPcb);
     if (!(await exists(board))) throw new ToolError("board.kicad_pcb not found", "precondition");
     const beforeRevision = await pcbFileRevision(board);
+    if (expectedSourceSha256 && beforeRevision.sha256 !== expectedSourceSha256) throw new ToolError("The saved PCB changed since inspection. Inspect the selected source again before checking it.", "precondition");
     const beforeHierarchy = schematicParity ? await inspectSavedHierarchy(ctx, project, cli) : null;
     if (beforeHierarchy && !beforeHierarchy.complete)
       throw new ToolError(
@@ -661,6 +666,7 @@ export const verify_drc = defineTool({
     const checkedReport = {
       ...enriched,
       schematicParityChecked: schematicParity,
+      ...(ctx.board ? { boardSource: { projectId: project.id, ...ctx.board } } : {}),
       pcbRevision: afterRevision,
       ...(beforeHierarchy
         ? {
@@ -674,6 +680,7 @@ export const verify_drc = defineTool({
           }
         : {}),
     };
+    if (ctx.board) AssemblyPcbCheckReceipt.parse(checkedReport);
     // Revalidate the output jail and captured native ownership immediately before publication.
     await jailPath(project.dir, reportPath);
     await ctx.runInScope?.(async () => {});

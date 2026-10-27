@@ -1,4 +1,5 @@
 import { z } from "zod/v4";
+import { BoardSourceSelection } from "./assembly";
 
 /** Records the bytes used for a PCB SVG preview; it is not an electrical compatibility check. */
 export const PcbPreviewRevision = z.object({
@@ -18,6 +19,13 @@ export const PCB_SVG_COORDINATE_SYSTEM = "kicad-pcb-mm-v1";
 export const PcbCheckSourceReceipt = z.object({
   pcbRevision: z.object({ sha256: z.string().regex(/^[a-f0-9]{64}$/), bytes: z.number().int().nonnegative() }),
 });
+
+
+/** A member report belongs to one captured declaration and saved PCB, never an implicit root board. */
+export const AssemblyPcbCheckReceipt = PcbCheckSourceReceipt.extend({
+  boardSource: BoardSourceSelection.extend({ projectId: z.string().min(1) }).strict(),
+});
+export type AssemblyPcbCheckReceipt = z.infer<typeof AssemblyPcbCheckReceipt>;
 
 
 /** GLB source identity checked before/after live export; external model dependencies are unverified. */
