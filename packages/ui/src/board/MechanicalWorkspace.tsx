@@ -1,6 +1,6 @@
 import { lazy, Suspense, useMemo, useRef, useState } from "react";
 import { ImportedMechanicalModel, type MechanicalModelUnits } from "@fabdesk/protocol";
-import { createModelImportSession, mechanicalModelFormat, useCoreClient, useProject, useProjectText } from "@fabdesk/client-core";
+import { createModelImportSession, mechanicalModelFormat, useEnclosureSourceRevision, useCoreClient, useProject, useProjectText } from "@fabdesk/client-core";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button, Dialog, EmptyState, LoadError, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
@@ -23,6 +23,7 @@ function ProjectMechanical({ projectId, onAdvanced }: { projectId: string; onAdv
   const [generating, setGenerating] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const models = (project.data?.files ?? []).filter((file) => IMPORTED_MODEL.test(file.path)).sort((a, b) => b.mtime.localeCompare(a.mtime));
+  const hasPcb = project.data?.files.some((file) => file.path === "board.kicad_pcb") ?? false;
   const generated = project.data?.files.find((file) => /^exports\/enclosure\.stl$/i.test(file.path));
   const path = selected && project.data?.files.some((file) => file.path === selected) ? selected : models[0]?.path ?? generated?.path ?? null;
   const metadataPath = path && IMPORTED_MODEL.test(path) ? `${path.slice(0, path.lastIndexOf("/"))}/model.json` : null;
@@ -32,6 +33,8 @@ function ProjectMechanical({ projectId, onAdvanced }: { projectId: string; onAdv
     try { const parsed = ImportedMechanicalModel.safeParse(JSON.parse(metadata.data)); return parsed.success && parsed.data.path === path ? parsed.data : null; }
     catch { return null; }
   }, [metadata.data, path]);
+  const caseSource = useEnclosureSourceRevision(projectId, !!path && path === generated?.path);
+  const caseChanged = path === generated?.path && caseSource.data === "changed";
   const previewable = path && /\.(glb|stl|obj)$/i.test(path);
   if (project.isError) return <LoadError title="Could not load mechanical files" onRetry={() => void project.refetch()} />;
   if (!project.data) return <div className="flex h-full items-center justify-center"><Spinner /></div>;
@@ -39,11 +42,11 @@ function ProjectMechanical({ projectId, onAdvanced }: { projectId: string; onAdv
     {generating ? <div className="fd-mechanical-generator"><div className="fd-mechanical-generator-heading"><Button size="sm" onClick={() => { if (generated) setSelected(generated.path); setGenerating(false); }}>{generated ? "View generated case" : "Back to canvas"}</Button><span>Generate from the saved PCB</span></div><EnclosurePanel key={projectId} /></div>
       : path ? <>
         {previewable ? <Suspense fallback={<div className="flex h-full items-center justify-center"><Spinner /></div>}><ModelCanvas key={`${projectId}:${path}`} projectId={projectId} path={path} /></Suspense> : <EmptyState title="STEP model saved"><p>The original is in this project. STEP preview and fit checks are not available in this canvas yet.</p><Button className="mt-4" onClick={() => useUiStore.getState().openProjectFile(path)}>Show saved file</Button></EmptyState>}
-        <div className="fd-mechanical-selection"><Icon name="tool" width={18} height={18} /><div><strong>{model?.originalName ?? path.split("/").pop()}</strong><span>{model ? `${model.units === "file" ? "Units from file" : `Source units: ${model.units}`} · Placement not checked` : IMPORTED_MODEL.test(path) ? "Source units unconfirmed · Placement not checked" : "Generated case · Open generator to check alignment"}</span></div>
+        <div className="fd-mechanical-selection" data-stale={caseChanged}><Icon name="tool" width={18} height={18} /><div><strong>{model?.originalName ?? path.split("/").pop()}</strong><span>{model ? `${model.units === "file" ? "Units from file" : `Source units: ${model.units}`} · Placement not checked` : IMPORTED_MODEL.test(path) ? "Source units unconfirmed · Placement not checked" : caseChanged ? "PCB changed · Review or regenerate this case" : caseSource.data === "missing-pcb" ? "PCB source missing · Check before using this case" : caseSource.isError ? "Could not verify source · Open generator to check" : "Generated case · Open generator to check alignment"}</span></div>
           {models.length + (generated ? 1 : 0) > 1 && <select aria-label="Choose enclosure model" value={path} onChange={(event) => setSelected(event.target.value)}>{models.map((file) => <option key={file.path} value={file.path}>{file.path.split("/").pop()} · {file.path.split("/")[2]?.slice(0, 5)}</option>)}{generated && <option value={generated.path}>Generated enclosure</option>}</select>}
         </div>
-      </> : <div className="fd-mechanical-start"><Icon name="tool" width={52} height={52} /><h1>Add an enclosure</h1><p>Bring your existing model, or generate a case around this board.</p><div><Button variant="primary" onClick={() => setImportOpen(true)}><Icon name="folderOpen" width={17} height={17} />Import a model</Button><Button onClick={() => setGenerating(true)}>Generate from PCB</Button></div><span>STL, GLB, OBJ or STEP · Original files preserved</span></div>}
-    {!generating && <div className="fd-mechanical-actions">{path && <Button size="sm" onClick={() => setImportOpen(true)}>Import model</Button>}{path && <Button size="sm" onClick={() => setGenerating(true)}>Generate / check case</Button>}<Button size="sm" variant="ghost" onClick={onAdvanced}>Advanced CAD</Button></div>}
+      </> : <div className="fd-mechanical-start"><Icon name="tool" width={52} height={52} /><h1>Add an enclosure</h1><p>Bring your existing model, or generate a case around this board.</p><div><Button variant="primary" onClick={() => setImportOpen(true)}><Icon name="folderOpen" width={17} height={17} />Import a model</Button><Button disabled={!hasPcb} title={hasPcb ? "Generate a case from this PCB" : "Create or import a PCB in Board first"} onClick={() => setGenerating(true)}>Generate from PCB</Button></div><span>{hasPcb ? "STL, GLB, OBJ or STEP · Original files preserved" : "Import an existing model, or add a PCB to generate a fitted case."}</span></div>}
+    {!generating && <div className="fd-mechanical-actions">{path && <Button size="sm" onClick={() => setImportOpen(true)}>Import model</Button>}{path && <Button size="sm" disabled={!hasPcb} title={hasPcb ? "Review enclosure parameters and alignment" : "Add the PCB source to generate or check alignment"} onClick={() => setGenerating(true)}>Generate / check case</Button>}<Button size="sm" variant="ghost" onClick={onAdvanced}>Advanced CAD</Button></div>}
     {importOpen && <ModelImportDialog projectId={projectId} onClose={() => setImportOpen(false)} onSaved={(path) => { if (useUiStore.getState().activeProjectId === projectId) { setSelected(path); setGenerating(false); setImportOpen(false); } }} />}
   </div>;
 }

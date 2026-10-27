@@ -1,3 +1,4 @@
+import { inspectEnclosureSourceRevision } from "./enclosure-revision";
 import { inspectPcbPreviewRevision } from "./pcb-preview-revision";
 import type {
   AgentId,
@@ -925,4 +926,9 @@ export function useStopFinishIt() {
 export function usePcbPreviewRevision(projectId: string | null, enabled = true) {
   const client = useCoreClient();
   return useQuery({ queryKey: ["pcb-preview-revision", projectId], queryFn: () => inspectPcbPreviewRevision(client, projectId!), enabled: !!projectId && enabled });
+}
+
+export function useEnclosureSourceRevision(projectId: string | null, enabled = true) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["enclosure-source-revision", projectId], queryFn: () => inspectEnclosureSourceRevision(client, projectId!), enabled: !!projectId && enabled });
 }

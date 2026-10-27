@@ -216,3 +216,5 @@
 .fd-model-import-file span,.fd-model-import label > span { color:var(--fd-muted); font-size:12px; line-height:1.6; }
 .fd-model-import label { display:flex; flex-direction:column; gap:10px; font-size:13px; }
 .fd-model-import select { padding:10px; background:var(--fd-panel); border:1px solid var(--fd-border); border-radius:8px; }
+.fd-mechanical-selection[data-stale=true] { border-color:var(--fd-warning); }
+.fd-mechanical-selection[data-stale=true] span { color:var(--fd-warning); }

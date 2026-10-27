@@ -3,7 +3,7 @@ import { CoreHttpError, type CoreClient } from "./CoreClient";
 
 export type PcbPreviewState = "matches-source" | "source-changed" | "artifact-changed" | "untracked" | "missing-source" | "missing-artifact";
 
-async function sha256(blob: Blob): Promise<string> {
+export async function sha256Blob(blob: Blob): Promise<string> {
   const bytes = new Uint8Array(await crypto.subtle.digest("SHA-256", await blob.arrayBuffer()));
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
@@ -28,7 +28,7 @@ export async function inspectPcbPreviewRevision(client: Pick<CoreClient, "readFi
   const [source, artifact] = await Promise.all([read(receipt.source), read(receipt.artifact)]);
   if (!source) return "missing-source";
   if (!artifact) return "missing-artifact";
-  const [sourceHash, artifactHash] = await Promise.all([sha256(source), sha256(artifact)]);
+  const [sourceHash, artifactHash] = await Promise.all([sha256Blob(source), sha256Blob(artifact)]);
   if (artifactHash !== receipt.artifactSha256) return "artifact-changed";
   return sourceHash === receipt.sourceSha256 ? "matches-source" : "source-changed";
 }

@@ -336,6 +336,7 @@ export function handleCoreEvent(event: CoreEvent, ctx: HandlerCtx): void {
       ctx.route?.setDone(event.result);
       break;
     case "project.changed":
+      void qc.invalidateQueries({ queryKey: ["enclosure-source-revision", event.projectId] });
       void qc.invalidateQueries({ queryKey: ["pcb-preview-revision", event.projectId] });
       void qc.invalidateQueries({ queryKey: ["finish-it-needs-work", event.projectId] });
       void qc.invalidateQueries({ queryKey: ["project", event.projectId] });

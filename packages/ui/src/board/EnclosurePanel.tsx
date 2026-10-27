@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { useCoreClient } from "@fabdesk/client-core";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useCoreClient, useProject } from "@fabdesk/client-core";
 import { Button, Input, Select, Spinner } from "../components/ui";
 import { useUiStore } from "../stores/ui";
 import "./enclosure-panel.css";
@@ -440,6 +440,9 @@ export function EnclosureScreen({
 export function EnclosurePanel() {
   const client = useCoreClient();
   const projectId = useUiStore((s) => s.activeProjectId);
+  const project = useProject(projectId);
+  const checkedRevision = useRef<string | null>(null);
+  const sourceRevision = project.data ? `${projectId}:${project.dataUpdatedAt}` : null;
   const [view, setView] = useState<EnclosureView | null>(null);
   const [draft, setDraft] = useState<EnclosureDraft>(DEFAULT_ENCLOSURE_DRAFT);
   const [busy, setBusy] = useState(false);
@@ -466,7 +469,7 @@ export function EnclosurePanel() {
   };
 
   const call = useCallback(
-    async (action: "generate" | "status" | "check", extras: Record<string, unknown> = {}) => {
+    async (action: "generate" | "status" | "check", extras: Record<string, unknown> = {}, preserveDraft = false) => {
       if (!projectId) return;
       setBusy(true);
       setError(null);
@@ -480,7 +483,7 @@ export function EnclosurePanel() {
           client.readFile(projectId, path),
         );
         setView(next);
-        if (action !== "generate") setDraft(next.draft);
+        if (action !== "generate" && !preserveDraft) setDraft(next.draft);
         const rec = asRecord(res);
         if (rec && rec["ok"] === false && typeof rec["text"] === "string") setError(rec["text"]);
       } catch (e) {
@@ -500,12 +503,12 @@ export function EnclosurePanel() {
   );
 
   useEffect(() => {
-    if (!projectId) {
-      setView(null);
-      return;
-    }
-    void call("status");
-  }, [projectId, call]);
+    if (!projectId || !sourceRevision || busy || checkedRevision.current === sourceRevision) return;
+    const initial = checkedRevision.current === null;
+    checkedRevision.current = sourceRevision;
+    // Background source changes update the report without replacing unsaved controls.
+    void call("status", {}, !initial);
+  }, [projectId, sourceRevision, busy, call]);
 
   if (!projectId) return null;
   return (
@@ -528,7 +531,7 @@ export function EnclosurePanel() {
           snapFit: draft.snapFit,
         })
       }
-      onCheck={() => void call("check")}
+      onCheck={() => void call("check", {}, true)}
       onDownload={(path) => void download(path)}
       onOpenFiles={(path) => useUiStore.getState().openProjectFile(path)}
       downloading={downloading}
