@@ -5,7 +5,7 @@ import { buildCommentsAskPrompt, pendingBoardComments } from "./comment-requests
 const pin = (id: string, patch: Partial<BoardComment> = {}): BoardComment => ({
   id, question: `Question for ${id}`, author: "test", status: "open",
   createdAt: "2026-10-26T00:00:00Z", updatedAt: "2026-10-26T00:00:00Z",
-  anchor: { view: "pcb", x: 10, y: 20, xMm: 10, yMm: 20 }, ...patch,
+  anchor: { view: "pcb", coordinateSystem: "kicad-pcb-mm", x: 10, y: 20, xMm: 10, yMm: 20 }, ...patch,
 });
 
 test("batch includes only unanswered open pins in the current view", () => {

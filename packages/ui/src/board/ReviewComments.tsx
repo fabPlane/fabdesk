@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { commentAnchorLabel, type BoardComment } from "@fabdesk/protocol";
+import { commentAnchorLabel, commentMillimetrePoint, type BoardComment } from "@fabdesk/protocol";
 import { useBoardComments, useBoardCommentMutations } from "@fabdesk/client-core";
 import { Button, EmptyState, LoadError, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
@@ -39,6 +39,7 @@ export function ReviewComments() {
       <div className="mt-4 flex justify-center gap-2"><Button onClick={() => useUiStore.getState().setBoardTab("pcb")}>Open PCB</Button><Button variant="ghost" onClick={() => useUiStore.getState().setBoardTab("schematic")}>Open schematic</Button></div>
     </EmptyState> : <ul>{visible.map((comment) => <li key={comment.id}>
       <div className="fd-review-comment-meta"><span>{comment.anchor.view === "pcb" ? "PCB" : comment.anchor.view === "schematic" ? "Schematic" : comment.anchor.view === "3d" ? "3D" : "Product"} · {commentAnchorLabel(comment.anchor)}</span><span>{comment.status}</span></div>
+      {comment.anchor.view === "pcb" && (comment.anchor.x !== undefined || comment.anchor.y !== undefined) && !commentMillimetrePoint(comment.anchor) && <p className="mt-2 text-xs text-warning">Drawing origin unverified · Confirm this pin on an updated PCB preview.</p>}
       <h2>{comment.question}</h2>
       {comment.answer && <p className="fd-review-comment-answer">{comment.answer}</p>}
       <div className="fd-review-comment-actions">

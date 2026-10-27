@@ -162,3 +162,5 @@ export {
   type VentPattern,
 } from "./enclosure";
 export { previewEnclosureSvg } from "./enclosure-preview";
+
+export { cropNativePageSvg } from "./pcb-svg-coordinates";

@@ -11,3 +11,5 @@ export const PcbPreviewRevision = z.object({
 });
 export type PcbPreviewRevision = z.infer<typeof PcbPreviewRevision>;
 export const PCB_PREVIEW_REVISION_PATH = "renders/pcb.svg.revision.json";
+
+export const PCB_SVG_COORDINATE_SYSTEM = "kicad-pcb-mm-v1";

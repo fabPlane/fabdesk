@@ -168,3 +168,5 @@ export * from "./pcb-preview-revision";
 export * from "./model-import";
 
 export * from "./enclosure-revision";
+
+export * from "./pcb-parts";

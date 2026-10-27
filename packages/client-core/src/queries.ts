@@ -1,3 +1,4 @@
+import { inspectPcbParts } from "./pcb-parts";
 import { inspectEnclosureSourceRevision } from "./enclosure-revision";
 import { inspectPcbPreviewRevision } from "./pcb-preview-revision";
 import type {
@@ -931,4 +932,9 @@ export function usePcbPreviewRevision(projectId: string | null, enabled = true) 
 export function useEnclosureSourceRevision(projectId: string | null, enabled = true) {
   const client = useCoreClient();
   return useQuery({ queryKey: ["enclosure-source-revision", projectId], queryFn: () => inspectEnclosureSourceRevision(client, projectId!), enabled: !!projectId && enabled });
+}
+
+export function usePcbPartsNear(projectId: string, point: { x: number; y: number }, enabled: boolean) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["pcb-parts", projectId, point.x, point.y], queryFn: () => inspectPcbParts(client, projectId, { near: { ...point, radius: 5 } }), enabled });
 }

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { BoardComment, CommentView } from "@fabdesk/protocol";
-import { commentAnchorLabel } from "@fabdesk/protocol";
+import { commentAnchorLabel, commentMillimetrePoint } from "@fabdesk/protocol";
 import { Button, EmptyState, IconButton, Input, LoadError, Spinner, Textarea } from "../components/ui";
 import { Icon } from "../components/Icon";
 import {
@@ -8,10 +8,13 @@ import {
   useBoardComments,
   useCoreClient,
   useProject,
+  usePcbPreviewRevision,
+  pcbSvgHasNativeCoordinates,
   useProjectText,
   useRunTool,
 } from "@fabdesk/client-core";
 import { newChatDraftKey, useUiStore } from "../stores/ui";
+import { NativePartTools } from "./NativePartTools";
 import { PcbPreviewStatus } from "./PcbPreviewStatus";
 import { CommentPins } from "./CommentPins";
 import { SvgViewer } from "./SvgViewer";
@@ -38,17 +41,19 @@ export function svgArtifactCopy(kind: "schematic" | "pcb") {
   };
 }
 
-/** PCB SVG user units are millimetres; copy them so ask-agent prompts include Near (mm). */
+/** Only exporter-verified native coordinates can be sent as PCB millimetres. */
 export function commentPinAnchor(
   view: CommentView,
   point: SvgPoint,
   fields: { ref?: string; net?: string; pad?: string } = {},
+  nativeCoordinates = true,
 ) {
   return {
     view,
     x: point.x,
     y: point.y,
-    ...(view === "pcb" ? { xMm: point.x, yMm: point.y } : {}),
+    ...(view === "pcb" ? { coordinateSystem: nativeCoordinates ? "kicad-pcb-mm" as const : "svg" as const } : {}),
+    ...(view === "pcb" && nativeCoordinates ? { xMm: point.x, yMm: point.y } : {}),
     ...(fields.ref ? { ref: fields.ref } : {}),
     ...(fields.net ? { net: fields.net } : {}),
     ...(fields.pad ? { pad: fields.pad } : {}),
@@ -63,6 +68,13 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
   const projectId = useUiStore((s) => s.activeProjectId);
   const project = useProject(projectId);
   const rendered = useProjectText(projectId, `renders/${kind}.svg`);
+  const nativeCoordinates = kind === "pcb" && pcbSvgHasNativeCoordinates(rendered.data ?? "");
+  const previousFrame = useRef(nativeCoordinates);
+  const revision = usePcbPreviewRevision(projectId, canvasMode && kind === "pcb" && !!rendered.data);
+  useEffect(() => {
+    if (previousFrame.current !== nativeCoordinates) { setCanvasPoint(null); setDraftPoint(null); setSelectedId(null); }
+    previousFrame.current = nativeCoordinates;
+  }, [nativeCoordinates]);
   const render = useRunTool();
   const comments = useBoardComments(projectId);
   const { pin, patch } = useBoardCommentMutations(projectId);
@@ -77,7 +89,7 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
   const [asking, setAsking] = useState(false);
   const [askError, setAskError] = useState<string | null>(null);
 
-  useEffect(() => { setCanvasPoint(null); }, [projectId, kind, rendered.data]);
+  useEffect(() => { setCanvasPoint(null); }, [projectId, kind]);
   const view = kind as CommentView;
   const pins = useMemo(
     () => (comments.data?.comments ?? []).filter((comment) => comment.anchor.view === view),
@@ -143,7 +155,7 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
         ...(ref.trim() ? { ref: ref.trim() } : {}),
         ...(net.trim() ? { net: net.trim() } : {}),
         ...(pad.trim() ? { pad: pad.trim() } : {}),
-      }),
+      }, nativeCoordinates),
     });
     setSelectedId(created.comment.id);
     resetCompose();
@@ -169,7 +181,7 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
   if (rendered.data) {
     return (
       <div className="relative flex h-full min-h-0" data-testid={`board-${kind}-svg`} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); if (canvasPoint) setCanvasPoint(null); else if (selected || draftPoint || commentMode) closeComments(); } }}>
-        {canvasMode && kind === "pcb" && <PcbPreviewStatus projectId={projectId} busy={render.state.status === "running"} error={render.state.error ?? null} onUpdate={() => void render.run(RENDER_TOOL.pcb, { projectId })} />}
+        {canvasMode && kind === "pcb" && <PcbPreviewStatus projectId={projectId} coordinatesVerified={nativeCoordinates} busy={render.state.status === "running"} error={render.state.error ?? null} onUpdate={() => void render.run(RENDER_TOOL.pcb, { projectId })} />}
         <div className="min-w-0 flex-1">
           <SvgViewer
             svg={rendered.data}
@@ -180,22 +192,23 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
               else setCanvasPoint(point);
             } } : {})}
             overlay={(box) => <>
-              <CommentPins comments={pins} box={box} selectedId={selectedId} draftPoint={draftPoint}
+              <CommentPins nativePcbCoordinates={nativeCoordinates} comments={pins} box={box} selectedId={selectedId} draftPoint={draftPoint}
                 onSelect={(id) => { setSelectedId(id); setDraftPoint(null); setCanvasPoint(null); }} />
               {canvasMode && canvasPoint && box && !commentMode && <div data-canvas-tools className="fd-location-anchor" style={{ left: `${(canvasPoint.x - box.x) / box.width * 100}%`, top: `${(canvasPoint.y - box.y) / box.height * 100}%` }}>
                 <span className="fd-location-marker" />
                 <div className="fd-location-toolbar" style={{ transform: `translateX(${(canvasPoint.x - box.x) / box.width < .25 ? "0" : (canvasPoint.x - box.x) / box.width > .75 ? "-100%" : "-50%"})` }} aria-label="Selected drawing location">
-                  <span>{kind === "pcb" ? `${canvasPoint.x.toFixed(1)}, ${canvasPoint.y.toFixed(1)} mm` : "Drawing location"}</span>
+                  <span>{nativeCoordinates ? `${canvasPoint.x.toFixed(1)}, ${canvasPoint.y.toFixed(1)} mm` : "Drawing location"}</span>
                   <Button variant="ghost" size="sm" onClick={() => {
                     const ui = useUiStore.getState();
                     const key = ui.activeThreadId ?? newChatDraftKey(ui.activeProjectId);
-                    const prompt = `Explain this ${kind === "pcb" ? "PCB" : "schematic"} location near ${canvasPoint.x.toFixed(2)}, ${canvasPoint.y.toFixed(2)}${kind === "pcb" ? " mm" : " SVG units"}.`;
+                    const prompt = `Explain this ${kind === "pcb" ? "PCB" : "schematic"} location near ${canvasPoint.x.toFixed(2)}, ${canvasPoint.y.toFixed(2)}${nativeCoordinates ? " native PCB mm" : kind === "pcb" ? " drawing units (PCB origin not verified)" : " SVG units"}.`;
                     const existing = ui.drafts[key] ?? "";
                     ui.setDraft(key, existing.trim() ? `${existing}\n\n${prompt}` : prompt);
                     ui.focusComposer();
                     setCanvasPoint(null);
                   }}><Icon name="sparkles" width={15} height={15} />Ask about this</Button>
                   <Button variant="ghost" size="sm" onClick={() => { setDraftPoint(canvasPoint); setCanvasPoint(null); setSelectedId(null); setCommentMode(true); }}><Icon name="pin" width={15} height={15} />Pin comment</Button>
+                  {kind === "pcb" && <NativePartTools projectId={projectId} point={canvasPoint} canPosition={nativeCoordinates && revision.data === "matches-source"} openAbove={(canvasPoint.y - box.y) / box.height > .5} onMoved={setCanvasPoint} />}
                   <IconButton size="sm" title="Deselect location" onClick={() => setCanvasPoint(null)}><Icon name="close" width={15} height={15} /></IconButton>
                 </div>
               </div>}
@@ -285,6 +298,7 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
                 <div className="text-[11px] font-semibold uppercase tracking-[0.09em] text-muted">
                   {commentAnchorLabel(selected.anchor)}
                 </div>
+                {kind === "pcb" && !commentMillimetrePoint(selected.anchor) && <p className="text-xs text-warning">This pin’s PCB origin is unverified. Confirm its location on an updated preview before using it for native edits.</p>}
                 <div className="text-[13px] font-medium">{selected.question}</div>
                 {selected.answer ? (
                   <p className="text-[12.5px] leading-relaxed text-fg/90">{selected.answer}</p>

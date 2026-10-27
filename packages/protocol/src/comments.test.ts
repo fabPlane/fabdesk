@@ -51,7 +51,7 @@ describe("board comments protocol", () => {
   test("ask prompt includes Near (mm) when the pin stores millimetres", () => {
     const prompt = buildCommentAskPrompt({
       ...pin,
-      anchor: { view: "pcb", x: 12.4, y: 8, xMm: 12.4, yMm: 8 },
+      anchor: { view: "pcb", coordinateSystem: "kicad-pcb-mm", x: 12.4, y: 8, xMm: 12.4, yMm: 8 },
     });
     expect(prompt).toContain("Near (mm): 12.4, 8");
   });
@@ -63,4 +63,11 @@ describe("board comments protocol", () => {
     expect(BoardComment.safeParse({ ...pin, id: "cmt_" }).success).toBe(false);
     expect(BoardComment.safeParse({ ...pin, id: `cmt_${"a".repeat(80)}` }).success).toBe(false);
   });
+});
+
+
+test("legacy mixed drawing/mm anchors do not silently become native placement targets", () => {
+  const prompt = buildCommentAskPrompt({ id: "cmt_legacy", createdAt: "now", updatedAt: "now", author: "local", status: "open", question: "Check this point", anchor: { view: "pcb", x: 7.5, y: 7.5, xMm: 7.5, yMm: 7.5 } });
+  expect(prompt).not.toContain("Near (mm)");
+  expect(prompt).toContain("drawing origin is unverified");
 });
