@@ -344,3 +344,11 @@ UI typecheck and all **223 UI tests** pass. The complete suite at the preceding 
 ![Contextual board tools at minimum window size](overview-compact-tools.png)
 ![Live warning at minimum window size](overview-compact-source-warning.png)
 ![Empty project overview entry](overview-new-project.png)
+
+## Assembly membership in agent context
+
+`project_status` now exposes explicit assembly sources, instances, links, provenance and inspected source hashes to the agent. Root native/build/release/DRC facts are qualified as project-root data; available source files are not described as compatible. Invalid or dangling declarations preserve an unavailable membership section instead of silently becoming an ordinary root board. Legacy single-board status remains unchanged.
+
+An authenticated running-app walkthrough used copies of two actual native test boards, three physical instances and one unverified illustrative link. It returned exactly two declared sources, omitted an archived PCB, matched both source hashes, and exposed the same membership through agent status. An invalid manifest returned HTTP 400 for inspection and unavailable membership for status. Source originals were unchanged and the valid declaration was restored. This tests context/ownership inspection, not multi-board editing or cable correctness.
+
+All **411 tool tests** and tool typecheck pass, including three assembly-context regressions and the existing registry/MCP/HTTP coverage. The full standard suite was green at the preceding source-inspection milestone (2,088 / 28 skips / zero failures); these three new tests were also exercised in the tool suite.

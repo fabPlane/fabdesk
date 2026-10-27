@@ -5,9 +5,9 @@ import {
 } from "../task-checkpoints";
 /** Core toolset: always loaded. */
 import { createHash } from "node:crypto";
-import { readFile, readdir, unlink } from "node:fs/promises";
+import { readFile, readdir, lstat, unlink } from "node:fs/promises";
 import { z } from "zod/v4";
-import type { FpPcbBoardSpec, NetlistFile } from "@fabdesk/protocol";
+import { ASSEMBLY_MANIFEST_PATH, type ProjectBoardSources, type FpPcbBoardSpec, type NetlistFile } from "@fabdesk/protocol";
 import { PROJECT_FILES, exists, mtimeMs, readJsonOrNull, writeJson } from "../fs";
 import {
   ToolError,
@@ -31,6 +31,7 @@ import {
 } from "./common";
 import { formatLastRelease, readProjectStatusEvidence } from "./project-status-evidence";
 import { ROUTE_RUN_DEFAULT_WAIT_MS, ROUTE_RUN_MAX_WAIT_MS, runRoute, RouteRunArgs } from "./route";
+import { inspectProjectBoardSources } from "../assembly";
 import { compilerSourceHelp, formatCompilerSourceHelp } from "./compiler-source-guide";
 
 export const load_toolset = defineTool({
@@ -151,7 +152,7 @@ export const project_status = defineTool({
   toolset: "core",
   title: "Project status",
   description:
-    "Summarise the selected project: directory, board settings, native KiCad files, latest source/compiler build, persisted release evidence and staleness, route and verification state, sketches, and reports. Does not run ERC, DRC, or release.",
+    "Summarise the selected project: directory, board settings, native KiCad files, latest source/compiler build, persisted release evidence and staleness, route and verification state, sketches, reports, and explicitly declared assembly board sources/instances/connections. Assembly source availability is not compatibility evidence. Does not run ERC, DRC, or release.",
   inputSchema: {},
   annotations: {
     readOnlyHint: true,
@@ -162,6 +163,18 @@ export const project_status = defineTool({
   handler: async (_args, ctx) => {
     const project = ctx.requireProject();
     const manifest = project.manifest();
+    let assembly: { status: "inspected"; membership: ProjectBoardSources; editing: "unavailable" } | { status: "unavailable"; reason: string; editing: "unavailable" } | null = null;
+    let declaredAssembly = false;
+    try {
+      // lstat sees dangling declarations too; an unsafe manifest cannot silently become a root board.
+      await lstat(p(project, ASSEMBLY_MANIFEST_PATH));
+      declaredAssembly = true;
+      const membership = await inspectProjectBoardSources(project);
+      if (membership.mode !== "assembly") throw new Error("Assembly declaration changed during inspection");
+      assembly = { status: "inspected", membership, editing: "unavailable" };
+    } catch (error) {
+      if (declaredAssembly || (error as NodeJS.ErrnoException)?.code !== "ENOENT") assembly = { status: "unavailable", reason: "Assembly membership could not be verified. Inspect fabplane.assembly.json; project-root status does not describe its member boards.", editing: "unavailable" };
+    }
     const files: Record<string, { exists: boolean; mtime?: string }> = {};
     for (const rel of [PROJECT_FILES.boardPro, PROJECT_FILES.boardSch, PROJECT_FILES.boardPcb, PROJECT_FILES.projectParts]) {
       const m = await mtimeMs(p(project, rel));
@@ -190,6 +203,7 @@ export const project_status = defineTool({
       id: project.id,
       name: project.name,
       dir: project.dir,
+      ...(assembly ? { assembly, nativeStatusScope: "project-root" } : {}),
       board: manifest.board,
       router: manifest.router === "capacity" ? "fab_router" : (manifest.router ?? "auto"),
       files,
@@ -208,18 +222,21 @@ export const project_status = defineTool({
     };
     const lines = [
       `Project "${project.name}" (${project.id}) at ${project.dir}`,
-      `Board: ${manifest.board.layers} layers${manifest.board.widthMm ? `, ${manifest.board.widthMm}×${manifest.board.heightMm ?? "?"} mm` : ""}; router: ${manifest.router === "capacity" ? "fab_router" : (manifest.router ?? "freerouting (default; fab_router fallback)")}`,
-      `Files: ${Object.entries(files)
+      ...(assembly ? [assembly.status === "inspected"
+        ? `Assembly instances: ${assembly.membership.assembly!.instances.length}; source boards: ${assembly.membership.sources.length}; declared connections: ${assembly.membership.assembly!.connections.length}. Source files available: ${assembly.membership.sources.filter(source => source.status === "available").length}/${assembly.membership.sources.length}. Geometry, schematic parity and connection compatibility are unverified. Native assembly-member editing is unavailable. Remaining native status below describes only the project root.`
+        : assembly.reason] : []),
+      `${assembly ? "Root project defaults" : "Board"}: ${manifest.board.layers} layers${manifest.board.widthMm ? `, ${manifest.board.widthMm}×${manifest.board.heightMm ?? "?"} mm` : ""}; router: ${manifest.router === "capacity" ? "fab_router" : (manifest.router ?? "freerouting (default; fab_router fallback)")}`,
+      `${assembly ? "Root files" : "Files"}: ${Object.entries(files)
         .map(([k, v]) => `${k}=${v.exists ? "yes" : "no"}`)
         .join(", ")}`,
       `Sketches: ${sketches.length ? sketches.join(", ") : "none"}`,
       `Last source/compiler build: ${lastSourceBuild ? `${lastSourceBuild.ok ? "ok" : "FAILED"} (${lastSourceBuild.errors} errors, ${lastSourceBuild.warnings} warnings, captured ${lastSourceBuild.at})` : "never"}`,
-      `Last release: ${formatLastRelease(lastRelease)}`,
+      `${assembly ? "Root last release" : "Last release"}: ${formatLastRelease(lastRelease)}`,
       taskComparisonError
         ? `Task baseline comparison unavailable: ${taskComparisonError}`
         : taskCheckpointText(taskComparison),
       `Last route: ${route ? `${route.status} (${route.result ? `${route.result.open.length} open` : "no result"})` : "never"}`,
-      `Last DRC: ${drc ? `${drc.counts.errors} errors, ${drc.counts.warnings} warnings, ${drc.counts.unconnected} unconnected` : "never"}`,
+      `${assembly ? "Root last DRC" : "Last DRC"}: ${drc ? `${drc.counts.errors} errors, ${drc.counts.warnings} warnings, ${drc.counts.unconnected} unconnected` : "never"}`,
     ];
     return ok(lines.join("\n"), json);
   },
