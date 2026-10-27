@@ -1,4 +1,4 @@
-import { PCB_SVG_COORDINATE_SYSTEM, PcbPartPosition, PcbInspectionCoordinateSystem, type PcbPartInspection } from "@fabdesk/protocol";
+import { BoardSourceSelection, PCB_SVG_COORDINATE_SYSTEM, PcbPartPosition, PcbInspectionCoordinateSystem, type PcbPartInspection } from "@fabdesk/protocol";
 import type { CoreClient } from "./CoreClient";
 
 const record = (value: unknown): Record<string, unknown> | null => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
@@ -10,6 +10,15 @@ export function pcbToolJson(value: unknown): Record<string, unknown> {
   if (!body) throw new Error("The native operation returned no usable data.");
   return body;
 }
+/** A scoped result must echo the owner; legacy/root responses cannot drive member controls. */
+export function pcbToolJsonForSource(value: unknown, projectId: string, board?: BoardSourceSelection): Record<string, unknown> {
+  const body = pcbToolJson(value);
+  if (board) {
+    const owner = record(body._board);
+    if (owner?.projectId !== projectId || owner.sourceId !== board.sourceId || owner.manifestSha256 !== board.manifestSha256) throw new Error("This result does not belong to the selected board source. Select the board again.");
+  }
+  return body;
+}
 export function parsePcbPartInspection(value: unknown): PcbPartInspection {
   const body = pcbToolJson(value), contract = record(body.contract), results = record(body.results), components = record(results?.components);
   if (contract?.name !== "fabdesk.pcb-inspection" || contract.version !== "2.0.0" || !PcbInspectionCoordinateSystem.safeParse(body.coordinateSystem).success || typeof body.revision !== "string" || !/^[a-f0-9]{64}$/.test(body.revision) || !Array.isArray(components?.rows)) throw new Error("A saved PCB inspection is required before positioning parts.");
@@ -17,8 +26,9 @@ export function parsePcbPartInspection(value: unknown): PcbPartInspection {
   if (new Set(parts.map((part) => part.ref)).size !== parts.length) throw new Error("Duplicate part references need resolving before positioning parts.");
   return { sourceSha256: body.revision, parts, truncated: components.truncated === true };
 }
-export async function inspectPcbParts(client: Pick<CoreClient, "callTool">, projectId: string, query: { near?: { x: number; y: number; radius: number }; reference?: string }): Promise<PcbPartInspection> {
-  return parsePcbPartInspection(await client.callTool("pcb_inspect", { projectId, kinds: ["components"], limitPerKind: 200, ...(query.near ? { near: query.near } : {}), ...(query.reference ? { references: [query.reference] } : {}) }));
+export async function inspectPcbParts(client: Pick<CoreClient, "callTool">, projectId: string, query: { near?: { x: number; y: number; radius: number }; reference?: string }, board?: BoardSourceSelection): Promise<PcbPartInspection> {
+  const selector = board ? Object.freeze(BoardSourceSelection.parse(board)) : undefined;
+  return parsePcbPartInspection(pcbToolJsonForSource(await client.callTool("pcb_inspect", { projectId, ...(selector ? { board: selector } : {}), kinds: ["components"], limitPerKind: 200, ...(query.near ? { near: { ...query.near } } : {}), ...(query.reference ? { references: [query.reference] } : {}) }), projectId, selector));
 }
 export function parsePartPositionInput(input: { x: string; y: string; rotation: string }): { x: number; y: number; rotation: number } | null {
   if (Object.values(input).some((value) => !value.trim())) return null;

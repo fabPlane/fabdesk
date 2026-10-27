@@ -1,6 +1,6 @@
-import { PcbOutlineSegment, PcbInspectionCoordinateSystem, type PcbOutlineInspection } from "@fabdesk/protocol";
+import { BoardSourceSelection, PcbOutlineSegment, PcbInspectionCoordinateSystem, type PcbOutlineInspection } from "@fabdesk/protocol";
 import type { CoreClient } from "./CoreClient";
-import { pcbToolJson } from "./pcb-parts";
+import { pcbToolJson, pcbToolJsonForSource } from "./pcb-parts";
 const record = (value: unknown): Record<string, unknown> | null => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
 
 /** Only a complete unlocked native rectangle, identified by its original IDs, supports dimensions. */
@@ -34,8 +34,9 @@ export function parsePcbOutlineInspection(value: unknown): PcbOutlineInspection 
 }
 // PCB inspection v2 uses native BoardLayer enum 47 for Edge.Cuts. Its string alias
 // is not normalized by older spatial providers; using the explicit enum avoids an empty result.
-export async function inspectPcbOutline(client: Pick<CoreClient, "callTool">, projectId: string): Promise<PcbOutlineInspection> {
-  return parsePcbOutlineInspection(await client.callTool("pcb_inspect", { projectId, kinds: ["board_geometry"], layers: [47], limitPerKind: 200 }));
+export async function inspectPcbOutline(client: Pick<CoreClient, "callTool">, projectId: string, board?: BoardSourceSelection): Promise<PcbOutlineInspection> {
+  const selector = board ? Object.freeze(BoardSourceSelection.parse(board)) : undefined;
+  return parsePcbOutlineInspection(pcbToolJsonForSource(await client.callTool("pcb_inspect", { projectId, ...(selector ? { board: selector } : {}), kinds: ["board_geometry"], layers: [47], limitPerKind: 200 }), projectId, selector));
 }
 export function resizedOutlinePoints(bounds: PcbOutlineInspection["bounds"], width: string, height: string): { x: number; y: number }[] | null {
   if (!width.trim() || !height.trim()) return null;

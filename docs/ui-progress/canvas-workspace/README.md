@@ -417,3 +417,24 @@ The installed KiCad registry/context integration test used two independent sourc
 **Two installed-native tests passed, 34 assertions.** The focused source/transport/status set passed 22 tests / 117 assertions. Root typecheck passed. The complete standard suite passes **2,124 tests / 30 skips / zero failures** (core 553 passed / 28 native-environment skips; client 215, tools 415, UI 223). The installed-native tests were run separately; their skipped ordinary-suite entries are not counted as native passes. An initial broad run found an HTTP assertion still expecting the earlier single-board-only assembly mode; its expectation was updated to the new limited explicit-source capability.
 
 The canvas member inspector remains read-only. Client queries, preview coordinates, action ownership and review anchors must carry the captured source before native editing controls are exposed. Other member workflows, native replacement, undo/recovery UX and compatibility validation remain unfinished. No source in the real VAIO study was edited by this increment, and it does not establish DRC, routing safety or chassis fit.
+
+
+## Source-bound member canvas editing controls
+
+Selecting a board opens one source-bound canvas. Only clicking a verified native PCB location reveals Parts and Board size; secondary tools remain closed by default. Part/outline inspection keys, saved-source guards, mutation confirmations and preview regeneration carry the captured source and manifest SHA. Root/older or mismatched responses cannot become facts for a member. A source’s initial empty outline cannot fall through to unsupported root creation, and locked/complex native boundaries remain read-only with their actual reason.
+
+The physical app walkthrough used the owned two-source fixture, not real VAIO files. A keyboard R1 proposal left files unchanged; Apply saved X 105 → 105.1 mm only in I/O and refreshed its matching preview. A physical corner drag proposed 20 × 15 mm without writing; Apply resized the original 15 × 15 mm rectangle while keeping the edge ID and native (100, 95) minimum corner. Placed components, pads and routed copper stayed identical during resize. Carrier files and parent metadata stayed byte-identical throughout. Both I/O instances showed the shared updated source. Switching to carrier began with no selected part and its own original R1 coordinate, not the I/O form state.
+
+Changing manifest membership disabled a pending carrier Apply while preserving X 105.1 in the form; the carrier file stayed unchanged. Ask prepared an unsent draft naming assembly source carrier. Member post-save guidance no longer navigates to unrelated root checks, and root comment anchors are not reused. All fixture PCB/manifest/preview/receipt bytes were restored. A subsequent native inspection returned the original I/O R1 position and 15 × 15 mm geometry, confirming it did not retain stale edited-session facts. The window was restored to 1440 × 870 with secondary tools closed.
+
+The compact-window check found that popup placement could use geometry from before the SVG finished fitting. Observing the drawing’s final size fixes that timing issue. An actual wide → 960 × 720 round trip kept the popup within the window, clear of the native drag target, with no horizontal overflow. [Native UI evidence and restored hashes](member-controls-native.json).
+
+Root typecheck and the full standard suite pass **2,127 tests / 30 skips / zero failures**. Sixteen focused part/outline/source helper tests pass (61 assertions), including immutable captured selectors, response ownership rejection and legacy single-board behavior. After refining locked/complex rejection copy, the final UI typecheck and all 223 UI tests passed. Native replacement, member checks/comments/schematic/3D/CAD, persistent board-workspace selection and undo/recovery UX remain unfinished. No compatibility, DRC or fit pass is implied.
+
+![Member placement proposal](member-position-proposal.png)
+![Member position saved](member-position-saved.png)
+![Physical member resize proposal](member-resize-proposal.png)
+![Native member resize saved](member-resize-saved.png)
+![Shared design overview updated](member-shared-updated.png)
+![Stale membership keeps unsaved fields](member-stale-selection.png)
+![Compact tools clear of the drag target](member-compact-tools.png)

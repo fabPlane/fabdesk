@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import type { ProjectBoardSources } from "@fabdesk/protocol";
-import { assemblyLinkShape, assemblyScene, assemblySourcesToReview, assemblySelectionState, captureAssemblySelection, useAssemblyBoardInspection, useAssemblyPreviewRevisions, usePcbPreviewRevision, useProjectText, useRunTool, type AssemblySceneNode, type AssemblySceneSelection } from "@fabdesk/client-core";
+import type { BoardSourceSelection, ProjectBoardSources } from "@fabdesk/protocol";
+import { pcbSvgHasNativeCoordinates, assemblyLinkShape, assemblyScene, assemblySourcesToReview, assemblySelectionState, captureAssemblySelection, useAssemblyBoardInspection, useAssemblyPreviewRevisions, usePcbPreviewRevision, useProjectText, useRunTool, type AssemblySceneNode, type AssemblySceneSelection } from "@fabdesk/client-core";
 import { useProjectBlobUrl } from "../hooks/queries";
 import { Button, EmptyState, LoadError, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { SvgViewer } from "../board/SvgViewer";
+import { NativePartTools } from "../board/NativePartTools";
 import { parseSvgViewBox } from "../board/svg-coords";
 import { ProjectImage } from "../chat/ProjectImage";
 import { newChatDraftKey, useUiStore } from "../stores/ui";
@@ -160,6 +161,9 @@ export function AssemblyOverview({ projectId, name, data, checking, failed, onRe
 function AssemblyBoardDetail({ projectId, detail, current, checking, failed, onBack }: { projectId: string; detail: Detail; current: ProjectBoardSources; checking: boolean; failed: boolean; onBack: () => void }) {
   const owned = assemblySelectionState(current, detail.selection) === "owned", enabled = owned && !checking && !failed;
   const update = useRunTool(), updating = update.state.status === "running";
+  const [nativeBusy, setNativeBusy] = useState(false), busyRef = useRef(false);
+  const onNativeBusy = (value: boolean) => { busyRef.current = value; setNativeBusy(value); };
+  const editing = current.editing === "explicit-source-tools";
   const board = { sourceId: detail.selection.sourceId, manifestSha256: detail.selection.manifestSha256 };
   const inspection = useAssemblyBoardInspection(projectId, board, enabled);
   const source = current.sources.find(row => row.source.id === detail.selection.sourceId);
@@ -169,10 +173,28 @@ function AssemblyBoardDetail({ projectId, detail, current, checking, failed, onB
   const bounds = inspection.data?.outlineBounds;
   const sourceNote = !owned ? "Project definition changed. Return to the overview and select this board again." : failed ? "Could not refresh project ownership. Recheck the overview before inspecting." : previewCopy(revision.data, revision.isFetching || checking, revision.isError, !!previewPath);
   return <div className="fd-assembly-detail" data-testid="assembly-board-detail">
-    <div className="fd-assembly-detail-heading"><Button size="sm" variant="ghost" onClick={onBack}>← All boards</Button><strong>{detail.instanceName}</strong><span>Read-only PCB</span><Button size="sm" variant="ghost" disabled={!enabled} onClick={() => askAbout(projectId, detail.instanceName, true)}>Ask about this board</Button></div>
-    <div className="fd-assembly-detail-status"><span data-warning={!owned || failed || ["source-changed", "artifact-changed"].includes(revision.data ?? "")}>{sourceNote}</span>{owned && (updating || !previewPath || revision.data !== "matches-source") && <Button size="sm" variant="ghost" disabled={!enabled || updating || revision.isFetching} onClick={() => void update.run("render_pcb_svg", { projectId, board })}>{updating ? "Updating preview…" : previewPath ? "Update preview" : "Create preview"}</Button>}{inspection.isFetching ? <span>Inspecting native source…</span> : inspection.isError ? <Button size="sm" variant="ghost" disabled={!enabled} onClick={() => void inspection.refetch()}>Could not inspect source · Retry</Button> : owned && !failed && inspection.data && <span>{inspection.data.partCount} parts{bounds ? ` · ${+(bounds.maxX - bounds.minX).toFixed(3)} × ${+(bounds.maxY - bounds.minY).toFixed(3)} mm` : " · outline dimensions unverified"}</span>}</div>
-    {preview.isError ? <LoadError title="Could not load this board’s saved preview" onRetry={() => void preview.refetch()} /> : previewPath && preview.isPending ? <div className="flex h-full items-center justify-center"><Spinner /></div> : preview.data ? parseSvgViewBox(preview.data) ? <SvgViewer svg={preview.data} viewKey={`${projectId}/${detail.selection.sourceId}/${detail.directory}`} /> : <div className="fd-assembly-safe-preview"><ProjectImage projectId={projectId} path={previewPath!} alt={`${detail.instanceName} saved PCB preview`} /><p>Saved preview · drawing coordinates unverified</p></div> : <EmptyState title="No saved PCB preview">Create a preview to see this saved board here. Its native source details appear above.</EmptyState>}
+    <div className="fd-assembly-detail-heading"><Button size="sm" variant="ghost" disabled={nativeBusy} onClick={() => { if (!busyRef.current) onBack(); }}>← All boards</Button><strong>{detail.instanceName}</strong><span>{editing ? "PCB" : "Read-only PCB"}</span><Button size="sm" variant="ghost" disabled={!enabled} onClick={() => askAbout(projectId, detail.instanceName, true)}>Ask about this board</Button></div>
+    <div className="fd-assembly-detail-status"><span data-warning={!owned || failed || ["source-changed", "artifact-changed"].includes(revision.data ?? "")}>{sourceNote}</span>{owned && (updating || !previewPath || revision.data !== "matches-source") && <Button size="sm" variant="ghost" disabled={!enabled || updating || nativeBusy || revision.isFetching} onClick={() => void update.run("render_pcb_svg", { projectId, board })}>{updating ? "Updating preview…" : previewPath ? "Update preview" : "Create preview"}</Button>}{inspection.isFetching ? <span>Inspecting native source…</span> : inspection.isError ? <Button size="sm" variant="ghost" disabled={!enabled} onClick={() => void inspection.refetch()}>Could not inspect source · Retry</Button> : owned && !failed && inspection.data && <span>{inspection.data.partCount} parts{bounds ? ` · ${+(bounds.maxX - bounds.minX).toFixed(3)} × ${+(bounds.maxY - bounds.minY).toFixed(3)} mm` : " · outline dimensions unverified"}</span>}</div>
+    {preview.isError ? <LoadError title="Could not load this board’s saved preview" onRetry={() => void preview.refetch()} /> : previewPath && preview.isPending ? <div className="flex h-full items-center justify-center"><Spinner /></div> : preview.data ? parseSvgViewBox(preview.data) ? <AssemblyPcbDrawing key={`${projectId}/${board.sourceId}/${board.manifestSha256}`} projectId={projectId} board={board} directory={detail.directory} svg={preview.data} canSelect={editing && enabled} canPosition={editing && enabled && !updating && revision.data === "matches-source" && !revision.isFetching && !revision.isError} onBusyChange={onNativeBusy} /> : <div className="fd-assembly-safe-preview"><ProjectImage projectId={projectId} path={previewPath!} alt={`${detail.instanceName} saved PCB preview`} /><p>Saved preview · drawing coordinates unverified</p></div> : <EmptyState title="No saved PCB preview">Create a preview to see this saved board here. Its native source details appear above.</EmptyState>}
     {update.state.error && <p role="alert" className="fd-assembly-detail-error">{update.state.error}</p>}
     <p className="fd-assembly-detail-note">Source: {detail.sourceName}{owned && (current.assembly?.instances.filter(instance => instance.sourceId === detail.selection.sourceId).length ?? 0) > 1 ? ` · Shared by ${current.assembly!.instances.filter(instance => instance.sourceId === detail.selection.sourceId).length} boards` : ""} · Schematic, connection and fit checks unverified</p>
   </div>;
+}
+
+
+/** Source-bound location tools; member comments are deliberately absent until anchors carry a source. */
+function AssemblyPcbDrawing({ projectId, board, directory, svg, canPosition, canSelect, onBusyChange }: { projectId: string; board: BoardSourceSelection; directory: string; svg: string; canPosition: boolean; canSelect: boolean; onBusyChange: (busy: boolean) => void }) {
+  const [point, setPoint] = useState<{ x: number; y: number } | null>(null), [busy, setBusy] = useState(false);
+  const busyRef = useRef(false), nativeCoordinates = pcbSvgHasNativeCoordinates(svg);
+  const mutationBusy = (value: boolean) => { busyRef.current = value; setBusy(value); onBusyChange(value); };
+  return <SvgViewer svg={svg} viewKey={`${projectId}/${board.sourceId}/${directory}`}
+    {...(canSelect && nativeCoordinates ? { onDrawingClick: (next: { x: number; y: number }) => { if (!busyRef.current) setPoint(next); } } : {})}
+    overlay={box => point && box && <div data-canvas-tools className="fd-location-anchor" style={{ left: `${(point.x - box.x) / box.width * 100}%`, top: `${(point.y - box.y) / box.height * 100}%` }}>
+      <span className="fd-location-marker" />
+      <div className="fd-location-toolbar" aria-label="Selected board source location" style={{ transform: `translateX(${(point.x - box.x) / box.width < .25 ? "0" : (point.x - box.x) / box.width > .75 ? "-100%" : "-50%"})` }}>
+        <span>{point.x.toFixed(1)}, {point.y.toFixed(1)} mm</span>
+        <NativePartTools board={board} projectId={projectId} point={point} box={box} canPosition={canPosition && nativeCoordinates} openAbove={(point.y - box.y) / box.height > .5} onMoved={setPoint} onMutationBusyChange={mutationBusy} />
+        <button className="fd-assembly-dismiss" disabled={busy} aria-label="Deselect board source location" onClick={() => { if (!busyRef.current) setPoint(null); }}><Icon name="close" width={15} height={15} /></button>
+      </div>
+    </div>} />;
 }

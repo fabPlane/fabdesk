@@ -958,14 +958,14 @@ export function useEnclosureSourceRevision(projectId: string | null, enabled = t
   return useQuery({ queryKey: ["enclosure-source-revision", projectId], queryFn: () => inspectEnclosureSourceRevision(client, projectId!), enabled: !!projectId && enabled });
 }
 
-export function usePcbPartsNear(projectId: string, point: { x: number; y: number }, enabled: boolean) {
+export function usePcbPartsNear(projectId: string, point: { x: number; y: number }, enabled: boolean, board?: BoardSourceSelection) {
   const client = useCoreClient();
-  return useQuery({ queryKey: ["pcb-parts", projectId, point.x, point.y], queryFn: () => inspectPcbParts(client, projectId, { near: { ...point, radius: 5 } }), enabled });
+  return useQuery({ queryKey: board ? ["pcb-parts", projectId, "source", board.sourceId, board.manifestSha256, point.x, point.y] : ["pcb-parts", projectId, point.x, point.y], queryFn: () => inspectPcbParts(client, projectId, { near: { ...point, radius: 5 } }, board), enabled });
 }
 
-export function usePcbOutline(projectId: string, enabled: boolean) {
+export function usePcbOutline(projectId: string, enabled: boolean, board?: BoardSourceSelection) {
   const client = useCoreClient();
-  return useQuery({ queryKey: ["pcb-outline", projectId], queryFn: () => inspectPcbOutline(client, projectId), enabled });
+  return useQuery({ queryKey: board ? ["pcb-outline", projectId, "source", board.sourceId, board.manifestSha256] : ["pcb-outline", projectId], queryFn: () => inspectPcbOutline(client, projectId, board), enabled });
 }
 
 export function usePcbCheckRevision(projectId: string | null, enabled = true) {
