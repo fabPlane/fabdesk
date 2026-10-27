@@ -244,3 +244,9 @@
 
 .fd-location-anchor:has(.fd-native-part-control[data-mode=outline][data-open=true]) .fd-location-toolbar { visibility:hidden; pointer-events:none; }
 .fd-location-anchor:has(.fd-native-part-control[data-mode=outline][data-open=true]) .fd-location-marker { display:none; }
+
+.fd-board-model-status { display:flex; flex-direction:column; gap:3px; padding:10px 14px; border:1px solid var(--fd-border); border-radius:12px; background:var(--fd-panel); color:var(--fd-fg,inherit); font-size:12px; }
+.fd-board-model-status > span { color:var(--fd-muted); font-size:11px; }
+.fd-board-model-status[data-warning="true"] { border-color:var(--fd-warning); }
+.fd-board-model-status[data-warning="true"] > strong { color:var(--fd-warning); }
+.fd-board-model-status-floating { position:absolute; top:12px; left:28px; max-width:calc(100% - 320px); }

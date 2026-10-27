@@ -1,3 +1,4 @@
+import { inspectBoardModelRevision } from "./board-model-revision";
 import { inspectPcbCheckRevision } from "./check-revision";
 import { inspectPcbOutline } from "./pcb-outline";
 import { inspectPcbParts } from "./pcb-parts";
@@ -949,4 +950,10 @@ export function usePcbOutline(projectId: string, enabled: boolean) {
 export function usePcbCheckRevision(projectId: string | null, enabled = true) {
   const client = useCoreClient();
   return useQuery({ queryKey: ["pcb-check-revision", projectId], queryFn: () => inspectPcbCheckRevision(client, projectId!), enabled: !!projectId && enabled });
+}
+
+
+export function useBoardModelRevision(projectId: string | null, enabled = true) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["board-model-revision", projectId], queryFn: () => inspectBoardModelRevision(client, projectId!), enabled: !!projectId && enabled });
 }

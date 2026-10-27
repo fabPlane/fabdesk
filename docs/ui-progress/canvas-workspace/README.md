@@ -244,3 +244,16 @@ Validation: root typecheck; client-core 200, UI 221, protocol 87 and tools 398 t
 Component inspection now reports effective locking through ancestor groups as well as the footprint's own lock. Contextual positioning explains that the part or its group must be unlocked in KiCad. Native placement rejects geometry edits to members of locked groups before any mutation, including an attempted footprint-only unlock. A separately locked footprint can still be deliberately unlocked with the existing explicit `lock=false` tool option; unlocked groups do not block editing.
 
 Focused placement/revision/compatibility checks: 42 pass. Real KiCad tests create and save a locked group containing an unlocked R1, confirm inspection reports it locked, reject both movement attempts (with/without own unlock), and compare saved bytes and native coordinates unchanged. The existing imported resize save/reopen test also passes. Root typecheck, final core typecheck, UI221 and tools398 suites pass. Group-aware lock coverage does not replace clearance or full editor recovery validation.
+
+
+## Board model source tracking across canvas and Outputs
+
+Board → 3D and Outputs → Models & video share source identity warnings for the saved GLB. A qualified receipt compares both saved PCB and GLB SHA-256 bytes; a replaced model cannot inherit the prior receipt. Missing/legacy/invalid provenance stays unverified. Source equality says only that the PCB bytes are unchanged since export: external component models and physical fit remain explicitly unverified. No model regeneration or video creation is triggered by a change notification.
+
+GLB export now writes to a fresh temporary output, checks saved PCB bytes before/after the live export, and publishes the new model/receipt only after a successful write and source recheck. This also prevents an existing output from hiding a failed native exporter. The board remains in its real project during export so relative component model paths and project variables keep their resolution. Unlike the PCB SVG exporter, the GLB path does not render an immutable source snapshot, and external model changes during export are not qualified. Complete dependency tracking remains pending.
+
+Actual native verification generated a real GLB, matched its receipt to source/artifact bytes, then replaced a whitespace byte in the PCB while retaining size and mtime. Both the model canvas and Outputs warned; the model bytes stayed identical. Restoring the original PCB cleared the warning. Fixture source/model/receipt files and timestamps were restored afterward. Tests cover failed/missing exports and source changes preserving the prior model/receipt, legacy/invalid receipts, missing inputs, replaced outputs and transport failures. Root typecheck and tools402/client205/UI221/protocol87 suites pass.
+
+![Saved PCB unchanged since model export, with dependency limits](model-source-unchanged.png)
+![Live PCB change warns on the 3D canvas](model-source-changed.png)
+![The same warning follows the model into Outputs](outputs-model-source-warning.png)

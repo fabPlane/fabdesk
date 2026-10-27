@@ -179,3 +179,6 @@ export { inspectPcbCheckRevision, type PcbCheckRevisionState } from "./check-rev
 export { usePcbCheckRevision } from "./queries";
 
 export { snapNativePoint, nudgeNativePoint } from "./native-target";
+
+export * from "./board-model-revision";
+export { useBoardModelRevision } from "./queries";

@@ -1,3 +1,4 @@
+import { BoardModelStatus } from "./BoardModelStatus";
 import { lazy, Suspense, useMemo, useState } from "react";
 import { useCoreClient, useProject, useRunTool, useRunsStore } from "@fabdesk/client-core";
 import { Button, EmptyState, LoadError, Spinner } from "../components/ui";
@@ -69,6 +70,7 @@ export function ThreeDTab() {
 
   if (canvas) return <div className="fd-board-model-view">
     {glb ? <Suspense fallback={<div className="flex h-full items-center justify-center"><Spinner /></div>}><ModelCanvas key={`${projectId}:${GLB_PATH}`} projectId={projectId} path={GLB_PATH} /></Suspense> : <EmptyState title="See your board in 3D" action={<Button disabled={glbRun.state.status === "running"} onClick={() => void glbRun.run("glb", { projectId })}>{glbRun.state.status === "running" ? "Generating model…" : "Generate 3D preview"}</Button>}>Generate a model from your saved KiCad PCB. Components with available 3D models appear in the preview.</EmptyState>}
+    <BoardModelStatus projectId={projectId} present={!!glb} updating={glbRun.state.status === "running"} floating />
     <div className="fd-board-model-actions">
       {glb && <Button size="sm" disabled={glbRun.state.status === "running"} onClick={() => void glbRun.run("glb", { projectId })}>{glbRun.state.status === "running" ? "Updating…" : "Update model"}</Button>}
       <Button size="sm" onClick={() => { const ui = useUiStore.getState(); ui.setWorkspaceArea("outputs"); ui.setWorkspaceTab("3d"); }}>Video & downloads</Button>
@@ -79,6 +81,7 @@ export function ThreeDTab() {
   return (
     <ProductVideoPanel
       projectId={projectId}
+      modelStatus={<BoardModelStatus projectId={projectId} present={!!glb} updating={glbRun.state.status === "running"} />}
       glb={glb}
       videos={videos}
       poster={poster}

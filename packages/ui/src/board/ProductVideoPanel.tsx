@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { FileEntry } from "@fabdesk/protocol";
 import { Button, Select, Spinner } from "../components/ui";
 import { ProjectImage } from "../chat/ProjectImage";
@@ -41,6 +42,7 @@ export type ProductVideoForm = {
 };
 
 export type ProductVideoPanelProps = {
+  modelStatus?: ReactNode;
   projectId: string;
   glb: FileEntry | undefined;
   videos: FileEntry[];
@@ -71,6 +73,7 @@ export function pickPreview(videos: FileEntry[]): FileEntry | undefined {
 /** Presentational 3D-export + product-video surface. */
 export function ProductVideoPanel({
   projectId,
+  modelStatus,
   glb,
   videos,
   poster,
@@ -111,6 +114,7 @@ export function ProductVideoPanel({
             : "Needs renders/board.glb (exported automatically when you make a video)"}
         </span>
       </div>
+      {modelStatus}
       <div className="grid min-h-0 flex-1 grid-cols-1 overflow-auto lg:grid-cols-2">
         <form
           className="flex flex-col gap-3 border-b border-border p-3 lg:border-b-0 lg:border-r"

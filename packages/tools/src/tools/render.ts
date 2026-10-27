@@ -1,5 +1,6 @@
 /** Render toolset: schematic/PCB images, GLB, and product videos. */
 import { createHash } from "node:crypto";
+import { BoardModelRevision, BOARD_MODEL_REVISION_PATH } from "@fabdesk/protocol";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { z } from "zod/v4";
 import { tmpdir } from "node:os";
@@ -13,7 +14,7 @@ import {
   VIDEO_PRESETS,
   VIDEO_RESOLUTIONS,
 } from "@fabdesk/product-video";
-import { PROJECT_FILES, ensureDir, exists, mtimeMs, writeAtomic } from "../fs";
+import { PROJECT_FILES, ensureDir, exists, mtimeMs, writeAtomic, writeJson } from "../fs";
 import { ToolError, defineTool } from "../registry";
 import { fileUrl, loadNetlist, ok, p, requireBoard, requireKicad, requireSchematic } from "./common";
 import { pcbPreviewFileHash, recordPcbPreviewRevision } from "../pcb-preview-revision";
@@ -193,7 +194,21 @@ export const render_glb = defineTool({
     const board = await requireBoard(project);
     const output = p(project, PROJECT_FILES.renders, "board.glb");
     ctx.progress(0.2, "exporting glb");
-    const res = await ctx.services.kicad.exportGlb(cli, { board, output, signal: ctx.signal });
+    const sourceSha256 = await pcbPreviewFileHash(board);
+    const scratch = await mkdtemp(join(tmpdir(), "fabplane-board-model-"));
+    let res: { fused: boolean; warnings: string[] };
+    try {
+      // Keep the source in its real project so relative component models/project variables
+      // resolve normally. Only publish a newly written export, after rechecking saved PCB bytes.
+      const temporary = join(scratch, "board.glb");
+      res = await ctx.services.kicad.exportGlb(cli, { board, output: temporary, signal: ctx.signal });
+      if (await pcbPreviewFileHash(board) !== sourceSha256)
+        throw new ToolError("PCB changed while exporting the model. The previous model was kept; review the saved PCB and try again.", "precondition");
+      const bytes = await readFile(temporary);
+      const receipt = BoardModelRevision.parse({ contract: "fabplane.board-model-revision.v1", source: "board.kicad_pcb", artifact: "renders/board.glb", sourceSha256, artifactSha256: createHash("sha256").update(bytes).digest("hex"), generatedAt: new Date().toISOString(), dependencies: "unverified" });
+      await writeAtomic(output, bytes);
+      await writeJson(p(project, BOARD_MODEL_REVISION_PATH), receipt);
+    } finally { await rm(scratch, { recursive: true, force: true }); }
     ctx.progress(1, "done");
     const url = fileUrl(output);
     return ok(
