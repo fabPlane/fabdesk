@@ -186,3 +186,11 @@
 .fd-preview-status[data-state=changed] { color:var(--fd-warning); }
 .fd-preview-status p { max-width:380px; margin-top:8px; padding:10px; border-radius:8px; background:var(--fd-panel); color:var(--fd-warning); overflow-wrap:anywhere; }
 .fd-canvas-board-body:has([data-testid=comment-detail]) .fd-preview-status { right:calc(18rem + 12px); }
+.fd-board-model-view,.fd-model-canvas { position:relative; height:100%; min-height:0; }
+.fd-model-viewport { position:absolute; inset:0; }
+.fd-model-viewport canvas { display:block; width:100%; height:100%; outline-offset:-3px; }
+.fd-model-message { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); display:flex; align-items:center; flex-direction:column; gap:14px; max-width:440px; padding:22px; border-radius:12px; background:var(--fd-panel); text-align:center; }
+.fd-model-view-tools { position:absolute; left:28px; bottom:26px; display:flex; align-items:center; gap:15px; padding:7px 14px; border:1px solid var(--fd-border); border-radius:24px; background:var(--fd-panel); box-shadow:0 3px 10px #102a2010; }
+.fd-model-view-tools span { color:var(--fd-muted); font-size:11px; }
+.fd-board-model-actions { position:absolute; top:12px; right:28px; display:flex; gap:8px; }
+.fd-model-export-error { position:absolute; top:58px; right:28px; max-width:420px; max-height:180px; overflow:auto; padding:16px; border:1px solid var(--fd-border); border-radius:12px; color:var(--fd-warning); background:var(--fd-panel); font-size:12px; }

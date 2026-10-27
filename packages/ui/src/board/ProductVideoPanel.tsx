@@ -54,6 +54,9 @@ export type ProductVideoPanelProps = {
   exportError?: string;
   makeError?: string;
   onExportGlb: () => void;
+  onDownloadGlb?: () => void;
+  onPreviewGlb?: () => void;
+  downloading?: boolean;
   onMakeVideo: () => void;
 };
 
@@ -80,6 +83,9 @@ export function ProductVideoPanel({
   exportError,
   makeError,
   onExportGlb,
+  onDownloadGlb,
+  onPreviewGlb,
+  downloading,
   onMakeVideo,
 }: ProductVideoPanelProps) {
   const preview = pickPreview(videos);
@@ -97,6 +103,8 @@ export function ProductVideoPanel({
             "Generate 3D model"
           )}
         </Button>
+        {glb && onPreviewGlb && <Button size="sm" variant="ghost" onClick={onPreviewGlb}>View model</Button>}
+        {glb && onDownloadGlb && <Button size="sm" variant="ghost" disabled={downloading} onClick={onDownloadGlb}>{downloading ? "Downloading…" : "Download GLB"}</Button>}
         <span className="text-[11px] text-muted">
           {glb
             ? `${glb.path} · ${(glb.size / 1024).toFixed(0)} KB`

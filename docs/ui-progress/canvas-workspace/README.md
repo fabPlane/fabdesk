@@ -64,3 +64,15 @@ Checks: root typecheck passes; UI 218, client-core 175, protocol 86, tools 392 t
 ![Saved PCB changed, update remains a user choice](preview-source-changed.png)
 ![Real native export matches its saved PCB bytes](preview-matches-source.png)
 ![A modified SVG cannot inherit the old receipt](preview-modified.png)
+
+## Interactive board model milestone
+
+Board → 3D now opens a real interactive model canvas instead of video configuration. Generate/Update explicitly exports the saved KiCad board to GLB. Orbit, zoom, keyboard pan/rotation and Fit change the view only. Video configuration lives under Outputs → Models & video, with View model and authenticated Download GLB actions. The classic fallback keeps its existing export view.
+
+The viewer loads lazily, renders on demand, resizes with its container, retains the camera through model refresh, and disposes graphics resources when closed. Standalone model loading blocks referenced remote resources. Graphics/load failures have retry guidance. The source file remains untouched by view controls. This milestone is a viewer, not native placement/resize or a multi-board assembly editor. GLB revision/freshness tracking is not yet implemented.
+
+Native validation used an actual CLI-exported GLB from the isolated KiCad 9 fixture, not a generated concept image or a pretend populated board. Its sparse geometry reflects the available fixture. Keyboard orbit, zoom, Fit and both directions of Board/Outputs navigation worked; SHA-256 of the GLB was identical after view actions. The download button and authenticated file path are connected; an OS save-dialog/download walkthrough remains to do. Root typecheck and UI218 tests pass. Three.js 0.186.1 and matching 0.186.0 type definitions were added with the root lockfile.
+
+![Actual native board in the model canvas](board-3d.png)
+![Keyboard orbit changes only the view](board-3d-orbit.png)
+![Model and video controls together in Outputs](outputs-model-video.png)
