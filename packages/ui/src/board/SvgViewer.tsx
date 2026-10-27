@@ -5,6 +5,7 @@ import { cn } from "../util";
 import { clientPointToSvg, parseSvgViewBox, resolveSvgBox, type SvgBox, type SvgPoint } from "./svg-coords";
 import { svgImageCache } from "./svg-image-cache";
 import { SvgCanvas } from "./SvgCanvas";
+import { useSvgNavigation } from "./useSvgNavigation";
 
 /** Zoomable vector image, isolated from the app's DOM and CSS layout. */
 export function SvgViewer({ svg, viewKey, toolbar, overlay, commentMode = false, onDrawingClick }: {
@@ -20,6 +21,7 @@ export function SvgViewer({ svg, viewKey, toolbar, overlay, commentMode = false,
   const image = useRef<HTMLImageElement>(null);
   const [zoom, setZoom] = useState(1);
   const viewport = useRef<HTMLDivElement>(null);
+  const dragging = useSvgNavigation(viewport, drawing, zoom, setZoom, viewKey ?? svg);
   const [source, setSource] = useState<{ svg: string; url: string } | null>(null);
   const [loaded, setLoaded] = useState<{ url: string; width: number; height: number } | null>(null);
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
@@ -97,15 +99,16 @@ export function SvgViewer({ svg, viewKey, toolbar, overlay, commentMode = false,
         <Button size="sm" variant="ghost" onClick={() => { setZoom(1); viewport.current?.scrollTo(0, 0); }}>
           Fit
         </Button>
+        <span className="text-[11px] text-muted">Scroll to zoom · Drag to move</span>
         <div className="ml-auto flex items-center gap-1">{toolbar}</div>
       </div>
-      <div ref={viewport} className="min-h-0 flex-1 overflow-auto bg-panel-2/40 p-3">
+      <div ref={viewport} className={cn("min-h-0 flex-1 select-none overflow-auto overscroll-contain bg-panel-2/40 p-3", dragging ? "cursor-grabbing" : "cursor-grab")}>
         {!size && !failed && <div className="flex h-full items-center justify-center" role="status" aria-label="Loading board preview"><Spinner /></div>}
         {failed && <div className="p-4 text-sm text-muted" role="alert">Could not display this SVG preview. Try rendering it again.</div>}
         <div
           ref={drawing}
           onClick={handleClick}
-          className={cn("fd-svg-host relative mx-auto origin-top-left bg-panel", commentMode && "cursor-crosshair")}
+          className={cn("fd-svg-host relative mx-auto origin-top-left bg-panel", dragging ? "cursor-grabbing" : commentMode && "cursor-crosshair")}
           style={{ width: fitSize.width * zoom, height: fitSize.height * zoom, display: size || !viewBox ? "block" : "none" }}
         >
           {viewBox && current && <img

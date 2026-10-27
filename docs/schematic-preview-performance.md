@@ -9,6 +9,7 @@ The existing image-based viewer keeps SVG paths out of React's DOM, but Chromium
 - Reuse the largest cached raster for the same SVG when reopening or zooming out. Changed SVG text gets its own raster; failed refinements do not replace a usable cache entry.
 - Quantize raster sizes in 256-pixel width steps. Limit each raster to 4096 pixels per side and 8 megapixels, and retain at most 48 MiB of cached RGBA pixels. Visible canvases have their own bounded backing stores. Eviction releases unused canvas backing stores.
 - Fall back to the vector image if canvas rendering fails. Legacy SVGs without a viewBox retain the existing geometry-based viewer.
+- Scroll over the preview to zoom toward the pointer (20–800%). Hold the left or middle mouse button and drag to pan a zoomed drawing. Pointer capture keeps a drag active outside the panel; a drag does not place a comment, while a stationary click still does. Fit resets zoom and scroll position.
 
 At extreme zoom or on a very dense display, the raster cap can soften detail; the original SVG file is unchanged. Initial decoding and the first vector-to-canvas draw can still stall a frame. This change addresses repeated repainting, not every possible source of UI latency.
 
@@ -35,3 +36,5 @@ bun scripts/bench-svg-preview.mjs "$env:APPDATA\fabPlane Dev"
 The benchmark uses the existing authenticated local app bridge, changes only preview navigation/zoom, and leaves the schematic at Fit. Run it against the original and changed viewers at the same panel size. It does not send agent messages or modify project files.
 
 Also check Fit, high zoom, panel reopening, PCB previews, resize, and comment placement. Unit tests cover size/memory limits, cache reuse, source changes, eviction, failed refinements, and existing SVG coordinate mapping.
+
+Navigation was also checked in the running Windows app with real wheel and drag input: zoom in/out, horizontal/vertical panning, and dragging versus clicking in Comment mode. A renderer check verified pointer anchoring (less than one pixel of rounding error), line-based wheel deltas, 20%/800% limits, and Fit returning scroll to zero.
