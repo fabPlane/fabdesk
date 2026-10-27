@@ -4,6 +4,9 @@ import { Icon } from "../components/Icon";
 const LABELS: Record<ReasoningEffort, string> = {
   none: "None", minimal: "Minimal", low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max", ultra: "Ultra",
 };
+export function reasoningEffortLabel(effort: ReasoningEffort | null): string {
+  return effort ? LABELS[effort] : "Auto";
+}
 const DETAILS: Record<ReasoningEffort, string> = {
   none: "Skip reasoning when the model supports it.",
   minimal: "Very light reasoning for simple requests.",
@@ -33,7 +36,7 @@ export function EffortSection({ levels, value, agentName, disabled, saving, onCh
   const restoreFocus = useRef(false);
   const id = useId();
   const available = levels.length > 0;
-  const label = value ? LABELS[value] : "Auto";
+  const label = reasoningEffortLabel(value);
   useLayoutEffect(() => {
     if (restoreFocus.current && !open && !saving) { restoreFocus.current = false; anchor.current?.focus(); }
   }, [open, saving]);

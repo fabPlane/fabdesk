@@ -19,9 +19,7 @@ export function useAppActions() {
     const active = () => (data && data.id === ui().activeThreadId ? data : undefined);
     return {
       newChat() {
-        ui().setActiveOpenSourceId(null);
-        ui().setOrderFlowOpen(false);
-        ui().setActiveThread(null);
+        // Keep the current conversation until a project is chosen; Cancel is a no-op.
         ui().setProjectPickerOpen(true);
       },
       send() {
