@@ -170,3 +170,7 @@ export * from "./model-import";
 export * from "./enclosure-revision";
 
 export * from "./pcb-parts";
+
+export { parsePcbOutlineInspection, inspectPcbOutline, resizedOutlinePoints } from "./pcb-outline";
+
+export { usePcbOutline } from "./queries";

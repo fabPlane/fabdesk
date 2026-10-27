@@ -218,7 +218,7 @@
 .fd-model-import select { padding:10px; background:var(--fd-panel); border:1px solid var(--fd-border); border-radius:8px; }
 .fd-mechanical-selection[data-stale=true] { border-color:var(--fd-warning); }
 .fd-mechanical-selection[data-stale=true] span { color:var(--fd-warning); }
-.fd-native-part-control { position:relative; }
+.fd-native-part-control { position:relative; display:flex; align-items:center; }
 .fd-native-part-popover { position:fixed; z-index:90; width:390px; max-width:75vw; max-height:min(470px,65vh); overflow:auto; display:flex; flex-direction:column; gap:14px; padding:17px; border:1px solid var(--fd-border); border-radius:14px; background:var(--fd-panel); color:var(--fd-fg); white-space:normal; box-shadow:0 8px 35px #102a2026; }
 .fd-native-part-popover > header { display:flex; align-items:center; justify-content:space-between; gap:14px; }
 .fd-native-part-popover header strong { font-size:13px; }
@@ -229,3 +229,5 @@
 .fd-native-part-actions { display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-top:14px; }
 .fd-native-part-footprint,.fd-native-part-note { color:var(--fd-muted); font-size:10px; line-height:1.6; overflow-wrap:anywhere; }
 .fd-native-part-warning { color:var(--fd-warning); font-size:11px; line-height:1.6; }
+
+.fd-native-outline-fields { display:grid; grid-template-columns:1fr 1fr; gap:12px; }

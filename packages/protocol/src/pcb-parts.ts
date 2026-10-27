@@ -13,3 +13,19 @@ export const PcbPartPosition = z.object({
 });
 export type PcbPartPosition = z.infer<typeof PcbPartPosition>;
 export type PcbPartInspection = { sourceSha256: string; parts: PcbPartPosition[]; truncated: boolean };
+
+export const PcbOutlineSegment = z.object({
+  id: z.string().min(1),
+  owner: z.literal("board"),
+  kind: z.string(),
+  locked: z.boolean(),
+  toolOwnedOutline: z.boolean(),
+  start: z.object({ x: z.number().finite(), y: z.number().finite() }),
+  end: z.object({ x: z.number().finite(), y: z.number().finite() }),
+});
+export type PcbOutlineInspection = {
+  sourceSha256: string;
+  bounds: { minX: number; minY: number; maxX: number; maxY: number } | null;
+  editable: boolean;
+  reason: string | null;
+};
