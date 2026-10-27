@@ -23,6 +23,11 @@ export function ThreadView() {
   const { create } = useThreadMutations();
   const onCreateThread = useCallback(
     async (input: { agentId: AgentId; model?: string }) => {
+      if (!projectId) {
+        useUiStore.getState().setProjectPickerOpen(true);
+        throw new Error("Choose or create a project before sending a message.");
+      }
+      if (activeThreadId) throw new Error("Wait for the current chat to load before sending.");
       try {
         const t = await create.mutateAsync({
           projectId,
@@ -43,7 +48,7 @@ export function ThreadView() {
         throw error;
       }
     },
-    [create, projectId, setActiveThread],
+    [create, projectId, activeThreadId, setActiveThread],
   );
 
   return (
@@ -68,7 +73,7 @@ export function ThreadView() {
           </div>
         </div>
       )}
-      <Composer thread={thread} onCreateThread={onCreateThread} />
+      <Composer thread={thread} loadingThread={!!activeThreadId && !thread} onCreateThread={onCreateThread} />
       </div>
     </div>
   );

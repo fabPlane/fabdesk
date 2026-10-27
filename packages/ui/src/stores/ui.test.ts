@@ -19,7 +19,7 @@ describe("sidebar list tabs", () => {
       projectPickerOpen: false,
       sidebarListTab: "projects",
     });
-    expect(newChatInProjectState(null).activeProjectId).toBeNull();
+    expect(newChatInProjectState(null)).toMatchObject({ activeProjectId: null, projectPickerOpen: true });
   });
 
   test("normalizes the removed Conversations and Inventory tabs onto Projects", () => {
@@ -46,6 +46,19 @@ describe("board tabs", () => {
 });
 
 describe("project context", () => {
+  test("canceling the project picker keeps the current chat, draft and attachments", () => {
+    const previous = useUiStore.getState();
+    try {
+      useUiStore.setState({ activeProjectId: "a", activeThreadId: "chat-a", drafts: { __new__: "pending draft" }, attachments: { __new__: [{ path: "sketch.png", mime: "image/png", label: "Sketch" }] } });
+      useUiStore.getState().setProjectPickerOpen(true);
+      useUiStore.getState().setProjectPickerOpen(false);
+      expect(useUiStore.getState()).toMatchObject({ activeProjectId: "a", activeThreadId: "chat-a", drafts: { __new__: "pending draft" }, attachments: { __new__: [{ path: "sketch.png" }] } });
+      useUiStore.getState().startNewChatInProject("b");
+      expect(useUiStore.getState()).toMatchObject({ activeProjectId: "b", activeThreadId: null, projectPickerOpen: false, drafts: { __new__: "pending draft" }, attachments: { __new__: [{ path: "sketch.png" }] } });
+      useUiStore.getState().startNewChatInProject(null);
+      expect(useUiStore.getState()).toMatchObject({ activeProjectId: null, activeThreadId: null, projectPickerOpen: true });
+    } finally { useUiStore.setState(previous); }
+  });
   test("pinning is idempotent and does not switch the active chat", () => {
     const previous = useUiStore.getState();
     try {
