@@ -438,3 +438,8 @@ Root typecheck and the full standard suite pass **2,127 tests / 30 skips / zero 
 ![Shared design overview updated](member-shared-updated.png)
 ![Stale membership keeps unsaved fields](member-stale-selection.png)
 ![Compact tools clear of the drag target](member-compact-tools.png)
+
+
+The final restarted runtime also inspected the populated VAIO I/O board through the same source controls. It displayed native F1 (1.5 A) at (88.5, 56.5) mm, rotation 180°, with Apply disabled because no proposal was made. All five imported PCB sources and saved previews remained byte-identical to their recorded hashes. The app was left on the six-instance overview with secondary tools closed. This read-only inspection is separate from the disposable fixture’s saved edits.
+
+![Native tools on the real VAIO I/O board, without edits](vaio-member-part-tools.png)

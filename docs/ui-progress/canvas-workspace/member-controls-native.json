@@ -79,5 +79,17 @@
     "Native replacement, undo/recovery UX, member checks/comments/schematic/3D/CAD still pending",
     "No electrical or mechanical compatibility claim",
     "No real VAIO source was edited"
-  ]
+  ],
+  "finalRuntimeVaioReadOnlyInspection": {
+    "sourceId": "io",
+    "reference": "F1",
+    "value": "1.5A",
+    "x": 88.5,
+    "y": 56.5,
+    "rotation": 180,
+    "partsOnBoard": 22,
+    "applyDisabledWithoutProposal": true,
+    "allImportedSourceAndPreviewHashesUnchanged": true,
+    "allSecondaryToolsClosedAfterInspection": true
+  }
 }
