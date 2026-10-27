@@ -455,3 +455,18 @@ Validation: root typecheck passed; client-core **219 passed**, UI **224 passed**
 
 ![Real VAIO I/O board restored after a full reload](board-workspace-restored.png)
 ![Changed declaration requires board reselection](board-workspace-reselect.png)
+
+
+## Saved editable sketches
+
+Drawing saves now embed the original editable scene in the PNG using the installed drawing library's supported scene metadata. The same project-owned PNG remains a chat image; no separate sidecar write can get out of sync with it. Sketch → Draw offers a Saved drawings picker only when this project has reserved scene-export filenames. Open a copy explicitly replaces the working draft after decoding succeeds; saving uses a new filename and retains previous versions. Ordinary uploaded PNG/JPEG images remain reference images and are preserved unchanged. A filename is not proof of editable content; invalid/missing scene data produces recovery guidance without replacing the current scene.
+
+Actual native mouse/keyboard walkthrough: created a rectangle and two-line board note, saved, reloaded the full Electron renderer, reopened the disk copy, edited the restored text and saved a second version. Decoded PNG metadata confirmed both original object IDs survived and the old PNG SHA stayed identical. After another full reload, an intentionally invalid saved file failed to load; saving the still-visible draft preserved the exact object IDs, types, text and geometry of the second version. Both earlier PNG hashes stayed identical, and the created invalid fixture was removed. No agent message was sent. The reopened picker and canvas fit at the actual 960 × 720 minimum window. [Source/metadata evidence](editable-sketch-native.json).
+
+Root typecheck passed; final UI typecheck passed. Affected suites: client-core **220 passed**, UI **224 passed**, zero failures with local fixture-server access. Complete standard suite: **2,130 passed / 30 skipped / zero failures**. A final duplicate-name filter refinement was followed by the same 220 client-core + 224 UI tests passing. The actual upload endpoint produced a byte-identical `.excalidraw-2.png` copy; this server suffix remains recognized as an editable drawing. Earlier board-workspace head `d82b9d0` passed hosted verify, mobile verify, real-board-pipeline and TraceMaker checks; the new sketch head needs its own CI.
+
+Limits: this persists **saved drawings**. Unsaved scenes still live in memory until saved; standalone `.excalidraw` JSON import and broader embedded-image/asset walkthroughs remain unfinished. Previous plain PNG drawings cannot recover vectors they never stored. This is a user sketch, not a native PCB, schematic or verified mechanical model.
+
+![Reopened editable objects and text editing](editable-sketch-reopened.png)
+![Failed load leaves the current drawing visible](editable-sketch-failed-load.png)
+![Saved copy at the minimum desktop window](editable-sketch-compact.png)

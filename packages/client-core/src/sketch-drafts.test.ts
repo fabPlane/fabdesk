@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createSketchDraftSession, newChatDraftKey } from "./sketch-drafts";
+import { editableSketchPaths, createSketchDraftSession, newChatDraftKey } from "./sketch-drafts";
 import type { CoreClient } from "./CoreClient";
 
 function fixture(projectId: string | null = null) {
@@ -65,4 +65,8 @@ describe("sketch draft ownership", () => {
     expect(newChatDraftKey(null)).toBe("__new__");
     expect(newChatDraftKey("a")).not.toBe(newChatDraftKey("b"));
   });
+});
+
+test("editable drawing picker excludes ordinary references, unrelated files and nested paths", () => {
+  expect(editableSketchPaths(["sketches/sketch-2.excalidraw.png", "sketches/sketch-1.excalidraw.png", "sketches/sketch-2.excalidraw-2.png", "sketches/photo.png", "sketches/photo.jpg", "renders/sketch.excalidraw.png", "sketches/nested/sketch.excalidraw.png", "sketches/..\\sketch.excalidraw.png"].map(path => ({ path })))).toEqual(["sketches/sketch-2.excalidraw.png", "sketches/sketch-2.excalidraw-2.png", "sketches/sketch-1.excalidraw.png"]);
 });

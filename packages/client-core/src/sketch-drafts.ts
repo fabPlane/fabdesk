@@ -35,3 +35,8 @@ export function createSketchDraftSession({ client, projectId: initialProjectId, 
     },
   };
 }
+
+/** Offer reserved scene-export names, not ordinary references; opening still validates their contents. */
+export function editableSketchPaths(files: ReadonlyArray<{ path: string }>): string[] {
+  return files.map(file => file.path).filter(path => /^sketches\/[^/\\]+\.excalidraw(?:-\d+)?\.png$/i.test(path)).sort().reverse();
+}

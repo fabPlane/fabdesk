@@ -3,7 +3,7 @@ import type { ExcalidrawImperativeAPI, ExcalidrawInitialDataState } from "@excal
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button, Dialog, Spinner } from "../components/ui";
-import { createSketchDraftSession, useCoreClient } from "@fabdesk/client-core";
+import { editableSketchPaths, createSketchDraftSession, useCoreClient, useProject } from "@fabdesk/client-core";
 import { newChatDraftKey, useUiStore } from "../stores/ui";
 import { basename } from "../util";
 
@@ -32,6 +32,11 @@ function SketchSession({ scenes }: { scenes: Scenes }) {
       void qc.invalidateQueries({ queryKey: ["projects"] });
     },
   }));
+  const project = useProject(target.projectId);
+  const savedDrawings = editableSketchPaths(project.data?.files ?? []);
+  const [savedPath, setSavedPath] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [hasDrawing, setHasDrawing] = useState(false);
   const needsProjectChat = !!target.threadId && !target.projectId;
   const [mode, setMode] = useState(() => useUiStore.getState().sketchMode);
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
@@ -82,10 +87,10 @@ function SketchSession({ scenes }: { scenes: Scenes }) {
         if (elements.length === 0) throw new Error("Draw something first.");
         blob = await exportToBlob({
           elements,
-          appState: { ...api.getAppState(), exportBackground: true, exportWithDarkMode: false },
+          appState: { ...api.getAppState(), exportBackground: true, exportWithDarkMode: false, exportEmbedScene: true },
           files: api.getFiles(), mimeType: "image/png", exportPadding: 16,
         });
-        name = `sketch-${Date.now()}.png`;
+        name = `sketch-${Date.now()}.excalidraw.png`;
       }
       const saved = await session.save(blob, name);
       const key = target.threadId ?? newChatDraftKey(saved.projectId);
@@ -104,6 +109,30 @@ function SketchSession({ scenes }: { scenes: Scenes }) {
     }
   };
 
+  const openSavedDrawing = async () => {
+    if (busyRef.current || !target.projectId || !savedDrawings.includes(savedPath)) return;
+    const api = apiRef.current;
+    if (!api) { setError("The drawing canvas is still loading. Try again in a moment."); return; }
+    busyRef.current = true; setBusy(true); setLoading(true); setError(null);
+    try {
+      const blob = await client.readFileBlob(target.projectId, savedPath);
+      const { loadFromBlob } = await import("@excalidraw/excalidraw");
+      const scene = await loadFromBlob(new File([blob], basename(savedPath), { type: "image/png" }), null, null);
+      if (!scene.elements?.some(element => !element.isDeleted)) throw new Error("This saved file has no editable drawing. Upload it as a reference image instead.");
+      // Fetch/decode completely before replacing the draft; a failed load leaves it intact.
+      api.resetScene();
+      api.addFiles(Object.values(scene.files ?? {}));
+      api.updateScene({ elements: scene.elements, appState: scene.appState });
+      api.scrollToContent(undefined, { fitToViewport: true, viewportZoomFactor: .65, maxZoom: 1 });
+      initialScene.current = scene;
+      rememberScene();
+    } catch {
+      setError("Could not open this drawing. Choose another saved copy, or use Upload image to attach a reference.");
+    } finally {
+      busyRef.current = false; setBusy(false); setLoading(false);
+    }
+  };
+
   const dark = typeof document !== "undefined" && document.documentElement.classList.contains("dark");
   return (
     <Dialog open onClose={close} bare ariaLabel="Sketch or image" className="h-[85vh] w-[90vw] max-w-6xl">
@@ -117,13 +146,23 @@ function SketchSession({ scenes }: { scenes: Scenes }) {
           <div className="ml-auto flex items-center gap-2">
             <Button size="sm" disabled={busy} onClick={close}>Close</Button>
             <Button variant="primary" size="sm" disabled={busy || needsProjectChat || (mode === "upload" && !file)} onClick={() => void attach()}>
-              {busy ? "Saving…" : "Save and attach"}
+              {loading ? "Opening…" : busy ? "Saving…" : "Save and attach"}
             </Button>
           </div>
         </div>
         <p className="border-b border-border px-3 py-2 text-xs text-muted">
-          {target.projectId ? "Save the original image in this project and attach it to your next message." : "Saving creates a project automatically. Your sketch stays with it; nothing is sent to the agent yet."}
+          {target.projectId ? mode === "draw" ? "Save an editable PNG in this project and attach it to your next message. Each save keeps a new copy." : "Save the original image in this project and attach it to your next message." : "Saving creates a project automatically. Your sketch stays with it; nothing is sent to the agent yet."}
         </p>
+        {mode === "draw" && savedDrawings.length > 0 && <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2 text-xs">
+          <label className="flex min-w-0 items-center gap-2">Saved drawings
+            <select aria-label="Saved drawings" className="max-w-[45vw] rounded border border-border bg-panel px-2 py-1" value={savedPath} disabled={busy} onChange={event => setSavedPath(event.target.value)}>
+              <option value="">Choose a drawing…</option>
+              {savedDrawings.map(path => <option key={path} value={path}>{basename(path)}</option>)}
+            </select>
+          </label>
+          <Button size="sm" disabled={busy || !savedPath} onClick={() => void openSavedDrawing()}>{hasDrawing ? "Replace draft with saved copy" : "Open a copy"}</Button>
+          <span className="text-muted">The saved original stays unchanged.</span>
+        </div>}
         {needsProjectChat && <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2 text-xs">
           <span>This conversation has no project. Start a new project chat to save a sketch; this conversation stays here.</span>
           <Button size="sm" onClick={() => { close(); useUiStore.getState().startNewChatInProject(null); }}>Start a project chat</Button>
@@ -150,7 +189,7 @@ function SketchSession({ scenes }: { scenes: Scenes }) {
             <Suspense fallback={<div className="flex h-full items-center justify-center"><Spinner /></div>}>
               <Excalidraw initialData={initialScene.current}
                 excalidrawAPI={(api) => { apiRef.current = api; }}
-                onChange={(elements, appState, files) => { initialScene.current = { elements, appState, files }; }}
+                onChange={(elements, appState, files) => { initialScene.current = { elements, appState, files }; setHasDrawing(elements.some(element => !element.isDeleted)); }}
                 theme={dark ? "dark" : "light"}
                 UIOptions={{ canvasActions: { loadScene: false, saveToActiveFile: false } }} />
             </Suspense>

@@ -1,0 +1,98 @@
+{
+  "projectId": "prj_mvr7n2n5db55576304",
+  "nativePhysicalRectangleAndText": true,
+  "sceneEmbeddedInSavedPng": true,
+  "reloadedApp": true,
+  "performanceTimeOriginBefore": 1793137314847.7,
+  "performanceTimeOriginAfter": 1793137456447.6,
+  "reopenedObjectsEditable": true,
+  "originalUnchanged": true,
+  "elementIdsPreserved": true,
+  "editedTextPreserved": true,
+  "failedSceneLoadLeavesCurrentElementsAndGeometryUnchanged": true,
+  "threeSavedVersions": [
+    "sketch-1793137310638.excalidraw.png",
+    "sketch-1793137412545.excalidraw.png",
+    "sketch-1793137521460.excalidraw.png"
+  ],
+  "invalidFixtureRemoved": true,
+  "noAgentMessageSent": true,
+  "first": {
+    "path": "sketches/sketch-1793137310638.excalidraw.png",
+    "sha256": "3c3a153a0dc6d4f5f7ff9692765b0aa7b02b22a31c786db3f8376b71f5ea49dc",
+    "elements": [
+      {
+        "id": "oJojcDwLHSJhcfWkkN6ba",
+        "type": "rectangle",
+        "x": 405,
+        "y": 176.75,
+        "width": 250,
+        "height": 160
+      },
+      {
+        "id": "_ZFnUrXw9n03iXmi3Uxl2",
+        "type": "text",
+        "text": "VAIO I/O board\n36 x 27.455 mm",
+        "x": 450,
+        "y": 231.75,
+        "width": 131.11328125,
+        "height": 50
+      }
+    ]
+  },
+  "second": {
+    "path": "sketches/sketch-1793137412545.excalidraw.png",
+    "sha256": "eb9241a1f64aa30f817cf51499615a929e5221b8bdbb4865894b8dec8e420dd4",
+    "elements": [
+      {
+        "id": "oJojcDwLHSJhcfWkkN6ba",
+        "type": "rectangle",
+        "x": 405,
+        "y": 176.75,
+        "width": 250,
+        "height": 160
+      },
+      {
+        "id": "_ZFnUrXw9n03iXmi3Uxl2",
+        "type": "text",
+        "text": "VAIO I/O board\n36 x 27.455 mm\nKeep connector edge clear",
+        "x": 450,
+        "y": 231.75,
+        "width": 212.646484375,
+        "height": 75
+      }
+    ]
+  },
+  "afterFailedLoad": {
+    "path": "sketches/sketch-1793137521460.excalidraw.png",
+    "sha256": "eb9241a1f64aa30f817cf51499615a929e5221b8bdbb4865894b8dec8e420dd4",
+    "elements": [
+      {
+        "id": "oJojcDwLHSJhcfWkkN6ba",
+        "type": "rectangle",
+        "x": 405,
+        "y": 176.75,
+        "width": 250,
+        "height": 160
+      },
+      {
+        "id": "_ZFnUrXw9n03iXmi3Uxl2",
+        "type": "text",
+        "text": "VAIO I/O board\n36 x 27.455 mm\nKeep connector edge clear",
+        "x": 450,
+        "y": 231.75,
+        "width": 212.646484375,
+        "height": 75
+      }
+    ]
+  },
+  "limits": "Saved drawings only; unsaved scenes remain in memory. Native .excalidraw JSON import is not implemented.",
+  "compactWindow": {
+    "width": 960,
+    "height": 720,
+    "savedCopyOpened": true,
+    "controlsFit": true
+  },
+  "collisionUploadPath": "sketches/sketch-1793137310638.excalidraw-2.png",
+  "collisionUploadBytesPreserved": true
+}
