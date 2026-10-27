@@ -545,7 +545,7 @@ export interface DesignService {
   placeFootprints(
     projectDir: string,
     placements: PcbFootprintEdit[],
-    options?: { staleCopper?: "keep" | "remove" },
+    options?: { staleCopper?: "keep" | "remove"; expectedSourceSha256?: string },
   ): Promise<PcbPlacementResult>;
   /** Create and delete explicitly named native board geometry without replacing unrelated items. */
   editBoardGeometry(projectDir: string, edit: PcbGeometryEdit): Promise<PcbGeometryEditResult>;

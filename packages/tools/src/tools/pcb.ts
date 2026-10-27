@@ -66,6 +66,7 @@ export const pcb_place = defineTool({
       )
       .min(1)
       .max(500),
+    expectedSourceSha256: z.string().regex(/^[a-f0-9]{64}$/).optional().describe("Saved PCB hash from pcb_inspect. Reject the edit if the board changed since inspection."),
     staleCopper: z
       .enum(["keep", "remove"])
       .default("keep")
@@ -79,11 +80,12 @@ export const pcb_place = defineTool({
     openWorldHint: false,
     idempotentHint: true,
   },
-  handler: async ({ placements, staleCopper }, ctx) => {
+  handler: async ({ placements, staleCopper, expectedSourceSha256 }, ctx) => {
     const project = ctx.requireProject();
     const copperBefore = staleCopper === "remove" ? await readCopper(project.dir) : null;
     const result = await ctx.services.design.placeFootprints(project.dir, placements, {
       staleCopper,
+      ...(expectedSourceSha256 ? { expectedSourceSha256 } : {}),
     });
     const removedFacts =
       copperBefore && result.removedCopper

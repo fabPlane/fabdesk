@@ -4,6 +4,7 @@
  * through the typed client on the project's session. Positions come back in millimetres; the
  * client speaks nanometres.
  */
+import { createHash } from "node:crypto";
 import { resolveSchematicSheet } from "./schematic-sheet";
 import {
   assertConsistentSymbolMetadata,
@@ -1526,8 +1527,18 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
   const placeFootprints = async (
     projectDir: string,
     placements: PcbFootprintEdit[],
-    options: { staleCopper?: "keep" | "remove" } = {},
+    options: { staleCopper?: "keep" | "remove"; expectedSourceSha256?: string } = {},
   ): Promise<PcbPlacementResult> => {
+    const assertExpectedSource = async () => {
+      if (!options.expectedSourceSha256) return;
+      const bytes = await readFile(join(projectDir, BOARD_PCB)).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") throw new NativeRevisionConflict("The saved PCB is missing. Reopen the project before placing parts.");
+        throw error;
+      });
+      if (createHash("sha256").update(bytes).digest("hex") !== options.expectedSourceSha256)
+        throw new NativeRevisionConflict("The PCB changed since this part was inspected. Refresh the part before applying its position.");
+    };
+    await assertExpectedSource();
     const board = await deps.sessions.board(projectDir);
     const footprints = await board.getFootprints();
     const byReference = new Map(footprints.map((footprint) => [footprint.reference, footprint]));
@@ -1600,6 +1611,8 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         }),
       })),
     );
+    // Recheck after asynchronous preflight; the native save guard covers later external writes.
+    await assertExpectedSource();
     const moved: string[] = [];
     let staleAnalysis: ReturnType<typeof analyzeStaleCopper> = {
       reports: {},
@@ -1609,7 +1622,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     let zoneRefill: { refilled: boolean; error?: string } | undefined;
     let revision = 0;
     try {
-      await board.commit("Fabdesk: place native PCB footprints", async (tx) => {
+      await board.commit("fabPlane: place native PCB footprints", async (tx) => {
         // KiCad's native flip transforms pads, fields, graphics and layers together.
         const toFlip = planned.filter(
           ({ placement, footprint }) =>
