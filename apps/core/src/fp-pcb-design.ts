@@ -4,6 +4,7 @@
  * through the typed client on the project's session. Positions come back in millimetres; the
  * client speaks nanometres.
  */
+import { assertNativeBoardOwnership } from "./assembly-board-binding";
 import { resizeNativeOutlineShapes, nativeGroupLocksAny } from "./pcb-outline-resize";
 import { createHash } from "node:crypto";
 import { resolveSchematicSheet } from "./schematic-sheet";
@@ -2747,6 +2748,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
   const nativeOperation =
     <Args extends unknown[], Result>(operation: (dir: string, ...args: Args) => Promise<Result>) =>
     async (dir: string, ...args: Args): Promise<Result> => {
+      await assertNativeBoardOwnership(dir);
       if (recovering.has(dir))
         throw new NativeRevisionConflict(
           "native project recovery is active; retry after it finishes",

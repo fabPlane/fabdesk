@@ -11,6 +11,7 @@
  * exist yet.
  */
 import { join } from "node:path";
+import { assertNativeBoardOwnership } from "./assembly-board-binding";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { KiCad, type Board, type Schematic } from "@fp-pcb/client";
@@ -377,6 +378,7 @@ export class FpPcbSessions {
       );
     const save = document.save.bind(document);
     document.save = async () => {
+      await assertNativeBoardOwnership(projectDir);
       if (
         this.recovering.has(projectDir) ||
         generation !== (this.generations.get(projectDir) ?? 0) ||

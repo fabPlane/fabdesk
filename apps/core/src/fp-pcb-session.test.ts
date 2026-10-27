@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { DocumentType } from "@fp-pcb/proto";
+import { inspectProjectBoardSources } from "@fabdesk/tools";
+import { resolveNativeBoardBinding, withNativeBoardBinding } from "./assembly-board-binding";
 import { FpPcbSessions, type ProjectSession } from "./fp-pcb-session";
 
 function sessionsWithSchematic(state: boolean | undefined | null) {
@@ -346,3 +348,20 @@ describe("concurrent saved document reconciliation", () => {
       expect(f.live()).toBe("unsaved live copper");
     }));
 });
+
+test("native save checks captured assembly ownership immediately before the save RPC", async () =>
+  fixture(async f => {
+    const declaration = join(f.dir, "fabplane.assembly.json");
+    await writeFile(declaration, JSON.stringify({ contract: "fabplane.assembly.v1", sources: [{ id: "main", name: "Main", location: "project", directory: "." }], instances: [{ id: "main-1", name: "Main", sourceId: "main" }], connections: [] }));
+    const project = { id: "project", dir: f.dir }, inspection = await inspectProjectBoardSources(project);
+    const binding = await resolveNativeBoardBinding(project, { sourceId: "main", manifestSha256: inspection.manifestSha256! });
+    const board = await f.sessions.board(binding.boardDir);
+    f.edit("unsaved:candidate");
+    await expect(withNativeBoardBinding(binding, async () => {
+      await writeFile(declaration, "{}");
+      await board.save();
+    })).rejects.toThrow("ownership changed");
+    expect(f.counts().saves).toBe(0);
+    expect(await readFile(f.path, "utf8")).toBe("checkpoint:pad-A");
+    expect(f.live()).toBe("unsaved:candidate");
+  }));
