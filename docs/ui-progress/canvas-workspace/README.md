@@ -271,3 +271,17 @@ Native walkthrough: six real saved files, no forms/dialogs/actions on initial mo
 ![One action bar appears beside the selected model](outputs-selected-model.png)
 ![Saved GLB opens on request](outputs-model-preview.png)
 ![Source warnings update on affected output cards](outputs-source-warnings.png)
+
+
+## Physical fresh-project drawing and native JPEG picker
+
+Created a new isolated project through the header's New project dialog, then opened Sketch or image → Draw a sketch. Actual mouse drags drew two labeled concept blocks and an arrow. Save and attach produced a real 12,183-byte PNG in that project's sketches folder and left an unsent attachment in the fresh composer. The saved image was visually inspected and retains the block diagram. A typed draft and the attachment survived a real app reload. No message was sent and no circuit was generated.
+
+Opened the native image picker, cancelled it, and confirmed Save and attach stayed disabled with no file chosen. Reopened the picker and selected an existing repository JPEG reference; native upload saved the original 74,022 bytes unchanged (SHA-256 `7b29dc306fd3d9ab94066f3ebe48b9556af67915bab65a180f58028be3cd14c7`). Both originals remain attached to the same project draft. The reference is a test screenshot, not a new circuit or agent interpretation. The vendor fixture was read only.
+
+This closes the physical drawing/JPEG picker portion of onboarding validation. It does not implement editable scene-file persistence/import or a sketch-to-circuit run: a saved drawing is currently a PNG reference, and a new drawing starts a fresh scene after attachment. Projectless-chat migration remains explicitly deferred.
+
+![Physically drawn concept in the fresh-project sketch canvas](fresh-physical-sketch.png)
+![Saved sketch attached without sending an agent message](fresh-sketch-attached.png)
+![JPEG chosen through the native file picker](fresh-jpeg-selected.png)
+![Both original files stay with the same unsent project draft](fresh-original-attachments.png)
