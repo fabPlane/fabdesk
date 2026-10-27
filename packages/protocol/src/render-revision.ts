@@ -13,3 +13,8 @@ export type PcbPreviewRevision = z.infer<typeof PcbPreviewRevision>;
 export const PCB_PREVIEW_REVISION_PATH = "renders/pcb.svg.revision.json";
 
 export const PCB_SVG_COORDINATE_SYSTEM = "kicad-pcb-mm-v1";
+
+/** Existing saved DRC reports record the checked PCB bytes, independently of findings. */
+export const PcbCheckSourceReceipt = z.object({
+  pcbRevision: z.object({ sha256: z.string().regex(/^[a-f0-9]{64}$/), bytes: z.number().int().nonnegative() }),
+});

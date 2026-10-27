@@ -1,3 +1,4 @@
+import { inspectPcbCheckRevision } from "./check-revision";
 import { inspectPcbOutline } from "./pcb-outline";
 import { inspectPcbParts } from "./pcb-parts";
 import { inspectEnclosureSourceRevision } from "./enclosure-revision";
@@ -943,4 +944,9 @@ export function usePcbPartsNear(projectId: string, point: { x: number; y: number
 export function usePcbOutline(projectId: string, enabled: boolean) {
   const client = useCoreClient();
   return useQuery({ queryKey: ["pcb-outline", projectId], queryFn: () => inspectPcbOutline(client, projectId), enabled });
+}
+
+export function usePcbCheckRevision(projectId: string | null, enabled = true) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["pcb-check-revision", projectId], queryFn: () => inspectPcbCheckRevision(client, projectId!), enabled: !!projectId && enabled });
 }

@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Badge, Button, EmptyState, LoadError, Spinner } from "../components/ui";
 import { useProjectJson } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
+import { CheckReportStatus } from "./CheckReportStatus";
 import { cn } from "../util";
 import { useRunTool } from "@fabdesk/client-core";
 
@@ -106,6 +107,7 @@ export function DrcTab() {
   return (
     <div className="flex h-full flex-col">
       {toolbar}
+      {!loading && !failed && <CheckReportStatus projectId={projectId} drc={drc.data} erc={erc.data} />}
       {failed ? <LoadError title="Checks could not be verified" onRetry={() => { void drc.refetch(); void erc.refetch(); }} /> : loading ? (
         <div className="flex flex-1 items-center justify-center">
           <Spinner />

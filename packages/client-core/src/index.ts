@@ -174,3 +174,6 @@ export * from "./pcb-parts";
 export { parsePcbOutlineInspection, inspectPcbOutline, resizedOutlinePoints } from "./pcb-outline";
 
 export { usePcbOutline } from "./queries";
+
+export { inspectPcbCheckRevision, type PcbCheckRevisionState } from "./check-revision";
+export { usePcbCheckRevision } from "./queries";

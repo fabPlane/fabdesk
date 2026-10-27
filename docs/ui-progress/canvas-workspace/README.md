@@ -175,3 +175,15 @@ Open checks exposed a report-format mismatch: the existing view dropped normaliz
 ![Populated PCB before explicit dimension Apply](board-size-populated-before.png)
 ![Populated native resize preserves components and copper](board-size-populated-saved.png)
 ![Checks includes all measured violations and unconnected items](board-size-populated-checks.png)
+
+
+## Saved-check source warnings
+
+Checks compares the PCB SHA-256 stored in a qualified DRC report with the current saved board bytes. A changed board produces an explicit re-run warning; unchanged bytes are described only as unchanged since the report, never as a rule-check pass. Missing/legacy/invalid provenance stays unverified and transport failures offer retry. The view also makes missing ERC and unverified schematic parity explicit; ERC freshness is not yet implemented.
+
+Actual native validation replaced one whitespace byte in the populated study PCB while preserving file size and mtime. The source warning appeared, and hashes of the saved DRC report and SVG stayed identical: no automatic check/render was run. Restoring the exact PCB bytes cleared the warning. The original source bytes/timestamps were restored. Unit coverage includes changed/returned bytes, missing/invalid receipts, missing PCB and transport failures.
+
+Final root typecheck and UI221/client193/protocol87 tests pass. This tracks saved PCB identity only. It does not authenticate a manually edited report, certify ERC/parity, track external library/rule dependencies or replace complete DRC freshness qualification.
+
+![Saved PCB matches the source recorded in DRC](checks-source-matches.png)
+![Changed PCB warns while prior findings remain visible](checks-source-changed.png)
