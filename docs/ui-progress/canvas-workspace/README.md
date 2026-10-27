@@ -326,4 +326,21 @@ Root typecheck, subsequent UI/desktop typecheck, UI223 tests and the complete st
 
 ## Read-only multi-board source foundation
 
-[Explicit source and instance contract](../../../assembly-sources.md) adds typed, jailed inspection of declared board membership through the local daemon. It distinguishes repeated physical instances from editable source ownership, preserves unresolved provenance, and does not import viewer PASS labels. Unit and HTTP regression tests exercise two source directories, omitted historical variants, aliases and malformed manifests. The UI and native editing remain single-board until board-scoped ownership and job guards are complete; this increment does not present assembly editing as available.
+[Explicit source and instance contract](../../assembly-sources.md) adds typed, jailed inspection of declared board membership through the local daemon. It distinguishes repeated physical instances from editable source ownership, preserves unresolved provenance, and does not import viewer PASS labels. Unit and HTTP regression tests exercise two source directories, omitted historical variants, aliases and malformed manifests. The UI and native editing remain single-board until board-scoped ownership and job guards are complete; this increment does not present assembly editing as available.
+
+## Live overview source signals and compact layout
+
+The single-board overview now brings qualified PCB-preview, saved model, enclosure and DRC source changes into one **Review updates** action. Its count covers tracked artifacts only. Untracked images remain explicitly source-unverified, matching SVG receipts are labeled only as matching the saved PCB, and no regeneration or electrical/fit validation happens on entry. Saved-output counts reuse the library classifier and exclude JSON receipts/intermediate reports.
+
+Native isolated walkthroughs detected a whitespace-only PCB source change with its file size and timestamp retained. The overview showed the two actually tracked dependent artifacts (PCB SVG and case), navigated to Review, and cleared the source warnings after restoring the original PCB. The legacy GLB had no receipt and was not assigned a fabricated currentness result. Case/model bytes stayed unchanged. The script restores source bytes and timestamps in `finally`.
+
+SVG previews now scale within the overview rather than rendering at a tiny physical-unit intrinsic size. Selection outlines follow the preview instead of the full canvas width. The layout reserves bottom space for the closed assistant; at a physically resized **960×720** native window, one contextual toolbar stayed within the viewport, summary cards were above the assistant, and there was no horizontal overflow. Physical selection/Escape passed; the window was restored to 1440×870. The empty saved-project entry still offers idea/sketch actions with no dialog opened.
+
+UI typecheck and all **223 UI tests** pass. The complete suite at the preceding source-inspection milestone passed 2,088 tests / 28 skips / zero failures; no backend code changed in this overview increment.
+
+![Tracked saved PCB preview](overview-tracked-preview.png)
+![Live overview source warning](overview-source-warning.png)
+![Saved image explicitly unverified](overview-image-unverified.png)
+![Contextual board tools at minimum window size](overview-compact-tools.png)
+![Live warning at minimum window size](overview-compact-source-warning.png)
+![Empty project overview entry](overview-new-project.png)
