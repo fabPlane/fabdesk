@@ -1,3 +1,5 @@
+import { inspectAssemblyBoard } from "./assembly-scene";
+import type { BoardSourceSelection, ProjectBoardSources } from "@fabdesk/protocol";
 import { inspectBoardModelRevision } from "./board-model-revision";
 import { inspectPcbCheckRevision } from "./check-revision";
 import { inspectPcbOutline } from "./pcb-outline";
@@ -17,7 +19,7 @@ import type {
   RouteResult,
   RouterCatalogId,
 } from "@fabdesk/protocol";
-import { useInfiniteQuery, useIsMutating, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useIsMutating, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useCoreClient } from "./provider";
 import { messagesKey } from "./events";
@@ -42,6 +44,25 @@ export function useProject(projectId: string | null) {
     queryFn: () => client.getProject(projectId!),
     enabled: !!projectId,
   });
+}
+
+export function useBoardSources(projectId: string | null) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["board-sources", projectId], queryFn: () => client.inspectBoardSources(projectId!), enabled: !!projectId });
+}
+
+export function useAssemblyPreviewRevisions(projectId: string, sources: ProjectBoardSources["sources"]) {
+  const client = useCoreClient();
+  const queries = useQueries({ queries: sources.map(source => {
+    const directory = source.source.location === "project" ? source.source.directory : null;
+    return { queryKey: directory === "." ? ["pcb-preview-revision", projectId] : directory ? ["pcb-preview-revision", projectId, directory] : ["pcb-preview-revision", projectId, "unresolved", source.source.id], queryFn: () => inspectPcbPreviewRevision(client, projectId, directory!), enabled: source.status === "available" && !!source.previewPath && directory !== null };
+  }) });
+  return sources.map((source, index) => ({ sourceId: source.source.id, trackable: source.status === "available" && !!source.previewPath && source.source.location === "project", ...queries[index]! }));
+}
+
+export function useAssemblyBoardInspection(projectId: string, board: BoardSourceSelection, enabled = true) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["assembly-board-inspection", projectId, board.sourceId, board.manifestSha256], queryFn: () => inspectAssemblyBoard(client, projectId, board), enabled });
 }
 
 export function useOpenCatalog(q = "") {
@@ -927,9 +948,9 @@ export function useStopFinishIt() {
   });
 }
 
-export function usePcbPreviewRevision(projectId: string | null, enabled = true) {
+export function usePcbPreviewRevision(projectId: string | null, enabled = true, directory = ".") {
   const client = useCoreClient();
-  return useQuery({ queryKey: ["pcb-preview-revision", projectId], queryFn: () => inspectPcbPreviewRevision(client, projectId!), enabled: !!projectId && enabled });
+  return useQuery({ queryKey: directory === "." ? ["pcb-preview-revision", projectId] : ["pcb-preview-revision", projectId, directory], queryFn: () => inspectPcbPreviewRevision(client, projectId!, directory), enabled: !!projectId && enabled });
 }
 
 export function useEnclosureSourceRevision(projectId: string | null, enabled = true) {

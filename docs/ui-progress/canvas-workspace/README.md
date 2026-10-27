@@ -366,3 +366,23 @@ The installed KiCad runtime test performed a valid 0.1 mm placement save, reject
 Deferred-job regressions also reject a retargeted project and a byte-identical replacement source directory, and verify original cancellation/progress ownership. The running isolated app inspected carrier 20 mm / four edges, I/O 15 mm / one rectangle, then carrier 20 mm again. Both sources had three native parts. Source, manifest and saved preview bytes remained unchanged; only KiCad’s normal session locks appeared. No root PCB was created. [Native walkthrough results](scoped-inspection-native.json).
 
 Root typecheck passes. The complete standard suite passes **2,112 tests / 29 skips / zero failures**, including core 548, tools 415 and protocol 93. Eighteen focused selector/transport/registry regressions passed before the broad run. No assembly editing UI is presented by this increment.
+
+
+## Declared multi-board canvas and source preview updates
+
+The overview now uses actual declared instances and saved PCB previews. One selection toolbar appears beside a board or link; no assistant or property panel opens by default. The Boards destination uses an explicit member picker. Native PCB inspection replaces the main canvas and is read-only. Ordinary single-board workflows remain available.
+
+Installed native-app validation used two owned PCB designs, three physical instances and one explicitly unverified illustrative connector link. It checked I/O 15 × 15 mm and carrier 20 × 15 mm inspections, shared-source warnings, selected-source generation from both overview and detail, unchanged carrier files, a retained 125% detail zoom and retained graph camera. A same-length/timestamp source change triggered warnings automatically. Membership changes disabled stale selections. The 960 × 720 window had no horizontal overflow and its toolbar stayed within the window. Dark-theme contrast was visually checked; Ask prepared an unsent draft. All fixture PCB/manifest/preview bytes and the original light theme were restored. [Walkthrough evidence](assembly-overview-native.json).
+
+Root typecheck passes. The complete standard suite passes **2,121 tests / 29 skips / zero failures**. The new helper coverage checks repeated instances, stale/missing ownership, response identity, partial geometry and member-relative preview receipts. Scoped export tests check selected-source publication, changed-membership preservation and aliased output rejection.
+
+This is a logical assembly overview with native read-only member inspection and explicit SVG preview generation. Member editing, schematic/3D/CAD actions, compatibility validation and review anchors are still pending.
+
+![Quiet default assembly overview](assembly-overview.png)
+![Selected shared-source tools](assembly-context-tools.png)
+![Shared source warnings](assembly-shared-warnings.png)
+![Explicit member preview refresh](assembly-preview-refreshed.png)
+![Contextual tools at 960 by 720](assembly-compact-tools.png)
+![Stale selection actions disabled](assembly-stale-selection.png)
+![Native carrier inspection](assembly-native-inspection.png)
+![Selected connection in dark theme](assembly-dark-connections.png)

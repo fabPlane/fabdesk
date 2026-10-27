@@ -41,3 +41,18 @@ test("missing source and artifact are distinct from a matching receipt", async (
 test("transport failures remain errors rather than being reported as unverified or current", async () => {
   await expect(inspectPcbPreviewRevision({ readFile: async () => { throw new Error("offline"); }, readFileBlob: async () => new Blob() }, "study")).rejects.toThrow("offline");
 });
+
+test("member preview checks stay inside the captured source directory", async () => {
+  const f = fixture(); f.writeReceipt();
+  const files = new Map([...f.files.entries()].map(([path, value]) => [`boards/io/${path}`, value]));
+  const reads: string[] = [];
+  const read = async (_id: string, path: string) => { reads.push(path); const value = files.get(path); if (value === undefined) throw new CoreHttpError(404, path, "not found"); return value; };
+  const client = { readFile: read, readFileBlob: async (id: string, path: string) => new Blob([await read(id, path)]) };
+  expect(await inspectPcbPreviewRevision(client, "project", "boards/io")).toBe("matches-source");
+  expect(reads.every(path => path.startsWith("boards/io/"))).toBe(true);
+  files.set("boards/io/board.kicad_pcb", "changed source");
+  expect(await inspectPcbPreviewRevision(client, "project", "boards/io")).toBe("source-changed");
+  reads.length = 0;
+  await expect(inspectPcbPreviewRevision(client, "project", "../outside")).rejects.toThrow();
+  expect(reads).toEqual([]);
+});

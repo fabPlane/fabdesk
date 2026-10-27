@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { useCore, useProject, useProjects, useThreads, WORKSPACE_AREAS, type WorkspaceArea } from "@fabdesk/client-core";
+import { useCore, useBoardSources, useProject, useProjects, useThreads, WORKSPACE_AREAS, type WorkspaceArea } from "@fabdesk/client-core";
 import { BoardPanel } from "../board/BoardPanel";
 import { ThreadView } from "../chat/ThreadView";
 import { ProjectPickerDialog } from "../chat/ProjectPickerDialog";
@@ -43,8 +43,14 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
   const { host, sseStatus, client } = useCore();
   const projectId = useUiStore((s) => s.activeProjectId);
   const project = useProject(projectId);
+  const boardSources = useBoardSources(projectId);
+  useEffect(() => {
+    const state = useUiStore.getState();
+    if (projectId && state.activeProjectId === projectId && boardSources.data?.mode === "assembly" && !state.workspaceByProject[projectId]) state.setWorkspaceArea("overview");
+  }, [projectId, boardSources.data]);
   const projects = useProjects();
   const area = useUiStore((s) => s.workspaceArea);
+  const areaLabel = area === "boards" && boardSources.data?.mode === "assembly" ? "Boards" : WORKSPACE_AREAS[area].label;
   const openArea = useUiStore((s) => s.setWorkspaceArea);
   const assistantOpen = useUiStore((s) => s.assistantOpen);
   const setAssistantOpen = useUiStore((s) => s.setAssistantOpen);
@@ -82,7 +88,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
         <button onClick={() => setCreating("github")}><Icon name="folderOpen" width={16} height={16} />Import from GitHub</button>
         <button onClick={() => setNavigationOpen(true)}><Icon name="sidebar" width={16} height={16} />Browse projects & chats</button>
       </WorkspaceMenu>
-      {projectId && <span className="fd-canvas-breadcrumb"><span>/</span>{WORKSPACE_AREAS[area].label}</span>}
+      {projectId && <span className="fd-canvas-breadcrumb"><span>/</span>{areaLabel}</span>}
       <div className="fd-canvas-header-actions">
         <span className="fd-canvas-connection" title={coreStatus?.message ?? `Core ${coreStatus?.state ?? "ready"}; events ${sseStatus}`}><i data-connected={connected} />{connected ? local ? "Local workspace" : "Remote workspace" : "Reconnecting…"}</span>
         {projectId && <Button size="sm" onClick={() => openArea("outputs")}><Icon name="export" width={16} height={16} />Export</Button>}
@@ -99,14 +105,14 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
     {banner}
     <main className="fd-canvas-main" data-area={fresh ? "start" : area}>
       {projectId && !secondary && !conversationOnly && <nav className="fd-canvas-destinations" aria-label="Project workspace">
-        <WorkspaceMenu label={<><Icon name="library" width={16} height={16} /><span>{WORKSPACE_AREAS[area].label}</span><Icon name="chevronDown" width={14} height={14} /></>}>
+        <WorkspaceMenu label={<><Icon name="library" width={16} height={16} /><span>{areaLabel}</span><Icon name="chevronDown" width={14} height={14} /></>}>
           <div className="fd-menu-caption">Project workspace</div>
-          {(Object.keys(WORKSPACE_AREAS) as WorkspaceArea[]).map((key) => <button key={key} aria-current={area === key ? "page" : undefined} onClick={() => openArea(key)}>{WORKSPACE_AREAS[key].label}</button>)}
+          {(Object.keys(WORKSPACE_AREAS) as WorkspaceArea[]).map((key) => <button key={key} aria-current={area === key ? "page" : undefined} onClick={() => openArea(key)}>{key === "boards" && boardSources.data?.mode === "assembly" ? "Boards" : WORKSPACE_AREAS[key].label}</button>)}
         </WorkspaceMenu>
       </nav>}
       {secondary && <Button className="fd-canvas-back" size="sm" onClick={() => { ui().setActiveOpenSourceId(null); ui().setInventoryOpen(false); ui().setOrderFlowOpen(false); ui().setBoardOpen(true); }}>← Return to canvas</Button>}
       <div className="fd-canvas-surface">
-        {order ? <OrderFlow /> : inventory ? <InventoryView /> : sourceId ? <OpenSourceView /> : fresh || conversationOnly ? null : area === "overview" ? <ProjectOverview key={projectId} /> : <BoardPanel canvas />}
+        {order ? <OrderFlow /> : inventory ? <InventoryView /> : sourceId ? <OpenSourceView /> : fresh || conversationOnly ? null : area === "overview" || area === "boards" && boardSources.data?.mode === "assembly" ? <ProjectOverview key={projectId} boardPicker={area === "boards"} /> : <BoardPanel canvas />}
       </div>
         <section className={fresh ? "fd-canvas-start-surface" : conversationOnly ? "fd-canvas-conversation-surface" : "fd-assistant-dock"} aria-label="fabPlane assistant" hidden={secondary || (!fresh && !conversationOnly && !assistantOpen)} onKeyDown={(event) => {
           if (!fresh && !conversationOnly && event.key === "Escape" && !(event.target as HTMLElement).closest("details[open]")) { event.stopPropagation(); setAssistantOpen(false); requestAnimationFrame(() => document.querySelector<HTMLButtonElement>("[data-assistant-launcher]")?.focus()); }

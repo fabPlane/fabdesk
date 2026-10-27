@@ -1,4 +1,4 @@
-import { PcbPreviewRevision, PCB_PREVIEW_REVISION_PATH } from "@fabdesk/protocol";
+import { AssemblyRelativePath, PcbPreviewRevision, PCB_PREVIEW_REVISION_PATH } from "@fabdesk/protocol";
 import { CoreHttpError, type CoreClient } from "./CoreClient";
 
 export type PcbPreviewState = "matches-source" | "source-changed" | "artifact-changed" | "untracked" | "missing-source" | "missing-artifact";
@@ -9,10 +9,11 @@ export async function sha256Blob(blob: Blob): Promise<string> {
 }
 
 /** Compare bytes, never timestamps. Older previews remain unverified until explicitly regenerated. */
-export async function inspectPcbPreviewRevision(client: Pick<CoreClient, "readFile" | "readFileBlob">, projectId: string): Promise<PcbPreviewState> {
+export async function inspectPcbPreviewRevision(client: Pick<CoreClient, "readFile" | "readFileBlob">, projectId: string, directory = "."): Promise<PcbPreviewState> {
+  const prefix = directory === "." ? "" : `${AssemblyRelativePath.parse(directory)}/`;
   let raw: unknown;
   try {
-    const text = await client.readFile(projectId, PCB_PREVIEW_REVISION_PATH);
+    const text = await client.readFile(projectId, prefix + PCB_PREVIEW_REVISION_PATH);
     try { raw = JSON.parse(text); } catch { return "untracked"; }
   } catch (error) {
     if (error instanceof CoreHttpError && error.status === 404) return "untracked";
@@ -22,7 +23,7 @@ export async function inspectPcbPreviewRevision(client: Pick<CoreClient, "readFi
   if (!parsed.success) return "untracked";
   const receipt = parsed.data;
   const read = async (path: string) => {
-    try { return await client.readFileBlob(projectId, path); }
+    try { return await client.readFileBlob(projectId, prefix + path); }
     catch (error) { if (error instanceof CoreHttpError && error.status === 404) return null; throw error; }
   };
   const [source, artifact] = await Promise.all([read(receipt.source), read(receipt.artifact)]);

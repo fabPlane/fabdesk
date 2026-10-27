@@ -1,12 +1,22 @@
 import { useState } from "react";
-import { savedOutputs, useProject, useProjectOrder, usePcbPreviewRevision, useBoardModelRevision, useEnclosureSourceRevision, usePcbCheckRevision } from "@fabdesk/client-core";
+import { CoreHttpError, savedOutputs, useBoardSources, useProject, useProjectOrder, usePcbPreviewRevision, useBoardModelRevision, useEnclosureSourceRevision, usePcbCheckRevision } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { ProjectImage } from "../chat/ProjectImage";
 import { Button, EmptyState, LoadError, Spinner } from "../components/ui";
+import { AssemblyOverview } from "./AssemblyOverview";
 import { Icon } from "../components/Icon";
 
-/** The current canonical board, derived from project files; no inferred assembly membership. */
-export function ProjectOverview() {
+/** Declared assembly membership takes priority over the legacy canonical root board. */
+export function ProjectOverview({ boardPicker = false }: { boardPicker?: boolean } = {}) {
+  const projectId = useUiStore(state => state.activeProjectId), project = useProject(projectId), sources = useBoardSources(projectId);
+  if (!projectId) return <EmptyState title="Choose a project to see its overview" />;
+  if (sources.isError && !sources.data && !(sources.error instanceof CoreHttpError && sources.error.status === 404 && project.data && !project.data.files.some(file => file.path === "fabplane.assembly.json"))) return <LoadError title="Could not inspect project board sources" onRetry={() => { void sources.refetch(); void project.refetch(); }} />;
+  if (sources.isPending) return <div className="flex h-full items-center justify-center"><Spinner /></div>;
+  if (sources.data?.mode === "assembly") return <AssemblyOverview boardPicker={boardPicker} projectId={projectId} name={project.data?.name ?? "Project overview"} data={sources.data} checking={sources.isFetching} failed={sources.isError} onRetry={() => { void sources.refetch(); }} />;
+  return <SingleBoardOverview />;
+}
+
+function SingleBoardOverview() {
   const projectId = useUiStore((s) => s.activeProjectId);
   const project = useProject(projectId);
   const order = useProjectOrder(projectId);

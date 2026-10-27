@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { cp, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { createHash } from "node:crypto";
 import { Hono } from "hono";
@@ -130,4 +130,36 @@ test("direct MCP and capability dispatch preserve the same explicit source selec
     } finally { await client.close(); await server.close(); }
   }
   expect(f.calls).toEqual([join(f.root, "boards/a"), join(f.root, "boards/b")]);
+});
+
+test("explicit member preview export publishes only the chosen source and a matching receipt", async () => {
+  const f = await fixture();
+  for (const id of ["a", "b"]) { await mkdir(join(f.root, "boards", id, "renders")); await writeFile(join(f.root, "boards", id, "renders/pcb.svg"), `old ${id}`); }
+  f.services.kicad.exportPcbSvg = async (_cli, options) => { expect(await readFile(options.board, "utf8")).toBe("source a"); await writeFile(options.output, "<svg viewBox=\"0 0 10 10\"/>"); return { paths: [options.output] }; };
+  const result = await f.registry.invoke("render_pcb_svg", { project: f.project.id, board: f.board }, (projectRef, def, board) => f.factory({ projectRef, def, ...(board ? { board } : {}), signal: new AbortController().signal, progress: () => {} }));
+  expect(result.json).toMatchObject({ _board: { projectId: f.project.id, sourceId: "a" } });
+  const artifact = await readFile(join(f.root, "boards/a/renders/pcb.svg")), receipt = JSON.parse(await readFile(join(f.root, "boards/a/renders/pcb.svg.revision.json"), "utf8"));
+  expect(receipt.sourceSha256).toBe(createHash("sha256").update("source a").digest("hex"));
+  expect(receipt.artifactSha256).toBe(createHash("sha256").update(artifact).digest("hex"));
+  expect(await readFile(join(f.root, "boards/b/renders/pcb.svg"), "utf8")).toBe("old b");
+  expect(await readFile(join(f.root, "board.kicad_pcb"), "utf8")).toBe("root source");
+});
+test("membership changes during preview export preserve both the previous member image and receipt", async () => {
+  const f = await fixture(), output = join(f.root, "boards/a/renders/pcb.svg"), receipt = `${output}.revision.json`;
+  await mkdir(dirname(output)); await writeFile(output, "previous image"); await writeFile(receipt, "previous receipt");
+  f.services.kicad.exportPcbSvg = async (_cli, options) => { await writeFile(options.output, "new image"); await writeFile(join(f.root, "fabplane.assembly.json"), "{}"); return { paths: [options.output] }; };
+  await expect(f.registry.invoke("render_pcb_svg", { project: f.project.id, board: f.board }, (projectRef, def, board) => f.factory({ projectRef, def, ...(board ? { board } : {}), signal: new AbortController().signal, progress: () => {} }))).rejects.toThrow("ownership changed");
+  expect(await readFile(output, "utf8")).toBe("previous image"); expect(await readFile(receipt, "utf8")).toBe("previous receipt");
+});
+test("member preview and receipt aliases cannot redirect publication into another source", async () => {
+  for (const alias of ["directory", "receipt"]) {
+    const f = await fixture();
+    await mkdir(join(f.root, "boards/b/renders")); await writeFile(join(f.root, "boards/b/renders/pcb.svg"), "other image"); await writeFile(join(f.root, "boards/b/renders/pcb.svg.revision.json"), "other receipt");
+    if (alias === "directory") await symlink(join(f.root, "boards/b/renders"), join(f.root, "boards/a/renders"));
+    else { await mkdir(join(f.root, "boards/a/renders")); await symlink(join(f.root, "boards/b/renders/pcb.svg.revision.json"), join(f.root, "boards/a/renders/pcb.svg.revision.json")); }
+    let exported = false;
+    f.services.kicad.exportPcbSvg = async () => { exported = true; throw new Error("Unexpected export"); };
+    await expect(f.registry.invoke("render_pcb_svg", { project: f.project.id, board: f.board }, (projectRef, def, board) => f.factory({ projectRef, def, ...(board ? { board } : {}), signal: new AbortController().signal, progress: () => {} }))).rejects.toThrow("outside");
+    expect(exported).toBe(false); expect(await readFile(join(f.root, "boards/b/renders/pcb.svg"), "utf8")).toBe("other image"); expect(await readFile(join(f.root, "boards/b/renders/pcb.svg.revision.json"), "utf8")).toBe("other receipt");
+  }
 });

@@ -1,6 +1,6 @@
 /** Render toolset: schematic/PCB images, GLB, and product videos. */
 import { createHash } from "node:crypto";
-import { BoardModelRevision, BOARD_MODEL_REVISION_PATH } from "@fabdesk/protocol";
+import { BoardModelRevision, BOARD_MODEL_REVISION_PATH, PCB_PREVIEW_REVISION_PATH } from "@fabdesk/protocol";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { z } from "zod/v4";
 import { tmpdir } from "node:os";
@@ -14,7 +14,7 @@ import {
   VIDEO_PRESETS,
   VIDEO_RESOLUTIONS,
 } from "@fabdesk/product-video";
-import { PROJECT_FILES, ensureDir, exists, mtimeMs, writeAtomic, writeJson } from "../fs";
+import { PROJECT_FILES, ensureDir, exists, jailPath, mtimeMs, writeAtomic, writeJson } from "../fs";
 import { ToolError, defineTool } from "../registry";
 import { fileUrl, loadNetlist, ok, p, requireBoard, requireKicad, requireSchematic } from "./common";
 import { pcbPreviewFileHash, recordPcbPreviewRevision } from "../pcb-preview-revision";
@@ -128,6 +128,7 @@ export const render_schematic_svg = defineTool({
 
 export const render_pcb_svg = defineTool({
   name: "render_pcb_svg",
+  boardScoped: true,
   toolset: "render",
   title: "Render PCB SVG",
   description: "Render board.kicad_pcb copper, silkscreen, and edge cuts to renders/pcb.svg.",
@@ -143,8 +144,8 @@ export const render_pcb_svg = defineTool({
     const project = ctx.requireProject();
     const cli = await requireKicad(ctx);
     const board = await requireBoard(project);
-    await ensureDir(p(project, PROJECT_FILES.renders));
-    const output = p(project, PROJECT_FILES.renders, "pcb.svg");
+    const output = await jailPath(project.dir, `${PROJECT_FILES.renders}/pcb.svg`);
+    await jailPath(project.dir, PCB_PREVIEW_REVISION_PATH);
     ctx.progress(0.2, "exporting svg");
     const sourceBytes = await readFile(board);
     const sourceRevision = createHash("sha256").update(sourceBytes).digest("hex");
@@ -159,6 +160,10 @@ export const render_pcb_svg = defineTool({
         throw new ToolError("PCB changed while rendering. Review the saved board and render the preview again.", "precondition");
       }
       const artifactBytes = await readFile(svg);
+      // A queued/exporting member must retain its original source ownership and output jail.
+      await jailPath(project.dir, `${PROJECT_FILES.renders}/pcb.svg`);
+      await jailPath(project.dir, PCB_PREVIEW_REVISION_PATH);
+      await ctx.runInScope?.(async () => {});
       await writeAtomic(output, artifactBytes);
       await recordPcbPreviewRevision(project.dir, sourceRevision, createHash("sha256").update(artifactBytes).digest("hex"));
     } finally {

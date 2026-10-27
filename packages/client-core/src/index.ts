@@ -184,3 +184,5 @@ export * from "./board-model-revision";
 export { useBoardModelRevision } from "./queries";
 
 export * from "./output-library";
+
+export * from "./assembly-scene";
