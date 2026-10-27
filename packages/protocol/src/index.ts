@@ -24,3 +24,5 @@ export * from "./mechanical-model";
 
 export * from "./pcb-parts";
 export * from "./assembly";
+
+export * from "./sketch";

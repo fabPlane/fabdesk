@@ -281,11 +281,11 @@ export class CoreClient {
   }
   async uploadSketch(
     projectId: string,
-    png: Blob,
+    file: Blob,
     filename = "sketch.png",
   ): Promise<{ path: string }> {
     const form = new FormData();
-    form.append("file", png, filename);
+    form.append("file", file, filename);
     const res = await this.fetchImpl(
       `${this.baseUrl}/projects/${encodeURIComponent(projectId)}/sketches`,
       {

@@ -470,3 +470,20 @@ Limits: this persists **saved drawings**. Unsaved scenes still live in memory un
 ![Reopened editable objects and text editing](editable-sketch-reopened.png)
 ![Failed load leaves the current drawing visible](editable-sketch-failed-load.png)
 ![Saved copy at the minimum desktop window](editable-sketch-compact.png)
+
+
+## Standalone drawing-file import
+
+Sketch → Draw now imports an existing `.excalidraw` version 2 drawing through the native file picker. Import fully decodes a working copy before replacing the draft; it writes nothing until Save and attach. Save preserves the original file bytes under `sketches/` before uploading an editable PNG of the current drawing. An open save session reuses its successfully uploaded original when retrying a failed PNG upload. Original-source failures prevent the PNG upload; project creation/retry ownership remains captured. Source files and PNG copies both appear under Saved drawings, and reopening either does not overwrite it. Uploading an ordinary reference image also keeps a separately remembered unsaved drawing instead of clearing it.
+
+The HTTP boundary accepts a supported drawing envelope, limits new source files to 10 MiB / 10,000 elements, rejects invalid JSON/library files/unsupported versions and keeps collision names separate. It preserves unknown fields and whitespace; the installed drawing library restores the editable objects. This structural envelope check is not PCB, schematic or compatibility validation.
+
+Native human-style walkthrough: header → New project → named fresh project → Sketch → native macOS picker → original file. The project sketches folder stayed empty until Save. Closing/reopening the tool kept the source File with its in-memory scene. Choosing an invalid library envelope kept the valid original and working draft. After editing the text object and saving, the project contained exactly the original JSON and one editable PNG. Original SHA/bytes, whitespace and extra notes matched the chosen file; native drawing IDs survived in the edited PNG. After renderer reload, the original reopened with its original text and the PNG reopened with the edited text. Actual 960 × 720 fit passed, then the original window size was restored. No agent message was sent. [Exact preservation evidence](sketch-import-native.json).
+
+Root typecheck passed; final UI typecheck passed after hiding the duplicate native input from keyboard navigation. Complete standard suite: **2,134 passed / 30 skipped / zero failures**. Focused envelope/client retry/HTTP tests passed, including raw-source equality, collision naming, invalid envelope and 10 MiB rejection. Earlier installed-native PCB evidence remains qualified under its own milestones; this change did not edit a PCB.
+
+Limits: external import supports the stated version 2 envelope, not every historical or library format. Unsaved scenes/original File objects remain in memory and need recovery persistence. Image/asset compatibility and full sketch-to-engineering generation still need broader walkthroughs. Save is staged, not a two-file filesystem transaction: if the PNG upload fails, the preserved original may already exist and stays available for retry/reopening.
+
+![Import into a fresh project before any file writes](sketch-import-before-save.png)
+![Preserved original reopened after reload](sketch-import-original.png)
+![Edited working copy reopened in the compact app](sketch-import-compact.png)

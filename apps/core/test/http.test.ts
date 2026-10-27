@@ -316,6 +316,23 @@ describe("http daemon", () => {
     }>;
     expect(sketches.map((s) => s.path)).toEqual(["sketches/front.png"]);
 
+    // Original editable source bytes and collision naming survive without becoming a PNG.
+    const drawing = '{\n "type": "excalidraw", "version": 2, "elements": [{"id":"kept","type":"rectangle"}], "custom": "untouched"\n}\n';
+    const uploadDrawing = (body: string, name = "front.excalidraw") => {
+      const form = new FormData(); form.append("file", new Blob([body], { type: "application/vnd.excalidraw+json" }), name);
+      return fetch(`${daemon.url}/projects/${project.id}/sketches`, { method: "POST", headers: H(), body: form });
+    };
+    const source = await uploadDrawing(drawing, "../../front.excalidraw");
+    expect(source.status).toBe(201);
+    expect(((await source.json()) as { path: string }).path).toBe("sketches/front.excalidraw");
+    expect(await (await api(`/projects/${project.id}/files/sketches/front.excalidraw`)).text()).toBe(drawing);
+    const duplicate = await uploadDrawing(drawing);
+    expect(duplicate.status).toBe(201);
+    expect(((await duplicate.json()) as { path: string }).path).toBe("sketches/front-2.excalidraw");
+    expect((await uploadDrawing("not json")).status).toBe(415);
+    expect((await uploadDrawing('{"type":"excalidrawlib","version":2,"elements":[]}')).status).toBe(415);
+    expect((await uploadDrawing(" ".repeat(10 * 1024 * 1024 + 1))).status).toBe(413);
+
     // PATCH manifest + settings
     const patched = (await (
       await api(`/projects/${project.id}`, {

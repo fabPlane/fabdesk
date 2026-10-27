@@ -70,3 +70,36 @@ describe("sketch draft ownership", () => {
 test("editable drawing picker excludes ordinary references, unrelated files and nested paths", () => {
   expect(editableSketchPaths(["sketches/sketch-2.excalidraw.png", "sketches/sketch-1.excalidraw.png", "sketches/sketch-2.excalidraw-2.png", "sketches/photo.png", "sketches/photo.jpg", "renders/sketch.excalidraw.png", "sketches/nested/sketch.excalidraw.png", "sketches/..\\sketch.excalidraw.png"].map(path => ({ path })))).toEqual(["sketches/sketch-2.excalidraw.png", "sketches/sketch-2.excalidraw-2.png", "sketches/sketch-1.excalidraw.png"]);
 });
+
+test("import saves the captured original before the image and retries without re-uploading it", async () => {
+  const calls: string[] = [];
+  let fail = true;
+  const source = { file: new Blob(['{"original":"unchanged"}']), name: "existing.excalidraw" };
+  const session = createSketchDraftSession({ projectId: "owned", onProjectCreated: () => { throw new Error("unexpected creation"); }, client: {
+    createProject: async () => { throw new Error("unexpected creation"); },
+    uploadSketch: async (id, blob, name = "sketch.png") => { calls.push(`${id}/${name}`); if (name.endsWith(".png") && fail) throw new Error("image failed"); if (name.endsWith(".excalidraw")) expect(await blob.text()).toBe('{"original":"unchanged"}'); return { path: `sketches/${name}` }; },
+  } });
+  await expect(session.save(new Blob(), "first.png", source)).rejects.toThrow("image failed");
+  fail = false;
+  expect(await session.save(new Blob(), "retry.png", source)).toMatchObject({ projectId: "owned", sourcePath: "sketches/existing.excalidraw", path: "sketches/retry.png" });
+  expect(calls).toEqual(["owned/existing.excalidraw", "owned/first.png", "owned/retry.png"]);
+});
+
+test("failed source upload prevents image upload and can retry the original", async () => {
+  const calls: string[] = [];
+  let fail = true;
+  const source = { file: new Blob(), name: "drawing.excalidraw" };
+  const session = createSketchDraftSession({ projectId: "owned", onProjectCreated: () => {}, client: {
+    createProject: async () => { throw new Error("unexpected creation"); },
+    uploadSketch: async (_id, _blob, name = "sketch.png") => { calls.push(name); if (fail) throw new Error("source failed"); return { path: `sketches/${name}` }; },
+  } });
+  await expect(session.save(new Blob(), "image.png", source)).rejects.toThrow("source failed");
+  expect(calls).toEqual(["drawing.excalidraw"]);
+  fail = false;
+  await session.save(new Blob(), "image.png", source);
+  expect(calls).toEqual(["drawing.excalidraw", "drawing.excalidraw", "image.png"]);
+});
+
+test("saved drawing choices include original scene files alongside their editable image copies", () => {
+  expect(editableSketchPaths([{ path: "sketches/old.excalidraw" }, { path: "sketches/old-2.excalidraw" }, { path: "sketches/draft.excalidraw.png" }, { path: "sketches/notes.json" }])).toEqual(["sketches/old.excalidraw", "sketches/old-2.excalidraw", "sketches/draft.excalidraw.png"]);
+});

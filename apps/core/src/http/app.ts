@@ -4,6 +4,8 @@ import { threadTitleFrom } from "../thread-title";
 import { basename, extname, isAbsolute, join } from "node:path";
 import { Hono, type Context } from "hono";
 import {
+  isEditableSketchSource,
+  MAX_EDITABLE_SKETCH_BYTES,
   CreateProject,
   CreateThread,
   DevicePushRegistration,
@@ -424,9 +426,12 @@ export function createApp(deps: AppDeps): Hono<Env> {
       data = new Uint8Array(await c.req.arrayBuffer());
       name = c.req.query("name") ?? "sketch.png";
     }
-    if (!isPng(data) && !isJpeg(data)) return c.json({ error: "PNG or JPEG required" }, 415);
+    const sceneFile = /\.excalidraw$/i.test(name);
+    if (sceneFile && data.length > MAX_EDITABLE_SKETCH_BYTES) return c.json({ error: "Editable drawings must be 10 MiB or smaller" }, 413);
+    const scene = sceneFile && isEditableSketchSource(new TextDecoder().decode(data));
+    if (sceneFile ? !scene : !isPng(data) && !isJpeg(data)) return c.json({ error: "PNG, JPEG or a supported .excalidraw drawing required" }, 415);
     const safe = basename(name).replace(/[^A-Za-z0-9._-]/g, "_") || "sketch.png";
-    const stamped = /\.(png|jpe?g)$/i.test(safe) ? safe : `${safe}.png`;
+    const stamped = scene ? safe : /\.(png|jpe?g)$/i.test(safe) ? safe : `${safe}.png`;
     const dir = join(h.dir, PROJECT_FILES.sketches);
     await mkdir(dir, { recursive: true });
     let final = stamped;

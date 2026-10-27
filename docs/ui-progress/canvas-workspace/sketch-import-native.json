@@ -1,0 +1,28 @@
+{
+  "projectId": "prj_mvr8ts5ybaf179c2d3",
+  "humanCreatedFreshProject": true,
+  "nativeOsFilePicker": true,
+  "importBeforeSaveWritesNothing": true,
+  "originalRetainedAcrossCloseReopen": true,
+  "invalidImportPreservesValidOriginal": true,
+  "originalFileUnchanged": true,
+  "storedOriginalBytesIdentical": true,
+  "originalSha256": "6e388261afe8da68ca268b2edf6f5f1869dd95da43bf18a28a225bc8e26d3913",
+  "originalPath": "sketches/sketch-import-source.excalidraw",
+  "workingCopyPath": "sketches/sketch-1793139390317.excalidraw.png",
+  "workingCopySha256": "ae0abe45a4f0cc31de6bc37094eada83e0a6082fc4cd9b0831eca159ff85abed",
+  "objectIdsPreserved": true,
+  "editedText": "VAIO I/O board\n36 x 27.455 mm\nImported working copy",
+  "noAgentMessageSent": true,
+  "notPcbOrElectricalValidation": true,
+  "sourceAndPngReopenedAfterReload": true,
+  "originalReopenedWithOriginalText": true,
+  "workingCopyReopenedWithEditedText": true,
+  "minimumWindow": {
+    "width": 960,
+    "height": 720,
+    "controlsAndDrawingFit": true
+  },
+  "hiddenFileInputRemovedFromKeyboardNavigation": true,
+  "limits": "Standalone version 2 envelope, <=10 MiB and <=10,000 elements. Unsaved scenes remain in memory; image assets and broader format compatibility need further walkthroughs."
+}

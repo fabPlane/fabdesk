@@ -1,4 +1,5 @@
 import "@excalidraw/excalidraw/index.css";
+import { isEditableSketchSource, MAX_EDITABLE_SKETCH_BYTES } from "@fabdesk/protocol";
 import type { ExcalidrawImperativeAPI, ExcalidrawInitialDataState } from "@excalidraw/excalidraw/types";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -8,7 +9,7 @@ import { newChatDraftKey, useUiStore } from "../stores/ui";
 import { basename } from "../util";
 
 const Excalidraw = lazy(() => import("@excalidraw/excalidraw").then((m) => ({ default: m.Excalidraw })));
-type Scenes = Map<string, ExcalidrawInitialDataState>;
+type Scenes = Map<string, { scene: ExcalidrawInitialDataState; source?: File }>;
 
 /** Capture ownership when opened, never from whichever chat is active when upload finishes. */
 export function SketchPad() {
@@ -51,10 +52,14 @@ function SketchSession({ scenes }: { scenes: Scenes }) {
     return () => URL.revokeObjectURL(url);
   }, [file]);
   const [error, setError] = useState<string | null>(null);
-  const initialScene = useRef(scenes.get(newChatDraftKey(target.projectId)) ?? null);
+  const memory = scenes.get(newChatDraftKey(target.projectId));
+  const initialScene = useRef(memory?.scene ?? null);
+  const originalSource = useRef<File | null>(memory?.source ?? null);
+  const sourceInput = useRef<HTMLInputElement>(null);
+  const [sourceName, setSourceName] = useState(memory?.source?.name ?? "");
   const rememberScene = useCallback(() => {
     const scene = initialScene.current;
-    if (scene) scenes.set(newChatDraftKey(session.projectId), scene);
+    if (scene) scenes.set(newChatDraftKey(session.projectId), { scene, ...(originalSource.current ? { source: originalSource.current } : {}) });
   }, [scenes, session]);
   const close = useCallback(() => {
     if (busyRef.current) return;
@@ -92,12 +97,14 @@ function SketchSession({ scenes }: { scenes: Scenes }) {
         });
         name = `sketch-${Date.now()}.excalidraw.png`;
       }
-      const saved = await session.save(blob, name);
+      const saved = await session.save(blob, name, mode === "draw" && originalSource.current ? { file: originalSource.current, name: originalSource.current.name } : undefined);
       const key = target.threadId ?? newChatDraftKey(saved.projectId);
       useUiStore.getState().addAttachment(key, { path: saved.path, mime: mode === "draw" ? "image/png" : file?.type || (/\.jpe?g$/i.test(name) ? "image/jpeg" : "image/png"), label: basename(saved.path) });
       void qc.invalidateQueries({ queryKey: ["project", saved.projectId] });
-      scenes.delete(newChatDraftKey(target.projectId));
-      scenes.delete(newChatDraftKey(saved.projectId));
+      if (mode === "draw") {
+        scenes.delete(newChatDraftKey(target.projectId));
+        scenes.delete(newChatDraftKey(saved.projectId));
+      } else rememberScene();
       useUiStore.getState().setSketchOpen(false);
       useUiStore.getState().focusComposer();
     } catch (e) {
@@ -109,6 +116,32 @@ function SketchSession({ scenes }: { scenes: Scenes }) {
     }
   };
 
+  const loadDrawing = async (file: File, source: File | null) => {
+    const api = apiRef.current;
+    if (!api) throw new Error("The drawing canvas is still loading. Try again in a moment.");
+    const { loadFromBlob } = await import("@excalidraw/excalidraw");
+    const scene = await loadFromBlob(file, null, null);
+    if (!scene.elements?.some(element => !element.isDeleted)) throw new Error("This file has no editable drawing.");
+    // Finish decoding before replacing the current draft.
+    api.resetScene(); api.addFiles(Object.values(scene.files ?? {}));
+    api.updateScene({ elements: scene.elements, appState: scene.appState });
+    api.scrollToContent(undefined, { fitToViewport: true, viewportZoomFactor: .65, maxZoom: 1 });
+    initialScene.current = scene;
+    originalSource.current = source; setSourceName(source?.name ?? "");
+    rememberScene();
+  };
+  const importDrawing = async (file: File) => {
+    if (busyRef.current) return;
+    busyRef.current = true; setBusy(true); setLoading(true); setError(null);
+    try {
+      if (!/\.excalidraw$/i.test(file.name)) throw new Error("Choose an .excalidraw drawing.");
+      if (file.size > MAX_EDITABLE_SKETCH_BYTES) throw new Error("Choose a drawing no larger than 10 MiB.");
+      if (!isEditableSketchSource(await file.text())) throw new Error("This file is not a supported .excalidraw drawing (version 2).");
+      await loadDrawing(file, file);
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not import this drawing."); }
+    finally { busyRef.current = false; setBusy(false); setLoading(false); }
+  };
+
   const openSavedDrawing = async () => {
     if (busyRef.current || !target.projectId || !savedDrawings.includes(savedPath)) return;
     const api = apiRef.current;
@@ -116,16 +149,7 @@ function SketchSession({ scenes }: { scenes: Scenes }) {
     busyRef.current = true; setBusy(true); setLoading(true); setError(null);
     try {
       const blob = await client.readFileBlob(target.projectId, savedPath);
-      const { loadFromBlob } = await import("@excalidraw/excalidraw");
-      const scene = await loadFromBlob(new File([blob], basename(savedPath), { type: "image/png" }), null, null);
-      if (!scene.elements?.some(element => !element.isDeleted)) throw new Error("This saved file has no editable drawing. Upload it as a reference image instead.");
-      // Fetch/decode completely before replacing the draft; a failed load leaves it intact.
-      api.resetScene();
-      api.addFiles(Object.values(scene.files ?? {}));
-      api.updateScene({ elements: scene.elements, appState: scene.appState });
-      api.scrollToContent(undefined, { fitToViewport: true, viewportZoomFactor: .65, maxZoom: 1 });
-      initialScene.current = scene;
-      rememberScene();
+      await loadDrawing(new File([blob], basename(savedPath), { type: /\.excalidraw$/i.test(savedPath) ? "application/vnd.excalidraw+json" : "image/png" }), null);
     } catch {
       setError("Could not open this drawing. Choose another saved copy, or use Upload image to attach a reference.");
     } finally {
@@ -153,6 +177,11 @@ function SketchSession({ scenes }: { scenes: Scenes }) {
         <p className="border-b border-border px-3 py-2 text-xs text-muted">
           {target.projectId ? mode === "draw" ? "Save an editable PNG in this project and attach it to your next message. Each save keeps a new copy." : "Save the original image in this project and attach it to your next message." : "Saving creates a project automatically. Your sketch stays with it; nothing is sent to the agent yet."}
         </p>
+        {mode === "draw" && <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2 text-xs">
+          <Button size="sm" disabled={busy || needsProjectChat} onClick={() => sourceInput.current?.click()}>{hasDrawing ? "Replace draft from file…" : "Import drawing…"}</Button>
+          <input ref={sourceInput} type="file" accept=".excalidraw,application/vnd.excalidraw+json" aria-label="Import editable drawing" hidden disabled={busy} onChange={event => { const next = event.target.files?.[0]; event.target.value = ""; if (next) void importDrawing(next); }} />
+          <span className="min-w-0 break-all text-muted">{sourceName ? `${sourceName} · Original file will be preserved when you save.` : ".excalidraw · Import opens a copy; nothing is written until you save."}</span>
+        </div>}
         {mode === "draw" && savedDrawings.length > 0 && <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2 text-xs">
           <label className="flex min-w-0 items-center gap-2">Saved drawings
             <select aria-label="Saved drawings" className="max-w-[45vw] rounded border border-border bg-panel px-2 py-1" value={savedPath} disabled={busy} onChange={event => setSavedPath(event.target.value)}>
