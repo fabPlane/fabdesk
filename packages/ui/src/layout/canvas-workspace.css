@@ -238,3 +238,9 @@
 .fd-native-part-target { position:absolute; z-index:95; transform:translate(-50%,-50%); width:28px; height:28px; display:grid; place-items:center; border:2px solid var(--fd-primary); border-radius:50%; background:var(--fd-panel); color:var(--fd-primary); box-shadow:0 0 0 5px #0c80561c; cursor:move; touch-action:none; user-select:none; font-size:23px; line-height:1; }
 .fd-native-part-target:focus-visible { outline:3px solid var(--fd-accent); outline-offset:4px; }
 .fd-native-part-target-label { position:absolute; top:calc(100% + 9px); left:50%; transform:translateX(-50%); padding:5px 8px; border:1px solid var(--fd-border); border-radius:6px; background:var(--fd-panel); color:var(--fd-fg); font-size:11px; white-space:nowrap; pointer-events:none; }
+
+.fd-native-part-target[data-corner=true] { border-radius:6px; cursor:nwse-resize; font-size:21px; }
+.fd-outline-size-preview { position:absolute; z-index:27; border:2px dashed var(--fd-primary); background:#0c805608; pointer-events:none; }
+
+.fd-location-anchor:has(.fd-native-part-control[data-mode=outline][data-open=true]) .fd-location-toolbar { visibility:hidden; pointer-events:none; }
+.fd-location-anchor:has(.fd-native-part-control[data-mode=outline][data-open=true]) .fd-location-marker { display:none; }

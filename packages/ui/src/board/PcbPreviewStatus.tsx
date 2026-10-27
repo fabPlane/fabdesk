@@ -7,7 +7,7 @@ export function PcbPreviewStatus({ projectId, busy, error, onUpdate, coordinates
   const revision = usePcbPreviewRevision(projectId);
   const state = revision.data;
   const changed = state === "source-changed";
-  const matches = state === "matches-source" && coordinatesVerified && !revision.isFetching && !revision.isError;
+  const matches = state === "matches-source" && coordinatesVerified && !revision.isFetching && !revision.isError && !busy;
   const label = busy ? "Updating preview…" : revision.isPending || revision.isFetching ? "Checking preview…" : revision.isError ? "Could not verify preview" : matches ? "Preview matches PCB" : state === "matches-source" && !coordinatesVerified ? "Preview origin unverified" : changed ? "PCB changed since preview" : state === "artifact-changed" ? "Preview changed outside export" : state === "missing-source" ? "PCB source missing" : "Saved preview · unverified";
   return <div className="fd-preview-status" data-state={matches ? "matches" : changed ? "changed" : "unverified"}>
     <div title="Compares this SVG and board.kicad_pcb against the recorded export hashes. It does not check schematic synchronization, other outputs or electrical compatibility.">

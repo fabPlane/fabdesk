@@ -13,3 +13,7 @@ test("pointer proposals snap both axes to the requested absolute grid", () => {
   expect(snapNativePoint({ x: 105.123, y: 100.456 }, false)).toEqual({ x: 105.1, y: 100.5 });
   expect(snapNativePoint({ x: 105.123, y: 100.456 }, true)).toEqual({ x: 105.12, y: 100.46 });
 });
+
+test("dimension snapping uses the fixed board corner as its grid origin", () => {
+  expect(snapNativePoint({ x: 115.201, y: 110.876 }, false, { x: 100.123, y: 95.456 })).toEqual({ x: 115.223, y: 110.856 });
+});

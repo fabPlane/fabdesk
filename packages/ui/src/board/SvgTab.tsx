@@ -65,6 +65,7 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
   const commentToReveal = useUiStore((s) => s.commentToReveal);
   const canvasMode = useUiStore((s) => s.canvasMode);
   const [canvasPoint, setCanvasPoint] = useState<SvgPoint | null>(null);
+  const [nativeEditBusy, setNativeEditBusy] = useState(false);
   const projectId = useUiStore((s) => s.activeProjectId);
   const project = useProject(projectId);
   const rendered = useProjectText(projectId, `renders/${kind}.svg`);
@@ -89,7 +90,7 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
   const [asking, setAsking] = useState(false);
   const [askError, setAskError] = useState<string | null>(null);
 
-  useEffect(() => { setCanvasPoint(null); }, [projectId, kind]);
+  useEffect(() => { setCanvasPoint(null); setNativeEditBusy(false); }, [projectId, kind]);
   const view = kind as CommentView;
   const pins = useMemo(
     () => (comments.data?.comments ?? []).filter((comment) => comment.anchor.view === view),
@@ -181,7 +182,7 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
   if (rendered.data) {
     return (
       <div className="relative flex h-full min-h-0" data-testid={`board-${kind}-svg`} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); if (canvasPoint) setCanvasPoint(null); else if (selected || draftPoint || commentMode) closeComments(); } }}>
-        {canvasMode && kind === "pcb" && <PcbPreviewStatus projectId={projectId} coordinatesVerified={nativeCoordinates} busy={render.state.status === "running"} error={render.state.error ?? null} onUpdate={() => void render.run(RENDER_TOOL.pcb, { projectId })} />}
+        {canvasMode && kind === "pcb" && <PcbPreviewStatus projectId={projectId} coordinatesVerified={nativeCoordinates} busy={render.state.status === "running" || nativeEditBusy} error={render.state.error ?? null} onUpdate={() => void render.run(RENDER_TOOL.pcb, { projectId })} />}
         <div className="min-w-0 flex-1">
           <SvgViewer
             svg={rendered.data}
@@ -208,7 +209,7 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
                     setCanvasPoint(null);
                   }}><Icon name="sparkles" width={15} height={15} />Ask about this</Button>
                   <Button variant="ghost" size="sm" onClick={() => { setDraftPoint(canvasPoint); setCanvasPoint(null); setSelectedId(null); setCommentMode(true); }}><Icon name="pin" width={15} height={15} />Pin comment</Button>
-                  {kind === "pcb" && <NativePartTools box={box} projectId={projectId} point={canvasPoint} canPosition={nativeCoordinates && revision.data === "matches-source" && !revision.isError && !revision.isFetching} openAbove={(canvasPoint.y - box.y) / box.height > .5} onMoved={setCanvasPoint} />}
+                  {kind === "pcb" && <NativePartTools onMutationBusyChange={busy => { if (useUiStore.getState().activeProjectId === projectId) setNativeEditBusy(busy); }} box={box} projectId={projectId} point={canvasPoint} canPosition={nativeCoordinates && revision.data === "matches-source" && !revision.isError && !revision.isFetching} openAbove={(canvasPoint.y - box.y) / box.height > .5} onMoved={setCanvasPoint} />}
                   <IconButton size="sm" title="Deselect location" onClick={() => setCanvasPoint(null)}><Icon name="close" width={15} height={15} /></IconButton>
                 </div>
               </div>}

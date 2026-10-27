@@ -12,9 +12,10 @@ import { newChatDraftKey, useUiStore } from "../stores/ui";
 type Selection = { part: PcbPartPosition; sourceSha256: string };
 
 /** Real reference selection and guarded native edits; the surrounding marker is a drawing location. */
-export function NativePartTools({ projectId, point, openAbove, onMoved, canPosition, box }: { box: SvgBox; canPosition: boolean; projectId: string; point: { x: number; y: number }; openAbove: boolean; onMoved: (point: { x: number; y: number }) => void }) {
+export function NativePartTools({ projectId, point, openAbove, onMoved, canPosition, box, onMutationBusyChange }: { onMutationBusyChange: (busy: boolean) => void; box: SvgBox; canPosition: boolean; projectId: string; point: { x: number; y: number }; openAbove: boolean; onMoved: (point: { x: number; y: number }) => void }) {
   const client = useCoreClient(), preview = useRunTool();
   const popup = useRef<HTMLElement>(null);
+  const outlineTrigger = useRef<HTMLButtonElement>(null);
   const [popupStyle, setPopupStyle] = useState<CSSProperties>({ visibility: "hidden" });
   const root = useRef<HTMLDivElement>(null), trigger = useRef<HTMLButtonElement>(null);
   const latestPoint = useRef(point); latestPoint.current = point;
@@ -56,6 +57,15 @@ export function NativePartTools({ projectId, point, openAbove, onMoved, canPosit
       if (!rect) return;
       const width = Math.min(390, window.innerWidth * .75), below = window.innerHeight - rect.bottom - 24, above = rect.top - 24;
       const anchor = root.current?.closest(".fd-location-anchor")?.getBoundingClientRect();
+      if (mode === "outline") {
+        const drawing = root.current?.closest(".fd-svg-host")?.getBoundingClientRect();
+        if (drawing) {
+          const left = drawing.left >= width + 36 ? drawing.left - width - 24 : window.innerWidth - drawing.right >= width + 36 ? drawing.right + 24 : 12;
+          const height = Math.min(470, window.innerHeight - 24, (popup.current?.scrollHeight ?? 468) + 2);
+          setPopupStyle({ left, width, top: Math.max(12, Math.min(drawing.top + 30, window.innerHeight - height - 12)), maxHeight: Math.min(470, window.innerHeight - 24) });
+          return;
+        }
+      }
       if (anchor && (window.innerWidth - anchor.left >= width + 40 || anchor.left >= width + 40)) {
         const left = window.innerWidth - anchor.left >= width + 40 ? anchor.left + 40 : anchor.left - width - 40;
         const height = Math.min(470, window.innerHeight - 24, (popup.current?.scrollHeight ?? 468) + 2);
@@ -71,7 +81,7 @@ export function NativePartTools({ projectId, point, openAbove, onMoved, canPosit
     window.addEventListener("resize", position); window.addEventListener("scroll", position, true);
     return () => { observer.disconnect(); window.removeEventListener("resize", position); window.removeEventListener("scroll", position, true); };
   }, [open, openAbove, point.x, point.y, mode]);
-  const close = () => { if (inFlight.current) return; setOpen(false); trigger.current?.focus(); };
+  const close = () => { if (inFlight.current) return; setOpen(false); requestAnimationFrame(() => (mode === "outline" ? outlineTrigger.current : trigger.current)?.focus()); };
   const reload = async () => {
     if (!selection || inFlight.current) return;
     const origin = { ...point };
@@ -90,7 +100,7 @@ export function NativePartTools({ projectId, point, openAbove, onMoved, canPosit
   const apply = async () => {
     if (!selection || !values || !changed || selection.part.locked || sourceChanged || !canPosition || parts.isFetching || parts.isError || inFlight.current) return;
     const origin = { ...point };
-    inFlight.current = true; setBusy(true); setError(null); setMessage(null); setPreviewError(null);
+    inFlight.current = true; onMutationBusyChange(true); setBusy(true); setError(null); setMessage(null); setPreviewError(null);
     let saved = false;
     try {
       const result = await client.callTool("pcb_place", { projectId, placements: [{ reference: selection.part.ref, position: { x: values.x, y: values.y }, rotation: values.rotation }], staleCopper: "keep", expectedSourceSha256: selection.sourceSha256 });
@@ -114,19 +124,19 @@ export function NativePartTools({ projectId, point, openAbove, onMoved, canPosit
       }
     } catch (failure) {
       if (mounted.current) setError(`${saved ? "The position was saved, but refresh could not finish." : "Could not apply this placement."} Reload the part before retrying. ${failure instanceof Error ? failure.message : ""}`);
-    } finally { inFlight.current = false; if (mounted.current) setBusy(false); }
+    } finally { inFlight.current = false; onMutationBusyChange(false); if (mounted.current) setBusy(false); }
   };
   const drawingHost = root.current?.closest<HTMLElement>(".fd-svg-host");
-  return <div className="fd-native-part-control" ref={root} onKeyDown={(event) => {
+  return <div className="fd-native-part-control" data-mode={mode} data-open={open} ref={root} onKeyDown={(event) => {
     if ((event.metaKey || event.ctrlKey) && event.key === "Enter") { event.preventDefault(); event.stopPropagation(); }
     if (event.key === "Escape" && open) { event.stopPropagation(); close(); }
   }}>
     <Button ref={trigger} size="sm" variant="ghost" aria-expanded={open && mode === "parts"} disabled={busy || !canPosition && !open} title={canPosition ? "Inspect and position native PCB parts" : "Update this preview to verify its native PCB coordinates before positioning parts"} onClick={() => { setMode("parts"); setOpen(mode !== "parts" || !open); }}><Icon name="pcb" width={15} height={15} />{selection?.part.ref ?? "Parts"}<Icon name="chevronDown" width={12} height={12} /></Button>
-    <Button size="sm" variant="ghost" aria-expanded={open && mode === "outline"} disabled={busy || !canPosition && !open} onClick={() => { setMode("outline"); setOpen(mode !== "outline" || !open); }}>Board size</Button>
+    <Button ref={outlineTrigger} size="sm" variant="ghost" aria-expanded={open && mode === "outline"} disabled={busy || !canPosition && !open} onClick={() => { setMode("outline"); setOpen(mode !== "outline" || !open); }}>Board size</Button>
     {open && mode === "parts" && drawingHost && selection && values && canPosition && !sourceChanged && !busy && !parts.isError && !selection.part.locked && <NativePartTarget host={drawingHost} box={box} point={values} reference={selection.part.ref} changed={changed} onMove={target => { setFields(previous => ({ ...previous, x: String(target.x), y: String(target.y) })); setError(null); setMessage(null); setPreviewError(null); }} />}
     {open && createPortal(<section ref={popup} style={popupStyle} data-canvas-tools className="fd-native-part-popover" role="dialog" aria-label={mode === "parts" ? "PCB part position" : "Board size"} aria-busy={busy}>
       <header><strong>{mode === "outline" ? "Board size" : selection ? `${selection.part.ref} · ${selection.part.value}` : "Parts near this location"}</strong><IconButton title="Close board tools" size="sm" disabled={busy} onClick={close}><Icon name="close" width={14} height={14} /></IconButton></header>
-      {mode === "outline" ? <NativeOutlinePanel projectId={projectId} canPosition={canPosition} onBusyChange={value => { inFlight.current = value; if (mounted.current) setBusy(value); }} /> : <>
+      {mode === "outline" ? <NativeOutlinePanel onMutationBusyChange={onMutationBusyChange} host={drawingHost ?? null} box={box} projectId={projectId} canPosition={canPosition} onBusyChange={value => { inFlight.current = value; if (mounted.current) setBusy(value); }} /> : <>
       {parts.isPending && !current ? <div className="flex items-center gap-2 text-muted"><Spinner />Inspecting saved PCB…</div> : parts.isError && !current ? <p role="alert">Could not inspect parts. <Button size="sm" onClick={() => void parts.refetch()}>Retry</Button></p> : current && <>
         {current.parts.length > 0 ? <label>Part<select aria-label="Select native PCB part" value={selection?.part.ref ?? ""} disabled={busy} onChange={(event) => { const part = current.parts.find((p) => p.ref === event.target.value); if (part) choose(part, current.sourceSha256); }}><option value="">Choose a part</option>{[...current.parts].sort((a, b) => Math.hypot(a.x - point.x, a.y - point.y) - Math.hypot(b.x - point.x, b.y - point.y)).map((part) => <option key={part.ref} value={part.ref}>{part.ref} · {part.value}</option>)}</select></label> : <p>No part origins within 5 mm. Select a location nearer the part you want to move.</p>}
         {current.truncated && <p>More parts are nearby. Select a more precise location.</p>}
