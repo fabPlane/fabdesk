@@ -1,3 +1,4 @@
+import { OutputsLibrary } from "./OutputsLibrary";
 import { Tabs } from "../components/ui";
 import { BoardViewMenu } from "./BoardViewMenu";
 import { CircuitLogo } from "../components/CircuitLogo";
@@ -70,7 +71,7 @@ export function BoardPanel({ canvas = false }: { canvas?: boolean }) {
       {workspaceViews(area).length > 1 && <Tabs tabs={workspaceViews(area).map((item) => ({ id: item.tab, label: item.label }))} value={tab} onChange={setWorkspaceTab} />}
       <div className="fd-canvas-checks">{order.data && <OrderChecksButton order={order.data} unavailable={order.isError} onClick={() => setOrderFlowOpen(true)} />}</div>
     </div>
-    <div className="fd-canvas-board-body"><TabBody key={`${projectId}:${tab}`} tab={tab} /></div>
+    <div className="fd-canvas-board-body">{area === "outputs" && tab === "renders" ? <OutputsLibrary key={projectId} projectId={projectId} /> : <TabBody key={`${projectId}:${tab}`} tab={tab} />}</div>
   </div>;
   return (
     <div className="fd-board-panel flex h-full min-w-0 flex-col bg-panel" data-testid="board-panel">

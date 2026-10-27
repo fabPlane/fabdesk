@@ -41,6 +41,7 @@ export type IconName =
   | "chevronLeft"
   | "chevronRight"
   | "library"
+  | "cube"
   | "mic";
 
 /** One stroke language for the desktop chrome. Icons inherit the control's color. */
@@ -66,6 +67,7 @@ export function Icon({ name, ...props }: SVGProps<SVGSVGElement> & { name: IconN
     chevronLeft: <path d="m15 6-6 6 6 6" />,
     chevronRight: <path d="m9 6 6 6-6 6" />,
     folder: <><path d="M3 18V6a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" /><path d="M3 9h18" /></>,
+    cube: <><path d="m12 3 9 5v9l-9 5-9-5V8l9-5Z" /><path d="m3 8 9 5 9-5m-9 5v9" /></>,
     library: <><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></>,
     mic: <><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z" /><path d="M5 11a7 7 0 0 0 14 0" /><path d="M12 18v3" /></>,
     menu: <path d="M4 6h16M4 12h16M4 18h16" />,

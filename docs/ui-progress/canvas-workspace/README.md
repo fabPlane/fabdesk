@@ -257,3 +257,17 @@ Actual native verification generated a real GLB, matched its receipt to source/a
 ![Saved PCB unchanged since model export, with dependency limits](model-source-unchanged.png)
 ![Live PCB change warns on the 3D canvas](model-source-changed.png)
 ![The same warning follows the model into Outputs](outputs-model-source-warning.png)
+
+
+## Quiet saved-output library
+
+Canvas Outputs now lands on a Library containing actual saved images, videos, models and manufacturing deliverables. Category filters share this library rather than opening more panels. Native sources, imported mechanical originals, reports and revision receipts do not become output cards. File paths, sizes and dates come from project files; no synthetic revision/currentness badges are added. Existing image generation, model/video settings and export file tools remain reachable through Create output and local tabs. Classic image browsing stays available.
+
+Selection reveals one compact action bar beside the selected card, without moving the grid. Previews open only on request: saved images/videos and GLB/STL/OBJ models are supported; STEP stays download/file-only. Deselect/Escape returns focus to the card. Known PCB preview, model and enclosure source warnings update on the cards; other sources remain unverified. A matching case source does not certify mesh identity or fit. Model previews use the saved files, not substituted stock illustrations.
+
+Native walkthrough: six real saved files, no forms/dialogs/actions on initial mount; one selected-model toolbar; actual GLB and SVG previews; Escape closes previews; Models filters four saved model files; Create output → Make video reaches the existing settings. A same-size/same-mtime PCB edit flags the SVG and generated-case cards; exact restore clears both. Source files/timestamps were restored finally. Root typecheck passed after the library integration; final UI/client typecheck and client207/UI221 tests pass after the contextual layout. Original grouping remains compatible with persisted workspace tabs. Native OS download-dialog, video creation/playback and manufacturing output exercises remain pending; this walkthrough does not claim those passed.
+
+![Quiet library of actual saved output files](outputs-library.png)
+![One action bar appears beside the selected model](outputs-selected-model.png)
+![Saved GLB opens on request](outputs-model-preview.png)
+![Source warnings update on affected output cards](outputs-source-warnings.png)

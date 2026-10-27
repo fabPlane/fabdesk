@@ -4,7 +4,7 @@ export const WORKSPACE_AREAS = {
   boards: { label: "Board", views: [{ tab: "pcb", label: "PCB" }, { tab: "schematic", label: "Schematic" }, { tab: "3d", label: "3D" }, { tab: "cinema", label: "Routing" }, { tab: "art", label: "Artwork" }] },
   mechanical: { label: "Mechanical", views: [{ tab: "cad", label: "Enclosure & CAD" }] },
   parts: { label: "Parts & BOM", views: [{ tab: "bom", label: "Parts & shopping" }] },
-  outputs: { label: "Outputs", views: [{ tab: "renders", label: "Images" }, { tab: "3d", label: "Models & video" }, { tab: "files", label: "Export files" }] },
+  outputs: { label: "Outputs", views: [{ tab: "renders", label: "Library" }, { tab: "3d", label: "Models & video" }, { tab: "files", label: "Export files" }] },
   review: { label: "Review", views: [{ tab: "diff", label: "Changes" }, { tab: "comments", label: "Comments" }, { tab: "drc", label: "Checks" }] },
   files: { label: "Files", views: [{ tab: "files", label: "Files" }, { tab: "notes", label: "Notes" }] },
 } as const;

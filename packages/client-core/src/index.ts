@@ -182,3 +182,5 @@ export { snapNativePoint, nudgeNativePoint } from "./native-target";
 
 export * from "./board-model-revision";
 export { useBoardModelRevision } from "./queries";
+
+export * from "./output-library";
