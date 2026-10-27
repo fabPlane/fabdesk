@@ -20,7 +20,7 @@ test("disconnected, diagonal, duplicate edges and degenerate loops cannot masque
 });
 test("empty native boards need explicit dimensions; invalid values cannot turn into destructive zero-size outlines", () => {
   expect(parsePcbOutlineInspection(inspection([]))).toMatchObject({ editable: true, bounds: null });
-  for (const [w, h] of [["", "10"], ["10", ""], ["0", "5"], ["-1", "5"], ["5foo", "4"], ["Infinity", "4"], ["1001", "5"]]) expect(resizedOutlinePoints(null, w!, h!)).toBeNull();
+  for (const [w, h] of [["", "10"], ["10", ""], ["0", "5"], ["-1", "5"], ["5foo", "4"], ["Infinity", "4"], ["1001", "5"], ["0.0000001", "5"]]) expect(resizedOutlinePoints(null, w!, h!)).toBeNull();
   expect(resizedOutlinePoints(null, "20", "10")?.[2]).toEqual({ x: 20, y: 10 });
 });
 

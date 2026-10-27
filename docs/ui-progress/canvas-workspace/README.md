@@ -200,3 +200,12 @@ Visual review moved the popup off the target and checked non-overlapping rectang
 ![Visible native part target beside contextual tools](part-target.png)
 ![Physical mouse drag changes a proposal without writing the PCB](part-target-physical-preview.png)
 ![Guarded native Apply refreshes the drawing and preserves copper](part-target-saved.png)
+
+
+## Fine-coordinate target entry
+
+Keyboard nudging now preserves off-grid coordinates on the untouched axis and adds the requested delta at native precision, rather than snapping both axes. Pointer dragging still uses its explicit absolute grid. A stationary target click focuses it without snapping; a small movement threshold separates focus from drag. Number fields accept valid fractional positions/angles and PCB outline dimensions, and values are captured immediately before state updates. Outline dimensions smaller than one native nanometre are rejected.
+
+Three regression tests cover off-grid/negative coordinates, reversible nudges, and pointer-grid behavior. A native walkthrough entered (105.123,100.456789), clicked the target without movement, then nudged right and Shift-up: the resulting proposal was exactly (105.223,100.446789), the form remained valid and the PCB hash stayed unchanged. Reload restored the saved position. Root typecheck and client196/UI221 tests pass.
+
+![Fine coordinates remain precise through target focus and keyboard movement](part-target-fine.png)

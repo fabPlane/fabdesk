@@ -40,7 +40,7 @@ export async function inspectPcbOutline(client: Pick<CoreClient, "callTool">, pr
 export function resizedOutlinePoints(bounds: PcbOutlineInspection["bounds"], width: string, height: string): { x: number; y: number }[] | null {
   if (!width.trim() || !height.trim()) return null;
   const w = Number(width), h = Number(height);
-  if (![w, h].every(Number.isFinite) || w <= 0 || h <= 0 || w > 1000 || h > 1000) return null;
+  if (![w, h].every(Number.isFinite) || w < .000001 || h < .000001 || w > 1000 || h > 1000) return null;
   const x = bounds?.minX ?? 0, y = bounds?.minY ?? 0;
   return [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
 }

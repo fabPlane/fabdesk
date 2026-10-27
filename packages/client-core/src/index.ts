@@ -177,3 +177,5 @@ export { usePcbOutline } from "./queries";
 
 export { inspectPcbCheckRevision, type PcbCheckRevisionState } from "./check-revision";
 export { usePcbCheckRevision } from "./queries";
+
+export { snapNativePoint, nudgeNativePoint } from "./native-target";

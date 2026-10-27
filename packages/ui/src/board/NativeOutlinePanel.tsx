@@ -53,8 +53,8 @@ export function NativeOutlinePanel({ projectId, canPosition, onBusyChange }: { p
       {!canPosition && !busy && <p className="fd-native-part-warning">Update the PCB preview before applying dimensions.</p>}
       <form onSubmit={event => { event.preventDefault(); void apply(); }}>
         <div className="fd-native-outline-fields">
-          <label>Width (mm)<Input type="number" min="0.1" max="1000" step="0.1" aria-label="Board width (mm)" value={width} disabled={busy} onChange={event => setWidth(event.target.value)} /></label>
-          <label>Height (mm)<Input type="number" min="0.1" max="1000" step="0.1" aria-label="Board height (mm)" value={height} disabled={busy} onChange={event => setHeight(event.target.value)} /></label>
+          <label>Width (mm)<Input type="number" min="0.000001" max="1000" step="any" aria-label="Board width (mm)" value={width} disabled={busy} onChange={event => setWidth(event.target.value)} /></label>
+          <label>Height (mm)<Input type="number" min="0.000001" max="1000" step="any" aria-label="Board height (mm)" value={height} disabled={busy} onChange={event => setHeight(event.target.value)} /></label>
         </div>
         <div className="fd-native-part-actions"><Button size="sm" variant="ghost" disabled={busy} onClick={() => void reload()}>Reload outline</Button><Button size="sm" variant="primary" type="submit" disabled={busy || stale || !canPosition || inspection.isFetching || inspection.isError || !points || !changed}>{busy ? "Saving / refreshing…" : snapshot.bounds ? "Apply dimensions" : "Create outline"}</Button></div>
       </form>
