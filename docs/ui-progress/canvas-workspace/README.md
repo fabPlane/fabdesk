@@ -518,3 +518,12 @@ Limits: only saved PCB preview provenance is tracked per member here. Source-qua
 ![VAIO source review](assembly-review-vaio.png)
 ![Shared source changed since preview](assembly-review-shared-warning.png)
 ![Explicit refresh verified in the compact native app](assembly-review-shared-compact.png)
+
+
+## DRC report preservation prerequisite
+
+DRC now writes the native CLI's raw output into a temporary directory. The saved project report is replaced atomically only after native execution, enrichment, PCB/hierarchy revision checks, output-jail revalidation, captured execution-scope validation and cancellation checks succeed. CLI failure, changed source, rejected ownership or cancellation preserves the previous report bytes. Temporary native output is removed on success and failure. Existing violation counts and release-gate semantics stay unchanged; completing a check with violations remains a measurement, not an infrastructure failure.
+
+Targeted registry tests passed: **8 passed / 60 assertions**. A separate installed fabPlane-bundled KiCad CLI walkthrough/test on a disposable mini-board copy passed **1 test / 16 assertions**: real DRC report hash matched the unchanged PCB, parity was explicitly disabled, then an injected post-CLI failure and changed-source case preserved the saved report exactly. These checks do not certify the fixture as electrically clean; geometry enrichment was stubbed in this publication test. [Reproducible native test](../../../packages/tools/test/drc-publication.kicad.test.ts) requires `FABPLANE_KICAD_CLI` and is skipped when it is absent.
+
+Root typecheck passed. Complete standard suite: **2,143 passed / 31 skipped / zero failures**; the additional standard skip is the explicit installed-CLI publication test, run separately above. This is a prerequisite only: `verify_drc` is still not enabled for assembly members. Source-qualified report queries, hierarchy ownership and native member walkthroughs must be completed before exposing that workflow. No PCB source or real VAIO study was changed, and this increment has no new UI screenshot.

@@ -1994,11 +1994,16 @@ describe("registry", () => {
     const board = join(project.dir, "board.kicad_pcb");
     await writeFile(board, "before");
     await writeFile(join(project.dir, "board.kicad_sch"), "before-sch");
+    const oldReport = "previous measured report\n", output = join(project.dir, "reports/drc.json");
+    await Bun.write(output, oldReport);
+    let staged = "";
     const base = mockServices([project]);
     const services = mockServices([project], {
       kicad: {
         ...base.kicad,
-        runDrc: async () => {
+        runDrc: async (_cli, args) => {
+          staged = args.outFile;
+          await Bun.write(staged, "partial raw report");
           await Bun.write(board, "after");
           return {
             violations: [],
@@ -2020,7 +2025,36 @@ describe("registry", () => {
         }),
       ),
     ).rejects.toThrow(/changed while DRC was running/);
-    expect(await Bun.file(join(project.dir, "reports/drc.json")).exists()).toBe(false);
+    expect(await Bun.file(output).text()).toBe(oldReport);
+    expect(staged).not.toBe(output);
+    expect(await Bun.file(staged).exists()).toBe(false);
+  });
+
+  test("verify_drc preserves earlier reports after a partial CLI failure or rejected publication", async () => {
+    for (const failure of ["cli", "ownership", "abort"] as const) {
+      const reg = createRegistry(), project = await tempProject(`drc-preserve-${failure}`);
+      await writeFile(join(project.dir, "board.kicad_pcb"), "before");
+      const output = join(project.dir, "reports/drc.json"), previous = "previous report bytes";
+      await Bun.write(output, previous);
+      const base = mockServices([project]), abort = new AbortController();
+      let staged = "", scopes = 0;
+      const services = mockServices([project], { kicad: { ...base.kicad, runDrc: async (_cli, args) => {
+        staged = args.outFile; await Bun.write(staged, "partial raw report");
+        if (failure === "cli") throw new Error("CLI failed after writing");
+        if (failure === "abort") abort.abort();
+        return { violations: [], unconnected: [], schematicParity: [], counts: { errors: 0, warnings: 0, unconnected: 0 } };
+      } } });
+      const factory = contextFactory(services, project);
+      await expect(reg.invoke("verify_drc", { schematicParity: false }, async ref => {
+        const ctx = await factory({ def: reg.get("verify_drc")!, projectRef: ref, signal: abort.signal, progress: () => {} });
+        return { ...ctx, runInScope: async operation => {
+          if (++scopes > 1 && failure === "ownership") throw new ToolError("source ownership changed", "precondition");
+          return operation();
+        } };
+      })).rejects.toThrow();
+      expect(await Bun.file(output).text()).toBe(previous);
+      expect(staged).not.toBe(output); expect(await Bun.file(staged).exists()).toBe(false);
+    }
   });
 
   test("verify_drc reports an unfinished board as a successful measurement", async () => {

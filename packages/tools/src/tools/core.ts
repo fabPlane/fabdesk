@@ -5,10 +5,12 @@ import {
 } from "../task-checkpoints";
 /** Core toolset: always loaded. */
 import { createHash } from "node:crypto";
-import { readFile, readdir, lstat, unlink } from "node:fs/promises";
+import { readFile, readdir, lstat, mkdtemp, rm } from "node:fs/promises";
 import { z } from "zod/v4";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { ASSEMBLY_MANIFEST_PATH, type ProjectBoardSources, type FpPcbBoardSpec, type NetlistFile } from "@fabdesk/protocol";
-import { PROJECT_FILES, exists, mtimeMs, readJsonOrNull, writeJson } from "../fs";
+import { PROJECT_FILES, exists, jailPath, mtimeMs, readJsonOrNull, writeJson } from "../fs";
 import {
   ToolError,
   ToolsetIdOrAlias,
@@ -623,19 +625,26 @@ export const verify_drc = defineTool({
         "precondition",
       );
     ctx.progress(0.4, "running DRC");
-    const outFile = p(project, PROJECT_FILES.reports, "drc.json");
-    const report = await ctx.services.kicad.runDrc(cli, {
-      board,
-      outFile,
-      severity,
-      schematicParity,
-      signal: ctx.signal,
-    });
+    const reportPath = `${PROJECT_FILES.reports}/drc.json`;
+    const outFile = await jailPath(project.dir, reportPath);
+    const scratch = await mkdtemp(join(tmpdir(), "fabplane-drc-"));
+    let report: DrcReport;
+    try {
+      // The CLI may write a partial report before failing. Never expose it over a previous measurement.
+      report = await ctx.services.kicad.runDrc(cli, {
+        board,
+        outFile: join(scratch, "drc.json"),
+        severity,
+        schematicParity,
+        signal: ctx.signal,
+      });
+    } finally {
+      await rm(scratch, { recursive: true, force: true });
+    }
     const geometry = await queryDrcGeometry(ctx, project.dir);
     const afterRevision = await pcbFileRevision(board);
     const afterHierarchy = schematicParity ? await inspectSavedHierarchy(ctx, project, cli) : null;
     if (beforeRevision.sha256 !== afterRevision.sha256) {
-      await unlink(outFile).catch(() => {});
       throw new ToolError("board.kicad_pcb changed while DRC was running", "precondition");
     }
     if (
@@ -643,7 +652,6 @@ export const verify_drc = defineTool({
       afterHierarchy &&
       beforeHierarchy.aggregateRevision !== afterHierarchy.aggregateRevision
     ) {
-      await unlink(outFile).catch(() => {});
       throw new ToolError(
         "a referenced schematic changed while parity DRC was running",
         "precondition",
@@ -666,6 +674,10 @@ export const verify_drc = defineTool({
           }
         : {}),
     };
+    // Revalidate the output jail and captured native ownership immediately before publication.
+    await jailPath(project.dir, reportPath);
+    await ctx.runInScope?.(async () => {});
+    ctx.signal.throwIfAborted();
     await writeJson(outFile, checkedReport);
     ctx.progress(1, "done");
     const c = enriched.counts;
