@@ -8,7 +8,7 @@ import { Button, Input, Spinner } from "../components/ui";
 import { useUiStore } from "../stores/ui";
 
 /** Dimensions edit the selected native Edge.Cuts only; no footprint, route, or enclosure is scaled. */
-export function NativeOutlinePanel({ projectId, canPosition, onBusyChange, host, box, onMutationBusyChange }: { onMutationBusyChange: (busy: boolean) => void; projectId: string; canPosition: boolean; onBusyChange: (busy: boolean) => void; host: HTMLElement | null; box: SvgBox }) {
+export function NativeOutlinePanel({ projectId, canPosition, onBusyChange, host, box, onMutationBusyChange, visible = true }: { visible?: boolean; onMutationBusyChange: (busy: boolean) => void; projectId: string; canPosition: boolean; onBusyChange: (busy: boolean) => void; host: HTMLElement | null; box: SvgBox }) {
   const client = useCoreClient(), preview = useRunTool(), inspection = usePcbOutline(projectId, true), tools = useToolManifest();
   const resizeAvailable = tools.data?.some(tool => tool.name === "pcb_resize_outline") === true;
   const [snapshot, setSnapshot] = useState<PcbOutlineInspection | null>(null);
@@ -53,7 +53,7 @@ export function NativeOutlinePanel({ projectId, canPosition, onBusyChange, host,
   };
   if (!snapshot) return inspection.isError ? <p role="alert">Could not inspect the saved outline. <Button size="sm" onClick={() => void inspection.refetch()}>Retry</Button></p> : <div className="flex items-center gap-2 text-muted"><Spinner />Inspecting saved outline…</div>;
   const bounds = snapshot.bounds;
-  const showTarget = host && bounds && points && snapshot.editable && resizeAvailable && canPosition && !busy && !stale && !inspection.isError && !inspection.isFetching;
+  const showTarget = visible && host && bounds && points && snapshot.editable && resizeAvailable && canPosition && !busy && !stale && !inspection.isError && !inspection.isFetching;
   return <>
     {showTarget && <>
       {createPortal(<div className="fd-outline-size-preview" data-canvas-tools style={{ left: `${(bounds.minX - box.x) / box.width * 100}%`, top: `${(bounds.minY - box.y) / box.height * 100}%`, width: `${Number(width) / box.width * 100}%`, height: `${Number(height) / box.height * 100}%` }} />, host)}

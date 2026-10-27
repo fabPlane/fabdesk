@@ -305,3 +305,21 @@ The fresh-start walkthrough exposed an inherited assistant pane covering a diffe
 The standard root `bun run test` now exits successfully across all workspace packages and script tests. Core reports 531 pass / 26 native-environment skips; script tests report 94 pass. The installed-fork native placement-lock and imported-outline save/reopen tests were also run separately and passed (2 tests, 23 assertions). Earlier full-suite failure entries above record historical outcomes rather than the current result.
 
 The broad check caught the MCP discovery test's old tool counts after adding `pcb_resize_outline`; the updated HTTP test verifies the new tool is listed. macOS retention fixtures now use the canonical temporary root instead of the OS `/var` symlink alias, retaining the production symlink-ancestor deletion protection and deliberate attack fixtures. The queued-message test counts only its own thread's events, excluding asynchronous completions from earlier stopped fake adapters. The npm workflow test uses canonical paths too. These are test fixtures/expectations only: runtime retention, consent and publishing behavior are unchanged. Final core typecheck passes. The generated tracked Python cache was restored after testing.
+
+
+## Optional PCB and schematic alongside each other
+
+The default board workspace remains one drawing. Show schematic/PCB alongside opens an explicitly chosen comparison with independently zoomable saved previews and a resizable divider. The preference and divider width restore for that project; another project stays single-view unless comparison was enabled there. The same useful local tabs remain. Comparison is not a schematic/PCB synchronization or equivalence check, and the schematic preview's unverified freshness is visible.
+
+Focusing a drawing reveals only its selection tools. Both drawing components remain stable while focus changes; native edits retain their captured project/source. Comment focus restoration now targets its own drawing instead of the first comment button in the document, and status styling is scoped to its own comment panel. Inactive native position/outline targets and popups hide. A real unsaved R1 proposal at X=105.1 disappeared from the inactive PCB pane's tools, returned unchanged on refocus and reset to the saved X=105 with Reload; source bytes never changed. A missing schematic is shown explicitly rather than fabricated.
+
+Native verification used the real Game Boy study's PCB and 2.8 MB schematic SVG: independent zoom at 125%/156%, one visible selection toolbar, scoped comment close/focus and unchanged image sources. A physical divider drag produced approximately 57%/43%, and real reload restored that chosen layout. PCB/schematic/render SHA-256 values stayed unchanged. A physical window resize reached exactly 960×720; compact toolbars now sit above the corner assistant. At the 25% pane limit, icon/zoom controls and wrapped source status remain within their pane. The window was restored to 1440×870 and comparison deliberately closed after validation.
+
+Root typecheck, subsequent UI/desktop typecheck, UI223 tests and the complete standard root test command pass: **2,075 passed / 28 skipped / 0 failed** across workspaces and script tests. Native operations documented earlier remain separate installed-fork runs. This is one board's two views; multiple independent board sources, pin-map/physical compatibility and board-scoped assembly editing remain unfinished.
+
+![Comparison opens only when requested](pcb-schematic-comparison.png)
+![Independent cameras and one focused selection](comparison-independent-tools.png)
+![A physical divider drag changes only the layout](comparison-physical-resize.png)
+![An unsaved native proposal stays in its PCB pane](comparison-native-proposal.png)
+![Comparison at the minimum native window size](comparison-minimum-window.png)
+![Controls stay within a narrow pane](comparison-narrow-pane.png)

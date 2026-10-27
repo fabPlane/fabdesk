@@ -213,3 +213,16 @@ test("opening another project closes inherited canvas panes without discarding d
   expect(store.getState().drafts[newChatDraftKey("a")]).toBe("Keep this sketch discussion");
   store.getState().setActiveThread("chat-b"); expect(store.getState().assistantOpen).toBe(true);
 });
+
+
+test("comparison is opt-in and remembered per project without opening it for another project", async () => {
+  let snapshot: string | null = null;
+  const storage = { getItem: () => snapshot, setItem: (_key: string, value: string) => { snapshot = value; }, removeItem: () => {} };
+  const store = createUiStore(storage); store.getState().setActiveProject("a");
+  expect(store.getState().boardComparisonByProject.a).toBeUndefined();
+  store.getState().setBoardComparison(true); store.getState().setActiveProject("b");
+  expect(store.getState().boardComparisonByProject.b).toBeUndefined();
+  const reopened = createUiStore(storage); await reopened.persist.rehydrate();
+  reopened.getState().setActiveProject("a"); expect(reopened.getState().boardComparisonByProject.a).toBe(true);
+  reopened.getState().setBoardComparison(false); expect(reopened.getState().boardComparisonByProject.a).toBe(false);
+});

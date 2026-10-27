@@ -1,3 +1,5 @@
+import { BoardComparison } from "./BoardComparison";
+import { Button } from "../components/ui";
 import { ReviewUpdates } from "./ReviewUpdates";
 import { OutputsLibrary } from "./OutputsLibrary";
 import { Tabs } from "../components/ui";
@@ -64,6 +66,8 @@ export function BoardPanel({ canvas = false }: { canvas?: boolean }) {
   const tab = useUiStore((s) => s.boardTab);
   const setBoardTab = useUiStore((s) => s.setBoardTab);
   const projectId = useUiStore((s) => s.activeProjectId);
+  const compare = useUiStore(s => !!s.activeProjectId && s.boardComparisonByProject[s.activeProjectId] === true);
+  const compareAvailable = area === "boards" && (tab === "pcb" || tab === "schematic");
   const setOrderFlowOpen = useUiStore((s) => s.setOrderFlowOpen);
   const order = useProjectOrder(projectId);
   const projects = useProjects();
@@ -72,9 +76,10 @@ export function BoardPanel({ canvas = false }: { canvas?: boolean }) {
   if (canvas) return <div className="fd-canvas-board" data-testid="board-panel">
     <div className="fd-canvas-controls">
       {workspaceViews(area).length > 1 && <Tabs tabs={workspaceViews(area).map((item) => ({ id: item.tab, label: item.label }))} value={tab} onChange={setWorkspaceTab} />}
+      {compareAvailable && <Button className="fd-comparison-toggle" size="sm" aria-pressed={compare} onClick={() => useUiStore.getState().setBoardComparison(!compare)}>{compare ? "Close comparison" : `Show ${tab === "pcb" ? "schematic" : "PCB"} alongside`}</Button>}
       <div className="fd-canvas-checks">{order.data && <OrderChecksButton order={order.data} unavailable={order.isError} onClick={() => setOrderFlowOpen(true)} />}</div>
     </div>
-    <div className="fd-canvas-board-body">{area === "outputs" && tab === "renders" ? <OutputsLibrary key={projectId} projectId={projectId} /> : <TabBody key={`${projectId}:${tab}`} tab={tab} />}</div>
+    <div className="fd-canvas-board-body">{compareAvailable && compare && projectId ? <BoardComparison key={projectId} projectId={projectId} active={tab as "pcb" | "schematic"} /> : area === "outputs" && tab === "renders" ? <OutputsLibrary key={projectId} projectId={projectId} /> : <TabBody key={`${projectId}:${tab}`} tab={tab} />}</div>
   </div>;
   return (
     <div className="fd-board-panel flex h-full min-w-0 flex-col bg-panel" data-testid="board-panel">

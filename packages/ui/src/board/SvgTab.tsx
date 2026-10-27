@@ -61,7 +61,8 @@ export function commentPinAnchor(
 }
 
 /** Schematic / PCB tab: shows the daemon's rendered SVG (`renders/<kind>.svg`, drawn by kicad-cli) and offers to render it. */
-export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
+export function SvgTab({ kind, active = true }: { kind: "schematic" | "pcb"; active?: boolean }) {
+  const commentTrigger = useRef<HTMLButtonElement>(null);
   const commentToReveal = useUiStore((s) => s.commentToReveal);
   const canvasMode = useUiStore((s) => s.canvasMode);
   const [canvasPoint, setCanvasPoint] = useState<SvgPoint | null>(null);
@@ -125,7 +126,7 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
     setSelectedId(null);
     setCommentMode(false);
     resetCompose();
-    requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('[data-testid="comment-mode"]')?.focus());
+    requestAnimationFrame(() => commentTrigger.current?.focus());
   };
 
   const askAgent = async (targets: BoardComment[]) => {
@@ -195,7 +196,7 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
             overlay={(box) => <>
               <CommentPins nativePcbCoordinates={nativeCoordinates} comments={pins} box={box} selectedId={selectedId} draftPoint={draftPoint}
                 onSelect={(id) => { setSelectedId(id); setDraftPoint(null); setCanvasPoint(null); }} />
-              {canvasMode && canvasPoint && box && !commentMode && <div data-canvas-tools className="fd-location-anchor" style={{ left: `${(canvasPoint.x - box.x) / box.width * 100}%`, top: `${(canvasPoint.y - box.y) / box.height * 100}%` }}>
+              {canvasMode && canvasPoint && box && !commentMode && <div data-canvas-tools className="fd-location-anchor" style={{ visibility: active ? "visible" : "hidden", left: `${(canvasPoint.x - box.x) / box.width * 100}%`, top: `${(canvasPoint.y - box.y) / box.height * 100}%` }}>
                 <span className="fd-location-marker" />
                 <div className="fd-location-toolbar" style={{ transform: `translateX(${(canvasPoint.x - box.x) / box.width < .25 ? "0" : (canvasPoint.x - box.x) / box.width > .75 ? "-100%" : "-50%"})` }} aria-label="Selected drawing location">
                   <span>{nativeCoordinates ? `${canvasPoint.x.toFixed(1)}, ${canvasPoint.y.toFixed(1)} mm` : "Drawing location"}</span>
@@ -209,7 +210,7 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
                     setCanvasPoint(null);
                   }}><Icon name="sparkles" width={15} height={15} />Ask about this</Button>
                   <Button variant="ghost" size="sm" onClick={() => { setDraftPoint(canvasPoint); setCanvasPoint(null); setSelectedId(null); setCommentMode(true); }}><Icon name="pin" width={15} height={15} />Pin comment</Button>
-                  {kind === "pcb" && <NativePartTools onMutationBusyChange={busy => { if (useUiStore.getState().activeProjectId === projectId) setNativeEditBusy(busy); }} box={box} projectId={projectId} point={canvasPoint} canPosition={nativeCoordinates && revision.data === "matches-source" && !revision.isError && !revision.isFetching} openAbove={(canvasPoint.y - box.y) / box.height > .5} onMoved={setCanvasPoint} />}
+                  {kind === "pcb" && <NativePartTools visible={active} onMutationBusyChange={busy => { if (useUiStore.getState().activeProjectId === projectId) setNativeEditBusy(busy); }} box={box} projectId={projectId} point={canvasPoint} canPosition={nativeCoordinates && revision.data === "matches-source" && !revision.isError && !revision.isFetching} openAbove={(canvasPoint.y - box.y) / box.height > .5} onMoved={setCanvasPoint} />}
                   <IconButton size="sm" title="Deselect location" onClick={() => setCanvasPoint(null)}><Icon name="close" width={15} height={15} /></IconButton>
                 </div>
               </div>}
@@ -223,6 +224,7 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
                     if (commentMode || selected || draftPoint) closeComments();
                     else beginPin();
                   }}
+                  ref={commentTrigger}
                   data-testid="comment-mode"
                   aria-pressed={commentMode || !!selected || !!draftPoint}
                   title="Pin a question to this drawing"
@@ -237,7 +239,7 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
             }
           />
         </div>
-        {(selected || draftPoint || commentMode) && (
+        {active && (selected || draftPoint || commentMode) && (
           <aside className="flex w-72 shrink-0 flex-col gap-2 overflow-auto border-l border-border p-3" data-testid="comment-detail">
             <div className="flex items-center justify-between"><strong className="text-sm">Pinned comments</strong><IconButton size="sm" title="Close comments" onClick={closeComments}><Icon name="close" width={16} height={16} /></IconButton></div>
             {pins.length > 0 && (

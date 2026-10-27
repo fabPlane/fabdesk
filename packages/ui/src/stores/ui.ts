@@ -58,6 +58,8 @@ export interface UiState {
   setAssistantOpen: (open: boolean) => void;
   workspaceArea: WorkspaceArea;
   workspaceByProject: Record<string, { area: WorkspaceArea; tab: BoardTab }>;
+  boardComparisonByProject: Record<string, boolean>;
+  setBoardComparison: (enabled: boolean) => void;
   setWorkspaceArea: (area: WorkspaceArea) => void;
   setWorkspaceTab: (tab: BoardTab) => void;
   sidebarOpen: boolean;
@@ -153,6 +155,8 @@ export function createUiStore(storage?: StateStorage) {
   setAssistantOpen: (assistantOpen) => set({ assistantOpen }),
   workspaceArea: "boards",
   workspaceByProject: {},
+  boardComparisonByProject: {},
+  setBoardComparison: (enabled) => set(s => s.activeProjectId ? { boardComparisonByProject: { ...s.boardComparisonByProject, [s.activeProjectId]: enabled } } : {}),
   setWorkspaceArea: (workspaceArea) => set((s) => {
     const boardTab = workspaceViews(workspaceArea)[0]?.tab ?? s.boardTab;
     return { workspaceArea, boardTab, boardOpen: true, activeOpenSourceId: null, inventoryOpen: false, orderFlowOpen: false,
@@ -280,6 +284,7 @@ export function createUiStore(storage?: StateStorage) {
         assistantOpen: s.assistantOpen,
         workspaceArea: s.workspaceArea,
         workspaceByProject: s.workspaceByProject,
+        boardComparisonByProject: s.boardComparisonByProject,
         sidebarOpen: s.sidebarOpen,
         boardOpen: s.boardOpen,
         activeThreadId: s.activeThreadId,
