@@ -12,6 +12,7 @@ import {
   useRunTool,
 } from "@fabdesk/client-core";
 import { newChatDraftKey, useUiStore } from "../stores/ui";
+import { PcbPreviewStatus } from "./PcbPreviewStatus";
 import { CommentPins } from "./CommentPins";
 import { SvgViewer } from "./SvgViewer";
 import { type SvgPoint } from "./svg-coords";
@@ -167,7 +168,8 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
   }
   if (rendered.data) {
     return (
-      <div className="flex h-full min-h-0" data-testid={`board-${kind}-svg`} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); if (canvasPoint) setCanvasPoint(null); else if (selected || draftPoint || commentMode) closeComments(); } }}>
+      <div className="relative flex h-full min-h-0" data-testid={`board-${kind}-svg`} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); if (canvasPoint) setCanvasPoint(null); else if (selected || draftPoint || commentMode) closeComments(); } }}>
+        {canvasMode && kind === "pcb" && <PcbPreviewStatus projectId={projectId} busy={render.state.status === "running"} error={render.state.error ?? null} onUpdate={() => void render.run(RENDER_TOOL.pcb, { projectId })} />}
         <div className="min-w-0 flex-1">
           <SvgViewer
             svg={rendered.data}

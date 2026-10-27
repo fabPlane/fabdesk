@@ -1,7 +1,9 @@
 /** Render toolset: schematic/PCB images, GLB, and product videos. */
 import { createHash } from "node:crypto";
-import { readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { z } from "zod/v4";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   extractSpecs,
   renderProductVideo,
@@ -11,9 +13,10 @@ import {
   VIDEO_PRESETS,
   VIDEO_RESOLUTIONS,
 } from "@fabdesk/product-video";
-import { PROJECT_FILES, ensureDir, exists, mtimeMs } from "../fs";
+import { PROJECT_FILES, ensureDir, exists, mtimeMs, writeAtomic } from "../fs";
 import { ToolError, defineTool } from "../registry";
 import { fileUrl, loadNetlist, ok, p, requireBoard, requireKicad, requireSchematic } from "./common";
+import { pcbPreviewFileHash, recordPcbPreviewRevision } from "../pcb-preview-revision";
 import { rowPoints } from "./spatial";
 
 async function fileRevision(
@@ -142,7 +145,24 @@ export const render_pcb_svg = defineTool({
     await ensureDir(p(project, PROJECT_FILES.renders));
     const output = p(project, PROJECT_FILES.renders, "pcb.svg");
     ctx.progress(0.2, "exporting svg");
-    await ctx.services.kicad.exportPcbSvg(cli, { board, output, signal: ctx.signal });
+    const sourceBytes = await readFile(board);
+    const sourceRevision = createHash("sha256").update(sourceBytes).digest("hex");
+    const scratch = await mkdtemp(join(tmpdir(), "fabplane-pcb-preview-"));
+    try {
+      // Render immutable input; a live edit cannot mix source revisions in one SVG.
+      const snapshot = join(scratch, "board.kicad_pcb");
+      const svg = join(scratch, "pcb.svg");
+      await writeFile(snapshot, sourceBytes);
+      await ctx.services.kicad.exportPcbSvg(cli, { board: snapshot, output: svg, signal: ctx.signal });
+      if (await pcbPreviewFileHash(board) !== sourceRevision) {
+        throw new ToolError("PCB changed while rendering. Review the saved board and render the preview again.", "precondition");
+      }
+      const artifactBytes = await readFile(svg);
+      await writeAtomic(output, artifactBytes);
+      await recordPcbPreviewRevision(project.dir, sourceRevision, createHash("sha256").update(artifactBytes).digest("hex"));
+    } finally {
+      await rm(scratch, { recursive: true, force: true });
+    }
     ctx.progress(1, "done");
     const url = fileUrl(output);
     return ok(

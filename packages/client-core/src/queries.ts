@@ -1,3 +1,4 @@
+import { inspectPcbPreviewRevision } from "./pcb-preview-revision";
 import type {
   AgentId,
   ApprovalDecision,
@@ -919,4 +920,9 @@ export function useStopFinishIt() {
       qc.setQueryData(["finish-it", projectId], data.session);
     },
   });
+}
+
+export function usePcbPreviewRevision(projectId: string | null, enabled = true) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["pcb-preview-revision", projectId], queryFn: () => inspectPcbPreviewRevision(client, projectId!), enabled: !!projectId && enabled });
 }

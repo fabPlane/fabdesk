@@ -17,3 +17,5 @@ export * from "./comments";
 export * from "./finish-it";
 export * from "./routers";
 export * from "./speech";
+
+export * from "./render-revision";
