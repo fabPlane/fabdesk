@@ -35,6 +35,7 @@ import type {
   PatchBoardComment,
   PrivacyStatus,
   ProjectDetail,
+  ProjectBoardSources,
   ProjectSummary,
   RemixResult,
   RemoteStatus,
@@ -215,6 +216,9 @@ export class CoreClient {
   }
   getProject(id: string): Promise<ProjectDetail> {
     return this.request(`/projects/${encodeURIComponent(id)}`);
+  }
+  inspectBoardSources(id: string): Promise<ProjectBoardSources> {
+    return this.request(`/projects/${encodeURIComponent(id)}/board-sources`);
   }
   fileUrl(projectId: string, path: string): string {
     const clean = path.replace(/^\/+/, "").split("/").map(encodeURIComponent).join("/");

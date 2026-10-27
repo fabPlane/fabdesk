@@ -38,6 +38,7 @@ import {
 import { z } from "zod/v4";
 import {
   PROJECT_FILES,
+  inspectProjectBoardSources,
   ToolError,
   jailPath,
   toolRoutes,
@@ -335,6 +336,10 @@ export function createApp(deps: AppDeps): Hono<Env> {
   app.get("/projects/:id", async (c) => {
     const d = await deps.projects.detail(c.req.param("id"));
     return d ? c.json(d) : c.json({ error: "not found" }, 404);
+  });
+  app.get("/projects/:id/board-sources", async (c) => {
+    const project = await deps.projects.handle(c.req.param("id"));
+    return project ? c.json(await inspectProjectBoardSources(project)) : c.json({ error: "not found" }, 404);
   });
   app.patch("/projects/:id", async (c) => {
     const id = c.req.param("id");

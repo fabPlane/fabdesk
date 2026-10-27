@@ -2,7 +2,7 @@
 
 Design roadmap: [#388](https://github.com/TensorFleet/fabdesk/pull/388). Implementation continues in [#389](https://github.com/TensorFleet/fabdesk/pull/389).
 
-Current implementation includes: a primary canvas and corner assistant; project/task navigation; fresh sketch/idea/artboard entry; actual board overview; shared Review comments; PCB SVG byte provenance and explicit updates; interactive board model viewing; grouped model/video outputs; original enclosure imports with units/provenance; case generation and live source-change warnings. Native resize/replacement, multi-board assembly, schematic reconciliation and remaining artifact dependencies are still unfinished. Latest validation: UI218, client181, protocol86, tools392; root typecheck plus affected follow-up checks pass. Desktop149 passed at the shell milestone. See evidence sections below for scope and limits.
+Current implementation includes the primary canvas and corner assistant; quiet project/task navigation; fresh sketch/idea/artboard entry; saved-board overview; shared Review comments and source updates; explicit PCB/model freshness; interactive models and original enclosure imports; native part positioning and rectangular outline resizing; saved-output browsing; and opt-in PCB/schematic comparison. Multi-board editing, native footprint replacement, directional schematic reconciliation and complete artifact dependency tracking remain unfinished. The latest complete standard suite including the assembly-source foundation passed **2,088 tests, 28 skipped, zero failures**. Root typecheck passed; separate native placement/outline checks passed at the preceding editing milestone. Later evidence sections qualify each milestone.
 
 
 ## Implemented
@@ -323,3 +323,7 @@ Root typecheck, subsequent UI/desktop typecheck, UI223 tests and the complete st
 ![An unsaved native proposal stays in its PCB pane](comparison-native-proposal.png)
 ![Comparison at the minimum native window size](comparison-minimum-window.png)
 ![Controls stay within a narrow pane](comparison-narrow-pane.png)
+
+## Read-only multi-board source foundation
+
+[Explicit source and instance contract](../../../assembly-sources.md) adds typed, jailed inspection of declared board membership through the local daemon. It distinguishes repeated physical instances from editable source ownership, preserves unresolved provenance, and does not import viewer PASS labels. Unit and HTTP regression tests exercise two source directories, omitted historical variants, aliases and malformed manifests. The UI and native editing remain single-board until board-scoped ownership and job guards are complete; this increment does not present assembly editing as available.

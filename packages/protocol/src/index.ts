@@ -23,3 +23,4 @@ export * from "./render-revision";
 export * from "./mechanical-model";
 
 export * from "./pcb-parts";
+export * from "./assembly";

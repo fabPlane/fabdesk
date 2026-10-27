@@ -14,3 +14,5 @@ export * from "./cloud/index";
 export * from "./routers/index";
 export * from "./adapters/mcp-apps";
 export * from "./apps/dxf";
+
+export * from "./assembly";

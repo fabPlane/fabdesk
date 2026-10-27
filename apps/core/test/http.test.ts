@@ -189,6 +189,27 @@ describe("http daemon", () => {
     expect(me.principal.subject).toBe("local:dev");
   });
 
+  test("board-source inspection reads explicit membership and fails closed on invalid manifests", async () => {
+    const created = await api("/projects", { method: "POST", body: JSON.stringify({ name: "Assembly inspection" }) });
+    const project = await created.json() as { id: string; path: string };
+    const endpoint = `/projects/${project.id}/board-sources`;
+    expect((await api("/projects/missing-project/board-sources")).status).toBe(404);
+    const empty = await (await api(endpoint)).json() as { mode: string; sources: Array<{ status: string }> };
+    expect(empty.mode).toBe("single"); expect(empty.sources[0]?.status).toBe("missing");
+    await mkdir(join(project.path, "boards", "io"), { recursive: true });
+    await writeFile(join(project.path, "boards", "io", "board.kicad_pcb"), "(kicad_pcb)");
+    await writeFile(join(project.path, "fabplane.assembly.json"), JSON.stringify({
+      contract: "fabplane.assembly.v1", sources: [{ id: "io", name: "I/O", location: "project", directory: "boards/io" }],
+      instances: [{ id: "io-1", sourceId: "io", name: "I/O main" }], connections: [],
+    }));
+    const response = await api(endpoint); expect(response.status).toBe(200);
+    const assembly = await response.json() as { mode: string; editing: string; sources: Array<{ pcbPath: string; status: string }> };
+    expect(assembly.mode).toBe("assembly"); expect(assembly.editing).toBe("single-board-only");
+    expect(assembly.sources[0]?.status).toBe("available"); expect(assembly.sources[0]?.pcbPath).toBe("boards/io/board.kicad_pcb");
+    await writeFile(join(project.path, "fabplane.assembly.json"), "{}");
+    expect((await api(endpoint)).status).toBe(400);
+  });
+
   test("projects CRUD, files, sketches and project.changed over SSE with catch-up", async () => {
     // Open SSE first so the create event is observed live.
     const sse = await fetch(`${daemon.url}/events?token=${daemon.token}&topics=project.*,job.*`);

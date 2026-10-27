@@ -151,3 +151,11 @@ describe("CoreClient push registration (docs/mobile-notifications.md §4.1)", ()
     ]);
   });
 });
+
+test("assembly inspection encodes project identity and returns the read-only response", async () => {
+  let requested = "";
+  const result = { projectId: "project/one", mode: "single" as const, assembly: null, manifestSha256: null, sources: [], observedAt: new Date().toISOString(), editing: "single-board-only" as const };
+  const client = new CoreClient({ baseUrl: "http://127.0.0.1:47831", token: "tok", fetch: async (input) => { requested = input; return Response.json(result); } });
+  expect(await client.inspectBoardSources("project/one")).toEqual(result);
+  expect(requested).toBe("http://127.0.0.1:47831/projects/project%2Fone/board-sources");
+});
