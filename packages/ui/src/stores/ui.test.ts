@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { BOARD_TABS, BOARD_TAB_LABELS, SIDEBAR_LIST_TABS, SIDEBAR_LIST_TAB_LABELS, newChatInProjectState, normalizeSidebarListTab, migrateProjectDraftSlot, createUiStore, useUiStore } from "./ui";
+import { newChatDraftKey, BOARD_TABS, BOARD_TAB_LABELS, SIDEBAR_LIST_TABS, SIDEBAR_LIST_TAB_LABELS, newChatInProjectState, normalizeSidebarListTab, migrateProjectDraftSlot, createUiStore, useUiStore } from "./ui";
 
 describe("sidebar list tabs", () => {
   test("exposes Projects and Open source (Parts Inventory lives in the user menu)", () => {
@@ -41,7 +41,8 @@ describe("board tabs", () => {
     expect(BOARD_TABS).toContain("notes");
     expect(BOARD_TAB_LABELS.notes).toBe("Notes");
     expect(BOARD_TABS[11]).toBe("diff");
-    expect(BOARD_TABS.at(-1)).toBe("comments");
+    expect(BOARD_TABS[12]).toBe("comments");
+    expect(BOARD_TABS.at(-1)).toBe("updates");
     expect(BOARD_TAB_LABELS.comments).toBe("Comments");
     expect(BOARD_TAB_LABELS.diff).toBe("Diff");
   });
@@ -199,4 +200,16 @@ test("review comment navigation stays in its project and never leaks into anothe
   store.getState().setActiveProject("b");
   expect(store.getState().commentToReveal).toBeNull();
   expect(store.getState().boardTab).toBe("pcb");
+});
+
+
+test("opening another project closes inherited canvas panes without discarding drafts; explicit conversation selection reopens chat", () => {
+  const store = createUiStore({ getItem: () => null, setItem: () => {}, removeItem: () => {} });
+  store.getState().setActiveProject("a"); store.getState().setDraft(newChatDraftKey("a"), "Keep this sketch discussion");
+  store.getState().focusComposer(); store.getState().setCanvasNavigationOpen(true);
+  store.getState().setActiveProject("a"); expect(store.getState().assistantOpen).toBe(true);
+  store.getState().setActiveProject("b");
+  expect(store.getState().assistantOpen).toBe(false); expect(store.getState().canvasNavigationOpen).toBe(false);
+  expect(store.getState().drafts[newChatDraftKey("a")]).toBe("Keep this sketch discussion");
+  store.getState().setActiveThread("chat-b"); expect(store.getState().assistantOpen).toBe(true);
 });

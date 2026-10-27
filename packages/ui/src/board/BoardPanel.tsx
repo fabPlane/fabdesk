@@ -1,3 +1,4 @@
+import { ReviewUpdates } from "./ReviewUpdates";
 import { OutputsLibrary } from "./OutputsLibrary";
 import { Tabs } from "../components/ui";
 import { BoardViewMenu } from "./BoardViewMenu";
@@ -23,6 +24,8 @@ import { OrderChecksButton } from "./OrderChecksButton";
 
 function TabBody({ tab }: { tab: BoardTab }) {
   switch (tab) {
+    case "updates":
+      return <ReviewUpdates />;
     case "schematic":
       return <SvgTab kind="schematic" />;
     case "pcb":

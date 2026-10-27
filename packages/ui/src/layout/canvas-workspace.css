@@ -282,3 +282,25 @@
 .fd-output-model-preview { height:65vh; position:relative; }
 
 .fd-output-caption small[data-stale="true"] { color:var(--fd-warning); }
+
+.fd-review-updates { height:100%; overflow:auto; padding:26px clamp(20px,6vw,90px) 110px; }
+.fd-review-updates > header { position:relative; max-width:1160px; margin:0 auto 24px; padding-right:140px; }
+.fd-review-updates h2 { font-size:22px; font-weight:650; }
+.fd-review-updates > header p { color:var(--fd-muted); font-size:12px; margin-top:8px; line-height:1.7; max-width:720px; }
+.fd-review-updates > header > button { position:absolute; right:0; top:8px; }
+.fd-update-table { max-width:1160px; margin:auto; border:1px solid var(--fd-border); border-radius:14px; background:var(--fd-panel); overflow:hidden; }
+.fd-update-row { display:grid; grid-template-columns:minmax(220px,1.5fr) minmax(170px,1fr) 160px; gap:22px; align-items:center; padding:20px 24px; border-bottom:1px solid var(--fd-border); }
+.fd-update-row:last-child { border-bottom:0; }
+.fd-update-row strong { font-size:13px; }
+.fd-update-row p { font-size:11px; line-height:1.6; margin-top:5px; color:var(--fd-muted); }
+.fd-update-row > span { color:var(--fd-muted); font-size:12px; }
+.fd-update-row > span[data-warning="true"] { color:var(--fd-warning); font-weight:600; }
+.fd-update-table-heading { background:var(--fd-panel-2); padding-top:13px; padding-bottom:13px; }
+.fd-update-table-heading span { font-size:11px; font-weight:600; }
+.fd-update-sync { max-width:1160px; margin:24px auto; display:flex; align-items:center; gap:24px; padding:20px 24px; border:1px solid var(--fd-border); border-radius:14px; background:var(--fd-panel); }
+.fd-update-sync > div { flex:1; }
+.fd-update-sync h3 { font-size:14px; font-weight:600; }
+.fd-update-sync p { color:var(--fd-muted); font-size:12px; line-height:1.6; margin:6px 0; }
+.fd-update-sync small { color:var(--fd-muted); font-size:11px; }
+.fd-update-feedback { max-width:1160px; margin:14px auto; color:var(--fd-warning); display:flex; gap:8px; }
+@media (max-width:1050px) { .fd-update-row { grid-template-columns:minmax(180px,1.4fr) minmax(145px,1fr) 140px; gap:14px; padding:16px; } .fd-update-sync { align-items:start; flex-direction:column; } }

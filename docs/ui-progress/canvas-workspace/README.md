@@ -285,3 +285,16 @@ This closes the physical drawing/JPEG picker portion of onboarding validation. I
 ![Saved sketch attached without sending an agent message](fresh-sketch-attached.png)
 ![JPEG chosen through the native file picker](fresh-jpeg-selected.png)
 ![Both original files stay with the same unsent project draft](fresh-original-attachments.png)
+
+
+## Central Review updates and quiet project switching
+
+Review now opens Updates alongside Changes, Comments and Checks. It brings the qualified saved PCB preview, GLB, generated-case and DRC source signals together. Each row has its own deliberate next action: update a preview/model, inspect case controls, open Checks or browse saved outputs. Opening the view only reads state. Other outputs stay explicitly untracked; matching source is separate from electrical/fit correctness. Missing source files or unverified receipts do not become a complete-system pass.
+
+Native validation changed one PCB whitespace byte while keeping size and mtime, observed the preview and case warnings together, then explicitly updated only the preview. Its receipt matched the changed source while the GLB and case bytes stayed unchanged and the case warning remained. Original PCB/SVG/receipt bytes and timestamps were restored finally. A separate real project with schematic and PCB confirmed Ask about sync direction appends to the correct draft, retains prior text, opens the assistant and sends nothing. The draft was restored. This prepares a review question; directional native preview/apply and persistent keep-older decisions are not implemented by this view.
+
+The fresh-start walkthrough exposed an inherited assistant pane covering a different project's canvas. Switching project now closes canvas assistant/navigation panes, preserving drafts and destination/tab restore. Selecting the same project keeps its current pane; explicitly selecting a conversation reopens the assistant. A regression test covers these cases. Native source-review captures confirm the table opens unobscured. Root typecheck and UI222/client207 suites pass. Existing classic keyboard tab indices stay unchanged; Updates is appended. Hosted push/pull remains in its existing separate feature stack, not recreated here.
+
+![Central source review with explicit actions](review-updates.png)
+![Affected preview and case appear together after a PCB change](review-updates-source-changed.png)
+![Only the chosen preview updates; the case still needs review](review-update-selected-preview.png)
