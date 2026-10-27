@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, statSync, symlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { detectBinary, resolveFirst } from "../detect";
-import { readCodexConfiguredModel } from "../codex-model";
+import { readCodexConfiguredModel, readCodexModelEfforts } from "../codex-model";
 import { CodexStreamParser } from "../parsers/codex";
 import { runAgentProcess } from "../process";
 import type { AgentAdapter, AgentRun, AgentSession } from "../types";
@@ -116,6 +116,7 @@ export function codexArgs(
   }
   if (!session.resume) args.push("-C", session.cwd);
   if (session.model) args.push("-m", session.model);
+  if (session.effort) args.push("-c", `model_reasoning_effort=${tomlString(session.effort)}`);
   args.push(
     "-c",
     // Codex snapshots MCP tools at turn start and does not currently apply
@@ -217,7 +218,7 @@ export const codexAdapter: AgentAdapter = {
   detect: async (binaryPath) => {
     const detected = await detectBinary(CANDIDATES, binaryPath);
     const defaultModel = detected.installed ? readCodexConfiguredModel() : undefined;
-    return { ...detected, ...(defaultModel ? { defaultModel } : {}) };
+    return { ...detected, ...(defaultModel ? { defaultModel } : {}), ...(detected.installed ? { modelEfforts: readCodexModelEfforts() } : {}) };
   },
   models: () => [
     "gpt-5.5",
