@@ -2,7 +2,7 @@ import type { AgentId } from "@fabdesk/protocol";
 import { useCallback, useEffect } from "react";
 import { Icon } from "../components/Icon";
 import { CircuitLogo } from "../components/CircuitLogo";
-import { Badge } from "../components/ui";
+import { Badge, Button } from "../components/ui";
 import { CoreHttpError, useMessages, useThread, useThreadMutations } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { Composer } from "./Composer";
@@ -11,6 +11,7 @@ import { MessageList } from "./MessageList";
 export function ThreadView() {
   const activeThreadId = useUiStore((s) => s.activeThreadId);
   const projectId = useUiStore((s) => s.activeProjectId);
+  const setSketchOpen = useUiStore((s) => s.setSketchOpen);
   const setActiveThread = useUiStore((s) => s.setActiveThread);
   const threadQuery = useThread(activeThreadId);
   const thread = threadQuery.data ?? null;
@@ -62,10 +63,15 @@ export function ThreadView() {
         <div className="fd-empty-hero">
           <CircuitLogo className="fd-hero-icon mb-3 shrink-0 text-accent" />
           <div className="fd-eyebrow">Your PCB workspace</div>
-          <h1>What board are we building?</h1>
+          <h1>{projectId ? "What board are we building?" : "What would you like to make?"}</h1>
           <div className="fd-hero-description">
             Describe your circuit or attach a sketch. Build, route, and verify your board with an agent, then prepare it for manufacturing.
           </div>
+          <div className="mt-5 flex flex-wrap justify-center gap-2" aria-label="Start from a sketch">
+            <Button onClick={() => setSketchOpen(true, "draw")}><Icon name="compose" width={16} height={16} />Draw a sketch</Button>
+            <Button onClick={() => setSketchOpen(true, "upload")}><Icon name="paperclip" width={16} height={16} />Upload an image</Button>
+          </div>
+          {!projectId && <p className="mt-3 text-xs text-muted">Saving a sketch creates a project automatically.</p>}
         </div>
       )}
       <Composer thread={thread} onCreateThread={onCreateThread} />

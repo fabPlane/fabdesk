@@ -14,7 +14,7 @@ import { SettingsDialog } from "../settings/SettingsDialog";
 import { WhatsNewDialog } from "../whatsnew/WhatsNew";
 import { SketchPad } from "../sketch/SketchPad";
 import { useAuthStore } from "@fabdesk/client-core";
-import { DRAFT_KEY_NEW, useUiStore } from "../stores/ui";
+import { useUiStore } from "../stores/ui";
 import type { CoreStatusInfo } from "./types";
 import { useAppActions } from "./useAppActions";
 import { FirstInstallPrivacy } from "./FirstInstallPrivacy";
@@ -47,8 +47,6 @@ function AppInner({ coreStatus, onRestartCore }: { coreStatus?: CoreStatusInfo |
   const authState = useAuthStore((s) => s.state);
   const setLocalAllowed = useAuthStore((s) => s.setLocalAllowed);
   const actions = useAppActions();
-  const addAttachment = useUiStore((s) => s.addAttachment);
-  const activeThreadId = useUiStore((s) => s.activeThreadId);
 
   useEffect(() => {
     host
@@ -131,7 +129,7 @@ function AppInner({ coreStatus, onRestartCore }: { coreStatus?: CoreStatusInfo |
       <CommandPalette />
       <SettingsDialog />
       <WhatsNewDialog />
-      <SketchPad onAttach={(att) => addAttachment(activeThreadId ?? DRAFT_KEY_NEW, att)} />
+      <SketchPad />
     </>
   );
 }

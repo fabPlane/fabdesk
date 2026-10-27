@@ -9,7 +9,7 @@ import { ErrorNotice } from "../components/ErrorNotice";
 import { useCore } from "@fabdesk/client-core";
 import { CoreHttpError, formatVoiceShortcut, parseVoiceShortcut, useDoctor, useSettings, useSpeechStatus, useMessages, useQueueMessage, useUnqueueMessage, useFinishIt, useFinishItNeedsWork, useStartFinishIt, useStopFinishIt } from "@fabdesk/client-core";
 import { useRunsStore } from "@fabdesk/client-core";
-import { DRAFT_KEY_NEW, useUiStore } from "../stores/ui";
+import { newChatDraftKey, useUiStore } from "../stores/ui";
 import { basename, mimeFromPath, modKey } from "../util";
 import { AgentLogo } from "../components/AgentLogo";
 import { AgentModelMenu } from "./AgentModelMenu";
@@ -56,7 +56,8 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
   const agentButtonRef = useRef<HTMLButtonElement>(null);
   const { client, host } = useCore();
   const qc = useQueryClient();
-  const draftKey = thread?.id ?? DRAFT_KEY_NEW;
+  const projectId = useUiStore((s) => s.activeProjectId);
+  const draftKey = thread?.id ?? newChatDraftKey(projectId);
   const draft = useUiStore((s) => s.drafts[draftKey] ?? "");
   const setDraft = useUiStore((s) => s.setDraft);
   const pending = useUiStore((s) => s.attachments[draftKey] ?? EMPTY);
@@ -68,7 +69,6 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
   const focusNonce = useUiStore((s) => s.composerFocusNonce);
   const agentPickerOpen = useUiStore((s) => s.agentPickerOpen);
   const setAgentPickerOpen = useUiStore((s) => s.setAgentPickerOpen);
-  const projectId = useUiStore((s) => s.activeProjectId);
   const run = useRunsStore((s) => (thread ? s.runsByThread[thread.id] : undefined));
   const messages = useMessages(thread?.id ?? null);
   const queued = (messages.data ?? []).filter((message) => message.status === "queued");
@@ -187,15 +187,15 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
       voice.reset();
       setDraft(draftKey, "");
       clearAttachments(draftKey);
-      if (draftKey === DRAFT_KEY_NEW) setDraft(threadId, "");
+      if (!thread) setDraft(threadId, "");
       void qc.invalidateQueries({ queryKey: ["messages", threadId] });
       void qc.invalidateQueries({ queryKey: ["threads"] });
     } catch (e) {
       if (createdThreadId) {
         setDraft(createdThreadId, draft);
         for (const attachment of pending) addAttachment(createdThreadId, attachment);
-        setDraft(DRAFT_KEY_NEW, "");
-        clearAttachments(DRAFT_KEY_NEW);
+        setDraft(draftKey, "");
+        clearAttachments(draftKey);
       }
       setError(e);
     } finally {
@@ -250,7 +250,7 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
     ? "Message the agent..."
     : projectId
       ? "Describe the board you want..."
-      : "Pick or create a project, then describe the board...";
+      : "Describe your idea or start with a sketch...";
 
   return (
     <div className="fd-composer-dock bg-bg px-5 pb-4 pt-3">
@@ -357,7 +357,6 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
               aria-label="Sketch"
               title={`Sketch (${mod} + Shift + S)`}
               onClick={() => setSketchOpen(true)}
-              disabled={!projectId}
             >
               <Icon name="compose" width={16} height={16} /><span className="fd-action-label">Sketch</span>
             </Button>

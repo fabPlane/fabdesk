@@ -1,7 +1,10 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { DRAFT_KEY_NEW, newChatDraftKey } from "@fabdesk/client-core";
+import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
 import { readStoredThemeId, type ThemeId } from "../theme/resolve";
 import { stencilThicknessMm } from "./stencil-thickness";
+
+export { DRAFT_KEY_NEW, newChatDraftKey } from "@fabdesk/client-core";
 
 export const BOARD_TABS = ["schematic", "pcb", "cinema", "3d", "cad", "drc", "renders", "files", "bom", "art", "notes", "diff"] as const;
 export type BoardTab = (typeof BOARD_TABS)[number];
@@ -71,6 +74,9 @@ export interface UiState {
   /** Section the settings dialog should show when it next opens; null keeps the last one. */
   settingsSection: SettingsSection | null;
   sketchOpen: boolean;
+  sketchMode: "draw" | "upload";
+  /** Adopt a newly saved sketch project only while the original blank chat is active. */
+  adoptSketchProject: (projectId: string) => void;
   agentPickerOpen: boolean;
   whatsNewOpen: boolean;
   /** Id of the release notes the user last read (set on close); the top-bar link hides once it matches. */
@@ -98,14 +104,12 @@ export interface UiState {
   clearAttachments: (threadKey: string) => void;
   setPaletteOpen: (open: boolean) => void;
   setSettingsOpen: (open: boolean, section?: SettingsSection) => void;
-  setSketchOpen: (open: boolean) => void;
+  setSketchOpen: (open: boolean, mode?: "draw" | "upload") => void;
   setAgentPickerOpen: (open: boolean) => void;
   setWhatsNewOpen: (open: boolean) => void;
   markWhatsNewSeen: (id: string) => void;
   focusComposer: () => void;
 }
-
-export const DRAFT_KEY_NEW = "__new__";
 
 /** Shared patch for “new chat in this project” (sidebar + and the picker). */
 export function newChatInProjectState(projectId: string | null) {
@@ -120,7 +124,8 @@ export function newChatInProjectState(projectId: string | null) {
   };
 }
 
-export const useUiStore = create<UiState>()(
+export function createUiStore(storage?: StateStorage) {
+  return create<UiState>()(
   persist(
     (set) => ({
   // Seed from localStorage so the first React render matches the pre-paint boot script.
@@ -156,6 +161,17 @@ export const useUiStore = create<UiState>()(
   settingsOpen: false,
   settingsSection: null,
   sketchOpen: false,
+  sketchMode: "draw",
+  adoptSketchProject: (projectId) => set((s) => {
+    if (s.activeProjectId || s.activeThreadId) return {};
+    const key = newChatDraftKey(projectId);
+    return {
+      activeProjectId: projectId,
+      projectPickerOpen: false,
+      drafts: { ...s.drafts, [key]: s.drafts[DRAFT_KEY_NEW] ?? "", [DRAFT_KEY_NEW]: "" },
+      attachments: { ...s.attachments, [key]: [...(s.attachments[key] ?? []), ...(s.attachments[DRAFT_KEY_NEW] ?? [])], [DRAFT_KEY_NEW]: [] },
+    };
+  }),
   agentPickerOpen: false,
   whatsNewOpen: false,
   whatsNewSeenId: null,
@@ -192,7 +208,7 @@ export const useUiStore = create<UiState>()(
   clearAttachments: (key) => set((s) => ({ attachments: { ...s.attachments, [key]: [] } })),
   setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
   setSettingsOpen: (settingsOpen, section) => set({ settingsOpen, settingsSection: settingsOpen ? (section ?? null) : null }),
-  setSketchOpen: (sketchOpen) => set({ sketchOpen }),
+  setSketchOpen: (sketchOpen, sketchMode = "draw") => set({ sketchOpen, sketchMode }),
   setAgentPickerOpen: (agentPickerOpen) => set({ agentPickerOpen }),
   setWhatsNewOpen: (whatsNewOpen) => set({ whatsNewOpen }),
   markWhatsNewSeen: (whatsNewSeenId) => set({ whatsNewSeenId }),
@@ -200,11 +216,17 @@ export const useUiStore = create<UiState>()(
 }),
     {
       name: "fabdesk.ui",
-      version: 5,
+      storage: createJSONStorage(() => storage ?? localStorage),
+      version: 6,
       migrate: (persisted, _version) => {
         const state = (persisted ?? {}) as Record<string, unknown>;
         return {
           ...state,
+          // The old shared new-chat slot belonged to the selected project.
+          ...(typeof state.activeProjectId === "string" ? {
+            drafts: migrateProjectDraftSlot(state.drafts, state.activeProjectId),
+            attachments: migrateProjectDraftSlot(state.attachments, state.activeProjectId),
+          } : {}),
           boardTab: (BOARD_TABS as readonly string[]).includes(String(state.boardTab)) ? state.boardTab : "schematic",
           sidebarListTab: normalizeSidebarListTab(typeof state.sidebarListTab === "string" ? state.sidebarListTab : undefined),
         };
@@ -221,8 +243,22 @@ export const useUiStore = create<UiState>()(
         boardTab: s.boardTab,
         stencilThicknessByProject: s.stencilThicknessByProject,
         drafts: s.drafts,
+        attachments: s.attachments,
         whatsNewSeenId: s.whatsNewSeenId,
       }),
     },
   ),
-);
+  );
+}
+
+export const useUiStore = createUiStore();
+
+/** Migrate the former shared slot once; existing project drafts take precedence. */
+export function migrateProjectDraftSlot(value: unknown, projectId: string): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const slots = value as Record<string, unknown>;
+  const key = newChatDraftKey(projectId);
+  if (!(DRAFT_KEY_NEW in slots) || key in slots) return slots;
+  const { [DRAFT_KEY_NEW]: draft, ...rest } = slots;
+  return { ...rest, [key]: draft };
+}

@@ -6,7 +6,7 @@
  * Everything here goes through the same zustand stores and composer handlers the UI uses, so the
  * real code paths run (thread creation, agent runs, cinema playback).
  */
-import { BOARD_TABS, DRAFT_KEY_NEW, composerHandlers, useAuthStore, useCinemaStore, useUiStore, type BoardTab } from "@fabdesk/ui";
+import { BOARD_TABS, newChatDraftKey, composerHandlers, useAuthStore, useCinemaStore, useUiStore, type BoardTab } from "@fabdesk/ui";
 import { cssPath, implicitRole, normalizeText, rankMatches, uiSnapshot, type ElementInfo, type PathNode, type RankedElement, type UiSnapshot } from "./automation-core";
 
 const SETTINGS_SECTIONS = ["agents", "kicad", "router", "auth", "remote", "voice", "appearance", "privacy", "shortcuts"] as const;
@@ -44,7 +44,7 @@ function state(): UiSnapshot {
     auth: useAuthStore.getState().state,
     core: core ? { url: core.url, status: core.status } : null,
     page: { href: location.href, title: document.title, width: window.innerWidth, height: window.innerHeight, dpr: window.devicePixelRatio, composerMounted: composerHandlers.send !== null },
-    newChatDraftKey: DRAFT_KEY_NEW,
+    newChatDraftKey: newChatDraftKey(useUiStore.getState().activeProjectId),
   });
 }
 
@@ -174,7 +174,8 @@ async function newChat(): Promise<UiSnapshot> {
 }
 
 function draftKey(): string {
-  return useUiStore.getState().activeThreadId ?? DRAFT_KEY_NEW;
+  const ui = useUiStore.getState();
+  return ui.activeThreadId ?? newChatDraftKey(ui.activeProjectId);
 }
 
 async function setComposer(text: string): Promise<{ draftKey: string; draft: string }> {

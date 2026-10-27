@@ -11,7 +11,7 @@ import {
   useProjectText,
   useRunTool,
 } from "@fabdesk/client-core";
-import { DRAFT_KEY_NEW, useUiStore } from "../stores/ui";
+import { newChatDraftKey, useUiStore } from "../stores/ui";
 import { CommentPins } from "./CommentPins";
 import { SvgViewer } from "./SvgViewer";
 import { type SvgPoint } from "./svg-coords";
@@ -104,7 +104,7 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
       if (threadId) {
         await client.sendMessage(threadId, { content: prompt });
       } else {
-        useUiStore.getState().setDraft(DRAFT_KEY_NEW, prompt);
+        useUiStore.getState().setDraft(newChatDraftKey(useUiStore.getState().activeProjectId), prompt);
         useUiStore.getState().focusComposer();
       }
     } catch (error) {

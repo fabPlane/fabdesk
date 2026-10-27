@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { BOARD_TABS, BOARD_TAB_LABELS, SIDEBAR_LIST_TABS, SIDEBAR_LIST_TAB_LABELS, newChatInProjectState, normalizeSidebarListTab, useUiStore } from "./ui";
+import { BOARD_TABS, BOARD_TAB_LABELS, SIDEBAR_LIST_TABS, SIDEBAR_LIST_TAB_LABELS, newChatInProjectState, normalizeSidebarListTab, migrateProjectDraftSlot, createUiStore, useUiStore } from "./ui";
 
 describe("sidebar list tabs", () => {
   test("exposes Projects and Open source (Parts Inventory lives in the user menu)", () => {
@@ -80,4 +80,56 @@ describe("project context", () => {
       expect(useUiStore.getState().activeThreadId).toBe("chat-a");
     } finally { useUiStore.setState(previous); }
   });
+});
+
+describe("sketch-first draft adoption", () => {
+  test("adopts the blank chat text and attachments into the new project", () => {
+    const previous = useUiStore.getState();
+    try {
+      useUiStore.setState({ activeProjectId: null, activeThreadId: null, drafts: { __new__: "Use this sketch" }, attachments: { __new__: [{ path: "/reference.txt", mime: "text/plain", label: "reference" }] } });
+      useUiStore.getState().adoptSketchProject("sketch-project");
+      const state = useUiStore.getState();
+      expect(state.activeProjectId).toBe("sketch-project");
+      expect(state.drafts["__new__:sketch-project"]).toBe("Use this sketch");
+      expect(state.attachments["__new__:sketch-project"]?.[0]?.path).toBe("/reference.txt");
+      expect(state.drafts.__new__).toBe("");
+    } finally { useUiStore.setState(previous); }
+  });
+  test("a late project creation does not move the user out of another chat", () => {
+    const previous = useUiStore.getState();
+    try {
+      useUiStore.setState({ activeProjectId: "other", activeThreadId: "other-chat", drafts: { __new__: "Keep" } });
+      useUiStore.getState().adoptSketchProject("sketch-project");
+      expect(useUiStore.getState().activeProjectId).toBe("other");
+      expect(useUiStore.getState().activeThreadId).toBe("other-chat");
+      expect(useUiStore.getState().drafts.__new__).toBe("Keep");
+    } finally { useUiStore.setState(previous); }
+  });
+});
+
+ test("legacy unsent slots migrate without overwriting an existing project draft", () => {
+  expect(migrateProjectDraftSlot({ __new__: "Legacy" }, "a")).toEqual({ "__new__:a": "Legacy" });
+  expect(migrateProjectDraftSlot({ __new__: "Legacy", "__new__:a": "Saved" }, "a")).toEqual({ __new__: "Legacy", "__new__:a": "Saved" });
+  expect(migrateProjectDraftSlot(undefined, "a")).toBeUndefined();
+});
+
+test("saved sketch attachments survive UI-store rehydration in their project slot", async () => {
+  let snapshot: string | null = null;
+  const storage = { getItem: () => snapshot, setItem: (_name: string, value: string) => { snapshot = value; }, removeItem: () => { snapshot = null; } };
+  const first = createUiStore(storage);
+  first.setState({ activeProjectId: "a", activeThreadId: null, drafts: { "__new__:a": "Build this" }, attachments: { "__new__:a": [{ path: "sketches/a.png", mime: "image/png", label: "a.png" }] } });
+  const reopened = createUiStore(storage);
+  await reopened.persist.rehydrate();
+  expect(reopened.getState().activeProjectId).toBe("a");
+  expect(reopened.getState().drafts["__new__:a"]).toBe("Build this");
+  expect(reopened.getState().attachments["__new__:a"]?.[0]?.path).toBe("sketches/a.png");
+});
+
+test("version 5 drafts migrate even while an existing conversation is open", async () => {
+  let snapshot = JSON.stringify({ version: 5, state: { activeProjectId: "a", activeThreadId: "chat-a", drafts: { __new__: "Unsent new chat", "chat-a": "Existing chat draft" } } });
+  const reopened = createUiStore({ getItem: () => snapshot, setItem: (_name, value) => { snapshot = value; }, removeItem: () => {} });
+  await reopened.persist.rehydrate();
+  expect(reopened.getState().drafts["__new__:a"]).toBe("Unsent new chat");
+  expect(reopened.getState().drafts["chat-a"]).toBe("Existing chat draft");
+  expect(reopened.getState().activeThreadId).toBe("chat-a");
 });

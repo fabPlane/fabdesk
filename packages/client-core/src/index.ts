@@ -158,3 +158,5 @@ export {
   DEFAULT_VOICE_SHORTCUT,
 } from "./speech/shortcut";
 export type { VoiceShortcut } from "./speech/shortcut";
+
+export { DRAFT_KEY_NEW, newChatDraftKey, createSketchDraftSession } from "./sketch-drafts";
