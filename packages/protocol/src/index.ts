@@ -19,3 +19,5 @@ export * from "./routers";
 export * from "./speech";
 
 export * from "./render-revision";
+
+export * from "./mechanical-model";

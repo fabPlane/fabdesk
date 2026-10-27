@@ -164,3 +164,5 @@ export { WORKSPACE_AREAS, workspaceAreaForView, workspaceViews } from "./workspa
 export type { WorkspaceArea, WorkspaceView } from "./workspace-navigation";
 
 export * from "./pcb-preview-revision";
+
+export * from "./model-import";

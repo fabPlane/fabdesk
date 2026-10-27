@@ -27,7 +27,7 @@ async function loadModel(bytes: ArrayBuffer, path: string): Promise<THREE.Object
   if (/\.stl$/i.test(path)) {
     const geometry = new STLLoader().parse(bytes);
     geometry.computeVertexNormals();
-    const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0x76b6a1, roughness: .65, metalness: .05 }));
+    const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0x76b6a1, roughness: .65, metalness: .05, side: THREE.DoubleSide }));
     mesh.rotation.x = -Math.PI / 2; // STL convention: Z up; display only, never rewrite the source.
     return mesh;
   }

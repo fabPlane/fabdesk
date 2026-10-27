@@ -194,3 +194,25 @@
 .fd-model-view-tools span { color:var(--fd-muted); font-size:11px; }
 .fd-board-model-actions { position:absolute; top:12px; right:28px; display:flex; gap:8px; }
 .fd-model-export-error { position:absolute; top:58px; right:28px; max-width:420px; max-height:180px; overflow:auto; padding:16px; border:1px solid var(--fd-border); border-radius:12px; color:var(--fd-warning); background:var(--fd-panel); font-size:12px; }
+.fd-mechanical-workspace { height:100%; position:relative; min-height:0; }
+.fd-mechanical-start { height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:60px 30px 100px; text-align:center; gap:20px; }
+.fd-mechanical-start > svg { color:var(--fd-accent); }
+.fd-mechanical-start h1 { font-size:32px; font-weight:600; letter-spacing:-1px; }
+.fd-mechanical-start p { color:var(--fd-muted); font-size:15px; }
+.fd-mechanical-start > div { display:flex; gap:12px; margin:10px 0; }
+.fd-mechanical-start > span { color:var(--fd-muted); font-size:11px; }
+.fd-mechanical-actions { position:absolute; right:28px; top:12px; display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; max-width:48%; }
+.fd-mechanical-selection { position:absolute; top:12px; left:28px; display:flex; align-items:center; gap:12px; max-width:46%; padding:10px 14px; border:1px solid var(--fd-border); border-radius:12px; background:var(--fd-panel); box-shadow:0 3px 12px #102a2008; }
+.fd-mechanical-selection > div { display:flex; flex-direction:column; gap:4px; min-width:0; }
+.fd-mechanical-selection strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; }
+.fd-mechanical-selection span { color:var(--fd-muted); font-size:10px; }
+.fd-mechanical-selection select { max-width:150px; background:var(--fd-panel); font-size:11px; border:1px solid var(--fd-border); border-radius:7px; }
+.fd-mechanical-generator { height:100%; overflow:auto; padding:12px 20px 100px; }
+.fd-mechanical-generator-heading { display:flex; align-items:center; gap:14px; color:var(--fd-muted); font-size:12px; }
+.fd-model-import { display:flex; flex-direction:column; gap:22px; }
+.fd-model-import > p { color:var(--fd-muted); line-height:1.65; }
+.fd-model-import > button { align-self:flex-start; }
+.fd-model-import-file { display:flex; flex-direction:column; gap:6px; overflow-wrap:anywhere; padding:16px; border:1px solid var(--fd-border); border-radius:10px; background:var(--fd-panel-2); }
+.fd-model-import-file span,.fd-model-import label > span { color:var(--fd-muted); font-size:12px; line-height:1.6; }
+.fd-model-import label { display:flex; flex-direction:column; gap:10px; font-size:13px; }
+.fd-model-import select { padding:10px; background:var(--fd-panel); border:1px solid var(--fd-border); border-radius:8px; }

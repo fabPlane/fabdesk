@@ -31,6 +31,7 @@ export function useAppActions() {
         ui().setProjectPickerOpen(true);
       },
       send() {
+        if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
         if (ui().canvasMode && (ui().inventoryOpen || ui().activeOpenSourceId || ui().orderFlowOpen)) return;
         if (ui().canvasMode && ui().activeProjectId && ui().boardOpen && !ui().assistantOpen) {
           ui().focusComposer();

@@ -3,6 +3,7 @@ import { type CadRuntimeBridge } from "@fabdesk/protocol";
 import { CadSession, type CadSessionState, useCoreClient } from "@fabdesk/client-core";
 import { Button, EmptyState, Spinner } from "../components/ui";
 import { useUiStore } from "../stores/ui";
+import { MechanicalWorkspace } from "./MechanicalWorkspace";
 import { EnclosurePanel } from "./EnclosurePanel";
 
 /**
@@ -26,6 +27,13 @@ export function shouldShowCadKernelTree(
 
 /** The CAD runtime is optional and installed only after native download consent. */
 export function CadTab() {
+  const canvas = useUiStore((s) => s.canvasMode);
+  const [advanced, setAdvanced] = useState(false);
+  if (canvas && !advanced) return <MechanicalWorkspace onAdvanced={() => setAdvanced(true)} />;
+  return <div className="flex h-full min-h-0 flex-col">{canvas && <div className="p-3"><Button size="sm" onClick={() => setAdvanced(false)}>Back to enclosure canvas</Button></div>}<div className="min-h-0 flex-1"><AdvancedCadTab /></div></div>;
+}
+
+function AdvancedCadTab() {
   const client = useCoreClient();
   const projectId = useUiStore((s) => s.activeProjectId);
   const runtimeBridge = (window as unknown as { fabdesk?: CadRuntimeBridge }).fabdesk;

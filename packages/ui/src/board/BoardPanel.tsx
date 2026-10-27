@@ -67,7 +67,7 @@ export function BoardPanel({ canvas = false }: { canvas?: boolean }) {
   const mod = modKey(host.platform);
   if (canvas) return <div className="fd-canvas-board" data-testid="board-panel">
     <div className="fd-canvas-controls">
-      <Tabs tabs={workspaceViews(area).map((item) => ({ id: item.tab, label: item.label }))} value={tab} onChange={setWorkspaceTab} />
+      {workspaceViews(area).length > 1 && <Tabs tabs={workspaceViews(area).map((item) => ({ id: item.tab, label: item.label }))} value={tab} onChange={setWorkspaceTab} />}
       <div className="fd-canvas-checks">{order.data && <OrderChecksButton order={order.data} unavailable={order.isError} onClick={() => setOrderFlowOpen(true)} />}</div>
     </div>
     <div className="fd-canvas-board-body"><TabBody key={`${projectId}:${tab}`} tab={tab} /></div>
