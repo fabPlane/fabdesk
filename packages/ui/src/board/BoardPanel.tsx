@@ -13,6 +13,7 @@ import { ArtTab } from "./ArtTab";
 import { FilesTab } from "./FilesTab";
 import { NotesTab } from "./NotesTab";
 import { RendersTab } from "./RendersTab";
+import { ReviewComments } from "./ReviewComments";
 import { DiffTab } from "./DiffTab";
 import { ShoppingListTab } from "./ShoppingListTab";
 import { SvgTab } from "./SvgTab";
@@ -43,6 +44,8 @@ function TabBody({ tab }: { tab: BoardTab }) {
       return <ArtTab />;
     case "bom":
       return <ShoppingListTab />;
+    case "comments":
+      return <ReviewComments />;
     case "diff":
       return <DiffTab />;
     default:

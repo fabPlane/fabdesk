@@ -56,6 +56,7 @@ export function commentPinAnchor(
 
 /** Schematic / PCB tab: shows the daemon's rendered SVG (`renders/<kind>.svg`, drawn by kicad-cli) and offers to render it. */
 export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
+  const commentToReveal = useUiStore((s) => s.commentToReveal);
   const canvasMode = useUiStore((s) => s.canvasMode);
   const [canvasPoint, setCanvasPoint] = useState<SvgPoint | null>(null);
   const projectId = useUiStore((s) => s.activeProjectId);
@@ -81,6 +82,15 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
     () => (comments.data?.comments ?? []).filter((comment) => comment.anchor.view === view),
     [comments.data, view],
   );
+  useEffect(() => {
+    if (!commentToReveal || commentToReveal.projectId !== projectId || commentToReveal.view !== kind || !comments.data) return;
+    if (pins.some((comment) => comment.id === commentToReveal.id)) {
+      setSelectedId(commentToReveal.id);
+      setCommentMode(true);
+      setDraftPoint(null);
+    }
+    useUiStore.setState({ commentToReveal: null });
+  }, [commentToReveal, projectId, kind, comments.data, pins]);
   const selected = pins.find((comment) => comment.id === selectedId) ?? null;
   const pendingPins = pendingBoardComments(pins, view);
   const beginPin = () => {
@@ -95,6 +105,13 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
     setRef("");
     setNet("");
     setPad("");
+  };
+
+  const closeComments = () => {
+    setSelectedId(null);
+    setCommentMode(false);
+    resetCompose();
+    requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('[data-testid="comment-mode"]')?.focus());
   };
 
   const askAgent = async (targets: BoardComment[]) => {
@@ -150,7 +167,7 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
   }
   if (rendered.data) {
     return (
-      <div className="flex h-full min-h-0" data-testid={`board-${kind}-svg`} onKeyDown={(event) => { if (event.key === "Escape") setCanvasPoint(null); }}>
+      <div className="flex h-full min-h-0" data-testid={`board-${kind}-svg`} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); if (canvasPoint) setCanvasPoint(null); else if (selected || draftPoint || commentMode) closeComments(); } }}>
         <div className="min-w-0 flex-1">
           <SvgViewer
             svg={rendered.data}
@@ -187,10 +204,11 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
                   size="sm"
                   variant={commentMode ? "primary" : "secondary"}
                   onClick={() => {
-                    setCommentMode((on) => !on);
-                    resetCompose();
+                    if (commentMode || selected || draftPoint) closeComments();
+                    else beginPin();
                   }}
                   data-testid="comment-mode"
+                  aria-pressed={commentMode || !!selected || !!draftPoint}
                   title="Pin a question to this drawing"
                 >
                   <Icon name="pin" width={14} height={14} />
@@ -205,6 +223,7 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
         </div>
         {(selected || draftPoint || commentMode) && (
           <aside className="flex w-72 shrink-0 flex-col gap-2 overflow-auto border-l border-border p-3" data-testid="comment-detail">
+            <div className="flex items-center justify-between"><strong className="text-sm">Pinned comments</strong><IconButton size="sm" title="Close comments" onClick={closeComments}><Icon name="close" width={16} height={16} /></IconButton></div>
             {pins.length > 0 && (
               <div className="mb-1 border-b border-border pb-3">
                 <p className="mb-2 text-xs font-medium">Pins on this {kind === "pcb" ? "PCB" : "schematic"}</p>

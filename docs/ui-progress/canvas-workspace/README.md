@@ -40,3 +40,12 @@ Overview tools now appear only after board selection. The preview is labeled Sav
 ![Dark canvas](dark-board.png)
 ![Fresh-start actions and a retained study draft](fresh-start.png)
 ![Minimum desktop window](compact-board.png)
+
+## Review comments milestone
+
+Review now groups Changes, Comments and Checks. Comments reuse the existing project `comments.json` API and drawing pins. Active/resolved filters, resolve/reopen and source-drawing navigation are connected to saved project data. Ask about this prepares a draft containing the existing pin ID and opens the assistant; the user sends it explicitly.
+
+A clearly labeled question was created in the isolated study project. Native walkthrough verified that resolving writes `resolved` to the server and removes the item from Active, reopening returns it, Show on drawing opens its exact selected pin/detail, and Ask about this retains the pin ID in the draft. Closing comment details restores focus to the Comment button. The assistant launcher no longer overlaps the comment-detail action area. UI tests now total 218 passing, including cross-project comment navigation isolation; root typecheck passed and the subsequent UI polish typecheck passed.
+
+![Comments beside changes and checks](review-comments.png)
+![The same saved comment selected on the drawing](review-comment-drawing.png)

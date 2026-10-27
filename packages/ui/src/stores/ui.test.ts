@@ -40,7 +40,9 @@ describe("board tabs", () => {
     expect(BOARD_TAB_LABELS.art).toBe("Art");
     expect(BOARD_TABS).toContain("notes");
     expect(BOARD_TAB_LABELS.notes).toBe("Notes");
-    expect(BOARD_TABS.at(-1)).toBe("diff");
+    expect(BOARD_TABS[11]).toBe("diff");
+    expect(BOARD_TABS.at(-1)).toBe("comments");
+    expect(BOARD_TAB_LABELS.comments).toBe("Comments");
     expect(BOARD_TAB_LABELS.diff).toBe("Diff");
   });
 });
@@ -181,4 +183,20 @@ describe("canvas workspace state", () => {
     store.getState().setWorkspaceArea("mechanical");
     expect(store.getState().boardTab).toBe("cad");
   });
+});
+
+
+test("review comment navigation stays in its project and never leaks into another project", () => {
+  const store = createUiStore();
+  store.getState().openBoardComment("cmt_none", "pcb");
+  expect(store.getState().commentToReveal).toBeNull();
+  store.getState().setActiveProject("a");
+  store.getState().setWorkspaceArea("review");
+  store.getState().openBoardComment("cmt_a", "schematic");
+  expect(store.getState().commentToReveal).toEqual({ projectId: "a", id: "cmt_a", view: "schematic" });
+  expect(store.getState().workspaceArea).toBe("boards");
+  expect(store.getState().boardTab).toBe("schematic");
+  store.getState().setActiveProject("b");
+  expect(store.getState().commentToReveal).toBeNull();
+  expect(store.getState().boardTab).toBe("pcb");
 });
