@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, realpathSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -28,10 +28,12 @@ describe("publish-fabplane-cli workflow", () => {
   });
 
   test.skipIf(!Bun.which("npm"))("npm ci inside the bun workspace walks up and fails; a copy outside it installs", () => {
-    const seed = mkdtempSync(join(tmpdir(), "fabplane-cli-seed-"));
-    const parent = mkdtempSync(join(tmpdir(), "fabplane-cli-ws-"));
+    // npm reports canonical paths, including macOS /private/var rather than /var.
+    const temporaryRoot = realpathSync(tmpdir());
+    const seed = mkdtempSync(join(temporaryRoot, "fabplane-cli-seed-"));
+    const parent = mkdtempSync(join(temporaryRoot, "fabplane-cli-ws-"));
     const child = join(parent, "vendor-cli");
-    const isolated = join(tmpdir(), `fabplane-cli-iso-${Date.now()}`);
+    const isolated = join(temporaryRoot, `fabplane-cli-iso-${Date.now()}`);
     try {
       writeFileSync(join(seed, "package.json"), JSON.stringify({ name: "tiny-cli", version: "1.0.0" }));
       const lock = Bun.spawnSync(["npm", "install", "--package-lock-only", "--ignore-scripts", "--no-audit", "--no-fund"], {

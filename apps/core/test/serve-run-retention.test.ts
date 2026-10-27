@@ -1,5 +1,5 @@
 import { expect, spyOn, test } from "bun:test";
-import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { realpath, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CoreServices } from "@fabdesk/tools";
@@ -9,8 +9,9 @@ import { Store } from "../src/db";
 import { RUN_DUMP_RETENTION } from "../src/run-retention";
 import { UsageArchive } from "../src/usage-archive";
 
+// Use the canonical OS temp root: retention deliberately refuses symlink ancestors.
 test.each([undefined, "0"])("serve retains 50 run folders with remote backup %s and attempts no uploads", async remote => {
-  const home = await mkdtemp(join(tmpdir(), "fabdesk-serve-retention-"));
+  const home = await mkdtemp(join(await realpath(tmpdir()), "fabdesk-serve-retention-"));
   await writeFile(join(home, ".fabdesk-dev"), "");
   const overrides = {
     FABDESK_USAGE_ARCHIVE_DIR: undefined,
@@ -60,7 +61,7 @@ test.each([undefined, "0"])("serve retains 50 run folders with remote backup %s 
 
 
 test.each([false, true])("serve continues backfill after a cap drop unless consent is revoked (%s)", async revoke => {
-  const home = await mkdtemp(join(tmpdir(), "fabdesk-backfill-drop-"));
+  const home = await mkdtemp(join(await realpath(tmpdir()), "fabdesk-backfill-drop-"));
   await writeFile(join(home, ".fabdesk-dev"), "");
   const overrides = { FABDESK_USAGE_ARCHIVE_DIR: undefined, FABDESK_USAGE_REMOTE_BACKUP: "1",
     FABDESK_PROJECTS_DIR: join(home, "projects"), FABDESK_PRIVACY_SCREEN: "never", FABPLANE_API_ORIGIN: "https://retention.invalid" };

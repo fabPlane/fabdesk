@@ -1,7 +1,7 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { existsSync, linkSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Store } from "../src/db";
@@ -11,8 +11,10 @@ import { captureSnapshotFile } from "../src/run-telemetry";
 import { logger } from "../src/log";
 import { partReceiptPrefix } from "../src/usage-parts";
 
+// Retention rejects symlink ancestors. macOS's temporary root includes /var → /private/var;
+// canonicalize the fixture root while keeping deliberate symlink attack cases below it.
 async function fixture() {
-  const root = await mkdtemp(join(tmpdir(), "fabdesk-retention-"));
+  const root = await mkdtemp(join(await realpath(tmpdir()), "fabdesk-retention-"));
   const store = Store.open(join(root, "fabdesk.db"));
   function put(index: number, destinations: string[] = [], project = "project") {
     const runId = `run_${String(index).padStart(3, "0")}`, createdAt = new Date(1_700_000_000_000 + index).toISOString();
@@ -372,7 +374,7 @@ describe("bounded local run history", () => {
 });
 
 test.each([1, 2])("snapshot retries a file changing %i time(s)", async changes => {
-  const root = await mkdtemp(join(tmpdir(), "fabdesk-copy-retry-"));
+  const root = await mkdtemp(join(await realpath(tmpdir()), "fabdesk-copy-retry-"));
   try {
     const file = join(root, "board.txt"); writeFileSync(file, "initial");
     let copies = 0;
@@ -390,7 +392,7 @@ test.each([1, 2])("snapshot retries a file changing %i time(s)", async changes =
 });
 
 test.each(["deleted", "directory"])("file %s mid-copy becomes per-file error after retry", async mutation => {
-  const root = await mkdtemp(join(tmpdir(), "fabdesk-copy-mutation-"));
+  const root = await mkdtemp(join(await realpath(tmpdir()), "fabdesk-copy-mutation-"));
   try {
     const file = join(root, "board.txt"); writeFileSync(file, "initial");
     const result = await captureSnapshotFile(file, "board.txt", root, async (source, temporary) => {

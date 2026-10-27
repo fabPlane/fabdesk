@@ -700,8 +700,10 @@ describe("queued messages (C5)", () => {
     ).toBe(409);
 
     release("queue");
-    await waitFor(() => ofTopic(bus.events, "agent.started").length === 2);
-    await waitFor(() => ofTopic(bus.events, "agent.done").length === 2);
+    // Earlier stopped fake adapters can still finish; only this conversation's events
+    // describe whether its queued message started and completed.
+    await waitFor(() => ofTopic(bus.events, "agent.started").filter(event => event.threadId === t.id).length === 2);
+    await waitFor(() => ofTopic(bus.events, "agent.done").filter(event => event.threadId === t.id).length === 2);
     expect(sessions.map((s) => s.prompt)).toContain("second follow-up");
     const after = await messages(t.id);
     expect(after.some((m) => m.status === "queued")).toBe(false);

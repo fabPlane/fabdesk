@@ -298,3 +298,10 @@ The fresh-start walkthrough exposed an inherited assistant pane covering a diffe
 ![Central source review with explicit actions](review-updates.png)
 ![Affected preview and case appear together after a PCB change](review-updates-source-changed.png)
 ![Only the chosen preview updates; the case still needs review](review-update-selected-preview.png)
+
+
+## Full-suite validation cleanup
+
+The standard root `bun run test` now exits successfully across all workspace packages and script tests. Core reports 531 pass / 26 native-environment skips; script tests report 94 pass. The installed-fork native placement-lock and imported-outline save/reopen tests were also run separately and passed (2 tests, 23 assertions). Earlier full-suite failure entries above record historical outcomes rather than the current result.
+
+The broad check caught the MCP discovery test's old tool counts after adding `pcb_resize_outline`; the updated HTTP test verifies the new tool is listed. macOS retention fixtures now use the canonical temporary root instead of the OS `/var` symlink alias, retaining the production symlink-ancestor deletion protection and deliberate attack fixtures. The queued-message test counts only its own thread's events, excluding asynchronous completions from earlier stopped fake adapters. The npm workflow test uses canonical paths too. These are test fixtures/expectations only: runtime retention, consent and publishing behavior are unchanged. Final core typecheck passes. The generated tracked Python cache was restored after testing.
