@@ -48,14 +48,14 @@ test("missing, stale and physical-instance selectors cannot fall back to a root 
   await expect(f.invoke({ board: { ...f.board, manifestSha256: "0".repeat(64) } })).rejects.toThrow("membership changed");
   await expect(f.invoke({ board: { ...f.board, sourceId: "physical-instance-only" } })).rejects.toThrow("source is missing");
   expect(f.calls).toEqual([]);
-  await expect(f.registry.invoke("pcb_place", { board: f.board, placements: [{ reference: "R1", rotation: 90 }] }, () => { throw new Error("must not resolve unsupported input"); })).rejects.toThrow("invalid arguments");
+  await expect(f.registry.invoke("pcb_define_outline", { board: f.board, widthMm: 10, heightMm: 10 }, () => { throw new Error("must not resolve unsupported input"); })).rejects.toThrow("invalid arguments");
 });
-test("unsupported native member mutations cannot execute against an assembly root", async () => {
+test("unscoped and unsupported native member mutations cannot execute against an assembly root", async () => {
   const f = await fixture();
   let placed = false;
   f.services.design.placeFootprints = async () => { placed = true; throw new Error("Unexpected native placement"); };
   const run = (name: string, args: Record<string, unknown>) => f.registry.invoke(name, { project: f.project.id, ...args }, (projectRef, def, board) => f.factory({ projectRef, def, ...(board ? { board } : {}), signal: new AbortController().signal, progress: () => {} }));
-  await expect(run("pcb_place", { placements: [{ reference: "R1", rotation: 90 }] })).rejects.toThrow("not yet board-scoped");
+  await expect(run("pcb_place", { placements: [{ reference: "R1", rotation: 90 }] })).rejects.toThrow("explicit assembly board source");
   await expect(run("pcb_define_outline", { widthMm: 10, heightMm: 10 })).rejects.toThrow("not yet board-scoped");
   expect(placed).toBe(false); expect(f.calls).toEqual([]);
   const status = await run("project_status", {});
@@ -162,4 +162,29 @@ test("member preview and receipt aliases cannot redirect publication into anothe
     await expect(f.registry.invoke("render_pcb_svg", { project: f.project.id, board: f.board }, (projectRef, def, board) => f.factory({ projectRef, def, ...(board ? { board } : {}), signal: new AbortController().signal, progress: () => {} }))).rejects.toThrow("outside");
     expect(exported).toBe(false); expect(await readFile(join(f.root, "boards/b/renders/pcb.svg"), "utf8")).toBe("other image"); expect(await readFile(join(f.root, "boards/b/renders/pcb.svg.revision.json"), "utf8")).toBe("other receipt");
   }
+});
+
+
+test("explicit member placement requires a source revision before reaching the native service", async () => {
+  const f = await fixture(), called: string[] = [];
+  const original = f.services.design.placeFootprints;
+  f.services.design.placeFootprints = async (dir, placements, options) => { await assertNativeBoardOwnership(dir); called.push(dir); expect(options?.expectedSourceSha256).toBe("c".repeat(64)); return original(dir, placements, options); };
+  const run = (args: Record<string, unknown>) => f.registry.invoke("pcb_place", { project: f.project.id, board: f.board, placements: [{ reference: "R1", rotation: 90 }], ...args }, (projectRef, def, board) => f.factory({ projectRef, def, ...(board ? { board } : {}), signal: new AbortController().signal, progress: () => {} }));
+  await expect(run({})).rejects.toThrow("requires expectedSourceSha256"); expect(called).toEqual([]);
+  const result = await run({ expectedSourceSha256: "c".repeat(64) });
+  expect(result.json).toMatchObject({ saved: true, _board: { projectId: f.project.id, sourceId: "a", manifestSha256: f.board.manifestSha256 } });
+  expect(called).toEqual([join(f.root, "boards/a")]);
+  await expect(run({ board: { ...f.board, manifestSha256: "0".repeat(64) }, expectedSourceSha256: "c".repeat(64) })).rejects.toThrow("membership changed");
+  expect(called).toHaveLength(1);
+});
+test("HTTP member resize retains the selected source, required source SHA and exact edge IDs", async () => {
+  const f = await fixture(), calls: Array<{ dir: string; request: unknown }> = [], original = f.services.design.resizeBoardOutline;
+  f.services.design.resizeBoardOutline = async (dir, request) => { await assertNativeBoardOwnership(dir); calls.push({ dir, request }); return original(dir, request); };
+  const app = new Hono().route("/", toolRoutes({ registry: f.registry, ctxFactory: f.factory }));
+  const args = { board: { ...f.board, sourceId: "b" }, edgeIds: ["edge-b"], widthMm: 20, heightMm: 15, expectedSourceSha256: "d".repeat(64) };
+  const response = await app.request("/tools/pcb_resize_outline", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ project: f.project.id, args }) });
+  expect(response.status).toBe(200); expect(await response.json()).toMatchObject({ ok: true, json: { saved: true, _board: { sourceId: "b", projectId: f.project.id } } });
+  expect(calls).toEqual([{ dir: join(f.root, "boards/b"), request: { edgeIds: ["edge-b"], widthMm: 20, heightMm: 15, expectedSourceSha256: "d".repeat(64) } }]);
+  const invalid = await app.request("/tools/pcb_resize_outline", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ project: f.project.id, args: { ...args, expectedSourceSha256: undefined } }) });
+  expect(invalid.status).toBe(400); expect(calls).toHaveLength(1);
 });

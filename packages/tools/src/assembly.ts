@@ -93,5 +93,5 @@ export async function inspectProjectBoardSources(project: { id: string; dir: str
   } catch (error) {
     if (manifest || !isMissing(error)) throw new ToolError("Assembly membership changed during inspection; inspect again.", "invalid_args");
   }
-  return { projectId: project.id, mode: assembly ? "assembly" : "single", assembly, manifestSha256: manifest?.sha256 ?? null, sources, observedAt: new Date().toISOString(), editing: "single-board-only" };
+  return { projectId: project.id, mode: assembly ? "assembly" : "single", assembly, manifestSha256: manifest?.sha256 ?? null, sources, observedAt: new Date().toISOString(), editing: assembly ? "explicit-source-tools" : "single-board-only" };
 }

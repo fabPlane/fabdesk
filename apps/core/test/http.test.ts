@@ -204,7 +204,7 @@ describe("http daemon", () => {
     }));
     const response = await api(endpoint); expect(response.status).toBe(200);
     const assembly = await response.json() as { mode: string; editing: string; sources: Array<{ pcbPath: string; status: string }> };
-    expect(assembly.mode).toBe("assembly"); expect(assembly.editing).toBe("single-board-only");
+    expect(assembly.mode).toBe("assembly"); expect(assembly.editing).toBe("explicit-source-tools");
     expect(assembly.sources[0]?.status).toBe("available"); expect(assembly.sources[0]?.pcbPath).toBe("boards/io/board.kicad_pcb");
     await writeFile(join(project.path, "fabplane.assembly.json"), "{}");
     expect((await api(endpoint)).status).toBe(400);

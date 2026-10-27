@@ -406,3 +406,14 @@ The affected client suite passes **215 tests** and UI suite **223 tests**, with 
 ![Native RH inspection](vaio-rh-inspection.png)
 ![Live I/O source warning](vaio-live-source-warning.png)
 ![Compact connection tools](vaio-compact-link-tools.png)
+
+
+## Guarded native member placement and rectangle resize
+
+The source-scoped tool contract now opts in `pcb_place` and `pcb_resize_outline`. An assembly selector always names a source design and captured manifest SHA, and these mutations require its inspected saved-source SHA. Shared physical instances therefore refer to the same edited source. No-selector assembly operations cannot fall back to a root PCB; unsupported tools stay blocked. Project/agent status now reports `explicit-source-tools` and names the supported operations, rather than advertising a complete member editor. Legacy single-board placement keeps its previous optional-hash contract.
+
+The installed KiCad registry/context integration test used two independent source directories with identical native item IDs and two instances of source A. It rejected missing/stale source hashes before opening a native session, moved R1 in A by 0.1 mm with copper retained, rejected a stale resize revision, then resized A from 15 × 15 to 20 × 15 mm with its original outline ID and minimum corner. Tracks/vias/zones/nets stayed identical; resize also preserved the placed component/pad data. The other source and unrelated root PCB stayed byte-identical. Changed manifest membership and a host ignoring the selector were rejected. Native close/reopen confirmed the stored part position and rectangle coordinates. The existing ownership test also retained a saved revision and an unsaved live placement when the declaration changed before save.
+
+**Two installed-native tests passed, 34 assertions.** The focused source/transport/status set passed 22 tests / 117 assertions. Root typecheck passed. The complete standard suite passes **2,124 tests / 30 skips / zero failures** (core 553 passed / 28 native-environment skips; client 215, tools 415, UI 223). The installed-native tests were run separately; their skipped ordinary-suite entries are not counted as native passes. An initial broad run found an HTTP assertion still expecting the earlier single-board-only assembly mode; its expectation was updated to the new limited explicit-source capability.
+
+The canvas member inspector remains read-only. Client queries, preview coordinates, action ownership and review anchors must carry the captured source before native editing controls are exposed. Other member workflows, native replacement, undo/recovery UX and compatibility validation remain unfinished. No source in the real VAIO study was edited by this increment, and it does not establish DRC, routing safety or chassis fit.

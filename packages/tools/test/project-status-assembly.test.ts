@@ -34,9 +34,10 @@ test("agent status includes explicit sources, repeated instances and links witho
   const files = await readdir(project.dir), result = await invoke();
   expect(result.text).toContain("Assembly instances: 3; source boards: 2; declared connections: 1");
   expect(result.text).toContain("Source files available: 1/2. Geometry, schematic parity and connection compatibility are unverified");
-  expect(result.text).toContain("Native assembly-member editing is unavailable");
+  expect(result.text).toContain("Explicit source tools pcb_inspect, render_pcb_svg, pcb_place and pcb_resize_outline");
+  expect(result.text).toContain("shared physical instances use the same edited source");
   expect(result.text).toContain("Root project defaults: 2 layers"); expect(result.text).toContain("Root last DRC: never");
-  expect(result.json).toMatchObject({ nativeStatusScope: "project-root", assembly: { status: "inspected", editing: "unavailable", membership: { mode: "assembly", sources: [{ status: "available", pcbPath: "boards/io/board.kicad_pcb" }, { status: "unresolved" }] } } });
+  expect(result.json).toMatchObject({ nativeStatusScope: "project-root", assembly: { status: "inspected", editing: "explicit-source-tools", membership: { mode: "assembly", sources: [{ status: "available", pcbPath: "boards/io/board.kicad_pcb" }, { status: "unresolved" }] } } });
   expect(await readdir(project.dir)).toEqual(files);
   expect(await readFile(join(project.dir, "board.kicad_pcb"), "utf8")).toBe("unrelated root source");
 });

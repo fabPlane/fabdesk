@@ -45,6 +45,7 @@ export const pcb_define_outline = defineTool({
 
 export const pcb_resize_outline = defineTool({
   name: "pcb_resize_outline",
+  boardScoped: true,
   toolset: "circuit",
   title: "Resize native PCB outline",
   description: "Resize the complete inspected rectangular Edge.Cuts boundary from its existing minimum X/Y corner. Supports one native rectangle or four axis-aligned segments, including imported boards. Updates the same primitive IDs and preserves style/metadata; footprints and copper do not scale. Requires exact inspected edge IDs and saved-source SHA. Locked, curved, partial, disconnected or multi-boundary outlines fail without a write.",
@@ -63,6 +64,7 @@ export const pcb_resize_outline = defineTool({
 
 export const pcb_place = defineTool({
   name: "pcb_place",
+  boardScoped: true,
   toolset: "circuit",
   title: "Place PCB footprints",
   description:
@@ -100,6 +102,7 @@ export const pcb_place = defineTool({
     idempotentHint: true,
   },
   handler: async ({ placements, staleCopper, expectedSourceSha256 }, ctx) => {
+    if (ctx.board && !expectedSourceSha256) throw new ToolError("An assembly placement requires expectedSourceSha256 from a fresh inspection of the selected source.", "precondition");
     const project = ctx.requireProject();
     const copperBefore = staleCopper === "remove" ? await readCopper(project.dir) : null;
     const result = await ctx.services.design.placeFootprints(project.dir, placements, {

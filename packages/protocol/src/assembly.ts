@@ -68,7 +68,7 @@ export const ProjectBoardSources = z.object({
   assembly: ProjectAssembly.nullable(), manifestSha256: Hash.nullable(),
   sources: z.array(InspectedBoardSource),
   observedAt: z.string().datetime(),
-  /** Native mutation requires a later, explicitly scoped board-tool contract. */
-  editing: z.literal("single-board-only"),
+  /** Only opted-in source tools can mutate members; this does not enable every board workflow. */
+  editing: z.enum(["single-board-only", "explicit-source-tools"]),
 });
 export type ProjectBoardSources = z.infer<typeof ProjectBoardSources>;

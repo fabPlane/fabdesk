@@ -163,7 +163,7 @@ export const project_status = defineTool({
   handler: async (_args, ctx) => {
     const project = ctx.requireProject();
     const manifest = project.manifest();
-    let assembly: { status: "inspected"; membership: ProjectBoardSources; editing: "unavailable" } | { status: "unavailable"; reason: string; editing: "unavailable" } | null = null;
+    let assembly: { status: "inspected"; membership: ProjectBoardSources; editing: "explicit-source-tools" } | { status: "unavailable"; reason: string; editing: "unavailable" } | null = null;
     let declaredAssembly = false;
     try {
       // lstat sees dangling declarations too; an unsafe manifest cannot silently become a root board.
@@ -171,7 +171,7 @@ export const project_status = defineTool({
       declaredAssembly = true;
       const membership = await inspectProjectBoardSources(project);
       if (membership.mode !== "assembly") throw new Error("Assembly declaration changed during inspection");
-      assembly = { status: "inspected", membership, editing: "unavailable" };
+      assembly = { status: "inspected", membership, editing: "explicit-source-tools" };
     } catch (error) {
       if (declaredAssembly || (error as NodeJS.ErrnoException)?.code !== "ENOENT") assembly = { status: "unavailable", reason: "Assembly membership could not be verified. Inspect fabplane.assembly.json; project-root status does not describe its member boards.", editing: "unavailable" };
     }
@@ -223,7 +223,7 @@ export const project_status = defineTool({
     const lines = [
       `Project "${project.name}" (${project.id}) at ${project.dir}`,
       ...(assembly ? [assembly.status === "inspected"
-        ? `Assembly instances: ${assembly.membership.assembly!.instances.length}; source boards: ${assembly.membership.sources.length}; declared connections: ${assembly.membership.assembly!.connections.length}. Source files available: ${assembly.membership.sources.filter(source => source.status === "available").length}/${assembly.membership.sources.length}. Geometry, schematic parity and connection compatibility are unverified. Native assembly-member editing is unavailable. Read-only pcb_inspect accepts board {sourceId, manifestSha256}. Remaining native status below describes only the project root.`
+        ? `Assembly instances: ${assembly.membership.assembly!.instances.length}; source boards: ${assembly.membership.sources.length}; declared connections: ${assembly.membership.assembly!.connections.length}. Source files available: ${assembly.membership.sources.filter(source => source.status === "available").length}/${assembly.membership.sources.length}. Geometry, schematic parity and connection compatibility are unverified. Explicit source tools pcb_inspect, render_pcb_svg, pcb_place and pcb_resize_outline accept board {sourceId, manifestSha256}. Placement and resize require the selected source's inspected expectedSourceSha256; shared physical instances use the same edited source. Other member workflows remain unavailable, and the canvas inspection UI remains read-only. Remaining native status below describes only the project root.`
         : assembly.reason] : []),
       `${assembly ? "Root project defaults" : "Board"}: ${manifest.board.layers} layers${manifest.board.widthMm ? `, ${manifest.board.widthMm}×${manifest.board.heightMm ?? "?"} mm` : ""}; router: ${manifest.router === "capacity" ? "fab_router" : (manifest.router ?? "freerouting (default; fab_router fallback)")}`,
       `${assembly ? "Root files" : "Files"}: ${Object.entries(files)
