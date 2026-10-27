@@ -1,6 +1,6 @@
 # Chat agent effort
 
-The chatbox now has an **Effort** menu beside its agent/model picker. It lists only levels reported for the selected model. Each choice includes a short explanation of the speed/reasoning tradeoff.
+The **Agent & model** menu in the chatbox now includes a **Reasoning effort** section directly above **Model settings**. It lists only levels reported for the selected model. Each choice includes a short explanation of the speed/reasoning tradeoff.
 
 - Preferences are saved per agent in the local daemon settings (`agents[id].effort`), survive restarts, and apply to subsequent runs across chats, including queued messages and Finish it runs when they start. A run already in progress is unchanged. The picker is disabled while this chat is running or has queued messages, like the model picker.
 - **Agent default** removes the app's override and delegates effort to the CLI's own settings/session behavior. It does not guarantee a particular numeric/default level on a resumed session.
@@ -26,4 +26,4 @@ References: [Codex configuration](https://learn.chatgpt.com/docs/config-file/con
 
 ## Try it
 
-Choose a supported Codex or Claude model, open **Effort**, and choose a level. Reload the app to check persistence, or switch agents and back to check their separate preferences. Higher effort can use more time and tokens. Choose **Agent default** to return control to the agent.
+Open **Agent & model**, choose a supported Codex or Claude model, then expand **Reasoning effort** above **Model settings** and choose a level. Reload the app to check persistence, or switch agents and back to check their separate preferences. Higher effort can use more time and tokens. Choose **Agent default** to return control to the agent.

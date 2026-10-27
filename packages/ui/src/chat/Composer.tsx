@@ -13,7 +13,6 @@ import { DRAFT_KEY_NEW, useUiStore } from "../stores/ui";
 import { basename, mimeFromPath, modKey } from "../util";
 import { AgentLogo } from "../components/AgentLogo";
 import { AgentModelMenu } from "./AgentModelMenu";
-import { EffortMenu } from "./EffortMenu";
 import { PermissionsMenu } from "./PermissionsMenu";
 import { expandSlashCommand, isFinishItCommand, slashSuggestions } from "@fabdesk/client-core";
 import { applyComposerTextareaHeight } from "./composer-autosize";
@@ -430,11 +429,10 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
                     setModel(m);
                   }}
                   onOpenSettings={() => setSettingsOpen(true, "agents")}
+                  effort={{ levels: effortLevels, value: effort, agentName: selectedAgent?.displayName ?? agentId,
+                    disabled: !!run || queued.length > 0 || !settings.data, saving: patchSettings.isPending, onChange: changeEffort }}
                 />
               </div>
-              <EffortMenu key={`${agentId}:${displayedModel}`} levels={effortLevels} value={effort}
-                agentName={selectedAgent?.displayName ?? agentId} disabled={!!run || queued.length > 0 || !settings.data}
-                saving={patchSettings.isPending} onChange={changeEffort} />
               <Button
                 variant="primary"
                 size="sm"
