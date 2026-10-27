@@ -540,6 +540,7 @@ export interface DesignService {
     projectDir: string,
     points: SchematicPoint[],
     replace: boolean,
+    options?: { expectedSourceSha256?: string },
   ): Promise<PcbOutlineResult>;
   /** Place native board footprints by reference without touching schematic connectivity. */
   placeFootprints(

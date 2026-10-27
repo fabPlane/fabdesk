@@ -17,6 +17,7 @@ export const pcb_define_outline = defineTool({
     heightMm: z.number().positive().optional(),
     points: z.array(Point).min(3).max(100).optional(),
     replace: z.boolean().default(false),
+    expectedSourceSha256: z.string().regex(/^[a-f0-9]{64}$/).optional().describe("Saved PCB hash from pcb_inspect. Reject outline changes when the source has changed."),
   },
   annotations: {
     readOnlyHint: false,
@@ -24,7 +25,7 @@ export const pcb_define_outline = defineTool({
     openWorldHint: false,
     idempotentHint: true,
   },
-  handler: async ({ widthMm, heightMm, points, replace }, ctx) => {
+  handler: async ({ widthMm, heightMm, points, replace, expectedSourceSha256 }, ctx) => {
     if (!points && !(widthMm && heightMm))
       throw new ToolError("provide points or both widthMm and heightMm", "invalid_args");
     const outline = points ?? [
@@ -34,7 +35,7 @@ export const pcb_define_outline = defineTool({
       { x: 0, y: heightMm! },
     ];
     const project = ctx.requireProject();
-    const result = await ctx.services.design.defineBoardOutline(project.dir, outline, replace);
+    const result = await ctx.services.design.defineBoardOutline(project.dir, outline, replace, expectedSourceSha256 ? { expectedSourceSha256 } : undefined);
     return ok(
       `PCB outline saved at revision ${result.revision}: ${result.created} segments created, ${result.replaced} replaced.`,
       result,

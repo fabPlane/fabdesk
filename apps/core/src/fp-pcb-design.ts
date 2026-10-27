@@ -1443,7 +1443,18 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     projectDir: string,
     pointsMm: Array<{ x: number; y: number }>,
     replace: boolean,
+    options: { expectedSourceSha256?: string } = {},
   ) => {
+    const assertExpectedSource = async () => {
+      if (!options.expectedSourceSha256) return;
+      const bytes = await readFile(join(projectDir, BOARD_PCB)).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") throw new NativeRevisionConflict("The saved PCB is missing. Reopen the project before resizing its outline.");
+        throw error;
+      });
+      if (createHash("sha256").update(bytes).digest("hex") !== options.expectedSourceSha256)
+        throw new NativeRevisionConflict("The PCB changed since this outline was inspected. Refresh the board before resizing it.");
+    };
+    await assertExpectedSource();
     const { board } = await deps.sessions.ensureProject(projectDir);
     const property = "fabdesk.generated-outline";
     const value = "native-atomic-edit";
@@ -1462,10 +1473,11 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       return edge;
     });
     const existing = (await board.getShapes()).filter(
-      (shape) =>
-        shape.proto.layer === BoardLayer.BL_Edge_Cuts &&
-        shape.proto.shape?.geometry.case === "segment",
+      (shape) => shape.proto.layer === BoardLayer.BL_Edge_Cuts,
     );
+    // Curved boundaries and cutouts cannot be compared or replaced by the segment-only tool.
+    if (existing.some((edge) => edge.proto.shape?.geometry.case !== "segment"))
+      throw new ToolError("This board has curved or non-segment Edge.Cuts geometry. Review and edit its boundary in KiCad.", "precondition");
     const generated = existing.filter((edge) => edge.customProperties[property] === value);
     const segmentKey = (a: { x: number; y: number }, b: { x: number; y: number }) => {
       const first = `${a.x},${a.y}`;
@@ -1493,8 +1505,12 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         })
         .sort();
     const matches =
-      JSON.stringify(keys(generated.length ? generated : existing)) ===
+      JSON.stringify(keys(existing)) ===
       JSON.stringify(keys(newEdges));
+    if ((await board.modified()) !== false)
+      throw new NativeRevisionConflict("Save the open PCB before resizing its outline.");
+    await deps.sessions.assertSchematicSaved(projectDir);
+    await assertExpectedSource();
     if (matches) {
       return {
         created: 0,
@@ -1503,14 +1519,17 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         saved: true,
       };
     }
-    if (existing.length && (!generated.length || !replace))
+    if (existing.length && (generated.length !== existing.length || !replace))
       throw new ToolError(
-        generated.length
-          ? "the requested outline differs from the Fabdesk-owned outline; preview the board and pass replace=true to update it"
+        generated.length === existing.length
+          ? "the requested outline differs from the fabPlane-owned outline; review the board and pass replace=true to update it"
           : "the requested outline differs from a human-authored Edge.Cuts boundary; edit it in KiCad or remove it explicitly",
         "precondition",
       );
-    await board.commit("Fabdesk: define native PCB outline", async (tx) => {
+    if (existing.some((edge) => edge.locked))
+      throw new ToolError("The board outline contains locked edges. Unlock them in KiCad before resizing.", "precondition");
+    await assertExpectedSource();
+    await board.commit("fabPlane: define native PCB outline", async (tx) => {
       if (generated.length) await tx.delete(generated);
       await tx.create(newEdges);
     });
@@ -2208,6 +2227,8 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         const shapeRow = (shape: BoardShape, owner: string) => ({
           id: shape.id,
           owner,
+          locked: shape.locked,
+          toolOwnedOutline: shape.proto.layer === BoardLayer.BL_Edge_Cuts && shape.customProperties["fabdesk.generated-outline"] === "native-atomic-edit",
           kind: shape.kind,
           layer: shape.layerId,
           start: { x: mm(shape.start.x), y: mm(shape.start.y) },
