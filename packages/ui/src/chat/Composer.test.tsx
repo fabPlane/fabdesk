@@ -44,6 +44,7 @@ test("a nonempty draft still requires a project, with a way to reopen the picker
 test("sending waits for the existing chat and saved settings to load", () => {
   expect(sendButton(renderComposer("project-a", null, true))).toContain(' disabled=""');
   expect(sendButton(renderComposer("project-a", null, false, false))).toContain(' disabled=""');
+  expect(renderComposer("project-a", null, true).match(/<button[^>]*data-testid="agent-model"[^>]*>/)?.[0]).toContain(' disabled=""');
 });
 
 test("new chats initialize from saved preferences; existing threads keep their own model", () => {

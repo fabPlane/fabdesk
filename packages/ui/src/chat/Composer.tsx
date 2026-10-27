@@ -119,14 +119,14 @@ export function Composer({ thread, loadingThread = false, onCreateThread }: Comp
   }, [thread?.id, defaultAgent, defaultModel, savePreference.isPending]);
 
   const selectAgent = useCallback((id: AgentId, selectedModel: string) => {
-    if (!settings.data || savePreference.isPending) return;
+    if (!settings.data || loadingThread || savePreference.isPending) return;
     setAgentId(id);
     setModel(selectedModel);
     setError(null);
     savePreference.mutate({ agentId: id, model: selectedModel || null }, {
       onError: () => setError("Could not save your agent and model. Check the connection and select them again to retry."),
     });
-  }, [settings.data, savePreference.isPending, savePreference.mutate]);
+  }, [settings.data, loadingThread, savePreference.isPending, savePreference.mutate]);
 
   useEffect(() => {
     textareaRef.current?.focus();
@@ -244,7 +244,7 @@ export function Composer({ thread, loadingThread = false, onCreateThread }: Comp
     composerHandlers.setAgent = (id, m) => {
       const offered = doctor.data?.agents ?? FALLBACK_AGENTS;
       const agent = offered.find((a) => a.id === id);
-      if (!agent || !settings.data || savePreference.isPending || run || queued.length > 0) return false;
+      if (!agent || !settings.data || loadingThread || savePreference.isPending || run || queued.length > 0) return false;
       selectAgent(agent.id, m ?? settings.data.agents[agent.id]?.model ?? "");
       return true;
     };
@@ -255,7 +255,7 @@ export function Composer({ thread, loadingThread = false, onCreateThread }: Comp
       composerHandlers.setAgent = null;
       composerHandlers.voiceToggle = null;
     };
-  }, [send, stop, run, doctor.data, settings.data, voice.toggle, beginFinishIt, selectAgent, savePreference.isPending, queued.length]);
+  }, [send, stop, run, doctor.data, settings.data, loadingThread, voice.toggle, beginFinishIt, selectAgent, savePreference.isPending, queued.length]);
 
   const showStop = !!run && !draft.trim() && !sending;
 
@@ -418,7 +418,7 @@ export function Composer({ thread, loadingThread = false, onCreateThread }: Comp
                   title={`${pickerLabel} (${mod} + /)`}
                   aria-label={`Agent and model: ${pickerLabel}`}
                   onClick={() => setAgentPickerOpen(!agentPickerOpen)}
-                  disabled={!!run || queued.length > 0 || !settings.data || savePreference.isPending}
+                  disabled={!!run || queued.length > 0 || loadingThread || !settings.data || savePreference.isPending}
                   aria-haspopup="menu"
                   aria-expanded={agentPickerOpen}
                   data-testid="agent-model"
