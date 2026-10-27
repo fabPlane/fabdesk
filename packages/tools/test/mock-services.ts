@@ -182,6 +182,7 @@ export function mockServices(
         revision: 2,
         saved: true,
       }),
+      resizeBoardOutline: async (_dir, request) => ({ saved: true, changed: true, edgeIds: request.edgeIds, revision: 3, bounds: { minX: 0, minY: 0, maxX: request.widthMm, maxY: request.heightMm } }),
       placeFootprints: async (_dir, placements) => ({
         moved: placements.map((placement) => placement.reference),
         missing: [],

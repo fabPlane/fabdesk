@@ -1,4 +1,4 @@
-import { PCB_SVG_COORDINATE_SYSTEM, PcbPartPosition, type PcbPartInspection } from "@fabdesk/protocol";
+import { PCB_SVG_COORDINATE_SYSTEM, PcbPartPosition, PcbInspectionCoordinateSystem, type PcbPartInspection } from "@fabdesk/protocol";
 import type { CoreClient } from "./CoreClient";
 
 const record = (value: unknown): Record<string, unknown> | null => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
@@ -12,7 +12,7 @@ export function pcbToolJson(value: unknown): Record<string, unknown> {
 }
 export function parsePcbPartInspection(value: unknown): PcbPartInspection {
   const body = pcbToolJson(value), contract = record(body.contract), results = record(body.results), components = record(results?.components);
-  if (contract?.name !== "fabdesk.pcb-inspection" || contract.version !== "2.0.0" || typeof body.revision !== "string" || !/^[a-f0-9]{64}$/.test(body.revision) || !Array.isArray(components?.rows)) throw new Error("A saved PCB inspection is required before positioning parts.");
+  if (contract?.name !== "fabdesk.pcb-inspection" || contract.version !== "2.0.0" || !PcbInspectionCoordinateSystem.safeParse(body.coordinateSystem).success || typeof body.revision !== "string" || !/^[a-f0-9]{64}$/.test(body.revision) || !Array.isArray(components?.rows)) throw new Error("A saved PCB inspection is required before positioning parts.");
   const parts = components.rows.map((row) => PcbPartPosition.parse(row));
   if (new Set(parts.map((part) => part.ref)).size !== parts.length) throw new Error("Duplicate part references need resolving before positioning parts.");
   return { sourceSha256: body.revision, parts, truncated: components.truncated === true };

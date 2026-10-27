@@ -279,6 +279,7 @@ describe("registry", () => {
       "schematic_review",
       "pcb_update_from_schematic",
       "pcb_define_outline",
+      "pcb_resize_outline",
       "pcb_place",
       "route_status",
       "route_cancel",

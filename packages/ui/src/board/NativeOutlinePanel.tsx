@@ -2,14 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { NativePartTarget } from "./NativePartTarget";
 import type { SvgBox } from "./svg-coords";
-import type { PcbOutlineInspection } from "@fabdesk/protocol";
-import { inspectPcbOutline, pcbToolJson, resizedOutlinePoints, useCoreClient, usePcbOutline, useRunTool } from "@fabdesk/client-core";
+import { PcbOutlineResizeResult, type PcbOutlineInspection } from "@fabdesk/protocol";
+import { inspectPcbOutline, pcbToolJson, resizedOutlinePoints, useCoreClient, usePcbOutline, useRunTool, useToolManifest } from "@fabdesk/client-core";
 import { Button, Input, Spinner } from "../components/ui";
 import { useUiStore } from "../stores/ui";
 
-/** Dimensions edit the owned Edge.Cuts only; no footprint, route, or enclosure is scaled. */
+/** Dimensions edit the selected native Edge.Cuts only; no footprint, route, or enclosure is scaled. */
 export function NativeOutlinePanel({ projectId, canPosition, onBusyChange, host, box, onMutationBusyChange }: { onMutationBusyChange: (busy: boolean) => void; projectId: string; canPosition: boolean; onBusyChange: (busy: boolean) => void; host: HTMLElement | null; box: SvgBox }) {
-  const client = useCoreClient(), preview = useRunTool(), inspection = usePcbOutline(projectId, true);
+  const client = useCoreClient(), preview = useRunTool(), inspection = usePcbOutline(projectId, true), tools = useToolManifest();
+  const resizeAvailable = tools.data?.some(tool => tool.name === "pcb_resize_outline") === true;
   const [snapshot, setSnapshot] = useState<PcbOutlineInspection | null>(null);
   const [width, setWidth] = useState(""), [height, setHeight] = useState("");
   const [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null), [notice, setNotice] = useState<string | null>(null), [exportError, setExportError] = useState<string | null>(null);
@@ -30,13 +31,16 @@ export function NativeOutlinePanel({ projectId, canPosition, onBusyChange, host,
     finally { inFlight.current = false; onBusyChange(false); if (mounted.current) setBusy(false); }
   };
   const apply = async () => {
-    if (inFlight.current || !snapshot?.editable || !points || !changed || stale || !canPosition || inspection.isFetching || inspection.isError) return;
+    if (inFlight.current || !snapshot?.editable || !points || !changed || stale || !canPosition || inspection.isFetching || inspection.isError || !!snapshot.bounds && (!resizeAvailable || !snapshot.edgeIds?.length)) return;
     inFlight.current = true; onMutationBusyChange(true); setBusy(true); onBusyChange(true); setError(null); setNotice(null); setExportError(null);
     let saved = false;
     try {
-      const result = pcbToolJson(await client.callTool("pcb_define_outline", { projectId, points, replace: !!snapshot.bounds, expectedSourceSha256: snapshot.sourceSha256 }));
+      const result = snapshot.bounds
+        ? pcbToolJson(await client.callTool("pcb_resize_outline", { projectId, edgeIds: snapshot.edgeIds, widthMm: Number(width), heightMm: Number(height), expectedSourceSha256: snapshot.sourceSha256 }))
+        : pcbToolJson(await client.callTool("pcb_define_outline", { projectId, points, expectedSourceSha256: snapshot.sourceSha256 }));
       if (result.saved !== true) throw Error("The native tool did not confirm a saved outline.");
       saved = true;
+      if (snapshot.bounds) PcbOutlineResizeResult.parse(result);
       const rendered = await preview.run("render_pcb_svg", { projectId });
       const data = await inspectPcbOutline(client, projectId);
       if (mounted.current) {
@@ -49,7 +53,7 @@ export function NativeOutlinePanel({ projectId, canPosition, onBusyChange, host,
   };
   if (!snapshot) return inspection.isError ? <p role="alert">Could not inspect the saved outline. <Button size="sm" onClick={() => void inspection.refetch()}>Retry</Button></p> : <div className="flex items-center gap-2 text-muted"><Spinner />Inspecting saved outline…</div>;
   const bounds = snapshot.bounds;
-  const showTarget = host && bounds && points && snapshot.editable && canPosition && !busy && !stale && !inspection.isError && !inspection.isFetching;
+  const showTarget = host && bounds && points && snapshot.editable && resizeAvailable && canPosition && !busy && !stale && !inspection.isError && !inspection.isFetching;
   return <>
     {showTarget && <>
       {createPortal(<div className="fd-outline-size-preview" data-canvas-tools style={{ left: `${(bounds.minX - box.x) / box.width * 100}%`, top: `${(bounds.minY - box.y) / box.height * 100}%`, width: `${Number(width) / box.width * 100}%`, height: `${Number(height) / box.height * 100}%` }} />, host)}
@@ -59,7 +63,7 @@ export function NativeOutlinePanel({ projectId, canPosition, onBusyChange, host,
       }} />
     </>}
     {inspection.isError && <p role="alert" className="fd-native-part-warning">The latest outline inspection failed. Reload before applying dimensions.</p>}
-    {!snapshot.editable ? <><p className="fd-native-part-note">{snapshot.reason}</p><Button size="sm" variant="ghost" disabled={busy} onClick={() => void reload()}>Reload outline</Button></> : <>
+    {!snapshot.editable ? <><p className="fd-native-part-note">{snapshot.reason}</p><Button size="sm" variant="ghost" disabled={busy} onClick={() => void reload()}>Reload outline</Button></> : snapshot.bounds && !resizeAvailable ? <p className="fd-native-part-note">{tools.isPending ? "Loading native board tools…" : tools.isError ? "Could not load native board tools." : "This runtime does not support resizing existing native outlines yet. Update the app and its connected runtime."}{tools.isError && <Button size="sm" variant="ghost" onClick={() => void tools.refetch()}>Retry</Button>}</p> : <>
       <p className="fd-native-part-note">{snapshot.bounds ? `Resize the rectangular outline from its top-left corner at (${snapshot.bounds.minX}, ${snapshot.bounds.minY}) mm.` : "This PCB has no outline yet. Enter its width and height; the top-left corner will be at KiCad (0, 0)."} Drag the bottom-right corner or enter dimensions, then Apply. Parts, traces and mechanical models keep their current positions.</p>
       {stale && <p role="status" className="fd-native-part-warning">The PCB changed. Reload its outline before applying dimensions. Your typed values are kept.</p>}
       {!canPosition && !busy && <p className="fd-native-part-warning">Update the PCB preview before applying dimensions.</p>}

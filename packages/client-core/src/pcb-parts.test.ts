@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { parsePcbPartInspection, parsePartPositionInput, pcbPlacementWarnings, pcbSvgHasNativeCoordinates } from "./pcb-parts";
 const row = { ref: "R1", value: "1k", footprint: "R_0402", x: 105, y: 100, rotation: 0, flipped: false, locked: false };
-const envelope = (rows: unknown[] = [row]) => ({ ok: true, json: { contract: { name: "fabdesk.pcb-inspection", version: "2.0.0" }, revision: "a".repeat(64), results: { components: { rows, truncated: false } } } });
+const envelope = (rows: unknown[] = [row]) => ({ ok: true, json: { contract: { name: "fabdesk.pcb-inspection", version: "2.0.0" }, revision: "a".repeat(64), coordinateSystem: { units: "mm", origin: "KiCad board origin", x: "right", y: "down" }, results: { components: { rows, truncated: false } } } });
 test("native part data retains the source revision and coordinates across response envelopes", () => {
   expect(parsePcbPartInspection(envelope())).toEqual({ sourceSha256: "a".repeat(64), parts: [row], truncated: false });
   expect(parsePcbPartInspection({ result: envelope() }).parts[0]?.x).toBe(105);
@@ -27,4 +27,10 @@ test("native part tools require an exporter stamp on the SVG root, not inferred 
   expect(pcbSvgHasNativeCoordinates('<svg viewBox="0 0 15 15"><path /></svg>')).toBe(false);
   expect(pcbSvgHasNativeCoordinates('<svg><g data-fabplane-coordinate-system="kicad-pcb-mm-v1" /></svg>')).toBe(false);
   expect(pcbSvgHasNativeCoordinates('<svg viewBox="98 93 19 19" data-fabplane-coordinate-system="kicad-pcb-mm-v1"></svg>')).toBe(true);
+});
+
+test("a familiar response contract cannot override an unverified coordinate frame", () => {
+  const response = envelope();
+  expect(() => parsePcbPartInspection({ ...response, json: { ...response.json, coordinateSystem: { ...response.json.coordinateSystem, units: "inches" } } })).toThrow();
+  expect(() => parsePcbPartInspection({ ...response, json: { ...response.json, coordinateSystem: { ...response.json.coordinateSystem, origin: "drawing origin" } } })).toThrow();
 });

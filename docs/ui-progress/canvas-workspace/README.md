@@ -224,3 +224,16 @@ The physical drag exposed an OS-driver/capture path where movement outside the s
 ![Corner proposal with one contextual panel](corner-resize-preview.png)
 ![Actual physical mouse resize proposal](corner-resize-physical-preview.png)
 ![Physical Apply preserved populated PCB content and refreshed its preview](corner-resize-physical-saved.png)
+
+
+## Resize imported rectangles without replacing their native edges
+
+Complete unlocked rectangular boundaries now use `pcb_resize_outline`: either one native rectangle or four closed, axis-aligned segments. The operation updates the existing primitives in place, retaining IDs, style and custom metadata without claiming tool ownership of imported geometry. Locked ancestor groups, missing/partial edges, curves, cutouts, unsaved documents and stale source hashes stop the write. Legacy outline creation/replacement keeps its ownership guard. UI editing additionally requires the explicit native millimetre coordinate frame and the runtime's resize capability.
+
+A real KiCad integration test saves, closes and reopens an imported rectangle, checks its original ID, stroke and custom property, and compares components, pads, tracks, vias, zones and named connectivity. Internal numeric net codes can be renumbered on reopen and are excluded only from the net-list comparison. The native UI walkthrough resized the populated imported rectangle from 15×15 to 20×16 mm, kept its original ID and non-tool-owned status, and refreshed the matching SVG receipt. The generated enclosure then displayed a source-change warning while its STL and specification bytes stayed unchanged. Restoring the source cleared the warning. All fixture files and timestamps were restored after the walkthrough.
+
+Validation: root typecheck; client-core 200, UI 221, protocol 87 and tools 398 tests; 52 focused core/tool checks; one real KiCad save/reopen integration test all pass. These establish source/content preservation, not clearance, enclosure fit or manufacturability. Irregular boundary editing, multiple outlines and undo/recovery UI remain follow-ups. Earlier imported-outline read-only screenshots document the previous milestone.
+
+![Imported native rectangle size proposal](imported-outline-preview.png)
+![Imported rectangle saved with the same native ID](imported-outline-saved.png)
+![Existing generated case warns without automatic regeneration](imported-outline-case-warning.png)

@@ -273,6 +273,7 @@ describe("PCB geometry query boundaries", () => {
       layer: BoardLayer.BL_F_Silkscreen,
     });
     const board = {
+      getGroups: async () => [],
       getShapes: async () => [boardShape],
       getFootprints: async () => [{ reference: "R1", items: [courtyard, fabrication, silkscreen] }],
     };

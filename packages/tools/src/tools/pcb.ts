@@ -43,6 +43,24 @@ export const pcb_define_outline = defineTool({
   },
 });
 
+export const pcb_resize_outline = defineTool({
+  name: "pcb_resize_outline",
+  toolset: "circuit",
+  title: "Resize native PCB outline",
+  description: "Resize the complete inspected rectangular Edge.Cuts boundary from its existing minimum X/Y corner. Supports one native rectangle or four axis-aligned segments, including imported boards. Updates the same primitive IDs and preserves style/metadata; footprints and copper do not scale. Requires exact inspected edge IDs and saved-source SHA. Locked, curved, partial, disconnected or multi-boundary outlines fail without a write.",
+  inputSchema: {
+    edgeIds: z.array(z.string().min(1).max(100)).min(1).max(4).refine(ids => [1, 4].includes(ids.length) && new Set(ids).size === ids.length, "Select one or four unique outline edge IDs"),
+    widthMm: z.number().finite().min(.000001).max(1000),
+    heightMm: z.number().finite().min(.000001).max(1000),
+    expectedSourceSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  },
+  annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: true },
+  handler: async (request, ctx) => {
+    const result = await ctx.services.design.resizeBoardOutline(ctx.requireProject().dir, request);
+    return ok(`Saved native outline ${request.widthMm} × ${request.heightMm} mm at (${result.bounds.minX}, ${result.bounds.minY}) mm. Existing edge IDs, footprints and copper were preserved; review clearances and mechanical fit.`, result);
+  },
+});
+
 export const pcb_place = defineTool({
   name: "pcb_place",
   toolset: "circuit",
@@ -120,4 +138,4 @@ export const pcb_place = defineTool({
   },
 });
 
-export const pcbTools = [pcb_define_outline, pcb_place];
+export const pcbTools = [pcb_define_outline, pcb_resize_outline, pcb_place];

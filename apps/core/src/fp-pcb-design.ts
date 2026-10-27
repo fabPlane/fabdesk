@@ -4,6 +4,7 @@
  * through the typed client on the project's session. Positions come back in millimetres; the
  * client speaks nanometres.
  */
+import { resizeNativeOutlineShapes, nativeGroupLocksAny } from "./pcb-outline-resize";
 import { createHash } from "node:crypto";
 import { resolveSchematicSheet } from "./schematic-sheet";
 import {
@@ -1543,6 +1544,39 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     };
   };
 
+  const resizeBoardOutline = async (projectDir: string, request: { edgeIds: string[]; widthMm: number; heightMm: number; expectedSourceSha256: string }) => {
+    const ids = new Set(request.edgeIds);
+    if (![1, 4].includes(request.edgeIds.length) || ids.size !== request.edgeIds.length)
+      throw new ToolError("Inspect and select one rectangle or four unique outline edges.", "invalid_args");
+    if (![request.widthMm, request.heightMm].every(Number.isFinite) || request.widthMm < .000001 || request.heightMm < .000001 || request.widthMm > 1000 || request.heightMm > 1000)
+      throw new ToolError("Outline dimensions must be between 0.000001 and 1000 mm.", "invalid_args");
+    const assertSource = async () => {
+      const bytes = await readFile(join(projectDir, BOARD_PCB)).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") throw new NativeRevisionConflict("The saved PCB is missing. Reopen the project before resizing its outline.");
+        throw error;
+      });
+      if (createHash("sha256").update(bytes).digest("hex") !== request.expectedSourceSha256)
+        throw new NativeRevisionConflict("The PCB changed since this outline was inspected. Reload the outline before resizing.");
+    };
+    await assertSource();
+    const board = await deps.sessions.board(projectDir);
+    const edges = (await board.getShapes()).filter(shape => shape.layerId === BoardLayer.BL_Edge_Cuts);
+    if (edges.length !== ids.size || edges.some(edge => !ids.has(edge.id)))
+      throw new ToolError("The selected IDs do not cover the complete current Edge.Cuts boundary. Reload the outline; complex boundaries and cutouts require KiCad editing.", "precondition");
+    if (nativeGroupLocksAny([...ids], await board.getGroups()))
+      throw new ToolError("The outline belongs to a locked group. Unlock the group in KiCad before resizing.", "precondition");
+    const proposal = resizeNativeOutlineShapes(edges, request.widthMm, request.heightMm);
+    if ((await board.modified()) !== false) throw new NativeRevisionConflict("Save the open PCB before resizing its outline.");
+    await deps.sessions.assertSchematicSaved(projectDir);
+    await assertSource();
+    if (proposal.changed) {
+      await board.commit("fabPlane: resize native PCB outline", async tx => { await tx.update(proposal.updates); });
+      await board.save();
+      await keepNetClass(projectDir);
+    }
+    return { saved: true as const, changed: proposal.changed, edgeIds: edges.map(edge => edge.id), revision: Number((await board.revision()) ?? 0n), bounds: proposal.bounds };
+  };
+
   const placeFootprints = async (
     projectDir: string,
     placements: PcbFootprintEdit[],
@@ -2234,8 +2268,10 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
           start: { x: mm(shape.start.x), y: mm(shape.start.y) },
           end: { x: mm(shape.end.x), y: mm(shape.end.y) },
         });
-        if (select === "board_geometry")
-          return (await board.getShapes()).map((shape) => shapeRow(shape, "board"));
+        if (select === "board_geometry") {
+          const [shapes, groups] = await Promise.all([board.getShapes(), board.getGroups()]);
+          return shapes.map(shape => ({ ...shapeRow(shape, "board"), locked: shape.locked || nativeGroupLocksAny([shape.id], groups) }));
+        }
         const footprints = await board.getFootprints();
         return footprints.flatMap((footprint) =>
           footprint.items
@@ -2746,6 +2782,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     schematicEdit: nativeOperation(schematicEdit),
     syncSchematicToPcb: nativeOperation(syncSchematicToPcb),
     defineBoardOutline: nativeOperation(defineBoardOutline),
+    resizeBoardOutline: nativeOperation(resizeBoardOutline),
     placeFootprints: nativeOperation(placeFootprints),
     editBoardGeometry: nativeOperation(editBoardGeometry),
     inspectBoardGeometry: nativeOperation(inspectBoardGeometry),

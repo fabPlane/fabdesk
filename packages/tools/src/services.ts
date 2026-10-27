@@ -11,6 +11,7 @@ import type { CloudService } from "./cloud/service";
 import type { RouterRegistry } from "./routers/registry";
 import type {
   CoreEvent,
+  PcbOutlineResizeResult,
   FpPcbBoardSpec,
   NetlistFile,
   Principal,
@@ -542,6 +543,8 @@ export interface DesignService {
     replace: boolean,
     options?: { expectedSourceSha256?: string },
   ): Promise<PcbOutlineResult>;
+  /** Resize explicitly selected native rectangle primitives without replacing IDs or metadata. */
+  resizeBoardOutline(projectDir: string, request: { edgeIds: string[]; widthMm: number; heightMm: number; expectedSourceSha256: string }): Promise<PcbOutlineResizeResult>;
   /** Place native board footprints by reference without touching schematic connectivity. */
   placeFootprints(
     projectDir: string,
