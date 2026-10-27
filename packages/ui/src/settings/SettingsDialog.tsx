@@ -170,7 +170,7 @@ export function SettingsDialog() {
                 hint={
                   doctor.data?.kicad.found
                     ? `using ${doctor.data.kicad.version ?? ""} at ${doctor.data.kicad.path ?? ""}`
-                    : "bundled FabPlane KiCad (leave blank), or set a path to override"
+                    : "bundled fabPlane KiCad (leave blank), or set a path to override"
                 }
               >
                 <Input
@@ -218,7 +218,7 @@ export function SettingsDialog() {
           ) : section === "appearance" ? (
             <fieldset>
               <legend className="text-[13px] font-medium">Theme</legend>
-              <p className="mb-5 mt-1 text-xs leading-5 text-muted">Choose FabPlane's signature palette or a neutral System theme. Your choice is stored on this device.</p>
+              <p className="mb-5 mt-1 text-xs leading-5 text-muted">Choose fabPlane's signature palette or a neutral System theme. Your choice is stored on this device.</p>
               <div className="fd-theme-options">
                 {THEME_IDS.map((id) => <label key={id} className="fd-theme-option">
                   <input type="radio" name="appearance-theme" value={id} checked={themeId === id} onChange={() => {
@@ -238,7 +238,7 @@ export function SettingsDialog() {
               <Row label="Error reporting" hint="Send crash and error reports to Sentry so bugs get fixed. Reports carry no prompts, board files, tokens or project paths. Turning this off applies immediately; turning it back on applies after a restart.">
                 <input type="checkbox" checked={draft.errorReporting} onChange={(e) => update((s) => ({ ...s, errorReporting: e.target.checked }))} />
               </Row>
-              <Row label="Share usage data" hint="Share your sessions with us so we can see where Fabdesk gets stuck and make it better. This includes your conversations and agent activity, past ones too, and can include your prompts and project files. We keep it private. Turning this off stops future sharing; it doesn't remove what was already shared.">
+              <Row label="Share usage data" hint="Share your sessions with us so we can see where fabPlane gets stuck and make it better. This includes your conversations and agent activity, past ones too, and can include your prompts and project files. We keep it private. Turning this off stops future sharing; it doesn't remove what was already shared.">
                 <input type="checkbox" checked={usageArchiveAllowed(draft, privacyScreen ?? true)} onChange={(e) => update((s) => ({ ...s, ...usageArchiveChoice(e.target.checked) }))} />
               </Row>
             </div>

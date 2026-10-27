@@ -25,16 +25,16 @@ export function ProjectOverview() {
   return <div className="fd-project-overview" onKeyDown={(event) => { if (event.key === "Escape") setSelected(false); }}>
     <div className="fd-overview-heading"><span className="fd-overview-eyebrow">PROJECT OVERVIEW</span><h1>{project.data.name}</h1><p>Your board, source files and outputs in one place.</p></div>
     {(pcb || preview) ? <div className="fd-overview-board">
-      <div className="fd-board-context-tools" aria-label="Board actions">
-        <span><Icon name="pcb" width={17} height={17} />{selected ? "Board selected" : "Main board"}</span>
+      {selected && <div className="fd-board-context-tools" aria-label="Board actions">
+        <span><Icon name="pcb" width={17} height={17} />Board selected</span>
         <Button variant="ghost" size="sm" onClick={() => ui().setBoardTab("pcb")}><Icon name="compose" width={16} height={16} />Open PCB</Button>
         <Button variant="ghost" size="sm" onClick={() => ui().setBoardTab("schematic")}>Schematic</Button>
         <Button variant="ghost" size="sm" onClick={() => ui().setWorkspaceArea("mechanical")}>Enclosure</Button>
-      </div>
-      <button className="fd-overview-preview" data-selected={selected} aria-pressed={selected} aria-label="Select main board" onClick={() => setSelected(!selected)} onDoubleClick={() => ui().setBoardTab("pcb")}>
+      </div>}
+      <button className="fd-overview-preview" data-selected={selected} aria-pressed={selected} aria-label="Select main board to show tools" onClick={() => setSelected(!selected)} onDoubleClick={() => ui().setBoardTab("pcb")}>
         {preview ? <ProjectImage projectId={projectId} path={preview.path} alt={`${project.data.name} board preview`} /> : <span><Icon name="pcb" width={64} height={64} /><span>Open the PCB to render its preview</span></span>}
       </button>
-      <div className="fd-overview-board-caption"><strong>Main board</strong><span>{pcb ? "board.kicad_pcb" : "Rendered preview"}</span><span>{schematic ? "Schematic available" : "No schematic source"}</span></div>
+      <div className="fd-overview-board-caption"><strong>Main board</strong><span>{pcb ? "board.kicad_pcb" : "Rendered preview"}</span>{preview && <span>Saved preview</span>}<span>{schematic ? "Schematic available" : "No schematic source"}</span></div>
     </div> : <div className="fd-overview-empty"><Icon name="pcb" width={54} height={54} /><h2>Start with an idea or a sketch</h2><p>Your project is ready. Add a design or describe what you want to build.</p><Button onClick={() => { ui().setAssistantOpen(true); ui().focusComposer(); }}>Describe your board</Button><Button variant="ghost" onClick={() => ui().setSketchOpen(true)}>Add a sketch</Button></div>}
     <div className="fd-overview-facts">
       <button onClick={() => ui().setWorkspaceArea("files")}><Icon name="folder" width={18} height={18} /><strong>{files.length}</strong><span>project files</span></button>

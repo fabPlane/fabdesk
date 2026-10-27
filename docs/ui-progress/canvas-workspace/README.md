@@ -25,4 +25,18 @@ Root typecheck passes. UI tests: 217 pass. Client-core tests: 170 pass; desktop 
 
 ## Next work and limits
 
-This is a navigation and interaction foundation, not completion of the screenshot roadmap. Still required: adaptive first-open overview for explicit multi-board projects; assembly membership and relationships; source revision/freshness tracking and directional reconciliation; native safe resize/replacement; model upload/generation flow; unified output/review workflows; compact/dark/accessibility walkthroughs; all accepted concept states and end-to-end project exercises. Existing views are grouped, not yet fully redesigned. No fabricated synchronization or native editing controls are presented.
+This is a navigation and interaction foundation, not completion of the screenshot roadmap. Still required: adaptive first-open overview for explicit multi-board projects; assembly membership and relationships; source revision/freshness tracking and directional reconciliation; native safe resize/replacement; model upload/generation flow; unified output/review workflows; remaining accessibility walkthroughs; all accepted concept states and end-to-end project exercises. Existing views are grouped, not yet fully redesigned. No fabricated synchronization or native editing controls are presented.
+
+## Subsequent native walkthrough
+
+All 12 existing destinations were opened in the native app: PCB, schematic, 3D/video, routing, artwork, CAD, parts/shopping, renders, changes, checks, files and notes. The assistant stayed closed and no page overflow appeared. This checks navigation and presentation, not successful execution of every backend operation.
+
+The desktop enforces a minimum 960 × 720 window. Canvas and explicitly opened assistant fit that size. Appearance settings switched between fabPlane light and dark. A harmless comment was temporarily added to the isolated PCB SVG then restored: the preview blob URL changed automatically, while the host width and 125% zoom stayed identical.
+
+Overview tools now appear only after board selection. The preview is labeled Saved preview; revision-based freshness remains a follow-up.
+
+![Quiet overview after deselection](overview.png)
+![Overview after board selection](overview-selected.png)
+![Dark canvas](dark-board.png)
+![Fresh-start actions and a retained study draft](fresh-start.png)
+![Minimum desktop window](compact-board.png)
