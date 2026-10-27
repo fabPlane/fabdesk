@@ -162,3 +162,16 @@ Final root typecheck, UI220/client191/protocol87 tests pass. Five client cases c
 ![Imported outline stays read-only](board-size-imported.png)
 ![Contextual dimensions before native resize](board-size-before.png)
 ![Native dimensions saved and preview refreshed](board-size-saved.png)
+
+
+## Populated native resize and complete Checks display
+
+A second isolated project copies the committed routed mini-board fixture. Preparation removes only its exact known test-outline rectangle from the new copy, then creates the same bounds through the native outline tool; no imported production boundary is adopted or changed. The repository fixture is untouched. Through the actual UI, width 15→20 mm preserved top-left (100,95), height 15 mm, all three components, five track/via rows, the via, the zone and all net records. The regenerated SVG receipt matches the saved PCB. This demonstrates content preservation, not clearance or manufacturability.
+
+Real saved-PCB DRC ran afterward with schematic parity explicitly disabled: **8 errors, 4 warnings, 2 unconnected items**. The PCB source hash was identical before/after checking. No claim is made about which findings were caused by the resize because a before-resize DRC baseline was not measured.
+
+Open checks exposed a report-format mismatch: the existing view dropped normalized `unconnected` and `schematicParity` categories. It now reads normalized and raw KiCad names without counting alias copies or nested raw payloads twice. The native view shows all **14 findings**, including the two missing connections. Loading no longer briefly labels an empty array as zero findings; an empty report no longer claims that the board passes every rule. UI221 tests and affected typecheck pass; prior final root typecheck passed for the board-size milestone.
+
+![Populated PCB before explicit dimension Apply](board-size-populated-before.png)
+![Populated native resize preserves components and copper](board-size-populated-saved.png)
+![Checks includes all measured violations and unconnected items](board-size-populated-checks.png)

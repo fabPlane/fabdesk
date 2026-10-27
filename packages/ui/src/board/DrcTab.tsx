@@ -55,11 +55,17 @@ export function normalizeReport(json: unknown, source: "drc" | "erc"): Violation
   const r = asRecord(json);
   if (!r) return [];
   const out: Violation[] = [];
-  for (const key of ["violations", "unconnected_items", "schematic_parity"]) {
-    const arr = r[key];
+  // Saved tool reports use normalized camelCase keys; raw KiCad reports use snake_case.
+  // Prefer the normalized category if both are present, so raw payloads are not counted twice.
+  for (const [keys, unconnected] of [
+    [["violations"], false],
+    [["unconnected", "unconnected_items"], true],
+    [["schematicParity", "schematic_parity"], false],
+  ] as const) {
+    const arr = keys.map(key => r[key]).find(Array.isArray);
     if (Array.isArray(arr)) for (const v of arr) {
       const n = normalizeViolation(v, source);
-      if (n) out.push(key === "unconnected_items" ? { ...n, type: n.type === "unknown" ? "unconnected" : n.type } : n);
+      if (n) out.push(unconnected ? { ...n, type: n.type === "unknown" ? "unconnected" : n.type } : n);
     }
   }
   const sheets = r["sheets"];
@@ -92,7 +98,7 @@ export function DrcTab() {
       {tool.state.status === "running" && <Spinner />}
       {tool.state.error && <span className="text-xs text-danger">{tool.state.error}</span>}
       <span className="ml-auto text-[11px] text-muted">
-        {failed ? "Reports unavailable" : drc.data === null && erc.data === null ? "no reports yet" : `${rows.length} finding${rows.length === 1 ? "" : "s"}`}
+        {failed ? "Reports unavailable" : loading ? "Loading reports…" : drc.data === null && erc.data === null ? "no reports yet" : `${rows.length} finding${rows.length === 1 ? "" : "s"}`}
       </span>
     </div>
   );
@@ -105,10 +111,10 @@ export function DrcTab() {
           <Spinner />
         </div>
       ) : rows.length === 0 ? (
-        <EmptyState title={drc.data === null && erc.data === null ? "No DRC/ERC reports" : "No violations"}>
+        <EmptyState title={drc.data === null && erc.data === null ? "No DRC/ERC reports" : "No findings in saved reports"}>
           {drc.data === null && erc.data === null
             ? "Run DRC after routing; reports land in reports/drc.json and reports/erc.json."
-            : "The board passes every rule in the current reports."}
+            : "These saved reports contain no listed findings. Re-run checks after design changes; missing or incomplete checks do not establish a pass."}
         </EmptyState>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">
