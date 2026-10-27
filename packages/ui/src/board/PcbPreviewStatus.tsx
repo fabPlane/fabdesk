@@ -7,12 +7,12 @@ export function PcbPreviewStatus({ projectId, busy, error, onUpdate, coordinates
   const revision = usePcbPreviewRevision(projectId);
   const state = revision.data;
   const changed = state === "source-changed";
-  const matches = state === "matches-source" && coordinatesVerified;
-  const label = busy ? "Updating preview…" : revision.isPending ? "Checking preview…" : revision.isError ? "Could not verify preview" : matches ? "Preview matches PCB" : state === "matches-source" && !coordinatesVerified ? "Preview origin unverified" : changed ? "PCB changed since preview" : state === "artifact-changed" ? "Preview changed outside export" : state === "missing-source" ? "PCB source missing" : "Saved preview · unverified";
+  const matches = state === "matches-source" && coordinatesVerified && !revision.isFetching && !revision.isError;
+  const label = busy ? "Updating preview…" : revision.isPending || revision.isFetching ? "Checking preview…" : revision.isError ? "Could not verify preview" : matches ? "Preview matches PCB" : state === "matches-source" && !coordinatesVerified ? "Preview origin unverified" : changed ? "PCB changed since preview" : state === "artifact-changed" ? "Preview changed outside export" : state === "missing-source" ? "PCB source missing" : "Saved preview · unverified";
   return <div className="fd-preview-status" data-state={matches ? "matches" : changed ? "changed" : "unverified"}>
     <div title="Compares this SVG and board.kicad_pcb against the recorded export hashes. It does not check schematic synchronization, other outputs or electrical compatibility.">
       <Icon name={matches ? "check" : changed ? "warning" : "pcb"} width={14} height={14} /><span role="status">{label}</span>
-      {!matches && state !== "missing-source" && !revision.isPending && <Button size="sm" variant="ghost" disabled={busy} onClick={onUpdate}>Update preview</Button>}
+      {!matches && state !== "missing-source" && !revision.isPending && !revision.isFetching && <Button size="sm" variant="ghost" disabled={busy} onClick={onUpdate}>Update preview</Button>}
       {revision.isError && <Button size="sm" variant="ghost" onClick={() => void revision.refetch()}>Retry check</Button>}
     </div>
     {error && <p role="alert">{error}</p>}

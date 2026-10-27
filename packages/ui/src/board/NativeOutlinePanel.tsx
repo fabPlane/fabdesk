@@ -27,7 +27,7 @@ export function NativeOutlinePanel({ projectId, canPosition, onBusyChange }: { p
     finally { inFlight.current = false; onBusyChange(false); if (mounted.current) setBusy(false); }
   };
   const apply = async () => {
-    if (inFlight.current || !snapshot?.editable || !points || !changed || stale || !canPosition || inspection.isFetching) return;
+    if (inFlight.current || !snapshot?.editable || !points || !changed || stale || !canPosition || inspection.isFetching || inspection.isError) return;
     inFlight.current = true; setBusy(true); onBusyChange(true); setError(null); setNotice(null); setExportError(null);
     let saved = false;
     try {
@@ -46,16 +46,17 @@ export function NativeOutlinePanel({ projectId, canPosition, onBusyChange }: { p
   };
   if (!snapshot) return inspection.isError ? <p role="alert">Could not inspect the saved outline. <Button size="sm" onClick={() => void inspection.refetch()}>Retry</Button></p> : <div className="flex items-center gap-2 text-muted"><Spinner />Inspecting saved outline…</div>;
   return <>
+    {inspection.isError && <p role="alert" className="fd-native-part-warning">The latest outline inspection failed. Reload before applying dimensions.</p>}
     {!snapshot.editable ? <><p className="fd-native-part-note">{snapshot.reason}</p><Button size="sm" variant="ghost" disabled={busy} onClick={() => void reload()}>Reload outline</Button></> : <>
       <p className="fd-native-part-note">{snapshot.bounds ? `Resize the rectangular outline from its top-left corner at (${snapshot.bounds.minX}, ${snapshot.bounds.minY}) mm.` : "This PCB has no outline yet. Enter its width and height; the top-left corner will be at KiCad (0, 0)."} Parts, traces and mechanical models keep their current positions.</p>
       {stale && <p role="status" className="fd-native-part-warning">The PCB changed. Reload its outline before applying dimensions. Your typed values are kept.</p>}
-      {!canPosition && <p className="fd-native-part-warning">Update the PCB preview before applying dimensions.</p>}
+      {!canPosition && !busy && <p className="fd-native-part-warning">Update the PCB preview before applying dimensions.</p>}
       <form onSubmit={event => { event.preventDefault(); void apply(); }}>
         <div className="fd-native-outline-fields">
           <label>Width (mm)<Input type="number" min="0.1" max="1000" step="0.1" aria-label="Board width (mm)" value={width} disabled={busy} onChange={event => setWidth(event.target.value)} /></label>
           <label>Height (mm)<Input type="number" min="0.1" max="1000" step="0.1" aria-label="Board height (mm)" value={height} disabled={busy} onChange={event => setHeight(event.target.value)} /></label>
         </div>
-        <div className="fd-native-part-actions"><Button size="sm" variant="ghost" disabled={busy} onClick={() => void reload()}>Reload outline</Button><Button size="sm" variant="primary" type="submit" disabled={busy || stale || !canPosition || inspection.isFetching || !points || !changed}>{busy ? "Saving / refreshing…" : snapshot.bounds ? "Apply dimensions" : "Create outline"}</Button></div>
+        <div className="fd-native-part-actions"><Button size="sm" variant="ghost" disabled={busy} onClick={() => void reload()}>Reload outline</Button><Button size="sm" variant="primary" type="submit" disabled={busy || stale || !canPosition || inspection.isFetching || inspection.isError || !points || !changed}>{busy ? "Saving / refreshing…" : snapshot.bounds ? "Apply dimensions" : "Create outline"}</Button></div>
       </form>
     </>}
     {notice && <p role="status" className="fd-native-part-warning">{notice}<Button size="sm" variant="ghost" onClick={() => useUiStore.getState().setBoardTab("drc")}>Open checks</Button></p>}

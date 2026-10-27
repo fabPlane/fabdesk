@@ -208,7 +208,7 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
                     setCanvasPoint(null);
                   }}><Icon name="sparkles" width={15} height={15} />Ask about this</Button>
                   <Button variant="ghost" size="sm" onClick={() => { setDraftPoint(canvasPoint); setCanvasPoint(null); setSelectedId(null); setCommentMode(true); }}><Icon name="pin" width={15} height={15} />Pin comment</Button>
-                  {kind === "pcb" && <NativePartTools projectId={projectId} point={canvasPoint} canPosition={nativeCoordinates && revision.data === "matches-source"} openAbove={(canvasPoint.y - box.y) / box.height > .5} onMoved={setCanvasPoint} />}
+                  {kind === "pcb" && <NativePartTools box={box} projectId={projectId} point={canvasPoint} canPosition={nativeCoordinates && revision.data === "matches-source" && !revision.isError && !revision.isFetching} openAbove={(canvasPoint.y - box.y) / box.height > .5} onMoved={setCanvasPoint} />}
                   <IconButton size="sm" title="Deselect location" onClick={() => setCanvasPoint(null)}><Icon name="close" width={15} height={15} /></IconButton>
                 </div>
               </div>}
