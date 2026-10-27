@@ -1,11 +1,21 @@
-import { useProject, usePcbPreviewRevision, useBoardModelRevision, useEnclosureSourceRevision, usePcbCheckRevision, useRunTool } from "@fabdesk/client-core";
+import { CoreHttpError, useBoardSources, useProject, usePcbPreviewRevision, useBoardModelRevision, useEnclosureSourceRevision, usePcbCheckRevision, useRunTool } from "@fabdesk/client-core";
 import { Button, EmptyState, LoadError, Spinner } from "../components/ui";
+import { AssemblyReviewUpdates } from "./AssemblyReviewUpdates";
 import { newChatDraftKey, useUiStore } from "../stores/ui";
 
 type Row = { item: string; status: string; note: string; warning: boolean; action: string; disabled?: boolean; onClick: () => void };
 
 /** A review of known dependencies, not a claim that every project artifact is synchronized. */
 export function ReviewUpdates() {
+  const projectId = useUiStore(state => state.activeProjectId), project = useProject(projectId), sources = useBoardSources(projectId);
+  if (!projectId) return <EmptyState title="No project selected" />;
+  if (sources.isPending) return <div className="flex h-full items-center justify-center"><Spinner /></div>;
+  if (sources.isError && !sources.data && !(sources.error instanceof CoreHttpError && sources.error.status === 404 && project.data && !project.data.files.some(file => file.path === "fabplane.assembly.json"))) return <LoadError title="Could not inspect project board sources" onRetry={() => { void sources.refetch(); void project.refetch(); }} />;
+  if (sources.data?.mode === "assembly") return <AssemblyReviewUpdates projectId={projectId} data={sources.data} checking={sources.isFetching} failed={sources.isError} onRetry={() => { void sources.refetch(); }} />;
+  return <SingleBoardUpdates />;
+}
+
+function SingleBoardUpdates() {
   const projectId = useUiStore(state => state.activeProjectId), project = useProject(projectId), update = useRunTool();
   const files = project.data?.files ?? [], has = (path: string) => files.some(file => file.path === path);
   const pcb = has("board.kicad_pcb"), schematic = has("board.kicad_sch");

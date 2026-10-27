@@ -187,3 +187,5 @@ export * from "./output-library";
 
 export * from "./assembly-scene";
 export * from "./sketch-recovery";
+
+export * from "./assembly-review";

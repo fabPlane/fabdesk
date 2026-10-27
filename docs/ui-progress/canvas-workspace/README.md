@@ -503,3 +503,18 @@ Limits: this is local profile storage, not project synchronization or a backup s
 ![Saved drawing no longer appears as an unsaved draft](sketch-recovery-cleared.png)
 ![Storage failure warns while retaining the earlier recovery](sketch-recovery-warning.png)
 ![Recovery retry in the compact native app](sketch-recovery-compact.png)
+
+
+## Assembly source review
+
+Review → Updates now selects an assembly-aware view before mounting root-board artifact queries. One row represents each explicitly declared source, with shared board instances listed together. Known preview hashes distinguish matching, changed, missing, checking and unverified states. Unavailable sources offer an unsent source-specific assistance draft. Inspect opens the captured instance/source/declaration in Boards; changed or untracked previews can be refreshed explicitly through the source-qualified renderer. Matching previews show only inspection. The view does not inherit root DRC/model/enclosure/schematic statuses as assembly results. Existing single-board review remains available; unsupported source inspection fails closed.
+
+Actual native VAIO walkthrough showed five matching previews and one unresolved keyboard source, inspected the exact I/O board, and prepared a keyboard-specific draft without sending it. A separate three-board/two-source fixture received a whitespace-only I/O source change: one shared-source warning covered Left and Right I/O. Explicit Update preview produced a receipt matching that changed source; the carrier, PCB bytes and parent files remained unchanged. All nine fixture files were then restored byte-for-byte. Actual 960 × 720 controls passed. All real VAIO source/preview/manifest hashes remained unchanged and its quiet Overview was restored. [Evidence](assembly-review-native.json).
+
+Root typecheck passed. Both affected suites passed: **231 client-core + 224 UI tests**, zero failures; new helper cases cover shared ownership, unavailable sources, changed/missing previews and checking/error states without stale match claims. The preceding full standard run was **2,139 passed / 30 skipped / zero failures** at the sketch-recovery milestone; it was not repeated for this frontend/helper increment.
+
+Limits: only saved PCB preview provenance is tracked per member here. Source-qualified DRC/ERC, schematic parity, comments/diffs, 3D/model dependencies and enclosure fit remain separate unfinished workflows. Declared links and a matching preview are not compatibility passes. Warning capture below predates the final footer wording refinement; the compact capture shows final guidance.
+
+![VAIO source review](assembly-review-vaio.png)
+![Shared source changed since preview](assembly-review-shared-warning.png)
+![Explicit refresh verified in the compact native app](assembly-review-shared-compact.png)
