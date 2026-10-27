@@ -21,7 +21,7 @@ Native Electron development app, isolated profile/core/projects; existing projec
 ![Assistant opened explicitly](assistant.png)
 ![Project overview from saved project data](overview.png)
 
-Root typecheck passes. UI tests: 217 pass. Client-core tests: 170 pass with local HTTP fixture access; the restricted sandbox denied two fixture servers. Native checks cover logo load, closed assistant, real board navigation, location tools, overview, project-scoped drafts and failed-first-send ownership. The full suite has the previously recorded unrelated KiCad/core failures; see [earlier validation](../sketch-first/README.md).
+Root typecheck passes. UI tests: 217 pass. Client-core tests: 170 pass; desktop tests: 149 pass with local HTTP/process fixture access; the restricted sandbox denied two fixture servers. Native checks cover logo load, closed assistant, real board navigation, location tools, overview, project-scoped drafts and failed-first-send ownership. The full suite has the previously recorded unrelated KiCad/core failures; see [earlier validation](../sketch-first/README.md).
 
 ## Next work and limits
 
