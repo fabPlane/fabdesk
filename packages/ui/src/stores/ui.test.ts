@@ -133,3 +133,52 @@ test("version 5 drafts migrate even while an existing conversation is open", asy
   expect(reopened.getState().drafts["chat-a"]).toBe("Existing chat draft");
   expect(reopened.getState().activeThreadId).toBe("chat-a");
 });
+
+test("profiles without the old attachments field retain a usable empty attachment store", async () => {
+  let snapshot = JSON.stringify({ version: 6, state: { activeProjectId: "a", drafts: { "__new__:a": "Keep" } } });
+  const reopened = createUiStore({ getItem: () => snapshot, setItem: (_name, value) => { snapshot = value; }, removeItem: () => {} });
+  await reopened.persist.rehydrate();
+  expect(reopened.getState().attachments).toEqual({});
+  expect(reopened.getState().drafts["__new__:a"]).toBe("Keep");
+});
+
+describe("canvas workspace state", () => {
+  const memory = () => ({ getItem: () => null, setItem: () => {}, removeItem: () => {} });
+  test("starts with one canvas and closed secondary panes; the classic layout remains reversible", () => {
+    const store = createUiStore(memory());
+    expect(store.getState().canvasMode).toBe(true);
+    expect(store.getState().assistantOpen).toBe(false);
+    expect(store.getState().canvasNavigationOpen).toBe(false);
+    store.getState().toggleSidebar();
+    expect(store.getState().canvasNavigationOpen).toBe(true);
+    store.getState().setCanvasMode(false);
+    expect(store.getState().canvasNavigationOpen).toBe(false);
+    store.getState().setCanvasMode(true);
+    expect(store.getState().canvasMode).toBe(true);
+  });
+  test("each project restores its own working destination and local tab", () => {
+    const store = createUiStore(memory());
+    store.getState().setActiveProject("a");
+    store.getState().setWorkspaceArea("outputs");
+    store.getState().setWorkspaceTab("3d");
+    store.getState().setActiveProject("b");
+    expect(store.getState().boardTab).toBe("pcb");
+    store.getState().setBoardTab("drc");
+    store.getState().setActiveProject("a");
+    expect(store.getState().workspaceArea).toBe("outputs");
+    expect(store.getState().boardTab).toBe("3d");
+    store.getState().setActiveProject("b");
+    expect(store.getState().workspaceArea).toBe("review");
+    expect(store.getState().boardTab).toBe("drc");
+  });
+  test("file links and conversation selection reveal the intended tool instead of leaving a hidden destination", () => {
+    const store = createUiStore(memory());
+    store.getState().setActiveProject("a");
+    store.getState().openProjectFile("board.kicad_pcb");
+    expect(store.getState().workspaceArea).toBe("files");
+    store.getState().setActiveThread("chat-a");
+    expect(store.getState().assistantOpen).toBe(true);
+    store.getState().setWorkspaceArea("mechanical");
+    expect(store.getState().boardTab).toBe("cad");
+  });
+});

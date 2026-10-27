@@ -81,7 +81,7 @@ export function CreateProjectDialog({ onClose, onCreated, initialMode = "create"
     </div>
     {result ? <div className="space-y-4">
       {result.boards.length === 0 ? <p className="text-sm leading-6 text-muted">Project imported. No KiCad board was found. You can add one later.</p> : <>
-        <p className="text-sm text-muted">Choose the board to open in FabDesk:</p>
+        <p className="text-sm text-muted">Choose the board to open in fabPlane:</p>
         <div className="max-h-48 space-y-2 overflow-y-auto" role="group" aria-label="KiCad boards">
           {result.boards.map((path) => <Button key={path} type="button" disabled={pending} className="w-full justify-start break-all text-left" onClick={() => void adopt(path)}>{path}</Button>)}
         </div>

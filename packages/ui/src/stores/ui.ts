@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { DRAFT_KEY_NEW, newChatDraftKey } from "@fabdesk/client-core";
+import { DRAFT_KEY_NEW, newChatDraftKey, workspaceAreaForView, workspaceViews, type WorkspaceArea } from "@fabdesk/client-core";
 import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
 import { readStoredThemeId, type ThemeId } from "../theme/resolve";
 import { stencilThicknessMm } from "./stencil-thickness";
@@ -48,6 +48,16 @@ export interface UiState {
   /** Theme chosen in Settings → Appearance; null = derive from the core setting / OS. */
   themeId: ThemeId | null;
   setThemeId: (id: UiState["themeId"]) => void;
+  canvasMode: boolean;
+  setCanvasMode: (enabled: boolean) => void;
+  canvasNavigationOpen: boolean;
+  setCanvasNavigationOpen: (open: boolean) => void;
+  assistantOpen: boolean;
+  setAssistantOpen: (open: boolean) => void;
+  workspaceArea: WorkspaceArea;
+  workspaceByProject: Record<string, { area: WorkspaceArea; tab: BoardTab }>;
+  setWorkspaceArea: (area: WorkspaceArea) => void;
+  setWorkspaceTab: (tab: BoardTab) => void;
   sidebarOpen: boolean;
   boardOpen: boolean;
   activeThreadId: string | null;
@@ -131,6 +141,21 @@ export function createUiStore(storage?: StateStorage) {
   // Seed from localStorage so the first React render matches the pre-paint boot script.
   themeId: readStoredThemeId(),
   setThemeId: (themeId) => set({ themeId }),
+  canvasMode: true,
+  setCanvasMode: (canvasMode) => set({ canvasMode, canvasNavigationOpen: false }),
+  canvasNavigationOpen: false,
+  setCanvasNavigationOpen: (canvasNavigationOpen) => set({ canvasNavigationOpen }),
+  assistantOpen: false,
+  setAssistantOpen: (assistantOpen) => set({ assistantOpen }),
+  workspaceArea: "boards",
+  workspaceByProject: {},
+  setWorkspaceArea: (workspaceArea) => set((s) => {
+    const boardTab = workspaceViews(workspaceArea)[0]?.tab ?? s.boardTab;
+    return { workspaceArea, boardTab, boardOpen: true, activeOpenSourceId: null, inventoryOpen: false, orderFlowOpen: false,
+      ...(s.activeProjectId ? { workspaceByProject: { ...s.workspaceByProject, [s.activeProjectId]: { area: workspaceArea, tab: boardTab } } } : {}) };
+  }),
+  setWorkspaceTab: (boardTab) => set((s) => ({ boardTab, boardOpen: true,
+    ...(s.activeProjectId ? { workspaceByProject: { ...s.workspaceByProject, [s.activeProjectId]: { area: s.workspaceArea, tab: boardTab } } } : {}) })),
   sidebarOpen: true,
   boardOpen: true,
   activeThreadId: null,
@@ -145,10 +170,11 @@ export function createUiStore(storage?: StateStorage) {
   projectPickerOpen: false,
   orderFlowOpen: false,
   inventoryOpen: false,
-  boardTab: "schematic",
+  boardTab: "pcb",
   fileToReveal: null,
   openProjectFile: (path) => set((s) => s.activeProjectId ? {
-    boardTab: "files", boardOpen: true,
+    boardTab: "files", boardOpen: true, workspaceArea: "files",
+    workspaceByProject: { ...s.workspaceByProject, [s.activeProjectId]: { area: "files", tab: "files" } },
     fileToReveal: { projectId: s.activeProjectId, path },
   } : {}),
   stencilThicknessByProject: {},
@@ -176,15 +202,16 @@ export function createUiStore(storage?: StateStorage) {
   whatsNewOpen: false,
   whatsNewSeenId: null,
   composerFocusNonce: 0,
-  toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
+  toggleSidebar: () => set((s) => s.canvasMode ? { canvasNavigationOpen: !s.canvasNavigationOpen } : { sidebarOpen: !s.sidebarOpen }),
   toggleBoard: () => set((s) => ({ boardOpen: !s.boardOpen })),
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
   setBoardOpen: (boardOpen) => set({ boardOpen }),
-  setActiveThread: (activeThreadId) => set({ activeThreadId, ...(activeThreadId ? { activeOpenSourceId: null, orderFlowOpen: false, inventoryOpen: false } : {}) }),
+  setActiveThread: (activeThreadId) => set({ activeThreadId, ...(activeThreadId ? { activeOpenSourceId: null, orderFlowOpen: false, inventoryOpen: false, assistantOpen: true } : {}) }),
   setFocusMessageId: (focusMessageId) => set({ focusMessageId }),
-  setActiveProject: (activeProjectId) => set((s) => ({ activeProjectId, ...(activeProjectId !== s.activeProjectId ? { activeThreadId: null, activeOpenSourceId: null, orderFlowOpen: false, inventoryOpen: false } : {}) })),
+  setActiveProject: (activeProjectId) => set((s) => ({ activeProjectId, ...(activeProjectId !== s.activeProjectId ? { activeThreadId: null, activeOpenSourceId: null, orderFlowOpen: false, inventoryOpen: false, ...(s.canvasMode ? { boardOpen: true } : {}), workspaceArea: activeProjectId ? s.workspaceByProject[activeProjectId]?.area ?? "boards" : "boards", boardTab: activeProjectId ? s.workspaceByProject[activeProjectId]?.tab ?? "pcb" : "pcb" } : {}) })),
   startNewChatInProject: (projectId) =>
-    set((s) => ({ ...newChatInProjectState(projectId), composerFocusNonce: s.composerFocusNonce + 1 })),
+    set((s) => ({ ...newChatInProjectState(projectId), composerFocusNonce: s.composerFocusNonce + 1, assistantOpen: true,
+      ...(projectId !== s.activeProjectId ? { workspaceArea: projectId ? s.workspaceByProject[projectId]?.area ?? "boards" : "boards", boardTab: projectId ? s.workspaceByProject[projectId]?.tab ?? "pcb" : "pcb" } : {}) })),
   setSidebarListTab: (sidebarListTab) => set({ sidebarListTab: normalizeSidebarListTab(sidebarListTab) }),
   setActiveOpenSourceId: (activeOpenSourceId) =>
     set({
@@ -197,7 +224,11 @@ export function createUiStore(storage?: StateStorage) {
   setOrderFlowOpen: (orderFlowOpen) => set({ orderFlowOpen, ...(orderFlowOpen ? { activeOpenSourceId: null, inventoryOpen: false } : {}) }),
   setInventoryOpen: (inventoryOpen) =>
     set({ inventoryOpen, ...(inventoryOpen ? { activeOpenSourceId: null, orderFlowOpen: false } : {}) }),
-  setBoardTab: (boardTab) => set({ boardTab, boardOpen: true }),
+  setBoardTab: (boardTab) => set((s) => {
+    const workspaceArea = workspaceAreaForView(boardTab);
+    return { boardTab, boardOpen: true, workspaceArea, activeOpenSourceId: null, inventoryOpen: false, orderFlowOpen: false,
+      ...(s.activeProjectId ? { workspaceByProject: { ...s.workspaceByProject, [s.activeProjectId]: { area: workspaceArea, tab: boardTab } } } : {}) };
+  }),
   setDraft: (key, text) => set((s) => ({ drafts: { ...s.drafts, [key]: text } })),
   addAttachment: (key, att) =>
     set((s) => ({ attachments: { ...s.attachments, [key]: [...(s.attachments[key] ?? []), att] } })),
@@ -212,20 +243,21 @@ export function createUiStore(storage?: StateStorage) {
   setAgentPickerOpen: (agentPickerOpen) => set({ agentPickerOpen }),
   setWhatsNewOpen: (whatsNewOpen) => set({ whatsNewOpen }),
   markWhatsNewSeen: (whatsNewSeenId) => set({ whatsNewSeenId }),
-  focusComposer: () => set((s) => ({ composerFocusNonce: s.composerFocusNonce + 1 })),
+  focusComposer: () => set((s) => ({ composerFocusNonce: s.composerFocusNonce + 1, assistantOpen: true })),
 }),
     {
       name: "fabdesk.ui",
       storage: createJSONStorage(() => storage ?? localStorage),
-      version: 6,
+      version: 7,
       migrate: (persisted, _version) => {
         const state = (persisted ?? {}) as Record<string, unknown>;
         return {
           ...state,
+          ...(_version < 7 ? { canvasMode: true, assistantOpen: false, workspaceArea: workspaceAreaForView(String(state.boardTab ?? "pcb")), workspaceByProject: {} } : {}),
           // The old shared new-chat slot belonged to the selected project.
           ...(typeof state.activeProjectId === "string" ? {
-            drafts: migrateProjectDraftSlot(state.drafts, state.activeProjectId),
-            attachments: migrateProjectDraftSlot(state.attachments, state.activeProjectId),
+            drafts: migrateProjectDraftSlot(state.drafts ?? {}, state.activeProjectId),
+            attachments: migrateProjectDraftSlot(state.attachments ?? {}, state.activeProjectId),
           } : {}),
           boardTab: (BOARD_TABS as readonly string[]).includes(String(state.boardTab)) ? state.boardTab : "schematic",
           sidebarListTab: normalizeSidebarListTab(typeof state.sidebarListTab === "string" ? state.sidebarListTab : undefined),
@@ -234,6 +266,10 @@ export function createUiStore(storage?: StateStorage) {
       // Survive full reloads (Vite HMR fallbacks, core reloads) without leaking transient state.
       partialize: (s) => ({
         themeId: s.themeId,
+        canvasMode: s.canvasMode,
+        assistantOpen: s.assistantOpen,
+        workspaceArea: s.workspaceArea,
+        workspaceByProject: s.workspaceByProject,
         sidebarOpen: s.sidebarOpen,
         boardOpen: s.boardOpen,
         activeThreadId: s.activeThreadId,

@@ -168,7 +168,8 @@ async function newChat(): Promise<UiSnapshot> {
   ui.setActiveOpenSourceId(null);
   ui.setOrderFlowOpen(false);
   ui.setActiveThread(null);
-  ui.setProjectPickerOpen(true);
+  if (ui.canvasMode) ui.startNewChatInProject(ui.activeProjectId);
+  else ui.setProjectPickerOpen(true);
   await settle();
   return state();
 }

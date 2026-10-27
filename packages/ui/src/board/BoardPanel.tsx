@@ -1,6 +1,7 @@
 import { Tabs } from "../components/ui";
 import { BoardViewMenu } from "./BoardViewMenu";
 import { CircuitLogo } from "../components/CircuitLogo";
+import { workspaceViews } from "@fabdesk/client-core";
 import { useCore } from "@fabdesk/client-core";
 import { useProjectOrder, useProjects } from "@fabdesk/client-core";
 import { BOARD_TABS, BOARD_TAB_LABELS, useUiStore, type BoardTab } from "../stores/ui";
@@ -49,8 +50,10 @@ function TabBody({ tab }: { tab: BoardTab }) {
   }
 }
 
-export function BoardPanel() {
+export function BoardPanel({ canvas = false }: { canvas?: boolean }) {
   const { host } = useCore();
+  const area = useUiStore((s) => s.workspaceArea);
+  const setWorkspaceTab = useUiStore((s) => s.setWorkspaceTab);
   const tab = useUiStore((s) => s.boardTab);
   const setBoardTab = useUiStore((s) => s.setBoardTab);
   const projectId = useUiStore((s) => s.activeProjectId);
@@ -59,6 +62,13 @@ export function BoardPanel() {
   const projects = useProjects();
   const project = projects.data?.find((item) => item.id === projectId);
   const mod = modKey(host.platform);
+  if (canvas) return <div className="fd-canvas-board" data-testid="board-panel">
+    <div className="fd-canvas-controls">
+      <Tabs tabs={workspaceViews(area).map((item) => ({ id: item.tab, label: item.label }))} value={tab} onChange={setWorkspaceTab} />
+      <div className="fd-canvas-checks">{order.data && <OrderChecksButton order={order.data} unavailable={order.isError} onClick={() => setOrderFlowOpen(true)} />}</div>
+    </div>
+    <div className="fd-canvas-board-body"><TabBody key={`${projectId}:${tab}`} tab={tab} /></div>
+  </div>;
   return (
     <div className="fd-board-panel flex h-full min-w-0 flex-col bg-panel" data-testid="board-panel">
       <div className="fd-board-heading">
@@ -88,7 +98,7 @@ export function BoardPanel() {
         <BoardViewMenu value={tab} onChange={setBoardTab} modifier={mod} />
       </div>
       <div className="fd-board-stage min-h-0 flex-1">
-        <TabBody tab={tab} />
+        <TabBody key={`${projectId}:${tab}`} tab={tab} />
       </div>
     </div>
   );

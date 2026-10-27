@@ -10,6 +10,7 @@ import { OpenSourceView } from "../opensource/OpenSourceView";
 import { OrderFlow } from "../order/OrderFlow";
 import { ThreadSidebar } from "../sidebar/ThreadSidebar";
 import { useUiStore } from "../stores/ui";
+import { CanvasWorkspace } from "./CanvasWorkspace";
 import { TopBar } from "./TopBar";
 import { useSlidingPane } from "./useSlidingPane";
 
@@ -56,7 +57,12 @@ function usePaneWidth(initialWidth: number) {
 }
 
 /** The sidebar owns an outer split; only chat and board share the inner split. */
-export function AppShell({ onNewChat, coreStatus, banner }: AppShellProps) {
+export function AppShell(props: AppShellProps) {
+  const canvasMode = useUiStore((s) => s.canvasMode);
+  return canvasMode ? <CanvasWorkspace {...props} /> : <ClassicAppShell {...props} />;
+}
+
+function ClassicAppShell({ onNewChat, coreStatus, banner }: AppShellProps) {
   const { ref: shellRef, width: shellWidth } = usePaneWidth(window.innerWidth);
   const { ref: mainRef, width: mainWidth } = usePaneWidth(window.innerWidth - 240);
   const percent = (pixels: number) => (pixels / Math.max(760, shellWidth)) * 100;

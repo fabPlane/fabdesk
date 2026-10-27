@@ -1,5 +1,7 @@
 # Sketch-first onboarding: first implementation slice
 
+**Historical milestone:** the subsequent [canvas workspace milestone](../canvas-workspace/README.md) adds the main canvas shell and updates validation counts. Screenshots below preserve the earlier implementation stage.
+
 Parent design roadmap: [#388](https://github.com/TensorFleet/fabdesk/pull/388). This slice keeps the existing shell while making sketch entry usable before manual project setup. It does not implement the full canvas shell, multi-board editing or the concept's requirements review.
 
 ## Behavior

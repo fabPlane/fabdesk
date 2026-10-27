@@ -19,12 +19,23 @@ export function useAppActions() {
     const active = () => (data && data.id === ui().activeThreadId ? data : undefined);
     return {
       newChat() {
+        if (ui().canvasMode) {
+          ui().startNewChatInProject(ui().activeProjectId);
+          ui().setAssistantOpen(true);
+          ui().setCanvasNavigationOpen(false);
+          return;
+        }
         ui().setActiveOpenSourceId(null);
         ui().setOrderFlowOpen(false);
         ui().setActiveThread(null);
         ui().setProjectPickerOpen(true);
       },
       send() {
+        if (ui().canvasMode && (ui().inventoryOpen || ui().activeOpenSourceId || ui().orderFlowOpen)) return;
+        if (ui().canvasMode && ui().activeProjectId && ui().boardOpen && !ui().assistantOpen) {
+          ui().focusComposer();
+          return;
+        }
         composerHandlers.send?.();
       },
       abort() {

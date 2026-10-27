@@ -1,0 +1,51 @@
+import { useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useCoreClient } from "@fabdesk/client-core";
+import { Button } from "../components/ui";
+import { Icon } from "../components/Icon";
+import { CreateProjectDialog } from "../sidebar/CreateProjectDialog";
+import { useUiStore } from "../stores/ui";
+
+export function FreshStartActions() {
+  const sketchMenu = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    const dismiss = (event: PointerEvent) => { if (event.target instanceof Node && !sketchMenu.current?.contains(event.target)) sketchMenu.current?.removeAttribute("open"); };
+    document.addEventListener("pointerdown", dismiss);
+    return () => document.removeEventListener("pointerdown", dismiss);
+  }, []);
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  const [importing, setImporting] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const ui = () => useUiStore.getState();
+  const createArt = async () => {
+    if (creating) return;
+    const originProjectId = ui().activeProjectId;
+    const originThreadId = ui().activeThreadId;
+    setCreating(true); setError(null);
+    try {
+      const project = await client.createProject("Untitled art board");
+      await qc.invalidateQueries({ queryKey: ["projects"] });
+      // Never replace the board of a project selected while creation was in flight.
+      if (ui().activeProjectId === originProjectId && ui().activeThreadId === originThreadId) {
+        if (!originProjectId) ui().adoptSketchProject(project.id);
+        else ui().setActiveProject(project.id);
+        ui().setBoardTab("art");
+      }
+    } catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)); }
+    finally { setCreating(false); }
+  };
+  return <>
+    <div className="fd-fresh-actions" aria-label="Start your project">
+      <Button onClick={() => ui().focusComposer()}><Icon name="sparkles" width={18} height={18} />Describe an idea</Button>
+      <details ref={sketchMenu} className="fd-start-sketch-menu" onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); sketchMenu.current?.removeAttribute("open"); sketchMenu.current?.querySelector("summary")?.focus(); } }} onClick={(event) => { if ((event.target as HTMLElement).closest("button")) sketchMenu.current?.removeAttribute("open"); }}><summary><Icon name="image" width={18} height={18} />Sketch or image<Icon name="chevronDown" width={14} height={14} /></summary>
+        <div><button onClick={() => ui().setSketchOpen(true, "draw")}><Icon name="compose" width={18} height={18} />Draw a sketch</button><button onClick={() => ui().setSketchOpen(true, "upload")}><Icon name="paperclip" width={18} height={18} />Upload PNG / JPEG</button><p>Your sketch stays with the project</p></div>
+      </details>
+      <Button onClick={() => setImporting(true)}><Icon name="folderOpen" width={18} height={18} />Import design</Button>
+      <Button disabled={creating} onClick={() => void createArt()}><Icon name="pcb" width={18} height={18} />{creating ? "Creating…" : "Create art board"}</Button>
+    </div>
+    {error && <p role="alert" className="text-center text-sm text-danger">{error}</p>}
+    {importing && <CreateProjectDialog initialMode="github" onClose={() => setImporting(false)} onCreated={(id) => { ui().setActiveProject(id); ui().setBoardTab("pcb"); setImporting(false); }} />}
+  </>;
+}

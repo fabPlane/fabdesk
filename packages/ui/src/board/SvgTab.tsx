@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { BoardComment, CommentView } from "@fabdesk/protocol";
 import { commentAnchorLabel } from "@fabdesk/protocol";
-import { Button, EmptyState, Input, LoadError, Spinner, Textarea } from "../components/ui";
+import { Button, EmptyState, IconButton, Input, LoadError, Spinner, Textarea } from "../components/ui";
 import { Icon } from "../components/Icon";
 import {
   useBoardCommentMutations,
@@ -56,6 +56,8 @@ export function commentPinAnchor(
 
 /** Schematic / PCB tab: shows the daemon's rendered SVG (`renders/<kind>.svg`, drawn by kicad-cli) and offers to render it. */
 export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
+  const canvasMode = useUiStore((s) => s.canvasMode);
+  const [canvasPoint, setCanvasPoint] = useState<SvgPoint | null>(null);
   const projectId = useUiStore((s) => s.activeProjectId);
   const project = useProject(projectId);
   const rendered = useProjectText(projectId, `renders/${kind}.svg`);
@@ -73,6 +75,7 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
   const [asking, setAsking] = useState(false);
   const [askError, setAskError] = useState<string | null>(null);
 
+  useEffect(() => { setCanvasPoint(null); }, [projectId, kind, rendered.data]);
   const view = kind as CommentView;
   const pins = useMemo(
     () => (comments.data?.comments ?? []).filter((comment) => comment.anchor.view === view),
@@ -147,31 +150,37 @@ export function SvgTab({ kind }: { kind: "schematic" | "pcb" }) {
   }
   if (rendered.data) {
     return (
-      <div className="flex h-full min-h-0" data-testid={`board-${kind}-svg`}>
+      <div className="flex h-full min-h-0" data-testid={`board-${kind}-svg`} onKeyDown={(event) => { if (event.key === "Escape") setCanvasPoint(null); }}>
         <div className="min-w-0 flex-1">
           <SvgViewer
             svg={rendered.data}
+            viewKey={`${projectId}:${kind}`}
             commentMode={commentMode}
-            {...(commentMode
-              ? {
-                  onDrawingClick: (point: SvgPoint) => {
-                    setDraftPoint(point);
-                    setSelectedId(null);
-                  },
-                }
-              : {})}
-            overlay={(box) => (
-              <CommentPins
-                comments={pins}
-                box={box}
-                selectedId={selectedId}
-                draftPoint={draftPoint}
-                onSelect={(id) => {
-                  setSelectedId(id);
-                  setDraftPoint(null);
-                }}
-              />
-            )}
+            {...((commentMode || canvasMode) ? { onDrawingClick: (point: SvgPoint) => {
+              if (commentMode) { setDraftPoint(point); setSelectedId(null); }
+              else setCanvasPoint(point);
+            } } : {})}
+            overlay={(box) => <>
+              <CommentPins comments={pins} box={box} selectedId={selectedId} draftPoint={draftPoint}
+                onSelect={(id) => { setSelectedId(id); setDraftPoint(null); setCanvasPoint(null); }} />
+              {canvasMode && canvasPoint && box && !commentMode && <div data-canvas-tools className="fd-location-anchor" style={{ left: `${(canvasPoint.x - box.x) / box.width * 100}%`, top: `${(canvasPoint.y - box.y) / box.height * 100}%` }}>
+                <span className="fd-location-marker" />
+                <div className="fd-location-toolbar" style={{ transform: `translateX(${(canvasPoint.x - box.x) / box.width < .25 ? "0" : (canvasPoint.x - box.x) / box.width > .75 ? "-100%" : "-50%"})` }} aria-label="Selected drawing location">
+                  <span>{kind === "pcb" ? `${canvasPoint.x.toFixed(1)}, ${canvasPoint.y.toFixed(1)} mm` : "Drawing location"}</span>
+                  <Button variant="ghost" size="sm" onClick={() => {
+                    const ui = useUiStore.getState();
+                    const key = ui.activeThreadId ?? newChatDraftKey(ui.activeProjectId);
+                    const prompt = `Explain this ${kind === "pcb" ? "PCB" : "schematic"} location near ${canvasPoint.x.toFixed(2)}, ${canvasPoint.y.toFixed(2)}${kind === "pcb" ? " mm" : " SVG units"}.`;
+                    const existing = ui.drafts[key] ?? "";
+                    ui.setDraft(key, existing.trim() ? `${existing}\n\n${prompt}` : prompt);
+                    ui.focusComposer();
+                    setCanvasPoint(null);
+                  }}><Icon name="sparkles" width={15} height={15} />Ask about this</Button>
+                  <Button variant="ghost" size="sm" onClick={() => { setDraftPoint(canvasPoint); setCanvasPoint(null); setSelectedId(null); setCommentMode(true); }}><Icon name="pin" width={15} height={15} />Pin comment</Button>
+                  <IconButton size="sm" title="Deselect location" onClick={() => setCanvasPoint(null)}><Icon name="close" width={15} height={15} /></IconButton>
+                </div>
+              </div>}
+            </>}
             toolbar={
               <>
                 <Button

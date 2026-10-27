@@ -13,7 +13,7 @@ export function SvgViewer({ svg, viewKey, toolbar, overlay, commentMode = false,
   toolbar?: ReactNode;
   overlay?: ReactNode | ((box: SvgBox | null) => ReactNode);
   commentMode?: boolean;
-  onDrawingClick?: (point: SvgPoint, event: MouseEvent<HTMLDivElement>) => void;
+  onDrawingClick?: (point: SvgPoint, event?: MouseEvent<HTMLDivElement>) => void;
 }) {
   const drawing = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(1);
@@ -66,7 +66,8 @@ export function SvgViewer({ svg, viewKey, toolbar, overlay, commentMode = false,
     if (!size || !frame) return;
     const { width, height } = size;
     const measure = () => {
-      const scale = Math.min(Math.max(1, frame.clientWidth - 24) / width, Math.max(1, frame.clientHeight - 24) / height);
+      const inset = Number.parseFloat(getComputedStyle(frame).getPropertyValue("--fd-viewer-inset")) || 24;
+      const scale = Math.min(Math.max(1, frame.clientWidth - inset) / width, Math.max(1, frame.clientHeight - inset) / height);
       const next = { width: width * scale, height: height * scale };
       setFitSize((prev) => prev.width === next.width && prev.height === next.height ? prev : next);
     };
@@ -76,15 +77,15 @@ export function SvgViewer({ svg, viewKey, toolbar, overlay, commentMode = false,
     return () => observer.disconnect();
   }, [size]);
   const handleClick = (event: MouseEvent<HTMLDivElement>) => {
-    if (!onDrawingClick || (event.target as HTMLElement | null)?.closest("[data-comment-pin]")) return;
+    if (!onDrawingClick || (event.target as HTMLElement | null)?.closest("[data-comment-pin], [data-canvas-tools]")) return;
     const host = drawing.current;
     if (!host || !box) return;
     const point = clientPointToSvg(box, host.getBoundingClientRect(), event.clientX, event.clientY);
     if (point) onDrawingClick(point, event);
   };
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-border px-3 py-2">
+    <div className="fd-svg-viewer relative flex h-full flex-col">
+      <div className="fd-svg-tools flex shrink-0 flex-wrap items-center gap-1 border-b border-border px-3 py-2">
         <Button size="sm" onClick={() => setZoom((z) => Math.max(0.2, z / 1.25))} title="Zoom out">
           <Icon name="minus" width={16} height={16} />
         </Button>
@@ -95,14 +96,24 @@ export function SvgViewer({ svg, viewKey, toolbar, overlay, commentMode = false,
         <Button size="sm" variant="ghost" onClick={() => { setZoom(1); viewport.current?.scrollTo(0, 0); }}>
           Fit
         </Button>
-        <div className="ml-auto flex items-center gap-1">{toolbar}</div>
+        <div className="fd-svg-context ml-auto flex items-center gap-1">{toolbar}</div>
       </div>
-      <div ref={viewport} className="min-h-0 flex-1 overflow-auto bg-panel-2/40 p-3">
+      <div ref={viewport} className="fd-svg-viewport min-h-0 flex-1 overflow-auto bg-panel-2/40 p-3">
         {!size && !failed && <div className="flex h-full items-center justify-center" role="status" aria-label="Loading board preview"><Spinner /></div>}
         {failed && <div className="p-4 text-sm text-muted" role="alert">Could not display this SVG preview. Try rendering it again.</div>}
         <div
           ref={drawing}
           onClick={handleClick}
+          role={onDrawingClick ? "group" : undefined}
+          tabIndex={onDrawingClick ? 0 : undefined}
+          aria-label={onDrawingClick ? "Drawing canvas. Click a location, or press Enter to select the center." : undefined}
+          onKeyDown={(event) => {
+            if (event.target !== event.currentTarget || !box || !onDrawingClick) return;
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              onDrawingClick({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
+            }
+          }}
           className={cn("fd-svg-host relative mx-auto origin-top-left bg-panel", commentMode && "cursor-crosshair")}
           style={{ width: fitSize.width * zoom, height: fitSize.height * zoom, display: size || !viewBox ? "block" : "none" }}
         >
@@ -120,7 +131,7 @@ export function SvgViewer({ svg, viewKey, toolbar, overlay, commentMode = false,
             }}
             onError={() => setFailedUrl(current.url)}
           />}
-          {!viewBox && <div className="h-full w-full" dangerouslySetInnerHTML={{ __html: svg }} />}
+          {!viewBox && <div className="fd-svg-document h-full w-full" dangerouslySetInnerHTML={{ __html: svg }} />}
           {typeof overlay === "function" ? overlay(box) : overlay}
         </div>
       </div>
