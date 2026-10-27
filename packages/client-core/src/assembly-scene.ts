@@ -2,9 +2,14 @@ import { BoardSourceSelection, type ProjectAssembly, type ProjectBoardSources } 
 import { pcbToolJson, parsePcbPartInspection } from "./pcb-parts";
 import { parsePcbOutlineInspection } from "./pcb-outline";
 import type { CoreClient } from "./CoreClient";
+import type { PcbPreviewState } from "./pcb-preview-revision";
 
 export type AssemblySceneSelection = BoardSourceSelection & { projectId: string; instanceId: string };
 export type AssemblySceneNode = { instance: ProjectAssembly["instances"][number]; source: ProjectBoardSources["sources"][number] | undefined; x: number; y: number; width: number; height: number };
+/** Count source problems once even when several physical instances share that source. */
+export function assemblySourcesToReview(data: ProjectBoardSources, previews: ReadonlyMap<string, PcbPreviewState | undefined>) {
+  return data.sources.filter(row => row.status !== "available" || ["source-changed", "artifact-changed"].includes(previews.get(row.source.id) ?? "")).map(row => row.source.id);
+}
 export function assemblyScene(data: ProjectBoardSources) {
   if (data.mode !== "assembly" || !data.assembly) throw new Error("An explicit assembly declaration is required");
   const nodes: AssemblySceneNode[] = data.assembly.instances.map((instance, index) => ({ instance, source: data.sources.find(row => row.source.id === instance.sourceId), x: instance.presentation?.x ?? index % 3 * 290, y: instance.presentation?.y ?? Math.floor(index / 3) * 230, width: 210, height: 158 }));

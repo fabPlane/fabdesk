@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { ProjectBoardSources } from "@fabdesk/protocol";
-import { assemblyLinkShape, assemblyScene, assemblySelectionState, captureAssemblySelection, useAssemblyBoardInspection, useAssemblyPreviewRevisions, usePcbPreviewRevision, useProjectText, useRunTool, type AssemblySceneNode, type AssemblySceneSelection } from "@fabdesk/client-core";
+import { assemblyLinkShape, assemblyScene, assemblySourcesToReview, assemblySelectionState, captureAssemblySelection, useAssemblyBoardInspection, useAssemblyPreviewRevisions, usePcbPreviewRevision, useProjectText, useRunTool, type AssemblySceneNode, type AssemblySceneSelection } from "@fabdesk/client-core";
 import { useProjectBlobUrl } from "../hooks/queries";
 import { Button, EmptyState, LoadError, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
@@ -36,7 +36,7 @@ export function AssemblyOverview({ projectId, name, data, checking, failed, onRe
   const scene = useMemo(() => assemblyScene(data), [data]);
   const update = useRunTool(), [updateSourceId, setUpdateSourceId] = useState<string | null>(null);
   const root = useRef<HTMLDivElement>(null), viewport = useRef<HTMLDivElement>(null), svg = useRef<SVGSVGElement>(null), tools = useRef<HTMLDivElement>(null);
-  const nodeElements = useRef(new Map<string, SVGGElement>());
+  const nodeElements = useRef(new Map<string, SVGGElement>()), linkElements = useRef(new Map<string, SVGGElement>());
   const measured = useRef(false);
   const dimensions = useRef({ width: 1000, height: 600 });
   const [camera, setCamera] = useState<Box>(() => fitBox(scene.bounds, 1.7));
@@ -46,7 +46,7 @@ export function AssemblyOverview({ projectId, name, data, checking, failed, onRe
   const [toolStyle, setToolStyle] = useState<CSSProperties>({ visibility: "hidden" });
   const previews = useAssemblyPreviewRevisions(projectId, data.sources);
   const previewById = new Map(previews.map(state => [state.sourceId, state]));
-  const changedPreviews = previews.filter(state => state.trackable && ["source-changed", "artifact-changed"].includes(state.data ?? ""));
+  const sourcesToReview = assemblySourcesToReview(data, new Map(previews.filter(state => state.trackable).map(state => [state.sourceId, state.data])));
   const selectedNode = selected ? scene.nodes.find(node => node.instance.id === selected.instanceId) : undefined;
   const selectedLink = scene.links.find(link => link.connection.id === linkId);
   const linkStale = !!linkId && linkHash !== data.manifestSha256;
@@ -81,11 +81,12 @@ export function AssemblyOverview({ projectId, name, data, checking, failed, onRe
     if ((!selectedNode && !selectedLink) || detail) return;
     const place = () => {
       const host = root.current?.getBoundingClientRect(), bar = tools.current?.getBoundingClientRect();
-      const target = selectedNode ? nodeElements.current.get(selectedNode.instance.id)?.getBoundingClientRect() : null;
+      const target = selectedNode ? nodeElements.current.get(selectedNode.instance.id)?.getBoundingClientRect() : selectedLink ? linkElements.current.get(selectedLink.connection.id)?.getBoundingClientRect() : null;
       if (!host || !bar) return;
-      const width = Math.min(650, host.width - 32), center = target ? target.left + target.width / 2 - host.left : host.width / 2;
-      const top = target && target.top - host.top > 170 ? target.top - host.top - bar.height - 12 : target ? target.bottom - host.top + 12 : 112;
-      setToolStyle({ width, left: Math.max(16, Math.min(center - width / 2, host.width - width - 16)), top: Math.max(108, Math.min(top, host.height - bar.height - 90)) });
+      const width = Math.min(bar.width, host.width - 32), center = target ? target.left + target.width / 2 - host.left : host.width / 2;
+      const top = target && target.top - host.top > 170 ? target.top - host.top - bar.height - 12 : target ? target.bottom - host.top + 12 : 184;
+      const headingBottom = root.current?.querySelector(".fd-assembly-heading")?.getBoundingClientRect().bottom ?? host.top + 158;
+      setToolStyle({ maxWidth: host.width - 32, left: Math.max(16, Math.min(center - width / 2, host.width - width - 16)), top: Math.max(headingBottom - host.top + 12, Math.min(top, host.height - bar.height - 90)) });
     };
     place(); const observer = new ResizeObserver(place); if (tools.current) observer.observe(tools.current);
     window.addEventListener("resize", place); return () => { observer.disconnect(); window.removeEventListener("resize", place); };
@@ -110,7 +111,7 @@ export function AssemblyOverview({ projectId, name, data, checking, failed, onRe
     if (event.key === "Escape") { setSelected(null); setLinkId(null); event.stopPropagation(); }
   }}>
     <header className="fd-assembly-heading"><span>CONNECTIONS</span><h1 title={name}>{boardPicker ? "Choose a board" : "Project overview"}</h1><p>{scene.nodes.length} boards · {data.sources.length} source designs · {scene.links.length} declared {scene.links.length === 1 ? "connection" : "connections"}</p><small>{failed ? "Project refresh unavailable" : checking ? "Checking project sources…" : "Connections view · compatibility unverified"}</small></header>
-    {failed ? <Button className="fd-assembly-update" size="sm" variant="ghost" onClick={onRetry}>Retry project refresh</Button> : changedPreviews.length > 0 && <Button className="fd-assembly-update" size="sm" variant="ghost" onClick={() => { const node = scene.nodes.find(node => changedPreviews.some(preview => preview.sourceId === node.instance.sourceId)); if (node) { choose(node); fit(); } }}><Icon name="warning" width={16} height={16} />Preview updates · {changedPreviews.length}</Button>}
+    {failed ? <Button className="fd-assembly-update" size="sm" variant="ghost" onClick={onRetry}>Retry project refresh</Button> : sourcesToReview.length > 0 && <Button className="fd-assembly-update" size="sm" variant="ghost" onClick={() => { const node = scene.nodes.find(node => sourcesToReview.includes(node.instance.sourceId)); if (node) { choose(node); fit(); } }}><Icon name="warning" width={16} height={16} />Sources to review · {sourcesToReview.length}</Button>}
     <div ref={viewport} className="fd-assembly-viewport" tabIndex={0} aria-label="Assembly canvas. Drag the background to pan; scroll to zoom. Select a board to show its tools." onKeyDown={event => {
       if (event.target !== event.currentTarget) return;
       if (event.key === "Home") { event.preventDefault(); fit(); }
@@ -130,12 +131,12 @@ export function AssemblyOverview({ projectId, name, data, checking, failed, onRe
       <svg ref={svg} viewBox={`${camera.x} ${camera.y} ${camera.width} ${camera.height}`} width="100%" height="100%" aria-label="Declared board connections">
         {scene.links.map(({ connection, a, b }) => {
           const shape = assemblyLinkShape(a, b);
-          return <g key={connection.id} data-assembly-link role="button" tabIndex={0} aria-label={`${connection.name}. ${a.instance.name} ${connection.a.connector} to ${b.instance.name} ${connection.b.connector}. Compatibility unverified.`} aria-pressed={linkId === connection.id} onClick={() => { setLinkId(connection.id); setLinkHash(data.manifestSha256); setSelected(null); }} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setLinkId(connection.id); setLinkHash(data.manifestSha256); setSelected(null); } }}>
+          return <g key={connection.id} ref={element => { if (element) linkElements.current.set(connection.id, element); else linkElements.current.delete(connection.id); }} data-assembly-link={connection.id} role="button" tabIndex={0} aria-label={`${connection.name}. ${a.instance.name} ${connection.a.connector} to ${b.instance.name} ${connection.b.connector}. Compatibility unverified.`} aria-pressed={linkId === connection.id} onClick={() => { setLinkId(connection.id); setLinkHash(data.manifestSha256); setSelected(null); }} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setLinkId(connection.id); setLinkHash(data.manifestSha256); setSelected(null); } }}>
             <path className="fd-assembly-link-hit" d={shape.path} /><path className="fd-assembly-link" data-selected={linkId === connection.id} d={shape.path} /><circle className="fd-assembly-port" cx={shape.start.x} cy={shape.start.y} r={5} /><circle className="fd-assembly-port" cx={shape.end.x} cy={shape.end.y} r={5} />
           </g>;
         })}
         {scene.nodes.map(node => {
-          const preview = previewById.get(node.instance.sourceId), warning = !!preview?.trackable && ["source-changed", "artifact-changed"].includes(preview?.data ?? ""), status = node.source?.status;
+          const preview = previewById.get(node.instance.sourceId), warning = sourcesToReview.includes(node.instance.sourceId), status = node.source?.status;
           const text = status !== "available" ? status === "unresolved" ? "Source not imported" : status === "blocked" ? "Source needs review" : "Source missing" : previewCopy(preview?.data, preview?.isFetching ?? false, preview?.isError ?? false, !!node.source?.previewPath);
           return <g key={node.instance.id} ref={element => { if (element) nodeElements.current.set(node.instance.id, element); else nodeElements.current.delete(node.instance.id); }} data-assembly-node={node.instance.id} className="fd-assembly-node" transform={`translate(${node.x},${node.y})`} role="button" tabIndex={0} aria-label={`${node.instance.name}. Source ${node.source?.source.name ?? node.instance.sourceId}. ${text}. Select to show tools.`} aria-pressed={selected?.instanceId === node.instance.id} onClick={() => choose(node)} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); choose(node); } }}>
             <title>{node.instance.name} — {node.source?.source.name ?? node.instance.sourceId}. {text}</title>

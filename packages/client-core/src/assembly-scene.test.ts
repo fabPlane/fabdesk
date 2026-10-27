@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { ProjectBoardSources } from "@fabdesk/protocol";
-import { assemblyScene, captureAssemblySelection, assemblySelectionState, inspectAssemblyBoard } from "./assembly-scene";
+import { assemblyScene, assemblySourcesToReview, captureAssemblySelection, assemblySelectionState, inspectAssemblyBoard } from "./assembly-scene";
 const source = { id: "io", name: "I/O", location: "project", directory: "boards/io" };
 const data = () => ProjectBoardSources.parse({ projectId: "project", mode: "assembly", manifestSha256: "a".repeat(64), editing: "single-board-only", observedAt: "2026-10-28T00:00:00Z", assembly: { contract: "fabplane.assembly.v1", sources: [source], instances: [{ id: "left", name: "Left I/O", sourceId: "io", presentation: { units: "canvas-px", x: -100, y: -40 } }, { id: "right", name: "Right I/O", sourceId: "io", presentation: { units: "canvas-px", x: 360, y: 240 } }], connections: [{ id: "link", name: "Declared link", a: { instanceId: "left", connector: "J1" }, b: { instanceId: "right", connector: "J1" } }] }, sources: [{ source, status: "available", pcbPath: "boards/io/board.kicad_pcb", previewPath: "boards/io/renders/pcb.svg" }] });
 test("scene membership uses physical instances without duplicating source ownership or converting canvas positions to millimetres", () => {
@@ -20,6 +20,15 @@ test("captured selections go stale on membership or project changes and never re
   snapshot.sources[0]!.status = "missing";
   expect(assemblySelectionState(snapshot, selection)).toBe("unavailable");
   expect(captureAssemblySelection(snapshot, "unknown")).toBeNull();
+});
+test("source attention includes unresolved ownership and changed previews, but never counts shared instances or unknown checks as passes", () => {
+  const snapshot = data();
+  expect(assemblySourcesToReview(snapshot, new Map([["io", "source-changed"]]))).toEqual(["io"]);
+  expect(assemblySourcesToReview(snapshot, new Map([["io", "untracked"]]))).toEqual([]);
+  snapshot.sources[0]!.status = "unresolved";
+  expect(assemblySourcesToReview(snapshot, new Map([["io", "matches-source"]]))).toEqual(["io"]);
+  snapshot.sources[0]!.status = "blocked";
+  expect(assemblySourcesToReview(snapshot, new Map())).toEqual(["io"]);
 });
 const board = { sourceId: "io", manifestSha256: "a".repeat(64) };
 function native() { return { contract: { name: "fabdesk.pcb-inspection", version: "2.0.0" }, _board: { projectId: "project", ...board }, revision: "b".repeat(64), coordinateSystem: { units: "mm", origin: "KiCad board origin", x: "right", y: "down" }, results: { components: { total: 201, returned: 1, truncated: true, rows: [{ ref: "R1", value: "1k", footprint: "R_0402", x: 105, y: 100, rotation: 0, locked: false, flipped: false }] }, board_geometry: { total: 1, returned: 1, truncated: false, rows: [{ id: "outline", owner: "board", kind: "rectangle", layer: 47, locked: false, toolOwnedOutline: false, start: { x: 100, y: 95 }, end: { x: 115, y: 105 } }] } } }; }

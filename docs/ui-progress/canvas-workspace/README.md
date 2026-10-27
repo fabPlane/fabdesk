@@ -386,3 +386,23 @@ This is a logical assembly overview with native read-only member inspection and 
 ![Stale selection actions disabled](assembly-stale-selection.png)
 ![Native carrier inspection](assembly-native-inspection.png)
 ![Selected connection in dark theme](assembly-dark-connections.png)
+
+
+## Real VAIO source exercise and source-attention refinement
+
+The native app now displays six explicitly declared VAIO instances and five intended links. Carrier B2.21, LCD R2.6, I/O Rev H A18, RH-A13 and battery B8.3 were downloaded at pinned GitHub commits and their PCB SHA-256 values exactly match the original viewer scene manifest. Five previews were exported from these actual native files through the scoped tool. No repository scripts were executed. This is a PCB-only read-only canvas study, not a complete project/dependency import.
+
+The published keyboard board differs from the viewer’s recorded RevH-A1 hash. Its intended instance remains visible and explicitly unresolved; an alternative revision was not substituted. The overview’s Sources to review badge now includes unavailable source designs and changed previews, counting shared sources once. It leads to the relevant instance; Inspect PCB stays disabled until its source is owned.
+
+The physical walkthrough selected I/O (22 native parts, 36 × 27.455 mm), selected its RH link using the keyboard, and opened RH (11 native parts; complex-outline dimensions unverified). A same-size/timestamp I/O source edit updated the canvas warning and attention count without moving the camera or regenerating any artifact. All original bytes were restored. At 960 × 720, the content-sized link toolbar stayed inside the window and below the measured heading; there was no horizontal overflow. The window was restored to 1440 × 870. [Source hashes and native evidence](vaio-canvas-native.json).
+
+The current interconnect contract requires LCD R2.9 and rejects this viewer’s R2.6 endpoint. That mismatch is recorded in the study notes; **the UI does not yet automatically validate those contracts or surface their findings**. All links remain unverified, and viewer PASS labels were not copied. Schematics, 3D dependencies, physical alignment, battery commissioning and manufacturing checks were not exercised. This does not complete the VAIO acceptance checklist.
+
+The affected client suite passes **215 tests** and UI suite **223 tests**, with zero failures. Root typecheck passes, followed by a UI typecheck after the final toolbar adjustment. The preceding full standard suite passed 2,121 / 29 skips / zero failures; the new attention regression adds one client test. This refinement does not change backend native-edit behavior.
+
+![Quiet real VAIO overview](vaio-overview.png)
+![Explicit unresolved keyboard source](vaio-source-review.png)
+![Native I/O inspection](vaio-io-inspection.png)
+![Native RH inspection](vaio-rh-inspection.png)
+![Live I/O source warning](vaio-live-source-warning.png)
+![Compact connection tools](vaio-compact-link-tools.png)
