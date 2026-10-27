@@ -1,7 +1,19 @@
 /** Builds ToolContexts for the MCP and HTTP adapters: resolves the project from args, token or default. */
-import { makeContext, type ContextFactory, type CoreServices, type ProjectHandle, type ToolTelemetry } from "@fabdesk/tools";
+import { lstat } from "node:fs/promises";
+import { join } from "node:path";
+import { ASSEMBLY_MANIFEST_PATH, BoardSourceSelection } from "@fabdesk/protocol";
+import { resolveNativeBoardBinding, withNativeBoardBinding } from "./assembly-board-binding";
+import { ToolError, makeContext, type ContextFactory, type CoreServices, type ProjectHandle, type ToolTelemetry, type ToolDef } from "@fabdesk/tools";
 import type { TokenSet } from "./auth";
 import type { ProjectStore } from "./projects";
+
+// These project-scoped toolsets operate on one concrete board today. An assembly
+// root is not an implicit member; unsupported member operations stay disabled.
+const BOARD_TOOLSETS = new Set(["circuit", "route", "kicad", "verify", "render", "export", "sim", "cad"]);
+const ROOT_BOARD_TOOLS = new Set(["circuit_build", "circuit_place", "route_run", "verify_drc", "render_board", "project_import_kicad"]);
+function needsConcreteBoard(def: ToolDef): boolean {
+  return def.boardScoped === true || ((def.scope ?? "project") === "project" && (BOARD_TOOLSETS.has(def.toolset) || ROOT_BOARD_TOOLS.has(def.name)));
+}
 
 export type ContextDeps = {
   services: CoreServices;
@@ -20,6 +32,27 @@ export function createContextFactory(deps: ContextDeps): ContextFactory {
     if (!project && !req.projectRef) {
       if (info?.projectId) project = await deps.projects.handle(info.projectId);
       if (!project && deps.defaultProject) project = await deps.defaultProject();
+    }
+    const board = req.board ? Object.freeze(BoardSourceSelection.parse(req.board)) : undefined;
+    let runInScope: (<T>(operation: () => Promise<T>) => Promise<T>) | undefined;
+    if (board) {
+      if (!project || !req.def.boardScoped) throw new ToolError("This operation does not support the requested assembly board source.", "precondition");
+      const rootProject = project, binding = await resolveNativeBoardBinding(rootProject, board);
+      // IDs stay project-owned for leases, telemetry and jobs; native sessions use the captured leaf directory.
+      project = Object.freeze({
+        id: rootProject.id, name: `${rootProject.name} / ${board.sourceId}`, dir: binding.boardDir,
+        manifest: () => { throw new ToolError("Parent project defaults are not board-specific metadata.", "precondition"); },
+        updateManifest: async () => { throw new ToolError("This board-scoped operation cannot change parent project metadata.", "precondition"); },
+      });
+      runInScope = operation => withNativeBoardBinding(binding, operation);
+    } else if (project && needsConcreteBoard(req.def)) {
+      const declared = await lstat(join(project.dir, ASSEMBLY_MANIFEST_PATH)).then(() => true, (error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return false;
+        throw new ToolError("Assembly ownership could not be checked. Inspect the project declaration before choosing a board.", "precondition");
+      });
+      if (declared) throw new ToolError(req.def.boardScoped
+        ? "Select an explicit assembly board source and captured manifest SHA for this operation; the project root is not an inferred member board."
+        : "This operation is not yet board-scoped for assembly projects. Project-root execution is disabled; use a supported member-source operation.", "precondition");
     }
     const telemetry = info?.runId ? deps.telemetry?.forToolCall(info.runId) : undefined;
     let lastRecordedProgress = -Infinity;
@@ -54,6 +87,8 @@ export function createContextFactory(deps: ContextDeps): ContextFactory {
       principal: deps.services.principal(),
       ...(req.session ? { session: req.session } : {}),
       ...(telemetry ? { telemetry } : {}),
+      ...(board ? { board } : {}),
+      ...(runInScope ? { runInScope } : {}),
     });
   };
 }

@@ -3,6 +3,7 @@
  * manifest, AGENTS.md) are generated from it; handlers are deterministic and never call a model.
  */
 import { z } from "zod/v4";
+import { BoardSourceSelection } from "@fabdesk/protocol";
 import { createHash } from "node:crypto";
 import type {
   CoreEvent,
@@ -91,6 +92,15 @@ export interface ToolContext {
   session?: ToolSession;
   /** Optional run-scoped tracing supplied by fabdesk-core. */
   telemetry?: ToolTelemetry;
+  /** Captured board scope; a transport must execute it rather than ignore its selector. */
+  board?: BoardSourceSelection;
+  runInScope?: <T>(operation: () => Promise<T>) => Promise<T>;
+}
+
+/** A host must bind an explicit selector; ignoring it must never become a root operation. */
+export function assertBoardExecutionContext(ctx: ToolContext, board: BoardSourceSelection | undefined): void {
+  if (ctx.board && !board) throw new ToolError("This host supplied an implicit board source; pass an explicit board selector.", "precondition");
+  if (board && (!ctx.runInScope || ctx.board?.sourceId !== board.sourceId || ctx.board.manifestSha256 !== board.manifestSha256)) throw new ToolError("This host did not establish the requested board source scope; refusing to use the project root.", "precondition");
 }
 
 export interface ToolTelemetry {
@@ -142,6 +152,8 @@ export type ToolDef<I extends z.ZodRawShape = z.ZodRawShape> = {
    * it (HTTP: 403 `tool_local_only`) and leave it out of their manifests.
    */
   localOnly?: boolean;
+  /** Supports an explicit assembly source selector. Other tools reject that argument. */
+  boardScoped?: boolean;
   handler: ToolHandler<I>;
 };
 
@@ -236,6 +248,7 @@ export class ToolRegistry {
   add<I extends z.ZodRawShape>(def: ToolDef<I>): this {
     if (this.tools.has(def.name)) throw new Error(`duplicate tool ${def.name}`);
     if (!TOOL_NAME_RE.test(def.name)) throw new Error(`bad tool name ${def.name}`);
+    if (def.boardScoped && ((def.scope ?? "project") === "global" || Object.hasOwn(def.inputSchema, "board"))) throw new Error("Board-scoped tools must be project-scoped and reserve the board selector argument");
     this.tools.set(def.name, def as unknown as ToolDef);
     this.contractCache = null;
     return this;
@@ -260,7 +273,7 @@ export class ToolRegistry {
   /** Input shape as exposed to clients: project-scoped tools gain the optional `project` argument. */
   inputShape(def: ToolDef): z.ZodRawShape {
     if ((def.scope ?? "project") === "global") return def.inputSchema;
-    return { ...def.inputSchema, project: PROJECT_ARG };
+    return { ...def.inputSchema, project: PROJECT_ARG, ...(def.boardScoped ? { board: BoardSourceSelection.optional().describe("Explicit assembly source ID and captured manifest SHA from project_status or board-source inspection") } : {}) };
   }
 
   inputObject(def: ToolDef): z.ZodObject<z.ZodRawShape> {
@@ -308,6 +321,7 @@ export class ToolRegistry {
     makeContext: (
       projectRef: string | undefined,
       def: ToolDef,
+      board?: BoardSourceSelection,
     ) => Promise<ToolContext> | ToolContext,
   ): Promise<ToolOutput> {
     const def = this.get(name);
@@ -328,15 +342,19 @@ export class ToolRegistry {
     const { project: projectRef, ...rest } = parsed.data as Record<string, unknown> & {
       project?: string;
     };
-    const args = global ? (parsed.data as Record<string, unknown>) : rest;
-    const ctx = await makeContext(global ? undefined : projectRef, def);
+    const board = !global && def.boardScoped && rest["board"] ? Object.freeze(BoardSourceSelection.parse(rest["board"])) : undefined;
+    const args = global ? (parsed.data as Record<string, unknown>) : def.boardScoped ? Object.fromEntries(Object.entries(rest).filter(([key]) => key !== "board")) : rest;
+    const ctx = await makeContext(global ? undefined : projectRef, def, board);
+    assertBoardExecutionContext(ctx, board);
     if (!global && !ctx.project) {
       throw new ToolError(
         "no project selected: pass `project` (id, name or path) or create one with the app / POST /projects",
         "precondition",
       );
     }
-    const invoke = () => def.handler(args as never, ctx);
+    const executionBoard = board && ctx.project ? { projectId: ctx.project.id, ...board } : null;
+    const handler = () => def.handler(args as never, ctx);
+    const invoke = () => ctx.runInScope ? ctx.runInScope(handler) : handler();
     const output = await (ctx.telemetry
       ? ctx.telemetry.traceToolCall(
           {
@@ -355,8 +373,8 @@ export class ToolRegistry {
       ...output,
       json:
         structured && typeof structured === "object" && !Array.isArray(structured)
-          ? { ...(structured as Record<string, unknown>), _contract: contract }
-          : { value: structured ?? null, _contract: contract },
+          ? { ...(structured as Record<string, unknown>), ...(executionBoard ? { _board: executionBoard } : {}), _contract: contract }
+          : { value: structured ?? null, ...(executionBoard ? { _board: executionBoard } : {}), _contract: contract },
     };
   }
 }
@@ -366,6 +384,7 @@ export type ContextRequest = {
   def: ToolDef;
   /** Value of the `project` argument (already stripped from args), if any. */
   projectRef: string | undefined;
+  board?: BoardSourceSelection;
   signal: AbortSignal;
   progress: (p: number, note?: string) => void;
   session?: ToolSession;
@@ -384,6 +403,8 @@ export function makeContext(opts: {
   principal?: Principal | null;
   session?: ToolSession;
   telemetry?: ToolTelemetry;
+  board?: BoardSourceSelection;
+  runInScope?: <T>(operation: () => Promise<T>) => Promise<T>;
 }): ToolContext {
   const project = opts.project;
   return {
@@ -398,6 +419,8 @@ export function makeContext(opts: {
     principal: opts.principal ?? null,
     ...(opts.session ? { session: opts.session } : {}),
     ...(opts.telemetry ? { telemetry: opts.telemetry } : {}),
+    ...(opts.board ? { board: opts.board } : {}),
+    ...(opts.runInScope ? { runInScope: opts.runInScope } : {}),
   };
 }
 

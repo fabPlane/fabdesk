@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { AssemblyRelativePath, ProjectAssembly } from "./assembly";
+import { AssemblyRelativePath, BoardSourceSelection, ProjectAssembly } from "./assembly";
 const source = { id: "io", name: "I/O", location: "project", directory: "boards/io" };
 const instance = { id: "io-1", sourceId: "io", name: "I/O main" };
 const base = { contract: "fabplane.assembly.v1", sources: [source], instances: [instance], connections: [] };
@@ -28,4 +28,9 @@ test("connections use physical instance endpoints and do not acquire a status fr
   expect(ProjectAssembly.safeParse(value).success).toBe(true);
   expect(ProjectAssembly.safeParse({ ...value, connections: [{ ...link, status: "PASS" }] }).success).toBe(false);
   expect(ProjectAssembly.safeParse({ ...value, connections: [{ ...link, b: link.a }] }).success).toBe(false);
+});
+
+test("board selectors require a declared source identity and an exact lowercase manifest SHA", () => {
+  expect(BoardSourceSelection.safeParse({ sourceId: "io", manifestSha256: "a".repeat(64) }).success).toBe(true);
+  for (const value of [{ sourceId: "../io", manifestSha256: "a".repeat(64) }, { sourceId: "io", manifestSha256: "main" }, { sourceId: "io", manifestSha256: "A".repeat(64) }, { sourceId: "io", manifestSha256: "a".repeat(64), directory: "../outside" }]) expect(BoardSourceSelection.safeParse(value).success).toBe(false);
 });

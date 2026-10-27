@@ -42,6 +42,28 @@ The existing `project_status` tool now includes the same explicit assembly membe
 
 The core now has an internal `resolveNativeBoardBinding` / `withNativeBoardBinding` execution scope. It captures a declared source at an exact manifest SHA, copies caller identities, and pins the canonical project and board-directory identities. Concurrent and nested operations retain their own scopes. Rechecks reject membership changes, replaced directories, wrong native targets and file aliases, including native project/schematic/library companion files. The guard runs at native operation entry and immediately before the existing document revision/save checks and save RPC. It does not replace native saved-source conflict checks.
 
-The public tool transports and UI do **not** activate this scope yet. Assembly-member editing remains unavailable until board selectors, queued jobs, query keys, asset paths and comments are explicitly scoped. Legacy unscoped operations retain their behavior. These checks are optimistic preflight checks, not a cross-process filesystem transaction or a guarantee that an external editor cannot race an RPC.
+The read-only `pcb_inspect` transport now activates this scope for declared members. Assembly-member mutations/exports and editing UI remain unavailable until their query keys, asset paths, comments and operations are explicitly scoped. Ordinary single-board projects retain their legacy behavior. Source-bound native operations are blocked at an assembly root when no supported member scope is established. These checks are optimistic preflight checks, not a cross-process filesystem transaction or a guarantee that an external editor cannot race an RPC.
 
 The installed native KiCad test saves one owned placement, rejects a different board directory, then changes the declaration after a second native placement commit. The guarded save fails while saved PCB bytes and unsaved live placement both remain intact. Seven ownership unit tests also cover caller-object mutation, stale/queued selection, retargeting, aliases, directory replacement and concurrent/nested scopes; a session regression verifies that a failed ownership check makes zero save calls.
+
+## Read-only member inspection over tools
+
+`pcb_inspect` accepts optional `board: { sourceId, manifestSha256 }`. The source ID identifies an editable source definition, not one physical instance. For an assembly this selector is required; ordinary single-board inspection omits it. Only explicitly opted-in tools accept the selector. Arbitrary directories, instance IDs, stale hashes and unsupported member operations are rejected without root fallback.
+
+```ts
+const assembly = await client.inspectBoardSources(projectId);
+if (assembly.mode !== "assembly" || !assembly.manifestSha256) throw new Error("No assembly declaration");
+const inspection = await client.callTool("pcb_inspect", {
+  projectId,
+  board: { sourceId: "io", manifestSha256: assembly.manifestSha256 },
+  kinds: ["components", "board_geometry"],
+});
+```
+
+Structured results carry `_board: { projectId, sourceId, manifestSha256 }` alongside the saved PCB revision. The core keeps the root project ID for leases/jobs and uses the captured source directory for native sessions. Scoped handles cannot inherit or mutate parent board-default metadata. A host that ignores the selector or fails to establish its execution scope is refused.
+
+Direct MCP, discovered-capability dispatch and HTTP forward the same selector. Deferred jobs pin the original owner and execution guard, reject retargeted projects or replaced directory containers, and retain their own cancellation/progress context. Re-resolving a byte-identical replacement must not legitimize a queued job.
+
+Project-wide status/files and global library operations remain available. Existing project-scoped circuit/route/KiCad/verification/render/export/simulation/CAD operations and concrete-board core operations are disabled at an assembly root until member support is implemented. This is a product ownership boundary, not an operating-system permissions sandbox; explicit project file access remains project-wide.
+
+The running native-app walkthrough inspected two real saved sources, switched 20 mm carrier → 15 mm I/O → 20 mm carrier, and verified the scoped identities, independent native sessions and unchanged PCB/manifest/preview bytes. The carrier had four outline segments; the I/O had one native rectangle. KiCad created its normal session lock files. No root PCB was created, and no-selector/stale/instance selectors plus unsupported edits were rejected. Geometry inspection does not verify connectivity, schematic parity or mechanical compatibility.

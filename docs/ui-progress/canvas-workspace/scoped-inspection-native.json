@@ -1,0 +1,39 @@
+{
+  "projectId": "prj_mvqyacun3e60075ae8",
+  "observations": [
+    {
+      "sourceId": "carrier",
+      "widthMm": 20,
+      "edgePrimitives": 4,
+      "components": 3,
+      "sourceSha256": "406b12f63e656f59751b39fe9e7f346cb2c9beb65eb16cdc4400ab20fe471d99"
+    },
+    {
+      "sourceId": "io",
+      "widthMm": 15,
+      "edgePrimitives": 1,
+      "components": 3,
+      "sourceSha256": "34f1e8d8592b9fce278642e7ab15b94cf53631740cccf25c439a1311e7bc77c6"
+    },
+    {
+      "sourceId": "carrier",
+      "widthMm": 20,
+      "edgePrimitives": 4,
+      "components": 3,
+      "sourceSha256": "406b12f63e656f59751b39fe9e7f346cb2c9beb65eb16cdc4400ab20fe471d99"
+    }
+  ],
+  "separateNativeSourceSessions": true,
+  "sourceAndManifestBytesUnchanged": true,
+  "missingOrStaleOrInstanceSelectorRejected": true,
+  "unscopedAssemblyPlacementBlocked": true,
+  "memberMutationStillUnavailable": true,
+  "noRootPcbCreated": true,
+  "createdFiles": [
+    "boards/io/~board.kicad_pro.lck"
+  ],
+  "nativeSessionLockFiles": [
+    "boards/carrier/~board.kicad_pro.lck",
+    "boards/io/~board.kicad_pro.lck"
+  ]
+}

@@ -1,0 +1,133 @@
+import { afterEach, expect, test } from "bun:test";
+import { cp, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { createHash } from "node:crypto";
+import { Hono } from "hono";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { attachToRegistry, createRegistry, defineTool, inspectProjectBoardSources, toolRoutes, type JobsLike, type ToolOutput } from "@fabdesk/tools";
+import { contextFactory, mockServices, tempProject } from "../../../packages/tools/test/mock-services";
+import { createContextFactory } from "../src/context";
+import { assertNativeBoardOwnership } from "../src/assembly-board-binding";
+import type { ProjectStore } from "../src/projects";
+const roots: string[] = [];
+afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });
+async function fixture(assembly = true) {
+  const project = await tempProject("scoped-inspection"); roots.push(dirname(project.dir));
+  const root = await realpath(project.dir), calls: string[] = [], services = mockServices([project]);
+  await writeFile(join(root, "board.kicad_pcb"), "root source");
+  if (assembly) {
+    for (const id of ["a", "b"]) { await mkdir(join(root, "boards", id), { recursive: true }); await writeFile(join(root, "boards", id, "board.kicad_pcb"), `source ${id}`); }
+    await writeFile(join(root, "fabplane.assembly.json"), JSON.stringify({ contract: "fabplane.assembly.v1", sources: ["a", "b"].map(id => ({ id, name: id, location: "project", directory: `boards/${id}` })), instances: ["a", "b"].map(id => ({ id, name: id, sourceId: id })), connections: [] }));
+  }
+  services.design.query = async dir => {
+    await assertNativeBoardOwnership(dir); calls.push(dir);
+    return [{ ref: dir.endsWith("/a") ? "RA" : dir.endsWith("/b") ? "RB" : "ROOT", x: 1, y: 2 }];
+  };
+  const projects = { resolve: async (ref: string) => ref === project.id ? project : null, handle: async (id: string) => id === project.id ? project : null } as unknown as ProjectStore;
+  const factory = createContextFactory({ services, projects, tokens: null, defaultProject: async () => project });
+  const inspection = await inspectProjectBoardSources(project), registry = createRegistry();
+  const board = { sourceId: "a", manifestSha256: inspection.manifestSha256! };
+  const invoke = (args: Record<string, unknown>) => registry.invoke("pcb_inspect", { project: project.id, kinds: ["components"], ...args }, (projectRef, def, board) => factory({ projectRef, def, ...(board ? { board } : {}), signal: new AbortController().signal, progress: () => {} }));
+  return { project, root, calls, services, factory, registry, board, invoke };
+}
+
+test("explicit board inspection uses separate native directories while retaining root project ownership", async () => {
+  const f = await fixture();
+  for (const sourceId of ["a", "b"]) {
+    const result = await f.invoke({ board: { ...f.board, sourceId } });
+    expect(result.json).toMatchObject({ _board: { projectId: f.project.id, sourceId, manifestSha256: f.board.manifestSha256 }, revision: createHash("sha256").update(`source ${sourceId}`).digest("hex"), results: { components: { rows: [{ ref: sourceId === "a" ? "RA" : "RB" }] } } });
+  }
+  expect(f.calls).toEqual([join(f.root, "boards/a"), join(f.root, "boards/b")]);
+  expect(await readFile(join(f.root, "board.kicad_pcb"), "utf8")).toBe("root source");
+});
+test("missing, stale and physical-instance selectors cannot fall back to a root PCB", async () => {
+  const f = await fixture();
+  await expect(f.invoke({})).rejects.toThrow("explicit assembly board source");
+  await expect(f.invoke({ board: { ...f.board, manifestSha256: "0".repeat(64) } })).rejects.toThrow("membership changed");
+  await expect(f.invoke({ board: { ...f.board, sourceId: "physical-instance-only" } })).rejects.toThrow("source is missing");
+  expect(f.calls).toEqual([]);
+  await expect(f.registry.invoke("pcb_place", { board: f.board, placements: [{ reference: "R1", rotation: 90 }] }, () => { throw new Error("must not resolve unsupported input"); })).rejects.toThrow("invalid arguments");
+});
+test("unsupported native member mutations cannot execute against an assembly root", async () => {
+  const f = await fixture();
+  let placed = false;
+  f.services.design.placeFootprints = async () => { placed = true; throw new Error("Unexpected native placement"); };
+  const run = (name: string, args: Record<string, unknown>) => f.registry.invoke(name, { project: f.project.id, ...args }, (projectRef, def, board) => f.factory({ projectRef, def, ...(board ? { board } : {}), signal: new AbortController().signal, progress: () => {} }));
+  await expect(run("pcb_place", { placements: [{ reference: "R1", rotation: 90 }] })).rejects.toThrow("not yet board-scoped");
+  await expect(run("pcb_define_outline", { widthMm: 10, heightMm: 10 })).rejects.toThrow("not yet board-scoped");
+  expect(placed).toBe(false); expect(f.calls).toEqual([]);
+  const status = await run("project_status", {});
+  expect(status.json).toHaveProperty("assembly");
+});
+test("scoped handles freeze native destinations and reject parent-default metadata access", async () => {
+  const f = await fixture(), ctx = await f.factory({ def: f.registry.get("pcb_inspect")!, projectRef: f.project.id, board: f.board, signal: new AbortController().signal, progress: () => {} });
+  expect(Object.isFrozen(ctx.project)).toBe(true); expect(ctx.project?.id).toBe(f.project.id);
+  expect(() => ctx.requireProject().manifest()).toThrow("not board-specific");
+  await expect(ctx.requireProject().updateManifest({ name: "wrong parent" })).rejects.toThrow("parent project metadata");
+  await writeFile(join(f.root, "fabplane.assembly.json"), "{}");
+  await expect(ctx.runInScope!(async () => { await f.services.design.query(ctx.requireProject().dir, "components"); })).rejects.toThrow("ownership changed");
+  expect(f.calls).toEqual([]);
+});
+test("legacy inspection remains unscoped and hosts that ignore board selection fail closed", async () => {
+  const legacy = await fixture(false), result = await legacy.invoke({});
+  expect(result.json).not.toHaveProperty("_board"); expect(legacy.calls).toEqual([legacy.project.dir]);
+  const f = await fixture();
+  await expect(f.registry.invoke("pcb_inspect", { kinds: ["components"], board: f.board }, (projectRef, def) => contextFactory(f.services, f.project)({ projectRef, def, signal: new AbortController().signal, progress: () => {} }))).rejects.toThrow("did not establish");
+  expect(f.calls).toEqual([]);
+});
+test("HTTP sync and deferred jobs carry selectors and attribute work to the root project", async () => {
+  const f = await fixture(), queued: Array<Parameters<JobsLike["enqueue"]>[0]> = [], executed: string[] = [];
+  let observedSignal: AbortSignal | null = null;
+  const jobs: JobsLike = { enqueue: job => { queued.push(job); return { id: `job-${queued.length}` }; } };
+  f.registry.add(defineTool({ name: "scoped_probe", title: "Scoped probe", description: "Test source execution", toolset: "core", boardScoped: true, longRunning: true, inputSchema: {}, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }, handler: async (_args, ctx) => { executed.push(ctx.requireProject().dir); observedSignal = ctx.signal; ctx.progress(.5); return { json: { dir: ctx.requireProject().dir } }; } }));
+  const app = new Hono().route("/", toolRoutes({ registry: f.registry, ctxFactory: f.factory, jobs }));
+  const request = (name: string, board = f.board) => app.request(`/tools/${name}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ project: f.project.id, args: { kinds: ["components"], board } }) });
+  const sync = await request("pcb_inspect"); expect(sync.status).toBe(200); expect(await sync.json()).toMatchObject({ ok: true, json: { _board: { sourceId: "a", projectId: f.project.id } } });
+  const enqueue = async (sourceId: string) => app.request("/tools/scoped_probe", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ project: f.project.id, args: { board: { ...f.board, sourceId } } }) });
+  expect((await enqueue("b")).status).toBe(202); expect(queued[0]?.projectId).toBe(f.project.id);
+  const signal = new AbortController().signal, progress: number[] = [];
+  const completed = await queued[0]!.run({ signal, progress: value => { progress.push(value); } }) as ToolOutput;
+  expect(observedSignal).toBe(signal); expect(progress).toEqual([.5]);
+  expect(completed.json).toMatchObject({ dir: join(f.root, "boards/b"), _board: { projectId: f.project.id, sourceId: "b" } });
+  expect((await enqueue("a")).status).toBe(202);
+  const other = await fixture(), originalDir = f.project.dir;
+  f.project.dir = other.project.dir;
+  await expect(queued[1]!.run({ signal: new AbortController().signal, progress: () => {} })).rejects.toThrow("refusing to retarget");
+  f.project.dir = originalDir;
+  expect((await enqueue("a")).status).toBe(202);
+  await writeFile(join(f.root, "fabplane.assembly.json"), "{}");
+  await expect(queued[2]!.run({ signal: new AbortController().signal, progress: () => {} })).rejects.toThrow();
+  expect(executed).toEqual([join(f.root, "boards/b")]);
+});
+test("deferred source operations retain the original directory identity, not a newly resolved copy", async () => {
+  const f = await fixture();
+  let queued: Parameters<JobsLike["enqueue"]>[0] | null = null, executed = false;
+  f.registry.add(defineTool({ name: "queued_source", title: "Queued source", description: "Test original owner", toolset: "core", boardScoped: true, longRunning: true, inputSchema: {}, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }, handler: async () => { executed = true; return { json: {} }; } }));
+  const app = new Hono().route("/", toolRoutes({ registry: f.registry, ctxFactory: f.factory, jobs: { enqueue: job => { queued = job; return { id: "queued" }; } } }));
+  const response = await app.request("/tools/queued_source", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ project: f.project.id, args: { board: f.board } }) });
+  expect(response.status).toBe(202);
+  const directory = join(f.root, "boards/a"); await rename(directory, `${directory}-old`); await cp(`${directory}-old`, directory, { recursive: true });
+  await expect(queued!.run({ signal: new AbortController().signal, progress: () => {} })).rejects.toThrow("ownership changed");
+  expect(executed).toBe(false);
+});
+test("direct MCP and capability dispatch preserve the same explicit source selector", async () => {
+  const f = await fixture();
+  for (const hidden of [false, true]) {
+    const server = new McpServer({ name: "scope-test", version: "0" });
+    attachToRegistry(server, f.registry, f.factory, { initialTools: hidden ? ["project_status"] : ["project_status", "pcb_inspect"] });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    const client = new Client({ name: "scope-client", version: "0" }); await client.connect(clientTransport);
+    try {
+      const sourceId = hidden ? "b" : "a", args = { project: f.project.id, kinds: ["components"], board: { ...f.board, sourceId } };
+      if (hidden) await client.callTool({ name: "capability_search", arguments: { query: "pcb_inspect" } });
+      if (!hidden) expect((await client.callTool({ name: "pcb_inspect", arguments: { project: f.project.id, kinds: ["components"] } })).isError).toBe(true);
+      const result = await client.callTool(hidden ? { name: "capability_call", arguments: { name: "pcb_inspect", arguments: args } } : { name: "pcb_inspect", arguments: args });
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toMatchObject({ _board: { sourceId, projectId: f.project.id } });
+    } finally { await client.close(); await server.close(); }
+  }
+  expect(f.calls).toEqual([join(f.root, "boards/a"), join(f.root, "boards/b")]);
+});

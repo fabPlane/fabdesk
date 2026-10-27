@@ -51,10 +51,11 @@ const REFERENCE_COPPER_KINDS = new Set<z.infer<typeof Kind>>([
 
 export const pcb_inspect = defineTool({
   name: "pcb_inspect",
+  boardScoped: true,
   toolset: "circuit",
   title: "Inspect a PCB region",
   description:
-    "routing_quality returns per-net copper widths, planar chord length, via counts and sizes, layers, and name-identified pairs; accepts nets and is requested alone. Inspect a bounded part of the saved native PCB by item kind, reference, net, layer, rectangle, or point/radius. Layers accept F.Cu, BL_F_Cu, or the KiCad enum number (3); vias occupy every copper layer they span. board_geometry returns board-owned outline and graphic shapes; request footprint_geometry explicitly for footprint-owned courtyard and fabrication primitives, and include zones to see pour occupancy. islandsOfNet returns the copper islands of those nets (pad/via/track/zone connectivity). Returns compact exact millimetre coordinates, AABB, source revision, bounds, and a truncation indicator.",
+    "Optional board selects a declared assembly source at its captured manifest SHA; results include _board identity. Assembly roots require explicit source selection. routing_quality returns per-net copper widths, planar chord length, via counts and sizes, layers, and name-identified pairs; accepts nets and is requested alone. Inspect a bounded part of the saved native PCB by item kind, reference, net, layer, rectangle, or point/radius. Layers accept F.Cu, BL_F_Cu, or the KiCad enum number (3); vias occupy every copper layer they span. board_geometry returns board-owned outline and graphic shapes; request footprint_geometry explicitly for footprint-owned courtyard and fabrication primitives, and include zones to see pour occupancy. islandsOfNet returns the copper islands of those nets (pad/via/track/zone connectivity). Returns compact exact millimetre coordinates, AABB, source revision, bounds, and a truncation indicator.",
   inputSchema: {
     kinds: z
       .array(Kind)

@@ -3,8 +3,8 @@
  * Long-running tools are enqueued as jobs and answer `202 {jobId}` unless `?sync=1`.
  */
 import { Hono } from "hono";
-import type { ToolManifestEntry } from "@fabdesk/protocol";
-import { ToolError, type ContextFactory, type ToolDef, type ToolOutput, type ToolRegistry } from "../registry";
+import { BoardSourceSelection, type ToolManifestEntry } from "@fabdesk/protocol";
+import { assertBoardExecutionContext, ToolError, type ToolContext, type ContextFactory, type ToolDef, type ToolOutput, type ToolRegistry } from "../registry";
 
 export type JobClass = "router" | "build" | "kicad" | "render" | "default";
 
@@ -71,15 +71,28 @@ export function toolRoutes(opts: HttpAdapterOptions): Hono<HttpEnv> {
     if (!parsed.success) return c.json({ error: `invalid arguments: ${parsed.error.message}` }, 400);
     const projectRef = typeof args["project"] === "string" ? (args["project"] as string) : undefined;
 
+    let queuedOwner: { projectId: string; dir: string; runInScope: NonNullable<ToolContext["runInScope"]> } | null = null;
     const run = (signal: AbortSignal, progress: (p: number, note?: string) => void) =>
-      registry.invoke(name, args, (ref) => ctxFactory({ def, projectRef: ref, signal, progress, ...(token ? { token } : {}) }));
+      registry.invoke(name, args, async (ref, _def, board) => {
+        const owner = queuedOwner;
+        if (owner) await owner.runInScope(async () => {});
+        const ctx = await ctxFactory({ def, projectRef: ref, signal, progress, ...(board ? { board } : {}), ...(token ? { token } : {}) });
+        if (!owner) return ctx;
+        assertBoardExecutionContext(ctx, board);
+        if (ctx.project?.id !== owner.projectId || ctx.project.dir !== owner.dir || !ctx.runInScope) throw new ToolError("The queued board operation's project changed. Select the source again; refusing to retarget the job.", "precondition");
+        const currentScope = ctx.runInScope;
+        return { ...ctx, runInScope: <T>(operation: () => Promise<T>) => owner.runInScope(() => currentScope(operation)) };
+      });
 
     if (def.longRunning && !sync) {
       // Resolve the project id up front so the job is attributed correctly.
       let projectId: string | null = null;
       try {
-        const ctx = await ctxFactory({ def, projectRef, signal: new AbortController().signal, progress: () => {}, ...(token ? { token } : {}) });
+        const board = def.boardScoped && parsed.data["board"] ? Object.freeze(BoardSourceSelection.parse(parsed.data["board"])) : undefined;
+        const ctx = await ctxFactory({ def, projectRef, ...(board ? { board } : {}), signal: new AbortController().signal, progress: () => {}, ...(token ? { token } : {}) });
+        assertBoardExecutionContext(ctx, board);
         projectId = ctx.project?.id ?? null;
+        if (board && ctx.project && ctx.runInScope) queuedOwner = { projectId: ctx.project.id, dir: ctx.project.dir, runInScope: ctx.runInScope };
         if ((def.scope ?? "project") === "project" && !projectId) return c.json({ error: "no project selected: pass `project`" }, 412);
       } catch (e) {
         return errorResponse(c, e);

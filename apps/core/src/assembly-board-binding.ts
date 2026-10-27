@@ -4,10 +4,10 @@ import { constants } from "node:fs";
 import { lstat, open, realpath, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createHash } from "node:crypto";
-import { ASSEMBLY_MANIFEST_PATH } from "@fabdesk/protocol";
+import { ASSEMBLY_MANIFEST_PATH, type BoardSourceSelection } from "@fabdesk/protocol";
 import { inspectProjectBoardSources, NativeRevisionConflict, ToolError } from "@fabdesk/tools";
 
-export type AssemblyBoardSelector = { sourceId: string; manifestSha256: string };
+export type AssemblyBoardSelector = BoardSourceSelection;
 export type NativeBoardBinding = Readonly<{
   projectId: string;
   sourceId: string;

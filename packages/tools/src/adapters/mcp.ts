@@ -125,10 +125,11 @@ export function attachToRegistry(
             ? setInterval(() => send(last.pr, last.note), heartbeatMs())
             : null;
         try {
-          const output = await registry.invoke(def.name, args, (projectRef) =>
+          const output = await registry.invoke(def.name, args, (projectRef, _def, board) =>
             ctxFactory({
               def,
               projectRef,
+              ...(board ? { board } : {}),
               signal: extra.signal,
               progress,
               session,
@@ -310,10 +311,11 @@ function registerCapabilityTools(
       if (!discovered.has(name))
         return errorResult(new ToolError(`search for ${name} before calling it`, "invalid_args"));
       try {
-        const output = await registry.invoke(name, args, (projectRef, def) =>
+        const output = await registry.invoke(name, args, (projectRef, def, board) =>
           ctxFactory({
             def,
             projectRef,
+            ...(board ? { board } : {}),
             signal: extra.signal,
             progress: () => {},
             session,

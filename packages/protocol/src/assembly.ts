@@ -3,6 +3,9 @@ import { z } from "zod/v4";
 export const ASSEMBLY_MANIFEST_PATH = "fabplane.assembly.json";
 const Id = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/);
 const Hash = z.string().regex(/^[a-f0-9]{64}$/);
+/** A captured editable source identity, not a physical instance or a mutable active-board selection. */
+export const BoardSourceSelection = z.object({ sourceId: Id, manifestSha256: Hash }).strict();
+export type BoardSourceSelection = z.infer<typeof BoardSourceSelection>;
 /** Portable project-relative paths only; filesystem inspection additionally rejects symlink aliases. */
 export const AssemblyRelativePath = z.string().min(1).max(1024).refine(path => !path.startsWith("/") && !path.includes("\\") && !path.includes(":") && !path.includes("\0") && path.split("/").every(part => part !== "" && part !== "." && part !== ".."), "Use a portable project-relative path without dot segments");
 const Directory = z.union([z.literal("."), AssemblyRelativePath]);

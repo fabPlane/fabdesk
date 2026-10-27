@@ -223,7 +223,7 @@ export const project_status = defineTool({
     const lines = [
       `Project "${project.name}" (${project.id}) at ${project.dir}`,
       ...(assembly ? [assembly.status === "inspected"
-        ? `Assembly instances: ${assembly.membership.assembly!.instances.length}; source boards: ${assembly.membership.sources.length}; declared connections: ${assembly.membership.assembly!.connections.length}. Source files available: ${assembly.membership.sources.filter(source => source.status === "available").length}/${assembly.membership.sources.length}. Geometry, schematic parity and connection compatibility are unverified. Native assembly-member editing is unavailable. Remaining native status below describes only the project root.`
+        ? `Assembly instances: ${assembly.membership.assembly!.instances.length}; source boards: ${assembly.membership.sources.length}; declared connections: ${assembly.membership.assembly!.connections.length}. Source files available: ${assembly.membership.sources.filter(source => source.status === "available").length}/${assembly.membership.sources.length}. Geometry, schematic parity and connection compatibility are unverified. Native assembly-member editing is unavailable. Read-only pcb_inspect accepts board {sourceId, manifestSha256}. Remaining native status below describes only the project root.`
         : assembly.reason] : []),
       `${assembly ? "Root project defaults" : "Board"}: ${manifest.board.layers} layers${manifest.board.widthMm ? `, ${manifest.board.widthMm}×${manifest.board.heightMm ?? "?"} mm` : ""}; router: ${manifest.router === "capacity" ? "fab_router" : (manifest.router ?? "freerouting (default; fab_router fallback)")}`,
       `${assembly ? "Root files" : "Files"}: ${Object.entries(files)
