@@ -67,7 +67,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
   const name = project.data?.name ?? projects.data?.find((item) => item.id === projectId)?.name ?? "Untitled project";
   const conversationOnly = !boardOpen || (!projectId && !!threadId);
   const hasNativeDesign = project.data?.files.some((file) => file.path === "board.kicad_pcb" || file.path === "board.kicad_sch");
-  const fresh = !threadId && !sourceId && !inventory && !order && (!projectId || (!!project.data && !hasNativeDesign && area === "boards"));
+  const fresh = !threadId && !sourceId && !inventory && !order && (!projectId || (!!project.data && !boardSources.isPending && boardSources.data?.mode !== "assembly" && !hasNativeDesign && area === "boards"));
   const secondary = !!sourceId || inventory || order;
   const showAssistant = !fresh && !conversationOnly && !secondary;
   const local = ["localhost", "127.0.0.1", "[::1]"].includes(new URL(client.baseUrl).hostname);

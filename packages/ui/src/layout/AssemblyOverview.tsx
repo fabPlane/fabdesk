@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { BoardSourceSelection, ProjectBoardSources } from "@fabdesk/protocol";
-import { pcbSvgHasNativeCoordinates, assemblyLinkShape, assemblyScene, assemblySourcesToReview, assemblySelectionState, captureAssemblySelection, useAssemblyBoardInspection, useAssemblyPreviewRevisions, usePcbPreviewRevision, useProjectText, useRunTool, type AssemblySceneNode, type AssemblySceneSelection } from "@fabdesk/client-core";
+import { pcbSvgHasNativeCoordinates, restoreAssemblySelection, assemblyLinkShape, assemblyScene, assemblySourcesToReview, assemblySelectionState, captureAssemblySelection, useAssemblyBoardInspection, useAssemblyPreviewRevisions, usePcbPreviewRevision, useProjectText, useRunTool, type AssemblySceneNode, type AssemblySceneSelection } from "@fabdesk/client-core";
 import { useProjectBlobUrl } from "../hooks/queries";
 import { Button, EmptyState, LoadError, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
@@ -35,6 +35,13 @@ function askAbout(projectId: string, name: string, available: boolean) {
 /** Logical project topology. Canvas positions and declared links never imply chassis fit or electrical validation. */
 export function AssemblyOverview({ projectId, name, data, checking, failed, onRetry, boardPicker = false }: { boardPicker?: boolean; projectId: string; name: string; data: ProjectBoardSources; checking: boolean; failed: boolean; onRetry: () => void }) {
   const scene = useMemo(() => assemblyScene(data), [data]);
+  const savedBoard = useUiStore(state => state.assemblyBoardByProject[projectId]);
+  const restored = restoreAssemblySelection(data, savedBoard);
+  const detailFor = (selection: AssemblySceneSelection | null): Detail | null => {
+    if (!selection) return null;
+    const node = scene.nodes.find(row => row.instance.id === selection.instanceId), source = node?.source;
+    return node && source?.source.location === "project" ? { selection, directory: source.source.directory, previewPath: source.previewPath ?? null, instanceName: node.instance.name, sourceName: source.source.name } : null;
+  };
   const update = useRunTool(), [updateSourceId, setUpdateSourceId] = useState<string | null>(null);
   const root = useRef<HTMLDivElement>(null), viewport = useRef<HTMLDivElement>(null), svg = useRef<SVGSVGElement>(null), tools = useRef<HTMLDivElement>(null);
   const nodeElements = useRef(new Map<string, SVGGElement>()), linkElements = useRef(new Map<string, SVGGElement>());
@@ -43,7 +50,9 @@ export function AssemblyOverview({ projectId, name, data, checking, failed, onRe
   const [camera, setCamera] = useState<Box>(() => fitBox(scene.bounds, 1.7));
   const cameraRef = useRef(camera); cameraRef.current = camera;
   const boundsRef = useRef(scene.bounds); boundsRef.current = scene.bounds;
-  const [selected, setSelected] = useState<AssemblySceneSelection | null>(null), [linkId, setLinkId] = useState<string | null>(null), [linkHash, setLinkHash] = useState<string | null>(null), [detail, setDetail] = useState<Detail | null>(null);
+  const [selected, setSelected] = useState<AssemblySceneSelection | null>(null), [linkId, setLinkId] = useState<string | null>(null), [linkHash, setLinkHash] = useState<string | null>(null), [detail, setDetail] = useState<Detail | null>(() => boardPicker ? detailFor(restored) : null);
+  // Only navigation restores a captured selection; live declaration changes keep the active editor stale.
+  useEffect(() => { setDetail(boardPicker ? detailFor(restoreAssemblySelection(data, useUiStore.getState().assemblyBoardByProject[projectId])) : null); }, [boardPicker, projectId]);
   const [toolStyle, setToolStyle] = useState<CSSProperties>({ visibility: "hidden" });
   const previews = useAssemblyPreviewRevisions(projectId, data.sources);
   const previewById = new Map(previews.map(state => [state.sourceId, state]));
@@ -97,6 +106,8 @@ export function AssemblyOverview({ projectId, name, data, checking, failed, onRe
     if (unavailable) return;
     const selection = captureAssemblySelection(data, node.instance.id), source = node.source;
     if (!selection || !source || source.status !== "available" || source.source.location !== "project") return;
+    useUiStore.getState().setAssemblyBoard(selection);
+    useUiStore.getState().setWorkspaceArea("boards");
     setDetail({ selection, directory: source.source.directory, previewPath: source.previewPath ?? null, instanceName: node.instance.name, sourceName: source.source.name });
   };
   const updatePreview = async (node: AssemblySceneNode) => {
@@ -107,11 +118,11 @@ export function AssemblyOverview({ projectId, name, data, checking, failed, onRe
   };
   const drag = useRef<{ pointerId: number; clientX: number; clientY: number; camera: Box } | null>(null);
   useEffect(() => { const cancel = () => { drag.current = null; }; window.addEventListener("blur", cancel); return () => window.removeEventListener("blur", cancel); }, []);
-  if (detail) return <AssemblyBoardDetail projectId={projectId} detail={detail} current={data} checking={checking} failed={failed} onBack={() => { setDetail(null); requestAnimationFrame(() => nodeElements.current.get(detail.selection.instanceId)?.focus()); }} />;
+  if (boardPicker && detail) return <AssemblyBoardDetail projectId={projectId} detail={detail} current={data} checking={checking} failed={failed} onBack={() => { useUiStore.getState().setAssemblyBoard(null); setDetail(null); requestAnimationFrame(() => nodeElements.current.get(detail.selection.instanceId)?.focus()); }} />;
   return <div ref={root} className="fd-assembly-overview" data-testid="assembly-overview" onKeyDown={event => {
     if (event.key === "Escape") { setSelected(null); setLinkId(null); event.stopPropagation(); }
   }}>
-    <header className="fd-assembly-heading"><span>CONNECTIONS</span><h1 title={name}>{boardPicker ? "Choose a board" : "Project overview"}</h1><p>{scene.nodes.length} boards · {data.sources.length} source designs · {scene.links.length} declared {scene.links.length === 1 ? "connection" : "connections"}</p><small>{failed ? "Project refresh unavailable" : checking ? "Checking project sources…" : "Connections view · compatibility unverified"}</small></header>
+    <header className="fd-assembly-heading"><span>CONNECTIONS</span><h1 title={name}>{boardPicker ? "Choose a board" : "Project overview"}</h1><p>{scene.nodes.length} boards · {data.sources.length} source designs · {scene.links.length} declared {scene.links.length === 1 ? "connection" : "connections"}</p><small>{failed ? "Project refresh unavailable" : checking ? "Checking project sources…" : "Connections view · compatibility unverified"}</small>{boardPicker && savedBoard && !restored && !detail && <small role="status" className="fd-assembly-restore-notice">Project definition changed or board unavailable. Select a board again.</small>}</header>
     {failed ? <Button className="fd-assembly-update" size="sm" variant="ghost" onClick={onRetry}>Retry project refresh</Button> : sourcesToReview.length > 0 && <Button className="fd-assembly-update" size="sm" variant="ghost" onClick={() => { const node = scene.nodes.find(node => sourcesToReview.includes(node.instance.sourceId)); if (node) { choose(node); fit(); } }}><Icon name="warning" width={16} height={16} />Sources to review · {sourcesToReview.length}</Button>}
     <div ref={viewport} className="fd-assembly-viewport" tabIndex={0} aria-label="Assembly canvas. Drag the background to pan; scroll to zoom. Select a board to show its tools." onKeyDown={event => {
       if (event.target !== event.currentTarget) return;

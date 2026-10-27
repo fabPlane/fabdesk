@@ -443,3 +443,15 @@ Root typecheck and the full standard suite pass **2,127 tests / 30 skips / zero 
 The final restarted runtime also inspected the populated VAIO I/O board through the same source controls. It displayed native F1 (1.5 A) at (88.5, 56.5) mm, rotation 180°, with Apply disabled because no proposal was made. All five imported PCB sources and saved previews remained byte-identical to their recorded hashes. The app was left on the six-instance overview with secondary tools closed. This read-only inspection is separate from the disposable fixture’s saved edits.
 
 ![Native tools on the real VAIO I/O board, without edits](vaio-member-part-tools.png)
+
+
+## Captured board workspace restoration
+
+Boards now remembers the inspected physical instance and its captured project/source/manifest identity per project, across task navigation and full reloads. Inspect PCB opens Boards; Overview always shows the project map. All boards clears the saved selection. Restored state is validated against the current explicit declaration and availability; a changed declaration or missing source shows a reselection notice and never retargets the editor. Restoring opens neither contextual tools nor the assistant. Draft part/outline values are not persisted by this milestone.
+
+The actual Electron VAIO walkthrough opened I/O main (22 parts, native dimensions 36 × 27.455 mm), visited Files, returned to Boards, reloaded, returned to Overview, then cleared the remembered board. Every previously recorded real-study source/preview/manifest hash stayed identical. A disposable two-source fixture then changed only declaration whitespace: after reload Boards showed the reselection warning without mounting a native editor; the original declaration bytes and timestamps were restored. This also exposed and fixed the fresh-start classifier incorrectly treating an assembly with no canonical root PCB as an empty project.
+
+Validation: root typecheck passed; client-core **219 passed**, UI **224 passed**, zero failures with local fixture-server access. The first restricted client run could not bind its fixture HTTP servers; the permitted rerun passed unchanged. Focused restoration/ownership tests: **27 passed / 123 assertions**. No backend changes or new native board edits in this milestone. The previous full-suite and separate installed-KiCad results above belong to their recorded milestones. Actual walkthrough evidence: [board-workspace-native.json](board-workspace-native.json).
+
+![Real VAIO I/O board restored after a full reload](board-workspace-restored.png)
+![Changed declaration requires board reselection](board-workspace-reselect.png)

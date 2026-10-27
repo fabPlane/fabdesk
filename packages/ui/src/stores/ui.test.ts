@@ -226,3 +226,23 @@ test("comparison is opt-in and remembered per project without opening it for ano
   reopened.getState().setActiveProject("a"); expect(reopened.getState().boardComparisonByProject.a).toBe(true);
   reopened.getState().setBoardComparison(false); expect(reopened.getState().boardComparisonByProject.a).toBe(false);
 });
+
+test("board workspaces survive reloads, isolate projects and reject cross-project writes", () => {
+  let stored: string | null = null;
+  const memory = { getItem: () => stored, setItem: (_key: string, value: string) => { stored = value; }, removeItem: () => { stored = null; } };
+  const store = createUiStore(memory);
+  store.getState().setActiveProject("a");
+  const selection = { projectId: "a", instanceId: "left", sourceId: "io", manifestSha256: "a".repeat(64) };
+  store.getState().setAssemblyBoard(selection);
+  selection.instanceId = "changed-after-selection";
+  store.getState().setActiveProject("b");
+  store.getState().setAssemblyBoard({ ...selection, instanceId: "wrong-project" });
+  expect(store.getState().assemblyBoardByProject.b).toBeUndefined();
+  store.getState().setAssemblyBoard({ ...selection, projectId: "b", instanceId: "right" });
+  const reopened = createUiStore(memory);
+  expect(reopened.getState().assemblyBoardByProject.a?.instanceId).toBe("left");
+  expect(reopened.getState().assemblyBoardByProject.b?.instanceId).toBe("right");
+  reopened.getState().setAssemblyBoard(null);
+  expect(reopened.getState().assemblyBoardByProject.b).toBeUndefined();
+  expect(reopened.getState().assemblyBoardByProject.a?.instanceId).toBe("left");
+});

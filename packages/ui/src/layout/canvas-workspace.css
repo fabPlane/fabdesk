@@ -381,3 +381,5 @@
 
 .fd-assembly-detail-status > span[data-warning=true] { color:var(--fd-warning); background:color-mix(in srgb,var(--fd-warning) 10%,var(--fd-panel)); border-radius:7px; padding:4px 8px; }
 .fd-assembly-detail-error { position:absolute; top:158px; left:32px; right:32px; z-index:3; padding:8px 12px; background:var(--fd-panel); border:1px solid var(--fd-warning); border-radius:8px; color:var(--fd-warning); font-size:11px; }
+
+.fd-assembly-heading .fd-assembly-restore-notice { display:block; margin-top:6px; color:var(--fd-warning); max-width:400px; }

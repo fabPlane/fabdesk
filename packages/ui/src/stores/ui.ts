@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { DRAFT_KEY_NEW, newChatDraftKey, workspaceAreaForView, workspaceViews, type WorkspaceArea } from "@fabdesk/client-core";
+import { DRAFT_KEY_NEW, newChatDraftKey, workspaceAreaForView, workspaceViews, type WorkspaceArea, type AssemblySceneSelection } from "@fabdesk/client-core";
 import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
 import { readStoredThemeId, type ThemeId } from "../theme/resolve";
 import { stencilThicknessMm } from "./stencil-thickness";
@@ -58,6 +58,8 @@ export interface UiState {
   setAssistantOpen: (open: boolean) => void;
   workspaceArea: WorkspaceArea;
   workspaceByProject: Record<string, { area: WorkspaceArea; tab: BoardTab }>;
+  assemblyBoardByProject: Record<string, AssemblySceneSelection>;
+  setAssemblyBoard: (selection: AssemblySceneSelection | null) => void;
   boardComparisonByProject: Record<string, boolean>;
   setBoardComparison: (enabled: boolean) => void;
   setWorkspaceArea: (area: WorkspaceArea) => void;
@@ -155,6 +157,14 @@ export function createUiStore(storage?: StateStorage) {
   setAssistantOpen: (assistantOpen) => set({ assistantOpen }),
   workspaceArea: "boards",
   workspaceByProject: {},
+  assemblyBoardByProject: {},
+  setAssemblyBoard: (selection) => set(s => {
+    if (!s.activeProjectId || selection && selection.projectId !== s.activeProjectId) return {};
+    const assemblyBoardByProject = { ...s.assemblyBoardByProject };
+    if (selection) assemblyBoardByProject[s.activeProjectId] = { ...selection };
+    else delete assemblyBoardByProject[s.activeProjectId];
+    return { assemblyBoardByProject };
+  }),
   boardComparisonByProject: {},
   setBoardComparison: (enabled) => set(s => s.activeProjectId ? { boardComparisonByProject: { ...s.boardComparisonByProject, [s.activeProjectId]: enabled } } : {}),
   setWorkspaceArea: (workspaceArea) => set((s) => {
@@ -284,6 +294,7 @@ export function createUiStore(storage?: StateStorage) {
         assistantOpen: s.assistantOpen,
         workspaceArea: s.workspaceArea,
         workspaceByProject: s.workspaceByProject,
+        assemblyBoardByProject: s.assemblyBoardByProject,
         boardComparisonByProject: s.boardComparisonByProject,
         sidebarOpen: s.sidebarOpen,
         boardOpen: s.boardOpen,

@@ -1,0 +1,11 @@
+{
+  "taskNavigationRestored": true,
+  "fullReloadRestored": true,
+  "overviewIsProjectMap": true,
+  "allBoardsClearsSelection": true,
+  "realVaioNativeAndPreviewHashesUnchanged": true,
+  "changedManifestRequiresReselection": true,
+  "noEditorOnStaleRestore": true,
+  "fixtureManifestRestored": true,
+  "validation": "Actual Electron app bridge walkthroughs; no native board edits"
+}

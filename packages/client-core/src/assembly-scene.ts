@@ -37,6 +37,16 @@ export function assemblySelectionState(data: ProjectBoardSources, selection: Ass
   const source = data.sources.find(row => row.source.id === selection.sourceId);
   return source?.status === "available" && source.source.location === "project" ? "owned" : "unavailable";
 }
+/** Restored UI state is untrusted and must never select a changed declaration or source. */
+export function restoreAssemblySelection(data: ProjectBoardSources, saved: unknown): AssemblySceneSelection | null {
+  if (!saved || typeof saved !== "object") return null;
+  const row = saved as Record<string, unknown>;
+  if (typeof row.projectId !== "string" || typeof row.instanceId !== "string") return null;
+  const parsed = BoardSourceSelection.safeParse({ sourceId: row.sourceId, manifestSha256: row.manifestSha256 });
+  if (!parsed.success) return null;
+  const selection = { ...parsed.data, projectId: row.projectId, instanceId: row.instanceId };
+  return assemblySelectionState(data, selection) === "owned" ? selection : null;
+}
 export async function inspectAssemblyBoard(client: Pick<CoreClient, "callTool">, projectId: string, board: BoardSourceSelection) {
   const selector = Object.freeze(BoardSourceSelection.parse(board));
   const body = pcbToolJson(await client.callTool("pcb_inspect", { projectId, board: selector, kinds: ["components", "board_geometry"], limitPerKind: 200 }));
