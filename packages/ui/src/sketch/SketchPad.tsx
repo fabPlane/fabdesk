@@ -4,9 +4,10 @@ import type { ExcalidrawImperativeAPI, ExcalidrawInitialDataState } from "@excal
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button, Dialog, Spinner } from "../components/ui";
-import { editableSketchPaths, createSketchDraftSession, useCoreClient, useProject } from "@fabdesk/client-core";
+import { sketchRecoverySignature, sketchRecoveryKey, editableSketchPaths, createSketchDraftSession, useCoreClient, useProject } from "@fabdesk/client-core";
 import { newChatDraftKey, useUiStore } from "../stores/ui";
 import { basename } from "../util";
+import { sketchRecoveryStore } from "./recovery-storage";
 
 const Excalidraw = lazy(() => import("@excalidraw/excalidraw").then((m) => ({ default: m.Excalidraw })));
 type Scenes = Map<string, { scene: ExcalidrawInitialDataState; source?: File }>;
@@ -19,7 +20,8 @@ export function SketchPad() {
 }
 
 function SketchSession({ scenes }: { scenes: Scenes }) {
-  const client = useCoreClient();
+  const connectedClient = useCoreClient();
+  const [client] = useState(() => connectedClient);
   const qc = useQueryClient();
   const [target] = useState(() => {
     const ui = useUiStore.getState();
@@ -52,23 +54,90 @@ function SketchSession({ scenes }: { scenes: Scenes }) {
     return () => URL.revokeObjectURL(url);
   }, [file]);
   const [error, setError] = useState<string | null>(null);
-  const memory = scenes.get(newChatDraftKey(target.projectId));
+  const [initialKey] = useState(() => sketchRecoveryKey(client.baseUrl, target.projectId, target.threadId));
+  const currentKey = () => sketchRecoveryKey(client.baseUrl, session.projectId, target.threadId);
+  const memory = scenes.get(initialKey);
+  const [recovering, setRecovering] = useState(!memory);
+  const [recoveryStatus, setRecoveryStatus] = useState("");
+  const mounted = useRef(true), completed = useRef(false), revision = useRef(0);
+  const recoveryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const needsRecovery = useRef(!!memory?.source || !!memory?.scene.elements?.some(element => !element.isDeleted));
+  const lastSignature = useRef(sketchRecoverySignature(memory?.scene.elements ?? []));
   const initialScene = useRef(memory?.scene ?? null);
   const originalSource = useRef<File | null>(memory?.source ?? null);
   const sourceInput = useRef<HTMLInputElement>(null);
   const [sourceName, setSourceName] = useState(memory?.source?.name ?? "");
   const rememberScene = useCallback(() => {
     const scene = initialScene.current;
-    if (scene) scenes.set(newChatDraftKey(session.projectId), { scene, ...(originalSource.current ? { source: originalSource.current } : {}) });
-  }, [scenes, session]);
+    if (scene && needsRecovery.current && !completed.current) {
+      scenes.set(currentKey(), { scene, ...(originalSource.current ? { source: originalSource.current } : {}) });
+      if (currentKey() !== initialKey) scenes.delete(initialKey);
+    }
+  }, [scenes, session, initialKey]);
+  const persistRecovery = useCallback(async () => {
+    if (completed.current || !needsRecovery.current || !initialScene.current) return;
+    const ticket = ++revision.current, snapshot = initialScene.current, source = originalSource.current;
+    if (recoveryTimer.current) clearTimeout(recoveryTimer.current);
+    try {
+      const { serializeAsJSON } = await import("@excalidraw/excalidraw");
+      if (completed.current || ticket !== revision.current) return;
+      const scene = serializeAsJSON(snapshot.elements ?? [], snapshot.appState ?? {}, snapshot.files ?? {}, "local");
+      const key = sketchRecoveryKey(client.baseUrl, session.projectId, target.threadId);
+      await sketchRecoveryStore.write(key, { version: 1, scene, updatedAt: Date.now(), ...(source ? { source: { blob: source, name: source.name, lastModified: source.lastModified } } : {}) });
+      if (key !== initialKey) await sketchRecoveryStore.remove(initialKey);
+      if (mounted.current && ticket === revision.current) setRecoveryStatus("Draft kept on this device · Save and attach to add it to the project.");
+    } catch {
+      if (mounted.current && !completed.current) setRecoveryStatus("Could not keep a recovery copy. Save and attach before reloading or quitting.");
+    }
+  }, [client, session, initialKey, target.threadId]);
+  const scheduleRecovery = () => {
+    if (completed.current) return;
+    needsRecovery.current = true;
+    ++revision.current;
+    if (mounted.current) setRecoveryStatus("Keeping local draft…");
+    if (recoveryTimer.current) clearTimeout(recoveryTimer.current);
+    recoveryTimer.current = setTimeout(() => { void persistRecovery(); }, 350);
+  };
+  useEffect(() => {
+    let alive = true;
+    if (memory) { setHasDrawing(!!memory.scene.elements?.some(element => !element.isDeleted)); setRecovering(false); void persistRecovery(); return; }
+    void (async () => {
+      try {
+        const record = await sketchRecoveryStore.read(initialKey);
+        if (record) {
+          const { loadFromBlob } = await import("@excalidraw/excalidraw");
+          const scene = await loadFromBlob(new Blob([record.scene], { type: "application/vnd.excalidraw+json" }), null, null);
+          if (!alive) return;
+          initialScene.current = scene; needsRecovery.current = true;
+          lastSignature.current = sketchRecoverySignature(scene.elements ?? []);
+          setHasDrawing(!!scene.elements?.some(element => !element.isDeleted));
+          originalSource.current = record.source ? new File([record.source.blob], record.source.name, { type: "application/vnd.excalidraw+json", lastModified: record.source.lastModified }) : null;
+          setSourceName(originalSource.current?.name ?? "");
+          setRecoveryStatus("Recovered local draft · Save and attach to add it to the project.");
+        }
+      } catch { if (alive) setRecoveryStatus("Could not recover the local draft. Saved project drawings are still available."); }
+      finally { if (alive) setRecovering(false); }
+    })();
+    return () => { alive = false; };
+  }, [initialKey]);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      if (recoveryTimer.current) clearTimeout(recoveryTimer.current);
+      rememberScene(); void persistRecovery();
+    };
+  }, [persistRecovery, rememberScene]);
   const close = useCallback(() => {
     if (busyRef.current) return;
-    rememberScene();
+    rememberScene(); void persistRecovery();
     useUiStore.getState().setSketchOpen(false);
-  }, [rememberScene]);
+  }, [rememberScene, persistRecovery]);
 
   const attach = async () => {
-    if (busyRef.current) return;
+    if (busyRef.current || recovering || completed.current) return;
+    ++revision.current;
+    if (recoveryTimer.current) clearTimeout(recoveryTimer.current);
     // Moving an existing projectless chat needs an explicit history migration, not a UI-only reassignment.
     if (needsProjectChat) {
       setError("Start a new chat to save a sketch in a project. This conversation will stay here.");
@@ -102,13 +171,19 @@ function SketchSession({ scenes }: { scenes: Scenes }) {
       useUiStore.getState().addAttachment(key, { path: saved.path, mime: mode === "draw" ? "image/png" : file?.type || (/\.jpe?g$/i.test(name) ? "image/jpeg" : "image/png"), label: basename(saved.path) });
       void qc.invalidateQueries({ queryKey: ["project", saved.projectId] });
       if (mode === "draw") {
-        scenes.delete(newChatDraftKey(target.projectId));
-        scenes.delete(newChatDraftKey(saved.projectId));
+        completed.current = true; ++revision.current;
+        scenes.delete(initialKey); scenes.delete(currentKey());
+        try {
+          for (const key of new Set([initialKey, currentKey()])) await sketchRecoveryStore.remove(key);
+        } catch {
+          setRecoveryStatus("Saved and attached. The local recovery copy could not be cleared; you can close this window.");
+          return;
+        }
       } else rememberScene();
       useUiStore.getState().setSketchOpen(false);
       useUiStore.getState().focusComposer();
     } catch (e) {
-      rememberScene();
+      rememberScene(); void persistRecovery();
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       busyRef.current = false;
@@ -126,12 +201,12 @@ function SketchSession({ scenes }: { scenes: Scenes }) {
     api.resetScene(); api.addFiles(Object.values(scene.files ?? {}));
     api.updateScene({ elements: scene.elements, appState: scene.appState });
     api.scrollToContent(undefined, { fitToViewport: true, viewportZoomFactor: .65, maxZoom: 1 });
-    initialScene.current = scene;
+    initialScene.current = scene; setHasDrawing(!!scene.elements?.some(element => !element.isDeleted));
     originalSource.current = source; setSourceName(source?.name ?? "");
-    rememberScene();
+    scheduleRecovery(); rememberScene();
   };
   const importDrawing = async (file: File) => {
-    if (busyRef.current) return;
+    if (busyRef.current || recovering || completed.current) return;
     busyRef.current = true; setBusy(true); setLoading(true); setError(null);
     try {
       if (!/\.excalidraw$/i.test(file.name)) throw new Error("Choose an .excalidraw drawing.");
@@ -143,7 +218,7 @@ function SketchSession({ scenes }: { scenes: Scenes }) {
   };
 
   const openSavedDrawing = async () => {
-    if (busyRef.current || !target.projectId || !savedDrawings.includes(savedPath)) return;
+    if (busyRef.current || recovering || completed.current || !target.projectId || !savedDrawings.includes(savedPath)) return;
     const api = apiRef.current;
     if (!api) { setError("The drawing canvas is still loading. Try again in a moment."); return; }
     busyRef.current = true; setBusy(true); setLoading(true); setError(null);
@@ -164,12 +239,12 @@ function SketchSession({ scenes }: { scenes: Scenes }) {
         <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2">
           <div className="text-sm font-semibold">Sketch or image</div>
           <div role="group" aria-label="Sketch source" className="flex gap-1">
-            <Button size="sm" variant={mode === "draw" ? "secondary" : "ghost"} aria-pressed={mode === "draw"} disabled={busy} onClick={() => { setMode("draw"); setError(null); }}>Draw</Button>
-            <Button size="sm" variant={mode === "upload" ? "secondary" : "ghost"} aria-pressed={mode === "upload"} disabled={busy} onClick={() => { rememberScene(); setMode("upload"); setError(null); }}>Upload image</Button>
+            <Button size="sm" variant={mode === "draw" ? "secondary" : "ghost"} aria-pressed={mode === "draw"} disabled={busy || recovering || completed.current} onClick={() => { setMode("draw"); setError(null); }}>Draw</Button>
+            <Button size="sm" variant={mode === "upload" ? "secondary" : "ghost"} aria-pressed={mode === "upload"} disabled={busy || recovering || completed.current} onClick={() => { rememberScene(); setMode("upload"); setError(null); }}>Upload image</Button>
           </div>
           <div className="ml-auto flex items-center gap-2">
             <Button size="sm" disabled={busy} onClick={close}>Close</Button>
-            <Button variant="primary" size="sm" disabled={busy || needsProjectChat || (mode === "upload" && !file)} onClick={() => void attach()}>
+            <Button variant="primary" size="sm" disabled={busy || recovering || completed.current || needsProjectChat || (mode === "upload" && !file)} onClick={() => void attach()}>
               {loading ? "Opening…" : busy ? "Saving…" : "Save and attach"}
             </Button>
           </div>
@@ -178,30 +253,31 @@ function SketchSession({ scenes }: { scenes: Scenes }) {
           {target.projectId ? mode === "draw" ? "Save an editable PNG in this project and attach it to your next message. Each save keeps a new copy." : "Save the original image in this project and attach it to your next message." : "Saving creates a project automatically. Your sketch stays with it; nothing is sent to the agent yet."}
         </p>
         {mode === "draw" && <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2 text-xs">
-          <Button size="sm" disabled={busy || needsProjectChat} onClick={() => sourceInput.current?.click()}>{hasDrawing ? "Replace draft from file…" : "Import drawing…"}</Button>
-          <input ref={sourceInput} type="file" accept=".excalidraw,application/vnd.excalidraw+json" aria-label="Import editable drawing" hidden disabled={busy} onChange={event => { const next = event.target.files?.[0]; event.target.value = ""; if (next) void importDrawing(next); }} />
+          <Button size="sm" disabled={busy || recovering || completed.current || needsProjectChat} onClick={() => sourceInput.current?.click()}>{hasDrawing ? "Replace draft from file…" : "Import drawing…"}</Button>
+          <input ref={sourceInput} type="file" accept=".excalidraw,application/vnd.excalidraw+json" aria-label="Import editable drawing" hidden disabled={busy || recovering || completed.current} onChange={event => { const next = event.target.files?.[0]; event.target.value = ""; if (next) void importDrawing(next); }} />
           <span className="min-w-0 break-all text-muted">{sourceName ? `${sourceName} · Original file will be preserved when you save.` : ".excalidraw · Import opens a copy; nothing is written until you save."}</span>
         </div>}
         {mode === "draw" && savedDrawings.length > 0 && <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2 text-xs">
           <label className="flex min-w-0 items-center gap-2">Saved drawings
-            <select aria-label="Saved drawings" className="max-w-[45vw] rounded border border-border bg-panel px-2 py-1" value={savedPath} disabled={busy} onChange={event => setSavedPath(event.target.value)}>
+            <select aria-label="Saved drawings" className="max-w-[45vw] rounded border border-border bg-panel px-2 py-1" value={savedPath} disabled={busy || recovering || completed.current} onChange={event => setSavedPath(event.target.value)}>
               <option value="">Choose a drawing…</option>
               {savedDrawings.map(path => <option key={path} value={path}>{basename(path)}</option>)}
             </select>
           </label>
-          <Button size="sm" disabled={busy || !savedPath} onClick={() => void openSavedDrawing()}>{hasDrawing ? "Replace draft with saved copy" : "Open a copy"}</Button>
+          <Button size="sm" disabled={busy || recovering || completed.current || !savedPath} onClick={() => void openSavedDrawing()}>{hasDrawing ? "Replace draft with saved copy" : "Open a copy"}</Button>
           <span className="text-muted">The saved original stays unchanged.</span>
         </div>}
         {needsProjectChat && <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2 text-xs">
           <span>This conversation has no project. Start a new project chat to save a sketch; this conversation stays here.</span>
           <Button size="sm" onClick={() => { close(); useUiStore.getState().startNewChatInProject(null); }}>Start a project chat</Button>
         </div>}
+        {mode === "draw" && recoveryStatus && <p role="status" className="border-b border-border px-3 py-2 text-xs text-muted">{recoveryStatus}</p>}
         {error && <p role="alert" className="px-3 py-2 text-sm text-danger">{error}</p>}
         <div className="fd-sketch-canvas min-h-0 flex-1">
-          {mode === "upload" ? (
+          {recovering ? <div className="flex h-full items-center justify-center gap-2 text-sm text-muted"><Spinner />Checking for a local draft…</div> : mode === "upload" ? (
             <div className="flex h-full flex-col items-center justify-center gap-4 p-6">
               <label className="flex max-w-full flex-col gap-3 text-sm font-medium">Choose a sketch or reference image
-                <input type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg" disabled={busy} onChange={(event) => {
+                <input type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg" disabled={busy || recovering || completed.current} onChange={(event) => {
                   const next = event.target.files?.[0] ?? null;
                   setError(null);
                   if (next && !["image/png", "image/jpeg"].includes(next.type) && !/\.(png|jpe?g)$/i.test(next.name)) {
@@ -218,7 +294,11 @@ function SketchSession({ scenes }: { scenes: Scenes }) {
             <Suspense fallback={<div className="flex h-full items-center justify-center"><Spinner /></div>}>
               <Excalidraw initialData={initialScene.current}
                 excalidrawAPI={(api) => { apiRef.current = api; }}
-                onChange={(elements, appState, files) => { initialScene.current = { elements, appState, files }; setHasDrawing(elements.some(element => !element.isDeleted)); }}
+                onChange={(elements, appState, files) => {
+                  initialScene.current = { elements, appState, files }; setHasDrawing(elements.some(element => !element.isDeleted));
+                  const signature = sketchRecoverySignature(elements);
+                  if (lastSignature.current !== signature) { lastSignature.current = signature; scheduleRecovery(); }
+                }}
                 theme={dark ? "dark" : "light"}
                 UIOptions={{ canvasActions: { loadScene: false, saveToActiveFile: false } }} />
             </Suspense>

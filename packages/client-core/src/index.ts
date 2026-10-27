@@ -186,3 +186,4 @@ export { useBoardModelRevision } from "./queries";
 export * from "./output-library";
 
 export * from "./assembly-scene";
+export * from "./sketch-recovery";

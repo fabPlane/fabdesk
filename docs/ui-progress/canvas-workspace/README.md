@@ -482,8 +482,24 @@ Native human-style walkthrough: header → New project → named fresh project �
 
 Root typecheck passed; final UI typecheck passed after hiding the duplicate native input from keyboard navigation. Complete standard suite: **2,134 passed / 30 skipped / zero failures**. Focused envelope/client retry/HTTP tests passed, including raw-source equality, collision naming, invalid envelope and 10 MiB rejection. Earlier installed-native PCB evidence remains qualified under its own milestones; this change did not edit a PCB.
 
-Limits: external import supports the stated version 2 envelope, not every historical or library format. Unsaved scenes/original File objects remain in memory and need recovery persistence. Image/asset compatibility and full sketch-to-engineering generation still need broader walkthroughs. Save is staged, not a two-file filesystem transaction: if the PNG upload fails, the preserved original may already exist and stays available for retry/reopening.
+Limits: external import supports the stated version 2 envelope, not every historical or library format. Unsaved recovery was added in the following milestone. Image/asset compatibility and full sketch-to-engineering generation still need broader walkthroughs. Save is staged, not a two-file filesystem transaction: if the PNG upload fails, the preserved original may already exist and stays available for retry/reopening.
 
 ![Import into a fresh project before any file writes](sketch-import-before-save.png)
 ![Preserved original reopened after reload](sketch-import-original.png)
 ![Edited working copy reopened in the compact app](sketch-import-compact.png)
+
+
+## Private unsaved sketch recovery
+
+Drawings and their imported original File now have a private IndexedDB recovery copy, scoped to the captured connection, project and conversation. Content changes debounce for 350 ms; closing the tool flushes the latest scene. Opening checks recovery before enabling drawing/import/save, then restores through the official drawing library. Status distinguishes pending, durable and recovered drafts. Nothing is written into project files until Save and attach. Successful save removes only that draft's recovery record, after queued writes; reopening cannot resurrect an older queued snapshot. An unused blank canvas creates no recovery record. Explicit deletion of drawing content is still a content revision.
+
+Actual native validation reloaded a drawing with unsaved text and an imported original, recovered the same object IDs/geometry/text and unchanged original bytes, then saved a new original/PNG pair while preserving earlier project files. A second project recovered its first single object independently. Saving the first did not remove the second. A simulated IndexedDB quota failure displayed a warning and retained the previous backup; normal storage was restored immediately, then a native keyboard edit successfully persisted both objects. Actual compact 960 × 720 controls remained usable; canvas zoom was used to fit the drawing. No agent message was sent. All VAIO source/preview/manifest hashes remained unchanged. [Exact evidence](sketch-recovery-native.json).
+
+Final root typecheck passed. Complete standard suite: **2,139 passed / 30 skipped / zero failures**. New helper tests cover ownership keys, byte preservation/limits, delayed-write/cleanup ordering, quota failure/retry and first-edit/deletion signatures. Native-environment skips retain their earlier qualifications.
+
+Limits: this is local profile storage, not project synchronization or a backup service. Abrupt exit before the debounce commits, unavailable/quota-limited storage, or clearing app data can lose unsaved work; failures tell the user to save before quitting. Ordinary reference-image upload selections are not recovered. Multiwindow concurrency, projectless adoption and broader embedded-image assets still need walkthroughs. Recovery cleanup is separate from the already-staged original/PNG project save.
+
+![Unsaved scene and original recovered after reload](sketch-recovery-reloaded.png)
+![Saved drawing no longer appears as an unsaved draft](sketch-recovery-cleared.png)
+![Storage failure warns while retaining the earlier recovery](sketch-recovery-warning.png)
+![Recovery retry in the compact native app](sketch-recovery-compact.png)
