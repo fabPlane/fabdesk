@@ -869,6 +869,7 @@ describe("embedded footprint placement recovery", () => {
     let failSave = options.failSave ?? false;
     const board = {
       getFootprints: async () => [live],
+      getGroups: async () => [],
       getPads: async () => live.pads,
       getTracks: async () => routes,
       getZones: async () => [],

@@ -237,3 +237,10 @@ Validation: root typecheck; client-core 200, UI 221, protocol 87 and tools 398 t
 ![Imported native rectangle size proposal](imported-outline-preview.png)
 ![Imported rectangle saved with the same native ID](imported-outline-saved.png)
 ![Existing generated case warns without automatic regeneration](imported-outline-case-warning.png)
+
+
+## Respect native placement locks
+
+Component inspection now reports effective locking through ancestor groups as well as the footprint's own lock. Contextual positioning explains that the part or its group must be unlocked in KiCad. Native placement rejects geometry edits to members of locked groups before any mutation, including an attempted footprint-only unlock. A separately locked footprint can still be deliberately unlocked with the existing explicit `lock=false` tool option; unlocked groups do not block editing.
+
+Focused placement/revision/compatibility checks: 42 pass. Real KiCad tests create and save a locked group containing an unlocked R1, confirm inspection reports it locked, reject both movement attempts (with/without own unlock), and compare saved bytes and native coordinates unchanged. The existing imported resize save/reopen test also passes. Root typecheck, final core typecheck, UI221 and tools398 suites pass. Group-aware lock coverage does not replace clearance or full editor recovery validation.

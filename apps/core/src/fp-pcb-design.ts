@@ -1639,6 +1639,16 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         return moved ? [placement.reference] : [];
       }),
     );
+    if (geometryReferences.size) {
+      const groups = await board.getGroups();
+      for (const { placement, footprint } of planned) {
+        if (!geometryReferences.has(placement.reference)) continue;
+        if (nativeGroupLocksAny([footprint.id], groups))
+          throw new ToolError(`Footprint ${placement.reference} belongs to a locked group. Unlock the group in KiCad before positioning it.`, "precondition");
+        if (footprint.locked && placement.lock !== false)
+          throw new ToolError(`Footprint ${placement.reference} is locked. Unlock it before positioning it.`, "precondition");
+      }
+    }
     if ((await board.modified()) !== false)
       throw new NativeRevisionConflict(
         "save the open PCB before placing footprints; placement recovery may restart KiCad",
@@ -2130,7 +2140,8 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         ];
       }
       case "components": {
-        return (await board.getFootprints())
+        const [footprints, groups] = await Promise.all([board.getFootprints(), board.getGroups()]);
+        return footprints
           .map((fp) => ({
             ref: fp.reference,
             value: fp.value,
@@ -2140,7 +2151,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
             layer: fp.layerId,
             rotation: fp.orientation,
             flipped: fp.isFlipped,
-            locked: fp.locked,
+            locked: fp.locked || nativeGroupLocksAny([fp.id], groups),
             symbolPath: fp.symbolPath,
           }))
           .filter((r) => keep(r.ref, r.value, r.footprint));
