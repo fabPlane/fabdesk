@@ -2,7 +2,7 @@
 
 Design roadmap: [#388](https://github.com/TensorFleet/fabdesk/pull/388). Implementation continues in [#389](https://github.com/TensorFleet/fabdesk/pull/389).
 
-Current implementation includes the primary canvas and corner assistant; quiet project/task navigation; fresh sketch/idea/artboard entry; saved-board overview; shared Review comments and source updates; explicit PCB/model freshness; interactive models and original enclosure imports; native part positioning and rectangular outline resizing; saved-output browsing; and opt-in PCB/schematic comparison. Multi-board editing, native footprint replacement, directional schematic reconciliation and complete artifact dependency tracking remain unfinished. The latest complete standard suite including the assembly-source foundation passed **2,112 tests, 29 skipped, zero failures**. Root typecheck passed; separate native placement/outline checks passed at the preceding editing milestone. Later evidence sections qualify each milestone.
+Current checkpoints include the canvas-first shell; project/source overviews and member tools; native source-qualified positioning and rectangular resizing; grouped Outputs/Review; saved sketches, artwork drafts and project notes; actual saved-finding navigation; and explicit PCB/model/ERC update attention. Board Art further work is deferred by the user, with UI Apply still unwired. Enclosure is teammate-owned and preserved. Native replacement, recovery/undo, directional synchronization and complete artifact dependencies remain unfinished. Root typecheck passes. The latest full standard run recorded2,131passed/36skipped/1five-second packaged KiCad test timeout; the unchanged focused tests passed18/18 with a diagnostic15-second timeout. Current UItypecheck/228tests pass. Earlier sections below are chronological evidence, not the latest completion checklist. All recent checkpoints are local-only; remote publication remains revoked.
 
 
 ## Implemented
@@ -15,7 +15,7 @@ Current implementation includes the primary canvas and corner assistant; quiet p
 - A single mounted conversation/composer survives the transition into the assistant dock, including a failed initial send. Project switching restores the saved task, clears unrelated conversation context and reveals the canvas.
 - Official desktop icon and fabPlane wordmark in the new header. User-facing privacy/import copy uses fabPlane.
 
-## Evidence
+## Evidence — initial milestone (historical)
 
 Native Electron development app, isolated profile/core/projects; existing project sources were copied into the study project without changing the original. The board preview and saved render are separate existing artifacts and visibly differ. No new board, compatibility or freshness claim is inferred from these images.
 
@@ -28,7 +28,7 @@ Root typecheck passes. UI tests: 217 pass. Client-core tests: 170 pass; desktop 
 
 ## Next work and limits
 
-This is a navigation and interaction foundation, not completion of the screenshot roadmap. Still required: adaptive first-open overview for explicit multi-board projects; assembly membership and relationships; source revision/freshness tracking and directional reconciliation; native safe resize/replacement; model upload/generation flow; unified output/review workflows; remaining accessibility walkthroughs; all accepted concept states and end-to-end project exercises. Existing views are grouped, not yet fully redesigned. No fabricated synchronization or native editing controls are presented.
+The initial navigation checklist below is historical; later milestones implement several of its items. The accepted roadmap is still unfinished. Remaining work includes safe native footprint replacement and recovery/undo, directional schematic/PCB reconciliation, complete output dependency tracking, uncovered source-specific workflows, and remaining human/visual acceptance. Source-qualified member editing is bounded, and no assembly compatibility or physical fit is inferred. Board Art expansion is deferred; enclosure is teammate-owned.
 
 ## Subsequent native walkthrough
 
@@ -1045,3 +1045,16 @@ Actual native use showed the saved R1pad short at105.49,100mm, hid the marker af
 ### Readiness findings open directly
 
 In the canvas, Review issues opens Design checks directly when a PCB/schematic check explicitly failed, became stale or is not applicable. Ordering remains the existing destination for ordinary readiness warnings and order options; classic layout behavior is unchanged. Native use confirmed the actual failed study report opens in one action, without the intermediate order screen. UItypecheck/228tests pass; all18existing non-report study files remain unchanged.
+
+
+### Schematic checks surface in the shared update flow
+
+Checks, Review updates and Overview now reuse the existing readiness service’s stale ERC evidence. A changed saved schematic shows ERC needs updating and an explicit Open checks action. Checking electrical rules remains distinct from deciding or applying schematic/PCB synchronization; a nonstale status is not presented here as verified parity or an overall pass. No backend or engineering engine changed.
+
+A separate schematic-only project used the actual saved GameBoy source and ran the existing native ERC tool:0errors,201warnings, measured/applicable/stable evidence for1sheet. Changing source bytes surfaced the warning automatically in all three views. Exact guarded restoration cleared it without another ERC run. All3initial study files and9source-project files remain unchanged; the actual ERC report is intentionally retained. UItypes/228tests pass. Screenshot242also records the preexisting schematic-only Overview empty state, which is the next core-flow fix.
+
+![Changed schematic warns beside saved findings](erc-source-update-warning.jpg)
+![Overview points to the schematic update](erc-overview-attention.jpg)
+![Shared update review offers an explicit next step](erc-review-updates.jpg)
+
+[Actual ERC source-attention evidence](erc-attention-native.json).

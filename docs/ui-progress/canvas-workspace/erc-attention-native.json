@@ -1,0 +1,39 @@
+{
+  "projectId": "prj_mvryufgk550fb26292",
+  "projectPath": "/Users/amliomnie/Documents/Codex/2026-10-27/https-github-com-tensorfleet-placement-lab/work/sketch-first-projects/erc-source-updates-ui-validation",
+  "nativeRun": {
+    "tool": "verify_erc",
+    "counts": {
+      "errors": 0,
+      "warnings": 201
+    },
+    "evidenceLevel": "measured",
+    "applicability": true,
+    "revisionStable": true,
+    "referencedSheets": 1
+  },
+  "walkthrough": [
+    "Native schematic-only project disabled PCB checks and enabled schematic checks",
+    "Actual ERC report saved201warnings and0errors; no overall project pass claimed",
+    "Changing saved schematic bytes automatically exposed ERC needs updating in Checks",
+    "Overview showed Review updates1 and opened shared Review updates",
+    "Schematic checks row showed ERC needs updating/Open checks; no sync applied",
+    "Exact schematic source restored under SHA guard; stale warning cleared without rerunning ERC"
+  ],
+  "preservation": {
+    "studyOriginalFiles": 3,
+    "sourceGameBoyOriginalFiles": 9,
+    "faultRestored": true,
+    "ercReportIntentionallyRetained": true
+  },
+  "validation": {
+    "uiTypecheck": "pass",
+    "uiTests": 228,
+    "assertions": 870
+  },
+  "limits": [
+    "Current ERC evidence is reused from the existing readiness service; no new hierarchy/synchronization backend",
+    "Positive source/parity verification is not inferred from a nonstale status",
+    "Historical screenshot242exposes the separate schematic-only Overview empty-state gap, to fix next"
+  ]
+}

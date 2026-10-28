@@ -33,6 +33,7 @@ function SingleBoardOverview() {
     ...(has("renders/board.glb") && ["source-changed", "artifact-changed"].includes(modelRevision.data ?? "") ? ["3D model"] : []),
     ...(has("enclosure.json") && enclosureRevision.data === "changed" ? ["Enclosure"] : []),
     ...(has("reports/drc.json") && checkRevision.data === "source-changed" ? ["PCB checks"] : []),
+    ...(has("reports/erc.json") && !order.isFetching && !order.isError && order.data?.checks.erc === "stale" ? ["Schematic checks"] : []),
   ];
   const ui = () => useUiStore.getState();
   if (!projectId) return <EmptyState title="Choose a project to see its overview" />;
