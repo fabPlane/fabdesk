@@ -644,3 +644,4 @@
   .fd-routing-reference { height:230px; width:100%; }
   .fd-routing-setup { width:100%; max-height:none; }
 }
+.fd-mechanical-selection small { display:block; margin-top:3px; font-size:11px; color:var(--fd-warning); }

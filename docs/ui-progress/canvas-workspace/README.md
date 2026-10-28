@@ -874,3 +874,17 @@ Native961×721gallery More→Show file opened exact exports/bom.csv; lower-row i
 ![Quiet Review after original bytes restored](review-quiet-compact.jpg)
 
 [Native evidence](compact-output-review-native.json).
+
+
+### Enclosure handoff — teammate-owned, further work stopped
+
+The user reassigned further enclosure work to a teammate. Preserve this implementation as it stands; do not continue enclosure UI, import, generation, fit or validation. It is not claimed complete and does not block other page work.
+
+Before that scope change, compact961×721use exposed two workflow issues now fixed locally: a legacy in-sync headline is replaced by structured saved dimensions, and unfinished generator settings survive inspecting the saved model and resuming controls. Specific alignment findings/CAD failures remain available. The existing limited cutout/mounting-hole check now acknowledges completion without claiming full physical fit. Native clearance1→1.5and snap-fit enabled survived resume; both were reverted to saved values without regenerating.
+
+Already completed validation: client/UItypes,268client tests and226UItests pass. No new generator/import/export/fit job ran. Further enclosure validation stopped on the scope change; the last38originalhash audit was the preceding Outputs/Review checkpoint. Draft retention is local to the mounted Mechanical workspace, not reload persistence.
+
+![Retained unfinished settings beside saved reference](enclosure-retained-settings.jpg)
+![Saved model with explicit resume action](enclosure-resume-draft.jpg)
+
+[Teammate handoff and exact limits](enclosure-teammate-handoff.json).

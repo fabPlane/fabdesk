@@ -209,3 +209,4 @@ export * from "./assembly-schematic-inspection";
 
 export * from "./assembly-schematic-preview";
 export { useAssemblySchematicPreview } from "./queries";
+export { enclosureSizeLabel } from "./enclosure-display";

@@ -7,7 +7,7 @@ import { Icon } from "../components/Icon";
 import { useUiStore } from "../stores/ui";
 import { AssemblyOverview } from "../layout/AssemblyOverview";
 import { WorkspaceMenu } from "../layout/WorkspaceMenu";
-import { EnclosurePanel } from "./EnclosurePanel";
+import { EnclosurePanel, type EnclosureDraft } from "./EnclosurePanel";
 
 const ModelCanvas = lazy(() => import("./ModelCanvas"));
 const IMPORTED_MODEL = /^mechanical\/imports\/[^/]+\/[^/]+\.(stl|glb|obj|step|stp)$/i;
@@ -24,6 +24,7 @@ function ProjectMechanical({ projectId, onAdvanced }: { projectId: string; onAdv
   const [selected, setSelected] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [enclosureDraft, setEnclosureDraft] = useState<EnclosureDraft | null>(null);
   const models = (project.data?.files ?? []).filter((file) => IMPORTED_MODEL.test(file.path)).sort((a, b) => b.mtime.localeCompare(a.mtime));
   const hasPcb = project.data?.files.some((file) => file.path === "board.kicad_pcb") ?? false;
   const assembly = sources.data?.mode === "assembly";
@@ -49,11 +50,11 @@ function ProjectMechanical({ projectId, onAdvanced }: { projectId: string; onAdv
   return <div className="fd-mechanical-workspace">
     {generating ? <div className="fd-mechanical-generator" data-reference={!!referencePath}>
       {referencePath && <div className="fd-mechanical-generator-reference"><Suspense fallback={<Spinner />}><ModelCanvas projectId={projectId} path={referencePath} /></Suspense><p className="fd-mechanical-reference-note" data-warning={["source-changed", "artifact-changed"].includes(referenceRevision.data ?? "")}>{referenceLabel}</p></div>}
-      <div className="fd-mechanical-generator-controls"><div className="fd-mechanical-generator-heading"><Button size="sm" onClick={() => { if (generated) setSelected(generated.path); setGenerating(false); }}>{generated ? "View generated case" : "Back to canvas"}</Button><span>Generate from the saved PCB</span></div><fieldset className="min-w-0" disabled={!canGenerate}><legend className="sr-only">Generated enclosure controls</legend><EnclosurePanel key={projectId} /></fieldset>{!canGenerate && <p className="fd-mechanical-generator-status" role="status">{generationNote}</p>}</div>
+      <div className="fd-mechanical-generator-controls"><div className="fd-mechanical-generator-heading"><Button size="sm" onClick={() => { if (generated) setSelected(generated.path); setGenerating(false); }}>{generated ? "View generated case" : "Back to canvas"}</Button><span>{enclosureDraft ? "Unsaved settings kept in this workspace" : "Generate from the saved PCB"}</span></div><fieldset className="min-w-0" disabled={!canGenerate}><legend className="sr-only">Generated enclosure controls</legend><EnclosurePanel key={projectId} {...(enclosureDraft ? { initialDraft: enclosureDraft } : {})} onDraftSnapshot={setEnclosureDraft} /></fieldset>{!canGenerate && <p className="fd-mechanical-generator-status" role="status">{generationNote}</p>}</div>
     </div>
       : path ? <>
         {previewable ? <Suspense fallback={<div className="flex h-full items-center justify-center"><Spinner /></div>}><ModelCanvas key={`${projectId}:${path}`} projectId={projectId} path={path} /></Suspense> : <EmptyState title="STEP model saved"><p>The original is in this project. STEP preview and fit checks are not available in this canvas yet.</p><Button className="mt-4" onClick={() => useUiStore.getState().openProjectFile(path)}>Show saved file</Button></EmptyState>}
-        <div className="fd-mechanical-selection" data-stale={caseChanged}><Icon name="tool" width={18} height={18} /><div><strong>{model?.originalName ?? path.split("/").pop()}</strong><span>{model ? `${model.units === "file" ? "Units from file" : `Source units: ${model.units}`} · Placement not checked` : IMPORTED_MODEL.test(path) ? "Source units unconfirmed · Placement not checked" : caseChanged ? "PCB changed · Review or regenerate this case" : caseSource.data === "missing-pcb" ? "PCB source missing · Check before using this case" : caseSource.isError ? "Could not verify source · Open generator to check" : "Generated case · Open generator to check alignment"}</span></div>
+        <div className="fd-mechanical-selection" data-stale={caseChanged}><Icon name="tool" width={18} height={18} /><div><strong>{model?.originalName ?? path.split("/").pop()}</strong><span>{model ? `${model.units === "file" ? "Units from file" : `Source units: ${model.units}`} · Placement not checked` : IMPORTED_MODEL.test(path) ? "Source units unconfirmed · Placement not checked" : caseChanged ? "PCB changed · Review or regenerate this case" : caseSource.data === "missing-pcb" ? "PCB source missing · Check before using this case" : caseSource.isError ? "Could not verify source · Open generator to check" : "Generated case · Open generator to check alignment"}</span>{enclosureDraft && <small>Generator has unsaved settings</small>}</div>
           {models.length + (generated ? 1 : 0) > 1 && <select aria-label="Choose enclosure model" value={path} onChange={(event) => setSelected(event.target.value)}>{models.map((file) => <option key={file.path} value={file.path}>{file.path.split("/").pop()} · {file.path.split("/")[2]?.slice(0, 5)}</option>)}{generated && <option value={generated.path}>Generated enclosure</option>}</select>}
         </div>
       </> : <div className="fd-mechanical-add-flow" data-reference={!!referencePath || assembly}>
@@ -68,7 +69,7 @@ function ProjectMechanical({ projectId, onAdvanced }: { projectId: string; onAdv
           <details className="fd-mechanical-formats"><summary>STL, GLB, OBJ, STEP · Formats and units</summary><p>STL and OBJ need confirmed units. GLB uses metres. STEP originals are kept with their file units; STEP preview is not available here yet. Importing keeps the original and does not verify enclosure fit.</p></details>
         </section>
       </div>}
-    {!generating && path && <div className="fd-mechanical-actions"><WorkspaceMenu className="fd-mechanical-more" label={<><span>Enclosure tools</span><Icon name="chevronDown" width={14} height={14} /></>}><button onClick={() => setImportOpen(true)}>Import another model</button><button disabled={!canGenerate} title={generationNote} onClick={() => { if (canGenerate) setGenerating(true); }}>{path === generated?.path ? "Review generated case" : "Generate a case from PCB"}</button><button onClick={onAdvanced}>Advanced CAD</button></WorkspaceMenu></div>}
+    {!generating && path && <div className="fd-mechanical-actions"><WorkspaceMenu className="fd-mechanical-more" label={<><span>Enclosure tools</span><Icon name="chevronDown" width={14} height={14} /></>}><button onClick={() => setImportOpen(true)}>Import another model</button><button disabled={!canGenerate} title={generationNote} onClick={() => { if (canGenerate) setGenerating(true); }}>{enclosureDraft ? "Resume enclosure settings" : path === generated?.path ? "Review generated case" : "Generate a case from PCB"}</button><button onClick={onAdvanced}>Advanced CAD</button></WorkspaceMenu></div>}
     {importOpen && <ModelImportDialog projectId={projectId} onClose={() => setImportOpen(false)} onSaved={(path) => { if (useUiStore.getState().activeProjectId === projectId) { setSelected(path); setGenerating(false); setImportOpen(false); } }} />}
   </div>;
 }

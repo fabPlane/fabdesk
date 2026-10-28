@@ -58,6 +58,14 @@ const html = (
   );
 
 describe("EnclosureScreen", () => {
+  test("saved dimensions do not turn a limited alignment report into a fit claim", () => {
+    const out = html(view({ sizeLabel: "21 × 21 × 16.1 mm", cadError: "CAD bridge unavailable" }));
+    expect(out).toContain("21 × 21 × 16.1 mm");
+    expect(out).not.toContain("in sync");
+    expect(out).toContain("Case files were generated, but the CAD model could not be updated");
+    expect(out).toContain("CAD bridge unavailable");
+    expect(html(view())).not.toContain("in sync");
+  });
   test("offers generate before a spec exists and regenerate after", () => {
     expect(html(null)).toContain("Generate");
     expect(html(null)).toContain("printable case");

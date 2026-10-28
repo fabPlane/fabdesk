@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useCoreClient, useProject } from "@fabdesk/client-core";
+import { enclosureSizeLabel, useCoreClient, useProject } from "@fabdesk/client-core";
 import { Button, Input, Select, Spinner } from "../components/ui";
 import { useUiStore } from "../stores/ui";
 import "./enclosure-panel.css";
@@ -25,6 +25,8 @@ export type EnclosureView = {
   stale: boolean;
   ok: boolean;
   summary: string;
+  sizeLabel?: string;
+  cadError?: string;
   issues: string[];
   cutouts: Array<{ ref: string; edge: string }>;
   holes: number;
@@ -64,11 +66,14 @@ export function enclosureFromTool(result: unknown): EnclosureView {
     .filter((v): v is string => typeof v === "string");
   const text = typeof rec?.["text"] === "string" ? rec["text"] : "";
   const previewSvg = typeof data["previewSvg"] === "string" ? data["previewSvg"] : undefined;
+  const sizeLabel = enclosureSizeLabel(data["outerMm"]);
   return {
     exists: data["exists"] !== false && (Boolean(alignment) || files.length > 0),
     stale: alignment?.["stale"] === true,
     ok: data["exists"] !== false && alignment?.["ok"] !== false && issues.length === 0,
     summary: firstLine(text) || (data["exists"] === false ? "No enclosure yet." : "Enclosure"),
+    ...(sizeLabel ? { sizeLabel } : {}),
+    ...(typeof data["cadError"] === "string" ? { cadError: data["cadError"] } : {}),
     issues,
     cutouts,
     holes: typeof features?.["holes"] === "number" ? features["holes"] : 0,
@@ -190,6 +195,7 @@ export function EnclosureScreen({
   onDownload,
   onOpenFiles,
   downloading,
+  checkNote,
 }: {
   view: EnclosureView | null;
   draft: EnclosureDraft;
@@ -201,6 +207,7 @@ export function EnclosureScreen({
   onDownload?: (path: string) => void;
   onOpenFiles?: (path: string) => void;
   downloading?: string | null;
+  checkNote?: string | null;
 }) {
   const offsetError = enclosureDimensionError(draft.outlineOffsetMm, 40, "Outline offset");
   const clearanceError = enclosureDimensionError(draft.clearanceMm, 20, "Clearance");
@@ -220,8 +227,7 @@ export function EnclosureScreen({
             {view?.exists ? "Your enclosure" : "Create a printable enclosure"}
           </h2>
           <p className="mt-1 text-sm text-muted" data-testid="enclosure-summary">
-            {view?.summary ??
-              "Generate a printable case from the board outline, holes and connectors."}
+            {view?.exists ? view.sizeLabel ? `Saved case · ${view.sizeLabel}` : "Saved generated case" : view?.summary ?? "Generate a printable case from the board outline, holes and connectors."}
           </p>
         </div>
         {busy && <Spinner />}
@@ -347,6 +353,8 @@ export function EnclosureScreen({
           {error}
         </p>
       )}
+      {view?.cadError && <p className="mt-2 text-xs text-danger" role="alert">Case files were generated, but the CAD model could not be updated: {view.cadError}</p>}
+      {checkNote && <p role="status" className="mt-2 text-xs text-muted">{checkNote}</p>}
       {view?.exists && (
         <p className="mt-1 text-xs text-muted" data-testid="enclosure-meta">
           {settingsChanged
@@ -358,6 +366,7 @@ export function EnclosureScreen({
                 : (view.issues[0] ?? "Cutouts need attention.")}
         </p>
       )}
+      {!!view && view.issues.length > 1 && <details className="fd-enclosure-findings mt-3 text-xs"><summary className="cursor-pointer">Alignment findings · {view.issues.length}</summary><ul className="mt-2 list-disc space-y-1 pl-4">{view.issues.map((issue, index) => <li key={index}>{issue}</li>)}</ul></details>}
       {view?.exists && (
         <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-border pt-3">
           <Button
@@ -367,6 +376,7 @@ export function EnclosureScreen({
             disabled={busy}
             onClick={onCheck}
             data-testid="enclosure-check"
+            title="Compare cutouts and mounting holes with the saved PCB. This does not check the full assembly or physical fit."
           >
             Check alignment
           </Button>
@@ -439,17 +449,18 @@ export function EnclosureScreen({
   );
 }
 
-export function EnclosurePanel() {
+export function EnclosurePanel({ initialDraft, onDraftSnapshot }: { initialDraft?: EnclosureDraft; onDraftSnapshot?: (draft: EnclosureDraft | null) => void } = {}) {
   const client = useCoreClient();
   const projectId = useUiStore((s) => s.activeProjectId);
   const project = useProject(projectId);
   const checkedRevision = useRef<string | null>(null);
   const sourceRevision = project.data ? `${projectId}:${project.dataUpdatedAt}` : null;
   const [view, setView] = useState<EnclosureView | null>(null);
-  const [draft, setDraft] = useState<EnclosureDraft>(DEFAULT_ENCLOSURE_DRAFT);
+  const [draft, setDraft] = useState<EnclosureDraft>(initialDraft ?? DEFAULT_ENCLOSURE_DRAFT);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<string | null>(null);
+  const [checkNote, setCheckNote] = useState<string | null>(null);
 
   const download = async (path: string) => {
     if (!projectId || downloading) return;
@@ -475,6 +486,7 @@ export function EnclosurePanel() {
       if (!projectId) return;
       setBusy(true);
       setError(null);
+      setCheckNote(null);
       try {
         const res = await client.callTool("cad_enclosure", {
           projectId,
@@ -485,7 +497,9 @@ export function EnclosurePanel() {
           client.readFile(projectId, path),
         );
         setView(next);
-        if (action !== "generate" && !preserveDraft) setDraft(next.draft);
+        if (action === "check") setCheckNote(next.ok && !next.stale ? "Cutout and mounting-hole check completed. Full physical fit is not verified." : "Board-feature check completed. Review the alignment findings before regenerating.");
+        if (action === "generate") { setDraft(next.draft); onDraftSnapshot?.(null); }
+        else if (!preserveDraft) setDraft(next.draft);
         const rec = asRecord(res);
         if (rec && rec["ok"] === false && typeof rec["text"] === "string") setError(rec["text"]);
       } catch (e) {
@@ -496,12 +510,13 @@ export function EnclosurePanel() {
               client.readFile(projectId, path),
             ),
           );
+        if (action === "check" && failure.result) setCheckNote("Board-feature check found issues. Review the alignment findings.");
         if (failure.message) setError(failure.message);
       } finally {
         setBusy(false);
       }
     },
-    [client, projectId],
+    [client, projectId, onDraftSnapshot],
   );
 
   useEffect(() => {
@@ -509,7 +524,7 @@ export function EnclosurePanel() {
     const initial = checkedRevision.current === null;
     checkedRevision.current = sourceRevision;
     // Background source changes update the report without replacing unsaved controls.
-    void call("status", {}, !initial);
+    void call("status", {}, !initial || !!initialDraft);
   }, [projectId, sourceRevision, busy, call]);
 
   if (!projectId) return null;
@@ -520,7 +535,9 @@ export function EnclosurePanel() {
       busy={busy}
       error={error}
       onDraftChange={(patch) => {
-        setDraft((cur) => ({ ...cur, ...patch }));
+        const next = { ...draft, ...patch };
+        setDraft(next);
+        onDraftSnapshot?.(view?.exists && !enclosureDraftChanged(next, view.draft) ? null : next);
         setError(null);
       }}
       onGenerate={() =>
@@ -537,6 +554,7 @@ export function EnclosurePanel() {
       onDownload={(path) => void download(path)}
       onOpenFiles={(path) => useUiStore.getState().openProjectFile(path)}
       downloading={downloading}
+      checkNote={checkNote}
     />
   );
 }
