@@ -58,5 +58,11 @@
   "allRecordedFixtureHashesRestored": true,
   "temporaryReportRestoredToAbsent": true,
   "allRecordedVaioHashesUnchanged": true,
-  "noAgentMessageSent": true
+  "noAgentMessageSent": true,
+  "crossSourceView": {
+    "before": "Carrier source",
+    "backgroundDidNotNavigate": true,
+    "afterExplicitView": "I/O source",
+    "allRecordedHashesRestored": true
+  }
 }

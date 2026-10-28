@@ -610,3 +610,6 @@ Limits: this observes changes while the assembly workspace is mounted, not a bac
 
 ![Live source preview update retains old DRC warnings and canvas selection](live-preview-overview.png)
 ![Compact source-bound View after a successful update](live-preview-compact.png)
+
+
+Live-preview navigation follow-up: explicit saved board selection changes now update an already open Boards detail. Background declaration/source updates still keep the active captured detail stale rather than silently retargeting or resetting it. Native validation opened Carrier, updated I/O, confirmed Carrier remained visible during automatic refresh, then clicked View and verified the I/O detail. All recorded fixture/VAIO hashes were restored again. Final UI typecheck and **225 UI tests passed**, zero failures. See the same native evidence record's crossSourceView entry.

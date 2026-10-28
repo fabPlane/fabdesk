@@ -52,7 +52,7 @@ export function AssemblyOverview({ projectId, name, data, checking, failed, onRe
   const boundsRef = useRef(scene.bounds); boundsRef.current = scene.bounds;
   const [selected, setSelected] = useState<AssemblySceneSelection | null>(null), [linkId, setLinkId] = useState<string | null>(null), [linkHash, setLinkHash] = useState<string | null>(null), [detail, setDetail] = useState<Detail | null>(() => boardPicker ? detailFor(restored) : null);
   // Only navigation restores a captured selection; live declaration changes keep the active editor stale.
-  useEffect(() => { setDetail(boardPicker ? detailFor(restoreAssemblySelection(data, useUiStore.getState().assemblyBoardByProject[projectId])) : null); }, [boardPicker, projectId]);
+  useEffect(() => { setDetail(boardPicker ? detailFor(restoreAssemblySelection(data, useUiStore.getState().assemblyBoardByProject[projectId])) : null); }, [boardPicker, projectId, savedBoard]);
   const [toolStyle, setToolStyle] = useState<CSSProperties>({ visibility: "hidden" });
   const previews = useAssemblyPreviewRevisions(projectId, data.sources);
   const previewById = new Map(previews.map(state => [state.sourceId, state]));
