@@ -1448,3 +1448,8 @@ The active-thread attachment branch is now natively verified independently of ag
 ### Project overview prefers the PCB drawing
 
 When a PCB drawing and saved render coexist, Overview now shows renders/pcb.svg first. This avoids a static render masking later drawing updates; photo renders remain available in Outputs and as a fallback when no drawing exists. Native Game Boy study before/after, guarded no-drawing fallback and automatic return on exact SVG arrival passed. Legacy drawing stays source unverified; no generation/check job or agent request ran. All9original files exact; hold guard RESTORED. Captures378–381 and overview-primary-artifact-native.json. UI types/229tests pass. LOCAL ONLY; no Art/Mechanical changes.
+
+
+### Source arrival does not inherit unrelated contextual tools
+
+Single-board Overview now keys selection to its native PCB, schematic, preview or exact saved reference. A selected sketch no longer silently selects a newly arriving PCB; the user selects that board to open its tools. A drawing refresh for the same native board keeps the existing board selection. Native reproduced the old retargeting, verified reference→native arrival with tools closed and same-board SVG absence/arrival preserving selection; Escape recovery passed. All48 protected files exact, exclusive hold guards RESTORED/held files absent, no job/message. Captures382–384 and overview-selection-identity-native.json. UI typecheck/229tests pass. LOCAL ONLY.

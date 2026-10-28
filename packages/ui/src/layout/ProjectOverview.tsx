@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CoreHttpError, savedOutputs, projectSketchImagePaths, useBoardSources, useProject, useProjectOrder, usePcbPreviewRevision, useBoardModelRevision, useEnclosureSourceRevision, usePcbCheckRevision, useVideoInputRevision, videoInputsNeedReview } from "@fabdesk/client-core";
 import { newChatDraftKey, useUiStore } from "../stores/ui";
 import { ProjectImage } from "../chat/ProjectImage";
@@ -21,7 +21,7 @@ function SingleBoardOverview() {
   const projectId = useUiStore((s) => s.activeProjectId);
   const project = useProject(projectId);
   const order = useProjectOrder(projectId);
-  const [selected, setSelected] = useState(false);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const selectionTrigger = useRef<HTMLButtonElement>(null);
   const [chosenReference, setChosenReference] = useState<string | null>(null);
   const files = project.data?.files ?? [], has = (path: string) => files.some(file => file.path === path);
@@ -40,9 +40,6 @@ function SingleBoardOverview() {
     ...(has("reports/erc.json") && !order.isFetching && !order.isError && order.data?.checks.erc === "stale" ? ["Schematic checks"] : []),
   ];
   const ui = () => useUiStore.getState();
-  if (!projectId) return <EmptyState title="Choose a project to see its overview" />;
-  if (project.isError) return <LoadError title="Could not load project overview" onRetry={() => void project.refetch()} />;
-  if (!project.data) return <div className="flex h-full items-center justify-center"><Spinner /></div>;
   const pcb = files.find((file) => file.path === "board.kicad_pcb");
   const schematic = files.find((file) => file.path === "board.kicad_sch");
   const designTab = pcb || !schematic ? "pcb" : "schematic";
@@ -55,18 +52,27 @@ function SingleBoardOverview() {
   const references = projectSketchImagePaths(files);
   const reference = chosenReference && references.includes(chosenReference) ? chosenReference : references[0];
   const referenceOnly = !pcb && !schematic && !preview && !!reference;
+  // New native sources must not inherit a selection made on a different design/reference.
+  // A refreshed drawing of the same native board keeps its contextual tools.
+  const surfaceKey = pcb ? "native:board.kicad_pcb" : schematic ? "native:board.kicad_sch" : preview ? `preview:${preview.path}` : `reference:${reference ?? ""}`;
+  const selected = selectedKey === surfaceKey;
+  useEffect(() => { if (selectedKey !== null && selectedKey !== surfaceKey) setSelectedKey(null); }, [selectedKey, surfaceKey]);
+
   const previewStatus = designTab === "schematic" ? "Saved schematic preview · freshness unverified" : preview?.path !== "renders/pcb.svg" ? "Saved image · source unverified"
     : pcbRevision.isFetching ? "Checking preview source…" : pcbRevision.isError ? "Preview source check unavailable"
     : pcbRevision.data === "source-changed" ? "PCB changed since preview" : pcbRevision.data === "artifact-changed" ? "Preview changed · source unverified"
     : pcbRevision.data === "matches-source" ? "Preview matches saved PCB" : "Saved preview · source unverified";
+  if (!projectId) return <EmptyState title="Choose a project to see its overview" />;
+  if (project.isError) return <LoadError title="Could not load project overview" onRetry={() => void project.refetch()} />;
+  if (!project.data) return <div className="flex h-full items-center justify-center"><Spinner /></div>;
   return <div className="fd-project-overview" onKeyDown={(event) => { if (event.key === "Escape" && selected && !event.defaultPrevented) {
-    event.preventDefault(); event.stopPropagation(); setSelected(false); requestAnimationFrame(() => selectionTrigger.current?.focus({ preventScroll: true }));
+    event.preventDefault(); event.stopPropagation(); setSelectedKey(null); requestAnimationFrame(() => selectionTrigger.current?.focus({ preventScroll: true }));
   } }}>
     <div className="fd-overview-heading"><h1 title={project.data.name}>Project overview</h1><p>{referenceOnly ? "Select a saved reference to continue your design." : designTab === "schematic" ? "Select your schematic to open its tools." : "Select your board to open its tools."}</p>
       {updates.length > 0 && <Button className="fd-overview-updates" size="sm" variant="ghost" title={`${updates.join(", ")} ${updates.length === 1 ? "has" : "have"} source or artifact changes. This covers tracked artifacts only; review before sharing or fabrication.`} onClick={() => ui().setBoardTab("updates")}><Icon name="warning" width={16} height={16} />Review updates · {updates.length}</Button>}
     </div>
     {(pcb || schematic || preview) ? <div className="fd-overview-board">
-      <button ref={selectionTrigger} className="fd-overview-preview" data-selected={selected} aria-pressed={selected} aria-label={`Select ${designLabel.toLowerCase()} to show tools`} onClick={() => setSelected(!selected)} onDoubleClick={() => ui().setBoardTab(designTab)}>
+      <button ref={selectionTrigger} className="fd-overview-preview" data-selected={selected} aria-pressed={selected} aria-label={`Select ${designLabel.toLowerCase()} to show tools`} onClick={() => setSelectedKey(selected ? null : surfaceKey)} onDoubleClick={() => ui().setBoardTab(designTab)}>
         {preview ? <ProjectImage projectId={projectId} path={preview.path} alt={`${project.data.name} ${designTab} preview`} /> : <span><Icon name={designTab === "schematic" ? "compose" : "pcb"} width={64} height={64} /><span>{designTab === "schematic" ? "Open the schematic to create its preview" : "Open the PCB to render its preview"}</span></span>}
       </button>
       {selected && <div className="fd-board-context-tools" aria-label="Board actions">
@@ -87,7 +93,7 @@ function SingleBoardOverview() {
       </div>}
       <div className="fd-overview-board-caption"><strong>{designLabel}</strong>{preview && <span>{previewStatus}</span>}<span>{schematic ? "Schematic available" : "No schematic source"}</span>{!pcb && <span>No saved PCB</span>}</div>
     </div> : reference ? <div className="fd-overview-board fd-overview-reference">
-      <button ref={selectionTrigger} className="fd-overview-preview" data-selected={selected} aria-pressed={selected} aria-label="Select saved reference to show tools" onClick={() => setSelected(!selected)}><ProjectImage projectId={projectId} path={reference} alt="Saved project reference" /></button>
+      <button ref={selectionTrigger} className="fd-overview-preview" data-selected={selected} aria-pressed={selected} aria-label="Select saved reference to show tools" onClick={() => setSelectedKey(selected ? null : surfaceKey)}><ProjectImage projectId={projectId} path={reference} alt="Saved project reference" /></button>
       {selected && <div className="fd-board-context-tools" aria-label="Reference actions"><span><Icon name="image" width={17} height={17} />Reference</span>
         <Button size="sm" variant="ghost" onClick={() => {
           const state = ui(); if (state.activeProjectId !== projectId) return;
@@ -97,7 +103,7 @@ function SingleBoardOverview() {
         }}><Icon name="sparkles" width={16} height={16} />Use in conversation</Button>
         <Button size="sm" variant="ghost" onClick={() => ui().openProjectFile(reference)}><Icon name="folderOpen" width={16} height={16} />Open file</Button>
       </div>}
-      <div className="fd-overview-board-caption"><strong>Design reference</strong><span>Saved image · No saved PCB</span>{references.length > 1 ? <label>Reference<select aria-label="Saved project reference" value={reference} onChange={event => { setChosenReference(event.target.value); setSelected(false); }}>{references.map(path => <option key={path} value={path}>{path.slice("sketches/".length)}</option>)}</select></label> : <span>{reference.slice("sketches/".length)}</span>}<Button size="sm" variant="ghost" onClick={() => ui().setSketchOpen(true)}>Draw or open a sketch</Button></div>
+      <div className="fd-overview-board-caption"><strong>Design reference</strong><span>Saved image · No saved PCB</span>{references.length > 1 ? <label>Reference<select aria-label="Saved project reference" value={reference} onChange={event => { setChosenReference(event.target.value); setSelectedKey(null); }}>{references.map(path => <option key={path} value={path}>{path.slice("sketches/".length)}</option>)}</select></label> : <span>{reference.slice("sketches/".length)}</span>}<Button size="sm" variant="ghost" onClick={() => ui().setSketchOpen(true)}>Draw or open a sketch</Button></div>
     </div> : <div className="fd-overview-empty"><Icon name="pcb" width={54} height={54} /><h2>Start with an idea or a sketch</h2><p>Your project is ready. Add a design or describe what you want to build.</p><Button onClick={() => { ui().setAssistantOpen(true); ui().focusComposer(); }}>Describe your board</Button><Button variant="ghost" onClick={() => ui().setSketchOpen(true)}>Add a sketch</Button></div>}
     <nav className="fd-overview-facts" aria-label="Project resources">
       <button onClick={() => ui().setWorkspaceArea("files")}><Icon name="folder" width={18} height={18} /><strong>{files.length}</strong><span>project files</span></button>

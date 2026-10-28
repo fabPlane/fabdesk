@@ -1,0 +1,27 @@
+{
+  "change": "Single-board overview contextual selection is keyed to the native PCB, native schematic, saved preview or exact reference instead of one shared boolean",
+  "native": {
+    "projectId": "prj_mvs5abwp2ff3301fe3",
+    "before": "Selected native board silently became selected reference with Reference actions after sources disappeared",
+    "after": "Explicitly selected reference did not transfer selection to the arriving restored native PCB; tools closed until actual board selection",
+    "sameBoard": "Holding/restoring only the SVG kept the native PCB selected and retained Board actions, then Escape closed tools and returned focus",
+    "method": "Exclusive guarded temporary holds outside isolated project; restoration preserves exact original bytes; no export or source editing job"
+  },
+  "preservation": {
+    "protectedFiles": 48,
+    "changed": [],
+    "pcbGuard": "RESTORED",
+    "svgGuard": "RESTORED",
+    "heldFilesAbsent": true
+  },
+  "validation": {
+    "uiTypecheck": "PASS /tmp/canvas-overview-selection-identity-types.log",
+    "uiTests": "229 pass / 0 fail / 874 assertions"
+  },
+  "screenshots": [
+    "382-overview-selection-retarget-before.png",
+    "383-overview-source-arrival-tools-closed.png",
+    "384-overview-same-board-preview-keeps-selection.png"
+  ],
+  "noAgentMessage": true
+}
