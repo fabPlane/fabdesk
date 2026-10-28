@@ -71,11 +71,11 @@ export function CreateProjectDialog({ onClose, onCreated, initialMode = "create"
     catch (e) { setError(e); }
     finally { setPending(false); }
   };
-  return <Dialog open onClose={close} title={mode === "github" ? "Import from GitHub" : "Create project"} className="!w-[520px]">
-    <div className="mb-5 flex gap-2" role="tablist" aria-label="Project setup">
+  return <Dialog open onClose={close} title={result ? "Project imported" : mode === "github" ? "Import from GitHub" : "Create project"} className="!w-[520px]">
+    {!result && <div className="mb-5 flex gap-2" role="tablist" aria-label="Project setup">
       <Button type="button" role="tab" aria-selected={mode === "create"} {...(mode === "create" ? { variant: "primary" as const } : {})} disabled={pending} onClick={() => { setMode("create"); setError(null); }}>New project</Button>
       <Button type="button" role="tab" aria-selected={mode === "github"} {...(mode === "github" ? { variant: "primary" as const } : {})} disabled={pending} onClick={() => { setMode("github"); setError(null); }}>Import from GitHub</Button>
-    </div>
+    </div>}
     {result ? <div className="space-y-4">
       {result.boards.length === 0 ? <p className="text-sm leading-6 text-muted">Project imported. No KiCad board was found. You can add one later.</p> : <>
         <p className="text-sm text-muted">Choose the board to open in fabPlane:</p>
@@ -83,8 +83,9 @@ export function CreateProjectDialog({ onClose, onCreated, initialMode = "create"
           {result.boards.map((path) => <Button key={path} type="button" disabled={pending} className="w-full justify-start break-all text-left" onClick={() => void adopt(path)}>{path}</Button>)}
         </div>
       </>}
+      {pending && <p role="status" className="text-sm text-muted">Opening board…</p>}
       {error != null && <ErrorNotice error={error} />}
-      <div className="flex justify-end"><Button type="button" onClick={() => void finish(result.id)}>{result.boards.length ? "Open without board" : "Open project"}</Button></div>
+      <div className="flex justify-end"><Button type="button" disabled={pending} onClick={() => void finish(result.id)}>{result.boards.length ? "Open without board" : "Open project"}</Button></div>
     </div> : <form className="flex flex-col gap-4" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
       {mode === "github" && <label className="flex flex-col gap-2 text-[13px] font-medium">Public GitHub URL
         <Input autoFocus type="url" required value={url} disabled={pending} onChange={(e) => {

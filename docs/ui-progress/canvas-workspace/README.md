@@ -1476,3 +1476,7 @@ Native member2→1before→2retainedafter, image preview warning/restoration and
 ## Import location recovery
 
 The GitHub import destination check now reports failure and offers Retry location check while retaining the URL, name and folder. Query ownership follows connection/name/folder; an old or failed result cannot enable Import. Native missing-parent failure, failed retry, exact restoration, successful retry, default-location recovery and cancel/reopen passed without cloning or creating a project. UI typecheck passed. Captures406–407; [native evidence](import-location-recovery-native.json). No broad-suite rerun for this UI slice.
+
+## Imported-project step guard
+
+After import, the dialog now identifies the Project imported step and hides setup-mode tabs. While opening a selected board, it displays Opening board and disables Open without board alongside the already-disabled board choices. This prevents leaving through a competing action while adoption is in flight. UI typecheck PASS (/tmp/canvas-import-step-ui-types.log); reviewed against existing adopt/finish/error paths. This small control-state slice was not exercised through a fresh native clone/adoption, and has no new native success claim. Destination recovery captures406–407 remain the latest actual images.
