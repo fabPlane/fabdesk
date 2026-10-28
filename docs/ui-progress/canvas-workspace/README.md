@@ -1169,3 +1169,7 @@ Review keeps all source rows visible, placing unavailable/stale previews and rep
 
 ### Identify outputs by board
 Source-owned library cards now lead with the declared board source name, retaining the filename beneath it. The selection bar and preview title identify the same owner; preview title also retains the exact filename. Source-free outputs keep their filenames. Native I/O preview showed boards/io/renders/pcb.svg; Escape restored Preview focus. No file rename, download or regeneration; all16originalVAIO hashes unchanged. UItypes/228tests pass. Captures vaio-output-source-labels.png / vaio-output-preview-source.png.
+
+
+### Compact native tools preserve canvas space
+Native960×720 study exposed a330pxpartpopup covering the drawing. Parts/outline tools now use a narrower available gutter when it can hold at least220px content, leaving24pxfrom the SVG host. Actual244pxpopup fits280pxgutter; R1 exact fields/quickrotation/discard and15→18→Discard15outlineproposal passed with noApply. Wider1440×870 restores preferred390pxoutline.19stableoriginalfiles unchanged; transientKiCadlock excluded. UItypes/228tests pass. compact-tools-gutter-native.json and compact-part-properties-gutter.png / compact-board-size-gutter.png. Also retained compact source-owned Outputs capture.

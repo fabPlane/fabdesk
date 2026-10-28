@@ -63,9 +63,11 @@ export function NativePartTools({ projectId, board, point, openAbove, onMoved, c
       const rect = root.current?.getBoundingClientRect();
       if (!rect) return;
       const safeBottom = window.innerHeight - (root.current?.closest(".fd-canvas-workspace") ? 88 : 12);
-      const width = Math.min(mode === "parts" ? 330 : 390, window.innerWidth * .75), below = safeBottom - rect.bottom - 12, above = rect.top - 24;
-      const anchor = root.current?.closest(".fd-location-anchor")?.getBoundingClientRect();
       const drawing = root.current?.closest(".fd-svg-host")?.getBoundingClientRect();
+      const preferredWidth = mode === "parts" ? 330 : 390;
+      const gutter = drawing ? Math.max(drawing.left, window.innerWidth - drawing.right) : 0;
+      const width = Math.min(preferredWidth, window.innerWidth * .75, gutter >= 256 ? gutter - 36 : preferredWidth), below = safeBottom - rect.bottom - 12, above = rect.top - 24;
+      const anchor = root.current?.closest(".fd-location-anchor")?.getBoundingClientRect();
       // Use spare canvas space when it can hold the requested tools without covering the drawing.
       if (drawing && (mode === "outline" || drawing.left >= width + 36 || window.innerWidth - drawing.right >= width + 36)) {
         const left = drawing.left >= width + 36 ? drawing.left - width - 24 : window.innerWidth - drawing.right >= width + 36 ? drawing.right + 24 : 12;
