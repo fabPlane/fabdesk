@@ -2,7 +2,9 @@ import { useVideoInputRevision, videoInputsNeedReview, type VideoInputRevisionSt
 import { Button } from "../components/ui";
 
 export function videoInputLabel(state: VideoInputRevisionState | undefined): string {
-  return state === "inputs-changed" ? "Video model inputs changed"
+  return state === "board-source-changed" ? "PCB changed since the video’s board model"
+    : state === "board-source-unverified" ? "Video board model · PCB source unverified"
+    : state === "inputs-changed" ? "Video model inputs changed"
     : state === "inputs-unchanged" ? "Recorded model inputs unchanged"
     : state === "artifact-changed" ? "Video file changed · Source unverified"
     : state === "missing-input" ? "A recorded video model is missing"
@@ -10,12 +12,12 @@ export function videoInputLabel(state: VideoInputRevisionState | undefined): str
     : "Saved video · Source unverified";
 }
 
-/** Input identity is narrower than current PCB, caption or full-scene freshness. */
+/** Tracked root-board provenance is checked; captions and full-scene freshness remain separate. */
 export function VideoSourceStatus({ projectId, path, updating }: { projectId: string; path: string; updating: boolean }) {
   const revision = useVideoInputRevision(projectId, path);
   return <div className="fd-board-model-status" data-warning={videoInputsNeedReview(revision.data)} aria-live="polite">
     <strong>{updating ? "Updating video…" : revision.isFetching || revision.isPending ? "Checking video inputs…" : revision.isError ? "Video inputs could not be checked" : videoInputLabel(revision.data)}</strong>
-    <details><summary>Video source details</summary><p>Tracks the models used by this saved video. PCB changes, captions and newly added scene content need separate review. The saved video stays until you choose Make video.</p></details>
+    <details><summary>Video source details</summary><p>Checks the saved video, its recorded models and the PCB source of a tracked board model. Captions, new scene content and external component files still need review. The saved video stays until you choose Make video.</p></details>
     {revision.isError && <Button size="sm" variant="ghost" onClick={() => void revision.refetch()}>Retry video source check</Button>}
   </div>;
 }

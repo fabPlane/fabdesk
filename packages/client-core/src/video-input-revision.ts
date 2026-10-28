@@ -1,12 +1,13 @@
 import { ProductVideoInputRevision, PRODUCT_VIDEO_MANIFEST_PATH } from "@fabdesk/protocol";
 import { CoreHttpError, type CoreClient } from "./CoreClient";
+import { inspectBoardModelRevision } from "./board-model-revision";
 import { sha256Blob } from "./pcb-preview-revision";
 
-export type VideoInputRevisionState = "inputs-unchanged" | "inputs-changed" | "artifact-changed" | "missing-input" | "missing-artifact" | "untracked";
+export type VideoInputRevisionState = "inputs-unchanged" | "inputs-changed" | "artifact-changed" | "missing-input" | "missing-artifact" | "untracked" | "board-source-changed" | "board-source-unverified";
 
-export const videoInputsNeedReview = (state: VideoInputRevisionState | undefined) => ["inputs-changed", "artifact-changed", "missing-input", "missing-artifact"].includes(state ?? "");
+export const videoInputsNeedReview = (state: VideoInputRevisionState | undefined) => ["inputs-changed", "artifact-changed", "missing-input", "missing-artifact", "board-source-changed", "board-source-unverified"].includes(state ?? "");
 
-/** Only the recorded decoded meshes and selected video bytes; never infer current PCB, captions or newly added scene content. */
+/** Follow recorded mesh/video bytes and the canonical board model’s explicit PCB receipt. Other dependencies, captions and new scene content remain unverified. */
 export async function inspectVideoInputRevision(client: Pick<CoreClient, "readFile" | "readFileBlob">, projectId: string, path: string): Promise<VideoInputRevisionState> {
   let raw: unknown;
   try {
@@ -34,5 +35,12 @@ export async function inspectVideoInputRevision(client: Pick<CoreClient, "readFi
     if (hash === null) return "missing-input";
     if (hash !== input.sha256) changed = true;
   }
-  return changed ? "inputs-changed" : "inputs-unchanged";
+  if (changed) return "inputs-changed";
+  if (parsed.data.inputs.some(input => input.path === "renders/board.glb")) {
+    // Reuse the saved model's byte checks; a retained GLB can still precede a changed PCB.
+    const board = await inspectBoardModelRevision(client, projectId);
+    if (board === "source-changed") return "board-source-changed";
+    if (board !== "source-unchanged") return "board-source-unverified";
+  }
+  return "inputs-unchanged";
 }

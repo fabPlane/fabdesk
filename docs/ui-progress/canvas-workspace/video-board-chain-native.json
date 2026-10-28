@@ -1,0 +1,33 @@
+{
+  "projectId": "prj_mvs5abwp2ff3301fe3",
+  "before": {
+    "readyState": 4,
+    "error": null,
+    "currentTime": 1.369265,
+    "duration": 6,
+    "paused": false,
+    "loop": true
+  },
+  "after": {
+    "readyState": 4,
+    "error": null,
+    "currentTime": 0,
+    "duration": 6,
+    "paused": true,
+    "loop": true
+  },
+  "sameSourceUrl": false,
+  "mediaUnchanged": {
+    "renders/board.glb": true,
+    "exports/product-video.mp4": true,
+    "exports/product-video.json": true
+  },
+  "transitiveWarning": true,
+  "sourceFault": "RESTORED",
+  "scope": "Actual unchanged video/model; only PCB bytes differ from its tracked board model",
+  "allPreFaultFilesExact": 25,
+  "overview": "Review updates3 explicitly includes Product video, PCB preview and3Dmodel",
+  "review": "Product video row exposes PCB changed since the video\u2019s board model",
+  "observedRegression": "Unchanged MP4 got a new blob URL and paused at0 during PCB-only update; fix next, not a playback-continuity pass",
+  "validation": "7focusedtests23assert/clientUItypes228UItestsPASS; source-chain UI passed; playback continuity observed regression remains next"
+}
