@@ -7,7 +7,7 @@ import { BoardViewMenu } from "./BoardViewMenu";
 import { CircuitLogo } from "../components/CircuitLogo";
 import { workspaceViews } from "@fabdesk/client-core";
 import { useCore } from "@fabdesk/client-core";
-import { useProjectOrder, useProjects } from "@fabdesk/client-core";
+import { useBoardSources, useProjectOrder, useProjects } from "@fabdesk/client-core";
 import { BOARD_TABS, BOARD_TAB_LABELS, useUiStore, type BoardTab } from "../stores/ui";
 import { modKey } from "../util";
 import { CadTab } from "./CadTab";
@@ -70,6 +70,14 @@ export function BoardPanel({ canvas = false }: { canvas?: boolean }) {
   const compareAvailable = area === "boards" && (tab === "pcb" || tab === "schematic");
   const setOrderFlowOpen = useUiStore((s) => s.setOrderFlowOpen);
   const order = useProjectOrder(projectId);
+  const sources = useBoardSources(projectId);
+  const openChecks = () => { if (projectId && useUiStore.getState().activeProjectId === projectId) setBoardTab("drc"); };
+  const assembly = sources.data?.mode === "assembly";
+  const openOrder = () => {
+    if (!projectId || useUiStore.getState().activeProjectId !== projectId) return;
+    if (sources.data?.mode !== "single" || sources.isError || sources.isFetching) openChecks();
+    else setOrderFlowOpen(true);
+  };
   const projects = useProjects();
   const project = projects.data?.find((item) => item.id === projectId);
   const mod = modKey(host.platform);
@@ -77,7 +85,7 @@ export function BoardPanel({ canvas = false }: { canvas?: boolean }) {
     <div className="fd-canvas-controls">
       {workspaceViews(area).length > 1 && <Tabs tabs={workspaceViews(area).map((item) => ({ id: item.tab, label: item.label }))} value={tab} onChange={setWorkspaceTab} />}
       {compareAvailable && <Button className="fd-comparison-toggle" size="sm" aria-pressed={compare} onClick={() => useUiStore.getState().setBoardComparison(!compare)}>{compare ? "Close comparison" : `Show ${tab === "pcb" ? "schematic" : "PCB"} alongside`}</Button>}
-      <div className="fd-canvas-checks">{order.data && <OrderChecksButton order={order.data} unavailable={order.isError} onClick={() => setOrderFlowOpen(true)} onReviewChecks={() => { if (projectId && useUiStore.getState().activeProjectId === projectId) setBoardTab("drc"); }} />}</div>
+      <div className="fd-canvas-checks">{assembly ? <Button size="sm" onClick={openChecks}>Board checks</Button> : order.data && <OrderChecksButton order={order.data} unavailable={order.isError || sources.isError || sources.isFetching || sources.data?.mode !== "single"} onClick={openOrder} onReviewChecks={openChecks} />}</div>
     </div>
     <div className="fd-canvas-board-body">{compareAvailable && compare && projectId ? <BoardComparison key={projectId} projectId={projectId} active={tab as "pcb" | "schematic"} /> : area === "outputs" && tab === "renders" ? <OutputsLibrary key={projectId} projectId={projectId} /> : area === "outputs" && tab === "files" ? <FilesTab key={projectId} exportFocus /> : <TabBody key={`${projectId}:${tab}`} tab={tab} />}</div>
   </div>;
@@ -90,11 +98,11 @@ export function BoardPanel({ canvas = false }: { canvas?: boolean }) {
           <div className="fd-board-title truncate" title={project?.name}>{project?.name ?? "Select a project"}</div>
         </div>
         <div className="fd-board-actions">
-          {order.data && (order.data.hasKicadPcb || order.data.hasRouted || order.data.ready) && (
+          {assembly ? <Button size="sm" onClick={openChecks}>Board checks</Button> : order.data && (order.data.hasKicadPcb || order.data.hasRouted || order.data.ready) && (
             <OrderChecksButton
               order={order.data}
-              unavailable={order.isError}
-              onClick={() => setOrderFlowOpen(true)}
+              unavailable={order.isError || sources.isError || sources.isFetching || sources.data?.mode !== "single"}
+              onClick={openOrder}
             />
           )}
         </div>
