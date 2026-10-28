@@ -1165,3 +1165,7 @@ At 960 × 720 the actual six-board map and requested source tools fit. Source de
 
 ### Attention-first source Review
 Review keeps all source rows visible, placing unavailable/stale previews and reported model/check warnings first while preserving order within each group. Native VAIO now shows unresolved keyboard first, followed by the five unchanged sources. Requested I/O details correctly say No saved PCB check / No saved model receipt, with explicit existing actions. No generation or compatibility claim. UI/client types pass, UI228tests and authorized client285tests pass; initial restricted run failed to bind its local transport fixture server and was rerun with loopback permitted. Capture vaio-review-attention-first.png.
+
+
+### Identify outputs by board
+Source-owned library cards now lead with the declared board source name, retaining the filename beneath it. The selection bar and preview title identify the same owner; preview title also retains the exact filename. Source-free outputs keep their filenames. Native I/O preview showed boards/io/renders/pcb.svg; Escape restored Preview focus. No file rename, download or regeneration; all16originalVAIO hashes unchanged. UItypes/228tests pass. Captures vaio-output-source-labels.png / vaio-output-preview-source.png.

@@ -115,7 +115,7 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
     {generate.state.status === "running" && <p role="status" className="fd-output-feedback"><Spinner />Creating output…</p>}
     {(error || generate.state.error) && <p role="alert" className="fd-output-feedback">{error || generate.state.error}</p>}
     {active && <div ref={actions} style={actionPosition} className="fd-output-selected" data-testid="output-actions">
-      <div className="fd-output-action-bar"><strong title={active.path}>{basename(active.path)}</strong>
+      <div className="fd-output-action-bar"><strong title={active.path}>{active.sourceName ?? basename(active.path)}</strong>
         {canPreview && <Button size="sm" onClick={() => setPreview(active.path)}>{active.kind === "videos" ? "Play" : "Preview"}</Button>}
         <Button size="sm" disabled={downloading} onClick={() => void download()}>{downloading ? "Downloading…" : "Download"}</Button>
         {active.path === "renders/board.glb" && <Button size="sm" disabled={!rootGenerationReady || generate.state.status === "running"} onClick={() => create("glb")}>Regenerate model</Button>}
@@ -128,9 +128,9 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
     </div>}
     {shown.length ? <div className="fd-output-grid">{shown.map(file => <button key={file.path} className="fd-output-card" data-path={file.path} aria-pressed={selected === file.path} onClick={() => { setSelected(file.path); setError(null); }}>
       <div className="fd-output-thumbnail">{sourceInfo(file.path).warning && <span className="fd-output-warning"><Icon name="warning" width={14} height={14} />Needs review</span>}{file.kind === "images" ? <ProjectImage projectId={projectId} path={file.path} alt={basename(file.path)} /> : <><Icon name={file.kind === "videos" ? "play" : file.kind === "models" ? "cube" : "export"} width={58} height={58} /><span>{file.path.split(".").pop()?.toUpperCase()}</span></>}</div>
-      <div className="fd-output-caption"><strong>{basename(file.path)}</strong>{file.sourceName && <span className="fd-output-source">{file.sourceName}</span>}<span>{formatFileSize(file.size)} · Saved {new Date(file.mtime).toLocaleDateString()}</span><small data-stale={sourceInfo(file.path).warning}>{sourceInfo(file.path).label}</small></div>
+      <div className="fd-output-caption"><strong>{file.sourceName ?? basename(file.path)}</strong>{file.sourceName && <span className="fd-output-source">{basename(file.path)}</span>}<span>{formatFileSize(file.size)} · Saved {new Date(file.mtime).toLocaleDateString()}</span><small data-stale={sourceInfo(file.path).warning}>{sourceInfo(file.path).label}</small></div>
     </button>)}</div> : <div className="fd-output-empty"><h3>{filter === "all" ? "Your outputs will appear here" : "No saved files in this category"}</h3><p>Create images, a board model, a video or export files from the menu above.</p></div>}
-    <Dialog open={!!visible} onClose={() => setPreview(null)} title={visible ? basename(visible.path) : "Output preview"} className="fd-output-preview-dialog">
+    <Dialog open={!!visible} onClose={() => setPreview(null)} title={visible ? visible.sourceName ? `${visible.sourceName} · ${basename(visible.path)}` : basename(visible.path) : "Output preview"} className="fd-output-preview-dialog">
       {visible && (visible.kind === "images" ? <ProjectImage projectId={projectId} path={visible.path} className="max-h-[70vh] w-full object-contain" /> : visible.kind === "videos" ? <><VideoSourceStatus projectId={projectId} path={visible.path} updating={false} /><ProjectVideo projectId={projectId} path={visible.path} className="max-h-[70vh]" /></> : <div className="fd-output-model-preview"><Suspense fallback={<Spinner />}><ModelCanvas projectId={projectId} path={visible.path} /></Suspense></div>)}
     </Dialog>
   </div>;
