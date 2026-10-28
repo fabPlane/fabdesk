@@ -1438,3 +1438,8 @@ Board-entry focus regression check: existing shared-source Show on PCB still foc
 ### Review opens a current saved model
 
 Review updates now offers **Open model** when the tracked PCB is unchanged, rather than regenerating it. Changed/unverified or missing models retain explicit Update/Create actions; actions wait for the freshness check and retain project ownership guards. Native current→open existing model, controlled source change→Update, exact restoration→Open all passed. No exporter ran; all48 protected study files remain exact. UI types and229UItests pass. Captures372–375 and review-model-action-native.json preserve the proof. External model dependencies/fit remain unverified. LOCAL ONLY.
+
+
+### Existing-conversation sketch reference acceptance
+
+The active-thread attachment branch is now natively verified independently of agent authentication. In the isolated root study, a guarded temporary PCB hold exposed the reference canvas for its existing failed-review conversation. Choosing the earlier saved sketch and Use in message attached it only to that conversation. Renderer reload retained the exact earlier reference, unsent attachment and owned test draft. No message sent or job started. The test draft/attachment were removed through native UI and before/after state matched; guarded PCB restoration passed and all48 protected files are exact. Captures376–377 and active-reference-draft-check.json supersede its former unverified-branch limitation. Actual assistant interpretation still needs human Claude reauthentication.
