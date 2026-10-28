@@ -283,7 +283,7 @@ export function createUiStore(storage?: StateStorage) {
   toggleBoard: () => set((s) => ({ boardOpen: !s.boardOpen })),
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
   setBoardOpen: (boardOpen) => set({ boardOpen }),
-  setActiveThread: (activeThreadId) => set({ activeThreadId, ...(activeThreadId ? { activeOpenSourceId: null, orderFlowOpen: false, inventoryOpen: false, assistantOpen: true } : {}) }),
+  setActiveThread: (activeThreadId) => set(s => ({ activeThreadId, ...(activeThreadId ? { activeOpenSourceId: null, orderFlowOpen: false, inventoryOpen: false, assistantOpen: true, ...(s.canvasMode ? { canvasNavigationOpen: false } : {}) } : {}) })),
   setFocusMessageId: (focusMessageId) => set({ focusMessageId }),
   setActiveProject: (activeProjectId) => set((s) => ({ activeProjectId, ...(activeProjectId !== s.activeProjectId ? { activeThreadId: null, rootFinding: null, assemblyFinding: null, commentToReveal: null, activeOpenSourceId: null, orderFlowOpen: false, inventoryOpen: false, ...(s.canvasMode ? { boardOpen: true, assistantOpen: false, canvasNavigationOpen: false } : {}), workspaceArea: activeProjectId ? s.workspaceByProject[activeProjectId]?.area ?? "boards" : "boards", boardTab: activeProjectId ? s.workspaceByProject[activeProjectId]?.tab ?? "pcb" : "pcb" } : {}) })),
   startNewChatInProject: (projectId) =>

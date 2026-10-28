@@ -230,6 +230,17 @@ test("opening another project closes inherited canvas panes without discarding d
   expect(store.getState().assistantOpen).toBe(false); expect(store.getState().canvasNavigationOpen).toBe(false);
   expect(store.getState().drafts[newChatDraftKey("a")]).toBe("Keep this sketch discussion");
   store.getState().setActiveThread("chat-b"); expect(store.getState().assistantOpen).toBe(true);
+  store.getState().setWorkspaceArea("review"); store.getState().setWorkspaceTab("comments");
+  store.getState().setDraft("chat-b", "Keep this unsent question");
+  store.getState().addAttachment("chat-b", { path: "sketches/reference.png", mime: "image/png", label: "reference" });
+  store.getState().setCanvasNavigationOpen(true);
+  store.getState().setActiveProject("b"); // Picking a conversation in the current project.
+  store.getState().setActiveThread("chat-b");
+  expect(store.getState().canvasNavigationOpen).toBe(false);
+  expect(store.getState().activeProjectId).toBe("b");
+  expect(store.getState().boardTab).toBe("comments");
+  expect(store.getState().drafts["chat-b"]).toBe("Keep this unsent question");
+  expect(store.getState().attachments["chat-b"]?.[0]?.path).toBe("sketches/reference.png");
 });
 
 
