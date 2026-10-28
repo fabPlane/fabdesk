@@ -5,6 +5,7 @@ import { ThreadView } from "../chat/ThreadView";
 import { ProjectPickerDialog } from "../chat/ProjectPickerDialog";
 import { ThreadSidebar } from "../sidebar/ThreadSidebar";
 import { CreateProjectDialog } from "../sidebar/CreateProjectDialog";
+import { ProjectActionDialog, type ProjectAction } from "../sidebar/ProjectActionDialog";
 import { InventoryView } from "../inventory/InventoryView";
 import { OpenSourceView } from "../opensource/OpenSourceView";
 import { OrderFlow } from "../order/OrderFlow";
@@ -49,6 +50,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
   const threadId = useUiStore((s) => s.activeThreadId);
   const threads = useThreads({ ...(projectId ? { projectId } : {}) });
   const [creating, setCreating] = useState<"create" | "github" | null>(null);
+  const [projectAction, setProjectAction] = useState<ProjectAction | null>(null);
   const ui = () => useUiStore.getState();
   const name = project.data?.name ?? projects.data?.find((item) => item.id === projectId)?.name ?? "Untitled project";
   const conversationOnly = !boardOpen || (!projectId && !!threadId);
@@ -65,6 +67,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
         <FabPlaneLogo /><span>fabPlane</span>
       </button>
       <WorkspaceMenu className="fd-project-switcher" label={<><span>{name}</span><Icon name="chevronDown" width={15} height={15} /></>}>
+        {projectId && <><div className="fd-menu-caption">Current project</div><button onClick={() => setProjectAction({ id: projectId, name, action: "rename" })}><Icon name="compose" width={16} height={16} />Rename project</button><div className="fd-menu-divider" /></>}
         <div className="fd-menu-caption">Open project</div>
         {projects.isError && <button onClick={() => void projects.refetch()}>Could not load projects · Retry</button>}
         {projects.isPending && <p className="p-3 text-xs text-muted">Loading projects…</p>}
@@ -123,6 +126,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
       <ThreadSidebar onNewChat={onNewChat} /></div>
     </Dialog>
     {creating && <CreateProjectDialog initialMode={creating} onClose={() => setCreating(null)} onCreated={(id) => { ui().setActiveProject(id); ui().setBoardOpen(true); setCreating(null); }} />}
+    {projectAction && <ProjectActionDialog key={projectAction.id} project={projectAction} onClose={() => setProjectAction(null)} />}
     <ProjectPickerDialog />
   </div>;
 }

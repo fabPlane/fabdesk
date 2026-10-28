@@ -1,0 +1,21 @@
+{
+  "projectId": "prj_mvrlt1yx802c210b69",
+  "nativeWalkthrough": [
+    "Header current-project menu opens existing Rename project dialog",
+    "Saved temporary Canvas workspace \u2014 rename study name; header and project menu refreshed",
+    "Reopened dialog with saved name",
+    "Saved original Canvas fresh-start \u2014 UI validation name",
+    "Focus returned to current-project header"
+  ],
+  "restoration": "Display name restored using native UI; updatedAt then restored to original exact metadata bytes with recorded SHA guard",
+  "preservedExistingNonReportFiles": 18,
+  "validation": {
+    "uiTypecheck": "pass",
+    "uiTests": 227,
+    "assertions": 866
+  },
+  "limitations": [
+    "Remote publication remains revoked",
+    "Latest full standard suite2223pass36skip0fail predates only this two-file UI reuse change; current UI typecheck/tests pass"
+  ]
+}

@@ -1021,3 +1021,10 @@ Native use verified reference selection, one attachment after repeated action, o
 ![Reuse existing reference in an unsent conversation](overview-reference-assistant.jpg)
 
 [Native reference walkthrough and full-suite counts](overview-reference-flow-native.json).
+
+
+### Name a project without opening the chat drawer
+
+The project header exposes Rename project using the existing shared dialog and mutation, rather than requiring a separate project/chat drawer. Modal close returns focus to the header when sidebar controls are absent. Native use saved a temporary private-project name, verified the updated header/menu and reopened form, then restored the display name. The update timestamp was restored to exact original metadata bytes using the recorded SHA guard; all18existing non-report study files match their baseline. UItypecheck and227tests pass.
+
+[Native rename evidence and restoration](project-header-controls-native.json).
