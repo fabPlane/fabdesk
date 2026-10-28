@@ -1,0 +1,55 @@
+{
+  "projectId": "prj_mvs6704td18dae52b4",
+  "preservedNativeFacts": [
+    "components",
+    "tracks",
+    "vias",
+    "zones",
+    "nets",
+    "board_geometry"
+  ],
+  "unchangedOtherBaselinePaths": [
+    "fabplane.assembly.json",
+    "boards/carrier/board.kicad_pcb",
+    "boards/carrier/renders/pcb.svg",
+    "boards/carrier/renders/pcb.svg.revision.json",
+    "fabdesk.json"
+  ],
+  "sharedInstances": [
+    "io-left",
+    "io-right"
+  ],
+  "sharedPreviewPath": "boards/io/renders/pcb.svg",
+  "sourceSha256": "79b947b29900edc999f0a166908bddcf712b03e19c48aa4c9c0c14fa905ec75a",
+  "previewReceipt": {
+    "contract": "fabplane.pcb-preview-revision.v1",
+    "source": "board.kicad_pcb",
+    "artifact": "renders/pcb.svg",
+    "sourceSha256": "79b947b29900edc999f0a166908bddcf712b03e19c48aa4c9c0c14fa905ec75a",
+    "artifactSha256": "bb6341dc52b0151fcfed9e2526d61ca51a24b1212c4ca37925fd7ec7e03f3089",
+    "generatedAt": "2026-10-28T13:55:22.114Z"
+  },
+  "manifestGuard": "blocked Revert on changed declaration; exact original restored",
+  "nativeVersionMigration": {
+    "before": "20241229 / KiCad9",
+    "after": "20260901 / KiCad10.99",
+    "byteIdentical": false
+  },
+  "nativeRevertPosition": {
+    "ref": "R1",
+    "x": 105,
+    "y": 100,
+    "rotation": 0
+  },
+  "limits": [
+    "Source copy saved by native KiCad with file-format upgrade, so restored native facts rather than byte identity are verified",
+    "No DRC/ERC/parity/connection validation claimed",
+    "Independent blob URLs are created for each card; source association is verified from declaration and receipt, not URL equality"
+  ],
+  "originalFixturesUnchanged": {
+    "prj_mvrlt1yx802c210b69": 19,
+    "prj_mvr2ofe307592e4a2e": 16,
+    "prj_mvqyacun3e60075ae8": 8
+  },
+  "nativeUIFocusAfterRevert": "PCB part position"
+}
