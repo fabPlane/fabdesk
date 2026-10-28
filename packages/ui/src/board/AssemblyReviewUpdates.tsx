@@ -39,6 +39,6 @@ export function AssemblyReviewUpdates({ projectId, data, checking, failed, onRet
     </div>
     {busy && <p role="status" className="fd-update-feedback"><Spinner />Updating one source preview; shared board instances use the same drawing.</p>}
     {update.state.error && <p role="alert" className="fd-update-feedback">{update.state.error}</p>}
-    <section className="fd-update-sync"><div><h3>Checks and compatibility</h3><p>Preview freshness compares the saved PCB and drawing bytes. It does not verify electrical checks, schematic parity, cables or enclosure fit.</p><small>Open each board’s native KiCad project for electrical checks and schematic comparison. Review inter-board connections separately.</small></div><Button size="sm" variant="ghost" onClick={() => { if (active()) useUiStore.getState().setWorkspaceArea("overview"); }}>Project overview</Button></section>
+    <section className="fd-update-sync"><div><h3>Checks and compatibility</h3><p>Preview freshness compares the saved PCB and drawing bytes. It does not verify electrical checks, schematic parity, cables or enclosure fit.</p><small>Run PCB-only DRC in Checks. Schematic parity, ERC and inter-board compatibility need separate review.</small></div><Button size="sm" variant="ghost" onClick={() => { if (active()) useUiStore.getState().setBoardTab("drc"); }}>Open board checks</Button></section>
   </div>;
 }

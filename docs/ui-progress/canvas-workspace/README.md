@@ -540,3 +540,21 @@ The running native app then executed the HTTP long-running job against the dispo
 Root typecheck passed. Complete standard suite: **2,145 passed / 32 skipped / zero failures**. The added standard skip is the explicit installed-CLI member test, run successfully above. An initial full run found the prior agent capability-list expectation; its replacement asserts the new capability and its PCB-only/non-compatibility limits, then the complete rerun passed.
 
 Limits: this increment enables the tool/API and agent capability, not the member Checks UI. Source-qualified report queries/display and the board picker are next; root reports must not be inherited as assembly reports. Member parity/ERC, complete schematic/dependency import and inter-board compatibility remain unavailable. Checks with violations are successful measurements, not clean-board certification. No new UI screenshot accompanies this backend increment.
+
+
+## Source-specific member Checks UI
+
+Review → Checks now resolves assembly sources before mounting report queries. It starts from a valid captured board selection or asks for a source. Shared boards use one report; unavailable sources cannot be selected. Run PCB-only DRC uses the checked source hash and captured declaration, checks the returned ownership, then rereads that source's report. PCB-only scope is visible beside the board name. Board inspection and Review updates link into Checks without opening another window.
+
+The client derives report/PCB paths from a freshly inspected, validated source declaration and rechecks ownership and PCB bytes after reading. A missing, malformed, root, different-source or older-declaration report supplies no member findings. A correctly owned report for an older PCB remains visible with a stale warning. Source-change events invalidate the report query. Normalized finding parsing now lives in client-core and retains the existing single-board API/tests. Selecting a finding expands its native item details directly beneath that row.
+
+Actual native app walkthrough: selected shared I/O → Run PCB-only DRC → **14 findings (8 errors, 4 warnings, 2 unconnected)** → selected clearance row → native item coordinates/descriptions appeared inline. Carrier did not inherit I/O's findings; switching back recovered them. A whitespace-only PCB change automatically showed the stale-PCB warning. The actual 960 × 720 layout remained usable. A changed declaration hid findings and required explicit reselection; after reselection, the older-declaration report remained unverified. All nine source/artifact/parent fixture files were restored byte-for-byte and the temporary report restored to absent. VAIO board inspection → PCB checks preserved its exact I/O source; the unresolved keyboard option was disabled. All VAIO source/preview/manifest hashes stayed unchanged; its quiet Overview was restored. No agent message was sent. [Native evidence](member-checks-ui-native.json).
+
+Root typecheck passed; final UI typecheck passed. Both affected complete package suites passed: **234 client-core + 224 UI**, zero failures. Focused report-scope/normalization cases passed **5 tests / 24 assertions**, including wrong/missing report ownership, changed source/declaration/directory and captured-selector mutation. The preceding full standard suite remains **2,145 passed / 32 skipped / zero failures** at the backend milestone; it was not repeated for this frontend/client-only increment.
+
+Limits: these are per-source PCB checks. Member schematic parity/ERC, inter-board electrical contracts and mechanical fit remain unverified. The checker does not navigate findings to exact source-canvas geometry yet. Persistent keep-older decisions, all-source check summaries and report artifact-integrity receipts remain future work; a matching source hash alone is not a pass.
+
+![Native member findings with contextual item details](member-checks-findings.png)
+![Older PCB warning in the compact native window](member-checks-stale-compact.png)
+![Changed declaration requires reselection](member-checks-reselect.png)
+![VAIO inspection opens the exact source's Checks](member-checks-vaio.png)

@@ -189,3 +189,7 @@ export * from "./assembly-scene";
 export * from "./sketch-recovery";
 
 export * from "./assembly-review";
+
+export * from "./assembly-checks";
+export * from "./check-findings";
+export { useAssemblyPcbCheck } from "./queries";
