@@ -243,9 +243,10 @@ export function ProductVideoPanel({
         <div className="fd-video-preview flex min-h-0 flex-col gap-2 p-3" data-testid="product-video-preview">
           {preview ? (
             <>
-              <div className="text-sm font-semibold">Preview</div>
               <VideoSourceStatus projectId={projectId} path={preview.path} updating={making} />
-              <ProjectVideo projectId={projectId} path={preview.path} className="max-h-[52vh]" />
+              <div className="fd-video-player">
+                <ProjectVideo projectId={projectId} path={preview.path} />
+              </div>
               <div className="text-[11px] text-muted">
                 {videos.map((f) => `${basename(f.path)} (${(f.size / 1024).toFixed(0)} KB)`).join(" · ")}
               </div>

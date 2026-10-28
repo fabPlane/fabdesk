@@ -1,0 +1,39 @@
+{
+  "viewport": {
+    "width": 960,
+    "height": 720
+  },
+  "preview": {
+    "x": 365,
+    "y": 287.5,
+    "width": 570,
+    "height": 343.5,
+    "top": 287.5,
+    "right": 935,
+    "bottom": 631,
+    "left": 365
+  },
+  "video": {
+    "x": 377,
+    "y": 368.5,
+    "width": 546,
+    "height": 186,
+    "top": 368.5,
+    "right": 923,
+    "bottom": 554.5,
+    "left": 377
+  },
+  "actions": {
+    "x": 377,
+    "y": 587,
+    "width": 546,
+    "height": 32,
+    "top": 587,
+    "right": 923,
+    "bottom": 619,
+    "left": 377
+  },
+  "paused": false,
+  "error": null,
+  "setupOpen": true
+}
