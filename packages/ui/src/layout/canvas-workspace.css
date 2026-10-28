@@ -91,7 +91,7 @@
 .fd-start-sketch-menu > summary { cursor:pointer; list-style:none; }
 .fd-start-sketch-menu > summary::-webkit-details-marker { display:none; }
 .fd-start-sketch-menu[open] > summary { background:color-mix(in srgb,var(--fd-accent) 7%,var(--fd-panel)); border-color:color-mix(in srgb,var(--fd-accent) 20%,var(--fd-border)); }
-.fd-start-sketch-menu > div { position:absolute; z-index:20; left:0; top:calc(100% + 8px); width:245px; border:1px solid var(--fd-border); border-radius:15px; background:var(--fd-panel); padding:10px; box-shadow:0 10px 35px #102a2015; }
+.fd-start-sketch-menu > div { position:absolute; z-index:20; left:0; top:calc(100% + 8px); width:270px; max-width:calc(100vw - 48px); border:1px solid var(--fd-border); border-radius:15px; background:var(--fd-panel); padding:10px; box-shadow:0 10px 35px #102a2015; }
 .fd-start-sketch-menu button { display:flex; width:100%; min-height:42px; align-items:center; gap:12px; padding:8px 10px; border-radius:7px; font-size:13px; text-align:left; }
 .fd-start-sketch-menu button:hover { background:var(--fd-panel-2); }
 .fd-start-sketch-menu p { font-size:11px; color:var(--fd-muted); border-top:1px solid var(--fd-border); margin:8px 4px 0; padding-top:12px; }
@@ -456,3 +456,8 @@
 
 .fd-canvas-breadcrumb { min-width:0; }
 .fd-canvas-breadcrumb > strong { min-width:0; overflow:hidden; text-overflow:ellipsis; font:inherit; }
+
+.fd-start-sketch-menu button > span { display:flex; flex-direction:column; gap:4px; white-space:normal; }
+.fd-start-sketch-menu button small { font-size:11px; color:var(--fd-muted); }
+.fd-composer-more > summary { border:0; box-shadow:none; padding:6px; min-height:30px; background:transparent; }
+.fd-composer-more .fd-workspace-menu-content { top:auto; bottom:calc(100% + 10px); width:240px; max-width:calc(100vw - 48px); }

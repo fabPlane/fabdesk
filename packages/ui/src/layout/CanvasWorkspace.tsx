@@ -73,11 +73,12 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
         <button onClick={() => setCreating("github")}><Icon name="folderOpen" width={16} height={16} />Import from GitHub</button>
         <button onClick={() => setNavigationOpen(true)}><Icon name="sidebar" width={16} height={16} />Browse projects & chats</button>
       </WorkspaceMenu>
-      {projectId && <span className="fd-canvas-breadcrumb" title={selectedBoardName ?? areaLabel}><span>/</span><strong>{selectedBoardName ?? areaLabel}</strong></span>}
+      {projectId && !fresh && <span className="fd-canvas-breadcrumb" title={selectedBoardName ?? areaLabel}><span>/</span><strong>{selectedBoardName ?? areaLabel}</strong></span>}
       <div className="fd-canvas-header-actions">
         <span className="fd-canvas-connection" title={coreStatus?.message ?? `Core ${coreStatus?.state ?? "ready"}; events ${sseStatus}`}><i data-connected={connected} />{connected ? local ? "Local workspace" : "Remote workspace" : "Reconnecting…"}</span>
-        {projectId && <Button size="sm" onClick={() => openArea("outputs")}><Icon name="export" width={16} height={16} />Export</Button>}
+        {projectId && !fresh && <Button size="sm" onClick={() => openArea("outputs")}><Icon name="export" width={16} height={16} />Export</Button>}
         <WorkspaceMenu className="fd-workspace-overflow" label={<span aria-label="Workspace options"><Icon name="more" width={20} height={20} /></span>}>
+          {fresh && projectId && <><div className="fd-menu-caption">Project tools</div>{(Object.keys(WORKSPACE_AREAS) as WorkspaceArea[]).map(key => <button key={key} onClick={() => openArea(key)}>{WORKSPACE_AREAS[key].label}</button>)}<div className="fd-menu-divider" /></>}
           <button onClick={() => ui().setPaletteOpen(true)}><Icon name="search" width={16} height={16} />Search commands</button>
           <button onClick={() => ui().setSettingsOpen(true)}><Icon name="settings" width={16} height={16} />Settings</button>
           <button onClick={() => ui().setInventoryOpen(true)}><Icon name="library" width={16} height={16} />Parts inventory</button>
@@ -90,7 +91,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
     {banner}
     {projectId && boardSources.data?.mode === "assembly" && <LiveAssemblyPreviews key={`${client.baseUrl}/${projectId}/${boardSources.data.manifestSha256}`} projectId={projectId} data={boardSources.data} enabled={!boardSources.isFetching && !boardSources.isError && connected && boardSources.data.editing === "explicit-source-tools"} />}
     <main className="fd-canvas-main" data-area={fresh ? "start" : area}>
-      {projectId && !secondary && !conversationOnly && <nav className="fd-canvas-destinations" aria-label="Project workspace">
+      {projectId && !fresh && !secondary && !conversationOnly && <nav className="fd-canvas-destinations" aria-label="Project workspace">
         <WorkspaceMenu label={<><Icon name="library" width={16} height={16} /><span>{areaLabel}</span><Icon name="chevronDown" width={14} height={14} /></>}>
           <div className="fd-menu-caption">Project workspace</div>
           {(Object.keys(WORKSPACE_AREAS) as WorkspaceArea[]).map((key) => <button key={key} aria-current={area === key ? "page" : undefined} onClick={() => openArea(key)}>{key === "boards" && boardSources.data?.mode === "assembly" ? "Boards" : WORKSPACE_AREAS[key].label}</button>)}

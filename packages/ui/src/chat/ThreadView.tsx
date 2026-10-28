@@ -96,7 +96,7 @@ export function ThreadView({ presentation = "chat" }: { presentation?: "chat" | 
           {presentation !== "start" && !projectId && <p className="mt-3 text-xs text-muted">Saving a sketch creates a project automatically.</p>}
         </div>
       )}
-      <Composer thread={thread} onCreateThread={onCreateThread} />
+      <Composer thread={thread} onCreateThread={onCreateThread} startMode={presentation === "start"} />
       {presentation === "start" && !activeThreadId && <FreshStartActions />}
       </div>
     </div>

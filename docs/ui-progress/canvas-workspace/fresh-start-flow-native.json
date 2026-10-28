@@ -1,0 +1,30 @@
+{
+  "uiOnly": true,
+  "study": {
+    "id": "prj_mvrlt1yx802c210b69",
+    "path": "/Users/amliomnie/Documents/Codex/2026-10-27/https-github-com-tensorfleet-placement-lab/work/sketch-first-projects/canvas-fresh-start-ui-validation",
+    "name": "Canvas fresh-start \u2014 UI validation"
+  },
+  "validated": [
+    "Native Create project \u2192 fresh start",
+    "Sketch choices explain .excalidraw versus PNG/JPEG",
+    "Draw or open \u2192 existing loaded Excalidraw editor with Import drawing; closed without saving",
+    "Assistant tools \u2192 Finish it visible; not executed",
+    "Workspace options \u2192 Files \u2192 task menu Board \u2192 fresh start",
+    "All 24 recorded fixture and VAIO hashes unchanged",
+    "New study has only fabdesk.json and .gitignore; no thread, sketch or native design created"
+  ],
+  "checks": {
+    "uiTypecheck": "PASS",
+    "uiTests": {
+      "pass": 225,
+      "fail": 0
+    }
+  },
+  "limits": [
+    "Fresh import callback now leaves initial area selection to existing adaptive/restore flow; no repository import rerun in this UI pass.",
+    "No new image upload/editable-file save validation claimed; existing verified implementation reused.",
+    "Compact-window acceptance remains pending."
+  ],
+  "captures": "177 is prior placeholder iteration;178\u2013180 are final UI"
+}

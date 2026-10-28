@@ -18,6 +18,7 @@ import { expandSlashCommand, isFinishItCommand, slashSuggestions } from "@fabdes
 import { applyComposerTextareaHeight } from "./composer-autosize";
 import { useVoiceInput } from "./voice/useVoiceInput";
 import { MicButton, VoiceBar } from "./voice/VoiceBar";
+import { WorkspaceMenu } from "../layout/WorkspaceMenu";
 import { FinishItPanel } from "./FinishItPanel";
 import { finishItActive } from "./finish-it-view";
 
@@ -41,6 +42,8 @@ export const composerHandlers: {
 };
 
 export interface ComposerProps {
+  /** First-start actions already expose sketch creation; advanced automation stays requested. */
+  startMode?: boolean;
   thread: Thread | null;
   /** Creates a thread for a first message; returns the new thread id. */
   onCreateThread: (input: { agentId: AgentId; model?: string }) => Promise<string>;
@@ -52,7 +55,7 @@ const FALLBACK_AGENTS = [
 
 const EMPTY: never[] = [];
 
-export function Composer({ thread, onCreateThread }: ComposerProps) {
+export function Composer({ thread, onCreateThread, startMode = false }: ComposerProps) {
   const agentButtonRef = useRef<HTMLButtonElement>(null);
   const { client, host } = useCore();
   const qc = useQueryClient();
@@ -248,9 +251,16 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
   const mod = modKey(host.platform);
   const placeholder = thread
     ? "Message the agent..."
-    : projectId
+    : startMode ? "Describe your project…" : projectId
       ? "Describe the board you want..."
       : "Describe your idea or start with a sketch...";
+
+  const finishAction = <Button variant="secondary" size="sm" aria-label="Finish it"
+                title={alreadyFinished ? "Board already finished. Make changes to enable Finish it again." : "Finish schematic, place, route and verify without step-by-step prompts"}
+                onClick={() => void beginFinishIt()} disabled={finishItBusy || alreadyFinished || agentMissing} data-testid="finish-it">
+                <Icon name="play" width={14} height={14} />
+                <span className="fd-action-label">Finish it</span>
+              </Button>;
 
   return (
     <div className="fd-composer-dock bg-bg px-5 pb-4 pt-3">
@@ -350,7 +360,7 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
             <IconButton title="Attach file" onClick={() => void pickFiles()}>
               <Icon name="paperclip" />
             </IconButton>
-            <Button
+            {!startMode && <Button
               variant="ghost"
               size="sm"
               className="fd-sketch-button"
@@ -359,7 +369,7 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
               onClick={() => setSketchOpen(true)}
             >
               <Icon name="compose" width={16} height={16} /><span className="fd-action-label">Sketch</span>
-            </Button>
+            </Button>}
             <MicButton
               active={voice.state.phase === "recording"}
               disabled={sending}
@@ -370,14 +380,12 @@ export function Composer({ thread, onCreateThread }: ComposerProps) {
               onToggle={voice.toggle}
             />
             {thread && <PermissionsMenu key={thread.id} thread={thread} />}
-            {projectId && (
-              <Button variant="secondary" size="sm" aria-label="Finish it"
-                title={alreadyFinished ? "Board already finished. Make changes to enable Finish it again." : "Finish schematic, place, route and verify without step-by-step prompts"}
-                onClick={() => void beginFinishIt()} disabled={finishItBusy || alreadyFinished || agentMissing} data-testid="finish-it">
-                <Icon name="play" width={14} height={14} />
-                <span className="fd-action-label">Finish it</span>
-              </Button>
-            )}
+            {projectId && (startMode ? <WorkspaceMenu className="fd-composer-more" label={<span aria-label="Assistant tools"><Icon name="more" width={18} height={18} /></span>}>
+              <div className="fd-menu-caption">Automation</div>
+              {finishAction}
+              <p className="fd-menu-caption">Finish schematic, placement, routing and checks with the agent.</p>
+            </WorkspaceMenu> : finishAction)}
+
             <div className="fd-composer-send-group ml-auto flex min-w-0 items-center gap-2">
               <div className="fd-agent-control relative min-w-0">
                 <Button

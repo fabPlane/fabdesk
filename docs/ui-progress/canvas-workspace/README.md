@@ -696,3 +696,16 @@ Native validation covered the shared Right I/O primary and checks navigation, Es
 ![Secondary tools requested on VAIO](vaio-requested-tools.jpg)
 
 [Native walkthrough evidence](overview-context-native.json). The small fixture capture is [also preserved](overview-context-tools.jpg).
+
+
+### Fresh start with requested tools
+
+A blank project opens on the idea/sketch canvas without a Board selector, Board breadcrumb or Export button. Existing project destinations remain in Workspace options. The sketch menu distinguishes drawing/.excalidraw files from PNG/JPEG reference images. Duplicate composer Sketch controls are removed on the start screen only; advanced Finish it stays available under Assistant tools. Existing chat composer controls remain unchanged. Import no longer forces PCB after selecting the project, allowing the existing adaptive/restore flow to choose the view. No native/backend behavior was rebuilt.
+
+Created a private blank project through the actual native UI, opened the loaded drawing editor and its existing Import drawing entry, closed it without saving, inspected the requested automation menu without running it, and navigated Files → Board → fresh start. The study still has only its metadata and .gitignore, with no thread or source creation. UI typecheck and **225 UI tests PASS**; all24 recorded fixture/VAIO hashes unchanged. A new repository import and compact acceptance were not rerun; earlier sketch upload/save validation is retained, not claimed as newly repeated.
+
+![Quiet fresh start](fresh-start-quiet.jpg)
+![Sketch and image choices](fresh-start-final.jpg)
+![Existing drawing tool on request](fresh-start-drawing-tool.jpg)
+
+[Native walkthrough record](fresh-start-flow-native.json). Original177 capture is retained as an earlier placeholder iteration.
