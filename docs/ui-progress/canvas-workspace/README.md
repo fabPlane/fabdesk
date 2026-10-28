@@ -752,3 +752,18 @@ Native validation opened and canceled VAIO import, verified Close then Choose mo
 ![Native import dialog](enclosure-import-requested.jpg)
 
 [Native walkthrough evidence](mechanical-flow-native.json). All concepts and prior captures remain preserved.
+
+
+### Single-board overview and compact native tools
+
+The single-board overview now uses the shared compact heading and selection pattern: Open board and Ask, with schematic/model/enclosure/checks under More. Resource counts stay available as a quiet footer. Selection resets when the project changes. Existing artifact source labels and Review updates remain; no unknown schematic/model parity is inferred. Ask prepares a draft without sending it.
+
+Post-edit placement/outline notices now link to existing Checks. Member navigation requires the current owned physical selection to match the edit’s captured source and declaration; a project/selection change disables it. The obsolete claim that member checks are unavailable is removed. Native popup placement reserves space above the corner assistant in canvas mode. No native editing or check implementation was rebuilt.
+
+Actual native window961×721: overview selection/More→existing Checks passed; Open board→location→Parts→R1 showed105,100mm/rotation0 with Apply disabled until changes. Reopened settled inspector stayed above the corner assistant. No edits, reports, regeneration or messages were submitted.225UItests and types pass; all38recordedroot/assembly/VAIOhashes unchanged. Post-edit Checks was typechecked but not triggered by another native mutation this pass; compact acceptance for other surfaces remains open.
+
+![Native overview requested tools](board-overview-requested-tools.jpg)
+![Actual compact overview](board-overview-compact.jpg)
+![Actual compact native part inspector](native-part-tools-compact.jpg)
+
+[Native evidence](board-flow-native.json).

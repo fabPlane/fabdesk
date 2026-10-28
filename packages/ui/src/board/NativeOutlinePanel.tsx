@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { NativePartTarget } from "./NativePartTarget";
+import { BoardChecksButton } from "./BoardChecksButton";
 import type { SvgBox } from "./svg-coords";
 import { PcbOutlineResizeResult, type PcbOutlineInspection, type BoardSourceSelection } from "@fabdesk/protocol";
 import { inspectPcbOutline, pcbToolJsonForSource, resizedOutlinePoints, useCoreClient, usePcbOutline, useRunTool, useToolManifest } from "@fabdesk/client-core";
 import { Button, Input, Spinner } from "../components/ui";
-import { useUiStore } from "../stores/ui";
 
 /** Dimensions edit the selected native Edge.Cuts only; no footprint, route, or enclosure is scaled. */
 export function NativeOutlinePanel({ projectId, board, canPosition, onBusyChange, host, box, onMutationBusyChange, visible = true }: { board?: BoardSourceSelection; visible?: boolean; onMutationBusyChange: (busy: boolean) => void; projectId: string; canPosition: boolean; onBusyChange: (busy: boolean) => void; host: HTMLElement | null; box: SvgBox }) {
@@ -75,7 +75,7 @@ export function NativeOutlinePanel({ projectId, board, canPosition, onBusyChange
         <div className="fd-native-part-actions"><Button size="sm" variant="ghost" disabled={busy} onClick={() => void reload()}>Reload outline</Button><Button size="sm" variant="primary" type="submit" disabled={busy || stale || !canPosition || inspection.isFetching || inspection.isError || !points || !changed}>{busy ? "Saving / refreshing…" : snapshot.bounds ? "Apply dimensions" : "Create outline"}</Button></div>
       </form>
     </>}
-    {notice && <p role="status" className="fd-native-part-warning">{notice}{board ? " Run the selected source’s checks in KiCad; member checks are not integrated here yet." : <Button size="sm" variant="ghost" onClick={() => useUiStore.getState().setBoardTab("drc")}>Open checks</Button>}</p>}
+    {notice && <p role="status" className="fd-native-part-warning">{notice}<BoardChecksButton projectId={projectId} {...(board ? { board } : {})} /></p>}
     {exportError && <details className="fd-native-part-note"><summary>Preview remains out of date</summary><p>{exportError}</p><p>Resolve the export error, then choose Update preview. The outline is already saved.</p></details>}
     {error && <p role="alert" className="fd-native-part-warning">{error}</p>}
   </>;

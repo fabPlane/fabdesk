@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { CoreHttpError, savedOutputs, useBoardSources, useProject, useProjectOrder, usePcbPreviewRevision, useBoardModelRevision, useEnclosureSourceRevision, usePcbCheckRevision } from "@fabdesk/client-core";
-import { useUiStore } from "../stores/ui";
+import { newChatDraftKey, useUiStore } from "../stores/ui";
 import { ProjectImage } from "../chat/ProjectImage";
 import { Button, EmptyState, LoadError, Spinner } from "../components/ui";
 import { AssemblyOverview } from "./AssemblyOverview";
 import { Icon } from "../components/Icon";
+import { WorkspaceMenu } from "./WorkspaceMenu";
 
 /** Declared assembly membership takes priority over the legacy canonical root board. */
 export function ProjectOverview({ boardPicker = false }: { boardPicker?: boolean } = {}) {
@@ -13,7 +14,7 @@ export function ProjectOverview({ boardPicker = false }: { boardPicker?: boolean
   if (sources.isError && !sources.data && !(sources.error instanceof CoreHttpError && sources.error.status === 404 && project.data && !project.data.files.some(file => file.path === "fabplane.assembly.json"))) return <LoadError title="Could not inspect project board sources" onRetry={() => { void sources.refetch(); void project.refetch(); }} />;
   if (sources.isPending) return <div className="flex h-full items-center justify-center"><Spinner /></div>;
   if (sources.data?.mode === "assembly") return <AssemblyOverview boardPicker={boardPicker} projectId={projectId} name={project.data?.name ?? "Project overview"} data={sources.data} checking={sources.isFetching} failed={sources.isError} onRetry={() => { void sources.refetch(); }} />;
-  return <SingleBoardOverview />;
+  return <SingleBoardOverview key={projectId} />;
 }
 
 function SingleBoardOverview() {
@@ -47,25 +48,35 @@ function SingleBoardOverview() {
     : pcbRevision.data === "source-changed" ? "PCB changed since preview" : pcbRevision.data === "artifact-changed" ? "Preview changed · source unverified"
     : pcbRevision.data === "matches-source" ? "Preview matches saved PCB" : "Saved preview · source unverified";
   return <div className="fd-project-overview" onKeyDown={(event) => { if (event.key === "Escape") setSelected(false); }}>
-    <div className="fd-overview-heading"><span className="fd-overview-eyebrow">PROJECT OVERVIEW</span><h1>{project.data.name}</h1><p>Your board, source files and outputs in one place.</p>
+    <div className="fd-overview-heading"><h1 title={project.data.name}>Project overview</h1><p>Select your board to open its tools.</p>
       {updates.length > 0 && <Button className="fd-overview-updates" size="sm" variant="ghost" title={`${updates.join(", ")} have source or artifact changes. This covers tracked artifacts only; review before sharing or fabrication.`} onClick={() => ui().setBoardTab("updates")}><Icon name="warning" width={16} height={16} />Review updates · {updates.length}</Button>}
     </div>
     {(pcb || preview) ? <div className="fd-overview-board">
       {selected && <div className="fd-board-context-tools" aria-label="Board actions">
-        <span><Icon name="pcb" width={17} height={17} />Board selected</span>
-        <Button variant="ghost" size="sm" onClick={() => ui().setBoardTab("pcb")}><Icon name="compose" width={16} height={16} />Open PCB</Button>
-        <Button variant="ghost" size="sm" onClick={() => ui().setBoardTab("schematic")}>Schematic</Button>
-        <Button variant="ghost" size="sm" onClick={() => ui().setWorkspaceArea("mechanical")}>Enclosure</Button>
+        <span><Icon name="pcb" width={17} height={17} />Main board</span>
+        <Button variant="ghost" size="sm" onClick={() => ui().setBoardTab("pcb")}><Icon name="compose" width={16} height={16} />Open board</Button>
+        <Button variant="ghost" size="sm" onClick={() => {
+          const state = ui(); if (state.activeProjectId !== projectId) return;
+          const key = state.activeThreadId ?? newChatDraftKey(projectId), previous = state.drafts[key] ?? "";
+          const prompt = "Review this board’s latest saved PCB and schematic. Explain its purpose and any changes that need attention before proposing edits.";
+          state.setDraft(key, previous.trim() ? `${previous}\n\n${prompt}` : prompt); state.focusComposer();
+        }}><Icon name="sparkles" width={16} height={16} />Ask</Button>
+        <WorkspaceMenu label={<><span>More</span><Icon name="chevronDown" width={14} height={14} /></>}>
+          <button onClick={() => ui().setBoardTab("schematic")}>Schematic</button>
+          <button onClick={() => ui().setBoardTab("3d")}>3D model</button>
+          <button onClick={() => ui().setWorkspaceArea("mechanical")}>Enclosure</button>
+          <button onClick={() => ui().setBoardTab("drc")}>Checks</button>
+        </WorkspaceMenu>
       </div>}
       <button className="fd-overview-preview" data-selected={selected} aria-pressed={selected} aria-label="Select main board to show tools" onClick={() => setSelected(!selected)} onDoubleClick={() => ui().setBoardTab("pcb")}>
         {preview ? <ProjectImage projectId={projectId} path={preview.path} alt={`${project.data.name} board preview`} /> : <span><Icon name="pcb" width={64} height={64} /><span>Open the PCB to render its preview</span></span>}
       </button>
-      <div className="fd-overview-board-caption"><strong>Main board</strong><span>{pcb ? "board.kicad_pcb" : "Rendered preview"}</span>{preview && <span>{previewStatus}</span>}<span>{schematic ? "Schematic available" : "No schematic source"}</span></div>
+      <div className="fd-overview-board-caption"><strong>Main board</strong>{preview && <span>{previewStatus}</span>}<span>{schematic ? "Schematic available" : "No schematic source"}</span></div>
     </div> : <div className="fd-overview-empty"><Icon name="pcb" width={54} height={54} /><h2>Start with an idea or a sketch</h2><p>Your project is ready. Add a design or describe what you want to build.</p><Button onClick={() => { ui().setAssistantOpen(true); ui().focusComposer(); }}>Describe your board</Button><Button variant="ghost" onClick={() => ui().setSketchOpen(true)}>Add a sketch</Button></div>}
-    <div className="fd-overview-facts">
+    <nav className="fd-overview-facts" aria-label="Project resources">
       <button onClick={() => ui().setWorkspaceArea("files")}><Icon name="folder" width={18} height={18} /><strong>{files.length}</strong><span>project files</span></button>
       <button onClick={() => ui().setWorkspaceArea("outputs")}><Icon name="export" width={18} height={18} /><strong>{outputs.length}</strong><span>saved outputs</span></button>
       <button onClick={() => ui().setBoardTab("drc")}><Icon name={issues.length ? "warning" : "checklist"} width={18} height={18} /><strong>{order.isError ? "Unavailable" : issues.length ? "Needs review" : "Open checks"}</strong><span>{issues.length ? `${issues.length} readiness notes` : "DRC / ERC & readiness"}</span></button>
-    </div>
+    </nav>
   </div>;
 }

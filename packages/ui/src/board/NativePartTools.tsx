@@ -5,6 +5,7 @@ import { inspectPcbParts, parsePartPositionInput, pcbPlacementWarnings, pcbToolJ
 import { Button, IconButton, Input, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { NativePartTarget } from "./NativePartTarget";
+import { BoardChecksButton } from "./BoardChecksButton";
 import type { SvgBox } from "./svg-coords";
 import { NativeOutlinePanel } from "./NativeOutlinePanel";
 import { newChatDraftKey, useUiStore } from "../stores/ui";
@@ -55,21 +56,22 @@ export function NativePartTools({ projectId, board, point, openAbove, onMoved, c
     const position = () => {
       const rect = root.current?.getBoundingClientRect();
       if (!rect) return;
-      const width = Math.min(390, window.innerWidth * .75), below = window.innerHeight - rect.bottom - 24, above = rect.top - 24;
+      const safeBottom = window.innerHeight - (root.current?.closest(".fd-canvas-workspace") ? 88 : 12);
+      const width = Math.min(390, window.innerWidth * .75), below = safeBottom - rect.bottom - 12, above = rect.top - 24;
       const anchor = root.current?.closest(".fd-location-anchor")?.getBoundingClientRect();
       if (mode === "outline") {
         const drawing = root.current?.closest(".fd-svg-host")?.getBoundingClientRect();
         if (drawing) {
           const left = drawing.left >= width + 36 ? drawing.left - width - 24 : window.innerWidth - drawing.right >= width + 36 ? drawing.right + 24 : 12;
-          const height = Math.min(470, window.innerHeight - 24, (popup.current?.scrollHeight ?? 468) + 2);
-          setPopupStyle({ left, width, top: Math.max(12, Math.min(drawing.top + 30, window.innerHeight - height - 12)), maxHeight: Math.min(470, window.innerHeight - 24) });
+          const height = Math.min(470, safeBottom - 12, (popup.current?.scrollHeight ?? 468) + 2);
+          setPopupStyle({ left, width, top: Math.max(12, Math.min(drawing.top + 30, safeBottom - height)), maxHeight: Math.min(470, safeBottom - 12) });
           return;
         }
       }
       if (anchor && (window.innerWidth - anchor.left >= width + 40 || anchor.left >= width + 40)) {
         const left = window.innerWidth - anchor.left >= width + 40 ? anchor.left + 40 : anchor.left - width - 40;
-        const height = Math.min(470, window.innerHeight - 24, (popup.current?.scrollHeight ?? 468) + 2);
-        setPopupStyle({ left, width, top: Math.max(12, Math.min(anchor.top + 20, window.innerHeight - height - 12)), maxHeight: Math.min(470, window.innerHeight - 24) });
+        const height = Math.min(470, safeBottom - 12, (popup.current?.scrollHeight ?? 468) + 2);
+        setPopupStyle({ left, width, top: Math.max(12, Math.min(anchor.top + 20, safeBottom - height)), maxHeight: Math.min(470, safeBottom - 12) });
         return;
       }
       const useAbove = below < 470 && above > below || above >= 470 && openAbove;
@@ -165,7 +167,7 @@ export function NativePartTools({ projectId, board, point, openAbove, onMoved, c
         }}>Ask about {selection.part.ref}</Button>
         <p className="fd-native-part-note">Drag the labeled target or use arrow keys to preview a position; Apply saves it. Coordinates use KiCad’s board origin. Existing routed copper is kept; inspect routing and run checks afterward.</p>
       </>}
-      {message && <p role="status" className="fd-native-part-warning">{message}{board ? " Run the selected source’s checks in KiCad; member checks are not integrated here yet." : <Button size="sm" variant="ghost" onClick={() => useUiStore.getState().setBoardTab("drc")}>Open checks</Button>}</p>}
+      {message && <p role="status" className="fd-native-part-warning">{message}<BoardChecksButton projectId={projectId} {...(board ? { board } : {})} /></p>}
       {previewError && <details className="fd-native-part-note"><summary>Why couldn’t the preview update?</summary><p>{previewError}</p><p>Resolve the export error, then choose Update preview. The native placement is already saved.</p></details>}
       {error && <p role="alert" className="fd-native-part-warning">{error}</p>}
       </>}
