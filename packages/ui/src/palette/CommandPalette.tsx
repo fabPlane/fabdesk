@@ -2,7 +2,7 @@ import { Command } from "cmdk";
 import { useCallback, useDeferredValue, useState } from "react";
 import { useAppActions } from "../app/useAppActions";
 import { Dialog, Kbd } from "../components/ui";
-import { useCore, useBoardSources, WORKSPACE_AREAS, workspaceAreaForView, workspaceViews, type WorkspaceArea } from "@fabdesk/client-core";
+import { useCore, useBoardSources, WORKSPACE_AREAS, workspaceAreaForView, workspaceViews, workspaceViewSearchTerms, type WorkspaceArea } from "@fabdesk/client-core";
 import { useAuthStore, useChatSearch, useProjects, useThreads } from "@fabdesk/client-core";
 import { openChatSearchResult } from "../chat/SearchResults";
 import { BOARD_TABS, BOARD_TAB_LABELS, useUiStore } from "../stores/ui";
@@ -63,8 +63,8 @@ export function CommandPalette() {
               {workspaceViews(area).length === 0 && <Command.Item disabled={!projectId} value="project overview all boards assembly" onSelect={pick(() => useUiStore.getState().setWorkspaceArea(area))}>Project overview</Command.Item>}
               {workspaceViews(area).filter(view => !(assembly && area === "boards" && (view.tab === "cinema" || view.tab === "art"))).map(view => {
                 const index = BOARD_TABS.indexOf(view.tab);
-                const aliases = area === "outputs" && view.tab === "files" ? "export gerbers export solder stencil export laser cut stencil fabrication bom csv lightburn" : area === "outputs" && view.tab === "renders" ? "render board renders images" : area === "outputs" && view.tab === "3d" ? "3d glb stl obj product video movie" : view.tab === "cinema" ? "route board cinema" : view.tab === "drc" ? "run drc run erc drc erc electrical checks" : view.tab === "diff" ? "diff changes" : "";
-                return <Command.Item key={view.tab} disabled={!projectId} value={`${WORKSPACE_AREAS[area].label} ${view.label} ${aliases}`} onSelect={pick(() => { const ui = useUiStore.getState(); ui.setWorkspaceArea(area); ui.setWorkspaceTab(view.tab); })}>
+
+                return <Command.Item key={view.tab} disabled={!projectId} value={workspaceViewSearchTerms(area, view)} onSelect={pick(() => { const ui = useUiStore.getState(); ui.setWorkspaceArea(area); ui.setWorkspaceTab(view.tab); })}>
                   {view.label}{index >= 0 && index < 9 && workspaceAreaForView(view.tab) === area ? <span className="ml-auto"><Kbd>{mod} + {index + 1}</Kbd></span> : null}
                 </Command.Item>;
               })}

@@ -23,3 +23,22 @@ export function workspaceAreaForView(view: string): WorkspaceArea {
 export function workspaceViews(area: WorkspaceArea): ReadonlyArray<{ tab: WorkspaceView; label: string }> {
   return WORKSPACE_AREAS[area].views;
 }
+
+/** Familiar task names remain searchable after their tools move into grouped workspaces. */
+export function workspaceViewSearchTerms(area: WorkspaceArea, view: { tab: WorkspaceView; label: string }): string {
+  const aliases: Partial<Record<`${WorkspaceArea}:${WorkspaceView}`, string>> = {
+    "boards:pcb": "pcb layout placement position rotate resize board dimensions",
+    "boards:schematic": "schematic circuit sheets",
+    "boards:cinema": "route board router cinema playback",
+    "parts:bom": "bill of materials bom parts shopping list off-board items quantities",
+    "outputs:files": "export gerbers drill fabrication zip bom csv solder stencil laser cut lightburn download files",
+    "outputs:renders": "render board renders images pictures saved outputs gallery",
+    "outputs:3d": "3d glb stl obj model export download product video render make movie animation mp4 webm gif",
+    "review:updates": "review updates sync freshness stale source changes",
+    "review:drc": "run drc run erc electrical design rule checks findings",
+    "review:diff": "diff changes compare revisions visual comparison history",
+    "review:comments": "pin pins comments discussion questions answers",
+    "files:notes": "project notes requirements decisions",
+  };
+  return `${WORKSPACE_AREAS[area].label} ${view.label} ${aliases[`${area}:${view.tab}`] ?? ""}`;
+}

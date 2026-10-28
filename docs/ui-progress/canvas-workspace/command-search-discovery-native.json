@@ -1,0 +1,13 @@
+{
+  "observedProblem": "Native command search export video returned No results despite existing Models & video page",
+  "nativeQueries": {
+    "export video": "Outputs / Models & video",
+    "shopping list": "Parts & BOM / Parts & shopping",
+    "3d export": "Outputs / Models & video",
+    "compare revisions": "Review / Changes",
+    "laser stencil": "Outputs / Export files"
+  },
+  "navigation": "Enter on export video opens existing Models & video, no export job started; no saved PCB \u2192 Generate 3D model disabled with prerequisite explanation",
+  "validation": "Client/UItypes PASS,285clienttests/228UItests PASS",
+  "limits": "Aliases expose existing pages, not new engineering operations. Prior complete standard suite2236pass36skip0fail before this aliases-only slice."
+}
