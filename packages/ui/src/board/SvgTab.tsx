@@ -266,13 +266,15 @@ export function SvgTab({ kind, active = true }: { kind: "schematic" | "pcb"; act
                 <div className="text-[11px] font-semibold uppercase tracking-[0.09em] text-muted">New pin</div>
                 <p className="text-xs text-muted">The blue marker shows the selected location. Click another spot on the board to move it.</p>
                 <Textarea
+                  autoFocus
                   value={question}
                   onChange={(event) => setQuestion(event.target.value)}
                   placeholder="What is this?"
                   rows={4}
                   aria-label="Comment question"
                 />
-                <p className="mt-1 text-[11px] text-muted">Optional details: the board location is already captured. Add these only if you know them.</p>
+                <details className="fd-comment-optional"><summary>Component, pin or net (optional)</summary><div className="mt-3 space-y-3">
+                <p className="text-[11px] text-muted">The board location is already captured. Add these details if you know them.</p>
                 <label className="flex flex-col gap-1 text-xs">
                   <span>Component reference <span className="text-muted">(optional)</span></span>
                   <Input value={ref} onChange={(event) => setRef(event.target.value)} placeholder="e.g. R2, D1, U12" />
@@ -288,6 +290,7 @@ export function SvgTab({ kind, active = true }: { kind: "schematic" | "pcb"; act
                   <Input value={net} onChange={(event) => setNet(event.target.value)} placeholder="e.g. GND, VCC, SPI.CS" />
                   <span className="text-[11px] text-muted">The named electrical connection you’re asking about.</span>
                 </label>
+                </div></details>
                 <div className="flex gap-1">
                   <Button size="sm" variant="primary" disabled={!question.trim() || pin.isPending} onClick={() => void savePin()}>
                     Save pin

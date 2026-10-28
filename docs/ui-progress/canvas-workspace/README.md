@@ -796,3 +796,21 @@ Native961×721walkthrough in the isolated blank UI study added SG90 and M3 stand
 ![VAIO member BOM coverage is explicit](vaio-parts-coverage.jpg)
 
 [Native evidence](parts-flow-native.json).
+
+
+### Revision review opens on the drawing
+
+Changes keeps existing revision selectors, highlights, overlay/blend and side-by-side tools. The change index opens only through Change list; compact controls use Latest commit/Current files labels. Saved reports are explicitly labeled Saved comparison. A project without Git history gets a clear explanation and Files action rather than a row of disabled controls. Member-board diff remains unavailable and cannot silently invoke root-board comparison.
+
+Comment review labels project-root scope for assemblies and prevents unqualified pins opening on a selected member. Existing project notes remain reachable. Root comment creation now focuses the question and folds optional component/pin/net fields. Existing pin persistence and review/navigation are reused. Hosted Repo/Share remain a separate feature stack; a fresh main fetch still resolves519cc3c.
+
+Actual native961×721workflow: copied an earlier native fixture unchanged into the isolated UI study, created one local Git baseline, rendered it, and used the guarded UI to move R1 from105→106mm. The refreshed native preview and post-edit Open checks worked in that project. Placement analysis warned of2affectedcopperitems/1possible short; no DRC or engineering pass is claimed. Compare produced one moved R1 with unchanged nets/tracks; requested change highlighting and overlayAfter passed. A local pin at107.5,102.5mm was saved and Review→Show on drawing returned to it. No agent request or cloud publication.
+
+The study intentionally retains its copied/edited PCB, local baseline, generated preview/comparison outputs and one local comment; earlier hardware is unchanged. All38recordedroot/assembly/VAIOhashes plus2studyoriginals remain unchanged.225UItests/types pass. Final no-history entry and VAIO diff/comment limitations were verified in the native app.197/198 precede the final saved-report prefix;201 is the final default canvas.
+
+![Final saved comparison, change index closed](saved-comparison-canvas.jpg)
+![Requested actual R1 change](review-requested-change-list.jpg)
+![Persisted local drawing pin](local-review-pin.jpg)
+![Project without revision history](review-no-history.jpg)
+
+[Native workflow evidence](change-flow-native.json).

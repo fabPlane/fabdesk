@@ -1,0 +1,92 @@
+{
+  "preservation": [
+    {
+      "fixture": "root",
+      "files": 14,
+      "changed": []
+    },
+    {
+      "fixture": "assembly",
+      "files": 8,
+      "changed": []
+    },
+    {
+      "fixture": "vaio",
+      "files": 16,
+      "changed": []
+    },
+    {
+      "fixture": "study-originals",
+      "files": 2,
+      "changed": []
+    }
+  ],
+  "nativeStudy": {
+    "projectId": "prj_mvrlt1yx802c210b69",
+    "gitBaselineCommit": "6fecddb9ce4db5ff4c10fbdc0e763fffa9530e22",
+    "copiedPcbBeforeSha256": "34f1e8d8592b9fce278642e7ab15b94cf53631740cccf25c439a1311e7bc77c6",
+    "savedPcbAfterSha256": "623d182c8b5a79c654b5cf6a50534cb4d97863076ec717d36be2f96433563df8",
+    "measuredChange": {
+      "ref": "R1",
+      "before": {
+        "x": 105,
+        "y": 100
+      },
+      "after": {
+        "x": 106,
+        "y": 100
+      },
+      "rotation": 0
+    },
+    "placementAnalysis": {
+      "affectedCopperItems": 2,
+      "possibleShorts": 1,
+      "note": "Warnings shown; not a DRC/clearance/fit pass"
+    },
+    "diffSummary": {
+      "added": 0,
+      "removed": 0,
+      "moved": 1,
+      "schematicMoved": 0,
+      "changed": 1,
+      "netsAdded": 0,
+      "netsRemoved": 0,
+      "netsChanged": 0,
+      "tracksAdded": 0,
+      "tracksRemoved": 0,
+      "viasAdded": 0,
+      "viasRemoved": 0,
+      "viasChanged": 0,
+      "zonesAdded": 0,
+      "zonesRemoved": 0,
+      "zonesChanged": 0
+    },
+    "filesIntentionallyRetained": [
+      "board.kicad_pcb",
+      ".git local baseline",
+      "renders/pcb.svg and revision receipt",
+      "reports/board-diff.json",
+      "renders/diff generated native comparisons",
+      "comments.json local review pin",
+      "prior project.parts.json hardware unchanged"
+    ]
+  },
+  "walkthrough": [
+    "Native render\u2192guarded R1 Apply\u2192preview refreshed\u2192post-edit Open checks same project; no DRC run",
+    "Changes Compare\u2192one moved part; default change list closed; requested list\u2192R1 highlight; overlayAfter\u2192100percent",
+    "Saved comparison reopened with list closed and explicit saved label",
+    "Local pin question autofocused; optional component/pin/net closed; saved; ReviewComments\u2192Showondrawing same107.5,102.5mm",
+    "Earlier no-Git reference project showed only explanation/Openprojectfiles, no disabled revision toolbar",
+    "VAIO member diff unavailable/Comments member pins unsupported; project notes offered"
+  ],
+  "validation": {
+    "uiTypes": "PASS /tmp/canvas-change-flow-final-types.log",
+    "uiTests": "225 PASS 0 FAIL /tmp/canvas-change-flow-final-tests.log"
+  },
+  "limits": [
+    "No source-qualified member diff/comment implementation added",
+    "No agent request, cloud publication, DRC, ERC, synchronization or engineering pass claimed",
+    "Hosted Repo/Share remain on separate feature stack; fresh main fetched still519cc3c",
+    "197/198 precede final Savedcomparison prefix;201 is final default layout"
+  ]
+}

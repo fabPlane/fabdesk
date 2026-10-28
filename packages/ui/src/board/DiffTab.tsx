@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Badge, Button, EmptyState, LoadError, Select, Spinner } from "../components/ui";
-import { useProjectJson, useProjectText, useRunTool } from "@fabdesk/client-core";
+import { useBoardSources, useProjectJson, useProjectText, useRunTool } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { SvgViewer } from "./SvgViewer";
 import { cn } from "../util";
@@ -73,11 +73,15 @@ function revisionsFrom(result: unknown): Revision[] {
 }
 
 function shortRef(ref: string): string {
+  if (ref === "HEAD") return "Latest commit";
+  if (ref === "worktree") return "Current files";
   return /^[0-9a-f]{7,40}$/i.test(ref) ? ref.slice(0, 8) : ref;
 }
 
 export function DiffTab() {
   const projectId = useUiStore((s) => s.activeProjectId);
+  const sources = useBoardSources(projectId);
+  const [changesOpen, setChangesOpen] = useState(false);
   const queryClient = useQueryClient();
   const list = useRunTool();
   const compare = useRunTool();
@@ -104,12 +108,12 @@ export function DiffTab() {
   }, [selection]);
 
   useEffect(() => {
-    if (!projectId) return;
+    if (!projectId || sources.isPending || sources.isError || sources.data?.mode === "assembly") return;
     void list.run("board_revision_list", { projectId, limit: 40 }).then((state) => {
       const next = revisionsFrom(state.result);
       if (next.length > 0) setRevisions(next);
     });
-  }, [projectId, list.run]);
+  }, [projectId, list.run, sources.isPending, sources.isError, sources.data?.mode]);
 
   useEffect(() => {
     if (report?.from?.ref) setFrom(report.from.ref);
@@ -125,6 +129,7 @@ export function DiffTab() {
   );
 
   const running = compare.state.status === "running" || list.state.status === "running";
+  const noHistory = list.state.status === "done" && revisions.every(revision => revision.ref === "worktree");
   const options = useMemo(() => {
     const seen = new Set<string>();
     const rows: Revision[] = [];
@@ -144,7 +149,14 @@ export function DiffTab() {
 
   if (!projectId) return <EmptyState title="Pick a project to compare revisions" />;
 
+  if (sources.isPending) return <div className="flex h-full items-center justify-center"><Spinner /></div>;
+  if (sources.isError) return <LoadError title="Could not verify board scope for comparison" onRetry={() => void sources.refetch()} />;
+  if (sources.data?.mode === "assembly") return <div className="fd-canvas-empty h-full"><EmptyState title="Member-board revision comparison is not available yet"><p>Changes currently compares a project’s root board. Choose a board to inspect its saved source; this view does not compare or synchronize assembly members.</p><Button className="mt-4" onClick={() => useUiStore.getState().setWorkspaceArea("boards")}>Open boards</Button></EmptyState></div>;
+
+  if (noHistory && !report) return <div className="fd-canvas-empty h-full"><EmptyState title="No saved revision to compare yet"><p>This view uses Git history. Open a project with commits, or save its first commit with your Git tools, then reopen Changes.</p><Button className="mt-4" onClick={() => useUiStore.getState().setWorkspaceArea("files")}>Open project files</Button></EmptyState></div>;
+
   const onCompare = async () => {
+    if (running || noHistory || sources.isFetching || sources.isError) return;
     const result = await compare.run("board_revision_diff", { projectId, from, to });
     if (result.status === "done") {
       // All six view artifacts are overwritten. Invalidate inactive views too,
@@ -155,14 +167,14 @@ export function DiffTab() {
 
   const diff = report?.diff;
   return (
-    <div className="flex h-full min-h-0 flex-col" data-testid="board-diff">
-      <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border px-3 py-2">
+    <div className="fd-diff-workspace flex h-full min-h-0 flex-col" data-testid="board-diff">
+      <div className="fd-diff-revisions flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border px-3 py-2">
         <label className="flex min-w-0 items-center gap-1 text-[11px] text-muted">
           From
           <Select value={from} onChange={(e) => setFrom(e.target.value)} aria-label="From revision" className="h-8 max-w-52 text-xs">
             {options.map((rev) => (
               <option key={`from-${rev.ref}`} value={rev.ref}>
-                {shortRef(rev.ref)} · {rev.title}
+                {shortRef(rev.ref)}{rev.ref === "HEAD" || rev.ref === "worktree" ? "" : ` · ${rev.title}`}
               </option>
             ))}
           </Select>
@@ -172,18 +184,18 @@ export function DiffTab() {
           <Select value={to} onChange={(e) => setTo(e.target.value)} aria-label="To revision" className="h-8 max-w-52 text-xs">
             {options.map((rev) => (
               <option key={`to-${rev.ref}`} value={rev.ref}>
-                {shortRef(rev.ref)} · {rev.title}
+                {shortRef(rev.ref)}{rev.ref === "HEAD" || rev.ref === "worktree" ? "" : ` · ${rev.title}`}
               </option>
             ))}
           </Select>
         </label>
-        <Button size="sm" variant="primary" disabled={running} onClick={() => void onCompare()}>
+        <Button size="sm" variant="primary" disabled={running || noHistory || sources.isFetching} onClick={() => void onCompare()}>
           {running ? "Comparing…" : "Compare"}
         </Button>
         {running && <Spinner />}
-        <span className="ml-auto text-[11px] text-muted">{diffHeadline(report)}</span>
+        <span className="ml-auto text-[11px] text-muted">{report ? "Saved comparison · " : ""}{diffHeadline(report)}</span>
       </div>
-      <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border px-3 py-1.5">
+      <div className="fd-diff-views flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border px-3 py-1.5">
         {(["pcb", "schematic"] as const).map((id) => (
           <Button key={id} size="sm" variant={surface === id ? "primary" : "ghost"} onClick={() => setSurface(id)}>
             {id === "pcb" ? "PCB" : "Schematic"}
@@ -202,8 +214,10 @@ export function DiffTab() {
             {id === "structured" ? "Highlights" : id === "overlay" ? "Overlay" : "Side by side"}
           </Button>
         ))}
+        {report && <Button size="sm" className="ml-auto" aria-expanded={changesOpen} aria-controls="revision-change-list" onClick={() => setChangesOpen(!changesOpen)}>Change list</Button>}
         {compare.state.error && <span className="text-xs text-danger">{compare.state.error}</span>}
       </div>
+      {list.state.error && <p role="alert" className="px-3 text-xs text-warning">Could not load revision history. {list.state.error}</p>}
       {mode === "overlay" && report && (
         <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2 text-xs">
           <span className="text-muted">Compare revisions</span>
@@ -223,13 +237,12 @@ export function DiffTab() {
         <LoadError title="Could not load the last diff report" onRetry={() => void reportQuery.refetch()} />
       ) : !report ? (
         <div className="fd-canvas-empty h-full">
-          <EmptyState title="No revision diff yet">
-            Choose two git revisions (or HEAD and the current worktree) and compare. Added parts are green, removed are
-            red, moved/changed are amber.
+          <EmptyState title={noHistory ? "No saved revision to compare yet" : "Compare board revisions"}>
+            {noHistory ? "This view uses Git history. Open a project with commits, or save a commit using your Git tools, then reopen Changes." : "Choose two saved revisions, or compare the latest commit with your current files. Added parts are green, removed are red, and moved or changed parts are amber."}
           </EmptyState>
         </div>
       ) : (
-        <div className="flex min-h-0 flex-1">
+        <div className="fd-diff-content flex min-h-0 flex-1">
           <div className="min-w-0 flex-1">
             {svgPath && svg.data ? (
               <SvgViewer
@@ -246,7 +259,7 @@ export function DiffTab() {
               </EmptyState>
             )}
           </div>
-          <aside className="w-72 shrink-0 overflow-auto border-l border-border bg-panel-2/30 p-3 text-xs">
+          {changesOpen && <aside id="revision-change-list" aria-label="Revision changes" className="fd-diff-change-list w-72 shrink-0 overflow-auto border-l border-border bg-panel-2/30 p-3 text-xs">
             <p className="mb-2 font-medium">
               {shortRef(report.from?.ref ?? from)} → {shortRef(report.to?.ref ?? to)}
             </p>
@@ -284,7 +297,7 @@ export function DiffTab() {
                 ) ?? []
               }
             />
-          </aside>
+          </aside>}
         </div>
       )}
     </div>
