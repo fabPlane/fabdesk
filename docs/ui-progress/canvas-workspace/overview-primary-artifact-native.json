@@ -1,0 +1,34 @@
+{
+  "change": "Single-board project overview prefers renders/pcb.svg over saved top/populated/release PNG renders; schematic preview order unchanged",
+  "projectId": "prj_mvqk3ppw7d08838b1a",
+  "native": {
+    "before": "Saved top.png render wins although PCB SVG exists; Saved image \u00b7 source unverified",
+    "after": "Actual PCB drawing visible; Saved preview \u00b7 source unverified retained for legacy receipt-less file",
+    "fallback": "Guarded temporary hold of exact SVG outside study exposes existing saved PNG automatically; no navigation or regeneration",
+    "arrival": "Exact SVG restoration automatically replaces PNG with PCB drawing and restores3saved output count",
+    "sourcePreservation": {
+      "originalFiles": 9,
+      "changed": [],
+      "faultStatus": "RESTORED",
+      "heldFileAbsent": true
+    },
+    "generationJobs": 0,
+    "messagesSent": 0
+  },
+  "diagnostics": "Attempt to read browser blob bytes from isolated automation evaluation failed to fetch; proof is actual native image/caption transition plus exact file guard/hash preservation, not an image-byte digest from that diagnostic",
+  "validation": {
+    "uiTypecheck": "PASS /tmp/canvas-overview-primary-artifact-types.log",
+    "uiTests": "229 pass / 0 fail / 874 assertions /tmp/canvas-overview-primary-artifact-tests.log"
+  },
+  "limitations": [
+    "Existing legacy PCB drawing has no receipt and remains source unverified",
+    "No automatic PCB drawing generation or engineering validation claimed",
+    "Saved PNG renders remain intact and available in Outputs"
+  ],
+  "screenshots": [
+    "378-overview-static-render-before.png",
+    "379-overview-pcb-drawing-first.png",
+    "380-overview-saved-render-fallback.png",
+    "381-overview-pcb-drawing-auto-return.png"
+  ]
+}

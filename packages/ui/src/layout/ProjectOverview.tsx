@@ -47,7 +47,8 @@ function SingleBoardOverview() {
   const schematic = files.find((file) => file.path === "board.kicad_sch");
   const designTab = pcb || !schematic ? "pcb" : "schematic";
   const designLabel = pcb ? "Main board" : schematic ? "Schematic design" : "Saved board preview";
-  const previewPaths = designTab === "schematic" ? ["renders/schematic.svg"] : ["renders/top.png", "renders/pcb-top.png", "renders/populated-top.png", "renders/release-top.png", "renders/pcb.svg"];
+  // Keep the design overview on the PCB drawing; saved render images have no source receipt here.
+  const previewPaths = designTab === "schematic" ? ["renders/schematic.svg"] : ["renders/pcb.svg", "renders/top.png", "renders/pcb-top.png", "renders/populated-top.png", "renders/release-top.png"];
   const preview = previewPaths.map((path) => files.find((file) => file.path === path)).find(Boolean);
   const issues = [...(order.data?.warnings ?? []), ...(order.data?.reasons ?? [])];
   const outputs = savedOutputs(files);

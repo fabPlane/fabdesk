@@ -1443,3 +1443,8 @@ Review updates now offers **Open model** when the tracked PCB is unchanged, rath
 ### Existing-conversation sketch reference acceptance
 
 The active-thread attachment branch is now natively verified independently of agent authentication. In the isolated root study, a guarded temporary PCB hold exposed the reference canvas for its existing failed-review conversation. Choosing the earlier saved sketch and Use in message attached it only to that conversation. Renderer reload retained the exact earlier reference, unsent attachment and owned test draft. No message sent or job started. The test draft/attachment were removed through native UI and before/after state matched; guarded PCB restoration passed and all48 protected files are exact. Captures376–377 and active-reference-draft-check.json supersede its former unverified-branch limitation. Actual assistant interpretation still needs human Claude reauthentication.
+
+
+### Project overview prefers the PCB drawing
+
+When a PCB drawing and saved render coexist, Overview now shows renders/pcb.svg first. This avoids a static render masking later drawing updates; photo renders remain available in Outputs and as a fallback when no drawing exists. Native Game Boy study before/after, guarded no-drawing fallback and automatic return on exact SVG arrival passed. Legacy drawing stays source unverified; no generation/check job or agent request ran. All9original files exact; hold guard RESTORED. Captures378–381 and overview-primary-artifact-native.json. UI types/229tests pass. LOCAL ONLY; no Art/Mechanical changes.
