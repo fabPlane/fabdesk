@@ -12,9 +12,13 @@ export function outputKind(path: string): OutputKind | null {
   return null;
 }
 export function savedOutputs(files: FileEntry[], sources: ProjectBoardSources["sources"] = []) {
-  const members = sources.flatMap(row => row.status === "available" && row.source.location === "project" ? [{ sourceId: row.source.id, sourceName: row.source.name, prefix: row.source.directory === "." ? "" : `${row.source.directory}/` }] : []).sort((a, b) => b.prefix.length - a.prefix.length);
+  // A missing PCB does not delete saved deliverables from a declared directory.
+  // Blocked/undeclared directories still cannot establish an output source.
+  const members = sources.flatMap(row => row.source.location === "project" ? [{ sourceId: row.source.id, sourceName: row.source.name, prefix: row.source.directory === "." ? "" : `${row.source.directory}/`, browsable: row.status === "available" || row.status === "missing" }] : []).sort((a, b) => b.prefix.length - a.prefix.length);
   return files.flatMap(file => {
-    const member = members.find(row => file.path.startsWith(row.prefix) && outputKind(file.path.slice(row.prefix.length)));
+    // A nested declaration owns its directory even when blocked; do not relabel it as its parent.
+    const member = members.find(row => file.path.startsWith(row.prefix));
+    if (member && !member.browsable) return [];
     const kind = member ? outputKind(file.path.slice(member.prefix.length)) : outputKind(file.path);
     return kind ? [{ ...file, kind, ...(member ? { sourceId: member.sourceId, sourceName: member.sourceName } : {}) }] : [];
   }).sort((a, b) => b.mtime.localeCompare(a.mtime) || a.path.localeCompare(b.path));

@@ -282,6 +282,8 @@
 .fd-output-empty h3 { font-size:18px; font-weight:600; }
 .fd-output-empty p { margin-top:8px; color:var(--fd-muted); }
 .fd-output-preview-dialog { width:90vw; max-width:1100px; }
+.fd-output-preview-source { margin:0 0 12px; color:var(--fd-muted); font-size:12px; line-height:1.5; }
+.fd-output-preview-source[data-warning="true"] { color:var(--fd-warning); font-weight:600; }
 .fd-output-model-preview { height:65vh; position:relative; }
 
 .fd-output-caption small[data-stale="true"] { color:var(--fd-warning); }

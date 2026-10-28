@@ -7,7 +7,7 @@ export function BoardModelStatus({ projectId, present, updating = false, floatin
   if (!present) return null;
   const state = revision.data;
   const label = updating ? "Updating 3D model…" : revision.isFetching || revision.isPending ? "Checking model source…" : revision.isError ? "Model source could not be checked" : state === "source-changed" ? "PCB changed · Review or update this model" : state === "artifact-changed" ? "Model file changed · Source unverified" : state === "source-unchanged" ? "PCB unchanged since model export" : state === "missing-source" ? "Model’s PCB source is missing" : state === "missing-artifact" ? "Saved model is missing" : "Saved model · Source unverified";
-  return <div className={`fd-board-model-status${floating ? " fd-board-model-status-floating" : ""}`} data-warning={state === "source-changed" || state === "artifact-changed"} aria-live="polite">
+  return <div className={`fd-board-model-status${floating ? " fd-board-model-status-floating" : ""}`} data-warning={["source-changed", "artifact-changed", "missing-source", "missing-artifact"].includes(state ?? "")} aria-live="polite">
     <strong>{label}</strong>
     <span>External component models and physical fit are not verified.</span>
     {revision.isError && <Button size="sm" variant="ghost" onClick={() => void revision.refetch()}>Retry source check</Button>}

@@ -13,7 +13,7 @@ test("output listing keeps distinct saved formats/paths and sorts actual timesta
   expect(rows[0]).toEqual({ path: "renders/top.png", size: 3, mtime: "2026-10-27", kind: "images" });
 });
 
-test("member outputs come only from explicitly available source directories and retain their source labels", () => {
+test("member outputs exclude blocked and undeclared source directories and retain their source labels", () => {
   const sources = [
     { source: { id: "io", name: "I/O", location: "project" as const, directory: "boards/io" }, status: "available" as const },
     { source: { id: "blocked", name: "Blocked", location: "project" as const, directory: "boards/blocked" }, status: "blocked" as const },
@@ -50,4 +50,30 @@ test("small exports stay directly visible and DXF layer files share the counted 
   expect(outputLibrarySections(files.slice(0, 6), true).cards).toHaveLength(6);
   expect(outputLibrarySections(files.slice(0, 6), true).manufacturingFiles).toEqual([]);
   expect(outputLibrarySections(files, true).manufacturingFiles).toHaveLength(7);
+});
+
+
+test("missing declared PCB sources retain saved outputs without inferring historical membership", () => {
+  const sources = [
+    { source: { id: "io", name: "I/O", location: "project" as const, directory: "boards/io" }, status: "missing" as const },
+    { source: { id: "blocked", name: "Blocked", location: "project" as const, directory: "boards/blocked" }, status: "blocked" as const },
+    { source: { id: "external", name: "External", location: "unresolved" as const, provenance: { path: "external/board.kicad_pcb", ref: "external-revision" } }, status: "unresolved" as const },
+  ];
+  const files = ["boards/io/renders/pcb.svg", "boards/io/renders/board.glb", "boards/io/exports/product-video.mp4", "boards/io/exports/gerbers/top.gtl", "boards/io/renders/board.glb.revision.json", "boards/old/renders/pcb.svg", "boards/blocked/renders/pcb.svg", "external/renders/pcb.svg"]
+    .map(path => ({ path, mtime: "2026-10-28", size: 20 }));
+  const rows = savedOutputs(files, sources);
+  expect(rows).toHaveLength(4);
+  expect(rows.every(row => row.sourceId === "io" && row.sourceName === "I/O")).toBe(true);
+  expect(rows.map(row => row.kind).sort()).toEqual(["images", "manufacturing", "models", "videos"]);
+  expect(savedOutputs(files, sources.map(row => row.source.id === "io" ? { ...row, status: "available" as const } : row))).toEqual(rows);
+});
+
+
+test("nested declared outputs never borrow ownership from an available ancestor", () => {
+  const parent = { source: { id: "io", name: "I/O", location: "project" as const, directory: "boards/io" }, status: "available" as const };
+  const child = { source: { id: "child", name: "Child", location: "project" as const, directory: "boards/io/renders/history" }, status: "blocked" as const };
+  const files = ["boards/io/renders/pcb.svg", "boards/io/renders/history/renders/pcb.svg"].map(path => ({ path, mtime: "2026-10-28", size: 20 }));
+  expect(savedOutputs(files, [parent, child]).map(row => row.sourceId)).toEqual(["io"]);
+  const rows = savedOutputs(files, [parent, { ...child, status: "missing" }]);
+  expect(rows.find(row => row.path === files[1]!.path)).toMatchObject({ sourceId: "child", sourceName: "Child" });
 });
