@@ -1319,3 +1319,12 @@ Native wide/compact entry→Manufacturing focus and exact DXF More→Show file p
 ![Compact counted-file entry](library-counted-files-compact.png)
 
 [Native grouping and preservation evidence](output-groups-native.json).
+
+
+## Exact file reveal keeps keyboard context
+
+Show file now consumes its existing project/path reveal intent once after the actual tree row renders, expands its folders, scrolls to it and focuses it. It checks active project/intent and does not steal focus after another control has been selected. Clear file search returns focus to its input. Native saved ZIP→Show file focused exports/fabrication.zip; unmatched search and Clear kept input focus and the exact ZIP selection. All48study files unchanged; capture341/native JSON retained. UI typecheck/229tests pass. No download or file/export mutation in this slice. Continue UI workflow acceptance locally; no Art/Mechanical.
+
+![Focused actual output file](output-file-reveal-focused.png)
+
+[Native file reveal proof](file-reveal-focus-native.json).

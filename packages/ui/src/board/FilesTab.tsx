@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ProjectImage } from "../chat/ProjectImage";
 import { ProjectVideo } from "../chat/ProjectVideo";
 import { Button, Dialog, EmptyState, IconButton, Input, LoadError, Spinner } from "../components/ui";
@@ -35,8 +35,11 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const fileToReveal = useUiStore((s) => s.fileToReveal);
+  const fileTree = useRef<HTMLElement>(null), searchInput = useRef<HTMLInputElement>(null);
+  const revealFocus = useRef<{ intent: NonNullable<typeof fileToReveal>; previous: Element | null } | null>(null);
   useEffect(() => {
     if (fileToReveal?.projectId !== projectId) return;
+    if (!exportFocus) revealFocus.current = { intent: fileToReveal, previous: document.activeElement };
     const path = fileToReveal.path;
     setSelected(path);
     setQuery("");
@@ -46,7 +49,17 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
       for (let i = 1; i < parts.length; i++) next.add(parts.slice(0, i).join("/"));
       return next;
     });
-  }, [fileToReveal, projectId]);
+  }, [fileToReveal, projectId, exportFocus]);
+  useLayoutEffect(() => {
+    const pending = revealFocus.current;
+    if (!pending || pending.intent !== fileToReveal || selected !== pending.intent.path || exportFocus) return;
+    const row = [...(fileTree.current?.querySelectorAll<HTMLButtonElement>("[data-file-path]") ?? [])].find(element => element.dataset.filePath === selected);
+    if (!row?.getClientRects().length) return;
+    revealFocus.current = null;
+    const ui = useUiStore.getState();
+    if (ui.activeProjectId !== projectId || ui.fileToReveal !== pending.intent || document.activeElement !== document.body && document.activeElement !== pending.previous) return;
+    row.scrollIntoView({ block: "nearest" }); row.focus({ preventScroll: true });
+  }, [fileToReveal, selected, expanded, query, project.data, projectId, exportFocus]);
   const [exportOpen, setExportOpen] = useState(false);
   const [requestedExport, setExportKind] = useState<ExportKind>(exportFocus ? "export_gerbers" : "export_stencil");
   const [lastExport, setLastExport] = useState<ExportKind>(exportFocus ? "export_gerbers" : "export_stencil");
@@ -94,6 +107,7 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
       const info = node.file ? fileAppearance(node.path) : null;
       return <li key={`${node.file ? "file" : "folder"}:${node.path}`}>
         <button type="button" className={cn("fd-file-row", node.file?.path === selected && "is-selected")}
+          data-file-path={node.file?.path}
           style={{ paddingLeft: 10 + depth * 16 }} title={node.file ? `${node.file.path} · ${formatFileSize(node.file.size)}` : node.path}
           aria-label={node.file ? `Open ${node.file.path}` : `${open ? "Collapse" : "Expand"} folder ${node.path}`}
           {...(node.file ? { "aria-pressed": selected === node.file.path } : { "aria-expanded": open })}
@@ -137,12 +151,12 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
         {state.status === "done" && <ExportCompletionDetails kind={lastExport} result={state.result} />}
       </div>}
       <div className="fd-files-body flex min-h-0 flex-1">
-        <nav aria-label="Project file explorer" className="fd-files-list flex w-72 shrink-0 flex-col border-r border-border bg-panel/40">
+        <nav ref={fileTree} aria-label="Project file explorer" className="fd-files-list flex w-72 shrink-0 flex-col border-r border-border bg-panel/40">
           <div className="flex shrink-0 items-center gap-1 border-b border-border p-2">
             <div className="relative min-w-0 flex-1">
               <Icon name="search" width={14} height={14} className="pointer-events-none absolute left-2 top-2 text-muted" />
-              <Input aria-label="Find project files" placeholder="Find a file…" value={query} onChange={(e) => setQuery(e.target.value)} className="h-7 pl-7 pr-7 text-xs" />
-              {query && <button type="button" aria-label="Clear file search" className="absolute right-1 top-1 rounded-md p-0.5 text-muted hover:bg-panel-2 hover:text-fg" onClick={() => setQuery("")}><Icon name="close" width={16} height={16} /></button>}
+              <Input ref={searchInput} aria-label="Find project files" placeholder="Find a file…" value={query} onChange={(e) => setQuery(e.target.value)} className="h-7 pl-7 pr-7 text-xs" />
+              {query && <button type="button" aria-label="Clear file search" className="absolute right-1 top-1 rounded-md p-0.5 text-muted hover:bg-panel-2 hover:text-fg" onClick={() => { setQuery(""); searchInput.current?.focus(); }}><Icon name="close" width={16} height={16} /></button>}
             </div>
             <IconButton title="Collapse all folders" size="sm" disabled={!!query.trim()} onClick={() => setExpanded(new Set())}><Icon name="minus" width={14} height={14} /></IconButton>
           </div>

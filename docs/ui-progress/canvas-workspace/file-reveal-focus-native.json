@@ -1,0 +1,19 @@
+{
+  "projectId": "prj_mvs5abwp2ff3301fe3",
+  "validated": [
+    "Output library ZIP \u2192 More \u2192 Show file selects and focuses exports/fabrication.zip",
+    "File tree expands the requested path before focus",
+    "Unmatched file search retains input focus; no reveal refocus",
+    "Clear file search returns input focus with exact ZIP selection retained"
+  ],
+  "ownership": "Pending reveal is consumed once, tied to captured intent and active project; no focus steal after user selects another control",
+  "preservation": {
+    "files": 48,
+    "allExact": true
+  },
+  "checks": {
+    "uiTypes": "PASS",
+    "uiTests": 229
+  },
+  "scope": "UI focus only; no download, file mutation, export or external action"
+}
