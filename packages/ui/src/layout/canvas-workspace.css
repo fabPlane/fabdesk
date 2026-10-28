@@ -671,3 +671,5 @@
 .fd-project-notes > footer { font-size:11px; color:var(--fd-muted); }
 .fd-notes-notice { display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:10px 14px; border:1px solid var(--fd-border); border-radius:10px; background:var(--fd-panel); color:var(--fd-warning); font-size:12px; }
 .fd-notes-notice > p { flex:1; }
+.fd-schematic-status .fd-workspace-menu-content { left:auto; right:0; width:250px; }
+.fd-schematic-status .fd-workspace-menu > summary { border:0; box-shadow:none; padding:3px; min-height:26px; }

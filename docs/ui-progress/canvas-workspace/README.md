@@ -917,3 +917,16 @@ Actual961×721private-study flow drafted hardware decisions, previewed them, lef
 ![Saved project note with requested Markdown preview](project-notes-saved-preview.jpg)
 
 [Native evidence and limits](notes-flow-native.json).
+
+
+### Root schematic: quiet drawing tools and honest source status
+
+Saved root schematics now show an explicit freshness-unverified status. Drawing tools reveal update-from-saved-source and exact native-file access on request, with ERC and PCB parity kept separate. Missing sources get one explanation and a project-specific unsent help action. Existing exporters and native editing are reused. Root rendering and placement require verified single-board scope; classic assembly views return to the owned board canvas rather than falling back to a root file.
+
+The actual compact native walkthrough opened the saved Game Boy schematic and its exact538.5KB source, requested PCB comparison, changed the focused pane and returned to one canvas. Comparison headers no longer repeat the status badge. Missing-source help prepared a draft without sending. The classic assembly guard and return passed. Native R1 inspection still opened on a matching root PCB; no position was changed. All9GameBoyfiles unchanged. UItypecheck and227UItests/866assertions pass. No render, synchronization or enclosure work performed; schematic freshness remains unverified.
+
+![Requested schematic drawing tools](root-schematic-tools.jpg)
+![Requested PCB and schematic comparison](root-board-comparison.jpg)
+![Missing source next step](root-missing-schematic.jpg)
+
+[Native walkthrough and limits](root-schematic-flow-native.json).

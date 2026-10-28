@@ -5,6 +5,7 @@ import { Button, EmptyState, IconButton, Input, LoadError, Spinner, Textarea } f
 import { Icon } from "../components/Icon";
 import {
   useBoardCommentMutations,
+  useBoardSources,
   useBoardComments,
   useCoreClient,
   useProject,
@@ -20,6 +21,7 @@ import { CommentPins } from "./CommentPins";
 import { SvgViewer } from "./SvgViewer";
 import { type SvgPoint } from "./svg-coords";
 import { buildCommentsAskPrompt, pendingBoardComments } from "./comment-requests";
+import { SchematicPreviewStatus } from "./SchematicPreviewStatus";
 
 const RENDER_TOOL = { schematic: "render_schematic_svg", pcb: "render_pcb_svg" } as const;
 
@@ -36,8 +38,8 @@ export function svgArtifactCopy(kind: "schematic" | "pcb") {
   const label = kind === "pcb" ? "PCB" : "schematic";
   return {
     label,
-    title: `No ${label} SVG render yet`,
-    action: `Render ${label} SVG`,
+    title: `No ${label} preview yet`,
+    action: `Create ${label} preview`,
   };
 }
 
@@ -69,6 +71,8 @@ export function SvgTab({ kind, active = true }: { kind: "schematic" | "pcb"; act
   const [nativeEditBusy, setNativeEditBusy] = useState(false);
   const projectId = useUiStore((s) => s.activeProjectId);
   const project = useProject(projectId);
+  const sources = useBoardSources(projectId);
+  const scopeReady = sources.data?.mode === "single" && !sources.isFetching && !sources.isError;
   const rendered = useProjectText(projectId, `renders/${kind}.svg`);
   const nativeCoordinates = kind === "pcb" && pcbSvgHasNativeCoordinates(rendered.data ?? "");
   const previousFrame = useRef(nativeCoordinates);
@@ -163,15 +167,29 @@ export function SvgTab({ kind, active = true }: { kind: "schematic" | "pcb"; act
     resetCompose();
     setCommentMode(true);
   };
+  const refreshPreview = () => {
+    if (!projectId || !scopeReady || useUiStore.getState().activeProjectId !== projectId) return;
+    void render.run(RENDER_TOOL[kind], { projectId });
+  };
+  const askForSource = () => {
+    const ui = useUiStore.getState();
+    if (!projectId || ui.activeProjectId !== projectId || !scopeReady) return;
+    const key = ui.activeThreadId ?? newChatDraftKey(projectId), previous = ui.drafts[key] ?? "";
+    const prompt = `Help locate or create a native KiCad ${kind === "pcb" ? "PCB" : "schematic"} for this project. Review its saved files and explain what is missing before proposing changes.`;
+    ui.setDraft(key, previous.trim() ? `${previous}\n\n${prompt}` : prompt); ui.focusComposer();
+  };
 
   if (!projectId)
     return (
       <div className="fd-canvas-empty h-full"><EmptyState title="Your board starts here" icon={<BoardOutline />}>
-        Pick a project in the sidebar to see its {kind}.
+        Choose a project to see its {kind}.
       </EmptyState></div>
     );
   if (project.isLoading) return <div className="flex h-full items-center justify-center"><Spinner /></div>;
   if (project.isError) return <LoadError title="Could not load project files" onRetry={() => void project.refetch()} />;
+  if (sources.isError && !sources.data) return <LoadError title="Could not verify board source scope" onRetry={() => void sources.refetch()} />;
+  if (!sources.data) return <div className="flex h-full items-center justify-center"><Spinner /></div>;
+  if (sources.data.mode === "assembly") return <EmptyState title="Open this assembly’s board canvas" action={<Button onClick={() => { const ui = useUiStore.getState(); ui.setCanvasMode(true); ui.setWorkspaceArea("boards"); }}>Open assembly canvas</Button>}>Choose an individual board to view its own PCB and schematic.</EmptyState>;
   if (rendered.isError) return <LoadError title="Could not load board preview" onRetry={() => void rendered.refetch()} />;
   if (rendered.isLoading) {
     return (
@@ -183,7 +201,8 @@ export function SvgTab({ kind, active = true }: { kind: "schematic" | "pcb"; act
   if (rendered.data) {
     return (
       <div className="relative flex h-full min-h-0" data-testid={`board-${kind}-svg`} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); if (canvasPoint) setCanvasPoint(null); else if (selected || draftPoint || commentMode) closeComments(); } }}>
-        {canvasMode && kind === "pcb" && <PcbPreviewStatus projectId={projectId} coordinatesVerified={nativeCoordinates} busy={render.state.status === "running" || nativeEditBusy} error={render.state.error ?? null} onUpdate={() => void render.run(RENDER_TOOL.pcb, { projectId })} />}
+        {canvasMode && kind === "pcb" && <PcbPreviewStatus projectId={projectId} coordinatesVerified={nativeCoordinates} scopeReady={scopeReady} {...(sources.isError ? { onRetryScope: () => void sources.refetch() } : {})} busy={render.state.status === "running" || nativeEditBusy} error={render.state.error ?? null} onUpdate={refreshPreview} />}
+        {canvasMode && kind === "schematic" && <SchematicPreviewStatus scopeReady={scopeReady} hasSource={project.data?.files.some(file => file.path === "board.kicad_sch") ?? false} updated={render.state.status === "done"} busy={render.state.status === "running"} error={render.state.error ?? null} onUpdate={refreshPreview} onOpenSource={() => { if (useUiStore.getState().activeProjectId === projectId) useUiStore.getState().openProjectFile("board.kicad_sch"); }} {...(sources.isError ? { onRetryScope: () => void sources.refetch() } : {})} />}
         <div className="min-w-0 flex-1">
           <SvgViewer
             svg={rendered.data}
@@ -210,7 +229,7 @@ export function SvgTab({ kind, active = true }: { kind: "schematic" | "pcb"; act
                     setCanvasPoint(null);
                   }}><Icon name="sparkles" width={15} height={15} />Ask about this</Button>
                   <Button variant="ghost" size="sm" onClick={() => { setDraftPoint(canvasPoint); setCanvasPoint(null); setSelectedId(null); setCommentMode(true); }}><Icon name="pin" width={15} height={15} />Pin comment</Button>
-                  {kind === "pcb" && <NativePartTools visible={active} onMutationBusyChange={busy => { if (useUiStore.getState().activeProjectId === projectId) setNativeEditBusy(busy); }} box={box} projectId={projectId} point={canvasPoint} canPosition={nativeCoordinates && revision.data === "matches-source" && !revision.isError && !revision.isFetching} openAbove={(canvasPoint.y - box.y) / box.height > .5} onMoved={setCanvasPoint} />}
+                  {kind === "pcb" && <NativePartTools visible={active} onMutationBusyChange={busy => { if (useUiStore.getState().activeProjectId === projectId) setNativeEditBusy(busy); }} box={box} projectId={projectId} point={canvasPoint} canPosition={scopeReady && nativeCoordinates && revision.data === "matches-source" && !revision.isError && !revision.isFetching} openAbove={(canvasPoint.y - box.y) / box.height > .5} onMoved={setCanvasPoint} />}
                   <IconButton size="sm" title="Deselect location" onClick={() => setCanvasPoint(null)}><Icon name="close" width={15} height={15} /></IconButton>
                 </div>
               </div>}
@@ -344,7 +363,7 @@ export function SvgTab({ kind, active = true }: { kind: "schematic" | "pcb"; act
   }
   const sourcePath = kind === "pcb" ? "board.kicad_pcb" : "board.kicad_sch";
   if (!project.data?.files.some((file) => file.path === sourcePath))
-    return <div className="fd-canvas-empty h-full" data-testid={`board-${kind}-missing-source`}><EmptyState title={kind === "pcb" ? "No KiCad board found" : "No KiCad schematic found"} icon={<BoardOutline />}>
+    return <div className="fd-canvas-empty h-full" data-testid={`board-${kind}-missing-source`}><EmptyState title={kind === "pcb" ? "This project needs a PCB" : "This project needs a schematic"} icon={<BoardOutline />} action={<Button disabled={!scopeReady} onClick={askForSource}>Ask about missing files</Button>}>
       {kind === "pcb" ? "Add a KiCad board to this project to preview it here." : "Add a KiCad schematic to this project to preview it here."}
     </EmptyState></div>;
   const running = render.state.status === "running";
@@ -358,17 +377,17 @@ export function SvgTab({ kind, active = true }: { kind: "schematic" | "pcb"; act
           <Button
             variant="primary"
             size="sm"
-            disabled={running}
-            onClick={() => void render.run(RENDER_TOOL[kind], { projectId })}
+            disabled={running || !scopeReady}
+            onClick={refreshPreview}
           >
-            {running ? "Rendering..." : copy.action}
+            {running ? "Creating preview…" : copy.action}
           </Button>
         }
       >
         {kind === "pcb"
-          ? "Generate a preview from your saved PCB to inspect the layout. Image exports are available in Renders."
-          : "Generate a preview from your saved KiCad schematic to inspect the circuit alongside your conversation."}
-        {render.state.error && <div className="mt-2 text-danger">{render.state.error}</div>}
+          ? "Create a drawing from your saved PCB to inspect the layout. Image exports are available in Outputs."
+          : "Create a drawing from your saved KiCad schematic to inspect the circuit here."}
+        {render.state.error && <div role="alert" className="mt-2 text-danger">{render.state.error}</div>}
       </EmptyState>
     </div>
   );
