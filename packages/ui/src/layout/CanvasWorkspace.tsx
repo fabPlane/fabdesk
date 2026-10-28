@@ -67,7 +67,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
   const hasNativeDesign = project.data?.files.some((file) => file.path === "board.kicad_pcb" || file.path === "board.kicad_sch");
   const fresh = !threadId && !sourceId && !inventory && !order && (!projectId || (!!project.data && !boardSources.isPending && boardSources.data?.mode !== "assembly" && !hasNativeDesign && area === "boards" && boardTab === "pcb"));
   const sketchPaths = projectSketchImagePaths(project.data?.files ?? []);
-  const draftAttachments = useUiStore(s => s.attachments[newChatDraftKey(projectId)]);
+  const draftAttachments = useUiStore(s => s.attachments[s.activeThreadId ?? newChatDraftKey(projectId)]);
   const attachedSketch = draftAttachments?.slice().reverse().find(item => sketchPaths.includes(item.path))?.path;
   const referenceCanvas = !!projectId && !!project.data && !hasNativeDesign && boardSources.data?.mode === "single" && area === "boards" && boardTab === "pcb" && boardOpen;
   const sketchReference = referenceCanvas ? attachedSketch ?? sketchPaths[0] : undefined;

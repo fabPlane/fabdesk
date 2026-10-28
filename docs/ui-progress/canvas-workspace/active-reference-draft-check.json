@@ -1,0 +1,18 @@
+{
+  "change": "Read activeThreadId attachment key, or project new-chat key, matching composer and sketch export",
+  "checks": {
+    "uiTypecheck": "PASS",
+    "uiTests": 229
+  },
+  "nativeRegression": {
+    "projectId": "prj_mvr7n2n5db55576304",
+    "reference": "sketches/sketch-1793137521460.excalidraw.png",
+    "unsentAttachments": 3,
+    "sourceFiles": 6,
+    "allExact": true
+  },
+  "limitations": [
+    "Active-conversation branch not exercised natively because real configured-agent walkthrough remains blocked by Claude authentication"
+  ],
+  "noMessageSent": true
+}

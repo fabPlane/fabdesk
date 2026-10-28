@@ -1398,3 +1398,8 @@ Observed in the actual overview: Tab from a selected board skipped the revealed 
 ![Saved-sketch compact tools](361-sketch-context-tools-compact.png)
 
 [Native keyboard evidence](overview-tools-keyboard-native.json).
+
+
+## Reference canvas uses the active composer’s attachments
+
+CanvasWorkspace now reads the active thread attachment key when a conversation exists, falling back to the project new-chat key otherwise, matching the composer and sketch-save workflow. Previously it always read the new-chat key, so a newly attached drawing during an existing conversation could fail to become the displayed reference. UI typecheck/229tests pass. Native new-chat regression retains the same selected saved drawing, all three prior unsent attachments and all6fixture file hashes. The active-conversation sketch-to-agent branch is code-reviewed but remains natively unverified while Claude sign-in is pending; no assistant request was sent.
