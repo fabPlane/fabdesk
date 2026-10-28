@@ -1,33 +1,34 @@
 import { useEffect, useMemo, useState } from "react";
 import { ProjectImage } from "../chat/ProjectImage";
 import { ProjectVideo } from "../chat/ProjectVideo";
-import { Button, Dialog, EmptyState, IconButton, Input, LoadError, Select, Spinner } from "../components/ui";
+import { Button, Dialog, EmptyState, IconButton, Input, LoadError, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
-import { useProject, useProjectText, useRunTool } from "@fabdesk/client-core";
+import { useBoardSources, usePcbPreviewRevision, useProject, useProjectText, useRunTool } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
-import { STENCIL_THICKNESSES_MM, DEFAULT_STENCIL_THICKNESS_MM, stencilThicknessMm } from "../stores/stencil-thickness";
+import { stencilThicknessMm } from "../stores/stencil-thickness";
 import { cn } from "../util";
 import { buildFileTree, fileAppearance, formatFileSize, type ExplorerNode } from "./file-explorer";
 import { FileGlyph } from "./FileGlyph";
+import { FileExportControls } from "./FileExportControls";
 import { FILE_EXPORTS as EXPORTS, fileExportChoices, type FileExportKind as ExportKind } from "./file-exports";
 import {
   DEFAULT_LASER_STENCIL_FORM,
-  LaserStencilPresetPanel,
   laserStencilToolArgs,
   type LaserStencilFormState,
 } from "./LaserStencilPresetPanel";
 
 const MAX_TEXT_BYTES = 1_000_000;
 
-export function FilesTab() {
+export function FilesTab({ exportFocus = false }: { exportFocus?: boolean } = {}) {
   const projectId = useUiStore((s) => s.activeProjectId);
   if (!projectId) return <EmptyState title="No project selected" />;
   // Selection, folder state and export errors belong to one project.
-  return <ProjectFiles key={projectId} projectId={projectId} />;
+  return <ProjectFiles key={`${projectId}:${exportFocus}`} projectId={projectId} exportFocus={exportFocus} />;
 }
 
-function ProjectFiles({ projectId }: { projectId: string }) {
+function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFocus: boolean }) {
   const project = useProject(projectId);
+  const sources = useBoardSources(projectId);
   const thicknessMm = useUiStore((s) => stencilThicknessMm(s.stencilThicknessByProject?.[projectId]));
   const setThickness = useUiStore((s) => s.setStencilThickness);
   const [selected, setSelected] = useState<string | null>(null);
@@ -47,14 +48,24 @@ function ProjectFiles({ projectId }: { projectId: string }) {
     });
   }, [fileToReveal, projectId]);
   const [exportOpen, setExportOpen] = useState(false);
-  const [requestedExport, setExportKind] = useState<ExportKind>("export_stencil");
-  const [lastExport, setLastExport] = useState<ExportKind>("export_stencil");
+  const [requestedExport, setExportKind] = useState<ExportKind>(exportFocus ? "export_gerbers" : "export_stencil");
+  const [lastExport, setLastExport] = useState<ExportKind>(exportFocus ? "export_gerbers" : "export_stencil");
   const [laserForm, setLaserForm] = useState<LaserStencilFormState>(DEFAULT_LASER_STENCIL_FORM);
   const { run, state, manifest } = useRunTool();
-  const exportChoices = fileExportChoices(manifest);
+  const availableExports = fileExportChoices(manifest);
+  const exportChoices: ExportKind[] = exportFocus ? ["export_gerbers", "export_bom", ...availableExports.filter(kind => kind !== "export_gerbers" && kind !== "export_bom")] : availableExports;
   const exportKind = exportChoices.includes(requestedExport) ? requestedExport : "export_gerbers";
   const busy = state.status === "running";
   const files = project.data?.files ?? [];
+  const assembly = sources.data?.mode === "assembly";
+  const hasPcb = files.some(file => file.path === "board.kicad_pcb");
+  const bomSource = files.some(file => ["project.parts.json", "circuit.netlist.json", "board.kicad_sch"].includes(file.path));
+  const scopeReady = !!sources.data && !sources.isFetching && !sources.isError;
+  const canExport = scopeReady && (exportKind === "export_bom" ? bomSource : !assembly && hasPcb);
+  const sourceNote = !scopeReady ? sources.isError ? "Board source scope could not be checked. Retry before exporting." : "Checking board sources…" : exportKind === "export_bom" ? !bomSource ? "Add a saved netlist, schematic or project parts list before exporting a BOM. Member-board BOMs are not included." : assembly ? "Project parts CSV includes saved root netlist and extras only; member-board BOMs are not included." : "Uses the saved netlist and project hardware, or schematic fallback. Component coverage and freshness are unverified." : assembly ? "Member-board manufacturing exports are not available here yet. Choose a board to inspect its source; project parts CSV remains separate." : !hasPcb ? "Add a saved PCB in Board before creating manufacturing files." : "Exports use this project’s saved PCB. Review current checks, routing and clearances before fabrication.";
+  const previewPresent = exportFocus && !assembly && files.some(file => file.path === "renders/pcb.svg");
+  const previewRevision = usePcbPreviewRevision(projectId, previewPresent);
+  const previewLabel = previewRevision.isFetching ? "Checking saved preview…" : previewRevision.isError ? "Preview source check unavailable" : previewRevision.data === "matches-source" ? "Preview matches saved PCB" : previewRevision.data === "source-changed" ? "PCB changed · Preview is older" : "Saved preview · Source unverified";
   const tree = useMemo(() => buildFileTree(files, query), [project.data?.files, query]);
   const file = files.find((f) => f.path === selected);
   const appearance = file ? fileAppearance(file.path) : null;
@@ -62,6 +73,7 @@ function ProjectFiles({ projectId }: { projectId: string }) {
   const text = useProjectText(projectId, file && appearance?.preview === "text" && !tooBig ? file.path : null);
   const closeExport = () => { if (!busy) setExportOpen(false); };
   async function exportFiles() {
+    if (!canExport || busy || useUiStore.getState().activeProjectId !== projectId) return;
     setLastExport(exportKind);
     const extras =
       exportKind === "export_stencil"
@@ -97,6 +109,17 @@ function ProjectFiles({ projectId }: { projectId: string }) {
 
   if (project.isError) return <LoadError title="Could not load project files" onRetry={() => void project.refetch()} />;
   if (project.isLoading) return <div className="flex h-full items-center justify-center"><Spinner /></div>;
+  const exportControls = { exportChoices, exportKind, setExportKind, thicknessMm, onThickness: (value: number) => setThickness(projectId, value), laserForm, setLaserForm, busy, canExport, sourceNote, ...(state.error && !exportFocus ? { error: `${EXPORTS[lastExport].title}: ${state.error}` } : {}), onExport: () => void exportFiles() };
+  if (exportFocus) return <div className="fd-export-workspace">
+    <header><h1>Export files</h1><p>Choose what you need for fabrication or your parts list.</p></header>
+    <div className="fd-export-flow">
+      <section className="fd-export-reference" aria-label="Export source reference">
+        {previewPresent ? <><ProjectImage projectId={projectId} path="renders/pcb.svg" alt="Saved PCB preview for export reference" /><p>{previewLabel}</p></> : <EmptyState title={assembly ? "Assembly source exports need board scope" : hasPcb ? "Saved PCB ready for export selection" : "Start with a saved PCB"} icon={<Icon name="pcb" width={48} height={48} />}><p>{assembly ? "This export screen cannot manufacture all member boards. Their individual previews remain available in Boards." : "Use Board to inspect your source. Exports do not establish that a design is ready to manufacture."}</p><Button className="mt-4" onClick={() => useUiStore.getState().setWorkspaceArea("boards")}>Open Board</Button></EmptyState>}
+      </section>
+      <section className="fd-export-config" aria-label="Export options"><FileExportControls {...exportControls} />{sources.isError && <Button size="sm" onClick={() => void sources.refetch()}>Retry source check</Button>}</section>
+    </div>
+    {state.status !== "idle" && <div className="fd-export-feedback" role={state.error ? "alert" : "status"}>{state.error ?? (busy ? `Exporting ${EXPORTS[lastExport].title.toLowerCase()}…` : `${EXPORTS[lastExport].title} saved in project outputs.`)}{state.note && <p>{state.note}</p>}{state.status === "done" && <Button size="sm" variant="ghost" onClick={() => { const ui = useUiStore.getState(); ui.setWorkspaceArea("outputs"); ui.setWorkspaceTab("renders"); }}>Open output library</Button>}</div>}
+  </div>;
   return (
     <div className="fd-files flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
@@ -153,31 +176,8 @@ function ProjectFiles({ projectId }: { projectId: string }) {
         </section>
       </div>
       <Dialog open={exportOpen} onClose={closeExport} title="Export project files" className={exportKind === "export_laser_stencil" ? "w-[560px]" : "w-[480px]"}>
-        <fieldset disabled={busy}>
-          <legend className="mb-3 text-xs text-muted">What would you like to make?</legend>
-          <div className="space-y-2">
-            {exportChoices.map((kind) => <label key={kind} className={cn("flex cursor-pointer items-center gap-3 rounded-lg border p-3", exportKind === kind ? "border-accent bg-accent/10" : "border-border hover:bg-panel-2/50")}>
-              <input type="radio" name="project-export" value={kind} checked={exportKind === kind} onChange={() => setExportKind(kind)} className="accent-[var(--fd-accent)]" />
-              <FileGlyph kind={EXPORTS[kind].kind} />
-              <span><span className="block text-[13px] font-medium">{EXPORTS[kind].title}</span><span className="block text-xs text-muted">{EXPORTS[kind].detail}</span></span>
-            </label>)}
-          </div>
-          {exportKind === "export_stencil" && <div className="mt-4 rounded-lg border border-border bg-bg/40 p-3">
-            <label className="flex items-center justify-between gap-3 text-xs font-medium">Stencil thickness
-              <Select aria-label="Stencil thickness" value={thicknessMm} onChange={(e) => setThickness(projectId, Number(e.target.value))}>
-                {STENCIL_THICKNESSES_MM.map((mm) => <option key={mm} value={mm}>{mm.toFixed(2)} mm{mm === DEFAULT_STENCIL_THICKNESS_MM ? " (default)" : ""}</option>)}
-              </Select>
-            </label>
-            <p className="mt-2 text-xs leading-5 text-muted">Total stencil thickness. Match this to the total printed layer thickness in your slicer. Thicker stencils hold more paste.</p>
-          </div>}
-          {exportKind === "export_laser_stencil" && <LaserStencilPresetPanel form={laserForm} onChange={setLaserForm} />}
-        </fieldset>
-        {state.error && <p role="alert" className="mt-3 break-words text-xs text-danger">{EXPORTS[lastExport].title}: {state.error}</p>}
-        <div className="mt-5 flex flex-wrap items-center justify-end gap-2 border-t border-border pt-4">
-          <span className="mr-auto text-[11px] text-muted">Saved under exports/</span>
-          <Button size="sm" variant="ghost" onClick={closeExport} disabled={busy}>Cancel</Button>
-          <Button size="sm" variant="primary" disabled={busy} onClick={() => void exportFiles()}>{busy ? <><Spinner /> Exporting…</> : EXPORTS[exportKind].action}</Button>
-        </div>
+        <FileExportControls {...exportControls} onClose={closeExport} />
+        {sources.isError && <Button size="sm" onClick={() => void sources.refetch()}>Retry source check</Button>}
       </Dialog>
     </div>
   );

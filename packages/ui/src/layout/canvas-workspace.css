@@ -589,3 +589,31 @@
 .fd-video-model-preview .fd-model-view-tools span { font-size:10px; }
 .fd-video-model-tools .fd-board-model-status { flex-basis:100%; width:100%; border:0; border-top:1px solid var(--fd-border); border-radius:0; padding:8px 0 0; margin-top:4px; background:transparent; }
 .fd-canvas-workspace .fd-video-setup form > div:has(> [data-testid="make-video"]) { position:sticky; bottom:0; z-index:2; padding:12px 0; border-top:1px solid var(--fd-border); background:var(--fd-panel); }
+
+/* Export files is a focused output task; Files keeps the full source explorer. */
+.fd-export-workspace { height:100%; min-height:0; display:flex; flex-direction:column; gap:16px; padding:18px 24px 88px; }
+.fd-export-workspace > header { text-align:center; }
+.fd-export-workspace h1 { font-size:21px; font-weight:550; letter-spacing:-.45px; margin:4px 0 7px; }
+.fd-export-workspace header p { font-size:12px; color:var(--fd-muted); }
+.fd-export-flow { display:grid; grid-template-columns:minmax(0,1fr) 390px; gap:24px; flex:1; min-height:0; }
+.fd-export-reference { display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:0; overflow:hidden; gap:14px; }
+.fd-export-reference > img { object-fit:contain; max-width:100%; max-height:calc(100% - 40px); width:auto; filter:drop-shadow(0 8px 12px #102a2010); }
+.fd-export-reference > p { color:var(--fd-muted); font-size:11px; text-align:center; }
+.fd-export-config { min-height:0; overflow:auto; padding:20px; background:var(--fd-panel); border:1px solid var(--fd-border); border-radius:18px; box-shadow:0 4px 22px #102a2008; }
+.fd-export-config .fd-export-controls > div:last-child { position:sticky; bottom:-20px; z-index:2; padding:12px 0 20px; background:var(--fd-panel); }
+.fd-export-source-note { line-height:1.6; }
+.fd-export-feedback { flex:none; font-size:12px; padding:10px 14px; border:1px solid var(--fd-border); border-radius:12px; background:var(--fd-panel); }
+@media(max-width:800px) {
+  .fd-export-workspace { overflow:auto; padding:12px 14px 88px; }
+  .fd-export-flow { display:flex; flex-direction:column; flex:none; }
+  .fd-export-reference { min-height:220px; }
+  .fd-export-reference > img { max-height:220px; }
+  .fd-export-config { overflow:visible; }
+  .fd-export-config .fd-export-controls > div:last-child { position:static; }
+}
+.fd-export-reference > img { width:100%; height:calc(100% - 40px); min-height:0; }
+.fd-export-config .fd-export-source-note { flex-basis:100%; margin:0 0 5px; }
+.fd-export-config fieldset > .space-y-2 { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+.fd-export-config fieldset > .space-y-2 > label { margin:0; padding:10px; gap:8px; align-items:flex-start; }
+.fd-export-config fieldset > .space-y-2 > label input { margin-top:4px; }
+.fd-export-config fieldset > .space-y-2 > label > svg { display:none; }

@@ -829,3 +829,17 @@ Native961×721walkthrough opened the existing root GLB with source/fit uncertain
 ![A PCB is required for generation](video-pcb-prerequisite.jpg)
 
 [Native evidence](video-flow-native.json).
+
+
+### Export files follows a fabrication task
+
+Outputs → Export files now presents the actual saved PCB beside four export choices. Gerbers comes first; stencil thickness and existing laser settings appear for their respective selection. The source note and primary action stay reachable in the compact scroll area. Files retains its full explorer and requested export dialog, using the same shared controls and unchanged four exporters.
+
+Source scope must load before export. Manufacturing requires a single saved root PCB; assembly exports remain explicitly unavailable rather than falling back to a root board. Project parts CSV explains its root netlist/extras coverage. Preview freshness is separate from manufacturing readiness.
+
+Native961×721walkthrough changed/restored stencil thickness, inspected laser settings, canceled the existing Files dialog, verified missing-PCB and VAIO scope guards, and actually exported the isolated study BOM. The CSV contains M1 SG90 quantity2 and ST1 standoff quantity1; success opened the output library. All38recordedsource hashes unchanged. UItypes and225UItests pass. No Gerber/stencil/laser job or DRC pass claimed. The study CSV is intentionally retained. Screenshot205 preserves the earlier vertical choice layout;206/207 show the final compact grid.
+
+![Actual BOM export and output handoff](export-bom-success.jpg)
+![Assembly manufacturing scope guard](assembly-export-scope.jpg)
+
+[Native evidence](export-flow-native.json).
