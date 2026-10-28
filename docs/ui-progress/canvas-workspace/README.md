@@ -971,3 +971,16 @@ Root typecheck,278client tests(including10newartwork tests),94protocoltests and2
 ![Changed saved artwork retains the draft and blocks overwrite](art-save-conflict.jpg)
 
 [Native persistence evidence and remaining limits](art-draft-persistence-native.json).
+
+
+### Existing native graphics path verified for circuit artwork
+
+A bounded conversion now maps the existing art converter’s clipped dots, rectangles and strokes onto the native graphics transaction’s front-silkscreen inputs. It preserves mark geometry and translates the inspected PCB origin. Excess detail and non-silkscreen layers reject explicitly; nothing is silently removed. A transparent proposal SVG contains only the artwork, ready for an existing-board preview. No backend or vendor implementation changed. Four new math/overlay tests pass with all33board-art tests and UItypes.
+
+A separate private native study converted the saved reference image into31silkscreen rectangles and used the existing revision-guarded pcb_edit_graphics transaction. A stale revision rejected without a write. The actual saved native PCB retained all inspected components, pads, tracks, vias, zones and nets; all31graphic geometries matched the proposal. A real KiCad SVG export matches that PCB. Named F.SilkS inspection returned no rows in the installed provider; numeric native layer40 returned all31. Verification recovered through inspection, without a second apply. Initial setup/row-limit errors occurred before mutation and were corrected. No design checks ran. The original source fixture remains unchanged; the separate study intentionally retains its native board, transaction backup and exported preview.
+
+A related art-first check temporarily added an actual native PCB to the saved-art project. Artwork remained available and Save artwork did not alter that PCB. The temporary native file was hash-guarded and restored absent. UI Apply, existing-board overlay and safe update ownership still need integration; this is a verified foundation rather than issue394completion.
+
+![Actual native PCB after additive silkscreen transaction](native-additive-art-study-pcb.jpg)
+
+[Exact native transaction evidence and limits](native-additive-art-proof.json).
