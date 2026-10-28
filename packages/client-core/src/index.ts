@@ -196,3 +196,5 @@ export { useAssemblyPcbCheck } from "./queries";
 
 export * from "./assembly-check-summary";
 export { useAssemblyCheckSummaries } from "./queries";
+
+export * from "./assembly-check-finding";

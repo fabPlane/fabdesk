@@ -576,3 +576,21 @@ Limits: the summary tracks saved PCB-only reports, not ERC, schematic parity, de
 ![Preview and PCB checks shown independently](check-attention-review.png)
 ![Combined review in a compact native window](check-attention-review-compact.png)
 ![Native findings annotated on shared board instances](check-attention-canvas-findings.png)
+
+
+## Source-bound check finding locations
+
+A current member PCB-check finding now offers **Show on PCB** beside each actual native item coordinate. It opens the captured source on the main canvas and preserves the selected physical instance when several boards share a design. The marker is read-only; it does not open placement/resize controls. The finding summary remains visible above the drawing, with a dismiss action and keyboard Escape. Location state is transient and clears across projects.
+
+Navigation requires an owned report matching the current declaration and PCB hash, a finite reported item coordinate and a declared available source. At the destination, the current source hash, native SVG coordinate stamp, preview receipt and SHA of the exact displayed SVG must agree. While fetching, failed, stale, unverified or outside the saved viewBox, the marker stays hidden with an explanation. Older report details remain readable without a misleading navigation action. Marking one item location does not highlight its complete geometry or certify a design.
+
+Native app validation restored the prior actual I/O DRC report, clicked a real clearance item's **107.000, 100.000 mm** location, and verified the marker. Changing PCB whitespace hid it automatically; a changed displayed SVG also hid it. Both were restored byte-for-byte. The older PCB report retained details but offered no Show on PCB action. Native selection of Right I/O → PCB checks → finding returned to **Right I/O**, rather than its shared Left instance. Native Escape dismissed the finding, and 960 × 720 controls remained usable. All recorded fixture and real VAIO source/preview/manifest hashes were preserved; the temporary report was restored to absent and the quiet VAIO Overview restored. No agent message was sent. [Native evidence](finding-navigation-native.json).
+
+Root typecheck passed. Affected complete suites: **240 client-core + 225 UI passed**, zero failures. Focused navigation/store tests: **24 passed / 108 assertions**. The first sandboxed affected run could not bind local ephemeral test servers; the authorized rerun passed. Previous full standard suite remains **2,145 passed / 32 skipped / zero failures** at the member DRC backend milestone. No backend or native mutation behavior changed in this increment.
+
+Member ERC/parity, source-qualified comments/diffs, complete affected-geometry highlighting and check artifact/dependency integrity remain unfinished. This section supersedes the earlier exact-location-navigation limitation only.
+
+![Source-bound finding on the main PCB canvas](member-finding-pcb.png)
+![Location suppressed after the PCB changed](member-finding-hidden.png)
+![Compact finding location](member-finding-compact.png)
+![Selected shared physical instance preserved](member-finding-shared.png)

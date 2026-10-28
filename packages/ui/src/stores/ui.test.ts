@@ -246,3 +246,20 @@ test("board workspaces survive reloads, isolate projects and reject cross-projec
   expect(reopened.getState().assemblyBoardByProject.b).toBeUndefined();
   expect(reopened.getState().assemblyBoardByProject.a?.instanceId).toBe("left");
 });
+
+test("assembly finding navigation is copied, source-qualified, transient and cleared across projects", () => {
+  let saved = "";
+  const store = createUiStore({ getItem: () => null, setItem: (_key, value) => { saved = value; }, removeItem: () => {} });
+  store.getState().setActiveProject("p");
+  const finding = { selection: { projectId: "p", sourceId: "io", instanceId: "right", manifestSha256: "a".repeat(64) }, sourceSha256: "b".repeat(64), point: { x: 107, y: 100 }, description: "Clearance", itemDescription: "Track" };
+  store.getState().openAssemblyFinding(finding);
+  finding.point.x = 999; finding.selection.sourceId = "other";
+  expect(store.getState().assemblyFinding?.point.x).toBe(107);
+  expect(store.getState().assemblyBoardByProject.p?.instanceId).toBe("right");
+  expect(store.getState().boardTab).toBe("pcb");
+  expect(JSON.parse(saved).state.assemblyFinding).toBeUndefined();
+  store.getState().setActiveProject("q");
+  expect(store.getState().assemblyFinding).toBeNull();
+  store.getState().openAssemblyFinding(finding);
+  expect(store.getState().assemblyFinding).toBeNull();
+});

@@ -1,0 +1,22 @@
+{
+  "projectId": "prj_mvqyacun3e60075ae8",
+  "report": "restored actual prior native report; no new DRC run in this study",
+  "nativePoint": {
+    "x": 107,
+    "y": 100
+  },
+  "sourceId": "io",
+  "sharedRightInstancePreserved": true,
+  "sourceChangeHidesMarker": true,
+  "artifactChangeHidesMarker": true,
+  "staleReportOffersNoNavigation": true,
+  "keyboardEscapeDismisses": true,
+  "compactWindow": {
+    "width": 960,
+    "height": 720
+  },
+  "allRecordedFixtureHashesUnchanged": true,
+  "temporaryReportRestoredToAbsent": true,
+  "vaioRecordedHashesUnchanged": true,
+  "noAgentMessageSent": true
+}

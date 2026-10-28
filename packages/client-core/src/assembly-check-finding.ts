@@ -1,0 +1,36 @@
+import { AssemblyPcbCheckReceipt, PcbPreviewRevision, type ProjectBoardSources } from "@fabdesk/protocol";
+import { assemblySelectionState, captureAssemblySelection, restoreAssemblySelection, type AssemblySceneSelection } from "./assembly-scene";
+import type { inspectAssemblyPcbCheck } from "./assembly-checks";
+import { normalizeReport } from "./check-findings";
+import { pcbSvgHasNativeCoordinates } from "./pcb-parts";
+import { sha256Blob } from "./pcb-preview-revision";
+
+export type AssemblyCheckFinding = {
+  selection: AssemblySceneSelection;
+  sourceSha256: string;
+  point: { x: number; y: number };
+  description: string;
+  itemDescription: string;
+};
+/** Capture an actual item from an owned, current report, never a coordinate inferred from its text. */
+export function captureAssemblyCheckFinding(data: ProjectBoardSources, snapshot: Awaited<ReturnType<typeof inspectAssemblyPcbCheck>>, rowIndex: number, itemIndex: number, preferred?: AssemblySceneSelection): AssemblyCheckFinding | null {
+  if (snapshot.state !== "source-unchanged" || snapshot.projectId !== data.projectId || snapshot.board.manifestSha256 !== data.manifestSha256) return null;
+  const receipt = AssemblyPcbCheckReceipt.safeParse(snapshot.report);
+  if (!receipt.success || receipt.data.pcbRevision.sha256 !== snapshot.sourceSha256 || receipt.data.boardSource.projectId !== snapshot.projectId || receipt.data.boardSource.sourceId !== snapshot.board.sourceId || receipt.data.boardSource.manifestSha256 !== snapshot.board.manifestSha256) return null;
+  const previous = restoreAssemblySelection(data, preferred);
+  const instanceId = previous?.sourceId === snapshot.board.sourceId ? previous.instanceId : data.assembly?.instances.find(row => row.sourceId === snapshot.board.sourceId)?.id;
+  const selection = instanceId ? captureAssemblySelection(data, instanceId) : null;
+  if (!selection || selection.sourceId !== snapshot.board.sourceId || assemblySelectionState(data, selection) !== "owned" || data.sources.find(row => row.source.id === selection.sourceId)?.pcbSha256 !== snapshot.sourceSha256) return null;
+  const row = normalizeReport(snapshot.report, "drc")[rowIndex], item = row?.items[itemIndex], point = item?.pos;
+  if (!row || !item || !point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
+  return { selection: { ...selection }, sourceSha256: snapshot.sourceSha256, point: { ...point }, description: row.description, itemDescription: item.description };
+}
+export function assemblyCheckFindingOwned(data: ProjectBoardSources, finding: AssemblyCheckFinding) {
+  return assemblySelectionState(data, finding.selection) === "owned" && data.sources.find(row => row.source.id === finding.selection.sourceId)?.pcbSha256 === finding.sourceSha256;
+}
+/** Validate the bytes actually displayed, not a separately fetched preview that may have changed. */
+export async function assemblyFindingPreviewMatches(svg: string, rawReceipt: string | undefined, sourceSha256: string) {
+  let raw: unknown; try { raw = JSON.parse(rawReceipt ?? ""); } catch { return false; }
+  const receipt = PcbPreviewRevision.safeParse(raw);
+  return receipt.success && receipt.data.sourceSha256 === sourceSha256 && pcbSvgHasNativeCoordinates(svg) && await sha256Blob(new Blob([svg])) === receipt.data.artifactSha256;
+}

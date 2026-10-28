@@ -407,3 +407,9 @@
 .fd-assembly-review-status { display:flex; flex-direction:column; gap:7px; color:var(--fd-muted); font-size:12px; }
 .fd-assembly-review-status small { font-size:11px; }
 .fd-assembly-review-status [data-warning="true"] { color:var(--fd-warning); font-weight:600; }
+
+.fd-assembly-finding-summary { display:flex; align-items:center; gap:12px; margin:0 20px 12px; padding:12px 16px; border:1px solid var(--fd-border); border-radius:12px; background:var(--fd-panel); font-size:12px; }
+.fd-assembly-finding-summary > div { flex:1; min-width:0; }
+.fd-assembly-finding-summary span { display:block; margin-top:4px; color:var(--fd-muted); overflow-wrap:anywhere; }
+.fd-finding-anchor .fd-location-marker { background:var(--fd-warning, #d49320); }
+.fd-member-checks-detail p button { margin-left:8px; }
