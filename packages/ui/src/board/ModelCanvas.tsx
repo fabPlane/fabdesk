@@ -1,3 +1,4 @@
+import { fitModelCamera } from "@fabdesk/client-core";
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -42,12 +43,13 @@ async function loadModel(bytes: ArrayBuffer, path: string): Promise<THREE.Object
 }
 
 /** View transforms affect only the camera. Model bytes and physical placement stay untouched. */
-export default function ModelCanvas({ projectId, path }: { projectId: string; path: string }) {
+export default function ModelCanvas({ projectId, path, blob }: { projectId: string; path: string; blob?: Blob }) {
   const host = useRef<HTMLDivElement>(null);
   const savedCamera = useRef<CameraState | null>(null);
   const zoom = useRef<((factor: number) => void) | null>(null);
   const fit = useRef<(() => void) | null>(null);
-  const { data, isPending, isError, refetch } = useProjectBlobUrl(projectId, path);
+  const query = useProjectBlobUrl(projectId, blob ? null : path);
+  const data = blob ?? query.data, isPending = !blob && query.isPending, isError = !blob && query.isError, refetch = query.refetch;
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [retry, setRetry] = useState(0);
@@ -93,8 +95,8 @@ export default function ModelCanvas({ projectId, path }: { projectId: string; pa
           if (!camera || !controls) return;
           controls.target.set(0, 0, 0);
           camera.up.set(0, 1, 0);
-          const distance = span / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) * 1.45 / Math.min(camera.aspect, 1);
-          camera.position.set(distance * .7, distance * .65, distance * .85);
+          const { distance, direction } = fitModelCamera(size, camera.fov, camera.aspect);
+          camera.position.set(distance * direction.x, distance * direction.y, distance * direction.z);
           controls.update(); render();
         };
         fit.current = reset;
@@ -136,7 +138,7 @@ export default function ModelCanvas({ projectId, path }: { projectId: string; pa
   return <div className="fd-model-canvas" data-testid="model-canvas">
     <div ref={host} className="fd-model-viewport" />
     {(isPending || (loading && data !== null)) && !error && !isError && <div className="fd-model-message"><Spinner /><span>Opening model…</span></div>}
-    {(error || isError || data === null) && <div className="fd-model-message" role="alert"><p>{error ?? (isError ? "Could not load the saved model." : "Model file not found.")}</p><Button onClick={() => { savedCamera.current = null; setRetry((n) => n + 1); void refetch(); }}>Retry preview</Button></div>}
+    {(error || isError || data === null) && <div className="fd-model-message" role="alert"><p>{error ?? (isError ? "Could not load the saved model." : "Model file not found.")}</p><Button onClick={() => { savedCamera.current = null; setRetry((n) => n + 1); if (!blob) void refetch(); }}>Retry preview</Button></div>}
     <div className="fd-model-view-tools"><Button size="sm" title="Zoom out" aria-label="Zoom out" onClick={() => zoom.current?.(1.25)}>−</Button><Button size="sm" title="Zoom in" aria-label="Zoom in" onClick={() => zoom.current?.(.8)}>+</Button><Button size="sm" onClick={() => fit.current?.()}>Fit view</Button><span>Drag to orbit · Arrow keys pan</span></div>
   </div>;
 }

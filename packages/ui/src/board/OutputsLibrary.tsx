@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { savedOutputs, useBoardModelRevision, usePcbPreviewRevision, useEnclosureSourceRevision, useCoreClient, useProject, useRunTool, type OutputKind } from "@fabdesk/client-core";
+import { savedOutputs, useBoardSources, useBoardModelRevision, usePcbPreviewRevision, useEnclosureSourceRevision, useCoreClient, useProject, useRunTool, type OutputKind } from "@fabdesk/client-core";
 import { Button, Dialog, EmptyState, LoadError, Spinner } from "../components/ui";
 import { ProjectImage } from "../chat/ProjectImage";
 import { ProjectVideo } from "../chat/ProjectVideo";
@@ -16,11 +16,14 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
   const [preview, setPreview] = useState<string | null>(null), [downloading, setDownloading] = useState(false), [error, setError] = useState<string | null>(null);
   const menu = useRef<HTMLDetailsElement>(null), library = useRef<HTMLDivElement>(null), actions = useRef<HTMLDivElement>(null);
   const [actionPosition, setActionPosition] = useState({ left: 12, top: 150, width: 640 });
-  const outputs = savedOutputs(project.data?.files ?? []), active = outputs.find(file => file.path === selected), shown = outputs.filter(file => filter === "all" || file.kind === filter);
-  const modelRevision = useBoardModelRevision(projectId, outputs.some(file => file.path === "renders/board.glb"));
-  const pcbRevision = usePcbPreviewRevision(projectId, outputs.some(file => file.path === "renders/pcb.svg"));
-  const enclosureRevision = useEnclosureSourceRevision(projectId, outputs.some(file => file.path === "exports/enclosure.stl"));
+  const boardSources = useBoardSources(projectId), assembly = boardSources.data?.mode === "assembly";
+  const outputs = savedOutputs(project.data?.files ?? [], assembly ? boardSources.data?.sources : []), active = outputs.find(file => file.path === selected), shown = outputs.filter(file => filter === "all" || file.kind === filter);
+  const modelRevision = useBoardModelRevision(projectId, !assembly && outputs.some(file => file.path === "renders/board.glb"));
+  const pcbRevision = usePcbPreviewRevision(projectId, !assembly && outputs.some(file => file.path === "renders/pcb.svg"));
+  const enclosureRevision = useEnclosureSourceRevision(projectId, !assembly && outputs.some(file => file.path === "exports/enclosure.stl"));
   const sourceInfo = (path: string) => {
+    const member = outputs.find(file => file.path === path);
+    if (member?.sourceId) return { warning: false, label: `${member.sourceName} · Source not checked` };
     if (path === "renders/board.glb") return { warning: ["source-changed", "artifact-changed"].includes(modelRevision.data ?? ""), label: modelRevision.isFetching ? "Checking model source…" : modelRevision.isError ? "Model source check unavailable" : modelRevision.data === "source-changed" ? "PCB changed · Review model" : modelRevision.data === "artifact-changed" ? "Model changed · Source unverified" : modelRevision.data === "source-unchanged" ? "PCB unchanged · Model dependencies unverified" : "Source unverified" };
     if (path === "renders/pcb.svg") return { warning: ["source-changed", "artifact-changed"].includes(pcbRevision.data ?? ""), label: pcbRevision.isFetching ? "Checking preview source…" : pcbRevision.isError ? "Preview source check unavailable" : pcbRevision.data === "source-changed" ? "PCB changed · Review preview" : pcbRevision.data === "artifact-changed" ? "Preview changed · Source unverified" : pcbRevision.data === "matches-source" ? "Preview matches saved PCB" : "Source unverified" };
     if (path === "exports/enclosure.stl") return { warning: enclosureRevision.data === "changed", label: enclosureRevision.isFetching ? "Checking case source…" : enclosureRevision.isError ? "Case source check unavailable" : enclosureRevision.data === "changed" ? "PCB changed · Review case" : enclosureRevision.data === "unchanged" ? "Case source unchanged · Fit unverified" : "Case source unverified" };
@@ -60,7 +63,9 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
   };
   const create = (kind: "render" | "glb" | "video" | "files") => {
     if (menu.current) menu.current.open = false;
-    if (!projectId) return;
+    if (!projectId || kind !== "files" && (boardSources.isPending || boardSources.isError)) return;
+    if (assembly && kind === "glb") { useUiStore.getState().setWorkspaceTab("3d"); return; }
+    if (assembly && kind === "render") return;
     if (kind === "video" || kind === "files") useUiStore.getState().setWorkspaceTab(kind === "video" ? "3d" : "files");
     else void generate.run(kind, { projectId });
   };
@@ -76,9 +81,9 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
       <details ref={menu} className="fd-workspace-menu fd-output-create" onKeyDown={event => { if (event.key === "Escape" && menu.current) { menu.current.open = false; menu.current.querySelector("summary")?.focus(); } }}>
         <summary><Icon name="plus" width={16} height={16} />Create output</summary>
         <div className="fd-workspace-menu-content">
-          <button disabled={generate.state.status === "running"} onClick={() => create("render")}>Render board images</button>
-          <button disabled={generate.state.status === "running"} onClick={() => create("glb")}>Generate board model</button>
-          <button onClick={() => create("video")}>Make video…</button>
+          <button disabled={assembly || boardSources.isPending || boardSources.isError || generate.state.status === "running"} title={assembly ? "Member board image renders are not available here yet. Use the selected board’s PCB preview." : undefined} onClick={() => create("render")}>Render board images</button>
+          <button disabled={boardSources.isPending || boardSources.isError || generate.state.status === "running"} onClick={() => create("glb")}>Generate board model</button>
+          <button disabled={assembly || boardSources.isPending || boardSources.isError} title={assembly ? "Member video export is not available yet" : undefined} onClick={() => create("video")}>Make video…</button>
           <button onClick={() => create("files")}>Export files…</button>
         </div>
       </details>
@@ -90,7 +95,7 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
       <div className="fd-output-action-bar"><strong title={active.path}>{basename(active.path)}</strong>
         {canPreview && <Button size="sm" onClick={() => setPreview(active.path)}>{active.kind === "videos" ? "Play" : "Preview"}</Button>}
         <Button size="sm" disabled={downloading} onClick={() => void download()}>{downloading ? "Downloading…" : "Download"}</Button>
-        {active.path === "renders/board.glb" && <Button size="sm" disabled={generate.state.status === "running"} onClick={() => create("glb")}>Regenerate model</Button>}
+        {active.path === "renders/board.glb" && <Button size="sm" disabled={boardSources.isPending || boardSources.isError || generate.state.status === "running"} onClick={() => create("glb")}>Regenerate model</Button>}
         <Button size="sm" variant="ghost" onClick={() => useUiStore.getState().openProjectFile(active.path)}>Show file</Button>
         <Button size="sm" variant="ghost" onClick={deselect}>Deselect</Button>
       </div>

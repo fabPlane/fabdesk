@@ -199,3 +199,5 @@ export { useAssemblyCheckSummaries } from "./queries";
 
 export * from "./assembly-check-finding";
 export * from "./live-assembly-previews";
+export * from "./assembly-board-model";
+export * from "./model-camera";

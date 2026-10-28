@@ -1,0 +1,91 @@
+{
+  "fixture": {
+    "projectId": "prj_mvqyacun3e60075ae8",
+    "firstExport": {
+      "receipt": {
+        "contract": "fabplane.board-model-revision.v1",
+        "source": "board.kicad_pcb",
+        "artifact": "renders/board.glb",
+        "sourceSha256": "34f1e8d8592b9fce278642e7ab15b94cf53631740cccf25c439a1311e7bc77c6",
+        "artifactSha256": "fa4fc598e26dbcc406cbe0765aab32ed92cc7224c6fd4b3309ca87bd7021b1c4",
+        "generatedAt": "2026-10-28T01:50:57.624Z",
+        "dependencies": "unverified",
+        "boardSource": {
+          "sourceId": "io",
+          "manifestSha256": "ffe6b12399cec942549f829855f4d6e532a18db08d843a44f6c2624f7dd4885c",
+          "projectId": "prj_mvqyacun3e60075ae8"
+        },
+        "warnings": []
+      },
+      "allRecordedSourcePreviewHashesUnchanged": true,
+      "sourceHash": "34f1e8d8592b9fce278642e7ab15b94cf53631740cccf25c439a1311e7bc77c6",
+      "artifactHash": "fa4fc598e26dbcc406cbe0765aab32ed92cc7224c6fd4b3309ca87bd7021b1c4"
+    },
+    "nativeJobs": [
+      {
+        "id": "job_mvrgk0hbe09c6758c2",
+        "kind": "tool:render_glb",
+        "status": "done",
+        "projectId": "prj_mvqyacun3e60075ae8"
+      },
+      {
+        "id": "job_mvrgnwvz86bc797a43",
+        "kind": "tool:render_pcb_svg",
+        "status": "done",
+        "projectId": "prj_mvqyacun3e60075ae8"
+      }
+    ],
+    "interactiveOrbit": true,
+    "downloadByteIdentical": true,
+    "sourceChangeWarning": true,
+    "artifactChangeWarning": true,
+    "manifestChangeBlocksActions": true,
+    "sourceReselectExplicit": true,
+    "otherSourceDoesNotInheritModel": true,
+    "sharedRightInstanceUsesSameModel": true,
+    "outputsContainsDeclaredModelAndPreviews": true,
+    "outputsSelectionSurvivesReload": true,
+    "compactWindow": {
+      "width": 960,
+      "height": 720
+    },
+    "allRecordedFixtureHashesRestored": true,
+    "priorModelFilePresenceRestored": true,
+    "vaioRecordedHashesUnchanged": true,
+    "noAgentMessageSent": true
+  },
+  "vaio": {
+    "projectId": "prj_mvr2ofe307592e4a2e",
+    "sourceId": "io",
+    "receipt": {
+      "contract": "fabplane.board-model-revision.v1",
+      "source": "board.kicad_pcb",
+      "artifact": "renders/board.glb",
+      "sourceSha256": "f4e8b6f53313955dcec724cf5cf8853d9b0f965af404e6a9c1b006033b2ab25d",
+      "artifactSha256": "f1b26217e84f7091f0295f6e19ed0141d29458dc46e3175e749c509d0c43f475",
+      "generatedAt": "2026-10-28T02:02:11.622Z",
+      "dependencies": "unverified",
+      "boardSource": {
+        "sourceId": "io",
+        "manifestSha256": "1dac5bb4e85c2cad241039b813069ad97fefcf65602a03e664d4ca85c7599002",
+        "projectId": "prj_mvr2ofe307592e4a2e"
+      },
+      "warnings": []
+    },
+    "nativeJobs": [
+      {
+        "id": "job_mvrgygfpe8e85616ab",
+        "kind": "tool:render_glb",
+        "projectId": "prj_mvr2ofe307592e4a2e",
+        "status": "done"
+      }
+    ],
+    "actualInteractiveModel": true,
+    "componentModelDependencies": "unverified; PCB-only study does not contain the complete model dependencies",
+    "allRecordedSourcePreviewManifestHashesUnchanged": true,
+    "priorModelFilePresenceRestored": true,
+    "compactAndWideFit": true,
+    "quietOverviewRestored": true
+  },
+  "noAgentMessageSent": true
+}

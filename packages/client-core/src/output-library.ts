@@ -1,4 +1,4 @@
-import type { FileEntry } from "@fabdesk/protocol";
+import type { FileEntry, ProjectBoardSources } from "@fabdesk/protocol";
 export type OutputKind = "images" | "videos" | "models" | "manufacturing";
 
 /** A library of saved deliverables, not intermediate receipts/reports or project source files. */
@@ -11,6 +11,11 @@ export function outputKind(path: string): OutputKind | null {
   if (["zip", "csv", "gbr", "gbl", "gtl", "gbo", "gto", "gbs", "gts", "gko", "drl", "pdf", "dxf", "lbrn2", "net", "pos"].includes(extension ?? "")) return "manufacturing";
   return null;
 }
-export function savedOutputs(files: FileEntry[]) {
-  return files.flatMap(file => { const kind = outputKind(file.path); return kind ? [{ ...file, kind }] : []; }).sort((a, b) => b.mtime.localeCompare(a.mtime) || a.path.localeCompare(b.path));
+export function savedOutputs(files: FileEntry[], sources: ProjectBoardSources["sources"] = []) {
+  const members = sources.flatMap(row => row.status === "available" && row.source.location === "project" ? [{ sourceId: row.source.id, sourceName: row.source.name, prefix: row.source.directory === "." ? "" : `${row.source.directory}/` }] : []).sort((a, b) => b.prefix.length - a.prefix.length);
+  return files.flatMap(file => {
+    const member = members.find(row => file.path.startsWith(row.prefix) && outputKind(file.path.slice(row.prefix.length)));
+    const kind = member ? outputKind(file.path.slice(member.prefix.length)) : outputKind(file.path);
+    return kind ? [{ ...file, kind, ...(member ? { sourceId: member.sourceId, sourceName: member.sourceName } : {}) }] : [];
+  }).sort((a, b) => b.mtime.localeCompare(a.mtime) || a.path.localeCompare(b.path));
 }

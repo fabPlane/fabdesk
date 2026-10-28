@@ -40,3 +40,10 @@ export const BoardModelRevision = z.object({
 });
 export type BoardModelRevision = z.infer<typeof BoardModelRevision>;
 export const BOARD_MODEL_REVISION_PATH = "renders/board.glb.revision.json";
+
+/** A model exported from one captured assembly source, never an inferred project-root board. */
+export const AssemblyBoardModelRevision = BoardModelRevision.extend({
+  boardSource: BoardSourceSelection.extend({ projectId: z.string().min(1) }).strict(),
+  warnings: z.array(z.string()).default([]),
+});
+export type AssemblyBoardModelRevision = z.infer<typeof AssemblyBoardModelRevision>;

@@ -613,3 +613,30 @@ Limits: this observes changes while the assembly workspace is mounted, not a bac
 
 
 Live-preview navigation follow-up: explicit saved board selection changes now update an already open Boards detail. Background declaration/source updates still keep the active captured detail stale rather than silently retargeting or resetting it. Native validation opened Carrier, updated I/O, confirmed Carrier remained visible during automatic refresh, then clicked View and verified the I/O detail. All recorded fixture/VAIO hashes were restored again. Final UI typecheck and **225 UI tests passed**, zero failures. See the same native evidence record's crossSourceView entry.
+
+
+## Source-qualified member 3D models and Outputs
+
+Each captured assembly board now has local **PCB / 3D** controls on the same canvas. The PCB subtree remains mounted while hidden to retain proposal fields; hidden native-tool portals receive the existing visibility guard. The requested 3D view lazily loads the model renderer. Outputs → Models also offers an explicit source picker, preserves its captured source through workspace reload and requires reselection after a declaration change. Shared physical instances use the same source model. The source picker does not implicitly choose a root board.
+
+Member `render_glb` requires the inspected saved PCB hash. Exports use the leaf board's real directory so relative model paths can resolve, then recheck saved source bytes, the output jail, cancellation and captured declaration before publication. Failures retain the prior model/receipt. The receipt records project/source/declaration, source and model hashes, export notes, and explicitly unverified external dependencies. The agent's project status names this limited capability separately from root-board status.
+
+The client checks ownership before and after reading the leaf PCB, model and receipt and passes the **exact inspected Blob** to the viewer and download. Source, artifact and ownership changes have distinct labels. A legacy/root or older-declaration receipt cannot become a current member result. Saved unverified models remain inspectable with an explicit label; model dependencies, physical placement and enclosure fit are never inferred from a PCB hash.
+
+The Outputs library now discovers render/export files under explicitly declared available source directories, labels their source, and excludes undeclared historical folders, blocked sources, receipts and native sources. It does not hash large models merely to fill the library; use the source-specific model view to check provenance. Assembly model creation routes to the source picker. Unsupported member image/video rendering actions are disabled rather than invoking unrelated root tools. Saved member files can still be previewed/downloaded. Full assembly alignment, enclosure fit and member video creation remain unavailable.
+
+Model Fit view now projects the actual eight bounding-box corners into the perspective viewport instead of estimating from the largest dimension. It preserves the default orientation and reserves space for the controls; this changes the camera only. Narrow/wide viewports, flat boards and tall cases have property tests, and compact/full-size native rendering was checked.
+
+Native study: generated the isolated I/O model through the UI, orbited it, downloaded through the native Save panel and verified byte equality. The source/member/model receipt and all original source/preview hashes matched. PCB whitespace changes marked the model stale even after the PCB preview automatically refreshed. Changed GLB bytes were unverified; changed declaration blocked actions and required explicit reselection. Carrier did not inherit I/O's model; Right I/O used the same source model. Outputs displayed the declared artifacts, and its model source survived a full renderer reload. All recorded fixture hashes and prior model-file presence were restored.
+
+Real VAIO: native Generate 3D preview exported the exact I/O main Rev H A18 source and displayed its available board geometry at 960 × 720 and 1440 × 870. This PCB-only study lacks complete component-model dependencies; the preview is not a fully populated assembly or a fit check. Source/model/member hashes matched; all recorded real-study source/preview/manifest hashes stayed unchanged. The temporary generated model/receipt were preserved as evidence and restored to their prior absent state after all jobs were terminal. The quiet VAIO Overview was restored. No agent message was sent. [Native evidence](member-model-native.json).
+
+Validation: final root typecheck passed; final client-core/UI suites **250 + 225 passed**, zero failures. Installed KiCad scope/publication tests **3 passed / 48 assertions**, including actual exports and retained prior output on source/declaration/queued changes. Initial focused model cases **9 passed / 1 native opt-in skip / 64 assertions**; camera properties **2 passed / 231 assertions**. The first standard suite found an outdated capability-list assertion; it was updated to include member GLB export and preserve the dependency/fit limitation. The following complete suite passed **2165 / 33 skipped / zero failures** before the final Outputs/camera refinement. The final complete standard suite passed **2,168 / 33 skipped / zero failures**. Final minor warning-color and creation-scope guard refinements also passed UI typecheck.
+
+Remaining model work: combine member-model freshness with Overview/Review attention, dependency-complete import/receipts, assembly alignment, enclosure fit and member video/media generation. Member schematic/ERC/parity, qualified comments/diffs and native replacement/undo remain separate unfinished work.
+
+![Source-specific model on one canvas](member-model-canvas.png)
+![Model remains stale after saved PCB/preview changes](member-model-stale.png)
+![Source-qualified Outputs model view after reload](member-model-outputs.png)
+![Real VAIO model in compact view](member-model-vaio-compact.png)
+![Real VAIO model in the full-size canvas](member-model-vaio.png)

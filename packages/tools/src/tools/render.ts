@@ -1,6 +1,6 @@
 /** Render toolset: schematic/PCB images, GLB, and product videos. */
 import { createHash } from "node:crypto";
-import { BoardModelRevision, BOARD_MODEL_REVISION_PATH, PCB_PREVIEW_REVISION_PATH } from "@fabdesk/protocol";
+import { AssemblyBoardModelRevision, BoardModelRevision, BOARD_MODEL_REVISION_PATH, PCB_PREVIEW_REVISION_PATH } from "@fabdesk/protocol";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { z } from "zod/v4";
 import { tmpdir } from "node:os";
@@ -182,11 +182,12 @@ export const render_pcb_svg = defineTool({
 
 export const render_glb = defineTool({
   name: "render_glb",
+  boardScoped: true,
   toolset: "render",
   title: "Export 3D GLB",
   description:
     "Export a 3D model (GLB) of the KiCad board to renders/board.glb for the app's 3D tab. Requires kicad-cli and board.kicad_pcb.",
-  inputSchema: {},
+  inputSchema: { expectedSourceSha256: z.string().regex(/^[a-f0-9]{64}$/).optional().describe("Required for an assembly member: hash of its inspected saved PCB") },
   annotations: {
     readOnlyHint: false,
     destructiveHint: true,
@@ -194,13 +195,16 @@ export const render_glb = defineTool({
     idempotentHint: true,
   },
   longRunning: true,
-  handler: async (_args, ctx) => {
+  handler: async ({ expectedSourceSha256 }, ctx) => {
     const project = ctx.requireProject();
+    if (ctx.board && !expectedSourceSha256) throw new ToolError("Inspect the selected member PCB and provide expectedSourceSha256 before exporting its model.", "precondition");
     const cli = await requireKicad(ctx);
     const board = await requireBoard(project);
-    const output = p(project, PROJECT_FILES.renders, "board.glb");
+    const output = await jailPath(project.dir, `${PROJECT_FILES.renders}/board.glb`);
+    const receiptPath = await jailPath(project.dir, BOARD_MODEL_REVISION_PATH);
     ctx.progress(0.2, "exporting glb");
     const sourceSha256 = await pcbPreviewFileHash(board);
+    if (expectedSourceSha256 && sourceSha256 !== expectedSourceSha256) throw new ToolError("The saved PCB changed since inspection. Inspect the selected source again before exporting its model.", "precondition");
     const scratch = await mkdtemp(join(tmpdir(), "fabplane-board-model-"));
     let res: { fused: boolean; warnings: string[] };
     try {
@@ -211,9 +215,13 @@ export const render_glb = defineTool({
       if (await pcbPreviewFileHash(board) !== sourceSha256)
         throw new ToolError("PCB changed while exporting the model. The previous model was kept; review the saved PCB and try again.", "precondition");
       const bytes = await readFile(temporary);
-      const receipt = BoardModelRevision.parse({ contract: "fabplane.board-model-revision.v1", source: "board.kicad_pcb", artifact: "renders/board.glb", sourceSha256, artifactSha256: createHash("sha256").update(bytes).digest("hex"), generatedAt: new Date().toISOString(), dependencies: "unverified" });
+      const receipt = (ctx.board ? AssemblyBoardModelRevision : BoardModelRevision).parse({ contract: "fabplane.board-model-revision.v1", source: "board.kicad_pcb", artifact: "renders/board.glb", sourceSha256, artifactSha256: createHash("sha256").update(bytes).digest("hex"), generatedAt: new Date().toISOString(), dependencies: "unverified", ...(ctx.board ? { boardSource: { projectId: project.id, ...ctx.board }, warnings: res.warnings } : {}) });
+      await jailPath(project.dir, `${PROJECT_FILES.renders}/board.glb`);
+      await jailPath(project.dir, BOARD_MODEL_REVISION_PATH);
+      await ctx.runInScope?.(async () => {});
+      ctx.signal.throwIfAborted();
       await writeAtomic(output, bytes);
-      await writeJson(p(project, BOARD_MODEL_REVISION_PATH), receipt);
+      await writeJson(receiptPath, receipt);
     } finally { await rm(scratch, { recursive: true, force: true }); }
     ctx.progress(1, "done");
     const url = fileUrl(output);

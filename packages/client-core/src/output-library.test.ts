@@ -12,3 +12,15 @@ test("output listing keeps distinct saved formats/paths and sorts actual timesta
   expect(rows.map(row => row.path)).toEqual(["renders/top.png", "exports/video.mp4", "exports/video.webm"]);
   expect(rows[0]).toEqual({ path: "renders/top.png", size: 3, mtime: "2026-10-27", kind: "images" });
 });
+
+test("member outputs come only from explicitly available source directories and retain their source labels", () => {
+  const sources = [
+    { source: { id: "io", name: "I/O", location: "project" as const, directory: "boards/io" }, status: "available" as const },
+    { source: { id: "blocked", name: "Blocked", location: "project" as const, directory: "boards/blocked" }, status: "blocked" as const },
+  ];
+  const files = ["boards/io/renders/board.glb", "boards/io/renders/board.glb.revision.json", "boards/io/exports/top.png", "boards/old/renders/board.glb", "boards/blocked/renders/board.glb", "exports/enclosure.stl"].map(path => ({ path, mtime: "2026-10-28", size: 20 }));
+  const rows = savedOutputs(files, sources);
+  expect(rows.map(row => row.path)).toEqual(["boards/io/exports/top.png", "boards/io/renders/board.glb", "exports/enclosure.stl"]);
+  expect(rows[1]).toMatchObject({ sourceId: "io", sourceName: "I/O", kind: "models" });
+  expect(rows[2]!.sourceId).toBeUndefined();
+});
