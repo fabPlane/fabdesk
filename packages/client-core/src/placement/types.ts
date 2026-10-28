@@ -77,6 +77,18 @@ export interface NetEdge {
   b: { id: string; xy: Point };
   length: number;
 }
+export interface PlacementContext {
+  neighbors: { id: string; ref: string; net: string; distance: number }[];
+  gap: {
+    a: string;
+    b: string;
+    ref: string;
+    distance: number;
+    overlap: boolean;
+    from?: Point;
+    to?: Point;
+  } | null;
+}
 export interface PlacementReview {
   changed: { id: string; ref: string; from: number[] | null; to: number[] }[];
   added: PlacementFinding[];

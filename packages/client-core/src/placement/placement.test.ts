@@ -21,6 +21,15 @@ import {
   placementBoardFiles,
   placementDrafts,
   replaceFootprint,
+  addPlacementFootprint,
+  setPartValue,
+  setAnchorOffset,
+  swapPlacement,
+  connectedNeighbors,
+  nearestClearance,
+  placementScore,
+  saveAutosave,
+  decodeAutosave,
 } from "./index";
 
 const source = readFileSync(new URL("./fixtures/usb-timer.kicad_pcb", import.meta.url), "utf8");
@@ -43,9 +52,9 @@ test("footprint replacement keeps identity and pad nets, and rejects incompatibl
   ]);
   expect(p.pads.map((p) => [p.number, p.net])).toEqual(original.pads.map((p) => [p.number, p.net]));
   const valid = clone(p);
-  expect(() => replaceFootprint(p, replacement.replace('pad "2"', 'pad "3"'), "Wrong pins")).toThrow(
-    /Pad numbers/,
-  );
+  expect(() =>
+    replaceFootprint(p, replacement.replace('pad "2"', 'pad "3"'), "Wrong pins"),
+  ).toThrow(/Pad numbers/);
   expect(p).toEqual(valid);
 });
 
@@ -128,7 +137,9 @@ test("session round trips retain groups, anchors, locks, reserved areas and net 
   );
   s.parts[2]!.locked = true;
   setAnchor(s, s.parts[3]!, "right");
-  s.reservedAreas = [{ id: "area", name: "Mount", x: 2, y: 2, w: 3, h: 4, margin: 0.2, side: "both" }];
+  s.reservedAreas = [
+    { id: "area", name: "Mount", x: 2, y: 2, w: 3, h: 4, margin: 0.2, side: "both" },
+  ];
   s.netWeights = { GND: 2 };
   const restored = readPlacement(JSON.stringify(s), "draft.placement.json");
   expect(restored).toEqual(s);
@@ -166,4 +177,69 @@ test("draft recovery is scoped to a project and retains unsaved history", () => 
   placementDrafts.set("placement-test-a", h, -1);
   expect(placementDrafts.get("placement-test-a")).toEqual({ history: h, savedRevision: -1 });
   expect(placementDrafts.get("placement-test-b")).toBeUndefined();
+});
+
+test("library addition renews identities, keeps unique references and exports without nets", async () => {
+  const { placementLibrary } = await import("./library");
+  expect(placementLibrary).toHaveLength(42);
+  const s = fresh(),
+    entry = placementLibrary[0]!;
+  const a = addPlacementFootprint(s, entry.text, entry.name, [3, 4]),
+    b = addPlacementFootprint(s, entry.text, entry.name, [5, 6]);
+  expect(a.ref).not.toBe(b.ref);
+  expect(a.id).not.toBe(b.id);
+  expect(a.pads.every((p) => !p.net)).toBe(true);
+  setPartValue(a, "22k");
+  const result = readPlacement(exportBoard(s), "added.kicad_pcb");
+  expect(result.parts.find((p) => p.ref === a.ref)).toMatchObject({ x: 3, y: 4, value: "22k" });
+  expect(result.parts.length).toBe(14);
+});
+test("resize supports fixed placement and preserves physical cutout sizes", async () => {
+  const { default: examples } = await import("./examples.json");
+  const s = readPlacement(
+    examples.find((x) => x.name === "constraint-board")!.text,
+    "constraint-board.kicad_pcb",
+  );
+  const poses = s.parts.map((p) => [p.x, p.y, p.angle]);
+  resizeBoard(s, 80, 60, false);
+  expect(s.parts.map((p) => [p.x, p.y, p.angle])).toEqual(poses);
+  expect(readPlacement(exportBoard(s), "resized.kicad_pcb").board).toMatchObject({ w: 80, h: 60 });
+});
+test("swaps retain component identities/nets; anchors constrain offset edits", () => {
+  const s = fresh(),
+    a = s.parts.find((p) => p.ref === "R5")!,
+    b = s.parts.find((p) => p.ref === "R1")!,
+    old = clone(a);
+  swapPlacement(s, a.id, b.id);
+  expect([b.x, b.y, b.angle]).toEqual([old.x, old.y, old.angle]);
+  expect(a.pads).toEqual(old.pads);
+  setAnchor(s, a, "left");
+  const x = a.x;
+  setAnchorOffset(s, a.id, a.anchor!.offset + 2);
+  expect(a.x).toBe(x + 2);
+  expect(() => swapPlacement(s, a.id, b.id)).toThrow();
+});
+test("context and weights match the original board's geometry and connections", () => {
+  const s = fresh(),
+    p = s.parts.find((p) => p.ref === "R5")!;
+  expect(nearestClearance(s, [p.id])?.ref).toBe("D1");
+  expect(connectedNeighbors(s, [p.id])).toHaveLength(6);
+  const before = placementScore(s);
+  s.netWeights = Object.fromEntries(
+    s.parts.flatMap((p) => p.pads.map((p) => [p.net, 0])).filter(([n]) => n),
+  );
+  expect(placementScore(s)).toBe(0);
+  expect(before).toBeGreaterThan(0);
+});
+test("browser recovery falls back to compressed sessions without changing metadata", async () => {
+  const text = JSON.stringify(fresh());
+  let saved = "";
+  const storage = {
+    setItem: (_key: string, value: string) => {
+      if (!value.includes("storageFormat")) throw Error("quota");
+      saved = value;
+    },
+  };
+  await saveAutosave(storage, "test-project", text);
+  expect(await decodeAutosave(saved)).toBe(text);
 });

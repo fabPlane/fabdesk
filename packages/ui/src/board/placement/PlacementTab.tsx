@@ -22,14 +22,24 @@ import {
   type PlacementAnalysis,
   type PlacementHistory,
   type PlacementReview,
+  type PlacementContext,
+  type Point,
+  loadPlacementExamples,
+  saveAutosave,
+  decodeAutosave,
+  setPartValue,
+  setAnchorOffset,
+  swapPlacement,
 } from "@fabdesk/client-core/placement";
 import { useUiStore } from "../../stores/ui";
 import { Button, Dialog, EmptyState, Spinner } from "../../components/ui";
 import { Icon } from "../../components/Icon";
 import { PlacementCanvas } from "./PlacementCanvas";
 import { placementJob } from "./placement-jobs";
-import type { PlacementJob } from "./placement.worker";
+import type { PlacementJob, PlacementResult } from "./placement.worker";
 import "./placement.css";
+import { FootprintLibrary, FootprintPicture, type FootprintChoice } from "./FootprintLibrary";
+import { PlacementEnclosure } from "./PlacementEnclosure";
 
 const fmt = (n: number) => Number(n.toFixed(2)).toString();
 const EMPTY_ANALYSIS: PlacementAnalysis = { findings: [], guidelines: [], edges: [], length: 0 };
@@ -80,7 +90,16 @@ function NumberField({
         onBlur={(e) => {
           const n = Number(text);
           setText(String(value));
-          if (text.trim() && e.target.validity.valid && Number.isFinite(n) && n !== value) onChange(n);
+          // Step controls arrow increments, not the precision of a typed dimension or angle.
+          if (
+            text.trim() &&
+            !e.target.validity.badInput &&
+            Number.isFinite(n) &&
+            n >= min &&
+            n <= max &&
+            n !== value
+          )
+            onChange(n);
         }}
         onKeyDown={(e) => {
           if (e.key === "Enter") e.currentTarget.blur();
@@ -115,6 +134,7 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
     session: PlacementSession;
     review: PlacementReview;
     label: string;
+    comparison?: PlacementResult["comparison"];
   } | null>(null);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -125,7 +145,23 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
     [net, setNet] = useState("off");
   const [grid, setGrid] = useState(0.25),
     [push, setPush] = useState(true);
-  const [mode, setMode] = useState<"select" | "pan">("select");
+  const [mode, setMode] = useState<"select" | "pan" | "area">("select");
+  const [allowRotation, setAllowRotation] = useState(true),
+    [adjust, setAdjust] = useState(true),
+    [swap, setSwap] = useState<string | null>(null);
+  const [context, setContext] = useState<PlacementContext>({ neighbors: [], gap: null });
+  const [library, setLibrary] = useState<{
+    target: string | null;
+    initial?: FootprintChoice;
+    at?: Point;
+  } | null>(null);
+  const [enclosure, setEnclosure] = useState(false),
+    [recovery, setRecovery] = useState("");
+  const recoveryQueue = useRef(Promise.resolve()),
+    recoveryVersion = useRef(0);
+  const [zoom, setZoom] = useState({ factor: 1, nonce: 0 }),
+    [zoomPercent, setZoomPercent] = useState(100);
+  const issueCursor = useRef(-1);
   const [focus, setFocus] = useState({ ids: [] as string[], nonce: 0 });
   const [exportOpen, setExportOpen] = useState(false),
     [replaceOpen, setReplaceOpen] = useState(false),
@@ -138,14 +174,14 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
   const input = useRef<HTMLInputElement>(null),
     operation = useRef<AbortController | null>(null),
     initialized = useRef(!!cached.current);
-  const footprintInput = useRef<HTMLInputElement>(null);
   const replacement = useRef<(() => void) | null>(null),
     mounted = useRef(true);
   const session = preview?.session ?? history?.present;
   const dirty = !!history && history.revision !== savedRevision;
   const blocked = !!busy || !!preview;
   const files = placementBoardFiles(project.data?.files ?? []);
-  const one = selection.length === 1 ? session?.parts.find((p) => p.id === selection[0]) : undefined;
+  const one =
+    selection.length === 1 ? session?.parts.find((p) => p.id === selection[0]) : undefined;
   const selectedGroupIds = useMemo(
     () => new Set(session && selection.length ? expanded(session, selection) : []),
     [session, selection],
@@ -155,7 +191,9 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
     () =>
       [
         ...new Set(
-          session?.parts.flatMap((p) => p.pads.map((pad) => pad.net)).filter((n) => n && n !== "0") ?? [],
+          session?.parts
+            .flatMap((p) => p.pads.map((pad) => pad.net))
+            .filter((n) => n && n !== "0") ?? [],
         ),
       ].sort(),
     [session],
@@ -167,7 +205,7 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
         `${p.ref} ${p.value} ${p.footprint}`.toLowerCase().includes(query.toLowerCase()),
     ) ?? [];
   const focusParts = (ids: string[]) => {
-    setSelection(ids);
+    selectParts(ids);
     setFocus((f) => ({ ids, nonce: f.nonce + 1 }));
   };
   const commit = (next: PlacementSession) => {
@@ -185,6 +223,13 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
+  };
+  const selectParts = (ids: string[]) => {
+    if (swap && ids.length === 1 && ids[0] !== swap) {
+      change((next) => swapPlacement(next, swap, ids[0]!));
+      setSwap(null);
+    }
+    setSelection(ids);
   };
   const rotate = () => {
     if (selection.length) change((next) => rotateParts(next, selection));
@@ -208,6 +253,46 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
   useEffect(() => {
     if (history) placementDrafts.set(projectId, history, savedRevision);
   }, [projectId, history, savedRevision]);
+  useEffect(() => {
+    if (!history) return;
+    const version = ++recoveryVersion.current;
+    setRecovery("Saving recovery copy…");
+    let queued = false;
+    const flush = () => {
+      if (queued) return;
+      queued = true;
+      const text = JSON.stringify(history.present);
+      recoveryQueue.current = recoveryQueue.current
+        .catch(() => {})
+        .then(async () => {
+          if (version !== recoveryVersion.current) return;
+          try {
+            await saveAutosave(localStorage, "fabdesk-placement:" + projectId, text);
+            if (mounted.current && version === recoveryVersion.current)
+              setRecovery("Recovery copy saved on this device");
+          } catch {
+            if (mounted.current)
+              setRecovery("Recovery unavailable — save or download your session");
+          }
+        });
+    };
+    const timer = setTimeout(flush, 350);
+    return () => {
+      clearTimeout(timer);
+      flush();
+    };
+  }, [history, projectId]);
+  useEffect(() => {
+    if (!session || !selection.length) {
+      setContext({ neighbors: [], gap: null });
+      return;
+    }
+    const c = new AbortController();
+    void placementJob({ kind: "context", session, ids: selection }, c.signal)
+      .then((r) => setContext(r.context!))
+      .catch(() => {});
+    return () => c.abort();
+  }, [session, selection]);
   useEffect(() => {
     if (session) {
       setWidth(session.board.w);
@@ -248,8 +333,11 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
         controller.signal,
       );
       if (controller.signal.aborted) return;
-      setHistory(placementHistory(result.session!));
-      setSavedRevision(path === PLACEMENT_DRAFT_PATH && !local ? 0 : -1);
+      const nextHistory = history
+        ? commitPlacement(history, result.session!)
+        : placementHistory(result.session!);
+      setHistory(nextHistory);
+      setSavedRevision(path === PLACEMENT_DRAFT_PATH && !local ? nextHistory.revision : -1);
       setSelection([]);
       setPreview(null);
       setAnalysis(EMPTY_ANALYSIS);
@@ -271,7 +359,24 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
     if (initialized.current || history || !project.data) return;
     initialized.current = true;
     const saved = project.data.files.some((f) => f.path === PLACEMENT_DRAFT_PATH);
-    if (saved || files[0]) void load(saved ? PLACEMENT_DRAFT_PATH : files[0]!);
+    void (async () => {
+      try {
+        const local = localStorage.getItem("fabdesk-placement:" + projectId);
+        if (local) {
+          const text = await decodeAutosave(local);
+          if (!mounted.current) return;
+          await load(
+            "Device recovery.placement.json",
+            new File([text], "Device recovery.placement.json"),
+          );
+          return;
+        }
+      } catch {
+        setRecovery("Could not restore device recovery. Opening project copy.");
+      }
+      if (mounted.current && (saved || files[0]))
+        await load(saved ? PLACEMENT_DRAFT_PATH : files[0]!);
+    })();
   }, [project.data]);
 
   const replace = (action: () => void) => {
@@ -289,12 +394,16 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
       placementDrafts.set(projectId, history, history.revision);
       if (mounted.current) {
         setSavedRevision(history.revision);
-        setNotice("Draft saved to this project. You can reopen it or share its .placement.json file.");
+        setNotice(
+          "Draft saved to this project. You can reopen it or share its .placement.json file.",
+        );
         void project.refetch();
       }
     } catch (e) {
       if (mounted.current)
-        setError(`Draft was not saved: ${e instanceof Error ? e.message : e}. Your edits are still here.`);
+        setError(
+          `Draft was not saved: ${e instanceof Error ? e.message : e}. Your edits are still here.`,
+        );
     } finally {
       if (mounted.current) setBusy("");
     }
@@ -308,7 +417,13 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
     try {
       const result = await placementJob(job, controller.signal);
       if (!controller.signal.aborted) {
-        setPreview({ session: result.session!, review: result.review!, label });
+        setPreview({
+          session: result.session!,
+          review: result.review!,
+          label,
+          ...(result.comparison ? { comparison: result.comparison } : {}),
+        });
+        setFocus((f) => ({ ids: [], nonce: f.nonce + 1 }));
         setInspector("review");
       }
     } catch (e) {
@@ -337,14 +452,36 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
         void project.refetch();
       }
     } catch (e) {
-      if (!controller.signal.aborted) setError(`Export failed: ${e instanceof Error ? e.message : e}`);
+      if (!controller.signal.aborted)
+        setError(`Export failed: ${e instanceof Error ? e.message : e}`);
     } finally {
       if (!controller.signal.aborted && mounted.current) setBusy("");
     }
   }
 
+  const downloadSession = () => {
+    if (!history) return;
+    const url = URL.createObjectURL(
+        new Blob([JSON.stringify(history.present)], { type: "application/json" }),
+      ),
+      a = document.createElement("a");
+    a.href = url;
+    a.download = history.present.name + ".placement.json";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  };
+  const loadExample = async (name: string) => {
+    const examples = await loadPlacementExamples();
+    const example = examples.find((x) => x.name === name);
+    if (example)
+      replace(() => void load(name + ".kicad_pcb", new File([example.text], name + ".kicad_pcb")));
+  };
   return (
-    <section className="fd-placement" data-testid="placement-workspace" aria-label="Placement workspace">
+    <section
+      className="fd-placement"
+      data-testid="placement-workspace"
+      aria-label="Placement workspace"
+    >
       <header className="fd-placement-header">
         <div className="fd-placement-title">
           <span className="fd-placement-symbol">
@@ -361,18 +498,49 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
               {dirty ? "Unsaved draft" : "Draft saved"}
             </span>
           )}
-          <Button size="sm" variant="ghost" onClick={() => setHelp(true)} aria-label="Placement help">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setHelp(true)}
+            aria-label="Placement help"
+          >
             ?
           </Button>
-          <Button size="sm" variant="secondary" disabled={blocked} onClick={() => input.current?.click()}>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={blocked}
+            onClick={() => input.current?.click()}
+          >
             <Icon name="folderOpen" width={14} height={14} /> Open
           </Button>
           {session && (
             <>
-              <Button size="sm" variant="secondary" disabled={blocked} onClick={() => setExportOpen(true)}>
+              <Button size="sm" variant="secondary" disabled={blocked} onClick={downloadSession}>
+                Download session
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={blocked}
+                onClick={() => setEnclosure(true)}
+              >
+                Enclosure / STL
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={blocked}
+                onClick={() => setExportOpen(true)}
+              >
                 <Icon name="export" width={14} height={14} /> Export PCB
               </Button>
-              <Button size="sm" variant="primary" disabled={blocked || !dirty} onClick={() => void save()}>
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={blocked || !dirty}
+                onClick={() => void save()}
+              >
                 Save draft
               </Button>
             </>
@@ -387,35 +555,6 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
             const file = e.target.files?.[0];
             if (file) replace(() => void load(file.name, file));
             e.target.value = "";
-          }}
-        />
-        <input
-          ref={footprintInput}
-          type="file"
-          accept=".kicad_mod"
-          hidden
-          onChange={async (e) => {
-            const file = e.target.files?.[0];
-            e.target.value = "";
-            if (!file || !session || !one || blocked) return;
-            if (file.size > 1_000_000) {
-              setError("Choose a footprint smaller than 1 MB.");
-              return;
-            }
-            try {
-              await propose(
-                {
-                  kind: "replace",
-                  session,
-                  id: one.id,
-                  name: file.name.replace(/\.kicad_mod$/i, ""),
-                  text: await file.text(),
-                },
-                `Replace ${one.ref} footprint`,
-              );
-            } catch (e) {
-              setError(String(e));
-            }
           }}
         />
       </header>
@@ -453,8 +592,8 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
           <span className="fd-placement-eyebrow">BOARD PLACEMENT</span>
           <h3>A little room. A better layout.</h3>
           <p>
-            Arrange components, inspect their connections, and explore a cleaner layout. Start with your
-            project board or open a KiCad file.
+            Arrange components, inspect their connections, and explore a cleaner layout. Start with
+            your project board or open a KiCad file.
           </p>
           {busy || project.isLoading ? (
             <div className="fd-placement-loading">
@@ -462,7 +601,9 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
             </div>
           ) : (
             <div className="fd-placement-empty-actions">
-              {files.length > 0 && <Button onClick={() => void load(files[0]!)}>Open project board</Button>}
+              {files.length > 0 && (
+                <Button onClick={() => void load(files[0]!)}>Open project board</Button>
+              )}
               <Button variant="secondary" onClick={() => input.current?.click()}>
                 Open KiCad board
               </Button>
@@ -473,6 +614,14 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
               )}
             </div>
           )}
+          <div className="fd-placement-empty-actions">
+            <Button disabled={!!busy} onClick={() => void loadExample("usb-timer")}>
+              Try USB timer
+            </Button>
+            <Button disabled={!!busy} onClick={() => void loadExample("constraint-board")}>
+              Try connectors &amp; cutout
+            </Button>
+          </div>
           <small>Drop a .kicad_pcb or .placement.json here. Source files stay unchanged.</small>
           <div className="fd-placement-steps">
             <span>
@@ -488,6 +637,35 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
         </div>
       ) : (
         <>
+          <div className="fd-placement-overview">
+            <div>
+              <strong>
+                {fmt(session.board.w)} × {fmt(session.board.h)} mm
+              </strong>
+              <button onClick={() => setInspector("board")}>Resize board…</button>
+              <span>
+                {session.parts.length} components ·{" "}
+                {session.resized ? "Resized outline" : "Original outline"}
+              </span>
+            </div>
+            <span title={recovery}>{recovery}</span>
+            <button
+              disabled={!analysis.findings.length}
+              onClick={() => {
+                issueCursor.current = (issueCursor.current + 1) % analysis.findings.length;
+                focusParts(analysis.findings[issueCursor.current]!.ids);
+                setInspector("review");
+              }}
+            >
+              Review next finding →
+            </button>
+          </div>
+          {swap && (
+            <div className="fd-placement-preview">
+              Choose another unlocked individual component to swap positions.{" "}
+              <button onClick={() => setSwap(null)}>Cancel swap</button>
+            </div>
+          )}
           <div className="fd-placement-toolbar" aria-label="Placement tools">
             <div className="fd-placement-segment">
               <button aria-pressed={mode === "select"} onClick={() => setMode("select")}>
@@ -510,8 +688,25 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
             >
               Focus
             </button>
+            <button disabled={blocked} onClick={() => setLibrary({ target: null })}>
+              + Footprint
+            </button>
+            <button
+              disabled={blocked}
+              aria-pressed={mode === "area"}
+              onClick={() => {
+                setMode(mode === "area" ? "select" : "area");
+                setInspector("board");
+              }}
+            >
+              Draw reserved area
+            </button>
             <span className="fd-placement-divider" />
-            <button disabled={blocked || !history?.past.length} onClick={undo} title="Undo (Ctrl/Cmd+Z)">
+            <button
+              disabled={blocked || !history?.past.length}
+              onClick={undo}
+              title="Undo (Ctrl/Cmd+Z)"
+            >
               ↶ Undo
             </button>
             <button
@@ -543,16 +738,25 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                 disabled={session.parts.length > 200}
                 onChange={(e) => setPush(e.target.checked)}
               />
-              Push on drop
+              Push neighbors
             </label>
           </div>
           {preview && (
             <div className="fd-placement-preview" role="status">
               <div>
                 <strong>{preview.label} · preview</strong>
+                {preview.comparison && (
+                  <p>
+                    Estimated connections {fmt(preview.comparison.before)} →{" "}
+                    {fmt(preview.comparison.after)} mm · Weighted score{" "}
+                    {fmt(preview.comparison.beforeScore)} → {fmt(preview.comparison.afterScore)}
+                    {preview.comparison.timedOut ? " · Search time limit reached" : ""}
+                  </p>
+                )}
                 <p>
-                  {preview.review.changed.length} {preview.review.changed.length === 1 ? "part" : "parts"}{" "}
-                  changed · {preview.review.resolved.length} findings resolved · {preview.review.added.length}{" "}
+                  {preview.review.changed.length}{" "}
+                  {preview.review.changed.length === 1 ? "part" : "parts"} changed ·{" "}
+                  {preview.review.resolved.length} findings resolved · {preview.review.added.length}{" "}
                   new findings · dashed outlines show the original
                 </p>
               </div>
@@ -614,15 +818,72 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                 mode={mode}
                 disabled={blocked}
                 focus={focus}
-                onSelection={setSelection}
+                onSelection={selectParts}
+                onResize={(w, h) =>
+                  void propose(
+                    { kind: "resize", session, w, h, adjust },
+                    `Resize to ${fmt(w)} × ${fmt(h)} mm`,
+                  )
+                }
+                onArea={(x, y, w, h) => {
+                  change((next) => {
+                    next.reservedAreas ??= [];
+                    next.reservedAreas.push({
+                      id: crypto.randomUUID(),
+                      name: `Reserved ${next.reservedAreas.length + 1}`,
+                      x,
+                      y,
+                      w,
+                      h,
+                      margin: 0.25,
+                      side: "both",
+                    });
+                  });
+                  setMode("select");
+                  setInspector("board");
+                }}
+                onEscape={() => {
+                  setMode("select");
+                  setSwap(null);
+                  setPreview(null);
+                }}
+                onFile={(file) => replace(() => void load(file.name, file))}
+                onFootprint={(choice, target, at) => setLibrary({ target, initial: choice, at })}
+                zoom={zoom}
+                onZoom={setZoomPercent}
+                gap={context.gap}
+                findings={analysis.findings}
+                swapActive={!!swap}
                 onCommit={commit}
                 onRotate={rotate}
                 onUndo={undo}
                 onRedo={redo}
                 onError={setError}
               />
+              <div className="fd-placement-zoom">
+                <button
+                  aria-label="Zoom out"
+                  onClick={() => setZoom((z) => ({ factor: 0.8, nonce: z.nonce + 1 }))}
+                >
+                  −
+                </button>
+                <span>{zoomPercent}%</span>
+                <button
+                  aria-label="Zoom in"
+                  onClick={() => setZoom((z) => ({ factor: 1.25, nonce: z.nonce + 1 }))}
+                >
+                  +
+                </button>
+              </div>
+              {context.gap && (
+                <div className="fd-placement-gap">
+                  {context.gap.overlap ? "Envelope overlap" : fmt(context.gap.distance) + " mm gap"}{" "}
+                  · {context.gap.ref}
+                </div>
+              )}
               <div className="fd-placement-canvas-hint">
-                Scroll to zoom <span>·</span> Space + drag to pan <span>·</span> Shift-click to select more
+                Scroll to zoom <span>·</span> Space + drag to pan <span>·</span> Shift-click to
+                select more
               </div>
               {busy && (
                 <div className="fd-placement-busy" role="status">
@@ -653,7 +914,9 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                   event.preventDefault();
                   event.stopPropagation();
                   setInspector(tabs[next]!);
-                  event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
+                  event.currentTarget
+                    .querySelectorAll<HTMLButtonElement>('[role="tab"]')
+                    [next]?.focus();
                 }}
               >
                 {(["parts", "review", "board"] as const).map((tab) => (
@@ -691,28 +954,87 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                               ? `${selection.length} parts selected`
                               : "Select a component"}
                         </h3>
-                        {selection.length > 0 && <button onClick={() => setSelection([])}>Clear</button>}
+                        {selection.length > 0 && (
+                          <button onClick={() => setSelection([])}>Clear</button>
+                        )}
                       </div>
                       {one ? (
                         <>
-                          <p className="fd-placement-part-value">{one.value || one.footprint}</p>
+                          <div className="fd-placement-part-picture">
+                            <FootprintPicture part={one} />
+                          </div>
+                          <label className="fd-placement-field">
+                            <span>Value</span>
+                            <input
+                              key={one.id + one.value}
+                              aria-label="Part value"
+                              defaultValue={one.value}
+                              disabled={blocked}
+                              onBlur={(e) => {
+                                if (e.target.value !== one.value)
+                                  change((next) =>
+                                    setPartValue(
+                                      next.parts.find((p) => p.id === one.id)!,
+                                      e.target.value,
+                                    ),
+                                  );
+                              }}
+                            />
+                          </label>
                           <small className="fd-placement-footprint">
-                            {one.footprint} · {one.side === "F" ? "Front" : "Back"} · {fmt(one.angle)}°
+                            {one.footprint} · {one.side === "F" ? "Front" : "Back"} ·{" "}
+                            {fmt(one.angle)}°
                           </small>
                           <div className="fd-placement-field-pair">
                             <NumberField
                               label="X · mm"
                               value={one.x}
-                              disabled={blocked || groupLocked}
-                              onChange={(x) => change((next) => moveParts(next, selection, x - one.x, 0))}
+                              disabled={
+                                blocked ||
+                                groupLocked ||
+                                session.parts.some(
+                                  (p) =>
+                                    selectedGroupIds.has(p.id) &&
+                                    ["left", "right"].includes(p.anchor?.edge ?? ""),
+                                )
+                              }
+                              onChange={(x) =>
+                                change((next) => moveParts(next, selection, x - one.x, 0))
+                              }
                             />
                             <NumberField
                               label="Y · mm"
                               value={one.y}
-                              disabled={blocked || groupLocked}
-                              onChange={(y) => change((next) => moveParts(next, selection, 0, y - one.y))}
+                              disabled={
+                                blocked ||
+                                groupLocked ||
+                                session.parts.some(
+                                  (p) =>
+                                    selectedGroupIds.has(p.id) &&
+                                    ["top", "bottom"].includes(p.anchor?.edge ?? ""),
+                                )
+                              }
+                              onChange={(y) =>
+                                change((next) => moveParts(next, selection, 0, y - one.y))
+                              }
                             />
                           </div>
+                          <NumberField
+                            label="Rotation · degrees"
+                            value={one.angle}
+                            step={90}
+                            disabled={blocked || groupLocked || !!one.anchor}
+                            onChange={(angle) =>
+                              change((next) => rotateParts(next, [one.id], angle - one.angle))
+                            }
+                          />
+                          <button
+                            className="fd-placement-wide"
+                            disabled={blocked || groupLocked || !!one.anchor || !!one.group}
+                            onClick={() => setSwap(one.id)}
+                          >
+                            Swap position…
+                          </button>
                           <label className="fd-placement-field">
                             <span>Edge anchor</span>
                             <select
@@ -720,7 +1042,11 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                               value={one.anchor?.edge ?? ""}
                               onChange={(e) =>
                                 change((next) =>
-                                  setAnchor(next, next.parts.find((p) => p.id === one.id)!, e.target.value),
+                                  setAnchor(
+                                    next,
+                                    next.parts.find((p) => p.id === one.id)!,
+                                    e.target.value,
+                                  ),
                                 )
                               }
                             >
@@ -766,7 +1092,8 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                           </button>
                           <button
                             disabled={
-                              blocked || !session.parts.some((p) => selection.includes(p.id) && p.group)
+                              blocked ||
+                              !session.parts.some((p) => selection.includes(p.id) && p.group)
                             }
                             onClick={() => change((next) => ungroupParts(next, selection))}
                           >
@@ -779,13 +1106,26 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                           <button
                             className="fd-placement-wide"
                             disabled={blocked || groupLocked}
-                            onClick={() => footprintInput.current?.click()}
+                            onClick={() => setLibrary({ target: one.id })}
                           >
                             Compare replacement footprint…
                           </button>
                           <p className="fd-placement-small-note">
-                            Open a .kicad_mod with matching pad numbers. Review the new geometry before
-                            applying.
+                            Compare library or local footprints, dimensions, pin 1 and pad-to-net
+                            mappings.
+                          </p>
+                          {one.anchor && (
+                            <NumberField
+                              label="Anchor origin offset · mm"
+                              value={one.anchor.offset}
+                              min={-2000}
+                              max={2000}
+                              disabled={blocked || groupLocked}
+                              onChange={(n) => change((next) => setAnchorOffset(next, one.id, n))}
+                            />
+                          )}
+                          <p className="fd-placement-small-note">
+                            Geometry: {one.geometrySource}. Orange dot marks pin 1.
                           </p>
                           {one.anchor && (
                             <label className="fd-placement-check">
@@ -795,7 +1135,8 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                                 disabled={blocked}
                                 onChange={(e) =>
                                   change((next) => {
-                                    next.parts.find((p) => p.id === one.id)!.overhang = e.target.checked;
+                                    next.parts.find((p) => p.id === one.id)!.overhang =
+                                      e.target.checked;
                                   })
                                 }
                               />
@@ -817,7 +1158,9 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                               <button
                                 key={value}
                                 disabled={blocked || groupLocked}
-                                onClick={() => change((next) => alignParts(next, selection, value!))}
+                                onClick={() =>
+                                  change((next) => alignParts(next, selection, value!))
+                                }
                               >
                                 {label}
                               </button>
@@ -831,7 +1174,13 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                                 <option value="y">Vertical</option>
                               </select>
                             </label>
-                            <NumberField label="Gap · mm" value={gap} min={0} max={100} onChange={setGap} />
+                            <NumberField
+                              label="Gap · mm"
+                              value={gap}
+                              min={0}
+                              max={100}
+                              onChange={setGap}
+                            />
                           </div>
                           <button
                             className="fd-placement-wide"
@@ -849,6 +1198,42 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                       )}
                     </div>
                     <div className="fd-placement-section">
+                      {selection.length > 0 && (
+                        <div className="fd-placement-context">
+                          <h3>Placement context</h3>
+                          {context.gap && (
+                            <p>
+                              {context.gap.overlap
+                                ? "Envelope overlap with"
+                                : fmt(context.gap.distance) + " mm envelope gap to"}{" "}
+                              <strong>{context.gap.ref}</strong>
+                            </p>
+                          )}
+                          <details open>
+                            <summary>Connected neighbors ({context.neighbors.length})</summary>
+                            <p>
+                              Nearest pad distance. Select a neighbor to highlight the shared net.
+                            </p>
+                            {context.neighbors.map((n) => (
+                              <button
+                                className="fd-placement-neighbor"
+                                key={n.id + ":" + n.net}
+                                onClick={() => {
+                                  setNet(n.net);
+                                  setFocus((f) => ({
+                                    ids: [...selection, n.id],
+                                    nonce: f.nonce + 1,
+                                  }));
+                                }}
+                              >
+                                <strong>{n.ref}</strong>
+                                <span>{n.net}</span>
+                                <small>{fmt(n.distance)} mm</small>
+                              </button>
+                            ))}
+                          </details>
+                        </div>
+                      )}
                       <label className="fd-placement-search">
                         <Icon name="search" width={15} height={15} />
                         <input
@@ -894,7 +1279,11 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                       <div
                         className={`fd-placement-health ${analysis.findings.length ? "has-findings" : ""}`}
                       >
-                        <Icon name={analysis.findings.length ? "warning" : "check"} width={20} height={20} />
+                        <Icon
+                          name={analysis.findings.length ? "warning" : "check"}
+                          width={20}
+                          height={20}
+                        />
                         <div>
                           <strong>
                             {checking
@@ -909,12 +1298,21 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                         <strong>{checking ? "…" : `${fmt(analysis.length)} mm`}</strong>
                       </div>
                       <p>Explore shorter connections while preserving locks, groups and anchors.</p>
+                      <label className="fd-placement-check">
+                        <input
+                          type="checkbox"
+                          checked={allowRotation}
+                          disabled={blocked}
+                          onChange={(e) => setAllowRotation(e.target.checked)}
+                        />
+                        Allow rotation in suggestions
+                      </label>
                       <button
                         className="fd-placement-primary-action"
                         disabled={blocked || checking}
                         onClick={() =>
                           void propose(
-                            { kind: "improve", session, ids: selection },
+                            { kind: "improve", session, ids: selection, allowRotation },
                             selection.length ? "Improve selection" : "Improve placement",
                           )
                         }
@@ -933,26 +1331,49 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                       <details>
                         <summary>Connection priorities</summary>
                         <p>
-                          Choose a net above, then give it more weight in placement suggestions. This does not
-                          change electrical rules.
+                          Choose a net above, then give it more weight in placement suggestions.
+                          This does not change electrical rules.
                         </p>
-                        {net && net !== "off" ? (
+                        <div className="fd-placement-button-grid">
+                          <button
+                            disabled={blocked || !net || net === "off"}
+                            onClick={() =>
+                              change((next) => {
+                                next.netWeights = Object.fromEntries(
+                                  nets.map((n) => [n, n === net ? 1 : 0]),
+                                );
+                              })
+                            }
+                          >
+                            Use highlighted net only
+                          </button>
+                          <button
+                            disabled={blocked}
+                            onClick={() =>
+                              change((next) => {
+                                next.netWeights = {};
+                              })
+                            }
+                          >
+                            Reset weights
+                          </button>
+                        </div>
+                        {nets.map((n) => (
                           <NumberField
-                            label={"Weight for " + net}
-                            value={session.netWeights?.[net] ?? 1}
+                            key={n}
+                            label={n}
+                            value={session.netWeights?.[n] ?? 1}
                             min={0}
                             max={100}
                             step={1}
                             disabled={blocked}
-                            onChange={(n) =>
+                            onChange={(weight) =>
                               change((next) => {
-                                next.netWeights = { ...next.netWeights, [net]: n };
+                                next.netWeights = { ...next.netWeights, [n]: weight };
                               })
                             }
                           />
-                        ) : (
-                          <p>Select a named net in the canvas controls to adjust its weight.</p>
-                        )}
+                        ))}
                       </details>
                     </div>
                     <div className="fd-placement-section">
@@ -960,7 +1381,7 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                       {checking ? (
                         <p>Updating checks…</p>
                       ) : analysis.findings.length ? (
-                        analysis.findings.slice(0, 100).map((finding, i) => (
+                        analysis.findings.map((finding, i) => (
                           <button
                             className="fd-placement-finding"
                             key={i}
@@ -972,14 +1393,15 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                         ))
                       ) : (
                         <p>
-                          No placement findings. Run KiCad DRC after routing to check the electrical design.
+                          No placement findings. Run KiCad DRC after routing to check the electrical
+                          design.
                         </p>
                       )}
-                      {analysis.findings.length > 100 && <p>Showing the first 100 findings.</p>}
+
                       {analysis.guidelines.length > 0 && (
                         <details>
                           <summary>{analysis.guidelines.length} advisory spacing targets</summary>
-                          {analysis.guidelines.slice(0, 50).map((g, i) => (
+                          {analysis.guidelines.map((g, i) => (
                             <button
                               key={i}
                               className="fd-placement-finding is-advisory"
@@ -994,7 +1416,7 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                     {preview && (
                       <div className="fd-placement-section">
                         <h3>Changed parts</h3>
-                        {preview.review.changed.slice(0, 60).map((p) => (
+                        {preview.review.changed.map((p) => (
                           <button
                             className="fd-placement-change"
                             key={p.id}
@@ -1002,8 +1424,7 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                           >
                             <strong>{p.ref}</strong>
                             <span>
-                              {p.from?.slice(0, 2).map(fmt).join(", ")} →{" "}
-                              {p.to.slice(0, 2).map(fmt).join(", ")}
+                              {p.from?.map(fmt).join(", ") ?? "New"} → {p.to.map(fmt).join(", ")}
                             </span>
                           </button>
                         ))}
@@ -1015,9 +1436,22 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                   <>
                     <div className="fd-placement-section">
                       <h3>Project board</h3>
+                      <label className="fd-placement-field">
+                        <span>Try an example</span>
+                        <select
+                          aria-label="Example board"
+                          value=""
+                          disabled={blocked}
+                          onChange={(e) => void loadExample(e.target.value)}
+                        >
+                          <option value="">Choose an example…</option>
+                          <option value="usb-timer">USB timer</option>
+                          <option value="constraint-board">Connectors &amp; cutout</option>
+                        </select>
+                      </label>
                       <p>
-                        Open a board from this project. Existing placement edits stay in your draft until you
-                        replace it.
+                        Open a board from this project. Existing placement edits stay in your draft
+                        until you replace it.
                       </p>
                       <select
                         aria-label="Project board file"
@@ -1047,8 +1481,19 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                     </div>
                     <div className="fd-placement-section">
                       <h3>Board dimensions</h3>
+                      <label className="fd-placement-check">
+                        <input
+                          type="checkbox"
+                          checked={adjust}
+                          disabled={blocked}
+                          onChange={(e) => setAdjust(e.target.checked)}
+                        />
+                        Adjust placement when resizing
+                      </label>
+                      <p>Drag the board's bottom-right handle, or enter exact dimensions below.</p>
                       <p>
-                        Preview a new outline size. Footprints and cutouts keep their physical dimensions.
+                        Preview a new outline size. Footprints and cutouts keep their physical
+                        dimensions.
                       </p>
                       <div className="fd-placement-field-pair">
                         <NumberField
@@ -1070,7 +1515,10 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                         className="fd-placement-wide"
                         disabled={blocked}
                         onClick={() =>
-                          void propose({ kind: "resize", session, w: width, h: height }, "Resize board")
+                          void propose(
+                            { kind: "resize", session, w: width, h: height, adjust },
+                            "Resize board",
+                          )
                         }
                       >
                         Preview resize
@@ -1092,7 +1540,7 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                               y: next.board.y + next.board.h / 2 - 2.5,
                               w: 5,
                               h: 5,
-                              margin: 0,
+                              margin: 0.25,
                               side: "both",
                             });
                           })
@@ -1103,18 +1551,41 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                       {session.reservedAreas?.map((a) => (
                         <details key={a.id}>
                           <summary>{a.name}</summary>
+                          <label className="fd-placement-field">
+                            <span>Name</span>
+                            <input
+                              key={a.id + a.name}
+                              defaultValue={a.name}
+                              maxLength={120}
+                              disabled={blocked}
+                              onBlur={(e) => {
+                                if (e.target.value !== a.name)
+                                  change((next) => {
+                                    next.reservedAreas!.find((q) => q.id === a.id)!.name =
+                                      e.target.value;
+                                  });
+                              }}
+                            />
+                          </label>
                           <div className="fd-placement-field-pair">
                             {(["x", "y", "w", "h", "margin"] as const).map((field) => (
                               <NumberField
                                 key={field}
                                 label={`${{ x: "X", y: "Y", w: "Width", h: "Height", margin: "Margin" }[field]} · mm`}
                                 value={a[field]}
-                                min={field === "w" || field === "h" ? 0.1 : field === "margin" ? 0 : -10000}
+                                min={
+                                  field === "w" || field === "h"
+                                    ? 0.1
+                                    : field === "margin"
+                                      ? 0
+                                      : -10000
+                                }
                                 max={field === "margin" ? 100 : 2000}
                                 disabled={blocked}
                                 onChange={(n) =>
                                   change((next) => {
-                                    next.reservedAreas!.find((area) => area.id === a.id)![field] = n;
+                                    next.reservedAreas!.find((area) => area.id === a.id)![field] =
+                                      n;
                                   })
                                 }
                               />
@@ -1127,8 +1598,8 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                               disabled={blocked}
                               onChange={(e) =>
                                 change((next) => {
-                                  next.reservedAreas!.find((area) => area.id === a.id)!.side = e.target
-                                    .value as "F" | "B" | "both";
+                                  next.reservedAreas!.find((area) => area.id === a.id)!.side = e
+                                    .target.value as "F" | "B" | "both";
                                 })
                               }
                             >
@@ -1137,16 +1608,25 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                               <option value="B">Back</option>
                             </select>
                           </label>
-                          <button
-                            disabled={blocked}
-                            onClick={() =>
-                              change((next) => {
-                                next.reservedAreas = next.reservedAreas!.filter((area) => area.id !== a.id);
-                              })
-                            }
-                          >
-                            Remove area
-                          </button>
+                          <div className="fd-placement-button-grid">
+                            <button
+                              onClick={() => setFocus((f) => ({ ids: [a.id], nonce: f.nonce + 1 }))}
+                            >
+                              Locate area
+                            </button>
+                            <button
+                              disabled={blocked}
+                              onClick={() =>
+                                change((next) => {
+                                  next.reservedAreas = next.reservedAreas!.filter(
+                                    (area) => area.id !== a.id,
+                                  );
+                                })
+                              }
+                            >
+                              Remove area
+                            </button>
+                          </div>
                         </details>
                       ))}
                     </div>
@@ -1203,7 +1683,9 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
           <footer className="fd-placement-footer">
             <span>
               <i />
-              {selection.length ? `${selection.length} selected` : `${session.parts.length} components`}
+              {selection.length
+                ? `${selection.length} selected`
+                : `${session.parts.length} components`}
             </span>
             <button onClick={() => setInspector("review")}>
               {checking
@@ -1223,16 +1705,16 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
       >
         <div className="fd-placement-dialog">
           <p>
-            This creates a new KiCad file in your project's <strong>placement</strong> folder with the edited
-            component positions.
+            This creates a new KiCad file in your project's <strong>placement</strong> folder with
+            the edited component positions.
           </p>
           <p>
-            <strong>Tracks, vias and copper zones are removed.</strong> The schematic and original PCB are
-            unchanged. Route this copy and run KiCad DRC before manufacturing.
+            <strong>Tracks, vias and copper zones are removed.</strong> The schematic and original
+            PCB are unchanged. Route this copy and run KiCad DRC before manufacturing.
           </p>
           <p>
-            Groups, edge anchors, reserved areas and spacing guidelines are retained in the placement draft,
-            not the exported PCB.
+            Groups, edge anchors, reserved areas and spacing guidelines are retained in the
+            placement draft, not the exported PCB.
           </p>
           <div>
             <Button variant="secondary" disabled={!!busy} onClick={() => setExportOpen(false)}>
@@ -1244,7 +1726,11 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
           </div>
         </div>
       </Dialog>
-      <Dialog open={replaceOpen} onClose={() => setReplaceOpen(false)} title="Replace this placement draft?">
+      <Dialog
+        open={replaceOpen}
+        onClose={() => setReplaceOpen(false)}
+        title="Replace this placement draft?"
+      >
         <div className="fd-placement-dialog">
           <p>
             {dirty
@@ -1267,21 +1753,53 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
           </div>
         </div>
       </Dialog>
+      {library && session && (
+        <FootprintLibrary
+          target={session.parts.find((p) => p.id === library.target) ?? null}
+          {...(library.initial ? { initial: library.initial } : {})}
+          onClose={() => setLibrary(null)}
+          onPreview={(entry) => {
+            const target = library.target,
+              at = library.at;
+            setLibrary(null);
+            void propose(
+              target
+                ? { kind: "replace", session, id: target, text: entry.text, name: entry.name }
+                : {
+                    kind: "add",
+                    session,
+                    text: entry.text,
+                    name: entry.name,
+                    ...(at ? { at } : {}),
+                  },
+              target ? "Replace footprint" : "Add footprint",
+            );
+          }}
+        />
+      )}
+      {enclosure && history && (
+        <PlacementEnclosure
+          projectId={projectId}
+          session={history.present}
+          onClose={() => setEnclosure(false)}
+        />
+      )}
       <Dialog open={help} onClose={() => setHelp(false)} title="Place components with confidence">
         <div className="fd-placement-dialog">
           <p>
-            <strong>1. Arrange.</strong> Click a component or use the Parts list. Drag it to move, Shift-click
-            or box-select several, and lock anything that must stay fixed. Push on drop moves neighbors on
-            boards up to 200 parts; larger boards can use overlap cleanup.
+            <strong>1. Arrange.</strong> Click a component or use the Parts list. Drag it to move,
+            Shift-click or box-select several, and lock anything that must stay fixed. Push
+            neighbors moves neighbors on boards up to 200 parts; larger boards can use overlap
+            cleanup.
           </p>
           <p>
-            <strong>2. Review.</strong> Open Review to inspect geometric findings or preview a better layout.
-            Apply accepts the whole preview; Cancel keeps your layout.
+            <strong>2. Review.</strong> Open Review to inspect geometric findings or preview a
+            better layout. Apply accepts the whole preview; Cancel keeps your layout.
           </p>
           <p>
-            <strong>3. Save.</strong> Save draft keeps your work across restarts. Export PCB creates an
-            unrouted copy for routing and DRC. Unsaved edits survive tab switches, but save before closing the
-            app.
+            <strong>3. Save.</strong> Save draft keeps your work across restarts. Export PCB creates
+            an unrouted copy for routing and DRC. Unsaved edits survive tab switches, but save
+            before closing the app.
           </p>
           <dl>
             <dt>Scroll</dt>
