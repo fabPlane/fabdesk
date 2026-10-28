@@ -1,0 +1,41 @@
+{
+  "scope": "Compact contextual gallery actions, shared generation prerequisites and quieter source review",
+  "checks": [
+    {
+      "fixture": "root",
+      "checkedFiles": 14,
+      "changed": []
+    },
+    {
+      "fixture": "assembly",
+      "checkedFiles": 8,
+      "changed": []
+    },
+    {
+      "fixture": "vaio",
+      "checkedFiles": 16,
+      "changed": []
+    }
+  ],
+  "nativeWalkthrough": [
+    "961x721 actual gallery BOM showed 220 B, not 0 KB; selected More then Show file opened exact exports/bom.csv and its two actual hardware rows",
+    "Selected lower-row renders/pcb.svg actions stayed above corner assistant; Preview opened saved image, Escape restored Preview focus; second Escape deselected and restored card focus",
+    "Reference-only library Create output disabled image/model/video operations with saved-PCB prerequisite; export files stayed available for separate BOM prerequisites",
+    "Root Review source details open/close; matching preview leads to Open board rather than unnecessary regeneration",
+    "Temporary preview newline changed root Review to visible Preview file changed / Update preview without opening source details",
+    "Guarded byte-for-byte restoration returned matching-preview / Open board; Open board opened the same actual root PCB; no generation or source edit"
+  ],
+  "temporaryFault": {
+    "path": "renders/pcb.svg",
+    "restored": true,
+    "originalHash": "c3daabe16c421794a8c86fffa74ed5d8308407aed8c439b65d166adc386d6dbb"
+  },
+  "validation": {
+    "uiTypecheck": "/tmp/canvas-compact-output-review-verified-types.log",
+    "uiTests": "/tmp/canvas-compact-output-review-verified-tests.log"
+  },
+  "limitations": [
+    "No output download, image/model/video regeneration, sync or native geometry edit in this UI pass",
+    "Member Review and mechanical compact acceptance continue separately; source integrity does not imply engineering compatibility"
+  ]
+}

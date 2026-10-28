@@ -859,3 +859,18 @@ UItypes/225UItests pass; all38recordedoriginalhashes and18priorprivate-studyfile
 ![Real router failure with recovery and requested details](routing-real-failure.jpg)
 
 [Native evidence](routing-flow-native.json).
+
+
+### Compact gallery and Review details
+
+Gallery creation now follows the dedicated screens’ saved-PCB/source-scope prerequisites, with visible recovery guidance when unavailable. Member model entry says Review board models rather than implying a new unscoped export. Root freshness queries wait for source scope. Small files use the existing precise size formatter (the real study BOM is220B). Contextual actions reserve space above the corner assistant.
+
+Single-board Review keeps status and one next step visible; source explanations disclose on request. A matching saved preview opens the board instead of prompting redundant regeneration. Manual preview/model generation waits for verified single-board scope and checks the active project. Copy no longer implies all previews update only manually.
+
+Native961×721gallery More→Show file opened exact exports/bom.csv; lower-row image Preview/Escape restored action focus, and another Escape restored selected-card focus. Reference-only Create output showed disabled image/model/video actions with their prerequisite. Review source details open/close passed; a temporary preview-byte change kept the warning and Update preview visible. Guarded restoration returned Open board, which opened the actual same root PCB. No output generation/download/sync or native source edit ran. All38recordedoriginalhashes unchanged; UItypes and225UItests pass. Mechanical/member Review compact walkthroughs continue separately.
+
+![Lower-card contextual actions stay above assistant](output-actions-compact.jpg)
+![Actual modified preview warning remains visible](review-preview-warning-compact.jpg)
+![Quiet Review after original bytes restored](review-quiet-compact.jpg)
+
+[Native evidence](compact-output-review-native.json).
