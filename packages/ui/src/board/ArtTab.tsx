@@ -17,13 +17,14 @@ import {
   type OutlineKind,
 } from "@fabdesk/board-art";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { useCoreClient } from "@fabdesk/client-core";
 import { useProject, useRunTool } from "@fabdesk/client-core";
 import { Button, Dialog, Select } from "../components/ui";
 import { useUiStore } from "../stores/ui";
 import { BoardDimensions } from "./BoardDimensions";
 import { Icon } from "../components/Icon";
+import { WorkspaceMenu } from "../layout/WorkspaceMenu";
 import "./art-tab.css";
 import { placementAfterBoardResize } from "./art-placement";
 import { latestPreviewQueue } from "./art-preview-queue";
@@ -58,6 +59,7 @@ export function ArtTab() {
   const [dragging, setDragging] = useState(false);
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
+  const [previewAspect, setPreviewAspect] = useState(1);
   const [confirmSave, setConfirmSave] = useState(false);
   const [placement, setPlacement] = useState<ArtPlacement | null>(null);
   const [lockProportions, setLockProportions] = useState(true);
@@ -361,6 +363,7 @@ export function ArtTab() {
     <div
       className="fd-art"
       data-testid="board-art"
+      data-has-art={!!gray}
       onDragOver={(e) => {
         e.preventDefault();
         if (!busy) {
@@ -373,17 +376,11 @@ export function ArtTab() {
       }}
       onDrop={drop}
     >
-      <aside className="fd-art-controls">
-        <h2 className="text-sm font-semibold">Board art</h2>
-        <p className="mt-1 text-xs leading-relaxed text-muted">
-          Turn a picture into artwork on a PCB. Preview and export locally, with no AI credits.
-        </p>
         <input
           ref={input}
           type="file"
           accept="image/png,image/jpeg,image/webp,image/gif"
-          className="sr-only"
-          tabIndex={-1}
+          hidden
           aria-label="Choose artwork image"
           data-testid="board-art-file"
           onChange={(e) => {
@@ -391,6 +388,11 @@ export function ArtTab() {
             e.target.value = "";
           }}
         />
+      {gray && <aside className="fd-art-controls" aria-label="Artwork tools">
+        <h2 className="text-sm font-semibold">Artwork tools</h2>
+        <p className="mt-1 text-xs leading-relaxed text-muted">
+          Preview a standalone art PCB. Your circuit is unchanged until you choose to replace it.
+        </p>
         <div className={`fd-art-upload ${dragging ? "is-dragging" : ""}`}>
           <Icon name="image" width={26} height={26} aria-hidden="true" />
           <Button variant="primary" disabled={busy || loading} onClick={choose}>
@@ -444,23 +446,6 @@ export function ArtTab() {
               ))}
             </Select>
           </label>
-          {gray && resolvedPlacement && (
-            <ArtPlacementControls
-              crop={crop}
-              value={resolvedPlacement}
-              onChange={setPlacement}
-              lock={lockProportions}
-              onLock={setLockProportions}
-              widthMm={widthMm}
-              heightMm={heightMm}
-              onFit={() =>
-                setPlacement(
-                  fitArtPlacement(gray, widthMm, heightMm, resolvedPlacement.rotationDeg, 2, crop),
-                )
-              }
-              onReset={() => setPlacement(null)}
-            />
-          )}
           <div>
             <div className="fd-art-label">Art style</div>
             <div className="fd-art-styles" role="group" aria-label="Art style">
@@ -480,6 +465,25 @@ export function ArtTab() {
             </div>
             <p className="mt-1 text-[11px] text-muted">{STYLE_HELP[style]}</p>
           </div>
+          <details className="fd-art-advanced"><summary>Position and size</summary>
+          {gray && resolvedPlacement && (
+            <ArtPlacementControls
+              crop={crop}
+              value={resolvedPlacement}
+              onChange={setPlacement}
+              lock={lockProportions}
+              onLock={setLockProportions}
+              widthMm={widthMm}
+              heightMm={heightMm}
+              onFit={() =>
+                setPlacement(
+                  fitArtPlacement(gray, widthMm, heightMm, resolvedPlacement.rotationDeg, 2, crop),
+                )
+              }
+              onReset={() => setPlacement(null)}
+            />
+          )}
+          </details>
           <details className="fd-art-advanced">
             <summary>Board settings</summary>
             <div className="mt-3 space-y-4">
@@ -570,6 +574,7 @@ export function ArtTab() {
           <Button variant="primary" disabled={unavailable} onClick={() => void newProject()}>
             {busy ? "Saving…" : "Create art project"}
           </Button>
+          <WorkspaceMenu label={<>Export and save<Icon name="chevronDown" width={14} height={14} /></>}>
           <Button disabled={unavailable} onClick={downloadLocal} data-testid="board-art-download">
             Download Gerber ZIP
           </Button>
@@ -578,29 +583,20 @@ export function ArtTab() {
             onClick={() => setConfirmSave(true)}
             data-testid="board-art-save"
           >
-            Save to current project…
+            {existingBoard ? "Replace current board…" : "Save to current project…"}
           </Button>
+          </WorkspaceMenu>
           <p className="text-[11px] leading-relaxed text-muted">
             Create a separate project to keep your existing board untouched.
           </p>
         </div>
-        {error && (
-          <p role="alert" className="mt-2 text-xs text-danger">
-            {error}
-          </p>
-        )}
-        {note && (
-          <p role="status" className="mt-2 text-xs text-success">
-            {note}
-          </p>
-        )}
-      </aside>
+      </aside>}
       <section
         className={`fd-art-preview ${dragging ? "is-dragging" : ""}`}
         aria-label="Board art preview"
         aria-busy={loading || converting}
       >
-        <div className="fd-art-toolbar">
+        {gray && <div className="fd-art-toolbar">
           <span>
             {outline === "circle" ? `Ø ${widthMm} mm` : `${widthMm} × ${heightMm} mm`} ·{" "}
             {STYLE_LABELS[style]}
@@ -632,7 +628,7 @@ export function ArtTab() {
               </button>
             </div>
           )}
-        </div>
+        </div>}
         {(loading || converting) && (
           <div role="status" className="fd-art-progress">
             {loading ? "Reading image…" : "Updating preview…"}
@@ -641,8 +637,8 @@ export function ArtTab() {
         {!svg && !loading && !converting && (
           <div className="fd-art-empty">
             <Icon name="image" width={38} height={38} aria-hidden="true" />
-            <h3>Make a picture into a PCB</h3>
-            <p>Upload a logo, drawing, or photo to see it on a board.</p>
+            <h3>Create a board from artwork</h3>
+            <p>Start with a logo, drawing or photo. This creates an art PCB; it does not decorate your existing circuit.</p>
             <div className="fd-art-example" aria-hidden="true">
               <span>★</span>
               <span>→</span>
@@ -651,16 +647,18 @@ export function ArtTab() {
             <Button variant="primary" onClick={choose}>
               Upload image
             </Button>
-            <p>Or drop it anywhere in this panel.</p>
+            <p>PNG, JPG, WebP, GIF · up to 12 MB<br />Or drop an image on this canvas.</p>
+            {sketches.length > 0 && <Select aria-label="Existing sketch" value="" disabled={busy || loading} onChange={event => void onSketch(event.target.value)}><option value="" disabled>Use a project sketch…</option>{sketches.map(file => <option key={file.path} value={file.path}>{file.path.split("/").pop()}</option>)}</Select>}
           </div>
         )}
         {svg && (
           <div className="fd-art-comparison">
             {sourceUrl && (
-              <figure className="fd-art-source">
+              <details className="fd-art-source"><summary>Source image</summary>
+              <figure>
                 <figcaption>Source image</figcaption>
                 <img src={sourceUrl} alt={`Source: ${sourceName ?? "uploaded image"}`} />
-              </figure>
+              </figure></details>
             )}
             <figure className="fd-art-result">
               <figcaption>
@@ -672,12 +670,13 @@ export function ArtTab() {
               <div className="fd-art-canvas">
                 <div
                   className="fd-art-board-surface"
-                  style={{ width: `${zoom * 100}%`, minWidth: `${zoom * 100}%` }}
+                  style={{ "--fd-art-preview-scale": zoom, "--fd-art-preview-aspect": previewAspect } as CSSProperties}
                 >
                   <img
                     data-testid="board-art-preview"
                     src={svg}
                     alt="PCB artwork preview"
+                    onLoad={event => { const image = event.currentTarget; if (image.naturalWidth > 0 && image.naturalHeight > 0) setPreviewAspect(image.naturalWidth / image.naturalHeight); }}
                     draggable={false}
                   />
                   {placing && resolvedPlacement && (
@@ -698,6 +697,18 @@ export function ArtTab() {
         )}
         {dragging && <div className="fd-art-drop-hint">Drop image to preview</div>}
       </section>
+      {(error || note) && <div className="fd-art-feedback">
+        {error && (
+          <p role="alert" className="mt-2 text-xs text-danger">
+            {error}
+          </p>
+        )}
+        {note && (
+          <p role="status" className="mt-2 text-xs text-success">
+            {note}
+          </p>
+        )}
+      </div>}
       <Dialog
         open={confirmSave}
         onClose={() => setConfirmSave(false)}

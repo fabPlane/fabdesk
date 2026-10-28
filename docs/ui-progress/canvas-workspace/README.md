@@ -767,3 +767,17 @@ Actual native window961×721: overview selection/More→existing Checks passed; 
 ![Actual compact native part inspector](native-part-tools-compact.jpg)
 
 [Native evidence](board-flow-native.json).
+
+
+### Artwork starts with an image, then reveals tools
+
+Artwork now starts with one upload/sketch choice. Selecting an image reveals crop/style tools; exact position, board settings and fabrication layers are requested disclosures. The source image is folded; Create art project is the primary action, with download and explicit current-board replacement under Export and save. The existing replacement confirmation remains. Error/success messages stay available even before an image is loaded. Canvas styling uses the shared light project surface and keeps the corner assistant clear.
+
+The current verified tool creates standalone art PCBs. It does not preserve an existing circuit while decorating it; the UI says so instead of imitating that proposed screenshot behavior. Existing worker, placement, native generation and Gerber pipelines are reused. Fit now accounts for both available dimensions using the decoded preview’s actual aspect ratio; image and placement overlay remain identical in size and position.
+
+Actual native961×721walkthrough: existing local logo image selected, Halftone→Solid silhouette updated worker preview, requested exact position and keyboard40→40.1→40mm preview passed. Export and save→Replace current board showed the existing explicit warning and was canceled. No project creation, upload/save, replacement, export download or native editing job ran.225UItests/types pass;38recordedfixture/VAIOhashes unchanged. Read-only geometry verified fitted image=overlay, image inside canvas and tools above assistant. Other viewport sizes remain to validate.192 captures the empty-card layout before final height-fit refinement;193 is final loaded layout.
+
+![Native artwork starting choice](artwork-start-compact.jpg)
+![Native loaded artwork tools](artwork-tools-compact.jpg)
+
+[Native evidence](art-flow-native.json).

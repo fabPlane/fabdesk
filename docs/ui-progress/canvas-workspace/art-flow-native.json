@@ -1,0 +1,111 @@
+{
+  "recordedHashes": [
+    {
+      "fixture": "root",
+      "files": 14,
+      "changed": []
+    },
+    {
+      "fixture": "assembly",
+      "files": 8,
+      "changed": []
+    },
+    {
+      "fixture": "vaio",
+      "files": 16,
+      "changed": []
+    }
+  ],
+  "layout": {
+    "viewport": {
+      "width": 961,
+      "height": 721
+    },
+    "preview": {
+      "x": 24,
+      "y": 152,
+      "width": 569,
+      "height": 481,
+      "top": 152,
+      "right": 593,
+      "bottom": 633,
+      "left": 24
+    },
+    "canvas": {
+      "x": 24,
+      "y": 285,
+      "width": 569,
+      "height": 330,
+      "top": 285,
+      "right": 593,
+      "bottom": 615,
+      "left": 24
+    },
+    "surface": {
+      "x": 82.4296875,
+      "y": 301,
+      "width": 452.1328125,
+      "height": 297.9921875,
+      "top": 301,
+      "right": 534.5625,
+      "bottom": 598.9921875,
+      "left": 82.4296875
+    },
+    "image": {
+      "x": 82.4296875,
+      "y": 301,
+      "width": 452.1328125,
+      "height": 297.9921875,
+      "top": 301,
+      "right": 534.5625,
+      "bottom": 598.9921875,
+      "left": 82.4296875
+    },
+    "overlay": {
+      "x": 82.4296875,
+      "y": 301,
+      "width": 452.1328125,
+      "height": 297.9921875,
+      "top": 301,
+      "right": 534.5625,
+      "bottom": 598.9921875,
+      "left": 82.4296875
+    },
+    "controls": {
+      "x": 617,
+      "y": 152,
+      "width": 320,
+      "height": 481,
+      "top": 152,
+      "right": 937,
+      "bottom": 633,
+      "left": 617
+    },
+    "assistant": {
+      "x": 649,
+      "y": 647,
+      "width": 284,
+      "height": 48,
+      "top": 647,
+      "right": 933,
+      "bottom": 695,
+      "left": 649
+    }
+  },
+  "nativeWalkthrough": [
+    "Single empty upload card; no pre-image controls",
+    "Existing local reference-image.png selected via native chooser; no project upload/save",
+    "Halftone to Solid silhouette updated actual worker preview",
+    "Position and size\u2192Exact position; keyboard Right changed40\u219240.1mm thenLeftrestored40; preview only",
+    "Export and save\u2192Replace current board opened existing replacement warning; canceled without mutation"
+  ],
+  "validation": {
+    "uiTypes": "PASS /tmp/canvas-art-flow-final-types.log",
+    "uiTests": "225 PASS 0 FAIL /tmp/canvas-art-flow-final-tests.log"
+  },
+  "limits": [
+    "Tool still generates standalone art PCBs, not source-preserving decoration of an existing circuit",
+    "No new project, Gerber download or current board replacement executed",
+    "Loaded compact viewport verified; broad sizes remain to validate"
+  ]
+}
