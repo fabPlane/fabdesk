@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { CoreHttpError, savedOutputs, projectSketchImagePaths, useBoardSources, useProject, useProjectOrder, usePcbPreviewRevision, useBoardModelRevision, useEnclosureSourceRevision, usePcbCheckRevision, useVideoInputRevision, videoInputsNeedReview } from "@fabdesk/client-core";
 import { newChatDraftKey, useUiStore } from "../stores/ui";
 import { ProjectImage } from "../chat/ProjectImage";
@@ -22,6 +22,7 @@ function SingleBoardOverview() {
   const project = useProject(projectId);
   const order = useProjectOrder(projectId);
   const [selected, setSelected] = useState(false);
+  const selectionTrigger = useRef<HTMLButtonElement>(null);
   const [chosenReference, setChosenReference] = useState<string | null>(null);
   const files = project.data?.files ?? [], has = (path: string) => files.some(file => file.path === path);
   const pcbRevision = usePcbPreviewRevision(projectId, has("renders/pcb.svg"));
@@ -57,11 +58,16 @@ function SingleBoardOverview() {
     : pcbRevision.isFetching ? "Checking preview source…" : pcbRevision.isError ? "Preview source check unavailable"
     : pcbRevision.data === "source-changed" ? "PCB changed since preview" : pcbRevision.data === "artifact-changed" ? "Preview changed · source unverified"
     : pcbRevision.data === "matches-source" ? "Preview matches saved PCB" : "Saved preview · source unverified";
-  return <div className="fd-project-overview" onKeyDown={(event) => { if (event.key === "Escape") setSelected(false); }}>
+  return <div className="fd-project-overview" onKeyDown={(event) => { if (event.key === "Escape" && selected && !event.defaultPrevented) {
+    event.preventDefault(); event.stopPropagation(); setSelected(false); requestAnimationFrame(() => selectionTrigger.current?.focus({ preventScroll: true }));
+  } }}>
     <div className="fd-overview-heading"><h1 title={project.data.name}>Project overview</h1><p>{referenceOnly ? "Select a saved reference to continue your design." : designTab === "schematic" ? "Select your schematic to open its tools." : "Select your board to open its tools."}</p>
       {updates.length > 0 && <Button className="fd-overview-updates" size="sm" variant="ghost" title={`${updates.join(", ")} ${updates.length === 1 ? "has" : "have"} source or artifact changes. This covers tracked artifacts only; review before sharing or fabrication.`} onClick={() => ui().setBoardTab("updates")}><Icon name="warning" width={16} height={16} />Review updates · {updates.length}</Button>}
     </div>
     {(pcb || schematic || preview) ? <div className="fd-overview-board">
+      <button ref={selectionTrigger} className="fd-overview-preview" data-selected={selected} aria-pressed={selected} aria-label={`Select ${designLabel.toLowerCase()} to show tools`} onClick={() => setSelected(!selected)} onDoubleClick={() => ui().setBoardTab(designTab)}>
+        {preview ? <ProjectImage projectId={projectId} path={preview.path} alt={`${project.data.name} ${designTab} preview`} /> : <span><Icon name={designTab === "schematic" ? "compose" : "pcb"} width={64} height={64} /><span>{designTab === "schematic" ? "Open the schematic to create its preview" : "Open the PCB to render its preview"}</span></span>}
+      </button>
       {selected && <div className="fd-board-context-tools" aria-label="Board actions">
         <span><Icon name={designTab === "schematic" ? "compose" : "pcb"} width={17} height={17} />{designLabel}</span>
         <Button variant="ghost" size="sm" onClick={() => ui().setBoardTab(designTab)}><Icon name="compose" width={16} height={16} />{designTab === "schematic" ? "Open schematic" : "Open board"}</Button>
@@ -78,11 +84,9 @@ function SingleBoardOverview() {
           <button onClick={() => ui().setBoardTab("drc")}>Checks</button>
         </WorkspaceMenu>
       </div>}
-      <button className="fd-overview-preview" data-selected={selected} aria-pressed={selected} aria-label={`Select ${designLabel.toLowerCase()} to show tools`} onClick={() => setSelected(!selected)} onDoubleClick={() => ui().setBoardTab(designTab)}>
-        {preview ? <ProjectImage projectId={projectId} path={preview.path} alt={`${project.data.name} ${designTab} preview`} /> : <span><Icon name={designTab === "schematic" ? "compose" : "pcb"} width={64} height={64} /><span>{designTab === "schematic" ? "Open the schematic to create its preview" : "Open the PCB to render its preview"}</span></span>}
-      </button>
       <div className="fd-overview-board-caption"><strong>{designLabel}</strong>{preview && <span>{previewStatus}</span>}<span>{schematic ? "Schematic available" : "No schematic source"}</span>{!pcb && <span>No saved PCB</span>}</div>
     </div> : reference ? <div className="fd-overview-board fd-overview-reference">
+      <button ref={selectionTrigger} className="fd-overview-preview" data-selected={selected} aria-pressed={selected} aria-label="Select saved reference to show tools" onClick={() => setSelected(!selected)}><ProjectImage projectId={projectId} path={reference} alt="Saved project reference" /></button>
       {selected && <div className="fd-board-context-tools" aria-label="Reference actions"><span><Icon name="image" width={17} height={17} />Reference</span>
         <Button size="sm" variant="ghost" onClick={() => {
           const state = ui(); if (state.activeProjectId !== projectId) return;
@@ -92,7 +96,6 @@ function SingleBoardOverview() {
         }}><Icon name="sparkles" width={16} height={16} />Use in conversation</Button>
         <Button size="sm" variant="ghost" onClick={() => ui().openProjectFile(reference)}><Icon name="folderOpen" width={16} height={16} />Open file</Button>
       </div>}
-      <button className="fd-overview-preview" data-selected={selected} aria-pressed={selected} aria-label="Select saved reference to show tools" onClick={() => setSelected(!selected)}><ProjectImage projectId={projectId} path={reference} alt="Saved project reference" /></button>
       <div className="fd-overview-board-caption"><strong>Design reference</strong><span>Saved image · No saved PCB</span>{references.length > 1 ? <label>Reference<select aria-label="Saved project reference" value={reference} onChange={event => { setChosenReference(event.target.value); setSelected(false); }}>{references.map(path => <option key={path} value={path}>{path.slice("sketches/".length)}</option>)}</select></label> : <span>{reference.slice("sketches/".length)}</span>}<Button size="sm" variant="ghost" onClick={() => ui().setSketchOpen(true)}>Draw or open a sketch</Button></div>
     </div> : <div className="fd-overview-empty"><Icon name="pcb" width={54} height={54} /><h2>Start with an idea or a sketch</h2><p>Your project is ready. Add a design or describe what you want to build.</p><Button onClick={() => { ui().setAssistantOpen(true); ui().focusComposer(); }}>Describe your board</Button><Button variant="ghost" onClick={() => ui().setSketchOpen(true)}>Add a sketch</Button></div>}
     <nav className="fd-overview-facts" aria-label="Project resources">

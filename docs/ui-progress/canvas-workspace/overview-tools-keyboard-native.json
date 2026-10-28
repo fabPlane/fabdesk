@@ -1,0 +1,21 @@
+{
+  "observedBefore": "Selecting overview board revealed tools before its trigger in DOM order; Tab skipped Open board and jumped to Project files",
+  "change": "Place revealed actions after their selection trigger in DOM while preserving the approved visual anchoring; Escape restores selection trigger focus",
+  "validated": [
+    "Board Enter selects, Tab reaches Open board, Escape deselects and returns board focus",
+    "More menu Escape closes only that menu; next Escape deselects board",
+    "Saved sketch Enter selects, Tab reaches Use in message, Escape returns reference focus",
+    "Same saved-sketch flow passed at960x720",
+    "Project overview saved-reference branch Tab reaches Use in conversation and Escape returns reference focus",
+    "No action invoked, attachment changed, drawing saved or message sent"
+  ],
+  "preservation": {
+    "sketchFixtureFiles": 6,
+    "rootStudyFiles": 48,
+    "allExact": true
+  },
+  "checks": {
+    "uiTypecheck": "PASS",
+    "uiTests": 229
+  }
+}

@@ -718,7 +718,7 @@
 
 /* The saved sketch remains the main surface while the original composer keeps its draft. */
 .fd-start-reference { position:absolute; inset:20px 24px 280px; display:flex; flex-direction:column; align-items:center; gap:12px; min-height:0; }
-.fd-start-reference-tools { position:relative; flex:none; min-height:48px; width:100%; display:flex; align-items:center; justify-content:center; }
+.fd-start-reference-tools { order:-1; position:relative; flex:none; min-height:48px; width:100%; display:flex; align-items:center; justify-content:center; }
 .fd-start-reference-tools > p { color:var(--fd-muted); font-size:12px; }
 .fd-start-reference-tools .fd-board-context-tools { top:0; }
 .fd-start-reference-image { display:flex; align-items:center; justify-content:center; flex:1; min-height:0; max-width:100%; border-radius:14px; }

@@ -1388,3 +1388,13 @@ Observed native gap: Escape could clear a highlighted change but could not close
 ![Requested compact change list](358-review-requested-change-list-compact.png)
 
 [Native keyboard evidence](diff-disclosure-native.json).
+
+
+## Contextual actions follow the selected object for keyboard users
+
+Observed in the actual overview: Tab from a selected board skipped the revealed toolbar and jumped to project files. Board/reference actions now follow their selection trigger in DOM order, while CSS preserves the approved floating toolbar position. The same fix applies to the saved-sketch canvas. Enter selects; Tab reaches Open board or Use in message/conversation; Escape deselects and restores trigger focus. Nested More Escape dismisses only More first. Wide/compact native walkthroughs passed, all6saved-sketch fixture files and48root-study files remain exact, unsent attachments unchanged. No source editing, drawing save or assistant request was performed. UI typecheck/229tests pass.
+
+![Board keyboard tools](359-overview-keyboard-context-tools.png)
+![Saved-sketch compact tools](361-sketch-context-tools-compact.png)
+
+[Native keyboard evidence](overview-tools-keyboard-native.json).
