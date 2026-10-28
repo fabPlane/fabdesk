@@ -39,6 +39,11 @@ export interface ToolRunState {
   note?: string;
 }
 
+/** Synchronous HTTP tools return {ok,text,json}; queued tools and some hosts wrap {result}. */
+export function immediateToolResult(response: unknown): unknown {
+  return response && typeof response === "object" && Object.hasOwn(response, "result") ? (response as { result: unknown }).result : response;
+}
+
 /** Calls a tool; if the daemon answers with a job, waits for it (progress arrives via the runs store). */
 export function useRunTool() {
   const { client, host } = useCore();
@@ -70,7 +75,7 @@ export function useRunTool() {
               : { status: "failed", jobId: res.jobId, error: job.error ?? job.status };
           return await finish(next);
         }
-        const next: ToolRunState = { status: "done", result: res.result };
+        const next: ToolRunState = { status: "done", result: immediateToolResult(res) };
         return await finish(next);
       } catch (e) {
         const next: ToolRunState = {

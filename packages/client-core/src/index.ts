@@ -204,3 +204,5 @@ export * from "./model-camera";
 
 export * from "./assembly-model-summary";
 export { useAssemblyModelSummaries } from "./queries";
+
+export * from "./assembly-schematic-inspection";

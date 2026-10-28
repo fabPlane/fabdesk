@@ -689,7 +689,7 @@ export interface KicadService {
   /** Shared saved native hierarchy and packaged-KiCad complete-project electrical facts. */
   inspectSchematicHierarchy(
     cli: KicadCli,
-    opts: { projectDir: string; rootSchematic: string; projectFile?: string; signal?: AbortSignal },
+    opts: { projectDir: string; rootSchematic: string; projectFile?: string; signal?: AbortSignal; ownedFilesOnly?: boolean },
   ): Promise<SchematicHierarchy>;
   gate(drc: DrcReport, erc: ErcReport | undefined, allowedWarningSignatures: string[]): GateResult;
   renderPng(

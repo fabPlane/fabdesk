@@ -72,3 +72,19 @@ export const ProjectBoardSources = z.object({
   editing: z.enum(["single-board-only", "explicit-source-tools"]),
 });
 export type ProjectBoardSources = z.infer<typeof ProjectBoardSources>;
+
+/** Read-only member netlist snapshot. It is deliberately not ERC or schematic/PCB parity evidence. */
+export const AssemblySchematicInspection = z.object({
+  contract: z.object({ name: z.literal("fabdesk.schematic-inspection"), version: z.literal("4.0.0") }),
+  _board: BoardSourceSelection.extend({ projectId: z.string().min(1) }),
+  ownership: z.literal("independent-source-snapshot"),
+  scope: z.literal("complete-saved-hierarchy"),
+  hierarchy: z.object({
+    aggregateRevision: Hash, complete: z.boolean(),
+    counts: z.object({ components: z.number().int().nonnegative(), nets: z.number().int().nonnegative(), sheets: z.number().int().nonnegative() }),
+    sheets: z.array(z.object({ nativePath: AssemblyRelativePath, hierarchyPath: z.string(), sha256: Hash })).max(50),
+    issues: z.array(z.object({ kind: z.string(), path: z.string(), detail: z.string() })),
+    pagination: z.object({ returned: z.number().int().nonnegative(), total: z.number().int().nonnegative(), truncated: z.boolean() }),
+  }),
+});
+export type AssemblySchematicInspection = z.infer<typeof AssemblySchematicInspection>;

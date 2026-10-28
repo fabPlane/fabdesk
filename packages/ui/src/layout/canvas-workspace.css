@@ -436,3 +436,10 @@
 .fd-assembly-pcb-surface > .fd-svg-viewer, .fd-assembly-model > .fd-model-canvas { flex:1; height:auto; min-height:0; }
 
 .fd-assembly-model-status[data-warning=true] strong { color:var(--fd-warning); }
+
+.fd-member-schematic-sources [data-warning="true"] > strong { color:var(--fd-warning); }
+.fd-member-schematic-sources p { margin:4px 0; color:var(--fd-muted); line-height:1.6; }
+.fd-member-schematic-sources button { align-self:flex-start; }
+.fd-member-schematic-sources summary { cursor:pointer; padding:8px 0; }
+.fd-member-schematic-sources li { overflow-wrap:anywhere; margin:4px 0; }
+.fd-member-schematic-sources { margin-bottom:12px; }

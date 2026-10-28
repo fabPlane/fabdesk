@@ -15,10 +15,11 @@ const Point = mutationInputObject({
 
 export const schematic_inspect = defineTool({
   name: "schematic_inspect",
+  boardScoped: true,
   toolset: "circuit",
   title: "Inspect native schematic",
   description:
-    "Inspect selected native schematic objects using the union of references, netNames and objectIds; optional expand=nets includes their connected electrical objects. Pins are absolute sheet millimetres. Reuse wire.start/end and label.position in schematic_edit; junctions use junction.position as {x,y}, deleteItemIds uses object.id. Inspect-to-edit: {junctions:[result.junctions[0].position],deleteItemIds:[result.wires[0].id],sheet:result.scope.identity}. Selectors request object detail even with summary. Inspect the complete saved native schematic hierarchy. The default is a compact packaged-KiCad project summary; request authoring or full for bounded live KiCad IPC details on the root/current or one selected sheet. Live session diagnostics include issue descriptions, itemIds and danglingItemIds (up to 200 issues; issueCount reports the total) and are never presented as saved-file ERC.",
+    "Explicit assembly members support saved-hierarchy summary only; live member authoring and object selection remain unavailable. Inspect selected native schematic objects using the union of references, netNames and objectIds; optional expand=nets includes their connected electrical objects. Pins are absolute sheet millimetres. Reuse wire.start/end and label.position in schematic_edit; junctions use junction.position as {x,y}, deleteItemIds uses object.id. Inspect-to-edit: {junctions:[result.junctions[0].position],deleteItemIds:[result.wires[0].id],sheet:result.scope.identity}. Selectors request object detail even with summary. Inspect the complete saved native schematic hierarchy. The default is a compact packaged-KiCad project summary; request authoring or full for bounded live KiCad IPC details on the root/current or one selected sheet. Live session diagnostics include issue descriptions, itemIds and danglingItemIds (up to 200 issues; issueCount reports the total) and are never presented as saved-file ERC.",
   inputSchema: {
     detail: z
       .enum(["summary", "authoring", "full"])
@@ -102,7 +103,9 @@ export const schematic_inspect = defineTool({
     ctx,
   ) => {
     const project = ctx.requireProject();
+    if (ctx.board && (detail !== "summary" || sheet || references.length || netNames.length || objectIds.length)) throw new ToolError("Member schematic inspection supports saved-hierarchy summary only; live authoring and object selection are not yet source-qualified.", "precondition");
     const hierarchy = await inspectSavedHierarchy(ctx, project);
+    if (ctx.board) await ctx.runInScope!(async () => {});
     const hierarchyResult = compactHierarchy(hierarchy, sheetOffset, sheetLimit);
     const targeted = references.length + netNames.length + objectIds.length > 0;
     if (detail === "summary" && !targeted) {
@@ -112,9 +115,11 @@ export const schematic_inspect = defineTool({
         json: {
           contract: { name: "fabdesk.schematic-inspection", version: "4.0.0" },
           scope: "complete-saved-hierarchy",
+          ...(ctx.board ? { ownership: "independent-source-snapshot", limitations: ["Electrical counts are saved native netlist facts, not ERC, PCB parity, external library verification or assembly compatibility."] } : {}),
           hierarchy: hierarchyResult,
         },
-        isError: !hierarchy.complete,
+        // An incomplete member inventory is a successful read with explicit issues, never a check pass.
+        isError: !hierarchy.complete && !ctx.board,
       };
     }
     const source = await ctx.services.design.schematicInspect(project.dir, sheet);

@@ -651,3 +651,21 @@ Model receipt summaries compare the current declared PCB hash without downloadin
 ![Compact review](model-freshness-review-compact.png)
 
 Native evidence: [model-freshness-native.json](model-freshness-native.json).
+
+
+### Source-qualified schematic inventory prerequisite
+
+Member `schematic_inspect` now supports only a saved hierarchy summary. Each referenced sheet and native project metadata must be independently owned by that source; the native netlist runs against a captured scratch snapshot. The aggregate revision includes member project metadata, and saved files/declaration are rechecked afterward. Aliases/hardlinks, missing sheets and changing sources cannot produce a complete member inventory. Root project behavior remains separate; live member editing, ERC/parity, schematic rendering and synchronization remain unavailable.
+
+Review → Checks has a folded Schematic sources disclosure and an explicit Inspect action. File details stay folded until requested. Background source refresh retains the inspected snapshot and marks it older; incomplete inventories show unknown electrical totals. Other sources cannot inherit the result. The generic tool runner now retains immediate HTTP results as well as wrapped/queued results.
+
+Complete standard suite: **2187 passed / 34 skipped / zero failures**; root typecheck passed. Installed KiCad scoped tests: **4 passed / 40 assertions**, including a real two-sheet snapshot and source/declaration preservation. Hierarchy tests: **21 passed / 73 assertions**, covering nested filesystem aliases, missing sheets and changes during export. Client result/transport tests: **3 passed / 15 assertions**. Latest UI disclosure typecheck passed after the final folding refinement.
+
+Native screenshots169–171 show the requested temporary two-sheet fixture inventory, retained older warning and missing-sheet guidance at 960×720; screenshot172 shows the final closed-by-default disclosure in actual VAIO Checks. The fixture contains zero-component validation sheets, not a generated design. Native testing found and fixed the immediate-result bug and snapshot unmount during background checking. Both temporary sheets were restored absent; all eight recorded fixture hashes and all recorded VAIO hashes stayed unchanged. No agent messages. Final native app is quiet wide VAIO Overview.
+
+![Requested native sheet inventory](member-schematic-sources.png)
+![Child-change warning](member-schematic-changed.png)
+![Missing native sheet, compact](member-schematic-missing-compact.png)
+![Final folded disclosure in VAIO](member-schematic-folded.png)
+
+Native record: [member-schematic-native.json](member-schematic-native.json). The earlier three captures precede the final outer disclosure refinement; all screenshot iterations are preserved.
