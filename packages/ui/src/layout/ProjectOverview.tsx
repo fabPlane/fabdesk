@@ -25,6 +25,7 @@ function SingleBoardOverview() {
   const selectionTrigger = useRef<HTMLButtonElement>(null);
   const [chosenReference, setChosenReference] = useState<string | null>(null);
   const files = project.data?.files ?? [], has = (path: string) => files.some(file => file.path === path);
+  const pcbMissing = !has("board.kicad_pcb");
   const pcbRevision = usePcbPreviewRevision(projectId, has("renders/pcb.svg"));
   const modelRevision = useBoardModelRevision(projectId, has("renders/board.glb"));
   const enclosureRevision = useEnclosureSourceRevision(projectId, has("enclosure.json"));
@@ -33,10 +34,10 @@ function SingleBoardOverview() {
   const videoRevision = useVideoInputRevision(projectId, videoPath);
   const updates = [
     ...(videoPath && !videoRevision.isFetching && !videoRevision.isError && videoInputsNeedReview(videoRevision.data) ? ["Product video"] : []),
-    ...(has("renders/pcb.svg") && ["source-changed", "artifact-changed"].includes(pcbRevision.data ?? "") ? ["PCB preview"] : []),
-    ...(has("renders/board.glb") && ["source-changed", "artifact-changed"].includes(modelRevision.data ?? "") ? ["3D model"] : []),
+    ...(has("renders/pcb.svg") && (pcbMissing || ["source-changed", "artifact-changed", "missing-source"].includes(pcbRevision.data ?? "")) ? ["PCB preview"] : []),
+    ...(has("renders/board.glb") && (pcbMissing || ["source-changed", "artifact-changed", "missing-source"].includes(modelRevision.data ?? "")) ? ["3D model"] : []),
     ...(has("enclosure.json") && enclosureRevision.data === "changed" ? ["Enclosure"] : []),
-    ...(has("reports/drc.json") && checkRevision.data === "source-changed" ? ["PCB checks"] : []),
+    ...(has("reports/drc.json") && (pcbMissing || ["source-changed", "missing-source"].includes(checkRevision.data ?? "")) ? ["PCB checks"] : []),
     ...(has("reports/erc.json") && !order.isFetching && !order.isError && order.data?.checks.erc === "stale" ? ["Schematic checks"] : []),
   ];
   const ui = () => useUiStore.getState();
@@ -59,8 +60,8 @@ function SingleBoardOverview() {
   useEffect(() => { if (selectedKey !== null && selectedKey !== surfaceKey) setSelectedKey(null); }, [selectedKey, surfaceKey]);
 
   const previewStatus = designTab === "schematic" ? "Saved schematic preview · freshness unverified" : preview?.path !== "renders/pcb.svg" ? "Saved image · source unverified"
-    : pcbRevision.isFetching ? "Checking preview source…" : pcbRevision.isError ? "Preview source check unavailable"
-    : pcbRevision.data === "source-changed" ? "PCB changed since preview" : pcbRevision.data === "artifact-changed" ? "Preview changed · source unverified"
+    : pcbMissing ? "PCB source missing · saved drawing" : pcbRevision.isFetching ? "Checking preview source…" : pcbRevision.isError ? "Preview source check unavailable"
+    : pcbRevision.data === "missing-source" ? "PCB source missing · saved drawing" : pcbRevision.data === "source-changed" ? "PCB changed since preview" : pcbRevision.data === "artifact-changed" ? "Preview changed · source unverified"
     : pcbRevision.data === "matches-source" ? "Preview matches saved PCB" : "Saved preview · source unverified";
   if (!projectId) return <EmptyState title="Choose a project to see its overview" />;
   if (project.isError) return <LoadError title="Could not load project overview" onRetry={() => void project.refetch()} />;
@@ -72,12 +73,12 @@ function SingleBoardOverview() {
       {updates.length > 0 && <Button className="fd-overview-updates" size="sm" variant="ghost" title={`${updates.join(", ")} ${updates.length === 1 ? "has" : "have"} source or artifact changes. This covers tracked artifacts only; review before sharing or fabrication.`} onClick={() => ui().setBoardTab("updates")}><Icon name="warning" width={16} height={16} />Review updates · {updates.length}</Button>}
     </div>
     {(pcb || schematic || preview) ? <div className="fd-overview-board">
-      <button ref={selectionTrigger} className="fd-overview-preview" data-selected={selected} aria-pressed={selected} aria-label={`Select ${designLabel.toLowerCase()} to show tools`} onClick={() => setSelectedKey(selected ? null : surfaceKey)} onDoubleClick={() => ui().setBoardTab(designTab)}>
+      <button ref={selectionTrigger} className="fd-overview-preview" data-selected={selected} aria-pressed={selected} aria-label={`Select ${designLabel.toLowerCase()} to show tools`} onClick={() => setSelectedKey(selected ? null : surfaceKey)} onDoubleClick={() => ui().setBoardTab(pcb || schematic ? designTab : "files")}>
         {preview ? <ProjectImage projectId={projectId} path={preview.path} alt={`${project.data.name} ${designTab} preview`} /> : <span><Icon name={designTab === "schematic" ? "compose" : "pcb"} width={64} height={64} /><span>{designTab === "schematic" ? "Open the schematic to create its preview" : "Open the PCB to render its preview"}</span></span>}
       </button>
       {selected && <div className="fd-board-context-tools" aria-label="Board actions">
         <span><Icon name={designTab === "schematic" ? "compose" : "pcb"} width={17} height={17} />{designLabel}</span>
-        <Button variant="ghost" size="sm" onClick={() => ui().setBoardTab(designTab)}><Icon name="compose" width={16} height={16} />{designTab === "schematic" ? "Open schematic" : "Open board"}</Button>
+        <Button variant="ghost" size="sm" onClick={() => ui().setBoardTab(pcb || schematic ? designTab : "files")}><Icon name={pcb || schematic ? "compose" : "folderOpen"} width={16} height={16} />{!pcb && !schematic ? "Open project files" : designTab === "schematic" ? "Open schematic" : "Open board"}</Button>
         <Button variant="ghost" size="sm" onClick={() => {
           const state = ui(); if (state.activeProjectId !== projectId) return;
           const key = state.activeThreadId ?? newChatDraftKey(projectId), previous = state.drafts[key] ?? "";

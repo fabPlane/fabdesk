@@ -1,0 +1,43 @@
+{
+  "scope": "Single-board missing native PCB with existing saved artifacts",
+  "change": [
+    "Overview counts preview/model/DRC missing-source evidence and labels retained drawing PCB source missing",
+    "Review labels missing PCB source explicitly and routes preview/model actions to project files instead of disabled generation actions",
+    "Saved-preview-only contextual primary action and double-click open project files rather than empty native board editor",
+    "Keep saved version remains unavailable when PCB source is missing"
+  ],
+  "native": {
+    "rootStudy": "prj_mvs5abwp2ff3301fe3",
+    "before": "Overview only flags video; preview/model/DRC source unverified; preview/model update buttons disabled",
+    "after": "Overview flags4tracked artifacts; preview/model/DRC say PCB source missing; both Review recovery and contextual preview recovery open same project Files",
+    "restore": "Exact PCB restoration clears Overview missing-source badge and returns Review Open board/Open model/source-unchanged DRC",
+    "freshStudy": "prj_mvr7n2n5db55576304",
+    "freshProject": "No outputs yet: Not generated, no DRC/ERC report, zero warning attributes and no missing-source label",
+    "noGenerationOrMessages": true
+  },
+  "preservation": {
+    "rootProtectedFiles": 48,
+    "sketchProtectedFiles": 6,
+    "changed": [],
+    "guard": "RESTORED",
+    "heldFileAbsent": true
+  },
+  "validation": {
+    "uiTypecheck": "PASS /tmp/canvas-missing-root-source-final-types.log",
+    "uiTests": "229 pass / 0 fail / 874 assertions /tmp/canvas-missing-root-source-tests.log"
+  },
+  "limitations": [
+    "Open project files is inspection/recovery navigation, not a promise to restore or synchronize sources",
+    "Electrical validation, Mechanical and Board Art are unchanged"
+  ],
+  "screenshots": [
+    "385-overview-missing-source-before.png",
+    "386-review-missing-source-before.png",
+    "387-review-missing-source-recovery.png",
+    "388-review-source-recovery-opens-files.png",
+    "389-overview-missing-source-attention.png",
+    "390-review-restored-source-current-actions.png",
+    "391-overview-saved-preview-source-recovery.png",
+    "392-sketch-only-review-no-false-source-warning.png"
+  ]
+}

@@ -1453,3 +1453,8 @@ When a PCB drawing and saved render coexist, Overview now shows renders/pcb.svg 
 ### Source arrival does not inherit unrelated contextual tools
 
 Single-board Overview now keys selection to its native PCB, schematic, preview or exact saved reference. A selected sketch no longer silently selects a newly arriving PCB; the user selects that board to open its tools. A drawing refresh for the same native board keeps the existing board selection. Native reproduced the old retargeting, verified reference→native arrival with tools closed and same-board SVG absence/arrival preserving selection; Escape recovery passed. All48 protected files exact, exclusive hold guards RESTORED/held files absent, no job/message. Captures382–384 and overview-selection-identity-native.json. UI typecheck/229tests pass. LOCAL ONLY.
+
+
+### Missing native PCB has an explicit recovery path
+
+Overview and Review now distinguish a missing PCB from an unverified saved artifact. Retained preview/model/DRC evidence receives an explicit missing-source warning; preview/model actions open project files instead of offering disabled regeneration. The saved-preview contextual action and double-click likewise open files when no native design exists. Keep choice cannot be recorded without the source. Native root source hold→4artifact attention→Review/Overview Files recovery→exact restore/current actions passed. Fresh sketch-only project has zero warning attributes: not-yet-generated outputs are not treated as lost sources. All48root/6sketch protected files exact; guard RESTORED/held file absent, no generation/check job or message. UI types/229tests pass. Captures385–392 and missing-root-source-native.json; LOCAL ONLY.
