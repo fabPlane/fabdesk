@@ -30,6 +30,7 @@ import "./art-tab.css";
 import { placementAfterBoardResize } from "./art-placement";
 import { latestPreviewQueue } from "./art-preview-queue";
 import type { PreviewResult } from "./art-preview.worker";
+import { ArtSavedBoardPreview } from "./ArtSavedBoardPreview";
 import { ArtPlacementControls, ArtPlacementOverlay } from "./ArtPlacementEditor";
 import { buildSketchPngFile } from "./art-sketch-upload";
 
@@ -81,6 +82,9 @@ function OwnedArtworkWorkspace() {
   const [lockProportions, setLockProportions] = useState(initial.current?.settings.lockProportions ?? true);
   const [placing, setPlacing] = useState(initial.current?.view.placing ?? true);
   const [svg, setSvg] = useState<string | null>(null);
+  const [overlaySvg, setOverlaySvg] = useState<string | null>(null);
+  const [marks, setMarks] = useState(0);
+  const [savedBoardPreview, setSavedBoardPreview] = useState(initial.current?.boardPreview ?? false);
   const [gray, setGray] = useState<GrayImage | null>(null);
   const [sourceName, setSourceName] = useState<string | null>(null);
   const [localFile, setLocalFile] = useState<File | null>(null);
@@ -176,8 +180,8 @@ function OwnedArtworkWorkspace() {
   const draftSaved = !!sourceImage && sourceImage === savedImage && draftSignature === savedSettings;
   useEffect(() => {
     if (!sourceImage || !sourceImageName || !gray || loading) return;
-    artworkSessions.set(client.baseUrl, projectId, { image: sourceImage, name: sourceImageName, settings: draftSettings, view: draftView, baseText: baseText.current, savedImage, savedSettings, ...(draftDestination.current ? { pendingProjectId: draftDestination.current } : {}) });
-  }, [client.baseUrl, projectId, sourceImage, sourceImageName, gray, loading, draftSignature, savedImage, savedSettings]);
+    artworkSessions.set(client.baseUrl, projectId, { image: sourceImage, name: sourceImageName, settings: draftSettings, view: draftView, baseText: baseText.current, savedImage, savedSettings, boardPreview: savedBoardPreview, ...(draftDestination.current ? { pendingProjectId: draftDestination.current } : {}) });
+  }, [client.baseUrl, projectId, sourceImage, sourceImageName, gray, loading, draftSignature, savedImage, savedSettings, savedBoardPreview]);
 
   const saveDraft = async () => {
     if (!sourceImage || !sourceImageName || busyRef.current || loading || converting || restoreFailed) return;
@@ -192,7 +196,7 @@ function OwnedArtworkWorkspace() {
         artworkSessions.set(client.baseUrl, null, { image: sourceImage, name: sourceImageName, settings, view, baseText: null, savedImage: null, savedSettings: null, pendingProjectId: owner });
       }
       const result = await saveBoardArtwork({ client, projectId: owner, image: sourceImage, name: sourceImageName, settings, view, expectedText: projectId ? baseText.current : null });
-      artworkSessions.set(client.baseUrl, owner, { image: sourceImage, name: sourceImageName, settings, view, baseText: result.text, savedImage: sourceImage, savedSettings: signature });
+      artworkSessions.set(client.baseUrl, owner, { image: sourceImage, name: sourceImageName, settings, view, baseText: result.text, savedImage: sourceImage, savedSettings: signature, boardPreview: savedBoardPreview });
       await qc.invalidateQueries({ queryKey: ["projects"] }); await qc.invalidateQueries({ queryKey: ["project", owner] }); await qc.invalidateQueries({ queryKey: ["file", owner] });
       if (!originProject) {
         const ui = useUiStore.getState();
@@ -256,6 +260,8 @@ function OwnedArtworkWorkspace() {
       (result) => {
         if (result.svg) {
           setSvg(URL.createObjectURL(new Blob([result.svg], { type: "image/svg+xml" })));
+          setOverlaySvg(result.overlaySvg ? URL.createObjectURL(new Blob([result.overlaySvg], { type: "image/svg+xml" })) : null);
+          setMarks(result.marks ?? 0);
         } else {
           setSvg(null);
           setError(result.error ?? "Could not update artwork preview.");
@@ -283,6 +289,7 @@ function OwnedArtworkWorkspace() {
     },
     [svg],
   );
+  useEffect(() => () => { if (overlaySvg) URL.revokeObjectURL(overlaySvg); }, [overlaySvg]);
   useEffect(() => {
     if (!gray) {
       setSvg(null);
@@ -440,6 +447,7 @@ function OwnedArtworkWorkspace() {
   const unavailable = !gray || !svg || busy || loading || converting;
   const existingBoard = project.data?.files.some((f) => f.path === "board.kicad_pcb");
   const existingCircuit = existingBoard || project.data?.files.some(file => file.path === "board.kicad_sch");
+  const showPcbPreview = savedBoardPreview && !!projectId && !!existingBoard && sources.data?.mode === "single";
   const drop = (event: React.DragEvent) => {
     event.preventDefault();
     setDragging(false);
@@ -693,10 +701,11 @@ function OwnedArtworkWorkspace() {
           </span>
           {svg && (
             <div className="flex flex-wrap items-center gap-1">
+              {projectId && existingBoard && sources.data?.mode === "single" && <><button type="button" aria-pressed={!savedBoardPreview} onClick={() => setSavedBoardPreview(false)}>Artwork canvas</button><button type="button" aria-pressed={savedBoardPreview} onClick={() => setSavedBoardPreview(true)}>Preview on PCB</button></>}
               <button type="button" aria-pressed={placing} onClick={() => setPlacing((p) => !p)}>
                 {placing ? "Finish placing" : "Place artwork"}
               </button>
-              <button
+              {!showPcbPreview && <><button
                 type="button"
                 aria-label="Zoom out"
                 disabled={zoom <= 0.5}
@@ -715,7 +724,7 @@ function OwnedArtworkWorkspace() {
               </button>
               <button type="button" onClick={() => setZoom(1)}>
                 Fit
-              </button>
+              </button></>}
             </div>
           )}
         </div>}
@@ -742,7 +751,7 @@ function OwnedArtworkWorkspace() {
             {sketches.length > 0 && <Select aria-label="Existing sketch" value="" disabled={busy || loading} onChange={event => void onSketch(event.target.value)}><option value="" disabled>Use a project sketch…</option>{sketches.map(file => <option key={file.path} value={file.path}>{file.path.split("/").pop()}</option>)}</Select>}
           </div>
         )}
-        {svg && (
+        {svg && showPcbPreview && projectId ? <ArtSavedBoardPreview projectId={projectId} enabled={sources.data?.mode === "single" && !sources.isFetching && !sources.isError} {...(sources.isError ? { onRetrySource: () => void sources.refetch() } : {})} overlayUrl={overlaySvg} widthMm={widthMm} heightMm={heightMm} crop={crop} placement={resolvedPlacement} lock={lockProportions} placing={placing} busy={busy || loading || converting} silkOnly={layers.length === 1 && layers[0] === "silk"} marks={marks} onPlace={setPlacement} onFit={(width, height) => { setWidthMm(width); setHeightMm(height); setOutline("rectangle"); if (gray) setPlacement(fitArtPlacement(gray, width, height, resolvedPlacement?.rotationDeg ?? 0, 2, crop)); }} /> : svg && (
           <div className="fd-art-comparison">
             {sourceUrl && (
               <details className="fd-art-source"><summary>Source image</summary>

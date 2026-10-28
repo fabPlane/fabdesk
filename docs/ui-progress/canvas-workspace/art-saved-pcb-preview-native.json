@@ -1,0 +1,23 @@
+{
+  "status": "Saved-PCB preview verified; UI Apply deferred",
+  "projectId": "prj_mvrufz7w4a1b4caa95",
+  "nativePcbSha256Unchanged": "9b7c1e434cf0f08d846c3ce49dd2cbda592fdde840c4cff29ae86b802b7fd044",
+  "nativeWalkthrough": [
+    "Requested saved PCB view and explicitly fitted artwork to inspected 15\u00d715mm bounds",
+    "Selected Solid silhouette; transparent proposed marks appear over actual native PCB",
+    "Dragged resize handle and artwork; exact 3\u00d73mm placement at X2.5 Y12 retained",
+    "Arrow Right moved X2.5 to2.6; restored2.5",
+    "Saved artwork settings and immutable original image; proposed19marks remain explicitly Not applied",
+    "Changed PCB bytes hid proposal and offered preview update; exact original bytes restored; proposal returned"
+  ],
+  "validation": {
+    "uiTypecheck": "pass",
+    "uiTests": 227,
+    "uiAssertions": 866
+  },
+  "limits": [
+    "No UI Apply action or native source mutation in this preview milestone",
+    "Source warning screenshot predates final wording refinement",
+    "Board Art further work deferred by direct user; prioritize core workspace flow"
+  ]
+}

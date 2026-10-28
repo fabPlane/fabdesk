@@ -47,6 +47,7 @@ export async function saveBoardArtwork({ client, projectId, image, name, setting
 export interface ArtworkSessionDraft {
   image: Blob; name: string; settings: BoardArtworkSettings; view: BoardArtworkView;
   pendingProjectId?: string;
+  boardPreview?: boolean;
   baseText: string | null; savedImage: Blob | null; savedSettings: string | null;
 }
 /** In-memory image drafts; chat ids never participate in project ownership. */

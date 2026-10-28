@@ -984,3 +984,15 @@ A related art-first check temporarily added an actual native PCB to the saved-ar
 ![Actual native PCB after additive silkscreen transaction](native-additive-art-study-pcb.jpg)
 
 [Exact native transaction evidence and limits](native-additive-art-proof.json).
+
+
+### Artwork preview on the saved PCB — further art work deferred
+
+Requested Preview on PCB uses the actual saved native drawing and inspected bounds. Transparent proposed silkscreen stays separate from the board; mismatched dimensions require explicit Fit artwork to PCB. Handles stay usable at board scale, and pointer selection enables keyboard nudging. Save artwork retains image/settings without changing native PCB geometry. Source/preview uncertainty hides the proposal and offers an explicit preview update.
+
+Native compact-window use verified drag/resize, exact placement, keyboard nudging, saved settings, and a changed-source warning with guarded restoration. UI typecheck and227tests pass. The saved PCB hash remained unchanged. Apply is still unwired and remains a functional follow-up. The user explicitly asked to move on once the art structure works; further Board Art development is deferred in favor of core workspace functionality.
+
+![Proposed artwork over the actual saved PCB](art-saved-pcb-proposal.jpg)
+![Changed PCB hides the unverified proposal](art-pcb-preview-source-warning.jpg)
+
+[Native preview evidence and limits](art-saved-pcb-preview-native.json).
