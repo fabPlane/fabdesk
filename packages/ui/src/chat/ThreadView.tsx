@@ -10,7 +10,7 @@ import { FreshStartActions } from "./FreshStartActions";
 import { Composer } from "./Composer";
 import { MessageList } from "./MessageList";
 
-export function ThreadView({ presentation = "chat" }: { presentation?: "chat" | "start" }) {
+export function ThreadView({ presentation = "chat", referenceStart = false }: { presentation?: "chat" | "start"; referenceStart?: boolean }) {
   const activeThreadId = useUiStore((s) => s.activeThreadId);
   const projectId = useUiStore((s) => s.activeProjectId);
   const setSketchOpen = useUiStore((s) => s.setSketchOpen);
@@ -80,7 +80,7 @@ export function ThreadView({ presentation = "chat" }: { presentation?: "chat" | 
       <div className={activeThreadId ? "fd-thread-body" : "fd-thread-body fd-new-chat-body"}>
       {activeThreadId ? (
         <MessageList thread={thread} messages={messages.data ?? []} loading={messages.isLoading} />
-      ) : (
+      ) : referenceStart ? null : (
         <div className="fd-empty-hero">
           <CircuitLogo className="fd-hero-icon mb-3 shrink-0 text-accent" />
           <div className="fd-eyebrow">Your PCB workspace</div>
@@ -97,7 +97,7 @@ export function ThreadView({ presentation = "chat" }: { presentation?: "chat" | 
         </div>
       )}
       <Composer thread={thread} onCreateThread={onCreateThread} startMode={presentation === "start"} />
-      {presentation === "start" && !activeThreadId && <FreshStartActions />}
+      {presentation === "start" && !activeThreadId && !referenceStart && <FreshStartActions />}
       </div>
     </div>
   );

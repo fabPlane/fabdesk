@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useCore, restoreAssemblySelection, useBoardSources, useProject, useProjects, useThreads, WORKSPACE_AREAS, type WorkspaceArea } from "@fabdesk/client-core";
+import { projectSketchImagePaths, useCore, restoreAssemblySelection, useBoardSources, useProject, useProjects, useThreads, WORKSPACE_AREAS, type WorkspaceArea } from "@fabdesk/client-core";
 import { BoardPanel } from "../board/BoardPanel";
 import { ThreadView } from "../chat/ThreadView";
 import { ProjectPickerDialog } from "../chat/ProjectPickerDialog";
@@ -14,10 +14,11 @@ import { Icon } from "../components/Icon";
 import { FabPlaneLogo } from "../components/FabPlaneLogo";
 import { UpdateBadge } from "../components/UpdateBadge";
 import { WhatsNewLink } from "../whatsnew/WhatsNew";
-import { useUiStore } from "../stores/ui";
+import { newChatDraftKey, useUiStore } from "../stores/ui";
 import { WorkspaceMenu } from "./WorkspaceMenu";
 import { LiveAssemblyPreviews } from "./LiveAssemblyPreviews";
 import { ProjectOverview } from "./ProjectOverview";
+import { SketchStartReference } from "./SketchStartReference";
 import type { AppShellProps } from "./AppShell";
 import "./canvas-workspace.css";
 
@@ -61,6 +62,11 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
   const conversationOnly = !boardOpen || (!projectId && !!threadId);
   const hasNativeDesign = project.data?.files.some((file) => file.path === "board.kicad_pcb" || file.path === "board.kicad_sch");
   const fresh = !threadId && !sourceId && !inventory && !order && (!projectId || (!!project.data && !boardSources.isPending && boardSources.data?.mode !== "assembly" && !hasNativeDesign && area === "boards" && boardTab === "pcb"));
+  const sketchPaths = projectSketchImagePaths(project.data?.files ?? []);
+  const draftAttachments = useUiStore(s => s.attachments[newChatDraftKey(projectId)]);
+  const attachedSketch = draftAttachments?.slice().reverse().find(item => sketchPaths.includes(item.path))?.path;
+  const sketchReference = fresh && projectId ? attachedSketch ?? sketchPaths[0] : undefined;
+  const referenceStart = !!sketchReference;
   const secondary = !!sourceId || inventory || order;
   const showAssistant = !fresh && !conversationOnly && !secondary;
   const local = ["localhost", "127.0.0.1", "[::1]"].includes(new URL(client.baseUrl).hostname);
@@ -82,6 +88,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
         <button onClick={() => setCreating("github")}><Icon name="folderOpen" width={16} height={16} />Import from GitHub</button>
         <button onClick={() => setNavigationOpen(true)}><Icon name="sidebar" width={16} height={16} />Browse projects & chats</button>
       </WorkspaceMenu>
+      {referenceStart && <span className="fd-canvas-breadcrumb"><span>/</span><strong>Start with sketch</strong></span>}
       {projectId && !fresh && <span className="fd-canvas-breadcrumb" title={selectedBoardName ?? areaLabel}><span>/</span><strong>{selectedBoardName ?? areaLabel}</strong></span>}
       <div className="fd-canvas-header-actions">
         <span className="fd-canvas-connection" title={coreStatus?.message ?? `Core ${coreStatus?.state ?? "ready"}; events ${sseStatus}`}><i data-connected={connected} />{connected ? local ? "Local workspace" : "Remote workspace" : "Reconnecting…"}</span>
@@ -108,9 +115,9 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
       </nav>}
       {secondary && <Button className="fd-canvas-back" size="sm" onClick={() => { ui().setActiveOpenSourceId(null); ui().setInventoryOpen(false); ui().setOrderFlowOpen(false); ui().setBoardOpen(true); }}>← Return to canvas</Button>}
       <div className="fd-canvas-surface">
-        {order ? <OrderFlow /> : inventory ? <InventoryView /> : sourceId ? <OpenSourceView /> : fresh || conversationOnly ? null : area === "overview" || area === "boards" && boardSources.data?.mode === "assembly" ? <ProjectOverview key={projectId} boardPicker={area === "boards"} /> : <BoardPanel canvas />}
+        {order ? <OrderFlow /> : inventory ? <InventoryView /> : sourceId ? <OpenSourceView /> : fresh && projectId && sketchReference ? <SketchStartReference key={projectId} projectId={projectId} paths={sketchPaths} preferred={sketchReference} checking={project.isFetching} failed={project.isError} /> : fresh || conversationOnly ? null : area === "overview" || area === "boards" && boardSources.data?.mode === "assembly" ? <ProjectOverview key={projectId} boardPicker={area === "boards"} /> : <BoardPanel canvas />}
       </div>
-        <section className={fresh ? "fd-canvas-start-surface" : conversationOnly ? "fd-canvas-conversation-surface" : "fd-assistant-dock"} aria-label="fabPlane assistant" hidden={secondary || (!fresh && !conversationOnly && !assistantOpen)} onKeyDown={(event) => {
+        <section className={referenceStart ? "fd-canvas-reference-composer" : fresh ? "fd-canvas-start-surface" : conversationOnly ? "fd-canvas-conversation-surface" : "fd-assistant-dock"} aria-label="fabPlane assistant" hidden={secondary || (!fresh && !conversationOnly && !assistantOpen)} onKeyDown={(event) => {
           if (!fresh && !conversationOnly && event.key === "Escape" && !(event.target as HTMLElement).closest("details[open]")) { event.stopPropagation(); setAssistantOpen(false); requestAnimationFrame(() => document.querySelector<HTMLButtonElement>("[data-assistant-launcher]")?.focus()); }
         }}>
           {!fresh && !conversationOnly && <div className="fd-assistant-heading"><span><Icon name="sparkles" width={17} height={17} />Ask fabPlane</span><div>
@@ -121,7 +128,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
             </WorkspaceMenu>
             <IconButton size="sm" title="Close assistant" onClick={() => setAssistantOpen(false)}><Icon name="close" width={17} height={17} /></IconButton>
           </div></div>}
-          <ThreadView presentation={fresh ? "start" : "chat"} />
+          <ThreadView presentation={fresh ? "start" : "chat"} referenceStart={referenceStart} />
         </section>
         {showAssistant && !assistantOpen && <button className="fd-ask-fabdesk" data-assistant-launcher onClick={() => { setAssistantOpen(true); ui().focusComposer(); }}><Icon name="sparkles" width={19} height={19} /><span>Ask fabPlane</span><Icon name="mic" width={19} height={19} /></button>}
       {fresh && <><div className="fd-canvas-start-note">Your ideas and files stay with your project</div><button className="fd-ask-fabdesk" data-assistant-launcher onClick={() => ui().focusComposer()}><Icon name="sparkles" width={19} height={19} /><span>Ask fabPlane</span><Icon name="mic" width={19} height={19} /></button></>}

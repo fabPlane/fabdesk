@@ -66,6 +66,8 @@ function SketchSession({ scenes }: { scenes: Scenes }) {
   const initialScene = useRef(memory?.scene ?? null);
   const originalSource = useRef<File | null>(memory?.source ?? null);
   const sourceInput = useRef<HTMLInputElement>(null);
+  const canvasRoot = useRef<HTMLDivElement>(null);
+  const sourceOptions = useRef<HTMLDetailsElement>(null);
   const [sourceName, setSourceName] = useState(memory?.source?.name ?? "");
   const rememberScene = useCallback(() => {
     const scene = initialScene.current;
@@ -204,6 +206,10 @@ function SketchSession({ scenes }: { scenes: Scenes }) {
     initialScene.current = scene; setHasDrawing(!!scene.elements?.some(element => !element.isDeleted));
     originalSource.current = source; setSourceName(source?.name ?? "");
     scheduleRecovery(); rememberScene();
+    if (sourceOptions.current) sourceOptions.current.open = false;
+    requestAnimationFrame(() => {
+      if (mounted.current && useUiStore.getState().activeProjectId === target.projectId) canvasRoot.current?.querySelector<HTMLElement>(".excalidraw-container")?.focus();
+    });
   };
   const importDrawing = async (file: File) => {
     if (busyRef.current || recovering || completed.current) return;
@@ -256,7 +262,7 @@ function SketchSession({ scenes }: { scenes: Scenes }) {
             <span className="fd-sketch-source-name" title={sourceName || (hasDrawing ? "Editable drawing" : "New drawing · .excalidraw supported")}>{sourceName || (hasDrawing ? "Editable drawing" : ".excalidraw supported")}</span>
             {hasDrawing && <Button size="sm" variant="ghost" disabled={busy || recovering || completed.current} onClick={() => apiRef.current?.scrollToContent(undefined, { fitToViewport: true, viewportZoomFactor: .65, maxZoom: 1 })}>Fit drawing</Button>}
           </>}
-          <details className="fd-sketch-options">
+          <details ref={sourceOptions} className="fd-sketch-options">
             <summary>{mode === "draw" ? "Drawing options" : "Image details"}</summary>
             <div>
               <p>{target.projectId ? mode === "draw" ? "Save an editable PNG in this project and attach it to your next message. Each save keeps a new copy." : "Save the original image in this project and attach it to your next message." : "Saving creates a project automatically. Your sketch stays with it; nothing is sent to the agent yet."}</p>
@@ -283,7 +289,7 @@ function SketchSession({ scenes }: { scenes: Scenes }) {
         </div>}
         {mode === "draw" && recoveryStatus && <p role="status" className="border-b border-border px-3 py-2 text-xs text-muted">{recoveryStatus}</p>}
         {error && <p role="alert" className="px-3 py-2 text-sm text-danger">{error}</p>}
-        <div className="fd-sketch-canvas min-h-0 flex-1">
+        <div ref={canvasRoot} className="fd-sketch-canvas min-h-0 flex-1">
           {recovering ? <div className="flex h-full items-center justify-center gap-2 text-sm text-muted"><Spinner />Checking for a local draft…</div> : mode === "upload" ? (
             <div className="flex h-full flex-col items-center justify-center gap-4 p-6">
               <label className="flex max-w-full flex-col gap-3 text-sm font-medium">Choose a sketch or reference image

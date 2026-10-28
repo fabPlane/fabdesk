@@ -699,3 +699,25 @@
 .fd-native-part-details[open] > summary { margin-bottom:12px; }
 .fd-native-part-details .fd-native-part-footprint { margin-bottom:10px; }
 .fd-native-part-details .fd-native-part-note { margin-top:8px; }
+
+/* The saved sketch remains the main surface while the original composer keeps its draft. */
+.fd-start-reference { position:absolute; inset:20px 24px 280px; display:flex; flex-direction:column; align-items:center; gap:12px; min-height:0; }
+.fd-start-reference-tools { position:relative; flex:none; min-height:48px; width:100%; display:flex; align-items:center; justify-content:center; }
+.fd-start-reference-tools > p { color:var(--fd-muted); font-size:12px; }
+.fd-start-reference-tools .fd-board-context-tools { top:0; }
+.fd-start-reference-image { display:flex; align-items:center; justify-content:center; flex:1; min-height:0; max-width:100%; border-radius:14px; }
+.fd-start-reference-image img { width:auto; height:100%; max-width:100%; max-height:100%; object-fit:contain; border:0; border-radius:12px; filter:drop-shadow(0 8px 18px #102a2010); }
+.fd-start-reference-image[aria-pressed=true] { outline:2px solid color-mix(in srgb,var(--fd-accent) 35%,transparent); outline-offset:6px; }
+.fd-start-reference-caption { display:flex; flex-direction:column; align-items:center; gap:6px; max-width:100%; flex:none; font-size:11px; color:var(--fd-muted); }
+.fd-start-reference-caption strong { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500; }
+.fd-start-reference-caption label { display:flex; align-items:center; gap:8px; max-width:100%; }
+.fd-start-reference-caption select { max-width:min(60vw,420px); background:var(--fd-panel); border:1px solid var(--fd-border); padding:4px 8px; border-radius:6px; }
+.fd-canvas-reference-composer { position:absolute; z-index:15; bottom:82px; left:50%; transform:translateX(-50%); width:min(730px,calc(100% - 48px)); max-height:220px; }
+.fd-canvas-reference-composer .fd-chat-pane { height:auto; }
+.fd-canvas-reference-composer .fd-start-view .fd-new-chat-body { padding:0; justify-content:flex-end; overflow:visible; }
+@media(max-width:1050px) {
+  .fd-start-reference { inset:12px 20px 270px; gap:8px; }
+  .fd-start-reference-tools { min-height:48px; }
+  .fd-start-reference-tools .fd-board-context-tools { gap:2px; padding:5px 8px; }
+  .fd-start-reference-tools .fd-board-context-tools > span { display:none; }
+}

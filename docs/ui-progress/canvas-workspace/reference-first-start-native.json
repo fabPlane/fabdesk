@@ -1,0 +1,126 @@
+{
+  "wide": {
+    "projectId": "prj_mvs5abwp2ff3301fe3",
+    "activeThreadId": null,
+    "geometry": {
+      "viewport": {
+        "width": 1440,
+        "height": 870
+      },
+      "reference": {
+        "left": 24,
+        "top": 78,
+        "right": 1416,
+        "bottom": 590,
+        "width": 1392,
+        "height": 512
+      },
+      "image": {
+        "left": 431.7578125,
+        "top": 138,
+        "right": 1008.2421875,
+        "bottom": 530.5,
+        "width": 576.484375,
+        "height": 392.5
+      },
+      "composer": {
+        "left": 355,
+        "top": 627,
+        "right": 1085,
+        "bottom": 788,
+        "width": 730,
+        "height": 161
+      },
+      "loaded": true,
+      "imagePixels": {
+        "width": 282,
+        "height": 192
+      },
+      "referencePath": "sketches/sketch-1793198980283.excalidraw.png",
+      "attachments": 2,
+      "selected": "false",
+      "draft": "Review this I/O board sketch. Help me confirm dimensions and connector requirements before creating a PCB."
+    },
+    "nativeFlow": [
+      "960\u00d7720 actual reference selection and Escape/Enter focus",
+      "Use in message retains one existing attachment",
+      "Open saved editable PNG copy \u2192 options close \u2192 drawing receives focus",
+      "View file opens only requested file workspace; message/attachment retained",
+      "Return Board restores reference and composer",
+      "CmdR restores reference, typed draft and attachment",
+      "Saved editable recovery survives CmdR",
+      "Save again adds a separate PNG; earlier reference remains selectable"
+    ],
+    "sentMessage": false,
+    "limits": "References are saved sketch images, not generated engineering designs. Reference picker choice is local; reopening defaults to attached or newest saved reference."
+  },
+  "compact": {
+    "projectId": "prj_mvs5abwp2ff3301fe3",
+    "activeThreadId": null,
+    "geometry": {
+      "viewport": {
+        "width": 960,
+        "height": 720
+      },
+      "reference": {
+        "left": 20,
+        "top": 70,
+        "right": 940,
+        "bottom": 450,
+        "width": 920,
+        "height": 380
+      },
+      "image": {
+        "left": 282.8203125,
+        "top": 126,
+        "right": 677.1796875,
+        "bottom": 394.5,
+        "width": 394.359375,
+        "height": 268.5
+      },
+      "composer": {
+        "left": 115,
+        "top": 477,
+        "right": 845,
+        "bottom": 638,
+        "width": 730,
+        "height": 161
+      },
+      "loaded": true,
+      "imagePixels": {
+        "width": 282,
+        "height": 192
+      },
+      "referencePath": "sketches/sketch-1793198980283.excalidraw.png",
+      "attachments": 2,
+      "selected": "false",
+      "draft": "Review this I/O board sketch. Help me confirm dimensions and connector requirements before creating a PCB."
+    },
+    "nativeFlow": [
+      "960\u00d7720 actual reference selection and Escape/Enter focus",
+      "Use in message retains one existing attachment",
+      "Open saved editable PNG copy \u2192 options close \u2192 drawing receives focus",
+      "View file opens only requested file workspace; message/attachment retained",
+      "Return Board restores reference and composer",
+      "CmdR restores reference, typed draft and attachment",
+      "Saved editable recovery survives CmdR",
+      "Save again adds a separate PNG; earlier reference remains selectable"
+    ],
+    "sentMessage": false,
+    "limits": "References are saved sketch images, not generated engineering designs. Reference picker choice is local; reopening defaults to attached or newest saved reference."
+  },
+  "sourcePreservation": "Original imported drawing and preexisting fresh project metadata byte-identical; original .excalidraw copy exact",
+  "versions": {
+    "sketch-1793198980283.excalidraw.png": "273fd045153178b880ea85daa8cd6c4681a0d723f9dcb902c9a78fcfa47d07d0",
+    "sketch-1793199664553.excalidraw.png": "273fd045153178b880ea85daa8cd6c4681a0d723f9dcb902c9a78fcfa47d07d0"
+  },
+  "validation": {
+    "rootTypecheck": "PASS",
+    "finalUiTypecheck": "PASS after path-qualified selection refinement",
+    "ui": "228pass/870assertions",
+    "fullStandard": "2236pass/36skip/0fail with fixture servers permitted",
+    "sandboxedFullRun": "Failed local server binds; preserved /tmp/canvas-reference-start-full-suite.log, permitted full rerun passed",
+    "nativeSkips": "Not counted as native passes"
+  },
+  "next": "Continue remaining core navigation/contextual tools/visual acceptance; not all roadmap phases complete."
+}
