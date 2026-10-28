@@ -1433,3 +1433,8 @@ At3316f0c, root typecheck and the full standard suite pass:2257passed,36skipped,
 
 
 Board-entry focus regression check: existing shared-source Show on PCB still focuses Dismiss finding, so the board-title effect does not steal its contextual focus. Back to checks restores the exact saved row. All12original member fixture files and its recorded DRC report remain exact; no new check was run. [Actual finding entry](371-member-finding-entry-focus-preserved.png).
+
+
+### Review opens a current saved model
+
+Review updates now offers **Open model** when the tracked PCB is unchanged, rather than regenerating it. Changed/unverified or missing models retain explicit Update/Create actions; actions wait for the freshness check and retain project ownership guards. Native current→open existing model, controlled source change→Update, exact restoration→Open all passed. No exporter ran; all48 protected study files remain exact. UI types and229UItests pass. Captures372–375 and review-model-action-native.json preserve the proof. External model dependencies/fit remain unverified. LOCAL ONLY.
