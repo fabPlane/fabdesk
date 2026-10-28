@@ -281,3 +281,15 @@ test("assembly finding navigation is copied, source-qualified, transient and cle
   store.getState().openAssemblyFinding(finding);
   expect(store.getState().assemblyFinding).toBeNull();
 });
+
+test("saved root check navigation copies its point and cannot leak into another project", () => {
+  const store = createUiStore(); store.getState().setActiveProject("a");
+  const finding = { endpoint: "http://local", projectId: "a", sourceSha256: "a".repeat(64), reportFingerprint: "report", point: { x: 2, y: 3 }, description: "Short", itemDescription: "Pad" };
+  store.getState().openRootFinding(finding); finding.point.x = 99;
+  expect(store.getState().rootFinding?.point.x).toBe(2);
+  expect(store.getState().boardTab).toBe("pcb");
+  store.getState().setActiveProject("b");
+  expect(store.getState().rootFinding).toBeNull();
+  store.getState().openRootFinding(finding);
+  expect(store.getState().rootFinding).toBeNull();
+});

@@ -1028,3 +1028,15 @@ Native use verified reference selection, one attachment after repeated action, o
 The project header exposes Rename project using the existing shared dialog and mutation, rather than requiring a separate project/chat drawer. Modal close returns focus to the header when sidebar controls are absent. Native use saved a temporary private-project name, verified the updated header/menu and reopened form, then restored the display name. The update timestamp was restored to exact original metadata bytes using the recorded SHA guard; all18existing non-report study files match their baseline. UItypecheck and227tests pass.
 
 [Native rename evidence and restoration](project-header-controls-native.json).
+
+
+### Navigate a saved PCB finding to its drawing
+
+Selected DRC item details now offer Show on PCB when the report source is current. The selection captures endpoint, project, report contents, source revision and actual finite native coordinates. Its marker requires the same report plus a matching PCB preview receipt and actual displayed SVG bytes; source/report/frame uncertainty hides it. This reuses the existing preview validator and engineering report. It does not create an edit selection or comment. Contextual details stay opposite the selected point and offer Back to checks/Dismiss; Dismiss restores drawing focus, and Escape dismisses after other selection tools. Project switching clears the finding.
+
+Actual native use showed the saved R1pad short at105.49,100mm, hid the marker after a temporary PCB newline, and returned it after guarded byte restoration. Header switching to VAIO and back cleared selection; final endpoint-qualified action and Dismiss focus passed. All18existing non-report study files remain unchanged. Root typecheck,228UItests and5focused finding tests pass. The standard suite recorded2131passed/36skipped/1failed: an existing packaged KiCad test hit its5000ms timeout. Its default-timeout rerun also timed out; unchanged tests with a diagnostic15000ms timeout passed18/18. The standard full command is therefore not claimed green at this checkpoint. No backend/vendor/test-timeout code changed.
+
+![Actual saved short-circuit finding on PCB](saved-check-finding-on-pcb.jpg)
+![Changed source hides the unverified marker](saved-check-finding-stale.jpg)
+
+[Exact navigation evidence, validation and limits](root-check-finding-native.json).

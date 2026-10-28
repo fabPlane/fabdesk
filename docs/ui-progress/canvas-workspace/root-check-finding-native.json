@@ -1,0 +1,43 @@
+{
+  "projectId": "prj_mvrlt1yx802c210b69",
+  "finding": {
+    "description": "Items shorting two nets (nets /sig/SDA and +3V3)",
+    "item": "Pad 1 [/sig/SDA] of R1 on F.Cu",
+    "pointMm": {
+      "x": 105.49,
+      "y": 100
+    }
+  },
+  "nativeWalkthrough": [
+    "Selected actual saved shorting item and Show on PCB",
+    "Marker appeared at native coordinate in matching saved SVG with selected finding card",
+    "Temporary source newline hid marker and showed changed preview guidance",
+    "Exact PCB bytes restored with SHA guard; marker returned",
+    "Switched through header to VAIO and back; no finding leaked or reopened",
+    "Final endpoint-qualified action showed the marker again",
+    "Dismiss removed finding and returned focus to Drawing canvas"
+  ],
+  "preservedExistingNonReportFiles": 18,
+  "validation": {
+    "rootTypecheck": "pass",
+    "uiTests": 228,
+    "focusedFindingTests": 5,
+    "standardSuite": {
+      "pass": 2131,
+      "skip": 36,
+      "fail": 1,
+      "failure": "Existing packaged KiCad project-local result JSON test timed out at5000ms; script tests did not run after workspace failure"
+    },
+    "focusedDefaultTimeoutRerun": "Same5000ms timeout",
+    "focusedDiagnosticTimeout15s": {
+      "pass": 18,
+      "fail": 0,
+      "assertions": 250
+    }
+  },
+  "limits": [
+    "Standard full command is not green at this checkpoint; prior2223pass run predates finding navigation",
+    "Classic-layout preview gating is wired but not newly native-walked",
+    "Marker is one saved report coordinate; no electrical repair, full affected-geometry highlight or automatic zoom/pan"
+  ]
+}

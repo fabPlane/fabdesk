@@ -211,3 +211,5 @@ export * from "./assembly-schematic-preview";
 export { useAssemblySchematicPreview } from "./queries";
 export { enclosureSizeLabel } from "./enclosure-display";
 export { loadBoardArtwork, saveBoardArtwork, createArtworkSessionStore, artworkSessions, type ArtworkSessionDraft } from "./board-artwork";
+
+export { captureRootCheckFinding, type RootCheckFinding } from "./root-check-finding";

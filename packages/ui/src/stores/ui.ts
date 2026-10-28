@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { DRAFT_KEY_NEW, newChatDraftKey, workspaceAreaForView, workspaceViews, type WorkspaceArea, type AssemblySceneSelection, type AssemblyCheckFinding } from "@fabdesk/client-core";
+import { DRAFT_KEY_NEW, newChatDraftKey, workspaceAreaForView, workspaceViews, type WorkspaceArea, type AssemblySceneSelection, type AssemblyCheckFinding, type RootCheckFinding } from "@fabdesk/client-core";
 import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
 import { readStoredThemeId, type ThemeId } from "../theme/resolve";
 import { stencilThicknessMm } from "./stencil-thickness";
@@ -60,6 +60,9 @@ export interface UiState {
   workspaceByProject: Record<string, { area: WorkspaceArea; tab: BoardTab }>;
   assemblyBoardByProject: Record<string, AssemblySceneSelection>;
   setAssemblyBoard: (selection: AssemblySceneSelection | null) => void;
+  rootFinding: RootCheckFinding | null;
+  openRootFinding: (finding: RootCheckFinding) => void;
+  dismissRootFinding: () => void;
   assemblyFinding: AssemblyCheckFinding | null;
   openAssemblyFinding: (finding: AssemblyCheckFinding) => void;
   dismissAssemblyFinding: () => void;
@@ -171,6 +174,13 @@ export function createUiStore(storage?: StateStorage) {
     else delete assemblyBoardByProject[s.activeProjectId];
     return { assemblyBoardByProject, assemblyFinding: null };
   }),
+  rootFinding: null,
+  openRootFinding: (finding) => set(s => finding.projectId === s.activeProjectId ? {
+    rootFinding: { ...finding, point: { ...finding.point } }, assemblyFinding: null,
+    workspaceArea: "boards", boardTab: "pcb", boardOpen: true, activeOpenSourceId: null, inventoryOpen: false, orderFlowOpen: false,
+    workspaceByProject: { ...s.workspaceByProject, [finding.projectId]: { area: "boards", tab: "pcb" } },
+  } : {}),
+  dismissRootFinding: () => set({ rootFinding: null }),
   assemblyFinding: null,
   openAssemblyFinding: (finding) => set(s => finding.selection.projectId === s.activeProjectId ? {
     assemblyFinding: { ...finding, selection: { ...finding.selection }, point: { ...finding.point } },
@@ -253,10 +263,10 @@ export function createUiStore(storage?: StateStorage) {
   setBoardOpen: (boardOpen) => set({ boardOpen }),
   setActiveThread: (activeThreadId) => set({ activeThreadId, ...(activeThreadId ? { activeOpenSourceId: null, orderFlowOpen: false, inventoryOpen: false, assistantOpen: true } : {}) }),
   setFocusMessageId: (focusMessageId) => set({ focusMessageId }),
-  setActiveProject: (activeProjectId) => set((s) => ({ activeProjectId, ...(activeProjectId !== s.activeProjectId ? { activeThreadId: null, assemblyFinding: null, commentToReveal: null, activeOpenSourceId: null, orderFlowOpen: false, inventoryOpen: false, ...(s.canvasMode ? { boardOpen: true, assistantOpen: false, canvasNavigationOpen: false } : {}), workspaceArea: activeProjectId ? s.workspaceByProject[activeProjectId]?.area ?? "boards" : "boards", boardTab: activeProjectId ? s.workspaceByProject[activeProjectId]?.tab ?? "pcb" : "pcb" } : {}) })),
+  setActiveProject: (activeProjectId) => set((s) => ({ activeProjectId, ...(activeProjectId !== s.activeProjectId ? { activeThreadId: null, rootFinding: null, assemblyFinding: null, commentToReveal: null, activeOpenSourceId: null, orderFlowOpen: false, inventoryOpen: false, ...(s.canvasMode ? { boardOpen: true, assistantOpen: false, canvasNavigationOpen: false } : {}), workspaceArea: activeProjectId ? s.workspaceByProject[activeProjectId]?.area ?? "boards" : "boards", boardTab: activeProjectId ? s.workspaceByProject[activeProjectId]?.tab ?? "pcb" : "pcb" } : {}) })),
   startNewChatInProject: (projectId) =>
     set((s) => ({ ...newChatInProjectState(projectId), composerFocusNonce: s.composerFocusNonce + 1, assistantOpen: true,
-      ...(projectId !== s.activeProjectId ? { assemblyFinding: null, workspaceArea: projectId ? s.workspaceByProject[projectId]?.area ?? "boards" : "boards", boardTab: projectId ? s.workspaceByProject[projectId]?.tab ?? "pcb" : "pcb" } : {}) })),
+      ...(projectId !== s.activeProjectId ? { rootFinding: null, assemblyFinding: null, workspaceArea: projectId ? s.workspaceByProject[projectId]?.area ?? "boards" : "boards", boardTab: projectId ? s.workspaceByProject[projectId]?.tab ?? "pcb" : "pcb" } : {}) })),
   setSidebarListTab: (sidebarListTab) => set({ sidebarListTab: normalizeSidebarListTab(sidebarListTab) }),
   setActiveOpenSourceId: (activeOpenSourceId) =>
     set({

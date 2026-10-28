@@ -15,6 +15,7 @@ import {
   useRunTool,
 } from "@fabdesk/client-core";
 import { newChatDraftKey, useUiStore } from "../stores/ui";
+import { RootFindingOverlay } from "./RootFindingOverlay";
 import { NativePartTools } from "./NativePartTools";
 import { PcbPreviewStatus } from "./PcbPreviewStatus";
 import { CommentPins } from "./CommentPins";
@@ -67,6 +68,7 @@ export function SvgTab({ kind, active = true }: { kind: "schematic" | "pcb"; act
   const commentTrigger = useRef<HTMLButtonElement>(null);
   const commentToReveal = useUiStore((s) => s.commentToReveal);
   const canvasMode = useUiStore((s) => s.canvasMode);
+  const findingRequested = useUiStore((s) => kind === "pcb" && s.rootFinding?.projectId === s.activeProjectId);
   const [canvasPoint, setCanvasPoint] = useState<SvgPoint | null>(null);
   const [nativeEditBusy, setNativeEditBusy] = useState(false);
   const projectId = useUiStore((s) => s.activeProjectId);
@@ -76,7 +78,7 @@ export function SvgTab({ kind, active = true }: { kind: "schematic" | "pcb"; act
   const rendered = useProjectText(projectId, `renders/${kind}.svg`);
   const nativeCoordinates = kind === "pcb" && pcbSvgHasNativeCoordinates(rendered.data ?? "");
   const previousFrame = useRef(nativeCoordinates);
-  const revision = usePcbPreviewRevision(projectId, canvasMode && kind === "pcb" && !!rendered.data);
+  const revision = usePcbPreviewRevision(projectId, (canvasMode || findingRequested) && kind === "pcb" && !!rendered.data);
   useEffect(() => {
     if (previousFrame.current !== nativeCoordinates) { setCanvasPoint(null); setDraftPoint(null); setSelectedId(null); }
     previousFrame.current = nativeCoordinates;
@@ -200,7 +202,7 @@ export function SvgTab({ kind, active = true }: { kind: "schematic" | "pcb"; act
   }
   if (rendered.data) {
     return (
-      <div className="relative flex h-full min-h-0" data-testid={`board-${kind}-svg`} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); if (canvasPoint) setCanvasPoint(null); else if (selected || draftPoint || commentMode) closeComments(); } }}>
+      <div className="relative flex h-full min-h-0" data-testid={`board-${kind}-svg`} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); if (canvasPoint) setCanvasPoint(null); else if (selected || draftPoint || commentMode) closeComments(); else if (findingRequested) useUiStore.getState().dismissRootFinding(); } }}>
         {canvasMode && kind === "pcb" && <PcbPreviewStatus projectId={projectId} coordinatesVerified={nativeCoordinates} scopeReady={scopeReady} {...(sources.isError ? { onRetryScope: () => void sources.refetch() } : {})} busy={render.state.status === "running" || nativeEditBusy} error={render.state.error ?? null} onUpdate={refreshPreview} />}
         {canvasMode && kind === "schematic" && <SchematicPreviewStatus scopeReady={scopeReady} hasSource={project.data?.files.some(file => file.path === "board.kicad_sch") ?? false} updated={render.state.status === "done"} busy={render.state.status === "running"} error={render.state.error ?? null} onUpdate={refreshPreview} onOpenSource={() => { if (useUiStore.getState().activeProjectId === projectId) useUiStore.getState().openProjectFile("board.kicad_sch"); }} {...(sources.isError ? { onRetryScope: () => void sources.refetch() } : {})} />}
         <div className="min-w-0 flex-1">
@@ -213,6 +215,7 @@ export function SvgTab({ kind, active = true }: { kind: "schematic" | "pcb"; act
               else setCanvasPoint(point);
             } } : {})}
             overlay={(box) => <>
+              {kind === "pcb" && active && <RootFindingOverlay projectId={projectId} svg={rendered.data!} box={box} ready={scopeReady && nativeCoordinates && revision.data === "matches-source" && !revision.isFetching && !revision.isError} />}
               <CommentPins nativePcbCoordinates={nativeCoordinates} comments={pins} box={box} selectedId={selectedId} draftPoint={draftPoint}
                 onSelect={(id) => { setSelectedId(id); setDraftPoint(null); setCanvasPoint(null); }} />
               {canvasMode && canvasPoint && box && !commentMode && <div data-canvas-tools className="fd-location-anchor" style={{ visibility: active ? "visible" : "hidden", left: `${(canvasPoint.x - box.x) / box.width * 100}%`, top: `${(canvasPoint.y - box.y) / box.height * 100}%` }}>

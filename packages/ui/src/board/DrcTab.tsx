@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Badge, Button, EmptyState, LoadError, Spinner } from "../components/ui";
-import { useProjectJson } from "@fabdesk/client-core";
+import { captureRootCheckFinding, useCoreClient, usePcbCheckRevision, useProjectJson } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { CheckReportStatus } from "./CheckReportStatus";
 import { cn } from "../util";
@@ -21,8 +21,10 @@ export function DrcTab() {
 
 function SingleBoardChecks({ projectId, scopeVerified }: { projectId: string; scopeVerified: boolean }) {
   const project = useProject(projectId);
+  const client = useCoreClient();
   const drc = useProjectJson(projectId, "reports/drc.json");
   const erc = useProjectJson(projectId, "reports/erc.json");
+  const checkRevision = usePcbCheckRevision(projectId, !!drc.data);
   const [selected, setSelected] = useState<number | null>(null);
   const [filter, setFilter] = useState<"all" | "drc" | "erc">("all");
   const [runningCheck, setRunningCheck] = useState<"drc" | "erc" | null>(null);
@@ -127,6 +129,11 @@ function SingleBoardChecks({ projectId, scopeVerified }: { projectId: string; sc
                     <span className="shrink-0 font-mono text-muted">(no position)</span>
                   )}
                   <span>{it.description}</span>
+                  {sel.source === "drc" && selected !== null && captureRootCheckFinding(client.baseUrl, projectId, drc.data, selected, i) && <Button size="sm" variant="ghost" disabled={!sourceReady || busy || drc.isFetching || drc.isError || checkRevision.isFetching || checkRevision.isError || checkRevision.data !== "source-unchanged"} onClick={() => {
+                    const state = useUiStore.getState(); if (state.activeProjectId !== projectId || !sourceReady || busy || drc.isFetching || checkRevision.isFetching || checkRevision.isError || checkRevision.data !== "source-unchanged") return;
+                    const finding = captureRootCheckFinding(client.baseUrl, projectId, drc.data, selected, i);
+                    if (finding) state.openRootFinding(finding);
+                  }}>Show on PCB</Button>}
                 </div>
               ))}
             </div>

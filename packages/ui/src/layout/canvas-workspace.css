@@ -686,3 +686,10 @@
 
 .fd-overview-reference .fd-overview-board-caption label { display:flex; align-items:center; gap:8px; }
 .fd-overview-reference select { max-width:220px; border:1px solid var(--fd-border); border-radius:7px; background:var(--fd-panel); color:var(--fd-fg); padding:5px 8px; }
+
+.fd-root-finding-overlay { position:absolute; inset:0; pointer-events:none; }
+.fd-root-finding-marker { position:absolute; transform:translate(-50%,-50%); width:34px; height:34px; border:2px solid var(--fd-warning); border-radius:50%; background:color-mix(in srgb,var(--fd-warning) 18%,transparent); box-shadow:0 0 0 4px #fff9; display:grid; place-items:center; }
+.fd-root-finding-marker span { width:6px; height:6px; border-radius:50%; background:var(--fd-warning); }
+.fd-root-finding-card { pointer-events:auto; position:absolute; left:14px; bottom:14px; width:320px; max-width:calc(100% - 28px); padding:12px; border:1px solid var(--fd-border); border-radius:12px; background:var(--fd-panel); box-shadow:0 4px 18px #102a2015; font-size:12px; }
+.fd-root-finding-card p { color:var(--fd-muted); margin:7px 0; overflow-wrap:anywhere; }
+.fd-root-finding-card > div { display:flex; flex-wrap:wrap; gap:6px; }
