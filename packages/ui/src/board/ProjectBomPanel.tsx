@@ -141,16 +141,17 @@ function PartsToolbar({ label, query, onQueryChange, selected, onChange, include
 }) {
   const [open, setOpen] = useState(false);
   const filtersId = useId();
+  const searchInput = useRef<HTMLInputElement>(null);
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
         <div className="relative min-w-0 flex-1">
           <Icon name="search" width={15} height={15} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
-          <Input value={query} onChange={(e) => onQueryChange(e.target.value)}
+          <Input ref={searchInput} value={query} onChange={(e) => onQueryChange(e.target.value)}
             placeholder={includePcb ? "Search name, reference or part number…" : "Search motors, displays or hardware…"}
             aria-label={label} className="h-8 pl-8 pr-8 text-xs" />
           {query && <IconButton size="xs" title={`Clear ${includePcb ? "BOM" : "library"} search`}
-            className="absolute right-1 top-1" onClick={() => onQueryChange("")}><Icon name="close" width={14} height={14} /></IconButton>}
+            className="absolute right-1 top-1" onClick={() => { onQueryChange(""); searchInput.current?.focus(); }}><Icon name="close" width={14} height={14} /></IconButton>}
         </div>
         <Button size="sm" variant={open || selected.length ? "secondary" : "ghost"}
           aria-expanded={open} aria-controls={filtersId} onClick={() => setOpen(!open)}
@@ -232,9 +233,13 @@ export function ProjectBomPanel() {
     );
   }
 
-  const persist = (next: ProjectPartsFile) => {
+  const persist = (next: ProjectPartsFile, focusAdd = false) => {
     if (!editable) return;
-    write.mutate({ projectId, path: PROJECT_PARTS_FILE, content: `${JSON.stringify(next, null, 2)}\n` });
+    write.mutate({ projectId, path: PROJECT_PARTS_FILE, content: `${JSON.stringify(next, null, 2)}\n` }, {
+      onSuccess: () => {
+        if (focusAdd && useUiStore.getState().activeProjectId === projectId) requestAnimationFrame(() => addTrigger.current?.focus());
+      },
+    });
   };
 
   const addCatalog = (catalogId: string) => {
@@ -271,7 +276,7 @@ export function ProjectBomPanel() {
   };
 
   const removeLine = (lineId: string) =>
-    persist({ schema: 1, parts: parts.parts.filter((p) => p.id !== lineId) });
+    persist({ schema: 1, parts: parts.parts.filter((p) => p.id !== lineId) }, lines.length === 1);
 
   return (
     <div className="fd-project-parts flex h-full min-h-0 flex-col" data-testid="project-bom">
@@ -279,7 +284,7 @@ export function ProjectBomPanel() {
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-sm font-semibold">Project parts</h2>
-            <span className="text-xs text-muted">{lines.length} items</span>
+            <span className="text-xs text-muted">{lines.length} {lines.length === 1 ? "item" : "items"}</span>
             <Badge tone="accent" title="Off-board parts are separate from components mounted on the PCB.">
               {parts.parts.length} off-board
             </Badge>
@@ -291,7 +296,7 @@ export function ProjectBomPanel() {
 
           <Button
             size="sm"
-            disabled={exportBom.state.status === "running"}
+            disabled={exportBom.state.status === "running" || lines.length === 0}
             onClick={() => void exportBom.run("export_bom", { projectId })}
             data-testid="bom-export"
           >
@@ -299,9 +304,9 @@ export function ProjectBomPanel() {
           </Button>
         </div>
       </div>
-      <div className="shrink-0 border-b border-border px-2 py-2" data-testid="bom-filter">
+      {lines.length > 0 && <div className="shrink-0 border-b border-border px-2 py-2" data-testid="bom-filter">
         <PartsToolbar label="Search BOM" query={bomQuery} onQueryChange={setBomQuery} selected={filters} onChange={setFilters} includePcb />
-      </div>
+      </div>}
       {(netlist.isError || netlist.parseError) && <div role="alert" className="flex items-center gap-2 border-b border-border px-3 py-2 text-xs text-warning"><span className="min-w-0 flex-1">The saved electrical netlist could not be read. Listed hardware does not establish PCB component coverage.</span><Button size="sm" variant="ghost" onClick={() => void netlist.refetch()}>Retry netlist</Button></div>}
       {exportBom.state.error && <div className="border-b border-border px-2 py-1 text-xs text-danger">{exportBom.state.error}</div>}
       {partsState.status === "error" && (

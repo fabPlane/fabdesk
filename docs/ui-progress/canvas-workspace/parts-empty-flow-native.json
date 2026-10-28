@@ -1,0 +1,21 @@
+{
+  "projectId": "prj_mvs5abwp2ff3301fe3",
+  "flow": [
+    "Empty list: no search/filter toolbar; CSV disabled; Add parts available",
+    "Native Add parts: added M3 standoff ST1; existing duplicate guard kept",
+    "Show in project parts: one saved row; search/filter and CSV enabled",
+    "Unmatched search kept search/filter controls",
+    "Clear search returned focus to search field",
+    "Remove ST1 returned quiet empty state and focus to Add parts"
+  ],
+  "preservation": {
+    "baselineFiles": 25,
+    "allExact": true,
+    "newFile": "project.parts.json",
+    "finalContents": {
+      "schema": 1,
+      "parts": []
+    }
+  },
+  "scope": "Temporary hardware test in isolated study only; no export, shopping order, PCB or VAIO mutation"
+}
