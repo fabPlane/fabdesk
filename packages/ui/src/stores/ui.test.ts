@@ -1,6 +1,24 @@
 import { describe, expect, test } from "bun:test";
 import { newChatDraftKey, BOARD_TABS, BOARD_TAB_LABELS, SIDEBAR_LIST_TABS, SIDEBAR_LIST_TAB_LABELS, newChatInProjectState, normalizeSidebarListTab, migrateProjectDraftSlot, createUiStore, useUiStore } from "./ui";
 
+test("unfinished notes stay separate across projects, hosts and chat drafts during navigation", () => {
+  const memory = new Map<string, string>();
+  const storage = { getItem: (key: string) => memory.get(key) ?? null, setItem: (key: string, value: string) => { memory.set(key, value); }, removeItem: (key: string) => { memory.delete(key); } };
+  const store = createUiStore(storage);
+  const a = JSON.stringify(["http://local", "project-a"]), b = JSON.stringify(["http://remote", "project-a"]);
+  store.getState().setDraft(newChatDraftKey("project-a"), "Existing unsent question");
+  store.getState().setNotesDraft(a, { base: "Saved", content: "Local note draft" });
+  store.getState().setActiveProject("project-b");
+  store.getState().setNotesDraft(b, { base: "Other saved", content: "Remote note draft" });
+  expect(store.getState().notesDrafts[a]?.content).toBe("Local note draft");
+  expect(store.getState().notesDrafts[b]?.base).toBe("Other saved");
+  expect(store.getState().drafts[newChatDraftKey("project-a")]).toBe("Existing unsent question");
+  store.getState().setNotesDraft(a, null);
+  expect(store.getState().notesDrafts[a]).toBeUndefined();
+  expect(store.getState().notesDrafts[b]?.content).toBe("Remote note draft");
+  expect(createUiStore(storage).getState().notesDrafts).toEqual({}); // Session-only, no reload-recovery promise.
+});
+
 describe("sidebar list tabs", () => {
   test("exposes Projects and Open source (Parts Inventory lives in the user menu)", () => {
     expect(SIDEBAR_LIST_TABS).toEqual(["projects", "open_source"]);

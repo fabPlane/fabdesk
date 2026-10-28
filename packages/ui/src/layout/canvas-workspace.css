@@ -658,3 +658,16 @@
 .fd-schematic-preview-details { max-width:50%; }
 .fd-schematic-preview-details > button { margin-top:8px; }
 .fd-assembly-schematic-toolbar { padding-top:4px; padding-bottom:8px; }
+
+.fd-project-notes { height:100%; min-height:0; display:flex; flex-direction:column; gap:16px; padding:20px clamp(20px,5vw,72px) 88px; }
+.fd-project-notes > header { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:16px; }
+.fd-project-notes h1 { font-size:21px; font-weight:550; letter-spacing:-.4px; }
+.fd-project-notes header p { margin-top:6px; color:var(--fd-muted); font-size:12px; }
+.fd-notes-actions { display:flex; align-items:center; gap:8px; }
+.fd-notes-actions .fd-workspace-menu-content { left:auto; right:0; width:240px; }
+.fd-notes-paper { min-height:0; flex:1; display:flex; overflow:hidden; border:1px solid var(--fd-border); border-radius:16px; background:var(--fd-panel); box-shadow:0 3px 14px #102a2006; }
+.fd-notes-paper > textarea { flex:1; width:100%; min-height:0; resize:none; border:0; border-radius:16px; padding:24px; font-size:14px; line-height:1.8; background:transparent; }
+.fd-notes-preview { width:100%; overflow:auto; padding:24px; }
+.fd-project-notes > footer { font-size:11px; color:var(--fd-muted); }
+.fd-notes-notice { display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:10px 14px; border:1px solid var(--fd-border); border-radius:10px; background:var(--fd-panel); color:var(--fd-warning); font-size:12px; }
+.fd-notes-notice > p { flex:1; }

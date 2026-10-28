@@ -1,0 +1,30 @@
+{
+  "scope": "Project notes UI uses existing read/write notes APIs; no backend changes",
+  "nativeWalkthrough": [
+    "961x721 empty project notes do not claim a saved file exists",
+    "Typed hardware decisions; requested Markdown preview; Files then Notes restored unfinished draft",
+    "Deliberate external NOTES.md update while drafting triggered visible changed-saved-file warning and disabled Save notes",
+    "Review saved notes showed actual changed content without clearing the draft",
+    "Keep my draft restored edit view; direct file-hash read confirmed no automatic overwrite",
+    "Manually combined the external power review and local hardware decisions; Command-S saved through existing notes API and rechecked actual content",
+    "More then Show saved file opened exact NOTES.md/244B in Files"
+  ],
+  "study": {
+    "projectId": "prj_mvrlt1yx802c210b69",
+    "priorFilesChecked": 18,
+    "changedPriorFiles": [],
+    "newNotesIntentionallyRetained": true,
+    "notesSha256": "dab6523b58c5a974151cd912d8bf8fbfe711559be284dc30368bd704a97ebb60",
+    "notesBytes": 244
+  },
+  "validation": {
+    "uiTypecheck": "/tmp/canvas-notes-flow-verified-types.log",
+    "uiTests": "/tmp/canvas-notes-flow-verified-tests.log"
+  },
+  "limitations": [
+    "Draft retention is per endpoint/project in this app session, not reload recovery",
+    "Known observed external changes require a choice; existing notes write API is not an atomic compare-and-swap and racing writers are not guaranteed conflict-free",
+    "Use saved notes alternative and HTTP save/read failure recovery were not newly exercised natively",
+    "No agent message, PCB edit or enclosure follow-up"
+  ]
+}

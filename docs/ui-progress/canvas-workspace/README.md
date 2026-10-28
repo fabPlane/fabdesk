@@ -903,3 +903,17 @@ Native961×721VAIOmissing-file flow preserved the earlier unsent keyboard questi
 ![Changed child-source warning remains visible](member-schematic-warning-compact.jpg)
 
 [Native evidence and exact restoration](member-schematic-flow-native.json).
+
+
+### Project notes retain drafts during navigation
+
+Notes is a project-wide document for decisions and open questions, with one editor canvas and requested Markdown preview. It no longer calls every project Git-tracked or treats an empty missing document as Saved. More provides recheck and exact saved-file access. Existing notes APIs are reused. Unfinished drafts are separate from chat, scoped by endpoint/project and kept during navigation in this app session. Reload recovery is not claimed.
+
+An observed changed saved file blocks Save and offers Review saved notes, Use saved notes or Keep my draft. Reviewing uses the same canvas and preserves the draft; choosing to keep it does not write anything. Save remains explicit and rechecks saved text, retaining the draft on failure or a different result. The existing API has no atomic compare-and-swap, so this does not guarantee against writes racing the save request.
+
+Actual961×721private-study flow drafted hardware decisions, previewed them, left for Files and returned with the draft intact. A deliberate external power-review note triggered the warning/disabled Save; the saved review showed its actual content. Keep my draft did not alter its file hash. Manually combined notes then saved through Command-S and reopened exact NOTES.md/244B in Files. The new note is intentionally retained; all18priorstudyfilehashes unchanged. Native Use saved notes and HTTP failure injection were not newly exercised. UItypes/227UItests pass, including draft host/project/chat isolation and session-only scope. No native PCB or enclosure work.
+
+![Review saved notes without losing a draft](notes-saved-change-review.jpg)
+![Saved project note with requested Markdown preview](project-notes-saved-preview.jpg)
+
+[Native evidence and limits](notes-flow-native.json).

@@ -89,6 +89,9 @@ export interface UiState {
   stencilThicknessByProject: Record<string, number>;
   setStencilThickness: (projectId: string, thicknessMm: number) => void;
   drafts: Record<string, string>;
+  /** Unsaved project notes stay available during navigation in this app session. */
+  notesDrafts: Record<string, { base: string; content: string }>;
+  setNotesDraft: (key: string, draft: { base: string; content: string } | null) => void;
   attachments: Record<string, PendingAttachment[]>;
   paletteOpen: boolean;
   settingsOpen: boolean;
@@ -217,6 +220,13 @@ export function createUiStore(storage?: StateStorage) {
     stencilThicknessByProject: { ...s.stencilThicknessByProject, [projectId]: stencilThicknessMm(thicknessMm) },
   })),
   drafts: {},
+  notesDrafts: {},
+  setNotesDraft: (key, draft) => set(s => {
+    const notesDrafts = { ...s.notesDrafts };
+    if (draft) notesDrafts[key] = draft;
+    else delete notesDrafts[key];
+    return { notesDrafts };
+  }),
   attachments: {},
   paletteOpen: false,
   settingsOpen: false,
