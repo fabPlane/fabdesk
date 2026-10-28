@@ -721,3 +721,14 @@
   .fd-start-reference-tools .fd-board-context-tools { gap:2px; padding:5px 8px; }
   .fd-start-reference-tools .fd-board-context-tools > span { display:none; }
 }
+
+.fd-start-reference[data-conversation=true] { top:80px; bottom:42px; }
+.fd-start-reference[data-conversation=true][data-assistant-open=true] { right:478px; }
+@media(max-width:1050px) {
+  .fd-start-reference[data-conversation=true] { top:72px; bottom:82px; }
+  .fd-start-reference[data-conversation=true][data-assistant-open=true] { right:478px; }
+}
+
+.fd-start-reference-caption { width:min(100%,560px); }
+.fd-start-reference-caption label { width:100%; min-width:0; justify-content:center; }
+.fd-start-reference-caption select { min-width:0; }

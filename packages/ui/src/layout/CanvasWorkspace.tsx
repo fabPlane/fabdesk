@@ -47,6 +47,10 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
   const openArea = useUiStore((s) => s.setWorkspaceArea);
   const assistantOpen = useUiStore((s) => s.assistantOpen);
   const setAssistantOpen = useUiStore((s) => s.setAssistantOpen);
+  const closeAssistant = () => {
+    setAssistantOpen(false);
+    requestAnimationFrame(() => document.querySelector<HTMLButtonElement>("[data-assistant-launcher]")?.focus());
+  };
   const navigationOpen = useUiStore((s) => s.canvasNavigationOpen);
   const setNavigationOpen = useUiStore((s) => s.setCanvasNavigationOpen);
   const boardOpen = useUiStore((s) => s.boardOpen);
@@ -65,8 +69,9 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
   const sketchPaths = projectSketchImagePaths(project.data?.files ?? []);
   const draftAttachments = useUiStore(s => s.attachments[newChatDraftKey(projectId)]);
   const attachedSketch = draftAttachments?.slice().reverse().find(item => sketchPaths.includes(item.path))?.path;
-  const sketchReference = fresh && projectId ? attachedSketch ?? sketchPaths[0] : undefined;
-  const referenceStart = !!sketchReference;
+  const referenceCanvas = !!projectId && !!project.data && !hasNativeDesign && boardSources.data?.mode === "single" && area === "boards" && boardTab === "pcb" && boardOpen;
+  const sketchReference = referenceCanvas ? attachedSketch ?? sketchPaths[0] : undefined;
+  const referenceStart = fresh && !!sketchReference;
   const secondary = !!sourceId || inventory || order;
   const showAssistant = !fresh && !conversationOnly && !secondary;
   const local = ["localhost", "127.0.0.1", "[::1]"].includes(new URL(client.baseUrl).hostname);
@@ -88,8 +93,8 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
         <button onClick={() => setCreating("github")}><Icon name="folderOpen" width={16} height={16} />Import from GitHub</button>
         <button onClick={() => setNavigationOpen(true)}><Icon name="sidebar" width={16} height={16} />Browse projects & chats</button>
       </WorkspaceMenu>
-      {referenceStart && <span className="fd-canvas-breadcrumb"><span>/</span><strong>Start with sketch</strong></span>}
-      {projectId && !fresh && <span className="fd-canvas-breadcrumb" title={selectedBoardName ?? areaLabel}><span>/</span><strong>{selectedBoardName ?? areaLabel}</strong></span>}
+      {sketchReference && <span className="fd-canvas-breadcrumb"><span>/</span><strong>{threadId ? "Sketch review" : "Start with sketch"}</strong></span>}
+      {projectId && !fresh && !sketchReference && <span className="fd-canvas-breadcrumb" title={selectedBoardName ?? areaLabel}><span>/</span><strong>{selectedBoardName ?? areaLabel}</strong></span>}
       <div className="fd-canvas-header-actions">
         <span className="fd-canvas-connection" title={coreStatus?.message ?? `Core ${coreStatus?.state ?? "ready"}; events ${sseStatus}`}><i data-connected={connected} />{connected ? local ? "Local workspace" : "Remote workspace" : "Reconnecting…"}</span>
         {projectId && !fresh && <Button size="sm" onClick={() => openArea("outputs")}><Icon name="export" width={16} height={16} />Export</Button>}
@@ -115,10 +120,10 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
       </nav>}
       {secondary && <Button className="fd-canvas-back" size="sm" onClick={() => { ui().setActiveOpenSourceId(null); ui().setInventoryOpen(false); ui().setOrderFlowOpen(false); ui().setBoardOpen(true); }}>← Return to canvas</Button>}
       <div className="fd-canvas-surface">
-        {order ? <OrderFlow /> : inventory ? <InventoryView /> : sourceId ? <OpenSourceView /> : fresh && projectId && sketchReference ? <SketchStartReference key={projectId} projectId={projectId} paths={sketchPaths} preferred={sketchReference} checking={project.isFetching} failed={project.isError} /> : fresh || conversationOnly ? null : area === "overview" || area === "boards" && boardSources.data?.mode === "assembly" ? <ProjectOverview key={projectId} boardPicker={area === "boards"} /> : <BoardPanel canvas />}
+        {order ? <OrderFlow /> : inventory ? <InventoryView /> : sourceId ? <OpenSourceView /> : projectId && sketchReference && !conversationOnly ? <SketchStartReference key={projectId} projectId={projectId} paths={sketchPaths} preferred={sketchReference} checking={project.isFetching} failed={project.isError} conversation={!!threadId} assistantOpen={assistantOpen} attached={attachedSketch} /> : fresh || conversationOnly ? null : area === "overview" || area === "boards" && boardSources.data?.mode === "assembly" ? <ProjectOverview key={projectId} boardPicker={area === "boards"} /> : <BoardPanel canvas />}
       </div>
         <section className={referenceStart ? "fd-canvas-reference-composer" : fresh ? "fd-canvas-start-surface" : conversationOnly ? "fd-canvas-conversation-surface" : "fd-assistant-dock"} aria-label="fabPlane assistant" hidden={secondary || (!fresh && !conversationOnly && !assistantOpen)} onKeyDown={(event) => {
-          if (!fresh && !conversationOnly && event.key === "Escape" && !(event.target as HTMLElement).closest("details[open]")) { event.stopPropagation(); setAssistantOpen(false); requestAnimationFrame(() => document.querySelector<HTMLButtonElement>("[data-assistant-launcher]")?.focus()); }
+          if (!fresh && !conversationOnly && event.key === "Escape" && !(event.target as HTMLElement).closest("details[open]")) { event.stopPropagation(); closeAssistant(); }
         }}>
           {!fresh && !conversationOnly && <div className="fd-assistant-heading"><span><Icon name="sparkles" width={17} height={17} />Ask fabPlane</span><div>
             <WorkspaceMenu label={<span aria-label="Project conversations"><Icon name="chevronDown" width={16} height={16} /></span>}>
@@ -126,7 +131,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
               {(threads.data ?? []).filter((t) => t.projectId === projectId && !t.archived).map((t) => <button key={t.id} onClick={() => ui().setActiveThread(t.id)}>{t.title || "Untitled conversation"}</button>)}
               <button onClick={onNewChat}><Icon name="plus" width={16} height={16} />New conversation</button>
             </WorkspaceMenu>
-            <IconButton size="sm" title="Close assistant" onClick={() => setAssistantOpen(false)}><Icon name="close" width={17} height={17} /></IconButton>
+            <IconButton size="sm" title="Close assistant" onClick={closeAssistant}><Icon name="close" width={17} height={17} /></IconButton>
           </div></div>}
           <ThreadView presentation={fresh ? "start" : "chat"} referenceStart={referenceStart} />
         </section>

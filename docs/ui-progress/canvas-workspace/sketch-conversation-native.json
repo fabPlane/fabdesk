@@ -1,0 +1,64 @@
+{
+  "projectId": "prj_mvs5abwp2ff3301fe3",
+  "threadId": "th_mvs98ynlf9708589c1",
+  "geometry": {
+    "viewport": {
+      "width": 960,
+      "height": 720
+    },
+    "reference": {
+      "left": 20,
+      "right": 482,
+      "top": 130,
+      "bottom": 638,
+      "width": 462,
+      "height": 508
+    },
+    "image": {
+      "left": 20,
+      "right": 482,
+      "top": 186,
+      "bottom": 582.5,
+      "width": 462,
+      "height": 396.5
+    },
+    "assistant": {
+      "left": 506,
+      "right": 936,
+      "top": 144,
+      "bottom": 696,
+      "width": 430,
+      "height": 552
+    },
+    "tools": {
+      "left": 40.41796875,
+      "right": 461.58203125,
+      "top": 130,
+      "bottom": 174,
+      "width": 421.1640625,
+      "height": 44
+    },
+    "picker": {
+      "left": 160.53125,
+      "right": 402.53125,
+      "top": 590.5,
+      "bottom": 615.5,
+      "width": 242,
+      "height": 25
+    },
+    "imageLoaded": true,
+    "referencePath": "sketches/sketch-1793199664553.excalidraw.png",
+    "authenticationFailure": true,
+    "selected": "true"
+  },
+  "reviewOutcome": "Actual review-only message submitted with one existing sketch attachment. Agent failed after1s because Claude authentication expired. No successful reasoning/context review is claimed.",
+  "preservation": "All five project files byte-identical to pre-send baseline; no native generation/route/export/edit performed",
+  "scope": "UI keeps saved reference when conversation begins; real source-less PCB remains absent; source choice kept through draft clearing",
+  "nativeFollowThrough": [
+    "Context tools Escape returns sketch focus",
+    "Close assistant expands main reference and focuses Ask fabPlane launcher",
+    "Reopen retains actual failed conversation and attached image",
+    "CmdR restores reference, active conversation and closed assistant"
+  ],
+  "tests": "UItypes+228tests870assertionsPASS; prior complete2236/36/0 before UI-only conversation refinement"
+}
