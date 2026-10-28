@@ -23,5 +23,9 @@
     351,
     352,
     353
-  ]
+  ],
+  "checks": {
+    "uiTypecheck": "PASS",
+    "uiTests": 229
+  }
 }

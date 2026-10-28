@@ -13,5 +13,9 @@
   "preservation": {
     "files": 34,
     "allExact": true
+  },
+  "checks": {
+    "uiTypecheck": "PASS",
+    "uiTests": 229
   }
 }
