@@ -460,3 +460,5 @@
 @media (max-width:620px) {
   .fd-canvas-workspace .fd-art-preview:has(.fd-art-result) { height:380px; }
 }
+
+.fd-art-owner { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

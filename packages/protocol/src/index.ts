@@ -26,3 +26,4 @@ export * from "./pcb-parts";
 export * from "./assembly";
 
 export * from "./sketch";
+export * from "./board-artwork";

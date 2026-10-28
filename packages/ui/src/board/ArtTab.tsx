@@ -18,7 +18,8 @@ import {
 } from "@fabdesk/board-art";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
-import { useCoreClient } from "@fabdesk/client-core";
+import { artworkSessions, loadBoardArtwork, saveBoardArtwork, useBoardSources, useCoreClient } from "@fabdesk/client-core";
+import { BOARD_ARTWORK_PATH, type BoardArtworkSettings, type BoardArtworkView } from "@fabdesk/protocol";
 import { useProject, useRunTool } from "@fabdesk/client-core";
 import { Button, Dialog, Select } from "../components/ui";
 import { useUiStore } from "../stores/ui";
@@ -45,38 +46,53 @@ const STYLE_HELP: Record<ArtStyle, string> = {
 };
 
 export function ArtTab() {
+  const projectId = useUiStore(s => s.activeProjectId), client = useCoreClient();
+  return <OwnedArtworkWorkspace key={JSON.stringify([client.baseUrl, projectId])} />;
+}
+
+function OwnedArtworkWorkspace() {
   const projectId = useUiStore((s) => s.activeProjectId);
   const project = useProject(projectId);
   const client = useCoreClient();
   const qc = useQueryClient();
+  const sources = useBoardSources(projectId);
+  const initial = useRef(artworkSessions.get(client.baseUrl, projectId));
+  const baseText = useRef<string | null>(initial.current?.baseText ?? null);
+  const draftDestination = useRef(initial.current?.pendingProjectId);
+  const [sourceImage, setSourceImage] = useState<Blob | null>(null);
+  const [sourceImageName, setSourceImageName] = useState<string | null>(null);
+  const [savedImage, setSavedImage] = useState<Blob | null>(null);
+  const [savedSettings, setSavedSettings] = useState<string | null>(initial.current?.savedSettings ?? null);
+  const [restoreFailed, setRestoreFailed] = useState(false);
+  const [restoreNonce, setRestoreNonce] = useState(0);
   const tool = useRunTool();
   const input = useRef<HTMLInputElement>(null);
   const loadId = useRef(0);
   const busyRef = useRef(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(!!projectId && !initial.current);
   const [converting, setConverting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
-  const [zoom, setZoom] = useState(1);
+  const [zoom, setZoom] = useState(initial.current?.view.zoom ?? 1);
   const [previewAspect, setPreviewAspect] = useState(1);
   const [confirmSave, setConfirmSave] = useState(false);
-  const [placement, setPlacement] = useState<ArtPlacement | null>(null);
-  const [lockProportions, setLockProportions] = useState(true);
-  const [placing, setPlacing] = useState(true);
+  const [placement, setPlacement] = useState<ArtPlacement | null>(initial.current?.settings.placement ?? null);
+  const [lockProportions, setLockProportions] = useState(initial.current?.settings.lockProportions ?? true);
+  const [placing, setPlacing] = useState(initial.current?.view.placing ?? true);
   const [svg, setSvg] = useState<string | null>(null);
   const [gray, setGray] = useState<GrayImage | null>(null);
   const [sourceName, setSourceName] = useState<string | null>(null);
   const [localFile, setLocalFile] = useState<File | null>(null);
-  const [style, setStyle] = useState<ArtStyle>("realistic");
-  const [color, setColor] = useState<BoardColor>("green");
-  const [crop, setCrop] = useState<ImageCrop>("none");
-  const [outline, setOutline] = useState<OutlineKind>("rectangle");
-  const [widthMm, setWidthMm] = useState(80);
-  const [heightMm, setHeightMm] = useState(50);
-  const [invert, setInvert] = useState(false);
-  const [threshold, setThreshold] = useState(0.5);
-  const [layers, setLayers] = useState<ArtLayer[]>(["silk"]);
+  const [style, setStyle] = useState<ArtStyle>(initial.current?.settings.style ?? "realistic");
+  const [color, setColor] = useState<BoardColor>(initial.current?.settings.color ?? "green");
+  const [crop, setCrop] = useState<ImageCrop>(initial.current?.settings.crop ?? "none");
+  const [outline, setOutline] = useState<OutlineKind>(initial.current?.settings.outline ?? "rectangle");
+  const [widthMm, setWidthMm] = useState(initial.current?.settings.widthMm ?? 80);
+  const [heightMm, setHeightMm] = useState(initial.current?.settings.heightMm ?? 50);
+  const [invert, setInvert] = useState(initial.current?.settings.invert ?? false);
+  const [threshold, setThreshold] = useState(initial.current?.settings.threshold ?? 0.5);
+  const [layers, setLayers] = useState<ArtLayer[]>(initial.current?.settings.layers ?? ["silk"]);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const resolvedPlacement = gray
@@ -103,23 +119,94 @@ export function ArtTab() {
   }, [projectId]);
 
   const loadBytes = useCallback(
-    async (bytes: Uint8Array, name: string, file: File | null, id: number) => {
+    async (bytes: Uint8Array, name: string, file: File | null, id: number, reset = true) => {
       const img = await decodeGray(bytes);
       if (id !== loadId.current) return;
-      const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)]));
+      const original = new Blob([new Uint8Array(bytes)]);
+      const url = URL.createObjectURL(original);
+      setSourceImage(original); setSourceImageName(name);
       setGray(img);
-      setPlacement(null);
+      if (reset) setPlacement(null);
       setSourceName(name);
       setSourceUrl(url);
       setLocalFile(file);
-      setZoom(1);
+      if (reset) setZoom(1);
       setConfirmSave(false);
+      return original;
     },
     [],
   );
 
+  useEffect(() => {
+    const id = ++loadId.current;
+    let cancelled = false;
+    const apply = (settings: BoardArtworkSettings, view: BoardArtworkView) => {
+      setStyle(settings.style); setColor(settings.color); setCrop(settings.crop); setOutline(settings.outline);
+      setWidthMm(settings.widthMm); setHeightMm(settings.heightMm); setInvert(settings.invert);
+      setThreshold(settings.threshold); setLayers(settings.layers); setPlacement(settings.placement);
+      setLockProportions(settings.lockProportions); setZoom(view.zoom); setPlacing(view.placing);
+    };
+    void (async () => {
+      setLoading(true); setRestoreFailed(false);
+      try {
+        const session = initial.current;
+        if (session) {
+          const image = await loadBytes(new Uint8Array(await session.image.arrayBuffer()), session.name, null, id, false);
+          if (cancelled || !image) return;
+          if (session.savedImage === session.image) setSavedImage(image);
+        } else if (projectId) {
+          const saved = await loadBoardArtwork(client, projectId);
+          if (cancelled || loadId.current !== id) return;
+          if (saved) {
+            apply(saved.record.settings, saved.record.view); baseText.current = saved.text;
+            const image = await loadBytes(new Uint8Array(await saved.image.arrayBuffer()), saved.record.source.name, null, id, false);
+            if (cancelled || !image) return;
+            setSavedImage(image); setSavedSettings(JSON.stringify({ settings: saved.record.settings, view: saved.record.view }));
+          }
+        }
+      } catch (failure) { if (!cancelled) { setRestoreFailed(true); setError(failure instanceof Error ? failure.message : String(failure)); } }
+      finally { if (!cancelled) setLoading(false); }
+    })();
+    return () => { cancelled = true; loadId.current++; };
+  }, [client, projectId, loadBytes, restoreNonce]);
+
+  const draftSettings: BoardArtworkSettings = { style, color, crop, outline, widthMm, heightMm, invert, threshold, layers, placement, lockProportions };
+  const draftView: BoardArtworkView = { zoom, placing };
+  const draftSignature = JSON.stringify({ settings: draftSettings, view: draftView });
+  const draftSaved = !!sourceImage && sourceImage === savedImage && draftSignature === savedSettings;
+  useEffect(() => {
+    if (!sourceImage || !sourceImageName || !gray || loading) return;
+    artworkSessions.set(client.baseUrl, projectId, { image: sourceImage, name: sourceImageName, settings: draftSettings, view: draftView, baseText: baseText.current, savedImage, savedSettings, ...(draftDestination.current ? { pendingProjectId: draftDestination.current } : {}) });
+  }, [client.baseUrl, projectId, sourceImage, sourceImageName, gray, loading, draftSignature, savedImage, savedSettings]);
+
+  const saveDraft = async () => {
+    if (!sourceImage || !sourceImageName || busyRef.current || loading || converting || restoreFailed) return;
+    if (projectId && (sources.data?.mode !== "single" || sources.isFetching || sources.isError)) return;
+    const originProject = projectId, originThread = useUiStore.getState().activeThreadId;
+    const settings = structuredClone(draftSettings), view = { ...draftView }, signature = draftSignature;
+    busyRef.current = true; setBusy(true); setError(null); setNote(null);
+    try {
+      const owner = projectId ?? draftDestination.current ?? (await client.createProject("Artwork draft")).id;
+      if (!projectId) {
+        draftDestination.current = owner;
+        artworkSessions.set(client.baseUrl, null, { image: sourceImage, name: sourceImageName, settings, view, baseText: null, savedImage: null, savedSettings: null, pendingProjectId: owner });
+      }
+      const result = await saveBoardArtwork({ client, projectId: owner, image: sourceImage, name: sourceImageName, settings, view, expectedText: projectId ? baseText.current : null });
+      artworkSessions.set(client.baseUrl, owner, { image: sourceImage, name: sourceImageName, settings, view, baseText: result.text, savedImage: sourceImage, savedSettings: signature });
+      await qc.invalidateQueries({ queryKey: ["projects"] }); await qc.invalidateQueries({ queryKey: ["project", owner] }); await qc.invalidateQueries({ queryKey: ["file", owner] });
+      if (!originProject) {
+        const ui = useUiStore.getState();
+        if (ui.activeProjectId === originProject && ui.activeThreadId === originThread) { artworkSessions.remove(client.baseUrl, null); ui.adoptSketchProject(owner); ui.setBoardTab("art"); }
+      } else {
+        baseText.current = result.text; setSavedImage(sourceImage); setSavedSettings(signature);
+        setNote("Artwork source and settings saved. No circuit files were changed.");
+      }
+    } catch (failure) { setSavedImage(null); setSavedSettings(null); setError(failure instanceof Error ? failure.message : String(failure)); }
+    finally { busyRef.current = false; setBusy(false); }
+  };
+
   const onFile = async (file: File | undefined) => {
-    if (!file || busyRef.current) return;
+    if (!file || busyRef.current || loading) return;
     const id = ++loadId.current;
     setError(null);
     setLoading(true);
@@ -136,7 +223,7 @@ export function ArtTab() {
   };
 
   const onSketch = async (path: string) => {
-    if (!projectId || busyRef.current) return;
+    if (!projectId || busyRef.current || loading) return;
     const id = ++loadId.current;
     setError(null);
     setLoading(true);
@@ -353,7 +440,6 @@ export function ArtTab() {
   const unavailable = !gray || !svg || busy || loading || converting;
   const existingBoard = project.data?.files.some((f) => f.path === "board.kicad_pcb");
   const existingCircuit = existingBoard || project.data?.files.some(file => file.path === "board.kicad_sch");
-  const saveHere = !!projectId && !!project.data && !existingCircuit;
   const drop = (event: React.DragEvent) => {
     event.preventDefault();
     setDragging(false);
@@ -392,9 +478,10 @@ export function ArtTab() {
         />
       {gray && <aside className="fd-art-controls" aria-label="Artwork tools">
         <h2 className="text-sm font-semibold">Artwork tools</h2>
-        <p className="mt-1 text-xs leading-relaxed text-muted">
-          Preview an art PCB. Drag the image to position it, then choose how to save.
+        <p className="fd-art-owner mt-1 text-xs text-muted" title="Artwork belongs to this project’s root board. Chat selection does not change its owner.">
+          {projectId ? `Project artwork · ${project.data?.name ?? "this project"}` : "Unassigned artwork draft"}
         </p>
+        <p className="mt-1 text-[11px] text-muted" role="status">{draftSaved ? "Artwork saved to project" : "Session draft · Save to keep after reopening"}</p>
         <div className={`fd-art-upload ${dragging ? "is-dragging" : ""}`}>
           <Icon name="image" width={26} height={26} aria-hidden="true" />
           <Button variant="primary" disabled={busy || loading} onClick={choose}>
@@ -573,24 +660,25 @@ export function ArtTab() {
           </details>
         </fieldset>
         <div className="fd-art-actions">
-          <Button variant="primary" disabled={unavailable || saveHere && project.isFetching} onClick={() => saveHere ? setConfirmSave(true) : void newProject()}>
-            {busy ? "Saving…" : saveHere ? "Save artwork…" : "Create art project"}
+          <Button variant="primary" disabled={unavailable || restoreFailed || !!projectId && (sources.data?.mode !== "single" || sources.isFetching || sources.isError)} onClick={() => void saveDraft()}>
+            {busy ? "Saving…" : "Save artwork"}
           </Button>
           <WorkspaceMenu label={<>Export and save<Icon name="chevronDown" width={14} height={14} /></>}>
           <Button disabled={unavailable} onClick={downloadLocal} data-testid="board-art-download">
-            Download Gerber ZIP
+            Download standalone art Gerbers
           </Button>
-          {saveHere ? <Button disabled={unavailable} onClick={() => void newProject()}>Create separate art project</Button> : <Button
+          <Button disabled={unavailable} onClick={() => void newProject()}>Generate standalone art project</Button>
+          <Button
             disabled={unavailable || !projectId || !project.data || project.isFetching}
             onClick={() => setConfirmSave(true)}
             data-testid="board-art-save"
           >
-            {existingBoard ? "Replace current board…" : "Save to current project…"}
-          </Button>}
+            {existingBoard ? "Replace current board with art PCB…" : "Generate art PCB in this project…"}
+          </Button>
+          {projectId && <button onClick={() => useUiStore.getState().openProjectFile(BOARD_ARTWORK_PATH)}>Show saved artwork settings</button>}
+          <div className="fd-menu-caption">Applying artwork to an existing circuit is not available yet. Standalone generation creates PCB and fabrication files.</div>
           </WorkspaceMenu>
-          <p className="text-[11px] leading-relaxed text-muted">
-            {saveHere ? "Save the board and fabrication files here." : "Create a separate art project."}
-          </p>
+          <p className="text-[11px] leading-relaxed text-muted">Save image and settings to this project.</p>
         </div>
       </aside>}
       <section
@@ -639,17 +727,18 @@ export function ArtTab() {
         {!svg && !loading && !converting && (
           <div className="fd-art-empty">
             <Icon name="image" width={38} height={38} aria-hidden="true" />
-            <h3>Create a board from artwork</h3>
-            <p>Start with a logo, drawing or photo. This creates an art PCB; it does not decorate your existing circuit.</p>
+            <h3>Start with artwork</h3>
+            <p>Add a logo, drawing or photo. Save its image and settings now, then return as your project develops.</p>
             <div className="fd-art-example" aria-hidden="true">
               <span>★</span>
               <span>→</span>
               <span className="fd-art-example-board">★</span>
             </div>
-            <Button variant="primary" onClick={choose}>
+            <Button variant="primary" disabled={loading} onClick={choose}>
               Upload image
             </Button>
             <p>PNG, JPG, WebP, GIF · up to 12 MB<br />Or drop an image on this canvas.</p>
+            {restoreFailed && <Button onClick={() => { setError(null); setRestoreNonce(value => value + 1); }}>Retry saved artwork</Button>}
             {sketches.length > 0 && <Select aria-label="Existing sketch" value="" disabled={busy || loading} onChange={event => void onSketch(event.target.value)}><option value="" disabled>Use a project sketch…</option>{sketches.map(file => <option key={file.path} value={file.path}>{file.path.split("/").pop()}</option>)}</Select>}
           </div>
         )}
@@ -664,7 +753,7 @@ export function ArtTab() {
             )}
             <figure className="fd-art-result">
               <figcaption>
-                Board preview ·{" "}
+                Artwork preview ·{" "}
                 {layers
                   .map((l) => ({ silk: "silkscreen", mask: "mask", copper: "copper" })[l])
                   .join(" + ")}
@@ -714,7 +803,7 @@ export function ArtTab() {
       <Dialog
         open={confirmSave}
         onClose={() => setConfirmSave(false)}
-        title={existingBoard ? "Replace the current board?" : "Save artwork to this project?"}
+        title={existingBoard ? "Replace the current board with art?" : "Generate an art PCB in this project?"}
         className="!w-[460px]"
       >
         <p className="text-sm leading-relaxed">
@@ -723,7 +812,7 @@ export function ArtTab() {
           will be replaced.
         </p>
         {existingCircuit && <p className="mt-3 text-sm text-muted">
-          Choose Create art project to keep this design intact.
+          Choose Generate standalone art project to keep this design intact.
         </p>}
         <div className="mt-5 flex justify-end gap-2">
           <Button onClick={() => setConfirmSave(false)}>Cancel</Button>

@@ -210,3 +210,4 @@ export * from "./assembly-schematic-inspection";
 export * from "./assembly-schematic-preview";
 export { useAssemblySchematicPreview } from "./queries";
 export { enclosureSizeLabel } from "./enclosure-display";
+export { loadBoardArtwork, saveBoardArtwork, createArtworkSessionStore, artworkSessions, type ArtworkSessionDraft } from "./board-artwork";

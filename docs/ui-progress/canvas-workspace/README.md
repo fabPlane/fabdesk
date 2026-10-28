@@ -956,3 +956,18 @@ Issue394 was received during this work: tab/project/reopen artwork retention, ex
 ![Style-first controls after selecting a project image](art-style-first-tools.jpg)
 
 [Native entry evidence and limits](art-entry-flow-native.json).
+
+
+### Project-owned artwork survives navigation and explicit save
+
+Artwork drafts now belong to endpoint/project, independently of chat. Image, style, crop, dimensions, layers, placement and view settings survive tab and project navigation in the app session. The canvas names the project and distinguishes session drafts from saved artwork. Explicit Save artwork retains the original image under a SHA-named artwork source and versioned artwork/board-art.json; it does not generate a circuit. Reopening verifies owner and image bytes before restoring the preview. Existing file APIs are reused. Known external metadata changes reject saving and retain the draft; checks are optimistic, not atomic. Standalone PCB generation stays in requested export tools and is never called Apply.
+
+Actual961×721flow restored Line hatch/41mmX after leaving Artwork, saved only two artwork files, then recovered the saved image/settings after renderer reload. An unsaved42mmX survived another project and return, while that project stayed empty. New-conversation focus retained project artwork without sending. A deliberate metadata newline blocked Save and preserved external bytes; guarded restore/retry passed, with no pending fault. Original3referencefiles and new2empty-art-project files remain unchanged; saved artwork files are intentionally retained. No PCB was created or changed.
+
+Root typecheck,278client tests(including10newartwork tests),94protocoltests and227UItests pass. Initial sandboxed client tests could not bind the transport test server; the authorized local-socket rerun passed. Tests cover endpoint/project/unassigned isolation, copied settings, byte verification, foreign ownership, unsafe paths, changed metadata and failed saves. Unsaved reload recovery and atomic saves are not claimed. Issue394 still requires real existing-board preview and non-destructive native application, plus full art-first/circuit-first application walkthroughs.
+
+![Saved artwork data belongs to the selected project](art-project-draft-saved.jpg)
+![Unsaved placement restored after project switching](art-project-draft-return.jpg)
+![Changed saved artwork retains the draft and blocks overwrite](art-save-conflict.jpg)
+
+[Native persistence evidence and remaining limits](art-draft-persistence-native.json).
