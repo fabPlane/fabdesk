@@ -29,8 +29,13 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
   const boardSources = useBoardSources(projectId);
   useEffect(() => {
     const state = useUiStore.getState();
-    if (projectId && state.activeProjectId === projectId && boardSources.data?.mode === "assembly" && !state.workspaceByProject[projectId]) state.setWorkspaceArea("overview");
-  }, [projectId, boardSources.data]);
+    if (!projectId || state.activeProjectId !== projectId || state.workspaceByProject[projectId] || !project.data || project.isFetching || project.isError || !boardSources.data || boardSources.isFetching || boardSources.isError) return;
+    // Choose once from the imported/saved sources. Recording even the empty default
+    // prevents later agent writes from stealing the user's current task.
+    if (boardSources.data.mode === "assembly") state.setWorkspaceArea("overview");
+    else if (!project.data.files.some(file => file.path === "board.kicad_pcb") && project.data.files.some(file => file.path === "board.kicad_sch")) state.setBoardTab("schematic");
+    else state.setWorkspaceArea("boards");
+  }, [projectId, boardSources.data, boardSources.isFetching, boardSources.isError, project.data, project.isFetching, project.isError]);
   const projects = useProjects();
   const area = useUiStore((s) => s.workspaceArea);
   const boardTab = useUiStore((s) => s.boardTab);

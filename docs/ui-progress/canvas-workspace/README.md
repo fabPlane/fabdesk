@@ -1058,3 +1058,18 @@ A separate schematic-only project used the actual saved GameBoy source and ran t
 ![Shared update review offers an explicit next step](erc-review-updates.jpg)
 
 [Actual ERC source-attention evidence](erc-attention-native.json).
+
+
+### Schematic-only designs have a useful starting workspace
+
+Overview now recognizes a saved native schematic even before a PCB exists. Select its card to open Schematic; a saved schematic preview appears when available, explicitly freshness unverified. It does not borrow an old PCB image as a schematic preview or ask users to start an idea over an existing design. First-open defaults choose Overview for assemblies, Schematic when only the schematic exists, and the existing Board default otherwise. The choice is recorded once, including empty projects, so later source writes do not retarget the current task. Existing saved workspaces still win.
+
+Native use opened the existing schematic from Overview, requested an actual native preview and returned to the real saved drawing. An unopened schematic-only project selected Schematic automatically. After choosing Overview, temporary source absence/restoration updated its card without changing tasks; a background native render then updated the open Overview and its4savedoutputcount automatically. Renderer reload restored Overview. All3initial files in each study and9source GameBoy files remain byte-identical. Native previews are intentionally retained. UItypecheck/228tests pass. No agent message, PCB generation or schematic/PCB equivalence is claimed.
+
+![Schematic-specific contextual action](schematic-only-overview-actions.jpg)
+![Actual requested native schematic drawing](schematic-only-native-preview.jpg)
+![Saved schematic in quiet Overview](schematic-only-overview-preview.jpg)
+![Adaptive first opening](schematic-adaptive-first-open.jpg)
+![Background native render updates the open Overview](live-schematic-overview.jpg)
+
+[Native source, rendering and reopening evidence](schematic-only-workflow-native.json).

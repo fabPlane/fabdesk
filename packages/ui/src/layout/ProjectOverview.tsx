@@ -41,42 +41,44 @@ function SingleBoardOverview() {
   if (!project.data) return <div className="flex h-full items-center justify-center"><Spinner /></div>;
   const pcb = files.find((file) => file.path === "board.kicad_pcb");
   const schematic = files.find((file) => file.path === "board.kicad_sch");
-  const preview = ["renders/top.png", "renders/pcb-top.png", "renders/populated-top.png", "renders/release-top.png", "renders/pcb.svg"]
-    .map((path) => files.find((file) => file.path === path)).find(Boolean);
+  const designTab = pcb || !schematic ? "pcb" : "schematic";
+  const designLabel = pcb ? "Main board" : schematic ? "Schematic design" : "Saved board preview";
+  const previewPaths = designTab === "schematic" ? ["renders/schematic.svg"] : ["renders/top.png", "renders/pcb-top.png", "renders/populated-top.png", "renders/release-top.png", "renders/pcb.svg"];
+  const preview = previewPaths.map((path) => files.find((file) => file.path === path)).find(Boolean);
   const issues = [...(order.data?.warnings ?? []), ...(order.data?.reasons ?? [])];
   const outputs = savedOutputs(files);
   const references = projectSketchImagePaths(files);
   const reference = chosenReference && references.includes(chosenReference) ? chosenReference : references[0];
-  const referenceOnly = !pcb && !preview && !!reference;
-  const previewStatus = preview?.path !== "renders/pcb.svg" ? "Saved image · source unverified"
+  const referenceOnly = !pcb && !schematic && !preview && !!reference;
+  const previewStatus = designTab === "schematic" ? "Saved schematic preview · freshness unverified" : preview?.path !== "renders/pcb.svg" ? "Saved image · source unverified"
     : pcbRevision.isFetching ? "Checking preview source…" : pcbRevision.isError ? "Preview source check unavailable"
     : pcbRevision.data === "source-changed" ? "PCB changed since preview" : pcbRevision.data === "artifact-changed" ? "Preview changed · source unverified"
     : pcbRevision.data === "matches-source" ? "Preview matches saved PCB" : "Saved preview · source unverified";
   return <div className="fd-project-overview" onKeyDown={(event) => { if (event.key === "Escape") setSelected(false); }}>
-    <div className="fd-overview-heading"><h1 title={project.data.name}>Project overview</h1><p>{referenceOnly ? "Select a saved reference to continue your design." : "Select your board to open its tools."}</p>
+    <div className="fd-overview-heading"><h1 title={project.data.name}>Project overview</h1><p>{referenceOnly ? "Select a saved reference to continue your design." : designTab === "schematic" ? "Select your schematic to open its tools." : "Select your board to open its tools."}</p>
       {updates.length > 0 && <Button className="fd-overview-updates" size="sm" variant="ghost" title={`${updates.join(", ")} have source or artifact changes. This covers tracked artifacts only; review before sharing or fabrication.`} onClick={() => ui().setBoardTab("updates")}><Icon name="warning" width={16} height={16} />Review updates · {updates.length}</Button>}
     </div>
-    {(pcb || preview) ? <div className="fd-overview-board">
+    {(pcb || schematic || preview) ? <div className="fd-overview-board">
       {selected && <div className="fd-board-context-tools" aria-label="Board actions">
-        <span><Icon name="pcb" width={17} height={17} />Main board</span>
-        <Button variant="ghost" size="sm" onClick={() => ui().setBoardTab("pcb")}><Icon name="compose" width={16} height={16} />Open board</Button>
+        <span><Icon name={designTab === "schematic" ? "compose" : "pcb"} width={17} height={17} />{designLabel}</span>
+        <Button variant="ghost" size="sm" onClick={() => ui().setBoardTab(designTab)}><Icon name="compose" width={16} height={16} />{designTab === "schematic" ? "Open schematic" : "Open board"}</Button>
         <Button variant="ghost" size="sm" onClick={() => {
           const state = ui(); if (state.activeProjectId !== projectId) return;
           const key = state.activeThreadId ?? newChatDraftKey(projectId), previous = state.drafts[key] ?? "";
-          const prompt = "Review this board’s latest saved PCB and schematic. Explain its purpose and any changes that need attention before proposing edits.";
+          const prompt = "Review this design’s available saved schematic and PCB sources. Explain its purpose and any changes that need attention before proposing edits.";
           state.setDraft(key, previous.trim() ? `${previous}\n\n${prompt}` : prompt); state.focusComposer();
         }}><Icon name="sparkles" width={16} height={16} />Ask</Button>
         <WorkspaceMenu label={<><span>More</span><Icon name="chevronDown" width={14} height={14} /></>}>
-          <button onClick={() => ui().setBoardTab("schematic")}>Schematic</button>
+          <button onClick={() => ui().setBoardTab(designTab === "schematic" ? "pcb" : "schematic")}>{designTab === "schematic" ? "PCB" : "Schematic"}</button>
           <button onClick={() => ui().setBoardTab("3d")}>3D model</button>
           <button onClick={() => ui().setWorkspaceArea("mechanical")}>Enclosure</button>
           <button onClick={() => ui().setBoardTab("drc")}>Checks</button>
         </WorkspaceMenu>
       </div>}
-      <button className="fd-overview-preview" data-selected={selected} aria-pressed={selected} aria-label="Select main board to show tools" onClick={() => setSelected(!selected)} onDoubleClick={() => ui().setBoardTab("pcb")}>
-        {preview ? <ProjectImage projectId={projectId} path={preview.path} alt={`${project.data.name} board preview`} /> : <span><Icon name="pcb" width={64} height={64} /><span>Open the PCB to render its preview</span></span>}
+      <button className="fd-overview-preview" data-selected={selected} aria-pressed={selected} aria-label={`Select ${designLabel.toLowerCase()} to show tools`} onClick={() => setSelected(!selected)} onDoubleClick={() => ui().setBoardTab(designTab)}>
+        {preview ? <ProjectImage projectId={projectId} path={preview.path} alt={`${project.data.name} ${designTab} preview`} /> : <span><Icon name={designTab === "schematic" ? "compose" : "pcb"} width={64} height={64} /><span>{designTab === "schematic" ? "Open the schematic to create its preview" : "Open the PCB to render its preview"}</span></span>}
       </button>
-      <div className="fd-overview-board-caption"><strong>Main board</strong>{preview && <span>{previewStatus}</span>}<span>{schematic ? "Schematic available" : "No schematic source"}</span></div>
+      <div className="fd-overview-board-caption"><strong>{designLabel}</strong>{preview && <span>{previewStatus}</span>}<span>{schematic ? "Schematic available" : "No schematic source"}</span>{!pcb && <span>No saved PCB</span>}</div>
     </div> : reference ? <div className="fd-overview-board fd-overview-reference">
       {selected && <div className="fd-board-context-tools" aria-label="Reference actions"><span><Icon name="image" width={17} height={17} />Reference</span>
         <Button size="sm" variant="ghost" onClick={() => {
