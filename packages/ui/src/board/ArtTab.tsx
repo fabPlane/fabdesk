@@ -572,12 +572,6 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
             ink={inkColor}
             onInk={setInkColor}
           />
-          {colorMode === "multicolor" && (
-            <p className="text-[11px] text-muted">
-              Multicolor uses source-colored halftone dots. Background edits do not recolor the
-              source.
-            </p>
-          )}
           <div hidden={colorMode === "multicolor"}>
             <div className="fd-art-label">Art style</div>
             <div className="fd-art-styles" role="group" aria-label="Art style">
