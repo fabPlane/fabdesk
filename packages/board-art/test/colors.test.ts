@@ -6,6 +6,7 @@ import {
   encodePng,
   rgbaToGray,
   resolveArtOptions,
+  previewSvg,
   type ArtOptions,
 } from "../src";
 
@@ -26,6 +27,25 @@ const raster = {
   data: new Uint8Array([255, 0, 0, 255, 0, 255, 0, 255, 255, 255, 255, 255, 0, 0, 255, 0]),
 };
 const image = { ...rgbaToGray(raster), rgba: raster.data };
+
+test("board image framing keeps physical layers and colors without the preview stage", () => {
+  for (const outline of ["rectangle", "rounded", "circle"] as const) {
+    for (const colorMode of ["monotone", "multicolor"] as const) {
+      const art = convertImage(image, { ...options, outline, colorMode });
+      const svg = previewSvg(art.options, art.clipped, false, true);
+      expect(svg).toContain('viewBox="0 0 30 20"');
+      expect(svg).not.toContain('fill="#111"');
+      expect(svg).toContain('data-layer="fr4"');
+      expect(svg).toContain('data-layer="mask"');
+      expect(svg).toContain('clip-path="url(#');
+      expect(svg).toContain('data-layer="silk"');
+      if (colorMode === "multicolor") {
+        expect(svg).toContain('fill="#ff0000"');
+        expect(svg).toContain('data-layer="printed-background"');
+      }
+    }
+  }
+});
 
 test("decode retains original color and alpha for future mode switches", async () => {
   const decoded = await decodeGray(encodePng(raster));

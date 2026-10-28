@@ -32,6 +32,7 @@ import type { PreviewResult } from "./art-preview.worker";
 import { ArtPlacementControls, ArtPlacementOverlay } from "./ArtPlacementEditor";
 import { buildSketchPngFile } from "./art-sketch-upload";
 import { ArtColorControls } from "./ArtColorControls";
+import { artImageName, buildArtPng } from "./art-image-export";
 import { artDraftStore, bytesToBase64, base64ToBytes, type ArtDraft } from "./art-draft";
 
 const STYLE_LABELS: Record<ArtStyle, string> = {
@@ -66,6 +67,7 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
   const [loading, setLoading] = useState(false);
   const [converting, setConverting] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [exportingImage, setExportingImage] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
@@ -358,6 +360,34 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
       colorMode === "multicolor" ? "fabplane-color-art-reference.zip" : "fabplane-board-art.zip";
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const downloadImage = async () => {
+    if (!gray || busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    setExportingImage(true);
+    setError(null);
+    try {
+      const blob = await buildArtPng(gray, options);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = artImageName(sourceName);
+      document.body.append(a);
+      try {
+        a.click();
+      } finally {
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+      setExportingImage(false);
+    }
   };
 
   const saveProject = async () => {
@@ -699,7 +729,7 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
         </fieldset>
         <div className="fd-art-actions">
           <Button variant="primary" disabled={unavailable} onClick={() => void newProject()}>
-            {busy ? "Saving…" : "Create art project"}
+            {busy && !exportingImage ? "Saving…" : "Create art project"}
           </Button>
           <Button disabled={unavailable} onClick={downloadLocal} data-testid="board-art-download">
             {colorMode === "multicolor" ? "Download color reference ZIP" : "Download Gerber ZIP"}
@@ -741,33 +771,45 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
             {outline === "circle" ? `Ø ${widthMm} mm` : `${widthMm} × ${heightMm} mm`} ·{" "}
             {STYLE_LABELS[style]}
           </span>
-          {svg && (
-            <div className="flex flex-wrap items-center gap-1">
-              <button type="button" aria-pressed={placing} onClick={() => setPlacing((p) => !p)}>
-                {placing ? "Finish placing" : "Place artwork"}
-              </button>
-              <button
-                type="button"
-                aria-label="Zoom out"
-                disabled={zoom <= 0.5}
-                onClick={() => setZoom((z) => Math.max(0.5, z - 0.25))}
-              >
-                −
-              </button>
-              <span className="fd-art-zoom">{Math.round(zoom * 100)}%</span>
-              <button
-                type="button"
-                aria-label="Zoom in"
-                disabled={zoom >= 3}
-                onClick={() => setZoom((z) => Math.min(3, z + 0.25))}
-              >
-                +
-              </button>
-              <button type="button" onClick={() => setZoom(1)}>
-                Fit
-              </button>
-            </div>
-          )}
+          <div className="flex flex-wrap items-center gap-1">
+            {svg && (
+              <>
+                <button type="button" aria-pressed={placing} onClick={() => setPlacing((p) => !p)}>
+                  {placing ? "Finish placing" : "Place artwork"}
+                </button>
+                <button
+                  type="button"
+                  aria-label="Zoom out"
+                  disabled={zoom <= 0.5}
+                  onClick={() => setZoom((z) => Math.max(0.5, z - 0.25))}
+                >
+                  −
+                </button>
+                <span className="fd-art-zoom">{Math.round(zoom * 100)}%</span>
+                <button
+                  type="button"
+                  aria-label="Zoom in"
+                  disabled={zoom >= 3}
+                  onClick={() => setZoom((z) => Math.min(3, z + 0.25))}
+                >
+                  +
+                </button>
+                <button type="button" onClick={() => setZoom(1)}>
+                  Fit
+                </button>
+              </>
+            )}
+            <button
+              type="button"
+              disabled={unavailable}
+              onClick={() => void downloadImage()}
+              className="inline-flex items-center gap-1.5"
+              aria-label="Download finished board as PNG"
+            >
+              <Icon name="export" width={14} height={14} aria-hidden="true" />
+              {exportingImage ? "Exporting…" : "Download PNG"}
+            </button>
+          </div>
         </div>
         {(loading || converting) && (
           <div role="status" className="fd-art-progress">

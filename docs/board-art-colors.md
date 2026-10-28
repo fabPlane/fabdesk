@@ -60,6 +60,13 @@ Verify pad/component keepouts, feature sizes, actual color reproduction and
 process options there; the current dot floor is a reference drawing constraint,
 not a validated multicolor manufacturing profile.
 
+`Download board PNG` exports a shareable image of the finished standalone board
+in either color mode. It includes the selected physical finish, artwork layers,
+printed background, crop and placement, with no editor handles or preview stage.
+Round and rounded boards have transparent corners. Output uses 300 pixels per
+inch of board size, capped at 4096 pixels on the longest edge; this is an image
+of the preview rather than a manufacturing file.
+
 The current preview is a standalone artwork board. Applying artwork onto an
 existing circuit, showing its components/clearances and generating the final
 manufacturing package remain integration work for #394/#395. The Art tab saves

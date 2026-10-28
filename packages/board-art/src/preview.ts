@@ -9,9 +9,11 @@ export function previewSvg(
   o: ResolvedArtOptions,
   art: readonly Primitive[],
   printOnly = false,
+  boardOnly = false,
 ): string {
   const finish = BOARD_FINISH[o.color];
-  const pad = printOnly ? 0 : 4;
+  // Image downloads keep the physical finish, but omit the preview's surrounding stage.
+  const pad = printOnly || boardOnly ? 0 : 4;
   const w = o.widthMm + pad * 2;
   const h = o.heightMm + pad * 2;
   const resourceId = previewResourceId(o, art);
@@ -39,7 +41,7 @@ export function previewSvg(
     <clipPath id="${clipId}" clipPathUnits="userSpaceOnUse">${outlineFill(o)}</clipPath>
     ${maskDef}
   </defs>
-  ${printOnly ? "" : `<rect x="${-pad}" y="${-pad}" width="${w}" height="${h}" fill="#111"/>`}
+  ${printOnly || boardOnly ? "" : `<rect x="${-pad}" y="${-pad}" width="${w}" height="${h}" fill="#111"/>`}
   <g clip-path="url(#${clipId})">
     ${printOnly ? "" : `<rect data-layer="fr4" ${board} fill="${finish.fr4}"/>`}
     ${printOnly ? "" : copper}
