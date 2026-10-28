@@ -8,6 +8,7 @@ import { sha256Blob } from "./pcb-preview-revision";
 export type AssemblyCheckFinding = {
   selection: AssemblySceneSelection;
   sourceSha256: string;
+  reportFingerprint?: string;
   point: { x: number; y: number };
   description: string;
   itemDescription: string;
@@ -23,7 +24,7 @@ export function captureAssemblyCheckFinding(data: ProjectBoardSources, snapshot:
   if (!selection || selection.sourceId !== snapshot.board.sourceId || assemblySelectionState(data, selection) !== "owned" || data.sources.find(row => row.source.id === selection.sourceId)?.pcbSha256 !== snapshot.sourceSha256) return null;
   const row = normalizeReport(snapshot.report, "drc")[rowIndex], item = row?.items[itemIndex], point = item?.pos;
   if (!row || !item || !point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
-  return { selection: { ...selection }, sourceSha256: snapshot.sourceSha256, point: { ...point }, description: row.description, itemDescription: item.description };
+  return { selection: { ...selection }, reportFingerprint: JSON.stringify(snapshot.report), sourceSha256: snapshot.sourceSha256, point: { ...point }, description: row.description, itemDescription: item.description };
 }
 export function assemblyCheckFindingOwned(data: ProjectBoardSources, finding: AssemblyCheckFinding) {
   return assemblySelectionState(data, finding.selection) === "owned" && data.sources.find(row => row.source.id === finding.selection.sourceId)?.pcbSha256 === finding.sourceSha256;
@@ -33,4 +34,14 @@ export async function assemblyFindingPreviewMatches(svg: string, rawReceipt: str
   let raw: unknown; try { raw = JSON.parse(rawReceipt ?? ""); } catch { return false; }
   const receipt = PcbPreviewRevision.safeParse(raw);
   return receipt.success && receipt.data.sourceSha256 === sourceSha256 && pcbSvgHasNativeCoordinates(svg) && await sha256Blob(new Blob([svg])) === receipt.data.artifactSha256;
+}
+
+/** Return only to one exact saved report row within its still-owned source. */
+export function assemblyCheckFindingRow(data: ProjectBoardSources, snapshot: Awaited<ReturnType<typeof inspectAssemblyPcbCheck>>, finding: AssemblyCheckFinding | null): number | null {
+  if (!finding || !finding.reportFingerprint || JSON.stringify(snapshot.report) !== finding.reportFingerprint || !assemblyCheckFindingOwned(data, finding) || snapshot.sourceSha256 !== finding.sourceSha256 || snapshot.board.sourceId !== finding.selection.sourceId) return null;
+  const matches = normalizeReport(snapshot.report, "drc").flatMap((row, index) => row.items.some((_item, itemIndex) => {
+    const captured = captureAssemblyCheckFinding(data, snapshot, index, itemIndex, finding.selection);
+    return captured && captured.description === finding.description && captured.itemDescription === finding.itemDescription && captured.point.x === finding.point.x && captured.point.y === finding.point.y;
+  }) ? [index] : []);
+  return matches.length === 1 ? matches[0]! : null;
 }

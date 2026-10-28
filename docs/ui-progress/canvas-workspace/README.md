@@ -1344,3 +1344,13 @@ The PCB finding card now offers Ask about finding only while the report, PCB and
 ![Prepared unsent question](finding-ask-preserves-draft.png)
 
 [Native evidence](finding-ask-native.json).
+
+
+## Multi-board finding review keeps its source and place
+
+Member finding tools now include Ask about finding and Back to checks. Questions carry the instance, shared source directory, PCB and assembly revision hashes and remain unsent. Return navigation restores only a unique item in the exact unchanged report with current source/manifest ownership; changed, missing or ambiguous reports do not restore a row. Close details restores row focus. Native compact walkthrough passed with a real14-finding PCB-only report in the isolated shared-I/O study; all12original files remain exact and the new member report is intentionally retained. No schematic/compatibility pass or successful agent reasoning is claimed. Client/UI types,229UItests and4finding helper tests pass.
+
+![Member contextual tools](member-finding-contextual-tools.png)
+![Exact row return](member-finding-return-row.png)
+
+[Native evidence](member-finding-native.json).

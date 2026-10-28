@@ -411,7 +411,9 @@
 .fd-assembly-review-status [data-warning="true"] { color:var(--fd-warning); font-weight:600; }
 
 .fd-assembly-finding-summary { display:flex; align-items:center; gap:12px; margin:0 20px 12px; padding:12px 16px; border:1px solid var(--fd-border); border-radius:12px; background:var(--fd-panel); font-size:12px; }
-.fd-assembly-finding-summary > div { flex:1; min-width:0; }
+.fd-assembly-finding-summary { flex-wrap:wrap; }
+.fd-assembly-finding-summary > div { flex:1; min-width:min(260px,100%); }
+.fd-assembly-finding-summary > .fd-assembly-finding-actions { flex:0 1 auto; display:flex; flex-wrap:wrap; gap:6px; min-width:0; }
 .fd-assembly-finding-summary span { display:block; margin-top:4px; color:var(--fd-muted); overflow-wrap:anywhere; }
 .fd-finding-anchor .fd-location-marker { background:var(--fd-warning, #d49320); }
 .fd-member-checks-detail p button { margin-left:8px; }
@@ -752,3 +754,6 @@
 .fd-kept-output > small { font-size:10px; line-height:1.5; color:var(--fd-muted); }
 .fd-kept-output > button { white-space:normal; text-align:left; height:auto; min-height:32px; max-width:100%; padding-top:6px; padding-bottom:6px; }
 .fd-kept-output:focus-visible { outline:2px solid var(--fd-accent); outline-offset:4px; }
+
+.fd-member-checks-detail-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+.fd-member-checks-detail-heading h3 { flex:1; min-width:0; }

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { ProjectBoardSources } from "@fabdesk/protocol";
-import { assemblyCheckFindingOwned, assemblyFindingPreviewMatches, captureAssemblyCheckFinding } from "./assembly-check-finding";
+import { assemblyCheckFindingRow, assemblyCheckFindingOwned, assemblyFindingPreviewMatches, captureAssemblyCheckFinding } from "./assembly-check-finding";
 import { sha256Blob } from "./pcb-preview-revision";
 const hash = "b".repeat(64), manifest = "a".repeat(64);
 function fixture() {
@@ -39,4 +39,19 @@ test("marker requires stamped native coordinates, matching source receipt and th
   expect(await assemblyFindingPreviewMatches(svg, JSON.stringify(receipt), "c".repeat(64))).toBe(false);
   expect(await assemblyFindingPreviewMatches(svg.replace('data-fabplane-coordinate-system', 'unverified'), JSON.stringify(receipt), hash)).toBe(false);
   expect(await assemblyFindingPreviewMatches(svg, "bad", hash)).toBe(false);
+});
+
+test("return navigation rejects changed reports, owners and ambiguous identical findings", () => {
+  const { data, snapshot } = fixture();
+  const finding = captureAssemblyCheckFinding(data, snapshot, 0, 0)!;
+  expect(assemblyCheckFindingRow(data, snapshot, finding)).toBe(0);
+  expect(assemblyCheckFindingRow(data, { ...snapshot, state: "source-changed" }, finding)).toBeNull();
+  expect(assemblyCheckFindingRow({ ...data, projectId: "other" }, snapshot, finding)).toBeNull();
+  expect(assemblyCheckFindingRow(data, snapshot, { ...finding, reportFingerprint: "" })).toBeNull();
+  snapshot.report.violations[0]!.description = "Changed report";
+  expect(assemblyCheckFindingRow(data, snapshot, finding)).toBeNull();
+  snapshot.report.violations[0]!.description = "Clearance";
+  snapshot.report.violations.push(structuredClone(snapshot.report.violations[0]!));
+  const ambiguous = captureAssemblyCheckFinding(data, snapshot, 0, 0)!;
+  expect(assemblyCheckFindingRow(data, snapshot, ambiguous)).toBeNull();
 });
