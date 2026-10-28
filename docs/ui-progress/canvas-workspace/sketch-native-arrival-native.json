@@ -1,0 +1,27 @@
+{
+  "projectId": "prj_mvs5abwp2ff3301fe3",
+  "path": "/Users/amliomnie/Documents/Codex/2026-10-27/https-github-com-tensorfleet-placement-lab/work/sketch-first-projects/canvas-navigation-fresh-start-study",
+  "sourceHashes": {
+    "board.kicad_pro": "0ef365722416a367bbc590a05896d06c587909aebb2b3030c0f558f675d2529c",
+    "board.kicad_pcb": "623d182c8b5a79c654b5cf6a50534cb4d97863076ec717d36be2f96433563df8"
+  },
+  "donor": "/Users/amliomnie/Documents/Codex/2026-10-27/https-github-com-tensorfleet-placement-lab/work/sketch-first-projects/canvas-fresh-start-ui-validation/",
+  "action": "Actual native files copied through existing project API into isolated sketch study; not agent-generated",
+  "originalFiveFiles": "unchanged",
+  "receipt": {
+    "contract": "fabplane.pcb-preview-revision.v1",
+    "source": "board.kicad_pcb",
+    "artifact": "renders/pcb.svg",
+    "sourceSha256": "623d182c8b5a79c654b5cf6a50534cb4d97863076ec717d36be2f96433563df8",
+    "artifactSha256": "2f2b9a1bfaf13f9d8f3a6f2dd318da4be06f38651b8d9e1d63f363c0b9e48853",
+    "generatedAt": "2026-10-28T15:25:11.438Z"
+  },
+  "nativeUi": [
+    "Existing project API added fixture PCB/PRO, main canvas automatically replaced sketch with native Board task",
+    "No PCB preview yet clearly disclosed; assistant stayed closed",
+    "Native Create PCB preview \u2192 Creating preview \u2192 Preview matches PCB",
+    "Source and generated SVG hashes verified against exact saved receipt"
+  ],
+  "preservation": "Five preexisting sketch/project files and both copied native source files byte-identical; new preview/receipt and explicit NOTES.md intentional",
+  "limitation": "15\u00d715mm fixture intentionally differs from 36\u00d727.455mm reference; documented in project NOTES.md. Not an agent-generated or reconciled design. Actual Claude review still blocked by expired authentication."
+}
