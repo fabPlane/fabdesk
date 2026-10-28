@@ -21,7 +21,18 @@ export const DEFAULT_HEIGHT_MM = 50;
 export const DEFAULT_MARGIN_MM = 2;
 export const MAX_PRIMITIVES = 12_000;
 
+export const COLOR_MODES = ["monotone", "multicolor"] as const;
+export type ColorMode = (typeof COLOR_MODES)[number];
+
+export function normalizeHex(value: string): string {
+  if (!/^#[0-9a-f]{6}$/i.test(value))
+    throw new Error("Use a six-digit hex color, such as #1D3F7A.");
+  return value.toLowerCase();
+}
+
 export type GrayImage = {
+  /** Original RGBA retained for source-colored printing. */
+  rgba?: Uint8Array;
   width: number;
   height: number;
   /** 0 = black, 255 = white. Length = width * height. */
@@ -38,7 +49,7 @@ export type RgbaImage = {
 export type CirclePrim = { kind: "circle"; x: number; y: number; d: number };
 export type LinePrim = { kind: "line"; x1: number; y1: number; x2: number; y2: number; w: number };
 export type RectPrim = { kind: "rect"; x: number; y: number; w: number; h: number };
-export type Primitive = CirclePrim | LinePrim | RectPrim;
+export type Primitive = (CirclePrim | LinePrim | RectPrim) & { color?: string };
 
 export const IMAGE_CROPS = ["none", "circle", "rounded"] as const;
 export type ImageCrop = (typeof IMAGE_CROPS)[number];
@@ -52,6 +63,10 @@ export type ArtPlacement = {
 };
 
 export type ArtOptions = {
+  colorMode?: ColorMode;
+  printedBackground?: string;
+  /** Monotone ink is a preview/order choice; conventional Gerber carries geometry only. */
+  inkColor?: string;
   crop?: ImageCrop;
   placement?: ArtPlacement;
   style: ArtStyle;
@@ -73,6 +88,9 @@ export type ArtOptions = {
 };
 
 export type ResolvedArtOptions = {
+  colorMode: ColorMode;
+  printedBackground: string;
+  inkColor: string;
   crop: ImageCrop;
   placement?: ArtPlacement;
   style: ArtStyle;
@@ -125,13 +143,22 @@ export function resolveArtOptions(raw: ArtOptions): ResolvedArtOptions {
     throw new Error("board is too small for the margin and minimum feature size");
   const pitchMm = Math.max(minFeatureMm, raw.pitchMm ?? Math.max(minFeatureMm, usable / 90));
   const layers = raw.layers && raw.layers.length > 0 ? raw.layers : (["silk"] as const);
+  const colorMode = raw.colorMode ?? "monotone";
+  if (!COLOR_MODES.includes(colorMode)) throw new Error("Unknown artwork color mode");
+  if (colorMode === "multicolor" && raw.layers?.some((l) => l !== "silk"))
+    throw new Error(
+      "Multicolor artwork supports printed silkscreen only, not copper or mask openings.",
+    );
   return {
+    colorMode,
+    printedBackground: normalizeHex(raw.printedBackground ?? "#ffffff"),
+    inkColor: normalizeHex(raw.inkColor ?? BOARD_FINISH[raw.color].silk),
     ...(raw.placement ? { placement: validateArtPlacement(raw.placement) } : {}),
     crop: raw.crop ?? "none",
     style: raw.style,
     widthMm,
     heightMm,
-    color: raw.color,
+    color: colorMode === "multicolor" ? "white" : raw.color,
     outline: raw.outline,
     invert: raw.invert === true,
     minFeatureMm,

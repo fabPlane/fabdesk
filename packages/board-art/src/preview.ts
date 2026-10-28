@@ -5,9 +5,13 @@ import { outlinePrimitives } from "./gerber";
  * Composite the layers the Gerber set actually carries: FR4, copper (art or flood fill), soldermask
  * with art-shaped openings when mask is selected, and silkscreen art only when silk is selected.
  */
-export function previewSvg(o: ResolvedArtOptions, art: readonly Primitive[]): string {
+export function previewSvg(
+  o: ResolvedArtOptions,
+  art: readonly Primitive[],
+  printOnly = false,
+): string {
   const finish = BOARD_FINISH[o.color];
-  const pad = 4;
+  const pad = printOnly ? 0 : 4;
   const w = o.widthMm + pad * 2;
   const h = o.heightMm + pad * 2;
   const resourceId = previewResourceId(o, art);
@@ -27,22 +31,23 @@ export function previewSvg(o: ResolvedArtOptions, art: readonly Primitive[]): st
     ? `<mask id="${maskId}" maskUnits="userSpaceOnUse" x="0" y="0" width="${o.widthMm}" height="${o.heightMm}"><rect ${board} fill="#fff"/>${art.map((p) => primSvg(p, "#000")).join("")}</mask>`
     : "";
   const silk = silkArt
-    ? `<g data-layer="silk">${art.map((p) => primSvg(p, finish.silk)).join("")}</g>`
+    ? `<g data-layer="silk">${art.map((p) => primSvg(p, o.colorMode === "multicolor" ? (p.color ?? o.inkColor) : o.inkColor)).join("")}</g>`
     : "";
   return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="${-pad} ${-pad} ${w} ${h}" width="${Math.round(w * 8)}" height="${Math.round(h * 8)}" data-layers="${o.layers.join(" ")}">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="${-pad} ${-pad} ${w} ${h}" width="${w}mm" height="${h}mm" data-layers="${o.layers.join(" ")}">
   <defs>
     <clipPath id="${clipId}" clipPathUnits="userSpaceOnUse">${outlineFill(o)}</clipPath>
     ${maskDef}
   </defs>
-  <rect x="${-pad}" y="${-pad}" width="${w}" height="${h}" fill="#111"/>
+  ${printOnly ? "" : `<rect x="${-pad}" y="${-pad}" width="${w}" height="${h}" fill="#111"/>`}
   <g clip-path="url(#${clipId})">
-    <rect data-layer="fr4" ${board} fill="${finish.fr4}"/>
-    ${copper}
-    <rect data-layer="mask" ${board} fill="${finish.mask}" fill-opacity="0.75"${maskArt ? ` mask="url(#${maskId})"` : ""}/>
+    ${printOnly ? "" : `<rect data-layer="fr4" ${board} fill="${finish.fr4}"/>`}
+    ${printOnly ? "" : copper}
+    ${printOnly ? "" : `<rect data-layer="mask" ${board} fill="${finish.mask}" fill-opacity="0.75"${maskArt ? ` mask="url(#${maskId})"` : ""}/>`}
+    ${o.colorMode === "multicolor" ? `<rect data-layer="printed-background" ${board} fill="${o.printedBackground}"/>` : ""}
     ${silk}
   </g>
-  <path d="${path}" fill="none" stroke="#0a0a0a" stroke-width="0.25"/>
+  ${printOnly ? "" : `<path d="${path}" fill="none" stroke="#0a0a0a" stroke-width="0.25"/>`}
 </svg>
 `;
 }

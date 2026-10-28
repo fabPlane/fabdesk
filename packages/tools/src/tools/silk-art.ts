@@ -6,6 +6,7 @@ import {
   IMAGE_CROPS,
   ART_STYLES,
   BOARD_COLORS,
+  COLOR_MODES,
   DEFAULT_HEIGHT_MM,
   DEFAULT_WIDTH_MM,
   OUTLINE_KINDS,
@@ -25,7 +26,7 @@ export const silk_art = defineTool({
   toolset: "export",
   title: "Picture to silkscreen",
   description:
-    "Turn a PNG, JPEG, WebP or GIF (photo, drawing or logo) into manufacturing-ready Gerbers with the picture printed on a real board. Styles: realistic = halftone dots, retro = line hatch, poster = one-cut threshold. Previewing is free and uses no AI credit. Writes board.kicad_pcb, exports/gerbers/, exports/fabrication.zip and renders/board-art.svg. Typical fab silkscreen floor is 0.15 mm. Does not need kicad-cli.",
+    "Turn a PNG, JPEG, WebP or GIF (photo, drawing or logo) into manufacturing-ready Gerbers with the picture printed on a real board. Multicolor produces an SVG reference, NOT JLCPCB production files; its KiCad/Gerbers are blank. White physical mask is required; printed background is separate. This tool replaces the project board; save drafts in the Art tab to preserve existing circuits. Styles: realistic = halftone dots, retro = line hatch, poster = one-cut threshold. Previewing is free and uses no AI credit. Writes board.kicad_pcb, exports/gerbers/, exports/fabrication.zip and renders/board-art.svg. Typical fab silkscreen floor is 0.15 mm. Does not need kicad-cli.",
   inputSchema: {
     image: z
       .string()
@@ -51,7 +52,20 @@ export const silk_art = defineTool({
     style: z.enum(ART_STYLES).default("realistic"),
     widthMm: z.number().positive().max(400).default(DEFAULT_WIDTH_MM),
     heightMm: z.number().positive().max(400).default(DEFAULT_HEIGHT_MM),
-    color: z.enum(BOARD_COLORS).default("green"),
+    color: z
+      .enum(BOARD_COLORS)
+      .default("green")
+      .describe("Physical solder mask; multicolor resolves to white."),
+    colorMode: z.enum(COLOR_MODES).default("monotone"),
+    printedBackground: z
+      .string()
+      .regex(/^#[0-9a-f]{6}$/i)
+      .default("#ffffff"),
+    inkColor: z
+      .string()
+      .regex(/^#[0-9a-f]{6}$/i)
+      .optional()
+      .describe("Monotone preview/order ink; conventional Gerber has no ink color."),
     outline: z.enum(OUTLINE_KINDS).default("rectangle"),
     invert: z.boolean().default(false),
     minFeatureMm: z.number().min(0.15).max(2).default(0.2),
@@ -87,6 +101,9 @@ export const silk_art = defineTool({
       widthMm: args.widthMm,
       heightMm: args.heightMm,
       color: args.color,
+      colorMode: args.colorMode,
+      printedBackground: args.printedBackground,
+      ...(args.inkColor ? { inkColor: args.inkColor } : {}),
       outline: args.outline,
       invert: args.invert,
       minFeatureMm: args.minFeatureMm,
@@ -108,9 +125,14 @@ export const silk_art = defineTool({
     }
     const zipPath = p(project, PROJECT_FILES.exports, "fabrication.zip");
     await writeAtomic(zipPath, job.zip);
+    if (job.options.colorMode === "multicolor") {
+      const reference = job.files.find((file) => file.name === "color-artwork-reference.svg")!;
+      await writeAtomic(p(project, PROJECT_FILES.exports, reference.name), reference.data);
+    }
     const previewPath = p(project, PROJECT_FILES.renders, "board-art.svg");
     await writeAtomic(previewPath, job.previewSvg);
     await writeJson(p(project, PROJECT_FILES.reports, "board-art.json"), {
+      ...job.options,
       style: job.options.style,
       widthMm: job.options.widthMm,
       heightMm: job.options.heightMm,
@@ -136,11 +158,21 @@ export const silk_art = defineTool({
       `Board art (${job.options.style}) ${job.options.widthMm}×${job.options.heightMm} mm, ${job.options.color} ${job.options.outline}.`,
       `${job.stats.primitives} primitives, min feature ${job.stats.minFeatureMm} mm.`,
       `Wrote board.kicad_pcb, ${gerberRel.length} gerbers, exports/fabrication.zip (${job.stats.zipBytes} bytes).`,
+      ...(job.options.colorMode === "multicolor"
+        ? [
+            "COLOR REFERENCE ONLY: the KiCad board and Gerbers are blank; colored artwork/background is in exports/color-artwork-reference.svg and the ZIP. Generate JLCPCB color-production files in EasyEDA Pro. Physical solder mask is white.",
+          ]
+        : [
+            "Solder-mask and ink colors must be selected when ordering; Gerber does not encode them.",
+          ]),
       "No AI credit spent.",
     ].join("\n");
     return ok(
       text,
       {
+        colorMode: job.options.colorMode,
+        printedBackground: job.options.printedBackground,
+        inkColor: job.options.inkColor,
         style: job.options.style,
         widthMm: job.options.widthMm,
         heightMm: job.options.heightMm,
