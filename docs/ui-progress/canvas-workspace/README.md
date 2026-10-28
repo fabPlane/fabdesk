@@ -888,3 +888,18 @@ Already completed validation: client/UItypes,268client tests and226UItests pass.
 ![Saved model with explicit resume action](enclosure-resume-draft.jpg)
 
 [Teammate handoff and exact limits](enclosure-teammate-handoff.json).
+
+
+### Member schematic flow with one useful next step
+
+A board with no native schematic now shows one explanation and Ask about missing files. That prepares an unsent, source-specific question while preserving the existing draft. Selected-board PCB/Schematic/3D tabs remain; Ask is compact and PCB checks is requested through More. The existing source-qualified preview/export tools are unchanged.
+
+Saved sheets get more canvas space and Previous/Next/select navigation. Matching previews keep optional regeneration and validation caveats under Preview details. Changed/unverified sources retain a visible warning and primary update action; older drawings stay available.
+
+Native961×721VAIOmissing-file flow preserved the earlier unsent keyboard question and appended the correct I/O source. More→Checks retained I/O without running DRC. Five earlier verified note-only schematic/preview files were temporarily reused in the isolated fixture, with no new export. Previous/Next, requested details, a changed child-sheet warning and restoration passed. All5temporaryfiles restored absent; original8assembly/16VAIOhashes unchanged. This is not VAIO circuit or compatibility proof. UItypes and226UItests pass. Enclosure follow-up remains teammate-owned and untouched.
+
+![One missing-schematic explanation and next step](member-schematic-missing.jpg)
+![Actual note-only child sheet on compact canvas](member-schematic-sheet-compact.jpg)
+![Changed child-source warning remains visible](member-schematic-warning-compact.jpg)
+
+[Native evidence and exact restoration](member-schematic-flow-native.json).

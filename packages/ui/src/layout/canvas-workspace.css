@@ -645,3 +645,16 @@
   .fd-routing-setup { width:100%; max-height:none; }
 }
 .fd-mechanical-selection small { display:block; margin-top:3px; font-size:11px; color:var(--fd-warning); }
+.fd-assembly-detail[data-view="schematic"] { padding-top:132px; }
+.fd-assembly-detail-more .fd-workspace-menu-content { min-width:190px; }
+.fd-schematic-preview-details { color:var(--fd-muted); font-size:11px; }
+.fd-schematic-preview-details > summary { cursor:pointer; }
+.fd-schematic-preview-details > span { display:block; margin-top:6px; }
+.fd-assembly-schematic-empty { align-items:center; justify-content:center; }
+.fd-assembly-schematic-empty > div { max-width:520px; }
+.fd-assembly-schematic > .fd-svg-viewer { flex:1; height:auto; min-height:0; --fd-viewer-inset:80; }
+.fd-assembly-schematic .fd-svg-viewport { padding:14px 24px 56px; }
+.fd-assembly-schematic > .fd-assembly-model-status { flex-direction:row; justify-content:space-between; align-items:flex-start; gap:16px; padding:8px 20px; }
+.fd-schematic-preview-details { max-width:50%; }
+.fd-schematic-preview-details > button { margin-top:8px; }
+.fd-assembly-schematic-toolbar { padding-top:4px; padding-bottom:8px; }

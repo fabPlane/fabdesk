@@ -1,0 +1,44 @@
+{
+  "scope": "Member-board schematic flow and requested board tools; no enclosure follow-up",
+  "nativeWalkthrough": [
+    "Real VAIO I/O missing schematic: one explanation/action, no duplicate disabled render button",
+    "Ask about missing files appended exact source io / I/O main RevH A18 to the existing unsent keyboard draft; assistant opened, no message sent; assistant closed",
+    "More then PCB checks retained VAIO I/O source; no DRC job",
+    "Reused5earlier verified native note-only source/preview files temporarily in the isolated fixture; no new generation",
+    "Actual961x721Next selected child2, Previous returned root1; source matches and shared-source caption visible",
+    "Preview details opened source/validation caveats and requested Update; closed without export",
+    "Temporary child newline kept older drawing visible with Schematic changed since preview and primary Update; guarded restoration returned source matches"
+  ],
+  "restoration": {
+    "temporaryFilesRestoredAbsent": [
+      "boards/io/board.kicad_sch",
+      "boards/io/child.kicad_sch",
+      "boards/io/renders/schematic.revision.json",
+      "boards/io/renders/schematic/8ddae1d0-9a4c-496a-a6f5-0f1eb1a4744e/sheet-2.svg",
+      "boards/io/renders/schematic/8ddae1d0-9a4c-496a-a6f5-0f1eb1a4744e/sheet-1.svg"
+    ],
+    "originalBoardAndAssemblyFiles": [
+      {
+        "fixture": "assembly",
+        "checkedFiles": 8,
+        "changed": []
+      },
+      {
+        "fixture": "vaio",
+        "checkedFiles": 16,
+        "changed": []
+      }
+    ],
+    "scope": "Member schematic UI only; no enclosure follow-up or validation"
+  },
+  "validation": {
+    "uiTypecheck": "PASS /tmp/canvas-member-schematic-flow-final-types.log",
+    "uiTests": "226 PASS 0 FAIL /tmp/canvas-member-schematic-flow-final-tests.log"
+  },
+  "limitations": [
+    "Note-only two-sheet fixture is UI evidence, not VAIO circuit/compatibility proof",
+    "No new native render, DRC, ERC, parity, synchronization or component editing",
+    "Real VAIO native schematic dependencies remain unresolved",
+    "Root schematic freshness and Notes workflow continue separately"
+  ]
+}
