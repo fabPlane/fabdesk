@@ -64,7 +64,7 @@ export type ArtPlacement = {
 
 export type ArtOptions = {
   colorMode?: ColorMode;
-  printedBackground?: string;
+  printedBackground?: string | null;
   /** Monotone ink is a preview/order choice; conventional Gerber carries geometry only. */
   inkColor?: string;
   crop?: ImageCrop;
@@ -89,7 +89,7 @@ export type ArtOptions = {
 
 export type ResolvedArtOptions = {
   colorMode: ColorMode;
-  printedBackground: string;
+  printedBackground: string | null;
   inkColor: string;
   crop: ImageCrop;
   placement?: ArtPlacement;
@@ -151,7 +151,7 @@ export function resolveArtOptions(raw: ArtOptions): ResolvedArtOptions {
     );
   return {
     colorMode,
-    printedBackground: normalizeHex(raw.printedBackground ?? "#ffffff"),
+    printedBackground: raw.printedBackground == null ? null : normalizeHex(raw.printedBackground),
     inkColor: normalizeHex(raw.inkColor ?? BOARD_FINISH[raw.color].silk),
     ...(raw.placement ? { placement: validateArtPlacement(raw.placement) } : {}),
     crop: raw.crop ?? "none",

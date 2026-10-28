@@ -76,7 +76,7 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
   const [gray, setGray] = useState<GrayImage | null>(null);
   const [sourceName, setSourceName] = useState<string | null>(null);
   const [colorMode, setColorMode] = useState<ColorMode>("monotone");
-  const [printedBackground, setPrintedBackground] = useState("#ffffff");
+  const [printedBackground, setPrintedBackground] = useState<string | null>(null);
   const [inkColor, setInkColor] = useState(BOARD_FINISH.green.silk);
   const [style, setStyle] = useState<ArtStyle>("realistic");
   const [color, setColor] = useState<BoardColor>("green");
@@ -144,7 +144,7 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
           setLayers([...(o.layers ?? ["silk"])]);
           setPlacement(o.placement ?? null);
           setColorMode(o.colorMode ?? "monotone");
-          setPrintedBackground(o.printedBackground ?? "#ffffff");
+          setPrintedBackground(o.printedBackground ?? null);
           setInkColor(o.inkColor ?? BOARD_FINISH[o.color].silk);
         }
         setHydrated(true);

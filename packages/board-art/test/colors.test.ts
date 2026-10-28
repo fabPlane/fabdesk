@@ -111,3 +111,26 @@ test("color dots respect crop, placement and rounded board edges", () => {
     ),
   ).toBe(true);
 });
+
+test("unset background uses the physical board and omits the printed base from the SVG reference", () => {
+  const job = buildBoardArt(image, { ...options, printedBackground: null });
+  expect(job.options.printedBackground).toBeNull();
+  expect(job.options.color).toBe("white");
+  expect(job.previewSvg).not.toContain('data-layer="printed-background"');
+  expect(job.previewSvg).toContain('data-layer="mask"');
+  const reference = new TextDecoder().decode(
+    job.files.find((f) => f.name === "color-artwork-reference.svg")!.data,
+  );
+  expect(reference).not.toContain('data-layer="printed-background"');
+  expect(reference).toContain('fill="#ff0000"');
+  expect(
+    resolveArtOptions({
+      style: "realistic",
+      color: "blue",
+      outline: "rectangle",
+      widthMm: 30,
+      heightMm: 20,
+      colorMode: "multicolor",
+    }).printedBackground,
+  ).toBeNull();
+});

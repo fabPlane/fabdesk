@@ -43,8 +43,8 @@ export function previewSvg(
   <g clip-path="url(#${clipId})">
     ${printOnly ? "" : `<rect data-layer="fr4" ${board} fill="${finish.fr4}"/>`}
     ${printOnly ? "" : copper}
-    ${printOnly ? "" : `<rect data-layer="mask" ${board} fill="${finish.mask}" fill-opacity="0.75"${maskArt ? ` mask="url(#${maskId})"` : ""}/>`}
-    ${o.colorMode === "multicolor" ? `<rect data-layer="printed-background" ${board} fill="${o.printedBackground}"/>` : ""}
+    ${printOnly ? "" : `<rect data-layer="mask" ${board} fill="${finish.mask}" fill-opacity="${o.colorMode === "multicolor" ? 1 : 0.75}"${maskArt ? ` mask="url(#${maskId})"` : ""}/>`}
+    ${o.colorMode === "multicolor" && o.printedBackground ? `<rect data-layer="printed-background" ${board} fill="${o.printedBackground}"/>` : ""}
     ${silk}
   </g>
   ${printOnly ? "" : `<path d="${path}" fill="none" stroke="#0a0a0a" stroke-width="0.25"/>`}

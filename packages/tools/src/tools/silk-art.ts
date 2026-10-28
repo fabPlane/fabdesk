@@ -60,7 +60,11 @@ export const silk_art = defineTool({
     printedBackground: z
       .string()
       .regex(/^#[0-9a-f]{6}$/i)
-      .default("#ffffff"),
+      .nullable()
+      .default(null)
+      .describe(
+        "Optional printed background override. Null uses the physical board color; unrelated to source image colors.",
+      ),
     inkColor: z
       .string()
       .regex(/^#[0-9a-f]{6}$/i)

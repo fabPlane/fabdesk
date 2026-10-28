@@ -80,7 +80,12 @@ function readme(o: ResolvedArtOptions, primitives: number): string {
     `Monotone ink (preview/order choice): ${o.inkColor}`,
     ...(o.colorMode === "multicolor"
       ? [
-          `Printed background: ${o.printedBackground}; physical solder mask: white`,
+          `Printed background: ${o.printedBackground ?? "not set — use board color (white)"}; physical solder mask: white`,
+          ...(o.printedBackground === null
+            ? [
+                "No custom background rectangle is included in the SVG reference. Leave EasyEDA Pro board/base color at its white default for the JLCPCB process.",
+              ]
+            : []),
           "COLOR REFERENCE ONLY: Gerber and KiCad files contain the blank board, not the colored artwork.",
           "color-artwork-reference.svg contains source-colored dots and the printed background at board size.",
           "This ZIP is NOT a JLCPCB multicolor production package. Import the SVG into EasyEDA Pro and generate its color silkscreen production files. Verify alignment, pads, minimum features and process settings there.",

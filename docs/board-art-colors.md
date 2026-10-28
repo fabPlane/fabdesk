@@ -7,8 +7,11 @@ Monotone ink is a preview/order choice; ordinary Gerber contains geometry, not
 ink or solder-mask color instructions.
 
 Multicolor locks the effective physical solder mask to white. Its printed
-background is independent, with a native color picker, validated six-digit hex
-input and presets. Background edits leave sampled source colors unchanged.
+background is an optional override, independent of the source image, with a native
+color picker, validated six-digit hex input and a not-set icon. It defaults to not
+set, leaving the physical board color visible between dots. Clearing it omits the
+custom base rectangle from the SVG reference; leave EasyEDA Pro at its default
+white base for JLCPCB. Background edits leave sampled source colors unchanged.
 Original RGBA is retained, including transparency. Multicolor uses colored dots
 with varying coverage, keeping white highlights; crop, placement and outline
 clipping use the same geometry as the preview and SVG reference. Previous

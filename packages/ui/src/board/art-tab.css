@@ -447,3 +447,16 @@
   border-color: var(--color-accent, #65a4ef);
   background: #65a4ef22;
 }
+
+.fd-art-no-color {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--fd-border);
+  border-radius: 5px;
+}
+.fd-art-no-color[aria-pressed="true"] {
+  outline: 2px solid var(--color-accent, #65a4ef);
+  outline-offset: 2px;
+}

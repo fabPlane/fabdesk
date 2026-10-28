@@ -14,14 +14,20 @@ function HexColor({
   label,
   value,
   onChange,
+  unset = false,
+  onClear,
+  presets = true,
 }: {
   label: string;
   value: string;
   onChange(value: string): void;
+  unset?: boolean;
+  onClear?: () => void;
+  presets?: boolean;
 }) {
-  const [text, setText] = useState(value);
-  useEffect(() => setText(value), [value]);
-  const invalid = !/^#[0-9a-f]{6}$/i.test(text);
+  const [text, setText] = useState(unset ? "" : value);
+  useEffect(() => setText(unset ? "" : value), [value, unset]);
+  const invalid = !(unset && text === "") && !/^#[0-9a-f]{6}$/i.test(text);
   return (
     <div className="fd-art-field">
       <span>{label}</span>
@@ -34,6 +40,7 @@ function HexColor({
         />
         <input
           aria-label={`${label} hex`}
+          placeholder={unset ? "Not set" : "#RRGGBB"}
           value={text}
           maxLength={7}
           spellCheck={false}
@@ -44,25 +51,45 @@ function HexColor({
             if (/^#[0-9a-f]{6}$/i.test(next)) onChange(next.toLowerCase());
           }}
         />
+        {onClear && (
+          <button
+            type="button"
+            className="fd-art-no-color"
+            aria-label="Use board color (no printed background)"
+            title="Not set — use board color"
+            aria-pressed={unset}
+            onClick={() => {
+              setText("");
+              onClear();
+            }}
+          >
+            <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="1.5" />
+              <path d="M5.5 18.5 18.5 5.5" stroke="currentColor" strokeWidth="1.5" />
+            </svg>
+          </button>
+        )}
       </div>
       {invalid && (
         <span role="status" className="text-[11px] text-muted">
           Enter # and six hex digits. Preview keeps the last valid color.
         </span>
       )}
-      <div className="fd-art-color-swatches" role="group" aria-label={`${label} presets`}>
-        {PRESETS.map(([name, hex]) => (
-          <button
-            type="button"
-            key={hex}
-            title={name}
-            aria-label={`${label}: ${name}`}
-            aria-pressed={value === hex}
-            style={{ backgroundColor: hex }}
-            onClick={() => onChange(hex)}
-          />
-        ))}
-      </div>
+      {presets && (
+        <div className="fd-art-color-swatches" role="group" aria-label={`${label} presets`}>
+          {PRESETS.map(([name, hex]) => (
+            <button
+              type="button"
+              key={hex}
+              title={name}
+              aria-label={`${label}: ${name}`}
+              aria-pressed={value === hex}
+              style={{ backgroundColor: hex }}
+              onClick={() => onChange(hex)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -81,8 +108,8 @@ export function ArtColorControls({
   onMode(value: ColorMode): void;
   mask: BoardColor;
   onMask(value: BoardColor): void;
-  background: string;
-  onBackground(value: string): void;
+  background: string | null;
+  onBackground(value: string | null): void;
   ink: string;
   onInk(value: string): void;
 }) {
@@ -116,24 +143,24 @@ export function ArtColorControls({
         </div>
         <span className="text-[11px] text-muted">
           {mode === "multicolor"
-            ? "White solder mask required for JLCPCB multicolor. Choose a printed background below."
+            ? "White solder mask required for JLCPCB multicolor. A custom printed background is optional."
             : `${mask} · JLCPCB palette. Swatches approximate the physical finish.`}
         </span>
       </div>
       {mode === "multicolor" ? (
         <>
-          <HexColor label="Printed background" value={background} onChange={onBackground} />
+          <HexColor
+            label="Printed background"
+            value={background ?? "#ffffff"}
+            unset={background === null}
+            onChange={onBackground}
+            onClear={() => onBackground(null)}
+            presets={false}
+          />
           <p className="text-[11px] text-muted">
-            Printed over white solder mask, visible between source-colored dots. Artwork retains its
-            original colors.
+            Optional color over the board, independent of the source image. Not set leaves the board
+            color visible between artwork dots.
           </p>
-          <button
-            type="button"
-            className="text-xs underline"
-            onClick={() => onBackground("#ffffff")}
-          >
-            Reset printed background to white
-          </button>
           <p className="text-[11px] text-muted">
             Color SVG reference only. JLCPCB requires EasyEDA Pro color-production files; this ZIP
             does not supply them. Halftone feature sizes need process review.
