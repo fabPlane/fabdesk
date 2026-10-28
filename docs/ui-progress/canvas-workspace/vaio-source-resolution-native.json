@@ -1,0 +1,16 @@
+{
+  "projectId": "prj_mvr2ofe307592e4a2e",
+  "originalFilesUnchanged": 16,
+  "nativeViewport": "1440x870",
+  "flow": [
+    "Sources to review selects unresolved keyboard",
+    "Resolve source opens unsent assistant draft with exact board name",
+    "Source details reveals actual resolver reason on request",
+    "I/O Open board shows actual 22 parts and 36 x 27.455 mm",
+    "All boards returns focus to I/O card"
+  ],
+  "limitations": [
+    "Declared links remain compatibility unverified",
+    "No import, regeneration, native Apply or assistant send performed"
+  ]
+}

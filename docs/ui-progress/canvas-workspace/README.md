@@ -1149,3 +1149,7 @@ Native use verified closed defaults, a90°proposal/discard, requested106/100/0co
 ![Exact native properties only when requested](requested-part-properties-native.jpg)
 
 [Native workflow, geometry and focus evidence](compact-part-tools-native.json).
+
+
+### VAIO source resolution and board selection
+Actual native map now omits the redundant source count when each board has its own source. Missing-source selection offers Resolve source and requested Source details; it no longer exposes an empty More menu or disabled Open board. Resolve source only prepares an unsent assistant draft. Native I/O board view reports the actual 22 parts and 36 × 27.455 mm; All boards restores card focus. All 16 baseline files unchanged. UI types and 228 tests pass. See vaio-source-resolution-native.json and captures vaio-source-details.png / vaio-io-board-context.png. Compatibility remains unverified.
