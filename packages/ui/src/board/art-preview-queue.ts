@@ -11,6 +11,10 @@ export function latestPreviewQueue<T, R>(
     send(job.id, job.input);
   };
   return {
+    cancel() {
+      newest++;
+      pending = null;
+    },
     request(input: T) {
       const job = { id: ++newest, input };
       if (active === null) dispatch(job);

@@ -1,6 +1,23 @@
 import { expect, test } from "bun:test";
 import { latestPreviewQueue } from "./art-preview-queue";
 
+test("removing an image discards queued renders and ignores its late preview", () => {
+  const sent: number[] = [], shown: string[] = [];
+  const q = latestPreviewQueue<string, string>(
+    (id) => sent.push(id),
+    (value) => shown.push(value),
+  );
+  q.request("removed image");
+  q.request("pending edit");
+  q.cancel();
+  q.complete(1, "removed preview");
+  expect(sent).toEqual([1]);
+  expect(shown).toEqual([]);
+  q.request("replacement image");
+  q.complete(4, "replacement preview");
+  expect(shown).toEqual(["replacement preview"]);
+});
+
 test("a rapid drag keeps one render in flight and only the latest pending placement", () => {
   const sent: Array<[number, number]> = [],
     shown: string[] = [];

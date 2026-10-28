@@ -262,6 +262,24 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
     typeof latestPreviewQueue<ArtOptions, PreviewResult>
   > | null>(null);
   const workerImage = useRef<GrayImage | null>(null);
+  const removeImage = () => {
+    if (busyRef.current || !hydrated) return;
+    loadId.current++;
+    previewQueue.current?.cancel();
+    setLoading(false);
+    setConverting(false);
+    setGray(null);
+    setSourceData(null);
+    setSourceName(null);
+    setSourceUrl(null);
+    setSvg(null);
+    setPlacement(null);
+    setZoom(1);
+    setDragging(false);
+    setError(null);
+    setNote(null);
+    if (input.current) input.current.value = "";
+  };
   useEffect(() => {
     let worker: Worker;
     try {
@@ -452,17 +470,16 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
       <aside className="fd-art-controls">
         <h2 className="text-sm font-semibold">Board art</h2>
         <p className="mt-1 text-xs leading-relaxed text-muted">
-          Turn a picture into artwork on a PCB. Preview and export locally, with no AI credits.
+          Turn an image into PCB artwork.
         </p>
-        <p className="mt-2 text-xs" data-testid="board-art-owner">
+        <p
+          className="mt-2 truncate text-[11px] text-muted"
+          data-testid="board-art-owner"
+          title={projectId ? `Artwork saved with ${project.data?.name ?? projectId}` : "Draft saved on this device"}
+        >
           {projectId
-            ? `Artwork for ${project.data?.name ?? projectId} · board.kicad_pcb`
-            : "Unassigned draft · stored on this device"}
-        </p>
-        <p className="text-[11px] text-muted">
-          {projectId
-            ? "Shared by chats in this project. Switching chats keeps this artwork; switching projects restores that project's draft."
-            : "Create an art project to associate this draft with a project. A circuit is not required."}
+            ? project.data?.name ?? projectId
+            : "Unassigned draft"}
         </p>
         <p role="status" className="text-[11px] text-muted">
           {saveStatus}
@@ -491,6 +508,17 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
             <span className="fd-art-filename" title={sourceName}>
               {sourceName.split("/").pop()}
             </span>
+          )}
+          {gray && (
+            <>
+              <Button disabled={busy || !hydrated} onClick={removeImage}>
+                <Icon name="trash" width={14} height={14} aria-hidden="true" />
+                Remove image
+              </Button>
+              <span className="text-[11px] text-muted text-center">
+                Clears the saved artwork image. Board and color settings are kept.
+              </span>
+            </>
           )}
         </div>
         <fieldset
