@@ -2,7 +2,9 @@
 
 Design roadmap: [#388](https://github.com/TensorFleet/fabdesk/pull/388). Implementation continues in [#389](https://github.com/TensorFleet/fabdesk/pull/389).
 
-Current checkpoints include the canvas-first shell; project/source overviews and member tools; native source-qualified positioning and rectangular resizing; grouped Outputs/Review; saved sketches, artwork drafts and project notes; actual saved-finding navigation; and explicit PCB/model/ERC update attention. Board Art further work is deferred by the user, with UI Apply still unwired. Enclosure is teammate-owned and preserved. Native replacement, recovery/undo, directional synchronization and complete artifact dependencies remain unfinished. Root typecheck passes. The latest full standard run recorded2,131passed/36skipped/1five-second packaged KiCad test timeout; the unchanged focused tests passed18/18 with a diagnostic15-second timeout. Current UItypecheck/228tests pass. Earlier sections below are chronological evidence, not the latest completion checklist. All recent checkpoints are local-only; remote publication remains revoked.
+Current UI checkpoint: **1e6b79c**, after native video source-chain, playback continuity, fitted controls, library freshness and Parts empty-state/focus work. One main canvas, project/source overviews, contextual source-qualified position/rectangle tools, grouped Outputs/Review, saved sketches, project notes and finding navigation are implemented. Bounded last-position/dimension recovery is implemented; native replacement and general Undo are not. Board Art Apply/polish is deferred by the user; Mechanical is teammate-owned and preserved. Directional synchronization, complete artifact dependencies, member diff/pins and complete VAIO dependency import remain capability gaps. Actual assistant reasoning review is blocked by expired configured Claude authentication; no credentials or provider changed.
+
+Root typecheck and the full standard suite passed at925d41a: **2250 passed / 36 skipped / zero failures**. Subsequent UI/library/Parts slices passed affected checks (299 client / 228 UI tests and relevant typechecks). The final combined batch also passed root typecheck and2250tests/36skipped/0failures at1e6b79c. Historical failures below remain evidence of earlier runs; they are not current failure claims. All recent checkpoints are local-only; remote publication remains revoked. Generated concepts and chronological actual captures remain separate.
 
 
 ## Implemented
@@ -1241,3 +1243,44 @@ Root trackedPCBpreview/GLB Review rows offer Keep saved version only after sourc
 
 ### Video follows the tracked board model’s PCB source
 Recordedrenders/board.glb now follows existing model source inspector: PCBsourcechange warns evenwhileGLB/MP4bytesstayidentical; missing/untracked/inconsistentmodelrecord staysunverified. UnrelatedimportedmeshesdonotinheritrootPCB. SharedclassifierfeedsOutputs/Review/Overviewwithoutnewrenderer/backend. NativeexistingverifiedMP4/manifestreusedonlyaftermodel/videohashmatch; PCBnewlineonly producedOutputs319/Overview320Reviewupdates3(includesvideo)/Review321warning. ExactsourceRESTORED/all25baselinefilesunchanged. Helper7tests23assert/clientUItypes228UItestsPASS. **Playback continuity not passed:** beforelooping1.369s/playing→sourcewrite→unchangedMP4newblobURL/paused0; existingblobhookreloadregressionmustfixnext. No fakefreshness/generation/fit claims. Captions/newscene/externalcomponentfilesremainoutsidecheck. LOCALonlykeepworking; noArt/Mechanical.
+
+
+## Media continuity, saved-output cards and quiet Parts
+
+A PCB-only change now updates the video’s source warning without resetting an unchanged playing video. Its freshly fetched Blob retains identity only when size, MIME and SHA match within the same endpoint/project/path query. Real changed bytes load a different asset. Native fault tests restored the exact source/video bytes and all25 baseline file hashes. This preserves the original failed proof as well as the successful proof; no new rendered scene is claimed.
+
+![Playing through a PCB-source warning](video-source-warning-keeps-playback.png)
+![Real video-byte change warning](video-binary-change-loads-version.png)
+
+[Native continuity proof](video-board-chain-stable-media-native-proof.json), [changed asset proof](video-continuity-changed-media-proof.json).
+
+Models & video now fits native controls and saved-format actions within the panel at1440×870 and960×720. Generation setup remains requested, with advanced settings folded. Actual compact geometry confirms the playing video and actions fit without default scrolling.
+
+![Compact video playback](video-controls-fit-compact.png)
+![Requested video setup](video-setup-fit-compact.png)
+
+[Native compact geometry](video-preview-fit-compact-native.json).
+
+Library video cards reuse the same recorded-input inspector as the selected player. A PCB-only change marks preview/model/video and Review updates3; restoring source clears those known warnings. This check applies to canonical saved product-video formats; unrelated video provenance is not invented. Contextual Play works; visible Close restores Play focus. Native media controls consumed Escape, so Escape-from-player dismissal is not claimed.
+
+![Video included in library review](library-video-source-review.png)
+
+[Native library proof](video-library-source-native.json).
+
+Parts starts with Add parts when there are no lines; search/filter controls appear after adding a line, while an unmatched search retains recovery controls. CSV export stays disabled for a genuinely empty list. The native walkthrough added one temporary hardware line, revealed it, searched/cleared it, then removed it. Clear returns search focus; removing the last line returns Add parts focus. The original25 study files remain exact; the existing UI intentionally saved an empty project.parts.json after removal. No export, order, PCB edit or VAIO edit occurred.
+
+![Empty Parts starting point](parts-empty-start.png)
+![Tools after adding a line](parts-tools-after-add.png)
+
+[Native Parts flow](parts-empty-flow-native.json).
+
+
+## Native checks retain canvas keyboard context
+
+The actual fresh-study readiness note opened Checks; Run PCB-only checks completed with18saved findings. Missing schematic/ERC/parity remain explicit, and the release header shows Review issues. The first shorting finding navigated to its actual105.490/100.000mm pad location on the verified PCB preview. Fixed an observed keyboard gap: a fresh Show on PCB transition now waits for the SVG host to become visible before focusing its selected finding summary; Escape dismisses it and returns focus to the drawing. It does not refocus on routine source queries or steal focus from another selected control.
+
+Native fresh-route focus and Escape passed after the visibility fix; an earlier HMR-only attempt did not establish focus and is not counted as proof. All25protected baseline files remain exact. Intentional new files are the earlier empty project.parts.json and actual reports/drc.json. The fixture failed engineering checks; no clearance/parity/pass claim. Capture331 and JSONproof retained. Final affected UI typecheck/228tests pass. The combined preceding root typecheck/fullstandard2250pass36skip0fail passed at1e6b79c before this small focus change. No Art/Mechanical/remote work.
+
+![Focused actual PCB finding](root-check-finding-focused-canvas.png)
+
+[Native check/focus proof](root-check-finding-focus-native.json).

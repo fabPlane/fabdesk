@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { assemblyFindingPreviewMatches, useCoreClient, usePcbCheckRevision, useProjectJson, useProjectText } from "@fabdesk/client-core";
 import { Button } from "../components/ui";
 import { useUiStore } from "../stores/ui";
@@ -9,6 +9,22 @@ export function RootFindingOverlay({ projectId, svg, box, ready }: { projectId: 
   const client = useCoreClient();
   const candidate = useUiStore(state => state.rootFinding);
   const finding = candidate?.projectId === projectId && candidate.endpoint === client.baseUrl ? candidate : null;
+  const card = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const element = card.current;
+    if (!finding || !element) return;
+    // The SVG host starts hidden until its image loads. Focus only once it is painted.
+    const focus = () => {
+      if (!element.getClientRects().length) return;
+      observer.disconnect();
+      const ui = useUiStore.getState();
+      if (ui.activeProjectId === projectId && ui.rootFinding === finding && document.activeElement === document.body) element.focus({ preventScroll: true });
+    };
+    const observer = new ResizeObserver(focus);
+    observer.observe(element);
+    const frame = requestAnimationFrame(focus);
+    return () => { cancelAnimationFrame(frame); observer.disconnect(); };
+  }, [finding, projectId]);
   const report = useProjectJson(projectId, finding ? "reports/drc.json" : null);
   const receipt = useProjectText(projectId, finding ? "renders/pcb.svg.revision.json" : null);
   const check = usePcbCheckRevision(projectId, !!finding);
@@ -30,7 +46,7 @@ export function RootFindingOverlay({ projectId, svg, box, ready }: { projectId: 
   const visible = position && position.left >= 0 && position.left <= 100 && position.top >= 0 && position.top <= 100;
   return <div className="fd-root-finding-overlay" data-canvas-tools>
     {visible && <div className="fd-root-finding-marker" role="img" aria-label={`Saved PCB finding at ${finding.point.x}, ${finding.point.y} mm`} style={{ left: `${position.left}%`, top: `${position.top}%` }}><span /></div>}
-    <section className="fd-root-finding-card" style={position && position.top > 50 ? { top: 14, bottom: "auto" } : undefined} aria-label="Selected saved PCB finding">
+    <section ref={card} tabIndex={-1} className="fd-root-finding-card" style={position && position.top > 50 ? { top: 14, bottom: "auto" } : undefined} aria-label="Selected saved PCB finding">
       <strong>{finding.description}</strong>
       <p>{current ? `${finding.point.x.toFixed(3)}, ${finding.point.y.toFixed(3)} mm · ${finding.itemDescription}` : checking ? "Checking saved finding and drawing…" : "Finding or drawing changed or is unverified. Marker hidden; review checks again."}</p>
       {current && !visible && <p>This reported position lies outside the displayed drawing.</p>}
