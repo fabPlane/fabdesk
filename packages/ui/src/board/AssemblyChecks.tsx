@@ -30,7 +30,8 @@ export function AssemblyChecks({ projectId, data, checking, failed, onRetry }: {
     returnFocus.current = null;
     if (useUiStore.getState().activeProjectId !== projectId || document.activeElement !== document.body) return;
     const row = root.current?.querySelector<HTMLElement>(`[data-member-check-row="${selected}"]`);
-    row?.scrollIntoView({ block: "nearest" }); row?.focus({ preventScroll: true });
+    // Leave room below the restored row for its details and the corner assistant.
+    row?.scrollIntoView({ block: "center" }); row?.focus({ preventScroll: true });
   }, [selected, projectId]);
   const choose = (id: string) => { restored.current = true; setBoard(id && data.manifestSha256 ? { sourceId: id, manifestSha256: data.manifestSha256 } : null); setSelected(null); setResultError(null); };
   const run = async () => {

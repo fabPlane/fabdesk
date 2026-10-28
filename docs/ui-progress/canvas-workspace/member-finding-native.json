@@ -13,7 +13,8 @@
     "Original empty draft restored and assistant closed",
     "Back to checks restores I/O source, exact saved report row and keyboard focus",
     "Close details returns focus to that row",
-    "Compact contextual controls fit; window restored wide"
+    "Compact contextual controls fit; window restored wide",
+    "Final compact return centers saved row with full detail card above corner assistant; capture349 supersedes below-fold347"
   ],
   "checks": {
     "findingHelper": "4 pass / 24 assertions",

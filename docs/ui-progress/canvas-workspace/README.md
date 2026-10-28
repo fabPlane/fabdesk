@@ -1363,3 +1363,8 @@ Overview Ask/Resolve source, inspected-board Ask and missing-schematic requests 
 ![VAIO source resolution draft](vaio-resolve-source-context.png)
 
 [Native context evidence](board-ask-context-native.json).
+
+
+Compact screenshot review caught that347focused the row at the viewport bottom while its details remained below the fold. Return navigation now centers that row; final349shows its whole detail card and Close details/Show on PCB controls above the corner assistant. Both iterations are preserved. The full standard suite atd314c0cpassed2257tests/36skip/0fail and roottypes passed; the final UI-only scroll correction was verified natively after that checkpoint.
+
+![Visible returned finding details](member-finding-return-details-visible.png)
