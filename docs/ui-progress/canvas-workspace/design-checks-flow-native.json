@@ -1,0 +1,30 @@
+{
+  "projectId": "prj_mvrlt1yx802c210b69",
+  "actualRun": "verify_drc with schematicParity=false through native UI",
+  "reportCounts": {
+    "errors": 10,
+    "warnings": 5,
+    "unconnected": 3
+  },
+  "savedFindings": 18,
+  "nativeWalkthrough": [
+    "No schematic: ERC disabled and PCB-only scope explicit",
+    "Actual run produced findings and readiness warning",
+    "Schematic filter showed zero with no saved ERC report, not a pass",
+    "All checks restored18findings",
+    "Selected shorting finding showed actual pad/track positions; details explicitly close",
+    "Reference-only project with neither native file had both check actions disabled"
+  ],
+  "preservedExistingNonReportFiles": 18,
+  "validation": {
+    "uiTypecheck": "pass",
+    "uiTests": 227,
+    "assertions": 866
+  },
+  "limits": [
+    "No ERC run in this milestone",
+    "Source-qualified assembly checks are unchanged",
+    "Root findings do not yet jump to PCB geometry",
+    "Existing report provenance limitations remain explicit"
+  ]
+}

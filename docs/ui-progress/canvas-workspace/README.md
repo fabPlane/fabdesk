@@ -996,3 +996,16 @@ Native compact-window use verified drag/resize, exact placement, keyboard nudgin
 ![Changed PCB hides the unverified proposal](art-pcb-preview-source-warning.jpg)
 
 [Native preview evidence and limits](art-saved-pcb-preview-native.json).
+
+
+### Clear check prerequisites and selected findings
+
+Design checks explains PCB DRC and schematic ERC, requires each saved native source, and labels PCB-only checks when no schematic exists. Project/source checks gate actions and project switching resets selection/error state. Filters separate saved PCB/schematic findings; details appear on selection and close explicitly. Existing tools and report provenance are reused. Source-inspection failures expose retry instead of an indefinite checking label.
+
+Actual native use ran PCB-only DRC on the private study:10errors,5warnings and3unconnected items (18displayedfindings). Matching source is not presented as a pass. Filtering to the absent ERC report showed no findings and explicitly no saved ERC; returning restored all18. A selected shorting finding exposed actual pad/track positions. A reference-only project disabled both actions. All18existing non-report study files stayed unchanged; the actual DRC report is intentionally retained. UItypecheck/227tests pass. ERC was not run; root finding-to-PCB navigation remains a follow-up.
+
+![Actual PCB-only findings](design-checks-results.jpg)
+![Details only for the selected finding](design-checks-selected-finding.jpg)
+![Saved-source prerequisites](design-checks-prerequisites.jpg)
+
+[Exact check walkthrough](design-checks-flow-native.json).

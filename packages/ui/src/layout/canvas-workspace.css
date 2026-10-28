@@ -673,3 +673,13 @@
 .fd-notes-notice > p { flex:1; }
 .fd-schematic-status .fd-workspace-menu-content { left:auto; right:0; width:250px; }
 .fd-schematic-status .fd-workspace-menu > summary { border:0; box-shadow:none; padding:3px; min-height:26px; }
+
+/* Checks stay one task surface; finding details appear only on selection. */
+.fd-single-checks-header { flex-shrink:0; padding:16px; border-bottom:1px solid var(--fd-border); }
+.fd-single-checks-header h2 { margin:0; font-size:16px; font-weight:600; }
+.fd-single-checks-header p { margin:5px 0 0; font-size:12px; color:var(--fd-muted); line-height:1.6; }
+.fd-single-checks-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-top:12px; }
+.fd-single-checks-header .fd-single-checks-prerequisite { margin-top:10px; }
+.fd-single-checks-filter { display:flex; align-items:center; flex-wrap:wrap; justify-content:space-between; gap:8px; margin-top:14px; font-size:11px; color:var(--fd-muted); }
+.fd-single-checks-filter label { display:flex; align-items:center; gap:8px; }
+.fd-single-checks-filter select { background:var(--fd-panel); color:var(--fd-fg); border:1px solid var(--fd-border); border-radius:7px; padding:5px 8px; }
