@@ -1,4 +1,4 @@
-import { useVideoInputRevision, type VideoInputRevisionState } from "@fabdesk/client-core";
+import { useVideoInputRevision, videoInputsNeedReview, type VideoInputRevisionState } from "@fabdesk/client-core";
 import { Button } from "../components/ui";
 
 export function videoInputLabel(state: VideoInputRevisionState | undefined): string {
@@ -9,7 +9,6 @@ export function videoInputLabel(state: VideoInputRevisionState | undefined): str
     : state === "missing-artifact" ? "Saved video is missing"
     : "Saved video · Source unverified";
 }
-export const videoInputsNeedReview = (state: VideoInputRevisionState | undefined) => ["inputs-changed", "artifact-changed", "missing-input", "missing-artifact"].includes(state ?? "");
 
 /** Input identity is narrower than current PCB, caption or full-scene freshness. */
 export function VideoSourceStatus({ projectId, path, updating }: { projectId: string; path: string; updating: boolean }) {

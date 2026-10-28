@@ -1101,4 +1101,29 @@ Actual native Make video created the record. A guarded model-byte change raised 
 
 ### Placement and outline proposals have an explicit discard action
 
-The existing position and rectangular-outline editors now reveal Discard proposal only when unsaved values differ from their inspected snapshot. It restores those local values without a tool call or source write; Apply remains the deliberate save step, and stale-source guards remain in force. UItypecheck and228tests pass. Native acceptance of these new buttons is pending: the computer-use surface began returning noWindowsAvailable/elementHasNoFrame while the owned development bridge remained healthy. No native pass or new placement mutation is claimed.
+The existing position and rectangular-outline editors now reveal Discard proposal only when unsaved values differ from their inspected snapshot. It restores those local values without a tool call or source write; Apply remains the deliberate save step, and stale-source guards remain in force. UItypecheck and228tests pass. Native acceptance now passed after the next owned runtime restart: R1X106→proposal108→Discard106; outline width15→proposal18→Discard15. Both Apply buttons disabled afterward. Neither Apply was invoked. All19stable existing files remain unchanged; KiCad owns its new ephemeral lock nonce. The temporary automation-input issue and its recovery are recorded in the local handoff.
+
+
+![Native position proposal with a discard action](position-discard-proposal-native.jpg)
+![Native outline proposal with a discard action](outline-discard-proposal-native.jpg)
+
+[Proposal-only native evidence](placement-discard-native.json).
+
+### Make video reuses the guarded model exporter
+
+Video generation now checks the existing PCB/model receipt by bytes instead of timestamps. If it needs a model, it calls the existing guarded GLB exporter, retaining its before/after saved-source checks and model receipt. Unchanged verified models are reused. A changed PCB during export preserves the previous model and video. The requested video controls explain the refresh before the user chooses Make video.
+
+An isolated real KiCad study copied a PCB/model, deliberately changed only its saved PCB bytes and backdated the source to2000. Native Make video observed the mismatch, ran the guarded exporter, produced6seconds/144frames and played successfully. Its saved model receipt matches both the actual PCB and GLB; video input/output hashes match. Donor files and study source/metadata remain unchanged.4tool tests,228UItests and roottypes pass. The whole tools suite first hit an unrelated MCP heartbeat timing assertion, then passed focused10/626 and full419pass/1skip/0fail on recheck. The earlier full-root mechanical timeout remains recorded; no new complete-root-suite green claim.
+
+![Native model knows the saved PCB changed](video-stale-pcb-model-native.jpg)
+![Actual video after guarded model refresh](video-guarded-model-refresh-native.jpg)
+
+[Native guarded export evidence](video-guarded-model-native.json).
+
+### Video changes appear automatically in project Overview
+
+Overview now includes recorded video input/output changes in its existing Review updates action. A temporary change to the saved MP4 alone surfaced one update while the PCB, model and check sources stayed unchanged. The action opened the video row in Review. Exact restoration cleared the badge without generating anything. All19stable original files remain unchanged; the video is restored and no source fault remains.
+
+![Overview points to a changed saved video](overview-video-update-native.jpg)
+
+[Native Overview attention evidence](overview-video-attention-native.json).

@@ -15,7 +15,7 @@ import {
   VIDEO_PRESETS,
   VIDEO_RESOLUTIONS,
 } from "@fabdesk/product-video";
-import { PROJECT_FILES, ensureDir, exists, jailPath, mtimeMs, writeAtomic, writeJson } from "../fs";
+import { PROJECT_FILES, ensureDir, exists, jailPath, writeAtomic, writeJson } from "../fs";
 import { ToolError, defineTool } from "../registry";
 import { fileUrl, loadNetlist, ok, p, requireBoard, requireKicad, requireSchematic } from "./common";
 import { pcbPreviewFileHash, recordPcbPreviewRevision } from "../pcb-preview-revision";
@@ -423,14 +423,23 @@ export const render_product_video = defineTool({
     const project = ctx.requireProject();
     const boardGlb = p(project, PROJECT_FILES.renders, "board.glb");
     const board = p(project, PROJECT_FILES.boardPcb);
-    const pcbMtime = await mtimeMs(board);
-    const glbMtime = await mtimeMs(boardGlb);
-    const glbStale = glbMtime === null || (pcbMtime !== null && pcbMtime > glbMtime);
-    if (glbStale && (await exists(board))) {
-      const cli = await requireKicad(ctx);
-      ctx.progress(0.05, "exporting glb");
-      await ensureDir(p(project, PROJECT_FILES.renders));
-      await ctx.services.kicad.exportGlb(cli, { board, output: boardGlb, signal: ctx.signal });
+    if (await exists(board)) {
+      // Reuse the guarded exporter and its source receipt. File timestamps cannot establish
+      // whether an imported/restored PCB matches a saved model.
+      let receipt: unknown;
+      try {
+        const text = await readFile(p(project, BOARD_MODEL_REVISION_PATH), "utf8");
+        try { receipt = JSON.parse(text); } catch { receipt = null; }
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+      const parsed = BoardModelRevision.safeParse(receipt);
+      const current = parsed.success && await exists(boardGlb)
+        && await pcbPreviewFileHash(board) === parsed.data.sourceSha256
+        && await pcbPreviewFileHash(boardGlb) === parsed.data.artifactSha256;
+      if (!current) {
+        await render_glb.handler({}, { ...ctx, progress: (fraction, note) => ctx.progress(fraction * .1, note) });
+      }
     }
     const manifest = project.manifest();
     let components: Array<{ ref: string; value: string; footprint?: string }> = [];

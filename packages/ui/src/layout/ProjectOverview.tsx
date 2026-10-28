@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CoreHttpError, savedOutputs, projectSketchImagePaths, useBoardSources, useProject, useProjectOrder, usePcbPreviewRevision, useBoardModelRevision, useEnclosureSourceRevision, usePcbCheckRevision } from "@fabdesk/client-core";
+import { CoreHttpError, savedOutputs, projectSketchImagePaths, useBoardSources, useProject, useProjectOrder, usePcbPreviewRevision, useBoardModelRevision, useEnclosureSourceRevision, usePcbCheckRevision, useVideoInputRevision, videoInputsNeedReview } from "@fabdesk/client-core";
 import { newChatDraftKey, useUiStore } from "../stores/ui";
 import { ProjectImage } from "../chat/ProjectImage";
 import { Button, EmptyState, LoadError, Spinner } from "../components/ui";
@@ -28,7 +28,10 @@ function SingleBoardOverview() {
   const modelRevision = useBoardModelRevision(projectId, has("renders/board.glb"));
   const enclosureRevision = useEnclosureSourceRevision(projectId, has("enclosure.json"));
   const checkRevision = usePcbCheckRevision(projectId, has("reports/drc.json"));
+  const videoPath = ["mp4", "webm", "gif"].map(extension => `exports/product-video.${extension}`).find(has);
+  const videoRevision = useVideoInputRevision(projectId, videoPath);
   const updates = [
+    ...(videoPath && !videoRevision.isFetching && !videoRevision.isError && videoInputsNeedReview(videoRevision.data) ? ["Product video"] : []),
     ...(has("renders/pcb.svg") && ["source-changed", "artifact-changed"].includes(pcbRevision.data ?? "") ? ["PCB preview"] : []),
     ...(has("renders/board.glb") && ["source-changed", "artifact-changed"].includes(modelRevision.data ?? "") ? ["3D model"] : []),
     ...(has("enclosure.json") && enclosureRevision.data === "changed" ? ["Enclosure"] : []),
@@ -56,7 +59,7 @@ function SingleBoardOverview() {
     : pcbRevision.data === "matches-source" ? "Preview matches saved PCB" : "Saved preview · source unverified";
   return <div className="fd-project-overview" onKeyDown={(event) => { if (event.key === "Escape") setSelected(false); }}>
     <div className="fd-overview-heading"><h1 title={project.data.name}>Project overview</h1><p>{referenceOnly ? "Select a saved reference to continue your design." : designTab === "schematic" ? "Select your schematic to open its tools." : "Select your board to open its tools."}</p>
-      {updates.length > 0 && <Button className="fd-overview-updates" size="sm" variant="ghost" title={`${updates.join(", ")} have source or artifact changes. This covers tracked artifacts only; review before sharing or fabrication.`} onClick={() => ui().setBoardTab("updates")}><Icon name="warning" width={16} height={16} />Review updates · {updates.length}</Button>}
+      {updates.length > 0 && <Button className="fd-overview-updates" size="sm" variant="ghost" title={`${updates.join(", ")} ${updates.length === 1 ? "has" : "have"} source or artifact changes. This covers tracked artifacts only; review before sharing or fabrication.`} onClick={() => ui().setBoardTab("updates")}><Icon name="warning" width={16} height={16} />Review updates · {updates.length}</Button>}
     </div>
     {(pcb || schematic || preview) ? <div className="fd-overview-board">
       {selected && <div className="fd-board-context-tools" aria-label="Board actions">

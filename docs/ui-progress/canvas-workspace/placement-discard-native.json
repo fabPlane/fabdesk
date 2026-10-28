@@ -1,0 +1,20 @@
+{
+  "projectId": "prj_mvrlt1yx802c210b69",
+  "nativePosition": {
+    "reference": "R1",
+    "savedX": 106,
+    "proposedX": 108,
+    "afterDiscardX": 106,
+    "applyDisabledAfterDiscard": true
+  },
+  "nativeOutline": {
+    "savedWidth": 15,
+    "proposedWidth": 18,
+    "afterDiscardWidth": 15,
+    "applyDisabledAfterDiscard": true
+  },
+  "nativeApplyInvoked": false,
+  "stablePreexistingFilesUnchanged": 19,
+  "runtimeLock": "KiCad inspection recreated its ephemeral lock with a new nonce; intentionally not restored or counted as a stable source",
+  "finalState": "Board PCB; popup closed, location deselected, assistant closed, no active job or source fault"
+}

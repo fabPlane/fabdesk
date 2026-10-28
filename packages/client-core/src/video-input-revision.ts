@@ -4,6 +4,8 @@ import { sha256Blob } from "./pcb-preview-revision";
 
 export type VideoInputRevisionState = "inputs-unchanged" | "inputs-changed" | "artifact-changed" | "missing-input" | "missing-artifact" | "untracked";
 
+export const videoInputsNeedReview = (state: VideoInputRevisionState | undefined) => ["inputs-changed", "artifact-changed", "missing-input", "missing-artifact"].includes(state ?? "");
+
 /** Only the recorded decoded meshes and selected video bytes; never infer current PCB, captions or newly added scene content. */
 export async function inspectVideoInputRevision(client: Pick<CoreClient, "readFile" | "readFileBlob">, projectId: string, path: string): Promise<VideoInputRevisionState> {
   let raw: unknown;

@@ -143,7 +143,7 @@ export function ProductVideoPanel({
         >
           <div>
             <p className="mt-1 text-[12px] leading-relaxed text-muted">
-              Choose the camera motion and duration. The result stays in this project’s outputs.
+              Choose the camera motion and duration. An outdated board model is refreshed from the saved PCB first. The video stays in this project’s outputs.
             </p>
           </div>
           <label className="flex flex-col gap-1 text-[12px]">
