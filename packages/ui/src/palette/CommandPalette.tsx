@@ -102,7 +102,7 @@ export function CommandPalette() {
             <Command.Item value="branch thread chat conversation" onSelect={pick(() => void actions.branchThread())}>
               Branch chat <span className="ml-auto"><Kbd>{mod} + Shift + D</Kbd></span>
             </Command.Item></>}
-            <Command.Item value="sketch" onSelect={pick(actions.openSketch)}>
+            <Command.Item value="open sketch pad drawing" onSelect={pick(actions.openSketch)}>
               Open sketch pad <span className="ml-auto"><Kbd>{mod} + Shift + S</Kbd></span>
             </Command.Item>
             <Command.Item value="settings" onSelect={pick(actions.openSettings)}>
@@ -117,14 +117,14 @@ export function CommandPalette() {
               Parts Inventory
             </Command.Item>
             {dashboardUrl && (
-              <Command.Item value="fabplane dashboard" onSelect={pick(() => void host.openExternal(dashboardUrl))}>
+              <Command.Item value="open fabplane dashboard" onSelect={pick(() => void host.openExternal(dashboardUrl))}>
                 Open fabPlane dashboard
               </Command.Item>
             )}
-            <Command.Item value="toggle sidebar" onSelect={pick(toggleSidebar)}>
+            <Command.Item value="toggle sidebar browse projects & conversations" onSelect={pick(toggleSidebar)}>
               {canvasMode ? "Browse projects & conversations" : "Toggle sidebar"} <span className="ml-auto"><Kbd>{mod} + B</Kbd></span>
             </Command.Item>
-            <Command.Item value="toggle board panel" onSelect={pick(toggleBoard)}>
+            <Command.Item value="toggle board panel switch canvas / conversation" onSelect={pick(toggleBoard)}>
               {canvasMode ? "Switch canvas / conversation" : "Toggle board panel"} <span className="ml-auto"><Kbd>{mod} + Shift + B</Kbd></span>
             </Command.Item>
           </Command.Group>

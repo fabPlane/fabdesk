@@ -1480,3 +1480,7 @@ The GitHub import destination check now reports failure and offers Retry locatio
 ## Imported-project step guard
 
 After import, the dialog now identifies the Project imported step and hides setup-mode tabs. While opening a selected board, it displays Opening board and disables Open without board alongside the already-disabled board choices. This prevents leaving through a competing action while adoption is in flight. UI typecheck PASS (/tmp/canvas-import-step-ui-types.log); reviewed against existing adopt/finish/error paths. This small control-state slice was not exercised through a fresh native clone/adoption, and has no new native success claim. Destination recovery captures406–407 remain the latest actual images.
+
+## Search uses visible action names
+
+Native search for browse projects previously returned No results. Action search values now include visible words for Browse projects & conversations, Switch canvas / conversation, Open sketch pad and Open fabPlane dashboard. Native browse query→navigation drawer and sketch query→existing sketch dialog passed, with no Save or Send; switch query found its action. Dashboard alias is typechecked only. UI typecheck PASS. Capture408 and [native evidence](command-label-search-native.json).
