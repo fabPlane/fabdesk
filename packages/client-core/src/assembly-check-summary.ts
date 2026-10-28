@@ -6,9 +6,10 @@ export type AssemblyCheckSummary = { sourceId: string; state: "missing-report" |
 export async function inspectAssemblyCheckSummaries(client: Pick<CoreClient, "readFileBlob" | "inspectBoardSources">, projectId: string, snapshot: ProjectBoardSources) {
   const data = ProjectBoardSources.parse(snapshot);
   if (data.projectId !== projectId || data.mode !== "assembly" || !data.manifestSha256) throw new Error("An explicit assembly declaration is required.");
-  const summaries: AssemblyCheckSummary[] = new Array(data.sources.length); let next = 0;
-  await Promise.all(Array.from({ length: Math.min(4, data.sources.length) }, async () => {
+  const summaries: AssemblyCheckSummary[] = new Array(data.sources.length); let next = 0, stopped = false;
+  const workers = await Promise.allSettled(Array.from({ length: Math.min(4, data.sources.length) }, async () => {
     for (;;) {
+      if (stopped) break;
       const index = next++, row = data.sources[index]; if (!row) break;
       let state: AssemblyCheckSummary["state"] = "unavailable", findingCount = 0;
       if (row.status === "available" && row.source.location === "project" && row.pcbSha256) {
@@ -20,11 +21,13 @@ export async function inspectAssemblyCheckSummaries(client: Pick<CoreClient, "re
           const receipt = AssemblyPcbCheckReceipt.safeParse(raw);
           if (!receipt.success || receipt.data.boardSource.projectId !== projectId || receipt.data.boardSource.sourceId !== row.source.id || receipt.data.boardSource.manifestSha256 !== data.manifestSha256) state = "scope-unverified";
           else { state = receipt.data.pcbRevision.sha256 === row.pcbSha256 ? "source-unchanged" : "source-changed"; findingCount = normalizeReport(raw, "drc").length; }
-        } catch (error) { if (error instanceof CoreHttpError && error.status === 404) state = "missing-report"; else throw error; }
+        } catch (error) { if (error instanceof CoreHttpError && error.status === 404) state = "missing-report"; else { stopped = true; throw error; } }
       }
       summaries[index] = { sourceId: row.source.id, state, findingCount };
     }
   }));
+  const failure = workers.find(worker => worker.status === "rejected");
+  if (failure?.status === "rejected") throw failure.reason;
   const current = ProjectBoardSources.parse(await client.inspectBoardSources(projectId));
   if (current.projectId !== projectId || current.mode !== "assembly" || current.manifestSha256 !== data.manifestSha256 || current.sources.length !== data.sources.length || data.sources.some(before => {
     const after = current.sources.find(row => row.source.id === before.source.id);

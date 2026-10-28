@@ -29,3 +29,17 @@ test("ownership/source changes reject the whole summary and unavailable sources 
   for (const change of ["manifest", "source"] as const) await expect(inspectAssemblyCheckSummaries({ ...client, inspectBoardSources: async () => { const current = structuredClone(data); if (change === "manifest") current.manifestSha256 = "b".repeat(64); else current.sources[1]!.pcbSha256 = "2".repeat(64); return current; } }, "p", data)).rejects.toThrow("sources changed");
   await expect(inspectAssemblyCheckSummaries({ ...client, readFileBlob: async () => { throw new Error("offline"); } }, "p", data)).rejects.toThrow("offline");
 });
+
+test("transport failure settles started reads before rejecting and stops further batches", async () => {
+  const data = fixture(); let active = 0, calls = 0, release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const query = inspectAssemblyCheckSummaries({ inspectBoardSources: async () => data, readFileBlob: async (_p, path) => {
+    calls++; active++;
+    try { if (path.includes("/a/")) throw new Error("offline"); await gate; return report(path.split("/")[1]!); }
+    finally { active--; }
+  } }, "p", data);
+  let rejected = false; void query.catch(() => { rejected = true; });
+  await new Promise(resolve => setTimeout(resolve, 1));
+  expect(rejected).toBe(false); expect(active).toBe(3);
+  release(); await expect(query).rejects.toThrow("offline"); expect(active).toBe(0); expect(calls).toBe(4);
+});
