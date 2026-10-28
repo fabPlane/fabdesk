@@ -2,10 +2,11 @@
 
 Design roadmap: [#388](https://github.com/TensorFleet/fabdesk/pull/388). Implementation continues in [#389](https://github.com/TensorFleet/fabdesk/pull/389).
 
-Current UI checkpoint: **1e6b79c**, after native video source-chain, playback continuity, fitted controls, library freshness and Parts empty-state/focus work. One main canvas, project/source overviews, contextual source-qualified position/rectangle tools, grouped Outputs/Review, saved sketches, project notes and finding navigation are implemented. Bounded last-position/dimension recovery is implemented; native replacement and general Undo are not. Board Art Apply/polish is deferred by the user; Mechanical is teammate-owned and preserved. Directional synchronization, complete artifact dependencies, member diff/pins and complete VAIO dependency import remain capability gaps. Actual assistant reasoning review is blocked by expired configured Claude authentication; no credentials or provider changed.
+Current local UI checkpoint: **2f03dae**, after16f2dcd/efe9b2c/ae4a231/f1d233a. The latest batch adds existing drill/placement/DXF/ZIP access on demand, actual ZIP missing-file feedback, a counted entry for large manufacturing sets, and keyboard context across check/finding/file/search transitions. It builds on the canvas shell, source overviews and guarded native part/rectangle tools, sketch retention, live source warnings and grouped Review/Outputs.
 
-Root typecheck and the full standard suite passed at925d41a: **2250 passed / 36 skipped / zero failures**. Subsequent UI/library/Parts slices passed affected checks (299 client / 228 UI tests and relevant typechecks). The final combined batch also passed root typecheck and2250tests/36skipped/0failures at1e6b79c. Historical failures below remain evidence of earlier runs; they are not current failure claims. All recent checkpoints are local-only; remote publication remains revoked. Generated concepts and chronological actual captures remain separate.
+Final root typecheck and standard regression suite passed at2f03dae: **2256 passed / 36 skipped / zero failures**. Native proof is separate: real source-preserving exports, real DRC findings, exact-file access and compact/wide UI walkthroughs are recorded below. All48current study files remain exact after final verification, and all40original concept image hashes/dimensions are unchanged. No owned fault or export job remains active.
 
+The real assistant sketch-to-board walkthrough remains blocked by “Claude needs you to sign in again”; human reauthentication was requested without changing credentials/provider. Native replacement/general Undo, directional reconciliation, complete VAIO dependencies/keyboard revision and hosted-stack integration remain capability/dependency gaps. Board Art Apply/polish is user-deferred; Mechanical is teammate-owned. This is a verified UI checkpoint, not completion of every original roadmap phase. All progress remains local-only; nothing was pushed or published. Historical sections below retain earlier results and limits.
 
 ## Implemented
 
@@ -1328,3 +1329,8 @@ Show file now consumes its existing project/path reveal intent once after the ac
 ![Focused actual output file](output-file-reveal-focused.png)
 
 [Native file reveal proof](file-reveal-focus-native.json).
+
+
+## Final local verification for the current UI batch
+
+At2f03dae the root typecheck and full standard `bun run test` passed:2256passed,36skipped,0failures. Logs are retained locally as /tmp/canvas-workspace-final-types.log and /tmp/canvas-workspace-final-tests.log. Skipped native integrations are not counted as native walkthroughs. All48recorded study file hashes remain exact; actual generated outputs and the failing DRC report are intentionally retained. All40original design PNGs match their saved SHA/dimension manifests and all planning relative file links resolve. No remote action, merge, deploy or order was performed.
