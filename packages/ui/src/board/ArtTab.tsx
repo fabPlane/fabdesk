@@ -731,9 +731,6 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
           <Button variant="primary" disabled={unavailable} onClick={() => void newProject()}>
             {busy && !exportingImage ? "Saving…" : "Create art project"}
           </Button>
-          <Button disabled={unavailable} onClick={() => void downloadImage()}>
-            {exportingImage ? "Exporting image…" : "Download board PNG"}
-          </Button>
           <Button disabled={unavailable} onClick={downloadLocal} data-testid="board-art-download">
             {colorMode === "multicolor" ? "Download color reference ZIP" : "Download Gerber ZIP"}
           </Button>
@@ -774,33 +771,45 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
             {outline === "circle" ? `Ø ${widthMm} mm` : `${widthMm} × ${heightMm} mm`} ·{" "}
             {STYLE_LABELS[style]}
           </span>
-          {svg && (
-            <div className="flex flex-wrap items-center gap-1">
-              <button type="button" aria-pressed={placing} onClick={() => setPlacing((p) => !p)}>
-                {placing ? "Finish placing" : "Place artwork"}
-              </button>
-              <button
-                type="button"
-                aria-label="Zoom out"
-                disabled={zoom <= 0.5}
-                onClick={() => setZoom((z) => Math.max(0.5, z - 0.25))}
-              >
-                −
-              </button>
-              <span className="fd-art-zoom">{Math.round(zoom * 100)}%</span>
-              <button
-                type="button"
-                aria-label="Zoom in"
-                disabled={zoom >= 3}
-                onClick={() => setZoom((z) => Math.min(3, z + 0.25))}
-              >
-                +
-              </button>
-              <button type="button" onClick={() => setZoom(1)}>
-                Fit
-              </button>
-            </div>
-          )}
+          <div className="flex flex-wrap items-center gap-1">
+            {svg && (
+              <>
+                <button type="button" aria-pressed={placing} onClick={() => setPlacing((p) => !p)}>
+                  {placing ? "Finish placing" : "Place artwork"}
+                </button>
+                <button
+                  type="button"
+                  aria-label="Zoom out"
+                  disabled={zoom <= 0.5}
+                  onClick={() => setZoom((z) => Math.max(0.5, z - 0.25))}
+                >
+                  −
+                </button>
+                <span className="fd-art-zoom">{Math.round(zoom * 100)}%</span>
+                <button
+                  type="button"
+                  aria-label="Zoom in"
+                  disabled={zoom >= 3}
+                  onClick={() => setZoom((z) => Math.min(3, z + 0.25))}
+                >
+                  +
+                </button>
+                <button type="button" onClick={() => setZoom(1)}>
+                  Fit
+                </button>
+              </>
+            )}
+            <button
+              type="button"
+              disabled={unavailable}
+              onClick={() => void downloadImage()}
+              className="inline-flex items-center gap-1.5"
+              aria-label="Download finished board as PNG"
+            >
+              <Icon name="export" width={14} height={14} aria-hidden="true" />
+              {exportingImage ? "Exporting…" : "Download PNG"}
+            </button>
+          </div>
         </div>
         {(loading || converting) && (
           <div role="status" className="fd-art-progress">
