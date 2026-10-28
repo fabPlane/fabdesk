@@ -35,7 +35,11 @@ function HexColor({
         {onClear ? " (optional)" : ""}
       </span>
       <div className="fd-art-color-input">
-        <label className="fd-art-color-picker">
+        <label
+          className="fd-art-color-picker"
+          title={unset ? "Choose a custom color" : `Choose a custom color · ${value}`}
+        >
+          <span className="fd-art-color-wheel-icon" aria-hidden="true" />
           <input
             type="color"
             aria-label={`${label} color wheel`}
@@ -43,6 +47,13 @@ function HexColor({
             onChange={(e) => onChange(e.target.value)}
           />
           <span>Color wheel</span>
+          {!unset && (
+            <span
+              className="fd-art-picked-color"
+              style={{ backgroundColor: value }}
+              aria-hidden="true"
+            />
+          )}
         </label>
         <input
           aria-label={`${label} hex`}
