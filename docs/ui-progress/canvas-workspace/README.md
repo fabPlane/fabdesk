@@ -1197,3 +1197,7 @@ Independent clone with2sources/3instances opened Overview adaptively. Native Lef
 
 ### Guarded previous-dimension recovery
 Existing editable rectangles now expose Revert last dimensions after a confirmed resize. Reuses pcb_resize_outline and source/edge/ownership checks; no general undo or deletion of newly created outline. Refreshed bounds must match requested dimensions, original anchor and edge IDs. Native member15×15→16×15→Revert15×15 passed, exact upgradedPCBbytes restored and all6protectedfiles unchanged. Source newline disabled Revert even after automatic preview refresh; exact source restored. New17mmproposal disabledRevert; Discardkeptrecovery. FocusreturnsBoard sizedialog. Noactivefault. UItypes/228tests pass. outline-dimensions-recovery-native.json +3captures. Root-size variant and historical auto-preview activity wording are next; existing old-job source-change toast remained while current receipt was verified matching.
+
+
+### Single-board dimensions recovery
+Native root15×15→16.5×15→Revert15×15 passed with the same guard and dialog focus. PCB, .kicad_pro and projectmetadata all byte-identical to the immediate baseline; refreshed SVG/source receipt verified. Escape closes size tools then selected location, keeping drawing focus. Capture root-dimensions-restored.png; root-outline-recovery-native.json. No code change after the member-verified implementation; broader UI workflow work continues.
