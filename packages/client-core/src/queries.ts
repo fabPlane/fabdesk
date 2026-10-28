@@ -57,7 +57,7 @@ export function useAssemblyPreviewRevisions(projectId: string, sources: ProjectB
   const client = useCoreClient();
   const queries = useQueries({ queries: sources.map(source => {
     const directory = source.source.location === "project" ? source.source.directory : null;
-    return { queryKey: directory === "." ? ["pcb-preview-revision", projectId] : directory ? ["pcb-preview-revision", projectId, directory] : ["pcb-preview-revision", projectId, "unresolved", source.source.id], queryFn: () => inspectPcbPreviewRevision(client, projectId, directory!), enabled: source.status === "available" && !!source.previewPath && directory !== null };
+    return { queryKey: directory === "." ? ["pcb-preview-revision", projectId, ".", source.pcbSha256] : directory ? ["pcb-preview-revision", projectId, directory, source.pcbSha256] : ["pcb-preview-revision", projectId, "unresolved", source.source.id], queryFn: () => inspectPcbPreviewRevision(client, projectId, directory!, source.pcbSha256), enabled: source.status === "available" && !!source.previewPath && directory !== null };
   }) });
   return sources.map((source, index) => ({ sourceId: source.source.id, trackable: source.status === "available" && !!source.previewPath && source.source.location === "project", ...queries[index]! }));
 }

@@ -132,7 +132,7 @@ export const render_pcb_svg = defineTool({
   toolset: "render",
   title: "Render PCB SVG",
   description: "Render board.kicad_pcb copper, silkscreen, and edge cuts to renders/pcb.svg.",
-  inputSchema: {},
+  inputSchema: { expectedSourceSha256: z.string().regex(/^[a-f0-9]{64}$/).optional().describe("Captured saved PCB hash; reject if a queued preview would render newer bytes") },
   annotations: {
     readOnlyHint: false,
     destructiveHint: true,
@@ -140,7 +140,7 @@ export const render_pcb_svg = defineTool({
     idempotentHint: true,
   },
   longRunning: true,
-  handler: async (_args, ctx) => {
+  handler: async ({ expectedSourceSha256 }, ctx) => {
     const project = ctx.requireProject();
     const cli = await requireKicad(ctx);
     const board = await requireBoard(project);
@@ -149,6 +149,7 @@ export const render_pcb_svg = defineTool({
     ctx.progress(0.2, "exporting svg");
     const sourceBytes = await readFile(board);
     const sourceRevision = createHash("sha256").update(sourceBytes).digest("hex");
+    if (expectedSourceSha256 && sourceRevision !== expectedSourceSha256) throw new ToolError("PCB changed before preview rendering. Review the latest source and try again.", "precondition");
     const scratch = await mkdtemp(join(tmpdir(), "fabplane-pcb-preview-"));
     try {
       // Render immutable input; a live edit cannot mix source revisions in one SVG.

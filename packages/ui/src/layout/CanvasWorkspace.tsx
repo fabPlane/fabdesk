@@ -14,6 +14,7 @@ import { FabPlaneLogo } from "../components/FabPlaneLogo";
 import { UpdateBadge } from "../components/UpdateBadge";
 import { WhatsNewLink } from "../whatsnew/WhatsNew";
 import { useUiStore } from "../stores/ui";
+import { LiveAssemblyPreviews } from "./LiveAssemblyPreviews";
 import { ProjectOverview } from "./ProjectOverview";
 import type { AppShellProps } from "./AppShell";
 import "./canvas-workspace.css";
@@ -103,6 +104,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
       </div>
     </header>
     {banner}
+    {projectId && boardSources.data?.mode === "assembly" && <LiveAssemblyPreviews key={`${client.baseUrl}/${projectId}/${boardSources.data.manifestSha256}`} projectId={projectId} data={boardSources.data} enabled={!boardSources.isFetching && !boardSources.isError && connected && boardSources.data.editing === "explicit-source-tools"} />}
     <main className="fd-canvas-main" data-area={fresh ? "start" : area}>
       {projectId && !secondary && !conversationOnly && <nav className="fd-canvas-destinations" aria-label="Project workspace">
         <WorkspaceMenu label={<><Icon name="library" width={16} height={16} /><span>{areaLabel}</span><Icon name="chevronDown" width={14} height={14} /></>}>

@@ -56,3 +56,10 @@ test("member preview checks stay inside the captured source directory", async ()
   await expect(inspectPcbPreviewRevision(client, "project", "../outside")).rejects.toThrow();
   expect(reads).toEqual([]);
 });
+
+test("a source-qualified preview read cannot certify bytes for a different captured PCB hash", async () => {
+  const f = fixture(); f.writeReceipt();
+  const client = { readFile: async (_id: string, path: string) => f.files.get(path)!, readFileBlob: async (_id: string, path: string) => new Blob([f.files.get(path)!]) };
+  expect(await inspectPcbPreviewRevision(client, "p", ".", hash("board-a"))).toBe("matches-source");
+  await expect(inspectPcbPreviewRevision(client, "p", ".", hash("newer-board"))).rejects.toThrow("PCB changed while checking");
+});

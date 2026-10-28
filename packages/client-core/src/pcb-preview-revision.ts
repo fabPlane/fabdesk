@@ -9,7 +9,7 @@ export async function sha256Blob(blob: Blob): Promise<string> {
 }
 
 /** Compare bytes, never timestamps. Older previews remain unverified until explicitly regenerated. */
-export async function inspectPcbPreviewRevision(client: Pick<CoreClient, "readFile" | "readFileBlob">, projectId: string, directory = "."): Promise<PcbPreviewState> {
+export async function inspectPcbPreviewRevision(client: Pick<CoreClient, "readFile" | "readFileBlob">, projectId: string, directory = ".", expectedSourceSha256?: string): Promise<PcbPreviewState> {
   const prefix = directory === "." ? "" : `${AssemblyRelativePath.parse(directory)}/`;
   let raw: unknown;
   try {
@@ -30,6 +30,7 @@ export async function inspectPcbPreviewRevision(client: Pick<CoreClient, "readFi
   if (!source) return "missing-source";
   if (!artifact) return "missing-artifact";
   const [sourceHash, artifactHash] = await Promise.all([sha256Blob(source), sha256Blob(artifact)]);
+  if (expectedSourceSha256 && sourceHash !== expectedSourceSha256) throw new Error("PCB changed while checking its preview. Recheck project sources.");
   if (artifactHash !== receipt.artifactSha256) return "artifact-changed";
   return sourceHash === receipt.sourceSha256 ? "matches-source" : "source-changed";
 }

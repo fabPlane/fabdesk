@@ -413,3 +413,6 @@
 .fd-assembly-finding-summary span { display:block; margin-top:4px; color:var(--fd-muted); overflow-wrap:anywhere; }
 .fd-finding-anchor .fd-location-marker { background:var(--fd-warning, #d49320); }
 .fd-member-checks-detail p button { margin-left:8px; }
+
+.fd-live-preview-notice { position:absolute; z-index:25; left:50%; bottom:96px; transform:translateX(-50%); display:flex; align-items:center; gap:8px; max-width:calc(100% - 32px); padding:7px 10px 7px 14px; border:1px solid var(--fd-border); border-radius:14px; background:var(--fd-panel); box-shadow:0 6px 22px #102a2020; font-size:12px; }
+.fd-live-preview-notice > span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

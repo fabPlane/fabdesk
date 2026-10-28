@@ -1,0 +1,62 @@
+{
+  "projectId": "prj_mvqyacun3e60075ae8",
+  "nativePlacement": {
+    "reference": "R1",
+    "x": 105.3,
+    "y": 100
+  },
+  "firstPreview": {
+    "sourceSha256": "af1dfdf2eb0243728c3699fd407a1e5d3a0c6cd62531cca182e354915d8209d0",
+    "artifactSha256": "f5a95a2016638120543d080ff143b093c7d8af220e658fe23d20f729d23c6e69",
+    "drcSourceSha256": "34f1e8d8592b9fce278642e7ab15b94cf53631740cccf25c439a1311e7bc77c6",
+    "cameraAndSelection": {
+      "camera": "-220.5220588235294 -24 1291.0441176470588 506",
+      "selection": "io-right"
+    },
+    "otherSourceUnchanged": true
+  },
+  "protection": {
+    "jobs": [
+      {
+        "id": "job_mvrfpu6b64dd56c78b",
+        "status": "done"
+      },
+      {
+        "id": "job_mvrfri0ef5bd853dfd",
+        "status": "failed"
+      }
+    ],
+    "failedRenderPreservedPriorArtifactAndReceipt": true,
+    "manualPreviewPreservedAfterSavedSourceChange": true
+  },
+  "finalJobs": [
+    {
+      "id": "job_mvrfpu6b64dd56c78b",
+      "kind": "tool:render_pcb_svg",
+      "projectId": "prj_mvqyacun3e60075ae8",
+      "status": "done"
+    },
+    {
+      "id": "job_mvrfri0ef5bd853dfd",
+      "kind": "tool:render_pcb_svg",
+      "projectId": "prj_mvqyacun3e60075ae8",
+      "status": "failed"
+    },
+    {
+      "id": "job_mvrfujzeefc6705f69",
+      "kind": "tool:render_pcb_svg",
+      "projectId": "prj_mvqyacun3e60075ae8",
+      "status": "done"
+    }
+  ],
+  "newValidSaveRecoveredAfterFailure": true,
+  "viewPreservedRightInstance": true,
+  "compactWindow": {
+    "width": 960,
+    "height": 720
+  },
+  "allRecordedFixtureHashesRestored": true,
+  "temporaryReportRestoredToAbsent": true,
+  "allRecordedVaioHashesUnchanged": true,
+  "noAgentMessageSent": true
+}

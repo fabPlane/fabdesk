@@ -15,7 +15,7 @@ async function fixture(changeWhileRendering = false) {
     if (changeWhileRendering) await Bun.write(join(project.dir, "board.kicad_pcb"), "(kicad_pcb changed)");
   } } });
   const registry = createRegistry(), factory = contextFactory(services, project);
-  const run = () => registry.invoke("render_pcb_svg", {}, (ref) => factory({ def: registry.get("render_pcb_svg")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }));
+  const run = (args: Record<string, unknown> = {}) => registry.invoke("render_pcb_svg", args, (ref) => factory({ def: registry.get("render_pcb_svg")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }));
   return { project, run };
 }
 test("PCB rendering writes an atomic receipt bound to the source and final SVG bytes", async () => {
@@ -34,5 +34,18 @@ test("a PCB edited during generation cannot receive a fresh receipt", async () =
     await expect(run()).rejects.toThrow("PCB changed while rendering");
     expect(await Bun.file(join(project.dir, PCB_PREVIEW_REVISION_PATH)).exists()).toBe(false);
     expect(await readFile(join(project.dir, "renders/pcb.svg"), "utf8")).toBe("previous SVG");
+  } finally { await rm(project.dir, { recursive: true, force: true }); }
+});
+
+test("queued previews reject changed saved bytes and retain both prior artifact and receipt", async () => {
+  const { project, run } = await fixture();
+  try {
+    await run();
+    const hash = await pcbPreviewFileHash(join(project.dir, "board.kicad_pcb"));
+    const svg = await readFile(join(project.dir, "renders/pcb.svg"), "utf8"), receipt = await readFile(join(project.dir, PCB_PREVIEW_REVISION_PATH), "utf8");
+    await Bun.write(join(project.dir, "board.kicad_pcb"), "(kicad_pcb changed)");
+    await expect(run({ expectedSourceSha256: hash })).rejects.toThrow("PCB changed before preview rendering");
+    expect(await readFile(join(project.dir, "renders/pcb.svg"), "utf8")).toBe(svg);
+    expect(await readFile(join(project.dir, PCB_PREVIEW_REVISION_PATH), "utf8")).toBe(receipt);
   } finally { await rm(project.dir, { recursive: true, force: true }); }
 });
