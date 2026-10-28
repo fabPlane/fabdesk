@@ -21,3 +21,11 @@ test("the laser stencil choice is enabled only for export_laser_stencil", () => 
     fileExportChoices([{ name: "export_stencil" }, { name: "export_laser_stencil" }]),
   ).toEqual(["export_stencil", "export_laser_stencil", "export_gerbers", "export_bom"]);
 });
+
+test("additional formats require their exact existing registered exporters", () => {
+  const tools = ["export_drill", "export_pos", "export_dxf", "export_zip"] as const;
+  expect(fileExportChoices(tools.map(name => ({ name })))).toEqual(["export_gerbers", "export_bom", ...tools]);
+  expect(fileExportChoices([{ name: "export_drill" }])).toContain("export_drill");
+  expect(fileExportChoices([{ name: "export_drill" }])).not.toContain("export_pos");
+  expect(fileExportChoices([{ name: "fabrication_zip" }])).not.toContain("export_zip");
+});

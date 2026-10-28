@@ -625,6 +625,10 @@
 .fd-export-config fieldset > .space-y-2 > label { margin:0; padding:10px; gap:8px; align-items:flex-start; }
 .fd-export-config fieldset > .space-y-2 > label input { margin-top:4px; }
 .fd-export-config fieldset > .space-y-2 > label > svg { display:none; }
+.fd-export-config .fd-export-other-formats > div { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+.fd-export-config .fd-export-other-formats label { margin:0; padding:10px; gap:8px; align-items:flex-start; }
+.fd-export-config .fd-export-other-formats label input { margin-top:4px; }
+.fd-export-config .fd-export-other-formats label > svg { display:none; }
 
 /* Routing uses one saved-board reference; playback tools appear with a real run. */
 .fd-routing-start { height:100%; min-height:0; display:flex; flex-direction:column; gap:18px; padding:18px 24px 88px; }

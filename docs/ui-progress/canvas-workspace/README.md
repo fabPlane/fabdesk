@@ -1293,3 +1293,16 @@ The existing captured root finding now restores its exact saved DRC row and deta
 ![Restored finding details](check-return-restores-selection.png)
 
 [Native return-navigation evidence](check-return-selection-native.json).
+
+
+## Additional existing export formats
+
+Added registered existing exporters under closed-by-default More formats in the shared Outputs/Files controls: Excellon drill files, pick-and-place CSV, default F.Cu/B.Cu/Edge.Cuts DXF and fabrication ZIP. No exporter/backend rebuilt. ZIP requires existing saved fabrication inputs; its scope note states packaging does not regenerate or validate. Completion feedback shows actual packaged count and missing optional files. Actual native paste/edge Gerbers (.gtp/.gbp/.gm1) now remain visible in the output library, and familiar format names remain searchable.
+
+Native isolated-study exports passed:15Gerber files, board.drl,3placement rows,3DXFs, and17-entry ZIP. CRC and every ZIP entry match current saved bytes; absent bom.csv is reported in UI. The installed drill exporter produced no map, so UI promises Excellon hole files only. DXFs are separate from this ZIP. Compact requested-format actions are reachable; shared Files dialog on VAIO keeps Create ZIP disabled with assembly-scope explanation, Cancel restores export-button focus. All42 pre-additional-export files and16VAIO files remain exact. Captures333–335 and native JSON retained. Client/UI typechecks and302client/229UItests pass. Known fixture DRC errors remain; no engineering pass, download/order or remote action. Continue immediately with default library clarity after multi-file exports; individual files must remain accessible without flooding the first canvas.
+
+![Common formats remain quiet](export-common-formats.png)
+![Compact ZIP completion](export-more-formats-compact.png)
+![Assembly scope guard](export-more-assembly-guard.png)
+
+[Actual export files and preservation evidence](additional-export-native.json).

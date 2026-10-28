@@ -1,0 +1,68 @@
+{
+  "projectId": "prj_mvs5abwp2ff3301fe3",
+  "registeredToolsExposed": [
+    "export_drill",
+    "export_pos",
+    "export_dxf",
+    "export_zip"
+  ],
+  "nativeExports": {
+    "gerbers": 15,
+    "drillFiles": [
+      "exports/gerbers/board.drl"
+    ],
+    "placementRows": 3,
+    "dxfLayers": [
+      "F.Cu",
+      "B.Cu",
+      "Edge.Cuts"
+    ],
+    "zipEntries": [
+      "gerbers/board-F_Silkscreen.gto",
+      "gerbers/board-F_Cu.gtl",
+      "gerbers/board-B_Silkscreen.gbo",
+      "gerbers/board-B_Mask.gbs",
+      "gerbers/board-B_Cu.gbl",
+      "gerbers/board-B_Fab.gbr",
+      "gerbers/board-F_Courtyard.gbr",
+      "gerbers/board-B_Courtyard.gbr",
+      "gerbers/board-Margin.gbr",
+      "gerbers/board-B_Paste.gbp",
+      "gerbers/board-Edge_Cuts.gm1",
+      "gerbers/board-job.gbrjob",
+      "gerbers/board-F_Paste.gtp",
+      "gerbers/board-F_Mask.gts",
+      "gerbers/board.drl",
+      "gerbers/board-F_Fab.gbr",
+      "positions.csv"
+    ],
+    "zipCrcAndBytesMatch": true,
+    "missingOptionalShown": "bom.csv"
+  },
+  "ui": [
+    "More formats closed by default",
+    "Compact960x720 requested formats and action reachable",
+    "Shared Files dialog exposes same formats",
+    "Assembly Create ZIP disabled with source-scope reason; Cancel returns Export project files focus"
+  ],
+  "preservation": {
+    "original25FilesExact": true,
+    "beforeAdditionalExports42FilesExact": true,
+    "vaioRecordedFiles": 16,
+    "vaioAllExact": true
+  },
+  "newFileHashes": {
+    "exports/positions.csv": "4356c0f9f2f110ac1b42c582b6a3642035f9de3adf29947c446fbaccd8f774b3",
+    "exports/fabrication.zip": "79dfdef3db05b4b0bca94d3a4e27326e06d28a1736c77f6184c10c20939838b2",
+    "exports/dxf/board-B_Cu.dxf": "81af2a006f2d8c0a0a069196b4c15ab9341595f1b2a7296b51e2bdc0662fccca",
+    "exports/dxf/board-F_Cu.dxf": "06c5f4f68e913adf63263f43d07bd17a289e1da140ee83914def305452670312",
+    "exports/dxf/board-Edge_Cuts.dxf": "4325ae5c07c32c3fb19485d99f56967267c02d86f6fe421c78a7c658bc5f69f6",
+    "exports/gerbers/board.drl": "dce40344b872a61f0069ffcfc8c3f4c6f3187ef883d6a2aa377dd09c92c9aa6b"
+  },
+  "limits": [
+    "No drill-map file was produced by this installed exporter; UI promises only Excellon hole files",
+    "DXF default layers only, bottom layers top view",
+    "ZIP packages existing Gerbers/drills/positions/BOM; DXFs remain separate",
+    "Fixture DRC has errors; no fabrication-readiness pass, download or external order claimed"
+  ]
+}

@@ -24,3 +24,10 @@ test("member outputs come only from explicitly available source directories and 
   expect(rows[1]).toMatchObject({ sourceId: "io", sourceName: "I/O", kind: "models" });
   expect(rows[2]!.sourceId).toBeUndefined();
 });
+
+test("actual native paste and board-edge Gerbers remain visible manufacturing outputs", () => {
+  for (const path of ["exports/gerbers/board-F_Paste.gtp", "exports/gerbers/board-B_Paste.gbp", "exports/gerbers/board-Edge_Cuts.gm1"]) {
+    expect(outputKind(path)).toBe("manufacturing");
+    expect(savedOutputs([{ path, size: 1, mtime: "2026-10-29" }])[0]?.path).toBe(path);
+  }
+});

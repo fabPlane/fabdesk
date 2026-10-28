@@ -31,7 +31,7 @@ export function workspaceViewSearchTerms(area: WorkspaceArea, view: { tab: Works
     "boards:schematic": "schematic circuit sheets",
     "boards:cinema": "route board router cinema playback",
     "parts:bom": "bill of materials bom parts shopping list off-board items quantities",
-    "outputs:files": "export gerbers drill fabrication zip bom csv solder stencil laser cut lightburn download files",
+    "outputs:files": "export gerbers drill fabrication zip bom csv pick and place component placement dxf layers solder stencil laser cut lightburn download files",
     "outputs:renders": "render board renders images pictures saved outputs gallery",
     "outputs:3d": "3d glb stl obj model export download product video render make movie animation mp4 webm gif",
     "review:updates": "review updates sync freshness stale source changes",

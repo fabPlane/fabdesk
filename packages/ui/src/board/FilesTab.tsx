@@ -61,8 +61,9 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
   const hasPcb = files.some(file => file.path === "board.kicad_pcb");
   const bomSource = files.some(file => ["project.parts.json", "circuit.netlist.json", "board.kicad_sch"].includes(file.path));
   const scopeReady = !!sources.data && !sources.isFetching && !sources.isError;
-  const canExport = scopeReady && (exportKind === "export_bom" ? bomSource : !assembly && hasPcb);
-  const sourceNote = !scopeReady ? sources.isError ? "Board source scope could not be checked. Retry before exporting." : "Checking board sources…" : exportKind === "export_bom" ? !bomSource ? "Add a saved netlist, schematic or project parts list before exporting a BOM. Member-board BOMs are not included." : assembly ? "Project parts CSV includes saved root netlist and extras only; member-board BOMs are not included." : "Uses the saved netlist and project hardware, or schematic fallback. Component coverage and freshness are unverified." : assembly ? "Member-board manufacturing exports are not available here yet. Choose a board to inspect its source; project parts CSV remains separate." : !hasPcb ? "Add a saved PCB in Board before creating manufacturing files." : "Exports use this project’s saved PCB. Review current checks, routing and clearances before fabrication.";
+  const hasFabricationFiles = files.some(file => file.path.startsWith("exports/gerbers/") || ["exports/positions.csv", "exports/bom.csv"].includes(file.path));
+  const canExport = scopeReady && (exportKind === "export_bom" ? bomSource : !assembly && (exportKind === "export_zip" ? hasFabricationFiles : hasPcb));
+  const sourceNote = !scopeReady ? sources.isError ? "Board source scope could not be checked. Retry before exporting." : "Checking board sources…" : exportKind === "export_bom" ? !bomSource ? "Add a saved netlist, schematic or project parts list before exporting a BOM. Member-board BOMs are not included." : assembly ? "Project parts CSV includes saved root netlist and extras only; member-board BOMs are not included." : "Uses the saved netlist and project hardware, or schematic fallback. Component coverage and freshness are unverified." : assembly ? "Member-board manufacturing exports are not available here yet. Choose a board to inspect its source; project parts CSV remains separate." : exportKind === "export_zip" ? hasFabricationFiles ? "Packages existing Gerbers, drills, placements and BOM when present. Missing optional files are reported; nothing is regenerated or validated." : "Export Gerbers, drill files, placements or a BOM before creating a ZIP." : !hasPcb ? "Add a saved PCB in Board before creating manufacturing files." : exportKind === "export_dxf" ? "Exports F.Cu, B.Cu and Edge.Cuts in millimetres. Bottom layers use a top view. Review saved checks before fabrication." : "Exports use this project’s saved PCB. Review current checks, routing and clearances before fabrication.";
   const previewPresent = exportFocus && !assembly && files.some(file => file.path === "renders/pcb.svg");
   const previewRevision = usePcbPreviewRevision(projectId, previewPresent);
   const previewLabel = previewRevision.isFetching ? "Checking saved preview…" : previewRevision.isError ? "Preview source check unavailable" : previewRevision.data === "matches-source" ? "Preview matches saved PCB" : previewRevision.data === "source-changed" ? "PCB changed · Preview is older" : "Saved preview · Source unverified";
@@ -118,7 +119,7 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
       </section>
       <section className="fd-export-config" aria-label="Export options"><FileExportControls {...exportControls} />{sources.isError && <Button size="sm" onClick={() => void sources.refetch()}>Retry source check</Button>}</section>
     </div>
-    {state.status !== "idle" && <div className="fd-export-feedback" role={state.error ? "alert" : "status"}>{state.error ?? (busy ? `Exporting ${EXPORTS[lastExport].title.toLowerCase()}…` : `${EXPORTS[lastExport].title} saved in project outputs.`)}{state.note && <p>{state.note}</p>}{state.status === "done" && <Button size="sm" variant="ghost" onClick={() => { const ui = useUiStore.getState(); ui.setWorkspaceArea("outputs"); ui.setWorkspaceTab("renders"); }}>Open output library</Button>}</div>}
+    {state.status !== "idle" && <div className="fd-export-feedback" role={state.error ? "alert" : "status"}>{state.error ?? (busy ? `Exporting ${EXPORTS[lastExport].title.toLowerCase()}…` : `${EXPORTS[lastExport].title} saved in project outputs.`)}{state.note && <p>{state.note}</p>}{state.status === "done" && <ExportCompletionDetails kind={lastExport} result={state.result} />}{state.status === "done" && <Button size="sm" variant="ghost" onClick={() => { const ui = useUiStore.getState(); ui.setWorkspaceArea("outputs"); ui.setWorkspaceTab("renders"); }}>Open output library</Button>}</div>}
   </div>;
   return (
     <div className="fd-files flex h-full min-h-0 flex-col">
@@ -133,6 +134,7 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
       {state.status !== "idle" && !exportOpen && <div role={state.error ? "alert" : "status"} className={cn("border-b border-border px-3 py-2 text-xs", state.error ? "text-danger" : "text-muted")}>
         {state.error ?? (busy ? `Exporting ${EXPORTS[lastExport].title.toLowerCase()}…` : `${EXPORTS[lastExport].title} exported to exports/.`)}
         {state.note && <p className="mt-1">{state.note}</p>}
+        {state.status === "done" && <ExportCompletionDetails kind={lastExport} result={state.result} />}
       </div>}
       <div className="fd-files-body flex min-h-0 flex-1">
         <nav aria-label="Project file explorer" className="fd-files-list flex w-72 shrink-0 flex-col border-r border-border bg-panel/40">
@@ -181,4 +183,14 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
       </Dialog>
     </div>
   );
+}
+
+
+function ExportCompletionDetails({ kind, result }: { kind: ExportKind; result: unknown }) {
+  if (kind !== "export_zip" || !result || typeof result !== "object" || !("json" in result)) return null;
+  const json = result.json;
+  if (!json || typeof json !== "object") return null;
+  const files = "files" in json && Array.isArray(json.files) ? json.files.filter((file): file is string => typeof file === "string") : [];
+  const missing = "missing" in json && Array.isArray(json.missing) ? json.missing.filter((file): file is string => typeof file === "string") : [];
+  return <p>{files.length} saved files packaged{missing.length ? ` · Not included: ${missing.join(", ")}` : ""}</p>;
 }
