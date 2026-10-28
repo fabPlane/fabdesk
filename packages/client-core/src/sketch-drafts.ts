@@ -50,3 +50,8 @@ export function createSketchDraftSession({ client, projectId: initialProjectId, 
 export function editableSketchPaths(files: ReadonlyArray<{ path: string }>): string[] {
   return files.map(file => file.path).filter(path => /^sketches\/[^/\\]+(?:\.excalidraw(?:-\d+)?\.png|\.excalidraw)$/i.test(path)).sort().reverse();
 }
+
+/** Saved visual references, including rendered editable sketches; never treat these as native boards. */
+export function projectSketchImagePaths(files: ReadonlyArray<{ path: string }>): string[] {
+  return files.map(file => file.path).filter(path => /^sketches\/[^/\\]+\.(?:png|jpe?g)$/i.test(path)).sort().reverse();
+}

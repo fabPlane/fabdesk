@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { editableSketchPaths, createSketchDraftSession, newChatDraftKey } from "./sketch-drafts";
+import { projectSketchImagePaths, editableSketchPaths, createSketchDraftSession, newChatDraftKey } from "./sketch-drafts";
 import type { CoreClient } from "./CoreClient";
 
 function fixture(projectId: string | null = null) {
@@ -102,4 +102,8 @@ test("failed source upload prevents image upload and can retry the original", as
 
 test("saved drawing choices include original scene files alongside their editable image copies", () => {
   expect(editableSketchPaths([{ path: "sketches/old.excalidraw" }, { path: "sketches/old-2.excalidraw" }, { path: "sketches/draft.excalidraw.png" }, { path: "sketches/notes.json" }])).toEqual(["sketches/old.excalidraw", "sketches/old-2.excalidraw", "sketches/draft.excalidraw.png"]);
+});
+
+test("overview references include saved sketch images but exclude native sources and nonvisual scene JSON", () => {
+  expect(projectSketchImagePaths(["sketches/reference.jpg", "sketches/drawing.excalidraw.png", "sketches/drawing.excalidraw", "renders/pcb.svg", "board.kicad_pcb", "sketches/nested/image.png", "sketches/..\\image.png"].map(path => ({ path })))).toEqual(["sketches/reference.jpg", "sketches/drawing.excalidraw.png"]);
 });

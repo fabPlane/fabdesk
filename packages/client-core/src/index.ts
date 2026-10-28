@@ -159,7 +159,7 @@ export {
 } from "./speech/shortcut";
 export type { VoiceShortcut } from "./speech/shortcut";
 
-export { DRAFT_KEY_NEW, newChatDraftKey, createSketchDraftSession, editableSketchPaths } from "./sketch-drafts";
+export { DRAFT_KEY_NEW, newChatDraftKey, createSketchDraftSession, editableSketchPaths, projectSketchImagePaths } from "./sketch-drafts";
 export { WORKSPACE_AREAS, workspaceAreaForView, workspaceViews } from "./workspace-navigation";
 export type { WorkspaceArea, WorkspaceView } from "./workspace-navigation";
 

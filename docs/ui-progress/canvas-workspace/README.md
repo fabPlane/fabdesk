@@ -1009,3 +1009,15 @@ Actual native use ran PCB-only DRC on the private study:10errors,5warnings and3u
 ![Saved-source prerequisites](design-checks-prerequisites.jpg)
 
 [Exact check walkthrough](design-checks-flow-native.json).
+
+
+### Continue from a saved project reference
+
+Before a native PCB exists, Overview displays actual saved sketch/reference images rather than asking users to upload again. Select the image to reveal Use in conversation and Open file. The first action adds the existing project path to the current project conversation draft once, preserves message text and opens the assistant without sending. Open file selects the original in Files. Multiple saved images use a selector, and the image is explicitly a reference, not a generated PCB. Existing board and assembly overviews are unchanged.
+
+Native use verified reference selection, one attachment after repeated action, original-file navigation and quiet return. The temporary study attachment was removed; original3referencefiles stayed unchanged. Root typecheck and the complete standard suite pass (see exact counts below); restricted-server failures from the first sandboxed attempt were resolved by rerunning with local fixture access. The test-generated tracked Python cache was restored. Additional reference selection was not newly exercised in the native app.
+
+![Quiet saved-reference overview](overview-saved-reference.jpg)
+![Reuse existing reference in an unsent conversation](overview-reference-assistant.jpg)
+
+[Native reference walkthrough and full-suite counts](overview-reference-flow-native.json).

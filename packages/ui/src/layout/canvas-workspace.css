@@ -683,3 +683,6 @@
 .fd-single-checks-filter { display:flex; align-items:center; flex-wrap:wrap; justify-content:space-between; gap:8px; margin-top:14px; font-size:11px; color:var(--fd-muted); }
 .fd-single-checks-filter label { display:flex; align-items:center; gap:8px; }
 .fd-single-checks-filter select { background:var(--fd-panel); color:var(--fd-fg); border:1px solid var(--fd-border); border-radius:7px; padding:5px 8px; }
+
+.fd-overview-reference .fd-overview-board-caption label { display:flex; align-items:center; gap:8px; }
+.fd-overview-reference select { max-width:220px; border:1px solid var(--fd-border); border-radius:7px; background:var(--fd-panel); color:var(--fd-fg); padding:5px 8px; }
