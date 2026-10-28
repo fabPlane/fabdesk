@@ -1084,3 +1084,16 @@ After an owned development restart, the actual player loaded, played, paused and
 ![Actual corrected native board video and format downloads](video-playback-corrected-native.jpg)
 
 [Native evidence and precise limits](model-video-native.json).
+
+
+### Saved video inputs participate in Review updates
+
+New video manifests record hashes of the exact mesh bytes decoded and each saved video format. Outputs and Review compare those bytes; older manifests remain unverified. Changing an input warns without deleting or regenerating the video. The shared Review video action opens its existing tools in one step. Source details explicitly distinguish recorded mesh identity from current PCB, captions, newly added scene content and physical compatibility.
+
+Actual native Make video created the record. A guarded model-byte change raised warnings in both views; exact restoration cleared them without another render. Native playback still worked.19stable preexisting files remain unchanged, the temporary model change is restored and regenerated outputs are intentionally retained.285client,228UI,28video and2tool tests pass, as do root types. The standard suite reports2136pass/36skip/1fail at the unchanged packaged mechanical-truth5000ms timeout; it ran before the final extra writer test. A final one-writer-per-output guard prevents overlapping same-runtime renders from mixing files and provenance; tested separately, pending next native core restart. No complete-suite pass is claimed.
+
+![Saved video with recorded inputs](video-recorded-inputs-native.jpg)
+![Changed input warns while the saved video remains](video-input-changed-native.jpg)
+![Shared Review updates action](review-video-input-change-native.jpg)
+
+[Native evidence and explicit scope](video-input-freshness-native.json).

@@ -349,6 +349,7 @@ export function handleCoreEvent(event: CoreEvent, ctx: HandlerCtx): void {
       void qc.invalidateQueries({ queryKey: ["assembly-board-model", event.projectId] });
       void qc.invalidateQueries({ queryKey: ["assembly-schematic-preview", event.projectId] });
       void qc.invalidateQueries({ queryKey: ["board-model-revision", event.projectId] });
+      void qc.invalidateQueries({ queryKey: ["video-input-revision", event.projectId] });
       void qc.invalidateQueries({ queryKey: ["finish-it-needs-work", event.projectId] });
       void qc.invalidateQueries({ queryKey: ["project", event.projectId] });
       void qc.invalidateQueries({ queryKey: ["projects"] });

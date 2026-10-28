@@ -213,3 +213,6 @@ export { enclosureSizeLabel } from "./enclosure-display";
 export { loadBoardArtwork, saveBoardArtwork, createArtworkSessionStore, artworkSessions, type ArtworkSessionDraft } from "./board-artwork";
 
 export { captureRootCheckFinding, type RootCheckFinding } from "./root-check-finding";
+
+export { useVideoInputRevision } from "./queries";
+export { inspectVideoInputRevision, type VideoInputRevisionState } from "./video-input-revision";

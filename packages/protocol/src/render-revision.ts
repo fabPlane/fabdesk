@@ -1,5 +1,5 @@
 import { z } from "zod/v4";
-import { BoardSourceSelection } from "./assembly";
+import { AssemblyRelativePath, BoardSourceSelection } from "./assembly";
 
 /** Records the bytes used for a PCB SVG preview; it is not an electrical compatibility check. */
 export const PcbPreviewRevision = z.object({
@@ -74,3 +74,13 @@ export const AssemblySchematicPreviewRevision = z.object({
   }
 });
 export type AssemblySchematicPreviewRevision = z.infer<typeof AssemblySchematicPreviewRevision>;
+
+/** Recorded mesh bytes consumed by the video renderer. Does not establish PCB/model parity or caption freshness. */
+const VideoInput = z.object({ path: AssemblyRelativePath.refine(path => /\.(?:glb|stl|obj)$/i.test(path)), sha256: z.string().regex(/^[a-f0-9]{64}$/) }).strict();
+const VideoOutput = z.object({ path: z.enum(["exports/product-video.mp4", "exports/product-video.webm", "exports/product-video.gif"]), sha256: z.string().regex(/^[a-f0-9]{64}$/) }).strict();
+export const ProductVideoInputRevision = z.object({
+  contract: z.literal("fabplane.video-input-revision.v1"),
+  inputs: z.array(VideoInput).min(1).max(256),
+  outputs: z.array(VideoOutput).min(1).max(3),
+}).strict().refine(value => new Set(value.inputs.map(row => row.path)).size === value.inputs.length && new Set(value.outputs.map(row => row.path)).size === value.outputs.length, "Revision paths must be distinct");
+export const PRODUCT_VIDEO_MANIFEST_PATH = "exports/product-video.json";

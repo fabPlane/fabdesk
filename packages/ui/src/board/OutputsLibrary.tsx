@@ -1,3 +1,4 @@
+import { VideoSourceStatus } from "./VideoSourceStatus";
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { assemblyModelNeedsReview, assemblyModelSummaryLabel, useAssemblyModelSummaries, useAssemblyPreviewRevisions, savedOutputs, useBoardSources, useBoardModelRevision, usePcbPreviewRevision, useEnclosureSourceRevision, useCoreClient, useProject, useRunTool, type OutputKind } from "@fabdesk/client-core";
 import { Button, Dialog, EmptyState, LoadError, Spinner } from "../components/ui";
@@ -130,7 +131,7 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
       <div className="fd-output-caption"><strong>{basename(file.path)}</strong>{file.sourceName && <span className="fd-output-source">{file.sourceName}</span>}<span>{formatFileSize(file.size)} · Saved {new Date(file.mtime).toLocaleDateString()}</span><small data-stale={sourceInfo(file.path).warning}>{sourceInfo(file.path).label}</small></div>
     </button>)}</div> : <div className="fd-output-empty"><h3>{filter === "all" ? "Your outputs will appear here" : "No saved files in this category"}</h3><p>Create images, a board model, a video or export files from the menu above.</p></div>}
     <Dialog open={!!visible} onClose={() => setPreview(null)} title={visible ? basename(visible.path) : "Output preview"} className="fd-output-preview-dialog">
-      {visible && (visible.kind === "images" ? <ProjectImage projectId={projectId} path={visible.path} className="max-h-[70vh] w-full object-contain" /> : visible.kind === "videos" ? <ProjectVideo projectId={projectId} path={visible.path} className="max-h-[70vh]" /> : <div className="fd-output-model-preview"><Suspense fallback={<Spinner />}><ModelCanvas projectId={projectId} path={visible.path} /></Suspense></div>)}
+      {visible && (visible.kind === "images" ? <ProjectImage projectId={projectId} path={visible.path} className="max-h-[70vh] w-full object-contain" /> : visible.kind === "videos" ? <><VideoSourceStatus projectId={projectId} path={visible.path} updating={false} /><ProjectVideo projectId={projectId} path={visible.path} className="max-h-[70vh]" /></> : <div className="fd-output-model-preview"><Suspense fallback={<Spinner />}><ModelCanvas projectId={projectId} path={visible.path} /></Suspense></div>)}
     </Dialog>
   </div>;
 }

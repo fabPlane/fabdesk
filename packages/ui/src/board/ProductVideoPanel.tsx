@@ -1,3 +1,4 @@
+import { VideoSourceStatus } from "./VideoSourceStatus";
 import type { ReactNode } from "react";
 import type { FileEntry } from "@fabdesk/protocol";
 import { Button, Select, Spinner } from "../components/ui";
@@ -107,7 +108,7 @@ export function ProductVideoPanel({
   return (
     <div className="fd-video-workspace flex h-full min-h-0 flex-col" data-testid="product-video-panel">
       <div className="fd-video-model-tools flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2">
-        <Button variant="secondary" size="sm" disabled={exporting || !canGenerate} onClick={onExportGlb}>
+        <Button variant="secondary" size="sm" disabled={exporting || making || !canGenerate} onClick={onExportGlb}>
           {exporting ? (
             <>
               <Spinner className="mr-1" /> Exporting GLB…
@@ -243,6 +244,7 @@ export function ProductVideoPanel({
           {preview ? (
             <>
               <div className="text-sm font-semibold">Preview</div>
+              <VideoSourceStatus projectId={projectId} path={preview.path} updating={making} />
               <ProjectVideo projectId={projectId} path={preview.path} className="max-h-[52vh]" />
               <div className="text-[11px] text-muted">
                 {videos.map((f) => `${basename(f.path)} (${(f.size / 1024).toFixed(0)} KB)`).join(" · ")}

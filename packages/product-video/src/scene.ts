@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, extname, join, relative, sep } from "node:path";
 import { aabbValid, emptyAabb, expandAabb, mergeAabb, transformDir, transformPoint, vec3, type Mat4 } from "./math";
@@ -63,9 +64,11 @@ export async function loadPart(abs: string, projectDir: string): Promise<ScenePa
   const ext = extname(abs).toLowerCase();
   const id = rel.replace(/[^\w.-]+/g, "_");
   const role = roleFor(abs, projectDir);
-  if (ext === ".glb") return loadGlb(new Uint8Array(await readFile(abs)), id, rel, role);
-  if (ext === ".stl") return loadStl(new Uint8Array(await readFile(abs)), id, rel, role);
-  return loadObj(await readFile(abs, "utf8"), id, rel, role);
+  const bytes = await readFile(abs);
+  const part = ext === ".glb" ? loadGlb(new Uint8Array(bytes), id, rel, role)
+    : ext === ".stl" ? loadStl(new Uint8Array(bytes), id, rel, role)
+    : loadObj(bytes.toString("utf8"), id, rel, role);
+  return { ...part, sourceSha256: createHash("sha256").update(bytes).digest("hex") };
 }
 
 /**

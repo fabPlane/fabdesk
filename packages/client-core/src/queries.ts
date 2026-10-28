@@ -1,3 +1,4 @@
+import { inspectVideoInputRevision } from "./video-input-revision";
 import { inspectAssemblySchematicPreview } from "./assembly-schematic-preview";
 import { inspectAssemblyModelSummaries } from "./assembly-model-summary";
 import { inspectAssemblyBoardModel } from "./assembly-board-model";
@@ -1010,4 +1011,9 @@ export function useAssemblyBoardModel(projectId: string, board: BoardSourceSelec
 export function useAssemblySchematicPreview(projectId: string, board: BoardSourceSelection, selectedPath: string | null, enabled = true) {
   const client = useCoreClient();
   return useQuery({ queryKey: ["assembly-schematic-preview", projectId, board.sourceId, board.manifestSha256, selectedPath], queryFn: () => inspectAssemblySchematicPreview(client, projectId, board, selectedPath), enabled });
+}
+
+export function useVideoInputRevision(projectId: string | null, path: string | undefined) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["video-input-revision", projectId, path], queryFn: () => inspectVideoInputRevision(client, projectId!, path!), enabled: !!projectId && !!path });
 }
