@@ -1,0 +1,28 @@
+{
+  "projectId": "prj_mvs5abwp2ff3301fe3",
+  "before": {
+    "readyState": 4,
+    "error": null,
+    "currentTime": 0.6076,
+    "duration": 6,
+    "paused": false,
+    "loop": true
+  },
+  "after": {
+    "readyState": 4,
+    "error": null,
+    "currentTime": 1.159557,
+    "duration": 6,
+    "paused": false,
+    "loop": true
+  },
+  "sameSourceUrl": true,
+  "mediaUnchanged": {
+    "renders/board.glb": true,
+    "exports/product-video.mp4": true,
+    "exports/product-video.json": true
+  },
+  "transitiveWarning": true,
+  "sourceFault": "RESTORED; all 25 baseline file hashes exact",
+  "scope": "Actual unchanged video/model; only PCB bytes differ from its tracked board model"
+}
