@@ -1413,3 +1413,15 @@ Fresh start now requires a successfully inspected single-board scope. Board/Over
 ![Automatic saved-reference recovery](365-source-check-auto-recovered-compact.png)
 
 [Native fault and recovery evidence](source-failure-native.json).
+
+
+## Map selection leads directly into contextual board tools
+
+Observed native gaps: Enter selected a map object while subsequent Tab moved to another object, and opening a board lost focus to the page body. Keyboard selection now focuses the first enabled action in its captured board/link toolbar; pointer selection stays on the map. Sources to review focuses its selected source recovery action. Deferred focus is guarded by project, contextual identity and unchanged initiating focus. Board entry now has a semantic title that receives focus only on captured instance/source/manifest entry from the page body, so routine inspection refreshes preserve tool focus.
+
+Actual VAIO I/O→RH keyboard endpoint navigation opened RH with11native parts; I/O reports22parts36×27.455mm. RH outline dimensions, schematic parity and compatibility remain unverified. All boards/Escape restored actual map nodes; unresolved Keyboard Resolve source/Source details passed compact keyboard access. No source import/edit, agent message or validation job ran. All16recorded VAIO files remain exact. UI typecheck/229tests pass. Capture367retains the earlier body-focus state;370is the final board-entry focus result.
+
+![Keyboard source tools](369-vaio-compact-keyboard-source-tools.png)
+![Final board-entry tools](370-vaio-board-entry-keyboard-tools.png)
+
+[Native navigation evidence](map-keyboard-navigation-native.json).

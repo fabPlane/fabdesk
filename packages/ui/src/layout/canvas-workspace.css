@@ -369,6 +369,7 @@
 .fd-assembly-caption { position:absolute; bottom:26px; left:50%; transform:translateX(-50%); max-width:300px; font-size:10px; color:var(--fd-muted); text-align:center; pointer-events:none; }
 .fd-assembly-detail { height:100%; min-width:0; display:flex; flex-direction:column; position:relative; padding:164px 0 80px; }
 .fd-assembly-detail-heading { position:absolute; top:87px; left:26px; right:26px; display:flex; align-items:center; flex-wrap:wrap; gap:12px; font-size:14px; }
+.fd-assembly-board-title { margin:0; font-size:inherit; font-weight:600; }
 .fd-assembly-detail-heading > span { font-size:10px; color:var(--fd-muted); background:var(--fd-panel); padding:4px 7px; border:1px solid var(--fd-border); border-radius:7px; }
 .fd-assembly-detail-status { position:absolute; top:132px; left:32px; right:32px; display:flex; align-items:center; flex-wrap:wrap; gap:14px; font-size:11px; color:var(--fd-muted); }
 .fd-assembly-detail > .fd-svg-viewer { flex:1; min-height:0; }
