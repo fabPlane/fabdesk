@@ -1040,3 +1040,8 @@ Actual native use showed the saved R1pad short at105.49,100mm, hid the marker af
 ![Changed source hides the unverified marker](saved-check-finding-stale.jpg)
 
 [Exact navigation evidence, validation and limits](root-check-finding-native.json).
+
+
+### Readiness findings open directly
+
+In the canvas, Review issues opens Design checks directly when a PCB/schematic check explicitly failed, became stale or is not applicable. Ordering remains the existing destination for ordinary readiness warnings and order options; classic layout behavior is unchanged. Native use confirmed the actual failed study report opens in one action, without the intermediate order screen. UItypecheck/228tests pass; all18existing non-report study files remain unchanged.
