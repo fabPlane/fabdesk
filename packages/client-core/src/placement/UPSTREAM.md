@@ -9,3 +9,5 @@ Relative module extensions were removed for FabDesk's bundler. The engine remain
 `examples.json` contains upstream's illustrative USB timer and constructed connectors/cutout fixtures, available as explicit example choices. `fixtures/usb-timer.kicad_pcb` is the same illustrative board used in tests. No personal boards are included. Placement findings are geometric review aids, not electrical DRC or fabrication acceptance. Optional spacing targets are advisory and disabled by default. Native export removes tracks, vias and zones and leaves the source file unchanged.
 
 See [the feature and screenshot comparison](../../../../docs/placement-parity.md) for integration differences and checks.
+
+FabDesk's export adaptation gives synthesized resized-outline segments stable identities. Re-exporting an unchanged session then preserves the board hash used by enclosure alignment checks; real geometry edits still change the export.

@@ -26,7 +26,8 @@ import {
   type Point,
   loadPlacementExamples,
   saveAutosave,
-  decodeAutosave,
+  restorePlacement,
+  DEVICE_PLACEMENT_RECOVERY,
   setPartValue,
   setAnchorOffset,
   swapPlacement,
@@ -359,24 +360,44 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
     if (initialized.current || history || !project.data) return;
     initialized.current = true;
     const saved = project.data.files.some((f) => f.path === PLACEMENT_DRAFT_PATH);
-    void (async () => {
-      try {
-        const local = localStorage.getItem("fabdesk-placement:" + projectId);
-        if (local) {
-          const text = await decodeAutosave(local);
-          if (!mounted.current) return;
-          await load(
-            "Device recovery.placement.json",
-            new File([text], "Device recovery.placement.json"),
-          );
-          return;
-        }
-      } catch {
-        setRecovery("Could not restore device recovery. Opening project copy.");
-      }
-      if (mounted.current && (saved || files[0]))
-        await load(saved ? PLACEMENT_DRAFT_PATH : files[0]!);
-    })();
+    const controller = new AbortController();
+    operation.current = controller;
+    setBusy("Restoring placement…");
+    void restorePlacement({
+      readRecovery: () => localStorage.getItem("fabdesk-placement:" + projectId),
+      readFile: (path) => client.readFile(projectId, path),
+      parse: async (text, name) =>
+        (await placementJob({ kind: "load", text, name }, controller.signal)).session!,
+      paths: [...(saved ? [PLACEMENT_DRAFT_PATH] : []), ...files.slice(0, 1)],
+      signal: controller.signal,
+    })
+      .then((result) => {
+        if (controller.signal.aborted || !mounted.current || !result) return;
+        setHistory(placementHistory(result.session));
+        setSavedRevision(result.source === PLACEMENT_DRAFT_PATH ? 0 : -1);
+        setSource(result.source);
+        setError(null);
+        setFocus((f) => ({ ids: [], nonce: f.nonce + 1 }));
+        setNotice(
+          result.skipped.length
+            ? "Could not restore " +
+                result.skipped.join(", ") +
+                ". Opened " +
+                result.source +
+                " instead."
+            : result.source === DEVICE_PLACEMENT_RECOVERY
+              ? "Recovered your placement edits from this device."
+              : result.source === PLACEMENT_DRAFT_PATH
+                ? "Saved placement draft restored."
+                : "Working in a draft. Your source board is unchanged.",
+        );
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted && mounted.current) setError(String(error));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted && mounted.current) setBusy("");
+      });
   }, [project.data]);
 
   const replace = (action: () => void) => {

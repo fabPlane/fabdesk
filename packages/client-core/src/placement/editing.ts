@@ -25,6 +25,18 @@ export function setAnchorOffset(session: PlacementSession, id: string, offset: n
     throw new Error("Unlock this group first.");
   const axis = ["left", "right"].includes(p.anchor.edge) ? "x" : "y",
     delta = offset - p.anchor.offset;
+  if (
+    session.parts.some(
+      (q) =>
+        q.id !== id &&
+        ids.has(q.id) &&
+        q.anchor &&
+        (["left", "right"].includes(q.anchor.edge) ? "x" : "y") === axis,
+    )
+  )
+    throw new Error(
+      "Another edge anchor fixes this group's position. Unanchor it before changing this offset.",
+    );
   p.anchor.offset = offset;
   for (const q of session.parts) if (ids.has(q.id)) q[axis] += delta;
 }

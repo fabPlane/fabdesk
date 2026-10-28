@@ -2,6 +2,7 @@ import { importBoard, loadSession, clone, issues, spacingGuidelines, netEdges } 
 import type { PlacementSession, PlacementAnalysis } from "./types";
 export * from "./types";
 export * from "./editing";
+export * from "./recovery";
 export {
   saveAutosave,
   decodeAutosave,

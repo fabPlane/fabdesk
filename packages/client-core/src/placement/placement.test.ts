@@ -35,6 +35,21 @@ import {
 const source = readFileSync(new URL("./fixtures/usb-timer.kicad_pcb", import.meta.url), "utf8");
 const fresh = () => readPlacement(source, "usb-timer.kicad_pcb");
 
+test("resized board exports remain identical after reopening, but detect real layout changes", () => {
+  const session = fresh();
+  resizeBoard(session, 40, 30, true);
+  const before = clone(session);
+  const text = exportBoard(session);
+  expect(exportBoard(session)).toBe(text);
+  expect(exportBoard(readPlacement(JSON.stringify(session), "saved.placement.json"))).toBe(text);
+  expect(session).toEqual(before);
+  const ids = [...text.matchAll(/\(uuid\s+"?([\da-f-]+)"?\)/g)].map((match) => match[1]);
+  expect(ids.length).toBeGreaterThan(4);
+  expect(new Set(ids).size).toBe(ids.length);
+  moveParts(session, [session.parts.find((part) => part.ref === "R5")!.id], 1, 0);
+  expect(exportBoard(session)).not.toBe(text);
+});
+
 test("footprint replacement keeps identity and pad nets, and rejects incompatible pins", () => {
   const s = fresh(),
     p = s.parts.find((p) => p.ref === "R5")!;
@@ -242,4 +257,19 @@ test("browser recovery falls back to compressed sessions without changing metada
   };
   await saveAutosave(storage, "test-project", text);
   expect(await decodeAutosave(saved)).toBe(text);
+});
+
+test("anchor offsets preserve rigid groups and reject a second anchor on the constrained axis", () => {
+  const s = fresh(),
+    a = s.parts.find((p) => p.ref === "R5")!,
+    b = s.parts.find((p) => p.ref === "R1")!;
+  groupParts(s, [a.id, b.id]);
+  setAnchor(s, a, "left");
+  const before = [a.x, b.x];
+  setAnchorOffset(s, a.id, a.anchor!.offset + 1.25);
+  expect([a.x, b.x]).toEqual(before.map((x) => x + 1.25));
+  setAnchor(s, b, "right");
+  const unchanged = JSON.stringify(s);
+  expect(() => setAnchorOffset(s, a.id, a.anchor!.offset + 1)).toThrow("Another edge anchor");
+  expect(JSON.stringify(s)).toBe(unchanged);
 });

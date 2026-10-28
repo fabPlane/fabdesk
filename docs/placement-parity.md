@@ -61,5 +61,8 @@ The snapshot is `placement/enclosure-source.kicad_pcb`; generated models are und
 
 - Repository typecheck: passed.
 - Desktop production build: passed; no `.map` files in desktop output.
-- Client-core: 180 passing tests; UI: 208; focused CAD/enclosure tests: 13. Total: **401 passing focused tests**.
-- The previous full workspace run had 34 failure names identical to unchanged `main` on this Windows machine (product-video 1, desktop 2, agents 8, kicad 5, tools 9, core 9). It is not represented as a fully green local root suite.
+- Client-core: 187 passing tests; UI: 208; focused CAD/enclosure tests: 13. Total: **408 passing focused tests**.
+- Audit fixes: corrupt device recovery falls back to the saved project draft, then the source board; an anchor offset cannot break another same-axis anchor in its group; enclosure settings/downloads restore on reopen; synthesized outline UUIDs stay stable so an unchanged resized board does not falsely invalidate its enclosure.
+- Live recovery checks used the actual workspace and workers: corrupt device copy, corrupt device plus project copy, all sources unavailable, and switching projects during a delayed read. Failed sources are explained and Open/example controls remain usable.
+- Live enclosure recheck used a 32 × 27.5 mm board, 1.5 mm offset, grid vents and snap-fits: 16 vents, four clips, 432-facet base STL, 540-facet lid STL and valid STEP output. Reopening restored settings/downloads and remained in sync; source PCB text was unchanged. Simulated generation and download failures displayed errors, re-enabled controls and allowed a successful alignment check afterward.
+- The full workspace run still has **35 failure names**: the 34 previously reproduced on unchanged `main` on this Windows machine (product-video 1, desktop 2, agents 8, kicad 5, tools 9, core 9), plus the intermittent MCP progress-count assertion, also reproduced with unchanged `main` tool sources and the same dependencies. The before/after full runs had the same failure names. This is not a fully green local root suite.

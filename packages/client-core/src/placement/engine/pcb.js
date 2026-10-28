@@ -102,11 +102,24 @@ export function replaceFootprint(p,text,name) {
   set(n,'at',['0','0','0']);n[1]=q(name||val(n[1]));
   Object.assign(p,{node:n,footprint:val(n[1]),originalAngle:0,...geometry(n)});
 }
+// Stable, non-security identities for synthesized outline segments. Regenerating
+// random UUIDs on every export makes an unchanged enclosure snapshot look stale.
+function outlineUuid(seed, index) {
+  const key = `${seed}:placement-outline:${index}`;
+  const words = [0x811c9dc5, 0x9e3779b9, 0x85ebca6b, 0xc2b2ae35].map(initial => {
+    let hash = initial;
+    for (let i = 0; i < key.length; i++) hash = Math.imul(hash ^ key.charCodeAt(i), 0x01000193);
+    return (hash >>> 0).toString(16).padStart(8, '0');
+  }).join('');
+  return `${words.slice(0,8)}-${words.slice(8,12)}-8${words.slice(13,16)}-a${words.slice(17,20)}-${words.slice(20)}`;
+}
 export function exportBoard(state) {
   const root=clone(state.root).filter(n=>!Array.isArray(n)||!['footprint','segment','arc','via','zone','group','generated'].includes(n[0]));
   if(state.resized) {
+    const seed = state.parts[0]?.id || state.name || 'fabdesk';
+    let segment = 0;
     for(let i=root.length-1;i>=0;i--)if(Array.isArray(root[i])&&val(child(root[i],'layer')?.[1])==='Edge.Cuts')root.splice(i,1);
-    for(const loop of boardContours(state))for(let i=0;i<loop.length;i++) {const a=loop[i],b=loop[(i+1)%loop.length];root.push(['gr_line',['start',...a.map(x=>String(round(x)))],['end',...b.map(x=>String(round(x)))],['stroke',['width','0.05'],['type','default']],['layer',q('Edge.Cuts')],['uuid',q(crypto.randomUUID())]]);}
+    for(const loop of boardContours(state))for(let i=0;i<loop.length;i++) {const a=loop[i],b=loop[(i+1)%loop.length];root.push(['gr_line',['start',...a.map(x=>String(round(x)))],['end',...b.map(x=>String(round(x)))],['stroke',['width','0.05'],['type','default']],['layer',q('Edge.Cuts')],['uuid',q(outlineUuid(seed,segment++))]]);}
 
   }
   for(const p of state.parts) {
