@@ -1,0 +1,668 @@
+.fd-mechanical {
+  container-type: inline-size;
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  height: 100%;
+  min-height: 460px;
+  overflow: hidden;
+  color: var(--fd-fg);
+  background-color: var(--fd-bg);
+  background-image: radial-gradient(
+    color-mix(in srgb, var(--fd-muted) 17%, transparent) 0.8px,
+    transparent 0.8px
+  );
+  background-size: 22px 22px;
+  font-size: 12px;
+}
+.fd-mechanical.is-expanded {
+  position: fixed;
+  inset: 48px 12px 12px;
+  z-index: 40;
+  width: auto;
+  height: auto;
+  border: 1px solid var(--fd-border);
+  border-radius: 14px;
+  box-shadow: 0 12px 60px #0005;
+}
+.fd-mechanical * {
+  box-sizing: border-box;
+}
+.fd-mechanical button {
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    box-shadow 0.15s;
+  border-radius: 8px;
+  padding: 7px 10px;
+  white-space: nowrap;
+}
+.fd-mechanical button:hover:not(:disabled) {
+  background: var(--fd-panel-2);
+}
+.fd-mechanical button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.fd-mechanical button:focus-visible,
+.fd-mechanical input:focus-visible,
+.fd-mechanical select:focus-visible {
+  outline: 2px solid var(--fd-accent);
+  outline-offset: 3px;
+}
+.fd-mechanical button[aria-pressed="true"] {
+  background: var(--fd-accent);
+  color: var(--fd-accent-fg);
+}
+.fd-mechanical-stage {
+  position: absolute;
+  inset: 48px 0 0;
+  z-index: -1;
+  touch-action: none;
+}
+.fd-mechanical-stage canvas {
+  display: block;
+  outline: none;
+}
+.fd-mechanical-header {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 18px;
+  background: color-mix(in srgb, var(--fd-panel) 90%, transparent);
+  border-bottom: 1px solid var(--fd-border);
+}
+.fd-mechanical-header > div {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.fd-mechanical-header > div > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fd-mechanical-mark {
+  font-size: 25px;
+  color: var(--fd-accent);
+}
+.fd-mechanical-divider {
+  color: var(--fd-muted);
+}
+.fd-mechanical-save {
+  font-size: 10px;
+  color: var(--fd-muted);
+}
+.fd-mechanical-header button {
+  font-size: 11px;
+  border: 1px solid var(--fd-border);
+  background: var(--fd-panel);
+}
+.fd-mechanical-top {
+  position: absolute;
+  top: 66px;
+  left: 20px;
+  right: 20px;
+  display: flex;
+  justify-content: space-between;
+  pointer-events: none;
+}
+.fd-mechanical-top > * {
+  pointer-events: auto;
+}
+.fd-mechanical-segment {
+  padding: 3px;
+  border: 1px solid var(--fd-border);
+  border-radius: 10px;
+  background: var(--fd-panel);
+  box-shadow: 0 3px 12px #00000009;
+}
+.fd-mechanical-segment button {
+  padding: 6px 14px;
+}
+.fd-mechanical-review {
+  color: var(--fd-warning);
+  background: color-mix(in srgb, var(--fd-warning) 10%, var(--fd-panel));
+  border: 1px solid color-mix(in srgb, var(--fd-warning) 22%, transparent);
+  font-size: 11px;
+}
+.fd-mechanical-card {
+  background: color-mix(in srgb, var(--fd-panel) 96%, transparent);
+  border: 1px solid var(--fd-border);
+  border-radius: 16px;
+  box-shadow:
+    0 10px 36px #00000012,
+    0 2px 8px #0000000a;
+  backdrop-filter: blur(14px);
+  padding: 18px;
+}
+.fd-mechanical-card h2 {
+  font-weight: 650;
+  font-size: 14px;
+  margin: 0;
+}
+.fd-mechanical-card-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.fd-mechanical-card-heading > span {
+  color: var(--fd-muted);
+  font-size: 10px;
+}
+.fd-mechanical-card p {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--fd-muted);
+  margin-top: 12px;
+}
+.fd-mechanical-add {
+  position: absolute;
+  right: 22px;
+  top: 128px;
+  width: 300px;
+}
+.fd-mechanical-choice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin: 8px 0;
+  text-align: left;
+  border: 1px solid var(--fd-border);
+  padding: 16px 12px !important;
+}
+.fd-mechanical-choice > span:first-child {
+  font-size: 22px;
+}
+.fd-mechanical-choice > span:last-child {
+  margin-left: auto;
+}
+.fd-mechanical-choice strong,
+.fd-mechanical-choice small {
+  display: block;
+}
+.fd-mechanical-choice strong {
+  font-size: 12px;
+  font-weight: 550;
+}
+.fd-mechanical-choice small {
+  font-size: 11px;
+  color: var(--fd-muted);
+  margin-top: 5px;
+  white-space: normal;
+}
+.fd-mechanical-add footer {
+  border-top: 1px solid var(--fd-border);
+  margin-top: 16px;
+  padding-top: 12px;
+  font-size: 10px;
+  line-height: 1.8;
+  color: var(--fd-muted);
+}
+.fd-mechanical-add footer button {
+  padding: 0;
+  text-decoration: underline;
+}
+.fd-mechanical-left {
+  position: absolute;
+  left: 20px;
+  top: 128px;
+  width: 248px;
+  max-height: calc(100% - 235px);
+  overflow: auto;
+}
+.fd-mechanical-card label {
+  display: block;
+  font-size: 11px;
+  color: var(--fd-muted);
+  margin: 12px 0;
+}
+.fd-mechanical-card input[type="number"],
+.fd-mechanical-card select {
+  border: 1px solid var(--fd-border);
+  border-radius: 7px;
+  background: var(--fd-bg);
+  color: var(--fd-fg);
+  padding: 7px 8px;
+  max-width: 100%;
+  font: inherit;
+}
+.fd-mechanical-card select {
+  width: 100%;
+  margin-top: 7px;
+}
+.fd-mechanical-field {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.fd-mechanical-field > span {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--fd-border);
+  border-radius: 7px;
+  overflow: hidden;
+}
+.fd-mechanical-field input {
+  width: 64px;
+  border: 0 !important;
+  border-radius: 0 !important;
+}
+.fd-mechanical-field em {
+  font-style: normal;
+  padding: 0 9px;
+  font-size: 10px;
+}
+.fd-mechanical-card details {
+  border-top: 1px solid var(--fd-border);
+  margin-top: 16px;
+  padding-top: 14px;
+}
+.fd-mechanical-card summary {
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--fd-muted);
+}
+.fd-mechanical-check {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+}
+.fd-mechanical-check input {
+  accent-color: var(--fd-accent);
+}
+.fd-mechanical-wide {
+  width: 100%;
+  margin-top: 10px;
+  border: 1px solid var(--fd-border);
+  white-space: normal !important;
+}
+.fd-mechanical-primary {
+  background: var(--fd-accent);
+  color: var(--fd-accent-fg);
+  font-weight: 600;
+  box-shadow: 0 3px 8px #00000016;
+  padding: 10px 17px !important;
+}
+.fd-mechanical-primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--fd-accent) 85%, var(--fd-fg)) !important;
+}
+.fd-mechanical-views {
+  position: absolute;
+  top: 112px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  background: color-mix(in srgb, var(--fd-panel) 86%, transparent);
+  border: 1px solid var(--fd-border);
+  border-radius: 10px;
+}
+.fd-mechanical-views button {
+  font-size: 10px;
+  padding: 5px 9px;
+}
+.fd-mechanical-selection {
+  position: absolute;
+  top: 166px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - 48px);
+  padding: 5px 9px;
+  border-radius: 13px;
+}
+.fd-mechanical-selection-tools {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.fd-mechanical-selection-tools strong {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 550;
+  padding: 5px 10px;
+  border-right: 1px solid var(--fd-border);
+  margin-right: 6px;
+}
+.fd-mechanical-selection-tools button {
+  font-size: 11px;
+}
+.fd-mechanical-selection details {
+  padding: 6px 8px 9px;
+  margin-top: 3px;
+}
+.fd-mechanical-transform {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  max-width: 540px;
+}
+.fd-mechanical-transform fieldset {
+  display: flex;
+  gap: 7px;
+}
+.fd-mechanical-transform legend {
+  font-size: 10px;
+  margin-top: 12px;
+  color: var(--fd-muted);
+}
+.fd-mechanical-transform label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 6px 0;
+}
+.fd-mechanical-transform input {
+  width: 65px;
+}
+.fd-mechanical-transform small {
+  font-size: 9px;
+}
+.fd-mechanical-transform > label {
+  align-self: center;
+}
+.fd-mechanical-transform button {
+  font-size: 10px;
+}
+.fd-mechanical-parts {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 260px;
+  overflow: auto;
+}
+.fd-mechanical-parts > div {
+  display: flex;
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: 9px;
+}
+.fd-mechanical-parts .is-selected {
+  border-color: var(--fd-accent);
+  background: color-mix(in srgb, var(--fd-accent) 8%, var(--fd-panel));
+}
+.fd-mechanical-parts button:last-child {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  padding: 8px 3px;
+  white-space: normal;
+}
+.fd-mechanical-parts strong {
+  display: block;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fd-mechanical-parts small {
+  display: block;
+  font-size: 9px;
+  color: var(--fd-muted);
+  margin-top: 3px;
+  font-weight: 400;
+}
+.fd-mechanical-bottom {
+  position: absolute;
+  bottom: 30px;
+  left: 20px;
+  right: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+}
+.fd-mechanical-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--fd-border);
+  background: var(--fd-panel);
+  border-radius: 40px;
+  padding: 5px 8px;
+  box-shadow: 0 4px 14px #00000012;
+  pointer-events: auto;
+}
+.fd-mechanical-pill > span {
+  min-width: 43px;
+  text-align: center;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.fd-mechanical-pill button {
+  padding: 6px 9px;
+  font-size: 11px;
+}
+.fd-mechanical-display label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  padding-left: 7px;
+  color: var(--fd-muted);
+}
+.fd-mechanical-display input {
+  width: 75px;
+  accent-color: var(--fd-accent);
+}
+.fd-mechanical-help {
+  position: absolute;
+  bottom: 7px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 10px;
+  color: var(--fd-muted);
+  pointer-events: none;
+}
+.fd-mechanical-envelope-note {
+  position: absolute;
+  bottom: 90px;
+  left: 20px;
+  color: var(--fd-muted);
+  font-size: 10px;
+  background: var(--fd-panel);
+  border: 1px solid var(--fd-border);
+  border-radius: 7px;
+  padding: 6px 9px;
+  pointer-events: none;
+}
+.fd-mechanical-preview-bar {
+  position: absolute;
+  bottom: 92px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 6px 8px 6px 18px;
+  background: var(--fd-panel);
+  border: 1px solid var(--fd-border);
+  box-shadow: 0 8px 22px #00000019;
+  border-radius: 14px;
+  white-space: nowrap;
+}
+.fd-mechanical-preview-bar > span {
+  color: var(--fd-muted);
+  font-size: 11px;
+  border-right: 1px solid var(--fd-border);
+  padding-right: 16px;
+}
+.fd-mechanical-review-panel {
+  position: absolute;
+  right: 20px;
+  top: 112px;
+  width: 300px;
+  max-height: calc(100% - 215px);
+  overflow: auto;
+  z-index: 3;
+}
+.fd-mechanical-warning {
+  color: var(--fd-warning) !important;
+}
+.fd-mechanical-empty {
+  position: absolute;
+  top: 44%;
+  left: 32%;
+  max-width: 300px;
+  text-align: center;
+}
+.fd-mechanical-empty > span {
+  font-size: 50px;
+  color: var(--fd-accent);
+}
+.fd-mechanical-empty h2 {
+  font-size: 20px;
+  font-weight: 600;
+  margin-top: 12px;
+}
+.fd-mechanical-empty p {
+  margin: 8px 0 20px;
+  color: var(--fd-muted);
+  line-height: 1.6;
+}
+.fd-mechanical-toast,
+.fd-mechanical-error {
+  position: absolute;
+  bottom: 150px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--fd-panel);
+  padding: 12px 18px;
+  border: 1px solid var(--fd-border);
+  border-radius: 12px;
+  box-shadow: 0 4px 20px #00000015;
+  max-width: 70%;
+  z-index: 5;
+}
+.fd-mechanical-error {
+  color: var(--fd-danger);
+  border-color: color-mix(in srgb, var(--fd-danger) 35%, var(--fd-border));
+  bottom: 200px;
+}
+.fd-mechanical-error > span {
+  overflow-wrap: anywhere;
+}
+.fd-mechanical-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--fd-border);
+  border-top-color: var(--fd-accent);
+  border-radius: 50%;
+  animation: fd-mechanical-spin 0.8s linear infinite;
+}
+.fd-mechanical-advanced {
+  height: 65vh;
+  min-height: 360px;
+  overflow: auto;
+}
+.fd-mechanical-advanced > div {
+  height: 100%;
+}
+@keyframes fd-mechanical-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@container (max-width: 1000px) {
+  .fd-mechanical-save {
+    display: none;
+  }
+  .fd-mechanical-left {
+    width: 215px;
+  }
+  .fd-mechanical-add {
+    width: 265px;
+  }
+  .fd-mechanical-selection {
+    top: auto;
+    bottom: 150px;
+  }
+  .fd-mechanical-display label {
+    font-size: 10px;
+  }
+  .fd-mechanical-display input {
+    width: 45px;
+  }
+  .fd-mechanical-bottom {
+    gap: 4px;
+    left: 12px;
+    right: 12px;
+  }
+  .fd-mechanical-pill {
+    gap: 2px;
+    padding: 4px;
+  }
+  .fd-mechanical-pill button {
+    padding: 6px;
+  }
+  .fd-mechanical-empty {
+    left: 24%;
+    max-width: 230px;
+  }
+}
+@container (max-width: 650px) {
+  .fd-mechanical-header > div > span:last-child {
+    display: none;
+  }
+  .fd-mechanical-left,
+  .fd-mechanical-add {
+    top: 155px;
+    width: 210px;
+    max-height: calc(100% - 275px);
+  }
+  .fd-mechanical-top {
+    left: 12px;
+    right: 12px;
+  }
+  .fd-mechanical-top button {
+    font-size: 10px;
+    padding: 6px 8px;
+  }
+  .fd-mechanical-display {
+    position: absolute;
+    bottom: 50px;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+  }
+  .fd-mechanical-selection-tools {
+    flex-wrap: wrap;
+  }
+  .fd-mechanical-selection-tools strong {
+    max-width: 120px;
+  }
+  .fd-mechanical-views {
+    top: 111px;
+  }
+  .fd-mechanical-preview-bar {
+    bottom: 140px;
+    gap: 4px;
+    max-width: 96%;
+    padding-left: 8px;
+  }
+  .fd-mechanical-preview-bar > span {
+    font-size: 10px;
+    padding-right: 6px;
+  }
+  .fd-mechanical-review-panel {
+    width: 260px;
+  }
+  .fd-mechanical-empty {
+    left: 36%;
+    max-width: 200px;
+  }
+}

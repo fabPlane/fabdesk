@@ -247,6 +247,38 @@ const ENCLOSURE_BOARD = `(kicad_pcb
 `;
 
 describe("cad_enclosure", () => {
+  test("3D preview does not write files or touch FreeCAD; apply rejects a changed board", async () => {
+    const cad = fakeCad();
+    const { invoke, project } = await setup(cad);
+    await writeFile(join(project.dir, "board.kicad_pcb"), ENCLOSURE_BOARD);
+    await writeFile(join(project.dir, "enclosure.json"), "existing specification");
+    const preview = await invoke("cad_enclosure", { action: "preview", wallMm: 3, clearanceMm: 2 });
+    const json = preview.json as {
+      previewOnly: boolean;
+      pcbRevision: string;
+      meshes: { base: string; lid: string };
+      params: { wallMm: number };
+    };
+    expect(json.previewOnly).toBe(true);
+    expect(json.meshes.base).toStartWith("solid fabplane_enclosure_base");
+    expect(json.meshes.lid).toContain("facet normal");
+    expect(json.params.wallMm).toBe(3);
+    expect(await readFile(join(project.dir, "enclosure.json"), "utf8")).toBe(
+      "existing specification",
+    );
+    await expect(readFile(join(project.dir, "exports", "enclosure.stl"))).rejects.toThrow();
+    expect(cad.calls).toHaveLength(0);
+    await writeFile(
+      join(project.dir, "board.kicad_pcb"),
+      ENCLOSURE_BOARD.replace("(end 40 20)", "(end 45 20)"),
+    );
+    await expect(
+      invoke("cad_enclosure", { action: "generate", expectedBoardRevision: json.pcbRevision }),
+    ).rejects.toThrow(/board changed/);
+    expect(await readFile(join(project.dir, "enclosure.json"), "utf8")).toBe(
+      "existing specification",
+    );
+  });
   test("generates STL/STEP without FreeCAD and checks alignment after a board move", async () => {
     const { invoke, project } = await setup();
     await writeFile(join(project.dir, "board.kicad_pcb"), ENCLOSURE_BOARD);
@@ -255,7 +287,9 @@ describe("cad_enclosure", () => {
     expect(generated.text).toContain("enclosure.stl");
     const json = generated.json as { stl: string; step: string; alignment: { ok: boolean } };
     expect(json.alignment.ok).toBe(true);
-    expect(await readFile(join(project.dir, json.stl), "utf8")).toStartWith("solid fabplane_enclosure_base");
+    expect(await readFile(join(project.dir, json.stl), "utf8")).toStartWith(
+      "solid fabplane_enclosure_base",
+    );
     expect(await readFile(join(project.dir, json.step), "utf8")).toContain("ISO-10303-21;");
 
     const status = await invoke("cad_enclosure", { action: "status" });
@@ -272,7 +306,10 @@ describe("cad_enclosure", () => {
 
     const again = await invoke("cad_enclosure", { action: "generate", applyToCad: false });
     expect(again.isError).toBeUndefined();
-    expect((again.json as { cutouts: Array<{ ref: string; center: { x: number } }> }).cutouts[0]!.center.x).toBe(28);
+    expect(
+      (again.json as { cutouts: Array<{ ref: string; center: { x: number } }> }).cutouts[0]!.center
+        .x,
+    ).toBe(28);
   });
 
   test("mirrors primitives into FreeCAD when a CAD service is present", async () => {
@@ -296,7 +333,9 @@ describe("cad_enclosure", () => {
       expect(cylinders.some((c) => c.includes(`"Radius":${st.innerDiameterMm / 2},`))).toBe(true);
     }
     expect(cuts[0]).toContain('"Base":{"$type":"Object","doc":"Model","name":"EnclosureStandoff_');
-    expect(cuts[0]).toMatch(/"Tool":\{"\$type":"Object","doc":"Model","name":"EnclosureStandoff_\w+_Bore"\}/);
+    expect(cuts[0]).toMatch(
+      /"Tool":\{"\$type":"Object","doc":"Model","name":"EnclosureStandoff_\w+_Bore"\}/,
+    );
     expect(cad.calls).toContain("recompute");
     expect(cad.calls).toContain("save");
   });
@@ -321,7 +360,12 @@ describe("cad_enclosure", () => {
       previewSvg: string;
       vents: number;
       clips: number;
-      params: { outlineOffsetMm: number; clearanceMm: number; ventPattern: string; snapFit: boolean };
+      params: {
+        outlineOffsetMm: number;
+        clearanceMm: number;
+        ventPattern: string;
+        snapFit: boolean;
+      };
       outerMm: { width: number };
     };
     expect(json.params.outlineOffsetMm).toBe(2);
@@ -334,7 +378,9 @@ describe("cad_enclosure", () => {
     expect(generated.text).toContain("snap-fit");
     const preview = await readFile(join(project.dir, json.preview), "utf8");
     expect(preview).toContain("<svg");
-    expect(await readFile(join(project.dir, json.stl), "utf8")).toStartWith("solid fabplane_enclosure_base");
+    expect(await readFile(join(project.dir, json.stl), "utf8")).toStartWith(
+      "solid fabplane_enclosure_base",
+    );
     expect(await readFile(join(project.dir, json.step), "utf8")).toContain("ISO-10303-21;");
     expect(json.outerMm.width).toBeCloseTo(40 + 2 * (1.5 + 2) + 2 * 2, 4);
     const status = await invoke("cad_enclosure", { action: "status" });
@@ -359,4 +405,3 @@ describe("cad_enclosure", () => {
     expect((out.json as { noBoard: boolean }).noBoard).toBe(true);
   });
 });
-

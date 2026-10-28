@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { type CadRuntimeBridge } from "@fabdesk/protocol";
 import { CadSession, type CadSessionState, useCoreClient } from "@fabdesk/client-core";
 import { Button, EmptyState, Spinner } from "../components/ui";
 import { useUiStore } from "../stores/ui";
-import { EnclosurePanel } from "./EnclosurePanel";
+const MechanicalWorkspace = lazy(() =>
+  import("./mechanical/MechanicalWorkspace").then((m) => ({ default: m.MechanicalWorkspace })),
+);
 
 /**
  * The fab_cad web UI is served by the loopback bridge, an origin other than the renderer's, so
@@ -84,11 +86,10 @@ export function CadTab() {
     };
   }, [client, projectId]);
 
-  return (
+  const advanced = (
     <div className="flex h-full min-h-0">
       {shouldShowCadKernelTree(projectId, tree) ? <CadKernelTree model={tree!} /> : null}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto">
-        <EnclosurePanel key={projectId} />
         {!state.busy &&
         !state.view &&
         state.runtime?.status !== "ready" &&
@@ -99,8 +100,8 @@ export function CadTab() {
               Advanced CAD editing — optional
             </summary>
             <p className="mt-2 text-xs leading-5 text-muted">
-              Enclosure generation and STL/STEP downloads work without the CAD bridge. Install it only
-              to edit mechanical parts in FreeCAD.
+              Enclosure generation and STL/STEP downloads work without the CAD bridge. Install it
+              only to edit mechanical parts in FreeCAD.
             </p>
             <div className="mt-4">
               <CadScreen projectSelected={Boolean(projectId)} state={state} session={session} />
@@ -113,6 +114,18 @@ export function CadTab() {
         )}
       </div>
     </div>
+  );
+  if (!projectId) return <EmptyState title="Open a project to assemble your models" />;
+  return (
+    <Suspense
+      fallback={
+        <EmptyState title="Opening mechanical workspace">
+          <Spinner />
+        </EmptyState>
+      }
+    >
+      <MechanicalWorkspace key={projectId} projectId={projectId} advanced={advanced} />
+    </Suspense>
   );
 }
 
@@ -173,7 +186,9 @@ export function CadKernelTree({ model }: { model: CadKernelTreeModel }) {
                 <div className="font-medium">{p.name}</div>
                 <div className="text-muted">
                   kernel {p.kernel}
-                  {p.fallbacks?.length ? ` · switched ${p.fallbacks.map((f) => `${f.from}→${f.to}`).join(", ")}` : ""}
+                  {p.fallbacks?.length
+                    ? ` · switched ${p.fallbacks.map((f) => `${f.from}→${f.to}`).join(", ")}`
+                    : ""}
                 </div>
                 {p.reason ? <div className="text-muted">{p.reason}</div> : null}
               </li>
@@ -189,7 +204,6 @@ export function CadKernelTree({ model }: { model: CadKernelTreeModel }) {
     </aside>
   );
 }
-
 
 /** Presentational surface shared by the desktop and local state previews. */
 export function CadScreen({

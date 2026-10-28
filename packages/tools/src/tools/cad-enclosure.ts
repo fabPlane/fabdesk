@@ -45,11 +45,21 @@ function placement(x: number, y: number, z: number) {
   return { $type: "Placement", base: [x, y, z], rotation: [0, 0, 0, 1] };
 }
 
-async function applyEnclosureToCad(cad: CadService, dir: string, spec: EnclosureSpec): Promise<string[]> {
+async function applyEnclosureToCad(
+  cad: CadService,
+  dir: string,
+  spec: EnclosureSpec,
+): Promise<string[]> {
   const model = await cad.model(dir);
-  const stale = model.objects.filter((o) => o.name.startsWith("Enclosure") || o.label.startsWith("Enclosure"));
+  const stale = model.objects.filter(
+    (o) => o.name.startsWith("Enclosure") || o.label.startsWith("Enclosure"),
+  );
   for (const o of stale) await cad.removeObject(dir, o.name, true);
-  const group = await cad.addObject(dir, { type: "App::DocumentObjectGroup", name: "Enclosure", label: "Enclosure" });
+  const group = await cad.addObject(dir, {
+    type: "App::DocumentObjectGroup",
+    name: "Enclosure",
+    label: "Enclosure",
+  });
   const created = [group.name];
   for (const solid of spec.solids) {
     const dx = solid.max.x - solid.min.x;
@@ -58,7 +68,9 @@ async function applyEnclosureToCad(cad: CadService, dir: string, spec: Enclosure
     if (solid.kind === "cylinder" && solid.radiusMm) {
       const cx = (solid.min.x + solid.max.x) / 2;
       const cy = (solid.min.y + solid.max.y) / 2;
-      const stand = spec.standoffs.find((h) => Math.abs(h.x - cx) < 1e-6 && Math.abs(h.y - cy) < 1e-6);
+      const stand = spec.standoffs.find(
+        (h) => Math.abs(h.x - cx) < 1e-6 && Math.abs(h.y - cy) < 1e-6,
+      );
       const cylinder = (suffix: string, radius: number) =>
         cad.addObject(dir, {
           type: "Part::Cylinder",
@@ -128,9 +140,15 @@ export const cad_enclosure = defineTool({
     "Generate a printable two-piece enclosure from board.kicad_pcb (Edge.Cuts outline, NPTH / mounting holes, edge connectors, tall parts). v2 adds a separate outline offset, vent patterns (grid / slots / honeycomb), snap-fit clips, an SVG preview, and STL/STEP export. Cutouts and standoffs stay keyed to the board hash. Writes enclosure.json plus exports/<name>.stl, <name>-lid.stl, <name>.step and <name>-preview.svg. FreeCAD is optional — when the CAD bridge is up, the same primitives are mirrored into model.FCStd.",
   inputSchema: {
     action: z
-      .enum(["generate", "status", "check"])
+      .enum(["generate", "preview", "status", "check"])
       .default("generate")
-      .describe("generate writes the case; status reports sync; check compares cutouts to the current board"),
+      .describe(
+        "preview returns meshes without writing; generate writes the case; status reports sync; check compares cutouts to the current board",
+      ),
+    expectedBoardRevision: z
+      .string()
+      .optional()
+      .describe("Reject apply if the board changed since preview"),
     wallMm: z.number().positive().max(20).optional(),
     clearanceMm: z.number().nonnegative().max(20).optional(),
     outlineOffsetMm: z
@@ -157,7 +175,12 @@ export const cad_enclosure = defineTool({
       .describe("When the FabPlane CAD bridge is running, also update model.FCStd"),
     name: ENCLOSURE_NAME,
   },
-  annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: false,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
   handler: async (args, ctx) => {
     const project = ctx.requireProject();
     if (args.action === "status") {
@@ -177,10 +200,16 @@ export const cad_enclosure = defineTool({
       }
     }
     const features = await loadFeatures(project);
+    if (args.expectedBoardRevision && args.expectedBoardRevision !== features.pcbRevision)
+      throw new ToolError(
+        "The board changed since this preview. Preview again before applying.",
+        "precondition",
+      );
     if (args.action === "status" || args.action === "check") {
       const spec = await loadSpec(project);
       if (!spec) {
-        if (args.action === "check") throw new ToolError("no enclosure.json; run cad_enclosure generate", "precondition");
+        if (args.action === "check")
+          throw new ToolError("no enclosure.json; run cad_enclosure generate", "precondition");
         return ok(
           `No enclosure yet. Board ${features.outline.widthMm}×${features.outline.heightMm} mm, ${features.holes.length} hole(s), ${features.connectors.length} edge connector(s).`,
           {
@@ -204,7 +233,9 @@ export const cad_enclosure = defineTool({
       ...(args.lidMm !== undefined ? { lidMm: args.lidMm } : {}),
       ...(args.standoffMm !== undefined ? { standoffMm: args.standoffMm } : {}),
       ...(args.headroomMm !== undefined ? { headroomMm: args.headroomMm } : {}),
-      ...(args.cutoutClearanceMm !== undefined ? { cutoutClearanceMm: args.cutoutClearanceMm } : {}),
+      ...(args.cutoutClearanceMm !== undefined
+        ? { cutoutClearanceMm: args.cutoutClearanceMm }
+        : {}),
       ...(args.ventPattern !== undefined ? { ventPattern: args.ventPattern as VentPattern } : {}),
       ...(args.ventPitchMm !== undefined ? { ventPitchMm: args.ventPitchMm } : {}),
       ...(args.ventSizeMm !== undefined ? { ventSizeMm: args.ventSizeMm } : {}),
@@ -216,6 +247,19 @@ export const cad_enclosure = defineTool({
     const spec = generateEnclosure(features, params);
     const mesh = meshEnclosure(spec);
     const previewSvg = previewEnclosureSvg(spec);
+    if (args.action === "preview") {
+      return ok("Enclosure preview — not applied.", {
+        ...resultPayload(
+          project,
+          spec,
+          checkEnclosureAlignment(spec, features),
+          args.name,
+          features,
+        ),
+        previewOnly: true,
+        meshes: { base: mesh.baseStl, lid: mesh.lidStl },
+      });
+    }
     const files = filesJson(project, args.name);
     await writeJson(files.paths.spec, spec);
     await writeAtomic(files.paths.stl, mesh.baseStl);
@@ -255,6 +299,12 @@ export const cad_enclosure = defineTool({
 function summarizeFeatures(features: Awaited<ReturnType<typeof loadFeatures>>) {
   return {
     outlineMm: { width: features.outline.widthMm, height: features.outline.heightMm },
+    geometry: {
+      outline: features.outline,
+      holes: features.holes,
+      parts: [...features.tallParts, ...features.connectors],
+      connectors: features.connectors,
+    },
     thicknessMm: features.thicknessMm,
     holes: features.holes.length,
     connectors: features.connectors.map((c) => ({ ref: c.ref, edge: c.edge, x: c.x, y: c.y })),
@@ -297,7 +347,13 @@ function resultPayload(
   };
 }
 
-function fileTable(payload: { spec: string; stl: string; lidStl: string; step: string; preview: string }): string {
+function fileTable(payload: {
+  spec: string;
+  stl: string;
+  lidStl: string;
+  step: string;
+  preview: string;
+}): string {
   return table([
     { file: payload.spec, what: "parametric spec keyed to the board hash" },
     { file: payload.stl, what: "printable base (walls, floor, standoffs, clips)" },
@@ -306,4 +362,3 @@ function fileTable(payload: { spec: string; stl: string; lidStl: string; step: s
     { file: payload.preview, what: "SVG plan + isometric preview" },
   ]);
 }
-
