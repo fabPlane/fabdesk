@@ -352,6 +352,8 @@ export function ArtTab() {
   };
   const unavailable = !gray || !svg || busy || loading || converting;
   const existingBoard = project.data?.files.some((f) => f.path === "board.kicad_pcb");
+  const existingCircuit = existingBoard || project.data?.files.some(file => file.path === "board.kicad_sch");
+  const saveHere = !!projectId && !!project.data && !existingCircuit;
   const drop = (event: React.DragEvent) => {
     event.preventDefault();
     setDragging(false);
@@ -391,7 +393,7 @@ export function ArtTab() {
       {gray && <aside className="fd-art-controls" aria-label="Artwork tools">
         <h2 className="text-sm font-semibold">Artwork tools</h2>
         <p className="mt-1 text-xs leading-relaxed text-muted">
-          Preview a standalone art PCB. Your circuit is unchanged until you choose to replace it.
+          Preview an art PCB. Drag the image to position it, then choose how to save.
         </p>
         <div className={`fd-art-upload ${dragging ? "is-dragging" : ""}`}>
           <Icon name="image" width={26} height={26} aria-hidden="true" />
@@ -407,7 +409,7 @@ export function ArtTab() {
           )}
         </div>
         <fieldset disabled={busy || loading} className="min-w-0 space-y-4 border-0 p-0">
-          {sketches.length > 0 && (
+          {sketches.length > 0 && <details className="fd-art-advanced"><summary>Use another project sketch</summary>
             <Select
               className="w-full"
               value=""
@@ -423,7 +425,27 @@ export function ArtTab() {
                 </option>
               ))}
             </Select>
-          )}
+          </details>}
+          <div>
+            <div className="fd-art-label">Art style</div>
+            <div className="fd-art-styles" role="group" aria-label="Art style">
+              {ART_STYLES.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  aria-pressed={style === s}
+                  className="fd-art-style"
+                  onClick={() => setStyle(s)}
+                  data-testid={`board-art-style-${s}`}
+                >
+                  <span className={`fd-art-swatch ${s}`} aria-hidden="true" />
+                  <span>{STYLE_LABELS[s]}</span>
+                </button>
+              ))}
+            </div>
+            <p className="mt-1 text-[11px] text-muted">{STYLE_HELP[style]}</p>
+          </div>
+          <details className="fd-art-advanced"><summary>Position and size</summary>
           <label className="fd-art-field">
             Image crop
             <Select
@@ -446,26 +468,6 @@ export function ArtTab() {
               ))}
             </Select>
           </label>
-          <div>
-            <div className="fd-art-label">Art style</div>
-            <div className="fd-art-styles" role="group" aria-label="Art style">
-              {ART_STYLES.map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  aria-pressed={style === s}
-                  className="fd-art-style"
-                  onClick={() => setStyle(s)}
-                  data-testid={`board-art-style-${s}`}
-                >
-                  <span className={`fd-art-swatch ${s}`} aria-hidden="true" />
-                  <span>{STYLE_LABELS[s]}</span>
-                </button>
-              ))}
-            </div>
-            <p className="mt-1 text-[11px] text-muted">{STYLE_HELP[style]}</p>
-          </div>
-          <details className="fd-art-advanced"><summary>Position and size</summary>
           {gray && resolvedPlacement && (
             <ArtPlacementControls
               crop={crop}
@@ -571,23 +573,23 @@ export function ArtTab() {
           </details>
         </fieldset>
         <div className="fd-art-actions">
-          <Button variant="primary" disabled={unavailable} onClick={() => void newProject()}>
-            {busy ? "Saving…" : "Create art project"}
+          <Button variant="primary" disabled={unavailable || saveHere && project.isFetching} onClick={() => saveHere ? setConfirmSave(true) : void newProject()}>
+            {busy ? "Saving…" : saveHere ? "Save artwork…" : "Create art project"}
           </Button>
           <WorkspaceMenu label={<>Export and save<Icon name="chevronDown" width={14} height={14} /></>}>
           <Button disabled={unavailable} onClick={downloadLocal} data-testid="board-art-download">
             Download Gerber ZIP
           </Button>
-          <Button
+          {saveHere ? <Button disabled={unavailable} onClick={() => void newProject()}>Create separate art project</Button> : <Button
             disabled={unavailable || !projectId || !project.data || project.isFetching}
             onClick={() => setConfirmSave(true)}
             data-testid="board-art-save"
           >
             {existingBoard ? "Replace current board…" : "Save to current project…"}
-          </Button>
+          </Button>}
           </WorkspaceMenu>
           <p className="text-[11px] leading-relaxed text-muted">
-            Create a separate project to keep your existing board untouched.
+            {saveHere ? "Save the board and fabrication files here." : "Create a separate art project."}
           </p>
         </div>
       </aside>}
@@ -720,9 +722,9 @@ export function ArtTab() {
           board.kicad_pcb, board.kicad_pro, Gerbers, and fabrication exports. Any matching files
           will be replaced.
         </p>
-        <p className="mt-3 text-sm text-muted">
+        {existingCircuit && <p className="mt-3 text-sm text-muted">
           Choose Create art project to keep this design intact.
-        </p>
+        </p>}
         <div className="mt-5 flex justify-end gap-2">
           <Button onClick={() => setConfirmSave(false)}>Cancel</Button>
           <Button variant="danger" disabled={unavailable} onClick={() => void saveProject()}>

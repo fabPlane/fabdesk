@@ -32,6 +32,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
   }, [projectId, boardSources.data]);
   const projects = useProjects();
   const area = useUiStore((s) => s.workspaceArea);
+  const boardTab = useUiStore((s) => s.boardTab);
   const areaLabel = area === "boards" && boardSources.data?.mode === "assembly" ? "Boards" : WORKSPACE_AREAS[area].label;
   const savedBoard = useUiStore((s) => projectId ? s.assemblyBoardByProject[projectId] : undefined);
   const selectedBoard = area === "boards" && boardSources.data?.mode === "assembly" ? restoreAssemblySelection(boardSources.data, savedBoard) : null;
@@ -52,7 +53,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
   const name = project.data?.name ?? projects.data?.find((item) => item.id === projectId)?.name ?? "Untitled project";
   const conversationOnly = !boardOpen || (!projectId && !!threadId);
   const hasNativeDesign = project.data?.files.some((file) => file.path === "board.kicad_pcb" || file.path === "board.kicad_sch");
-  const fresh = !threadId && !sourceId && !inventory && !order && (!projectId || (!!project.data && !boardSources.isPending && boardSources.data?.mode !== "assembly" && !hasNativeDesign && area === "boards"));
+  const fresh = !threadId && !sourceId && !inventory && !order && (!projectId || (!!project.data && !boardSources.isPending && boardSources.data?.mode !== "assembly" && !hasNativeDesign && area === "boards" && boardTab === "pcb"));
   const secondary = !!sourceId || inventory || order;
   const showAssistant = !fresh && !conversationOnly && !secondary;
   const local = ["localhost", "127.0.0.1", "[::1]"].includes(new URL(client.baseUrl).hostname);

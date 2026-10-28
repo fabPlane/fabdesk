@@ -942,3 +942,17 @@ Actual compact native search opened stencil export setup, routing setup, Models 
 ![Canvas commands use workspace groups](command-workspace-groups.jpg)
 
 [Native command workflow evidence](command-flow-native.json).
+
+
+### Artwork entry and save destination — incremental checkpoint
+
+Fresh-start Create art board now opens the requested Artwork workspace instead of being hidden by the welcome screen. A project without native PCB/schematic offers current-project saving with an explicit replacement-summary confirmation. Existing circuits retain separate-project generation as the primary standalone-generator path. Styles move ahead of optional crop/precise placement and alternate project-image selection.
+
+Native961×721Createartboard opened an isolated empty project. Existing reference-only project loaded its saved image, changed Line hatch and returned Halftone; requested Position and size revealed crop/exact placement. Save confirmation named the current target; Cancel preserved it. Original3referencefiles and new2emptyartprojectfiles unchanged. The new empty art project is intentionally retained. No generation or upload completed; the upload picker closed during a desktop state change. UItypes227tests pass.
+
+Issue394 was received during this work: tab/project/reopen artwork retention, explicit ownership and non-destructive circuit-first application remain required. This entry checkpoint does not implement those requirements or claim art can decorate an existing circuit. Next: retain owned drafts using existing file APIs, then inspect the real native additive-application path. Enclosure remains teammate-owned.
+
+![Fresh art-board project opens Artwork](fresh-art-board-entry.jpg)
+![Style-first controls after selecting a project image](art-style-first-tools.jpg)
+
+[Native entry evidence and limits](art-entry-flow-native.json).

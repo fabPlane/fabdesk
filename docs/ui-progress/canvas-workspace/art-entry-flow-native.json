@@ -1,0 +1,24 @@
+{
+  "status": "LOCAL ONLY; issue394 not complete",
+  "nativeViewportCss": "961x721",
+  "verified": [
+    "Fresh-start Create art board created isolated prj_mvrufz7w4a1b4caa95 and opened Artwork rather than staying on welcome screen",
+    "Existing reference-only project opened Artwork before any circuit existed",
+    "Saved project image decoded to actual worker preview; Line hatch selected and returned to Halftone",
+    "Style choices visible before optional crop/precise position; Position and size revealed crop and exact position disclosure",
+    "Current empty project primary Save artwork opened exact-target file replacement summary; Cancel preserved project",
+    "Original reference project 3files and new empty art project 2files unchanged after walkthrough"
+  ],
+  "intentionalNewProject": "work/sketch-first-projects/untitled-art-board; retained empty fabdesk.json/.gitignore only",
+  "notVerified": [
+    "New art upload picker closed during desktop state change; no file chosen or uploaded",
+    "No art PCB generated, no native circuit modified, no download, no compatibility claim",
+    "Tab/project artwork draft retention and non-destructive circuit application still outstanding per issue394"
+  ],
+  "validation": {
+    "uiTypecheck": "PASS",
+    "uiTests": 227,
+    "assertions": 866,
+    "failed": 0
+  }
+}
