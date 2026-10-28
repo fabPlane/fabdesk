@@ -1,0 +1,22 @@
+{
+  "projectId": "prj_mvs5abwp2ff3301fe3",
+  "validated": [
+    "Saved DRC row \u2192 Show on PCB focused finding summary",
+    "Back to checks restored same shorting row, details and row focus",
+    "Close details retained focus on the source row"
+  ],
+  "authority": "Exact endpoint/project/report fingerprint/source SHA and unique description/item/coordinates; a changed or ambiguous report cannot restore an arbitrary row",
+  "preservation": {
+    "baselineFiles": 25,
+    "allExact": true,
+    "drcReportUnchanged": true
+  },
+  "checks": {
+    "helperTests": 4,
+    "helperAssertions": 14,
+    "clientTests": 301,
+    "uiTests": 228,
+    "clientAndUiTypes": "PASS"
+  },
+  "scope": "UI return navigation only; no new check, PCB edit or engineering pass"
+}

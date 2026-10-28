@@ -212,7 +212,7 @@ export { useAssemblySchematicPreview } from "./queries";
 export { enclosureSizeLabel } from "./enclosure-display";
 export { loadBoardArtwork, saveBoardArtwork, createArtworkSessionStore, artworkSessions, type ArtworkSessionDraft } from "./board-artwork";
 
-export { captureRootCheckFinding, type RootCheckFinding } from "./root-check-finding";
+export { captureRootCheckFinding, rootCheckFindingRow, type RootCheckFinding } from "./root-check-finding";
 
 export { useVideoInputRevision, useVideoInputRevisions } from "./queries";
 export { inspectVideoInputRevision, videoInputsNeedReview, type VideoInputRevisionState } from "./video-input-revision";

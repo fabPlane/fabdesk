@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Badge, Button, EmptyState, LoadError, Spinner } from "../components/ui";
-import { captureRootCheckFinding, useCoreClient, usePcbCheckRevision, useProjectJson } from "@fabdesk/client-core";
+import { captureRootCheckFinding, rootCheckFindingRow, useCoreClient, usePcbCheckRevision, useProjectJson } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { CheckReportStatus } from "./CheckReportStatus";
 import { cn } from "../util";
@@ -26,6 +26,9 @@ function SingleBoardChecks({ projectId, scopeVerified }: { projectId: string; sc
   const erc = useProjectJson(projectId, "reports/erc.json");
   const checkRevision = usePcbCheckRevision(projectId, !!drc.data);
   const [selected, setSelected] = useState<number | null>(null);
+  const returnFinding = useUiStore(state => state.rootFinding);
+  const restored = useRef(false), root = useRef<HTMLDivElement>(null);
+  const returnFocus = useRef<number | null>(null);
   const [filter, setFilter] = useState<"all" | "drc" | "erc">("all");
   const [runningCheck, setRunningCheck] = useState<"drc" | "erc" | null>(null);
   const tool = useRunTool();
@@ -36,6 +39,22 @@ function SingleBoardChecks({ projectId, scopeVerified }: { projectId: string; sc
 
   const busy = tool.state.status === "running";
   const sourceReady = scopeVerified && !!project.data && !project.isFetching && !project.isError;
+  useEffect(() => {
+    if (restored.current || !sourceReady || drc.isFetching || checkRevision.isFetching) return;
+    restored.current = true;
+    if (selected !== null || drc.isError || drc.parseError || checkRevision.isError || checkRevision.data !== "source-unchanged") return;
+    const index = rootCheckFindingRow(client.baseUrl, projectId, drc.data, returnFinding);
+    if (index === null) return;
+    returnFocus.current = index;
+    setSelected(index);
+  }, [sourceReady, drc.isFetching, drc.isError, drc.parseError, drc.data, checkRevision.isFetching, checkRevision.isError, checkRevision.data, selected, returnFinding, client.baseUrl, projectId]);
+  useLayoutEffect(() => {
+    if (selected === null || returnFocus.current !== selected) return;
+    returnFocus.current = null;
+    if (useUiStore.getState().activeProjectId !== projectId || document.activeElement !== document.body) return;
+    const row = root.current?.querySelector<HTMLElement>(`[data-check-row="${selected}"]`);
+    row?.scrollIntoView({ block: "nearest" }); row?.focus({ preventScroll: true });
+  }, [selected, projectId]);
   const hasPcb = !!project.data?.files.some(file => file.path === "board.kicad_pcb");
   const hasSchematic = !!project.data?.files.some(file => file.path === "board.kicad_sch");
   const run = async (kind: "drc" | "erc") => {
@@ -67,7 +86,7 @@ function SingleBoardChecks({ projectId, scopeVerified }: { projectId: string; sc
   );
   const sel = selected !== null ? rows[selected] : undefined;
   return (
-    <div className="fd-single-checks flex h-full min-h-0 flex-col">
+    <div ref={root} className="fd-single-checks flex h-full min-h-0 flex-col">
       {toolbar}
       {!loading && !failed && !noReports && <CheckReportStatus projectId={projectId} drc={drc.data} erc={erc.data} />}
       {failed ? <LoadError title="Checks could not be verified" onRetry={() => { void drc.refetch(); void erc.refetch(); }} /> : loading ? (
@@ -96,6 +115,7 @@ function SingleBoardChecks({ projectId, scopeVerified }: { projectId: string; sc
                 {filteredRows.map(({ finding: v, index: i }) => (
                   <tr
                     key={i}
+                    data-check-row={i}
                     onClick={() => setSelected(i)}
                     tabIndex={0}
                     aria-selected={selected === i}
@@ -117,7 +137,7 @@ function SingleBoardChecks({ projectId, scopeVerified }: { projectId: string; sc
           </div>
           {sel && (
             <div className="max-h-48 overflow-auto border-t border-border bg-panel-2/40 px-3 py-2 text-xs">
-              <div className="mb-1 flex items-start justify-between gap-3"><strong>{sel.description}</strong><Button size="sm" variant="ghost" onClick={() => setSelected(null)}>Close details</Button></div>
+              <div className="mb-1 flex items-start justify-between gap-3"><strong>{sel.description}</strong><Button size="sm" variant="ghost" onClick={() => { root.current?.querySelector<HTMLElement>(`[data-check-row="${selected}"]`)?.focus({ preventScroll: true }); setSelected(null); }}>Close details</Button></div>
               {sel.items.length === 0 && <div className="text-muted">No item details.</div>}
               {sel.items.map((it, i) => (
                 <div key={i} className="flex items-baseline gap-2">

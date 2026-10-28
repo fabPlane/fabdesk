@@ -1284,3 +1284,12 @@ Native fresh-route focus and Escape passed after the visibility fix; an earlier 
 ![Focused actual PCB finding](root-check-finding-focused-canvas.png)
 
 [Native check/focus proof](root-check-finding-focus-native.json).
+
+
+## Return to the same finding
+
+The existing captured root finding now restores its exact saved DRC row and detail panel when returning from the PCB canvas. A shared helper requires the same endpoint/project, exact report fingerprint/source SHA and a unique matching description/item/coordinate; changed or ambiguous reports cannot restore an arbitrary row. Fresh native roundtrip restored the same shorting finding and row focus. Close details also returns focus to that row. All25protected study files and the actual DRC report remain unchanged. Capture332/native JSON retained. Four helper tests14assertions,301client/228UItests and client/UItypes pass. No new check or engineering edit for this slice. Continue current scope locally, Art deferred and Mechanical excluded.
+
+![Restored finding details](check-return-restores-selection.png)
+
+[Native return-navigation evidence](check-return-selection-native.json).
