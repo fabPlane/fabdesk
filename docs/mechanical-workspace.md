@@ -12,17 +12,15 @@ These are captures of the running desktop app, using the repository's enclosure 
 | Selected imported case with movement tools | STL/OBJ/GLB import, selection, XYZ movement/rotation handles, precise values, uniform scale, centre-on-PCB and surface measurement. |
 | Enclosure form and exploded preview with Apply/Cancel | Actual generated base/lid meshes, clearance/wall/options, explode slider, transparency, non-writing preview and explicit Apply. |
 
-### Add a model
+### Visual comparisons
 
-![Add model and generate enclosure](screenshots/mechanical-workspace/01-add-model.png)
+The left column contains the supplied design concepts; the right column shows the implemented app. The screenshots use a small regression fixture, so component detail and enclosure shape differ from the illustrative laptop assets. The app retains its existing theme.
 
-### Position and inspect a case
-
-![Imported case, move handles and transparency](screenshots/mechanical-workspace/02-import-transform.png)
-
-### Preview before applying
-
-![Enclosure preview with Apply and Cancel](screenshots/mechanical-workspace/03-enclosure-preview.png)
+| Supplied design concept | Running FabDesk |
+| --- | --- |
+| ![Reference: assembly and import card](screenshots/mechanical-workspace/reference-01-assembly.png) | ![Implemented: add model and generate enclosure](screenshots/mechanical-workspace/01-add-model.png) |
+| ![Reference: imported case and movement tools](screenshots/mechanical-workspace/reference-02-imported-case.png) | ![Implemented: imported case, move handles and transparency](screenshots/mechanical-workspace/02-import-transform.png) |
+| ![Reference: enclosure preview and Apply/Cancel](screenshots/mechanical-workspace/reference-03-preview.png) | ![Implemented: enclosure preview with Apply and Cancel](screenshots/mechanical-workspace/03-enclosure-preview.png) |
 
 ### Measurement and light theme
 
