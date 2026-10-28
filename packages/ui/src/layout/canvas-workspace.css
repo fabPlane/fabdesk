@@ -338,12 +338,11 @@
 /* Declared assembly map: no property panes until an object is selected. */
 .fd-assembly-overview { height:100%; min-width:0; position:relative; overflow:hidden; }
 .fd-assembly-heading { position:absolute; z-index:2; left:32px; top:86px; max-width:calc(100% - 300px); pointer-events:none; }
-.fd-assembly-heading > span { font-size:10px; letter-spacing:1.8px; color:var(--fd-muted); }
-.fd-assembly-heading h1 { font-size:23px; font-weight:600; letter-spacing:-.7px; margin:5px 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.fd-assembly-heading h1 { font-size:21px; font-weight:600; letter-spacing:-.5px; margin:0 0 5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .fd-assembly-heading p { color:var(--fd-muted); font-size:12px; }
 .fd-assembly-heading small { color:var(--fd-muted); font-size:10px; }
 .fd-assembly-update { position:absolute; z-index:3; right:28px; top:93px; color:var(--fd-warning); background:color-mix(in srgb,var(--fd-warning) 10%,var(--fd-panel)); border:1px solid color-mix(in srgb,var(--fd-warning) 24%,transparent); }
-.fd-assembly-viewport { position:absolute; inset:176px 26px 92px; touch-action:none; cursor:grab; outline:none; }
+.fd-assembly-viewport { position:absolute; inset:158px 26px 92px; touch-action:none; cursor:grab; outline:none; }
 .fd-assembly-viewport:active { cursor:grabbing; }
 .fd-assembly-viewport:focus-visible { outline:1px solid color-mix(in srgb,var(--fd-accent) 45%,transparent); outline-offset:6px; border-radius:12px; }
 .fd-assembly-card { fill:var(--fd-panel); stroke:var(--fd-border); stroke-width:1; filter:drop-shadow(0 4px 8px #102a2010); }
@@ -449,3 +448,11 @@
 .fd-assembly-schematic-toolbar label { display:flex; align-items:center; gap:8px; font-size:12px; }
 .fd-assembly-schematic-toolbar select { max-width:260px; padding:6px 10px; border:1px solid var(--fd-border); border-radius:8px; background:var(--fd-panel); color:var(--fd-fg); }
 .fd-assembly-model-status[data-warning="true"] strong { color:var(--fd-warning); }
+
+/* A selection exposes the next action; secondary board tools stay on request. */
+.fd-assembly-more > summary { border:0; box-shadow:none; background:transparent; min-height:30px; padding:5px 8px; gap:5px; font-size:12px; }
+.fd-assembly-more .fd-workspace-menu-content { left:auto; right:0; width:230px; max-width:calc(100vw - 48px); max-height:min(35vh,300px); }
+.fd-assembly-more-above .fd-workspace-menu-content { top:auto; bottom:calc(100% + 12px); }
+
+.fd-canvas-breadcrumb { min-width:0; }
+.fd-canvas-breadcrumb > strong { min-width:0; overflow:hidden; text-overflow:ellipsis; font:inherit; }

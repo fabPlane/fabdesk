@@ -684,3 +684,15 @@ Actual UI generation rendered two temporary note-only KiCad sheets, retained nat
 This image is the first native generation before the previous/next refinement. The original173.png filename is preserved in outputs; its native capture bytes are JPEG, so an identical173.jpg and this correctly named evidence copy were added without recompressing. [Native evidence](schematic-preview-native.json).
 
 The human's latest direction prioritizes UI flow, feature organization, tool discoverability and visual fidelity to the approved concepts. Subsequent milestones should reuse verified engineering functionality and add backend work only for necessary UI connections or observed regressions. Compact and visual acceptance checks remain on that UI checklist.
+
+
+### Quieter overview and tools on selection
+
+The overview drops its repeated Connections eyebrow and gives more height to the board canvas. A selected board exposes **Open board**, **Ask** and **More**. PCB checks, 3D model, optional preview refresh and shared-design context appear only when requested. Selecting another board closes More. Escape closes the open disclosure while preserving selection; disabled actions do not dismiss it. Existing ownership, source-refresh and job guards remain in place. The workspace header identifies the restored owned physical board instead of a generic Boards label. No new native/backend capability was added.
+
+Native validation covered the shared Right I/O primary and checks navigation, Escape, selection changes and actual six-board VAIO layout. UI typecheck and **225 UI tests PASS / 0 FAIL**. All eight recorded fixture and sixteen recorded VAIO hashes are unchanged. Source inspection returned HTTP503 and its Retry state was displayed; this milestone does not claim current part-count/dimension validation. Compact acceptance remains pending. All earlier concepts and actual captures are retained.
+
+![Compact selection toolbar on VAIO](vaio-context-tools.jpg)
+![Secondary tools requested on VAIO](vaio-requested-tools.jpg)
+
+[Native walkthrough evidence](overview-context-native.json). The small fixture capture is [also preserved](overview-context-tools.jpg).

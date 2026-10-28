@@ -1,0 +1,32 @@
+{
+  "milestone": "Canvas overview contextual tool disclosure",
+  "uiOnly": true,
+  "nativeWalkthrough": {
+    "fixtureSelection": "Right I/O",
+    "primaryAction": "Open board retained Right I/O",
+    "checksAction": "More \u2192 PCB checks retained I/O source",
+    "escape": "Closed More without clearing selection",
+    "selectionChange": "I/O main \u2192 LCD closed More",
+    "vaio": "Six boards and five declared connections visible; keyboard source unresolved",
+    "header": "Right I/O shown from restored owned instance"
+  },
+  "validation": {
+    "uiTypecheck": "PASS",
+    "uiTests": {
+      "pass": 225,
+      "fail": 0
+    },
+    "fixtureRecordedHashesUnchanged": 8,
+    "vaioRecordedHashesUnchanged": 16
+  },
+  "limitations": [
+    "PCB inspection returned HTTP503 during native retry; part count/dimensions not validated this milestone.",
+    "Compact-window acceptance still pending.",
+    "No new source/native editing, compatibility or engineering feature claims."
+  ],
+  "screenshots": [
+    "174-overview-context-tools.jpg",
+    "175-vaio-context-tools.jpg",
+    "176-vaio-requested-tools.jpg"
+  ]
+}
