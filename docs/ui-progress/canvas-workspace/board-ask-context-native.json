@@ -1,0 +1,17 @@
+{
+  "projectId": "prj_mvr2ofe307592e4a2e",
+  "validated": [
+    "Unresolved keyboard selection offers Resolve source without substituting a board",
+    "Prepared question retains keyboard instance/source IDs and captured assembly manifest SHA",
+    "Previous VAIO draft preserved, then restored exactly through native composer",
+    "No Send, import, source edit or validation claim",
+    "Assistant closed after native walkthrough"
+  ],
+  "preservation": {
+    "files": 16,
+    "allExact": true
+  },
+  "checks": {
+    "uiTypes": "PASS"
+  }
+}

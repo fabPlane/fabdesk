@@ -1354,3 +1354,12 @@ Member finding tools now include Ask about finding and Back to checks. Questions
 ![Exact row return](member-finding-return-row.png)
 
 [Native evidence](member-finding-native.json).
+
+
+## Board questions include captured project identity
+
+Overview Ask/Resolve source, inspected-board Ask and missing-schematic requests now retain the selected instance ID, source ID and manifest SHA rather than relying on display names. They ask the agent to verify the current declaration and shared-source consequences. Actual VAIO unresolved Keyboard Resolve source prepared the correct identity, preserved the existing draft, sent nothing and imported nothing; the original draft was restored and all16recorded VAIO files remain exact. UI typecheck passes.
+
+![VAIO source resolution draft](vaio-resolve-source-context.png)
+
+[Native context evidence](board-ask-context-native.json).
