@@ -1,0 +1,83 @@
+{
+  "assembly": {
+    "ready": false,
+    "hasGerbers": false,
+    "hasFabricationZip": false,
+    "hasRouted": false,
+    "hasKicadPcb": true,
+    "checks": {
+      "drc": "not_required",
+      "erc": "not_required"
+    },
+    "reasons": [
+      "Ordering is not available for multi-board projects. Review each board\u2019s checks; assembly fabrication exports are not yet supported.",
+      "Export gerbers or a fabrication zip to send to a fab house."
+    ],
+    "warnings": [],
+    "vendors": [
+      {
+        "id": "jlcpcb",
+        "label": "JLCPCB",
+        "enabled": true
+      },
+      {
+        "id": "pcbway",
+        "label": "PCBWay",
+        "enabled": true
+      },
+      {
+        "id": "laser",
+        "label": "Laser",
+        "enabled": false
+      },
+      {
+        "id": "cnc",
+        "label": "CNC",
+        "enabled": false
+      }
+    ]
+  },
+  "single": {
+    "ready": false,
+    "hasGerbers": false,
+    "hasFabricationZip": false,
+    "hasRouted": false,
+    "hasKicadPcb": true,
+    "checks": {
+      "drc": "missing",
+      "erc": "not_required"
+    },
+    "reasons": [
+      "Export gerbers or a fabrication zip to send to a fab house.",
+      "Run DRC on the current board before ordering."
+    ],
+    "warnings": [],
+    "vendors": [
+      {
+        "id": "jlcpcb",
+        "label": "JLCPCB",
+        "enabled": true
+      },
+      {
+        "id": "pcbway",
+        "label": "PCBWay",
+        "enabled": true
+      },
+      {
+        "id": "laser",
+        "label": "Laser",
+        "enabled": false
+      },
+      {
+        "id": "cnc",
+        "label": "CNC",
+        "enabled": false
+      }
+    ]
+  },
+  "endpoint": "GET only; no order session/vendor action",
+  "checkedAt": "2026-10-28T14:38:25.145Z",
+  "nativeUi": "Outputs Board checks \u2192 Review / Checks, I/O source retained, shared Left I/O / Right I/O explained; assistant closed",
+  "preservation": "All six protected baseline files unchanged",
+  "limits": "No assembly manufacturing/order capability added. No vendor, order session, upload or external action invoked."
+}
