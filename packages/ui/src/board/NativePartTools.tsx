@@ -11,6 +11,7 @@ import { NativeOutlinePanel } from "./NativeOutlinePanel";
 import { newChatDraftKey, useUiStore } from "../stores/ui";
 
 type Selection = { part: PcbPartPosition; sourceSha256: string };
+type PositionRecovery = { part: PcbPartPosition; savedSha256: string };
 
 /** Real reference selection and guarded native edits; the surrounding marker is a drawing location. */
 export function NativePartTools({ projectId, board, point, openAbove, onMoved, canPosition, box, onMutationBusyChange, visible = true }: { board?: BoardSourceSelection; visible?: boolean; onMutationBusyChange: (busy: boolean) => void; box: SvgBox; canPosition: boolean; projectId: string; point: { x: number; y: number }; openAbove: boolean; onMoved: (point: { x: number; y: number }) => void }) {
@@ -24,6 +25,7 @@ export function NativePartTools({ projectId, board, point, openAbove, onMoved, c
   const [mode, setMode] = useState<"parts" | "outline">("parts");
   const [open, setOpen] = useState(false), [busy, setBusy] = useState(false);
   const [selection, setSelection] = useState<Selection | null>(null);
+  const [recovery, setRecovery] = useState<PositionRecovery | null>(null);
   const [fields, setFields] = useState({ x: "", y: "", rotation: "" });
   const [error, setError] = useState<string | null>(null), [message, setMessage] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -33,7 +35,8 @@ export function NativePartTools({ projectId, board, point, openAbove, onMoved, c
   const values = parsePartPositionInput(fields);
   const changed = !!selection && !!values && (values.x !== selection.part.x || values.y !== selection.part.y || values.rotation !== ((selection.part.rotation % 360) + 360) % 360);
   const hasProposal = !!selection && (fields.x !== String(selection.part.x) || fields.y !== String(selection.part.y) || fields.rotation !== String(selection.part.rotation));
-  const choose = (part: PcbPartPosition, sourceSha256: string) => {
+  const choose = (part: PcbPartPosition, sourceSha256: string, keepRecovery = false) => {
+    if (!keepRecovery) setRecovery(null);
     setSelection({ part, sourceSha256 }); setFields({ x: String(part.x), y: String(part.y), rotation: String(part.rotation) }); setError(null); setMessage(null); setPreviewError(null);
   };
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -41,7 +44,7 @@ export function NativePartTools({ projectId, board, point, openAbove, onMoved, c
     const wasApplied = appliedPoint.current?.x === point.x && appliedPoint.current.y === point.y;
     appliedPoint.current = null;
     if (wasApplied) return;
-    setSelection(null); setError(null); setMessage(null); setPreviewError(null);
+    setSelection(null); setRecovery(null); setError(null); setMessage(null); setPreviewError(null);
   }, [projectId, point.x, point.y]);
   useEffect(() => {
     if (current?.parts.length === 1 && !selection && !inFlight.current) choose(current.parts[0]!, current.sourceSha256);
@@ -109,34 +112,50 @@ export function NativePartTools({ projectId, board, point, openAbove, onMoved, c
     } catch (failure) { if (mounted.current) setError(failure instanceof Error ? failure.message : "Could not reload this part."); }
     finally { if (mounted.current) setBusy(false); }
   };
-  const apply = async () => {
-    if (!selection || !values || !changed || selection.part.locked || sourceChanged || !canPosition || parts.isFetching || parts.isError || inFlight.current) return;
+  const apply = async (reverting = false) => {
+    if (!selection || selection.part.locked || sourceChanged || !canPosition || parts.isFetching || parts.isError || inFlight.current) return;
+    if (reverting && (!recovery || recovery.part.ref !== selection.part.ref || recovery.savedSha256 !== selection.sourceSha256 || current?.sourceSha256 !== recovery.savedSha256 || hasProposal)) return;
+    const target = reverting ? recovery!.part : values;
+    if (!target || !reverting && !changed) return;
+    const previousPart = { ...selection.part };
     const origin = { ...point };
     inFlight.current = true; onMutationBusyChange(true); setBusy(true); setError(null); setMessage(null); setPreviewError(null);
     let saved = false;
     try {
-      const result = await client.callTool("pcb_place", { projectId, ...(board ? { board: { ...board } } : {}), placements: [{ reference: selection.part.ref, position: { x: values.x, y: values.y }, rotation: values.rotation }], staleCopper: "keep", expectedSourceSha256: selection.sourceSha256 });
+      const result = await client.callTool("pcb_place", { projectId, ...(board ? { board: { ...board } } : {}), placements: [{ reference: selection.part.ref, position: { x: target.x, y: target.y }, rotation: target.rotation }], staleCopper: "keep", expectedSourceSha256: selection.sourceSha256 });
       const data = pcbToolJsonForSource(result, projectId, board);
       if (data.saved !== true) throw new Error("The backend did not confirm a saved placement. Reload the part before retrying.");
-      saved = true;
+      saved = true; setRecovery(null);
       const warnings = pcbPlacementWarnings(result);
       const rendered = await preview.run("render_pcb_svg", { projectId, ...(board ? { board: { ...board } } : {}) });
       const inspected = await inspectPcbParts(client, projectId, { reference: selection.part.ref }, board);
       const part = inspected.parts.find((p) => p.ref === selection.part.ref);
       if (!part) throw new Error("The saved part could not be found in the refreshed inspection.");
+      const rotationDifference = Math.abs(((part.rotation - target.rotation + 180) % 360 + 360) % 360 - 180);
+      if (Math.abs(part.x - target.x) > .000001 || Math.abs(part.y - target.y) > .000001 || rotationDifference > .000001 || part.flipped !== previousPart.flipped || part.footprint !== previousPart.footprint || part.value !== previousPart.value) throw new Error("The inspected part does not match the requested saved position and identity. Review the latest PCB before making another change.");
       if (mounted.current) {
         const sameLocation = latestPoint.current.x === origin.x && latestPoint.current.y === origin.y;
-        if (sameLocation) choose(part, inspected.sourceSha256);
+        if (sameLocation) {
+          choose(part, inspected.sourceSha256);
+          if (!reverting) setRecovery({ part: previousPart, savedSha256: inspected.sourceSha256 });
+        }
+        const savedNotice = reverting ? `${part.ref} previous position restored.` : `${part.ref} position saved.`;
         const notice = warnings.affectedCopper || warnings.possibleShorts
-          ? `${part.ref} saved. Placement analysis flagged ${warnings.affectedCopper} affected copper item(s)${warnings.possibleShorts ? ` and ${warnings.possibleShorts} possible short(s)` : ""}. Review routing and checks.`
-          : `${part.ref} position saved. Run checks after changing placement.`;
+          ? `${savedNotice} Placement analysis flagged ${warnings.affectedCopper} affected copper item(s)${warnings.possibleShorts ? ` and ${warnings.possibleShorts} possible short(s)` : ""}. Review routing and checks.`
+          : `${savedNotice} Run checks after changing placement.`;
         setMessage(rendered.status === "failed" ? `${notice} The preview could not update and remains out of date.` : notice);
         setPreviewError(rendered.status === "failed" ? rendered.error ?? "The exporter returned no error detail." : null);
         if (sameLocation && useUiStore.getState().activeProjectId === projectId) { appliedPoint.current = { x: part.x, y: part.y }; onMoved(appliedPoint.current); }
       }
     } catch (failure) {
       if (mounted.current) setError(`${saved ? "The position was saved, but refresh could not finish." : "Could not apply this placement."} Reload the part before retrying. ${failure instanceof Error ? failure.message : ""}`);
-    } finally { inFlight.current = false; onMutationBusyChange(false); if (mounted.current) setBusy(false); }
+    } finally {
+      inFlight.current = false; onMutationBusyChange(false);
+      if (mounted.current) {
+        setBusy(false);
+        if (useUiStore.getState().activeProjectId === projectId) requestAnimationFrame(() => { if (useUiStore.getState().activeProjectId === projectId) popup.current?.focus({ preventScroll: true }); });
+      }
+    }
   };
   const drawingHost = root.current?.closest<HTMLElement>(".fd-svg-host");
   const partPicker = current && <label>Part<select aria-label="Select native PCB part" value={selection?.part.ref ?? ""} disabled={busy} onChange={(event) => { const part = current.parts.find((p) => p.ref === event.target.value); if (part) choose(part, current.sourceSha256); }}><option value="">Choose a part</option>{[...current.parts].sort((a, b) => Math.hypot(a.x - point.x, a.y - point.y) - Math.hypot(b.x - point.x, b.y - point.y)).map((part) => <option key={part.ref} value={part.ref}>{part.ref} · {part.value}</option>)}</select></label>;
@@ -170,8 +189,9 @@ export function NativePartTools({ projectId, board, point, openAbove, onMoved, c
           </details>
           {hasProposal && values && <p role="status" className="fd-native-part-note">Proposal · X {values.x} mm · Y {values.y} mm · {values.rotation}°</p>}
           {hasProposal && !values && <p role="status" className="fd-native-part-warning">Enter valid X, Y and rotation values to apply, or discard this proposal.</p>}
-          <div className="fd-native-part-actions">{hasProposal && <Button size="sm" variant="ghost" disabled={busy} onClick={() => { choose(selection.part, selection.sourceSha256); requestAnimationFrame(() => popup.current?.focus({ preventScroll: true })); }}>Discard proposal</Button>}<Button size="sm" disabled={busy || selection.part.locked} onClick={() => setFields((previous) => ({ ...previous, rotation: String((Number(previous.rotation) || 0) + 90) }))}>+90°</Button><Button size="sm" variant="primary" type="submit" disabled={busy || !canPosition || parts.isFetching || parts.isError || !values || !changed || sourceChanged || selection.part.locked}>{busy ? "Saving / refreshing…" : "Apply position"}</Button></div>
+          <div className="fd-native-part-actions">{hasProposal && <Button size="sm" variant="ghost" disabled={busy} onClick={() => { choose(selection.part, selection.sourceSha256, true); requestAnimationFrame(() => popup.current?.focus({ preventScroll: true })); }}>Discard proposal</Button>}<Button size="sm" disabled={busy || selection.part.locked} onClick={() => setFields((previous) => ({ ...previous, rotation: String((Number(previous.rotation) || 0) + 90) }))}>+90°</Button><Button size="sm" variant="primary" type="submit" disabled={busy || !canPosition || parts.isFetching || parts.isError || !values || !changed || sourceChanged || selection.part.locked}>{busy ? "Saving / refreshing…" : "Apply position"}</Button></div>
         </form>
+        {recovery && <div className="fd-native-position-recovery"><Button size="sm" variant="ghost" disabled={busy || hasProposal || sourceChanged || !canPosition || parts.isFetching || parts.isError || selection.part.locked || recovery.savedSha256 !== selection.sourceSha256 || current?.sourceSha256 !== recovery.savedSha256} onClick={() => void apply(true)}>Revert last position</Button><p className="fd-native-part-note">Restore {recovery.part.ref} to {recovery.part.x}, {recovery.part.y} mm · {recovery.part.rotation}°. Available here until the PCB changes or another part is inspected; routing edits are not undone.</p></div>}
         <Button size="sm" variant="ghost" disabled={busy || sourceChanged || !canPosition} onClick={() => {
           const ui = useUiStore.getState();
           if (ui.activeProjectId !== projectId) return;

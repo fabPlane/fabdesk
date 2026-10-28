@@ -1,0 +1,38 @@
+{
+  "projectId": "prj_mvs5p9p9691f522186",
+  "pcbRestoredByteForByte": true,
+  "pcbSha256": "623d182c8b5a79c654b5cf6a50534cb4d97863076ec717d36be2f96433563df8",
+  "projectMetadataUnchanged": true,
+  "otherOriginalFilesUnchanged": {
+    "prj_mvrlt1yx802c210b69": 19,
+    "prj_mvr2ofe307592e4a2e": 16
+  },
+  "nativeRounds": [
+    "R1 X106\u2192106.1\u2192Revert106, Y100/rotation0 unchanged",
+    "R1 X106\u2192106.2\u2192Revert106, dialog focus restored"
+  ],
+  "guards": [
+    "source newline disables Revert and warns stale preview; exact snapshot restore re-enables",
+    "new unsaved +90 proposal disables Revert; Discard retains recovery",
+    "existing expectedSourceSha256 / native lock / preview ownership guards retained"
+  ],
+  "nativeWarning": "0 affected copper items, 1 possible short; not DRC evidence",
+  "faultStatus": "RESTORED",
+  "projectSettingsInitialization": {
+    "onlyChangedKey": "schematic.top_level_sheets",
+    "nativeValue": [
+      {
+        "filename": "board.kicad_sch",
+        "name": "board",
+        "uuid": "00000000-0000-0000-0000-000000000000"
+      }
+    ],
+    "revertedByPositionAction": false
+  },
+  "limits": [
+    "One in-memory previous position for the inspected part",
+    "Reload/new part/new drawing location/navigation loses this local recovery",
+    "Not general undo, footprint replacement, routing rollback or project-file recovery",
+    "Native root proof only; isolated assembly-member proof next"
+  ]
+}
