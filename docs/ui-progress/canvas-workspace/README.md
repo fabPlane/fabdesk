@@ -1157,3 +1157,7 @@ Actual native map now omits the redundant source count when each board has its o
 
 ### Project conversation entry
 An empty conversation within an existing project now asks what to work on and invites questions, changes or references; the composer no longer assumes a new board. Fresh-start wording and sketch entry are preserved. Native VAIO corner assistant keeps the exact unsent missing-keyboard draft; no message sent. UI types and 228 tests pass. Capture: vaio-project-assistant.png.
+
+
+### Compact map and keyboard recovery
+At 960 × 720 the actual six-board map and requested source tools fit. Source details closes first with Escape; the next Escape or Deselect returns focus to the selected board. Enter reopens its tools. The same dismissal/reopen sequence passed for the I/O → RH link. Its RH J13 action opens the actual RH source (11 parts, complex-outline dimensions honestly unverified); All boards returns to the map. Restored 1440 × 870. All16original hashes remain exact, no engineering edit/send/regeneration. UItypes and228tests pass. Captures vaio-source-context-compact.png and vaio-rh-endpoint-compact.png.
