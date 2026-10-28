@@ -635,12 +635,13 @@
 
 /* Routing uses one saved-board reference; playback tools appear with a real run. */
 .fd-routing-start { height:100%; min-height:0; display:flex; flex-direction:column; gap:18px; padding:18px 24px 88px; }
-.fd-routing-start > header { text-align:center; }
+.fd-routing-start > header { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; }
 .fd-routing-start h1 { font-size:21px; font-weight:550; letter-spacing:-.45px; margin:4px 0 7px; }
 .fd-routing-start header p, .fd-routing-reference > p { font-size:12px; color:var(--fd-muted); }
 .fd-routing-start-body { display:grid; grid-template-columns:minmax(0,1fr) 350px; gap:24px; flex:1; min-height:0; align-items:center; }
+.fd-routing-start-body[data-setup-open="false"] { grid-template-columns:minmax(0,1fr); }
 .fd-routing-reference { min-height:0; height:100%; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:12px; }
-.fd-routing-reference img { width:100%; height:calc(100% - 40px); object-fit:contain; min-height:0; }
+.fd-routing-reference > .fd-svg-viewer { flex:1; height:auto; min-height:0; width:100%; }
 .fd-routing-setup { display:flex; flex-direction:column; align-items:stretch; gap:14px; padding:22px; background:var(--fd-panel); border:1px solid var(--fd-border); border-radius:18px; max-height:100%; overflow:auto; }
 .fd-routing-setup h2 { font-size:16px; font-weight:550; }
 .fd-routing-setup p { font-size:12px; color:var(--fd-muted); line-height:1.6; }

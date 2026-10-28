@@ -5,8 +5,8 @@ import { useCinemaStore } from "../../stores/cinema";
 import { useUiStore } from "../../stores/ui";
 import { Icon } from "../../components/Icon";
 import { cn } from "../../util";
-import { useBoardSources, useProject, useRouteRun, useRouteRuns, useRouters, useRunTool } from "@fabdesk/client-core";
-import { ProjectImage } from "../../chat/ProjectImage";
+import { useBoardSources, useProject, useProjectText, useRouteRun, useRouteRuns, useRouters, useRunTool } from "@fabdesk/client-core";
+import { SvgViewer } from "../SvgViewer";
 import type { RouterCatalogId } from "@fabdesk/protocol";
 import { routerPickerOptions } from "../../settings/routers";
 import { runFailureText } from "./runError";
@@ -32,6 +32,14 @@ function isEditable(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   const tag = target.tagName;
   return ["INPUT", "TEXTAREA", "SELECT", "BUTTON", "SUMMARY", "A"].includes(tag) || target.isContentEditable;
+}
+
+function RoutingReference({ projectId }: { projectId: string }) {
+  const drawing = useProjectText(projectId, "renders/pcb.svg");
+  return <section className="fd-routing-reference" aria-label="Saved PCB routing reference">
+    {drawing.isError ? <LoadError title="Could not load the saved PCB preview" onRetry={() => void drawing.refetch()} /> : drawing.isPending ? <Spinner /> : drawing.data ? <SvgViewer svg={drawing.data} viewKey={`${projectId}/routing-reference`} /> : <EmptyState title="No saved PCB preview" />}
+    <p>Saved preview · Routing and source freshness unverified</p>
+  </section>;
 }
 
 export function CinemaTab() {
@@ -233,8 +241,8 @@ function ProjectCinema({ projectId, scopeReady }: { projectId: string; scopeRead
   </section>;
   const feedback = <>{route.state.error && <p role="alert" className="text-danger">{route.state.error}</p>}{cancel.state.error && <p role="alert" className="text-danger">{cancel.state.error}</p>}{history.isError && <p role="alert">Routing history could not be loaded. <Button size="sm" onClick={() => void history.refetch()}>Retry history</Button></p>}{frameError && <p role="alert">{frameError} <Button size="sm" onClick={() => setFrameRetry(value => value + 1)}>Retry frames</Button></p>}</>;
   if (!run) return <div className="fd-routing-start">
-    <header><h1>Routing</h1><p>Start a run when your board is ready for copper routing.</p></header>
-    <div className="fd-routing-start-body"><section className="fd-routing-reference" aria-label="Saved PCB routing reference">{preview ? <><ProjectImage projectId={projectId} path="renders/pcb.svg" alt="Saved PCB preview before routing" /><p>Saved preview · Routing and source freshness unverified</p></> : <EmptyState title={hasPcb ? "Saved PCB" : "Start with a saved PCB"} />}</section>{setup}</div>
+    <header><div><h1>Routing</h1><p>Start a run when your board is ready for copper routing.</p></div><Button ref={setupTrigger} size="sm" aria-expanded={setupOpen} onClick={() => setSetupOpen(!setupOpen)}>{setupOpen ? "Close setup" : "Set up routing"}</Button></header>
+    <div className="fd-routing-start-body" data-setup-open={setupOpen}>{preview ? <RoutingReference projectId={projectId} /> : <section className="fd-routing-reference"><EmptyState title={hasPcb ? "Saved PCB" : "Start with a saved PCB"}>Choose Set up routing to review router options and requirements.</EmptyState></section>}{setupOpen && setup}</div>
     <div className="fd-routing-feedback">{history.isLoading && <p role="status">Loading recorded runs…</p>}{ownedRunId && <p role="status">Loading this run’s recorded frames…</p>}{cancelButton}{feedback}</div>
   </div>;
 

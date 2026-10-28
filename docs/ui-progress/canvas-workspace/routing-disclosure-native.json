@@ -1,0 +1,27 @@
+{
+  "projectId": "prj_mvs5abwp2ff3301fe3",
+  "validated": [
+    "No recorded run: router setup stays closed on entry",
+    "Set up routing opens existing router picker, Manage routers, source requirements and Route board",
+    "Escape closes setup and returns trigger focus in wide and compact layouts",
+    "Existing SvgViewer zoom 100 to125 percent; setup open/close preserves125; Fit restores100",
+    "Requested controls and default zoom toolbar fit 960x720 without corner-assistant overlap",
+    "No route started, provider changed, source mutation or successful routing claim"
+  ],
+  "preservation": {
+    "files": 48,
+    "allExact": true
+  },
+  "comparison": "Approved11-routing uses one main board and requested tools; native selection-based routing is unsupported and was not simulated",
+  "finalCaptures": [
+    354,
+    355,
+    356
+  ],
+  "earlierIterations": [
+    350,
+    351,
+    352,
+    353
+  ]
+}

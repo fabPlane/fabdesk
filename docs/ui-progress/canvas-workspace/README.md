@@ -1368,3 +1368,13 @@ Overview Ask/Resolve source, inspected-board Ask and missing-schematic requests 
 Compact screenshot review caught that347focused the row at the viewport bottom while its details remained below the fold. Return navigation now centers that row; final349shows its whole detail card and Close details/Show on PCB controls above the corner assistant. Both iterations are preserved. The full standard suite atd314c0cpassed2257tests/36skip/0fail and roottypes passed; the final UI-only scroll correction was verified natively after that checkpoint.
 
 ![Visible returned finding details](member-finding-return-details-visible.png)
+
+
+## Routing opens onto one board canvas
+
+The no-recorded-run entry now keeps setup closed until Set up routing. Existing router choices, management, requirements and Route board remain available on request; Escape returns trigger focus. The saved reference reuses SvgViewer with real zoom/Fit, preserves zoom across setup disclosure, and shows a separate unverified-routing/source note. Wide/compact native disclosure,125%zoom preservation and Fit passed. All48protected study files remain exact; no routing run started. This follows the approved11-routing canvas hierarchy without inventing selected-net routing or successful routing for the known unavailable installed bridge. Captures350–353 retain earlier static-reference iterations;354–356show the final zoomable reference.
+
+![Actual quiet routing canvas](354-routing-zoomable-default-wide.png)
+![Requested routing setup](355-routing-zoomable-setup-compact.png)
+
+[Native disclosure evidence](routing-disclosure-native.json).
