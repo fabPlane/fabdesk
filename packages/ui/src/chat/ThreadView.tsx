@@ -84,9 +84,9 @@ export function ThreadView({ presentation = "chat" }: { presentation?: "chat" | 
         <div className="fd-empty-hero">
           <CircuitLogo className="fd-hero-icon mb-3 shrink-0 text-accent" />
           <div className="fd-eyebrow">Your PCB workspace</div>
-          <h1>{presentation === "start" ? "What would you like to make?" : projectId ? "What board are we building?" : "How can I help with your board?"}</h1>
+          <h1>{presentation === "start" ? "What would you like to make?" : projectId ? "What would you like to work on?" : "How can I help with your board?"}</h1>
           <div className="fd-hero-description">
-            {presentation === "start" ? "Start with an idea, a sketch, or an existing design." : "Describe your circuit, ask a question or attach a sketch."}
+            {presentation === "start" ? "Start with an idea, a sketch, or an existing design." : projectId ? "Ask about this project, describe a change, or attach a reference." : "Describe your circuit, ask a question or attach a sketch."}
           </div>
           {presentation !== "start" && <div className="mt-5 flex flex-wrap justify-center gap-2" aria-label="Start from a sketch">
             <Button onClick={() => setSketchOpen(true, "draw")}><Icon name="compose" width={16} height={16} />Draw a sketch</Button>

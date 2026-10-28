@@ -252,7 +252,7 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
   const placeholder = thread
     ? "Message the agent..."
     : startMode ? "Describe your project…" : projectId
-      ? "Describe the board you want..."
+      ? "Ask about this project or describe a change…"
       : "Describe your idea or start with a sketch...";
 
   const finishAction = <Button variant="secondary" size="sm" aria-label="Finish it"
