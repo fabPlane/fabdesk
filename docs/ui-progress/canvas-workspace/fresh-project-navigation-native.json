@@ -23,7 +23,9 @@
     "Project menu New project \u2192 native create dialog \u2192 Create project",
     "Fresh start has no other workspace tools open",
     "Sketch or image \u2192 Draw or open a sketch \u2192 Import drawing button visible",
-    "Close sketch returns focus to Sketch or image"
+    "Close sketch returns focus to Sketch or image",
+    "Renderer reload restores the same fresh project and quiet start",
+    "Recent-project VAIO selection restores I/O board workspace with assistant closed"
   ],
   "savedSketch": false
 }
