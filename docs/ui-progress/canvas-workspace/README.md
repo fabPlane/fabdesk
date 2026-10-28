@@ -930,3 +930,15 @@ The actual compact native walkthrough opened the saved Game Boy schematic and it
 ![Missing source next step](root-missing-schematic.jpg)
 
 [Native walkthrough and limits](root-schematic-flow-native.json).
+
+
+### Command search follows the canvas workflow
+
+Canvas command search groups the same Overview, Board, Parts, Outputs, Review and Files destinations as the workspace. Requested tools open their setup or review screen; they do not immediately start legacy export/routing/check jobs. Models & video and Export files preserve the Outputs area even though their underlying views are shared elsewhere. Existing classic direct commands and numeric shortcut order remain. Inactive chat actions and the full project/chat list no longer crowd initial canvas search; projects appear when searched. Unsupported assembly Routing/Artwork entries are omitted.
+
+Actual compact native search opened stencil export setup, routing setup, Models & video and Checks without invoking engineering jobs. A discovered fuzzy Run DRC→Routing mismatch was corrected with canvas token matching; retest opened Review/Checks with no reports and explicit Run buttons. VAIO routing search returned no unsupported command; Escape restored its board canvas. UItypes/227tests pass. No new full-suite claim or enclosure work.
+
+![Search finds model and video outputs](command-video-search.jpg)
+![Canvas commands use workspace groups](command-workspace-groups.jpg)
+
+[Native command workflow evidence](command-flow-native.json).
