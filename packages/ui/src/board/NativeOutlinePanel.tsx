@@ -72,7 +72,7 @@ export function NativeOutlinePanel({ projectId, board, canPosition, onBusyChange
           <label>Width (mm)<Input type="number" min="0.000001" max="1000" step="any" aria-label="Board width (mm)" value={width} disabled={busy} onChange={event => setWidth(event.target.value)} /></label>
           <label>Height (mm)<Input type="number" min="0.000001" max="1000" step="any" aria-label="Board height (mm)" value={height} disabled={busy} onChange={event => setHeight(event.target.value)} /></label>
         </div>
-        <div className="fd-native-part-actions"><Button size="sm" variant="ghost" disabled={busy} onClick={() => void reload()}>Reload outline</Button><Button size="sm" variant="primary" type="submit" disabled={busy || stale || !canPosition || inspection.isFetching || inspection.isError || !points || !changed}>{busy ? "Saving / refreshing…" : snapshot.bounds ? "Apply dimensions" : "Create outline"}</Button></div>
+        <div className="fd-native-part-actions">{changed && <Button size="sm" variant="ghost" disabled={busy} onClick={() => choose(snapshot)}>Discard proposal</Button>}<Button size="sm" variant="ghost" disabled={busy} onClick={() => void reload()}>Reload outline</Button><Button size="sm" variant="primary" type="submit" disabled={busy || stale || !canPosition || inspection.isFetching || inspection.isError || !points || !changed}>{busy ? "Saving / refreshing…" : snapshot.bounds ? "Apply dimensions" : "Create outline"}</Button></div>
       </form>
     </>}
     {notice && <p role="status" className="fd-native-part-warning">{notice}<BoardChecksButton projectId={projectId} {...(board ? { board } : {})} /></p>}

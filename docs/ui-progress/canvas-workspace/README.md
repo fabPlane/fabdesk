@@ -1097,3 +1097,8 @@ Actual native Make video created the record. A guarded model-byte change raised 
 ![Shared Review updates action](review-video-input-change-native.jpg)
 
 [Native evidence and explicit scope](video-input-freshness-native.json).
+
+
+### Placement and outline proposals have an explicit discard action
+
+The existing position and rectangular-outline editors now reveal Discard proposal only when unsaved values differ from their inspected snapshot. It restores those local values without a tool call or source write; Apply remains the deliberate save step, and stale-source guards remain in force. UItypecheck and228tests pass. Native acceptance of these new buttons is pending: the computer-use surface began returning noWindowsAvailable/elementHasNoFrame while the owned development bridge remained healthy. No native pass or new placement mutation is claimed.
