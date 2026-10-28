@@ -732,3 +732,10 @@
 .fd-start-reference-caption { width:min(100%,560px); }
 .fd-start-reference-caption label { width:100%; min-width:0; justify-content:center; }
 .fd-start-reference-caption select { min-width:0; }
+
+.fd-update-actions { display:flex; flex-direction:column; align-items:flex-start; gap:5px; min-width:0; }
+.fd-kept-output { display:flex; flex-direction:column; align-items:flex-start; gap:4px; max-width:100%; border-radius:6px; }
+.fd-kept-output > span { font-size:11px; color:var(--fd-warning); }
+.fd-kept-output > small { font-size:10px; line-height:1.5; color:var(--fd-muted); }
+.fd-kept-output > button { white-space:normal; text-align:left; height:auto; min-height:32px; max-width:100%; padding-top:6px; padding-bottom:6px; }
+.fd-kept-output:focus-visible { outline:2px solid var(--fd-accent); outline-offset:4px; }

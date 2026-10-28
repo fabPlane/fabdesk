@@ -1,0 +1,141 @@
+{
+  "projectId": "prj_mvs5abwp2ff3301fe3",
+  "geometry": {
+    "viewport": {
+      "width": 960,
+      "height": 720
+    },
+    "warnings": [
+      "PCB source changed",
+      "PCB source changed"
+    ],
+    "choices": [
+      {
+        "text": "Keep saved version",
+        "rect": {
+          "left": 745.3984375,
+          "right": 879.6171875,
+          "top": 348.8984375,
+          "bottom": 380.8984375,
+          "width": 134.21875,
+          "height": 32
+        },
+        "buttons": [
+          {
+            "text": "Keep saved version",
+            "rect": {
+              "left": 745.3984375,
+              "right": 879.6171875,
+              "top": 348.8984375,
+              "bottom": 380.8984375,
+              "width": 134.21875,
+              "height": 32
+            },
+            "scrollHeight": 30,
+            "clientHeight": 30
+          }
+        ]
+      },
+      {
+        "text": "Kept saved versionReview choiceThis device \u00b7 review again if the PCB or output changes",
+        "rect": {
+          "left": 745.3984375,
+          "right": 885.3984375,
+          "top": 450.8984375,
+          "bottom": 537.3984375,
+          "width": 140,
+          "height": 86.5
+        },
+        "buttons": [
+          {
+            "text": "Review choice",
+            "rect": {
+              "left": 745.3984375,
+              "right": 850.1328125,
+              "top": 471.3984375,
+              "bottom": 503.3984375,
+              "width": 104.734375,
+              "height": 32
+            },
+            "scrollHeight": 30,
+            "clientHeight": 30
+          }
+        ]
+      }
+    ]
+  },
+  "orderReadiness": {
+    "ready": false,
+    "hasGerbers": false,
+    "hasFabricationZip": false,
+    "hasRouted": false,
+    "hasKicadPcb": true,
+    "checks": {
+      "drc": "missing",
+      "erc": "not_required"
+    },
+    "reasons": [
+      "Export gerbers or a fabrication zip to send to a fab house.",
+      "Run DRC on the current board before ordering."
+    ],
+    "warnings": [],
+    "vendors": [
+      {
+        "id": "jlcpcb",
+        "label": "JLCPCB",
+        "enabled": true
+      },
+      {
+        "id": "pcbway",
+        "label": "PCBWay",
+        "enabled": true
+      },
+      {
+        "id": "laser",
+        "label": "Laser",
+        "enabled": false
+      },
+      {
+        "id": "cnc",
+        "label": "CNC",
+        "enabled": false
+      }
+    ]
+  },
+  "nativeCases": [
+    "Keep preview and model only after actual hash checks; both stale warnings retained",
+    "Choices survive CmdR",
+    "New PCB revision C removes both kept labels",
+    "Exact revision B restore recognizes prior choice",
+    "Altered SVG loses preview kept label while unchanged model retains its own choice",
+    "Exact SVG restore re-identifies original choice",
+    "Review choice clears preference and restores group focus",
+    "Compact control fits without clipping"
+  ],
+  "scope": "Device preference for root PCB preview/GLB only; not freshness, check pass, version archive, synchronization or assembly support",
+  "pendingFault": "RESTORED",
+  "allPreFaultFilesByteIdentical": 23,
+  "testPreferences": "Cleared through native Review choice",
+  "finalWording": "Kept saved version; chronology is not inferred from differing hashes",
+  "finalLiveRead": {
+    "projectId": "prj_mvs5abwp2ff3301fe3",
+    "identity": {
+      "sourceSha256": "8f31d7c224ac8eb64e16449890716193ac12707981c668f82a1618a2c6c3d168",
+      "artifactSha256": "b0c4c16247fe8341f21794dc7770aebb6238da5c8bcce57fd4fe384133c09605",
+      "receiptSha256": "89f5502b2451c74da23e137b0541ce14928f0a7d2261a7d553b17be411c60131",
+      "keptAt": "2026-10-28T15:59:29.986Z"
+    },
+    "scope": "Real existing project API reads, including final artifact recheck; no preference/file writes by capture helper",
+    "sourceFault": "RESTORED",
+    "allFilesExact": 23
+  },
+  "validation": {
+    "rootTypecheck": "PASS",
+    "fullStandard": "2241pass/36skip/0fail before final artifact-race recheck",
+    "finalClientTests": "291pass/1411assertions after final artifact recheck",
+    "finalFocusedGuardTests": "6pass/24assertions",
+    "uiTests": "228pass/870assertions",
+    "finalClientUiTypecheck": "PASS"
+  },
+  "wordingIterations": "314\u2013317 retain intermediate older wording;318 uses precise Kept saved version. No chronological order inferred from differing hashes."
+}

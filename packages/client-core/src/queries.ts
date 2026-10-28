@@ -1,3 +1,4 @@
+import { inspectKeptOutputIdentity, type KeptOutputKind } from "./kept-output";
 import { inspectVideoInputRevision } from "./video-input-revision";
 import { inspectAssemblySchematicPreview } from "./assembly-schematic-preview";
 import { inspectAssemblyModelSummaries } from "./assembly-model-summary";
@@ -952,6 +953,11 @@ export function useStopFinishIt() {
       qc.setQueryData(["finish-it", projectId], data.session);
     },
   });
+}
+
+export function useKeptOutputIdentity(projectId: string, kind: KeptOutputKind, enabled: boolean) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["kept-output-identity", projectId, client.baseUrl, kind], queryFn: () => inspectKeptOutputIdentity(client, projectId, kind), enabled, retry: false });
 }
 
 export function usePcbPreviewRevision(projectId: string | null, enabled = true, directory = ".") {

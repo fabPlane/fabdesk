@@ -216,3 +216,5 @@ export { captureRootCheckFinding, type RootCheckFinding } from "./root-check-fin
 
 export { useVideoInputRevision } from "./queries";
 export { inspectVideoInputRevision, videoInputsNeedReview, type VideoInputRevisionState } from "./video-input-revision";
+
+export * from "./kept-output";

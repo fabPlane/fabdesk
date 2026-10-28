@@ -336,6 +336,7 @@ export function handleCoreEvent(event: CoreEvent, ctx: HandlerCtx): void {
       ctx.route?.setDone(event.result);
       break;
     case "project.changed":
+      void qc.invalidateQueries({ queryKey: ["kept-output-identity", event.projectId] });
       void qc.invalidateQueries({ queryKey: ["board-sources", event.projectId] });
       void qc.invalidateQueries({ queryKey: ["assembly-board-inspection", event.projectId] });
       void qc.invalidateQueries({ queryKey: ["assembly-pcb-check", event.projectId] });

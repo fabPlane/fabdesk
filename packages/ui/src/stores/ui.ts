@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { DRAFT_KEY_NEW, newChatDraftKey, workspaceAreaForView, workspaceViews, type WorkspaceArea, type AssemblySceneSelection, type AssemblyCheckFinding, type RootCheckFinding } from "@fabdesk/client-core";
+import { DRAFT_KEY_NEW, newChatDraftKey, workspaceAreaForView, workspaceViews, type WorkspaceArea, type AssemblySceneSelection, type AssemblyCheckFinding, type RootCheckFinding, type KeptOutputChoice } from "@fabdesk/client-core";
 import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
 import { readStoredThemeId, type ThemeId } from "../theme/resolve";
 import { stencilThicknessMm } from "./stencil-thickness";
@@ -54,6 +54,8 @@ export interface UiState {
   setCanvasMode: (enabled: boolean) => void;
   canvasNavigationOpen: boolean;
   setCanvasNavigationOpen: (open: boolean) => void;
+  keptOutputChoices: Record<string, KeptOutputChoice>;
+  setKeptOutputChoice: (key: string, choice: KeptOutputChoice | null) => void;
   assistantOpen: boolean;
   setAssistantOpen: (open: boolean) => void;
   workspaceArea: WorkspaceArea;
@@ -162,6 +164,13 @@ export function createUiStore(storage?: StateStorage) {
   setCanvasMode: (canvasMode) => set({ canvasMode, canvasNavigationOpen: false }),
   canvasNavigationOpen: false,
   setCanvasNavigationOpen: (canvasNavigationOpen) => set({ canvasNavigationOpen }),
+  keptOutputChoices: {},
+  setKeptOutputChoice: (key, choice) => set(s => {
+    const keptOutputChoices = { ...s.keptOutputChoices };
+    if (choice) keptOutputChoices[key] = { ...choice };
+    else delete keptOutputChoices[key];
+    return { keptOutputChoices };
+  }),
   assistantOpen: false,
   setAssistantOpen: (assistantOpen) => set({ assistantOpen }),
   workspaceArea: "boards",
@@ -323,6 +332,7 @@ export function createUiStore(storage?: StateStorage) {
         themeId: s.themeId,
         canvasMode: s.canvasMode,
         assistantOpen: s.assistantOpen,
+        keptOutputChoices: s.keptOutputChoices,
         workspaceArea: s.workspaceArea,
         workspaceByProject: s.workspaceByProject,
         assemblyBoardByProject: s.assemblyBoardByProject,
