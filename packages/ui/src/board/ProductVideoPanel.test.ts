@@ -39,7 +39,7 @@ describe("product video panel", () => {
     expect(html).toContain("Generate 3D model");
     for (const preset of VIDEO_PRESETS) expect(html).toContain(preset.label);
     expect(html).toContain("Title and spec captions");
-    expect(html).toContain("exports/");
+    expect(html).toContain("project’s outputs");
   });
 
   test("prefers MP4 over GIF for preview", () => {

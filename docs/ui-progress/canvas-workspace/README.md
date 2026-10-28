@@ -814,3 +814,18 @@ The study intentionally retains its copied/edited PCB, local baseline, generated
 ![Project without revision history](review-no-history.jpg)
 
 [Native workflow evidence](change-flow-native.json).
+
+
+### Models and video share one output flow
+
+Models & video now keeps model actions/source status together and opens video tools only when requested. If no saved video/poster exists, the actual saved GLB is the main reference. Preset/duration come first; resolution, aspect, background and captions stay under Output settings. Closing tools retains values while mounted; project changes reset their local state. The primary action stays reachable in the compact scroll area. Model/video progress and failures remain visible outside the folded form.
+
+Generation requires a verified single-board scope and saved PCB; existing model viewing/downloads remain available independently. The same exporters, camera controls, presets and formats are reused. This does not add member video, assembly alignment or fit checking.
+
+Native961×721walkthrough opened the existing root GLB with source/fit uncertainty visible, disclosed settings, changed6→8seconds and reopened with8retained, then checked the no-PCB prerequisite disables both generators. No model/video regeneration, download or injected job failure was run.225UItests/types pass; all38recordedfixture/VAIOhashes unchanged. One initial test expected old exports/ wording; updated copy assertion retained every existing preset/caption check before the successful rerun.202 precedes the final prerequisite guard;203 is requested tools,204 verifies the guard.
+
+![Actual saved model with video tools closed](model-video-quiet.jpg)
+![Requested video tools beside the real model](requested-video-tools.jpg)
+![A PCB is required for generation](video-pcb-prerequisite.jpg)
+
+[Native evidence](video-flow-native.json).

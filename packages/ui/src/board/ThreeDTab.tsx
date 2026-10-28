@@ -29,10 +29,10 @@ export function ThreeDTab() {
   if (sources.isError && !sources.data) return <LoadError title="Could not inspect board sources" onRetry={() => void sources.refetch()} />;
   if (sources.isPending) return <div className="flex h-full items-center justify-center"><Spinner /></div>;
   if (sources.data?.mode === "assembly") return <AssemblyModels key={projectId} projectId={projectId} data={sources.data} checking={sources.isFetching} failed={sources.isError} onRetry={() => void sources.refetch()} />;
-  return <SingleBoardThreeDTab />;
+  return <SingleBoardThreeDTab key={projectId} scopeReady={!sources.isFetching && !sources.isError && sources.data?.mode === "single"} />;
 }
 
-function SingleBoardThreeDTab() {
+function SingleBoardThreeDTab({ scopeReady }: { scopeReady: boolean }) {
   const client = useCoreClient();
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
@@ -59,6 +59,7 @@ function SingleBoardThreeDTab() {
   };
   const files = project.data?.files ?? [];
   const glb = files.find((f) => f.path === GLB_PATH);
+  const canGenerate = scopeReady && files.some(file => file.path === "board.kicad_pcb");
   const videos = useMemo(
     () =>
       files
@@ -79,10 +80,10 @@ function SingleBoardThreeDTab() {
   }
 
   if (canvas) return <div className="fd-board-model-view">
-    {glb ? <Suspense fallback={<div className="flex h-full items-center justify-center"><Spinner /></div>}><ModelCanvas key={`${projectId}:${GLB_PATH}`} projectId={projectId} path={GLB_PATH} /></Suspense> : <EmptyState title="See your board in 3D" action={<Button disabled={glbRun.state.status === "running"} onClick={() => void glbRun.run("glb", { projectId })}>{glbRun.state.status === "running" ? "Generating model…" : "Generate 3D preview"}</Button>}>Generate a model from your saved KiCad PCB. Components with available 3D models appear in the preview.</EmptyState>}
+    {glb ? <Suspense fallback={<div className="flex h-full items-center justify-center"><Spinner /></div>}><ModelCanvas key={`${projectId}:${GLB_PATH}`} projectId={projectId} path={GLB_PATH} /></Suspense> : <EmptyState title="See your board in 3D" action={<Button disabled={!canGenerate || glbRun.state.status === "running"} onClick={() => void glbRun.run("glb", { projectId })}>{glbRun.state.status === "running" ? "Generating model…" : "Generate 3D preview"}</Button>}>Generate a model from your saved KiCad PCB. Components with available 3D models appear in the preview.</EmptyState>}
     <BoardModelStatus projectId={projectId} present={!!glb} updating={glbRun.state.status === "running"} floating />
     <div className="fd-board-model-actions">
-      {glb && <Button size="sm" disabled={glbRun.state.status === "running"} onClick={() => void glbRun.run("glb", { projectId })}>{glbRun.state.status === "running" ? "Updating…" : "Update model"}</Button>}
+      {glb && <Button size="sm" disabled={!canGenerate || glbRun.state.status === "running"} onClick={() => void glbRun.run("glb", { projectId })}>{glbRun.state.status === "running" ? "Updating…" : "Update model"}</Button>}
       <Button size="sm" onClick={() => { const ui = useUiStore.getState(); ui.setWorkspaceArea("outputs"); ui.setWorkspaceTab("3d"); }}>Video & downloads</Button>
     </div>
     {glbRun.state.error && <div className="fd-model-export-error" role="alert">{glbRun.state.error}</div>}
@@ -91,7 +92,9 @@ function SingleBoardThreeDTab() {
   return (
     <ProductVideoPanel
       projectId={projectId}
+      canGenerate={canGenerate}
       modelStatus={<BoardModelStatus projectId={projectId} present={!!glb} updating={glbRun.state.status === "running"} />}
+      {...(canvasMode && glb ? { modelPreview: <Suspense fallback={<Spinner />}><ModelCanvas key={`${projectId}:${GLB_PATH}`} projectId={projectId} path={GLB_PATH} /></Suspense> } : {})}
       glb={glb}
       videos={videos}
       poster={poster}

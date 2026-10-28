@@ -43,6 +43,8 @@ export type ProductVideoForm = {
 
 export type ProductVideoPanelProps = {
   modelStatus?: ReactNode;
+  modelPreview?: ReactNode;
+  canGenerate?: boolean;
   projectId: string;
   glb: FileEntry | undefined;
   videos: FileEntry[];
@@ -74,6 +76,8 @@ export function pickPreview(videos: FileEntry[]): FileEntry | undefined {
 export function ProductVideoPanel({
   projectId,
   modelStatus,
+  modelPreview,
+  canGenerate = true,
   glb,
   videos,
   poster,
@@ -93,9 +97,9 @@ export function ProductVideoPanel({
 }: ProductVideoPanelProps) {
   const preview = pickPreview(videos);
   return (
-    <div className="flex h-full min-h-0 flex-col" data-testid="product-video-panel">
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2">
-        <Button variant="secondary" size="sm" disabled={exporting} onClick={onExportGlb}>
+    <div className="fd-video-workspace flex h-full min-h-0 flex-col" data-testid="product-video-panel">
+      <div className="fd-video-model-tools flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2">
+        <Button variant="secondary" size="sm" disabled={exporting || !canGenerate} onClick={onExportGlb}>
           {exporting ? (
             <>
               <Spinner className="mr-1" /> Exporting GLB…
@@ -111,23 +115,26 @@ export function ProductVideoPanel({
         <span className="text-[11px] text-muted">
           {glb
             ? `${glb.path} · ${(glb.size / 1024).toFixed(0)} KB`
-            : "Needs renders/board.glb (exported automatically when you make a video)"}
+            : "Making a video also creates its board model."}
         </span>
+        {modelStatus}
       </div>
-      {modelStatus}
-      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-auto lg:grid-cols-2">
+      {!canGenerate && <p role="status" className="text-xs text-muted">Verify a saved PCB in Board before generating a model or video.</p>}
+      {(making || exporting) && <p role="status" className="fd-video-job text-xs text-muted">{making ? "Making video…" : "Exporting model…"} {making ? makeNote : exportNote}</p>}
+      {exportError && <p role="alert" className="text-xs text-danger">{exportError}</p>}
+      {makeError && <p role="alert" className="text-xs text-danger">{makeError}</p>}
+      <div className="fd-video-body min-h-0 flex-1">
+        <details className="fd-video-setup"><summary>Make a product video</summary>
         <form
           className="flex flex-col gap-3 border-b border-border p-3 lg:border-b-0 lg:border-r"
           onSubmit={(e) => {
             e.preventDefault();
-            onMakeVideo();
+            if (canGenerate && !making && !exporting) onMakeVideo();
           }}
         >
           <div>
-            <div className="text-sm font-semibold">Make video</div>
             <p className="mt-1 text-[12px] leading-relaxed text-muted">
-              A short turntable, exploded assembly, or top/bottom flip of this project — for design
-              reviews, customer updates and launch pages. Saved under exports/.
+              Choose the camera motion and duration. The result stays in this project’s outputs.
             </p>
           </div>
           <label className="flex flex-col gap-1 text-[12px]">
@@ -144,7 +151,7 @@ export function ProductVideoPanel({
               ))}
             </Select>
           </label>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="fd-video-duration grid grid-cols-2 gap-2">
             <label className="flex flex-col gap-1 text-[12px]">
               <span className="font-medium">Duration</span>
               <Select
@@ -160,6 +167,8 @@ export function ProductVideoPanel({
                 ))}
               </Select>
             </label>
+          </div>
+          <details className="fd-video-output-settings"><summary>Output settings</summary><div className="mt-3 grid grid-cols-2 gap-2">
             <label className="flex flex-col gap-1 text-[12px]">
               <span className="font-medium">Resolution</span>
               <Select
@@ -207,9 +216,9 @@ export function ProductVideoPanel({
               onChange={(e) => onForm({ ...form, captions: e.target.checked })}
             />
             Title and spec captions (name, board size, layers, MCU)
-          </label>
+          </label></details>
           <div className="flex flex-wrap items-center gap-2">
-            <Button type="submit" variant="primary" size="sm" disabled={making} data-testid="make-video">
+            <Button type="submit" variant="primary" size="sm" disabled={!canGenerate || making || exporting} data-testid="make-video">
               {making ? (
                 <>
                   <Spinner className="mr-1" /> Making video…
@@ -220,11 +229,9 @@ export function ProductVideoPanel({
             </Button>
             {making && makeNote && <span className="text-[11px] text-muted">{makeNote}</span>}
           </div>
-          {exportError && <div className="text-xs text-danger">{exportError}</div>}
-          {makeError && <div className="text-xs text-danger">{makeError}</div>}
           {exportNote && !making && <div className="text-[11px] text-muted">{exportNote}</div>}
-        </form>
-        <div className="flex min-h-0 flex-col gap-2 p-3" data-testid="product-video-preview">
+        </form></details>
+        <div className="fd-video-preview flex min-h-0 flex-col gap-2 p-3" data-testid="product-video-preview">
           {preview ? (
             <>
               <div className="text-sm font-semibold">Preview</div>
@@ -241,10 +248,10 @@ export function ProductVideoPanel({
               <div className="text-sm font-semibold">Poster</div>
               <ProjectImage projectId={projectId} path={poster.path} className="max-h-[52vh] w-full object-contain" />
             </>
-          ) : (
+          ) : modelPreview ? <div className="fd-video-model-preview" aria-label="Saved board model reference">{modelPreview}</div> : (
             <div className="text-[12px] text-muted">
-              The video lands here after you run Make video. MP4 and WebM need ffmpeg on this machine; GIF is always
-              written.
+              <strong className="block text-sm font-medium text-fg">Your saved video appears here</strong>
+              Open Make a product video to choose its motion and duration. Save an MP4, WebM or GIF for review; MP4 and WebM require ffmpeg.
             </div>
           )}
         </div>
