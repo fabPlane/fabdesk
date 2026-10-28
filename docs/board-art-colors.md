@@ -8,7 +8,8 @@ ink or solder-mask color instructions.
 
 Multicolor locks the effective physical solder mask to white. Its printed
 background is an optional override, independent of the source image, with a native
-color picker, validated six-digit hex input and a not-set icon. It defaults to not
+color picker, validated six-digit hex input, suggested background swatches and a
+not-set icon. Suggestions are a fixed palette, independent of the source image. It defaults to not
 set, leaving the physical board color visible between dots. Clearing it omits the
 custom base rectangle from the SVG reference; leave EasyEDA Pro at its default
 white base for JLCPCB. Background edits leave sampled source colors unchanged.

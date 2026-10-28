@@ -82,18 +82,23 @@ function HexColor({
         </span>
       )}
       {presets && (
-        <div className="fd-art-color-swatches" role="group" aria-label={`${label} presets`}>
-          {PRESETS.map(([name, hex]) => (
-            <button
-              type="button"
-              key={hex}
-              title={name}
-              aria-label={`${label}: ${name}`}
-              aria-pressed={value === hex}
-              style={{ backgroundColor: hex }}
-              onClick={() => onChange(hex)}
-            />
-          ))}
+        <div className="space-y-2">
+          <span className="text-[11px] text-muted">
+            {onClear ? "Suggested backgrounds" : "Suggested ink colors"}
+          </span>
+          <div className="fd-art-color-swatches" role="group" aria-label={`${label} presets`}>
+            {PRESETS.map(([name, hex]) => (
+              <button
+                type="button"
+                key={hex}
+                title={name}
+                aria-label={`${label}: ${name}`}
+                aria-pressed={!unset && value === hex}
+                style={{ backgroundColor: hex }}
+                onClick={() => onChange(hex)}
+              />
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -182,7 +187,6 @@ export function ArtColorControls({
             unset={background === null}
             onChange={onBackground}
             onClear={() => onBackground(null)}
-            presets={false}
           />
           <p className="text-[11px] text-muted">
             A solid color printed behind the artwork. It is independent of the source image. Not set
