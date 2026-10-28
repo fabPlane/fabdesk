@@ -843,3 +843,19 @@ Native961×721walkthrough changed/restored stencil thickness, inspected laser se
 ![Assembly manufacturing scope guard](assembly-export-scope.jpg)
 
 [Native evidence](export-flow-native.json).
+
+
+### Routing starts from one board and keeps history scoped
+
+A saved-board reference and one router setup card replace the blank routing entry. Manage routers opens the existing settings page. Playback keeps its timeline/camera/speed controls; layers and performance details open on request, as does New run setup. Escape closes setup and restores focus; keyboard shortcuts preserve button activation. Exact-run cancellation uses the existing tool and source ownership.
+
+The global frame store has no project identity in frame metadata. The view now verifies the durable run owner before showing frames and lists only this project’s runs; failed history/frame reads have retry actions. Starting routing waits for saved-source/history checks, refuses assembly-root fallback and missing PCB, and prevents duplicate active project runs. Routing engines, painter and publication rules are unchanged.
+
+Actual961×721private-study attempt failed because the installed PCB bridge lacks @fabplane/fab-router. The UI exposed the failure/recovery action and exact expandable diagnostic; static geometry is not successful routing. No routing frames were produced, so playback remained disabled. Switching to another project showed no inherited run; switching back restored the correct failed run. Requested layers/setup/failure details and Escape passed. Assembly and no-PCB guards were checked through retained classic task access, then canvas layout restored. Exact-run cancellation and successful live playback were not newly exercised.
+
+UItypes/225UItests pass; all38recordedoriginalhashes and18priorprivate-studyfiles unchanged. The failed run’s diagnostics are intentionally retained under .fabdesk/runs; no canonical PCB edit occurred.
+
+![Routing entry beside actual saved board](routing-start-compact.jpg)
+![Real router failure with recovery and requested details](routing-real-failure.jpg)
+
+[Native evidence](routing-flow-native.json).
