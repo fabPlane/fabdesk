@@ -1,0 +1,17 @@
+{
+  "projectId": "prj_mvrlt1yx802c210b69",
+  "observedBefore": "Escape did not close requested Change list when no highlight selected",
+  "validated": [
+    "Opening Change list focuses its semantic region after paint without stealing later user focus",
+    "Tab reaches actual R1 moved change; Space selects it",
+    "First Escape clears selection and keeps list open",
+    "Second Escape closes list and restores Change list trigger focus",
+    "Wide and compact native walkthrough passed, assistant closed",
+    "No Compare job, revision regeneration or source mutation",
+    "Escape in corner assistant closes assistant but preserves requested comparison list; return to list and Escape closes list"
+  ],
+  "preservation": {
+    "files": 34,
+    "allExact": true
+  }
+}

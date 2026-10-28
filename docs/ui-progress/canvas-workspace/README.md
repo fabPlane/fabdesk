@@ -1378,3 +1378,13 @@ The no-recorded-run entry now keeps setup closed until Set up routing. Existing 
 ![Requested routing setup](355-routing-zoomable-setup-compact.png)
 
 [Native disclosure evidence](routing-disclosure-native.json).
+
+
+## Requested Change list closes with a predictable keyboard path
+
+Observed native gap: Escape could clear a highlighted change but could not close the requested list. Opening now focuses the semantic list region only if its trigger still has focus; Tab/Space selects an actual saved change. Escape clears that selection first, then closes the list and restores trigger focus. Compact/wide native roundtrip passed with the existing saved R1 movement comparison; all34current fixture files remain exact, no Compare/regeneration/native edits.
+
+![Quiet comparison after dismissal](357-review-change-list-dismissed.png)
+![Requested compact change list](358-review-requested-change-list-compact.png)
+
+[Native keyboard evidence](diff-disclosure-native.json).

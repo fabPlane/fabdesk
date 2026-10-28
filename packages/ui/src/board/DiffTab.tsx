@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Badge, Button, EmptyState, LoadError, Select, Spinner } from "../components/ui";
 import { useBoardSources, useProjectJson, useProjectText, useRunTool } from "@fabdesk/client-core";
@@ -82,6 +82,8 @@ export function DiffTab() {
   const projectId = useUiStore((s) => s.activeProjectId);
   const sources = useBoardSources(projectId);
   const [changesOpen, setChangesOpen] = useState(false);
+  const changesTrigger = useRef<HTMLButtonElement>(null), changesPanel = useRef<HTMLElement>(null);
+  const workspace = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
   const list = useRunTool();
   const compare = useRunTool();
@@ -99,13 +101,24 @@ export function DiffTab() {
   const [selection, setSelection] = useState<DiffSelection | null>(null);
   useEffect(() => setSelection(null), [projectId, reportQuery.dataUpdatedAt]);
   useEffect(() => {
-    if (!selection) return;
+    if (!selection && !changesOpen) return;
     const clear = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setSelection(null);
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (event.target instanceof Node && event.target !== document.body && !workspace.current?.contains(event.target)) return;
+      event.preventDefault();
+      if (selection) setSelection(null);
+      else { setChangesOpen(false); changesTrigger.current?.focus(); }
     };
     window.addEventListener("keydown", clear);
     return () => window.removeEventListener("keydown", clear);
-  }, [selection]);
+  }, [selection, changesOpen]);
+  useEffect(() => {
+    if (!changesOpen) return;
+    const frame = requestAnimationFrame(() => {
+      if (useUiStore.getState().activeProjectId === projectId && document.activeElement === changesTrigger.current) changesPanel.current?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [changesOpen, projectId]);
 
   useEffect(() => {
     if (!projectId || sources.isPending || sources.isError || sources.data?.mode === "assembly") return;
@@ -167,7 +180,7 @@ export function DiffTab() {
 
   const diff = report?.diff;
   return (
-    <div className="fd-diff-workspace flex h-full min-h-0 flex-col" data-testid="board-diff">
+    <div ref={workspace} className="fd-diff-workspace flex h-full min-h-0 flex-col" data-testid="board-diff">
       <div className="fd-diff-revisions flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border px-3 py-2">
         <label className="flex min-w-0 items-center gap-1 text-[11px] text-muted">
           From
@@ -214,7 +227,7 @@ export function DiffTab() {
             {id === "structured" ? "Highlights" : id === "overlay" ? "Overlay" : "Side by side"}
           </Button>
         ))}
-        {report && <Button size="sm" className="ml-auto" aria-expanded={changesOpen} aria-controls="revision-change-list" onClick={() => setChangesOpen(!changesOpen)}>Change list</Button>}
+        {report && <Button ref={changesTrigger} size="sm" className="ml-auto" aria-expanded={changesOpen} aria-controls="revision-change-list" onClick={() => setChangesOpen(!changesOpen)}>Change list</Button>}
         {compare.state.error && <span className="text-xs text-danger">{compare.state.error}</span>}
       </div>
       {list.state.error && <p role="alert" className="px-3 text-xs text-warning">Could not load revision history. {list.state.error}</p>}
@@ -259,7 +272,7 @@ export function DiffTab() {
               </EmptyState>
             )}
           </div>
-          {changesOpen && <aside id="revision-change-list" aria-label="Revision changes" className="fd-diff-change-list w-72 shrink-0 overflow-auto border-l border-border bg-panel-2/30 p-3 text-xs">
+          {changesOpen && <aside ref={changesPanel} tabIndex={-1} id="revision-change-list" aria-label="Revision changes" className="fd-diff-change-list w-72 shrink-0 overflow-auto border-l border-border bg-panel-2/30 p-3 text-xs">
             <p className="mb-2 font-medium">
               {shortRef(report.from?.ref ?? from)} → {shortRef(report.to?.ref ?? to)}
             </p>
