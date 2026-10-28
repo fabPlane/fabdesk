@@ -24,6 +24,12 @@ export function workspaceViews(area: WorkspaceArea): ReadonlyArray<{ tab: Worksp
   return WORKSPACE_AREAS[area].views;
 }
 
+/** Restore only a tab actually offered by this area; older or malformed preferences use its default. */
+export function workspaceTabForArea(area: WorkspaceArea, remembered: unknown): WorkspaceView | null {
+  const views = workspaceViews(area);
+  return views.find(view => view.tab === remembered)?.tab ?? views[0]?.tab ?? null;
+}
+
 /** Familiar task names remain searchable after their tools move into grouped workspaces. */
 export function workspaceViewSearchTerms(area: WorkspaceArea, view: { tab: WorkspaceView; label: string }): string {
   const aliases: Partial<Record<`${WorkspaceArea}:${WorkspaceView}`, string>> = {

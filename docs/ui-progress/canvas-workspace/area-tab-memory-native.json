@@ -1,0 +1,67 @@
+{
+  "change": "Each project remembers its last valid tab per workspace area; neutral area navigation restores it while explicit destinations remain authoritative",
+  "persistence": "Additive v7 preference with empty default for older profiles; only tabs currently offered by an area can be restored",
+  "native": {
+    "rootStudy": "prj_mvs5abwp2ff3301fe3",
+    "flows": [
+      "Notes\u2192Board\u2192Files returns Notes",
+      "Changes\u2192Board\u2192Review returns Changes",
+      "Review issues explicitly opens Checks despite remembered Changes",
+      "Full renderer reload then Board\u2192Files restores Notes",
+      "Other VAIO project opens Files rather than inheriting root Notes",
+      "Assembly Open board enters PCB despite remembered Boards 3D"
+    ],
+    "notesEdited": false,
+    "generationOrCheckJobs": 0,
+    "agentMessages": 0,
+    "appRestored": "VAIO Overview, tools/assistant closed"
+  },
+  "nativePreferenceState": {
+    "root": {
+      "files": "notes",
+      "boards": "pcb",
+      "review": "drc"
+    },
+    "vaio": {
+      "files": "files"
+    },
+    "rootDraft": "",
+    "rootAttachments": [],
+    "sketchAttachments": [
+      "sketches/sketch-1793137310638.excalidraw.png",
+      "sketches/sketch-1793137412545.excalidraw.png",
+      "sketches/sketch-1793137521460.excalidraw.png"
+    ]
+  },
+  "preservation": {
+    "rootStudyFiles": 48,
+    "vaioFiles": 16,
+    "sketchFiles": 6,
+    "changed": [],
+    "sourceFaults": "None injected; earlier guards remain restored"
+  },
+  "checks": {
+    "focused": "27 tests passed before final explicit-file assertions",
+    "ui": "231 pass / 0 fail / 890 assertions",
+    "client": "306 pass / 0 fail / 1473 assertions",
+    "rootTypecheck": "PASS /tmp/canvas-area-tab-memory-root-types.log",
+    "fullStandardSuite": {
+      "pass": 2260,
+      "skip": 36,
+      "fail": 0,
+      "log": "/tmp/canvas-area-tab-memory-root-tests.log"
+    }
+  },
+  "limitations": [
+    "Remembers tab choice, not a new general editor session or camera persistence system",
+    "Existing native capability and artifact freshness limits remain unchanged",
+    "No Mechanical/Board Art-specific changes or remote publication"
+  ],
+  "screenshots": [
+    "393-workspace-return-restores-notes-tab.png",
+    "394-workspace-return-restores-changes-tab.png",
+    "395-explicit-checks-overrides-remembered-review-tab.png",
+    "396-area-tab-memory-after-native-reload.png",
+    "397-explicit-open-board-overrides-remembered-3d.png"
+  ]
+}

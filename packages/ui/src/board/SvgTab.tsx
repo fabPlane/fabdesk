@@ -191,7 +191,7 @@ export function SvgTab({ kind, active = true }: { kind: "schematic" | "pcb"; act
   if (project.isError) return <LoadError title="Could not load project files" onRetry={() => void project.refetch()} />;
   if (sources.isError && !sources.data) return <LoadError title="Could not verify board source scope" onRetry={() => void sources.refetch()} />;
   if (!sources.data) return <div className="flex h-full items-center justify-center"><Spinner /></div>;
-  if (sources.data.mode === "assembly") return <EmptyState title="Open this assembly’s board canvas" action={<Button onClick={() => { const ui = useUiStore.getState(); ui.setCanvasMode(true); ui.setWorkspaceArea("boards"); }}>Open assembly canvas</Button>}>Choose an individual board to view its own PCB and schematic.</EmptyState>;
+  if (sources.data.mode === "assembly") return <EmptyState title="Open this assembly’s board canvas" action={<Button onClick={() => { const ui = useUiStore.getState(); ui.setCanvasMode(true); ui.setBoardTab("pcb"); }}>Open assembly canvas</Button>}>Choose an individual board to view its own PCB and schematic.</EmptyState>;
   if (rendered.isError) return <LoadError title="Could not load board preview" onRetry={() => void rendered.refetch()} />;
   if (rendered.isLoading) {
     return (

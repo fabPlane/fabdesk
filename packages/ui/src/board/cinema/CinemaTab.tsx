@@ -48,7 +48,7 @@ export function CinemaTab() {
   if (!projectId) return <EmptyState title="Choose a project" />;
   if (sources.isError) return <LoadError title="Could not check routing source" onRetry={() => void sources.refetch()} />;
   if (!sources.data) return <div className="flex h-full items-center justify-center"><Spinner /></div>;
-  if (sources.data.mode === "assembly") return <EmptyState title="Routing needs a single-board project" action={<Button onClick={() => useUiStore.getState().setWorkspaceArea("boards")}>Open Boards</Button>}>Member-board routing is not available in this workspace yet. Inspect each saved PCB in Boards; this action will not route a project-root board in its place.</EmptyState>;
+  if (sources.data.mode === "assembly") return <EmptyState title="Routing needs a single-board project" action={<Button onClick={() => useUiStore.getState().setBoardTab("pcb")}>Open Boards</Button>}>Member-board routing is not available in this workspace yet. Inspect each saved PCB in Boards; this action will not route a project-root board in its place.</EmptyState>;
   return <ProjectCinema key={projectId} projectId={projectId} scopeReady={!sources.isFetching} />;
 }
 

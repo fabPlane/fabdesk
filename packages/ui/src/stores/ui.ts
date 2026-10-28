@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { DRAFT_KEY_NEW, newChatDraftKey, workspaceAreaForView, workspaceViews, type WorkspaceArea, type AssemblySceneSelection, type AssemblyCheckFinding, type RootCheckFinding, type KeptOutputChoice } from "@fabdesk/client-core";
+import { DRAFT_KEY_NEW, newChatDraftKey, workspaceAreaForView, workspaceViews, workspaceTabForArea, type WorkspaceArea, type AssemblySceneSelection, type AssemblyCheckFinding, type RootCheckFinding, type KeptOutputChoice } from "@fabdesk/client-core";
 import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
 import { readStoredThemeId, type ThemeId } from "../theme/resolve";
 import { stencilThicknessMm } from "./stencil-thickness";
@@ -60,6 +60,7 @@ export interface UiState {
   setAssistantOpen: (open: boolean) => void;
   workspaceArea: WorkspaceArea;
   workspaceByProject: Record<string, { area: WorkspaceArea; tab: BoardTab }>;
+  workspaceTabsByProject: Record<string, Partial<Record<WorkspaceArea, BoardTab>>>;
   assemblyBoardByProject: Record<string, AssemblySceneSelection>;
   setAssemblyBoard: (selection: AssemblySceneSelection | null) => void;
   rootFinding: RootCheckFinding | null;
@@ -153,6 +154,18 @@ export function newChatInProjectState(projectId: string | null) {
   };
 }
 
+/** Keep explicit destinations authoritative while remembering each project's other task tabs. */
+function workspaceNavigationState(state: UiState, area: WorkspaceArea, tab: BoardTab): Partial<UiState> {
+  if (!state.activeProjectId) return { workspaceArea: area, boardTab: tab, boardOpen: true };
+  const id = state.activeProjectId, history = state.workspaceTabsByProject ?? {};
+  const tabs = { ...history[id] };
+  if (workspaceViews(state.workspaceArea).some(view => view.tab === state.boardTab)) tabs[state.workspaceArea] = state.boardTab;
+  if (workspaceViews(area).some(view => view.tab === tab)) tabs[area] = tab;
+  return { workspaceArea: area, boardTab: tab, boardOpen: true,
+    workspaceByProject: { ...state.workspaceByProject, [id]: { area, tab } },
+    workspaceTabsByProject: { ...history, [id]: tabs } };
+}
+
 export function createUiStore(storage?: StateStorage) {
   return create<UiState>()(
   persist(
@@ -175,6 +188,7 @@ export function createUiStore(storage?: StateStorage) {
   setAssistantOpen: (assistantOpen) => set({ assistantOpen }),
   workspaceArea: "boards",
   workspaceByProject: {},
+  workspaceTabsByProject: {},
   assemblyBoardByProject: {},
   setAssemblyBoard: (selection) => set(s => {
     if (!s.activeProjectId || selection && selection.projectId !== s.activeProjectId) return {};
@@ -201,12 +215,11 @@ export function createUiStore(storage?: StateStorage) {
   boardComparisonByProject: {},
   setBoardComparison: (enabled) => set(s => s.activeProjectId ? { boardComparisonByProject: { ...s.boardComparisonByProject, [s.activeProjectId]: enabled } } : {}),
   setWorkspaceArea: (workspaceArea) => set((s) => {
-    const boardTab = workspaceViews(workspaceArea)[0]?.tab ?? s.boardTab;
-    return { workspaceArea, boardTab, boardOpen: true, activeOpenSourceId: null, inventoryOpen: false, orderFlowOpen: false,
-      ...(s.activeProjectId ? { workspaceByProject: { ...s.workspaceByProject, [s.activeProjectId]: { area: workspaceArea, tab: boardTab } } } : {}) };
+    const remembered = workspaceArea === s.workspaceArea ? s.boardTab : s.activeProjectId ? s.workspaceTabsByProject?.[s.activeProjectId]?.[workspaceArea] : undefined;
+    const boardTab = workspaceTabForArea(workspaceArea, remembered) ?? s.boardTab;
+    return { ...workspaceNavigationState(s, workspaceArea, boardTab), activeOpenSourceId: null, inventoryOpen: false, orderFlowOpen: false };
   }),
-  setWorkspaceTab: (boardTab) => set((s) => ({ boardTab, boardOpen: true,
-    ...(s.activeProjectId ? { workspaceByProject: { ...s.workspaceByProject, [s.activeProjectId]: { area: s.workspaceArea, tab: boardTab } } } : {}) })),
+  setWorkspaceTab: (boardTab) => set((s) => workspaceNavigationState(s, s.workspaceArea, boardTab)),
   sidebarOpen: true,
   boardOpen: true,
   activeThreadId: null,
@@ -290,8 +303,7 @@ export function createUiStore(storage?: StateStorage) {
     set({ inventoryOpen, ...(inventoryOpen ? { activeOpenSourceId: null, orderFlowOpen: false } : {}) }),
   setBoardTab: (boardTab) => set((s) => {
     const workspaceArea = workspaceAreaForView(boardTab);
-    return { boardTab, boardOpen: true, workspaceArea, activeOpenSourceId: null, inventoryOpen: false, orderFlowOpen: false,
-      ...(s.activeProjectId ? { workspaceByProject: { ...s.workspaceByProject, [s.activeProjectId]: { area: workspaceArea, tab: boardTab } } } : {}) };
+    return { ...workspaceNavigationState(s, workspaceArea, boardTab), activeOpenSourceId: null, inventoryOpen: false, orderFlowOpen: false };
   }),
   setDraft: (key, text) => set((s) => ({ drafts: { ...s.drafts, [key]: text } })),
   addAttachment: (key, att) =>
@@ -335,6 +347,7 @@ export function createUiStore(storage?: StateStorage) {
         keptOutputChoices: s.keptOutputChoices,
         workspaceArea: s.workspaceArea,
         workspaceByProject: s.workspaceByProject,
+        workspaceTabsByProject: s.workspaceTabsByProject,
         assemblyBoardByProject: s.assemblyBoardByProject,
         boardComparisonByProject: s.boardComparisonByProject,
         sidebarOpen: s.sidebarOpen,

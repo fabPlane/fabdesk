@@ -160,7 +160,7 @@ export {
 export type { VoiceShortcut } from "./speech/shortcut";
 
 export { DRAFT_KEY_NEW, newChatDraftKey, createSketchDraftSession, editableSketchPaths, projectSketchImagePaths } from "./sketch-drafts";
-export { WORKSPACE_AREAS, workspaceAreaForView, workspaceViews, workspaceViewSearchTerms } from "./workspace-navigation";
+export { WORKSPACE_AREAS, workspaceAreaForView, workspaceViews, workspaceViewSearchTerms, workspaceTabForArea } from "./workspace-navigation";
 export type { WorkspaceArea, WorkspaceView } from "./workspace-navigation";
 
 export * from "./pcb-preview-revision";

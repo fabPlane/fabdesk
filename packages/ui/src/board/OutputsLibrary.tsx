@@ -109,7 +109,7 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
       <WorkspaceMenu className="fd-output-create" label={<><span>Create output</span><Icon name="plus" width={16} height={16} /></>}>
         {!sourceReady && <div className="fd-menu-caption">{boardSources.isError ? "Board sources could not be checked." : "Checking board sources…"}</div>}
         {boardSources.isError && <button onClick={() => void boardSources.refetch()}>Retry source check</button>}
-        {sourceReady && !assembly && !hasPcb && <><div className="fd-menu-caption">Add a saved PCB in Board to create images, models or videos.</div><button onClick={() => useUiStore.getState().setWorkspaceArea("boards")}>Open Board</button></>}
+        {sourceReady && !assembly && !hasPcb && <><div className="fd-menu-caption">Add a saved PCB in Board to create images, models or videos.</div><button onClick={() => useUiStore.getState().setBoardTab("pcb")}>Open Board</button></>}
         <button disabled={!rootGenerationReady || generate.state.status === "running"} title={assembly ? "Use the selected board’s PCB preview; member image renders are not available here yet." : !hasPcb ? "Add a saved PCB first" : undefined} onClick={() => create("render")}>Render board images</button>
         <button disabled={!sourceReady || !assembly && !rootGenerationReady || generate.state.status === "running"} title={!assembly && !hasPcb ? "Add a saved PCB first" : undefined} onClick={() => create("glb")}>{assembly ? "Review board models…" : "Generate board model"}</button>
         <button disabled={!rootGenerationReady} title={assembly ? "Member video export is not available yet" : !hasPcb ? "Add a saved PCB first" : undefined} onClick={() => create("video")}>Make video…</button>

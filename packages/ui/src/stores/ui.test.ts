@@ -293,3 +293,48 @@ test("saved root check navigation copies its point and cannot leak into another 
   store.getState().openRootFinding(finding);
   expect(store.getState().rootFinding).toBeNull();
 });
+
+
+test("area tab choices survive other tasks, project switches and reload without changing drafts", () => {
+  const memory = new Map<string, string>();
+  const storage = { getItem: (key: string) => memory.get(key) ?? null, setItem: (key: string, value: string) => { memory.set(key, value); }, removeItem: (key: string) => { memory.delete(key); } };
+  const store = createUiStore(storage);
+  store.getState().setActiveProject("a");
+  store.getState().setDraft(newChatDraftKey("a"), "Keep my question");
+  store.getState().addAttachment(newChatDraftKey("a"), { path: "sketches/a.png", mime: "image/png", label: "a" });
+  store.getState().setWorkspaceArea("files"); store.getState().setWorkspaceTab("notes");
+  store.getState().setWorkspaceArea("review"); store.getState().setWorkspaceTab("diff");
+  store.getState().setWorkspaceArea("outputs"); store.getState().setWorkspaceTab("3d");
+  store.getState().setWorkspaceArea("files"); expect(store.getState().boardTab).toBe("notes");
+  store.getState().setWorkspaceArea("review"); expect(store.getState().boardTab).toBe("diff");
+  store.getState().setActiveProject("b");
+  store.getState().setWorkspaceArea("files"); expect(store.getState().boardTab).toBe("files");
+  store.getState().setWorkspaceArea("review"); expect(store.getState().boardTab).toBe("updates");
+  store.getState().setActiveProject("a");
+  const restored = createUiStore(storage);
+  restored.getState().setWorkspaceArea("outputs"); expect(restored.getState().boardTab).toBe("3d");
+  restored.getState().setWorkspaceArea("files"); expect(restored.getState().boardTab).toBe("notes");
+  expect(restored.getState().drafts[newChatDraftKey("a")]).toBe("Keep my question");
+  expect(restored.getState().attachments[newChatDraftKey("a")]).toEqual([{ path: "sketches/a.png", mime: "image/png", label: "a" }]);
+  restored.getState().setBoardTab("drc"); expect(restored.getState().boardTab).toBe("drc");
+  restored.getState().setWorkspaceArea("files"); restored.getState().setWorkspaceArea("review");
+  expect(restored.getState().boardTab).toBe("drc");
+  restored.getState().openProjectFile("board.kicad_pcb");
+  expect(restored.getState().boardTab).toBe("files");
+  restored.getState().setWorkspaceArea("boards"); restored.getState().setWorkspaceArea("files");
+  expect(restored.getState().boardTab).toBe("files");
+  expect(restored.getState().fileToReveal).toEqual({ projectId: "a", path: "board.kicad_pcb" });
+});
+
+test("older profiles learn their current tab; invalid saved area tabs use the area's default", () => {
+  let snapshot = JSON.stringify({ version: 7, state: { activeProjectId: "a", canvasMode: true, workspaceArea: "files", boardTab: "notes", workspaceByProject: { a: { area: "files", tab: "notes" } } } });
+  const storage = { getItem: () => snapshot, setItem: (_key: string, value: string) => { snapshot = value; }, removeItem: () => {} };
+  const store = createUiStore(storage);
+  expect(store.getState().workspaceTabsByProject).toEqual({});
+  store.getState().setWorkspaceArea("boards"); store.getState().setWorkspaceArea("files");
+  expect(store.getState().boardTab).toBe("notes");
+  const raw = JSON.parse(snapshot); raw.state.workspaceTabsByProject.a.review = "notes";
+  snapshot = JSON.stringify(raw);
+  const restored = createUiStore(storage); restored.getState().setWorkspaceArea("review");
+  expect(restored.getState().boardTab).toBe("updates");
+});

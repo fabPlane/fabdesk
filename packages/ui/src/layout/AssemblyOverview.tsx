@@ -129,7 +129,7 @@ export function AssemblyOverview({ projectId, name, data, checking, failed, onRe
     const selection = captureAssemblySelection(data, node.instance.id), source = node.source;
     if (!selection || !source || source.status !== "available" || source.source.location !== "project") return;
     useUiStore.getState().setAssemblyBoard(selection);
-    useUiStore.getState().setWorkspaceArea("boards");
+    useUiStore.getState().setBoardTab("pcb");
     setDetail({ selection, directory: source.source.directory, previewPath: source.previewPath ?? null, instanceName: node.instance.name, sourceName: source.source.name });
   };
   const updatePreview = async (node: AssemblySceneNode) => {

@@ -1458,3 +1458,10 @@ Single-board Overview now keys selection to its native PCB, schematic, preview o
 ### Missing native PCB has an explicit recovery path
 
 Overview and Review now distinguish a missing PCB from an unverified saved artifact. Retained preview/model/DRC evidence receives an explicit missing-source warning; preview/model actions open project files instead of offering disabled regeneration. The saved-preview contextual action and double-click likewise open files when no native design exists. Keep choice cannot be recorded without the source. Native root source hold→4artifact attention→Review/Overview Files recovery→exact restore/current actions passed. Fresh sketch-only project has zero warning attributes: not-yet-generated outputs are not treated as lost sources. All48root/6sketch protected files exact; guard RESTORED/held file absent, no generation/check job or message. UI types/229tests pass. Captures385–392 and missing-root-source-native.json; LOCAL ONLY.
+
+
+### Workspace areas remember the project’s last tab
+
+Returning to Files now restores Notes when that was the project’s last Files task; Review similarly restores Changes or Checks. Preferences are additive, per-project and survive reload, while invalid/removed saved tabs fall back to that area’s default. Explicit file links, check actions and Open board remain authoritative; all explicit board recovery/inspection links still select PCB rather than inheriting remembered 3D/Routing. No new window or default panel opens.
+
+Native Notes→Board→Files, Changes→Board→Review, explicit Review issues→Checks, renderer reload, VAIO project isolation and remembered3D→Open board→PCB passed. Existing root draft/attachments and3unsent sketch attachments remain intact; all48root/16VAIO/6sketch protected files remain exact. No source fault, job or message. Captures393–397 and area-tab-memory-native.json. Root typecheck/fullstandard2260pass/36skip/0fail; affected306client/231UItests pass. The suite-generated tracked Python cache alone was restored. This remembers task-tab preference, not a new general editor/camera session. LOCAL ONLY; Art/Mechanical scope unchanged.
