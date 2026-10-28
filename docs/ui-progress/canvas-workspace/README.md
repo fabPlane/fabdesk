@@ -737,3 +737,18 @@ The previously observed inspection503 was an offline development PCB bridge. Res
 ![Requested checks and model tools with findings](review-requested-tools.jpg)
 
 [Native evidence](review-flow-native.json).
+
+
+### Enclosure tools around the actual task
+
+The enclosure entry now offers Import 3D model or Generate enclosure beside the available board reference. The VAIO assembly reuses the actual board map; its positions remain a project map, not installed geometry. Generation is disabled for assemblies rather than silently using an unrelated canonical PCB. Existing imported originals and advanced CAD remain available through requested tools. Formats and units are explained on request.
+
+A single-board generator keeps its saved GLB reference visible when available, explicitly labeling unverified source/fit. Outline offset and clearance are immediately available; vents/fastening, saved downloads and cutout drawing disclose on request. Existing alignment/generation actions remain ahead of the supporting sections. Import uses a visible keyboard-accessible chooser; the duplicate hidden file input is removed from the focus sequence. No exporter, generator or native editing implementation was rebuilt.
+
+Native validation opened and canceled VAIO import, verified Close then Choose model keyboard focus, and disclosed/closed existing root-case fastening, downloads and cutout drawing. No new generation, import, download or alignment job was run. UI types and225UItests pass;14root+8assembly+16VAIO recorded hashes are unchanged and the root fixture has no added files. Compact viewport acceptance remains pending.
+
+![Native VAIO enclosure entry](vaio-enclosure-entry.jpg)
+![Native board reference and requested generation controls](enclosure-generation-context.jpg)
+![Native import dialog](enclosure-import-requested.jpg)
+
+[Native walkthrough evidence](mechanical-flow-native.json). All concepts and prior captures remain preserved.

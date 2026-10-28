@@ -501,3 +501,44 @@
 .fd-review-source-details summary:hover,.fd-review-explanation summary:hover { color:var(--fd-fg); }
 
 .fd-review-updates .fd-update-row:not(.fd-update-table-heading) { padding-top:16px; padding-bottom:16px; }
+
+/* Existing-model import and generation are the two mechanical entry points. */
+.fd-mechanical-add-flow { height:100%; position:relative; }
+.fd-mechanical-add-card { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:min(410px,calc(100% - 48px)); padding:22px; border:1px solid var(--fd-border); border-radius:16px; background:var(--fd-panel); box-shadow:0 5px 24px #102a2012; }
+.fd-mechanical-add-flow[data-reference="true"] .fd-mechanical-add-card { top:24px; right:28px; left:auto; transform:none; }
+.fd-mechanical-add-card > header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:9px; }
+.fd-mechanical-add-card h1 { font-size:17px; font-weight:600; }
+.fd-mechanical-add-card > p { color:var(--fd-muted); font-size:12px; line-height:1.6; margin-bottom:16px; }
+.fd-mechanical-choice { display:flex; align-items:center; gap:16px; width:100%; padding:17px 15px; border:1px solid var(--fd-border); border-radius:11px; text-align:left; margin-top:12px; background:var(--fd-panel); }
+.fd-mechanical-choice:hover:not(:disabled) { border-color:var(--fd-accent); background:var(--fd-panel-2); }
+.fd-mechanical-choice > svg { flex:none; }
+.fd-mechanical-choice > span { display:flex; flex:1; min-width:0; flex-direction:column; gap:5px; }
+.fd-mechanical-choice strong { font-size:13px; font-weight:550; }
+.fd-mechanical-choice small { font-size:11px; color:var(--fd-muted); }
+.fd-mechanical-choice:disabled { opacity:.55; cursor:not-allowed; }
+.fd-mechanical-formats { margin-top:16px; padding-top:16px; border-top:1px solid var(--fd-border); font-size:11px; color:var(--fd-muted); }
+.fd-mechanical-formats summary { cursor:pointer; }
+.fd-mechanical-formats p { margin-top:10px; line-height:1.7; }
+.fd-mechanical-add-card > .fd-mechanical-generation-note { margin:12px 0 0; font-size:11px; }
+.fd-mechanical-more > summary { min-height:30px; padding:5px 8px; box-shadow:none; }
+.fd-mechanical-add-card .fd-mechanical-more > summary { border:0; background:transparent; }
+.fd-mechanical-more .fd-workspace-menu-content { left:auto; right:0; width:240px; }
+.fd-mechanical-reference-note { position:absolute; bottom:25px; left:28px; max-width:calc(100% - 370px); color:var(--fd-muted); font-size:11px; }
+.fd-mechanical-reference-note[data-warning="true"] { color:var(--fd-warning); }
+@media(max-width:900px) { .fd-mechanical-add-flow[data-reference="true"] .fd-mechanical-add-card { right:18px; width:min(350px,calc(100% - 36px)); } .fd-mechanical-add-card { padding:18px; } }
+
+.fd-mechanical-generator-status { margin:12px 16px; font-size:12px; color:var(--fd-warning); }
+
+.fd-mechanical-assembly-reference { position:absolute; inset:0 460px 0 0; }
+.fd-mechanical-assembly-reference .fd-assembly-heading { max-width:calc(100% - 56px); top:24px; }
+.fd-mechanical-assembly-reference .fd-assembly-update { top:90px; right:26px; }
+.fd-mechanical-assembly-reference .fd-assembly-viewport { top:136px; }
+@media(max-width:1100px) { .fd-mechanical-assembly-reference { right:390px; } .fd-mechanical-add-flow[data-reference="true"] .fd-mechanical-add-card { right:18px; width:350px; } }
+
+.fd-mechanical-generator[data-reference="true"] { overflow:hidden; padding:0; }
+.fd-mechanical-generator-reference { position:absolute; inset:0 460px 0 0; }
+.fd-mechanical-generator[data-reference="true"] .fd-mechanical-generator-controls { position:absolute; right:28px; top:12px; width:410px; max-height:calc(100% - 100px); overflow:auto; padding:1px; }
+.fd-mechanical-generator[data-reference="true"] .fd-enclosure-panel { margin:12px 0; box-shadow:0 4px 18px #102a2010; }
+@media(max-width:1100px) { .fd-mechanical-generator-reference { right:390px; } .fd-mechanical-generator[data-reference="true"] .fd-mechanical-generator-controls { right:18px; width:350px; } }
+
+.fd-mechanical-generator-reference .fd-mechanical-reference-note { max-width:calc(100% - 56px); bottom:85px; }

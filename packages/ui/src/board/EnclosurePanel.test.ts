@@ -63,7 +63,7 @@ describe("EnclosureScreen", () => {
     expect(html(null)).toContain("printable case");
     expect(html(view())).toContain("Regenerate");
     expect(html(view())).toContain("Check alignment");
-    expect(html(view())).toContain("In sync");
+    expect(html(view())).toContain("Saved case");
     expect(html(view())).toContain("exports/enclosure.stl");
     expect(html(view())).toContain("Outline offset");
     expect(html(view())).toContain("Clearance");
@@ -89,8 +89,8 @@ describe("EnclosureScreen", () => {
 
   test("warns when the board hash no longer matches", () => {
     const out = html(view({ stale: true, ok: true, issues: ["board changed"] }));
-    expect(out).toContain("Board changed");
-    expect(out).toContain("cutouts stay aligned");
+    expect(out).toContain("PCB changed");
+    expect(out).toContain("Review before regenerating");
   });
 });
 
@@ -204,7 +204,7 @@ describe("enclosureFailure", () => {
     expect(v.stale).toBe(true);
     expect(v.ok).toBe(false);
     const out = html(v);
-    expect(out).toContain("Board changed");
+    expect(out).toContain("PCB changed");
     expect(out).toContain("J1 moved 6 mm from its cutout.");
     expect(out).not.toContain("In sync");
     expect(out).not.toContain("{&quot;");

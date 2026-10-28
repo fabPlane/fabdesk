@@ -1,0 +1,35 @@
+{
+  "scope": "Native mechanical UI disclosure only; no new generation, import, download or alignment job run",
+  "checks": [
+    {
+      "fixture": "root",
+      "checkedFiles": 14,
+      "changed": []
+    },
+    {
+      "fixture": "assembly",
+      "checkedFiles": 8,
+      "changed": []
+    },
+    {
+      "fixture": "vaio",
+      "checkedFiles": 16,
+      "changed": []
+    }
+  ],
+  "rootAdditionalFiles": [],
+  "nativeWalkthrough": [
+    "VAIO assembly map and import entry; generation disabled for assembly",
+    "Import dialog Close then Choose model receives keyboard focus; canceled without file",
+    "Existing root board GLB reference explicitly source/fit unverified",
+    "Existing saved case controls open; Vents and fastening, Downloads and files, Cutout drawing disclose and close"
+  ],
+  "validation": {
+    "uiTypecheck": "PASS /tmp/canvas-mechanical-flow-verified-types.log",
+    "uiTests": "225 PASS 0 FAIL /tmp/canvas-mechanical-flow-verified-tests.log"
+  },
+  "limitations": [
+    "Compact viewport not yet verified",
+    "No assembly enclosure generation or fit/compatibility attestation"
+  ]
+}

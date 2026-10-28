@@ -278,6 +278,7 @@ export function EnclosureScreen({
             </span>
           )}
         </label>
+        <details className="fd-enclosure-extra-settings"><summary>Vents and fastening<span>{draft.ventPattern === "none" ? "No vents" : `${draft.ventPattern} vents`}{draft.snapFit ? " · Snap-fit clips" : ""}</span></summary><div className="fd-enclosure-secondary-controls">
         <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-muted">
           Vent pattern
           <Select
@@ -320,6 +321,7 @@ export function EnclosureScreen({
           />
           Snap-fit clips
         </label>
+        </div></details>
       </div>
       {settingsChanged && (
         <div
@@ -350,15 +352,40 @@ export function EnclosureScreen({
           {settingsChanged
             ? "Preview and downloads show the last generated settings."
             : view.stale
-              ? "Board changed — regenerate so cutouts stay aligned."
+              ? "PCB changed · Review before regenerating."
               : view.ok
-                ? `In sync · ${view.cutouts.length} cutout(s) · ${view.holes} hole(s) · ${view.vents} vent(s) · ${view.clips} clip(s)`
+                ? `Saved case · ${view.cutouts.length} cutout(s) · ${view.holes} hole(s) · ${view.vents} vent(s) · ${view.clips} clip(s)`
                 : (view.issues[0] ?? "Cutouts need attention.")}
         </p>
       )}
+      {view?.exists && (
+        <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-border pt-3">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-xs text-muted"
+            disabled={busy}
+            onClick={onCheck}
+            data-testid="enclosure-check"
+          >
+            Check alignment
+          </Button>
+          {!settingsChanged && (
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={busy || invalid}
+              onClick={onGenerate}
+              data-testid="enclosure-generate"
+            >
+              Regenerate
+            </Button>
+          )}
+        </div>
+      )}
       {view?.exists && view.files.some((path) => /\.(stl|step)$/i.test(path)) && (
-        <div className="mt-5 border-t border-border pt-4">
-          <h3 className="text-sm font-medium">Open in your slicer or CAD app</h3>
+        <details className="fd-enclosure-downloads mt-4 border-t border-border pt-3"><summary>Downloads and files</summary><div className="mt-3">
+          <h3 className="text-sm font-medium">Files for printing and CAD</h3>
           <p className="mt-1 text-xs leading-5 text-muted">
             Download the base and lid for 3D printing, or STEP for CAD editing. These files are also
             saved in your project’s exports folder.
@@ -391,9 +418,8 @@ export function EnclosureScreen({
           >
             View generated files →
           </button>
-        </div>
+        </div></details>
       )}
-      <p className="mt-4 text-xs text-muted">No CAD bridge installation required.</p>
       {view && view.issues.length > 1 && (
         <ul className="mt-1 list-disc pl-4 text-xs text-warning" data-testid="enclosure-issues">
           {view.issues.slice(0, 6).map((issue) => (
@@ -402,37 +428,13 @@ export function EnclosureScreen({
         </ul>
       )}
       {view?.previewSvg && (
-        <div
+        <details className="fd-enclosure-drawing"><summary>Cutout drawing</summary><div
           className="mt-2 max-w-full overflow-auto rounded-md border border-border bg-bg [&_svg]:h-auto [&_svg]:max-w-full"
           data-testid="enclosure-preview"
           dangerouslySetInnerHTML={{ __html: view.previewSvg }}
-        />
+        /></details>
       )}
-      {view?.exists && (
-        <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-border pt-3">
-          <Button
-            size="sm"
-            variant="ghost"
-            className="text-xs text-muted"
-            disabled={busy}
-            onClick={onCheck}
-            data-testid="enclosure-check"
-          >
-            Check alignment
-          </Button>
-          {!settingsChanged && (
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={busy || invalid}
-              onClick={onGenerate}
-              data-testid="enclosure-generate"
-            >
-              Regenerate
-            </Button>
-          )}
-        </div>
-      )}
+
     </section>
   );
 }
