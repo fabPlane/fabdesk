@@ -6,7 +6,7 @@ import { clientPointToSvg, parseSvgViewBox, resolveSvgBox, type SvgBox, type Svg
 import { svgImageCache } from "./svg-image-cache";
 
 /** Zoomable vector image, isolated from the app's DOM and CSS layout. */
-export function SvgViewer({ svg, viewKey, toolbar, overlay, commentMode = false, onDrawingClick }: {
+export function SvgViewer({ svg, viewKey, toolbar, overlay, commentMode = false, onDrawingClick, onDrawingEscape }: {
   svg: string;
   /** Preserve zoom and scroll when only presentation (such as blend) changes. */
   viewKey?: string;
@@ -14,6 +14,8 @@ export function SvgViewer({ svg, viewKey, toolbar, overlay, commentMode = false,
   overlay?: ReactNode | ((box: SvgBox | null) => ReactNode);
   commentMode?: boolean;
   onDrawingClick?: (point: SvgPoint, event?: MouseEvent<HTMLDivElement>) => void;
+  /** Return true when a source-local selection was dismissed. */
+  onDrawingEscape?: () => boolean;
 }) {
   const drawing = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(1);
@@ -84,7 +86,7 @@ export function SvgViewer({ svg, viewKey, toolbar, overlay, commentMode = false,
     if (point) onDrawingClick(point, event);
   };
   return (
-    <div className="fd-svg-viewer relative flex h-full flex-col">
+    <div className="fd-svg-viewer relative flex h-full flex-col" onKeyDown={event => { if (event.key === "Escape" && onDrawingEscape?.()) { event.preventDefault(); event.stopPropagation(); requestAnimationFrame(() => drawing.current?.focus({ preventScroll: true })); } }}>
       <div className="fd-svg-tools flex shrink-0 flex-wrap items-center gap-1 border-b border-border px-3 py-2">
         <Button size="sm" onClick={() => setZoom((z) => Math.max(0.2, z / 1.25))} title="Zoom out">
           <Icon name="minus" width={16} height={16} />

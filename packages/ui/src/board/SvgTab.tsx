@@ -202,7 +202,7 @@ export function SvgTab({ kind, active = true }: { kind: "schematic" | "pcb"; act
   }
   if (rendered.data) {
     return (
-      <div className="relative flex h-full min-h-0" data-testid={`board-${kind}-svg`} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); if (canvasPoint) setCanvasPoint(null); else if (selected || draftPoint || commentMode) closeComments(); else if (findingRequested) useUiStore.getState().dismissRootFinding(); } }}>
+      <div className="relative flex h-full min-h-0" data-testid={`board-${kind}-svg`} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); if (canvasPoint) { const drawing = event.currentTarget.querySelector<HTMLElement>(".fd-svg-host"); setCanvasPoint(null); requestAnimationFrame(() => drawing?.focus({ preventScroll: true })); } else if (selected || draftPoint || commentMode) closeComments(); else if (findingRequested) useUiStore.getState().dismissRootFinding(); } }}>
         {canvasMode && kind === "pcb" && <PcbPreviewStatus projectId={projectId} coordinatesVerified={nativeCoordinates} scopeReady={scopeReady} {...(sources.isError ? { onRetryScope: () => void sources.refetch() } : {})} busy={render.state.status === "running" || nativeEditBusy} error={render.state.error ?? null} onUpdate={refreshPreview} />}
         {canvasMode && kind === "schematic" && <SchematicPreviewStatus scopeReady={scopeReady} hasSource={project.data?.files.some(file => file.path === "board.kicad_sch") ?? false} updated={render.state.status === "done"} busy={render.state.status === "running"} error={render.state.error ?? null} onUpdate={refreshPreview} onOpenSource={() => { if (useUiStore.getState().activeProjectId === projectId) useUiStore.getState().openProjectFile("board.kicad_sch"); }} {...(sources.isError ? { onRetryScope: () => void sources.refetch() } : {})} />}
         <div className="min-w-0 flex-1">
@@ -233,7 +233,7 @@ export function SvgTab({ kind, active = true }: { kind: "schematic" | "pcb"; act
                   }}><Icon name="sparkles" width={15} height={15} />Ask about this</Button>
                   <Button variant="ghost" size="sm" onClick={() => { setDraftPoint(canvasPoint); setCanvasPoint(null); setSelectedId(null); setCommentMode(true); }}><Icon name="pin" width={15} height={15} />Pin comment</Button>
                   {kind === "pcb" && <NativePartTools visible={active} onMutationBusyChange={busy => { if (useUiStore.getState().activeProjectId === projectId) setNativeEditBusy(busy); }} box={box} projectId={projectId} point={canvasPoint} canPosition={scopeReady && nativeCoordinates && revision.data === "matches-source" && !revision.isError && !revision.isFetching} openAbove={(canvasPoint.y - box.y) / box.height > .5} onMoved={setCanvasPoint} />}
-                  <IconButton size="sm" title="Deselect location" onClick={() => setCanvasPoint(null)}><Icon name="close" width={15} height={15} /></IconButton>
+                  <IconButton size="sm" title="Deselect location" onClick={event => { const drawing = event.currentTarget.closest<HTMLElement>(".fd-svg-host"); setCanvasPoint(null); requestAnimationFrame(() => drawing?.focus({ preventScroll: true })); }}><Icon name="close" width={15} height={15} /></IconButton>
                 </div>
               </div>}
             </>}

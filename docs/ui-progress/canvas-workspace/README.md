@@ -1173,3 +1173,7 @@ Source-owned library cards now lead with the declared board source name, retaini
 
 ### Compact native tools preserve canvas space
 Native960×720 study exposed a330pxpartpopup covering the drawing. Parts/outline tools now use a narrower available gutter when it can hold at least220px content, leaving24pxfrom the SVG host. Actual244pxpopup fits280pxgutter; R1 exact fields/quickrotation/discard and15→18→Discard15outlineproposal passed with noApply. Wider1440×870 restores preferred390pxoutline.19stableoriginalfiles unchanged; transientKiCadlock excluded. UItypes/228tests pass. compact-tools-gutter-native.json and compact-part-properties-gutter.png / compact-board-size-gutter.png. Also retained compact source-owned Outputs capture.
+
+
+### Drawing location keyboard continuity
+Root and source-local Deselect return focus to their own drawing. Source-local Escape now dismisses a location while respecting native busy guards; nested part popup Escape is handled first. Native root and VAIO I/O Deselect→Enter→Escape passed with correct drawing focus. Existing root comment unchanged;19root/16VAIOoriginalhashes exact. UItypes/228tests pass. See drawing-location-focus-native.json.
