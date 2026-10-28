@@ -1,0 +1,80 @@
+{
+  "implementation": "3316f0c",
+  "areas": [
+    {
+      "area": "overview",
+      "label": "Overview",
+      "views": []
+    },
+    {
+      "area": "boards",
+      "label": "Board",
+      "views": [
+        "pcb",
+        "schematic",
+        "3d",
+        "cinema",
+        "art"
+      ]
+    },
+    {
+      "area": "mechanical",
+      "label": "Mechanical",
+      "views": [
+        "cad"
+      ]
+    },
+    {
+      "area": "parts",
+      "label": "Parts & BOM",
+      "views": [
+        "bom"
+      ]
+    },
+    {
+      "area": "outputs",
+      "label": "Outputs",
+      "views": [
+        "renders",
+        "3d",
+        "files"
+      ]
+    },
+    {
+      "area": "review",
+      "label": "Review",
+      "views": [
+        "updates",
+        "diff",
+        "comments",
+        "drc"
+      ]
+    },
+    {
+      "area": "files",
+      "label": "Files",
+      "views": [
+        "files",
+        "notes"
+      ]
+    }
+  ],
+  "registeredViews": [
+    "schematic",
+    "pcb",
+    "cinema",
+    "3d",
+    "cad",
+    "drc",
+    "renders",
+    "files",
+    "bom",
+    "art",
+    "notes",
+    "diff",
+    "comments",
+    "updates"
+  ],
+  "missingViews": [],
+  "scope": "Registered task entry points only; not a claim of native capability, assembly support or hosted stack completion"
+}

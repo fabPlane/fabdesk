@@ -1425,3 +1425,11 @@ Actual VAIO I/O→RH keyboard endpoint navigation opened RH with11native parts; 
 ![Final board-entry tools](370-vaio-board-entry-keyboard-tools.png)
 
 [Native navigation evidence](map-keyboard-navigation-native.json).
+
+
+## Current full regression and registered-view checkpoint
+
+At3316f0c, root typecheck and the full standard suite pass:2257passed,36skipped,0failures. Skipped native integrations are not claimed as native passes. All16VAIO/6sketch/48root/34donor-diff protected files remain exact. [Local task registry audit](registered-view-reachability.json) confirms all14registered task views remain reachable through7grouped areas. Hosted Repo/Share remains absent from this checkout and separately tracked; ArtApply/polish is deferred and Mechanical belongs to the teammate. This is not a whole-roadmap completion claim. No remote action, order, merge or deploy occurred.
+
+
+Board-entry focus regression check: existing shared-source Show on PCB still focuses Dismiss finding, so the board-title effect does not steal its contextual focus. Back to checks restores the exact saved row. All12original member fixture files and its recorded DRC report remain exact; no new check was run. [Actual finding entry](371-member-finding-entry-focus-preserved.png).

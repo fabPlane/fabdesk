@@ -12,12 +12,15 @@
     "Sources to review selects unresolved Keyboard and focuses Resolve source without importing or sending",
     "Compact Enter focuses Resolve source; nested Source details closes before selection",
     "I/O Open board focuses semantic title; Tab reaches PCB; settled native inspection retains PCB focus and reports22parts36x27.455mm",
-    "All boards then Escape leaves map unselected and assistant closed"
+    "All boards then Escape leaves map unselected and assistant closed",
+    "Existing shared-source saved finding still autofocuses Dismiss finding rather than board title; Back to checks still restores exact row focus"
   ],
   "focusGuards": "Next-frame focus requires same active project, same contextual selection key and unchanged initiating focus; board-title focus runs only on captured instance/source/manifest entry and only from body",
   "preservation": {
     "recordedVaioFiles": 16,
-    "allExact": true
+    "allExact": true,
+    "memberOriginals": 12,
+    "savedMemberReportExact": true
   },
   "checks": {
     "uiTypecheck": "PASS",
