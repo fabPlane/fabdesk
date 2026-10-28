@@ -1177,3 +1177,7 @@ Native960×720 study exposed a330pxpartpopup covering the drawing. Parts/outline
 
 ### Drawing location keyboard continuity
 Root and source-local Deselect return focus to their own drawing. Source-local Escape now dismisses a location while respecting native busy guards; nested part popup Escape is handled first. Native root and VAIO I/O Deselect→Enter→Escape passed with correct drawing focus. Existing root comment unchanged;19root/16VAIOoriginalhashes exact. UItypes/228tests pass. See drawing-location-focus-native.json.
+
+
+### Fresh project / shorter project menu
+Project menu exposes five recently updated projects excluding the current project, preserving full Browse projects & chats. Native browser retained all19existingstudies. New project stays directly reachable rather than following the entire list. Native UI created an isolated fresh project: one starting surface; Sketch or image offers drawing/.excalidraw or PNG/JPEG; editor Import drawing stays explicit. Closing blank editor restored trigger focus and left only the normal .gitignore and fabdesk.json metadata (no sketch, board or conversation generated/sent). UItypes/228tests pass. fresh-project-navigation-native.json and captures project-menu-recent.png / fresh-project-quiet-start.png / fresh-project-sketch-options.png / fresh-project-sketch-editor.png.
