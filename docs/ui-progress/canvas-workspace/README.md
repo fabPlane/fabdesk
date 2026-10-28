@@ -1403,3 +1403,13 @@ Observed in the actual overview: Tab from a selected board skipped the revealed 
 ## Reference canvas uses the active composer’s attachments
 
 CanvasWorkspace now reads the active thread attachment key when a conversation exists, falling back to the project new-chat key otherwise, matching the composer and sketch-save workflow. Previously it always read the new-chat key, so a newly attached drawing during an existing conversation could fail to become the displayed reference. UI typecheck/229tests pass. Native new-chat regression retains the same selected saved drawing, all three prior unsent attachments and all6fixture file hashes. The active-conversation sketch-to-agent branch is code-reviewed but remains natively unverified while Claude sign-in is pending; no assistant request was sent.
+
+
+## Failed source inspection is not an empty project
+
+Fresh start now requires a successfully inspected single-board scope. Board/Overview source failures show retry and Open project files instead of silently treating an unknown or cached source scope as a new design. Files and other independent task views remain reachable; detailed diagnostics are requested. Native owned fault validation used an exclusively created malformed assembly declaration in the isolated saved-sketch fixture, with exact-byte removal guards. Both cached failure and cold full-reload failure passed. Restoring the original absent declaration automatically restored the same sketch and all three unsent attachments without navigation or another reload. All6original files remain exact and the temporary file is absent. UI typecheck/229tests pass; no parser/backend change, native PCB edit or agent request.
+
+![Cold source failure](364-source-check-cold-error-compact.png)
+![Automatic saved-reference recovery](365-source-check-auto-recovered-compact.png)
+
+[Native fault and recovery evidence](source-failure-native.json).

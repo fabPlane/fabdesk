@@ -1,0 +1,28 @@
+{
+  "projectId": "prj_mvr7n2n5db55576304",
+  "fault": {
+    "file": "fabplane.assembly.json",
+    "sha256": "0d915032559cd4e1a265864187d1472364d0e49d136cce1c90210dab05e60f48",
+    "original": "absent",
+    "status": "RESTORED",
+    "method": "exclusive creation; remove only if bytes exactly match owned fault"
+  },
+  "validated": [
+    "Cached single-board source error displays explicit retry/files state rather than a fresh empty project",
+    "Open project files remains accessible and displays actual invalid declaration",
+    "Cold full renderer reload shows same recovery actions without cached source data",
+    "Restoring original absent declaration triggers automatic saved-sketch canvas recovery without navigation or another reload",
+    "Same selected saved drawing and three unsent attachments survive reload and recovery",
+    "Compact error and recovered reference controls fit"
+  ],
+  "preservation": {
+    "originalFiles": 6,
+    "allExact": true,
+    "testManifestAbsent": true
+  },
+  "checks": {
+    "uiTypecheck": "PASS",
+    "uiTests": 229
+  },
+  "scope": "UI classification and recovery only; no changes to board-source parser, native editing or membership validation; no agent message sent"
+}

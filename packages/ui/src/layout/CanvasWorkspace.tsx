@@ -9,7 +9,7 @@ import { ProjectActionDialog, type ProjectAction } from "../sidebar/ProjectActio
 import { InventoryView } from "../inventory/InventoryView";
 import { OpenSourceView } from "../opensource/OpenSourceView";
 import { OrderFlow } from "../order/OrderFlow";
-import { Button, Dialog, IconButton } from "../components/ui";
+import { Button, Dialog, EmptyState, IconButton } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { FabPlaneLogo } from "../components/FabPlaneLogo";
 import { UpdateBadge } from "../components/UpdateBadge";
@@ -65,11 +65,11 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
   const name = project.data?.name ?? projects.data?.find((item) => item.id === projectId)?.name ?? "Untitled project";
   const conversationOnly = !boardOpen || (!projectId && !!threadId);
   const hasNativeDesign = project.data?.files.some((file) => file.path === "board.kicad_pcb" || file.path === "board.kicad_sch");
-  const fresh = !threadId && !sourceId && !inventory && !order && (!projectId || (!!project.data && !boardSources.isPending && boardSources.data?.mode !== "assembly" && !hasNativeDesign && area === "boards" && boardTab === "pcb"));
+  const fresh = !threadId && !sourceId && !inventory && !order && (!projectId || (!!project.data && !boardSources.isError && boardSources.data?.mode === "single" && !hasNativeDesign && area === "boards" && boardTab === "pcb"));
   const sketchPaths = projectSketchImagePaths(project.data?.files ?? []);
   const draftAttachments = useUiStore(s => s.attachments[s.activeThreadId ?? newChatDraftKey(projectId)]);
   const attachedSketch = draftAttachments?.slice().reverse().find(item => sketchPaths.includes(item.path))?.path;
-  const referenceCanvas = !!projectId && !!project.data && !hasNativeDesign && boardSources.data?.mode === "single" && area === "boards" && boardTab === "pcb" && boardOpen;
+  const referenceCanvas = !!projectId && !!project.data && !hasNativeDesign && !boardSources.isError && boardSources.data?.mode === "single" && area === "boards" && boardTab === "pcb" && boardOpen;
   const sketchReference = referenceCanvas ? attachedSketch ?? sketchPaths[0] : undefined;
   const referenceStart = fresh && !!sketchReference;
   const secondary = !!sourceId || inventory || order;
@@ -120,7 +120,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
       </nav>}
       {secondary && <Button className="fd-canvas-back" size="sm" onClick={() => { ui().setActiveOpenSourceId(null); ui().setInventoryOpen(false); ui().setOrderFlowOpen(false); ui().setBoardOpen(true); }}>← Return to canvas</Button>}
       <div className="fd-canvas-surface">
-        {order ? <OrderFlow /> : inventory ? <InventoryView /> : sourceId ? <OpenSourceView /> : projectId && sketchReference && !conversationOnly ? <SketchStartReference key={projectId} projectId={projectId} paths={sketchPaths} preferred={sketchReference} checking={project.isFetching} failed={project.isError} conversation={!!threadId} assistantOpen={assistantOpen} attached={attachedSketch} /> : fresh || conversationOnly ? null : area === "overview" || area === "boards" && boardSources.data?.mode === "assembly" ? <ProjectOverview key={projectId} boardPicker={area === "boards"} /> : <BoardPanel canvas />}
+        {order ? <OrderFlow /> : inventory ? <InventoryView /> : sourceId ? <OpenSourceView /> : projectId && boardSources.isError && !conversationOnly && (area === "boards" || area === "overview") ? <EmptyState title="Could not verify project board sources" action={<><Button onClick={() => void boardSources.refetch()}>Try again</Button><Button variant="ghost" onClick={() => openArea("files")}>Open project files</Button></>}><p role="alert">Review the project files or retry the source check before opening a board.</p>{boardSources.error instanceof Error && <details className="mt-3 max-w-xl text-left"><summary>Source check details</summary><p className="mt-2 break-words">{boardSources.error.message}</p></details>}</EmptyState> : projectId && sketchReference && !conversationOnly ? <SketchStartReference key={projectId} projectId={projectId} paths={sketchPaths} preferred={sketchReference} checking={project.isFetching} failed={project.isError} conversation={!!threadId} assistantOpen={assistantOpen} attached={attachedSketch} /> : fresh || conversationOnly ? null : area === "overview" || area === "boards" && boardSources.data?.mode === "assembly" ? <ProjectOverview key={projectId} boardPicker={area === "boards"} /> : <BoardPanel canvas />}
       </div>
         <section className={referenceStart ? "fd-canvas-reference-composer" : fresh ? "fd-canvas-start-surface" : conversationOnly ? "fd-canvas-conversation-surface" : "fd-assistant-dock"} aria-label="fabPlane assistant" hidden={secondary || (!fresh && !conversationOnly && !assistantOpen)} onKeyDown={(event) => {
           if (!fresh && !conversationOnly && event.key === "Escape" && !(event.target as HTMLElement).closest("details[open]")) { event.stopPropagation(); closeAssistant(); }
