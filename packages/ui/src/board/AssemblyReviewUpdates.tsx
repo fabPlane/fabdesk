@@ -10,7 +10,11 @@ export function AssemblyReviewUpdates({ projectId, data, checking, failed, onRet
   const checks = useAssemblyCheckSummaries(projectId, data), checkById = new Map((checks.data ?? []).map(row => [row.sourceId, row]));
   const models = useAssemblyModelSummaries(projectId, data), modelById = new Map((models.data ?? []).map(row => [row.sourceId, row]));
   const [updatingSource, setUpdatingSource] = useState<string | null>(null);
-  const rows = assemblyReviewRows(data, new Map(previews.map(preview => [preview.sourceId, preview])));
+  const attentionSources = new Set([
+    ...(!checks.isFetching && !checks.isError ? (checks.data ?? []).filter(assemblyCheckNeedsReview).map(row => row.sourceId) : []),
+    ...(!models.isFetching && !models.isError ? (models.data ?? []).filter(assemblyModelNeedsReview).map(row => row.sourceId) : []),
+  ]);
+  const rows = assemblyReviewRows(data, new Map(previews.map(preview => [preview.sourceId, preview])), attentionSources);
   const busy = update.state.status === "running", unavailable = checking || failed;
   const active = () => useUiStore.getState().activeProjectId === projectId;
   const ask = (sourceId: string, name: string) => {
@@ -33,7 +37,7 @@ export function AssemblyReviewUpdates({ projectId, data, checking, failed, onRet
     ui.setAssemblyBoard(previous?.sourceId === row.sourceId ? previous : row.selection); ui.setBoardTab(tab);
   };
   return <div className="fd-review-updates" data-testid="assembly-review-updates">
-    <header><h2>Choose what to update</h2><p>Choose which previews to refresh. Shared boards use one source. Checks and physical fit stay separate.</p><Button size="sm" variant="ghost" disabled={busy || checking} onClick={() => { onRetry(); void checks.refetch(); void models.refetch(); for (const preview of previews) if (preview.trackable) void preview.refetch(); }}>Recheck sources</Button></header>
+    <header><h2>Choose what to update</h2><p>Sources needing attention appear first. Choose what to refresh; shared boards use one source.</p><Button size="sm" variant="ghost" disabled={busy || checking} onClick={() => { onRetry(); void checks.refetch(); void models.refetch(); for (const preview of previews) if (preview.trackable) void preview.refetch(); }}>Recheck sources</Button></header>
     {failed && <p role="alert" className="fd-update-feedback">Project sources could not be refreshed. Retry before choosing a board or updating a preview.</p>}
     <div className="fd-update-table" role="table" aria-label="Assembly source review">
       <div className="fd-update-row fd-update-table-heading" role="row"><span role="columnheader">Board source</span><span role="columnheader">Source status</span><span role="columnheader">Next step</span></div>

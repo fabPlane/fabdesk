@@ -4,7 +4,7 @@ import type { PcbPreviewState } from "./pcb-preview-revision";
 
 type Preview = { data?: PcbPreviewState | undefined; isFetching: boolean; isError: boolean };
 /** One row per declared source, even when several physical boards share it. Preview provenance is not an electrical check. */
-export function assemblyReviewRows(data: ProjectBoardSources, previews: ReadonlyMap<string, Preview>) {
+export function assemblyReviewRows(data: ProjectBoardSources, previews: ReadonlyMap<string, Preview>, attentionSources: ReadonlySet<string> = new Set()) {
   if (data.mode !== "assembly" || !data.assembly) return [];
   return data.sources.map(row => {
     const instances = data.assembly!.instances.filter(instance => instance.sourceId === row.source.id);
@@ -22,5 +22,5 @@ export function assemblyReviewRows(data: ProjectBoardSources, previews: Readonly
       hasPreview: !!row.previewPath,
       previewCurrent: available && !!row.previewPath && !preview?.isFetching && !preview?.isError && state === "matches-source",
     };
-  });
+  }).sort((a, b) => Number(b.warning || attentionSources.has(b.sourceId)) - Number(a.warning || attentionSources.has(a.sourceId)));
 }

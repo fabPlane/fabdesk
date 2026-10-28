@@ -1161,3 +1161,7 @@ An empty conversation within an existing project now asks what to work on and in
 
 ### Compact map and keyboard recovery
 At 960 × 720 the actual six-board map and requested source tools fit. Source details closes first with Escape; the next Escape or Deselect returns focus to the selected board. Enter reopens its tools. The same dismissal/reopen sequence passed for the I/O → RH link. Its RH J13 action opens the actual RH source (11 parts, complex-outline dimensions honestly unverified); All boards returns to the map. Restored 1440 × 870. All16original hashes remain exact, no engineering edit/send/regeneration. UItypes and228tests pass. Captures vaio-source-context-compact.png and vaio-rh-endpoint-compact.png.
+
+
+### Attention-first source Review
+Review keeps all source rows visible, placing unavailable/stale previews and reported model/check warnings first while preserving order within each group. Native VAIO now shows unresolved keyboard first, followed by the five unchanged sources. Requested I/O details correctly say No saved PCB check / No saved model receipt, with explicit existing actions. No generation or compatibility claim. UI/client types pass, UI228tests and authorized client285tests pass; initial restricted run failed to bind its local transport fixture server and was rerun with loopback permitted. Capture vaio-review-attention-first.png.
