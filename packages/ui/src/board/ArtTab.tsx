@@ -32,6 +32,7 @@ import type { PreviewResult } from "./art-preview.worker";
 import { ArtPlacementControls, ArtPlacementOverlay } from "./ArtPlacementEditor";
 import { buildSketchPngFile } from "./art-sketch-upload";
 import { ArtColorControls } from "./ArtColorControls";
+import { artImageName, buildArtPng } from "./art-image-export";
 import { artDraftStore, bytesToBase64, base64ToBytes, type ArtDraft } from "./art-draft";
 
 const STYLE_LABELS: Record<ArtStyle, string> = {
@@ -66,6 +67,7 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
   const [loading, setLoading] = useState(false);
   const [converting, setConverting] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [exportingImage, setExportingImage] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
@@ -358,6 +360,34 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
       colorMode === "multicolor" ? "fabplane-color-art-reference.zip" : "fabplane-board-art.zip";
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const downloadImage = async () => {
+    if (!gray || busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    setExportingImage(true);
+    setError(null);
+    try {
+      const blob = await buildArtPng(gray, options);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = artImageName(sourceName);
+      document.body.append(a);
+      try {
+        a.click();
+      } finally {
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+      setExportingImage(false);
+    }
   };
 
   const saveProject = async () => {
@@ -699,7 +729,10 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
         </fieldset>
         <div className="fd-art-actions">
           <Button variant="primary" disabled={unavailable} onClick={() => void newProject()}>
-            {busy ? "Saving…" : "Create art project"}
+            {busy && !exportingImage ? "Saving…" : "Create art project"}
+          </Button>
+          <Button disabled={unavailable} onClick={() => void downloadImage()}>
+            {exportingImage ? "Exporting image…" : "Download board PNG"}
           </Button>
           <Button disabled={unavailable} onClick={downloadLocal} data-testid="board-art-download">
             {colorMode === "multicolor" ? "Download color reference ZIP" : "Download Gerber ZIP"}
