@@ -563,3 +563,16 @@ img.fd-file-image { background: #fff; padding: 8px; }
 .fd-finish-it-close:focus-visible, .fd-finish-it-complete-toggle:focus-visible {
   outline: 2px solid var(--fd-success); outline-offset: 2px;
 }
+
+/* Sketch secondary controls are requested; the drawing retains the available workspace. */
+.fd-sketch-source-bar { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:8px 12px; border-bottom:1px solid var(--fd-border); flex-shrink:0; }
+.fd-sketch-source-name { flex:1; min-width:80px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--fd-muted); font-size:12px; }
+.fd-sketch-options { margin-left:auto; font-size:12px; max-width:100%; }
+.fd-sketch-options > summary { cursor:pointer; padding:7px 8px; border-radius:7px; }
+.fd-sketch-options > summary:hover { background:var(--fd-panel-2); }
+.fd-sketch-options[open] { flex-basis:100%; margin-left:0; }
+.fd-sketch-options > div { padding:8px; display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
+.fd-sketch-options p { color:var(--fd-muted); flex-basis:100%; line-height:1.5; overflow-wrap:anywhere; }
+.fd-sketch-saved-options { display:flex; flex-wrap:wrap; gap:8px; align-items:center; width:100%; }
+.fd-sketch-saved-options label { display:flex; flex-wrap:wrap; align-items:center; gap:8px; min-width:0; }
+.fd-sketch-saved-options select { max-width:min(45vw,360px); min-width:0; padding:6px 8px; background:var(--fd-panel); border:1px solid var(--fd-border); border-radius:6px; }

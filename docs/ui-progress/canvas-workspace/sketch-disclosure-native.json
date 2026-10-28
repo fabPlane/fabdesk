@@ -1,0 +1,16 @@
+{
+  "projectId": "prj_mvs5abwp2ff3301fe3",
+  "viewport": "960\u00d7720 native app",
+  "sourceSha256": "6e388261afe8da68ca268b2edf6f5f1869dd95da43bf18a28a225bc8e26d3913",
+  "savedPng": "sketch-1793198980283.excalidraw.png",
+  "nativeFlow": [
+    "Fresh start \u2192 Sketch or image \u2192 Draw or open a sketch",
+    "Native Import drawing picker selects existing .excalidraw copy",
+    "Fit drawing preserves actual imported geometry",
+    "Drawing options closed by default; requested help/replacement remains available",
+    "Save and attach creates original source copy + editable PNG, focuses composer; no message sent"
+  ],
+  "preservation": "Original file and preexisting project metadata byte-identical; source copy byte-identical",
+  "tests": "UItypecheck and228tests870assertionsPASS",
+  "next": "Saved reference remains only a small attachment chip after save; continue reference-first main canvas composition to match approved fresh-start screenshot."
+}

@@ -249,24 +249,34 @@ function SketchSession({ scenes }: { scenes: Scenes }) {
             </Button>
           </div>
         </div>
-        <p className="border-b border-border px-3 py-2 text-xs text-muted">
-          {target.projectId ? mode === "draw" ? "Save an editable PNG in this project and attach it to your next message. Each save keeps a new copy." : "Save the original image in this project and attach it to your next message." : "Saving creates a project automatically. Your sketch stays with it; nothing is sent to the agent yet."}
-        </p>
-        {mode === "draw" && <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2 text-xs">
-          <Button size="sm" disabled={busy || recovering || completed.current || needsProjectChat} onClick={() => sourceInput.current?.click()}>{hasDrawing ? "Replace draft from file…" : "Import drawing…"}</Button>
-          <input ref={sourceInput} type="file" accept=".excalidraw,application/vnd.excalidraw+json" aria-label="Import editable drawing" hidden disabled={busy || recovering || completed.current} onChange={event => { const next = event.target.files?.[0]; event.target.value = ""; if (next) void importDrawing(next); }} />
-          <span className="min-w-0 break-all text-muted">{sourceName ? `${sourceName} · Original file will be preserved when you save.` : ".excalidraw · Import opens a copy; nothing is written until you save."}</span>
-        </div>}
-        {mode === "draw" && savedDrawings.length > 0 && <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2 text-xs">
-          <label className="flex min-w-0 items-center gap-2">Saved drawings
-            <select aria-label="Saved drawings" className="max-w-[45vw] rounded border border-border bg-panel px-2 py-1" value={savedPath} disabled={busy || recovering || completed.current} onChange={event => setSavedPath(event.target.value)}>
-              <option value="">Choose a drawing…</option>
-              {savedDrawings.map(path => <option key={path} value={path}>{basename(path)}</option>)}
-            </select>
-          </label>
-          <Button size="sm" disabled={busy || recovering || completed.current || !savedPath} onClick={() => void openSavedDrawing()}>{hasDrawing ? "Replace draft with saved copy" : "Open a copy"}</Button>
-          <span className="text-muted">The saved original stays unchanged.</span>
-        </div>}
+        <div className="fd-sketch-source-bar">
+          {mode === "draw" && <>
+            {!hasDrawing && <Button size="sm" disabled={busy || recovering || completed.current || needsProjectChat} onClick={() => sourceInput.current?.click()}>Import drawing…</Button>}
+            <input ref={sourceInput} type="file" accept=".excalidraw,application/vnd.excalidraw+json" aria-label="Import editable drawing" hidden disabled={busy || recovering || completed.current} onChange={event => { const next = event.target.files?.[0]; event.target.value = ""; if (next) void importDrawing(next); }} />
+            <span className="fd-sketch-source-name" title={sourceName || (hasDrawing ? "Editable drawing" : "New drawing · .excalidraw supported")}>{sourceName || (hasDrawing ? "Editable drawing" : ".excalidraw supported")}</span>
+            {hasDrawing && <Button size="sm" variant="ghost" disabled={busy || recovering || completed.current} onClick={() => apiRef.current?.scrollToContent(undefined, { fitToViewport: true, viewportZoomFactor: .65, maxZoom: 1 })}>Fit drawing</Button>}
+          </>}
+          <details className="fd-sketch-options">
+            <summary>{mode === "draw" ? "Drawing options" : "Image details"}</summary>
+            <div>
+              <p>{target.projectId ? mode === "draw" ? "Save an editable PNG in this project and attach it to your next message. Each save keeps a new copy." : "Save the original image in this project and attach it to your next message." : "Saving creates a project automatically. Your sketch stays with it; nothing is sent to the agent yet."}</p>
+              {mode === "draw" && <>
+                <p>{sourceName ? `${sourceName} · Original file will be preserved when you save.` : "Import opens a copy; nothing is written until you save."}</p>
+                {hasDrawing && <Button size="sm" disabled={busy || recovering || completed.current || needsProjectChat} onClick={() => sourceInput.current?.click()}>Replace draft from file…</Button>}
+                {savedDrawings.length > 0 && <div className="fd-sketch-saved-options">
+                  <label>Saved drawings
+                    <select aria-label="Saved drawings" value={savedPath} disabled={busy || recovering || completed.current} onChange={event => setSavedPath(event.target.value)}>
+                      <option value="">Choose a drawing…</option>
+                      {savedDrawings.map(path => <option key={path} value={path}>{basename(path)}</option>)}
+                    </select>
+                  </label>
+                  <Button size="sm" disabled={busy || recovering || completed.current || !savedPath} onClick={() => void openSavedDrawing()}>{hasDrawing ? "Replace draft with saved copy" : "Open a copy"}</Button>
+                  <p>The saved original stays unchanged.</p>
+                </div>}
+              </>}
+            </div>
+          </details>
+        </div>
         {needsProjectChat && <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2 text-xs">
           <span>This conversation has no project. Start a new project chat to save a sketch; this conversation stays here.</span>
           <Button size="sm" onClick={() => { close(); useUiStore.getState().startNewChatInProject(null); }}>Start a project chat</Button>
