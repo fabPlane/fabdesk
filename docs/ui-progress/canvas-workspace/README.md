@@ -1127,3 +1127,13 @@ Overview now includes recorded video input/output changes in its existing Review
 ![Overview points to a changed saved video](overview-video-update-native.jpg)
 
 [Native Overview attention evidence](overview-video-attention-native.json).
+
+
+### Invalid drafts remain easy to discard
+
+Discard proposal now follows the raw edited fields, so it remains available when numbers are empty or outside the native limits. Inline guidance explains why Apply is disabled. Native use tested an invalid1518mmwidth and an emptyR1Xcoordinate: each showed guidance and Discard, kept Apply disabled, and restored15mm/106mmafter Discard. No Apply or source edit was requested; all19stable original files remain unchanged. UItypecheck/228tests pass.
+
+![Invalid outline dimensions retain Discard](invalid-outline-discard-native.jpg)
+![An empty coordinate retains Discard](empty-position-discard-native.jpg)
+
+[Native recovery evidence](invalid-proposal-recovery-native.json).

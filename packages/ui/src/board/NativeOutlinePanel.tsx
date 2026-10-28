@@ -23,6 +23,7 @@ export function NativeOutlinePanel({ projectId, board, canPosition, onBusyChange
   const stale = !!snapshot && !!inspection.data && snapshot.sourceSha256 !== inspection.data.sourceSha256;
   const points = resizedOutlinePoints(snapshot?.bounds ?? null, width, height);
   const changed = !!snapshot && !!points && (!snapshot.bounds || Number(width) !== snapshot.bounds.maxX - snapshot.bounds.minX || Number(height) !== snapshot.bounds.maxY - snapshot.bounds.minY);
+  const hasProposal = !!snapshot && (width !== (snapshot.bounds ? String(snapshot.bounds.maxX - snapshot.bounds.minX) : "") || height !== (snapshot.bounds ? String(snapshot.bounds.maxY - snapshot.bounds.minY) : ""));
   const reload = async () => {
     if (inFlight.current) return;
     inFlight.current = true; setBusy(true); onBusyChange(true); setError(null);
@@ -72,7 +73,8 @@ export function NativeOutlinePanel({ projectId, board, canPosition, onBusyChange
           <label>Width (mm)<Input type="number" min="0.000001" max="1000" step="any" aria-label="Board width (mm)" value={width} disabled={busy} onChange={event => setWidth(event.target.value)} /></label>
           <label>Height (mm)<Input type="number" min="0.000001" max="1000" step="any" aria-label="Board height (mm)" value={height} disabled={busy} onChange={event => setHeight(event.target.value)} /></label>
         </div>
-        <div className="fd-native-part-actions">{changed && <Button size="sm" variant="ghost" disabled={busy} onClick={() => choose(snapshot)}>Discard proposal</Button>}<Button size="sm" variant="ghost" disabled={busy} onClick={() => void reload()}>Reload outline</Button><Button size="sm" variant="primary" type="submit" disabled={busy || stale || !canPosition || inspection.isFetching || inspection.isError || !points || !changed}>{busy ? "Saving / refreshing…" : snapshot.bounds ? "Apply dimensions" : "Create outline"}</Button></div>
+        {hasProposal && !points && <p role="status" className="fd-native-part-warning">Enter width and height between 0.000001 and 1000 mm, or discard this proposal.</p>}
+        <div className="fd-native-part-actions">{hasProposal && <Button size="sm" variant="ghost" disabled={busy} onClick={() => choose(snapshot)}>Discard proposal</Button>}<Button size="sm" variant="ghost" disabled={busy} onClick={() => void reload()}>Reload outline</Button><Button size="sm" variant="primary" type="submit" disabled={busy || stale || !canPosition || inspection.isFetching || inspection.isError || !points || !changed}>{busy ? "Saving / refreshing…" : snapshot.bounds ? "Apply dimensions" : "Create outline"}</Button></div>
       </form>
     </>}
     {notice && <p role="status" className="fd-native-part-warning">{notice}<BoardChecksButton projectId={projectId} {...(board ? { board } : {})} /></p>}

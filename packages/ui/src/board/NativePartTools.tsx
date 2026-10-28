@@ -32,6 +32,7 @@ export function NativePartTools({ projectId, board, point, openAbove, onMoved, c
   const sourceChanged = !!selection && !!current && selection.sourceSha256 !== current.sourceSha256;
   const values = parsePartPositionInput(fields);
   const changed = !!selection && !!values && (values.x !== selection.part.x || values.y !== selection.part.y || values.rotation !== ((selection.part.rotation % 360) + 360) % 360);
+  const hasProposal = !!selection && (fields.x !== String(selection.part.x) || fields.y !== String(selection.part.y) || fields.rotation !== String(selection.part.rotation));
   const choose = (part: PcbPartPosition, sourceSha256: string) => {
     setSelection({ part, sourceSha256 }); setFields({ x: String(part.x), y: String(part.y), rotation: String(part.rotation) }); setError(null); setMessage(null); setPreviewError(null);
   };
@@ -154,7 +155,8 @@ export function NativePartTools({ projectId, board, point, openAbove, onMoved, c
         {selection.part.locked && <p className="fd-native-part-warning">This part or its group is locked. Unlock it in KiCad before positioning it here.</p>}
         <form onSubmit={(event) => { event.preventDefault(); void apply(); }}>
           <div className="fd-native-part-fields">{([['x', 'X (mm)'], ['y', 'Y (mm)'], ['rotation', 'Rotation (°)']] as const).map(([key, label]) => <label key={key}>{label}<Input type="number" step="any" aria-label={label} value={fields[key]} disabled={busy || selection.part.locked} onChange={(event) => { const value = event.currentTarget.value; setFields((previous) => ({ ...previous, [key]: value })); }} /></label>)}</div>
-          <div className="fd-native-part-actions">{changed && <Button size="sm" variant="ghost" disabled={busy} onClick={() => choose(selection.part, selection.sourceSha256)}>Discard proposal</Button>}<Button size="sm" disabled={busy || selection.part.locked} onClick={() => setFields((previous) => ({ ...previous, rotation: String((Number(previous.rotation) || 0) + 90) }))}>+90°</Button><Button size="sm" variant="ghost" disabled={busy} onClick={() => void reload()}>Reload part</Button><Button size="sm" variant="primary" type="submit" disabled={busy || !canPosition || parts.isFetching || parts.isError || !values || !changed || sourceChanged || selection.part.locked}>{busy ? "Saving / refreshing…" : "Apply position"}</Button></div>
+          {hasProposal && !values && <p role="status" className="fd-native-part-warning">Enter valid X, Y and rotation values to apply, or discard this proposal.</p>}
+          <div className="fd-native-part-actions">{hasProposal && <Button size="sm" variant="ghost" disabled={busy} onClick={() => choose(selection.part, selection.sourceSha256)}>Discard proposal</Button>}<Button size="sm" disabled={busy || selection.part.locked} onClick={() => setFields((previous) => ({ ...previous, rotation: String((Number(previous.rotation) || 0) + 90) }))}>+90°</Button><Button size="sm" variant="ghost" disabled={busy} onClick={() => void reload()}>Reload part</Button><Button size="sm" variant="primary" type="submit" disabled={busy || !canPosition || parts.isFetching || parts.isError || !values || !changed || sourceChanged || selection.part.locked}>{busy ? "Saving / refreshing…" : "Apply position"}</Button></div>
         </form>
         <Button size="sm" variant="ghost" disabled={busy || sourceChanged || !canPosition} onClick={() => {
           const ui = useUiStore.getState();
