@@ -20,7 +20,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useCoreClient } from "@fabdesk/client-core";
-import { useProject } from "@fabdesk/client-core";
+import { useProject, useRunTool } from "@fabdesk/client-core";
 import { Button, Select } from "../components/ui";
 import { useUiStore } from "../stores/ui";
 import { BoardDimensions } from "./BoardDimensions";
@@ -30,6 +30,7 @@ import { placementAfterBoardResize } from "./art-placement";
 import { latestPreviewQueue } from "./art-preview-queue";
 import type { PreviewResult } from "./art-preview.worker";
 import { ArtPlacementControls, ArtPlacementOverlay } from "./ArtPlacementEditor";
+import { buildSketchPngFile } from "./art-sketch-upload";
 import { ArtColorControls } from "./ArtColorControls";
 import { artDraftStore, bytesToBase64, base64ToBytes, type ArtDraft } from "./art-draft";
 
@@ -54,6 +55,7 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
   const project = useProject(projectId);
   const client = useCoreClient();
   const qc = useQueryClient();
+  const tool = useRunTool();
   const drafts = useMemo(() => artDraftStore(client, projectId), [client, projectId]);
   const [hydrated, setHydrated] = useState(false);
   const [saveStatus, setSaveStatus] = useState("Loading saved artwork…");
@@ -397,9 +399,15 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
       await target.save();
       await exportToProject(created.id);
       if (colorMode === "monotone") {
-        const job = buildBoardArt(gray, options);
-        await client.writeFile(created.id, "board.kicad_pcb", job.kicadPcb);
-        await client.writeFile(created.id, "board.kicad_pro", job.kicadPro);
+        const png = await buildSketchPngFile(gray, sourceName);
+        const { path } = await client.uploadSketch(created.id, png, png.name);
+        const result = await tool.run("silk_art", {
+          ...options,
+          projectId: created.id,
+          image: path.replace(/^\//, ""),
+        });
+        if (result.status === "failed")
+          throw new Error(result.error ?? "Could not create artwork board.");
       }
       await qc.invalidateQueries({ queryKey: ["projects"] });
       if (ownerEpoch === loadId.current) useUiStore.getState().setActiveProject(created.id);
