@@ -19,3 +19,11 @@ export function savedOutputs(files: FileEntry[], sources: ProjectBoardSources["s
     return kind ? [{ ...file, kind, ...(member ? { sourceId: member.sourceId, sourceName: member.sourceName } : {}) }] : [];
   }).sort((a, b) => b.mtime.localeCompare(a.mtime) || a.path.localeCompare(b.path));
 }
+
+/** Keep large native layer-file sets from overwhelming All; every row remains in Manufacturing. */
+export function outputLibrarySections<T extends { path: string; kind: OutputKind }>(files: T[], groupDetails: boolean) {
+  const individual = groupDetails ? files.filter(file => file.kind === "manufacturing" && /(?:^|\/)exports\/(?:gerbers|dxf)\//.test(file.path)) : [];
+  if (individual.length <= 6) return { cards: files, manufacturingFiles: [] as T[] };
+  const paths = new Set(individual.map(file => file.path));
+  return { cards: files.filter(file => !paths.has(file.path)), manufacturingFiles: individual };
+}

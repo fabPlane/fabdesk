@@ -1,0 +1,62 @@
+{
+  "projectId": "prj_mvs5abwp2ff3301fe3",
+  "allView": {
+    "savedFiles": 23,
+    "individualCards": 5,
+    "countedEntry": 18,
+    "sourceClaims": "unverified; no ZIP membership or freshness inferred"
+  },
+  "manufacturingView": {
+    "files": 20,
+    "all18RawFilesReachable": true,
+    "entryFocus": "Manufacturing filter",
+    "exactFileAccess": "exports/dxf/board-Edge_Cuts.dxf via More \u2192 Show file"
+  },
+  "compact960x720": {
+    "entryReachableAfterScroll": true,
+    "entryAndCaptionClearOfAssistant": true,
+    "activationFocus": "Manufacturing filter"
+  },
+  "wideGeometry": {
+    "viewport": {
+      "width": 1440,
+      "height": 870
+    },
+    "individualCards": 5,
+    "groupedFiles": 18,
+    "totalSavedFiles": "23 saved files",
+    "groupRect": {
+      "x": 918,
+      "y": 514.5,
+      "width": 352,
+      "height": 278.5,
+      "top": 514.5,
+      "right": 1270,
+      "bottom": 793,
+      "left": 918
+    },
+    "assistantRect": {
+      "x": 1128,
+      "y": 796,
+      "width": 284,
+      "height": 48,
+      "top": 796,
+      "right": 1412,
+      "bottom": 844,
+      "left": 1128
+    },
+    "actionBarClosed": true
+  },
+  "preservation": {
+    "files": 48,
+    "allExact": true
+  },
+  "checks": {
+    "partitionHelperTests": 6,
+    "helperAssertions": 29,
+    "clientTests": 304,
+    "uiTests": 229,
+    "clientAndUiTypes": "PASS"
+  },
+  "limits": "Presentation grouping only. No artifact moved, hidden from Manufacturing, deleted, regenerated or certified. Small sets remain directly visible."
+}

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { outputKind, savedOutputs } from "./output-library";
+import { outputKind, outputLibrarySections, savedOutputs } from "./output-library";
 
 test("saved outputs include media/models/manufacturing without treating receipts, reports or sources as deliverables", () => {
   for (const path of ["renders/board.glb.revision.json", "reports/drc.json", "board.kicad_pcb", "mechanical/imports/id/case.stl", "exports/.temporary"]) expect(outputKind(path)).toBeNull();
@@ -30,4 +30,24 @@ test("actual native paste and board-edge Gerbers remain visible manufacturing ou
     expect(outputKind(path)).toBe("manufacturing");
     expect(savedOutputs([{ path, size: 1, mtime: "2026-10-29" }])[0]?.path).toBe(path);
   }
+});
+
+
+test("large native layer sets group without losing metadata, file order or unrelated outputs", () => {
+  const layers = Array.from({ length: 7 }, (_, index) => ({ path: `boards/io/exports/gerbers/layer-${index}.gbr`, kind: "manufacturing" as const, sourceId: "io", size: index }));
+  const packageFile = { path: "exports/fabrication.zip", kind: "manufacturing" as const, sourceId: "", size: 20 };
+  const image = { path: "renders/top.png", kind: "images" as const, sourceId: "", size: 10 };
+  const files = [packageFile, ...layers, image], sections = outputLibrarySections(files, true);
+  expect(sections.cards).toEqual([packageFile, image]);
+  expect(sections.manufacturingFiles).toEqual(layers);
+  expect(sections.manufacturingFiles[0]).toBe(layers[0]!);
+  expect(sections.cards.length + sections.manufacturingFiles.length).toBe(files.length);
+  expect(outputLibrarySections(files, false)).toEqual({ cards: files, manufacturingFiles: [] });
+});
+
+test("small exports stay directly visible and DXF layer files share the counted set", () => {
+  const files = Array.from({ length: 7 }, (_, index) => ({ path: `exports/dxf/layer-${index}.dxf`, kind: "manufacturing" as const }));
+  expect(outputLibrarySections(files.slice(0, 6), true).cards).toHaveLength(6);
+  expect(outputLibrarySections(files.slice(0, 6), true).manufacturingFiles).toEqual([]);
+  expect(outputLibrarySections(files, true).manufacturingFiles).toHaveLength(7);
 });

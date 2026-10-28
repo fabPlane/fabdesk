@@ -1306,3 +1306,16 @@ Native isolated-study exports passed:15Gerber files, board.drl,3placement rows,3
 ![Assembly scope guard](export-more-assembly-guard.png)
 
 [Actual export files and preservation evidence](additional-export-native.json).
+
+
+## Large export sets stay behind one counted entry
+
+All now keeps large native Gerber/drill/DXF sets behind one counted navigation entry. Actual example:23saved files become5individual cards plus an18-file entry, matching the approved calm gallery structure. Manufacturing still shows all20manufacturing files, with original metadata/source labels and contextual actions. Small sets stay directly visible. Grouping does not move files or assert ZIP coverage/freshness. Default gallery spacing no longer reserves an unused selection toolbar; the extra room appears only after selecting an actual file.
+
+Native wide/compact entry→Manufacturing focus and exact DXF More→Show file passed. Wide six-card layout ends above the corner assistant; compact lower-row entry remains clear after normal scrolling. All48current study files remain exact. Captures336–340 preserve before/spacing/final iterations and native JSON.6partition/format helper tests29assertions,304client/229UItests and client/UItypes pass. Next observed core UI gap: Show file opens the exact Files path but leaves focus on the page body. Reuse the existing reveal intent to focus that selected file after its list renders, preserving project ownership. LOCALonly; noArt/Mechanical.
+
+![Quiet actual default gallery](library-quiet-default-final.png)
+![Individual output actions](library-individual-dxf-actions.png)
+![Compact counted-file entry](library-counted-files-compact.png)
+
+[Native grouping and preservation evidence](output-groups-native.json).

@@ -1,5 +1,5 @@
 import { VideoSourceStatus, videoInputLabel } from "./VideoSourceStatus";
-import { useVideoInputRevisions, videoInputsNeedReview } from "@fabdesk/client-core";
+import { outputLibrarySections, useVideoInputRevisions, videoInputsNeedReview } from "@fabdesk/client-core";
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { assemblyModelNeedsReview, assemblyModelSummaryLabel, useAssemblyModelSummaries, useAssemblyPreviewRevisions, savedOutputs, useBoardSources, useBoardModelRevision, usePcbPreviewRevision, useEnclosureSourceRevision, useCoreClient, useProject, useRunTool, type OutputKind } from "@fabdesk/client-core";
 import { Button, Dialog, EmptyState, LoadError, Spinner } from "../components/ui";
@@ -18,7 +18,7 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
   const client = useCoreClient(), project = useProject(projectId), generate = useRunTool();
   const [filter, setFilter] = useState<OutputKind | "all">("all"), [selected, setSelected] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null), [downloading, setDownloading] = useState(false), [error, setError] = useState<string | null>(null);
-  const library = useRef<HTMLDivElement>(null), actions = useRef<HTMLDivElement>(null);
+  const library = useRef<HTMLDivElement>(null), actions = useRef<HTMLDivElement>(null), manufacturingFilter = useRef<HTMLButtonElement>(null);
   const [actionPosition, setActionPosition] = useState({ left: 12, top: 150, maxWidth: 640 });
   const boardSources = useBoardSources(projectId), assembly = boardSources.data?.mode === "assembly";
   const sourceReady = !!boardSources.data && !boardSources.isFetching && !boardSources.isError;
@@ -27,6 +27,7 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
   const memberPreviews = useAssemblyPreviewRevisions(projectId ?? "", assembly ? boardSources.data?.sources ?? [] : []);
   const memberModels = useAssemblyModelSummaries(projectId ?? "", assembly ? boardSources.data : undefined, !boardSources.isFetching && !boardSources.isError);
   const outputs = savedOutputs(project.data?.files ?? [], assembly ? boardSources.data?.sources : []), active = outputs.find(file => file.path === selected), shown = outputs.filter(file => filter === "all" || file.kind === filter);
+  const sections = outputLibrarySections(shown, filter === "all");
   const modelRevision = useBoardModelRevision(projectId, sourceReady && !assembly && outputs.some(file => file.path === "renders/board.glb"));
   const pcbRevision = usePcbPreviewRevision(projectId, sourceReady && !assembly && outputs.some(file => file.path === "renders/pcb.svg"));
   const enclosureRevision = useEnclosureSourceRevision(projectId, sourceReady && !assembly && outputs.some(file => file.path === "exports/enclosure.stl"));
@@ -104,7 +105,7 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
       {outputs.some(file => sourceInfo(file.path).warning) && <Button className="fd-output-review" size="sm" variant="ghost" onClick={() => useUiStore.getState().setBoardTab("updates")}><Icon name="warning" width={16} height={16} />Review updates · {outputs.filter(file => sourceInfo(file.path).warning).length}</Button>}
     </header>
     <div className="fd-output-toolbar">
-      <div className="fd-output-filters" role="group" aria-label="Filter saved outputs">{FILTERS.map(item => <Button size="sm" key={item.id} aria-pressed={filter === item.id} onClick={() => { setFilter(item.id); setSelected(null); }}>{item.label}</Button>)}</div>
+      <div className="fd-output-filters" role="group" aria-label="Filter saved outputs">{FILTERS.map(item => <Button ref={item.id === "manufacturing" ? manufacturingFilter : undefined} size="sm" key={item.id} aria-pressed={filter === item.id} onClick={() => { setFilter(item.id); setSelected(null); }}>{item.label}</Button>)}</div>
       <WorkspaceMenu className="fd-output-create" label={<><span>Create output</span><Icon name="plus" width={16} height={16} /></>}>
         {!sourceReady && <div className="fd-menu-caption">{boardSources.isError ? "Board sources could not be checked." : "Checking board sources…"}</div>}
         {boardSources.isError && <button onClick={() => void boardSources.refetch()}>Retry source check</button>}
@@ -130,10 +131,16 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
         <Button size="sm" variant="ghost" aria-label="Deselect output" onClick={deselect}><Icon name="close" width={15} height={15} /></Button>
       </div>
     </div>}
-    {shown.length ? <div className="fd-output-grid">{shown.map(file => <button key={file.path} className="fd-output-card" data-path={file.path} aria-pressed={selected === file.path} onClick={() => { setSelected(file.path); setError(null); }}>
+    {shown.length ? <div className="fd-output-grid">{sections.cards.map(file => <button key={file.path} className="fd-output-card" data-path={file.path} aria-pressed={selected === file.path} onClick={() => { setSelected(file.path); setError(null); }}>
       <div className="fd-output-thumbnail">{sourceInfo(file.path).warning && <span className="fd-output-warning"><Icon name="warning" width={14} height={14} />Needs review</span>}{file.kind === "images" ? <ProjectImage projectId={projectId} path={file.path} alt={basename(file.path)} /> : <><Icon name={file.kind === "videos" ? "play" : file.kind === "models" ? "cube" : "export"} width={58} height={58} /><span>{file.path.split(".").pop()?.toUpperCase()}</span></>}</div>
       <div className="fd-output-caption"><strong>{file.sourceName ?? basename(file.path)}</strong>{file.sourceName && <span className="fd-output-source">{basename(file.path)}</span>}<span>{formatFileSize(file.size)} · Saved {new Date(file.mtime).toLocaleDateString()}</span><small data-stale={sourceInfo(file.path).warning}>{sourceInfo(file.path).label}</small></div>
-    </button>)}</div> : <div className="fd-output-empty"><h3>{filter === "all" ? "Your outputs will appear here" : "No saved files in this category"}</h3><p>Create images, a board model, a video or export files from the menu above.</p></div>}
+    </button>)}{sections.manufacturingFiles.length > 0 && <button className="fd-output-card" aria-label={`View ${sections.manufacturingFiles.length} individual manufacturing files`} onClick={() => {
+      setFilter("manufacturing"); setSelected(null);
+      requestAnimationFrame(() => { if (useUiStore.getState().activeProjectId === projectId) manufacturingFilter.current?.focus(); });
+    }}>
+      <div className="fd-output-thumbnail"><Icon name="folderOpen" width={58} height={58} /><span>{sections.manufacturingFiles.length} FILES</span></div>
+      <div className="fd-output-caption"><strong>Manufacturing files</strong><span>Individual Gerber, drill and DXF files</span><small>View all {sections.manufacturingFiles.length} files · Source unverified</small></div>
+    </button>}</div> : <div className="fd-output-empty"><h3>{filter === "all" ? "Your outputs will appear here" : "No saved files in this category"}</h3><p>Create images, a board model, a video or export files from the menu above.</p></div>}
     <Dialog open={!!visible} onClose={() => setPreview(null)} title={visible ? visible.sourceName ? `${visible.sourceName} · ${basename(visible.path)}` : basename(visible.path) : "Output preview"} className="fd-output-preview-dialog">
       {visible && (visible.kind === "images" ? <ProjectImage projectId={projectId} path={visible.path} className="max-h-[70vh] w-full object-contain" /> : visible.kind === "videos" ? <><VideoSourceStatus projectId={projectId} path={visible.path} updating={false} /><ProjectVideo projectId={projectId} path={visible.path} className="max-h-[70vh]" /></> : <div className="fd-output-model-preview"><Suspense fallback={<Spinner />}><ModelCanvas projectId={projectId} path={visible.path} /></Suspense></div>)}
     </Dialog>

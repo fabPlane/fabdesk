@@ -487,7 +487,8 @@
 
 .fd-output-library-heading { position:relative; margin:0 auto; }
 .fd-output-library-heading .fd-output-review { position:absolute; right:0; top:0; z-index:1; }
-.fd-output-grid { margin-top:64px; }
+.fd-output-grid { margin-top:16px; }
+.fd-outputs-library:has(.fd-output-selected) .fd-output-grid { margin-top:64px; }
 @media(max-width:1100px) { .fd-output-library-heading:has(.fd-output-review) { min-height:42px; } }
 
 /* Review shows one next step per source; supporting checks and tools open inline. */
