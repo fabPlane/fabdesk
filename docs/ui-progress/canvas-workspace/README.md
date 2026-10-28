@@ -1137,3 +1137,15 @@ Discard proposal now follows the raw edited fields, so it remains available when
 ![An empty coordinate retains Discard](empty-position-discard-native.jpg)
 
 [Native recovery evidence](invalid-proposal-recovery-native.json).
+
+
+### One compact contextual part panel
+
+Direct comparison with the approved selected-component/resize concepts showed the default part form obscuring too much canvas. Selecting a real footprint now leaves its alternate-part picker and exact properties closed until requested. Quick rotation, Apply, Discard and Ask remain accessible, with explicit numeric proposal feedback. The generic location toolbar hides while the requested tools are open, and a330pxpartpanel uses spare gutter space when available. Native saved geometry remains authoritative; no replacement/locking feature is simulated.
+
+Native use verified closed defaults, a90°proposal/discard, requested106/100/0coordinates/footprint/Reload access, and switching to realJ1. Focus stays in the tool after Discard; Escape closes it and restores the correct R1orBoardSize trigger. The measured panel330×266fits outside the drawing with24pxgap. All19stable existing files remain unchanged; no Apply was invoked. UItypes/228tests pass. This slice validates1440×870; the narrower existing clamped fallback remains, without claiming a new compact native run.
+
+![One compact requested panel; drawing remains visible](compact-contextual-tools-final-native.jpg)
+![Exact native properties only when requested](requested-part-properties-native.jpg)
+
+[Native workflow, geometry and focus evidence](compact-part-tools-native.json).

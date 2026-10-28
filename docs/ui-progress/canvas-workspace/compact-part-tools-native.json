@@ -1,0 +1,63 @@
+{
+  "projectId": "prj_mvrlt1yx802c210b69",
+  "conceptsCompared": [
+    "screenshots/00-selected-component.png",
+    "screenshots/02-resize-board.png"
+  ],
+  "actualBefore": "257-position-discard-proposal-native.jpg",
+  "changes": [
+    "Native part picker moves into Choose another part after selection",
+    "Exact coordinates, footprint, Reload and engineering explanation under requested Position & properties",
+    "Quick +90, Apply, Discard and Ask retained",
+    "Only one contextual tool surface; generic location toolbar hidden while native popup is open",
+    "330px part panel uses spare drawing gutter when available; existing clamped fallback retained",
+    "Native role-dialog focus on open and reference change; Discard restores popup focus; Escape restores trigger focus"
+  ],
+  "metrics": {
+    "popup": {
+      "left": 91,
+      "top": 227,
+      "width": 330,
+      "height": 266,
+      "right": 421,
+      "bottom": 493
+    },
+    "drawing": {
+      "left": 445,
+      "top": 197,
+      "width": 550,
+      "height": 550,
+      "right": 995,
+      "bottom": 747
+    },
+    "toolbar": "hidden",
+    "focus": "PCB part position",
+    "details": [
+      {
+        "summary": "Choose another part",
+        "open": false
+      },
+      {
+        "summary": "Position & properties",
+        "open": false
+      }
+    ]
+  },
+  "nativeChecks": [
+    "R1initialdetailsclosed; valid Apply disabled",
+    "Quickrotation shows106/100/90 proposal; Discard restores Apply disabled",
+    "Requestedproperties show106/100/0 actual footprint and Reload",
+    "Requestedpicker switches actualR1toJ1; details close for the newly selected part",
+    "AfterR1Discard, focusedPCBpartdialog; EscapeclosedandfocusedR1trigger",
+    "Afteroutline18\u2192Discard15, focusedBoardsizedialog; EscapeclosedandfocusedBoardsizetrigger"
+  ],
+  "applyInvoked": false,
+  "stablePreexistingFilesUnchanged": 19,
+  "validation": "UItypes and228tests/870assertions pass",
+  "limits": [
+    "Native walkthrough at1440x870; narrower fallback retained, no newly claimed compact-window pass",
+    "Concept Lock/Replace are not invented; safe native replacement remains unfinished",
+    "No Art/enclosure work, compatibility or electrical-pass claim"
+  ],
+  "finalState": "Private PCB quiet; tools closed; location deselected; assistant closed; no job/fault"
+}
