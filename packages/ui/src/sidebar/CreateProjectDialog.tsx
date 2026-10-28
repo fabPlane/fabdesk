@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCore } from "@fabdesk/client-core";
 import { parsePublicGitHubUrl } from "@fabdesk/protocol";
 import { Button, Dialog, Input } from "../components/ui";
@@ -15,7 +15,6 @@ export function CreateProjectDialog({ onClose, onCreated, initialMode = "create"
   const [nameTouched, setNameTouched] = useState(false);
   const [url, setUrl] = useState("");
   const [directory, setDirectory] = useState<string | null>(null);
-  const [destination, setDestination] = useState<{ path: string; exists: boolean } | null>(null);
   const [pending, setPending] = useState(false);
   const [picking, setPicking] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -24,17 +23,15 @@ export function CreateProjectDialog({ onClose, onCreated, initialMode = "create"
   const local = ["localhost", "127.0.0.1", "[::1]"].includes(new URL(client.baseUrl).hostname);
   const canPick = local && !!host.pickDirectory;
 
-  useEffect(() => {
-    setDestination(null);
-    if (mode !== "github" || !name.trim()) { setDestination(null); return; }
-    let canceled = false;
-    const timer = setTimeout(() => {
-      void client.importGitHubDestination(name.trim(), directory ?? undefined)
-        .then((value) => { if (!canceled) setDestination(value); })
-        .catch(() => { if (!canceled) setDestination(null); });
-    }, 200);
-    return () => { canceled = true; clearTimeout(timer); };
-  }, [client, mode, name, directory]);
+  const destinationQuery = useQuery({
+    queryKey: ["github-import-destination", client.baseUrl, name.trim(), directory],
+    queryFn: () => client.importGitHubDestination(name.trim(), directory ?? undefined),
+    enabled: mode === "github" && !!name.trim() && !result,
+    retry: false,
+    gcTime: 0,
+  });
+  // A previous name/location or a failed refresh must never authorize this import.
+  const destination = !destinationQuery.isFetching && !destinationQuery.isError ? destinationQuery.data : undefined;
 
   const close = () => { if (!pending && !picking) onClose(); };
   const pick = async () => {
@@ -113,7 +110,14 @@ export function CreateProjectDialog({ onClose, onCreated, initialMode = "create"
             {directory && <Button type="button" disabled={pending || picking} onClick={() => setDirectory(null)}>Use default</Button>}</div> : <p className="text-xs leading-5 text-muted">{local ? "Folder selection is available in the desktop app." : "The project will be created on the connected computer."}</p>}
         </div>
       </div>
-      {mode === "github" && name.trim() && <div className="rounded-xl bg-panel-2/70 px-3 py-2 text-xs leading-5" aria-live="polite">Destination: <span className="break-all font-medium">{destination?.path ?? "Checking…"}</span>{destination?.exists && <span className="block text-danger">This folder already exists. Choose another name or location.</span>}</div>}
+      {mode === "github" && name.trim() && <div className="rounded-xl bg-panel-2/70 px-3 py-2 text-xs leading-5" aria-live="polite">
+        {destinationQuery.isError ? <>
+          <p className="font-medium text-danger">Couldn’t check the project location.</p>
+          <p>Your import details are kept. Retry, or choose another name or location.</p>
+          <ErrorNotice error={destinationQuery.error} />
+          <Button type="button" size="sm" disabled={pending || picking} onClick={() => void destinationQuery.refetch()}>Retry location check</Button>
+        </> : <>Destination: <span className="break-all font-medium">{destination?.path ?? "Checking…"}</span>{destination?.exists && <span className="block text-danger">This folder already exists. Choose another name or location.</span>}</>}
+      </div>}
       {pending && mode === "github" && <p role="status" className="text-xs text-muted">Cloning repository and checking for KiCad boards…</p>}
       {error != null && <ErrorNotice error={error} />}
       <div className="sticky bottom-0 z-10 flex flex-wrap justify-end gap-3 border-t border-border bg-panel py-3">
