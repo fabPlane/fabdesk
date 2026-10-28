@@ -107,8 +107,8 @@ function SingleBoardOverview() {
       <div className="fd-overview-board-caption"><strong>Design reference</strong><span>Saved image · No saved PCB</span>{references.length > 1 ? <label>Reference<select aria-label="Saved project reference" value={reference} onChange={event => { setChosenReference(event.target.value); setSelectedKey(null); }}>{references.map(path => <option key={path} value={path}>{path.slice("sketches/".length)}</option>)}</select></label> : <span>{reference.slice("sketches/".length)}</span>}<Button size="sm" variant="ghost" onClick={() => ui().setSketchOpen(true)}>Draw or open a sketch</Button></div>
     </div> : <div className="fd-overview-empty"><Icon name="pcb" width={54} height={54} /><h2>Start with an idea or a sketch</h2><p>Your project is ready. Add a design or describe what you want to build.</p><Button onClick={() => { ui().setAssistantOpen(true); ui().focusComposer(); }}>Describe your board</Button><Button variant="ghost" onClick={() => ui().setSketchOpen(true)}>Add a sketch</Button></div>}
     <nav className="fd-overview-facts" aria-label="Project resources">
-      <button onClick={() => ui().setWorkspaceArea("files")}><Icon name="folder" width={18} height={18} /><strong>{files.length}</strong><span>project files</span></button>
-      <button onClick={() => ui().setWorkspaceArea("outputs")}><Icon name="export" width={18} height={18} /><strong>{outputs.length}</strong><span>saved outputs</span></button>
+      <button onClick={() => ui().setBoardTab("files")}><Icon name="folder" width={18} height={18} /><strong>{files.length}</strong><span>project files</span></button>
+      <button onClick={() => ui().setBoardTab("renders")}><Icon name="export" width={18} height={18} /><strong>{outputs.length}</strong><span>saved outputs</span></button>
       <button onClick={() => ui().setBoardTab("drc")}><Icon name={issues.length ? "warning" : "checklist"} width={18} height={18} /><strong>{order.isError ? "Unavailable" : issues.length ? "Needs review" : "Open checks"}</strong><span>{issues.length ? `${issues.length} readiness notes` : "DRC / ERC & readiness"}</span></button>
     </nav>
   </div>;

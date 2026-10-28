@@ -1484,3 +1484,7 @@ After import, the dialog now identifies the Project imported step and hides setu
 ## Search uses visible action names
 
 Native search for browse projects previously returned No results. Action search values now include visible words for Browse projects & conversations, Switch canvas / conversation, Open sketch pad and Open fabPlane dashboard. Native browse query→navigation drawer and sketch query→existing sketch dialog passed, with no Save or Send; switch query found its action. Dashboard alias is typechecked only. UI typecheck PASS. Capture408 and [native evidence](command-label-search-native.json).
+
+## Explicit overview and recovery destinations
+
+Native Overview project files reopened Notes after tab memory was introduced. Project file/output counts and Changes recovery now select exact Files/Library destinations; generic area navigation still restores Notes. Native all three explicit links plus generic Notes restoration passed. All48protected study files remain exact; no edit/job/Send. UI typecheck and231UItests/890assertions PASS. Captures409–411 and [evidence](resource-shortcut-navigation-native.json).

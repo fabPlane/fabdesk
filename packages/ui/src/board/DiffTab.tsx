@@ -166,7 +166,7 @@ export function DiffTab() {
   if (sources.isError) return <LoadError title="Could not verify board scope for comparison" onRetry={() => void sources.refetch()} />;
   if (sources.data?.mode === "assembly") return <div className="fd-canvas-empty h-full"><EmptyState title="Member-board revision comparison is not available yet"><p>Changes currently compares a project’s root board. Choose a board to inspect its saved source; this view does not compare or synchronize assembly members.</p><Button className="mt-4" onClick={() => useUiStore.getState().setBoardTab("pcb")}>Open boards</Button></EmptyState></div>;
 
-  if (noHistory && !report) return <div className="fd-canvas-empty h-full"><EmptyState title="No saved revision to compare yet"><p>This view uses Git history. Open a project with commits, or save its first commit with your Git tools, then reopen Changes.</p><Button className="mt-4" onClick={() => useUiStore.getState().setWorkspaceArea("files")}>Open project files</Button></EmptyState></div>;
+  if (noHistory && !report) return <div className="fd-canvas-empty h-full"><EmptyState title="No saved revision to compare yet"><p>This view uses Git history. Open a project with commits, or save its first commit with your Git tools, then reopen Changes.</p><Button className="mt-4" onClick={() => useUiStore.getState().setBoardTab("files")}>Open project files</Button></EmptyState></div>;
 
   const onCompare = async () => {
     if (running || noHistory || sources.isFetching || sources.isError) return;
