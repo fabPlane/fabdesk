@@ -158,3 +158,4 @@ export {
   DEFAULT_VOICE_SHORTCUT,
 } from "./speech/shortcut";
 export type { VoiceShortcut } from "./speech/shortcut";
+export { PersistentDraft, localDraft } from "./persistent-draft";

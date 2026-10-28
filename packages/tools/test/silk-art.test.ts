@@ -102,3 +102,45 @@ describe("silk_art", () => {
     ).rejects.toMatchObject({ code: "precondition" });
   });
 });
+
+test("silk_art exports multicolor reference and reports the white-mask / production-file boundary", async () => {
+  const project = await tempProject("color-art");
+  await mkdir(join(project.dir, "sketches"), { recursive: true });
+  await Bun.write(
+    join(project.dir, "sketches/color.png"),
+    encodePng({ width: 2, height: 1, data: new Uint8Array([255, 0, 0, 255, 0, 128, 255, 255]) }),
+  );
+  const services = mockServices([project]);
+  const factory = contextFactory(services, project);
+  const reg = createRegistry();
+  const out = await reg.invoke(
+    "silk_art",
+    {
+      image: "sketches/color.png",
+      colorMode: "multicolor",
+      color: "blue",
+      printedBackground: "#123456",
+    },
+    (ref) =>
+      factory({
+        def: reg.get("silk_art")!,
+        projectRef: ref,
+        signal: new AbortController().signal,
+        progress: () => {},
+      }),
+  );
+  expect(out.isError).toBeFalsy();
+  expect(out.text).toContain("COLOR REFERENCE ONLY");
+  expect(out.text).toContain("EasyEDA Pro");
+  const reference = await Bun.file(join(project.dir, "exports/color-artwork-reference.svg")).text();
+  expect(reference).toContain('fill="#123456"');
+  expect(reference).toContain('fill="#ff0000"');
+  expect(reference).toContain('fill="#0080ff"');
+  const report = await Bun.file(join(project.dir, "reports/board-art.json")).json();
+  expect(report.color).toBe("white");
+  expect(report.printedBackground).toBe("#123456");
+  expect(report.colorMode).toBe("multicolor");
+  expect(
+    await Bun.file(join(project.dir, "exports/gerbers/board-F_Silkscreen.gbr")).text(),
+  ).not.toContain("D03*");
+});

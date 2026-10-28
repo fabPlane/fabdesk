@@ -3,7 +3,8 @@ import {
   IMAGE_CROPS,
   type ImageCrop,
   ART_STYLES,
-  BOARD_COLORS,
+  BOARD_FINISH,
+  type ColorMode,
   OUTLINE_KINDS,
   buildBoardArt,
   fitArtPlacement,
@@ -17,10 +18,10 @@ import {
   type OutlineKind,
 } from "@fabdesk/board-art";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useCoreClient } from "@fabdesk/client-core";
 import { useProject, useRunTool } from "@fabdesk/client-core";
-import { Button, Dialog, Select } from "../components/ui";
+import { Button, Select } from "../components/ui";
 import { useUiStore } from "../stores/ui";
 import { BoardDimensions } from "./BoardDimensions";
 import { Icon } from "../components/Icon";
@@ -30,6 +31,8 @@ import { latestPreviewQueue } from "./art-preview-queue";
 import type { PreviewResult } from "./art-preview.worker";
 import { ArtPlacementControls, ArtPlacementOverlay } from "./ArtPlacementEditor";
 import { buildSketchPngFile } from "./art-sketch-upload";
+import { ArtColorControls } from "./ArtColorControls";
+import { artDraftStore, bytesToBase64, base64ToBytes, type ArtDraft } from "./art-draft";
 
 const STYLE_LABELS: Record<ArtStyle, string> = {
   realistic: "Halftone",
@@ -45,10 +48,18 @@ const STYLE_HELP: Record<ArtStyle, string> = {
 
 export function ArtTab() {
   const projectId = useUiStore((s) => s.activeProjectId);
+  return <ProjectArtTab key={projectId ?? "unassigned"} projectId={projectId} />;
+}
+
+function ProjectArtTab({ projectId }: { projectId: string | null }) {
   const project = useProject(projectId);
   const client = useCoreClient();
   const qc = useQueryClient();
   const tool = useRunTool();
+  const drafts = useMemo(() => artDraftStore(client, projectId), [client, projectId]);
+  const [hydrated, setHydrated] = useState(false);
+  const [saveStatus, setSaveStatus] = useState("Loading saved artwork…");
+  const [sourceData, setSourceData] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const loadId = useRef(0);
   const busyRef = useRef(false);
@@ -58,14 +69,15 @@ export function ArtTab() {
   const [dragging, setDragging] = useState(false);
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
-  const [confirmSave, setConfirmSave] = useState(false);
   const [placement, setPlacement] = useState<ArtPlacement | null>(null);
   const [lockProportions, setLockProportions] = useState(true);
   const [placing, setPlacing] = useState(true);
   const [svg, setSvg] = useState<string | null>(null);
   const [gray, setGray] = useState<GrayImage | null>(null);
   const [sourceName, setSourceName] = useState<string | null>(null);
-  const [localFile, setLocalFile] = useState<File | null>(null);
+  const [colorMode, setColorMode] = useState<ColorMode>("monotone");
+  const [printedBackground, setPrintedBackground] = useState<string | null>(null);
+  const [inkColor, setInkColor] = useState(BOARD_FINISH.green.silk);
   const [style, setStyle] = useState<ArtStyle>("realistic");
   const [color, setColor] = useState<BoardColor>("green");
   const [crop, setCrop] = useState<ImageCrop>("none");
@@ -96,28 +108,125 @@ export function ArtTab() {
       if (sourceUrl) URL.revokeObjectURL(sourceUrl);
     };
   }, [sourceUrl]);
-  useEffect(() => {
-    setConfirmSave(false);
-  }, [projectId]);
 
-  const loadBytes = useCallback(
-    async (bytes: Uint8Array, name: string, file: File | null, id: number) => {
-      const img = await decodeGray(bytes);
-      if (id !== loadId.current) return;
-      const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)]));
-      setGray(img);
-      setPlacement(null);
-      setSourceName(name);
-      setSourceUrl(url);
-      setLocalFile(file);
-      setZoom(1);
-      setConfirmSave(false);
-    },
-    [],
+  const loadBytes = useCallback(async (bytes: Uint8Array, name: string, id: number) => {
+    const img = await decodeGray(bytes);
+    if (id !== loadId.current) return;
+    const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)]));
+    setGray(img);
+    setPlacement(null);
+    setSourceName(name);
+    setSourceUrl(url);
+    setSourceData(bytesToBase64(bytes));
+    setZoom(1);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const id = ++loadId.current;
+    void drafts
+      .load()
+      .then(async (draft) => {
+        if (!active) return;
+        if (draft) {
+          if (draft.source)
+            await loadBytes(base64ToBytes(draft.source), draft.sourceName ?? "art.png", id);
+          if (!active) return;
+          const o = draft.options;
+          setStyle(o.style);
+          setColor(o.color);
+          setCrop(o.crop ?? "none");
+          setOutline(o.outline);
+          setWidthMm(o.widthMm);
+          setHeightMm(o.heightMm);
+          setInvert(o.invert ?? false);
+          setThreshold(o.threshold ?? 0.5);
+          setLayers([...(o.layers ?? ["silk"])]);
+          setPlacement(o.placement ?? null);
+          setColorMode(o.colorMode ?? "monotone");
+          setPrintedBackground(o.printedBackground ?? null);
+          setInkColor(o.inkColor ?? BOARD_FINISH[o.color].silk);
+        }
+        setHydrated(true);
+        setSaveStatus(draft ? "Saved artwork restored" : "Ready");
+      })
+      .catch((e: unknown) => {
+        if (active) {
+          setError(String(e));
+          setSaveStatus("Could not restore draft. Reopen Board Art to retry.");
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [drafts, loadBytes]);
+
+  const options = useMemo<ArtOptions>(
+    () => ({
+      ...(placement ? { placement } : {}),
+      crop,
+      style,
+      widthMm,
+      heightMm,
+      color,
+      outline,
+      invert,
+      threshold,
+      layers,
+      colorMode,
+      printedBackground,
+      inkColor,
+    }),
+    [
+      placement,
+      crop,
+      style,
+      widthMm,
+      heightMm,
+      color,
+      outline,
+      invert,
+      threshold,
+      layers,
+      colorMode,
+      printedBackground,
+      inkColor,
+    ],
   );
+  const draft = useMemo<ArtDraft>(
+    () => ({ version: 1, source: sourceData, sourceName, options }),
+    [sourceData, sourceName, options],
+  );
+  useEffect(() => {
+    if (!hydrated) return;
+    drafts.stage(draft);
+    setSaveStatus("Saving draft…");
+    let active = true;
+    const save = () =>
+      void drafts
+        .save()
+        .then(() => {
+          if (active)
+            setSaveStatus(
+              projectId ? "Draft saved in project" : "Unassigned draft saved on this device",
+            );
+        })
+        .catch((e: unknown) => {
+          if (active) {
+            setSaveStatus("Draft not saved — use Save draft to retry");
+            setError(String(e));
+          }
+        });
+    const timer = setTimeout(save, 400);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+      save();
+    };
+  }, [draft, drafts, hydrated, projectId]);
 
   const onFile = async (file: File | undefined) => {
-    if (!file || busyRef.current) return;
+    if (!file || busyRef.current || !hydrated) return;
     const id = ++loadId.current;
     setError(null);
     setLoading(true);
@@ -125,7 +234,7 @@ export function ArtTab() {
       if (!/\.(png|jpe?g|webp|gif)$/i.test(file.name))
         throw new Error("Choose a PNG, JPG, WebP, or GIF image.");
       if (file.size > 12 * 1024 * 1024) throw new Error("Choose an image smaller than 12 MB.");
-      await loadBytes(new Uint8Array(await file.arrayBuffer()), file.name, file, id);
+      await loadBytes(new Uint8Array(await file.arrayBuffer()), file.name, id);
     } catch (e) {
       if (id === loadId.current) setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -134,13 +243,13 @@ export function ArtTab() {
   };
 
   const onSketch = async (path: string) => {
-    if (!projectId || busyRef.current) return;
+    if (!projectId || busyRef.current || !hydrated) return;
     const id = ++loadId.current;
     setError(null);
     setLoading(true);
     try {
       const blob = await client.readFileBlob(projectId, path);
-      await loadBytes(new Uint8Array(await blob.arrayBuffer()), path, null, id);
+      await loadBytes(new Uint8Array(await blob.arrayBuffer()), path, id);
     } catch (e) {
       if (id === loadId.current) setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -153,6 +262,24 @@ export function ArtTab() {
     typeof latestPreviewQueue<ArtOptions, PreviewResult>
   > | null>(null);
   const workerImage = useRef<GrayImage | null>(null);
+  const removeImage = () => {
+    if (busyRef.current || !hydrated) return;
+    loadId.current++;
+    previewQueue.current?.cancel();
+    setLoading(false);
+    setConverting(false);
+    setGray(null);
+    setSourceData(null);
+    setSourceName(null);
+    setSourceUrl(null);
+    setSvg(null);
+    setPlacement(null);
+    setZoom(1);
+    setDragging(false);
+    setError(null);
+    setNote(null);
+    if (input.current) input.current.value = "";
+  };
   useEffect(() => {
     let worker: Worker;
     try {
@@ -206,23 +333,12 @@ export function ArtTab() {
       workerImage.current = gray;
     }
     setConverting(true);
-    previewQueue.current.request({
-      ...(placement ? { placement } : {}),
-      crop,
-      style,
-      widthMm,
-      heightMm,
-      color,
-      outline,
-      invert,
-      threshold,
-      layers,
-    });
-  }, [gray, style, widthMm, heightMm, color, outline, invert, threshold, layers, placement, crop]);
+    previewQueue.current.request(options);
+  }, [gray, options]);
 
   useEffect(() => {
     setNote(null);
-  }, [style, color, outline, widthMm, heightMm, invert, threshold, layers, gray, placement, crop]);
+  }, [options, gray]);
 
   const toggleLayer = (layer: ArtLayer) => {
     setLayers((cur) => {
@@ -233,109 +349,88 @@ export function ArtTab() {
 
   const downloadLocal = () => {
     if (!gray) return;
-    const job = buildBoardArt(gray, {
-      ...(resolvedPlacement ? { placement: resolvedPlacement } : {}),
-      crop,
-      style,
-      widthMm,
-      heightMm,
-      color,
-      outline,
-      invert,
-      threshold,
-      layers,
-    });
+    const job = buildBoardArt(gray, options);
     const blob = new Blob([new Uint8Array(job.zip)], { type: "application/zip" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "fabplane-board-art.zip";
+    a.download =
+      colorMode === "multicolor" ? "fabplane-color-art-reference.zip" : "fabplane-board-art.zip";
     a.click();
     URL.revokeObjectURL(url);
   };
 
   const saveProject = async () => {
-    if (!projectId || !gray || busyRef.current || loading || converting) return;
+    if (!hydrated) return;
+    setError(null);
+    try {
+      drafts.stage(draft);
+      await drafts.save();
+      setSaveStatus(projectId ? "Draft saved in project" : "Unassigned draft saved on this device");
+    } catch (e) {
+      setError(String(e));
+      setSaveStatus("Draft not saved — retry Save draft");
+    }
+  };
+
+  const exportToProject = async (target: string) => {
+    if (!gray) return;
+    const job = buildBoardArt(gray, options);
+    // Keep the standalone board/export under Board Art; never replace the circuit's files.
+    await client.writeFile(
+      target,
+      "board-art/artwork.zip",
+      new Blob([new Uint8Array(job.zip)], { type: "application/zip" }),
+    );
+    await client.writeFile(target, "board-art/preview.svg", job.previewSvg);
+  };
+  const saveExport = async () => {
+    if (!projectId || !gray || busyRef.current) return;
     busyRef.current = true;
     setBusy(true);
-    setConfirmSave(false);
     setError(null);
-    setNote(null);
     try {
-      // Encode the displayed image into the target project, even after switching projects.
-      const png = await buildSketchPngFile(gray, localFile?.name ?? sourceName);
-      const { path } = await client.uploadSketch(projectId, png, png.name);
-      const image = path.replace(/^\//, "");
-      setSourceName(image);
-      setLocalFile(null);
-      const result = await tool.run("silk_art", {
-        projectId,
-        ...(resolvedPlacement ? { placement: resolvedPlacement } : {}),
-        ...(image ? { image } : {}),
-        crop,
-        style,
-        widthMm,
-        heightMm,
-        color,
-        outline,
-        invert,
-        threshold,
-        layers,
-      });
-      if (result.status === "failed") {
-        setError(result.error ?? "silk_art failed");
-        return;
-      }
+      drafts.stage(draft);
+      await drafts.save();
+      await exportToProject(projectId);
       await qc.invalidateQueries({ queryKey: ["project", projectId] });
-      await qc.invalidateQueries({ queryKey: ["file", projectId] });
-      setNote("Saved board.kicad_pcb and exports/fabrication.zip in this project.");
+      setNote("Saved board-art/artwork.zip and preview.svg. The circuit board is preserved.");
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(String(e));
     } finally {
       busyRef.current = false;
       setBusy(false);
     }
   };
-
   const newProject = async () => {
-    if (!gray || busyRef.current || loading || converting) return;
+    if (!gray || busyRef.current || !hydrated) return;
+    const ownerEpoch = loadId.current;
     busyRef.current = true;
     setBusy(true);
     setError(null);
-    setNote(null);
     try {
       const created = await client.createProject(
         sourceName ? `Art ${sourceName.split("/").pop()}` : "Board art",
       );
-      await qc.invalidateQueries({ queryKey: ["projects"] });
-      const png = await buildSketchPngFile(gray, localFile?.name ?? sourceName);
-      const { path } = await client.uploadSketch(created.id, png, png.name);
-      const result = await tool.run("silk_art", {
-        projectId: created.id,
-        ...(resolvedPlacement ? { placement: resolvedPlacement } : {}),
-        image: path.replace(/^\//, ""),
-        crop,
-        style,
-        widthMm,
-        heightMm,
-        color,
-        outline,
-        invert,
-        threshold,
-        layers,
-      });
-      if (result.status === "failed") {
-        setError(result.error ?? "silk_art failed");
-        return;
+      const target = artDraftStore(client, created.id);
+      target.stage(draft);
+      await target.save();
+      await exportToProject(created.id);
+      if (colorMode === "monotone") {
+        const png = await buildSketchPngFile(gray, sourceName);
+        const { path } = await client.uploadSketch(created.id, png, png.name);
+        const result = await tool.run("silk_art", {
+          ...options,
+          projectId: created.id,
+          image: path.replace(/^\//, ""),
+        });
+        if (result.status === "failed")
+          throw new Error(result.error ?? "Could not create artwork board.");
       }
-      await qc.invalidateQueries({ queryKey: ["project", created.id] });
-      await qc.invalidateQueries({ queryKey: ["file", created.id] });
-      setLocalFile(null);
-      useUiStore.getState().setActiveProject(created.id);
-      setSourceName(path.replace(/^\//, ""));
-      setNote(`Created project ${created.name}.`);
+      await qc.invalidateQueries({ queryKey: ["projects"] });
+      if (ownerEpoch === loadId.current) useUiStore.getState().setActiveProject(created.id);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(String(e));
     } finally {
       busyRef.current = false;
       setBusy(false);
@@ -348,8 +443,7 @@ export function ArtTab() {
     setHeightMm(h);
     setOutline(shape);
   };
-  const unavailable = !gray || !svg || busy || loading || converting;
-  const existingBoard = project.data?.files.some((f) => f.path === "board.kicad_pcb");
+  const unavailable = !hydrated || !gray || !svg || busy || loading || converting;
   const drop = (event: React.DragEvent) => {
     event.preventDefault();
     setDragging(false);
@@ -376,7 +470,19 @@ export function ArtTab() {
       <aside className="fd-art-controls">
         <h2 className="text-sm font-semibold">Board art</h2>
         <p className="mt-1 text-xs leading-relaxed text-muted">
-          Turn a picture into artwork on a PCB. Preview and export locally, with no AI credits.
+          Turn an image into PCB artwork.
+        </p>
+        <p
+          className="mt-2 truncate text-[11px] text-muted"
+          data-testid="board-art-owner"
+          title={projectId ? `Artwork saved with ${project.data?.name ?? projectId}` : "Draft saved on this device"}
+        >
+          {projectId
+            ? project.data?.name ?? projectId
+            : "Unassigned draft"}
+        </p>
+        <p role="status" className="text-[11px] text-muted">
+          {saveStatus}
         </p>
         <input
           ref={input}
@@ -393,7 +499,7 @@ export function ArtTab() {
         />
         <div className={`fd-art-upload ${dragging ? "is-dragging" : ""}`}>
           <Icon name="image" width={26} height={26} aria-hidden="true" />
-          <Button variant="primary" disabled={busy || loading} onClick={choose}>
+          <Button variant="primary" disabled={busy || loading || !hydrated} onClick={choose}>
             {gray ? "Replace image" : "Upload image"}
           </Button>
           <span className="text-xs text-muted">or drag a picture here</span>
@@ -403,8 +509,22 @@ export function ArtTab() {
               {sourceName.split("/").pop()}
             </span>
           )}
+          {gray && (
+            <>
+              <Button disabled={busy || !hydrated} onClick={removeImage}>
+                <Icon name="trash" width={14} height={14} aria-hidden="true" />
+                Remove image
+              </Button>
+              <span className="text-[11px] text-muted text-center">
+                Clears the saved artwork image. Board and color settings are kept.
+              </span>
+            </>
+          )}
         </div>
-        <fieldset disabled={busy || loading} className="min-w-0 space-y-4 border-0 p-0">
+        <fieldset
+          disabled={busy || loading || !hydrated}
+          className="min-w-0 space-y-4 border-0 p-0"
+        >
           {sketches.length > 0 && (
             <Select
               className="w-full"
@@ -461,7 +581,26 @@ export function ArtTab() {
               onReset={() => setPlacement(null)}
             />
           )}
-          <div>
+          <ArtColorControls
+            mode={colorMode}
+            onMode={(mode) => {
+              setColorMode(mode);
+              if (mode === "multicolor") {
+                setLayers(["silk"]);
+                setStyle("realistic");
+              }
+            }}
+            mask={color}
+            onMask={(next) => {
+              if (inkColor === BOARD_FINISH[color].silk) setInkColor(BOARD_FINISH[next].silk);
+              setColor(next);
+            }}
+            background={printedBackground}
+            onBackground={setPrintedBackground}
+            ink={inkColor}
+            onInk={setInkColor}
+          />
+          <div hidden={colorMode === "multicolor"}>
             <div className="fd-art-label">Art style</div>
             <div className="fd-art-styles" role="group" aria-label="Art style">
               {ART_STYLES.map((s) => (
@@ -505,16 +644,6 @@ export function ArtTab() {
                   ))}
                 </Select>
               </label>
-              <label className="fd-art-field">
-                Board colour
-                <Select value={color} onChange={(e) => setColor(e.target.value as BoardColor)}>
-                  {BOARD_COLORS.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </Select>
-              </label>
               <BoardDimensions
                 widthMm={widthMm}
                 heightMm={heightMm}
@@ -537,16 +666,18 @@ export function ArtTab() {
             <summary>Advanced</summary>
             <div className="mt-3 space-y-3">
               <div className="fd-art-label">Artwork layer</div>
-              {ART_LAYERS.map((layer) => (
-                <label key={layer} className="flex items-center gap-2 text-xs">
-                  <input
-                    type="checkbox"
-                    checked={layers.includes(layer)}
-                    onChange={() => toggleLayer(layer)}
-                  />
-                  {{ silk: "Silkscreen", mask: "Solder mask openings", copper: "Copper" }[layer]}
-                </label>
-              ))}
+              {ART_LAYERS.filter((layer) => colorMode !== "multicolor" || layer === "silk").map(
+                (layer) => (
+                  <label key={layer} className="flex items-center gap-2 text-xs">
+                    <input
+                      type="checkbox"
+                      checked={layers.includes(layer)}
+                      onChange={() => toggleLayer(layer)}
+                    />
+                    {{ silk: "Silkscreen", mask: "Solder mask openings", copper: "Copper" }[layer]}
+                  </label>
+                ),
+              )}
               <p className="text-[11px] text-muted">
                 Silkscreen is the default. Other layers change how the artwork is fabricated.
               </p>
@@ -571,17 +702,22 @@ export function ArtTab() {
             {busy ? "Saving…" : "Create art project"}
           </Button>
           <Button disabled={unavailable} onClick={downloadLocal} data-testid="board-art-download">
-            Download Gerber ZIP
+            {colorMode === "multicolor" ? "Download color reference ZIP" : "Download Gerber ZIP"}
           </Button>
           <Button
-            disabled={unavailable || !projectId || !project.data || project.isFetching}
-            onClick={() => setConfirmSave(true)}
+            disabled={busy || !hydrated}
+            onClick={() => void saveProject()}
             data-testid="board-art-save"
           >
-            Save to current project…
+            Save draft
+          </Button>
+          <Button disabled={unavailable || !projectId} onClick={() => void saveExport()}>
+            Save export in project
           </Button>
           <p className="text-[11px] leading-relaxed text-muted">
-            Create a separate project to keep your existing board untouched.
+            Drafts and exports are saved under board-art/. Applying artwork to an existing circuit
+            is not yet supported here; the standalone preview does not show its components or pad
+            clearances. Import and align exported artwork in your PCB editor.
           </p>
         </div>
         {error && (
@@ -648,7 +784,7 @@ export function ArtTab() {
               <span>→</span>
               <span className="fd-art-example-board">★</span>
             </div>
-            <Button variant="primary" onClick={choose}>
+            <Button variant="primary" disabled={!hydrated} onClick={choose}>
               Upload image
             </Button>
             <p>Or drop it anywhere in this panel.</p>
@@ -688,7 +824,7 @@ export function ArtTab() {
                       widthMm={widthMm}
                       heightMm={heightMm}
                       lock={lockProportions}
-                      disabled={busy || loading}
+                      disabled={busy || loading || !hydrated}
                     />
                   )}
                 </div>
@@ -698,27 +834,6 @@ export function ArtTab() {
         )}
         {dragging && <div className="fd-art-drop-hint">Drop image to preview</div>}
       </section>
-      <Dialog
-        open={confirmSave}
-        onClose={() => setConfirmSave(false)}
-        title={existingBoard ? "Replace the current board?" : "Save artwork to this project?"}
-        className="!w-[460px]"
-      >
-        <p className="text-sm leading-relaxed">
-          Save artwork in <strong>{project.data?.name ?? "this project"}</strong>? This writes
-          board.kicad_pcb, board.kicad_pro, Gerbers, and fabrication exports. Any matching files
-          will be replaced.
-        </p>
-        <p className="mt-3 text-sm text-muted">
-          Choose Create art project to keep this design intact.
-        </p>
-        <div className="mt-5 flex justify-end gap-2">
-          <Button onClick={() => setConfirmSave(false)}>Cancel</Button>
-          <Button variant="danger" disabled={unavailable} onClick={() => void saveProject()}>
-            {existingBoard ? "Replace board and exports" : "Save artwork"}
-          </Button>
-        </div>
-      </Dialog>
     </div>
   );
 }

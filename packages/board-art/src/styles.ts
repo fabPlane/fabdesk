@@ -70,6 +70,7 @@ export function convertImage(img: GrayImage, raw: ArtOptions): BoardArt {
 }
 
 function rasterize(img: GrayImage, o: ResolvedArtOptions): Primitive[] {
+  if (o.colorMode === "multicolor") return colorHalftone(img, o);
   if (o.style === "realistic") return halftone(img, o);
   if (o.style === "retro") return hatch(img, o);
   return threshold(img, o);
@@ -122,6 +123,42 @@ function halftone(img: GrayImage, o: ResolvedArtOptions): Primitive[] {
       const d = darknessAt(img, o, map, x, y);
       const diameter = d * pitch * 0.92;
       if (diameter >= o.minFeatureMm) out.push({ kind: "circle", x, y, d: diameter });
+    }
+  }
+  return out;
+}
+
+/** Source-colored dots: retain white/highlight pixels as well as dark tones.
+ * Dot coverage follows source luminance; transparent pixels reveal the printed base.
+ * These are artwork reference dimensions, not a validated color-print process profile.
+ */
+function colorHalftone(img: GrayImage, o: ResolvedArtOptions): Primitive[] {
+  if (!img.rgba) throw new Error("Reimport the source image to use Multicolor.");
+  const box = artBox(o);
+  const map = sourceMap(img, o);
+  const pitch = o.pitchMm;
+  const out: Primitive[] = [];
+  for (let iy = 0; iy < Math.floor(box.h / pitch); iy++) {
+    for (let ix = 0; ix < Math.floor(box.w / pitch); ix++) {
+      const x = box.x + (ix + 0.5) * pitch;
+      const y = box.y + (iy + 0.5) * pitch;
+      const p = map(x, y);
+      if (!p.inside || p.x < 0 || p.y < 0 || p.x >= img.width || p.y >= img.height) continue;
+      const offset = (Math.floor(p.y) * img.width + Math.floor(p.x)) * 4;
+      const alpha = (img.rgba[offset + 3] ?? 0) / 255;
+      if (alpha === 0) continue;
+      const rgb = [0, 1, 2].map((c) => img.rgba![offset + c] ?? 0);
+      const darkness = 1 - (0.299 * rgb[0]! + 0.587 * rgb[1]! + 0.114 * rgb[2]!) / 255;
+      const tone = o.invert ? darkness : 1 - darkness;
+      const d = pitch * (0.55 + 0.37 * tone) * Math.sqrt(alpha);
+      if (d < o.minFeatureMm) continue;
+      out.push({
+        kind: "circle",
+        x,
+        y,
+        d,
+        color: "#" + rgb.map((c) => c.toString(16).padStart(2, "0")).join(""),
+      });
     }
   }
   return out;
