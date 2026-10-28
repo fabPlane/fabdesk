@@ -1,0 +1,17 @@
+{
+  "projectId": "prj_mvs6704td18dae52b4",
+  "flow": [
+    "Assembly Comments \u2192 Open project notes",
+    "Save notes through native UI",
+    "Unsaved draft retained after live saved-file updates",
+    "Review saved notes leaves draft intact and Save disabled",
+    "Keep my draft explicitly adopts new base and restores editor focus",
+    "Navigate Checks \u2192 Comments \u2192 Notes retains draft",
+    "Use saved notes replaces draft only after explicit choice and restores editor focus",
+    "Append review note \u2192 Save \u2192 saved bytes verified and editor focus retained"
+  ],
+  "preservation": "Six protected original study files unchanged; NOTES.md newly created intentionally; no source faults",
+  "limitations": "Draft retained in app session; not a durable cross-window merge or atomic conflict-free editor; no compatibility claim",
+  "savedNotesSha256": "e64cd9f69918762656bab7cc2c79a02160dc643ddb74bf2e64164074e006425c",
+  "tests": "UI typecheck +228tests870assertions pass"
+}

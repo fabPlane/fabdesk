@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button, EmptyState, LoadError, Spinner, Textarea } from "../components/ui";
 import { useBoardCommentMutations, useBoardNotes, useCoreClient, useProject } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
@@ -15,6 +15,8 @@ export function NotesTab() {
   const draft = useUiStore(s => s.notesDrafts[key]);
   const [preview, setPreview] = useState(false), [saving, setSaving] = useState(false), [saveError, setSaveError] = useState<string | null>(null);
   const [reviewSaved, setReviewSaved] = useState(false);
+  const editor = useRef<HTMLTextAreaElement>(null);
+  const focusEditor = () => requestAnimationFrame(() => { if (useUiStore.getState().activeProjectId === projectId) editor.current?.focus(); });
   const saved = notes.data?.content ?? "", content = draft?.content ?? saved;
   const hasSavedNotes = project.data?.files.some(file => file.path === "NOTES.md") ?? false;
   const dirty = content !== saved, changedOutside = !saving && !!notes.data && !!draft && dirty && draft.base !== saved;
@@ -37,6 +39,7 @@ export function NotesTab() {
       const ui = useUiStore.getState(), current = ui.notesDrafts[key];
       if (current?.content === submitted) ui.setNotesDraft(key, null);
       else if (current) ui.setNotesDraft(key, { ...current, base: submitted });
+      focusEditor();
     } catch (error) { setSaveError(error instanceof Error ? error.message : "Could not save project notes. Your draft is kept."); }
     finally { setSaving(false); }
   };
@@ -57,11 +60,11 @@ export function NotesTab() {
         <Button size="sm" variant="primary" disabled={!canSave} onClick={() => void save()}>{saving ? "Saving…" : !dirty && hasSavedNotes ? "Saved" : "Save notes"}</Button>
       </div>
     </header>
-    {changedOutside && <div className="fd-notes-notice" role="alert"><p>Saved notes changed while you were editing. Your draft is kept.</p><Button size="sm" onClick={() => setReviewSaved(true)}>Review saved notes</Button><Button size="sm" onClick={() => { useUiStore.getState().setNotesDraft(key, null); setReviewSaved(false); }}>Use saved notes</Button><Button size="sm" onClick={() => { useUiStore.getState().setNotesDraft(key, { base: saved, content }); setReviewSaved(false); }}>Keep my draft</Button></div>}
+    {changedOutside && <div className="fd-notes-notice" role="alert"><p>Saved notes changed while you were editing. Your draft is kept.</p><Button size="sm" onClick={() => setReviewSaved(true)}>Review saved notes</Button><Button size="sm" onClick={() => { useUiStore.getState().setNotesDraft(key, null); setReviewSaved(false); setPreview(false); setSaveError(null); focusEditor(); }}>Use saved notes</Button><Button size="sm" onClick={() => { useUiStore.getState().setNotesDraft(key, { base: saved, content }); setReviewSaved(false); setPreview(false); setSaveError(null); focusEditor(); }}>Keep my draft</Button></div>}
     {notes.isError && <div className="fd-notes-notice" role="alert">Saved notes could not be refreshed. <Button size="sm" onClick={() => void notes.refetch()}>Retry</Button></div>}
     {saveError && <p className="fd-notes-notice" role="alert">{saveError}</p>}
     <section className="fd-notes-paper" aria-label={reviewSaved ? "Saved notes review" : preview ? "Project notes preview" : "Project notes editor"}>
-      {preview || reviewSaved ? <div className="fd-notes-preview">{reviewSaved && <p className="mb-4 text-xs text-muted">Saved file · Your draft is kept</p>}{(reviewSaved ? saved : content).trim() ? <Markdown text={reviewSaved ? saved : content} /> : <p className="text-sm text-muted">{reviewSaved ? "The saved file is empty." : "Your notes preview will appear here."}</p>}</div> : <Textarea value={content} onChange={event => {
+      {preview || reviewSaved ? <div className="fd-notes-preview">{reviewSaved && <p className="mb-4 text-xs text-muted">Saved file · Your draft is kept</p>}{(reviewSaved ? saved : content).trim() ? <Markdown text={reviewSaved ? saved : content} /> : <p className="text-sm text-muted">{reviewSaved ? "The saved file is empty." : "Your notes preview will appear here."}</p>}</div> : <Textarea ref={editor} value={content} onChange={event => {
         const next = event.target.value;
         useUiStore.getState().setNotesDraft(key, next === saved ? null : { base: draft && dirty ? draft.base : saved, content: next });
         setSaveError(null);
