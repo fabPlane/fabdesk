@@ -994,9 +994,12 @@ export function useAssemblyCheckSummaries(projectId: string, data: ProjectBoardS
   return useQuery({ queryKey: ["assembly-check-summaries", projectId, data.manifestSha256, data.sources.map(row => [row.source.id, row.status, row.pcbSha256 ?? null, row.source])], queryFn: () => inspectAssemblyCheckSummaries(client, projectId, data) });
 }
 
-export function useAssemblyModelSummaries(projectId: string, data: ProjectBoardSources) {
+export function useAssemblyModelSummaries(projectId: string, data: ProjectBoardSources | undefined, enabled = true) {
   const client = useCoreClient();
-  return useQuery({ queryKey: ["assembly-model-summaries", projectId, data.manifestSha256, data.sources.map(row => [row.source.id, row.status, row.pcbSha256 ?? null, row.source])], queryFn: () => inspectAssemblyModelSummaries(client, projectId, data) });
+  return useQuery({ queryKey: ["assembly-model-summaries", projectId, data?.manifestSha256 ?? null, data?.sources.map(row => [row.source.id, row.status, row.pcbSha256 ?? null, row.source]) ?? []], enabled: enabled && !!data, queryFn: () => {
+    if (!data) throw new Error("Choose an assembly before reviewing model sources.");
+    return inspectAssemblyModelSummaries(client, projectId, data);
+  } });
 }
 
 export function useAssemblyBoardModel(projectId: string, board: BoardSourceSelection, enabled = true) {

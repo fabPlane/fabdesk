@@ -709,3 +709,17 @@ Created a private blank project through the actual native UI, opened the loaded 
 ![Existing drawing tool on request](fresh-start-drawing-tool.jpg)
 
 [Native walkthrough record](fresh-start-flow-native.json). Original177 capture is retained as an earlier placeholder iteration.
+
+
+### Outputs as one saved-file library
+
+Category filters and Create output share the central toolbar; the responsive card grid follows the approved three-column layout. A selected file reveals Preview/Play, Download and a requested More menu for Show file, with a separate dismiss control. Existing task tabs retain model/video creation and fabrication export access. Member cards show the board source name so identical pcb.svg filenames remain distinguishable.
+
+Existing preview and model source queries now feed member card labels and known-change badges. A Review updates shortcut appears for known warnings. Model summaries inspect small receipts only and explicitly say model bytes were not inspected; unknown files are not called current. No new exporter, source-editing or backend pipeline was added.
+
+Native walkthrough: real VAIO member Preview opened boards/io/renders/pcb.svg; More→Show file selected that exact path. An isolated earlier actual native GLB/receipt showed unchanged PCB source with model-not-inspected wording. A newline in only the fixture SVG triggered Needs review and Review updates1, which led to one shared I/O source row. Restoring the original bytes cleared the warning; all24 recorded fixture/VAIO hashes and prior absent GLB/receipt state were restored. No agent message or native editing job. Client/UI types and **267client +225UI tests PASS/0FAIL**; initial sandboxed transport tests could not bind ephemeral ports, authorized rerun passed. Compact acceptance remains pending.
+
+![Settled native VAIO output actions](vaio-output-actions.jpg)
+![Changed artifact leads to Review](output-needs-review.jpg)
+
+[Native evidence](output-flow-native.json). The earlier181 HMR-position capture is preserved;182 follows native deselect/reselect and settled placement.

@@ -461,3 +461,28 @@
 .fd-start-sketch-menu button small { font-size:11px; color:var(--fd-muted); }
 .fd-composer-more > summary { border:0; box-shadow:none; padding:6px; min-height:30px; background:transparent; }
 .fd-composer-more .fd-workspace-menu-content { top:auto; bottom:calc(100% + 10px); width:240px; max-width:calc(100vw - 48px); }
+
+/* Saved output categories and creation share one quiet toolbar. */
+.fd-output-toolbar { display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:22px; max-width:1160px; margin:0 auto 22px; }
+.fd-output-toolbar .fd-output-filters { display:flex; flex-wrap:wrap; justify-content:center; gap:3px; margin:0; padding:3px; border:1px solid var(--fd-border); border-radius:12px; background:var(--fd-panel); box-shadow:0 2px 6px #102a2008; }
+.fd-output-toolbar .fd-output-filters button { border:0; background:transparent; box-shadow:none; padding:5px 18px; border-radius:8px; }
+.fd-output-toolbar .fd-output-filters button[aria-pressed="true"] { background:var(--fd-primary); }
+.fd-output-count { max-width:1160px; margin:0 auto 12px; font-size:11px; color:var(--fd-muted); }
+.fd-output-review { color:var(--fd-warning); background:color-mix(in srgb,var(--fd-warning) 10%,var(--fd-panel)); white-space:nowrap; }
+.fd-output-selected { width:max-content; }
+.fd-output-thumbnail { position:relative; }
+.fd-output-thumbnail .fd-output-warning { position:absolute; z-index:1; top:10px; left:10px; display:flex; align-items:center; gap:5px; padding:5px 7px; border-radius:6px; background:var(--fd-panel); color:var(--fd-warning); font-size:11px; letter-spacing:0; box-shadow:0 1px 5px #102a2010; }
+.fd-output-more > summary { padding:5px; min-height:30px; border:0; box-shadow:none; background:transparent; }
+.fd-output-more .fd-workspace-menu-content { left:auto; right:0; width:230px; max-height:35vh; }
+.fd-output-more-above .fd-workspace-menu-content { top:auto; bottom:calc(100% + 8px); }
+.fd-output-caption .fd-output-source { color:var(--fd-fg); }
+
+.fd-output-grid { grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr)); max-width:1100px; }
+.fd-output-library-heading h2 { font-size:18px; }
+.fd-output-library-heading { margin-bottom:16px; }
+.fd-output-toolbar { margin-bottom:16px; }
+
+.fd-output-library-heading { position:relative; margin:0 auto; }
+.fd-output-library-heading .fd-output-review { position:absolute; right:0; top:0; z-index:1; }
+.fd-output-grid { margin-top:64px; }
+@media(max-width:1100px) { .fd-output-library-heading:has(.fd-output-review) { min-height:42px; } }
