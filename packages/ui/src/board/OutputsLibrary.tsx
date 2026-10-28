@@ -1,4 +1,5 @@
-import { VideoSourceStatus } from "./VideoSourceStatus";
+import { VideoSourceStatus, videoInputLabel } from "./VideoSourceStatus";
+import { useVideoInputRevisions, videoInputsNeedReview } from "@fabdesk/client-core";
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { assemblyModelNeedsReview, assemblyModelSummaryLabel, useAssemblyModelSummaries, useAssemblyPreviewRevisions, savedOutputs, useBoardSources, useBoardModelRevision, usePcbPreviewRevision, useEnclosureSourceRevision, useCoreClient, useProject, useRunTool, type OutputKind } from "@fabdesk/client-core";
 import { Button, Dialog, EmptyState, LoadError, Spinner } from "../components/ui";
@@ -29,6 +30,7 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
   const modelRevision = useBoardModelRevision(projectId, sourceReady && !assembly && outputs.some(file => file.path === "renders/board.glb"));
   const pcbRevision = usePcbPreviewRevision(projectId, sourceReady && !assembly && outputs.some(file => file.path === "renders/pcb.svg"));
   const enclosureRevision = useEnclosureSourceRevision(projectId, sourceReady && !assembly && outputs.some(file => file.path === "exports/enclosure.stl"));
+  const videoRevisions = useVideoInputRevisions(projectId, sourceReady && !assembly ? outputs.filter(file => /^exports\/product-video\.(mp4|webm|gif)$/i.test(file.path)).map(file => file.path) : []);
   const sourceInfo = (path: string) => {
     if (!sourceReady) return { warning: false, label: boardSources.isError ? "Board source check unavailable" : "Checking board source…" };
     const member = outputs.find(file => file.path === path);
@@ -48,6 +50,8 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
     if (path === "renders/board.glb") return { warning: ["source-changed", "artifact-changed"].includes(modelRevision.data ?? ""), label: modelRevision.isFetching ? "Checking model source…" : modelRevision.isError ? "Model source check unavailable" : modelRevision.data === "source-changed" ? "PCB changed · Review model" : modelRevision.data === "artifact-changed" ? "Model changed · Source unverified" : modelRevision.data === "source-unchanged" ? "PCB unchanged · Model dependencies unverified" : "Source unverified" };
     if (path === "renders/pcb.svg") return { warning: ["source-changed", "artifact-changed"].includes(pcbRevision.data ?? ""), label: pcbRevision.isFetching ? "Checking preview source…" : pcbRevision.isError ? "Preview source check unavailable" : pcbRevision.data === "source-changed" ? "PCB changed · Review preview" : pcbRevision.data === "artifact-changed" ? "Preview changed · Source unverified" : pcbRevision.data === "matches-source" ? "Preview matches saved PCB" : "Source unverified" };
     if (path === "exports/enclosure.stl") return { warning: enclosureRevision.data === "changed", label: enclosureRevision.isFetching ? "Checking case source…" : enclosureRevision.isError ? "Case source check unavailable" : enclosureRevision.data === "changed" ? "PCB changed · Review case" : enclosureRevision.data === "unchanged" ? "Case source unchanged · Fit unverified" : "Case source unverified" };
+    const video = videoRevisions.find(row => row.path === path);
+    if (video) return { warning: !video.isFetching && !video.isError && videoInputsNeedReview(video.data), label: video.isFetching || video.isPending ? "Checking video inputs…" : video.isError ? "Video inputs could not be checked" : videoInputLabel(video.data) };
     return { warning: false, label: "Source unverified" };
   };
   const visible = outputs.find(file => file.path === preview);

@@ -214,7 +214,7 @@ export { loadBoardArtwork, saveBoardArtwork, createArtworkSessionStore, artworkS
 
 export { captureRootCheckFinding, type RootCheckFinding } from "./root-check-finding";
 
-export { useVideoInputRevision } from "./queries";
+export { useVideoInputRevision, useVideoInputRevisions } from "./queries";
 export { inspectVideoInputRevision, videoInputsNeedReview, type VideoInputRevisionState } from "./video-input-revision";
 
 export * from "./kept-output";

@@ -1023,3 +1023,14 @@ export function useVideoInputRevision(projectId: string | null, path: string | u
   const client = useCoreClient();
   return useQuery({ queryKey: ["video-input-revision", projectId, path], queryFn: () => inspectVideoInputRevision(client, projectId!, path!), enabled: !!projectId && !!path });
 }
+
+/** Library cards share the selected player's checks; callers restrict this to recorded product formats. */
+export function useVideoInputRevisions(projectId: string | null, paths: string[]) {
+  const client = useCoreClient();
+  const rows = useQueries({ queries: paths.map(path => ({
+    queryKey: ["video-input-revision", projectId, path],
+    queryFn: () => inspectVideoInputRevision(client, projectId!, path),
+    enabled: !!projectId,
+  })) });
+  return rows.map((row, index) => ({ ...row, path: paths[index]! }));
+}
