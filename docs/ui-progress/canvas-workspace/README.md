@@ -1334,3 +1334,13 @@ Show file now consumes its existing project/path reveal intent once after the ac
 ## Final local verification for the current UI batch
 
 At2f03dae the root typecheck and full standard `bun run test` passed:2256passed,36skipped,0failures. Logs are retained locally as /tmp/canvas-workspace-final-types.log and /tmp/canvas-workspace-final-tests.log. Skipped native integrations are not counted as native walkthroughs. All48recorded study file hashes remain exact; actual generated outputs and the failing DRC report are intentionally retained. All40original design PNGs match their saved SHA/dimension manifests and all planning relative file links resolve. No remote action, merge, deploy or order was performed.
+
+
+## Ask about a selected saved finding
+
+The PCB finding card now offers Ask about finding only while the report, PCB and preview remain verified. It appends the saved description, item, native position and full source SHA to the existing unsent project conversation draft, then focuses the corner assistant. The request asks the agent to inspect current sources and explain before making changes. Native draft preservation/focus and compact layout passed; the original empty draft was restored and no message was sent. All48study files remain exact. UI typecheck passes. Claude reauthentication remains pending, so this proves draft preparation only.
+
+![Finding tools](finding-contextual-ask.png)
+![Prepared unsent question](finding-ask-preserves-draft.png)
+
+[Native evidence](finding-ask-native.json).

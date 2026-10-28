@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { assemblyFindingPreviewMatches, useCoreClient, usePcbCheckRevision, useProjectJson, useProjectText } from "@fabdesk/client-core";
 import { Button } from "../components/ui";
-import { useUiStore } from "../stores/ui";
+import { newChatDraftKey, useUiStore } from "../stores/ui";
 import { svgPointToPercent, type SvgBox } from "./svg-coords";
 
 /** A saved finding is navigation evidence, never an editing selection or a new comment. */
@@ -50,7 +50,15 @@ export function RootFindingOverlay({ projectId, svg, box, ready }: { projectId: 
       <strong>{finding.description}</strong>
       <p>{current ? `${finding.point.x.toFixed(3)}, ${finding.point.y.toFixed(3)} mm · ${finding.itemDescription}` : checking ? "Checking saved finding and drawing…" : "Finding or drawing changed or is unverified. Marker hidden; review checks again."}</p>
       {current && !visible && <p>This reported position lies outside the displayed drawing.</p>}
-      <div><Button size="sm" variant="ghost" onClick={() => useUiStore.getState().setBoardTab("drc")}>Back to checks</Button><Button size="sm" variant="ghost" onClick={event => {
+      <div><Button size="sm" disabled={!current} onClick={() => {
+        const ui = useUiStore.getState();
+        if (ui.activeProjectId !== projectId || ui.rootFinding !== finding) return;
+        const key = ui.activeThreadId ?? newChatDraftKey(projectId);
+        const prompt = `Help me understand this saved PCB check finding: ${JSON.stringify(finding.description)}. Report item: ${JSON.stringify(finding.itemDescription)} at X ${finding.point.x} mm, Y ${finding.point.y} mm. It was recorded in reports/drc.json for board.kicad_pcb SHA-256 ${finding.sourceSha256}. Inspect the latest saved sources and report before explaining whether it still applies. Explain the cause and proposed fix before making changes.`;
+        const previous = ui.drafts[key] ?? "";
+        ui.setDraft(key, previous.trim() ? `${previous}\n\n${prompt}` : prompt);
+        ui.focusComposer();
+      }}>Ask about finding</Button><Button size="sm" variant="ghost" onClick={() => useUiStore.getState().setBoardTab("drc")}>Back to checks</Button><Button size="sm" variant="ghost" onClick={event => {
         const drawing = event.currentTarget.closest('[data-testid="board-pcb-svg"]')?.querySelector<HTMLElement>('[aria-label^="Drawing canvas"]') ?? event.currentTarget.closest('[data-testid="board-pcb-svg"]')?.querySelector<HTMLElement>('[data-testid="comment-mode"]');
         useUiStore.getState().dismissRootFinding(); requestAnimationFrame(() => drawing?.focus());
       }}>Dismiss finding</Button></div>
