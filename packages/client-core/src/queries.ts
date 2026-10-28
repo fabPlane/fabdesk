@@ -1,3 +1,4 @@
+import { inspectAssemblyModelSummaries } from "./assembly-model-summary";
 import { inspectAssemblyBoardModel } from "./assembly-board-model";
 import { inspectAssemblyCheckSummaries } from "./assembly-check-summary";
 import { inspectAssemblyPcbCheck } from "./assembly-checks";
@@ -990,6 +991,11 @@ export function useAssemblyPcbCheck(projectId: string, board: BoardSourceSelecti
 export function useAssemblyCheckSummaries(projectId: string, data: ProjectBoardSources) {
   const client = useCoreClient();
   return useQuery({ queryKey: ["assembly-check-summaries", projectId, data.manifestSha256, data.sources.map(row => [row.source.id, row.status, row.pcbSha256 ?? null, row.source])], queryFn: () => inspectAssemblyCheckSummaries(client, projectId, data) });
+}
+
+export function useAssemblyModelSummaries(projectId: string, data: ProjectBoardSources) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["assembly-model-summaries", projectId, data.manifestSha256, data.sources.map(row => [row.source.id, row.status, row.pcbSha256 ?? null, row.source])], queryFn: () => inspectAssemblyModelSummaries(client, projectId, data) });
 }
 
 export function useAssemblyBoardModel(projectId: string, board: BoardSourceSelection, enabled = true) {

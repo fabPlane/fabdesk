@@ -640,3 +640,14 @@ Remaining model work: combine member-model freshness with Overview/Review attent
 ![Source-qualified Outputs model view after reload](member-model-outputs.png)
 ![Real VAIO model in compact view](member-model-vaio-compact.png)
 ![Real VAIO model in the full-size canvas](member-model-vaio.png)
+
+
+### Assembly model freshness in Overview and Review
+
+Model receipt summaries compare the current declared PCB hash without downloading every GLB. Known source/declaration differences annotate shared boards once per source; Review keeps preview, PCB-check and model-source status separate. No receipt is unknown, and unchanged PCB source does not attest model bytes or dependencies. Contextual 3D and Review actions open the qualified source. Root typecheck and 254 client-core + 225 UI tests passed; four receipt tests include bounded concurrency, settle-before-reject and ownership changes. Native validation restored an actual earlier fixture GLB, saved its PCB, verified the automatic SVG refresh, and confirmed both shared cards retained one 3D attention count. Review/compact/source-navigation passed. Eight baseline fixture hashes, prior absent model outputs and all recorded VAIO hashes restored. No agent message sent.
+
+![Shared boards retain the model warning](model-freshness-overview.png)
+![Separate preview and model status](model-freshness-review.png)
+![Compact review](model-freshness-review-compact.png)
+
+Native evidence: [model-freshness-native.json](model-freshness-native.json).

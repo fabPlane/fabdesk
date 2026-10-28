@@ -1,0 +1,55 @@
+{
+  "before": {
+    "result": {
+      "viewBox": "-220.5220588235294 -24 1291.0441176470588 506",
+      "selected": []
+    }
+  },
+  "refreshedPreview": {
+    "contract": "fabplane.pcb-preview-revision.v1",
+    "source": "board.kicad_pcb",
+    "artifact": "renders/pcb.svg",
+    "sourceSha256": "b92be11b76505001769991a3c46ef3245e22b3c68032593647ada293a367b00a",
+    "artifactSha256": "e3a3292fb9a5f2317b7798b4dbddd0317c264fd5ebd97547e52cbb728261795a",
+    "generatedAt": "2026-10-28T02:20:37.153Z"
+  },
+  "olderModel": {
+    "contract": "fabplane.board-model-revision.v1",
+    "source": "board.kicad_pcb",
+    "artifact": "renders/board.glb",
+    "sourceSha256": "34f1e8d8592b9fce278642e7ab15b94cf53631740cccf25c439a1311e7bc77c6",
+    "artifactSha256": "fa4fc598e26dbcc406cbe0765aab32ed92cc7224c6fd4b3309ca87bd7021b1c4",
+    "generatedAt": "2026-10-28T01:50:57.624Z",
+    "dependencies": "unverified",
+    "boardSource": {
+      "sourceId": "io",
+      "manifestSha256": "ffe6b12399cec942549f829855f4d6e532a18db08d843a44f6c2624f7dd4885c",
+      "projectId": "prj_mvqyacun3e60075ae8"
+    },
+    "warnings": []
+  },
+  "overview": {
+    "result": {
+      "text": "fabPlane\nAssembly source ownership — validation fixture\n/\nOverview\nLocal workspace\nExport\nOverview\nCONNECTIONS\nProject overview\n\n3 boards · 2 source designs · 1 declared connection\n\nConnections view · compatibility unverified\nSources to review · 1\nMain carrier\nPreview matches saved PCB\nLeft I/O\nPCB changed since 3D export\nRight I/O\nPCB changed since 3D export\nFit\n−\n108%\n+\n\nSelect a board to inspect it · Layout is a project map, not installed positions\n\nAsk fabPlane",
+      "viewBox": "-220.5220588235294 -24 1291.0441176470588 506"
+    }
+  },
+  "contextModel": {
+    "result": "fabPlane\nAssembly source ownership — validation fixture\n/\nBoards\nLocal workspace\nExport\nBoards\n← All boards\nRight I/O\nPCB\n3D\nPCB checks\nAsk about this board\nI/O source · PCB changed since model export\nComponent-model dependencies, physical placement and enclosure fit are unverified.\n−\n+\nFit view\nDrag to orbit · Arrow keys pan\nUpdate this model\nDownload GLB\n\nSource: I/O source · Shared by 2 boards · Schematic, connection and fit checks unverified\n\nAsk fabPlane"
+  },
+  "reviewModel": {
+    "result": "fabPlane\nAssembly source ownership — validation fixture\nLocal workspace\nExport\nBoards\n← All boards\nLeft I/O\nPCB\n3D\nPCB checks\nAsk about this board\nI/O source · PCB changed since model export\nComponent-model dependencies, physical placement and enclosure fit are unverified.\n−\n+\nFit view\nDrag to orbit · Arrow keys pan\nUpdate this model\nDownload GLB\n\nSource: I/O source · Shared by 2 boards · Schematic, connection and fit checks unverified\n\nAsk fabPlane"
+  },
+  "restoredFixtureHashes": {
+    "fabdesk.json": "a0527b15fead3e9b4b0c30e3cf741d3edfc6798e093091ebf288711054ddb9a4",
+    "fabplane.assembly.json": "ffe6b12399cec942549f829855f4d6e532a18db08d843a44f6c2624f7dd4885c",
+    "boards/io/board.kicad_pcb": "34f1e8d8592b9fce278642e7ab15b94cf53631740cccf25c439a1311e7bc77c6",
+    "boards/io/renders/pcb.svg": "c3daabe16c421794a8c86fffa74ed5d8308407aed8c439b65d166adc386d6dbb",
+    "boards/io/renders/pcb.svg.revision.json": "d013dcce6655c9a0e570fab0881b107e6dc529e724666d8c28331f7f9e6a771e",
+    "boards/carrier/board.kicad_pcb": "406b12f63e656f59751b39fe9e7f346cb2c9beb65eb16cdc4400ab20fe471d99",
+    "boards/carrier/renders/pcb.svg": "1dc8e9220bdcf210e6968f4332792ecc1f28955525de2123d27ac1191c5207ab",
+    "boards/carrier/renders/pcb.svg.revision.json": "a91c67ab69d30119e0e3952d344afdf9e5c9688872adcdaf23b6ae644322b51c"
+  },
+  "realVaioUnchanged": true,
+  "fixtureModelPresenceRestored": true
+}

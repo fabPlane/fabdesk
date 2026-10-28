@@ -201,3 +201,6 @@ export * from "./assembly-check-finding";
 export * from "./live-assembly-previews";
 export * from "./assembly-board-model";
 export * from "./model-camera";
+
+export * from "./assembly-model-summary";
+export { useAssemblyModelSummaries } from "./queries";
