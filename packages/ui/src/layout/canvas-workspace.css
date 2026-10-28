@@ -486,3 +486,18 @@
 .fd-output-library-heading .fd-output-review { position:absolute; right:0; top:0; z-index:1; }
 .fd-output-grid { margin-top:64px; }
 @media(max-width:1100px) { .fd-output-library-heading:has(.fd-output-review) { min-height:42px; } }
+
+/* Review shows one next step per source; supporting checks and tools open inline. */
+.fd-review-updates > header,.fd-review-updates .fd-update-table,.fd-review-updates .fd-update-sync,.fd-review-explanation { max-width:1040px; }
+.fd-review-source-name { display:flex; align-items:center; gap:10px; }
+.fd-review-source-name svg { flex:none; color:var(--fd-accent); }
+.fd-review-source-details { margin-top:8px; color:var(--fd-muted); font-size:11px; }
+.fd-review-source-details > summary,.fd-review-explanation > summary { cursor:pointer; list-style:disclosure-closed; }
+.fd-review-source-details[open] > summary,.fd-review-explanation[open] > summary { list-style:disclosure-open; }
+.fd-review-source-details > div { margin-top:10px; padding-top:7px; border-top:1px solid var(--fd-border); }
+.fd-review-detail-actions { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+.fd-review-explanation { margin:24px auto; color:var(--fd-muted); font-size:12px; }
+.fd-review-explanation .fd-update-sync { margin-top:12px; }
+.fd-review-source-details summary:hover,.fd-review-explanation summary:hover { color:var(--fd-fg); }
+
+.fd-review-updates .fd-update-row:not(.fd-update-table-heading) { padding-top:16px; padding-bottom:16px; }

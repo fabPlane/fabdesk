@@ -37,7 +37,7 @@ function SingleBoardUpdates() {
     { item: "Other saved outputs", status: "Freshness not yet tracked", warning: false, note: "Images, videos and manufacturing files retain their saved versions. Review before sharing or fabrication.", action: "Browse outputs", onClick: () => open("renders") },
   ];
   return <div className="fd-review-updates" data-testid="review-updates">
-    <header><h2>Review updates</h2><p>See what changed and choose what to refresh. Opening this view does not regenerate files or synchronize your designs.</p><Button size="sm" variant="ghost" onClick={() => retry([preview, model, enclosure, checks])}>Recheck sources</Button></header>
+    <header><h2>Choose what to update</h2><p>Review source changes, then choose an output to refresh. Files update only when you request it.</p><Button size="sm" variant="ghost" onClick={() => retry([preview, model, enclosure, checks])}>Recheck sources</Button></header>
     <div className="fd-update-table" role="table" aria-label="Saved artifact source review">
       <div className="fd-update-row fd-update-table-heading" role="row"><span role="columnheader">Item</span><span role="columnheader">Source status</span><span role="columnheader">Next step</span></div>
       {rows.map(row => <div key={row.item} className="fd-update-row" role="row"><div role="cell"><strong>{row.item}</strong><p>{row.note}</p></div><span role="cell" data-warning={row.warning}>{row.status}</span><div role="cell"><Button size="sm" disabled={row.disabled} onClick={row.onClick}>{row.action}</Button></div></div>)}

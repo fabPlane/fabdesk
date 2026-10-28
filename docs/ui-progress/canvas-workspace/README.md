@@ -723,3 +723,17 @@ Native walkthrough: real VAIO member Preview opened boards/io/renders/pcb.svg; M
 ![Changed artifact leads to Review](output-needs-review.jpg)
 
 [Native evidence](output-flow-native.json). The earlier181 HMR-position capture is preserved;182 follows native deselect/reselect and settled placement.
+
+
+### Review with one next step per source
+
+Review now uses the approved “Choose what to update” table. Each member source has one primary action: refresh a missing/older preview, open its board, or resolve an unavailable source. Checks/model status and secondary actions open inline on request. Known DRC findings and model warnings remain visible while those details are closed. The explanation of source checks is folded. Returning to a shared source preserves the currently owned physical instance and explicitly opens PCB. No batch-regeneration, automatic sync or compatibility behavior is implied.
+
+Actual native validation restored an earlier measured report, confirmed14findings stayed visible despite unchanged source bytes, and opened the correct source’s Checks through requested details. The prior report absence was restored. Right I/O→Review→Open board retained Right I/O. All six VAIO source rows fit with keyboard Resolve source visible; secondary details stay closed. UI typecheck and225UItests pass; all24recordedfixture/VAIOhashes unchanged, no new engineering job or agent message. Compact acceptance remains pending. Screenshot184 precedes final summary accessibility/spacing;185 is the final VAIO layout.
+
+The previously observed inspection503 was an offline development PCB bridge. Restarting the existing installed official bridge on loopback with a short socket directory restored actual native inspection; the app displayed3parts and15×15mm. No backend/source implementation changed. The first source launcher lacked a submodule dependency, and the first binary attempt’s long socket path failed startup; both are recorded, not counted as successful validation.
+
+![Final native VAIO source review](vaio-review-sources.jpg)
+![Requested checks and model tools with findings](review-requested-tools.jpg)
+
+[Native evidence](review-flow-native.json).
