@@ -1201,3 +1201,7 @@ Existing editable rectangles now expose Revert last dimensions after a confirmed
 
 ### Single-board dimensions recovery
 Native root15×15→16.5×15→Revert15×15 passed with the same guard and dialog focus. PCB, .kicad_pro and projectmetadata all byte-identical to the immediate baseline; refreshed SVG/source receipt verified. Escape closes size tools then selected location, keeping drawing focus. Capture root-dimensions-restored.png; root-outline-recovery-native.json. No code change after the member-verified implementation; broader UI workflow work continues.
+
+
+### Distinguish older preview jobs from current source state
+When an older automatic preview job is superseded and the current available source/SVG hashes are independently verified, activity now says preview matches PCB · older update skipped and View opens that owned source. It no longer exposes the old ownership error as the current View tooltip. Without verified latest bytes it retains Review/error behavior. Native race observed running job, restored owned source before completion, then verified new label and Overview→View LeftI/O. Altering SVG with XMLcomment switched back to Review/unverified and was not automatically overwritten; exact restoration re-enabled View. Activity Dismiss returns active drawing focus.6protectedstudyfiles unchanged, source/artifact receipts verified, allfaultsRESTORED. UItypes/228tests pass. preview-activity-native.json +3captures.

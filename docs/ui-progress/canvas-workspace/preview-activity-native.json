@@ -1,0 +1,13 @@
+{
+  "projectId": "prj_mvs6704td18dae52b4",
+  "observedRunning": true,
+  "supersededLabelVerified": true,
+  "notice": "I/O source preview matches PCB \u00b7 older update skippedView",
+  "sourceRestored": true,
+  "viewNavigation": "Overview \u2192 View opened Left I/O / I/O source, shared by 2 boards",
+  "tooltip": "Current preview verified; older job skipped, not current ownership error",
+  "artifactNegativeCase": "Harmless SVG XML comment produced Preview changed \u00b7 unverified and Review; exact restore re-enabled View without regeneration",
+  "activityDismissFocus": "Active source drawing",
+  "protectedBaselineFilesUnchanged": 6,
+  "allFaultsRestored": true
+}
