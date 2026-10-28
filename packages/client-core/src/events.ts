@@ -339,6 +339,7 @@ export function handleCoreEvent(event: CoreEvent, ctx: HandlerCtx): void {
       void qc.invalidateQueries({ queryKey: ["board-sources", event.projectId] });
       void qc.invalidateQueries({ queryKey: ["assembly-board-inspection", event.projectId] });
       void qc.invalidateQueries({ queryKey: ["assembly-pcb-check", event.projectId] });
+      void qc.invalidateQueries({ queryKey: ["assembly-check-summaries", event.projectId] });
       void qc.invalidateQueries({ queryKey: ["pcb-check-revision", event.projectId] });
       void qc.invalidateQueries({ queryKey: ["pcb-outline", event.projectId] });
       void qc.invalidateQueries({ queryKey: ["pcb-parts", event.projectId] });

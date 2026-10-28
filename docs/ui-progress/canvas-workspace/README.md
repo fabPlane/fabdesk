@@ -558,3 +558,21 @@ Limits: these are per-source PCB checks. Member schematic parity/ERC, inter-boar
 ![Older PCB warning in the compact native window](member-checks-stale-compact.png)
 ![Changed declaration requires reselection](member-checks-reselect.png)
 ![VAIO inspection opens the exact source's Checks](member-checks-vaio.png)
+
+
+## Canvas PCB-check attention and combined source review
+
+Assembly Overview now annotates shared board instances when their saved PCB check is older than the source, has unverified ownership, or lists findings. Attention counts deduplicate source designs across instances and across preview/check issues. Selecting a board reveals a source-bound PCB checks action. Review updates shows preview freshness and PCB-check status together, so regenerating an image cannot imply electrical checks became current.
+
+The summary reads each declared source report once with at most four concurrent reads, applies a 10 MiB parsing limit, and performs one final source/declaration reinspection. It reuses the membership's PCB hashes instead of rereading and hashing every PCB for every member. Missing reports remain unknown coverage; unavailable sources, mismatched ownership, changed sources and transport failures never imply a pass. A current report with zero listed findings is still described as PCB-only, not assembly compatibility.
+
+Actual native study restored the prior real I/O DRC report from the preceding walkthrough (not a synthetic result), then changed only PCB whitespace. Both shared instances showed the stale DRC warning with one source attention count. Explicit native preview refresh produced a source/artifact receipt matching that modified PCB, yet the DRC warning remained. The contextual Checks action opened that exact source. Review showed a matching preview beside the stale check, including at actual 960 × 720 size. Restoring original PCB/preview bytes then showed the real report's 14 findings on both cards. All nine fixture files were restored and the study report removed back to its previous absent state. Real VAIO source/preview/manifest hashes stayed unchanged and its quiet Overview was restored. No agent message was sent. [Native evidence](check-attention-native.json).
+
+Root typecheck passed. Both affected suites passed: **236 client-core + 224 UI**, zero failures. New summary tests: **2 passed / 13 assertions**, covering one read per source, bounded concurrency, one final inspection, shared instances, missing/malformed/mismatched reports, source/declaration changes and transport errors. The preceding full standard run remains **2,145 passed / 32 skipped / zero failures** at the member DRC backend milestone; it was not repeated for this client/UI increment.
+
+Limits: the summary tracks saved PCB-only reports, not ERC, schematic parity, design-rule/model dependencies or assembly-wide compatibility. Report bodies over 10 MiB are unverified in this overview summary. Electrical-clean certification, persistent keep-older choices, artifact-integrity receipts and exact finding-to-canvas navigation remain separate work.
+
+![DRC warning survives native preview refresh](check-attention-canvas-stale.png)
+![Preview and PCB checks shown independently](check-attention-review.png)
+![Combined review in a compact native window](check-attention-review-compact.png)
+![Native findings annotated on shared board instances](check-attention-canvas-findings.png)

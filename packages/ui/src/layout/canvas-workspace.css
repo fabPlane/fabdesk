@@ -403,3 +403,7 @@
 .fd-member-checks-detail { margin-top:18px; padding:16px; border:1px solid var(--fd-border); border-radius:12px; font-size:12px; }
 .fd-member-checks-detail p { color:var(--fd-muted); margin-top:6px; }
 @media(max-width:1050px) { .fd-member-checks header { flex-direction:column; gap:14px; } }
+
+.fd-assembly-review-status { display:flex; flex-direction:column; gap:7px; color:var(--fd-muted); font-size:12px; }
+.fd-assembly-review-status small { font-size:11px; }
+.fd-assembly-review-status [data-warning="true"] { color:var(--fd-warning); font-weight:600; }

@@ -1,3 +1,4 @@
+import { inspectAssemblyCheckSummaries } from "./assembly-check-summary";
 import { inspectAssemblyPcbCheck } from "./assembly-checks";
 import { inspectAssemblyBoard } from "./assembly-scene";
 import type { BoardSourceSelection, ProjectBoardSources } from "@fabdesk/protocol";
@@ -983,4 +984,9 @@ export function useBoardModelRevision(projectId: string | null, enabled = true) 
 export function useAssemblyPcbCheck(projectId: string, board: BoardSourceSelection | null, enabled = true) {
   const client = useCoreClient();
   return useQuery({ queryKey: ["assembly-pcb-check", projectId, board?.sourceId ?? null, board?.manifestSha256 ?? null], queryFn: () => inspectAssemblyPcbCheck(client, projectId, board!), enabled: !!board && enabled });
+}
+
+export function useAssemblyCheckSummaries(projectId: string, data: ProjectBoardSources) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["assembly-check-summaries", projectId, data.manifestSha256, data.sources.map(row => [row.source.id, row.status, row.pcbSha256 ?? null, row.source])], queryFn: () => inspectAssemblyCheckSummaries(client, projectId, data) });
 }
