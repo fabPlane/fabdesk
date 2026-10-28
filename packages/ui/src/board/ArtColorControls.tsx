@@ -30,14 +30,20 @@ function HexColor({
   const invalid = !(unset && text === "") && !/^#[0-9a-f]{6}$/i.test(text);
   return (
     <div className="fd-art-field">
-      <span>{label}</span>
+      <span>
+        {label}
+        {onClear ? " (optional)" : ""}
+      </span>
       <div className="fd-art-color-input">
-        <input
-          type="color"
-          aria-label={`${label} color wheel`}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-        />
+        <label className="fd-art-color-picker">
+          <input
+            type="color"
+            aria-label={`${label} color wheel`}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+          />
+          <span>Color wheel</span>
+        </label>
         <input
           aria-label={`${label} hex`}
           placeholder={unset ? "Not set" : "#RRGGBB"}
@@ -127,25 +133,46 @@ export function ArtColorControls({
       </div>
       <div className="fd-art-field">
         <span>Physical board · solder mask</span>
-        <div className="fd-art-color-swatches" role="group" aria-label="Physical solder mask color">
-          {BOARD_COLORS.map((c) => (
-            <button
-              type="button"
-              key={c}
-              title={c}
-              aria-label={`${c} solder mask`}
-              aria-pressed={(mode === "multicolor" ? "white" : mask) === c}
-              disabled={mode === "multicolor" && c !== "white"}
-              style={{ backgroundColor: BOARD_FINISH[c].mask }}
-              onClick={() => onMask(c)}
-            />
-          ))}
-        </div>
-        <span className="text-[11px] text-muted">
-          {mode === "multicolor"
-            ? "White solder mask required for JLCPCB multicolor. A custom printed background is optional."
-            : `${mask} · JLCPCB palette. Swatches approximate the physical finish.`}
-        </span>
+        {mode === "multicolor" ? (
+          <>
+            <div className="fd-art-fixed-mask">
+              <span
+                className="fd-art-fixed-mask-swatch"
+                style={{ backgroundColor: BOARD_FINISH.white.mask }}
+                aria-hidden="true"
+              />
+              <span>White · required for multicolor</span>
+            </div>
+            <span className="text-[11px] text-muted">
+              JLCPCB prints multicolor artwork on white solder mask. Use Printed background below
+              for a colored appearance, or switch to Monotone to choose another physical board
+              color.
+            </span>
+          </>
+        ) : (
+          <>
+            <div
+              className="fd-art-color-swatches"
+              role="group"
+              aria-label="Physical solder mask color"
+            >
+              {BOARD_COLORS.map((c) => (
+                <button
+                  type="button"
+                  key={c}
+                  title={c}
+                  aria-label={`${c} solder mask`}
+                  aria-pressed={mask === c}
+                  style={{ backgroundColor: BOARD_FINISH[c].mask }}
+                  onClick={() => onMask(c)}
+                />
+              ))}
+            </div>
+            <span className="text-[11px] text-muted">
+              {mask} · JLCPCB palette. Swatches approximate the physical finish.
+            </span>
+          </>
+        )}
       </div>
       {mode === "multicolor" ? (
         <>
@@ -158,8 +185,8 @@ export function ArtColorControls({
             presets={false}
           />
           <p className="text-[11px] text-muted">
-            Optional color over the board, independent of the source image. Not set leaves the board
-            color visible between artwork dots.
+            A solid color printed behind the artwork. It is independent of the source image. Not set
+            leaves the board color visible between artwork dots.
           </p>
           <p className="text-[11px] text-muted">
             Color SVG reference only. JLCPCB requires EasyEDA Pro color-production files; this ZIP

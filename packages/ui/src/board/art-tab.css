@@ -460,3 +460,25 @@
   outline: 2px solid var(--color-accent, #65a4ef);
   outline-offset: 2px;
 }
+
+.fd-art-color-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  cursor: pointer;
+  font-weight: 400;
+}
+.fd-art-fixed-mask {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 400;
+}
+.fd-art-fixed-mask-swatch {
+  width: 27px;
+  height: 27px;
+  border: 1px solid #888;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
