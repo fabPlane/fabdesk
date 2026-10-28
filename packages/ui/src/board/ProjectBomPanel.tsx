@@ -12,10 +12,9 @@ import {
   type ProjectBomLine,
   type ProjectPartsFile,
 } from "@fabdesk/protocol";
-import { useProjectJson, useRunTool, useWriteProjectFile } from "@fabdesk/client-core";
+import { useBoardSources, useProjectJson, useRunTool, useWriteProjectFile } from "@fabdesk/client-core";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
-import { Badge, Button, EmptyState, IconButton, Input, Spinner } from "../components/ui";
+import { Badge, Button, Dialog, EmptyState, IconButton, Input, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { useUiStore } from "../stores/ui";
 import { cn } from "../util";
@@ -169,6 +168,10 @@ function PartsToolbar({ label, query, onQueryChange, selected, onChange, include
 
 export function ProjectBomPanel() {
   const projectId = useUiStore((s) => s.activeProjectId);
+  const sources = useBoardSources(projectId);
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const addTrigger = useRef<HTMLButtonElement>(null);
+  const libraryRoot = useRef<HTMLDivElement>(null);
   const netlist = useProjectJson<NetlistFile>(projectId, "circuit.netlist.json");
   const partsFile = useProjectJson<ProjectPartsFile>(projectId, PROJECT_PARTS_FILE);
   const write = useWriteProjectFile();
@@ -244,6 +247,7 @@ export function ProjectBomPanel() {
         setFilters([]);
         setBomQuery("");
         setPendingReveal({ projectId, lineId });
+        requestAnimationFrame(() => libraryRoot.current?.querySelector<HTMLInputElement>("input")?.focus());
       },
     });
   };
@@ -253,7 +257,9 @@ export function ProjectBomPanel() {
     if (!part || !projectId) return;
     setFilters([]);
     setBomQuery("");
+    setLibraryOpen(false);
     setPendingReveal({ projectId, lineId: part.id });
+    requestAnimationFrame(() => addTrigger.current?.focus());
   };
 
   const setQtyFor = (lineId: string, nextQty: number) => {
@@ -268,7 +274,7 @@ export function ProjectBomPanel() {
     persist({ schema: 1, parts: parts.parts.filter((p) => p.id !== lineId) });
 
   return (
-    <div className="flex h-full min-h-0 flex-col" data-testid="project-bom">
+    <div className="fd-project-parts flex h-full min-h-0 flex-col" data-testid="project-bom">
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -278,9 +284,10 @@ export function ProjectBomPanel() {
               {parts.parts.length} off-board
             </Badge>
           </div>
-          <p className="mt-1 text-xs text-muted">PCB components and extra hardware in one bill of materials.</p>
+          <p className="mt-1 text-xs text-muted">{sources.data?.mode === "assembly" ? "Project extras and saved root netlist only. Member-board BOMs are not included." : sources.isPending || sources.isError ? "Project extras and saved root netlist. Board membership has not been verified." : "Saved board netlist and project hardware. Source freshness is unverified."}</p>
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-1.5">
+          <Button ref={addTrigger} variant="primary" size="sm" onClick={() => setLibraryOpen(true)}><Icon name="plus" width={15} height={15} />Add parts</Button>
 
           <Button
             size="sm"
@@ -295,6 +302,7 @@ export function ProjectBomPanel() {
       <div className="shrink-0 border-b border-border px-2 py-2" data-testid="bom-filter">
         <PartsToolbar label="Search BOM" query={bomQuery} onQueryChange={setBomQuery} selected={filters} onChange={setFilters} includePcb />
       </div>
+      {(netlist.isError || netlist.parseError) && <div role="alert" className="flex items-center gap-2 border-b border-border px-3 py-2 text-xs text-warning"><span className="min-w-0 flex-1">The saved electrical netlist could not be read. Listed hardware does not establish PCB component coverage.</span><Button size="sm" variant="ghost" onClick={() => void netlist.refetch()}>Retry netlist</Button></div>}
       {exportBom.state.error && <div className="border-b border-border px-2 py-1 text-xs text-danger">{exportBom.state.error}</div>}
       {partsState.status === "error" && (
         <div
@@ -308,13 +316,12 @@ export function ProjectBomPanel() {
           </Button>
         </div>
       )}
-      <PanelGroup direction="vertical" autoSaveId="fabdesk-project-bom-library" className="min-h-0 flex-1">
-        <Panel id="bom-lines" order={1} defaultSize={60} minSize={15}>
+      <div className="min-h-0 flex-1">
           <div ref={bomScroll} id="project-bom-lines" className="h-full min-h-0 overflow-auto" aria-label="Project BOM lines">
             {shown.length === 0 ? (
               <div className="px-3 py-6 text-center text-xs text-muted">
                 {lines.length === 0
-                  ? "No parts yet. Electrical parts come from the board netlist; add motors, displays or hardware below."
+                  ? "No parts are listed in the saved netlist or project parts file. Choose Add parts for motors, displays and hardware."
                   : "No parts match your search or filters."}
               </div>
             ) : (
@@ -377,22 +384,16 @@ export function ProjectBomPanel() {
               </table>
             )}
           </div>
-        </Panel>
-        <PanelResizeHandle
-          aria-label="Resize BOM and parts library"
-          className="group flex h-3 shrink-0 cursor-row-resize items-center justify-center border-y border-border bg-panel-2 hover:bg-accent/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent data-[resize-handle-active]:bg-accent/15"
-        >
-          <span aria-hidden="true" className="h-1 w-10 rounded-full bg-muted/50 group-hover:bg-accent group-data-[resize-handle-active]:bg-accent" />
-        </PanelResizeHandle>
-        <Panel id="offboard-library" order={2} defaultSize={40} minSize={15}>
-          <div className="flex h-full min-h-0 flex-col" data-testid="offboard-picker">
+      </div>
+      <Dialog open={libraryOpen} title="Add project parts" className="!w-[780px]" onClose={() => { setLibraryOpen(false); requestAnimationFrame(() => addTrigger.current?.focus()); }}>
+          <div ref={libraryRoot} className="fd-parts-library flex min-h-0 flex-col" data-testid="offboard-picker">
             <div className="shrink-0 border-b border-border bg-panel px-3 py-3">
               <div className="mb-3">
                 <div className="flex items-center gap-2">
                   <h2 className="text-sm font-semibold">Add off-board parts</h2>
                   <span className="text-xs text-muted">{hits.length} available</span>
                 </div>
-                <p className="mt-1 text-xs text-muted">Choose motors, displays and hardware. Adjust quantities above.</p>
+                <p className="mt-1 text-xs text-muted">Choose motors, displays and hardware. Quantities are edited in the project parts list.</p>
               </div>
               <PartsToolbar label="Search off-board library" query={query} onQueryChange={setQuery} selected={kinds} onChange={setKinds} />
               <div className="mt-3 grid items-center gap-2 px-2 text-[10.5px] font-semibold uppercase tracking-wide text-muted" style={{ gridTemplateColumns: "80px minmax(0, 1fr) minmax(0, 160px) 48px 28px" }} aria-hidden="true">
@@ -417,7 +418,7 @@ export function ProjectBomPanel() {
                   </span>
                   <IconButton
                     size="sm"
-                    title={addedCatalogIds.has(hit.id) ? `${hit.name} is already in BOM — edit quantity above` : `Add ${hit.name}`}
+                    title={addedCatalogIds.has(hit.id) ? `${hit.name} is already in BOM — edit its quantity in project parts` : `Add ${hit.name}`}
                     disabled={!editable || write.isPending || addedCatalogIds.has(hit.id)}
                     className={addedCatalogIds.has(hit.id) ? "disabled:opacity-100 text-accent" : "fd-bom-add"}
                     aria-label={addedCatalogIds.has(hit.id) ? `${hit.name} — already in BOM` : `Add ${hit.name}`}
@@ -431,8 +432,8 @@ export function ProjectBomPanel() {
               {hits.length === 0 && <div className="px-2 py-2 text-[11px] text-muted">No library matches.</div>}
             </div>
           </div>
-        </Panel>
-      </PanelGroup>
+        <div className="flex justify-end border-t border-border pt-3"><Button onClick={() => { setLibraryOpen(false); requestAnimationFrame(() => addTrigger.current?.focus()); }}>Done</Button></div>
+      </Dialog>
     </div>
   );
 }

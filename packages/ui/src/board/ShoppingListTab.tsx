@@ -176,9 +176,9 @@ export function ShoppingListTab() {
     </div>
   );
   return (
-    <div className="flex h-full min-h-0 flex-col" data-testid="bom-tab">
+    <div className="fd-parts-workspace flex h-full min-h-0 flex-col" data-testid="bom-tab">
       <div className="shrink-0 border-b border-border px-3 py-1.5">{navigation}</div>
-      <div className="min-h-0 flex-1">{view === "bom" ? <ProjectBomPanel /> : <ShoppingListContent key={projectId} />}</div>
+      <div className="min-h-0 flex-1">{view === "bom" ? <ProjectBomPanel key={projectId} /> : <ShoppingListContent key={projectId} />}</div>
     </div>
   );
 }

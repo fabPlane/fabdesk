@@ -781,3 +781,18 @@ Actual native961×721walkthrough: existing local logo image selected, Halftone�
 ![Native loaded artwork tools](artwork-tools-compact.jpg)
 
 [Native evidence](art-flow-native.json).
+
+
+### Parts list first, catalog on request
+
+Parts & BOM now opens as one project list. Add parts opens the existing hardware catalog in a requested dialog; search, filters, multiple additions and In BOM navigation remain. Adding restores search focus, while returning to a line closes the dialog and highlights the row. Shopping remains a separate requested view. CSV export and guarded parts-file editing are unchanged.
+
+Scope copy distinguishes the saved root netlist and project extras from member-board BOM coverage, which is not implemented. Source freshness is unverified; unreadable electrical netlists show a warning and Retry rather than silently suggesting component coverage. No BOM aggregation or backend pipeline was rebuilt.
+
+Native961×721walkthrough in the isolated blank UI study added SG90 and M3 standoff, saved servo quantity2, used catalog search and In BOM return; the new project.parts.json is intentionally retained as study data. Both original metadata files remain byte-identical. All38recordedroot/assembly/VAIOhashes unchanged. Shopping signed-out state and VAIO member-coverage limitation verified.225UItests/types pass. No CSV export, shopping sync, login or native board edit was run.
+
+![Native one-list project parts](parts-list-compact.jpg)
+![Requested searchable catalog](requested-parts-catalog.jpg)
+![VAIO member BOM coverage is explicit](vaio-parts-coverage.jpg)
+
+[Native evidence](parts-flow-native.json).

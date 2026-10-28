@@ -154,3 +154,19 @@
 @media (prefers-reduced-motion: reduce) {
   .shopping-progress > span, .shopping-expand, .shopping-item-summary { transition: none; }
 }
+
+/* A single project list is the default; the existing parts catalog opens on request. */
+.fd-parts-library { height:min(470px,calc(100vh - 220px)); }
+.fd-canvas-workspace .fd-canvas-board-body > .fd-parts-workspace { padding:18px 24px 88px; }
+.fd-canvas-workspace .fd-parts-workspace > div:first-child { border:0; padding:0 0 14px; text-align:center; }
+.fd-canvas-workspace .fd-parts-workspace > div:first-child > div { border-radius:24px; padding:4px; background:var(--fd-panel); }
+.fd-canvas-workspace .fd-parts-workspace > div:first-child button { border-radius:18px; padding:7px 18px; }
+.fd-canvas-workspace .fd-project-parts { width:min(1120px,100%); margin:0 auto; background:var(--fd-panel); border:1px solid var(--fd-border); border-radius:18px; overflow:hidden; box-shadow:0 4px 22px #102a2008; }
+.fd-canvas-workspace .fd-project-parts > div:first-child { padding:18px 20px; }
+.fd-canvas-workspace .fd-project-parts [data-testid="bom-filter"] { padding:12px 20px; }
+.fd-canvas-workspace .fd-project-parts th { padding-top:12px; padding-bottom:12px; }
+.fd-canvas-workspace .fd-project-parts td { padding-top:11px; padding-bottom:11px; }
+@media (max-width:620px) {
+  .fd-canvas-workspace .fd-canvas-board-body > .fd-parts-workspace { padding:12px 14px 88px; }
+  .fd-canvas-workspace .fd-project-parts > div:first-child { padding:14px; }
+}
