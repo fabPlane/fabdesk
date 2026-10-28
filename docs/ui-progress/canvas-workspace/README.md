@@ -669,3 +669,18 @@ Native screenshots169–171 show the requested temporary two-sheet fixture inven
 ![Final folded disclosure in VAIO](member-schematic-folded.png)
 
 Native record: [member-schematic-native.json](member-schematic-native.json). The earlier three captures precede the final outer disclosure refinement; all screenshot iterations are preserved.
+
+
+### Source-qualified schematic canvas connection
+
+The selected member board now has a read-only Schematic view beside PCB and 3D, with sheet selection/previous/next navigation on the same canvas. Create/Update explicitly inspects the native hierarchy before using the existing native KiCad SVG exporter. Verified captured sheet/project bytes reach the CLI; immutable SVG versions and one atomically replaced source receipt preserve earlier previews on failure. Client inspection checks all recorded native inputs and the exact selected SVG, rechecks inputs after page loading and rejects obsolete pointers, ownership and selections. PCB placement proposals remain mounted/hidden when changing local views. No member schematic editing, ERC, PCB parity or automatic heavy rendering is claimed.
+
+Root typecheck PASS. The complete standard workspace suites plus scripts passed **sequentially: 2205 PASS / 36 SKIP / 0 FAIL**. The default concurrent command failed twice on existing five-second mechanical/agent-detection timeouts (and resulting canceled-process errors); mechanical alone passed18/0 and both packages passed in the sequential complete run. Test limits outside this feature were not changed. Focused snapshot/publication tests with installed KiCad: **10 PASS / 130 assertions**, including two real native cases; the multi-export native test has a30-second allowance after its initial five-second timeout. Client scope/transport/race tests **10 PASS /32 assertions**. Native skips in the standard run are not native passes.
+
+Actual UI generation rendered two temporary note-only KiCad sheets, retained native inputs and switched to the child page with the Next button. The actual app client then distinguished changed child source, modified SVG, restored bytes and another source with no inherited preview. The native window changed to Checks during an attempted resize; compact/popup interaction and visual stale-warning acceptance remain unverified. Further interactive navigation stopped. Both temporary native sources and their new preview directory/pointer were restored absent; all eight recorded fixture and all recorded VAIO hashes stayed unchanged. Actual generated versions/receipts are backed up under work/schematic-preview-generated-evidence. Current native app remains at the observed fixture Checks; it was not retargeted afterward.
+
+![Actual native schematic generation](member-schematic-preview.jpg)
+
+This image is the first native generation before the previous/next refinement. The original173.png filename is preserved in outputs; its native capture bytes are JPEG, so an identical173.jpg and this correctly named evidence copy were added without recompressing. [Native evidence](schematic-preview-native.json).
+
+The human's latest direction prioritizes UI flow, feature organization, tool discoverability and visual fidelity to the approved concepts. Subsequent milestones should reuse verified engineering functionality and add backend work only for necessary UI connections or observed regressions. Compact and visual acceptance checks remain on that UI checklist.

@@ -206,3 +206,6 @@ export * from "./assembly-model-summary";
 export { useAssemblyModelSummaries } from "./queries";
 
 export * from "./assembly-schematic-inspection";
+
+export * from "./assembly-schematic-preview";
+export { useAssemblySchematicPreview } from "./queries";

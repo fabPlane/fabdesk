@@ -1,3 +1,4 @@
+import { inspectAssemblySchematicPreview } from "./assembly-schematic-preview";
 import { inspectAssemblyModelSummaries } from "./assembly-model-summary";
 import { inspectAssemblyBoardModel } from "./assembly-board-model";
 import { inspectAssemblyCheckSummaries } from "./assembly-check-summary";
@@ -1001,4 +1002,9 @@ export function useAssemblyModelSummaries(projectId: string, data: ProjectBoardS
 export function useAssemblyBoardModel(projectId: string, board: BoardSourceSelection, enabled = true) {
   const client = useCoreClient();
   return useQuery({ queryKey: ["assembly-board-model", projectId, board.sourceId, board.manifestSha256], queryFn: () => inspectAssemblyBoardModel(client, projectId, board), enabled });
+}
+
+export function useAssemblySchematicPreview(projectId: string, board: BoardSourceSelection, selectedPath: string | null, enabled = true) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["assembly-schematic-preview", projectId, board.sourceId, board.manifestSha256, selectedPath], queryFn: () => inspectAssemblySchematicPreview(client, projectId, board, selectedPath), enabled });
 }

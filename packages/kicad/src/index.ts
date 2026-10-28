@@ -50,6 +50,8 @@ export {
 } from "./drc";
 export {
   inspectSchematicHierarchy,
+  exportOwnedSchematicSvg,
+  type OwnedSchematicSvg,
   type SchematicHierarchy,
   type SchematicHierarchyIssue,
   type SchematicHierarchySheet,

@@ -47,3 +47,30 @@ export const AssemblyBoardModelRevision = BoardModelRevision.extend({
   warnings: z.array(z.string()).default([]),
 });
 export type AssemblyBoardModelRevision = z.infer<typeof AssemblyBoardModelRevision>;
+
+/** Member schematic preview pointer. Versioned SVGs are immutable; publication replaces only this receipt. */
+export const SCHEMATIC_PREVIEW_REVISION_PATH = "renders/schematic.revision.json";
+const SchematicSourceFile = z.object({ path: z.string().min(1), sha256: z.string().regex(/^[a-f0-9]{64}$/) }).strict();
+export const AssemblySchematicPreviewRevision = z.object({
+  contract: z.literal("fabplane.schematic-preview-revision.v1"),
+  boardSource: BoardSourceSelection.extend({ projectId: z.string().min(1) }).strict(),
+  sourceRevision: z.string().regex(/^[a-f0-9]{64}$/),
+  sourceFiles: z.array(SchematicSourceFile).min(1).max(257),
+  sheets: z.array(z.object({ path: z.string().min(1), name: z.string().min(1).max(512), sha256: z.string().regex(/^[a-f0-9]{64}$/) }).strict()).min(1).max(256),
+  generatedAt: z.string().datetime(),
+  dependencies: z.literal("unverified"),
+}).strict().superRefine((value, ctx) => {
+  const portable = (path: string) => !path.startsWith("/") && !path.includes("\\") && !path.includes(":") && !path.includes("\0") && path.split("/").every(part => part && part !== "." && part !== "..");
+  const seen = new Set<string>();
+  for (const [index, file] of value.sourceFiles.entries()) {
+    if (!portable(file.path) || !/\.kicad_(sch|pro)$/.test(file.path) || seen.has(file.path)) ctx.addIssue({ code: "custom", path: ["sourceFiles", index, "path"], message: "Use distinct native source paths within the declared board directory" });
+    seen.add(file.path);
+  }
+  if (!seen.has("board.kicad_sch")) ctx.addIssue({ code: "custom", path: ["sourceFiles"], message: "The native root schematic is required" });
+  seen.clear();
+  for (const [index, sheet] of value.sheets.entries()) {
+    if (!portable(sheet.path) || !sheet.path.startsWith("renders/schematic/") || !sheet.path.endsWith(".svg") || seen.has(sheet.path)) ctx.addIssue({ code: "custom", path: ["sheets", index, "path"], message: "Use distinct versioned schematic SVG paths" });
+    seen.add(sheet.path);
+  }
+});
+export type AssemblySchematicPreviewRevision = z.infer<typeof AssemblySchematicPreviewRevision>;

@@ -1,3 +1,4 @@
+import { renderMemberSchematicPreview } from "../member-schematic-preview";
 /** Render toolset: schematic/PCB images, GLB, and product videos. */
 import { createHash } from "node:crypto";
 import { AssemblyBoardModelRevision, BoardModelRevision, BOARD_MODEL_REVISION_PATH, PCB_PREVIEW_REVISION_PATH } from "@fabdesk/protocol";
@@ -38,11 +39,13 @@ async function fileIdentity(path: string): Promise<{ sha256: string; bytes: numb
 
 export const render_schematic_svg = defineTool({
   name: "render_schematic_svg",
+  boardScoped: true,
   toolset: "render",
   title: "Render schematic",
   description:
-    "Export board.kicad_sch as SVG and return PNG image pixels bound to the source file revision.",
+    "Export schematic SVG previews. Single-board projects also receive PNG pixels. Assembly members require expectedHierarchyRevision from schematic_inspect and publish all captured sheets with a source-qualified receipt; maxWidth only affects single-board PNGs.",
   inputSchema: {
+    expectedHierarchyRevision: z.string().regex(/^[a-f0-9]{64}$/).optional().describe("Required for an assembly member: aggregate revision from its saved schematic inspection"),
     maxWidth: z.number().int().min(320).max(4096).default(1600),
   },
   annotations: {
@@ -52,7 +55,8 @@ export const render_schematic_svg = defineTool({
     idempotentHint: true,
   },
   longRunning: true,
-  handler: async ({ maxWidth }, ctx) => {
+  handler: async ({ maxWidth, expectedHierarchyRevision }, ctx) => {
+    if (ctx.board) return renderMemberSchematicPreview(ctx, expectedHierarchyRevision);
     const project = ctx.requireProject();
     const cli = await requireKicad(ctx);
     const schematic = await requireSchematic(project);

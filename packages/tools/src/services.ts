@@ -754,6 +754,10 @@ export interface KicadService {
       signal?: AbortSignal;
     },
   ): Promise<{ paths: string[] }>;
+  exportOwnedSchematicSvg(
+    cli: KicadCli,
+    opts: { projectDir: string; hierarchy: SchematicHierarchy; signal?: AbortSignal },
+  ): Promise<{ sourceRevision: string; sourceFiles: Array<{ path: string; sha256: string }>; sheets: Array<{ name: string; svg: Uint8Array }> }>;
   exportSchematicSvg(
     cli: KicadCli,
     opts: { schematic: string; outDir: string; signal?: AbortSignal },
