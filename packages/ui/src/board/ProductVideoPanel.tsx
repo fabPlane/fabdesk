@@ -45,6 +45,7 @@ export type ProductVideoPanelProps = {
   modelStatus?: ReactNode;
   modelPreview?: ReactNode;
   canGenerate?: boolean;
+  checkingSources?: boolean;
   projectId: string;
   glb: FileEntry | undefined;
   videos: FileEntry[];
@@ -61,6 +62,9 @@ export type ProductVideoPanelProps = {
   onDownloadGlb?: () => void;
   onPreviewGlb?: () => void;
   downloading?: boolean;
+  onDownloadVideo?: (path: string) => void;
+  downloadingVideo?: string | null;
+  onOpenVideoFile?: (path: string) => void;
   onMakeVideo: () => void;
 };
 
@@ -78,6 +82,7 @@ export function ProductVideoPanel({
   modelStatus,
   modelPreview,
   canGenerate = true,
+  checkingSources = false,
   glb,
   videos,
   poster,
@@ -93,6 +98,9 @@ export function ProductVideoPanel({
   onDownloadGlb,
   onPreviewGlb,
   downloading,
+  onDownloadVideo,
+  downloadingVideo,
+  onOpenVideoFile,
   onMakeVideo,
 }: ProductVideoPanelProps) {
   const preview = pickPreview(videos);
@@ -111,7 +119,7 @@ export function ProductVideoPanel({
           )}
         </Button>
         {glb && onPreviewGlb && <Button size="sm" variant="ghost" onClick={onPreviewGlb}>View model</Button>}
-        {glb && onDownloadGlb && <Button size="sm" variant="ghost" disabled={downloading} onClick={onDownloadGlb}>{downloading ? "Downloading…" : "Download GLB"}</Button>}
+        {glb && onDownloadGlb && <Button size="sm" variant="ghost" disabled={downloading || !!downloadingVideo || exporting || making} onClick={onDownloadGlb}>{downloading ? "Downloading…" : "Download GLB"}</Button>}
         <span className="text-[11px] text-muted">
           {glb
             ? `${glb.path} · ${(glb.size / 1024).toFixed(0)} KB`
@@ -119,7 +127,7 @@ export function ProductVideoPanel({
         </span>
         {modelStatus}
       </div>
-      {!canGenerate && <p role="status" className="text-xs text-muted">Verify a saved PCB in Board before generating a model or video.</p>}
+      {!canGenerate && !making && !exporting && <p role="status" className="text-xs text-muted">{checkingSources ? "Checking saved PCB sources…" : "Verify a saved PCB in Board before generating a model or video."}</p>}
       {(making || exporting) && <p role="status" className="fd-video-job text-xs text-muted">{making ? "Making video…" : "Exporting model…"} {making ? makeNote : exportNote}</p>}
       {exportError && <p role="alert" className="text-xs text-danger">{exportError}</p>}
       {makeError && <p role="alert" className="text-xs text-danger">{makeError}</p>}
@@ -239,9 +247,10 @@ export function ProductVideoPanel({
               <div className="text-[11px] text-muted">
                 {videos.map((f) => `${basename(f.path)} (${(f.size / 1024).toFixed(0)} KB)`).join(" · ")}
               </div>
-              <p className="text-[12px] text-muted">
-                Files are in exports/. Attach the MP4 to a revision or drop the GIF/WebM on a launch page.
-              </p>
+              <div className="flex flex-wrap items-center gap-2" aria-label="Download saved video formats">
+                {videos.map(file => <Button key={file.path} size="sm" variant="secondary" aria-label={`Download ${file.path.split(".").pop()?.toUpperCase()}`} disabled={!onDownloadVideo || downloading || !!downloadingVideo || making || exporting} onClick={() => onDownloadVideo?.(file.path)}>{downloadingVideo === file.path ? "Downloading…" : `Download ${file.path.split(".").pop()?.toUpperCase()}`}</Button>)}
+                {onOpenVideoFile && <Button size="sm" variant="ghost" onClick={() => onOpenVideoFile(preview.path)}>Show exported file</Button>}
+              </div>
             </>
           ) : poster ? (
             <>

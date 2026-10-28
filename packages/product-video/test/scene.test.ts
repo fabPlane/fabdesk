@@ -34,5 +34,9 @@ describe("scene assembly", () => {
     const part = loadGlb(buildBoxGlb([0.1, 0.8, 0.2, 1]), "box", "renders/board.glb", "board");
     expect(part.triangles.length).toBe(12);
     expect(part.triangles[0]!.color[1]).toBeCloseTo(0.8, 5);
+    // glTF stores metres; video scene/camera geometry uses millimetres.
+    expect(part.bounds.max.x - part.bounds.min.x).toBeCloseTo(20, 4);
+    expect(part.bounds.max.y - part.bounds.min.y).toBeCloseTo(1.6, 4);
+    expect(part.bounds.max.z - part.bounds.min.z).toBeCloseTo(12, 4);
   });
 });

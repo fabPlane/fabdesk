@@ -1073,3 +1073,14 @@ Native use opened the existing schematic from Overview, requested an actual nati
 ![Background native render updates the open Overview](live-schematic-overview.jpg)
 
 [Native source, rendering and reopening evidence](schematic-only-workflow-native.json).
+
+
+### Native model and video exports work through Outputs
+
+The existing board export generated a real GLB and six-second MP4/WebM/GIF. Native use exposed a blocked blob-media policy and a metre/millimetre camera-scale bug. Targeted existing PR380 fixes address both without importing the Inspect/enclosure stack. Outputs now offers direct format downloads and Show exported file. Loading and source-check states distinguish ongoing work from actual failures.
+
+After an owned development restart, the actual player loaded, played, paused and sought the correctly scaled board. Download MP4 opened the native Save dialog; after a focus change, the specifically requested downloaded file matched the generated file byte-for-byte. Files navigation opened its real video preview. All19stable preexisting files stayed identical; restart released one ephemeral KiCad lock. Root typecheck,228UItests,26product-video tests and2video-tool tests passed. The earlier full-suite mechanical timeout remains recorded; no new full-suite pass is claimed.
+
+![Actual corrected native board video and format downloads](video-playback-corrected-native.jpg)
+
+[Native evidence and precise limits](model-video-native.json).

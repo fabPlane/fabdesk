@@ -29,12 +29,12 @@ export function ThreeDTab() {
   if (sources.isError && !sources.data) return <LoadError title="Could not inspect board sources" onRetry={() => void sources.refetch()} />;
   if (sources.isPending) return <div className="flex h-full items-center justify-center"><Spinner /></div>;
   if (sources.data?.mode === "assembly") return <AssemblyModels key={projectId} projectId={projectId} data={sources.data} checking={sources.isFetching} failed={sources.isError} onRetry={() => void sources.refetch()} />;
-  return <SingleBoardThreeDTab key={projectId} scopeReady={!sources.isFetching && !sources.isError && sources.data?.mode === "single"} />;
+  return <SingleBoardThreeDTab key={projectId} checkingSources={sources.isFetching} scopeReady={!sources.isFetching && !sources.isError && sources.data?.mode === "single"} />;
 }
 
-function SingleBoardThreeDTab({ scopeReady }: { scopeReady: boolean }) {
+function SingleBoardThreeDTab({ scopeReady, checkingSources }: { scopeReady: boolean; checkingSources: boolean }) {
   const client = useCoreClient();
-  const [downloading, setDownloading] = useState(false);
+  const [downloadPath, setDownloadPath] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const canvasMode = useUiStore((s) => s.canvasMode);
   const canvas = useUiStore((s) => s.canvasMode && s.workspaceArea === "boards");
@@ -46,16 +46,16 @@ function SingleBoardThreeDTab({ scopeReady }: { scopeReady: boolean }) {
   const videoJob = useRunsStore((s) => (videoRun.state.jobId ? s.jobs[videoRun.state.jobId] : undefined));
   const [form, setForm] = useState<ProductVideoForm>(DEFAULT_FORM);
 
-  const downloadGlb = async () => {
-    if (!projectId || downloading) return;
-    setDownloading(true); setDownloadError(null);
+  const downloadOutput = async (path: string) => {
+    if (!projectId || downloadPath || useUiStore.getState().activeProjectId !== projectId || !project.data?.files.some(file => file.path === path)) return;
+    setDownloadPath(path); setDownloadError(null);
     try {
-      const blob = await client.readFileBlob(projectId, GLB_PATH);
+      const blob = await client.readFileBlob(projectId, path);
       const url = URL.createObjectURL(blob);
-      const link = document.createElement("a"); link.href = url; link.download = "board.glb"; link.click();
+      const link = document.createElement("a"); link.href = url; link.download = path.split("/").pop() ?? "output"; link.click();
       setTimeout(() => URL.revokeObjectURL(url), 10_000);
-    } catch { setDownloadError("Could not download the model. Try again."); }
-    finally { setDownloading(false); }
+    } catch { setDownloadError(`Could not download ${path.split("/").pop()}. Try again.`); }
+    finally { setDownloadPath(null); }
   };
   const files = project.data?.files ?? [];
   const glb = files.find((f) => f.path === GLB_PATH);
@@ -63,7 +63,7 @@ function SingleBoardThreeDTab({ scopeReady }: { scopeReady: boolean }) {
   const videos = useMemo(
     () =>
       files
-        .filter((f) => f.path.startsWith(VIDEO_PREFIX) && !f.path.endsWith(".json"))
+        .filter((f) => f.path.startsWith(VIDEO_PREFIX) && /\.(?:mp4|webm|gif)$/i.test(f.path))
         .sort((a, b) => b.mtime.localeCompare(a.mtime)),
     [files],
   );
@@ -93,6 +93,7 @@ function SingleBoardThreeDTab({ scopeReady }: { scopeReady: boolean }) {
     <ProductVideoPanel
       projectId={projectId}
       canGenerate={canGenerate}
+      checkingSources={checkingSources || project.isFetching}
       modelStatus={<BoardModelStatus projectId={projectId} present={!!glb} updating={glbRun.state.status === "running"} />}
       {...(canvasMode && glb ? { modelPreview: <Suspense fallback={<Spinner />}><ModelCanvas key={`${projectId}:${GLB_PATH}`} projectId={projectId} path={GLB_PATH} /></Suspense> } : {})}
       glb={glb}
@@ -106,8 +107,11 @@ function SingleBoardThreeDTab({ scopeReady }: { scopeReady: boolean }) {
       {...(videoJob?.note ? { makeNote: videoJob.note } : {})}
       {...((glbRun.state.error || downloadError) ? { exportError: glbRun.state.error || downloadError! } : {})}
       {...(videoRun.state.error ? { makeError: videoRun.state.error } : {})}
-      onDownloadGlb={() => void downloadGlb()}
-      downloading={downloading}
+      onDownloadGlb={() => void downloadOutput(GLB_PATH)}
+      downloading={downloadPath === GLB_PATH}
+      onDownloadVideo={path => void downloadOutput(path)}
+      downloadingVideo={downloadPath !== GLB_PATH ? downloadPath : null}
+      onOpenVideoFile={path => { if (useUiStore.getState().activeProjectId === projectId) useUiStore.getState().openProjectFile(path); }}
       {...(canvasMode ? { onPreviewGlb: () => useUiStore.getState().setBoardTab("3d") } : {})}
       onExportGlb={() => void glbRun.run("glb", { projectId })}
       onMakeVideo={() =>
