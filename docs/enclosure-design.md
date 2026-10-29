@@ -2,6 +2,8 @@
 
 Open **CAD → Enclosure**. The guided workspace has four tabs: **Start**, **Space**, **PCB**, and **Review**. The primary action stays in the footer: Continue → Preview → Apply → Download. Dimensions and units are explicit, secondary controls are collapsed, and a changed dimension invalidates the confirmation and previous preview.
 
+The Review tab separates required fixes from visual checks using labelled status cards, icons, board/blocker counts and contextual navigation. Raw diagnostic text remains under **Technical details**. **Check before printing** is a short checklist rather than a log paragraph. No status claims the design is certified for manufacture.
+
 ## Workflows
 
 - **New enclosure:** dimensions start from the project PCB. Adjust the rectangular interior, wall/floor/lid thickness, clearance, mounting posts and connector openings. Additional project PCBs can be positioned in the same coordinate frame. Preview the generated base and lid before applying.
@@ -47,6 +49,14 @@ All mechanical values use millimetres, PCB XY coordinates and Z up. Exported CAD
 - Live native PCB editing could not complete: the PCB bridge was unavailable. The failed edit restored the isolated test copy. Downloading the matching Windows backend was blocked by disk space; the incomplete archive was removed. Native imported-case modification also still needs an active FabPlane CAD bridge in the app.
 
 ## Running-app evidence
+
+### Visual fit review
+
+| Review notes | Blocking collisions |
+| --- | --- |
+| ![Readable status and review cards](screenshots/mechanical-workspace/15-visual-fit-review.png) | ![Required fixes have distinct cards](screenshots/mechanical-workspace/16-visual-fit-blockers.png) |
+
+Follow-up checks: UI typecheck and desktop build pass; live navigation to PCB, expandable original diagnostics and collision-disabled Apply work. Dark/light layouts and a 310 px inspector were checked with no horizontal overflow.
 
 These screenshots use the VAIO P project's A5 board copy and original bottom-cover STL. The board components are estimated envelopes. The source-cover screenshot shows import/display, not a completed native modification.
 

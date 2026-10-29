@@ -14,6 +14,7 @@ import {
   type EnclosureBoardSummary,
 } from "@fabdesk/client-core";
 import { MechanicalScene, type SceneModel, type BoardGeometry } from "./MechanicalScene";
+import { EnclosureFitReview } from "./EnclosureFitReview";
 
 type Result = {
   design?: MechanicalDesign | null;
@@ -930,26 +931,11 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
                   >
                     Check fit
                   </button>
-                  {report && (
-                    <div className="fd-case-results">
-                      <strong>
-                        {report.status === "blocked"
-                          ? "Resolve these fit issues"
-                          : "Ready for visual review"}
-                      </strong>
-                      <p>{report.checkedBoards} board(s) checked</p>
-                      {report.issues.map((i, n) => (
-                        <div className={`fd-case-issue ${i.severity}`} key={n}>
-                          <span>{i.severity === "error" ? "Fix" : "Review"}</span>
-                          <p>{i.message}</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  {report && <EnclosureFitReview report={report} onNavigate={setStep} />}
                   {!preview && (
                     <p className="fd-case-hint">
-                      A current preview is required before applying. Editing dimensions or PCB files
-                      invalidates it.
+                      Next: preview your case. If you change the design, preview it again before
+                      applying.
                     </p>
                   )}
                   {preview && (
