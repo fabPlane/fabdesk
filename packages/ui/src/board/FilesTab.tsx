@@ -1,3 +1,4 @@
+import { boardFileDestination } from "@fabdesk/client-core";
 import { CanvasToolButton } from "../components/CanvasToolButton";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ProjectImage } from "../chat/ProjectImage";
@@ -86,6 +87,7 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
   const tree = useMemo(() => buildFileTree(files, query), [project.data?.files, query]);
   const file = files.find((f) => f.path === selected);
   const appearance = file ? fileAppearance(file.path) : null;
+  const designDestination = file && scopeReady && sources.data ? boardFileDestination(sources.data, file.path) : null;
   const tooBig = !!file && file.size > MAX_TEXT_BYTES;
   const text = useProjectText(projectId, file && appearance?.preview === "text" && !tooBig ? file.path : null);
   async function exportFiles() {
@@ -182,6 +184,13 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
               <span className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted">{appearance.label}</span>
               <span className="text-[10px] text-muted">{formatFileSize(file.size)}</span>
               <div role="group" aria-label="Selected file actions" className="flex max-w-full shrink-0 flex-wrap items-center gap-1">
+              {designDestination && <Button size="sm" variant="ghost" onClick={() => {
+                const ui = useUiStore.getState();
+                if (ui.activeProjectId !== projectId || sources.isFetching || sources.isError || !sources.data || !file) return;
+                const target = boardFileDestination(sources.data, file.path); if (!target) return;
+                if (target.selection) ui.setAssemblyBoard(target.selection);
+                ui.setBoardTab(target.tab);
+              }}><Icon name={designDestination.tab === "pcb" ? "pcb" : "schematic"} width={16} height={16} />{designDestination.tab === "pcb" ? "Open board" : "Open schematic"}</Button>}
               <CanvasToolButton icon="export" label={downloadPath === file.path ? "Downloading…" : "Download file"} disabled={downloadPath !== null} onClick={() => void downloadFile(file.path)} />
               {editableSketchPaths([file]).includes(file.path) && <Button size="sm" variant="ghost" onClick={() => {
                 const ui = useUiStore.getState();

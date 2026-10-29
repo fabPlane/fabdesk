@@ -222,3 +222,5 @@ export * from "./kept-output";
 
 export * from "./stable-project-blob";
 export * from "./overview-images";
+export * from "./diff-preview";
+export * from "./board-file-destination";

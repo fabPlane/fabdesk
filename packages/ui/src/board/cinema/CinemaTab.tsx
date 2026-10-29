@@ -227,18 +227,25 @@ function ProjectCinema({ projectId, scopeReady }: { projectId: string; scopeRead
     await route.run("route", { projectId, ...(pickedRouter !== "default" ? { router: pickedRouter } : {}) });
     void history.refetch();
   }
+  const failureNotice = runError && (
+        <div role="alert" className="border-b border-danger/40 bg-danger/10 px-3 py-1.5 text-xs text-danger" data-testid="route-run-error">
+          <p><span className="font-semibold">Routing {runRecord.data?.status === "timed_out" ? "timed out" : "failed"}</span> using {runRecord.data?.router}. Check router availability before trying again. <Button size="sm" variant="ghost" onClick={() => useUiStore.getState().setSettingsOpen(true, "router")}>Manage routers</Button></p>
+          <details className="mt-1"><summary className="cursor-pointer">Failure details</summary><p className="mt-2 break-words">{runError}</p></details>
+        </div>
+      );
   const setup = <section className="fd-routing-setup" aria-label="Routing setup">
-    <h2>Route your saved PCB</h2>
-    <p>Watch copper routing live, then scrub through the recorded steps.</p>
+    <h2>Routing</h2>
+    <p>Saved PCB · Board-level routing</p>
     <label className="flex flex-col gap-2 text-xs">Router
       <Select aria-label="Router" value={pickedRouter} disabled={busy} onChange={e => setPickedRouter(e.target.value as "default" | RouterCatalogId)}>
         {picker.map(option => <option key={option.id} value={option.id} disabled={option.disabled} title={option.hint}>{option.label}{option.disabled ? ` (${option.note ?? "not installed"})` : ""}</option>)}
       </Select>
     </label>
-    <Button size="sm" variant="ghost" onClick={() => useUiStore.getState().setSettingsOpen(true, "router")}>Manage routers</Button>
+    <details className="fd-routing-options"><summary>Router options</summary><Button size="sm" variant="ghost" onClick={() => useUiStore.getState().setSettingsOpen(true, "router")}>Manage routers</Button></details>
     {routers.isError && <p role="alert">Router availability could not be checked. <Button size="sm" onClick={() => void routers.refetch()}>Retry</Button></p>}
     <p role="status">{project.isError ? "Project files could not be read." : !scopeReady || project.isFetching ? "Checking saved PCB…" : !hasPcb ? "Add a saved PCB in Board before starting routing." : "Routing can update the saved PCB after its source checks. Review the result and current PCB checks before fabrication."}</p>
-    <Button variant="primary" disabled={!canRoute} onClick={() => void startRouting()}>{busy ? "Routing…" : "Route board"}</Button>
+    <Button className="fd-routing-start-action" variant="primary" disabled={!canRoute} onClick={() => void startRouting()}>{busy ? "Routing…" : "Start routing"}</Button>
+    {ownedRunId && <section className="fd-routing-saved-run"><h3>Saved run</h3>{failureNotice || <p>Recorded {runRecord.data?.status ?? "run"} · inspect playback before starting another run.</p>}</section>}
   </section>;
   const feedback = <>{route.state.error && <p role="alert" className="text-danger">{route.state.error}</p>}{cancel.state.error && <p role="alert" className="text-danger">{cancel.state.error}</p>}{history.isError && <p role="alert">Routing history could not be loaded. <Button size="sm" onClick={() => void history.refetch()}>Retry history</Button></p>}{frameError && <p role="alert">{frameError} <Button size="sm" onClick={() => setFrameRetry(value => value + 1)}>Retry frames</Button></p>}</>;
   if (!run) return <div className="fd-routing-start">
@@ -318,12 +325,7 @@ function ProjectCinema({ projectId, scopeReady }: { projectId: string; scopeRead
         </span>
       </div>
       }
-      {runError && (
-        <div role="alert" className="border-b border-danger/40 bg-danger/10 px-3 py-1.5 text-xs text-danger" data-testid="route-run-error">
-          <p><span className="font-semibold">Routing {runRecord.data?.status === "timed_out" ? "timed out" : "failed"}</span> using {runRecord.data?.router}. Check router availability before trying again. <Button size="sm" variant="ghost" onClick={() => useUiStore.getState().setSettingsOpen(true, "router")}>Manage routers</Button></p>
-          <details className="mt-1"><summary className="cursor-pointer">Failure details</summary><p className="mt-2 break-words">{runError}</p></details>
-        </div>
-      )}
+      {!setupOpen && failureNotice}
       {/* The box owns the size; the canvas is absolutely positioned so its bitmap size never feeds back into layout. */}
       <div ref={boxRef} className="fd-routing-drawing relative min-h-0 flex-1">
         <canvas ref={canvasRef} className="absolute inset-0 block h-full w-full" hidden={!!showSavedReference} />

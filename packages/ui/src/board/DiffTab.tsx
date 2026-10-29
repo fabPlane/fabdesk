@@ -1,3 +1,4 @@
+import { diffPreviewSvg } from "@fabdesk/client-core";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Badge, Button, EmptyState, LoadError, Select, Spinner } from "../components/ui";
@@ -136,7 +137,7 @@ export function DiffTab() {
   const fileKey = FILE_KEYS[surface][mode];
   const svgPath = report?.files?.[fileKey] ?? report?.files?.[FILE_KEYS[surface].structured];
   const svg = useProjectText(projectId, svgPath ?? null);
-  const drawing = useMemo(() => selectDiffGeometry(svg.data ?? "", selection), [svg.data, selection]);
+  const drawing = useMemo(() => selectDiffGeometry(diffPreviewSvg(svg.data ?? ""), selection), [svg.data, selection]);
   const select = (next: DiffSelection) => setSelection(current =>
     current?.kind === next.kind && current.id === next.id ? null : next,
   );
@@ -248,6 +249,7 @@ export function DiffTab() {
           <span className="text-[11px] text-muted">{100 - blend}% From / {blend}% To · position and zoom stay fixed</span>
         </div>
       )}
+      {report && <DiffLegend mode={mode} />}
       {reportQuery.isError ? (
         <LoadError title="Could not load the last diff report" onRetry={() => void reportQuery.refetch()} />
       ) : !report ? (
@@ -278,7 +280,6 @@ export function DiffTab() {
             <p className="mb-2 font-medium">
               {shortRef(report.from?.ref ?? from)} → {shortRef(report.to?.ref ?? to)}
             </p>
-            <DiffLegend mode={mode} />
             <p className="mb-3 text-[11px] text-muted">Click a change to highlight and zoom. Click again or press Esc to clear.</p>
             <DiffGroup
               selection={selection} onSelect={select}
@@ -334,7 +335,7 @@ function DiffLegend({ mode }: { mode: Mode }) {
         ]
       : [{ color: "#64748b", label: "Revision geometry" }];
   return (
-    <section aria-label="Drawing color legend" className="mb-3 rounded border border-border bg-panel p-2">
+    <section aria-label="Drawing color legend" className="fd-diff-legend">
       <p className="mb-1.5 text-[11px] font-medium">Drawing colors</p>
       <ul className="space-y-1 text-[11px]">
         {[...entries, { color: "#2563eb", label: "Selected item" }].map(({ color, label }) => (
