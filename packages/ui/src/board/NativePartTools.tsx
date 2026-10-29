@@ -1,3 +1,4 @@
+import { ErrorNotice } from "../components/ErrorNotice";
 import { askAboutSurface, useAssistantSurface } from "../chat/useAssistantSurface";
 import { DisclosureSummary } from "../components/DisclosureSummary";
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
@@ -33,12 +34,12 @@ export function NativePartTools({ projectId, board, point, openAbove, onMoved, c
   const [previewError, setPreviewError] = useState<string | null>(null);
   const parts = usePcbPartsNear(projectId, point, open && mode === "parts", board);
   const current = parts.data;
-  const assistantSurface = { projectId, label: mode === "outline" && open ? "Board · Resize outline" : selection ? `Board · ${selection.part.ref}` : "Board · Selected location", priority: 20, details: JSON.stringify({ board, pointMm: point, part: selection?.part, recordedSourceSha256: selection?.sourceSha256, editor: open ? mode : "location", proposedFields: open && selection ? fields : null, applying: busy, canPosition, error }) };
-  useAssistantSurface(visible ? assistantSurface : null);
   const sourceChanged = !!selection && !!current && selection.sourceSha256 !== current.sourceSha256;
   const values = parsePartPositionInput(fields);
   const changed = !!selection && !!values && (values.x !== selection.part.x || values.y !== selection.part.y || values.rotation !== ((selection.part.rotation % 360) + 360) % 360);
   const hasProposal = !!selection && (fields.x !== String(selection.part.x) || fields.y !== String(selection.part.y) || fields.rotation !== String(selection.part.rotation));
+  const assistantSurface = { projectId, label: mode === "outline" && open ? "Board · Resize outline" : selection ? `Board · ${selection.part.ref}` : "Board · Selected location", priority: 20, details: JSON.stringify({ board, pointMm: point, part: selection?.part, recordedSourceSha256: selection?.sourceSha256, editor: open ? mode : "location", proposedFields: open && hasProposal ? fields : null, unappliedProposal: hasProposal, sourceChanged, applying: busy, canPosition, error }) };
+  useAssistantSurface(visible ? assistantSurface : null);
   const choose = (part: PcbPartPosition, sourceSha256: string, keepRecovery = false) => {
     if (!keepRecovery) setRecovery(null);
     setSelection({ part, sourceSha256 }); setFields({ x: String(part.x), y: String(part.y), rotation: String(part.rotation) }); setError(null); setMessage(null); setPreviewError(null);
@@ -207,8 +208,8 @@ export function NativePartTools({ projectId, board, point, openAbove, onMoved, c
         {selection && <details className="fd-native-part-details"><DisclosureSummary icon="pcb" label="More part actions" /><p className="fd-native-part-note">Ask for a compatible alternative and review its footprint and connections before changing the native board.</p><Button size="sm" onClick={() => { askAboutSurface(assistantSurface, `Find a suitable replacement for ${selection.part.ref}. Check its electrical requirements, footprint and pin mapping, then explain the proposed changes before editing the saved design.`); setOpen(false); }}>Ask to replace {selection.part.ref}</Button></details>}
       </>}
       {message && <p role="status" className="fd-native-part-warning">{message}<BoardChecksButton projectId={projectId} {...(board ? { board } : {})} /></p>}
-      {previewError && <details className="fd-native-part-note"><DisclosureSummary icon="warning" label="Why couldn’t the preview update?" variant="compact" /><p>{previewError}</p><p>Resolve the export error, then choose Update preview. The native placement is already saved.</p></details>}
-      {error && <p role="alert" className="fd-native-part-warning">{error}</p>}
+      {previewError && <details className="fd-native-part-note"><DisclosureSummary icon="warning" label="Why couldn’t the preview update?" variant="compact" /><ErrorNotice error={previewError} /><p>Resolve the export error, then choose Update preview. The native placement is already saved.</p></details>}
+      {error && <ErrorNotice error={error} />}
       </>}
     </section>, root.current?.closest(".fd-canvas-workspace") ?? document.body)}
   </div>;

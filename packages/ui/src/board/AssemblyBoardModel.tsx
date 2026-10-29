@@ -1,3 +1,4 @@
+import { ErrorNotice } from "../components/ErrorNotice";
 import { DisclosureSummary } from "../components/DisclosureSummary";
 import { lazy, Suspense, useState } from "react";
 import type { ProjectBoardSources } from "@fabdesk/protocol";
@@ -38,7 +39,7 @@ export function AssemblyBoardModel({ projectId, data, selection, enabled }: { pr
     {model.data?.model ? <Suspense fallback={<div className="flex h-full items-center justify-center"><Spinner /></div>}><ModelCanvas projectId={projectId} path={model.data.path} blob={model.data.model} /></Suspense> : <EmptyState title="See this board in 3D">Export a model from its saved KiCad PCB. Components appear when their model files are available.</EmptyState>}
     <div className="fd-assembly-model-actions"><Button size="sm" disabled={!enabled || busy || model.isFetching || !model.data} onClick={() => void run()}>{busy ? "Exporting model…" : model.data?.model ? "Update this model" : "Generate 3D preview"}</Button>{model.data?.model && <Button size="sm" variant="ghost" disabled={!enabled || busy || model.isFetching} onClick={download}>Download GLB</Button>}</div>
     {!!model.data?.warnings.length && <details className="fd-assembly-model-warnings"><DisclosureSummary icon="warning" label="Export notes" badge={model.data.warnings.length} warning variant="compact" /><ul>{model.data.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></details>}
-    {(error || tool.state.error) && <p role="alert" className="fd-assembly-detail-error">{error ?? tool.state.error}</p>}
+    {(error || tool.state.error) && <ErrorNotice error={error ?? tool.state.error} />}
   </div>;
 }
 

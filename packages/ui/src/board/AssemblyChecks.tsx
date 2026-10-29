@@ -1,3 +1,4 @@
+import { ErrorNotice } from "../components/ErrorNotice";
 import { useAssistantSurface } from "../chat/useAssistantSurface";
 import { CheckFindingDetails } from "./CheckFindingDetails";
 import { CheckFindingFilters } from "./CheckFindingFilters";
@@ -75,7 +76,7 @@ export function AssemblyChecks({ projectId, data, checking, failed, onRetry }: {
                 }}>Show on PCB</Button>}</p>)}</CheckFindingDetails>}</div>}</> : <EmptyState title="No findings listed in this report">This PCB-only report does not establish schematic parity or assembly compatibility.</EmptyState> : null}
       </>}
     </>}
-    {runScope === scope && (resultError || tool.state.error) && <p role="alert" className="fd-update-feedback">{resultError ?? tool.state.error}</p>}
+    {runScope === scope && (resultError || tool.state.error) && <ErrorNotice error={resultError ?? tool.state.error} />}
     </div>
   </div>;
 }

@@ -25,7 +25,7 @@ export function captureAssistantContext(state: ReturnType<typeof selectAssistant
     ...(surface ? { focusedSurface: { label: surface.label, details: surface.details.slice(0, 6000) } } : {}),
     sourceCheck: checking ? "pending or unavailable" : sources?.mode ?? "unavailable",
     ...(selection ? { board: { sourceId: selection.sourceId, instanceId: selection.instanceId, manifestSha256: selection.manifestSha256, name: row?.source.name, availability: row?.status, pcbSha256: checking ? undefined : row?.pcbSha256 } } : {}),
-    ...(finding ? { finding: { description: finding.description.slice(0, 1000), item: finding.itemDescription.slice(0, 1000), pointMm: finding.point, recordedSourceSha256: finding.sourceSha256 } } : {}),
+    ...(finding ? { finding: { description: finding.description.slice(0, 1000), item: finding.itemDescription.slice(0, 1000), pointMm: finding.point, recordedSourceSha256: finding.sourceSha256, locationStatus: "Requested from a saved report; current source and drawing match require verification" } } : {}),
     ...(attached.length ? { explicitlyAttachedContext: attached.slice(0, 20).map(item => ({ label: item.label.slice(0, 160), details: item.instruction.slice(0, Math.max(160, Math.floor(6000 / Math.min(attached.length, 20)))) })), attachedContextCount: attached.length } : {}),
   };
   const encoded = JSON.stringify(details);

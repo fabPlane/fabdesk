@@ -1,3 +1,4 @@
+import { ErrorNotice } from "../components/ErrorNotice";
 import { useAssistantSurface } from "../chat/useAssistantSurface";
 import { CheckFindingDetails } from "./CheckFindingDetails";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -87,7 +88,7 @@ function SingleBoardChecks({ projectId, scopeVerified }: { projectId: string; sc
         {busy && <Spinner />}
       </div>
       {project.isError ? <LoadError title="Could not inspect saved design files" onRetry={() => void project.refetch()} /> : !sourceReady ? <p role="status">Checking project sources…</p> : (!hasPcb || !hasSchematic) && <p className="fd-single-checks-prerequisite">{!hasPcb && !hasSchematic ? "Save a PCB or schematic to start checking your design." : !hasSchematic ? "No saved schematic yet. PCB checks are available; electrical rule checking needs a schematic." : "No saved PCB yet. Schematic checks are available; PCB design rules need a board."}</p>}
-      {tool.state.error && <p role="alert" className="text-xs text-danger">{tool.state.error}</p>}
+      {tool.state.error && <ErrorNotice error={tool.state.error} />}
 
     </header>
   );
