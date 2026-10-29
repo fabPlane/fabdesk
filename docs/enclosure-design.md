@@ -56,6 +56,8 @@ All mechanical values use millimetres, PCB XY coordinates and Z up. Exported CAD
 
 ### Select and position boards in the enclosure
 
+Camera drag recovery: informational fit-overlay text now lets pointer gestures reach the canvas, while its buttons remain clickable. Canvas and viewport chrome suppress native text/image dragging. Cancelled pointers, lost mouse capture and window focus loss release camera/part controls and discard an unfinished part move. Live native drags verified orbit through the overlay, recovery after injected pointer cancellation/focus loss and actual capture release, and a successful normal move afterwards. UI typecheck, 10 focused scene/placement tests and the desktop build pass for this fix; PCB source bytes remain unchanged.
+
 Click a PCB in the 3D view or choose it under **Position boards**. Use **Move** arrows/plane handles or the **Rotate** ring; the case stays fixed. Rotation pivots around the board centre while saved/exported placements retain the native PCB coordinate frame. **Undo move** (Ctrl/Cmd+Z outside inputs) restores the last placement change. These controls change enclosure placement, not PCB source bytes.
 
 **Top view**, **Focus board** (F), **Hide case** and **Fit view** make occluded or displaced boards easier to reach. Escape clears selection. **Center in usable space** uses confirmed interior dimensions and preserves mounting height/rotation; it does not certify fit. View controls collapse automatically in narrower workspaces and can also be hidden manually.

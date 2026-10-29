@@ -91,6 +91,7 @@ export class MechanicalScene {
   private point: T.Vector3 | null = null;
   private pointerStart = new T.Vector2();
   private draggedGizmo = false;
+  private activePointers = new Set<number>();
   private themeObserver: MutationObserver;
   private environment: T.WebGLRenderTarget;
   private keyLight = new T.DirectionalLight(0xfff4df, 1.8);
@@ -184,10 +185,15 @@ export class MechanicalScene {
       attributes: true,
       attributeFilter: ["class", "data-skin"],
     });
-    this.renderer.domElement.addEventListener("pointerdown", this.pointerDown);
+    this.renderer.domElement.addEventListener("pointerdown", this.pointerDown, true);
     this.renderer.domElement.addEventListener("pointerup", this.pointerUp);
     this.renderer.domElement.addEventListener("pointermove", this.pointerMove);
     this.renderer.domElement.addEventListener("pointerleave", this.clearHover);
+    this.renderer.domElement.addEventListener("pointercancel", this.pointerInterrupted);
+    this.renderer.domElement.addEventListener("lostpointercapture", this.pointerInterrupted);
+    this.renderer.domElement.addEventListener("dragstart", this.preventNativeDrag);
+    window.addEventListener("blur", this.interruptGesture);
+    document.addEventListener("visibilitychange", this.visibilityChanged);
     this.renderer.domElement.addEventListener("webglcontextlost", this.contextLost);
   }
   private contextLost = (e: Event) => {
@@ -197,10 +203,40 @@ export class MechanicalScene {
     );
   };
   private pointerDown = (e: PointerEvent) => {
+    // Keep Chromium's text/image dragging from taking over the camera gesture.
+    e.preventDefault();
+    this.activePointers.add(e.pointerId);
     this.clearHover();
     this.renderer.domElement.focus({ preventScroll: true });
     this.pointerStart.set(e.clientX, e.clientY);
     this.draggedGizmo = false;
+  };
+  private preventNativeDrag = (e: Event) => e.preventDefault();
+  private pointerInterrupted = (e: PointerEvent) => {
+    if (this.activePointers.has(e.pointerId)) this.interruptGesture();
+  };
+  private visibilityChanged = () => {
+    if (document.hidden) this.interruptGesture();
+  };
+  private interruptGesture = () => {
+    if (!this.activePointers.size && !this.gizmo.dragging) return;
+    const canvas = this.renderer.domElement;
+    const pointers = [...this.activePointers];
+    this.activePointers.clear();
+    // Cancel without committing a partial transform; reset both controls' pointer bookkeeping.
+    this.gizmo.dragging = false;
+    this.gizmo.axis = null;
+    this.gizmo.disconnect();
+    this.orbit.disconnect();
+    for (const id of pointers) if (canvas.hasPointerCapture(id)) canvas.releasePointerCapture(id);
+    this.orbit.connect(canvas);
+    this.gizmo.connect(canvas);
+    this.orbit.enabled = true;
+    this.draggedGizmo = true;
+    this.updateTransforms();
+    this.select(this.selection);
+    this.clearHover();
+    this.render();
   };
   private clearHover = () => {
     if (this.hoverBox) {
@@ -247,6 +283,7 @@ export class MechanicalScene {
     }
   };
   private pointerUp = (e: PointerEvent) => {
+    if (!this.activePointers.delete(e.pointerId)) return;
     if (
       e.button !== 0 ||
       this.draggedGizmo ||
@@ -330,6 +367,7 @@ export class MechanicalScene {
     });
   };
   async setModels(sources: SceneModel[], autoFit = true) {
+    if (this.gizmo.dragging) this.interruptGesture();
     this.clearHover();
     const generation = ++this.generation;
     const added: Array<{ source: SceneModel; object: T.Group }> = [];
@@ -606,6 +644,7 @@ export class MechanicalScene {
     this.render();
   }
   setMode(mode: SceneMode) {
+    if (this.gizmo.dragging) this.interruptGesture();
     this.mode = mode;
     this.gizmo.showX = this.gizmo.showY = !(this.planarPlacement && mode === "rotate");
     this.gizmo.showZ = true;
@@ -748,10 +787,15 @@ export class MechanicalScene {
     });
     for (const m of this.models.values()) disposeObject(m.object);
     this.models.clear();
-    this.renderer.domElement.removeEventListener("pointerdown", this.pointerDown);
+    this.renderer.domElement.removeEventListener("pointerdown", this.pointerDown, true);
     this.renderer.domElement.removeEventListener("pointerup", this.pointerUp);
     this.renderer.domElement.removeEventListener("pointermove", this.pointerMove);
     this.renderer.domElement.removeEventListener("pointerleave", this.clearHover);
+    this.renderer.domElement.removeEventListener("pointercancel", this.pointerInterrupted);
+    this.renderer.domElement.removeEventListener("lostpointercapture", this.pointerInterrupted);
+    this.renderer.domElement.removeEventListener("dragstart", this.preventNativeDrag);
+    window.removeEventListener("blur", this.interruptGesture);
+    document.removeEventListener("visibilitychange", this.visibilityChanged);
     this.clearHover();
     if (this.selectionBox) disposeObject(this.selectionBox);
     this.renderer.domElement.removeEventListener("webglcontextlost", this.contextLost);

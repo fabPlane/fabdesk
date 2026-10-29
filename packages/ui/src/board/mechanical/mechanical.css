@@ -520,7 +520,19 @@
   max-width: 300px;
   width: 100%;
   box-sizing: border-box;
+  pointer-events: none;
+}
+.fd-case-hud .fd-case-fit-legend button {
   pointer-events: auto;
+}
+.fd-case-hud,
+.fd-case-canvas-note,
+.fd-mechanical-viewport-tools,
+.fd-mechanical-bottom,
+.fd-case-canvas canvas,
+.fd-mechanical-stage canvas {
+  user-select: none;
+  -webkit-user-drag: none;
 }
 .fd-case-placement {
   width: 300px;
