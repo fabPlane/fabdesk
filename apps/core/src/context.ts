@@ -14,7 +14,7 @@ const ROOT_BOARD_TOOLS = new Set(["circuit_build", "circuit_place", "route_run",
 function needsConcreteBoard(def: ToolDef): boolean {
   // Unqualified comments remain legacy project-root discussion. An explicit board selector
   // binds the same tools to that source's comments.json; no native board is inferred.
-  if (["comment_list", "comment_pin", "comment_answer", "comment_resolve"].includes(def.name)) return false;
+  if (["comment_list", "comment_pin", "comment_answer", "comment_resolve", "export_bom"].includes(def.name)) return false;
   return def.boardScoped === true || ((def.scope ?? "project") === "project" && (BOARD_TOOLSETS.has(def.toolset) || ROOT_BOARD_TOOLS.has(def.name)));
 }
 

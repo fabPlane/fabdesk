@@ -9,13 +9,13 @@ import {
   OffboardKind,
   findOffboardCatalogPart,
   nextOffboardRef,
-  projectBomLines,
   searchOffboardCatalog,
   type ProjectPartLine,
 } from "@fabdesk/protocol";
 import { PROJECT_FILES } from "../fs";
 import { ToolError, defineTool } from "../registry";
-import { loadNetlistOrNull, loadProjectParts, ok, saveProjectParts, table } from "./common";
+import { readProjectBom } from "../project-bom";
+import { loadProjectParts, ok, saveProjectParts, table } from "./common";
 
 const KindArg = OffboardKind.describe(
   `Off-board category: ${OFFBOARD_KINDS_HELP()}. Electrical PCB parts stay in the netlist / schematic.`,
@@ -145,7 +145,7 @@ export const parts_list = defineTool({
   toolset: "project",
   title: "List the project BOM",
   description:
-    `Show the project's off-board parts (${PROJECT_FILES.projectParts}) and, by default, the coherent bill of materials: electrical netlist components plus off-board hardware. Use scope=offboard for the file alone.`,
+    `Show the captured project BOM with explicit native-source coverage and physical instance quantities. Use scope=offboard for ${PROJECT_FILES.projectParts} alone.`,
   inputSchema: {
     scope: z.enum(["bom", "offboard"]).default("bom").describe("bom = electrical + off-board; offboard = project.parts.json only"),
   },
@@ -166,11 +166,10 @@ export const parts_list = defineTool({
         { parts: file.parts },
       );
     }
-    const netlist = await loadNetlistOrNull(project);
-    const bom = projectBomLines(netlist?.netlist.components ?? [], file.parts);
+    const snapshot = await readProjectBom(ctx), bom = snapshot.lines;
     return ok(
       bom.length
-        ? `Project BOM (${bom.length} lines):\n${table(
+        ? `Project BOM (${bom.length} lines; ${snapshot.complete ? "native source coverage complete" : "partial source coverage — review coverage"}):\n${table(
             bom.map((l) => ({
               kind: l.kind,
               source: l.source,
@@ -182,7 +181,7 @@ export const parts_list = defineTool({
             ["kind", "source", "refs", "qty", "name", "mpn"],
           )}`
         : "Project BOM is empty. Write the electrical netlist and/or add off-board parts with parts_add.",
-      { bom, parts: file.parts, pcbLines: bom.filter((l) => l.source === "pcb").length, offboardLines: file.parts.length },
+      { bom, parts: file.parts, pcbLines: bom.filter((l) => l.source === "pcb").length, offboardLines: file.parts.length, coverage: snapshot.coverage, complete: snapshot.complete, revision: snapshot.revision },
     );
   },
 });

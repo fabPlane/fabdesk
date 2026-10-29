@@ -1,4 +1,5 @@
 import { inspectKeptOutputIdentity, type KeptOutputKind } from "./kept-output";
+import { pcbToolJson } from "./pcb-parts";
 import { inspectVideoInputRevision } from "./video-input-revision";
 import { inspectRouteReview } from "./route-review";
 import { inspectAssemblySchematicPreview } from "./assembly-schematic-preview";
@@ -7,7 +8,7 @@ import { inspectAssemblyBoardModel } from "./assembly-board-model";
 import { inspectAssemblyCheckSummaries } from "./assembly-check-summary";
 import { inspectAssemblyPcbCheck } from "./assembly-checks";
 import { inspectAssemblyBoard } from "./assembly-scene";
-import type { BoardSourceSelection, ProjectBoardSources } from "@fabdesk/protocol";
+import type { BoardSourceSelection, ProjectBoardSources, ProjectBomSnapshot } from "@fabdesk/protocol";
 import { inspectBoardModelRevision } from "./board-model-revision";
 import { inspectPcbCheckRevision } from "./check-revision";
 import { inspectPcbOutline } from "./pcb-outline";
@@ -57,6 +58,20 @@ export function useProject(projectId: string | null) {
 export function useBoardSources(projectId: string | null) {
   const client = useCoreClient();
   return useQuery({ queryKey: ["board-sources", projectId], queryFn: () => client.inspectBoardSources(projectId!), enabled: !!projectId });
+}
+
+export function useProjectBom(projectId: string | null) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["project-bom", projectId], enabled: !!projectId, retry: false, staleTime: 30_000,
+    queryFn: async (): Promise<ProjectBomSnapshot> => {
+      const call = await client.callTool("bom_read", { projectId });
+      const job = call.jobId ? await client.waitJob(call.jobId) : null;
+      if (job && job.status !== "done") throw new Error(job.error ?? "Could not read project BOM");
+      const snapshot = pcbToolJson(job ? job.result : call);
+      if (snapshot.contract !== "fabplane.project-bom.v1" || snapshot.projectId !== projectId || !Array.isArray(snapshot.lines) || !Array.isArray(snapshot.coverage)) throw new Error("The parts list did not return a captured project BOM.");
+      return snapshot as unknown as ProjectBomSnapshot;
+    },
+  });
 }
 
 export function useAssemblyPreviewRevisions(projectId: string, sources: ProjectBoardSources["sources"]) {

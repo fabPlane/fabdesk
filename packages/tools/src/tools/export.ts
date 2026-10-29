@@ -2,10 +2,11 @@
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod/v4";
-import { projectBomCsv, projectBomLines } from "@fabdesk/protocol";
-import { PROJECT_FILES, ensureDir, writeAtomic } from "../fs";
+import { projectBomCsv } from "@fabdesk/protocol";
+import { PROJECT_FILES, ensureDir, jailPath, writeAtomic } from "../fs";
+import { readProjectBom, assertProjectBomInputs } from "../project-bom";
 import { ToolError, defineTool } from "../registry";
-import { loadNetlistOrNull, loadProjectParts, ok, p, requireBoard, requireKicad, requireSchematic } from "./common";
+import { ok, p, requireBoard, requireKicad, requireSchematic } from "./common";
 import { expectedPcbSource, withPcbOutput } from "../pcb-output";
 import { silk_art } from "./silk-art";
 
@@ -168,37 +169,26 @@ export const export_bom = defineTool({
   toolset: "export",
   title: "Export BOM",
   description:
-    "Export the project bill of materials to exports/bom.csv: electrical parts from circuit.netlist.json plus off-board / mechanical lines from project.parts.json (motors, displays, standoffs, screws). Falls back to the KiCad schematic BOM when there is no netlist and no off-board file.",
-  inputSchema: {},
+    "Export the project BOM from captured native schematic sources, explicit physical instances and project hardware. Writes exports/bom.csv and its coverage receipt. Incomplete or netlist-only coverage requires explicit allowPartial; pass expectedRevision from bom_read to refuse changed inputs.",
+  inputSchema: { expectedRevision: z.string().regex(/^[a-f0-9]{64}$/).optional(), allowPartial: z.boolean().default(false) },
   annotations: {
     readOnlyHint: false,
     destructiveHint: true,
     openWorldHint: false,
     idempotentHint: true,
   },
-  handler: async (_args, ctx) => {
+  longRunning: true,
+  handler: async ({ expectedRevision, allowPartial }, ctx) => {
     const project = ctx.requireProject();
-    const netlist = await loadNetlistOrNull(project);
-    const parts = await loadProjectParts(project);
-    const lines = projectBomLines(netlist?.netlist.components ?? [], parts.parts);
-    await ensureDir(p(project, PROJECT_FILES.exports));
-    const output = p(project, PROJECT_FILES.exports, "bom.csv");
-    if (lines.length > 0) {
-      await writeAtomic(output, projectBomCsv(lines));
-      const pcb = lines.filter((l) => l.source === "pcb").length;
-      const offboard = lines.filter((l) => l.source === "offboard").length;
-      return ok(
-        `Exported exports/bom.csv (${lines.length} lines: ${pcb} electrical, ${offboard} off-board).`,
-        { path: output, lines: lines.length, pcb, offboard, source: "project" },
-      );
-    }
-    const cli = await requireKicad(ctx);
-    const schematic = await requireSchematic(project);
-    await ctx.services.kicad.exportBom(cli, { schematic, output, signal: ctx.signal });
-    return ok("Exported exports/bom.csv from board.kicad_sch.", {
-      path: output,
-      source: PROJECT_FILES.boardSch,
-    });
+    const snapshot = await readProjectBom(ctx);
+    if (expectedRevision && snapshot.revision !== expectedRevision) throw new ToolError("BOM inputs changed; refresh and review the parts list before exporting.", "precondition");
+    if (!snapshot.complete && !allowPartial) throw new ToolError("BOM source coverage is incomplete or netlist-only. Review bom_read coverage and explicitly choose allowPartial to export only listed parts.", "precondition");
+    if (!snapshot.lines.length) throw new ToolError("No included parts are listed. Resolve the board sources or add project hardware before exporting.", "precondition");
+    const output = await jailPath(project.dir, "exports/bom.csv"), receipt = await jailPath(project.dir, "exports/bom.coverage.json");
+    await assertProjectBomInputs(project.dir, snapshot);
+    await writeAtomic(receipt, `${JSON.stringify(snapshot, null, 2)}\n`);
+    await writeAtomic(output, projectBomCsv(snapshot.lines));
+    return ok(`Exported exports/bom.csv (${snapshot.lines.length} lines${snapshot.complete ? "" : "; partial source coverage"}). Coverage receipt: exports/bom.coverage.json. Electrical checks remain separate.`, { path: output, receiptPath: receipt, lines: snapshot.lines.length, complete: snapshot.complete, revision: snapshot.revision });
   },
 });
 

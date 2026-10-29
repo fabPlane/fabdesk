@@ -12,7 +12,7 @@ const isMissing = (error: unknown) => (error as NodeJS.ErrnoException)?.code ===
 const unchanged = (a: { dev: number; ino: number; size: number; mtimeMs: number; ctimeMs: number }, b: typeof a) => a.dev === b.dev && a.ino === b.ino && a.size === b.size && a.mtimeMs === b.mtimeMs && a.ctimeMs === b.ctimeMs;
 
 /** Reject aliases even within the jail: one inode must never become two editable sources. */
-async function inspectFile(root: string, relative: string, limit: number, content = false) {
+export async function inspectOwnedProjectFile(root: string, relative: string, limit: number, content = false) {
   const path = resolve(root, relative);
   const entry = await lstat(path);
   if (!entry.isFile() || entry.isSymbolicLink()) throw new Error("Sources must be regular files");
@@ -37,6 +37,8 @@ async function inspectFile(root: string, relative: string, limit: number, conten
     return { identity: `${before.dev}:${before.ino}`, sha256: hash.digest("hex"), bytes, text: content ? Buffer.concat(chunks).toString("utf8") : null };
   } finally { await file.close(); }
 }
+
+const inspectFile = inspectOwnedProjectFile;
 
 async function inspectSource(root: string, source: AssemblyBoardSource, identities: Map<string, string[]>): Promise<Inspected> {
   if (source.location === "unresolved") return { source, status: "unresolved", reason: "Resolve this source into the project before opening its board" };

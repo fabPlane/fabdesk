@@ -1,4 +1,5 @@
 import { ToolRegistry, type ToolDef } from "../registry";
+import { bom_read } from "./bom";
 import { appTools } from "./app";
 import { cadTools } from "./cad";
 import { circuitTools } from "./circuit";
@@ -23,6 +24,7 @@ import { verifyTools } from "./verify";
 export const allTools: ReadonlyArray<ToolDef> = [
   ...coreTools,
   ...projectTools,
+  bom_read,
   ...commentTools,
   ...circuitTools,
   ...inspectionTools,

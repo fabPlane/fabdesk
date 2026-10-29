@@ -57,8 +57,9 @@ describe("off-board parts tools", () => {
     const off = await invoke("parts_list", { scope: "offboard" });
     expect((off.json as { parts: unknown[] }).parts).toHaveLength(3);
 
-    const csv = await invoke("export_bom");
-    expect(csv.text).toContain("1 electrical, 3 off-board");
+    await expect(invoke("export_bom")).rejects.toThrow("coverage");
+    const csv = await invoke("export_bom", { allowPartial: true });
+    expect(csv.text).toContain("4 lines; partial source coverage");
     const text = await readFile(join(project.dir, "exports/bom.csv"), "utf8");
     expect(text).toContain("motor,offboard,M1,NEMA 17 stepper motor,2");
     expect(text).toContain("display,offboard,DS1");

@@ -258,6 +258,7 @@ describe("registry", () => {
       "parts_add",
       "parts_list",
       "parts_remove",
+      "bom_read",
       "comment_list",
       "comment_pin",
       "comment_answer",

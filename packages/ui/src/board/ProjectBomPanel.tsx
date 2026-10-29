@@ -5,19 +5,18 @@ import {
   ProjectPartsFile as ProjectPartsFileSchema,
   findOffboardCatalogPart,
   nextOffboardRef,
-  projectBomLines,
   searchOffboardCatalog,
-  type NetlistFile,
   type OffboardKind,
   type ProjectBomLine,
   type ProjectPartsFile,
 } from "@fabdesk/protocol";
-import { useBoardSources, useProjectJson, useRunTool, useWriteProjectFile } from "@fabdesk/client-core";
+import { useCoreClient, useProjectBom, useProjectJson, useRunTool, useWriteProjectFile } from "@fabdesk/client-core";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Badge, Button, Dialog, EmptyState, IconButton, Input, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { useUiStore } from "../stores/ui";
 import { cn } from "../util";
+import { useAssistantSurface } from "../chat/useAssistantSurface";
 
 function emptyParts(): ProjectPartsFile {
   return { schema: 1, parts: [] };
@@ -169,14 +168,16 @@ function PartsToolbar({ label, query, onQueryChange, selected, onChange, include
 
 export function ProjectBomPanel() {
   const projectId = useUiStore((s) => s.activeProjectId);
-  const sources = useBoardSources(projectId);
+  const bom = useProjectBom(projectId), client = useCoreClient();
   const [libraryOpen, setLibraryOpen] = useState(false);
   const addTrigger = useRef<HTMLButtonElement>(null);
   const libraryRoot = useRef<HTMLDivElement>(null);
-  const netlist = useProjectJson<NetlistFile>(projectId, "circuit.netlist.json");
   const partsFile = useProjectJson<ProjectPartsFile>(projectId, PROJECT_PARTS_FILE);
   const write = useWriteProjectFile();
   const exportBom = useRunTool();
+  const [exportOpen, setExportOpen] = useState(false), [allowPartial, setAllowPartial] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null), [downloading, setDownloading] = useState(false);
+  const [coverageOpen, setCoverageOpen] = useState(false);
   const [filters, setFilters] = useState<PartKind[]>([]);
   const [query, setQuery] = useState("");
   const [bomQuery, setBomQuery] = useState("");
@@ -191,8 +192,9 @@ export function ProjectBomPanel() {
   const parts = partsState.parts;
   const editable = partsState.status === "ok";
   const addedCatalogIds = new Set(parts.parts.map((part) => part.catalogId));
-  const components = netlist.data?.netlist.components ?? [];
-  const lines = useMemo(() => projectBomLines(components, parts.parts), [components, parts.parts]);
+  const lines = bom.data?.lines ?? [];
+  useEffect(() => { setAllowPartial(false); }, [bom.data?.revision]);
+  useAssistantSurface(projectId ? { projectId, label: "Parts / Design BOM", priority: 10, details: JSON.stringify({ revision: bom.data?.revision, sourceCoverage: bom.data?.coverage, completeSourceCoverage: bom.data?.complete, lines: lines.length, electricalParity: "not established by BOM", error: bom.error instanceof Error ? bom.error.message : undefined }) } : null);
   const searchTerm = bomQuery.trim().toLowerCase();
   const shown = lines.filter((line) =>
     (filters.length === 0 || filters.includes(line.kind)) &&
@@ -225,7 +227,7 @@ export function ProjectBomPanel() {
   }, [highlightedLine]);
 
   if (!projectId) return <EmptyState title="No project selected" />;
-  if (netlist.isLoading || partsFile.isLoading) {
+  if (bom.isLoading || partsFile.isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
         <Spinner />
@@ -278,6 +280,20 @@ export function ProjectBomPanel() {
   const removeLine = (lineId: string) =>
     persist({ schema: 1, parts: parts.parts.filter((p) => p.id !== lineId) }, lines.length === 1);
 
+  const downloadBom = async () => {
+    if (!bom.data || bom.isFetching || downloading || !lines.length || (!bom.data.complete && !allowPartial)) return;
+    setDownloading(true); setDownloadError(null);
+    try {
+      const result = await exportBom.run("export_bom", { projectId, expectedRevision: bom.data.revision, allowPartial });
+      if (result.status !== "done") return;
+      const blob = await client.readFileBlob(projectId, "exports/bom.csv");
+      if (useUiStore.getState().activeProjectId !== projectId) return;
+      const url = URL.createObjectURL(blob), link = document.createElement("a"); link.href = url; link.download = "bom.csv"; link.click(); setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      setExportOpen(false);
+    } catch (error) { setDownloadError(error instanceof Error ? error.message : "Could not download BOM. Try again."); }
+    finally { setDownloading(false); }
+  };
+
   return (
     <div className="fd-project-parts flex h-full min-h-0 flex-col" data-testid="project-bom">
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-3">
@@ -289,25 +305,31 @@ export function ProjectBomPanel() {
               {parts.parts.length} off-board
             </Badge>
           </div>
-          <p className="mt-1 text-xs text-muted">{sources.data?.mode === "assembly" ? "Project extras and saved root netlist only. Member-board BOMs are not included." : sources.isPending || sources.isError ? "Project extras and saved root netlist. Board membership has not been verified." : "Project hardware and any saved board netlist. Component coverage and freshness are unverified."}</p>
+          <p className="mt-1 text-xs text-muted">Board parts from saved design sources, plus project hardware. Quantities follow declared physical boards.</p>
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-1.5">
           <Button ref={addTrigger} variant="primary" size="sm" onClick={() => setLibraryOpen(true)}><Icon name="plus" width={15} height={15} />Add hardware</Button>
+          <Button size="sm" disabled={bom.isFetching} onClick={() => void bom.refetch()}>{bom.isFetching ? "Reading sources…" : "Refresh parts"}</Button>
 
           <Button
             size="sm"
-            disabled={exportBom.state.status === "running" || lines.length === 0}
-            onClick={() => void exportBom.run("export_bom", { projectId })}
+            disabled={downloading || bom.isFetching || bom.isError || lines.length === 0}
+            onClick={() => setExportOpen(true)}
             data-testid="bom-export"
           >
-            {exportBom.state.status === "running" ? "Exporting..." : "Export CSV"}
+            {downloading ? "Exporting…" : "Export CSV"}
           </Button>
         </div>
       </div>
+      {bom.data && <div className="shrink-0 border-b border-border px-3 py-2">
+        <Button size="sm" variant="ghost" aria-expanded={coverageOpen} onClick={() => setCoverageOpen(!coverageOpen)}><Icon name="pcb" width={16} height={16} />{bom.data.complete ? "Native source coverage" : "Review source coverage"}<Badge tone={bom.data.complete ? "accent" : "warning"}>{bom.data.coverage.filter(source => source.status === "native-schematic").length} of {bom.data.coverage.filter(source => source.multiplier > 0).length} sources</Badge><Icon name="chevronDown" width={14} height={14} className={coverageOpen ? "rotate-180" : ""} /></Button>
+        {(coverageOpen || !bom.data.complete) && <div className="mt-2 grid gap-2 sm:grid-cols-2">{bom.data.coverage.map(source => <div key={source.sourceId ?? "main"} className="rounded-lg border border-border px-3 py-2 text-xs"><div className="font-medium">{source.name}<span className="ml-2 text-muted">{source.multiplier} {source.multiplier === 1 ? "board" : "boards"} · {source.componentCount * source.multiplier} parts</span></div><p className={cn("mt-1", source.status === "native-schematic" || source.status === "unused" ? "text-muted" : "text-warning")}>{source.status === "native-schematic" ? "Saved native schematic · BOM exclusions respected" : source.reason ?? source.status}</p></div>)}</div>}
+        {coverageOpen && <p className="mt-2 text-xs text-muted">Source coverage does not establish schematic/PCB parity or passed electrical checks. Hardware is counted once for the project.</p>}
+      </div>}
       {lines.length > 0 && <div className="shrink-0 border-b border-border px-2 py-2" data-testid="bom-filter">
         <PartsToolbar label="Search BOM" query={bomQuery} onQueryChange={setBomQuery} selected={filters} onChange={setFilters} includePcb />
       </div>}
-      {(netlist.isError || netlist.parseError) && <div role="alert" className="flex items-center gap-2 border-b border-border px-3 py-2 text-xs text-warning"><span className="min-w-0 flex-1">The saved electrical netlist could not be read. Listed hardware does not establish PCB component coverage.</span><Button size="sm" variant="ghost" onClick={() => void netlist.refetch()}>Retry netlist</Button></div>}
+      {bom.isError && <div role="alert" className="flex items-center gap-2 border-b border-border px-3 py-2 text-xs text-warning"><span className="min-w-0 flex-1">{bom.error instanceof Error ? bom.error.message : "Could not read the project BOM."} Refresh parts to retry.</span><Button size="sm" variant="ghost" onClick={() => void bom.refetch()}>Retry</Button></div>}
       {exportBom.state.error && <div className="border-b border-border px-2 py-1 text-xs text-danger">{exportBom.state.error}</div>}
       {partsState.status === "error" && (
         <div
@@ -326,7 +348,7 @@ export function ProjectBomPanel() {
             {shown.length === 0 ? (
               <div className="px-3 py-6 text-center text-xs text-muted">
                 {lines.length === 0
-                  ? "No parts are listed in the saved netlist or project parts file. Choose Add hardware for motors, displays and hardware."
+                  ? "No included parts are listed yet. Review source coverage or choose Add hardware for motors, displays and hardware."
                   : "No parts match your search or filters."}
               </div>
             ) : (
@@ -390,6 +412,15 @@ export function ProjectBomPanel() {
             )}
           </div>
       </div>
+      <Dialog open={exportOpen} title="Export bill of materials" onClose={() => { if (!downloading) setExportOpen(false); }}>
+        <div className="space-y-4 text-sm">
+          <p>{lines.length} listed items. The CSV includes board-qualified references, quantities, footprints and saved part numbers.</p>
+          {!bom.data?.complete && <div className="rounded-lg border border-warning/30 bg-warning/5 p-3"><p className="font-medium text-warning">Some board sources need review</p><p className="mt-1 text-xs text-muted">Missing sources are omitted. Saved netlist parts have not been checked against native schematic exclusions.</p><label className="mt-3 flex items-start gap-2"><input type="checkbox" checked={allowPartial} onChange={event => setAllowPartial(event.target.checked)} disabled={downloading} /><span>Export only the listed parts</span></label></div>}
+          <p className="text-xs text-muted">Saved to Outputs as bom.csv with a source coverage receipt, then downloaded. This does not mark the design as electrically checked.</p>
+          {(downloadError || exportBom.state.error) && <p role="alert" className="text-danger">{downloadError || exportBom.state.error}</p>}
+          <div className="flex justify-end gap-2"><Button disabled={downloading} onClick={() => setExportOpen(false)}>Cancel</Button><Button variant="primary" disabled={downloading || bom.isFetching || bom.isError || !lines.length || (!bom.data?.complete && !allowPartial)} onClick={() => void downloadBom()}>{downloading ? "Exporting…" : "Export and download CSV"}</Button></div>
+        </div>
+      </Dialog>
       <Dialog open={libraryOpen} title="Add project parts" className="!w-[780px]" onClose={() => { setLibraryOpen(false); requestAnimationFrame(() => addTrigger.current?.focus()); }}>
           <div ref={libraryRoot} className="fd-parts-library flex min-h-0 flex-col" data-testid="offboard-picker">
             <div className="shrink-0 border-b border-border bg-panel px-3 py-3">
