@@ -1,20 +1,20 @@
 # v6 page-by-page visual review
 
-## Active implementation resume checklist — October29,20:58Bangkok
+## Active implementation resume checklist — 2026-10-29 16:46 UTC / 23:46 Bangkok
 
-The new overnight run is active at051faf8; one final push is authorized, with local milestones during work. Existing native captures below remain evidence for their stated earlier revisions. New controls need native visual acceptance after the locked Mac is available; read-only rendered-state checks are not substituted for screenshots.
+Current code `2b85c3c`. Continuous run active; milestones local, one final normal push/PR389 update explicitly authorized at final handoff. Native captures below remain evidence only for their recorded revisions. No roadmap-complete claim.
 
-- [x] Source-qualified Changes/checkpoints, batch library selection/download, scoped output creation and compact exports.
-- [x] Context at Send, live Codex model discovery and actual context/native-generation tests; no credential/default rewrites.
-- [x] Source-local board comments with Review scope and stale/sibling rejection; native sources preserved.
-- [x] Root routing candidate review and explicit apply; actual partial6→3opens result retained, not called complete routing.
-- [x] Actual fresh idea→native PCB/SCH→automatic canvas preview; two parts,20×15mm; native/design inputs unchanged across preview handoff.
-- [ ] Authoritative multi-board BOM/source coverage and working assembly CSV export; currently the UI targets a root-only export path.
-- [ ] Remaining non-enclosure human flows and guarded capability gaps: member routing, replacement/Undo, directional reconciliation.
-- [ ] New native dialog/media/keyboard and v6 visual acceptance when unlocked; original screenshot iterations retained.
-- [ ] Final full checks/diff review and one final PR389 push/handoff. Last fullsuite had2failures; both passed isolated reruns, so it is not an unqualified full pass.
+- [x] Source-qualified Changes/checkpoints, explicit library multi-selection/ZIP, scoped output creation and compact exports.
+- [x] Captured contextual Ask, concise source recovery/Review questions, source-local comments/pins and local review packages.
+- [x] Existing Codex/native fresh-project journey; automatic canvas handoff; no global credential/default rewrites. Optional later live context check was rejected before execution; local tests pass, no indirect retry.
+- [x] Authoritative native BOM/exclusions and physical-instance quantities, reviewed partial CSV/Shopping sync; schematic-only members work before PCB creation, missing sources remain explicit.
+- [x] Root/member manual routing candidates and source-bound Apply/cancel/history/frames/download; alias-preservation regressions fixed. Native successful candidates are partial; no-progress failure retained with appropriate recovery.
+- [x] Actual video/source freshness change→restoration, contextual model-to-video actions, source-recovery and missing-coverage help; new mounted DOM states checked honestly.
+- [x] Root typechecks PASS; equivalent sequential full package suites2260pass/36skip/0fail; scripts94pass. Default parallel mechanical5000ms timeout retained; isolated/sequential passes do not erase it. UI239/940 and latest affected types pass.
+- [ ] Current native click/dialog/media/keyboard and approved-v6 visual acceptance after Mac unlock. Exact fixture/action list: `work/overnight-run/2026-10-29/NATIVE-ACCEPTANCE-QUEUE.md`. DOM is not screenshot/click acceptance.
+- [ ] Final diff/reviewable PR description and appropriate final checks; one final push/handoff, with no merge/deploy or premature completion claim.
 
-Mechanical PR398 remains teammate-owned; PR393 is the placement/resize integration boundary. Art Apply/polish remains deferred. Original VAIO8/root-study34 protected files rehashed13:57UTC with no mismatches. Detailed local evidence lives outside Git in outputs/overnight-journeys-2026-10-29. No roadmap completion claim.
+All42 protected VAIO/root-study files still match their original hashes; original designs and every screenshot iteration retained. PR393 replacement/Undo and PR398 Mechanical remain integration boundaries; Mechanical excluded/last, Art Apply/polish deferred. Native directional reconciliation, assembly alignment/fit and inter-board electrical compatibility are not claimed. New longer-doc checkpoint supersedes earlier limitations/counts below. Automation stays PAUSED; owned lease72458 expires19:44:26UTC.
 
 ## Latest: secondary controls and disclosures
 
