@@ -13,6 +13,8 @@ import {
   CreateDestinationInput,
   InventoryAdjust,
   InventoryItemInput,
+  BomSyncOptions,
+  type ProjectBomSnapshot,
 } from "@fabdesk/protocol";
 import {
   CloudSignedOutError,
@@ -30,6 +32,7 @@ const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif
 type Deps = {
   cloud: () => CloudService | undefined;
   projects: Pick<ProjectStore, "handle">;
+  readBom: (project: ProjectHandle) => Promise<ProjectBomSnapshot>;
 };
 
 const param = (c: Context, name: string): string => c.req.param(name) ?? "";
@@ -200,7 +203,13 @@ export function cloudRoutes<E extends object>(deps: Deps): Hono<{ Variables: E }
   );
   app.post(
     "/projects/:id/shopping-list/sync-bom",
-    run(async (c) => c.json(await cloud().syncBom(await project(param(c, "id"))))),
+    run(async (c) => {
+      const raw = await c.req.text(); let body: unknown;
+      try { body = raw ? JSON.parse(raw) : {}; } catch { throw new RouteError(400, "invalid_request", "Expected JSON BOM sync options."); }
+      const options = BomSyncOptions.parse(body), handle = await project(param(c, "id"));
+      const service = cloud(); service.client();
+      return c.json(await service.syncBom(handle, await deps.readBom(handle), options));
+    }),
   );
 
   return app;

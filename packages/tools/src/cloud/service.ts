@@ -24,6 +24,8 @@ import {
   type InventoryQuery,
   type Org,
   type ShoppingListResponse,
+  type ProjectBomSnapshot,
+  type BomSyncOptions,
 } from "@fabdesk/protocol";
 import { PROJECT_FILES, readJsonIfPresent, readJsonOrNull } from "../fs";
 import { ToolError } from "../registry";
@@ -35,7 +37,8 @@ import {
   type CloudApiFactory,
   type CloudImageUpload,
 } from "./api";
-import { BOM_SOURCE, bomLinesFromNetlist, bomLinesFromOffboard, mergeBomItems } from "./bom";
+import { BOM_SOURCE, shoppingLinesFromProjectBom, mergeBomItems } from "./bom";
+import { assertProjectBomInputs } from "../project-bom";
 import { gitRemotes } from "./git";
 
 /** What the service needs to know about a project. `ProjectHandle` satisfies it. */
@@ -200,28 +203,28 @@ export class CloudService {
     await this.call((api) => api.deleteCartItem(orgId, cart.id, itemId));
   }
 
-  /** Rebuild the part lines from the netlist and `project.parts.json`, keeping user edits. */
+  /** Sync the same captured BOM as the Parts UI; partial coverage cannot erase unmatched items. */
   async syncBom(
     project: CloudProject,
+    snapshot: ProjectBomSnapshot,
+    options: BomSyncOptions = { allowPartial: false },
   ): Promise<{ cart: Cart; summary: BomSyncSummary; cartUrl: string }> {
-    const netlist = await readNetlistOrNull(project);
-    const offboard = await readProjectParts(project);
+    this.client(); // Preserve sign-in errors before evaluating a potentially partial BOM.
+    if (snapshot.projectId !== project.id || snapshot.contract !== "fabplane.project-bom.v1") throw new ToolError("BOM snapshot does not belong to this project.", "precondition");
+    if (options.expectedRevision && snapshot.revision !== options.expectedRevision) throw new ToolError("BOM inputs changed; refresh and review before syncing.", "precondition");
+    if (!snapshot.complete && !options.allowPartial) throw new ToolError("BOM coverage is incomplete or netlist-only. Review the Parts BOM and explicitly allow a partial sync.", "precondition");
+    if (!snapshot.lines.length) throw new ToolError("No included parts are listed. Add design sources or project hardware first.", "precondition");
+    await assertProjectBomInputs(project.dir, snapshot);
     const { orgId, cart } = await this.ensureShoppingList(project);
     const fab = cart.fabDestinationId || DEFAULT_FAB_DESTINATION;
-    const fresh = [
-      ...bomLinesFromNetlist(netlist?.netlist.components ?? [], { destinationId: fab }),
-      ...bomLinesFromOffboard(offboard.parts, { destinationId: fab }),
-    ];
-    if (fresh.length === 0 && !netlist && offboard.parts.length === 0) {
-      throw new ToolError(
-        `${PROJECT_FILES.netlistJson} not found in project "${project.name}"; write the netlist or add off-board parts first`,
-        "precondition",
-      );
-    }
+    const fresh = shoppingLinesFromProjectBom(snapshot.lines, fab);
     const { items, summary } = mergeBomItems(fresh, cart.items, {
       projectName: project.name,
       fabDestinationId: fab,
+      addPcb: snapshot.manifestSha256 === null,
+      keepUnmatched: !snapshot.complete,
     });
+    await assertProjectBomInputs(project.dir, snapshot);
     const next = (await this.call((api) => api.replaceCartItems(orgId, cart.id, items, BOM_SOURCE)))
       .cart;
     return { cart: next, summary, cartUrl: cartDashboardUrl(this.dashboardUrl, next.id) };

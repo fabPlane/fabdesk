@@ -16,3 +16,4 @@ export * from "./adapters/mcp-apps";
 export * from "./apps/dxf";
 
 export * from "./assembly";
+export * from "./project-bom";

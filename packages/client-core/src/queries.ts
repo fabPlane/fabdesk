@@ -8,7 +8,7 @@ import { inspectAssemblyBoardModel } from "./assembly-board-model";
 import { inspectAssemblyCheckSummaries } from "./assembly-check-summary";
 import { inspectAssemblyPcbCheck } from "./assembly-checks";
 import { inspectAssemblyBoard } from "./assembly-scene";
-import type { BoardSourceSelection, ProjectBoardSources, ProjectBomSnapshot } from "@fabdesk/protocol";
+import type { BoardSourceSelection, ProjectBoardSources, ProjectBomSnapshot, BomSyncOptions } from "@fabdesk/protocol";
 import { inspectBoardModelRevision } from "./board-model-revision";
 import { inspectPcbCheckRevision } from "./check-revision";
 import { inspectPcbOutline } from "./pcb-outline";
@@ -60,9 +60,9 @@ export function useBoardSources(projectId: string | null) {
   return useQuery({ queryKey: ["board-sources", projectId], queryFn: () => client.inspectBoardSources(projectId!), enabled: !!projectId });
 }
 
-export function useProjectBom(projectId: string | null) {
+export function useProjectBom(projectId: string | null, enabled = true) {
   const client = useCoreClient();
-  return useQuery({ queryKey: ["project-bom", projectId], enabled: !!projectId, retry: false, staleTime: 30_000,
+  return useQuery({ queryKey: ["project-bom", projectId], enabled: enabled && !!projectId, retry: false, staleTime: 30_000,
     queryFn: async (): Promise<ProjectBomSnapshot> => {
       const call = await client.callTool("bom_read", { projectId });
       const job = call.jobId ? await client.waitJob(call.jobId) : null;
@@ -833,7 +833,7 @@ export function useShoppingListMutations(projectId: string | null) {
   };
   return {
     create: useMutation({ mutationFn: () => client.createShoppingList(need()), onSuccess: refresh }),
-    syncBom: useMutation({ mutationFn: () => client.syncShoppingBom(need()), onSuccess: refresh }),
+    syncBom: useMutation({ mutationFn: (options: BomSyncOptions) => client.syncShoppingBom(need(), options), onSuccess: refresh }),
     add: useMutation({
       mutationFn: (items: Parameters<typeof client.addShoppingItems>[1]) =>
         client.addShoppingItems(need(), items),

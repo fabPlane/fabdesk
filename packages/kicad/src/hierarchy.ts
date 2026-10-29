@@ -274,7 +274,7 @@ export type OwnedSchematicBom = { sourceRevision: string; sourceFiles: Array<{ p
 export async function exportOwnedSchematicBom(cli: KicadCli, opts: { projectDir: string; hierarchy: SchematicHierarchy; signal?: AbortSignal }): Promise<OwnedSchematicBom> {
   const captured = await withCapturedSchematic(opts, async (source, scratch) => {
     const output = join(scratch, "bom.csv");
-    const fields = "Reference,Value,Footprint,MPN,Manufacturer,QUANTITY,DNP,EXCLUDE_FROM_BOM,EXCLUDE_FROM_BOARD";
+    const fields = "Reference,Value,Footprint,MPN,Manufacturer,LCSC,QUANTITY,DNP,EXCLUDE_FROM_BOM,EXCLUDE_FROM_BOARD";
     await runKicadCli(cli, ["sch", "export", "bom", "--fields", fields, "--labels", fields, "--group-by", "", "--exclude-dnp", "--ref-range-delimiter", "", "-o", output, source], { ...(opts.signal ? { signal: opts.signal } : {}), cwd: dirname(source) });
     const info = await stat(output);
     if (info.size > 10 * 1024 * 1024) throw new Error("The native BOM exceeds the supported 10 MB limit");

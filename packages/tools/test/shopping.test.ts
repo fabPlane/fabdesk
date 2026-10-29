@@ -147,6 +147,13 @@ describe("BOM merge", () => {
     expect(summary.pcbAdded).toBe(false);
     expect(items).toEqual([{ kind: "pcb", description: "PCB", quantity: 10, status: "needed", destinationId: "builtin:jlcpcb" }]);
   });
+  test("partial assembly imports retain unmatched saved items and never infer a generic PCB order", () => {
+    const existing = [{ id: "old", kind: "part", refs: ["missing:R1"], value: "Unavailable board part", footprint: "old", quantity: 3, destinationId: "builtin:manual", status: "ordered", notes: "Keep this purchase record" }] as CartItem[];
+    const result = mergeBomItems([{ kind: "part", refs: ["left:R1", "right:R1"], value: "1k", footprint: R0603, quantity: 2, destinationId: "builtin:lcsc" }], existing, { projectName: "Assembly", fabDestinationId: "builtin:jlcpcb", addPcb: false, keepUnmatched: true });
+    expect(result.items.map(item => [item.kind, item.quantity])).toEqual([["part", 2], ["part", 3]]);
+    expect(result.items[1]).toMatchObject({ status: "ordered", notes: "Keep this purchase record", destinationId: "builtin:manual", refs: ["missing:R1"] });
+    expect(result.summary).toMatchObject({ removed: 0, kept: 1, pcbAdded: false });
+  });
 });
 
 describe("git remotes", () => {
@@ -202,7 +209,7 @@ describe("shopping toolset", () => {
     expect((empty.json as { cart: unknown }).cart).toBeNull();
     expect(empty.text).toContain("no shopping list yet");
 
-    const synced = await invoke("shopping_list_sync_bom");
+    const synced = await invoke("shopping_list_sync_bom", { allowPartial: true });
     const cart = (synced.json as { cart: { id: string; name: string; projectId: string; items: CartItem[] } }).cart;
     expect(cart.name).toBe("shop");
     expect(cart.projectId).toBe(project.id);
@@ -217,7 +224,7 @@ describe("shopping toolset", () => {
     const moved = await invoke("shopping_list_update", { itemId: part.id, destination: "manual", status: "ordered", notes: "have some" });
     expect((moved.json as { item: CartItem }).item).toMatchObject({ destinationId: "builtin:manual", status: "ordered" });
 
-    const again = await invoke("shopping_list_sync_bom");
+    const again = await invoke("shopping_list_sync_bom", { allowPartial: true });
     const items = (again.json as { cart: { items: CartItem[] } }).cart.items;
     expect(items.filter((i) => i.kind === "pcb")).toHaveLength(1);
     expect(items.find((i) => i.kind === "part")).toMatchObject({ destinationId: "builtin:manual", status: "ordered", notes: "have some", refs: ["R1"] });
@@ -243,7 +250,7 @@ describe("shopping toolset", () => {
         ],
       }),
     );
-    const synced = await invoke("shopping_list_sync_bom");
+    const synced = await invoke("shopping_list_sync_bom", { allowPartial: true });
     const items = (synced.json as { cart: { items: CartItem[] } }).cart.items;
     expect(items.map((i) => [i.kind, i.refs?.[0], i.quantity])).toEqual([
       ["pcb", undefined, 5],
@@ -255,6 +262,21 @@ describe("shopping toolset", () => {
       footprint: "offboard:nema-17-stepper",
       description: "Off-board motor · NEMA 17 stepper motor",
     });
+  });
+
+  test("assembly sync reviews source coverage before creating a cloud list and uses declared instance quantities", async () => {
+    const { project, invoke, api } = await setup();
+    await mkdir(join(project.dir, "boards/io"), { recursive: true });
+    await writeFile(join(project.dir, "boards/io/board.kicad_pcb"), "isolated source");
+    await writeFile(join(project.dir, "boards/io/circuit.netlist.json"), JSON.stringify({ netlist: { components: [comp("R2", "10k", R0603), comp("#PWR1", "GND", ""), comp("R3", "DNP", R0603, { DNP: "yes" })], nets: [] } }));
+    await writeFile(join(project.dir, "fabplane.assembly.json"), JSON.stringify({ contract: "fabplane.assembly.v1", sources: [{ id: "io", name: "I/O", location: "project", directory: "boards/io" }, { id: "missing", name: "Missing", location: "unresolved", provenance: { repository: "https://example.com/test", path: "missing" } }], instances: [{ id: "left", sourceId: "io", name: "Left" }, { id: "right", sourceId: "io", name: "Right" }, { id: "missing", sourceId: "missing", name: "Missing" }], connections: [] }));
+    await expect(invoke("shopping_list_sync_bom")).rejects.toThrow("coverage");
+    await expect(invoke("shopping_list_sync_bom", { allowPartial: true, expectedRevision: "0".repeat(64) })).rejects.toThrow("changed");
+    expect(api.calls.some(call => call.startsWith("createCart"))).toBe(false);
+    const result = await invoke("shopping_list_sync_bom", { allowPartial: true });
+    const items = (result.json as { cart: { items: CartItem[] } }).cart.items;
+    expect(items.map(item => [item.kind, item.refs, item.quantity])).toEqual([["part", ["left:R2", "right:R2"], 2]]);
+    expect((result.json as { summary: { pcbAdded: boolean } }).summary.pcbAdded).toBe(false);
   });
 
   test("add resolves destination names, custom destinations, remove", async () => {

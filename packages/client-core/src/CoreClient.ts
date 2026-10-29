@@ -4,6 +4,7 @@ import type {
   AgentId,
   AuthState,
   BomSyncSummary,
+  BomSyncOptions,
   Cart,
   CartItem,
   CartItemInput,
@@ -391,9 +392,11 @@ export class CoreClient {
   }
   syncShoppingBom(
     projectId: string,
+    options?: BomSyncOptions,
   ): Promise<{ cart: Cart; summary: BomSyncSummary; cartUrl: string }> {
     return this.request(`/projects/${encodeURIComponent(projectId)}/shopping-list/sync-bom`, {
       method: "POST",
+      ...(options ? { json: options } : {}),
     });
   }
   cloudDestinations(): Promise<{ destinations: Destination[] }> {

@@ -1,16 +1,38 @@
-import { useAssistantSurface } from "../chat/useAssistantSurface";
-import { CART_ITEM_STATUSES, type CartItem, type CartItemPatch, type CartItemStatus, type Destination } from "@fabdesk/protocol";
+import { askAboutSurface, useAssistantSurface } from "../chat/useAssistantSurface";
+import { CART_ITEM_STATUSES, type BomSyncOptions, type CartItem, type CartItemPatch, type CartItemStatus, type Destination } from "@fabdesk/protocol";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { Button, EmptyState, IconButton, Input, Select, Spinner, Textarea } from "../components/ui";
+import { Button, Dialog, EmptyState, IconButton, Input, Select, Spinner, Textarea } from "../components/ui";
 import {
   cloudErrorMessage, destinationOptions, filterShoppingItems, groupByDestination, isCloudSignedOut,
   createShoppingDraft, shoppingDraftPatch, shoppingDraftConflicts, rebaseShoppingDraft, type ShoppingItemDraft,
   itemLabel, useCloudDestinations, useCloudStatus, useCore, useShoppingList, useShoppingListMutations,
+  useProjectBom,
 } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { Icon } from "../components/Icon";
 import { ProjectBomPanel } from "./ProjectBomPanel";
 import "./shopping-list.css";
+
+function ShoppingBomDialog({ projectId, open, busy, error, onClose, onSync }: { projectId: string; open: boolean; busy: boolean; error: unknown; onClose: () => void; onSync: (options: BomSyncOptions) => void }) {
+  const bom = useProjectBom(projectId, open), [allowPartial, setAllowPartial] = useState(false);
+  useEffect(() => { setAllowPartial(false); }, [open, bom.data?.revision]);
+  const surface = { projectId, label: "Shopping / Review BOM import", priority: 20, details: JSON.stringify({ snapshotRevision: bom.data?.revision, coverage: bom.data?.coverage, importParts: bom.data?.lines.length, partialCoverage: !bom.data?.complete, ordering: "not performed", error: error instanceof Error ? error.message : undefined }) };
+  useAssistantSurface(open ? surface : null);
+  return <Dialog open={open} title="Review parts before syncing" onClose={() => { if (!busy) onClose(); }}>
+    <div className="space-y-4 text-sm">
+      {bom.isLoading || bom.isFetching ? <p className="flex items-center gap-2"><Spinner />Reading saved design sources…</p> : bom.isError ? <div role="alert"><p className="text-danger">{bom.error instanceof Error ? bom.error.message : "Could not read the project BOM."}</p><Button size="sm" onClick={() => void bom.refetch()}>Retry source check</Button></div> : <>
+        <p>{bom.data?.lines.length ?? 0} listed items from your Design BOM. Matching suppliers, order status and notes stay saved; manual items are kept.</p>
+        <div className="max-h-52 space-y-2 overflow-auto">{bom.data?.coverage.map(source => <div className="rounded-lg border border-border p-3 text-xs" key={source.sourceId ?? "main"}><strong>{source.name}</strong><p className="mt-1 text-muted">{source.status === "native-schematic" ? `${source.multiplier} declared ${source.multiplier === 1 ? "board" : "boards"} · ${source.componentCount * source.multiplier} included parts` : source.reason ?? source.status}</p></div>)}</div>
+        {!bom.data?.complete && <label className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/5 p-3"><input type="checkbox" checked={allowPartial} disabled={busy} onChange={event => setAllowPartial(event.target.checked)} /><span>Sync only the listed parts<span className="mt-1 block text-xs text-muted">Coverage is incomplete or netlist-only. Unmatched saved items will be kept so missing sources cannot remove them.</span></span></label>}
+        {bom.data?.manifestSha256 === null && <p className="text-xs text-muted">If the list has no PCB item, an editable fabrication line defaults to 5 boards. Review that quantity in Shopping.</p>}
+        {bom.data?.manifestSha256 && <p className="text-xs text-muted">Assembly PCB orders stay separate; this imports component quantities without adding a generic project PCB order.</p>}
+      </>}
+      {!!error && <p role="alert" className="text-danger">{cloudErrorMessage(error)}</p>}
+      <p className="text-xs text-muted">This updates your team’s shopping list. It does not place an order or establish electrical checks.</p>
+      <div className="flex flex-wrap items-center justify-end gap-2"><IconButton title="Ask about these BOM sources" onClick={() => askAboutSurface(surface, "Help me review this BOM’s source coverage and quantities before importing it into Shopping. Identify missing sources and preserve existing supplier and order details.")}><Icon name="sparkles" /></IconButton><Button disabled={busy} onClick={() => { onClose(); useUiStore.getState().setBoardTab("bom"); }}>Open Design BOM</Button><Button variant="primary" disabled={busy || bom.isFetching || bom.isError || !bom.data?.lines.length || (!bom.data.complete && !allowPartial)} onClick={() => { if (bom.data) onSync({ expectedRevision: bom.data.revision, allowPartial }); }}>{busy ? "Syncing…" : "Sync shopping list"}</Button></div>
+    </div>
+  </Dialog>;
+}
 
 const STATUS_LABEL: Record<CartItemStatus, string> = { needed: "To order", ordered: "Ordered", received: "Received" };
 
@@ -194,6 +216,7 @@ function ShoppingListContent() {
   const destinations = useCloudDestinations(ready);
   const m = useShoppingListMutations(projectId);
   const [notice, setNotice] = useState<string | null>(null);
+  const [bomReviewOpen, setBomReviewOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<CartItemStatus | "all">("all");
   const [adding, setAdding] = useState(false);
@@ -217,14 +240,15 @@ function ShoppingListContent() {
   const saving = m.update.isPending || m.remove.isPending || m.add.isPending;
   const pending = m.create.isPending || m.syncBom.isPending || saving;
   const error = list.error ?? (m.create.isError ? m.create.error : m.syncBom.isError ? m.syncBom.error : null);
-  const syncBom = () => m.syncBom.mutate(undefined, { onSuccess: ({ summary: s }) => setNotice(`Synced ${s.parts} part lines · ${s.added} added · ${s.removed} removed · ${s.matched} kept their edits${s.pcbAdded ? " · Board added" : ""}`) });
-  if (!cart) return <EmptyState title="Your next build starts here" action={<div className="flex flex-wrap justify-center gap-2"><Button size="sm" onClick={() => m.create.mutate()} disabled={pending}>Start an empty list</Button><Button variant="primary" size="sm" onClick={syncBom} disabled={pending} data-testid="shopping-sync-bom">{m.syncBom.isPending ? "Syncing…" : "Import board parts"}</Button></div>}>
+  const syncBom = () => { m.syncBom.reset(); setBomReviewOpen(true); };
+  const bomDialog = <ShoppingBomDialog projectId={projectId} open={bomReviewOpen} busy={m.syncBom.isPending} error={m.syncBom.error} onClose={() => setBomReviewOpen(false)} onSync={options => m.syncBom.mutate(options, { onSuccess: ({ summary: s }) => { setBomReviewOpen(false); setNotice(`Synced ${s.parts} part lines · ${s.added} added · ${s.removed} removed · ${s.matched} kept their edits${s.pcbAdded ? " · Board added" : ""}`); } })} />;
+  if (!cart) return <><EmptyState title="Your next build starts here" action={<div className="flex flex-wrap justify-center gap-2"><Button size="sm" onClick={() => m.create.mutate()} disabled={pending}>Start an empty list</Button><Button variant="primary" size="sm" onClick={syncBom} disabled={pending} data-testid="shopping-sync-bom">{m.syncBom.isPending ? "Syncing…" : "Import board parts"}</Button></div>}>
     Bring in your bill of materials or add parts yourself. Track everything by supplier, from ordering to delivery.
     {error && <p role="alert" className="shopping-error">{cloudErrorMessage(error)}</p>}
-  </EmptyState>;
+  </EmptyState>{bomDialog}</>;
   const received = cart.items.filter(i => i.status === "received").length;
   const totalQuantity = cart.items.reduce((total, i) => total + i.quantity, 0);
-  return <div className="shopping-list" data-testid="shopping-list">
+  return <><div className="shopping-list" data-testid="shopping-list">
     <header className="shopping-header">
       <div className="shopping-title-row"><div className="shopping-title"><span className="shopping-eyebrow">Shopping list</span><h2 title={cart.name}>{cart.name}</h2></div>
         <div className="shopping-header-actions">{list.isFetching && <Spinner />}<Button size="sm" onClick={syncBom} disabled={pending || unsaved > 0} data-testid="shopping-sync-bom" title={unsaved ? "Save or discard your edits before syncing board parts" : "Update parts from the board’s bill of materials"}><Icon name="refresh" width={15} height={15} />{m.syncBom.isPending ? "Syncing…" : "Sync from BOM"}</Button>
@@ -256,5 +280,5 @@ function ShoppingListContent() {
       </section>)}
     </div>
     <footer className="shopping-footer"><span role="status">{filtered.length === cart.items.length ? "Shared with your team" : `${filtered.length} of ${cart.items.length} items shown`}</span>{unsaved > 0 ? <button type="button" disabled={saving} onClick={() => { setQuery(""); setFilter("all"); }}>{unsaved} unsaved {unsaved === 1 ? "edit" : "edits"} · Show all items</button> : <span>Open an item to edit</span>}</footer>
-  </div>;
+  </div>{bomDialog}</>;
 }

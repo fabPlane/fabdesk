@@ -8,11 +8,19 @@ import type {
   CartItemInput,
   NetlistComponent,
   ProjectPartLine,
+  ProjectBomLine,
 } from "@fabdesk/protocol";
 
 /** `source` passed to `replaceCartItems` for a BOM sync. */
 export const BOM_SOURCE = "fabdesk-bom";
 export const DEFAULT_PCB_QUANTITY = 5;
+
+/** The same reviewed quantities and references used by the Parts page and CSV. */
+export function shoppingLinesFromProjectBom(lines: readonly ProjectBomLine[], destinationId: string): CartItemInput[] {
+  return lines.map(line => ({ kind: "part", value: line.name, refs: [...line.refs], quantity: line.qty, destinationId,
+    ...(line.footprint ? { footprint: line.footprint } : {}), ...(line.mpn ? { mpn: line.mpn } : {}), ...(line.manufacturer ? { manufacturer: line.manufacturer } : {}), ...(line.sku ? { sku: line.sku } : {}), ...(line.notes ? { notes: line.notes } : {}), ...(line.source === "offboard" ? { description: `Off-board ${line.kind} · ${line.name}` } : {}),
+  }));
+}
 
 const collator = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
 /** R2 < R10 < U1. */
@@ -153,7 +161,7 @@ function matches(fresh: CartItemInput, old: CartItem): boolean {
 export function mergeBomItems(
   fresh: readonly CartItemInput[],
   existing: readonly CartItem[],
-  opts: { projectName: string; fabDestinationId: string },
+  opts: { projectName: string; fabDestinationId: string; addPcb?: boolean; keepUnmatched?: boolean },
 ): { items: CartItemInput[]; summary: BomSyncSummary } {
   const synced = existing.filter(isSyncedPart);
   const used = new Set<string>();
@@ -175,9 +183,9 @@ export function mergeBomItems(
       ...(old.inventoryItemId ? { inventoryItemId: old.inventoryItemId } : {}),
     } satisfies CartItemInput;
   });
-  const kept = existing.filter((i) => !isSyncedPart(i)).map(cartItemToInput);
+  const kept = existing.filter((i) => !isSyncedPart(i) || (opts.keepUnmatched && !used.has(i.id))).map(cartItemToInput);
   const hasPcb = existing.some((i) => i.kind === "pcb");
-  const pcb: CartItemInput[] = hasPcb
+  const pcb: CartItemInput[] = hasPcb || opts.addPcb === false
     ? []
     : [
         {
@@ -193,9 +201,9 @@ export function mergeBomItems(
       parts: parts.length,
       matched,
       added: parts.length - matched,
-      removed: synced.length - used.size,
+      removed: opts.keepUnmatched ? 0 : synced.length - used.size,
       kept: kept.length,
-      pcbAdded: !hasPcb,
+      pcbAdded: !hasPcb && opts.addPcb !== false,
     },
   };
 }

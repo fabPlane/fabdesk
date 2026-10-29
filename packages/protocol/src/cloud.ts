@@ -5,6 +5,9 @@
  */
 import { z } from "zod/v4";
 
+export const BomSyncOptions = z.object({ expectedRevision: z.string().regex(/^[a-f0-9]{64}$/).optional(), allowPartial: z.boolean().default(false) }).strict();
+export type BomSyncOptions = z.infer<typeof BomSyncOptions>;
+
 export type OrgRole = "owner" | "admin" | "member";
 
 export type Org = {

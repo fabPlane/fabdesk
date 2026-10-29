@@ -5,6 +5,7 @@
 import { z } from "zod/v4";
 import {
   BUILTIN_DESTINATIONS,
+  BomSyncOptions,
   matchDestination,
   type Cart,
   type CartItemInput,
@@ -16,6 +17,7 @@ import { ToolError, defineTool, type ToolContext } from "../registry";
 import { cloudToolError } from "../cloud/api";
 import type { CloudService } from "../cloud/service";
 import { ok, table } from "./common";
+import { readProjectBom } from "../project-bom";
 
 async function withCloud<T>(ctx: ToolContext, fn: (cloud: CloudService) => Promise<T>): Promise<T> {
   const cloud = ctx.services.cloud;
@@ -253,18 +255,19 @@ export const shopping_list_sync_bom = defineTool({
   toolset: "shopping",
   title: "Sync the shopping list from the BOM",
   description:
-    'Rebuild the part lines of the project\'s shopping list from circuit.netlist.json and project.parts.json: electrical components grouped by value + footprint + MPN/manufacturer, plus off-board motors/displays/hardware (quantity from the off-board line). Lines matched to the previous sync (by MPN, else value + footprint) keep their destination, status and notes; hand-added lines are kept; parts no longer in the design are dropped. Adds a "PCB – <project>" × 5 line at the fab house if there is none. Creates the list on first use.',
-  inputSchema: {},
+    'Sync the captured project BOM (native schematic exclusions, declared board instances and project hardware) to Shopping. Review bom_read first and pass expectedRevision. Partial coverage needs explicit allowPartial and keeps unmatched saved items; matched supplier/status/notes and manual lines remain. Single-board projects retain the default editable PCB fabrication line; assemblies do not infer a generic PCB order. Does not place an order.',
+  inputSchema: BomSyncOptions.shape,
   annotations: {
     readOnlyHint: false,
     destructiveHint: true,
     openWorldHint: false,
     idempotentHint: true,
   },
-  handler: async (_args, ctx) =>
+  handler: async (options, ctx) =>
     withCloud(ctx, async (cloud) => {
       const project = ctx.requireProject();
-      const res = await cloud.syncBom(project);
+      cloud.client();
+      const res = await cloud.syncBom(project, await readProjectBom(ctx), options);
       const s = res.summary;
       const destinations = await cloud.destinations().catch(() => [] as Destination[]);
       return ok(

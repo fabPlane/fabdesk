@@ -42,6 +42,8 @@ import { z } from "zod/v4";
 import {
   PROJECT_FILES,
   inspectProjectBoardSources,
+  readProjectBom,
+  makeContext,
   ToolError,
   jailPath,
   toolRoutes,
@@ -882,7 +884,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
   });
 
   /* ---------- fabplane.com shopping lists & inventory ---------- */
-  app.route("/", cloudRoutes<Env["Variables"]>({ cloud: () => deps.services.cloud, projects: deps.projects }));
+  app.route("/", cloudRoutes<Env["Variables"]>({ cloud: () => deps.services.cloud, projects: deps.projects, readBom: project => readProjectBom(makeContext({ project, services: deps.services })) }));
 
   /* ---------- folders ---------- */
   app.get("/folders", (c) => c.json(deps.store.folders.list()));
