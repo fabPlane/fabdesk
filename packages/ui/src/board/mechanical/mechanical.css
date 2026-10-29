@@ -504,6 +504,12 @@
   gap: 10px;
   pointer-events: none;
 }
+.fd-case-controls-toggle {
+  pointer-events: auto;
+}
+.fd-case-hud[data-collapsed="true"] > :not(.fd-case-controls-toggle) {
+  display: none;
+}
 .fd-case-hud .fd-case-view-tools {
   position: static;
   max-width: 100%;
@@ -515,6 +521,61 @@
   width: 100%;
   box-sizing: border-box;
   pointer-events: auto;
+}
+.fd-case-placement {
+  width: 300px;
+  max-width: 100%;
+  box-sizing: border-box;
+  pointer-events: auto;
+  border: 1px solid var(--fd-border);
+  border-radius: 12px;
+  padding: 12px;
+  background: var(--fd-panel);
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.fd-case-placement-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.fd-case-placement-title strong {
+  font-size: 12px;
+}
+.fd-case-placement small {
+  color: var(--fd-muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+.fd-case-placement select {
+  width: 100%;
+  min-width: 0;
+  background: var(--fd-bg);
+  color: var(--fd-fg);
+  border: 1px solid var(--fd-border);
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 12px;
+}
+.fd-case-placement-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.fd-case-placement-tools button {
+  font-size: 11px;
+  padding: 6px 8px;
+  white-space: normal;
+}
+.fd-case-placement .fd-case-placement-tools button[aria-pressed="true"] {
+  background: var(--fd-panel-2);
+  color: var(--fd-fg);
+  border-color: var(--fd-accent);
+}
+.fd-case-placement + .fd-case-view-tools {
+  max-width: 300px;
 }
 @container (max-width: 800px) {
   .fd-case-hud {

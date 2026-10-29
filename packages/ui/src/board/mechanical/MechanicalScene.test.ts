@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { Box3, Vector3 } from "three";
-import { mechanicalItem } from "@fabdesk/client-core";
+import { enclosureBoardPose, mechanicalItem } from "@fabdesk/client-core";
 import { MechanicalScene } from "./MechanicalScene";
 const encode = (text: string) => new TextEncoder().encode(text).buffer;
 const triangle =
@@ -21,6 +21,23 @@ test("empty or invalid model geometry is rejected", async () => {
   await expect(
     MechanicalScene.decode({ item: mechanicalItem("bad.obj"), data: encode("not a model") }),
   ).rejects.toThrow(/empty, invalid/);
+});
+
+test("centre-mounted placement preserves the board's exported world frame", async () => {
+  const pose = enclosureBoardPose(
+    { path: "board.kicad_pcb", x: 3, y: 4, z: 5, rotation: 90 },
+    { minX: 0, minY: 0, maxX: 20, maxY: 10, widthMm: 20, heightMm: 10 },
+  );
+  const model = await MechanicalScene.decode({
+    item: mechanicalItem("board.stl", "board"),
+    data: encode(triangle),
+    origin: pose.origin,
+  });
+  model.position.set(...pose.position);
+  model.rotation.z = Math.PI / 2;
+  const bounds = new Box3().setFromObject(model);
+  bounds.min.toArray().forEach((n, i) => expect(n).toBeCloseTo([-7, 4, 5][i]!));
+  bounds.max.toArray().forEach((n, i) => expect(n).toBeCloseTo([3, 24, 5][i]!));
 });
 test("board and enclosure share a centred PCB frame while imports pivot at their centre", async () => {
   const board = await MechanicalScene.decode({

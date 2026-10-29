@@ -54,6 +54,22 @@ All mechanical values use millimetres, PCB XY coordinates and Z up. Exported CAD
 
 ## Running-app evidence
 
+### Select and position boards in the enclosure
+
+Click a PCB in the 3D view or choose it under **Position boards**. Use **Move** arrows/plane handles or the **Rotate** ring; the case stays fixed. Rotation pivots around the board centre while saved/exported placements retain the native PCB coordinate frame. **Undo move** (Ctrl/Cmd+Z outside inputs) restores the last placement change. These controls change enclosure placement, not PCB source bytes.
+
+**Top view**, **Focus board** (F), **Hide case** and **Fit view** make occluded or displaced boards easier to reach. Escape clears selection. **Center in usable space** uses confirmed interior dimensions and preserves mounting height/rotation; it does not certify fit. View controls collapse automatically in narrower workspaces and can also be hidden manually.
+
+The VAIO screenshot exposes a remaining limitation: a board can cross the actual imported wall while staying inside the user-defined rectangular interior. The view now explicitly warns that imported case surfaces are not checked automatically. Red marks identify detected envelope/interior conflicts, not exact shell intersections.
+
+| Select and move; case fixed | Top view for alignment |
+| --- | --- |
+| ![Board selection and placement handles](screenshots/mechanical-workspace/19-board-placement.png) | ![Top view with board selected](screenshots/mechanical-workspace/20-top-view-placement.png) |
+
+![Compact controls leave the model accessible](screenshots/mechanical-workspace/21-compact-placement.png)
+
+Live checks: native mouse selection, arrow drag, centre rotation, button/keyboard undo, list selection, hide/show case, top/3D views, focus/fit, centering and compact-control expansion pass. Test movements were restored to X=0/Y=0/Z=5/rotation=0; the A5 PCB SHA-256 stayed unchanged. Root typecheck and final UI typecheck pass; desktop build passes with no output source maps. **60 focused tests pass** across placement helpers, scene geometry, mechanical constraints and CAD tools (native service paths remain mocked). The full-suite baseline and native bridge limitations above remain unresolved.
+
 ### Visual fit review
 
 | Red collision / clearance risks | Displaced board outside the usable space |

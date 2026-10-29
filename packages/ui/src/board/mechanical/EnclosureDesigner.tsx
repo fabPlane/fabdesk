@@ -12,6 +12,9 @@ import {
   mechanicalItem,
   enclosureErrorMessage,
   enclosureFileLabel,
+  enclosureBoardPose,
+  enclosureBoardPlacement,
+  centerEnclosureBoard,
   type EnclosureBoardSummary,
 } from "@fabdesk/client-core";
 import { MechanicalScene, type SceneModel, type BoardGeometry } from "./MechanicalScene";
@@ -55,8 +58,9 @@ function NumberField({
   min?: number;
   unit?: string;
 }) {
-  const [draft, setDraft] = useState(String(value));
-  useEffect(() => setDraft(String(value)), [value]);
+  const displayValue = String(Number(value.toFixed(3)));
+  const [draft, setDraft] = useState(displayValue);
+  useEffect(() => setDraft(displayValue), [displayValue]);
   return (
     <label className="fd-case-number">
       <span>{label}</span>
@@ -73,7 +77,7 @@ function NumberField({
               onChange(e.target.valueAsNumber);
           }}
           onBlur={() => {
-            if (!draft.trim() || !Number.isFinite(Number(draft))) setDraft(String(value));
+            if (!draft.trim() || !Number.isFinite(Number(draft))) setDraft(displayValue);
           }}
         />
         <span>{unit}</span>
@@ -112,6 +116,83 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
   const [showRisks, setShowRisks] = useState(true),
     [showSpace, setShowSpace] = useState(true);
   const [focusedIssue, setFocusedIssue] = useState<MechanicalFitIssue | null>(null);
+  const [selectedBoard, setSelectedBoard] = useState<string | null>(null);
+  const [placementMode, setPlacementMode] = useState<"orbit" | "translate" | "rotate">("orbit");
+  const [caseVisible, setCaseVisible] = useState(true);
+  const [controlsExpanded, setControlsExpanded] = useState(true);
+  const [undoPlacement, setUndoPlacement] = useState<MechanicalDesign["boards"][number] | null>(
+    null,
+  );
+  const framed = useRef(false);
+  useEffect(() => {
+    if (!host.current) return;
+    let compact: boolean | undefined;
+    const observer = new ResizeObserver(([entry]) => {
+      if (!entry) return;
+      const next = entry.contentRect.width < 900;
+      if (next !== compact) setControlsExpanded(!next);
+      compact = next;
+    });
+    observer.observe(host.current);
+    return () => observer.disconnect();
+  }, []);
+  const placementHandlers = useRef({
+    select: (_id: string | null) => {},
+    transform: (
+      _id: string,
+      _position: [number, number, number],
+      _rotation: [number, number, number],
+    ) => {},
+  });
+  function featuresFor(path: string) {
+    return (
+      (preview?.boards ?? fitBoards)?.find((b) => b.placement.path === path)?.features ??
+      (path === "board.kicad_pcb" ? board : null)
+    );
+  }
+  function selectBoard(path: string | null) {
+    if (busy) return;
+    setSelectedBoard(path);
+    setPlacementMode(path ? "translate" : "orbit");
+    setFocusedIssue(null);
+    if (path) setStep("PCB");
+  }
+  function changePlacement(next: MechanicalDesign["boards"][number]) {
+    if (!design) return;
+    const old = design.boards.find((b) => b.path === next.path);
+    if (!old) return;
+    setUndoPlacement(old);
+    edit({ ...design, boards: design.boards.map((b) => (b.path === next.path ? next : b)) });
+  }
+  function undoBoardMove() {
+    if (!undoPlacement || !design || busy) return;
+    edit({
+      ...design,
+      boards: design.boards.map((b) => (b.path === undoPlacement.path ? undoPlacement : b)),
+    });
+    setUndoPlacement(null);
+  }
+  placementHandlers.current = {
+    select: (id) => selectBoard(id?.startsWith("@fit-") ? id.slice(5) : null),
+    transform: (id, position, rotation) => {
+      if (busy || !design) return;
+      const path = id.startsWith("@fit-") ? id.slice(5) : "";
+      const current = design.boards.find((b) => b.path === path),
+        features = featuresFor(path);
+      if (current && features)
+        changePlacement(enclosureBoardPlacement(current, features.outline, position, rotation[2]));
+    },
+  };
+  useEffect(() => {
+    framed.current = false;
+  }, [projectId, design?.source?.path, design?.mode]);
+  useEffect(() => {
+    scene.current?.select(selectedBoard ? `@fit-${selectedBoard}` : null);
+    scene.current?.setMode(busy ? "orbit" : placementMode);
+  }, [selectedBoard, placementMode, busy, modelSources]);
+  useEffect(() => {
+    scene.current?.setCaseVisible(caseVisible);
+  }, [caseVisible]);
   const sourceBuffers = useRef(new Map<string, ArrayBuffer>());
   const body = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -121,8 +202,8 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
   const [openLid, setOpenLid] = useState(true),
     [transparent, setTransparent] = useState(false);
   useEffect(() => {
-    scene.current?.setExplode(openLid ? 25 : 0);
-  }, [openLid, modelSources]);
+    scene.current?.setExplode(openLid && preview?.meshes?.lid ? 25 : 0, false);
+  }, [openLid, preview?.meshes?.lid]);
   useEffect(() => {
     scene.current?.setTranslucent(transparent);
   }, [transparent, modelSources]);
@@ -198,13 +279,15 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
     if (!host.current) return;
     try {
       const s = new MechanicalScene(host.current, {
-        select: () => {},
-        transform: () => {},
+        select: (id) => placementHandlers.current.select(id),
+        transform: (id, position, rotation) =>
+          placementHandlers.current.transform(id, position, rotation),
         measured: () => {},
         zoom: () => {},
         error: setError,
       });
       scene.current = s;
+      s.setPlanarPlacement(true);
       return () => {
         s.dispose();
         scene.current = null;
@@ -216,9 +299,17 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
   useEffect(() => {
     let cancel = false;
     void scene.current
-      ?.setModels(modelSources)
+      ?.setModels(modelSources, false)
       .then(() => {
-        if (!cancel) scene.current?.fit();
+        const sourceReady =
+          !!preview ||
+          design?.mode !== "imported" ||
+          !design.source?.path.toLowerCase().endsWith(".stl") ||
+          modelSources.some((m) => m.item.path === design.source?.path);
+        if (!cancel && modelSources.length && sourceReady && !framed.current) {
+          scene.current?.fit();
+          framed.current = true;
+        }
       })
       .catch((e) => setError(String(e)));
     return () => {
@@ -265,15 +356,17 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
       item: mechanicalItem(`@obstacle-${i}`, "import", volume.name),
       volume,
       origin: [0, 0, 0],
+      selectable: false,
     }));
     const knownBoards = new Map((fitBoards ?? []).map((b) => [b.placement.path, b.features]));
     if (board && !knownBoards.has("board.kicad_pcb")) knownBoards.set("board.kicad_pcb", board);
     for (const placement of design.boards) {
       const features = knownBoards.get(placement.path);
       if (!features) continue;
-      const item = mechanicalItem(`@current-${placement.path}`, "board", "PCB envelope");
-      item.position = [placement.x, placement.y, placement.z];
-      item.rotation = [0, 0, placement.rotation];
+      const item = mechanicalItem(`@fit-${placement.path}`, "board", "PCB envelope");
+      const pose = enclosureBoardPose(placement, features.outline);
+      item.position = pose.position;
+      item.rotation = pose.rotation;
       models.push({
         item,
         board: {
@@ -283,7 +376,7 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
           connectors: features.connectors ?? [],
         },
         thickness: features.thicknessMm,
-        origin: [0, 0, 0],
+        origin: pose.origin,
       });
     }
     setModelSources(models);
@@ -304,7 +397,11 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
           rotation: source.rotation,
           scale: source.scale,
         };
-        if (!cancelled) setModelSources([...models, { item, data, origin: [0, 0, 0] }]);
+        if (!cancelled)
+          setModelSources([
+            ...models,
+            { item, data, origin: [0, 0, 0], selectable: false, enclosure: true },
+          ]);
       })().catch((e) => {
         if (!cancelled) setError(enclosureErrorMessage(e));
       });
@@ -321,7 +418,7 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
     setArchive(null);
     setEditReview(null);
     setNotice("");
-    setModelSources([]);
+    if (selectedBoard && !next.boards.some((b) => b.path === selectedBoard)) selectBoard(null);
   };
   function space(key: keyof MechanicalDesign["space"], value: number) {
     if (design) edit({ ...design, confirmed: false, space: { ...design.space, [key]: value } });
@@ -339,6 +436,7 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
     await save();
     const r = await call("preview", { design });
     if (!mounted.current) return;
+    framed.current = false;
     setPreview(r);
     setReport(r.report ?? null);
     setFitError("");
@@ -348,6 +446,7 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
       item: mechanicalItem(`@obstacle-${i}`, "import", volume.name),
       volume,
       origin: [0, 0, 0],
+      selectable: false,
     }));
     if (r.meshes)
       for (const kind of ["base", "lid"] as const) {
@@ -361,12 +460,15 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
             ),
             data: decodeMesh(bytes),
             origin: [0, 0, 0],
+            selectable: false,
+            enclosure: true,
           });
       }
     for (const b of r.boards ?? []) {
       const item = mechanicalItem(`@fit-${b.placement.path}`, "board", b.placement.path);
-      item.position = [b.placement.x, b.placement.y, b.placement.z];
-      item.rotation = [0, 0, b.placement.rotation];
+      const pose = enclosureBoardPose(b.placement, b.features.outline);
+      item.position = pose.position;
+      item.rotation = pose.rotation;
       models.push({
         item,
         board: {
@@ -376,7 +478,7 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
           connectors: b.features.connectors ?? [],
         } as BoardGeometry,
         thickness: b.features.thicknessMm,
-        origin: [0, 0, 0],
+        origin: pose.origin,
       });
     }
     setModelSources(models);
@@ -445,8 +547,32 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
     />
   );
   const actionsDisabled = !!busy || !design;
+  const currentPlacement = design?.boards.find((b) => b.path === selectedBoard);
+  const currentFeatures = selectedBoard ? featuresFor(selectedBoard) : null;
   return (
-    <section className="fd-case-workflow" aria-label="Enclosure designer">
+    <section
+      className="fd-case-workflow"
+      aria-label="Enclosure designer"
+      onKeyDown={(e) => {
+        if ((e.target as HTMLElement).closest("input, textarea, select, [contenteditable=true]"))
+          return;
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!e.shiftKey) undoBoardMove();
+        }
+        if (e.key === "Escape") {
+          e.stopPropagation();
+          selectBoard(null);
+        }
+        if (e.key.toLowerCase() === "f" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (selectedBoard) scene.current?.focusModel(`@fit-${selectedBoard}`);
+          else scene.current?.fit();
+        }
+      }}
+    >
       <div className="fd-case-canvas" ref={host} />
       <aside className="fd-case-panel">
         <header>
@@ -858,14 +984,7 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
                             inputLabel={`Board ${i + 1} ${k}`}
                             unit={k === "rotation" ? "°" : "mm"}
                             value={b[k]}
-                            onChange={(v) =>
-                              edit({
-                                ...design,
-                                boards: design.boards.map((p, j) =>
-                                  j === i ? { ...p, [k]: v } : p,
-                                ),
-                              })
-                            }
+                            onChange={(v) => changePlacement({ ...b, [k]: v })}
                           />
                         ))}
                       </div>
@@ -1132,8 +1251,103 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
           </div>
         </footer>
       </aside>
-      <div className="fd-case-hud">
+      <div className="fd-case-hud" data-collapsed={!controlsExpanded}>
+        <button
+          className="fd-case-controls-toggle"
+          aria-expanded={controlsExpanded}
+          onClick={() => setControlsExpanded(!controlsExpanded)}
+        >
+          {controlsExpanded ? "Hide view controls" : "View & placement"}
+        </button>
+        <section className="fd-case-placement" aria-label="Position boards in the enclosure">
+          <div className="fd-case-placement-title">
+            <strong>Position boards</strong>
+            <small>Case stays fixed</small>
+          </div>
+          <select
+            aria-label="Select board in 3D"
+            value={selectedBoard ?? ""}
+            disabled={!!busy}
+            onChange={(e) => selectBoard(e.target.value || null)}
+          >
+            <option value="">Click a board or choose one…</option>
+            {design?.boards.map((b) => (
+              <option key={b.path} value={b.path}>
+                {b.path === "board.kicad_pcb" ? "Project PCB" : enclosureFileLabel(b.path)}
+              </option>
+            ))}
+          </select>
+          <div className="fd-case-placement-tools">
+            <button
+              disabled={!!busy}
+              aria-pressed={placementMode === "orbit"}
+              onClick={() => setPlacementMode("orbit")}
+            >
+              Camera
+            </button>
+            <button
+              disabled={!selectedBoard || !!busy}
+              aria-pressed={placementMode === "translate"}
+              onClick={() => setPlacementMode("translate")}
+            >
+              Move
+            </button>
+            <button
+              disabled={!selectedBoard || !!busy}
+              aria-pressed={placementMode === "rotate"}
+              onClick={() => setPlacementMode("rotate")}
+            >
+              Rotate
+            </button>
+            <button
+              disabled={!selectedBoard || !!busy}
+              onClick={() => selectedBoard && scene.current?.focusModel(`@fit-${selectedBoard}`)}
+            >
+              Focus board
+            </button>
+          </div>
+          {currentPlacement && (
+            <>
+              <small>
+                {placementMode === "translate"
+                  ? "Drag an arrow or a square handle to move."
+                  : placementMode === "rotate"
+                    ? "Drag the ring to rotate the board flat."
+                    : "Drag empty space to orbit. Scroll to zoom."}
+              </small>
+              <div className="fd-case-placement-tools">
+                <button
+                  disabled={!currentFeatures || !design?.confirmed || !!busy}
+                  title="Uses your confirmed interior dimensions; does not certify fit against the imported shell."
+                  onClick={() => {
+                    if (currentFeatures && design)
+                      changePlacement(
+                        centerEnclosureBoard(
+                          currentPlacement,
+                          currentFeatures.outline,
+                          design.space,
+                        ),
+                      );
+                  }}
+                >
+                  Center in usable space
+                </button>
+                <button disabled={!undoPlacement || !!busy} onClick={undoBoardMove}>
+                  Undo move
+                </button>
+              </div>
+              <small>Placement only · PCB file unchanged</small>
+            </>
+          )}
+        </section>
         <div className="fd-case-view-tools">
+          <button onClick={() => scene.current?.view("top")}>Top view</button>
+          <button onClick={() => scene.current?.view("iso")}>3D view</button>
+          {(design?.source || preview) && (
+            <button aria-pressed={!caseVisible} onClick={() => setCaseVisible(!caseVisible)}>
+              {caseVisible ? "Hide case" : "Show case"}
+            </button>
+          )}
           <button aria-pressed={showRisks} onClick={() => setShowRisks(!showRisks)}>
             Fit risks
           </button>
@@ -1150,6 +1364,23 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
           </button>
         </div>
         <div className="fd-case-fit-legend" aria-label="Fit overlay legend">
+          {design?.mode === "imported" && (
+            <>
+              <strong>Check the actual case walls</strong>
+              <small>
+                Red checks use the interior you defined. Imported case surfaces are not checked
+                automatically.
+              </small>
+              <button
+                onClick={() => {
+                  setStep("Start");
+                  setShowSpace(true);
+                }}
+              >
+                Set usable interior
+              </button>
+            </>
+          )}
           <span>
             <i className="is-risk" />
             Red: affected parts / clearance risk
@@ -1190,11 +1421,7 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
               ? "Original enclosure · Unchanged"
               : "PCB reference"}
         </strong>
-        <span>
-          {preview
-            ? "Drag to rotate · Scroll to zoom · Right-drag to pan"
-            : "Set your space, then choose Preview enclosure."}
-        </span>
+        <span>Click a board to select · Drag empty space to orbit · Scroll to zoom</span>
         <button onClick={() => scene.current?.fit()}>Fit view</button>
       </div>
       <input

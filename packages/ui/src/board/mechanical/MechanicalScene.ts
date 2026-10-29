@@ -27,6 +27,8 @@ export type SceneModel = {
   thickness?: number;
   origin?: [number, number, number];
   volume?: { x: number; y: number; z: number; width: number; depth: number; height: number };
+  selectable?: boolean;
+  enclosure?: boolean;
 };
 export type SceneMode = "orbit" | "translate" | "rotate" | "measure";
 type Callbacks = {
@@ -70,6 +72,8 @@ export class MechanicalScene {
   private hovered: string | null = null;
   private lastHover = 0;
   private mode: SceneMode = "orbit";
+  private planarPlacement = false;
+  private caseVisible = true;
   private observer: ResizeObserver;
   private disposed = false;
   private generation = 0;
@@ -222,7 +226,9 @@ export class MechanicalScene {
       this.camera,
     );
     const hit = ray.intersectObjects(
-      [...this.models.values()].filter((m) => m.object.visible).map((m) => m.object),
+      [...this.models.values()]
+        .filter((m) => m.object.visible && m.source.selectable !== false)
+        .map((m) => m.object),
       true,
     )[0];
     let object = hit?.object;
@@ -257,7 +263,9 @@ export class MechanicalScene {
       this.camera,
     );
     const hit = ray.intersectObjects(
-      [...this.models.values()].filter((m) => m.object.visible).map((m) => m.object),
+      [...this.models.values()]
+        .filter((m) => m.object.visible && m.source.selectable !== false)
+        .map((m) => m.object),
       true,
     )[0];
     if (this.mode === "measure") {
@@ -321,7 +329,7 @@ export class MechanicalScene {
       );
     });
   };
-  async setModels(sources: SceneModel[]) {
+  async setModels(sources: SceneModel[], autoFit = true) {
     this.clearHover();
     const generation = ++this.generation;
     const added: Array<{ source: SceneModel; object: T.Group }> = [];
@@ -378,7 +386,7 @@ export class MechanicalScene {
       }
       this.updateTransforms();
       this.select(this.selection);
-      if (changed) this.fit();
+      if (changed && autoFit) this.fit();
       else this.render();
       if (errors.length) this.callbacks.error(errors.join("\n"));
     } catch (e) {
@@ -531,7 +539,7 @@ export class MechanicalScene {
       object.rotation.set(...(i.rotation.map(T.MathUtils.degToRad) as [number, number, number]));
       if (i.kind === "lid") object.translateZ(this.explode);
       object.scale.setScalar(i.scale);
-      object.visible = i.visible;
+      object.visible = i.visible && (!source.enclosure || this.caseVisible);
       object.traverse((o) => {
         if (o instanceof T.Mesh) o.castShadow = true;
         if (o instanceof T.Mesh && i.kind !== "board")
@@ -586,7 +594,11 @@ export class MechanicalScene {
     if (object?.visible) {
       this.selectionBox = new T.BoxHelper(object, 0xaddb75);
       this.scene.add(this.selectionBox);
-      if ((this.mode === "translate" || this.mode === "rotate") && !this.explode) {
+      if (
+        (this.mode === "translate" || this.mode === "rotate") &&
+        (!this.explode ||
+          (this.planarPlacement && this.models.get(id!)?.source.item.kind === "board"))
+      ) {
         this.gizmo.setMode(this.mode);
         this.gizmo.attach(object);
       }
@@ -595,14 +607,31 @@ export class MechanicalScene {
   }
   setMode(mode: SceneMode) {
     this.mode = mode;
+    this.gizmo.showX = this.gizmo.showY = !(this.planarPlacement && mode === "rotate");
+    this.gizmo.showZ = true;
     this.clearMeasure();
     this.select(this.selection);
   }
-  setExplode(value: number) {
+  setPlanarPlacement(value: boolean) {
+    this.planarPlacement = value;
+    this.setMode(this.mode);
+  }
+  setCaseVisible(value: boolean) {
+    this.caseVisible = value;
+    this.updateTransforms();
+    this.select(this.selection);
+    this.render();
+  }
+  focusModel(id: string) {
+    const box = this.bounds(id);
+    if (box && !box.isEmpty()) this.fitBox(box.expandByScalar(3));
+  }
+  setExplode(value: number, autoFit = true) {
     this.explode = value;
     this.updateTransforms();
     this.select(this.selection);
-    this.fit();
+    if (autoFit) this.fit();
+    else this.render();
   }
   setTranslucent(value: boolean) {
     this.translucent = value;

@@ -29,6 +29,54 @@ export type EnclosureBoardSummary = {
     bounds: { minX: number; minY: number; maxX: number; maxY: number };
   }>;
 };
+/** Keep a centre-mounted gizmo while design/export coordinates retain the PCB's native origin. */
+export function enclosureBoardPose(
+  placement: MechanicalDesign["boards"][number],
+  outline: EnclosureBoardSummary["outline"],
+) {
+  const cx = (outline.minX + outline.maxX) / 2,
+    cy = (outline.minY + outline.maxY) / 2;
+  const angle = (placement.rotation * Math.PI) / 180;
+  return {
+    origin: [cx, cy, 0] as [number, number, number],
+    position: [
+      placement.x + cx * Math.cos(angle) - cy * Math.sin(angle),
+      placement.y + cx * Math.sin(angle) + cy * Math.cos(angle),
+      placement.z,
+    ] as [number, number, number],
+    rotation: [0, 0, placement.rotation] as [number, number, number],
+  };
+}
+export function enclosureBoardPlacement(
+  placement: MechanicalDesign["boards"][number],
+  outline: EnclosureBoardSummary["outline"],
+  position: [number, number, number],
+  rotation: number,
+) {
+  if (![...position, rotation].every(Number.isFinite))
+    throw new Error("Enter a valid board position.");
+  const offset = enclosureBoardPose({ ...placement, x: 0, y: 0, z: 0, rotation }, outline).position;
+  return {
+    ...placement,
+    x: position[0] - offset[0],
+    y: position[1] - offset[1],
+    z: position[2],
+    rotation,
+  };
+}
+export function centerEnclosureBoard(
+  placement: MechanicalDesign["boards"][number],
+  outline: EnclosureBoardSummary["outline"],
+  space: MechanicalDesign["space"],
+) {
+  // A placement aid, not a fit guarantee. Preserve height and orientation for mounting alignment.
+  return enclosureBoardPlacement(
+    placement,
+    outline,
+    [space.x + space.width / 2, space.y + space.depth / 2, placement.z],
+    placement.rotation,
+  );
+}
 export function defaultEnclosureDesign(board: EnclosureBoardSummary | null): MechanicalDesign {
   const o = board?.outline;
   return {
