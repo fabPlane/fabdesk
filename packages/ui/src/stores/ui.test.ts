@@ -357,3 +357,38 @@ test("older profiles learn their current tab; invalid saved area tabs use the ar
   const restored = createUiStore(storage); restored.getState().setWorkspaceArea("review");
   expect(restored.getState().boardTab).toBe("updates");
 });
+
+
+test("map view positions persist per endpoint and project without changing drafts or workspace tools", () => {
+  const memory = new Map<string, string>();
+  const storage = { getItem: (key: string) => memory.get(key) ?? null, setItem: (key: string, value: string) => { memory.set(key, value); }, removeItem: (key: string) => { memory.delete(key); } };
+  const store = createUiStore(storage), local = JSON.stringify(["http://local", "a"]), remote = JSON.stringify(["http://remote", "a"]);
+  store.getState().setActiveProject("a");
+  store.getState().setDraft(newChatDraftKey("a"), "Unsent project question");
+  const tab = store.getState().boardTab, point = { units: "canvas-px" as const, sourceId: "io", x: 30, y: -50 };
+  store.getState().setAssemblyMapPosition(local, "a", "left", point);
+  point.x = 999;
+  store.getState().setAssemblyMapPosition(remote, "a", "left", { units: "canvas-px" as const, sourceId: "io", x: 80, y: 90 });
+  expect(store.getState().assemblyMapLayouts[local]?.left?.x).toBe(30);
+  expect(store.getState().assemblyMapLayouts[remote]?.left?.x).toBe(80);
+  expect(store.getState().boardTab).toBe(tab);
+  expect(store.getState().assistantOpen).toBe(false);
+  expect(store.getState().drafts[newChatDraftKey("a")]).toBe("Unsent project question");
+  expect(createUiStore(storage).getState().assemblyMapLayouts).toEqual(store.getState().assemblyMapLayouts);
+  store.getState().resetAssemblyMapLayout(local, "a");
+  expect(store.getState().assemblyMapLayouts[local]).toBeUndefined();
+  expect(store.getState().assemblyMapLayouts[remote]?.left?.x).toBe(80);
+});
+test("stale project events and invalid coordinates cannot save or reset another project map", () => {
+  const store = createUiStore({ getItem: () => null, setItem: () => {}, removeItem: () => {} }), a = JSON.stringify(["http://local", "a"]), b = JSON.stringify(["http://local", "b"]);
+  store.getState().setActiveProject("a");
+  store.getState().setAssemblyMapPosition(a, "a", "left", { units: "canvas-px" as const, sourceId: "io", x: 20, y: 40 });
+  for (const x of [NaN, Infinity, -Infinity, 1e6 + 1]) store.getState().setAssemblyMapPosition(a, "a", "left", { units: "canvas-px" as const, sourceId: "io", x, y: 40 });
+  expect(store.getState().assemblyMapLayouts[a]?.left?.x).toBe(20);
+  store.getState().setActiveProject("b");
+  store.getState().setAssemblyMapPosition(a, "a", "left", { units: "canvas-px" as const, sourceId: "io", x: 400, y: 500 });
+  store.getState().resetAssemblyMapLayout(a, "a");
+  store.getState().setAssemblyMapPosition(b, "b", "left", { units: "canvas-px" as const, sourceId: "carrier", x: 70, y: 80 });
+  expect(store.getState().assemblyMapLayouts[a]?.left?.x).toBe(20);
+  expect(store.getState().assemblyMapLayouts[b]?.left?.sourceId).toBe("carrier");
+});

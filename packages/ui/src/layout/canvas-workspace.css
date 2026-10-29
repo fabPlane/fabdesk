@@ -352,7 +352,8 @@
 .fd-assembly-viewport:focus-visible { outline:1px solid color-mix(in srgb,var(--fd-accent) 45%,transparent); outline-offset:6px; border-radius:12px; }
 .fd-assembly-card { fill:var(--fd-panel); stroke:var(--fd-border); stroke-width:1; filter:drop-shadow(0 4px 8px #102a2010); }
 .fd-assembly-card[data-selected=true], .fd-assembly-node:focus-visible .fd-assembly-card { stroke:var(--fd-accent); stroke-width:2.2; }
-.fd-assembly-node { cursor:pointer; outline:none; }
+.fd-assembly-node { cursor:grab; outline:none; }
+.fd-assembly-node:active { cursor:grabbing; }
 .fd-assembly-node-title { fill:var(--fd-fg); font-size:13px; font-weight:600; }
 .fd-assembly-node-note { fill:var(--fd-muted); font-size:10px; }
 .fd-assembly-node-note[data-warning=true] { fill:var(--fd-warning); }

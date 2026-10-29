@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { DRAFT_KEY_NEW, newChatDraftKey, workspaceAreaForView, workspaceViews, workspaceTabForArea, type WorkspaceArea, type AssemblySceneSelection, type AssemblyCheckFinding, type RootCheckFinding, type KeptOutputChoice } from "@fabdesk/client-core";
+import { DRAFT_KEY_NEW, newChatDraftKey, parseAssemblyMapPosition, type AssemblyMapPosition, type AssemblyMapLayout, workspaceAreaForView, workspaceViews, workspaceTabForArea, type WorkspaceArea, type AssemblySceneSelection, type AssemblyCheckFinding, type RootCheckFinding, type KeptOutputChoice } from "@fabdesk/client-core";
 import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
 import { readStoredThemeId, type ThemeId } from "../theme/resolve";
 import { stencilThicknessMm } from "./stencil-thickness";
@@ -62,6 +62,9 @@ export interface UiState {
   workspaceByProject: Record<string, { area: WorkspaceArea; tab: BoardTab }>;
   workspaceTabsByProject: Record<string, Partial<Record<WorkspaceArea, BoardTab>>>;
   assemblyBoardByProject: Record<string, AssemblySceneSelection>;
+  assemblyMapLayouts: Record<string, AssemblyMapLayout>;
+  setAssemblyMapPosition: (key: string, projectId: string, instanceId: string, position: AssemblyMapPosition) => void;
+  resetAssemblyMapLayout: (key: string, projectId: string) => void;
   setAssemblyBoard: (selection: AssemblySceneSelection | null) => void;
   rootFinding: RootCheckFinding | null;
   openRootFinding: (finding: RootCheckFinding) => void;
@@ -191,6 +194,17 @@ export function createUiStore(storage?: StateStorage) {
   workspaceArea: "boards",
   workspaceByProject: {},
   workspaceTabsByProject: {},
+  assemblyMapLayouts: {},
+  setAssemblyMapPosition: (key, projectId, instanceId, position) => set(s => {
+    const parsed = parseAssemblyMapPosition(position);
+    if (s.activeProjectId !== projectId || !instanceId || !parsed) return {};
+    return { assemblyMapLayouts: { ...s.assemblyMapLayouts, [key]: { ...s.assemblyMapLayouts?.[key], [instanceId]: parsed } } };
+  }),
+  resetAssemblyMapLayout: (key, projectId) => set(s => {
+    if (s.activeProjectId !== projectId) return {};
+    const assemblyMapLayouts = { ...s.assemblyMapLayouts }; delete assemblyMapLayouts[key];
+    return { assemblyMapLayouts };
+  }),
   assemblyBoardByProject: {},
   setAssemblyBoard: (selection) => set(s => {
     if (!s.activeProjectId || selection && selection.projectId !== s.activeProjectId) return {};
@@ -352,6 +366,7 @@ export function createUiStore(storage?: StateStorage) {
         workspaceByProject: s.workspaceByProject,
         workspaceTabsByProject: s.workspaceTabsByProject,
         assemblyBoardByProject: s.assemblyBoardByProject,
+        assemblyMapLayouts: s.assemblyMapLayouts,
         boardComparisonByProject: s.boardComparisonByProject,
         sidebarOpen: s.sidebarOpen,
         boardOpen: s.boardOpen,

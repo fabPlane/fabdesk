@@ -1,3 +1,4 @@
+import { restoreAssemblyMapLayout } from "./assembly-map-layout";
 import { BoardSourceSelection, type ProjectAssembly, type ProjectBoardSources } from "@fabdesk/protocol";
 import { pcbToolJson, parsePcbPartInspection } from "./pcb-parts";
 import { parsePcbOutlineInspection } from "./pcb-outline";
@@ -10,9 +11,10 @@ export type AssemblySceneNode = { instance: ProjectAssembly["instances"][number]
 export function assemblySourcesToReview(data: ProjectBoardSources, previews: ReadonlyMap<string, PcbPreviewState | undefined>) {
   return data.sources.filter(row => row.status !== "available" || ["source-changed", "artifact-changed"].includes(previews.get(row.source.id) ?? "")).map(row => row.source.id);
 }
-export function assemblyScene(data: ProjectBoardSources) {
+export function assemblyScene(data: ProjectBoardSources, layout?: unknown) {
   if (data.mode !== "assembly" || !data.assembly) throw new Error("An explicit assembly declaration is required");
-  const nodes: AssemblySceneNode[] = data.assembly.instances.map((instance, index) => ({ instance, source: data.sources.find(row => row.source.id === instance.sourceId), x: instance.presentation?.x ?? index % 3 * 290, y: instance.presentation?.y ?? Math.floor(index / 3) * 230, width: 210, height: 158 }));
+  const positions = restoreAssemblyMapLayout(data, layout);
+  const nodes: AssemblySceneNode[] = data.assembly.instances.map((instance, index) => ({ instance, source: data.sources.find(row => row.source.id === instance.sourceId), x: positions.get(instance.id)?.x ?? instance.presentation?.x ?? index % 3 * 290, y: positions.get(instance.id)?.y ?? instance.presentation?.y ?? Math.floor(index / 3) * 230, width: 210, height: 158 }));
   const links = data.assembly.connections.map(connection => ({ connection, a: nodes.find(node => node.instance.id === connection.a.instanceId)!, b: nodes.find(node => node.instance.id === connection.b.instanceId)! }));
   if (links.some(link => !link.a || !link.b)) throw new Error("A connection endpoint is not declared");
   const minX = Math.min(...nodes.map(node => node.x)) - 64, minY = Math.min(...nodes.map(node => node.y)) - 64;

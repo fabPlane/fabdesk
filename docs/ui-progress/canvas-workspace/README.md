@@ -1569,3 +1569,15 @@ Project images now distinguish a failed read from an unavailable file, and objec
 ## Download a selected project file
 
 Files now exposes Download file beside the selected file using the existing authenticated Blob read/download path. Native Save As placed TXT89bytes and PNG12824bytes in task outputs; both SHA/bytes exactly match sources, with no overwritten file or Downloads write. Actual denied-read failure stayed bound to its image, did not leak onto another selected file, and retried after exact access restoration. Compact filenames retain space while grouped contextual actions wrap together. UItypes/231tests/901assertions passed; original3+context2files exact and imageguardRESTORED0644. [Evidence](file-download-native.json), actual [action](file-download-action.png), [native Save](file-download-save-dialog.png), [error](file-download-error.png), [recovered](file-download-recovery.png), [compact before](file-download-compact-before.png), [compact after](file-download-compact-after.png). No generation/validation or successful-save claim is inferred from merely opening Save As.
+
+
+## Device-local project-map arrangement
+
+Drag a declared board card to arrange the logical project map; its connection lines follow. Option/Alt plus arrows nudges the focused board, with Shift for a larger step. This device retains positions per connection endpoint, project, instance and source. Reset layout restores the declared presentation and returns focus to Fit. These view coordinates are explicitly `canvas-px`, never native PCB coordinates or installed positions. Source refresh retains the arrangement for the same declared instance/source pair. Changed or malformed identities are ignored.
+
+Native VAIO walkthrough covered dragging, renderer reload, keyboard nudging, board navigation, background pan, compact layout and reset. All16 protected files and the actual PCB-only DRC report remained exact. Cancellation guards were reviewed; mid-gesture fault injection was not performed. See [native evidence](board-map-layout-native.json).
+
+![Arranged map after reload](board-map-layout-reloaded.png)
+![Reset restores the declared presentation](board-map-layout-reset.png)
+
+Map-arrangement checkpoint: full root typecheck passed; standard suite **2276 passed /36 skipped /0 failures**. Focused client14/85assertions and UI233/912assertions passed. Skips are not native passes.

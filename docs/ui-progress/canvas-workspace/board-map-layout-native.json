@@ -1,0 +1,32 @@
+{
+  "feature": "Device-local logical board-map arrangement",
+  "runtime": "owned native Electron app26",
+  "projectId": "prj_mvr2ofe307592e4a2e",
+  "nativeVerified": [
+    "Before: card drag selected only (467\u2013468)",
+    "Drag moves I/O card and its logical links (469)",
+    "Full renderer reload retains positions (470,474)",
+    "Option+Right and Shift+Option+Down nudge focused instance (471)",
+    "Open board reaches real I/O source; return retains map",
+    "960\u00d7720 layout and reset controls fit (472)",
+    "Background pan does not change stored instance positions",
+    "Reset restores declared layout, removes local override and returns focus to Fit (473,475)",
+    "Final stored format explicitly units canvas-px; sourceId io, x659.6 y263.2",
+    "16 protected source/manifest/preview files and real DRC report remain byte-identical"
+  ],
+  "boundaries": [
+    "Presentation coordinates only; never KiCad positions, physical fit, or electrical compatibility",
+    "Stored per endpoint/project/instance/source in this device UI preferences",
+    "Gesture cancellation on pointercancel/blur/declaration changes is code-reviewed; not injected mid-gesture in native CUA",
+    "No shared/synchronized map arrangement claim"
+  ],
+  "tests": {
+    "focusedClient": "14 pass /85 assertions",
+    "ui": "233 pass /912 assertions",
+    "root": "Root typecheck PASS; standard suite2276 pass /36 skip /0 fail across17 batches"
+  },
+  "screenshots": [
+    "board-map-layout-reloaded.png",
+    "board-map-layout-reset.png"
+  ]
+}

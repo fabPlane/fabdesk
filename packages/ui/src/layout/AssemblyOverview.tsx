@@ -1,8 +1,8 @@
 import { WorkspaceMenu } from "./WorkspaceMenu";
 import { AssemblySchematicPreview } from "../board/AssemblySchematicPreview";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { ASSEMBLY_MANIFEST_PATH, PCB_PREVIEW_REVISION_PATH, type BoardSourceSelection, type ProjectBoardSources } from "@fabdesk/protocol";
-import { nextAssemblyReviewSelection, assemblyModelNeedsReview, assemblyModelSummaryLabel, useAssemblyModelSummaries, assemblyCheckFindingOwned, assemblyFindingPreviewMatches, assemblyCheckNeedsReview, assemblyCheckSummaryLabel, useAssemblyCheckSummaries, pcbSvgHasNativeCoordinates, restoreAssemblySelection, assemblyLinkShape, assemblyScene, assemblySourcesToReview, assemblySelectionState, captureAssemblySelection, useAssemblyBoardInspection, useAssemblyPreviewRevisions, usePcbPreviewRevision, useProjectText, useRunTool, type AssemblySceneNode, type AssemblySceneSelection } from "@fabdesk/client-core";
+import { assemblyMapLayoutKey, restoreAssemblyMapLayout, useCoreClient, type AssemblyMapLayout, nextAssemblyReviewSelection, assemblyModelNeedsReview, assemblyModelSummaryLabel, useAssemblyModelSummaries, assemblyCheckFindingOwned, assemblyFindingPreviewMatches, assemblyCheckNeedsReview, assemblyCheckSummaryLabel, useAssemblyCheckSummaries, pcbSvgHasNativeCoordinates, restoreAssemblySelection, assemblyLinkShape, assemblyScene, assemblySourcesToReview, assemblySelectionState, captureAssemblySelection, useAssemblyBoardInspection, useAssemblyPreviewRevisions, usePcbPreviewRevision, useProjectText, useRunTool, type AssemblySceneNode, type AssemblySceneSelection } from "@fabdesk/client-core";
 import { useProjectBlobUrl } from "../hooks/queries";
 import { Button, EmptyState, LoadError, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
@@ -14,6 +14,7 @@ import { ProjectImage } from "../chat/ProjectImage";
 import { newChatDraftKey, useUiStore } from "../stores/ui";
 
 type Box = { x: number; y: number; width: number; height: number };
+type MapDrag = { selection: AssemblySceneSelection; scopeKey: string; pointerId: number; clientX: number; clientY: number; x: number; y: number; scaleX: number; scaleY: number; nextX: number; nextY: number; moved: boolean; layout: AssemblyMapLayout };
 type Detail = { selection: AssemblySceneSelection; directory: string; previewPath: string | null; instanceName: string; sourceName: string };
 const shortened = (value: string, length = 25) => value.length > length ? `${value.slice(0, length - 1)}…` : value;
 function fitBox(bounds: Box, aspect: number): Box {
@@ -41,7 +42,12 @@ function askAbout(selection: AssemblySceneSelection | null, name: string, availa
 
 /** Logical project topology. Canvas positions and declared links never imply chassis fit or electrical validation. */
 export function AssemblyOverview({ projectId, name, data, checking, failed, onRetry, boardPicker = false }: { boardPicker?: boolean; projectId: string; name: string; data: ProjectBoardSources; checking: boolean; failed: boolean; onRetry: () => void }) {
-  const scene = useMemo(() => assemblyScene(data), [data]);
+  const client = useCoreClient(), layoutKey = assemblyMapLayoutKey(client.baseUrl, projectId);
+  const savedLayout = useUiStore(state => state.assemblyMapLayouts?.[layoutKey]);
+  const [transientLayout, setTransientLayout] = useState<AssemblyMapLayout | null>(null);
+  const savedPositions = useMemo(() => restoreAssemblyMapLayout(data, savedLayout), [data, savedLayout]);
+  const scene = useMemo(() => assemblyScene(data, transientLayout ?? savedLayout), [data, transientLayout, savedLayout]);
+  const mapDrag = useRef<MapDrag | null>(null);
   const savedBoard = useUiStore(state => state.assemblyBoardByProject[projectId]);
   const restored = restoreAssemblySelection(data, savedBoard);
   const detailFor = (selection: AssemblySceneSelection | null): Detail | null => {
@@ -51,6 +57,7 @@ export function AssemblyOverview({ projectId, name, data, checking, failed, onRe
   };
   const update = useRunTool(), [updateSourceId, setUpdateSourceId] = useState<string | null>(null);
   const root = useRef<HTMLDivElement>(null), viewport = useRef<HTMLDivElement>(null), svg = useRef<SVGSVGElement>(null), tools = useRef<HTMLDivElement>(null);
+  const fitButton = useRef<HTMLButtonElement>(null);
   const nodeElements = useRef(new Map<string, SVGGElement>()), linkElements = useRef(new Map<string, SVGGElement>());
   const measured = useRef(false);
   const dimensions = useRef({ width: 1000, height: 600 });
@@ -93,7 +100,7 @@ export function AssemblyOverview({ projectId, name, data, checking, failed, onRe
   useEffect(() => {
     const element = viewport.current; if (!element || detail) return;
     const wheel = (event: WheelEvent) => {
-      event.preventDefault(); const rect = element.getBoundingClientRect(), current = cameraRef.current;
+      event.preventDefault(); if (mapDrag.current) return; const rect = element.getBoundingClientRect(), current = cameraRef.current;
       zoom(Math.exp(-Math.max(-120, Math.min(120, event.deltaY)) * .0025), { x: current.x + (event.clientX - rect.left) / rect.width * current.width, y: current.y + (event.clientY - rect.top) / rect.height * current.height });
     };
     element.addEventListener("wheel", wheel, { passive: false }); return () => element.removeEventListener("wheel", wheel);
@@ -138,6 +145,47 @@ export function AssemblyOverview({ projectId, name, data, checking, failed, onRe
     if (node.source?.status === "available") inspect(node);
     else { choose(node); focusToolsFrom(origin, `board:${node.instance.id}`, true); }
   };
+  const cancelMapDrag = () => {
+    const start = mapDrag.current; if (!start) return;
+    mapDrag.current = null; setTransientLayout(null);
+    const element = nodeElements.current.get(start.selection.instanceId);
+    if (element?.hasPointerCapture(start.pointerId)) element.releasePointerCapture(start.pointerId);
+  };
+  const beginMapDrag = (event: ReactPointerEvent<SVGGElement>, node: AssemblySceneNode) => {
+    if (event.button !== 0 || unavailable || mapDrag.current) return;
+    const selection = captureAssemblySelection(data, node.instance.id), box = viewport.current?.getBoundingClientRect();
+    if (!selection || !box?.width || !box.height) return;
+    event.preventDefault(); event.stopPropagation(); event.currentTarget.focus();
+    event.currentTarget.setPointerCapture(event.pointerId); choose(node);
+    mapDrag.current = { selection, scopeKey: layoutKey, pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, x: node.x, y: node.y, scaleX: cameraRef.current.width / box.width, scaleY: cameraRef.current.height / box.height, nextX: node.x, nextY: node.y, moved: false, layout: Object.fromEntries(savedPositions) };
+  };
+  const mapCoordinate = (value: number) => Math.max(-1e6, Math.min(1e6, Math.round(value * 10) / 10));
+  const moveMapDrag = (event: ReactPointerEvent<SVGGElement>) => {
+    const start = mapDrag.current; if (!start || start.pointerId !== event.pointerId) return;
+    if (start.scopeKey !== layoutKey || assemblySelectionState(data, start.selection) === "stale" || failed) { cancelMapDrag(); return; }
+    event.stopPropagation();
+    const dx = event.clientX - start.clientX, dy = event.clientY - start.clientY;
+    if (!start.moved && Math.hypot(dx, dy) < 4) return;
+    start.moved = true; start.nextX = mapCoordinate(start.x + dx * start.scaleX); start.nextY = mapCoordinate(start.y + dy * start.scaleY);
+    setTransientLayout({ ...start.layout, [start.selection.instanceId]: { units: "canvas-px", sourceId: start.selection.sourceId, x: start.nextX, y: start.nextY } });
+  };
+  const finishMapDrag = (event: ReactPointerEvent<SVGGElement>) => {
+    const start = mapDrag.current; if (!start || start.pointerId !== event.pointerId) return;
+    mapDrag.current = null;
+    const dx = event.clientX - start.clientX, dy = event.clientY - start.clientY;
+    if (start.moved || Math.hypot(dx, dy) >= 4) { start.moved = true; start.nextX = mapCoordinate(start.x + dx * start.scaleX); start.nextY = mapCoordinate(start.y + dy * start.scaleY); }
+    if (start.moved && !failed && start.scopeKey === layoutKey && assemblySelectionState(data, start.selection) !== "stale") useUiStore.getState().setAssemblyMapPosition(start.scopeKey, projectId, start.selection.instanceId, { units: "canvas-px", sourceId: start.selection.sourceId, x: start.nextX, y: start.nextY });
+    setTransientLayout(null);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+  useEffect(() => {
+    const start = mapDrag.current;
+    if (start && (failed || start.scopeKey !== layoutKey || assemblySelectionState(data, start.selection) === "stale")) cancelMapDrag();
+  }, [layoutKey, data, failed]);
+  const resetMapLayout = () => {
+    cancelMapDrag(); useUiStore.getState().resetAssemblyMapLayout(layoutKey, projectId);
+    requestAnimationFrame(() => { fit(); if (useUiStore.getState().activeProjectId === projectId && document.activeElement === document.body) fitButton.current?.focus({ preventScroll: true }); });
+  };
   const updatePreview = async (node: AssemblySceneNode) => {
     const selection = captureAssemblySelection(data, node.instance.id);
     if (unavailable || update.state.status === "running" || !selection || assemblySelectionState(data, selection) !== "owned") return;
@@ -145,14 +193,15 @@ export function AssemblyOverview({ projectId, name, data, checking, failed, onRe
     await update.run("render_pcb_svg", { projectId, board: { sourceId: selection.sourceId, manifestSha256: selection.manifestSha256 } });
   };
   const drag = useRef<{ pointerId: number; clientX: number; clientY: number; camera: Box } | null>(null);
-  useEffect(() => { const cancel = () => { drag.current = null; }; window.addEventListener("blur", cancel); return () => window.removeEventListener("blur", cancel); }, []);
+  useEffect(() => { const cancel = () => { drag.current = null; cancelMapDrag(); }; window.addEventListener("blur", cancel); return () => { window.removeEventListener("blur", cancel); mapDrag.current = null; }; }, []);
   if (boardPicker && detail) return <AssemblyBoardDetail projectId={projectId} detail={detail} current={data} checking={checking} failed={failed} onBack={() => { useUiStore.getState().setAssemblyBoard(null); setDetail(null); requestAnimationFrame(() => nodeElements.current.get(detail.selection.instanceId)?.focus()); }} />;
   return <div ref={root} className="fd-assembly-overview" data-testid="assembly-overview" onKeyDown={event => {
+    if (event.key === "Escape" && mapDrag.current) { event.preventDefault(); event.stopPropagation(); cancelMapDrag(); return; }
     if (event.key === "Escape" && (selectedNode || selectedLink)) { event.preventDefault(); dismissSelection(); event.stopPropagation(); }
   }}>
     <header className="fd-assembly-heading"><h1 title={name}>{boardPicker ? "Choose a board" : "Project overview"}</h1><p>{scene.nodes.length} {scene.nodes.length === 1 ? "board" : "boards"}{data.sources.length !== scene.nodes.length && <> · {data.sources.length} source designs</>} · {scene.links.length} {scene.links.length === 1 ? "connection" : "connections"}</p><small>{failed ? "Project refresh unavailable" : checking ? "Checking project sources…" : "Declared connections · compatibility unverified"}</small>{boardPicker && savedBoard && !restored && !detail && <small role="status" className="fd-assembly-restore-notice">Project definition changed or board unavailable. Select a board again.</small>}</header>
     {failed ? <Button className="fd-assembly-update" size="sm" variant="ghost" onClick={onRetry}>Retry project refresh</Button> : sourcesToReview.length > 0 && <Button className="fd-assembly-update" size="sm" variant="ghost" disabled={checking} onClick={event => { const next = nextAssemblyReviewSelection(data, sourcesToReview, selected), node = next ? scene.nodes.find(node => node.instance.id === next.instanceId) : null; if (node) { choose(node); fit(); focusToolsFrom(event.currentTarget, `board:${node.instance.id}`); } }}><Icon name="warning" width={16} height={16} />{sourcesToReview.length > 1 && selected && ownership !== "stale" && sourcesToReview.includes(selected.sourceId) ? "Next source to review" : "Sources to review"} · {sourcesToReview.length}</Button>}
-    <div ref={viewport} className="fd-assembly-viewport" tabIndex={0} aria-label="Assembly canvas. Drag the background to pan; scroll to zoom. Select a board to show its tools." onKeyDown={event => {
+    <div ref={viewport} className="fd-assembly-viewport" tabIndex={0} aria-label="Assembly canvas. Drag boards to arrange this device’s project map; drag the background to pan; scroll to zoom. Select a board to show its tools." onKeyDown={event => {
       if (event.target !== event.currentTarget) return;
       if (event.key === "Home") { event.preventDefault(); fit(); }
       if (event.key === "+" || event.key === "=") zoom(1.25);
@@ -180,7 +229,15 @@ export function AssemblyOverview({ projectId, name, data, checking, failed, onRe
           const check = checkById.get(node.instance.sourceId), checkWarning = !checks.isFetching && !checks.isError && assemblyCheckNeedsReview(check);
           const model = modelById.get(node.instance.sourceId), modelWarning = !models.isFetching && !models.isError && assemblyModelNeedsReview(model);
           const text = modelWarning ? assemblyModelSummaryLabel(model) : checkWarning ? assemblyCheckSummaryLabel(check) : status !== "available" ? status === "unresolved" ? "Source not imported" : status === "blocked" ? "Source needs review" : "Source missing" : previewCopy(preview?.data, preview?.isFetching ?? false, preview?.isError ?? false, !!node.source?.previewPath);
-          return <g key={node.instance.id} ref={element => { if (element) nodeElements.current.set(node.instance.id, element); else nodeElements.current.delete(node.instance.id); }} data-assembly-node={node.instance.id} className="fd-assembly-node" transform={`translate(${node.x},${node.y})`} role="button" tabIndex={0} aria-label={`${node.instance.name}. Source ${node.source?.source.name ?? node.instance.sourceId}. ${text}. Select to show tools.`} aria-pressed={selected?.instanceId === node.instance.id} onClick={() => choose(node)} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); choose(node); focusToolsFrom(event.currentTarget, `board:${node.instance.id}`); } }}>
+          return <g key={node.instance.id} ref={element => { if (element) nodeElements.current.set(node.instance.id, element); else nodeElements.current.delete(node.instance.id); }} data-assembly-node={node.instance.id} className="fd-assembly-node" transform={`translate(${node.x},${node.y})`} role="button" tabIndex={0} aria-label={`${node.instance.name}. Source ${node.source?.source.name ?? node.instance.sourceId}. ${text}. Select to show tools. Drag to arrange the map; Alt or Option plus arrows to nudge.`} aria-pressed={selected?.instanceId === node.instance.id} onPointerDown={event => beginMapDrag(event, node)} onPointerMove={moveMapDrag} onPointerUp={finishMapDrag} onPointerCancel={cancelMapDrag} onLostPointerCapture={cancelMapDrag} onClick={() => choose(node)} onKeyDown={event => {
+              const offset = ({ ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] } as Record<string, number[]>)[event.key];
+              if (event.altKey && offset) {
+                event.preventDefault(); event.stopPropagation(); if (unavailable) return;
+                const step = event.shiftKey ? 10 : 1;
+                useUiStore.getState().setAssemblyMapPosition(layoutKey, projectId, node.instance.id, { units: "canvas-px", sourceId: node.instance.sourceId, x: mapCoordinate(node.x + offset[0]! * step), y: mapCoordinate(node.y + offset[1]! * step) }); return;
+              }
+              if (event.key === "Enter" || event.key === " ") { event.preventDefault(); choose(node); focusToolsFrom(event.currentTarget, `board:${node.instance.id}`); }
+            }}>
             <title>{node.instance.name} — {node.source?.source.name ?? node.instance.sourceId}. {text}</title>
             <rect className="fd-assembly-card" data-selected={selected?.instanceId === node.instance.id} width={210} height={118} rx={12} />
             <BoardImage projectId={projectId} node={node} />
@@ -194,8 +251,8 @@ export function AssemblyOverview({ projectId, name, data, checking, failed, onRe
       {selectedNode ? <><strong title={selectedNode.instance.name}>{shortened(selectedNode.instance.name, 24)}</strong>{ownership !== "unavailable" && <Button size="sm" variant="ghost" disabled={unavailable || ownership !== "owned"} onClick={() => inspect(selectedNode)}><Icon name="pcb" width={16} height={16} />Open board</Button>}<Button size="sm" variant="ghost" disabled={unavailable || ownership === "stale"} onClick={() => askAbout(selected, selectedNode.instance.name, ownership === "owned")}><Icon name="sparkles" width={16} height={16} />{ownership === "unavailable" ? "Resolve source" : "Ask"}</Button><WorkspaceMenu key={selectedNode.instance.id} className={`fd-assembly-more ${Number(toolStyle.top) > 300 ? "fd-assembly-more-above" : ""}`} label={<><span>{ownership === "unavailable" ? "Source details" : "More"}</span><Icon name="chevronDown" width={14} height={14} /></>}>{ownership === "unavailable" ? <><div className="fd-assembly-source-details"><strong>{selectedNode.instance.name}</strong><p>{selectedNode.source?.reason ?? "Resolve this source before opening its PCB"}</p></div><Button size="sm" variant="ghost" disabled={unavailable || !selected || selected.manifestSha256 !== data.manifestSha256} onClick={() => { if (useUiStore.getState().activeProjectId === projectId && selected?.manifestSha256 === data.manifestSha256) useUiStore.getState().openProjectFile(ASSEMBLY_MANIFEST_PATH); }}><Icon name="folderOpen" width={16} height={16} />Open project definition</Button>{selectedNode.source && <dl className="fd-assembly-source-details"><dt>Source ID</dt><dd>{selectedNode.source.source.id}</dd>{selectedNode.source.source.location === "project" && <><dt>Project folder</dt><dd>{selectedNode.source.source.directory}</dd></>}{selectedNode.source.source.provenance && <><dt>Declared origin · unverified</dt><dd>{selectedNode.source.source.provenance.repository}</dd><dd>{selectedNode.source.source.provenance.ref}</dd><dd>{selectedNode.source.source.provenance.path}</dd></>}</dl>}</> : <Button size="sm" variant="ghost" disabled={unavailable || ownership !== "owned"} onClick={() => { if (!selected || ownership !== "owned") return; const ui = useUiStore.getState(); ui.setAssemblyBoard(selected); ui.setBoardTab("drc"); }}>PCB checks</Button>}{ownership === "owned" && <Button size="sm" variant="ghost" disabled={unavailable} onClick={() => { if (!selected || ownership !== "owned") return; const ui = useUiStore.getState(); ui.setAssemblyBoard(selected); ui.setBoardTab("3d"); }}>3D model</Button>}{ownership === "owned" && (!selectedNode.source?.previewPath || previewById.get(selectedNode.instance.sourceId)?.data !== "matches-source" || update.state.status === "running" && updateSourceId === selectedNode.instance.sourceId) && <Button size="sm" variant="ghost" disabled={unavailable || update.state.status === "running" || !!previewById.get(selectedNode.instance.sourceId)?.isFetching} onClick={() => void updatePreview(selectedNode)}>{update.state.status === "running" && updateSourceId === selectedNode.instance.sourceId ? "Updating preview…" : selectedNode.source?.previewPath ? "Update preview" : "Create preview"}</Button>}{scene.nodes.filter(node => node.instance.sourceId === selectedNode.instance.sourceId).length > 1 && <p className="fd-menu-caption">Shared design · {scene.nodes.filter(node => node.instance.sourceId === selectedNode.instance.sourceId).length} boards</p>}</WorkspaceMenu>{ownership === "stale" && <span>Project changed · select again</span>}{update.state.error && updateSourceId === selectedNode.instance.sourceId && <span role="alert">{update.state.error}</span>}</> : selectedLink && <><strong title={selectedLink.connection.name}>{shortened(selectedLink.connection.name, 22)}</strong><Button size="sm" variant="ghost" aria-label={`${selectedLink.a.source?.status === "available" ? "Open board" : "Show source tools"}: ${selectedLink.a.instance.name} · ${selectedLink.connection.a.connector}`} title={`${selectedLink.a.instance.name} · ${selectedLink.connection.a.connector}${selectedLink.a.source?.status === "available" ? "" : " · Source unavailable"}`} disabled={unavailable || linkStale} onClick={event => followEndpoint(selectedLink.a, event.currentTarget)}>{shortened(selectedLink.a.instance.name, 15)} · {selectedLink.connection.a.connector}</Button><span>↔</span><Button size="sm" variant="ghost" aria-label={`${selectedLink.b.source?.status === "available" ? "Open board" : "Show source tools"}: ${selectedLink.b.instance.name} · ${selectedLink.connection.b.connector}`} title={`${selectedLink.b.instance.name} · ${selectedLink.connection.b.connector}${selectedLink.b.source?.status === "available" ? "" : " · Source unavailable"}`} disabled={unavailable || linkStale} onClick={event => followEndpoint(selectedLink.b, event.currentTarget)}>{shortened(selectedLink.b.instance.name, 15)} · {selectedLink.connection.b.connector}</Button><span>{linkStale ? "Project changed · select again" : "Unverified"}</span></>}
       <button className="fd-assembly-dismiss" aria-label="Deselect assembly item" onClick={dismissSelection}><Icon name="close" width={15} height={15} /></button>
     </div>}
-    <div className="fd-assembly-camera" aria-label="Assembly view controls"><Button size="sm" variant="ghost" onClick={fit}>Fit</Button><Button size="sm" variant="ghost" aria-label="Zoom out assembly" onClick={() => zoom(.8)}>−</Button><span>{Math.round(dimensions.current.width / camera.width * 100)}%</span><Button size="sm" variant="ghost" aria-label="Zoom in assembly" onClick={() => zoom(1.25)}>+</Button></div>
-    <p className="fd-assembly-caption">{update.state.status === "running" ? "Updating the selected source preview…" : "Select a board to inspect it · Layout is a project map, not installed positions"}</p>
+    <div className="fd-assembly-camera" aria-label="Assembly view controls"><Button ref={fitButton} size="sm" variant="ghost" onClick={fit}>Fit</Button><Button size="sm" variant="ghost" aria-label="Zoom out assembly" onClick={() => zoom(.8)}>−</Button><span>{Math.round(dimensions.current.width / camera.width * 100)}%</span><Button size="sm" variant="ghost" aria-label="Zoom in assembly" onClick={() => zoom(1.25)}>+</Button>{savedPositions.size > 0 && <Button size="sm" variant="ghost" aria-label="Reset map layout" title="Restore this device’s map to the project’s declared arrangement" onClick={resetMapLayout}>Reset layout</Button>}</div>
+    <p className="fd-assembly-caption">{update.state.status === "running" ? "Updating the selected source preview…" : "Drag boards to arrange · Layout is a project map, not installed positions"}</p>
   </div>;
 }
 
