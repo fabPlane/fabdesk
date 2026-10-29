@@ -35,10 +35,11 @@ export async function readProjectBom(ctx: ToolContext): Promise<ProjectBomSnapsh
     const entry: BomSourceCoverage = { sourceId: assembly ? source.id : null, name: source.name, directory, instanceIds, multiplier, status: "unavailable", componentCount: 0 };
     coverage.push(entry);
     if (!multiplier) { entry.status = "unused"; entry.reason = "No physical instance is declared; this source contributes no quantity."; continue; }
-    if (source.location !== "project" || (assembly && record.status !== "available")) { entry.reason = record.reason ?? "Board source is unavailable."; continue; }
+    if (source.location !== "project" || (assembly && record.status !== "available" && record.status !== "missing")) { entry.reason = record.reason ?? "Board source is unavailable."; continue; }
     const prefix = directory === "." ? "" : `${directory}/`;
     if (record.pcbPath && record.pcbSha256) inputs.set(record.pcbPath, record.pcbSha256);
     try {
+      if (assembly && record.status === "missing") await read(`${prefix}board.kicad_pcb`, false);
       const schematic = await read(`${prefix}board.kicad_sch`, false);
       let sourceComponents: NetlistComponent[];
       if (schematic) {

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createRegistry, makeContext, type ToolContext } from "../src";
 import { readProjectBom } from "../src/project-bom";
@@ -68,4 +68,30 @@ test("native export failure stays explicit and never falls back to an old design
   const result = await readProjectBom(ctx);
   expect(result.lines).toEqual([]); expect(result.coverage[0]?.status).toBe("failed"); expect(result.coverage[0]?.reason).toContain("unavailable"); expect(result.complete).toBe(false);
   await expect(readProjectBom({ ...ctx, board: { sourceId: "io", manifestSha256: "a".repeat(64) } } as ToolContext)).rejects.toThrow("project scope");
+});
+
+
+test("declared schematic-only boards contribute parts before a PCB is created", async () => {
+  const { ctx, project } = await fixture(true);
+  const path = join(project.dir, "boards/io/board.kicad_pcb");
+  await rm(path);
+  const before = await readFile(join(project.dir, "boards/io/board.kicad_sch"), "utf8");
+  const result = await readProjectBom(ctx);
+  expect(result.lines).toEqual([expect.objectContaining({ refs: ["left:R1", "right:R1"], qty: 2 })]);
+  expect(result.coverage[0]).toMatchObject({ status: "native-schematic", multiplier: 2, componentCount: 1 });
+  expect(result.absentInputs).toContain("boards/io/board.kicad_pcb");
+  expect(await readFile(join(project.dir, "boards/io/board.kicad_sch"), "utf8")).toBe(before);
+  expect(await Bun.file(path).exists()).toBe(false);
+});
+
+test("a schematic-only source alias is refused without using its saved netlist", async () => {
+  const { ctx, project } = await fixture(true);
+  await rm(join(project.dir, "boards/io/board.kicad_pcb"));
+  await rm(join(project.dir, "boards/io/board.kicad_sch"));
+  await symlink(join(project.dir, "boards/unused/board.kicad_sch"), join(project.dir, "boards/io/board.kicad_sch"));
+  await writeFile(join(project.dir, "boards/io/circuit.netlist.json"), JSON.stringify(DEMO_NETLIST));
+  const result = await readProjectBom(ctx);
+  expect(result.lines).toEqual([]);
+  expect(result.coverage[0]?.status).toBe("failed");
+  expect(result.inputs.some(input => input.path === "boards/io/circuit.netlist.json")).toBe(false);
 });
