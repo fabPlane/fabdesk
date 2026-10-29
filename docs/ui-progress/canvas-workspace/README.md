@@ -1518,3 +1518,9 @@ Actual960×720 file actions/path/image fit passed and window restored1440×870; 
 ## Failed text preview can retry in place
 
 Files text-read failures now offer Retry file preview, disabled while retrying. Native owned fixture permission failure reproduced missing recovery before; retry remained honestly failed while access was denied. Exact mode/bytes restored; existing watcher automatically refreshed the same selection. All5original/context study files exact; new89byte fixture intentionally retained, mode0644; no fault active. UI typecheck and231UItests/901assertions PASS. Captures426–427 and [native evidence](file-preview-retry-native.json). Automatic restored-access recovery is not claimed as a separate manual Retry success.
+
+## Blank project starts ready for typing
+
+A native blank-project creation from a current new conversation left focus on the page body. After successful ordinary creation, the existing composer-focus action now focuses the main fresh-start question. GitHub import completion retains its existing design-first handoff. Native second-project creation/immediate unsent typing/cleanup passed; two isolated blank2-file projects retained. UI types and231UItests/901assertions PASS. Captures428–429 and [native evidence](new-project-focus-native.json). Cumulative standard root suite PASS:2262pass/36skip/0fail (/tmp/canvas-reference-flow-full-tests.log). Skipped native integrations are not native passes. Only the suite-generated tracked Pythoncache was restored; source changes preserved.
+
+Final cumulative root typecheck PASS (/tmp/canvas-reference-flow-final-root-types.log), including desktop/core/UI. No remote publication.

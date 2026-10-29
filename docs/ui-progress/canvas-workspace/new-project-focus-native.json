@@ -1,0 +1,43 @@
+{
+  "native": [
+    "With no active conversation and assistant closed, created a blank project through native header form",
+    "Before change, fresh project main composer was visible but focus remained on HTML page body",
+    "After change, a second blank project focused Describe your project immediately",
+    "Typed unsent Keyboard handoff check without another click, verified it landed in main composer, then removed it"
+  ],
+  "projects": [
+    {
+      "id": "prj_mvt0va3vb759d81cf7",
+      "name": "Fresh project keyboard entry after \u2014 validation",
+      "path": "/Users/amliomnie/Documents/Codex/2026-10-27/https-github-com-tensorfleet-placement-lab/work/sketch-first-projects/fresh-project-keyboard-entry-after-validation",
+      "hashes": {
+        ".gitignore": "b19e46b028283686f56a2fbc838cd00ea1d51c8d26ddbb8f0c5e6134a6a0cdb6",
+        "fabdesk.json": "d9dfc2bae00144b0e24e84f691b831c1934667f3dfa392551a161e56203d14fd"
+      }
+    },
+    {
+      "id": "prj_mvt0tnhk02ca01a29e",
+      "name": "Fresh project keyboard entry \u2014 validation",
+      "path": "/Users/amliomnie/Documents/Codex/2026-10-27/https-github-com-tensorfleet-placement-lab/work/sketch-first-projects/fresh-project-keyboard-entry-validation",
+      "hashes": {
+        ".gitignore": "b19e46b028283686f56a2fbc838cd00ea1d51c8d26ddbb8f0c5e6134a6a0cdb6",
+        "fabdesk.json": "ec7f504e87c64494f627c2ae0101c459babb60a8acc935aaec0875a6d0cb28da"
+      }
+    }
+  ],
+  "screenshots": [
+    "428-new-project-keyboard-focus-lost-before.png",
+    "429-new-project-focuses-main-question.png"
+  ],
+  "validation": {
+    "uiTypes": "PASS /tmp/canvas-new-project-focus-ui-types.log",
+    "uiTests": "231pass/901assertions/0fail /tmp/canvas-new-project-focus-ui-tests.log",
+    "fullRootSuite": "PASS:2262pass/36skip/0fail /tmp/canvas-reference-flow-full-tests.log",
+    "rootTypes": "PASS /tmp/canvas-reference-flow-final-root-types.log"
+  },
+  "limits": [
+    "GitHub import finish is excluded by explicit mode guard; no new clone/adoption walkthrough in this slice",
+    "No agent Send or PCB/schematic generation",
+    "Two isolated blank projects intentionally retained,2files each"
+  ]
+}

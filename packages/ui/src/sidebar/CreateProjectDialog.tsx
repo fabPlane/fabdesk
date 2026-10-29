@@ -5,6 +5,7 @@ import { parsePublicGitHubUrl } from "@fabdesk/protocol";
 import { Button, Dialog, Input } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { ErrorNotice } from "../components/ErrorNotice";
+import { useUiStore } from "../stores/ui";
 
 /** Mounted only while open, so canceled names and locations never leak into the next project. */
 export function CreateProjectDialog({ onClose, onCreated, initialMode = "create" }: { onClose: () => void; onCreated: (id: string) => void; initialMode?: "create" | "github" }) {
@@ -44,6 +45,7 @@ export function CreateProjectDialog({ onClose, onCreated, initialMode = "create"
   const finish = async (id: string) => {
     await qc.invalidateQueries({ queryKey: ["projects"] });
     onCreated(id);
+    if (mode === "create") useUiStore.getState().focusComposer();
   };
   const submit = async () => {
     if (!name.trim() || pending || picking) return;
