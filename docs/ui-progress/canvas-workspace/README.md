@@ -2,11 +2,13 @@
 
 Design roadmap: [#388](https://github.com/TensorFleet/fabdesk/pull/388). Implementation continues in [#389](https://github.com/TensorFleet/fabdesk/pull/389).
 
-Current source checkpoint: **4cac7a0**, LOCAL ONLY. The latest targeted v6 refinements add device-local map arrangement, a single-composer fresh start, separate design-source/output/check review, saved-output search/source filters, direct member-board switching, requested secondary board tools and a quiet header Review entry. Existing native functionality remains the foundation. All generated concepts and prior native captures are preserved.
+**Shared UI structure is ready for feature delegation** at source checkpoint **b38683d**. This is the user-approved structure-first milestone, not completion of every feature. [23 feature handoffs](STRUCTURE-HANDOFF.md) give each feature a home, working/preserved behavior, remaining implementation, dependencies and entry files. [Final acceptance](structure-final-acceptance.json) separates navigation, native evidence and functional limits.
 
-Full root typecheck and standard suite passed at **e5d9c63**: **2277 passed /36 skipped /zero failures** across17 batches, recorded in42360d9. The later header-only change passed UItypes and233tests/912assertions plus native root/VAIO/fresh/compact walkthroughs. Native engineering operations, source preservation and UI navigation have separate evidence below; skipped tests are not native passes.
+The canvas shell, requested tools, source-qualified overview, primary board tabs, direct board switching, grouped Outputs/Review, clear pending feature states, missing-source recovery and fresh-start structure are in place. Actual wide/compact captures and all original concepts remain preserved. The final native app is a quiet VAIOOverview with6boards5declaredlinks2sourcesreview. No compatibility/engineering pass is inferred.
 
-The Codex assistant model-routing issue is explicitly user-deferred and recorded locally; actual assistant reasoning/sketch-to-board generation is unverified. No sign-in or model retries are pending. Full reconciliation, native replacement/general Undo, aggregate/member BOM/diff/pins, complete VAIO dependencies and hosted collaboration remain capability/dependency gaps. Board Art Apply/polish is user-deferred; Mechanical is teammate-owned. The roadmap is not complete. No pushes, remote PR/document updates, merge or deployment are authorized. Historical sections below retain their original scope and are superseded by these current statements where they differ.
+Final UItypecheck passed and233tests/912assertions passed with0failures. Earlier accumulated root verification at **e5d9c63** passed typechecks and2277tests/36skipped/0failures. Subsequent minor structure changes received targeted checks. All13registered non-Mechanical views reached their rendered shell with the assistant closed; additional Outputs/Parts journeys were checked natively. Donor34,GameBoy9 andVAIO16protectedfiles plus actualDRCreport stayed exact. Recorded routing failure and deferred Codex model compatibility remain honestly documented.
+
+Hosted sharing/push/pull, assembled3D, native replacement, general undo and directed reconciliation are explicitly pending; deeper member-specific capabilities have handoffs. Board Art Apply/polish remains deferred. Mechanical/enclosure belongs to the teammate and is excluded. All progress is LOCAL ONLY: no push, remotePR/ticket/document publication, merge or deploy. Historical sections below keep their original validation scope and do not override this completion target.
 
 ## Implemented
 
@@ -1688,3 +1690,6 @@ The assembly overview keeps Connections as its quiet default. Its requested view
 Outputs→Exportfiles now focuses on manufacturing; a clear component-list link opens Parts&BOM with its existing ExportCSV action. Classic Files retains its original BOM export access. Parts copy qualifies coverage of any saved netlist and project hardware. Models&video retain their shared Outputs task with creation settings disclosed only on request.
 
 Native manufacturing→Parts/CSV, Shopping signedout, savedGLB/video formats and requestedvideo controls passed;34protectedfiles exact. No generation/exports/signin/edits in this structural walkthrough. [Evidence](output-parts-ownership-native.json).
+
+
+![Final native wide project overview](final-wide-overview.png)

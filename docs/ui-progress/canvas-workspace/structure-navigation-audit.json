@@ -1,0 +1,176 @@
+{
+  "projectId": "prj_mvrlt1yx802c210b69",
+  "scope": "Read-only UI navigation and rendered-shell diagnostics; no export/generation/sync/pass claim",
+  "sourcePreservation": "34 protected files byte-identical before/after",
+  "mechanical": "Excluded teammate-owned; existing home retained, not opened in this audit",
+  "routes": [
+    {
+      "tab": "pcb",
+      "area": "boards",
+      "panel": true,
+      "selectedTabs": [
+        "PCB"
+      ],
+      "headings": [],
+      "alerts": [],
+      "assistantClosed": true,
+      "runtimeError": false
+    },
+    {
+      "tab": "schematic",
+      "area": "boards",
+      "panel": true,
+      "selectedTabs": [
+        "Schematic"
+      ],
+      "headings": [],
+      "alerts": [],
+      "assistantClosed": true,
+      "runtimeError": false
+    },
+    {
+      "tab": "3d",
+      "area": "boards",
+      "panel": true,
+      "selectedTabs": [
+        "3D"
+      ],
+      "headings": [],
+      "alerts": [],
+      "assistantClosed": true,
+      "runtimeError": false
+    },
+    {
+      "tab": "cinema",
+      "area": "boards",
+      "panel": true,
+      "selectedTabs": [],
+      "headings": [],
+      "alerts": [
+        "Routing failed using fab_router. Check router availability before trying again. Manage routersFailure detailsFabPlane PCB bridge 400 on /sessions/b28915a1e0a3/route: fab-router unavailable: fab_router unavailable from @fabplane/fab-router: Cannot find package '@fabplane/fab-router' imported from /$bunfs/root/fp-pcb-bridge; install the router or set FAB_ROUTER_MODULE"
+      ],
+      "assistantClosed": true,
+      "runtimeError": false
+    },
+    {
+      "tab": "art",
+      "area": "boards",
+      "panel": true,
+      "selectedTabs": [],
+      "headings": [],
+      "alerts": [],
+      "assistantClosed": true,
+      "runtimeError": false
+    },
+    {
+      "tab": "drc",
+      "area": "review",
+      "panel": true,
+      "selectedTabs": [
+        "Checks"
+      ],
+      "headings": [
+        "Design checks"
+      ],
+      "alerts": [],
+      "assistantClosed": true,
+      "runtimeError": false
+    },
+    {
+      "tab": "renders",
+      "area": "outputs",
+      "panel": true,
+      "selectedTabs": [
+        "Library"
+      ],
+      "headings": [
+        "Project outputs"
+      ],
+      "alerts": [],
+      "assistantClosed": true,
+      "runtimeError": false
+    },
+    {
+      "tab": "files",
+      "area": "files",
+      "panel": true,
+      "selectedTabs": [
+        "Files"
+      ],
+      "headings": [],
+      "alerts": [],
+      "assistantClosed": true,
+      "runtimeError": false
+    },
+    {
+      "tab": "notes",
+      "area": "files",
+      "panel": true,
+      "selectedTabs": [
+        "Notes"
+      ],
+      "headings": [
+        "Project notes"
+      ],
+      "alerts": [],
+      "assistantClosed": true,
+      "runtimeError": false
+    },
+    {
+      "tab": "bom",
+      "area": "parts",
+      "panel": true,
+      "selectedTabs": [],
+      "headings": [
+        "Project parts"
+      ],
+      "alerts": [],
+      "assistantClosed": true,
+      "runtimeError": false
+    },
+    {
+      "tab": "diff",
+      "area": "review",
+      "panel": true,
+      "selectedTabs": [
+        "Changes"
+      ],
+      "headings": [],
+      "alerts": [],
+      "assistantClosed": true,
+      "runtimeError": false
+    },
+    {
+      "tab": "comments",
+      "area": "review",
+      "panel": true,
+      "selectedTabs": [
+        "Comments"
+      ],
+      "headings": [
+        "Comments",
+        "Review routing and clearances near the changed R1 before fabrication."
+      ],
+      "alerts": [],
+      "assistantClosed": true,
+      "runtimeError": false
+    },
+    {
+      "tab": "updates",
+      "area": "review",
+      "panel": true,
+      "selectedTabs": [
+        "Updates"
+      ],
+      "headings": [
+        "Review updates",
+        "Design sources",
+        "Generated outputs",
+        "Saved checks"
+      ],
+      "alerts": [],
+      "assistantClosed": true,
+      "runtimeError": false
+    }
+  ]
+}
