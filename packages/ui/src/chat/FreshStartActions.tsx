@@ -39,7 +39,7 @@ export function FreshStartActions() {
         <button onClick={() => ui().setSketchOpen(true, "upload")}><Icon name="paperclip" width={18} height={18} /><span>Upload a reference image<small>PNG or JPEG</small></span></button>
         <p>Your sketch stays with the project</p>
       </WorkspaceMenu>
-      <Button onClick={() => setImporting(true)}><Icon name="folderOpen" width={18} height={18} />Import design</Button>
+      <Button onClick={() => setImporting(true)}><Icon name="folderOpen" width={18} height={18} />Import from GitHub</Button>
       <Button disabled={creating} onClick={() => void createArt()}><Icon name="pcb" width={18} height={18} />{creating ? "Creating…" : "Create art board"}</Button>
     </div>
     {error && <p role="alert" className="text-center text-sm text-danger">{error}</p>}

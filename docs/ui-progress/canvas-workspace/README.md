@@ -1498,3 +1498,9 @@ Selecting a same-project conversation previously left the navigation modal over 
 ## Project-row new conversation reveals its composer
 
 Project-row New chat used the shared store action and left navigation over the draft. The shared canvas action now closes navigation, covering current/other-project rows and picker paths. Native current project retained Notes/focused composer; VAIO row restored Overview and its existing unsent source-resolution draft without Send. All48root/16VAIOprotected files exact. UI typecheck and231UItests/901assertions PASS. Captures415–416 and [native evidence](project-new-conversation-native.json). No new agent/auth/engineering success claim.
+
+## Codex model routing — deferred by user
+
+User selected Codex. Installed CLI login status confirmed ChatGPT login, and fabPlane default remains Codex. Actual isolated review requests rejected inherited gpt-6.1-sol and the offered gpt-5.5 preset with model_not_found for this account. No successful image reasoning/generation claimed. Per user, stop retries and move on to core UI work. Restored our model override to its prior null value; no global credentials/config changes. All3initial isolated-study files unchanged. Local [issue evidence](codex-model-compatibility-ticket.json), captures417–418; no remote ticket/publication.
+
+Fresh-start Import design now says Import from GitHub, matching the existing importer and header command. UI typecheck PASS (/tmp/canvas-fresh-import-label-ui-types.log); no new native import/clone or broad-suite pass claimed for this label change.

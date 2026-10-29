@@ -1,0 +1,33 @@
+{
+  "title": "Codex CLI rejects inherited/configured model IDs with ChatGPT login",
+  "status": "deferred per user; do not retry during canvas UI work",
+  "projectId": "prj_mvszo4wl7ba352a775",
+  "threadId": "th_mvszp7f7015e186a82",
+  "evidence": [
+    {
+      "id": "msg_mvszp7wmdb5bbdb89b",
+      "parts": [
+        "⚠ Model metadata for `gpt-6.1-sol` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.\n\n⚠ {\"type\":\"error\",\"status\":400,\"error\":{\"type\":\"invalid_request_error\",\"message\":\"The 'gpt-6.1-sol' model is not supported when using Codex with a ChatGPT account.\",\"code\":\"model_not_found\"}}"
+      ]
+    },
+    {
+      "id": "msg_mvszubh32155032de2",
+      "parts": [
+        "⚠ This session was recorded with model `gpt-6.1-sol` but is resuming with `gpt-5.5`. Consider switching back to `gpt-6.1-sol` as it may affect Codex performance.\n\n⚠ Model metadata for `gpt-5.5` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.\n\n⚠ {\"type\":\"error\",\"status\":400,\"error\":{\"type\":\"invalid_request_error\",\"message\":\"The 'gpt-5.5' model is not supported when using Codex with a ChatGPT account.\",\"code\":\"model_not_found\"}}"
+      ]
+    }
+  ],
+  "modelsAttempted": [
+    "gpt-6.1-sol",
+    "gpt-5.5"
+  ],
+  "loginStatus": "Codex CLI reports existing ChatGPT login",
+  "settings": {
+    "defaultAgent": "codex",
+    "codexModel": null
+  },
+  "cleanup": "Removed only our rejected gpt-5.5 override; original model=null restored; Codex remains selected",
+  "protectedFiles": 3,
+  "mismatches": [],
+  "scope": "No successful reasoning or sketch-to-board generation; no remote issue/PR update authorized"
+}
