@@ -1534,3 +1534,8 @@ The selected unavailable board now exposes its full name, reason, source ID and 
 ## Connections remain navigable when a source is missing
 
 Available endpoints still open their saved board; missing endpoints now select the declared board and its source tools rather than ending at a disabled button. Full board/connector accessible labels distinguish Open board and Show source tools. Native VAIO I/O–Keyboard verified missing-board focus, Tab/Return details, scoped Escape and exact I/O destination; all16 protected files remain exact. UI types/231tests/901assertions passed. Evidence: [connection-endpoint-native.json](connection-endpoint-native.json), actual [before](connection-endpoint-before.png), [endpoint](connection-endpoint-after.png), [source tools](connection-endpoint-source.png), [board destination](connection-endpoint-board.png). No compatibility pass or import claimed.
+
+
+## Missing schematic: direct source-file browsing
+
+The member schematic empty state now names its actual source folder and offers Browse source files alongside the existing unsent Ask path. Native VAIO I/O browse expanded boards/io, selected/focused its exact saved PCB, and returning through Boards preserved I/O + Schematic. Compact960×720 guidance/actions fit; restored wide. All16protected VAIO files exact; no import, generation, agent message or parity pass claimed. UI types/231tests/901assertions passed. Evidence: [schematic-source-recovery-native.json](schematic-source-recovery-native.json), actual [before](schematic-source-recovery-before.png), [after](schematic-source-recovery-after.png), [source file](schematic-source-recovery-file.png), [compact return](schematic-source-recovery-compact.png).
