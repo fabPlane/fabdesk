@@ -283,7 +283,7 @@ export function Tabs<T extends string>({
               : cn("h-8 rounded-md", t.id === value ? "bg-panel-2 text-fg shadow-sm" : "text-muted hover:text-fg hover:bg-panel-2/60"),
           )}
         >
-          {iconOnly && t.icon ? <><Icon name={t.icon} width={18} height={18} aria-hidden="true" /><span className="fd-canvas-tool-label" aria-hidden="true">{t.label}</span></> : t.label}
+          {t.icon ? <><Icon name={t.icon} width={18} height={18} aria-hidden="true" />{iconOnly ? <span className="fd-canvas-tool-label" aria-hidden="true">{t.label}</span> : <span>{t.label}</span>}</> : t.label}
         </button>
       ))}
     </div>

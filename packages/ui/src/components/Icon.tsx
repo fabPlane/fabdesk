@@ -1,6 +1,9 @@
 import type { SVGProps } from "react";
 
 export type IconName =
+  | "route"
+  | "checkCircle"
+  | "share"
   | "sparkles"
   | "image"
   | "terminal"
@@ -48,6 +51,9 @@ export type IconName =
 /** One stroke language for the desktop chrome. Icons inherit the control's color. */
 export function Icon({ name, ...props }: SVGProps<SVGSVGElement> & { name: IconName }) {
   const paths: Record<IconName, React.ReactNode> = {
+    route: <><circle cx="5" cy="18" r="2" /><circle cx="19" cy="5" r="2" /><path d="M7 18h4a4 4 0 0 0 4-4V9a4 4 0 0 1 2-3" /><path d="m8 8 2-3 2 3" /></>,
+    checkCircle: <><circle cx="12" cy="12" r="9" /><path d="m8 12 3 3 5-6" /></>,
+    share: <><circle cx="18" cy="5" r="3" /><circle cx="5" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="m8 10.5 7.5-4M8 13.5l7.5 4" /></>,
     sparkles: <><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z" /><path d="m21 2 .6 1.4L23 4l-1.4.6L21 6l-.6-1.4L19 4l1.4-.6L21 2Z" /></>,
     externalLink: <><path d="M14 3h7v7m0-7L10 14" /><path d="M10 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5" /></>,
     refresh: <><path d="M20 7v5h-5M4 17v-5h5" /><path d="M6.1 7a7 7 0 0 1 11.5-1L20 9M4 15l2.4 3A7 7 0 0 0 17.9 17" /></>,

@@ -218,6 +218,7 @@ function ProjectCinema({ projectId, scopeReady }: { projectId: string; scopeRead
   const hasPcb = project.data?.files.some(file => file.path === "board.kicad_pcb") ?? false;
   const canRoute = scopeReady && hasPcb && !project.isFetching && !project.isError && !!history.data && !history.isFetching && !history.isError && !busy;
   const preview = project.data?.files.some(file => file.path === "renders/pcb.svg");
+  const showSavedReference = frames === 0 && !active && !!runError && preview;
   const cancelButton = active && cancel.manifest?.some(tool => tool.name === "route_cancel") ? <Button size="sm" disabled={cancel.state.status === "running" || ["cancel_requested", "cancelling"].includes(runRecord.data?.status ?? "")} onClick={() => {
     if (ownedRunId && useUiStore.getState().activeProjectId === projectId) void cancel.run("route_cancel", { projectId, runId: ownedRunId }).then(() => { void runRecord.refetch(); void history.refetch(); });
   }}>Cancel run</Button> : null;
@@ -247,11 +248,11 @@ function ProjectCinema({ projectId, scopeReady }: { projectId: string; scopeRead
   </div>;
 
   return (
-    <div className="fd-routing-player flex h-full flex-col">
-      <div className="fd-routing-heading"><strong>Routing</strong><span>{runRecord.data?.router} · {runRecord.data?.status} · Recorded run; current PCB coverage unverified</span><Button ref={setupTrigger} size="sm" aria-expanded={setupOpen} onClick={() => setSetupOpen(!setupOpen)}>{setupOpen ? "Close setup" : "New run"}</Button>{cancelButton}</div>
+    <div className="fd-routing-player flex h-full flex-col" data-setup-open={setupOpen}>
+      <div className="fd-routing-heading"><strong>Routing</strong><span>{runRecord.data?.router} · {runRecord.data?.status} · Recorded run; current PCB coverage unverified</span><Button size="sm" variant="ghost" aria-expanded={detailsOpen} onClick={() => setDetailsOpen(!detailsOpen)}>Layers and run details</Button><Button ref={setupTrigger} size="sm" aria-expanded={setupOpen} onClick={() => setSetupOpen(!setupOpen)}>{setupOpen ? "Close setup" : "New run"}</Button>{cancelButton}</div>
       {setupOpen && setup}
       <div className="fd-routing-feedback">{feedback}</div>
-      <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-2 py-1 text-xs">
+      <div className="fd-routing-playback flex flex-wrap items-center gap-1.5 text-xs" role="group" aria-label="Recorded routing playback">
         <Button size="sm" variant={followLive ? "primary" : "secondary"} onClick={goLive} title="Follow live (End)">
           <Icon name="play" width={14} height={14} /> Live
         </Button>
@@ -293,8 +294,7 @@ function ProjectCinema({ projectId, scopeReady }: { projectId: string; scopeRead
           </Select>
         )}
       </div>
-      <Button className="self-start m-2" size="sm" variant="ghost" aria-expanded={detailsOpen} onClick={() => setDetailsOpen(!detailsOpen)}>Layers and run details</Button>
-      {detailsOpen && <div className="flex flex-wrap items-center gap-1 border-b border-border px-2 py-1">
+      {detailsOpen && <div className="fd-routing-layer-details flex flex-wrap items-center gap-1 border-b border-border px-2 py-1">
         {(run.meta?.layers ?? []).map((name, index) => {
           const off = hiddenLayers.includes(index);
           return (
@@ -325,8 +325,9 @@ function ProjectCinema({ projectId, scopeReady }: { projectId: string; scopeRead
         </div>
       )}
       {/* The box owns the size; the canvas is absolutely positioned so its bitmap size never feeds back into layout. */}
-      <div ref={boxRef} className="relative min-h-0 flex-1">
-        <canvas ref={canvasRef} className="absolute inset-0 block h-full w-full" />
+      <div ref={boxRef} className="fd-routing-drawing relative min-h-0 flex-1">
+        <canvas ref={canvasRef} className="absolute inset-0 block h-full w-full" hidden={!!showSavedReference} />
+        {showSavedReference && <><RoutingReference projectId={projectId} /><p className="fd-routing-no-frames">This run has no recorded frames. Showing the saved PCB preview.</p></>}
       </div>
     </div>
   );

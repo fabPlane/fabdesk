@@ -45,7 +45,7 @@ export function SketchStartReference({ projectId, paths, preferred, checking, fa
     </div>
     <div className="fd-start-reference-caption">
       {paths.length > 1 ? <label>Reference<select aria-label="Choose project sketch reference" value={path} onChange={event => { setChoice(event.target.value); setSelectedPath(null); }}>{paths.map(item => <option key={item} value={item}>{item.slice("sketches/".length)}</option>)}</select></label> : <strong title={path}>{path.slice("sketches/".length)}</strong>}
-      <span role="status">{failed ? "Saved references could not be refreshed" : checking ? "Checking saved references…" : "Saved to this project · Design reference"}</span>
+      <span role="status">{failed ? "Saved references could not be refreshed" : checking ? "Checking saved references…" : "Saved reference · No PCB yet"}</span>
     </div>
   </section>;
 }

@@ -1,7 +1,8 @@
+import { CanvasToolButton } from "../components/CanvasToolButton";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ProjectImage } from "../chat/ProjectImage";
 import { ProjectVideo } from "../chat/ProjectVideo";
-import { Button, Dialog, EmptyState, IconButton, Input, LoadError, Spinner } from "../components/ui";
+import { Button, EmptyState, IconButton, Input, LoadError, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { editableSketchPaths, useCoreClient, useBoardSources, usePcbPreviewRevision, useProject, useProjectText, useRunTool } from "@fabdesk/client-core";
 import { newChatDraftKey, useUiStore } from "../stores/ui";
@@ -63,7 +64,6 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
     if (ui.activeProjectId !== projectId || ui.fileToReveal !== pending.intent || document.activeElement !== document.body && document.activeElement !== pending.previous) return;
     row.scrollIntoView({ block: "nearest" }); row.focus({ preventScroll: true });
   }, [fileToReveal, selected, expanded, query, project.data, projectId, exportFocus]);
-  const [exportOpen, setExportOpen] = useState(false);
   const [requestedExport, setExportKind] = useState<ExportKind>(exportFocus ? "export_gerbers" : "export_stencil");
   const [lastExport, setLastExport] = useState<ExportKind>(exportFocus ? "export_gerbers" : "export_stencil");
   const [laserForm, setLaserForm] = useState<LaserStencilFormState>(DEFAULT_LASER_STENCIL_FORM);
@@ -88,7 +88,6 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
   const appearance = file ? fileAppearance(file.path) : null;
   const tooBig = !!file && file.size > MAX_TEXT_BYTES;
   const text = useProjectText(projectId, file && appearance?.preview === "text" && !tooBig ? file.path : null);
-  const closeExport = () => { if (!busy) setExportOpen(false); };
   async function exportFiles() {
     if (!canExport || busy || useUiStore.getState().activeProjectId !== projectId) return;
     setLastExport(exportKind);
@@ -99,7 +98,7 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
           ? laserStencilToolArgs(laserForm)
           : {};
     const result = await run(exportKind, { projectId, ...extras });
-    if (result.status === "done") { setExportOpen(false); void project.refetch(); }
+    if (result.status === "done") void project.refetch();
   }
   async function downloadFile(path: string) {
     if (downloadPath || useUiStore.getState().activeProjectId !== projectId) return;
@@ -156,15 +155,8 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
         <Icon name="folderOpen" className="text-muted" />
         <span className="text-xs font-semibold">Project files</span>
         <span className="text-[11px] text-muted">{files.length}</span>
-        <Button size="sm" className="ml-auto" aria-label="Export project files" onClick={() => setExportOpen(true)} disabled={busy}>
-          {busy ? <Spinner /> : <Icon name="export" width={16} height={16} />} {busy ? "Exporting…" : "Export"}
-        </Button>
+        <Button size="sm" variant="ghost" className="ml-auto" onClick={() => { const ui = useUiStore.getState(); if (ui.activeProjectId !== projectId) return; ui.setWorkspaceArea("outputs"); ui.setWorkspaceTab("renders"); }}><Icon name="library" width={16} height={16} />Outputs</Button>
       </div>
-      {state.status !== "idle" && !exportOpen && <div role={state.error ? "alert" : "status"} className={cn("border-b border-border px-3 py-2 text-xs", state.error ? "text-danger" : "text-muted")}>
-        {state.error ?? (busy ? `Exporting ${EXPORTS[lastExport].title.toLowerCase()}…` : `${EXPORTS[lastExport].title} exported to exports/.`)}
-        {state.note && <p className="mt-1">{state.note}</p>}
-        {state.status === "done" && <ExportCompletionDetails kind={lastExport} result={state.result} />}
-      </div>}
       <div className="fd-files-body flex min-h-0 flex-1">
         <nav ref={fileTree} aria-label="Project file explorer" className="fd-files-list flex w-72 shrink-0 flex-col border-r border-border bg-panel/40">
           <div className="flex shrink-0 items-center gap-1 border-b border-border p-2">
@@ -181,7 +173,7 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
         </nav>
         <section aria-label="File preview" className="flex min-h-0 min-w-0 flex-1 flex-col">
           {!file && <EmptyState title="Select a file" icon={<Icon name="folderOpen" width={32} height={32} />}>
-            Browse the folders to preview a file. Use Export to create a stencil, Gerbers or a component list.
+            Choose a saved file to preview it here. Images, models and manufacturing files are collected in Outputs.
           </EmptyState>}
           {file && appearance && <>
             <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-panel/40 px-3 py-2">
@@ -190,7 +182,7 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
               <span className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted">{appearance.label}</span>
               <span className="text-[10px] text-muted">{formatFileSize(file.size)}</span>
               <div role="group" aria-label="Selected file actions" className="flex max-w-full shrink-0 flex-wrap items-center gap-1">
-              <Button size="sm" variant="ghost" disabled={downloadPath !== null} title={downloadPath && downloadPath !== file.path ? `Downloading ${downloadPath}` : "Save a copy of this project file"} onClick={() => void downloadFile(file.path)}>{downloadPath === file.path ? "Downloading…" : "Download file"}</Button>
+              <CanvasToolButton icon="export" label={downloadPath === file.path ? "Downloading…" : "Download file"} disabled={downloadPath !== null} onClick={() => void downloadFile(file.path)} />
               {editableSketchPaths([file]).includes(file.path) && <Button size="sm" variant="ghost" onClick={() => {
                 const ui = useUiStore.getState();
                 if (ui.activeProjectId === projectId) ui.setSketchOpen(true, "draw", file.path);
@@ -216,15 +208,12 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
                 : text.isError ? <div role="alert" className="space-y-2 text-xs text-danger"><p>Could not load this file.</p><Button size="sm" variant="ghost" disabled={text.isFetching} onClick={() => void text.refetch()}>{text.isFetching ? "Retrying…" : "Retry file preview"}</Button></div>
                 : text.isLoading ? <Spinner />
                 : text.data === null ? <p className="text-xs text-muted">This file is no longer available.</p>
-                : <pre className="whitespace-pre-wrap font-mono text-[11.5px] leading-relaxed [overflow-wrap:anywhere]">{text.data || "(Empty file)"}</pre>)}
+                : <pre className="fd-file-text-preview whitespace-pre-wrap font-mono leading-relaxed [overflow-wrap:anywhere]" aria-label="Read-only file preview">{text.data || "(Empty file)"}</pre>)}
             </div>
           </>}
         </section>
       </div>
-      <Dialog open={exportOpen} onClose={closeExport} title="Export project files" className={exportKind === "export_laser_stencil" ? "w-[560px]" : "w-[480px]"}>
-        <FileExportControls {...exportControls} onClose={closeExport} />
-        {sources.isError && <Button size="sm" onClick={() => void sources.refetch()}>Retry source check</Button>}
-      </Dialog>
+
     </div>
   );
 }

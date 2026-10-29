@@ -170,7 +170,7 @@ export function ShoppingListTab() {
         <button key={value} type="button" aria-pressed={view === value} onClick={() => setView(value)}
           data-testid={value === "bom" ? "bom-view-project" : "bom-view-shopping"}
           className={`rounded-md px-2 py-1 text-xs font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${view === value ? "bg-panel text-fg shadow-sm" : "text-muted hover:text-fg"}`}>
-          {value === "bom" ? "Parts" : "Shopping"}
+          {value === "bom" ? "Design BOM" : "Shopping"}
         </button>
       ))}
     </div>

@@ -283,7 +283,7 @@ export function ProjectBomPanel() {
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-sm font-semibold">Project parts</h2>
+            <h2 className="text-sm font-semibold">Parts for this build</h2>
             <span className="text-xs text-muted">{lines.length} {lines.length === 1 ? "item" : "items"}</span>
             <Badge tone="accent" title="Off-board parts are separate from components mounted on the PCB.">
               {parts.parts.length} off-board
@@ -292,7 +292,7 @@ export function ProjectBomPanel() {
           <p className="mt-1 text-xs text-muted">{sources.data?.mode === "assembly" ? "Project extras and saved root netlist only. Member-board BOMs are not included." : sources.isPending || sources.isError ? "Project extras and saved root netlist. Board membership has not been verified." : "Project hardware and any saved board netlist. Component coverage and freshness are unverified."}</p>
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-1.5">
-          <Button ref={addTrigger} variant="primary" size="sm" onClick={() => setLibraryOpen(true)}><Icon name="plus" width={15} height={15} />Add parts</Button>
+          <Button ref={addTrigger} variant="primary" size="sm" onClick={() => setLibraryOpen(true)}><Icon name="plus" width={15} height={15} />Add hardware</Button>
 
           <Button
             size="sm"
@@ -326,7 +326,7 @@ export function ProjectBomPanel() {
             {shown.length === 0 ? (
               <div className="px-3 py-6 text-center text-xs text-muted">
                 {lines.length === 0
-                  ? "No parts are listed in the saved netlist or project parts file. Choose Add parts for motors, displays and hardware."
+                  ? "No parts are listed in the saved netlist or project parts file. Choose Add hardware for motors, displays and hardware."
                   : "No parts match your search or filters."}
               </div>
             ) : (

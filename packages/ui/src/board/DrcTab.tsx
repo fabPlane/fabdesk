@@ -87,15 +87,18 @@ function SingleBoardChecks({ projectId, scopeVerified }: { projectId: string; sc
       </div>
       {project.isError ? <LoadError title="Could not inspect saved design files" onRetry={() => void project.refetch()} /> : !sourceReady ? <p role="status">Checking project sources…</p> : (!hasPcb || !hasSchematic) && <p className="fd-single-checks-prerequisite">{!hasPcb && !hasSchematic ? "Save a PCB or schematic to start checking your design." : !hasSchematic ? "No saved schematic yet. PCB checks are available; electrical rule checking needs a schematic." : "No saved PCB yet. Schematic checks are available; PCB design rules need a board."}</p>}
       {tool.state.error && <p role="alert" className="text-xs text-danger">{tool.state.error}</p>}
-      {!loading && !failed && !noReports && <div className="fd-single-checks-filter"><label>Findings<select aria-label="Filter saved check findings" value={filter} onChange={event => { setFilter(event.target.value as typeof filter); filterFindings("", "all"); }}><option value="all">All checks</option><option value="drc">PCB · DRC</option><option value="erc">Schematic · ERC</option></select></label></div>}
-      {!loading && !failed && !noReports && <CheckFindingFilters rows={scopedRows} count={filteredRows.length} query={findingQuery} severity={severity} onChange={filterFindings} />}
+
     </header>
   );
   const sel = selected !== null ? rows[selected] : undefined;
   return (
     <div ref={root} className="fd-single-checks flex h-full min-h-0 flex-col">
       {toolbar}
+      <div className="fd-checks-body" data-detail-open={!!sel}>
       {!loading && !failed && !noReports && <CheckReportStatus projectId={projectId} drc={drc.data} erc={erc.data} />}
+      <div className="fd-single-checks-filters">
+      {!loading && !failed && !noReports && <div className="fd-single-checks-filter"><label>Findings<select aria-label="Filter saved check findings" value={filter} onChange={event => { setFilter(event.target.value as typeof filter); filterFindings("", "all"); }}><option value="all">All checks</option><option value="drc">PCB · DRC</option><option value="erc">Schematic · ERC</option></select></label></div>}
+      {!loading && !failed && !noReports && <CheckFindingFilters rows={scopedRows} count={filteredRows.length} query={findingQuery} severity={severity} onChange={filterFindings} />}</div>
       {failed ? <LoadError title="Checks could not be verified" onRetry={() => { void drc.refetch(); void erc.refetch(); }} /> : loading ? (
         <div className="flex flex-1 items-center justify-center">
           <Spinner />
@@ -143,17 +146,17 @@ function SingleBoardChecks({ projectId, scopeVerified }: { projectId: string; sc
             </table>
           </div>
           {sel && (
-            <CheckFindingDetails><h3>Finding details</h3>
-              <div className="mb-1 flex items-start justify-between gap-3"><strong>{sel.description}</strong><Button size="sm" variant="ghost" onClick={() => { root.current?.querySelector<HTMLElement>(`[data-check-row="${selected}"]`)?.focus({ preventScroll: true }); setSelected(null); }}>Close details</Button></div>
+            <CheckFindingDetails>
+              <div className="fd-member-checks-detail-heading"><h3>Finding details</h3><Button size="sm" variant="ghost" onClick={() => { root.current?.querySelector<HTMLElement>(`[data-check-row="${selected}"]`)?.focus({ preventScroll: true }); setSelected(null); }}>Close details</Button></div><strong>{sel.description}</strong>
               {sel.items.length === 0 && <div className="text-muted">No item details.</div>}
               {sel.items.map((it, i) => (
-                <div key={i} className="flex items-baseline gap-2">
+                <p key={i}>
                   {it.pos ? (
-                    <span className="shrink-0 font-mono text-accent">
+                    <span className="fd-checks-coordinates">
                       ({it.pos.x.toFixed(3)}, {it.pos.y.toFixed(3)}) mm
                     </span>
                   ) : (
-                    <span className="shrink-0 font-mono text-muted">(no position)</span>
+                    <span className="fd-checks-coordinates">No position in this report</span>
                   )}
                   <span>{it.description}</span>
                   {sel.source === "drc" && selected !== null && captureRootCheckFinding(client.baseUrl, projectId, drc.data, selected, i) && <Button size="sm" variant="ghost" disabled={!sourceReady || busy || drc.isFetching || drc.isError || checkRevision.isFetching || checkRevision.isError || checkRevision.data !== "source-unchanged"} onClick={() => {
@@ -161,12 +164,13 @@ function SingleBoardChecks({ projectId, scopeVerified }: { projectId: string; sc
                     const finding = captureRootCheckFinding(client.baseUrl, projectId, drc.data, selected, i);
                     if (finding) state.openRootFinding(finding);
                   }}>Show on PCB</Button>}
-                </div>
+                </p>
               ))}
             </CheckFindingDetails>
           )}
         </div>
       )}
+      </div>
     </div>
   );
 }

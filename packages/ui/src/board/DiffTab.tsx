@@ -181,6 +181,7 @@ export function DiffTab() {
   const diff = report?.diff;
   return (
     <div ref={workspace} className="fd-diff-workspace flex h-full min-h-0 flex-col" data-testid="board-diff">
+      <div className="fd-diff-toolbar" aria-label="Comparison controls">
       <div className="fd-diff-revisions flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border px-3 py-2">
         <label className="flex min-w-0 items-center gap-1 text-[11px] text-muted">
           From
@@ -229,6 +230,7 @@ export function DiffTab() {
         ))}
         {report && <Button ref={changesTrigger} size="sm" className="ml-auto" aria-expanded={changesOpen} aria-controls="revision-change-list" onClick={() => setChangesOpen(!changesOpen)}>Change list</Button>}
         {compare.state.error && <span className="text-xs text-danger">{compare.state.error}</span>}
+      </div>
       </div>
       {list.state.error && <p role="alert" className="px-3 text-xs text-warning">Could not load revision history. {list.state.error}</p>}
       {mode === "overlay" && report && (

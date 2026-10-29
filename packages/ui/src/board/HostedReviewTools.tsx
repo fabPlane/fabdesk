@@ -8,18 +8,18 @@ type View = "share" | "sync" | "history";
 const TITLES: Record<View, string> = { share: "Share for review", sync: "KiCad push / pull", history: "Recovery & history" };
 
 /** Structural home for pending integrations. No publication, remote sync or general undo is implemented here. */
-export function HostedReviewTools({ projectId }: { projectId: string }) {
+export function HostedReviewTools({ projectId, shareButton = false }: { projectId: string; shareButton?: boolean }) {
   const [view, setView] = useState<View | null>(null);
   const openLocal = (tab: "files" | "diff") => {
     if (useUiStore.getState().activeProjectId !== projectId) return;
     setView(null); useUiStore.getState().setBoardTab(tab);
   };
   return <>
-    <WorkspaceMenu className="fd-review-publishing" label={<><span>Publish & sync</span><Icon name="chevronDown" width={14} height={14} /></>}>
+    {shareButton ? <Button size="sm" variant="ghost" onClick={() => setView("share")}><Icon name="share" width={17} height={17} />Share</Button> : <WorkspaceMenu className="fd-review-publishing" label={<><span>Publish & sync</span><Icon name="chevronDown" width={14} height={14} /></>}>
       <div className="fd-menu-caption">Review integrations</div>
       {(["share", "sync", "history"] as const).map(item => <button key={item} onClick={() => setView(item)}>{TITLES[item]}</button>)}
       <p className="fd-menu-caption">Hosted sharing, sync and full undo are not connected in this build.</p>
-    </WorkspaceMenu>
+    </WorkspaceMenu>}
     <Dialog open={view !== null} onClose={() => setView(null)} title={view ? TITLES[view] : "Review integrations"} className="fd-review-integration-dialog">
       <div className="fd-review-integration-status" role="status">Integration pending</div>
       {view === "share" ? <section><h3>Share a review link</h3><p>Hosted review links and access controls are not connected in this build. You can review local changes and saved files here.</p><Button disabled>Share review link</Button></section> : view === "sync" ? <>

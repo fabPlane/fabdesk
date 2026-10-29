@@ -1,6 +1,6 @@
 import { VideoSourceStatus, videoInputLabel } from "./VideoSourceStatus";
 import { filterSavedOutputs, outputLibrarySections, useVideoInputRevisions, videoInputsNeedReview } from "@fabdesk/client-core";
-import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { assemblyModelNeedsReview, assemblyModelSummaryLabel, useAssemblyModelSummaries, useAssemblyPreviewRevisions, savedOutputs, useBoardSources, useBoardModelRevision, usePcbPreviewRevision, useEnclosureSourceRevision, useCoreClient, useProject, useRunTool, type OutputKind } from "@fabdesk/client-core";
 import { Button, Dialog, EmptyState, LoadError, Spinner } from "../components/ui";
 import { ProjectImage } from "../chat/ProjectImage";
@@ -20,8 +20,7 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
   const [query, setQuery] = useState(""), [sourceScope, setSourceScope] = useState("all");
   const search = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(null), [downloading, setDownloading] = useState(false), [error, setError] = useState<string | null>(null);
-  const library = useRef<HTMLDivElement>(null), actions = useRef<HTMLDivElement>(null), manufacturingFilter = useRef<HTMLButtonElement>(null);
-  const [actionPosition, setActionPosition] = useState({ left: 12, top: 150, maxWidth: 640 });
+  const library = useRef<HTMLDivElement>(null), manufacturingFilter = useRef<HTMLButtonElement>(null);
   const boardSources = useBoardSources(projectId), assembly = boardSources.data?.mode === "assembly";
   const sourceReady = !!boardSources.data && !boardSources.isFetching && !boardSources.isError;
   const hasPcb = project.data?.files.some(file => file.path === "board.kicad_pcb") ?? false;
@@ -62,22 +61,6 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
   };
   const visible = outputs.find(file => file.path === preview);
   useEffect(() => { if (selected && !shown.some(file => file.path === selected)) { setSelected(null); setPreview(null); } }, [project.data?.files, selected, query, filter, sourceScope]);
-  useLayoutEffect(() => {
-    if (!selected) return;
-    const card = [...(library.current?.querySelectorAll<HTMLButtonElement>(".fd-output-card") ?? [])].find(element => element.dataset.path === selected);
-    card?.scrollIntoView({ block: "nearest" });
-    const position = () => {
-      if (!card || !actions.current) return;
-      const rect = card.getBoundingClientRect(), width = Math.min(actions.current.offsetWidth, window.innerWidth - 32), height = actions.current.offsetHeight;
-      setActionPosition({ maxWidth: window.innerWidth - 32, left: Math.max(16, Math.min(rect.left, window.innerWidth - width - 16)), top: Math.max(145, Math.min(rect.top - height - 12, window.innerHeight - height - 90)) });
-    };
-    position();
-    const observer = new ResizeObserver(position);
-    for (const element of [actions.current, card, library.current?.querySelector(".fd-output-library-heading"), library.current?.querySelector(".fd-output-toolbar")]) if (element) observer.observe(element);
-    window.addEventListener("resize", position); library.current?.addEventListener("scroll", position);
-    const host = library.current;
-    return () => { observer.disconnect(); window.removeEventListener("resize", position); host?.removeEventListener("scroll", position); };
-  }, [selected]);
   const deselect = () => {
     [...(library.current?.querySelectorAll<HTMLButtonElement>(".fd-output-card") ?? [])].find(card => card.dataset.path === selected)?.focus();
     setSelected(null);
@@ -130,12 +113,12 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
     </div>
     {generate.state.status === "running" && <p role="status" className="fd-output-feedback"><Spinner />Creating output…</p>}
     {(error || generate.state.error) && <p role="alert" className="fd-output-feedback">{error || generate.state.error}</p>}
-    {active && <div ref={actions} style={actionPosition} className="fd-output-selected" data-testid="output-actions">
-      <div className="fd-output-action-bar"><strong title={active.path}>{active.sourceName ?? basename(active.path)}</strong>
+    {active && <div className="fd-output-selected" data-testid="output-actions">
+      <div className="fd-output-action-bar"><span className="fd-output-selection-count">1 selected</span><strong title={active.path}>{active.sourceName ?? basename(active.path)}</strong>
         {canPreview && <Button size="sm" onClick={() => setPreview(active.path)}>{active.kind === "videos" ? "Play" : "Preview"}</Button>}
         <Button size="sm" disabled={downloading} onClick={() => void download()}>{downloading ? "Downloading…" : "Download"}</Button>
         {active.path === "renders/board.glb" && <Button size="sm" disabled={!rootGenerationReady || generate.state.status === "running"} onClick={() => create("glb")}>Regenerate model</Button>}
-        <WorkspaceMenu key={active.path} className={`fd-output-more ${actionPosition.top > 300 ? "fd-output-more-above" : ""}`} label={<span aria-label="More output actions"><Icon name="more" width={18} height={18} /></span>}>
+        <WorkspaceMenu key={active.path} className="fd-output-more" label={<span aria-label="More output actions"><Icon name="more" width={18} height={18} /></span>}>
           <button onClick={() => useUiStore.getState().openProjectFile(active.path)}>Show file</button>
           <div className="fd-menu-caption">{sourceInfo(active.path).label}</div>
         </WorkspaceMenu>
@@ -143,7 +126,7 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
       </div>
     </div>}
     {shown.length ? <div className="fd-output-grid">{sections.cards.map(file => <button key={file.path} className="fd-output-card" data-path={file.path} aria-pressed={selected === file.path} onClick={() => { setSelected(file.path); setError(null); }}>
-      <div className="fd-output-thumbnail">{sourceInfo(file.path).warning && <span className="fd-output-warning"><Icon name="warning" width={14} height={14} />Needs review</span>}{file.kind === "images" ? <ProjectImage projectId={projectId} path={file.path} alt={basename(file.path)} /> : <><Icon name={file.kind === "videos" ? "play" : file.kind === "models" ? "cube" : "export"} width={58} height={58} /><span>{file.path.split(".").pop()?.toUpperCase()}</span></>}</div>
+      <div className="fd-output-thumbnail">{sourceInfo(file.path).warning && <span className="fd-output-warning"><Icon name="warning" width={14} height={14} />Needs review</span>}{file.kind === "images" ? <ProjectImage projectId={projectId} path={file.path} alt={basename(file.path)} /> : file.kind === "videos" ? <><ProjectVideo projectId={projectId} path={file.path} thumbnail /><span className="fd-output-video-play"><Icon name="play" width={22} height={22} /></span></> : <><Icon name={file.kind === "models" ? "cube" : "export"} width={58} height={58} /><span>{file.path.split(".").pop()?.toUpperCase()}</span></>}</div>
       <div className="fd-output-caption"><strong><Icon name={file.kind === "images" ? "image" : file.kind === "videos" ? "play" : file.kind === "models" ? "cube" : "export"} width={18} height={18} aria-hidden="true" /><span>{basename(file.path)}</span></strong>{file.sourceName && <span className="fd-output-source">{file.sourceName}</span>}<span>{formatFileSize(file.size)} · Saved {new Date(file.mtime).toLocaleDateString()}</span><small data-stale={sourceInfo(file.path).warning}>{sourceInfo(file.path).label}</small></div>
     </button>)}{sections.manufacturingFiles.length > 0 && <button className="fd-output-card" aria-label={`View ${sections.manufacturingFiles.length} individual manufacturing files`} onClick={() => {
       setFilter("manufacturing"); setSelected(null);
