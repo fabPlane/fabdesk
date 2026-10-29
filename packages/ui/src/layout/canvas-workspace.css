@@ -794,3 +794,6 @@
 
 .fd-board-tools > summary { min-height:34px; padding:7px 12px; gap:8px; font-size:12px; }
 .fd-board-tool-active > summary { color:var(--fd-accent); border-color:var(--fd-accent); }
+
+.fd-review-declared-origin { overflow-wrap:anywhere; font-size:11px; }
+.fd-review-declared-origin strong { font-size:11px; }

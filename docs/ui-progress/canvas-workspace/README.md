@@ -2,11 +2,11 @@
 
 Design roadmap: [#388](https://github.com/TensorFleet/fabdesk/pull/388). Implementation continues in [#389](https://github.com/TensorFleet/fabdesk/pull/389).
 
-Current local UI checkpoint: **2f03dae**, after16f2dcd/efe9b2c/ae4a231/f1d233a. The latest batch adds existing drill/placement/DXF/ZIP access on demand, actual ZIP missing-file feedback, a counted entry for large manufacturing sets, and keyboard context across check/finding/file/search transitions. It builds on the canvas shell, source overviews and guarded native part/rectangle tools, sketch retention, live source warnings and grouped Review/Outputs.
+Current source checkpoint: **4cac7a0**, LOCAL ONLY. The latest targeted v6 refinements add device-local map arrangement, a single-composer fresh start, separate design-source/output/check review, saved-output search/source filters, direct member-board switching, requested secondary board tools and a quiet header Review entry. Existing native functionality remains the foundation. All generated concepts and prior native captures are preserved.
 
-Final root typecheck and standard regression suite passed at2f03dae: **2256 passed / 36 skipped / zero failures**. Native proof is separate: real source-preserving exports, real DRC findings, exact-file access and compact/wide UI walkthroughs are recorded below. All48current study files remain exact after final verification, and all40original concept image hashes/dimensions are unchanged. No owned fault or export job remains active.
+Full root typecheck and standard suite passed at **e5d9c63**: **2277 passed /36 skipped /zero failures** across17 batches, recorded in42360d9. The later header-only change passed UItypes and233tests/912assertions plus native root/VAIO/fresh/compact walkthroughs. Native engineering operations, source preservation and UI navigation have separate evidence below; skipped tests are not native passes.
 
-The real assistant sketch-to-board walkthrough remains blocked by “Claude needs you to sign in again”; human reauthentication was requested without changing credentials/provider. Native replacement/general Undo, directional reconciliation, complete VAIO dependencies/keyboard revision and hosted-stack integration remain capability/dependency gaps. Board Art Apply/polish is user-deferred; Mechanical is teammate-owned. This is a verified UI checkpoint, not completion of every original roadmap phase. All progress remains local-only; nothing was pushed or published. Historical sections below retain earlier results and limits.
+The Codex assistant model-routing issue is explicitly user-deferred and recorded locally; actual assistant reasoning/sketch-to-board generation is unverified. No sign-in or model retries are pending. Full reconciliation, native replacement/general Undo, aggregate/member BOM/diff/pins, complete VAIO dependencies and hosted collaboration remain capability/dependency gaps. Board Art Apply/polish is user-deferred; Mechanical is teammate-owned. The roadmap is not complete. No pushes, remote PR/document updates, merge or deployment are authorized. Historical sections below retain their original scope and are superseded by these current statements where they differ.
 
 ## Implemented
 
@@ -1640,3 +1640,13 @@ Full accumulated verification at **e5d9c63**: root typecheck PASS; standard suit
 A populated project has a header Review action that opens the existing Updates flow. Fresh start stays quiet. This is navigation, with no invented warning count or status. Root and assembly review keep their respective data sources and source ownership. Native root/VAIO/fresh/compact walkthrough passed; no generation or assistant message. UItypes/233tests912assertions passed; the preceding accumulated full root2277/36/0 remains separately scoped to e5d9c63. [Evidence](header-review-native.json).
 
 ![Same Review entry, source-qualified assembly evidence](header-review-assembly-scope.png)
+
+
+## Missing-source recovery from Review
+
+Unavailable assembly sources have requested Source details with the saved reason, source ID, project directory where declared, and explicitly unverified provenance. Open project definition uses the existing Files reveal route, preserving the manifest and focusing its exact selected row. The assistant Resolve action stays separate.
+
+Actual VAIO Keyboard Review→definition→Review/Overview and compact long-provenance checks passed;16protected files plus actual DRC report exact. UItypecheck and233tests912assertions passed. No import, source edit, origin fetch or agent message was performed. [Evidence](review-source-recovery-native.json).
+
+![Missing-source facts when requested](review-missing-source-details.png)
+![Exact project definition selected and focused](review-recovery-exact-definition.png)

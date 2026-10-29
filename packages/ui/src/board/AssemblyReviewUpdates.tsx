@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { ProjectBoardSources } from "@fabdesk/protocol";
+import { ASSEMBLY_MANIFEST_PATH, type ProjectBoardSources } from "@fabdesk/protocol";
 import { restoreAssemblySelection, assemblyModelNeedsReview, assemblyModelSummaryLabel, useAssemblyModelSummaries, assemblyCheckNeedsReview, assemblyCheckSummaryLabel, useAssemblyCheckSummaries, assemblyReviewRows, useAssemblyPreviewRevisions, useRunTool } from "@fabdesk/client-core";
 import { Icon } from "../components/Icon";
 import { Button, Spinner } from "../components/ui";
@@ -42,6 +42,7 @@ export function AssemblyReviewUpdates({ projectId, data, checking, failed, onRet
     <div className="fd-update-table" role="table" aria-label="Assembly source review">
       <div className="fd-update-row fd-update-table-heading" role="row"><span role="columnheader">Board source</span><span role="columnheader">Source status</span><span role="columnheader">Next step</span></div>
       {rows.map(row => {
+        const declaredSource = data.sources.find(source => source.source.id === row.sourceId);
         const checkWarning = !unavailable && !checks.isFetching && !checks.isError && assemblyCheckNeedsReview(checkById.get(row.sourceId));
         const modelWarning = !unavailable && !models.isFetching && !models.isError && assemblyModelNeedsReview(modelById.get(row.sourceId));
         return <div key={row.sourceId} className="fd-update-row" role="row" data-review-source={row.sourceId}>
@@ -50,6 +51,16 @@ export function AssemblyReviewUpdates({ projectId, data, checking, failed, onRet
             <span data-warning={!unavailable && row.warning}>{unavailable ? failed ? "Source check unavailable" : "Checking project sources…" : row.status}</span>
             {checkWarning && <small data-warning>{assemblyCheckSummaryLabel(checkById.get(row.sourceId))}</small>}
             {modelWarning && <small data-warning>{assemblyModelSummaryLabel(modelById.get(row.sourceId))}</small>}
+            {!row.board && declaredSource && <details className="fd-review-source-details">
+              <summary aria-label={`Source details for ${row.name}`}>Source details</summary>
+              <div>
+                <p>{declaredSource.reason ?? "This source is unavailable. Review its saved declaration before choosing how to resolve it."}</p>
+                <p>Source ID: {declaredSource.source.id}</p>
+                {declaredSource.source.location === "project" && <p>Project folder: {declaredSource.source.directory}</p>}
+                {declaredSource.source.provenance && <div className="fd-review-declared-origin"><strong>Declared origin · unverified</strong>{declaredSource.source.provenance.repository && <p>{declaredSource.source.provenance.repository}</p>}<p>{declaredSource.source.provenance.ref}</p><p>{declaredSource.source.provenance.path}</p></div>}
+                <Button size="sm" variant="ghost" disabled={unavailable || busy || !data.manifestSha256} onClick={() => { if (active() && !unavailable && !busy && data.manifestSha256) useUiStore.getState().openProjectFile(ASSEMBLY_MANIFEST_PATH); }}>Open project definition</Button>
+              </div>
+            </details>}
             <details className="fd-review-source-details">
               <summary aria-label={`Checks and model for ${row.name}`}>Checks and model</summary>
               <div>
