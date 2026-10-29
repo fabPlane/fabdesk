@@ -1,0 +1,39 @@
+{
+  "implementation": "2304c65",
+  "rootTypecheck": "PASS",
+  "standardRootSuite": {
+    "passed": 2270,
+    "skipped": 36,
+    "failed": 0,
+    "batches": 17
+  },
+  "logs": {
+    "types": "/tmp/canvas-check-navigation-root-types.log",
+    "tests": "/tmp/canvas-check-navigation-root-tests.log"
+  },
+  "nativeEvidence": [
+    "source-details-native.json",
+    "connection-endpoint-native.json",
+    "schematic-source-recovery-native.json",
+    "source-review-cycle-native.json",
+    "finding-filters-native.json",
+    "root-finding-filters-native.json"
+  ],
+  "protectedFixtures": {
+    "vaio": {
+      "files": 16,
+      "exact": true
+    },
+    "donor": {
+      "files": 34,
+      "exact": true
+    }
+  },
+  "scope": "Source/connection recovery and saved finding filters/navigation. No engineering pass or successful model reasoning implied.",
+  "intentionallyRetainedActualReport": {
+    "sha256": "c7cf61a0b13a6f6256a6e0e701a74f6a8b98de38804e35dead219956e9dc00e9",
+    "errors": 86,
+    "warnings": 4,
+    "pcbOnly": true
+  }
+}
