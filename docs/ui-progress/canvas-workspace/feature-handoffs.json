@@ -6,7 +6,7 @@
   "designReference": "outputs/fabplane-workspace-v6; prior concepts preserved",
   "validation": {
     "root": "Full root types and2277 pass/36 skip/0 failures at e5d9c63; later structural UI changes use targeted checks.",
-    "ui": "Final UI typecheckPASS;233tests912assertions/0fail",
+    "ui": "Latest follow-up: UI typecheck PASS;234 tests/917 assertions/0 failures",
     "navigation": "Read-only UI navigation and rendered-shell diagnostics; no export/generation/sync/pass claim",
     "protected": "34 protected files byte-identical before/after"
   },
@@ -186,10 +186,12 @@
       "owner": "Coworker to assign",
       "working": [
         "Existing root/member schematic views and missing-file recovery.",
-        "Stable PCB/Schematic/3D task locations; direct member switching retains the task."
+        "Stable PCB/Schematic/3D task locations; direct member switching retains the task.",
+        "Declared native schematic opens automatically via source-bound preview rendering; missing schematic offers Find, KiCad file picker/import request, Generate request."
       ],
       "remaining": [
-        "Complete member schematic hierarchy/library import; connect full comparison separately."
+        "Complete member schematic hierarchy/library import; connect full comparison separately.",
+        "Automatic pairing of noncanonical files elsewhere in a repository; complete native import/generation through the prepared agent requests and verify compatibility."
       ],
       "dependencies": [
         "Native schematic hierarchy, symbol libraries and source ownership"
@@ -201,7 +203,8 @@
       ],
       "evidence": [
         "schematic-source-recovery-native.json",
-        "board-switcher-native.json"
+        "board-switcher-native.json",
+        "schematic-flow-native.json"
       ],
       "stateCoverage": [
         "Saved/missing source, load/export failure/retry, requested comparison; no parity claim"
@@ -590,7 +593,8 @@
       "owner": "Coworker to assign",
       "working": [
         "One mounted composer; project-scoped drafts/attachments and explicit conversation selection.",
-        "Voice/model/settings entry points preserved; no hidden automatic send."
+        "Voice/model/settings entry points preserved; no hidden automatic send.",
+        "Captured board contexts are collapsed separately from editable prose; prepared board request uses a compact dock; assembly root Finish it is unavailable."
       ],
       "remaining": [
         "Resolve documented Codex CLI model compatibility and rerun actual agent reasoning workflow; do not retry blocked provider setup in UI handoff."
@@ -637,5 +641,6 @@
     }
   ],
   "structureReady": true,
-  "featureImplementationComplete": false
+  "featureImplementationComplete": false,
+  "followUp": "Schematic page UX follow-up after f5693ce; see SCHEMATIC-FLOW.md and schematic-flow-native.json"
 }

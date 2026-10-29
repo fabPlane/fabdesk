@@ -1,5 +1,7 @@
 # Shared UI structure — delegation handoff
 
+Follow-up: schematic entry and board request clarity revised after user feedback. See [SCHEMATIC-FLOW.md](SCHEMATIC-FLOW.md). Latest UI checks234pass/917assertions; no native source changes.
+
 Source checkpoint: `b38683d`. **Shared UI structure ready for delegation.** Final UItypecheckPASS;233tests912assertions/0fail. This handoff covers UI structure; feature implementation is separately qualified. Local only.
 
 All13 non-Mechanical registered views reached their rendered shell in the isolated root study; assistant closed and34 protected files exact. Mechanical remains teammate-owned. Existing router failure is recorded honestly.

@@ -5,7 +5,7 @@ import { CircuitLogo } from "../components/CircuitLogo";
 import { Badge, Button } from "../components/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCoreClient, CoreHttpError, useMessages, useThread, useThreadMutations } from "@fabdesk/client-core";
-import { useUiStore } from "../stores/ui";
+import { newChatDraftKey, useUiStore } from "../stores/ui";
 import { FreshStartActions } from "./FreshStartActions";
 import { Composer } from "./Composer";
 import { MessageList } from "./MessageList";
@@ -13,6 +13,7 @@ import { MessageList } from "./MessageList";
 export function ThreadView({ presentation = "chat", referenceStart = false }: { presentation?: "chat" | "start"; referenceStart?: boolean }) {
   const activeThreadId = useUiStore((s) => s.activeThreadId);
   const projectId = useUiStore((s) => s.activeProjectId);
+  const preparedBoardRequest = useUiStore(s => !s.activeThreadId && (s.draftBoardContexts?.[newChatDraftKey(s.activeProjectId)] ?? []).some(context => context.projectId === s.activeProjectId));
   const setSketchOpen = useUiStore((s) => s.setSketchOpen);
   const setActiveThread = useUiStore((s) => s.setActiveThread);
   const threadQuery = useThread(activeThreadId);
@@ -69,7 +70,7 @@ export function ThreadView({ presentation = "chat", referenceStart = false }: { 
   );
 
   return (
-    <div className={`fd-chat-pane flex h-full min-w-0 flex-col bg-bg ${presentation === "start" ? "fd-start-view" : ""}`}>
+    <div data-board-request={preparedBoardRequest} className={`fd-chat-pane flex h-full min-w-0 flex-col bg-bg ${presentation === "start" ? "fd-start-view" : ""}`}>
       <div className="fd-thread-header relative flex min-h-16 shrink-0 flex-wrap items-center gap-2 py-2 pl-5 pr-[52px]">
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <Icon name="folder" width={18} height={18} className="shrink-0 text-fg" />
@@ -80,7 +81,7 @@ export function ThreadView({ presentation = "chat", referenceStart = false }: { 
       <div className={activeThreadId ? "fd-thread-body" : "fd-thread-body fd-new-chat-body"}>
       {activeThreadId ? (
         <MessageList thread={thread} messages={messages.data ?? []} loading={messages.isLoading} />
-      ) : referenceStart ? null : (
+      ) : referenceStart || preparedBoardRequest ? null : (
         <div className="fd-empty-hero">
           <CircuitLogo className="fd-hero-icon mb-3 shrink-0 text-accent" />
           <div className="fd-eyebrow">Your PCB workspace</div>

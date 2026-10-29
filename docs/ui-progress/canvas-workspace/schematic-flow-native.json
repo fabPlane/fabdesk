@@ -1,0 +1,30 @@
+{
+  "scope": "Assembly schematic page and board assistant UX after user feedback",
+  "baseHead": "f5693ce",
+  "validation": {
+    "uiTypes": "PASS",
+    "uiTests": {
+      "pass": 234,
+      "fail": 0,
+      "assertions": 917
+    },
+    "nativeFilesChecked": 8,
+    "nativeFilesChanged": [],
+    "nativeAutoOpen": "I/O schematic_inspect then render_schematic_svg completed; actual drawing displayed; receipt matches saved sources",
+    "missingSource": "LCD missing schematic offers Find, Import, Generate; source details collapsed",
+    "picker": "KiCad-filtered picker opened; cancel returned without import",
+    "generate": "Prepared short LCD request with captured source context; not sent",
+    "assistant": "Prepared new board request is a compact corner dock; no root-netlist Finish it card"
+  },
+  "limits": [
+    "Auto-open uses the existing declared source folder and canonical native schematic; arbitrary files elsewhere in a repository are not silently paired. Find with agent prepares a search request.",
+    "Import stages selected files with a scoped agent request; no direct native import completion claimed. Generation prepares a request; no circuit generation claimed.",
+    "Existing saved stale previews retain their warning and explicit Update action.",
+    "No remote publication; no provider/model configuration changes."
+  ],
+  "screenshots": [
+    "515-schematic-start-actions.png",
+    "516-schematic-auto-open.png",
+    "518-schematic-compact-assistant.png"
+  ]
+}

@@ -370,11 +370,11 @@
 .fd-assembly-camera { position:absolute; bottom:24px; left:26px; z-index:5; display:flex; align-items:center; gap:3px; padding:5px 9px; background:var(--fd-panel); border:1px solid var(--fd-border); border-radius:24px; box-shadow:0 3px 10px #102a2010; }
 .fd-assembly-camera > span { min-width:45px; text-align:center; font-size:11px; color:var(--fd-muted); }
 .fd-assembly-caption { position:absolute; bottom:26px; left:50%; transform:translateX(-50%); max-width:300px; font-size:10px; color:var(--fd-muted); text-align:center; pointer-events:none; }
-.fd-assembly-detail { height:100%; min-width:0; display:flex; flex-direction:column; position:relative; padding:164px 0 80px; }
-.fd-assembly-detail-heading { position:absolute; top:87px; left:26px; right:26px; display:flex; align-items:center; flex-wrap:wrap; gap:12px; font-size:14px; }
+.fd-assembly-detail { height:100%; min-width:0; display:flex; flex-direction:column; position:relative; padding:110px 0 80px; }
+.fd-assembly-detail-heading { position:absolute; top:22px; left:190px; right:26px; display:flex; align-items:center; flex-wrap:wrap; gap:6px; font-size:14px; }
 .fd-assembly-board-title { margin:0; font-size:inherit; font-weight:600; }
 .fd-assembly-detail-heading > span { font-size:10px; color:var(--fd-muted); background:var(--fd-panel); padding:4px 7px; border:1px solid var(--fd-border); border-radius:7px; }
-.fd-assembly-detail-status { position:absolute; top:132px; left:32px; right:32px; display:flex; align-items:center; flex-wrap:wrap; gap:14px; font-size:11px; color:var(--fd-muted); }
+.fd-assembly-detail-status { position:absolute; top:76px; left:32px; right:32px; display:flex; align-items:center; flex-wrap:wrap; gap:14px; font-size:11px; color:var(--fd-muted); }
 .fd-assembly-detail > .fd-svg-viewer { flex:1; min-height:0; }
 .fd-assembly-detail-note { position:absolute; bottom:25px; left:270px; right:330px; font-size:10px; color:var(--fd-muted); text-align:center; }
 .fd-assembly-safe-preview { height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; font-size:11px; color:var(--fd-muted); }
@@ -817,3 +817,19 @@
 @media(max-width:1100px) { .fd-assembly-view-menu { left:180px; top:18px; } }
 
 .fd-export-parts-link { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:18px; font-size:12px; color:var(--fd-muted); }
+
+.fd-assembly-board-picker > summary { max-width:260px; gap:8px; padding:7px 10px; }
+.fd-assembly-board-picker > summary > span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.fd-composer-board-context { display:flex; align-items:start; gap:8px; margin-bottom:8px; padding:8px 10px; border:1px solid var(--fd-border); border-radius:9px; background:var(--fd-panel); font-size:11px; }
+.fd-composer-board-context details { flex:1; min-width:0; }
+.fd-composer-board-context summary { cursor:pointer; font-weight:600; }
+.fd-composer-board-context p { margin-top:8px; color:var(--fd-muted); }
+@media(max-width:1100px) { .fd-assembly-board-picker > summary { max-width:200px; } }
+@media(max-width:760px) { .fd-assembly-detail-heading { top:66px; left:20px; right:20px; } .fd-assembly-detail { padding-top:152px; } .fd-assembly-detail-status { top:112px; } }
+
+.fd-schematic-start-actions { display:flex; flex-direction:column; align-items:center; gap:8px; }
+.fd-schematic-start-actions > p { max-width:340px; margin:0; font-size:11px; color:var(--fd-muted); }
+
+.fd-assistant-dock:has([data-board-request=true]) { height:auto; max-height:calc(100% - 110px); }
+.fd-assistant-dock [data-board-request=true] .fd-thread-header { display:none; }
+.fd-assistant-dock [data-board-request=true] .fd-new-chat-body { max-height:60vh; }

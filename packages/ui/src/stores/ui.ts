@@ -98,6 +98,8 @@ export interface UiState {
   stencilThicknessByProject: Record<string, number>;
   setStencilThickness: (projectId: string, thicknessMm: number) => void;
   drafts: Record<string, string>;
+  draftBoardContexts: Record<string, { projectId: string; sourceKey: string; label: string; instruction: string }[]>;
+  setDraftBoardContext: (key: string, context: { projectId: string; sourceKey: string; label: string; instruction: string } | null) => void;
   /** Unsaved project notes stay available during navigation in this app session. */
   notesDrafts: Record<string, { base: string; content: string }>;
   setNotesDraft: (key: string, draft: { base: string; content: string } | null) => void;
@@ -268,6 +270,13 @@ export function createUiStore(storage?: StateStorage) {
     stencilThicknessByProject: { ...s.stencilThicknessByProject, [projectId]: stencilThicknessMm(thicknessMm) },
   })),
   drafts: {},
+  draftBoardContexts: {},
+  setDraftBoardContext: (key, context) => set(s => {
+    const draftBoardContexts = { ...s.draftBoardContexts };
+    if (context) draftBoardContexts[key] = [...(s.draftBoardContexts[key] ?? []).filter(row => row.sourceKey !== context.sourceKey), context];
+    else delete draftBoardContexts[key];
+    return { draftBoardContexts };
+  }),
   notesDrafts: {},
   setNotesDraft: (key, draft) => set(s => {
     const notesDrafts = { ...s.notesDrafts };
@@ -377,6 +386,7 @@ export function createUiStore(storage?: StateStorage) {
         boardTab: s.boardTab,
         stencilThicknessByProject: s.stencilThicknessByProject,
         drafts: s.drafts,
+        draftBoardContexts: s.draftBoardContexts,
         attachments: s.attachments,
         whatsNewSeenId: s.whatsNewSeenId,
       }),

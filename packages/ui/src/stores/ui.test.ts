@@ -392,3 +392,23 @@ test("stale project events and invalid coordinates cannot save or reset another 
   expect(store.getState().assemblyMapLayouts[a]?.left?.x).toBe(20);
   expect(store.getState().assemblyMapLayouts[b]?.left?.sourceId).toBe("carrier");
 });
+
+test("board request context survives reload separately from prose and retains every requested source", () => {
+  const memory = new Map<string, string>();
+  const storage = { getItem: (key: string) => memory.get(key) ?? null, setItem: (key: string, value: string) => { memory.set(key, value); }, removeItem: (key: string) => { memory.delete(key); } };
+  const store = createUiStore(storage), key = newChatDraftKey("assembly");
+  const io = { projectId: "assembly", sourceKey: "io-captured-a", label: "I/O", instruction: "instance io; source io; manifest captured-a" };
+  const lcd = { projectId: "assembly", sourceKey: "lcd-captured-a", label: "LCD", instruction: "instance lcd; source lcd; manifest captured-a" };
+  store.getState().setDraft(key, "Keep my unsent question");
+  store.getState().setDraftBoardContext(key, io);
+  store.getState().setDraftBoardContext(key, lcd);
+  store.getState().setDraftBoardContext(key, io);
+  store.getState().setDraftBoardContext("other-thread", { ...lcd, projectId: "other-project" });
+  const restored = createUiStore(storage);
+  expect(restored.getState().drafts[key]).toBe("Keep my unsent question");
+  expect(restored.getState().draftBoardContexts[key]).toEqual([lcd, io]);
+  restored.getState().setDraftBoardContext(key, null);
+  expect(restored.getState().draftBoardContexts[key]).toBeUndefined();
+  expect(restored.getState().drafts[key]).toBe("Keep my unsent question");
+  expect(restored.getState().draftBoardContexts["other-thread"]?.[0]?.projectId).toBe("other-project");
+});

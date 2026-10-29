@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { projectSketchImagePaths, useCore, restoreAssemblySelection, useBoardSources, useProject, useProjects, useThreads, WORKSPACE_AREAS, type WorkspaceArea } from "@fabdesk/client-core";
+import { projectSketchImagePaths, useCore, useBoardSources, useProject, useProjects, useThreads, WORKSPACE_AREAS, type WorkspaceArea } from "@fabdesk/client-core";
 import { BoardPanel } from "../board/BoardPanel";
 import { ThreadView } from "../chat/ThreadView";
 import { ProjectPickerDialog } from "../chat/ProjectPickerDialog";
@@ -41,9 +41,6 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
   const area = useUiStore((s) => s.workspaceArea);
   const boardTab = useUiStore((s) => s.boardTab);
   const areaLabel = area === "boards" && boardSources.data?.mode === "assembly" ? "Boards" : WORKSPACE_AREAS[area].label;
-  const savedBoard = useUiStore((s) => projectId ? s.assemblyBoardByProject[projectId] : undefined);
-  const selectedBoard = area === "boards" && boardSources.data?.mode === "assembly" ? restoreAssemblySelection(boardSources.data, savedBoard) : null;
-  const selectedBoardName = selectedBoard ? boardSources.data?.assembly?.instances.find(instance => instance.id === selectedBoard.instanceId)?.name : undefined;
   const openArea = useUiStore((s) => s.setWorkspaceArea);
   const assistantOpen = useUiStore((s) => s.assistantOpen);
   const setAssistantOpen = useUiStore((s) => s.setAssistantOpen);
@@ -94,7 +91,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
         <button onClick={() => setNavigationOpen(true)}><Icon name="sidebar" width={16} height={16} />Browse projects & chats</button>
       </WorkspaceMenu>
       {sketchReference && <span className="fd-canvas-breadcrumb"><span>/</span><strong>{threadId ? "Sketch review" : "Start with sketch"}</strong></span>}
-      {projectId && !fresh && !sketchReference && <span className="fd-canvas-breadcrumb" title={selectedBoardName ?? areaLabel}><span>/</span><strong>{selectedBoardName ?? areaLabel}</strong></span>}
+      {projectId && !fresh && !sketchReference && <span className="fd-canvas-breadcrumb" title={areaLabel}><span>/</span><strong>{areaLabel}</strong></span>}
       <div className="fd-canvas-header-actions">
         <span className="fd-canvas-connection" title={coreStatus?.message ?? `Core ${coreStatus?.state ?? "ready"}; events ${sseStatus}`}><i data-connected={connected} />{connected ? local ? "Local workspace" : "Remote workspace" : "Reconnecting…"}</span>
         {projectId && !fresh && <Button size="sm" variant="ghost" title="Review source and output updates" aria-current={area === "review" && boardTab === "updates" ? "page" : undefined} onClick={() => ui().setBoardTab("updates")}>Review</Button>}

@@ -7,7 +7,7 @@ import { Icon } from "../components/Icon";
 import { InstallHint } from "../components/InstallHint";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { useCore } from "@fabdesk/client-core";
-import { CoreHttpError, formatVoiceShortcut, parseVoiceShortcut, useDoctor, useSettings, useSpeechStatus, useMessages, useQueueMessage, useUnqueueMessage, useFinishIt, useFinishItNeedsWork, useStartFinishIt, useStopFinishIt } from "@fabdesk/client-core";
+import { CoreHttpError, formatVoiceShortcut, parseVoiceShortcut, useDoctor, useSettings, useSpeechStatus, useMessages, useQueueMessage, useUnqueueMessage, useFinishIt, useFinishItNeedsWork, useStartFinishIt, useStopFinishIt, useBoardSources } from "@fabdesk/client-core";
 import { useRunsStore } from "@fabdesk/client-core";
 import { newChatDraftKey, useUiStore } from "../stores/ui";
 import { basename, mimeFromPath, modKey } from "../util";
@@ -63,6 +63,12 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
   const draftKey = thread?.id ?? newChatDraftKey(projectId);
   const draft = useUiStore((s) => s.drafts[draftKey] ?? "");
   const setDraft = useUiStore((s) => s.setDraft);
+  const savedContexts = useUiStore(s => s.draftBoardContexts?.[draftKey]);
+  const matchingContexts = savedContexts?.filter(context => context.projectId === projectId);
+  const boardContext = matchingContexts?.length ? { projectId: matchingContexts[0]!.projectId, label: matchingContexts.map(context => context.label).join(", "), instruction: matchingContexts.map(context => context.instruction).join("\n\n") } : undefined;
+  const setDraftBoardContext = useUiStore(s => s.setDraftBoardContext);
+  const boardSources = useBoardSources(projectId);
+  const rootAutomation = boardSources.data?.mode === "single";
   const pending = useUiStore((s) => s.attachments[draftKey] ?? EMPTY);
   const addAttachment = useUiStore((s) => s.addAttachment);
   const removeAttachment = useUiStore((s) => s.removeAttachment);
@@ -144,6 +150,7 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
 
   const beginFinishIt = useCallback(async () => {
     if (!projectId || finishItBusy || alreadyFinished) return;
+    if (!rootAutomation) { setError("Finish it currently supports single-board projects. Ask about the selected board instead."); return; }
     setError(null);
     try {
       const result = await startFinishIt.mutateAsync({
@@ -157,18 +164,19 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [projectId, finishItBusy, alreadyFinished, startFinishIt, thread?.id, agentId, model, setActiveThread, qc]);
+  }, [projectId, rootAutomation, finishItBusy, alreadyFinished, startFinishIt, thread?.id, agentId, model, setActiveThread, qc]);
 
   const send = useCallback(async () => {
     const typed = draft.trim();
     if (!typed || sending) return;
     if (isFinishItCommand(typed)) {
-      setDraft(draftKey, "");
+      if (rootAutomation) setDraft(draftKey, "");
       await beginFinishIt();
       return;
     }
     // `/shopping-list …` and friends expand into the instructions the agent needs.
-    const content = expandSlashCommand(typed) ?? typed;
+    const expanded = expandSlashCommand(typed) ?? typed;
+    const content = boardContext ? `${expanded}\n\n${boardContext.instruction}` : expanded;
     setSending(true);
     setError(null);
     let createdThreadId: string | null = null;
@@ -190,21 +198,24 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
       voice.reset();
       setDraft(draftKey, "");
       clearAttachments(draftKey);
+      setDraftBoardContext(draftKey, null);
       if (!thread) setDraft(threadId, "");
       void qc.invalidateQueries({ queryKey: ["messages", threadId] });
       void qc.invalidateQueries({ queryKey: ["threads"] });
     } catch (e) {
       if (createdThreadId) {
         setDraft(createdThreadId, draft);
+        for (const context of matchingContexts ?? []) setDraftBoardContext(createdThreadId, context);
         for (const attachment of pending) addAttachment(createdThreadId, attachment);
         setDraft(draftKey, "");
         clearAttachments(draftKey);
+        setDraftBoardContext(draftKey, null);
       }
       setError(e);
     } finally {
       setSending(false);
     }
-  }, [draft, sending, thread, onCreateThread, agentId, model, pending, setDraft, draftKey, clearAttachments, addAttachment, qc, queueMessage, voice.reset, beginFinishIt]);
+  }, [draft, rootAutomation, matchingContexts, boardContext, setDraftBoardContext, sending, thread, onCreateThread, agentId, model, pending, setDraft, draftKey, clearAttachments, addAttachment, qc, queueMessage, voice.reset, beginFinishIt]);
 
   const stop = useCallback(async () => {
     if (!run || stopping) return;
@@ -247,7 +258,7 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
     for (const p of paths) addAttachment(draftKey, { path: p, mime: mimeFromPath(p), label: basename(p) });
   };
 
-  const suggestions = slashSuggestions(draft);
+  const suggestions = slashSuggestions(draft).filter(command => rootAutomation || !isFinishItCommand(`/${command.name}`));
   const mod = modKey(host.platform);
   const placeholder = thread
     ? "Message the agent..."
@@ -297,7 +308,7 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
             ))}
           </div>
         )}
-        {finishItSession && (
+        {finishItSession && (rootAutomation || finishItActive(finishItSession)) && (
           <FinishItPanel
             session={finishItSession}
             stopping={stopFinishIt.isPending || finishItSession.status === "stopping"}
@@ -328,6 +339,10 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
             ))}
           </div>
         )}
+        {boardContext && <div className="fd-composer-board-context">
+          <details><summary>Board: {boardContext.label}</summary><p>This source context accompanies your next message.</p><p className="break-words">{boardContext.instruction}</p></details>
+          <button type="button" aria-label="Remove board context" onClick={() => setDraftBoardContext(draftKey, null)}>×</button>
+        </div>}
         <div className="fd-composer rounded-xl border border-border bg-panel transition-colors focus-within:border-accent">
           <VoiceBar
             state={voice.state}
@@ -380,7 +395,7 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
               onToggle={voice.toggle}
             />
             {thread && <PermissionsMenu key={thread.id} thread={thread} />}
-            {projectId && (startMode ? <WorkspaceMenu className="fd-composer-more" label={<span aria-label="Assistant tools"><Icon name="more" width={18} height={18} /></span>}>
+            {projectId && rootAutomation && (startMode ? <WorkspaceMenu className="fd-composer-more" label={<span aria-label="Assistant tools"><Icon name="more" width={18} height={18} /></span>}>
               <div className="fd-menu-caption">Automation</div>
               {finishAction}
               <p className="fd-menu-caption">Finish schematic, placement, routing and checks with the agent.</p>
